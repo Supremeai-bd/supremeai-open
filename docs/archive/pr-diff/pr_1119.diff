@@ -1,0 +1,454 @@
+diff --git a/studio/.github/workflows/ci.yml b/studio/.github/workflows/ci.yml
+index aeab35ce..45ba7424 100644
+--- a/studio/.github/workflows/ci.yml
++++ b/studio/.github/workflows/ci.yml
+@@ -21,8 +21,6 @@ jobs:
+ 
+       - name: Setup pnpm
+         uses: pnpm/action-setup@v4
+-        with:
+-          version: 9
+ 
+       - name: Set up Node
+         uses: actions/setup-node@v4
+diff --git a/studio/.github/workflows/deploy-pages.yml b/studio/.github/workflows/deploy-pages.yml
+index a9460497..188a9eb0 100644
+--- a/studio/.github/workflows/deploy-pages.yml
++++ b/studio/.github/workflows/deploy-pages.yml
+@@ -20,8 +20,6 @@ jobs:
+ 
+       - name: Setup pnpm
+         uses: pnpm/action-setup@v4
+-        with:
+-          version: 9
+ 
+       - name: Setup Node.js
+         uses: actions/setup-node@v4
+diff --git a/studio/src/commandcenter/modules/secure/ApprovalQueue.tsx b/studio/src/commandcenter/modules/secure/ApprovalQueue.tsx
+new file mode 100644
+index 00000000..272bdbb1
+--- /dev/null
++++ b/studio/src/commandcenter/modules/secure/ApprovalQueue.tsx
+@@ -0,0 +1,205 @@
++import React, { useState } from 'react';
++import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
++import { apiClient } from '../../../services/apiClient';
++import { adminTokenStore } from '../../../services/adminTokenStore';
++
++interface PendingApproval {
++  id?: string;
++  task_id?: string;
++  proposed_action?: string;
++  action?: string;
++  target?: string;
++  requester?: string;
++  requester_id?: string;
++  status?: string;
++  expires_at?: string | number;
++  created_at?: string | number;
++  [key: string]: unknown;
++}
++
++const getId = (a: PendingApproval): string => String(a.id ?? a.task_id ?? '');
++
++export function ApprovalQueue() {
++  const qc = useQueryClient();
++  const [activeId, setActiveId] = useState<string | null>(null);
++  const [otp, setOtp] = useState('');
++  const [reason, setReason] = useState('');
++  const [error, setError] = useState<string | null>(null);
++
++  const hasToken = () => !!adminTokenStore.getDecodedToken();
++
++  const { data, isLoading, error: fetchError, refetch } = useQuery({
++    queryKey: ['hitl-pending'],
++    queryFn: () => apiClient.get<PendingApproval[] | { records?: PendingApproval[]; approvals?: PendingApproval[] }>('/api/v1/hitl/pending'),
++    enabled: hasToken(),
++    refetchInterval: 15_000,
++  });
++
++  const approvals: PendingApproval[] = Array.isArray(data)
++    ? data
++    : (data as { records?: PendingApproval[]; approvals?: PendingApproval[] })?.records
++      || (data as { approvals?: PendingApproval[] })?.approvals
++      || [];
++
++  const approveMutation = useMutation({
++    mutationFn: ({ id, otpCode }: { id: string; otpCode: string }) =>
++      apiClient.post(`/api/v1/hitl/approve/${encodeURIComponent(id)}`, { resolved_by: 'admin', reason: reason || null, otp: otpCode || null }),
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ['hitl-pending'] });
++      setActiveId(null);
++      setOtp('');
++      setReason('');
++      setError(null);
++    },
++    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
++  });
++
++  const rejectMutation = useMutation({
++    mutationFn: ({ id, r }: { id: string; r: string }) =>
++      apiClient.post(`/api/v1/hitl/reject/${encodeURIComponent(id)}`, { resolved_by: 'admin', reason: r }),
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ['hitl-pending'] });
++      setActiveId(null);
++      setReason('');
++      setError(null);
++    },
++    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
++  });
++
++  const cancelMutation = useMutation({
++    mutationFn: ({ id, r }: { id: string; r: string }) =>
++      apiClient.post(`/api/v1/hitl/cancel/${encodeURIComponent(id)}`, { resolved_by: 'admin', reason: r }),
++    onSuccess: () => {
++      qc.invalidateQueries({ queryKey: ['hitl-pending'] });
++      setActiveId(null);
++      setReason('');
++      setError(null);
++    },
++    onError: (e: unknown) => setError(e instanceof Error ? e.message : String(e)),
++  });
++
++  const fetchErrorMessage = fetchError
++    ? (fetchError instanceof Error ? fetchError.message : String(fetchError))
++    : null;
++
++  return (
++    <div className="flex flex-col gap-3">
++      <div className="flex items-center justify-between">
++        <span className="text-xs text-[var(--sa-ink-muted)]">
++          {approvals.length} pending
++        </span>
++        <button
++          type="button"
++          onClick={() => refetch()}
++          className="text-xs text-cyan-300 hover:text-cyan-200"
++        >
++          Refresh
++        </button>
++      </div>
++
++      {fetchErrorMessage && (
++        <div className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
++          Approval fetch failed: {fetchErrorMessage}
++        </div>
++      )}
++
++      {error && (
++        <div className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
++          {error}
++        </div>
++      )}
++
++      {isLoading && approvals.length === 0 && (
++        <div className="text-xs text-[var(--sa-ink-muted)]">Loading approvals…</div>
++      )}
++
++      {!isLoading && approvals.length === 0 && !fetchErrorMessage && (
++        <div className="rounded-xl border border-dashed border-[var(--sa-border)] p-6 text-center text-xs text-[var(--sa-ink-muted)]">
++          No pending approvals.
++        </div>
++      )}
++
++      <ul className="space-y-3">
++        {approvals.map((a) => {
++          const id = getId(a);
++          const isActive = activeId === id;
++          return (
++            <li key={id} className="rounded-xl border border-[var(--sa-border)] bg-black/20 p-3">
++              <div className="flex items-start justify-between gap-3">
++                <div className="min-w-0 flex-1">
++                  <p className="text-sm font-medium text-[var(--sa-ink)] truncate">
++                    {String(a.proposed_action ?? a.action ?? 'Pending action')}
++                  </p>
++                  <p className="text-xs text-[var(--sa-ink-muted)]">
++                    {a.target ? `target: ${String(a.target)} · ` : ''}
++                    {a.requester ? `requester: ${String(a.requester)} · ` : ''}
++                    {a.status ? `status: ${String(a.status)}` : ''}
++                  </p>
++                  {a.expires_at && (
++                    <p className="text-xs text-[var(--sa-ink-muted)]">
++                      expires: {String(a.expires_at)}
++                    </p>
++                  )}
++                </div>
++                <button
++                  type="button"
++                  onClick={() => setActiveId(isActive ? null : id)}
++                  className="text-xs text-cyan-300 hover:text-cyan-200"
++                >
++                  {isActive ? 'Close' : 'Decide'}
++                </button>
++              </div>
++
++              {isActive && (
++                <div className="mt-3 space-y-2">
++                  <input
++                    type="text"
++                    value={otp}
++                    onChange={(e) => setOtp(e.target.value)}
++                    placeholder="OTP code (required to approve)"
++                    className="w-full rounded-lg border border-[var(--sa-border)] bg-black/30 px-3 py-2 text-xs text-[var(--sa-ink)]"
++                  />
++                  <textarea
++                    value={reason}
++                    onChange={(e) => setReason(e.target.value)}
++                    placeholder="Reason (required to reject/cancel)"
++                    className="w-full rounded-lg border border-[var(--sa-border)] bg-black/30 px-3 py-2 text-xs text-[var(--sa-ink)]"
++                    rows={2}
++                  />
++                  <div className="flex flex-wrap gap-2">
++                    <button
++                      type="button"
++                      disabled={approveMutation.isPending || !otp.trim()}
++                      onClick={() => approveMutation.mutate({ id, otpCode: otp.trim() })}
++                      className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 disabled:opacity-50"
++                    >
++                      {approveMutation.isPending ? 'Approving…' : 'Approve (OTP)'}
++                    </button>
++                    <button
++                      type="button"
++                      disabled={rejectMutation.isPending || !reason.trim()}
++                      onClick={() => rejectMutation.mutate({ id, r: reason.trim() })}
++                      className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-1.5 text-xs font-semibold text-rose-200 disabled:opacity-50"
++                    >
++                      {rejectMutation.isPending ? 'Rejecting…' : 'Reject'}
++                    </button>
++                    <button
++                      type="button"
++                      disabled={cancelMutation.isPending}
++                      onClick={() => cancelMutation.mutate({ id, r: reason.trim() || 'cancelled' })}
++                      className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-xs font-semibold text-amber-200 disabled:opacity-50"
++                    >
++                      {cancelMutation.isPending ? 'Cancelling…' : 'Cancel'}
++                    </button>
++                  </div>
++                </div>
++              )}
++            </li>
++          );
++        })}
++      </ul>
++    </div>
++  );
++}
++
++export default ApprovalQueue;
+diff --git a/studio/src/components/admin/AdminCommandCenter.tsx b/studio/src/components/admin/AdminCommandCenter.tsx
+deleted file mode 100644
+index 09329437..00000000
+--- a/studio/src/components/admin/AdminCommandCenter.tsx
++++ /dev/null
+@@ -1,52 +0,0 @@
+-import React from 'react';
+-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, CircleDashed, GitMerge, HeartPulse, LifeBuoy, ServerCog, ShieldCheck, Sparkles, Terminal, Zap } from 'lucide-react';
+-import { useMetrics, useThreatScan, useCIReports, useDashboardEvents } from '../../hooks/useDashboardData';
+-
+-type HealthRecord = { status?: string; latency?: string | number; region?: string; [key: string]: unknown };
+-
+-interface AdminCommandCenterProps {
+-  healthMap?: Record<string, HealthRecord>;
+-  setAdminSubTab?: (tab: string) => void;
+-  handleTriggerDeploy?: () => void;
+-  actionStatus?: string;
+-}
+-
+-const statusTone = (status: string | undefined) => {
+-  const normalized = (status || 'unknown').toLowerCase();
+-  if (['healthy', 'operational', 'online', 'ok', 'ready'].includes(normalized)) return { label: status || 'Healthy', dot: 'bg-emerald-400', text: 'text-emerald-300', bar: 'bg-emerald-400' };
+-  if (['degraded', 'warning', 'partial'].includes(normalized)) return { label: status || 'Degraded', dot: 'bg-amber-400', text: 'text-amber-300', bar: 'bg-amber-400' };
+-  if (['down', 'offline', 'error', 'critical'].includes(normalized)) return { label: status || 'Offline', dot: 'bg-rose-400', text: 'text-rose-300', bar: 'bg-rose-400' };
+-  return { label: status || 'Unknown', dot: 'bg-slate-500', text: 'text-slate-400', bar: 'bg-slate-500' };
+-};
+-
+-function MetricCard({ label, value, detail, icon: Icon, tone = 'cyan' }: { label: string; value: React.ReactNode; detail: string; icon: React.ElementType; tone?: 'cyan' | 'emerald' | 'amber' | 'rose' }) {
+-  const tones = { cyan: 'text-cyan-300 bg-cyan-400/10 border-cyan-400/20', emerald: 'text-emerald-300 bg-emerald-400/10 border-emerald-400/20', amber: 'text-amber-300 bg-amber-400/10 border-amber-400/20', rose: 'text-rose-300 bg-rose-400/10 border-rose-400/20' };
+-  return <article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 shadow-[0_18px_50px_rgba(0,0,0,0.12)]"><div className="flex items-start justify-between gap-3"><div><p className="sa-eyebrow">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight text-[var(--sa-ink)]">{value}</p><p className="mt-2 text-xs text-[var(--sa-ink-muted)]">{detail}</p></div><div className={`rounded-xl border p-2.5 ${tones[tone]}`}><Icon size={18} /></div></div></article>;
+-}
+-
+-export default function AdminCommandCenter({ healthMap = {}, setAdminSubTab, handleTriggerDeploy, actionStatus }: AdminCommandCenterProps) {
+-  const { data: metrics } = useMetrics();
+-  const { data: threats } = useThreatScan();
+-  const { data: ciReports } = useCIReports();
+-  const { data: events } = useDashboardEvents(6);
+-  const findings = threats?.findings || [];
+-  const activeIncidents = findings.filter((item) => item.severity === 'high' || item.severity === 'critical');
+-  const runningDeployments = ciReports?.filter((item) => item.status === 'running') || [];
+-  const serviceEntries = Object.entries(healthMap);
+-  const healthyServices = serviceEntries.filter(([, service]) => ['healthy', 'operational', 'online', 'ok', 'ready'].includes((service.status || '').toLowerCase())).length;
+-  const rps = metrics?.requests_per_second;
+-  const latency = metrics?.latency_p95_ms;
+-  const cpu = metrics?.cpu_percent ?? metrics?.cpu_usage_percent;
+-  const open = (tab: string) => setAdminSubTab?.(tab);
+-
+-  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-7 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1500px] space-y-7"><header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-cyan-300"><Sparkles size={14} /> SupremeAI operations</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Command Center</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--sa-ink-muted)]">One calm surface for platform health, incidents, delivery, and the next safe operator action.</p></div><div className="flex flex-wrap items-center gap-3"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs font-medium text-emerald-300"><span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />Admin context protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"><GitMerge size={15} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Platform summary"><MetricCard label="Platform signal" value={metrics ? 'Live' : 'Pending'} detail={metrics ? 'Telemetry is reporting' : 'Waiting for telemetry'} icon={HeartPulse} tone={metrics ? 'emerald' : 'amber'} /><MetricCard label="p95 latency" value={latency != null ? `${latency} ms` : '—'} detail="From the current metrics snapshot" icon={Zap} tone="cyan" /><MetricCard label="Open incidents" value={activeIncidents.length} detail={activeIncidents.length ? 'Review required' : 'No high-severity findings'} icon={activeIncidents.length ? AlertTriangle : CheckCircle2} tone={activeIncidents.length ? 'rose' : 'emerald'} /><MetricCard label="Running deploys" value={runningDeployments.length} detail="CI/CD runs currently active" icon={GitMerge} tone="amber" /></section><section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]"><div className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="sa-eyebrow">Operational posture</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">What needs attention now?</h2></div><span className="text-xs text-[var(--sa-ink-muted)]">Auto-refreshed by platform hooks</span></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><PostureItem label="Services" value={serviceEntries.length ? `${healthyServices}/${serviceEntries.length} healthy` : 'No snapshot'} tone={serviceEntries.length && healthyServices === serviceEntries.length ? 'good' : 'neutral'} /><PostureItem label="Compute" value={cpu != null ? `${cpu}% CPU` : 'Awaiting data'} tone={cpu != null && cpu > 80 ? 'warn' : 'good'} /><PostureItem label="Traffic" value={rps != null ? `${rps} req/s` : 'Awaiting data'} tone="neutral" /></div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="sa-eyebrow">Service health</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">Federation status</h2></div><button type="button" onClick={() => open('service-explorer')} className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Open explorer <ArrowUpRight size={14} /></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{serviceEntries.length ? serviceEntries.map(([name, service]) => { const tone = statusTone(service.status); return <div key={name} className="rounded-xl border border-[var(--sa-border)] bg-black/10 p-4"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium capitalize text-[var(--sa-ink)]">{name.replace(/[-_]/g, ' ')}</span><span className={`inline-flex items-center gap-1.5 text-[11px] ${tone.text}`}><span className={`size-1.5 rounded-full ${tone.dot}`} />{tone.label}</span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: tone.label === 'Healthy' || tone.label === 'Operational' ? '100%' : tone.label === 'Degraded' ? '58%' : '24%' }} /></div><p className="mt-3 text-[11px] text-[var(--sa-ink-muted)]">{service.region || 'Region unavailable'}{service.latency != null ? ` · ${service.latency} latency` : ''}</p></div>; }) : <EmptyState icon={CircleDashed} title="No health snapshot yet" body="Open Service Explorer after the next health poll completes." />}</div></article></div><aside className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center gap-3"><div className="rounded-xl border border-indigo-400/20 bg-indigo-400/10 p-2 text-indigo-300"><LifeBuoy size={18} /></div><div><p className="sa-eyebrow">Operator shortcuts</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Move safely</h2></div></div><div className="mt-5 grid gap-2">{[['incidents', 'Review incidents', AlertTriangle], ['audit', 'Inspect audit trail', ShieldCheck], ['deployments', 'Review deployments', GitMerge], ['configuration', 'Open configuration', ServerCog], ['interactive-chat', 'Ask the admin copilot', Terminal]].map(([tab, label, Icon]) => <button key={tab as string} type="button" onClick={() => open(tab as string)} className="group flex items-center justify-between rounded-xl border border-[var(--sa-border)] bg-black/10 px-3 py-3 text-left text-sm text-[var(--sa-ink)] transition hover:border-cyan-400/30 hover:bg-cyan-400/5"><span className="flex items-center gap-3"><Icon size={16} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" />{label as string}</span><ArrowUpRight size={14} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" /></button>)}</div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="sa-eyebrow">Recent activity</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">What changed</h2></div><Activity size={18} className="text-cyan-300" /></div><div className="mt-5 space-y-3">{events?.length ? events.map((event, index) => <div key={`${event.timestamp}-${index}`} className="flex gap-3 border-b border-[var(--sa-border)] pb-3 last:border-0 last:pb-0"><div className="mt-1 size-2 shrink-0 rounded-full bg-cyan-300" /><div className="min-w-0"><p className="text-sm text-[var(--sa-ink)]">{event.message || event.source || 'Platform event'}</p><p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">{new Date(event.timestamp).toLocaleString()}</p></div></div>) : <EmptyState icon={Activity} title="No recent events" body="The activity stream is quiet." />}</div></article></aside></section>{activeIncidents.length > 0 && <section className="rounded-2xl border border-rose-400/25 bg-rose-400/5 p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-rose-300" size={18} /><div><h2 className="font-semibold text-rose-200">High-severity findings require review</h2><p className="mt-1 text-sm text-rose-100/70">The dashboard is showing the live threat feed. Use Incidents or Security for remediation; no destructive action is taken from this overview.</p><button type="button" onClick={() => open('incidents')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-300/20 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-400/10">Review now <ArrowUpRight size={14} /></button></div></div></section>}</div></div>;
+-}
+-
+-function PostureItem({ label, value, tone }: { label: string; value: string; tone: 'good' | 'warn' | 'neutral' }) {
+-  const styles = { good: 'border-emerald-400/20 bg-emerald-400/5', warn: 'border-amber-400/20 bg-amber-400/5', neutral: 'border-[var(--sa-border)] bg-black/10' };
+-  return <div className={`rounded-xl border p-4 ${styles[tone]}`}><p className="text-xs text-[var(--sa-ink-muted)]">{label}</p><p className="mt-2 text-sm font-semibold text-[var(--sa-ink)]">{value}</p></div>;
+-}
+-
+-function EmptyState({ icon: Icon, title, body }: { icon: React.ElementType; title: string; body: string }) {
+-  return <div className="rounded-xl border border-dashed border-[var(--sa-border)] p-5 text-center sm:col-span-2 xl:col-span-3"><Icon size={18} className="mx-auto text-[var(--sa-ink-muted)]" /><p className="mt-3 text-sm font-medium text-[var(--sa-ink)]">{title}</p><p className="mt-1 text-xs text-[var(--sa-ink-muted)]">{body}</p></div>;
+-}
+diff --git a/studio/src/components/admin/SupremeAdminControlPlane.tsx b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+index 22efd383..eae5cedd 100644
+--- a/studio/src/components/admin/SupremeAdminControlPlane.tsx
++++ b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+@@ -1,4 +1,4 @@
+-import React from 'react';
++import React, { useEffect, useState } from 'react';
+ import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Command, Cpu, GitMerge, HeartPulse, LockKeyhole, MessageSquare, Network, Send, ShieldCheck, Sparkles } from 'lucide-react';
+ import { useMetrics, useThreatScan, useCIReports } from '../../hooks/useDashboardData';
+ import { ApprovalQueue } from '../../commandcenter/modules/secure/ApprovalQueue';
+@@ -32,20 +32,50 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+   const activeIncidents = threats?.findings?.filter((item) => item.severity === 'high' || item.severity === 'critical') || [];
+   const runningDeployments = ciReports?.filter((item) => item.status === 'running') || [];
+   const serviceEntries = Object.entries(healthMap);
++  const [freshness, setFreshness] = useState<string>(new Date().toISOString());
++  useEffect(() => { setFreshness(new Date().toISOString()); }, [healthMap, metrics, threats, ciReports]);
+   const open = (tab: string) => setAdminSubTab?.(tab);
+   const requestPermission = () => setAdminInput?.('Request permission for: ');
++  const run = (cmd: string) => setAdminInput?.(cmd);
+ 
+   return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1600px] space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
+ 
+ <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Super admin live summary"><Summary icon={HeartPulse} label="Platform" value={metrics ? 'LIVE' : 'PENDING'} detail={metrics ? 'Telemetry connected' : 'Waiting for telemetry'} good={!!metrics} /><Summary icon={Activity} label="p95 latency" value={metrics?.latency_p95_ms != null ? `${metrics.latency_p95_ms} ms` : '—'} detail="Current metrics snapshot" /><Summary icon={AlertTriangle} label="Critical review" value={activeIncidents.length} detail={activeIncidents.length ? 'Action may be required' : 'No high-severity finding'} good={!activeIncidents.length} /><Summary icon={GitMerge} label="Deployments" value={runningDeployments.length} detail="Currently running" /></section>
+ 
+-<section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="sa-eyebrow">System command center</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Tell SupremeAI what to do</h2></div><Command className="text-cyan-300" size={19} /></div><div className="mt-4 min-h-44 space-y-3 overflow-y-auto rounded-xl border border-[var(--sa-border)] bg-black/20 p-3">{adminMessages.length ? adminMessages.slice(-8).map((message) => <div key={message.id} className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto bg-cyan-400/10 text-cyan-100' : 'bg-white/5 text-[var(--sa-ink)]'}`}><p>{message.content || '—'}</p></div>) : <div className="flex min-h-36 flex-col items-center justify-center text-center text-sm text-[var(--sa-ink-muted)]"><MessageSquare size={20} className="mb-2 text-cyan-300" /><p>No command session yet.</p><p className="mt-1 text-xs">Use the command box below to ask the system to inspect, explain, or prepare work.</p></div>}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={requestPermission} className="inline-flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-400/10"><ShieldCheck size={14} /> Request permission</button><button type="button" onClick={() => setAdminInput?.('Give me a complete system status report')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><HeartPulse size={14} /> Full status</button></div><div className="mt-3 flex gap-2"><input value={adminInput} onChange={(event) => setAdminInput?.(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleSendAdmin?.(); }} placeholder="Command, inspect, diagnose, or request permission..." aria-label="System command" className="min-w-0 flex-1 rounded-xl border border-[var(--sa-border)] bg-black/20 px-3 py-3 text-sm text-[var(--sa-ink)] outline-none transition focus:border-cyan-400/40" /><button type="button" onClick={handleSendAdmin} disabled={loading || !adminInput.trim()} className="inline-flex items-center gap-2 rounded-xl bg-cyan-300 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"><Send size={15} />{loading ? 'Running' : 'Send'}</button></div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="sa-eyebrow">Live service posture</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">A-to-Z health snapshot</h2></div><Network size={19} className="text-cyan-300" /></div><div className="mt-4 grid gap-2 sm:grid-cols-2">{serviceEntries.length ? serviceEntries.map(([name, service]) => <div key={name} className={`rounded-xl border p-3 ${tone(service.status)}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium capitalize">{name.replace(/[-_]/g, ' ')}</span><span className="text-[10px] uppercase">{service.status || 'unknown'}</span></div><p className="mt-2 text-[11px] opacity-80">{service.region || 'Region unavailable'}{service.latency != null ? ` · ${service.latency}` : ''}</p></div>) : <Empty icon={Network} text="No service snapshot returned yet." />}</div><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={() => open('service-explorer')} className="rounded-xl border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]">Inspect services <ArrowUpRight size={13} className="ml-1 inline" /></button><button type="button" onClick={() => open('telemetry')} className="rounded-xl border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]">Open telemetry <ArrowUpRight size={13} className="ml-1 inline" /></button></div></article></section>
++<section className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6">
++  <div className="mb-3 flex items-center justify-between">
++    <div>
++      <p className="sa-eyebrow">Service health snapshot</p>
++      <h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Live status (unknown is never shown as healthy)</h2>
++    </div>
++    <span className="text-xs text-[var(--sa-ink-muted)]">Refreshed {new Date(freshness).toLocaleTimeString()}</span>
++  </div>
++  {serviceEntries.length === 0 ? (
++    <p className="text-xs text-[var(--sa-ink-muted)]">No health data yet.</p>
++  ) : (
++    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
++      {serviceEntries.map(([name, rec]) => (
++        <li key={name} className={`rounded-xl border px-3 py-2 text-xs ${tone(rec?.status)}`}>
++          <div className="flex items-center justify-between">
++            <span className="font-medium">{name}</span>
++            <span className="uppercase">{String(rec?.status || 'unknown')}</span>
++          </div>
++          <div className="mt-1 text-[10px] opacity-80">
++            {rec?.latency != null ? `latency: ${rec.latency} · ` : ''}
++            {rec?.region ? `region: ${rec.region}` : ''}
++          </div>
++        </li>
++      ))}
++    </ul>
++  )}
++</section>
+ 
+-<section className="grid gap-5 xl:grid-cols-2"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Requested work</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Approve or reject</h2></div><CheckCircle2 size={19} className="text-emerald-300" /></div><ApprovalQueue /></article><article className="max-h-[620px] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
++<section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="sa-eyebrow">System command center</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Tell SupremeAI what to do</h2></div><Command className="text-cyan-300" size={19} /></div><div className="mt-4 min-h-44 space-y-3 overflow-y-auto rounded-xl border border-[var(--sa-border)] bg-black/20 p-3">{adminMessages.length ? adminMessages.slice(-8).map((message) => <div key={message.id} className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto bg-cyan-400/10 text-cyan-100' : 'bg-white/5 text-[var(--sa-ink)]'}`}><p>{message.content || '—'}</p></div>) : <div className="flex min-h-36 flex-col items-center justify-center text-center text-sm text-[var(--sa-ink-muted)]"><MessageSquare size={20} className="mb-2 text-cyan-300" /><p>No command session yet.</p><p className="mt-1 text-xs">Use the command box below to ask the system to inspect, explain, or prepare work.</p></div>}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={requestPermission} className="inline-flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-400/10"><ShieldCheck size={14} /> Request permission</button><button type="button" onClick={() => run('Give me a complete system status report')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><HeartPulse size={14} /> Full status</button><button type="button" onClick={() => run('Service health snapshot')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Activity size={14} /> Service health</button><button type="button" onClick={() => run('Current incidents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><AlertTriangle size={14} /> Incidents</button><button type="button" onClick={() => run('Recent audit activity')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><ShieldCheck size={14} /> Audit</button><button type="button" onClick={() => run('Current deployment status')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><GitMerge size={14} /> Deployments</button><button type="button" onClick={() => run('Active agents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Cpu size={14} /> Agents</button></div><div className="mt-3 flex gap-2"><input value={adminInput} onChange={(event) => setAdminInput?.(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleSendAdmin?.(); }} placeholder="Command, inspect, diagnose..." className="min-w-0 flex-1 rounded-xl border border-[var(--sa-border)] bg-black/20 px-4 py-2.5 text-sm text-[var(--sa-ink)] outline-none focus:border-cyan-400/40" /><button type="button" onClick={() => handleSendAdmin?.()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400/15 px-4 py-2.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25 disabled:opacity-50"><Send size={14} /> Send</button></div></article><article className="max-h-[620px] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
+ 
+-<section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><QuickAction icon={Cpu} label="Agents / swarm" onClick={() => open('agents-swarm')} /><QuickAction icon={ShieldCheck} label="Security & guardrails" onClick={() => open('security')} /><QuickAction icon={Activity} label="Audit trail" onClick={() => open('audit')} /><QuickAction icon={ArrowUpRight} label="Customer / RBAC" onClick={() => open('tenants-rbac')} /></section></div></div>;
++<section className="grid gap-5 xl:grid-cols-2"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Requested work</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Approve or reject</h2></div><CheckCircle2 size={19} className="text-emerald-300" /></div><ApprovalQueue /></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Quick access</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Controlled modules</h2></div></div><div className="grid gap-2 sm:grid-cols-2"><QuickAction icon={Cpu} label="Agents / swarm" onClick={() => open('agents-swarm')} /><QuickAction icon={ShieldCheck} label="Security & guardrails" onClick={() => open('security')} /><QuickAction icon={Activity} label="Audit trail" onClick={() => open('audit')} /><QuickAction icon={ArrowUpRight} label="Customer / RBAC" onClick={() => open('tenants-rbac')} /></div></article></section>
++
++</div></div>;
+ }
+ 
+ function Summary({ icon: Icon, label, value, detail, good = false }: { icon: React.ElementType; label: string; value: string | number; detail: string; good?: boolean }) { return <article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-4"><div className="flex items-start justify-between"><div><p className="sa-eyebrow">{label}</p><p className="mt-2 text-2xl font-semibold text-[var(--sa-ink)]">{value}</p><p className="mt-1 text-xs text-[var(--sa-ink-muted)]">{detail}</p></div><Icon size={18} className={good ? 'text-emerald-300' : 'text-cyan-300'} /></div></article>; }
+ function QuickAction({ icon: Icon, label, onClick }: { icon: React.ElementType; label: string; onClick: () => void }) { return <button type="button" onClick={onClick} className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-4 text-left text-sm text-[var(--sa-ink)] transition hover:border-cyan-400/30 hover:bg-cyan-400/5"><Icon size={17} className="mb-3 text-cyan-300" /><span className="block font-medium">{label}</span><span className="mt-1 block text-xs text-[var(--sa-ink-muted)]">Open controlled module</span></button>; }
+-function Empty({ icon: Icon, text }: { icon: React.ElementType; text: string }) { return <div className="rounded-xl border border-dashed border-[var(--sa-border)] p-6 text-center text-xs text-[var(--sa-ink-muted)] sm:col-span-2"><Icon size={18} className="mx-auto mb-2" />{text}</div>; }
+diff --git a/studio/src/services/adminTokenStore.ts b/studio/src/services/adminTokenStore.ts
+new file mode 100644
+index 00000000..0bc45bf6
+--- /dev/null
++++ b/studio/src/services/adminTokenStore.ts
+@@ -0,0 +1,17 @@
++import { getAdminToken } from './tokenStorage';
++
++export const adminTokenStore = {
++  getDecodedToken: () => {
++    const token = getAdminToken();
++    if (!token) return null;
++    try {
++      const part = token.split('.')[1];
++      const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
++      const payload = JSON.parse(decodeURIComponent(atob(base64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
++      if (typeof payload?.exp === 'number' && payload.exp * 1000 <= Date.now()) return null;
++      return payload;
++    } catch {
++      return null;
++    }
++  },
++};
+diff --git a/studio/src/types/index.ts b/studio/src/types/index.ts
+new file mode 100644
+index 00000000..a245c115
+--- /dev/null
++++ b/studio/src/types/index.ts
+@@ -0,0 +1,65 @@
++// SupremeAI Studio — shared type barrel (transit surface).
++// Re-exports domain types and defines UI-facing types that were previously
++// imported from '../../types' without a backing module.
++
++export * from './domain';
++export * from './federation';
++
++export type AdminSubTab = string;
++
++export interface HealthMap {
++  [key: string]: {
++    status?: string;
++    region?: string;
++    latency?: string | number;
++    [k: string]: unknown;
++  };
++}
++
++export interface ChatMessage {
++  id: string;
++  role?: string;
++  content?: string;
++  text?: string;
++  sender?: string;
++  timestamp?: number | string;
++  [key: string]: unknown;
++}
++
++export interface Skill {
++  id?: string;
++  name?: string;
++  description?: string;
++  [key: string]: unknown;
++}
++
++export interface Checkpoint {
++  id?: string;
++  taskId?: string;
++  [key: string]: unknown;
++}
++
++export interface AdminUser {
++  username: string;
++  role?: string;
++  permissions?: string[];
++  [key: string]: unknown;
++}
++
++export interface GcpHealth {
++  [key: string]: unknown;
++}
++
++export interface CloudStats {
++  [key: string]: unknown;
++}
++
++export interface SystemAlert {
++  id: string;
++  level?: string;
++  message?: string;
++  created_at?: string | number;
++  resolved?: boolean;
++  resolved_at?: string | number;
++  [key: string]: unknown;
++}

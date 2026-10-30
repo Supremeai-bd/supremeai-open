@@ -1,0 +1,171 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index c719b0c0..6e5f2ad9 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -335,6 +335,18 @@ def is_claimable(item: dict[str, Any]) -> bool:
+             return False
+         # বাংলা: ৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং — অন্য এজেন্ট যদি ৩০ মিনিটের মধ্যে কাজ শেষ না
+         # করে থাকে, তবে এটি নিজে থেকেই রিলিজ হয়ে রি-ক্লেইমযোগ্য হয়ে যাবে।
++        # #2903 fix: state truth on the fallback plane — the gh-present path
++        # pre-filters `gh issue list --state open`, but tower-board fallback rows
++        # carry `state` verbatim, so a closed row with stale unclaimed labels
++        # dispatched as claimable (live 2026-10-29: #2225 picked while closed at
++        # 9f32c01 — the #2211/#2225 false-closure family, contained only by the
++        # #2886 template scoping; #2794 fix (2)-adjacent mechanical filter, not
++        # the owner-pending convention space). Rows without a `state` key (the
++        # gh-present contract: number,title,labels) default open — that path's
++        # behavior is unchanged.
++        state = item.get("state")
++        if state is not None and str(state).lower() != "open":
++            return False
+         num_str = str(item.get("number", ""))
+         leased_at = lease_store.get(num_str)
+         if leased_at is not None and (now_ts - leased_at) < ISSUE_LEASE_SECONDS:
+diff --git a/tests/test_pick_state_truth.py b/tests/test_pick_state_truth.py
+new file mode 100644
+index 00000000..1f05e345
+--- /dev/null
++++ b/tests/test_pick_state_truth.py
+@@ -0,0 +1,142 @@
++#!/usr/bin/env python3
++"""Pin: pick_next_issue respects the `state` field on fallback rows (#2903).
++
++Dual-mode: runs under both `python3 -m unittest` and `pytest`.
++
++The gh-present pick path pre-filters with `gh issue list --state open`, so its
++rows (contract: number,title,labels) never carry a state key. The tower-board
++fallback (`_tower_board_rows`) builds rows carrying `state` verbatim, and
++`is_claimable` never read it — a closed issue with stale `status:unclaimed`
++labels dispatched as claimable. Live 2026-10-29T22:4xZ at 9f32c01: the
++post-merge rerun picked #2225 while the bridge receipt said state=closed
++(the #2211/#2225 false-closure family; damage contained by the #2886 template
++scoping, but the dispatch surface stayed dishonest).
++
++Functional pins ride `cal.pick_next_issue(issues=[...])` on an in-memory board
++(zero gh/network dependency, same harness as test_pick_excludes_bridge_states).
++The source pin is AST-level (comment-immune, #2100 wiring-pin precedent): the
++`is_claimable` closure must call `.get("state")` and compare against "open".
++"""
++
++from __future__ import annotations
++
++import ast
++import sys
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal
++
++LOOP_SRC = (_ROOT / "scripts" / "agents" / "continuous_agent_loop.py").read_text(
++    encoding="utf-8"
++)
++
++
++def _is_claimable_nodes():
++    """Yield every FunctionDef named is_claimable in the loop module."""
++    tree = ast.parse(LOOP_SRC)
++    for node in ast.walk(tree):
++        if isinstance(node, ast.FunctionDef) and node.name == "is_claimable":
++            yield node
++
++
++class TestStateCheckSourcePin(unittest.TestCase):
++    def test_is_claimable_reads_state_and_compares_open(self):
++        """AST pin (comment-immune): is_claimable contains a `.get("state")`
++        call and a string literal "open" — the guard cannot be silently
++        commented out; a rename surfaces here."""
++        nodes = list(_is_claimable_nodes())
++        self.assertTrue(nodes, "is_claimable function missing from loop source")
++        has_state_get = False
++        has_open_literal = False
++        for fn in nodes:
++            for node in ast.walk(fn):
++                if (
++                    isinstance(node, ast.Call)
++                    and isinstance(node.func, ast.Attribute)
++                    and node.func.attr == "get"
++                    and node.args
++                    and isinstance(node.args[0], ast.Constant)
++                    and node.args[0].value == "state"
++                ):
++                    has_state_get = True
++                if (
++                    isinstance(node, ast.Constant)
++                    and isinstance(node.value, str)
++                    and node.value == "open"
++                ):
++                    has_open_literal = True
++        self.assertTrue(has_state_get, "is_claimable never reads item['state'] (#2903)")
++        self.assertTrue(has_open_literal, 'is_claimable never compares against "open" (#2903)')
++
++
++class TestPickStateTruth(unittest.TestCase):
++    def test_closed_row_not_pickable(self):
++        """A closed row must never win the pick (#2225-class dispatch)."""
++        board = [
++            {
++                "number": 2225,
++                "title": "closed with stale labels",
++                "state": "closed",
++                "labels": [{"name": "status:unclaimed"}],
++            },
++            {"number": 2904, "title": "genuinely open", "state": "open", "labels": []},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "2904")
++
++    def test_only_closed_rows_returns_none(self):
++        """An all-closed fallback board dispatches nothing (honest empty)."""
++        board = [
++            {"number": 1, "title": "x", "state": "closed", "labels": []},
++            {"number": 2, "title": "y", "state": "closed", "labels": []},
++        ]
++        self.assertIsNone(cal.pick_next_issue(issues=board))
++
++    def test_stateless_gh_rows_still_claimable(self):
++        """gh-present contract rows (no state key) keep the pre-#2903 behavior."""
++        board = [
++            {"number": 9001, "title": "gh row, no state key", "labels": []},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "9001")
++
++    def test_explicit_open_row_claimable(self):
++        """state='open' verbatim (fallback contract) remains claimable."""
++        board = [
++            {"number": 9002, "title": "fallback open row", "state": "open", "labels": []},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "9002")
++
++    def test_state_case_normalized(self):
++        """Uppercase CLOSED is not a loophole."""
++        board = [
++            {"number": 1, "title": "x", "state": "CLOSED", "labels": []},
++            {"number": 2, "title": "y", "state": "open", "labels": []},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "2")
++
++    def test_null_state_defaults_open(self):
++        """state=None (bridge rows carry stateReason:null patterns) stays claimable."""
++        board = [
++            {"number": 9003, "title": "null state", "state": None, "labels": []},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "9003")
++
++    def test_closed_row_with_priority_labels_still_skipped(self):
++        """Priority tiers do not outrank state truth."""
++        board = [
++            {
++                "number": 1,
++                "title": "closed P0",
++                "state": "closed",
++                "labels": [{"name": "P0-critical"}, {"name": "status:unclaimed"}],
++            },
++            {"number": 2, "title": "open P3", "state": "open", "labels": [{"name": "P3-low"}]},
++        ]
++        self.assertEqual(cal.pick_next_issue(issues=board), "2")
++
++
++if __name__ == "__main__":
++    unittest.main()

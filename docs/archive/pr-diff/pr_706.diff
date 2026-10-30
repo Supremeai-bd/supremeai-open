@@ -1,0 +1,106 @@
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 0a26ca68..38f60fc1 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -67,6 +67,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
+  */
+ export function registerDiscoveredOrgRepo(repoName: string): void {
+   const normalized = repoName.trim().toLowerCase();
++  // Ghost Cloaking: supremeai-api is never tracked or exposed in regular repo lists
++  if (normalized === "supremeai-api") return;
+   if (normalized && !discoveredOrgRepos.has(normalized)) {
+     discoveredOrgRepos.add(normalized);
+   }
+diff --git a/infrastructure/mcp-control-plane/src/service-circles.ts b/infrastructure/mcp-control-plane/src/service-circles.ts
+index ba4957c3..0d726180 100644
+--- a/infrastructure/mcp-control-plane/src/service-circles.ts
++++ b/infrastructure/mcp-control-plane/src/service-circles.ts
+@@ -13,9 +13,7 @@ export interface ServiceDescriptor {
+ }
+ 
+ export const serviceDescriptors: Array<Pick<ServiceDescriptor, "provider" | "circle" | "requiredEnv">> = [
+-  { provider: "gemini", circle: "ai", requiredEnv: ["GEMINI_API_KEY"] },
+-  { provider: "groq", circle: "ai", requiredEnv: ["GROQ_API_KEY"] },
+-  { provider: "openrouter", circle: "ai", requiredEnv: ["OPENROUTER_API_KEY"] },
++  { provider: "gateway", circle: "ai", requiredEnv: ["SUPREMEAI_API_KEY"] },
+   { provider: "render", circle: "infrastructure", requiredEnv: ["RENDER_API_KEY"] },
+   { provider: "cloudflare", circle: "infrastructure", requiredEnv: ["CLOUDFLARE_API_TOKEN"] },
+   { provider: "redis", circle: "infrastructure", requiredEnv: ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"] },
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index f130fbd7..14c5ac91 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -14,7 +14,6 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
+  * উর্ধ্বতন স্তর আগের মতোই read/write (টাস্ক স্কোপের মধ্যে)।
+  */
+ export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+-  "supremeai-api",
+   "supremeai-open",
+   "supremeai-sdk",
+   "supremeai-archive",
+@@ -66,6 +65,11 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
+   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
+   const shortName = fullName.split("/").pop() ?? fullName;
++  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents.
++  // Non-admin callers receive 'Repository not found' (stealth, zero-knowledge).
++  if (shortName === "supremeai-api" && roleRank(store.role) < 4) {
++    return `Repository not found: '${shortName}'.`;
++  }
+   // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin রোলের জন্য উন্মুক্ত।
+   if (shortName === "supremeai" && roleRank(store.role) < 4) {
+     return `Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; non-admin roles are limited to satellite repos (current role: '${store.role}').`;
+diff --git a/infrastructure/mcp-control-plane/test_client_registry.ts b/infrastructure/mcp-control-plane/test_client_registry.ts
+index de803792..d9a865ae 100644
+--- a/infrastructure/mcp-control-plane/test_client_registry.ts
++++ b/infrastructure/mcp-control-plane/test_client_registry.ts
+@@ -111,9 +111,10 @@ assert.equal(repoAccessFor("agent"), "read-write");
+ assert.equal(repoAccessFor("admin"), "read-write");
+ assert.equal(repoAccessFor("supremeadmin"), "read-write");
+ 
+-// 6a. restricted_viewer: satellite repo allowed, core repo BLOCKED.
+-const satUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
++// 6a. restricted_viewer: satellite repo allowed, core repo BLOCKED, supremeai-api cloaked.
++const satUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-browser";
+ const coreUrl = "https://api.github.com/repos/Supremeai-bd/supremeai";
++const cloakedApiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+ const rvScopes = defaultClientScopes("restricted_viewer");
+ let deny = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
+   assertRepoReadAccess("github.read_file", "gh-sat", satUrl));
+@@ -121,6 +122,9 @@ assert.equal(deny, null, `satellite read should pass for restricted_viewer: ${de
+ deny = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
+   assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
+ assert.ok(deny && deny.includes("satellite"), "core repo must be blocked for restricted_viewer");
++const denyCloaked = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () =>
++  assertRepoReadAccess("github.read_file", "gh-sat", cloakedApiUrl));
++assert.ok(denyCloaked && denyCloaked.includes("Repository not found: 'supremeai-api'"), "supremeai-api must be cloaked into ghost mode for restricted_viewer");
+ 
+ // 6b. repo_viewer: satellite repos readable with scope; core repo blocked (admin-only).
+ deny = RequestContextStore.run({ role: "repo_viewer", scopes: defaultClientScopes("repo_viewer") }, () =>
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index 3a44629c..a1239d73 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -101,6 +101,11 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+ 
+   const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
+   assert.equal(denyCmd, null, "Agent must be permitted to read satellite repo supremeai-command");
++
++  // Ghost Cloaking verification: supremeai-api is completely air-gapped from regular agents
++  const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
++  const denyApi = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
++  assert.equal(denyApi, "Repository not found: 'supremeai-api'.", "Agent must receive Repository not found for cloaked supremeai-api");
+ });
+ 
+ // 5a.1 Admin & Supremeadmin authority (Rank >= 4) — can access core repo and all satellites
+@@ -110,6 +115,10 @@ RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
+ 
+   const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+   assert.equal(denySkills, null, "Admin must be permitted to read satellite repo");
++
++  const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
++  const denyApiAdmin = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
++  assert.equal(denyApiAdmin, null, "Admin must be permitted to read cloaked repo");
+ });
+ 
+ RequestContextStore.run({ role: "supremeadmin", scopes: ["tools:execute"] }, () => {

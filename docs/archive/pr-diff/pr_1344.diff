@@ -1,0 +1,38 @@
+diff --git a/docs/bridge/bridge-20261027-tenant-dogfood.md b/docs/bridge/bridge-20261027-tenant-dogfood.md
+new file mode 100644
+index 00000000..367f3830
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-tenant-dogfood.md
+@@ -0,0 +1,32 @@
++# 🌉 Bridge Work Order — [P2] Tenant isolation never exercised: 0 tenants, all guests on tenant_default (bridge-20261027-tenant-dogfood)
++
++## Problem
++Verified live 2026-10-25:
++
++- `tenant_list` → `{"count": 0, "tenants": []}` — the full multi-tenant machinery (`tenant_create/update/suspend/activate/rotate_admin_token`, slot system, per-tenant admin tokens) has **never been exercised in production conditions**
++- `agent_status` shows every interactive client (`guest_generic_*`, `supreme-os-ucc`, `z-ai-assistant`) on `tenantId: "tenant_default"` — zero isolation in practice
++- AIQ-075 (P0 in the checklist) demands cross-tenant access + privilege-escalation tests before scale; the first real customer onboarding would be the first-ever test, at the worst possible moment
++
++## Impact (AIQ mapping)
++- AIQ-075 ❌ isolation unverified (P0 checklist item)
++- AIQ-047 🟡 permission boundaries designed but unproven under real tenancy
++- Blocks any B2B/agency pricing tier (AIQ-118/094)
++
++## Fix (smallest safe change)
++1. Dogfood: provision 2 internal tenants via `tenant_create` (e.g. `staging-admin`, `staging-customer`) with separate admin tokens
++2. Run the studio workspace against the customer tenant for one week; route at least one full agent work order through it
++3. Negative tests: customer-tenant token calls admin endpoints → expect 403 everywhere (scripted battery, results in CI); cross-tenant memory/doc reads → expect empty
++4. Document tenant limits (from `tenant_update` plan/limits fields) in the status page
++
++## Acceptance Criteria
++- [ ] `tenant_list` shows ≥1 active non-default tenant with its own admin token
++- [ ] Negative battery: 0 cross-tenant successes, all 403/empty as designed
++- [ ] One full work-order lifecycle completed inside the dogfood tenant
++- [ ] Findings filed as follow-ups if any isolation hole appears
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** untested isolation is equivalent to absent isolation; dogfooding converts a P0 unknown into a tested invariant at zero customer risk.
++**Alternatives rejected:** (a) waiting for a real customer — violates the checklist's own P0 rule; (b) synthetic load tests only — they miss the auth/UX seams that real usage finds.
++
++## Labels
++`bridge:queued` `P2-medium` `area:tenancy` `security` `AIQ:075` `AIQ:047`

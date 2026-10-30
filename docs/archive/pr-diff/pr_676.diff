@@ -1,0 +1,36 @@
+diff --git a/README.md b/README.md
+index d8faf724..08dacc93 100644
+--- a/README.md
++++ b/README.md
+@@ -59,7 +59,7 @@ flowchart LR
+ | [`docs/FAQ.md`](./docs/FAQ.md) | **Operational FAQ** (#23): symptom→cause→fix for every known validation-error class (naming, duplicates, boundary, stale-base, force-push, keyword propagation, env-skips) |
+ | `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
+ | `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
+-| `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
++| `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the agent-loop dispatch job (`scripts/agents/continuous_agent_loop.py --pick-next`) — triggerable by manual `workflow_dispatch`; the */30 schedule is currently disabled per admin directive (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
+ | `.github/workflows/landing.yml` | Unified autonomous landing & bridge dispatch (#155): auto-squash-merge on full gate success, then the same run streams the landed patch reference into the private bridge queue |
+ | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
+ | `LICENSE` | MIT |
+diff --git a/docs/AUTONOMY_LOOP_CONTRACT.md b/docs/AUTONOMY_LOOP_CONTRACT.md
+index 758d631e..26d1bd9e 100644
+--- a/docs/AUTONOMY_LOOP_CONTRACT.md
++++ b/docs/AUTONOMY_LOOP_CONTRACT.md
+@@ -86,8 +86,8 @@ The runner is a single stdlib-only Python entrypoint:
+ Integration modes (non-exclusive):
+ 
+ - **`--pick-next`** — autonomous mode: claim the highest-priority claimable issue and
+-  run one full 8-step cycle. This is the mode the scheduled pipeline job uses every 30
+-  minutes.
++  run one full 8-step cycle. This is the mode the pipeline's `agent-loop` job uses when
++  dispatched manually; its */30 schedule is disabled per admin directive.
+ - **`--issue <n>`** — targeted mode: claim a specific issue (still subject to the
+   duplicate-PR preflight and all gates).
+ - **`--loop` + `--max-tasks N`** — sequential mode: N cycles back-to-back with a short
+@@ -138,6 +138,6 @@ retrying a broken harness unchanged is the wrong response.
+ ## Related Documents
+ 
+ - [AGENTS.md](../AGENTS.md) — agent entrypoint, zero-admin pathways
+-- [AGENT_RULES.md](../AGENT_RULES.md) — policy source (U1–U10, P1–P6)
++- [AGENT_RULES.md](../AGENT_RULES.md) — policy source (U1–U10, P0–P7)
+ - [docs/AGENT_LOOP_SPEC.md](./AGENT_LOOP_SPEC.md) — envelope schema §2, canonical flag surface §4b, open guards §5
+ - [docs/CONTRIBUTING.md](./CONTRIBUTING.md) — contributor quickstart and submission paths

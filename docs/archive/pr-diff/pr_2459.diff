@@ -1,0 +1,163 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index ae86502f..754d46f7 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -288,7 +288,10 @@ def _probe() -> None:
+ 
+             client = _mtc.McpTowerClient()
+             client.connect()
+-            q = client.call_tool("bridge_work_queue", {})
++            # 2026-10-29: the tower renamed bridge_work_queue -> bridge.work_queue
++            # (#2454 r3 deploy; old name absent from the live registry) — use the
++            # dotted name or the P0-drainage probe stays dark (#2457).
++            q = client.call_tool("bridge.work_queue", {})
+             # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
+             # the queue dict rides as JSON inside content[0].text (same extraction
+             # the client's own CLI does). Tolerate both envelope and parsed shapes.
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index d3f4c2e6..38cafbec 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -9,10 +9,11 @@
+ reconciles the two planes. This is the watchdog mirror the triage asked for.
+ 
+ Reconciliation model (three planes, one join key):
+-  - board plane   : open WOs labeled `bridge:queued` (Tower bridge_work_queue,
+-                    zero-credential; limit ladder 200->50->default crosses the
+-                    queue-fidelity deploy window #2115/#2123) — each title
+-                    carries the lane slug
++  - board plane   : open WOs labeled `bridge:queued` (Tower bridge.work_queue —
++                    renamed from bridge_work_queue 2026-10-29, #2454 r3 deploy
++                    / #2457 migration; zero-credential; limit ladder
++                    200->50->default crosses the queue-fidelity deploy window
++                    #2115/#2123) — each title carries the lane slug
+   - rejected plane: open `bridge:rejected` issues enumerated straight from
+                     the GitHub API (zero-credential, S05 query SSOT; #2158) —
+                     the queue omits rejected WOs (#1972), so landing truth
+@@ -70,7 +71,7 @@
+                    keeping the strict surface minimal. Honest scope limit:
+                    the board plane IS the queue payload, and Tower currently
+                    omits some rejected WOs from it entirely (live: #1972 was
+-                   absent from bridge_work_queue) — since 2026-10-28 (#2158)
++                   absent from bridge.work_queue) — since 2026-10-28 (#2158)
+                    the rejected plane enumerates those rows directly from
+                    GitHub, closing the invisible-rejected half of this note
+                    (the merged-row half closed with the feedback-plane
+@@ -86,7 +87,7 @@
+                    work another plane owns. Live motivation (2026-10-28,
+                    #2173): a landed-and-merged WO stayed `bridge:queued`
+                    yet absent from an untruncated 16-18-row listing while
+-                   bridge_work_order confirmed it — the integrity line is
++                   bridge.work_order confirmed it — the integrity line is
+                    the only place such a row surfaces.
+ 
+ Modes:
+@@ -203,7 +204,7 @@ def _tower_text(name: str, arguments: dict) -> str:
+ def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
+     """Fetch open work orders across the queue-fidelity deploy window.
+ 
+-    r2 (#2115/#2123) makes bridge_work_queue paginate (short-page-stop,
++    r2 (#2115/#2123) makes bridge.work_queue paginate (short-page-stop,
+     number-dedupe merge) and raises its limit cap 50 -> 200, but the
+     DEPLOYED tower can keep running the pre-r2 single-page handler while
+     the redeploy lags — and a single-page window is a creation-rank
+@@ -221,7 +222,7 @@ def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
+     for limit in QUEUE_LIMIT_LADDER:
+         arguments = {} if limit is None else {"limit": limit}
+         try:
+-            payload = json.loads(fetch_text("bridge_work_queue", arguments))
++            payload = json.loads(fetch_text("bridge.work_queue", arguments))
+         except json.JSONDecodeError as err:  # error-envelope text, not JSON
+             last_err = err
+             continue
+@@ -295,7 +296,7 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
+                          max_pages: int | None = None) -> list[dict]:
+     """Enumerate open `bridge:rejected` issues straight from GitHub.
+ 
+-    The queue omits rejected WOs (#1972 was absent from bridge_work_queue;
++    The queue omits rejected WOs (#1972 was absent from bridge.work_queue;
+     live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
+     Rows are ready for run_verdicts' existing rejected-row branch (zero new
+     verdict classes)."""
+@@ -305,7 +306,7 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
+ 
+ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+     """Tower-plane enumeration of open `bridge:rejected` via the
+-    label-filtered bridge_work_queue query — the disclosed fallback when the
++    label-filtered bridge.work_queue query — the disclosed fallback when the
+     unauthenticated GitHub budget is exhausted (per-IP, shared egress).
+ 
+     #2251 un-self-defeated the tower-side label filter: queueFromIssues had
+@@ -330,7 +331,7 @@ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+         arguments = {"label": REJECTED_LABEL} if limit is None else {
+             "label": REJECTED_LABEL, "limit": limit}
+         try:
+-            payload = json.loads(fetch_text("bridge_work_queue", arguments))
++            payload = json.loads(fetch_text("bridge.work_queue", arguments))
+         except json.JSONDecodeError as err:  # error-envelope text, not JSON
+             last_err = err
+             continue
+@@ -338,7 +339,7 @@ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+             last_err = TypeError(f"rejected rung {limit} answered a non-payload")
+             continue
+         if not isinstance(payload.get("workOrders"), list):
+-            raise TypeError("bridge_work_queue: expected {workOrders: [...]}, got "
++            raise TypeError("bridge.work_queue: expected {workOrders: [...]}, got "
+                             f"{type(payload).__name__}")
+         return payload["workOrders"]
+     raise last_err
+@@ -390,7 +391,7 @@ def _check_queue_integrity(listing_numbers: set, label_numbers: set) -> tuple:
+     by design: unlike rejected rows (terminal, queue-omitted BY DESIGN), a
+     queued row can be mid-transition (claim-label lag is structural per
+     the #2182 plane watch), so these rows do NOT join the verdict payload
+-    — the line discloses exact numbers; bridge_work_order resolves each.
++    — the line discloses exact numbers; bridge.work_order resolves each.
+     """
+     missing = sorted(label_numbers - listing_numbers)
+     phantom = sorted(listing_numbers - label_numbers)
+@@ -567,7 +568,7 @@ def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
+ def _fetch_wo_body(number: int) -> str | None:
+     """Fetch one WO's full body (read-only tower round-trip) for refinement."""
+     try:
+-        return json.loads(_tower_text("bridge_work_order", {"number": number})).get("body")
++        return json.loads(_tower_text("bridge.work_order", {"number": number})).get("body")
+     except Exception:  # noqa: BLE001 - refinement is best-effort, fail-closed
+         return None
+ 
+diff --git a/tests/test_bridge_landing_watchdog.py b/tests/test_bridge_landing_watchdog.py
+index 61525d5e..44d252ab 100644
+--- a/tests/test_bridge_landing_watchdog.py
++++ b/tests/test_bridge_landing_watchdog.py
+@@ -315,7 +315,7 @@ def prer2_tower(name, arguments):
+         calls.append(dict(arguments))
+         if arguments.get("limit") == 200:
+             return ("MCP error -32602: Input validation error: Invalid "
+-                    "arguments for tool bridge_work_queue: Too big: expected "
++                    "arguments for tool bridge.work_queue: Too big: expected "
+                     "number to be <=50")
+         assert arguments.get("limit") == 50, arguments
+         return json.dumps({"workOrders": [{"number": n} for n in range(35)]})
+@@ -421,7 +421,7 @@ def boom():
+ 
+ 
+ def test_fetch_rejected_rows_tower_shape():
+-    """The tower fallback parses the label-filtered bridge_work_queue payload
++    """The tower fallback parses the label-filtered bridge.work_queue payload
+     (#2251 fixed the self-defeating filter) and fails loud on drift."""
+     mod = _load_watchdog_module()
+ 
+diff --git a/tests/test_dispatch_honesty_floor.py b/tests/test_dispatch_honesty_floor.py
+index 4662384c..487505c6 100644
+--- a/tests/test_dispatch_honesty_floor.py
++++ b/tests/test_dispatch_honesty_floor.py
+@@ -28,7 +28,9 @@ def connect(self) -> None:
+         return None
+ 
+     def call_tool(self, name: str, arguments: dict | None = None) -> dict:
+-        assert name == "bridge_work_queue"
++        # 2026-10-29 tower rename (#2454 r3 deploy): bridge_work_queue is now
++        # bridge.work_queue — the pin follows the live registry (#2457).
++        assert name == "bridge.work_queue"
+         import json as _json
+ 
+         payload = _json.dumps(

@@ -1,0 +1,75 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 1810b333..e5fc5e94 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -34,7 +34,9 @@ name: CI — Open Unified Pipeline
+ 
+ on:
+   push:
+-    branches: [ main ]
++    branches:
++      - main
++      - 'bridge/**'
+   pull_request:
+     branches: [ main ]
+     types: [opened, edited, reopened, synchronize, ready_for_review]
+@@ -53,6 +55,32 @@ permissions:
+   contents: read
+ 
+ jobs:
++  # ---------------------------------------------------------------------------
++  # ⚡ Real-Time Bridge Intake & PR Opener (push to bridge/**)
++  # ---------------------------------------------------------------------------
++  bridge-intake-instant:
++    name: "⚡ Instant Bridge Intake & PR Opener"
++    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/bridge/')
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    permissions:
++      contents: write
++      pull-requests: write
++      issues: write
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Run Auto-Bridge PR Opener
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/auto_bridge_pr_opener.py --auto-open
++
+   # ---------------------------------------------------------------------------
+   # 🛡️ Zero-checkout fast guards (PR-only, ~5s each)
+   # ---------------------------------------------------------------------------
+@@ -249,7 +277,7 @@ jobs:
+     needs: [boundary_sanitization_guard, loop_contract_parity_guard]
+     if: |
+       always() &&
+-      (github.event_name == 'push' ||
++      ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (needs.boundary_sanitization_guard.result == 'success' &&
+         needs.loop_contract_parity_guard.result == 'success' &&
+         needs.boundary_sanitization_guard.outputs.docs_only != 'true'))
+@@ -327,7 +355,7 @@ jobs:
+     name: Secret Scanning
+     needs: boundary_sanitization_guard
+     if: |
+-      github.event_name == 'push' ||
++      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       needs.boundary_sanitization_guard.result == 'success'
+     runs-on: ubuntu-latest
+     steps:
+@@ -346,7 +374,7 @@ jobs:
+     name: Tower TS Verification (typecheck + contract-safe tests)
+     needs: boundary_sanitization_guard
+     if: |
+-      github.event_name == 'push' ||
++      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+     runs-on: ubuntu-latest
+     steps:

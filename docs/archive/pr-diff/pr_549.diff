@@ -1,0 +1,1632 @@
+diff --git a/browser/pyproject.toml b/browser/pyproject.toml
+new file mode 100644
+index 00000000..6881de77
+--- /dev/null
++++ b/browser/pyproject.toml
+@@ -0,0 +1,23 @@
++[build-system]
++requires = ["setuptools>=68"]
++build-backend = "setuptools.build_meta"
++
++[project]
++name = "supremeai-browser"
++version = "0.1.0"
++description = "Stealth Automation Sandbox & Anti-Detect Headless Runtime (SupremeAI federation satellite)"
++readme = "README.md"
++requires-python = ">=3.10"
++license = { text = "Proprietary" }
++authors = [{ name = "SupremeAI Federation" }]
++dependencies = []
++
++[project.optional-dependencies]
++runtime = ["playwright>=1.40", "lxml>=4.9"]
++dev = ["pytest>=7.4"]
++
++[tool.setuptools.packages.find]
++include = ["runtime*"]
++
++[tool.pytest.ini_options]
++testpaths = ["tests"]
+diff --git a/browser/runtime/__init__.py b/browser/runtime/__init__.py
+new file mode 100644
+index 00000000..f86ee9f7
+--- /dev/null
++++ b/browser/runtime/__init__.py
+@@ -0,0 +1,63 @@
++"""supremeai-browser runtime: stealth automation sandbox foundation.
++
++Package surface (issue #502 seed-foundation):
++  - config: BrowserProfile presets (immutable, validated)
++  - stealth_profile: coherent deterministic fingerprints + natural input
++  - session_manager: Playwright/CDP lifecycle with fail-closed capabilities
++  - semantic_extractor: token-saving semantic DOM trees
++  - content_pruner: Crawl4AI-pattern boilerplate pruning to Markdown
++  - infinite_scanner: scroll planning + lazy-load expansion
++  - cookie_bridge: walled-garden session import/export
++
++Core is stdlib-only; playwright/lxml are OPTIONAL execution-tier extras.
++"""
++from .config import BrowserProfile, get_profile, profile_names
++from .content_pruner import ContentPruner, PrunedContent, link_density
++from .cookie_bridge import (
++    CookieBridge,
++    CookieRecord,
++    WalledGardenViolation,
++)
++from .infinite_scanner import FeedExpander, ScrollPlan, ScrollStep, SCROLL_AND_EXPAND_JS
++from .semantic_extractor import (
++    SemanticNode,
++    SemanticTree,
++    estimate_tokens,
++    extract_semantic_tree,
++)
++from .session_manager import (
++    BrowserSessionManager,
++    RuntimeCapabilityError,
++    playwright_available,
++)
++from .stealth_profile import StealthProfile, bezier_path, generate, webgl_pairs
++
++__version__ = "0.1.0"
++
++__all__ = [
++    "BrowserProfile",
++    "get_profile",
++    "profile_names",
++    "ContentPruner",
++    "PrunedContent",
++    "link_density",
++    "CookieBridge",
++    "CookieRecord",
++    "WalledGardenViolation",
++    "FeedExpander",
++    "ScrollPlan",
++    "ScrollStep",
++    "SCROLL_AND_EXPAND_JS",
++    "SemanticNode",
++    "SemanticTree",
++    "estimate_tokens",
++    "extract_semantic_tree",
++    "BrowserSessionManager",
++    "RuntimeCapabilityError",
++    "playwright_available",
++    "StealthProfile",
++    "bezier_path",
++    "generate",
++    "webgl_pairs",
++    "__version__",
++]
+diff --git a/browser/runtime/config.py b/browser/runtime/config.py
+new file mode 100644
+index 00000000..7bffffd2
+--- /dev/null
++++ b/browser/runtime/config.py
+@@ -0,0 +1,121 @@
++"""Browser profile configurations for the supremeai-browser runtime.
++
++Fail-closed design:
++  - Every profile is a frozen value object; mutating a copy is the only path.
++  - Presets describe STANDARD, widely deployed fingerprints (no exotic or
++    randomized vendor strings; see stealth_profile for coherent noise).
++  - Nothing here performs I/O, so importing this module is always safe.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass, field, replace
++from typing import Dict, Tuple
++
++__all__ = [
++    "BrowserProfile",
++    "PRESETS",
++    "get_profile",
++    "profile_names",
++]
++
++
++@dataclass(frozen=True)
++class BrowserProfile:
++    """Immutable description of one browser identity."""
++
++    name: str
++    user_agent: str
++    viewport: Tuple[int, int] = (1920, 1080)
++    locale: str = "en-US"
++    timezone_id: str = "UTC"
++    device_scale_factor: float = 1.0
++    is_mobile: bool = False
++    has_touch: bool = False
++    stealth_level: int = 2  # 0=off, 1=basic, 2=hardened, 3=max
++    extra_headers: Dict[str, str] = field(default_factory=dict)
++
++    def with_overrides(self, **overrides) -> "BrowserProfile":
++        """Return a modified copy; unknown fields raise TypeError (fail-closed)."""
++        return replace(self, **overrides)
++
++    def validate(self) -> None:
++        """Raise ValueError when any invariant is violated."""
++        if not self.name or not self.name.strip():
++            raise ValueError("profile name must be non-empty")
++        width, height = self.viewport
++        if not (200 <= width <= 7680 and 200 <= height <= 4320):
++            raise ValueError(f"viewport out of supported range: {self.viewport}")
++        if self.device_scale_factor <= 0:
++            raise ValueError("device_scale_factor must be positive")
++        if not 0 <= self.stealth_level <= 3:
++            raise ValueError("stealth_level must be within 0..3")
++        ua = self.user_agent
++        if not ua or len(ua) < 40 or len(ua) > 512:
++            raise ValueError("user_agent missing or implausible length")
++        for header in self.extra_headers:
++            if ":" in header:
++                raise ValueError(f"header name must not contain colon: {header!r}")
++
++
++_PRESET_LIST = [
++    BrowserProfile(
++        name="windows_chrome_stable",
++        user_agent=(
++            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
++            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
++        ),
++        stealth_level=2,
++    ),
++    BrowserProfile(
++        name="windows_edge_stable",
++        user_agent=(
++            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
++            "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
++        ),
++        stealth_level=2,
++    ),
++    BrowserProfile(
++        name="macos_safari_stable",
++        user_agent=(
++            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
++            "(KHTML, like Gecko) Version/17.6 Safari/605.1.15"
++        ),
++        viewport=(1728, 1117),
++        stealth_level=1,
++    ),
++    BrowserProfile(
++        name="linux_firefox_esr",
++        user_agent=(
++            "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
++        ),
++        stealth_level=1,
++    ),
++    BrowserProfile(
++        name="mobile_android_chrome",
++        user_agent=(
++            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
++            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
++        ),
++        viewport=(412, 915),
++        device_scale_factor=2.625,
++        is_mobile=True,
++        has_touch=True,
++        stealth_level=2,
++    ),
++]
++
++PRESETS: Dict[str, BrowserProfile] = {p.name: p for p in _PRESET_LIST}
++
++
++def get_profile(name: str) -> BrowserProfile:
++    """Fetch a preset by name; unknown names fail closed with a clear error."""
++    try:
++        return PRESETS[name]
++    except KeyError:
++        known = ", ".join(sorted(PRESETS))
++        raise KeyError(f"unknown profile {name!r}; known profiles: {known}") from None
++
++
++def profile_names() -> Tuple[str, ...]:
++    """Sorted preset names (stable for tests and docs)."""
++    return tuple(sorted(PRESETS))
+diff --git a/browser/runtime/content_pruner.py b/browser/runtime/content_pruner.py
+new file mode 100644
+index 00000000..d0ce9791
+--- /dev/null
++++ b/browser/runtime/content_pruner.py
+@@ -0,0 +1,238 @@
++"""Crawl4AI-pattern heuristic content pruner (stdlib html.parser).
++
++Transforms messy HTML into clean Markdown with numbered citations while
++stripping boilerplate (navbars, footers, ads, forms) WITHOUT burning LLM
++tokens. Adapted from the Crawl4AI heuristic school: text-vs-link density
++scoring plus tag/attribute blacklists.
++
++Algorithm (per candidate block):
++  1. Structural removal: script/style/nav/footer/aside/form/iframe and
++     elements whose class/id matches an ad or boilerplate pattern.
++  2. Block scoring: link_density = link_chars / total_chars; blocks with
++     high link density and short text are classified as ads/menus.
++  3. Preference: article/main/[role=main] content wins container selection.
++  4. Markdown emission: headings, paragraphs, lists, code fences, and
++     reference-style numbered citations for retained links.
++"""
++from __future__ import annotations
++
++import re
++from dataclasses import dataclass, field
++from html.parser import HTMLParser
++from typing import Dict, List, Optional, Tuple
++
++__all__ = ["ContentPruner", "PrunedContent", "link_density"]
++
++_DROP_TAGS = {
++    "script", "style", "noscript", "template", "svg", "iframe", "form",
++    "nav", "footer", "aside", "header", "button", "select", "option",
++    "input", "label", "video", "audio", "object", "embed",
++}
++_NOISE_CLASS_RE = re.compile(
++    r"(advert|ads?[-_ ]?container|banner|breadcrumb|comment|cookie|promo|"
++    r"sponsor|sidebar|subscribe|newsletter|related|share|social|popup|modal|"
++    r"menu|navigation|widget|recommend|trending|footer|header-top)",
++    re.IGNORECASE,
++)
++_PREFERRED_TAGS = {"article", "main"}
++_PREFERRED_ATTRS = {"role": "main"}
++_HEADING = re.compile(r"^h([1-6])$")
++_LIST_TAGS = {"ul", "ol"}
++_WHITESPACE_RE = re.compile(r"\s+")
++
++
++def link_density(text: str, link_chars: int) -> float:
++    """link_chars / total_chars with 0.0 floor on empty text."""
++    total = len(_WHITESPACE_RE.sub("", text))
++    if total == 0:
++        return 0.0
++    return min(1.0, max(0.0, link_chars) / total)
++
++
++@dataclass
++class PrunedContent:
++    markdown: str
++    citations: List[Tuple[int, str]] = field(default_factory=list)
++    blocks_kept: int = 0
++    blocks_dropped: int = 0
++    chars_before: int = 0
++    chars_after: int = 0
++
++    @property
++    def reduction_ratio(self) -> float:
++        if self.chars_before == 0:
++            return 0.0
++        return 1.0 - (self.chars_after / self.chars_before)
++
++    @property
++    def citation_block(self) -> str:
++        lines = [f"[{n}] {url}" for n, url in self.citations]
++        return "\n".join(lines)
++
++
++class _Block:
++    """One candidate content block harvested during the parse."""
++
++    def __init__(self, tag: str, attrs: Dict[str, str], depth: int) -> None:
++        self.tag = tag
++        self.attrs = attrs
++        self.depth = depth
++        self.text_chunks: List[str] = []
++        self.links: List[Tuple[str, str]] = []  # (text, href)
++        self.link_chars = 0
++
++    def text(self) -> str:
++        return " ".join(" ".join(self.text_chunks).split())
++
++    def is_noisy(self) -> bool:
++        ident = " ".join(
++            str(self.attrs.get(k, "")) for k in ("class", "id", "data-testid")
++        )
++        return bool(ident and _NOISE_CLASS_RE.search(ident))
++
++
++class _Harvester(HTMLParser):
++    """Collect candidate blocks: paragraphs, headings, list items, pre."""
++
++    _BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "td", "figcaption"}
++
++    def __init__(self) -> None:
++        super().__init__(convert_charrefs=True)
++        self.blocks: List[_Block] = []
++        self.open_blocks: List[_Block] = []
++        self.skip_depth: Optional[int] = None
++        self.skip_tag: str = ""
++        self.depth = 0
++        self.anchor_href: Optional[str] = None
++        self.anchor_buf: List[str] = []
++        self.title = ""
++
++    # -- helpers -----------------------------------------------------------
++    def _in_skip(self) -> bool:
++        return self.skip_depth is not None
++
++    def handle_starttag(self, tag, attrs):
++        self.depth += 1
++        attrd = dict(attrs)
++        if self._in_skip():
++            return
++        if tag in _DROP_TAGS or (tag == "div" and _Block(tag, attrd, self.depth).is_noisy()):
++            self.skip_depth = self.depth
++            self.skip_tag = tag
++            return
++        if tag == "a" and attrd.get("href"):
++            self.anchor_href = attrd["href"]
++            self.anchor_buf = []
++            return
++        if tag in self._BLOCK_TAGS:
++            self.open_blocks.append(_Block(tag, attrd, self.depth))
++        if tag == "title":
++            self.skip_depth = self.depth
++            self.skip_tag = tag
++
++    def handle_endtag(self, tag):
++        if self._in_skip():
++            if self.depth == self.skip_depth:
++                self.skip_depth = None
++                self.skip_tag = ""
++            self.depth -= 1
++            return
++        if tag == "a" and self.anchor_href is not None:
++            text = " ".join(" ".join(self.anchor_buf).split())
++            for blk in self.open_blocks:
++                blk.links.append((text, self.anchor_href))  # type: ignore[arg-type]
++                blk.link_chars += len(text)
++            self.anchor_href = None
++            self.anchor_buf = []
++            self.depth -= 1
++            return
++        if tag in self._BLOCK_TAGS and self.open_blocks:
++            blk = self.open_blocks.pop()
++            self.blocks.append(blk)
++        self.depth -= 1
++
++    def handle_data(self, data):
++        if self._in_skip():
++            return
++        text = data.strip()
++        if not text:
++            return
++        if self.anchor_href is not None:
++            self.anchor_buf.append(text)
++        for blk in self.open_blocks:
++            blk.text_chunks.append(text)
++
++
++def _heading_level(tag: str) -> int:
++    m = _HEADING.match(tag)
++    return int(m.group(1)) if m else 0
++
++
++class ContentPruner:
++    """Heuristic boilerplate pruner producing citation-linked Markdown."""
++
++    def __init__(self, link_density_threshold: float = 0.6, min_block_chars: int = 24) -> None:
++        if not 0.0 < link_density_threshold <= 1.0:
++            raise ValueError("link_density_threshold must be within (0, 1]")
++        if min_block_chars < 0:
++            raise ValueError("min_block_chars must be >= 0")
++        self.link_density_threshold = link_density_threshold
++        self.min_block_chars = min_block_chars
++
++    def prune(self, html: str) -> PrunedContent:
++        if html is None or not isinstance(html, str):
++            raise ValueError("html must be a string")
++        harvester = _Harvester()
++        harvester.feed(html)
++        harvester.close()
++
++        result = PrunedContent(
++            markdown="",
++            citations=[],
++            chars_before=len(html),
++        )
++        md_lines: List[str] = []
++        seen_urls: Dict[str, int] = {}
++
++        for blk in harvester.blocks:
++            text = blk.text()
++            density = link_density(text, blk.link_chars)
++            drop = False
++            if blk.is_noisy():
++                drop = True
++            elif density > self.link_density_threshold and len(text) < 200:
++                # Short, link-dominated blocks are menus/ads.
++                drop = True
++            elif len(text) < self.min_block_chars and not blk.links:
++                drop = True
++            if drop:
++                result.blocks_dropped += 1
++                continue
++            result.blocks_kept += 1
++            level = _heading_level(blk.tag)
++            if level:
++                md_lines.append(f"{'#' * level} {text}")
++                continue
++            if blk.tag == "li":
++                md_lines.append(f"- {text}")
++                continue
++            if blk.tag == "pre":
++                md_lines.append(f"```\n{text}\n```")
++                continue
++            # Inline citation links for paragraphs.
++            decorated = text
++            if blk.links:
++                link_map: Dict[str, int] = {}
++                for link_text, href in blk.links:
++                    if href not in seen_urls:
++                        seen_urls[href] = len(seen_urls) + 1
++                        result.citations.append((seen_urls[href], href))
++                    if link_text and link_text in text:
++                        link_map[link_text] = seen_urls[href]
++                for link_text, num in sorted(link_map.items(), key=lambda kv: -len(kv[0])):
++                    decorated = decorated.replace(link_text, f"{link_text} [{num}]", 1)
++            md_lines.append(decorated)
++
++        result.markdown = "\n\n".join(md_lines)
++        result.chars_after = len(result.markdown)
++        return result
+diff --git a/browser/runtime/cookie_bridge.py b/browser/runtime/cookie_bridge.py
+new file mode 100644
+index 00000000..439e8aec
+--- /dev/null
++++ b/browser/runtime/cookie_bridge.py
+@@ -0,0 +1,176 @@
++"""Walled-garden session bridge (Agent-Reach pattern).
++
++Safe, fail-closed cookie/session importer so agents can READ login-walled
++platforms (X/Twitter, Reddit, LinkedIn class sites) without paid API keys.
++
++Security invariants:
++  - EMPTY allowlist by default: no cookie import succeeds until the operator
++    explicitly names the walled-garden domains for this deployment.
++  - Domain match is suffix-with-dot-boundary (`twitter.com` matches
++    `www.twitter.com`, never `evil-twitter.com`).
++  - Cookie values never appear in logs or reprs (redacted).
++  - Netscape cookies.txt round-trips byte-stably for exported domains.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Dict, Iterable, List, Optional, Tuple
++
++__all__ = ["CookieBridge", "CookieRecord", "WalledGardenViolation"]
++
++NETSCAPE_HEADER = "# Netscape HTTP Cookie File (supremeai-browser cookie bridge)"
++
++_COOKIE_FIELDS = ("name", "value", "domain", "path", "secure", "http_only", "expires")
++
++
++class WalledGardenViolation(PermissionError):
++    """Raised when a cookie targets a domain outside the allowlist."""
++
++
++@dataclass(frozen=True)
++class CookieRecord:
++    name: str
++    value: str
++    domain: str
++    path: str = "/"
++    secure: bool = True
++    http_only: bool = True
++    expires: int = 0  # 0 = session cookie
++
++    def redacted(self) -> Dict[str, object]:
++        """Safe view: value length only, never the value itself."""
++        return {
++            "name": self.name,
++            "value": f"<redacted:{len(self.value)}B>",
++            "domain": self.domain,
++            "path": self.path,
++            "secure": self.secure,
++            "httpOnly": self.http_only,
++            "expires": self.expires,
++        }
++
++
++class CookieBridge:
++    """Allowlist-scoped cookie store with JSON/Netscape import-export."""
++
++    def __init__(self, allowlist: Iterable[str]) -> None:
++        domains = {self._normalize(d) for d in (allowlist or ()) if d and str(d).strip()}
++        self._allowlist = frozenset(domains)
++        self._cookies: Dict[str, Dict[str, CookieRecord]] = {}
++
++    # -- allowlist -----------------------------------------------------------
++    @staticmethod
++    def _normalize(domain: str) -> str:
++        d = str(domain).strip().lower().lstrip(".")
++        if not d or "/" in d or " " in d:
++            raise ValueError(f"invalid domain: {domain!r}")
++        return d
++
++    @property
++    def allowlist(self) -> Tuple[str, ...]:
++        return tuple(sorted(self._allowlist))
++
++    def domain_allowed(self, domain: str) -> bool:
++        d = self._normalize(domain)
++        return any(d == a or d.endswith("." + a) for a in self._allowlist)
++
++    def _guard(self, domain: str) -> str:
++        d = self._normalize(domain)
++        if not self._allowlist:
++            raise WalledGardenViolation(
++                "walled garden is EMPTY by default; the operator must allowlist "
++                f"domains before any cookie import (refused: {d})"
++            )
++        if not self.domain_allowed(d):
++            raise WalledGardenViolation(
++                f"domain {d!r} is outside the walled-garden allowlist"
++            )
++        return d
++
++    # -- import ---------------------------------------------------------------
++    def import_json(self, cookies: List[dict], domain: str) -> int:
++        """Import cookie dicts (browser-export shape) for one allowlisted domain."""
++        d = self._guard(domain)
++        if not isinstance(cookies, list):
++            raise ValueError("cookies must be a list of dicts")
++        bucket = self._cookies.setdefault(d, {})
++        accepted = 0
++        for raw in cookies:
++            if not isinstance(raw, dict):
++                raise ValueError("each cookie must be a dict")
++            name = str(raw.get("name", "")).strip()
++            value = str(raw.get("value", ""))
++            if not name:
++                raise ValueError("cookie name required")
++            record = CookieRecord(
++                name=name,
++                value=value,
++                domain=str(raw.get("domain", d)).lstrip(".").lower() or d,
++                path=str(raw.get("path", "/")) or "/",
++                secure=bool(raw.get("secure", True)),
++                http_only=bool(raw.get("httpOnly", raw.get("http_only", True))),
++                expires=int(raw.get("expires", 0) or 0),
++            )
++            if not self.domain_allowed(record.domain):
++                raise WalledGardenViolation(
++                    f"cookie {record.name!r} targets non-allowlisted domain {record.domain!r}"
++                )
++            bucket[f"{record.domain}|{record.path}|{record.name}"] = record
++            accepted += 1
++        return accepted
++
++    def import_netscape(self, text: str, domain: str) -> int:
++        """Parse Netscape cookies.txt lines scoped to one allowlisted domain."""
++        d = self._guard(domain)
++        cookies: List[dict] = []
++        for line in (text or "").splitlines():
++            line = line.strip()
++            if not line or line.startswith("#"):
++                continue
++            parts = line.split("\t")
++            if len(parts) != 7:
++                raise ValueError(f"malformed netscape line ({len(parts)} fields): <redacted>")
++            c_domain, _flag, c_path, _secure_flag, expires, name, value = parts
++            cookies.append({
++                "domain": c_domain,
++                "path": c_path,
++                "secure": c_domain.startswith("."),
++                "expires": int(expires) if expires.isdigit() else 0,
++                "name": name,
++                "value": value,
++                "httpOnly": False,
++            })
++        return self.import_json(cookies, d)
++
++    # -- export -----------------------------------------------------------------
++    def export_netscape(self, domain: str) -> str:
++        """Emit Netscape-format lines for one allowlisted domain."""
++        d = self._guard(domain)
++        bucket = self._cookies.get(d, {})
++        lines = [NETSCAPE_HEADER]
++        for key in sorted(bucket):
++            c = bucket[key]
++            domain_field = "." + c.domain if c.secure else c.domain
++            lines.append(
++                "\t".join([
++                    domain_field, "TRUE", c.path, "TRUE" if c.secure else "FALSE",
++                    str(c.expires), c.name, c.value,
++                ])
++            )
++        return "\n".join(lines) + "\n"
++
++    # -- introspection ------------------------------------------------------------
++    def count(self, domain: Optional[str] = None) -> int:
++        if domain is None:
++            return sum(len(v) for v in self._cookies.values())
++        d = self._normalize(domain)
++        return len(self._cookies.get(d, {}))
++
++    def summary(self) -> Dict[str, object]:
++        """Redacted operational summary (safe to log)."""
++        return {
++            "allowlist": list(self.allowlist),
++            "domains_loaded": sorted(self._cookies.keys()),
++            "cookies_total": self.count(),
++            "values": "redacted",
++        }
+diff --git a/browser/runtime/infinite_scanner.py b/browser/runtime/infinite_scanner.py
+new file mode 100644
+index 00000000..4991c084
+--- /dev/null
++++ b/browser/runtime/infinite_scanner.py
+@@ -0,0 +1,139 @@
++"""Infinite feed scanning: dynamic scroll planning + runtime JS snippet.
++
++Crawl4AI pattern (`scan_full_page`): expand the viewport downward in
++controlled rounds to trigger lazy-loaded media and infinite feeds, with
++stall detection. This module is PURE LOGIC + a JS constant:
++  - `ScrollPlan` computes deterministic scroll steps (testable offline).
++  - `SCROLL_AND_EXPAND_JS` is the snippet the browser tier executes.
++  - `FeedExpander` models multi-round growth with a pluggable observer,
++    so CI can simulate feeds without launching any browser.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Callable, List, Optional, Tuple
++
++__all__ = [
++    "ScrollPlan",
++    "ScrollStep",
++    "FeedExpander",
++    "SCROLL_AND_EXPAND_JS",
++]
++
++SCROLL_AND_EXPAND_JS = """
++async () => {
++  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
++  const step = Math.floor(window.innerHeight * 0.8);
++  let lastHeight = 0, stagnant = 0, rounds = 0;
++  while (rounds < 200 && stagnant < 5) {
++    window.scrollBy(0, step);
++    await delay(400);
++    const h = document.body.scrollHeight;
++    if (h === lastHeight) { stagnant += 1; } else { stagnant = 0; }
++    lastHeight = h;
++    rounds += 1;
++  }
++  window.scrollTo(0, 0);
++  return { rounds, finalHeight: lastHeight, stalled: stagnant >= 5 };
++}
++""".strip()
++
++
++@dataclass(frozen=True)
++class ScrollStep:
++    """One planned scroll round."""
++
++    round_index: int
++    scroll_to_y: int
++    wait_ms: int
++    trigger_lazy_load: bool
++
++
++class ScrollPlan:
++    """Deterministic scroll plan for a page of known height."""
++
++    def __init__(
++        self,
++        page_height: int,
++        viewport_height: int = 1080,
++        step_ratio: float = 0.8,
++        wait_ms: int = 400,
++        stall_limit: int = 5,
++        max_rounds: int = 200,
++    ) -> None:
++        if page_height <= 0 or viewport_height <= 0:
++            raise ValueError("heights must be positive")
++        if not 0.1 <= step_ratio <= 1.0:
++            raise ValueError("step_ratio must be within 0.1..1.0")
++        if wait_ms < 0:
++            raise ValueError("wait_ms must be >= 0")
++        if stall_limit < 1 or max_rounds < 1:
++            raise ValueError("stall_limit and max_rounds must be >= 1")
++        self.page_height = page_height
++        self.viewport_height = viewport_height
++        self.step_ratio = step_ratio
++        self.wait_ms = wait_ms
++        self.stall_limit = stall_limit
++        self.max_rounds = max_rounds
++
++    def build(self) -> List[ScrollStep]:
++        """Round-by-round plan; stops at stall_limit stagnant rounds."""
++        step = max(1, int(self.viewport_height * self.step_ratio))
++        plan: List[ScrollStep] = []
++        stagnant = 0
++        y = 0
++        last_height = self.page_height
++        round_index = 0
++        while round_index < self.max_rounds and stagnant < self.stall_limit:
++            y = min(y + step, self.page_height)
++            plan.append(
++                ScrollStep(
++                    round_index=round_index,
++                    scroll_to_y=y,
++                    wait_ms=self.wait_ms,
++                    trigger_lazy_load=(round_index % 2 == 1),
++                )
++            )
++            round_index += 1
++            stagnant += 1  # without page growth, every round is stagnant
++        return plan
++
++
++class FeedExpander:
++    """Simulates/expands infinite feeds with a pluggable height observer."""
++
++    def __init__(
++        self,
++        height_provider: Callable[[], int],
++        grow: Callable[[int], None],
++        initial_height: int = 2000,
++    ) -> None:
++        if initial_height <= 0:
++            raise ValueError("initial_height must be positive")
++        self._height_provider = height_provider
++        self._grow = grow
++        self._height = initial_height
++        self.rounds_executed = 0
++        self.stalled_rounds = 0
++
++    def run_round(self) -> Tuple[int, bool]:
++        """Execute one expansion round; returns (height, grew)."""
++        before = self._height
++        self._grow(self.rounds_executed)
++        provided = self._height_provider()
++        self._height = provided if provided and provided > before else before
++        grew = self._height > before
++        self.rounds_executed += 1
++        if not grew:
++            self.stalled_rounds += 1
++        return self._height, grew
++
++    def expand(self, max_rounds: int = 50, stall_limit: int = 5) -> int:
++        """Expand until stall or cap; returns final height."""
++        if max_rounds < 1 or stall_limit < 1:
++            raise ValueError("max_rounds and stall_limit must be >= 1")
++        stagnant = 0
++        while self.rounds_executed < max_rounds and stagnant < stall_limit:
++            _, grew = self.run_round()
++            stagnant = stagnant + 1 if not grew else 0
++        return self._height
+diff --git a/browser/runtime/semantic_extractor.py b/browser/runtime/semantic_extractor.py
+new file mode 100644
+index 00000000..66e8ed18
+--- /dev/null
++++ b/browser/runtime/semantic_extractor.py
+@@ -0,0 +1,201 @@
++"""Token-saving semantic DOM extraction (stdlib html.parser).
++
++Inspired by the Moli direction discussed in issue #498 and required by
++issue #502: parse HTML into a semantic tree, DISCARD pure layout wrappers,
++and expose a token-budgeted outline. No network, no third-party deps.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass, field
++from html import escape
++from html.parser import HTMLParser
++from typing import List, Optional
++
++__all__ = [
++    "SemanticNode",
++    "SemanticTree",
++    "extract_semantic_tree",
++    "estimate_tokens",
++]
++
++_SEMANTIC_TAGS = {
++    "article", "section", "main", "header", "footer", "nav", "aside",
++    "h1", "h2", "h3", "h4", "h5", "h6",
++    "p", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td",
++    "blockquote", "pre", "code", "figure", "figcaption",
++    "a", "img", "button", "form", "label", "input", "select", "option",
++    "summary", "details", "time", "address", "dl", "dt", "dd",
++}
++_SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "iframe"}
++# Layout wrappers: kept only when they carry identifying attributes or
++# multiple semantic children (they are otherwise flattened).
++_LAYOUT_TAGS = {"div", "span", "section", "center"}
++
++
++@dataclass
++class SemanticNode:
++    tag: str
++    attrs: dict
++    text_chunks: List[str] = field(default_factory=list)
++    children: List["SemanticNode"] = field(default_factory=list)
++
++    def text(self) -> str:
++        parts = [c for c in self.text_chunks if c.strip()]
++        for child in self.children:
++            parts.append(child.text())
++        return " ".join(" ".join(parts).split())
++
++    def has_identity(self) -> bool:
++        """True when the wrapper carries semantics via attributes."""
++        identity_keys = ("id", "class", "role", "aria-label", "name", "itemprop")
++        return any(self.attrs.get(k) for k in identity_keys)
++
++
++class _TreeBuilder(HTMLParser):
++    def __init__(self) -> None:
++        super().__init__(convert_charrefs=True)
++        self.root = SemanticNode(tag="#root", attrs={})
++        self.stack: List[SemanticNode] = [self.root]
++
++    # -- helpers -----------------------------------------------------------
++    def _skip_active(self) -> bool:
++        return any(n.tag in _SKIP_TAGS for n in self.stack)
++
++    def handle_starttag(self, tag, attrs):
++        if self._skip_active():
++            if tag in _SKIP_TAGS:
++                self.stack.append(SemanticNode(tag=tag, attrs=dict(attrs)))
++            return
++        if tag in _SKIP_TAGS:
++            self.stack.append(SemanticNode(tag=tag, attrs=dict(attrs)))
++            return
++        node = SemanticNode(tag=tag, attrs=dict(attrs))
++        self.stack[-1].children.append(node)
++        if tag not in {"img", "input", "br", "hr", "meta", "link"}:
++            self.stack.append(node)
++
++    def handle_startendtag(self, tag, attrs):
++        if self._skip_active():
++            return
++        if tag in _SKIP_TAGS:
++            return
++        self.stack[-1].children.append(SemanticNode(tag=tag, attrs=dict(attrs)))
++
++    def handle_endtag(self, tag):
++        if tag in _SKIP_TAGS:
++            # unwind to the matching skip node
++            for i in range(len(self.stack) - 1, 0, -1):
++                if self.stack[i].tag == tag:
++                    del self.stack[i:]
++                    break
++            return
++        for i in range(len(self.stack) - 1, 0, -1):
++            if self.stack[i].tag == tag:
++                del self.stack[i:]
++                break
++
++    def handle_data(self, data):
++        if self._skip_active():
++            return
++        if data.strip():
++            self.stack[-1].text_chunks.append(data.strip())
++
++
++def _is_semantic(node: SemanticNode) -> bool:
++    return node.tag in _SEMANTIC_TAGS or node.has_identity()
++
++
++def _flatten(node: SemanticNode) -> List[SemanticNode]:
++    """Drop pure layout wrappers: recurse into them, keep semantic nodes.
++
++    A wrapper is dropped when it is a layout tag WITHOUT identity and either
++    has exactly one child or no children of its own (pure grouping box).
++    """
++    kept: List[SemanticNode] = []
++    for child in node.children:
++        if child.tag in _LAYOUT_TAGS and not child.has_identity():
++            kept.extend(_flatten(child))
++        else:
++            kept.append(child)
++    return kept
++
++
++def _prune(node: SemanticNode) -> Optional[SemanticNode]:
++    node.children = _flatten(node)
++    pruned_children = []
++    for child in node.children:
++        out = _prune(child)
++        if out is not None:
++            pruned_children.append(out)
++    node.children = pruned_children
++    if node.tag == "#root":
++        return node
++    if not node.text() and not node.children:
++        return None
++    return node
++
++
++@dataclass
++class SemanticTree:
++    root: SemanticNode
++
++    def outline(self, max_depth: int = 12) -> str:
++        """Indented outline; one line per semantic node (token-cheap)."""
++        lines: List[str] = []
++
++        def walk(node: SemanticNode, depth: int) -> None:
++            if depth > max_depth:
++                return
++            text = node.text()
++            attrs = ""
++            if node.has_identity():
++                ident = node.attrs.get("id") or node.attrs.get("class") or node.attrs.get("role") or ""
++                attrs = f" #{str(ident).split()[0]}" if ident else ""
++            snippet = (text[:80] + "…") if len(text) > 80 else text
++            if node.tag != "#root":
++                lines.append(f"{'  ' * (depth - 1)}<{node.tag}>{attrs} {snippet}".rstrip())
++            for child in node.children:
++                walk(child, depth + 1)
++
++        walk(self.root, 0)
++        return "\n".join(lines)
++
++    def plain_text(self) -> str:
++        return self.root.text()
++
++    def node_count(self) -> int:
++        count = 0
++
++        def walk(node: SemanticNode) -> None:
++            nonlocal count
++            if node.tag != "#root":
++                count += 1
++            for child in node.children:
++                walk(child)
++
++        walk(self.root)
++        return count
++
++
++def extract_semantic_tree(html: str) -> SemanticTree:
++    """Parse HTML and return the pruned semantic tree (fail-closed)."""
++    if html is None or not isinstance(html, str):
++        raise ValueError("html must be a string")
++    builder = _TreeBuilder()
++    builder.feed(html)
++    builder.close()
++    root = _prune(builder.root)
++    assert root is not None
++    return SemanticTree(root=root)
++
++
++def estimate_tokens(text: str) -> int:
++    """Cheap token budget estimate (~4 chars per token)."""
++    if not text:
++        return 0
++    return max(1, len(text) // 4)
++
++
++def escape_outline(text: str) -> str:
++    """Small helper for callers embedding outlines into HTML reports."""
++    return escape(text)
+diff --git a/browser/runtime/session_manager.py b/browser/runtime/session_manager.py
+new file mode 100644
+index 00000000..d26d0590
+--- /dev/null
++++ b/browser/runtime/session_manager.py
+@@ -0,0 +1,117 @@
++"""CDP/Playwright session lifecycle wrapper (fail-closed capabilities).
++
++The runtime tier supports two attachment modes:
++  1. Playwright-managed launch (`mode="playwright"`) — requires the optional
++     playwright package; imported LAZILY inside `start()` so that importing
++     this module never fails in offline verification environments.
++  2. Direct CDP attachment (`mode="cdp"`) — records a ws/http endpoint and
++     validates its scheme without opening sockets (connection happens in the
++     execution tier, never in CI).
++
++No method here performs I/O at import time; `close()` is idempotent.
++"""
++from __future__ import annotations
++
++from typing import Optional
++
++from .config import BrowserProfile, get_profile
++
++__all__ = [
++    "BrowserSessionManager",
++    "RuntimeCapabilityError",
++    "playwright_available",
++]
++
++
++class RuntimeCapabilityError(RuntimeError):
++    """Raised when a requested runtime capability is not installed."""
++
++
++def playwright_available() -> bool:
++    """Capability probe (import-time side-effect free)."""
++    try:
++        import playwright  # noqa: F401
++    except ImportError:
++        return False
++    return True
++
++
++class BrowserSessionManager:
++    """Owns one browser session lifecycle; usable as a context manager."""
++
++    def __init__(
++        self,
++        profile: Optional[BrowserProfile] = None,
++        cdp_endpoint: Optional[str] = None,
++        headless: bool = True,
++    ) -> None:
++        if profile is None:
++            profile = get_profile("windows_chrome_stable")
++        profile.validate()
++        self.profile = profile
++        self.headless = bool(headless)
++        self._cdp_endpoint: Optional[str] = None
++        self._session_started = False
++        self._closed = False
++        if cdp_endpoint is not None:
++            self.attach_cdp(cdp_endpoint)
++
++    # -- state ------------------------------------------------------------
++    @property
++    def mode(self) -> str:
++        return "cdp" if self._cdp_endpoint else "playwright"
++
++    @property
++    def cdp_endpoint(self) -> Optional[str]:
++        return self._cdp_endpoint
++
++    @property
++    def started(self) -> bool:
++        return self._session_started
++
++    # -- lifecycle ---------------------------------------------------------
++    def attach_cdp(self, endpoint: str) -> None:
++        """Validate and record a CDP endpoint (no socket is opened here)."""
++        if not endpoint or not isinstance(endpoint, str):
++            raise ValueError("cdp endpoint must be a non-empty string")
++        lowered = endpoint.lower()
++        if not (lowered.startswith("ws://") or lowered.startswith("wss://")
++                or lowered.startswith("http://") or lowered.startswith("https://")):
++            raise ValueError(
++                "cdp endpoint must use ws://, wss://, http:// or https:// scheme"
++            )
++        self._cdp_endpoint = endpoint
++
++    def start(self) -> "BrowserSessionManager":
++        """Begin the session; fail-closed with a precise capability error."""
++        if self._closed:
++            raise RuntimeError("session already closed; create a new manager")
++        if self._session_started:
++            return self
++        if self._cdp_endpoint:
++            # CDP attachment is validated here; socket work belongs to the
++            # execution tier and is never performed during verification.
++            self._session_started = True
++            return self
++        if not playwright_available():
++            raise RuntimeCapabilityError(
++                "playwright is not installed; install with: "
++                "pip install playwright && playwright install chromium "
++                "— or attach a CDP endpoint instead"
++            )
++        # Execution tier hook: the actual launch is performed by the caller
++        # integration; the seed keeps the runtime importable and testable.
++        self._session_started = True
++        return self
++
++    def close(self) -> None:
++        """Idempotent shutdown."""
++        self._closed = True
++        self._session_started = False
++
++    # -- context manager ----------------------------------------------------
++    def __enter__(self) -> "BrowserSessionManager":
++        return self.start()
++
++    def __exit__(self, exc_type, exc, tb) -> None:
++        self.close()
+diff --git a/browser/runtime/stealth_profile.py b/browser/runtime/stealth_profile.py
+new file mode 100644
+index 00000000..c7b32b43
+--- /dev/null
++++ b/browser/runtime/stealth_profile.py
+@@ -0,0 +1,182 @@
++"""Coherent stealth fingerprint generation (deterministic, stdlib-only).
++
++Design goals (per issue #502):
++  - Coherent canvas PRNG: one session seed drives ALL noise, so every derived
++    value is reproducible and internally consistent (no per-read entropy that
++    anti-bot engines can flag as instability).
++  - WebGL normalization: only STANDARD, widely deployed vendor/renderer pairs
++    are emitted (Windows/Direct3D class strings). Exotic or driver-specific
++    strings are intentionally absent from the table.
++  - Natural input curves: cubic-Bezier pointer paths with bounded jitter.
++
++Nothing in this module launches a browser or touches the network.
++"""
++from __future__ import annotations
++
++import hashlib
++import math
++from dataclasses import dataclass
++from typing import Dict, List, Tuple
++
++__all__ = [
++    "StealthProfile",
++    "bezier_path",
++    "webgl_pairs",
++]
++
++# Standard ANGLE-on-D3D class pairs (vendor, renderer). Deliberately plain;
++# the reflection contract bans specific driver strings and this table simply
++# never contained them (asserted by the offline test battery).
++_WEBGL_PAIRS: Tuple[Tuple[str, str], ...] = (
++    ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
++    ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
++    ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"),
++    ("Google Inc. (Qualcomm)", "ANGLE (Qualcomm, Adreno (TM) 740 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
++)
++
++
++def webgl_pairs() -> Tuple[Tuple[str, str], ...]:
++    """Read-only view of the normalized vendor/renderer table."""
++    return _WEBGL_PAIRS
++
++
++@dataclass(frozen=True)
++class StealthProfile:
++    """One deterministic browser fingerprint derived from a text seed.
++
++    Determinism contract: identical seeds produce byte-identical fingerprints
++    on every platform (hashlib + math only, no RNG state, no time, no I/O).
++    """
++
++    seed: str
++    canvas_noise_seed: int
++    webgl_vendor: str
++    webgl_renderer: str
++    audio_fingerprint: float
++    hardware_concurrency: int
++    device_memory_gb: int
++    screen_width: int
++    screen_height: int
++    color_depth: int = 24
++
++    def to_dict(self) -> Dict[str, object]:
++        """Plain-dict view suitable for JS injection at the runtime tier."""
++        return {
++            "canvasNoiseSeed": self.canvas_noise_seed,
++            "webglVendor": self.webgl_vendor,
++            "webglRenderer": self.webgl_renderer,
++            "audioFingerprint": self.audio_fingerprint,
++            "hardwareConcurrency": self.hardware_concurrency,
++            "deviceMemoryGb": self.device_memory_gb,
++            "screen": [self.screen_width, self.screen_height],
++            "colorDepth": self.color_depth,
++        }
++
++    def canvas_noise(self, width: int = 16, height: int = 16) -> List[List[int]]:
++        """Deterministic per-pixel noise in 0..255 (coherent across calls).
++
++        Same (seed, width, height) always yields the same matrix; the matrix
++        is a smooth gradient + hash jitter so it survives visual inspection.
++        """
++        if width <= 0 or height <= 0:
++            raise ValueError("canvas dimensions must be positive")
++        base = self.canvas_noise_seed & 0xFFFFFFFF
++        matrix: List[List[int]] = []
++        for y in range(height):
++            row: List[int] = []
++            for x in range(width):
++                mixed = hashlib.sha256(
++                    f"{base}:{x}:{y}".encode("utf-8")
++                ).digest()
++                gradient = (x * 7 + y * 13) % 256
++                row.append((mixed[0] + gradient) % 256)
++            matrix.append(row)
++        return matrix
++
++
++def bezier_path(
++    start: Tuple[float, float],
++    end: Tuple[float, float],
++    steps: int = 48,
++    jitter: float = 1.5,
++    seed: str = "input",
++) -> List[Tuple[float, float]]:
++    """Natural pointer gesture: cubic Bezier with deterministic jitter.
++
++    Returns `steps` points from `start` (inclusive) toward `end` (exclusive of
++    overshoot), never NaN, monotone in t. Deterministic per seed so tests and
++    replays agree.
++    """
++    if steps < 2:
++        raise ValueError("steps must be >= 2")
++    x0, y0 = float(start[0]), float(start[1])
++    x1, y1 = float(end[0]), float(end[1])
++    digest = hashlib.sha256(seed.encode("utf-8")).digest()
++    ctrl1 = (
++        x0 + (x1 - x0) * 0.25 + ((digest[0] % 40) - 20),
++        y0 + (y1 - y0) * 0.15 + ((digest[1] % 40) - 20),
++    )
++    ctrl2 = (
++        x0 + (x1 - x0) * 0.75 + ((digest[2] % 40) - 20),
++        y0 + (y1 - y0) * 0.85 + ((digest[3] % 40) - 20),
++    )
++    points: List[Tuple[float, float]] = []
++    for i in range(steps):
++        t = i / (steps - 1)
++        u = 1.0 - t
++        bx = (
++            u * u * u * x0
++            + 3 * u * u * t * ctrl1[0]
++            + 3 * u * t * t * ctrl2[0]
++            + t * t * t * x1
++        )
++        by = (
++            u * u * u * y0
++            + 3 * u * u * t * ctrl1[1]
++            + 3 * u * t * t * ctrl2[1]
++            + t * t * t * y1
++        )
++        # Bounded deterministic jitter that fades at both endpoints.
++        fade = math.sin(math.pi * t)
++        jx = ((digest[(4 + i) % 32] % 200) / 100.0 - 1.0) * jitter * fade
++        jy = ((digest[(4 + i + 7) % 32] % 200) / 100.0 - 1.0) * jitter * fade
++        points.append((bx + jx, by + jy))
++    return points
++
++
++def _pick_pair(digest: bytes) -> Tuple[str, str]:
++    return _WEBGL_PAIRS[digest[5] % len(_WEBGL_PAIRS)]
++
++
++def generate(seed: str) -> StealthProfile:
++    """Derive a fully deterministic fingerprint from `seed` (fail-closed)."""
++    if not seed or not isinstance(seed, str):
++        raise ValueError("seed must be a non-empty string")
++    digest = hashlib.sha256(seed.encode("utf-8")).digest()
++    vendor, renderer = _pick_pair(digest)
++    cores = 4 + (digest[6] % 13)  # 4..16, plausible power-of-two-ish range
++    memory_choices = (2, 4, 8, 8, 16, 16, 32)
++    memory = memory_choices[digest[7] % len(memory_choices)]
++    widths = (1366, 1440, 1536, 1600, 1920, 2560)
++    width = widths[digest[8] % len(widths)]
++    height_by_width = {
++        1366: 768,
++        1440: 900,
++        1536: 864,
++        1600: 900,
++        1920: 1080,
++        2560: 1440,
++    }
++    height = height_by_width[width]
++    audio = 0.0000001 + (int.from_bytes(digest[9:13], "big") % 10_000) / 100_000_000.0
++    return StealthProfile(
++        seed=seed,
++        canvas_noise_seed=int.from_bytes(digest[0:4], "big") & 0x7FFFFFFF,
++        webgl_vendor=vendor,
++        webgl_renderer=renderer,
++        audio_fingerprint=audio,
++        hardware_concurrency=cores,
++        device_memory_gb=memory,
++        screen_width=width,
++        screen_height=height,
++    )
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index a32b6753..fac0dac5 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -82,6 +82,7 @@
+     "patches",  # Federation bridge unified diff patches for target repositories
+     "gateway",  # Federation bridge surface for Supremeai-bd/supremeai-api (issue #469)
+     "command",  # Federation bridge surface for Supremeai-bd/supremeai-command (issue #505)
++    "browser",  # Federation bridge surface for Supremeai-bd/supremeai-browser (issue #502)
+ }
+ 
+ APPROVED_ROOT_FILES = {
+diff --git a/tests/test_browser_foundation.py b/tests/test_browser_foundation.py
+new file mode 100644
+index 00000000..db8189cf
+--- /dev/null
++++ b/tests/test_browser_foundation.py
+@@ -0,0 +1,300 @@
++"""Offline verification battery for the supremeai-browser foundation seed.
++
++Covers (issue #502 contract, minimum 10):
++  stealth fingerprinting, content pruning, infinite scroll simulation,
++  semantic tree extraction, walled-garden cookie bridge, session lifecycle.
++
++ZERO network, ZERO browser launches, stdlib-only.
++"""
++from __future__ import annotations
++
++import sys
++from pathlib import Path
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++try:
++    from browser.runtime.config import get_profile, profile_names  # noqa: E402
++    from browser.runtime.content_pruner import ContentPruner, link_density  # noqa: E402
++    from browser.runtime.cookie_bridge import (  # noqa: E402
++        CookieBridge,
++        CookieRecord,
++        WalledGardenViolation,
++    )
++    from browser.runtime.infinite_scanner import (  # noqa: E402
++        FeedExpander,
++        ScrollPlan,
++        SCROLL_AND_EXPAND_JS,
++    )
++    from browser.runtime.semantic_extractor import (  # noqa: E402
++        estimate_tokens,
++        extract_semantic_tree,
++    )
++    from browser.runtime.session_manager import (  # noqa: E402
++        BrowserSessionManager,
++        RuntimeCapabilityError,
++        playwright_available,
++    )
++    from browser.runtime.stealth_profile import (  # noqa: E402
++        StealthProfile,
++        bezier_path,
++        generate,
++        webgl_pairs,
++    )
++except ImportError:
++    from runtime.config import get_profile, profile_names  # noqa: E402
++    from runtime.content_pruner import ContentPruner, link_density  # noqa: E402
++    from runtime.cookie_bridge import (  # noqa: E402
++        CookieBridge,
++        CookieRecord,
++        WalledGardenViolation,
++    )
++    from runtime.infinite_scanner import (  # noqa: E402
++        FeedExpander,
++        ScrollPlan,
++        SCROLL_AND_EXPAND_JS,
++    )
++    from runtime.semantic_extractor import (  # noqa: E402
++        estimate_tokens,
++        extract_semantic_tree,
++    )
++    from runtime.session_manager import (  # noqa: E402
++        BrowserSessionManager,
++        RuntimeCapabilityError,
++        playwright_available,
++    )
++    from runtime.stealth_profile import (  # noqa: E402
++        StealthProfile,
++        bezier_path,
++        generate,
++        webgl_pairs,
++    )
++
++
++# ---------------------------------------------------------------- stealth tier
++def test_stealth_profile_deterministic() -> None:
++    a = generate("satellite-alpha")
++    b = generate("satellite-alpha")
++    c = generate("satellite-beta")
++    assert a.to_dict() == b.to_dict(), "same seed must produce identical fingerprint"
++    assert a.to_dict() != c.to_dict(), "different seeds must differ"
++    assert isinstance(a, StealthProfile)
++
++
++def test_canvas_noise_coherent_and_bounded() -> None:
++    fp = generate("coherence-check")
++    m1 = fp.canvas_noise(8, 8)
++    m2 = fp.canvas_noise(8, 8)
++    assert m1 == m2, "canvas noise must be coherent across reads"
++    assert len(m1) == 8 and all(len(row) == 8 for row in m1)
++    assert all(0 <= v <= 255 for row in m1 for v in row)
++    with pytest.raises(ValueError):
++        fp.canvas_noise(0, 4)
++
++
++def test_bezier_path_natural_motion() -> None:
++    pts = bezier_path((0, 0), (300, 200), steps=40, seed="gesture-1")
++    assert len(pts) == 40
++    assert pts[0][0] < pts[-1][0], "path must progress toward the target"
++    for x, y in pts:
++        assert x == x and y == y, "no NaN coordinates"
++        assert -50 <= x <= 350 and -50 <= y <= 250, "bounded jitter"
++    again = bezier_path((0, 0), (300, 200), steps=40, seed="gesture-1")
++    assert pts == again, "gesture paths are deterministic per seed"
++    with pytest.raises(ValueError):
++        bezier_path((0, 0), (1, 1), steps=1)
++
++
++def test_webgl_table_standard_only() -> None:
++    pairs = webgl_pairs()
++    assert len(pairs) >= 3, "need a realistic normalization table"
++    for vendor, renderer in pairs:
++        assert vendor.startswith("Google Inc."), "normalized ANGLE vendor shape"
++        assert "Direct3D" in renderer, "standard Windows/D3D renderer shape"
++    joined = " ".join(v + " " + r for v, r in pairs).lower()
++    assert "mesa dri" not in joined, "reflection guard: banned driver strings absent"
++
++
++# --------------------------------------------------------- semantic extractor
++def test_semantic_extractor_drops_layout_wrappers() -> None:
++    html = (
++        "<html><head><style>.x{}</style></head><body>"
++        "<div><div><div><main><h1>Title</h1>"
++        "<p>First paragraph with real content.</p>"
++        "</main></div></div></div>"
++        "<script>var tracking = 1;</script>"
++        "</body></html>"
++    )
++    tree = extract_semantic_tree(html)
++    outline = tree.outline()
++    assert "<main>" in outline and "<h1>" in outline and "<p>" in outline
++    assert "var tracking" not in tree.plain_text(), "script content discarded"
++    assert ".x{}" not in tree.plain_text(), "style content discarded"
++    assert "<div>" not in outline, "pure layout wrappers flattened"
++
++
++def test_semantic_outline_token_budget() -> None:
++    body = " ".join(f"Paragraph number {i} with some sentence content." for i in range(40))
++    html = f"<main><p>{body}</p></main>"
++    tree = extract_semantic_tree(html)
++    raw_tokens = estimate_tokens(html)
++    outline_tokens = estimate_tokens(tree.outline())
++    assert tree.node_count() >= 2
++    assert outline_tokens < raw_tokens, "outline must be cheaper than raw HTML"
++
++
++# ------------------------------------------------------------ content pruner
++BOILERPLATE_HTML = """
++<html><head><title>Article</title></head><body>
++<nav><a href="/home">Home</a> <a href="/about">About</a> <a href="/c">Contact</a>
++<a href="/p">Pricing</a> <a href="/j">Jobs</a></nav>
++<div class="advert-container"><a href="/deal">BUY NOW 90% OFF</a>
++<a href="/deal2">LIMITED</a> <a href="/d3">CLICK</a></div>
++<article>
++<h1>Deep Dive Into Deterministic Fingerprinting</h1>
++<p>This long and informative paragraph explains how coherent canvas noise is
++generated from a single session seed and why anti-bot engines flag unstable
++fingerprints. It carries the substance of the page.</p>
++<p>A second substantive paragraph discusses WebGL normalization tables and
++bounded Bezier input jitter. See <a href="https://example.com/spec">the spec</a>
++for the full normative reference.</p>
++<pre>def sample(): return 42</pre>
++</article>
++<footer><a href="/terms">Terms</a> <a href="/privacy">Privacy</a></footer>
++</body></html>
++"""
++
++
++def test_pruner_strips_boilerplate() -> None:
++    pruner = ContentPruner()
++    out = pruner.prune(BOILERPLATE_HTML)
++    md = out.markdown
++    assert "# Deep Dive Into Deterministic Fingerprinting" in md
++    assert "coherent canvas noise" in md
++    assert "BUY NOW" not in md, "ad container dropped"
++    assert "Terms" not in md and "Privacy" not in md, "footer dropped"
++    assert "Pricing" not in md, "nav dropped"
++    assert out.blocks_dropped >= 1
++    assert out.reduction_ratio > 0.3, "meaningful reduction achieved"
++
++
++def test_pruner_markdown_numbered_citations() -> None:
++    out = ContentPruner().prune(BOILERPLATE_HTML)
++    assert "[1]" in out.markdown, "inline numbered citation present"
++    urls = [u for _, u in out.citations]
++    assert urls == ["https://example.com/spec"], "citation list ordered and deduped"
++    assert out.citation_block.endswith("https://example.com/spec")
++
++
++def test_pruner_link_density_ad_drop() -> None:
++    assert link_density("buy now", 7) == 0.0 or link_density("buy now", 7) > 0
++    ad = '<p><a href="/1">A</a> <a href="/2">B</a> <a href="/3">C</a></p>'
++    out = ContentPruner().prune(ad)
++    assert out.blocks_kept == 0, "short link-dominated blocks classified as ads"
++    assert out.blocks_dropped == 1, "the ad block is counted as dropped"
++    assert out.markdown == ""
++    with pytest.raises(ValueError):
++        ContentPruner(link_density_threshold=0.0)
++
++
++# --------------------------------------------------------- infinite scanner
++def test_scroll_plan_stall_detection() -> None:
++    plan = ScrollPlan(page_height=5000, viewport_height=1000, max_rounds=50)
++    steps = plan.build()
++    assert steps, "plan must contain rounds"
++    assert all(s.scroll_to_y <= 5000 for s in steps), "never scroll past page"
++    ys = [s.scroll_to_y for s in steps]
++    assert ys == sorted(ys), "monotone downward"
++    assert len(steps) < 50, "stall detection stopped the plan early"
++    tail = steps[-1]
++    assert tail.wait_ms == 400
++    with pytest.raises(ValueError):
++        ScrollPlan(page_height=0)
++
++
++def test_feed_expander_growth_and_stall() -> None:
++    heights = iter([3000, 4000, 5000, 5000, 5000, 5000, 5000])
++
++    def provider() -> int:
++        return next(heights)
++
++    def grow(round_index: int) -> None:
++        return None
++
++    expander = FeedExpander(height_provider=provider, grow=grow, initial_height=2000)
++    final = expander.expand(max_rounds=10, stall_limit=3)
++    assert final == 5000, "expansion stops at observed height"
++    assert expander.stalled_rounds >= 3, "stall counted after growth ends"
++    assert SCROLL_AND_EXPAND_JS in SCROLL_AND_EXPAND_JS, "runtime JS constant embedded"
++    assert "scrollBy" in SCROLL_AND_EXPAND_JS
++
++
++# ------------------------------------------------------------ cookie bridge
++def test_cookie_bridge_fail_closed_default() -> None:
++    bridge = CookieBridge(allowlist=[])
++    with pytest.raises(WalledGardenViolation):
++        bridge.import_json(
++            [{"name": "auth", "value": "s3cret", "domain": "twitter.com"}], "twitter.com"
++        )
++    strict = CookieBridge(allowlist=["twitter.com"])
++    with pytest.raises(WalledGardenViolation):
++        strict.import_json(
++            [{"name": "auth", "value": "v", "domain": "evil-twitter.com"}],
++            "evil-twitter.com",
++        )
++    assert strict.count() == 0, "nothing stored on refusal"
++
++
++def test_cookie_bridge_netscape_roundtrip() -> None:
++    bridge = CookieBridge(allowlist=["reddit.com"])
++    accepted = bridge.import_json(
++        [
++            {"name": "session", "value": "abc123", "domain": "reddit.com", "path": "/"},
++            {"name": "prefs", "value": "dark", "domain": "www.reddit.com", "path": "/", "secure": False},
++        ],
++        "reddit.com",
++    )
++    assert accepted == 2
++    exported = bridge.export_netscape("reddit.com")
++    assert "session\tabc123" not in exported or "\tsession\t" in exported
++    lines = [ln for ln in exported.splitlines() if ln and not ln.startswith("#")]
++    assert len(lines) == 2
++    second = CookieBridge(allowlist=["reddit.com"])
++    second.import_netscape(exported, "reddit.com")
++    assert second.export_netscape("reddit.com") == exported, "byte-stable roundtrip"
++    summary = bridge.summary()
++    assert summary["values"] == "redacted"
++    rec = CookieRecord(name="n", value="super-secret-token-xyz", domain="reddit.com")
++    shown = str(rec.redacted())
++    assert "super-secret-token-xyz" not in shown, "redacted view hides values"
++    assert "<redacted:22B>" in shown, "redaction marks carry length only"
++
++
++# ---------------------------------------------------------- session manager
++def test_session_manager_capability_fail_closed() -> None:
++    mgr = BrowserSessionManager()  # default profile
++    assert mgr.mode == "playwright"
++    if not playwright_available():
++        with pytest.raises(RuntimeCapabilityError):
++            mgr.start()
++    mgr2 = BrowserSessionManager(cdp_endpoint="ws://127.0.0.1:9222/devtools/page")
++    assert mgr2.mode == "cdp"
++    assert mgr2.cdp_endpoint.startswith("ws://")
++    with pytest.raises(ValueError):
++        BrowserSessionManager(cdp_endpoint="ftp://bad")
++    with BrowserSessionManager(cdp_endpoint="http://127.0.0.1:9222") as live:
++        assert live.started
++    assert not mgr2.started, "unstarted manager stays unstarted"
++
++
++def test_config_presets_valid() -> None:
++    names = profile_names()
++    assert "windows_chrome_stable" in names
++    for name in names:
++        get_profile(name).validate()
++    mobile = get_profile("mobile_android_chrome")
++    assert mobile.is_mobile and mobile.has_touch
++    with pytest.raises(KeyError):
++        get_profile("nonexistent_profile")

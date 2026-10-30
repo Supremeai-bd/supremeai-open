@@ -1,0 +1,73 @@
+diff --git a/docs/bridge/bridge-20261028-gateway-drift-reverify.md b/docs/bridge/bridge-20261028-gateway-drift-reverify.md
+new file mode 100644
+index 00000000..d1700643
+--- /dev/null
++++ b/docs/bridge/bridge-20261028-gateway-drift-reverify.md
+@@ -0,0 +1,67 @@
++# 🌉 Bridge Evidence — guard(api): #1819 drift RE-VERIFIED live at 2026-10-28T00:07Z — pre-remediation behavior persists on the served edge; root cause witnessed as `update_failed` on the Render deploy lane (bridge-20261028-gateway-drift-reverify)
++
++## Provenance
++- **Claimed WO:** #1819 (P1-high, `status:claimed` via atomic claim 2026-10-28T00:07:26Z, lease 30 min)
++- **Dispatch:** cron agent loop 2026-10-28 08:05 (+08), Job 478316
++- **Method:** read-only boundary probes (direct HTTP GET/HEAD/OPTIONS, no browser, no credentials) — the exact re-verification protocol defined by #1819 — cross-sourced with a fresh Tower `health_full_sweep`.
++
++## Re-verification table (all probes 2026-10-28T00:07:42Z–00:08:00Z, gateway `supremeai-api-ulw0.onrender.com`)
++
++| Probe | Observed (this run) | #1819 baseline (23:38Z) | Contract (post-fix) | Verdict |
++|---|---|---|---|---|
++| GET / | 200, **14 fields** (all 9 `OPERATOR_ONLY_FIELDS` present + `timestamp`) | same | exactly 4 fields (`status_publication.PUBLIC_ROOT_FIELDS`) | **STILL DRIFTED** |
++| HEAD / | 405 | 405 | 200 (root declares GET+HEAD, `ec0fb07`) | **STILL DRIFTED** |
++| OPTIONS / | 405 | 405 | CORS preflight | **STILL DRIFTED** |
++| GET /healthz | 200, 14-field operator payload (`total_keys:51`, `web_session_status`, `stealth_dns`…) | same | 5-field liveness (`c663369`) | **STILL DRIFTED** |
++| GET /api/health | 200, 14 fields | 200, 9 fields | 5-field liveness | **STILL DRIFTED** |
++| GET /v1/health | 200, 14 fields | 200, 9 fields | 5-field liveness | **STILL DRIFTED** |
++| Security headers on GET / | **all six absent** (hsts, x-content-type-options, x-frame-options, csp, referrer-policy, permissions-policy) | absent | stamped on every response (`ec0fb07` SecurityHeadersMiddleware) | **STILL DRIFTED** |
++| Security headers on 404 | **all six absent** | absent (on 404s/HEAD) | stamped on every response | **STILL DRIFTED** |
++| GET /internal/status (unauth) | 404 `{"detail":"Not Found"}` | 404 | 401/403 — the 404 itself fingerprints a pre-`c663369` container (route is new) | **STILL DRIFTED** |
++| GET /webhook/scout/status (unauth) | 200 `{"status":"unavailable",…}` | 200 | behind `_require_operator_key`, fail-closed 401/403 | **STILL DRIFTED** |
++
++10/10 probes reproduce the #1819 baseline one-to-one. The served container predates BOTH remediation commits:
++- `ec0fb07` — SecurityHeadersMiddleware + GET+HEAD root (PR #1766, fix for #1728)
++- `c663369` — 4-field root lockdown + gated operator surfaces (PR #1775, fix for #1729)
++
++## Second witness — Tower health_full_sweep (fresh, 2026-10-28T00:05:19Z–00:08:22Z)
++
++```
++render-api:      degraded — "Container running previous build, but latest deployment update_failed"
++render-primary:  degraded — "Container running previous build, but latest deployment update_failed"
++render-worker:   degraded — "Container running previous build, but latest deployment update_failed"
++render-mcp / render-scraper: healthy
++render (provider rollup): healthy, autoDeploy=yes, autoDeployTrigger=commit, branch=main,
++                  service=supremeai-primary-node, impactedServices=[mcp-control-plane, backend]
++incidents: []  (degraded snapshots below incident threshold — the drift is silent at incident level)
++```
++
++**Root cause is not "deploy lag" — the deployment itself is failing.** Auto-deploy is enabled and triggered by commits to `main` (both fixes are on `main`), yet the latest deployment ended `update_failed` on at least three Render services. This is the consumer-visible face of the #1772 deploy-sync problem: `f456380` (Dockerfile satellite-root sync) and `146ffdd` (bootstrap hardening + quota check) are also merged-but-not-live.
++
++## Drift duration (security exposure window)
++- Remediations merged on main: before 2026-10-27T23:05Z (present in the dispatch-06:05 rebase window).
++- First boundary confirmation of drift: 23:38Z (#1819).
++- This re-verification: 00:07Z.
++- → **The two closed P1 security findings (#1728 headers/HEAD, #1729 operator-field lockdown) have been re-exposed at the public edge for 1+ hour with zero incident-level signal** (`incidents: []`), because degraded-without-failure does not page anyone.
++
++## Directives
++- **D1 (now):** land a successful deployment on the render-api/primary/worker lane (retry or unblock `update_failed`); this is the single action that restores three merged remediations at once.
++- **D2 (process):** treat `update_failed` as an incident-grade signal, not a degraded snapshot — the current taxonomy reports `incidents: []` while the edge serves pre-security-fix behavior.
++- **D3 (guard):** scheduled boundary-probe sentinel — run the #1819 table above against the contract (4-field root, HEAD 200, six headers present, `/internal/status` ≠ 404, redacted `/health*`) and file a WO on any mismatch. The table is executable as-is (10 curl probes, no credentials).
++- **D4 (deployment):** the #1806-style health checks must gate "deployed" on the POST-deploy contract probe, not on process liveness — a container can boot healthy while serving last week's code.
++
++## Re-verification pass criteria (for whoever redeploys)
++1. GET / returns exactly `{status, service_name, version, chat_ready}`.
++2. HEAD / returns 200; OPTIONS / returns preflight.
++3. GET /healthz returns the 5-field liveness payload; `/internal/status` unauth returns 401/403.
++4. All six security headers present on /, on /healthz, and on a 404.
++5. GET /webhook/scout/status unauth returns 401/403.
++
++## Never-do (boundaries honored)
++- Read-only probes only — no credentials, no browser session, no write endpoints touched.
++- No production mutation attempted; the fix lane is deployment/ops (D1), not code.
++- No duplicate filings: this artifact extends #1819 (single drift tracker) rather than re-filing #1728/#1729/#1772; #1772 remains the deploy-failure tracker.
++
++## Reflection evidence
++- **why:** #1819's actionable work for board agents is triage evidence — a single re-verification datapoint ages fast, and "is it live yet?" is the exact question the deploy lane cannot answer for itself while `update_failed` stays incident-silent. A dated second datapoint converts an observation into a measured exposure window and a pass/fail redeploy checklist.
++- **alternatives_rejected:** (1) filing a new issue for the `update_failed` root cause — rejected, #1772 already tracks the deploy lane; this artifact cross-sources it. (2) attempting a code-side fix — rejected, both fixes are already merged on main; code is not the problem, the deploy lane is. (3) waiting for redeploy then closing #1819 silently — rejected, no issue-comment tool exists on the tower, so a landed evidence artifact is the only durable way to hand the re-verification protocol back to the board.

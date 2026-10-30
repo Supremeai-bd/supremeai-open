@@ -1,0 +1,268 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 15f1fab3..ae527eb0 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -10,7 +10,7 @@
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+     "test": "npm run test:unit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:preemptive-rotation && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:bridge-freshness && npm run test:queue-scope",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:preemptive-rotation && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:bridge-freshness",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -51,8 +51,7 @@
+     "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
+     "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
+-    "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
+-    "test:queue-scope": "tsx test_bridge_queue_scope.ts"
++    "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts"
+   },
+   "keywords": [
+     "mcp",
+@@ -73,4 +72,4 @@
+     "tsx": "^4.23.13",
+     "typescript": "^7.0.2"
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index c806f61b..d57fece6 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -622,8 +622,6 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+     lastActivityMs: number;
+     /** #48: slot binding re-verified live on every session request. */
+     slot?: { slotId: string; credentialId?: string };
+-    /** #621: honest unverified-fallback evidence propagated from SlotSession. */
+-    fallbackReason?: string;
+   }
+   const httpSessions = new Map<string, HttpSessionEntry>();
+ 
+@@ -1463,7 +1461,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           const sessionAuthenticated = Boolean(entry.slot || refreshedClient || role !== null);
+           const sessionAccessMode = accessModeFor(sessionRole, sessionAuthenticated);
+           const sessionScopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(sessionRole);
+-          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId, fallbackReason: entry.fallbackReason }, async () => {
++          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
+             await entry.transport.handleRequest(req, res, parsedBody);
+           });
+           return;
+@@ -1539,14 +1537,14 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           try { writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session could not be established" }, id: null }); } catch {}
+           return;
+         }
+-        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId, fallbackReason: session.fallbackReason }, async () => {
++        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
+           await httpTransport.handleRequest(req, res, parsedBody);
+         });
+         // The SDK assigns the session id DURING the initialize handshake; only
+         // register the entry if the handshake actually established one (and
+         // did not already tear the session down).
+         if (httpTransport.sessionId && !dropped) {
+-          httpSessions.set(httpTransport.sessionId, { transport: httpTransport, server: sessionServer, client: effectiveClient, lastActivityMs: Date.now(), slot: slotBinding, fallbackReason: session.fallbackReason });
++          httpSessions.set(httpTransport.sessionId, { transport: httpTransport, server: sessionServer, client: effectiveClient, lastActivityMs: Date.now(), slot: slotBinding });
+         }
+       });
+       return;
+@@ -1868,7 +1866,7 @@ async function main(): Promise<void> {
+     // identities survive redeploys/restarts without manual re-registration.
+     await initClientRegistry();
+ 
+-    // #2596: টাস্ক-কিউ রেজিস্���্রিও একই সারিতে হাইড্রেট — tower restart-এ
++    // #2596: টাস্ক-কিউ রেজিস্ট্রিও একই সারিতে হাইড্রেট — tower restart-এ
+     // চালু লিজ হারাবে না; সাথে প্রথম সিঙ্ক এগিয়ে ছোড়া (non-blocking)।
+     await initTaskRegistry();
+ 
+diff --git a/infrastructure/mcp-control-plane/src/policy/auth.context.ts b/infrastructure/mcp-control-plane/src/policy/auth.context.ts
+index 1d6446d4..c958435b 100644
+--- a/infrastructure/mcp-control-plane/src/policy/auth.context.ts
++++ b/infrastructure/mcp-control-plane/src/policy/auth.context.ts
+@@ -57,15 +57,6 @@ export interface RequestContext {
+   slotVerified?: boolean;
+   /** Audit-safe credential fingerprint (never the raw credential). */
+   credentialId?: string;
+-  /**
+-   * #621 (queue isolation): why an unverified fallback session exists
+-   * ("anonymous" or a slot-denial reason). Undefined = the caller presented
+-   * a VERIFIED credential (env key or registry client — slot-verification
+-   * Path A). Queue partitioning keys on this honest evidence, NOT on the
+-   * RBAC `authenticated` flag, because pre-production URL guests carry
+-   * authenticated:true by doctrine (TEMPORARY viewerFallback comment).
+-   */
+-  fallbackReason?: string;
+   /**
+    * Tool Exposure Policy: the client's curated tool-surface profile. Absent
+    * or undefined = full RBAC surface (no discovery filtering beyond RBAC).
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 4ef5a5a2..e5d8e31a 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -633,33 +633,6 @@ function isOpenIssue(raw: RawIssue): boolean {
+   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
+ }
+ 
+-/**
+- * #621 (queue isolation, acceptance criterion 1): public-open partition
+- * predicate. Unverified callers see ONLY repo:open work orders plus
+- * repo-unlabeled ones (agent-orchestration style); private-plane tickets
+- * (repo:infrastructure, repo:api, repo:studio, repo:monorepo, ...) can never
+- * leak into the unauthenticated view. Matches the documented queueScope
+- * contract advertised by bridge_guide.
+- */
+-export function isPublicQueueItem(labels: readonly string[] | undefined | null): boolean {
+-  const list = Array.isArray(labels) ? labels : [];
+-  const hasRepoLabel = list.some((l) => typeof l === "string" && l.startsWith("repo:"));
+-  return !hasRepoLabel || list.includes("repo:open");
+-}
+-
+-/**
+- * #621: queue-scope resolution for one request context. Verified evidence =
+- * a context WITHOUT fallbackReason (env-key / registry Path A) or no context
+- * at all (internal call paths, tests). Guest and slot-denial sessions carry
+- * fallbackReason from slot-verification and get the public-open partition.
+- * The RBAC `authenticated` flag is deliberately NOT used here: pre-production
+- * URL guests carry authenticated:true by doctrine (TEMPORARY viewerFallback).
+- */
+-export function queueScopeForContext(ctx?: { fallbackReason?: string } | null): "public-open" | "all-open" {
+-  const reason = ctx?.fallbackReason;
+-  return typeof reason === "string" && reason.length > 0 ? "public-open" : "all-open";
+-}
+-
+ /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
+ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+   const items = Array.isArray(rawIssues) ? rawIssues : [];
+@@ -734,24 +707,18 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           };
+         }
+         const queued = queueFromIssues(res.data, limit ?? 20);
+-        // #621 queue isolation: unverified (fallback) sessions only see the
+-        // public-open partition — private-plane tickets cannot leak into the
+-        // anonymous view. Verified sessions and internal paths see all open
+-        // orders. Honest evidence (fallbackReason), not the RBAC flag, drives
+-        // the split because pre-production guests are authenticated:true.
+-        const queueScope = queueScopeForContext(RequestContextStore.get());
+-        const workOrders =
+-          queueScope === "public-open" ? queued.filter((item) => isPublicQueueItem(item.labels)) : queued;
++        // Expose all active open issues so agents discover claimable federation work
++        const anonymous = RequestContextStore.get()?.authenticated !== true;
++        const workOrders = queued;
+         return {
+           content: [{
+             type: "text",
+             text: JSON.stringify({
+               repo,
+               label: appliedLabel,
+-              scope: queueScope,
++              scope: "all-open",
+               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
+-              callerAuthenticated: RequestContextStore.get()?.authenticated === true,
+-              callerVerified: queueScope === "all-open",
++              callerAuthenticated: !anonymous,
+               count: workOrders.length,
+               workOrders,
+               nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
+diff --git a/infrastructure/mcp-control-plane/test_bridge_queue_scope.ts b/infrastructure/mcp-control-plane/test_bridge_queue_scope.ts
+deleted file mode 100644
+index 02e1dae7..00000000
+--- a/infrastructure/mcp-control-plane/test_bridge_queue_scope.ts
++++ /dev/null
+@@ -1,96 +0,0 @@
+-/**
+- * #621 queue isolation (acceptance criterion 1) — public-open partition contract.
+- *
+- * বাংলা মন্তব্য: bridge.work_queue-এর partition চুক্তি এখন pure function দুটিতে
+- * বাঁধা আছে — verified (Path A credential) কলার সম্পূর্ণ কিউ দেখে, কিন্তু
+- * unverified fallback সেশন (URL guest / slot-denial) শুধু repo:open ও
+- * repo-label-বিহীন অর্ডার দেখে। প্রাইভেট-প্লেন টিকেট (repo:infrastructure,
+- * repo:api, repo:monorepo, ...) anonymous ভিউতে লিক করতে পারে না।
+- *
+- * Pure-function tier: no HTTP, no Redis, no credentials (offline-safe per the
+- * #116 env-skip contract).
+- *
+- * Run: npm run test:queue-scope   (wired into test:unit)
+- */
+-import assert from "node:assert/strict";
+-
+-import { isPublicQueueItem, queueScopeForContext } from "./src/tools/bridge.tools.js";
+-
+-let passed = 0;
+-function check(name: string, fn: () => void): void {
+-  fn();
+-  passed++;
+-  console.log(`  ✓ ${name}`);
+-}
+-
+-console.log("── 1. isPublicQueueItem: public-open partition predicate ──");
+-
+-check("repo:open item is public", () => {
+-  assert.equal(isPublicQueueItem(["P1-high", "repo:open", "status:unclaimed"]), true);
+-});
+-
+-check("item with NO repo:* label at all is public (agent-orchestration style)", () => {
+-  assert.equal(isPublicQueueItem(["P1-high", "status:unclaimed", "area:agent-orchestration"]), true);
+-});
+-
+-check("empty label list is public", () => {
+-  assert.equal(isPublicQueueItem([]), true);
+-});
+-
+-check("undefined/null labels are public (defensive)", () => {
+-  assert.equal(isPublicQueueItem(undefined), true);
+-  assert.equal(isPublicQueueItem(null), true);
+-});
+-
+-check("private-plane repo:infrastructure is NOT public", () => {
+-  assert.equal(isPublicQueueItem(["P0-critical", "repo:infrastructure", "area:ci"]), false);
+-});
+-
+-check("private-plane repo:api is NOT public", () => {
+-  assert.equal(isPublicQueueItem(["P0-critical", "repo:api", "area:ci"]), false);
+-});
+-
+-check("private-plane repo:monorepo is NOT public", () => {
+-  assert.equal(isPublicQueueItem(["P1-high", "repo:monorepo", "area:core-engine"]), false);
+-});
+-
+-check("repo:open overrides sibling private labels (still public)", () => {
+-  assert.equal(isPublicQueueItem(["repo:open", "P1-high"]), true);
+-});
+-
+-check("non-string entries never crash the predicate", () => {
+-  assert.equal(isPublicQueueItem([undefined as unknown as string, 42 as unknown as string]), true);
+-});
+-
+-console.log("── 2. queueScopeForContext: honest evidence classification ──");
+-
+-check("verified Path A context (no fallbackReason) sees all-open", () => {
+-  assert.equal(queueScopeForContext({ role: "agent" } as never), "all-open");
+-  assert.equal(queueScopeForContext({ authenticated: true } as never), "all-open");
+-});
+-
+-check("guest fallback context sees public-open", () => {
+-  assert.equal(queueScopeForContext({ fallbackReason: "anonymous" } as never), "public-open");
+-});
+-
+-check("slot-denial fallback contexts also see public-open (fail-closed)", () => {
+-  assert.equal(queueScopeForContext({ fallbackReason: "slot-credential-missing" } as never), "public-open");
+-  assert.equal(queueScopeForContext({ fallbackReason: "slot-credential-mismatch" } as never), "public-open");
+-});
+-
+-check("empty-string fallbackReason does NOT classify as fallback (defensive)", () => {
+-  assert.equal(queueScopeForContext({ fallbackReason: "" } as never), "all-open");
+-});
+-
+-check("missing context (internal paths / direct handler calls) sees all-open", () => {
+-  assert.equal(queueScopeForContext(undefined), "all-open");
+-  assert.equal(queueScopeForContext(null), "all-open");
+-});
+-
+-console.log(`\n✅ test_bridge_queue_scope: ${passed} assertions passed — #621 criterion 1 partition contract pinned`);
+-
+-// The deployed live defect this suite pins: before the fix, the queue handler
+-// ignored caller evidence entirely (workOrders = queued for EVERY caller) and
+-// URL guests carried authenticated:true via the pre-production viewerFallback,
+-// so private-plane tickets leaked into anonymous views (live-verified on
+-// main@3e07296: tokenless queue read reported callerAuthenticated:true).

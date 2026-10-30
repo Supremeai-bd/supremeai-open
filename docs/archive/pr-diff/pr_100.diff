@@ -1,0 +1,138 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index f7370a1e..667d2e1f 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -43,6 +43,30 @@ jobs:
+           except ValueError:
+               pass"
+ 
++      - name: Pick-Next Claim-Filter Contract Test (#88, offline stub)
++        run: |
++          python -c "
++          import json
++          import scripts.agents.continuous_agent_loop as loop
++          stub = [
++              {'number': 101, 'title': 'old unclaimed P1', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P1-high'}]},
++              {'number': 102, 'title': 'claimed p0 critical words', 'labels': [{'name': 'status:in-progress'}, {'name': 'P0-critical'}]},
++              {'number': 103, 'title': 'held work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'state:seq-hold'}]},
++              {'number': 104, 'title': 'unlabeled tail', 'labels': [{'name': 'status:unclaimed'}]}
++          ]
++          loop.run_cmd = lambda cmd: (0, json.dumps(stub), '')
++          picked = loop.pick_next_issue()
++          assert picked == '101', f'expected oldest claimable 101, got {picked}'
++          stub2 = [
++              {'number': 55, 'title': 'totally high-level prose title', 'labels': [{'name': 'status:unclaimed'}]},
++              {'number': 66, 'title': 'nothing special', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P0-critical'}]}
++          ]
++          loop.run_cmd = lambda cmd: (0, json.dumps(stub2), '')
++          assert loop.pick_next_issue() == '66', 'real P0 label must outrank prose titles'
++          assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
++          print('pick-next claim-filter contract: OK (#88)')
++          "
++
+   tower-verify:
+     name: Tower TS Verification (typecheck + contract-safe tests)
+     runs-on: ubuntu-latest
+diff --git a/.github/workflows/continuous-agent-loop.yml b/.github/workflows/continuous-agent-loop.yml
+index 38361be7..0c706142 100644
+--- a/.github/workflows/continuous-agent-loop.yml
++++ b/.github/workflows/continuous-agent-loop.yml
+@@ -64,12 +64,14 @@ jobs:
+       # is actionable when evidence confirms it… No-actionable-finding must be
+       # recorded explicitly without creating issue storms." An empty upstream
+       # board is a recorded no-op, NOT a red run and NOT a silent skip.
+-      - name: Board pre-check (explicit no-op on empty board)
++      # #88: has_work reflects CLAIMABLE work only (status:unclaimed, whole
++      # board) so the cron no-ops when every open issue is already claimed.
++      - name: Board pre-check (explicit no-op on empty or fully-claimed board)
+         id: board
+         run: |
+           set -euo pipefail
+-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 1 --json number,title)
+-          echo "board snapshot: $BOARD"
++          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title)
++          echo "claimable-board snapshot: $BOARD"
+           if [ "$BOARD" = "[]" ]; then
+             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
+             echo "has_work=false" >> "$GITHUB_OUTPUT"
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 18a264e2..850db55a 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -379,28 +379,59 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
+ 
+ 
+ def pick_next_issue() -> str | None:
+-    """Fetch the highest priority unclaimed open issue from GitHub."""
+-    code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--limit", "20", "--json", "number,title,labels"])
++    """Fetch the highest priority claimable open issue from GitHub.
++
++    Selection policy (#88):
++      - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
++        claimed/in-progress, sequence-held and blocked boards are never
++        (re)dispatched.
++      - Whole-board scope: pagination limit high enough that truncation cannot
++        starve old issues (verified: board regularly holds 35+ open issues).
++      - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
++        titles can no longer outrank a real priority label; age (lowest issue
++        number) breaks ties per AGENT_RULES.md §5.
++    """
++    code, out, _ = run_cmd([
++        "gh", "issue", "list",
++        "--repo", UPSTREAM_REPO,
++        "--state", "open",
++        "--limit", "200",
++        "--json", "number,title,labels",
++    ])
+     if code != 0 or not out.strip():
+         return None
+     try:
+         issues = json.loads(out)
+ 
+-        def priority_key(item: dict[str, Any]) -> int:
+-            title = item.get("title", "").lower()
+-            labels = [l.get("name", "").lower() for l in item.get("labels", [])] if isinstance(item.get("labels"), list) else []
+-            combined = f"{title} {' '.join(labels)}"
+-            if "p0" in combined or "critical" in combined:
+-                return 0
+-            if "p1" in combined or "high" in combined:
+-                return 1
+-            if "p2" in combined or "medium" in combined:
+-                return 2
+-            if "p3" in combined or "low" in combined:
+-                return 3
+-            return 4
+-
+-        sorted_issues = sorted(issues, key=priority_key)
++        CLAIMABLE_LABEL = "status:unclaimed"
++        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream"}
++
++        def label_names(item: dict[str, Any]) -> list[str]:
++            labels = item.get("labels")
++            if not isinstance(labels, list):
++                return []
++            return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
++
++        def is_claimable(item: dict[str, Any]) -> bool:
++            names = label_names(item)
++            if CLAIMABLE_LABEL not in names:
++                return False
++            return not (EXCLUDED_LABELS & set(names))
++
++        # Explicit priority map — LABELS ONLY (title prose must not influence).
++        PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
++
++        def priority_key(item: dict[str, Any]) -> tuple[int, int]:
++            names = label_names(item)
++            tier = 4  # unlabeled sorts last
++            for marker, rank in PRIORITY_MAP:
++                if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
++                    tier = rank
++                    break
++            return (tier, int(item.get("number", 0)))  # number ASC = oldest first
++
++        candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
++        sorted_issues = sorted(candidates, key=priority_key)
+         if sorted_issues:
+             return str(sorted_issues[0].get("number"))
+     except Exception:

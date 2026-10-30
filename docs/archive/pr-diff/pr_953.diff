@@ -1,0 +1,56 @@
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 83172dc5..2713b0ce 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -2,7 +2,7 @@ import React from 'react';
+ import { Link } from 'react-router-dom';
+ import { FileText, History, Menu, Search, Sparkles, WandSparkles, Wrench, X, Zap } from 'lucide-react';
+ import { UnifiedChatBubble } from '../components/chat/UnifiedChatBubble';
+-import { brandFrom, brandTooltip, TIER_CLASS, Brand } from '../lib/brandLabel';
++import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../lib/brandLabel';
+ 
+ // ROOT-CAUSE RESTYLE (Refs #878 / bridge-20261023-frontend-guestchat-cosmic):
+ // বাংলা মন্তব্য: গেস্ট চ্যাট আগে legacy slate/cyan প্যালেট ব্যবহার করত ও নিজের
+diff --git a/studio/src/pages/auth/LoginPage.tsx b/studio/src/pages/auth/LoginPage.tsx
+index 4e8c1d6f..5e2df472 100644
+--- a/studio/src/pages/auth/LoginPage.tsx
++++ b/studio/src/pages/auth/LoginPage.tsx
+@@ -1,7 +1,7 @@
+ import React, { useState } from 'react';
+ import { useNavigate, Link } from 'react-router-dom';
+ import { motion } from 'framer-motion';
+-import { useAuthStore } from '../../store/authStore';
++import { useAuthStore, AuthStatus } from '../../store/authStore';
+ import { ServiceHealthBar } from '../../components/auth/ServiceHealthBar';
+ import { apiClient } from '../../services/apiClient';
+ 
+@@ -24,7 +24,7 @@ export const LoginPage: React.FC = () => {
+ 
+   // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
+   React.useEffect(() => {
+-    if (status === 'LOGGED_IN') {
++    if (status === AuthStatus.LOGGED_IN) {
+       navigate('/workspace', { replace: true });
+     }
+   }, [status, navigate]);
+diff --git a/studio/src/pages/auth/RegisterPage.tsx b/studio/src/pages/auth/RegisterPage.tsx
+index 5bd62691..2dc96709 100644
+--- a/studio/src/pages/auth/RegisterPage.tsx
++++ b/studio/src/pages/auth/RegisterPage.tsx
+@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+ import { useNavigate, Link } from 'react-router-dom';
+-import { useAuthStore } from '../../store/authStore';
++import { useAuthStore, AuthStatus } from '../../store/authStore';
+ 
+ // ROOT-CAUSE RESTYLE (Refs #890 funnel / Cosmic auth):
+ // বাংলা মন্তব্য: রেজিস্ট্রেশন পেজ আগে legacy neon/--supremeai-color-* টোকেন
+@@ -19,7 +19,7 @@ export const RegisterPage: React.FC = () => {
+ 
+   // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
+   React.useEffect(() => {
+-    if (status === 'LOGGED_IN') {
++    if (status === AuthStatus.LOGGED_IN) {
+       navigate('/workspace', { replace: true });
+     }
+   }, [status, navigate]);

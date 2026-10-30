@@ -1,0 +1,126 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index f951071d..6a448e6d 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -27,6 +27,7 @@
+ import hashlib
+ import json
+ import os
++import re
+ import subprocess
+ import sys
+ import time
+@@ -433,8 +434,14 @@ def pick_issue(all_issues: list[dict[str, Any]], exclude: set[str]) -> dict[str,
+ # ---------------------------------------------------------------------------
+ 
+ def _fingerprint(text: str) -> str:
+-    """Stable short hash for dedup — based on normalized title."""
++    """Stable short hash for dedup — based on normalized title.
++
++    CI-failure titles embed the workflow run id (``(Run #123...)``) which is
++    different on every failure; stripping it keeps the fingerprint stable so
++    the zero-duplicate contract (U4) holds across repeated CI incidents.
++    """
+     normalized = " ".join(text.lower().split())
++    normalized = re.sub(r"\(run #\d+\)", "", normalized)
+     return hashlib.sha1(normalized.encode()).hexdigest()[:12]
+ 
+ 
+@@ -766,8 +773,13 @@ def claim(issue_num: int, dry_run: bool) -> bool:
+     return True
+ 
+ 
+-def release(issue_num: int, reason: str) -> None:
++def release(issue_num: int, reason: str, dry_run: bool = False) -> None:
+     log("🔓", f"[Release] #{issue_num}: {reason}")
++    if dry_run:
++        # Dry-run purity: release mutates the live board (label + comment);
++        # stripping another agent's claim from a simulation is never safe.
++        log("🔍", "[DRY-RUN] Release skipped (no board write).")
++        return
+     run(["gh", "issue", "edit", str(issue_num),
+          "--repo", UPSTREAM_REPO, "--remove-label", "status:claimed"])
+     run(["gh", "issue", "comment", str(issue_num),
+@@ -837,7 +849,30 @@ def run_cycle(
+     log("📋", f"[Board] {len(all_issues)} open issues fetched.")
+ 
+     # ── PICK ──────────────────────────────────────────────────────────────
+-    issue = pick_issue(all_issues, exclude)
++    if getattr(args, "issue", None):
++        # Explicit operator targeting: pick the requested issue directly instead
++        # of the board-priority heuristic. Hard claimability blocks (anchor
++        # hubs, admin-only, already-claimed labels) still apply; claim() has
++        # its own TOCTOU re-check as the second line of defense.
++        wanted = str(args.issue)
++        issue = next(
++            (i for i in all_issues if str(i.get("number")) == wanted), None
++        )
++        if issue is None:
++            code, data = gh_api(f"/repos/{UPSTREAM_REPO}/issues/{wanted}", token=token)
++            if (
++                code == 200
++                and isinstance(data, dict)
++                and data.get("number")
++                and "pull_request" not in data
++            ):
++                issue = data
++                all_issues.append(issue)
++        if issue is None or not _is_claimable(issue):
++            log("❌", f"[Pick] Issue #{wanted} not found or not claimable.")
++            return "fail"
++    else:
++        issue = pick_issue(all_issues, exclude)
+ 
+     if not issue:
+         # Board empty — try to create from action plan
+@@ -880,7 +915,16 @@ def run_cycle(
+     if not args.dry_run:
+         run(["git", "config", "user.name", "supremeai-bot"])
+         run(["git", "config", "user.email", "bot@supremeai.org"])
+-        run(["git", "checkout", "-b", branch])
++        # Branch names are deterministic (agent/issue-<num>-<slug>), so a local
++        # branch left by a previous failed cycle makes `checkout -b` fail — and
++        # proceeding on the wrong branch would open a PR from garbage. Clear
++        # the stale local branch, then fail honestly if checkout still fails.
++        run(["git", "branch", "-D", branch])
++        rc, _, err = run(["git", "checkout", "-b", branch])
++        if rc != 0:
++            log("❌", f"[Branch] {err.strip()[:200]}")
++            release(issue_num, f"branch create failed: {err.strip()[:100]}", dry_run=args.dry_run)
++            return "fail"
+ 
+     # ── VERIFY ────────────────────────────────────────────────────────────
+     files = get_changed_files()
+@@ -888,7 +932,7 @@ def run_cycle(
+ 
+     if not passed:
+         log("❌", f"[Verify] {errors}")
+-        release(issue_num, f"verify failed: {errors}")
++        release(issue_num, f"verify failed: {errors}", dry_run=args.dry_run)
+         return "fail"
+ 
+     log("✅", f"[Verify] {len(files)} file(s) clean.")
+@@ -906,7 +950,7 @@ def run_cycle(
+             log("🤝", "[Handoff] No implementation on branch — task envelope emitted for specialist agent.")
+         except Exception as exc:
+             log("⚠️", f"[Handoff] envelope emission failed: {exc}")
+-        release(issue_num, "no implementation attached — envelope emitted for specialist handoff (no empty PR)")
++        release(issue_num, "no implementation attached — envelope emitted for specialist handoff (no empty PR)", dry_run=args.dry_run)
+         return "idle"
+ 
+     # ── REBASE ────────────────────────────────────────────────────────────
+@@ -916,12 +960,12 @@ def run_cycle(
+         if rc != 0:
+             run(["git", "rebase", "--abort"])
+             log("❌", f"[Rebase] {err.strip()[:200]}")
+-            release(issue_num, "rebase failed")
++            release(issue_num, "rebase failed", dry_run=args.dry_run)
+             return "fail"
+ 
+     # ── PR ────────────────────────────────────────────────────────────────
+     if not open_pr(issue, branch, args.dry_run):
+-        release(issue_num, "PR failed")
++        release(issue_num, "PR failed", dry_run=args.dry_run)
+         return "fail"
+ 
+     log("✅", f"[Done] #{issue_num} complete. Branch: {branch}")

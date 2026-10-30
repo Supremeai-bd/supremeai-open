@@ -1,0 +1,398 @@
+diff --git a/core/tools/conversation_manager.py b/core/tools/conversation_manager.py
+index 881d4732..69017a10 100644
+--- a/core/tools/conversation_manager.py
++++ b/core/tools/conversation_manager.py
+@@ -1,7 +1,7 @@
+ import uuid
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ConversationManager:
+diff --git a/core/tools/devops/auto_coverage_improver.py b/core/tools/devops/auto_coverage_improver.py
+index 01da5886..d2e46f15 100644
+--- a/core/tools/devops/auto_coverage_improver.py
++++ b/core/tools/devops/auto_coverage_improver.py
+@@ -3,7 +3,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.code.auto_test_generator import AutoTestGenerator
+ from tools.devops.coverage_auditor import CoverageAuditor
+ 
+diff --git a/core/tools/devops/coverage_auditor.py b/core/tools/devops/coverage_auditor.py
+index 0abefc75..a63ccfc8 100644
+--- a/core/tools/devops/coverage_auditor.py
++++ b/core/tools/devops/coverage_auditor.py
+@@ -4,7 +4,7 @@
+ 
+ import defusedxml.ElementTree as ET  # -- standard idiom (mirrors stdlib xml.etree.ElementTree as ET)
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/tools/devops/docker_sandbox.py b/core/tools/devops/docker_sandbox.py
+index b4d00eae..6095074c 100644
+--- a/core/tools/devops/docker_sandbox.py
++++ b/core/tools/devops/docker_sandbox.py
+@@ -7,7 +7,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class DockerSandbox:
+diff --git a/core/tools/devops/gcp_cloud_functions.py b/core/tools/devops/gcp_cloud_functions.py
+index 890888c2..728ebb6e 100644
+--- a/core/tools/devops/gcp_cloud_functions.py
++++ b/core/tools/devops/gcp_cloud_functions.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class GCPCloudFunctionClient:
+diff --git a/core/tools/devops/github_agent.py b/core/tools/devops/github_agent.py
+index 1e9d4075..e425d69d 100644
+--- a/core/tools/devops/github_agent.py
++++ b/core/tools/devops/github_agent.py
+@@ -5,7 +5,7 @@
+ from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.security_vault import decrypt_token
+ from models.integration import Integration
+ 
+diff --git a/core/tools/devops/on_premise_deployer.py b/core/tools/devops/on_premise_deployer.py
+index 86c936c3..de711b43 100644
+--- a/core/tools/devops/on_premise_deployer.py
++++ b/core/tools/devops/on_premise_deployer.py
+@@ -2,7 +2,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import yaml  # type: ignore
+diff --git a/core/tools/ensemble_router.py b/core/tools/ensemble_router.py
+index b50ccc2b..22c5b19e 100644
+--- a/core/tools/ensemble_router.py
++++ b/core/tools/ensemble_router.py
+@@ -7,7 +7,7 @@
+ import asyncio
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class EnsembleRouter:
+diff --git a/core/tools/ephemeral_synthesizer.py b/core/tools/ephemeral_synthesizer.py
+index 4682e7ad..a6fed0c8 100644
+--- a/core/tools/ephemeral_synthesizer.py
++++ b/core/tools/ephemeral_synthesizer.py
+@@ -24,7 +24,7 @@
+ 
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.codegen_gate import (
+     denied_reason,
+     inprocess_codegen_enabled,
+diff --git a/core/tools/graph_service.py b/core/tools/graph_service.py
+index 0901092f..44bb7c65 100644
+--- a/core/tools/graph_service.py
++++ b/core/tools/graph_service.py
+@@ -4,7 +4,7 @@
+     AsyncGraphDatabase = None
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: স্কিল ইন্টিগ্রেশন এবং নলেজ গ্রাফ ম্যাপিং করার সার্ভিস লেয়ার।
+ 
+diff --git a/core/tools/headless_agent_registry.py b/core/tools/headless_agent_registry.py
+index 5ef05e87..67c8faf1 100644
+--- a/core/tools/headless_agent_registry.py
++++ b/core/tools/headless_agent_registry.py
+@@ -19,7 +19,7 @@
+ def get_headless_agent_configs() -> dict[str, dict[str, Any]]:
+     """বাংলা মন্তব্য: সব হেডলেস এজেন্টের কনফিগারেশন রিটার্ন করে। (ডাটাবেস থেকে)"""
+     try:
+-        from core.logging_config import logger
++        from core.monitoring.logging_config import logger
+         from tools.mcp.mcp_supabase import _get_connection
+ 
+         conn = _get_connection()
+diff --git a/core/tools/health_checker.py b/core/tools/health_checker.py
+index 82d0718a..8d65bba8 100644
+--- a/core/tools/health_checker.py
++++ b/core/tools/health_checker.py
+@@ -7,7 +7,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class HealthChecker:
+diff --git a/core/tools/knowledge/codebase_exporter.py b/core/tools/knowledge/codebase_exporter.py
+index 8866d5f9..2fe2be00 100644
+--- a/core/tools/knowledge/codebase_exporter.py
++++ b/core/tools/knowledge/codebase_exporter.py
+@@ -4,7 +4,7 @@
+ import subprocess
+ import tempfile
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ IGNORE_DIRS: set[str] = {
+     ".git",
+diff --git a/core/tools/knowledge/git_knowledge_extractor.py b/core/tools/knowledge/git_knowledge_extractor.py
+index d1b5e775..7e4bd01a 100644
+--- a/core/tools/knowledge/git_knowledge_extractor.py
++++ b/core/tools/knowledge/git_knowledge_extractor.py
+@@ -18,7 +18,7 @@
+ import time
+ import uuid
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from core.feedback_loop import FeedbackLoop
+diff --git a/core/tools/knowledge/knowledge_base_indexer.py b/core/tools/knowledge/knowledge_base_indexer.py
+index bc6c2692..ba82fc62 100644
+--- a/core/tools/knowledge/knowledge_base_indexer.py
++++ b/core/tools/knowledge/knowledge_base_indexer.py
+@@ -14,7 +14,7 @@
+ import os
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from memory.chromadb_store import ChromaDBStore
+ 
+ 
+diff --git a/core/tools/knowledge/local_search_rag.py b/core/tools/knowledge/local_search_rag.py
+index 4d8f8184..b952d4bf 100644
+--- a/core/tools/knowledge/local_search_rag.py
++++ b/core/tools/knowledge/local_search_rag.py
+@@ -13,7 +13,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Import BrowserAgent here to handle it separately
+ from tools.ai_agents.browser_agent import BrowserAgent
+diff --git a/core/tools/knowledge/pdf_to_sdk.py b/core/tools/knowledge/pdf_to_sdk.py
+index 7f3fd075..6d934c79 100644
+--- a/core/tools/knowledge/pdf_to_sdk.py
++++ b/core/tools/knowledge/pdf_to_sdk.py
+@@ -9,7 +9,7 @@
+ import re
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class PDFToSDKConverter:
+diff --git a/core/tools/knowledge/repo_deep_indexer.py b/core/tools/knowledge/repo_deep_indexer.py
+index 7f249fee..b4bb508c 100644
+--- a/core/tools/knowledge/repo_deep_indexer.py
++++ b/core/tools/knowledge/repo_deep_indexer.py
+@@ -4,7 +4,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class RepoDeepIndexer:
+diff --git a/core/tools/launchdarkly_agent_adapter.py b/core/tools/launchdarkly_agent_adapter.py
+index 736ca457..587c023e 100644
+--- a/core/tools/launchdarkly_agent_adapter.py
++++ b/core/tools/launchdarkly_agent_adapter.py
+@@ -6,7 +6,7 @@
+ import sys
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Add backend directory to sys.path
+ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+@@ -23,7 +23,7 @@
+     from ldclient.context import Context
+     from ldobserve import ObservabilityConfig, ObservabilityPlugin, observe
+ 
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     INTEGRATION_OK = True
+ except ImportError as e:
+diff --git a/core/tools/learning/agent_knowledge_store.py b/core/tools/learning/agent_knowledge_store.py
+index 6624199d..2e124a99 100644
+--- a/core/tools/learning/agent_knowledge_store.py
++++ b/core/tools/learning/agent_knowledge_store.py
+@@ -7,7 +7,7 @@
+ import datetime
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.storage.gcp_firestore import GCPFirestoreVerificationQueue
+ 
+ 
+diff --git a/core/tools/learning/domain_adapter.py b/core/tools/learning/domain_adapter.py
+index 48ebeeb3..784937df 100644
+--- a/core/tools/learning/domain_adapter.py
++++ b/core/tools/learning/domain_adapter.py
+@@ -2,7 +2,7 @@
+ import os
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ 
+ 
+diff --git a/core/tools/learning/model_trainer.py b/core/tools/learning/model_trainer.py
+index 77d09d34..ce4b27a4 100644
+--- a/core/tools/learning/model_trainer.py
++++ b/core/tools/learning/model_trainer.py
+@@ -5,7 +5,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ModelTrainer:
+diff --git a/core/tools/learning/rlhf_pipeline.py b/core/tools/learning/rlhf_pipeline.py
+index 268ba9cc..e177f025 100644
+--- a/core/tools/learning/rlhf_pipeline.py
++++ b/core/tools/learning/rlhf_pipeline.py
+@@ -3,7 +3,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class RLHFPipeline:
+diff --git a/core/tools/learning/skill_recommender.py b/core/tools/learning/skill_recommender.py
+index 9e7f5134..adb0ff81 100644
+--- a/core/tools/learning/skill_recommender.py
++++ b/core/tools/learning/skill_recommender.py
+@@ -26,7 +26,7 @@
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+diff --git a/core/tools/learning/style_learner.py b/core/tools/learning/style_learner.py
+index 8e5e5c82..757e6fc4 100644
+--- a/core/tools/learning/style_learner.py
++++ b/core/tools/learning/style_learner.py
+@@ -6,7 +6,7 @@
+ from pydantic import BaseModel
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/style", tags=["style-learner"])
+ 
+diff --git a/core/tools/localization/bangla_ai_connector.py b/core/tools/localization/bangla_ai_connector.py
+index 017bc5fa..bf558ec2 100644
+--- a/core/tools/localization/bangla_ai_connector.py
++++ b/core/tools/localization/bangla_ai_connector.py
+@@ -6,7 +6,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class BanglaAiConnector:
+diff --git a/core/tools/localization/bangla_voice.py b/core/tools/localization/bangla_voice.py
+index 7901755e..24b70217 100644
+--- a/core/tools/localization/bangla_voice.py
++++ b/core/tools/localization/bangla_voice.py
+@@ -3,7 +3,7 @@
+ import os
+ from dataclasses import dataclass
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/tools/localization/bengali_ocr_converter.py b/core/tools/localization/bengali_ocr_converter.py
+index da01d458..9e1afcd3 100644
+--- a/core/tools/localization/bengali_ocr_converter.py
++++ b/core/tools/localization/bengali_ocr_converter.py
+@@ -15,7 +15,7 @@
+     vision = None
+     service_account = None
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def setup_google_vision(credentials_path=None):
+diff --git a/core/tools/localization/local_ocr_extractor.py b/core/tools/localization/local_ocr_extractor.py
+index 9e1951bb..9008a51e 100644
+--- a/core/tools/localization/local_ocr_extractor.py
++++ b/core/tools/localization/local_ocr_extractor.py
+@@ -1,6 +1,6 @@
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class LocalOCRExtractor:
+diff --git a/core/tools/mcp/mcp_cloud_deploy.py b/core/tools/mcp/mcp_cloud_deploy.py
+index fcb8612f..097a066e 100644
+--- a/core/tools/mcp/mcp_cloud_deploy.py
++++ b/core/tools/mcp/mcp_cloud_deploy.py
+@@ -17,7 +17,7 @@
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # শেয়ার্ড ইউটিলিটি — ডুপ্লিকেট কোড দূর করতে কেন্দ্রীয় মডিউল থেকে ইম্পোর্ট
+ from utils.environment import is_admin_authorized

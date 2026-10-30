@@ -1,0 +1,124 @@
+diff --git a/docs/bridge/bridge-20261030-ci1745-uv-adoption-runbook.md b/docs/bridge/bridge-20261030-ci1745-uv-adoption-runbook.md
+new file mode 100644
+index 00000000..6361375a
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-ci1745-uv-adoption-runbook.md
+@@ -0,0 +1,118 @@
++# Bridge Runbook — #1745 (R29): uv adoption for CI installs — SHA-pinned setup + lockfile consumption
++
++**Task ID:** `bridge-20261030-ci1745-uv-adoption-r3` (consolidated single-file delivery; lane r1 = the 2026-10-29T20:53:16Z packaging claim on #1745, 8-file cluster r2 hollowed — see §8)
++**Lane:** P2-medium · repo:monorepo · [#1745](https://github.com/Supremeai-bd/supremeai-open/issues/1745) · follow-up lane documented by merged PR #2936 (R29 acceptance items 1-2 unmet)
++**Admin lane:** `.github/**` is protected (#1643; #1769 live-proves the bridge rejects those writes). This runbook packages a verified workflow diff for a **single admin commit**. Lane precedent: #1709 via PR #2680.
++**Verified against:** origin/main `92bf439` (2026-10-29T20:35Z), re-line-checked 2026-10-30 @ `50fd1b1c` (0 behind; raw-pip sites unchanged — `.github/**` is admin-only so no drift source). Tool: `uv` **0.13.6** (scout-verified; MIT, Astral — vendor of the standardized ruff).
++
++---
++
++## 1. Scope & boundary
++
++- **Agent-side (landed/in-boundary):** Part A — committed `requirements-dev.lock` (uv-compiled) — already on main via PR #2873, completing the pair referenced by the `requirements-dev.txt` header note. **Zero CI behavior change** — nothing consumes the lock until the admin diff below lands.
++- **Admin-side (single commit, this runbook §3):** 3 jobs × `pipeline.yml` — add SHA-pinned `astral-sh/setup-uv`, replace the 4 raw-pip lines with lock/pin-based `uv pip install`, add the lock-freshness gate.
++- Nothing outside `requirements-dev.*` + `docs/bridge/` is touched by the agent lane. `.github/**` is not edited by the agent (#1643).
++
++## 2. Current state (line-anchored evidence @ 92bf439, re-verified @ 50fd1b1c)
++
++Four raw-pip install sites across three jobs (exact replacements verbatim in §3):
++
++- Site 1 — `fast-lint-syntax-preflight` (job at L506): pyyaml install at **L519**.
++- Site 2 — `fast-lint-syntax-preflight`: import-linter install from `requirements-dev.txt` at **L521**.
++- Site 3 — `test-matrix` (job at L549): two-line block at **L573-574** (pip self-upgrade, then pyyaml).
++- Site 4 — `agent-loop` (job at L955): quiet pyyaml install at **L983**.
++
++- `rg "uv pip|setup-uv|uv sync|uvx" .github/workflows/ scripts/` → **zero footprint** (idempotency: lane unstarted upstream).
++- CI's **only** requirements-file consumption is L521 (`import-linter==2.15`, the import-contract gate #1791). Domain manifests (`core/`, `gateway/`, `browser/`) are **not installed by any CI job today**.
++- `requirements-dev.txt` header anticipated this lane ("pip equivalent until the R29 uv-lockfile lane (#1745) lands").
++
++## 3. Admin patch (apply verbatim, single commit)
++
++Tool refs:
++- `astral-sh/setup-uv` **v10.3.3** = lightweight tag → commit `68559e99cc807c1eb7e9238fd43a15bba460eec2` (`git ls-remote`-verified 2026-10-29). Full-SHA pin per `scripts/ci/check_actions_pinning.py` house rule.
++- `uv` pinned to **0.13.6** via the action's `version:` input — lock-freshness determinism couples the uv resolver version to the committed lock (bump protocol §6).
++- `pyyaml==6.0.3` — current latest (probed 2026-10-29); pinning converts the floating ref into a reviewable one-line bump.
++
++### Hunk 1 — `fast-lint-syntax-preflight` (after the `Setup Python` step, ~L517)
++
++```yaml
++      - name: "Setup uv (R29 #1745 — SHA-pinned per check_actions_pinning house rule)"
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
++        with:
++          version: "0.13.6"
++          enable-cache: true
++      - name: Install PyYAML
++        run: uv pip install --system pyyaml==6.0.3
++      - name: Install import-linter (import-contract gate, #1791)
++        run: uv pip install --system -r requirements-dev.lock
++      - name: Lock freshness gate (R29 acceptance item 2 - CI validates lock freshness)
++        run: |
++          set -euo pipefail
++          uv pip compile requirements-dev.txt -o /tmp/fresh.lock --quiet
++          diff <(tail -n +3 /tmp/fresh.lock) <(tail -n +3 requirements-dev.lock)
++```
++
++(replaces current L519 and L521)
++
++### Hunk 2 — `test-matrix` (immediately before the `Install dependencies` step, ~L571)
++
++```yaml
++      - name: "Setup uv (R29 #1745)"
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
++        with:
++          version: "0.13.6"
++          enable-cache: true
++      - name: Install dependencies
++        run: |
++          uv pip install --system pyyaml==6.0.3
++```
++
++(replaces L573-574; the pip self-upgrade line is dropped — nothing in this job invokes pip afterwards)
++
++### Hunk 3 — `agent-loop` (immediately before the `Install PyYAML (dispatcher tier-3 verification dependency)` step, ~L981)
++
++```yaml
++      - name: "Setup uv (R29 #1745)"
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
++        with:
++          version: "0.13.6"
++          enable-cache: true
++      - name: Install PyYAML (dispatcher tier-3 verification dependency)
++        run: uv pip install --quiet --system pyyaml==6.0.3
++```
++
++(replaces L983; the L977-980 comment block above it stays untouched)
++
++`--system` is required in all three jobs: `uv pip install` refuses to operate without a venv unless `--system` targets the `setup-python` interpreter on PATH.
++
++## 4. Verification legs (executed locally on 92bf439, 2026-10-29)
++
++- **V1 — surface census:** 4 raw-pip lines across exactly 3 jobs (§2); zero pre-existing uv footprint; no lock files; `requirements-dev.txt` = single pin `import-linter==2.15`.
++- **V2 — lock compile:** `uv pip compile requirements-dev.txt -o requirements-dev.lock` exit 0 → 8 pins: `click==8.5.0`, `grimp==3.18`, `import-linter==2.15`, `markdown-it-py==4.2.0`, `mdurl==0.1.2`, `pygments==2.21.0`, `rich==15.0.0`, `typing-extensions==4.16.0`.
++- **V3 — determinism:** repeated compiles byte-identical **modulo the 2-line autogen header** (embeds the `-o` path; hence the normalized `tail -n +3` diff in the gate). Normalized recompile diff = empty.
++- **V4 — equivalence + honest benchmark:** two clean venvs, same machine/network window, 2 runs each: pip 1.846 s / 1.575 s; uv 0.350 s / 0.061 s → **5.3x-25.8x**. `pip freeze` parity: **byte-identical**. Honesty: local probe, not the CI matrix job; admin's first post-landing CI run completes the before/after loop.
++- **V5 — structural safety:** the §3 hunks were applied locally to `pipeline.yml` (never pushed, restored after): step-name/run-line inventory diff == exactly the intended edits (setup-uv x3, freshness gate x1, run-line replacements x4; zero drift) via object-equality + pickle-hash (pre `1c99c4180ca82695` / post `0a0c6d3fd0d164a2`); repo guard `deploy_preflight_guard.py --step1-syntax` exit 0 — 2278 Python + 72 JSON + 31 YAML files clean. **Typing note for admin:** keep the two step names containing `#` **double-quoted** — in YAML plain scalars an unquoted `#` starts a comment and truncates the name (live-proven locally).
++- **V6 — idempotency:** 0 open PRs at claim time; `verdictHistory` empty; no competing claim on #1745.
++
++## 5. Landing order & closure semantics
++
++1. **Agent-side (done/in flight):** Part A lock landed via PR #2873; this runbook (part B) is the remaining pair member — merging it changes no CI behavior (lock unconsumed until step 2). Safe-to-land by construction.
++2. **Admin commit** — apply §3 hunks verbatim. Post-landing, `fast-lint-syntax-preflight` installs from the committed lock and enforces freshness; `test-matrix`/`agent-loop` install pinned pyyaml via uv.
++3. **Closure** — #1745 was closed by the verdict plane (2026-10-29T22:07Z) on the strength of part A; admin application of §3 completes acceptance items 1-2 the closure pre-declared (the gap documented in merged PR #2936). Same semantics as the #1709/#2680 landing.
++
++## 6. Maintenance protocol
++
++- **Dep bump:** edit `requirements-dev.txt` → `uv pip compile requirements-dev.txt -o requirements-dev.lock` → commit both (lock body = the reviewable resolution diff).
++- **uv bump:** bump the `version:` input in all 3 setup-uv steps **and** recompile the lock in the same commit (resolver-version coupling).
++- **pyyaml bump:** one-line `pyyaml==` change at the 3 install sites, single commit.
++- **Freshness-gate triage:** a red gate = lock no longer matches manifest — recompile; never hand-edit the lock.
++
++## 7. Alternatives rejected
++
++1. **setup-uv without `version:` pin** — freshness determinism drifts with uv releases. 2. **`pip install uv` bootstrap** — reintroduces the pip chain into the <10s preflight job. 3. **Second lock for pyyaml** — one-package surface; inline pin suffices. 4. **Domain locks now** — deferred WITH census evidence: no CI job installs domain requirements today; unconsumed locks are speculative surface. 5. **`uv sync` / pyproject rewrite** — rejected by the WO itself (requirements.txt stays SSOT). 6. **`uv.lock` binary** — text locks are diff-reviewable, `pip install -r` fallback preserved.
++
++## 8. Provenance & cycle disclosure
++
++- Lane r1: claim GRANT_NEW on #1745 at 2026-10-29T20:53:16Z (feedback-plane `latestClaim: null` verified pre-claim), renewed pre-submit. Same-window siblings: #1776 dispatch dropped on Tower/live divergence (Tower was right), #1673 WIP dropped (landed via #2801).
++- Gate defects isolated (clean ladder, c30-c31 + c34): temporal throttle ~20-call/session (403-storm class, #2133); a content rule rejecting a verbatim table row; a **multi-file hollow path (6 attempts incl. cluster r2: no branch, empty 200)**; and a single-file size envelope (~10KB: 9.7KB landed c29, 10.4-11.5KB hollow) — hence this consolidated single-file delivery. Filing debris disclosed in merged PR #2936.
++- Full saga: agent worklog cycles 30-31 + 34 (Job 478342).

@@ -1,0 +1,394 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 14dc6d49..51d3c915 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -493,6 +493,7 @@ jobs:
+       - name: Stream landed patch reference via Webhook / Bridge Intake (#107)
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
+           BRIDGE_WEBHOOK_URL: ${{ secrets.BRIDGE_WEBHOOK_URL }}
+           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
+@@ -680,20 +681,23 @@ jobs:
+               with open(body_path, "w", encoding="utf-8") as fh:
+                   fh.write(body)
+               issue_title = "Bridge Work Order — " + title + " (" + task_id + ") [target: " + slug + "]"
++              header = "## 🌉 " + issue_title + "\n\n"
++              with open(body_path, "w", encoding="utf-8") as fh:
++                  fh.write(header + body)
+               cmd = [
+-                  "gh", "issue", "create", "--repo", os.environ["GITHUB_REPOSITORY"],
+-                  "--title", issue_title, "--body-file", body_path, "--label", "bridge:queued",
+-                  "--parent", str(BRIDGE_HUB_ANCHOR)
++                  "gh", "issue", "comment", str(BRIDGE_HUB_ANCHOR),
++                  "--repo", os.environ["GITHUB_REPOSITORY"],
++                  "--body-file", body_path
+               ]
+ 
+               try:
+                   r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                   if r.returncode == 0:
+-                      print("✅ " + slug + " -> " + r.stdout.strip() + " [Sub-Issue of Anchor #" + str(parent_anchor) + "]")
++                      print("✅ " + slug + " -> Logged inside Bridge Hub #" + str(BRIDGE_HUB_ANCHOR))
+                   else:
+-                      print("::warning::issue create failed for " + slug + ": " + r.stderr.strip())
++                      print("::warning::bridge order comment failed for " + slug + ": " + r.stderr.strip())
+               except Exception as exc:  # noqa: BLE001
+-                  print("::warning::issue create exception for " + slug + ": " + str(exc))
++                  print("::warning::bridge order exception for " + slug + ": " + str(exc))
+           PYEOF
+ 
+           # 3. Optional low-latency signal (best-effort; satellites may ignore it)
+diff --git a/scripts/ci/admin_sovereignty_guard.py b/scripts/ci/admin_sovereignty_guard.py
+index a744fd45..f5e59c13 100644
+--- a/scripts/ci/admin_sovereignty_guard.py
++++ b/scripts/ci/admin_sovereignty_guard.py
+@@ -42,6 +42,7 @@
+ 
+ ADMIN_ONLY_LABEL: Final = "authority:admin-only"
+ DENIAL_CODE: Final = "CLAIM_DENIED_ADMIN_ONLY"
++DOMAIN_MISMATCH_CODE: Final = "CLAIM_DENIED_DOMAIN_MISMATCH"
+ GRANT_CODE: Final = "GRANT"
+ LANE_SWARM: Final = "swarm"
+ LANE_ADMIN: Final = "admin-only"
+@@ -100,6 +101,99 @@ def quarantine_decision(labels: Sequence[str] | None, issue_number: int) -> Deci
+     )
+ 
+ 
++def extract_domain_from_labels(labels: Sequence[str] | None) -> str | None:
++    """Extract a routing domain from labels (domain:* or repo:* or target_repo shorthand)."""
++    if not isinstance(labels, (list, tuple, set, frozenset)):
++        return None
++    for label in labels:
++        if not isinstance(label, str):
++            continue
++        low = label.strip().lower()
++        for prefix in ("domain:", "repo:"):
++            if low.startswith(prefix):
++                return low[len(prefix):].strip() or None
++    return None
++
++
++def domain_scope_decision(
++    issue_domain: str | None,
++    agent_allowed_domains: Sequence[str] | None,
++    issue_number: int,
++) -> Decision:
++    """Domain-scope claim decision: agent may only claim issues in its allowed domains."""
++    allowed = (
++        [str(d).strip().lower() for d in agent_allowed_domains]
++        if isinstance(agent_allowed_domains, (list, tuple, set, frozenset))
++        else []
++    )
++    if not issue_domain:
++        # no domain tag -> cannot verify scope -> fail-closed deny
++        return Decision(
++            allowed=False,
++            code=DOMAIN_MISMATCH_CODE,
++            message=(
++                f"CLAIM_DENIED_DOMAIN_MISMATCH: Issue #{issue_number} has no "
++                "domain tag; cannot verify agent scope (fail-closed)."
++            ),
++            execution_lane=LANE_SWARM,
++        )
++    dom = issue_domain.strip().lower()
++    if dom not in allowed:
++        return Decision(
++            allowed=False,
++            code=DOMAIN_MISMATCH_CODE,
++            message=(
++                f"CLAIM_DENIED_DOMAIN_MISMATCH: Agent scope {allowed or ['(none)']} "
++                f"cannot claim domain '{dom}' (issue #{issue_number})."
++            ),
++            execution_lane=LANE_SWARM,
++        )
++    return Decision(
++        allowed=True,
++        code=GRANT_CODE,
++        message=f"Issue #{issue_number} domain '{dom}' is within agent scope.",
++        execution_lane=LANE_SWARM,
++    )
++
++
++def quarantine_decision(  # type: ignore[no-redef]
++    labels: Sequence[str] | None,
++    issue_number: int,
++    *,
++    issue_domain: str | None = None,
++    agent_allowed_domains: Sequence[str] | None = None,
++) -> Decision:
++    """D1: the fail-closed claim decision for one issue.
++
++    Backward compatible: when issue_domain/agent_allowed_domains are not
++    supplied, only the admin-only check runs (existing contract).
++    """
++    # admin-only check first (highest priority)
++    if is_admin_only(labels):
++        return Decision(
++            allowed=False,
++            code=DENIAL_CODE,
++            message=(
++                f"CLAIM_DENIED_ADMIN_ONLY: Issue #{issue_number} is "
++                "strictly reserved for human Admin execution. "
++                "Autonomous bots cannot claim."
++            ),
++            execution_lane=LANE_ADMIN,
++        )
++    # optional domain-scope check
++    if issue_domain is not None or agent_allowed_domains is not None:
++        dom = issue_domain
++        if dom is None:
++            dom = extract_domain_from_labels(labels)
++        ddec = domain_scope_decision(dom, agent_allowed_domains, issue_number)
++        if not ddec.allowed:
++            return ddec
++    return Decision(
++        allowed=True,
++        code=GRANT_CODE,
++        message=f"Issue #{issue_number} is swarm-claimable.",
++        execution_lane=LANE_SWARM,
++    )
+ def filter_pick_next(
+     candidates: Sequence[Mapping],
+ ) -> tuple[list[Mapping], list[Mapping]]:
+@@ -218,6 +312,16 @@ def self_test() -> bool:
+         except ValueError as exc:
+             captured.append(str(exc))
+     assert len(captured) == 3 and all("labels" in c for c in captured)
++
++    # Domain-scope check
++    dd = domain_scope_decision("studio", ["studio", "vscode"], 7)
++    assert dd.allowed and dd.code == GRANT_CODE
++    dd2 = domain_scope_decision("core", ["studio"], 8)
++    assert not dd2.allowed and dd2.code == DOMAIN_MISMATCH_CODE
++    assert domain_scope_decision(None, ["studio"], 9).code == DOMAIN_MISMATCH_CODE
++    assert extract_domain_from_labels(["domain:studio", "P1-high"]) == "studio"
++    assert extract_domain_from_labels(["repo:core"]) == "core"
++    assert extract_domain_from_labels(["enhancement"]) is None
+     return True
+ 
+ 
+@@ -236,6 +340,11 @@ def _cli(argv: Sequence[str] | None = None) -> int:
+     )
+     parser.add_argument("--labels-json", help="JSON list of label strings")
+     parser.add_argument("--issue", type=int, default=0)
++    parser.add_argument("--domain", help="issue domain (e.g. studio) for scope check")
++    parser.add_argument(
++        "--allowed-domains",
++        help="comma-separated agent allowed domains (e.g. studio,vscode)",
++    )
+     parser.add_argument(
+         "--filter",
+         action="store_true",
+@@ -249,8 +358,14 @@ def _cli(argv: Sequence[str] | None = None) -> int:
+         return EXIT_ALLOW
+     try:
+         if args.check:
++            allowed_domains = None
++            if args.allowed_domains:
++                allowed_domains = [x.strip() for x in args.allowed_domains.split(",") if x.strip()]
+             decision = quarantine_decision(
+-                _parse_labels(args.labels_json or "[]"), args.issue
++                _parse_labels(args.labels_json or "[]"),
++                args.issue,
++                issue_domain=args.domain,
++                agent_allowed_domains=allowed_domains,
+             )
+             print(
+                 json.dumps(
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 33b80a69..ba59ef9b 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -231,28 +231,22 @@ def gh_api(
+         return 0, {"error": str(e)}
+ 
+ 
++CI_FAILURE_ANCHOR = 761
++
++
+ def check_existing_mirror(
+     repo: str, run_id: int | str, token: str | None = None
+ ) -> int | None:
+-    """Check if an OPEN issue on supremeai-open already carries this run's marker.
+-
+-    Paginates up to 3 pages of 100 OPEN items (PRs excluded inside
+-    find_mirror_in_items). A CLOSED mirror means the failure was fixed - a
+-    re-listed failed run after that is a genuinely new event and SHOULD get
+-    a new issue, so only the open plane participates in deduplication.
+-    """
+-    for page in (1, 2, 3):
+-        code, res = gh_api(
+-            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
+-            token=token,
+-        )
+-        if code != 200 or not isinstance(res, list):
+-            return None
+-        found = find_mirror_in_items(res, repo, run_id)
+-        if found is not None:
+-            return found
+-        if len(res) < 100:
+-            break
++    """Check if this run's marker already exists in CI Failure Hub #761 comments."""
++    needle = f"{repo}/actions/runs/{run_id}"
++    code, comments = gh_api(
++        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100",
++        token=token,
++    )
++    if code == 200 and isinstance(comments, list):
++        for c in comments:
++            if needle in (c.get("body") or ""):
++                return int(c.get("id", 0))
+     return None
+ 
+ 
+@@ -266,48 +260,36 @@ def mirror_failure(
+     error_summary: str = "",
+     token: str | None = None,
+ ) -> bool:
+-    """Create a mirrored issue on supremeai-open if not already existing."""
++    """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
+     existing = check_existing_mirror(repo, run_id, token=token)
+     if existing:
+-        print(f"[watchdog] Mirror already exists on {OPEN_REPO}#{existing}. Skipping.")
++        print(f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping.")
+         return True
+ 
+     title = build_issue_title(workflow_name, repo, branch, run_id)
+-    body = build_issue_body(
+-        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
++    body = (
++        f"## 🚨 CI Failure Incident: {title}\n\n"
++        + build_issue_body(
++            repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
++        )
+     )
+-    labels = build_issue_labels(repo)
+-
+-    data = {
+-        "title": title,
+-        "body": body,
+-        "labels": labels,
+-    }
+ 
+     code, resp = gh_api(
+-        f"repos/{OPEN_REPO}/issues", token=token, method="POST", data=data
++        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments",
++        token=token,
++        method="POST",
++        data={"body": body},
+     )
+     if code == 201:
+-        issue_num = resp.get("number")
+-        issue_url = resp.get("html_url")
++        cid = resp.get("id")
++        curl = resp.get("html_url")
+         print(
+-            f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}"
++            f"✅ [watchdog] Mirrored CI failure from {repo} into CI Hub #{CI_FAILURE_ANCHOR} (comment #{cid}): {curl}"
+         )
+-        CI_FAILURE_ANCHOR = 761
+-        if link_sub_issue and issue_num:
+-            linked = link_sub_issue(CI_FAILURE_ANCHOR, issue_num, repo=OPEN_REPO, token=token)
+-            if linked:
+-                print(
+-                    f"🔗 [watchdog] Linked #{issue_num} as Sub-Issue under CI Incident Hub #{CI_FAILURE_ANCHOR} (repo: {repo})"
+-                )
+-            else:
+-                print(
+-                    f"⚠️ [watchdog] Notice: could not link #{issue_num} under CI Incident Hub #{CI_FAILURE_ANCHOR}"
+-                )
+         return True
+     else:
+         print(
+-            f"❌ [watchdog] Failed to create mirror issue on {OPEN_REPO} (HTTP {code}): {resp}"
++            f"❌ [watchdog] Failed to record incident into CI Hub #{CI_FAILURE_ANCHOR} (HTTP {code}): {resp}"
+         )
+         return False
+ 
+diff --git a/scripts/ci/satellite_board_guard.py b/scripts/ci/satellite_board_guard.py
+index 90e18382..e7e7303c 100644
+--- a/scripts/ci/satellite_board_guard.py
++++ b/scripts/ci/satellite_board_guard.py
+@@ -375,13 +375,37 @@ def main() -> int:
+         default=DEFAULT_ORG,
+         help=f"GitHub organization (default: {DEFAULT_ORG})",
+     )
++    parser.add_argument(
++        "--scopes",
++        help="comma-separated satellite short keys to audit (e.g. studio,vscode); default: all",
++    )
++    parser.add_argument(
++        "--via-tower",
++        action="store_true",
++        help="scope audit to AGENT_ALLOWED_DOMAINS env (comma-separated short keys)",
++    )
+     args = parser.parse_args()
+ 
+     if args.self_test:
+         return 0 if self_test() else 1
+-
+     token = _env_token()
+-    reports = audit_all(org=args.org, token=token)
++
++    # Resolve scoped satellite set (roadmap L2: scoped audit mode)
++    scoped = None
++    if args.via_tower:
++        raw = os.environ.get("AGENT_ALLOWED_DOMAINS", "")
++        scoped = [s.strip() for s in raw.split(",") if s.strip()]
++    elif args.scopes:
++        scoped = [s.strip() for s in args.scopes.split(",") if s.strip()]
++    if scoped:
++        satellites = tuple(s for s in SATELLITES if s in scoped)
++        if not satellites:
++            print("MALFORMED INPUT (fail-closed): no valid satellite scopes resolved")
++            return 3
++    else:
++        satellites = SATELLITES
++
++    reports = audit_all(org=args.org, token=token, satellites=satellites)
+ 
+     if args.as_json:
+         print(json.dumps(build_json(reports, args.org), indent=2))
+diff --git a/tests/test_admin_sovereignty.py b/tests/test_admin_sovereignty.py
+index cb44ddde..70f0b9bd 100644
+--- a/tests/test_admin_sovereignty.py
++++ b/tests/test_admin_sovereignty.py
+@@ -148,7 +148,35 @@ def test_lane_values(self):
+         self.assertEqual(guard.LANE_SWARM, "swarm")
+ 
+ 
+-class TestSelfTestAndCli(unittest.TestCase):
++class TestDomainScopeAndCli(unittest.TestCase):
++    def test_domain_in_scope_allowed(self):
++        d = guard.domain_scope_decision("studio", ["studio", "vscode"], 1)
++        self.assertTrue(d.allowed)
++        self.assertEqual(d.code, guard.GRANT_CODE)
++
++    def test_domain_out_of_scope_denied(self):
++        d = guard.domain_scope_decision("core", ["studio"], 2)
++        self.assertFalse(d.allowed)
++        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
++
++    def test_missing_domain_denied(self):
++        d = guard.domain_scope_decision(None, ["studio"], 3)
++        self.assertFalse(d.allowed)
++        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
++
++    def test_quarantine_decision_with_domain(self):
++        d = guard.quarantine_decision(SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"])
++        self.assertFalse(d.allowed)
++        self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
++
++    def test_quarantine_decision_domain_ok(self):
++        d = guard.quarantine_decision(SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"])
++        self.assertTrue(d.allowed)
++
++    def test_extract_domain(self):
++        self.assertEqual(guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio")
++        self.assertEqual(guard.extract_domain_from_labels(["repo:core"]), "core")
++        self.assertIsNone(guard.extract_domain_from_labels(["enhancement"]))
+     def test_module_self_test_passes(self):
+         self.assertTrue(guard.self_test())
+ 

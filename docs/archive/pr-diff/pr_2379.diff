@@ -1,0 +1,196 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 6ed548b1..82e08077 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-verdicts",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-verdicts && npm run test:github-pagination",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -65,7 +65,8 @@
+     "test:bridge-dedup": "tsx test_bridge_dedup.ts",
+     "test:bridge-titles": "tsx test_bridge_titles.ts",
+     "test:bridge-staleness": "tsx test_bridge_staleness.ts",
+-    "test:bridge-verdicts": "tsx test_bridge_verdicts.ts"
++    "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
++    "test:github-pagination": "tsx test_github_pagination.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/lib/github_pagination.ts b/infrastructure/mcp-control-plane/src/lib/github_pagination.ts
+new file mode 100644
+index 00000000..c7189170
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/github_pagination.ts
+@@ -0,0 +1,19 @@
++/**
++ * Resolve the effective page size for the GitHub list tools.
++ *
++ * #2311 / R62: the list-tool schemas exposed `limit` only, while GitHub-
++ * REST-conventional callers send `per_page` — zod strips unknown keys, so
++ * the per_page value was silently discarded and the call degraded to the
++ * default 5-row window with zero truncation signal (probe discriminator:
++ * per_page=1 still returned 5 rows — the argument was discarded, not
++ * clamped). Precedence: per_page ?? limit ?? fallback, clamped to GitHub's
++ * documented 1..100 per_page envelope; junk input falls back rather than
++ * throwing (page size is a window preference, never a hard failure).
++ */
++export function resolvePerPage(perPage: unknown, limit: unknown, fallback = 5): number {
++  const raw = perPage ?? limit;
++  if (raw === undefined || raw === null || raw === "") return fallback;
++  const n = Number(raw);
++  if (!Number.isFinite(n)) return fallback;
++  return Math.min(Math.max(Math.trunc(n), 1), 100);
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 0944bd28..06961902 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -1,6 +1,7 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+ import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode, createIssue } from "../adapters/github/index.js";
++import { resolvePerPage } from "../lib/github_pagination.js"; // #2311/R62 per_page alias
+ import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
+ import { scopeAllows } from "../policy/client-registry.js";
+ import { buildAccountRegistry } from "../registry/account.registry.js";
+@@ -136,10 +137,12 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
+       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+       repo: z.string().optional().describe("Target repository name"),
++      per_page: z.number().int().min(1).max(100).optional().describe(
++        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+       runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
+     },
+-    async ({ action, accountId, repo, limit, runId }: { action: string; accountId?: string; repo?: string; limit?: number; runId?: string }) => {
++    async ({ action, accountId, repo, per_page, limit, runId }: { action: string; accountId?: string; repo?: string; per_page?: number; limit?: number; runId?: string }) => {
+       const target = repo || accountId || "github-primary";
+       const targetUrl = repoUrlFor(accountId, repo);
+       const deny = assertRepoReadAccess("github.actions_op", target, targetUrl);
+@@ -147,7 +150,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+ 
+       try {
+         if (action === "list_runs") {
+-          const runs = await getWorkflowRuns(target, limit || 5);
++          const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
+           return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
+         }
+         if (action === "get_failed_logs") {
+@@ -170,15 +173,17 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     {
+       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+       repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
++      per_page: z.number().int().min(1).max(100).optional().describe(
++        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+     },
+-    async ({ accountId, repo, limit }) => {
++    async ({ accountId, repo, per_page, limit }) => {
+       const target = repo || accountId || "github-primary";
+       const targetUrl = repoUrlFor(accountId, repo);
+       const deny = assertRepoReadAccess("github.workflow_runs", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const runs = await getWorkflowRuns(target, limit || 5);
++        const runs = await getWorkflowRuns(target, resolvePerPage(per_page, limit));
+         return {
+           content: [{ type: "text", text: JSON.stringify(runs, null, 2) }],
+         };
+@@ -279,15 +284,17 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+       repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+       state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
++      per_page: z.number().int().min(1).max(100).optional().describe(
++        "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+       limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+     },
+-    async ({ accountId, repo, state, limit }) => {
++    async ({ accountId, repo, state, per_page, limit }) => {
+       const target = repo || accountId || "github-primary";
+       const targetUrl = repoUrlFor(accountId, repo);
+       const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const prs = await listPullRequests(target, state ?? "open", limit ?? 5);
++        const prs = await listPullRequests(target, state ?? "open", resolvePerPage(per_page, limit));
+         return {
+           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
+         };
+diff --git a/infrastructure/mcp-control-plane/test_github_pagination.ts b/infrastructure/mcp-control-plane/test_github_pagination.ts
+new file mode 100644
+index 00000000..335bb826
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_github_pagination.ts
+@@ -0,0 +1,67 @@
++/**
++ * #2311 / R62 — GitHub list-tool per_page alias regression battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Replays the live probe (2026-10-29, R62): the three list-tool schemas
++ * (github.list_prs, github.workflow_runs, github.actions_op list_runs)
++ * exposed `limit` only, while GitHub-REST-conventional callers send
++ * `per_page` — zod strips unknown keys, so the value was silently
++ * discarded and every call degraded to the default 5-row window with
++ * zero truncation signal (per_page=1 -> 5 rows was the discriminator:
++ * discarded, not clamped). resolvePerPage is the shared precedence rule:
++ * per_page ?? limit ?? fallback, clamped to GitHub's 1..100 envelope,
++ * junk falls back (a window preference is never a hard failure).
++ */
++import { resolvePerPage } from "./src/lib/github_pagination.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n── ${title} ──`);
++}
++
++function main(): void {
++  section("P1 precedence: per_page wins over limit");
++  check("per_page=25, limit=5 -> 25", resolvePerPage(25, 5) === 25, String(resolvePerPage(25, 5)));
++  check("per_page=1, limit=50 -> 1 (the R62 discriminator)", resolvePerPage(1, 50) === 1, String(resolvePerPage(1, 50)));
++  check("per_page=0 with limit set -> clamp to 1 (zod blocks int<=0; defensive path)", resolvePerPage(0, 5) === 1, String(resolvePerPage(0, 5)));
++
++  section("P2 limit is honored when per_page absent");
++  check("limit=50 alone -> 50", resolvePerPage(undefined, 50) === 50, String(resolvePerPage(undefined, 50)));
++  check("limit=25 alone -> 25", resolvePerPage(undefined, 25) === 25, String(resolvePerPage(undefined, 25)));
++
++  section("P3 fallback: neither knob (or junk) -> default 5");
++  check("both undefined -> 5", resolvePerPage(undefined, undefined) === 5, String(resolvePerPage(undefined, undefined)));
++  check("both null -> 5", resolvePerPage(null, null) === 5, String(resolvePerPage(null, null)));
++  check("empty string -> 5", resolvePerPage("", 5) === 5, String(resolvePerPage("", 5)));
++  check("NaN string junk -> 5", resolvePerPage("lots", undefined) === 5, String(resolvePerPage("lots", undefined)));
++  check("explicit fallback honored", resolvePerPage(undefined, undefined, 10) === 10, String(resolvePerPage(undefined, undefined, 10)));
++
++  section("P4 GitHub 1..100 envelope clamp");
++  check("per_page=500 -> 100", resolvePerPage(500, undefined) === 100, String(resolvePerPage(500, undefined)));
++  check("limit=500 (legacy unconstrained knob) -> 100", resolvePerPage(undefined, 500) === 100, String(resolvePerPage(undefined, 500)));
++  check("per_page=0.5 -> 1", resolvePerPage(0.5, undefined) === 1, String(resolvePerPage(0.5, undefined)));
++  check("per_page=12.7 -> 12 (truncate, never round up)", resolvePerPage(12.7, undefined) === 12, String(resolvePerPage(12.7, undefined)));
++  check("per_page=100 boundary kept", resolvePerPage(100, undefined) === 100, String(resolvePerPage(100, undefined)));
++
++  section("P5 honesty: the alias must not regress to silent discard");
++  check("per_page=5, limit=5 -> 5 (identity)", resolvePerPage(5, 5) === 5, String(resolvePerPage(5, 5)));
++  check("per_page=2 -> 2 (NOT the 5-row hard window)", resolvePerPage(2, undefined) === 2, String(resolvePerPage(2, undefined)));
++
++  console.log("\n=============================================");
++  if (failures === 0) {
++    console.log("ALL GITHUB PAGINATION TESTS PASSED (#2311/R62)");
++  } else {
++    console.error(`${failures} TEST(S) FAILED (#2311/R62)`);
++  }
++  process.exit(failures === 0 ? 0 : 1);
++}
++
++main();

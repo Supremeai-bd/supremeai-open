@@ -1,0 +1,115 @@
+diff --git a/docs/ops/CI3195_CLOSURE_2026-10-30.md b/docs/ops/CI3195_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..ca8aa05f
+--- /dev/null
++++ b/docs/ops/CI3195_CLOSURE_2026-10-30.md
+@@ -0,0 +1,109 @@
++# CI Incident #3195 — Closure Record: RESOLVED-BY-CLOSURE, superseded on main (docs-only)
++
++**Task ID:** bridge-20261030-ci3195-closure · **Closes #3195** · **Probed:** 2026-10-30T11:01–11:17Z
++**Claim:** GRANT_NEW on #3195 at 11:17:27Z (TTL 30m → 11:47:27Z), GLM Agent 13 (Job 486783).
++
++## 1. What the incident row says
++
++WO #3195 (P2-medium, handoff:coder, area:ci, repo:open, status:runway) mirrors a
++**CI — Open Unified Pipeline** failure on `Supremeai-bd/supremeai-open`, branch
++`3192/merge` — the PR lane of **PR #3192** — referencing workflow run **41042525263**.
++Its own body routes PR-lane failures to triage-evidence, not a main-side fix, and its
++Protected-Path Routing Note (#2512) says: check the board for a triage report before
++claiming; workflow-internal root causes are admin-only.
++
++## 2. Failure mechanism (Tier-1 log evidence, fetched via tower `get_failed_logs`)
++
++The failing job is **🛬 Autonomous Auto-Landing** (exit 1 at 2026-10-30T10:41:32Z):
++
++```
++Evaluating PR #3192 for autonomous squash-merge...
++✅ All verification tests and constitutional guards passed! Executing autonomous squash-merge...
++GraphQL: Pull Request has merge conflicts (mergePullRequest)
++##[error]Process completed with exit code 1.
++```
++
++All verification tests and constitutional guards **passed**; the merge attempt itself
++failed because PR #3192 had conflicts with `main` at that moment. Not a code failure.
++
++## 3. Board check — triage already exists (per the WO's own contract)
++
++Peer triage **PR #3199** (`bridge-20261030-ci3192-conflict-triage`, commit `d9be19f`)
++is **merged into main** — main run **7573** ran green on exactly that SHA at
++10:47:57Z. Its verdict matches §2: conflict-blind auto-landing exit, not a code
++failure; it hands the admin the repeat-class fix sketch (conflict-aware auto-landing:
++defer/retry, never bare exit 1) and the author lane the rebase remedy. It referenced
++#3195 without closing because at 10:45Z the PR was still open and the incident live.
++
++## 4. Live ground truth — the incident has since resolved itself (probes 11:01–11:17Z)
++
++**(a) The failing lane no longer exists.** PR #3192 is **CLOSED, unmerged**
++(`state: closed`, `mergedAt: null`; probed via `list_prs state=all`). The
++author-lane remedy (rebase the bridge branch) is moot: there is no open PR to rebase,
++and board agents cannot push to a closed lane anyway.
++
++**(b) Main has been continuously green since the incident.** Eleven consecutive
++successful main runs of the same workflow, ten distinct HEADs, ~20 minutes — every run
++newer than the incident, zero newer reds on main (all reds in the window sit on peer
++PR branches: `bridge/…closure-live-state-r1`, `bridge/…closure-live-gate`,
++`feat/hybrid-external-web-agent…`, `bridge/…premise-delivered-residual-r1`,
++`bridge/…readme-roster-first-r2` — unrelated lanes):
++
++| # | Run | SHA | Started (UTC) | Verdict |
++|----|------------|---------|---------------------|---------|
++| 1 | 7560 | `b24a031` | 2026-10-30T10:41:15Z | success |
++| 2 | 7561 | `b24a031` | 2026-10-30T10:41:34Z | success |
++| 3 | 7562 | `139b73e` | 2026-10-30T10:42:02Z | success |
++| 4 | 7566 | `1f2c864` | 2026-10-30T10:44:28Z | success |
++| 5 | 7573 | `d9be19f` | 2026-10-30T10:47:57Z | success |
++| 6 | 7574 | `46ceff9` | 2026-10-30T10:48:08Z | success |
++| 7 | 7584 | `ac27024` | 2026-10-30T10:49:06Z | success |
++| 8 | 7588 | `1a11491` | 2026-10-30T10:49:49Z | success |
++| 9 | 7589 | `4f80905` | 2026-10-30T10:50:28Z | success |
++| 10 | 7593 | `358b239` | 2026-10-30T10:55:21Z | success |
++| 11 | 7596 | `28658fb` | 2026-10-30T11:01:01Z | success |
++
++This is 2× the ≥5-green supersession bar of the picker's own mechanical demotion rule
++(#3050). Note run 7573: main is green **on the merged triage commit itself**.
++
++## 5. Why this row must close (dispatch-hygiene datum)
++
++The stale-sentry demoted 16 superseded rows in this dispatch cycle, yet #3195 was still
++served as the top pick: its referenced run is a PR lane, so the main-run supersession
++check does not demote it mechanically. Without a deliberate closure record the row keeps
++re-dispatching to agents who must each re-derive §§2–4 from scratch — exactly the
++treadmill class documented in CI3019_CLOSURE_2026-10-30.md. Closing it is the root-cause
++fix for this instance of the treadmill, not a masking action.
++
++## 6. Resolution asked
++
++Close #3195 as **resolved-by-closure / superseded**. Acceptance criteria: (1) inspect
++failing logs — satisfied by merged triage #3199 and §2 above; (2) fix root cause — moot
++for this incident (PR closed unmerged, lane gone, main 11× green); the repeat-class
++remedy (conflict-aware auto-landing) is admin-lane and already sketched in #3199;
++(3) submit via bridge — this record. Closing does not mask new failures: any future red
++mints a fresh incident WO with its own run ID. Zero `.github/` content touched
++(docs-only; protected paths untouched).
++
++## 7. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**ঘটনা কী ছিল:** #3195 টিকিটে বলা ছিল — PR #3192-এর CI লেনে (run 41042525263) "Autonomous
++Auto-Landing" ধাপ ব্যর্থ হয়েছে।
++
++**সত্য কারণ কী:** লগ বলছে — সব টেস্ট ও গার্ড **পাস** করেছে, কিন্তু merge করার সময় GitHub
++বলেছে "Pull Request has merge conflicts"। অর্থাৎ কোডের ত্রুটি নয় — PR-টার সাথে main-এর
++কনফ্লিক্ট ছিল বলেই ব্যর্থতা।
++
++**আগেই কে দেখেছে:** PR #3199-এ আরেক এজেন্ট এই একই ঘটনার triage করে main-এ ল্যান্ড করেছে
++(কমিট `d9be19f`), এবং সেই কমিটেই main সবুজ (green) হয়েছে (run 7573)।
++
++**এখন অবস্থা কী:** আমি জীবন্ত যাচাই করে দেখলাম — (১) PR #3192 এখন **বন্ধ**, merge হয়নি;
++ফলে ব্যর্থ লেনটাই আর নেই। (২) ঘটনার পর থেকে main-এ **টানা ১১টা সফল পাইপলাইন রান**
++(১০টি আলাদা HEAD, ~২০ মিনিট), main-এ একটিও নতুন লাল (red) রান নেই।
++
++**সিদ্ধান্ত:** এই টিকিটে আর কোনো কোড-ফিক্স করার কিছু নেই — তাই প্রমাণসহ closure record
++জমা দিয়ে #3195 বন্ধ হওয়ার অনুরোধ করছি। ভবিষ্যতে নতুন ব্যর্থতা এলে সেটার নিজস্ব run ID নিয়ে
++নতুন টিকিট আসবে — এই বন্ধতা কোনো সমস্যা ঢাকবে না। (প্রতিকার: conflict-aware auto-landing —
++সেটা admin-এর লেনে, #3199-তে স্কেচ করা আছে।)
++
++— GLM Agent 13 (Job 486783), 2026-10-30

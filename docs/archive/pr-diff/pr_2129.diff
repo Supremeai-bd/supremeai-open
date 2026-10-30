@@ -1,0 +1,491 @@
+diff --git a/scripts/ci/bump_candidate_probe.py b/scripts/ci/bump_candidate_probe.py
+index 29562b50..162906fc 100644
+--- a/scripts/ci/bump_candidate_probe.py
++++ b/scripts/ci/bump_candidate_probe.py
+@@ -7,14 +7,18 @@
+     ratchet) that DETECTS vulnerable/drifted pins with dated shrink-only
+     baselines — but nothing in the repo automates the FIX side, and every
+     bump/absorb/re-arm observed on 2026-10-28 was a hand-landed commit.
+-    This probe is the deliberate complement: it reads the SAME lock
+-    surfaces the npm guard family already owns (SSOT import of
+-    npm_dep_cve_guard.LOCK_PATHS — never a private copy) plus the py
+-    manifest surface (requirements*.txt, any tracked depth, same surface
+-    string as py_dep_cve_guard.MANIFEST_SURFACE), diffs every locked
+-    (name, version) pair against the LIVE latest version on the public
+-    registries, and prints a dated candidate list for a human/agent to
+-    act on. It decides nothing and changes nothing.
++    This probe is the deliberate complement: it reads the SAME surfaces
++    the guard family already owns, both via SSOT import — never a private
++    copy (R51/#2122): the npm plane from npm_dep_cve_guard.LOCK_PATHS,
++    and the full py plane from py_dep_cve_guard (its MANIFEST_SURFACE
++    string plus its poetry synthesizer: requirements*.txt at any tracked
++    depth AND pyproject.toml [tool.poetry.dependencies] main group, with
++    caret/tilde/exact constraint synthesis, groups/extras/local/wildcard
++    skip notes, malformed-TOML fail-close — semantics owned by the guard,
++    not reinvented here). It diffs every locked (name, version) pair
++    against the LIVE latest version on the public registries, and prints
++    a dated candidate list for a human/agent to act on. It decides
++    nothing and changes nothing.
+ 
+ Report-only contract (the #2106 section-4 never-do list, verbatim):
+     - NO auto-merge / auto-push / auto-PR of any kind; bump decisions are
+@@ -66,11 +70,13 @@
+ )
+ 
+ # --- SSOT surfaces (never a private copy) --------------------------------
+-# npm: import the guard's own LOCK_PATHS tuple. If the sibling module ever
+-# moves/renames, --plan/--live exit 3 (wiring) rather than silently probing
+-# a stale surface list.
++# npm: import the guard's own LOCK_PATHS tuple; py: import the guard's own
++# MANIFEST_SURFACE string + poetry synthesizer. If a sibling module ever
++# moves/renames, --plan/--live fail loudly rather than silently probing a
++# stale surface list (the R51/#2122 drift class: the py side WAS a private
++# copy here and the SSOT widened one commit before this probe landed).
+ GUARD_REL = Path("scripts/ci/npm_dep_cve_guard.py")
+-_PY_MANIFEST_SURFACE = "requirements*.txt (any tracked depth)"
++PY_GUARD_REL = Path("scripts/ci/py_dep_cve_guard.py")
+ 
+ _REQ_PIN_RE = re.compile(
+     r"^(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?==(?P<ver>[^\s;]+)"
+@@ -93,6 +99,24 @@ def _load_npm_guard():
+     return mod
+ 
+ 
++def _load_py_guard():
++    guard_path = REPO_ROOT / PY_GUARD_REL
++    if not guard_path.is_file():
++        raise FileNotFoundError(f"SSOT py guard module missing: {PY_GUARD_REL}")
++    spec = importlib.util.spec_from_file_location("_py_dep_cve_guard_ssot", guard_path)
++    if spec is None or spec.loader is None:
++        raise ImportError(f"cannot load SSOT py guard module: {PY_GUARD_REL}")
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    if not getattr(mod, "MANIFEST_SURFACE", None) or not hasattr(
++        mod, "synthesize_poetry_requirements"
++    ):
++        raise AttributeError(
++            "SSOT py guard module exposes no MANIFEST_SURFACE/synthesize_poetry_requirements"
++        )
++    return mod
++
++
+ # --- parsers --------------------------------------------------------------
+ def parse_npm_lock(path: Path) -> list[dict]:
+     """Extract (name, version, dev) pairs from a package-lock.json.
+@@ -163,14 +187,112 @@ def parse_requirements(path: Path) -> list[dict]:
+     return sorted(pairs.values(), key=lambda p: (p["name"], p["version"]))
+ 
+ 
+-def discover_py_manifests(root: Path) -> list[Path]:
++def _pip_spec_bounds(spec: str):
++    """One synthesized pip spec -> ((base_name, floor), upper, open_floor) | None.
++
++    Recognises ONLY the forms the guard's poetry synthesizer emits and
++    this probe can honestly freshness-check:
++      name==V            exact pin           -> floor V, no upper
++      name>=F,<U         caret/tilde range   -> floor F, upper U
++      name~=F.F(.F)?     PEP 440 compatible  -> floor F, PEP-440 upper
++      name>=F            open floor          -> floor F, unbounded above
++    Extras brackets are stripped from the reported name (PyPI indexes the
++    base distribution). Anything else (bare comparators, `!=` composites,
++    pre-release floors the tuple logic cannot compare) returns None — the
++    caller records an honest skip instead of guessing a floor.
++    """
++    m = re.match(r"^([A-Za-z0-9][A-Za-z0-9._-]*)(?:\[[^\]]*\])?(.+)$", spec)
++    if not m:
++        return None
++    name = re.sub(r"[-_.]+", "-", m.group(1)).lower()
++    rest = m.group(2).strip()
++    if rest.startswith("=="):
++        v = rest[2:].strip()
++        return ((name, v), None, False) if _ver_tuple(v) is not None else None
++    if rest.startswith("~="):
++        vm = re.match(r"^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?$", rest[2:].strip())
++        if not vm or vm.group(2) is None:
++            return None
++        floor = rest[2:].strip().lstrip("v")
++        maj, mino, patch = vm.group(1), vm.group(2), vm.group(3)
++        upper = f"{maj}.{int(mino) + 1}.0" if patch is not None else f"{int(maj) + 1}.0"
++        return ((name, floor), upper, False)
++    parts = [p.strip() for p in rest.split(",")]
++    if len(parts) == 2 and parts[0].startswith(">=") and parts[1].startswith("<"):
++        floor, upper = parts[0][2:].strip(), parts[1][1:].strip()
++        if _ver_tuple(floor) is not None and _ver_tuple(upper) is not None:
++            return ((name, floor), upper, False)
++    if rest.startswith(">="):
++        floor = rest[2:].strip()
++        if _ver_tuple(floor) is not None:
++            return ((name, floor), None, True)  # unbounded above: latest already admitted
++    return None
++
++
++def parse_poetry_pyproject(path: Path, synth=None) -> tuple[list[dict], list[str]]:
++    """[tool.poetry.dependencies] main group -> freshness pairs + skip notes.
++
++    Synthesis is the guard's OWN function (SSOT import — the R51/#2122
++    lesson: poetry semantics are owned by py_dep_cve_guard, never copied).
++    Each synthesized pip spec is reduced to an honest (floor, upper)
++    freshness pair; specs without one land in the skip notes. Malformed
++    TOML propagates tomllib.TOMLDecodeError — the guard fails closed on
++    it and so does this probe (never silently skipped).
++    """
++    if synth is None:
++        synth = _load_py_guard().synthesize_poetry_requirements
++    text, skips, _stats = synth(path)
++    pairs: dict[str, dict] = {}
++    for line in text.splitlines():
++        line = line.strip()
++        if not line:
++            continue
++        bounds = _pip_spec_bounds(line)
++        if bounds is None:
++            skips.append(f"{line}: no honest freshness floor (unrecognised spec)")
++            continue
++        (name, floor), upper, open_floor = bounds
++        pairs[f"{name}@{floor}"] = {
++            "name": name,
++            "version": floor,
++            "dev": False,
++            "upper": upper,
++            "open_floor": open_floor,
++        }
++    return sorted(pairs.values(), key=lambda p: (p["name"], p["version"])), skips
++
++
++def discover_py_manifests(root: Path, skip_dirs=None) -> list[Path]:
+     """requirements*.txt at any tracked depth (py_dep_cve_guard surface)."""
+     if not root.is_dir():
+         return []
++    if skip_dirs is None:
++        skip_dirs = getattr(_load_py_guard(), "SKIP_DIRS", frozenset({".git", "node_modules"}))
+     out = []
+     for p in sorted(root.rglob("requirements*.txt")):
+-        rel = p.relative_to(root).as_posix()
+-        if rel.startswith((".git/", "node_modules/")) or "/node_modules/" in rel:
++        rel = p.relative_to(root)
++        if any(part in skip_dirs for part in rel.parts[:-1]):
++            continue
++        out.append(p)
++    return out
++
++
++def discover_pyprojects(root: Path, skip_dirs=None) -> list[Path]:
++    """pyproject.toml at any tracked depth (py_dep_cve_guard surface).
++
++    Pruned by the guard's own SKIP_DIRS (SSOT) so vendored and virtual
++    trees are excluded exactly where the guard excludes them; poetry-plane
++    membership is decided at parse time — a PEP-621-only pyproject becomes
++    an honest skip row, mirroring the guard's discovery contract.
++    """
++    if not root.is_dir():
++        return []
++    if skip_dirs is None:
++        skip_dirs = getattr(_load_py_guard(), "SKIP_DIRS", frozenset({".git", "node_modules"}))
++    out = []
++    for p in sorted(root.rglob("pyproject.toml")):
++        rel = p.relative_to(root)
++        if any(part in skip_dirs for part in rel.parts[:-1]):
+             continue
+         out.append(p)
+     return out
+@@ -187,21 +309,39 @@ def _ver_tuple(v: str):
+     return tuple(parts) if parts else None
+ 
+ 
+-def freshness_verdict(locked: str, latest) -> str:
+-    """BUMP / fresh / unknown — freshness only, zero severity hype."""
++def freshness_verdict(locked: str, latest, upper: str | None = None, open_floor: bool = False) -> str:
++    """BUMP / fresh / unknown — freshness only, zero severity hype.
++
++    Three pin shapes, all produced by the guard's poetry synthesizer:
++      exact `==V`       BUMP iff latest > V (legacy 2-arg behavior)
++      ranged `>=F,<U`   BUMP iff latest >= U — outside the allowed range,
++                        i.e. a constraint edit is the fix-side candidate;
++                        a latest inside the range is fresh (the resolver
++                        already admits it)
++      open floor `>=F`  fresh — unbounded above, the resolver admits the
++                        latest release by construction (upper=None alone
++                        keeps the legacy exact-pin semantics)
++    """
+     if latest is None:
+         return "unknown"
+     lt = _ver_tuple(locked)
+     ll = _ver_tuple(str(latest))
+     if lt is None or ll is None:
+         return "unknown"
++    if open_floor:
++        return "fresh"
++    if upper is not None:
++        ut = _ver_tuple(upper)
++        if ut is None:
++            return "unknown"
++        return "BUMP" if ll >= ut else "fresh"
+     return "BUMP" if ll > lt else "fresh"
+ 
+ 
+ # --- registry probes (zero-credential) ------------------------------------
+ def _http_get_json(url: str):
+     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+-    with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as resp:
++    with urllib.request.urlopen(req, timeout=PROBE_TIMEOUT_S) as resp:  # nosec B310 — pypi.org/registry.npmjs.org https endpoints, zero-credential GET with pinned UA+timeout (report-only design; #2122 audit)
+         if getattr(resp, "status", 200) != 200:
+             return None
+         return json.loads(resp.read().decode("utf-8", errors="replace"))
+@@ -230,6 +370,8 @@ def latest_npm(name: str):
+ def collect_surfaces(repo_root: Path):
+     """(kind, path, pairs, skip_reason) rows for every surface, honest-skips included."""
+     guard = _load_npm_guard()
++    pyg = _load_py_guard()
++    skip_dirs = getattr(pyg, "SKIP_DIRS", frozenset({".git", "node_modules"}))
+     rows = []
+     for rel in guard.LOCK_PATHS:
+         p = repo_root / rel
+@@ -241,12 +383,28 @@ def collect_surfaces(repo_root: Path):
+         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+             rows.append(("npm", rel, [], f"unparseable: {type(exc).__name__}"))
+     py_root = repo_root
+-    for p in discover_py_manifests(py_root):
++    for p in discover_py_manifests(py_root, skip_dirs):
+         rel = p.relative_to(py_root).as_posix()
+         try:
+             rows.append(("pip", rel, parse_requirements(p), ""))
+         except UnicodeDecodeError as exc:
+             rows.append(("pip", rel, [], f"unparseable: {type(exc).__name__}"))
++    for p in discover_pyprojects(py_root, skip_dirs):
++        rel = p.relative_to(py_root).as_posix()
++        try:
++            pairs, skips = parse_poetry_pyproject(p, synth=pyg.synthesize_poetry_requirements)
++        except UnicodeDecodeError as exc:
++            rows.append(("pip", rel, [], f"unparseable: {type(exc).__name__}"))
++            continue
++        # tomllib.TOMLDecodeError deliberately NOT caught: the guard fails
++        # closed on malformed TOML (#2114) and this probe inherits that.
++        if not pairs:
++            reason = "; ".join(skips[:3]) if skips else (
++                "no [tool.poetry.dependencies] (PEP-621-only or absent poetry plane)"
++            )
++            rows.append(("pip", rel, [], f"poetry plane: {reason}"))
++            continue
++        rows.append(("pip", rel, pairs, ""))
+     return rows
+ 
+ 
+@@ -281,7 +439,7 @@ def build_report(surfaces, fetch=None, clock=None):
+                 )
+                 counters["unknown"] += 1
+                 continue
+-            verdict = freshness_verdict(pair["version"], latest)
++            verdict = freshness_verdict(pair["version"], latest, pair.get("upper"), pair.get("open_floor", False))
+             counters[verdict] += 1
+             if verdict == "BUMP":
+                 lines.append(f"[BUMP  ] {kind} {pair['name']} {pair['version']} -> {latest} — {rel}")
+@@ -299,6 +457,7 @@ def run_plan(repo_root: Path) -> int:
+     surfaces = collect_surfaces(repo_root)
+     total = 0
+     print(f"{PROBE_TAG} offline surface snapshot (no network, no writes):")
++    print(f"{PROBE_TAG} py surface (SSOT import): {_load_py_guard().MANIFEST_SURFACE}")
+     for kind, rel, pairs, skip in surfaces:
+         if skip:
+             print(f"  {kind} {rel} — SKIP {skip}")
+@@ -368,12 +527,58 @@ def _selftest() -> int:
+     got3 = {(p["name"], p["version"]) for p in parse_requirements(req)}
+     checks.append(("requirements parse", got3 == {("requests", "2.31.0"), ("uvicorn", "0.30.1"), ("dask-utils", "3.1.2")}))
+ 
++    # 3b. poetry plane parse (R51/#2122): synthesis is the guard's OWN SSOT
++    #     function; dict/optional/local/wildcard forms skip with notes;
++    #     caret/exact/extras/open-floor give honest (floor, upper) pairs
++    pyproject = tmp / "pyproject.toml"
++    pyproject.write_text("\n".join([
++        "[tool.poetry.dependencies]",
++        'python = "^3.11"',
++        'fastapi = "^0.136.0"',
++        'requests = "2.31.0"',
++        'httpx = { version = "^0.28.0", extras = ["http2"] }',
++        'pillow = { version = "^11.0", optional = true }',
++        'mypkg = { path = "../mypkg" }',
++        'starlette = "*"',
++        'cachetools = ">=5.0.0"',
++        "",
++    ]), encoding="utf-8")
++    try:
++        pyg = _load_py_guard()
++        gotp, skipsp = parse_poetry_pyproject(pyproject, synth=pyg.synthesize_poetry_requirements)
++        gp = {(p["name"], p["version"], p["upper"], p["open_floor"]) for p in gotp}
++        checks.append(("poetry parse", gp == {
++            ("fastapi", "0.136.0", "0.137.0", False),
++            ("requests", "2.31.0", None, False),
++            ("httpx", "0.28.0", "0.29.0", False),
++            ("cachetools", "5.0.0", None, True),
++        }
++            and any("optional" in s for s in skipsp)
++            and any("wildcard-any" in s for s in skipsp)
++            and any("path" in s for s in skipsp)))
++    except Exception:
++        checks.append(("poetry parse", False))
++
++    # 3c. PEP-621-only pyproject -> zero pairs, zero notes (collect_surfaces
++    #     turns this into an honest skip row, never an error)
++    pep = tmp / "pep621-only.toml"
++    pep.write_text('[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8")
++    try:
++        gotq, skipq = parse_poetry_pyproject(pep, synth=_load_py_guard().synthesize_poetry_requirements)
++        checks.append(("pep621-only empty", gotq == [] and skipq == []))
++    except Exception:
++        checks.append(("pep621-only empty", False))
++
+     # 4. verdict matrix
+     checks.append(("verdict BUMP", freshness_verdict("1.2.3", "1.3.0") == "BUMP"))
+     checks.append(("verdict fresh", freshness_verdict("4.17.21", "4.17.21") == "fresh"))
+     checks.append(("verdict None", freshness_verdict("1.0.0", None) == "unknown"))
+     checks.append(("verdict garbage", freshness_verdict("1.0.0", "abc-alpha") == "unknown"))
+     checks.append(("verdict shorter", freshness_verdict("1.2", "1.2.1") == "BUMP"))
++    checks.append(("verdict in-range fresh", freshness_verdict("0.136.0", "0.136.9", "0.137.0") == "fresh"))
++    checks.append(("verdict out-range BUMP", freshness_verdict("0.136.0", "0.137.0", "0.137.0") == "BUMP"))
++    checks.append(("verdict open-floor fresh", freshness_verdict("5.0.0", "9.9.9", None, True) == "fresh"))
++    checks.append(("verdict bad-upper unknown", freshness_verdict("1.0.0", "1.1.0", "garbage") == "unknown"))
+ 
+     # 5. full pipeline on injected fetcher (zero network)
+     surf = [("pip", "requirements-test.txt", parse_requirements(req), ""),
+@@ -400,6 +605,16 @@ def boom(kind, name):
+     except Exception:
+         checks.append(("SSOT LOCK_PATHS", False))
+ 
++    # 7b. py SSOT wiring pin: the guard's own MANIFEST_SURFACE must still
++    #     advertise BOTH py planes — if the guard ever drops the poetry
++    #     plane, the probe's SSOT import makes that drift loud here
++    try:
++        pyg2 = _load_py_guard()
++        checks.append(("SSOT py MANIFEST_SURFACE", "pyproject.toml" in pyg2.MANIFEST_SURFACE
++                       and "requirements" in pyg2.MANIFEST_SURFACE))
++    except Exception:
++        checks.append(("SSOT py MANIFEST_SURFACE", False))
++
+     # 8. never-write / never-subprocess source pin on the LIVE code (everything
+     #    before the self-test section; the self-test's own tmpdir fixture
+     #    writes are the sanctioned exception by construction)
+@@ -412,9 +627,14 @@ def boom(kind, name):
+     baselines = [REPO_ROOT / "scripts/ci/npm_dep_cve_baseline.json",
+                  REPO_ROOT / "scripts/ci/py_dep_cve_baseline.json"]
+     before = {b: b.read_bytes() for b in baselines if b.is_file()}
+-    collect_surfaces(REPO_ROOT)
++    live_rows = collect_surfaces(REPO_ROOT)
+     checks.append(("baselines untouched", all(b.read_bytes() == data for b, data in before.items()) and len(before) == 2))
+ 
++    # 9b. live poetry plane enumerated (R51/#2122 Finding-3 receipt flipped:
++    #     core/pyproject.toml now yields fix-side candidates)
++    pyproj_rows = [r for r in live_rows if str(r[1]).endswith("pyproject.toml")]
++    checks.append(("poetry plane live-enumerated", bool(pyproj_rows) and any(r[2] for r in pyproj_rows)))
++
+     failed = [name for name, ok in checks if not ok]
+     for name, ok in checks:
+         print(f"  {'PASS' if ok else 'FAIL'} {name}")
+diff --git a/scripts/ci/npm_dep_cve_guard.py b/scripts/ci/npm_dep_cve_guard.py
+index 5ea9c316..8d3c0915 100644
+--- a/scripts/ci/npm_dep_cve_guard.py
++++ b/scripts/ci/npm_dep_cve_guard.py
+@@ -99,7 +99,7 @@
+ import argparse
+ import contextlib
+ import json
+-import subprocess
++import subprocess  # nosec B404 — the guard shells out to git for the changed-lockfile surface; list-argv only (#2081 audit)
+ import sys
+ import time
+ import urllib.request
+@@ -220,7 +220,7 @@ def query_osv_batch(
+                     headers={"Content-Type": "application/json"},
+                     method="POST",
+                 )
+-                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:
++                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:  # nosec B310 — OSV https endpoint is a pinned module constant, zero-credential read (#2081 audit)
+                     response = json.loads(resp.read().decode("utf-8"))
+                 last_error = None
+                 break
+@@ -290,7 +290,7 @@ def git_head(repo_root: Path) -> str:
+ 
+ 
+ def subprocess_run(cmd: list[str], cwd: Path) -> str:
+-    proc = subprocess.run(
++    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git invocation (#2081 audit)
+         cmd, cwd=cwd, capture_output=True, text=True, timeout=30, check=False
+     )
+     return proc.stdout
+diff --git a/tests/test_bump_candidate_probe.py b/tests/test_bump_candidate_probe.py
+index f4267275..114b2b43 100644
+--- a/tests/test_bump_candidate_probe.py
++++ b/tests/test_bump_candidate_probe.py
+@@ -207,6 +207,74 @@ def test_surfaces_ssot_from_guard_not_private_copy(self):
+             'GUARD_REL = Path("scripts/ci/npm_dep_cve_guard.py")', ""))
+ 
+ 
++class TestPoetryPlaneParsing(TmpCase):
++    """R51/#2122: the probe's py side imports the guard's OWN synthesizer —
++    the poetry plane (pyproject.toml [tool.poetry.dependencies] main group)
++    must yield honest fix-side freshness pairs, never a silent blind spot."""
++
++    def _poetry_fixture(self) -> Path:
++        pyproject = self.tmp / "pyproject.toml"
++        pyproject.write_text("\n".join([
++            "[tool.poetry.dependencies]",
++            'python = "^3.11"',
++            'fastapi = "^0.136.0"',
++            'requests = "2.31.0"',
++            'httpx = { version = "^0.28.0", extras = ["http2"] }',
++            'pillow = { version = "^11.0", optional = true }',
++            'mypkg = { path = "../mypkg" }',
++            'starlette = "*"',
++            'cachetools = ">=5.0.0"',
++            "",
++        ]), encoding="utf-8")
++        return pyproject
++
++    def test_poetry_forms_to_freshness_pairs(self):
++        pairs, skips = P.parse_poetry_pyproject(
++            self._poetry_fixture(), synth=P._load_py_guard().synthesize_poetry_requirements)
++        got = {(p["name"], p["version"], p["upper"], p["open_floor"]) for p in pairs}
++        self.assertEqual(got, {
++            ("fastapi", "0.136.0", "0.137.0", False),   # caret -> ranged floor/upper
++            ("requests", "2.31.0", None, False),        # exact pin
++            ("httpx", "0.28.0", "0.29.0", False),       # dict form, extras stripped
++            ("cachetools", "5.0.0", None, True),        # open floor, unbounded above
++        })
++        self.assertTrue(any("optional" in s for s in skips))       # pillow skipped WITH note
++        self.assertTrue(any("path" in s for s in skips))           # local source skipped WITH note
++        self.assertTrue(any("wildcard-any" in s for s in skips))   # `*` skipped WITH note
++        self.assertEqual([p for p in pairs if p["name"] == "python"], [])  # python key excluded
++
++    def test_pep621_only_pyproject_is_empty_not_error(self):
++        pyproject = self.tmp / "pyproject.toml"
++        pyproject.write_text('[project]\nname = "x"\nversion = "0.1.0"\n', encoding="utf-8")
++        pairs, skips = P.parse_poetry_pyproject(
++            pyproject, synth=P._load_py_guard().synthesize_poetry_requirements)
++        self.assertEqual(pairs, [])
++        self.assertEqual(skips, [])
++
++    def test_py_guard_ssot_surface_exposes_both_planes(self):
++        g = P._load_py_guard()
++        self.assertIn("pyproject.toml", g.MANIFEST_SURFACE)
++        self.assertIn("requirements", g.MANIFEST_SURFACE)
++
++    def test_collect_surfaces_enumerates_live_poetry_plane(self):
++        rows = P.collect_surfaces(REPO_ROOT)
++        pyproj = [r for r in rows if str(r[1]).endswith("pyproject.toml")]
++        self.assertTrue(any(r[2] for r in pyproj),
++                        f"poetry plane blind spot regressed: {pyproj}")
++
++
++class TestPoetryVerdict(unittest.TestCase):
++    """Range-aware freshness semantics (R51/#2122): BUMP means the pin
++    itself needs an edit, never merely that a newer release exists."""
++
++    def test_range_aware_matrix(self):
++        self.assertEqual(P.freshness_verdict("0.136.0", "0.136.9", "0.137.0"), "fresh")   # in-range
++        self.assertEqual(P.freshness_verdict("0.136.0", "0.137.0", "0.137.0"), "BUMP")    # boundary
++        self.assertEqual(P.freshness_verdict("0.136.0", "0.140.1", "0.137.0"), "BUMP")    # outside
++        self.assertEqual(P.freshness_verdict("5.0.0", "9.9.9", None, True), "fresh")      # open floor
++        self.assertEqual(P.freshness_verdict("1.0.0", "1.1.0", "garbage"), "unknown")     # bad upper
++
++
+ class TestCliContract(unittest.TestCase):
+ 
+     def test_selftest_hermetic_exit_0(self):

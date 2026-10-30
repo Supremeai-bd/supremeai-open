@@ -1,0 +1,54 @@
+diff --git a/.importlinter b/.importlinter
+index 5e7d2b99..dad4fee0 100644
+--- a/.importlinter
++++ b/.importlinter
+@@ -1,4 +1,4 @@
+-# .importlinter — SupremeAI federation import-contract gate (report-only ratchet)
++# .importlinter — SupremeAI federation import-contract gate (ENFORCEMENT mode)
+ #
+ # Bridge Work Order: bridge-20261028-import-contract-lane (issue #1791, R37)
+ #
+@@ -17,10 +17,12 @@
+ #   pip install -r requirements-dev.txt        # pins import-linter==2.15
+ #   lint-imports                               # run from repo root
+ #
+-# Rollout (per issue #1791 phase plan): report-only ratchet — known
+-# violations are enumerated under ignore_imports with a dated reason.
+-# ANY new violation of the same class fails. Flip to fail-on-broken
+-# (drop the ignore entries) only after the known sites are remediated.
++# Rollout history (per issue #1791 phase plan): landed 2026-10-28 as a
++# report-only ratchet with the 2 known #1693 sites baselined; PR #1879
++# remediated both sites to the core.monitoring public facade; ratchet
++# DROPPED 2026-10-28 (main 02590d1 era) — the contract is now
++# fail-on-broken: ANY direct core.api -> core._monitoring_legacy import
++# fails, per the issue's own flip condition.
+ #
+ # Contract-inventory honesty (dated 2026-10-28, main d67298c):
+ # - core's private top-level modules: core._monitoring_legacy, core._archive
+@@ -66,9 +68,11 @@ allow_indirect_imports = true
+ # Facade doctrine for the admin surface mirror (the #1693 violation class):
+ # core.api modules must reach monitoring internals only through the
+ # core.monitoring public facade — a DIRECT import of core._monitoring_legacy
+-# from anywhere under core.api is a violation. The two current sites are
+-# enumerated in the dated ignore baseline above (report-only ratchet; drop
+-# them after the sites are remediated). Core-internal use outside core.api
++# from anywhere under core.api is a violation. The 2 known sites were
++# remediated to the facade by PR #1879 (verified: git grep shows zero
++# core._monitoring_legacy imports under core/api/ on main 02590d1+); the
++# dated ignore baseline is DROPPED — this contract is fail-on-broken.
++# Core-internal use outside core.api
+ # (e.g. core/app_builder.py) is legitimate domain-internal access.
+ # (A `layers` contract does NOT express this: layers semantics allow
+ # higher->lower imports, so the bypass class needs an explicit ban.)
+@@ -80,11 +84,3 @@ source_modules =
+ forbidden_modules =
+     core._monitoring_legacy
+ allow_indirect_imports = true
+-# --- Report-only ratchet baseline (dated 2026-10-28, main d67298c) ---------
+-# The two known #1693-class facade-bypass sites inside the core/api mirror.
+-# core-domain-internal use of its own private internals (e.g.
+-# core/app_builder.py) is NOT a violation (domain-internal access is
+-# legitimate — see tests/test_gateway_private_import_boundary.py doctrine).
+-ignore_imports =
+-    core.api.routes.admin_v1 -> core._monitoring_legacy
+-    core.api.routes.admin_dashboard.endpoints_metrics -> core._monitoring_legacy

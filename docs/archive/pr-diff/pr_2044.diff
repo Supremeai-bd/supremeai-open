@@ -1,0 +1,34 @@
+diff --git a/scripts/ci/constitution_pointer_guard.py b/scripts/ci/constitution_pointer_guard.py
+index b39e60d1..7d283fd1 100644
+--- a/scripts/ci/constitution_pointer_guard.py
++++ b/scripts/ci/constitution_pointer_guard.py
+@@ -76,6 +76,29 @@
+         "enforcement",
+         "pins the guard contract with fixture citations",
+     ),
++    # -- enforcement: R42 interop consumers (#2031) --------------------------
++    # The docs-link-integrity lane does NOT cite the deleted file as authority;
++    # it ROUTES those ghost citations to this guard: EXCLUDED_TARGET_SUBSTR
++    # declares the exclusion pattern, the baseline JSON is the machine-readable
++    # debt ledger (10 knownExcluded), and the tests pin that contract. Their
++    # citations are pattern/contract definitions, not drift — same class as
++    # this guard's own registry source.
++    "scripts/ci/docs_link_integrity_guard.py": (
++        "enforcement",
++        "R42 gate (#2031): EXCLUDED_TARGET_SUBSTR routes AGENT_RULES.md ghost citations to THIS guard's debt class (#1642->#1708); the citation is the interop routing definition, not drift",
++    ),
++    ".githooks/pre-push": (
++        "enforcement",
++        "R42 gate wiring (#2031, section 15): comment documents that AGENT_RULES.md ghost citations are excluded debt owned by THIS guard (#1642->#1708)",
++    ),
++    "scripts/ci/docs_link_integrity_baseline.json": (
++        "enforcement",
++        "R42 baseline (#2031): knownExcluded is the machine-readable ledger of the 10 AGENT_RULES.md ghost entries this guard owns (#1642->#1708)",
++    ),
++    "tests/test_docs_link_integrity_guard.py": (
++        "enforcement",
++        "R42 gate tests (#2031): fixture + knownExcluded==10 assertion pin the ghost-debt routing contract",
++    ),
+     # -- historical: the deletion is documented here BY DESIGN --------------
+     "scripts/agents/continuous_agent_loop.py": (
+         "historical",

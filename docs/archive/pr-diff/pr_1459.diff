@@ -1,0 +1,41 @@
+diff --git a/docs/bridge/bridge-20261027-housekeeping-stale-ci-orders.md b/docs/bridge/bridge-20261027-housekeeping-stale-ci-orders.md
+new file mode 100644
+index 00000000..880d7fc0
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-housekeeping-stale-ci-orders.md
+@@ -0,0 +1,35 @@
++# chore(housekeeping): close 19 stale auto-filed CI orders polluting the runway queue
++
++## Problem
++The runway queue carries 19 CI-failure orders that are already resolved; they keep
++`status:runway` visible and drown real work. Verified stale as of 2026-10-27:
++
++- 8x "Open Unified Pipeline failed on 1426/merge" (#1427-#1434): PR #1426 is
++  CLOSED (0 open PRs on the repo), and open main is GREEN (run 40467936110).
++- 8x core/studio main failures (#1401,#1402,#1404,#1408,#1412,#1414,#1416 + the
++  studio 40397847487/#1425): both mains are GREEN with fixes landed — core run
++  40396646408 success (carries the core/__init__ lazy-export fix), studio run
++  40411503150 success (carries the AdminShell/AdminConsole fixes). The only
++  remaining core failure (#1445, nightly PyErrorFix job) is tracked separately
++  by #1446 with a fix PR open.
++- #1417/#1418 (claimed CI orders): fixes landed via the sync bot; leases can be
++  released and orders closed as done.
++
++## Requested action
++Close the listed orders as "stale — superseded by green mains" (or let the
++federated CI watcher auto-close on green); release the two claimed leases.
++
++## Acceptance criteria
++- [ ] Runway queue contains no order older than the latest green run on its repo
++- [ ] #1417/#1418 leases released
++- [ ] #1445/#1446 remain the only live CI items (until PyErrorFix lands)
++
++## Reflection Evidence
++**Why:** A runway queue that mostly contains resolved failures misroutes coder
++agents and hides the real P0; hygiene here has outsized routing value for every
++future bridge task.
++**Alternatives rejected:**
++- Leave auto-closure to the watcher: it demonstrably has not closed them across
++  two green cycles; explicit close avoids weeks of noise.
++- Batch-close via a bot without evidence: each close above carries its
++  superseding green run id for auditability.

@@ -1,0 +1,142 @@
+diff --git a/gateway/dynamic_llm_router.py b/gateway/dynamic_llm_router.py
+index 2a83f87a..279c8294 100644
+--- a/gateway/dynamic_llm_router.py
++++ b/gateway/dynamic_llm_router.py
+@@ -47,36 +47,60 @@ class LLMAccount:
+     total_failures: int = 0
+ 
+ 
+-# Canonical default models per provider family
++# Canonical default models and observed baseline latencies per provider family
+ PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
++    "cerebras": {
++        "tier": 1,
++        "default_model": "llama-3.3-70b",
++        "baseline_latency_ms": 350.0,
++        "env_pattern": re.compile(r"^CEREBRAS_API_KEY(?:_.*)?$"),
++    },
+     "groq": {
+         "tier": 1,
+-        "default_model": "llama-3.3-70b-versatile",
++        "default_model": "qwen/qwen3.8-27b",
++        "baseline_latency_ms": 450.0,
+         "env_pattern": re.compile(r"^GROQ_API_KEY(?:_.*)?$"),
+     },
++    "openrouter": {
++        "tier": 1,
++        "default_model": "nvidia/nemotron-3.5-lightning:free",
++        "baseline_latency_ms": 650.0,
++        "env_pattern": re.compile(r"^OPENROUTER_API_KEY(?:_.*)?$"),
++    },
++    "sambanova": {
++        "tier": 1,
++        "default_model": "Meta-Llama-3.3-70B-Instruct",
++        "baseline_latency_ms": 900.0,
++        "env_pattern": re.compile(r"^SAMBANOVA_API_KEY(?:_.*)?$"),
++    },
+     "gemini": {
+         "tier": 1,
+-        "default_model": "gemini-2.0-flash",
++        "default_model": "gemini-2.5-flash",
++        "baseline_latency_ms": 1300.0,
+         "env_pattern": re.compile(r"^(?:GEMINI_API_KEY|GOOGLE_API_KEY)(?:_.*)?$"),
+     },
+-    "openrouter": {
+-        "tier": 2,
+-        "default_model": "deepseek/deepseek-chat",
+-        "env_pattern": re.compile(r"^OPENROUTER_API_KEY(?:_.*)?$"),
++    "github_models": {
++        "tier": 1,
++        "default_model": "gpt-4o-mini",
++        "baseline_latency_ms": 1350.0,
++        "env_pattern": re.compile(r"^(?:GITHUB_MODELS_API_KEY|GITHUB_TOKEN)(?:_.*)?$"),
+     },
+     "mistral": {
+         "tier": 2,
+-        "default_model": "mistral-large-latest",
++        "default_model": "mistral-small-latest",
++        "baseline_latency_ms": 1400.0,
+         "env_pattern": re.compile(r"^MISTRAL_API_KEY(?:_.*)?$"),
+     },
+     "openai": {
+         "tier": 3,
+         "default_model": "gpt-4o-mini",
++        "baseline_latency_ms": 1500.0,
+         "env_pattern": re.compile(r"^OPENAI_API_KEY(?:_.*)?$"),
+     },
+     "huggingface": {
+         "tier": 3,
+         "default_model": "meta-llama/Llama-3.3-70B-Instruct",
++        "baseline_latency_ms": 2000.0,
+         "env_pattern": re.compile(r"^(?:HUGGINGFACE_API_KEY|HF_TOKEN)(?:_.*)?$"),
+     },
+ }
+@@ -92,7 +116,17 @@ def __init__(self, clock: Callable[[], float] = time.time) -> None:
+     def refresh_accounts(self, env_dict: dict[str, str] | None = None) -> list[LLMAccount]:
+         """Dynamically scans environment variables to register or prune provider accounts."""
+         now = self._clock()
+-        src = os.environ if env_dict is None else env_dict
++        src = dict(os.environ) if env_dict is None else dict(env_dict)
++        # Attempt to load local .env if env_dict not explicitly passed
++        if env_dict is None and os.path.exists(".env"):
++            with contextlib.suppress(Exception):
++                with open(".env", "r", encoding="utf-8") as f:
++                    for line in f:
++                        line = line.strip()
++                        if line and not line.startswith("#") and "=" in line:
++                            k, v = line.split("=", 1)
++                            src.setdefault(k.strip(), v.strip().strip("'\""))
++
+         discovered: list[LLMAccount] = []
+ 
+         # Retain stats from existing accounts if they match alias
+@@ -115,7 +149,7 @@ def refresh_accounts(self, env_dict: dict[str, str] | None = None) -> list[LLMAc
+                         healthy=old.healthy if old else True,
+                         cooldown_until=old.cooldown_until if old else 0.0,
+                         consecutive_failures=old.consecutive_failures if old else 0,
+-                        latency_ms=old.latency_ms if old else 0.0,
++                        latency_ms=old.latency_ms if (old and old.latency_ms > 0) else cfg.get("baseline_latency_ms", 1000.0),
+                         total_requests=old.total_requests if old else 0,
+                         total_failures=old.total_failures if old else 0,
+                     )
+@@ -135,19 +169,19 @@ def active_providers(self) -> list[str]:
+         return sorted({a.provider for a in self._accounts})
+ 
+     def get_execution_ladder(self) -> list[LLMAccount]:
+-        """Returns accounts sorted in priority order: Tier -> Health -> Latency -> Failures."""
++        """Returns accounts dynamically sorted by: Health -> Tier -> Consecutive Failures -> Response Time (Latency)."""
+         now = self._clock()
+-        # Separate eligible and cooling-down accounts
++        # Separate eligible (healthy & not cooling down) accounts
+         eligible = [
+             a
+             for a in self._accounts
+             if a.healthy and a.cooldown_until <= now
+         ]
+ 
+-        # Sort order:
+-        # 1. Tier (1 first, then 2, then 3)
+-        # 2. Consecutive failures ascending (0 first)
+-        # 3. Latency ms ascending
++        # Smart dynamic priority:
++        # 1. Tier (Tier 1 fast-free before Tier 2 / 3)
++        # 2. Consecutive failures ascending (0 failures first)
++        # 3. Dynamic latency ms ascending (fastest response time first)
+         eligible.sort(key=lambda a: (a.tier, a.consecutive_failures, a.latency_ms))
+         return eligible
+ 
+@@ -196,12 +230,12 @@ def self_test() -> int:
+     assert len(accounts) == 4, f"Expected 4 accounts, got {len(accounts)}"
+     assert set(router.active_providers) == {"gemini", "groq", "mistral", "openrouter"}
+ 
+-    # Invariant 2: Execution ladder respects tiers (Groq/Gemini tier 1 before OpenRouter/Mistral tier 2)
++    # Invariant 2: Execution ladder respects tiers & latency (Tier 1 Groq, OpenRouter, Gemini before Tier 2 Mistral)
+     ladder = router.get_execution_ladder()
+     assert len(ladder) == 4, f"Expected 4 eligible accounts, got {len(ladder)}"
+     assert ladder[0].tier == 1
+     assert ladder[1].tier == 1
+-    assert ladder[2].tier == 2
++    assert ladder[2].tier == 1
+     assert ladder[3].tier == 2
+ 
+     # Invariant 3: Circuit breaker & Cooldown on 429

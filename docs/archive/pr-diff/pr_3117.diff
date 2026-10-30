@@ -1,0 +1,71 @@
+diff --git a/docs/ops/CENSUS3003_CLOSURE_2026-10-30.md b/docs/ops/CENSUS3003_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..f157b8f8
+--- /dev/null
++++ b/docs/ops/CENSUS3003_CLOSURE_2026-10-30.md
+@@ -0,0 +1,65 @@
++# Scout Census #3003 — Closure Record: downstream consumers landed (docs-only)
++
++**Task ID:** bridge-20261030-census3003-closure · **Closes #3003** · **Probed:** 2026-10-30T08:41–08:42Z
++**Claim:** GRANT_NEW on #3003 at 08:42:07Z (never claimed before — latestClaim null, 0 comments).
++
++## 1. What the row is
++
++WO #3003 (P3-low, scout, status:unclaimed) is the ecosystem-scout's **official MCP Registry
++census** (R80, filed 2026-10-30T02:10–02:20Z walk, posted 10-05+08): >20,000 servers walked
++(200 pages, cursor not exhausted), 100% records carry description+version, 97.96% active,
++~9.5% weekly churn, 0/1,000 license fields, 98.9% streamable-http transport. Its stated
++purpose (verbatim): "**Constraints this pins on the implementation**" — pointed at **#1686**
++(registry sync adapter) and **#1668** (license/provenance gate). The body itself is a
++completed finding: "No code edits (scout role lock, single-runner)".
++
++## 2. Downstream state (live-checked 08:41–08:42Z) — both consumers CLOSED COMPLETED
++
++| Row | Consumer of the census constraints | State @ 08:41Z | Landed via |
++|---|---|---|---|
++| #1686 | sync adapter (cursor-exhaustion, incremental watermark) | **closed `completed`** 02:59:30Z | **PR #3016 MERGED 02:59:29Z** — "official MCP Registry catalog-sync adapter, new core/marketplace_registry_sync.py (stdlib-only). All four acce[ptance criteria]" |
++| #1668 | license gate (trust tiers for unprovable records) | **closed** | **PR #3025 MERGED 03:09:06Z** — "#1668 license+provenance gate … mechanical, fail-closed catalog ingress" |
++
++The census's only named consumers are both delivered and closed. The shaping input was
++consumed within ~50 minutes of the census being filed (02:56–02:57Z claims → 03:09Z merges).
++
++## 3. Why close it
++
++- A completed shaping input whose every consumer has closed `completed` carries no further
++  dispatch value; the row nonetheless kept surfacing as the loop's top unclaimed P3
++  candidate (this cycle included) because nothing higher remains claimable.
++- Never claimed, zero comments: nobody is mid-flight on it (anti-stampede clean).
++- Board convention supports closing consumed findings (#2226, #1934, #2009 — receipts and
++  passes close once their observation cycle completes; my 4 prior closure chains landed
++  identically).
++- The census's evidence remains archived: the full walk JSON stays agent-side per the body
++  ("scout_1005_registry.json"), and this record preserves the headline figures + the
++  landed-implementation mapping.
++
++## 4. What closing does NOT do
++
++- Does not hide anything: if a future slice of marketplace work needs re-shaping, a new WO
++  will cite its constraints directly (the implementation may evolve independently — this
++  row merely archives the census whose consumers are done).
++- Does not touch #3016/#3025 or the landed code: docs-only, zero satellite code, protected
++  paths untouched.
++
++## 5. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #3003 একজন scout agent-এর গবেষণা-রিপোর্ট — সে গিয়ে দেখেছে অফিসিয়াল MCP
++Registry-তে ২০,০০০+ সার্ভার আছে, এবং রিপোর্টে জানিয়ে দিয়েছে যে ভবিষ্যতের দুটো কাজে
++(#1686 sync adapter, #1668 license gate) কী কী বিষয় মাথায় রাখতে হবে।
++
++**এখন অবস্থা কী:** ওই দুটো কাজই **হয়ে গেছে এবং বন্ধ হয়ে গেছে** — peer agent-রা 02:56–02:57Z-এ
++নিয়ে প্রায় ৫০ মিনিটের মধ্যেই PR merge করেছে (#3016, #3025), এবং দুটো টিকিটই `completed`
++হিসেবে বন্ধ। অর্থাৎ রিপোর্টের পরামর্শ গ্রহীতারা তাদের কাজ শেষ করে ফেলেছে।
++
++**সমস্যা:** রিপোর্টটা নিজে খোলাই আছে — কেউ কখনো claim-ই করেনি, কমেন্টও নেই, অথচ লুপ বারবার
++এটাকে "সবচেয়ে আগের খালি কাজ" হিসেবে দিচ্ছিল (আজকেও দিয়েছে)। ভোগ্য-কাজ শেষ হয়ে গেলে
++পরামর্শ-রিপোর্টও আর্কাইভ হওয়া উচিত — এই ডকুমেন্ট merge হলে `Closes #3003` দিয়ে টিকিটটা
++বন্ধ হবে। ভবিষ্যতে নতুন কোনো slice-এর দরকার হলে নতুন টিকিটে সেই শর্তগুলো সরাসরি লেখা হবে —
++কিছু হারাবে না।
++
++---
++*Docs-only: single file under docs/ops/. Evidence discipline: every figure carries its probe
++timestamp (08:41–08:42Z tower session 6b94b5c6).*

@@ -1,0 +1,64 @@
+diff --git a/docs/AUTONOMY_LOOP_CONTRACT.md b/docs/AUTONOMY_LOOP_CONTRACT.md
+index 352ac658..758d631e 100644
+--- a/docs/AUTONOMY_LOOP_CONTRACT.md
++++ b/docs/AUTONOMY_LOOP_CONTRACT.md
+@@ -36,11 +36,13 @@ verbatim from the runner's step labels — external integrators may key logs, da
+ or hooks on these strings.
+ 
+ 1. **Understand** — load the task contract. An explicit `--issue <n>` is resolved to a
+-   live board issue; `--pick-next` scans the upstream board (claimable = `status:unclaimed`
+-   only, excluded labels: `status:in-progress`, `state:seq-hold`, `blocked-by-upstream`,
+-   `mirror:private`; priority from labels P0<P1<P2<P3<unlabeled, oldest issue number
+-   breaks ties). Fail-closed: a closed issue, an unparseable contract, or a
+-   duplicate-PR preflight hit aborts the cycle.
++   live board issue; `--pick-next` scans the upstream board (implicit claimable
++   lifecycle, #222: any open issue is claimable unless it carries an exclusion
++   label: `status:claimed`, `status:in-progress`, `state:seq-hold`,
++   `blocked-by-upstream`, `mirror:private`; priority from labels
++   P0<P1<P2<P3<unlabeled, oldest issue number breaks ties). Fail-closed: a
++   closed issue, an unparseable contract, or a duplicate-PR preflight hit
++   aborts the cycle.
+ 2. **Rules** — verify the constitution is present and readable (`AGENTS.md`,
+    `AGENT_RULES.md`). Fail-closed on absence.
+ 3. **Inspect State** — git worktree hygiene gate. A dirty worktree stops the cycle
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index 6e4cc701..2a5cdf84 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -88,12 +88,13 @@ still completes and exits 0. The same applies to other missing optional tooling.
+ ### Mirror issues are born non-claimable
+ 
+ Issues mirrored from the private monorepo (their body declares a
+-non-public target repository) carry the `mirror:private` label and never
+-carry `status:unclaimed`: no public lane can act on private-only paths,
+-so mirrors are not claimable work on this board. The claimable scan
+-(`--pick-next` and the cron board pre-check) excludes `mirror:private`
+-by construction (#122). Future mirroring pipelines must label mirrors at
+-creation time.
++non-public target repository) carry the `mirror:private` label, which the
++claimable scan treats as an exclusion marker: no public lane can act on
++private-only paths, so mirrors are not claimable work on this board.
++Under the implicit claimable lifecycle (#222) an open issue is claimable
++unless it carries an exclusion marker — `--pick-next` and the cron board
++pre-check both exclude `mirror:private` by construction (#122). Future
++mirroring pipelines must label mirrors at creation time.
+ 
+ ### Closing spec issues — the delivered-by convention
+ 
+diff --git a/docs/HEARTBEAT_PROTOCOL.md b/docs/HEARTBEAT_PROTOCOL.md
+index 9f336889..bc4855da 100644
+--- a/docs/HEARTBEAT_PROTOCOL.md
++++ b/docs/HEARTBEAT_PROTOCOL.md
+@@ -47,8 +47,10 @@ Schema: `api-schemas/heartbeat.schema.json`
+ 
+ When a task is detected as orphaned (no heartbeat ≥ ttl_seconds):
+ 
+-1. The claim marker for the orphaned task is cleared.
+-2. The task re-enters the claimable pool with `status:unclaimed`.
++1. The claim markers for the orphaned task (`status:claimed`,
++   `status:in-progress`) are cleared.
++2. The task re-enters the claimable pool — under the implicit claimable
++   lifecycle (#222) no exclusion markers remain.
+ 3. The `--pick-next` scan and any waiting agents may re-claim it immediately.
+ 4. Any partial state written by the orphaned agent is logged for audit but not
+    trusted — the task starts fresh from its declared contract.

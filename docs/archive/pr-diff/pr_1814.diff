@@ -1,0 +1,753 @@
+diff --git a/docs/workorders/bridge-20261028-satellite-parity-gate.md b/docs/workorders/bridge-20261028-satellite-parity-gate.md
+new file mode 100644
+index 00000000..edf862e5
+--- /dev/null
++++ b/docs/workorders/bridge-20261028-satellite-parity-gate.md
+@@ -0,0 +1,130 @@
++# Bridge Work Order — guard(federation): scheduled satellite-dispatch parity gate (#1792, R38)
++
++**Lane**: coder → admin (`.github/` apply only). **Classification**: `adapt` — adapts the
++proven #1689 sentinel SHA-256 method into a scheduled, report-only detection gate.
++**Delivered**: 3 files (`scripts/ci/satellite_parity_gate.py`, `tests/test_satellite_parity_gate.py`,
++this runbook). `.github/workflows/satellite-parity-gate.yml` is carried VERBATIM in §3 below —
++agents cannot write protected paths (#1643 precedent), so the admin applies it exactly as printed.
++
++## Why
++
++#1689 proved a satellite dispatch drift could sit in production for days until a human
++byte-level audit found it (unsanitized gateway entrypoint served live while the hardened
++mirror fix sat undispatched). The verification kernel exists in-tree
++(`federation_satellite_sync.py --verify-only`, run 7, landed via PR #1720) but only fires
++when a human or admin re-runs the sync — there is no scheduled detection. This WO adds the
++missing schedule: **detection latency drops from "until the next manual audit" to ≤6 h 15 m**
++(schedule + jitter), with zero auto-push and zero auto-merge — dispatch authority stays with
++humans/admins per the bridge contract.
++
++## §1 Live baseline (evidence, dated)
++
++Run 9 live probe of all 7 manifest pairs via authenticated contents-API reads,
++2026-10-28 07:32+08 (= 2026-10-27T23:32Z), `git blob SHA` identity on both sides:
++
++```
++CLEAN  gateway/main.py          <-> Supremeai-bd/supremeai-api:main.py
++CLEAN  core/main.py             <-> Supremeai-bd/supremeai-core:main.py
++CLEAN  browser/main.py          <-> Supremeai-bd/supremeai-browser:main.py
++CLEAN  studio/package.json      <-> Supremeai-bd/supremeai-studio:package.json
++CLEAN  vscode/package.json      <-> Supremeai-bd/supremeai-vscode:package.json
++CLEAN  api-schemas/gateway.openapi.yaml <-> Supremeai-bd/supremeai-api:contracts/openapi.yaml
++CLEAN  examples/gateway_client.py       <-> Supremeai-bd/supremeai-api:scripts/clients/gateway_client.py
++```
++
++7/7 clean — the #1689 heal is holding. First scheduled run must report clean; any later
++drift then auto-files its own evidence (§3), which is the entire point of the gate.
++
++## §2 Admin apply — checklist (2 minutes)
++
++1. **Secret**: `SAT_SYNC_PAT` already exists on this repo (verified via
++   `github_list_secrets`, 2026-10-27T23:33Z, total_count 13). Confirm its scope is
++   least-privilege READ-ONLY contents on the five satellite repos
++   (`supremeai-api`, `-core`, `-browser`, `-studio`, `-vscode`). The gate never writes.
++2. **Label**: `audit:finding` exists in this repo (in active use on #1791/#1785/#1804 …).
++   The auto-WO step uses it; no setup needed.
++3. **Workflow**: create `.github/workflows/satellite-parity-gate.yml` with EXACTLY the §3
++   content (copy the fenced block, nothing else).
++4. **Enable**: `workflow_dispatch` lets you trigger a first run immediately from the
++   Actions tab to prove the wiring (expect exit 0, `7/7 clean`).
++
++## §3 Verbatim workflow (admin applies as-is)
++
++```yaml
++name: satellite-parity-gate
++
++on:
++  schedule:
++    # every 6 h at :17 UTC — off the top of the hour to avoid contention
++    - cron: "17 */6 * * *"
++  workflow_dispatch: {}
++
++permissions:
++  contents: read
++  issues: write
++
++jobs:
++  parity:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - name: Checkout open monorepo mirror
++        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2 (SHA-pinned per #1776/R35 zizmor discipline)
++
++      - name: Set up Python
++        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.3.0
++        with:
++          python-version: "3.11"
++
++      - name: Run satellite parity gate (report-only)
++        id: gate
++        env:
++          SAT_SYNC_PAT: ${{ secrets.SAT_SYNC_PAT }}
++        run: |
++          set -o pipefail
++          python scripts/ci/satellite_parity_gate.py --json --issue-body drift_body.md | tee gate_report.json
++          code=$?
++          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
++          exit $code   # 0 clean / 1 drift / 2 infra — failing on drift is intentional (red-CI double-signal)
++
++      - name: File report-only drift work order
++        if: steps.gate.outputs.exit_code == '1'
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        run: |
++          gh issue create \
++            --title "federation: satellite parity drift detected (auto, report-only)" \
++            --body-file drift_body.md \
++            --label "audit:finding"
++```
++
++## §4 Behavior contract (what admin should expect)
++
++- **Exit 0** — all sentinels byte-identical; job green; nothing filed.
++- **Exit 1** — drift. Job red ON PURPOSE (double-signal) AND a report-only issue is filed
++  with the `api_drift_detail.py` template: per-pair byte-size delta + sha256 pairs + capped
++  unified hunks + remediation pointing at the #1689 runbook (re-dispatch sync to heal, or
++  revert satellite surface to the mirror blob SHA).
++- **Exit 2** — infra (auth/network/rate-limit/manifest unreadable). Job red, NO issue filed
++  (a gate that cannot see must not vote clean, and must not spam issues either — inspect logs).
++- **Never**: no push, no merge, no dispatch, no satellite writes. The script's only
++  filesystem side effect is the issue-body file you explicitly name via `--issue-body`.
++- GitHub caveat: scheduled workflows auto-pause after 60 days of repo inactivity — if the
++  repo goes quiet, re-enable from the Actions tab.
++
++## §5 Validation performed (this submission)
++
++- `py_compile` PASS on both scripts.
++- unittest runner, module `tests.test_satellite_parity_gate` — 25/25 PASS (offline, fetch layer
++  injected; covers clean/drift/error classification, fail-closed infra semantics, exit-code
++  mapping, hunk caps + delta signs, issue-body contract markers, token env chain, 404→None,
++  base64 decode, manifest-missing/empty refusal).
++- `scripts/ci/satellite_parity_gate.py --self-test` — PASS.
++- Secret scan: no literals, no tokens, no URLs with credentials; token referenced by env
++  name only (`SAT_SYNC_PAT`).
++- `.github/` untouched by this PR (§3 is the only workflow source of truth, printed above).
++
++## §6 Rollback
++
++Delete `.github/workflows/satellite-parity-gate.yml` (reverts schedule instantly; the
++script is inert without it) — the standalone script + tests can stay harmlessly in-tree.
+diff --git a/scripts/ci/satellite_parity_gate.py b/scripts/ci/satellite_parity_gate.py
+new file mode 100644
+index 00000000..7a77c8a2
+--- /dev/null
++++ b/scripts/ci/satellite_parity_gate.py
+@@ -0,0 +1,395 @@
++#!/usr/bin/env python3
++"""scripts/ci/satellite_parity_gate.py — scheduled mirror<->satellite drift gate (#1792).
++
++Report-only scheduled counterpart of federation_satellite_sync.py --verify-only
++(#1689). Reads scripts/ci/satellite_sentinels.json and verifies every sentinel
++pair byte-identical between this open monorepo mirror and the GitHub satellite
++repos (supremeai-api / -core / -browser / -studio / -vscode).
++
++Design contract (verbatim from #1792):
++  - report-only: drift is DETECTED and REPORTED (exit 1 + JSON report + optional
++    issue body). The gate NEVER pushes, merges, or dispatches — dispatch
++    authority stays with humans/admins per the bridge contract.
++  - fail-closed: infrastructure errors (auth, network, rate limit) are exit 2,
++    never silently reported as "clean". A gate that cannot see must not vote.
++  - config-driven: pairs come from scripts/ci/satellite_sentinels.json (the
++    #1689 manifest). Extend the manifest to grow the sweep — no code edit.
++
++Modes:
++  --check             human-readable run (default)
++  --json              machine-readable JSON report on stdout (implies --check)
++  --issue-body PATH   write a report-only drift work-order body to PATH
++                      (api_drift_detail.py template: byte-size delta + hunk
++                      summary). Only written when drift or errors exist.
++  --all-remote        fetch the OPEN side live too (no local checkout needed;
++                      agent/tower mode). Default: open side read from checkout.
++  --ref REF           git ref for both sides (default: main)
++  --manifest PATH     override the sentinel manifest path
++  --token-env NAME    env var holding a read-only PAT (default SAT_SYNC_PAT;
++                      falls back OPEN_SYNC_PAT, then GITHUB_TOKEN)
++
++Exit codes (same family as federation_satellite_sync.py):
++  0  all pairs verified byte-identical
++  1  drift detected (actionable; report printed, issue body written if asked)
++  2  infra/verification error (fail-closed)
++
++stdlib-only; offline-testable (tests/test_satellite_parity_gate.py).
++"""
++
++from __future__ import annotations
++
++import argparse
++import base64
++import difflib
++import hashlib
++import json
++import os
++import sys
++import urllib.error
++import urllib.request
++from datetime import datetime, timezone
++from pathlib import Path
++
++DEFAULT_MANIFEST = Path("scripts/ci/satellite_sentinels.json")
++DEFAULT_OPEN_REPO = "Supremeai-bd/supremeai-open"
++TOKEN_ENV_CHAIN = ["SAT_SYNC_PAT", "OPEN_SYNC_PAT", "GITHUB_TOKEN"]
++MAX_DIFF_HUNKS = 3
++MAX_DIFF_LINES = 40
++UA = "supremeai-satellite-parity-gate"
++
++EXIT_CLEAN = 0
++EXIT_DRIFT = 1
++EXIT_INFRA = 2
++
++
++# ---------------------------------------------------------------- fetching
++
++
++def resolve_token(token_env: str | None = None) -> str:
++    """Pick the first readable token env (least-privilege read-only PAT)."""
++    chain = [token_env] if token_env else list(TOKEN_ENV_CHAIN)
++    for name in chain:
++        if name and os.environ.get(name, "").strip():
++            return os.environ[name].strip()
++    raise RuntimeError(
++        "no read token found; set one of: " + ", ".join(c for c in chain if c)
++    )
++
++
++def fetch_blob(repo: str, path: str, token: str, ref: str = "main") -> bytes | None:
++    """Fetch a file blob via the GitHub contents API (stdlib only).
++
++    Returns decoded bytes, or None for definitive absence (404).
++    Raises on infrastructure errors — callers must treat raised errors as
++    fail-closed verification failures, never as drift and never as clean.
++    """
++    api = f"https://api.github.com/repos/{repo}/contents/{path}?ref={ref}"
++    req = urllib.request.Request(
++        api,
++        headers={
++            "Authorization": f"Bearer {token}",
++            "Accept": "application/vnd.github+json",
++            "X-GitHub-Api-Version": "2022-11-28",
++            "User-Agent": UA,
++        },
++    )
++    try:
++        with urllib.request.urlopen(req, timeout=30) as resp:
++            data = json.loads(resp.read().decode("utf-8"))
++    except urllib.error.HTTPError as e:
++        if e.code == 404:
++            return None
++        raise
++    content = data.get("content")
++    if content is None:
++        return None
++    return base64.b64decode(content)
++
++
++def read_open_side(pair: dict, repo_root: Path | None, token: str, ref: str,
++                   all_remote: bool, open_repo: str) -> bytes:
++    """Open-side bytes: from the local checkout (default) or fetched live."""
++    open_rel = str(pair.get("open", "")).strip()
++    if all_remote or repo_root is None or not (repo_root / open_rel).exists():
++        if all_remote:
++            data = fetch_blob(open_repo, open_rel, token, ref)
++            if data is None:
++                raise FileNotFoundError(f"open-side surface absent: {open_repo}:{open_rel}")
++            return data
++        raise FileNotFoundError(f"open-side file missing in checkout: {open_rel}")
++    return (repo_root / open_rel).read_bytes()
++
++
++# ---------------------------------------------------------------- analysis
++
++
++def sha256_hex(data: bytes) -> str:
++    return hashlib.sha256(data).hexdigest()
++
++
++def hunk_summary(open_bytes: bytes, sat_bytes: bytes, context: bool = True) -> str:
++    """api_drift_detail.py-style drift detail: byte-size delta + capped hunks.
++
++    Plain-text block suitable for a report-only issue body. Text decoded with
++    errors=replace so binary-ish drift still yields a size-delta report.
++    """
++    o_txt = open_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
++    s_txt = sat_bytes.decode("utf-8", errors="replace").splitlines(keepends=True)
++    delta = len(open_bytes) - len(sat_bytes)
++    sign = "+" if delta > 0 else ("-" if delta < 0 else "0")
++    lines: list[str] = [
++        f"- byte-size delta: open {len(open_bytes):,} B vs satellite {len(sat_bytes):,} B "
++        f"(open {sign}{abs(delta):,} B)",
++        f"- sha256: open {sha256_hex(open_bytes)[:16]} / satellite {sha256_hex(sat_bytes)[:16]}",
++    ]
++    diff = list(difflib.unified_diff(s_txt, o_txt,
++                                     fromfile="satellite (live)", tofile="open (mirror)",
++                                     n=3 if context else 0))
++    if not diff:
++        lines.append("- unified diff: empty (files differ only in bytes outside text view)")
++    else:
++        lines.append(f"- unified hunks (first {MAX_DIFF_HUNKS} hunks, capped {MAX_DIFF_LINES} lines):")
++        shown: list[str] = []
++        hunk_count = 0
++        for ln in diff:
++            if ln.startswith("@@"):
++                hunk_count += 1
++                if hunk_count > MAX_DIFF_HUNKS:
++                    break
++            if len(shown) >= MAX_DIFF_LINES:
++                shown.append("  … (truncated)")
++                break
++            shown.append("  " + ln.rstrip("\n"))
++        lines.extend(shown)
++    return "\n".join(lines)
++
++
++def classify_pair(pair: dict, open_bytes: bytes | None, sat_bytes: bytes | None,
++                  error: str | None) -> tuple[str, dict]:
++    """Classify one pair -> ("clean" | "drift" | "error", detail dict)."""
++    if error is not None:
++        return "error", {"pair": pair, "detail": error}
++    if open_bytes is None:
++        return "error", {"pair": pair, "detail": "open-side surface absent"}
++    if sat_bytes is None:
++        return "drift", {"pair": pair, "detail": "satellite surface absent",
++                         "hunks": None,
++                         "open_sha256": sha256_hex(open_bytes)[:16],
++                         "open_size": len(open_bytes)}
++    if sha256_hex(open_bytes) == sha256_hex(sat_bytes):
++        return "clean", {"pair": pair,
++                         "sha256": sha256_hex(open_bytes)[:16],
++                         "size": len(open_bytes)}
++    return "drift", {"pair": pair,
++                     "detail": "content divergence",
++                     "hunks": hunk_summary(open_bytes, sat_bytes),
++                     "open_sha256": sha256_hex(open_bytes)[:16],
++                     "sat_sha256": sha256_hex(sat_bytes)[:16],
++                     "open_size": len(open_bytes),
++                     "sat_size": len(sat_bytes)}
++
++
++def run_gate(pairs: list[dict], token: str, ref: str = "main",
++             repo_root: Path | None = None, all_remote: bool = False,
++             open_repo: str = DEFAULT_OPEN_REPO,
++             fetcher=fetch_blob) -> dict:
++    """Verify every manifest pair. Returns a report dict (JSON-ready).
++
++    fetcher is injectable for offline tests (same signature as fetch_blob).
++    """
++    clean: list[dict] = []
++    drift: list[dict] = []
++    errors: list[dict] = []
++    for pair in pairs:
++        open_rel = str(pair.get("open", "")).strip()
++        sat_repo = str(pair.get("satellite", "")).strip()
++        sat_rel = str(pair.get("path", "")).strip()
++        if not (open_rel and sat_repo and sat_rel):
++            errors.append({"pair": pair, "detail": "malformed pair (requires open/satellite/path)"})
++            continue
++        ob = sb = None
++        err = None
++        try:
++            ob = read_open_side(pair, repo_root, token, ref, all_remote, open_repo)
++        except FileNotFoundError as e:
++            err = str(e)
++        except Exception as e:  # infra on open side
++            err = f"open-side fetch failed: {e}"
++        if err is None:
++            try:
++                sb = fetcher(sat_repo, sat_rel, token, ref)
++            except Exception as e:  # infra on satellite side
++                err = f"satellite-side fetch failed: {e}"
++        verdict, detail = classify_pair(pair, ob, sb, err)
++        if verdict == "clean":
++            clean.append(detail)
++        elif verdict == "drift":
++            drift.append(detail)
++        else:
++            errors.append(detail)
++    now = datetime.now(timezone.utc)
++    return {
++        "gate": "satellite_parity_gate",
++        "provenance": {"issue": 1792, "kernel": "#1689 sentinel SHA method (run 7)"},
++        "checkedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
++        "ref": ref,
++        "allRemote": bool(all_remote),
++        "summary": {"total": len(pairs), "clean": len(clean),
++                    "drift": len(drift), "errors": len(errors)},
++        "clean": clean,
++        "drift": drift,
++        "errors": errors,
++    }
++
++
++# ---------------------------------------------------------------- reporting
++
++
++def build_issue_body(report: dict) -> str:
++    """Report-only drift work-order body (api_drift_detail.py template)."""
++    s = report["summary"]
++    title = (
++        f"federation: satellite parity drift — {s['drift']} drift / "
++        f"{s['errors']} infra error of {s['total']} sentinels "
++        f"(auto, report-only @ {report['checkedAt']})"
++    )
++    lines = [
++        f"## {title}",
++        "",
++        f"- Gate: `scripts/ci/satellite_parity_gate.py` (#1792, scheduled; kernel: "
++        f"#1689 sentinel SHA method). Ref `{report['ref']}`.",
++        "- **Report-only**: no push, no merge, no dispatch was performed by this "
++        "gate. Dispatch authority stays with humans/admins per the bridge contract.",
++        "- Fail-closed note: `errors` are infrastructure/verification failures — "
++        "the gate could NOT see; treat as blind, not clean.",
++        "",
++        "### Drift detail (byte-size delta + hunk summary)",
++        "",
++    ]
++    for d in report["drift"]:
++        p = d["pair"]
++        lines.append(f"#### `{p.get('open')}` <-> `{p.get('satellite')}:{p.get('path')}`")
++        lines.append("")
++        if d.get("hunks"):
++            lines.append(d["hunks"])
++        else:
++            lines.append(f"- {d.get('detail')} "
++                         f"(open sha256 {d.get('open_sha256','?')}, {d.get('open_size','?'):,} B)")
++        lines.append("")
++    if report["errors"]:
++        lines += ["### Verification errors (fail-closed)", ""]
++        for e in report["errors"]:
++            p = e["pair"]
++            lines.append(f"- `{p.get('open')}` <-> `{p.get('satellite')}:{p.get('path')}`: {e.get('detail')}")
++        lines.append("")
++    lines += [
++        "### Remediation (admin/coder)",
++        "",
++        "1. Confirm the drift is not a satellite-side intended change (read the",
++        "   satellite repo's history for the surface first).",
++        "2. If the mirror is ahead intentionally: re-dispatch "
++        "`federation_satellite_sync.py` (heal) per the #1689 runbook.",
++        "3. If the drift is a regression: revert the satellite surface to the",
++        "   mirror blob SHA listed above.",
++        "",
++        f"_Provenance: #1792 R38 (scout radar XII); detection latency target <=6 h; "
++        f"generated {report['checkedAt']} by the scheduled parity gate. "
++        f"Labels: audit:finding, federation:drift._",
++    ]
++    return "\n".join(lines)
++
++
++def exit_code_for(report: dict) -> int:
++    s = report["summary"]
++    if s["errors"]:
++        return EXIT_INFRA
++    if s["drift"]:
++        return EXIT_DRIFT
++    return EXIT_CLEAN
++
++
++# ---------------------------------------------------------------- self-test
++
++
++def self_test() -> bool:
++    """Offline contract checks (no network)."""
++    p1 = {"open": "a", "satellite": "r", "path": "b"}
++    assert classify_pair(p1, b"x", b"x", None)[0] == "clean"
++    v, d = classify_pair(p1, b"x" * 10, b"y", None)
++    assert v == "drift" and "byte-size delta" in d["hunks"]
++    assert classify_pair(p1, None, None, "boom")[0] == "error"
++    assert classify_pair(p1, b"x", None, None)[0] == "drift"
++    assert exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 1}}) == EXIT_CLEAN
++    assert exit_code_for({"summary": {"errors": 0, "drift": 2, "total": 3}}) == EXIT_DRIFT
++    assert exit_code_for({"summary": {"errors": 1, "drift": 0, "total": 3}}) == EXIT_INFRA
++    rep = {"checkedAt": "T", "ref": "main", "summary": {"drift": 1, "errors": 0, "total": 2},
++           "drift": [{"pair": p1, "detail": "content divergence", "hunks": "- byte-size delta: x"}],
++           "errors": []}
++    body = build_issue_body(rep)
++    assert "Report-only" in body and "byte-size delta" in body and "#1792" in body
++    assert resolve_token.__doc__
++    return True
++
++
++# ---------------------------------------------------------------- main
++
++
++def main(argv: list[str] | None = None) -> int:
++    ap = argparse.ArgumentParser(description="scheduled mirror<->satellite parity gate (#1792)")
++    ap.add_argument("--json", action="store_true", help="machine-readable JSON report on stdout")
++    ap.add_argument("--issue-body", metavar="PATH", help="write report-only drift WO body to PATH")
++    ap.add_argument("--all-remote", action="store_true",
++                    help="fetch the open side live too (no checkout needed)")
++    ap.add_argument("--ref", default="main")
++    ap.add_argument("--manifest", default=str(DEFAULT_MANIFEST))
++    ap.add_argument("--token-env", default=None,
++                    help="env var name holding the read-only PAT (default: SAT_SYNC_PAT chain)")
++    ap.add_argument("--open-repo", default=DEFAULT_OPEN_REPO)
++    ap.add_argument("--self-test", action="store_true")
++    args = ap.parse_args(argv)
++
++    if args.self_test:
++        ok = self_test()
++        print("self-test:", "PASS" if ok else "FAIL")
++        return EXIT_CLEAN if ok else EXIT_INFRA
++
++    try:
++        manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
++        pairs = manifest.get("pairs") or []
++    except Exception as e:
++        print(f"gate INFRA: cannot read manifest {args.manifest}: {e}", file=sys.stderr)
++        return EXIT_INFRA
++    if not pairs:
++        print("gate INFRA: manifest has no pairs (refusing to vote clean on blindness)",
++              file=sys.stderr)
++        return EXIT_INFRA
++
++    try:
++        token = resolve_token(args.token_env)
++        report = run_gate(pairs, token, ref=args.ref,
++                          repo_root=Path.cwd(), all_remote=args.all_remote,
++                          open_repo=args.open_repo)
++    except Exception as e:
++        print(f"gate INFRA: {e}", file=sys.stderr)
++        return EXIT_INFRA
++
++    if args.json:
++        print(json.dumps(report, indent=2))
++    else:
++        s = report["summary"]
++        print(f"satellite parity gate: {s['clean']}/{s['total']} clean, "
++              f"{s['drift']} drift, {s['errors']} errors")
++        for c in report["clean"]:
++            print(f"  OK    {c['pair']['open']} == {c['pair']['satellite']}:{c['pair']['path']}")
++        for d in report["drift"]:
++            print(f"  DRIFT {d['pair']['open']} != {d['pair']['satellite']}:{d['pair']['path']}")
++        for e in report["errors"]:
++            print(f"  ERROR {e['pair'].get('open','?')}: {e.get('detail')}")
++        if args.issue_body and (report["drift"] or report["errors"]):
++            Path(args.issue_body).write_text(build_issue_body(report), encoding="utf-8")
++            print(f"issue body written: {args.issue_body}")
++    return exit_code_for(report)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_satellite_parity_gate.py b/tests/test_satellite_parity_gate.py
+new file mode 100644
+index 00000000..c6dc6aae
+--- /dev/null
++++ b/tests/test_satellite_parity_gate.py
+@@ -0,0 +1,210 @@
++#!/usr/bin/env python3
++"""Offline tests for scripts/ci/satellite_parity_gate.py (#1792).
++
++No network: the GitHub fetch layer is injected/monkeypatched. Run:
++    python -m unittest tests.test_satellite_parity_gate -v
++"""
++
++from __future__ import annotations
++
++import base64
++import io
++import json
++import sys
++import unittest
++import urllib.error
++from contextlib import redirect_stderr, redirect_stdout
++from pathlib import Path
++from unittest import mock
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "ci"))
++
++import satellite_parity_gate as gate  # noqa: E402
++
++P1 = {"open": "gateway/main.py", "satellite": "Supremeai-bd/supremeai-api", "path": "main.py"}
++P2 = {"open": "core/main.py", "satellite": "Supremeai-bd/supremeai-core", "path": "main.py"}
++P3 = {"open": "studio/package.json", "satellite": "Supremeai-bd/supremeai-studio",
++      "path": "package.json"}
++
++
++def fake_fetch(mapping):
++    """mapping: {(repo, path): bytes | None | Exception}"""
++    def _f(repo, path, token, ref="main"):
++        key = (repo, path)
++        if key not in mapping:
++            raise AssertionError(f"unexpected fetch {key}")
++        v = mapping[key]
++        if isinstance(v, Exception):
++            raise v
++        return v
++    return _f
++
++
++class ClassifyTests(unittest.TestCase):
++    def test_clean(self):
++        verdict, d = gate.classify_pair(P1, b"same", b"same", None)
++        self.assertEqual(verdict, "clean")
++        self.assertEqual(d["size"], 4)
++
++    def test_drift_has_hunks_and_delta(self):
++        verdict, d = gate.classify_pair(P1, b"a" * 20, b"b", None)
++        self.assertEqual(verdict, "drift")
++        self.assertIn("byte-size delta", d["hunks"])
++        self.assertIn("+19 B", d["hunks"])
++
++    def test_drift_satellite_absent(self):
++        verdict, d = gate.classify_pair(P1, b"data", None, None)
++        self.assertEqual(verdict, "drift")
++        self.assertIn("absent", d["detail"])
++
++    def test_error_infra(self):
++        verdict, _ = gate.classify_pair(P1, None, None, "rate limited")
++        self.assertEqual(verdict, "error")
++
++    def test_error_open_absent(self):
++        verdict, _ = gate.classify_pair(P1, None, b"x", None)
++        self.assertEqual(verdict, "error")
++
++
++class ExitCodeTests(unittest.TestCase):
++    def test_clean(self):
++        self.assertEqual(gate.exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 7}}), 0)
++
++    def test_drift(self):
++        self.assertEqual(gate.exit_code_for({"summary": {"errors": 0, "drift": 1, "total": 7}}), 1)
++
++    def test_infra_wins(self):
++        self.assertEqual(gate.exit_code_for({"summary": {"errors": 2, "drift": 1, "total": 7}}), 2)
++
++
++class RunGateTests(unittest.TestCase):
++    def test_full_flow_two_clean_one_drift(self):
++        fetcher = fake_fetch({
++            ("Supremeai-bd/supremeai-core", "main.py"): b"same",
++            ("Supremeai-bd/supremeai-studio", "package.json"): b"{}",
++            ("Supremeai-bd/supremeai-api", "main.py"): b"old",
++        })
++        with mock.patch.object(gate, "read_open_side", side_effect=[
++                b"same", b"same", b"new"]):
++            report = gate.run_gate([P1, P2, P3], "tok", fetcher=fetcher, repo_root=None)
++        self.assertEqual(report["summary"], {"total": 3, "clean": 1, "drift": 2, "errors": 0})
++        self.assertEqual(report["drift"][0]["pair"]["path"], "main.py")
++        self.assertIn("byte-size delta", report["drift"][0]["hunks"])
++
++    def test_malformed_pair_is_error_not_crash(self):
++        report = gate.run_gate([{"open": "", "satellite": "r", "path": ""}], "tok",
++                               fetcher=fake_fetch({}), repo_root=None)
++        self.assertEqual(report["summary"]["errors"], 1)
++
++    def test_satellite_infra_is_fail_closed_error(self):
++        fetcher = fake_fetch({
++            ("Supremeai-bd/supremeai-core", "main.py"):
++                urllib.error.HTTPError("u", 403, "forbidden", {}, io.BytesIO(b"")),
++        })
++        with mock.patch.object(gate, "read_open_side", return_value=b"x"):
++            report = gate.run_gate([P2], "tok", fetcher=fetcher, repo_root=None)
++        self.assertEqual(report["summary"]["errors"], 1)
++        self.assertIn("403", report["errors"][0]["detail"])
++
++    def test_open_side_local_missing_is_error(self):
++        report = gate.run_gate([P2], "tok", fetcher=fake_fetch({}),
++                               repo_root=Path("/nonexistent-root-xyz"))
++        self.assertEqual(report["summary"]["errors"], 1)
++
++
++class HunkSummaryTests(unittest.TestCase):
++    def test_lines_capped(self):
++        big = "\n".join(f"line {i}" for i in range(500)) + "\n"
++        out = gate.hunk_summary(big.encode(), ("x\n" + big).encode())
++        self.assertLessEqual(len(out.splitlines()), gate.MAX_DIFF_LINES + 5)
++
++    def test_delta_sign_negative(self):
++        out = gate.hunk_summary(b"short", b"much longer satellite content")
++        self.assertIn("open -24 B", out)
++
++
++class IssueBodyTests(unittest.TestCase):
++    def _report(self):
++        with mock.patch.object(gate, "read_open_side", return_value=b"new"):
++            return gate.run_gate([P1], "tok",
++                                 fetcher=fake_fetch({(P1["satellite"], P1["path"]): b"old"}),
++                                 repo_root=None)
++
++    def test_body_contains_contract_markers(self):
++        rep = self._report()
++        body = gate.build_issue_body(rep)
++        for marker in ("Report-only", "byte-size delta", "#1792", "no push, no merge",
++                       "Remediation"):
++            self.assertIn(marker, body)
++        self.assertIn("+new", body)  # drift hunks render the diff, not the detail string
++
++    def test_body_errors_section(self):
++        rep = {"checkedAt": "2026-10-28T00:00:00Z", "ref": "main", "allRemote": False,
++               "summary": {"total": 1, "clean": 0, "drift": 0, "errors": 1},
++               "clean": [], "drift": [],
++               "errors": [{"pair": P1, "detail": "open-side fetch failed: boom"}]}
++        body = gate.build_issue_body(rep)
++        self.assertIn("fail-closed", body)
++        self.assertIn("boom", body)
++
++
++class TokenTests(unittest.TestCase):
++    def test_chain_prefers_first(self):
++        with mock.patch.dict("os.environ", {"SAT_SYNC_PAT": "a", "GITHUB_TOKEN": "b"}):
++            self.assertEqual(gate.resolve_token(), "a")
++
++    def test_chain_falls_back(self):
++        with mock.patch.dict("os.environ", {"OPEN_SYNC_PAT": "b"}, clear=True):
++            self.assertEqual(gate.resolve_token(), "b")
++
++    def test_chain_empty_raises(self):
++        with mock.patch.dict("os.environ", {}, clear=True):
++            with self.assertRaises(RuntimeError):
++                gate.resolve_token()
++
++
++class FetchBlobTests(unittest.TestCase):
++    def _resp(self, obj):
++        return io.BytesIO(json.dumps(obj).encode())
++
++    def test_404_is_none(self):
++        err = urllib.error.HTTPError("u", 404, "nf", {}, io.BytesIO(b""))
++        with mock.patch.object(gate.urllib.request, "urlopen", side_effect=err):
++            self.assertIsNone(gate.fetch_blob("r", "p", "t"))
++
++    def test_infra_raises(self):
++        err = urllib.error.HTTPError("u", 403, "forbidden", {}, io.BytesIO(b""))
++        with mock.patch.object(gate.urllib.request, "urlopen", side_effect=err):
++            with self.assertRaises(urllib.error.HTTPError):
++                gate.fetch_blob("r", "p", "t")
++
++    def test_decodes_base64(self):
++        payload = {"content": base64.b64encode(b"hello").decode()}
++        with mock.patch.object(gate.urllib.request, "urlopen",
++                               return_value=self._resp(payload)):
++            self.assertEqual(gate.fetch_blob("r", "p", "t"), b"hello")
++
++
++class SelfTestAndMainTests(unittest.TestCase):
++    def test_self_test_passes(self):
++        self.assertTrue(gate.self_test())
++
++    def test_main_infra_when_manifest_missing(self):
++        buf_out, buf_err = io.StringIO(), io.StringIO()
++        with redirect_stdout(buf_out), redirect_stderr(buf_err):
++            code = gate.main(["--manifest", "/nonexistent/manifest.json"])
++        self.assertEqual(code, 2)
++
++    def test_main_refuses_empty_manifest(self):
++        import tempfile
++        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
++            json.dump({"pairs": []}, f)
++            path = f.name
++        buf_out, buf_err = io.StringIO(), io.StringIO()
++        with redirect_stdout(buf_out), redirect_stderr(buf_err):
++            code = gate.main(["--manifest", path])
++        self.assertEqual(code, 2)
++
++
++if __name__ == "__main__":
++    unittest.main()

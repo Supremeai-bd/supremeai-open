@@ -1,0 +1,169 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 0ccfde36..ddf30183 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -22,6 +22,7 @@
+     "test:tool-visibility": "tsx test_tool_visibility.ts",
+     "test:access": "tsx test_mcp_access.ts",
+     "test:health-history": "tsx test_health_history.ts",
++    "test:health-hollow-guard": "tsx test_health_hollow_guard.ts",
+     "test:guardian": "tsx test_guardian.ts",
+     "test:heartbeat": "tsx test_heartbeat.ts",
+     "test:redis-rotation": "tsx test_redis_auto_rotation.ts",
+diff --git a/infrastructure/mcp-control-plane/src/http_server.ts b/infrastructure/mcp-control-plane/src/http_server.ts
+index ee07f33a..4865dbbd 100644
+--- a/infrastructure/mcp-control-plane/src/http_server.ts
++++ b/infrastructure/mcp-control-plane/src/http_server.ts
+@@ -337,7 +337,12 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           status: snapshot.status,
+         }));
+         const unhealthy = services.filter((s) => s.status !== "healthy").length;
+-        const status: string = unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
++        // #2681: an empty snapshot table (post-restart, before any check ran) must NOT
++        // read "ok" — that is the #2665 live-but-empty signature ("ok" + total:0 while
++        // the system runs work). Boot-state honesty: derive "starting" (remains 200 —
++        // a boot state is not an outage). Empty-array vacuous truth is the trap:
++        // unhealthy === 0 is vacuously true over services = [].
++        const status: string = services.length === 0 ? "starting" : unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
+         const httpStatus = status === "outage" ? 503 : 200;
+         res.writeHead(httpStatus, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+         res.end(JSON.stringify(withTimestamp({
+@@ -347,10 +352,11 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           services: { healthy: services.length - unhealthy, degraded: unhealthy, total: services.length },
+         })));
+       } catch {
+-        // Fallback: if health cache isn't loaded yet (cold start), return ok
+-        // but flag that health data isn't available yet.
++        // Fallback: if health cache isn't loaded yet (cold start), report "starting" —
++        // #2681: an unreadable cache is never evidence that everything is healthy,
++        // so the fallback must not emit a bare "ok" either.
+         res.writeHead(200, { "Content-Type": "application/json" });
+-        res.end(JSON.stringify(withTimestamp({ status: "ok", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
++        res.end(JSON.stringify(withTimestamp({ status: "starting", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
+       }
+       return;
+     }
+diff --git a/infrastructure/mcp-control-plane/test_health_hollow_guard.ts b/infrastructure/mcp-control-plane/test_health_hollow_guard.ts
+new file mode 100644
+index 00000000..2d6b1e63
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_health_hollow_guard.ts
+@@ -0,0 +1,109 @@
++/**
++ * /health hollow-read guard — deploy-independent pin for the #2665 live-but-empty
++ * residual (class filing #2673, remedy pt.1; fix issue #2681).
++ *
++ * What it asserts:
++ *   1. EMPTY-TABLE HONESTY — the /health handler in src/http_server.ts derives a
++ *      non-"ok" status ("starting") when the snapshot table is empty. The vacuous
++ *      truth trap (`unhealthy === 0` over `services = []`) is exactly how the
++ *      #2665 signature (status:"ok" + services{total:0} while the system runs
++ *      work) survived the honest-aggregate fix (#2724 lineage).
++ *   2. COLD-START FALLBACK HONESTY — the catch fallback never emits a bare "ok";
++ *      an unreadable cache is not evidence that everything is healthy.
++ *   3. SEMANTIC TRUTH TABLE — the intended derivation, re-stated as pure data:
++ *      [] -> starting; all-healthy -> ok; mixed -> degraded; all-unhealthy -> outage.
++ *
++ * Static source scans follow the test_annotations_floor.ts precedent (deploy-
++ * independent; the live-plane behavior is separately witnessed by hourly curl
++ * readings, e.g. #2665's evidence series and the cycle-42/43 receipts).
++ *
++ * Run: tsx test_health_hollow_guard.ts  (wired as `test:health-hollow-guard` in test:unit)
++ */
++import { readFileSync } from "node:fs";
++import { join, dirname } from "node:path";
++import { fileURLToPath } from "node:url";
++
++const ROOT = dirname(fileURLToPath(import.meta.url));
++const SERVER_SRC = join(ROOT, "src", "http_server.ts");
++
++let failed = false;
++function check(name: string, ok: boolean, detail = "") {
++  if (ok) {
++    console.log(`[health-hollow-guard] ok — ${name}`);
++  } else {
++    failed = true;
++    console.error(`[health-hollow-guard] FAIL — ${name}${detail ? ` (${detail})` : ""}`);
++  }
++}
++
++const src = readFileSync(SERVER_SRC, "utf8");
++
++/** Strip line comments and block comments so prose like `must NOT read "ok"` inside
++ *  explanatory comments can never satisfy or defeat a code-shape assertion. */
++function stripComments(s: string): string {
++  let out = "";
++  let i = 0;
++  while (i < s.length) {
++    if (s.startsWith("//", i)) {
++      while (i < s.length && s[i] !== "\n") i++;
++    } else if (s.startsWith("/*", i)) {
++      const close = s.indexOf("*/", i + 2);
++      i = close === -1 ? s.length : close + 2;
++    } else if (s.startsWith('"', i) || s.startsWith("'", i) || s.startsWith("`", i)) {
++      const q = s[i];
++      out += s[i++];
++      while (i < s.length && s[i] !== q) {
++        if (s[i] === "\\") out += s[i++];
++        out += s[i++] ?? "";
++      }
++      if (i < s.length) out += s[i++];
++    } else {
++      out += s[i++];
++    }
++  }
++  return out;
++}
++
++// Isolate the /health handler region: from the route match to its terminating return.
++const start = src.indexOf('url === "/health"');
++if (start === -1) {
++  console.error("[health-hollow-guard] FAIL — /health handler not found in src/http_server.ts");
++  process.exit(1);
++}
++const end = src.indexOf("return;", start);
++const region = stripComments(src.slice(start, end === -1 ? src.length : end));
++
++// 1. Empty-table guard: "starting" must be derived BEFORE any "ok" can be reached,
++//    keyed on the empty services array (not merely present somewhere in the file).
++const emptyGuardIdx = region.indexOf('services.length === 0 ? "starting"');
++check(
++  "empty-table guard derives \"starting\" before \"ok\" (services.length === 0 ? \"starting\")",
++  emptyGuardIdx !== -1 && emptyGuardIdx < region.indexOf('"ok"'),
++  "status chain must test emptiness first"
++);
++
++// 2. Cold-start fallback: the catch branch must not emit bare "ok".
++const catchIdx = region.indexOf("} catch {");
++const catchTail = catchIdx === -1 ? "" : region.slice(catchIdx);
++check(
++  "cold-start catch fallback reports \"starting\" (not bare \"ok\")",
++  catchTail.includes('status: "starting"') && !/status:\s*"ok"/.test(catchTail),
++  "an unreadable cache is not all-healthy evidence"
++);
++
++// 3. Semantic truth table — the intended derivation, pinned as pure data so the
++//    contract survives refactors of the inline expression.
++type S = { status: string };
++function derive(services: S[]): string {
++  const unhealthy = services.filter((s) => s.status !== "healthy").length;
++  return services.length === 0 ? "starting" : unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
++}
++check("derive([]) = starting (boot state, not ok)", derive([]) === "starting");
++check("derive([healthy]) = ok", derive([{ status: "healthy" }]) === "ok");
++check("derive(mixed) = degraded", derive([{ status: "healthy" }, { status: "degraded" }]) === "degraded");
++check("derive(all-unhealthy) = outage", derive([{ status: "unreachable" }, { status: "unreachable" }]) === "outage");
++
++if (failed) {
++  process.exit(1);
++}
++console.log("[health-hollow-guard] PASS — /health empty-table + cold-start honesty pinned (#2665 residual closed by #2681)");

@@ -1,0 +1,769 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 1fc6889f..3ab974cb 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -1027,7 +1027,7 @@ jobs:
+           BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 200 --json number,title,labels)
+           # Mirror the pick_next_issue() EXCLUDED_LABELS set exactly (case-insensitive,
+           # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror, anchor-hub.
+-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
++          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub","admin-only","bridge:idempotent-noop","bridge:in-gates","bridge:pr-opened","bridge:queued","bridge:rejected"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+           echo "claimable-board snapshot: $CLAIMABLE"
+           if [ "$CLAIMABLE" = "[]" ]; then
+             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENTS.md §10."
+diff --git a/.gitignore b/.gitignore
+index 667afd04..e8ab56b0 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -29,6 +29,8 @@ graphify-out/
+ .cache/graphify*/
+ audit-out/
+ audit.raw.json
++ci-reports/
++size_budget_report.json
+ .agents/**/audit-out/
+ .agents/**/audit.raw.json
+ .agents/**/test_shot.png
+diff --git a/browser/browsing_memory.py b/browser/browsing_memory.py
+index e8d38027..51958008 100644
+--- a/browser/browsing_memory.py
++++ b/browser/browsing_memory.py
+@@ -8,7 +8,7 @@
+ from __future__ import annotations
+ 
+ import time
+-from typing import Any
++from typing import Any, ClassVar
+ 
+ from core.cache.semantic_cache import semantic_cache
+ from core.monitoring.logging_config import logger
+@@ -17,7 +17,7 @@
+ class BrowsingMemory:
+     """Persistent cross-session site intelligence and preflight behavior synthesizer."""
+ 
+-    _site_history: dict[str, list[dict[str, Any]]] = {}
++    _site_history: ClassVar[dict[str, list[dict[str, Any]]]] = {}
+ 
+     async def observe(self, site: str, event: dict[str, Any]) -> None:
+         """Record navigation, interaction, or outcome event for a site domain."""
+diff --git a/core/adapters/red_team_adapter.py b/core/adapters/red_team_adapter.py
+index fb7f857e..38971f06 100644
+--- a/core/adapters/red_team_adapter.py
++++ b/core/adapters/red_team_adapter.py
+@@ -106,8 +106,11 @@ async def run_security_challenge(
+         # Load code content
+         if code_content is None:
+             try:
+-                with open(artifact_path, encoding="utf-8") as f:
+-                    code_content = f.read()
++                import asyncio
++                def _read_code():
++                    with open(artifact_path, encoding="utf-8") as f:
++                        return f.read()
++                code_content = await asyncio.to_thread(_read_code)
+             except FileNotFoundError:
+                 return SecurityReport(
+                     findings=[
+diff --git a/core/admin_god.py b/core/admin_god.py
+index 06943c42..5f353481 100644
+--- a/core/admin_god.py
++++ b/core/admin_god.py
+@@ -33,7 +33,7 @@
+ import secrets as _secrets
+ from contextlib import asynccontextmanager
+ from datetime import datetime
+-from typing import Any
++from typing import Any, ClassVar
+ 
+ from core.errors.error_bus import with_error_bus
+ from core.monitoring.logging_config import logger
+@@ -68,7 +68,7 @@ class GodModeAuditLog:
+     Note: entries are treated as WORM-like; no deletion.
+     """
+ 
+-    _entries: list[dict[str, Any]] = []
++    _entries: ClassVar[list[dict[str, Any]]] = []
+ 
+     _REDIS_KEY_PREFIX = "audit:godmode:events"
+ 
+diff --git a/core/api/routes/admin.py b/core/api/routes/admin.py
+index dc0e6bae..9faf144f 100644
+--- a/core/api/routes/admin.py
++++ b/core/api/routes/admin.py
+@@ -172,8 +172,12 @@ def _admin_action_audit(result: str) -> None:
+             backup_dir.mkdir(parents=True, exist_ok=True)
+             backup_path = backup_dir / f"db_backup_{int(datetime.now(UTC).timestamp())}.json"
+ 
+-            with open(backup_path, "w", encoding="utf-8") as f:
+-                json.dump(backup_data, f, indent=2)
++            import asyncio
++
++            def _write_backup():
++                with open(backup_path, "w", encoding="utf-8") as f:
++                    json.dump(backup_data, f, indent=2)
++            await asyncio.to_thread(_write_backup)
+ 
+             logger.info(f"Database backup saved successfully to {backup_path}")
+             _admin_action_audit("success")
+diff --git a/core/api/routes/admin_dashboard/__init__.py b/core/api/routes/admin_dashboard/__init__.py
+index da0279f0..33163518 100644
+--- a/core/api/routes/admin_dashboard/__init__.py
++++ b/core/api/routes/admin_dashboard/__init__.py
+@@ -117,7 +117,7 @@ async def log_generator():
+ 
+         if os.path.exists(log_file):
+             try:
+-                with open(log_file) as f:
++                with open(log_file) as f:  # noqa: ASYNC230
+                     lines = f.readlines()[-30:]
+                     for line in lines:
+                         yield f"data: {line.strip()}\n\n"
+@@ -129,7 +129,7 @@ async def log_generator():
+         last_output = time.monotonic()
+         try:
+             if os.path.exists(log_file):
+-                file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
++                file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
+                 file_obj.seek(0, os.SEEK_END)
+ 
+             while True:
+@@ -154,7 +154,7 @@ async def log_generator():
+                         yield ": ping\n\n"
+                         last_output = time.monotonic()
+                     if os.path.exists(log_file):
+-                        file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
++                        file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
+                         file_obj.seek(0, os.SEEK_END)
+                     await asyncio.sleep(1.0)
+         except asyncio.CancelledError:
+diff --git a/core/api/routes/admin_dashboard/endpoints_events.py b/core/api/routes/admin_dashboard/endpoints_events.py
+index 98ee6685..ecc95a99 100644
+--- a/core/api/routes/admin_dashboard/endpoints_events.py
++++ b/core/api/routes/admin_dashboard/endpoints_events.py
+@@ -1,7 +1,9 @@
+ """Dashboard events + standup report endpoints (GET /admin-api/events, GET /admin-api/reports)."""
+ 
++import asyncio
+ import json
+ import os
++from pathlib import Path
+ 
+ from fastapi import HTTPException, Query
+ 
+@@ -20,8 +22,10 @@ async def get_events(limit: int = Query(50, ge=1, le=200)):
+         return []
+ 
+     try:
+-        with open(events_log_path, encoding="utf-8") as f:
+-            lines = f.readlines()
++        def _read_events_lines():
++            with open(events_log_path, encoding="utf-8") as f:
++                return f.readlines()
++        lines = await asyncio.to_thread(_read_events_lines)
+ 
+         events = []
+         for line in reversed(lines):
+@@ -60,8 +64,8 @@ async def list_reports(report_name: str | None = None):
+ 
+         if not os.path.exists(file_path):
+             raise HTTPException(status_code=404, detail="Report not found.")
+-        with open(file_path, encoding="utf-8") as f:
+-            return {"name": report_name, "content": f.read()}
++        content = await asyncio.to_thread(lambda: Path(file_path).read_text(encoding="utf-8"))
++        return {"name": report_name, "content": content}
+     else:
+         import glob
+ 
+diff --git a/core/api/routes/byoc_api.py b/core/api/routes/byoc_api.py
+index 7780fa56..e5aab95f 100644
+--- a/core/api/routes/byoc_api.py
++++ b/core/api/routes/byoc_api.py
+@@ -1,5 +1,6 @@
+ # Secure Endpoints for Universal BYOC Management
+ # বাংলা মন্তব্য: সিকিউর প্রক্সি, রোটেশন, ক্রেডেনশিয়াল ম্যানেজমেন্ট ও টেরাফর্ম রানার ট্রিগার এপিআই।
++import asyncio
+ import json
+ import os
+ import uuid
+@@ -85,9 +86,11 @@ async def deploy_container(
+     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+     config_path = os.path.join(base_dir, "config", "byoc_limits.json")
+     try:
+-        with open(config_path, encoding="utf-8") as f:
+-            limits = json.load(f)["limits"]
+-            user_limits = limits.get(user_tier, limits["free"])
++        def _read_byoc_limits():
++            with open(config_path, encoding="utf-8") as f:
++                return json.load(f)["limits"]
++        limits = await asyncio.to_thread(_read_byoc_limits)
++        user_limits = limits.get(user_tier, limits["free"])
+     except Exception:
+         logger.exception("Unhandled exception")
+         user_limits = {"max_containers": 1, "max_memory": "256Mi", "max_cpu": "500m"}
+diff --git a/core/api/routes/chat_upload.py b/core/api/routes/chat_upload.py
+index e05fed3d..f9f642bb 100644
+--- a/core/api/routes/chat_upload.py
++++ b/core/api/routes/chat_upload.py
+@@ -171,8 +171,11 @@ async def upload_chat_image(
+ 
+     # Write file to disk
+     try:
+-        with open(file_path, "wb") as f:
+-            f.write(content)
++        import asyncio
++        def _write_content():
++            with open(file_path, "wb") as f:
++                f.write(content)
++        await asyncio.to_thread(_write_content)
+     except OSError as e:
+         logger.error(f"Failed to write upload file: {e}")
+         raise HTTPException(status_code=500, detail="Failed to save uploaded file") from e
+@@ -181,17 +184,20 @@ async def upload_chat_image(
+     # file so the /files explorer's LIST endpoint survives process restarts (the
+     # in-memory `_uploads` registry does not). Sidecar: <attachment_id>.meta.json
+     try:
+-        with open(os.path.join(user_dir, f"{attachment_id}.meta.json"), "w") as meta_fh:
+-            json.dump(
+-                {
+-                    "name": original_name,
+-                    "mime_type": mime_type,
+-                    "size": len(content),
+-                    "user_id": user_id,
+-                    "created_at": datetime.now(UTC).isoformat(),
+-                },
+-                meta_fh,
+-            )
++        import asyncio
++        def _write_meta():
++            with open(os.path.join(user_dir, f"{attachment_id}.meta.json"), "w") as meta_fh:
++                json.dump(
++                    {
++                        "name": original_name,
++                        "mime_type": mime_type,
++                        "size": len(content),
++                        "user_id": user_id,
++                        "created_at": datetime.now(UTC).isoformat(),
++                    },
++                    meta_fh,
++                )
++        await asyncio.to_thread(_write_meta)
+     except OSError as meta_err:
+         logger.warning(f"Sidecar metadata write failed (non-critical): {meta_err}")
+ 
+diff --git a/core/api/routes/ci_dashboard_api.py b/core/api/routes/ci_dashboard_api.py
+index c7ccfd33..3e3552a2 100644
+--- a/core/api/routes/ci_dashboard_api.py
++++ b/core/api/routes/ci_dashboard_api.py
+@@ -194,7 +194,7 @@ class WebhookPayload(BaseModel):
+ 
+ def _store_summary(summary: CISummaryModel):
+     """Store a CI summary (in memory or DB)"""
+-    global _ci_summaries_store, _ci_history
++    global _ci_history
+ 
+     # Store by run_id
+     _ci_summaries_store[summary.run_id] = summary
+@@ -711,7 +711,7 @@ async def clear_cache(
+             status_code=400, detail="Set confirm=true to proceed with cache clearing"
+         )
+ 
+-    global _ci_history, _ci_summaries_store
++    global _ci_history
+ 
+     cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+     before_count = len(_ci_history)
+diff --git a/core/api/routes/living_brain.py b/core/api/routes/living_brain.py
+index f55b8d9e..4659f179 100644
+--- a/core/api/routes/living_brain.py
++++ b/core/api/routes/living_brain.py
+@@ -318,7 +318,6 @@ async def query_learned_patterns(query: str, limit: int = 5):
+ 
+ def _get_startup_time() -> float:
+     """Get application startup time."""
+-    global _startup_time
+     return _startup_time
+ 
+ 
+diff --git a/core/github/scripts/platform_deep_audit.py b/core/github/scripts/platform_deep_audit.py
+index 61ac3a9b..11e393d2 100644
+--- a/core/github/scripts/platform_deep_audit.py
++++ b/core/github/scripts/platform_deep_audit.py
+@@ -295,7 +295,7 @@ def probe_render(kv: dict) -> list[dict]:
+                           f"{se}/{ke} নেই", category="CONFIG_MISSING"))
+             continue
+         H = {"Authorization": f"Bearer {akey}"}
+-        st, svc = retry(lambda: jget(f"https://api.render.com/v1/services/{sid}", H))
++        st, svc = retry(lambda sid=sid, H=H: jget(f"https://api.render.com/v1/services/{sid}", H))
+         if st != 200:
+             cat, note = classify("render", f"settings[{name}]", st, json.dumps(svc))
+             out.append(mk("render", f"settings[{name}]", False, f"HTTP {st}", category=cat, note=note))
+@@ -312,7 +312,7 @@ def probe_render(kv: dict) -> list[dict]:
+             out.append(mk("render", f"settings[{name}].healthCheckPath", None,
+                           "healthCheckPath সেট নেই — ভাঙা ডিপ্লয়ও 'live' হতে পারে",
+                           category="SETTINGS_RISK"))
+-        st, deps = retry(lambda: jget(f"https://api.render.com/v1/services/{sid}/deploys?limit=5", H))
++        st, deps = retry(lambda sid=sid, H=H: jget(f"https://api.render.com/v1/services/{sid}/deploys?limit=5", H))
+         if st == 200:
+             rows = [d.get("deploy", d) for d in (deps if isinstance(deps, list) else [])]
+             bad = [d for d in rows if d.get("status") in ("build_failed", "update_failed", "canceled")]
+@@ -427,7 +427,7 @@ def probe_cloudflare(kv: dict) -> list[dict]:
+         if not email or not gk:
+             continue
+         H = {"X-Auth-Email": email, "X-Auth-Key": gk}
+-        st, zones = retry(lambda: jget("https://api.cloudflare.com/client/v4/zones?per_page=50", H))
++        st, zones = retry(lambda H=H: jget("https://api.cloudflare.com/client/v4/zones?per_page=50", H))
+         if st != 200 or not (zones.get("success") if isinstance(zones, dict) else False):
+             out.append(mk("cloudflare", f"zones[{label}]", False, f"HTTP {st}", category="AUTH_INVALID"))
+             continue
+@@ -556,7 +556,7 @@ def probe_known_keys(kv: dict) -> list[dict]:
+             H = {"Authorization": f"Bearer {tok}"}
+         else:
+             H = {"Authorization": tok}
+-        st, body = retry(lambda: jget(url, H))
++        st, body = retry(lambda url=url, H=H: jget(url, H))
+         low = (body if isinstance(body, str) else json.dumps(body)).lower()
+         if st == 200:
+             out.append(mk(name, "key-validity", True, "HTTP 200 — সচল"))
+diff --git a/core/llm/free_tier_tracker.py b/core/llm/free_tier_tracker.py
+index 1709a6c3..868a892c 100644
+--- a/core/llm/free_tier_tracker.py
++++ b/core/llm/free_tier_tracker.py
+@@ -450,7 +450,6 @@ def get_tracker(
+     user_id: str = "default",
+ ) -> FreeTierTracker:
+     """Return the per-user FreeTierTracker."""
+-    global _trackers
+     if user_id not in _trackers:
+         _trackers[user_id] = FreeTierTracker(custom_limits=custom_limits)
+         logger.info(f"[FreeTier] FreeTierTracker initialized for user: {user_id}")
+diff --git a/core/llm/token_budget.py b/core/llm/token_budget.py
+index f8c27e07..6fac37b5 100644
+--- a/core/llm/token_budget.py
++++ b/core/llm/token_budget.py
+@@ -493,7 +493,6 @@ def get_budget_manager(
+     user_id: str = "default",
+ ) -> TokenBudgetManager:
+     """Return the per-user TokenBudgetManager."""
+-    global _managers
+     if user_id not in _managers:
+         _managers[user_id] = TokenBudgetManager(custom_budgets=custom_budgets)
+         logger.info(f"[TokenBudget] TokenBudgetManager initialized for user: {user_id}")
+diff --git a/core/rate_limit.py b/core/rate_limit.py
+index 93c62b8c..bb595024 100644
+--- a/core/rate_limit.py
++++ b/core/rate_limit.py
+@@ -158,7 +158,6 @@ async def _get_limits(self, request: Request, endpoint: str, tier: str) -> tuple
+ 
+     def _fallback_is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, dict]:
+         now = time.time()
+-        global fallback_cache
+         try:
+             timestamps = fallback_cache.get(key, [])
+             timestamps = [t for t in timestamps if now - t < window]
+diff --git a/core/resilience/circuit_breaker.py b/core/resilience/circuit_breaker.py
+index e58a3a54..ed85e4fd 100644
+--- a/core/resilience/circuit_breaker.py
++++ b/core/resilience/circuit_breaker.py
+@@ -677,7 +677,6 @@ async def sync_from_db(db: Any) -> None:
+     # module-level import — sync_from_db() is the only consumer).
+     from services.config_service import ConfigService
+ 
+-    global CIRCUITS
+     try:
+         # We serialize the default dict to a dict of config kwargs for fallback
+         default_configs = {
+diff --git a/core/utils/branding.py b/core/utils/branding.py
+index b3292b6f..61e650c0 100644
+--- a/core/utils/branding.py
++++ b/core/utils/branding.py
+@@ -64,7 +64,6 @@
+ 
+ async def sync_from_db(db: Any) -> None:
+     """Sync PROVIDER_DISPLAY and MODEL_DISPLAY from the database configuration."""
+-    global PROVIDER_DISPLAY, MODEL_DISPLAY
+     try:
+         default_config = {
+             "provider_display": dict(PROVIDER_DISPLAY),
+diff --git a/gateway/LICENSE b/gateway/LICENSE
+index 1437a2b4..95cde2e2 100644
+--- a/gateway/LICENSE
++++ b/gateway/LICENSE
+@@ -1,21 +1,12 @@
+-MIT License
++Proprietary License — All Rights Reserved
+ 
+-Copyright (c) 2026 SaifulHaque Niloy
++Copyright (c) 2026 SaifulHaque Niloy. All rights reserved.
+ 
+-Permission is hereby granted, free of charge, to any person obtaining a copy
+-of this software and associated documentation files (the "Software"), to deal
+-in the Software without restriction, including without limitation the rights
+-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-copies of the Software, and to permit persons to whom the Software is
+-furnished to do so, subject to the following conditions:
++This software and associated documentation files (the "Software") are the
++proprietary and confidential property of SaifulHaque Niloy ("SupremeAI").
++The Software is licensed, not sold. Unauthorized copying, modification,
++distribution, or use of this Software, in whole or in part, via any medium,
++is strictly prohibited without prior written permission from SupremeAI.
+ 
+-The above copyright notice and this permission notice shall be included in all
+-copies or substantial portions of the Software.
+-
+-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+-SOFTWARE.
++No open-source license is granted. See ECOSYSTEM_MAP.md §2.3 for the
++licensing policy.
+\ No newline at end of file
+diff --git a/gateway/main.py b/gateway/main.py
+index 6492002c..229644db 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -426,7 +426,7 @@ async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+     app.add_middleware(
+         CORSMiddleware,
+         allow_origins=_cors_origins,
+-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
++        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.pages\.dev|.*\.vercel\.app|.*\.workers\.dev)(:[0-9]+)?$",
+         allow_credentials=True,
+         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+         allow_headers=[
+diff --git a/gateway/routes/admin_dashboard/__init__.py b/gateway/routes/admin_dashboard/__init__.py
+index da0279f0..33163518 100644
+--- a/gateway/routes/admin_dashboard/__init__.py
++++ b/gateway/routes/admin_dashboard/__init__.py
+@@ -117,7 +117,7 @@ async def log_generator():
+ 
+         if os.path.exists(log_file):
+             try:
+-                with open(log_file) as f:
++                with open(log_file) as f:  # noqa: ASYNC230
+                     lines = f.readlines()[-30:]
+                     for line in lines:
+                         yield f"data: {line.strip()}\n\n"
+@@ -129,7 +129,7 @@ async def log_generator():
+         last_output = time.monotonic()
+         try:
+             if os.path.exists(log_file):
+-                file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
++                file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
+                 file_obj.seek(0, os.SEEK_END)
+ 
+             while True:
+@@ -154,7 +154,7 @@ async def log_generator():
+                         yield ": ping\n\n"
+                         last_output = time.monotonic()
+                     if os.path.exists(log_file):
+-                        file_obj = open(log_file)  # noqa: SIM115 - handle persists across generator yields, closed in finally
++                        file_obj = open(log_file)  # noqa: SIM115, ASYNC230 - handle persists across generator yields, closed in finally
+                         file_obj.seek(0, os.SEEK_END)
+                     await asyncio.sleep(1.0)
+         except asyncio.CancelledError:
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 30de4327..6f80e5d8 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -266,8 +266,9 @@ def get_logs(self, limit: int = 100, level: Optional[str] = None, search: Option
+ app.add_middleware(
+     CORSMiddleware,
+     allow_origins=allowed_origins,
++    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|.*\.pages\.dev|.*\.vercel\.app|.*\.workers\.dev)(:[0-9]+)?$",
+     allow_credentials=True,
+-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
++    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+     allow_headers=["Authorization", "Content-Type", "X-SupremeAI-Key", "X-Guest-Mode", "X-Forwarded-For", "Accept", "Origin", "Referer", "X-Correlation-ID"],
+ )
+ 
+@@ -762,6 +763,21 @@ async def get_public_config():
+     }
+ 
+ 
++@app.get("/api/preferences/{user_id}/stream")
++async def stream_preferences(user_id: str):
++    """SSE endpoint for real-time theme/preference updates (service tier)."""
++    import asyncio
++    import json
++
++    async def event_generator():
++        yield "event: connected\ndata: " + json.dumps({"status": "connected", "user_id": user_id}) + "\n\n"
++        while True:
++            await asyncio.sleep(15)
++            yield "event: ping\ndata: " + json.dumps({"channel": "heartbeat"}) + "\n\n"
++
++    return StreamingResponse(event_generator(), media_type="text/event-stream")
++
++
+ @app.get("/api/v1/live")
+ async def live_probe():
+     """Live heartbeat probe for Studio."""
+@@ -790,14 +806,25 @@ async def studio_auth_login(request: Request):
+     password = str(body.get("password", "")).strip()
+ 
+     admin_email = os.getenv("SUPREMEAI_ADMIN_LOGIN_EMAIL", "niloyjoy7@gmail.com").strip().lower()
+-    admin_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "").strip()
++    # Support both plaintext (SUPREMEAI_ADMIN_PASSWORD) and bcrypt hash
++    # (SUPREMEAI_ADMIN_PASSWORD_HASH) env vars, mirroring gateway.service.admin_auth.
++    try:
++        from service.admin_auth import _verify_password
++    except Exception:  # noqa: BLE001
++        try:
++            from gateway.service.admin_auth import _verify_password
++        except Exception:  # noqa: BLE001
++            def _verify_password(pw: str) -> bool:  # type: ignore[misc]
++                import hmac, os
++                env_pass = os.getenv("SUPREMEAI_ADMIN_PASSWORD", "").strip()
++                return bool(env_pass) and hmac.compare_digest(pw, env_pass)
+ 
+     # FIX(auth 2026-10-24): fail-closed credential check. Previously ANY email with
+     # ANY password of >=6 chars produced a session, and the admin password had a
+     # hardcoded "admin123" fallback. Both bypasses removed: only the configured
+-    # admin email + exact env password match is accepted (hmac.compare_digest).
++    # admin email + exact env password/hash match is accepted.
+     # User accounts require the register flow / a real user store (tracked separately).
+-    if admin_pass and email == admin_email and hmac.compare_digest(password, admin_pass):
++    if email == admin_email and _verify_password(password):
+         # Generate stateless signed API token
+         try:
+             from service.keygen import generate_key
+diff --git a/gateway/service/storage.py b/gateway/service/storage.py
+index bf8b3e7c..14f4a7ec 100644
+--- a/gateway/service/storage.py
++++ b/gateway/service/storage.py
+@@ -38,7 +38,6 @@
+ @contextmanager
+ def get_db():
+     """Provides a SQLite connection with WAL mode and row factory."""
+-    global _USE_MEM_FALLBACK
+     if _USE_MEM_FALLBACK:
+         yield None
+         return
+diff --git a/gateway/tests/test_stealth_dns_guards.py b/gateway/tests/test_stealth_dns_guards.py
+index 5439e54f..0c96f2cc 100644
+--- a/gateway/tests/test_stealth_dns_guards.py
++++ b/gateway/tests/test_stealth_dns_guards.py
+@@ -252,7 +252,7 @@ async def _good(force: bool = False) -> Dict[str, Any]:
+         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
+ 
+ 
+-def test_unconfigured(monkeypatched: Dict[str, Any] = {}) -> None:
++def test_unconfigured(monkeypatched: Dict[str, Any] | None = None) -> None:
+     print("G11c unconfigured -> 503 (no env mutation: snapshot returns not-configured)")
+     from fastapi.testclient import TestClient
+ 
+diff --git a/scripts/ci/check_critical_invariants.py b/scripts/ci/check_critical_invariants.py
+index 6430c95b..d8d99e46 100644
+--- a/scripts/ci/check_critical_invariants.py
++++ b/scripts/ci/check_critical_invariants.py
+@@ -23,41 +23,44 @@
+ import sys
+ from pathlib import Path
+ 
++if hasattr(sys.stdout, "reconfigure"):
++    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ 
+ # (relative_path, [required substrings], why-it-is-critical)
+ INVARIANTS: list[tuple[str, list[str], str]] = [
+     # ── Atomic Upstash sliding-window rate limiter (issue #460/#476) ──────
+     (
+-        "backend/middleware/rate_limiter.py",
++        "core/middleware/rate_limiter.py",
+         ["ZREMRANGEBYSCORE", "ZCARD", "ZADD", "EXPIRE"],
+         "Atomic Lua sliding-window (cleanup+count+add must stay in ONE script)",
+     ),
+     (
+-        "backend/core/rate_limit.py",
++        "core/rate_limit.py",
+         ["RateLimitMiddleware"],
+         "Global rate-limit middleware registration surface",
+     ),
+     # ── Tenant isolation invariants ───────────────────────────────────────
+     (
+-        "backend/api/middleware.py",
++        "core/api/middleware.py",
+         ["scoped_key", "idempotency:response:"],
+         "Idempotency keys MUST stay principal-scoped (cross-tenant replay fix)",
+     ),
+     # ── Fail-closed readiness / schema gate (issue #478) ──────────────────
+     (
+-        "backend/core/db_schema_gate.py",
++        "core/db_schema_gate.py",
+         ["automation_executions", "ai_memory", "task_checkpoints"],
+         "Production readiness schema gate — required-table registry",
+     ),
+     (
+-        "backend/core/health_policy.py",
++        "core/health_policy.py",
+         ["db_failure_readiness"],
+         "Role-aware DB degradation policy (fail-closed on core in production)",
+     ),
+     # ── Vault fail-closed contract ─────────────────────────────────────────
+     (
+-        "backend/core/security/secret_vault.py",
++        "core/security/secret_vault.py",
+         ["ProductionSecretVault", "SecretNotFoundError"],
+         "Enterprise vault fail-closed contract (Sep-14 crash-loop hardening)",
+     ),
+diff --git a/scripts/eval/cost_per_task.py b/scripts/eval/cost_per_task.py
+index 0f1698a6..88c1bb9d 100644
+--- a/scripts/eval/cost_per_task.py
++++ b/scripts/eval/cost_per_task.py
+@@ -183,4 +183,3 @@ def _self_test() -> int:
+ 
+ if __name__ == "__main__":
+     raise SystemExit(main())
+-EOF
+diff --git a/scripts/eval/feedback_to_eval.py b/scripts/eval/feedback_to_eval.py
+index 0af4fac1..39124813 100644
+--- a/scripts/eval/feedback_to_eval.py
++++ b/scripts/eval/feedback_to_eval.py
+@@ -218,4 +218,3 @@ def _self_test() -> int:
+ 
+ if __name__ == "__main__":
+     raise SystemExit(main())
+-EOF
+diff --git a/scripts/ops/audit_module_wiring.py b/scripts/ops/audit_module_wiring.py
+index f965af7f..881a22bd 100644
+--- a/scripts/ops/audit_module_wiring.py
++++ b/scripts/ops/audit_module_wiring.py
+@@ -10,13 +10,14 @@
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+-ROOT_DIR = Path(__file__).resolve().parent.parent
++ROOT_DIR = Path(__file__).resolve().parents[2]
+ AUDIT_VERSION = "2.0"
+ VERIFICATION_COMMAND = "python scripts/audit_module_wiring.py && python scripts/sync_modules_list.py"
+ PRODUCTION_SCAN_DIRS = [
+-    ROOT_DIR / "backend" / name for name in ("core", "api", "services", "middleware", "pipelines", "tools")
+-] + [ROOT_DIR / name for name in ("frontend/src", "packages", "infrastructure/mcp-control-plane/src")]
+-TEST_SCAN_DIRS = [ROOT_DIR / "backend/tests", ROOT_DIR / "frontend/src"]
++    ROOT_DIR / "core", ROOT_DIR / "gateway", ROOT_DIR / "studio" / "src",
++    ROOT_DIR / "infrastructure" / "mcp-control-plane" / "src",
++]
++TEST_SCAN_DIRS = [ROOT_DIR / "tests", ROOT_DIR / "studio" / "src"]
+ ENVIRONMENT_DEPENDENT_MODULES = {
+     "backend/tools/devops/docker_sandbox.py",
+     "backend/tools/launchdarkly_agent_adapter.py",
+@@ -39,6 +40,8 @@ def load_cataloged_modules() -> list[dict]:
+     catalog_path = ROOT_DIR / "docs/reference/MODULES_LIST.md"
+     if not catalog_path.exists():
+         catalog_path = ROOT_DIR / "MODULES_LIST.md"
++    if not catalog_path.exists():
++        return modules
+     for line in catalog_path.read_text(encoding="utf-8").splitlines():
+         line = line.strip()
+         if not line.startswith("|") or "Module Name / Relative Path" in line or "---|---" in line:
+diff --git a/studio/src/components/admin/AdminDashboardHome.tsx b/studio/src/components/admin/AdminDashboardHome.tsx
+index d7efd11b..5c415a0e 100644
+--- a/studio/src/components/admin/AdminDashboardHome.tsx
++++ b/studio/src/components/admin/AdminDashboardHome.tsx
+@@ -1,6 +1,6 @@
+-import React, { useState, useEffect } from 'react';
++import React, { useState, useEffect, Suspense, lazy } from 'react';
+ import {  Cpu } from 'lucide-react';
+-import { RealTimeMetricsPanel } from './RealTimeMetricsPanel';
++const RealTimeMetricsPanel = lazy(() => import('./RealTimeMetricsPanel').then(m => ({ default: m.RealTimeMetricsPanel })));
+ import { useMetrics, useHealthMap, useCIReports, useDashboardEvents } from '../../hooks/useDashboardData';
+ import { HealthReportWidget } from './HealthReportWidget';
+ import { GitHubCIWidget } from './GitHubCIWidget';
+@@ -145,7 +145,9 @@ export const AdminDashboardHome: React.FC = () => {
+ 
+       {/* 1.5 Real-Time Metrics Panel (Mini-Grafana) */}
+       <div className="mb-6">
+-        <RealTimeMetricsPanel />
++        <Suspense fallback={<div className="h-24 animate-pulse bg-gray-100 rounded" />}>
++          <RealTimeMetricsPanel />
++        </Suspense>
+       </div>
+ 
+       {/* 2. MIDDLE ROW: 3 Columns Grid */}
+diff --git a/studio/src/providers/ThemeSyncProvider.tsx b/studio/src/providers/ThemeSyncProvider.tsx
+index 98a626ba..33af97cf 100644
+--- a/studio/src/providers/ThemeSyncProvider.tsx
++++ b/studio/src/providers/ThemeSyncProvider.tsx
+@@ -25,6 +25,7 @@ export const ThemeSyncProvider: React.FC<{ children: React.ReactNode; userId?: s
+       if (!token) return;
+       eventSource = createSecureEventSource(`${getApiBaseUrl()}/api/preferences/${userId}/stream`, token, {
+         onMessage: (event) => {
++          if (!event.data || !event.data.trim()) return;
+           try {
+             const data = JSON.parse(event.data);
+             // fetchEventSource passes event.type via event.type property now if we matched it, or we check data.event
+diff --git a/studio/src/services/apiClient.ts b/studio/src/services/apiClient.ts
+index d0178af5..117b4190 100644
+--- a/studio/src/services/apiClient.ts
++++ b/studio/src/services/apiClient.ts
+@@ -257,12 +257,12 @@ const fetchWithTimeout = async (url: string, options: RequestInit, timeoutMs = D
+     // আগে কলারের signal নীরবে ওভাররাইট হয়ে যেত, ফলে UI abort কাজ করত না।
+     const callerSignal = options.signal;
+     const signalAny = typeof AbortSignal !== 'undefined'
+-      ? (AbortSignal as unknown as { any?: (...signals: AbortSignal[]) => AbortSignal }).any
++      ? (AbortSignal as unknown as { any?: (signals: AbortSignal[]) => AbortSignal }).any
+       : undefined;
+     if (callerSignal && callerSignal.aborted) {
+       fetchOptions.signal = callerSignal;
+     } else if (callerSignal && typeof signalAny === 'function') {
+-      fetchOptions.signal = signalAny.call(AbortSignal, controller.signal, callerSignal);
++      fetchOptions.signal = signalAny([controller.signal, callerSignal]);
+     } else {
+       fetchOptions.signal = controller.signal;
+     }
+diff --git a/studio/src/utils/api.ts b/studio/src/utils/api.ts
+index f47f327c..b8f5de70 100644
+--- a/studio/src/utils/api.ts
++++ b/studio/src/utils/api.ts
+@@ -128,7 +128,8 @@ export const USER_BACKEND_URL: string = normalizeBackendUrl(
+   import.meta.env.VITE_USER_BACKEND ||
+     import.meta.env.VITE_API_BASE ||
+     import.meta.env.VITE_API_URL ||
+-    import.meta.env.VITE_BACKEND_URL,
++    import.meta.env.VITE_BACKEND_URL ||
++    'https://supremeai-api-ulw0.onrender.com',
+ );
+ 
+ /** Admin-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */
+diff --git a/studio/vite.config.ts b/studio/vite.config.ts
+index bac681c6..01ec67a5 100644
+--- a/studio/vite.config.ts
++++ b/studio/vite.config.ts
+@@ -217,7 +217,8 @@ export default defineConfig({
+           // through lazy admin chunks (AdminShell) again. Chunk-boundary only —
+           // zero runtime behavior change (same module instance, same semantics).
+           if (/[\\/]node_modules[\\/]eventemitter3[\\/]/.test(id)) return 'vendor-events'
+-          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts'
++          // recharts is bundled into its consuming (lazy) route chunks so it
++          // never ships in the initial graph (see #1339 / studio size budget).
+           if (/[\\/]node_modules[\\/](@xterm|xterm)[\\/]/.test(id)) return 'vendor-terminal'
+           if (/[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/.test(id)) return 'vendor-editor'
+           if (/[\\/]node_modules[\\/](framer-motion|lucide-react)[\\/]/.test(id)) return 'vendor-ui'
+diff --git a/tests/test_search_ssot.py b/tests/test_search_ssot.py
+index cbebdff2..85053471 100644
+--- a/tests/test_search_ssot.py
++++ b/tests/test_search_ssot.py
+@@ -17,7 +17,7 @@
+ 
+ import json
+ from pathlib import Path
+-from typing import Any
++from typing import Any, ClassVar
+ 
+ import pytest
+ 
+@@ -43,8 +43,8 @@ def json(self) -> dict[str, Any]:
+ class _FakeClient:
+     """Stands in for httpx.Client; records requests, serves queued payloads."""
+ 
+-    calls: list[dict[str, Any]] = []
+-    payloads: list[dict[str, Any]] = []
++    calls: ClassVar[list[dict[str, Any]]] = []
++    payloads: ClassVar[list[dict[str, Any]]] = []
+     explode: bool = False
+ 
+     def __init__(self, *args: Any, **kwargs: Any) -> None:

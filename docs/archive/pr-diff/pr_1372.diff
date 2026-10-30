@@ -1,0 +1,90 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 97e6149d..b0d983a7 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -155,7 +155,7 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
+ 
+ - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
+-- **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
++- **Federation Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 8 active persistent root hubs (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode); all tasks/failures are Sub-Issues.
+ - **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — prevents root-level shadowing and unapproved surface leaks (#107, #508).
+ - **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
+ - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 5bd3543e..e5f4a62b 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -45,7 +45,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U1** | **Scope** | Work strictly inside assigned issue touching files. Zero unrelated refactoring or scope creep. |
+ | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
+ | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
+-| **U4** | **Zero-Duplicate PRs & 14 Anchor Hub SSOT** | Mandatory preflight `gh pr list`. The public board (`supremeai-open`) maintains strictly **14 persistent parent Anchor Hubs** (#749–#762; CI Incident Hub #761, Bridge Desk #760, 12 Domain Repos). All tasks, pipeline failures, and bridge sync orders attach strictly as **Sub-Issues** inside their respective Anchor Hub. Zero loose root issues permitted. One issue = at most one PR across the federation. |
++| **U4** | **Zero-Duplicate PRs & Federation Anchor Hub SSOT** | Mandatory preflight `gh pr list`. The public board (`supremeai-open`) maintains strictly **8 active persistent parent Anchor Hubs** (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive Desk, #761 CI Incident Hub, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode). All tasks, pipeline failures, and bridge sync orders attach strictly as **Sub-Issues** inside their respective Anchor Hub. Zero loose root issues permitted. One issue = at most one PR across the federation. |
+ | **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
+ | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
+ | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
+@@ -131,6 +131,6 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
+ - **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
+-- **14 Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 14 persistent root anchor hubs
++- **Federation Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 8 active primary root anchor hubs
+ - **Boundary Sanitization Guard:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — approved mirror surfaces & proprietary isolation (#107, #508)
+ - **Frontend Performance Guard:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)
+diff --git a/scripts/ci/federation_anchors.py b/scripts/ci/federation_anchors.py
+index 0933f7d1..69707b32 100644
+--- a/scripts/ci/federation_anchors.py
++++ b/scripts/ci/federation_anchors.py
+@@ -1,14 +1,16 @@
+ #!/usr/bin/env python3
+-"""scripts/ci/federation_anchors.py — SSOT Registry for the 14 Anchor Hub Issues.
++"""scripts/ci/federation_anchors.py — SSOT Registry for Federation Anchor Hubs.
+ 
+-Defines the permanent 14 Anchor Hub parent issues hosted on Supremeai-bd/supremeai-open.
++Defines the permanent Anchor Hub parent issues hosted on Supremeai-bd/supremeai-open.
+ All automated CI failure reports, bridge sync work orders, rejections, and agent tasks
+ attach strictly as Sub-Issues under their respective repository's Anchor Hub.
+ 
+-Board Invariant:
+-  - Exactly 14 persistent parent issues exist on Supremeai-bd/supremeai-open.
+-  - 12 Satellites + 1 Monorepo + 1 Open Embassy.
+-  - Root board query `gh issue list --search "no:parent"` returns strictly these 14 anchors.
++Topology Architecture (Golden 8-Satellite Architecture):
++  - Strictly 8 Active Primary Anchor Hubs (#749 Studio, #750 API, #751 Core, #754 VSCode,
++    #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy).
++  - 6 Transit Hubs (#752 Command, #753 Skills, #755 Agents, #757 SDK, #758 Infra, #759 MCP)
++    have been permanently consolidated into Supremeai-bd/supremeai-api and Supremeai-bd/supremeai-vscode.
++  - Root board query `gh issue list --search "no:parent is:open"` returns strictly the active anchor hubs.
+   - All granular tasks, CI failures, and bridge sync orders are child sub-issues.
+ """
+ 
+@@ -404,17 +406,25 @@ def create_sub_issue(
+ 
+ 
+ def self_test() -> int:
+-    """Hermetic contract test verifying the 14 Anchor Hub architecture (zero network)."""
+-    print("[self-test] Validating 14 Anchor Hub SSOT contract...")
++    """Hermetic contract test verifying the Federation Anchor Hub architecture (zero network)."""
++    print("[self-test] Validating Federation Anchor Hub SSOT contract...")
+ 
+     # 1. Exact count check
+     assert len(ANCHOR_HUBS) == 14, (
+-        f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
++        f"Must have 14 total historical anchor hubs in lookup, found {len(ANCHOR_HUBS)}"
++    )
++    assert len(ACTIVE_ANCHOR_HUBS) == 8, (
++        f"Must have strictly 8 active anchor hubs, found {len(ACTIVE_ANCHOR_HUBS)}"
++    )
++    assert len(RETIRED_ANCHOR_HUBS) == 6, (
++        f"Must have strictly 6 consolidated anchor hubs, found {len(RETIRED_ANCHOR_HUBS)}"
+     )
+ 
+     # 2. Unique issue numbers
+     numbers = list(ANCHOR_HUBS.values())
+     assert len(set(numbers)) == 14, "Anchor issue numbers must all be distinct"
++    assert len(set(ACTIVE_ANCHOR_HUBS.values())) == 8, "Active anchor issue numbers must all be distinct"
++    assert len(set(RETIRED_ANCHOR_HUBS.values())) == 6, "Retired anchor issue numbers must all be distinct"
+ 
+     # 3. Sequential 749-762 range
+     expected_range = set(range(749, 763))

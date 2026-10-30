@@ -1,0 +1,68 @@
+diff --git a/browser/server.py b/browser/server.py
+index 67840e70..161044b0 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -305,8 +305,14 @@ async def ask(self, prompt: str) -> str:
+                 self._infisical_cookies = {}
+                 self._infisical_expiry = 0
+                 self._cookies = {}
++                fallback_reply = await self._try_api_fallback(prompt)
++                if fallback_reply:
++                    return fallback_reply
+                 raise HTTPException(status_code=502, detail=str(exc))
+             except Exception as exc:
++                fallback_reply = await self._try_api_fallback(prompt)
++                if fallback_reply:
++                    return fallback_reply
+                 raise HTTPException(status_code=502, detail=f"Token initialization error: {exc}")
+ 
+             reqid = int(time.time() * 1000) % 1000000
+@@ -347,16 +353,48 @@ async def ask(self, prompt: str) -> str:
+             try:
+                 resp = await client.post(post_url, headers=post_headers, cookies=cookies, data=post_data)
+             except httpx.HTTPError as exc:
++                fallback_reply = await self._try_api_fallback(prompt)
++                if fallback_reply:
++                    return fallback_reply
+                 raise HTTPException(status_code=502, detail=f"Gemini upstream error: {exc}")
+ 
+             if resp.status_code != 200:
++                fallback_reply = await self._try_api_fallback(prompt)
++                if fallback_reply:
++                    return fallback_reply
+                 raise HTTPException(status_code=502, detail=f"Gemini returned HTTP {resp.status_code}")
+ 
+             reply = self._extract_reply_text(resp.text)
+             if not reply:
++                fallback_reply = await self._try_api_fallback(prompt)
++                if fallback_reply:
++                    return fallback_reply
+                 raise HTTPException(status_code=502, detail="Failed to extract chat text from Gemini stream")
+             return reply
+ 
++    async def _try_api_fallback(self, prompt: str) -> Optional[str]:
++        api_key = os.getenv("GEMINI_API_KEY", "").strip()
++        if not api_key:
++            return None
++        logger.info("Attempting Gemini API Key fallback response...")
++        try:
++            async with httpx.AsyncClient(timeout=30.0) as client:
++                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
++                payload = {"contents": [{"parts": [{"text": prompt}]}]}
++                r = await client.post(url, json=payload)
++                if r.status_code == 200:
++                    data = r.json()
++                    cands = data.get("candidates", [])
++                    if cands and "content" in cands[0]:
++                        parts = cands[0]["content"].get("parts", [])
++                        if parts and "text" in parts[0]:
++                            text = parts[0]["text"].strip()
++                            logger.info(f"Gemini API fallback succeeded ({len(text)} chars)")
++                            return text
++        except Exception as exc:
++            logger.warning(f"Gemini API fallback error: {exc}")
++        return None
++
+ 
+ relay_engine = GeminiCookieEngine()
+ 

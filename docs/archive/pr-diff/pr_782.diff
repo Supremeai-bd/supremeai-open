@@ -1,0 +1,13 @@
+diff --git a/sdk/.github/workflows/package-sdk.yml b/sdk/.github/workflows/package-sdk.yml
+index 02423c16..b19b0e15 100644
+--- a/sdk/.github/workflows/package-sdk.yml
++++ b/sdk/.github/workflows/package-sdk.yml
+@@ -74,7 +74,7 @@ jobs:
+       - name: Setup Node.js
+         uses: actions/setup-node@v4
+         with:
+-          node-version: "20"
++          node-version: "22"
+ 
+       - name: Install TypeScript Compiler
+         run: |

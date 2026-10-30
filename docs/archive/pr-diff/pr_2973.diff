@@ -1,0 +1,221 @@
+diff --git a/core/self_evolution/adversarial_defense/defense_system.py b/core/self_evolution/adversarial_defense/defense_system.py
+index 9d8ae97c..f1188bf9 100644
+--- a/core/self_evolution/adversarial_defense/defense_system.py
++++ b/core/self_evolution/adversarial_defense/defense_system.py
+@@ -58,7 +58,7 @@
+     DataLoader = None  # type: ignore
+     TORCH_UTILS_AVAILABLE = False
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ warnings.filterwarnings("ignore")
+ 
+diff --git a/core/self_evolution/agent_breeder.py b/core/self_evolution/agent_breeder.py
+index b7637928..61bfc664 100644
+--- a/core/self_evolution/agent_breeder.py
++++ b/core/self_evolution/agent_breeder.py
+@@ -25,7 +25,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ from models.meta_ai import AgentGenome, AgentOffspring, AgentStatus, BreedingPool
+ 
+diff --git a/core/self_evolution/auto_skill_creator.py b/core/self_evolution/auto_skill_creator.py
+index 2ed32909..fe5b769c 100644
+--- a/core/self_evolution/auto_skill_creator.py
++++ b/core/self_evolution/auto_skill_creator.py
+@@ -21,7 +21,7 @@
+ if repo_root not in sys.path:
+     sys.path.insert(0, repo_root)
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.self_evolution.fitness_engine import FitnessEngine
+ from database.tenant_db import TenantAwareFirestore
+ 
+diff --git a/core/self_evolution/continual_learning/ewc.py b/core/self_evolution/continual_learning/ewc.py
+index 639d4a44..02b94980 100644
+--- a/core/self_evolution/continual_learning/ewc.py
++++ b/core/self_evolution/continual_learning/ewc.py
+@@ -51,7 +51,7 @@
+     DataLoader = None  # type: ignore
+     TORCH_UTILS_AVAILABLE = False
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য (DEP-AUDIT): এখানে একটি আনগার্ডেড ডুপ্লিকেট
+ # `from torch.utils.data import DataLoader` ছিল — একই import উপরের
+diff --git a/core/self_evolution/daily_learner.py b/core/self_evolution/daily_learner.py
+index 873b4545..1e7e8a0b 100644
+--- a/core/self_evolution/daily_learner.py
++++ b/core/self_evolution/daily_learner.py
+@@ -23,7 +23,7 @@
+ 
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.self_evolution.evolution_engine import EvolutionEngine
+ from services.config_service import ConfigService
+ 
+diff --git a/core/self_evolution/digital_twin/__init__.py b/core/self_evolution/digital_twin/__init__.py
+index 08470afe..db82d7b7 100644
+--- a/core/self_evolution/digital_twin/__init__.py
++++ b/core/self_evolution/digital_twin/__init__.py
+@@ -11,7 +11,7 @@
+ """
+ 
+ from core.contracts.security_policy import SEVERITY_LEVELS
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .remediation_engine import (
+     RemediationAction,
+diff --git a/core/self_evolution/digital_twin/remediation_engine.py b/core/self_evolution/digital_twin/remediation_engine.py
+index 40b980a2..b64b9007 100644
+--- a/core/self_evolution/digital_twin/remediation_engine.py
++++ b/core/self_evolution/digital_twin/remediation_engine.py
+@@ -17,7 +17,7 @@
+ from enum import Enum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .simulator import SimulationResult, get_impact_simulator
+ from .topology import get_topology_mapper
+diff --git a/core/self_evolution/digital_twin/simulator.py b/core/self_evolution/digital_twin/simulator.py
+index b5b976f7..e3a32d19 100644
+--- a/core/self_evolution/digital_twin/simulator.py
++++ b/core/self_evolution/digital_twin/simulator.py
+@@ -16,7 +16,7 @@
+ from datetime import datetime, timedelta
+ from enum import Enum
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .topology import SystemTopologyMapper, get_topology_mapper
+ 
+diff --git a/core/self_evolution/digital_twin/topology.py b/core/self_evolution/digital_twin/topology.py
+index d2d631f5..2646c3e5 100644
+--- a/core/self_evolution/digital_twin/topology.py
++++ b/core/self_evolution/digital_twin/topology.py
+@@ -21,7 +21,7 @@
+ from datetime import datetime
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/self_evolution/evolution_engine.py b/core/self_evolution/evolution_engine.py
+index 5c7473ea..296106f9 100644
+--- a/core/self_evolution/evolution_engine.py
++++ b/core/self_evolution/evolution_engine.py
+@@ -17,7 +17,7 @@
+ from typing import Any
+ 
+ from brain.model_router import ModelRouter
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from prometheus_client import Counter
+diff --git a/core/self_evolution/evolution_react_agent.py b/core/self_evolution/evolution_react_agent.py
+index 4cbe8f91..073cd2f4 100644
+--- a/core/self_evolution/evolution_react_agent.py
++++ b/core/self_evolution/evolution_react_agent.py
+@@ -12,7 +12,7 @@
+ from typing import Any
+ 
+ from brain.model_router import ModelRouter
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class EvolutionReActAgent:
+diff --git a/core/self_evolution/fitness_engine.py b/core/self_evolution/fitness_engine.py
+index 2b17d5b1..912819f0 100644
+--- a/core/self_evolution/fitness_engine.py
++++ b/core/self_evolution/fitness_engine.py
+@@ -16,7 +16,7 @@
+ import threading
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Conditional imports to avoid circular dependency issues
+ # These are used inside methods but defined here for cleaner structure
+diff --git a/core/self_evolution/neural_symbolic/integration.py b/core/self_evolution/neural_symbolic/integration.py
+index 2640fd02..6764ad60 100644
+--- a/core/self_evolution/neural_symbolic/integration.py
++++ b/core/self_evolution/neural_symbolic/integration.py
+@@ -62,7 +62,7 @@
+ 
+ from sympy.parsing.sympy_parser import parse_expr
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SymbolicOperation(Enum):
+diff --git a/core/self_evolution/performance_oracle.py b/core/self_evolution/performance_oracle.py
+index 3253d7c5..45990741 100644
+--- a/core/self_evolution/performance_oracle.py
++++ b/core/self_evolution/performance_oracle.py
+@@ -21,7 +21,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from models.meta_ai import (
+     MetricType,
+     PerformanceMetric,
+diff --git a/core/self_evolution/self_evolution_agent.py b/core/self_evolution/self_evolution_agent.py
+index 11acd485..0504ed85 100644
+--- a/core/self_evolution/self_evolution_agent.py
++++ b/core/self_evolution/self_evolution_agent.py
+@@ -21,7 +21,7 @@
+ from sqlalchemy.future import select
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ try:
+diff --git a/core/self_evolution/self_updater.py b/core/self_evolution/self_updater.py
+index 7ceed2d5..a2ddd99a 100644
+--- a/core/self_evolution/self_updater.py
++++ b/core/self_evolution/self_updater.py
+@@ -6,7 +6,7 @@
+ import shutil
+ from pathlib import Path
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ _ALLOWED_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+ 
+diff --git a/core/self_evolution/skill_graph.py b/core/self_evolution/skill_graph.py
+index 9e1896e4..ba65b3a8 100644
+--- a/core/self_evolution/skill_graph.py
++++ b/core/self_evolution/skill_graph.py
+@@ -14,7 +14,7 @@
+     nx = None
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class EvolutionSkillGraph:

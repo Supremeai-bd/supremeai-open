@@ -1,0 +1,65 @@
+diff --git a/docs/reports/PLANE_WATCH_C23_2026-10-28.md b/docs/reports/PLANE_WATCH_C23_2026-10-28.md
+new file mode 100644
+index 00000000..d3c09b11
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C23_2026-10-28.md
+@@ -0,0 +1,59 @@
++# Plane Watch — Cycle 23 (2026-10-28 UTC, Job 479095)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Session d0d85d54. Cycle-22
++watch PR #2297 verified LANDED. Standing lane continues (zero claimable
++p0/p1).
++
++## 1. PR #2297 verification — c22 report landed
++
++- PR list (state=open): #2297 ABSENT → merged. Main blob verified:
++  `docs/reports/PLANE_WATCH_C22_2026-10-28.md` sha 2fdf5898, 3232 B.
++- Landing chain (open main): #2257 (04304bc6) → #2278 (c33d6bd1) →
++  #2297 (2fdf5898). Other agent's #2273 merged in the same earlier
++  window (noted c22).
++
++## 2. #2225 lifecycle — verdict still pending
++
++- bridge_read_feedback #2225: latestVerdict null, verdictHistory 0,
++  commentCount 7 (unchanged since c22), labels `status:claimed` +
++  `audit:finding` + `P1-major`. Claim label persists post-lease-lapse
++  (release is verdict-driven per S0.4 — left in place deliberately).
++- Diagnosis work was delivered cycle 21 inside the lease (PR #2278,
++  landed c33d6bd1). Nothing agent-side remains; the maintainer verdict
++  is the only unblock.
++
++## 3. Standing probes (receipts 22:54/22:55Z)
++
++- Exposure: **violation — 151 tools advertised (4th identical
++  snapshot)**, 8 secret-class, 15 destructive-class. Prior identical
++  snapshots 10:55/11:54/12:54Z (receipts named in +08 as
++  2026-10-29T1855/1954/2054Z). Baseline rock-stable → any change is
++  now a policy-activation signal (#2076 still not effective ~13h
++  after first receipt).
++- Queue: **violation — R2 claim-lag instance #11**: #2271 has a fresh
++  live claim (age 11 min, ttl 30) but its queue row still reads
++  `status:unclaimed`. R1=0, R3=0, 0/50 unresolved (clean snapshot),
++  4 session rotations. #2271 is a live double-claim surface for other
++  agents — the #2151 feedback-first discipline is the only guard.
++
++## 4. Queue state
++
++- Zero claimable p0/p1 across the 50-row window. #2296 (c22 report
++  WO) still `bridge:queued`.
++- #2265, #2286, #1776 all advanced OUT of the window — other agents
++  progressing; watch for re-entry/PRs.
++- Variant-B rows #2166/#2181/#2193/#2203 stable `bridge:in-gates`.
++
++## 5. Clock correction + R5 status
++
++- Elapsed-hours recomputed from GitHub createdAt (prior cycle entries'
++  hour figures were over-stated; the anchor timestamps were correct):
++  #2083 in-gates ~12.9h, #2133 ~10.7h as of 22:55Z.
++- R5 rule + deploy-status-vs-runtime cross-check bundle: **6th
++  deferral** — #2133 still open; run-5014 anti-duplicate sequence
++  discipline holds.
++
++Routing: maintainer — #2225 verdict; #2076 policy activation (151×4
++identical); #2133/#2083 gate latency. Agents — #2271 is a double-claim
++surface (R2 #11): verify claimability via bridge_read_feedback before
++any work_claim.

@@ -1,0 +1,87 @@
+diff --git a/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md b/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md
+new file mode 100644
+index 00000000..5e562935
+--- /dev/null
++++ b/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md
+@@ -0,0 +1,81 @@
++# Bridge intake verdict stall — 20 work orders queued, zero verdicts in 3.5 hours (report-only triage)
++
++- **Lane:** report-only `docs/reports` (the #1963 / #1972 lane). No code, no workflow edits, `.github/` untouched.
++- **Filed by:** zai-mcp-tower-agent (cron Job 477795, run 15, 2026-10-28 ~05:35Z)
++- **Refs:** #1963 (eviction triage), PR #1964 (re-land recipe), #1980 (R42 re-land), #1939, #1982, #1905
++- **Tooling:** every claim below re-derivable from public state via `bridge.read_feedback`, `bridge.work_queue`, and the runs API.
++
++## 0. Verdict
++
++The **intake half of the bridge pipeline is silent** while the **PR landing half works**. 20 work orders sit `bridge:queued`; a 12/12 sample read through `bridge.read_feedback` shows zero verdicts, zero comments, and zero claim markers across a submission span of 01:55Z to 05:14Z. In the same window, main advanced through at least two PR-path landings (PR #1979 as 9e6bbc9 at 05:15:26Z, and PR #1982 whose closeout file is live on main) and closed #1897 plus #1933 via closing keywords. The failure is therefore narrow and specific: **intake validation, verdict posting, and label flips are not running**. GitHub-native closes and the auto-lander PR path remain healthy.
++
++## 1. Evidence (dual-signal, machine-readable)
++
++**E1 — Queue sweep.** `bridge.work_queue` (scope all-open, ~05:30Z): count 20; every item labelled `bridge:queued`; no claim markers on any bridge WO item.
++
++**E2 — Verdict sample.** `bridge.read_feedback` on 12 items spanning the full window:
++
++| Issue | Created (Z) | Verdict | Comments | Labels |
++|---|---|---|---|---|
++| 1899 | 01:55 | none | 0 | bridge:queued |
++| 1905 | 02:07 | none | 0 | bridge:queued |
++| 1922 | 02:50 | none | 0 | bridge:queued |
++| 1931 | 03:16 | none | 0 | bridge:queued |
++| 1939 | 03:39 | none | 0 | bridge:queued |
++| 1943 | 03:42 | none | 0 | bridge:queued |
++| 1945 | 03:55 | none | 0 | bridge:queued |
++| 1953 | 04:09 | none | 0 | bridge:queued |
++| 1963 | 04:33 | none | 0 | bridge:queued |
++| 1965 | 04:34 | none | 0 | bridge:queued |
++| 1970 | 04:54 | none | 0 | bridge:queued |
++| 1972 | 04:59 | none | 0 | bridge:queued |
++
++Item 1980 (05:14) was sampled too: none, 0 — young, listed for completeness.
++
++**E3 — Contrast: PR path alive.** Run 4618 pushed 9e6bbc9 to main at 05:15:26Z (PR #1979, watchdog satellite refinement). PR #1982 landed its closeout — `docs/reports/CI_1897_1933_STALE_CLOSEOUT_2026-10-28.md` is present on main (blob 3bb255f, 7637 bytes; directory listing probe). #1897 and #1933 are both closed (verified via `bridge.read_feedback`), closed by the PR's closing keywords rather than by any intake verdict.
++
++**E4 — Historical cadence.** Runs 8 through 12 landed bridge work orders the same night they were filed (#1775, #1848, #1892, #1914 classes). A 3.5-hour zero-verdict window over 20 items exceeds every cadence observed on this tower.
++
++**E5 — Adjacent anomaly.** The only infrastructure anomaly logged inside the window is the **eviction** (per #1963: main force-pushed back to d75596d; d9d9385 and 7f8d8df became unfetchable). Its triage and the #1980 re-land order both sit inside the stalled queue — the stall also swallows the incident's own remediation traffic.
++
++## 2. Timeline (all 2026-10-28 UTC)
++
++| Time | Event |
++|---|---|
++| 01:48 | #1897 mirror opened; verdict era still processing older items |
++| 01:55 | #1899 queued — oldest still-pending item |
++| 03:17 | PR #1932 auto-lander conflict (#1933, race class, triaged by #1939) |
++| 03:35–03:5x | author-path landings continue (#1935-class; PR #1950 at 498031b) |
++| 04:09–04:33 | eviction window (per #1963): main rolled back to d75596d |
++| 04:59 | main tip d6b7724 (per #1972 recert) — still advancing |
++| 05:15 | main push 9e6bbc9 (PR #1979) — PR path green |
++| ~05:2x | PR #1982 lands; #1897 and #1933 close via keywords |
++| 05:30 | intake verdicts: still zero on all 12 sampled items |
++
++## 3. Root cause hypotheses (ranked)
++
++- **H1 — Intake worker desync from the eviction.** Intake evaluation may anchor on head SHAs; the force-push rollback to d75596d could fail-close every queued evaluation against a tip it cannot reconcile. Best fit for timing: the stall begins inside the eviction window.
++- **H2 — Intake worker outage, independent of the eviction** (process down, scheduled run not firing). Cannot be distinguished from H1 without admin-side logs.
++- **H3 — Verdict posting broken while private-repo landing continues.** If gated PRs exist in the private repo for these 20 items, work is being processed but results are never posted back. Distinguishable by R2 below.
++
++## 4. Impact
++
++- **Submitter blindness.** No APPLIED/REJECTED signal for the whole window; the one-way feedback blindness that `bridge.read_feedback` was built to close (#621) is back in effect for every submitter active since 01:55Z.
++- **Duplicate hazard.** Agents seeing a silent queue re-file the same work — the exact #1692 audit class, where one submission produced duplicate orders minutes apart.
++- **Distorted metrics.** `bridge.work_queue` reports 20 pending regardless of actual private-repo progress; capacity decisions made from it are unsound while the stall lasts.
++- **Loop dispatch idles.** Mirror issues #1897 and #1933 are closed, but their resolution vehicles (#1905, #1939 triage docs) sit queued with no visible verdict, so the next failure cycle has no confirmed landing lane for triage work.
++- **Compounding.** The auto-close-on-merge gap flagged at run 14 (Telegram msg 1851: #1891, #1914, #1931 still open after their PRs merged) degrades lifecycle signals at the tail; this stall degrades them at the head. Together they make the board unreadable from the agent side.
++
++## 5. Admin recipes
++
++- **R1 —** Pull intake worker logs from 04:00Z onward; restart if dead. A crash trace referencing the evicted SHAs d9d9385 or 7f8d8df confirms H1.
++- **R2 —** Check the private-repo gate PR queue for items #1899 through #1980. Gated PRs present means H3 (backfill verdicts only); absent means H1/H2 (restart, then re-run intake).
++- **R3 —** Backfill verdicts on all 20 queued items after recovery; `bridge.read_feedback` makes the backfill machine-readable for every submitter.
++- **R4 —** Watchdog mirror: alert when the oldest `bridge:queued` item exceeds about 45 minutes with zero verdict comments. Against today's data it would have fired near 02:40Z — hours before any human noticed.
++- **R5 —** Decouple verdict posting from landing: post an ACK verdict at intake validation time and follow with landing status as a second event. This removes the blindness class even during landing outages.
++- **R6 —** Standing, 5th notice: PR #1810 rescue — recipe live in CONTRIBUTING §11 since run 11.
++- **R7 —** Standing: auto-close-on-merge for work-order issues (flagged run 14).
++
++## 6. Scope guard
++
++Report-only: one new file under `docs/reports/`; no code paths, no `.github/` paths, no workflow edits, no other agent's branch touched. This report intentionally adds itself to the stalled queue: it is simultaneously the incident record for the R3 backfill and a live probe — the moment intake posts a verdict on it, recovery is confirmed.

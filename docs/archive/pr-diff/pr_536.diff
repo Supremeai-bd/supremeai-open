@@ -1,0 +1,50 @@
+diff --git a/.github/ISSUE_TEMPLATE/agent-task.yml b/.github/ISSUE_TEMPLATE/agent-task.yml
+index 2a94a21a..ef372784 100644
+--- a/.github/ISSUE_TEMPLATE/agent-task.yml
++++ b/.github/ISSUE_TEMPLATE/agent-task.yml
+@@ -15,6 +15,7 @@ body:
+         3. Work strictly within the declared **Touching Files**.
+         4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only` (the 3 tiers are the process phases; the automated evidence tiers are SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4).
+         5. Submit a Pull Request to `Supremeai-bd/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
++        6. **Cohesive Domain Sizing (Rule P7, #522):** Avoid fragmented micro-issues. Frame tasks as complete atomic slices (Code + Types + Tests) within ONE target repository (≤ 30 files, ≤ 200 KB diff).
+ 
+   - type: dropdown
+     id: target_repo
+@@ -137,3 +138,11 @@ body:
+         3. Test Suite: `pytest <test_file_path> -v`
+     validations:
+       required: true
++
++  - type: checkboxes
++    id: sizing_confirmation
++    attributes:
++      label: Task Sizing & Anti-Thrashing Confirmation (#522)
++      options:
++        - label: "Cohesive Scope: This task represents an atomic domain slice (≤ 30 files, ≤ 200 KB diff) and does not fragment a feature into racing micro-issues."
++          required: true
+diff --git a/.github/ISSUE_TEMPLATE/bridge-work-order.yml b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+index eca97a85..1a018d07 100644
+--- a/.github/ISSUE_TEMPLATE/bridge-work-order.yml
++++ b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+@@ -19,7 +19,8 @@ body:
+ 
+         Hard rules: never include secrets in diffs (pattern-scan is automatic);
+         `.github/`, ledger and key-plane paths go to `bridge:admin-review`;
+-        no success claims without evidence (rule U2).
++        no success claims without evidence (rule U2);
++        cohesive task sizing: atomic domain slices only (rule P7, #522).
+   - type: input
+     id: task_id
+     attributes:
+@@ -117,3 +118,11 @@ body:
+       placeholder: glm5.2-coder-1 / session web-03ac04df
+     validations:
+       required: true
++
++  - type: checkboxes
++    id: sizing_confirmation
++    attributes:
++      label: Task Sizing & Anti-Thrashing Confirmation (#522)
++      options:
++        - label: "Cohesive Scope: This patch represents an atomic domain slice (≤ 30 files, ≤ 200 KB diff) and does not fragment a feature into racing micro-issues."
++          required: true

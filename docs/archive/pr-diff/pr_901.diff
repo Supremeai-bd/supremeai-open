@@ -1,0 +1,543 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 9f49d237..6d05279a 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -478,6 +478,11 @@ jobs:
+           set -euo pipefail
+           python3 scripts/ci/contract_parity_guard.py --self-test
+           python3 scripts/ci/contract_parity_guard.py --check
++      - name: Frontend Code-Splitting & Zero-Blocking Landing Guard
++        run: |
++          set -euo pipefail
++          python3 scripts/ci/frontend_performance_guard.py --self-test
++          python3 scripts/ci/frontend_performance_guard.py --check studio/src/App.tsx
+ 
+   # ---------------------------------------------------------------------------
+   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
+diff --git a/AGENTS.md b/AGENTS.md
+index 229e1316..c870fc86 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -81,6 +81,7 @@ flowchart TD
+ - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
+ - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
+ - **Satellite-First (বাস্তব সুবিধা):** এই কাজ কি কোনো সক্রিয় স্যাটেলাইটে (studio, gateway, browser, vscode, core) পৌঁছাবে? শুধু ইন্টার্নাল টুলিং বা মনোরিপো-অনলি ফাইলে একা একা কাজ করা কঠোরভাবে নিষিদ্ধ।
++- **Frontend / Studio (স্পিড ডকট্রিন):** পাবলিক ল্যান্ডিং পেজ (`/`) কি কোনো অথ-ব্লকার ছাড়াই < 1.0s লোড হচ্ছে? ভারী পেজগুলো (AIStudio, AdminShell, UserDashboard) কি `React.lazy()` দিয়ে কোড-স্প্লিট করা আছে? (রুল P9)
+ 
+ ---
+ 
+@@ -113,4 +114,5 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
+ - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
+ - **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
++- **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
+ - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 06ff5dee..f7d00928 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -114,6 +114,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ - **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.
+ - **P7 (Domain Anti-Thrashing #522):** Frame tasks as cohesive domain slices (≤ 30 files, ≤ 200 KB) for ONE primary repo.
+ - **P8 (Satellite-First Delivery Mandate):** Code changes must dispatch to a live product satellite (`studio`, `api`, `browser`, `vscode`, `core`). Tasks touching solely monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) must not be autonomously undertaken without explicit administrative direction.
++- **P9 (Frontend Performance & Zero-Blocking Landing Doctrine):** Public funnel (`/`, `/about`, `/chat`, `/pricing`, `/docs`) must achieve First Contentful Paint (FCP) < 1.0s. Never wrap public root `/` in `GuestRoute` or any auth-checking blocker (public visitors must see the landing page immediately without an "Authenticating..." spinner). Heavy workspace engines (Monaco/Sandpack in `AIStudio`), admin shells (`AdminShell`), and customer dashboards (`UserDashboard`) must ALWAYS be code-split via `React.lazy()` with `<Suspense>`. Monolithic/eager imports of heavy pages in `App.tsx` are strictly prohibited (enforced via `scripts/ci/frontend_performance_guard.py`).
+ 
+ ---
+ 
+@@ -123,3 +124,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
+ - **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
+ - **14 Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 14 persistent root anchor hubs
++- **Frontend Performance Guard:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)
+diff --git a/scripts/ci/frontend_performance_guard.py b/scripts/ci/frontend_performance_guard.py
+new file mode 100644
+index 00000000..b9738a6c
+--- /dev/null
++++ b/scripts/ci/frontend_performance_guard.py
+@@ -0,0 +1,167 @@
++#!/usr/bin/env python3
++"""
++frontend_performance_guard.py — Enforce Code-Splitting & Zero-Blocking Landing Performance Doctrine.
++
++Guarantees:
++  1. Zero-Blocking Landing: The public root route ('/') must render immediately without
++     being wrapped in GuestRoute or any authentication-checking spinner.
++  2. Mandatory Route-Level Code Splitting: Heavy pages (UserDashboard, AIStudio, AdminShell,
++     KnowledgePage, LoginPage, RegisterPage, CommandBar) must be loaded dynamically
++     via React.lazy / lazy() to ensure the public landing bundle stays lean (<300 KB) and FCP < 1.0s.
++  3. Fail-closed: Exits with non-zero status code if eager monolithic imports are detected in App.tsx.
++"""
++
++from __future__ import annotations
++
++import argparse
++import contextlib
++import re
++import sys
++from pathlib import Path
++
++if hasattr(sys.stdout, "reconfigure"):
++    with contextlib.suppress(Exception):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++# Heavy modules that MUST NOT be imported statically at top-level of App.tsx
++HEAVY_MODULES = [
++    "UserDashboard",
++    "AIStudio",
++    "AdminShell",
++    "KnowledgePage",
++    "LoginPage",
++    "RegisterPage",
++    "CommandBar",
++]
++
++
++def check_app_code_splitting(app_tsx_content: str) -> list[str]:
++    """Inspect App.tsx content for performance violations."""
++    violations: list[str] = []
++
++    # 1. Check for GuestRoute or ProtectedRoute wrapping the root landing page ('/')
++    root_route_match = re.search(r'<Route\s+path=["\']\/["\']\s+element=\{([^}]+)\}', app_tsx_content)
++    if root_route_match:
++        element_content = root_route_match.group(1)
++        if "GuestRoute" in element_content:
++            violations.append(
++                "Violation: Landing page ('/') is wrapped in <GuestRoute> — causes render-blocking auth check spinner. Root '/' must render LandingPage directly."
++            )
++        if "ProtectedRoute" in element_content:
++            violations.append(
++                "Violation: Landing page ('/') is wrapped in <ProtectedRoute> — public visitors must never be blocked on root."
++            )
++
++    # 2. Check for eager/static top-level imports of heavy components
++    for module in HEAVY_MODULES:
++        # Pattern matching: import { ...Module... } from ... or import Module from ...
++        # but NOT comments or lazy import(...)
++        eager_pattern = re.compile(
++            r'^[ \t]*import\s+(?:\{[^}]*\b' + re.escape(module) + r'\b[^}]*\}|\b' + re.escape(module) + r'\b)\s+from\s+["\'][^"\']+["\'];?',
++            re.MULTILINE,
++        )
++        if eager_pattern.search(app_tsx_content):
++            violations.append(
++                f"Violation: Heavy module '{module}' is imported statically at top level. Must use React.lazy(() => import(...)) to avoid monolithic bundle bloat."
++            )
++
++    # 3. Check that React.lazy or lazy is used for code-splitting
++    for module in HEAVY_MODULES:
++        lazy_pattern = re.compile(r'\b(?:React\.lazy|lazy)\s*\(\s*\(\)\s*=>\s*import\(', re.MULTILINE)
++        if not lazy_pattern.search(app_tsx_content):
++            violations.append("Violation: No dynamic React.lazy() calls found in App.tsx.")
++            break
++
++    # 4. Check for Suspense boundary wrapping routes
++    if "Suspense" not in app_tsx_content:
++        violations.append("Violation: No Suspense boundary found in App.tsx to catch lazy-loaded route chunks.")
++
++    return violations
++
++
++def self_test() -> bool:
++    """Validate guard rules against synthetic valid and invalid App.tsx snippets."""
++    valid_snippet = """
++    import React from "react";
++    import { Routes, Route } from "react-router-dom";
++    import { LandingPage } from "./pages/LandingPage";
++    
++    const UserDashboard = React.lazy(() => import("./components/customer/UserDashboard").then(m => ({ default: m.UserDashboard })));
++    const AIStudio = React.lazy(() => import("./pages/user/AIStudio").then(m => ({ default: m.AIStudio })));
++    const AdminShell = React.lazy(() => import("./pages/admin/AdminShell").then(m => ({ default: m.AdminShell })));
++    const KnowledgePage = React.lazy(() => import("./components/dashboard/KnowledgePage").then(m => ({ default: m.KnowledgePage })));
++    const LoginPage = React.lazy(() => import("./pages/auth/LoginPage").then(m => ({ default: m.LoginPage })));
++    const RegisterPage = React.lazy(() => import("./pages/auth/RegisterPage").then(m => ({ default: m.RegisterPage })));
++    const CommandBar = React.lazy(() => import("./components/layout/CommandBar").then(m => ({ default: m.CommandBar })));
++    
++    export const App = () => (
++      <React.Suspense fallback={<div>Loading</div>}>
++        <Routes>
++          <Route path="/" element={<LandingPage />} />
++          <Route path="/workspace" element={<UserDashboard />} />
++        </Routes>
++      </React.Suspense>
++    );
++    """
++
++    invalid_snippet = """
++    import React from "react";
++    import { Routes, Route } from "react-router-dom";
++    import { LandingPage } from "./pages/LandingPage";
++    import { UserDashboard } from "./components/customer/UserDashboard";
++    import { AIStudio } from "./pages/user/AIStudio";
++    import { GuestRoute } from "./components/core/AuthGuards";
++
++    export const App = () => (
++      <Routes>
++        <Route path="/" element={<GuestRoute><LandingPage /></GuestRoute>} />
++        <Route path="/workspace" element={<UserDashboard />} />
++      </Routes>
++    );
++    """
++
++    valid_violations = check_app_code_splitting(valid_snippet)
++    assert not valid_violations, f"Self-test failed on valid snippet: {valid_violations}"
++
++    invalid_violations = check_app_code_splitting(invalid_snippet)
++    assert len(invalid_violations) >= 3, f"Self-test expected multiple violations on invalid snippet, got {len(invalid_violations)}"
++    assert any("GuestRoute" in v for v in invalid_violations), "Self-test failed to detect GuestRoute violation"
++    assert any("UserDashboard" in v for v in invalid_violations), "Self-test failed to detect eager UserDashboard import"
++
++    return True
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Enforce code-splitting and zero-blocking landing guard.")
++    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions.")
++    parser.add_argument("--check", type=str, default="studio/src/App.tsx", help="Path to App.tsx to inspect.")
++    args = parser.parse_args()
++
++    if args.self_test:
++        print("[self-test] Running Frontend Performance Guard offline contract tests...")
++        if self_test():
++            print("✅ [self-test] All frontend performance contract assertions passed!")
++            return 0
++        return 1
++
++    app_path = Path(args.check)
++    if not app_path.exists():
++        print(f"⚠️ App.tsx not found at {app_path} — skipping check.")
++        return 0
++
++    content = app_path.read_text(encoding="utf-8")
++    violations = check_app_code_splitting(content)
++
++    if violations:
++        print(f"❌ [FRONTEND-PERF-VIOLATION] Found {len(violations)} performance regression(s) in {app_path}:")
++        for v in violations:
++            print(f"   - {v}")
++        return 1
++
++    print(f"✅ [PASS] {app_path} adheres to code-splitting & zero-blocking landing doctrine.")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index be7bda32..039848db 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -23,13 +23,12 @@ import { setupGlobalFetchInterceptor } from "./utils/apiInterceptor";
+ import { ProtectedRoute, GuestRoute } from "./components/core/AuthGuards";
+ import { RoleGuard } from "./components/core/guards/RoleGuard";
+ 
+-// Providers + global chrome (ThemeSync, i18n, CommandBar were unmounted by the regression)
++// Providers + global chrome (ThemeSync, i18n, CommandBar)
+ import { ThemeSyncProvider } from "./providers/ThemeSyncProvider";
+ import { TranslationProvider } from "./i18n/I18nProvider";
+-import { CommandBar } from "./components/layout/CommandBar";
+ import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
+ 
+-// Public funnel (Cosmic landing lives at /; guest chat at /chat)
++// Public funnel (Cosmic landing lives at /; guest chat at /chat) — kept eager for instant FCP (<1s)
+ import { LandingPage } from "./pages/LandingPage";
+ import { OurStoryPage } from "./pages/OurStoryPage";
+ import {
+@@ -43,25 +42,50 @@ import {
+   DocsPage,
+ } from "./pages/PublicPages";
+ 
+-// Split auth (login/create account buttons work again)
+-import { LoginPage } from "./pages/auth/LoginPage";
+-import { RegisterPage } from "./pages/auth/RegisterPage";
+-
+-// Authenticated app
+-import { UserDashboard } from "./components/customer/UserDashboard";
+-import { AIStudio } from "./pages/user/AIStudio";
+-import { AdminShell } from "./pages/admin/AdminShell";
+ import ErrorBoundary from "./components/admin/DashboardErrorBoundary";
+-import { KnowledgePage } from "./components/dashboard/KnowledgePage";
+ import { workspaceFeatureRoutes } from "./routes/workspaceFeatureRoutes";
+-import ErrorPage from "./pages/ErrorPage";
+-
+-// Internal operator telemetry widgets (kept as-is; WO1b tokenization is separate scope)
+-import { SatelliteMatrix } from "./components/SatelliteMatrix";
+-import { ConsensusWidget } from "./components/ConsensusWidget";
+-import { EmergencyConsole } from "./components/EmergencyConsole";
+-import { RunwayVisualizer } from "./components/RunwayVisualizer";
+-import { SwarmDefenseGauge } from "./components/SwarmDefenseGauge";
++
++// 🚀 Performance Architecture: Code-splitting heavy routes with React.lazy
++// Prevents monolithic bundle bloat and keeps public landing FCP < 1s
++const LoginPage = React.lazy(() =>
++  import("./pages/auth/LoginPage").then((m) => ({ default: m.LoginPage }))
++);
++const RegisterPage = React.lazy(() =>
++  import("./pages/auth/RegisterPage").then((m) => ({ default: m.RegisterPage }))
++);
++const UserDashboard = React.lazy(() =>
++  import("./components/customer/UserDashboard").then((m) => ({ default: m.UserDashboard }))
++);
++const AIStudio = React.lazy(() =>
++  import("./pages/user/AIStudio").then((m) => ({ default: m.AIStudio }))
++);
++const AdminShell = React.lazy(() =>
++  import("./pages/admin/AdminShell").then((m) => ({ default: m.AdminShell }))
++);
++const KnowledgePage = React.lazy(() =>
++  import("./components/dashboard/KnowledgePage").then((m) => ({ default: m.KnowledgePage }))
++);
++const ErrorPage = React.lazy(() => import("./pages/ErrorPage"));
++const CommandBar = React.lazy(() =>
++  import("./components/layout/CommandBar").then((m) => ({ default: m.CommandBar }))
++);
++
++// Lazy-loaded operator telemetry widgets (isolated from public landing bundle)
++const SatelliteMatrix = React.lazy(() =>
++  import("./components/SatelliteMatrix").then((m) => ({ default: m.SatelliteMatrix }))
++);
++const ConsensusWidget = React.lazy(() =>
++  import("./components/ConsensusWidget").then((m) => ({ default: m.ConsensusWidget }))
++);
++const EmergencyConsole = React.lazy(() =>
++  import("./components/EmergencyConsole").then((m) => ({ default: m.EmergencyConsole }))
++);
++const RunwayVisualizer = React.lazy(() =>
++  import("./components/RunwayVisualizer").then((m) => ({ default: m.RunwayVisualizer }))
++);
++const SwarmDefenseGauge = React.lazy(() =>
++  import("./components/SwarmDefenseGauge").then((m) => ({ default: m.SwarmDefenseGauge }))
++);
+ import { useServerStream } from "./hooks/useServerStream";
+ import type { SatelliteHealth, RunwayEntry, SwarmDefenseState } from "./types/federation";
+ 
+@@ -94,30 +118,32 @@ export const OperatorCockpit: React.FC = () => {
+         </div>
+       </header>
+       <main className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+-          <h2 className="mb-3 text-sm font-medium text-slate-300">Satellites</h2>
+-          <SatelliteMatrix satellites={satellites} />
+-        </section>
+-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+-          <h2 className="mb-3 text-sm font-medium text-slate-300">Runway</h2>
+-          <RunwayVisualizer entries={runway} />
+-        </section>
+-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+-          <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
+-          <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
+-        </section>
+-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+-          <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>
+-          <SwarmDefenseGauge defense={defense} />
+-        </section>
+-        <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 lg:col-span-2">
+-          <h2 className="mb-3 text-sm font-medium text-slate-300">Emergency</h2>
+-          <EmergencyConsole
+-            armed={armed}
+-            onRequestKill={() => setArmed(true)}
+-            onRearm={() => setArmed(false)}
+-          />
+-        </section>
++        <React.Suspense fallback={<div className="p-8 text-center text-xs text-slate-500 font-mono col-span-2">Loading telemetry instrumentation...</div>}>
++          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
++            <h2 className="mb-3 text-sm font-medium text-slate-300">Satellites</h2>
++            <SatelliteMatrix satellites={satellites} />
++          </section>
++          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
++            <h2 className="mb-3 text-sm font-medium text-slate-300">Runway</h2>
++            <RunwayVisualizer entries={runway} />
++          </section>
++          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
++            <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
++            <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
++          </section>
++          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
++            <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>
++            <SwarmDefenseGauge defense={defense} />
++          </section>
++          <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 lg:col-span-2">
++            <h2 className="mb-3 text-sm font-medium text-slate-300">Emergency</h2>
++            <EmergencyConsole
++              armed={armed}
++              onRequestKill={() => setArmed(true)}
++              onRearm={() => setArmed(false)}
++            />
++          </section>
++        </React.Suspense>
+       </main>
+     </div>
+   );
+@@ -136,74 +162,84 @@ export const LiveChatPage: React.FC = () => (
+   </PublicPageShell>
+ );
+ 
++const RouteFallback: React.FC = () => (
++  <div className="flex h-screen w-full items-center justify-center bg-[#0d0f12]">
++    <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-700 border-t-cyan-400" />
++  </div>
++);
++
+ export const App: React.FC = () => {
+   return (
+     <GlobalConfigInitializer>
+       <ThemeSyncProvider>
+         <TranslationProvider>
+-          <CommandBar />
+-          <Routes>
+-            {/* Public Visitor Funnel — Cosmic landing at / (guests only; logged-in users land on /workspace) */}
+-            <Route path="/" element={<GuestRoute><LandingPage /></GuestRoute>} />
+-            <Route path="/about" element={<OurStoryPage />} />
+-            <Route path="/chat" element={<LiveChatPage />} />
+-            <Route path="/features" element={<PublicPageShell><FeaturesPage /></PublicPageShell>} />
+-            <Route path="/models" element={<PublicPageShell><ModelsPage /></PublicPageShell>} />
+-            <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
+-            <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
+-            <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
+-            <Route path="/knowledge" element={<KnowledgePage />} />
+-
+-            {/* Split auth (Refs #876) — /login + /register restored, no silent bounce */}
+-            <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+-            <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
+-
+-            {/* Authenticated workspace */}
+-            <Route
+-              path="/workspace"
+-              element={
+-                <ProtectedRoute>
+-                  <WorkspaceLayout>
+-                    <UserDashboard />
+-                  </WorkspaceLayout>
+-                </ProtectedRoute>
+-              }
+-            />
+-            <Route
+-              path="/workspace/live"
+-              element={
+-                <ProtectedRoute>
+-                  <WorkspaceLayout>
+-                    <AIStudio />
+-                  </WorkspaceLayout>
+-                </ProtectedRoute>
+-              }
+-            />
+-
+-            {/* Admin — AdminShell (OTP/TOTP step-up preserved), NOT OperatorCockpit */}
+-            <Route
+-              path="/admin/*"
+-              element={
+-                <RoleGuard requiredRole="admin">
+-                  <ErrorBoundary>
+-                    <AdminShell />
+-                  </ErrorBoundary>
+-                </RoleGuard>
+-              }
+-            />
+-
+-            {/* Tier-S feature routes (share links, prompt library) */}
+-            {workspaceFeatureRoutes.map((route) => (
+-              <Route key={route.path} path={route.path} element={route.element} />
+-            ))}
+-
+-            {/* Operator / Internal Telemetry Cockpit */}
+-            <Route path="/cockpit" element={<OperatorCockpit />} />
+-            <Route path="/telemetry" element={<OperatorCockpit />} />
+-
+-            {/* Honest 404 catch-all — never silently bounce to / */}
+-            <Route path="*" element={<ErrorPage code={404} />} />
+-          </Routes>
++          <React.Suspense fallback={null}>
++            <CommandBar />
++          </React.Suspense>
++          <React.Suspense fallback={<RouteFallback />}>
++            <Routes>
++              {/* Public Visitor Funnel — Cosmic landing at / (Zero-blocking; renders immediately without auth checks) */}
++              <Route path="/" element={<LandingPage />} />
++              <Route path="/about" element={<OurStoryPage />} />
++              <Route path="/chat" element={<LiveChatPage />} />
++              <Route path="/features" element={<PublicPageShell><FeaturesPage /></PublicPageShell>} />
++              <Route path="/models" element={<PublicPageShell><ModelsPage /></PublicPageShell>} />
++              <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
++              <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
++              <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
++              <Route path="/knowledge" element={<KnowledgePage />} />
++
++              {/* Split auth (Refs #876) — /login + /register restored */}
++              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
++              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
++
++              {/* Authenticated workspace */}
++              <Route
++                path="/workspace"
++                element={
++                  <ProtectedRoute>
++                    <WorkspaceLayout>
++                      <UserDashboard />
++                    </WorkspaceLayout>
++                  </ProtectedRoute>
++                }
++              />
++              <Route
++                path="/workspace/live"
++                element={
++                  <ProtectedRoute>
++                    <WorkspaceLayout>
++                      <AIStudio />
++                    </WorkspaceLayout>
++                  </ProtectedRoute>
++                }
++              />
++
++              {/* Admin — AdminShell (OTP/TOTP step-up preserved), NOT OperatorCockpit */}
++              <Route
++                path="/admin/*"
++                element={
++                  <RoleGuard requiredRole="admin">
++                    <ErrorBoundary>
++                      <AdminShell />
++                    </ErrorBoundary>
++                  </RoleGuard>
++                }
++              />
++
++              {/* Tier-S feature routes (share links, prompt library) */}
++              {workspaceFeatureRoutes.map((route) => (
++                <Route key={route.path} path={route.path} element={route.element} />
++              ))}
++
++              {/* Operator / Internal Telemetry Cockpit */}
++              <Route path="/cockpit" element={<OperatorCockpit />} />
++              <Route path="/telemetry" element={<OperatorCockpit />} />
++
++              {/* Honest 404 catch-all — never silently bounce to / */}
++              <Route path="*" element={<ErrorPage code={404} />} />
++            </Routes>
++          </React.Suspense>
+         </TranslationProvider>
+       </ThemeSyncProvider>
+     </GlobalConfigInitializer>
+diff --git a/tests/test_frontend_performance_guard.py b/tests/test_frontend_performance_guard.py
+new file mode 100644
+index 00000000..16f8f168
+--- /dev/null
++++ b/tests/test_frontend_performance_guard.py
+@@ -0,0 +1,20 @@
++import unittest
++from pathlib import Path
++from scripts.ci.frontend_performance_guard import check_app_code_splitting, self_test
++
++
++class TestFrontendPerformanceGuard(unittest.TestCase):
++    def test_self_test(self):
++        self.assertTrue(self_test())
++
++    def test_active_app_tsx(self):
++        app_path = Path("studio/src/App.tsx")
++        if not app_path.exists():
++            self.skipTest("studio/src/App.tsx not found in repository root")
++        content = app_path.read_text(encoding="utf-8")
++        violations = check_app_code_splitting(content)
++        self.assertEqual(violations, [], f"Performance violations found: {violations}")
++
++
++if __name__ == "__main__":
++    unittest.main()

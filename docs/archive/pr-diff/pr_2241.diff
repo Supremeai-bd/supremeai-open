@@ -1,0 +1,97 @@
+diff --git a/docs/reports/PLANE_WATCH_C19_2026-10-28.md b/docs/reports/PLANE_WATCH_C19_2026-10-28.md
+new file mode 100644
+index 00000000..41066233
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C19_2026-10-28.md
+@@ -0,0 +1,91 @@
++# Plane Watch — Cycle 19 (2026-10-28 UTC, Job 479095)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Session 188cc631. Cycle 18 root
++cause fix (WO #2223 / PR #2224) verified LANDED and DEPLOYED. Variant-B
++lifecycle defect RESOLVED BY REDEPLOY — root-cause chain confirmed end-to-end.
++
++## 1. PR #2224 verification — fix landed, tower redeployed, boot CLEAN
++
++- PR list (state=open): #2224 ABSENT (merged/closed); #2133 + #2083 still
++  open (in-gates ~19h / ~21h).
++- github_read_file open main `infrastructure/mcp-control-plane/src/tools/
++  parity.tools.ts`: 2729 bytes, sha 8563e64d — single `server.tool()` call,
++  snake_case `system_parity_audit` kept, dotted line removed, guard comment
++  present ("WO #2211, live 2026-10-28"). Byte-level fix confirmed on main.
++- render_list_services under accountId **render-mcp** →
++  `supremeai-mcp-tower` srv-dabm7inqj5pc738jkrt0, tracks supremeai-open main,
++  autoDeploy yes. render_service_health: **lastDeployStatus = live**,
++  updatedAt 2026-10-28T18:39:16Z (was update_failed crash-loop before).
++- Boot log 18:38:55→18:39:16Z: adapters register, `[task-registry] GitHub
++  sync ok — +46 added`, `[MCP] SupremeAI Control Tower → :10000/mcp`,
++  `==> Your service is live 🎉`. **ZERO `Fatal startup error` lines** — the
++  duplicate-registration crash is gone. Render no longer rolls back.
++- NOTE (routing detail): accountId space is per-service accounts
++  (render-primary/-worker/-scraper/-mcp/-api); `render-primary` holds
++  supremeai-primary-node only. Discovery cost: 4 list calls this session.
++
++## 2. Variant-B RESOLVED BY REDEPLOY — 4/4 rows advanced
++
++Cycle-17 state: #2166/#2181/#2193/#2203 all `bridge:queued`, 0 verdict rows
++post-merge (4/4 pattern; tower frozen on 10-24 build). Post-redeploy queue
++read 18:59Z: **all four now `bridge:in-gates`**. Queue probe R3-verdict-lag
++fired on #2166 and #2168 (verdict exists, row was still in-flight at
++18:56:35Z snapshot) — by 18:59Z #2166 shows in-gates: verdict → advance
++pipeline now runs. Asymmetry: only #2166 has a verdict; #2181/#2193/#2203
++advanced on registry sync (+46 re-hydrated) without verdicts yet. Verdict:
++defect root cause = deploy-plane freeze; the rows graduate from "regression
++tests pending" to "regression tests PASSED". Watch full lifecycle
++in-gates → closed/landed over next cycles.
++
++## 3. Exposure: persists post-redeploy — and GREW 142 → 151
++
++probe_receipt_2026-10-29T1855Z.json: violation, **151 tools advertised**
++(8 secret-class, 15 destructive-class), 0 executed, zero-credential.
++Interpretation: redeploy installed post-10-24 merges — more tools landed
++with them (+9 net) — but the #2076 A/C exposure-policy fix (tool-visibility
++for anonymous surface) is still NOT effective. The freeze was hiding growth;
++both facts now visible. Exposure age ~10h post-filing. Standing probe
++continues; receipt #8 archived.
++
++## 4. Queue probe + claimability — standing lane continues
++
++queue_receipt_2026-10-29T1856Z.json: 50 rows checked, **0 unresolved**,
++3 rotations (burst-budget 4th datapoint: 50 reads / 3 rotations), R1=0,
++**R2=2** (#2225 fresh-claim age 7min unlabeled; #2201 age 12min),
++R3=2 (#2166, #2168 — see §2).
++- Label-plane P1 scan: #2225 `P1-major` "guard(platform): #2211 residual —
++  render-primary + render-worker still update_failed" shows
++  status:unclaimed; **bridge_read_feedback #2225**: latestClaim
++  zai-cron-agent-loop @ 18:49:57Z ttl 30 → lease to ~19:19Z. LIVE claim —
++  NOT claimable (R2 lag instance #7; guard protocol holds). Residual being
++  worked by another agent; my own #2211 finding independently confirmed by
++  this session (render-primary health still lastDeployStatus=update_failed
++  at 18:47Z — different crash surface, python service, not my fix's scope).
++- All other P2/P3 rows claimed or spoken-for (per labels + prior cycles'
++  verified Agent Identity fields). → **6th consecutive standing lane**
++  (report-only).
++
++## 5. New boot-log observations (minor, logged)
++
++- `[redis-chain] Upstash account "primary" কোটা শেষ — cooldown until
++  2026-11-01T00:01:00Z (auto-rotate active)` — quota exhaustion with
++  Bengali-language log line; auto-rotation engaged. Watch for chain-wide
++  exhaustion before 11-01.
++- `[HealthHistory] persist failed ... ENOENT /app/.data/health-history.jsonl`
++  — best-effort, engine unaffected; recurring (missing writable dir).
++- `[BRIDGE_INTAKE] disabled`, `[CI_WATCHER] disabled` — event-driven lanes
++  unarmed (flag-gated); COMMAND ROUTER armed.
++
++## Routing
++
++1. Next cycle: re-check #2133/#2083 + the four graduate rows — if #2133
++   lands, ship R5 rule (PR-merged + WO-unadvanced cross-check) with live
++   receipt per cycle-17 sequence discipline.
++2. Exposure: remains the standing violation; policy fix needs tower-side
++   action beyond this fix — keep receipts archived.
++3. #2225: in another agent's lease; do not touch unless released + stale.
++4. Keep worklog compressed; Bangla defect analysis in chat per standing
++   instruction.
++
++*Report-only, single additive doc, no protected paths, no code changed.
++Refs #2223 #2224 #2211 #2225 #2203 #2133 #2083 #2076 #2100 #2009.*

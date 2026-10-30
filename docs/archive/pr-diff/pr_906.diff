@@ -1,0 +1,79 @@
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index 039848db..8111267c 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -189,9 +189,9 @@ export const App: React.FC = () => {
+               <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
+               <Route path="/knowledge" element={<KnowledgePage />} />
+ 
+-              {/* Split auth (Refs #876) — /login + /register restored */}
+-              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
+-              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
++              {/* Split auth — /login + /register render immediately with zero blocking */}
++              <Route path="/login" element={<LoginPage />} />
++              <Route path="/register" element={<RegisterPage />} />
+ 
+               {/* Authenticated workspace */}
+               <Route
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 7bc3ab7d..bc47827b 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -133,12 +133,14 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
+     return null;
+   };
+ 
+-  // Priority 1: webhook (stealth web-relay) only
+-  const webhookResult = await tryTarget(webhookTarget);
+-  if (webhookResult) return webhookResult;
++  // Priority 1: direct frontend webhookTarget (if configured)
++  if (webhookTarget) {
++    const webhookResult = await tryTarget(webhookTarget);
++    if (webhookResult) return webhookResult;
++  }
+ 
+-  // If no direct frontend webhookTarget, forward to gateway which routes strictly to STEALTH_WEBHOOK_URL
+-  if (!webhookTarget && apiTarget) {
++  // Priority 2: forward to gateway (which routes strictly to STEALTH_WEBHOOK_URL)
++  if (apiTarget && apiTarget !== webhookTarget) {
+     const gatewayWebhookResult = await tryTarget(apiTarget);
+     if (gatewayWebhookResult) return gatewayWebhookResult;
+   }
+diff --git a/studio/src/pages/auth/LoginPage.tsx b/studio/src/pages/auth/LoginPage.tsx
+index 808bd3fb..4e8c1d6f 100644
+--- a/studio/src/pages/auth/LoginPage.tsx
++++ b/studio/src/pages/auth/LoginPage.tsx
+@@ -20,6 +20,14 @@ export const LoginPage: React.FC = () => {
+   const [isLoading, setIsLoading] = useState(false);
+   const navigate = useNavigate();
+   const login = useAuthStore((state) => state.login);
++  const status = useAuthStore((state) => state.status);
++
++  // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
++  React.useEffect(() => {
++    if (status === 'LOGGED_IN') {
++      navigate('/workspace', { replace: true });
++    }
++  }, [status, navigate]);
+ 
+   const handleLogin = async (e: React.FormEvent) => {
+     e.preventDefault();
+diff --git a/studio/src/pages/auth/RegisterPage.tsx b/studio/src/pages/auth/RegisterPage.tsx
+index 3c64aee5..5bd62691 100644
+--- a/studio/src/pages/auth/RegisterPage.tsx
++++ b/studio/src/pages/auth/RegisterPage.tsx
+@@ -15,6 +15,14 @@ export const RegisterPage: React.FC = () => {
+   const [isSuccess, setIsSuccess] = useState(false);
+   const navigate = useNavigate();
+   const register = useAuthStore((state) => state.register);
++  const status = useAuthStore((state) => state.status);
++
++  // Non-blocking redirect: If already logged in, navigate to workspace in background without spinner
++  React.useEffect(() => {
++    if (status === 'LOGGED_IN') {
++      navigate('/workspace', { replace: true });
++    }
++  }, [status, navigate]);
+ 
+   const handleRegister = async (e: React.FormEvent) => {
+     e.preventDefault();

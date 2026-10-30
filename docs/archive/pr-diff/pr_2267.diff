@@ -1,0 +1,39 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 5d199de1..421cbd35 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R56**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R57**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -102,6 +102,7 @@
+ | R53 | *(issue-filed — scout lane, no radar doc; adopted by #2189 within ~1h — registered by the filer this pass, see Drift log pass 15)* | Radar gate invariant-D offline re-route — the 5-collision commit-plane blind class (A/B scan registry/pointer; C scans docs/**.md only — squash subjects leave zero .md evidence) closed offline: scan_subjects()/invariant_d() over git log (window 60, slice 96), POINTER_PHRASE_RE widened `next[-\s]free` per the filer's live probe, commit-subject-ghost in the shrink-only ratchet, floor born empty; #2127's state-plane report already inside C's docs/** surface as the lagging mirror; the guard's D-clean receipt cites #2187 | #2187 | `adapt` | **landed (closed by #2189)** |
+ | R54 | *(issue-filed — scout lane, no radar doc; adopted by #2220 within ~5min of filing — registered by the filer this pass, see Drift log pass 16)* | Bridge issue-read plane state_reason drop — normalizeQueueItem (bridge.tools.ts:625-648, shared by 5 call sites: work_queue listing, work_order single read, second queue path, 2x read_feedback) projected a bare two-valued `state`, dropping GitHub's upstream `state_reason` (completed \| not_planned \| reopened \| null); write/read asymmetry: the repo's own automation writes state_reason:completed at 6 live sites (bridge_intake.py:669/978, command_router.ts:205, federation_ci_watchdog.py:617, pipeline_failure_register.py:848/874) while the only issue-read surface dropped it; queue hardcodes state=open so work_order was the sole closed-WO read; consumer cost proven: registry pass-8 needed the completed/not_planned distinction (sourced from the issue-page event, not Tower), variant-B 3/3 (#2166/#2181/#2193) closed-WO truth was main-history archaeology; landed option A: +1 line `stateReason: raw.state_reason ?? null` + RawIssue state_reason? + queue-fidelity battery + queueFromIssues carry-through; live post-landing receipt: Tower read of #2218 returns stateReason:completed (deploy unblocked by #2224) | #2218 | `adapt` | **landed (closed by #2220)** |
+ | R55 | *(issue-filed — scout lane, no radar doc; adopted in part within one cycle by the filer's own PR — registered same-cycle this pass, see Drift log pass 17; row stays open until option A flips the gate)* | Render deploy-gating prevention layer — the deploy-lane RCA documented the instance failures + a detection probe, but the prevention surface (Render's native deploy-gating) had zero repo mentions: autoDeploy has no check-gate (#2229 lead falsification #3) and gating on the current CI is a no-op by the RCA's own causality chain (CI green because Render deploys post-merge, outside GH Actions — boot-smoke discrimination must come FIRST); landed option B: healthCheckPath /health on the mcp-tower blueprint (live 200/82ms, transport-level 2xx gate — P1 #2211's silent rollback was the exact no-signal class; browser already gated → in-repo web fleet fully health-gated; api dashboard-managed stays RCA-routed; worker out of scope per docs); routed A(i) boot-smoke CI job (protected path #1643, maintainer-only) then A(ii) After-CI-Checks-Pass dashboard flip (official docs receipts in brief); C rejected (hook coupling before simple pair), D = RCA's probe kept as backstop, not duplicated | #2249 | `adapt` | **adopted (B landed; A maintainer-pending — open)** |
++| R56 | *(issue-filed — scout lane, no radar doc; registered by the filer at filing time — same-cycle registration per the pass-5 contract)* | Landing-truth probe lane-2 blindness — `landing_truth_probe` (bridge_intake.py:439, the #2158/#2020/#2056 anti-mislabel fallback) iterates BRIDGE_TARGET_REPOS only (:56-64, OPEN_REPO absent) with the v2-lane `bridge-land/` head filter (:462) while the direct solver lane lands `bridge/<taskId>` PRs on the open repo (bridge.tools.ts Step B); layer-2 squash scan has the same repo gap, and the gh_paged max_pages cap raises AFTER fetching page 1 so the caller discards the fetched 100 commits (:203) — the "সাম্প্রতিক ১০০ commit-এর জানালা" intent is dead code on the highest-volume repos; live: 15 WOs stranded open post-merge (7 in-gates probe-loop #2193/#2197/#2203/#2207/#2212/#2214/#2228 + 8 queued #2240/#2243/#2245/#2247/#2252/#2256/#2258/#2260, PRs #2194/#2198/#2204/#2208/#2213/#2215/#2229/#2241/#2244/#2246/#2248/#2253/#2257/#2259/#2261 all mergedAt-verified) = 75% of the queue window; bimodal close/split explained: spec-only PRs emit Refs-not-Closes (keeps WO open by design) so closure depends on the blind probe, code-scope Closes auto-close at merge; fix options A-D routed (A recommended: head-filtered OPEN_REPO PR lookup first — one cheap call, exact repo + prefix, no pagination exposure) | #2265 | `adapt` | **open (filed 2026-10-29)** |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index c6f0e7e1..e337faf5 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -228,10 +228,11 @@ def test_live_repo_sweep_passes() -> None:
+     # (R51 registration) legitimately advanced the index next-free R51 -> R52,
+     # after #2172 (R52 registration) advanced it R52 -> R53, after #2196
+     # (R53 registration) advanced it R53 -> R54, after #2230 (R54
+-    # registration) advanced it R54 -> R55, and after #2249 (R55 adoption
+-    # + same-cycle registration) advanced it R55 -> R56.
++    # registration) advanced it R54 -> R55, after #2249 (R55 adoption
++    # + same-cycle registration) advanced it R55 -> R56, and after #2265
++    # (R56 same-cycle filer registration) advanced it R56 -> R57.
+     # Bump this literal ONLY together with a landed index-pointer advance.
+-    assert r["pointer"] == 56, "pointer drifted — regenerate expectation with the index"
++    assert r["pointer"] == 57, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])
+     assert not drift, f"live citation-ghost drift: {drift}"

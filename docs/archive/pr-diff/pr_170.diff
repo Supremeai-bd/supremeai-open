@@ -1,0 +1,355 @@
+diff --git a/.github/ISSUE_TEMPLATE/agent-task.yml b/.github/ISSUE_TEMPLATE/agent-task.yml
+index 2250e8d6..acfbca04 100644
+--- a/.github/ISSUE_TEMPLATE/agent-task.yml
++++ b/.github/ISSUE_TEMPLATE/agent-task.yml
+@@ -13,7 +13,7 @@ body:
+         1. Fork `Supremeai-bd/supremeai-open` (zero credentials needed).
+         2. Create a branch: `contributor/issue-<task-id>` (or `bridge/<task-id>` for collaborator bridge lane).
+         3. Work strictly within the declared **Touching Files**.
+-        4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only`.
++        4. Run and satisfy the **3-Tier Verification Contract** via `python scripts/agents/continuous_agent_loop.py --verify-only` (the 3 tiers are the process phases; the automated evidence tiers are SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4).
+         5. Submit a Pull Request to `Supremeai-bd/supremeai-open:main` or open a **Bridge Work Order**. The internal Bridge automation ports and tests your change in the target repository.
+ 
+   - type: dropdown
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+index 65c206f8..913124bb 100644
+--- a/.github/workflows/open-guards.yml
++++ b/.github/workflows/open-guards.yml
+@@ -6,7 +6,9 @@
+ # Zero-checkout (event-context-only) → প্রতি রান ~৫ সেকেন্ড, public repo-র
+ # Actions minute ফ্রি ও আনলিমিটেড। (#107 exception: boundary-sanitization-guard
+ # job content inspect করে, তাই checkout লাগে — তবু stdlib-only + <৩ মিনিট।)
+-name: 🛡️ Open Guards (branch naming + issue reference + boundary)
++# Loop-contract parity guard (#118): docs/code SSOT sync —
++# scripts/agents/check_loop_contract_parity.py (tiers, guard list, flag table).
++name: 🛡️ Open Guards (branch naming + issue reference + duplicate + boundary + parity)
+ 
+ on:
+   pull_request:
+@@ -151,3 +153,14 @@ jobs:
+ 
+       - name: Full-tree boundary audit (final fail-closed barrier)
+         run: python3 scripts/ci/boundary_sanitization_guard.py --check
++
++  loop-contract-parity-guard:
++    name: "🔁 Loop-Contract Parity Guard (#118)"
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Checkout repository (parity inspects file bodies)
++        uses: actions/checkout@v4
++
++      - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
++        run: python3 scripts/agents/check_loop_contract_parity.py
+diff --git a/AGENTS.md b/AGENTS.md
+index 6de3bc21..46ec55b9 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -26,7 +26,7 @@ Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispat
+ | 3. Inspect state | Queue, open PRs, active claims, token freshness | `continuous_agent_loop.py` · `issue_queue_manager.py audit` |
+ | 4. Claim | Atomic claim (session marker; no claim, no work) | Session branch / `scripts/ci/atomic_claim.sh` |
+ | 5. Work | Smallest safe change inside declared scope | Standard Task Contract (`continuous_agent_loop.build_task_contract()`) |
+-| 6. Verify | 3-tier: reflection → boot smoke → tests | `continuous_agent_loop.py --verify-only` |
++| 6. Verify | 3-tier contract (process phases): reflection → boot smoke → tests · evidence tiers SSOT: AGENT_LOOP_SPEC §4 | `continuous_agent_loop.py --verify-only` |
+ | 7. Record | PR with full template + Test Evidence (+ meaningful decision note; `Closes #N` must also ride in the **commit message** — squash auto-close doctrine, AGENT_RULES U8) | `continuous_agent_loop.py --auto-pr` / REST PR create |
+ | 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
+ 
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 975d559c..0a8de231 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -96,7 +96,7 @@ either list is an ADMIN_DECISION.
+ | `--emit-prompt` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
+ | `--emit-contract` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
+ | `--group <name>` | ✅ new | canonical group override |
+-| `--verify-only` | ✅ extended | tiers 1–5 (syntax / JSON / YAML / binary guard / contract guard) + **tier 6** group-registry guard + **tier 7** envelope-determinism check |
++| `--verify-only` | ✅ extended | tiers 1–8 (syntax / JSON / YAML / binary guard / contract guard / group-registry guard / envelope-determinism / machine-path-isolation). **This row is the tier-count SSOT** — parity-enforced by `scripts/agents/check_loop_contract_parity.py` |
+ 
+ Deprecated shims keep running automation alive; removal is a future admin
+ decision after private-mirror parity (do not remove in a drive-by change).
+@@ -128,7 +128,7 @@ parity contract:
+    |------|-------|-----------|
+    | `--task-envelope` | shared (canonical) | unified envelope JSON on stdout, banner → stderr |
+    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
+-   | `--verify-only` | shared | 3-tier verification + parity marker line |
++   | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
+    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
+    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+    | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private `continuous-agent-loop.yml` workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+@@ -143,16 +143,27 @@ parity contract:
+ 
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+-`.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR
++`.github/workflows/open-guards.yml` runs on every PR
+ to `supremeai-open` — free, unlimited public Actions minutes — so invalid
+ contributions fail at the public boundary instead of burning the private
+-repo's limited quota (Free org ≈ 2,000 min/month):
++repo's limited quota (Free org ≈ 2,000 min/month). The first three guards
++are zero-checkout (~5s each); the boundary and parity guards check out the
++tree for content inspection (stdlib-only, still minutes-bounded):
+ 
+ 1. **Branch Naming Guard** — head branch must match
+    `^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/…`
+    (bot branches `dependabot|github-actions|copilot/*` auto-allowed).
+ 2. **Issue Reference Guard** — PR title/body must contain `#<number>`
+    (admin escape hatch: `guard-exempt` label).
++3. **Anti-Duplicate PR Guard** — whole-token `#N` comparison across other
++   open PRs (titles, bodies, fork-branch names); a competing PR for the
++   same issue fails the gate (AGENT_RULES U4).
++4. **Boundary Sanitization Guard (#107)** — guard self-test + PR
++   changed-files scan + full-tree public/private boundary barrier.
++5. **Loop-Contract Parity Guard (#118)** — asserts the loop's contract
++   surface stays in sync: evidence tier count (code emission vs §4),
++   this guard list vs the workflow job set, and no flag-table copies
++   in CONTRIBUTING.
+ 
+ ## 6. Submission flow (Pathway 1 wiring)
+ 
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index 1121e1a6..92a77004 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -60,7 +60,7 @@ The repository ships a self-contained agent loop (`scripts/agents/continuous_age
+ Python 3 + PyYAML — the only dependency: `pip install pyyaml`):
+ 
+ ```bash
+-# Dry-run the full 3-tier verification only (safe, no side effects):
++# Dry-run all verification tiers (safe, no side effects; tier count SSOT: docs/AGENT_LOOP_SPEC.md §4):
+ python3 scripts/agents/continuous_agent_loop.py --verify-only
+ 
+ # Claim a specific issue and emit the task contract:
+@@ -73,23 +73,9 @@ python3 scripts/agents/continuous_agent_loop.py --pick-next --max-tasks 1
+ python3 scripts/agents/continuous_agent_loop.py --loop --max-tasks 5
+ ```
+ 
+-Useful flags (regenerated from `--help` after #63/#67 — canonical details live in `docs/AGENT_LOOP_SPEC.md` §4):
+-
+-| Flag | Meaning |
+-|------|---------|
+-| `--verify-only` | Run 3-tier verification and exit (use this first, always); final stdout line is the `CONTRACT_VERSION` parity marker (#67) |
+-| `--issue N` | Claim and resolve a specific issue number |
+-| `--pick-next` | Auto-select the highest-priority **claimable** open issue (`status:unclaimed` only) |
+-| `--loop --max-tasks N` | Sequentially process up to N tasks |
+-| `--task-envelope` | **Canonical** (#63): emit the unified deterministic Task Envelope JSON and exit |
+-| `--group NAME` | Canonical group override from the `VALID_GROUPS` registry (fail-closed: `agent-orchestration`, `mcp-tower`, `core-engine`, `schemas-contracts`, `infra-ops`) |
+-| `--allow-adhoc` | Allow adhoc task execution without `--issue` (offline testing only) |
+-| `--force` | Bypass dirty workspace isolation gate (not recommended) |
+-| `--role NAME` | Force a specialist role — one of: `coder`, `auditor`, `ci-fixer`, `security-breaker`, `browser-qa`, `planner`, `watcher` |
+-| `--emit-prompt` / `--emit-contract` | **DEPRECATED (#63)** — shims that emit the unified envelope with a deprecation warning; use `--task-envelope` |
+-| `--auto-pr` | Submit the PR via the `gh` CLI when tests pass |
+-| `--touching-files a,b` | Declare the exact scope (required by the task envelope) |
+-| `--task-type`, `--priority` | Task envelope metadata (defaults: `IMPLEMENT`, `P2`) |
++Flag semantics are **SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4** — do not copy
++the flag table here; the Loop-Contract Parity Guard (`scripts/agents/check_loop_contract_parity.py`)
++fails any drift between this file, the SPEC, and the code.
+ 
+ **Graceful degradation:** the loop does not require the `gh` CLI. If it is not
+ installed, every step that would call it degrades to a clear message
+@@ -119,9 +105,12 @@ no GitHub account, no fork, no token:
+ 
+ > Health check first: `system_summary` and `system_health` are open to everyone.
+ 
+-## 6. The 3-tier verification contract
++## 6. The 3-tier verification contract (process phases)
+ 
+-Every change — one line or one subsystem — passes all three tiers:
++Every change — one line or one subsystem — passes all three tiers.
++(The 3 tiers here are the *process phases* below; the automated *evidence
++tiers* executed by `--verify-only` are SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4
++and parity-enforced by `scripts/agents/check_loop_contract_parity.py`.)
+ 
+ 1. **Reflection diff** — re-read your own diff before running anything. Does it
+    do only what the issue declares?
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+new file mode 100644
+index 00000000..e4a76b25
+--- /dev/null
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -0,0 +1,116 @@
++#!/usr/bin/env python3
++"""Loop-Contract Parity Guard (#118) — docs/code SSOT sync, fail-closed.
++
++The loop's contract surface (evidence tiers, guards, flag semantics) drifted
++repeatedly because it was hand-duplicated across five surfaces. This guard
++makes the drift machine-visible:
++
++  1. Evidence tier count: the tiers emitted by ``continuous_agent_loop.py``
++     (``{"tier": N, ...}`` appends) must match the tier range declared by the
++     SSOT row in ``docs/AGENT_LOOP_SPEC.md`` §4 ("tiers 1–N"), with no gaps.
++  2. No hardcoded "<N>-tier checks passed" / "All <N>-tier checks" literal in
++     the loop code — the count must be derived from the evidence list.
++  3. SPEC §5 must name every job that ``open-guards.yml`` actually runs.
++  4. CONTRIBUTING.md must carry no flag-table copy (SSOT is SPEC §4).
++  5. The SSOT pointers must exist (SPEC §4b → §4; CONTRIBUTING → this guard).
++
++Exit codes: 0 = parity held · 1 = drift detected · 2 = guard environment error.
++"""
++
++import re
++import sys
++from pathlib import Path
++
++try:
++    import yaml
++except ImportError:  # pragma: no cover - PyYAML is the loop's only dependency
++    print("GUARD-ENV-ERROR: PyYAML required (pip install pyyaml)")
++    sys.exit(2)
++
++ROOT = Path(__file__).resolve().parents[2]
++LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
++SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
++CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
++GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
++
++
++def main() -> int:
++    for path in (LOOP, SPEC, CONTRIB, GUARDS_WF):
++        if not path.is_file():
++            print(f"GUARD-ENV-ERROR: missing required file: {path.relative_to(ROOT)}")
++            return 2
++
++    failures: list[str] = []
++    code = LOOP.read_text(encoding="utf-8")
++    spec = SPEC.read_text(encoding="utf-8")
++    contrib = CONTRIB.read_text(encoding="utf-8")
++
++    # 1. Evidence tier count: code emission vs SPEC §4 SSOT row.
++    emitted = sorted({int(n) for n in re.findall(r'\{"tier": (\d+),', code)})
++    declared = None
++    if not emitted:
++        failures.append("no evidence tier emissions found in the loop code")
++    else:
++        gaps = [t for t in range(1, max(emitted) + 1) if t not in emitted]
++        if gaps:
++            failures.append(f"evidence tier sequence has gaps in code: {gaps}")
++        m = re.search(r"tiers 1[–-](\d+)", spec)
++        if not m:
++            failures.append('SPEC §4 SSOT row does not declare "tiers 1–N"')
++        else:
++            declared = int(m.group(1))
++            if declared != max(emitted):
++                failures.append(
++                    f"tier-count drift: code emits tiers 1..{max(emitted)}, "
++                    f"SPEC §4 declares tiers 1..{declared}"
++                )
++
++    # 2. No hardcoded tier-count success literal (count must be derived).
++    if re.search(r'"[0-9]+-tier checks passed', code) or re.search(
++        r"All [0-9]+-tier checks", code
++    ):
++        failures.append(
++            "hardcoded tier-count success string found in the loop code — "
++            "derive the count from the evidence list instead"
++        )
++
++    # 3. SPEC §5 guard list vs open-guards.yml job set (name-level parity).
++    def norm(name: str) -> str:
++        name = re.sub(r"\(#[0-9]+\)", "", name)
++        name = re.sub(r"[^A-Za-z ]+", " ", name)
++        return re.sub(r"\s+", " ", name).strip()
++
++    wf = yaml.safe_load(GUARDS_WF.read_text(encoding="utf-8"))
++    job_names = {norm(j.get("name") or jid) for jid, j in wf["jobs"].items()}
++    sec5 = norm(spec.split("## 5.")[1].split("## 6.")[0])
++    for job in sorted(job_names):
++        if job and job not in sec5:
++            failures.append(f"SPEC §5 does not document open-guards job: '{job}'")
++
++    # 4. No flag-table copy in CONTRIBUTING (SSOT is SPEC §4).
++    if re.search(r"^\|\s*`--", contrib, flags=re.M):
++        failures.append("CONTRIBUTING.md still contains a flag-table copy (SSOT is SPEC §4)")
++
++    # 5. SSOT pointers present.
++    if "count SSOT: §4" not in spec:
++        failures.append("SPEC §4b row lost the tier-count SSOT pointer")
++    if "check_loop_contract_parity" not in contrib:
++        failures.append("CONTRIBUTING lost the parity-guard pointer")
++
++    if failures:
++        print("❌ Loop-contract parity FAILED:")
++        for failure in failures:
++            print(f"   - {failure}")
++        return 1
++
++    print(
++        f"✅ Loop-contract parity OK: tiers 1..{max(emitted)} "
++        f"(code == SPEC §4 declared 1..{declared}), "
++        f"{len(job_names)} guards (workflow == SPEC §5), "
++        "no flag-table copy, SSOT pointers present."
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index e45dbab1..eb510496 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -13,7 +13,7 @@
+   - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
+   - Builds a contract-bound, scoped prompt with strict file boundaries.
+   - Executes isolated branch and workspace setup.
+-  - Enforces strict 3-tier automated safety gates.
++  - Enforces strict multi-tier automated safety gates (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4).
+   - Records dynamic, verified test evidence in PRs.
+   - Performs fresh-board checks before looping to the next task.
+ """
+@@ -182,7 +182,7 @@ def build_task_contract(
+             },
+             "role_policy": role_policy,
+             "required_evidence": required_evidence or [
+-                "3-tier test output", "diff check", "board freshness re-poll"
++                "verification tier output", "diff check", "board freshness re-poll"
+             ],
+             "verification": verification or [
+                 "py_compile", "json schema parse", "smoke validation"
+@@ -596,8 +596,8 @@ def step_5_work_notice(role: str, prompt: str) -> None:
+ 
+ 
+ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
+-    """Step 6: Run 3-tier verification and collect dynamic evidence."""
+-    log("🧪", "[Step 6/8: Verify] Running 3-Tier Verification Contract...")
++    """Step 6: Run the verification tiers and collect dynamic evidence."""
++    log("🧪", "[Step 6/8: Verify] Running the verification contract (tier-count SSOT: docs/AGENT_LOOP_SPEC.md §4)...")
+     evidence: list[dict[str, Any]] = []
+ 
+     # 1. Python Syntax / Compile smoke
+@@ -709,7 +709,8 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
+         log("❌", f"Self-test verification failed: {e}")
+         return False, evidence
+ 
+-    log("✅", "3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
++    tier_count = len({e["tier"] for e in evidence})
++    log("✅", f"{tier_count}-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
+     return True, evidence
+ 
+ 
+@@ -783,7 +784,7 @@ def step_7_record(
+         if not ev.get("passed") and ev.get("reason"):
+             extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
+         evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
+-    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
++    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
+ 
+     pr_body = f"""## Summary
+ Autonomous contribution for issue #{issue_num}: {task.get('title')}.
+@@ -794,7 +795,7 @@ def step_7_record(
+ ## Type of Change
+ - [x] `feat` / `fix` / `docs` — Open contributor change
+ {contract_yaml_snippet}
+-## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)
++## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
+ {evidence_block}
+ 
+ ## Rollback Path
+@@ -917,7 +918,7 @@ def main() -> int:
+     parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
+     parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
+     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
+-    parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
++    parser.add_argument("--verify-only", action="store_true", help="Only run the verification tiers and exit")
+     parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
+     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
+     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")

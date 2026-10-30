@@ -1,0 +1,65 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo5.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo5.md
+new file mode 100644
+index 00000000..766c8947
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo5.md
+@@ -0,0 +1,59 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo5
++## SupremeAI Studio Frontend "Cosmic" Modernization — Phase 5: Admin Command Center Polish
++
++**Target subsystem:** supremeai-studio (frontend) — `src/components/admin/Dashboard.tsx` (Command Center) + admin auth entry visual
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Depends on:** bridge-20261022-frontend-cosmic-wo1 (tokens, #855); siblings: WO3 (#857), WO2 (#859), WO4 (#861)
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow)
++
++## Context (audit findings, 2026-10-22)
++
++`admin/Dashboard.tsx` (Command Center) has a solid skeleton — KPI grid, resource consumption, CI reports, threat scan, live events, all fed by real hooks (`useMetrics`, `useThreatScan`, `useCIReports`, `useDashboardEvents`) and already token-class based (`surface-1`, `text-text`, `border-border`). Audit found concrete defects and gaps:
++
++1. **Availability KPI is a hardcoded placeholder**: the value cell renders the literal string `'—'` and the delta badge also `'—'` — no data source is bound. In a Command Center whose whole purpose is operational truth, a permanent placeholder reads as a broken gauge.
++2. **No trend context**: KPIs are point-in-time numbers without sparklines/history.
++3. **Incidents/deployments lack urgency signaling**: counts render as static digits even when active high/critical incidents exist.
++4. **Redis quota is invisible**: the platform's most common operational event (free-tier Upstash quota exhaustion + multi-account failover rotation) has no surface in the Command Center.
++5. **Admin auth entry (`AdminShell`)** has no visual treatment; the split-screen pattern from WO2 can be reused for consistency.
++
++## Scope of this work order
++
++1. **Bind real Availability data:**
++   - Replace the hardcoded `'—'` with the real availability/uptime figure from the existing metrics source (`useMetrics` — same endpoint family the other KPIs consume). If the backend metric is genuinely absent, render the honest "not reported" state (existing honest-empty precedent) — never a fake number.
++2. **Sparkline trends:**
++   - Small SVG sparklines (pure inline SVG component, no chart library) for Latency p95 and Requests/s KPI cards, fed by the existing metrics polling; reduced-motion safe (no animated draw).
++3. **Incident urgency signaling:**
++   - When `activeIncidents.length > 0`: red pulse treatment on the Incidents KPI (`--danger` token) + list jumps to top of the main column. Zero incidents keeps the calm emerald state.
++4. **Redis quota meter:**
++   - New compact "Redis Quota" card: active account label (primary/secondary/tertiary chain), estimated commands vs 500k limit bar, and cooldown state — sourced from the existing metrics/hooks layer; if that data is not exposed to the frontend today, the card renders the honest "not reported" state and a note flags the backend follow-up (data plumbing, not invented frontend values).
++5. **Admin auth split-screen visual:**
++   - Reuse the WO2 split-screen wrapper around the existing AdminShell login (visual only — TOTP/OTP/JWT logic untouched).
++6. **Kill-switch:** `VITE_COSMIC_ADMIN` (default true) governs the new visual layer; all data bindings behave identically regardless.
++
++## Out of scope
++
++- Backend metrics endpoints (any new data exposure is a flagged follow-up, not this diff), RBAC, admin store logic, notifications, CI Guardian itself. No new npm dependencies (sparklines are inline SVG).
++
++## Acceptance criteria
++
++- [ ] No hardcoded `'—'` KPI values remain; every gauge either shows real data or the honest not-reported state.
++- [ ] Sparklines render from real series data; no chart library added.
++- [ ] Incident pulse only when severity high/critical count > 0; verified by test with fixture data.
++- [ ] All new classes token-based; `prefers-reduced-motion` respected.
++- [ ] `npm test` + typecheck green; existing admin KPI tests (`data-testid="admin-kpi"`) keep passing.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** The Command Center is the operator's only window into platform truth; a hardcoded placeholder gauge and invisible Redis-quota state are exactly the kind of silent rot the platform's honest-state conventions exist to prevent. With WO1 tokens in place, this is a data-binding + visual polish diff with zero architectural risk, closing the Cosmic roadmap end-to-end.
++
++**Alternatives rejected:**
++- *Invent a fallback availability number* — rejected: a fabricated SLA figure is worse than an honest not-reported state; violates the honesty convention.
++- *Add a charting library (recharts etc.)* — rejected for two sparklines: inline SVG is ~30 lines, keeps the cold-start bundle small.
++- *Plumb new backend metrics now* — rejected: crossing the frontend/backend boundary doubles the diff and review surface; the quota card ships with honest not-reported state and a flagged backend follow-up if data is absent.
++- *Redis quota via direct Upstash API calls from browser* — rejected: would leak credentials to the client; data must arrive through the existing metrics layer.
++
++## Verification evidence
++
++- Doc-only work-order spec. Findings verified against live `admin/Dashboard.tsx` + `AdminShell.tsx` read via MCP Tower on 2026-10-22 (hardcoded '—' availability cells, hook-based data sources, existing token classes, admin-kpi test ids).
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest + typecheck output.

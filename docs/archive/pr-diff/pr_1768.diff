@@ -1,0 +1,401 @@
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index b75c14dd..51953e6b 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -20,6 +20,7 @@
+     ["python", "scripts/ci/constitution_pointer_guard.py", "--self-test"],
+     ["python", "scripts/ci/constitution_pointer_guard.py"],
+     ["python", "scripts/ci/openapi_breaking_guard.py", "--check"],
++    ["python", "scripts/ci/security_gate.py", "--self-test"],
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+     ["python", "scripts/ci/test_parity_guard.py"],
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
+diff --git a/scripts/ci/security_gate.py b/scripts/ci/security_gate.py
+index cc5fa52a..74115839 100644
+--- a/scripts/ci/security_gate.py
++++ b/scripts/ci/security_gate.py
+@@ -1,11 +1,45 @@
+ #!/usr/bin/env python3
+-"""Aggregate machine-readable CI security findings with fail-closed semantics."""
++"""Aggregate machine-readable CI security findings with fail-closed semantics.
++
++Resurrection (issue #1735, scout radar VIII lane R26 — classification: adapt):
++    This gate was a pre-built-but-unwired security contract — a live Trivy
++    JSON parser with ZERO callers (no workflow produced the report; the
++    dependency-CVE class had no gate running anywhere). Per the #1554
++    precedent (gates land as in-repo tests; admin applies workflow patches —
++    `.github/` is admin-owned), this patch resurrects the gate bridge-ably:
++
++      1. `--self-test` — hermetic, offline fixture validation of the whole
++         fail-closed contract (findings → exit 1, clean → exit 0, missing or
++         malformed report → exit 1 with error evidence). No Trivy binary
++         needed; the parser is the contract under test.
++      2. Roster wiring — `run_all_guards.py` now invokes
++         `security_gate.py --self-test`, so the gate is discoverable,
++         executable, and pinned by CI on every dispatcher run.
++      3. Admin recipe (the one step only the admin can apply, SHA-pinned per
++         the March-2026 trivy-action compromise precedent):
++
++             - name: Dependency CVE gate (Trivy)
++               uses: aquasecurity/trivy-action@<full-commit-sha>  # v0.71.x line; NEVER @master
++               with:
++                 scan-type: fs
++                 format: json
++                 output: trivy-report.json
++             - run: python scripts/ci/security_gate.py --trivy trivy-report.json --output security-report.json
++
++         until that step lands, the live gate runs hermetically via
++         `--self-test` and honestly reports the report-absent error path.
++
++Existing contract (unchanged): `--trivy` + `--output` → exit 0 on pass,
++exit 1 on blocking findings or errors; report JSON schema stable
++(`status` / `blocking_findings` / `errors`).
++"""
+ 
+ from __future__ import annotations
+ 
+ import argparse
+ import json
+ import sys
++import tempfile
+ from pathlib import Path
+ from typing import Any
+ 
+@@ -27,35 +61,133 @@ def _trivy_findings(report: dict[str, Any]) -> list[dict[str, Any]]:
+     return findings
+ 
+ 
+-def main() -> int:
+-    parser = argparse.ArgumentParser()
+-    parser.add_argument("--trivy", type=Path, required=True)
+-    parser.add_argument("--output", type=Path, required=True)
+-    args = parser.parse_args()
++def _evaluate(trivy_path: Path) -> tuple[int, dict[str, Any]]:
++    """Single decision path shared by CLI mode and self-test.
+ 
++    Returns (exit_code, report_dict). Fail-closed: missing/unparseable
++    reports are errors (exit 1), never silent passes.
++    """
+     errors: list[str] = []
+     findings: list[dict[str, Any]] = []
+-    if not args.trivy.is_file():
+-        errors.append(f"missing required report: {args.trivy}")
++    if not trivy_path.is_file():
++        errors.append(f"missing required report: {trivy_path}")
+     else:
+         try:
+-            findings = _trivy_findings(json.loads(args.trivy.read_text(encoding="utf-8")))
++            findings = _trivy_findings(json.loads(trivy_path.read_text(encoding="utf-8")))
+         except (OSError, json.JSONDecodeError) as exc:
+-            errors.append(f"invalid Trivy report {args.trivy}: {exc}")
++            errors.append(f"invalid Trivy report {trivy_path}: {exc}")
+ 
+     report = {
+         "status": "fail" if errors or findings else "pass",
+         "blocking_findings": findings,
+         "errors": errors,
+     }
+-    args.output.parent.mkdir(parents=True, exist_ok=True)
+-    args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    return (1 if errors or findings else 0), report
++
++
++def _write_report(output: Path, report: dict[str, Any]) -> None:
++    output.parent.mkdir(parents=True, exist_ok=True)
++    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++
++
++def self_test() -> bool:
++    """Hermetic, offline validation of the fail-closed contract. No Trivy needed."""
++    print("[self-test] Running security gate tests...")
++
++    # Case A: HIGH + CRITICAL findings must be extracted and fail the gate.
++    with tempfile.TemporaryDirectory(prefix="secgate-a-") as td:
++        report_path = Path(td) / "trivy.json"
++        report_path.write_text(
++            json.dumps(
++                {
++                    "Results": [
++                        {
++                            "Target": "requirements.txt",
++                            "Vulnerabilities": [
++                                {"VulnerabilityID": "CVE-2026-0001", "Severity": "CRITICAL", "PkgName": "requests"},
++                                {"VulnerabilityID": "CVE-2026-0002", "Severity": "HIGH", "PkgName": "urllib3"},
++                                {"VulnerabilityID": "CVE-2026-0003", "Severity": "LOW", "PkgName": "idna"},
++                                {"VulnerabilityID": "CVE-2026-0004", "Severity": "MEDIUM", "PkgName": "certifi"},
++                            ],
++                        }
++                    ]
++                }
++            ),
++            encoding="utf-8",
++        )
++        code, report = _evaluate(report_path)
++        assert code == 1, (code, report)
++        assert report["status"] == "fail"
++        ids = sorted(f["id"] for f in report["blocking_findings"])
++        assert ids == ["CVE-2026-0001", "CVE-2026-0002"], ids  # LOW/MEDIUM never block
++        assert report["blocking_findings"][0]["package"] == "requests"
++    print("  PASS | HIGH/CRITICAL findings extracted, gate fails closed")
++
++    # Case B: clean report passes.
++    with tempfile.TemporaryDirectory(prefix="secgate-b-") as td:
++        report_path = Path(td) / "trivy.json"
++        report_path.write_text(json.dumps({"Results": []}), encoding="utf-8")
++        code, report = _evaluate(report_path)
++        assert code == 0 and report["status"] == "pass" and report["blocking_findings"] == []
++    print("  PASS | clean report passes (exit 0)")
++
++    # Case C: missing report is an ERROR, never a silent pass (fail-closed).
++    with tempfile.TemporaryDirectory(prefix="secgate-c-") as td:
++        code, report = _evaluate(Path(td) / "absent.json")
++        assert code == 1 and report["status"] == "fail"
++        assert any("missing required report" in e for e in report["errors"]), report
++    print("  PASS | missing report fails closed with evidence")
++
++    # Case D: malformed JSON is an ERROR, never a silent pass.
++    with tempfile.TemporaryDirectory(prefix="secgate-d-") as td:
++        report_path = Path(td) / "trivy.json"
++        report_path.write_text("{not json", encoding="utf-8")
++        code, report = _evaluate(report_path)
++        assert code == 1 and report["status"] == "fail"
++        assert any("invalid Trivy report" in e for e in report["errors"]), report
++    print("  PASS | malformed report fails closed with evidence")
++
++    # Case E: output writer round-trips the report schema.
++    with tempfile.TemporaryDirectory(prefix="secgate-e-") as td:
++        out = Path(td) / "nested" / "security-report.json"
++        _write_report(out, {"status": "pass", "blocking_findings": [], "errors": []})
++        loaded = json.loads(out.read_text(encoding="utf-8"))
++        assert loaded == {"status": "pass", "blocking_findings": [], "errors": []}
++        assert loaded["status"] == "pass"
++    print("  PASS | output writer round-trips schema (nested dirs created)")
++
++    print("[self-test] security gate self-tests PASSED (5 test cases)!")
++    return True
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Dependency-CVE gate: parse a Trivy JSON report, fail closed on HIGH/CRITICAL."
++    )
++    parser.add_argument("--trivy", type=Path, help="path to the Trivy JSON report")
++    parser.add_argument("--output", type=Path, help="path to write the aggregated report JSON")
++    parser.add_argument(
++        "--self-test",
++        action="store_true",
++        help="run hermetic offline contract tests (no Trivy binary or report needed)",
++    )
++    args = parser.parse_args()
++
++    if args.self_test:
++        ok = self_test()
++        return 0 if ok else 1
++
++    if args.trivy is None or args.output is None:
++        parser.error("--trivy and --output are required unless --self-test is given")
++
++    code, report = _evaluate(args.trivy)
++    _write_report(args.output, report)
+     print(json.dumps(report, indent=2, sort_keys=True))
+-    return 1 if errors or findings else 0
++    return code
+ 
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+ 
+ 
+-__all__ = ["main"]
++__all__ = ["main", "self_test", "_trivy_findings"]
+diff --git a/tests/test_security_gate_selftest.py b/tests/test_security_gate_selftest.py
+new file mode 100644
+index 00000000..305840c2
+--- /dev/null
++++ b/tests/test_security_gate_selftest.py
+@@ -0,0 +1,185 @@
++#!/usr/bin/env python3
++"""tests/test_security_gate_selftest.py — pin the resurrected dependency-CVE gate (#1735).
++
++Auditor finding (scout radar VIII, R26): scripts/ci/security_gate.py was a
++pre-built-but-unwired contract — a live Trivy JSON parser with zero callers
++anywhere in the repo (pipeline.yml, run_all_guards.py, audit_suite.py). The
++dependency-CVE class had no gate running at all.
++
++Resurrection envelope (bridge-able, .github/ untouched per the admin-sovereignty
++contract — #1554 precedent: gates land as in-repo tests, admin applies the
++workflow patch):
++
++  1. ``security_gate.py --self-test``  — hermetic fixture validation of the
++     fail-closed contract (added by this patch; no Trivy binary required).
++  2. ``run_all_guards.py`` roster wiring (added by this patch).
++  3. This test file pins BOTH: the contract behavior end-to-end via the real
++     CLI (subprocess) and the roster wiring (regression lock against silent
++     un-wiring — the exact failure mode that killed the gate originally).
++
++The admin recipe for the real Trivy step (SHA-pinned action, json output,
++feeding ``--trivy``) lives in the security_gate.py module docstring.
++
++Dual mode (zero-dependency doctrine):
++  - pytest:  pytest tests/test_security_gate_selftest.py
++  - stdlib:  python3 tests/test_security_gate_selftest.py
++
++Every test is offline and deterministic.
++"""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++GATE = REPO_ROOT / "scripts" / "ci" / "security_gate.py"
++ROSTER = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
++
++
++def _run_gate(*extra: str) -> tuple[int, str]:
++    """Run the real gate CLI (subprocess, offline)."""
++    r = subprocess.run(
++        [sys.executable, str(GATE), *extra],
++        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60, check=False,
++    )
++    return r.returncode, r.stdout + r.stderr
++
++
++def _write_trivy(td: Path, name: str, payload: str) -> Path:
++    p = td / name
++    p.write_text(payload, encoding="utf-8")
++    return p
++
++
++def test_self_test_mode_passes() -> None:
++    code, out = _run_gate("--self-test")
++    assert code == 0, out
++    assert "PASSED" in out, out
++
++
++def _agg_report(td: Path) -> tuple[int, dict, Path]:
++    trivy = _write_trivy(
++        td,
++        "trivy.json",
++        json.dumps(
++            {
++                "Results": [
++                    {
++                        "Target": "requirements.txt",
++                        "Vulnerabilities": [
++                            {"VulnerabilityID": "CVE-2026-9999", "Severity": "CRITICAL", "PkgName": "flask"},
++                        ],
++                    }
++                ]
++            }
++        ),
++    )
++    out = td / "security-report.json"
++    code, out_text = _run_gate("--trivy", str(trivy), "--output", str(out))
++    return code, json.loads(out.read_text(encoding="utf-8")), out
++
++
++def test_blocking_findings_fail_closed_with_report() -> None:
++    with tempfile.TemporaryDirectory(prefix="secgate-t1-") as td:
++        code, report, out = _agg_report(Path(td))
++        assert code == 1
++        assert out.is_file(), "aggregated report must be written even on failure"
++        assert report["status"] == "fail"
++        assert report["blocking_findings"] == [
++            {"target": "requirements.txt", "id": "CVE-2026-9999", "severity": "CRITICAL", "package": "flask"}
++        ]
++        assert report["errors"] == []
++
++
++def test_clean_report_passes() -> None:
++    with tempfile.TemporaryDirectory(prefix="secgate-t2-") as td:
++        trivy = _write_trivy(Path(td), "trivy.json", json.dumps({"Results": []}))
++        out = Path(td) / "security-report.json"
++        code, _ = _run_gate("--trivy", str(trivy), "--output", str(out))
++        report = json.loads(out.read_text(encoding="utf-8"))
++        assert code == 0
++        assert report["status"] == "pass" and report["blocking_findings"] == []
++
++
++def test_missing_report_fails_closed() -> None:
++    with tempfile.TemporaryDirectory(prefix="secgate-t3-") as td:
++        out = Path(td) / "security-report.json"
++        code, out_text = _run_gate("--trivy", str(Path(td) / "absent.json"), "--output", str(out))
++        report = json.loads(out.read_text(encoding="utf-8"))
++        assert code == 1
++        assert report["status"] == "fail"
++        assert any("missing required report" in e for e in report["errors"])
++
++
++def test_malformed_report_fails_closed() -> None:
++    with tempfile.TemporaryDirectory(prefix="secgate-t4-") as td:
++        trivy = _write_trivy(Path(td), "trivy.json", "{definitely not json")
++        out = Path(td) / "security-report.json"
++        code, _ = _run_gate("--trivy", str(trivy), "--output", str(out))
++        report = json.loads(out.read_text(encoding="utf-8"))
++        assert code == 1
++        assert any("invalid Trivy report" in e for e in report["errors"])
++
++
++def test_gate_is_roster_wired() -> None:
++    """Regression lock: the gate must stay wired into the guard dispatcher.
++
++    Zero callers is the exact failure mode that killed this gate originally
++    (#1735) — if someone removes the roster line, this test goes red.
++    """
++    roster_src = ROSTER.read_text(encoding="utf-8")
++    assert "scripts/ci/security_gate.py" in roster_src, (
++        "security_gate.py vanished from run_all_guards.py roster — dependency-CVE "
++        "gate would be dead again (the #1735 failure mode)"
++    )
++    assert '"--self-test"' in roster_src
++
++
++def test_admin_recipe_is_documented() -> None:
++    """The module docstring must carry the SHA-pinned admin recipe.
++
++    The real Trivy step can only be applied by the admin (.github/ is
++    admin-owned); the recipe living in-repo keeps the resurrection honest
++    and reviewable.
++    """
++    doc = GATE.read_text(encoding="utf-8")
++    assert "trivy-action" in doc
++    assert "full-commit-sha" in doc, "recipe must mandate SHA pinning (March-2026 compromise precedent)"
++    assert "NEVER @master" in doc
++    assert "--trivy" in doc and "--output" in doc
++
++
++class _Skip(Exception):
++    """Honest skip signal (dual-mode; mirrors test_ci_guards.py)."""
++
++
++def main() -> int:  # plain stdlib runner (dual mode)
++    tests = [
++        test_self_test_mode_passes,
++        test_blocking_findings_fail_closed_with_report,
++        test_clean_report_passes,
++        test_missing_report_fails_closed,
++        test_malformed_report_fails_closed,
++        test_gate_is_roster_wired,
++        test_admin_recipe_is_documented,
++    ]
++    for t in tests:
++        try:
++            t()
++        except _Skip as exc:
++            print(f"SKIP {t.__name__}: {exc}")
++            continue
++        except AssertionError as exc:
++            print(f"FAIL {t.__name__}: {exc}")
++            return 1
++        print(f"PASS {t.__name__}")
++    print("ALL PASS: dependency-CVE gate contract + wiring pinned (7 tests)")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())

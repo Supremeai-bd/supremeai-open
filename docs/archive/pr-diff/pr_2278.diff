@@ -1,0 +1,85 @@
+diff --git a/docs/reports/WO2225_DIAGNOSIS_2026-10-28.md b/docs/reports/WO2225_DIAGNOSIS_2026-10-28.md
+new file mode 100644
+index 00000000..c33d6bd1
+--- /dev/null
++++ b/docs/reports/WO2225_DIAGNOSIS_2026-10-28.md
+@@ -0,0 +1,79 @@
++# WO #2225 Diagnosis — render-primary + render-worker update_failed residual
++
++Agent: zai-loop-agent Job 479095 cycle 21. Claimed #2225 via work_claim
++**GRANT_TAKEOVER 20:56:09Z** (prior lease zai-agent-job-478709 expired
++19:56Z, 60min stale, zero activity 1h, no verdict — guard protocol §#2151
++takeover path; second live validation after c15 external adoption).
++
++## 1. Executive correction to the audit finding
++
++The finding "render-primary + render-worker still update_failed" is TRUE as
++a **platform state**, but the services are NOT down: both run their pre-10-24
++images and serve healthy traffic. The real residual is: **5 days of
++undeployed builds** + a deploy pipeline that stopped firing after the 10-24
++failure wave. Same plane-disagreement family as R2 claim-lag (label/API
++plane says failed, runtime plane says live).
++
++## 2. Evidence (live, session 8d4f6747, 2026-10-28 20:47–20:58Z)
++
++- render_service_health primary srv-dau7c9ek1f9s73almn0g:
++  `lastDeployStatus=update_failed`, service updatedAt **2026-10-24T08:32:40Z**.
++- render_service_health worker srv-dabm7evqj5pc738jkf30:
++  `lastDeployStatus=update_failed`, updatedAt **2026-10-24T08:32:47Z** —
++  same wave, 7s apart.
++- Primary app logs 10-24 08:32:11–08:32:50Z (full 40s window):
++  08:32:19 `==> Deploying...` → 08:32:30 vault key gen → 08:32:31 `Started
++  server process [1]` / `Application startup complete` / `Uvicorn running
++  on http://0.0.0.0:10000` → 08:32:32 HEAD / 405 (port probe) → 08:32:33
++  `GET /health?t=... 200` (deploy probe, 10.29.8.12) → 08:32:40.071
++  `Shutting down` → 08:32:40.693 (API record instant) → 08:32:40.930
++  `==> Your service is live 🎉` → continuous 200s after.
++- Interpretation: new container booted, probes passed, then the new
++  container was killed at 08:32:40 with **no traceback, no exit line** in
++  retained logs → Render recorded update_failed → rolled back; the "live"
++  banner belongs to the rolled-back instance. Failure is platform/deploy
++  phase, invisible to the log API (dashboard required).
++- Primary build logs 10-24 08:33 → 10-28 23:59: exactly ONE build —
++  10-28 06:41Z, poetry multi-stage image pushed 06:41:46 — then log
++  silence. **No deploy activity after image push** (confirms c18's "zero
++  deploy activity" on newer evidence).
++- Dockerfile drift note: 10-24 image = python:3.11-slim + pip
++  requirements.txt, root user; 10-28 image = poetry venv build, non-root
++  `supremeai` user, /app/data|uploads|logs|tmp pre-created. The 10-28
++  image has NEVER booted — the next successful deploy is its first boot.
++
++## 3. Root-cause boundary (honest)
++
++What the log API can prove: builds OK, boots OK, deploy-phase kill without
++app error, wave-wide (2/2 core services, 7s apart), zero deploys since.
++What it cannot prove: WHY the deploy phase killed the containers (no
++deploy-phase log stream retained for failed deploys) and WHY no autoDeploy
++has fired since. Both live behind the Render dashboard → **admin action
++required**; agent-side self-heal would need `action_render_deploy`, which
++is destructive-class + HITL-gated — correctly refused for an agent to
++self-approve.
++
++## 4. Recommended path (admin)
++
++1. Render dashboard: manual deploy (clear cache) on primary + worker with
++   deploy-phase logs open — captures the kill reason the API never
++   retained.
++2. Before that deploy: treat the poetry/non-root image as unvalidated
++   (first boot); consider deploying primary alone first, worker after.
++3. If the 10-24 kill reason turns out app-level after all, the evidence
++   window to re-check is 08:32:31–08:32:40 on both services.
++4. Post-redeploy: re-run the standing probes; primary/worker should read
++   `live` and the 5-day fix backlog lands.
++
++## 5. Relation to the standing defect list
++
++- Confirms c18 root-cause scope: the parity fix repaired the TOWER lane
++  (redeployed 18:39:16Z live, boot clean) — the core lane (primary/worker)
++  is a SEPARATE platform-side stall that agent tooling cannot clear.
++- Plane-disagreement family grows: claim-lag (R2), verdict-lag (R3,
++  resolved), now deploy-status-vs-runtime divergence. A future probe rule
++  (post-#2133) could cross-check `render_service_health.lastDeployStatus`
++  against observed traffic/uptime — same fail-close pattern.
++
++*Diagnosis report, doc-only, no code changed, no protected paths. Claimed
++under lease expiresAt 21:26:09Z. Refs #2225 #2211 #2223 #2224 #2151 #2076.*

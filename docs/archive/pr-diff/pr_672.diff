@@ -1,0 +1,69 @@
+diff --git a/sdk/python/supremeai/client.py b/sdk/python/supremeai/client.py
+index e7690e70..2b473838 100644
+--- a/sdk/python/supremeai/client.py
++++ b/sdk/python/supremeai/client.py
+@@ -92,7 +92,12 @@ def request(
+                         parsed = json.loads(raw.decode("utf-8"))
+                     except ValueError:
+                         parsed = None
+-                shape = parsed if isinstance(parsed, dict) else {}
++                parsed_obj = parsed if isinstance(parsed, dict) else {}
++                # The gateway nests error details under "error"
++                # ({"error": {"code", "message", ...}}); unwrap it, falling
++                # back to the top-level shape for legacy/plain bodies.
++                inner = parsed_obj.get("error")
++                shape = inner if isinstance(inner, dict) else parsed_obj
+                 error = GatewayError(
+                     status=exc.code,
+                     code=str(shape.get("code", "GATEWAY_ERROR")),
+diff --git a/sdk/tests/test_py_client.py b/sdk/tests/test_py_client.py
+index c9989ade..982870d8 100644
+--- a/sdk/tests/test_py_client.py
++++ b/sdk/tests/test_py_client.py
+@@ -72,7 +72,7 @@ def do_POST(self):
+                 {"id": "run_123", "status": "queued", "task": state["last_body"].get("task", "")},
+             )
+         else:
+-            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
++            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
+ 
+     def do_GET(self):
+         state = self.server.state  # type: ignore[attr-defined]
+@@ -83,11 +83,11 @@ def do_GET(self):
+                 state["flaky_hits"] += 1
+                 should_fail = state["flaky_hits"] <= 2
+             if should_fail:
+-                self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "try again"})
++                self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "try again"}})
+             else:
+                 self._send_json(200, {"ok": True, "attempts": state["flaky_hits"]})
+         elif self.path == "/v1/always-503":
+-            self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "never recovers"})
++            self._send_json(503, {"error": {"code": "UPSTREAM_BUSY", "message": "never recovers"}})
+         elif self.path.endswith("/stream"):
+             body = SSE_BODY.encode("utf-8")
+             self.send_response(200)
+@@ -96,7 +96,7 @@ def do_GET(self):
+             self.end_headers()
+             self.wfile.write(body)
+         else:
+-            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
++            self._send_json(404, {"error": {"code": "NOT_FOUND", "message": "unknown path"}})
+ 
+ 
+ class MockGatewayServer(ThreadingHTTPServer):
+diff --git a/sdk/typescript/src/client.ts b/sdk/typescript/src/client.ts
+index 41ed0132..e3155a9c 100644
+--- a/sdk/typescript/src/client.ts
++++ b/sdk/typescript/src/client.ts
+@@ -180,7 +180,9 @@ export class SupremeAIClient {
+         try {
+           raw = await response.json();
+           if (raw && typeof raw === 'object') {
+-            shape = raw as Partial<GatewayErrorShape>;
++            const obj = raw as Record<string, unknown>;
++            const inner = obj['error'];
++            shape = (inner && typeof inner === 'object' ? inner : obj) as Partial<GatewayErrorShape>;
+           }
+         } catch {
+           raw = undefined;

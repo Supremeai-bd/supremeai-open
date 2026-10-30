@@ -1,0 +1,75 @@
+diff --git a/.gitignore b/.gitignore
+index 77a59d87..509f874d 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -14,3 +14,11 @@ node_modules/
+ dist/
+ .wrangler/
+ vscode/out/
++
++# Local planning and internal docs (do not commit to GitHub)
++ARCHITECTURE_PLAN.md
++*.local.md
++docs/*_BN.md
++docs/GHOST_TOWER_MULTI_AI_ROADMAP_BN.md
++docs/SUPREMEAI_API_KEY_AND_GUEST_SOLUTION_BN.md
++pr_body*.txt
+diff --git a/gateway/config.py b/gateway/config.py
+index e5826985..125da025 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -41,7 +41,7 @@
+ # Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
+ # (providerId pattern SSOT'd in provider-registry.schema.json).
+ ALLOWED_PROVIDERS: frozenset[str] = frozenset(
+-    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
++    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
+ )
+ 
+ ALLOWED_SCOPES: frozenset[str] = frozenset({"chat", "models"})
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+index 560756b2..df982366 100644
+--- a/gateway/tests/test_streaming_gateway.py
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -65,7 +65,7 @@
+ 
+ def fake_attempt(responses: dict[str, AttemptResult], calls: list[str]):
+     async def attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+-        calls.append(f"{endpoint.provider}/{endpoint.model}")
++        calls.append("%s/%s" % (endpoint.provider, endpoint.model))
+         found = responses.get(endpoint.provider)
+         if found is None:
+             raise RuntimeError(f"no fake for {endpoint.provider}")
+@@ -691,7 +691,7 @@ def drift(mutate):
+ 
+ def test_config_provider_enum_matches_task_router_ssot():
+     assert ALLOWED_PROVIDERS == frozenset(
+-        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
++        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
+     )
+ 
+ 
+diff --git a/scripts/ci/test_parity_guard.py b/scripts/ci/test_parity_guard.py
+index 90151620..93c7e057 100644
+--- a/scripts/ci/test_parity_guard.py
++++ b/scripts/ci/test_parity_guard.py
+@@ -54,6 +54,7 @@
+     "scripts/ci/run_all_guards.py": "guard dispatcher, meta",
+     "scripts/ci/vendored_tree_guard.py": "covered by test_ci_guards",
+     "scripts/ci/federation_ci_watchdog.py": "covered by test_ci_guards",
++    "scripts/ci/contract_parity_guard.py": "covered by --self-test and contract guards",
+ }
+ 
+ 
+diff --git a/tests/test_gateway_foundation.py b/tests/test_gateway_foundation.py
+index 02e34615..132dcda6 100644
+--- a/tests/test_gateway_foundation.py
++++ b/tests/test_gateway_foundation.py
+@@ -46,6 +46,7 @@ def test_allowed_providers_ssot(self):
+             "openrouter",
+             "mistral",
+             "deepseek",
++            "web",
+         }
+         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
+ 

@@ -1,0 +1,945 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 174ce269..8b278e07 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -527,6 +527,47 @@ for line in $updates; do
+         fi
+     fi
+ 
++    # 15. DOCS LINK INTEGRITY GUARD (#1938).
++    # Markdown internal-link integrity ratchet over every tracked .md surface.
++    # Engages ONLY when the push touches .md files; sweeps the surviving
++    # changed files (links OUT of them) against the shrink-only baseline
++    # scripts/ci/docs_link_integrity_baseline.json. NEW or GROWN ratcheted
++    # (file, target, reason) findings fail-close the push (writable lanes);
++    # vendored .agents/skills findings are report-only (routed to the #1725
++    # lane, never asserted by agents); AGENT_RULES.md ghost citations are
++    # excluded debt owned by constitution_pointer_guard (#1642->#1708).
++    # Deleted files are skipped with evidence; the roster full-sweep owns
++    # stranded targets. Fully offline stdlib; no external-URL checking.
++    # Self-contained under `set -u`. Wired additively after the two CVE
++    # guards (js_dep #1913, py_dep #1969) — neither CVE plane is touched.
++    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/docs_link_integrity_guard.py ]; then
++        if ZERO_TEST "$remote_sha"; then
++            links_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
++        else
++            links_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
++        fi
++        links_md_files=$(printf '%s\n' "$links_changed" | grep -E '\.md$' || true)
++        if [ -n "$links_md_files" ]; then
++            hook_py=""
++            if python3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="python3"
++            elif python -c "import sys" >/dev/null 2>&1; then
++                hook_py="python"
++            elif py -3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="py -3"
++            fi
++            if [ -n "$hook_py" ]; then
++                if ! $hook_py scripts/ci/docs_link_integrity_guard.py --files $links_md_files; then
++                    reject "DOCS LINK INTEGRITY GUARD (#1938) FAILED" \
++                        "The push introduces NEW or GROWN broken internal markdown links in writable lanes." \
++                        "Fix the finding (see the [docs-link-integrity-guard] evidence lines above) — the baseline may never grow." \
++                        "Vendored .agents/skills findings are report-only and route to the #1725 lane." \
++                        "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        fi
++    fi
++
+     IFS="$nl"
+ done
+ IFS="$OIFS"
+diff --git a/docs/CONTRIBUTING_BN.md b/docs/CONTRIBUTING_BN.md
+index 3c2b86dd..4cc6d521 100644
+--- a/docs/CONTRIBUTING_BN.md
++++ b/docs/CONTRIBUTING_BN.md
+@@ -23,7 +23,7 @@
+ | ওয়ার্কফ্লো ফাইল | ভূমিকা ও দায়িত্ব |
+ |---|---|
+ | [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) | **ভ্যালিডেশন ও টেস্ট:** ব্রাঞ্চের নাম যাচাই, ইস্যু রেফারেন্স চেক, অ্যান্টি-ডুপ্লিকেট চেক, সিক্রেট স্ক্যান (Gitleaks), Python ম্যাট্রিক্স (3.10–3.13) এবং MCP Tower টেস্ট রান করে। |
+-| [`.github/workflows/landing.yml`](../.github/workflows/landing.yml) | **অটো-মার্জ ও ব্রিজ:** সব গেট সফলভাবে পাস হলে পিআর অটো-স্কোয়াশ-মার্জ করে এবং প্রাইভেট ব্রিজ কিউতে ডিসপ্যাচ করে। |
++| [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) | **অটো-মার্জ ও ব্রিজ:** সব গেট সফলভাবে পাস হলে পিআর অটো-স্কোয়াশ-মার্জ করে এবং প্রাইভেট ব্রিজ কিউতে ডিসপ্যাচ করে। |
+ 
+ ---
+ 
+diff --git a/docs/README.bn.md b/docs/README.bn.md
+index c029ec6e..8daaec47 100644
+--- a/docs/README.bn.md
++++ b/docs/README.bn.md
+@@ -1,7 +1,7 @@
+ # SupremeAI — বাংলা README (Way 16: Bangla-First Docs)
+ 
+ > ইংরেজি README-র সহোদর — বাংলাভাষী ডেভেলপারদের জন্য। ইংরেজি সংস্করণ:
+-> [README.md](./README.md) · পরিকল্পনা: [INFINITY_TECHSTACK_FOLLOW_PLAN.md](./docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md)
++> [README.md](../README.md) · পরিকল্পনা: [INFINITY_TECHSTACK_FOLLOW_PLAN.md](./INFINITY_TECHSTACK_FOLLOW_PLAN.md)
+ 
+ **SupremeAI** হলো একটি autonomous AI agent platform — federation মডেলে চলে:
+ একটি private core, একটি public open mirror, এবং ১২টি satellite repo।
+@@ -69,7 +69,7 @@ python scripts/ci/boundary_sanitization_guard.py --files <আপনার ফা
+ 
+ ## লাইসেন্স ও অবদান
+ 
+-MIT — বিস্তারিত [LICENSE](./LICENSE)। অবদানের আগে AGENTS.md ও
++MIT — বিস্তারিত [LICENSE](../LICENSE)। অবদানের আগে AGENTS.md ও
+ AGENT_RULES.md পড়ুন; সব PR bridge pipeline দিয়ে যায়, constitutional gates ছাড়া
+ কিছুই main-এ যায় না।
+ 
+diff --git a/docs/specs/002-policy-driven-web-crawler/plan.md b/docs/specs/002-policy-driven-web-crawler/plan.md
+index 368c8eef..9e6ae850 100644
+--- a/docs/specs/002-policy-driven-web-crawler/plan.md
++++ b/docs/specs/002-policy-driven-web-crawler/plan.md
+@@ -1,6 +1,6 @@
+ # Implementation Plan: Policy-Driven Web Crawler Upgrade
+ 
+-**Branch**: `002-policy-driven-web-crawler` | **Date**: 2026-09-05 | **Spec**: [spec.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/spec.md)
++**Branch**: `002-policy-driven-web-crawler` | **Date**: 2026-09-05 | **Spec**: [spec.md](./spec.md)
+ 
+ **Input**: Feature specification from `specs/002-policy-driven-web-crawler/spec.md`
+ 
+diff --git a/docs/specs/002-policy-driven-web-crawler/tasks.md b/docs/specs/002-policy-driven-web-crawler/tasks.md
+index 721afec1..ab2c00c7 100644
+--- a/docs/specs/002-policy-driven-web-crawler/tasks.md
++++ b/docs/specs/002-policy-driven-web-crawler/tasks.md
+@@ -1,7 +1,7 @@
+ # Tasks: Policy-Driven Web Crawler Upgrade
+ 
+ **Feature**: `002-policy-driven-web-crawler`  
+-**Spec**: [spec.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/spec.md) | **Plan**: [plan.md](file:///f:/supremeai/specs/002-policy-driven-web-crawler/plan.md)  
++**Spec**: [spec.md](./spec.md) | **Plan**: [plan.md](./plan.md)  
+ **Status**: Ready for Implementation  
+ 
+ ---
+diff --git a/scripts/ci/docs_link_integrity_baseline.json b/scripts/ci/docs_link_integrity_baseline.json
+new file mode 100644
+index 00000000..15fec5d2
+--- /dev/null
++++ b/scripts/ci/docs_link_integrity_baseline.json
+@@ -0,0 +1,85 @@
++{
++  "schema": "docs-link-integrity-baseline/1",
++  "generatedAt": "2026-10-28",
++  "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
++  "probe": "scripts/ci/docs_link_integrity_guard.py",
++  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (dated 2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): the single MANIFEST.md entry is satellite-lane debt — core/** routes to the satellite repo (bridge v2 routing law, the #1980 rejection), so its fix ships as a separate satellite order (bridge-20261028-r42-manifest-satellite-fix). SHRINK TO 0 once the mirror syncs: delete the entry, re-run --check.",
++  "ratchetedFloor": [
++    {
++      "file": "core/_archive/MANIFEST.md",
++      "target": "../../docs/plan-network/MAINTAINABILITY_PLAN.md",
++      "reason": "missing-file",
++      "allowed": 1
++    }
++  ],
++  "knownReportOnly": [
++    {
++      "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
++      "target": "agents.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": ".agents/skills/developing-genkit-python/references/dev-workflow.md",
++      "target": "agents.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": ".agents/skills/github-actions-debugger/SKILL.md",
++      "target": "file:///f:/supremeai%20backup/docs/devops/CI_DEBUGGING_ROADMAP.md",
++      "reason": "file-uri"
++    }
++  ],
++  "knownExcluded": [
++    {
++      "file": "docs/AUDIT_2026-10-15.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/AUDIT_2026-10-16-external-audit.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/AUTONOMY_LOOP_CONTRACT.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/CI_MINIMUM_PIPELINE_STANDARD.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/CONTRIBUTING_BN.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/FAQ.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/GUARDIAN_EVALUATION.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/INGRESS_SECURITY_POLICY.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/ZERO_ADMIN_GUIDE.md",
++      "target": "../AGENT_RULES.md",
++      "reason": "missing-file"
++    },
++    {
++      "file": "docs/adrs/README.md",
++      "target": "../../AGENT_RULES.md",
++      "reason": "missing-file"
++    }
++  ],
++  "checkedAtGeneration": 269
++}
+diff --git a/scripts/ci/docs_link_integrity_guard.py b/scripts/ci/docs_link_integrity_guard.py
+new file mode 100644
+index 00000000..d8aa0ae7
+--- /dev/null
++++ b/scripts/ci/docs_link_integrity_guard.py
+@@ -0,0 +1,438 @@
++#!/usr/bin/env python3
++"""docs_link_integrity_guard.py — R42 markdown internal-link integrity ratchet (#1938).
++
++কেন (Why — Bengali, house style):
++    #1909 প্রুন (২০৮ ডক ডিলিট) করার সময় কোনো গার্ড লিংক-গ্রাফ দেখেনি —
++    রেফারেন্স রেখে যাওয়া ফাইল মুছে গেলে কেউ জানতই না। এই গার্ড সেই
++    টেলিমেট্রি-গ্যাপ বন্ধ করে: প্রতিটি ট্র্যাকড .md-এর প্রতিটি ইন্টারনাল
++    লিংক (ফাইল + অ্যাঙ্কর) রেজলভ করে, shrink-only বেসলাইনের সাথে তুলনা করে,
++    নতুন ভাঙা লিংক fail-closed করে। এজেন্ট ফ্লিট ডকুমেন্টেশন দিয়ে নেভিগেট
++    করে — ডেড লিংক মানে ভাঙা রাউটিং টেবিল, কসমেটিক সমস্যা নয়।
++
++Verdict routing (single bookkeeping, no double-counting):
++    - ratcheted   — self-owned lanes (docs/, core/, specs/, ...): NEW or
++                    GROWN (file, target, reason) occurrences fail-closed.
++                    The baseline may never grow; fixes shrink it.
++    - report_only — vendored `.agents/skills/**` packs (#1725 lane, U1/U3):
++                    never assert upstream state, never fail, routed to the
++                    owning domain.
++    - excluded    — `AGENT_RULES.md` ghost citations: constitution_pointer_guard
++                    (#1642→#1708) already owns the deleted-authority citation
++                    class with its own docs-debt allowlist. Counted for the
++                    record, excluded from this gate's ratchet pressure.
++
++Never-do (from #1938):
++    No re-creation of deleted authority files; no edits to vendored
++    .agents/skills content; no .github/** writes (#1643); no external-URL
++    flakiness in verdicts (external schemes are ignored, never checked);
++    no baseline growth ever.
++
++Semantics (deterministic, stdlib-only, fully offline):
++    - inline links `[text](target)` + reference definitions `[ref]: target`
++    - external schemes (http/https/mailto/ftp/tel) and angle forms: ignored
++    - `file://` targets: counted as file-uri hygiene findings (ratcheted in
++      writable lanes — a developer's local disk path must not land again)
++    - same-file `#anchor` and cross-file `path.md#anchor`: anchor validated
++      with GitHub-style heading slugs
++    - every occurrence counts (a broken link written twice is double damage)
++    - exit 0 clean/report-only, exit 1 ratchet violation, exit 2 usage error
++
++Modes:
++    --check        roster mode: full-tree sweep vs the baseline (default)
++    --files <p..>  pre-push mode: sweep only these changed .md files
++    --baseline     regenerate the versioned baseline at the current head (admin)
++    --json         machine-readable auditor report on stdout
++    --self-test    hermetic offline fixture suite (guard-the-guard)
++
++Run: python3 scripts/ci/docs_link_integrity_guard.py --check
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import sys
++import tempfile
++import unicodedata
++from collections import Counter
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++GUARD_TAG = "[docs-link-integrity-guard]"
++BASELINE_PATH = Path("scripts/ci/docs_link_integrity_baseline.json")
++
++# Anchor/pure-external walk exclusions (same class as the #1938 scout probe:
++# no .git, no dependency trees, no build output).
++EXCLUDED_DIRS = {
++    ".git", "node_modules", "venv", ".venv", "env", ".env",
++    "build", "dist", "out", "__pycache__", ".next", ".pytest_cache",
++    "generated", ".mypy_cache", ".ruff_cache", ".tox", ".eggs",
++}
++
++VENDORED_PREFIX = ".agents/skills/"   # #1725 lane — report-only, never agent-fixed
++EXCLUDED_TARGET_SUBSTR = "AGENT_RULES.md"  # #1642→#1708 pointer-guard debt
++
++EXTERNAL_RE = re.compile(r"^(?:https?|mailto|ftp|tel):", re.IGNORECASE)
++FILE_URI_RE = re.compile(r"^file://", re.IGNORECASE)
++INLINE_LINK_RE = re.compile(r"\[[^\]]*\]\(\s*([^)\s]+)(?:\s+\"[^\"]*\")?\s*\)")
++REF_DEF_RE = re.compile(r"^\s{0,3}\[[^\]]+\]:\s+(\S+)\s*$", re.MULTILINE)
++HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
++SAME_FILE_ANCHOR_RE = re.compile(r"^#(.+)$")
++
++
++def _evidence(msg: str) -> None:
++    """Stable-tagged evidence line — CI greps this."""
++    print(f"{GUARD_TAG} {msg}")
++
++
++def github_slug(text: str) -> str:
++    """GitHub-style heading slug: NFKD, lowercase, drop punctuation, spaces->dashes."""
++    t = unicodedata.normalize("NFKD", text.strip().lower())
++    t = re.sub(r"[^\w\s-]", "", t, flags=re.UNICODE)
++    t = re.sub(r"\s+", "-", t)
++    return t.strip("-")
++
++
++def anchors_of(path: Path) -> set[str]:
++    try:
++        text = path.read_text(encoding="utf-8", errors="replace")
++    except OSError:
++        return set()
++    found = set()
++    for line in text.splitlines():
++        m = HEADING_RE.match(line)
++        if m:
++            found.add(github_slug(m.group(2)))
++    return found
++
++
++def markdown_files(root: Path) -> list[Path]:
++    out: list[Path] = []
++    for dirpath, dirnames, filenames in os.walk(root):
++        dirnames[:] = [d for d in dirnames if d not in EXCLUDED_DIRS and not d.endswith(".egg-info")]
++        for fn in filenames:
++            if fn.lower().endswith(".md"):
++                out.append(Path(dirpath) / fn)
++    return sorted(out)
++
++
++def classify(rel_file: str, target: str, reason: str) -> str:
++    """Single-bookkeeping verdict: ratcheted | report_only | excluded."""
++    if rel_file.startswith(VENDORED_PREFIX):
++        return "report_only"          # vendored upstream — #1725 lane (U1/U3)
++    if EXCLUDED_TARGET_SUBSTR in target:
++        return "excluded"             # pointer-guard debt — #1642→#1708
++    return "ratcheted"                # self-owned writable lanes
++
++
++def sweep(root: Path, only_files: list[Path] | None = None) -> tuple[int, list[dict]]:
++    """Resolve every internal link occurrence. Returns (checked, findings)."""
++    files = markdown_files(root) if only_files is None else sorted(only_files)
++    checked = 0
++    findings: list[dict] = []
++    for f in files:
++        rel = f.relative_to(root).as_posix()
++        try:
++            text = f.read_text(encoding="utf-8", errors="replace")
++        except OSError:
++            continue
++        targets = [m.group(1) for m in INLINE_LINK_RE.finditer(text)]
++        targets += REF_DEF_RE.findall(text)
++        own_anchors: set[str] | None = None
++        for raw in targets:
++            t = raw.strip()
++            if not t or t.startswith("<"):
++                continue
++            if EXTERNAL_RE.match(t):
++                continue                      # external URLs deliberately out of scope
++            checked += 1
++            if FILE_URI_RE.match(t):
++                findings.append({"file": rel, "target": t, "reason": "file-uri"})
++                continue
++            same = SAME_FILE_ANCHOR_RE.match(t)
++            if same:
++                if own_anchors is None:
++                    own_anchors = anchors_of(f)
++                if same.group(1) not in own_anchors:
++                    findings.append({"file": rel, "target": t, "reason": "missing-anchor"})
++                continue
++            path_part, _, anchor = t.partition("#")
++            path_part = path_part.split("?", 1)[0]
++            if not path_part:
++                continue                      # bare "#" placeholder — no routing claim
++            cand = (root / path_part.lstrip("/")) if path_part.startswith("/") else (f.parent / path_part)
++            try:
++                resolved = cand.resolve()
++            except OSError:
++                resolved = cand
++            inside = str(resolved).startswith(str(root.resolve()))
++            if not resolved.exists() or not inside:
++                reason = "missing-file"
++                findings.append({"file": rel, "target": t, "reason": reason})
++                continue
++            if anchor:
++                tgt = resolved
++                if tgt.is_dir():
++                    tgt = tgt / "README.md"
++                    if not tgt.exists():
++                        findings.append({"file": rel, "target": t, "reason": "missing-anchor"})
++                        continue
++                if anchor not in anchors_of(tgt):
++                    findings.append({"file": rel, "target": t, "reason": "missing-anchor"})
++    return checked, findings
++
++
++def key_of(f: dict) -> tuple[str, str, str]:
++    return (f["file"], f["target"], f["reason"])
++
++
++def counts_of(findings: list[dict]) -> dict[tuple[str, str, str], int]:
++    return dict(Counter(key_of(f) for f in findings))
++
++
++def load_baseline(repo_root: Path) -> dict:
++    p = repo_root / BASELINE_PATH
++    if not p.is_file():
++        _evidence(f"FAIL baseline missing: {BASELINE_PATH}")
++        raise SystemExit(1)
++    try:
++        data = json.loads(p.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError) as exc:
++        _evidence(f"FAIL baseline malformed: {exc}")
++        raise SystemExit(1)
++    floor = data.get("ratchetedFloor") if isinstance(data, dict) else None
++    if not isinstance(data, dict) or "schema" not in data or not isinstance(floor, list):
++        _evidence("FAIL baseline schema unrecognised (need schema + ratchetedFloor entry list)")
++        raise SystemExit(1)
++    for e in floor:
++        if not isinstance(e, dict) or not {"file", "target", "reason", "allowed"} <= set(e):
++            _evidence(f"FAIL baseline ratchetedFloor entry malformed: {e!r}")
++            raise SystemExit(1)
++    return data
++
++
++def compare(baseline: dict, findings: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
++    """Shrink-only ratchet. Returns (drift, report_only, improvements)."""
++    floor = {(e["file"], e["target"], e["reason"]): int(e["allowed"])
++             for e in baseline.get("ratchetedFloor", [])}
++    current_all = counts_of(findings)
++    verdict_by_key = {key_of(f): classify(f["file"], f["target"], f["reason"]) for f in findings}
++
++    drift: list[dict] = []
++    improvements: list[dict] = []
++    for key, now in sorted(current_all.items()):
++        verdict = verdict_by_key[key]
++        if verdict != "ratcheted":
++            continue
++        allowed = floor.get(key, 0)
++        if now > allowed:
++            drift.append({"file": key[0], "target": key[1], "reason": key[2],
++                          "now": now, "allowed": allowed, "kind": "grown" if key in floor else "new"})
++        elif key in floor and now < allowed:
++            improvements.append({"file": key[0], "target": key[1], "reason": key[2],
++                                 "now": now, "allowed": allowed, "kind": "shrunk"})
++    # keys that vanished entirely are improvements too
++    for key, allowed in sorted(floor.items()):
++        if key not in current_all:
++            improvements.append({"file": key[0], "target": key[1], "reason": key[2],
++                                 "now": 0, "allowed": allowed, "kind": "resolved"})
++    return drift, [f for f in findings if verdict_by_key[key_of(f)] == "report_only"], improvements
++
++
++def render(drift: list[dict], report_only: list[dict], excluded: list[dict], improvements: list[dict], checked: int) -> None:
++    if improvements:
++        for it in improvements:
++            _evidence(f"SHRUNK {it['file']} -> {it['target']} ({it['reason']}) {it['allowed']}->{it['now']} "
++                      f"(shrink the baseline entry in this same change)")
++    if report_only:
++        _evidence(f"REPORT-ONLY {len(report_only)} vendored .agents/skills finding(s) — routed to the #1725 lane, never agent-fixed")
++        for r in report_only:
++            print(f"  {GUARD_TAG} vendored: {r['file']} -> {r['target']} ({r['reason']})")
++    if excluded:
++        _evidence(f"EXCLUDED {len(excluded)} AGENT_RULES.md ghost citation(s) — owned by constitution_pointer_guard (#1642->#1708), not double-counted here")
++    if drift:
++        for d in drift:
++            _evidence(f"DRIFT {d['kind']}: {d['file']} -> {d['target']} ({d['reason']}) {d['now']}/{d['allowed']}")
++        _evidence(f"FAIL {len(drift)} new/grown ratcheted link-integrity finding(s) over {checked} checked — the baseline may never grow")
++    else:
++        _evidence(f"OK {checked} internal link occurrences swept; ratchet holds")
++
++
++def self_test() -> bool:
++    """Hermetic fixture suite — offline, tempdir, no repo mutation."""
++    ok = True
++
++    def check(name: str, cond: bool) -> None:
++        nonlocal ok
++        print(f"{'PASS' if cond else 'FAIL'} {name}")
++        ok = ok and cond
++
++    def tree(files: dict[str, str], baseline: dict | None) -> tuple[Path, Path]:
++        tmp = Path(tempfile.mkdtemp(prefix="dlig-selftest-"))
++        for rel, content in files.items():
++            p = tmp / rel
++            p.parent.mkdir(parents=True, exist_ok=True)
++            p.write_text(content, encoding="utf-8")
++        base = {"schema": "docs-link-integrity-baseline/1",
++                "generatedAt": "1970-01-01", "headAtGeneration": "test",
++                "ratchetedFloor": {}, "knownReportOnly": [], "knownExcluded": []}
++        if baseline:
++            base.update(baseline)
++        (tmp / BASELINE_PATH).parent.mkdir(parents=True, exist_ok=True)
++        (tmp / BASELINE_PATH).write_text(json.dumps(base), encoding="utf-8")
++        return tmp, tmp / BASELINE_PATH
++
++    # S1: clean tree passes
++    root, _ = tree({"docs/a.md": "# H\n\n[ok](b.md)\n", "docs/b.md": "# B\n"}, None)
++    _, findings = sweep(root)
++    check("S1 clean-tree-no-findings", not findings)
++
++    # S2: new broken link is a ratchet drift
++    root, _ = tree({"docs/a.md": "[dead](ghost.md)\n"}, None)
++    _, findings = sweep(root)
++    check("S2-missing-file-found", findings and findings[0]["reason"] == "missing-file"
++          and classify(findings[0]["file"], findings[0]["target"], findings[0]["reason"]) == "ratcheted")
++
++    # S3: baseline-pinned drift reports, does not fail
++    root, basep = tree({"docs/a.md": "[dead](ghost.md)\n"},
++                       {"ratchetedFloor": [{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}]})
++    checked, findings = sweep(root)
++    drift, _ro, _im = compare(json.loads(basep.read_text()), findings)
++    check("S3-pinned-drift-not-drift", checked == 1 and not drift)
++
++    # S4: AGENT_RULES ghost routes excluded (pointer-guard debt, not ours)
++    root, _ = tree({"docs/a.md": "[rules](../AGENT_RULES.md)\n"}, None)
++    _, findings = sweep(root)
++    check("S4-ghost-excluded", findings and classify(findings[0]["file"], findings[0]["target"], findings[0]["reason"]) == "excluded")
++
++    # S5: vendored pack path routes report-only (#1725)
++    root, _ = tree({".agents/skills/somepack/SKILL.md": "[x](missing.md)\n"}, None)
++    _, findings = sweep(root)
++    check("S5-vendored-report-only", findings and classify(findings[0]["file"], findings[0]["target"], findings[0]["reason"]) == "report_only")
++
++    # S6: occurrence growth on a pinned key fails (double damage counts twice)
++    root, basep = tree({"docs/a.md": "[d](ghost.md)\n\n[d2](ghost.md)\n"},
++                       {"ratchetedFloor": [{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}]})
++    _, findings = sweep(root)
++    drift, _ro, _im = compare(json.loads(basep.read_text()), findings)
++    check("S6-grown-occurrence-fails", len(drift) == 1 and drift[0]["kind"] == "grown")
++
++    # S7: valid GitHub-slug cross-file anchor resolves (not a finding)
++    root, _ = tree({
++        "docs/a.md": "[s](b.md#serve-an-agent-over-http)\n",
++        "docs/b.md": "# T\n\n## Serve an agent over HTTP\n",
++    }, None)
++    _, findings = sweep(root)
++    check("S7-valid-anchor-resolves", not findings)
++
++    # S8: invalid cross-file anchor is a missing-anchor finding
++    root, _ = tree({
++        "docs/a.md": "[s](b.md#no-such-heading)\n",
++        "docs/b.md": "# T\n",
++    }, None)
++    _, findings = sweep(root)
++    check("S8-bad-anchor-found", findings and findings[0]["reason"] == "missing-anchor")
++
++    # S9: external URLs are ignored (never checked, no flakiness)
++    root, _ = tree({"docs/a.md": "[gh](https://github.com/x/y)\n[hi](mailto:a@b.c)\n"}, None)
++    checked, findings = sweep(root)
++    check("S9-external-ignored", checked == 0 and not findings)
++
++    # S10: file:// hygiene is a ratcheted finding in writable lanes
++    root, _ = tree({"docs/a.md": "[l](file:///f:/supremeai/spec.md)\n"}, None)
++    _, findings = sweep(root)
++    check("S10-file-uri-ratcheted", findings and findings[0]["reason"] == "file-uri"
++          and classify(findings[0]["file"], findings[0]["target"], findings[0]["reason"]) == "ratcheted")
++
++    # S11: resolved anchor that vanished -> improvement path does not crash compare
++    root, basep = tree({"docs/a.md": "# fine\n"}, {"ratchetedFloor": [{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}]})
++    _, findings = sweep(root)
++    drift, _ro, im = compare(json.loads(basep.read_text()), findings)
++    check("S11-resolved-key-improves", not drift and len(im) == 1 and im[0]["kind"] == "resolved")
++
++    print(f"{'SELF-TEST OK: docs_link_integrity_guard' if ok else 'SELF-TEST FAILED: docs_link_integrity_guard'}")
++    return ok
++
++
++def build_baseline(root: Path) -> dict:
++    checked, findings = sweep(root)
++    ratch: Counter = Counter()
++    report_only: list[dict] = []
++    excluded: list[dict] = []
++    for f in findings:
++        v = classify(f["file"], f["target"], f["reason"])
++        if v == "ratcheted":
++            ratch[key_of(f)] += 1
++        elif v == "report_only":
++            report_only.append(f)
++        else:
++            excluded.append(f)
++    return {
++        "schema": "docs-link-integrity-baseline/1",
++        "generatedAt": "2026-10-28",
++        "headAtGeneration": "post-#1938-fixes (R42 landing)",
++        "probe": "scripts/ci/docs_link_integrity_guard.py",
++        "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; "
++                "report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). "
++                "The floor may never grow.",
++        "ratchetedFloor": [
++            {"file": k[0], "target": k[1], "reason": k[2], "allowed": v}
++            for k, v in sorted(ratch.items())
++        ],
++        "knownReportOnly": report_only,
++        "knownExcluded": excluded,
++        "checkedAtGeneration": checked,
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="R42 markdown internal-link integrity ratchet (#1938)")
++    parser.add_argument("--check", action="store_true", help="roster mode: full-tree sweep vs baseline (default)")
++    parser.add_argument("--files", nargs="*", help="pre-push mode: sweep only these changed .md files")
++    parser.add_argument("--baseline", action="store_true", help="regenerate the versioned baseline at current head (admin)")
++    parser.add_argument("--json", action="store_true", help="machine-readable auditor report on stdout")
++    parser.add_argument("--self-test", action="store_true", help="hermetic offline self-test suite")
++    args = parser.parse_args()
++
++    if args.self_test:
++        return 0 if self_test() else 1
++
++    root = REPO_ROOT
++
++    if args.baseline:
++        data = build_baseline(root)
++        print(json.dumps(data, indent=2, ensure_ascii=False))
++        return 0
++
++    baseline = load_baseline(root)
++    only = [Path(p) for p in args.files] if args.files else None
++    if only:
++        # The pre-push hook feeds `git diff --name-only` output: repo-relative
++        # paths. Normalize against the repo root BEFORE any is_file()/sweep use
++        # (a relative Path silently raises ValueError inside relative_to()).
++        only = [p if p.is_absolute() else root / p for p in only]
++        for m in [str(p.relative_to(root)) for p in only if not p.is_file()]:
++            _evidence(f"SKIP missing-file {m} (deleted in this push; roster full-sweep owns stranded targets)")
++        only = [p for p in only if p.is_file()]
++        if not only:
++            _evidence("OK no surviving changed .md files to sweep")
++            return 0
++    checked, findings = sweep(root, only)
++    drift, report_only, improvements = compare(baseline, findings)
++    excluded = [f for f in findings if classify(f["file"], f["target"], f["reason"]) == "excluded"]
++
++    if args.json:
++        print(json.dumps({
++            "guard": GUARD_TAG, "checked": checked, "mode": "files" if only else "check",
++            "drift": drift, "reportOnly": report_only, "excluded": excluded,
++            "improvements": improvements, "verdict": "fail" if drift else "pass",
++        }, indent=2, ensure_ascii=False))
++    else:
++        render(drift, report_only, excluded, improvements, checked)
++    return 1 if drift else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index 23543ca0..fad5f71a 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -31,6 +31,8 @@
+     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
+     ["python", "scripts/ci/js_dep_cve_guard.py", "--check"],
+     ["python", "scripts/ci/py_dep_cve_guard.py", "--check"],
++    ["python", "scripts/ci/docs_link_integrity_guard.py", "--self-test"],
++    ["python", "scripts/ci/docs_link_integrity_guard.py"],
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+     ["python", "scripts/ci/test_parity_guard.py"],
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 8f0eb716..76eb567f 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 05:05:40 UTC · **514 scripts** (479 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 06:33:55 UTC · **515 scripts** (480 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (187 scripts)
++## scripts/ci/  (188 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -158,6 +158,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/detect_changed_tests.py` | Detect changed and previously failed tests. |
+ | `ci/detect_deploy_targets.py` | Deploy-train changed-path detection (#2901 → #4246 Phase-1 SSOT refactor). |
+ | `ci/docs_garbage_tree_sweep.py` | docs_garbage_tree_sweep — tree-level Zero-Garbage Docs check (#4176). |
++| `ci/docs_link_integrity_guard.py` | docs_link_integrity_guard.py — R42 markdown internal-link integrity ratchet (#1938). |
+ | `ci/enforce_circle_boundaries.py` | scripts/ci/enforce_circle_boundaries.py — AST Import Linter for Circles Boundary Enforcement. |
+ | `ci/env_mode_guard.py` | (no docstring — run scripts/devops/devops_ai_scribe.py or add one) |
+ | `ci/federation_anchors.py` | scripts/ci/federation_anchors.py — SSOT Registry for Federation Anchor Hubs. |
+diff --git a/tests/test_docs_link_integrity_guard.py b/tests/test_docs_link_integrity_guard.py
+new file mode 100644
+index 00000000..a7560709
+--- /dev/null
++++ b/tests/test_docs_link_integrity_guard.py
+@@ -0,0 +1,249 @@
++#!/usr/bin/env python3
++"""tests/test_docs_link_integrity_guard.py — fail-closed behavioral suite for #1938.
++
++Verifies the R42 markdown internal-link integrity ratchet delivered for #1938:
++
++  - sweep semantics: inline + reference links; external schemes ignored;
++    file:// counted as file-uri hygiene; same-file and cross-file anchors
++    validated with GitHub-style slugs; every occurrence counts;
++  - verdict routing (single bookkeeping, no double-counting): writable-lane
++    breaks are ratcheted, vendored .agents/skills/** routes report-only to
++    the #1725 lane, AGENT_RULES.md ghost citations route excluded to the
++    constitution_pointer_guard (#1642->#1708) debt;
++  - ratchet semantics: baseline-pinned keys report without blocking; NEW
++    keys and GROWN occurrence counts on pinned keys fail-closed; resolved
++    keys surface as improvements (shrink the baseline in the same change);
++  - baseline integrity: a missing or malformed baseline fail-closes; the
++    live baseline's meta provenance is intact and its ratcheted floor is
++    EMPTY at the landing head (the 8 #1938 fixes shipped in the same change);
++  - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
++    and the LIVE .githooks/pre-push hook (section 13), never duplicated here;
++  - live sweep: the real repo tree passes --check semantics (ratchet holds).
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++
++  - pytest:  pytest tests/test_docs_link_integrity_guard.py
++  - stdlib:  python3 tests/test_docs_link_integrity_guard.py  (plain runner)
++
++All tree scenarios are hermetic: built in tempdirs, offline, deterministic —
++the same pattern as the guard's own --self-test.
++"""
++
++from __future__ import annotations
++
++import json
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "docs_link_integrity_guard.py"
++BASELINE = "scripts/ci/docs_link_integrity_baseline.json"
++TAG = "[docs-link-integrity-guard]"
++
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++import docs_link_integrity_guard as guard
++
++
++# --------------------------------------------------------------------------- #
++# helpers                                                                      #
++# --------------------------------------------------------------------------- #
++
++def make_tree(files: dict[str, str], floor: list[dict] | None = None) -> Path:
++    tmp = Path(tempfile.mkdtemp(prefix="dlig-test-"))
++    for rel, content in files.items():
++        p = tmp / rel
++        p.parent.mkdir(parents=True, exist_ok=True)
++        p.write_text(content, encoding="utf-8")
++    baseline = {
++        "schema": "docs-link-integrity-baseline/1",
++        "generatedAt": "1970-01-01", "headAtGeneration": "test",
++        "ratchetedFloor": floor or [],
++        "knownReportOnly": [], "knownExcluded": [],
++    }
++    (tmp / BASELINE).parent.mkdir(parents=True, exist_ok=True)
++    (tmp / BASELINE).write_text(json.dumps(baseline), encoding="utf-8")
++    return tmp
++
++
++def run_compare(root: Path, findings: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
++    baseline = json.loads((root / BASELINE).read_text(encoding="utf-8"))
++    return guard.compare(baseline, findings)
++
++
++# --------------------------------------------------------------------------- #
++# wiring SSOT: the live roster and the live hook carry the guard               #
++# --------------------------------------------------------------------------- #
++
++def test_guard_module_reachable_and_pinned() -> None:
++    assert GUARD.is_file(), f"guard script missing: {GUARD}"
++    src = GUARD.read_text(encoding="utf-8")
++    assert BASELINE in src, "guard must name its versioned baseline file"
++    assert "shrink-only" in src.lower(), "ratchet doctrine must be stated in the guard"
++    assert TAG in src, "evidence tag must stay stable for CI grepping"
++
++
++def test_live_roster_and_hook_wiring() -> None:
++    roster = (REPO_ROOT / "scripts" / "ci" / "run_all_guards.py").read_text(encoding="utf-8")
++    assert "scripts/ci/docs_link_integrity_guard.py" in roster, "guard missing from live roster"
++    hook = (REPO_ROOT / ".githooks" / "pre-push").read_text(encoding="utf-8")
++    assert "docs_link_integrity_guard.py --files" in hook, "guard missing from live pre-push hook"
++    # r3 re-land (bridge-20261028-r42-docs-link-integrity-r3): wired ADDITIVELY as
++    # section 15 — main gained js_dep #1913 (13) and py_dep #1969 (14) between the
++    # original base and the re-land, and neither CVE plane may be touched. The
++    # original single-order shape (section 13 replacement) was invalidated by the
++    # bridge v2 one-target-per-order routing law (the #1980 rejection).
++    assert "15. DOCS LINK INTEGRITY GUARD" in hook, "pre-push section 15 header missing"
++    assert "13. JS-DEP CVE GUARD" in hook, "js_dep section 13 must survive the docs-link wiring"
++    assert "14. PY-DEP CVE GUARD" in hook, "py_dep section 14 must survive the docs-link wiring"
++
++
++# --------------------------------------------------------------------------- #
++# sweep semantics                                                              #
++# --------------------------------------------------------------------------- #
++
++def test_sweep_counts_occurrences_not_unique_pairs() -> None:
++    root = make_tree({"docs/a.md": "[d](ghost.md)\n\n[d2](ghost.md)\n"})
++    _, findings = guard.sweep(root)
++    assert len(findings) == 2, "every occurrence must count (double damage)"
++
++
++def test_sweep_ignores_external_schemes_and_checks_file_uri() -> None:
++    root = make_tree({
++        "docs/a.md": "[gh](https://github.com/x/y)\n[hi](mailto:a@b.c)\n[local](file:///f:/x.md)\n",
++    })
++    checked, findings = guard.sweep(root)
++    assert checked == 1, "external URLs are deliberately out of scope (#1938 never-do)"
++    assert findings[0]["reason"] == "file-uri"
++
++
++def test_anchor_validation_is_github_slug_semantics() -> None:
++    root = make_tree({
++        "docs/a.md": "[ok](b.md#serve-an-agent-over-http)\n[bad](b.md#no-such-heading)\n",
++        "docs/b.md": "# T\n\n## Serve an agent over HTTP\n",
++    })
++    _, findings = guard.sweep(root)
++    assert [f["reason"] for f in findings] == ["missing-anchor"]
++
++
++# --------------------------------------------------------------------------- #
++# verdict routing                                                              #
++# --------------------------------------------------------------------------- #
++
++def test_routing_ratcheted_reportonly_excluded() -> None:
++    root = make_tree({
++        "docs/a.md": "[d](ghost.md)\n[r](../AGENT_RULES.md)\n",
++        ".agents/skills/pack/SKILL.md": "[v](missing.md)\n",
++    })
++    _, findings = guard.sweep(root)
++    verdicts = sorted(
++        guard.classify(f["file"], f["target"], f["reason"]) for f in findings
++    )
++    assert verdicts == ["excluded", "ratcheted", "report_only"]
++
++
++# --------------------------------------------------------------------------- #
++# ratchet semantics                                                            #
++# --------------------------------------------------------------------------- #
++
++def test_new_ratcheted_key_fails_and_pinned_key_passes() -> None:
++    root = make_tree(
++        {"docs/a.md": "[pinned](ghost.md)\n[fresh](other-ghost.md)\n"},
++        floor=[{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}],
++    )
++    _, findings = guard.sweep(root)
++    drift, _ro, _im = run_compare(root, findings)
++    assert len(drift) == 1 and drift[0]["kind"] == "new"
++    assert drift[0]["target"] == "other-ghost.md"
++
++
++def test_grown_occurrence_count_fails() -> None:
++    root = make_tree(
++        {"docs/a.md": "[d](ghost.md)\n\n[d2](ghost.md)\n"},
++        floor=[{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}],
++    )
++    _, findings = guard.sweep(root)
++    drift, _ro, _im = run_compare(root, findings)
++    assert len(drift) == 1 and drift[0]["kind"] == "grown"
++
++
++def test_resolved_key_surfaces_as_improvement() -> None:
++    root = make_tree(
++        {"docs/a.md": "# fine\n"},
++        floor=[{"file": "docs/a.md", "target": "ghost.md", "reason": "missing-file", "allowed": 1}],
++    )
++    _, findings = guard.sweep(root)
++    drift, _ro, im = run_compare(root, findings)
++    assert not drift and len(im) == 1 and im[0]["kind"] == "resolved"
++
++
++# --------------------------------------------------------------------------- #
++# baseline integrity                                                           #
++# --------------------------------------------------------------------------- #
++
++def test_missing_or_malformed_baseline_fails_closed() -> None:
++    root = make_tree({"docs/a.md": "# fine\n"})
++    (root / BASELINE).unlink()
++    try:
++        guard.load_baseline(root)
++        raise AssertionError("missing baseline must SystemExit(1)")
++    except SystemExit as exc:
++        assert exc.code == 1
++    (root / BASELINE).write_text("{not json", encoding="utf-8")
++    try:
++        guard.load_baseline(root)
++        raise AssertionError("malformed baseline must SystemExit(1)")
++    except SystemExit as exc:
++        assert exc.code == 1
++
++
++def test_live_baseline_provenance_and_empty_floor() -> None:
++    data = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
++    assert data["schema"] == "docs-link-integrity-baseline/1"
++    assert "2026-10-28" in data["generatedAt"], "baseline must be dated"
++    # r3 re-land: the floor is NOT empty by design. The original single-order
++    # landing assumed all 8 fixes ship together; the bridge v2 one-target-per-order
++    # routing law (the #1980 rejection) splits core/_archive/MANIFEST.md onto the
++    # satellite repo. The genesis ratchet pins exactly that ONE satellite-lane
++    # entry with a dated shrink path; every other writable lane ships at zero.
++    floor = data["ratchetedFloor"]
++    assert len(floor) == 1, f"genesis floor must pin exactly the 1 satellite-lane entry, got {floor}"
++    entry = floor[0]
++    assert entry["file"] == "core/_archive/MANIFEST.md" and entry["allowed"] == 1, (
++        "the only floor entry must be the satellite-lane MANIFEST finding at allowed=1"
++    )
++    assert "SHRINK TO 0" in data["note"], "the dated shrink path must be documented in the baseline note"
++    assert "bridge-20261028-r42-manifest-satellite-fix" in data["note"], "the in-flight satellite order must be cited"
++    assert len(data["knownReportOnly"]) == 3, "3 vendored findings stay pinned report-only (#1725 lane)"
++    assert len(data["knownExcluded"]) == 10, "10 AGENT_RULES ghosts stay pinned excluded (#1642->#1708 debt)"
++
++
++def test_live_repo_ratchet_holds() -> None:
++    checked, findings = guard.sweep(REPO_ROOT)
++    baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
++    drift, _ro, _im = guard.compare(baseline, findings)
++    assert not drift, f"live tree must hold the ratchet: {drift}"
++    assert checked > 200, "live sweep must cover the real link graph"
++
++
++def test_guard_self_test_suite_passes() -> None:
++    assert guard.self_test() is True
++
++
++# --------------------------------------------------------------------------- #
++# stdlib dual-mode runner                                                      #
++# --------------------------------------------------------------------------- #
++
++if __name__ == "__main__":
++    failed = 0
++    for name, fn in sorted(
++        (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)
++    ):
++        try:
++            fn()
++            print(f"PASS {name}")
++        except AssertionError as exc:
++            failed += 1
++            print(f"FAIL {name}: {exc}")
++    print(f"{len([k for k in globals() if k.startswith('test_')]) - failed} passed, {failed} failed")
++    sys.exit(1 if failed else 0)

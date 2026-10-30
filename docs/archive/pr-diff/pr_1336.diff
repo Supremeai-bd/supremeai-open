@@ -1,0 +1,37 @@
+diff --git a/docs/bridge/bridge-20261027-frontend-observability.md b/docs/bridge/bridge-20261027-frontend-observability.md
+new file mode 100644
+index 00000000..f25c8a39
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-frontend-observability.md
+@@ -0,0 +1,31 @@
++# 🌉 Bridge Work Order — [P1] Frontend invisible to Control Tower + false-degraded alarm culture (bridge-20261027-frontend-observability)
++
++## Problem
++Two observability defects verified live on 2026-10-25:
++
++1. **The user-facing surface is the least observed surface.** `resource_list` shows 21 resources — none is the Cloudflare Pages studio or the Vercel deployment, even though `system_dependencies` maps `frontend → [supabase-auth, supabase-db, vercel]` and `cloudflare_analytics` confirms 3 deployed workers (`supremeai-browser-worker`, `supremeai-studio`, `supremeai-worker`). Complements but does not duplicate #1324 (which is about liveness-vs-deploy state on Render services).
++2. **False alarm + silent channel.** `health_full_sweep` returned `overallStatus: "degraded"` with incident `"Provider render transitioned to degraded. Error: None"` while **all 21 snapshots were `healthy` with 0 consecutive failures**. The Telegram alerts bot is healthy but idle — no notification for this phantom incident, nor for the CI failures the same morning. Users also have no external status page.
++
++## Impact (AIQ mapping)
++- AIQ-108 ❌/🟡 monitors production failure, drift, abuse, latency, cost — except where users actually are
++- AIQ-087 ❌ SLO/incident process: alarm fatigue trains the operator to ignore the one channel that matters
++- AIQ-124: internal health claims can't be shown to users
++
++## Fix (smallest safe change)
++1. Register `cloudflare-pages-studio` + `vercel-frontend` as first-class resources (capabilities: health, deploys, rollback visibility); include both in the sweep — target 23/23
++2. Alarm hygiene: never emit an incident with `message: "Error: None"` (attach real error or drop); recompute `overallStatus` from current snapshots, not from the incident log
++3. Wire `notify_telegram`: sweep transitions, CI red, guardian escalations (cohesive with issue-02 but independent wiring)
++4. Read-only public status page fed by `health_dashboard` (cached 60 s) — ships user trust
++
++## Acceptance Criteria
++- [ ] `system_health` returns 23/23 including studio + vercel
++- [ ] Fresh sweep with all-green snapshots → `overallStatus: healthy`, 0 incidents
++- [ ] Induced failure → Telegram message within one sweep cycle
++- [ ] Status URL renders live 23-service state
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** Monica-class trust requires that the thing users touch is the thing you watch first.
++**Alternatives rejected:** (a) scraping status from CF/Vercel dashboards manually — not machine-readable, rots; (b) building a separate monitoring stack — duplicates the tower's existing observe layer.
++
++## Labels
++`bridge:queued` `P1-high` `area:control-tower` `area:frontend` `AIQ:108` `AIQ:087`

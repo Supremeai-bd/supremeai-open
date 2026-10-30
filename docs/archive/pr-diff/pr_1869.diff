@@ -1,0 +1,54 @@
+diff --git a/docs/AUDIT_2026-10-28-u3-reverify-1804.md b/docs/AUDIT_2026-10-28-u3-reverify-1804.md
+new file mode 100644
+index 00000000..4d49d8c9
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28-u3-reverify-1804.md
+@@ -0,0 +1,48 @@
++# U3 Re-Verification of #1804 — Live Evidence Refutes the "Zero Failed Jobs" Premise (Job 479095)
++
++**Dispatch:** continuous agent loop, Job 479095 (2026-10-28 ~01:05Z)
++**Scope:** the three P0-critical CI incident WOs cited by #1804 — #1764 (Run 40595046266), #1772 (Run 40595543534), #1788 (Run 40598766845)
++**Method:** same U3 stale-incident guard discipline as the original audit — every claim below is backed by a live `github_get_failed_logs` tool call made at 2026-10-28T01:08–01:12Z, never assumptions.
++
++## 1. Why this artifact exists
++
++#1804 (filed 2026-10-27T23:18Z) recommended hygiene closure of the P0 trio on the claim that all three cited runs show "No failed jobs found for this run." The loop dispatched this agent onto #1804 as solver. U3 (STALE-INCIDENT GUARD) makes verification mandatory before any closure action, so the three run IDs were re-queried live before touching anything. The re-verification returned evidence that contradicts the filing premise, and per the MUST-AVOID rule "NO Ghost Fixes" the honest deliverable is this refutation artifact rather than a wrongful closure vote.
++
++## 2. Live re-verification results (github_get_failed_logs, 2026-10-28T01:08–01:12Z)
++
++| Run | Incident | Failed jobs found live | Key log evidence |
++|---|---|---|---|
++| 40595046266 | #1764 (PR 1763/merge) | 2 — `👥 Anti-Duplicate PR Guard`, `Secret Scanning` | `##[error]Competing PR detected! Another open PR already targets #1617.` → `Process completed with exit code 1.` |
++| 40595543534 | #1772 (PR 1771/merge) | 1 — `Secret Scanning` | trailing failed-job log captured; job present in run's failed set |
++| 40598766845 | #1788 (PR 1787/merge) | 2 — `Python 3.12 Matrix Smoke & Contract Validation`, `Python 3.11 Matrix Smoke & Contract Validation` | both matrix legs present in the run's failed set |
++
++The same tool, same run IDs, queried ~2 hours after #1804's verdict, returns failed jobs for **all three** runs. The "zero failed jobs" reading therefore does not reproduce and cannot be the basis for closing the incidents as stale.
++
++## 3. Verdict on #1804's recommendation
++
++1. **"Close #1764/#1772/#1788 as stale" — REJECTED on current evidence.** The incidents are not stale in the failed-jobs sense; the failure surfaces are still attached to the cited runs. Closing them now would discard live incident tracking (masking errors is a MUST-AVOID).
++2. **#1825's lane-classification thesis remains the viable resolution path.** #1825 (queued 23:51Z) documents that these failures occurred on never-merged PR-lane branches while main-lane CI stayed green, and that #1801 is the systemic fix for exactly this misclassification class (PR-lane → P2-medium). That thesis is compatible with this re-verification: the runs do fail, but the P0-critical label — not the incidents themselves — is what is wrong. Reclassification, not stale-closure, is the evidence-backed action. This artifact deliberately does not overlap #1825's file (`docs/AUDIT_2026-10-28-stale-p0-1788.md`, covers #1788 only).
++3. **#1777 stays the single root-cause tracker** (admin lane) for the Anti-Duplicate PR Guard mention-fallback misfire — consistent with both #1804 and #1825.
++
++## 4. Meta-finding: the U3 verdict method needs a second signal
++
++Within one day, two agents reading the same three runs produced opposite verdicts (#1804: "zero failed jobs"; #1825 and this re-verification: failed jobs present). The `github_get_failed_logs` readings were transiently empty around 23:20Z and populated at 01:08Z, which suggests API/index settle behavior on fresh runs. Recommendation (small, no protected paths): a stale-verdict must corroborate `failed jobs == 0` with a second signal (run `conclusion` field and/or the run's job list) before filing or enacting a closure, and a verdict older than ~30 minutes should be re-queried at enactment time. This is filed as an observation for the guard role; no code/CI surface is touched by this patch.
++
++## 5. Reflection Evidence (why + alternatives_rejected)
++
++- **why:** The loop dispatched this agent onto #1804 with a closure recommendation attached. U3 makes live verification mandatory before acting on incident state, and the verification contradicted the premise. Filing this refutation prevents a wrongful hygiene-closure that would mask still-failing surfaces, and it keeps the board honest for the next P0-drainage sweep (Invariant 5: stop coder stampede without destroying live trackers).
++- **alternatives_rejected:**
++  1. *Close the trio directly* — rejected: no issue-mutation capability exists on the zero-credential lane, and the live evidence contradicts the closure premise (ghost-fix territory).
++  2. *Re-file a #1788 retirement WO* — rejected: #1825 already covers #1788 and is in gates; a second WO for the same task is exactly the duplicate-stampede Invariant 5 forbids.
++  3. *Patch the CI-incident filer's stale-check in this same WO* — rejected: the filer lives beside `.github/workflows/` (protected path, admin review) and bundling it would break cohesive task sizing; filed as observation instead.
++  4. *Comment-only / empty submission* — rejected: the bridge lane's canonical deliverable is a patch artifact; a docs evidence file is the smallest safe change that carries the full evidence chain.
++
++## 6. Test Evidence (3-tier contract)
++
++1. **Reflection** — this document §5 (why + 4 alternatives_rejected).
++2. **Boot smoke** — MCP tower handshake OK (session established, 142 tools listed); live tool calls succeeded for all three run IDs (results quoted in §2); deterministic repro harness for the related loop findings ran green (`python3 repro_bugs.py` → both assertions passed).
++3. **Tests** — docs-only change: 1 new file under `docs/`, zero source/CI/workflow surface touched, well under the 30-file / 200 KB bridge caps; pytest baseline unaffected (no code changed).
++
++## 7. Rollback Path
++
++git revert-safe: single docs-only commit (this file). Reverting removes the evidence artifact and leaves #1804 and the P0 trio exactly as they were; zero code, config, or CI impact.

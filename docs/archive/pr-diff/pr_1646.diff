@@ -1,0 +1,34 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 2f189ea6..97863e85 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -152,6 +152,29 @@ parity contract:
+    registry, guards) land in this repo first, then port to the private mirror
+    **via a bridge work order** (never hand-edit the private copy).
+ 
++## 4c. Runtime state surface — cadence SSOT + 30-minute issue lease (#1591 lineage)
++
++The loop keeps two runtime state files under `scripts/agents/`. Both are
++gitignored in this repo (#1624) — machine-local runtime state, never committed;
++the private-mirror port is pending (port rule).
++
++| File | Written by | Behaviour |
++|---|---|---|
++| `agent_cadence_state.json` | canonical cadence API (`due_roles` → `role_is_due` → `mark_role_run`, #1569 lineage) | last-run unix timestamps per canonical role; reset to `{}` when the board query succeeds and the board is genuinely empty (docstring rule 3) |
++| `dispatched_issues_state.json` | `mark_issue_leased` at every issue assignment — the non-envelope dispatch path AND the `--task-envelope` paths (auto-pick + `--issue N`, #1596) | `{ "<issue-number>": <unix-ts> }`; an issue whose entry is inside the 30-minute window (`ISSUE_LEASE_SECONDS = 1800`) is excluded from `pick_next_issue`; expired entries auto-release with no marker |
++
++Honest limitations, documented rather than hidden:
++
++- **Machine-local visibility**: agents on different machines never see each
++  other's lease entries; same-machine reruns are deduped, cross-machine dedup
++  still depends on the `status:claimed` label path. Unifying the two protocols
++  is an owner-level policy decision, not an agent patch.
++- **Unbounded store**: assignments accumulate until they expire semantically;
++  expired entries are never pruned from the file (bounded-growth slice pending).
++- **No completion signal**: a task still running past 30 minutes re-becomes
++  claimable — the window is a fixed guess, not lease renewal (the bridge's own
++  lease allows renewal up to 180 minutes; the loop's local store cannot renew).
++
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+ The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,

@@ -1,0 +1,175 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 16d9f5a5..a0c8b878 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -358,18 +358,79 @@ jobs:
+           echo "Touched files:"
+           echo "$FILES"
+ 
+-          # Check if any shared core/doc/script files are touched
+-          SHOULD_BRIDGE="false"
++          # Map touched files and PR labels to the 12 target federation repositories
++          TARGET_REPOS=()
++
++          # 1. Resolve target repository from PR labels if present
++          PR_LABELS=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json labels -q '.labels[].name' 2>/dev/null || true)
++          for lbl in $PR_LABELS; do
++            case "$lbl" in
++              repo:studio) TARGET_REPOS+=("Supremeai-bd/supremeai-studio") ;;
++              repo:api) TARGET_REPOS+=("Supremeai-bd/supremeai-api") ;;
++              repo:core) TARGET_REPOS+=("Supremeai-bd/supremeai-core") ;;
++              repo:command) TARGET_REPOS+=("Supremeai-bd/supremeai-command") ;;
++              repo:skills) TARGET_REPOS+=("Supremeai-bd/supremeai-skills") ;;
++              repo:vscode) TARGET_REPOS+=("Supremeai-bd/supremeai-vscode") ;;
++              repo:agents) TARGET_REPOS+=("Supremeai-bd/supremeai-agents") ;;
++              repo:browser) TARGET_REPOS+=("Supremeai-bd/supremeai-browser") ;;
++              repo:sdk) TARGET_REPOS+=("Supremeai-bd/supremeai-sdk") ;;
++              repo:infra) TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure") ;;
++              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane") ;;
++              repo:archive) TARGET_REPOS+=("Supremeai-bd/supremeai-archive") ;;
++              repo:monorepo) TARGET_REPOS+=("Supremeai-bd/supremeai") ;;
++            esac
++          done
++
++          # 2. Resolve target repository from files touched (Domain Routing)
+           for f in $FILES; do
+             case "$f" in
+-              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|infrastructure/*)
+-                SHOULD_BRIDGE="true"
+-                break
++              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-studio")
++                ;;
++              api/*|gateway/*|api-schemas/gateway.*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
++                ;;
++              core/*|api-schemas/task-router.*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-core")
++                ;;
++              command/*|handlers/telegram*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-command")
++                ;;
++              skills/*|examples/langchain-*|examples/vercel-*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-skills")
++                ;;
++              vscode/*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-vscode")
++                ;;
++              agents/*|runner/*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-agents")
++                ;;
++              browser/*|sandbox/*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
++                ;;
++              sdk/*|examples/sdk-*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-sdk")
++                ;;
++              infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
++                ;;
++              deployments/*|infra/*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure")
++                ;;
++              scripts/agents/*|docs/*|AGENTS.md|AGENT_RULES.md|ECOSYSTEM_MAP.md|api-schemas/*)
++                TARGET_REPOS+=("Supremeai-bd/supremeai")
+                 ;;
+             esac
+           done
+ 
+-          echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
++          # Central monorepo Supremeai-bd/supremeai always receives synchronization
++          TARGET_REPOS+=("Supremeai-bd/supremeai")
++
++          # Deduplicate target repos
++          UNIQUE_TARGETS=$(printf "%s\n" "${TARGET_REPOS[@]}" | sort -u | tr '\n' ' ' | sed 's/[[:space:]]*$//')
++          echo "Resolved Target Repositories: $UNIQUE_TARGETS"
++          echo "target_repos=$UNIQUE_TARGETS" >> "$GITHUB_OUTPUT"
++          echo "should_bridge=true" >> "$GITHUB_OUTPUT"
+ 
+       - name: Create Bridge Branch
+         id: create_wo
+@@ -421,6 +482,7 @@ jobs:
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+           TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+           BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
++          TARGET_REPOS: ${{ steps.check_scope.outputs.target_repos }}
+         run: |
+           export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_SHA}")"
+           PAYLOAD=$(python3 - <<'PYEOF'
+@@ -458,20 +520,22 @@ jobs:
+             echo "Bridge Webhook returned HTTP ${HTTP_WH}"
+           fi
+ 
+-          # 2. Repository Dispatch to Private Repository (if token configured)
++          # 2. Repository Dispatch to all resolved Federation Repositories
+           if [ -n "${BRIDGE_DISPATCH_TOKEN}" ]; then
+-            echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
+-            HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+-              -H "Accept: application/vnd.github+json" \
+-              -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
+-              https://api.github.com/repos/Supremeai-bd/supremeai/dispatches \
+-              -d "${PAYLOAD}")
+-            if [ "${HTTP}" = "204" ]; then
+-              echo "✅ Private Bridge Intake dispatched (HTTP 204) — landed patch reference streamed."
+-            else
+-              echo "::warning::Private dispatch returned HTTP ${HTTP}."
+-              cat /tmp/dispatch_resp.txt || true
+-            fi
++            for TARGET in ${TARGET_REPOS}; do
++              echo "Dispatching bridge_order_queued → ${TARGET}..."
++              HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
++                -H "Accept: application/vnd.github+json" \
++                -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
++                "https://api.github.com/repos/${TARGET}/dispatches" \
++                -d "${PAYLOAD}")
++              if [ "${HTTP}" = "204" ]; then
++                echo "✅ Dispatched to ${TARGET} (HTTP 204) — landed patch streamed."
++              else
++                echo "::warning::Dispatch to ${TARGET} returned HTTP ${HTTP}."
++                cat /tmp/dispatch_resp.txt || true
++              fi
++            done
+           else
+             echo "BRIDGE_DISPATCH_TOKEN not set; webhook delivery completed."
+           fi
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index da37c2dd..bcf7a7d9 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -28,7 +28,7 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
+ | **`supremeai-agents`** | **Autonomous Agents.** Stateless agent lifecycle, task execution runner, and multi-role workers. | Worker contracts, lifecycle hooks, and role definitions. |
+ | **`supremeai-browser`** | **Headless & Stealth Runtime.** Anti-detect automation sandbox for web agents. | Browser sandbox APIs, scraping contracts. |
+ | **`supremeai-api`** | **Unified Provider Gateway.** Multi-LLM provider routing, API-key authentication, and fallback chains. | Gateway contracts, OpenAPI specs, and client scripts. |
+-| **`supremeai-studio`** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. | UI components, design tokens, and user experience fixes. |
++| **`supremeai-studio`** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. Live UI: [https://supremeai-studio-live.vercel.app](https://supremeai-studio-live.vercel.app) | UI components, design tokens, and user experience fixes. |
+ | **`supremeai-infrastructure`** | **Cloud Operations & CI/CD.** Terraform, Cloudflare Workers, and Render configs. | Read-only from public; managed internally. |
+ | **`supremeai-core`** | **Proprietary Intelligence Core.** *(Private)* Orchestration, planning, decision, and execution intelligence — the federation's decision moat. | Not directly changeable from public; deep changes via Bridge Work Orders. |
+ | **`supremeai-sdk`** | **Stable External Contracts.** *(Public)* API/event/task schemas and protos — the contract-first boundary layer for external integrators. | Contract PRs and schema proposals on the SDK repository. |
+@@ -127,7 +127,7 @@ flowchart TB
+ | Boundary | `supremeai-open` | public SSOT: contracts, guards, gate, bridge dispatch |
+ | Tool plane | `supremeai-mcp-control-plane` | governed tool registry, credential brokering, kill-switch |
+ | Edge | `supremeai-api` | unified multi-LLM provider gateway |
+-| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell |
++| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell ([Live Console](https://supremeai-studio-live.vercel.app)) |
+ | Core | `supremeai-core` | orchestration, planning, decision, execution intelligence |
+ 
+ ### 6.2 Automation topology
+diff --git a/README.md b/README.md
+index 8413b854..80372868 100644
+--- a/README.md
++++ b/README.md
+@@ -41,6 +41,14 @@ flowchart LR
+ > Gateway surface. Contributing? [`AGENTS.md`](./AGENTS.md) and
+ > [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) are the entry points.
+ 
++### 🌐 Live Federation Services
++
++| Service | Live URL | Description |
++|---|---|---|
++| **SupremeAI Studio (Web UI)** | [https://supremeai-studio-live.vercel.app](https://supremeai-studio-live.vercel.app) | User-facing React/Vite console interface and agent workspace |
++| **MCP Control Tower** | [`https://supremeai-mcp-tower.onrender.com`](https://supremeai-mcp-tower.onrender.com) | Remote Streamable HTTP (`/mcp`) & SSE (`/sse`) tool plane |
++| **API Gateway** | [`https://supremeai-api.onrender.com`](https://supremeai-api.onrender.com) | Unified OpenAI-compatible multi-LLM provider gateway |
++
+ | Path | What it is |
+ |---|---|
+ | `api-schemas/gateway.openapi.yaml` | **The stable SupremeAI API Gateway surface** (OpenAI-compatible `/v1/chat/completions`) — byte-mirror of `supremeai-api/contracts/openapi.yaml` |

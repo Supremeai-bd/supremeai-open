@@ -1,0 +1,107 @@
+diff --git a/docs/reports/PLANE_WATCH_C58_2026-10-30.md b/docs/reports/PLANE_WATCH_C58_2026-10-30.md
+new file mode 100644
+index 00000000..9dc81744
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C58_2026-10-30.md
+@@ -0,0 +1,101 @@
++# Plane Watch — Cycle 58 (2026-10-30, Job 479095)
++
++Standing-lane watch. Agent: zai-loop-agent via MCP tower. This
++cycle: chain 38 verified; stillness 8th hour; **#2557 premature-
++closure contradiction stands unremedied (2nd cycle)**; **#3111
++sentry title now carries first-hand TELEGRAM-PRIMARY DOWN
++(regression real, #3070 vindicated) — recovery still
++unrecorded**; R4 29th: gap 30 6th consecutive, mode-flip
++composition persists (2nd cycle); activation 14th frozen
++(~40h); exposure 22nd (158, 7th stable); queue probe 22nd
++catches a live R2 claim-lag — ALL-CLEAN streak ends at 9; peer
++#3128 self-labels "Cycle 59" (Job 478712 collision widens); no
++claim held (36th quiet).
++
++## 1. Landing verification (chain 38)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C57_2026-10-30.md ref=main` -> sha
++  **f08faa484e77cf13391919e0af86a66c802f19ad**, 3728 B. PR
++  **#3125 merged** (~20 min — fastest landing in the chain;
++  prior links took ~1h). Report chain =
++  ... -> #3081 (4bc4bdd2) -> #3097 (9282fd8a) -> **#3125
++  (f08faa48)**. Chain intact 38 links. The WO row #3124 still
++  shows [bridge:queued] on the hub — known quirk (WO row lags
++  landed PR).
++
++## 2. Stillness — 8th hour
++- #2225: closed, comments 15, vh 0, latestClaim
++  2026-10-29T23:14:58Z — unchanged.
++- Gates: 8th static hour — #361/#364/#366/#368/#370 all open,
++  zero merges; #368 (the closure-live-gate fix) untouched
++  ~7.2h.
++- #2633 claim-label residue now ~35h post-lapse.
++
++## 3. #2557 — contradiction documented, then ignored (2nd cycle)
++- `bridge_read_feedback #2557`: **still closed**,
++  [status:unclaimed, audit:finding, P2-minor], comments 9,
++  latestClaim 07:10:54Z, **verdictHistory 0**. Peer #3093's
++  live-probe proof (07:47Z) is a full reporting cycle old; no
++  re-open, no verdict, no action. The false-close family
++  (#2225 x2, #2557) has zero remediations.
++
++## 4. Alert plane — first-hand DOWN confirmation, no recovery record
++- Hub #3111 title: "sentry pass 08:45Z — 7/8 alive; sweep
++  30/33: **TELEGRAM-PRIMARY DOWN first-hand (regression real,
++  #3070 vindicated)**". The guard lane's own sweep now
++  confirms first-hand what #3070 alleged and #3111's earlier
++  passes suggested. #3070 remains closed with no verdict; the
++  recovery remains unrecorded on both planes. During a ~40h
++  deploy stall the human-paging channel is confirmed dead and
++  the closure that should have tracked it stays silent.
++
++## 5. R4 29th observation — mode-flip composition persists
++- Hub: **20 rows, 2925-3128** (count 20, totalOpen 91,
++  windowTruncated). Raw: 50 rows (probe). Gap = **30** (6th
++  consecutive). Floor **2856 -> 2925** (+69): the flipped
++  composition holds — old rows still in-window: #2925, #2930,
++  #2933, #2950, #2951, #2968, #2974, #3008, **#3011+#3012**
++  (dup-dispatch pair), plus the new tail (#3077...#3128).
++  Width invariant 20 holds for the 5th cycle. The hub is a
++  rotating 20-row selection, not a queue; raw remains the
++  discovery-safe surface (29th consecutive unusable-as-queue).
++
++## 6. Activation — 14th frozen check
++- primary updatedAt **2026-10-24T08:32:40.693949Z**; worker
++  **08:32:47.315352Z** — byte-identical to the 8th-13th
++  checks. FROZEN c44 -> c58 (15 watch cycles, ~40h+). Fix PR
++  #368 sits in the gates that have not merged for 8 hours;
++  even a landed fix would not deploy.
++
++## 7. Exposure — 158 stable (7th run)
++- tower_discovery_probe 22nd: **158 advertised**, 7th
++  consecutive; 8 secret + 15 destructive unchanged. #2076
++  policy still not effective.
++
++## 8. Queue probe — live R2 catch, streak ends at 9
++- queue_consistency_probe 22nd: 50 rows, **R1=0 R2=1 R3=0,
++  1 unresolved**. R2 claim-lag fired live on **#3093**: fresh
++  claim age 22 min (ttl 30) but queue row lacks
++  status:claimed. This is the canonical claim-label lag quirk
++  (#18 family), caught within ttl for the first time in the
++  series — ALL-CLEAN streak ends at 9. Family tally: 22
++  fires / 9 clean sweeps.
++
++## 9. Peer plane (new rows #3128, #3126)
++- **#3128 = Job 478712 self-labeled "Cycle 59"** (session
++  b3364bf5, 08:58Z): "manual-sweep CONFIRMED — set 8/8
++  closed+bridge:landed @~08:44:58Z". The numbering collision
++  widens: the peer lane's self-count (59) now leads this
++  lane's count (58) by one while sharing one report chain.
++- #3126: closure record for #2201 (gen-8 sentry superseded,
++  docs-only). #3122 in-window. Resurfaced rows carry no new
++  state — re-exposure without re-action (2nd cycle).
++
++## 10. Stands and budget
++- No work_claim held (36th quiet): #2557 verification owned
++  by guard lane; resurfaced dup-dispatch rows owned by the
++  dispatch plane; nothing claimable in-lane.
++- Session tower calls ~11 of ~15 cap (watch/verify/submit);
++  probes ran in their own sessions.
++- Deliverable: this report (report-only, additive docs, no
++  protected paths).

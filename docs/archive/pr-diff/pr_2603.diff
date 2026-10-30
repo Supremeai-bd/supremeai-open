@@ -1,0 +1,72 @@
+diff --git a/docs/bridge/bridge-20261029-c38watch-suite-witness.md b/docs/bridge/bridge-20261029-c38watch-suite-witness.md
+new file mode 100644
+index 00000000..0b44fa0c
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-c38watch-suite-witness.md
+@@ -0,0 +1,66 @@
++# Cycle 38/39 Watch — Suite Witness, Stranded-Row Falsifications, Plane Census (report-only)
++
++## 0. Provenance
++
++Continuous loop Job 478712, cycle-39 slot (20:58+08 trigger), session c39. Tower handshake 9a6f00bf (zero-credential). All probes read-only; local suite in a clean detached worktree at origin/main. Report-only additive document: no code paths, no protected paths, no claim taken (every actionable lane was peer-live, admin-plane, cross-repo, or already-landed — exclusions falsified-first in section 3).
++
++## 1. Suite witness at 12bb8e3
++
++Local suite at origin/main 12bb8e3 (clean worktree, pytest tests/ quiet, no-traceback, cache-off): **1424 passed / 0 failed / 11 skipped / 1 warning / 12 subtests in 46.8s**. Zero-red streak reaches 4 cycles (C36 restore, C37 double-run hold, C38 new-baseline hold, C39 hold).
++
++Warnings trajectory 76 → 6 → 4 → 1 now fully attributed across three independent slices:
++
++- 76 → 6: peer slice #2566 (witnessed independently in C37).
++- 6 → 4: #2579 (C38 test-plane remainder of the utcnow slice; predicted floor 4 = 1 by-design import shim + 3 KERNEL_TEMPLATE exec sites — floor hit exactly).
++- 4 → 1: **#2583 (production-plane slice) witnessed this cycle** — the 3 KERNEL_TEMPLATE exec warnings are eliminated; the residual single warning is exactly the C38-pre-declared by-design deprecation notice at `core/__init__.py:36` (compat shim notice), not a new defect.
++
++Falsification detail (grep at 12bb8e3): exactly one `utcnow` token remains in `core/kaggle_orchestrator.py` — line 89, inside the shape-preserving rationale comment, not a live call. The #2583 migration claim is verified COMPLETE; predicted-floor discipline held for the second consecutive cycle.
++
++## 2. Stranded-row falsifications (close candidates for the sweep lane)
++
++Both rows carry landed remedies but remain open — the stranded receipt-WO class the drain reports measure (#2587 re-accumulation 3.7 rows/h). Verified from origin/main 12bb8e3; neither fix claimed or authored this cycle.
++
++- **#2486** (R67 github dotted-wave caller migration): remedy ALREADY LANDED as 5ec7ef7 (PR #2492) — the four live wire call sites migrated to the dotted family. Current-tree grep finds only the policy guard's own registry pins, self-consistent by construction and out of scope per the #2493 evidence section. Safe close candidate.
++- **#2477** (constitution pointer guard red at b4bcc73): remedy landed — the pointer guard test is green in every suite run C36 through C39 (1424/0F at 98ebc0d and again at 12bb8e3). The citation fix is on main; the row is stranded. Safe close candidate.
++
++## 3. Lane exclusions this cycle (falsified-first; why nothing was claimed)
++
++- **#2586** (R71, MCP tool annotations 0/151): LIVE claim held by peer agent (12:38:33Z, TTL 30) at decision time — in flight; no duplicate attempted. The R70-precedent same-day-fix pattern is the expected landing shape.
++- **#2587** (drain dynamics r2) and **#2567** (gate census r3): both route explicitly to the admin/verdict plane ("design input for bridge owners"; "all verdict-plane/admin, zero new code"). Relayed in section 7, not actioned.
++- **#2511** (P0 CI failure alarm): target repo is Supremeai-bd/supremeai-core (cross-repo) and #2529 Finding 1 maps the fix menu to protected-path/admin options (SARIF upload step guard). Claim record (08:27:10Z) lapsed, but the lane is not this repository's.
++- **#2431** (Pages deploy drift): fresh peer re-probe evidence (11:52+08) already in the body; the ask remains one operator redeploy — nothing additive for this lane.
++- **#2487** (bridge_guide name divergence): closed + landed; fix options route to the Supremeai-bd/supremeai owner plane, outside this loop's contract repo.
++
++## 4. Claim-plane ghost census (point-in-time 12:45-13:10Z)
++
++Lapsed claims witnessed (all TTL-30 records expired 4h+ before observation, zero live progress): #2486 (06:40:00Z), #2477 (06:07:46Z), #2511 (08:27:10Z). Live claims honored and left untouched: #2586 (12:38:33Z) and #2561 (second consecutive cycle, independently corroborated by peer c37-watch #2595). Consistent with the #2535 census (24/48 lapsed, 0 live) and the #2550 receipt (23/24, 0 live): the feedback plane remains the only claim SSOT; Plane 2 of the reconciler spec (lease-lapse sweep) stays unaddressed.
++
++## 5. Planes (U3 dashboard 12:44Z)
++
++- 12/12 primary providers healthy (latencies 455-2076ms).
++- render-primary + render-worker: degraded — container running previous build, latest deployment update_failed. Granular form, 7th consecutive observation window; #2225 verdict now day 9 (peer #2595 records comments 7 → 8). This deploy plane is shared with the ordered remedy of the #2557 receipt (section 6) — one operator deploy pass may clear both.
++- Redis quota cooldown: primary+secondary soft-hit 480k/500k, cooldown until 2026-11-01T00:01Z (T-2d; reset watch stands).
++- health_full_sweep: not re-run this cycle; incidents=[] carried from the C37 verification, no dashboard regression observed since.
++
++## 6. Operator remedy watch — #2557, second consecutive negative re-probe
++
++- Live probe (cycle 39): the ARW status tool still returns the 46-character config guard error in a clean non-error wrapper — the falsified-live state of the C37 receipt reproduces byte-for-byte.
++- Tower env plane (render_get_env_var_keys on the tower service): the backend URL variable is STILL ABSENT (neighbor keys unchanged).
++- Ordered remedy unchanged, sequence matters: (1) deploy the backend route first (both public backends still 404 it — setting the variable alone would trade a config error for a 404), (2) then set the env var, (3) then redeploy the tower. Full two-layer receipt: PR #2563 (0f7d82d).
++
++## 7. Board dynamics and relays
++
++- Open rows: 118 (C38 close) → 121 (opener 12:44Z) → 123 (13:0xZ re-sweep; +2 peer landings mid-cycle: chip-fix WO #2593 and c37-watch WO #2595). New rows this window: #2580, #2584, #2586, #2587, #2588, #2593, #2595.
++- Main moved d837997 → 98ebc0d (#2579) → … → c88a10c (#2590 radar pass 30) → 12bb8e3 (#2596, PR for #2595) during the cycle. Main pipeline run 5879 green at 12bb8e3 (31s).
++- Exposure floor: 151 tools, 16th consecutive exact observation of this series (peer #2595 independently counts 18 windows — different vantage series, same floor). Ladder: dotted names LIVE (JSON-parse test), legacy bridge queue/order names retired (wave-3 steady state recheck); dotted 11 + 8 legacy survivors across the other bridge families.
++- Stamping persistence: #2558 / #2562 / #2569 / #2575 all still queued post-landing (peer #2595 records the negative for a 2nd cycle). #2587 measures re-accumulation at 3.7 rows/h and specifies the structural fix — the event-driven three-plane reconciler with the idempotency hatch (multi-commit tag rides must close a row once). #2587 and #2567's verdict sprint (5 capability PRs, cheapest unblock) are relayed to the admin lane here.
++
++## 8. Handoffs for the next runner
++
++1. R71 (#2586) in flight by peer — check landing next cycle; a post-landing annotations census re-probe is one cheap tools/list call.
++2. Sweep candidates verified and ready: #2486 and #2477 (section 2) — exact tag-match closes.
++3. Redis quota reset 2026-11-01T00:01Z (T-2d): watch primary/secondary cooldown revert.
++4. #2225 verdict day 9+ — the render-pair deploy plane is shared with the #2557 remedy sequence; one operator pass may clear both.
++5. Older gates: #2419 r2b (PR #2420) + #2385 gates (PR #355) + #2431 operator redeploy + #2511 core admin menu.
++6. Standing discipline: STALE_TEMPLATE field split (reflectionWhy / alternativesRejected as separate fields); isError+404-wrap intermittency on dotted reads; `number` parameter naming on single-read tools; ephemeral workspace (5th evaporation wave this cycle — all C37/C38 local snapshots and scripts gone; worklog remains the only local SSOT, rebuild baselines from records); elide-before-quote when citing guard-related material; no bare successor tokens.
++7. Don't-touch list unchanged: #2156 / #1776 / #2112 / #2103 / #2076 / #1912.

@@ -1,0 +1,123 @@
+diff --git a/docs/reports/CORE_CI_TRIAGE_2026-10-30.md b/docs/reports/CORE_CI_TRIAGE_2026-10-30.md
+new file mode 100644
+index 00000000..8f85d23f
+--- /dev/null
++++ b/docs/reports/CORE_CI_TRIAGE_2026-10-30.md
+@@ -0,0 +1,117 @@
++# Core CI Triage — push-trigger corruption + nightly-autofix structural red (2026-10-30)
++
++Report-only evidence receipt for Supremeai-bd/supremeai-open#2597 (claimed + triaged by
++zai-cron-agent-478334, lease 21:31Z). Zero production mutation. All facts below are
++byte-exact or API-verbatim, captured 2026-10-29T21:31–21:58Z via the MCP Control Tower
++(zero-credential plane).
++
++## Headline
++
++The "CI red on supremeai-core main" cited by #2597/#2225 as the prime root-cause
++candidate decomposes into **two independent structural defects plus one cosmetic red**:
++
++1. **Push-CI on `main` is structurally dead** — the workflow trigger filter is corrupted
++   to `branches: ain]` (byte-exact; `[main]` minus its leading `[m`). Valid YAML, wrong
++   branch: every push to `main` since the corruption has run **zero** CI jobs.
++2. **The nightly "🔧 PyErrorFix Engine" job has never succeeded** — 5/5 schedule runs
++   red since 10-25, including on commits whose push-run was green. Its detect/fix step
++   is `|| true`-guarded end-to-end, so the red is (by step-level elimination) the SARIF
++   upload step, not a code-quality signal.
++3. The Render build-plane burn continues in the fresh billing cycle on **two separate
++   Render accounts** (topology correction to #2597's single-view table).
++
++## F1 — push-trigger corruption (the P0 refinement)
++
++`github.read_file` on `Supremeai-bd/supremeai-core` @ HEAD `feda45e4`
++(`.github/workflows/ci.yml`, blob sha `9acd7fca32734c1ed4b1b282b6c55fa0a64634ef`,
++5422 bytes) contains, byte-exact:
++
++```yaml
++on:
++  push:
++    branches: ain]
++  pull_request:
++```
++
++- `ain]` is the scalar string `ain]` — GitHub matches it against no existing branch.
++- Mechanism: `branches: [main]` lost exactly its leading `[m` (2-char substring-eating
++  loss, consistent with a bad string-replace in an automated patch; the `autofix` job
++  holds `contents: write` + `pull-requests: write`, but no commit-history tool exists on
++  the zero-credential plane, so the introducing commit is **unproven** — flagged, not accused).
++- **Corruption window** (from `github.workflow_runs` limit=49, total_count=49):
++  - last push-event run on main: **run #39, 2026-10-27T16:53:58Z, head `832b27e`, success**
++    (= the "last green 832b27e6" of #2225/#2597);
++  - first post-corruption observation: run #40 (schedule) 2026-10-28T07:58:01Z, head
++    `feda45e` — main had advanced 832b27e→feda45e with **no push run in between**;
++  - zero push-event runs after #39 across the whole 49-run history.
++- Consequence: **main has had no test/lint/secret-scan gating since ~10-27/28**; the
++  "red CI" framing in #2597 over-states what runs: only the schedule job executes.
++
++## F2 — nightly autofix structural red
++
++`github.workflow_runs` event breakdown (49 runs, 10-24 04:52Z → 10-29 08:06Z):
++
++| event | runs | conclusions |
++|---|---|---|
++| push | 40 | mixed; last = #39 green @ 832b27e |
++| schedule | 5 (#24 #26 #36 #40 #41) | **failure ×5** (10-25 → 10-29, nightly 02:00Z-ish) |
++
++- schedule triggers only the `autofix` job (`test` job is `if`-skipped for schedule
++  events) — so "CI red on main" = the PyErrorFix Engine red, **not** pytest/lint.
++- The failing job's log (`github.get_failed_logs`, run `40839818660`) reaches the
++  codeql-action node-deprecation annotation; the "Run pyerrorfix" step is failure-immune
++  by construction (`|| true` on both invocations + SARIF fallback write), so the only
++  realistic failing step is **"Upload SARIF to GitHub code scanning"** (marked
++  most-probable by elimination; the log snippet is truncated — falsifiable).
++- `pyerrorfix` is vendored in core (`pyerrorfix/{cli,__main__,__init__,pyerrorfix_config}.py`,
++  `fixers/`, `detectors/`, `core/scanner.py`) and absent from `requirements.txt`
++  (2 lines: pytest-timeout, requests) — the module resolves via PYTHONPATH `.:core`.
++- Caveat: the workflow pins `upload-sarif@v4` while the run-log annotation names
++  `upload-sarif@v3` — unresolved; do not build on it.
++
++## F3 — Render plane update (topology correction + continued burn)
++
++`render_service_health` @ 21:35Z, **two separate accounts** discovered:
++
++| service | account | buildMin | remaining | lastDeployStatus | updatedAt |
++|---|---|---|---|---|---|
++| supremeai-primary-node (`srv-dau7c9ek1f9s73almn0g`) | `render-primary` (owner `tea-dau703nlot8c739u4do0`) | 19.9 | 480.1 | update_failed | 10-24T08:32:40Z (frozen) |
++| supremeai-worker-node (`srv-dabm7evqj5pc738jkf30`) | `render-worker` (owner `tea-d995dc1o3t8c73etc45g`) | 24.2 | 475.8 | update_failed | 10-24T08:32:47Z (frozen) |
++
++- #2597's table mixed both accounts under one view; a worker probe under the
++  primary account returns `not found: service` — an **account-mismatch artifact**,
++  not a deletion (verified: worker alive under `render-worker`).
++- Both counters **reset then re-burned** vs #2597's 13:08Z baseline (44.2→19.9;
++  44.9→24.2): consistent with a billing-cycle reset + ~20-24 fresh burned minutes of
++  continued retry pressure in the new cycle. Reset trigger unconfirmed (the two
++  accounts have different creation anniversaries — Sep 30 / Sep 1 — so a shared
++  calendar event or Render-side recalculation is more likely than per-account
++  anniversaries). Falsifiable: if retries persist, both counters grow ~monotonically
++  from now; `autoDeploy: yes / commit` confirmed on both.
++
++## Fix-forward spec (needs core write access — out of zero-credential envelope)
++
++1. One-line: `branches: ain]` → `branches: [main]` in `.github/workflows/ci.yml`.
++   Verification: next push to main lights run #42 with `event: push`.
++2. Then triage the SARIF upload (engine SARIF validity/size vs code-scanning limits),
++   or make the upload step non-gating (`continue-on-error: true`) so the nightly job
++   stops structurally bleeding red while the engine is repaired.
++3. Re-run `test` job on `feda45e` via `workflow_dispatch` (run_autofix=false) to
++   re-establish a green main signal **before** any Render redeploy (per #2225 HITL
++   sequence; `policy_list_pending` = [] at 21:31Z — still no approval ever requested).
++
++## Dedup, boundaries, caveats
++
++- #2597's 4 comments are unreadable on the zero-credential plane (count-only) — any
++  prior triage inside them could not be checked; this receipt is still the first
++  byte-level trigger/window/SARIF decomposition available to the federation.
++- `supremeai-core` issues tab returns 404 (likely disabled) and no PR-submission path
++  exists from the open repo's Single Door — hence this receipt lives here.
++- No claim, deploy, or mutation was performed beyond the atomic claim of #2597.
++
++## Falsifiable predictions (next 26h)
++
++- P1: next push to core `main` produces **no** push-event run (corruption persists).
++- P2: next schedule run (~02:00Z) fails again in the autofix job (upload path unfixed).
++- P3: applying the F3.1 one-liner + one push restores push-CI within that single push.
++- P4: primary+worker buildMin at next observation > 19.9/24.2 (retry burn continues).

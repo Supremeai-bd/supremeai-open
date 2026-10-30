@@ -1,0 +1,67 @@
+diff --git a/gateway/main.py b/gateway/main.py
+index 0f7b4857..0aa7832e 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -361,6 +361,39 @@ async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+         title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None
+     )
+ 
++    import os as _cors_os
++
++    _cors_origins = [
++        "https://supremeai-studio.paykaribazaronline.workers.dev",
++        "https://supremeai-studio.vercel.app",
++        "http://localhost:3000",
++        "http://localhost:5173",
++        "http://127.0.0.1:3000",
++        "http://127.0.0.1:5173",
++    ]
++    _extra = _cors_os.environ.get("SUPREMEAI_CORS_ORIGINS", "")
++    if _extra:
++        _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
++
++    from fastapi.middleware.cors import CORSMiddleware
++
++    app.add_middleware(
++        CORSMiddleware,
++        allow_origins=_cors_origins,
++        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
++        allow_credentials=True,
++        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
++        allow_headers=[
++            "Authorization",
++            "Content-Type",
++            "Accept",
++            "Origin",
++            "X-Requested-With",
++            "X-SupremeAI-Key",
++            "x-supremeai-key",
++        ],
++    )
++
+     # ---- health (no auth, OpenAPI security: []) ----
+     @app.get("/health")
+     @app.get("/healthz")
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index 7db1f17f..28336552 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -80,11 +80,16 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+         if not relay_url:
+             relay_url = os.environ.get("SUPREMEAI_CF_WORKER_URL", "").rstrip("/")
+         if not relay_url:
+-            raise RuntimeError("web relay not configured (set SUPREMEAI_WEB_RELAY_URL)")
++            relay_url = os.environ.get("STEALTH_WEBHOOK_URL", "").rstrip("/")
++        if not relay_url:
++            relay_url = "https://supremeai-worker.paykaribazaronline.workers.dev"
+         url = relay_url + "/v1/chat/completions"
+         started = time.monotonic()
++        req_model = endpoint.model
++        if req_model in ("gemini", "gemini-web"):
++            req_model = "gemini-2.5-flash"
+         body = {
+-            "model": endpoint.model,
++            "model": req_model,
+             "messages": json.loads(payload).get("messages", []),
+             "stream": False,
+         }

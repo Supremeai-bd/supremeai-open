@@ -1,0 +1,324 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 9a88ffe5..8d6991e9 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -63,7 +63,8 @@
+     "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts",
+     "test:queue-fidelity": "tsx test_queue_fidelity.ts",
+     "test:bridge-dedup": "tsx test_bridge_dedup.ts",
+-    "test:bridge-titles": "tsx test_bridge_titles.ts"
++    "test:bridge-titles": "tsx test_bridge_titles.ts",
++    "test:bridge-staleness": "tsx test_bridge_staleness.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/lib/bridge_staleness.ts b/infrastructure/mcp-control-plane/src/lib/bridge_staleness.ts
+new file mode 100644
+index 00000000..d3fb78ab
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/bridge_staleness.ts
+@@ -0,0 +1,96 @@
++/**
++ * #2333 — bridge.submit_patch staleness checkpoint: pre-land base verification.
++ *
++ * Pure, offline helpers (no network, no env) so the regression battery
++ * (test_bridge_staleness.ts) can replay the live failure deterministically —
++ * same discipline as bridge_dedup.ts (#2136/#2227).
++ *
++ * Failure being fixed (live witness 2026-10-28 23:00Z, issue #2333):
++ * `bridge_submit_patch` accepts full file contents (`mode: full_file`) and lands
++ * them atomically with NO comparison against the current state of main for the
++ * touched paths. A filer whose branch goes stale between branch-cut and land
++ * overwrites the registry/code blind — whatever main gained in that window on
++ * those paths is silently reverted. Witness: #2322 (R61 registration) cut its
++ * branch before #2314 landed the R62 row + pointer advance (93aa098); #2322's
++ * whole-file index overwrite landed after (ebe630c) and silently evicted the
++ * landed R62 row and regressed the pointer. Four same-day landings (R59 ghost
++ * red, #2295 dead-import red, #2302 comment-invariant red, the R62 eviction)
++ * that no landing-path check caught (push-CI dark, #2111).
++ *
++ * Contract (pure decision, wiring in bridge.tools.ts Step C):
++ * - The filer MAY declare `baseSha` per file: the blob sha of the file as read
++ *   from main at branch-cut time (public blob id — zero-credential unchanged).
++ * - No declared baseSha -> SKIP (backward compatible: legacy filers and
++ *   brand-new files have nothing to declare; no behavior change for them).
++ * - Declared baseSha + main blob sha EQUALS it -> FRESH (file untouched on
++ *   main since the cut; full_file overwrite cannot regress anything).
++ * - Declared baseSha + main blob sha DIFFERS -> STALE (main advanced since the
++ *   cut; the overwrite would silently revert main's increment).
++ * - Declared baseSha + file ABSENT on main -> STALE (file deleted on main
++ *   since the cut; the overwrite would resurrect a deleted file).
++ *
++ * The rejection is fail-closed with a structured, re-readable error:
++ * `STALE_BASE_ERROR` names the path, the declared sha, and the current sha so
++ * the filer re-reads, re-applies, and resubmits — the same re-read contract as
++ * STALE_TEMPLATE_ERROR.
++ */
++
++/** The file's current state on main, as observed by the caller (GET /contents). */
++export type MainBlobState = { exists: boolean; sha?: string };
++
++/**
++ * Staleness verdict for one file:
++ * - `skip`   — no baseSha declared (legacy filers / brand-new files): no check.
++ * - `fresh`  — declared base still matches main: safe to overwrite.
++ * - `stale`  — main moved under the filer: landing would silently regress it.
++ */
++export type StalenessVerdict =
++  | { verdict: "skip"; note: "no-declared-base" }
++  | { verdict: "fresh"; note: "base-matches-main" }
++  | { verdict: "stale"; reason: "main-advanced-since-cut"; declaredBaseSha: string; currentMainSha: string }
++  | { verdict: "stale"; reason: "file-deleted-on-main-since-cut"; declaredBaseSha: string };
++
++export function evaluateBaseStaleness(
++  declaredBaseSha: string | undefined | null,
++  mainBlob: MainBlobState
++): StalenessVerdict {
++  // No declared base: legacy filers and new files skip the check entirely —
++  // the checkpoint is opt-in so the zero-credential contract and every
++  // existing caller keep working unchanged.
++  if (!declaredBaseSha) return { verdict: "skip", note: "no-declared-base" };
++  // Declared a base but main no longer has the file: it was deleted since the
++  // cut — a full_file (re)creation would silently resurrect it.
++  if (!mainBlob.exists) {
++    return { verdict: "stale", reason: "file-deleted-on-main-since-cut", declaredBaseSha };
++  }
++  // Main has the file: fresh only when its blob is bit-identical to what the
++  // filer cut against.
++  const current = mainBlob.sha ?? "";
++  if (current === declaredBaseSha) return { verdict: "fresh", note: "base-matches-main" };
++  return {
++    verdict: "stale",
++    reason: "main-advanced-since-cut",
++    declaredBaseSha,
++    currentMainSha: current,
++  };
++}
++
++/**
++ * Machine-readable rejection prefix (mirrors STALE_TEMPLATE_ERROR). The full
++ * error text names the path, both shas, and the re-read contract, so a filer
++ * can recover without human help.
++ */
++export const STALE_BASE_ERROR_PREFIX = "STALE_BASE_ERROR";
++
++export function staleBaseErrorText(path: string, v: Extract<StalenessVerdict, { verdict: "stale" }>): string {
++  const current =
++    v.reason === "main-advanced-since-cut"
++      ? `current main blob ${v.currentMainSha}`
++      : "file is ABSENT on main (deleted since your branch cut)";
++  return (
++    `${STALE_BASE_ERROR_PREFIX}: '${path}' is stale — you declared base ${v.declaredBaseSha} ` +
++    `(${v.reason.replace(/-/g, " ")}), but ${current}. Landing this full_file submission would ` +
++    `silently revert main's increment (#2333). Re-read the file from main, re-apply your change, ` +
++    `and resubmit with the fresh baseSha.`
++  );
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index cd84051e..118a5a62 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -7,6 +7,7 @@ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+ import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
++import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+ import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+@@ -1008,7 +1009,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     originalIssueNumber?: number;
+     scopePaths: string[];
+     testsEvidence: string;
+-    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string }>;
++    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string; baseSha?: string }>;
+     rollbackPath?: string;
+     agentIdentity?: string;
+     reflectionWhy?: string;
+@@ -1205,7 +1206,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         }
+ 
+         // Step C: Commit files to the branch (dual-mode ingress, #539)
+-        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[] }> = [];
++        const fileResults: Array<{ path: string; mode: string; hunksApplied?: number; offsets?: number[]; stalenessCheck?: string }> = [];
+         for (const file of files) {
+           const ingressMode = file.mode ?? "full_file";
+           const getFileRes = await httpRequest<{ sha?: string; content?: string; encoding?: string }>(
+@@ -1236,7 +1237,41 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+             }
+           } else {
+             finalContent = file.content ?? "";
+-            fileResults.push({ path: file.path, mode: ingressMode });
++            // #2333 staleness checkpoint (full_file only): when the filer
++            // declares the blob sha the file had on main at branch-cut time,
++            // re-read main now and fail closed on any drift — a stale
++            // full_file overwrite silently reverts main's increment (the R62
++            // eviction class: #2322's whole-file landing deleted #2314's
++            // landed registration). Opt-in per file, so legacy filers and
++            // brand-new files are untouched (no declared base -> no check,
++            // zero behavior change). API failure other than 404 fails open
++            // with a per-file disclosure (stalenessCheck) instead of blocking
++            // legitimate submissions on Tower-side API health.
++            let stalenessCheck: string | undefined;
++            if (file.baseSha) {
++              const mainBlobRes = await httpRequest<{ sha?: string; message?: string }>(
++                `https://api.github.com/repos/${repo}/contents/${file.path}?ref=main`,
++                { headers, timeoutMs: 15_000 }
++              );
++              // 200 -> compare against main's blob; 404 -> file absent on main
++              // (deleted since the cut); any other status -> Tower-side API
++              // health problem, fail open with a per-file disclosure.
++              const mainBlob: MainBlobState | undefined = mainBlobRes.ok
++                ? { exists: true, sha: mainBlobRes.data?.sha }
++                : mainBlobRes.status === 404
++                  ? { exists: false }
++                  : undefined;
++              if (mainBlob) {
++                const verdict = evaluateBaseStaleness(file.baseSha, mainBlob);
++                if (verdict.verdict === "stale") {
++                  return { isError: true, content: [{ type: "text", text: staleBaseErrorText(file.path, verdict) }] };
++                }
++                stalenessCheck = "checked-fresh";
++              } else {
++                stalenessCheck = "skipped-api-error";
++              }
++            }
++            fileResults.push({ path: file.path, mode: ingressMode, stalenessCheck });
+           }
+ 
+           const putFileRes = await httpRequest<{ message?: string }>(
+@@ -1426,7 +1461,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
+       mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
+       diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
+-    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
++      baseSha: z.string().regex(/^[0-9a-f]{40}$/).optional().describe("#2333 staleness checkpoint: blob sha of this file as read from main at branch-cut time. Before landing, the Tower re-reads main and rejects with STALE_BASE_ERROR when the blob moved (main-advanced or file-deleted), preventing a stale full_file overwrite from silently reverting main. Omit for brand-new files (nothing to compare) or legacy unchecked submissions."),
++    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539; optional per-file baseSha staleness checkpoint per #2333)"),
+     rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
+     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+diff --git a/infrastructure/mcp-control-plane/test_bridge_staleness.ts b/infrastructure/mcp-control-plane/test_bridge_staleness.ts
+new file mode 100644
+index 00000000..c077e63c
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_staleness.ts
+@@ -0,0 +1,110 @@
++/**
++ * #2333 — bridge.submit_patch staleness checkpoint regression battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Replays the live failure (2026-10-28 23:00Z): #2322 (R61 registration) cut its
++ * branch from a pre-#2314 base; its whole-file SCOUT_RADAR_INDEX.md overwrite
++ * landed after #2314 (93aa098) and silently evicted the landed R62 row and
++ * regressed the pointer (ebe630c). The suite's pointer-pin test stayed GREEN
++ * because the pointer regressed together with the row — co-regression is
++ * invisible to value-pins. The fix: per-file opt-in baseSha declared at
++ * branch-cut time; the Tower re-reads main pre-land and rejects with
++ * STALE_BASE_ERROR on any drift (main-advanced / file-deleted).
++ */
++import {
++  evaluateBaseStaleness,
++  staleBaseErrorText,
++  STALE_BASE_ERROR_PREFIX,
++  type MainBlobState,
++} from "./src/lib/bridge_staleness.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++// The R62 eviction replay shapes: #2314 landed row bytes (what main gained) vs
++// #2322's stale pre-#2314 declaration.
++const CUT_SHA_2314_BASE = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"; // filer's cut-time blob
++const MAIN_ADVANCED_SHA = "f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0"; // main after #2314 landed
++
++// ─── 1. Skip semantics (backward compatibility) ─────────────────────────────
++section("1. No declared base -> skip (legacy filers / brand-new files unchanged)");
++const noBase = evaluateBaseStaleness(undefined, { exists: true, sha: MAIN_ADVANCED_SHA });
++check("undefined baseSha skips even when main moved", noBase.verdict === "skip");
++check("skip carries the no-declared-base note", noBase.verdict === "skip" && noBase.note === "no-declared-base");
++const nullBase = evaluateBaseStaleness(null, { exists: false });
++check("null baseSha skips too", nullBase.verdict === "skip");
++const emptyBase = evaluateBaseStaleness("", { exists: true, sha: MAIN_ADVANCED_SHA });
++check("empty-string baseSha skips (falsy = undeclared)", emptyBase.verdict === "skip");
++
++// ─── 2. Fresh path (base still matches main) ────────────────────────────────
++section("2. Declared base matches main -> fresh (safe overwrite)");
++const fresh = evaluateBaseStaleness(CUT_SHA_2314_BASE, { exists: true, sha: CUT_SHA_2314_BASE });
++check("bit-identical blob -> fresh", fresh.verdict === "fresh");
++check("fresh carries the base-matches-main note", fresh.verdict === "fresh" && fresh.note === "base-matches-main");
++
++// ─── 3. Stale path A: main advanced (the #2322 witness) ─────────────────────
++section("3. Main advanced since the cut -> stale (the R62 eviction replay)");
++const advanced = evaluateBaseStaleness(CUT_SHA_2314_BASE, { exists: true, sha: MAIN_ADVANCED_SHA });
++check("moved blob -> stale", advanced.verdict === "stale");
++check(
++  "stale names the main-advanced-since-cut reason",
++  advanced.verdict === "stale" && advanced.reason === "main-advanced-since-cut"
++);
++check(
++  "stale carries both shas for the re-read contract",
++  advanced.verdict === "stale" &&
++    advanced.declaredBaseSha === CUT_SHA_2314_BASE &&
++    advanced.currentMainSha === MAIN_ADVANCED_SHA
++);
++
++// ─── 4. Stale path B: file deleted on main since the cut ────────────────────
++section("4. File deleted on main since the cut -> stale (no silent resurrection)");
++const deleted = evaluateBaseStaleness(CUT_SHA_2314_BASE, { exists: false });
++check("absent blob -> stale", deleted.verdict === "stale");
++check(
++  "stale names the file-deleted-on-main-since-cut reason",
++  deleted.verdict === "stale" && deleted.reason === "file-deleted-on-main-since-cut"
++);
++check("deleted-stale carries the declared sha", deleted.verdict === "stale" && deleted.declaredBaseSha === CUT_SHA_2314_BASE);
++
++// ─── 5. Error text contract (machine-readable, re-readable) ─────────────────
++section("5. STALE_BASE_ERROR text contract");
++const advText = staleBaseErrorText("docs/SCOUT_RADAR_INDEX.md", advanced as Extract<typeof advanced, { verdict: "stale" }>);
++check("error carries the STALE_BASE_ERROR prefix", advText.startsWith(STALE_BASE_ERROR_PREFIX));
++check("error names the offending path", advText.includes("docs/SCOUT_RADAR_INDEX.md"));
++check("error names the declared base sha", advText.includes(CUT_SHA_2314_BASE));
++check("error names the current main sha", advText.includes(MAIN_ADVANCED_SHA));
++check("error cites the #2333 rationale", advText.includes("#2333"));
++check("error instructs the re-read contract", advText.includes("Re-read the file from main"));
++check("error does NOT teach bypassing the checkpoint", !advText.includes("omit baseSha"));
++const delText = staleBaseErrorText("docs/ledger/x.md", deleted as Extract<typeof deleted, { verdict: "stale" }>);
++check("deleted-variant error states absence on main", delText.includes("ABSENT on main"));
++
++// ─── 6. Discriminant shape (exhaustive decision surface) ────────────────────
++section("6. Verdict discriminant shape");
++const all: Array<ReturnType<typeof evaluateBaseStaleness>> = [noBase, fresh, advanced, deleted];
++check("skip verdicts exclude reason fields", noBase.verdict === "skip" && !("reason" in noBase));
++check("fresh verdicts exclude reason fields", fresh.verdict === "fresh" && !("reason" in fresh));
++check("stale verdicts always carry reason", all.filter((v) => v.verdict === "stale").every((v) => "reason" in v && !!v.declaredBaseSha));
++check("verdicts partition into exactly the three actions", new Set(all.map((v) => v.verdict)).size === 3);
++const blob: MainBlobState = { exists: true };
++check("MainBlobState tolerates missing sha field (defensive)", evaluateBaseStaleness(CUT_SHA_2314_BASE, blob).verdict === "stale");
++
++// ─── Verdict ────────────────────────────────────────────────────────────────
++console.log("\n=============================================");
++if (failures === 0) {
++  console.log("ALL BRIDGE STALENESS TESTS PASSED (#2333)");
++} else {
++  console.error(`${failures} TEST(S) FAILED (#2333)`);
++}
++process.exit(failures === 0 ? 0 : 1);

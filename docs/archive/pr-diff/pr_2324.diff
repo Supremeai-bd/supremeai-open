@@ -1,0 +1,163 @@
+diff --git a/scripts/agents/mcp_tower_client.py b/scripts/agents/mcp_tower_client.py
+index 4f63f778..eee24bbd 100644
+--- a/scripts/agents/mcp_tower_client.py
++++ b/scripts/agents/mcp_tower_client.py
+@@ -49,11 +49,24 @@
+ # AUDIT-FIX (CI fixer): removed hardcoded deployment URL from default value.
+ # The URL must be set via MCP_TOWER_URL env var. AGENTS.md Rule #19 references
+ # the URL in documentation — the actual code reads it from env.
++def strip_endpoint_suffixes(url: str) -> str:
++    """Return the Tower base origin from any documented URL form.
++
++    #2317 (R60 lane, #2300 option A): the documented setup carries the /mcp
++    endpoint suffix (dispatch mandate export form, repo-root mcp.json) while
++    connect() appends MCP_SSE_PATH itself — the /mcp suffix must be stripped
++    here or the join produces the dead path GET /mcp/sse (live 404) instead of
++    GET /sse (200). Order-tolerant: /mcp, /sse, /mcp/sse and bare all resolve
++    to the base origin; exact-suffix matching cannot corrupt /mcp-server.
++    """
++    return url.rstrip("/").removesuffix("/sse").removesuffix("/mcp")
++
++
+ def resolve_mcp_server_url() -> str:
+     """Resolve MCP Control Tower URL from env or workspace mcp.json."""
+     url = os.environ.get("MCP_TOWER_URL", os.environ.get("MCP_SERVER_URL", ""))
+     if url:
+-        return url.rstrip("/").removesuffix("/sse")
++        return strip_endpoint_suffixes(url)
+     mcp_file = Path(__file__).resolve().parents[2] / "mcp.json"
+     if mcp_file.exists():
+         try:
+@@ -62,7 +75,7 @@ def resolve_mcp_server_url() -> str:
+                 tower = data.get("mcpServers", {}).get("supremeai-control-tower", {})
+                 server_url = tower.get("url", "")
+                 if server_url:
+-                    return server_url.rstrip("/").removesuffix("/sse")
++                    return strip_endpoint_suffixes(server_url)
+         except Exception:
+             pass
+     return "https://supremeai-mcp-tower.onrender.com"
+diff --git a/scripts/ops/operations/tower_db_bridge.py b/scripts/ops/operations/tower_db_bridge.py
+index 949e2e77..03d97746 100644
+--- a/scripts/ops/operations/tower_db_bridge.py
++++ b/scripts/ops/operations/tower_db_bridge.py
+@@ -42,7 +42,7 @@
+ sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+ sys.path.insert(0, str(Path(__file__).resolve().parent))
+ 
+-from mcp_tower_client import McpTowerClient  # noqa: E402
++from mcp_tower_client import McpTowerClient, strip_endpoint_suffixes  # noqa: E402
+ from operational_truth_db import (  # noqa: E402
+     connect,
+     ensure_schema,
+@@ -86,7 +86,9 @@ def _resolve_tower_url() -> str:
+             "Tower URL পাওয়া যায়নি — MCP_TOWER_URL env var সেট করুন "
+             "(fail-closed, scripts/agents/mcp_tower_client.py চুক্তি)"
+         )
+-    return url.rstrip("/").removesuffix("/sse")
++    # #2317: shared helper — the private duplicate drifted from the client
++    # contract (kept /mcp, producing GET /mcp/sse = live 404).
++    return strip_endpoint_suffixes(url)
+ 
+ 
+ def _tool_text(result: Any) -> str:
+diff --git a/tests/test_tower_url_resolution.py b/tests/test_tower_url_resolution.py
+new file mode 100644
+index 00000000..c389b2ce
+--- /dev/null
++++ b/tests/test_tower_url_resolution.py
+@@ -0,0 +1,94 @@
++"""Tower URL resolution contract — #2317 (R60 lane, #2300 option A).
++
++The documented agent setup carries the /mcp endpoint suffix
++(dispatch-mandate export form; repo-root mcp.json). connect() appends
++MCP_SSE_PATH itself, so every resolver return path must yield the base
++origin — pre-fix the /mcp suffix survived and the join produced the dead
++path GET /mcp/sse (live 404) while GET /sse answers 200. tower_db_bridge
++declared it follows the client resolution contract but kept a private
++duplicate with the same gap; option A retires the duplicate in favor of
++the shared helper so the drift cannot regrow.
++"""
++from __future__ import annotations
++
++import json
++import sys
++from pathlib import Path
++
++import pytest
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ops" / "operations"))
++
++import mcp_tower_client  # noqa: E402
++
++ORIGIN = "https://supremeai-mcp-tower.onrender.com"
++
++
++@pytest.fixture(autouse=True)
++def _clean_env(monkeypatch):
++    monkeypatch.delenv("MCP_TOWER_URL", raising=False)
++    monkeypatch.delenv("MCP_SERVER_URL", raising=False)
++
++
++@pytest.mark.parametrize(
++    ("raw", "expected"),
++    [
++        # the documented dispatch-mandate form — the bug case (#2300)
++        ("https://supremeai-mcp-tower.onrender.com/mcp", ORIGIN),
++        # legacy forms and combinations, all order-tolerant
++        ("https://supremeai-mcp-tower.onrender.com/sse", ORIGIN),
++        ("https://supremeai-mcp-tower.onrender.com/mcp/sse", ORIGIN),
++        (ORIGIN, ORIGIN),
++        (ORIGIN + "/", ORIGIN),
++        # exact-suffix matching: a path that merely CONTAINS /mcp is untouched
++        ("https://example.com/mcp-server", "https://example.com/mcp-server"),
++        ("https://example.com/mcp/sse-extra", "https://example.com/mcp/sse-extra"),
++    ],
++)
++def test_strip_endpoint_suffixes(raw, expected):
++    assert mcp_tower_client.strip_endpoint_suffixes(raw) == expected
++
++
++def test_env_documented_form_resolves_to_origin(monkeypatch):
++    monkeypatch.setenv("MCP_TOWER_URL", ORIGIN + "/mcp")
++    assert mcp_tower_client.resolve_mcp_server_url() == ORIGIN
++
++
++def test_env_sse_form_resolves_to_origin(monkeypatch):
++    monkeypatch.setenv("MCP_SERVER_URL", ORIGIN + "/sse")
++    assert mcp_tower_client.resolve_mcp_server_url() == ORIGIN
++
++
++@pytest.mark.skipif(
++    not (REPO_ROOT / "mcp.json").exists(), reason="repo mcp.json absent"
++)
++def test_mcp_json_vector_resolves_to_origin(monkeypatch):
++    # the tracked mcp.json carries url ".../mcp" — the second #2300 vector;
++    # pinning it here keeps the fallback contract honest if the file drifts
++    cfg = json.loads((REPO_ROOT / "mcp.json").read_text(encoding="utf-8"))
++    assert cfg["mcpServers"]["supremeai-control-tower"]["url"].endswith("/mcp")
++    assert mcp_tower_client.resolve_mcp_server_url() == ORIGIN
++
++
++def test_client_join_contract_under_documented_env(monkeypatch):
++    # the actual failure surface: server_url + sse_path must be the live endpoint
++    monkeypatch.setenv("MCP_TOWER_URL", ORIGIN + "/mcp")
++    client = mcp_tower_client.McpTowerClient(
++        server_url=mcp_tower_client.resolve_mcp_server_url()
++    )
++    assert client.server_url + client.sse_path == ORIGIN + "/sse"
++
++
++def test_tower_db_bridge_shares_the_helper(monkeypatch):
++    # option A: the bridge's private duplicate is retired in favor of the
++    # shared helper — the drift that produced this bug cannot regrow
++    import tower_db_bridge
++
++    assert (
++        tower_db_bridge.strip_endpoint_suffixes
++        is mcp_tower_client.strip_endpoint_suffixes
++    )
++    monkeypatch.setenv("MCP_TOWER_URL", ORIGIN + "/mcp")
++    assert tower_db_bridge._resolve_tower_url() == ORIGIN

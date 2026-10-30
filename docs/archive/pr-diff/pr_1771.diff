@@ -1,0 +1,93 @@
+diff --git a/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md b/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md
+new file mode 100644
+index 00000000..928d05a7
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md
+@@ -0,0 +1,87 @@
++# AUDIT 2026-10-28 — Dependabot Hub Enablement: Lane-Blocked Remediation Dossier (#1736 / #1769)
++
++- **Auditor cycle**: Job 478330, agent `zai-cron-agent-loop-478330`, 2026-10-28 (UTC+8 dispatch 06:20)
++- **Finding issues**: #1736 (original ask), #1769 (blocker registration with validated config)
++- **Verdict**: the gap is real and reproducible on pristine `main`; the standard bridge lane **cannot** deliver the literal fix because `.github/*` is a protected path set; enablement requires an **admin-gated one-file landing**. This dossier carries the validated config, the sentinel-safety analysis, and the runbook so the landing is a copy-paste operation.
++
++## 1. Executive summary
++
++The hub's dependency-update machinery is half-built: the Tier-6 sequential merger knows how to classify and merge `app/dependabot` pull requests, and the unified pipeline explicitly auto-allows `dependabot/*` bot branches — but the bot itself has never opened a single pull request on this hub because the one file that schedules it, `.github/dependabot.yml`, does not exist. This is a silent CI-gate gap rather than a missing feature: every other lane (routing, allowlist, gating, merge policy) was built and verified, and the entry point was never wired. The remediation is a config-only addition, yet it sits inside the one directory tree the zero-credential bridge lane deliberately refuses to write (protected paths, the same contract #1760 honored when it wired a guard while keeping `.github/` untouched). This document therefore serves as the audit record, the validated artifact, and the admin runbook in one place.
++
++## 2. Ground-truth verification (reproduced before designing — no ghost fixes)
++
++All checks were run on pristine `origin/main` at `e774c8b`, re-checked after the dual rebase onto `3daacf1`, with no local modifications beyond the audit's own artifacts.
++
++1. **Tier-6 routing pre-exists.** `scripts/ci/smart_priority_merger.py` classifies any pull request authored by `app/dependabot` or `dependabot[bot]` (or matching bump-title patterns) as `TIER_6_DEPENDENCIES`, priority score `50` — the lowest tier in the sequential merge train, behind governance (1000), contracts (800), migrations (600), backend (400), frontend (200) and janitor (100). Tier-6 PRs are fully gated: the #2571 merge-before-gates contract forbids merging unless every required check is `completed && SUCCESS`, and the #2630 protected-paths override blocks auto-merge from touching registry files.
++2. **Bot branches pre-allowed.** `.github/workflows/pipeline.yml` auto-allows head refs matching `dependabot|github-actions|copilot|all-contributors|gh-readonly` at three gate sites (approximately lines 168, 226, 291), with an admin escape hatch (`guard-exempt` label) documented inline.
++3. **The scheduling file is absent.** No `.github/dependabot.yml` exists at hub level. `core/github/dependabot.yml` is the core-satellite mirror configuration (pip ecosystem pointed at `/backend`, reviewer-pinned) and does not apply to this hub; copying it verbatim would reference a nonexistent `/backend` directory and hardcode a reviewer dependency the hub does not need.
++4. **Consequence.** Dependabot never schedules version-update pull requests against the hub; the Tier-6 lane it was built for has processed zero bot traffic.
++
++## 3. The lane constraint (why this dossier exists)
++
++Submitting `.github/dependabot.yml` through `bridge_submit` fails closed with:
++
++> `TOOL ERROR: Path '.github/dependabot.yml' is protected (.github/). Bridge lane does not accept automatic writes to protected paths.`
++
++This is by design: `.github/` holds the landing pipeline, branch guards, and templates — the machinery every other contribution depends on — so the bridge lane refuses automated writes there (#1643 precedent, explicitly honored by the #1760 OpenAPI guard landing: "\u200b.github/ untouched per #1643"). The correct response is not a workaround but a documented hand-off: the config below is validated and frozen, and the landing reduces to a single admin file copy. A companion issue (#1769) carries the same dossier so the finding is visible in the work queue where future agents claim work.
++
++## 4. Validated configuration (admin lands this verbatim at `.github/dependabot.yml`)
++
++```yaml
++# Hub-level Dependabot version updates (#1736).
++# Surface selection is sentinel-aware: /studio and /vscode root package.json
++# files are #1689 byte-parity pairs and are deliberately excluded — see
++# docs/AUDIT_2026-10-28-dependabot-lane-blocker.md section 5.
++version: 2
++updates:
++  - { package-ecosystem: "pip",  directory: "/core",    schedule: { interval: "weekly", day: "monday" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies", "security"] }
++  - { package-ecosystem: "pip",  directory: "/gateway", schedule: { interval: "weekly", day: "monday" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies", "security"] }
++  - { package-ecosystem: "pip",  directory: "/browser", schedule: { interval: "weekly", day: "monday" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies", "security"] }
++  - { package-ecosystem: "npm",  directory: "/infrastructure/mcp-control-plane", schedule: { interval: "weekly", day: "monday" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies"] }
++  - { package-ecosystem: "npm",  directory: "/browser/cloudflare-worker", schedule: { interval: "weekly", day: "monday" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies"] }
++  - { package-ecosystem: "github-actions", directory: "/", schedule: { interval: "monthly" }, open-pull-requests-limit: 5, groups: { minor-and-patch: { update-types: ["minor", "patch"] } }, labels: ["dependencies", "ci"] }
++```
++
++Design notes:
++
++- **Weekly Monday cadence for packages, monthly for actions** mirrors the core-satellite convention so operators see one rhythm across repos.
++- **`open-pull-requests-limit: 5` per ecosystem** caps concurrent bot PRs; combined with Tier-6 being the lowest merge priority, the sequential train cannot be flooded ahead of human or agent work.
++- **`groups.minor-and-patch`** collapses minor+patch bumps into one PR per ecosystem per cycle, isolating majors for individual review. This is the single highest-leverage noise control available in the config format.
++- **Labels** follow the core-satellite convention (`dependencies`, plus `security` on pip and `ci` on actions); labels that do not exist yet are created by the bot on first run.
++- **No `reviewers` blocks**: the Tier-6 sequential merger is the designed human-free route, and hardcoded reviewer handles would fail on non-collaborator requests.
++
++## 5. Sentinel-surface analysis (why maximal coverage would be a defect)
++
++The #1689 sentinel contract (`scripts/ci/satellite_sentinels.json`) requires byte-identity between specific hub files and their private-satellite counterparts, verified by `federation_satellite_sync.py --verify-only` after every sync. Two of the seven sentinel pairs are package manifests:
++
++| Sentinel pair | Declared deps at root | Dependabot would edit it? | Outcome if covered |
++|---|---|---|---|
++| `studio/package.json` ↔ `supremeai-studio` | 43 deps + 16 devDeps | Yes — root manifest carries its own dependency block | Parity verification fails on every bot PR; permanently gated red |
++| `vscode/package.json` ↔ `supremeai-vscode` | 1 devDep | Yes — any version-range edit breaks byte identity | Same permanent-red outcome |
++
++Because Dependabot edits root manifests directly, covering the `/studio` and `/vscode` npm ecosystems before the sync contract learns to propagate root-manifest bumps hub→satellite would manufacture a stream of permanently failing pull requests — a worse defect than the gap itself. The pip surfaces are safe: sentinels track only `main.py` for the core/gateway/browser satellites, so manifest bumps cannot collide with the parity contract. Workspace-member manifests (`studio/packages/*`, `vscode/extension`) are not sentinel-tracked, but their updates resolve through the root lockfiles, so they inherit the same exclusion until the propagation path exists.
++
++## 6. Scope of the validated slice
++
++Covered (6 entries): pip for `/core`, `/gateway`, `/browser` (top-level satellite manifests); npm for `/infrastructure/mcp-control-plane` and `/browser/cloudflare-worker` (lockfile-backed, non-sentinel); `github-actions` for `/` (keeps the unified pipeline's action refs current — squarely an auditor CI-gate concern).
++
++Deliberately excluded (with follow-up paths):
++
++- `/studio` and `/vscode` npm ecosystems — blocked by the sentinel contract until root-manifest propagation exists (§5). This is the headline limitation and the reason the config cannot simply be "everything".
++- Nested pip requirements (`core/services/*`, `gateway/services/*`, `core/client/*`, `core/tools/discovery_fabric`, `examples/sdk-client-py`) — real manifests, but lockfile-less and structurally mirrored across satellites; covering them in the first slice risks cross-mirror requirement drift for marginal gain. A follow-up order can enumerate them once the top-level lane proves stable.
++- `.agents/skills/devtools-audit/package.json` — vendored agent-skill manifest with no lockfile and no CI surface.
++
++## 7. Admin enablement runbook
++
++1. Copy the §4 YAML verbatim to `.github/dependabot.yml` on `main` (admin push; the bridge lane rejects `.github/*` writes by design — this is the only manual step).
++2. Confirm the repository's **Dependabot** tab shows six update configs with zero config errors.
++3. Expect the first batch on the next Monday run; bot pull requests will arrive on `dependabot/*` branches, pass the pre-existing branch allowlist, run the full pipeline gate set, and queue at Tier 6 (lowest priority, sequential).
++4. After week one, review train occupancy; if bot PRs crowd the queue, lower `open-pull-requests-limit` before touching cadence.
++5. Revisit §5 exclusions when a root-manifest propagation order lands; extending coverage then is a two-entry addition.
++
++## 8. Verification evidence
++
++- Reproduction on pristine `main` (`e774c8b`, re-checked at `3daacf1`): no `.github/dependabot.yml`; Tier-6 classification and bot-branch allowlist confirmed at source level.
++- Config validation: `yaml.safe_load` parses; `version: 2`; six entries; every `package-ecosystem` ∈ {pip, npm, github-actions}; every directory exists on disk; `groups.minor-and-patch.update-types == [minor, patch]` on all entries.
++- `continuous_agent_loop.py --verify-only`: 8/8 PASS, run twice (pre-commit worktree and post-commit), `CONTRACT_VERSION=agent-loop-contract/1`.
++- Claim discipline: #1736 atomically claimed (`GRANT_NEW`, lease 22:25:45Z → 22:55:45Z) before implementation began; blocker registration #1769 filed when the lane constraint surfaced.

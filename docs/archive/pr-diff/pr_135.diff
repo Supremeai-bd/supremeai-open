@@ -1,0 +1,134 @@
+diff --git a/.github/workflows/auto-bridge-dispatcher.yml b/.github/workflows/auto-bridge-dispatcher.yml
+index d5386fda..eb7f165b 100644
+--- a/.github/workflows/auto-bridge-dispatcher.yml
++++ b/.github/workflows/auto-bridge-dispatcher.yml
+@@ -49,6 +49,11 @@ on:
+   pull_request:
+     types: [closed]
+     branches: [main]
++  workflow_dispatch:
++    inputs:
++      pr_number:
++        description: "PR number to bridge into private repo"
++        required: true
+ 
+ permissions:
+   contents: write
+@@ -59,7 +64,9 @@ jobs:
+   auto-bridge:
+     name: "🌉 Create Auto Bridge Work Order"
+     # Only run on merged PRs, and never run on bridge branches (loop prevention)
+-    if: github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/')
++    if: |
++      github.event_name == 'workflow_dispatch' ||
++      (github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+     runs-on: ubuntu-latest
+     steps:
+       - name: Checkout repository
+@@ -69,12 +76,41 @@ jobs:
+ 
+       - name: Inspect touched files
+         id: check_scope
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+         run: |
+-          PR_NUM="${{ github.event.pull_request.number }}"
+-          echo "Processing merged PR #${PR_NUM}..."
++          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
++            PR_NUM="${{ github.event.inputs.pr_number }}"
++            echo "Processing dispatch for PR #${PR_NUM}..."
++            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title,mergeCommit,baseRefOid,headRefName,state)
++            STATE=$(echo "$PR_JSON" | jq -r '.state')
++            if [ "$STATE" != "MERGED" ]; then
++              echo "PR #${PR_NUM} is not merged (state: $STATE). Exiting."
++              exit 1
++            fi
++            HEAD_REF=$(echo "$PR_JSON" | jq -r '.headRefName')
++            if [[ "$HEAD_REF" =~ ^bridge/ ]]; then
++              echo "PR #${PR_NUM} is from a bridge branch ($HEAD_REF). Skipping loop."
++              exit 0
++            fi
++            PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
++            PR_SHA=$(echo "$PR_JSON" | jq -r '.mergeCommit.oid')
++            BASE_SHA=$(echo "$PR_JSON" | jq -r '.baseRefOid')
++          else
++            PR_NUM="${{ github.event.pull_request.number }}"
++            PR_TITLE="${{ github.event.pull_request.title }}"
++            PR_SHA="${{ github.event.pull_request.merge_commit_sha }}"
++            BASE_SHA="${{ github.event.pull_request.base.sha }}"
++            echo "Processing merged PR #${PR_NUM}..."
++          fi
+           
++          echo "pr_num=$PR_NUM" >> "$GITHUB_OUTPUT"
++          echo "pr_title=$PR_TITLE" >> "$GITHUB_OUTPUT"
++          echo "pr_sha=$PR_SHA" >> "$GITHUB_OUTPUT"
++          echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
++
+           # Get list of files touched in this PR
+-          FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.merge_commit_sha }})
++          FILES=$(git diff --name-only "$BASE_SHA" "$PR_SHA")
+           echo "Touched files:"
+           echo "$FILES"
+           
+@@ -96,10 +132,10 @@ jobs:
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          PR_NUM: ${{ github.event.pull_request.number }}
+-          PR_TITLE: ${{ github.event.pull_request.title }}
+-          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
++          PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
++          PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
++          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
++          BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+         run: |
+           DATE_STR=$(date +%Y%m%d)
+           TASK_ID="bridge-${DATE_STR}-pr${PR_NUM}-sync"
+@@ -140,7 +176,7 @@ jobs:
+           Auto-bridged from merged public PR #${PR_NUM} (${PR_TITLE}). Automated synchronization of shared ecosystem assets into private monorepo.
+ 
+           ### Scope Paths (files touched)
+-          $(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${PR_SHA}" | sed 's/^/- /')
++          $(git diff --name-only "${BASE_SHA}" "${PR_SHA}" | sed 's/^/- /')
+ 
+           ### Test Evidence (3-tier contract)
+           1. **Reflection Check:** Automatically ported from public PR #${PR_NUM} (merge commit ${PR_SHA}).
+@@ -165,11 +201,10 @@ jobs:
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
+-          PR_NUM: ${{ github.event.pull_request.number }}
+-          PR_TITLE: ${{ github.event.pull_request.title }}
+-          PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
++          PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
++          PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
++          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
++          BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+           TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+           BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
+         run: |
+diff --git a/.github/workflows/merge-gate.yml b/.github/workflows/merge-gate.yml
+index 3def450d..4c0d59fe 100644
+--- a/.github/workflows/merge-gate.yml
++++ b/.github/workflows/merge-gate.yml
+@@ -25,6 +25,7 @@ permissions:
+   contents: write
+   pull-requests: write
+   issues: write
++  actions: write
+ 
+ concurrency:
+   group: merge-gate-open
+@@ -113,3 +114,9 @@ jobs:
+             --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%)."
+ 
+           echo "✅ PR #${PR_NUM} successfully auto-merged."
++
++          # Trigger auto-bridge-dispatcher autonomously (Zero-Admin Policy)
++          echo "🌉 Dispatching auto-bridge work order for PR #${PR_NUM}..."
++          gh workflow run auto-bridge-dispatcher.yml \
++            --repo "${{ github.repository }}" \
++            -f pr_number="$PR_NUM" || echo "::warning::auto-bridge-dispatcher trigger skipped or failed"

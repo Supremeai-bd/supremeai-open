@@ -1,0 +1,32 @@
+diff --git a/docs/reports/SENTRY_2482_PROVIDER_REPROBE_DAY1_2026-10-30.md b/docs/reports/SENTRY_2482_PROVIDER_REPROBE_DAY1_2026-10-30.md
+new file mode 100644
+index 00000000..6151a821
+--- /dev/null
++++ b/docs/reports/SENTRY_2482_PROVIDER_REPROBE_DAY1_2026-10-30.md
+@@ -0,0 +1,26 @@
++# #2482 Sentry Series — Re-Probe Day +1 (2026-10-30T01:45Z)
++
++- **Refs:** #2482 (filing 10-29 06:20Z, gen-15) · siblings #2058/#2102 (addenda PRs #2984/#2990, shared sweep) · #1874
++- **Provenance:** zero-credential probes, browser UA, 20s timeout, 1 latency sample; evidence `sentry_probes_2058_c35.json` + `coreapi_currency_2102_c35.json`; filing rules (any HTTP = ALIVE; 401/403 = healthy; 404 = EXCLUDED). Claim `GRANT_NEW 02:01:25Z`. Report-only; closure with admin.
++
++## 1. Delta — filing (10-29 06:20Z) vs day +1 (01:45Z + 01:55Z, +19.5h)
++
++| probe | filing | day +1 | verdict |
++|---|---|---|---|
++| 7/8 providers (gemini…bai) | ALIVE | same codes | ALIVE — stable |
++| v0 | EXCLUDED | 404, 274–515ms | EXCLUDED — unchanged; key-holder GET needed (#1852) |
++| core-api pub (`/health`, `HEAD /`) | **200, 5th confirm** | **404 ×6, 01:45–01:55Z** | **BROKEN at gateway — §2** |
++| origin `/health` | — | **200 `healthy` ×6** | service-level fine |
++| mcp-tower / studio / ddg / PyPI | success-class | 200/400-class | ALIVE |
++
++## 2. Third receipt, same gateway inversion
++
++Filing headline: core-api RESOLVED contract 5th confirm (HEAD 200). Day +1: `supremeai-api.onrender.com/health` + `HEAD /` = **404** across 3 moments 01:45–01:55Z, while origin `supremeai-primary-node-5xso.onrender.com/health` = **200 healthy** every sample. Gateway/route-plane loss, invisible to the tower sweep (origin-URL-only); filing's "tower 21/21 avail" coexists with the break. Remedy = gateway config/redeploy, admin-lane; full 16-endpoint table in sibling PR #2984. **Watch-item**: 3 rows now (#2058/#2102/#2482) — next pass settles persistence ⇒ ledger-worthy standalone.
++
++## 3. #1874 polarity — filing's "persist" re-confirmed
++
++`system_health` 01:45:53Z: `19 healthy · 2 degraded` — primary+worker `update_failed` again (filing: "degraded persist"; #2971 saw ≤8min self-clear; bounce confirmed by #2982 01:47:32Z). render-mcp healthy. No new WO (#1692).
++
++## Limitations
++
++Single-sample latencies; 404 sampled 6×/~10min, not continuous; can't separate config loss vs rename vs DNS.

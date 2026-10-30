@@ -1,0 +1,83 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-XIV.md b/docs/SCOUT_RADAR_2026-10-28-XIV.md
+new file mode 100644
+index 00000000..bc73271a
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-XIV.md
+@@ -0,0 +1,48 @@
++# SCOUT RADAR — 2026-10-28 — XIV (R50)
++
++**Sweep:** ecosystem-scout cycle 15, Job 478346, 2026-10-28 ~11:00Z (+08 19:00)
++**Doctrine:** read-only scout (#1658) — live-evidence-only, zero hype, zero code edits.
++**Radar file:** `SCOUT_RADAR_2026-10-28-XIV.md` (this file) — lands in the same PR as its index row + drift pass 11, per the #1724 contract and the pass-5/7 same-cycle freshness rule.
++
++## 0. Provenance & allocation
++
++| item | value |
++|---|---|
++| R-number | **R50**, taken from `SCOUT_RADAR_INDEX.md` allocation rule as advertised at pass 10 ("next free: R50") |
++| Freeness check (self, before writing) | `git grep -l "R50"` over tracked files at cce3f6f → sole match `studio/pnpm-lock.yaml` = base64 **hash coincidence inside a lockfile, not a lane citation** (disclosed per pass-9 honesty rules; no radar doc, issue, or history citation exists) |
++| Post-write pointer | next free → **R51** (verified free by the same method: zero tracked-file citations) |
++| Lane issue | **#2106** (filed via `github_create_issue` before this doc was written) |
++| Numbers NOT used | R51 reserved by this pass's pointer update; nothing else touched |
++
++## 1. Lane summary
++
++| R | Lane (one line) | Issue | Status |
++|---|---|---|---|
++| R50 | Dependency freshness-automation gap — the 6-guard detect family (R37/R41/R45/R46/R47 + bandit + dead-import ratchets) has **no fix-side automation**: 0 dependabot/renovate configs repo-wide (E1/E2), ~10 manual absorb/pin/re-arm landings in the last 24h of main (E3), 12+ bumps queued by today's own landings as "maintainer lanes" (E4); options A–D routed (C recommended first: report-only bump-candidate probe, house-style, agent-plane) | #2106 | open (filed 2026-10-28) |
++
++**Why one lane this cycle:** board intake is outpacing drainage (20 open WOs at cycle start; #1840's close-on-merge defect keeps landed fixes false-open). The scout contract's highest-value move here is a single implementation-ready lane, not volume.
++
++## 2. Evidence digest (canonical source = #2106 body)
++
++- **E1/E2 (absence, ls-verified at cce3f6f):** `.github/dependabot.yml`, `renovate.json`, `.renovaterc.json` — all ABSENT.
++- **E3 (census, `git log --since="24 hours"`):** 60 subject matches on bump/absorb/pin/CVE/baseline/re-arm/ratchet; ~10 are direct hand-landed dependency-maintenance ops — cfa5bb9 (js-CVE floor absorb), 21da468 (**bandit ratchet was silently RED on main** — the detect-only loop already missed one), 64b791d (dead-import re-arm 446→388), 94008df (R44 23-pkg manual pin closure), 5f1575e (genesis ratchet manual shrink to 0), 9185483 (R47 guard), fc25d01 (R46 widen), 97bb269 (R45), 26466c0/83e786a/c34f309 (py-CVE family).
++- **E4 (queued toil):** R45 landed with 8 vulnerable pairs / 19 advisory ids explicitly as "maintainer lanes"; R46 has 4 vulnerable / 9 GHSAs open; R47 found 0 digest pins across 20 FROMs. The guard family *manufactures* manual work faster than maintainers drain it.
++- **E5 (tooling support, official docs fetched 2026-10-28):** Dependabot `package-ecosystem` supports npm, pip, uv (docs.github.com); Renovate `pip_requirements` manager confirmed (docs.renovatebot.com). pnpm-lock support claims deliberately left unverified by this zero-credential probe (JS-rendered docs) — option evaluation must verify before adoption.
++
++## 3. Held back (observed, live-proven, NOT filed — anti-spam)
++
++- **Official MCP Registry is live and the Tower is absent from it.** Probe 2026-10-28: `GET registry.modelcontextprotocol.io/v0/servers?limit=1` → HTTP 200 (server schema 2025-12-11); `?search=supremeai` → `{"servers":[],"metadata":{"count":0}}`. A discoverability/signed-identity lane exists, but it is thin and R49-adjacent (R49 already owns the Tower's MCP-surface lane); filing it would be split-spam. Recorded here so a future scout can claim it with the probe evidence attached.
++- **Tower session-plane stable post-#1894.** 16 successful zero-credential MCP calls this cycle across 2 sessions (incl. one cold-start 503 recovery by retry); no churn-lockout recurrence observed. No action warranted.
++
++## 4. Method notes
++
++- Zero-credential end-to-end: repo reads (local clone), tower (`github_create_issue`), registry probe (urllib), docs fetches (2). No keys, no admin surfaces, no `.github/**` writes.
++- Freeness checks used `git grep` over tracked files (not tree-wide ripgrep — 4.6k files incl. lockfiles make tree-wide scans both slow and noisy; lockfile hash-coincidences are disclosed, not treated as claims).
++- The census counts commit-subject matches, which **undercounts** (multi-op commits, unsubjected absorbs) — stated as a floor, not a total, per zero-hype.
++
++## এটা করা যাবে না (never-do — this radar)
++
++- কোনো অটোমার্জ/অটো-পুশ প্রস্তাব নয় — bump PR মানুষের review ছাড়া ল্যান্ড করবে না।
++- `.github/**` লেখা নয় (protected-path law) — option A ইচ্ছাকৃতভাবে admin-lane।
++- Guard baseline-গুলো এই lane-এর ইনপুট, তাদের টার্গেট নয় — shrink-only ratchet অক্ষত থাকবে।
++- R43/R45/R46/R47-এর duplicate নয় — তারা detect-plane, R50 fix-side চেইন।
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index e6fc49b0..2dc53556 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R50**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R51**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -27,6 +27,8 @@
+ > **Drift log:** *2026-10-28, pass 9 — FIRST DOUBLE-CLAIM ADJUDICATION (auditor cycle, Job 478344)* — two issue-side lanes independently self-assigned R47 within the same day: #2084 (base-image pinning + Node coherence, registered by the pass-8 first landing f0e2bec/PR #2088) and #2091 (radar-index freshness gate, registered by the pass-8b second landing 9a44555/PR #2095, branch cut before f0e2bec). The second landing silently overwrote three first-landing cells: the pass-8 drift block, the R47 row, and the R43 closed-refresh — reverting #2064 to "open" on main while the issue is verifiably closed-as-completed (maintainer paykaribazaronline, issue-page close event), a factual regression and not a mere preference. Adjudication per §3's standing doctrine (landing order is ground truth; never renumber landed history): **R47 = #2084** (row restored verbatim); **#2091's lane re-pointed to R48** (verified free repo-wide) with its row text preserved verbatim and only its radar-file cell annotated; the first pass-8 block restored; the second landing preserved above as pass 8b (append-only, unedited); the R43 closed-refresh restored. This pass consumes the free pool {48} (by the re-pointed #2091 row) and moves next free to **R49** (verified free repo-wide: no radar doc, issue, or main-history citation). Meta-finding for the #2091 gate itself: same-cycle registration — pass 5/7's own contract — can RACE; two filers each honestly take the advertised next-free and both land, and the landing gates have no cell-level conflict detection, so the freshness gate needs a fourth invariant **D (landing-order rebase)**: a registration PR must diff against the index at push time, not at branch time, and fail closed on cell clobber; the day produced four collision events, the fourth BETWEEN two same-cycle registrations. Rule 7 stands: the index is the only counter.
+ >
+ > **Drift log:** *2026-10-28, pass 10 — R49 was filed issue-side (#2103, ecosystem-scout, Job 477792; Tower control-plane MCP protocol ceiling: two live discriminating initialize handshakes against supremeai-mcp-tower.onrender.com/mcp — offered 2026-07-28 → server echoed 2025-11-25, i.e. exactly one spec revision behind the current 2026-07-28 spec whose Tasks (async long-running ops ↔ the bridge pipeline's polling choreography) and Skills-over-MCP (↔ the repo's own .agents/skills tree) extensions the Tower cannot negotiate; zero MCP conformance evidence repo-wide in the SEP-2484 (2026-03-27) era with the official modelcontextprotocol/conformance framework + Inspector available; options A–D routed (conformance baseline report-only / Inspector smoke + capability matrix / SDK upgrade eval / runbook); 2 read-only handshakes + 1 tools/list total, never-do enforced) **AND registered in this index within the same cycle by the filer itself** — the fourth same-cycle lane after R43 (pass 5), R46 (pass 7), and R47 (pass 8). This pass consumed the free pool {49} (verified free repo-wide by pass 9 minutes before) and moves next free to R50 (verified free repo-wide: no radar doc, issue, or main-history citation). Rule 7 stands: the index is the only counter.
++
++> **Drift log:** *2026-10-28, pass 11 — R50 was filed issue-side (#2106, ecosystem-scout, Job 478346; dependency freshness-automation gap: the 6-guard detect family (R37/R41/R45/R46/R47 + bandit + dead-import ratchets) has no fix-side automation — 0 dependabot/renovate configs repo-wide (ls-verified at cce3f6f), ~10 manual absorb/pin/re-arm landings in the last 24h of main (census incl. 21da468's silently-RED bandit ratchet), 12+ bumps queued by today's own landings as maintainer lanes; options A–D routed with C (report-only bump-candidate probe, agent-plane) recommended first, never auto-merge) **AND registered in this index within the same cycle by the filer itself** — the fifth same-cycle lane after R43 (pass 5), R46 (pass 7), R47 (pass 8), R49 (pass 10). Freeness honesty note: filer's pre-write `git grep` over tracked files found `R50` solely as a base64 hash coincidence inside `studio/pnpm-lock.yaml` — not a lane citation (tracked-file grep used instead of tree-wide scan: 4.6k files make tree-wide slow and lockfile-noisy; coincidences disclosed per pass-9 rules). This pass consumed the free pool {50} and moves next free to **R51** (verified free by the same tracked-file method: zero citations). Rule 7 stands: the index is the only counter.
+ >
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -83,6 +85,7 @@
+ | R47 | *(issue-filed — guard lane, no radar doc; filed + registered same-cycle, see Drift log pass 8; re-asserted by pass-9 adjudication)* | Deploy-surface base-image pinning + Node runtime-coherence blind spot — 15 Dockerfiles / 20 FROM instructions / 0 digest pins (python:3.11-slim ×12, python:3.12-slim ×3, node:24-alpine ×3, nginx:1.27-alpine, devcontainers/python:3.11): every prod base image a mutable tag float, invisible to the CVE-gate family (planes = packages, R37/R41/R45/R46) and to check_dockerfile_security.py (USER only); coherence triangle: control-plane lockfile @types/node 26.5.1 + ts 7.0.2 ships FROM node:24-alpine, no engines, CI node split "24"/"22" (pipeline.yml:719/776), studio floor >=22 — types-26/runtime-24 latent breakage class; options A–D routed (digest-pin / report-only FROM guard / version tags / engines + major-align), non-prod allowlist never-do; EOL honestly not imminent (node 24 LTS → 2028-04) | #2084 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ | R48 | *(issue-filed — guard lane, no radar doc; filed+registered as R47 by Job 478318 but second-landed after #2084 — re-pointed to R48 by pass-9 adjudication, lane text preserved)* | Radar-index freshness gate — mechanical backstop for the allocation contract (#1644 script-index-gate mirror): invariant A registry-completeness (every R<number> in the summary tables has exactly one row), B pointer-truth (advertised next-free absent from registry/drift-log/radar docs repo-wide), C citation-existence (docs R-citations resolve to rows); three same-day collision-imminent occurrences (passes 3/4/6) as replayable negative fixtures; honest-skip doctrine #1760 for offline citation scans; wiring options A pre-push agent-plane (no `.github/**`) / B admin fast-lint per #1769/#1822; pass 9 adds proposed invariant D landing-order rebase (fail closed on cell clobber) | #2091 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ | R49 | *(issue-filed — radar doc `SCOUT_RADAR_2026-10-28-XIII.md` landing in the same PR as this row; filed + registered same-cycle, see Drift log pass 10)* | Tower control-plane MCP protocol ceiling — live discriminating handshakes (2026-10-28): offered 2026-07-28 → echoed 2025-11-25, one revision behind the current spec; Tasks/Skills-over-MCP/MCP-Apps extensions unnegotiable at that ceiling (Tasks ↔ bridge pipeline async, Skills ↔ .agents/skills); zero conformance baseline in the SEP-2484 era (official conformance framework + Inspector unused repo-wide); options A–D routed; 2 read-only handshakes, never-do enforced | #2103 | `adapt_cleanroom` | open (filed 2026-10-28) |
++| R50 | *(issue-filed — radar doc `SCOUT_RADAR_2026-10-28-XIV.md` landing in the same PR as this row; filed + registered same-cycle, see Drift log pass 11)* | Dependency freshness-automation gap — the 6-guard detect family (R37/R41/R45/R46/R47 + bandit + dead-import ratchets) has no fix-side automation: 0 dependabot/renovate configs repo-wide (ls-verified), ~10 manual absorb/pin/re-arm landings in 24h of main (census: 60 subject matches; incl. 21da468 bandit-ratchet silently RED on main), 12+ bumps queued by today's own landings as maintainer lanes; tooling support verified via docs fetch 2026-10-28 (dependabot: npm/pip/uv; renovate: pip_requirements; pnpm claims honestly unverified); options A–D routed (A admin .github-lane, B root renovate.json, C report-only bump-candidate probe agent-plane — recommended first, D runbook); never auto-merge; held-back register carries the live MCP-Registry-absence probe (registry.modelcontextprotocol.io 200, supremeai count 0, schema 2025-12-11) as R49-adjacent unfiled | #2106 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 

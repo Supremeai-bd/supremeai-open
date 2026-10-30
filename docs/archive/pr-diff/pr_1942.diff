@@ -1,0 +1,225 @@
+diff --git a/scripts/ci/boundary_contract_sentinel.py b/scripts/ci/boundary_contract_sentinel.py
+index ff8e326c..9f002388 100644
+--- a/scripts/ci/boundary_contract_sentinel.py
++++ b/scripts/ci/boundary_contract_sentinel.py
+@@ -9,7 +9,9 @@
+ it a standing, wolf-proof check.
+ 
+ Contract under probe (the merged #1728/#1729 edge, live-verified 10/10 at
+-2026-10-28T01:11Z per bridge-20261028-gateway-drift-closed.md):
++2026-10-28T01:11Z per bridge-20261028-gateway-drift-closed.md; extended to
++12/12 against the edge serving the #1904/#1908 build at 2026-10-28T03:5xZ —
++the redaction class the first ten probes caught live is now guarded end-to-end):
+   1. GET /                     -> exactly {status, service_name, version, chat_ready}
+   2. HEAD /                    -> 200
+   3. OPTIONS / preflight       -> 200/204 + ACAO echo for an ALLOWLISTED origin
+@@ -19,6 +21,13 @@
+   7-8. security headers on / and on a 404  -> all six (CSP may ship as the
+                                   Report-Only variant per #1728 AC3 phase 1)
+   9-10. GET /internal/status + /webhook/scout/status unauth -> 401/403
++  11. GET /openapi.json        -> route inventory NOT served unauth (#1901/#1904:
++                                  404 via openapi_url=None; 401/403 operator gate
++                                  equally accepted — class intent, not shape)
++  12. GET /readyz              -> redacted readiness (#1902/#1908): 200 is exactly
++                                  {status, chat_ready, timestamp}; 503 adds one
++                                  generic reason; body must carry zero operator
++                                  fields AND zero stealth/infisical markers
+ 
+ Wolf-proof probe methodology (#1874 lessons — a sentinel that cries wolf gets
+ ignored, which is how the original drift stayed silent):
+@@ -85,6 +94,13 @@
+ 
+ LIVENESS_FIELDS = {"status", "service_name", "version", "chat_ready", "timestamp"}
+ ROOT_FIELDS = {"status", "service_name", "version", "chat_ready"}
++# #1902/#1908 redaction contract: 200 ships exactly these three; 503 adds one
++# generic `reason`. Anything else (stealth posture, env-var names, store names)
++# is the leak class the marker scan below flags.
++READINESS_FIELDS = {"status", "chat_ready", "timestamp"}
++# Body markers that re-introduce the #1902 posture leak even through a "reason"
++# string (case-insensitive scan of the raw body).
++READINESS_LEAK_MARKERS = ("stealth", "infisical")
+ 
+ 
+ def _get(base_url: str, path: str, method: str = "GET", headers: dict | None = None,
+@@ -166,6 +182,39 @@ def probe(name: str, observed: dict, ok: bool) -> None:
+     probe("GET /webhook/scout/status unauth 401/403", {"status": s8, "body": b8[:60]},
+           s8 in (401, 403))
+ 
++    # 11. docs lockdown: machine-readable route inventory not served unauth
++    # (#1901, fixed by #1904 openapi_url=None on both apps). Class intent, not
++    # shape: 404 (landed contract) or an operator gate (401/403) both PASS; a
++    # 200 with paths is the pre-fix leak and is drift evidence.
++    s9, _, b9 = _get(base_url, "/openapi.json", timeout=timeout)
++    path_count = None
++    if s9 == 200:
++        try:
++            path_count = len(json.loads(b9).get("paths") or {})
++        except Exception:  # noqa: BLE001 - non-JSON 200 is still inventory-shaped drift
++            path_count = -1
++    probe("GET /openapi.json inventory not served unauth",
++          {"status": s9, "path_count": path_count},
++          s9 in (401, 403, 404))
++
++    # 12. readiness redaction (#1902, fixed by #1908 build_readiness_payload):
++    # capability signal only — 200 exactly 3 fields, 503 + generic reason, zero
++    # operator fields, zero stealth/infisical markers anywhere in the body
++    # (the pre-fix body leaked the stealth_dns block through the 200 path and
++    # env/store names through the 503 reason — both are this probe's class).
++    s10, _, b10 = _get(base_url, "/readyz", timeout=timeout)
++    try:
++        f10 = set(json.loads(b10).keys())
++    except Exception:  # noqa: BLE001 - non-JSON readiness is drift evidence, not a crash
++        f10 = {"<non-json>"}
++    expected10 = READINESS_FIELDS if s10 == 200 else READINESS_FIELDS | {"reason"}
++    b10_low = b10.lower()
++    markers10 = sorted(m for m in READINESS_LEAK_MARKERS if m in b10_low)
++    leaked10 = sorted(f10 & set(OPERATOR_ONLY_FIELDS))
++    probe("GET /readyz redacted readiness",
++          {"status": s10, "fields": sorted(f10), "leaked": leaked10, "markers": markers10},
++          s10 in (200, 503) and f10 == expected10 and not leaked10 and not markers10)
++
+     return results
+ 
+ 
+@@ -217,9 +266,14 @@ def do_GET(self):  # noqa: N802 - stdlib naming
+                 elif self.path == "/webhook/scout/status":
+                     self._send(401, {"error": {"message": "webhook scout fleet status requires a valid gateway key"}},
+                                _postfix_headers())
++                elif self.path == "/openapi.json":
++                    self._send(404, {"detail": "Not Found"}, _postfix_headers())
++                elif self.path == "/readyz":
++                    self._send(200, {k: "v" for k in sorted(READINESS_FIELDS)},
++                               _postfix_headers())
+                 else:
+                     self._send(404, {"detail": "Not Found"}, _postfix_headers())
+-            else:  # pre-fix fixture (the #1819 baseline)
++            else:  # pre-fix fixture (the #1819 baseline + the #1901/#1902 residuals)
+                 leak = {k: "v" for k in sorted(ROOT_FIELDS | set(OPERATOR_ONLY_FIELDS))}
+                 if self.path in ("/", "/healthz", "/api/health", "/v1/health"):
+                     self._send(200, leak)  # 14-field operator payload, no headers
+@@ -227,6 +281,19 @@ def do_GET(self):  # noqa: N802 - stdlib naming
+                     self._send(404, {"detail": "Not Found"})
+                 elif self.path == "/webhook/scout/status":
+                     self._send(200, {"status": "unavailable"})
++                elif self.path == "/openapi.json":
++                    # pre-#1904: the full machine-readable inventory, unauth 200
++                    self._send(200, {"openapi": "3.1.0",
++                                     "paths": {f"/drift-class-{i}": {"get": {}} for i in range(70)}})
++                elif self.path == "/readyz":
++                    # pre-#1908: the stealth posture block shipped unauth (#1902)
++                    self._send(200, {
++                        "status": "ready", "chat_ready": True,
++                        "stealth_priority1_configured": True,
++                        "stealth_dns": {"ok": True, "host": "relay.example.invalid",
++                                        "detail": "resolved"},
++                        "timestamp": "2026-10-28T00:00:00Z",
++                    })
+                 else:
+                     self._send(404, {"detail": "Not Found"})
+ 
+@@ -259,7 +326,7 @@ def _serve(mode: str):
+ 
+ 
+ def self_test() -> list[tuple[str, bool, str]]:
+-    """Hermetic detector proof: post-fix -> 10/10 (no false positives);
++    """Hermetic detector proof: post-fix -> 12/12 (no false positives);
+     pre-fix -> every drifted probe flagged (no misses)."""
+     cases: list[tuple[str, bool, str]] = []
+ 
+@@ -267,8 +334,8 @@ def self_test() -> list[tuple[str, bool, str]]:
+     try:
+         res = run_probes(url, timeout=5.0)
+         failed = [r for r in res if not r["pass"]]
+-        cases.append(("post-fix fixture: 10/10 pass (false-positive=0)",
+-                      len(res) == 10 and not failed, json.dumps(failed)[:200]))
++        cases.append(("post-fix fixture: 12/12 pass (false-positive=0)",
++                      len(res) == 12 and not failed, json.dumps(failed)[:200]))
+     finally:
+         srv.shutdown()
+ 
+@@ -280,13 +347,31 @@ def self_test() -> list[tuple[str, bool, str]]:
+                     "GET /healthz redacted liveness", "GET /api/health redacted liveness",
+                     "GET /v1/health redacted liveness", "security headers on /",
+                     "security headers on 404", "GET /internal/status unauth 401/403",
+-                    "GET /webhook/scout/status unauth 401/403"}
+-        cases.append(("pre-fix fixture: all 10 drifted probes flagged (miss=0)",
++                    "GET /webhook/scout/status unauth 401/403",
++                    "GET /openapi.json inventory not served unauth",
++                    "GET /readyz redacted readiness"}
++        cases.append(("pre-fix fixture: all 12 drifted probes flagged (miss=0)",
+                       set(drifted) == expected, json.dumps(drifted)[:300]))
+         leaked = any(r["probe"].startswith("GET /healthz") and r["observed"].get("leaked")
+                      for r in res2)
+         cases.append(("pre-fix fixture: operator-field leak detected on liveness",
+                       leaked, "leak not detected"))
++        # #1901 residual: the pre-fix inventory exposure must be flagged with
++        # its path-count evidence (70-class inventory, not a silent pass).
++        openapi_res = next((r for r in res2
++                            if r["probe"] == "GET /openapi.json inventory not served unauth"), None)
++        cases.append(("pre-fix fixture: openapi inventory exposure flagged with path evidence",
++                      bool(openapi_res) and not openapi_res["pass"]
++                      and openapi_res["observed"].get("path_count") == 70,
++                      json.dumps(openapi_res or {})[:200]))
++        # #1902 residual: the pre-fix stealth posture must be flagged twice —
++        # by the operator-field intersection AND by the body marker scan.
++        readyz_res = next((r for r in res2 if r["probe"] == "GET /readyz redacted readiness"), None)
++        cases.append(("pre-fix fixture: readyz stealth posture flagged (fields + markers)",
++                      bool(readyz_res) and not readyz_res["pass"]
++                      and bool(readyz_res["observed"].get("leaked"))
++                      and bool(readyz_res["observed"].get("markers")),
++                      json.dumps(readyz_res or {})[:200]))
+     finally:
+         srv2.shutdown()
+ 
+diff --git a/tests/test_boundary_contract_sentinel.py b/tests/test_boundary_contract_sentinel.py
+index 49348def..402a2b98 100644
+--- a/tests/test_boundary_contract_sentinel.py
++++ b/tests/test_boundary_contract_sentinel.py
+@@ -6,8 +6,11 @@
+ --self-test (hermetic pre-fix/post-fix fixture servers, miss=0 +
+ false-positive=0 proof), pin the roster wiring, the wolf-proof methodology
+ constants (CSP Report-Only acceptance, allowlisted preflight origin), the
+-SSOT operator-field import, and the honest-skip exit code. Dual-mode
+-(pytest + stdlib runner), mirroring test_contract_fuzz_guard.py.
++SSOT operator-field import, and the honest-skip exit code. The probe table
++covers the full redaction class end-to-end: the original 10-probe #1819
++boundary table plus the #1901 docs-lockdown and #1902 readiness-redaction
++probes (12/12 live-verified against the edge serving the #1904/#1908 build).
++Dual-mode (pytest + stdlib runner), mirroring test_contract_fuzz_guard.py.
+ """
+ 
+ from __future__ import annotations
+@@ -42,12 +45,15 @@ def test_roster_wiring():
+ 
+ def test_probe_table_and_wolfproof_constants():
+     mod = _load_sentinel_module()
+-    # 10 probes: the exact #1819/#1874 table.
++    # 12 probes: the exact #1819/#1874 table + the #1901/#1902 redaction-class
++    # extension (live-verified 12/12 against the edge serving #1904/#1908).
+     src = SENTINEL.read_text(encoding="utf-8")
+     for needle in ('"GET / 4-field root"', '"HEAD / 200"',
+                    '"OPTIONS / preflight (allowlisted origin)"',
+                    '"security headers on /"', '"security headers on 404"',
+-                   '"/internal/status"', '"/webhook/scout/status"'):
++                   '"/internal/status"', '"/webhook/scout/status"',
++                   '"GET /openapi.json inventory not served unauth"',
++                   '"GET /readyz redacted readiness"'):
+         assert needle in src, f"probe pin missing: {needle}"
+     # Wolf-proof lesson (a): CSP accepted in both names, lookup case-insensitive.
+     assert "content-security-policy-report-only" in src
+@@ -55,9 +61,14 @@ def test_probe_table_and_wolfproof_constants():
+     # Wolf-proof lesson (b): preflight-shaped from the allowlisted origin only.
+     assert mod.ALLOWLISTED_ORIGIN == "https://supremeai-studio.pages.dev"
+     assert mod.FOREIGN_ORIGIN != mod.ALLOWLISTED_ORIGIN
+-    # Root/liveness field SSOTs mirror the merged contract.
++    # Root/liveness/readiness field SSOTs mirror the merged contract.
+     assert mod.ROOT_FIELDS == {"status", "service_name", "version", "chat_ready"}
+     assert mod.LIVENESS_FIELDS >= {"status", "chat_ready", "timestamp"}
++    assert mod.READINESS_FIELDS == {"status", "chat_ready", "timestamp"}
++    # #1902 leak-class markers: the reason string must not carry the posture
++    # vocabulary either (env-var names contain "stealth"; store names "infisical").
++    assert "stealth" in mod.READINESS_LEAK_MARKERS
++    assert "infisical" in mod.READINESS_LEAK_MARKERS
+     assert len(mod.OPERATOR_ONLY_FIELDS) >= 9, "operator-field SSOT lost"
+ 
+ 

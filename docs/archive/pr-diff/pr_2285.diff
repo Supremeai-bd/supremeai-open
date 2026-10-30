@@ -1,0 +1,353 @@
+diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+index 5bd48a24..78f5dbb5 100644
+--- a/scripts/bridge/bridge_intake.py
++++ b/scripts/bridge/bridge_intake.py
+@@ -206,6 +206,36 @@ def gh_paged(path: str, token: str, max_pages: int = 10) -> list[dict]:
+     return items
+ 
+ 
++def gh_first_page(path: str, token: str) -> tuple[list[dict], bool]:
++    """Single-page GitHub list fetch — cap-tolerant `(items, has_more)` (#2265).
++
++    বাংলা: `gh_paged`-এর cap-raise ইচ্ছাকৃত fail-honest (E5, #58) — কিন্তু
++    landing probe-এর স্তর-২ চুক্তি আলাদা: একটি বাউন্ডেড recent-commit window
++    যা পাওয়া ১০০টি commit স্ক্যান করবেই, আর window-এর সীমা সৎভাবে evidence-এ
++    যাবে। পুরনো `max_pages=1` আচরণে raise-টি fetch-এর *পরে* হত → স্ক্যান-ই
++    হওয়ার আগে ১০০টি commit ফেলে যেত (dead code on high-volume repos —
++    লাইভ-প্রমাণিত #2212/#2228 blank verdict)। এই helper raise করে না —
++    has_more বুলিয়ান ফেরত দেয়, সিদ্ধান্ত কলারের।
++    """
++    url: str = path if path.startswith("http") else f"https://api.github.com{path}"
++    req = urllib.request.Request(
++        url,
++        headers={
++            "Authorization": f"Bearer {token}",
++            "Accept": "application/vnd.github+json",
++            "User-Agent": "supremeai-bridge-intake",
++        },
++    )
++    try:
++        with urllib.request.urlopen(req, timeout=45) as resp:
++            body = json.loads(resp.read().decode() or "[]")
++            items = body if isinstance(body, list) else []
++            has_more = _next_link(resp.headers.get("Link", "")) is not None
++            return items, has_more
++    except urllib.error.HTTPError as exc:
++        raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
++
++
+ # ---------------------------------------------------------------------------
+ # Work-order parsing + validators (pure — unit-tested)
+ # ---------------------------------------------------------------------------
+@@ -445,52 +475,73 @@ def landing_truth_probe(token: str, task_id: str) -> tuple[str, str]:
+     2026-10-28: landed #2020/#2056 ভুলভাবে rejected হলো, 13:07Z sweep)।
+     reject-এর আগে দুই-স্তরের landing-প্রমাণ প্রোব (#2158-এর fallback protocol):
+ 
+-      স্তর ১ (PR-state lookup): প্রতিটি target repo-য় closed PR, head-filter
+-        `bridge-land/<task_id>` — `merged_at` সেট থাকলে landing প্রমাণিত
+-        (এই প্রোবে কোনো history-জানালা নেই — পুরোনো PR-ও ধরা পড়ে)।
+-      স্তর ২ (squash detection): target main-এর সাম্প্রতিক commit-message-এর
++      স্তর ১ (PR-state lookup): repo তালিকা OPEN_REPO প্রথমে + BRIDGE_TARGET_REPOS;
++        প্রতিটিতে closed PR, head-filter দুইটি — `bridge-land/<task_id>` (v2 lane)
++        ও `bridge/<task_id>` (direct solver lane, #2265); `merged_at` সেট থাকলে
++        landing প্রমাণিত (এই প্রোবে কোনো history-জানালা নেই — পুরোনো PR-ও ধরা পড়ে)।
++      স্তর ২ (squash detection): একই repo তালিকার main-এর সাম্প্রতিক commit-message-এর
+         প্রথম লাইনে task_id — private PR title (`feat(bridge): {task_id} —
+         external work order #N`) ও commit msg (`bridge({task_id}): ...`) দুটোই
+         task_id বহন করে, তাই squash ও merge-commit দুই ধারাতেই প্রথম লাইনে
+-        মেলে।
++        মেলে। fetch এক পেজ (নতুন ১০০); window-সীমা evidence-এ নোট হয় (#2265)।
+ 
+     রিটার্ন তিন-অবস্থা (E8-এর `intake_marker_state` চুক্তির সমান্তরাল):
+       ("landed", evidence) — landing প্রমাণিত; ("absent", "") — দুই স্তরই
+       নিশ্চিতভাবে নেতিবাচক (rejection সৎ); ("unknown", reason) — API-ব্যর্থতা,
+       fail-closed: terminal-rejected নয়, পরের রান আবার প্রোব করবে।
+     """
+-    land_ref = f"bridge-land/{task_id}"
++    land_ref_v2 = f"bridge-land/{task_id}"
++    land_ref_solver = f"bridge/{task_id}"
+     owner = OPEN_REPO.split("/")[0]
++    # (#2265) probe-স্থানীয় repo তালিকা: OPEN_REPO প্রথমে — direct solver lane
++    # (bridge.tools.ts Step B) `bridge/<taskId>` head-এ open repo-তেই land করে,
++    # আর সেটাই আজকের stranded cohort-এর পথ (15 WOs, PRs #2194…#2261)।
++    # BRIDGE_TARGET_REPOS অপরিবর্তিত থাকে — ওর sync/routing অর্থ আলাদা।
++    probe_repos: tuple[str, ...] = (OPEN_REPO,) + BRIDGE_TARGET_REPOS
+     errors: list[str] = []
+     # স্তর ১: PR-state lookup — head-filtered তালিকা সস্তা ও সুনির্দিষ্ট।
+-    for repo in BRIDGE_TARGET_REPOS:
+-        try:
+-            pulls = gh_paged(
+-                f"/repos/{repo}/pulls?state=closed&head={owner}:{land_ref}&per_page=20",
+-                token,
+-                max_pages=1,
+-            )
+-        except BridgeError as exc:
+-            errors.append(f"{repo}: pulls {str(exc)[:60]}")
+-            continue
+-        for pr in pulls:
+-            if (pr.get("head") or {}).get("ref") == land_ref and pr.get("merged_at"):
+-                return "landed", (
+-                    f"merged PR #{pr.get('number')} @ {repo} "
+-                    f"(merge {(pr.get('merge_commit_sha') or '')[:10]})"
++    # দুইটি head-prefix: v2 lane `bridge-land/<task_id>` (private targets) +
++    # direct solver lane `bridge/<task_id>` (open repo, #2265 blindness fix)।
++    for repo in probe_repos:
++        # (#2265 option A) open repo-তে solver head আগে — v2 lane open repo-তে
++        # bridge-land/ তৈরিই করে না; প্রথম কলটিই stranded cohort-এর পথ ধরে।
++        prefixes = (
++            (land_ref_solver, land_ref_v2) if repo == OPEN_REPO else (land_ref_v2, land_ref_solver)
++        )
++        for land_ref in prefixes:
++            try:
++                pulls = gh_paged(
++                    f"/repos/{repo}/pulls?state=closed&head={owner}:{land_ref}&per_page=20",
++                    token,
++                    max_pages=1,
+                 )
++            except BridgeError as exc:
++                errors.append(f"{repo}: pulls {str(exc)[:60]}")
++                continue
++            for pr in pulls:
++                if (pr.get("head") or {}).get("ref") == land_ref and pr.get("merged_at"):
++                    return "landed", (
++                        f"merged PR #{pr.get('number')} @ {repo} "
++                        f"(merge {(pr.get('merge_commit_sha') or '')[:10]})"
++                    )
+     # স্তর ২: squash detection — head-filter কোনো কারণে PR মিস করলেও main-এর
+     # commit-history-তে প্রমাণ থাকে (সাম্প্রতিক ১০০ commit-এর জানালা)।
+-    for repo in BRIDGE_TARGET_REPOS:
++    # (#2265) OPEN_REPO এখানেও অন্তর্ভুক্ত; gh_first_page ব্যবহার করে পাওয়া
++    # পেজটি স্ক্যান হয়ই — window-সীমা evidence-এ সৎভাবে নোট হয়, dead-code নয়।
++    for repo in probe_repos:
+         try:
+-            commits = gh_paged(f"/repos/{repo}/commits?per_page=100", token, max_pages=1)
++            commits, has_more = gh_first_page(f"/repos/{repo}/commits?per_page=100", token)
+         except BridgeError as exc:
+             errors.append(f"{repo}: commits {str(exc)[:60]}")
+             continue
+         for c in commits:
+             first_line = (((c.get("commit") or {}).get("message") or "").split("\n", 1)[0])
+             if task_id in first_line:
+-                return "landed", f"squash/merge commit {(c.get('sha') or '')[:10]} @ {repo} carries task"
++                window_note = " (newest-100 window)" if has_more else ""
++                return "landed", (
++                    f"squash/merge commit {(c.get('sha') or '')[:10]} @ {repo} "
++                    f"carries task{window_note}"
++                )
+     if errors:
+         return "unknown", "; ".join(errors[:3])
+     return "absent", ""
+diff --git a/tests/test_landing_truth_probe_2265.py b/tests/test_landing_truth_probe_2265.py
+new file mode 100644
+index 00000000..13001f72
+--- /dev/null
++++ b/tests/test_landing_truth_probe_2265.py
+@@ -0,0 +1,208 @@
++#!/usr/bin/env python3
++"""Offline tests for the landing_truth_probe lane-2 blindness fix (#2265).
++
++The probe (#2158 fallback protocol) stamps honest landing truth before any
++terminal `bridge:rejected`. R56 (#2265) proved it structurally blind to the
++direct solver lane: OPEN_REPO was absent from the probe's repo iteration and
++the head filter knew only `bridge-land/<task_id>` while the solver lane lands
++`bridge/<taskId>` PRs on the open repo — 15 WOs stranded open post-merge
++(75% of the queue window). Layer 2 additionally discarded its fetched
++100-commit page: gh_paged raises its fail-honest cap AFTER extending items,
++so `max_pages=1` on a high-volume repo = scan nothing, return "unknown"
++(live-proven: #2212/#2228 blank verdicts, reason "pagination cap reached
++(1 pages)").
++
++Fix under test:
++  1. probe-local repo order = OPEN_REPO first + BRIDGE_TARGET_REPOS (the
++     sync/routing tuple stays untouched);
++  2. both head prefixes probed (v2 `bridge-land/`, solver `bridge/`);
++  3. layer 2 fetches via cap-tolerant gh_first_page and always scans what it
++     fetched, noting the newest-100 window honestly in evidence;
++  4. three-state contract unchanged (landed / absent / unknown fail-closed).
++
++Network-free: gh_paged and gh_first_page are monkeypatched at module level;
++call order is recorded so the "open repo first, one cheap call" property is
++asserted, not just the verdict.
++"""
++
++from __future__ import annotations
++
++import sys
++from pathlib import Path
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
++
++from scripts.bridge import bridge_intake as intake  # noqa: E402
++
++TASK = "bridge-20261028-render2225-buildplane-evidence"
++OPEN = intake.OPEN_REPO
++FIRST_PRIVATE = intake.BRIDGE_TARGET_REPOS[0]
++
++
++def _pr(number: int, repo: str, head_ref: str, merged_at: str | None = "2026-10-28T19:30:00Z"):
++    return {
++        "number": number,
++        "head": {"ref": head_ref},
++        "merged_at": merged_at,
++        "merge_commit_sha": "abc123def4567890" if merged_at else None,
++    }
++
++
++def _commit(sha: str, first_line: str):
++    return {"sha": sha, "commit": {"message": first_line + "\n\nbody"}}
++
++
++class _Recorder:
++    """Records (repo, head-ref) layer-1 lookups and serves canned responses."""
++
++    def __init__(self, pulls_by_head=None, commits_by_repo=None, error_on=()):
++        self.calls: list[tuple[str, str]] = []
++        self.pulls = pulls_by_head or {}
++        self.commits = commits_by_repo or {}
++        self.error_on = set(error_on)
++
++    def fake_gh_paged(self, path: str, token: str, max_pages: int = 10):
++        head = path.split("head=", 1)[1].split("&", 1)[0] if "head=" in path else ""
++        repo = path.split("/repos/", 1)[1].split("/pulls", 1)[0] if "/pulls" in path else ""
++        self.calls.append((repo, head))
++        if (repo, head) in self.error_on:
++            raise intake.BridgeError(f"github GET {path} -> HTTP 500: boom")
++        return list(self.pulls.get((repo, head), []))
++
++    def fake_gh_first_page(self, path: str, token: str):
++        repo = path.split("/repos/", 1)[1].split("/commits", 1)[0]
++        if (repo, "") in self.error_on:
++            raise intake.BridgeError(f"github GET {path} -> HTTP 500: boom")
++        items, has_more = self.commits.get(repo, ([], False))
++        return list(items), has_more
++
++
++def test_solver_lane_open_repo_pr_is_found_first_call(monkeypatch):
++    """The 15-WO stranded class: solver PR on the open repo, head bridge/<tid>.
++
++    Must return landed on the FIRST layer-1 call (open repo, solver prefix) —
++    the option-A "one cheap call" property.
++    """
++    rec = _Recorder(
++        pulls_by_head={
++            (OPEN, f"Supremeai-bd:bridge/{TASK}"): [_pr(2248, OPEN, f"bridge/{TASK}")],
++        }
++    )
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "landed"
++    assert "#2248" in ev and OPEN in ev
++    assert rec.calls[0] == (OPEN, f"Supremeai-bd:bridge/{TASK}")
++
++
++def test_v2_lane_private_repo_pr_still_found(monkeypatch):
++    """v2-lane regression guard: bridge-land/ PR on a private target still lands."""
++    rec = _Recorder(
++        pulls_by_head={
++            (FIRST_PRIVATE, f"Supremeai-bd:bridge-land/{TASK}"): [
++                _pr(2100, FIRST_PRIVATE, f"bridge-land/{TASK}")
++            ],
++        }
++    )
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "landed"
++    assert f"#{2100}" in ev and FIRST_PRIVATE in ev
++
++
++def test_closed_unmerged_pr_is_not_landing_evidence(monkeypatch):
++    """A closed-but-unmerged PR (merged_at null) must NOT stamp landed."""
++    rec = _Recorder(
++        pulls_by_head={
++            (OPEN, f"Supremeai-bd:bridge/{TASK}"): [_pr(2248, OPEN, f"bridge/{TASK}", merged_at=None)],
++        }
++    )
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "absent"
++    assert ev == ""
++
++
++def test_layer2_squash_hit_on_open_repo_with_window_note(monkeypatch):
++    """Layer 2 finds the squash commit on the open repo and notes the window."""
++    rec = _Recorder(
++        commits_by_repo={
++            OPEN: ([_commit("deadbeefcafe", f"feat(bridge): report receipt ({TASK}) (#2248)")], True),
++        }
++    )
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "landed"
++    assert "deadbeef" in ev and OPEN in ev and "newest-100 window" in ev
++
++
++def test_layer2_scans_fetched_page_even_when_more_pages_exist(monkeypatch):
++    """The #2265 dead-code fix: has_more=True must not discard the fetched page.
++
++    Regression for the raise-after-fetch behavior: under gh_paged(max_pages=1)
++    the 100 fetched commits were thrown away on every high-volume repo.
++    """
++    hit_on_last = _commit("f00dcafe1234", f"bridge({TASK}): landed work")
++    filler = [_commit(f"sha{i:03d}", f"unrelated commit {i}") for i in range(99)]
++    rec = _Recorder(commits_by_repo={OPEN: (filler + [hit_on_last], True)})
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "landed"
++    assert "f00dcafe" in ev
++
++
++def test_api_errors_yield_unknown_fail_closed(monkeypatch):
++    """API failure anywhere -> ("unknown", reason) — never a honest-looking absent."""
++    rec = _Recorder(error_on={(OPEN, f"Supremeai-bd:bridge/{TASK}")})
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "unknown"
++    # reason is contractually truncated to 60 chars per error — assert shape.
++    assert "pulls github GET" in ev
++
++
++def test_clean_negative_is_absent(monkeypatch):
++    """Two definitively-negative layers -> ("absent", "") — the honest rejection."""
++    rec = _Recorder()
++    monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++    monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++    state, ev = intake.landing_truth_probe("t0k3n", TASK)
++    assert state == "absent"
++    assert ev == ""
++
++
++def test_probe_repo_order_open_first_then_private_tuple():
++    """OPEN_REPO leads the probe order; the BRIDGE_TARGET_REPOS tuple itself is untouched."""
++    rec = _Recorder()
++    monkeypatch = pytest.MonkeyPatch()
++    try:
++        monkeypatch.setattr(intake, "gh_paged", rec.fake_gh_paged)
++        monkeypatch.setattr(intake, "gh_first_page", rec.fake_gh_first_page)
++        intake.landing_truth_probe("t0k3n", TASK)
++    finally:
++        monkeypatch.undo()
++    looked_at = [repo for repo, _head in rec.calls]
++    assert looked_at[0] == OPEN
++    assert set(looked_at) == {OPEN} | set(intake.BRIDGE_TARGET_REPOS)
++    # BRIDGE_TARGET_REPOS (sync/routing SSOT) must remain exactly as before.
++    assert intake.BRIDGE_TARGET_REPOS == (
++        "Supremeai-bd/supremeai",
++        "Supremeai-bd/supremeai-studio",
++        "Supremeai-bd/supremeai-api",
++        "Supremeai-bd/supremeai-core",
++        "Supremeai-bd/supremeai-vscode",
++        "Supremeai-bd/supremeai-browser",
++        "Supremeai-bd/supremeai-archive",
++    )
++
++
++if __name__ == "__main__":
++    raise SystemExit(pytest.main([__file__, "-q"]))

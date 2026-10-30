@@ -1,0 +1,158 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 71216100..78ceaa42 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -673,9 +673,11 @@ def _premise_delivered_note(
+     """Item 15 ΓÇö demotion note when a row's premise is already delivered, else None.
+ 
+     αª¼αª╛αªéαª▓αª╛: αªªαºüαªç αª╕αºìαªòαºìαª»αª╛αª¿, αªªαºüαªƒαºïαªç αª╕αºÄ-αª¿αºïαªƒαª¼αª╣αª¿: (A) body-αª░ αª¬αºìαª░αªñαª┐αª╢αºìαª░αºüαªñ αªåαª░αºìαªƒαª┐αª½αºìαª»αª╛αªòαºìαªƒ
+-    αª¼αª░αºìαªñαª«αª╛αª¿ αªùαª╛αª¢αºç αªåαª¢αºç αªòαª┐ αª¿αª╛; (B) αª«αª╛αª░αºìαª£αªí PR αªòαª┐ αªíαºçαª▓αª┐αª¡αª╛αª░αª┐-αª½αª░αºìαª«αºç αª░αºï-αª¿αª«αºìαª¼αª░ αªëαªªαºìαªºαºâαªñ
+-    αªòαª░αª¢αºçαÑñ αª»αºçαªòαºïαª¿αºï αª¬αºìαª░αºïαª¼-αª¼αºìαª»αª░αºìαªÑαªñαª╛ (rate limit, timeout, parse) αª░αºï αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ
+-    αª╕αª╛αª░αºìαª¡ αªòαª░αºç ΓÇö αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü αªÅαªòαªƒαª┐ dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªòαªûαª¿αºï αª¼αºìαª▓αªò αªòαª░αºç αª¿αª╛αÑñ
++    αª¼αª░αºìαªñαª«αª╛αª¿ αªùαª╛αª¢αºç αªåαª¢αºç αªòαª┐ αª¿αª╛; (B) αª«αª╛αª░αºìαª£αªí PR αªòαª┐ αªíαºçαª▓αª┐αª¡αª╛αª░αª┐-αª½αª░αºìαª«αºç (closes/fixes/
++    resolves/for/receipt #N), αªòαª«αºìαª¬αª╛αªëαª¿αºìαªí αª░αª┐αª╕αª┐αªƒ-αª╣αºçαªíαª╛αª░ αª½αª░αºìαª«αºç (R<n>/#N, #<n>/#N)
++    αª¼αª╛ αª¼αºïαª░αºìαªíαºçαª░ R-idiom bare αª½αª░αºìαª«αºç (R<n>) αª░αºï-αª¿αª«αºìαª¼αª░ αªëαªªαºìαªºαºâαªñ αªòαª░αª¢αºçαÑñ αª»αºçαªòαºïαª¿αºï
++    αª¬αºìαª░αºïαª¼-αª¼αºìαª»αª░αºìαªÑαªñαª╛ (rate limit, timeout, parse) αª░αºï αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ αª╕αª╛αª░αºìαª¡ αªòαª░αºç ΓÇö
++    αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü αªÅαªòαªƒαª┐ dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªòαªûαª¿αºï αª¼αºìαª▓αªò αªòαª░αºç αª¿αª╛αÑñ
+     αª╣αª╛αª░αª«αºçαªƒαª┐αªò αªòαª▓αª╛αª░ tree_root/fetch_merged αªçαª¿αª£αºçαªòαºìαªƒ αªòαª░αºç (zero network)αÑñ
+     """
+     try:
+@@ -696,12 +698,23 @@ def _premise_delivered_note(
+     except Exception:  # noqa: BLE001 ΓÇö fail-open: a dark plane serves the row
+         return None
+     cite = re.compile(rf"(?:closes|fixes|resolves|for|receipt)\s+#{num}\b", re.IGNORECASE)
++    # Compound receipt-header form (R1776/#2766, #1776/#2766): slash-adjacent
++    # row citation with NO whitespace, invisible to the keyword regex. Live
++    # miss (2026-10-30 12:52Z): merged #3338's subject "R1776/#2766 evidence
++    # refresh r2" sailed past the cross-scan and the loop re-dispatched #2766
++    # ~20 minutes later ΓÇö the exact duplicate-minting invitation (U4).
++    compound = re.compile(rf"(?:\bR\d+|#\d+)/#{num}\b", re.IGNORECASE)
++    # Bare board R-idiom (R1776 = row #1776 in this board's own shorthand,
++    # cf. the R62 schema-note idiom): the same receipt names the PARENT row
++    # without a compound ΓÇö the predicted next miss when the loop serves the
++    # parent while a fresh family receipt still rides the window.
++    rref = re.compile(rf"\bR{num}\b", re.IGNORECASE)
+     try:
+         for pr in rows:
+             if not isinstance(pr, dict) or not pr.get("merged_at"):
+                 continue
+             hay = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
+-            m = cite.search(hay)
++            m = cite.search(hay) or compound.search(hay) or rref.search(hay)
+             if not m:
+                 continue
+             title = str(pr.get("title") or "").strip()[:80]
+diff --git a/tests/test_premise_delivered_demotion.py b/tests/test_premise_delivered_demotion.py
+index 767e7a99..b725a820 100644
+--- a/tests/test_premise_delivered_demotion.py
++++ b/tests/test_premise_delivered_demotion.py
+@@ -17,8 +17,9 @@
+      artifact existing ΓçÆ demote (any missing path keeps the row).
+   B. merged-landing citation: one cached /pulls?state=closed fetch per pick
+      run; a MERGED PR citing the row in delivery form (closes/fixes/resolves/
+-     for/receipt #N) ΓçÆ demote with the citing PR named. Closed-unmerged and
+-     in-gates vehicles never demote.
++     for/receipt #N), compound receipt-header form (R<n>/#N, #<n>/#N) or the
++     board's bare R-idiom (R<n>) ΓçÆ demote with the citing PR named.
++     Closed-unmerged and in-gates vehicles never demote.
+ 
+ Pins enforced here (zero gh/network dependency ΓÇö tree roots and fetchers are
+ injected fakes):
+@@ -27,10 +28,12 @@
+      nothing (never raises).
+   2. Check A: all promised artifacts exist (temp tree) ΓçÆ demotion note;
+      any missing ΓçÆ serve; markerless body falls through to Check B.
+-  3. Check B: merged "for #N"/"receipt #N"/"Closes #N" ΓçÆ demotion note with
+-     the citing PR number; closed-unmerged ΓçÆ serve; non-delivery citations
+-     ("refs #N", "#N false-close receipt") ΓçÆ serve; number-boundary safe
+-     (#N1 does not match #N).
++  3. Check B: merged "for #N"/"receipt #N"/"Closes #N", compound receipt
++     headers ("R<n>/#N", "#<n>/#N") and the board's bare R-idiom ("R<n>")
++     ΓçÆ demotion note with the citing PR number; closed-unmerged ΓçÆ serve;
++     non-delivery citations ("refs #N", "#N false-close receipt", bare
++     "#N") ΓçÆ serve; number-boundary safe (#N1, R<n>/#N1 and R<n>0 do not
++     match #N; branch-slug "...-r<n>-..." never demotes a compound check).
+   4. Check A hit short-circuits Check B (fetcher never called).
+   5. Raising fetcher ΓçÆ serve (fail-open); unparseable number ΓçÆ serve.
+   6. Live wrapper never raises.
+@@ -178,6 +181,80 @@ def test_closes_citation_demotes(self):
+         note = cal._premise_delivered_note(self._row_plain(2794), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+         self.assertIsNotNone(note)
+ 
++    def test_merged_compound_citation_demotes(self):
++        # Live miss (2026-10-30 12:52Z): merged #3338's subject carried the
++        # row as "R1776/#2766" ΓÇö slash-adjacent, no whitespace ΓÇö the keyword
++        # regex sailed past it and the loop re-dispatched #2766 ~20 minutes
++        # after its own evidence refresh landed.
++        rows = [
++            _pr(
++                3338,
++                "report(guard): R1776/#2766 evidence refresh r2 ΓÇö zizmor 1.31.1 rescan on current main (bridge-20261030-r1776-zizmor-refresh-glm25)",
++            )
++        ]
++        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        self.assertIsNotNone(note)
++        self.assertIn("#3338", note)
++        self.assertIn("R1776/#2766", note)
++
++    def test_merged_hash_compound_citation_demotes(self):
++        rows = [_pr(3400, "evidence refresh #1776/#2766 ΓÇö zero-delta receipt")]
++        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        self.assertIsNotNone(note)
++        self.assertIn("#1776/#2766", note)
++
++    def test_lowercase_compound_citation_demotes(self):
++        # "receipt r1776/#2766" defeats the KEYWORD form ("receipt" is not
++        # adjacent to #2766) ΓÇö the compound form must carry it, case-blind.
++        rows = [_pr(3401, "rescan r3 receipt r1776/#2766")]
++        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        self.assertIsNotNone(note)
++
++    def test_bare_r_idiom_demotes_parent_row(self):
++        # The same receipt names the parent row bare ("R1776") ΓÇö the loop's
++        # next #1776 serve must see the fresh family receipt too.
++        rows = [
++            _pr(
++                3338,
++                "report(guard): R1776/#2766 evidence refresh r2 ΓÇö zizmor 1.31.1 rescan on current main",
++            )
++        ]
++        note = cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        self.assertIsNotNone(note)
++        self.assertIn("R1776", note)
++
++    def test_bare_number_mention_serves(self):
++        # Non-delivery: bare "#N" with no delivery keyword and no compound
++        # slash is related-work context, never a landing receipt.
++        rows = [_pr(3402, "per #2766 precedent the refresh method stays pinned-version")]
++        self.assertIsNone(
++            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        )
++
++    def test_compound_number_boundary_safe(self):
++        rows = [_pr(3403, "R1776/#27661 wrong-row compound")]
++        self.assertIsNone(
++            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        )
++
++    def test_bare_r_idiom_number_boundary_safe(self):
++        # "R17760" must not demote row 1776 (boundary), and the title carries
++        # NO standalone "R1776" token.
++        rows = [_pr(3404, "R17760 and R17761 tokens only")]
++        self.assertIsNone(
++            cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        )
++
++    def test_branch_slug_alone_never_demotes_compound_check(self):
++        # "...-r1776-..." inside a branch slug matches \bR<n>\b ONLY when a
++        # slash follows for the compound; as a bare token it IS the board's
++        # R-idiom and demotes ΓÇö pin the compound's slug-neutrality instead:
++        # a slug WITHOUT the R-token (plain dash-number) must not demote.
++        rows = [_pr(3405, "watchdog live run (bridge-20261030-2766-watchdog-live-run-r1) (#3405)")]
++        self.assertIsNone(
++            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
++        )
++
+     def test_raising_fetcher_fails_open(self):
+         def boom(per_page):
+             raise RuntimeError("rate limited")

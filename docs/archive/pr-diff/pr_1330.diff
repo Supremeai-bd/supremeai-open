@@ -1,0 +1,38 @@
+diff --git a/docs/bridge/bridge-20261027-tower-self-capability.md b/docs/bridge/bridge-20261027-tower-self-capability.md
+new file mode 100644
+index 00000000..75722c04
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-tower-self-capability.md
+@@ -0,0 +1,32 @@
++# 🌉 Bridge Work Order — [P0] MCP Tower self-capability broken family: AST graph not indexed, browser audit silently degrades, 2 advertised resources unreadable (bridge-20261027-tower-self-capability)
++
++## Problem
++The Control Tower advertises capabilities that its own consumers (autonomous builders, external AI clients) cannot use. Verified live on 2026-10-25 via a clean MCP session:
++
++1. **`codebase_graph_query` returns `graph.json not found`** for every query (12/12 probes: auth, chat, stream, model, session, memory, agent, upload, settings, tenant, SupremeAI, login). The tower even suggests its own fix: `Run 'graphify extract .' or 'python scripts/ci/sync_graph_to_memory.py' first.` Meanwhile the "Graph Update: pip in /core" GitHub workflow ran successfully 3× on 2026-10-25 (runs #8/#9/#10) — the graph is built somewhere but never reaches the tower's read path.
++2. **`devtools_audit` silently degrades to `http-diagnostic-fallback`** on all 3 probes (studio home desktop/mobile, workspace). No console errors, no failed network requests, no accessibility violations — despite `render-scraper` reporting `playwright_available: true`. Verdict still says `PASS`, hiding the degradation.
++3. **`resources/read` fails with -32602** for 2 of 12 advertised resources: `control-tower://server/manifest`, `control-tower://clients/registry`.
++
++## Impact (AIQ mapping)
++- AIQ-041/043: agents pick the right tool and get dead ends or misleading empty results
++- AIQ-110: advertised API surface broken (128/130 tools work, resources don't)
++- AIQ-116: external-agent onboarding degraded — every client that trusts `resources/list` then fails
++- Blocks AIQ-060 runtime accessibility verification entirely
++
++## Fix (smallest safe change)
++1. Graph: add an upload/publish step to the Graph Update workflow that POSTs `graph.json` to a tower endpoint (or commits it to a branch the tower reads); add a CI assertion `codebase_graph_query("chat")` must return symbols, else fail.
++2. Audit: route audit requests to render-scraper's Playwright; when unavailable, return `mode: degraded` + `reason` and a non-PASS verdict. Never claim PASS in fallback mode.
++3. Resources: implement the 2 read handlers or remove them from `resources/list`. Add an MCP conformance self-test (list → read each URI → assert success).
++
++## Acceptance Criteria
++- [ ] `codebase_graph_query {"query":"chat"}` returns symbols with file paths
++- [ ] `devtools_audit` on https://supremeai-studio.pages.dev returns console/network data or honest `degraded` mode
++- [ ] Zero -32602 on any advertised resource URI
++- [ ] Conformance self-test runs in CI and is green
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** the tower is the nervous system of the builder pipeline; broken self-capabilities poison every downstream agent loop.
++**Alternatives rejected:** (a) documenting the tools as "best-effort" — hides failures from machines that need deterministic contracts; (b) removing the tools — throws away real capability (scraper exists) instead of wiring it.
++
++## Labels
++`bridge:queued` `P0-critical` `area:control-tower` `AIQ:041` `AIQ:043` `AIQ:110` `AIQ:116`

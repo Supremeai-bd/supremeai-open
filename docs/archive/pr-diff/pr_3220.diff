@@ -1,0 +1,126 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 79bd2401..e7cd5bb7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -137,6 +137,24 @@ export function describeTarget(targetUrl: string): { targetRepo: string; targetU
+   return { targetRepo: targetUrl, targetUrl };
+ }
+ 
++/** #2469/#2452 (R66 default-repo drift, disclosure slice) — the no-repo
++ * fallback is real runtime behavior (the github-primary account URL = the
++ * core monorepo 'Supremeai-bd/supremeai'), but it was invisible in
++ * tools/list, so callers silently landed on the monorepo and cited run/PR
++ * ids without a repo attestation. Deriving the disclosure from repoUrlFor()
++ * keeps description and runtime on ONE producer: if the registry default
++ * ever moves, the disclosure moves with it — the drift can never re-hide.
++ * Registration-time only; repoUrlFor is no-I/O by contract (try/catch kept
++ * so schema advertisement can never fail registration). */
++export function repoDefaultNote(accountId = "github-primary"): string {
++  try {
++    const { targetRepo } = describeTarget(repoUrlFor(accountId, undefined));
++    return ` When 'repo' is omitted the call silently targets the account default '${targetRepo}' (R66 drift class, #2452/#2469) — always pass repo explicitly and verify rows via the targetRepo/targetUrl echo.`;
++  } catch {
++    return " When 'repo' is omitted the call silently targets the account default repo (R66 drift class, #2452/#2469) — always pass repo explicitly and verify rows via the targetRepo/targetUrl echo.";
++  }
++}
++
+ /** R66 echo schemas: repo-targeted tools always resolve a repo; the search
+  * pair resolves org-wide when repo is omitted (null = org-wide, honest). */
+ const targetEchoSchema = {
+@@ -161,7 +179,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       inputSchema: {
+         action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name"),
++        repo: z.string().optional().describe("Target repository name" + repoDefaultNote()),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+@@ -201,7 +219,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
++        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+@@ -235,7 +253,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
++        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         runId: z.string().describe("The GitHub Actions run ID"),
+       },
+       outputSchema: targetEchoSchema,
+@@ -267,7 +285,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
++        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+       },
+       outputSchema: targetEchoSchema,
+     },
+@@ -298,7 +316,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
++        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
+         ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
+       },
+@@ -331,7 +349,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+-        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
++        repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+           "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
+diff --git a/infrastructure/mcp-control-plane/test_r66_target_echo.ts b/infrastructure/mcp-control-plane/test_r66_target_echo.ts
+index 72342cf4..e8a88634 100644
+--- a/infrastructure/mcp-control-plane/test_r66_target_echo.ts
++++ b/infrastructure/mcp-control-plane/test_r66_target_echo.ts
+@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+-import { describeTarget, registerGitHubTools } from "./src/tools/github.tools.js";
++import { describeTarget, registerGitHubTools, repoDefaultNote, repoUrlFor } from "./src/tools/github.tools.js";
+ import { RequestContextStore } from "./src/policy/auth.context.js";
+ 
+ // ─── 1. describeTarget unit ───────────────────────────────────────────────
+@@ -90,6 +90,28 @@ await RequestContextStore.run(anon, async () => {
+   assert.equal(r.structuredContent, undefined, "isError results must stay exempt from output validation (R65 class)");
+   assert.match(r.content?.[0]?.text ?? "", /Forbidden/i, "deny shape preserved");
+   console.log("[3] error-path OK (isError text-only, structuredContent absent)");
++
++  // ─── 4. default-repo disclosure (#2452/#2469): no silent fallback ───────
++  // The no-repo call MUST be documented in tools/list itself, derived from
++  // the same repoUrlFor producer the runtime uses — the description and the
++  // actual request target can never disagree (drift can never re-hide).
++  const expectedDefault = describeTarget(repoUrlFor("github-primary")).targetRepo;
++  const repoTargeted = [
++    "github_actions_op", "github_workflow_runs", "github_get_failed_logs",
++    "github_list_secrets", "github_read_file", "github_list_prs",
++  ];
++  for (const wire of repoTargeted) {
++    const t = github.find((x) => x.name === wire);
++    assert.ok(t, `${wire} missing from tools/list`);
++    type IS = { inputSchema?: { properties?: { repo?: { description?: string } } } };
++    const desc = (t as IS).inputSchema?.properties?.repo?.description ?? "";
++    assert.match(desc, /When 'repo' is omitted/, `${wire}.repo must disclose the no-repo default (R66 #2452/#2469)`);
++    assert.ok(desc.includes(expectedDefault), `${wire}.repo disclosure must name the resolved account default (${expectedDefault}) — got: ${desc}`);
++    assert.match(desc, /R66/, `${wire}.repo disclosure must carry the R66 marker`);
++  }
++  // helper itself stays on the single producer (self-consistency)
++  assert.ok(repoDefaultNote().includes(expectedDefault), "repoDefaultNote must derive from repoUrlFor");
++  console.log(`[4] default-repo disclosure OK (6 tools disclose '${expectedDefault}' from the single registry producer)`);
+ });
+ 
+-console.log("ALL R66 TARGET-ECHO CONTRACT TESTS PASSED (#2447 option A)");
++console.log("ALL R66 TARGET-ECHO CONTRACT TESTS PASSED (#2447 option A + #2452/#2469 default disclosure)");

@@ -1,0 +1,140 @@
+diff --git a/docs/reports/RULES_BREAKER_DESTRUCTIVE_GUARDS_2026-10-29.md b/docs/reports/RULES_BREAKER_DESTRUCTIVE_GUARDS_2026-10-29.md
+new file mode 100644
+index 00000000..baff9bab
+--- /dev/null
++++ b/docs/reports/RULES_BREAKER_DESTRUCTIVE_GUARDS_2026-10-29.md
+@@ -0,0 +1,134 @@
++# Rules-Breaker Audit — Destructive Tool Guardrails (Schema-Level)
++
++**Cycle**: 2026-10-29 08:45+08, Job 477792, role: rules-breaker
++**Finding issue**: #2380
++**Method**: read-only schema audit — one `tools/list` read on the MCP Tower
++(`https://supremeai-mcp-tower.onrender.com/mcp`), inputSchemas of the 17-tool
++destructive/write family inspected verbatim. **Zero destructive tools were
++invoked**; no write, flush, wipe, purge, kill, suspend, deploy, or export call
++was executed at any point in this cycle.
++
++## Scope and why this lane is open
++
++The prior rules-breaker exposure audit (RULES_BREAKER_TOWER_EXPOSURE_2026-10-28,
++landed via #1845/#1850) explicitly recorded, at line 30, that the destructive
++tools "were never invoked — their gating is verified from the mirror source
++(secret/admin class) only". That classification answers *who may call* these
++tools; it does not answer *what the call contract itself demands once a caller
++is past the gate*. This report audits that remaining plane: the published
++inputSchema each caller sees — required fields, defaults, enums, and the
++presence or absence of in-call guards such as confirm tokens, dry-run flags,
++typed acknowledgements, or scoping requirements. The two planes are
++complementary, and both #2374 (memory write dedup) and the #1845 exposure lane
++are left untouched: zero overlap with either.
++
++## Findings
++
++### RB-1 — HIGH — `memory_wipe_memory` defaults to total erasure
++
++The schema declares **no required parameters**. Its only parameter is `scope`,
++an enum of `['all', 'graph']` described as "graph = knowledge graph only; all
++(default) = every memory lane". Two properties make this the highest-severity
++schema gap in the family. First, the maximally destructive value (`all`) is
++the **default**, so the least-typed call — an empty argument object — selects
++it. Second, there is no confirm token, no `dry_run`, and no typed
++acknowledgement anywhere in the schema; the erasure of every memory lane
++(facts, episodes, graph, tasks — the planes other agents demonstrably depend
++on, per #2374's memory probes and the task-recall tooling) is one bare call
++away from any caller who reaches the tool surface. The memory plane is
++load-bearing state, not cache: wipe is not a performance operation, it is
++amnesia.
++
++### RB-2 — HIGH — `action_redis_flush` makes "flush everything" the default path
++
++`required=[]`, with a single optional `prefix`: "Prefix to match keys. If
++empty, flushes all." The parameter that would narrow the blast radius is
++optional, and its **empty default is the widest blast radius available** — all
++keys under the configured Redis instance. Anything co-located in that Redis
++(rate/quota counters, rotation state as referenced by the redis_rotation tool
++family, session state) vanishes with the same bare call. The tool does carry
++`overrideRequestId` ("Approved Request ID to bypass policy engine"), which
++confirms a policy engine exists in the stack — yet the schema's base path
++still needs nothing at all.
++
++### RB-3 — MEDIUM — `action_cloudflare_purge` requires no arguments at all
++
++An empty argument object is a schema-valid call. Whatever the tool's server
++side defaults to (zone-wide cache purge is the plausible reading of a purge
++tool with no required zone or file list), the contract published to callers
++offers no scoping requirement and no confirmation step. Ranked below RB-1/RB-2
++only because cache purge is typically recoverable by re-warm, unlike memory
++wipe or Redis flush.
++
++### RB-4 — MEDIUM — `autonomy_kill_switch` and `autonomy_enable` are both zero-arg
++
++The emergency stop and its resume are symmetric, unparameterized calls: no
++reason field, no confirm, no actor identity beyond whatever transport-level
++auth carries. An emergency stop that is trivially invocable is also trivially
++*accidentally* invocable — by a confused agent loop, a malformed retry, or a
++prompt-injected call — and the zero-arg `autonomy_enable` on the other side
++means the "switch" holds no in-schema state gate either. The kill switch's
++value is precisely that it should cost something to pull.
++
++### RB-5 — MEDIUM — `memory_export_memory` completes the exfil-destroy chain
++
++`required=[]`, no redaction, no scoping, no target filter: one call returns
++the full graph. Standing alone this is a bulk-read convenience. Paired with
++RB-1 it becomes a **two-call chain — export then wipe — that both exfiltrates
++and destroys the same state**, leaving no local copy. Schema-level, nothing
++separates the two calls.
++
++## Positive controls observed (same audit, for balance)
++
++The family is not uniformly unguarded, and the contrast strengthens the
++finding: `redis_op` is enum-restricted to read-only operations
++(`ping`/`stats`/`read_key`) — it is *not* an arbitrary-exec surface and is
++excluded from the destructive class; `supabase_update` requires a `filter`
++string, foreclosing unbounded table updates; `slot_suspend`/`slot_revoke`
++accept `adminToken` and `reason` (audit context) parameters. Most tellingly,
++`action_render_deploy`, `action_redis_flush`, and `action_cloudflare_purge`
++all expose `overrideRequestId` — an explicit policy-engine bypass parameter.
++The bypass's existence proves the guardrail layer exists in the stack; what is
++missing is a **default-path guard** on the four tools where the default
++argument set is the destructive one.
++
++## Limitation (disclosed)
++
++This audit is schema-level and claims exactly that: the **published call
++contract** lacks default-path guards. Server-side policy gating may
++invisibly compensate (the `overrideRequestId` pattern suggests a policy
++engine mediates at least some tools), and verifying that live would require
++privileged calls outside this cycle's zero-credential, zero-destructive
++scope. Nothing here asserts the policy engine is absent — only that a caller
++reading the tool surface is not told to bring a confirmation, a scope, or a
++dry-run before destroying shared state.
++
++## Recommendations (spec-only; no code in this cycle)
++
++1. **Confirm token + `dry_run` default-true** for every `required=[]`
++   destructive tool (RB-1, RB-2, RB-3, RB-4): a call that would destroy
++   shared state should be schema-invalid until the caller passes an explicit
++   acknowledgement, and a default-dry-run gives every caller a safe first
++   invocation.
++2. **Invert `redis_flush`'s default**: reject empty `prefix` (or require
++   `prefix` as a required parameter); "all keys" should be an explicit,
++   spelled-out choice, never the silent default.
++3. **Scope `memory_wipe_memory`'s default to `graph`** and require an explicit
++   `scope=all` plus a confirm token for the full lane; ideally add a
++   session/lane filter so blast radius is choosable downward, never upward.
++4. **Parameterize the kill switch**: require `reason` (audit context) and a
++   distinct confirm token on `autonomy_kill_switch`; consider whether
++   `autonomy_enable` should require a stronger, separate authority than the
++   stop.
++5. **Apply the existing pattern**: the `overrideRequestId` bypass shows the
++   policy engine integrates per-tool; extend the same integration so the
++   default path of wipe/flush/purge/kill requires policy approval rather than
++   offering the bypass as the only schema-visible knob.
++
++## Audit disclosure
++
++Total Tower calls this cycle: one `tools/list` read (schema pull), plus
++queue/feedback reads and this submission — no destructive tool invoked, no
++live wipe/flush/purge/kill/export, no fuzzing or load, no credential use.
++Raw schema evidence archived at `scripts/rb_guardrail_evidence.json` in the
++agent workspace (17 tools, verbatim, incl. descriptions and enums).

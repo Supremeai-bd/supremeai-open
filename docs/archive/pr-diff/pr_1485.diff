@@ -1,0 +1,597 @@
+diff --git a/studio/src/components/mobile/AppIcon.tsx b/studio/src/components/mobile/AppIcon.tsx
+new file mode 100644
+index 00000000..0fa7d4cd
+--- /dev/null
++++ b/studio/src/components/mobile/AppIcon.tsx
+@@ -0,0 +1,111 @@
++/**
++ * AppIcon — squircle হোম-স্ক্রিন আইকন (iOS-home-template)।
++ *
++ * বাংলা: একটি আইকনে তিনটি ব্যবহার —
++ * ১) সাধারণ ট্যাপ → আইকনের অবস্থান থেকে zoom করে অ্যাপ খোলা (launchRect store-এ);
++ * ২) long-press (~৪৫০ms) → wiggle mode (আইকন কাঁপে, iOS-এর মতো);
++ * ৩) wiggle mode-এ drag → যে আইকনের উপর ছাড়া হয় তার সাথে জায়গা swap।
++ * Swap হিট-টেস্ট DOM query দিয়ে হয় (data-app-icon attribute) — ছোট, নির্ভরযোগ্য।
++ */
++
++import { useRef } from 'react';
++import { motion } from 'framer-motion';
++import type { AppId, Rect } from './launcherStore';
++import { useLauncher } from './launcherStore';
++
++const LONG_PRESS_MS = 450;
++
++export function AppIcon({ appId, label, gradient, children }: {
++  appId: AppId;
++  label: string;
++  gradient: string;
++  children: React.ReactNode;
++}) {
++  const wiggle = useLauncher((s) => s.wiggle);
++  const setWiggle = useLauncher((s) => s.setWiggle);
++  const openAppWith = useLauncher((s) => s.openAppWith);
++  const swapApps = useLauncher((s) => s.swapApps);
++  const pressTimer = useRef<number | null>(null);
++  const draggedRef = useRef(false);
++
++  const clearTimer = () => {
++    if (pressTimer.current !== null) {
++      window.clearTimeout(pressTimer.current);
++      pressTimer.current = null;
++    }
++  };
++
++  // বাংলা: rect ফোন-স্ক্রিনের স্থানাঙ্কে দরকার — কাছের [data-phone-screen] ancestor থেকে মাপি।
++  const rectRelativeToScreen = (el: HTMLElement): Rect => {
++    const screen = el.closest('[data-phone-screen]');
++    const icon = el.closest('[data-icon-hitbox]') ?? el;
++    const r = icon.getBoundingClientRect();
++    const s = (screen ?? icon).getBoundingClientRect();
++    return { x: r.left - s.left, y: r.top - s.top, width: r.width, height: r.height };
++  };
++
++  return (
++    <motion.div
++      data-icon-hitbox
++      className="flex w-[19%] min-w-14 flex-col items-center gap-1.5 select-none"
++      // বাংলা: wiggle mode-এই শুধু drag চালু — সাধারণ অবস্থায় পাতার swipe-এর সাথে সংঘর্ষ এড়াতে।
++      drag={wiggle}
++      dragMomentum={false}
++      dragElastic={0.12}
++      whileDrag={{ scale: 1.12, zIndex: 40 }}
++      onDragEnd={(_, info) => {
++        if (draggedRef.current) {
++          draggedRef.current = false;
++          const el = document.elementFromPoint(info.point.x, info.point.y) as HTMLElement | null;
++          const target = el?.closest<HTMLElement>('[data-app-icon]');
++          const targetId = target?.dataset.appIcon as AppId | undefined;
++          if (targetId && targetId !== appId) swapApps(appId, targetId);
++        }
++      }}
++      onPointerDown={() => {
++        draggedRef.current = false;
++        clearTimer();
++        pressTimer.current = window.setTimeout(() => {
++          setWiggle(true);
++          pressTimer.current = null;
++        }, LONG_PRESS_MS);
++      }}
++      onPointerMove={(e) => {
++        // বাংলা: একটু টেনে নিলেই long-press বাতিল — অনিচ্ছাকৃত wiggle আটকায়।
++        if (e.movementX !== 0 || e.movementY !== 0) {
++          if (!wiggle) clearTimer();
++        }
++      }}
++      onPointerUp={() => {
++        clearTimer();
++        if (!wiggle) {
++          const el = document.querySelector<HTMLElement>('[data-phone-screen]');
++          if (el) openAppWith(appId, rectRelativeToScreen(el));
++        } else {
++          draggedRef.current = true;
++        }
++      }}
++      onPointerLeave={clearTimer}
++    >
++      <div data-app-icon={appId} className="relative">
++        <motion.div
++          animate={wiggle ? { rotate: [-2.4, 2.4, -2.4] } : { rotate: 0 }}
++          transition={wiggle ? { repeat: Infinity, duration: 0.42, ease: 'easeInOut' } : { duration: 0.18 }}
++          whileTap={wiggle ? undefined : { scale: 0.9 }}
++          className={`flex size-[3.4rem] items-center justify-center rounded-[1.05rem] bg-gradient-to-br ${gradient} shadow-lg shadow-black/40 ring-1 ring-white/15`}
++        >
++          {children}
++        </motion.div>
++        {wiggle && (
++          <span
++            className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-white text-[13px] font-bold leading-none text-slate-900 shadow"
++            aria-hidden="true"
++          >
++            ×
++          </span>
++        )}
++      </div>
++      <span className="max-w-full truncate text-[10px] font-medium text-white/90 drop-shadow">{label}</span>
++    </motion.div>
++  );
++}
+diff --git a/studio/src/components/mobile/AppWindow.tsx b/studio/src/components/mobile/AppWindow.tsx
+new file mode 100644
+index 00000000..c901df86
+--- /dev/null
++++ b/studio/src/components/mobile/AppWindow.tsx
+@@ -0,0 +1,59 @@
++/**
++ * AppWindow — app-launch zoom অ্যানিমেশন (iOS-home-template)।
++ * বাংলা: চাহিদা ছিল "app-launch animation zooms from the icon's position with
++ * a smooth scale" — আইকনের rect (ফোন-স্ক্রিনের স্থানাঙ্কে) থেকে spring দিয়ে
++ * পুরো স্ক্রিনে মুহূর্তে বড় হয়; বন্ধ করলে একই rect-এ ফিরে যায়।
++ * App screen একটু দেরিতে fade-in করে যাতে জুম মাঝপথেই কনটেন্ট স্পষ্ট হয়।
++ */
++
++import { motion } from 'framer-motion';
++import { useLauncher } from './launcherStore';
++import type { AppId, Rect } from './launcherStore';
++import { APP_REGISTRY } from './registry';
++
++export function AppWindow({ appId, rect, full }: {
++  appId: AppId;
++  rect: Rect;
++  full: { w: number; h: number };
++}) {
++  const closeApp = useLauncher((s) => s.closeApp);
++  const def = APP_REGISTRY[appId];
++  const Screen = def.screen;
++
++  return (
++    <motion.div
++      className="absolute inset-0 z-30 overflow-hidden bg-black"
++      initial={{
++        x: rect.x, y: rect.y, width: rect.width, height: rect.height,
++        borderRadius: Math.min(rect.width, rect.height) * 0.28, opacity: 0.6,
++      }}
++      animate={{ x: 0, y: 0, width: full.w, height: full.h, borderRadius: 0, opacity: 1 }}
++      exit={{
++        x: rect.x, y: rect.y, width: rect.width, height: rect.height,
++        borderRadius: Math.min(rect.width, rect.height) * 0.28, opacity: 0,
++      }}
++      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
++      data-testid={`app-window-${appId}`}
++    >
++      <motion.div
++        className="size-full overflow-hidden"
++        initial={{ opacity: 0 }}
++        animate={{ opacity: 1 }}
++        exit={{ opacity: 0 }}
++        transition={{ delay: 0.09, duration: 0.16 }}
++      >
++        <Screen />
++      </motion.div>
++      {/* বাংলা: অ্যাপের ভেতরেও উপরের status bar স্পষ্ট থাকে — HomeShell-এর
++          status bar z-40-এ এর উপরেই থাকে; নিচের স্ট্রিপ ট্যাপ করলে home। */}
++      <button
++        type="button"
++        onClick={closeApp}
++        aria-label="Close app and return home"
++        className="absolute right-3 top-12 z-10 rounded-full bg-black/45 px-3 py-1 text-[10px] font-semibold text-white/85 backdrop-blur transition active:scale-95"
++      >
++        Home
++      </button>
++    </motion.div>
++  );
++}
+diff --git a/studio/src/components/mobile/ControlCenter.tsx b/studio/src/components/mobile/ControlCenter.tsx
+new file mode 100644
+index 00000000..4a848db8
+--- /dev/null
++++ b/studio/src/components/mobile/ControlCenter.tsx
+@@ -0,0 +1,141 @@
++/**
++ * ControlCenter — bottom থেকে pull-up (iOS-home-template)।
++ * বাংলা: toggle-যোগ্য নিয়ন্ত্রণ — connectivity (airplane/wifi/bluetooth),
++ * theme cycle, flashlight, brightness + volume slider, music mini-control।
++ * সব state launcherStore-এ — HomeShell (brightness dim, flashlight glow) ও
++ * MusicEngine একই state থেকে চলে।
++ */
++
++import { motion } from 'framer-motion';
++import {
++  Bluetooth, Flashlight, Music2, Moon, Pause, Plane, Play, Sun, Volume2, Wifi, WifiOff,
++} from 'lucide-react';
++import { THEMES, useLauncher } from './launcherStore';
++import { TRACKS } from './apps/MusicApp';
++
++function RoundToggle({ on, onClick, label, children, onClass = 'bg-cyan-400/90 text-slate-900' }: {
++  on: boolean;
++  onClick: () => void;
++  label: string;
++  children: React.ReactNode;
++  onClass?: string;
++}) {
++  return (
++    <button
++      type="button"
++      onClick={onClick}
++      aria-pressed={on}
++      aria-label={label}
++      title={label}
++      data-testid={`cc-${label.toLowerCase().replace(/\s+/g, '-')}`}
++      className={`flex size-12 items-center justify-center rounded-full ring-1 transition active:scale-90 ${
++        on ? `${onClass} ring-white/30` : 'bg-white/10 text-white/80 ring-white/15 hover:bg-white/15'
++      }`}
++    >
++      {children}
++    </button>
++  );
++}
++
++function Slider({ value, onChange, icon, label }: {
++  value: number;
++  onChange: (v: number) => void;
++  icon: React.ReactNode;
++  label: string;
++}) {
++  return (
++    <div className="relative flex h-28 w-12 flex-col items-center justify-end overflow-hidden rounded-full bg-white/10 ring-1 ring-white/15">
++      {/* বাংলা: fill নিচ থেকে উপরে — iOS-এর উল্লম্ব স্লাইডার অনুকরণ। */}
++      <div className="absolute inset-x-0 bottom-0 bg-white/80" style={{ height: `${value}%` }} />
++      <span className="relative z-10 pb-2 text-slate-700 mix-blend-difference invert">{icon}</span>
++      <input
++        type="range"
++        min={0}
++        max={100}
++        value={value}
++        onChange={(e) => onChange(Number(e.target.value))}
++        aria-label={label}
++        className="absolute inset-0 size-full cursor-pointer opacity-0"
++      />
++    </div>
++  );
++}
++
++export function ControlCenter() {
++  const s = useLauncher();
++  const track = TRACKS[s.musicTrack % TRACKS.length];
++
++  return (
++    <div className="absolute inset-0 z-50" data-testid="control-center">
++      <button
++        type="button"
++        aria-label="Close control center"
++        onClick={() => s.setPanel('none')}
++        className="absolute inset-0 size-full cursor-default bg-black/40 backdrop-blur-2xl"
++      />
++      <motion.div
++        className="relative flex flex-col gap-3 px-4 pb-8 pt-10"
++        initial={{ y: '100%' }}
++        animate={{ y: 0 }}
++        exit={{ y: '100%' }}
++        transition={{ type: 'spring', stiffness: 320, damping: 32 }}
++      >
++        <div className="flex items-start justify-between gap-3">
++          {/* Connectivity block */}
++          <div className="grid grid-cols-2 gap-3 rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/15">
++            <RoundToggle on={s.airplane} onClick={() => s.toggleControl('airplane')} label="Airplane" onClass="bg-amber-400/90 text-slate-900">
++              <Plane size={19} />
++            </RoundToggle>
++            <RoundToggle on={s.wifi && !s.airplane} onClick={() => s.toggleControl('wifi')} label="Wi-Fi">
++              {s.wifi && !s.airplane ? <Wifi size={19} /> : <WifiOff size={19} />}
++            </RoundToggle>
++            <RoundToggle on={s.bluetooth} onClick={() => s.toggleControl('bluetooth')} label="Bluetooth" onClass="bg-cyan-400/90 text-slate-900">
++              <Bluetooth size={19} />
++            </RoundToggle>
++            <RoundToggle on={s.flashlight} onClick={() => s.toggleControl('flashlight')} label="Flashlight" onClass="bg-white text-slate-900">
++              <Flashlight size={19} />
++            </RoundToggle>
++          </div>
++
++          {/* Sliders + theme */}
++          <div className="flex flex-col items-center gap-2">
++            <div className="flex gap-2">
++              <Slider value={s.brightness} onChange={s.setBrightness} icon={<Sun size={16} />} label="Brightness" />
++              <Slider value={s.volume} onChange={s.setVolume} icon={<Volume2 size={16} />} label="Volume" />
++            </div>
++            <button
++              type="button"
++              onClick={s.cycleTheme}
++              aria-label={`Switch theme (current: ${THEMES[s.theme].label})`}
++              className="flex items-center gap-1.5 rounded-2xl bg-white/10 px-3 py-2 text-[11px] font-medium text-white ring-1 ring-white/15 transition active:scale-95"
++            >
++              <Moon size={13} className="text-violet-300" /> {THEMES[s.theme].label}
++            </button>
++          </div>
++        </div>
++
++        {/* Music mini-control */}
++        <div className="flex items-center gap-3 rounded-3xl bg-white/10 p-3.5 ring-1 ring-white/15">
++          <span className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${track.art}`}>
++            <Music2 size={16} className="text-white" />
++          </span>
++          <div className="min-w-0 flex-1">
++            <p className="truncate text-xs font-semibold text-white">{track.name}</p>
++            <p className="truncate text-[10px] text-white/60">{track.artist}</p>
++          </div>
++          <button
++            type="button"
++            onClick={s.toggleMusic}
++            aria-label={s.musicPlaying ? 'Pause' : 'Play'}
++            data-testid="cc-music-toggle"
++            className="flex size-10 items-center justify-center rounded-full bg-white/20 text-white transition active:scale-90"
++          >
++            {s.musicPlaying ? <Pause size={16} /> : <Play size={16} className="translate-x-px" />}
++          </button>
++        </div>
++
++        <p className="text-center text-[10px] uppercase tracking-wider text-white/45">Control Center</p>
++      </motion.div>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/NotificationCenter.tsx b/studio/src/components/mobile/NotificationCenter.tsx
+new file mode 100644
+index 00000000..d586db34
+--- /dev/null
++++ b/studio/src/components/mobile/NotificationCenter.tsx
+@@ -0,0 +1,84 @@
++/**
++ * NotificationCenter — top থেকে pull-down (iOS-home-template)।
++ * বাংলা: frosted blur (backdrop-blur-2xl) প্যানেল; নমুনা notification-এ
++ * SupremeAI-এর build/sync ইভেন্ট — Clear চাপলে তালিকা খালি হয়।
++ */
++
++import { useState } from 'react';
++import { motion } from 'framer-motion';
++import { Bell, CheckCheck, Music2, Smartphone, Sparkles } from 'lucide-react';
++import { useLauncher } from './launcherStore';
++
++interface Item {
++  id: number;
++  icon: typeof Bell;
++  title: string;
++  body: string;
++  time: string;
++}
++
++const SAMPLES: Item[] = [
++  { id: 1, icon: Sparkles, title: 'SupremeAI build ready', body: 'Preview is available on the Browser tab.', time: '2m ago' },
++  { id: 2, icon: Music2, title: 'Now playing', body: 'Aurora Drift — WebAudio synth demo track.', time: '9m ago' },
++  { id: 3, icon: Smartphone, title: 'Mobile Simulator synced', body: 'Browser mirror re-rendered via secure ticket.', time: '22m ago' },
++];
++
++export function NotificationCenter() {
++  const setPanel = useLauncher((s) => s.setPanel);
++  const [items, setItems] = useState(SAMPLES);
++  const now = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
++
++  return (
++    <div className="absolute inset-0 z-50" data-testid="notification-center">
++      {/* বাংলা: ব্যাকড্রপ ট্যাপ করলেই প্যানেল বন্ধ — বাইরে ক্লিক লিক না করার সহজ পথ। */}
++      <button
++        type="button"
++        aria-label="Close notifications"
++        onClick={() => setPanel('none')}
++        className="absolute inset-0 size-full cursor-default bg-black/40 backdrop-blur-2xl"
++      />
++      <motion.div
++        className="relative flex max-h-full flex-col px-4 pt-12"
++        initial={{ y: '-100%' }}
++        animate={{ y: 0 }}
++        exit={{ y: '-100%' }}
++        transition={{ type: 'spring', stiffness: 320, damping: 32 }}
++      >
++        <p className="px-2 pb-3 text-center text-xs font-medium text-white/70">{now}</p>
++        <ul className="flex flex-col gap-2 overflow-y-auto pb-4">
++          {items.length === 0 && (
++            <li className="rounded-2xl bg-white/10 px-4 py-6 text-center text-xs text-white/60 ring-1 ring-white/15">
++              No new notifications
++            </li>
++          )}
++          {items.map((n) => (
++            <li key={n.id} className="rounded-2xl bg-white/[0.14] p-3.5 ring-1 ring-white/20">
++              <div className="flex items-start gap-3 text-white">
++                <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-white/15">
++                  <n.icon size={15} />
++                </span>
++                <div className="min-w-0">
++                  <p className="text-sm font-semibold">{n.title}</p>
++                  <p className="text-xs leading-5 text-white/75">{n.body}</p>
++                </div>
++                <span className="ml-auto shrink-0 text-[10px] text-white/50">{n.time}</span>
++              </div>
++            </li>
++          ))}
++        </ul>
++        <div className="flex items-center justify-between px-2 pb-6">
++          <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/50">
++            <Bell size={11} /> Notification Center
++          </span>
++          <button
++            type="button"
++            onClick={() => setItems([])}
++            className="flex items-center gap-1 rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-medium text-white transition active:scale-95"
++          >
++            <CheckCheck size={12} /> Clear
++          </button>
++        </div>
++      </motion.div>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/Widgets.tsx b/studio/src/components/mobile/Widgets.tsx
+new file mode 100644
+index 00000000..b04af9a3
+--- /dev/null
++++ b/studio/src/components/mobile/Widgets.tsx
+@@ -0,0 +1,133 @@
++/**
++ * Home-screen widgets (iOS-home-template)।
++ * বাংলা: প্রতিটি widget লাইভ — ঘড়ি প্রতি মিনিটে, weather প্রতি ৪৫ সেকেন্ডে
++ * refresh হয়; আপডেটের মুহূর্তে `pulseKey` বদলে motion.div-এর হালকা
++ * scale-pulse ট্রিগার হয় (চাহিদা: "widgets refresh visibly with a subtle pulse")।
++ */
++
++import { useEffect, useState } from 'react';
++import { motion } from 'framer-motion';
++import { CloudSun, Play, Pause, Sparkles } from 'lucide-react';
++import { useLauncher } from './launcherStore';
++import { TRACKS } from './apps/MusicApp';
++
++/** আপডেটে হালকা pulse — key বদলালে framer-motion অ্যানিমেশন নতুন করে চলে। */
++function Pulse({ pulseKey, children }: { pulseKey: string | number; children: React.ReactNode }) {
++  return (
++    <motion.div
++      key={pulseKey}
++      initial={{ scale: 1 }}
++      animate={{ scale: [1, 1.035, 1] }}
++      transition={{ duration: 0.55, ease: 'easeOut' }}
++      className="size-full"
++    >
++      {children}
++    </motion.div>
++  );
++}
++
++const widgetShell =
++  'rounded-3xl bg-white/10 p-4 ring-1 ring-white/15 backdrop-blur-md shadow-lg shadow-black/20';
++
++export function WeatherWidget() {
++  const [tick, setTick] = useState(0);
++  useEffect(() => {
++    const t = window.setInterval(() => setTick((v) => v + 1), 45_000);
++    return () => window.clearInterval(t);
++  }, []);
++  const hi = 31 + (tick % 2);
++  const lo = 22 - (tick % 2);
++  return (
++    <div className={widgetShell} data-testid="widget-weather">
++      <Pulse pulseKey={tick}>
++        <div className="flex items-start justify-between text-white">
++          <div>
++            <p className="text-xs font-medium text-white/70">Dhaka</p>
++            <p className="text-3xl font-light leading-none">{28 + (tick % 3)}°</p>
++            <p className="mt-1 text-[11px] text-white/65">H:{hi}° L:{lo}°</p>
++          </div>
++          <CloudSun size={30} className="text-amber-200" />
++        </div>
++        <div className="mt-3 flex justify-between text-[10px] text-white/70">
++          {['Today', 'Tue', 'Wed', 'Thu'].map((d, i) => (
++            <span key={d} className="flex flex-col items-center gap-1">
++              <span>{d}</span>
++              <CloudSun size={13} className={i > 1 ? 'text-cyan-200' : 'text-amber-200'} />
++              <span>{30 - i}°</span>
++            </span>
++          ))}
++        </div>
++      </Pulse>
++    </div>
++  );
++}
++
++export function ClockWidget() {
++  const [now, setNow] = useState(() => new Date());
++  useEffect(() => {
++    const t = window.setInterval(() => setNow(new Date()), 15_000);
++    return () => window.clearInterval(t);
++  }, []);
++  const hhmm = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
++  return (
++    <div className={`${widgetShell} flex flex-col justify-between`} data-testid="widget-clock">
++      <Pulse pulseKey={hhmm}>
++        <p className="text-4xl font-extralight leading-none text-white">{hhmm}</p>
++        <p className="mt-2 text-[11px] text-white/65">
++          {now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
++        </p>
++      </Pulse>
++    </div>
++  );
++}
++
++export function MusicWidget() {
++  const playing = useLauncher((s) => s.musicPlaying);
++  const toggle = useLauncher((s) => s.toggleMusic);
++  const trackIndex = useLauncher((s) => s.musicTrack);
++  const elapsed = useLauncher((s) => s.musicElapsed);
++  const track = TRACKS[trackIndex % TRACKS.length];
++  return (
++    <div className={widgetShell} data-testid="widget-music">
++      <div className="flex items-center gap-3">
++        <span className={`flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ${track.art}`}>
++          {playing ? <Pause size={17} className="text-white" /> : <Play size={17} className="translate-x-px text-white" />}
++        </span>
++        <div className="min-w-0 flex-1">
++          <p className="truncate text-sm font-semibold text-white">{track.name}</p>
++          <p className="truncate text-[10px] text-white/60">{playing ? 'Playing · WebAudio synth' : 'Paused · tap play'}</p>
++        </div>
++        <button
++          type="button"
++          onClick={toggle}
++          aria-label={playing ? 'Pause music' : 'Play music'}
++          data-testid="widget-music-toggle"
++          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white/20 text-white transition active:scale-90"
++        >
++          {playing ? <Pause size={15} /> : <Play size={15} className="translate-x-px" />}
++        </button>
++      </div>
++      <div className="mt-3 h-1 w-full overflow-hidden rounded-full bg-white/15">
++        <div className="h-full rounded-full bg-cyan-300/90 transition-[width] duration-1000 ease-linear" style={{ width: `${(elapsed / 96) * 100}%` }} />
++      </div>
++    </div>
++  );
++}
++
++/** SupremeAI status widget — আমাদের প্ল্যান অনুযায়ী নিজের প্রোডাক্টের টাই। */
++export function SystemWidget() {
++  return (
++    <div className={widgetShell} data-testid="widget-system">
++      <Pulse pulseKey="static">
++        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-cyan-200">
++          <Sparkles size={12} /> SupremeAI
++        </p>
++        <ul className="mt-2 flex flex-col gap-1.5 text-[11px] text-white/75">
++          <li className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" /> Agent: online</li>
++          <li className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-cyan-300" /> Model: configured</li>
++          <li className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-violet-300" /> Bridge: ready</li>
++        </ul>
++      </Pulse>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/registry.tsx b/studio/src/components/mobile/registry.tsx
+new file mode 100644
+index 00000000..ad07a7e0
+--- /dev/null
++++ b/studio/src/components/mobile/registry.tsx
+@@ -0,0 +1,33 @@
++/**
++ * App registry — launcher-এর অ্যাপ তালিকা (iOS-home-template)।
++ * বাংলা: AppId → নাম, lucide icon, gradient, পূর্ণ-স্ক্রিন কম্পোনেন্ট।
++ * নতুন অ্যাপ যোগ করতে হলে শুধু এখানে এন্ট্রি + launcherStore-এর AppId union
++ * আপডেট করলেই হবে।
++ */
++
++import { CalendarDays, CloudSun, Image, Music2, Settings, StickyNote } from 'lucide-react';
++import type { LucideIcon } from 'lucide-react';
++import type { AppId } from './launcherStore';
++import { WeatherApp } from './apps/WeatherApp';
++import { MusicApp } from './apps/MusicApp';
++import { PhotosApp } from './apps/PhotosApp';
++import { NotesApp } from './apps/NotesApp';
++import { CalendarApp } from './apps/CalendarApp';
++import { SettingsApp } from './apps/SettingsApp';
++
++export interface AppDef {
++  id: AppId;
++  name: string;
++  icon: LucideIcon;
++  gradient: string;
++  screen: React.ComponentType;
++}
++
++export const APP_REGISTRY: Record<AppId, AppDef> = {
++  weather: { id: 'weather', name: 'Weather', icon: CloudSun, gradient: 'from-sky-400/90 to-cyan-600/90', screen: WeatherApp },
++  music: { id: 'music', name: 'Music', icon: Music2, gradient: 'from-rose-400/90 to-fuchsia-600/90', screen: MusicApp },
++  photos: { id: 'photos', name: 'Photos', icon: Image, gradient: 'from-amber-300/90 to-orange-500/90', screen: PhotosApp },
++  notes: { id: 'notes', name: 'Notes', icon: StickyNote, gradient: 'from-yellow-200/90 to-amber-400/90', screen: NotesApp },
++  calendar: { id: 'calendar', name: 'Calendar', icon: CalendarDays, gradient: 'from-slate-100/90 to-slate-400/90', screen: CalendarApp },
++  settings: { id: 'settings', name: 'Settings', icon: Settings, gradient: 'from-slate-400/90 to-slate-600/90', screen: SettingsApp },
++};

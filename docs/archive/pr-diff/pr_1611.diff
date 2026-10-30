@@ -1,0 +1,379 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28.md b/docs/SCOUT_RADAR_2026-10-28.md
+new file mode 100644
+index 00000000..725a3e6f
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28.md
+@@ -0,0 +1,373 @@
++# 🭂 SCOUT RADAR — 2026-10-28 (Long-Range Telescope 🔭)
++
++> **Role:** Ecosystem Scout (গ্লোবাল টেক রাডার) · **Job:** 478429 · **Cycle:** single-dispatch
++> **Method:** Every external signal below passes the SupremeAI Core Philosophy Filter before any proposal.
++> Verdicts: `accept_verbatim` · `adapt_cleanroom` · `reject_hype` · `quarantine_eval`
++> **Invariants honored:** no source code touched (docs-only), no direct push, no ghost fixes, zero-credential via MCP Bridge.
++
++---
++
++## 1. Scope & Method
++
++This radar tracks external AI releases, papers, and architectures from OpenAI, Anthropic,
++Meta, DeepSeek, and Google, plus protocol/research signals (MCP spec, ALMA, DualPath,
++agent-eval studies) observed between 2026-07 and 2026-10-28. Each item gets a full-spectrum
++evaluation: **Pros, Cons, Risks, Anti-patterns, and "এটা করা যাবে না"** (what SupremeAI must
++refuse to do with it), followed by a philosophy verdict. Nothing here is adopted on hype;
++every adoption path is expressed as a concrete, claimable issue in §4.
++
++Evidence base is dated public reporting and vendor documents only (TechCrunch 2026-07-09,
++Evertune tracker 2026-10, Presenc lineage 2026-10-01, Reuters/WSJ 2026-10-20/21,
++Google Cloud I/O 2026 blog, DeepSeek V4 technical report 2026-04, Trilogy AI CoE studies
++2026-07..10). Where a claim traces to a single secondary source, it is marked as such and
++kept out of acceptance criteria.
++
++---
++
++## 2. Radar Summary Table
++
++| # | Signal | Org | Date | One-line | Verdict |
++|---|--------|-----|------|----------|---------|
++| R1 | GPT-5.6 family (Sol/Terra/Luna) + ChatGPT Work | OpenAI | 2026-07-09 | Tiered model family, cyber-capable, 54% token-efficiency claim | `adapt_cleanroom` |
++| R2 | GPT-6 + Intelligent UI; "dot" always-on agent | OpenAI | 2026-10-07 | Persistent-context agent runtime goes mainstream | `quarantine_eval` |
++| R3 | Codex Security CLI open-sourced (Apache) | OpenAI | 2026-07-30 | CI-integrable security scan CLI + TS SDK | `accept_verbatim` (pattern) |
++| R4 | Claude Opus 4.6 / Opus 5.5 / Fable 5.1 line | Anthropic | 2026-07..09 | SOTA agentic coding; Fable 5.1 burned +69% output tokens | `adapt_cleanroom` |
++| R5 | Gemini 3.5/3.6/3.8 Flash cadence; Gemini 4 Argon (Fairwind) | Google | 2026-05..09 | Price-per-task fell ~71% via efficiency; cyber-gated frontier | `adapt_cleanroom` |
++| R6 | Muse Spark (Avocado) hybrid open/closed strategy | Meta | 2026-09..10 | "Private preview first, open later with strings" | `reject_hype` |
++| R7 | DeepSeek V4 (CSA+HCA, mHC, Muon, 1.6T MoE, 1M ctx) | DeepSeek | 2026-04-24 | Efficiency-first frontier; open weights + cheap API | `adapt_cleanroom` |
++| R8 | MCP spec 2026-07-28 (stateless, OAuth 2.1+PKCE) | OpenSSF/MCP | 2026-07-28 | Protocol converges on enterprise HTTP semantics | `accept_verbatim` |
++| R9 | ALMA — meta-learning memory design for agents | Clune group | 2026-02 | Automated selection among memory architectures | `adapt_cleanroom` |
++| R10 | DualPath — agentic inference storage bottleneck | arXiv 2602.21548 | 2026-02 | I/O-aware serving for long-horizon agents | `quarantine_eval` |
++| R11 | Eval studies: Astra xhigh, Fable churn, Muse Wonder blind study | Trilogy AI CoE | 2026-09..10 | More reasoning effort ≠ better; passing tests ≠ integration | `accept_verbatim` (method) |
++| R12 | Anthropic risk disclosures (self-replication horizon) | Anthropic | 2026-10 | IPO prospectus names cyber + self-replication risk | `quarantine_eval` |
++
++---
++
++## 3. Full-Spectrum Evaluations
++
++### R1 · OpenAI GPT-5.6 family (Sol / Terra / Luna) + ChatGPT Work — `adapt_cleanroom`
++
++**What shipped (2026-07-09):** three-tier family — Sol (workhorse), Terra (mid), Luna
++(budget). Vendor claims Sol is 54% more token-efficient on coding tasks and the family is
++the "strongest cybersecurity model yet" (threat modeling, code review/patching, blue
++teaming). ChatGPT Work ships as an enterprise clerical companion (docs, sheets, decks).
++US administration pressure on the rollout was reported before launch.
++
++- **Pros:** tier taxonomy (workhorse/mid/budget) matches real routing economics; explicit
++  defensive-cyber positioning gives enterprises a vocabulary to scope allowed use;
++  token-efficiency as a headline metric validates cost-per-task (not cost-per-token) as
++  the KPI that matters — the same KPI SupremeAI's cadence loops should hold.
++- **Cons:** efficiency numbers are vendor-reported on vendor-chosen tasks; the cyber
++  positioning arrives with government-restriction history, meaning availability and
++  policy posture can change under non-technical pressure; ChatGPT Work is a closed
++  runtime that locks clerical workflow data into one vendor surface.
++- **Risks:** single-vendor dependency for "work" workloads; cyber-capable models behind
++  policy shifts; efficiency claims decay across model generations (see R4: the same lab
++  pattern — new tier, more tokens — appears in competitor lines too).
++- **Anti-patterns flagged:** adopting a model family because of a launch-cycle headline;
++  routing all tasks to the "flagship" tier by default.
++- **এটা করা যাবে না:** SupremeAI MUST NOT wire any single vendor family as a default
++  dependency, and MUST NOT enable cyber-offense-adjacent prompts in any agent surface.
++  No blind copy of the "orders of magnitude" marketing (it did not survive independent
++  cost-per-task scrutiny in third-party studies, see R11).
++- **SupremeAI adoption path:** clean-room implement the *pattern* — a tier router with
++  explicit per-request token budgets (Issue P-01) — while keeping providers swappable.
++
++### R2 · OpenAI GPT-6 + Intelligent UI; "dot" always-on agent — `quarantine_eval`
++
++**What shipped (2026-10-07 per Evertune tracker; dot hands-on 2026-10-01):** a flagship
++generation plus an always-on personal agent that keeps context between conversations and
++reports its own limits. This is the persistent-agent-runtime pattern going consumer.
++
++- **Pros:** demonstrates that persistent memory + long-horizon scheduling is now a
++  product baseline, validating SupremeAI's memory-sidecar/episodic architecture bets;
++  "reports its own limits" is a UX worth clean-rooming for agent honesty.
++- **Cons:** closed runtime; the always-on pattern multiplies attack surface (session
++  continuity = persistent credential exposure); third-party hands-on notes context
++  continuity changes failure modes (stale-context drift), not just wins.
++- **Risks:** always-on agents make silent cost bleed and silent scope creep the default;
++  consumer-grade persistence patterns are NOT enterprise governance patterns.
++- **Anti-patterns flagged:** "assistant that never resets" without per-session budget
++  ledgers; treating vendor UI conventions as a spec.
++- **এটা করা যাবে না:** no SupremeAI agent may run always-on without (a) a token-budget
++  ledger per slot, and (b) a kill-switch reachable by Admin. No persistence of user
++  context across tenants, ever.
++- **SupremeAI adoption path:** quarantine until Issues P-11 (per-slot budget caps) and
++  P-05 (breach-drill harness) land; then eval in an isolated lane only.
++
++### R3 · OpenAI Codex Security CLI open-sourced (Apache-2.0) — `accept_verbatim` (pattern)
++
++**What shipped (2026-07-30):** Apache-licensed CLI + TypeScript SDK around the Codex
++Security plugin: CI integration, cost controls, structured exports, bulk scans.
++
++- **Pros:** permissive license (repo verdict rule: MIT/Apache=accept); the *shape* —
++  security scan as a CI step with cost controls and structured output — is directly
++  transferable to SupremeAI's 3-Tier Verify pipeline; independent corroboration that
++  agent-security needs tooling, not charters (see R11/R12).
++- **Cons:** keyed to that vendor's plugin ecosystem; adopting the binary creates
++  integration gravity toward their model routing.
++- **Risks:** supply-chain (a security tool is itself a privileged runtime); license
++  drift on future versions must be re-checked at each pin bump.
++- **Anti-patterns flagged:** running third-party security CLIs with broad repo tokens.
++- **এটা করা যাবে না:** never grant a security scanner write access to the board or
++  secrets; scan output must land as evidence, not as auto-fix commits.
++- **SupremeAI adoption path:** accept the *pattern* verbatim as a CI gate spec; the
++  implementation stays in-repo (Issue P-03 pairs it with the token-churn gate).
++
++### R4 · Anthropic Claude Opus 4.6 / Opus 5.5 / Fable 5.1 — `adapt_cleanroom`
++
++**What shipped:** Opus 4.6 at 80.8% SWE-bench Verified (reference frontier, per Morph
++roundup cited in DeepSeek V4 report); Opus 5.5 ranked most complete in a 21-run reviewed
++Harbor-migration study; Fable 5.1 spent +69% output tokens vs Fable 5 with 2.6x diff
++churn and broader system-wide refactors (Trilogy matched-pilot, 2026-09-03). Financials:
++$80.7B H1-2026 net loss (mostly accounting), IPO-window disclosure of cyber and
++self-replication risk factors (Reuters/WSJ, 2026-10-20/21).
++
++- **Pros:** strongest reviewed-implementation record among frontier agents — the blind
++  study is exactly the evidence culture SupremeAI's PR Guardian should encode; the
++  Fable 5.1 churn study is a gift: it proves model bumps need regression gates on
++  *behavior* (tokens, churn), not just benchmark scores.
++- **Cons:** churn regression means "newest = better" is false in measurable ways;
++  vendor financial instability (valuation step-down talk) is a supply-risk signal for
++  pricing/availability, not a quality signal — keep them separate.
++- **Risks:** anchoring the ecosystem to one vendor's agent harness; diff churn at 2.6x
++  multiplies review load — deadly for a bot-supervised review pipeline.
++- **Anti-patterns flagged:** auto-upgrading pinned models on release day; letting an
++  agent run "system-wide refactors" without scope fences.
++- **এটা করা যাবে না:** no agent may refactor beyond the issue's declared scope paths —
++  the Fable 5.1 churn data is the empirical proof behind our Boundary invariant. And no
++  procurement/strategy decisions keyed to IPO rumors.
++- **SupremeAI adoption path:** clean-room the *measurement* (Issue P-03) and the
++  reviewed-implementation judging method (Issue P-10), not the models themselves.
++
++### R5 · Google Gemini 3.5/3.6/3.8 Flash cadence + Gemini 4 Argon (Fairwind) — `adapt_cleanroom`
++
++**What shipped:** 3.5 Flash became AI-Mode default at I/O (2026-05-19); 3.6 Flash cut
++output price 17% with effective cost-per-task down ~71% (Trilogy, 2026-07-21); 3.8 Flash
++shipped 2026-09-02; Gemini 4 Argon announced 2026-09-30 in limited preview to vetted
++cyber defenders (Fairwind Program), no public date. 3.5 Pro delayed (reported) to improve
++coding performance. Gemma 4 under Apache-2.0.
++
++- **Pros:** the Flash cadence proves the efficiency-first thesis — price drops compound
++  with token-efficiency into order-of-magnitude real cost reduction without tier
++  theatrics; Argon's gated cyber rollout is a *responsible* frontier-release template
++  (capability matched to vetted audience); Gemma 4's Apache-2.0 is the open-license
++  gold standard.
++- **Cons:** Pro-tier delays show cadence marketing outruns shipping; "AI Mode default"
++  churns model identity under users without consent mechanics — bad precedent for
++  agent surfaces.
++- **Risks:** version soup (3.5/3.6/3.8 within months) breaks reproducibility of evals
++  and prompts; gated programs like Fairwind are unauditable from outside.
++- **Anti-patterns flagged:** eval results pinned to floating "latest" model aliases.
++- **এটা করা যাবে না:** SupremeAI MUST NOT pin any production route to a floating alias;
++  and MUST NOT seek or use restricted-access frontier models in any autonomous lane.
++- **SupremeAI adoption path:** clean-room the efficiency-cadence KPI (cost-per-task
++  ledger, Issue P-10) and exact-version pinning policy (Issue P-07).
++
++### R6 · Meta Muse Spark (Avocado) hybrid open/closed strategy — `reject_hype`
++
++**What is known:** first release from rebuilt Meta Superintelligence Labs (Alexandr Wang);
++"private preview" with specs withheld; eventual "open" versions promised after safety
++evaluation with "some pieces proprietary" (reporting; codenames Avocado/Mango are
++internal, not products). CapEx guidance $115–135B for 2026.
++
++- **Pros:** honestly, the *stated* safety-conditional openness is a reasonable posture
++  for cyber-capable models; competition on openness promises keeps pressure on everyone.
++- **Cons:** "open later, some pieces proprietary" is unfalsifiable until shipped — it
++  converts community goodwill into free evaluation labor for a closed product; specs
++  withheld means zero reproducibility; codename-based hype cycle (Avocado/Mango) is
++  marketing-first, evidence-last.
++- **Risks:** ecosystem engineering effort burned pre-integrating vaporware; "open
++ washing" devalues genuine open-weight releases (DeepSeek, Gemma).
++- **Anti-patterns flagged:** building adapters for unreleased models; treating
++  codename leaks as roadmap.
++- **এটা করা যাবে না:** SupremeAI MUST NOT build any integration, schema, or roadmap item
++  against unreleased/codename-stage models. No radar item graduates to an issue on
++  codename evidence alone.
++- **SupremeAI adoption path:** none — reject_hype. Re-evaluate only at actual
++  open-weight release with license in hand (repo rule: GPL=reject, MIT/Apache=accept).
++
++### R7 · DeepSeek V4 (CSA+HCA hybrid attention, mHC, Muon, 1.6T/49B MoE, 1M ctx) — `adapt_cleanroom`
++
++**What shipped (2026-04-24 preview):** open weights V4-Pro (1.6T total / 49B active) and
++V4-Flash (284B / 13B); Compressed Sparse Attention + Heavily Compressed Attention;
++manifold-constrained hyper-connections replacing residuals; Muon optimizer over 32T
++tokens; 1M context with ~27% of V3.2 per-token FLOPs and ~10% KV cache at 1M; SWE-bench
++Verified 80.6%, Terminal-Bench 2.0 67.9% (leads); API $0.145/$1.74 per M in/out (Pro);
++FP4/FP8 quantized weights. R2: not released as of 2026-10-13.
++
++- **Pros:** the strongest efficiency-per-capability release of the cycle, with open
++  weights and a technical report — the anti-hype bundle; 1M context *with published
++  FLOPs math* is the first long-context claim that comes with its own cost model;
++  three reasoning-effort modes (Non-Think/Think-High/Think-Max) make the
++  compute-vs-quality dial explicit and contract-friendly.
++- **Cons:** hardware reality (1.6T MoE) means self-hosting is out of reach for most —
++  "open" here mostly means "auditable API"; efficiency claims are strongest on
++  vendor-selected long-context tasks; reasoning-effort modes invite silent quality
++  drift when callers tune for cost.
++- **Risks:** geo/political supply exposure for a Beijing-based vendor; FP4/FP8
++  quantization complicates like-for-like reproducibility; benchmark parity ±0.2 points
++  (80.6 vs 80.8) is within eval noise — do not build decisions on it.
++- **Anti-patterns flagged:** "1M context viable" adopted without needle-recall and
++  drift checks; benchmark-delta decisions below noise floor.
++- **এটা করা যাবে না:** SupremeAI MUST NOT route long-context tasks to any 1M-context
++  model before our own quarantine eval (cost, recall, drift) passes. MUST NOT treat
++  benchmark deltas <1 point as superiority evidence.
++- **SupremeAI adoption path:** clean-room the *ideas* — effort-tier routing (P-01),
++  quarantine eval harness for long-context claims (P-08) — independent of provider.
++
++### R8 · MCP spec 2026-07-28 (stateless, OAuth 2.1 + PKCE, HTTP semantics) — `accept_verbatim`
++
++**What changed:** the spec makes MCP stateless, standardizes OAuth 2.1 with PKCE, and
++converges on plain HTTP semantics — moving MCP from developer convention to enterprise
++infrastructure (Trilogy analysis, 2026-07-23).
++
++- **Pros:** stateless servers eliminate an entire class of session-state bugs and scale
++  horizontally — directly relevant to the Control Tower's Render deployment; OAuth 2.1
++  + PKCE is exactly the zero-credential-to-credential bridge our slot architecture
++  needs; protocol-standard alignment keeps SupremeAI interoperable with Claude, Cursor,
++  Gemini, ChatGPT, and VS Code clients instead of bespoke adapters.
++- **Cons:** migration cost: our tower currently issues session IDs on initialize;
++  stateless mode changes heartbeat, lease, and HITL-approval flows that assume
++  session affinity; spec compliance without capability negotiation can break older
++  clients.
++- **Risks:** half-migrated state (some adapters stateful, some stateless) is worse than
++  either extreme; OAuth flows in autonomous agent lanes must never auto-approve.
++- **Anti-patterns flagged:** hand-rolled auth beside a standardized OAuth path;
++  long-lived sessions holding implicit trust.
++- **এটা করা যাবে না:** no adoption that silently drops the fail-closed property of slot
++  authorization, and no OAuth grant flows that bypass Human-In-The-Loop approval for
++  admin-scope tools.
++- **SupremeAI adoption path:** the one verbatim-accept item this cycle — rfc to adopt
++  the spec baseline across tower adapters (Issue P-02), gated behind HITL review.
++
++### R9 · ALMA — Automated meta-Learning of Memory designs for Agentic systems — `adapt_cleanroom`
++
++**What it is (Clune group, Feb 2026 per papers-of-week):** a meta-learning approach that
++automatically searches over memory architecture designs for agents rather than fixing
++one (episodic vs long-term vs RAG vs graph).
++
++- **Pros:** SupremeAI's memory sidecar already runs all these substrates (episodic
++  records, learned facts, vector store, knowledge graph) — ALMA says the *router*
++  between them should be learned from win-rates, not hand-coded; cheap to prototype
++  with existing memory_get_similar_tasks feedback as the reward signal.
++- **Cons:** meta-learning loops need eval volume we may not have yet; a mis-learned
++  router degrades every downstream agent at once — a single point of silent failure.
++- **Risks:** optimizing memory retrieval for benchmark tasks that don't match real
++  cadence work; feedback loops that reinforce stale routing.
++- **Anti-patterns flagged:** learning-based routing without a deterministic fallback.
++- **এটা করা যাবে না:** no learned router in the autonomous lane without a manual
++  override and a per-route accuracy floor; never train the router on tenant-private
++  content.
++- **SupremeAI adoption path:** clean-room — start with measured win-rate tracking per
++  memory route (Issue P-04); automate selection only after baselines exist.
++
++### R10 · DualPath — storage-bandwidth bottleneck in agentic LLM inference — `quarantine_eval`
++
++**What it is (arXiv 2602.21548, Feb 2026):** serving-layer work on breaking storage
++bandwidth limits for long-horizon agentic inference.
++
++- **Pros:** identifies a real ops constraint — agentic loops are I/O-bound before they
++  are model-bound; relevant if SupremeAI ever self-hosts or runs heavy vector workloads.
++- **Cons:** our serving is API-mediated (Render + vendor APIs); the bottleneck today is
++  quota and cost, not disk bandwidth — premature optimization for us.
++- **Risks:** infrastructure ideas adopted from papers without our own profiling = ghost
++  engineering effort.
++- **Anti-patterns flagged:** paper-driven infra rewrites without a measured bottleneck.
++- **এটা করা যাবে না:** no serving-layer rewrite motivated by a paper until our own
++  profiling shows the same bottleneck.
++- **SupremeAI adoption path:** quarantine_eval — revisit only if Qdrant/Redis profiling
++  (redis_stats, qdrant latency) shows I/O saturation at cadence scale.
++
++### R11 · Eval-method studies (Astra xhigh, Fable churn, Muse Wonder blind study) — `accept_verbatim` (method)
++
++**What they show (Trilogy AI CoE, 2026-09..10):** (a) xhigh reasoning effort averaged
++1.76–2.52x the tokens of medium with no quality case for the extra spend; (b) Fable 5.1
++burned +69% output tokens / 2.6x diff churn vs its predecessor; (c) in a 21-run blind
++study, Muse Wonder's passing tests masked missing production integration while reviewed
++Claude implementations were most complete.
++
++- **Pros:** three independent, quantified demonstrations that *spend ≠ quality* and
++  *green tests ≠ integration* — the exact measurement culture the 3-Tier Verify
++  (Reflection → Smoke → Tests) already gestures at; methods are vendor-neutral and
++  cheap to replicate.
++- **Cons:** small-N studies (21–24 runs); results may not transfer to our task mix.
++- **Risks:** over-fitting governance to one season's models; study methodology itself
++  needs pinning to exact model versions to be reproducible (ties to P-07).
++- **Anti-patterns flagged:** cost dashboards that show spend without paired quality
++  evidence.
++- **এটা করা যাবে না:** no "quality" claim inside SupremeAI without a paired, dated,
++  version-pinned measurement. No agent-spend increase approved without a same-task
++  quality comparison.
++- **SupremeAI adoption path:** adopt the methods verbatim as CI gates and ledgers
++  (Issues P-03, P-10).
++
++### R12 · Anthropic risk disclosures (cyber, blackmail-by-model, self-replication horizon) — `quarantine_eval`
++
++**What was disclosed (Reuters/WSJ, 2026-10-20/21):** IPO-window risk factors naming
++difficulty of preventing sophisticated cyberattack or blackmail by uncontrolled models;
++company-reported timeline that AI could be "months away" from self-replicating on
++everyday devices.
++
++- **Pros:** a frontier lab putting these in a legal disclosure is a strong governance
++  signal — risk registers beat keynote reassurance; validates SupremeAI's kill-switch
++  and audit-trail-first design.
++- **Cons:** disclosure language is litigated boilerplate as much as engineering fact;
++  "months away" claims are unauditable from outside.
++- **Risks:** either dismissal or panic — both are wrong responses; the actionable core
++  is narrow: agent runtimes need inventory, credential mediation, safe stopping, and
++  tamper-evident logs (the same control set the OpenAI-HF breach postmortem converged on).
++- **Anti-patterns flagged:** governance charters without enforceable controls (see
++  "A Charter Is Not a Control", 2026-09-14).
++- **এটা করা যাবে না:** no SupremeAI agent may hold credentials that outlive its task
++  lease; no self-replicating, self-scheduling behavior outside the cadence dispatcher.
++- **SupremeAI adoption path:** quarantine — convert into a breach-drill rfc (Issue P-05)
++  that *tests* our controls against this exact control list.
++
++---
++
++## 3b. Cross-Cutting Anti-Patterns Observed This Cycle
++
++1. **Tier theater** — flagship/mid/budget naming used to justify flagship-everything routing.
++2. **Spend-blind upgrade** — model bumps adopted on benchmark deltas within noise (<1 pt).
++3. **Green-test illusion** — passing tests mistaken for production integration (Muse Wonder).
++4. **Churn blindness** — new versions burning 1.7–2.6x tokens/churn without gates (Fable 5.1, Astra xhigh).
++5. **Open-washing** — "open later, some pieces proprietary" consuming community labor (Muse Spark).
++6. **Floating aliases** — evals/pins on "latest" instead of exact versions (Gemini cadence).
++7. **Charters without controls** — governance prose without enforceable mechanisms.
++8. **Always-on without ledgers** — persistent agents with no budget or kill-switch (dot pattern).
++9. **Paper-driven rewrites** — infra changes from papers without own profiling (DualPath).
++10. **Silent vendor policy shifts** — cyber-capable model availability changing under political pressure.
++
++---
++
++## 4. Proposed Issues (12 — exceeds 10-issue mandate)
++
++All: labels `P1-high`, `status:unclaimed`, `repo:<domain>`. Format per constitution.
++Full copy-ready bodies + `gh issue create` commands live in the cycle report; titles here:
++
++| ID | Title | Labels |
++|----|-------|--------|
++| P-01 | `feat(gateway): reasoning-effort tier router with per-request token-budget guardrails` | `P1-high`, `status:unclaimed`, `repo:gateway` |
++| P-02 | `rfc(federation): adopt MCP 2026-07-28 stateless HTTP + OAuth 2.1/PKCE baseline across Control Tower adapters` | `P1-high`, `status:unclaimed`, `repo:core` |
++| P-03 | `feat(core): token-churn regression gate in CI — block model bumps raising output tokens >30% or diff churn >2x` | `P1-high`, `status:unclaimed`, `repo:core` |
++| P-04 | `feat(memory): win-rate ledger per memory route (episodic vs facts vs RAG vs graph) as ALMA-cleanroom baseline` | `P1-high`, `status:unclaimed`, `repo:core` |
++| P-05 | `rfc(infra): breach-drill harness testing agent runtime controls (inventory, credential mediation, safe stopping, tamper-evident logs)` | `P1-high`, `status:unclaimed`, `repo:infra` |
++| P-06 | `feat(browser): prompt-injection canary corpus + regression suite for scrape/audit agents` | `P1-high`, `status:unclaimed`, `repo:browser` |
++| P-07 | `feat(gateway): model deprecation watchlist — exact-version pins, shutdown-date alerts, auto-repoint runbook` | `P1-high`, `status:unclaimed`, `repo:gateway` |
++| P-08 | `rfc(core): long-context quarantine eval harness — cost/needle-recall/drift gate before any 1M-context routing` | `P1-high`, `status:unclaimed`, `repo:core` |
++| P-09 | `feat(marketplace): license + provenance gate for mcp_plugins registry (MIT/Apache accept, GPL reject, upstream verify)` | `P1-high`, `status:unclaimed`, `repo:marketplace` |
++| P-10 | `feat(infra): dual-model shadow-eval harness with blind judge and cost/quality ledger` | `P1-high`, `status:unclaimed`, `repo:infra` |
++| P-11 | `feat(agents): per-slot token spend caps + cadence budget ledger (heartbeat-aware, kill-switch reachable)` | `P1-high`, `status:unclaimed`, `repo:core` |
++| P-12 | `rfc(docs): Never-Do register (এটা করা যাবে না) codifying cross-vendor incident anti-patterns as enforceable checklist` | `P1-high`, `status:unclaimed`, `repo:docs` |
++
++## 5. Philosophy Verdict Ledger
++
++`accept_verbatim`: R3 (pattern), R8 (spec), R11 (method) ·
++`adapt_cleanroom`: R1, R4, R5, R7, R9 ·
++`quarantine_eval`: R2, R10, R12 ·
++`reject_hype`: R6
++
++**Zero blind hype this cycle:** 3 accepts, 5 clean-room adaptations, 3 quarantines,
++1 rejection — every accept carries an in-repo issue path; nothing adopted on codename,
++keynote, or sub-noise benchmark evidence.

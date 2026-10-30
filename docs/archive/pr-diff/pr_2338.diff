@@ -1,0 +1,468 @@
+diff --git a/scripts/agents/mcp_tower_client.py b/scripts/agents/mcp_tower_client.py
+index eee24bbd..484ad4dc 100644
+--- a/scripts/agents/mcp_tower_client.py
++++ b/scripts/agents/mcp_tower_client.py
+@@ -83,6 +83,11 @@ def resolve_mcp_server_url() -> str:
+ 
+ MCP_SERVER_URL = resolve_mcp_server_url()
+ MCP_SSE_PATH = "/sse"
++MCP_STREAMABLE_PATH = "/mcp"
++# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the legacy SSE
++# transport keeps negotiating the revision the old path always used.
++PROTOCOL_VERSION_STREAMABLE = "2025-03-26"
++PROTOCOL_VERSION_SSE = "2024-11-05"
+ REQUEST_TIMEOUT = 30
+ SSE_READ_TIMEOUT = 600
+ RESPONSE_WAIT = 15
+@@ -106,6 +111,12 @@ class McpTowerTimeoutError(McpTowerError):
+     pass
+ 
+ 
++class _LegacyFallback(Exception):
++    """Internal signal: the Streamable HTTP attempt failed in a way the spec's
++    transition algorithm answers with the legacy GET+SSE transport (#2307).
++    Never escapes connect() — callers only ever see McpTowerError."""
++
++
+ # ── Identity management ────────────────────────────────────────────────────
+ 
+ 
+@@ -141,7 +152,13 @@ def resolve_name(preferred: str | None = None) -> str:
+ 
+ 
+ class McpTowerClient:
+-    """Synchronous MCP client over SSE transport (no auth)."""
++    """Synchronous MCP client (no auth) — Streamable HTTP first, SSE fallback.
++
++    Transport selection follows the MCP spec 2025-06-18 client transition
++    algorithm (#2307): POST-first to the server's single endpoint; the legacy
++    GET+SSE transport is the automatic fallback so no working configuration
++    breaks during the fleet transition.
++    """
+ 
+     def __init__(
+         self,
+@@ -153,6 +170,7 @@ def __init__(
+         self.sse_path = sse_path if sse_path.startswith("/") else "/" + sse_path
+         self.verbose = verbose
+         self._session_id: str | None = None
++        self._transport: str | None = None  # "streamable" | "sse" once connected
+         self._message_endpoint: str | None = None
+         self._sse_thread: threading.Thread | None = None
+         self._sse_stop = threading.Event()
+@@ -168,8 +186,69 @@ def _log(self, msg: str) -> None:
+             print(f"[mcp] {msg}", file=sys.stderr, flush=True)
+ 
+     def connect(self) -> None:
++        """Connect using the MCP spec 2025-06-18 client transition algorithm.
++
++        #2307 (R61 lane, R60 option A): POST the InitializeRequest to the
++        server URL first; only when that attempt fails (HTTP >= 400 or the
++        request cannot be delivered) fall back to the legacy GET+SSE
++        transport. A server that already speaks Streamable HTTP is used via
++        its single endpoint; every configuration that works today keeps
++        working through the fallback — the old transport is spec-blessed
++        for exactly this transition posture.
++        """
+         if self._initialized:
+             return
++        try:
++            self._connect_streamable()
++        except _LegacyFallback as e:
++            self._log(f"streamable unsupported ({e}); falling back to SSE")
++            self._connect_sse()
++        self._initialized = True
++
++    def _connect_streamable(self) -> None:
++        url = self.server_url + MCP_STREAMABLE_PATH
++        init_id = str(uuid.uuid4())
++        payload = {
++            "jsonrpc": "2.0",
++            "id": init_id,
++            "method": "initialize",
++            "params": {
++                "protocolVersion": PROTOCOL_VERSION_STREAMABLE,
++                "capabilities": {},
++                "clientInfo": {"name": "supremeai-agent", "version": "1.0.0"},
++            },
++        }
++        self._log(f"POST initialize (streamable): {url}")
++        try:
++            resp = self._http.post(
++                url,
++                json=payload,
++                timeout=REQUEST_TIMEOUT,
++                headers={
++                    "Content-Type": "application/json",
++                    "Accept": "application/json, text/event-stream",
++                },
++            )
++        except requests.RequestException as e:
++            raise _LegacyFallback(str(e)) from e
++        if not (200 <= resp.status_code < 300):
++            # Spec: HTTP 4xx → legacy transport. >=400 also covers 5xx here on
++            # purpose: the fallback preserves every currently-working setup.
++            raise _LegacyFallback(f"HTTP {resp.status_code}")
++        sid = resp.headers.get("mcp-session-id")
++        if sid:
++            self._session_id = sid
++        self._transport = "streamable"
++        try:
++            result = self._parse_streamable_response(resp, expect_id=init_id)
++        except Exception:
++            self._transport = None
++            self._session_id = None
++            raise
++        self._log(f"Server: {result.get('serverInfo', {})}" if isinstance(result, dict) else "Server: <streamable>")
++        self._send_notification("notifications/initialized", {})
++
++    def _connect_sse(self) -> None:
+         sse_url = self.server_url + self.sse_path
+         self._log(f"Opening SSE: {sse_url}")
+         resp = self._http.get(
+@@ -193,14 +272,43 @@ def connect(self) -> None:
+         init = self._send_request(
+             "initialize",
+             {
+-                "protocolVersion": "2024-11-05",
++                "protocolVersion": PROTOCOL_VERSION_SSE,
+                 "capabilities": {},
+                 "clientInfo": {"name": "supremeai-agent", "version": "1.0.0"},
+             },
+         )
+         self._log(f"Server: {init.get('serverInfo', {})}")
+         self._send_notification("notifications/initialized", {})
+-        self._initialized = True
++        self._transport = "sse"
++
++    def _parse_streamable_response(self, resp: requests.Response, expect_id: str | None) -> Any:
++        """Parse a Streamable HTTP response body: JSON object or SSE stream."""
++        ctype = (resp.headers.get("Content-Type") or "").lower()
++        if "text/event-stream" in ctype:
++            for raw in resp.iter_lines(decode_unicode=True):
++                line = (raw or "").rstrip("\r")
++                if not line.startswith("data:"):
++                    continue
++                data = line[5:].lstrip()
++                try:
++                    obj = json.loads(data)
++                except json.JSONDecodeError:
++                    continue
++                if not isinstance(obj, dict) or obj.get("id") != expect_id:
++                    continue
++                if "error" in obj:
++                    err = obj["error"]
++                    raise McpTowerError(f"RPC error {err.get('code')}: {err.get('message')}")
++                return obj.get("result")
++            raise McpTowerTimeoutError("streamable SSE body carried no matching response")
++        try:
++            obj = resp.json()
++        except ValueError:
++            return None  # empty body (e.g. bare 202) — nothing to parse
++        if isinstance(obj, dict) and obj.get("id") == expect_id and "error" in obj:
++            err = obj["error"]
++            raise McpTowerError(f"RPC error {err.get('code')}: {err.get('message')}")
++        return obj.get("result") if isinstance(obj, dict) else None
+ 
+     def list_tools(self) -> list[dict[str, Any]]:
+         return self._send_request("tools/list", {}).get("tools", [])
+@@ -238,6 +346,7 @@ def close(self) -> None:
+         self.stop_heartbeat()
+         self._sse_stop.set()
+         self._initialized = False
++        self._transport = None
+         try:
+             self._http.close()
+         except Exception:
+@@ -296,7 +405,35 @@ def _dispatch(self, event_type: str, data: str) -> None:
+             if q:
+                 q.put(payload)
+ 
++    def _post_streamable(self, method: str, params: dict[str, Any], expect_response: bool) -> Any:
++        url = self.server_url + MCP_STREAMABLE_PATH
++        headers = {
++            "Content-Type": "application/json",
++            "Accept": "application/json, text/event-stream",
++            "MCP-Protocol-Version": PROTOCOL_VERSION_STREAMABLE,
++        }
++        if self._session_id:
++            headers["mcp-session-id"] = self._session_id
++        if expect_response:
++            mid = str(uuid.uuid4())
++            payload = {"jsonrpc": "2.0", "id": mid, "method": method, "params": params}
++        else:
++            mid = None
++            payload = {"jsonrpc": "2.0", "method": method, "params": params}
++        self._log(f"-> {method} (streamable)")
++        try:
++            resp = self._http.post(url, json=payload, timeout=REQUEST_TIMEOUT, headers=headers)
++        except requests.RequestException as e:
++            raise McpTowerConnectionError(str(e)) from e
++        if resp.status_code not in (200, 202):
++            raise McpTowerConnectionError(f"HTTP {resp.status_code}")
++        if not expect_response:
++            return None
++        return self._parse_streamable_response(resp, expect_id=mid)
++
+     def _send_request(self, method: str, params: dict[str, Any]) -> Any:
++        if self._transport == "streamable":
++            return self._post_streamable(method, params, expect_response=True)
+         if not self._message_endpoint:
+             raise McpTowerConnectionError("Not connected")
+         mid = str(uuid.uuid4())
+@@ -316,7 +453,7 @@ def _send_request(self, method: str, params: dict[str, Any]) -> Any:
+                 with self._response_lock:
+                     self._response_queues.pop(mid, None)
+                 raise McpTowerConnectionError(f"HTTP {r.status_code}")
+-        except requests.RequestError as e:
++        except requests.RequestException as e:
+             with self._response_lock:
+                 self._response_queues.pop(mid, None)
+             raise McpTowerConnectionError(str(e))
+@@ -335,6 +472,9 @@ def _send_request(self, method: str, params: dict[str, Any]) -> Any:
+         return rpc.get("result")
+ 
+     def _send_notification(self, method: str, params: dict[str, Any]) -> None:
++        if self._transport == "streamable":
++            self._post_streamable(method, params, expect_response=False)
++            return
+         if not self._message_endpoint:
+             return
+         payload = {"jsonrpc": "2.0", "method": method, "params": params}
+diff --git a/tests/test_streamable_http_transition_2307.py b/tests/test_streamable_http_transition_2307.py
+new file mode 100644
+index 00000000..fcd0604d
+--- /dev/null
++++ b/tests/test_streamable_http_transition_2307.py
+@@ -0,0 +1,231 @@
++"""Streamable HTTP client transition — #2307 (R61 lane, R60 option A).
++
++MCP spec revision 2025-06-18 replaces HTTP+SSE and prescribes the client
++transition algorithm: POST the InitializeRequest to the server URL first;
++only when that attempt fails fall back to the legacy GET+SSE transport.
++The tower already serves both transports, so the client plane was the last
++holdout. These tests pin the contract offline (no network): POST-first,
++session-header capture + propagation, spec Accept header, protocol revision
++2025-03-26 on the streamable path, 2024-11-05 untouched on the SSE path,
++and the fallback preserving every currently-working configuration.
++"""
++from __future__ import annotations
++
++import json
++import sys
++from pathlib import Path
++
++import pytest
++import requests
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
++
++import mcp_tower_client as mtc  # noqa: E402
++
++ORIGIN = "https://supremeai-mcp-tower.example"
++
++
++class FakeResp:
++    def __init__(self, status=200, headers=None, body=None, sse_lines=None,
++                 content_type="application/json"):
++        self.status_code = status
++        self.headers = {"Content-Type": content_type}
++        self.headers.update(headers or {})
++        self._body = body
++        self._sse = sse_lines
++
++    @property
++    def text(self):
++        return json.dumps(self._body) if self._body is not None else ""
++
++    def json(self):
++        if self._body is None:
++            raise ValueError("no body")
++        return self._body
++
++    def iter_lines(self, decode_unicode=True):
++        return iter(self._sse or [])
++
++
++class FakeHTTP:
++    """Records POST/GET calls, replays scripted responses."""
++
++    def __init__(self):
++        self.posts: list[tuple[str, dict]] = []
++        self.gets: list[str] = []
++        self.post_responses: list[FakeResp] = []
++        self.get_responses: list[FakeResp] = []
++
++    def post(self, url, **kw):
++        self.posts.append((url, kw))
++        if not self.post_responses:
++            raise AssertionError("unexpected POST — no scripted response")
++        return self.post_responses.pop(0)
++
++    def get(self, url, **kw):
++        self.gets.append(url)
++        if not self.get_responses:
++            raise AssertionError("unexpected GET — SSE fallback must not fire")
++        return self.get_responses.pop(0)
++
++    def close(self):
++        pass
++
++
++def _client(http):
++    c = mtc.McpTowerClient(server_url=ORIGIN)
++    c._http = http
++    return c
++
++
++@pytest.fixture(autouse=True)
++def _fixed_request_id(monkeypatch):
++    # the client generates its own JSON-RPC ids; pin them so scripted
++    # response bodies can carry the matching id
++    monkeypatch.setattr(mtc.uuid, "uuid4", lambda: "fixed-id")
++
++
++def _init_result_body(init_id):
++    return {"jsonrpc": "2.0", "id": init_id,
++            "result": {"serverInfo": {"name": "tower", "version": "1.0"}}}
++
++
++@pytest.fixture(autouse=True)
++def _fast_wait(monkeypatch):
++    monkeypatch.setattr(mtc, "RESPONSE_WAIT", 0.2)
++    monkeypatch.setattr(mtc, "REQUEST_TIMEOUT", 1)
++
++
++def test_streamable_happy_path_post_first_json_body():
++    http = FakeHTTP()
++    http.post_responses = [
++        FakeResp(200, headers={"mcp-session-id": "sess-123"},
++                 body=_init_result_body("id-1")),
++        FakeResp(202),  # notifications/initialized
++        FakeResp(200, body={"jsonrpc": "2.0", "id": "id-2",
++                            "result": {"tools": []}}),  # tools/list
++    ]
++    c = _client(http)
++    c.connect()
++    assert c._transport == "streamable"
++    assert c._session_id == "sess-123"
++    result = c.list_tools()  # third POST
++    # POST-first: exactly the streamable endpoint, zero GETs
++    assert [u for u, _ in http.posts] == [ORIGIN + "/mcp"] * 3
++    assert http.gets == []
++    init_kw = http.posts[0][1]
++    # spec Accept header: both transports offered on every POST
++    assert init_kw["headers"]["Accept"] == "application/json, text/event-stream"
++    assert init_kw["headers"]["Content-Type"] == "application/json"
++    payload = init_kw["json"]
++    assert payload["method"] == "initialize"
++    assert payload["params"]["protocolVersion"] == "2025-03-26"
++    # session header propagates to follow-up requests
++    assert http.posts[1][1]["headers"]["mcp-session-id"] == "sess-123"
++    assert http.posts[2][1]["headers"]["mcp-session-id"] == "sess-123"
++    # MCP-Protocol-Version header on post-initialize requests
++    assert http.posts[2][1]["headers"]["MCP-Protocol-Version"] == "2025-03-26"
++    # notifications carry no id
++    assert "id" not in http.posts[1][1]["json"]
++    assert result == []  # list_tools() unwraps .get("tools") internally
++    c.close()
++
++
++def test_streamable_sse_response_body_parsed():
++    http = FakeHTTP()
++    http.post_responses = [
++        FakeResp(200, headers={"mcp-session-id": "sess-sse"},
++                 content_type="text/event-stream",
++                 sse_lines=[
++                     "event: message",
++                     f"data: {json.dumps(_init_result_body('fixed-id'))}",
++                     "",
++                 ]),
++        FakeResp(202),
++    ]
++    c = _client(http)
++    c.connect()
++    assert c._transport == "streamable"
++    assert c._session_id == "sess-sse"
++    c.close()
++
++
++def test_fallback_on_404_preserves_legacy_transport():
++    """Spec transition: POST fails HTTP 4xx → legacy GET+SSE transport."""
++    http = FakeHTTP()
++    http.post_responses = [FakeResp(404, body={"error": "not found"})]
++    c = _client(http)
++    calls = {}
++
++    def fake_sse():
++        calls["sse"] = True
++        c._transport = "sse"
++
++    c._connect_sse = fake_sse  # type: ignore[method-assign]
++    c.connect()
++    assert calls.get("sse") is True
++    assert c._transport == "sse"
++    # the POST attempt happened first and hit the streamable endpoint
++    assert [u for u, _ in http.posts] == [ORIGIN + "/mcp"]
++    c.close()
++
++
++@pytest.mark.parametrize("status", [404, 500, 503])
++def test_fallback_on_any_http_error(status):
++    """4xx is the spec's trigger; 5xx also falls back so a cold-start can
++    never break a configuration that works today (zero-downtime guarantee)."""
++    http = FakeHTTP()
++    http.post_responses = [FakeResp(status)]
++    c = _client(http)
++    c._connect_sse = lambda: setattr(c, "_transport", "sse")  # type: ignore[method-assign]
++    c.connect()
++    assert c._transport == "sse"
++    c.close()
++
++
++def test_fallback_on_connection_error():
++    http = FakeHTTP()
++
++    def boom(*a, **kw):
++        raise requests.ConnectionError("refused")
++
++    http.post = boom  # type: ignore[method-assign]
++    c = _client(http)
++    c._connect_sse = lambda: setattr(c, "_transport", "sse")  # type: ignore[method-assign]
++    c.connect()
++    assert c._transport == "sse"
++    c.close()
++
++
++def test_rpc_error_in_streamable_body_raises_mcp_error():
++    http = FakeHTTP()
++    http.post_responses = [
++        FakeResp(200, body={"jsonrpc": "2.0", "id": "fixed-id",
++                            "error": {"code": -32601, "message": "no such tool"}}),
++    ]
++    c = _client(http)
++    c._transport = "streamable"
++    with pytest.raises(mtc.McpTowerError, match="-32601"):
++        c.call_tool("nope", {})
++    c.close()
++
++
++def test_legacy_sse_revision_constant_untouched():
++    assert mtc.PROTOCOL_VERSION_SSE == "2024-11-05"
++    assert mtc.PROTOCOL_VERSION_STREAMABLE == "2025-03-26"
++
++
++def test_transport_reset_on_close():
++    http = FakeHTTP()
++    http.post_responses = [
++        FakeResp(200, headers={"mcp-session-id": "s"},
++                 body=_init_result_body("x")),
++        FakeResp(202),
++    ]
++    c = _client(http)
++    c.connect()
++    assert c._transport == "streamable"
++    c.close()
++    assert c._transport is None
++    assert c._initialized is False

@@ -1,0 +1,21 @@
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index 2a5cdf84..baafa0d2 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -69,11 +69,13 @@ python3 scripts/agents/continuous_agent_loop.py --verify-only
+ # Claim a specific issue and emit the task contract:
+ python3 scripts/agents/continuous_agent_loop.py --issue 34 --emit-contract
+ 
+-# Auto-pick the highest-priority open issue and process up to N tasks:
++# Auto-pick the highest-priority open issue (one task per invocation):
+ python3 scripts/agents/continuous_agent_loop.py --pick-next --max-tasks 1
+ 
+-# Continuous mode:
+-python3 scripts/agents/continuous_agent_loop.py --loop --max-tasks 5
++# Continuation — the agent is the wheel: after completing each task, rerun the
++# command above again until the board has no unclaimed issues. The loop prints
++# the CONTINUOUS DISPATCH rule with every dispatch; --loop runs a single
++# dispatch cycle per invocation (the scheduler/orchestrator is the outer loop).
+ ```
+ 
+ Flag semantics are **SSOT'd in `docs/AGENT_LOOP_SPEC.md` §4** — do not copy

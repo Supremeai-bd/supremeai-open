@@ -1,0 +1,133 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index a290a0a3..19f428b9 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -209,6 +209,23 @@ for line in $updates; do
+         # No origin/main ref and fetch failed: freshness cannot be verified
+         # offline — honest degradation; the CI stale-base guard is authoritative.
+     fi
++
++    # 5. NO CLAIM -> NO PUSH (AGENTS.md Step 4 / #430).
++    # Task/issue branches must carry an active claim before pushing to remote.
++    # Invariant: No claim -> no branch; no branch -> no push.
++    # Deliberate admin bypass: git push --no-verify or non-issue branch.
++    if ! ZERO_TEST "$local_sha"; then
++        issue_token=$(printf '%s' "$local_ref" | grep -oE '(issue-?|#)[0-9]+' | grep -oE '[0-9]+' | head -n1 || true)
++        if [ -n "$issue_token" ] && command -v gh >/dev/null 2>&1; then
++            claim_json=$(gh issue view "$issue_token" --repo Supremeai-bd/supremeai-open --json labels,comments 2>/dev/null || echo "")
++            if [ -n "$claim_json" ]; then
++                has_claim=$(printf '%s' "$claim_json" | grep -Eq '"status:claimed"|"status:in-progress"|<!-- atomic-claim -->' && echo "true" || echo "false")
++                if [ "$has_claim" != "true" ]; then
++                    reject "NO CLAIM -> NO PUSH (AGENTS.md Step 4 / #430)"                         "Branch '$local_ref' targets Issue #$issue_token, but Issue #$issue_token has NO active claim."                         "Per the Two-Tier Ingress Invariant: No claim -> no branch; no branch -> no push."                         "Claim the issue on GitHub before pushing: gh issue edit $issue_token --add-label status:claimed"                         "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        fi
++    fi
+     IFS="$nl"
+ done
+ IFS="$OIFS"
+diff --git a/AGENTS.md b/AGENTS.md
+index fc8d9b66..fa0ce3bd 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -63,7 +63,9 @@ Never invent a parallel workflow. The task contract is the common envelope for e
+ 
+ **Board-freshness rule (#4177):** the snapshot taken at task-start is not the whole mission. Work often takes long enough for new PRs/issues to arrive mid-flight — a completion declaration made against the start-time snapshot silently drops them. Before declaring any task, batch or founder-directed mission "done", re-poll the board and report the fresh snapshot; handle new arrivals or explicitly list them as outstanding (per [`AGENT_RULES.md`](./AGENT_RULES.md) U5/U7/U8).
+ 
+-**Critical ordering:** `atomic_claim.sh` must run **BEFORE** `gh pr create`. A PR opened without a prior claim will be auto-closed by the Claim Gate (#2644, #2892). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
++**Critical ordering (Two-Tier Ingress Invariant, #430):**
++1. **No Claim -> No Branch:** `atomic_claim.sh` must run and post both claim signals (`status:claimed` label + `<!-- atomic-claim -->` comment) **BEFORE** checking out or creating any task branch. Branch creation without a prior claim is fail-closed rejected by `continuous_agent_loop.py`.
++2. **No Branch -> No Push:** Any git push targeting an issue is rejected by `.githooks/pre-push` if the issue has no active claim marker on GitHub. Furthermore, PRs opened without a prior claim are strictly blocked by the Claim Gate (`claim-guard`). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
+ 
+ ## 2.1 Autonomous Work Submission (Zero-Admin Policy)
+ 
+diff --git a/docs/INGRESS_SECURITY_POLICY.md b/docs/INGRESS_SECURITY_POLICY.md
+index b118d260..9f2f0e73 100644
+--- a/docs/INGRESS_SECURITY_POLICY.md
++++ b/docs/INGRESS_SECURITY_POLICY.md
+@@ -255,3 +255,13 @@ self-contained here.
+ 5. **Boundary sanitization:** no protected paths touched
+    (`.githooks/`, `docs/`, `scripts/ci/` are outside the protected set); no
+    value-shaped credential patterns in any submitted file.
++
++## 5. Two-Tier Ingress Invariant — No Claim No Branch, No Branch No Push (#430)
++
++To eliminate unvetted pushes, rogue branches, and cross-agent collision on unclaimed work:
++1. **No Claim -> No Branch:**
++   - Autonomous agent loops (`continuous_agent_loop.py`) and contributors must secure an atomic claim on GitHub (`status:claimed` label + `<!-- atomic-claim -->` structured comment) BEFORE creating or checking out any task branch (`contributor/issue-<N>`, `bridge/<task-id>`).
++   - If claiming fails or the issue is already claimed, branch creation aborts immediately.
++2. **No Branch -> No Push:**
++   - The local pre-push hook (`.githooks/pre-push`) extracts the issue reference from the branch being pushed and queries GitHub for an active claim marker. Pushes of unclaimed branches are strictly rejected at the terminal.
++   - On the server side, PRs opened against `main` are fail-closed blocked by `claim-guard` in `.github/workflows/pipeline.yml` if the referenced issue has no prior claim.
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index adad7bde..7a6b093e 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -654,18 +654,42 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
+ 
+ 
+ def step_4_branch(task: dict[str, Any]) -> str | None:
+-    """Step 4: Create atomic branch for task with strict error checking."""
++    """Step 4: Atomic Claim -> Branch Creation Contract (No claim -> no branch, #430)."""
+     issue_num = task.get("id", "adhoc")
+     target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
++
++    # 🔒 GATE 1: NO CLAIM -> NO BRANCH (AGENTS.md Step 4 / #430)
++    # The agent must verify and acquire an atomic claim on GitHub BEFORE creating or checking out any branch.
++    if issue_num != "adhoc":
++        log("🔒", f"[Step 4/8: Claim Gate] Acquiring atomic claim on Issue #{issue_num} BEFORE branch creation...")
++        edit_code, _, edit_err = run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
++        if edit_code != 0:
++            log("❌", f"[Claim Gate Rejection] Failed to add status:claimed on Issue #{issue_num}: {edit_err}")
++            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
++            return None
++
++        claim_comment = (
++            "<!-- atomic-claim -->\n"
++            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
++            f"- **branch:** `{target_branch}`\n"
++            f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
++            "- **contract:** AGENTS.md Step 4 — no claim, no branch; no branch, no push (#430)."
++        )
++        comm_code, _, comm_err = run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
++        if comm_code != 0:
++            log("❌", f"[Claim Gate Rejection] Failed to post atomic-claim comment on Issue #{issue_num}: {comm_err}")
++            log("❌", "Contract violation: No claim -> no branch. Aborting branch creation.")
++            return None
++        log("✅", f"Atomic claim successfully secured on Issue #{issue_num} (No claim -> no branch verified)")
++
+     log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
+-    
+     code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
+     if code == 0:
+         _, curr_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+         if curr_branch == target_branch:
+             log("✅", f"Already on active branch '{target_branch}'")
+             return target_branch
+-        
++
+         checkout_code, _, checkout_err = run_cmd(["git", "checkout", target_branch])
+         if checkout_code != 0:
+             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
+@@ -686,21 +710,6 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
+         return None
+ 
+     log("✅", f"Active on verified branch '{target_branch}'")
+-    # Mark issue as claimed on upstream board (honest degradation if guest/offline)
+-    # Claim Gate planes (#392): BOTH signals post BEFORE any PR can exist —
+-    #   (1) status:claimed label (label plane — stale_claim_releaser.py lease),
+-    #   (2) the <!-- atomic-claim --> structured comment (comment plane — the
+-    #       evidence AGENTS.md says the Claim Gate checks before CI runs).
+-    if issue_num != "adhoc":
+-        run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
+-        claim_comment = (
+-            "<!-- atomic-claim -->\n"
+-            f"🎯 **Claimed** — autonomous agent loop for issue #{issue_num}.\n"
+-            f"- **branch:** `{target_branch}`\n"
+-            f"- **claimed (UTC):** {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())}\n"
+-            "- **contract:** AGENTS.md Step 4 — no claim, no work."
+-        )
+-        run_cmd(["gh", "issue", "comment", str(issue_num), "--repo", UPSTREAM_REPO, "--body", claim_comment])
+     return target_branch
+ 
+ 

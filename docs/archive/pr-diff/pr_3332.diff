@@ -1,0 +1,363 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index f57bfdda..71216100 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -825,6 +825,66 @@ def _probe() -> None:
+         f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
+     )
+ 
++
++def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
++    """#3315 ΓÇö receipt-coverage demotion probe (pure, in-memory, never raises).
++
++    αª¼αª╛αªéαª▓αª╛: #2794-αªÅαª░ claim-probe αª▓αª╛αªçαª¡ claim αªºαª░αºç, αªòαª┐αª¿αºìαªñαºü αªûαºïαª▓αª╛ (unmerged) bridge
++    WO/receipt αª»αºç αª░αºï-αªòαºç reference αªòαª░αºç αª╕αºçαªƒαª╛ αªºαª░αºç αª¿αª╛ ΓÇö αª▓αª╛αªçαª¡ αª¬αºìαª░αª«αª╛αªú 2026-10-30:
++    #2360 dispatch αª╣αª»αª╝αºçαª¢αºç αª░αª┐αª╕αª┐αª¬αºìαªƒ #3272 αª½αª╛αªçαª▓ αª╣αªôαª»αª╝αª╛αª░ αº¬ αª«αª┐αª¿αª┐αªƒ αª¬αª░αºç, #2633 αª╣αª»αª╝αºçαª¢αºç
++    αª░αª┐αª╕αª┐αª¬αºìαªƒ #3281-αªÅαª░ αººαºª αª«αª┐αª¿αª┐αªƒ αª¬αª░αºç (αªªαºüαªç αªòαºìαª╖αºçαªñαºìαª░αºçαªç latestClaim null αª¢αª┐αª▓, αªñαª╛αªç
++    claim-probe αª¬αª╛αª╕ αªòαª░αºçαª¢αª┐αª▓); #1676-αªô WO #3292-αªÅαª░ "detection half" αª░αºçαª½αª╛αª░αºçαª¿αºìαª╕
++    αªÑαª╛αªòαª╛ αª╕αªñαºìαªñαºìαª¼αºçαªô dispatch αª╣αª»αª╝αºçαª¢αª┐αª▓αÑñ αªÅαªç αª¬αºìαª░αºïαª¼ candidate-αªÅαª░ αª¿αª«αºìαª¼αª░ αª¼αºïαª░αºìαªíαºçαª░ αªàαª¿αºìαª»
++    αªòαºïαª¿αºï αªûαºïαª▓αª╛ Bridge-WO-αªåαªòαºâαªñαª┐ αª╕αª╛αª░αª┐αª░ αªƒαª╛αªçαªƒαºçαª▓αºç αªåαª¢αºç αªòαª┐ αª¿αª╛ αªªαºçαªûαºç αª╕αºÄ note αªªαºçαª»αª╝ ΓÇö
++    coverage αª«αª╛αª¿αºç αª╕αºçαªç αª░αºï-αª░ αªòαª╛αª£ αªçαª¿-αª½αºìαª▓αª╛αªçαªƒ (anti-stampede U5), αª¬αºüαª¿αªâ-dispatch
++    αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒ αªôαª»αª╝αª╛αª░αºìαªò αªàαª░αºìαªíαª╛αª░αºçαª░ αª¥αºüαªüαªòαª┐αÑñ αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªåαªƒαªòαª╛αªñαºç
++    αª¬αª╛αª░αºç αª¿αª╛; `--issue N` explicit override escape-hatch αªÑαºçαªòαºç αª»αª╛αª»αª╝αÑñ
++
++    Board-local and pure: the WO titles ride the same in-memory list the
++    picker already holds (gh path and tower fallback alike), so this adds
++    zero network. Fail-open contract: any malformed row / parse error returns
++    None (the filter can only REMOVE a dispatch, never break the pick).
++    Conservative issuer gate: only titles containing "Bridge Work Order" count
++    as coverage issuers ΓÇö a plain issue that merely cites #N is related work,
++    not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
++    `bridge-YYYYMMDD-N`) so #263 never matches #2633.
++    """
++    try:
++        num_raw = item.get("number") if isinstance(item, dict) else None
++        if num_raw is None:
++            return None
++        n = int(num_raw)
++        pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
++        pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
++        pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
++        hits: list[str] = []
++        for row in board or []:
++            if not isinstance(row, dict):
++                continue  # malformed rows fail open
++            try:
++                if str(row.get("number", "")) == str(n):
++                    continue  # a row never covers itself
++                state = row.get("state")
++                if state is not None and str(state).lower() != "open":
++                    continue
++                title = str(row.get("title") or "")
++                if "Bridge Work Order" not in title:
++                    continue  # conservative issuer gate (receipt-shaped WOs only)
++                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
++                    hits.append(f"#{row.get('number')}")
++            except Exception:  # noqa: BLE001 ΓÇö per-row fail-open
++                continue
++        if not hits:
++            return None
++        return (
++            "open bridge WO receipt already references this row "
++            f"({', '.join(hits[:3])}) ΓÇö coverage in flight (anti-stampede U5); "
++            "explicit --issue override available"
++        )
++    except Exception:  # noqa: BLE001 ΓÇö a demotion probe must never raise
++        return None
++
++
+ def pick_next_issue(
+     exclude: set[str] | list[str] | None = None,
+     issues: list[dict[str, Any]] | None = None,
+@@ -936,6 +996,37 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+                     f"filtered from the pick ΓÇö newest open sibling #{newest_sentry} carries the sentinel duty",
+                 )
+             candidates = survivors
++        # #3315 ΓÇö receipt-coverage demotion (live mode only, sentry-precedent
++        # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
++        # the same board is skipped BEFORE the priority sort (window-preserving:
++        # a covered candidate inside the top-FEEDBACK_PREVERIFY_TOPN window
++        # would otherwise burn a window slot plus a network probe on a row whose
++        # work is already in flight ΓÇö live 2026-10-30: #2360 dispatched 4 min
++        # after receipt #3272, #2633 10 min after #3281). Pure mode (claim_probe
++        # is None) keeps the byte-identical pre-#3315 label-only contract for
++        # hermetic callers; the filter can only REMOVE a dispatch, never block
++        # one, and the explicit --issue N override stays the escape hatch.
++        coverage_survivors: list[dict[str, Any]] = []
++        covered = 0
++        for cand in candidates:
++            covered_note = _receipt_covered_note(cand, issues or [])
++            if covered_note is not None:
++                covered += 1
++                log_fn(
++                    "!",
++                    f"receipt-coverage demotion: #{cand.get('number')} skipped ΓÇö {covered_note}",
++                )
++                continue
++            coverage_survivors.append(cand)
++        if covered:
++            candidates = coverage_survivors
++            if not candidates:
++                log_fn(
++                    "!",
++                    "receipt-coverage demotion: every open candidate is covered by an "
++                    "open bridge WO receipt ΓÇö no clean pick this run (rerun later or "
++                    "dispatch explicitly via --issue N)",
++                )
+     sorted_issues = sorted(candidates, key=priority_key)
+     if claim_probe is None:
+         # Pure mode ΓÇö label-only pick, exactly the pre-#2794 contract (hermetic
+diff --git a/tests/test_pick_receipt_coverage.py b/tests/test_pick_receipt_coverage.py
+new file mode 100644
+index 00000000..e2736a4c
+--- /dev/null
++++ b/tests/test_pick_receipt_coverage.py
+@@ -0,0 +1,248 @@
++#!/usr/bin/env python3
++"""Pin + behavior: #3315 ΓÇö dispatch pick receipt-coverage demotion.
++
++Live 2026-10-30T12:20-12:38Z (GLM Agent 20, Job 486804): the live-mode pick
++re-emitted rows whose work was already in flight on the SAME board ΓÇö
++#2360 was dispatched 4 minutes after receipt WO #3272 ("Evidence refresh for
++audit row 2360") was filed, #2633 was dispatched 10 minutes after receipt WO
++#3281 ("r+2 capability census receipt for scout row #2633"), and #1676 was
++dispatched while WO #3292 ("#1676 detection half") was open. In every case
++`latestClaim` was null, so the #2794 claim probe passed; the premise probe
++(item 15/┬º6ak) only cross-scans MERGED landing receipts, so open (unmerged)
++receipt WOs are invisible to every existing filter. In a 10+ agent fleet
++draining the board in minutes, label-only dispatch deterministically
++re-emits freshly-covered rows and burns the receiving agent's cycle.
++
++Fix: `pick_next_issue()` live mode (claim_probe wired) demotes a candidate
++BEFORE the priority sort when any OTHER open Bridge-WO-shaped board row
++references the candidate number via word-bounded patterns (`#N`, `row N`,
++`bridge-YYYYMMDD-N`). Same skip-and-advance shape as the #3050 sentry
++demotion; the filter can only REMOVE a dispatch, never block one; explicit
++`--issue N` override stays the escape hatch. Pure mode (claim_probe=None)
++keeps the byte-identical pre-#3315 label-only contract.
++
++Pins enforced here (zero gh/network dependency ΓÇö in-memory boards):
++  1. An open WO receipt citing `#N` demotes candidate N; pick advances.
++  2. `row N` prose pattern demotes.
++  3. `bridge-YYYYMMDD-N` taskId pattern demotes.
++  4. Substring safety: candidate #263 is NOT demoted by a `#2633` citation.
++  5. Issuer gate: a plain (non-Bridge-WO) issue citing #N does NOT demote.
++  6. A closed covering row does NOT demote (tower rows carry state verbatim).
++  7. Pure mode keeps the pre-#3315 contract (no demotion, no network).
++  8. All candidates covered ΓçÆ None + honest exhausted-window note.
++  9. Malformed board rows fail open (never raise).
++ 10. A row never covers itself.
++
++Dual-mode: runs under both `python3 -m unittest` and `pytest`.
++"""
++
++from __future__ import annotations
++
++import sys
++import unittest
++import unittest.mock
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal
++
++
++def _row(number: int, labels: list[str] | None = None, title: str | None = None,
++         state: str | None = None) -> dict:
++    row: dict = {
++        "number": number,
++        "title": title if title is not None else f"row {number}",
++        "labels": [{"name": name} for name in (labels or [])],
++    }
++    if state is not None:
++        row["state"] = state
++    return row
++
++
++def _wo(number: int, cites: int, state: str | None = "open") -> dict:
++    """A Bridge-WO-shaped row citing another issue number."""
++    return _row(
++        number,
++        labels=["bridge:queued"],
++        title=(
++            f"≡ƒîë Bridge Work Order ΓÇö docs(bridge): receipt for target #{cites} "
++            f"(bridge-20261030-receipt-{cites})"
++        ),
++        state=state,
++    )
++
++
++_FREE = (False, "no active claim on the feedback plane")
++
++
++class _LeaseIsolated(unittest.TestCase):
++    """Isolate pick_next_issue from THIS runtime's local dispatch-lease state.
++
++    Same hermetic boundary as test_pick_feedback_preverify.py: the loop
++    persists 30-min local leases outside the repo; ambient scheduler state
++    must never contaminate pick assertions.
++    """
++
++    def setUp(self):
++        patcher = unittest.mock.patch.object(
++            cal, "load_issue_lease_store", lambda path=None: {}
++        )
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
++
++class _CaptureLog:
++    def __init__(self):
++        self.lines: list[str] = []
++
++    def __call__(self, level: str, msg: str) -> None:
++        self.lines.append(f"{level}: {msg}")
++
++    def joined(self) -> str:
++        return "\n".join(self.lines)
++
++
++class TestReceiptCoveredNote(unittest.TestCase):
++    """Direct unit coverage of the pure probe."""
++
++    def test_hash_citation_hits(self):
++        cand = _row(2633)
++        board = [_wo(3281, 2633)]
++        note = cal._receipt_covered_note(cand, board)
++        self.assertIsNotNone(note)
++        self.assertIn("#3281", note)
++        self.assertIn("anti-stampede U5", note)
++
++    def test_row_prose_pattern_hits(self):
++        cand = _row(2360)
++        board = [_row(3272, title="≡ƒîë Bridge Work Order ΓÇö Evidence refresh for audit row 2360, report-only")]
++        self.assertIsNotNone(cal._receipt_covered_note(cand, board))
++
++    def test_taskid_pattern_hits(self):
++        cand = _row(2360)
++        board = [_row(3273, title="≡ƒîë Bridge Work Order ΓÇö some receipt (bridge-20261030-2360-evidence-refresh-r1)")]
++        self.assertIsNotNone(cal._receipt_covered_note(cand, board))
++
++    def test_substring_no_false_positive(self):
++        # #263 must NOT match a citation of #2633 (word-bounded patterns).
++        cand = _row(263)
++        board = [_wo(3281, 2633)]
++        self.assertIsNone(cal._receipt_covered_note(cand, board))
++
++    def test_issuer_gate_plain_issue_does_not_demote(self):
++        cand = _row(2633)
++        board = [_row(2900, title="fix: something that cites #2633 in prose")]
++        self.assertIsNone(cal._receipt_covered_note(cand, board))
++
++    def test_closed_covering_row_ignored(self):
++        cand = _row(2633)
++        board = [_wo(3281, 2633, state="closed")]
++        self.assertIsNone(cal._receipt_covered_note(cand, board))
++
++    def test_row_never_covers_itself(self):
++        cand = _wo(3281, 2633)
++        self.assertIsNone(cal._receipt_covered_note(cand, [cand]))
++
++    def test_malformed_inputs_fail_open(self):
++        self.assertIsNone(cal._receipt_covered_note({}, []))
++        self.assertIsNone(cal._receipt_covered_note({"number": None}, [_wo(1, 2)]))
++        self.assertIsNone(cal._receipt_covered_note({"number": "not-a-number"}, [_wo(1, 2)]))
++        # malformed board rows are skipped, good rows still hit
++        cand = _row(2633)
++        board = [None, "garbage", 42, _wo(3281, 2633)]
++        self.assertIsNotNone(cal._receipt_covered_note(cand, board))
++
++    def test_no_hits_returns_none(self):
++        cand = _row(9999)
++        self.assertIsNone(cal._receipt_covered_note(cand, [_wo(3281, 2633)]))
++        self.assertIsNone(cal._receipt_covered_note(cand, []))
++
++
++class TestPickReceiptCoverageDemotion(_LeaseIsolated):
++    """Behavior: the live-mode pick advances past covered candidates."""
++
++    def test_covered_candidate_skipped_next_served(self):
++        board = [
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633),
++            _row(2999, labels=["P2-medium", "status:unclaimed"]),
++        ]
++        log = _CaptureLog()
++        picked = cal.pick_next_issue(
++            issues=board, claim_probe=lambda n: _FREE, log_fn=log,
++        )
++        self.assertEqual(picked, "2999")
++        self.assertIn("receipt-coverage demotion: #2633 skipped", log.joined())
++
++    def test_all_covered_returns_none_with_honest_note(self):
++        board = [
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633),
++        ]
++        log = _CaptureLog()
++        picked = cal.pick_next_issue(
++            issues=board, claim_probe=lambda n: _FREE, log_fn=log,
++        )
++        self.assertIsNone(picked)
++        self.assertIn("no clean pick this run", log.joined())
++
++    def test_pure_mode_unchanged(self):
++        # Pre-#3315 contract: without a live claim_probe the covered candidate
++        # is served exactly as before (label-only pick, zero demotion).
++        board = [
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633),
++        ]
++        log = _CaptureLog()
++        picked = cal.pick_next_issue(issues=board, claim_probe=None, log_fn=log)
++        self.assertEqual(picked, "2633")
++        self.assertNotIn("receipt-coverage demotion", log.joined())
++
++    def test_closed_covering_row_serves_candidate(self):
++        board = [
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633, state="closed"),
++        ]
++        picked = cal.pick_next_issue(
++            issues=board, claim_probe=lambda n: _FREE, log_fn=_CaptureLog(),
++        )
++        self.assertEqual(picked, "2633")
++
++    def test_malformed_board_rows_fail_open(self):
++        board = [
++            None,
++            "garbage",
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633),
++        ]
++        picked = cal.pick_next_issue(
++            issues=board, claim_probe=lambda n: _FREE, log_fn=_CaptureLog(),
++        )
++        self.assertIsNone(picked)  # 2633 demoted; no other candidate exists
++
++    def test_demotion_window_preserved_for_live_probes(self):
++        # The demotion runs BEFORE the priority sort, so the top-N live-claim
++        # window is not burned on a covered candidate (sentry-precedent shape).
++        calls: list[int | str] = []
++
++        def probe(n):
++            calls.append(n)
++            return _FREE
++
++        board = [
++            _row(2633, labels=["P2-medium", "status:unclaimed"]),
++            _wo(3281, 2633),
++            _row(2999, labels=["P2-medium", "status:unclaimed"]),
++        ]
++        picked = cal.pick_next_issue(
++            issues=board, claim_probe=probe, log_fn=_CaptureLog(),
++        )
++        self.assertEqual(picked, "2999")
++        self.assertNotIn(2633, calls)
++        self.assertIn(2999, calls)
++
++
++if __name__ == "__main__":
++    unittest.main()

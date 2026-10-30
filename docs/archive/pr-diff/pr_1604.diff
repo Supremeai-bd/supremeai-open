@@ -1,0 +1,65 @@
+diff --git a/infrastructure/mcp-control-plane/src/adapters/notify/actions.ts b/infrastructure/mcp-control-plane/src/adapters/notify/actions.ts
+index dce7b6d1..36e1cc6b 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/notify/actions.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/notify/actions.ts
+@@ -6,29 +6,47 @@ import { httpRequest } from "../../lib/http.js";
+  * Telegram Bot API + Discord Webhook.
+  */
+ 
++/** Telegram Bot API `sendMessage` response — subset we rely on. */
++interface TelegramApiSendMessageResponse {
++  ok?: boolean;
++  description?: string;
++  result?: { message_id?: number };
++}
++
++/** Resolved result of a successful `sendTelegram` call (#1594). */
++export interface TelegramSendResult {
++  ok: boolean;
++  messageId?: number;
++  chatId: string;
++  sentAt: string;
++}
++
+ export async function sendTelegram(
+   message: string,
+   chatId?: string,
+   parseMode?: "Markdown" | "HTML"
+-): Promise<unknown> {
++): Promise<TelegramSendResult> {
+   const token = env.notify.telegramBotToken;
+   if (!token) throw new Error("TELEGRAM_BOT_TOKEN is not configured.");
+   const chat = chatId || env.notify.telegramChatId;
+   if (!chat) throw new Error("TELEGRAM_CHAT_ID is not configured and no chatId was provided.");
+ 
+-  const res = await httpRequest(`https://api.telegram.org/bot${token}/sendMessage`, {
+-    method: "POST",
+-    headers: { "Content-Type": "application/json" },
+-    body: {
+-      chat_id: chat,
+-      text: message.slice(0, 4096),
+-      ...(parseMode ? { parse_mode: parseMode } : {}),
+-      disable_web_page_preview: true,
+-    },
+-    timeoutMs: 10_000,
+-  });
++  const res = await httpRequest<TelegramApiSendMessageResponse>(
++    `https://api.telegram.org/bot${token}/sendMessage`,
++    {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: {
++        chat_id: chat,
++        text: message.slice(0, 4096),
++        ...(parseMode ? { parse_mode: parseMode } : {}),
++        disable_web_page_preview: true,
++      },
++      timeoutMs: 10_000,
++    }
++  );
+ 
+-  const data = res.data as any;
++  const data = res.data;
+   if (!data?.ok) throw new Error(`Telegram send failed: ${data?.description ?? res.status}`);
+   return { ok: true, messageId: data.result?.message_id, chatId: chat, sentAt: new Date().toISOString() };
+ }

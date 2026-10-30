@@ -1,0 +1,2734 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 3bdc42e9..dbeeb082 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -412,6 +412,44 @@ for line in $updates; do
+         fi
+     fi
+ 
++    # 12. BANDIT SAST GUARD (#1809).
++    # Python source static-security ratchet over the non-test surface
++    # (core scripts gateway browser skills examples infrastructure evals).
++    # Engages ONLY when the push touches .py files inside the scan targets.
++    # Shrink-only baseline (scripts/ci/bandit_sast_baseline.json): NEW or
++    # GROWN (path, test_id) findings under scripts/** fail-close the push
++    # (agent-bridge-able); drift under the satellite mirrors is report-only
++    # routing to the owning domain. Skips-with-evidence when bandit is not
++    # installed (honest degradation, #1760 oasdiff pattern). Self-contained
++    # under `set -u`.
++    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/bandit_sast_guard.py ]; then
++        if ZERO_TEST "$remote_sha"; then
++            sast_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
++        else
++            sast_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
++        fi
++        sast_py_files=$(printf '%s\n' "$sast_changed" | grep -E '\.py$' | grep -E '^(core|scripts|gateway|browser|skills|examples|infrastructure|evals)/' || true)
++        if [ -n "$sast_py_files" ]; then
++            hook_py=""
++            if python3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="python3"
++            elif python -c "import sys" >/dev/null 2>&1; then
++                hook_py="python"
++            elif py -3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="py -3"
++            fi
++            if [ -n "$hook_py" ]; then
++                if ! $hook_py scripts/ci/bandit_sast_guard.py --files $sast_py_files; then
++                    reject "BANDIT SAST GUARD (#1809) FAILED" \
++                        "The push introduces NEW or GROWN Python-source security findings under scripts/." \
++                        "Fix the finding (see the [bandit-sast-guard] evidence lines above) — the baseline may never grow." \
++                        "Satellite-mirror findings are report-only and route to their owning domain." \
++                        "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        fi
++    fi
++
+     IFS="$nl"
+ done
+ IFS="$OIFS"
+diff --git a/scripts/ci/bandit_sast_baseline.json b/scripts/ci/bandit_sast_baseline.json
+new file mode 100644
+index 00000000..fd2c4f19
+--- /dev/null
++++ b/scripts/ci/bandit_sast_baseline.json
+@@ -0,0 +1,1920 @@
++{
++ "findings": {
++  "browser/action_cascade.py": {
++   "B112": 1
++  },
++  "browser/ghost_tower/auto_login.py": {
++   "B105": 1,
++   "B110": 2
++  },
++  "browser/ghost_tower/cookie_sync_scheduler.py": {
++   "B310": 1
++  },
++  "browser/ghost_tower/credential_vault.py": {
++   "B107": 1,
++   "B110": 1
++  },
++  "browser/ghost_tower/gemini_web_engine.py": {
++   "B110": 2
++  },
++  "browser/ghost_tower/launch_manual_login.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "browser/ghost_tower/login_helper.py": {
++   "B110": 1
++  },
++  "browser/ghost_tower/multi_ai_sso_runner.py": {
++   "B110": 6
++  },
++  "browser/ghost_tower/stealth_browser_engine/semantic_extractor.py": {
++   "B101": 1
++  },
++  "browser/ghost_tower/sync_cookies_to_infisical.py": {
++   "B310": 3
++  },
++  "browser/runtime/semantic_extractor.py": {
++   "B101": 1
++  },
++  "browser/security.py": {
++   "B104": 1
++  },
++  "browser/server.py": {
++   "B104": 1,
++   "B110": 2,
++   "B112": 2
++  },
++  "browser/session_manager.py": {
++   "B110": 1
++  },
++  "core/_archive/batch-1/backend/debug_ci_boot.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/_archive/batch-1/backend/scripts/audit_import_walk.py": {
++   "B108": 1
++  },
++  "core/accessibility/wcag_compliance.py": {
++   "B105": 1
++  },
++  "core/adapters/red_team_adapter.py": {
++   "B105": 1
++  },
++  "core/adaptive_engine/approval_workflow.py": {
++   "B105": 1,
++   "B608": 10
++  },
++  "core/adaptive_engine/capability_registry.py": {
++   "B608": 11
++  },
++  "core/adaptive_engine/deployment_tracker.py": {
++   "B608": 5
++  },
++  "core/adaptive_engine/experience_db.py": {
++   "B108": 2
++  },
++  "core/adaptive_engine/governance.py": {
++   "B608": 2
++  },
++  "core/adaptive_engine/health_model.py": {
++   "B608": 3
++  },
++  "core/adaptive_engine/learning_loop.py": {
++   "B608": 7
++  },
++  "core/adaptive_engine/resource_registry.py": {
++   "B608": 5
++  },
++  "core/adaptive_engine/source_governance.py": {
++   "B608": 15
++  },
++  "core/adaptive_engine/task_engine.py": {
++   "B608": 8
++  },
++  "core/admin/god.py": {
++   "B108": 2
++  },
++  "core/advanced_reasoning.py": {
++   "B112": 1
++  },
++  "core/agents/code_vulnerability_scanner_agent.py": {
++   "B105": 1
++  },
++  "core/agents/ide/trio_adapters.py": {
++   "B404": 1,
++   "B603": 2
++  },
++  "core/agents/live/computer_agent.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/agents/research_assistant.py": {
++   "B310": 1,
++   "B314": 1,
++   "B405": 1
++  },
++  "core/agents/skill_ingestor.py": {
++   "B310": 1
++  },
++  "core/agents/skill_librarian.py": {
++   "B310": 1
++  },
++  "core/alembic_migrations/versions/j9k0l1m2n3o4_add_missing_live_model_tables.py": {
++   "B608": 1
++  },
++  "core/api/middleware.py": {
++   "B311": 3
++  },
++  "core/api/routes/admin.py": {
++   "B608": 1
++  },
++  "core/api/routes/admin_dashboard/endpoints_command.py": {
++   "B112": 1
++  },
++  "core/api/routes/admin_v1.py": {
++   "B112": 1
++  },
++  "core/api/routes/auth.py": {
++   "B105": 1
++  },
++  "core/api/routes/browser/_crown_jewel.py": {
++   "B324": 1
++  },
++  "core/api/routes/browser/_render_proxy.py": {
++   "B310": 1
++  },
++  "core/api/routes/browser/_session_store.py": {
++   "B324": 1
++  },
++  "core/api/routes/chat_upload.py": {
++   "B314": 1,
++   "B405": 1
++  },
++  "core/api/routes/integrations.py": {
++   "B105": 1
++  },
++  "core/api/routes/webhooks_ai.py": {
++   "B105": 1
++  },
++  "core/brain/mcp_client.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/brain/parallel_cloud_router.py": {
++   "B311": 1
++  },
++  "core/byoc/container_orchestrator.py": {
++   "B404": 1
++  },
++  "core/circles/governance_core.py": {
++   "B112": 1
++  },
++  "core/clients/render_api.py": {
++   "B310": 1
++  },
++  "core/competitive_kit.py": {
++   "B324": 2
++  },
++  "core/config_classification.py": {
++   "B105": 1
++  },
++  "core/config_fields.py": {
++   "B104": 1,
++   "B108": 1
++  },
++  "core/config_secrets.py": {
++   "B105": 4
++  },
++  "core/config_validator.py": {
++   "B104": 1
++  },
++  "core/connection_registry.py": {
++   "B608": 17
++  },
++  "core/container_auditor.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "core/database/db_repository.py": {
++   "B608": 1
++  },
++  "core/db_schema_gate.py": {
++   "B310": 1
++  },
++  "core/docs/examples/retry_integration_example.py": {
++   "B108": 1,
++   "B311": 6
++  },
++  "core/ecosystem/standalone_app.py": {
++   "B104": 1,
++   "B608": 3
++  },
++  "core/ecosystem/users.py": {
++   "B608": 15
++  },
++  "core/evolution/auto_tuner.py": {
++   "B311": 1
++  },
++  "core/evolution/canary_manager.py": {
++   "B311": 1,
++   "B324": 1
++  },
++  "core/evolution/learning_pipeline.py": {
++   "B324": 1
++  },
++  "core/evolution/memory_consolidator.py": {
++   "B324": 1,
++   "B403": 1
++  },
++  "core/evolution/strategy_optimizer.py": {
++   "B311": 2
++  },
++  "core/evolution_module.py": {
++   "B311": 10
++  },
++  "core/external_agents/channels/mcp_channel.py": {
++   "B404": 1,
++   "B603": 3,
++   "B607": 2
++  },
++  "core/external_agents/control/job_api.py": {
++   "B101": 1,
++   "B110": 2
++  },
++  "core/external_agents/verification/artifact_bridge.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/external_agents/verification/git_verifier.py": {
++   "B404": 1,
++   "B603": 3,
++   "B607": 2
++  },
++  "core/external_agents/verification/pr_manager.py": {
++   "B110": 1,
++   "B310": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/check-render-quota.py": {
++   "B310": 1
++  },
++  "core/github/scripts/ci_error_report.py": {
++   "B310": 1
++  },
++  "core/github/scripts/ci_smart_summary.py": {
++   "B310": 1
++  },
++  "core/github/scripts/ci_summary_v2.py": {
++   "B105": 1,
++   "B310": 3
++  },
++  "core/github/scripts/clean_action_logs.py": {
++   "B310": 3
++  },
++  "core/github/scripts/constitution/arch_preservation_gate.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/constitution/auto_close_on_failure.py": {
++   "B310": 1
++  },
++  "core/github/scripts/constitution/branch_creation_guard.py": {
++   "B310": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "core/github/scripts/constitution/engine.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/constitution/freshness_gate.py": {
++   "B110": 1,
++   "B310": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/constitution/gates.py": {
++   "B310": 2,
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "core/github/scripts/constitution/heartbeat_check.py": {
++   "B404": 1
++  },
++  "core/github/scripts/constitution/lessons_check.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "core/github/scripts/constitution/report_gate_outcome.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/constitution/rules/base.py": {
++   "B110": 3,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/constitution/rules/rel001_no_silent_failure.py": {
++   "B110": 1
++  },
++  "core/github/scripts/constitution/rules/sec002_no_secret_hardcoding.py": {
++   "B110": 1
++  },
++  "core/github/scripts/constitution/template_gate.py": {
++   "B112": 1,
++   "B310": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "core/github/scripts/dependency_upgrader.py": {
++   "B404": 1,
++   "B603": 4,
++   "B607": 4
++  },
++  "core/github/scripts/detect-previous-failures.py": {
++   "B310": 1
++  },
++  "core/github/scripts/enforce_24h_gap.py": {
++   "B310": 1
++  },
++  "core/github/scripts/platform_agent_check.py": {
++   "B310": 1
++  },
++  "core/github/scripts/platform_deep_audit.py": {
++   "B310": 1,
++   "B324": 1
++  },
++  "core/github/scripts/pr_helper/ai_fix_generator.py": {
++   "B110": 1,
++   "B310": 1
++  },
++  "core/github/scripts/pr_helper/auto_fix_engine.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/pr_helper/ci_failure_collector.py": {
++   "B310": 1
++  },
++  "core/github/scripts/pr_helper/delta_analysis.py": {
++   "B314": 1,
++   "B405": 1
++  },
++  "core/github/scripts/pr_helper/hunk_isolation.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/github/scripts/pr_helper/intent_extractor.py": {
++   "B105": 1
++  },
++  "core/github/scripts/pr_helper/learning_guards.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "core/github/scripts/service_preflight_check.py": {
++   "B310": 1
++  },
++  "core/github/scripts/supreme_ci.py": {
++   "B310": 4,
++   "B404": 1,
++   "B603": 3,
++   "B607": 2
++  },
++  "core/github/scripts/trigger_render_deploy.py": {
++   "B310": 3
++  },
++  "core/github/scripts/verify-render-deploy.py": {
++   "B310": 1
++  },
++  "core/human_behavior.py": {
++   "B311": 14
++  },
++  "core/integrations/e2b_adapter.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/integrations/telegram_bot.py": {
++   "B107": 1
++  },
++  "core/intelligence/precognitive_risk.py": {
++   "B311": 1
++  },
++  "core/intelligence/synaptic_memory.py": {
++   "B101": 1
++  },
++  "core/kaggle_orchestrator.py": {
++   "B107": 1,
++   "B324": 1
++  },
++  "core/knowledge_base.py": {
++   "B108": 2
++  },
++  "core/learning/evolution_bridge.py": {
++   "B105": 1
++  },
++  "core/learning/hypothesis_engine.py": {
++   "B105": 1
++  },
++  "core/learning/pattern_recognizer.py": {
++   "B324": 3
++  },
++  "core/llm/llm_gateway/completion.py": {
++   "B311": 1
++  },
++  "core/llm/llm_gateway/resilience.py": {
++   "B311": 1
++  },
++  "core/llm/provider_router.py": {
++   "B311": 1
++  },
++  "core/main.py": {
++   "B104": 1
++  },
++  "core/maintenance_pipeline.py": {
++   "B311": 1
++  },
++  "core/memory/mcp_server.py": {
++   "B104": 1
++  },
++  "core/messaging/gcp_pubsub_queue.py": {
++   "B101": 1
++  },
++  "core/microvm_sandbox.py": {
++   "B108": 2,
++   "B404": 1,
++   "B603": 3,
++   "B607": 3
++  },
++  "core/middleware/chaos_injector.py": {
++   "B311": 3
++  },
++  "core/models/execution_log.py": {
++   "B105": 1
++  },
++  "core/models/merge_learning_report.py": {
++   "B608": 1
++  },
++  "core/monitoring/logging_config.py": {
++   "B108": 1
++  },
++  "core/multi_platform_orchestrator.py": {
++   "B404": 1,
++   "B602": 1
++  },
++  "core/natural_file_presenter.py": {
++   "B311": 6
++  },
++  "core/observability/correlation_bridge.py": {
++   "B110": 1
++  },
++  "core/orchestration/periodic_task_scheduler.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/prompt_enhancement_engine.py": {
++   "B311": 1
++  },
++  "core/provider_rate_limiter.py": {
++   "B311": 1
++  },
++  "core/pyerrorfix/cli.py": {
++   "B110": 1
++  },
++  "core/pyerrorfix/core/scanner.py": {
++   "B112": 3
++  },
++  "core/repo_manager.py": {
++   "B404": 1,
++   "B603": 5,
++   "B607": 4
++  },
++  "core/resilience/chaos_engine.py": {
++   "B311": 2
++  },
++  "core/resilience/safety_rollback_manager.py": {
++   "B324": 1,
++   "B403": 1
++  },
++  "core/retry_handler.py": {
++   "B311": 4
++  },
++  "core/runner/agent_runner.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "core/sandbox/docker_sandbox.py": {
++   "B108": 2,
++   "B404": 1,
++   "B603": 2
++  },
++  "core/sandbox/file_isolation_gate.py": {
++   "B108": 1
++  },
++  "core/scripts/superai_free_tier_monitor.py": {
++   "B108": 8
++  },
++  "core/secret_policy.py": {
++   "B105": 2
++  },
++  "core/security/audit/security_auditor.py": {
++   "B105": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/security/injections/sql_prevention.py": {
++   "B608": 4
++  },
++  "core/security/protection/ssrf_protection.py": {
++   "B104": 1
++  },
++  "core/security/resource_guard.py": {
++   "B108": 1
++  },
++  "core/security/secret_vault.py": {
++   "B105": 3
++  },
++  "core/self_benchmark.py": {
++   "B311": 1
++  },
++  "core/self_evolution/agent_breeder.py": {
++   "B101": 1,
++   "B311": 7
++  },
++  "core/self_evolution/continual_learning/ewc.py": {
++   "B301": 1,
++   "B403": 1
++  },
++  "core/self_evolution/digital_twin/simulator.py": {
++   "B311": 4
++  },
++  "core/self_evolution/fitness_engine.py": {
++   "B105": 1
++  },
++  "core/services/auto_healer.py": {
++   "B311": 1
++  },
++  "core/services/browser/main.py": {
++   "B104": 1
++  },
++  "core/services/dynamic_ai/local_fallback.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/services/hitl/resume_token.py": {
++   "B105": 1
++  },
++  "core/services/memory_service.py": {
++   "B112": 1,
++   "B324": 1,
++   "B608": 1
++  },
++  "core/services/render_preflight_service.py": {
++   "B112": 1
++  },
++  "core/services/scraper/security.py": {
++   "B104": 1
++  },
++  "core/services/storage/gcp_firestore.py": {
++   "B101": 1
++  },
++  "core/services/tool_forge.py": {
++   "B102": 1
++  },
++  "core/services/video_to_code_pipeline.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/services/worker/main.py": {
++   "B104": 1
++  },
++  "core/skill_manager.py": {
++   "B102": 1
++  },
++  "core/skills/installer.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/social_growth.py": {
++   "B112": 1
++  },
++  "core/task_policy.py": {
++   "B105": 1
++  },
++  "core/testing/qa_suite.py": {
++   "B101": 2,
++   "B105": 1
++  },
++  "core/tier8/agent_evolution_engine.py": {
++   "B311": 14
++  },
++  "core/tools/agent_heartbeat/heartbeat.py": {
++   "B310": 1
++  },
++  "core/tools/autonomy/tools/autonomy_cycle.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/tools/autonomy/tools/deploy_guard.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/tools/browser/browser_stealth.py": {
++   "B311": 13
++  },
++  "core/tools/browser/playwright_browser_agent.py": {
++   "B311": 15
++  },
++  "core/tools/browser/stealth_http_client.py": {
++   "B311": 1
++  },
++  "core/tools/code/auto_test_generator.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/tools/code/code_smell_detector.py": {
++   "B103": 1,
++   "B404": 1,
++   "B603": 3,
++   "B607": 1
++  },
++  "core/tools/code/cot_reasoner.py": {
++   "B311": 2
++  },
++  "core/tools/code/dependency_manager_agent.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/tools/code/pre_commit_ai.py": {
++   "B404": 1,
++   "B603": 3
++  },
++  "core/tools/code/safe_executor.py": {
++   "B102": 1
++  },
++  "core/tools/devops/docker_sandbox.py": {
++   "B404": 1,
++   "B603": 5,
++   "B607": 2
++  },
++  "core/tools/devops/on_premise_deployer.py": {
++   "B105": 3
++  },
++  "core/tools/discovery_fabric/supremeai_discovery/source_scout.py": {
++   "B310": 1
++  },
++  "core/tools/gap_miner/tools/gap_miner.py": {
++   "B324": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/tools/gap_miner/tools/incident_replay.py": {
++   "B324": 1
++  },
++  "core/tools/gap_miner/tools/prompt_distiller.py": {
++   "B324": 1
++  },
++  "core/tools/knowledge/codebase_exporter.py": {
++   "B404": 1,
++   "B603": 2
++  },
++  "core/tools/knowledge/git_knowledge_extractor.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "core/tools/learning/style_learner.py": {
++   "B324": 1
++  },
++  "core/tools/pipeline_recipe_compiler.py": {
++   "B106": 8
++  },
++  "core/tools/social/marketplace_agent.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "core/tools/social/telegram_bot/handler.py": {
++   "B105": 1
++  },
++  "core/tools/social/telegram_bot/router.py": {
++   "B105": 1
++  },
++  "core/tools/solution_synthesizer/tools/solution_synthesizer.py": {
++   "B310": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "core/tools/sso_integrator.py": {
++   "B105": 3
++  },
++  "core/web_ai_session_bridge.py": {
++   "B105": 1,
++   "B311": 2
++  },
++  "core/worker_service.py": {
++   "B104": 1,
++   "B105": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "evals/golden/run_eval.py": {
++   "B105": 1,
++   "B110": 1,
++   "B310": 1
++  },
++  "examples/gateway_client.py": {
++   "B110": 1,
++   "B310": 1
++  },
++  "examples/langchain-mcp-bot/bot.py": {
++   "B101": 1
++  },
++  "examples/mcp-client-py/client.py": {
++   "B310": 2
++  },
++  "examples/sdk-client-py/client.py": {
++   "B101": 1
++  },
++  "examples/webhook-verification/verify.py": {
++   "B107": 1
++  },
++  "gateway/dynamic_llm_router.py": {
++   "B101": 10
++  },
++  "gateway/gateway_shield_reference.py": {
++   "B101": 21
++  },
++  "gateway/memory.py": {
++   "B310": 3,
++   "B324": 1
++  },
++  "gateway/middleware/chaos_injector.py": {
++   "B311": 3
++  },
++  "gateway/middleware/correlation_id.py": {
++   "B110": 1
++  },
++  "gateway/routes/admin.py": {
++   "B608": 1
++  },
++  "gateway/routes/admin_dashboard/endpoints_command.py": {
++   "B112": 1
++  },
++  "gateway/routes/admin_v1.py": {
++   "B112": 1
++  },
++  "gateway/routes/auth.py": {
++   "B105": 1
++  },
++  "gateway/routes/browser/_crown_jewel.py": {
++   "B324": 1
++  },
++  "gateway/routes/browser/_render_proxy.py": {
++   "B310": 1
++  },
++  "gateway/routes/browser/_session_store.py": {
++   "B324": 1
++  },
++  "gateway/routes/chat_upload.py": {
++   "B314": 1,
++   "B405": 1
++  },
++  "gateway/routes/integrations.py": {
++   "B105": 1
++  },
++  "gateway/routes/webhooks_ai.py": {
++   "B105": 1
++  },
++  "gateway/sanitization.py": {
++   "B105": 1
++  },
++  "gateway/service/admin_auth.py": {
++   "B310": 2
++  },
++  "gateway/service/app.py": {
++   "B105": 2,
++   "B110": 2
++  },
++  "gateway/service/context_compiler.py": {
++   "B110": 1
++  },
++  "gateway/service/memory_store.py": {
++   "B110": 2
++  },
++  "gateway/service/passkey_auth.py": {
++   "B105": 1
++  },
++  "gateway/service/providers/web_session.py": {
++   "B311": 1
++  },
++  "gateway/service/redis_rate_limit.py": {
++   "B110": 1
++  },
++  "gateway/service/storage.py": {
++   "B110": 3
++  },
++  "gateway/services/auto_healer.py": {
++   "B311": 1
++  },
++  "gateway/services/browser/main.py": {
++   "B104": 1
++  },
++  "gateway/services/dynamic_ai/local_fallback.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "gateway/services/hitl/resume_token.py": {
++   "B105": 1
++  },
++  "gateway/services/memory_service.py": {
++   "B112": 1,
++   "B324": 1,
++   "B608": 1
++  },
++  "gateway/services/render_preflight_service.py": {
++   "B112": 1
++  },
++  "gateway/services/scraper/security.py": {
++   "B104": 1
++  },
++  "gateway/services/storage/gcp_firestore.py": {
++   "B101": 1
++  },
++  "gateway/services/tool_forge.py": {
++   "B102": 1
++  },
++  "gateway/services/video_to_code_pipeline.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "gateway/services/worker/main.py": {
++   "B104": 1
++  },
++  "infrastructure/mcp-control-plane/scripts/runtime/infisical_bootstrap.py": {
++   "B310": 1,
++   "B606": 1
++  },
++  "infrastructure/mcp-control-plane/sidecars/memory/graph_store.py": {
++   "B110": 1
++  },
++  "infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py": {
++   "B310": 2
++  },
++  "scripts/agents/acquire_role_slot.py": {
++   "B110": 1,
++   "B310": 1,
++   "B404": 1,
++   "B603": 8,
++   "B607": 8
++  },
++  "scripts/agents/agent_dashboard.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/agents/agent_identity.py": {
++   "B108": 2,
++   "B110": 4,
++   "B310": 1,
++   "B404": 2,
++   "B603": 10,
++   "B607": 9
++  },
++  "scripts/agents/agent_solution_memory.py": {
++   "B110": 2
++  },
++  "scripts/agents/automation_watchdog.py": {
++   "B310": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/autonomy_persistence.py": {
++   "B101": 10
++  },
++  "scripts/agents/claim_ttl_expirer.py": {
++   "B101": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/context_graph_resolver.py": {
++   "B101": 11
++  },
++  "scripts/agents/continuous_agent_loop.py": {
++   "B110": 1,
++   "B404": 1,
++   "B603": 3
++  },
++  "scripts/agents/create_blocker_issue.py": {
++   "B404": 1,
++   "B603": 5,
++   "B607": 4
++  },
++  "scripts/agents/create_discovery_issue.py": {
++   "B404": 2,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/agents/create_issue.py": {
++   "B404": 1,
++   "B603": 10,
++   "B607": 8
++  },
++  "scripts/agents/credential_manager.py": {
++   "B105": 1,
++   "B107": 1,
++   "B108": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/dispatch_browser_task.py": {
++   "B110": 5,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/agents/dynamic_credential_broker.py": {
++   "B110": 2,
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/agents/dynamic_naming.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/agents/dynamic_router.py": {
++   "B101": 22
++  },
++  "scripts/agents/ecosystem_scout_reference.py": {
++   "B101": 8,
++   "B106": 1
++  },
++  "scripts/agents/execution_executor.py": {
++   "B404": 1,
++   "B602": 1
++  },
++  "scripts/agents/gh_label_ensure.py": {
++   "B404": 1,
++   "B603": 2
++  },
++  "scripts/agents/group_taxonomy.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/heartbeat_ping.py": {
++   "B310": 2
++  },
++  "scripts/agents/issue_fingerprint.py": {
++   "B324": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/issue_revalidator.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/agents/loop_common.py": {
++   "B110": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/mcp_presence_tracker.py": {
++   "B310": 1
++  },
++  "scripts/agents/mcp_tower_client.py": {
++   "B110": 4
++  },
++  "scripts/agents/pr_lifecycle_guard.py": {
++   "B310": 1
++  },
++  "scripts/agents/priority_queue_ledger.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/agents/role_registry.py": {
++   "B101": 5
++  },
++  "scripts/agents/role_trigger_matrix.py": {
++   "B101": 35
++  },
++  "scripts/agents/rules_breaker.py": {
++   "B108": 1,
++   "B112": 15,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/scope_gate.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/agents/scout_extractor.py": {
++   "B101": 14,
++   "B102": 1
++  },
++  "scripts/agents/self_healing_reporter.py": {
++   "B101": 10,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/agents/smart_context_selector.py": {
++   "B105": 2
++  },
++  "scripts/agents/smart_dispatcher.py": {
++   "B110": 6,
++   "B404": 1,
++   "B603": 8,
++   "B607": 8
++  },
++  "scripts/agents/web_agent_worker.py": {
++   "B101": 1,
++   "B110": 4,
++   "B112": 1,
++   "B310": 1,
++   "B311": 14,
++   "B404": 1,
++   "B602": 2
++  },
++  "scripts/agents/web_intent_engine.py": {
++   "B110": 4,
++   "B311": 20
++  },
++  "scripts/agents/web_session_client.py": {
++   "B311": 1
++  },
++  "scripts/bridge/bridge_intake.py": {
++   "B110": 1,
++   "B310": 2,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/admin_sovereignty_guard.py": {
++   "B101": 24
++  },
++  "scripts/ci/ai_pr_evaluator.py": {
++   "B110": 1,
++   "B310": 3,
++   "B324": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/audit_suite.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/auto_bridge_pr_opener.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/auto_escalate_priority.py": {
++   "B110": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/bandit_sast_guard.py": {
++   "B101": 24,
++   "B404": 1,
++   "B603": 3,
++   "B607": 1
++  },
++  "scripts/ci/boundary_sanitization_guard.py": {
++   "B404": 1,
++   "B603": 3,
++   "B607": 3
++  },
++  "scripts/ci/bridge_opener_hardening_reference.py": {
++   "B101": 25
++  },
++  "scripts/ci/build_manual_task_report.py": {
++   "B105": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/build_release_evidence.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/build_status_proof.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/ci/check_commit_sizing.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ci/check_free_tier_limits.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/check_import_budget.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/check_mcp_policy_parity.py": {
++   "B404": 1,
++   "B603": 3
++  },
++  "scripts/ci/check_self_heal_token_usage.py": {
++   "B110": 1
++  },
++  "scripts/ci/check_single_frontend.py": {
++   "B112": 2
++  },
++  "scripts/ci/cleanup_group_branches.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/cleanup_stale_branches.py": {
++   "B404": 1,
++   "B603": 5,
++   "B607": 4
++  },
++  "scripts/ci/constitution_pointer_guard.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/contract_parity_guard.py": {
++   "B101": 4
++  },
++  "scripts/ci/controller_evidence_verify.py": {
++   "B404": 1,
++   "B602": 1,
++   "B604": 1
++  },
++  "scripts/ci/create_group_issue.py": {
++   "B110": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/cross_platform_invariant_guard.py": {
++   "B101": 40
++  },
++  "scripts/ci/deploy_doctor.py": {
++   "B310": 2,
++   "B404": 1,
++   "B603": 1,
++   "B605": 1,
++   "B607": 1
++  },
++  "scripts/ci/deploy_preflight_guard.py": {
++   "B101": 4,
++   "B105": 1,
++   "B404": 1,
++   "B603": 2
++  },
++  "scripts/ci/detect_changed_tests.py": {
++   "B404": 1,
++   "B603": 4,
++   "B607": 2
++  },
++  "scripts/ci/detect_deploy_targets.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/docs_garbage_tree_sweep.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/federation_anchors.py": {
++   "B101": 29,
++   "B110": 1,
++   "B310": 8,
++   "B404": 1,
++   "B603": 4,
++   "B607": 1
++  },
++  "scripts/ci/federation_ci_watchdog.py": {
++   "B101": 59,
++   "B310": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/federation_satellite_sync.py": {
++   "B101": 20,
++   "B110": 2,
++   "B310": 1,
++   "B404": 1,
++   "B603": 30,
++   "B607": 30
++  },
++  "scripts/ci/frontend_performance_guard.py": {
++   "B101": 4
++  },
++  "scripts/ci/generate_changelog.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/generate_module_capability_matrix.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/generate_route_client_inventory.py": {
++   "B112": 1
++  },
++  "scripts/ci/generate_types.py": {
++   "B101": 16
++  },
++  "scripts/ci/group_closeout_janitor.py": {
++   "B110": 2,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/hourly_satellite_batcher.py": {
++   "B101": 53
++  },
++  "scripts/ci/infisical_loader.py": {
++   "B310": 1
++  },
++  "scripts/ci/ingest_pr_knowledge.py": {
++   "B101": 2,
++   "B310": 3,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/issue_queue_manager.py": {
++   "B110": 1,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/issue_router.py": {
++   "B404": 1,
++   "B603": 3,
++   "B607": 2
++  },
++  "scripts/ci/issue_template_guard.py": {
++   "B101": 13
++  },
++  "scripts/ci/kaggle_learning_bridge.py": {
++   "B101": 8,
++   "B310": 4
++  },
++  "scripts/ci/ledger_check.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/license_ssot_guard.py": {
++   "B101": 25
++  },
++  "scripts/ci/mark_branch_state.py": {
++   "B110": 2,
++   "B310": 1,
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ci/master_secret_shield.py": {
++   "B101": 3
++  },
++  "scripts/ci/mcp_conformance_selftest.py": {
++   "B310": 1
++  },
++  "scripts/ci/merge_gate.py": {
++   "B110": 2,
++   "B404": 1,
++   "B603": 4,
++   "B607": 1
++  },
++  "scripts/ci/merge_train_rollup.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/ci/mirror_issue_to_open.py": {
++   "B310": 1
++  },
++  "scripts/ci/mirror_parent_linker.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/mission_passk.py": {
++   "B314": 1,
++   "B404": 1,
++   "B405": 1,
++   "B603": 1
++  },
++  "scripts/ci/mutation_lease.py": {
++   "B108": 1,
++   "B404": 1,
++   "B603": 6,
++   "B607": 5
++  },
++  "scripts/ci/openapi_breaking_guard.py": {
++   "B101": 22,
++   "B404": 2,
++   "B603": 3,
++   "B607": 2
++  },
++  "scripts/ci/pipeline_failure_register.py": {
++   "B110": 3,
++   "B310": 1,
++   "B324": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/pr_improvement_regression_guard.py": {
++   "B101": 17,
++   "B105": 1
++  },
++  "scripts/ci/pr_patch_recorder.py": {
++   "B101": 7,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/probe_live_status.py": {
++   "B105": 1,
++   "B310": 1
++  },
++  "scripts/ci/probe_live_status_453.py": {
++   "B105": 1,
++   "B310": 1
++  },
++  "scripts/ci/production_certification.py": {
++   "B110": 2,
++   "B310": 4,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/production_mismatch_gate.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/project_health_check.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/purge_stale_workflow_runs.py": {
++   "B110": 1,
++   "B310": 2,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ci/record_merge_learning.py": {
++   "B310": 2
++  },
++  "scripts/ci/rejected_wo_rescue.py": {
++   "B105": 1
++  },
++  "scripts/ci/render_build_budget_guard.py": {
++   "B112": 1
++  },
++  "scripts/ci/render_build_quota_guard.py": {
++   "B101": 8,
++   "B310": 3
++  },
++  "scripts/ci/render_deploy_preflight.py": {
++   "B310": 1
++  },
++  "scripts/ci/run_all_guards.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/satellite_board_guard.py": {
++   "B310": 1
++  },
++  "scripts/ci/scan_secret_logs.py": {
++   "B105": 1
++  },
++  "scripts/ci/schedule_watchdog.py": {
++   "B112": 1,
++   "B310": 1
++  },
++  "scripts/ci/secondary_service_probes.py": {
++   "B310": 1
++  },
++  "scripts/ci/security_gate.py": {
++   "B101": 11
++  },
++  "scripts/ci/self_healing_reporter.py": {
++   "B101": 10
++  },
++  "scripts/ci/smart_priority_merger.py": {
++   "B108": 1,
++   "B310": 2,
++   "B404": 1,
++   "B603": 6,
++   "B607": 4
++  },
++  "scripts/ci/sprawl_guard.py": {
++   "B110": 2,
++   "B404": 1,
++   "B603": 4,
++   "B607": 4
++  },
++  "scripts/ci/staggered_rolling_train.py": {
++   "B101": 20
++  },
++  "scripts/ci/stale_claim_releaser.py": {
++   "B101": 4
++  },
++  "scripts/ci/sync_graph_to_memory.py": {
++   "B101": 6,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/task_dashboard.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ci/tenant_negative_battery.py": {
++   "B310": 1
++  },
++  "scripts/ci/validate_links.py": {
++   "B310": 1
++  },
++  "scripts/ci/validate_md_links.py": {
++   "B310": 2
++  },
++  "scripts/ci/validate_md_links_seq04.py": {
++   "B310": 2
++  },
++  "scripts/ci/vault_hygiene_check.py": {
++   "B105": 1,
++   "B310": 4
++  },
++  "scripts/ci/vendored_tree_guard.py": {
++   "B101": 6
++  },
++  "scripts/ci/vercel_deploy_preflight.py": {
++   "B310": 1
++  },
++  "scripts/ci/verify_canonical_startup.py": {
++   "B310": 2,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/knowledge/ingest_project_docs.py": {
++   "B310": 1
++  },
++  "scripts/ops/actions_quota_check.py": {
++   "B310": 1
++  },
++  "scripts/ops/advanced_analysis/api_contract_diff.py": {
++   "B112": 2
++  },
++  "scripts/ops/advanced_analysis/bengali_i18n_completeness_checker.py": {
++   "B112": 1
++  },
++  "scripts/ops/advanced_analysis/config_single_source_enforcer.py": {
++   "B104": 1,
++   "B108": 1
++  },
++  "scripts/ops/advanced_analysis/dependency_freshness_radar.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/advanced_analysis/duplicate_detector.py": {
++   "B112": 3
++  },
++  "scripts/ops/advanced_analysis/env_var_reconciler.py": {
++   "B112": 1
++  },
++  "scripts/ops/advanced_analysis/secret_rotation_reminder.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/ai/change_impact_detector.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/ai/evidence_bundle.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/ai/feature_store_sync.py": {
++   "B324": 1
++  },
++  "scripts/ops/ai/model_drift_detector.py": {
++   "B301": 1,
++   "B403": 1
++  },
++  "scripts/ops/ai/repository_metadata_index.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/ai/sandboxed_repair.py": {
++   "B404": 1,
++   "B603": 3,
++   "B607": 3
++  },
++  "scripts/ops/audit/system_deep_scan.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/audit/system_deep_scan_2026_09_15.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/audit/system_defect_scan.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/audit/system_defect_scan_2026_09_16.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/audit_env_usage.py": {
++   "B112": 1
++  },
++  "scripts/ops/audit_isolated_modules_and_capabilities.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/audit_observability.py": {
++   "B112": 1
++  },
++  "scripts/ops/auto_doctor.py": {
++   "B101": 12
++  },
++  "scripts/ops/backup/auto_cross_cloud_replicate.py": {
++   "B105": 3,
++   "B310": 1,
++   "B324": 1
++  },
++  "scripts/ops/backup/auto_firestore_backup.py": {
++   "B310": 1
++  },
++  "scripts/ops/backup/backup_telegram.py": {
++   "B404": 1,
++   "B603": 9,
++   "B607": 5
++  },
++  "scripts/ops/backup/create_desktop_backup.py": {
++   "B404": 1,
++   "B603": 9,
++   "B607": 5
++  },
++  "scripts/ops/backup/superai_backup_manager.py": {
++   "B202": 2,
++   "B324": 1,
++   "B404": 1,
++   "B603": 6,
++   "B607": 6
++  },
++  "scripts/ops/benchmark/superai_load_tester.py": {
++   "B310": 2
++  },
++  "scripts/ops/billing/fraud_detector.py": {
++   "B112": 1
++  },
++  "scripts/ops/billing/usage_reporter.py": {
++   "B105": 1
++  },
++  "scripts/ops/checkpoint_update.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/codegraph_integration.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/db/auto_migrate.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/db/ingest_knowledge.py": {
++   "B311": 1
++  },
++  "scripts/ops/deploy/add_secrets_to_infisical.py": {
++   "B310": 3
++  },
++  "scripts/ops/deploy/blue_green_deploy.py": {
++   "B404": 1,
++   "B602": 2
++  },
++  "scripts/ops/deploy/canary_deploy.py": {
++   "B404": 1,
++   "B603": 3
++  },
++  "scripts/ops/deploy/infrastructure_as_code_validator.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/devops/_audit.py": {
++   "B310": 4
++  },
++  "scripts/ops/devops/check_render_status.py": {
++   "B113": 1
++  },
++  "scripts/ops/devops/cloud_watchman.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/devops/devops_security_scan.py": {
++   "B112": 1,
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/devops/generate_modular_audits.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/devops/run_local_audit.py": {
++   "B310": 2
++  },
++  "scripts/ops/diagnostics/superai_console_detective.py": {
++   "B310": 1
++  },
++  "scripts/ops/git/auto_sync_main.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/git/cross_pr_collision_detector.py": {
++   "B110": 3,
++   "B404": 1,
++   "B603": 4,
++   "B607": 4
++  },
++  "scripts/ops/git/optional_poetry.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/git/push_as_agent.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/gitlab_mirror_sync.py": {
++   "B101": 2,
++   "B110": 1,
++   "B310": 1
++  },
++  "scripts/ops/health/check_system_health.py": {
++   "B311": 1
++  },
++  "scripts/ops/health/superai_health_check.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 1
++  },
++  "scripts/ops/health_check.py": {
++   "B310": 1
++  },
++  "scripts/ops/ingest_project_docs.py": {
++   "B310": 1
++  },
++  "scripts/ops/lib/auto_discovery.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/lib/render_client.py": {
++   "B310": 1
++  },
++  "scripts/ops/maintenance/check_infisical_vault_synth.py": {
++   "B310": 2
++  },
++  "scripts/ops/maintenance/create_issue.py": {
++   "B310": 1
++  },
++  "scripts/ops/master_health_check.py": {
++   "B101": 7,
++   "B107": 3,
++   "B110": 4,
++   "B310": 4,
++   "B404": 1,
++   "B603": 3,
++   "B607": 1
++  },
++  "scripts/ops/operations/operational_truth_db.py": {
++   "B608": 1
++  },
++  "scripts/ops/pre_commit_hook.py": {
++   "B310": 2,
++   "B404": 1,
++   "B602": 1,
++   "B603": 11,
++   "B607": 11
++  },
++  "scripts/ops/pre_merge_guard.py": {
++   "B105": 1,
++   "B112": 1,
++   "B310": 5,
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/pre_push_hook.py": {
++   "B110": 2,
++   "B404": 1,
++   "B603": 6,
++   "B607": 5
++  },
++  "scripts/ops/quality/auto_dead_code_remover.py": {
++   "B404": 1,
++   "B603": 5,
++   "B607": 1
++  },
++  "scripts/ops/quality/auto_improve_coverage.py": {
++   "B314": 1,
++   "B404": 1,
++   "B405": 1,
++   "B603": 1
++  },
++  "scripts/ops/quality/self_audit_scan.py": {
++   "B324": 1
++  },
++  "scripts/ops/redis_quota_monitor.py": {
++   "B310": 2
++  },
++  "scripts/ops/refactor/superai_transform.py": {
++   "B404": 1,
++   "B602": 1
++  },
++  "scripts/ops/resource_collection/scrapers.py": {
++   "B310": 1
++  },
++  "scripts/ops/resource_scraping/awesome_go/scrape.py": {
++   "B310": 2
++  },
++  "scripts/ops/resource_scraping/awesome_python/scrape.py": {
++   "B310": 1
++  },
++  "scripts/ops/resource_scraping/awesome_selfhosted/scrape.py": {
++   "B310": 1
++  },
++  "scripts/ops/runtime/infisical_bootstrap.py": {
++   "B310": 1,
++   "B404": 1,
++   "B606": 1
++  },
++  "scripts/ops/safety_guard.py": {
++   "B103": 1,
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/scan_duplicate_plans.py": {
++   "B324": 1
++  },
++  "scripts/ops/security/audit_log_analyzer.py": {
++   "B105": 1,
++   "B311": 15,
++   "B608": 1
++  },
++  "scripts/ops/security/auto_repair_cloudflare_vault.py": {
++   "B310": 4
++  },
++  "scripts/ops/security/auto_secret_rotate.py": {
++   "B105": 1
++  },
++  "scripts/ops/security/auto_vulnerability_scanner.py": {
++   "B112": 2,
++   "B404": 1,
++   "B603": 2
++  },
++  "scripts/ops/security/check_dependencies.py": {
++   "B404": 1,
++   "B602": 1
++  },
++  "scripts/ops/security/delete_vault_duplicate_render_keys.py": {
++   "B310": 2
++  },
++  "scripts/ops/security/delete_vault_stale_keys.py": {
++   "B310": 2
++  },
++  "scripts/ops/security/fetch_ai_keys.py": {
++   "B310": 2
++  },
++  "scripts/ops/security/find_dead_code.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/security/generate_secrets.py": {
++   "B310": 2
++  },
++  "scripts/ops/security/idor_runtime_matrix.py": {
++   "B310": 2
++  },
++  "scripts/ops/security/repair_and_federate_cloudflare.py": {
++   "B310": 1
++  },
++  "scripts/ops/security/secrets_rotation_manager.py": {
++   "B105": 2
++  },
++  "scripts/ops/security/verify_token_rotation.py": {
++   "B105": 2,
++   "B310": 1
++  },
++  "scripts/ops/supremeai_toolkit/cli.py": {
++   "B110": 2
++  },
++  "scripts/ops/supremeai_toolkit/plan_guard.py": {
++   "B324": 1
++  },
++  "scripts/ops/supremeai_toolkit/reusability_audit.py": {
++   "B404": 1,
++   "B603": 1,
++   "B607": 1
++  },
++  "scripts/ops/supremeai_toolkit/standalone_check.py": {
++   "B404": 1,
++   "B603": 2,
++   "B607": 2
++  },
++  "scripts/ops/testing/alert_manager.py": {
++   "B107": 2
++  },
++  "scripts/ops/testing/api_contract_validator.py": {
++   "B311": 14
++  },
++  "scripts/ops/testing/mutation_testing.py": {
++   "B404": 1,
++   "B603": 1
++  },
++  "scripts/ops/testing/performance_benchmark.py": {
++   "B105": 1
++  },
++  "scripts/ops/update_cors_hosts.py": {
++   "B113": 3
++  },
++  "scripts/ops/verify_capabilities.py": {
++   "B101": 10
++  },
++  "scripts/ops/verify_infisical_env.py": {
++   "B310": 3
++  },
++  "scripts/tower/claim_quota_reference.py": {
++   "B101": 15
++  },
++  "scripts/tower/nightly_train_reference.py": {
++   "B101": 15
++  },
++  "scripts/tower/work_queue_query_reference.py": {
++   "B101": 9
++  },
++  "skills/installer.py": {
++   "B404": 1,
++   "B603": 1
++  }
++ },
++ "meta": {
++  "command": "bandit -q -r --exclude tests/conftest -f json <targets>",
++  "dated": "2026-10-28",
++  "doctrine": "shrink-only ratchet: entries may only be REMOVED (in the same change that fixes them); counts may only shrink. New (path, id) pairs or grown counts are drift.",
++  "exclusions": [
++   "test-pattern files (test_*.py, *_test.py, conftest.py, any tests/ dir)",
++   "core/examples/sample_buggy.py (labeled teaching sample)",
++   "paths outside the scan targets"
++  ],
++  "head": "dfb9604 2026-10-28",
++  "issue": 1809,
++  "tool": "bandit",
++  "tool_version": "1.9.4",
++  "totals": {
++   "files": 487,
++   "findings_in_baseline": 2338,
++   "pairs": 923
++  }
++ }
++}
+diff --git a/scripts/ci/bandit_sast_guard.py b/scripts/ci/bandit_sast_guard.py
+new file mode 100644
+index 00000000..719ac3e8
+--- /dev/null
++++ b/scripts/ci/bandit_sast_guard.py
+@@ -0,0 +1,488 @@
++#!/usr/bin/env python3
++"""bandit_sast_guard.py — Python source static-security ratchet gate (#1809).
++
++Mission (issue #1809, scout radar lane R38):
++    Every adjacent security surface has a machine gate — dependency CVEs
++    (Trivy, #1735->#1768), CI workflows (zizmor, #1776), import contracts
++    (import-linter, #1791), runtime LLM behavior (garak, #1748), secrets
++    (gitleaks composite), license SSOT (#1796). The Python source plane had
++    zero mechanical coverage: the 2026-10-28 scout scan found 45 HIGH-severity
++    findings (weak hashes in session-store/crown-jewel routes, shell=True in
++    the agent command executor and deploy switch, tarfile unsafe-members in
++    the privileged backup-restore path) that were invisible until that
++    one-off run. This guard makes that plane a shrink-only ratchet.
++
++Behavior contract (the #1796 KNOWN_DRIFTS ratchet, externalized to a
++versioned baseline because the Python surface carries ~919 finding pairs):
++
++    1. Runs the pinned scanner (bandit 1.9.4) over the non-test Python
++       surface: targets core scripts gateway browser skills examples
++       infrastructure evals; excludes test-pattern files (test_*.py,
++       *_test.py, conftest.py, anything under a tests/ dir) and the labeled
++       teaching sample core/examples/sample_buggy.py. Post-filtering is done
++       here (not via bandit globs) so the exclusion set is one piece of code,
++       not scattered CLI glob semantics.
++    2. Aggregates findings to (repo-relative path, test_id) -> count and
++       compares against scripts/ci/bandit_sast_baseline.json:
++         - a (path, id) pair absent from the baseline, or a count ABOVE the
++           baselined count, is DRIFT;
++         - counts at or below baseline are compliant (a lower count is an
++           improvement — shrink the baseline entry in the same change, the
++           file may only ever shrink).
++    3. Routing (issue #1809 step 3 — triage routing, not agent fixes):
++         - drift under scripts/** is fail-closed (exit 1): that surface is
++           bridge-able, agents can and must fix it;
++         - drift under the satellite mirrors (core/, gateway/, browser/,
++           examples/, evals/, infrastructure/, skills/) is REPORT-ONLY
++           (exit 0): per the #1809 never-do, agents never edit those mirrors;
++           findings route to the owning satellite domain via the §2.2 table
++           (U1/U3 — this guard never asserts private-repo state).
++       The baseline itself is global: it may only shrink, on any surface.
++    4. Honest degradation (#1760 oasdiff pattern): when bandit is not
++       installed the guard skips with evidence (exit 0, note emitted) — it
++       never fabricates a PASS. A tool-version mismatch is reported as a
++       note, not a failure (the baseline provenance records the pin).
++    5. `--baseline` regenerates the versioned baseline at the CURRENT head
++       (admin action for the landing/floor reset; the diff of the baseline
++       file in review IS the audit trail). `--json` emits a machine report.
++       `--files f1 f2 ...` (pre-push mode) scans only the named files.
++
++Never-do (issue #1809): no auto-fix mode (findings are triage inputs, not
++auto-patches); the baseline may never grow; no agent edits to core/, browser/
++or gateway/ mirrors (report-only routing); no scanning .github/**; no secret
++values echoed (this guard reports paths, ids and counts — never code lines).
++
++Usage:
++    python scripts/ci/bandit_sast_guard.py --check            # roster mode
++    python scripts/ci/bandit_sast_guard.py --files a.py b.py  # pre-push mode
++    python scripts/ci/bandit_sast_guard.py --baseline         # regenerate floor
++    python scripts/ci/bandit_sast_guard.py --json             # machine report
++    python scripts/ci/bandit_sast_guard.py --self-test        # hermetic
++
++Exit codes: 0 = pass / known-floor / honest skip · 1 = new drift (scripts/**)
++· 2 = usage error.
++"""
++
++from __future__ import annotations
++
++import argparse
++import contextlib
++import json
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++if hasattr(sys.stdout, "reconfigure"):
++    with contextlib.suppress(Exception):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++GUARD_TAG = "[bandit-sast-guard]"
++BASELINE_PATH = Path("scripts/ci/bandit_sast_baseline.json")
++
++EXIT_PASS = 0
++EXIT_DRIFT = 1
++EXIT_USAGE = 2
++
++PINNED_BANDIT = "1.9.4"
++SCAN_TARGETS = ("core", "scripts", "gateway", "browser", "skills", "examples", "infrastructure", "evals")
++SCAN_TIMEOUT = 600
++KNOWN_SAMPLE = "core/examples/sample_buggy.py"
++
++# Surfaces where drift fail-closes (agent-bridge-able via the zero-credential
++# bridge). Everything else in SCAN_TARGETS is a satellite mirror: report-only.
++ENFORCED_PREFIXES = ("scripts/",)
++
++BANDIT_ARGS = ("-q", "-r", "--exclude", "tests/conftest", "-f", "json")
++
++
++def _evidence(msg: str) -> None:
++    print(f"{GUARD_TAG} {msg}")
++
++
++def is_test_path(path: str) -> bool:
++    """The one exclusion predicate (docstring clause 1)."""
++    parts = path.split("/")
++    name = parts[-1]
++    return (
++        name.startswith("test_")
++        or name.endswith("_test.py")
++        or name == "conftest.py"
++        or any(seg == "tests" for seg in parts[:-1])
++    )
++
++
++def in_scan_targets(rel_path: str) -> bool:
++    top = rel_path.split("/", 1)[0]
++    return top in SCAN_TARGETS
++
++
++def load_baseline(repo_root: Path) -> tuple[dict[str, dict[str, int]], dict]:
++    """Load the versioned baseline. Unreadable baseline is fail-closed drift."""
++    path = repo_root / BASELINE_PATH
++    if not path.is_file():
++        raise FileNotFoundError(f"baseline missing: {BASELINE_PATH} (run --baseline to create)")
++    data = json.loads(path.read_text(encoding="utf-8"))
++    findings = data.get("findings")
++    if not isinstance(findings, dict):
++        raise ValueError("baseline malformed: 'findings' must be an object")
++    return findings, data.get("meta", {})
++
++
++def bandit_version() -> str | None:
++    exe = shutil.which("bandit")
++    if exe is None:
++        return None
++    try:
++        out = subprocess.run(
++            [exe, "--version"], capture_output=True, text=True, timeout=30, check=False
++        ).stdout
++        for line in out.splitlines():
++            if line.strip().startswith("bandit"):
++                return line.split()[1].strip()
++    except Exception:
++        return "unknown"
++    return "unknown"
++
++
++def run_bandit_json(paths: list[str], cwd: Path) -> dict:
++    """Invoke bandit and return the parsed JSON report. Raises on hard failure."""
++    exe = shutil.which("bandit")
++    if exe is None:
++        raise FileNotFoundError("bandit binary not found on PATH")
++    cmd = [exe, *BANDIT_ARGS, *paths]
++    proc = subprocess.run(
++        cmd, cwd=cwd, capture_output=True, text=True, errors="replace", timeout=SCAN_TIMEOUT, check=False
++    )
++    # bandit exits 1 when findings exist — that is not a scan failure.
++    if proc.returncode not in (0, 1):
++        raise RuntimeError(
++            f"bandit exited {proc.returncode}: {(proc.stderr or '')[:400]}"
++        )
++    try:
++        return json.loads(proc.stdout)
++    except json.JSONDecodeError as exc:
++        raise RuntimeError(f"bandit produced unparseable JSON: {exc}") from exc
++
++
++def aggregate(report: dict) -> tuple[dict[str, dict[str, int]], int, int]:
++    """Aggregate a bandit JSON report to (path -> {test_id: count}).
++
++    Applies the exclusion predicate (docstring clause 1). Returns
++    (aggregates, raw_count, skipped_count). Bandit emits repo-CWD-relative
++    POSIX paths already; normalize defensively anyway.
++    """
++    agg: dict[str, dict[str, int]] = {}
++    raw = skipped = 0
++    for item in report.get("results", []):
++        raw += 1
++        rel = str(item.get("filename", "")).replace("\\", "/").lstrip("./")
++        if not rel:
++            skipped += 1
++            continue
++        if is_test_path(rel) or rel == KNOWN_SAMPLE:
++            skipped += 1
++            continue
++        if not in_scan_targets(rel):
++            skipped += 1
++            continue
++        tid = str(item.get("test_id", "UNKNOWN"))
++        agg.setdefault(rel, {})
++        agg[rel][tid] = agg[rel].get(tid, 0) + 1
++    return agg, raw, skipped
++
++
++def compare(
++    current: dict[str, dict[str, int]], baseline: dict[str, dict[str, int]]
++) -> tuple[list[dict], list[dict], list[dict]]:
++    """Ratchet compare. Returns (drift, improvements, notes).
++
++    drift: list of {path, test_id, baseline, current, surface}
++    improvements: baselined pairs whose count shrank (shrink-the-baseline hints)
++    """
++    drift: list[dict] = []
++    improvements: list[dict] = []
++    for path in sorted(current):
++        for tid in sorted(current[path]):
++            cur = current[path][tid]
++            base = baseline.get(path, {}).get(tid, 0)
++            if cur > base:
++                drift.append(
++                    {
++                        "path": path,
++                        "test_id": tid,
++                        "baseline": base,
++                        "current": cur,
++                        "surface": path.split("/", 1)[0],
++                    }
++                )
++            elif base > 0 and cur < base:
++                improvements.append({"path": path, "test_id": tid, "baseline": base, "current": cur})
++    return drift, improvements, []
++
++
++def build_baseline_report(repo_root: Path) -> dict:
++    """Full-surface scan -> the versioned baseline document (docstring clause 5)."""
++    existing = [t for t in SCAN_TARGETS if (repo_root / t).is_dir()]
++    report = run_bandit_json(existing, repo_root)
++    agg, _raw, _skipped = aggregate(report)
++    total = sum(sum(counts.values()) for counts in agg.values())
++    head = "unknown"
++    try:
++        head = subprocess.run(
++            ["git", "log", "-1", "--format=%h %ad", "--date=short"],
++            cwd=repo_root, capture_output=True, text=True, timeout=30, check=False,
++        ).stdout.strip() or "unknown"
++    except subprocess.SubprocessError as exc:
++        # provenance is best-effort — but never a silent swallow (B110-clean):
++        # the failure itself becomes the recorded evidence.
++        head = f"unknown (git probe failed: {exc.__class__.__name__})"
++    return {
++        "meta": {
++            "issue": 1809,
++            "tool": "bandit",
++            "tool_version": PINNED_BANDIT,
++            "command": "bandit " + " ".join([*BANDIT_ARGS, "<targets>"]),
++            "head": head,
++            "dated": "2026-10-28",
++            "exclusions": [
++                "test-pattern files (test_*.py, *_test.py, conftest.py, any tests/ dir)",
++                f"{KNOWN_SAMPLE} (labeled teaching sample)",
++                "paths outside the scan targets",
++            ],
++            "totals": {
++                "findings_in_baseline": total,
++                "files": len(agg),
++                "pairs": sum(len(counts) for counts in agg.values()),
++            },
++            "doctrine": (
++                "shrink-only ratchet: entries may only be REMOVED (in the same change "
++                "that fixes them); counts may only shrink. New (path, id) pairs or "
++                "grown counts are drift."
++            ),
++        },
++        "findings": dict(sorted(agg.items())),
++    }
++
++
++def evaluate(repo_root: Path, files: list[str] | None = None) -> tuple[int, list[dict], list[dict], list[str]]:
++    """Single decision tree. Returns (exit, drift, improvements, notes)."""
++    notes: list[str] = []
++    version = bandit_version()
++    if version is None:
++        notes.append(
++            f"bandit not installed — skipped with evidence (honest degradation, "
++            f"#1760 pattern; pip install bandit=={PINNED_BANDIT} to enable)"
++        )
++        return EXIT_PASS, [], [], notes
++    if version not in (PINNED_BANDIT, "unknown"):
++        notes.append(f"bandit version {version} != pinned {PINNED_BANDIT} — proceeding with evidence note")
++    try:
++        baseline, _meta = load_baseline(repo_root)
++    except (FileNotFoundError, ValueError) as exc:
++        return EXIT_DRIFT, [{"path": str(BASELINE_PATH), "test_id": "BASELINE", "baseline": 0, "current": 0, "surface": "meta", "detail": str(exc)}], [], notes
++
++    if files:
++        targets = [f for f in files if f.endswith(".py") and in_scan_targets(Path(f).as_posix())]
++        if not targets:
++            notes.append("no scanned-surface .py files in the changed set — nothing to scan")
++            return EXIT_PASS, [], [], notes
++        report = run_bandit_json(targets, repo_root)
++    else:
++        existing = [t for t in SCAN_TARGETS if (repo_root / t).is_dir()]
++        report = run_bandit_json(list(existing), repo_root)
++
++    current, raw, skipped = aggregate(report)
++    notes.append(f"scan: {raw} raw finding(s), {skipped} excluded by the guard predicate")
++    drift, _improvements, _ = compare(current, baseline)
++    enforced = [d for d in drift if d["path"].startswith(ENFORCED_PREFIXES)]
++    report_only = [d for d in drift if not d["path"].startswith(ENFORCED_PREFIXES)]
++    if enforced:
++        return EXIT_DRIFT, enforced, report_only, notes
++    return EXIT_PASS, [], drift, notes
++
++
++def render(drift: list[dict], report_only: list[dict], improvements: list[dict], notes: list[str]) -> None:
++    for note in notes:
++        _evidence(f"note | {note}")
++    for d in report_only:
++        _evidence(
++            f"SATELLITE-DRIFT (report-only, routes to {d['surface']}) | {d['path']} | "
++            f"{d['test_id']} | baseline {d['baseline']} -> current {d['current']}"
++        )
++    for d in drift:
++        _evidence(
++            f"NEW-DRIFT (fail-closed) | {d['path']} | {d['test_id']} | "
++            f"baseline {d['baseline']} -> current {d['current']}"
++        )
++    for imp in improvements:
++        _evidence(
++            f"IMPROVED (shrink the baseline entry in the same change) | {imp['path']} | "
++            f"{imp['test_id']} | {imp['baseline']} -> {imp['current']}"
++        )
++    if not drift and not report_only and not improvements:
++        _evidence("ratchet clean: no new or grown findings on the scanned surface")
++
++
++def self_test() -> bool:
++    """Hermetic guard-the-guard (offline; fixtures, no bandit needed)."""
++    print("[self-test] Running bandit SAST guard tests...")
++    import bandit_sast_guard as g
++
++    # 1. Exclusion predicate: the exact #1809 exclusion set.
++    assert not g.is_test_path("scripts/ci/bandit_sast_guard.py")
++    assert g.is_test_path("core/tests/test_x.py")
++    assert g.is_test_path("scripts/agents/test_foo.py")
++    assert g.is_test_path("core/api/conftest.py")
++    assert g.is_test_path("gateway/tests/unit/deep_test.py")
++    assert not g.is_test_path("scripts/ci/data/fixture.py")
++    assert g.in_scan_targets("core/api/x.py") and not g.in_scan_targets("studio/src/x.ts")
++    assert not g.in_scan_targets(".github/workflows/x.yml")
++    print("  PASS | exclusion predicate: test-patterns, targets, .github excluded")
++    # 2. Aggregation: exclusions + counting.
++    fake = {
++        "results": [
++            {"filename": "scripts/a.py", "test_id": "B602", "issue_severity": "HIGH"},
++            {"filename": "scripts/a.py", "test_id": "B602", "issue_severity": "HIGH"},
++            {"filename": "scripts/test_a.py", "test_id": "B101"},
++            {"filename": "core/examples/sample_buggy.py", "test_id": "B102"},
++            {"filename": "core/b.py", "test_id": "B324"},
++            {"filename": "studio/outside.py", "test_id": "B101"},
++        ]
++    }
++    agg, raw, skipped = g.aggregate(fake)
++    assert raw == 6 and skipped == 3, (raw, skipped)
++    assert agg == {"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}, agg
++    print("  PASS | aggregation: counts, test-file + sample + off-target exclusions")
++    # 3. Ratchet compare: new pair, grown count, shrunk count, equal count.
++    baseline = {"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}
++    drift, improvements, _ = g.compare({"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}, baseline)
++    assert not drift and not improvements
++    drift, _, _ = g.compare({"scripts/new.py": {"B105": 1}}, baseline)
++    assert drift and drift[0]["path"] == "scripts/new.py"
++    drift, _, _ = g.compare({"scripts/a.py": {"B602": 3}}, baseline)
++    assert drift and drift[0]["current"] == 3
++    _, improvements, _ = g.compare({"scripts/a.py": {"B602": 1}}, baseline)
++    assert improvements and improvements[0]["current"] == 1
++    print("  PASS | ratchet: equal/grown/shrunk/new-pair semantics")
++    # 4. Decision tree on a sandbox repo: scripts drift exit 1, satellite drift
++    #    report-only exit 0, honest skip when bandit is absent.
++    with tempfile.TemporaryDirectory(prefix="bandit-sast-guard-") as td:
++        root = Path(td)
++        (root / "scripts" / "ci").mkdir(parents=True)
++        (root / BASELINE_PATH).write_text(
++            json.dumps({"meta": {"issue": 1809}, "findings": {"core/b.py": {"B324": 1}}}),
++            encoding="utf-8",
++        )
++        saved_run, saved_ver = g.run_bandit_json, g.bandit_version
++        try:
++            g.bandit_version = lambda: "1.9.4"
++            g.run_bandit_json = lambda paths, cwd: {
++                "results": [
++                    {"filename": "scripts/new.py", "test_id": "B602"},
++                    {"filename": "core/b.py", "test_id": "B324"},
++                    {"filename": "core/c.py", "test_id": "B324"},
++                ]
++            }
++            code, drift, report_only, _notes = g.evaluate(root)
++            assert code == EXIT_DRIFT and drift[0]["path"] == "scripts/new.py", (code, drift)
++            assert any(d["path"] == "core/c.py" for d in report_only), report_only
++            assert not any(d["path"] == "core/b.py" for d in drift + report_only)
++            print("  PASS | decision tree: scripts fail-closed, satellite report-only")
++            # --files filtering: non-.py and off-target files produce an honest skip.
++            code2, drift2, _ro2, notes2 = g.evaluate(root, files=["README.md", "studio/x.py"])
++            assert code2 == EXIT_PASS and not drift2 and any("nothing to scan" in n for n in notes2)
++            print("  PASS | --files mode: off-target changed set -> honest skip")
++            g.bandit_version = lambda: None
++            code3, _, _, notes3 = g.evaluate(root)
++            assert code3 == EXIT_PASS and any("not installed" in n for n in notes3)
++            print("  PASS | bandit absent -> skip with evidence, never a fake PASS")
++            # Malformed baseline is fail-closed, never a silent pass.
++            (root / BASELINE_PATH).write_text("{not json", encoding="utf-8")
++            g.bandit_version = lambda: "1.9.4"
++            code4, drift4, _, _ = g.evaluate(root)
++            assert code4 == EXIT_DRIFT and drift4[0]["test_id"] == "BASELINE"
++            print("  PASS | malformed baseline -> fail-closed")
++        finally:
++            g.run_bandit_json, g.bandit_version = saved_run, saved_ver
++    # 5. Live wiring: roster + pre-push carry the guard (when run inside the repo).
++    roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
++    if roster.is_file():
++        assert "scripts/ci/bandit_sast_guard.py" in roster.read_text(encoding="utf-8"), (
++            "guard missing from run_all_guards roster"
++        )
++    hook = REPO_ROOT / ".githooks" / "pre-push"
++    if hook.is_file():
++        assert "bandit_sast_guard.py" in hook.read_text(encoding="utf-8"), (
++            "guard missing from pre-push hook"
++        )
++    print("  PASS | roster + pre-push wiring present (when run inside the repo)")
++    # 6. Baseline provenance sanity (when run inside the repo).
++    bl_path = REPO_ROOT / BASELINE_PATH
++    if bl_path.is_file():
++        meta = json.loads(bl_path.read_text(encoding="utf-8")).get("meta", {})
++        assert meta.get("tool") == "bandit" and meta.get("tool_version") == PINNED_BANDIT
++        assert meta.get("doctrine", "").startswith("shrink-only")
++    print("[self-test] bandit SAST guard self-tests PASSED (6 test cases)!")
++    return True
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Python source static-security ratchet gate (#1809, bandit)"
++    )
++    parser.add_argument("--check", action="store_true", help="roster mode: full-surface ratchet compare")
++    parser.add_argument("--files", nargs="*", help="pre-push mode: scan only these files")
++    parser.add_argument("--baseline", action="store_true", help="regenerate the versioned baseline at current head (admin)")
++    parser.add_argument("--json", action="store_true", help="machine-readable report on stdout")
++    parser.add_argument("--self-test", action="store_true", help="hermetic self-test suite (offline)")
++    args = parser.parse_args()
++
++    if args.self_test:
++        return EXIT_PASS if self_test() else EXIT_DRIFT
++
++    if args.baseline:
++        doc = build_baseline_report(REPO_ROOT)
++        out = REPO_ROOT / BASELINE_PATH
++        out.write_text(json.dumps(doc, indent=1, sort_keys=True) + "\n", encoding="utf-8")
++        _evidence(
++            f"baseline regenerated at {BASELINE_PATH} | head {doc['meta']['head']} | "
++            f"{doc['meta']['totals']['findings_in_baseline']} finding(s) in "
++            f"{doc['meta']['totals']['pairs']} pair(s) — review the diff; the file may only shrink"
++        )
++        return EXIT_PASS
++
++    code, drift, report_only, notes = evaluate(REPO_ROOT, files=args.files or None)
++    if args.json:
++        print(
++            json.dumps(
++                {
++                    "guard": "bandit_sast_guard",
++                    "mode": "files" if args.files else "check",
++                    "exit": code,
++                    "pinned_bandit": PINNED_BANDIT,
++                    "enforced_prefixes": list(ENFORCED_PREFIXES),
++                    "new_drift": drift,
++                    "satellite_drift_report_only": report_only,
++                    "notes": notes,
++                },
++                indent=2,
++                ensure_ascii=False,
++            )
++        )
++    else:
++        render(drift, report_only, [], notes)
++    if code == EXIT_DRIFT:
++        print(
++            f"{GUARD_TAG} ❌ NEW Python-source security drift under {list(ENFORCED_PREFIXES)}: "
++            f"fix it or extend the surface responsibly — the baseline may never grow.",
++            file=sys.stderr,
++        )
++    return code
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index e19bb0a0..4f800da4 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -24,6 +24,7 @@
+     ["python", "scripts/ci/mcp_access_policy_guard.py", "--check"],
+     ["python", "scripts/ci/license_ssot_guard.py", "--check"],
+     ["python", "scripts/ci/contract_codegen_guard.py", "--check"],
++    ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+     ["python", "scripts/ci/test_parity_guard.py"],
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
+diff --git a/tests/test_bandit_sast_guard.py b/tests/test_bandit_sast_guard.py
+new file mode 100644
+index 00000000..1a3ecce6
+--- /dev/null
++++ b/tests/test_bandit_sast_guard.py
+@@ -0,0 +1,247 @@
++#!/usr/bin/env python3
++"""tests/test_bandit_sast_guard.py — fail-closed behavioral suite for #1809.
++
++Verifies the Python source static-security ratchet gate delivered by #1809:
++
++  - exclusion predicate: the exact #1809 exclusion set (test-pattern files,
++    the labeled teaching sample core/examples/sample_buggy.py, paths outside
++    the scan targets, never .github/**);
++  - aggregation: bandit JSON reports aggregate to (path, test_id) -> count
++    with the exclusions applied and counts preserved;
++  - ratchet semantics: equal counts pass, grown counts and new (path, id)
++    pairs are drift, shrunk counts are improvements (shrink the baseline
++    entry in the same change);
++  - routing decision tree: NEW drift under scripts/** is fail-closed
++    (exit 1 — the agent-bridge-able surface), drift under the satellite
++    mirrors (core/, gateway/, browser/, ...) is report-only (exit 0) per the
++    #1809 never-do (agents never edit the mirrors); a missing or malformed
++    baseline fail-closes; a missing bandit binary skips with evidence and
++    NEVER fabricates a PASS (the #1760 honest-degradation pattern);
++  - live baseline pin: on the real repo the dated floor passes --check
++    (the landing state), and its meta provenance is intact;
++  - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
++    and the LIVE .githooks/pre-push hook (never duplicated here).
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++
++  - pytest:  pytest tests/test_bandit_sast_guard.py
++  - stdlib:  python3 tests/test_bandit_sast_guard.py   (plain runner)
++
++Scanner-dependent paths are hermetic: run_bandit_json / bandit_version are
++monkeypatched with fixture reports, so every test is offline and
++deterministic — the same pattern as the guard's own --self-test.
++"""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "bandit_sast_guard.py"
++BASELINE = "scripts/ci/bandit_sast_baseline.json"
++TAG = "[bandit-sast-guard]"
++
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++import bandit_sast_guard as guard
++
++# --------------------------------------------------------------------------- #
++# Wiring SSOT: the live roster and the live hook carry the guard               #
++# --------------------------------------------------------------------------- #
++
++def test_guard_module_reachable_and_pinned() -> None:
++    assert GUARD.is_file(), f"guard script missing: {GUARD}"
++    src = GUARD.read_text(encoding="utf-8")
++    assert BASELINE in src, "guard must name its versioned baseline file"
++    assert "shrink-only" in src, "ratchet doctrine must be stated in the guard"
++    assert TAG in src, "evidence tag must stay stable for CI grepping"
++    assert guard.PINNED_BANDIT == "1.9.4", "scanner pin must stay explicit"
++
++
++def test_live_roster_and_hook_wiring() -> None:
++    roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
++    assert roster.is_file(), "run_all_guards.py must exist"
++    assert "scripts/ci/bandit_sast_guard.py" in roster.read_text(encoding="utf-8"), (
++        "guard missing from the run_all_guards roster"
++    )
++    hook = REPO_ROOT / ".githooks" / "pre-push"
++    assert hook.is_file(), ".githooks/pre-push must exist"
++    htext = hook.read_text(encoding="utf-8")
++    assert "bandit_sast_guard.py" in htext, "guard missing from the pre-push hook"
++    assert "BANDIT SAST GUARD (#1809)" in htext, "hook section must document the guard"
++
++
++# --------------------------------------------------------------------------- #
++# Exclusion predicate + aggregation                                            #
++# --------------------------------------------------------------------------- #
++
++def test_exclusion_predicate_is_the_1809_set() -> None:
++    assert not guard.is_test_path("scripts/ci/bandit_sast_guard.py")
++    assert guard.is_test_path("core/tests/test_x.py")
++    assert guard.is_test_path("scripts/agents/test_foo.py")
++    assert guard.is_test_path("core/api/conftest.py")
++    assert guard.is_test_path("gateway/tests/unit/deep_test.py")
++    assert not guard.is_test_path("scripts/ci/data/fixture.py")
++    assert guard.in_scan_targets("core/api/x.py")
++    assert not guard.in_scan_targets("studio/src/x.ts")
++    assert not guard.in_scan_targets(".github/workflows/ci.yml")
++
++
++def test_aggregation_applies_exclusions_and_counts() -> None:
++    fake = {
++        "results": [
++            {"filename": "scripts/a.py", "test_id": "B602"},
++            {"filename": "scripts/a.py", "test_id": "B602"},
++            {"filename": "scripts/test_a.py", "test_id": "B101"},
++            {"filename": "core/examples/sample_buggy.py", "test_id": "B102"},
++            {"filename": "core/b.py", "test_id": "B324"},
++            {"filename": "studio/outside.py", "test_id": "B101"},
++            {"filename": "", "test_id": "B101"},
++        ]
++    }
++    agg, raw, skipped = guard.aggregate(fake)
++    assert raw == 7 and skipped == 4, (raw, skipped)
++    assert agg == {"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}, agg
++
++
++# --------------------------------------------------------------------------- #
++# Ratchet semantics                                                            #
++# --------------------------------------------------------------------------- #
++
++def test_ratchet_equal_grown_shrunk_new_pair() -> None:
++    baseline = {"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}
++    drift, improvements, _ = guard.compare(
++        {"scripts/a.py": {"B602": 2}, "core/b.py": {"B324": 1}}, baseline
++    )
++    assert not drift and not improvements, (drift, improvements)
++    drift, _, _ = guard.compare({"scripts/new.py": {"B105": 1}}, baseline)
++    assert len(drift) == 1 and drift[0]["path"] == "scripts/new.py"
++    drift, _, _ = guard.compare({"scripts/a.py": {"B602": 3}}, baseline)
++    assert len(drift) == 1 and drift[0]["current"] == 3 and drift[0]["baseline"] == 2
++    _, improvements, _ = guard.compare({"scripts/a.py": {"B602": 1}}, baseline)
++    assert len(improvements) == 1 and improvements[0]["current"] == 1
++
++
++# --------------------------------------------------------------------------- #
++# Decision tree (hermetic: scanner seams monkeypatched)                        #
++# --------------------------------------------------------------------------- #
++
++def _sandbox_repo(tmp: Path, baseline_findings: dict) -> Path:
++    root = tmp
++    (root / "scripts" / "ci").mkdir(parents=True, exist_ok=True)
++    (root / BASELINE).write_text(
++        json.dumps({"meta": {"issue": 1809, "tool": "bandit"}, "findings": baseline_findings}),
++        encoding="utf-8",
++    )
++    return root
++
++
++def test_decision_tree_scripts_failclosed_satellite_reportonly() -> None:
++    with tempfile.TemporaryDirectory(prefix="bandit-guard-test-") as td:
++        root = _sandbox_repo(Path(td), {"core/b.py": {"B324": 1}})
++        saved_run, saved_ver = guard.run_bandit_json, guard.bandit_version
++        try:
++            guard.bandit_version = lambda: "1.9.4"
++            guard.run_bandit_json = lambda paths, cwd: {
++                "results": [
++                    {"filename": "scripts/new.py", "test_id": "B602"},
++                    {"filename": "core/b.py", "test_id": "B324"},
++                    {"filename": "core/c.py", "test_id": "B324"},
++                ]
++            }
++            code, drift, report_only, _notes = guard.evaluate(root)
++            assert code == 1, (code, drift)
++            assert [d["path"] for d in drift] == ["scripts/new.py"], drift
++            assert [d["path"] for d in report_only] == ["core/c.py"], report_only
++            assert not any(d["path"] == "core/b.py" for d in drift + report_only), (
++                "an at-baseline satellite pair must stay silent"
++            )
++        finally:
++            guard.run_bandit_json, guard.bandit_version = saved_run, saved_ver
++
++
++def test_files_mode_honest_skip_for_off_target_changes() -> None:
++    with tempfile.TemporaryDirectory(prefix="bandit-guard-test-") as td:
++        root = _sandbox_repo(Path(td), {})
++        saved_ver = guard.bandit_version
++        try:
++            guard.bandit_version = lambda: "1.9.4"
++            code, drift, _ro, notes = guard.evaluate(root, files=["README.md", "studio/x.py"])
++            assert code == 0 and not drift
++            assert any("nothing to scan" in n for n in notes), notes
++        finally:
++            guard.bandit_version = saved_ver
++
++
++def test_missing_bandit_skips_with_evidence_never_fake_pass() -> None:
++    with tempfile.TemporaryDirectory(prefix="bandit-guard-test-") as td:
++        root = _sandbox_repo(Path(td), {})
++        saved_ver = guard.bandit_version
++        try:
++            guard.bandit_version = lambda: None
++            code, drift, _ro, notes = guard.evaluate(root)
++            assert code == 0 and not drift, (code, drift)
++            assert any("not installed" in n for n in notes), notes
++            assert any("skipped with evidence" in n for n in notes), notes
++        finally:
++            guard.bandit_version = saved_ver
++
++
++def test_missing_or_malformed_baseline_fails_closed() -> None:
++    with tempfile.TemporaryDirectory(prefix="bandit-guard-test-") as td:
++        root = Path(td)  # no baseline file at all
++        (root / "scripts" / "ci").mkdir(parents=True)
++        saved_run, saved_ver = guard.run_bandit_json, guard.bandit_version
++        try:
++            guard.bandit_version = lambda: "1.9.4"
++            code, drift, _, _ = guard.evaluate(root)
++            assert code == 1 and drift and drift[0]["test_id"] == "BASELINE", (code, drift)
++            (root / BASELINE).write_text("{not json", encoding="utf-8")
++            code2, drift2, _, _ = guard.evaluate(root)
++            assert code2 == 1 and drift2[0]["test_id"] == "BASELINE"
++        finally:
++            guard.run_bandit_json, guard.bandit_version = saved_run, saved_ver
++
++
++# --------------------------------------------------------------------------- #
++# Live baseline pin (the dated floor at the landing head)                      #
++# --------------------------------------------------------------------------- #
++
++def test_live_baseline_meta_provenance() -> None:
++    bl_path = REPO_ROOT / BASELINE
++    assert bl_path.is_file(), "the versioned baseline must be landed with the guard"
++    data = json.loads(bl_path.read_text(encoding="utf-8"))
++    meta = data["meta"]
++    assert meta["tool"] == "bandit" and meta["tool_version"] == guard.PINNED_BANDIT
++    assert meta["issue"] == 1809
++    assert meta["doctrine"].startswith("shrink-only")
++    assert isinstance(data["findings"], dict) and data["findings"], "floor must be non-empty"
++
++
++def test_guard_self_test_suite_passes() -> None:
++    r = subprocess.run(
++        [sys.executable, str(GUARD), "--self-test"],
++        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120, check=False,
++    )
++    assert r.returncode == 0, f"guard --self-test failed:\n{r.stdout}\n{r.stderr}"
++
++
++# --------------------------------------------------------------------------- #
++# stdlib plain runner (no pytest required)                                     #
++# --------------------------------------------------------------------------- #
++
++if __name__ == "__main__":
++    fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
++    failed = 0
++    for fn in fns:
++        try:
++            fn()
++            print(f"PASS | {fn.__name__}")
++        except AssertionError as exc:
++            failed += 1
++            print(f"FAIL | {fn.__name__}: {exc}")
++    print(f"\n{len(fns) - failed}/{len(fns)} tests passed")
++    sys.exit(1 if failed else 0)

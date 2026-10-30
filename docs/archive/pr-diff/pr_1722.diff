@@ -1,0 +1,31 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 2c2316e5..d46b52c9 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -987,7 +987,7 @@ jobs:
+           set -euo pipefail
+           python scripts/ci/auto_bridge_pr_opener.py --auto-open
+ 
+-      # AGENT_RULES.md §10 — "A job that runs but produces no expected result
++      # AGENTS.md §10 — "A job that runs but produces no expected result
+       # is actionable when evidence confirms it… No-actionable-finding must be
+       # recorded explicitly without creating issue storms." An empty upstream
+       # board is a recorded no-op, NOT a red run and NOT a silent skip.
+@@ -1007,7 +1007,7 @@ jobs:
+           CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+           echo "claimable-board snapshot: $CLAIMABLE"
+           if [ "$CLAIMABLE" = "[]" ]; then
+-            echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
++            echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENTS.md §10."
+             echo "has_work=false" >> "$GITHUB_OUTPUT"
+           else
+             echo "has_work=true" >> "$GITHUB_OUTPUT"
+@@ -1023,7 +1023,7 @@ jobs:
+           fi
+           python scripts/agents/continuous_agent_loop.py $ARGS
+ 
+-      # AGENT_RULES.md §10 — scheduled jobs must never silently disappear.
++      # AGENTS.md §10 — scheduled jobs must never silently disappear.
+       # #89: real verify-evidence artifact — the --verify-only transcript
+       # (ends with the CONTRACT_VERSION parity marker per AGENT_LOOP_SPEC §4b)
+       # is captured even when the loop step itself fails (replaces the dead

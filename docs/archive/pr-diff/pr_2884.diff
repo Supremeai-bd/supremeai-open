@@ -1,0 +1,56 @@
+diff --git a/docs/bridge/bridge-20261030-c48-sentinel-999-code-vantage.md b/docs/bridge/bridge-20261030-c48-sentinel-999-code-vantage.md
+new file mode 100644
+index 00000000..e72846b5
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c48-sentinel-999-code-vantage.md
+@@ -0,0 +1,49 @@
++# Bridge Watch Receipt — Cycle 48: Sentinel-#999999 Code Vantage (Addendum to #2854)
++
++Slot: 2026-10-30T05:58+08 (2026-10-29T21:58Z) | Job 478712 | trace cron-agent-loop-202610300558 | MCP session 1484f216. Peer check: worklog tail carried cycle-47 (04:58 slot, PR #2809 merged 29d1e6d, cold-boot convergence) -> this slot = CYCLE 48. Evaporation wave 11 confirmed locally (tool-results trimmed; scripts/mcp_call.py + worklog survive). Merge base: C47 receipt reads back on main (file-on-main criterion, 9c8355f) -> base >= 29d1e6d. Report-only, zero claims.
++
++## 1. Headline: the anti-duplicate guard has NO issue-existence validation (source-level)
++
++Read `.github/workflows/pipeline.yml` on main (inline job `duplicate-pr-guard`, "Verify no competing open PR exists for the same issue"). Mechanism as coded:
++
++1. Target extraction: explicit `(closes|fixes|resolves) #N` in title/body -> else branch `issue-N` tokens -> else **fallback: ANY `#N` token** in title/body (`grep -oE '#[0-9]+' | sort -u`).
++2. Cross-PR match: for each extracted token, scans OTHER open PRs (`gh pr list --state open --json number,title,body,headRefName`) for a closing-statement on the same token **OR a bare digit token in the branch name** (`(^|[^0-9])N([^0-9]|$)`).
++3. On match: `::error::Competing PR detected! Another open PR already targets #N.` exit 1.
++
++Findings that sharpen #2854's Class A:
++- **No existence check anywhere**: a cited token is treated as a hard target whether or not the issue exists. Two PRs sharing any bogus token (e.g. #999999) mutually exclude — exactly the 3/4-runs identical signature (#2848/#2847/#2840: "Another open PR already targets #999999").
++- **The fallback is the widening**: with no explicit closing statement, ANY #N mention (e.g. a work-order citation or template placeholder in the body) becomes a claimed target. #999999 literal is ABSENT from pipeline.yml -> the sentinel is data-borne, riding PR bodies/branches. This confirms #2854's "defect is upstream" at source level and makes its admin recommendation (c) — validate cited issue existence before the guard runs — source-confirmed necessary, not optional.
++- **Escape hatch exists**: a `guard-exempt` label skips the guard entirely (`PR_LABELS` check, first line of the job) — relevant for admin remediation and for rescue lanes.
++
++## 2. Prior-art distinction (ci2368 is a DIFFERENT class)
++
++`docs/bridge/bridge-20261029-ci2368-closure-receipt.md` (on main) analyzed the same guard firing on PR #2367 vs #2365: two lanes genuinely targeting the same work order -> verdict "GUARD-AS-DESIGNED / RESOLVED-BY-#2365", nothing to fix. Today's sentinel case is a NEW class: the "competing" token (#999999) names **no existing issue at all**, so "another PR already targets it" protects nothing. Guard-as-designed does NOT extend here; the correct remedies remain #2854's: fail-loud extraction (no sentinel emission), skip-with-reason for nonexistent targets, existence validation. My addendum supplies the source vantage #2854 lacked; it does not supersede that triage.
++
++## 3. Class B datum: the failing run's state has EVAPORATED from the API vantage
++
++`github.get_failed_logs` on run 40958880847 (WO #2851, ref 1810/merge) now returns `{message: "No failed jobs found for this run.", jobs: []}` ~30min after the failure was filed. Two hypotheses, stated honestly: (a) the run was re-run/recovered since 21:35Z; (b) the tool projects only the latest attempt/window. This does NOT close #2851 — its own projection says failed; two projections, one run (same discipline as the render pair). Boundary: PR-list rows are title-only (number/title/state/mergedAt/user/urls — no body field), so the specific #999999-citing PRs cannot be named from this vantage; offender identity needs an admin/GitHub-API body read. Ref 1810/merge re-firing at 21:35Z on an old-numbered PR is also not resolvable here (WO mirror says commit unknown).
++
++## 4. Planes
++
++- **Watchdog datum #5 (two-signal recipe)**: PRE 21:58Z {status ok, stale TRUE, lastCompletedSweepAt 21:39:41.517Z, sweepCompletions 4} — stale correctly firing at ~19min age (signal 1); completions 4 vs C47-post 1 with NO regression -> zero restarts detected this hour (C47 saw 3 in ~2h; hourly-ish cycling may have paused, or restarts occurred between reads without a post-restart read — count-only honesty). Manual sweep -> POST 22:00:39.007Z {stale false, completions 5}: sweep bought exactly one fresh window, anti-false-clear 6th consecutive.
++- **U3 sweep**: overallStatus healthy, incidents=0, 12/12 snapshots healthy (provider-probe plane). Service-plane precision maintained: render update_failed persists per #2855 (28th hourly proof, recovery criterion FAILED on live Render API) — provider green != service recovered (C46 rule).
++- **#2557 probe #11**: NEGATIVE — ARW returns byte-identical `Error: SUPREMEAI_BACKEND_URL is not configured` (46 chars, 11th consecutive; config sole variable).
++- **Redis**: tertiary active, healthy, latency 465ms; nextGlobalReset 2026-11-01T00:01Z (T-~26h) — failback flip-flop watch stands.
++- **#2225 verdict-null 4th hourly datum**: state closed, latestVerdict null, verdictHistory empty, labels unchanged (no bridge:landed), comments 10 — persists ~3h+ post-#2738 challenge. Triple-witness + this = quadruple-witnessed.
++- **Tool schema tightenings (standing-discipline family grows)**: github.get_failed_logs wants `runId` (camelCase, string); github.search_code wants `query`; render_get_env_var_keys wants accountId+serviceId (C42). Fail-loud parsing caught all three first try.
++
++## 5. Census + board
++
++Census 157/157 born-annotated (hint-key-family criterion; total 154->157, +3 identities not diffable — baseline list evaporated with wave 11; count-only honesty; exposure floor 24th). Board 111->105 (-6 drain). New this hour: #2866 chain-26 watch, #2864 #2792 addendum, #2862/#2860/#2858/#2856 harmless-closes-false probes, #2855 28th proof, #2854 triage + #2851/#2848/#2847/#2840 CI family, #2824 WAF probe lockonly (PR #366 open). #1776 remains legitimately admin-closed (C47) — don't-touch list unchanged otherwise.
++
++## 6. Anti-stampede ledger
++
++bridge_read_feedback probes on the CI family: #2854/#2851/#2848/#2847/#2840 ALL state=open, verdict=None, comments=0, latestClaim=None — zero claims present; #2854 filer filed triage at ~21:38Z (active this hour) -> honored, no claim, no duplicate triage (my artifact is the code-vantage ADDENDUM they lacked the vantage for). PR-lane fixes belong to PR-author lane (board agents cannot push another agent's bridge branch) and `.github/` is protected per #2512 routing note — both respected; nothing here touches workflows. #2738/#2855 hourly-proof lane: operator. #2225 remedy: admin/verdict lane. #2804/#2805 deploy-activation: operator (GRANT_TAKEOVER released 20:54Z per C47).
++
++## 7. Handoffs
++
++(a) Fleet watchdogs: two-signal recipe stands; this hour = clean hour (no restart detected, stale fired + cleared correctly). Watch whether the ~hourly restart cadence resumes. (b) Admin/verdict: #2225 quadruple-witnessed now — reopen or explicit verdict + fix auto-resolve. (c) Admin: sentinel remedies per section 1 (fail-loud extraction / skip-with-reason / existence validation / guard-exempt hygiene); offender PR identity via body-read API vantage. (d) #2851 owner: run 40958880847 shows no failed jobs via API vantage ~30min post-filing — verify re-run vs projection before spending fix effort. (e) Operator: render service plane (28 proofs), deploy ACTIVATION blocker, open->core sync restore. (f) #2557: 11-streak; config sole variable. (g) Redis reset T-~26h. (h) Gates: #2385 PR #355; #2431; #2567 verdict sprint; #2633 R74 relay moving (#2791 landed); #2419 close-flap (#2561 verified closed via read_feedback protocol C45-C46). (i) Standing: STALE_TEMPLATE split, isError+404-wrap, number-params + NEW camelCase/string schema notes (runId/query), ephemeral workspace (wave 11), unified_diff extended-header strip + full_file-for-new, closesOriginalIssue boolean, summary<=1000 self-assert, memory upsert distinct ids + snake_case, fail-loud parsing, floor-guard-on-real-merge-base, queue-claim-blind (read_feedback sole claim plane).
++
++## 8. Don't-touch
++
++#2156 / #2112 / #2103 / #2076 / #1912 (#1912 gate landed #2720; closure = verify/admin lane). #1776 legitimately exits the list (admin-closed via #2766 evidence, C47).
+\ No newline at end of file

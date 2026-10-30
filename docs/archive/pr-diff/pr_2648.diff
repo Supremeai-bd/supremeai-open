@@ -1,0 +1,78 @@
+diff --git a/core/api/routes/admin.py b/core/api/routes/admin.py
+index 9f4482a4..dc0e6bae 100644
+--- a/core/api/routes/admin.py
++++ b/core/api/routes/admin.py
+@@ -6,7 +6,7 @@
+ from pathlib import Path
+ 
+ from fastapi import APIRouter, Depends, HTTPException
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from pydantic import BaseModel
+ 
+ from admin.god import AdminGodLayer  # Your existing god.py
+diff --git a/core/api/routes/admin_routes.py b/core/api/routes/admin_routes.py
+index f725bdf0..407965db 100644
+--- a/core/api/routes/admin_routes.py
++++ b/core/api/routes/admin_routes.py
+@@ -58,7 +58,7 @@
+ from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: TOTP ব্রুট-ফোর্স প্রতিরোধে Redis lockout constants
+ _TOTP_MAX_ATTEMPTS = 5
+diff --git a/core/api/routes/auth.py b/core/api/routes/auth.py
+index ba23b4e6..c0d2191a 100644
+--- a/core/api/routes/auth.py
++++ b/core/api/routes/auth.py
+@@ -16,7 +16,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import is_token_revoked, revoke_token
+ from core.security.authentication.rbac import UserContext
+ from database.supabase_client import db
+diff --git a/core/api/routes/ci_dashboard_api.py b/core/api/routes/ci_dashboard_api.py
+index 3bdeddaf..c7ccfd33 100644
+--- a/core/api/routes/ci_dashboard_api.py
++++ b/core/api/routes/ci_dashboard_api.py
+@@ -54,7 +54,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.ws_auth import authenticate_websocket
+ 
+ # Set up logging
+diff --git a/core/api/routes/deep_research.py b/core/api/routes/deep_research.py
+index a8a51a22..371f270e 100644
+--- a/core/api/routes/deep_research.py
++++ b/core/api/routes/deep_research.py
+@@ -21,7 +21,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/evolution.py b/core/api/routes/evolution.py
+index 7f73adbc..d987b70d 100644
+--- a/core/api/routes/evolution.py
++++ b/core/api/routes/evolution.py
+@@ -16,7 +16,7 @@
+ from api.dependencies import get_fitness_engine, get_tenant_db
+ from api.deps import get_current_user_token
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.self_evolution.agent_breeder import AgentBreeder, BreederConfig
+ from core.self_evolution.auto_skill_creator import AutoSkillCreator
+ from core.self_evolution.fitness_engine import FitnessEngine

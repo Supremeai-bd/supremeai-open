@@ -1,0 +1,570 @@
+diff --git a/studio/src/components/admin/AdminConsole.tsx b/studio/src/components/admin/AdminConsole.tsx
+new file mode 100644
+index 00000000..e86f6e6e
+--- /dev/null
++++ b/studio/src/components/admin/AdminConsole.tsx
+@@ -0,0 +1,100 @@
++import type { ChatMessage, Skill, Checkpoint, AdminSubTab, HealthMap } from '../../types';
++import { LoginView } from './auth/AdminLogin';
++import { AuthenticatedView } from './auth/AdminAuthenticated';
++import DashboardErrorBoundary from './DashboardErrorBoundary';
++
++interface AdminConsoleProps {
++  adminAuthenticated: boolean;
++  adminEmail: string;
++  setAdminEmail: (val: string) => void;
++  totpSetupRequired: boolean;
++  provisioningUri: string;
++  totpSecret: string;
++  onResetTotp: () => void;
++  onAuthorize: () => void;
++  recoveryCode: string;
++  setRecoveryCode: (val: string) => void;
++  recoverTotp: () => void;
++  recoveryCodes: string[];
++  adminError: string;
++  handleAdminLogin: (password?: string) => void;
++  handleAdminOtpVerify: () => void;
++  handleAdminLogout: () => void;
++  actionStatus: string;
++  skillQuery: string;
++  setSkillQuery: (val: string) => void;
++  skills: Skill[];
++  handleInstallSkill: (name: string) => void;
++  checkpoints: Checkpoint[];
++  handleDeleteCheckpoint: (taskId: string) => void;
++  adminSubTab: AdminSubTab;
++  setAdminSubTab: (tab: AdminSubTab) => void;
++  handleTriggerDeploy: () => void;
++  adminMessages: ChatMessage[];
++  loading: boolean;
++  adminInput: string;
++  setAdminInput: (val: string) => void;
++  handleSendAdmin: () => void;
++  rulesJson: string;
++  setRulesJson: (val: string) => void;
++  saveStatus: string;
++  handleSaveRules: () => void;
++  liveLogs: string[];
++  setLiveLogs: (logs: string[]) => void;
++  costReport: string;
++  healthMap: HealthMap;
++  newUsername: string;
++  setNewUsername: (val: string) => void;
++  newUserRole: string;
++  setNewUserRole: (val: string) => void;
++  newUserPerms: string;
++  setNewUserPerms: (val: string) => void;
++  otpRequired: boolean;
++  adminOtp: string;
++  setAdminOtp: (val: string) => void;
++  rememberBrowser: boolean;
++  setRememberBrowser: (val: boolean) => void;
++  theme: 'dark' | 'light';
++  toggleTheme: () => void;
++}
++
++export function AdminConsole(props: AdminConsoleProps) {
++  // বাংলা (single-frontend migration): authenticated state-এ AuthenticatedView নিজেই
++  // UnifiedAppShell (full-screen shell) বয়ে আনে — তাই বাইরের h-screen wrapper সরানো
++  // হলো (nested full-screen হতো)। Login state-এ কোনো shell নেই, তাই সেখানেই
++  // min-h-screen container + dashboard-aurora background দরকার।
++  // Error boundary layering অপরিবর্তিত — দুই শাখাই DashboardErrorBoundary-র ভেতরে।
++  if (props.adminAuthenticated) {
++    return (
++      <DashboardErrorBoundary>
++        <AuthenticatedView {...props} />
++      </DashboardErrorBoundary>
++    );
++  }
++  return (
++    <div className="dashboard-aurora min-h-screen w-full flex flex-col">
++      <DashboardErrorBoundary>
++        <LoginView
++          adminEmail={props.adminEmail}
++          setAdminEmail={props.setAdminEmail}
++          adminError={props.adminError}
++          handleAdminLogin={props.handleAdminLogin}
++          otpRequired={props.otpRequired}
++          adminOtp={props.adminOtp}
++          setAdminOtp={props.setAdminOtp}
++          rememberBrowser={props.rememberBrowser}
++          setRememberBrowser={props.setRememberBrowser}
++          totpSetupRequired={props.totpSetupRequired}
++          provisioningUri={props.provisioningUri}
++          totpSecret={props.totpSecret}
++          onResetTotp={props.onResetTotp}
++          onAuthorize={props.onAuthorize}
++          recoveryCode={props.recoveryCode}
++          setRecoveryCode={props.setRecoveryCode}
++          recoverTotp={props.recoverTotp}
++          recoveryCodes={props.recoveryCodes}
++        />
++      </DashboardErrorBoundary>
++    </div>
++  );
++}
+diff --git a/studio/src/pages/admin/AdminShell.tsx b/studio/src/pages/admin/AdminShell.tsx
+new file mode 100644
+index 00000000..fe171a70
+--- /dev/null
++++ b/studio/src/pages/admin/AdminShell.tsx
+@@ -0,0 +1,321 @@
++import { useEffect, useRef, useState } from "react";
++import { useAdminStore } from "../../store/adminStore";
++import { AdminConsole } from "../../components/admin/AdminConsole";
++import { apiClient } from "../../services/apiClient";
++import { Shield } from "lucide-react";
++import type { AdminSubTab, ChatMessage } from "../../types";
++import { useCostReport, useHealthMap, useSkills, useCheckpoints, useDeleteCheckpoint, useInstallSkill } from "../../hooks";
++import { useTheme } from "../../contexts/useTheme";
++import { getAdminJwtRole, readAdminJwtClaims } from "../../auth/identity";
++
++export function AdminShell() {
++  const {
++    adminAuthenticated,
++    adminRole,
++    adminEmail,
++    setAdminEmail,
++    adminError,
++    handleAdminLogin,
++    otpRequired,
++    adminOtp,
++    setAdminOtp,
++    rememberBrowser,
++    setRememberBrowser,
++    totpSetupRequired,
++    provisioningUri,
++    totpSecret,
++    handleAdminLogout,
++    actionStatus,
++    setActionStatus,
++    resetTotpSetup,
++    recoveryCode,
++    setRecoveryCode,
++    recoverTotp,
++    recoveryCodes,
++  } = useAdminStore();
++
++  const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>("overview");
++  const [skillQuery, setSkillQuery] = useState("");
++  
++  const { data: skillsList = [] } = useSkills(skillQuery);
++  const { data: checkpointsList = [] } = useCheckpoints();
++  const { data: costReportData } = useCostReport();
++  const costReport = costReportData?.report || "";
++  const { data: healthMapData } = useHealthMap();
++  const healthMap = healthMapData || { gcp: { status: 'unknown', latency: '', region: '' }, railway: { status: 'unknown', latency: '', region: '' }, render: { status: 'unknown', latency: '', region: '' } };
++
++  const [adminMessages, setAdminMessages] = useState<ChatMessage[]>([]);
++  const [loading, setLoading] = useState(false);
++  const [saveStatus, setSaveStatus] = useState("");
++  const [liveLogs, setLiveLogs] = useState<string[]>([]);
++  const [newUsername, setNewUsername] = useState("");
++  const [newUserRole, setNewUserRole] = useState("Operator");
++  const [newUserPerms, setNewUserPerms] = useState("read,write");
++  const [adminInput, setAdminInput] = useState("");
++  const [rulesJson, setRulesJson] = useState("");
++  const abortRef = useRef<AbortController | null>(null);
++
++  // বাংলা (single-frontend migration): আগে এখানে আলাদা useState theme +
++  // documentElement.classList effect ছিল — এটি shared ThemeProvider-এর সাথে
++  // একই <html> class attribute নিয়ে লড়ত (duplicate theme authority)। এখন
++  // একক ThemeProvider-ই owner; AdminShell শুধু consume করে।
++  // AdminConsole-এর interface 'dark'|'light' প্রত্যাশা করে — 4-theme value
++  // থেকে সামঞ্জস্যপূর্ণ mapping করা হলো (UI preview-only usage)।
++  const { theme, toggleTheme } = useTheme();
++  const consoleTheme: 'dark' | 'light' = theme === 'light' ? 'light' : 'dark';
++
++  useEffect(() => {
++    if (!adminAuthenticated) {
++      // 🛡️ ISSUE #495: মাউন্টে যদি valid unexpired admin JWT থাকে, তা অবিলম্বে re-authenticate করবে
++      const role = getAdminJwtRole();
++      if (role === 'admin') {
++        useAdminStore.setState({ adminAuthenticated: true, adminRole: 'admin' });
++      } else {
++        const claims = readAdminJwtClaims();
++        if (claims && typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now()) {
++          useAdminStore.setState({ adminError: 'Your admin session has expired. Please sign in again.' });
++        }
++      }
++      return;
++    }
++
++    if (adminRole !== 'admin') {
++      if (import.meta.env.DEV) console.warn("RBAC: User is not an admin.");
++    }
++  }, [adminAuthenticated, adminRole]);
++
++  const handleAdminOtpVerify = () => {
++    handleAdminLogin();
++  };
++
++  const handleResetTotp = () => {
++    resetTotpSetup();
++  };
++
++  const handleAuthorize = () => {
++    setAdminEmail((adminEmail || '').trim());
++    setActionStatus('AUTHORIZATION READY');
++    setTimeout(() => setActionStatus(''), 2000);
++  };
++
++  const installSkillMutation = useInstallSkill();
++  const handleInstallSkill = (name: string) => {
++    installSkillMutation.mutate(name);
++  };
++
++  const deleteCheckpointMutation = useDeleteCheckpoint();
++  const handleDeleteCheckpoint = (taskId: string) => {
++    deleteCheckpointMutation.mutate(taskId);
++  };
++
++  const handleTriggerDeploy = () => {
++    setActionStatus("TRIGGERING DEPLOY...");
++    apiClient.post('/admin-api/deploy')
++      .then(() => {
++        setActionStatus("DEPLOY TRIGGERED");
++        setTimeout(() => setActionStatus(""), 2000);
++      })
++      .catch(() => {
++        setActionStatus("DEPLOY FAILED");
++        setTimeout(() => setActionStatus(""), 2000);
++      });
++  };
++
++  // FIX(fake-data): the sandbox previously had zero real behavior — sending a
++  // message only console.warn'ed it away and "SAVED" appeared after a fake
++  // setTimeout. Both now use the real backend endpoints.
++
++  // Load the real constitutional rules (GET /api/admin/rules → [{key,value}])
++  // into the editor as a plain JSON object.
++  useEffect(() => {
++    if (!adminAuthenticated) return;
++    let cancelled = false;
++    apiClient
++      .get<{ rules: Array<{ key: string; value: unknown }> }>("/api/admin/rules")
++      .then((data) => {
++        if (cancelled) return;
++        const list = Array.isArray(data?.rules) ? data.rules : [];
++        const asObject: Record<string, unknown> = {};
++        for (const entry of list) {
++          if (entry && typeof entry.key === "string") asObject[entry.key] = entry.value;
++        }
++        setRulesJson(JSON.stringify(asObject, null, 2));
++      })
++      .catch(() => {
++        // Editor stays empty; the save action surfaces the failure honestly.
++        if (!cancelled) setRulesJson("");
++      });
++    return () => {
++      cancelled = true;
++    };
++  }, [adminAuthenticated]);
++
++  const handleSendAdmin = async () => {
++    const prompt = adminInput.trim();
++    if (!prompt || loading) return;
++    const assistantId = `admin_a_${Date.now()}`;
++    setAdminMessages((prev) => [
++      ...prev,
++      { id: `admin_u_${Date.now()}`, role: "user", content: prompt, timestamp: Date.now() },
++      { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
++    ]);
++    setAdminInput("");
++    setLoading(true);
++    abortRef.current = new AbortController();
++    try {
++      // Same real chat endpoint the user-facing chat uses.
++      // Issue #2522: raw fetch -> apiClient.stream — auth/timeout/queue + abort passthrough।
++      const res = await apiClient.stream('/api/chat/stream', {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({
++          message: prompt,
++          project_id: "admin_sandbox",
++          idempotency_key: crypto.randomUUID(),
++        }),
++        signal: abortRef.current.signal,
++      });
++      if (!res.ok || !res.body) throw new Error(`Chat request failed: ${res.status}`);
++      const reader = res.body.getReader();
++      const decoder = new TextDecoder();
++      let assistantContent = "";
++      let pending = "";
++      const applyPayload = (payload: string) => {
++        if (!payload || payload === "[DONE]") return;
++        let token = payload;
++        try {
++          const parsed = JSON.parse(payload) as { token?: string; delta?: string; content?: string; response?: string };
++          token = parsed.token ?? parsed.delta ?? parsed.content ?? parsed.response ?? "";
++        } catch (err) {
++          // Plain-text SSE payloads are valid fallbacks — still log why parsing skipped.
++          console.warn('[admin-shell] SSE payload JSON parse failed, using raw text:', err);
++        }
++        assistantContent += token;
++        setAdminMessages((prev) =>
++          prev.map((m) => (m.id === assistantId ? { ...m, content: assistantContent } : m))
++        );
++      };
++      while (true) {
++        const { done, value } = await reader.read();
++        pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
++        const lines = pending.split(/\r?\n/);
++        pending = lines.pop() ?? "";
++        lines.forEach((line) => {
++          if (line.startsWith("data:")) applyPayload(line.slice(5).trim());
++        });
++        if (done) break;
++      }
++    } catch (err) {
++      if (!(err instanceof DOMException && err.name === "AbortError")) {
++        const message = err instanceof Error ? err.message : "Chat request failed";
++        setAdminMessages((prev) =>
++          prev.map((m) => (m.id === assistantId ? { ...m, content: m.content || `Error: ${message}` } : m))
++        );
++      }
++    } finally {
++      setLoading(false);
++      abortRef.current = null;
++    }
++  };
++
++  const handleSaveRules = async () => {
++    setSaveStatus("SAVING...");
++    try {
++      const parsed = JSON.parse(rulesJson) as Record<string, unknown>;
++      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
++        setSaveStatus("RULES MUST BE A JSON OBJECT");
++        setTimeout(() => setSaveStatus(""), 3000);
++        return;
++      }
++      const entries = Object.entries(parsed);
++      if (entries.length === 0) {
++        setSaveStatus("NO RULES TO SAVE");
++        setTimeout(() => setSaveStatus(""), 3000);
++        return;
++      }
++      // Real contract: POST /api/admin/rules persists one {key, value} per call.
++      await Promise.all(
++        entries.map(([key, value]) => apiClient.post("/api/admin/rules", { key, value: String(value) }))
++      );
++      setSaveStatus("SAVED");
++    } catch (err) {
++      setSaveStatus(err instanceof SyntaxError ? "INVALID JSON" : "SAVE FAILED");
++    }
++    setTimeout(() => setSaveStatus(""), 3000);
++  };
++
++  if (adminAuthenticated && adminRole !== 'admin') {
++    return (
++      <div className="flex min-h-screen w-full bg-[#0A0A0A] text-white items-center justify-center font-sans px-4">
++        <div className="w-full max-w-sm p-8 rounded-2xl bg-white/5 border border-red-500/30 text-center flex flex-col items-center gap-4">
++          <Shield className="w-16 h-16 text-red-500" />
++          <h1 className="text-2xl font-semibold">Access Denied</h1>
++          <p className="text-sm text-gray-400">You do not have the required "admin" role to access this dashboard.</p>
++          <button
++            onClick={handleAdminLogout}
++            className="mt-4 px-6 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium rounded-lg transition-colors border border-red-500/50"
++          >
++            Logout
++          </button>
++        </div>
++      </div>
++    );
++  }
++
++  return (
++    <AdminConsole
++      adminAuthenticated={adminAuthenticated}
++      adminEmail={adminEmail}
++      setAdminEmail={setAdminEmail}
++      totpSetupRequired={totpSetupRequired}
++      provisioningUri={provisioningUri}
++      totpSecret={totpSecret}
++      onResetTotp={handleResetTotp}
++      onAuthorize={handleAuthorize}
++      recoveryCode={recoveryCode}
++      setRecoveryCode={setRecoveryCode}
++      recoverTotp={recoverTotp}
++      recoveryCodes={recoveryCodes}
++      adminError={adminError}
++      handleAdminLogin={handleAdminLogin}
++      handleAdminOtpVerify={handleAdminOtpVerify}
++      handleAdminLogout={handleAdminLogout}
++      actionStatus={actionStatus}
++      skillQuery={skillQuery}
++      setSkillQuery={setSkillQuery}
++      skills={skillsList}
++      handleInstallSkill={handleInstallSkill}
++      checkpoints={checkpointsList}
++      handleDeleteCheckpoint={handleDeleteCheckpoint}
++      adminSubTab={adminSubTab}
++      setAdminSubTab={setAdminSubTab}
++      handleTriggerDeploy={handleTriggerDeploy}
++      adminMessages={adminMessages}
++      loading={loading}
++      adminInput={adminInput}
++      setAdminInput={setAdminInput}
++      handleSendAdmin={handleSendAdmin}
++      rulesJson={rulesJson}
++      setRulesJson={setRulesJson}
++      saveStatus={saveStatus}
++      handleSaveRules={handleSaveRules}
++      liveLogs={liveLogs}
++      setLiveLogs={setLiveLogs}
++      costReport={costReport}
++      healthMap={healthMap}
++      newUsername={newUsername}
++      setNewUsername={setNewUsername}
++      newUserRole={newUserRole}
++      setNewUserRole={setNewUserRole}
++      newUserPerms={newUserPerms}
++      setNewUserPerms={setNewUserPerms}
++      otpRequired={otpRequired}
++      adminOtp={adminOtp}
++      setAdminOtp={setAdminOtp}
++      rememberBrowser={rememberBrowser}
++      setRememberBrowser={setRememberBrowser}
++      theme={consoleTheme}
++      toggleTheme={toggleTheme}
++    />
++  );
++}
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+new file mode 100644
+index 00000000..dc41e526
+--- /dev/null
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -0,0 +1,131 @@
++import React, { useEffect, useRef, useState } from 'react';
++import { useSearchParams } from 'react-router-dom';
++import { InteractiveChatTab } from '../../components/admin/InteractiveChatTab';
++import { BrowserPreview } from '../../components/customer/BrowserPreview';
++import { MobileSimulator } from '../../components/customer/MobileSimulator';
++import { sendMessageStream, type ChatMessage } from '../../services/chatService';
++import { Bot, Code, Smartphone } from 'lucide-react';
++
++export const AIStudio: React.FC = () => {
++  const [messages, setMessages] = useState<ChatMessage[]>([]);
++  const [input, setInput] = useState('');
++  const [loading, setLoading] = useState(false);
++  const [activeTab, setActiveTab] = useState<'chat' | 'preview' | 'mobile'>('chat');
++  const [code, setCode] = useState('<!-- Code generated by SupremeAI will appear here -->');
++  const [searchParams, setSearchParams] = useSearchParams();
++  const intentConsumedRef = useRef(false);
++
++  const handleSend = async (explicit?: string) => {
++    const prompt = (explicit ?? input).trim();
++    if (!prompt || loading) return;
++    const userMsg: ChatMessage = { role: 'user', content: prompt };
++    const assistantId = crypto.randomUUID();
++    setMessages(prev => [...prev, userMsg, { role: 'ai', id: assistantId, content: '' }]);
++    setInput('');
++    setLoading(true);
++
++    let streamed = '';
++    await sendMessageStream(
++      prompt,
++      (token) => {
++        streamed += token;
++        setMessages(prev => prev.map((message) =>
++          message.id === assistantId ? { ...message, content: streamed } : message,
++        ));
++      },
++      () => setLoading(false),
++      (error) => {
++        setMessages(prev => prev.map((message) =>
++          message.id === assistantId
++            ? { ...message, content: `Unable to reach SupremeAI: ${error}` }
++            : message,
++        ));
++        setLoading(false);
++      },
++    );
++  };
++
++  // বাংলা মন্তব্য (FIX intent-carryover #2519): ?intent= প্যারামিটার আর auto-send হয় না —
++  // আগে `void handleSend(intent)` সরাসরি AI-তে পাঠাত, ফলে attacker-চিহ্নিত URL দিয়ে
++  // prompt-injection করা যেত (ব্যবহারকারী কিছু দেখার আগেই প্রম্পট execute)। Root-cause
++  // fix: প্যারামটি consume করে composer input-এ prefill + focus করা হয়, যাতে ব্যবহারকারী
++  // টেক্সট নিজের চোখে দেখে স্পষ্টভাবে Send চাপে। ref guard StrictMode-এর double
++  // effect-invoke-এ দ্বিগুণ prefill আটকায়; param strip (replace) রিফ্রেশে re-fire করে না।
++  useEffect(() => {
++    if (intentConsumedRef.current) return;
++    const intent = searchParams.get('intent');
++    if (!intent) return;
++    intentConsumedRef.current = true;
++    setSearchParams({}, { replace: true });
++    setInput(intent);
++    // বাংলা মন্তব্য: composer ইনপুট InteractiveChatTab-এ (data-testid="chat-input") — ফোকাস করলে prefill দৃশ্যমান থাকে
++    document.querySelector<HTMLInputElement>('[data-testid="chat-input"]')?.focus();
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
++
++  return (
++    <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--sa-canvas)] text-[var(--sa-ink)]">
++      <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.12),transparent_64%)]" aria-hidden="true" />
++      {/* AI Studio contextual header */}
++      <div className="relative flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-[var(--sa-border)] bg-[var(--sa-surface)]/80 px-4 backdrop-blur sm:px-6">
++        <div className="flex items-center gap-4 text-xs font-medium">
++          <button 
++            onClick={() => setActiveTab('chat')}
++            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'chat' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++          >
++            <Bot size={14} /> Conversation
++          </button>
++          <button 
++            onClick={() => setActiveTab('preview')}
++            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'preview' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++          >
++            <Code size={14} /> Browser Preview
++          </button>
++          <button 
++            onClick={() => setActiveTab('mobile')}
++            className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'mobile' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++          >
++            <Smartphone size={14} /> Mobile Simulator
++          </button>
++        </div>
++        
++        <div className="hidden items-center gap-4 text-[10px] uppercase tracking-widest text-[var(--sa-ink-muted)] sm:flex">
++          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-emerald-400" />Agent: SupremeAI</span>
++          <span className="flex items-center gap-1.5"><span className="size-1.5 rounded-full bg-[var(--sa-primary)]" />Model: Configured backend</span>
++          <span className="rounded-full border border-[var(--sa-border)] px-2 py-1 text-[var(--sa-ink-muted)]">Context ready</span>
++        </div>
++      </div>
++
++      <div className="flex-1 min-h-0 relative">
++        {activeTab === 'chat' && (
++          <div className="absolute inset-0 p-4">
++            <InteractiveChatTab
++              messages={messages}
++              input={input}
++              onInputChange={setInput}
++              onSend={handleSend}
++              loading={loading}
++              onSaveToProject={() => {}}
++              onPreview={(html) => {
++                setCode(html);
++                setActiveTab('preview');
++              }}
++            />
++          </div>
++        )}
++
++        {activeTab === 'preview' && (
++          <div className="absolute inset-0 p-4">
++            <BrowserPreview html={code} />
++          </div>
++        )}
++
++        {activeTab === 'mobile' && (
++          <div className="absolute inset-0 p-4">
++            <MobileSimulator html={code} />
++          </div>
++        )}
++      </div>
++    </div>
++  );
++};

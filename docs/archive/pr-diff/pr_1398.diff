@@ -1,0 +1,1910 @@
+diff --git a/studio/src/components/admin/AdminConsole.tsx b/studio/src/components/admin/AdminConsole.tsx
+index d333586b..002e3bdd 100644
+--- a/studio/src/components/admin/AdminConsole.tsx
++++ b/studio/src/components/admin/AdminConsole.tsx
+@@ -3,23 +3,17 @@ import { LoginView } from './auth/AdminLogin';
+ import { AuthenticatedView } from './auth/AdminAuthenticated';
+ import DashboardErrorBoundary from './DashboardErrorBoundary';
+ 
++// বাংলা (code-only gate): adminEmail/onAuthorize/recovery-জাতীয় সব prop সরানো
++// হয়েছে — gate এখন শুধু ৬-ডিজিট authentication code চায়, bypass কোনো পথ নেই।
++
+ interface AdminConsoleProps {
+   adminAuthenticated: boolean;
+-  adminEmail: string;
+-  setAdminEmail: (val: string) => void;
+-  totpSetupRequired: boolean;
+-  provisioningUri: string;
+-  totpSecret: string;
+-  onResetTotp: () => void;
+-  onAuthorize: () => void;
+-  recoveryCode: string;
+-  setRecoveryCode: (val: string) => void;
+-  recoverTotp: () => void;
+-  recoveryCodes: string[];
+   adminError: string;
+-  handleAdminLogin: (password?: string) => void;
+-  handleAdminOtpVerify: () => void;
+-  handleAdminLogout: () => void;
++  handleAdminLogin: () => void;
++  adminOtp: string;
++  setAdminOtp: (val: string) => void;
++  rememberBrowser: boolean;
++  setRememberBrowser: (val: boolean) => void;
+   actionStatus: string;
+   skillQuery: string;
+   setSkillQuery: (val: string) => void;
+@@ -49,11 +43,6 @@ interface AdminConsoleProps {
+   setNewUserRole: (val: string) => void;
+   newUserPerms: string;
+   setNewUserPerms: (val: string) => void;
+-  otpRequired: boolean;
+-  adminOtp: string;
+-  setAdminOtp: (val: string) => void;
+-  rememberBrowser: boolean;
+-  setRememberBrowser: (val: boolean) => void;
+   theme: 'dark' | 'light';
+   toggleTheme: () => void;
+ }
+@@ -75,24 +64,12 @@ export function AdminConsole(props: AdminConsoleProps) {
+     <div className="dashboard-aurora min-h-screen w-full flex flex-col overflow-hidden">
+       <DashboardErrorBoundary>
+         <LoginView
+-          adminEmail={props.adminEmail}
+-          setAdminEmail={props.setAdminEmail}
+           adminError={props.adminError}
+           handleAdminLogin={props.handleAdminLogin}
+-          otpRequired={props.otpRequired}
+           adminOtp={props.adminOtp}
+           setAdminOtp={props.setAdminOtp}
+           rememberBrowser={props.rememberBrowser}
+           setRememberBrowser={props.setRememberBrowser}
+-          totpSetupRequired={props.totpSetupRequired}
+-          provisioningUri={props.provisioningUri}
+-          totpSecret={props.totpSecret}
+-          onResetTotp={props.onResetTotp}
+-          onAuthorize={props.onAuthorize}
+-          recoveryCode={props.recoveryCode}
+-          setRecoveryCode={props.setRecoveryCode}
+-          recoverTotp={props.recoverTotp}
+-          recoveryCodes={props.recoveryCodes}
+         />
+       </DashboardErrorBoundary>
+     </div>
+diff --git a/studio/src/components/admin/auth/AdminLogin.tsx b/studio/src/components/admin/auth/AdminLogin.tsx
+index 6cfb82c3..bef01303 100644
+--- a/studio/src/components/admin/auth/AdminLogin.tsx
++++ b/studio/src/components/admin/auth/AdminLogin.tsx
+@@ -1,110 +1,46 @@
+ import { useState, useRef, useEffect } from 'react';
+-import QRCode from 'qrcode';
+ import {
+   ShieldCheck,
+-  Mail,
+   Lock,
+   KeyRound,
+-  Eye,
+-  EyeOff,
+-  Sparkles,
++  ShieldAlert,
+   Fingerprint,
+   ArrowRight,
+-  RefreshCw,
+-  Copy,
+-  Check,
+-  ShieldAlert,
+ } from 'lucide-react';
+ 
++// বাংলা: code-only admin gate — user dashboard থেকে admin dashboard-এ ঢুকতে
++// শুধুই ৬-ডিজিট authentication code। প্রথমবার code দেওয়া বাধ্যতামূলক;
++// "Fast-Pass Bypass" জাতীয় কোনো শর্টকাট আর নেই। ৭-দিন "browser মনে রাখো"
++// চালু করলে ব্রাউজার সার্ভারের ডাটাবেসে সেভ হয় — নির্দিষ্ট সময়ের মধ্যে
++// বার বার code দিতে হয় না (tryTrustedBrowser নীরবে যাচাই করে)।
++
+ interface LoginViewProps {
+-  adminEmail: string;
+-  setAdminEmail: (val: string) => void;
+   adminError: string;
+-  handleAdminLogin: (password?: string) => void;
+-  otpRequired: boolean;
++  handleAdminLogin: () => void;
+   adminOtp: string;
+   setAdminOtp: (val: string) => void;
+   rememberBrowser: boolean;
+   setRememberBrowser: (val: boolean) => void;
+-  totpSetupRequired: boolean;
+-  provisioningUri: string;
+-  totpSecret: string;
+-  onResetTotp: () => void;
+-  onAuthorize: () => void;
+-  recoveryCode: string;
+-  setRecoveryCode: (val: string) => void;
+-  recoverTotp: () => void;
+-  recoveryCodes: string[];
+ }
+ 
+ const MAX_ATTEMPTS = 5;
+ const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+ 
+ export function LoginView({
+-  adminEmail,
+-  setAdminEmail,
+   adminError,
+   handleAdminLogin,
+-  otpRequired,
+   adminOtp,
+   setAdminOtp,
+   rememberBrowser,
+   setRememberBrowser,
+-  totpSetupRequired,
+-  provisioningUri,
+-  totpSecret,
+-  onResetTotp,
+-  onAuthorize,
+-  recoveryCode,
+-  setRecoveryCode,
+-  recoverTotp,
+-  recoveryCodes,
+ }: LoginViewProps) {
+-  const [localPassword, setLocalPassword] = useState('');
+-  const [showPassword, setShowPassword] = useState(false);
+-  const [copiedSecret, setCopiedSecret] = useState(false);
+   const [localError, setLocalError] = useState('');
+-  const [qrFailed, setQrFailed] = useState(false);
+-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+   const [attempts, setAttempts] = useState(0);
+   const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+   const [isSubmitting, setIsSubmitting] = useState(false);
+   const lockoutTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+-
+-  // Generate the QR code locally (never transmit the provisioning URI). Re-run
+-  // whenever the URI changes (initial TOTP setup + "Generate New QR Code").
+-  useEffect(() => {
+-    let cancelled = false;
+-    if (!provisioningUri) {
+-      setQrDataUrl(null);
+-      setQrFailed(false);
+-      return;
+-    }
+-    QRCode.toDataURL(provisioningUri, {
+-      width: 320,
+-      margin: 2,
+-      errorCorrectionLevel: 'M',
+-      color: {
+-        dark: '#00f3ff',
+-        light: '#050b14',
+-      },
+-    })
+-      .then((url: string) => {
+-        if (!cancelled) {
+-          setQrDataUrl(url);
+-          setQrFailed(false);
+-        }
+-      })
+-      .catch(() => {
+-        if (!cancelled) {
+-          setQrDataUrl(null);
+-          setQrFailed(true);
+-        }
+-      });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, [provisioningUri]);
++  const attemptsRef = useRef(0);
++  const lastServerErrorRef = useRef<string>('');
+ 
+   const [currentTime, setCurrentTime] = useState(() => Date.now());
+ 
+@@ -121,68 +57,53 @@ export function LoginView({
+   const isLocked = lockedUntil !== null && currentTime < lockedUntil;
+   const lockoutRemaining = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - currentTime) / 1000)) : 0;
+ 
++  // বাংলা: সার্ভার-সাইড ব্যর্থতা (নতুন error স্ট্রিং) প্রতিটি lockout কাউন্টারে
++  // গোনা হয় — ৫ বার ভুল হলে ১৫ মিনিটের জন্য gate লক হয়ে যায়।
++  useEffect(() => {
++    if (adminError && adminError !== lastServerErrorRef.current) {
++      lastServerErrorRef.current = adminError;
++      const next = attemptsRef.current + 1;
++      if (next >= MAX_ATTEMPTS) {
++        attemptsRef.current = 0;
++        setAttempts(0);
++        const lockUntil = Date.now() + LOCKOUT_MS;
++        setLockedUntil(lockUntil);
++        if (lockoutTimerRef.current) clearTimeout(lockoutTimerRef.current);
++        lockoutTimerRef.current = setTimeout(() => setLockedUntil(null), LOCKOUT_MS);
++      } else {
++        attemptsRef.current = next;
++        setAttempts(next);
++      }
++    } else if (!adminError) {
++      lastServerErrorRef.current = '';
++    }
++  }, [adminError]);
++
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+ 
+-    // Rate limiting check
+     if (isLocked) {
+       setLocalError(`Too many failed attempts. Please wait ${lockoutRemaining} seconds.`);
+       return;
+     }
+ 
+-    // Email validation
+-    if (!otpRequired) {
+-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+-      if (!emailRegex.test(adminEmail)) {
+-        setLocalError('Please enter a valid email address.');
+-        return;
+-      }
+-      if (localPassword.length < 8) {
+-        setLocalError('Password must be at least 8 characters.');
+-        return;
+-      }
+-    }
+-
+-    // OTP validation
+-    if (otpRequired) {
+-      if (!/^\d{6}$/.test(adminOtp)) {
+-        setLocalError('OTP must be exactly 6 digits.');
+-        return;
+-      }
++    if (!/^\d{6}$/.test(adminOtp.trim())) {
++      setLocalError('Authentication code must be exactly 6 digits.');
++      return;
+     }
+ 
+     setLocalError('');
+     setIsSubmitting(true);
+ 
+     try {
+-      await handleAdminLogin(localPassword);
+-      if (!otpRequired) {
+-        setLocalPassword('');
+-      }
+-    } catch (err) {
+-      const newAttempts = attempts + 1;
+-      setAttempts(newAttempts);
+-      setLocalError(err instanceof Error ? err.message : 'Login failed. Please check your credentials.');
+-      if (newAttempts >= MAX_ATTEMPTS) {
+-        const lockUntil = Date.now() + LOCKOUT_MS;
+-        setLockedUntil(lockUntil);
+-        setAttempts(0);
+-        setLocalError(`Too many failed attempts. Account locked for 15 minutes.`);
+-        if (lockoutTimerRef.current) clearTimeout(lockoutTimerRef.current);
+-        lockoutTimerRef.current = setTimeout(() => setLockedUntil(null), LOCKOUT_MS);
+-      }
++      // বাংলা: সার্ভারই একমাত্র যাচাইকারী — store ভেতরে error সেট করে;
++      // ব্যর্থতা উপরের effect-এ গুনে lockout হয়।
++      await handleAdminLogin();
+     } finally {
+       setIsSubmitting(false);
+     }
+   };
+ 
+-  const copySecret = () => {
+-    if (!totpSecret) return;
+-    navigator.clipboard.writeText(totpSecret);
+-    setCopiedSecret(true);
+-    setTimeout(() => setCopiedSecret(false), 2000);
+-  };
+-
+   return (
+     <div className="relative min-h-[85vh] w-full flex items-center justify-center p-4 sm:p-6 overflow-hidden select-none">
+       {/* Background radial glow & cyber grid */}
+@@ -213,7 +134,7 @@ export function LoginView({
+             Supreme OS <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Security Gate</span>
+           </h2>
+           <p className="text-slate-400 text-xs font-mono max-w-xs leading-relaxed">
+-            Zero-Trust Administrative Clearance. Multi-Tier Sentinel Authorization Protocol.
++            Enter your 6-digit authentication code. First entry is mandatory — there is no bypass.
+           </p>
+         </div>
+ 
+@@ -222,195 +143,14 @@ export function LoginView({
+           className="flex flex-col gap-4 font-mono"
+           onSubmit={handleSubmit}
+           aria-label="Admin authentication form"
+-        >          {/* Subtle Fast-Pass Bypass / Operator Clearance Trigger */}
+-          <div className="flex justify-end">
+-            <button
+-              type="button"
+-              onClick={onAuthorize}
+-              className="text-[10px] text-cyan-400/80 hover:text-cyan-200 uppercase tracking-wider font-mono hover:underline"
+-              title="Quick Operator Authorization Clearance"
+-            >
+-              [ Fast-Pass Bypass ]
+-            </button>
+-          </div>
+-
+-          {!otpRequired && (
+-            <>
+-              {/* Email Input */}
+-              <div className="space-y-1.5 text-left">
+-                <label htmlFor="admin-email" className="block text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
+-                  Operator Identity
+-                </label>
+-                <div className="relative flex items-center">
+-                  <Mail className="absolute left-3.5 size-4 text-cyan-400/60" />
+-                  <input
+-                    id="admin-email"
+-                    data-testid="admin-email-input"
+-                    type="email"
+-                    placeholder="operator@supremeai.com"
+-                    value={adminEmail}
+-                    onChange={(e) => setAdminEmail(e.target.value)}
+-                    className="w-full rounded-xl border border-cyan-500/25 bg-black/60 pl-10 pr-4 py-3 text-sm text-cyan-100 placeholder:text-slate-600 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20"
+-                    required
+-                    autoComplete="email"
+-                    aria-required="true"
+-                    aria-invalid={localError ? 'true' : 'false'}
+-                  />
+-                </div>
+-              </div>
+-
+-              {/* Password Input */}
+-              <div className="space-y-1.5 text-left">
+-                <label htmlFor="admin-password" className="block text-[11px] uppercase tracking-wider text-slate-300 font-semibold">
+-                  Access Key / Passphrase
+-                </label>
+-                <div className="relative flex items-center">
+-                  <KeyRound className="absolute left-3.5 size-4 text-cyan-400/60" />
+-                  <input
+-                    id="admin-password"
+-                    data-testid="admin-password-input"
+-                    type={showPassword ? 'text' : 'password'}
+-                    placeholder="••••••••••••"
+-                    value={localPassword}
+-                    onChange={(e) => setLocalPassword(e.target.value)}
+-                    className="w-full rounded-xl border border-cyan-500/25 bg-black/60 pl-10 pr-11 py-3 text-sm text-cyan-100 placeholder:text-slate-600 outline-none transition-all focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20"
+-                    required
+-                    autoComplete="current-password"
+-                    aria-required="true"
+-                    aria-invalid={localError ? 'true' : 'false'}
+-                  />
+-                  <button
+-                    type="button"
+-                    onClick={() => setShowPassword((v) => !v)}
+-                    className="absolute right-3.5 text-slate-400 hover:text-cyan-300 transition-colors"
+-                    title={showPassword ? 'Hide password' : 'Show password'}
+-                  >
+-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+-                  </button>
+-                </div>
+-              </div>
+-
+-              {/* Trust Device Checkbox */}
+-              <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none py-1">
+-                <input
+-                  type="checkbox"
+-                  checked={rememberBrowser}
+-                  onChange={(e) => setRememberBrowser(e.target.checked)}
+-                  className="size-4 rounded border-cyan-500/40 bg-black/60 text-cyan-500 focus:ring-cyan-400 focus:ring-offset-0"
+-                />
+-                <span className="flex items-center gap-1.5 text-slate-300">
+-                  <ShieldCheck className="size-3.5 text-emerald-400" />
+-                  Remember device (7-day Biometric Trust)
+-                </span>
+-              </label>
+-            </>
+-          )}
+-
+-          {/* 2FA / TOTP Setup Step */}
+-          {totpSetupRequired && (
+-            <div className="flex flex-col items-center gap-3 rounded-2xl border border-cyan-500/30 bg-black/70 p-4 text-center">
+-              <div className="flex items-center gap-2 text-cyan-300 text-xs font-bold uppercase tracking-wider">
+-                <Sparkles size={14} />
+-                <span>Pair Multi-Factor Authenticator</span>
+-              </div>
+-
+-              {provisioningUri ? (
+-                <>
+-                  {qrDataUrl && (
+-                    <div className="p-2 rounded-xl border border-cyan-400/40 bg-[#050b14] shadow-lg">
+-                      <img src={qrDataUrl} alt="TOTP QR Code" className="size-36 rounded-lg" />
+-                    </div>
+-                  )}
+-                  {qrFailed && (
+-                    <p className="text-[11px] text-amber-400">
+-                      QR rendering failed — use the manual key below.
+-                    </p>
+-                  )}
+-                </>
+-              ) : (
+-                <p className="text-[11px] text-amber-400">
+-                  Provisioning URI initializing...
+-                </p>
+-              )}
+-
+-              {totpSecret && (
+-                <div className="w-full space-y-1">
+-                  <span className="text-[10px] text-slate-400 uppercase tracking-widest block">
+-                    Manual Security Secret
+-                  </span>
+-                  <div className="flex items-center justify-between rounded-lg border border-cyan-500/30 bg-slate-900/90 px-3 py-1.5">
+-                    <code className="text-xs text-emerald-300 font-mono tracking-wider break-all select-all">
+-                      {totpSecret}
+-                    </code>
+-                    <button
+-                      type="button"
+-                      onClick={copySecret}
+-                      className="ml-2 text-slate-400 hover:text-cyan-300 transition"
+-                      title="Copy Secret"
+-                    >
+-                      {copiedSecret ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+-                    </button>
+-                  </div>
+-                </div>
+-              )}
+-
+-              <button
+-                type="button"
+-                onClick={onResetTotp}
+-                className="flex items-center gap-1.5 text-[11px] text-cyan-400 underline underline-offset-4 hover:text-white transition"
+-              >
+-                <RefreshCw size={12} />
+-                <span>{provisioningUri ? 'Regenerate QR Key' : 'Generate New QR Code'}</span>
+-              </button>
+-              <p className="text-[10px] text-slate-500">Scan via Google Authenticator, 1Password, or Authy.</p>
+-            </div>
+-          )}
+-
+-          {/* Recovery Codes Display */}
+-          {recoveryCodes.length > 0 && (
+-            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-3 text-left">
+-              <p className="text-xs font-bold text-amber-300">Save Emergency Recovery Codes:</p>
+-              <code className="mt-1.5 block select-all break-words text-xs text-amber-200">
+-                {recoveryCodes.join('  •  ')}
+-              </code>
+-            </div>
+-          )}
+-
+-          {/* Recovery Code Input (if locked out of 2FA) */}
+-          {otpRequired && !totpSetupRequired && (
+-            <div className="space-y-2">
+-              <div className="flex gap-2">
+-                <input
+-                  aria-label="Recovery code"
+-                  value={recoveryCode}
+-                  onChange={(e) => setRecoveryCode(e.target.value)}
+-                  placeholder="Emergency Recovery Code"
+-                  className="flex-1 rounded-xl border border-slate-700 bg-black/60 px-3 py-2 text-xs text-white"
+-                />
+-                <button
+-                  type="button"
+-                  onClick={recoverTotp}
+-                  className="rounded-xl border border-cyan-500/40 bg-cyan-950/40 px-3 text-xs text-cyan-300 hover:bg-cyan-900/60 transition"
+-                >
+-                  Recover
+-                </button>
+-              </div>
+-              <button
+-                type="button"
+-                onClick={onResetTotp}
+-                className="text-[11px] text-cyan-400/80 hover:text-cyan-300 underline block text-center"
+-              >
+-                Lost authenticator? Generate a fresh QR pair
+-              </button>
+-            </div>
+-          )}
+-
+-          {/* 6-Digit OTP Field */}
+-          {otpRequired && (
+-            <div className="space-y-2 text-left">
+-              <label htmlFor="admin-otp" className="block text-xs uppercase tracking-wider text-slate-300 font-semibold text-center">
+-                Enter 6-Digit 2FA Token
+-              </label>
++        >
++          {/* 6-Digit Authentication Code (the only credential) */}
++          <div className="space-y-2 text-left">
++            <label htmlFor="admin-otp" className="block text-xs uppercase tracking-wider text-slate-300 font-semibold text-center">
++              Enter 6-Digit Authentication Code
++            </label>
++            <div className="relative flex items-center">
++              <KeyRound className="absolute left-3.5 size-4 text-cyan-400/60" />
+               <input
+                 id="admin-otp"
+                 data-testid="otp-input"
+@@ -421,45 +161,28 @@ export function LoginView({
+                 placeholder="000000"
+                 value={adminOtp}
+                 onChange={(e) => setAdminOtp(e.target.value.replace(/\D/g, ''))}
+-                className="w-full text-center text-xl font-bold tracking-[0.5em] rounded-xl border border-cyan-400/40 bg-black/70 py-3 text-cyan-300 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 outline-none transition"
++                className="w-full text-center text-xl font-bold tracking-[0.5em] rounded-xl border border-cyan-400/40 bg-black/70 py-3 pl-10 pr-4 text-cyan-300 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-400/30 outline-none transition"
+                 required
++                autoComplete="one-time-code"
+                 aria-required="true"
+-                aria-invalid={localError ? 'true' : 'false'}
++                aria-invalid={localError || adminError ? 'true' : 'false'}
+               />
+-              {!totpSetupRequired && (
+-                <div className="flex flex-col gap-2 pt-1">
+-                  <label className="flex items-center justify-center gap-2 text-xs text-slate-400 cursor-pointer">
+-                    <input
+-                      type="checkbox"
+-                      checked={rememberBrowser}
+-                      onChange={(e) => setRememberBrowser(e.target.checked)}
+-                      className="rounded border-cyan-500/40 accent-cyan-400"
+-                    />
+-                    <span>Trust this browser for 7 days</span>
+-                  </label>
+-                  <div className="flex justify-between items-center text-[11px] pt-1 border-t border-cyan-500/10">
+-                    <button
+-                      type="button"
+-                      onClick={() => {
+-                        onResetTotp();
+-                        setLocalError('');
+-                      }}
+-                      className="text-slate-400 hover:text-cyan-300 transition-colors"
+-                    >
+-                      ← Back to Password
+-                    </button>
+-                    <button
+-                      type="button"
+-                      onClick={onAuthorize}
+-                      className="text-cyan-400 hover:text-cyan-200 transition-colors font-bold"
+-                    >
+-                      [ Fast-Pass Clearance ]
+-                    </button>
+-                  </div>
+-                </div>
+-              )}
+             </div>
+-          )}
++          </div>
++
++          {/* 7-Day Trusted Browser (DB-backed remember) */}
++          <label className="flex items-center justify-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none py-1">
++            <input
++              type="checkbox"
++              checked={rememberBrowser}
++              onChange={(e) => setRememberBrowser(e.target.checked)}
++              className="size-4 rounded border-cyan-500/40 bg-black/60 text-cyan-500 focus:ring-cyan-400 focus:ring-offset-0"
++            />
++            <span className="flex items-center gap-1.5 text-slate-300">
++              <ShieldCheck className="size-3.5 text-emerald-400" />
++              Trust this browser for 7 days (saved in database)
++            </span>
++          </label>
+ 
+           {/* Error Message */}
+           {(adminError || localError) && (
+@@ -488,11 +211,11 @@ export function LoginView({
+           {/* Submit Action Button */}
+           <button
+             type="submit"
+-            data-testid={otpRequired ? 'otp-submit' : 'admin-login-submit'}
++            data-testid="otp-submit"
+             disabled={isSubmitting || isLocked}
+             className="group relative flex items-center justify-center gap-2 w-full rounded-xl bg-gradient-to-r from-cyan-500 via-indigo-600 to-purple-600 py-3.5 px-6 font-mono text-sm font-bold tracking-widest text-white uppercase shadow-[0_0_25px_rgba(6,182,212,0.35)] transition-all hover:shadow-[0_0_35px_rgba(6,182,212,0.55)] hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+           >
+-            <span>{isSubmitting ? 'Verifying Neural Credentials...' : otpRequired ? 'Confirm 2FA Verification' : 'Authorize Clearance'}</span>
++            <span>{isSubmitting ? 'Verifying Authentication Code...' : 'Verify Authentication Code'}</span>
+             {!isSubmitting && <ArrowRight className="size-4 transition-transform group-hover:translate-x-1" />}
+           </button>
+         </form>
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx
+index 07f4803c..62308ec4 100644
+--- a/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx
+@@ -1,7 +1,20 @@
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+ import { JarvisAdminGate } from './JarvisAdminGate';
+-import * as totpUtils from '../../../utils/totp';
++
++const { adminTotpVerify, adminTrustedBrowserLogin } = vi.hoisted(() => ({
++  adminTotpVerify: vi.fn(),
++  adminTrustedBrowserLogin: vi.fn(),
++}));
++
++// বাংলা: gate এখন সার্ভার-যাচাইকৃত — লোকাল TOTP/PIN/QR-seed কিছুই নেই,
++// তাই authService মক করাই যথেষ্ট।
++vi.mock('../../../services/authService', () => ({
++  authService: {
++    adminTotpVerify,
++    adminTrustedBrowserLogin,
++  },
++}));
+ 
+ describe('JarvisAdminGate', () => {
+   beforeEach(() => {
+@@ -9,36 +22,38 @@ describe('JarvisAdminGate', () => {
+     vi.clearAllMocks();
+   });
+ 
+-  it('bypasses gate immediately when 7-day trusted token is valid in localStorage', () => {
++  it('unlocks silently when the DB-backed trusted browser token is server-valid', async () => {
+     const onUnlocked = vi.fn();
+-    const future = Date.now() + 1000 * 60 * 60 * 24 * 7;
+-    localStorage.setItem('jarvis_admin_trusted_until', future.toString());
++    localStorage.setItem('supreme_trusted_browser_token', 'raw-trusted-token');
++    adminTrustedBrowserLogin.mockResolvedValue({ status: 'trusted_browser', token: 'jwt' });
+ 
+     render(<JarvisAdminGate onUnlocked={onUnlocked} />);
+-    expect(onUnlocked).toHaveBeenCalledTimes(1);
++
++    await waitFor(() => {
++      expect(adminTrustedBrowserLogin).toHaveBeenCalledWith('raw-trusted-token');
++      expect(onUnlocked).toHaveBeenCalledTimes(1);
++    });
++    // বাংলা: code ছাড়া প্রবেশ শুধুই সার্ভার-যাচাইয়ের পর — কোনো ক্লায়েন্ট শর্টকাট নেই।
++    expect(adminTotpVerify).not.toHaveBeenCalled();
+   });
+ 
+-  it('unlocks with emergency master PIN 1955 and stores 7-day trust when checked', async () => {
++  it('stays locked when the trusted browser token is server-rejected (expired)', async () => {
+     const onUnlocked = vi.fn();
+-    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++    localStorage.setItem('supreme_trusted_browser_token', 'stale-token');
++    adminTrustedBrowserLogin.mockRejectedValue({ message: 'expired' });
+ 
+-    const input = screen.getByPlaceholderText('000 000');
+-    fireEvent.change(input, { target: { value: '1955' } });
+-
+-    const authBtn = screen.getByRole('button', { name: /AUTHENTICATE/i });
+-    fireEvent.click(authBtn);
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
+ 
+     await waitFor(() => {
+-      expect(onUnlocked).toHaveBeenCalledTimes(1);
++      expect(adminTrustedBrowserLogin).toHaveBeenCalled();
+     });
+-
+-    const trusted = Number(localStorage.getItem('jarvis_admin_trusted_until'));
+-    expect(trusted).toBeGreaterThan(Date.now() + 1000 * 60 * 60 * 24 * 6);
++    expect(onUnlocked).not.toHaveBeenCalled();
++    expect(screen.getByPlaceholderText('000 000')).toBeInTheDocument();
+   });
+ 
+-  it('verifies 6-digit TOTP code and auto-submits upon 6 digits', async () => {
++  it('unlocks with a server-verified 6-digit code and auto-submits upon 6 digits', async () => {
+     const onUnlocked = vi.fn();
+-    vi.spyOn(totpUtils, 'verifyTotpCode').mockResolvedValue(true);
++    adminTotpVerify.mockResolvedValue({ status: 'success', token: 'admin-jwt' });
+ 
+     render(<JarvisAdminGate onUnlocked={onUnlocked} />);
+ 
+@@ -46,45 +61,55 @@ describe('JarvisAdminGate', () => {
+     fireEvent.change(input, { target: { value: '123456' } });
+ 
+     await waitFor(() => {
+-      expect(totpUtils.verifyTotpCode).toHaveBeenCalledWith('123456', expect.any(String), 1);
++      expect(adminTotpVerify).toHaveBeenCalledWith('123456', true);
+       expect(onUnlocked).toHaveBeenCalledTimes(1);
+     });
+   });
+ 
+-  it('shows error message on incorrect code', async () => {
++  it('does NOT unlock with the old emergency PIN 1955 — the server rejects it', async () => {
+     const onUnlocked = vi.fn();
+-    vi.spyOn(totpUtils, 'verifyTotpCode').mockResolvedValue(false);
++    adminTotpVerify.mockRejectedValue({ message: 'Invalid authentication code.' });
+ 
+     render(<JarvisAdminGate onUnlocked={onUnlocked} />);
+ 
+     const input = screen.getByPlaceholderText('000 000');
+-    fireEvent.change(input, { target: { value: '999999' } });
++    // ৪-ডিজিট PIN আর কোনো শর্টকাট নয় — সরাসরি সার্ভারে যায় এবং প্রত্যাখ্যাত হয়
++    fireEvent.change(input, { target: { value: '1955' } });
++    fireEvent.click(screen.getByRole('button', { name: /AUTHENTICATE/i }));
+ 
+     await waitFor(() => {
+-      expect(screen.getByText(/Invalid Authenticator code|Access denied/i)).toBeInTheDocument();
+-      expect(onUnlocked).not.toHaveBeenCalled();
++      expect(adminTotpVerify).toHaveBeenCalled();
+     });
++    expect(onUnlocked).not.toHaveBeenCalled();
++    expect(input).toBeInTheDocument();
+   });
+ 
+-  it('opens and closes Google Authenticator setup modal with QR code option', async () => {
++  it('shows server error message on incorrect code', async () => {
+     const onUnlocked = vi.fn();
+-    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++    adminTotpVerify.mockRejectedValue({ message: 'Invalid authentication code.' });
+ 
+-    const setupBtn = screen.getByRole('button', { name: /Setup Authenticator/i });
+-    fireEvent.click(setupBtn);
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
+ 
+-    expect(screen.getByText(/Setup Google Authenticator/i)).toBeInTheDocument();
+-    expect(screen.getByText(/Scan this QR code with/i)).toBeInTheDocument();
++    const input = screen.getByPlaceholderText('000 000');
++    fireEvent.change(input, { target: { value: '999999' } });
+ 
+     await waitFor(() => {
+-      expect(screen.getByAltText(/Google Authenticator QR Code/i)).toBeInTheDocument();
++      expect(screen.getByText(/Invalid authentication code/i)).toBeInTheDocument();
++      expect(onUnlocked).not.toHaveBeenCalled();
+     });
++  });
++
++  it('surfaces a server-side error when TOTP is not configured (fail-closed)', async () => {
++    const onUnlocked = vi.fn();
++    adminTotpVerify.mockRejectedValue({ message: 'TOTP secret not configured.' });
+ 
+-    const closeBtn = screen.getByRole('button', { name: /Close setup modal/i });
+-    fireEvent.click(closeBtn);
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++
++    fireEvent.change(screen.getByPlaceholderText('000 000'), { target: { value: '111111' } });
+ 
+     await waitFor(() => {
+-      expect(screen.queryByText(/Scan this QR code with/i)).not.toBeInTheDocument();
++      expect(screen.getByText(/TOTP secret not configured/i)).toBeInTheDocument();
++      expect(onUnlocked).not.toHaveBeenCalled();
+     });
+   });
+ });
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+index 38a28c4a..589dc82f 100644
+--- a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+@@ -1,86 +1,52 @@
+ import { useState, useEffect, useRef, useCallback } from 'react';
+-import QRCode from 'qrcode';
+-import { QrCode, ShieldCheck, Copy, Check, RefreshCw, KeyRound, Lock, Info, X } from 'lucide-react';
++import { ShieldCheck } from 'lucide-react';
+ import { ArcReactorOrb } from './ArcReactorOrb';
+-import { verifyTotpCode, buildOtpAuthUri, generateTotpSecret } from '../../../utils/totp';
+-import { apiClient } from '../../../services/apiClient';
++import { authService } from '../../../services/authService';
++import { getTrustedBrowserToken } from '../../../services/tokenStorage';
++
++// বাংলা: JARVIS admin gate — সার্ভার-যাচাইকৃত ৬-ডিজিট authentication code
++// ছাড়া প্রবেশ নেই। আগের সংস্করণে ৩টি bypass ছিল, সব বাদ (literal ইচ্ছা করেই
++// নথিতে রাখা হয়নি যেন সিক্রেট-স্ক্যান কখনো বৈধ credential মনে করে):
++//   1. UI-তেই প্রিন্ট করা হার্ডকোডেড ইমার্জেন্সি মাস্টার PIN
++//   2. localStorage-seed দিয়ে লোকাল TOTP যাচাই (যে কেউ নিজের seed বসাতে পারত)
++//   3. ক্লায়েন্ট-সাইড trust timestamp (forgeable) — এখন ৭-দিন ট্রাস্ট সার্ভারের
++//      ডাটাবেসে থাকে; মেয়াদের মধ্যে নীরব পুনঃপ্রবেশ, মেয়াদ শেষে আবার code।
+ 
+ interface JarvisAdminGateProps {
+   onUnlocked: () => void;
+ }
+ 
+-const DEFAULT_JARVIS_SEED = ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
+-const TRUSTED_STORAGE_KEY = 'jarvis_admin_trusted_until';
+-const SEED_STORAGE_KEY = 'jarvis_totp_seed';
+-const TRUST_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+-
+ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+   const [code, setCode] = useState('');
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
+   const [rememberDevice, setRememberDevice] = useState(true);
+-  const [showSetupModal, setShowSetupModal] = useState(false);
+-  const [copied, setCopied] = useState(false);
+-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+-
+-  const [totpSecret, setTotpSecret] = useState<string>(() => {
+-    try {
+-      return localStorage.getItem(SEED_STORAGE_KEY) || DEFAULT_JARVIS_SEED;
+-    } catch {
+-      return DEFAULT_JARVIS_SEED;
+-    }
+-  });
+ 
+-  // Fast-path: Check if this browser is already trusted for 7 days
++  // Fast-path: DB-backed trusted browser (7-day remember) — সার্ভারই যাচাই করে।
++  const trustedProbeDoneRef = useRef(false);
+   useEffect(() => {
+-    try {
+-      const trustedUntil = Number(localStorage.getItem(TRUSTED_STORAGE_KEY) || 0);
+-      if (trustedUntil > Date.now()) {
+-        onUnlocked();
+-      }
+-    } catch {
+-      // Ignore localStorage availability issues
+-    }
+-  }, [onUnlocked]);
+-
+-  // Generate QR code when setup modal opens or secret changes
+-  useEffect(() => {
+-    let isMounted = true;
+-    if (!showSetupModal) {
+-      setQrDataUrl(null);
+-      return;
+-    }
+-    const uri = buildOtpAuthUri('admin', totpSecret, 'SupremeAI JARVIS');
+-    QRCode.toDataURL(uri, {
+-      width: 256,
+-      margin: 2,
+-      color: {
+-        dark: '#00f3ff',
+-        light: '#050b14',
+-      },
+-    })
+-      .then((url) => {
+-        if (isMounted) setQrDataUrl(url);
++    if (trustedProbeDoneRef.current) return;
++    trustedProbeDoneRef.current = true;
++    const trusted = getTrustedBrowserToken();
++    if (!trusted) return;
++    authService
++      .adminTrustedBrowserLogin(trusted)
++      .then((data) => {
++        if (data.status === 'trusted_browser') {
++          onUnlocked();
++        }
+       })
+       .catch(() => {
+-        if (isMounted) setQrDataUrl(null);
++        // মেয়াদোত্তীর্ণ/অবৈধ — gate থাকবে; ব্যবহারকারী নতুন code দেবে।
+       });
+-
+-    return () => {
+-      isMounted = false;
+-    };
+-  }, [showSetupModal, totpSecret]);
++  }, [onUnlocked]);
+ 
+   const recordSuccess = useCallback(() => {
+-    if (rememberDevice) {
+-      try {
+-        localStorage.setItem(TRUSTED_STORAGE_KEY, (Date.now() + TRUST_DURATION_MS).toString());
+-      } catch {
+-        // Ignore storage write error
+-      }
+-    }
++    // বাংলা: rememberDevice চালু থাকলে authService.adminTotpVerify সার্ভারের
++    // trusted_browser_token ডাটাবেস-চুক্তি অনুযায়ী সংরণ করেছে — এখানে আর
++    // কোনো ক্লায়েন্ট-সাইড trust লেখা হয় না।
+     onUnlocked();
+-  }, [rememberDevice, onUnlocked]);
++  }, [onUnlocked]);
+ 
+   const submit = useCallback(
+     async (codeToVerify?: string) => {
+@@ -90,48 +56,25 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+       setBusy(true);
+       setError(null);
+ 
+-      // 1. Emergency Master PIN / Trial override
+-      if (target === '1955') {
+-        setBusy(false);
+-        recordSuccess();
+-        return;
+-      }
+-
+-      // 2. Google Authenticator RFC 6238 TOTP verification (local Web Crypto HMAC-SHA1)
+-      if (/^\d{6}$/.test(target)) {
+-        try {
+-          const isValidTotp = await verifyTotpCode(target, totpSecret, 1);
+-          if (isValidTotp) {
+-            setBusy(false);
+-            recordSuccess();
+-            return;
+-          }
+-        } catch {
+-          // Fall through to backend verification
+-        }
+-      }
+-
+-      // 3. Backend verification fallback (if control plane / API is reachable)
+       try {
+-        const data = await apiClient.post<{ ok?: boolean; error?: string }>('/api/admin/verify', {
+-          mode: 'gate',
+-          code: target,
+-        });
+-        if (data && data.ok) {
++        // সার্ভারই একমাত্র যাচাইকারী — লোকাল TOTP/PIN শর্টকাট নেই।
++        const data = await authService.adminTotpVerify(target, rememberDevice);
++        if (data && data.token) {
+           setBusy(false);
+           recordSuccess();
+           return;
+         }
+-        setError(data?.error || 'Invalid Authenticator code.');
++        setError('Invalid Authenticator code.');
+         setCode('');
+-      } catch {
+-        setError('Access denied. Incorrect Authenticator code or PIN.');
++      } catch (err) {
++        const message = err instanceof Error && err.message ? err.message : 'Access denied. Incorrect Authenticator code.';
++        setError(message);
+         setCode('');
+       } finally {
+         setBusy(false);
+       }
+     },
+-    [code, busy, totpSecret, recordSuccess]
++    [code, busy, rememberDevice, recordSuccess]
+   );
+ 
+   // Auto-submit when user enters 6 digits
+@@ -143,26 +86,6 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+     }
+   };
+ 
+-  const handleCopySecret = async () => {
+-    try {
+-      await navigator.clipboard.writeText(totpSecret);
+-      setCopied(true);
+-      setTimeout(() => setCopied(false), 2000);
+-    } catch {
+-      // Fallback
+-    }
+-  };
+-
+-  const handleGenerateNewSecret = () => {
+-    const newSec = generateTotpSecret(20);
+-    setTotpSecret(newSec);
+-    try {
+-      localStorage.setItem(SEED_STORAGE_KEY, newSec);
+-    } catch {
+-      // Ignore storage error
+-    }
+-  };
+-
+   return (
+     <div className="fixed inset-0 z-modal flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(14,165,183,0.12),transparent_70%)]" />
+@@ -192,9 +115,10 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+             onKeyDown={(e) => e.key === 'Enter' && submit()}
+             className="h-14 w-full rounded-xl border border-cyan-500/30 bg-black/60 px-4 text-center font-mono text-2xl tracking-[0.4em] text-cyan-200 outline-none transition placeholder:text-cyan-950 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+             autoFocus
++            autoComplete="one-time-code"
+           />
+           <p className="text-center font-mono text-[10px] text-cyan-600">
+-            Enter 6-digit TOTP token from Google Authenticator
++            Enter 6-digit authentication code — first entry is mandatory, no bypass
+           </p>
+         </div>
+ 
+@@ -212,7 +136,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+             onChange={(e) => setRememberDevice(e.target.checked)}
+             className="size-4 rounded border-cyan-500/40 bg-black/50 text-cyan-500 focus:ring-0 focus:ring-offset-0 accent-cyan-500"
+           />
+-          <span>Remember this browser for 7 days</span>
++          <span>Remember this browser for 7 days (saved in database)</span>
+         </label>
+ 
+         {/* Submit Button */}
+@@ -224,112 +148,10 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+           {busy ? 'VERIFYING...' : 'AUTHENTICATE'}
+         </button>
+ 
+-        {/* Setup & Backup Actions */}
+-        <div className="flex items-center justify-between pt-2 border-t border-cyan-500/15 text-[11px] font-mono text-cyan-500">
+-          <button
+-            type="button"
+-            onClick={() => setShowSetupModal(true)}
+-            className="flex items-center gap-1.5 hover:text-cyan-200 transition underline underline-offset-4 decoration-cyan-700"
+-          >
+-            <QrCode size={13} />
+-            <span>Setup Authenticator (QR)</span>
+-          </button>
+-
+-          <span className="text-cyan-800/80 text-[10px]">
+-            Backup PIN: <span className="text-cyan-600">1955</span>
+-          </span>
+-        </div>
++        <p className="text-center font-mono text-[10px] text-cyan-800 pt-2 border-t border-cyan-500/15">
++          Server-verified access only — the authentication code cannot be skipped.
++        </p>
+       </div>
+-
+-      {/* Google Authenticator Setup Modal */}
+-      {showSetupModal && (
+-        <div
+-          role="dialog"
+-          aria-modal="true"
+-          className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+-        >
+-          <div className="relative w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#060c18] p-6 shadow-2xl shadow-cyan-950/50 text-left">
+-            <button
+-              type="button"
+-              onClick={() => setShowSetupModal(false)}
+-              className="absolute right-4 top-4 text-cyan-400 hover:text-white p-1 rounded-lg transition"
+-              aria-label="Close setup modal"
+-            >
+-              <X size={18} />
+-            </button>
+-
+-            <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-3">
+-              <QrCode size={20} className="text-cyan-400" />
+-              <h2 className="font-mono text-sm font-bold tracking-wider uppercase text-cyan-200">
+-                Setup Google Authenticator
+-              </h2>
+-            </div>
+-
+-            <div className="mt-4 flex flex-col items-center gap-4">
+-              <p className="font-mono text-xs text-center text-cyan-300/80 leading-relaxed">
+-                Scan this QR code with <strong className="text-cyan-200">Google Authenticator</strong>, Microsoft Authenticator, or Apple Passwords:
+-              </p>
+-
+-              {/* QR Code Canvas/Image */}
+-              <div className="rounded-xl border border-cyan-500/40 bg-[#050b14] p-3 shadow-inner">
+-                {qrDataUrl ? (
+-                  <img
+-                    src={qrDataUrl}
+-                    alt="Google Authenticator QR Code"
+-                    className="size-48 rounded-lg"
+-                  />
+-                ) : (
+-                  <div className="size-48 flex items-center justify-center text-cyan-600 text-xs font-mono">
+-                    Generating QR...
+-                  </div>
+-                )}
+-              </div>
+-
+-              {/* Manual Secret Key */}
+-              <div className="w-full space-y-1.5">
+-                <span className="font-mono text-[10px] text-cyan-600 uppercase tracking-wider block text-center">
+-                  Or enter secret key manually:
+-                </span>
+-                <div className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-black/50 p-2.5">
+-                  <KeyRound size={14} className="text-cyan-400 shrink-0" />
+-                  <code className="flex-1 font-mono text-xs text-cyan-300 break-all select-all">
+-                    {totpSecret}
+-                  </code>
+-                  <button
+-                    type="button"
+-                    onClick={handleCopySecret}
+-                    className="p-1 rounded-md text-cyan-400 hover:bg-cyan-900/40 hover:text-white transition shrink-0"
+-                    title="Copy Secret"
+-                  >
+-                    {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+-                  </button>
+-                </div>
+-              </div>
+-
+-              {/* Actions */}
+-              <div className="w-full flex items-center justify-between pt-2">
+-                <button
+-                  type="button"
+-                  onClick={handleGenerateNewSecret}
+-                  className="flex items-center gap-1.5 font-mono text-[11px] text-cyan-500 hover:text-cyan-300 transition"
+-                  title="Generate a completely new TOTP secret"
+-                >
+-                  <RefreshCw size={12} />
+-                  <span>Generate New Key</span>
+-                </button>
+-
+-                <button
+-                  type="button"
+-                  onClick={() => setShowSetupModal(false)}
+-                  className="rounded-xl border border-cyan-500/40 bg-cyan-950/60 px-4 py-2 font-mono text-xs font-semibold text-cyan-300 hover:bg-cyan-900 hover:text-white transition"
+-                >
+-                  I've Scanned It
+-                </button>
+-              </div>
+-            </div>
+-          </div>
+-        </div>
+-      )}
+     </div>
+   );
+ }
+diff --git a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+index 56e64952..46b17e19 100644
+--- a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
++++ b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+@@ -1,7 +1,15 @@
+ import { useState } from 'react';
+-import { ShieldAlert, Fingerprint, KeyRound, X, CheckCircle2 } from 'lucide-react';
++import { ShieldAlert, KeyRound, X, CheckCircle2 } from 'lucide-react';
+ import { ArcReactorOrb } from './ArcReactorOrb';
+-import { verifyTotpCode } from '../../../utils/totp';
++import { authService } from '../../../services/authService';
++
++// বাংলা: destructive Jarvis কমান্ডের 2FA Sentinel — এখন শুধুই সার্ভার-যাচাইকৃত
++// ৬-ডিজিট authentication code। আগের ৩টি bypass সম্পূর্ণ বাদ (literal ইচ্ছা করেই
++// নথিতে রাখা হয়নি যেন সিক্রেট-স্ক্যান কখনো বৈধ credential মনে করে):
++//   1. সোর্সে হার্ডকোডেড ডিফল্ট অ্যাডমিন টোকেন
++//   2. হার্ডকোডেড ৪-ডিজিট ইমার্জেন্সি PIN
++//   3. লোকাল biometric assertion (সার্ভার-যাচাই ছাড়াই onAuthorized)
++// কোনো শর্টকাট নেই — সার্ভার প্রত্যাখ্যান করলে কমান্ড চলবে না।
+ 
+ interface TwoFASentinelModalProps {
+   command: string;
+@@ -10,8 +18,6 @@ interface TwoFASentinelModalProps {
+   onCancel: () => void;
+ }
+ 
+-const DEFAULT_ADMIN_TOKEN = 'jarvis-admin-2026';
+-
+ export function TwoFASentinelModal({
+   command,
+   reason,
+@@ -21,52 +27,6 @@ export function TwoFASentinelModal({
+   const [tokenInput, setTokenInput] = useState('');
+   const [error, setError] = useState<string | null>(null);
+   const [verifying, setVerifying] = useState(false);
+-  const [biometricSupported, setBiometricSupported] = useState(
+-    typeof window !== 'undefined' && !!window.PublicKeyCredential
+-  );
+-
+-  const handleBiometricAuth = async () => {
+-    setVerifying(true);
+-    setError(null);
+-
+-    try {
+-      if (!window.PublicKeyCredential) {
+-        throw new Error('Platform authenticator not supported on this device.');
+-      }
+-
+-      // Check if user verification is available
+-      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.();
+-      if (!available) {
+-        throw new Error('Biometric hardware (Windows Hello / Touch ID) unavailable. Please enter Admin PIN.');
+-      }
+-
+-      // Create a short assertion challenge
+-      const challenge = new Uint8Array(32);
+-      window.crypto.getRandomValues(challenge);
+-
+-      const credential = await navigator.credentials.get({
+-        publicKey: {
+-          challenge,
+-          rpId: window.location.hostname || 'localhost',
+-          userVerification: 'preferred',
+-          timeout: 60000,
+-        },
+-      });
+-
+-      if (credential) {
+-        onAuthorized();
+-      } else {
+-        throw new Error('Biometric verification cancelled.');
+-      }
+-    } catch (err: unknown) {
+-      const msg = err instanceof Error ? err.message : 'Biometric check cancelled or unavailable.';
+-      setError(msg);
+-      // Fallback to token PIN input
+-      setBiometricSupported(false);
+-    } finally {
+-      setVerifying(false);
+-    }
+-  };
+ 
+   const handleTokenSubmit = async (e?: React.FormEvent) => {
+     e?.preventDefault();
+@@ -74,34 +34,32 @@ export function TwoFASentinelModal({
+     const cleaned = tokenInput.trim();
+ 
+     if (!cleaned) {
+-      setError('Please enter Admin PIN or TOTP token.');
++      setError('Please enter your 6-digit authentication code.');
+       return;
+     }
+ 
+-    // 1. Check default token or emergency PIN
+-    if (cleaned === DEFAULT_ADMIN_TOKEN || cleaned === '1955') {
+-      onAuthorized();
++    if (!/^\d{6}$/.test(cleaned)) {
++      setError('Authentication code must be exactly 6 digits.');
+       return;
+     }
+ 
+-    // 2. Check 6-digit Google Authenticator TOTP code
+-    if (/^\d{6}$/.test(cleaned)) {
+-      try {
+-        const secret =
+-          localStorage.getItem('jarvis_totp_seed') ||
+-          ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
+-        const valid = await verifyTotpCode(cleaned, secret, 1);
+-        if (valid) {
+-          onAuthorized();
+-          return;
+-        }
+-      } catch {
+-        // Fall through
++    setVerifying(true);
++    try {
++      // সার্ভারই একমাত্র যাচাইকারী (remember চালু নয় — প্রতি কমান্ডে code লাগবে)
++      const data = await authService.adminTotpVerify(cleaned, false);
++      if (data && data.token) {
++        onAuthorized();
++        return;
+       }
++      setError('Invalid authentication code.');
++      setTokenInput('');
++    } catch (err) {
++      const message = err instanceof Error && err.message ? err.message : 'Invalid authentication code.';
++      setError(message);
++      setTokenInput('');
++    } finally {
++      setVerifying(false);
+     }
+-
+-    setError('Invalid security token, PIN, or TOTP code.');
+-    setTokenInput('');
+   };
+ 
+   return (
+@@ -149,29 +107,21 @@ export function TwoFASentinelModal({
+           )}
+         </div>
+ 
+-        {/* Auth Methods */}
++        {/* Auth Method: server-verified authentication code only */}
+         <div className="mt-5 space-y-4">
+-          {biometricSupported && (
+-            <button
+-              type="button"
+-              disabled={verifying}
+-              onClick={handleBiometricAuth}
+-              className="w-full flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-950/30 hover:bg-cyan-900/40 p-3 text-xs font-semibold text-cyan-200 transition disabled:opacity-50"
+-            >
+-              <Fingerprint size={16} className="text-cyan-400" />
+-              {verifying ? 'Awaiting Biometric Prompt...' : 'Verify with Biometrics (Windows Hello)'}
+-            </button>
+-          )}
+-
+           <form onSubmit={handleTokenSubmit} className="space-y-3">
+             <div className="relative">
+               <KeyRound size={15} className="absolute left-3 top-3 text-slate-400" />
+               <input
+-                type="password"
+-                placeholder="Or enter Admin PIN (e.g. 1955)"
++                type="text"
++                inputMode="numeric"
++                pattern="[0-9]*"
++                maxLength={6}
++                placeholder="Enter 6-digit authentication code"
+                 value={tokenInput}
+-                onChange={(e) => setTokenInput(e.target.value)}
+-                autoFocus={!biometricSupported}
++                onChange={(e) => setTokenInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
++                autoFocus
++                autoComplete="one-time-code"
+                 className="w-full rounded-xl border border-slate-700 bg-black/40 pl-9 pr-4 py-2.5 text-xs text-slate-200 font-mono placeholder:text-slate-500 outline-none focus:border-cyan-400/50"
+               />
+             </div>
+@@ -192,16 +142,17 @@ export function TwoFASentinelModal({
+               </button>
+               <button
+                 type="submit"
+-                className="flex-1 rounded-xl border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 py-2.5 text-xs font-semibold text-red-200 transition flex items-center justify-center gap-1.5"
++                disabled={verifying || tokenInput.length !== 6}
++                className="flex-1 rounded-xl border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 py-2.5 text-xs font-semibold text-red-200 transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+               >
+-                <CheckCircle2 size={14} /> Authorize & Run
++                <CheckCircle2 size={14} /> {verifying ? 'Verifying...' : 'Authorize & Run'}
+               </button>
+             </div>
+           </form>
+         </div>
+ 
+         <p className="mt-4 text-center text-[10px] text-slate-500">
+-          Super Admin clearance grants a 5-minute security window.
++          Server-verified clearance only — no PIN or bypass shortcut exists.
+         </p>
+       </div>
+     </div>
+diff --git a/studio/src/pages/admin/AdminShell.tsx b/studio/src/pages/admin/AdminShell.tsx
+index 78533a6b..12532b63 100644
+--- a/studio/src/pages/admin/AdminShell.tsx
++++ b/studio/src/pages/admin/AdminShell.tsx
+@@ -12,26 +12,16 @@ export function AdminShell() {
+   const {
+     adminAuthenticated,
+     adminRole,
+-    adminEmail,
+-    setAdminEmail,
+     adminError,
+     handleAdminLogin,
+-    otpRequired,
++    tryTrustedBrowser,
+     adminOtp,
+     setAdminOtp,
+     rememberBrowser,
+     setRememberBrowser,
+-    totpSetupRequired,
+-    provisioningUri,
+-    totpSecret,
+     handleAdminLogout,
+     actionStatus,
+     setActionStatus,
+-    resetTotpSetup,
+-    recoveryCode,
+-    setRecoveryCode,
+-    recoverTotp,
+-    recoveryCodes,
+   } = useAdminStore();
+ 
+   const [adminSubTab, setAdminSubTab] = useState<AdminSubTab>("overview");
+@@ -75,6 +65,10 @@ export function AdminShell() {
+         if (claims && typeof claims.exp === 'number' && claims.exp * 1000 <= Date.now()) {
+           useAdminStore.setState({ adminError: 'Your admin session has expired. Please sign in again.' });
+         }
++        // বাংলা (code-only gate): JWT না থাকলে DB-ব্যাকড ৭-দিন trusted-browser
++        // টোকেন সার্ভারে যাচাই — মেয়াদের মধ্যে থাকলে নীরবে প্রবেশ, নাহলে
++        // gate authentication code চাইবে (প্রথমবার দেওয়া বাধ্যতামূলক)।
++        void tryTrustedBrowser();
+       }
+       return;
+     }
+@@ -82,7 +76,7 @@ export function AdminShell() {
+     if (adminRole !== 'admin') {
+       if (import.meta.env.DEV) console.warn("RBAC: User is not an admin.");
+     }
+-  }, [adminAuthenticated, adminRole]);
++  }, [adminAuthenticated, adminRole, tryTrustedBrowser]);
+ 
+   // LiveLogs Real-Time Stream Hookup (SSE via /admin-api/logs/stream)
+   useEffect(() => {
+@@ -142,45 +136,9 @@ export function AdminShell() {
+     };
+   }, [adminAuthenticated]);
+ 
+-  const handleAdminOtpVerify = () => {
+-    handleAdminLogin();
+-  };
+-
+-  const handleResetTotp = () => {
+-    resetTotpSetup();
+-  };
+-
+-  const handleAuthorize = () => {
+-    const adminEmailToUse = (adminEmail || 'admin@supremeai.com').trim();
+-    setAdminEmail(adminEmailToUse);
+-    try {
+-      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+-      const payload = btoa(JSON.stringify({
+-        sub: 'admin-fast-pass',
+-        uid: 'admin-fast-pass',
+-        email: adminEmailToUse,
+-        role: 'admin',
+-        type: 'access',
+-        exp: Math.floor(Date.now() / 1000) + 7 * 86400,
+-      }));
+-      const mockToken = `${header}.${payload}.fast_pass_authorized`;
+-      localStorage.setItem('supreme_admin_jwt', mockToken);
+-      sessionStorage.setItem('supreme_admin_jwt', mockToken);
+-    } catch {
+-      // best-effort token persistence
+-    }
+-
+-    useAdminStore.setState({
+-      adminAuthenticated: true,
+-      adminRole: 'admin',
+-      otpRequired: false,
+-      totpSetupRequired: false,
+-      adminOtp: '',
+-      adminError: '',
+-    });
+-    setActionStatus('FAST-PASS CLEARANCE GRANTED');
+-    setTimeout(() => setActionStatus(''), 2000);
+-  };
++  // বাংলা: Fast-Pass Bypass (handleAuthorize) সম্পূর্ণ বাদ — এটি লোকাল মক JWT
++  // বানিয়ে যেকোনো ভিজিটরকে admin বানিয়ে দিত (গুরুতর সিকিউরিটি হোল)। এখন
++  // প্রবেশের একমাত্র পথ: authentication code → সার্ভার যাচাই → admin JWT।
+ 
+   const installSkillMutation = useInstallSkill();
+   const handleInstallSkill = (name: string) => {
+@@ -363,21 +321,12 @@ export function AdminShell() {
+   return (
+     <AdminConsole
+       adminAuthenticated={adminAuthenticated}
+-      adminEmail={adminEmail}
+-      setAdminEmail={setAdminEmail}
+-      totpSetupRequired={totpSetupRequired}
+-      provisioningUri={provisioningUri}
+-      totpSecret={totpSecret}
+-      onResetTotp={handleResetTotp}
+-      onAuthorize={handleAuthorize}
+-      recoveryCode={recoveryCode}
+-      setRecoveryCode={setRecoveryCode}
+-      recoverTotp={recoverTotp}
+-      recoveryCodes={recoveryCodes}
+       adminError={adminError}
+       handleAdminLogin={handleAdminLogin}
+-      handleAdminOtpVerify={handleAdminOtpVerify}
+-      handleAdminLogout={handleAdminLogout}
++      adminOtp={adminOtp}
++      setAdminOtp={setAdminOtp}
++      rememberBrowser={rememberBrowser}
++      setRememberBrowser={setRememberBrowser}
+       actionStatus={actionStatus}
+       skillQuery={skillQuery}
+       setSkillQuery={setSkillQuery}
+@@ -407,7 +356,6 @@ export function AdminShell() {
+       setNewUserRole={setNewUserRole}
+       newUserPerms={newUserPerms}
+       setNewUserPerms={setNewUserPerms}
+-      otpRequired={otpRequired}
+       adminOtp={adminOtp}
+       setAdminOtp={setAdminOtp}
+       rememberBrowser={rememberBrowser}
+diff --git a/studio/src/pages/admin/JarvisAdminConsolePage.tsx b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+index febb11a1..6aa0f15a 100644
+--- a/studio/src/pages/admin/JarvisAdminConsolePage.tsx
++++ b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+@@ -5,6 +5,7 @@ import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarv
+ import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
+ import { useAdminVoice } from '../../components/admin/jarvis/useAdminVoice';
+ import { controlPlane } from '../../services/controlPlane';
++import { authService } from '../../services/authService';
+ import { detectDestructiveReason } from '../../components/admin/jarvis/jarvisPersona';
+ 
+ interface Message {
+@@ -216,12 +217,9 @@ export function JarvisAdminConsolePage() {
+           <button
+             type="button"
+             onClick={() => {
+-              try {
+-                localStorage.removeItem('jarvis_admin_trusted_until');
+-              } catch {
+-                // ignore
+-              }
+-              setPhase('gate');
++              // বাংলা: ট্রাস্ট এখন সার্ভারের ডাটাবেসে — তাই LOCK মানে সার্ভার-সাইড
++              // revocation (local কী-ছাড়াও)। এরপর ঢুকতে আবার authentication code লাগবে।
++              authService.revokeTrustedBrowser().finally(() => setPhase('gate'));
+             }}
+             title="Lock Terminal & Revoke 7-Day Trust"
+             className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-950/20 px-2.5 py-1 text-[11px] text-red-300 transition hover:bg-red-900/40 hover:text-white"
+@@ -247,7 +245,7 @@ export function JarvisAdminConsolePage() {
+       </header>
+ 
+       {/* Main Center Stage */}
+-      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-feed mx-auto w-full gap-6">
++      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-4xl mx-auto w-full gap-6">
+         {/* Arc-Reactor Section */}
+         <div className="flex flex-col items-center gap-3 mt-4">
+           <ArcReactorOrb state={orbState} size={150} onClick={toggleListening} />
+diff --git a/studio/src/services/authService.test.ts b/studio/src/services/authService.test.ts
+index b7d5957b..d264e3c1 100644
+--- a/studio/src/services/authService.test.ts
++++ b/studio/src/services/authService.test.ts
+@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ vi.mock('./apiClient', () => ({
+   apiClient: {
+     post: vi.fn(),
++    delete: vi.fn(),
+   },
+ }));
+ 
+@@ -59,6 +60,30 @@ describe('authService (Native / Zero-Firebase)', () => {
+     });
+   });
+ 
++  it('adminTrustedBrowserLogin posts only the trusted_browser_token (code-free re-entry)', async () => {
++    (apiClient.post as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
++      status: 'trusted_browser',
++      token: 'fast-jwt',
++    });
++    const res = await authService.adminTrustedBrowserLogin('raw-browser-token');
++    expect(apiClient.post).toHaveBeenCalledWith('/api/admin/login', {
++      trusted_browser_token: 'raw-browser-token',
++    });
++    expect(res.status).toBe('trusted_browser');
++    expect(res.token).toBe('fast-jwt');
++  });
++
++  it('revokeTrustedBrowser sends the raw token via header', async () => {
++    (apiClient.delete as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({});
++    localStorage.setItem('supreme_trusted_browser_token', 'raw-browser-token');
++    await authService.revokeTrustedBrowser();
++    expect(apiClient.delete).toHaveBeenCalledWith(
++      '/api/admin/trusted-browsers',
++      expect.objectContaining({ headers: { 'X-Trusted-Browser-Token': 'raw-browser-token' } })
++    );
++    expect(localStorage.getItem('supreme_trusted_browser_token')).toBeNull();
++  });
++
+   it('adminLogout posts to /api/admin/logout', async () => {
+     (apiClient.post as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({});
+     await authService.adminLogout();
+diff --git a/studio/src/services/authService.ts b/studio/src/services/authService.ts
+index 00b1003f..deb7861d 100644
+--- a/studio/src/services/authService.ts
++++ b/studio/src/services/authService.ts
+@@ -15,6 +15,17 @@ export const authService = {
+     return { ...response, token: response.token ?? response.access_token ?? response.jwt };
+   },
+ 
++  // বাংলা: DB-backed trusted-browser পুনঃপ্রবেশ — ৭ দিনের মেয়াদের মধ্যে
++  // ব্রাউজার ডাটাবেসে সেভ থাকলে email/password/code ছাড়াই admin JWT।
++  // সার্ভারই একমাত্র যাচাইকারী — ক্লায়েন্টে কোনো trust shortcut নেই।
++  adminTrustedBrowserLogin: async (trustedBrowserToken: string): Promise<{ status: string; token?: string; email?: string }> => {
++    const response = await apiClient.post<{ status: string; token?: string; access_token?: string; jwt?: string; email?: string }>(
++      '/api/admin/login',
++      { trusted_browser_token: trustedBrowserToken }
++    );
++    return { ...response, token: response.token ?? response.access_token ?? response.jwt };
++  },
++
+   adminTotpVerify: async (otp: string, rememberBrowser = false): Promise<{ status: string; token: string; trusted_browser_token?: string }> => {
+     const response = await apiClient.post<{ status: string; token: string; trusted_browser_token?: string }>(
+       '/api/admin/totp-verify',
+@@ -39,11 +50,15 @@ export const authService = {
+   },
+ 
+   revokeTrustedBrowser: async (): Promise<void> => {
+-    clearTrustedBrowserToken();
++    const raw = getTrustedBrowserToken();
+     try {
+-      await apiClient.delete('/api/admin/trusted-browsers');
++      // বাংলা: কাঁচা টোকেনের ধারকই বৈধ মালিক — উপস্থাপন করে প্রত্যাহার।
++      await apiClient.delete('/api/admin/trusted-browsers', {
++        headers: raw ? { 'X-Trusted-Browser-Token': raw } : undefined,
++      } as RequestInit);
+     } catch {
+       // best-effort
+     }
++    clearTrustedBrowserToken();
+   },
+ };
+diff --git a/studio/src/store/adminStore.test.ts b/studio/src/store/adminStore.test.ts
+index 15cca945..36df3f7e 100644
+--- a/studio/src/store/adminStore.test.ts
++++ b/studio/src/store/adminStore.test.ts
+@@ -1,9 +1,9 @@
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { eventBus, Events } from '../lib/componentEventBus';
+ 
+-const { adminLogin, adminTotpSetup, adminTotpVerify, adminLogout } = vi.hoisted(() => ({
++const { adminLogin, adminTrustedBrowserLogin, adminTotpVerify, adminLogout } = vi.hoisted(() => ({
+   adminLogin: vi.fn(),
+-  adminTotpSetup: vi.fn(),
++  adminTrustedBrowserLogin: vi.fn(),
+   adminTotpVerify: vi.fn(),
+   adminLogout: vi.fn().mockResolvedValue(undefined),
+ }));
+@@ -11,7 +11,7 @@ const { adminLogin, adminTotpSetup, adminTotpVerify, adminLogout } = vi.hoisted(
+ vi.mock('../services/authService', () => ({
+   authService: {
+     adminLogin,
+-    adminTotpSetup,
++    adminTrustedBrowserLogin,
+     adminTotpVerify,
+     adminLogout,
+   },
+@@ -28,6 +28,7 @@ const reset = () =>
+     adminEmail: '',
+     otpRequired: false,
+     adminOtp: '',
++    rememberBrowser: false,
+     totpSetupRequired: false,
+     totpSecret: '',
+     provisioningUri: '',
+@@ -55,6 +56,7 @@ describe('adminStore (Zero Firebase / Native Auth)', () => {
+     useAdminStore.getState().setAdminEmail('a@b.com');
+     useAdminStore.getState().setOtpRequired(true);
+     useAdminStore.getState().setAdminOtp('123456');
++    useAdminStore.getState().setRememberBrowser(true);
+     useAdminStore.getState().setTotpSetupRequired(true);
+     useAdminStore.getState().setTotpSecret('secret');
+     useAdminStore.getState().setProvisioningUri('uri');
+@@ -66,49 +68,26 @@ describe('adminStore (Zero Firebase / Native Auth)', () => {
+     expect(s.adminEmail).toBe('a@b.com');
+     expect(s.otpRequired).toBe(true);
+     expect(s.adminOtp).toBe('123456');
++    expect(s.rememberBrowser).toBe(true);
+     expect(s.totpSetupRequired).toBe(true);
+     expect(s.totpSecret).toBe('secret');
+     expect(s.provisioningUri).toBe('uri');
+   });
+ 
+-  it('returns early from login when email/password are missing', async () => {
++  it('returns early when the authentication code is not exactly 6 digits', async () => {
++    useAdminStore.setState({ adminOtp: '12' });
+     await useAdminStore.getState().handleAdminLogin();
+-    expect(adminLogin).not.toHaveBeenCalled();
++    expect(adminTotpVerify).not.toHaveBeenCalled();
++    expect(useAdminStore.getState().adminError).toContain('6 digits');
+   });
+ 
+-  it('records an auth error when login fails', async () => {
+-    useAdminStore.getState().setAdminEmail('a@b.com');
+-    adminLogin.mockRejectedValue({
+-      message: 'bad creds',
+-    });
+-    await useAdminStore.getState().handleAdminLogin('pw');
+-    expect(useAdminStore.getState().adminError).toContain('bad creds');
+-  });
+-
+-  it('requires OTP when the backend reports otp_required', async () => {
+-    useAdminStore.getState().setAdminEmail('a@b.com');
+-    adminLogin.mockResolvedValue({ status: 'otp_required' });
+-    await useAdminStore.getState().handleAdminLogin('pw');
+-    expect(useAdminStore.getState().otpRequired).toBe(true);
+-  });
+-
+-  it('starts TOTP setup when backend reports totp_setup_required', async () => {
+-    useAdminStore.getState().setAdminEmail('a@b.com');
+-    adminLogin.mockResolvedValue({ status: 'totp_setup_required' });
+-    adminTotpSetup.mockResolvedValue({ secret: 's3cr3t' });
+-    await useAdminStore.getState().handleAdminLogin('pw');
+-    const s = useAdminStore.getState();
+-    expect(s.totpSetupRequired).toBe(true);
+-    expect(s.totpSecret).toBe('s3cr3t');
+-    expect(s.provisioningUri).toContain('otpauth');
+-  });
+-
+-  it('authenticates after verifying the TOTP code', async () => {
+-    useAdminStore.setState({ adminEmail: 'a@b.com', otpRequired: true, adminOtp: '123456' });
++  it('authenticates after server-verified TOTP code (code-only gate)', async () => {
++    useAdminStore.setState({ adminOtp: '123456' });
+     const token = makeJwt({ role: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 });
+     adminTotpVerify.mockResolvedValue({ token });
+-    await useAdminStore.getState().handleAdminLogin('pw');
++    await useAdminStore.getState().handleAdminLogin();
+     const s = useAdminStore.getState();
++    expect(adminTotpVerify).toHaveBeenCalledWith('123456', false);
+     expect(s.adminAuthenticated).toBe(true);
+     expect(s.adminRole).toBe('admin');
+     expect(sessionStorage.getItem('supreme_admin_jwt')).toBe(token);
+@@ -116,13 +95,44 @@ describe('adminStore (Zero Firebase / Native Auth)', () => {
+   });
+ 
+   it('records an error when TOTP verification fails', async () => {
+-    useAdminStore.setState({ adminEmail: 'a@b.com', otpRequired: true, adminOtp: '000000' });
++    useAdminStore.setState({ adminOtp: '000000' });
+     adminTotpVerify.mockRejectedValue({ message: 'invalid code' });
+-    await useAdminStore.getState().handleAdminLogin('pw');
++    await useAdminStore.getState().handleAdminLogin();
+     expect(useAdminStore.getState().adminError).toContain('invalid code');
+     expect(useAdminStore.getState().adminAuthenticated).toBe(false);
+   });
+ 
++  it('silently re-enters via DB-backed trusted browser token', async () => {
++    const token = makeJwt({ role: 'admin', exp: Math.floor(Date.now() / 1000) + 3600 });
++    localStorage.setItem('supreme_trusted_browser_token', 'raw-trusted-token');
++    adminTrustedBrowserLogin.mockResolvedValue({ status: 'trusted_browser', token });
++
++    const ok = await useAdminStore.getState().tryTrustedBrowser();
++
++    expect(ok).toBe(true);
++    expect(adminTrustedBrowserLogin).toHaveBeenCalledWith('raw-trusted-token');
++    expect(useAdminStore.getState().adminAuthenticated).toBe(true);
++    expect(useAdminStore.getState().adminRole).toBe('admin');
++    expect(sessionStorage.getItem('supreme_admin_jwt')).toBe(token);
++  });
++
++  it('fail-closed: clears the trusted token and returns false when the server rejects it', async () => {
++    localStorage.setItem('supreme_trusted_browser_token', 'stale-token');
++    adminTrustedBrowserLogin.mockRejectedValue({ message: 'expired' });
++
++    const ok = await useAdminStore.getState().tryTrustedBrowser();
++
++    expect(ok).toBe(false);
++    expect(useAdminStore.getState().adminAuthenticated).toBe(false);
++    expect(localStorage.getItem('supreme_trusted_browser_token')).toBeNull();
++  });
++
++  it('returns false immediately when no trusted browser token exists', async () => {
++    const ok = await useAdminStore.getState().tryTrustedBrowser();
++    expect(ok).toBe(false);
++    expect(adminTrustedBrowserLogin).not.toHaveBeenCalled();
++  });
++
+   it('logs out, clears tokens and emits AUTH_LOGOUT', async () => {
+     let emitted = false;
+     const handler = () => {
+diff --git a/studio/src/store/adminStore.ts b/studio/src/store/adminStore.ts
+index 4a5efc8c..4cd9d92d 100644
+--- a/studio/src/store/adminStore.ts
++++ b/studio/src/store/adminStore.ts
+@@ -1,7 +1,13 @@
+ import { create } from 'zustand';
+ import { authService } from '../services/authService';
+ import { updateTokenCache } from '../services/apiClient';
+-import { clearAdminToken, getAdminToken, setAdminToken } from '../services/tokenStorage';
++import {
++  clearAdminToken,
++  clearTrustedBrowserToken,
++  getAdminToken,
++  getTrustedBrowserToken,
++  setAdminToken,
++} from '../services/tokenStorage';
+ import { LEGACY_ADMIN_TOKEN_KEY } from './authStore';
+ import { eventBus, Events } from '../lib/componentEventBus';
+ 
+@@ -29,8 +35,8 @@ const decodeJwt = (token: string): Record<string, unknown> | null => {
+   }
+ };
+ 
+-const buildProvisioningUri = (email: string, secret: string): string =>
+-  `otpauth://totp/SupremeAI:${encodeURIComponent(email)}?secret=${secret}&issuer=SupremeAI&digits=6&period=30`;
++// বাংলা: buildProvisioningUri সরানো হয়েছে — QR setup UI এখন আর code-only
++// gate-এর অংশ নয়; TOTP secret env/vault (SUPREMEAI_ADMIN_TOTP_SECRET) থেকেই আসে।
+ 
+ const persistAdminToken = (token: unknown): token is string => {
+   if (typeof token !== 'string' || token.trim().length < 20) return false;
+@@ -45,7 +51,11 @@ interface AdminState {
+   setAdminRole: (val: string | null) => void;
+   adminError: string;
+   setAdminError: (val: string) => void;
+-  handleAdminLogin: (password?: string) => Promise<void>;
++  // বাংলা: code-only gate — authentication code ছাড়া প্রবেশ নেই।
++  // ১ম বার code দেওয়া বাধ্যতামূলক; ৭-দিন মনে-রাখো চালু থাকলে সেটি
++  // ডাটাবেসে সেভ হয় এবং মেয়াদের মধ্যে tryTrustedBrowser নীরবে ঢুকিয়ে দেয়।
++  handleAdminLogin: () => Promise<void>;
++  tryTrustedBrowser: () => Promise<boolean>;
+   handleAdminLogout: () => void;
+   actionStatus: string;
+   setActionStatus: (val: string) => void;
+@@ -65,10 +75,6 @@ interface AdminState {
+   setTotpSecret: (val: string) => void;
+   provisioningUri: string;
+   setProvisioningUri: (val: string) => void;
+-  recoveryCodes: string[];
+-  recoveryCode: string;
+-  setRecoveryCode: (val: string) => void;
+-  recoverTotp: () => Promise<void>;
+   resetTotpSetup: () => Promise<void>;
+ }
+ 
+@@ -118,118 +124,71 @@ export const useAdminStore = create<AdminState>((set, get) => ({
+   setTotpSecret: (val) => set({ totpSecret: val }),
+   provisioningUri: '',
+   setProvisioningUri: (val) => set({ provisioningUri: val }),
+-  recoveryCodes: [],
+-  recoveryCode: '',
+-  setRecoveryCode: (val) => set({ recoveryCode: val }),
+-  recoverTotp: async () => {
+-    const { recoveryCode, adminEmail } = get();
+-    if (recoveryCode && recoveryCode.trim().length >= 4) {
+-      const cleanEmail = adminEmail.trim() || 'admin@supremeai.com';
+-      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+-      const payload = btoa(JSON.stringify({
+-        sub: 'admin-recovery',
+-        uid: 'admin-recovery',
+-        email: cleanEmail,
+-        role: 'admin',
+-        type: 'access',
+-        exp: Math.floor(Date.now() / 1000) + 7 * 86400,
+-      }));
+-      const mockToken = `${header}.${payload}.recovery_authorized`;
+-      if (persistAdminToken(mockToken)) {
+-        eventBus.emit(Events.AUTH_LOGIN, { source: 'admin_store', timestamp: Date.now() });
+-        set({
+-          adminAuthenticated: true,
+-          adminRole: 'admin',
+-          otpRequired: false,
+-          totpSetupRequired: false,
+-          adminOtp: '',
+-          adminError: '',
+-          recoveryCode: '',
+-        });
+-        return;
+-      }
+-    }
+-    set({ adminError: 'Invalid recovery code. Please enter emergency code or use Fast-Pass.' });
+-  },
+-  handleAdminLogin: async (password?: string) => {
+-    const { adminEmail, otpRequired, adminOtp, rememberBrowser } = get();
+-    const cleanEmail = adminEmail.trim();
+-    const cleanPassword = password?.trim() || '';
++  // বাংলা: আগের recoverTotp লোকাল mock টোকেন বানাত (bypass) — পুরোপুরি বাদ।
++  // Bypass নেই: প্রথমবার অবশ্যই ৬-ডিজিট authentication code দিতে হবে।
++  handleAdminLogin: async () => {
++    const { adminOtp, rememberBrowser } = get();
++    const cleanOtp = adminOtp.trim();
+ 
+-    if (!otpRequired && (!cleanEmail || !cleanPassword)) return;
++    if (!/^\d{6}$/.test(cleanOtp)) {
++      set({ adminError: 'Authentication code must be exactly 6 digits.' });
++      return;
++    }
+     set({ adminError: '' });
+ 
+     try {
+-      if (!otpRequired) {
+-        // Step 1+2: Native backend login (no Firebase)
+-        const data = await authService.adminLogin(cleanEmail, cleanPassword);
++      // বাংলা: সার্ভারই একমাত্র যাচাইকারী। rememberBrowser=true হলে সার্ভার
++      // ব্রাউজার-টোকেন ডাটাবেসে ৭ দিনের মেয়াদে সেভ করে; authService সেটি
++      // সংরণ করে — পরেরবার tryTrustedBrowser নীরবে প্রবেশ করাবে।
++      const data = await authService.adminTotpVerify(cleanOtp, rememberBrowser);
++      if (!persistAdminToken(data.token)) {
++        set({ adminError: 'Authentication token missing. Please sign in again.' });
++        return;
++      }
++      const decoded = decodeJwt(data.token);
++      if (decoded && typeof decoded.role === 'string') {
++        set({ adminRole: decoded.role });
++      }
+ 
+-        if (data.status === 'trusted_browser' && persistAdminToken(data.token)) {
+-          const decoded = decodeJwt(data.token);
+-          set({ adminAuthenticated: true, adminRole: decoded?.role === 'admin' ? 'admin' : null });
+-          eventBus.emit(Events.AUTH_LOGIN, { source: 'admin_store', timestamp: Date.now() });
+-          return;
+-        }
++      eventBus.emit(Events.AUTH_LOGIN, {
++        source: 'admin_store',
++        timestamp: Date.now(),
++      });
+ 
+-        if (data.status === 'otp_required') {
+-          set({ otpRequired: true });
+-        } else if (data.status === 'totp_setup_required') {
+-          try {
+-            const setupData = await authService.adminTotpSetup();
+-            set({
+-              totpSetupRequired: true,
+-              otpRequired: true,
+-              totpSecret: setupData.secret,
+-              recoveryCodes: setupData.recovery_codes || [],
+-              provisioningUri: setupData.provisioning_uri || buildProvisioningUri(cleanEmail, setupData.secret || '')
+-            });
+-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-          } catch (setupErr: any) {
+-            const errStr = typeof setupErr?.message === 'string' ? setupErr.message : 'Failed to setup TOTP.';
+-            set({ adminError: errStr });
+-          }
+-        } else if (persistAdminToken(data.token)) {
+-            const decoded = decodeJwt(data.token);
+-            if (!decoded) {
+-              set({ adminError: 'Authentication token is invalid. Please sign in again.' });
+-              return;
+-            }
+-            set({ adminAuthenticated: true, adminRole: decoded?.role === 'admin' ? 'admin' : null });
+-            eventBus.emit(Events.AUTH_LOGIN, { source: 'admin_store', timestamp: Date.now() });
+-        } else {
+-          set({ adminError: 'Not authorized as admin.' });
+-        }
+-      } else {
+-        // Step 3: Verify TOTP (native)
+-        try {
+-          const data = await authService.adminTotpVerify(adminOtp.trim(), rememberBrowser);
+-          if (persistAdminToken(data.token)) {
+-            const decoded = decodeJwt(data.token);
+-            if (decoded && typeof decoded.role === 'string') {
+-              set({ adminRole: decoded.role });
+-            }
+-          } else {
+-            set({ adminError: 'Authentication token missing. Please sign in again.' });
+-            return;
+-          }
+-          
+-          eventBus.emit(Events.AUTH_LOGIN, {
+-            source: 'admin_store',
+-            timestamp: Date.now()
+-          });
+-          
+-          set({ adminAuthenticated: true, otpRequired: false, totpSetupRequired: false, adminOtp: '' });
+-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-        } catch (verifyErr: any) {
+-          const errStr = typeof verifyErr?.message === 'string' ? verifyErr.message : 'Invalid verification code.';
+-          set({ adminError: errStr });
+-        }
+-      }
++      set({ adminAuthenticated: true, otpRequired: false, totpSetupRequired: false, adminOtp: '' });
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-    } catch (err: any) {
+-      const msg = err && typeof err === 'object' && err.message ? String(err.message) : (typeof err === 'object' ? JSON.stringify(err) : String(err));
+-      set({ adminError: 'Connection failed: ' + msg });
++    } catch (verifyErr: any) {
++      const errStr = typeof verifyErr?.message === 'string' ? verifyErr.message : 'Invalid authentication code.';
++      set({ adminError: errStr });
++    }
++  },
++
++  // বাংলা: নীরব পুনঃপ্রবেশ — DB-ব্যাকড trusted-browser টোকেন সার্ভারে যাচাই।
++  // বৈধ হলে admin JWT, অবৈধ/মেয়াদোত্তীর্ণ হলে টোকেন মুছে false — fail-closed।
++  tryTrustedBrowser: async () => {
++    const trusted = getTrustedBrowserToken();
++    if (!trusted) return false;
++    try {
++      const data = await authService.adminTrustedBrowserLogin(trusted);
++      if (data.status === 'trusted_browser' && typeof data.token === 'string' && persistAdminToken(data.token)) {
++        const decoded = decodeJwt(data.token);
++        eventBus.emit(Events.AUTH_LOGIN, {
++          source: 'admin_store_trusted_browser',
++          timestamp: Date.now(),
++        });
++        set({
++          adminAuthenticated: true,
++          adminRole: decoded?.role === 'admin' ? 'admin' : null,
++          adminError: '',
++          otpRequired: false,
++        });
++        return true;
++      }
++    } catch {
++      // টোকেন অবৈধ/মেয়াদোত্তীর্ণ — নিচে মুছে ফেলা হয়; gate আবার code চাইবে।
+     }
++    clearTrustedBrowserToken();
++    return false;
+   },
+   handleAdminLogout: async () => {
+     try {

@@ -1,0 +1,38 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 0778d162..425dacb8 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -609,10 +609,31 @@ jobs:
+                   continue
+               slug = target.split("/")[-1]
+               scope = "\n".join(f"- {f}" for f in tfiles)
++
++              # When multiple federation targets are touched, create an isolated slice branch
++              # per satellite so that `git diff origin/main...origin/<branch>` only contains
++              # changes belonging to this target (bridge v2 single-target routing rule).
++              target_branch = branch
++              if len(targets) > 1 and target != "Supremeai-bd/supremeai":
++                  slice_branch = f"bridge/{task_id}-{slug}"
++                  try:
++                      base_sha = os.environ.get("BASE_SHA")
++                      pr_sha = os.environ.get("PR_SHA")
++                      subprocess.run(["git", "checkout", "-B", slice_branch, base_sha], check=True, capture_output=True)
++                      subprocess.run(["git", "checkout", pr_sha, "--"] + tfiles, check=True, capture_output=True)
++                      subprocess.run(["git", "commit", "--no-verify", "-m", f"bridge({task_id}-{slug}): slice for {slug}"], check=True, capture_output=True)
++                      subprocess.run(["git", "push", "-f", "origin", slice_branch], check=True, capture_output=True)
++                      subprocess.run(["git", "checkout", "main"], check=False, capture_output=True)
++                      target_branch = slice_branch
++                      print("✅ Pushed slice branch " + slice_branch + " for " + slug)
++                  except Exception as exc:
++                      print("::warning::slice branch creation failed for " + slug + ": " + str(exc))
++                      target_branch = branch
++
+               body = (
+                   "### Task ID\n" + task_id + "-" + slug + "\n\n"
+-                  "### Patch Branch\n" + branch + "\n\n"
+-                  "### Target Repo\n" + target + "\n\n"
++                  "### Patch Branch\n" + target_branch + "\n\n"
++                  "### Target Repository\n" + target + "\n\n"
+                   "### Agent Identity\nlanding.yml (auto) — PR #" + pr_num + "\n\n"
+                   "### Summary (what + why)\n" + title + " (satellite slice: " + slug + ")\n\n"
+                   "### Scope Paths\n" + scope + "\n\n"

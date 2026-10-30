@@ -1,0 +1,13 @@
+diff --git a/docs/bridge/bridge-20261029-ci2368-closure-receipt.md b/docs/bridge/bridge-20261029-ci2368-closure-receipt.md
+index 228e1765..c071970c 100644
+--- a/docs/bridge/bridge-20261029-ci2368-closure-receipt.md
++++ b/docs/bridge/bridge-20261029-ci2368-closure-receipt.md
+@@ -7,7 +7,7 @@
+ 
+ ## 1. Root cause (not a defect — the guard worked)
+ 
+-The failing check is `👥 Anti-Duplicate PR Guard`. Its log terminates with a designed fail-closed trip: `##[error]Competing PR detected! Another open PR already targets #2355.` / `Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden.` / `Conflicting PR: PR #2365 (branch: bridge/bridge-20261029-gateway-url-ghost-host-2355)`. Two bridge lanes (#2365 and #2367) raced the same WO #2355 (gateway-url ghost-host fix); the U4 guard fired on the `2367/merge` gate and refused the duplicate, exactly as the anti-stampede doctrine requires (Invariant 5). The pipeline itself has no defect: the "failure" is the poka-yoke doing its job on a losing duplicate lane, not a main-branch or workflow fault.
++The failing check is `👥 Anti-Duplicate PR Guard`. Its log terminates with a designed fail-closed trip: `##[error]Competing PR detected! Another open PR already targets #2355.` / `Per <constitution SSOT> U4, duplicate PRs are strictly forbidden.` / `Conflicting PR: PR #2365 (branch: bridge/bridge-20261029-gateway-url-ghost-host-2355)`. (Quote disclosure: the original log line named the pre-#1526 constitution filename; the name is elided here per the #1708 dead-authority-pointer guard — the U4 authority now lives in `AGENTS.md`. See #2477. The `pipeline.yml` U4 message still emits the pre-consolidation filename and needs an admin-lane edit, .github/* being bridge-protected per #1769.) Two bridge lanes (#2365 and #2367) raced the same WO #2355 (gateway-url ghost-host fix); the U4 guard fired on the `2367/merge` gate and refused the duplicate, exactly as the anti-stampede doctrine requires (Invariant 5). The pipeline itself has no defect: the "failure" is the poka-yoke doing its job on a losing duplicate lane, not a main-branch or workflow fault.
+ 
+ ## 2. Resolution already on main via the winning lane
+ 

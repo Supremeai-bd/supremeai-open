@@ -1,0 +1,561 @@
+diff --git a/scripts/ci/py_dep_cve_guard.py b/scripts/ci/py_dep_cve_guard.py
+index b5a90b7c..cfcbc2f8 100644
+--- a/scripts/ci/py_dep_cve_guard.py
++++ b/scripts/ci/py_dep_cve_guard.py
+@@ -52,6 +52,20 @@
+        skip with evidence (exit 0, note emitted) — it never fabricates a
+        PASS. A manifest that exists but cannot be READ is a surface change
+        and fail-closes (the #1913 unreadable-lockfile analog).
++    6. Inline-install blindspot visibility (--dockerfile-scan, #2064 R43
++       option D — the agent-safe lane): CLI `pip install` sites inside
++       tracked Dockerfiles are structurally invisible to the manifest-plane
++       ratchet (worst live case: gateway/Dockerfile's `|| fallback` installs
++       unpinned packages and exits 0, so the build can never fail on a
++       manifest error — the guard audits the manifest while the branch that
++       actually runs on its failure is unaudited). This mode parses every
++       tracked Dockerfile for pip-install occurrences, classifies each spec
++       (pinned / unpinned / direct-ref / dynamic / local) and each site
++       (manifest-backed / inline-pinned / inline-mixed / inline-unpinned),
++       flags the gate-defeat shape, and prints a date-stamped report. It is
++       REPORT-ONLY by contract: never blocking (always exit 0), never edits
++       a Dockerfile (the #2042 agent never-do stands), never feeds the
++       baseline (the floor may only shrink), and never scans .github/**.
+ 
+ Never-do (issue #1969): no auto bumps; no requirements edits; the baseline
+ may never grow; no scanning .github/**; no safety CLI (commercial DB breaks
+@@ -65,9 +79,10 @@
+     python scripts/ci/py_dep_cve_guard.py --baseline         # regenerate floor
+     python scripts/ci/py_dep_cve_guard.py --json             # machine report
+     python scripts/ci/py_dep_cve_guard.py --self-test        # hermetic
++    python scripts/ci/py_dep_cve_guard.py --dockerfile-scan  # blindspot report (R43)
+ 
+-Exit codes: 0 = pass / known-floor / honest skip · 1 = new drift ·
+-2 = usage error.
++Exit codes: 0 = pass / known-floor / honest skip / report-only scan ·
++1 = new drift · 2 = usage error.
+ """
+ 
+ from __future__ import annotations
+@@ -76,6 +91,7 @@
+ import contextlib
+ import json
+ import os
++import re
+ import shutil
+ import subprocess
+ import sys
+@@ -98,6 +114,25 @@
+ 
+ PIP_AUDIT_BIN = "pip-audit"
+ PIP_AUDIT_TIMEOUT = 300  # seconds per manifest (cold PyPI resolution included)
++
++# --- inline-install blindspot plane (#2064 R43 option D, report-only) ---
++DOCKERFILE_SURFACE = "tracked Dockerfiles (Dockerfile, Dockerfile.*, *.Dockerfile)"
++_PIP_INSTALL_RE = re.compile(r"\bpip3?\s+install\b")
++# pip flags whose NEXT token is a value (target/path), not a package spec:
++_PIP_VALUE_FLAGS = frozenset({
++    "-r", "--requirement", "-e", "--editable", "-c", "--constraint",
++    "-t", "--target", "-f", "--find-links", "-i", "--index-url",
++    "--extra-index-url", "--prefix", "--src", "--root", "--platform",
++    "--implementation", "--python-version", "--abi", "--proxy",
++    "--trusted-host", "--timeout", "--retries", "--exists-action",
++})
++_PIP_NOVALUE_FLAGS_PREFIXES = ("--no-", "--upgrade", "-q", "--quiet", "-v",
++                               "--verbose", "--disable-pip", "--isolated",
++                               "--no-cache", "--only-binary", "--no-build")
++
++
++def is_dockerfile_name(fn: str) -> bool:
++    return fn == "Dockerfile" or fn.startswith("Dockerfile.") or fn.endswith(".Dockerfile")
+ SKIP_DIRS = frozenset(
+     {".git", "node_modules", ".venv", "venv", "env", "dist", "build",
+      "archives", ".pytest_cache", "__pycache__", ".tox", "site-packages"}
+@@ -361,6 +396,224 @@ def render(drift: list[dict], improvements: list[dict], notes: list[str]) -> Non
+         _evidence("ratchet clean: no new advisory ids on the Python dependency plane")
+ 
+ 
++def _classify_spec(spec: str) -> str:
++    """One pip-install spec -> pinned | unpinned | direct | dynamic | local."""
++    s = spec.strip().strip('"').strip("'")
++    if s in (".", "./") or s.startswith("./") or s.startswith("file://"):
++        return "local"
++    if "${" in s:
++        return "dynamic"
++    if "://" in s or s.startswith("git+"):
++        return "direct"
++    if "==" in s:
++        return "pinned"
++    return "unpinned"
++
++
++def _logical_shell_lines(text: str) -> list[tuple[int, str]]:
++    """Dockerfile content -> [(start_line, logical_line)] with backslash
++    continuations joined (RUN blocks span lines) and full-line comments and
++    blank lines dropped (comments must never parse as install sites)."""
++    out: list[tuple[int, str]] = []
++    buf = ""
++    start = 0
++    for i, raw in enumerate(text.splitlines(), 1):
++        line = raw.rstrip("\n")
++        if buf:
++            buf += " " + line.strip()
++            if buf.endswith("\\"):
++                buf = buf[:-1]
++                continue
++        else:
++            stripped = line.strip()
++            if not stripped or stripped.startswith("#"):
++                continue
++            start = i
++            if stripped.endswith("\\"):
++                buf = stripped[:-1]
++                continue
++            buf = stripped
++        out.append((start, buf))
++        buf = ""
++    return out
++
++
++def _split_shell_segments(logical: str) -> list[str]:
++    """Split on shell control operators, keeping track of || positions so the
++    gate-defeat shape (a pip install in the survive-on-failure branch) can be
++    flagged. Full-line comments were already dropped; inline ` #` tails are
++    stripped (URL fragments contain no space-delimited ' #')."""
++    if " #" in logical:
++        logical = logical.split(" #", 1)[0]
++    import re as _re
++    parts = _re.split(r"&&|\|\||;|\|", logical)
++    return [p for p in (x.strip() for x in parts) if p]
++
++
++def parse_pip_install_sites(text: str) -> list[dict]:
++    """Dockerfile content -> ordered pip-install occurrence records.
++
++    Each record: {line, occurrence, class, specs:[{spec,class}],
++    manifest_refs, gate_defeat_shape}. Deterministic; comment lines and
++    pip-flag noise are excluded; `-r`/`--requirement` targets are recorded
++    as manifest_refs (that plane is already ratcheted) and `-e` targets as
++    local installs.
++    """
++    sites: list[dict] = []
++    for start, logical in _logical_shell_lines(text):
++        segments = _split_shell_segments(logical)
++        if not any(_PIP_INSTALL_RE.search(s) for s in segments):
++            continue
++        gate_defeat = ("||" in logical
++                       and any("unpinned" == sp["class"]
++                               for s in segments
++                               for sp in _segment_specs(s)["specs"]))
++        occurrence = 0
++        for seg in segments:
++            m = _PIP_INSTALL_RE.search(seg)
++            if not m:
++                continue
++            occurrence += 1
++            parsed = _segment_specs(seg)
++            sites.append({
++                "line": start,
++                "occurrence": occurrence,
++                "class": parsed["class"],
++                "specs": parsed["specs"],
++                "manifest_refs": parsed["manifest_refs"],
++                "gate_defeat_shape": gate_defeat,
++            })
++    return sites
++
++
++def _segment_specs(seg: str) -> dict:
++    m = _PIP_INSTALL_RE.search(seg)
++    tokens = seg[m.end():].split()
++    specs: list[dict] = []
++    manifest_refs: list[str] = []
++    skip_next = False
++    for tok in tokens:
++        if skip_next:
++            if tok.lower().endswith(".txt") or tok.lower().endswith(".in"):
++                manifest_refs.append(tok)
++            skip_next = False
++            continue
++        low = tok.lower()
++        if low in ("-r", "--requirement"):
++            manifest_refs.append("(next-token)")
++            skip_next = True
++            continue
++        if low in ("-e", "--editable"):
++            specs.append({"spec": tok, "class": "local"})
++            skip_next = True
++            continue
++        if tok.startswith("-"):
++            if low in _PIP_VALUE_FLAGS:
++                skip_next = True
++            continue
++        specs.append({"spec": tok, "class": _classify_spec(tok)})
++    _risky = ("unpinned", "direct", "dynamic")
++    has_pinned = any(sp["class"] == "pinned" for sp in specs)
++    has_risky = any(sp["class"] in _risky for sp in specs)
++    if manifest_refs and not specs:
++        site_class = "manifest-backed"
++    elif has_pinned and has_risky:
++        site_class = "inline-mixed"
++    elif has_risky:
++        site_class = "inline-unpinned"
++    elif specs:
++        site_class = "inline-pinned"
++    else:
++        site_class = "unparsed"
++    return {"class": site_class, "specs": specs, "manifest_refs": manifest_refs}
++
++
++def scan_inline_pip_installs(repo_root: Path) -> dict:
++    """Report-only blindspot scan across tracked Dockerfiles (#2064 option D).
++
++    Non-blocking by contract: anomalies (unreadable Dockerfile) are reported
++    as records, never raised; the caller always exits 0. Deterministic
++    sorted walk, same SKIP_DIRS pruning as the manifest plane.
++    """
++    files: list[str] = []
++    for dirpath, dirnames, filenames in os.walk(repo_root, topdown=True):
++        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
++        for fn in filenames:
++            if is_dockerfile_name(fn):
++                files.append((Path(dirpath) / fn).relative_to(repo_root).as_posix())
++    files.sort()
++    sites: list[dict] = []
++    anomalies: list[dict] = []
++    for rel in files:
++        try:
++            text = (repo_root / rel).read_text(encoding="utf-8")
++        except Exception as exc:  # report-only: an anomaly is a record, not a raise
++            anomalies.append({"file": rel, "kind": "unreadable", "detail": str(exc)[:160]})
++            continue
++        for parsed in parse_pip_install_sites(text):
++            sites.append({"file": rel, **parsed})
++    blindspot_sites = [s for s in sites if s["class"] in ("inline-unpinned", "inline-mixed")]
++    spec_counts: dict[str, int] = {}
++    for s in sites:
++        for sp in s["specs"]:
++            spec_counts[sp["class"]] = spec_counts.get(sp["class"], 0) + 1
++    return {
++        "report": (
++            "inline pip-install blindspot scan (report-only, non-blocking; "
++            "#2064 R43 option D) — CLI installs inside Dockerfiles are "
++            "structurally invisible to the manifest-plane ratchet"
++        ),
++        "dated": "2026-10-28",
++        "surface": DOCKERFILE_SURFACE,
++        "dockerfiles_scanned": len(files),
++        "dockerfiles_with_sites": len({s['file'] for s in sites}),
++        "sites": sites,
++        "anomalies": anomalies,
++        "summary": {
++            "pip_install_sites": len(sites),
++            "manifest_backed_sites": sum(1 for s in sites if s["class"] == "manifest-backed"),
++            "inline_unpinned_sites": sum(1 for s in sites if s["class"] == "inline-unpinned"),
++            "inline_mixed_sites": sum(1 for s in sites if s["class"] == "inline-mixed"),
++            "gate_defeat_sites": sum(1 for s in sites if s.get("gate_defeat_shape")),
++            "spec_classes": dict(sorted(spec_counts.items())),
++        },
++    }
++
++
++def render_dockerfile_report(doc: dict) -> None:
++    _evidence(f"dockerfile-scan (report-only, non-blocking) | {doc['dated']} | "
++              f"{doc['dockerfiles_scanned']} dockerfile(s) scanned, "
++              f"{doc['summary']['pip_install_sites']} pip-install site(s)")
++    s = doc["summary"]
++    _evidence(
++        f"summary | manifest-backed: {s['manifest_backed_sites']} · "
++        f"inline-unpinned (blindspot): {s['inline_unpinned_sites']} · "
++        f"gate-defeat shape: {s['gate_defeat_sites']} · "
++        f"spec classes: {json.dumps(s['spec_classes'])}"
++    )
++    for site in doc["sites"]:
++        gd = (" | GATE-DEFEAT: build survives manifest-install failure via ||"
++              if site.get("gate_defeat_shape") else "")
++        specs = ", ".join(
++            f"{sp['spec']}[{sp['class']}]" for sp in site["specs"]) or "-"
++        if site["class"] in ("inline-unpinned", "inline-mixed"):
++            _evidence(
++                f"BLINDSPOT | {site['file']}:{site['line']} (occ {site['occurrence']}) | "
++                f"{site['class']}{gd} | specs: {specs}"
++            )
++        elif site["class"] == "manifest-backed":
++            refs = ", ".join(site["manifest_refs"]) or "-"
++            _evidence(f"ok | {site['file']}:{site['line']} | manifest-backed ({refs}) "
++                      f"— already inside the ratchet plane{gd}")
++        else:
++            _evidence(f"ok | {site['file']}:{site['line']} | {site['class']}{gd} "
++                      f"| specs: {specs}")
++    for a in doc["anomalies"]:
++        _evidence(f"ANOMALY (report-only) | {a['file']} | {a['kind']} | {a['detail']}")
++    if not any(s["class"] in ("inline-unpinned", "inline-mixed") for s in doc["sites"]):
++        _evidence("no inline-unpinned blindspot on the scanned dockerfile plane")
++
++
+ def self_test() -> bool:
+     """Hermetic guard-the-guard (offline; fixtures, monkeypatched audits)."""
+     print("[self-test] Running Python dependency CVE guard tests...")
+@@ -514,7 +767,95 @@ def _boom(p):
+         finally:
+             g.shutil.which = real_which
+             g.audit_manifest = saved_audit
+-    # 4. Live wiring: roster + pre-push carry the guard (when run inside the repo).
++    # 6. Spec classification: pinned / extras-pinned / unpinned / direct /
++    #    dynamic / local — the vocabulary the report uses (#2064).
++    assert g._classify_spec("torch==2.4.1") == "pinned"
++    assert g._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"
++    assert g._classify_spec("wheel") == "unpinned"
++    assert g._classify_spec("nats-py") == "unpinned"
++    assert g._classify_spec("git+https://x/y.git") == "direct"
++    assert g._classify_spec("https://x/y.whl") == "direct"
++    assert g._classify_spec("${PIP_EXTRAS}") == "dynamic"
++    assert g._classify_spec("./local") == "local"
++    print("  PASS | spec classification: pinned/unpinned/direct/dynamic/local")
++
++    # 7. Parser: gateway `||` fallback (gate-defeat shape + 5 unpinned),
++    #    swarm continuation line (2 occurrences), ci partial pin (mixed),
++    #    quoted+extras pinned line stays inline-pinned, comment lines and
++    #    -r manifests never count as blindspots.
++    gw = g.parse_pip_install_sites(
++        "FROM python:3.11-slim\n"
++        "# RUN pip install commented-out must not parse\n"
++        "RUN pip install --no-cache-dir -r requirements.txt || "
++        "pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml\n"
++    )
++    assert len(gw) == 2, gw
++    assert gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]
++    assert gw[0]["gate_defeat_shape"] is True, "first branch sits on a || line"
++    assert gw[1]["class"] == "inline-unpinned"
++    assert [sp["spec"] for sp in gw[1]["specs"]] == [
++        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]
++    assert gw[1]["gate_defeat_shape"] is True
++    swarm = g.parse_pip_install_sites(
++        "RUN pip install --upgrade pip && \\\n"
++        "    pip install --no-cache-dir nats-py pydantic litellm langchain\n"
++    )
++    assert len(swarm) == 2, swarm
++    assert all(s["class"] == "inline-unpinned" for s in swarm)
++    ci = g.parse_pip_install_sites(
++        "RUN pip install --no-cache-dir setuptools==68.0.0 wheel\n"
++    )
++    assert len(ci) == 1 and ci[0]["class"] == "inline-mixed", ci
++    assert [sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]
++    eco = g.parse_pip_install_sites(
++        'RUN pip install --no-cache-dir fastapi==0.115.6 '
++        '"uvicorn[standard]==0.34.0"\n'
++    )
++    assert len(eco) == 1 and eco[0]["class"] == "inline-pinned", eco
++    print("  PASS | parser: gate-defeat || fallback, continuations, mixed pin, "
++          "quoted extras pin, comment skip")
++
++    # 8. Report-only semantics on a sandbox tree: exit contract lives in
++    #    main() (always EXIT_PASS); the scan itself must surface every
++    #    blindspot deterministically and treat an unreadable Dockerfile as a
++    #    recorded anomaly, never an exception.
++    with tempfile.TemporaryDirectory(prefix="pydep-df-") as td:
++        root = Path(td)
++        (root / "gateway").mkdir()
++        (root / "gateway" / "Dockerfile").write_text(
++            "RUN pip install -r requirements.txt || pip install fastapi uvicorn\n",
++            encoding="utf-8",
++        )
++        (root / "core" / "docker").mkdir(parents=True)
++        (root / "core" / "docker" / "swarm-worker.Dockerfile").write_text(
++            "RUN pip install --upgrade pip && \\\n"
++            "    pip install --no-cache-dir nats-py pydantic litellm langchain\n",
++            encoding="utf-8",
++        )
++        (root / "node_modules" / "x").mkdir(parents=True)
++        (root / "node_modules" / "x" / "Dockerfile").write_text(
++            "RUN pip install nodejunk\n", encoding="utf-8")
++        doc = g.scan_inline_pip_installs(root)
++        assert doc["dockerfiles_scanned"] == 2, doc["dockerfiles_scanned"]
++        assert doc["summary"]["pip_install_sites"] == 4, doc["summary"]
++        assert doc["summary"]["manifest_backed_sites"] == 1
++        assert doc["summary"]["inline_unpinned_sites"] == 3
++        assert doc["summary"]["gate_defeat_sites"] == 2  # both gateway occurrences on the || line
++        blind = {(s["file"], s["line"]) for s in doc["sites"]
++                 if s["class"] == "inline-unpinned"}
++        assert blind == {("gateway/Dockerfile", 1),
++                         ("core/docker/swarm-worker.Dockerfile", 1)}, blind
++        (root / "gateway" / "Dockerfile").chmod(0)
++        try:
++            doc2 = g.scan_inline_pip_installs(root)
++            assert doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"
++            assert doc2["dockerfiles_scanned"] == 2
++        finally:
++            (root / "gateway" / "Dockerfile").chmod(0o644)
++    print("  PASS | report-only scan: SKIP_DIRS pruned, blindspots surfaced, "
++          "unreadable -> recorded anomaly (never raises)")
++
++    # 9. Live wiring: roster + pre-push carry the guard (when run inside the repo).
+     roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
+     if roster.is_file():
+         assert "scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8"), (
+@@ -534,7 +875,7 @@ def _boom(p):
+             "baseline must record the pip-audit SSOT"
+         )
+         assert meta.get("doctrine", "").startswith("shrink-only")
+-    print("[self-test] Python dependency CVE guard self-tests PASSED (5 test cases)!")
++    print("[self-test] Python dependency CVE guard self-tests PASSED (9 test cases)!")
+     return True
+ 
+ 
+@@ -560,6 +901,11 @@ def main() -> int:
+     parser.add_argument(
+         "--self-test", action="store_true", help="hermetic self-test suite (offline)"
+     )
++    parser.add_argument(
++        "--dockerfile-scan", action="store_true",
++        help="report-only inline pip-install blindspot scan across tracked "
++             "Dockerfiles (non-blocking; #2064 R43 option D)",
++    )
+     args = parser.parse_args()
+ 
+     if args.self_test:
+@@ -578,6 +924,22 @@ def main() -> int:
+         )
+         return EXIT_PASS
+ 
++    if args.dockerfile_scan:
++        doc = scan_inline_pip_installs(REPO_ROOT)
++        note = (
++            "report-only by contract (#2064 option D): never blocking, never "
++            "edits a Dockerfile, never feeds the baseline — pin/manifest "
++            "remediation (requirements.fallback.txt, worker manifest, pin "
++            "completions) is the maintainer lane per the #2042 never-do"
++        )
++        doc["contract_note"] = note
++        if args.json:
++            print(json.dumps(doc, indent=2, ensure_ascii=False))
++        else:
++            render_dockerfile_report(doc)
++            _evidence(note)
++        return EXIT_PASS
++
+     code, drift, improvements, notes = evaluate(
+         REPO_ROOT, files=args.files if args.files is not None else None
+     )
+diff --git a/tests/test_py_dep_cve_guard.py b/tests/test_py_dep_cve_guard.py
+index 7ad13038..3b150c27 100644
+--- a/tests/test_py_dep_cve_guard.py
++++ b/tests/test_py_dep_cve_guard.py
+@@ -18,6 +18,12 @@
+     --files mode with an off-surface changed set is an honest skip;
+   - manifest discovery: deterministic sorted walk, vendored/venv trees
+     pruned;
++  - inline-install blindspot scan (#2064 R43 option D, report-only): spec
++    classification vocabulary (pinned / unpinned / direct / dynamic /
++    local), the gateway `||` gate-defeat shape, backslash continuations,
++    mixed-pin sites, quoted+extras pins, comment-line immunity, manifest
++    `-r` targets, non-blocking exit semantics, unreadable-Dockerfile
++    anomaly (recorded, never raised);
+   - live baseline pin: on the real repo the dated floor passes --check
+     (the landing state, network permitting — skipped with evidence when
+     pip-audit or PyPI is unreachable), and its meta provenance is intact;
+@@ -295,6 +301,105 @@ def test_files_mode_off_surface_is_honest_skip() -> None:
+             guard.audit_manifest = saved
+ 
+ 
++# --------------------------------------------------------------------------- #
++# Inline-install blindspot scan (#2064 R43 option D — report-only plane)        #
++# --------------------------------------------------------------------------- #
++
++def test_spec_classification_vocabulary() -> None:
++    assert guard._classify_spec("torch==2.4.1") == "pinned"
++    assert guard._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"
++    assert guard._classify_spec("wheel") == "unpinned"
++    assert guard._classify_spec("nats-py") == "unpinned"
++    assert guard._classify_spec("git+https://x/y.git") == "direct"
++    assert guard._classify_spec("https://x/y.whl") == "direct"
++    assert guard._classify_spec("${PIP_EXTRAS}") == "dynamic"
++    assert guard._classify_spec("./local") == "local"
++
++
++def test_parser_gateway_fallback_and_gate_defeat() -> None:
++    gw = guard.parse_pip_install_sites(
++        "FROM python:3.11-slim\n"
++        "# RUN pip install commented-out must not parse\n"
++        "RUN pip install --no-cache-dir -r requirements.txt || "
++        "pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml\n"
++    )
++    assert len(gw) == 2, gw
++    assert gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]
++    assert gw[0]["gate_defeat_shape"] is True, "first branch sits on a || line"
++    assert gw[1]["class"] == "inline-unpinned"
++    assert [sp["spec"] for sp in gw[1]["specs"]] == [
++        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]
++    assert gw[1]["gate_defeat_shape"] is True
++
++
++def test_parser_continuations_mixed_and_quoted_pins() -> None:
++    swarm = guard.parse_pip_install_sites(
++        "RUN pip install --upgrade pip && \\\n"
++        "    pip install --no-cache-dir nats-py pydantic litellm langchain\n"
++    )
++    assert len(swarm) == 2, swarm
++    assert all(s["class"] == "inline-unpinned" for s in swarm)
++    ci = guard.parse_pip_install_sites(
++        "RUN pip install --no-cache-dir setuptools==68.0.0 wheel\n"
++    )
++    assert len(ci) == 1 and ci[0]["class"] == "inline-mixed", ci
++    assert [sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]
++    eco = guard.parse_pip_install_sites(
++        'RUN pip install --no-cache-dir fastapi==0.115.6 '
++        '"uvicorn[standard]==0.34.0"\n'
++    )
++    assert len(eco) == 1 and eco[0]["class"] == "inline-pinned", eco
++
++
++def test_scan_report_only_semantics() -> None:
++    with tempfile.TemporaryDirectory(prefix="pydep-df-scan-") as td:
++        root = Path(td)
++        (root / "gateway").mkdir()
++        (root / "gateway" / "Dockerfile").write_text(
++            "RUN pip install -r requirements.txt || pip install fastapi uvicorn\n",
++            encoding="utf-8",
++        )
++        (root / "core" / "docker").mkdir(parents=True)
++        (root / "core" / "docker" / "swarm-worker.Dockerfile").write_text(
++            "RUN pip install --upgrade pip && \\\n"
++            "    pip install --no-cache-dir nats-py pydantic litellm langchain\n",
++            encoding="utf-8",
++        )
++        (root / "node_modules" / "x").mkdir(parents=True)
++        (root / "node_modules" / "x" / "Dockerfile").write_text(
++            "RUN pip install nodejunk\n", encoding="utf-8")
++        doc = guard.scan_inline_pip_installs(root)
++        assert doc["dockerfiles_scanned"] == 2, doc["dockerfiles_scanned"]
++        assert doc["summary"]["pip_install_sites"] == 4, doc["summary"]
++        assert doc["summary"]["manifest_backed_sites"] == 1
++        assert doc["summary"]["inline_unpinned_sites"] == 3
++        assert doc["summary"]["gate_defeat_sites"] == 2
++        blind = {(s["file"], s["line"]) for s in doc["sites"]
++                 if s["class"] == "inline-unpinned"}
++        assert blind == {("gateway/Dockerfile", 1),
++                         ("core/docker/swarm-worker.Dockerfile", 1)}, blind
++        (root / "gateway" / "Dockerfile").chmod(0)
++        try:
++            doc2 = guard.scan_inline_pip_installs(root)
++            assert doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"
++            assert doc2["dockerfiles_scanned"] == 2
++        finally:
++            (root / "gateway" / "Dockerfile").chmod(0o644)
++
++
++def test_dockerfile_scan_mode_is_non_blocking() -> None:
++    probe = subprocess.run(
++        [sys.executable, str(GUARD), "--dockerfile-scan", "--json"],
++        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120, check=False,
++    )
++    assert probe.returncode == guard.EXIT_PASS, (
++        f"report-only scan must never block\n{probe.stdout[:800]}\n{probe.stderr[:800]}"
++    )
++    doc = json.loads(probe.stdout)
++    assert doc["dockerfiles_scanned"] >= 1, "the live repo carries dockerfiles"
++    assert "contract_note" in doc and "report-only" in doc["contract_note"]
++
++
+ # --------------------------------------------------------------------------- #
+ # Live baseline pin (landing state; honest-skip when pip-audit is absent)      #
+ # --------------------------------------------------------------------------- #

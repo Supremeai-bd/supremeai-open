@@ -1,0 +1,96 @@
+diff --git a/.github/workflows/auto-bridge-dispatcher.yml b/.github/workflows/auto-bridge-dispatcher.yml
+index 169f6d32..d5386fda 100644
+--- a/.github/workflows/auto-bridge-dispatcher.yml
++++ b/.github/workflows/auto-bridge-dispatcher.yml
+@@ -27,8 +27,20 @@
+ #     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমানভাবে লগ হয়, merge
+ #     automation fail করে না (degradation policy, fail-loud not fail-merge)।
+ #
+-# এর ফলে কোনো মানুষের manual হস্তক্ষেপ ছাড়াই public merge স্বয়ংক্রিয়ভাবে private
+-# monorepo-র constitutional gate-এ পৌঁছে যাবে (Zero-Admin doctrine: human budget <= 0.01%)।
++# Branch-point doctrine (#113):
++#   The patch branch is created from the MERGE COMMIT (merge_commit_sha),
++#   never from the PR head SHA. The Merge Gate merges with --delete-branch,
++#   so by the time this workflow runs the head ref is gone and the head
++#   commit object is no longer fetched — `git branch <name> <head_sha>`
++#   failed with "not a valid branch point" on 100% of eligible merges
++#   (zero sync branches / zero auto work orders ever produced). The merge
++#   commit IS present in the pull_request:closed checkout (this workflow
++#   already diffs against it) and its two parents are reachable through it.
++#
++# Work Order field list: keep the section names/order aligned with the
++# canonical human template in .github/workflows/bridge-work-order.yml
++# (Task ID / Patch Branch / Target Repo / Summary / Scope / Evidence /
++# Rollback / Identity) — single field vocabulary, two producers.
+ # =============================================================================
+ 
+ name: Auto-Bridge Work Order (Public Merge -> Private Bridge Queue)
+@@ -97,15 +109,23 @@ jobs:
+           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+           
+-          echo "Creating patch branch ${BRANCH_NAME} pointing to ${PR_HEAD_SHA}..."
++          echo "Creating patch branch ${BRANCH_NAME} pointing to merge commit ${PR_SHA}..."
+           git config user.name "github-actions[bot]"
+           git config user.email "github-actions[bot]@users.noreply.github.com"
+           
+-          # Create and push bridge patch branch
+-          git branch "${BRANCH_NAME}" "${PR_HEAD_SHA}"
++          # Create and push bridge patch branch.
++          # #113: branch from the MERGE COMMIT — the head commit object is
++          # gone by now (Merge Gate merges with --delete-branch), so any
++          # git operation anchored on PR_HEAD_SHA fatal-exits here.
++          git branch "${BRANCH_NAME}" "${PR_SHA}"
+           git push origin "${BRANCH_NAME}"
+           
+-          # Prepare Work Order body
++          # Prepare Work Order body. Field order mirrors the canonical human
++          # template (.github/workflows/bridge-work-order.yml) — see header
++          # note. The heredoc lines below sit at the SAME indentation as the
++          # surrounding script: the YAML block scalar strips that common
++          # prefix, so the shell sees a top-level heredoc (content and EOF
++          # terminator flush-left) — no indentation-repair pass needed (#113).
+           cat <<EOF > /tmp/bridge_wo.md
+           ### Task ID
+           ${TASK_ID}
+@@ -120,7 +140,7 @@ jobs:
+           Auto-bridged from merged public PR #${PR_NUM} (${PR_TITLE}). Automated synchronization of shared ecosystem assets into private monorepo.
+ 
+           ### Scope Paths (files touched)
+-          $(git diff --name-only ${{ github.event.pull_request.base.sha }} ${PR_HEAD_SHA} | sed 's/^/- /')
++          $(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${PR_SHA}" | sed 's/^/- /')
+ 
+           ### Test Evidence (3-tier contract)
+           1. **Reflection Check:** Automatically ported from public PR #${PR_NUM} (merge commit ${PR_SHA}).
+@@ -134,9 +154,6 @@ jobs:
+           auto-bridge-workflow / github-actions[bot]
+           EOF
+ 
+-          # Clean leading whitespace in markdown template
+-          sed -i 's/^[ \t]*//' /tmp/bridge_wo.md
+-
+           echo "Submitting Bridge Work Order issue..."
+           gh issue create \
+             --repo "${{ github.repository }}" \
+@@ -162,8 +179,10 @@ jobs:
+             exit 0
+           fi
+ 
+-          # Build the patch-stream payload deterministically (JSON-safe quoting via python3)
+-          export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_HEAD_SHA}")"
++          # Build the patch-stream payload deterministically (JSON-safe quoting via python3).
++          # #113: file manifest diffs base..MERGE COMMIT — same reachable pair
++          # the scope check uses; the head-object-anchored diff fatal-exited here.
++          export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_SHA}")"
+           PAYLOAD=$(python3 - <<'PYEOF'
+           import json, os
+           files = [f for f in os.environ.get("FILES_RAW", "").splitlines() if f.strip()]
+@@ -186,7 +205,7 @@ jobs:
+           )
+ 
+           echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
+-          echo "  task_id: ${TASK_ID} | bridge branch: ${BRANCH_NAME} | head: ${PR_HEAD_SHA}"
++          echo "  task_id: ${TASK_ID} | bridge branch: ${BRANCH_NAME} | merge: ${PR_SHA} (head ${PR_HEAD_SHA} may be GC'd — metadata only)"
+           HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+             -H "Accept: application/vnd.github+json" \
+             -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \

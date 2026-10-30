@@ -1,0 +1,212 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index f5a33ed3..f5d6aa2a 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -6,7 +6,7 @@
+ > **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.
+ >
+ > **Canonical rule source:** [`AGENT_RULES.md`](./AGENT_RULES.md)
+-> **Governance issue:** [#3095](https://github.com/paykaribazaronline/supremeai/issues/3095)
++> **Governance issue:** [#3095](https://github.com/Supremeai-bd/supremeai/issues/3095)
+ 
+ ## 0. The Agent Loop — One Simple Entry Point
+ 
+@@ -109,7 +109,7 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
+      ```
+   2. Push the branch using the ephemeral token:
+      ```bash
+-     git push https://x-access-token:<TOKEN>@github.com/paykaribazaronline/supremeai.git <branch>
++     git push https://x-access-token:<TOKEN>@github.com/Supremeai-bd/supremeai.git <branch>
+      ```
+   3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
+ 
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 95b952b7..de690154 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -6,7 +6,7 @@
+ > `AGENT_RULES.md` = operational policy contracts.
+ > Task templates, system gates and domain documents provide execution detail; they must not silently contradict these rules.
+ >
+-> Governance source: [Issue #3095](https://github.com/paykaribazaronline/supremeai/issues/3095)
++> Governance source: [Issue #3095](https://github.com/Supremeai-bd/supremeai/issues/3095)
+ 
+ ---
+ 
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index 2aa58e85..9a2349ec 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -1,7 +1,7 @@
+ # 🗺️ SupremeAI Federation Ecosystem Map
+ 
+ > **The Definitive Repository Guide for Autonomous, External & Free AI Agents**  
+-> **Host Repository:** [`paykaribazaronline/supremeai-open`](https://github.com/paykaribazaronline/supremeai-open)  
++> **Host Repository:** [`Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)  
+ > **Architecture:** Public Gateway / Embassy to Private Federated Systems  
+ 
+ ---
+@@ -16,7 +16,7 @@ You do not need credentials or access to private repositories. You can inspect p
+ 
+ ## 2. Federation Repository Directory
+ 
+-The SupremeAI platform consists of specialized repositories under the **`paykaribazaronline`** organization:
++The SupremeAI platform consists of specialized repositories under the **`Supremeai-bd`** organization:
+ 
+ | Repository | Scope & Responsibility | What Can Be Changed From Here |
+ |---|---|---|
+@@ -39,7 +39,7 @@ Agent Forks/Clones supremeai-open
+   ├─ 2. Make your proposed changes within the declared scope.
+   └─ 3. Open a Bridge Work Order issue (or PR) specifying:
+         • Task ID: `bridge-YYYYMMDD-<slug>`
+-        • Target Repo: (e.g. `paykaribazaronline/supremeai-api`)
++        • Target Repo: (e.g. `Supremeai-bd/supremeai-api`)
+         • Summary & Scope Paths
+         • Test Evidence & Rollback Plan
+ ```
+diff --git a/infrastructure/mcp-control-plane/docs/TOOL-EXPOSURE.md b/infrastructure/mcp-control-plane/docs/TOOL-EXPOSURE.md
+index df769278..03cf1586 100644
+--- a/infrastructure/mcp-control-plane/docs/TOOL-EXPOSURE.md
++++ b/infrastructure/mcp-control-plane/docs/TOOL-EXPOSURE.md
+@@ -85,7 +85,7 @@ Guarantees for every profile:
+ 
+ ## 4. The public bridge onboarding surface (#123)
+ 
+-The front door for `paykaribazaronline/supremeai-open`: any external agent —
++The front door for `Supremeai-bd/supremeai-open`: any external agent —
+ zero credentials, zero private access — connects over `/mcp`, `/sse` or
+ `/gemini`, is auto-registered as a `public_viewer` guest (#1767/#2588), and gets
+ three additional **read-only, public-classified** tools (registered in
+diff --git a/infrastructure/mcp-control-plane/src/lib/http.ts b/infrastructure/mcp-control-plane/src/lib/http.ts
+index ca835a4b..0eb11338 100644
+--- a/infrastructure/mcp-control-plane/src/lib/http.ts
++++ b/infrastructure/mcp-control-plane/src/lib/http.ts
+@@ -42,13 +42,20 @@ export async function httpRequest<T = unknown>(
+ 
+   for (let attempt = 0; attempt <= retries; attempt++) {
+     try {
++      const requestBody =
++        body === undefined || body === null
++          ? undefined
++          : typeof body === "string"
++            ? body
++            : JSON.stringify(body);
++
+       const res = await fetch(url, {
+         method,
+         headers: {
+           "Content-Type": "application/json",
+           ...headers,
+         },
+-        body: body ? JSON.stringify(body) : undefined,
++        body: requestBody,
+         signal: controller.signal,
+       });
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 8727ea09..d7f4acf1 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -365,20 +365,21 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         );
+ 
+         if (!refRes.ok) {
+-          const createRefRes = await httpRequest(
++          const createRefRes = await httpRequest<{ message?: string }>(
+             `https://api.github.com/repos/${repo}/git/refs`,
+             {
+               method: "POST",
+               headers,
+-              body: JSON.stringify({
++              body: {
+                 ref: `refs/heads/${branchName}`,
+                 sha: mainSha,
+-              }),
++              },
+               timeoutMs: 15_000,
+             }
+           );
+           if (!createRefRes.ok) {
+-            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}` }] };
++            const msg = createRefRes.data?.message ? `: ${createRefRes.data.message}` : "";
++            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}${msg}` }] };
+           }
+         }
+ 
+@@ -390,22 +391,23 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           );
+           const fileSha = getFileRes.ok ? getFileRes.data?.sha : undefined;
+ 
+-          const putFileRes = await httpRequest(
++          const putFileRes = await httpRequest<{ message?: string }>(
+             `https://api.github.com/repos/${repo}/contents/${file.path}`,
+             {
+               method: "PUT",
+               headers,
+-              body: JSON.stringify({
++              body: {
+                 message: `feat(bridge): ${taskId} — update ${file.path}`,
+                 content: Buffer.from(file.content, "utf-8").toString("base64"),
+                 branch: branchName,
+                 ...(fileSha ? { sha: fileSha } : {}),
+-              }),
++              },
+               timeoutMs: 15_000,
+             }
+           );
+           if (!putFileRes.ok) {
+-            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}` }] };
++            const msg = putFileRes.data?.message ? `: ${putFileRes.data.message}` : "";
++            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}${msg}` }] };
+           }
+         }
+ 
+@@ -436,24 +438,25 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+         ].join("\n");
+ 
+-        const issueRes = await httpRequest<{ number?: number; html_url?: string }>(
++        const issueRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
+           `https://api.github.com/repos/${repo}/issues`,
+           {
+             method: "POST",
+             headers,
+-            body: JSON.stringify({
++            body: {
+               title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
+               labels: [BRIDGE_QUEUE_LABEL],
+               body: issueBody,
+-            }),
++            },
+             timeoutMs: 15_000,
+           }
+         );
+ 
+         if (!issueRes.ok) {
++          const msg = issueRes.data?.message ? `: ${issueRes.data.message}` : "";
+           return {
+             isError: true,
+-            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}` }],
++            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}${msg}` }],
+           };
+         }
+ 
+diff --git a/infrastructure/mcp-control-plane/test_bridge_onboarding.ts b/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
+index 78e4d15e..0455f58e 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
+@@ -76,10 +76,10 @@ await RequestContextStore.run(anonCtx, async () => {
+ 
+ // ─── ৩. Queue normalization (pure) ───────────────────────────────────────────
+ const rawIssues = [
+-  { number: 41, title: "docs: update client example", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/41", created_at: "2026-10-12T10:00:00Z", labels: [{ name: "bridge:queued" }, "good first issue"], comments: 2 },
+-  { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
+-  { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/paykaribazaronline/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
+-  { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/paykaribazaronline/supremeai-open/issues/44", labels: [] },
++  { number: 41, title: "docs: update client example", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/41", created_at: "2026-10-12T10:00:00Z", labels: [{ name: "bridge:queued" }, "good first issue"], comments: 2 },
++  { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
++  { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
++  { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/44", labels: [] },
+   null,
+ ];
+ 

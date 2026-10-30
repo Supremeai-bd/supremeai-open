@@ -1,0 +1,783 @@
+diff --git a/docs/S06_CLAIM_QUOTA_SPEC.md b/docs/S06_CLAIM_QUOTA_SPEC.md
+new file mode 100644
+index 00000000..7c16bfb6
+--- /dev/null
++++ b/docs/S06_CLAIM_QUOTA_SPEC.md
+@@ -0,0 +1,225 @@
++# S06 — Single Active Claim Quota Spec (work.claim concurrency guard, #479)
++
++Status: r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
++Scope: `infrastructure/mcp-control-plane/src/tools/bridge.tools.ts`
++(work.claim handler) + `infrastructure/mcp-control-plane/test_bridge_onboarding.ts`.
++Reference implementation + offline contract tests ship with this spec
++(pure-new-file lane): `scripts/tower/claim_quota_reference.py`,
++`tests/test_s06_claim_quota.py`. The TS edits themselves follow the
++exact hunks in §5.
++
++## 1. Problem
++
++`work.claim` (S0.1, #456) only checks whether the TARGET issue has an
++existing lock. It never asks whether the CALLING agent already holds a
++live claim on another unresolved issue. A single external agent —
++task #479 names `zai-web` as the observed example — can claim every
++open board issue simultaneously and starve all other agents. Task #479
++mandates a strict Single Active Claim Quota: Max 1 In-Flight Claim per
++Agent, enforced fail-closed at claim time.
++
++## 2. Behavior contract
++
++- Precondition: the S0.1 target-issue decision matrix runs first,
++  unchanged. The quota gate runs AFTER that matrix and BEFORE any
++  write (label, comment, audit).
++- Gated paths: the grant decisions `GRANT_NEW` and `GRANT_RENEW`
++  (spec-literal) plus `GRANT_TAKEOVER` (defense-in-depth: taking a
++  freshly expired lease while holding another live claim would
++  reintroduce hoarding; trimming this path requires an ops note).
++  `NOOP_SELF` (idempotent re-claim, mutates nothing) bypasses the scan.
++- Scan: open issues in `Supremeai-bd/supremeai-open` carrying
++  `status:claimed`, latest S0.1 atomic-claim marker parsed, marker
++  issue must equal the issue number (mismatch = garbage, ignored),
++  marker agent must equal the calling agentId, lease live per
++  `ttl` (default 30m, strict-greater expiry — exactly-TTL is live).
++- Rejection (fail-closed), exact MCP envelope:
++
++```json
++{
++  "isError": true,
++  "code": "AGENT_CONCURRENCY_LIMIT_REACHED",
++  "message": "Agent '<agentId>' already holds active claim on Issue #<existing_issue>. Submit patch or release before claiming new work."
++}
++```
++
++- Determinism: when multiple live claims exist, the rejection cites
++  the lowest issue number (deterministic anchor; active set reported
++  ascending).
++- Renewal: re-claiming an issue already in the agent's own live set is
++  a renewal of that slot and never counts as a hoard.
++- Limit constant: `MAX_ACTIVE_CLAIMS = 1` (task #479 normative). This
++  supersedes the S0.1 reference placeholder `MAX_ACTIVE_CLAIMS = 3`,
++  which was declared but never enforced. The quota predicate takes
++  `max_active` as an ops-tunable argument (default 1).
++- Unattributable claims (label-plane `status:claimed` with no S0.1
++  marker and no `label_claimed_at`) cannot be proven to belong to the
++  calling agent and never block; the guard blocks provable hoards
++  only. Label-plane claims with a `label_claimed_at` timestamp are
++  honored with the default TTL (Rule 9 parity).
++
++## 3. Release semantics (slot freed)
++
++A claim stops counting against the agent's quota when any of:
++1. **Lease expired** — Rule 9 arithmetic, strict-greater: now > ts + ttl.
++2. **Holding issue closed** — scan covers open issues only.
++3. **Work Order submitted and verified** — tower-visible intake ack
++   (board field `wo_verified=True` on the holding issue). A queued WO
++   (`wo_verified=False`) does NOT free the slot; the tower cannot see
++   the internal-repo PR lifecycle, so intake ack is the strongest
++   verifiable signal (documented policy trade-off: an agent may hold
++   one fresh claim plus queued WOs; the stale-claim releaser (#470,
++   Rule 9) still bounds neglect).
++
++Clock skew (now earlier than a parsed claim time) raises/aborts
++fail-closed — never silently grants.
++
++## 4. Why not the alternatives
++
++- **Submit-time enforcement in bridge_submit_patch** — rejected: task
++  #479 pins enforcement to claim time; submit-time-only still lets one
++  agent race-claim the whole board first.
++- **Server-side lock table / database** — rejected: the tower is
++  stateless by design and S0.1 made the issue comment thread the claim
++  ledger; a second SSOT would drift (doctrine: comment IS the ledger).
++- **Label-only detection** — rejected: misses plain S0.1 markers and
++  cannot attribute agents; marker parsing is the established SSOT
++  (S0.1 + Rule 9 both parse the same format).
++- **Keep S0.1's placeholder limit of 3** — rejected: task #479 is
++  normative at 1; the constant stays ops-tunable for policy changes.
++
++## 5. Exact TS hunks (bridge.tools.ts, work.claim handler)
++
++Hunk A — constant (module scope, near the S0.1 constants):
++
++```ts
++const MAX_ACTIVE_CLAIMS = 1; // task #479: single active claim per agent
++const QUOTA_ERROR_CODE = "AGENT_CONCURRENCY_LIMIT_REACHED";
++const QUOTA_MESSAGE = (agentId: string, issue: number) =>
++  `Agent '${agentId}' already holds active claim on Issue #${issue}. ` +
++  `Submit patch or release before claiming new work.`;
++```
++
++Hunk B — scan helper (alongside the existing S0.1 helpers):
++
++```ts
++async function scanActiveClaimsForAgent(
++  octokit: Octokit, agentId: string, now: Date
++): Promise<number[]> {
++  const { data: claimed } = await octokit.issues.listForRepo({
++    owner: OWNER, repo: REPO, state: "open",
++    labels: "status:claimed", per_page: 100,
++  });
++  const live: number[] = [];
++  for (const issue of claimed) {
++    const { data: comments } = await octokit.issues.listComments({
++      owner: OWNER, repo: REPO, issue_number: issue.number, per_page: 100,
++    });
++    let best: { agent: string; ts: number; ttlMin: number } | null = null;
++    for (const c of comments) {
++      const m = String(c.body || "").match(
++        /<!--\s*atomic-claim:issue=(\d+),agent=([^,]+),ts=([^,]+),ttl=(\d+)m\s*-->/);
++      if (!m || Number(m[1]) !== issue.number) continue;
++      const tsMs = Date.parse(m[3]);
++      if (Number.isNaN(tsMs)) continue; // fail-closed garbage handling
++      if (!best || tsMs > best.ts) {
++        best = { agent: m[2].trim(), ts: tsMs, ttlMin: Number(m[4]) };
++      }
++    }
++    if (!best || best.agent !== agentId) continue;
++    const expiresAt = best.ts + best.ttlMin * 60_000;
++    if (now.getTime() >= expiresAt) continue;          // lease expired
++    if (issue.state !== "open") continue;              // closed frees
++    live.push(issue.number);
++  }
++  return live.sort((a, b) => a - b);                   // ascending
++}
++```
++
++Hunk C — gate inside the work.claim handler, after the S0.1 decision
++matrix, before the first write:
++
++```ts
++if (["GRANT_NEW", "GRANT_RENEW", "GRANT_TAKEOVER"].includes(decision)) {
++  const active = await scanActiveClaimsForAgent(octokit, agentId, now);
++  const others = active.filter((n) => n !== issueNumber); // renewal never hoards
++  if (others.length >= MAX_ACTIVE_CLAIMS) {
++    const blocking = others[0]; // lowest issue number (deterministic)
++    return {
++      isError: true,
++      content: [{
++        type: "text" as const,
++        text: JSON.stringify({
++          isError: true,
++          code: QUOTA_ERROR_CODE,
++          message: QUOTA_MESSAGE(agentId, blocking),
++        }),
++      }],
++    };
++  }
++}
++```
++
++Note (wo_verified release path): the tower releases a slot when the
++claimant's Bridge Work Order passed intake verification. Wire this by
++extending the scan loop: skip an issue when a bridge WO referencing it
++carries the verified intake state (the reference implementation models
++this as `wo_verified=True`; the TS wiring may reuse the intake
++ack comment the bridge lane already posts on WO issues).
++
++## 6. Exact test hunks (test_bridge_onboarding.ts)
++
++Append to the existing S0.1 describe block:
++
++```ts
++it("quota: single agent claiming issue A -> GRANT_NEW (Success)", async () => {
++  const board = [mockIssue(900, { claimedBy: null })];
++  const d = await workClaimWithQuota(board, 900, "agent-a", NOW_T);
++  expect(d.decision).toBe("GRANT_NEW");
++});
++
++it("quota: same agent claiming issue B -> AGENT_CONCURRENCY_LIMIT_REACHED", async () => {
++  const board = [mockIssue(900, { claimedBy: "agent-a", claimedAt: NOW_T }),
++                 mockIssue(901, { claimedBy: null })];
++  const d = await workClaimWithQuota(board, 901, "agent-a", NOW_T);
++  expect(d.isError).toBe(true);
++  expect(d.code).toBe("AGENT_CONCURRENCY_LIMIT_REACHED");
++  expect(d.message).toContain("Issue #900");
++  expect(d.message).toContain("Submit patch or release before claiming new work.");
++});
++
++it("quota: different agent claiming issue B -> GRANT_NEW (Success)", async () => {
++  const board = [mockIssue(900, { claimedBy: "agent-a", claimedAt: NOW_T }),
++                 mockIssue(901, { claimedBy: null })];
++  const d = await workClaimWithQuota(board, 901, "agent-b", NOW_T);
++  expect(d.decision).toBe("GRANT_NEW");
++});
++```
++
++Additional regression cases (parity with the 35 offline tests in
++`tests/test_s06_claim_quota.py`): expired-lease re-claim, closed-issue
++release, queued-vs-verified WO release, renewal of own issue, NOOP_SELF
++bypass, deterministic lowest-issue blocking, max_active knob,
++malformed-marker garbage handling, clock-skew fail-closed.
++
++## 7. Verification tiers (task #479 contract)
++
++1. **Tier 1**: npm run test:bridge-onboarding green including the three
++   quota tests above; offline parity via
++   python3 -m unittest test_s06_claim_quota (35 tests).
++2. **Tier 2**: npm run typecheck zero diagnostics (Hunk B/C are typed;
++   no new dependencies).
++3. **Tier 3**: zero-credential workflows unaffected — the gate only
++   adds a rejection path; S0.1 matrix, marker ledger format, label
++   plane, and audit entries are unchanged. agents already holding
++   multiple live claims are not retroactively evicted; the quota binds
++   at the next claim attempt, and Rule 9 (#470) drains stale leases.
++
++## 8. Reference files (pure-new-file lane)
++
++- `scripts/tower/claim_quota_reference.py` — executable reference:
++  scan_active_claims / enforce_quota / rejection_payload, --self-test
++  included.
++- `tests/test_s06_claim_quota.py` — 35 offline contract tests
++  (unittest + pytest dual-mode), extraction SSOT: constants imported
++  from the reference module, never copied.
+diff --git a/scripts/tower/claim_quota_reference.py b/scripts/tower/claim_quota_reference.py
+new file mode 100644
+index 00000000..1a636eac
+--- /dev/null
++++ b/scripts/tower/claim_quota_reference.py
+@@ -0,0 +1,284 @@
++#!/usr/bin/env python3
++"""Single Active Claim Quota reference — S06 (task #479).
++
++Enforces Max 1 In-Flight Claim per Agent in the MCP Control Tower.
++Today work.claim only checks whether the TARGET issue has an existing
++lock; it never asks whether the CALLING agent already holds a live claim
++on another open issue, so one agent can hoard the whole board. This
++module is the executable, network-free reference for the guard specified
++in docs/S06_CLAIM_QUOTA_SPEC.md. The production implementation
++(TypeScript, infrastructure/mcp-control-plane bridge.tools.ts) must
++satisfy the same decision matrix and the exact rejection envelope.
++
++Claim identity reuses the S0.1 atomic-claim ledger (single line, the
++comment IS the ledger):
++
++    <!-- atomic-claim:issue=456,agent=AGENT_ID,ts=2026-10-17T02:40:52Z,ttl=30m -->
++
++Parsers unescape only, never strip HTML comment tags (doctrine x).
++Pure functions only; the board snapshot is plain data so the logic is
++fully testable offline. Constants are the single source of truth and are
++imported by the test suite, never copied.
++
++Self-test: python3 claim_quota_reference.py --self-test
++"""
++from __future__ import annotations
++
++import re
++import sys
++from dataclasses import dataclass
++from datetime import datetime, timedelta, timezone
++from typing import List, Optional, Tuple
++
++# --- Single sources of truth (imported by the test suite; never copy) ------
++TTL_MINUTES_DEFAULT = 30     # AUTONOMOUS_TRANSIT_PIPELINE.md stale-claim expiry
++MAX_ACTIVE_CLAIMS = 1        # task #479 normative limit (supersedes the
++                             # S0.1 placeholder value of 3)
++AGENT_CONCURRENCY_LIMIT_REACHED = "AGENT_CONCURRENCY_LIMIT_REACHED"
++
++MESSAGE_TEMPLATE = (
++    "Agent '{agent}' already holds active claim on Issue #{issue}. "
++    "Submit patch or release before claiming new work."
++)
++
++# Granting paths the quota gates. The task text names GRANT_NEW /
++# GRANT_RENEW; GRANT_TAKEOVER is included as defense-in-depth because it
++# is also a grant (taking a freshly expired lease while holding another
++# live claim would reintroduce hoarding). Trim only with an ops note.
++QUOTA_APPLIES_TO = frozenset({"GRANT_NEW", "GRANT_RENEW", "GRANT_TAKEOVER"})
++
++_MARKERTED_RE = re.compile(
++    r"<!--\s*atomic-claim:issue=(?P<issue>\d+),agent=(?P<agent>[^,]+),"
++    r"ts=(?P<ts>[^,]+),ttl=(?P<ttl>\S+?)\s*-->")
++_ISO = "%Y-%m-%dT%H:%M:%S.%fZ"
++_ISO_S = "%Y-%m-%dT%H:%M:%SZ"
++
++
++def parse_ts(value: str) -> datetime:
++    """Parse the ISO-8601 Z timestamps used across the board. Fail-closed."""
++    for fmt in (_ISO, _ISO_S):
++        try:
++            return datetime.strptime(value.strip(), fmt).replace(tzinfo=timezone.utc)
++        except (ValueError, TypeError):
++            continue
++    raise ValueError(f"unparseable timestamp: {value!r}")
++
++
++def _aware(now: datetime) -> datetime:
++    if now.tzinfo is None:
++        raise ValueError("now must be timezone-aware")
++    return now
++
++
++def validate_board(board: dict) -> List[dict]:
++    """Validate a board snapshot; returns the issues list. Fail-closed."""
++    if not isinstance(board, dict) or not isinstance(board.get("issues"), list):
++        raise ValueError("board must be {\"issues\": [...]}")
++    for issue in board["issues"]:
++        number = issue.get("number")
++        if not isinstance(number, int) or number <= 0:
++            raise ValueError(f"bad issue number: {number!r}")
++    return board["issues"]
++
++
++def claim_is_released(issue: dict, claimed_at: datetime, now: datetime,
++                      ttl_minutes: int) -> bool:
++    """Release semantics (spec section 4). A slot is freed when:
++    (a) the lease expired (Rule 9, strict-greater: exactly-TTL is live);
++    (b) the holding issue is closed;
++    (c) the claimant's Bridge Work Order was submitted and verified
++        (tower-visible intake ack; board field wo_verified=True).
++    """
++    if str(issue.get("state", "open")) != "open":
++        return True
++    if issue.get("wo_verified") is True:
++        return True
++    if now < claimed_at:
++        raise ValueError("clock skew: now earlier than claim time")
++    return (now - claimed_at) > timedelta(minutes=ttl_minutes)
++
++
++def scan_active_claims(board: dict, agent_id: str, now: datetime) -> List[int]:
++    """Issue numbers of the agent's live claims on open issues.
++
++    Detection: status:claimed label + latest S0.1 atomic-claim marker.
++    Marker-less label-plane claims are honored only when the snapshot
++    carries label_claimed_at (Rule 9 parity); unattributable claims
++    (no marker, no timestamp) cannot be proven to belong to the agent
++    and therefore never block (the guard blocks provable hoards only).
++    Malformed markers are ignored (fail-closed garbage handling).
++    Deterministic output: ascending issue numbers.
++    """
++    _aware(now)
++    live: List[int] = []
++    for issue in validate_board(board):
++        if "status:claimed" not in (issue.get("labels") or []):
++            continue
++        best_ts: Optional[datetime] = None
++        best_agent: Optional[str] = None
++        for comment in issue.get("comments") or []:
++            body = comment.get("body") or ""
++            m = _MARKERTED_RE.search(body)
++            if not m:
++                continue
++            marker_issue = int(m.group("issue"))
++            if marker_issue != issue["number"]:
++                continue  # ledger mismatch = garbage, ignore
++            ts = parse_ts(m.group("ts"))
++            ttl_raw = m.group("ttl")
++            minutes = TTL_MINUTES_DEFAULT
++            tm = re.fullmatch(r"(\d+)m", ttl_raw)
++            if tm:
++                minutes = int(tm.group(1))
++            if best_ts is None or ts > best_ts:
++                best_ts, best_agent, best_ttl = ts, m.group("agent").strip(), minutes
++        if best_ts is None:
++            lt = issue.get("label_claimed_at")
++            if not lt:
++                continue  # unattributable -> never blocks
++            best_ts = parse_ts(lt)
++            best_agent = issue.get("label_claimed_agent") or "unknown"
++            best_ttl = TTL_MINUTES_DEFAULT
++        if best_agent != agent_id:
++            continue
++        if claim_is_released(issue, best_ts, now, best_ttl):
++            continue
++        live.append(issue["number"])
++    return sorted(live)
++
++
++@dataclass(frozen=True)
++class QuotaDecision:
++    granted: bool
++    code: str
++    active_claims: Tuple[int, ...]
++    blocking_issue: Optional[int]
++    message: str
++
++
++def rejection_payload(agent_id: str, blocking_issue: int) -> dict:
++    """The exact MCP rejection envelope mandated by task #479."""
++    return {
++        "isError": True,
++        "code": AGENT_CONCURRENCY_LIMIT_REACHED,
++        "message": MESSAGE_TEMPLATE.format(agent=agent_id, issue=blocking_issue),
++    }
++
++
++def enforce_quota(board: dict, target_issue: int, agent_id: str, now: datetime,
++                  target_decision: Optional[str] = None,
++                  max_active: int = MAX_ACTIVE_CLAIMS) -> QuotaDecision:
++    """Quota gate for work.claim (spec section 3).
++
++    Runs AFTER the S0.1 target-issue decision matrix and BEFORE any
++    write. target_decision is the S0.1 decision for the target issue;
++    paths outside QUOTA_APPLIES_TO (e.g. NOOP_SELF idempotent re-claim,
++    which mutates nothing) bypass the scan. When target_decision is None
++    the scan always runs (conservative default). Multiple live claims
++    block on the lowest issue number (deterministic anchor). Re-claiming
++    an issue already in the agent's own live set is a renewal of that
++    slot, never a hoard.
++    """
++    _aware(now)
++    if not isinstance(max_active, int) or max_active < 1:
++        raise ValueError("max_active must be a positive integer")
++    if target_decision is not None and target_decision not in QUOTA_APPLIES_TO:
++        return QuotaDecision(True, target_decision, (), None, "")
++    active = scan_active_claims(board, agent_id, now)
++    if target_issue in active:
++        active = [n for n in active if n != target_issue]
++    if len(active) < max_active:
++        code = target_decision or "GRANT_NEW"
++        return QuotaDecision(True, code, tuple(active), None, "")
++    blocking = min(active)
++    return QuotaDecision(
++        False, AGENT_CONCURRENCY_LIMIT_REACHED, tuple(active), blocking,
++        MESSAGE_TEMPLATE.format(agent=agent_id, issue=blocking))
++
++
++def _self_test() -> int:
++    t0 = parse_ts("2026-10-17T06:00:00Z")
++    mid = parse_ts("2026-10-17T06:10:00Z")
++    late = parse_ts("2026-10-17T06:31:00Z")
++
++    def snap(rows):
++        return {"issues": rows}
++
++    def row(num, agent, ts="2026-10-17T06:00:00Z", state="open",
++            labels=("status:claimed",), wo_verified=False):
++        return {
++            "number": num, "state": state, "labels": list(labels),
++            "wo_verified": wo_verified, "label_claimed_at": None,
++            "comments": [{"ts": ts, "body":
++                          f"<!-- atomic-claim:issue={num},agent={agent},ts={ts},ttl=30m -->"}],
++        }
++
++    # spec test 1: clean board, A claims 900 -> GRANT_NEW (Success)
++    board = snap([row(900, "agent-a", labels=[]), row(901, "agent-b", labels=[])])
++    d = enforce_quota(board, 900, "agent-a", mid)
++    assert d.granted and d.code == "GRANT_NEW", d
++    # A now holds 900 live; claiming 902 must fail closed
++    board = snap([row(900, "agent-a"), row(901, "agent-b"), row(902, "agent-c", labels=[])])
++    d = enforce_quota(board, 902, "agent-a", mid)
++    assert not d.granted and d.code == AGENT_CONCURRENCY_LIMIT_REACHED, d
++    assert d.blocking_issue == 900 and d.active_claims == (900,)
++    payload = rejection_payload("agent-a", 900)
++    assert payload == {"isError": True, "code": AGENT_CONCURRENCY_LIMIT_REACHED,
++                       "message": MESSAGE_TEMPLATE.format(agent="agent-a", issue=900)}
++    assert "Issue #900" in payload["message"] and "Submit patch or release" in payload["message"]
++    # different agent still granted (spec test 3)
++    d = enforce_quota(board, 902, "agent-c", mid)
++    assert d.granted
++    # lease expiry frees the slot
++    d = enforce_quota(board, 902, "agent-a", late)
++    assert d.granted and d.active_claims == ()
++    # closed issue frees the slot
++    board2 = snap([row(900, "agent-a", state="closed"), row(902, "agent-c", labels=[])])
++    assert enforce_quota(board2, 902, "agent-a", mid).granted
++    # submitted-and-verified WO frees the slot
++    board3 = snap([row(900, "agent-a", wo_verified=True), row(902, "agent-c", labels=[])])
++    assert enforce_quota(board3, 902, "agent-a", mid).granted
++    # queued WO does NOT free the slot
++    board4 = snap([row(900, "agent-a", wo_verified=False), row(902, "agent-c", labels=[])])
++    assert not enforce_quota(board4, 902, "agent-a", mid).granted
++    # renewal of own held issue never blocked, even at the cap
++    board5 = snap([row(900, "agent-a"), row(902, "agent-c", labels=[])])
++    d = enforce_quota(board5, 900, "agent-a", mid)
++    assert d.granted and d.code == "GRANT_NEW"
++    # NOOP_SELF bypasses the scan
++    d = enforce_quota(board5, 902, "agent-a", mid, target_decision="NOOP_SELF")
++    assert d.granted and d.code == "NOOP_SELF"
++    # deterministic blocking anchor: lowest issue number
++    board6 = snap([row(910, "agent-a"), row(905, "agent-a"), row(920, "agent-b", labels=[])])
++    d = enforce_quota(board6, 920, "agent-a", mid)
++    assert d.blocking_issue == 905 and d.active_claims == (905, 910)
++    # max_active knob (ops-tunable; default 1 per task #479)
++    assert not enforce_quota(board6, 920, "agent-a", mid, max_active=2).granted
++    assert enforce_quota(board6, 920, "agent-a", mid, max_active=3).granted
++    # fail-closed garbage
++    for bad in ({}, {"issues": "x"}, {"issues": [{"number": "z"}]}):
++        try:
++            scan_active_claims(bad, "agent-a", mid)
++            raise AssertionError("expected ValueError")
++        except ValueError:
++            pass
++    try:
++        enforce_quota(snap([row(900, "agent-a")]), 902, "agent-a",
++                      parse_ts("2026-10-17T05:59:00Z"))
++        raise AssertionError("expected clock-skew ValueError")
++    except ValueError:
++        pass
++    try:
++        enforce_quota(snap([]), 902, "agent-a", mid, max_active=0)
++        raise AssertionError("expected max_active ValueError")
++    except ValueError:
++        pass
++    print("self-test OK: claim_quota_reference")
++    return 0
++
++
++if __name__ == "__main__":
++    if "--self-test" in sys.argv:
++        sys.exit(_self_test())
++    print(__doc__)
++    sys.exit(2)
+diff --git a/tests/test_s06_claim_quota.py b/tests/test_s06_claim_quota.py
+new file mode 100644
+index 00000000..32b9ca51
+--- /dev/null
++++ b/tests/test_s06_claim_quota.py
+@@ -0,0 +1,256 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the single active claim quota (#479, S06).
++
++Asserts the work.claim concurrency guard the TS handler + onboarding
++test must satisfy: the spec trio (GRANT_NEW / reject / different-agent
++grant), the exact AGENT_CONCURRENCY_LIMIT_REACHED envelope, release
++semantics (expired lease, closed issue, submitted-and-verified WO),
++renewal bypass, deterministic blocking anchor, fail-closed paths.
++
++Pure stdlib. Run: python3 -m unittest test_s06_claim_quota -v
++"""
++import sys
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "tower"))
++
++import claim_quota_reference as cref  # noqa: E402
++
++
++def ts(text):
++    return cref.parse_ts(text)
++
++
++NOW = ts("2026-10-17T06:10:00Z")       # 10 minutes after the seeded claims
++LATE = ts("2026-10-17T06:31:00Z")      # past the 30-minute lease
++
++
++def marker(num, agent, at="2026-10-17T06:00:00Z", ttl="30m"):
++    return {"ts": at, "body":
++            f"<!-- atomic-claim:issue={num},agent={agent},ts={at},ttl={ttl} -->"}
++
++
++def issue(num, agent=None, state="open", claimed_label=True, wo_verified=False,
++          comments=None, label_claimed_at=None, label_claimed_agent=None):
++    labels = ["status:claimed"] if claimed_label else []
++    row = {"number": num, "state": state, "labels": labels,
++           "wo_verified": wo_verified, "label_claimed_at": label_claimed_at,
++           "label_claimed_agent": label_claimed_agent, "comments": comments or []}
++    if agent:
++        row["comments"] = [marker(num, agent)]
++    return row
++
++
++def board(*rows):
++    return {"issues": list(rows)}
++
++
++class SpecTrio(unittest.TestCase):
++    """The three tests mandated by task #479 section 3."""
++
++    def test_01_spec_test1_single_agent_first_claim_grants(self):
++        d = cref.enforce_quota(board(issue(900, claimed_label=False)),
++                               900, "agent-a", NOW)
++        self.assertTrue(d.granted)
++        self.assertEqual(d.code, "GRANT_NEW")
++        self.assertEqual(d.active_claims, ())
++
++    def test_02_spec_test2_same_agent_second_claim_rejected(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-a", NOW)
++        self.assertFalse(d.granted)
++        self.assertEqual(d.code, cref.AGENT_CONCURRENCY_LIMIT_REACHED)
++        self.assertEqual(d.blocking_issue, 900)
++        self.assertEqual(d.active_claims, (900,))
++
++    def test_03_spec_test3_different_agent_claim_grants(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-b", NOW)
++        self.assertTrue(d.granted)
++        self.assertEqual(d.code, "GRANT_NEW")
++
++
++class RejectionEnvelope(unittest.TestCase):
++    def test_04_exact_envelope_shape(self):
++        p = cref.rejection_payload("zai-web:web-26454b1b", 900)
++        self.assertEqual(p, {"isError": True,
++                             "code": "AGENT_CONCURRENCY_LIMIT_REACHED",
++                             "message": cref.MESSAGE_TEMPLATE.format(
++                                 agent="zai-web:web-26454b1b", issue=900)})
++
++    def test_05_message_template_wording(self):
++        self.assertEqual(
++            cref.MESSAGE_TEMPLATE.format(agent="a", issue=7),
++            "Agent 'a' already holds active claim on Issue #7. "
++            "Submit patch or release before claiming new work.")
++
++    def test_06_decision_carries_same_message(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-a", NOW)
++        self.assertEqual(d.message, cref.MESSAGE_TEMPLATE.format(agent="agent-a", issue=900))
++
++
++class ReleaseSemantics(unittest.TestCase):
++    def test_07_expired_lease_frees_slot(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-a", LATE)
++        self.assertTrue(d.granted)
++        self.assertEqual(d.active_claims, ())
++
++    def test_08_exactly_ttl_is_still_live(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-a", ts("2026-10-17T06:30:00Z"))
++        self.assertFalse(d.granted)
++
++    def test_09_closed_issue_frees_slot(self):
++        b = board(issue(900, "agent-a", state="closed"), issue(901, claimed_label=False))
++        self.assertTrue(cref.enforce_quota(b, 901, "agent-a", NOW).granted)
++
++    def test_10_wo_verified_frees_slot(self):
++        b = board(issue(900, "agent-a", wo_verified=True), issue(901, claimed_label=False))
++        self.assertTrue(cref.enforce_quota(b, 901, "agent-a", NOW).granted)
++
++    def test_11_queued_wo_does_not_free_slot(self):
++        b = board(issue(900, "agent-a", wo_verified=False), issue(901, claimed_label=False))
++        self.assertFalse(cref.enforce_quota(b, 901, "agent-a", NOW).granted)
++
++
++class RenewalAndGating(unittest.TestCase):
++    def test_12_reclaiming_own_live_issue_not_blocked(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 900, "agent-a", NOW)
++        self.assertTrue(d.granted)
++        self.assertEqual(d.code, "GRANT_NEW")
++
++    def test_13_noop_self_bypasses_scan(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        d = cref.enforce_quota(b, 901, "agent-a", NOW, target_decision="NOOP_SELF")
++        self.assertTrue(d.granted)
++        self.assertEqual(d.code, "NOOP_SELF")
++
++    def test_14_grant_renew_is_gated_per_spec(self):
++        b = board(issue(900, "agent-a"), issue(901, "agent-b"))
++        d = cref.enforce_quota(b, 901, "agent-a", NOW, target_decision="GRANT_RENEW")
++        self.assertFalse(d.granted)
++
++    def test_15_takeover_gated_as_defense_in_depth(self):
++        b = board(issue(900, "agent-a"), issue(901, "agent-b"))
++        d = cref.enforce_quota(b, 901, "agent-a", NOW, target_decision="GRANT_TAKEOVER")
++        self.assertFalse(d.granted)
++
++    def test_16_quota_applies_to_constant(self):
++        self.assertEqual(cref.QUOTA_APPLIES_TO,
++                         frozenset({"GRANT_NEW", "GRANT_RENEW", "GRANT_TAKEOVER"}))
++
++    def test_17_none_decision_runs_scan(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        self.assertFalse(cref.enforce_quota(b, 901, "agent-a", NOW).granted)
++
++
++class DeterminismAndKnobs(unittest.TestCase):
++    def test_18_blocks_on_lowest_issue_number(self):
++        b = board(issue(910, "agent-a"), issue(905, "agent-a"),
++                  issue(920, "agent-b", claimed_label=False))
++        d = cref.enforce_quota(b, 920, "agent-a", NOW)
++        self.assertEqual(d.blocking_issue, 905)
++        self.assertEqual(d.active_claims, (905, 910))
++
++    def test_19_active_claims_sorted_ascending(self):
++        b = board(issue(910, "agent-a"), issue(905, "agent-a"), issue(902, "agent-a"))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [902, 905, 910])
++
++    def test_20_max_active_default_is_one(self):
++        self.assertEqual(cref.MAX_ACTIVE_CLAIMS, 1)
++
++    def test_21_max_active_knob_two_allows_second_blocks_third(self):
++        held_two = board(issue(900, "agent-a"), issue(905, "agent-a"),
++                         issue(902, claimed_label=False))
++        self.assertFalse(
++            cref.enforce_quota(held_two, 902, "agent-a", NOW, max_active=2).granted)
++        held_one = board(issue(900, "agent-a"), issue(902, claimed_label=False))
++        self.assertTrue(
++            cref.enforce_quota(held_one, 902, "agent-a", NOW, max_active=2).granted)
++
++    def test_22_max_active_knob_three_allows_second(self):
++        b = board(issue(900, "agent-a"), issue(902, claimed_label=False))
++        d = cref.enforce_quota(b, 902, "agent-a", NOW, max_active=3)
++        self.assertTrue(d.granted)
++
++
++class FailClosed(unittest.TestCase):
++    def test_23_board_must_be_shaped(self):
++        for bad in (None, {}, {"issues": "x"}, {"issues": None}, []):
++            with self.assertRaises(ValueError):
++                cref.scan_active_claims(bad, "agent-a", NOW)
++
++    def test_24_bad_issue_numbers_rejected(self):
++        for num in ("z", 0, -5, None):
++            with self.assertRaises(ValueError):
++                cref.scan_active_claims({"issues": [{"number": num}]}, "a", NOW)
++
++    def test_25_clock_skew_rejected(self):
++        b = board(issue(900, "agent-a"), issue(901, claimed_label=False))
++        with self.assertRaises(ValueError):
++            cref.enforce_quota(b, 901, "agent-a", ts("2026-10-17T05:59:00Z"))
++
++    def test_26_naive_clock_rejected(self):
++        import datetime as dt
++        with self.assertRaises(ValueError):
++            cref.scan_active_claims({"issues": []}, "a",
++                                    dt.datetime(2026, 10, 17, 6, 10))
++
++    def test_27_max_active_must_be_positive(self):
++        b = board(issue(900, "agent-a"))
++        for bad in (0, -1):
++            with self.assertRaises(ValueError):
++                cref.enforce_quota(b, 901, "agent-a", NOW, max_active=bad)
++
++    def test_28_unparseable_marker_timestamp_raises(self):
++        b = board(issue(900, comments=[marker(900, "agent-a", at="not-a-time")]))
++        with self.assertRaises(ValueError):
++            cref.scan_active_claims(b, "agent-a", NOW)
++
++    def test_29_malformed_markers_ignored(self):
++        b = board(issue(900, comments=[
++            {"ts": "2026-10-17T06:00:00Z", "body": "<!-- atomic-claim -->"},
++            {"ts": "2026-10-17T06:00:00Z", "body": "plain text, no marker"},
++        ]))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [])
++
++    def test_30_marker_issue_mismatch_is_garbage(self):
++        b = board(issue(900, comments=[marker(999, "agent-a")]))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [])
++
++    def test_31_unattributable_label_claim_never_blocks(self):
++        b = board(issue(900, comments=[]), issue(901, claimed_label=False))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [])
++
++    def test_32_label_claimed_at_fallback_honored(self):
++        b = board(issue(900, comments=[], label_claimed_at="2026-10-17T06:00:00Z",
++                        label_claimed_agent="agent-a"),
++                  issue(901, claimed_label=False))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [900])
++
++
++class Timestamps(unittest.TestCase):
++    def test_33_seconds_and_micro_formats(self):
++        self.assertEqual(ts("2026-10-17T06:00:00Z").strftime("%Y-%m-%dT%H:%M:%SZ"),
++                         "2026-10-17T06:00:00Z")
++        self.assertEqual(ts("2026-10-17T06:00:00.123456Z").strftime("%Sf")[:2], "00")
++
++    def test_34_ttl_suffix_parsed(self):
++        b = board(issue(900, comments=[marker(900, "agent-a", ttl="15m")]),
++                  issue(901, claimed_label=False))
++        # 06:00 + 15m = expires 06:15; at 06:10 still live, at 06:31 released
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [900])
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", LATE), [])
++
++    def test_35_ttl_default_when_suffix_malformed(self):
++        b = board(issue(900, comments=[marker(900, "agent-a", ttl="soon")]),
++                  issue(901, claimed_label=False))
++        self.assertEqual(cref.scan_active_claims(b, "agent-a", NOW), [900])
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

@@ -1,0 +1,179 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index a0776bb1..f46c112f 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -489,6 +489,9 @@ def _short(h: str) -> str:
+ @app.get("/")
+ @app.get("/health")
+ @app.get("/healthz")
++@app.get("/api/health")
++@app.get("/api/v1/health")
++@app.get("/v1/health")
+ async def health_check():
+     """Unauthenticated liveness probe. Always 200 OK when service is running."""
+     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
+diff --git a/gateway/service/epistemic_router.py b/gateway/service/epistemic_router.py
+index 94149c56..9bbb5011 100644
+--- a/gateway/service/epistemic_router.py
++++ b/gateway/service/epistemic_router.py
+@@ -151,3 +151,72 @@ async def intercept_horizon(req: HorizonInterceptRequest) -> dict[str, Any]:
+             raise HTTPException(status_code=400, detail="invalid as_of date (expected YYYY-MM-DD)")
+     ev = intercept_drift(req.model_id, as_of=as_of)
+     return {"model_id": ev.model_id, "kind": ev.kind, "detail": ev.detail, "successor": ev.successor}
++
++
++@router.get("/epistemic/health")
++async def epistemic_health() -> dict[str, Any]:
++    """Swiss-Watch Duo Pairing (Way 9): Joint health check for SPINE Stream Sanitizer + ChronoFact Epistemic Backbone."""
++    results: dict[str, Any] = {}
++
++    # 1. ChronoFact Pillar 1 (Model Horizon)
++    try:
++        ModelHorizonRegistry, _, _ = _import_horizon()
++        reg = ModelHorizonRegistry()
++        models = reg.all()
++        results["chronofact_model_horizon"] = {
++            "status": "healthy" if len(models) > 0 else "degraded",
++            "active_models_calibrated": len(models),
++        }
++    except Exception as exc:
++        results["chronofact_model_horizon"] = {"status": "degraded", "error": str(exc)}
++
++    # 2. ChronoFact Pillar 2 (Tool Pruner)
++    try:
++        ToolSchema, route_tools = _import_pruner()
++        test_tools = [ToolSchema(name="ping", description="Ping health check")]
++        prune_res = route_tools("ping server", test_tools, threshold=0.1)
++        results["chronofact_tool_pruner"] = {
++            "status": "healthy" if len(prune_res.retained) > 0 else "degraded",
++            "target_reduction": 0.70,
++        }
++    except Exception as exc:
++        results["chronofact_tool_pruner"] = {"status": "degraded", "error": str(exc)}
++
++    # 3. ChronoFact Pillar 3 (Memory Gate)
++    try:
++        MemoryEntry, MemoryGate = _import_memory_gate()
++        gate = MemoryGate(threshold=0.72)
++        results["chronofact_memory_gate"] = {
++            "status": "healthy",
++            "threshold": gate.threshold,
++        }
++    except Exception as exc:
++        results["chronofact_memory_gate"] = {"status": "degraded", "error": str(exc)}
++
++    # 4. SPINE (Stream Sanitizer)
++    try:
++        try:
++            from gateway.service.stream_sanitizer import sanitize_stream
++        except ImportError:
++            from service.stream_sanitizer import sanitize_stream  # type: ignore[no-redef]
++        res = sanitize_stream("Certainly! Here is the answer.")
++        results["spine_stream_sanitizer"] = {
++            "status": "healthy" if not res.text.lower().startswith("certainly") else "degraded",
++            "stripped_cushion": res.stripped_cushion,
++        }
++    except Exception as exc:
++        results["spine_stream_sanitizer"] = {"status": "degraded", "error": str(exc)}
++
++    all_healthy = all(v.get("status") == "healthy" for v in results.values())
++
++    return {
++        "status": "healthy" if all_healthy else "degraded",
++        "duo_pairing": results,
++        "invariants": {
++            "memory_cosine_threshold": 0.72,
++            "tool_pruning_reduction_target": 0.70,
++            "sampling_lock_logic": 0.2,
++            "sampling_lock_chat": 0.4,
++        },
++    }
++
+diff --git a/gateway/tests/test_epistemic_router.py b/gateway/tests/test_epistemic_router.py
+new file mode 100644
+index 00000000..369a23d6
+--- /dev/null
++++ b/gateway/tests/test_epistemic_router.py
+@@ -0,0 +1,82 @@
++"""gateway/tests/test_epistemic_router.py - Unit tests for Epistemic Router & Duo Pairing.
++
++Tests cover:
++1. Swiss-Watch Duo Pairing Health (/api/v1/epistemic/health)
++2. Tool Schema Pruning (/api/v1/tools/prune)
++3. Memory Gate (/api/v1/memory/gate)
++4. Model Horizon Listing & Intercept (/api/v1/model-horizon, /api/v1/model-horizon/intercept)
++"""
++from __future__ import annotations
++
++import pytest
++from starlette.testclient import TestClient
++from gateway.service.app import app
++
++
++@pytest.fixture
++def client():
++    return TestClient(app)
++
++
++def test_duo_pairing_joint_health(client):
++    res = client.get("/api/v1/epistemic/health")
++    assert res.status_code == 200
++    data = res.json()
++    assert data["status"] == "healthy"
++    assert "duo_pairing" in data
++    duo = data["duo_pairing"]
++    assert duo["chronofact_model_horizon"]["status"] == "healthy"
++    assert duo["chronofact_tool_pruner"]["status"] == "healthy"
++    assert duo["chronofact_memory_gate"]["status"] == "healthy"
++    assert duo["spine_stream_sanitizer"]["status"] == "healthy"
++    assert data["invariants"]["memory_cosine_threshold"] == 0.72
++
++
++def test_tool_prune_endpoint(client):
++    tools = [
++        {"name": "fetch_css_styles", "description": "Fetches CSS stylesheet rules and colors", "tokens": 150},
++        {"name": "query_database_sql", "description": "Executes SQL statements on Postgres", "tokens": 150},
++    ]
++    res = client.post(
++        "/api/v1/tools/prune",
++        json={"query": "change the button background color with CSS styles", "tools": tools, "threshold": 0.05},
++    )
++    assert res.status_code == 200
++    data = res.json()
++    assert len(data["retained"]) == 1
++    assert data["retained"][0]["name"] == "fetch_css_styles"
++    assert data["reduction_pct"] > 0
++
++
++def test_memory_gate_endpoint(client):
++    entries = [
++        {"id": "m1", "domain": "frontend", "content": "The UI theme is dark cosmic indigo."},
++        {"id": "m2", "domain": "database", "content": "Database uses PostgreSQL with pgvector."},
++    ]
++    res = client.post(
++        "/api/v1/memory/gate",
++        json={"query": "theme dark color palette", "entries": entries, "threshold": 0.05},
++    )
++    assert res.status_code == 200
++    data = res.json()
++    assert len(data["retained"]) >= 1
++    assert data["retained"][0]["id"] == "m1"
++
++
++def test_model_horizon_list(client):
++    res = client.get("/api/v1/model-horizon")
++    assert res.status_code == 200
++    data = res.json()
++    assert "models" in data
++    assert len(data["models"]) > 0
++
++
++def test_model_horizon_intercept_retired(client):
++    res = client.post(
++        "/api/v1/model-horizon/intercept",
++        json={"model_id": "anthropic/claude-3-5-sonnet"},
++    )
++    assert res.status_code == 200
++    data = res.json()
++    assert data["kind"] == "retired"
++    assert data["successor"] is not None

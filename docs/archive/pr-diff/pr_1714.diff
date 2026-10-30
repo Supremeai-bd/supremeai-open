@@ -1,0 +1,178 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-VI.md b/docs/SCOUT_RADAR_2026-10-28-VI.md
+new file mode 100644
+index 00000000..f64c2220
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-VI.md
+@@ -0,0 +1,172 @@
++# 🧭 SCOUT RADAR VI — 2026-10-28 (Constitution Portability, Python Freshness, Process Primitives)
++
++> **Role:** Ecosystem Scout · **Job:** 478318 (05:10 dispatch) · **Cycle:** single-dispatch · **Doctrine:** high-signal
++> only (per #1658). Every external signal below was **live-probed 2026-10-28** against primary sources before
++> filing; each issue carries dated evidence, a smallest-safe-slice proposal mapped to named files already on
++> `main`, acceptance criteria, and a never-do register.
++> **Non-duplication:** R1–R12 (#1611) models/MCP-spec/eval studies; R13–R16 (#1652) x402/OTel-GenAI/A2A/Firecracker;
++> R17–R20 (#1682) Agent-Skills/chrome-devtools-mcp/sigstore/Web-Bot-Auth; R21–R22 (#1688) provider lanes/MCP Registry.
++> **Task ID:** `bridge-20261028-scout-radar-vi` — renamed from `…radar-v` after WO **#1706** (another scout,
++> bridge:queued) claimed `SCOUT_RADAR_2026-10-28-V` for the A2A v1.0.0 exit-quarantine lane mid-cycle; the same
++> collision pattern radar IV hit with radar III (#1682). Zero content overlap: V = A2A interop; VI = constitution
++> portability, Python CI freshness, Spec Kit process primitives.
++
++---
++
++## 1. Radar Summary Table
++
++| # | Signal | Live proof (2026-10-28) | One-line | Verdict → Issue |
++|---|--------|--------------------------|----------|-----------------|
++| R23 | `agents.md` is now a de-facto open standard (60k+ projects, 20+ native tool adopters) — and SupremeAI's Single Door constitution already *is* an AGENTS.md file | https://agents.md live fetch: "used by over 60k open-source projects", adopter list incl. Codex, Cursor, GitHub Copilot coding agent, Gemini CLI, Jules, Devin, Windsurf, Zed, VS Code, Aider, goose, Warp, Junie, UiPath; CPython Language Summit 2026 lightning talk "an AGENTS.md file for CPython" (python-insider recap, 2026-09-30) | Document that external agent runtimes natively load the 4 Universal Invariants on clone; evaluate per-satellite nested AGENTS.md (referencing, never forking, the root SSOT) | `adapt_cleanroom` → **#1702** |
++| R24 | CI Python matrix honesty + supply-chain freshness: comment claims 3.10–3.13, matrix runs [3.11, 3.12]; both lines just received expedited CA-distrust security releases; 3.15.0 final shipped; 3.10 EOL'd | `pipeline.yml:533` vs `:548` (reproduced on 4b5a5a9); Python Insider 2026-10-26: 3.15.2/3.14.10/3.13.18/3.12.16/3.11.18 expedited releases (eMudhra/emSign CA compromise, CVE-2026-115557 ssl distrust, CVE-2026-114583 tarfile); python-insider: 3.15.0 final 2026-10-09, 3.10 EOL 2026-10-01, 3.13 security-only; PEP 779 free-threading supported (py-free-threading.github.io) | 1-line comment fix + explicit interpreter-version in CI logs + dated matrix decision memo (admin lane, `.github/` untouched by agents) | `adapt_cleanroom` → **#1709** |
++| R25 | GitHub Spec Kit (spec-kit) ships idea-assessment & bug-fix process primitives that map onto the bridge-WO lifecycle | github/spec-kit + github.github.com/spec-kit live: SDD core, bundled bug-fixing ("assessed cause, scoped fix, recorded verification") and idea-assessment ("evidence-backed go, clarify, or stop") extensions, `/speckit-constitution`, composable catalog/preset primitives, Python 3.11+ + uv | Doc-only pilot: instantiate the two templates for 2–3 open WOs, compare fields against the PR blueprint's Reflection Evidence, adopt/reject per field | `quarantine_eval` → **#1710** |
++| — | OpenAI `gpt-realtime` / WebRTC voice lane | Third-party aggregator pages only; **no primary-source probe this cycle** | Realtime speech-to-speech for studio/gateway stays unfiled until a dated primary probe exists | `MONITOR` (not filed — zero-hype) |
++| — | Langfuse v3 (MIT, self-host, OTel-compatible) as eval-signal intake for #1363 | GitHub roadmap discussion (2026-01-06) + secondary 2026 reviews; no live self-host probe | Overlaps R14 OTel-GenAI verdict; product-adoption decision needs a live probe first | `MONITOR` (not filed — zero-hype) |
++
++---
++
++## 2. Full-Spectrum Evaluations
++
++### R23 · Constitution portability: the Single Door rides a 60k-project standard — `adapt_cleanroom` → Issue #1702
++
++**Evidence trail (probed 2026-10-28):** the official agents.md site (live fetch) states the format is "used by
++over 60k open-source projects" and enumerates native consumers: OpenAI Codex, Cursor, GitHub Copilot coding
++agent, Google Gemini CLI, Google Jules, Devin (Cognition), Windsurf, Zed, VS Code, Aider, goose, opencode,
++RooCode, Ona, Warp, Amp, Kilo Code, Augment Code, Semgrep, Junie (JetBrains), Phoenix, UiPath Autopilot &
++Coded Agents, Factory. The site's thesis — "README for agents": a predictable, dedicated instruction surface —
++is precisely what `AGENTS.md` (The Single Door SSOT) already is for this federation, byte-for-byte compatible
++(plain Markdown, repo root). Corroborating: the Python Language Summit 2026 recap (python-insider,
++2026-09-30) lists a lightning talk titled "an AGENTS.md file for CPython" — even CPython is converging here.
++
++- **Pros:** zero-cost constitution propagation to every external contributor's toolchain; the 4 Universal
++  Invariants load without any bridge-side change; strengthens the "loop is the permission" doctrine because
++  foreign runtimes read the same rules the loop injects; documentation is a 1-file, 2-sentence change.
++- **Cons:** adopter toolchains interpret AGENTS.md loosely (advisory, not enforced); risk of over-promising
++  enforcement if docs imply tools *enforce* invariants — they only *carry* them.
++- **Risks:** nested per-satellite AGENTS.md files could drift from the root constitution — the issue pins
++  them as *references*, never forks; tool support for nested discovery varies and must be verified per
++  adopter before any implementation.
++- **এটা করা যাবে না:** no `CLAUDE.md` / `.cursorrules` / duplicate instruction files that can drift from
++  AGENTS.md (Single Door = one SSOT; adapters import, never fork); no change to the Invariants or hub
++  architecture.
++- **Adoption path → Issue [#1702](https://github.com/Supremeai-bd/supremeai-open/issues/1702).**
++
++### R24 · Python matrix honesty + supply-chain freshness — `adapt_cleanroom` → Issue #1709
++
++**Internal drift (reproduced on main `4b5a5a9`, 2026-10-28):** `pipeline.yml:533` comment promises
++"Python matrix (3.10–3.13) — the ONLY matrix"; `pipeline.yml:548` runs exactly `["3.11", "3.12"]`.
++The workflow's own narrative ("all four versions are proven here first") no longer matches its matrix.
++
++**External evidence (primary sources, probed 2026-10-28):** Python Insider (official blog, 2026-10-26)
++announced expedited security releases **3.15.2 / 3.14.10 / 3.13.18 / 3.12.16 / 3.11.18** addressing the
++compromised eMudhra/emSign intermediate CA keys — the `ssl` module now distrusts them as a last resort
++(CVE-2026-115557), `tarfile.tar_filter` rejects destination-replacing links (CVE-2026-114583),
++`http.cookiejar` rejects negative-version cookies. **Both lines this repo's matrix runs (3.11, 3.12)
++received fixes** (3.11.18, 3.12.16 — source-only). Also dated: Python 3.15.0 final 2026-10-09
++(3.16.0a1 2026-10-13); Python 3.10 EOL 2026-10-01; 3.13 entered security-only mode; PEP 779 accepted —
++free-threaded CPython no longer experimental as of 3.14 (py-free-threading.github.io).
++
++- **Pros:** the fix is a 1-line comment plus one log line — cheapest honesty win on the CI surface;
++  explicit `sys.version` in job logs makes the CA-distrust posture *verifiable* instead of assumed
++  (`actions/setup-python` resolves cached toolchains independently of runner images); a dated matrix
++  decision memo ends the recurring comment-vs-reality drift class.
++- **Cons:** matrix legs cost CI minutes; 3.13 is security-only (diminishing returns) and 3.15 is new.
++- **Risks:** silent `requires-python` floor drift if matrix legs change without checking the floors that
++  exist on main (`examples/sdk-client-py >=3.11`, `core/tools/discovery_fabric >=3.10`, `browser >=3.10`);
++  runner toolchain cache staleness is invisible without the log line.
++- **এটা করা যাবে না:** no silent floor bumps; no matrix leg without the full pytest suite green on that
++  interpreter locally first (Invariant 4); no patch-version pins in workflow YAML.
++- **Adoption path → Issue [#1709](https://github.com/Supremeai-bd/supremeai-open/issues/1709)** (admin lane:
++  `.github/` is protected; agents deliver the exact patch in the issue, maintainer lands).
++
++### R25 · Spec Kit process primitives as a WO-lifecycle overlay — `quarantine_eval` → Issue #1710
++
++**Evidence trail (probed 2026-10-28):** `github/spec-kit` (live README) and `github.github.com/spec-kit`
++(live docs): Spec-Driven Development ships in core; **bug fixing** and **idea assessment** are bundled
++opt-in extensions ("diagnose and repair broken behavior… recorded verification"; "evidence-backed go,
++clarify, or stop decision"); composable primitives (extension, preset, catalog, workflow overlay, bundle);
++requires Python 3.11+ and uv; `/speckit-constitution` creates a project constitution once, then `/speckit-*`
++commands drive specify → plan → tasks → implement → converge.
++
++**Mapping:** idea-assessment ↔ feature RFCs #1520/#1523/#1685 (strong: a repeatable go/clarify/stop
++artifact operationalizes the zero-hype doctrine); bug-fixing ↔ `audit:finding` WOs #1676–#1693 (medium:
++its verify step maps to the 3-tier contract, but much overlaps the PR blueprint's Reflection Evidence);
++`/speckit-constitution` ↔ AGENTS.md (**conflict by default — the constitution is landed SSOT**); the
++specify CLI + uv toolchain ↔ Single Door (**out of scope** — `continuous_agent_loop.py` is the only engine,
++stdlib-only culture in `scripts/`, S10 anti-vending invariant).
++
++- **Pros:** kill-criteria and convergence state are fields the current blueprint genuinely lacks; a
++  doc-only pilot measures value before any process commit.
++- **Cons:** ceremony risk — duplicating Reflection Evidence in a second format violates the repo's own
++  minimal-elegance doctrine; adoption without pruning would create two sources of process truth.
++- **Risks:** tool-led process capture (Spec Kit's catalog/preset machinery could fragment the board's
++  label taxonomy); license and maintenance posture must be re-verified at pilot time.
++- **এটা করা যাবে না:** no specify CLI/uv adoption in loop or CI; no AGENTS.md regeneration; no new labels
++  or hub re-architecture.
++- **Adoption path → Issue [#1710](https://github.com/Supremeai-bd/supremeai-open/issues/1710)** (doc-only
++  pilot on 2–3 WOs + one comparison page, adopt/reject per field).
++
++---
++
++## 3. Cross-Signal Synthesis
++
++1. **The constitution became portable infrastructure.** R23 (agents.md standard) and R25
++   (`/speckit-constitution`) are the same phenomenon from two directions: the industry converged on
++   "constitution-as-a-file" — which SupremeAI has operated since the Single Door landed. The federation's
++   asymmetric advantage is that its constitution is *enforced* (loop-injected invariants, guard chain),
++   while the ecosystems' are advisory. Document the compatibility (R23); borrow only process fields that
++   strengthen the blueprint (R25); never let a foreign tool regenerate the SSOT.
++2. **Byte/truth drift keeps landing through config-comment gaps.** R24's matrix-comment drift is the third
++   instance of the class this week (CRLF blob → #1590; BOM → #1623; now a workflow comment promising
++   versions the matrix doesn't run). Common root: prose-adjacent-to-config has no verifying tier. The
++   pattern-level fix (a "claims must match config" lint) is out of scout scope but is now evidenced three
++   times.
++3. **Zero-hype gate held.** Two signals (gpt-realtime, Langfuse v3) were probed and **deliberately not
++   filed** — no primary-source evidence this cycle. Radar II–IV each filed 2–4 lanes; VI files 3 with the
++   same evidence bar.
++
++## 4. Reflection Evidence
++
++**Why these three lanes:** each has (a) a dated primary-source probe from this cycle, (b) a smallest-safe
++slice mappable to named files already on `main`, (c) an immediate implementation path — the three-part
++high-signal bar from #1658. The two MONITOR rows demonstrate the gate rejecting signals that fail (a).
++
++**Filing artifact ledger (full transparency, in filing order):**
++
++| Artifact | What | Disposition |
++|---|---|---|
++| #1699 | R23 filing (attempt 1 — script lacked `User-Agent`; the tower WAF answered 403 but GitHub had already accepted) | **duplicate — close, keep #1702** |
++| #1700 | Connectivity probe "agent R23 filing retry" (diagnosing the 403) | **probe artifact — close** |
++| #1701 | R23 filing (attempt 2 — retry after adding UA; misread attempt 1 as fully failed) | **duplicate — close, keep #1702** |
++| #1702 | R23 filing (attempt 3 — canonical) | **KEEP** |
++| #1704 | Connectivity probe 2 (diagnosing why R24's large body 403'd while small bodies passed) | **probe artifact — close** |
++| #1709 / #1710 | R24 / R25 filings (compact WAF-safe bodies after retry with backoff) | **KEEP** |
++
++Root cause of the duplicates: the filing script was not idempotent across my retry edits — each retry
++re-filed R23 instead of checking for an existing open issue with the same title (the create tool offers no
++dedup search). Lesson applied in-cycle: R24/R25 were filed exactly once each, from one script, with backoff.
++
++**WAF behavior observed (worth a tower-side note):** `github_create_issue` rejects some requests with
++HTTP 403 + Cloudflare HTML unless a non-default `User-Agent` is sent (Python urllib's default is blocked);
++large bodies and rapid consecutive creations 403 even with UA (compact bodies + 45–75 s spacing pass).
++Suggest the tower adapter set a UA header and document a per-minute creation ceiling.
++
++**alternatives_rejected:**
++
++1. *File the AGENTS.md lane as a per-satellite nested-file implementation directly* — tool-by-tool nested
++   discovery support is unverified; a docs note + evaluation issue is the honest slice.
++2. *Propose adding 3.13/3.15 legs to the matrix outright* — `.github/` is protected and the workflow's own
++   comment demands local proof first; a decision-memo issue respects both.
++3. *Adopt Spec Kit's specify CLI in the scout/loop toolchain* — violates the Single Door (one engine) and
++   S10 anti-vending; process artifacts only.
++4. *File gpt-realtime/Langfuse anyway with secondary sources* — violates the zero-hype doctrine (#1658);
++   held as MONITOR with the gap named.
++5. *Keep the radar-V task ID (filed first by me in spirit, blocked in letter)* — #1706 is already
++   bridge:queued with the V name; renaming to VI per the #1682/#1688 collision precedent avoids a
++   duplicate-file landing and preserves both sweeps.
++
++## 5. Rollback
++
++Docs-only, single file (`docs/SCOUT_RADAR_2026-10-28-VI.md`). `git revert` removes the radar; the filed
++issues (#1702, #1709, #1710) and the duplicates/probes ledger above stand on their own and can be closed
++independently.

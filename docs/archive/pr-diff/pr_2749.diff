@@ -1,0 +1,134 @@
+diff --git a/gateway/main.py b/gateway/main.py
+index cf1b2774..a003fdf7 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -505,7 +505,26 @@ async def health_ready() -> Response:
+             },
+         )
+ 
+-    # ---- Unified Submodule Endpoints ----
++    # ---- Prometheus metrics exporter (#1934) ----
++    try:
++        from .metrics_exporter import record_request, render_metrics
++    except (ImportError, ModuleNotFoundError):
++        from metrics_exporter import record_request, render_metrics
++
++    @app.middleware("http")
++    async def _metrics_recorder(request: Request, call_next):
++        start = time.time()
++        response = await call_next(request)
++        try:
++            record_request(request.method, request.url.path, response.status_code, time.time() - start)
++        except Exception:  # noqa: BLE001
++            pass
++        return response
++
++    @app.get("/metrics")
++    async def _prometheus_metrics() -> Response:
++        body, ctype = render_metrics()
++        return Response(content=body, media_type=ctype)
+     @app.get("/command/health")
+     async def command_health() -> dict[str, Any]:
+         import os
+diff --git a/gateway/metrics_exporter.py b/gateway/metrics_exporter.py
+new file mode 100644
+index 00000000..406a8a6f
+--- /dev/null
++++ b/gateway/metrics_exporter.py
+@@ -0,0 +1,96 @@
++"""gateway/metrics_exporter.py — Prometheus metrics exporter (#1934).
++
++Stdlib + optional prometheus_client. Exposes gateway HTTP status and request
++latency for Prometheus scraping at /metrics. Falls back to a minimal
++text format when prometheus_client is unavailable (never raises).
++"""
++
++from __future__ import annotations
++
++import time
++from collections import defaultdict
++from typing import Any
++
++try:
++    from prometheus_client import (  # type: ignore[import-not-found]
++        CONTENT_TYPE_LATEST,
++        Counter,
++        Histogram,
++        generate_latest,
++    )
++
++    _PROM_AVAILABLE = True
++    _REQUESTS = Counter(
++        "gateway_http_requests_total",
++        "Total HTTP requests handled by the gateway",
++        ["method", "path", "status"],
++    )
++    _LATENCY = Histogram(
++        "gateway_http_request_duration_seconds",
++        "HTTP request latency in seconds",
++        ["method", "path"],
++    )
++except Exception:  # pragma: no cover - prometheus_client absent
++    _PROM_AVAILABLE = False
++    CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
++    _REQUESTS = None  # type: ignore[assignment]
++    _LATENCY = None  # type: ignore[assignment]
++    generate_latest = None  # type: ignore[assignment]
++
++
++# In-process fallback counters (used when prometheus_client is absent).
++_FALLBACK_COUNTS: dict[tuple[str, str, str], int] = defaultdict(int)
++_FALLBACK_LATENCY_SUM: dict[tuple[str, str], float] = defaultdict(float)
++_FALLBACK_LATENCY_COUNT: dict[tuple[str, str], int] = defaultdict(int)
++
++
++def record_request(method: str, path: str, status: int, duration_s: float) -> None:
++    """Record a single request. Safe to call from middleware."""
++    try:
++        if _PROM_AVAILABLE:
++            _REQUESTS.labels(method=method, path=path, status=str(status)).inc()
++            _LATENCY.labels(method=method, path=path).observe(duration_s)
++        else:
++            _FALLBACK_COUNTS[(method, path, str(status))] += 1
++            _FALLBACK_LATENCY_SUM[(method, path)] += duration_s
++            _FALLBACK_LATENCY_COUNT[(method, path)] += 1
++    except Exception:  # pragma: no cover - never break request path
++        pass
++
++
++def render_metrics() -> tuple[str, str]:
++    """Return (body, content_type) for the /metrics endpoint."""
++    if _PROM_AVAILABLE:
++        try:
++            return generate_latest().decode("utf-8", "replace"), CONTENT_TYPE_LATEST
++        except Exception:
++            pass
++    # Minimal text exposition fallback
++    lines: list[str] = []
++    lines.append("# HELP gateway_http_requests_total Total HTTP requests")
++    lines.append("# TYPE gateway_http_requests_total counter")
++    for (method, path, status), count in _FALLBACK_COUNTS.items():
++        lines.append(
++            'gateway_http_requests_total{method="%s",path="%s",status="%s"} %d'
++            % (method, path, status, count)
++        )
++    lines.append("# HELP gateway_http_request_duration_seconds_sum Latency sum (s)")
++    lines.append("# TYPE gateway_http_request_duration_seconds summary")
++    for (method, path), s in _FALLBACK_LATENCY_SUM.items():
++        c = _FALLBACK_LATENCY_COUNT[(method, path)]
++        lines.append(
++            'gateway_http_request_duration_seconds_sum{method="%s",path="%s"} %.6f'
++            % (method, path, s)
++        )
++        lines.append(
++            'gateway_http_request_duration_seconds_count{method="%s",path="%s"} %d'
++            % (method, path, c)
++        )
++    return "\n".join(lines) + "\n", CONTENT_TYPE_LATEST
++
++
++def reset_for_tests() -> None:
++    """Clear in-process fallback state (tests only)."""
++    _FALLBACK_COUNTS.clear()
++    _FALLBACK_LATENCY_SUM.clear()
++    _FALLBACK_LATENCY_COUNT.clear()

@@ -1,0 +1,45 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 67276c94..1f968bf3 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -204,21 +204,27 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "bridge.work_queue",
+-    "List OPEN Bridge Work Orders awaiting an external agent (issues labelled 'bridge:queued' in the public open-source repo). Read-only, public data only.",
++    "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
+     {
+       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return (default 20)"),
++      label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+     },
+-    async ({ limit }) => {
++    async ({ limit, label }) => {
+       const repo = bridgeOpenRepo();
++      const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
++      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
++      if (appliedLabel) {
++        queryParams.set("labels", appliedLabel);
++      }
+       try {
+         let res = await httpRequest<RawIssue[]>(
+-          `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
++          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+           { headers: await githubHeaders(true), timeoutMs: 15_000 }
+         );
+         // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+         if (!res.ok && (res.status === 401 || res.status === 403)) {
+           res = await httpRequest<RawIssue[]>(
+-            `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
++            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+             { headers: await githubHeaders(false), timeoutMs: 15_000 }
+           );
+         }
+@@ -235,7 +241,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+             type: "text",
+             text: JSON.stringify({
+               repo,
+-              label: BRIDGE_QUEUE_LABEL,
++              label: appliedLabel,
+               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
+               count: workOrders.length,
+               workOrders,

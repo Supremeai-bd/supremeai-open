@@ -1,0 +1,40 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 9a3c82aa..229e1316 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -80,6 +80,7 @@ flowchart TD
+ - **CI Fixer:** রুট-কজ ঠিক হচ্ছে নাকি স্কিপ হ্যাক? লিনাক্স/উইন্ডোজ/ম্যাকে পোর্টেবল এবং < 5s ফাস্ট-পাথ সুরক্ষিত তো?
+ - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
+ - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
++- **Satellite-First (বাস্তব সুবিধা):** এই কাজ কি কোনো সক্রিয় স্যাটেলাইটে (studio, gateway, browser, vscode, core) পৌঁছাবে? শুধু ইন্টার্নাল টুলিং বা মনোরিপো-অনলি ফাইলে একা একা কাজ করা কঠোরভাবে নিষিদ্ধ।
+ 
+ ---
+ 
+@@ -96,6 +97,7 @@ flowchart TD
+ - **Simple + effective > clever + complex.**
+ - **Existing work before new work.** (80% reuse rule; ১৭ লাইনে ৫টি রিপোর সমন্বয় প্রমাণ করেছে মিনিমালিজমের শক্তি)
+ - **Single-domain PRs.** One PR touches one federation target domain (e.g. `studio/*` OR `gateway/*`), never both in the same change — keeps patches small, testable, and avoids partial-landing drift across satellites. Cross-domain work is split into separate PRs.
++- **Satellite-First Delivery Mandate.** All autonomous agent work must target active product satellites (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`). Code touching exclusively internal tooling or monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) is strictly banned from autonomous PR creation without explicit admin authorization.
+ - **Issue validity before implementation.** (Never fix a ghost issue)
+ - **Evidence before action.** (Claims without proof are rejected)
+ - **System guards enforce boundaries; agents do not police themselves.**
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index cded0a83..06ff5dee 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -53,6 +53,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U9** | **Pattern Sweep** | When fixing a defect, sweep for sibling occurrences in the file family. Address or file linked follow-up. |
+ | **U10** | **Loop-Granted Authority** | The loop is the permission. Never ask "should I start / shall I proceed". Status reports state facts, never permission questions. |
+ | **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
++| **U12** | **Satellite-First & Tangible Product Value** | All autonomous agent tasks MUST deliver tangible user value to active product satellites (`studio/*`, `gateway/*` / `api/*`, `browser/*`, `vscode/*`, `core/*`). Autonomous PRs touching exclusively internal transit or tooling surfaces (`infrastructure/mcp-control-plane/*`, `scripts/ci/*`) that only land in the private monorepo are strictly banned without explicit human authorization. End the cycle of zero-value internal busywork. |
+ 
+ ---
+ 
+@@ -112,6 +113,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ - **P5 (Incremental Improvement):** Target is unlimited; first step is atomic and minimal.
+ - **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.
+ - **P7 (Domain Anti-Thrashing #522):** Frame tasks as cohesive domain slices (≤ 30 files, ≤ 200 KB) for ONE primary repo.
++- **P8 (Satellite-First Delivery Mandate):** Code changes must dispatch to a live product satellite (`studio`, `api`, `browser`, `vscode`, `core`). Tasks touching solely monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) must not be autonomously undertaken without explicit administrative direction.
+ 
+ ---
+ 

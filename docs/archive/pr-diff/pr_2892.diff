@@ -1,0 +1,124 @@
+diff --git a/core/alembic_migrations/script.py.mako b/core/alembic_migrations/script.py.mako
+index 11016301..a8d5e89e 100644
+--- a/core/alembic_migrations/script.py.mako
++++ b/core/alembic_migrations/script.py.mako
+@@ -5,7 +5,7 @@ Revises: ${down_revision | comma,n}
+ Create Date: ${create_date}
+ 
+ """
+-from typing import Sequence, Union
++from typing import Sequence
+ 
+ from alembic import op
+ import sqlalchemy as sa
+@@ -13,9 +13,9 @@ ${imports if imports else ""}
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = ${repr(up_revision)}
+-down_revision: Union[str, Sequence[str], None] = ${repr(down_revision)}
+-branch_labels: Union[str, Sequence[str], None] = ${repr(branch_labels)}
+-depends_on: Union[str, Sequence[str], None] = ${repr(depends_on)}
++down_revision: str | Sequence[str] | None = ${repr(down_revision)}
++branch_labels: str | Sequence[str] | None = ${repr(branch_labels)}
++depends_on: str | Sequence[str] | None = ${repr(depends_on)}
+ 
+ 
+ def upgrade() -> None:
+diff --git a/core/alembic_migrations/versions/cb8d8501f289_merge_heads.py b/core/alembic_migrations/versions/cb8d8501f289_merge_heads.py
+index 74a6cb0a..651195a3 100644
+--- a/core/alembic_migrations/versions/cb8d8501f289_merge_heads.py
++++ b/core/alembic_migrations/versions/cb8d8501f289_merge_heads.py
+@@ -6,11 +6,8 @@
+ 
+ """
+ 
+-from typing import Union
+ from collections.abc import Sequence
+ 
+-from alembic import op
+-import sqlalchemy as sa
+ 
+ 
+ # revision identifiers, used by Alembic.
+diff --git a/core/alembic_migrations/versions/f1a2b3c4d5e6_add_api_key_scopes_and_conv_ctx_unique.py b/core/alembic_migrations/versions/f1a2b3c4d5e6_add_api_key_scopes_and_conv_ctx_unique.py
+index 4c16454f..3d975789 100644
+--- a/core/alembic_migrations/versions/f1a2b3c4d5e6_add_api_key_scopes_and_conv_ctx_unique.py
++++ b/core/alembic_migrations/versions/f1a2b3c4d5e6_add_api_key_scopes_and_conv_ctx_unique.py
+@@ -16,11 +16,9 @@
+ Create Date: 2026-08-30
+ """
+ 
+-from typing import Union
+ from collections.abc import Sequence
+ 
+ from alembic import op
+-import sqlalchemy as sa
+ 
+ revision: str = "f1a2b3c4d5e6"
+ down_revision: str | Sequence[str] | None = "358bcbe79a4a"
+diff --git a/core/alembic_migrations/versions/g2b3c4d5e6f7_reconcile_task_history_and_baseline.py b/core/alembic_migrations/versions/g2b3c4d5e6f7_reconcile_task_history_and_baseline.py
+index 522f7712..13e912b7 100644
+--- a/core/alembic_migrations/versions/g2b3c4d5e6f7_reconcile_task_history_and_baseline.py
++++ b/core/alembic_migrations/versions/g2b3c4d5e6f7_reconcile_task_history_and_baseline.py
+@@ -16,7 +16,6 @@
+ Create Date: 2026-08-30
+ """
+ 
+-from typing import Union
+ from collections.abc import Sequence
+ 
+ from alembic import op
+diff --git a/core/api/deps.py b/core/api/deps.py
+index e6e2e411..bb3266b2 100644
+--- a/core/api/deps.py
++++ b/core/api/deps.py
+@@ -16,15 +16,15 @@
+ 
+ from __future__ import annotations
+ 
+-from api.dependencies import (
+-    get_ai_integrator,
+-    get_current_admin,
+-    get_current_tenant,
+-    get_current_user_token,
+-    get_fitness_engine,
+-    get_rate_limiter,
+-    get_tenant_db,
+-    verify_autonomous_agent_token,
++from api.dependencies import (  # noqa: F401 — canonical re-export module (__all__ below)
++    get_ai_integrator,  # noqa: F401
++    get_current_admin,  # noqa: F401
++    get_current_tenant,  # noqa: F401
++    get_current_user_token,  # noqa: F401
++    get_fitness_engine,  # noqa: F401
++    get_rate_limiter,  # noqa: F401
++    get_tenant_db,  # noqa: F401
++    verify_autonomous_agent_token,  # noqa: F401
+ )
+ 
+ __all__ = [
+diff --git a/core/api/routes/admin_auth.py b/core/api/routes/admin_auth.py
+index b5feda6b..69fd6873 100644
+--- a/core/api/routes/admin_auth.py
++++ b/core/api/routes/admin_auth.py
+@@ -3,7 +3,6 @@
+ from __future__ import annotations
+ 
+ import asyncio
+-import secrets
+ 
+ import jwt
+ from fastapi import Depends, HTTPException, Request
+diff --git a/tests/test_dead_import_drift.py b/tests/test_dead_import_drift.py
+index 392540be..7925442d 100644
+--- a/tests/test_dead_import_drift.py
++++ b/tests/test_dead_import_drift.py
+@@ -71,7 +71,7 @@
+ # dead by AST Name-load + zero consumer imports incl. _archive delegates)
+ # and re-measured with this file's own _scan_live_scope -> 384 across a
+ # smaller file set. Shrink-only preserved: 384 < 388 < 446.
+-BASELINE_UNUSED_IMPORTS = 378
++BASELINE_UNUSED_IMPORTS = 365
+ 
+ # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
+ # Each binding below was verified dead by AST Name-load analysis + word-boundary

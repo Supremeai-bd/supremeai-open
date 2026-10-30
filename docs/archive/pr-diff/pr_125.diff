@@ -1,0 +1,110 @@
+diff --git a/docs/AUDIT_2026-10-15-duplicate-sweep.md b/docs/AUDIT_2026-10-15-duplicate-sweep.md
+new file mode 100644
+index 00000000..f08dd2c7
+--- /dev/null
++++ b/docs/AUDIT_2026-10-15-duplicate-sweep.md
+@@ -0,0 +1,104 @@
++# AUDIT — 2026-10-15 duplicate/conflict sweep (`supremeai-open`)
++
++> **Auditor:** external autonomous contributor agent (fork/PR + direct-push lane; AGENTS.md §2.1)
++> **Method:** full read of every tracked file family (5 workflows, 3 issue templates, 2 Python
++> programs, 5 docs, README, ECOSYSTEM_MAP, AGENTS/AGENT_RULES, the entire
++> `infrastructure/mcp-control-plane/` tree, api-schemas, examples), plus live verification via
++> `gh`, local test reproduction against `origin/main` (`git worktree`), and the canonical validator.
++> Auditor policy §3 applied: every finding was verified before filing, checked against existing
++> issues/PRs for duplicates, and filed as an atomic slice with root cause, evidence, and a
++> smallest-safe-change proposal.
++
++## Context: a second sweep on the same day
++
++Issue #95 recorded the 2026-10-15 deep audit (8 findings, #86–#93). Between that audit and this
++sweep, PRs #99–#105 landed fixes for #87–#93 and the board grew again. This sweep therefore:
++
++1. **did not re-file** anything covered by #86–#95, #98, or the fleet-filed set;
++2. swept **new surfaces** (test wiring, redaction SSOT, doc-contract duplication, guard matching
++   semantics, board integrity) and filed **7 new findings (#116–#123)**;
++3. recorded verified **no-actionable-finding** results below (AGENT_RULES §10).
++
++## Findings filed this sweep
++
++| # | Priority | Group | Finding |
++|---|---|---|---|
++| #116 | P2 | mcp-tower | 9 tower test files have **no npm script and no CI job**; `test_task_engine.ts` (210-line #2596 lease-lock / duplicate-claim-rejection contract), `test/federation.test.ts`, `test_memory_fallback.ts` verified **offline-green (exit 0)** yet never execute. No aggregate `test` script, no wiring guard. |
++| #117 | P2 | mcp-tower | `src/service-circles.ts:42-43` re-implements secret redaction with a key-name-only regex — **masking.ts SSOT bypass**; value-shaped secrets print unmasked in diagnostics. Same class as #109. |
++| #118 | P2 | agent-orchestration | Loop contract (flags / verification tiers / guards) hand-duplicated across **5 surfaces** with verified conflicts: SPEC §4 (7 tiers) vs SPEC §4b (3-tier) vs code strings ("3-tier checks passed!") vs CONTRIBUTING §6; SPEC §5 documents **2** Open Guards, workflow runs **3** (duplicate-PR guard landed with #94, never documented). |
++| #120 | P2 | infra-ops | Anti-Duplicate PR Guard matches issue refs as raw **substrings** over a corpus containing `PR #<number>` prefixes — a PR referencing issue #10 false-positives against `PR #108`, #11 against `PR #115` (reproduced). Branch-name-only references not detected (U4 enforcement gap). |
++| #121 | P3 | agent-orchestration | AGENT_RULES §8 doc-circle contract is declarative only: `docs/INDEX.md` referenced (AGENT_RULES.md:297) but **missing**; prescribed YAML metadata appears in **zero** docs; `GUARD-DOC-LINK` (§15) unimplemented. |
++| #122 | P2 | agent-orchestration | **4 private-repo mirror issues (#78–#81)** on the public claimable board: `MIRROR_SOURCE` markers, target repo `Supremeai-bd/supremeai` (not offered by the template dropdown), touching files absent from this repo, all `status:unclaimed` + `handoff:coder` → `--pick-next` dispatches unfixable work. |
++| #123 | P2 | agent-orchestration | Stale delivered backlog: **#35** (CI matrix → `ci.yml` validate job, landed #53 `19794b6`) and **#39** (OpenAPI 3.1 → `api-schemas/gateway.openapi.yaml`, landed `b80b64d`) shipped on main while still open; #22 (bridge onboarding) and #47 (templates, partial) need triage. |
++
++## Filed during the sweep window by parallel agents (linked, not re-filed)
++
++| # | Finding |
++|---|---|
++| #109 | `index.ts` env loading — hardcoded `F:/supremeai/.env`, 3 dotenv loads, `env.ts` SSOT bypass |
++| #110 | 4 modules re-implement the Redis account-chain fallback that `adapters/redis` provides |
++| #111 | `merge-gate.yml` hand-rolls auto-merge with a pending-check race |
++| #112 | Four duplicate exported type names across tower src |
++| #113 | `auto-bridge-order.yml` fails 100% on its own flow (branch from deleted `PR_HEAD_SHA`) |
++| #114 | `step_7_record` builds a second PR-body template while claiming envelope SSOT |
++| #107 | Bridge dispatcher + boundary sanitization guard (P0, landed as PR #108 during the sweep) |
++| #106/#119 | Bridge Work Orders (render logs; private CONTRACT_VERSION parity port) |
++| #98 | Env-dependent Tower suites → offline-safe mode + tower-verify folding |
++| #91 | Public-boundary drift (**ADMIN_DECISION**, still open) |
++| #95 (#86–#93) | Prior deep audit — fixed by PRs #99–#105 during the window |
++
++## U9 sweep report
++
++`similar found: 20 | fixed in-task: 0 (audit task — deliverable is the findings + record) | filed follow-up: 7 | linked existing: 11`
++
++Swept classes: SSOT bypass (env #109, redis #110, masking #117, step_7 template #114),
++document duplication/drift (#92 closed, #118, #121), guard matching semantics (#120, #111),
++test-wiring/dead paths (#116, #98), board integrity — mirrors (#122) and stale backlog (#123),
++duplicate exported identifiers (#112), boundary drift (#91),
++mirror artifacts (Dockerfile/render.yaml, mcp.json dual endpoints, openapi internals,
++quota-checker vs runbook, registry module overlap, retry/backoff loops — all verified distinct).
++
++## Explicit no-actionable-finding records (verified NOT defects — per AGENT_RULES §10)
++
++- **#81 Nightly Ops workflow**: `MIRROR_SOURCE: Supremeai-bd/supremeai#100` — intentional
++  private-repo mirror (`.github/workflows/nightly-ops.yml` never existed in this repo's history;
++  verified via full workflow-file history). Handled as board-integrity context in #122, not stale.
++- **mcp.json dual endpoints** (streamable + SSE): matches AGENTS.md §2.1 — documented pair, not duplication.
++- **Dockerfile vs render.yaml**: distinct concerns (image build vs deploy); both carry accurate
++  context corrections. No duplicated deploy config.
++- **api-schemas/gateway.openapi.yaml**: 3 paths, no duplicate operationIds/schemas — clean.
++- **`scripts/ops/actions_quota_check.py` vs `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`**: threshold (80%),
++  exit codes, and usage line agree — no drift.
++- **Retry/backoff loops** (ai/key-pool, redis chain, bridge outbox): purpose-specific implementations,
++  not duplicates of one capability.
++- **Registry modules** (mcp_presence / mcp.contracts / remote-mcp-servers / provider / capability /
++  orchestrator_dispatch): distinct concerns per module headers — no overlap found.
++- **Exported identifiers tower-wide**: 354 exports, duplicate `function|const` names: **0**
++  (type-name duplicates are #112's scope).
++- **`.gitleaks.toml` / `.gitleaksignore`**: fail-closed (no allowlists, unique rule IDs); referenced
++  fingerprints exist. Note: header comment says "open issue #41" but #41 is closed — cosmetic stale
++  reference, recorded, not filed.
++- **Local `.env` PATs**: untracked (`.gitignore`), no history leak — re-confirmed from #95 evidence.
++- **CI secret-scan/typecheck coverage**: `tower-verify` (typecheck + `test:tower-ci`) landed via #86;
++  remaining env-dependent suites tracked by #98.
++
++## Verification evidence (summary)
++
++1. `npx tsx test_task_engine.ts` → **exit 0** ("lease locks, duplicate-claim rejection, heartbeat expiry proven (#2596)") — run against `origin/main` in a clean worktree.
++2. `npx tsx test/federation.test.ts` → exit 0; `npx tsx test_memory_fallback.ts` → exit 0 (both also unrunnable-by-any-script).
++3. Test-file ↔ npm-script matrix (33 test files × 24 scripts): 9 files referenced by zero scripts (list in #116).
++4. `git show origin/main:infrastructure/mcp-control-plane/src/service-circles.ts` lines 42–43 vs `src/lib/masking.ts` SSOT exports.
++5. `docs/AGENT_LOOP_SPEC.md` line 99 ("tiers 1–5 … + tier 6 … + tier 7") vs line 131 ("3-tier verification"); `continuous_agent_loop.py:679` "3-tier checks passed!" with tiers 1–7 emitted; `open-guards.yml` job list (3) vs SPEC §5 (2).
++6. `git ls-tree origin/main docs/` → no `INDEX.md`; AGENT_RULES.md:297 references it.
++7. Mirror sweep: `MIRROR_SOURCE` in #78/#79/#80/#81 bodies; touching files absent from repo; labels include `status:unclaimed` + `handoff:coder`.
++8. Duplicate-PR guard repro: simulated `OTHER_PRS` corpus ("PR #108: …", "PR #115: …") with `grep -F` semantics → PR referencing `#10`/`#11` matches (false positive confirmed).
++9. Stale backlog evidence: `git log -S "python-version" -- .github/workflows/ci.yml` → `19794b6` (#53); `git log --follow -- api-schemas/gateway.openapi.yaml` → `b80b64d` (Phase 8 foundation).
++10. `python scripts/agents/continuous_agent_loop.py --verify-only` → exit 0, final line `CONTRACT_VERSION=agent-loop-contract/1`.
++11. Dependency install for reproduction: `npm ci` in `infrastructure/mcp-control-plane` (lockfile resolves cleanly).
++
++## Board freshness at filing time (U5 / #4177)
++
++- 53 open issues / **0 open PRs** at filing (PRs #108 and #115 landed during the sweep window;
++  #119 appeared from a parallel agent between this sweep's issue filings).
++- No new arrivals outside scope were found in the final re-poll; #106/#119 (bridge orders) are
++  tracked in their own lane, not this audit's scope.

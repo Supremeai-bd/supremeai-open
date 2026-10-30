@@ -1,0 +1,251 @@
+diff --git a/browser/LICENSE b/browser/LICENSE
+new file mode 100644
+index 00000000..252a5b39
+--- /dev/null
++++ b/browser/LICENSE
+@@ -0,0 +1,36 @@
++SupremeAI Proprietary License Notice
++Surface: browser/ — public mirror of supremeai-browser
++
++Copyright (c) 2026 SaifulHaque Niloy. All Rights Reserved.
++
++This mirror surface carries proprietary software of the SupremeAI
++federation. ECOSYSTEM_MAP.md §2.3 ("Licensing & Intellectual Property
++Policy (SSOT)") declares the supremeai-core domain:
++
++    "Proprietary / All Rights Reserved"
++
++and requires that all private repositories carry the standard SupremeAI
++proprietary license notice prohibiting unauthorized reproduction or
++distribution. This notice is that license, published with the mirror.
++
++Terms
++
++  1. No license grant. Copying, reproduction, distribution, publication,
++     sale, sublicensing, or creation of derivative works of this
++     surface, in source or binary form, in whole or in part, is
++     prohibited without the prior written permission of the copyright
++     holder.
++  2. Scope of the repository MIT license. The MIT License at the root
++     of this repository applies to the declared permissive boundary
++     layers only (supremeai-open, supremeai-studio, supremeai-vscode)
++     and expressly does NOT extend to this surface or its contents.
++  3. No implied rights. Publication of this mirror for transparency and
++     operational continuity grants no trademark, patent, or other
++     intellectual-property right of any kind.
++  4. Changes. Public change proposals follow ECOSYSTEM_MAP.md §3 ("How
++     to Propose Changes for Any Target Repository"); acceptance of a
++     proposal grants no license beyond the rights explicitly stated
++     there.
++
++This notice implements the Open-Core Embassy Model declared in
++ECOSYSTEM_MAP.md §2.3; where wording conflicts, the SSOT governs.
+diff --git a/core/LICENSE b/core/LICENSE
+new file mode 100644
+index 00000000..4abb78cf
+--- /dev/null
++++ b/core/LICENSE
+@@ -0,0 +1,36 @@
++SupremeAI Proprietary License Notice
++Surface: core/ — public mirror of supremeai-core
++
++Copyright (c) 2026 SaifulHaque Niloy. All Rights Reserved.
++
++This mirror surface carries proprietary software of the SupremeAI
++federation. ECOSYSTEM_MAP.md §2.3 ("Licensing & Intellectual Property
++Policy (SSOT)") declares the supremeai-core domain:
++
++    "Proprietary / All Rights Reserved"
++
++and requires that all private repositories carry the standard SupremeAI
++proprietary license notice prohibiting unauthorized reproduction or
++distribution. This notice is that license, published with the mirror.
++
++Terms
++
++  1. No license grant. Copying, reproduction, distribution, publication,
++     sale, sublicensing, or creation of derivative works of this
++     surface, in source or binary form, in whole or in part, is
++     prohibited without the prior written permission of the copyright
++     holder.
++  2. Scope of the repository MIT license. The MIT License at the root
++     of this repository applies to the declared permissive boundary
++     layers only (supremeai-open, supremeai-studio, supremeai-vscode)
++     and expressly does NOT extend to this surface or its contents.
++  3. No implied rights. Publication of this mirror for transparency and
++     operational continuity grants no trademark, patent, or other
++     intellectual-property right of any kind.
++  4. Changes. Public change proposals follow ECOSYSTEM_MAP.md §3 ("How
++     to Propose Changes for Any Target Repository"); acceptance of a
++     proposal grants no license beyond the rights explicitly stated
++     there.
++
++This notice implements the Open-Core Embassy Model declared in
++ECOSYSTEM_MAP.md §2.3; where wording conflicts, the SSOT governs.
+diff --git a/infrastructure/LICENSE b/infrastructure/LICENSE
+new file mode 100644
+index 00000000..19875d04
+--- /dev/null
++++ b/infrastructure/LICENSE
+@@ -0,0 +1,36 @@
++SupremeAI Proprietary License Notice
++Surface: infrastructure/ — public mirror of supremeai-infrastructure
++
++Copyright (c) 2026 SaifulHaque Niloy. All Rights Reserved.
++
++This mirror surface carries proprietary software of the SupremeAI
++federation. ECOSYSTEM_MAP.md §2.3 ("Licensing & Intellectual Property
++Policy (SSOT)") declares the supremeai-core domain:
++
++    "Proprietary / All Rights Reserved"
++
++and requires that all private repositories carry the standard SupremeAI
++proprietary license notice prohibiting unauthorized reproduction or
++distribution. This notice is that license, published with the mirror.
++
++Terms
++
++  1. No license grant. Copying, reproduction, distribution, publication,
++     sale, sublicensing, or creation of derivative works of this
++     surface, in source or binary form, in whole or in part, is
++     prohibited without the prior written permission of the copyright
++     holder.
++  2. Scope of the repository MIT license. The MIT License at the root
++     of this repository applies to the declared permissive boundary
++     layers only (supremeai-open, supremeai-studio, supremeai-vscode)
++     and expressly does NOT extend to this surface or its contents.
++  3. No implied rights. Publication of this mirror for transparency and
++     operational continuity grants no trademark, patent, or other
++     intellectual-property right of any kind.
++  4. Changes. Public change proposals follow ECOSYSTEM_MAP.md §3 ("How
++     to Propose Changes for Any Target Repository"); acceptance of a
++     proposal grants no license beyond the rights explicitly stated
++     there.
++
++This notice implements the Open-Core Embassy Model declared in
++ECOSYSTEM_MAP.md §2.3; where wording conflicts, the SSOT governs.
+diff --git a/infrastructure/mcp-control-plane/LICENSE b/infrastructure/mcp-control-plane/LICENSE
+new file mode 100644
+index 00000000..befb93c2
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/LICENSE
+@@ -0,0 +1,36 @@
++SupremeAI Proprietary License Notice
++Surface: infrastructure/mcp-control-plane/ — public mirror of supremeai-mcp-control-plane
++
++Copyright (c) 2026 SaifulHaque Niloy. All Rights Reserved.
++
++This mirror surface carries proprietary software of the SupremeAI
++federation. ECOSYSTEM_MAP.md §2.3 ("Licensing & Intellectual Property
++Policy (SSOT)") declares the supremeai-core domain:
++
++    "Proprietary / All Rights Reserved"
++
++and requires that all private repositories carry the standard SupremeAI
++proprietary license notice prohibiting unauthorized reproduction or
++distribution. This notice is that license, published with the mirror.
++
++Terms
++
++  1. No license grant. Copying, reproduction, distribution, publication,
++     sale, sublicensing, or creation of derivative works of this
++     surface, in source or binary form, in whole or in part, is
++     prohibited without the prior written permission of the copyright
++     holder.
++  2. Scope of the repository MIT license. The MIT License at the root
++     of this repository applies to the declared permissive boundary
++     layers only (supremeai-open, supremeai-studio, supremeai-vscode)
++     and expressly does NOT extend to this surface or its contents.
++  3. No implied rights. Publication of this mirror for transparency and
++     operational continuity grants no trademark, patent, or other
++     intellectual-property right of any kind.
++  4. Changes. Public change proposals follow ECOSYSTEM_MAP.md §3 ("How
++     to Propose Changes for Any Target Repository"); acceptance of a
++     proposal grants no license beyond the rights explicitly stated
++     there.
++
++This notice implements the Open-Core Embassy Model declared in
++ECOSYSTEM_MAP.md §2.3; where wording conflicts, the SSOT governs.
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index d460f5e1..a12c836d 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -83,7 +83,7 @@
+     "supremeai",
+     "control-tower"
+   ],
+-  "license": "MIT",
++  "license": "LicenseRef-Proprietary",
+   "dependencies": {
+     "@modelcontextprotocol/sdk": "^1.30.0",
+     "@upstash/redis": "^1.38.3",
+diff --git a/scripts/ci/license_ssot_guard.py b/scripts/ci/license_ssot_guard.py
+index cc8a5d3c..f3bd4deb 100644
+--- a/scripts/ci/license_ssot_guard.py
++++ b/scripts/ci/license_ssot_guard.py
+@@ -120,21 +120,14 @@
+ # for new drift; new drift must be fixed, not baselined.
+ # History: baseline entered at 15 entries (#1773); the 9 PACKAGE_LICENSE_MISSING
+ # entries were fixed and shrunk out in the same change (issue #1621, the
+-# #1621<->#1678 class), landing the field-level license floor repo-wide.
++# #1621<->#1678 class), landing the field-level license floor repo-wide;
++# the 4 LICENSE-absent proprietary mirrors and infrastructure/mcp-control-plane
++# package.json contradiction were fixed in #1640/#1691 (shrink 6 -> 1).
+ # ---------------------------------------------------------------------------
+ KNOWN_DRIFTS: frozenset[tuple[str, str]] = frozenset(
+     {
+-        # -- LICENSE-absent proprietary mirror surfaces (#1640/#1691 class).
+-        #    The WO acceptance named 3 (core, browser, mcp-control-plane); the
+-        #    guard's surface model also correctly flags the infrastructure/
+-        #    mirror root itself — same class, same dated provenance.
+-        ("LICENSE_FILE_ABSENT", "core"),
+-        ("LICENSE_FILE_ABSENT", "browser"),
+-        ("LICENSE_FILE_ABSENT", "infrastructure"),
+-        ("LICENSE_FILE_ABSENT", "infrastructure/mcp-control-plane"),
+-        # -- 2 model contradictions (the #1690 declared-vs-actual class)
++        # -- 1 model contradiction (the #1690 declared-vs-actual class)
+         ("MODEL_CONTRADICTION", "gateway/LICENSE"),
+-        ("MODEL_CONTRADICTION", "infrastructure/mcp-control-plane/package.json"),
+     }
+ )
+ 
+diff --git a/tests/test_license_ssot_guard.py b/tests/test_license_ssot_guard.py
+index b8743046..4e8a764c 100644
+--- a/tests/test_license_ssot_guard.py
++++ b/tests/test_license_ssot_guard.py
+@@ -262,16 +262,19 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
+         "shrink KNOWN_DRIFTS in scripts/ci/license_ssot_guard.py in the same "
+         "change (shrink-only ratchet); if drift was ADDED, fix it instead."
+     )
+-    # The WO acceptance core, post-#1621: the license-field class is FIXED
+-    # (zero PACKAGE_LICENSE_MISSING must remain), the LICENSE-absent mirrors
+-    # and the #1690 contradiction class stay baselined.
++    # The WO acceptance core, post-#1640/#1691: the 4 proprietary mirrors
++    # (core, browser, infrastructure, infrastructure/mcp-control-plane) now
++    # carry §2.3 LICENSE notices and the mcp-control-plane package.json declares
++    # LicenseRef-Proprietary. Zero LICENSE_FILE_ABSENT remains.
+     missing = {p for c, p in keys if c == "PACKAGE_LICENSE_MISSING"}
+     assert not missing, (
+         "#1621 acceptance: the 9 package.json license fields were declared; "
+         f"a new PACKAGE_LICENSE_MISSING is a fix-it regression, not baseline material: {missing}"
+     )
+-    absent = {p for c, p in keys if c == "LICENSE_FILE_ABSENT"}
+-    assert {"core", "browser", "infrastructure/mcp-control-plane"} <= absent
++    assert not any(c == "LICENSE_FILE_ABSENT" for c, _ in keys), (
++        "the #1640/#1691 fix wave landed all proprietary mirror LICENSE notices; "
++        "a LICENSE_FILE_ABSENT here means a mirror license was removed — restore it"
++    )
+     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
+     assert "gateway/LICENSE" in contradiction, "the #1690 class must stay visible"
+ 
+@@ -309,7 +312,9 @@ def test_json_report_is_machine_readable() -> None:
+     assert report["guard"] == "license_ssot_guard"
+     assert report["map"] == MAP
+     assert report["mode"] == "ratchet"
+-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 6
++    # Dated floor (post-#1640/#1691 shrink): 6 -> 1 entry (the contested #1690
++    # gateway/LICENSE contradiction).
++    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 1
+     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
+     for f in report["findings"]:
+         assert set(f) == {"code", "path", "detail"}

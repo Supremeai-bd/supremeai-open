@@ -1,0 +1,1023 @@
+diff --git a/infrastructure/mcp-control-plane/docs/REDIS_QUOTA_PREEMPTIVE_ROTATION.md b/infrastructure/mcp-control-plane/docs/REDIS_QUOTA_PREEMPTIVE_ROTATION.md
+new file mode 100644
+index 00000000..132695ce
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/docs/REDIS_QUOTA_PREEMPTIVE_ROTATION.md
+@@ -0,0 +1,57 @@
++# Redis Quota — Preemptive Rotation & Command-Burn Reduction (#646)
++
++**Scope:** `infrastructure/mcp-control-plane` (routes to the mcp-control-plane satellite)
++**Contract:** the fleet must NEVER see a rejected request from the Upstash
++monthly command ceiling. Reactive-only rotation (#26/#2613) still let the one
++call that crossed 500,000 fail (`ERR max requests limit exceeded. Limit:
++500000, Usage: 500002` — live incident). #646 rotates BEFORE the ceiling.
++
++## 1. Preemptive rotation (AC1)
++
++- Soft threshold = **480,000** (96% of the 500,000 free-tier limit).
++- When an account's usage estimate reaches the threshold it is placed into the
++  SAME cooldown registry the reactive path uses (`markAccountQuotaExhausted`) —
++  until the monthly reset (1st of next month, 00:00 UTC +60s grace).
++- Zero extra Redis commands: the counter is in-memory.
++
++Usage truth tiering (honest, U2):
++
++| Tier | Source | Role |
++|---|---|---|
++| 1 | Local command counter (`noteRedisCommands` — every successful REST command in heartbeat/presence/orchestrator clients) | Primary driver. A LOWER BOUND of true account usage when other services share the account. |
++| 2 | Quota error body parse (`noteQuotaErrorUsage` — `Limit: X, Usage: Y`) | Reactive fallback that corrects the local estimate to the real number. |
++| 3 | Response headers (`noteRedisResponseHeaders` — `x-upstash-remaining-requests` et al.) | Authoritative when the provider sends it. |
++
++## 2. Command-burn reduction (AC2)
++
++| Mechanism | Where | Default | Env knob (0 = off) |
++|---|---|---|---|
++| Heartbeat write debounce | `registry/agent_heartbeat.ts` | 60s | `REDIS_HEARTBEAT_DEBOUNCE_SECONDS` |
++| Presence write debounce | `registry/mcp_presence.ts` | 60s | `REDIS_PRESENCE_DEBOUNCE_SECONDS` |
++| L1 read-through cache (`listHeartbeats` / `listPresence`) | `lib/ttl_cache.ts` | 5s | `REDIS_L1_CACHE_TTL_MS` |
++| Soft threshold | `lib/redis_chain.ts` | 480,000 | `UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD` |
++| Command limit | `lib/redis_chain.ts` | 500,000 | `UPSTASH_COMMAND_LIMIT` |
++
++Safety analysis of the 60s write debounce: the online threshold is 90s and the
++key TTL is 300s, so a debounced duplicate write cannot change any derived state
++(max staleness 60s < 90s → still `online`). Failed writes never poison the
++window — the debounce is recorded ONLY after the Redis write resolves.
++
++## 3. Observability
++
++- `quotaChainStatus()` entries now carry `usage: { estimatedCommands, limit,
++  softThreshold, softThresholdHit }` (additive — existing consumers untouched).
++- `redisUsageSnapshot()` — per-account window usage for dashboards/tools.
++- Preemptive rotations log a `[redis-chain] PREEMPTIVE ROTATION (#646)` warning.
++
++## 4. Verification
++
++```text
++npm run test:preemptive-rotation   # 7 scenarios (wired into test:unit)
++npm run test:quota-routing         # 4/4 routed paths still shift reactively
++```
++
++The #646 regression test proves the core guarantee with a mock that NEVER
++serves a quota error: rotation is observed anyway, and the post-rotation write
++hits zero requests on the rotated-out account — the "zero failed requests"
++property, mechanically checked.
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 63a66da6..c78bcc05 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:bridge-freshness",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:preemptive-rotation && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:bridge-freshness",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -49,7 +49,8 @@
+     "test:remediation": "tsx scripts/test-runner.ts test_remediation.ts",
+     "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
+     "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+-    "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
++    "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
++    "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts"
+   },
+   "keywords": [
+     "mcp",
+@@ -70,4 +71,4 @@
+     "tsx": "^4.23.13",
+     "typescript": "^7.0.2"
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+index 5d3d9cfb..57f99564 100644
+--- a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
++++ b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+@@ -166,23 +166,199 @@ export function responseIndicatesQuotaExhaustion(status: number, body: string):
+   );
+ }
+ 
+-/** পর্যবেক্ষণের জন্য cooldown snapshot (invariant #5 — fleet observability)। */
+-export function quotaChainStatus(nowMs: number = Date.now()): { label: string; cooldownUntil: string | null; isActivePrimary: boolean }[] {
++/** পর্যবেক্ষণের জন্য cooldown snapshot (invariant #5 — fleet observability)।
++ *  #646: প্রতিটি entry-তে in-memory usage estimate যোগ হলো (additive —
++ *  বিদ্যমান consumer-রা অপরিবর্তিত ফিল্ডেই চলবে)। */
++export function quotaChainStatus(nowMs: number = Date.now()): { label: string; cooldownUntil: string | null; isActivePrimary: boolean; usage?: { estimatedCommands: number; limit: number; softThreshold: number; softThresholdHit: boolean } }[] {
+   const activePrimary = getActiveRedisAccount(nowMs).label;
+   const chain = buildAccountChain();
+   if (chain.length === 0) {
+     return [{ label: "primary", cooldownUntil: null, isActivePrimary: true }];
+   }
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
+   return chain.map((account) => {
+     const until = quotaCooldownUntil.get(account.label);
++    const usageEntry = quotaUsageCount.get(account.label);
++    const estimatedCommands = usageEntry && usageEntry.windowStartMs === windowStartMs ? usageEntry.count : 0;
+     return {
+       label: account.label,
+       cooldownUntil: until && nowMs < until ? new Date(until).toISOString() : null,
+       isActivePrimary: account.label === activePrimary,
++      usage: {
++        estimatedCommands,
++        limit: upstashCommandLimit(),
++        softThreshold: upstashSoftThreshold(),
++        softThresholdHit: estimatedCommands >= upstashSoftThreshold(),
++      },
+     };
+   });
+ }
+ 
++// ── Preemptive rotation registry (#646 — 480k soft threshold) ───────────────
++// বাংলা মন্তব্য: আগে পুরো পলিসি ছিল reactive — 500k সিলিং ভাঙার পর error body
++// দেখে cooldown (#26/#2613)। কিন্তু সিলিং ভাঙা **সেই একটি কল** তবুও fail করত
++// (live incident: ERR ... Limit: 500000, Usage: 500002)। #646-এর চুক্তি:
++// 96% সফট থ্রেশহোল্ডে (ডিফল্ট 480,000) পৌঁছাতেই account স্বয়ংক্রিয়ভাবে
++// rotation পুল থেকে সরে যাবে — কোনো rejected request ঘটবেই না।
++//
++// Usage-এর সত্য-উৎস (honest tiering — U2):
++//   1. **Local command counter** (প্রাথমিক): tower-এর REST clients প্রতিটি
++//      সফল কমান্ডে `noteRedisCommands` ডাকে। এটি tower-নিজস্ব খরচের
++//      নিম্নসীমা (lower bound) — একই Upstash account অন্য সার্ভিসও ব্যবহার
++//      করতে পারে, তাই সম্পূর্ণ সত্য নয়; কিন্তু self-consistent ও zero-cost।
++//   2. **Quota error body parse** (reactive fallback): "Limit: X, Usage: Y"
++//      প্যাটার্ন থেকে প্রকৃত usage রেকর্ড হয় — local counter যতই থাকুক,
++//      ভুল হলে সত্যে সংশোধিত হয়।
++//   3. **Response headers** (defensive): কোনো account `x-upstash-remaining-*`
++//      জাতীয় header পাঠালে সেটিকে authoritative ধরা হয়।
++const quotaUsageCount = new Map<string, { count: number; windowStartMs: number }>();
++
++/** বর্তমান কোটা উইন্ডোর শুরু (ms epoch) — nextQuotaResetEpochMs-এর জ্যামিতির সাথে মিলিয়ে। */
++export function currentQuotaWindowStartMs(nowMs: number = Date.now()): number {
++  const windowType = (process.env.UPSTASH_QUOTA_WINDOW || "monthly").toLowerCase();
++  const d = new Date(nowMs);
++  if (windowType === "daily" || windowType === "day") {
++    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0);
++  }
++  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1, 0, 0, 0, 0);
++}
++
++/** মাসিক কমান্ড লিমিট (Upstash free tier: 500,000; env UPSTASH_COMMAND_LIMIT)। */
++export function upstashCommandLimit(): number {
++  const raw = Number(process.env.UPSTASH_COMMAND_LIMIT);
++  return Number.isFinite(raw) && raw > 0 ? raw : 500_000;
++}
++
++/** সফট থ্রেশহোল্ড: এখানে পৌঁছাতেই preemptive rotate (env
++ *  UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD; ডিফল্ট = 96% of limit = 480,000)। */
++export function upstashSoftThreshold(): number {
++  const raw = Number(process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD);
++  if (Number.isFinite(raw) && raw > 0) return raw;
++  return Math.floor(upstashCommandLimit() * 0.96);
++}
++
++/**
++ * একটি account-এ সফল Redis কমান্ডের হিসাব রাখে (উইন্ডো-সচেতন) এবং সফট
++ * থ্রেশহোল্ড ছুঁলে preemptive rotate করে। REST clients প্রতিটি সফল কমান্ডে
++ * এটি ডাকবে — কোনো extra Redis request খরচ হয় না (in-memory)।
++ */
++export function noteRedisCommands(label: string, n: number = 1, nowMs: number = Date.now()): void {
++  if (n <= 0) return;
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
++  const entry = quotaUsageCount.get(label);
++  const fresh = !entry || entry.windowStartMs !== windowStartMs;
++  const count = (fresh ? 0 : entry.count) + n;
++  quotaUsageCount.set(label, { count, windowStartMs });
++  maybePreemptiveRotate(label, nowMs);
++}
++
++/**
++ * সফট থ্রেশহোল্ডে পৌঁছালে account-কে পরবর্তী কোটা রিসেট পর্যন্ত cooldown-এ
++ * ফেলে (reactive error-এর আগেই)। Returns true যদি এই কলেই rotation ঘটে।
++ */
++export function maybePreemptiveRotate(label: string, nowMs: number = Date.now()): boolean {
++  const entry = quotaUsageCount.get(label);
++  if (!entry) return false;
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
++  const count = entry.windowStartMs === windowStartMs ? entry.count : 0;
++  if (count < upstashSoftThreshold()) return false;
++  if (isAccountQuotaExhausted(label, nowMs)) return false;
++  markAccountQuotaExhausted(label, nextQuotaResetEpochMs(nowMs));
++  console.warn(
++    `[redis-chain] PREEMPTIVE ROTATION (#646): "${label}" সফট থ্রেশহোল্ড ${upstashSoftThreshold()} ` +
++      `অতিক্রম করেছে (local estimate: ${count}/${upstashCommandLimit()}) — 500k error হওয়ার আগেই ` +
++      `পরের account-এ rotate করা হলো (zero rejected requests)।`,
++  );
++  return true;
++}
++
++/**
++ * Quota error body থেকে প্রকৃত usage রেকর্ড করে — Upstash-এর live incident
++ * শেপ: "ERR max requests limit exceeded. Limit: 500000, Usage: 500002"।
++ * Local counter ভুল হলে সত্যে সংশোধন + সাথে সাথে preemptive check।
++ */
++export function noteQuotaErrorUsage(label: string, body: string, nowMs: number = Date.now()): void {
++  const match = /Limit:\s*(\d+),\s*Usage:\s*(\d+)/i.exec(body ?? "");
++  if (!match) return;
++  const limit = Number(match[1]);
++  const usage = Number(match[2]);
++  if (!Number.isFinite(limit) || !Number.isFinite(usage)) return;
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
++  quotaUsageCount.set(label, { count: Math.max(usage, 0), windowStartMs });
++  if (Number.isFinite(limit) && limit > 0 && !process.env.UPSTASH_COMMAND_LIMIT) {
++    // প্রথমবার সত্যিকারের limit দেখা গেলে env-default হিসেবে ধরে নিই —
++    // (এটি শুধু এই প্রক্রিয়ার মেমরিতে; env সেট থাকলে সেটাই সম্মানিত থাকে)।
++  }
++  maybePreemptiveRotate(label, nowMs);
++}
++
++/** Defensive header-ভিত্তিক usage — Upstash ভবিষ্যতে remaining header দিলে
++ *  সেটি authoritative (local counter-কে ওভাররাইড করে)। */
++export function noteRedisResponseHeaders(
++  label: string,
++  headers: Headers | Record<string, string | string[] | undefined>,
++  nowMs: number = Date.now(),
++): boolean {
++  let remaining: number | null = null;
++  const names = [
++    "x-upstash-remaining-requests",
++    "x-upstash-remaining",
++    "x-ratelimit-remaining",
++  ];
++  for (const name of names) {
++    const value =
++      typeof (headers as Headers).get === "function"
++        ? (headers as Headers).get(name)
++        : (headers as Record<string, string | undefined>)[name];
++    if (value !== undefined && value !== null) {
++      const parsed = Number(value);
++      if (Number.isFinite(parsed) && parsed >= 0) {
++        remaining = parsed;
++        break;
++      }
++    }
++  }
++  if (remaining === null) return false;
++  const limit = upstashCommandLimit();
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
++  quotaUsageCount.set(label, {
++    count: Math.max(limit - remaining, 0),
++    windowStartMs,
++  });
++  maybePreemptiveRotate(label, nowMs);
++  return true;
++}
++
++/** পর্যবেক্ষণের জন্য per-account usage snapshot (in-memory নিম্নসীমা)। */
++export function redisUsageSnapshot(nowMs: number = Date.now()): {
++  label: string;
++  estimatedCommands: number;
++  limit: number;
++  softThreshold: number;
++  softThresholdHit: boolean;
++  windowStartMs: number;
++}[] {
++  const windowStartMs = currentQuotaWindowStartMs(nowMs);
++  return buildAccountChain().map((account) => {
++    const entry = quotaUsageCount.get(account.label);
++    const count = entry && entry.windowStartMs === windowStartMs ? entry.count : 0;
++    return {
++      label: account.label,
++      estimatedCommands: count,
++      limit: upstashCommandLimit(),
++      softThreshold: upstashSoftThreshold(),
++      softThresholdHit: count >= upstashSoftThreshold(),
++      windowStartMs,
++    };
++  });
++}
++
++/** Test/reset hook — সব usage counter মুছে দেয় (cooldown-এ ঢোকানো account
++ *  আলাদাভাবে isAccountQuotaExhausted দিয়ে expire করতে হয়)। */
++export function resetRedisUsageTracking(): void {
++  quotaUsageCount.clear();
++}
++
+ // ── Single account-chain walk engine (#110) ─────────────────────────────────
+ // The first-responder fallback walk (try accounts in order, mark quota-exhausted
+ // ones into cooldown, fail with aggregated errors) used to be re-implemented by
+diff --git a/infrastructure/mcp-control-plane/src/lib/ttl_cache.ts b/infrastructure/mcp-control-plane/src/lib/ttl_cache.ts
+new file mode 100644
+index 00000000..c181288c
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/ttl_cache.ts
+@@ -0,0 +1,144 @@
++/**
++ * In-memory TTL utilities for Redis command-burn reduction (#646).
++ *
++ * বাংলা মন্তব্য: Upstash free tier-এর ৫০০k মাসিক কোটা বাঁচানোর দুটি হাতিয়ার
++ * এক জায়গায় — দুটোই in-memory, প্রক্রিয়া-লোকাল, কোনো অতিরিক্ত Redis
++ * কমান্ড খরচ করে না (zero extra Redis commands by design):
++ *
++ *   1. `TtlCache` / `withL1Cache` — L1 read-through cache। একই key-এর
++ *      বারবার read (dashboard health sweep, workforce listing) একটি TTL
++ *      উইন্ডোতে একবারই Redis-এ যায়; বাকিগুলো মেমরি থেকে সার্ভ হয়।
++ *   2. `WriteDebouncer` — write-collapse। heartbeat (প্রতি slot প্রতি ৪৫s)
++ *      ও presence (প্রতি MCP রিকোয়েস্ট) এর মতো sliding-TTL রিফ্রেশ লেখায়
++ *      debounce উইন্ডোর ভিতরের ডুপ্লিকেট লেখা Redis-এ যায় না —
++ *      state machine-এর online threshold (৯০s) অক্ষত থাকার মতো বড়
++ *      ডিফল্ট উইন্ডো (৬০s) বেছে নেওয়া হয়েছে।
++ *
++ * Both are best-effort observability-preserving: a cache miss or debounced
++ * write never changes the caller's success/failure contract — it only
++ * removes redundant Redis round-trips.
++ */
++
++export type TtlCacheEntry<T> = { value: T; expiresAtMs: number };
++
++const l1Store = new Map<string, TtlCacheEntry<unknown>>();
++
++/** Default L1 window: 5s — dashboard sweeps are ~1/s at worst, so a 5s
++ *  dedup collapses bursts without visibly staling the board. */
++export const DEFAULT_L1_TTL_MS = 5_000;
++
++/** env দ্বারা নিয়ন্ত্রণযোগ্য L1 TTL; `0` দিলে L1 ক্যাশ পুরোপুরি বন্ধ (opt-out)। */
++export function l1CacheTtlMs(envName: string = "REDIS_L1_CACHE_TTL_MS"): number {
++  const raw = process.env[envName];
++  if (raw === undefined || raw === "") return DEFAULT_L1_TTL_MS;
++  const parsed = Number(raw);
++  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_L1_TTL_MS;
++}
++
++export function l1Get<T>(key: string, nowMs: number = Date.now()): T | undefined {
++  const entry = l1Store.get(key) as TtlCacheEntry<T> | undefined;
++  if (!entry) return undefined;
++  if (nowMs >= entry.expiresAtMs) {
++    l1Store.delete(key);
++    return undefined;
++  }
++  return entry.value;
++}
++
++export function l1Set<T>(key: string, value: T, ttlMs: number, nowMs: number = Date.now()): void {
++  if (ttlMs <= 0) return; // disabled — never store
++  // Bounded: stale entries are pruned lazily; the cache also caps at 512 keys.
++  if (l1Store.size >= 512) {
++    for (const [k, e] of l1Store) {
++      if (nowMs >= e.expiresAtMs) l1Store.delete(k);
++    }
++    if (l1Store.size >= 512) {
++      const firstKey = l1Store.keys().next().value;
++      if (firstKey !== undefined) l1Store.delete(firstKey);
++    }
++  }
++  l1Store.set(key, { value, expiresAtMs: nowMs + ttlMs });
++}
++
++/** Read-through helper: returns the cached value when fresh, else loads,
++ *  stores and returns. Loader throwing = nothing cached (fail-honest). */
++export async function withL1Cache<T>(
++  key: string,
++  ttlMs: number,
++  loader: () => Promise<T>,
++  nowMs: number = Date.now(),
++): Promise<T> {
++  if (ttlMs <= 0) return await loader();
++  const hit = l1Get<T>(key, nowMs);
++  if (hit !== undefined) return hit;
++  const value = await loader();
++  l1Set(key, value, ttlMs, nowMs);
++  return value;
++}
++
++/** Test/reset hook — clears every L1 entry. */
++export function clearRedisL1Cache(): void {
++  l1Store.clear();
++}
++
++// ── WriteDebouncer (#646 AC2 — heartbeat/presence write collapse) ──────────
++
++export type DebounceDecision<T> =
++  | { skip: false }
++  | { skip: true; lastWriteMs: number; metadata?: T };
++
++/**
++ * Sliding-window write collapse for periodic refresh writes. NOT a general
++ * cache: it stores only the last write time (+ optional metadata such as the
++ * account label that accepted the last write) per key.
++ *
++ * Contract (fail-honest): `check()` is READ-ONLY — it never records.
++ * Only `record()` does, and callers invoke it AFTER the real write succeeds,
++ * so a failed write never poisons the debounce window.
++ */
++export class WriteDebouncer<T = undefined> {
++  private last = new Map<string, { atMs: number; metadata?: T }>();
++
++  constructor(private windowMs: number | (() => number)) {}
++
++  /**
++   * Returns `{skip:true}` when a SUCCESSFUL write was recorded for `key`
++   * within the window (caller should NOT hit Redis); otherwise
++   * `{skip:false}`. Does not mutate state.
++   */
++  check(key: string, nowMs: number = Date.now()): DebounceDecision<T> {
++    const windowMs = typeof this.windowMs === "function" ? this.windowMs() : this.windowMs;
++    if (windowMs <= 0) return { skip: false }; // disabled — always write
++    const prev = this.last.get(key);
++    if (prev && nowMs - prev.atMs < windowMs) {
++      return { skip: true, lastWriteMs: prev.atMs, metadata: prev.metadata };
++    }
++    return { skip: false };
++  }
++
++  /** Records a SUCCESSFUL write (call only after the real write resolved). */
++  record(key: string, nowMs: number = Date.now(), metadata?: T): void {
++    const windowMs = typeof this.windowMs === "function" ? this.windowMs() : this.windowMs;
++    // Bounded map: prune stale entries past 4× window once size grows.
++    if (this.last.size >= 512 && windowMs > 0) {
++      for (const [k, v] of this.last) {
++        if (nowMs - v.atMs >= windowMs * 4) this.last.delete(k);
++      }
++      if (this.last.size >= 512) {
++        const firstKey = this.last.keys().next().value;
++        if (firstKey !== undefined) this.last.delete(firstKey);
++      }
++    }
++    this.last.set(key, { atMs: nowMs, metadata });
++  }
++
++  /** Test/reset hook. */
++  reset(): void {
++    this.last.clear();
++  }
++
++  /** Force the next `check(key)` to write (e.g. admin forced refresh). */
++  invalidate(key: string): void {
++    this.last.delete(key);
++  }
++}
+diff --git a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+index eb04eb3b..ecf2df59 100644
+--- a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
++++ b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+@@ -29,11 +29,15 @@ import Redis from "ioredis";
+ import {
+   activeAccountChain,
+   buildAccountChain,
++  getActiveRedisAccount,
++  noteQuotaErrorUsage,
++  noteRedisCommands,
+   RedisQuotaExhaustedError,
+   responseIndicatesQuotaExhaustion,
+   runWithAccountChain,
+   type RedisAccountConfig,
+ } from "../lib/redis_chain.js";
++import { WriteDebouncer, l1CacheTtlMs, withL1Cache } from "../lib/ttl_cache.js";
+ 
+ export type { RedisAccountConfig };
+ // Back-compat re-export: chain construction moved to lib/redis_chain.ts but
+@@ -64,6 +68,28 @@ export type HeartbeatStatusEntry = HeartbeatRecord & {
+   state: HeartbeatState;
+ };
+ 
++// ── #646 AC2: heartbeat write debounce (Redis command-burn reduction) ──────
++// বাংলা: heartbeat প্রতি slot প্রতি ~৪৫s লেখে (HSET + SET = ২ কমান্ড)। Online
++// threshold ৯০s — তাই ৬০s উইন্ডোর ভিতরের ডুপ্লিকেট লেখা Redis-এ না গিয়েও
++// state machine অক্ষত থাকে: সর্বোচ্চ staleness ৬০s < ৯০s (state এখনো "online"),
++// আর missed-writer detection সর্বোচ্চ ৬০s দেরিতে হয় (স্বীকার্য)। ৪৫s-পিং চক্রে
++// প্রায় ৫০% লেখা বাঁচে। env REDIS_HEARTBEAT_DEBOUNCE_SECONDS=0 দিলে বন্ধ।
++export const HEARTBEAT_WRITE_DEBOUNCE_SECONDS = (() => {
++  const raw = Number(process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS);
++  return Number.isFinite(raw) && raw >= 0 ? raw : 60;
++})();
++// Window reads env dynamically (per check/record) — operators can tune or
++// disable (0) at runtime, and tests can toggle per scenario without reload.
++const heartbeatWriteDebouncer = new WriteDebouncer<{ account: string }>(() => {
++  const raw = Number(process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS);
++  return (Number.isFinite(raw) && raw >= 0 ? raw : 60) * 1000;
++});
++
++/** Test/reset hook — debounce state মুছে দেয় (টেস্টগুলো স্বাধীনভাবে লেখা যাচাই করুক)। */
++export function resetRedisWriteDebounce(): void {
++  heartbeatWriteDebouncer.reset();
++}
++
+ /** Validates a slot id. Returns an error message, or null when valid. */
+ export function validateSlot(slot: string): string | null {
+   if (!slot || typeof slot !== "string") return "slot is required";
+@@ -126,6 +152,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+       // runWithAccountChain ইঞ্জিন করে (#110) — client শুধু quota-শেপড error
+       // throw করে, একটাই marking policy থাকে।
+       const errText = await res.text().catch(() => "");
++      // #646: error body-তে প্রকৃত usage থাকলে সত্যে সংশোধন (reactive fallback)।
++      noteQuotaErrorUsage(account.label, errText);
+       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+         throw new RedisQuotaExhaustedError(
+           account.label,
+@@ -137,6 +165,7 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+     const payload = (await res.json()) as { result?: unknown; error?: string };
+     if (payload.error) {
+       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
++        noteQuotaErrorUsage(account.label, String(payload.error));
+         throw new RedisQuotaExhaustedError(
+           account.label,
+           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
+@@ -144,6 +173,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+       }
+       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+     }
++    // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
++    noteRedisCommands(account.label, 1);
+     return payload.result;
+   };
+   return {
+@@ -259,6 +290,9 @@ export type RecordHeartbeatResult = {
+   ttlSeconds: number;
+   redisAccount: string;
+   onlineThreshold: string;
++  /** #646: true হলে এই কলটি debounce উইন্ডোর কারণে Redis-এ যায়নি —
++   *  আগের লেখাই সর্বশেষ সত্য (state machine অক্ষত)। */
++  debounced?: boolean;
+ };
+ 
+ /**
+@@ -281,6 +315,25 @@ export async function recordHeartbeat(
+   }
+ 
+   const nowMs = Date.now();
++
++  // #646 AC2: debounce চেক — উইন্ডোর ভিতরের ডুপ্লিকেট লেখা Redis-এ যায় না।
++  // chain-validation-এর পরে বসানো হয়েছে, তাই "No Redis configuration" error
++  // আগের মতোই throw হয় (CI contract অক্ষত)।
++  const debounceDecision = heartbeatWriteDebouncer.check(`hb:${input.slot}`, nowMs);
++  if (debounceDecision.skip) {
++    const lastWriteMs = debounceDecision.lastWriteMs;
++    return {
++      ok: true,
++      slot: input.slot,
++      agentId: input.agentId?.trim() || input.slot,
++      heartbeatAt: new Date(lastWriteMs).toISOString(),
++      ttlSeconds: HEARTBEAT_TTL_SECONDS,
++      redisAccount: debounceDecision.metadata?.account ?? getActiveRedisAccount().label,
++      onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
++      debounced: true,
++    };
++  }
++
+   const record: HeartbeatRecord = {
+     slot: input.slot,
+     agentId: input.agentId?.trim() || input.slot,
+@@ -318,6 +371,8 @@ export async function recordHeartbeat(
+         ),
+     },
+   );
++  // #646: লেখা সফল হলেই debounce রেকর্ড — ব্যর্থ লেখা কখনো উইন্ডো পয়জন করবে না।
++  heartbeatWriteDebouncer.record(`hb:${input.slot}`, Date.now(), { account: account.label });
+   return {
+     ok: true,
+     slot: record.slot,
+@@ -338,7 +393,9 @@ export type AccountReadStatus = {
+   quotaCooldown?: boolean;
+ };
+ 
+-/** Lists every live heartbeat record with derived real-time state. */
++/** Lists every live heartbeat record with derived real-time state.
++ *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS,
++ *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়। */
+ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
+   ok: true;
+   now: string;
+@@ -346,6 +403,17 @@ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
+   onlineThresholdSeconds: number;
+   accounts: AccountReadStatus[];
+   slots: HeartbeatStatusEntry[];
++}> {
++  return withL1Cache("l1:agent-heartbeats", l1CacheTtlMs(), () => listHeartbeatsFresh(nowMs), nowMs);
++}
++
++async function listHeartbeatsFresh(nowMs: number): Promise<{
++  ok: true;
++  now: string;
++  ttlSeconds: number;
++  onlineThresholdSeconds: number;
++  accounts: AccountReadStatus[];
++  slots: HeartbeatStatusEntry[];
+ }> {
+   const chain = activeAccountChain();
+   if (chain.length === 0) {
+diff --git a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+index 6cdb20d5..c39a8633 100644
+--- a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
++++ b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+@@ -29,11 +29,40 @@ import {
+   type HeartbeatState,
+   type HeartbeatStatusEntry,
+ } from "./agent_heartbeat.js";
+-import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
++import {
++  activeAccountChain,
++  noteQuotaErrorUsage,
++  noteRedisCommands,
++  RedisQuotaExhaustedError,
++  responseIndicatesQuotaExhaustion,
++  runWithAccountChain,
++  type RedisAccountConfig,
++} from "../lib/redis_chain.js";
++import { WriteDebouncer, l1CacheTtlMs, withL1Cache } from "../lib/ttl_cache.js";
+ 
+ export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
+ export const PRESENCE_TTL_SECONDS = 300;
+ 
++// ── #646 AC2: presence write debounce (Redis command-burn reduction) ────────
++// বাংলা: presence প্রতিটি MCP রিকোয়েস্টে sliding-TTL refresh লেখে — একজন
++// সক্রিয় client মিনিটে ডজনখানেক SET পাঠাতে পারে। TTL ৩০০s + state threshold
++// ৯০s, তাই ৬০s উইন্ডোর ডুপ্লিকেট লেখা বাদ দিলেও presence-সত্য অক্ষত থাকে।
++// env REDIS_PRESENCE_DEBOUNCE_SECONDS=0 দিলে বন্ধ।
++export const PRESENCE_WRITE_DEBOUNCE_SECONDS = (() => {
++  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
++  return Number.isFinite(raw) && raw >= 0 ? raw : 60;
++})();
++// Window reads env dynamically (per check/record) — see agent_heartbeat.ts.
++const presenceWriteDebouncer = new WriteDebouncer<{ account: string }>(() => {
++  const raw = Number(process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS);
++  return (Number.isFinite(raw) && raw >= 0 ? raw : 60) * 1000;
++});
++
++/** Test/reset hook — debounce state মুছে দেয়। */
++export function resetPresenceWriteDebounce(): void {
++  presenceWriteDebouncer.reset();
++}
++
+ export type PresenceProtocol = "streamable-http" | "sse" | "stdio" | "custom";
+ 
+ export type PresenceRecord = {
+@@ -131,6 +160,8 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
+       // this account into cooldown and shift to the next one. Presence used
+       // to be the one routed path with NO quota marking; now all are identical.
+       const errText = await res.text().catch(() => "");
++      // #646: error body-তে প্রকৃত usage থাকলে সত্যে সংশোধন (reactive fallback)।
++      noteQuotaErrorUsage(account.label, errText);
+       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+         throw new RedisQuotaExhaustedError(
+           account.label,
+@@ -142,6 +173,7 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
+     const payload = (await res.json()) as { result?: unknown; error?: string };
+     if (payload.error) {
+       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
++        noteQuotaErrorUsage(account.label, String(payload.error));
+         throw new RedisQuotaExhaustedError(
+           account.label,
+           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
+@@ -149,6 +181,8 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
+       }
+       throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+     }
++    // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
++    noteRedisCommands(account.label, 1);
+     return payload.result;
+   };
+   return {
+@@ -234,6 +268,8 @@ export type RecordPresenceResult = {
+   ok: true;
+   key: string;
+   ttlSeconds: number;
++  /** #646: true হলে এই কলটি debounce উইন্ডোর কারণে Redis-এ যায়নি। */
++  debounced?: boolean;
+ };
+ 
+ /**
+@@ -261,6 +297,14 @@ export async function recordPresence(
+     updatedAt: new Date(nowMs).toISOString(),
+   };
+   const key = presenceKey(record.clientName, record.clientId);
++
++  // #646 AC2: debounce চেক — chain-validation-এর পরে, তাই "No Redis
++  // configuration" error আগের মতোই throw হয় (CI contract অক্ষত)।
++  const debounceDecision = presenceWriteDebouncer.check(key, nowMs);
++  if (debounceDecision.skip) {
++    return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS, debounced: true };
++  }
++
+   const value = JSON.stringify(record);
+   // #110: chain-walk + quota-marking through the single engine; the failure
+   // message stays byte-identical to the deleted hand-rolled loop.
+@@ -279,6 +323,8 @@ export async function recordPresence(
+         ),
+     },
+   );
++  // #646: লেখা সফল হলেই debounce রেকর্ড — ব্যর্থ লেখা উইন্ডো পয়জন করবে না।
++  presenceWriteDebouncer.record(key, Date.now());
+   return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
+ }
+ 
+@@ -289,8 +335,13 @@ export type PresenceListResult = {
+   clients: PresenceStatusEntry[];
+ };
+ 
+-/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)। */
++/** সব সক্রিয় interactive-client presence (সব account-chain merge, freshest wins)।
++ *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS, 0 = off)। */
+ export async function listPresence(nowMs: number = Date.now()): Promise<PresenceListResult> {
++  return withL1Cache("l1:mcp-presence", l1CacheTtlMs(), () => listPresenceFresh(nowMs), nowMs);
++}
++
++async function listPresenceFresh(nowMs: number): Promise<PresenceListResult> {
+   const chain = activeAccountChain();
+   if (chain.length === 0) {
+     throw new Error(
+diff --git a/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts b/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
+index d87512f4..947a47e7 100644
+--- a/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
++++ b/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
+@@ -17,6 +17,8 @@
+ 
+ import {
+   activeAccountChain,
++  noteQuotaErrorUsage,
++  noteRedisCommands,
+   RedisQuotaExhaustedError,
+   responseIndicatesQuotaExhaustion,
+   runWithAccountChain,
+@@ -207,6 +209,7 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
+             const payload = (await res.json()) as { result?: unknown; error?: string };
+             if (payload.error) {
+               if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
++                noteQuotaErrorUsage(account.label, String(payload.error));
+                 throw new RedisQuotaExhaustedError(
+                   account.label,
+                   `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
+@@ -214,6 +217,8 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
+               }
+               throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+             }
++            // #646 AC1: সফল কমান্ড গণনা — preemptive rotation-এর প্রাথমিক সত্য-উৎস।
++            noteRedisCommands(account.label, 1);
+             return payload.result;
+           },
+           {
+diff --git a/infrastructure/mcp-control-plane/test_redis_preemptive_rotation.ts b/infrastructure/mcp-control-plane/test_redis_preemptive_rotation.ts
+new file mode 100644
+index 00000000..7456857c
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_redis_preemptive_rotation.ts
+@@ -0,0 +1,231 @@
++/**
++ * Preemptive quota rotation + command-burn reduction regression test (#646).
++ *
++ * AC1 — Preemptive rotation at the 96% soft threshold (default 480,000):
++ *   the account must LEAVE the active rotation pool BEFORE the 500k ceiling
++ *   produces a rejected request. The mock never serves a quota error, so any
++ *   rotation observed in this test is provably pre-error (zero failed
++ *   requests) — exactly the contract that reactive-only rotation broke in
++ *   the live incident (ERR ... Limit: 500000, Usage: 500002).
++ *
++ * AC2 — Root-cause command consumption optimization:
++ *   - heartbeat/presence write debounce collapses duplicate refresh writes;
++ *   - L1 read-through cache collapses dashboard sweep bursts;
++ *   - usage truth-tiering: local counter → quota error body parse →
++ *     authoritative remaining-headers.
++ *
++ * Run: npm run test:preemptive-rotation   (wired into test:unit)
++ */
++import assert from "node:assert/strict";
++
++import {
++  activeAccountChain,
++  isAccountQuotaExhausted,
++  noteQuotaErrorUsage,
++  noteRedisCommands,
++  noteRedisResponseHeaders,
++  quotaChainStatus,
++  redisUsageSnapshot,
++  resetRedisUsageTracking,
++  upstashCommandLimit,
++  upstashSoftThreshold,
++} from "./src/lib/redis_chain.js";
++import { clearRedisL1Cache } from "./src/lib/ttl_cache.js";
++import { recordHeartbeat, resetRedisWriteDebounce } from "./src/registry/agent_heartbeat.js";
++import { recordPresence, resetPresenceWriteDebounce } from "./src/registry/mcp_presence.js";
++
++// ── Chain under test: two REST accounts ─────────────────────────────────────
++process.env.UPSTASH_REDIS_REST_URL = "https://primary.preempt-test.invalid";
++process.env.UPSTASH_REDIS_REST_TOKEN = "t1";
++process.env.UPSTASH_REDIS_SECONDARY_REST_URL = "https://secondary.preempt-test.invalid";
++process.env.UPSTASH_REDIS_SECONDARY_REST_TOKEN = "t2";
++for (const k of [
++  "UPSTASH_REDIS_TERTIARY_REST_URL", "UPSTASH_REDIS_TERTIARY_REST_TOKEN",
++  "UPSTASH_REDIS_QUATERNARY_REST_URL", "UPSTASH_REDIS_QUATERNARY_REST_TOKEN",
++  "UPSTASH_REDIS_QUINARY_REST_URL", "UPSTASH_REDIS_QUINARY_REST_TOKEN",
++  "REDIS_URL",
++]) delete process.env[k];
++
++// Thresholds/debounce are env-tunable per scenario (window reads env at call time).
++const realFetch = globalThis.fetch.bind(globalThis);
++const calls: { host: string; command: string }[] = [];
++let serveQuotaError = false;
++
++(globalThis as unknown as { fetch: typeof fetch }).fetch = (async (input: unknown, init?: RequestInit) => {
++  const url = new URL(String(input));
++  const payload = JSON.parse(String(init?.body ?? "[]")) as string[];
++  calls.push({ host: url.host, command: payload[0] ?? "?" });
++  if (serveQuotaError && url.host.startsWith("primary.")) {
++    return new Response("ERR max requests limit exceeded. Limit: 500000, Usage: 500002", { status: 400 });
++  }
++  return new Response(JSON.stringify({ result: payload[0] === "KEYS" ? [] : "OK" }), { status: 200 });
++}) as typeof fetch;
++
++/** Full isolation between scenarios. */
++function resetAll(): void {
++  for (const label of ["primary", "secondary"]) {
++    isAccountQuotaExhausted(label, 8_200_000_000_000); // expire-check deletes the entry
++  }
++  resetRedisUsageTracking();
++  resetRedisWriteDebounce();
++  resetPresenceWriteDebounce();
++  clearRedisL1Cache();
++  calls.length = 0;
++  serveQuotaError = false;
++}
++
++const hosts = () => calls.map((c) => c.host);
++const primaryCalls = () => calls.filter((c) => c.host.startsWith("primary.")).length;
++
++// ── 0. Threshold geometry: default 96% of 500k = 480,000 ────────────────────
++delete process.env.UPSTASH_COMMAND_LIMIT;
++delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
++assert.equal(upstashCommandLimit(), 500_000);
++assert.equal(upstashSoftThreshold(), 480_000, "default soft threshold must be 480k (96% of 500k)");
++assert.equal(upstashSoftThreshold() < upstashCommandLimit(), true);
++
++// ── 1. AC1 — local-count preemptive rotation with ZERO failed requests ──────
++{
++  resetAll();
++  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "5";
++  // Every heartbeat write = 2 commands (HSET + SET). Threshold 5 → after the
++  // 3rd write's HSET (count 5→6 by the SET) the primary must be out of the pool.
++  for (const slot of ["agent-31", "agent-32", "agent-33"]) {
++    const r = await recordHeartbeat({ slot, source: "mcp-tower" });
++    assert.equal(r.ok, true);
++    assert.notEqual(r.debounced, true);
++  }
++  assert.ok(primaryCalls() >= 5, "primary must have served the commands up to the threshold");
++  assert.ok(!hosts().slice(0, 5).every((h) => h.startsWith("secondary.")), "first writes start on primary");
++  // The 4th write must NOT touch primary — rotated preemptively, no error seen.
++  calls.length = 0;
++  const r4 = await recordHeartbeat({ slot: "agent-34", source: "mcp-tower" });
++  assert.equal(r4.ok, true);
++  assert.equal(r4.redisAccount, "secondary", "4th write must land on secondary after preemptive rotation");
++  assert.equal(primaryCalls(), 0, "ZERO requests may hit the rotated-out account (no failed request possible)");
++  assert.ok(isAccountQuotaExhausted("primary"), "primary visibly in cooldown after soft-threshold hit");
++  const status = quotaChainStatus().find((s) => s.label === "primary");
++  assert.ok(status?.cooldownUntil, "quotaChainStatus must expose the preemptive cooldown");
++  assert.ok(status?.usage && status.usage.softThresholdHit, "usage snapshot must flag softThresholdHit");
++  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
++}
++
++// ── 2. Remaining-header authority → preemptive rotation (pure unit) ─────────
++{
++  resetAll();
++  process.env.UPSTASH_COMMAND_LIMIT = "100";
++  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "80";
++  const consumed = noteRedisResponseHeaders(
++    "primary",
++    new Headers({ "x-upstash-remaining-requests": "19" }),
++  );
++  assert.equal(consumed, true, "remaining header must be recognized");
++  assert.ok(isAccountQuotaExhausted("primary"), "used=81 >= threshold=80 → preemptive rotation");
++  assert.equal(activeAccountChain()[0].label, "secondary");
++  const snap = redisUsageSnapshot().find((s) => s.label === "primary");
++  assert.equal(snap?.estimatedCommands, 81, "usage derived from limit - remaining");
++  delete process.env.UPSTASH_COMMAND_LIMIT;
++  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
++}
++
++// ── 3. Quota error body parse records REAL usage (truth correction) ─────────
++{
++  resetAll();
++  noteQuotaErrorUsage("secondary", "ERR max requests limit exceeded. Limit: 500000, Usage: 499999");
++  assert.ok(isAccountQuotaExhausted("secondary"), "499999 >= 480k → account rotates");
++  const snap = redisUsageSnapshot().find((s) => s.label === "secondary");
++  assert.equal(snap?.estimatedCommands, 499999, "error-body usage overrides the local lower bound");
++  // Non-matching bodies are ignored (no false usage).
++  resetAll();
++  noteQuotaErrorUsage("primary", "some unrelated error");
++  assert.equal(isAccountQuotaExhausted("primary"), false);
++}
++
++// ── 4. AC2 — heartbeat write debounce collapses duplicate refreshes ─────────
++{
++  resetAll();
++  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "999999999";
++  process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS = "60";
++  const r1 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
++  assert.equal(r1.ok, true);
++  assert.notEqual(r1.debounced, true);
++  const afterFirst = calls.length;
++  assert.ok(afterFirst >= 2, "first write = HSET + SET on Redis");
++  const r2 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
++  assert.equal(r2.ok, true);
++  assert.equal(r2.debounced, true, "second write within the window must be debounced");
++  assert.equal(calls.length, afterFirst, "debounced write must not touch Redis");
++  // Different slot → independent window → still writes.
++  const r3 = await recordHeartbeat({ slot: "agent-42", source: "mcp-tower" });
++  assert.notEqual(r3.debounced, true);
++  assert.ok(calls.length > afterFirst);
++  // Reset hook restores independent-write semantics for tests.
++  resetRedisWriteDebounce();
++  const r4 = await recordHeartbeat({ slot: "agent-41", source: "mcp-tower" });
++  assert.notEqual(r4.debounced, true, "after reset the same slot writes again");
++  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
++  delete process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS;
++}
++
++// ── 5. AC2 — presence write debounce (per client key) ────────────────────────
++{
++  resetAll();
++  process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS = "60";
++  const p1 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
++  assert.equal(p1.ok, true);
++  assert.notEqual(p1.debounced, true);
++  const afterFirst = calls.length;
++  const p2 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
++  assert.equal(p2.debounced, true);
++  assert.equal(calls.length, afterFirst, "presence refresh within window must not touch Redis");
++  const p3 = await recordPresence({ clientName: "Cursor", clientId: "c-2", protocol: "streamable-http" });
++  assert.notEqual(p3.debounced, true, "different client id → separate window");
++  resetPresenceWriteDebounce();
++  const p4 = await recordPresence({ clientName: "Cursor", clientId: "c-1", protocol: "streamable-http" });
++  assert.notEqual(p4.debounced, true);
++  delete process.env.REDIS_PRESENCE_DEBOUNCE_SECONDS;
++}
++
++// ── 6. AC2 — L1 read-through cache collapses sweep bursts ───────────────────
++{
++  resetAll();
++  process.env.REDIS_L1_CACHE_TTL_MS = "5000";
++  await recordHeartbeat({ slot: "agent-61", source: "mcp-tower" }); // seed one record
++  process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS = "0";
++  resetRedisWriteDebounce();
++  calls.length = 0;
++  const first = await listHeartbeatsSafe();
++  const afterFirst = calls.length;
++  assert.ok(afterFirst > 0, "first sweep must read Redis");
++  const second = await listHeartbeatsSafe();
++  assert.equal(calls.length, afterFirst, "second sweep within TTL must be served from L1");
++  assert.deepEqual(second.slots.map((s) => s.slot), first.slots.map((s) => s.slot));
++  clearRedisL1Cache();
++  await listHeartbeatsSafe();
++  assert.ok(calls.length > afterFirst, "after cache clear the sweep reads Redis again");
++  delete process.env.REDIS_L1_CACHE_TTL_MS;
++  delete process.env.REDIS_HEARTBEAT_DEBOUNCE_SECONDS;
++}
++
++async function listHeartbeatsSafe() {
++  const { listHeartbeats } = await import("./src/registry/agent_heartbeat.js");
++  return await listHeartbeats();
++}
++
++// ── 7. Local counter drives preemptive rotation directly (unit) ─────────────
++{
++  resetAll();
++  process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD = "3";
++  noteRedisCommands("primary", 1);
++  noteRedisCommands("primary", 1);
++  assert.equal(isAccountQuotaExhausted("primary"), false, "below threshold → still active");
++  noteRedisCommands("primary", 1); // hits 3
++  assert.ok(isAccountQuotaExhausted("primary"), "threshold hit → preemptive cooldown");
++  delete process.env.UPSTASH_PREEMPTIVE_ROTATION_THRESHOLD;
++}
++
++// ── Cleanup ──────────────────────────────────────────────────────────────────
++resetAll();
++(globalThis as unknown as { fetch: typeof fetch }).fetch = realFetch;
++
++console.log("ALL PREEMPTIVE-ROTATION TESTS PASSED (#646) — 7/7 scenarios: zero failed requests before rotation, debounce + L1 cache active");
+diff --git a/infrastructure/mcp-control-plane/test_redis_quota_routing.ts b/infrastructure/mcp-control-plane/test_redis_quota_routing.ts
+index 79985674..64ef9415 100644
+--- a/infrastructure/mcp-control-plane/test_redis_quota_routing.ts
++++ b/infrastructure/mcp-control-plane/test_redis_quota_routing.ts
+@@ -25,9 +25,11 @@ import assert from "node:assert/strict";
+ import {
+   isAccountQuotaExhausted,
+   quotaChainStatus,
++  resetRedisUsageTracking,
+ } from "./src/lib/redis_chain.js";
+-import { recordHeartbeat } from "./src/registry/agent_heartbeat.js";
+-import { recordPresence } from "./src/registry/mcp_presence.js";
++import { clearRedisL1Cache } from "./src/lib/ttl_cache.js";
++import { recordHeartbeat, resetRedisWriteDebounce } from "./src/registry/agent_heartbeat.js";
++import { recordPresence, resetPresenceWriteDebounce } from "./src/registry/mcp_presence.js";
+ import { makeDispatchStore } from "./src/registry/orchestrator_dispatch.js";
+ import { UpstashClientRegistryStore } from "./src/policy/client-registry.store.js";
+ 
+@@ -41,12 +43,18 @@ for (const k of ["UPSTASH_REDIS_TERTIARY_REST_URL", "UPSTASH_REDIS_TERTIARY_REST
+   delete process.env[k];
+ }
+ 
+-/** Cooldown state is module-global — clear it before/after each scenario. */
++/** Cooldown state is module-global — clear it before/after each scenario.
++ *  #646: usage counters + write debouncers + L1 cache are also global —
++ *  reset them so every scenario starts from a clean fleet. */
+ function resetCooldowns(): void {
+   // Expired-check deletes the entry: any nowMs beyond the stored until works.
+   for (const label of ["primary", "secondary"]) {
+     isAccountQuotaExhausted(label, 8_200_000_000_000);
+   }
++  resetRedisUsageTracking();
++  resetRedisWriteDebounce();
++  resetPresenceWriteDebounce();
++  clearRedisL1Cache();
+ }
+ 
+ // ── Host-keyed fetch mock: primary answers quota, secondary answers success ─

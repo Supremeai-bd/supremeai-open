@@ -1,0 +1,34 @@
+diff --git a/scripts/ci/js_dep_cve_baseline.json b/scripts/ci/js_dep_cve_baseline.json
+index de5c9b83..3566b52b 100644
+--- a/scripts/ci/js_dep_cve_baseline.json
++++ b/scripts/ci/js_dep_cve_baseline.json
+@@ -1,9 +1,5 @@
+ {
+  "findings": {
+-  "@grpc/grpc-js@1.9.16": [
+-   "GHSA-f596-whhp-79r4",
+-   "GHSA-m9gg-hp2v-232j"
+-  ],
+   "@vitest/mocker@3.2.7": [
+    "GHSA-82fw-gwwq-j7x9",
+    "GHSA-qxg6-89mg-rqv8"
+@@ -52,15 +48,15 @@
+   "dated": "2026-10-28",
+   "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them \u2014 a pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow.",
+   "ecosystem": "npm",
+-  "head": "602a435 2026-10-28",
++  "head": "fc3c1a0 2026-10-28",
+   "issue": 1913,
+   "lockfile": "studio/pnpm-lock.yaml",
+   "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
+   "totals": {
+-   "pairs_scanned": 809,
++   "pairs_scanned": 740,
+    "skipped_non_registry_keys": 0,
+-   "vuln_ids": 31,
+-   "vulnerable_pairs": 8
++   "vuln_ids": 29,
++   "vulnerable_pairs": 7
+   }
+  }
+ }

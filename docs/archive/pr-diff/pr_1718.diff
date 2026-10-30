@@ -1,0 +1,188 @@
+diff --git a/gateway/routes/admin_dashboard/endpoints_metrics.py b/gateway/routes/admin_dashboard/endpoints_metrics.py
+index bf6c207f..bdbffeb8 100644
+--- a/gateway/routes/admin_dashboard/endpoints_metrics.py
++++ b/gateway/routes/admin_dashboard/endpoints_metrics.py
+@@ -3,7 +3,7 @@
+ from api.routes.admin_dashboard import router
+ from core.config import settings
+ from core.logging_config import logger
+-from core._monitoring_legacy import get_metrics_collector
++from core.monitoring import get_metrics_collector
+ from core.observability.metrics_registry import get_window_metrics, metrics_engine
+ 
+ 
+diff --git a/gateway/routes/admin_v1.py b/gateway/routes/admin_v1.py
+index 5d4f86f7..0935464b 100644
+--- a/gateway/routes/admin_v1.py
++++ b/gateway/routes/admin_v1.py
+@@ -174,7 +174,7 @@ async def admin_health_v1(admin: dict = Depends(get_current_admin)) -> dict[str,
+ @router.get("/admin/system-status")
+ async def admin_system_status_v1(admin: dict = Depends(get_current_admin)) -> dict[str, Any]:
+     """Real process-level system status (collector summary, no fabrications)."""
+-    from core._monitoring_legacy import get_metrics_collector
++    from core.monitoring import get_metrics_collector
+ 
+     summary = get_metrics_collector().get_summary()
+     return {
+diff --git a/tests/test_gateway_private_import_boundary.py b/tests/test_gateway_private_import_boundary.py
+new file mode 100644
+index 00000000..92d06604
+--- /dev/null
++++ b/tests/test_gateway_private_import_boundary.py
+@@ -0,0 +1,156 @@
++#!/usr/bin/env python3
++"""tests/test_gateway_private_import_boundary.py — gateway→core private-import boundary guard.
++
++Auditor finding #1693: two gateway files imported core's underscore-private
++module ``core._monitoring_legacy`` directly across the domain boundary,
++bypassing the ``core.monitoring`` public facade that exists precisely to
++re-export it (3-strategy fallback). A refactor of ``_monitoring_legacy``
++internals would silently break the gateway admin dashboard.
++
++Remediation (this patch): swap the two gateway import sites to
++``from core.monitoring import get_metrics_collector`` — the facade is the
++only sanctioned cross-domain surface. This guard pins that invariant:
++
++  1. ``test_gateway_never_imports_core_private_modules`` — zero static or
++     dynamic (``importlib.import_module``/``import_module``) imports of
++     ``core._*`` across all tracked ``gateway/**/*.py`` files.
++  2. ``test_core_monitoring_facade_reexports_collector`` — the facade
++     exposes ``get_metrics_collector`` (the symbol the remediated call
++     sites consume) without importing the gateway domain.
++
++In-domain note: ``core/*`` importing its own ``core._*`` internals is NOT a
++violation (domain-internal access is legitimate); the boundary this guard
++enforces is one-directional: gateway → core private.
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++  - pytest:  pytest tests/test_gateway_private_import_boundary.py
++  - stdlib:  python3 tests/test_gateway_private_import_boundary.py
++
++Every check is offline and deterministic (pure AST over the worktree).
++Fail-closed: if the gateway tree cannot be located, the test fails loudly
++rather than silently passing.
++"""
++
++from __future__ import annotations
++
++import ast
++import subprocess
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++
++GATEWAY_DIR = REPO_ROOT / "gateway"
++PRIVATE_PREFIX = "core._"
++
++
++class _Skip(Exception):
++    """Honest skip signal (dual-mode; mirrors test_ci_guards.py)."""
++
++
++def _tracked_gateway_py_files() -> list[Path]:
++    """Tracked *.py under gateway/ via git ls-files (fail-closed on git failure)."""
++    out = subprocess.run(
++        ["git", "ls-files", "--", "gateway/*.py", "gateway/**/*.py"],
++        cwd=REPO_ROOT, capture_output=True, text=True, timeout=60, check=True,
++    )
++    files = [REPO_ROOT / f for f in out.stdout.splitlines() if f.strip()]
++    if not files:
++        # Fail-closed: a vanished gateway tree must fail loudly, not pass vacuously.
++        if not GATEWAY_DIR.exists():
++            raise _Skip("gateway/ tree not found in worktree")
++        files = sorted(GATEWAY_DIR.rglob("*.py"))
++    return files
++
++
++def _find_private_core_imports(path: Path) -> list[str]:
++    """Return human-readable violations for private core imports in one file.
++
++    Catches three shapes:
++      A) ``from core._mod import x``        -> ast.ImportFrom with private module
++      B) ``from core import _mod``          -> ast.ImportFrom(core) with private alias
++      C) ``import core._mod``               -> ast.Import with private name
++      D) ``importlib.import_module("core._mod")`` / ``import_module("core._mod")``
++                                            -> dynamic constant-string import call
++    """
++    violations: list[str] = []
++    try:
++        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
++    except SyntaxError as exc:  # unparsable file cannot hide imports — flag it
++        return [f"{path}: SyntaxError ({exc}) — cannot verify boundary"]
++
++    for node in ast.walk(tree):
++        if isinstance(node, ast.ImportFrom) and node.module:
++            if node.module.startswith(PRIVATE_PREFIX):
++                violations.append(f"{path}:{node.lineno} from {node.module} import ...")
++            elif node.module == "core":
++                for alias in node.names:
++                    if alias.name.startswith("_"):
++                        violations.append(f"{path}:{node.lineno} from core import {alias.name}")
++        elif isinstance(node, ast.Import):
++            for alias in node.names:
++                if alias.name.startswith(PRIVATE_PREFIX):
++                    violations.append(f"{path}:{node.lineno} import {alias.name}")
++        elif isinstance(node, ast.Call):
++            func = node.func
++            is_import_module = (
++                (isinstance(func, ast.Attribute) and func.attr == "import_module")
++                or (isinstance(func, ast.Name) and func.id == "import_module")
++            )
++            if is_import_module and node.args:
++                arg = node.args[0]
++                if (
++                    isinstance(arg, ast.Constant)
++                    and isinstance(arg.value, str)
++                    and arg.value.startswith(PRIVATE_PREFIX)
++                ):
++                    violations.append(
++                        f"{path}:{node.lineno} import_module({arg.value!r}) (dynamic)"
++                    )
++    return violations
++
++
++def test_gateway_never_imports_core_private_modules():
++    assert GATEWAY_DIR.exists(), "gateway/ tree missing from worktree"
++    files = _tracked_gateway_py_files()
++    assert len(files) >= 50, f"expected a real gateway tree (>=50 py files), got {len(files)}"
++    violations: list[str] = []
++    for f in files:
++        violations.extend(_find_private_core_imports(f))
++    assert violations == [], (
++        "gateway→core private-import boundary violated (use the core public facade):\n"
++        + "\n".join(sorted(violations))
++    )
++
++
++def test_core_monitoring_facade_reexports_collector():
++    facade = REPO_ROOT / "core" / "monitoring" / "__init__.py"
++    assert facade.exists(), "core/monitoring/__init__.py facade missing"
++    src = facade.read_text(encoding="utf-8", errors="replace")
++    tree = ast.parse(src)
++    # Facade uses module-level __getattr__ forwarding; pin the two load-bearing pieces:
++    has_getattr = any(
++        isinstance(n, ast.FunctionDef) and n.name == "__getattr__" for n in tree.body
++    )
++    assert has_getattr, "facade lost its __getattr__ re-export mechanism"
++    assert "core._monitoring_legacy" in src, (
++        "facade no longer references core._monitoring_legacy — re-export chain changed?"
++    )
++
++
++def main() -> int:  # plain stdlib runner (dual mode)
++    try:
++        test_gateway_never_imports_core_private_modules()
++        test_core_monitoring_facade_reexports_collector()
++    except _Skip as exc:
++        print(f"SKIP: {exc}")
++        return 0
++    except AssertionError as exc:
++        print(f"FAIL: {exc}")
++        return 1
++    print("PASS: gateway→core private-import boundary clean; facade re-export intact")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())

@@ -1,0 +1,52 @@
+diff --git a/docs/reports/CI_FOLLOWTHROUGH_1745_2026-10-30.md b/docs/reports/CI_FOLLOWTHROUGH_1745_2026-10-30.md
+new file mode 100644
+index 00000000..d20f282e
+--- /dev/null
++++ b/docs/reports/CI_FOLLOWTHROUGH_1745_2026-10-30.md
+@@ -0,0 +1,46 @@
++# CI follow-through addendum for #1745 (R29) — closure premised on part A only
++
++Report-only (#2901/#2360 pattern; no Closes; closure = admin). By zai-glm-agent-c33
++(Job 478342). Anchors @ `ca43e18`, re-verified @ `ef42f8a`: raw pip still L519/521/
++573-574/983, still zero uv tokens. Full dossier (3 hunks + battery V1-V6) in worklog
++cycles 30-32 + staged runbook.
++
++## Facts
++
++#1745 closed "completed" via PR #2873 (part A lock, sound — completes the #2827
++pair). Ledger: item 3 MET; items 1-2 UNMET — zero uv tokens in `pipeline.yml`;
++raw pip L519/L521/L573-574/L983; lock consumed by no CI job; no freshness gate; CI
++re-resolves floating ranges.
++
++## Remedy (preflight hunk verbatim; replaces L519+L521; hunks 2-3 ~L571/~L981 in runbook)
++
++```yaml
++      - name: "Setup uv (R29 #1745 — SHA-pinned per check_actions_pinning house rule)"
++        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
++        with:
++          version: "0.13.6"
++          enable-cache: true
++      - name: Install PyYAML
++        run: uv pip install --system pyyaml==6.0.3
++      - name: Install import-linter (import-contract gate, #1791)
++        run: uv pip install --system -r requirements-dev.lock
++      - name: Lock freshness gate (R29 acceptance item 2 - CI validates lock freshness)
++        run: |
++          set -euo pipefail
++          uv pip compile requirements-dev.txt -o /tmp/fresh.lock --quiet
++          diff <(tail -n +3 /tmp/fresh.lock) <(tail -n +3 requirements-dev.lock)
++```
++
++(`#`-containing step names must stay double-quoted; uv bumps recompile the lock same-commit.)
++
++## Follow-through (admin lane)
++
++Apply the 3-hunk diff or re-scope R29 explicitly (= deferral receipt). Debris debt: 5
++probe files on main (`docs/bridge/__bisect__.md`, `__micro__.md`, `__head19__.md`,
++`__iso_procsub__.md`, `__iso_sha__.md`) — cleanup PR owed, not bundled.
++
++## Provenance
++
++#2211 → #2738 → #2608/#2615 → #2901 → this. Tier2 8/8; Tier3 1673P/11S/0F; 0 behind
++@ `ef42f8a`. Gate: heavier variants hollowed (7.4KB ×2, 11KB ×3) — this ~2.0KB trim
++files inside the proven ≤2.1KB band.

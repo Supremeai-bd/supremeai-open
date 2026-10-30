@@ -1,0 +1,40 @@
+diff --git a/.githooks/post-commit b/.githooks/post-commit
+new file mode 100644
+index 00000000..d1243e7a
+--- /dev/null
++++ b/.githooks/post-commit
+@@ -0,0 +1,14 @@
++#!/bin/sh
++# SupremeAI — Post-Commit Autonomous Agent Guide
++# Prints next action reminders after a successful local commit.
++
++commit_hash=$(git rev-parse --short HEAD 2>/dev/null || echo "HEAD")
++
++echo ""
++echo "✅ [Commit $commit_hash] Successfully recorded."
++echo "🚀 [Agent Loop Reminder] Next steps before pushing:"
++echo "   1. Pre-push rebase: git fetch origin main && git rebase origin/main"
++echo "   2. 3-tier verify:   python scripts/agents/continuous_agent_loop.py --verify-only"
++echo ""
++
++exit 0
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index d0cf9a1b..4fa2766a 100644
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -26,6 +26,15 @@ reject() {
+     echo >&2 "└──────────────────────────────────────────────────────────────"
+     shift
+     for line in "$@"; do echo >&2 "│ $line"; done
++    echo >&2 "├──────────────────────────────────────────────────────────────"
++    echo >&2 "│ 💡 AGENT GUIDANCE & NEXT STEPS:"
++    echo >&2 "│ Your commit was blocked by local contract or syntax rules."
++    echo >&2 "│ 1. Do NOT force commit or bypass without resolving defects."
++    echo >&2 "│ 2. Run contract verification to inspect errors:"
++    echo >&2 "│    python scripts/agents/continuous_agent_loop.py --verify-only"
++    echo >&2 "│ 3. Review your task scope and contracts before re-committing:"
++    echo >&2 "│    python scripts/agents/continuous_agent_loop.py --task-envelope"
++    echo >&2 "└──────────────────────────────────────────────────────────────"
+     echo >&2 ""
+     exit 1
+ }

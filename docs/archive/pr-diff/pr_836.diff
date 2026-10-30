@@ -1,0 +1,33 @@
+diff --git a/studio/src/components/core/GlobalConfigInitializer.tsx b/studio/src/components/core/GlobalConfigInitializer.tsx
+index c4a80c49..3b445a2b 100644
+--- a/studio/src/components/core/GlobalConfigInitializer.tsx
++++ b/studio/src/components/core/GlobalConfigInitializer.tsx
+@@ -31,7 +31,6 @@ export const GlobalConfigInitializer: React.FC<GlobalConfigInitializerProps> = (
+     let cancelled = false;
+     let retryCount = 0;
+     let backoffTimer: ReturnType<typeof setTimeout> | null = null;
+-    let deadlineTimer: ReturnType<typeof setTimeout> | null = null;
+ 
+     const applyConfig = (data: unknown) => {
+       if (cancelled) return;
+@@ -102,7 +101,6 @@ export const GlobalConfigInitializer: React.FC<GlobalConfigInitializerProps> = (
+     return () => {
+       cancelled = true;
+       if (backoffTimer) clearTimeout(backoffTimer);
+-      if (deadlineTimer) clearTimeout(deadlineTimer);
+       if (typeof window !== 'undefined') {
+         window.removeEventListener('online', onDeviceOnline);
+       }
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 01164fc9..21c5c661 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -189,7 +189,7 @@ export function GuestChat() {
+     setMessages((m) => [...m, { role: 'user', text }]);
+     setBusy(true);
+     try {
+-      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch {} }
++      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch { /* ignore storage error */ } }
+       const reply = await callLiveAI(text, model, apiKey);
+       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
+     } catch {

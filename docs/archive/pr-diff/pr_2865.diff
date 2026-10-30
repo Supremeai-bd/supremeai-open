@@ -1,0 +1,100 @@
+diff --git a/docs/reports/INTAKE_RCA_2792_2026-10-30.md b/docs/reports/INTAKE_RCA_2792_2026-10-30.md
+new file mode 100644
+index 00000000..6c32a66b
+--- /dev/null
++++ b/docs/reports/INTAKE_RCA_2792_2026-10-30.md
+@@ -0,0 +1,94 @@
++# Bridge Intake Gate RCA — evidence addendum for #2792 (2026-10-30)
++
++Report-only receipt (the #2511 peer pattern: RCA + suggested guard, admin applies).
++Claimed/worked by zai-loop-agent (Job 484751 lineage, tower session 2026-10-30 05:4x+08).
++All findings below are live-probed 2026-10-29T21:41-21:57Z unless noted.
++
++## 1. Live status: still down, and schedule-starved on top
++
++- Latest intake run is still **#329 (failure, 2026-10-29T16:56:58Z)** — no new run in
++  the 5 hourly cron slots after it (probe 21:45Z). Downtime is now **>19h**, not >14h.
++- The workflow cron is `23 * * * *` (hourly) but actual cadence has been 3-8h gaps for
++  days (13:03→18:53→23:15→02:28→10:05→16:56Z). GitHub-side schedule drops; the
++  hourly-cron assumption in any latency SLO is false.
++
++## 2. Signature split: the old streak was a DIFFERENT failure mode
++
++Tower `github.get_failed_logs` (2,119ch tail-capped) across both streaks:
++
++| streak | runs | exit code | window |
++|---|---|---|---|
++| old | #285, #290, #300, #305, #307, #309 | **1** | 10-24/25 (BEFORE c161014) |
++| current | #327, #328, #329 | **2** | 10-29 (after c161014) |
++
++Exit 1 = BridgeError escaping `main()` (queue fetch / labels / sync fetch — the
++pre-#65 family). Exit 2 = controlled fail-honest return. The two streaks are
++different failure classes; c161014 is exonerated for the OLD streak and the
++current one is a genuinely new mode debuting at #327.
++
++## 3. Exit-code semantics (private `scripts/bridge/bridge_intake.py`, read via tower)
++
++- L962 `return 2 if unexpected else 0` — any per-order result line containing
++  ERROR/UNEXPECTED without QUARANTINED fails the whole run.
++- L1078-1081 — `sync_errors` → 2. L1083-1090 — missing BRIDGE_TOKEN / unknown mode → 2.
++- `main()`: `if rc == 0 … cmd_sync(token)` — **sync (landed/rejected reporting) is
++  skipped whenever intake fails** → landed-reporting starved for the entire streak
++  (matches the "#2677 drain pending" note in #2769's title).
++
++## 4. Specimen: #2677 (Cycle-41 watch receipt) — the proven 422 chain
++
++Feedback plane: verdict at **2026-10-29T16:57:22Z** (24s into run #329):
++`ERROR (honest): github POST /repos/Supremeai-bd/supremeai/pulls → HTTP 422: Validation Failed`
++
++Branch archaeology (all probed 21:50-21:56Z):
++1. Public patch branch `bridge/bridge-20261030-plane-watch-c41` — **absent now**
++   (404 "No commit found for the ref").
++2. Its report file **IS already on public main** (sha e9d49e49, landed via the
++   receipt chain, cf. #2708 "chain 22 (#2678->e9d49e49)").
++3. Private land branch `bridge-land/bridge-20261030-plane-watch-c41` — **EXISTS**
++   (reads `scripts/bridge/bridge_intake.py` fine through it).
++4. The report file is **NOT on that land branch** (404 path).
++
++Elimination: a missing patch branch cannot produce this 422 (`fetch_patch` raises
++→ landing_truth_probe → clean reject). The run reached POST /pulls, so the branch
++existed then with a **zero diff vs main** (content already merged elsewhere):
++`git apply` no-ops → `has_staged=False` → **no commit** → push creates the land
++branch AT base HEAD → POST /pulls → GitHub 422 "No commits between main and
++bridge-land/<task>".
++
++## 5. Root cause + amplifiers
++
++**Root cause: the landing lane has no effective-patch guard.** `fetch_patch`
++returns `(diff, files)` with no empty-diff check; zero-diff orders pass every
++gate (size/files/paths/secrets are all trivially green on an empty diff), apply
++as a no-op, push a commit-less branch, and die at POST /pulls.
++
++Amplifiers:
++- Receipt/watch WOs keep arriving hourly → fresh first-failure orders never
++  reach the 2-strike quarantine → the "unexpected" list never empties → chronic red.
++- `main()` skips sync when intake rc≠0 → landed/rejected reporting dead all streak.
++- `gh_ok` keeps only `body.message` — GitHub's `errors[]` detail ("No commits
++  between…") is dropped, so the verdict plane cannot reveal the sub-cause.
++
++## 6. Suggested guards (admin/platform lane; bridge_intake.py is private-only)
++
++1. Empty-diff guard after fetch_patch: `if not files: reject("zero-diff patch
++   branch — content already merged or empty branch")` (clean reject, no exit-2).
++2. Pre-PR-create guard: `if not has_staged and not resumed: reject("no effective
++   commit to land")` before POST /pulls.
++3. `gh_ok`: append `body.errors` to the BridgeError message.
++4. `main()`: run cmd_sync regardless of intake rc; report both exit codes.
++5. Alert on 2+ consecutive intake failures (as #2792 already suggests).
++6. Optional: extend landing_truth_probe to the zero-diff path — content already
++   on public main → truth-restore LANDED instead of 422-poison.
++
++## Evidence provenance
++
++Tower tools: github.workflow_runs (60-row capture), github.get_failed_logs ×9
++(#327/#328/#329 + old streak #285/#290/#300/#305/#307/#309), github.read_file ×4
++(workflow yml, bridge_intake.py snapshot, patch-branch probe, land-branch probe),
++github.code_search ×1, bridge.work_queue ×3, bridge_read_feedback ×3
++(#2763/#2771/#2677), bridge.work_order #2677, work_claim #2792 (21:43:54Z).
++Local artifacts: tool-results/intake2792_logs.json, tool-results/queue_queued_full.json,
++work/loopfix/bridge_intake_snapshot.py (51,071ch read-only snapshot of the
++private script at sha 78f5dbb5 content hash, taken 21:48Z).

@@ -1,0 +1,46 @@
+diff --git a/docs/bridge/bridge-20261030-2597-buildplane-r2.md b/docs/bridge/bridge-20261030-2597-buildplane-r2.md
+new file mode 100644
+index 00000000..b9f08cb0
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2597-buildplane-r2.md
+@@ -0,0 +1,40 @@
++# #2597 Evidence Refresh r2 — render build-plane burn accelerated ~6x; days-scale quota deadline quantified
++
++- **Task ID:** `bridge-20261030-2597-buildplane-r2`
++- **Lane:** report-only evidence refresh (zero code, zero protected paths, no closure requested)
++- **Agent:** GLM Agent 08 (Job 486735), cycle 10:20Z 2026-10-30, zero-credential MCP tower probes
++- **Claim:** work_claim GRANT_TAKEOVER 10:19:43Z, 30-min lease (prior claim expired 2026-10-29T23:17Z)
++
++## Live evidence (render_service_health / render_get_logs / policy_list_pending, 2026-10-30T10:20Z)
++
++| metric | primary | worker | #2597 receipt baseline (10-29 13:08Z) |
++|---|---|---|---|
++| monthlyBuildMinutes | **118.1** | **125.5** | 44.2 / 44.9 |
++| net burn over 21.2h window | +73.9 (**3.49/h**) | +80.6 (**3.80/h**) | ~0.55 / ~0.68 per h |
++| freeLimitRemaining | 381.9 | 374.5 | ~455.8 / ~455.1 |
++| lastDeployStatus | update_failed | update_failed | update_failed (unchanged) |
++| updatedAt | 2026-10-24T08:32:40Z (frozen **6.1d**) | 2026-10-24T08:32:47Z | frozen 5d 4.6h |
++
++- **Acceleration: 6.3x (primary) / 5.6x (worker)** vs the receipt's per-hour baseline — arithmetic re-computed in code from raw probe JSON.
++- **12 failed build attempts visible** on primary since 10-29 13:18Z (`load build context` markers at 13:18/16:20/17:17/18:52/20:24/21:24/22:19/23:23/01:21/02:18/03:58/05:30) — ~1 per 1.8h, tracking the core-main bridge-landing cadence.
++- **Burn mechanism identified:** service cache profile is `no-cache` → every commit-triggered autoDeploy attempt rebuilds from scratch, **~6.2 build-min per attempt** (73.9/12), on both services, and every attempt fails pre-deploy (updatedAt unmoved). The receipt's "1 min per service per event" hypothesis is superseded.
++- **HITL:** `policy_list_pending` → `[]` live read — no redeploy approval ever requested/granted (~42h past the receipt's 21h mark).
++- **New deadline quantified:** at current burn the free budget exhausts in **~99h (4.1d, worker)** / **~110h (4.6d, primary)**; if the monthly window resets 2026-11-01 the refill may land first (reset anchor owner-verifiable on the Render dashboard). Post-exhaustion even the stale 10-24 serving builds could not be updated until reset.
++
++## Remedy routing (unchanged, admin-lane)
++
++Root cause and recovery stay with #2225/#2597's admin prescription (redeploy approval + the `supremeai-core` main CI red `feda45e4` as prime build-failure candidate). Two owner-cheap mitigations this evidence adds: (1) flipping the two services' cache profile off `no-cache` cuts per-attempt burn ~6x while the deploy path is broken; (2) pausing `autoDeploy` on the pair stops the bleed entirely until the plane is fixed. Both are Render dashboard settings outside every agent envelope — recorded, not applied.
++
++## Verification
++
++- Probes: zero-credential tower reads only; no production writes; numbers re-computed in Python from raw probe payloads (window 21.20h; rates; TTE; freeze 145.8h).
++- `continuous_agent_loop --verify-only`: 8/8 tiers pass on the PR tree; `radar_index_freshness_guard --check` green (index untouched; receipt cites issue numbers only, no R-tokens).
++
++## Reflection
++
++**Why:** #2597's evidence table was 21h stale and materially understated the erosion the P1 warns about; the row's escalation value depends on current numbers, and the burn mechanism was still hypothetical.
++**Alternatives rejected:** editing the issue body (agents cannot); filing a new issue (anti-stampede — evidence attaches to the existing row); fixing the deploy plane (admin/HITL lane, protected paths).
++
++## Rollback
++
++git revert-safe: delete this single receipt file (pure docs addition).

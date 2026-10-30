@@ -1,0 +1,80 @@
+diff --git a/docs/reports/human-eye-frontend-degraded-viewer-20261030.md b/docs/reports/human-eye-frontend-degraded-viewer-20261030.md
+new file mode 100644
+index 00000000..ad151ba6
+--- /dev/null
++++ b/docs/reports/human-eye-frontend-degraded-viewer-20261030.md
+@@ -0,0 +1,74 @@
++# human-eye — P1: production frontend builds ship without VITE_API_URL → app self-degrades to "degraded viewer mode" on BOTH public domains
++
++**Agent**: human-eye | cron Job 478633 | Cycle 45, 2026-10-30 02:57 +08 | fresh-session MCP handshake OK
++**Domains observed**: `supremeai-studio.pages.dev` (NEW canonical, bundle `index-DRulrJJe.js`), `supremeai-studio.vercel.app` (bundle `index-tU14YJV5.js`)
++**Severity**: P1 — core journeys (auth, chat, config-driven features, heartbeat) are non-functional on every freshly deployed frontend; graceful fallback masks it (no crash, no blank screen, landing renders fully). Not P0 because the app's designed degradation path works and the landing shell remains usable.
++
++## What changed (before → after)
++
++| Surface | Before (C44, 01:57 +08 and all prior cycles) | After (C45, 02:57 +08) |
++|---|---|---|
++| Pages domain | `supremeai-frontend.pages.dev` → HTTP 200 | **NXDOMAIN** (1.1.1.1 and 8.8.8.8 both) |
++| Pages bundle | `index-CAV1C5sl.js`, build 2026-10-27T18:10:28.851Z, 44 cycles stable | **`index-DRulrJJe.js`** at new domain `supremeai-studio.pages.dev` |
++| sw-assets.json (#2431 acceptance) | 6364B SPA-fallback HTML (stale v4 SW era) | **1929B real manifest**, `generatedAt: 2026-10-29T19:00:43.705Z` — operator redeploy executed inside the (01:57, 02:57] window |
++| F-12 preflight (canonical origin) | 400 ×4 on `Origin: supremeai-frontend.pages.dev` (#2258 family, 20+ cycles) | **200 ×4** on `Origin: supremeai-studio.pages.dev`, ACAO echoes exact origin (not `*`); old origin still 400 — precise allow-list swap, not a blanket `*` |
++| F-11 `GET /api/auth/me` (Pages proxy) | 401 (proxy forwards to API, auth gate live) | **200 + `text/html`** — SPA fallback; `/api/*` no longer proxied on Pages |
++
++## Runtime evidence (browser, agent-browser, both domains identical)
++
++Console on `supremeai-studio.pages.dev` AND `supremeai-studio.vercel.app`:
++
++```
++[error] ❌ VITE_API_URL or VITE_BACKEND_URL is required in production.
++        App will run in degraded viewer mode until the backend URL is configured.
++[warning] [Config] Public config unavailable; continuing with safe defaults:
++          {stack: "SyntaxError: Unexpected token '<', "<!doctype "... is not valid JSON", ...}
++[warning] [Self-Healing] Frontend error recorded: CONFIG_FETCH_FAILED - SyntaxError: ...
++[warning] [Self-Healing] Retry 1/1 in 1000ms
++[warning] [Heartbeat] ❌ Could not reach: /health
++```
++
++- `GET /api/auth/me` → 200, `content-type: text/html; charset=utf-8`, body is the SPA fallback HTML (contains the #1529 favicon comment), `access-control-allow-origin: *` — the Pages edge self-answering pattern (C36 lesson: this `*` is the proxy's own, not the API's). The app asks a same-origin `/api/*` path and receives HTML: JSON parse fails → CONFIG_FETCH_FAILED → degraded viewer mode.
++- DOM snapshot: landing renders fully (hero, nav, Sign In, Get Started, guest-demo relay panel with static copy). No crash. The degradation is functional, not visual.
++- Screenshots: `c45-pages-studio-degraded-viewer-mode.png`, `c45-vercel-studio-degraded-viewer-mode.png`.
++
++## Root-cause reading (evidence-scoped)
++
++The build pipeline that produced BOTH new bundles dropped the build-time env injection (`VITE_API_URL` / `VITE_BACKEND_URL`). With no backend URL the app falls back to same-origin relative paths; on Pages those are no longer proxied (SPA fallback answers), on Vercel the same console signature appears. The prior bundle (`index-CAV1C5sl.js`) ran 44 QA cycles with working backend connectivity, so the regression is in the most recent build(s), not in app code paths we observe. Two independent CD targets produce the identical symptom → common build source, not a Pages-specific pipeline fault.
++
++Secondary (deliberate, part of the same migration): the API CORS allow-list was swapped to the new origin (exact echo, credentials true; old origin 400) — so once env injection is restored, direct-to-API calls from the new origin will pass preflight. The swap is correct for the new canonical; it removes the historical F-12 400 ×4 condition on the old origin by removing the origin itself.
++
++## Impact
++
++- Every visitor of the two public frontend domains gets a viewer shell with **no auth (sign-in/sign-up), no live chat, no config-driven branding/features, heartbeat failing**. Guest-demo panel shows static copy only.
++- Deploy-watch discipline (44 cycles: "bundle change → full suite") fired exactly as designed; this filing is the first payload of that trigger.
++- The degraded mode is **silent** to a casual eye (no error banner on landing) — users discover breakage at the first action. The loud `❌` lives only in console.
++
++## Smallest safe fix
++
++1. Restore build-time env injection in the frontend build pipeline: set `VITE_API_URL` (or `VITE_BACKEND_URL`) in CI for the studio build job (both Pages and Vercel targets) — the single missing input; no app-code change needed for connectivity to return.
++2. Optional hardening (one line each, same PR): fail the build when `import.meta.env.VITE_API_URL` is empty in production mode; keep a visible non-console indicator when the app enters degraded viewer mode (reuse existing design-token error styles; no new pattern).
++
++## Regression tests
++
++1. CI post-build smoke: `rg -l "VITE_API_URL is required" dist/assets/*.js` must NOT match the error string as a reachable branch with empty env — assert bundle contains a non-empty API URL (or assert build fails when unset).
++2. Playwright smoke on the deployed URL: page loads → no console error matching `VITE_API_URL|CONFIG_FETCH_FAILED` within 5s → `/api/config/public` (or the configured API origin) returns JSON with `content-type: application/json`.
++3. Proxy contract test on Pages: `GET /api/auth/me` with no credentials returns 401 JSON (auth gate), NOT 200 text/html — the SPA fallback must never answer `/api/*`.
++
++## why
++
++This is a fresh production regression on both public entry domains, caught by the standing deploy-watch trigger (bundle hash changed after 44 stable cycles). The window between redeploy (~19:00Z) and this cycle is under 3 hours; filing now prevents the broken build from being treated as the new good baseline (the old bundle and its domain are gone — there is no healthy deploy to roll back to without a rebuild). It also redefines the watch baseline: F-12/F-11/domain/bundle all changed in one window, and the allow-list swap means historical probe expectations no longer apply.
++
++## alternatives_rejected
++
++1. **Report-only, wait for the operator's next deploy** — the operator's redeploy (the one #2431 asked for) already happened and shipped this breakage; waiting risks normalizing a broken baseline, and #2431's acceptance check passes while the app it serves is degraded (acceptance was asset-level, not runtime-level).
++2. **Fold into #2431 (Pages drift)** — different failure layer: #2431 is CD sync (asset staleness); this is build-input integrity (env injection) affecting both CD targets including the up-to-date Vercel one. Cross-link, don't merge.
++3. **Client-side workaround (hardcode API origin as fallback)** — violates the no-hardcoded-endpoint/no-workaround discipline, masks the build-pipeline defect, and breaks the 12-factor config contract the app itself enforces ("required in production").
++
++## Dedup
++
++GitHub search `VITE_API_URL` → 0 hits; `degraded viewer` → 0 hits (repo Supremeai-bd/supremeai-open, checked 2026-10-30 ~19:05Z). #2431 (Pages drift, open) is the deployment-sync context; #2717 (closed) is a CI-storm falsification report — unrelated; #2729 notes "deployStatus unverified" but does not cover runtime degradation.
++
++## Watch-baseline migration note (methodology, own log)
++
++From Cycle 46 onward: canonical frontend = `supremeai-studio.pages.dev` (bundle `index-DRulrJJe.js` at filing time), cross-check `supremeai-studio.vercel.app`. F-12 probes carry `Origin: https://supremeai-studio.pages.dev` and currently PASS 200 ×4. F-11 as a Pages-proxy auth-gate probe is RETIRED on Pages (endpoint now SPA-fallbacks); the auth gate remains observable at the API origin directly. Old `supremeai-frontend.pages.dev` NXDOMAIN at both 1.1.1.1 and 8.8.8.8, two consecutive probes — treated as deleted, not flapping.

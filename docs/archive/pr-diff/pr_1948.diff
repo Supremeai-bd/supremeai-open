@@ -1,0 +1,194 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index a0d9c46d..d4ce78e7 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -460,17 +460,20 @@ def build_task_envelope(
+     αªíαª╛αªëαª¿αª╕αºìαªƒαºìαª░αª┐αª« αªÅαª£αºçαª¿αºìαªƒ envelope αª¬αºçαª»αª╝αºçαªô αªòαª╛αª£ αªòαª░αªñαºç αª¬αª╛αª░αªñ αª¿αª╛αÑñ αªÅαªûαª¿ αª¼αºïαª░αºìαªí-αªÑαºçαªòαºç-αª¬αª╛αªôαª»αª╝αª╛
+     issue payload (αª¼αª╛ --issue N, αª¼αª╛ --allow-adhoc) αªÑαºçαªòαºç αª╕αºÄ, deterministic
+     envelope αªñαºêαª░αª┐ αª╣αª»αª╝: role classify_task_role() αªÑαºçαªòαºç, group fail-closed αª░αºçαª£αª┐αª╕αºìαªƒαºìαª░αª┐
+-    αªÑαºçαªòαºç, priority label-αªÑαºçαªòαºçαÑñ body αª½αª┐αª▓αºìαªí αªçαªÜαºìαª¢αª╛αªòαºâαªñαª¡αª╛αª¼αºç αª¼αª╛αªª (list payload-αªÅ αªÑαª╛αªòαºç αª¿αª╛;
+-    αª«αª┐αªÑαºìαª»αª╛ αªûαª╛αª▓αª┐ string αª¿αª»αª╝, αªàαª¿αºüαª¬αª╕αºìαªÑαª┐αªñ αªòαºÇ-αªç αª╕αºÄ)αÑñ
++    αªÑαºçαªòαºç, priority label-αªÑαºçαªòαºçαÑñ body αª½αª┐αª▓αºìαªí hydrate-αª¬αªÑαºç (gh issue view
++    --json ΓÇª,body) αªàαª¿αºìαªñαª░αºìαª¡αºüαªòαºìαªñ ΓÇö SPEC ┬º2 problem_statement.body-αª░ αª╕αºìαªòαª┐αª«αª╛-αª«αª╛αª¿;
++    hydrate αª¼αºìαª»αª░αºìαªÑ/αªàαª¿αºüαª¬αª╕αºìαªÑαª┐αªñ αª╣αª▓αºç αª«αª┐αªÑαºìαª»αª╛ αªûαª╛αª▓αª┐ string αª¿αª»αª╝, αªòαºÇ-αªç αª¼αª╛αªª (αª╕αºÄ absence)αÑñ
+     """
+     labels: list[str] = []
+     title = ""
+     issue_number: str | None = None
+     state = "open"
++    body = ""
+     if isinstance(issue, dict):
+         issue_number = str(issue.get("number")) if issue.get("number") is not None else None
+         title = str(issue.get("title", "") or "")
+         state = str(issue.get("state", "open") or "open")
++        body = str(issue.get("body", "") or "")
+         raw_labels = issue.get("labels")
+         if isinstance(raw_labels, list):
+             labels = [
+@@ -537,13 +540,18 @@ def build_task_envelope(
+             "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/<slug>",
+         },
+     }
+-    if labels:
+-        envelope["problem_statement"] = {
++    if issue_number is not None:
++        # αª¼αª╛αªéαª▓αª╛: αªåαªùαºç `if labels:` αª¢αª┐αª▓ ΓÇö αª▓αºçαª¼αºçαª▓αª╣αºÇαª¿ issue-αª░ αªùαºïαªƒαª╛ problem_statement
++        # αª╣αª╛αª░αª┐αª»αª╝αºç αª»αºçαªñ; SPEC ┬º2-αªñαºç αªÅαªƒαª┐ issue-αª¡αª┐αªñαºìαªñαª┐αªò, label-αª¡αª┐αªñαºìαªñαª┐αªò αª¿αª»αª╝αÑñ
++        problem_statement: dict[str, Any] = {
+             "id": issue_number,
+             "title": title,
+             "labels": labels,
+             "state": state,
+         }
++        if body:
++            problem_statement["body"] = body
++        envelope["problem_statement"] = problem_statement
+     if board_note:
+         envelope["board_note"] = board_note
+     return {"task_envelope": envelope}
+@@ -833,7 +841,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                 v_cmd = [
+                     "gh", "issue", "view", str(args.issue),
+                     "--repo", UPSTREAM_REPO,
+-                    "--json", "number,title,labels,state",
++                    "--json", "number,title,labels,state,body",
+                 ]
+                 try:
+                     vp = subprocess.run(v_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
+@@ -855,24 +863,26 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                 # --json number,labels) ΓÇö auto-pick αª¬αªÑαºç target_issue αª╢αºüαªºαºü number+labels
+                 # αª¼αª╣αª¿ αªòαª░αªñ, αª½αª▓αºç αªÅαª«αª┐αªƒαºçαªí envelope-αªÅ objective="" αª»αºçαªñ αªÅαª¼αªé αªÅαª£αºçαª¿αºìαªƒ
+                 # envelope αª¬αºçαª»αª╝αºçαªô αªòαª╛αª£αªƒαª╛ αªòαºÇ αªñαª╛ αª¼αºüαª¥αªñαºç αª¬αª╛αª░αªñ αª¿αª╛ (SPEC ┬º2 objective αª½αª╛αªüαªòαª╛)αÑñ
+-                # --issue αª¬αªÑαºçαª░ αª«αªñαºïαªç αª¿αª┐αª░αºìαª¼αª╛αªÜαª┐αªñ issue-αª░ title/state hydrate αªòαª░αª╛ αª╣αª»αª╝;
+-                # hydrate αª¼αºìαª»αª░αºìαªÑ αª╣αª▓αºç αª╕αºÄ board_note ΓÇö αª¿αºÇαª░αª¼ αªûαª╛αª▓αª┐ objective αª¿αª»αª╝αÑñ
++                # --issue αª¬αªÑαºçαª░ αª«αªñαºïαªç αª¿αª┐αª░αºìαª¼αª╛αªÜαª┐αªñ issue-αª░ title/state/body hydrate αªòαª░αª╛ αª╣αª»αª╝;
++                # body αª¢αª╛αªíαª╝αª╛ αªÅαª£αºçαª¿αºìαªƒ acceptance criteria αª¿αª╛-αª£αºçαª¿αºç αªàαª¿αºìαªºαªòαª╛αª░αºç αªòαª╛αª£ αªòαª░αªñ
++                # (SPEC ┬º2 problem_statement.body αª╕αºìαªòαª┐αª«αª╛αª░ αªàαªéαª╢αªç)αÑñ hydrate αª¼αºìαª»αª░αºìαªÑ αª╣αª▓αºç
++                # αª╕αºÄ board_note ΓÇö αª¿αºÇαª░αª¼ αªûαª╛αª▓αª┐ objective αª¿αª»αª╝αÑñ
+                 if target_issue is not None and target_issue.get("title") is None:
+                     h_cmd = [
+                         "gh", "issue", "view", str(picked),
+                         "--repo", UPSTREAM_REPO,
+-                        "--json", "number,title,labels,state",
++                        "--json", "number,title,labels,state,body",
+                     ]
+                     try:
+                         hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
+                         if hp.returncode == 0 and hp.stdout.strip():
+                             target_issue = json.loads(hp.stdout)
+                         else:
+-                            note = f"gh issue view {picked} failed: {(hp.stderr or '').strip() or hp.returncode}; envelope emitted without title"
++                            note = f"gh issue view {picked} failed: {(hp.stderr or '').strip() or hp.returncode}; envelope emitted without title/body"
+                     except FileNotFoundError:
+-                        note = "gh CLI not found on PATH; envelope emitted without title"
++                        note = "gh CLI not found on PATH; envelope emitted without title/body"
+                     except Exception as exc:
+-                        note = f"gh issue view error: {exc}; envelope emitted without title"
++                        note = f"gh issue view error: {exc}; envelope emitted without title/body"
+             elif not args.allow_adhoc:
+                 print(
+                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
+diff --git a/tests/test_envelope_problem_statement.py b/tests/test_envelope_problem_statement.py
+new file mode 100644
+index 00000000..8118c4e0
+--- /dev/null
++++ b/tests/test_envelope_problem_statement.py
+@@ -0,0 +1,98 @@
++#!/usr/bin/env python3
++"""Offline contract tests for task-envelope problem_statement (SPEC ┬º2).
++
++Covers the #1712-follow-up honesty fixes:
++  1. problem_statement.body is hydrated when the issue payload carries it
++     (gh issue view --json ...,state,body) ΓÇö agents must see acceptance
++     criteria, not dispatch blind.
++  2. A missing body is an honest ABSENT key, never a fake empty string.
++  3. A label-less issue keeps its whole problem_statement (the old
++     `if labels:` gate silently dropped it ΓÇö SPEC ┬º2 is issue-based).
++  4. Both hydrate commands in the loop source request `body` from gh.
++"""
++
++from __future__ import annotations
++
++import json
++import sys
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal
++
++LOOP_SOURCE = (_ROOT / "scripts" / "agents" / "continuous_agent_loop.py").read_text(encoding="utf-8")
++
++
++class TestProblemStatementBody(unittest.TestCase):
++    def test_body_hydrated_when_present(self):
++        issue = {
++            "number": 63,
++            "title": "fix: something real",
++            "state": "open",
++            "body": "## Acceptance criteria\n- MUST block on mutation",
++            "labels": [{"name": "P1-high"}, {"name": "repo:mcp"}],
++        }
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        ps = env["problem_statement"]
++        self.assertEqual(ps["id"], "63")
++        self.assertEqual(ps["title"], "fix: something real")
++        self.assertIn("MUST block on mutation", ps["body"])
++        self.assertEqual(ps["labels"], ["p1-high", "repo:mcp"])
++        self.assertEqual(ps["state"], "open")
++
++    def test_missing_body_is_absent_key_not_fake_empty(self):
++        issue = {"number": 7, "title": "t", "state": "open", "labels": []}
++        ps = cal.build_task_envelope(issue)["task_envelope"]["problem_statement"]
++        self.assertNotIn("body", ps, "absent body must stay absent (honest absence)")
++
++    def test_empty_body_is_absent_key_not_fake_empty(self):
++        issue = {"number": 7, "title": "t", "state": "open", "body": "", "labels": []}
++        ps = cal.build_task_envelope(issue)["task_envelope"]["problem_statement"]
++        self.assertNotIn("body", ps)
++
++    def test_label_less_issue_keeps_problem_statement(self):
++        # Old code: `if labels:` ΓÇö a label-less issue lost the ENTIRE
++        # problem_statement. SPEC ┬º2 is issue-based, not label-based.
++        issue = {"number": 9, "title": "no labels", "state": "open", "body": "b"}
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        ps = env["problem_statement"]
++        self.assertEqual(ps["id"], "9")
++        self.assertEqual(ps["labels"], [])
++        self.assertEqual(ps["body"], "b")
++
++    def test_adhoc_envelope_has_no_problem_statement(self):
++        env = cal.build_task_envelope(None)["task_envelope"]
++        self.assertNotIn("problem_statement", env)
++
++    def test_board_note_still_emitted(self):
++        issue = {"number": 5, "title": "t", "state": "open", "body": "", "labels": ["x"]}
++        env = cal.build_task_envelope(issue, board_note="gh issue view 5 failed: 1")["task_envelope"]
++        self.assertEqual(env["board_note"], "gh issue view 5 failed: 1")
++
++
++class TestHydrationRequestsBody(unittest.TestCase):
++    def test_both_gh_issue_view_commands_request_body(self):
++        # The --issue path (v_cmd) and the auto-pick path (h_cmd) must both
++        # fetch body ΓÇö a title-only hydrate dispatches agents blind.
++        self.assertEqual(
++            LOOP_SOURCE.count('"number,title,labels,state,body"'),
++            2,
++            "both gh issue view --json payloads must include body",
++        )
++        self.assertNotIn(
++            '"number,title,labels,state"',
++            LOOP_SOURCE,
++            "no hydrate command may remain body-less",
++        )
++
++    def test_envelope_output_remains_json_serializable(self):
++        issue = {"number": 11, "title": "t", "state": "open", "body": "unicode: αª¼αª╛αªéαª▓αª╛ Γ£ô", "labels": []}
++        env = cal.build_task_envelope(issue)
++        self.assertIn("αª¼αª╛αªéαª▓αª╛", json.dumps(env, ensure_ascii=False))
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,209 @@
+diff --git a/studio/src/components/admin/Dashboard.tsx b/studio/src/components/admin/Dashboard.tsx
+index 2eece068..2708360f 100644
+--- a/studio/src/components/admin/Dashboard.tsx
++++ b/studio/src/components/admin/Dashboard.tsx
+@@ -39,7 +39,8 @@ export default function Dashboard() {
+   const { data: events } = useDashboardEvents(5);
+ 
+   const dashRps = metrics?.requests_per_second ?? 0;
+-  const safeCpu = metrics?.cpu_percent ?? metrics?.cpu_usage_percent ?? Math.min(100, Math.round((dashRps / 50) * 100));
++  // FIX(audit 2026-10-24): no fabricated CPU derived from RPS — honest N/R when unreported
++  const safeCpu: number | null = metrics?.cpu_percent ?? metrics?.cpu_usage_percent ?? null;
+   const activeIncidents = threats?.findings?.filter(t => t.severity === 'high' || t.severity === 'critical') || [];
+   const activeDeployments = ciReports?.filter(c => c.status === 'running') || [];
+ 
+@@ -48,8 +49,9 @@ export default function Dashboard() {
+     (metrics as unknown as { availability_percent?: number; uptime_percent?: number })?.uptime_percent ?? null;
+ 
+   // Latency & requests sparkline points from metrics history (fallback to active reading)
+-  const latencyPoints = (metrics as unknown as { latency_history?: number[] })?.latency_history ?? [12, 14, 11, 15, metrics?.latency_p95_ms ?? 14];
+-  const rpsPoints = (metrics as unknown as { rps_history?: number[] })?.rps_history ?? [2, 5, 4, 7, dashRps];
++  // FIX(audit 2026-10-24): no fake sparkline trend fallbacks — render only with real history
++  const latencyPoints = (metrics as unknown as { latency_history?: number[] })?.latency_history ?? null;
++  const rpsPoints = (metrics as unknown as { rps_history?: number[] })?.rps_history ?? null;
+ 
+   return (
+     <div className="flex-1 flex flex-col min-h-screen bg-surface-0 overflow-y-auto">
+@@ -86,7 +88,7 @@ export default function Dashboard() {
+               <span className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
+                 <Zap size={14} className="text-amber-400" /> Latency (p95)
+               </span>
+-              <Sparkline points={latencyPoints} color="#f59e0b" />
++              {latencyPoints ? <Sparkline points={latencyPoints} color="#f59e0b" /> : null}
+             </div>
+             <div className="text-3xl font-bold text-text font-mono">
+               {metrics?.latency_p95_ms != null ? metrics.latency_p95_ms : '—'}
+@@ -121,7 +123,7 @@ export default function Dashboard() {
+               <span className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-2">
+                 <GitMerge size={14} className="text-indigo-400" /> Deployments
+               </span>
+-              <Sparkline points={rpsPoints} color="#818cf8" />
++              {rpsPoints ? <Sparkline points={rpsPoints} color="#818cf8" /> : null}
+             </div>
+             <div className="text-3xl font-bold text-text font-mono">{activeDeployments.length}</div>
+           </div>
+@@ -157,10 +159,10 @@ export default function Dashboard() {
+                 <div className="space-y-2">
+                   <div className="flex justify-between text-sm">
+                     <span className="text-secondary">Global CPU Load</span>
+-                    <span className="font-mono text-text">{safeCpu}%</span>
++                    <span className="font-mono text-text">{safeCpu != null ? `${safeCpu}%` : 'N/R'}</span>
+                   </div>
+                   <div className="w-full h-2 rounded-full surface-2 overflow-hidden">
+-                    <div className={`h-full ${safeCpu > 80 ? 'bg-rose-500' : 'bg-accent-primary'}`} style={{ width: `${safeCpu}%` }}></div>
++                    {safeCpu != null ? <div className={`h-full ${safeCpu > 80 ? 'bg-rose-500' : 'bg-accent-primary'}`} style={{ width: `${safeCpu}%` }}></div> : null}
+                   </div>
+                 </div>
+                 <div className="space-y-2">
+@@ -210,17 +212,19 @@ export default function Dashboard() {
+                 <ArrowUpRight size={14} className="text-accent-primary" />
+               </div>
+               <div className="space-y-4">
++                {/* FIX(audit 2026-10-24): the previous $42.50 / $128.00 / $170.50 figures were
++                    hardcoded fabrications. Honest "not reported" until the cost report binds. */}
+                 <div className="flex justify-between items-center pb-4 border-b border-border">
+                   <span className="text-secondary text-sm">LLM API Usage</span>
+-                  <span className="text-text font-mono font-medium">$42.50</span>
++                  <span className="text-muted font-mono text-xs">not reported</span>
+                 </div>
+                 <div className="flex justify-between items-center pb-4 border-b border-border">
+                   <span className="text-secondary text-sm">Compute Instances</span>
+-                  <span className="text-text font-mono font-medium">$128.00</span>
++                  <span className="text-muted font-mono text-xs">not reported</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span className="text-text font-semibold">Total MTD</span>
+-                  <span className="text-accent-primary font-mono font-bold">$170.50</span>
++                  <span className="text-muted font-mono text-xs">not reported</span>
+                 </div>
+               </div>
+             </div>
+@@ -230,28 +234,23 @@ export default function Dashboard() {
+               <h2 className="text-sm font-semibold uppercase tracking-wider text-muted mb-6 flex items-center gap-2">
+                 <BrainCircuit size={16} /> Active Agents
+               </h2>
++              {/* FIX(audit 2026-10-24): the previous list (CI/CD Watcher / Infra Autoscaler /
++                  Security Scanner) was fully hardcoded — fabricated status. Now binds the real
++                  active_agents metric when present, honest empty state otherwise. */}
+               <div className="space-y-4">
+-                <div className="flex items-center justify-between">
+-                  <span className="text-sm text-text flex items-center gap-2">
+-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+-                    CI/CD Watcher
+-                  </span>
+-                  <span className="text-xs font-mono text-emerald-400">Running</span>
+-                </div>
+-                <div className="flex items-center justify-between">
+-                  <span className="text-sm text-text flex items-center gap-2">
+-                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+-                    Infra Autoscaler
+-                  </span>
+-                  <span className="text-xs font-mono text-emerald-400">Running</span>
+-                </div>
+-                <div className="flex items-center justify-between">
+-                  <span className="text-sm text-secondary flex items-center gap-2">
+-                    <div className="w-2 h-2 rounded-full bg-secondary"></div>
+-                    Security Scanner
+-                  </span>
+-                  <span className="text-xs font-mono text-secondary">Idle</span>
+-                </div>
++                {metrics?.active_agents != null ? (
++                  <div className="flex items-center justify-between">
++                    <span className="text-sm text-text flex items-center gap-2">
++                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
++                      Active agent processes
++                    </span>
++                    <span className="text-xs font-mono text-emerald-400">{metrics.active_agents}</span>
++                  </div>
++                ) : (
++                  <div className="text-center py-4 text-xs text-secondary font-mono border border-dashed border-border rounded-lg">
++                    No live agent telemetry reported.
++                  </div>
++                )}
+               </div>
+             </div>
+ 
+diff --git a/studio/src/components/customer/UserDashboard.tsx b/studio/src/components/customer/UserDashboard.tsx
+index 3d2db39c..d0d4daaa 100644
+--- a/studio/src/components/customer/UserDashboard.tsx
++++ b/studio/src/components/customer/UserDashboard.tsx
+@@ -12,8 +12,10 @@ import TaskAutomationCard from './TaskAutomationCard';
+ 
+ const quickStarts = [
+   { label: 'Research a topic', detail: 'Get a clear answer with useful context.', icon: Sparkles, href: '/workspace/live' },
+-  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/files' },
+-  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/agents' },
++  // FIX(audit 2026-10-24): /files and /agents routes do not exist — both
++  // quick-starts now route to the Studio (/workspace/live) instead of a 404.
++  { label: 'Analyze a file', detail: 'Bring a document into a focused workspace.', icon: FileText, href: '/workspace/live' },
++  { label: 'Build a workflow', detail: 'Turn a repeatable task into a helper.', icon: Zap, href: '/workspace/live' },
+ ];
+ 
+ interface RecentConversation {
+@@ -45,6 +47,9 @@ export const UserDashboard: React.FC = () => {
+   const [ask, setAsk] = useState('');
+   const { enabledModules, toggleModule } = useWorkspaceSettings();
+   const name = user?.name?.split(' ')[0] || 'there';
++  // FIX(audit 2026-10-24): greeting was hardcoded "Good morning" — now time-of-day aware
++  const hour = new Date().getHours();
++  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+   const isCosmic = import.meta.env.VITE_COSMIC_DASHBOARD !== 'false';
+ 
+   const submitAsk = (explicitIntent?: string) => {
+@@ -144,18 +149,21 @@ export const UserDashboard: React.FC = () => {
+           <div>
+             <p className="sa-eyebrow mb-3">Your workspace</p>
+             <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+-              Good morning, {name}.
++              {greeting}, {name}.
+             </h1>
+             <p className="mt-2 max-w-xl text-[var(--sa-ink-muted)]">
+               A simple place to think, make progress, and keep your work moving.
+             </p>
+           </div>
+-          <Link
+-            to="/settings"
++          {/* FIX(audit 2026-10-24): /settings route does not exist (404) — Personalize
++              now opens the existing "Choose your tools" dialog instead. */}
++          <button
++            type="button"
++            onClick={() => setShowTools(true)}
+             className="inline-flex items-center gap-2 self-start rounded-[var(--sa-radius-sm)] border border-[var(--sa-border)] px-4 py-2.5 text-sm font-medium transition hover:border-[var(--sa-primary)] hover:text-[var(--sa-primary)]"
+           >
+             <Settings2 size={16} /> Personalize
+-          </Link>
++          </button>
+         </header>
+ 
+         <TaskAutomationCard />
+@@ -258,7 +266,7 @@ export const UserDashboard: React.FC = () => {
+                 key={item.id}
+                 item={item}
+                 onUse={() => navigate(item.href || '/workspace/live')}
+-                onManage={() => navigate(item.href || '/settings')}
++                onManage={() => setShowTools(true)}
+                 onRemove={() => {
+                   if (enabledModules.includes(item.id as typeof enabledModules[number])) {
+                     toggleModule(item.id as typeof enabledModules[number]);
+@@ -290,7 +298,7 @@ export const UserDashboard: React.FC = () => {
+                   <CapabilityUnavailableExplainer
+                     key={item.id}
+                     item={item}
+-                    onRequest={() => navigate('/settings')}
++                    onRequest={() => setShowTools(true)}
+                   />
+                 ))}
+               </div>
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 2713b0ce..e27e413a 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -211,7 +211,7 @@ export function GuestChat() {
+         {models.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
+       </select>
+     </div>
+-    <div ref={listRef} className="flex max-h-96 flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
++    <div ref={listRef} className="flex max-h-[min(60vh,32rem)] flex-col gap-3 overflow-y-auto rounded-xl bg-slate-950/40 p-3">
+       {messages.length === 0 && <p className="text-sm text-slate-500">Ask SupremeAI anything to get started.</p>}
+       {messages.map((m, i) => <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+         {/* Refs #861: shared Cosmic UnifiedChatBubble — আর কোনো ফর্কড legacy bubble নেই */}

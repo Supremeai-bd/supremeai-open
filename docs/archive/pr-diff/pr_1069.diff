@@ -1,0 +1,42 @@
+diff --git a/browser/.github/workflows/ci.yml b/browser/.github/workflows/ci.yml
+index 94600339..dc86e5f6 100644
+--- a/browser/.github/workflows/ci.yml
++++ b/browser/.github/workflows/ci.yml
+@@ -14,13 +14,13 @@ concurrency:
+ 
+ jobs:
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@v5
+ 
+       - name: Set up Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.12"
+ 
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index 146e6ed8..d0b0040b 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -14,13 +14,13 @@ concurrency:
+ 
+ jobs:
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@v5
+ 
+       - name: Set up Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.12"
+ 

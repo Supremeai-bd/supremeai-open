@@ -1,0 +1,106 @@
+diff --git a/.agents/skills/devtools-audit/SKILL.md b/.agents/skills/devtools-audit/SKILL.md
+index a7f60d35..4fb27208 100644
+--- a/.agents/skills/devtools-audit/SKILL.md
++++ b/.agents/skills/devtools-audit/SKILL.md
+@@ -36,10 +36,9 @@ Check reachability first: `curl -s -o /dev/null -m 8 -w "%{http_code}" <url>`.
+ 
+ ### 3. Run the audit
+ ```bash
+-# one-time setup (skip what is already installed)
+-npm i playwright axe-core && npx playwright install chromium
+-# in the claude.ai sandbox Chromium already exists; install axe-core with:
+-#   npm i axe-core --prefix /tmp/axe && export NODE_PATH=/tmp/axe/node_modules:/home/claude/.npm-global/lib/node_modules
++# one-time setup (in .agents/skills/devtools-audit/)
++# @sparticuz/chromium + playwright-core are ~45 MB — no separate browser install needed
++npm ci
+ 
+ node scripts/audit.mjs <url> --out audit.raw.json [--device mobile] [--throttle slow4g] [--wait 3000] [--screenshot shot.png]
+ ```
+diff --git a/.agents/skills/devtools-audit/package.json b/.agents/skills/devtools-audit/package.json
+index b08ef55b..704d5fc7 100644
+--- a/.agents/skills/devtools-audit/package.json
++++ b/.agents/skills/devtools-audit/package.json
+@@ -10,6 +10,7 @@
+   "type": "commonjs",
+   "dependencies": {
+     "axe-core": "^4.14.0",
+-    "playwright": "^1.64.1"
++    "playwright-core": "^1.44.1",
++    "@sparticuz/chromium": "^123.0.1"
+   }
+ }
+diff --git a/.agents/skills/devtools-audit/scripts/audit.mjs b/.agents/skills/devtools-audit/scripts/audit.mjs
+index 392b5e48..d147fb49 100644
+--- a/.agents/skills/devtools-audit/scripts/audit.mjs
++++ b/.agents/skills/devtools-audit/scripts/audit.mjs
+@@ -15,10 +15,35 @@ import { createRequire } from 'node:module';
+ import fs from 'node:fs';
+ const require = createRequire(import.meta.url);
+ 
+-let playwright;
+-try { playwright = require('playwright'); }
+-catch { console.error('playwright not found. Run: npm i playwright && npx playwright install chromium'); process.exit(2); }
+-const { chromium, devices } = playwright;
++// ── Browser bootstrap ──────────────────────────────────────────────────────
++// Cloud/Render: playwright-core + @sparticuz/chromium (~45 MB, no X11 needed)
++// Local dev:    falls back to full playwright if sparticuz not installed
++let chromium, devices;
++try {
++  // Prefer lightweight cloud-optimised build
++  const sparticuz = require('@sparticuz/chromium');
++  const pw = require('playwright-core');
++  chromium = {
++    launch: async (opts = {}) => pw.chromium.launch({
++      args: sparticuz.args,
++      executablePath: await sparticuz.executablePath(),
++      headless: sparticuz.headless,
++      ...opts,
++    }),
++    version: () => 'sparticuz-chromium',
++  };
++  devices = pw.devices;
++} catch {
++  // Local dev fallback — full playwright
++  try {
++    const pw = require('playwright');
++    chromium = pw.chromium;
++    devices = pw.devices;
++  } catch {
++    console.error('No browser driver found. Run: npm ci  (in .agents/skills/devtools-audit/)');
++    process.exit(2);
++  }
++}
+ 
+ // ---------- args ----------
+ const argv = process.argv.slice(2);
+@@ -59,8 +84,15 @@ function cleanUrl(u) {
+ const meta = { target: cleanUrl(target), startedAt: new Date().toISOString(), device: opts.device, throttle: opts.throttle || null, errors: [] };
+ const safe = async (label, fn, fallback = null) => { try { return await fn(); } catch (e) { meta.errors.push(`${label}: ${redact(e.message).split('\n')[0]}`); return fallback; } };
+ 
+-const browser = await chromium.launch();
+-meta.browserVersion = browser.version();
++const browser = await (async () => {
++  try {
++    return await chromium.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
++  } catch (e) {
++    meta.errors.push(`browser_launch: ${redact(e.message).split('\n')[0]}`);
++    throw e;
++  }
++})();
++meta.browserVersion = typeof browser.version === 'function' ? browser.version() : 'unknown';
+ const ctxOpts = opts.device === 'mobile' ? { ...devices['Pixel 7'] } : { viewport: { width: 1366, height: 768 } };
+ if (opts.storageState) ctxOpts.storageState = opts.storageState;
+ if (Object.keys(opts.headers).length) ctxOpts.extraHTTPHeaders = opts.headers;
+diff --git a/infrastructure/mcp-control-plane/render.yaml b/infrastructure/mcp-control-plane/render.yaml
+index 2f155ac7..554e331a 100644
+--- a/infrastructure/mcp-control-plane/render.yaml
++++ b/infrastructure/mcp-control-plane/render.yaml
+@@ -20,7 +20,7 @@ services:
+     # persisted, and backend/.venv/bin/python is the MemorySubAdapter's
+     # preferred launcher. Only the `mcp` package is needed: the sidecar's
+     # core.* imports are stdlib-light and memory stores degrade gracefully.
+-    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
++    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build && npm ci --prefix ../../.agents/skills/devtools-audit
+     startCommand: python scripts/runtime/infisical_bootstrap.py npm run start
+     envVars:
+       - key: MCP_API_KEY

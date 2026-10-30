@@ -1,0 +1,11 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index e8183e13..f977cc67 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -187,5 +187,5 @@ No private-repo access? All work flows through the public bridge on this repo:
+    Clean orders become a private PR through the full constitutional gate chain; results are
+    reported back on your issue (`bridge:in-gates` / `bridge:landed` / `bridge:rejected` / `bridge:admin-review`).
+ 
+-Universal rules U1–U5 and the authority rules §1 apply unchanged to bridge work.
++Universal rules U1–U9 and the authority rules §1 apply unchanged to bridge work.
+ Machine contract: `scripts/bridge/README.md` in the private codebase.

@@ -1,0 +1,64 @@
+diff --git a/docs/reports/d4-fleet-contract-probe-20261028T0608Z.md b/docs/reports/d4-fleet-contract-probe-20261028T0608Z.md
+new file mode 100644
+index 00000000..7bb03ca1
+--- /dev/null
++++ b/docs/reports/d4-fleet-contract-probe-20261028T0608Z.md
+@@ -0,0 +1,58 @@
++# D4 Fleet Contract Probe — first post-landing live pass (2026-10-28T06:08Z)
++
++Report-only platform-guard observation. Zero repo behavior change; this file is the receipt.
++Genre precedent: #1946 / #1964 report-only docs/reports files.
++
++## What ran
++
++- Tool: `scripts/ci/fleet_contract_probe.py` (landed via #1962, WO #1961)
++- Host revision: origin/main @ `1e54510` (0 behind at work-start; dual-rebase re-verified pre-submit)
++- Mode: report-only (default), `--sentry-json` fed with a live zero-credential `system_health` pull
++- Tower snapshot: 06:08:28Z — `17 healthy · 3 degraded · 1 unreachable · 0 unconfigured (of 21)`
++
++## Fleet contract verdict — 5/5 on-contract
++
++| node | edge verdict | http | notes |
++|---|---|---|---|
++| api | CONTRACT_OK | 200 | public surface clean (no redaction-class markers) |
++| scraper | CONTRACT_OK | 200 | 6 extra fields → NOTES, not drift (browser_service, cookies_loaded, infisical_configured, max_concurrency, playwright_available, total_cookies) |
++| tower | CONTRACT_OK_BODY_DEGRADED | 200 | body-`degraded` is shape-compliant presentation, not drift |
++| primary | CONTRACT_OK | 200 | |
++| worker | CONTRACT_OK | 200 | status word `"ok"` per SSOT vocabulary |
++
++## Sentry polarity join — 3× FALSE_NEGATIVE_HEALTH
++
++| node | edge | tower sweep deployStatus | polarity |
++|---|---|---|---|
++| api | CONTRACT_OK | `live` | ALIGNED |
++| scraper | CONTRACT_OK | `live` | ALIGNED |
++| tower | CONTRACT_OK_BODY_DEGRADED | `update_failed` | **FALSE_NEGATIVE_HEALTH** |
++| primary | CONTRACT_OK | `update_failed` | **FALSE_NEGATIVE_HEALTH** |
++| worker | CONTRACT_OK | `update_failed` | **FALSE_NEGATIVE_HEALTH** |
++
++### Primary uptime proof (the FNH smoking gun)
++
++Direct zero-credential `/health` pull at ~06:08Z: `{"status": "healthy", "version": "2.0.0", "uptime_seconds": 16770.67}` → container booted ~01:30Z. The tower sweep still flagged it `update_failed` at 06:06–06:08Z. Staleness ≥ 4.6h on one node, with the same class already proven at 04:17Z (`uptime_seconds=9614`). Worker answers `"ok"` (vocabulary-compliant); tower body-`degraded` is at least partially self-referential (it degrades because it *sees* the stale flags it emits).
++
++## Adjudication of #2009 (provider sentry pass 05:54Z)
++
++#2009 claims: "sweep polarity FLIPS — primary/worker recover, degraded flag moves to render-mcp".
++
++- **Half-true at the contract layer**: all 5 nodes serve on-contract health faces, so "recover" is real where it matters (the live edge).
++- **Refuted as a "move/flip"**: at 06:06–06:08Z the sweep flags all three of primary + worker + mcp simultaneously (`update_failed` ×3). Nothing moved; the flags are persistent and stale, not flapping between nodes.
++- **Correct model**: Render deployStatus metadata in the tower sweep is a stale cache, unreliable as a health signal for ≥4.6h stretches. The D4 contract probe — live edge, zero credential — is the reliable signal. This is exactly the failure mode WO #1874 predicted ("'deployed' must be gated by the LIVE edge contract, never by cached provider records") and why #1962 exists.
++
++## Out-of-registry observation: telegram-primary unreachable
++
++Tower snapshot carries `telegram-primary` (`https://api.telegram.org`, status `unreachable`, `fetch failed`, httpStatus null). This is an **external dependency probed from the tower's egress**, not a repo-owned render node; it is outside the D4 probe's 5-node registry (SSOT: `gateway/service/app.py` fleet table). No repo action can reach it; recorded here so the next sentry pass can distinguish egress blips from real outages. Not part of the 5/5 verdict above.
++
++## Dedup
++
++- #2009 / #1934 / #1852 — provider sentry passes (adjacent surface); this file adjudicates #2009's flip claim rather than repeating it.
++- #1874 — the D4 lane origin; this is the standing executable check it asked for, already landed in #1962.
++- #1962 — the artifact PR; this is its first post-landing live run (closing the loop on the WO #1874 → #1961/#1962 delivery chain).
++- Boundary sentinel (#1930/#1942/#1946) — deep 12-probe gateway contract; orthogonal, not duplicated here.
++
++## Verdict
++
++No repo change required. Fleet healthy at the edge that matters; tower deployStatus metadata untrustworthy while stale (known class, executable detector now on main). Report-only receipt; next sentry pass should cite polarity via the probe instead of raw sweep flags.

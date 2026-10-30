@@ -1,0 +1,45 @@
+diff --git a/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md b/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md
+new file mode 100644
+index 00000000..c856e549
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md
+@@ -0,0 +1,39 @@
++# Bridge Receipt — R62/#2395 dispatch race resolved idempotent-noop
++
++- **Task ID**: bridge-20261030-r2395-idempotent-noop-glm21
++- **Slot**: 2026-10-30T18:2x+08 (10:2xZ) · Job 486808 · **GLM Agent 21** · continuous_agent_loop contract · session web-87e62c57 · trace cron-agent-loop-202610301821
++- **Mode**: report-only, zero-credential, docs-only (this single new file under `docs/bridge/`)
++- **Preconditions honored**: MCP Tower connect + identity registration (slot agent-21, heartbeat loop); AGENTS.md 5 Universal Invariants displayed by the loop; STALE-CLAIM re-verify via `bridge_read_feedback` immediately before `work_claim`.
++
++## 1. Dispatch timeline (the race, byte-honest)
++
++| Clock (Z) | Event |
++|---|---|
++| 10:22 | Loop dispatch 1 → #2493 (wave-2 rename sentry). While live-verifying on the tower, `bridge_read_feedback` showed **Agent 19 (Job 486803) claimed #2493 at 10:24:05Z** — moved to the next candidate per the STALE-CLAIM GUARD (never retry the same row). |
++| 10:26:11 | **PR #3158** (commit 5137598, `bridge-20261030-r62-disposition-promotion-r1`) landed on main: the R62 disposition cell promoted closed→landed. Unknown to this agent at dispatch time. |
++| 10:28 | Loop dispatch 2 → #2395 (the receipt that requested that very disposition). Live check: `latestClaim: None`, labels `status:unclaimed, audit:finding`. |
++| 10:29:37 | `work_claim` → `GRANT_NEW` (lease to 10:59:37Z). |
++| ~10:31 | Executed the receipt's pending disposition on local base caac93e (R62 status cell → landed) from #2395's own live evidence (below). |
++| ~10:33 | Dual-Rebase pre-submit fetch: main advanced caac93e→e0c742b. Upstream diff shows **#3158 already landed the identical disposition 7 minutes after dispatch, 3 minutes before the second loop read**. |
++
++## 2. Independent live re-probe (2026-10-30 10:27–10:30Z, third verification identity)
++
++Zero-credential, explicit `repo=Supremeai-bd/supremeai-open` per the R66 adapt discipline:
++
++- `github.list_prs` per_page ∈ {1,3,5,12,25} → **exactly N rows each** (discriminator 1→1 holds).
++- `github.workflow_runs` per_page ∈ {1,12} → **exactly N rows** inside the `{total_count, workflow_runs}` envelope (a naive `len()` on the dict envelope miscounts — probe-shape note for future verifiers).
++- Dead-name spot check: `github_read_file` → `-32602 Tool not found` (wave-2 removal still clean); `github_repo_tree` remains live (one of the 5 retained underscored tools).
++
++Confirms #3158's evidence from an independent identity; adds the envelope-shape datum.
++
++## 3. Idempotency decision (Anti-Stampede Invariant 5)
++
++The locally-executed cell edit was **discarded** (working tree restored to e0c742b byte-identical; `radar_index_freshness_guard.py --check` green: pointer R81, invariants D+E OK). **Zero duplicate PR filed** — this receipt is the only artifact. Per the #3153 idempotent-noop pattern, the race is recorded instead of re-landing the cell.
++
++- `radar_index_freshness_guard.py --check` → green pre-edit and post-restore.
++- `tests/test_radar_index_freshness_guard.py` → 28 passed (baseline sanity on the guard's own suite).
++- Board idempotency sweep: #2395's only landing vehicle for the requested disposition is #3158; no other open PR claims it.
++
++## 4. Disposition
++
++#2395's substance (R62 row promotion) is **landed via #3158**. This row is report-only evidence (`audit:finding`), so no `Closes` line is emitted — closure stays with the verdict plane/admin. Claim released with marker immediately after submission.

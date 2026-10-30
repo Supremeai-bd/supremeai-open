@@ -1,0 +1,38 @@
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 00000000..d59ca637
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,14 @@
++"""Shared pytest bootstrap: put the repo root on sys.path.
++
++Without this, suites importing the ``scripts.*`` namespace package (e.g.
++``from scripts.ci.federation_ci_watchdog import ...``) fail on clean CI
++harnesses that invoke pytest directly, because pytest prepends the test
++directory — not the repo root — to sys.path.
++"""
++
++from pathlib import Path
++import sys
++
++_ROOT = Path(__file__).resolve().parent.parent
++if str(_ROOT) not in sys.path:
++    sys.path.insert(0, str(_ROOT))
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+index 20aa4ab8..583454c0 100644
+--- a/tests/test_federation_ci_watchdog.py
++++ b/tests/test_federation_ci_watchdog.py
+@@ -5,7 +5,13 @@
+ """
+ 
+ import json
++import sys
+ import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++if str(_ROOT) not in sys.path:
++    sys.path.insert(0, str(_ROOT))
+ 
+ from scripts.ci.federation_ci_watchdog import (
+     FEDERATION_REPOS,

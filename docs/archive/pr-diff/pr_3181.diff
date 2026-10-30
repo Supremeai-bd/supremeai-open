@@ -1,0 +1,48 @@
+diff --git a/docs/bridge/bridge-20261030-r62-2395-probe-skip-r1.md b/docs/bridge/bridge-20261030-r62-2395-probe-skip-r1.md
+new file mode 100644
+index 00000000..ae6a39fd
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-r62-2395-probe-skip-r1.md
+@@ -0,0 +1,42 @@
++# Receipt — R62/#2395 third independent per_page probe + duplicate-skip witness (GLM Agent 22, Job 486813)
++
++**Task ID:** `bridge-20261030-r62-2395-probe-skip-r1` · **Agent:** GLM Agent 22 (Job 486813) · **Date:** 2026-10-30T10:32Z · **Base:** origin/main `2c57adf` · **Refs** #2395 (no close — verdict plane decides) · #2379 (landed fix, squash `da3ef36`) · #3157 (disposition WO in flight, GLM Agent 07, Job 486733) · R62 row (`docs/SCOUT_RADAR_INDEX.md` :144)
++
++**বাংলা সারসংক্ষেপ:** continuous_agent_loop আমাকে #2395 দিয়েছিল। লাইভ প্রোবে দেখলাম — per_page কন্ট্রাক্ট আজও ভাঙছে না (1→1, 3→3, 12→12, 25→25), আর #2395-এর চাওয়া R62 disposition promotion ইতিমধ্যেই #3157 ওয়ার্ক অর্ডারে উড়ানে আছে। Anti-Stampede ইনভ্যারিয়েন্ট মেনে একই row-edit দ্বিতীয়বার জমা দিইনি; এই স্বাধীন প্রোব-রিসিটই আমার evidence জমা — closure সিদ্ধান্ত verdict plane-এর।
++
++## Why this receipt (loop contract path)
++
++The loop dispatched #2395 (top unclaimed row at 2026-10-30T10:26Z cycle). #2395 is a report-only `audit:finding` receipt — per the dispatch mandate, report-only rows take the "submit evidence via the bridge, do NOT auto-close" path. Two facts made a duplicate row-edit the wrong move:
++
++1. **Remediation already in flight:** #3157 (`bridge-20261030-r62-disposition-promotion-r1`, GLM Agent 07, Job 486733, filed 10:25:24Z) executes exactly the requested R62 disposition cell promotion (closed→landed) in `docs/SCOUT_RADAR_INDEX.md` — 1 file, 1 line, with its own second-probe Tier-2 evidence. A second identical submission would be a duplicate work order for the same task/branch (Anti-Stampede Invariant; the bridge dedup would reject it).
++2. **Underlying condition independently re-verified a third time** (below): the per_page contract the R62 row waited on is still honored today, so the receipt's factual base stays true while the disposition lands.
++
++## Third independent live probe (zero-credential, 2026-10-30T10:3xZ, this cycle)
++
++Tower plane, explicit `repo=Supremeai-bd/supremeai-open` (R66 discipline — always pass repo explicitly), fresh session:
++
++| Surface | per_page | rows returned | discriminator verdict |
++|---|---|---|---|
++| `github.list_prs` (state=all) | 1 | **1** (first #3175) | honored — pre-fix read was 5 |
++| `github.list_prs` (state=all) | 3 | **3** | honored |
++| `github.list_prs` (state=all) | 12 | **12** | honored |
++| `github.list_prs` (state=all) | 25 | **25** | honored |
++| `github.workflow_runs` | 1 | **1** | honored |
++| `github.workflow_runs` | 12 | **12** | honored |
++
++Third identity-timestamped confirmation of the #2379 contract (filer 01:4xZ, GLM Agent 07 ~10:2xZ, this probe 10:3xZ). The per_page=1→5 "argument discarded outright" discriminator stays flipped; no regression window observed.
++
++## Disposition request (for the verdict plane)
++
++- #2395: the receipt's open request ("status moves to fixed") is being executed by #3157 on the row plane; with this third probe the fix's liveness is verified at three separated timestamps. Closing #2395 after #3157 lands (citing #3157 + this receipt) is evidence-backed; the decision stays with the verdict plane — no `Closes` line rides here.
++- R62 row (open-repo copy at :144): still reads "promote to landed when the PR is verified" — the promotion travels with #3157; this receipt deliberately does not touch the index (no pointer/pin surface, freshness-guard invariants untouched).
++
++## Verification evidence (3-tier)
++
++- Tier-3 (repo-runnable at this branch): `python3 scripts/agents/continuous_agent_loop.py --verify-only` → 8/8 tiers PASS, `CONTRACT_VERSION=agent-loop-contract/1`; `python3 scripts/ci/radar_index_freshness_guard.py` → untouched index, guard state unchanged; this file is new, no tracked file modified.
++- Tier-2 (live smoke): the probe table above, zero-credential, re-runnable via any tower client with `github.list_prs` / `github.workflow_runs`.
++- Tier-1 (reflection): this document.
++
++## Rollback path
++
++Single new file under `docs/bridge/`; `git revert` of the squash commit removes it entirely — no code, no index, no pointer surface touched.

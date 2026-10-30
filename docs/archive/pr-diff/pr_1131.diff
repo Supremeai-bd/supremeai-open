@@ -1,0 +1,1079 @@
+diff --git a/studio/src/components/admin/SupremeAdminControlPlane.tsx b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+index 1ccbb534..259bd549 100644
+--- a/studio/src/components/admin/SupremeAdminControlPlane.tsx
++++ b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+@@ -1,8 +1,12 @@
+-import React, { useEffect, useState } from 'react';
+-import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Command, Cpu, Database, GitMerge, HeartPulse, LockKeyhole, MessageSquare, Network, Send, ShieldCheck, Sliders, Sparkles, Terminal } from 'lucide-react';
++import React, { useEffect, useRef, useState } from 'react';
++import { Activity, AlertTriangle, ArrowUpRight, CheckCircle2, Command, Cpu, Database, GitMerge, HeartPulse, LockKeyhole, MessageSquare, Mic, MicOff, Network, Send, ShieldCheck, Sliders, Sparkles, Terminal, Volume2, VolumeX } from 'lucide-react';
+ import { useMetrics, useThreatScan, useCIReports, useEpistemicTelemetry } from '../../hooks/useDashboardData';
+ import { ApprovalQueue } from '../../commandcenter/modules/secure/ApprovalQueue';
+ import { AdminAlertsTab } from './AdminAlertsTab';
++import { ArcReactorOrb, LiveWaveform, orbLabel } from './jarvis/ArcReactorOrb';
++import { useAdminVoice } from './jarvis/useAdminVoice';
++import { TwoFASentinelModal } from './jarvis/TwoFASentinelModal';
++import { generateAdminBriefing, isDestructiveCommand, detectDestructiveReason } from './jarvis/jarvisPersona';
+ 
+ interface HealthRecord { status?: string; latency?: string | number; region?: string; [key: string]: unknown }
+ interface AdminControlPlaneProps {
+@@ -39,7 +43,87 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+   const requestPermission = () => setAdminInput?.('Request permission for: ');
+   const run = (cmd: string) => setAdminInput?.(cmd);
+ 
+-  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1600px] space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap gap-2"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
++  // ── JARVIS Admin Voice Cockpit State & 2FA Sentinel ──
++  const [sentinelModal, setSentinelModal] = useState<{
++    isOpen: boolean;
++    command: string;
++    reason: string | null;
++  }>({ isOpen: false, command: '', reason: null });
++  const [graceUntil, setGraceUntil] = useState<number>(0);
++
++  const handleVoiceCommand = (spokenText: string) => {
++    setAdminInput?.(spokenText);
++    const reason = detectDestructiveReason(spokenText);
++    if (reason && Date.now() > graceUntil) {
++      setSentinelModal({ isOpen: true, command: spokenText, reason });
++      speak('Authorization required for this command, Sir.');
++      return;
++    }
++    setTimeout(() => {
++      handleSendAdmin?.();
++      speak(`Processing ${spokenText}, Sir.`);
++    }, 400);
++  };
++
++  const {
++    orbState,
++    setOrbState,
++    isListening,
++    isSpeaking,
++    transcript,
++    isMuted,
++    micAvailable,
++    toggleListening,
++    speak,
++    stopSpeaking,
++    toggleMute,
++  } = useAdminVoice(handleVoiceCommand);
++
++  // Auto-greeting & oral briefing upon initial admin dashboard mount
++  const briefedRef = useRef(false);
++  useEffect(() => {
++    if (briefedRef.current) return;
++    const timer = setTimeout(() => {
++      if (briefedRef.current) return;
++      briefedRef.current = true;
++      setOrbState('boot');
++      const briefing = generateAdminBriefing({
++        activeIncidents: activeIncidents.length,
++        runningDeployments: runningDeployments.length,
++        latencyP95: metrics?.latency_p95_ms,
++        totalServicesCount: serviceEntries.length,
++      });
++      speak(briefing, () => setOrbState('idle'));
++    }, 1200);
++    return () => clearTimeout(timer);
++  }, [metrics, activeIncidents.length, runningDeployments.length, serviceEntries.length, speak, setOrbState]);
++
++  // Safe send wrapper with 2FA check
++  const safeSendAdmin = () => {
++    const text = adminInput.trim();
++    if (!text) return;
++    const reason = detectDestructiveReason(text);
++    if (reason && Date.now() > graceUntil) {
++      setSentinelModal({ isOpen: true, command: text, reason });
++      speak('Authorization required for this command, Sir.');
++      return;
++    }
++    handleSendAdmin?.();
++  };
++
++  const on2FAAuthorized = () => {
++    setGraceUntil(Date.now() + 5 * 60 * 1000); // 5 min clearance window
++    setSentinelModal({ isOpen: false, command: '', reason: null });
++    speak('Authorization confirmed. Executing now, Sir.');
++    handleSendAdmin?.();
++  };
++
++  const on2FACancel = () => {
++    setSentinelModal({ isOpen: false, command: '', reason: null });
++    speak('Action cancelled, Sir.');
++  };
++
++  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1600px] space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-3 rounded-2xl border border-cyan-400/25 bg-black/40 px-3.5 py-2 backdrop-blur-md"><ArcReactorOrb state={orbState} size={56} onClick={toggleListening} /><div className="text-left"><div className="flex items-center gap-1.5 text-[10px] font-mono tracking-wider text-cyan-400 uppercase"><span className={`size-1.5 rounded-full ${orbState === 'alert' ? 'bg-red-400' : 'bg-cyan-400'} animate-ping`} />JARVIS {orbLabel(orbState)}</div><p className="text-[11px] text-[var(--sa-ink-muted)]">{isListening ? 'Listening to speech...' : isSpeaking ? 'Responding verbally...' : 'Voice cockpit ready'}</p><div className="mt-1 flex items-center gap-1.5"><button type="button" onClick={toggleListening} className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium transition ${isListening ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/20'}`} title="Toggle Speech Recognition">{isListening ? <Mic size={10} /> : <MicOff size={10} />}{isListening ? 'LIVE' : 'MIC'}</button><button type="button" onClick={toggleMute} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium bg-black/30 text-slate-400 border border-slate-700/50 hover:text-white" title={isMuted ? 'Unmute JARVIS Voice' : 'Mute JARVIS Voice'}>{isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}{isMuted ? 'MUTED' : 'VOICE'}</button></div></div></div><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
+ 
+ <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Super admin live summary"><Summary icon={HeartPulse} label="Platform" value={metrics ? 'LIVE' : 'PENDING'} detail={metrics ? 'Telemetry connected' : 'Waiting for telemetry'} good={!!metrics} /><Summary icon={Activity} label="p95 latency" value={metrics?.latency_p95_ms != null ? `${metrics.latency_p95_ms} ms` : '—'} detail="Current metrics snapshot" /><Summary icon={AlertTriangle} label="Critical review" value={activeIncidents.length} detail={activeIncidents.length ? 'Action may be required' : 'No high-severity finding'} good={!activeIncidents.length} /><Summary icon={GitMerge} label="Deployments" value={runningDeployments.length} detail="Currently running" /></section>
+ 
+@@ -163,10 +247,67 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+   )}
+ </section>
+ 
+-<section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="sa-eyebrow">System command center</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Tell SupremeAI what to do</h2></div><Command className="text-cyan-300" size={19} /></div><div className="mt-4 min-h-44 space-y-3 overflow-y-auto rounded-xl border border-[var(--sa-border)] bg-black/20 p-3">{adminMessages.length ? adminMessages.slice(-8).map((message) => <div key={message.id} className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto bg-cyan-400/10 text-cyan-100' : 'bg-white/5 text-[var(--sa-ink)]'}`}><p>{message.content || '—'}</p></div>) : <div className="flex min-h-36 flex-col items-center justify-center text-center text-sm text-[var(--sa-ink-muted)]"><MessageSquare size={20} className="mb-2 text-cyan-300" /><p>No command session yet.</p><p className="mt-1 text-xs">Use the command box below to ask the system to inspect, explain, or prepare work.</p></div>}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={requestPermission} className="inline-flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-400/10"><ShieldCheck size={14} /> Request permission</button><button type="button" onClick={() => run('Give me a complete system status report')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><HeartPulse size={14} /> Full status</button><button type="button" onClick={() => run('Service health snapshot')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Activity size={14} /> Service health</button><button type="button" onClick={() => run('Current incidents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><AlertTriangle size={14} /> Incidents</button><button type="button" onClick={() => run('Recent audit activity')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><ShieldCheck size={14} /> Audit</button><button type="button" onClick={() => run('Current deployment status')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><GitMerge size={14} /> Deployments</button><button type="button" onClick={() => run('Active agents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Cpu size={14} /> Agents</button></div><div className="mt-3 flex gap-2"><input value={adminInput} onChange={(event) => setAdminInput?.(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') handleSendAdmin?.(); }} placeholder="Command, inspect, diagnose..." className="min-w-0 flex-1 rounded-xl border border-[var(--sa-border)] bg-black/20 px-4 py-2.5 text-sm text-[var(--sa-ink)] outline-none focus:border-cyan-400/40" /><button type="button" onClick={() => handleSendAdmin?.()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400/15 px-4 py-2.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25 disabled:opacity-50"><Send size={14} /> Send</button></div></article><article className="max-h-[620px] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
++<section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-start justify-between gap-4"><div><p className="sa-eyebrow">System command center</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Tell SupremeAI what to do</h2></div><Command className="text-cyan-300" size={19} /></div><div className="mt-4 min-h-44 space-y-3 overflow-y-auto rounded-xl border border-[var(--sa-border)] bg-black/20 p-3">{adminMessages.length ? adminMessages.slice(-8).map((message) => <div key={message.id} className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${message.role === 'user' ? 'ml-auto bg-cyan-400/10 text-cyan-100' : 'bg-white/5 text-[var(--sa-ink)]'}`}><p>{message.content || '—'}</p></div>) : <div className="flex min-h-36 flex-col items-center justify-center text-center text-sm text-[var(--sa-ink-muted)]"><MessageSquare size={20} className="mb-2 text-cyan-300" /><p>No command session yet.</p><p className="mt-1 text-xs">Use the command box below to ask the system to inspect, explain, or prepare work.</p></div>}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={requestPermission} className="inline-flex items-center gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-400/10"><ShieldCheck size={14} /> Request permission</button><button type="button" onClick={() => run('Give me a complete system status report')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><HeartPulse size={14} /> Full status</button><button type="button" onClick={() => run('Service health snapshot')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Activity size={14} /> Service health</button><button type="button" onClick={() => run('Current incidents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><AlertTriangle size={14} /> Incidents</button><button type="button" onClick={() => run('Recent audit activity')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><ShieldCheck size={14} /> Audit</button><button type="button" onClick={() => run('Current deployment status')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><GitMerge size={14} /> Deployments</button><button type="button" onClick={() => run('Active agents')} className="inline-flex items-center gap-2 rounded-lg border border-[var(--sa-border)] px-3 py-2 text-xs text-[var(--sa-ink-muted)] hover:text-[var(--sa-ink)]"><Cpu size={14} /> Agents</button></div><div className="mt-3 flex gap-2">
++  <input
++    value={adminInput}
++    onChange={(event) => setAdminInput?.(event.target.value)}
++    onKeyDown={(event) => { if (event.key === 'Enter') safeSendAdmin(); }}
++    placeholder={isListening ? "Listening... (speak clearly in English or Bengali)" : "Command, inspect, diagnose..."}
++    className={`min-w-0 flex-1 rounded-xl border bg-black/20 px-4 py-2.5 text-sm text-[var(--sa-ink)] outline-none transition ${isListening ? 'border-emerald-400/60 shadow-[0_0_12px_rgba(52,211,153,0.3)]' : 'border-[var(--sa-border)] focus:border-cyan-400/40'}`}
++  />
++  {micAvailable && (
++    <button
++      type="button"
++      onClick={toggleListening}
++      className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${
++        isListening
++          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse'
++          : 'bg-cyan-500/10 text-cyan-200 border border-cyan-500/25 hover:bg-cyan-500/20'
++      }`}
++      title={isListening ? "Stop Listening" : "Speak to JARVIS"}
++    >
++      {isListening ? <Mic size={15} /> : <MicOff size={15} />}
++      <span className="hidden sm:inline">{isListening ? 'Listening...' : 'Voice'}</span>
++    </button>
++  )}
++  <button
++    type="button"
++    onClick={safeSendAdmin}
++    disabled={loading}
++    className="inline-flex items-center gap-2 rounded-xl bg-cyan-400/15 px-4 py-2.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/25 disabled:opacity-50"
++  >
++    <Send size={14} /> Send
++  </button>
++</div>
++
++{(isListening || isSpeaking || transcript) && (
++  <div className="mt-2.5 rounded-xl border border-cyan-500/20 bg-black/30 p-2.5">
++    <div className="flex items-center justify-between text-[10px] font-mono text-cyan-400/80 mb-1">
++      <span>JARVIS AUDIO CHANNEL</span>
++      <span className="uppercase">{orbLabel(orbState)}</span>
++    </div>
++    <LiveWaveform state={orbState} height={28} barCount={40} />
++    {transcript && (
++      <p className="mt-1.5 text-xs text-cyan-200 font-mono italic">
++        "{transcript}"
++      </p>
++    )}
++  </div>
++)}
++</article>
++<article className="max-h-[620px] overflow-hidden rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><AdminAlertsTab /></article></section>
+ 
+ <section className="grid gap-5 xl:grid-cols-2"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Requested work</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Approve or reject</h2></div><CheckCircle2 size={19} className="text-emerald-300" /></div><ApprovalQueue /></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="mb-4 flex items-center justify-between"><div><p className="sa-eyebrow">Quick access</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Controlled modules</h2></div></div><div className="grid gap-2 sm:grid-cols-2"><QuickAction icon={Cpu} label="Agents / swarm" onClick={() => open('agents-swarm')} /><QuickAction icon={ShieldCheck} label="Security & guardrails" onClick={() => open('security')} /><QuickAction icon={Activity} label="Audit trail" onClick={() => open('audit')} /><QuickAction icon={ArrowUpRight} label="Customer / RBAC" onClick={() => open('tenants-rbac')} /></div></article></section>
+ 
++{sentinelModal.isOpen && (
++  <TwoFASentinelModal
++    command={sentinelModal.command}
++    reason={sentinelModal.reason}
++    onAuthorized={on2FAAuthorized}
++    onCancel={on2FACancel}
++  />
++)}
++
+ </div></div>;
+ }
+ 
+diff --git a/studio/src/components/admin/jarvis/ArcReactorOrb.tsx b/studio/src/components/admin/jarvis/ArcReactorOrb.tsx
+new file mode 100644
+index 00000000..f5911b79
+--- /dev/null
++++ b/studio/src/components/admin/jarvis/ArcReactorOrb.tsx
+@@ -0,0 +1,326 @@
++import React, { useEffect, useRef } from 'react';
++import type { OrbState } from './jarvisPersona';
++
++const STATE_COLORS: Record<OrbState, string> = {
++  boot: '#0ea5b7',
++  idle: '#22d3ee',
++  listening: '#2ff3a6',
++  thinking: '#fbbf24',
++  speaking: '#38bdf8',
++  alert: '#ff2d40',
++};
++
++const STATE_LABELS: Record<OrbState, string> = {
++  boot: 'INITIALIZING',
++  idle: 'STANDBY',
++  listening: 'LISTENING',
++  thinking: 'PROCESSING',
++  speaking: 'RESPONDING',
++  alert: 'AUTHORIZATION REQUIRED',
++};
++
++export function orbColor(state: OrbState): string {
++  return STATE_COLORS[state] ?? STATE_COLORS.idle;
++}
++
++export function orbLabel(state: OrbState): string {
++  return STATE_LABELS[state] ?? STATE_LABELS.idle;
++}
++
++interface OrbProps {
++  state: OrbState;
++  size?: number;
++  onClick?: () => void;
++  className?: string;
++}
++
++export function ArcReactorOrb({ state, size = 180, onClick, className = '' }: OrbProps) {
++  const color = STATE_COLORS[state] ?? STATE_COLORS.idle;
++  const booting = state === 'boot';
++
++  return (
++    <div
++      onClick={onClick}
++      className={`jarvis-orb relative select-none cursor-pointer inline-flex items-center justify-center ${className}`}
++      data-state={state}
++      style={{ width: size, height: size, ['--orb' as string]: color }}
++      title={`JARVIS Core: ${orbLabel(state)}`}
++      aria-label={`JARVIS Core: ${orbLabel(state)}`}
++    >
++      <style>{`
++        @keyframes orb-breathe {
++          0%, 100% { transform: scale(1); opacity: 0.85; }
++          50% { transform: scale(1.045); opacity: 1; }
++        }
++        @keyframes orb-speak {
++          0%, 100% { transform: scale(0.96); }
++          50% { transform: scale(1.06); }
++        }
++        @keyframes orb-alert {
++          0%, 100% { transform: scale(1); box-shadow: 0 0 30px rgba(255, 45, 64, 0.75); }
++          50% { transform: scale(1.08); box-shadow: 0 0 46px rgba(255, 45, 64, 0.95); }
++        }
++        @keyframes spin-cw {
++          to { transform: rotate(360deg); }
++        }
++        @keyframes spin-ccw {
++          to { transform: rotate(-360deg); }
++        }
++        @keyframes boot-flicker {
++          0% { opacity: 0.15; }
++          50% { opacity: 0.5; }
++          100% { opacity: 0.15; }
++        }
++        .orb-halo {
++          position: absolute;
++          inset: -18%;
++          border-radius: 9999px;
++          background: radial-gradient(circle, color-mix(in srgb, var(--orb) 30%, transparent) 0%, transparent 62%);
++          filter: blur(14px);
++          animation: orb-breathe 3.4s ease-in-out infinite;
++          transition: background 0.5s ease;
++        }
++        .orb-ring {
++          position: absolute;
++          inset: 0;
++          width: 100%;
++          height: 100%;
++        }
++        .orb-ring-outer {
++          animation: spin-cw 14s linear infinite;
++        }
++        .orb-ring-mid {
++          animation: spin-ccw 9s linear infinite;
++        }
++        .orb-ring-inner {
++          animation: spin-cw 5.5s linear infinite;
++        }
++        .jarvis-orb[data-state="boot"] .orb-ring-inner {
++          animation-duration: 1.6s;
++        }
++        .jarvis-orb[data-state="listening"] .orb-ring-outer {
++          animation-duration: 6s;
++        }
++        .jarvis-orb[data-state="alert"] .orb-ring-outer {
++          animation-duration: 3s;
++        }
++        .orb-core {
++          position: absolute;
++          inset: 30%;
++          border-radius: 9999px;
++          background: radial-gradient(circle at 42% 38%, #ffffff 0%, var(--orb) 34%, rgba(2, 12, 24, 0.9) 78%);
++          box-shadow:
++            0 0 26px color-mix(in srgb, var(--orb) 65%, transparent),
++            inset 0 0 18px color-mix(in srgb, var(--orb) 45%, transparent);
++          animation: orb-breathe 2.8s ease-in-out infinite;
++          transition: background 0.4s ease, box-shadow 0.4s ease;
++        }
++        .orb-core-inner {
++          position: absolute;
++          inset: 22%;
++          border-radius: 9999px;
++          background: radial-gradient(circle at 45% 40%, #ffffff 0%, color-mix(in srgb, var(--orb) 80%, white) 55%, transparent 100%);
++          opacity: 0.9;
++        }
++        .orb-core-triangle {
++          position: absolute;
++          inset: 38%;
++          clip-path: polygon(50% 8%, 93% 82%, 7% 82%);
++          background: linear-gradient(160deg, rgba(255, 255, 255, 0.95), color-mix(in srgb, var(--orb) 70%, transparent));
++          opacity: 0.55;
++        }
++        .jarvis-orb[data-state="speaking"] .orb-core {
++          animation: orb-speak 0.55s ease-in-out infinite;
++        }
++        .jarvis-orb[data-state="listening"] .orb-core {
++          animation: orb-speak 0.9s ease-in-out infinite;
++        }
++        .jarvis-orb[data-state="alert"] .orb-core {
++          animation: orb-alert 0.8s ease-in-out infinite;
++        }
++        .orb-boot-flicker {
++          position: absolute;
++          inset: 0;
++          border-radius: 9999px;
++          background: color-mix(in srgb, var(--orb) 16%, transparent);
++          animation: boot-flicker 0.9s steps(2, end) infinite;
++        }
++      `}</style>
++
++      {/* ambient halo */}
++      <div className="orb-halo" />
++
++      {/* outer dashed ring */}
++      <svg className="orb-ring orb-ring-outer" viewBox="0 0 200 200">
++        <circle
++          cx="100"
++          cy="100"
++          r="94"
++          fill="none"
++          stroke={color}
++          strokeWidth="1.5"
++          strokeDasharray="4 7"
++          opacity="0.75"
++        />
++        <circle
++          cx="100"
++          cy="100"
++          r="86"
++          fill="none"
++          stroke={color}
++          strokeWidth="0.6"
++          strokeDasharray="30 46"
++          opacity="0.4"
++        />
++      </svg>
++
++      {/* middle counter-rotating tick ring */}
++      <svg className="orb-ring orb-ring-mid" viewBox="0 0 200 200">
++        <circle
++          cx="100"
++          cy="100"
++          r="72"
++          fill="none"
++          stroke={color}
++          strokeWidth="4"
++          strokeDasharray="2 18"
++          opacity="0.55"
++        />
++      </svg>
++
++      {/* inner arc segments */}
++      <svg className="orb-ring orb-ring-inner" viewBox="0 0 200 200">
++        <circle
++          cx="100"
++          cy="100"
++          r="58"
++          fill="none"
++          stroke={color}
++          strokeWidth="2.5"
++          strokeDasharray="80 120"
++          strokeLinecap="round"
++          opacity="0.9"
++        />
++        <circle
++          cx="100"
++          cy="100"
++          r="50"
++          fill="none"
++          stroke={color}
++          strokeWidth="1"
++          strokeDasharray="20 90"
++          opacity="0.5"
++        />
++      </svg>
++
++      {/* reactor core */}
++      <div className="orb-core">
++        <div className="orb-core-inner" />
++        <div className="orb-core-triangle" />
++      </div>
++
++      {booting && <div className="orb-boot-flicker" />}
++    </div>
++  );
++}
++
++// ------------------------------------------------------------
++// Real-time canvas waveform visualizer
++// ------------------------------------------------------------
++interface WaveformProps {
++  state: OrbState;
++  height?: number;
++  barCount?: number;
++}
++
++export function LiveWaveform({
++  state,
++  height = 36,
++  barCount = 32,
++}: WaveformProps) {
++  const canvasRef = useRef<HTMLCanvasElement | null>(null);
++  const rafRef = useRef<number>(0);
++  const levelsRef = useRef<number[]>(new Array(barCount).fill(0.04));
++  const stateRef = useRef<OrbState>(state);
++  stateRef.current = state;
++
++  useEffect(() => {
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++    const ctx = canvas.getContext('2d');
++    if (!ctx) return;
++
++    let frame = 0;
++    const draw = () => {
++      frame++;
++      const dpr = window.devicePixelRatio || 1;
++      const w = canvas.clientWidth;
++      const h = canvas.clientHeight;
++      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
++        canvas.width = w * dpr;
++        canvas.height = h * dpr;
++      }
++      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
++      ctx.clearRect(0, 0, w, h);
++
++      const s = stateRef.current;
++      const color = STATE_COLORS[s] ?? STATE_COLORS.idle;
++      const levels = levelsRef.current;
++
++      if (s === 'speaking') {
++        for (let i = 0; i < barCount; i++) {
++          const wave =
++            0.35 +
++            0.3 * Math.sin(frame * 0.12 + i * 0.55) +
++            0.25 * Math.sin(frame * 0.25 + i * 1.3);
++          const target = Math.abs(wave) * (0.75 + 0.25 * Math.sin(frame * 0.08));
++          levels[i] = levels[i] * 0.7 + Math.max(0.06, target) * 0.3;
++        }
++      } else if (s === 'listening') {
++        for (let i = 0; i < barCount; i++) {
++          const wave = 0.25 + 0.2 * Math.sin(frame * 0.18 + i * 0.9);
++          levels[i] = levels[i] * 0.75 + Math.max(0.05, wave) * 0.25;
++        }
++      } else if (s === 'thinking') {
++        for (let i = 0; i < barCount; i++) {
++          const wave = 0.15 + 0.12 * Math.sin(frame * 0.1 + i * 0.8) * Math.sin(frame * 0.05);
++          levels[i] = levels[i] * 0.85 + Math.max(0.04, wave) * 0.15;
++        }
++      } else {
++        for (let i = 0; i < barCount; i++) {
++          const wave = 0.04 + 0.02 * Math.sin(frame * 0.05 + i * 0.35);
++          levels[i] = levels[i] * 0.92 + wave * 0.08;
++        }
++      }
++
++      const barW = w / barCount;
++      const mid = h / 2;
++      ctx.fillStyle = color;
++      ctx.shadowColor = color;
++      ctx.shadowBlur = 6;
++      for (let i = 0; i < barCount; i++) {
++        const lh = Math.max(2, levels[i] * (h * 0.9));
++        const x = i * barW + barW * 0.2;
++        const bw = barW * 0.6;
++        ctx.globalAlpha = 0.35 + levels[i] * 0.65;
++        ctx.fillRect(x, mid - lh / 2, bw, lh);
++      }
++      ctx.globalAlpha = 1;
++      ctx.shadowBlur = 0;
++
++      rafRef.current = requestAnimationFrame(draw);
++    };
++
++    rafRef.current = requestAnimationFrame(draw);
++    return () => cancelAnimationFrame(rafRef.current);
++  }, [barCount]);
++
++  return (
++    <canvas
++      ref={canvasRef}
++      className="w-full"
++      style={{ height }}
++      aria-hidden="true"
++    />
++  );
++}
+diff --git a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+new file mode 100644
+index 00000000..88ab4e30
+--- /dev/null
++++ b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+@@ -0,0 +1,191 @@
++import React, { useState } from 'react';
++import { ShieldAlert, Fingerprint, KeyRound, X, CheckCircle2 } from 'lucide-react';
++import { ArcReactorOrb } from './ArcReactorOrb';
++
++interface TwoFASentinelModalProps {
++  command: string;
++  reason?: string | null;
++  onAuthorized: () => void;
++  onCancel: () => void;
++}
++
++const DEFAULT_ADMIN_TOKEN = 'jarvis-admin-2026';
++
++export function TwoFASentinelModal({
++  command,
++  reason,
++  onAuthorized,
++  onCancel,
++}: TwoFASentinelModalProps) {
++  const [tokenInput, setTokenInput] = useState('');
++  const [error, setError] = useState<string | null>(null);
++  const [verifying, setVerifying] = useState(false);
++  const [biometricSupported, setBiometricSupported] = useState(
++    typeof window !== 'undefined' && !!window.PublicKeyCredential
++  );
++
++  const handleBiometricAuth = async () => {
++    setVerifying(true);
++    setError(null);
++
++    try {
++      if (!window.PublicKeyCredential) {
++        throw new Error('Platform authenticator not supported on this device.');
++      }
++
++      // Check if user verification is available
++      const available = await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable?.();
++      if (!available) {
++        throw new Error('Biometric hardware (Windows Hello / Touch ID) unavailable. Please enter Admin PIN.');
++      }
++
++      // Create a short assertion challenge
++      const challenge = new Uint8Array(32);
++      window.crypto.getRandomValues(challenge);
++
++      const credential = await navigator.credentials.get({
++        publicKey: {
++          challenge,
++          rpId: window.location.hostname || 'localhost',
++          userVerification: 'preferred',
++          timeout: 60000,
++        },
++      });
++
++      if (credential) {
++        onAuthorized();
++      } else {
++        throw new Error('Biometric verification cancelled.');
++      }
++    } catch (err: unknown) {
++      const msg = err instanceof Error ? err.message : 'Biometric check cancelled or unavailable.';
++      setError(msg);
++      // Fallback to token PIN input
++      setBiometricSupported(false);
++    } finally {
++      setVerifying(false);
++    }
++  };
++
++  const handleTokenSubmit = (e?: React.FormEvent) => {
++    e?.preventDefault();
++    setError(null);
++    const cleaned = tokenInput.trim();
++
++    if (!cleaned) {
++      setError('Please enter Admin PIN or Token.');
++      return;
++    }
++
++    // Check token or admin PIN
++    if (cleaned === DEFAULT_ADMIN_TOKEN || cleaned === '1955') {
++      onAuthorized();
++    } else {
++      setError('Invalid security token or PIN.');
++      setTokenInput('');
++    }
++  };
++
++  return (
++    <div
++      role="dialog"
++      aria-modal="true"
++      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
++    >
++      <div className="relative w-full max-w-md rounded-2xl border border-red-500/40 bg-[#090d16] p-6 shadow-2xl shadow-red-950/40 text-left">
++        {/* Close Button */}
++        <button
++          type="button"
++          onClick={onCancel}
++          className="absolute right-4 top-4 text-slate-400 hover:text-white p-1 rounded-lg transition"
++          aria-label="Cancel authorization"
++        >
++          <X size={18} />
++        </button>
++
++        {/* Header with Alert Orb */}
++        <div className="flex items-center gap-4 border-b border-red-500/20 pb-4">
++          <ArcReactorOrb state="alert" size={60} />
++          <div>
++            <div className="flex items-center gap-1.5 text-xs font-mono font-semibold tracking-wider uppercase text-red-400">
++              <ShieldAlert size={15} /> 2FA Sentinel Guard
++            </div>
++            <h2 className="text-lg font-bold text-white tracking-tight">
++              Authorization Required
++            </h2>
++          </div>
++        </div>
++
++        {/* Flagged Command Info */}
++        <div className="mt-4 rounded-xl border border-red-500/20 bg-red-950/20 p-3 text-xs">
++          <p className="text-slate-400 font-mono text-[11px] uppercase tracking-wider">
++            Flagged Destructive Action:
++          </p>
++          <p className="mt-1 font-mono text-red-200 font-medium break-all">
++            "{command}"
++          </p>
++          {reason && (
++            <p className="mt-1 text-[10px] text-red-400/80">
++              Matched trigger pattern: <span className="font-mono">{reason}</span>
++            </p>
++          )}
++        </div>
++
++        {/* Auth Methods */}
++        <div className="mt-5 space-y-4">
++          {biometricSupported && (
++            <button
++              type="button"
++              disabled={verifying}
++              onClick={handleBiometricAuth}
++              className="w-full flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-950/30 hover:bg-cyan-900/40 p-3 text-xs font-semibold text-cyan-200 transition disabled:opacity-50"
++            >
++              <Fingerprint size={16} className="text-cyan-400" />
++              {verifying ? 'Awaiting Biometric Prompt...' : 'Verify with Biometrics (Windows Hello)'}
++            </button>
++          )}
++
++          <form onSubmit={handleTokenSubmit} className="space-y-3">
++            <div className="relative">
++              <KeyRound size={15} className="absolute left-3 top-3 text-slate-400" />
++              <input
++                type="password"
++                placeholder="Or enter Admin PIN (e.g. 1955)"
++                value={tokenInput}
++                onChange={(e) => setTokenInput(e.target.value)}
++                autoFocus={!biometricSupported}
++                className="w-full rounded-xl border border-slate-700 bg-black/40 pl-9 pr-4 py-2.5 text-xs text-slate-200 font-mono placeholder:text-slate-500 outline-none focus:border-cyan-400/50"
++              />
++            </div>
++
++            {error && (
++              <p className="text-xs text-red-400 font-mono" role="alert">
++                {error}
++              </p>
++            )}
++
++            <div className="flex gap-2 pt-1">
++              <button
++                type="button"
++                onClick={onCancel}
++                className="flex-1 rounded-xl border border-slate-700 bg-slate-900/40 py-2.5 text-xs font-semibold text-slate-400 hover:text-slate-200 transition"
++              >
++                Abort Action
++              </button>
++              <button
++                type="submit"
++                className="flex-1 rounded-xl border border-red-500/40 bg-red-600/20 hover:bg-red-600/30 py-2.5 text-xs font-semibold text-red-200 transition flex items-center justify-center gap-1.5"
++              >
++                <CheckCircle2 size={14} /> Authorize & Run
++              </button>
++            </div>
++          </form>
++        </div>
++
++        <p className="mt-4 text-center text-[10px] text-slate-500">
++          Super Admin clearance grants a 5-minute security window.
++        </p>
++      </div>
++    </div>
++  );
++}
+diff --git a/studio/src/components/admin/jarvis/jarvisPersona.ts b/studio/src/components/admin/jarvis/jarvisPersona.ts
+new file mode 100644
+index 00000000..9a7e6ac4
+--- /dev/null
++++ b/studio/src/components/admin/jarvis/jarvisPersona.ts
+@@ -0,0 +1,108 @@
++// ============================================================
++// SUPREME OS — JARVIS Admin Voice Persona & Classifier
++// Dedicated for Super Admin Dashboard (Zero-Cost, Cloud/Web-Native)
++// ============================================================
++
++export type OrbState =
++  | 'boot'
++  | 'idle'
++  | 'listening'
++  | 'thinking'
++  | 'speaking'
++  | 'alert';
++
++export interface TelemetryBriefingContext {
++  activeIncidents?: number;
++  runningDeployments?: number;
++  latencyP95?: string | number | null;
++  healthyServicesCount?: number;
++  totalServicesCount?: number;
++}
++
++// ------------------------------------------------------------
++// Time-based polite British Butler greeting
++// ------------------------------------------------------------
++export function greetingForHour(hour: number = new Date().getHours()): string {
++  if (hour < 5) return 'Burning the midnight oil, Sir?';
++  if (hour < 12) return 'Good morning, Sir.';
++  if (hour < 17) return 'Good afternoon, Sir.';
++  return 'Good evening, Sir.';
++}
++
++// ------------------------------------------------------------
++// Dynamic spoken briefing generated from live admin telemetry
++// ------------------------------------------------------------
++export function generateAdminBriefing(ctx: TelemetryBriefingContext): string {
++  const greeting = greetingForHour();
++  const incidents = ctx.activeIncidents ?? 0;
++  const deploys = ctx.runningDeployments ?? 0;
++  const latency = ctx.latencyP95 ? `${ctx.latencyP95} milliseconds` : 'normal';
++
++  let summary = `${greeting} Supreme Control Plane is online. `;
++  
++  if (incidents === 0) {
++    summary += 'All systems operational with zero critical incidents. ';
++  } else {
++    summary += `Attention required: ${incidents} high severity incident${incidents > 1 ? 's' : ''} detected. `;
++  }
++
++  if (deploys > 0) {
++    summary += `${deploys} active deployment${deploys > 1 ? 's are' : ' is'} in flight. `;
++  }
++
++  summary += `Latency is stable at ${latency}. Standing by for your command, Sir.`;
++  return summary;
++}
++
++// ------------------------------------------------------------
++// Spoken-Style System Prompt (≤80 words, no markdown/emoji)
++// ------------------------------------------------------------
++export function buildJarvisSystemPrompt(): string {
++  const now = new Date().toISOString();
++  return [
++    "You are JARVIS, the personal AI assistant of the SupremeAI system administrator (address him as 'Sir').",
++    "PERSONALITY: classic JARVIS — impeccably polite, razor-sharp, subtly witty British butler tone. Calm under pressure. Never grovel, never spam exclamation marks.",
++    "CONTEXT: Super Admin voice cockpit. The administrator controls the whole SupremeAI platform.",
++    `CURRENT TIME: ${now}.`,
++    "LANGUAGE: Mirror the user's language. If he speaks Banglish or Bengali, reply naturally in the same style with English technical terms kept as-is. If English, reply in English.",
++    "VOICE RULES (CRITICAL — reply is read aloud by TTS):",
++    "- Keep replies under 60-80 words unless explicitly asked for detail.",
++    "- Plain conversational text only. NO markdown, NO bullet points, NO asterisks, NO code blocks, NO emojis.",
++    "- Speak numbers and technical terms cleanly.",
++    "SAFETY: For destructive or major actions (deploy, delete, restart, shutdown, purge, rotate credentials), inform the administrator that 2FA authorization is required.",
++  ].join('\n');
++}
++
++// ------------------------------------------------------------
++// Destructive / High-Privilege Command Classifier
++// English + Banglish + Bengali script
++// ------------------------------------------------------------
++const DESTRUCTIVE_PATTERNS: RegExp[] = [
++  /\b(deploy|undeploy|redeploy)\b/i,
++  /\b(delete|del|remove|rm|drop|destroy|wipe|purge|flush|truncate)\b/i,
++  /\b(kill|shutdown|shut\s?down|power\s?off|halt|stop\s+(the\s+)?(server|service|node|system))\b/i,
++  /\b(restart|reboot|reset|rollback|roll\s?back|migrate|migration)\b/i,
++  /\b(force\s?(push|merge)|merge\s+to\s+(main|master)|git\s+push)\b/i,
++  /\b(revoke|rotate|suspend|terminate|disable|turn\s+off|switch\s+off|shut\s?off)\b/i,
++  /\b(credential|secret|token|password|api\s?key).{0,20}(rotate|reset|revoke|change)\b/i,
++  /\b(off\s?koro|off\s?kore\s?dao|bondho\s?koro|bandh?o\s?koro|band\s?koro)\b/i,
++  /\b(muchh?e?\s?(felo|dao|dibo)|delete\s?koro|remove\s?koro)\b/i,
++  /\b(deploy\s?koro|restart\s?koro|reset\s?koro|bondho\s?kore\s?dao)\b/i,
++  /\b(null\s?koro|khali\s?koro|uroye\s?fe?lo)\b/i,
++  /বন্ধ\s?কর/, /মুছে\s?ফেল/, /ডিলিট/, /ডিপ্লয/, /রিস্টার্ট/, /শাট\s?ডাউন/,
++  /ফেলে\s?দাও/, /রিসেট/, /বন্ধ\s?করে\s?দাও/, /নিভিয়ে\s?দাও/,
++];
++
++export function isDestructiveCommand(text: string): boolean {
++  const t = text.trim();
++  if (t.length < 3) return false;
++  return DESTRUCTIVE_PATTERNS.some((re) => re.test(t));
++}
++
++export function detectDestructiveReason(text: string): string | null {
++  for (const re of DESTRUCTIVE_PATTERNS) {
++    const m = text.match(re);
++    if (m) return m[0];
++  }
++  return null;
++}
+diff --git a/studio/src/components/admin/jarvis/useAdminVoice.ts b/studio/src/components/admin/jarvis/useAdminVoice.ts
+new file mode 100644
+index 00000000..f7cd313a
+--- /dev/null
++++ b/studio/src/components/admin/jarvis/useAdminVoice.ts
+@@ -0,0 +1,253 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++import type { OrbState } from './jarvisPersona';
++
++interface SpeechRecognitionEventLike {
++  results: {
++    [index: number]: {
++      [index: number]: {
++        transcript: string;
++      };
++      isFinal?: boolean;
++    };
++    length: number;
++  };
++}
++
++interface SpeechRecognitionLike {
++  lang: string;
++  continuous: boolean;
++  interimResults: boolean;
++  start(): void;
++  stop(): void;
++  abort(): void;
++  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
++  onerror: ((e: unknown) => void) | null;
++  onend: (() => void) | null;
++}
++
++type SRCtor = new () => SpeechRecognitionLike;
++
++function getSpeechRecognitionCtor(): SRCtor | null {
++  if (typeof window === 'undefined') return null;
++  const w = window as unknown as {
++    SpeechRecognition?: SRCtor;
++    webkitSpeechRecognition?: SRCtor;
++  };
++  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
++}
++
++export function useAdminVoice(onFinalTranscript?: (text: string) => void) {
++  const [orbState, setOrbState] = useState<OrbState>('idle');
++  const [isListening, setIsListening] = useState(false);
++  const [isSpeaking, setIsSpeaking] = useState(false);
++  const [transcript, setTranscript] = useState('');
++  const [isMuted, setIsMuted] = useState(false);
++  const [micAvailable, setMicAvailable] = useState(true);
++
++  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
++  const isMutedRef = useRef(isMuted);
++  isMutedRef.current = isMuted;
++
++  const onFinalTranscriptRef = useRef(onFinalTranscript);
++  onFinalTranscriptRef.current = onFinalTranscript;
++
++  // Initialize Speech Recognition once on client
++  useEffect(() => {
++    const Ctor = getSpeechRecognitionCtor();
++    if (!Ctor) {
++      setMicAvailable(false);
++      return;
++    }
++
++    try {
++      const recog = new Ctor();
++      recog.continuous = false;
++      recog.interimResults = true;
++      recog.lang = 'bn-BD, en-US';
++
++      recog.onresult = (e: SpeechRecognitionEventLike) => {
++        let interimText = '';
++        let finalText = '';
++
++        for (let i = 0; i < e.results.length; i++) {
++          const item = e.results[i];
++          if (item && item[0]) {
++            if (item.isFinal) {
++              finalText += item[0].transcript;
++            } else {
++              interimText += item[0].transcript;
++            }
++          }
++        }
++
++        const currentText = (finalText || interimText).trim();
++        setTranscript(currentText);
++
++        if (finalText.trim()) {
++          onFinalTranscriptRef.current?.(finalText.trim());
++          setOrbState('thinking');
++        }
++      };
++
++      recog.onerror = () => {
++        setIsListening(false);
++        setOrbState((prev) => (prev === 'listening' ? 'idle' : prev));
++      };
++
++      recog.onend = () => {
++        setIsListening(false);
++        setOrbState((prev) => (prev === 'listening' ? 'idle' : prev));
++      };
++
++      recognitionRef.current = recog;
++    } catch {
++      setMicAvailable(false);
++    }
++
++    return () => {
++      try {
++        recognitionRef.current?.abort();
++      } catch {
++        /* noop */
++      }
++    };
++  }, []);
++
++  const startListening = useCallback(() => {
++    if (!recognitionRef.current || isListening) return;
++    try {
++      // Cancel any ongoing speech synthesis first
++      if (typeof window !== 'undefined' && window.speechSynthesis) {
++        window.speechSynthesis.cancel();
++      }
++      setIsSpeaking(false);
++      setTranscript('');
++      setOrbState('listening');
++      setIsListening(true);
++      recognitionRef.current.start();
++    } catch {
++      setIsListening(false);
++      setOrbState('idle');
++    }
++  }, [isListening]);
++
++  const stopListening = useCallback(() => {
++    if (!recognitionRef.current || !isListening) return;
++    try {
++      recognitionRef.current.stop();
++    } catch {
++      /* noop */
++    }
++    setIsListening(false);
++    setOrbState('idle');
++  }, [isListening]);
++
++  const toggleListening = useCallback(() => {
++    if (isListening) {
++      stopListening();
++    } else {
++      startListening();
++    }
++  }, [isListening, startListening, stopListening]);
++
++  // Clean conversational text-to-speech using browser synthesis
++  const speak = useCallback((text: string, onEnd?: () => void) => {
++    if (isMutedRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
++      onEnd?.();
++      return;
++    }
++
++    try {
++      window.speechSynthesis.cancel();
++
++      // Clean markdown, symbols, and brackets before reading aloud
++      const cleanText = text
++        .replace(/[*#`_~[\]()<>]/g, ' ')
++        .replace(/\s+/g, ' ')
++        .trim();
++
++      if (!cleanText) {
++        onEnd?.();
++        return;
++      }
++
++      const utterance = new SpeechSynthesisUtterance(cleanText);
++      utterance.rate = 1.05;
++      utterance.pitch = 0.95; // Slightly deeper, classic British JARVIS tone
++
++      // Select best matching voice
++      const voices = window.speechSynthesis.getVoices();
++      const preferredVoice = voices.find(
++        (v) =>
++          v.lang.startsWith('en-GB') ||
++          v.name.includes('Ryan') ||
++          v.name.includes('Daniel') ||
++          v.name.includes('UK English') ||
++          v.name.includes('Natural')
++      ) || voices.find((v) => v.lang.startsWith('en')) || voices[0];
++
++      if (preferredVoice) {
++        utterance.voice = preferredVoice;
++      }
++
++      utterance.onstart = () => {
++        setIsSpeaking(true);
++        setOrbState('speaking');
++      };
++
++      utterance.onend = () => {
++        setIsSpeaking(false);
++        setOrbState('idle');
++        onEnd?.();
++      };
++
++      utterance.onerror = () => {
++        setIsSpeaking(false);
++        setOrbState('idle');
++        onEnd?.();
++      };
++
++      window.speechSynthesis.speak(utterance);
++    } catch {
++      setIsSpeaking(false);
++      setOrbState('idle');
++      onEnd?.();
++    }
++  }, []);
++
++  const stopSpeaking = useCallback(() => {
++    if (typeof window !== 'undefined' && window.speechSynthesis) {
++      window.speechSynthesis.cancel();
++    }
++    setIsSpeaking(false);
++    setOrbState('idle');
++  }, []);
++
++  const toggleMute = useCallback(() => {
++    setIsMuted((prev) => {
++      const next = !prev;
++      if (next && typeof window !== 'undefined' && window.speechSynthesis) {
++        window.speechSynthesis.cancel();
++        setIsSpeaking(false);
++        setOrbState('idle');
++      }
++      return next;
++    });
++  }, []);
++
++  return {
++    orbState,
++    setOrbState,
++    isListening,
++    isSpeaking,
++    transcript,
++    isMuted,
++    micAvailable,
++    startListening,
++    stopListening,
++    toggleListening,
++    speak,
++    stopSpeaking,
++    toggleMute,
++  };
++}

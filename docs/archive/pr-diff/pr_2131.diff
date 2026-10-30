@@ -1,0 +1,585 @@
+diff --git a/scripts/ci/satellite_ci_sentinel.py b/scripts/ci/satellite_ci_sentinel.py
+new file mode 100644
+index 00000000..a98226f3
+--- /dev/null
++++ b/scripts/ci/satellite_ci_sentinel.py
+@@ -0,0 +1,413 @@
++#!/usr/bin/env python3
++"""satellite_ci_sentinel.py — federation satellite main-CI health sentinel, report-only (issue #2111 option B kernel).
++
++# বাংলা নোট: #2111 অডিট পাওয়া গেছে — ৬টি স্যাটেলাইট রিপোর main CI লাল হলে
++# বোর্ডে কোনো WO জন্মায় না, কোনো এজেন্ট পেজ হয় না; core-এর ২ দিনের RED
++# ৩ ঘণ্টা পরেও শুধু এক অডিটর সুইপে ধরা পড়েছিল। এই সেন্টিনেল সেই সুইপকে
++# পুনরাবৃত্তিযোগ্য করে — এক কমান্ডে, শূন্য-ক্রেডেনশিয়ালে।
++
++Zero-credential by contract: exactly ONE anonymous MCP Tower handshake per sweep
++(initialize -> notifications/initialized -> tools/call), then read-only
++`github_workflow_runs` per satellite repo. No tokens, no gh CLI, no writes.
++
++Never-do compliance (audit trail):
++  - no `.github/**` touching (protected-path law #1643); scheduling is routed,
++    not wired: A admin workflow yml (maintainer lane) / B tower-side cron /
++    C manual agent-pass invocation. Mirrors the #2082 probe's honest routing.
++  - stateless: no baseline file, nothing written anywhere (report-only).
++  - log depth NOT probed: failed-log triage stays maintainer-lane per #2111's
++    own honest-scope finding; this sentinel surfaces STATE, not root cause.
++  - honest-skip (#1760): unreachable tower => exit 2 (fail-close), never a
++    fabricated green; unreachable single repo => skip row disclosed inline.
++
++Exit codes (fail-closed family, mirrors the #1814 drift-detector convention):
++  0  every verified main is green (stale rows disclosed inline, non-fatal)
++  1  at least one verified main is RED
++  2  unable to verify ANY repo (tower unreachable / all rows unknown) — fail-close
++
++Usage:
++  python3 scripts/ci/satellite_ci_sentinel.py               # live sweep (report-only)
++  python3 scripts/ci/satellite_ci_sentinel.py --json        # machine-readable report
++  python3 scripts/ci/satellite_ci_sentinel.py --repo supremeai-core
++  python3 scripts/ci/satellite_ci_sentinel.py --max-age-hours 24
++  python3 scripts/ci/satellite_ci_sentinel.py --self-test   # hermetic, offline
++
++Refs: #2111 (auditor pass, Job 478346) #1814 (exit-code family) #2082
++(routing-not-wiring precedent) #1760 (honest-skip) #1964 (open-repo watchdog
++lineage this sentinel deliberately does NOT duplicate).
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++import urllib.error
++import urllib.request
++from datetime import datetime, timezone
++
++TOWER_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
++ORG = "Supremeai-bd"
++# The 6 satellite mains from #2111's sweep table. supremeai-open itself is
++# EXCLUDED on purpose: the open repo's CI plane is already covered by the
++# pipeline_failure_register / bridge_landing_watchdog family (#1964 lineage).
++SATELLITES = (
++    "supremeai",
++    "supremeai-core",
++    "supremeai-api",
++    "supremeai-browser",
++    "supremeai-studio",
++    "supremeai-vscode",
++)
++DEFAULT_MAX_AGE_HOURS = 48.0
++PROTOCOL_VERSION = "2024-11-05"
++
++
++# ---------------------------------------------------------------- tower client
++class TowerClient:
++    """Minimal zero-credential MCP client (Streamable HTTP + SSE data lines)."""
++
++    def __init__(self, url: str = TOWER_URL, timeout: int = 45, retries: int = 2):
++        self.url = url
++        self.timeout = timeout
++        self.retries = retries
++        self.session: str | None = None
++        self._rid = 0
++
++    def _rpc(self, method: str, params: dict | None = None):
++        self._rid += 1
++        body: dict = {"jsonrpc": "2.0", "id": self._rid, "method": method}
++        if params is not None:
++            body["params"] = params
++        req = urllib.request.Request(
++            self.url,
++            data=json.dumps(body).encode(),
++            headers={
++                "Content-Type": "application/json",
++                "Accept": "application/json, text/event-stream",
++            },
++        )
++        if self.session:
++            req.add_header("Mcp-Session-Id", self.session)
++        last_err: Exception | None = None
++        for attempt in range(self.retries + 1):
++            try:
++                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
++                    sid = resp.headers.get("Mcp-Session-Id")
++                    if sid and not self.session:
++                        self.session = sid
++                    raw = resp.read().decode()
++                return extract_sse_data(raw)
++            except urllib.error.HTTPError as exc:
++                last_err = exc
++            except Exception as exc:  # noqa: BLE001 - honest-skip boundary
++                last_err = exc
++            if attempt < self.retries:
++                import time
++
++                time.sleep(2 * (attempt + 1))
++        raise ConnectionError(f"tower rpc failed after retries: {last_err}")
++
++    def handshake(self) -> dict:
++        init = self._rpc(
++            "initialize",
++            {
++                "protocolVersion": PROTOCOL_VERSION,
++                "capabilities": {},
++                "clientInfo": {"name": "supremeai-satellite-ci-sentinel", "version": "1.0.0"},
++            },
++        )
++        try:
++            self._rpc("notifications/initialized", {})
++        except Exception:  # noqa: BLE001 - notification is fire-and-forget
++            pass
++        return init
++
++    def tool(self, name: str, args: dict | None = None):
++        res = self._rpc("tools/call", {"name": name, "arguments": args or {}})
++        texts = []
++        for c in (res or {}).get("result", {}).get("content", []):
++            if isinstance(c, dict) and c.get("type") == "text":
++                texts.append(c.get("text", ""))
++        txt = "\n".join(texts)
++        try:
++            return json.loads(txt)
++        except Exception:  # noqa: BLE001
++            return txt
++
++
++def extract_sse_data(raw: str) -> dict:
++    """Pull the first `data:` line payload out of an SSE body and JSON it.
++
++    Plain-JSON bodies (no SSE framing) pass through untouched. Testable pure.
++    """
++    if not isinstance(raw, str):
++        return raw
++    for line in raw.splitlines():
++        if line.startswith("data:"):
++            payload = line[5:].strip()
++            if not payload:
++                continue
++            try:
++                return json.loads(payload)
++            except Exception:  # noqa: BLE001
++                return {"raw": payload}
++    try:
++        return json.loads(raw)
++    except Exception:  # noqa: BLE001
++        return {"raw": raw}
++
++
++# ------------------------------------------------------------- verdict kernel
++def _parse_ts(ts: str) -> datetime | None:
++    if not ts:
++        return None
++    try:
++        return datetime.fromisoformat(str(ts).replace("Z", "+00:00")).astimezone(timezone.utc)
++    except Exception:  # noqa: BLE001
++        return None
++
++
++def main_branch_runs(runs: list) -> list:
++    """Runs on the default branch name used across the federation (main)."""
++    out = []
++    for r in runs or []:
++        if isinstance(r, dict) and str(r.get("head_branch", "")).lower() == "main":
++            out.append(r)
++    return out
++
++
++def latest_completed_run(runs: list) -> dict | None:
++    """Newest COMPLETED run on main; in-progress/queued runs never mask it."""
++    best: dict | None = None
++    best_ts: datetime | None = None
++    for r in main_branch_runs(runs):
++        if str(r.get("status", "")).lower() != "completed":
++            continue
++        ts = _parse_ts(str(r.get("created_at", "")))
++        if ts is None:
++            continue
++        if best_ts is None or ts > best_ts:
++            best, best_ts = r, ts
++    return best
++
++
++def classify_run(run: dict | None, now: datetime, max_age_hours: float) -> str:
++    """Verdict string for one repo's latest completed main run.
++
++    red            -> completed/failure inside the freshness window
++    green          -> completed/success inside the freshness window
++    RED (staged)   -> staleness NEVER downgrades a red: "RED (stale ...)"
++    green (stale)  -> success but older than the window: runway blind spot
++    unknown        -> no completed main run visible / unparsable
++    """
++    if not run:
++        return "unknown (no completed main run visible)"
++    created = _parse_ts(str(run.get("created_at", "")))
++    age_h = None
++    if created is not None:
++        age_h = (now - created).total_seconds() / 3600.0
++    conclusion = str(run.get("conclusion", "")).lower()
++    stale = age_h is not None and age_h > max_age_hours
++    if conclusion == "failure":
++        return f"RED (stale {age_h:.1f}h)" if stale else "RED"
++    if conclusion == "success":
++        if stale:
++            return f"green (stale {age_h:.1f}h > {max_age_hours:g}h window)"
++        return "green"
++    return f"unknown (conclusion={conclusion or 'none'})"
++
++
++def exit_code_for(verdicts: dict) -> int:
++    """Fail-closed mapping: any verified RED -> 1; nothing verifiable -> 2."""
++    values = list(verdicts.values())
++    if not values:
++        return 2
++    if any(str(v).startswith("RED") for v in values):
++        return 1
++    if all(str(v).startswith(("unknown", "skip")) for v in values):
++        return 2
++    return 0
++
++
++def build_report(sweep: dict, now: datetime, max_age_hours: float) -> dict:
++    """Machine-readable report shape (pure; used by --json and self-test)."""
++    repos = []
++    for name in sorted(sweep):
++        row = sweep[name]
++        runs = row.get("runs") if isinstance(row, dict) else None
++        run = latest_completed_run(runs) if runs is not None else row.get("run")
++        verdict = classify_run(run, now, max_age_hours)
++        repos.append(
++            {
++                "repo": f"{ORG}/{name}",
++                "verdict": verdict,
++                "run_id": (run or {}).get("id"),
++                "head_sha": str((run or {}).get("head_sha", ""))[:12] or None,
++                "created_at": (run or {}).get("created_at"),
++                "note": row.get("note") if isinstance(row, dict) else None,
++            }
++        )
++    reds = [r["repo"] for r in repos if r["verdict"].startswith("RED")]
++    unknowns = [r["repo"] for r in repos if r["verdict"].startswith(("unknown", "skip"))]
++    return {
++        "generated_at": now.isoformat(),
++        "max_age_hours": max_age_hours,
++        "repos": repos,
++        "summary": {"red": reds, "unknown_or_skipped": unknowns, "exit_code": exit_code_for({r["repo"]: r["verdict"] for r in repos})},
++    }
++
++
++def live_sweep(repos, max_age_hours: float, tower_url: str = TOWER_URL, timeout: int = 45) -> tuple[dict, list]:
++    """Zero-credential sweep. Returns (sweep dict, disclosed-skip notes)."""
++    client = TowerClient(url=tower_url, timeout=timeout)
++    client.handshake()
++    sweep: dict = {}
++    skips: list = []
++    for name in repos:
++        try:
++            data = client.tool("github_workflow_runs", {"repo": f"{ORG}/{name}", "per_page": 15})
++        except Exception as exc:  # noqa: BLE001 - honest-skip, never fabricate
++            sweep[name] = {"runs": None, "note": f"skip ({exc})"}
++            skips.append(f"{ORG}/{name}: skip ({exc})")
++            continue
++        runs = []
++        if isinstance(data, dict):
++            runs = data.get("workflow_runs", data.get("runs") or [])
++        if not isinstance(runs, list):
++            runs = []
++        sweep[name] = {"runs": runs, "note": None}
++    return sweep, skips
++
++
++def human_report(report: dict) -> str:
++    lines = [
++        f"satellite_ci_sentinel — federation main-CI sweep @ {report['generated_at']}",
++        f"freshness window: {report['max_age_hours']:g}h · report-only (exit {report['summary']['exit_code']})",
++    ]
++    for r in report["repos"]:
++        line = f"  {r['repo']:<34} {r['verdict']}"
++        if r.get("created_at"):
++            line += f" · last completed {r['created_at']}"
++        if r.get("note"):
++            line += f" · {r['note']}"
++        lines.append(line)
++    if report["summary"]["red"]:
++        lines.append("RED mains: " + ", ".join(report["summary"]["red"]))
++    return "\n".join(lines)
++
++
++def self_test() -> int:
++    """Hermetic, offline verdict-kernel checks. Exit 0 = all green."""
++    now = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
++    old = datetime(2026, 10, 26, 0, 0, tzinfo=timezone.utc)  # 60h before now
++
++    def run(created, status="completed", conclusion="success", branch="main"):
++        return {"id": 1, "status": status, "conclusion": conclusion,
++                "created_at": created.isoformat().replace("+00:00", "Z"),
++                "head_branch": branch, "head_sha": "a" * 40}
++
++    checks: list[tuple[str, bool]] = []
++
++    # 1 newest completed wins; in-progress ignored
++    runs = [run(now, conclusion="failure"), run(old),
++            run(now, status="in_progress", conclusion=None)]
++    best = latest_completed_run(runs)
++    checks.append(("newest-completed-selection", best is not None and best["conclusion"] == "failure"))
++
++    # 2-5 classification
++    checks.append(("green", classify_run(run(now), now, 48) == "green"))
++    checks.append(("red", classify_run(run(now, conclusion="failure"), now, 48) == "RED"))
++    checks.append(("stale-green", classify_run(run(old), now, 48).startswith("green (stale")))
++    checks.append(("stale-never-downgrades-red",
++                   classify_run(run(old, conclusion="failure"), now, 48).startswith("RED (stale")))
++
++    # 6 no completed main run
++    checks.append(("unknown-empty", classify_run(None, now, 48).startswith("unknown")))
++    checks.append(("unknown-conclusion",
++                   classify_run(run(now, conclusion="timed_out"), now, 48).startswith("unknown")))
++
++    # 7 non-main branches ignored when main exists
++    mixed = [run(now, branch="feature/x"), run(old)]
++    best = latest_completed_run(mixed)
++    checks.append(("branch-filter", best is not None and best["head_branch"] == "main"))
++
++    # 8-10 exit mapping
++    checks.append(("exit0-all-green", exit_code_for({"a": "green", "b": "green"}) == 0))
++    checks.append(("exit1-any-red", exit_code_for({"a": "green", "b": "RED"}) == 1))
++    checks.append(("exit2-all-unknown", exit_code_for({"a": "unknown (x)", "b": "skip (y)"}) == 2))
++    checks.append(("exit2-empty", exit_code_for({}) == 2))
++    checks.append(("exit0-stale-green-not-fatal",
++                   exit_code_for({"a": "green (stale 50.0h > 48h window)"}) == 0))
++
++    # 11 SSE data-line extraction
++    sse = ': ping\ndata: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n\n'
++    checks.append(("sse-parse", extract_sse_data(sse).get("result", {}).get("ok") is True))
++    checks.append(("plain-json-passthrough", extract_sse_data('{"a":1}').get("a") == 1))
++
++    # 12 roster integrity: 6 satellites, open repo excluded
++    checks.append(("roster-6", len(SATELLITES) == 6))
++    checks.append(("open-excluded", "supremeai-open" not in SATELLITES))
++
++    # 13 report shape + exit mapping end-to-end
++    sweep = {
++        "supremeai": {"runs": [run(now)], "note": None},
++        "supremeai-core": {"runs": [run(now, conclusion="failure")], "note": None},
++        "supremeai-api": {"runs": None, "note": "skip (timeout)"},
++    }
++    report = build_report(sweep, now, 48)
++    checks.append(("report-shape", report["summary"]["exit_code"] == 1
++                   and len(report["repos"]) == 3
++                   and report["summary"]["unknown_or_skipped"] == [f"{ORG}/supremeai-api"]))
++
++    # 14 json round-trip
++    checks.append(("json-serializable", json.loads(json.dumps(report))["generated_at"] == report["generated_at"]))
++
++    failed = [name for name, ok in checks if not ok]
++    for name, ok in checks:
++        print(f"  [{'PASS' if ok else 'FAIL'}] {name}")
++    print(f"self-test: {len(checks) - len(failed)}/{len(checks)} PASS")
++    return 1 if failed else 0
++
++
++def main(argv: list | None = None) -> int:
++    ap = argparse.ArgumentParser(description="Federation satellite main-CI health sentinel (report-only, zero-credential).")
++    ap.add_argument("--repo", action="append", dest="repos", metavar="NAME",
++                    help="restrict sweep to this satellite (repeatable)")
++    ap.add_argument("--max-age-hours", type=float, default=DEFAULT_MAX_AGE_HOURS,
++                    help=f"freshness window before a green is flagged stale (default {DEFAULT_MAX_AGE_HOURS:g})")
++    ap.add_argument("--json", action="store_true", dest="as_json", help="machine-readable report")
++    ap.add_argument("--self-test", action="store_true", help="hermetic offline kernel checks")
++    args = ap.parse_args(argv)
++
++    if args.self_test:
++        return self_test()
++
++    repos = tuple(args.repos) if args.repos else SATELLITES
++    for name in repos:
++        if name not in SATELLITES:
++            print(f"honest-refusal: {name!r} is not a tracked satellite {SATELLITES}", file=sys.stderr)
++            return 2
++
++    try:
++        sweep, skips = live_sweep(repos, args.max_age_hours)
++    except Exception as exc:  # noqa: BLE001 - fail-close per #1760
++        print(f"unable to verify ANY repo — tower unreachable: {exc}", file=sys.stderr)
++        return 2
++
++    now = datetime.now(timezone.utc)
++    report = build_report(sweep, now, args.max_age_hours)
++    if skips:
++        report["summary"]["unknown_or_skipped"] = sorted(
++            set(report["summary"]["unknown_or_skipped"]) | {s.split(":")[0] for s in skips})
++
++    if args.as_json:
++        print(json.dumps(report, indent=2))
++    else:
++        print(human_report(report))
++
++    # report-only discipline: the exit code IS the verdict channel; nothing else is written.
++    return int(report["summary"]["exit_code"])
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 7a2f82c2..21ef725a 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 11:10:28 UTC · **517 scripts** (482 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 12:09:05 UTC · **518 scripts** (483 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (190 scripts)
++## scripts/ci/  (191 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -240,6 +240,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/run_all_guards.py` | Run all CI guards in one pass (dispatcher; guards stay as separate modules). |
+ | `ci/run_tests.sh` | (no docstring — run scripts/devops/devops_ai_scribe.py or add one) |
+ | `ci/satellite_board_guard.py` | satellite_board_guard.py — Zero-Issue Satellite Mandate Guard (#626) |
++| `ci/satellite_ci_sentinel.py` | satellite_ci_sentinel.py — federation satellite main-CI health sentinel, report-only (issue #2111 option B kernel). |
+ | `ci/satellite_parity_gate.py` | scripts/ci/satellite_parity_gate.py — scheduled mirror<->satellite drift gate (#1792). |
+ | `ci/scan_secret_logs.py` | Pre-commit secret-pattern scanner for the browser runtime (WO #1361). |
+ | `ci/schedule_render_rechecks.py` | Scheduled Render recheck automation runner. |
+diff --git a/tests/test_satellite_ci_sentinel.py b/tests/test_satellite_ci_sentinel.py
+new file mode 100644
+index 00000000..b5d6ba48
+--- /dev/null
++++ b/tests/test_satellite_ci_sentinel.py
+@@ -0,0 +1,130 @@
++#!/usr/bin/env python3
++"""Offline unit tests for the #2111 satellite main-CI sentinel kernel.
++
++No network access is required - every test drives the pure verdict kernel
++over fixtures. Run:  python -m unittest tests.test_satellite_ci_sentinel -v
++(or: python tests/test_satellite_ci_sentinel.py)
++"""
++
++from __future__ import annotations
++
++import json
++import sys
++import unittest
++from datetime import datetime, timezone
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++
++import satellite_ci_sentinel as sentinel  # noqa: E402
++
++NOW = datetime(2026, 10, 28, 12, 0, tzinfo=timezone.utc)
++OLD = datetime(2026, 10, 26, 0, 0, tzinfo=timezone.utc)  # 60h before NOW
++
++
++def mk_run(created=NOW, status="completed", conclusion="success", branch="main", run_id=1):
++    return {
++        "id": run_id,
++        "status": status,
++        "conclusion": conclusion,
++        "created_at": created.isoformat().replace("+00:00", "Z"),
++        "head_branch": branch,
++        "head_sha": "a" * 40,
++    }
++
++
++class SelectionKernel(unittest.TestCase):
++    def test_newest_completed_wins_and_ignores_in_progress(self):
++        runs = [mk_run(NOW, conclusion="failure", run_id=2), mk_run(OLD, run_id=1),
++                mk_run(NOW, status="in_progress", conclusion=None, run_id=3)]
++        best = sentinel.latest_completed_run(runs)
++        self.assertIsNotNone(best)
++        self.assertEqual(best["id"], 2)
++        self.assertEqual(best["conclusion"], "failure")
++
++    def test_non_main_branches_ignored_when_main_present(self):
++        best = sentinel.latest_completed_run([mk_run(NOW, branch="feature/x", run_id=9), mk_run(OLD)])
++        self.assertIsNotNone(best)
++        self.assertEqual(best["head_branch"], "main")
++
++    def test_empty_and_garbage_rows_never_crash(self):
++        self.assertIsNone(sentinel.latest_completed_run([]))
++        self.assertIsNone(sentinel.latest_completed_run([None, "x", {"status": "completed"}]))
++
++
++class Classification(unittest.TestCase):
++    def test_green(self):
++        self.assertEqual(sentinel.classify_run(mk_run(), NOW, 48), "green")
++
++    def test_red(self):
++        self.assertEqual(sentinel.classify_run(mk_run(conclusion="failure"), NOW, 48), "RED")
++
++    def test_stale_green_disclosed(self):
++        v = sentinel.classify_run(mk_run(OLD), NOW, 48)
++        self.assertTrue(v.startswith("green (stale"))
++        self.assertIn("60.0h", v)
++
++    def test_staleness_never_downgrades_red(self):
++        v = sentinel.classify_run(mk_run(OLD, conclusion="failure"), NOW, 48)
++        self.assertTrue(v.startswith("RED (stale"))
++
++    def test_unknown_when_no_completed_run(self):
++        self.assertTrue(sentinel.classify_run(None, NOW, 48).startswith("unknown"))
++
++    def test_unknown_on_unfamiliar_conclusion(self):
++        self.assertTrue(sentinel.classify_run(mk_run(conclusion="timed_out"), NOW, 48).startswith("unknown"))
++
++
++class ExitMapping(unittest.TestCase):
++    def test_all_green_is_zero(self):
++        self.assertEqual(sentinel.exit_code_for({"a": "green", "b": "green"}), 0)
++
++    def test_any_red_is_one(self):
++        self.assertEqual(sentinel.exit_code_for({"a": "green", "b": "RED"}), 1)
++
++    def test_all_unknown_is_two_fail_close(self):
++        self.assertEqual(sentinel.exit_code_for({"a": "unknown (x)", "b": "skip (y)"}), 2)
++
++    def test_empty_is_two(self):
++        self.assertEqual(sentinel.exit_code_for({}), 2)
++
++    def test_stale_green_is_not_fatal(self):
++        self.assertEqual(sentinel.exit_code_for({"a": "green (stale 50.0h > 48h window)"}), 0)
++
++
++class SseAndReport(unittest.TestCase):
++    def test_sse_data_line_extracted(self):
++        raw = ': ping\ndata: {"jsonrpc":"2.0","id":1,"result":{"ok":true}}\n\n'
++        self.assertTrue(sentinel.extract_sse_data(raw)["result"]["ok"])
++
++    def test_plain_json_passthrough(self):
++        self.assertEqual(sentinel.extract_sse_data('{"a":1}')["a"], 1)
++
++    def test_roster_integrity(self):
++        self.assertEqual(len(sentinel.SATELLITES), 6)
++        self.assertNotIn("supremeai-open", sentinel.SATELLITES)
++        self.assertEqual(sentinel.ORG, "Supremeai-bd")
++
++    def test_report_shape_end_to_end(self):
++        sweep = {
++            "supremeai": {"runs": [mk_run()], "note": None},
++            "supremeai-core": {"runs": [mk_run(conclusion="failure")], "note": None},
++            "supremeai-api": {"runs": None, "note": "skip (timeout)"},
++        }
++        report = sentinel.build_report(sweep, NOW, 48)
++        self.assertEqual(len(report["repos"]), 3)
++        self.assertEqual(report["summary"]["exit_code"], 1)
++        self.assertEqual(report["summary"]["red"], ["Supremeai-bd/supremeai-core"])
++        self.assertEqual(report["summary"]["unknown_or_skipped"], ["Supremeai-bd/supremeai-api"])
++        self.assertTrue(json.loads(json.dumps(report))["generated_at"].startswith("2026-10-28T12:00"))
++
++    def test_human_report_mentions_reds(self):
++        sweep = {"supremeai-core": {"runs": [mk_run(conclusion="failure")], "note": None}}
++        text = sentinel.human_report(sentinel.build_report(sweep, NOW, 48))
++        self.assertIn("RED", text)
++        self.assertIn("supremeai-core", text)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

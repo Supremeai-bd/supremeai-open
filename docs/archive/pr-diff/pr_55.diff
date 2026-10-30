@@ -1,0 +1,110 @@
+diff --git a/.github/workflows/continuous-agent-loop.yml b/.github/workflows/continuous-agent-loop.yml
+new file mode 100644
+index 00000000..170cf5c6
+--- /dev/null
++++ b/.github/workflows/continuous-agent-loop.yml
+@@ -0,0 +1,92 @@
++name: Continuous Agent Loop Cron
++
++# Scheduled Work → Issue Funnel (AGENT_RULES.md §10):
++#   Scheduled Trigger → run verification → logs/artifacts → classify → report.
++# This cron starts the EXISTING dispatcher (AGENTS.md §0 — never build a new loop):
++#   scripts/agents/continuous_agent_loop.py --pick-next
++# every 30 minutes so autonomous contribution cycles run continuously.
++# NOTE: the rewritten (Lazy Team Leader) dispatcher fails closed without an
++# issue contract, so each tick runs ONE --pick-next dispatch cycle; the
++# concurrency group serializes ticks and the next scheduled tick continues
++# where this one stopped.
++
++on:
++  schedule:
++    - cron: "*/30 * * * *" # every 30 minutes
++  workflow_dispatch:
++    inputs:
++      auto_pr:
++        description: "Step 7: autonomously open PR via gh CLI after verification passes (scheduled runs stay draft-only)"
++        type: boolean
++        default: false
++
++permissions:
++  contents: read
++
++# AGENT_RULES.md §12 — single execution under the parent controller.
++# Never run two loop instances concurrently; queue instead of duplicating.
++concurrency:
++  group: continuous-agent-loop
++  cancel-in-progress: false
++
++jobs:
++  agent-loop:
++    name: Start continuous_agent_loop.py --pick-next (30-min cadence)
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    env:
++      # Read-only token for `gh` (pre-installed on ubuntu runners).
++      # The dispatcher explicitly targets the upstream repo for issue reads.
++      GH_TOKEN: ${{ github.token }}
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++
++      # Dispatcher verification tier 3 ("YAML/OpenAPI Safe Load") requires
++      # PyYAML; actions/setup-python provides a bare Python without it.
++      # Without this, tier 3 is recorded skipped/failed in the run evidence.
++      - name: Install PyYAML (dispatcher tier-3 verification dependency)
++        run: python -m pip install --quiet pyyaml
++
++      # AGENT_RULES.md §10 — "A job that runs but produces no expected result
++      # is actionable when evidence confirms it… No-actionable-finding must be
++      # recorded explicitly without creating issue storms." An empty upstream
++      # board is a recorded no-op, NOT a red run and NOT a silent skip.
++      - name: Board pre-check (explicit no-op on empty board)
++        id: board
++        run: |
++          set -euo pipefail
++          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 1 --json number,title)
++          echo "board snapshot: $BOARD"
++          if [ "$BOARD" = "[]" ]; then
++            echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
++            echo "has_work=false" >> "$GITHUB_OUTPUT"
++          else
++            echo "has_work=true" >> "$GITHUB_OUTPUT"
++          fi
++
++      - name: Start Continuous Agent Loop (existing dispatcher, one cycle)
++        if: steps.board.outputs.has_work == 'true'
++        run: |
++          set -euo pipefail
++          ARGS="--pick-next"
++          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.auto_pr }}" = "true" ]; then
++            ARGS="$ARGS --auto-pr"
++          fi
++          python scripts/agents/continuous_agent_loop.py $ARGS
++
++      # AGENT_RULES.md §10 — scheduled jobs must never silently disappear.
++      # The generated PR draft is persisted as run evidence even if a later step fails.
++      - name: Record scheduled-run evidence (PR draft artifact)
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: agent-loop-pr-draft-${{ github.run_id }}
++          path: .pr_template_draft.md
++          if-no-files-found: ignore
++          retention-days: 14
+diff --git a/README.md b/README.md
+index d87f4531..74dba4ff 100644
+--- a/README.md
++++ b/README.md
+@@ -13,6 +13,7 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ | `ECOSYSTEM_MAP.md` | **The Federation Ecosystem Map** — architecture directory for agents working across repos |
+ | `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
+ | `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
++| `.github/workflows/continuous-agent-loop.yml` | 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch) |
+ | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
+ | `LICENSE` | MIT |
+ 

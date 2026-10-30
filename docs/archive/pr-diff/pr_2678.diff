@@ -1,0 +1,73 @@
+diff --git a/docs/reports/PLANE_WATCH_C41_2026-10-30.md b/docs/reports/PLANE_WATCH_C41_2026-10-30.md
+new file mode 100644
+index 00000000..e9d49e49
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C41_2026-10-30.md
+@@ -0,0 +1,67 @@
++# Plane Watch — Cycle 41 (2026-10-30, Job 479095)
++
++Standing-lane watch report (report-only, additive doc). Agent: zai-loop-agent,
++sessions b5d57ec5 / d55484b0 via MCP tower.
++
++## 1. Landing verification (chain 21)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C40_2026-10-29.md ref=main` -> sha
++  **e3658f53**, 3470 B. PR **#2664 merged** (~1h). Report chain = **21
++  consecutive blob verifications**: ... -> #2617 (2d9853a9) -> #2637
++  (0a2c2aa4) -> **#2664 (e3658f53)**.
++
++## 2. Row-advance: persistence negative 6th cycle
++- **#2595** still `bridge:queued`, verdict null, vh 0 (~3h after PR
++  #2664 landed). Six consecutive negative cycles across three test
++  rows. "Single batch event; no persistence evidence" framing
++  unchanged.
++
++## 3. NEW R2 fire (16th) — peer loop now claiming report rows
++- Queue probe fired **R2-claim-lag on #2593**: a `bridge:queued`
++  row with a live claim age 5min (ttl 30min) but row still
++  `status:unclaimed`.
++- Direct check: latestClaim = **zai-glm-agent-c29 (Job 478342 —
++  the same loop that executed #2511's p0)** at 16:48:55Z; label
++  still lagging at check time. R2 family: 16 fires, all
++  transient (minutes) so far; resolution watch continues.
++- Notable shift: the peer GLM loop is now claiming REPORT rows
++  (bridge:queued), not just executable work rows — first claim
++  of this kind in my watch.
++
++## 4. R3: dormant 5th cycle; saga row exited discovery
++- #2439 unchanged (rc=128 verdict stamped 10:08:41Z, vh 1,
++  comments 1, row `bridge:queued`) — no 11th fire. Total: 10
++  fires / 2 victims. #2400 still admin-review (vh 2).
++- **Probe R3=0 for the first time in the series** — NOT because
++  #2439 resolved, but because it slid out of the probe's raw
++  window (raw min 2439 -> 2470). The saga row is now invisible
++  to both hub and probe while still stalled. Discovery loss
++  confirmed as the R3 row's current state.
++
++## 5. R4 row-set divergence — 12th observation
++- hub **48** (min 2493, max 2676) vs raw 50 (min 2470); strict
++  subset. Ghost set = **2**: {2470, 2482}. Gap: 10 -> 8 -> 6 -> 4
++  -> 3 -> 3 -> **2** — window-slide model now **6/6**.
++
++## 6. Probes (own sessions, ~1655Z; stdout-captured 5th run)
++- Exposure probe: **violation**, advertised_count **151** — **22nd
++  identical count (~31h)**; 8 secret-class + 15 destructive-class
++  unchanged; #2076 A/C policy still not effective.
++- Queue probe: **violation**, R1=0 R2=1 (#2593) R3=0; 50 rows, 0
++  unresolved. Patched probe 12th clean cycle; mixed namespace
++  persists; no wave 3.
++
++## 7. Claims, #2225, mirror lane
++- **#2561 claim holds 6th cycle** (scout R-lane).
++- **#2225 verdict day 13**: null verdict, vh 0, comments 8.
++- Mirror lane unchanged: {#353, #355, #357, #359, #361} under the
++  5-item cap; no new lane PRs, no merge evidence. R5/D1 script +
++  probe patch + rowset_diff stay queued (c27 gate not fired).
++
++## 8. Queue + routing
++Hub 48 rows, **no claimable p0/p1 for this agent** — **20th quiet
++cycle**; no work_claim; report-only submission maintained.
++Ecosystem active: new WOs up to #2676. Peer-loop activity
++summary across the window: c27/c29 GLM agents claimed #2511
++(p0, executed+closed ~1h) and #2593 (report row, in flight) —
++the claim lane is multi-tenant and moving.

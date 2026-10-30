@@ -1,0 +1,31 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index fa0ce3bd..4215b78e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -67,6 +67,8 @@ Never invent a parallel workflow. The task contract is the common envelope for e
+ 1. **No Claim -> No Branch:** `atomic_claim.sh` must run and post both claim signals (`status:claimed` label + `<!-- atomic-claim -->` comment) **BEFORE** checking out or creating any task branch. Branch creation without a prior claim is fail-closed rejected by `continuous_agent_loop.py`.
+ 2. **No Branch -> No Push:** Any git push targeting an issue is rejected by `.githooks/pre-push` if the issue has no active claim marker on GitHub. Furthermore, PRs opened without a prior claim are strictly blocked by the Claim Gate (`claim-guard`). The claim comment on the issue is the evidence the gate checks — it must exist before CI runs.
+ 
++**Cohesive Task Sizing (Repo-Domain Anti-Thrashing, P7, #522):** frame every task as one cohesive, repo-scoped atomic slice (Code + Types + Tests + Contract) for a single primary repository — never fragmented micro-issues racing on the same files, never monster PRs beyond the ingestion ceiling (≤ 30 files / ≤ 200 KB diff). Before dispatch or claim, inspect active tasks in the same `sub_group`: declared Touching Files must not collide with an in-flight claim (fail-closed).
++
+ ## 2.1 Autonomous Work Submission (Zero-Admin Policy)
+ 
+ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bots) must submit work autonomously using whichever of the following 3 pathways matches their operational capabilities:
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index aae9b671..669fc2f6 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -107,6 +107,13 @@ External platforms may inspire ideas, but agents must not turn ecosystem scoutin
+ ## P6 — Defect Class Prevention over Symptom Patching
+ When fixing any bug, failure or regression, first analyze whether the defect is an isolated one-off occurrence or part of a systemic/recurring class. Never apply a superficial symptom patch (e.g., swallow echoes, per-call ad-hoc bypass, single-line error masking) that leaves the underlying condition open to repeat. If a problem can recur, eliminate the entire class at the root cause — preferably via machine-enforced guards, SSOT definitions, compile/schema checks, or permanent regression tests.
+ 
++## P7 — Repo-Domain Cohesion & Anti-Thrashing Policy (#522)
++Tasks and work orders must be framed as **cohesive, domain-bounded feature slices** with a single primary target repository — never as fragmented micro-issues racing on the same file tree, and never as monster PRs breaching the bridge ingestion ceiling (≤ 30 files, ≤ 200 KB diff). Because satellite repositories and functional domains have isolated file trees, repo-scoped tasks execute concurrently with **zero file-level contention**.
++
++1. **Cohesive Work Package:** one atomic slice = Code + Types + Tests + Contract for ONE primary repo. Do not split a single feature into micro-issues ("add header", "add function", "add test") — combine them into one work package.
++2. **Anti-Overlap Scope Guard:** before creating or dispatching an issue, inspect active tasks and claims in the same `sub_group`; declared `Touching Files` must not collide with another in-flight claim. Dispatchers and reviewers reject overlapping touching files when an active session claim exists on the same path (fail-closed).
++3. **Why (Anti-Race):** fragmented micro-issues touching the same files create O(N²) rebase churn (`behind: 1`, `behind: 2` after every neighbour merge), CI quota exhaustion, and merge-queue contention across the 11-satellite federation.
++
+ ---
+ 
+ # 3. Role Policy Contracts

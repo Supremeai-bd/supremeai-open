@@ -1,0 +1,193 @@
+diff --git a/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md b/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md
+new file mode 100644
+index 00000000..bae467f6
+--- /dev/null
++++ b/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md
+@@ -0,0 +1,65 @@
++---
++id: adr-001-open-foundation-boundary
++title: "Open Foundation Boundary — Public-First SSOT Split"
++document_role: adr
++status: accepted
++canonical: true
++decided: 2026-10-15
++deciders: "Admin (governance issue #155); boundary is constitutionally admin-owned (AGENTS.md §1.3/§4)"
++governing_issue: 155
++related_docs:
++  - AGENTS.md
++  - docs/INGRESS_SECURITY_POLICY.md
++  - docs/AGENT_PORTAL_SPEC.md
++  - docs/ZERO_ADMIN_GUIDE.md
++---
++
++# ADR-001: Open Foundation Boundary — Public-First SSOT Split
++
++## Status
++
++**Accepted** — 2026-10-15, enacted by the #155 workflow diet and the `supremeai-open` public boundary contract. Recorded as the founding ADR by issue #44.
++
++## Context
++
++The federation initially grew as a single private monorepo (`Supremeai-bd/supremeai`) with everything inside it: backends, CI, schemas, agent tooling, docs. External autonomous agents had no credential-free way to contribute; every contribution required private access or admin hand-holding, which violated the Zero-Admin budget (AGENTS.md §2.1, admin effort ≤ 0.01%). At the same time, most of what agents need to verify — loop contracts, guards, schemas, docs, examples — provably requires **no** private context.
++
++## Decision Drivers
++
++- **Zero-Admin budget:** contribution and landing must complete without human review.
++- **Quota:** the private org runs on a Free Actions budget (~2,000 min/month, shared); validation must be free and unlimited where possible.
++- **Security boundary:** secrets-bearing and production-context content must never touch the public repo.
++- **Determinism / fail-closed doctrine:** verification must be reproducible from public artifacts alone (U2).
++
++## Considered Options
++
++1. **Single private repo, credential-gated contributors** — violates Zero-Admin (every external agent needs access grants) and concentrates quota cost.
++2. **Full open-source monorepo** — unacceptable: backends, secrets-bearing configs and production context would cross the boundary; also burdens contributors with irrelevant private complexity.
++3. **Public-First SSOT split (CHOSEN)** — `supremeai-open` is the public SSOT for everything provable in public; the private monorepo stays the SSOT for private-context work; landed public work flows into private automatically via the bridge (webhook / direct dispatch), never by hand.
++
++## Decision
++
++`Supremeai-bd/supremeai-open` is the **public SSOT and the only public work-entry surface** for the federation. The approved public surface set (scripts/, api-schemas/, docs/, examples/, infrastructure/mcp-control-plane, workflow pair, issue templates) is codified in `scripts/ci/boundary_sanitization_guard.py` and may only be expanded by a PR referencing a governing issue. Everything else — private backends, deployment, secrets-bearing integration — lives in `Supremeai-bd/supremeai` and receives public work exclusively through the automated bridge. No agent or contributor opens manual PRs against the private repo for public-boundary work.
++
++## Consequences
++
++**Positive:** zero-credential contribution (fork+PR); unlimited free public CI minutes absorb all provable validation; agents onboard from `mcp.json` + public docs alone; the boundary is machine-checkable rather than reviewer-judged.
++
++**Negative / accepted costs:** two-repo synchronization must be automatic (bridge) — any manual sync step would rot; drift between README's boundary contract and shipped content must be guarded (boundary guard, anti-duplicate, quota runbook exist because of this cost).
++
++**Neutral:** workflow count is capped at two on the public side (pipeline.yml, landing.yml) — re-introducing the deleted `open-guards.yml`/`ci.yml`/`continuous-agent-loop.yml` is a boundary decision, not a convenience.
++
++## Validation Evidence
++
++- 🧱 **Boundary Sanitization Guard (#107):** full-tree scans on every PR — 200+ files scanned, 0 violations across all landed PRs of this session (e.g. PRs #229, #247, #253, #290, #293, #294, #298); guard self-test embedded in CI.
++- **Guards as a fleet:** 7 PR guards registered in `docs/AGENT_LOOP_SPEC.md` §5 and asserted by the Loop-Contract Parity Guard (#118).
++- **Landing evidence:** consecutive fully-autonomous landings with auto-closed issues (PRs #229/#232/#247/#253/#293/#294/#298 — each merged by the gate with zero admin action, task issues auto-closed by `Closes #N` propagation).
++- **Ingress enforcement:** Zero-Force-Push live at three layers — local pre-push hook (5/5 self-test scenarios), CI 🛡️ Ingress Hook Guard, and server-side pre-receive rejection (observed live on PR #290's rebase attempt).
++
++## Related Documents
++
++- [AGENTS.md](../../AGENTS.md) — §2.3 Public-First SSOT doctrine (normative statement of this decision)
++- [docs/INGRESS_SECURITY_POLICY.md](../INGRESS_SECURITY_POLICY.md) — push/merge enforcement surfaces for the boundary
++- [docs/AGENT_PORTAL_SPEC.md](../AGENT_PORTAL_SPEC.md) — the two-repo architecture and machinery executing this split
++- [docs/ZERO_ADMIN_GUIDE.md](../ZERO_ADMIN_GUIDE.md) — how work crosses the boundary autonomously
++- [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](../OPS_ACTIONS_QUOTA_RUNBOOK.md) — the quota rationale for shift-left validation
+diff --git a/docs/adrs/README.md b/docs/adrs/README.md
+new file mode 100644
+index 00000000..85fa1595
+--- /dev/null
++++ b/docs/adrs/README.md
+@@ -0,0 +1,36 @@
++# Architecture Decision Records (ADR) — Index
++
++> ADRs record the federation's **hard-to-reverse decisions**: what lives on the
++> public boundary, how work lands autonomously, which contracts are frozen.
++> Template and rules: [`template.md`](./template.md).
++
++| ADR | Title | Status | Decided |
++|---|---|---|---|
++| [ADR-001](./ADR-001-OPEN_FOUNDATION_BOUNDARY.md) | Open Foundation Boundary — Public-First SSOT split | accepted | 2026-10-15 |
++
++## Lifecycle
++
++```
++proposed ──> accepted ──> superseded-by-ADR-MMM
++    │
++    └──> rejected
++```
++
++- **proposed:** under discussion (a governing issue or admin directive exists).
++- **accepted:** enacted — enforcement surfaces (guards/gates) are live or land with the ADR.
++- **superseded / rejected:** never deleted; the record remains for provenance (U2 — history is immutable, the pre-push hook enforces it literally).
++
++## Authoring quick-start
++
++1. Copy [`template.md`](./template.md) → `ADR-NNN-<SLUG>.md` with the next free number.
++2. Fill every section; cite evidence (U2) and the governing issue.
++3. Add the row to the table above (same PR).
++4. Run the link resolver + `python scripts/agents/continuous_agent_loop.py --verify-only` before opening the PR.
++
++## Related Documents
++
++- [AGENTS.md](../../AGENTS.md) — constitution; §2.3 Public-First SSOT doctrine (the decision ADR-001 records)
++- [AGENT_RULES.md](../../AGENT_RULES.md) — policy contracts; U2 evidence, U6 safety
++- [docs/INGRESS_SECURITY_POLICY.md](../INGRESS_SECURITY_POLICY.md) — enforcement surface of the boundary decision
++- [docs/AGENT_PORTAL_SPEC.md](../AGENT_PORTAL_SPEC.md) — the machinery that executes the boundary
++- [docs/ZERO_ADMIN_GUIDE.md](../ZERO_ADMIN_GUIDE.md) — how ADR PRs land autonomously
+diff --git a/docs/adrs/template.md b/docs/adrs/template.md
+new file mode 100644
+index 00000000..913974c3
+--- /dev/null
++++ b/docs/adrs/template.md
+@@ -0,0 +1,74 @@
++# ADR Template
++
++> Copy this file to `ADR-NNN-<SLUG>.md` (zero-padded, uppercase slug) and fill
++> every section. An ADR records a **decision that is hard to reverse** —
++> architecture, governance, boundary, or contract-level choices. Operational
++> bug fixes and routine features do not get ADRs.
++
++```markdown
++---
++id: adr-NNN-<slug>
++title: "<short decision title>"
++document_role: adr
++status: proposed | accepted | superseded-by-ADR-MMM | rejected
++canonical: false
++decided: YYYY-MM-DD
++deciders: "<who/which lane had authority>"
++governing_issue: <issue number>
++related_docs:
++  - <relative paths>
++---
++
++# ADR-NNN: <title>
++
++## Status
++
++<proposed | accepted | superseded-by-ADR-MMM | rejected> — <date>, <deciders>.
++
++## Context
++
++What forces are in play — technical, political, organizational? What problem
++were we solving, and what made it hard? State facts with evidence pointers
++(issues, audits, measurements). No solution talk here.
++
++## Decision Drivers
++
++- <driver 1 — e.g. quota, security boundary, determinism, zero-admin budget>
++- <driver 2>
++
++## Considered Options
++
++1. **<Option A>** — <pros / cons>
++2. **<Option B>** — <pros / cons>
++3. **<Option C (CHOSEN)>** — <pros / cons, and why it beat the others>
++
++## Decision
++
++<The decision itself, stated in one or two unambiguous sentences.>
++
++## Consequences
++
++**Positive:** <what becomes easier/possible>
++
++**Negative / accepted costs:** <what becomes harder, and why it is acceptable>
++
++**Neutral:** <follow-up work this obligates>
++
++## Validation Evidence
++
++<How we know the decision works: guard names, verification tiers, measured
++results, live PR evidence. Fail-closed doctrine applies — an ADR that cannot
++be validated should say so honestly (U2).>
++
++## Related Documents
++
++- [<doc>](<relative link>) — <one-line role>
++```
++
++## Rules for this repository's ADRs
++
++1. **Numbering:** sequential `ADR-001`, `ADR-002`, … — never reused, never renumbered. Superseding creates a new ADR that flips the old one's `status` to `superseded-by-ADR-MMM` (both stay).
++2. **Immutability:** an accepted ADR is a historical record. Corrections land as new ADRs, not edits (except front-matter `status` flips and typo fixes that do not change meaning).
++3. **Evidence:** every ADR must cite its enforcement/validation surfaces — the guards, gates, or measurements that keep the decision true over time.
++4. **Scope:** boundary/governance decisions ultimately belong to the admin (AGENTS.md §1.3/§4). Agent-authored ADRs document decisions already enacted by a governing issue or an admin directive — they record and cross-reference authority, they do not invent it.
++5. **Index:** every new ADR is added to the [README index](./README.md) in the same PR.

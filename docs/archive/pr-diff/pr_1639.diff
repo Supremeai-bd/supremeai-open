@@ -1,0 +1,81 @@
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index c53c6fcd..b86025b6 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -68,23 +68,23 @@ Agent Forks/Clones supremeai-open
+ 
+ ### 3.1 Definitive Federation File & Domain Routing Matrix:
+ 
+-When a PR or bridge patch is merged in `supremeai-open`, `landing.yml` evaluates touched file patterns and PR labels to dispatch code to the appropriate federation repository:
++When a PR is merged in `supremeai-open`, the single unified `pipeline.yml` lands and dispatches it: the `auto-landing` job performs the autonomous squash-merge on full gate success, then on push to `main` the `satellite-dispatch-and-sync` job runs `scripts/ci/federation_satellite_sync.py --detect-changed`, which evaluates the touched file patterns of the landing diff (`git diff HEAD~1..HEAD`) to dispatch code to the appropriate federation repository (the central monorepo is always synced):
+ 
+ | Target Repository | Functional Domain | File Path Patterns in `supremeai-open` | PR Label | Automated Dispatch |
+ |---|---|---|---|---|
+-| **`Supremeai-bd/supremeai-studio`** | Web Dashboard & UI | `studio/**`, `examples/dashboard-preview/**`, `api-schemas/dashboard.*` | `repo:studio` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-api`** | Provider Gateway & OpenAPI | `api/**`, `gateway/**`, `api-schemas/gateway.*` | `repo:api` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-core`** | Intelligence Models & Planners | `core/**`, `api-schemas/task-router.*` | `repo:core` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-command`** | Telegram & Remote Dispatch | `command/**`, `handlers/telegram*`, `api-schemas/command.*` | `repo:command` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-skills`** | Tools & Capabilities Registry | `skills/**`, `examples/langchain-*`, `examples/vercel-*` | `repo:skills` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-vscode`** | VS Code Agent Extension | `vscode/**` | `repo:vscode` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-agents`** | Stateless Agent Runner & Loops | `agents/**`, `runner/**`, `api-schemas/agent-runner.*` | `repo:agents` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-browser`** | Anti-Detect Stealth Browser | `browser/**`, `sandbox/**` | `repo:browser` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-sdk`** | Schema Contracts & Client SDK | `sdk/**`, `examples/sdk-*`, `api-schemas/telemetry-log.*` | `repo:sdk` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-mcp-control-plane`** | MCP Control Tower & Policy | `infrastructure/mcp-control-plane/**`, `api-schemas/heartbeat.*` | `repo:mcp` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-infrastructure`** | Cloud Ops, Docker & Terraform | `deployments/**`, `infra/**` | `repo:infra` | `landing.yml` |
+-| **`Supremeai-bd/supremeai-archive`** | Append-Only Worklogs & Memory | `docs/archive/**`, `docs/ledger/**` | `repo:archive` | `landing.yml` |
+-| **`Supremeai-bd/supremeai`** | Central Monorepo Anchor | `scripts/agents/**`, `docs/**`, `patches/**`, `AGENTS.md`, `AGENT_RULES.md` | `repo:monorepo` | `landing.yml` (Always synced) |
++| **`Supremeai-bd/supremeai-studio`** | Web Dashboard & UI | `studio/**`, `examples/dashboard-preview/**`, `api-schemas/dashboard.*` | `repo:studio` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-api`** | Provider Gateway & OpenAPI | `api/**`, `gateway/**`, `api-schemas/gateway.*` | `repo:api` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-core`** | Intelligence Models & Planners | `core/**`, `api-schemas/task-router.*` | `repo:core` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-command`** | Telegram & Remote Dispatch | `command/**`, `handlers/telegram*`, `api-schemas/command.*` | `repo:command` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-skills`** | Tools & Capabilities Registry | `skills/**`, `examples/langchain-*`, `examples/vercel-*` | `repo:skills` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-vscode`** | VS Code Agent Extension | `vscode/**` | `repo:vscode` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-agents`** | Stateless Agent Runner & Loops | `agents/**`, `runner/**`, `api-schemas/agent-runner.*` | `repo:agents` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-browser`** | Anti-Detect Stealth Browser | `browser/**`, `sandbox/**` | `repo:browser` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-sdk`** | Schema Contracts & Client SDK | `sdk/**`, `examples/sdk-*`, `api-schemas/telemetry-log.*` | `repo:sdk` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-mcp-control-plane`** | MCP Control Tower & Policy | `infrastructure/mcp-control-plane/**`, `api-schemas/heartbeat.*` | `repo:mcp` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-infrastructure`** | Cloud Ops, Docker & Terraform | `deployments/**`, `infra/**` | `repo:infra` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai-archive`** | Append-Only Worklogs & Memory | `docs/archive/**`, `docs/ledger/**` | `repo:archive` | `pipeline.yml` |
++| **`Supremeai-bd/supremeai`** | Central Monorepo Anchor | `scripts/agents/**`, `docs/**`, `patches/**`, `AGENTS.md` | `repo:monorepo` | `pipeline.yml` (Always synced) |
+ 
+ ---
+ 
+@@ -117,7 +117,7 @@ flowchart TB
+     subgraph OPEN["supremeai-open · Public Window"]
+         direction TB
+         TASKS["Issues = task contracts"] --> GUARDS["7 PR guards<br/>(naming · issue-ref · anti-duplicate ·<br/>boundary · parity · hook · stale-base)<br/>+ CI Guardian evaluation"]
+-        GUARDS --> GATE["landing.yml Merge Gate<br/>(squash · Closes #N propagation ·<br/>file-set parity · freshness)"]
++        GUARDS --> GATE["pipeline.yml auto-landing Merge Gate<br/>(squash · Closes #N propagation ·<br/>file-set parity · freshness)"]
+         GATE --> ROUTER["Command Router<br/>(post-merge: close issue ·<br/>delete head branch)"]
+     end
+ 
+@@ -164,12 +164,19 @@ This repo runs the **minimum safest workflow set** on the free public runtime:
+ 
+ | Workflow | Jobs |
+ |---|---|
+-| `pipeline.yml` | guards (branch naming, issue reference, anti-duplicate PR, boundary sanitization) → Python 3.10–3.13 matrix + Tower TS verification + secret scan; event-driven intake via webhook |
+-| `landing.yml` | autonomous squash-merge on full gate success → same-run bridge dispatch to resolved federation satellite repositories + central monorepo → post-dispatch auto-pruning of ephemeral transit patches (#416) |
++| `pipeline.yml` (the only workflow in `.github/workflows/`) | guards (branch naming, issue reference, anti-duplicate PR, boundary sanitization) → Python 3.10–3.13 matrix + Tower TS verification + secret scan; then `auto-landing` (autonomous squash-merge on full gate success) → on push to `main`, `satellite-dispatch-and-sync` (bridge dispatch to resolved federation satellite repositories + central monorepo → post-dispatch auto-pruning of ephemeral transit patches (#416)); event-driven intake via webhook |
++
++> **Drift note (#1618):** older revisions of this map listed a standalone `landing.yml`
++> merge-gate workflow alongside `pipeline.yml`. No public `landing.yml` exists — the file
++> was never tracked in this repository's history and `.github/workflows/` contains exactly
++> one workflow. The duties described under that name run today inside the `pipeline.yml`
++> jobs above; the `landing.yml` referenced by `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md` and the
++> `pipeline.yml` header is the **private-side** landing workflow, out of the public boundary.
++> Documentation claiming a public `.github/workflows/landing.yml` is stale.
+ 
+ Because landed public work is **automatically bridged** into `Supremeai-bd/supremeai`:
+-- **Ephemeral Transit Pipeline (The Ephemeral Mailbox Model, #416):** `supremeai-open` is an ephemeral transit station. When a patch lands in `patches/`, `landing.yml` streams the patch to its designated satellite repo and central monorepo, then autonomously prunes the patch (`git rm patches/*`), ensuring zero residue and zero repository bloat.
+-- **Never open a duplicate manual PR on the private repository** for work handled here (AGENT_RULES.md U4 — one issue, at most one open PR, anywhere in the federation).
++- **Ephemeral Transit Pipeline (The Ephemeral Mailbox Model, #416):** `supremeai-open` is an ephemeral transit station. When a patch lands in `patches/`, the `satellite-dispatch-and-sync` job of `pipeline.yml` streams the patch to its designated satellite repo and central monorepo (`federation_satellite_sync.py --detect-changed --prune-patches`), then autonomously prunes the patch (`git rm patches/*`), ensuring zero residue and zero repository bloat.
++- **Never open a duplicate manual PR on the private repository** for work handled here (U4: one issue = one open PR, anywhere in the federation — see `docs/FAQ.md`).
+ - **Zero-Workload Decoupled Umbrella:** `Supremeai-bd/supremeai` executes zero active CI workloads, zero nightly cron jobs, and zero deploy scripts. Each satellite operates completely independently, and any cross-federation telemetry is managed from `supremeai-open`. `supremeai` serves purely as an aggregated passive mirror.
+ 
+ 
+@@ -177,4 +184,4 @@ Reusable building blocks (cross-federation SSOT): `scripts/ci/boundary_sanitizat
+ 
+ ---
+ 
+-**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`AGENT_RULES.md`](./AGENT_RULES.md) (policy) · [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) (contributor guide) · [`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`](./docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)
++**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) (contributor guide) · [`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`](./docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)

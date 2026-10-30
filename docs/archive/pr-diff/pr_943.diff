@@ -1,0 +1,144 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index baa689ee..0e226a81 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -25,6 +25,11 @@
+ from fastapi.middleware.cors import CORSMiddleware
+ from fastapi.responses import JSONResponse
+ 
++try:
++    from service.branding import build_brand
++except ImportError:  # pragma: no cover - package-relative fallback
++    from gateway.service.branding import build_brand
++
+ try:
+     from service.keygen import verify_key
+     try:
+@@ -445,6 +450,21 @@ async def chat_completions(
+     elif requested_model in PROVIDER_CONFIGS:
+         preferred_provider = requested_model
+ 
++    # ═══════════════════════════════════════════════════════════════════════
++    # 🔒 HEADLINE — ADMIN ER COMMAND CHARA ENABLE KORA JABE NA
++    # (অ্যাডমিনের সরাসরি নির্দেশ ছাড়া API fallback চালু করা সম্পূর্ণ নিষিদ্ধ)
++    #
++    # API-key fallback is INTENTIONALLY DISABLED. Chat replies come ONLY from
++    # the cookie-based Stealth Webhook relay (pure $0 Gemini web session).
++    # Purpose: admin must be able to verify that cookies alone actually work.
++    #
++    # DO NOT (any human, AI agent, bot or automated PR):
++    #   - add an API-key / provider-pool fallback after the relay below
++    #   - set ENABLE_API_FALLBACK=true in Infisical or Render
++    #   - re-add GEMINI_API_KEY to the scraper node (srv-dabm7gfqj5pc738jkicg)
++    # Re-enabling requires an explicit, written ADMIN_DECISION issue from the
++    # admin. Any PR that re-enables fallback without it must be rejected.
++    # ═══════════════════════════════════════════════════════════════════════
+     use_priority_1 = (
+         bool(STEALTH_WEBHOOK_URL)
+         and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini"))
+@@ -499,6 +519,12 @@ async def chat_completions(
+         )
+ 
+         if w_status is not None and 200 <= w_status < 300 and is_valid_chat:
++            # Server-decided reply badge (e.g. "SupremeAI w.ge Turbo"); UI only displays it.
++            served_model = str(w_response.get("model") or "")
++            engine_src = w_response.get("supremeai_engine") or (
++                served_model if served_model and served_model != "auto" else "gemini"
++            )
++            w_response["supremeai"] = build_brand("w", str(engine_src), served_model)
+             headers = {
+                 "X-SupremeAI-Provider": "stealth-webhook",
+                 "X-SupremeAI-Slot": "priority-1",
+diff --git a/gateway/service/branding.py b/gateway/service/branding.py
+new file mode 100644
+index 00000000..513a3224
+--- /dev/null
++++ b/gateway/service/branding.py
+@@ -0,0 +1,55 @@
++"""SupremeAI reply branding — single source of truth for the chat badge.
++
++Label format: ``SupremeAI <channel>.<engine> <Tier>``
++  channel: ``w`` = webhook/cookie relay, ``a`` = API-key squad
++  engine : short hint of the model that actually answered (ge, gr, gp ...)
++Example: ``SupremeAI w.ge Turbo`` / ``SupremeAI a.gr Free``
++"""
++from __future__ import annotations
++
++from typing import Optional
++
++ENGINE_HINTS = {
++    "gemini": "ge", "google": "ge", "ghost_gemini": "ge",
++    "grok": "gr", "xai": "gr",
++    "openai": "gp", "chatgpt": "gp", "gpt": "gp",
++    "claude": "cl", "anthropic": "cl",
++    "perplexity": "px",
++    "deepseek": "ds",
++    "groq": "lm", "llama": "lm",
++    "mistral": "mi",
++}
++ULTRA_MARKERS = ("pro", "opus", "ultra", "reasoning", "o1", "o3")
++CHANNELS = {"w", "a"}
++
++
++def engine_hint(*candidates: Optional[str]) -> str:
++    """Return the first matching engine hint from provider/model strings, else ``xx``."""
++    for cand in candidates:
++        low = (cand or "").lower()
++        for key, hint in ENGINE_HINTS.items():
++            if key in low:
++                return hint
++    return "xx"
++
++
++def tier_for(channel: str, model: Optional[str] = None, paid: bool = False) -> str:
++    low = (model or "").lower()
++    if channel == "a" and any(m in low for m in ULTRA_MARKERS):
++        return "Ultra"
++    if channel == "w":
++        return "Turbo"
++    return "Pro" if paid else "Free"
++
++
++def build_brand(channel: str, provider: Optional[str] = None,
++                model: Optional[str] = None, paid: bool = False) -> dict:
++    ch = channel if channel in CHANNELS else "w"
++    eng = engine_hint(provider, model)
++    tier = tier_for(ch, model, paid)
++    return {
++        "channel": ch,
++        "engine": eng,
++        "tier": tier,
++        "label": f"SupremeAI {ch}.{eng} {tier}",
++    }
+diff --git a/gateway/tests/test_branding.py b/gateway/tests/test_branding.py
+new file mode 100644
+index 00000000..1007db8c
+--- /dev/null
++++ b/gateway/tests/test_branding.py
+@@ -0,0 +1,26 @@
++"""Tests for SupremeAI reply branding badge."""
++import importlib
++import os
++import sys
++
++sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
++branding = importlib.import_module("service.branding")
++
++
++def test_webhook_gemini_is_turbo():
++    b = branding.build_brand("w", "gemini", "gemini-web-relay")
++    assert b == {"channel": "w", "engine": "ge", "tier": "Turbo", "label": "SupremeAI w.ge Turbo"}
++
++
++def test_api_grok_free_and_pro():
++    assert branding.build_brand("a", "grok", "grok-2")["label"] == "SupremeAI a.gr Free"
++    assert branding.build_brand("a", "grok", "grok-2", paid=True)["tier"] == "Pro"
++
++
++def test_api_reasoning_is_ultra():
++    assert branding.build_brand("a", "anthropic", "claude-opus")["label"] == "SupremeAI a.cl Ultra"
++
++
++def test_unknown_engine_and_channel_safe():
++    b = branding.build_brand("zz", None, None)
++    assert b["label"] == "SupremeAI w.xx Turbo"

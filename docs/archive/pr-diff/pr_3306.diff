@@ -1,0 +1,57 @@
+diff --git a/docs/bridge/bridge-20261030-2811-ledger-net-resume-r1.md b/docs/bridge/bridge-20261030-2811-ledger-net-resume-r1.md
+new file mode 100644
+index 00000000..355f1809
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2811-ledger-net-resume-r1.md
+@@ -0,0 +1,51 @@
++# #2811 evidence r1 — net depletion RESUMED at 12.6 min/h combined (4.2× the row's own escalation bar); corrections decoded as ledger re-basing to the 500-min basis; fresh probes 2026-10-30T12:23Z
++
++- **Task ID:** `bridge-20261030-2811-ledger-net-resume-r1`
++- **Agent:** GLM Agent 17 (Job 486798), continuous-loop dispatch of audit row 2811; claim GRANT_NEW 12:22:42Z (re-GRANT_NEW 12:30:19Z after the 180m cumulative lease budget turned over)
++- **Lane:** report-only evidence refresh (docs-only, zero code, zero protected paths, no closure requested — per the row's own "report-only, no closure request" contract)
++- **Lineage:** #2597 (gross burn) → **#2811** (cycle-47 correction finding, 10-29 21:08Z) → #3067 (code lane: guard truncated-window hardening, merged 06:02Z today) → **this receipt** (evidence lane, first observation past the row's escalation bar)
++- **Method:** zero-credential tower reads only — `render_service_health` (both accounts), `render_get_logs` type=build (attempt enumeration 10:15–12:30Z), arithmetic re-computed in Python from raw probe payloads.
++
++**বাংলা সারসংক্ষেপ:** #2811 ফাইল হওয়ার পর প্রথমবারের মতো এস্কেলেশন বার অতিক্রম হয়েছে — c47 (10-29 21:08Z) থেকে আমার 12:23Z প্রোব পর্যন্ত দুই অ্যাকাউন্ট মিলে নেট **+১৯২.৭ বিল্ড-মিনিট** (≈**১২.৬ মিনিট/ঘণ্টা**, রো-র ৩ মিনিট/ঘণ্টা বারের ৪.২ গুণ)। অর্থাৎ refund-সমেতও নেট ক্ষয় ফিরে এসেছে। পাশাপাশি ১০:২৯Z-এর পর নতুন correction ইভেন্ট ঘটেছে (কাউন্টার ৩টি build attempt সত্ত্বেও নেমেছে) — correction থামেনি, কিন্তু burn তাদের ছাড়িয়ে যাচ্ছে। সবচেয়ে গুরুত্বপূর্ণ বিশ্লেষণী অগ্রগতি: **correction মানে আসলে ledger re-basing** — রেকর্ডের প্রতিটি পোস্ট-কারেকশন স্ন্যাপশটে `buildMin + freeLimit = ৫০০.০` হুবহু; শুধু দুটি প্রি-কারেকশন রিড (৫০১.৮, ৫০৩.৪) ব্যতিক্রম। এতে issue-র খোলা প্রশ্ন ("কোন সাবসিস্টেম মিনিট ক্রেডিট করে")-এর পর্যবেক্ষণমূলক উত্তর মেলে: correction হলো ৫০০-মিনিট বেসিসে স্ন্যাপ-ব্যাক। পর্যবেক্ষকদের জন্য নতুন অপারেশনাল সংকেত: **SUM ট্র্যাক করুন** — ৫০০.০ থেকে বিচ্যুতি মানেই পরবর্তী correction-এর প্রাক্কাল।
++
++## 1. Fresh anchors (tower `render_service_health`, zero-credential)
++
++| anchor (UTC) | primary buildMin | worker buildMin | combined | source |
++|---|---|---|---|---|
++| 10-29 13:08Z | 44.2 | 44.9 | 89.1 | #2597 receipt baseline |
++| 10-29 21:08Z (c47) | 20.3 | 24.6 | 44.9 | issue table (post-correction) |
++| 10-30 10:20–10:29Z | 118.1 | 124.3–125.5 | 242.4–243.6 | #2597 r2 + burn-accel receipts |
++| **10-30 12:23:05Z (this probe)** | **113.5** | **124.1** | **237.6** | GLM Agent 17 |
++
++Mirror identity verified at every anchor: freeLimitRemaining = 500 − buildMin exactly (primary 386.5, worker 375.9 at 12:23Z; both `update_failed` with updatedAt still frozen 2026-10-24T08:32:40/47Z — deploy freeze day 6.17).
++
++## 2. Findings
++
++**F1 — net depletion resumed, escalation bar exceeded (4.2×).** c47→12:23Z (15.25h): net +192.7 min combined (primary +93.2, worker +99.5) = **12.63 min/h**, vs the row's ">3 min/h" escalation bar and vs the #2597 receipts' window net 7.29/h. Gross ≥12.95/h (corrections lower-bounded by the A2→A3 drop, below). The row's criterion ("corrections stop + gross resumes") is met in spirit: corrections did **not** stop, but burn now outruns them ≥2:1 on net.
++
++**F2 — new correction event(s) after 10:29Z (4th+ of the series).** 10:29/10:20Z → 12:23Z: combined **−4.8 to −6.0 min** despite 3 build attempts per service inside the window (build usage cannot decrease ⇒ corrections ≥4.8 min combined, upper-unbounded without the hourly cadence). The event table in the issue body (which stopped at c47) should be read as continuing.
++
++**F3 — build-attempt burst-then-silence; cached rebuilds are cheap.** `render_get_logs` type=build enumerates attempts per service at **10:27, 10:41, 11:01Z** (primary/worker paired within 4s — commit-triggered, tracking the core-main bridge-landing cadence), then **zero attempts 11:01→12:30Z**. The 11:01Z attempt shows most docker layers **CACHED** — recent attempts burn far below the #2597-r2 "6.2 min/attempt" average, which folded in older full rebuilds. The ~192-min resumption is therefore dominated by the 10-29 evening→10-30 morning cadence, not by these three cheap attempts.
++
++**F4 — corrections decoded: re-basing to the 500-minute basis.** Across 13 recorded reads (issue table + three agents' probes), **every post-correction snapshot satisfies buildMin + freeLimitRemaining = 500.0 exactly**; the only exceptions are the two pre-correction reads inside correction windows (c43-pre 501.8, c44-pre 503.4). Interpretation (bounded): corrections are Render-side reconciliations that re-snap the two counter views onto the 500-min basis after drift (+1.8/+3.4 observed) re-accumulates; "exact dual mirror" (c47) is that snap-back seen from both counters, not an independent signal. **Operational indicator for the guardian cadence: track the SUM — departure from 500.0 is the leading edge of the next correction, and a mid-quiet-hour sum ≠ 500 read also cross-checks tower read integrity.**
++
++**F5 — deadline re-quantified.** Combined freeLimit remaining 762.4 min at 12:23Z; at the sustained c47→now net rate (12.63/h) TTE = **60.3h → ~2026-11-02T00:43Z**. The #2597-r2 reset anchor (2026-11-01) still precedes exhaustion, but the margin is now hours-scale, not the days-scale it was at the receipts. Verdict-plane prioritization input, not an agent-lane action.
++
++## 3. Code lane status (not this receipt's work — recorded to prevent redo)
++
++The guard-plane root cause named by the "#2811 window class" (truncated deploys window under-counting month-to-date burn) is **already fixed**: PR **#3067** landed `scripts/ci/render_build_budget_guard.py` cursor-pagination + month-window saturation hardening (merged 06:02Z today). This receipt completes the row's remaining named deliverable — the refund-adjusted read the title assigns — with current numbers; nothing code-side is left open on this row from the agent lane.
++
++## 4. Envelope statement
++
++- Zero credentials; all reads via tower read-only tools; no `render_manage` mutation; autoDeploy state untouched (both services "yes", buildMin far below the 450 guard threshold).
++- **No closure requested**, matching the row's own "report-only, no closure request" contract and the #2211/#2225 false-closure family discipline — the ongoing watch belongs to the guardian cadence, and closure of the row belongs to the verdict plane.
++- Idempotency: single receipt for this row this slot; no sibling WO mentions 2811 (queue checked at 12:23Z); the two #2597 receipts are the sibling row, cross-referenced not duplicated.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++- **why:** the loop dispatched row 2811 after #3067 closed its code lane; the row's own Recovery section pre-commits "monitoring continues hourly" with a >3 min/h escalation bar — and the first post-filing probe shows the bar exceeded 4.2×. Filing converts a 15h-stale favorable reading ("quota exhaustion REMOTE") into a current decision-grade one (net resumption, hours-scale margin to the reset race), and the sum=500 re-basing decode gives every future watcher a leading indicator the issue's event table could not provide.
++- **alternatives_rejected:** (1) closing the row with this receipt — rejected: "no closure request" is the row's own contract; closure belongs to the verdict plane (false-closure family discipline); (2) attempting the autoDeploy-off / cache-profile mitigations — rejected: Render dashboard settings are admin/HITL plane, agent lane has no authority (same boundary as the #2597 receipts); (3) issuing a fresh sentinel issue for the burst-then-silence pattern — rejected: anti-stampede; the observation belongs on this row; (4) waiting for a second hourly observation before filing — rejected: the 15.25h window already aggregates ≥15 hourly cadences of net movement and the row's bar is exceeded with margin; the guardian cadence can confirm with its own next read.
++
++## Rollback
++
++git revert-safe: delete this single receipt file (pure docs addition).

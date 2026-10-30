@@ -1,0 +1,1204 @@
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index 56eea790..f8e23f3f 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -66,6 +66,8 @@ const KnowledgePage = React.lazy(() =>
+   import("./components/dashboard/KnowledgePage").then((m) => ({ default: m.KnowledgePage }))
+ );
+ const ErrorPage = React.lazy(() => import("./pages/ErrorPage"));
++const DevToolsPage = React.lazy(() => import("./pages/DevToolsPage"));
++const AcademyHubPage = React.lazy(() => import("./pages/AcademyHubPage"));
+ const CommandBar = React.lazy(() =>
+   import("./components/layout/CommandBar").then((m) => ({ default: m.CommandBar }))
+ );
+@@ -187,6 +189,10 @@ export const App: React.FC = () => {
+               <Route path="/pricing" element={<PublicPageShell><PricingPage /></PublicPageShell>} />
+               <Route path="/docs" element={<PublicPageShell><DocsPage /></PublicPageShell>} />
+               <Route path="/contact" element={<PublicPageShell><PublicInfoPage kind="contact" /></PublicPageShell>} />
++              {/* Way 4: free developer tools (browser-native, zero sign-up) */}
++              <Route path="/tools" element={<PublicPageShell><DevToolsPage /></PublicPageShell>} />
++              {/* Way 5: interactive academies (localStorage progress) */}
++              <Route path="/academies" element={<PublicPageShell><AcademyHubPage /></PublicPageShell>} />
+               <Route path="/knowledge" element={<KnowledgePage />} />
+ 
+               {/* Split auth — /login + /register render immediately with zero blocking */}
+diff --git a/studio/src/components/visual/RealityDial.tsx b/studio/src/components/visual/RealityDial.tsx
+new file mode 100644
+index 00000000..74d2a4f8
+--- /dev/null
++++ b/studio/src/components/visual/RealityDial.tsx
+@@ -0,0 +1,89 @@
++/**
++ * studio/src/components/visual/RealityDial.tsx — 4-level reality dial widget (Way 11).
++ *
++ * বাংলা: Infinity SPINE-এর 4-level reality dial-এর studio উইজেট — gateway
++ * telemetry-র "rigidity level" দেখায় (L1 সবচেয়ে শিথিল, L4 সবচেয়ে কঠোর)।
++ * Live data না থাকলে 'unknown' স্টেট — কখনো ভুয়া green নয় (honest observability)।
++ *
++ * Self-contained presentational component. Data contract (prop only):
++ *   level: 1..4 | null   (null = unknown — renders muted, never fake-green)
++ */
++
++import { useMemo } from 'react';
++
++export interface RealityDialProps {
++  /** Current gateway reality-dial level, or null when unknown/unreachable. */
++  level: number | null;
++  /** Optional last-updated epoch ms for the freshness stamp. */
++  updatedAt?: number | null;
++  /** Compact mode for dashboard tiles. */
++  compact?: boolean;
++}
++
++const LEVELS = [
++  { n: 1, label: 'L1 · Advisory', hint: 'Observations only — nothing stripped', color: 'emerald' },
++  { n: 2, label: 'L2 · Guarded', hint: 'Unearned apologies stripped', color: 'emerald' },
++  { n: 3, label: 'L3 · Assertive', hint: 'Capitulation pivots rewritten mid-stream', color: 'purple' },
++  { n: 4, label: 'L4 · Absolute', hint: 'Strictest invariants, zero accommodation', color: 'indigo' },
++] as const;
++
++const RING: Record<string, string> = {
++  emerald: 'border-emerald-400/50 bg-emerald-400/10 text-emerald-200',
++  purple: 'border-purple-400/50 bg-purple-400/10 text-purple-200',
++  indigo: 'border-indigo-400/50 bg-indigo-400/10 text-indigo-200',
++};
++
++export default function RealityDial({ level, updatedAt, compact = false }: RealityDialProps) {
++  const known = typeof level === 'number' && level >= 1 && level <= 4;
++  const active = useMemo(() => LEVELS.find((l) => l.n === level), [level]);
++
++  const freshness = useMemo(() => {
++    if (!updatedAt) return null;
++    const ageS = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
++    return ageS < 5 ? 'live' : `${ageS}s ago`;
++  }, [updatedAt]);
++
++  return (
++    <section
++      className={`rounded-xl border border-white/10 bg-white/[0.02] p-4 ${compact ? 'max-w-xs' : ''}`}
++      aria-label="Reality dial"
++      data-testid="reality-dial"
++    >
++      <header className="mb-3 flex items-baseline justify-between">
++        <h3 className="text-xs font-medium uppercase tracking-wider text-white/50">Reality Dial</h3>
++        <span className={`font-mono text-[10px] ${freshness === 'live' ? 'text-emerald-300' : 'text-white/40'}`}>
++          {freshness ?? 'no data'}
++        </span>
++      </header>
++
++      {!known ? (
++        <p className="font-mono text-sm text-white/40">status: unknown — dial level not reported</p>
++      ) : (
++        <div className="space-y-2">
++          <div className={`inline-block rounded-lg border px-3 py-1 font-mono text-sm ${RING[active!.color]}`}>
++            {active!.label}
++          </div>
++          <ul className="mt-2 space-y-1">
++            {LEVELS.map((l) => (
++              <li
++                key={l.n}
++                className={`flex items-center gap-2 text-xs ${
++                  l.n === level ? 'text-white' : 'text-white/35'
++                }`}
++              >
++                <span
++                  className={`h-1.5 w-1.5 rounded-full ${
++                    l.n === level ? 'bg-emerald-400' : 'bg-white/15'
++                  }`}
++                  aria-hidden
++                />
++                <span className="font-mono">L{l.n}</span>
++                <span>{l.hint}</span>
++              </li>
++            ))}
++          </ul>
++        </div>
++      )}
++    </section>
++  );
++}
+diff --git a/studio/src/components/visual/TokenPrunerLab.tsx b/studio/src/components/visual/TokenPrunerLab.tsx
+new file mode 100644
+index 00000000..7822743a
+--- /dev/null
++++ b/studio/src/components/visual/TokenPrunerLab.tsx
+@@ -0,0 +1,148 @@
++/**
++ * studio/src/components/visual/TokenPrunerLab.tsx — Interactive TF-IDF lab (Way 11).
++ *
++ * বাংলা: "try it live" প্যাটার্নের exemplar — Way 2-এর TF-IDF tool pruner-এর
++ * ব্রাউজার সিমুলেটর। ইউজার কোয়েরি লিখে দেখে কোন টুল স্কিমা থাকবে, কত টোকেন
++ * বাঁচল — সম্পূর্ণ ক্লায়েন্ট-সাইড, কোনো API কল নেই।
++ *
++ * Reuses the same algorithm contract as gateway/tool_pruner.py + mcp
++ * semantic_router.ts (TF × IDF cosine), simplified for the demo corpus.
++ */
++
++import { useMemo, useState } from 'react';
++
++interface DemoTool {
++  name: string;
++  description: string;
++  /** Rough token cost of the tool's JSON schema in a prompt. */
++  schemaTokens: number;
++}
++
++const DEMO_TOOLS: DemoTool[] = [
++  { name: 'github.list_prs', description: 'List open pull requests in a repository', schemaTokens: 180 },
++  { name: 'github.get_failed_logs', description: 'Fetch failed CI run logs', schemaTokens: 140 },
++  { name: 'bridge.work_queue', description: 'List open bridge work-order issues', schemaTokens: 210 },
++  { name: 'redis.read_key', description: 'Read a key value from Redis', schemaTokens: 90 },
++  { name: 'system_health', description: 'Fleet health snapshot for all services', schemaTokens: 120 },
++  { name: 'render_get_logs', description: 'Fetch service logs from Render', schemaTokens: 110 },
++  { name: 'memory_read_graph', description: 'Read the agent memory graph', schemaTokens: 160 },
++  { name: 'docs_fetch', description: 'Fetch documentation pages', schemaTokens: 80 },
++];
++
++const WORD_RE = /[a-z0-9_]{2,}/g;
++const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with', 'this', 'that', 'it', 'is', 'are', 'get', 'list', 'set', 'all']);
++
++function tokenize(text: string): string[] {
++  return (text.toLowerCase().match(WORD_RE) ?? []).filter((t) => !STOP.has(t));
++}
++
++function scoreCorpus(query: string, tools: DemoTool[]) {
++  const qTokens = tokenize(query);
++  if (!qTokens.length) return tools.map((t) => ({ ...t, score: 0 }));
++
++  const df = new Map<string, number>();
++  const toolTokens = tools.map((t) => {
++    const toks = tokenize(`${t.name.replace(/[._-]/g, ' ')} ${t.description}`);
++    for (const w of toks) df.set(w, (df.get(w) ?? 0) + 1);
++    return toks;
++  });
++  const idf = (w: string) => Math.log((1 + tools.length) / (1 + (df.get(w) ?? 0))) + 1;
++
++  const qTf = new Map<string, number>();
++  for (const w of qTokens) qTf.set(w, (qTf.get(w) ?? 0) + 1);
++
++  return tools.map((tool, i) => {
++    let score = 0;
++    for (const [w, tf] of qTf) {
++      const freq = toolTokens[i].filter((x) => x === w).length;
++      if (freq > 0) score += (1 + Math.log(tf)) * idf(w);
++    }
++    return { ...tool, score: score / Math.sqrt(qTokens.length) };
++  });
++}
++
++export default function TokenPrunerLab() {
++  const [query, setQuery] = useState('why did the ci run fail? show me the logs');
++  const [threshold, setThreshold] = useState(0.3);
++
++  const scored = useMemo(() => {
++    const rows = scoreCorpus(query, DEMO_TOOLS);
++    const max = Math.max(...rows.map((r) => r.score), 1e-9);
++    return rows
++      .map((r) => ({ ...r, norm: r.score / max }))
++      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
++  }, [query]);
++
++  const kept = scored.filter((r) => r.norm >= threshold);
++  const dropped = scored.filter((r) => r.norm < threshold);
++  const totalTokens = DEMO_TOOLS.reduce((a, t) => a + t.schemaTokens, 0);
++  const keptTokens = kept.reduce((a, t) => a + t.schemaTokens, 0);
++  const savedPct = totalTokens ? Math.round((100 * (totalTokens - keptTokens)) / totalTokens) : 0;
++
++  return (
++    <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4 md:p-6" aria-label="TF-IDF pruner lab">
++      <header className="mb-4">
++        <h3 className="text-sm font-medium text-white">Token Pruner Lab · <span className="text-white/50">live TF-IDF simulator</span></h3>
++        <p className="mt-1 text-xs text-white/50">
++          Same algorithm as the gateway tool pruner (Way 2) — try a query, watch the schema payload shrink.
++        </p>
++      </header>
++
++      <input
++        type="text"
++        value={query}
++        onChange={(e) => setQuery(e.target.value)}
++        placeholder="Ask a query…"
++        className="w-full rounded-lg border border-white/15 bg-black/40 px-3 py-2 font-mono text-sm text-white/90 outline-none focus:border-emerald-400/50"
++      />
++
++      <label className="mt-4 block text-xs text-white/50">
++        Keep threshold: <span className="font-mono text-white/80">{threshold.toFixed(2)}</span>
++        <input
++          type="range"
++          min={0}
++          max={1}
++          step={0.05}
++          value={threshold}
++          onChange={(e) => setThreshold(Number(e.target.value))}
++          className="mt-1 w-full accent-emerald-400"
++        />
++      </label>
++
++      <div className="mt-4 grid gap-4 md:grid-cols-2">
++        <ul className="space-y-1.5">
++          {scored.map((r) => (
++            <li
++              key={r.name}
++              className={`flex items-center justify-between rounded border px-3 py-1.5 font-mono text-xs ${
++                r.norm >= threshold
++                  ? 'border-emerald-400/30 bg-emerald-400/5 text-emerald-100'
++                  : 'border-white/10 text-white/35 line-through'
++              }`}
++            >
++              <span>{r.name}</span>
++              <span>{r.norm.toFixed(2)}</span>
++            </li>
++          ))}
++        </ul>
++        <div className="rounded-lg border border-indigo-400/30 bg-indigo-400/5 p-4">
++          <div className="font-mono text-xs text-indigo-200/70">schema payload</div>
++          <div className="mt-2 font-mono text-2xl text-white">{savedPct}% saved</div>
++          <div className="mt-1 font-mono text-xs text-white/50">
++            {keptTokens} / {totalTokens} tokens kept · {kept.length} tools kept, {dropped.length} pruned
++          </div>
++          <div className="mt-3 h-2 w-full overflow-hidden rounded bg-white/10">
++            <div
++              className="h-full bg-gradient-to-r from-emerald-400 to-indigo-400 transition-all"
++              style={{ width: `${100 - savedPct}%` }}
++            />
++          </div>
++        </div>
++      </div>
++
++      <p className="mt-4 text-[10px] text-white/35">
++        Demo corpus only — production pruning runs in gateway/tool_pruner.py with the full registry.
++      </p>
++    </section>
++  );
++}
+diff --git a/studio/src/config/routeParity.test.ts b/studio/src/config/routeParity.test.ts
+index d0aacbd3..ac17506d 100644
+--- a/studio/src/config/routeParity.test.ts
++++ b/studio/src/config/routeParity.test.ts
+@@ -21,6 +21,7 @@ const routePaths = new Set<string>(
+ const APP_INLINE_ROUTES = new Set<string>([
+   '/',
+   '/about',
++  '/academies',
+   '/admin/*',
+   '/chat',
+   '/cockpit',
+@@ -33,6 +34,7 @@ const APP_INLINE_ROUTES = new Set<string>([
+   '/pricing',
+   '/register',
+   '/telemetry',
++  '/tools',
+   '/workspace',
+   '/workspace/live',
+ ]);
+diff --git a/studio/src/content/academies/mcpAcademy.ts b/studio/src/content/academies/mcpAcademy.ts
+new file mode 100644
+index 00000000..02a43141
+--- /dev/null
++++ b/studio/src/content/academies/mcpAcademy.ts
+@@ -0,0 +1,141 @@
++/**
++ * studio/src/content/academies/mcpAcademy.ts — Academy course content (Way 5).
++ *
++ * বাংলা: "MCP Control Plane Academy" — প্রথম exemplar কোর্স। lessons + quiz +
++ * XP — সম্পূর্ণ ডেটা লোকালস্টোরেজে (Infinity প্যাটার্ন: local progress)।
++ *
++ * Content-only module: no imports, no side effects. The AcademyHubPage renders
++ * whatever Academy[] modules live here — new courses = new data files (P3).
++ */
++
++export interface QuizQuestion {
++  prompt: string;
++  options: string[];
++  answerIndex: number;
++  explain: string;
++}
++
++export interface Lesson {
++  id: string;
++  title: string;
++  minutes: number;
++  /** Short markdown-ish body (paragraphs separated by \n\n). */
++  body: string;
++  quiz: QuizQuestion[];
++}
++
++export interface Academy {
++  id: string;
++  title: string;
++  tagline: string;
++  level: 'beginner' | 'intermediate' | 'advanced';
++  lessons: Lesson[];
++}
++
++export const mcpAcademy: Academy = {
++  id: 'mcp-control-plane',
++  title: 'MCP Control Plane Academy',
++  tagline: 'How SupremeAI talks to tools: the Model Context Protocol, tower, and bridge.',
++  level: 'beginner',
++  lessons: [
++    {
++      id: 'mcp-101',
++      title: 'MCP 101 — one protocol, every tool',
++      minutes: 6,
++      body: [
++        'The Model Context Protocol (MCP) is a JSON-RPC contract that lets a model call tools without bespoke glue code. A server exposes tools via `tools/list`; a client calls them via `tools/call`; results come back as content blocks.',
++        'SupremeAI runs an MCP control plane (the "tower") that fronts GitHub, Redis, Render, Cloudflare and its own bridge. One authenticated session, many tools — no per-service credentials in agent hands.',
++        'Key idea: the protocol is stateful per session. A `mcp-session-id` from `initialize` must ride along every later call; lose it and the tower fail-closes with a session error (never guesses).',
++      ].join('\n\n'),
++      quiz: [
++        {
++          prompt: 'Which method lists the tools a server offers?',
++          options: ['tools/list', 'tools/call', 'initialize', 'resources/read'],
++          answerIndex: 0,
++          explain: '`tools/list` enumerates capabilities; `tools/call` executes one.',
++        },
++        {
++          prompt: 'What happens when the session id is missing from a call?',
++          options: [
++            'The tower auto-creates a new session',
++            'The call fails closed with a session error',
++            'The call runs anonymously',
++            'The tool results are cached instead',
++          ],
++          answerIndex: 1,
++          explain: 'SupremeAI fails closed — no session, no execution.',
++        },
++      ],
++    },
++    {
++      id: 'mcp-security',
++      title: 'Security — zero-credential agents & protected paths',
++      minutes: 7,
++      body: [
++        'Agents never hold GitHub tokens. The bridge is "zero-credential": work claims, patches, and feedback all flow through the tower, which holds the only real credentials.',
++        'Writes to sensitive surfaces (.github/, prisma/, .env*) are rejected for the agent lane — an admin-role executor must apply them. This is the protected-path guard.',
++        'Every tool result that echoes a secret family (sk-, ghp_, AKIA…) is redacted before it reaches a model. Audit logs record the event class, never the secret.',
++      ].join('\n\n'),
++      quiz: [
++        {
++          prompt: 'How does an external agent open a PR without repo credentials?',
++          options: [
++            'It forks the repo with its own token',
++            'Via the zero-credential bridge submit path',
++            'It emails a maintainer',
++            'It writes directly to main',
++          ],
++          answerIndex: 1,
++          explain: 'bridge_submit_patch creates the branch + issue server-side.',
++        },
++        {
++          prompt: 'What happens when a patch touches a protected path?',
++          options: [
++            'It lands after a delay',
++            'It lands with extra logging',
++            'The lane rejects it for an admin-role executor',
++            'It silently skips the file',
++          ],
++          answerIndex: 2,
++          explain: 'Protected paths fail closed for the agent lane.',
++        },
++      ],
++    },
++    {
++      id: 'mcp-bridge-lifecycle',
++      title: 'The bridge lifecycle — claim, patch, gates, land',
++      minutes: 8,
++      body: [
++        'Work orders are issues with labels. `work_claim` grants a 30-minute atomic lease (GRANT_NEW) so two agents never build the same slice; `work_renew` extends, `work_release` frees.',
++        'A delivered patch becomes a branch `bridge/<task-id>` plus a work-order issue. The constitutional gates (CI Guardian) then verify scope, shape, and tests — the bridge itself never merges.',
++        'Discipline rules: U2 evidence-first (verify base bytes before patching), P3 shape-preserving (response contracts do not change), P7 one atomic slice per cycle.',
++      ].join('\n\n'),
++      quiz: [
++        {
++          prompt: 'Who merges bridge patches into main?',
++          options: [
++            'The submitting agent',
++            'The bridge dispatcher',
++            'The constitutional gates only',
++            'A human admin, always',
++          ],
++          answerIndex: 2,
++          explain: '"The bridge never merges" — gates hold landing authority.',
++        },
++        {
++          prompt: 'Why does work_claim hand out a 30-minute lease?',
++          options: [
++            'To bill agents hourly',
++            'To make claims atomic and prevent duplicate work',
++            'To limit repo bandwidth',
++            'To throttle CI',
++          ],
++          answerIndex: 1,
++          explain: 'U4 zero-duplicate: one claim, one owner, at a time.',
++        },
++      ],
++    },
++  ],
++};
++
++export const academies: Academy[] = [mcpAcademy];
+diff --git a/studio/src/pages/AcademyHubPage.tsx b/studio/src/pages/AcademyHubPage.tsx
+new file mode 100644
+index 00000000..64f18c27
+--- /dev/null
++++ b/studio/src/pages/AcademyHubPage.tsx
+@@ -0,0 +1,275 @@
++/**
++ * studio/src/pages/AcademyHubPage.tsx — Interactive AI Academies (Infinity plan Way 5).
++ *
++ * বাংলা: ফ্রি ইন্টারেক্টিভ একাডেমি হাব — lessons + quiz + XP, প্রোগ্রেস
++ * সম্পূর্ণ localStorage-এ (Infinity প্যাটার্ন)। কোর্স = studio/src/content/
++ * academies/* এ নতুন ডেটা ফাইল — কম্পোনেন্ট অপরিবর্তিত।
++ *
++ * Self-contained: React-only, Tailwind + tokens. No backend calls; progress
++ * never leaves the browser (documented on-page).
++ *
++ * Route (public, INTEGRATION.diff provided):
++ *   <Route path="/academies" element={<PublicPageShell><AcademyHubPage /></PublicPageShell>} />
++ */
++
++import { useCallback, useMemo, useState } from 'react';
++import { academies, type Academy, type Lesson } from '../content/academies/mcpAcademy';
++
++const STORAGE_KEY = 'supremeai.academy.progress.v1';
++
++interface Progress {
++  xp: number;
++  completedLessons: string[]; // lesson ids across all academies
++  quizScores: Record<string, number>; // lesson id -> best score 0..1
++}
++
++function loadProgress(): Progress {
++  try {
++    const raw = window.localStorage.getItem(STORAGE_KEY);
++    if (!raw) return { xp: 0, completedLessons: [], quizScores: {} };
++    const parsed = JSON.parse(raw) as Partial<Progress>;
++    return {
++      xp: Number(parsed.xp) || 0,
++      completedLessons: Array.isArray(parsed.completedLessons) ? parsed.completedLessons : [],
++      quizScores: parsed.quizScores && typeof parsed.quizScores === 'object' ? parsed.quizScores : {},
++    };
++  } catch {
++    return { xp: 0, completedLessons: [], quizScores: {} };
++  }
++}
++
++function saveProgress(p: Progress): void {
++  try {
++    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
++  } catch {
++    /* private mode / storage full — progress stays session-only, page still works */
++  }
++}
++
++function lessonXp(lesson: Lesson): number {
++  return 10 + lesson.quiz.length * 5;
++}
++
++function QuizBlock({
++  lesson,
++  onScored,
++}: {
++  lesson: Lesson;
++  onScored: (score: number) => void;
++}) {
++  const [answers, setAnswers] = useState<Record<number, number>>({});
++  const [graded, setGraded] = useState(false);
++
++  const correct = useMemo(
++    () => lesson.quiz.filter((q, i) => answers[i] === q.answerIndex).length,
++    [answers, lesson.quiz],
++  );
++
++  const grade = () => {
++    setGraded(true);
++    onScored(lesson.quiz.length ? correct / lesson.quiz.length : 0);
++  };
++
++  if (!lesson.quiz.length) return null;
++
++  return (
++    <div className="mt-6 space-y-4">
++      {lesson.quiz.map((q, qi) => (
++        <fieldset key={qi} className="rounded-lg border border-white/10 bg-black/30 p-4">
++          <legend className="px-1 text-sm font-medium text-white/90">{q.prompt}</legend>
++          <div className="mt-2 space-y-1.5">
++            {q.options.map((opt, oi) => {
++              const chosen = answers[qi] === oi;
++              const isAnswer = graded && oi === q.answerIndex;
++              const isWrongPick = graded && chosen && oi !== q.answerIndex;
++              return (
++                <label
++                  key={oi}
++                  className={`flex cursor-pointer items-center gap-2 rounded border px-3 py-2 text-sm ${
++                    isAnswer
++                      ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-100'
++                      : isWrongPick
++                        ? 'border-red-400/50 bg-red-400/10 text-red-100'
++                        : 'border-white/10 text-white/80 hover:border-white/25'
++                  }`}
++                >
++                  <input
++                    type="radio"
++                    name={`${lesson.id}-${qi}`}
++                    checked={chosen}
++                    onChange={() => {
++                      setAnswers((a) => ({ ...a, [qi]: oi }));
++                      setGraded(false);
++                    }}
++                    disabled={graded}
++                    className="accent-emerald-400"
++                  />
++                  {opt}
++                </label>
++              );
++            })}
++          </div>
++          {graded && (
++            <p className="mt-2 text-xs text-white/60">💡 {q.explain}</p>
++          )}
++        </fieldset>
++      ))}
++      <div className="flex items-center gap-3">
++        {!graded ? (
++          <button
++            type="button"
++            onClick={grade}
++            disabled={Object.keys(answers).length < lesson.quiz.length}
++            className="rounded-lg border border-indigo-400/40 bg-indigo-400/10 px-4 py-2 text-sm text-indigo-100 disabled:opacity-40"
++          >
++            Grade answers
++          </button>
++        ) : (
++          <span className="font-mono text-sm text-white/80">
++            score: {correct}/{lesson.quiz.length}
++          </span>
++        )}
++      </div>
++    </div>
++  );
++}
++
++function LessonCard({
++  academy,
++  lesson,
++  index,
++  done,
++  bestScore,
++  onComplete,
++}: {
++  academy: Academy;
++  lesson: Lesson;
++  index: number;
++  done: boolean;
++  bestScore: number;
++  onComplete: (lessonId: string, score: number, xp: number) => void;
++}) {
++  const [open, setOpen] = useState(false);
++  return (
++    <article
++      className={`rounded-xl border p-4 transition ${
++        done ? 'border-emerald-400/30 bg-emerald-400/[0.04]' : 'border-white/10 bg-white/[0.02]'
++      }`}
++    >
++      <button
++        type="button"
++        onClick={() => setOpen((o) => !o)}
++        className="flex w-full items-center justify-between text-left"
++        aria-expanded={open}
++      >
++        <span className="flex items-center gap-3">
++          <span className="font-mono text-xs text-white/40">{String(index + 1).padStart(2, '0')}</span>
++          <span className="text-sm font-medium text-white">{lesson.title}</span>
++          {done && <span className="text-xs text-emerald-300">✓ done</span>}
++          {bestScore > 0 && (
++            <span className="text-xs text-white/50">best {Math.round(bestScore * 100)}%</span>
++          )}
++        </span>
++        <span className="font-mono text-xs text-white/40">{lesson.minutes} min</span>
++      </button>
++      {open && (
++        <div className="mt-4">
++          {lesson.body.split('\n\n').map((para, i) => (
++            <p key={i} className="mb-3 text-sm leading-relaxed text-white/75">
++              {para}
++            </p>
++          ))}
++          <QuizBlock
++            lesson={lesson}
++            onScored={(score) => onComplete(lesson.id, score, lessonXp(lesson))}
++          />
++        </div>
++      )}
++      <span className="sr-only">{`Part of ${academy.title}`}</span>
++    </article>
++  );
++}
++
++export default function AcademyHubPage() {
++  const [progress, setProgress] = useState<Progress>(loadProgress);
++  const [activeId, setActiveId] = useState<string>(academies[0]?.id ?? '');
++
++  const active: Academy | undefined = useMemo(
++    () => academies.find((a) => a.id === activeId) ?? academies[0],
++    [activeId],
++  );
++
++  const handleComplete = useCallback(
++    (lessonId: string, score: number, xp: number) => {
++      setProgress((prev) => {
++        const already = prev.completedLessons.includes(lessonId);
++        const prevBest = prev.quizScores[lessonId] ?? 0;
++        const next: Progress = {
++          xp: prev.xp + (already ? 0 : xp),
++          completedLessons: already ? prev.completedLessons : [...prev.completedLessons, lessonId],
++          quizScores: { ...prev.quizScores, [lessonId]: Math.max(prevBest, score) },
++        };
++        saveProgress(next);
++        return next;
++      });
++    },
++    [],
++  );
++
++  const academyDone = (a: Academy) =>
++    a.lessons.filter((l) => progress.completedLessons.includes(l.id)).length;
++
++  return (
++    <div className="mx-auto max-w-4xl px-4 py-10">
++      <header className="mb-8">
++        <h1 className="text-3xl font-semibold tracking-tight text-white">SupremeAI Academies</h1>
++        <p className="mt-2 text-sm text-white/60">
++          Free, interactive courses on our own stack. Progress lives in your browser
++          (localStorage) — no account, no tracking.
++        </p>
++        <p className="mt-1 font-mono text-xs text-emerald-300">XP: {progress.xp}</p>
++      </header>
++
++      <nav className="mb-6 flex flex-wrap gap-2" aria-label="Academy selector">
++        {academies.map((a) => (
++          <button
++            key={a.id}
++            type="button"
++            onClick={() => setActiveId(a.id)}
++            className={`rounded-lg border px-4 py-2 text-left transition ${
++              a.id === active?.id
++                ? 'border-purple-400/50 bg-purple-400/10'
++                : 'border-white/10 bg-white/[0.03] hover:border-white/25'
++            }`}
++            aria-pressed={a.id === active?.id}
++          >
++            <span className="block text-sm font-medium text-white">{a.title}</span>
++            <span className="block font-mono text-xs text-white/50">
++              {academyDone(a)}/{a.lessons.length} lessons · {a.level}
++            </span>
++          </button>
++        ))}
++      </nav>
++
++      {active && (
++        <section className="space-y-3">
++          <p className="mb-4 text-sm text-white/60">{active.tagline}</p>
++          {active.lessons.map((lesson, i) => (
++            <LessonCard
++              key={lesson.id}
++              academy={active}
++              lesson={lesson}
++              index={i}
++              done={progress.completedLessons.includes(lesson.id)}
++              bestScore={progress.quizScores[lesson.id] ?? 0}
++              onComplete={handleComplete}
++            />
++          ))}
++        </section>
++      )}
++    </div>
++  );
++}
++
++export { AcademyHubPage };
++
+diff --git a/studio/src/pages/DevToolsPage.tsx b/studio/src/pages/DevToolsPage.tsx
+new file mode 100644
+index 00000000..b68a5cbf
+--- /dev/null
++++ b/studio/src/pages/DevToolsPage.tsx
+@@ -0,0 +1,277 @@
++/**
++ * studio/src/pages/DevToolsPage.tsx — Free developer tools suite (Infinity plan Way 4).
++ *
++ * বাংলা: Infinity-র ১৩+ ফ্রি ডেভ টুলের প্যাটার্নে SupremeAI-র প্রথম ব্যাচ —
++ * JSONForge (format/validate), SchemaForge (JSON-LD schema), CostForge
++ * (API cost calculator)। সব ব্রাউজার-নেটিভ, সাইন-আপ ছাড়া, কোনো ব্যাকএন্ড কল নেই।
++ *
++ * Self-contained: no new dependencies (React only), Tailwind + existing tokens
++ * (emerald/purple/indigo, glass surfaces). Zero data leaves the browser.
++ *
++ * Route (public, INTEGRATION.diff provided):
++ *   <Route path="/tools" element={<PublicPageShell><DevToolsPage /></PublicPageShell>} />
++ */
++
++import { useMemo, useState } from 'react';
++
++type ToolId = 'jsonforge' | 'schemaforge' | 'costforge';
++
++interface ToolDef {
++  id: ToolId;
++  name: string;
++  tagline: string;
++  badge: string;
++}
++
++const TOOLS: ToolDef[] = [
++  { id: 'jsonforge', name: 'JSONForge', tagline: 'Format, validate & inspect JSON', badge: 'FREE' },
++  { id: 'schemaforge', name: 'SchemaForge', tagline: 'Generate JSON-LD schema from JSON', badge: 'FREE' },
++  { id: 'costforge', name: 'CostForge', tagline: 'LLM API cost calculator', badge: 'FREE' },
++];
++
++const BADGE_STYLES: Record<string, string> = {
++  FREE: 'border border-emerald-400/40 bg-emerald-400/10 text-emerald-300',
++};
++
++// ------------------------------------------------------------------ JSONForge
++function JsonForge() {
++  const [raw, setRaw] = useState('{"hello": "supremeai","items": [1, 2, 3]}');
++  const [indent, setIndent] = useState(2);
++
++  const result = useMemo(() => {
++    if (!raw.trim()) return { ok: true as const, text: '', error: '' };
++    try {
++      const parsed: unknown = JSON.parse(raw);
++      return { ok: true as const, text: JSON.stringify(parsed, null, indent), error: '' };
++    } catch (e) {
++      return { ok: false as const, text: '', error: e instanceof Error ? e.message : 'Invalid JSON' };
++    }
++  }, [raw, indent]);
++
++  const stats = useMemo(() => {
++    try {
++      const parsed = JSON.parse(raw) as unknown;
++      const count = (v: unknown): number => {
++        if (Array.isArray(v)) return v.reduce<number>((a, x) => a + count(x), 1);
++        if (v && typeof v === 'object') {
++          return Object.values(v as Record<string, unknown>).reduce<number>((a, x) => a + count(x), 1);
++        }
++        return 1;
++      };
++      return { nodes: count(parsed), bytes: new Blob([raw]).size };
++    } catch {
++      return null;
++    }
++  }, [raw]);
++
++  return (
++    <div className="space-y-3">
++      <div className="flex items-center gap-3 text-xs text-white/60">
++        <label className="flex items-center gap-2">
++          Indent
++          <select
++            className="rounded border border-white/15 bg-black/40 px-2 py-1 text-white/80"
++            value={indent}
++            onChange={(e) => setIndent(Number(e.target.value))}
++          >
++            <option value={2}>2</option>
++            <option value={4}>4</option>
++          </select>
++        </label>
++        {stats && (
++          <span className="font-mono">
++            {stats.nodes} nodes · {stats.bytes} bytes
++          </span>
++        )}
++      </div>
++      <div className="grid gap-3 md:grid-cols-2">
++        <textarea
++          className="h-64 w-full resize-none rounded-lg border border-white/15 bg-black/40 p-3 font-mono text-sm text-white/90 outline-none focus:border-emerald-400/50"
++          value={raw}
++          onChange={(e) => setRaw(e.target.value)}
++          spellCheck={false}
++          aria-label="JSON input"
++        />
++        <pre
++          className={`h-64 w-full overflow-auto rounded-lg border p-3 font-mono text-sm ${
++            result.ok
++              ? 'border-emerald-400/30 bg-emerald-400/5 text-emerald-100/90'
++              : 'border-red-400/40 bg-red-400/5 text-red-200'
++          }`}
++        >
++          {result.ok ? result.text || '—' : `✗ ${result.error}`}
++        </pre>
++      </div>
++    </div>
++  );
++}
++
++// ---------------------------------------------------------------- SchemaForge
++function SchemaForge() {
++  const [raw, setRaw] = useState('{"product": {"name": "SupremeAI", "price": 0}}');
++
++  const schema = useMemo(() => {
++    const infer = (v: unknown): Record<string, unknown> => {
++      if (v === null) return { type: 'null' };
++      if (Array.isArray(v)) {
++        return { type: 'array', items: v.length ? infer(v[0]) : {} };
++      }
++      if (typeof v === 'object') {
++        const props: Record<string, unknown> = {};
++        for (const [k, val] of Object.entries(v as Record<string, unknown>)) props[k] = infer(val);
++        return { type: 'object', properties: props };
++      }
++      if (typeof v === 'number') return { type: Number.isInteger(v) ? 'integer' : 'number' };
++      if (typeof v === 'boolean') return { type: 'boolean' };
++      return { type: 'string' };
++    };
++    try {
++      const parsed = JSON.parse(raw) as unknown;
++      return {
++        ok: true as const,
++        text: JSON.stringify(
++          { '@context': 'https://schema.org', '@type': 'Thing', ...infer(parsed) },
++          null,
++          2,
++        ),
++        error: '',
++      };
++    } catch (e) {
++      return { ok: false as const, text: '', error: e instanceof Error ? e.message : 'Invalid JSON' };
++    }
++  }, [raw]);
++
++  return (
++    <div className="space-y-3">
++      <p className="text-xs text-white/60">
++        Paste JSON → get a JSON-LD (schema.org) skeleton. Pure client-side inference.
++      </p>
++      <div className="grid gap-3 md:grid-cols-2">
++        <textarea
++          className="h-64 w-full resize-none rounded-lg border border-white/15 bg-black/40 p-3 font-mono text-sm text-white/90 outline-none focus:border-purple-400/50"
++          value={raw}
++          onChange={(e) => setRaw(e.target.value)}
++          spellCheck={false}
++          aria-label="JSON source"
++        />
++        <pre
++          className={`h-64 w-full overflow-auto rounded-lg border p-3 font-mono text-sm ${
++            schema.ok
++              ? 'border-purple-400/30 bg-purple-400/5 text-purple-100/90'
++              : 'border-red-400/40 bg-red-400/5 text-red-200'
++          }`}
++        >
++          {schema.ok ? schema.text || '—' : `✗ ${schema.error}`}
++        </pre>
++      </div>
++    </div>
++  );
++}
++
++// ------------------------------------------------------------------ CostForge
++function CostForge() {
++  const [inputTokens, setInputTokens] = useState(100000);
++  const [outputTokens, setOutputTokens] = useState(50000);
++  const [inPrice, setInPrice] = useState(0.5); // $ / 1M input tokens
++  const [outPrice, setOutPrice] = useState(1.5); // $ / 1M output tokens
++
++  const inputCost = (inputTokens / 1_000_000) * inPrice;
++  const outputCost = (outputTokens / 1_000_000) * outPrice;
++  const total = inputCost + outputCost;
++
++  const fmt = (n: number) => (n < 0.01 && n > 0 ? `<$0.01` : `$${n.toFixed(4).replace(/\.?0+$/, '')}`);
++
++  return (
++    <div className="space-y-4">
++      <div className="grid gap-4 md:grid-cols-2">
++        {(
++          [
++            ['Input tokens', inputTokens, setInputTokens, inPrice, setInPrice],
++            ['Output tokens', outputTokens, setOutputTokens, outPrice, setOutPrice],
++          ] as const
++        ).map(([label, tokens, setTokens, price, setPrice]) => (
++          <div key={label} className="rounded-lg border border-white/10 bg-black/30 p-4">
++            <div className="mb-2 text-sm text-white/70">{label}</div>
++            <input
++              type="number"
++              min={0}
++              className="w-full rounded border border-white/15 bg-black/40 px-2 py-1 font-mono text-sm text-white/90"
++              value={tokens}
++              onChange={(e) => setTokens(Math.max(0, Number(e.target.value) || 0))}
++            />
++            <label className="mt-3 block text-xs text-white/50">
++              Price ($ per 1M tokens)
++              <input
++                type="number"
++                min={0}
++                step="0.01"
++                className="mt-1 w-full rounded border border-white/15 bg-black/40 px-2 py-1 font-mono text-sm text-white/90"
++                value={price}
++                onChange={(e) => setPrice(Math.max(0, Number(e.target.value) || 0))}
++              />
++            </label>
++          </div>
++        ))}
++      </div>
++      <div className="rounded-lg border border-indigo-400/30 bg-indigo-400/5 p-4 font-mono text-sm text-indigo-100">
++        <div>input: {fmt(inputCost)}</div>
++        <div>output: {fmt(outputCost)}</div>
++        <div className="mt-2 text-lg font-semibold text-white">total: {fmt(total)}</div>
++      </div>
++    </div>
++  );
++}
++
++// ---------------------------------------------------------------------- page
++export default function DevToolsPage() {
++  const [active, setActive] = useState<ToolId>('jsonforge');
++
++  return (
++    <div className="mx-auto max-w-5xl px-4 py-10">
++      <header className="mb-8">
++        <h1 className="text-3xl font-semibold tracking-tight text-white">Free Developer Tools</h1>
++        <p className="mt-2 text-sm text-white/60">
++          Browser-native, zero sign-up, zero telemetry. Inspired by the Infinity dev-tools pattern —
++          built SupremeAI-first.
++        </p>
++      </header>
++
++      <nav className="mb-6 flex flex-wrap gap-2" aria-label="Tool selector">
++        {TOOLS.map((t) => (
++          <button
++            key={t.id}
++            type="button"
++            onClick={() => setActive(t.id)}
++            className={`group rounded-lg border px-4 py-2 text-left transition ${
++              active === t.id
++                ? 'border-emerald-400/50 bg-emerald-400/10'
++                : 'border-white/10 bg-white/[0.03] hover:border-white/25'
++            }`}
++            aria-pressed={active === t.id}
++          >
++            <span className="flex items-center gap-2 text-sm font-medium text-white">
++              {t.name}
++              <span className={`rounded border px-1.5 py-0.5 text-[10px] ${BADGE_STYLES[t.badge]}`}>
++                {t.badge}
++              </span>
++            </span>
++            <span className="block text-xs text-white/50">{t.tagline}</span>
++          </button>
++        ))}
++      </nav>
++
++      <section className="rounded-xl border border-white/10 bg-white/[0.02] p-4 shadow-2xl md:p-6">
++        {active === 'jsonforge' && <JsonForge />}
++        {active === 'schemaforge' && <SchemaForge />}
++        {active === 'costforge' && <CostForge />}
++      </section>
++
++      <p className="mt-6 text-xs text-white/40">
++        All processing happens in your browser. Nothing is uploaded, stored, or logged.
++      </p>
++    </div>
++  );
++}
++
++export { DevToolsPage };
++
+diff --git a/studio/src/store/persistence.ts b/studio/src/store/persistence.ts
+new file mode 100644
+index 00000000..3f775763
+--- /dev/null
++++ b/studio/src/store/persistence.ts
+@@ -0,0 +1,194 @@
++/**
++ * studio/src/store/persistence.ts — Server-flag store migration + rollback contract (Way 22).
++ *
++ * বাংলা: unified store migration — localStorage flag-নির্ভর নয়; সার্ভার-কনফিগার্ড
++ * সেফ মাইগ্রেশন + ব্যর্থ হলে rollback + audit log entry (plan Way 22 contract)।
++ *
++ * Contract:
++ * - Migrations are REGISTERED, ORDERED (vN → vN+1), and IDEMPOTENT.
++ * - The CURRENT version comes from the server config endpoint (fetchStoreConfig),
++ *   NOT from a localStorage flag — the operator controls rollout pace per client.
++ * - If a migration throws, `migrate()` ROLLS BACK: original snapshot is restored
++ *   byte-for-byte, the failed version is recorded as quarantined, and an audit
++ *   entry is emitted. The app continues on the OLD data (never half-migrated).
++ * - Audit log entries are appended to localStorage under AUDIT_KEY (bounded, FIFO)
++ *   AND surfaced via onAudit callback for server-side shipping hooks.
++ *
++ * Self-contained: no zustand import needed at module scope — works with any
++ * store; wire into adminStore/userStore rehydration (INTEGRATION.diff provided).
++ */
++
++export interface StoreMigration {
++  /** Source data version this migration upgrades FROM. */
++  from: number;
++  /** Target version. Must equal from + 1. */
++  to: number;
++  /** Human description (audit trail). */
++  describe: string;
++  /** Pure-ish transformer. Throw to abort + rollback. Mutating a copy is safest. */
++  up: (data: unknown) => unknown;
++}
++
++export interface AuditEntry {
++  at: string; // ISO timestamp
++  event: 'migrate.begin' | 'migrate.ok' | 'migrate.rollback' | 'migrate.quarantine';
++  fromVersion: number | null;
++  toVersion: number | null;
++  detail: string;
++}
++
++export interface MigrationResult {
++  status: 'migrated' | 'unchanged' | 'rolled-back';
++  data: unknown;
++  version: number | null;
++  audit: AuditEntry[];
++}
++
++export const AUDIT_KEY = 'supremeai.store.migration.audit.v1';
++export const DATA_VERSION_KEY = 'supremeai.store.dataVersion';
++const MAX_AUDIT = 50;
++
++/** Server-side rollout contract: return the sanctioned data version for this client. */
++export async function fetchStoreConfig(
++  endpoint = '/api/v1/config/store',
++  fetchImpl: typeof fetch = fetch,
++): Promise<number | null> {
++  try {
++    const res = await fetchImpl(endpoint, { credentials: 'include' });
++    if (!res.ok) return null; // fail-open: server unreachable → do not migrate
++    const json = (await res.json()) as { storeDataVersion?: number };
++    const v = json.storeDataVersion;
++    return typeof v === 'number' && v >= 0 ? v : null;
++  } catch {
++    return null;
++  }
++}
++
++function readAudit(): AuditEntry[] {
++  try {
++    const raw = window.localStorage.getItem(AUDIT_KEY);
++    return raw ? (JSON.parse(raw) as AuditEntry[]) : [];
++  } catch {
++    return [];
++  }
++}
++
++function appendAudit(entries: AuditEntry[], entry: AuditEntry): AuditEntry[] {
++  const next = [...entries, entry].slice(-MAX_AUDIT); // bounded FIFO
++  try {
++    window.localStorage.setItem(AUDIT_KEY, JSON.stringify(next));
++  } catch {
++    /* audit best-effort — never block the migration path */
++  }
++  return next;
++}
++
++export function readDataVersion(storage = window.localStorage): number | null {
++  const raw = storage.getItem(DATA_VERSION_KEY);
++  if (raw === null) return null;
++  const v = Number(raw);
++  return Number.isFinite(v) && v >= 0 ? v : null;
++}
++
++export function writeDataVersion(version: number, storage = window.localStorage): void {
++  storage.setItem(DATA_VERSION_KEY, String(version));
++}
++
++/**
++ * Run all pending migrations server-version-targeted, with rollback-on-failure.
++ *
++ * @param raw            the persisted store payload (JSON-parsed)
++ * @param targetVersion  version sanctioned by the server config (may be null → no-op)
++ * @param migrations     registered ordered migrations
++ */
++export function migrate(
++  raw: unknown,
++  targetVersion: number | null,
++  migrations: StoreMigration[],
++): MigrationResult {
++  const audit: AuditEntry[] = [];
++  const current = readDataVersion();
++
++  if (targetVersion === null || current === null || current >= targetVersion) {
++    audit.push(
++      ...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.begin',
++        fromVersion: current,
++        toVersion: targetVersion,
++        detail: current !== null && current >= (targetVersion ?? 0) ? 'already at/above target' : 'no server target',
++      }).slice(-1),
++    );
++    return { status: 'unchanged', data: raw, version: current, audit };
++  }
++
++  const byFrom = new Map(migrations.map((m) => [m.from, m] as const));
++  let data = raw;
++  let version = current;
++
++  // Snapshot ONCE — rollback restores this exact payload (P3 discipline).
++  const snapshot: string = JSON.stringify({ data, version });
++
++  const beginEntry: AuditEntry = {
++    at: new Date().toISOString(),
++    event: 'migrate.begin',
++    fromVersion: current,
++    toVersion: targetVersion,
++    detail: `snapshot ${snapshot.length} bytes`,
++  };
++  audit.push(...appendAudit([], beginEntry)); // fresh audit thread for this run
++
++  while (version < targetVersion) {
++    const step = byFrom.get(version);
++    if (!step) {
++      // No registered path → rollback (never improvise a migration).
++      audit.push(...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.rollback',
++        fromVersion: version,
++        toVersion: targetVersion,
++        detail: `no migration registered for v${version} → v${version + 1}`,
++      }).slice(-1));
++      const restored = JSON.parse(snapshot) as { data: unknown; version: number };
++      audit.push(...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.quarantine',
++        fromVersion: restored.version,
++        toVersion: null,
++        detail: 'data quarantined at pre-migration snapshot',
++      }).slice(-1));
++      return { status: 'rolled-back', data: restored.data, version: restored.version, audit };
++    }
++    try {
++      data = step.up(structuredClone(data));
++      version = step.to;
++      audit.push(...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.ok',
++        fromVersion: step.from,
++        toVersion: step.to,
++        detail: step.describe,
++      }).slice(-1));
++    } catch (exc) {
++      audit.push(...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.rollback',
++        fromVersion: version,
++        toVersion: targetVersion,
++        detail: `v${step.from}→v${step.to} threw: ${exc instanceof Error ? exc.message : String(exc)}`,
++      }).slice(-1));
++      const restored = JSON.parse(snapshot) as { data: unknown; version: number };
++      audit.push(...appendAudit(audit, {
++        at: new Date().toISOString(),
++        event: 'migrate.quarantine',
++        fromVersion: restored.version,
++        toVersion: null,
++        detail: 'original payload restored byte-for-byte',
++      }).slice(-1));
++      return { status: 'rolled-back', data: restored.data, version: restored.version, audit };
++    }
++  }
++
++  writeDataVersion(version);
++  return { status: 'migrated', data, version, audit };
++}

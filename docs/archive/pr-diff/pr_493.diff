@@ -1,0 +1,627 @@
+diff --git a/docs/S08_MISTAKE_IMMUNITY_SPEC.md b/docs/S08_MISTAKE_IMMUNITY_SPEC.md
+new file mode 100644
+index 00000000..20c03db7
+--- /dev/null
++++ b/docs/S08_MISTAKE_IMMUNITY_SPEC.md
+@@ -0,0 +1,193 @@
++# S08 — Mistake Immunity / Bridge Opener Hardening Spec (task #485)
++
++Status: r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
++Scope: exact hunks for `scripts/ci/auto_bridge_pr_opener.py` (pre-existing,
++operator-side) + regression additions for `tests/test_ci_guards.py`.
++Offline reference + tests ship new-file: `scripts/ci/bridge_opener_hardening_reference.py`,
++`tests/test_s08_mistake_immunity.py` (29 tests). Eliminates the 4
++intake friction points: claim hoarding (#479 enforcement cross-check),
++brittle punctuation check, lossy PR body generation (Knowledge Sharing
++Guard #392 failures), stale base drift (Stale-Base Guard #161).
++
++## 1. Fix 2 — Robust punctuation parser (opener line ~170)
++
++Hunk A — `wo_carries_reflection` regex (task-literal):
++
++```python
++# BEFORE:
++    return bool(re.search(r"Reflection\s*:\s*\S", wo_body or "", re.IGNORECASE))
++# AFTER:
++    return bool(re.search(r"Reflection\s*[:\u2014\u2013-]\s*\S", wo_body or "", re.IGNORECASE))
++```
++
++Accepts colon, em-dash, en-dash, hyphen. Case-insensitive and unanchored
++exactly as the task specifies. Empty body stays fail-closed (False).
++
++## 2. Fix 3 — Lossless PR body transfer
++
++Hunk B — insert after `wo_carries_reflection`:
++
++```python
++EVIDENCE_HEADINGS = ("## Test Evidence", "## Reflection Evidence")
++
++
++def extract_evidence_sections(wo_body: str) -> str:
++    """Lossless evidence transfer (#485): carry the WO's Test Evidence /
++    Reflection Evidence sections VERBATIM (including the
++    (why + alternatives_rejected) heading suffix and the
++    - **why:** / - **alternatives_rejected:** bullets) into the PR body
++    so Knowledge Sharing Guard (#392) passes first-shot. Heading match is
++    prefix-based; each section ends before the next "## " heading.
++    Missing sections -> empty string (PR body shape unchanged)."""
++    sections: list[str] = []
++    lines = (wo_body or "").splitlines()
++    for heading in EVIDENCE_HEADINGS:
++        capture = False
++        buf: list[str] = []
++        for line in lines:
++            stripped = line.strip()
++            if stripped.startswith(heading):
++                capture = True
++                buf.append(line)
++                continue
++            if capture and stripped.startswith("## "):
++                break
++            if capture:
++                buf.append(line)
++        if buf:
++            sections.append("\n".join(buf).strip())
++    return "\n\n".join(sections)
++```
++
++Hunk C — in `create_pr_for_work_order`, build and append the sections:
++
++```python
++# BEFORE (pr_body f-string ends with):
++Refs #{wo_num}
++"""
++# AFTER:
++    evidence_sections = extract_evidence_sections(body)
++    pr_body = f"""## Claim & Work Order
++Submitted via [Bridge Work Order #{wo_num}](https://github.com/{repo}/issues/{wo_num}) on branch `{branch}`.
++
++## Summary & Purpose
++{pr_title}
++
++{closes_line}
++Closes #{wo_num}
++Refs #{wo_num}
++{evidence_sections}"""
++```
++
++## 3. Fix 4 — Fresh-base checkout / auto-sync
++
++Hunk D — insert after `get_existing_pr_for_branch`:
++
++```python
++def fetch_origin_main_sha(repo: str = UPSTREAM_REPO) -> str | None:
++    """#485: latest origin/main SHA before evaluating branches."""
++    cmd = ["git", "ls-remote", f"https://github.com/{repo}.git", "main"]
++    try:
++        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
++        if res.returncode == 0 and res.stdout.strip():
++            return res.stdout.split()[0]
++    except Exception:
++        pass
++    return None
++
++
++def branch_base_status(branch: str, repo: str = UPSTREAM_REPO) -> str | None:
++    """#485: GitHub compare status main...branch
++    (ahead | identical | behind | diverged | None on error)."""
++    cmd = ["gh", "api", f"repos/{repo}/compare/main...{branch}", "--jq", ".status"]
++    try:
++        res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
++        if res.returncode == 0:
++            return res.stdout.strip() or None
++    except Exception:
++        pass
++    return None
++```
++
++Hunk E — in the `run_auto_bridge_pr_opener` loop, after the
++existing-PR skip and before the Claim Gate block:
++
++```python
++        # Stale-Base Guard prevention (#485): evaluate base drift first.
++        status = branch_base_status(branch, repo)
++        if status in ("behind", "diverged"):
++            print(f"  [WO #{wo_num}] Branch base is {status} vs main; "
++                  f"attempting clean rebase onto origin/main.")
++            if auto_open:
++                ok, detail = rebase_branch_onto_main(branch, repo)
++                if not ok:
++                    print(f"    ❌ Stale-base auto-sync failed: {detail}")
++                    actions.append({"wo": wo_num, "branch": branch,
++                                    "status": "skipped-stale-base",
++                                    "error": detail})
++                    continue
++            else:
++                print("    [DRY-RUN] Would rebase onto origin/main.")
++                actions.append({"wo": wo_num, "branch": branch,
++                                "status": "stale-base-plan"})
++                continue
++```
++
++Hunk E2 — helper next to the above (executed only under --auto-open):
++
++```python
++def rebase_branch_onto_main(branch: str, repo: str = UPSTREAM_REPO) -> tuple[bool, str]:
++    """Clean-rebase auto-sync (#485). Force-with-lease keeps the push safe;
++    any conflict aborts the rebase fail-closed (branch left untouched)."""
++    steps = [
++        ["git", "fetch", "origin", "main"],
++        ["git", "rebase", "origin/main", branch],
++    ]
++    for cmd in steps:
++        res = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
++        if res.returncode != 0:
++            subprocess.run(["git", "rebase", "--abort"], capture_output=True)
++            return False, (res.stderr or res.stdout).strip()[:400]
++    push = subprocess.run(["git", "push", "--force-with-lease", "origin", branch],
++                          capture_output=True, text=True, timeout=60)
++    if push.returncode != 0:
++        return False, (push.stderr or push.stdout).strip()[:400]
++    return True, "rebased onto origin/main"
++```
++
++## 4. Fix 1 — Claim-hoarding detection (test bullet 3)
++
++`tests/test_ci_guards.py` gains a deterministic detector over claim
++events (S0.1 marker plane): an agent with more than one live claim
++(ts <= now < expires_at, closed issues excluded) is flagged — enforcing
++task #479's single-active-claim quota at the intake layer. Reference:
++`bridge_opener_hardening_reference.detect_concurrent_claims`
++(deterministic, ascending agents, TTL/closed aware, fail-closed on
++malformed events).
++
++## 5. Tier mapping (task #485 contract)
++
++1. Tier 1: python3 scripts/ci/auto_bridge_pr_opener.py --self-test —
++   Hunk B/C functions are importable; extend run_self_test with the
++   punctuation + evidence-propagation asserts (or keep self-test as-is
++   and rely on tests/test_ci_guards.py Hunk F). Offline parity:
++   python3 -m unittest test_s08_mistake_immunity (29 tests) and
++   bridge_opener_hardening_reference.py --self-test.
++2. Tier 2: --auto-open against mock WOs with em-dash typography —
++   extract_evidence_sections returns the full verbatim sections, so the
++   generated PR body carries why + alternatives_rejected (first-shot
++   Knowledge Sharing Guard pass).
++3. Tier 3: existing guards (branch-naming, issue-ref, duplicate-pr)
++   untouched — all hunks are additive; the only modified line is the
++   Hunk A regex.
++
++## 6. Reference files (pure-new-file lane)
++
++- scripts/ci/bridge_opener_hardening_reference.py — REFLECTION_RE,
++  extract_evidence_sections, fresh_base_verdict/rebase_plan,
++  detect_concurrent_claims, --self-test.
++- tests/test_s08_mistake_immunity.py — 29 offline tests: typography
++  variants (colon/em/en/hyphen, case, spacing), verbatim section
++  transfer incl. heading suffix, section-terminator behavior, verdict
++  mapping, deterministic plans, quota detection (expiry, closed,
++  ordering), fail-closed inputs.
+diff --git a/scripts/ci/bridge_opener_hardening_reference.py b/scripts/ci/bridge_opener_hardening_reference.py
+new file mode 100644
+index 00000000..9dc2ee76
+--- /dev/null
++++ b/scripts/ci/bridge_opener_hardening_reference.py
+@@ -0,0 +1,230 @@
++#!/usr/bin/env python3
++"""Bridge Opener Hardening reference — S08 "Mistake Immunity" (task #485).
++
++Eliminates the 4 operational friction points from autonomous intake:
++1. Claim hoarding (cross-checks task #479's single-active-claim quota).
++2. Brittle punctuation check: has_reflection_evidence must accept
++   colon, em-dash, en-dash, and hyphen after "Reflection".
++3. Lossy PR body generation: the opener must carry the WO's
++   Test Evidence / Reflection Evidence sections VERBATIM into the PR
++   body (why + alternatives_rejected) so Knowledge Sharing Guard #392
++   passes first-shot.
++4. Stale base drift: compare-status verdicts + deterministic rebase
++   plans prevent false-positive Stale-Base Guard (#161) blocks.
++
++This module is the offline-testable reference for the exact hunks in
++docs/S08_MISTAKE_IMMUNITY_SPEC.md (the production edits land in
++scripts/ci/auto_bridge_pr_opener.py and tests/test_ci_guards.py).
++Pure functions only; network adapters stay in the opener.
++
++Self-test: python3 bridge_opener_hardening_reference.py --self-test
++"""
++from __future__ import annotations
++
++import re
++import sys
++from typing import Dict, List, Optional
++
++# --- Single sources of truth (imported by the test suite; never copy) ------
++REFLECTION_RE = re.compile(r"Reflection\s*[:\u2014\u2013-]\s*\S", re.IGNORECASE)
++EVIDENCE_HEADINGS = ("## Test Evidence", "## Reflection Evidence")
++FRESH_COMPARE_STATUSES = ("ahead", "identical")
++MAX_ACTIVE_CLAIMS = 1  # task #479 normative; detector cross-check
++
++
++def has_reflection_evidence(wo_body: str) -> bool:
++    """Robust typography parser (#485 fix 2): colon, em/en-dash, hyphen.
++
++    Case-insensitive; empty/None body -> False (fail-closed, unchanged).
++    """
++    return bool(REFLECTION_RE.search(wo_body or ""))
++
++
++def extract_evidence_sections(wo_body: str) -> str:
++    """Lossless evidence transfer (#485 fix 3).
++
++    Returns the verbatim "## Test Evidence" and "## Reflection Evidence"
++    sections (each ending before the next "## " heading), joined by a
++    blank line, ready to append to the PR body. Missing sections yield
++    an empty string — the PR body then keeps its original shape.
++    """
++    sections: List[str] = []
++    lines = (wo_body or "").splitlines()
++    for heading in EVIDENCE_HEADINGS:
++        capture = False
++        buf: List[str] = []
++        for line in lines:
++            stripped = line.strip()
++            # Prefix match: real WOs use "## Reflection Evidence (why +
++            # alternatives_rejected)" — the suffix must survive verbatim.
++            if stripped.startswith(heading):
++                capture = True
++                buf.append(line)
++                continue
++            if capture and stripped.startswith("## "):
++                break
++            if capture:
++                buf.append(line)
++        if buf:
++            sections.append("\n".join(buf).strip())
++    return "\n\n".join(sections)
++
++
++def fresh_base_verdict(compare_status: Optional[str]) -> str:
++    """Map a GitHub compare (main...branch) status to a base verdict.
++
++    ahead/identical -> "fresh"; behind/diverged -> "stale";
++    unknown/None/error -> "unknown" (fail-closed: treat as stale for
++    planning, never silently open a doomed PR).
++    """
++    if compare_status in FRESH_COMPARE_STATUSES:
++        return "fresh"
++    if compare_status in ("behind", "diverged"):
++        return "stale"
++    return "unknown"
++
++
++def rebase_plan(branch: str, verdict: str, clean: Optional[bool]) -> Dict[str, object]:
++    """Deterministic stale-base plan (#485 fix 4). Data-only output.
++
++    fresh            -> {"action": "none"}
++    stale + clean    -> {"action": "rebase_and_push"}
++    stale + conflict -> {"action": "skip", "reason": "stale-base-conflict"}
++    unknown          -> {"action": "rebase_and_push"} only when a clean
++                        dry-run is proven (clean=True); else skip.
++    """
++    if verdict == "fresh":
++        return {"branch": branch, "action": "none"}
++    if clean is True:
++        return {"branch": branch, "action": "rebase_and_push",
++                "commands": [f"git fetch origin main",
++                             f"git rebase origin/main {branch}",
++                             "git push --force-with-lease origin {branch}"]}
++    return {"branch": branch, "action": "skip",
++            "reason": "stale-base-conflict" if clean is False else "base-unknown"}
++
++
++def detect_concurrent_claims(claim_events: List[dict], now_iso: str,
++                             max_active: int = MAX_ACTIVE_CLAIMS) -> List[dict]:
++    """Flag agents exceeding the active-claim quota (#485 test bullet 3,
++    enforcing #479). Events: {agent, issue, ts, expires_at}. An event is
++    active when ts <= now < expires_at. Deterministic output, ascending
++    agent ids. TTL-expired and closed-issue events do not count.
++    """
++    if not isinstance(now_iso, str) or not re.fullmatch(
++            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", now_iso or ""):
++        raise ValueError("now_iso must be an ISO-8601 Z timestamp")
++    counts: Dict[str, List[int]] = {}
++    for ev in claim_events or []:
++        agent = ev.get("agent")
++        issue = ev.get("issue")
++        if not agent or not isinstance(issue, int):
++            raise ValueError("claim events need agent + integer issue")
++        if ev.get("state") == "closed":
++            continue
++        if ev.get("ts", "") <= now_iso < ev.get("expires_at", ""):
++            counts.setdefault(agent, []).append(issue)
++    flagged = []
++    for agent in sorted(counts):
++        issues = sorted(set(counts[agent]))
++        if len(issues) > max_active:
++            flagged.append({"agent": agent, "active_claims": issues,
++                            "limit": max_active})
++    return flagged
++
++
++def _self_test() -> int:
++    # fix 2: punctuation variants all pass
++    variants = [
++        "Reflection: why this way",
++        "Reflection \u2014 why this way",
++        "Reflection\u2013 why this way",
++        "Reflection- why this way",
++        "reflection:  spaced",
++        "REFLECTION \u2014 UPPER",
++        "prefix Reflection: tail",
++    ]
++    for body in variants:
++        assert has_reflection_evidence(body), body
++    for body in ("", None, "no reflection here", "Reflections: plural noun",
++                 "Reflection\t\n"):
++        assert not has_reflection_evidence(body), repr(body)
++
++    # fix 3: lossless section transfer
++    wo = ("### Task ID\nbridge-x\n\n## Test Evidence\n- a: 1\n- b: 2\n\n"
++          "## Reflection Evidence (why + alternatives_rejected)\n"
++          "- **why:** speed\n- **alternatives_rejected:** slow path\n\n"
++          "## Rollback\nrevert")
++    out = extract_evidence_sections(wo)
++    assert "## Test Evidence" in out and "- a: 1" in out and "- b: 2" in out
++    assert "## Reflection Evidence (why + alternatives_rejected)" in out
++    assert "- **why:** speed" in out and "- **alternatives_rejected:** slow path" in out
++    assert "## Rollback" not in out and "revert" not in out
++    assert out.index("## Test Evidence") < out.index("## Reflection Evidence")
++    # heading ends the previous section
++    assert "\n### Task ID" not in out
++    # missing sections -> empty string, PR body shape unchanged
++    assert extract_evidence_sections("no sections at all") == ""
++    assert extract_evidence_sections("") == ""
++    assert extract_evidence_sections(None) == ""
++    # evidence-first ordering also works
++    wo2 = "## Reflection Evidence\n- **why:** only\n\n## Tail\nx"
++    assert extract_evidence_sections(wo2) == "## Reflection Evidence\n- **why:** only"
++
++    # fix 4: base verdicts + plans
++    assert fresh_base_verdict("ahead") == "fresh"
++    assert fresh_base_verdict("identical") == "fresh"
++    assert fresh_base_verdict("behind") == "stale"
++    assert fresh_base_verdict("diverged") == "stale"
++    assert fresh_base_verdict(None) == "unknown"
++    assert rebase_plan("b", "fresh", None) == {"branch": "b", "action": "none"}
++    p = rebase_plan("b", "stale", True)
++    assert p["action"] == "rebase_and_push" and len(p["commands"]) == 3
++    assert rebase_plan("b", "stale", False)["reason"] == "stale-base-conflict"
++    assert rebase_plan("b", "unknown", None)["action"] == "skip"
++
++    # fix 1: concurrency detection (#479 enforcement cross-check)
++    events = [
++        {"agent": "a", "issue": 900, "ts": "2026-10-17T06:00:00Z",
++         "expires_at": "2026-10-17T06:30:00Z"},
++        {"agent": "a", "issue": 901, "ts": "2026-10-17T06:05:00Z",
++         "expires_at": "2026-10-17T06:35:00Z"},
++        {"agent": "b", "issue": 905, "ts": "2026-10-17T06:00:00Z",
++         "expires_at": "2026-10-17T06:30:00Z"},
++    ]
++    flagged = detect_concurrent_claims(events, "2026-10-17T06:10:00Z")
++    assert flagged == [{"agent": "a", "active_claims": [900, 901], "limit": 1}], flagged
++    # expired lease does not count
++    assert detect_concurrent_claims(events, "2026-10-17T06:40:00Z") == []
++    # closed issues do not count
++    closed = events + [{"agent": "c", "issue": 910, "ts": "2026-10-17T06:00:00Z",
++                        "expires_at": "2026-10-17T06:30:00Z", "state": "closed"}]
++    assert detect_concurrent_claims(closed, "2026-10-17T06:10:00Z") == flagged
++    # deterministic ascending agents
++    two = events + [{"agent": "b", "issue": 906, "ts": "2026-10-17T06:05:00Z",
++                     "expires_at": "2026-10-17T06:35:00Z"}]
++    got = [f["agent"] for f in detect_concurrent_claims(two, "2026-10-17T06:10:00Z")]
++    assert got == ["a", "b"], got
++
++    # fail-closed inputs
++    for bad_now in ("", "not-a-time", None, "2026-10-17 06:00:00"):
++        try:
++            detect_concurrent_claims(events, bad_now)  # type: ignore[arg-type]
++            raise AssertionError("expected ValueError")
++        except ValueError:
++            pass
++    for bad_ev in ([{"agent": "a"}], [{"issue": 1}], [{"agent": 5, "issue": "x"}]):
++        try:
++            detect_concurrent_claims(bad_ev, "2026-10-17T06:00:00Z")
++            raise AssertionError("expected ValueError")
++        except ValueError:
++            pass
++    print("self-test OK: bridge_opener_hardening_reference")
++    return 0
++
++
++if __name__ == "__main__":
++    if "--self-test" in sys.argv:
++        sys.exit(_self_test())
++    print(__doc__)
++    sys.exit(2)
+diff --git a/tests/test_s08_mistake_immunity.py b/tests/test_s08_mistake_immunity.py
+new file mode 100644
+index 00000000..1be137cd
+--- /dev/null
++++ b/tests/test_s08_mistake_immunity.py
+@@ -0,0 +1,186 @@
++#!/usr/bin/env python3
++"""Offline contract tests for Bridge Opener Hardening (#485, S08).
++
++Asserts the "Mistake Immunity" contract the production edits to
++scripts/ci/auto_bridge_pr_opener.py + tests/test_ci_guards.py must
++satisfy: robust reflection typography, lossless evidence transfer,
++stale-base verdicts/plans, and concurrency-limit detection (#479).
++
++Pure stdlib. Run: python3 -m unittest test_s08_mistake_immunity -v
++"""
++import sys
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "ci"))
++
++import bridge_opener_hardening_reference as hard  # noqa: E402
++
++
++def ev(agent, issue, ts, expires, state=None):
++    return {"agent": agent, "issue": issue, "ts": ts, "expires_at": expires,
++            "state": state}
++
++
++class ReflectionTypography(unittest.TestCase):
++    def test_01_colon_passes(self):
++        self.assertTrue(hard.has_reflection_evidence("Reflection: why"))
++
++    def test_02_em_dash_passes(self):
++        self.assertTrue(hard.has_reflection_evidence("Reflection \u2014 why"))
++
++    def test_03_en_dash_passes(self):
++        self.assertTrue(hard.has_reflection_evidence("Reflection\u2013 why"))
++
++    def test_04_hyphen_passes(self):
++        self.assertTrue(hard.has_reflection_evidence("Reflection- why"))
++
++    def test_05_case_and_spacing_insensitive(self):
++        self.assertTrue(hard.has_reflection_evidence("  reflection:\tvalue"))
++
++    def test_06_negative_cases(self):
++        for body in ("", None, "no reflection", "Reflections: plural",
++                     "Reflection without separator", "Reflection\t\n"):
++            self.assertFalse(hard.has_reflection_evidence(body), repr(body))
++
++    def test_06b_substring_match_is_spec_literal(self):
++        # The task mandates the unanchored regex verbatim; "InReflection:"
++        # therefore matches (documented behavior, not a bug).
++        self.assertTrue(hard.has_reflection_evidence("InReflection: glued"))
++
++    def test_07_regex_constant(self):
++        self.assertEqual(hard.REFLECTION_RE.pattern,
++                         r"Reflection\s*[:\u2014\u2013-]\s*\S")
++
++
++class LosslessEvidenceTransfer(unittest.TestCase):
++    WO = ("### Task ID\nbridge-x\n\n## Test Evidence\n- a: 1\n- b: 2\n\n"
++          "## Reflection Evidence (why + alternatives_rejected)\n"
++          "- **why:** speed\n- **alternatives_rejected:** slow path\n\n"
++          "## Rollback\nrevert it")
++
++    def test_08_both_sections_captured_verbatim(self):
++        out = hard.extract_evidence_sections(self.WO)
++        self.assertIn("## Test Evidence\n- a: 1\n- b: 2", out)
++        self.assertIn("## Reflection Evidence (why + alternatives_rejected)\n"
++                      "- **why:** speed\n- **alternatives_rejected:** slow path", out)
++
++    def test_09_why_and_alternatives_survive(self):
++        out = hard.extract_evidence_sections(self.WO)
++        self.assertIn("- **why:** speed", out)
++        self.assertIn("- **alternatives_rejected:** slow path", out)
++
++    def test_10_sections_stop_at_next_heading(self):
++        out = hard.extract_evidence_sections(self.WO)
++        self.assertNotIn("Rollback", out)
++        self.assertNotIn("revert it", out)
++
++    def test_11_non_evidence_body_untouched(self):
++        self.assertEqual(hard.extract_evidence_sections("no sections"), "")
++        self.assertEqual(hard.extract_evidence_sections(""), "")
++        self.assertEqual(hard.extract_evidence_sections(None), "")
++
++    def test_12_heading_suffix_preserved(self):
++        out = hard.extract_evidence_sections(self.WO)
++        self.assertIn("(why + alternatives_rejected)", out)
++
++    def test_13_order_test_evidence_then_reflection(self):
++        out = hard.extract_evidence_sections(self.WO)
++        self.assertLess(out.index("## Test Evidence"),
++                        out.index("## Reflection Evidence"))
++
++    def test_14_single_section_only(self):
++        wo = "## Reflection Evidence\n- **why:** only"
++        self.assertEqual(hard.extract_evidence_sections(wo),
++                         "## Reflection Evidence\n- **why:** only")
++
++    def test_15_indented_heading_variant(self):
++        wo = "## Test Evidence\n body\n\n  ## Reflection Evidence\n- x: 1"
++        out = hard.extract_evidence_sections(wo)
++        self.assertIn("- x: 1", out)
++
++
++class FreshBase(unittest.TestCase):
++    def test_16_verdict_mapping(self):
++        self.assertEqual(hard.fresh_base_verdict("ahead"), "fresh")
++        self.assertEqual(hard.fresh_base_verdict("identical"), "fresh")
++        self.assertEqual(hard.fresh_base_verdict("behind"), "stale")
++        self.assertEqual(hard.fresh_base_verdict("diverged"), "stale")
++        self.assertEqual(hard.fresh_base_verdict(None), "unknown")
++        self.assertEqual(hard.fresh_base_verdict("weird"), "unknown")
++
++    def test_17_plan_fresh_is_noop(self):
++        self.assertEqual(hard.rebase_plan("b", "fresh", None),
++                         {"branch": "b", "action": "none"})
++
++    def test_18_plan_stale_clean_rebases(self):
++        p = hard.rebase_plan("b", "stale", True)
++        self.assertEqual(p["action"], "rebase_and_push")
++        self.assertEqual(len(p["commands"]), 3)
++        self.assertIn("force-with-lease", p["commands"][2])
++
++    def test_19_plan_stale_conflict_skips(self):
++        p = hard.rebase_plan("b", "stale", False)
++        self.assertEqual(p["action"], "skip")
++        self.assertEqual(p["reason"], "stale-base-conflict")
++
++    def test_20_plan_unknown_fails_closed(self):
++        self.assertEqual(hard.rebase_plan("b", "unknown", None)["action"], "skip")
++
++    def test_21_plan_deterministic(self):
++        a = hard.rebase_plan("b", "stale", True)
++        b = hard.rebase_plan("b", "stale", True)
++        self.assertEqual(a, b)
++
++
++class ConcurrencyDetection(unittest.TestCase):
++    EVENTS = [ev("a", 900, "2026-10-17T06:00:00Z", "2026-10-17T06:30:00Z"),
++              ev("a", 901, "2026-10-17T06:05:00Z", "2026-10-17T06:35:00Z"),
++              ev("b", 905, "2026-10-17T06:00:00Z", "2026-10-17T06:30:00Z")]
++
++    def test_22_hoarder_flagged(self):
++        flagged = hard.detect_concurrent_claims(self.EVENTS, "2026-10-17T06:10:00Z")
++        self.assertEqual(flagged, [{"agent": "a", "active_claims": [900, 901],
++                                    "limit": 1}])
++
++    def test_23_expired_leases_do_not_count(self):
++        self.assertEqual(hard.detect_concurrent_claims(
++            self.EVENTS, "2026-10-17T06:40:00Z"), [])
++
++    def test_24_closed_issues_do_not_count(self):
++        events = self.EVENTS + [ev("c", 910, "2026-10-17T06:00:00Z",
++                                   "2026-10-17T06:30:00Z", state="closed")]
++        self.assertEqual(len(hard.detect_concurrent_claims(
++            events, "2026-10-17T06:10:00Z")), 1)
++
++    def test_25_deterministic_agent_order(self):
++        events = self.EVENTS + [ev("b", 906, "2026-10-17T06:05:00Z",
++                                   "2026-10-17T06:35:00Z")]
++        got = [f["agent"] for f in hard.detect_concurrent_claims(
++            events, "2026-10-17T06:10:00Z")]
++        self.assertEqual(got, ["a", "b"])
++
++    def test_26_boundary_exactly_at_expiry_is_inactive(self):
++        self.assertEqual(hard.detect_concurrent_claims(
++            self.EVENTS, "2026-10-17T06:30:00Z"), [])
++
++    def test_27_fail_closed_inputs(self):
++        for bad_now in ("", "not-a-time", None, "2026-10-17 06:00:00"):
++            with self.assertRaises(ValueError):
++                hard.detect_concurrent_claims(self.EVENTS, bad_now)  # type: ignore[arg-type]
++        for bad_ev in ([{"agent": "a"}], [{"issue": 1}],
++                       [{"agent": 5, "issue": "x"}]):
++            with self.assertRaises(ValueError):
++                hard.detect_concurrent_claims(bad_ev, "2026-10-17T06:00:00Z")
++
++
++class Contract(unittest.TestCase):
++    def test_28_constants(self):
++        self.assertEqual(hard.MAX_ACTIVE_CLAIMS, 1)
++        self.assertEqual(hard.EVIDENCE_HEADINGS,
++                         ("## Test Evidence", "## Reflection Evidence"))
++        self.assertIn("identical", hard.FRESH_COMPARE_STATUSES)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

@@ -1,0 +1,496 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 28d20945..7d950abc 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:license-gate && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:claim-markers && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:license-gate && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
+     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+     "test:tool-tombstones": "tsx test_tool_tombstones.ts",
+     "test:devtools-adapter": "tsx test_devtools_adapter.ts",
+@@ -73,6 +73,7 @@
+     "test:bridge-test-wiring": "tsx test_bridge_test_wiring.ts",
+     "test:mcp-mutation-rate-limit": "tsx test_mcp_mutation_rate_limit.ts",
+     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
++    "test:claim-markers": "tsx test_claim_markers.ts",
+     "test:github-pagination": "tsx test_github_pagination.ts",
+     "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
+     "test:license-gate": "tsx test_license_gate.ts",
+diff --git a/infrastructure/mcp-control-plane/src/lib/claim_markers.ts b/infrastructure/mcp-control-plane/src/lib/claim_markers.ts
+new file mode 100644
+index 00000000..3e6e81c7
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/claim_markers.ts
+@@ -0,0 +1,154 @@
++/**
++ * Claim-marker parsing — the pure, offline-testable core of the atomic-claim
++ * plane (label plane + comment plane, Two-Tier Ingress Invariant #430).
++ *
++ * Extracted from src/tools/bridge.tools.ts following the #2344/#621 house
++ * pattern (pure decision cores live in src/lib so regression batteries can
++ * replay live failures offline, zero network).
++ *
++ * THE BUG THIS FIXES (live instances 2026-10-28 → 10-30): the release handler
++ * already writes a machine-readable release marker
++ * (`<!-- atomic-claim-release:issue=N,agent=A,ts=ISO -->`) and older releases
++ * posted the deterministic prose `**Claim released by Agent (`A`)** via Tower
++ * `bridge.work.release` (#621)` — but the parser only ever looked at CLAIM
++ * markers. Result: after every release, `bridge_read_feedback` kept
++ * projecting the dead claim from `latestClaim`, and consumers (pick-path
++ * pre-verify `_feedback_claim_active`, GUARD doctrine, agents) had to
++ * cross-check the comment plane by hand on every read. Three live instances:
++ *   • #2557 c51 released 2026-10-30T01:38Z — projected 5h+ later;
++ *   • #2201 released 2026-10-28 — still projected +38h later;
++ *   • #3093 released 2026-10-30T08:56Z — still projected +18min later.
++ *
++ * EPOCH SEMANTICS: an issue's comments form a claim/release timeline. A
++ * release marker (new hidden marker OR legacy prose — retroactive heal for
++ * every release already on the boards) CLOSES the claim epoch:
++ *   • no claim after the last release → `{ first: null, latest: null }`
++ *     (feedback plane reports `latestClaim: null` — the released truth);
++ *   • claim(s) after the last release → fresh epoch: `latest` = newest
++ *     claim, `first` = FIRST claim at-or-after the last release, so the
++ *     180m total-lease budget resets per epoch ("release + re-claim is the
++ *     honest path", #621 Phase 1.2).
++ * Events are ordered by parsed timestamp (comment array order is only a
++ * tiebreak), so out-of-order API pages parse identically.
++ */
++
++/** One atomic-claim marker (label plane + comment plane, Invariant #430). */
++export interface ParsedClaimMarker {
++  agent: string;
++  issueNumber: number;
++  ts: Date;
++  ttlMinutes: number;
++}
++
++export interface ClaimMarkerView {
++  first: ParsedClaimMarker | null;
++  latest: ParsedClaimMarker | null;
++}
++
++export const ATOMIC_CLAIM_RE =
++  /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/;
++
++/** Machine-readable release marker written by the bridge.work.release handler. */
++export const ATOMIC_CLAIM_RELEASE_RE =
++  /<!--\s*atomic-claim-release:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+?)\s*-->/;
++
++/**
++ * Legacy releases (pre-marker writer) posted this exact prose shape from the
++ * same handler — parsing it retroactively heals every stale projection
++ * already on the boards without any data migration.
++ */
++export const LEGACY_RELEASE_RE =
++  /\*\*Claim released by Agent \(`([A-Za-z0-9_.:-]+)`\)\*\* via Tower `bridge\.work\.release`/;
++
++/**
++ * Parse ALL claim/release events from an issue's comments and return the
++ * CURRENT epoch's markers (latest ts wins; `first` = epoch start for the
++ * total-lease budget). Pure + offline. Fails open: any unparsable or
++ * date-invalid comment is ignored — a dark/malformed plane must not invent
++ * claim state.
++ */
++export function parseClaimMarkers(
++  comments: ReadonlyArray<{ body?: unknown; created_at?: unknown }>,
++): ClaimMarkerView {
++  type ClaimEvent = { kind: "claim" | "release"; ts: Date; claim?: ParsedClaimMarker };
++  const events: ClaimEvent[] = [];
++  for (const c of comments ?? []) {
++    const body = typeof c?.body === "string" ? c.body : "";
++    if (!body) continue;
++
++    // Release events first (one marker comment is exactly one event).
++    const release = ATOMIC_CLAIM_RELEASE_RE.exec(body);
++    if (release) {
++      const ts = new Date(release[3] ?? "");
++      if (!isNaN(ts.getTime())) {
++        events.push({ kind: "release", ts });
++        continue;
++      }
++    } else if (LEGACY_RELEASE_RE.test(body)) {
++      // Legacy prose release — timestamp from the comment's created_at.
++      const ts = new Date(typeof c?.created_at === "string" ? c.created_at : "");
++      if (!isNaN(ts.getTime())) {
++        events.push({ kind: "release", ts });
++        continue;
++      }
++    }
++
++    // Claim markers (current hidden-marker shape, then legacy JSON fallback —
++    // the SAME two shapes the live work.claim handler has always written).
++    const match = ATOMIC_CLAIM_RE.exec(body);
++    if (match) {
++      const ts = new Date(match[3] ?? "");
++      if (!isNaN(ts.getTime())) {
++        events.push({
++          kind: "claim",
++          ts,
++          claim: {
++            issueNumber: parseInt(match[1] ?? "0", 10),
++            agent: match[2] ?? "unknown",
++            ts,
++            ttlMinutes: parseInt(match[4] ?? "30", 10) || 30,
++          },
++        });
++      }
++    } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
++      try {
++        const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
++        const parsed = jsonMatch ? JSON.parse(jsonMatch[1]) : null;
++        const ts = parsed?.claimedAt ? new Date(parsed.claimedAt) : null;
++        if (ts && !isNaN(ts.getTime())) {
++          events.push({
++            kind: "claim",
++            ts,
++            claim: {
++              issueNumber: typeof parsed.issueNumber === "number" ? parsed.issueNumber : 0,
++              agent: typeof parsed.claimedBy === "string" ? parsed.claimedBy : "legacy-agent",
++              ts,
++              ttlMinutes: typeof parsed.leaseMinutes === "number" ? parsed.leaseMinutes : 30,
++            },
++          });
++        }
++      } catch {
++        /* malformed legacy marker — ignore */
++      }
++    }
++  }
++
++  if (events.length === 0) return { first: null, latest: null };
++  events.sort((a, b) => a.ts.getTime() - b.ts.getTime() || 0);
++
++  // Find the last release; everything after it in the current epoch.
++  let lastReleaseIdx = -1;
++  for (let i = events.length - 1; i >= 0; i--) {
++    if (events[i]!.kind === "release") {
++      lastReleaseIdx = i;
++      break;
++    }
++  }
++  const epoch: ParsedClaimMarker[] = [];
++  for (let i = lastReleaseIdx + 1; i < events.length; i++) {
++    const e = events[i]!;
++    if (e.kind === "claim" && e.claim) epoch.push(e.claim);
++  }
++  if (epoch.length === 0) return { first: null, latest: null };
++  return { first: epoch[0]!, latest: epoch[epoch.length - 1]! };
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 1c09ae5c..30a5eb43 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -15,6 +15,9 @@ import {
+ } from "../lib/bridge_test_wiring.js";
+ import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
+ import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
++import {
++  parseClaimMarkers,
++} from "../lib/claim_markers.js";
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+ export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
+@@ -337,67 +340,20 @@ export function filterPublicQueue<T extends { labels: readonly string[] }>(items
+   return { kept, filtered: items.length - kept.length };
+ }
+ 
+-/** One atomic-claim marker (label plane + comment plane, Invariant #430). */
+-export interface ParsedClaimMarker {
+-  agent: string;
+-  issueNumber: number;
+-  ts: Date;
+-  ttlMinutes: number;
+-}
+-
+-export interface ClaimMarkerView {
+-  first: ParsedClaimMarker | null;
+-  latest: ParsedClaimMarker | null;
+-}
+-
+-const ATOMIC_CLAIM_RE = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/;
+-
+-/**
+- * Parse ALL atomic-claim markers from an issue's comments — the SAME regex
+- * and legacy-JSON fallback the live work.claim handler uses (latest ts wins,
+- * first ts = original claim for the total-lease budget). Pure + offline.
+- */
+-export function parseClaimMarkers(comments: ReadonlyArray<{ body?: unknown }>): ClaimMarkerView {
+-  let first: ParsedClaimMarker | null = null;
+-  let latest: ParsedClaimMarker | null = null;
+-  for (const c of comments ?? []) {
+-    const body = typeof c?.body === "string" ? c.body : "";
+-    if (!body) continue;
+-    let marker: ParsedClaimMarker | null = null;
+-    const match = ATOMIC_CLAIM_RE.exec(body);
+-    if (match) {
+-      const ts = new Date(match[3] ?? "");
+-      if (!isNaN(ts.getTime())) {
+-        marker = {
+-          issueNumber: parseInt(match[1] ?? "0", 10),
+-          agent: match[2] ?? "unknown",
+-          ts,
+-          ttlMinutes: parseInt(match[4] ?? "30", 10) || 30,
+-        };
+-      }
+-    } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
+-      // Legacy JSON marker fallback (same shape the live handler accepts).
+-      try {
+-        const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
+-        const parsed = jsonMatch ? JSON.parse(jsonMatch[1]) : null;
+-        const ts = parsed?.claimedAt ? new Date(parsed.claimedAt) : null;
+-        if (ts && !isNaN(ts.getTime())) {
+-          marker = {
+-            issueNumber: typeof parsed.issueNumber === "number" ? parsed.issueNumber : 0,
+-            agent: typeof parsed.claimedBy === "string" ? parsed.claimedBy : "legacy-agent",
+-            ts,
+-            ttlMinutes: typeof parsed.leaseMinutes === "number" ? parsed.leaseMinutes : 30,
+-          };
+-        }
+-      } catch { /* malformed legacy marker — ignore */ }
+-    }
+-    if (marker) {
+-      if (!latest || marker.ts > latest.ts) latest = marker;
+-      if (!first || marker.ts < first.ts) first = marker;
+-    }
+-  }
+-  return { first, latest };
+-}
++// Claim-marker parsing extracted to src/lib/claim_markers.ts (house pattern:
++// pure decision cores live in src/lib, replayable offline). The lib is
++// EPOCH-AWARE: release markers (new `<!-- atomic-claim-release:... -->` and
++// legacy prose) CLOSE the claim epoch — fixes the release-blind-spot where
++// latestClaim kept projecting a released claim (live instances #2557 c51,
++// #2201, #3093). Re-exported here for API compat.
++export {
++  parseClaimMarkers,
++  ATOMIC_CLAIM_RE,
++  ATOMIC_CLAIM_RELEASE_RE,
++  LEGACY_RELEASE_RE,
++} from "../lib/claim_markers.js";
++import type { ClaimMarkerView, ParsedClaimMarker } from "../lib/claim_markers.js";
++export type { ClaimMarkerView, ParsedClaimMarker };
+ 
+ export const CLAIM_LEASE_MINUTES = 30;
+ export const MAX_TOTAL_LEASE_MINUTES = 180;
+@@ -1706,36 +1662,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           { headers, timeoutMs: 15_000 }
+         );
+ 
+-        let latestClaim: { agent: string; ts: Date; ttlMinutes: number } | null = null;
+-        if (commentsRes.ok && Array.isArray(commentsRes.data)) {
+-          for (const c of commentsRes.data) {
+-            const body = c.body || "";
+-            // Match <!-- atomic-claim:issue=123,agent=xyz,ts=...,ttl=30m --> or legacy JSON marker
+-            const match = /<!--\s*atomic-claim:issue=(\d+),agent=([A-Za-z0-9_.:-]+),ts=([^,]+),ttl=(\d+)m\s*-->/.exec(body);
+-            if (match) {
+-              const claimTs = new Date(match[3]);
+-              if (!isNaN(claimTs.getTime())) {
+-                if (!latestClaim || claimTs > latestClaim.ts) {
+-                  latestClaim = { agent: match[2], ts: claimTs, ttlMinutes: parseInt(match[4], 10) || 30 };
+-                }
+-              }
+-            } else if (body.includes("<!-- atomic-claim -->") && body.includes('"claimedAt"')) {
+-              // Legacy JSON marker fallback
+-              try {
+-                const jsonMatch = /```json\s*(\{[\s\S]*?\})\s*```/.exec(body);
+-                if (jsonMatch) {
+-                  const parsed = JSON.parse(jsonMatch[1]);
+-                  const claimTs = new Date(parsed.claimedAt);
+-                  if (!isNaN(claimTs.getTime())) {
+-                    if (!latestClaim || claimTs > latestClaim.ts) {
+-                      latestClaim = { agent: parsed.claimedBy || "legacy-agent", ts: claimTs, ttlMinutes: parsed.leaseMinutes || 30 };
+-                    }
+-                  }
+-                }
+-              } catch {}
+-            }
+-          }
+-        }
++        // Step 2b: parse the claim epoch via the SHARED parser (SSOT).
++        // The inline duplicate here ignored release markers — the divergence
++        // class behind the release-blind-spot: after bridge.work.release the
++        // stale claim stayed "live" for up to its full TTL, so fresh claimers
++        // hit CLAIM_CONFLICT_OTHER inside the zombie window. The epoch-aware
++        // lib closes the epoch on release markers AND legacy release prose.
++        const claimEpoch =
++          commentsRes.ok && Array.isArray(commentsRes.data)
++            ? parseClaimMarkers(commentsRes.data ?? [])
++            : { first: null, latest: null };
++        const latestClaim = claimEpoch.latest;
+ 
+         const now = new Date();
+         const ttlMs = (latestClaim?.ttlMinutes || 30) * 60 * 1000;
+diff --git a/infrastructure/mcp-control-plane/test_claim_markers.ts b/infrastructure/mcp-control-plane/test_claim_markers.ts
+new file mode 100644
+index 00000000..2a1352e2
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_claim_markers.ts
+@@ -0,0 +1,165 @@
++/**
++ * Claim-marker epoch regression battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Replays the live release-blind-spot instances (2026-10-28 → 10-30):
++ * bridge_read_feedback kept projecting a released claim from `latestClaim`
++ * because parseClaimMarkers only parsed CLAIM markers while the release
++ * handler wrote (a) a machine-readable release marker and (b) legacy prose.
++ * Live cohort:
++ *   • #2557 c51 released 2026-10-30T01:38Z — projected 5h+ later;
++ *   • #2201 released 2026-10-28T19:14Z (legacy prose) — projected +38h;
++ *   • #3093 released 2026-10-30T08:56Z (new marker) — projected +18min.
++ * The fix: epoch-aware parsing — a release closes the claim epoch; claims
++ * after the last release start a fresh one (total-lease budget resets).
++ */
++import {
++  parseClaimMarkers,
++  type ParsedClaimMarker,
++} from "./src/lib/claim_markers.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function eqMarker(
++  m: ParsedClaimMarker | null,
++  agent: string | null,
++  issueNumber: number | null,
++  ttlMinutes: number | null,
++): boolean {
++  if (m === null) return agent === null && issueNumber === null && ttlMinutes === null;
++  return (
++    m.agent === agent &&
++    (issueNumber === null || m.issueNumber === issueNumber) &&
++    (ttlMinutes === null || m.ttlMinutes === ttlMinutes)
++  );
++}
++
++const CLAIM_A = "<!-- atomic-claim:issue=3093,agent=zai-cron-agent-loop,ts=2026-10-30T08:55:28Z,ttl=30m -->\n**Claimed by Agent (`zai-cron-agent-loop`)** via Tower `work.claim` (GRANT_NEW).";
++const RELEASE_NEW = "<!-- atomic-claim-release:issue=3093,agent=zai-cron-agent-loop,ts=2026-10-30T08:56:10Z -->\n**Claim released by Agent (`zai-cron-agent-loop`)** via Tower `bridge.work.release` (#621).";
++const RELEASE_LEGACY = "**Claim released by Agent (`zai-cron-agent-478710`)** via Tower `bridge.work.release` (#621)\n\n- Status label restored to `status:unclaimed` (best-effort).";
++const CLAIM_LEGACY_JSON = "<!-- atomic-claim -->\n```json\n{\"issueNumber\": 2201, \"claimedBy\": \"zai-cron-agent-478710\", \"claimedAt\": \"2026-10-28T18:44:37Z\", \"leaseMinutes\": 30}\n```";
++
++console.log("1. Back-compat: claim-only timeline keeps current semantics");
++{
++  const v = parseClaimMarkers([{ body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" }]);
++  check("latest = the claim", eqMarker(v.latest, "zai-cron-agent-loop", 3093, 30));
++  check("first = the claim (budget epoch start)", eqMarker(v.first, "zai-cron-agent-loop", 3093, 30));
++}
++
++console.log("2. Live instance #3093: new release marker closes the epoch");
++{
++  const v = parseClaimMarkers([
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++  ]);
++  check("latestClaim = null after release", v.latest === null, JSON.stringify(v.latest));
++  check("first = null (epoch closed)", v.first === null);
++}
++
++console.log("3. Live instance #2201: legacy prose release retroactively heals");
++{
++  const v = parseClaimMarkers([
++    { body: CLAIM_LEGACY_JSON, created_at: "2026-10-28T18:44:37Z" },
++    { body: RELEASE_LEGACY, created_at: "2026-10-28T19:14:37Z" },
++  ]);
++  check("latestClaim = null after legacy prose release", v.latest === null, JSON.stringify(v.latest));
++  check("first = null", v.first === null);
++}
++
++console.log("4. Live instance #2557 (c51): prose release after legacy JSON claim");
++{
++  const v = parseClaimMarkers([
++    { body: CLAIM_LEGACY_JSON, created_at: "2026-10-30T01:38:00Z" },
++    { body: RELEASE_LEGACY, created_at: "2026-10-30T01:38:59Z" },
++  ]);
++  check("released claim no longer projected", v.latest === null);
++}
++
++console.log("5. Re-claim after release opens a FRESH epoch (budget reset)");
++{
++  const claimB = "<!-- atomic-claim:issue=3093,agent=contributor-agent,ts=2026-10-30T09:30:00Z,ttl=30m -->";
++  const v = parseClaimMarkers([
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++    { body: claimB, created_at: "2026-10-30T09:30:00Z" },
++  ]);
++  check("latest = new claim", eqMarker(v.latest, "contributor-agent", 3093, 30));
++  check("first = new claim (180m budget resets per epoch)", eqMarker(v.first, "contributor-agent", 3093, 30));
++}
++
++console.log("6. Cross-agent churn: A claims, releases, B claims");
++{
++  const claimB = "<!-- atomic-claim:issue=2557,agent=cron-484748-c51,ts=2026-10-30T01:38:00Z,ttl=30m -->";
++  const v = parseClaimMarkers([
++    { body: "<!-- atomic-claim:issue=2557,agent=c34-agent,ts=2026-10-30T00:44:00Z,ttl=30m -->", created_at: "2026-10-30T00:44:00Z" },
++    { body: claimB, created_at: "2026-10-30T01:38:00Z" },
++    { body: "<!-- atomic-claim-release:issue=2557,agent=cron-484748-c51,ts=2026-10-30T01:38:59Z -->", created_at: "2026-10-30T01:38:59Z" },
++  ]);
++  check("latestClaim = null (released last)", v.latest === null);
++}
++
++console.log("7. Out-of-order comment pages parse identically (ts ordering)");
++{
++  const a = parseClaimMarkers([
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++  ]);
++  const b = parseClaimMarkers([
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++  ]);
++  check("array order irrelevant", (a.latest === null) === (b.latest === null) && a.latest === null && b.latest === null);
++}
++
++console.log("8. Zombie-claim window closed: claim + release, then SAME-agent re-claim");
++{
++  const reclaim = "<!-- atomic-claim:issue=3093,agent=zai-cron-agent-loop,ts=2026-10-30T09:00:00Z,ttl=30m -->";
++  const v = parseClaimMarkers([
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++    { body: reclaim, created_at: "2026-10-30T09:00:00Z" },
++  ]);
++  check("re-claim inside old TTL window is the live epoch", eqMarker(v.latest, "zai-cron-agent-loop", 3093, 30));
++  check("epoch start = re-claim, not original claim (no budget carry-over)", eqMarker(v.first, "zai-cron-agent-loop", 3093, 30));
++}
++
++console.log("9. Fails open: garbage, empty, malformed, release-before-claim");
++{
++  const empty = parseClaimMarkers([]);
++  check("empty comments → null view", empty.latest === null && empty.first === null);
++  const garbage = parseClaimMarkers([
++    { body: "total nonsense", created_at: "2026-10-30T08:00:00Z" },
++    { body: RELEASE_LEGACY, created_at: "not-a-date" },
++    { body: "<!-- atomic-claim-release:issue=1,agent=x,ts=invalid -->", created_at: "2026-10-30T08:00:00Z" },
++  ]);
++  check("malformed events ignored, epoch closed with no claims → null", garbage.latest === null && garbage.first === null);
++  const releaseFirst = parseClaimMarkers([
++    { body: RELEASE_NEW, created_at: "2026-10-30T08:56:10Z" },
++    { body: CLAIM_A, created_at: "2026-10-30T08:55:28Z" },
++  ]);
++  // claim ts (08:55) < release ts (08:56): release closes the epoch even
++  // though the claim COMMENT appears later in a sorted-out array.
++  check("earlier claim does not resurrect after later release", releaseFirst.latest === null);
++}
++
++console.log("10. Malformed legacy JSON claim ignored, valid one still parsed");
++{
++  const bad = "<!-- atomic-claim -->\n```json\n{\"claimedBy\": \"x\", \"claimedAt\": \"nope\"}\n```";
++  const v = parseClaimMarkers([{ body: bad, created_at: "2026-10-30T08:00:00Z" }]);
++  check("invalid claimedAt → no marker", v.latest === null);
++  const ok = parseClaimMarkers([{ body: CLAIM_LEGACY_JSON, created_at: "2026-10-28T18:44:37Z" }]);
++  check("valid legacy JSON claim parses", eqMarker(ok.latest, "zai-cron-agent-478710", 2201, 30));
++}
++
++if (failures > 0) {
++  console.error(`\nFAIL — ${failures} check(s) failed`);
++  process.exit(1);
++}
++console.log("\nPASS — claim-marker epoch battery green");

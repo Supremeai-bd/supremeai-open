@@ -1,0 +1,1225 @@
+diff --git a/docs/S11_SURGICAL_ADOPTION_SPEC.md b/docs/S11_SURGICAL_ADOPTION_SPEC.md
+new file mode 100644
+index 00000000..391fe163
+--- /dev/null
++++ b/docs/S11_SURGICAL_ADOPTION_SPEC.md
+@@ -0,0 +1,110 @@
++# S11 — Surgical Code & Pattern Extraction Engine
++
++Implements **#498** — `feat(agents): [surgical-adoption]` (companion of
++#489/S09 WO #499 and #497/S10 WO #501).
++
++## 1. Deliverables
++
++| File | Kind | Purpose |
++|---|---|---|
++| `scripts/agents/scout_extractor.py` | new | Gold Pearl extraction engine: Python AST slicing with usage-driven import analysis; TS brace-balanced slicing; native zero-bloat fitting (stdlib-only adaptation stubs with provenance headers); `scout_transplant_patch` generator (atomic single-new-file patches into canonical satellites); the two live benchmark blueprints (REA + Moli) as structured doctrine. Extraction SSOT for the Gold Pearl budget constants. |
++| `scripts/ci/vendored_tree_guard.py` | new | CI sanitization guard (criterion 1): deterministic R1-R5 rules flag PRs adding large 3rd-party vendored trees; exit 0 clean / 2 violation, fail-closed on malformed input. |
++| `tests/test_s11_surgical_adoption.py` | new | 28 offline contract tests (dual-mode), incl. CLI smoke tests with real exit codes. |
++| This document | new | Spec + pipeline wiring appendix. |
++
++## 2. Dimension 1 — "কতটুকু দরকার" (need-driven scope slicing)
++
++`extract_python_slice(source, target)` — stdlib `ast`: unique module-level
++function/class by exact name; returns the exact source segment, line span
++and the imports **actually used** inside the slice (module-level import
++bindings referenced by slice names). Missing, ambiguous and over-budget
++targets raise `ExtractionError`.
++
++`extract_typescript_slice(source, target)` — deterministic brace-balanced
++scan over `function|class|const|let|var` declarations; no tree-sitter
++dependency.
++
++**Gold Pearl budget**: `GOLD_PEARL_MIN_LINES=20`, `GOLD_PEARL_MAX_LINES=100`
++(extraction SSOT; the CI guard and tests import these). A 19-line or
++101-line slice is rejected — slice smaller, never vendor.
++
++## 3. Dimension 2 — "কীভাবে দরকার" (native zero-bloat fitting)
++
++`generate_adaptation_stub()` emits a self-contained Python stub: language-
++aware provenance header (github repo, upstream license, component, line
++count), only allowlisted stdlib imports, fail-closed error contracts
++preserved as authored. `verify_stub_standalone()` machine-verifies the
++result: Python — AST import allowlist + compile check; TypeScript — no
++network/dynamic-loader calls, comment-stripped brace balance. Foreign
++markers (`import requests`, `require(`, playwright, torch, …) are rejected
++everywhere. Uniform failure surface: everything raises
++`ExtractionError` (SyntaxError is wrapped).
++
++`generate_transplant_patch(satellite, path, stub)` — atomic
++**single-new-file** patch (`new_file=True` is structural, not a flag),
++routed to `CANONICAL_SATELLITES`, unsafe paths rejected, stub re-verified
++at transplant time with language inferred from the path suffix.
++
++## 4. Live Benchmark Blueprints (criterion: concrete zero-bloat plans)
++
++`BENCHMARK_BLUEPRINTS` — validated structured doctrine, each carrying the
++mandatory কতটুকু দরকার / কীভাবে দরকার pair, native target, zero-bloat plan
++and prohibited list:
++
++* **REA Evidence Ledger** (`morluto/rea`, MIT) → extract the ~30-line
++  EvidenceRecord interface + SHA-256 fingerprinting as a stdlib-only
++  Python dataclass; no JVM/Ghidra runtime, no engine vendoring.
++* **Moli Semantic Tree** (`lexmount/moli`, Apache-2.0) → re-express the
++  DOM→semantic-tree filter in TypeScript for the browser satellite over a
++  structured DOM snapshot; no Cargo tree, no headless binary bundling,
++  unknown node types fail closed.
++
++## 5. Vendored-Tree Guard (criterion 1 — CI sanitization)
++
++Deterministic rules over the structured `{path, bytes}` added-file list:
++
++| Rule | Trigger |
++|---|---|
++| R1 | path under `vendor/`, `third_party/`, `node_modules/`, `bower_components/`, `vendors/` |
++| R2 | single addition > 512 KiB or binary-library suffix (`.jar`, `.wasm`, `.node`, …) |
++| R3 | > 50 new files under one first-level directory |
++| R4 | dependency lockfile added (package-lock/yarn/pnpm/poetry/Cargo/Pipfile/composer) |
++| R5 | total added mass > 2 MiB |
++
++Exit `0` clean, `2` violation; malformed input is a violation
++(fail-closed). Exactly-at-limit additions pass (tested).
++
++## 6. Appendix — pipeline wiring (protected path, spec hunk)
++
++`.github/workflows/pipeline.yml` is outside the bridge lane; the
++maintainer applies the equivalent step (pattern identical to the landed
++CI_GUARDS appendix):
++
++```yaml
++  vendored_tree_guard:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with: { fetch-depth: 0 }
++      - name: Zero-Bloat Vendored-Tree Sanitization (#498)
++        run: |
++          git diff --numstat "$BASE_SHA..$HEAD_SHA" \
++            | awk '$3 != "" {print $3}' \
++            | while read -r f; do
++                printf '{"path": "%s", "bytes": %s}\n' "$f" \
++                  "$(stat -c%s "$f" 2>/dev/null || echo 0)";
++              done \
++            | jq -s . \
++            | python3 scripts/ci/vendored_tree_guard.py
++```
++
++## 7. Test evidence
++
++28 offline tests green in dual mode (`python3 -m unittest
++test_s11_surgical_adoption -v` / `pytest -q`), `--self-test` green on both
++new modules. Coverage: slice exactness & sibling isolation, budget bounds,
++ambiguity/missing fail-closed, TS balancing, usage-driven imports,
++standalone stub execution (real `exec`) incl. the fail-closed empty-payload
++contract, foreign-import rejection, atomic transplant + satellite/unsafe-
++path gates, guard R1-R5 + boundary + CLI exit codes (0/2), blueprint
++doctrine for both live benchmarks.
+diff --git a/scripts/agents/scout_extractor.py b/scripts/agents/scout_extractor.py
+new file mode 100644
+index 00000000..97780968
+--- /dev/null
++++ b/scripts/agents/scout_extractor.py
+@@ -0,0 +1,584 @@
++#!/usr/bin/env python3
++"""S11 — Surgical Code & Pattern Extraction Engine (issue #498).
++
++The extraction arm of the Ecosystem Scout. Companion of #489 (S09 dispatch
++matrix), #497 (S10 scout agent) — advances both.
++
++Workflow ("কতটুকু দরকার, কীভাবে দরকার — সার্জিক্যাল এক্সট্রাকশন ইঞ্জিন"):
++
++    DIMENSION 1 "কতটুকু দরকার"  — need-driven scope slicing:
++        isolate the 1% Gold Algorithm (20-100 lines of pure logic),
++        discard the 99% bloat (GUI, CLI, heavy engines).
++    DIMENSION 2 "কীভাবে দরকার" — native zero-bloat fitting:
++        strip foreign dependencies, re-write in native TS/Python,
++        enforce fail-closed error contracts.
++
++Deterministic, fail-closed contract:
++
++  * `extract_python_slice` / `extract_typescript_slice` locate a target
++    function/class and return the exact source segment with its imports —
++    missing targets, ambiguous targets and over-budget slices all raise;
++  * `generate_adaptation_stub` emits a self-contained, provenance-attributed
++    stub whose only imports are a stdlib allowlist (zero foreign
++    network/binary dependencies — machine-verified by
++    `verify_stub_standalone`);
++  * `generate_transplant_patch` produces a minimal atomic single-new-file
++    patch routed to a canonical federation satellite;
++  * the two live benchmark patterns (REA evidence ledger, Moli semantic
++    tree) ship as structured zero-bloat blueprints (`BENCHMARK_BLUEPRINTS`).
++
++Pure stdlib. Run: python3 scripts/agents/scout_extractor.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import ast
++import json
++import re
++from dataclasses import dataclass, field
++from typing import Final
++
++# ---------------------------------------------------------------------------
++# Doctrine constants (extraction SSOT — the CI guard imports these)
++# ---------------------------------------------------------------------------
++
++GOLD_PEARL_MIN_LINES: Final = 20
++GOLD_PEARL_MAX_LINES: Final = 100
++
++CANONICAL_SATELLITES: Final = (
++    "supremeai-open",
++    "supremeai-browser",
++    "supremeai-agents",
++    "supremeai-mcp-control-plane",
++    "supremeai-studio",
++    "supremeai-sdk",
++    "supremeai-infra",
++)
++
++#: The only imports a transplanted stub may carry: Python stdlib.
++STDLIB_ALLOWLIST: Final = frozenset({
++    "hashlib", "json", "math", "re", "dataclasses", "typing", "itertools",
++    "functools", "collections", "enum", "abc", "io", "os.path", "pathlib",
++    "struct", "time", "unicodedata", "zlib", "base64", "binascii", "bisect",
++    "heapq", "random", "secrets", "shutil", "textwrap", "uuid",
++})
++
++#: Foreign-dependency red flags inside a stub (zero-bloat fitting).
++FOREIGN_DEPENDENCY_MARKERS: Final = (
++    "import requests", "import numpy", "import pandas", "import torch",
++    "import flask", "import django", "from playwright",
++    "require(", "from 'playwright", 'from "playwright',
++)
++
++PROVENANCE_HEADER_TEMPLATE: Final = (
++    "/**\n"
++    " * Concept / algorithm adapted from: github.com/{repository}\n"
++    " * Upstream License: {license}\n"
++    " * Adapted for SupremeAI Federation lightweight satellite runtime.\n"
++    " * Surgical extraction: {component} ({lines} lines, zero-dependency).\n"
++    " */"
++)
++
++PROVENANCE_HEADER_PY: Final = (
++    "# Concept / algorithm adapted from: github.com/{repository}\n"
++    "# Upstream License: {license}\n"
++    "# Adapted for SupremeAI Federation lightweight satellite runtime.\n"
++    "# Surgical extraction: {component} ({lines} lines, zero-dependency)."
++)
++
++
++class ExtractionError(ValueError):
++    """Raised when a Gold Pearl slice cannot be isolated (fail-closed)."""
++
++
++# ---------------------------------------------------------------------------
++# DIMENSION 1 — "কতটুকু দরকার" (need-driven scope slicing)
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class ExtractedSlice:
++    language: str                  # "python" | "typescript"
++    target_name: str
++    source_segment: str
++    line_start: int
++    line_count: int
++    imports_needed: tuple[str, ...]
++
++    @property
++    def budget_ok(self) -> bool:
++        return GOLD_PEARL_MIN_LINES <= self.line_count <= GOLD_PEARL_MAX_LINES
++
++
++def _check_budget(slice_: ExtractedSlice) -> ExtractedSlice:
++    if not slice_.budget_ok:
++        raise ExtractionError(
++            f"Gold Pearl budget is {GOLD_PEARL_MIN_LINES}-"
++            f"{GOLD_PEARL_MAX_LINES} lines; {slice_.target_name!r} spans "
++            f"{slice_.line_count} lines — slice smaller, never vendor"
++        )
++    return slice_
++
++
++def extract_python_slice(source: str, target_name: str) -> ExtractedSlice:
++    """Isolate a function/class by exact name via the stdlib AST."""
++    if not source.strip():
++        raise ExtractionError("empty source")
++    tree = ast.parse(source)
++    lines = source.splitlines()
++    matches = [
++        node for node in tree.body
++        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
++        and node.name == target_name
++    ]
++    if not matches:
++        raise ExtractionError(f"target {target_name!r} not found at module level")
++    if len(matches) > 1:
++        raise ExtractionError(
++            f"target {target_name!r} is ambiguous ({len(matches)} module-level "
++            "definitions) — extraction requires an exact, unique slice"
++        )
++    node = matches[0]
++    segment = "\n".join(lines[node.lineno - 1:node.end_lineno])
++    # Imports needed = module-level import bindings actually referenced by
++    # name inside the slice (deterministic usage analysis).
++    bindings: dict[str, str] = {}
++    for stmt in ast.walk(tree):
++        if isinstance(stmt, ast.Import):
++            for alias in stmt.names:
++                bindings[alias.asname or alias.name.split(".")[0]] = \
++                    alias.name.split(".")[0]
++        elif isinstance(stmt, ast.ImportFrom) and stmt.module:
++            for alias in stmt.names:
++                if alias.name == "*":
++                    continue
++                bindings[alias.asname or alias.name] = stmt.module.split(".")[0]
++    used = {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
++    used |= {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
++    imports_needed = sorted({mod for name, mod in bindings.items()
++                             if name in used})
++    return _check_budget(ExtractedSlice(
++        language="python",
++        target_name=target_name,
++        source_segment=segment,
++        line_start=node.lineno,
++        line_count=node.end_lineno - node.lineno + 1,
++        imports_needed=tuple(imports_needed),
++    ))
++
++
++_TS_DECL_RE = re.compile(
++    r"^[ \t]*(?:export\s+)?(?:default\s+)?(?:async\s+)?"
++    r"(?:function\*?|class|const|let|var)\s+"
++    r"(?P<name>[A-Za-z_$][\w$]*)",
++)
++
++
++def extract_typescript_slice(source: str, target_name: str) -> ExtractedSlice:
++    """Isolate a TS function/class/const by brace-balanced scanning.
++
++    Deterministic stdlib heuristic (no tree-sitter): match the declaration
++    line exactly, then balance braces/brackets/parens from the first `{`
++    (or the end of a single-expression arrow/const declaration).
++    """
++    if not source.strip():
++        raise ExtractionError("empty source")
++    lines = source.splitlines()
++    decl_idx = [
++        i for i, line in enumerate(lines)
++        if (m := _TS_DECL_RE.match(line)) and m.group("name") == target_name
++    ]
++    if not decl_idx:
++        raise ExtractionError(f"target {target_name!r} not found")
++    if len(decl_idx) > 1:
++        raise ExtractionError(f"target {target_name!r} is ambiguous "
++                              f"({len(decl_idx)} declarations)")
++    start = decl_idx[0]
++    depth = 0
++    seen_open = False
++    end = start
++    for i in range(start, len(lines)):
++        for ch in lines[i]:
++            if ch in "{[":
++                depth += 1
++                seen_open = True
++            elif ch in "}]":
++                depth -= 1
++        if seen_open and depth <= 0:
++            end = i
++            break
++        if not seen_open and (lines[i].rstrip().endswith(";")
++                              or lines[i].rstrip().endswith(",")):
++            end = i
++            break
++    else:
++        raise ExtractionError(f"unbalanced braces for {target_name!r}")
++    segment = "\n".join(lines[start:end + 1])
++    imports_needed = tuple(sorted({
++        m.group(1) for line in lines[:start] + lines[end + 1:]
++        if (m := re.match(r"\s*import\s+(?:.*\s+from\s+)?['\"]([^'\"]+)['\"]", line))
++    })) if False else ()  # slice-internal imports only; header imports excluded
++    slice_imports = tuple(sorted({
++        m.group(1)
++        for line in segment.splitlines()
++        if (m := re.match(r"\s*import\s+(?:.*\s+from\s+)?['\"]([^'\"]+)['\"]", line))
++    }))
++    return _check_budget(ExtractedSlice(
++        language="typescript",
++        target_name=target_name,
++        source_segment=segment,
++        line_start=start + 1,
++        line_count=len(segment.splitlines()),
++        imports_needed=slice_imports,
++    ))
++
++
++# ---------------------------------------------------------------------------
++# DIMENSION 2 — "কীভাবে দরকার" (native zero-bloat fitting)
++# ---------------------------------------------------------------------------
++
++
++def provenance_header(repository: str, license_name: str, component: str,
++                      lines: int, language: str = "typescript") -> str:
++    if not repository or not license_name or not component:
++        raise ExtractionError("provenance header requires repository, "
++                              "license and component")
++    template = (PROVENANCE_HEADER_PY if language == "python"
++                else PROVENANCE_HEADER_TEMPLATE)
++    return template.format(
++        repository=repository, license=license_name,
++        component=component, lines=lines)
++
++
++def generate_adaptation_stub(slice_: ExtractedSlice, repository: str,
++                             license_name: str) -> str:
++    """Emit a self-contained native stub with provenance attribution."""
++    if slice_.language != "python":
++        raise ExtractionError(
++            "native zero-bloat fitting transcribes to python for "
++            "scripts/agents|ci payloads; typescript stubs are routed via "
++            "generate_transplant_patch (control-plane/studio/sdk)"
++        )
++    foreign = [imp for imp in slice_.imports_needed
++               if imp not in STDLIB_ALLOWLIST]
++    if foreign:
++        raise ExtractionError(
++            f"slice needs non-stdlib imports {foreign} — strip or re-write "
++            "them natively before transplant (zero-bloat doctrine)"
++        )
++    header = provenance_header(repository, license_name,
++                               slice_.target_name, slice_.line_count,
++                               language="python")
++    import_block = "\n".join(f"import {imp}"
++                             for imp in slice_.imports_needed)
++    body = slice_.source_segment
++    if "raise NotImplementedError" not in body and "def " in body:
++        pass  # fail-closed contracts stay as authored upstream
++    return f"{header}\n\n{import_block}\n\n\n{body}\n"
++
++
++def verify_stub_standalone(stub: str, language: str = "python") -> None:
++    """Machine-verify the stub runs standalone.
++
++    python: stdlib-only imports (AST), no foreign network/binary markers,
++    compiles. typescript: no foreign markers, no dynamic network calls,
++    balanced braces (stdlib heuristic — no external parser).
++    """
++    lowered = stub.lower()
++    for marker in FOREIGN_DEPENDENCY_MARKERS:
++        if marker in lowered:
++            raise ExtractionError(
++                f"foreign dependency marker {marker!r} in stub — zero-bloat "
++                "doctrine violated")
++    if language == "python":
++        try:
++            tree = ast.parse(stub)
++        except SyntaxError as exc:
++            raise ExtractionError(
++                f"broken transcription (stub does not compile): {exc}") from exc
++        for node in ast.walk(tree):
++            if isinstance(node, ast.Import):
++                for alias in node.names:
++                    if alias.name.split(".")[0] not in STDLIB_ALLOWLIST:
++                        raise ExtractionError(
++                            f"stub imports non-allowlisted module {alias.name!r}")
++            if isinstance(node, ast.ImportFrom) and node.module:
++                if node.module.split(".")[0] not in STDLIB_ALLOWLIST:
++                    raise ExtractionError(
++                        f"stub imports non-allowlisted module {node.module!r}")
++        return
++    if language == "typescript":
++        for line in stub.splitlines():
++            if re.search(r"\b(fetch|XMLHttpRequest|require\()\s*\(", line):
++                raise ExtractionError(
++                    f"network/dynamic loader call in stub: {line.strip()!r}")
++        depth = 0
++        for line in stub.splitlines():
++            code = line.split("//", 1)[0]  # strip line comments (heuristic)
++            for ch in code:
++                if ch in "{[":
++                    depth += 1
++                elif ch in "}]":
++                    depth -= 1
++        if depth != 0:
++            raise ExtractionError("unbalanced braces in typescript stub")
++        return
++    raise ExtractionError(f"unknown stub language {language!r}")
++
++
++# ---------------------------------------------------------------------------
++# Transplant generator — minimal atomic single-new-file patch
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class TransplantPatch:
++    satellite: str
++    path: str
++    new_file: bool
++    content: str
++    byte_size: int
++
++
++def generate_transplant_patch(satellite: str, path: str, stub: str) -> TransplantPatch:
++    """Atomic patch: exactly one NEW file in a canonical satellite."""
++    if satellite not in CANONICAL_SATELLITES:
++        raise ExtractionError(
++            f"satellite {satellite!r} is not canonical — "
++            f"route into {CANONICAL_SATELLITES}")
++    if not path or path.startswith("/") or ".." in path.split("/"):
++        raise ExtractionError(f"unsafe transplant path {path!r}")
++    language = ("python" if path.endswith(".py") else "typescript")
++    verify_stub_standalone(stub, language=language)
++    return TransplantPatch(
++        satellite=satellite,
++        path=path,
++        new_file=True,          # single source of discipline: no edits to
++        content=stub,           # existing files — atomic pure-new-file patch
++        byte_size=len(stub.encode()),
++    )
++
++
++# ---------------------------------------------------------------------------
++# Live benchmark blueprints (issue #498 acceptance criterion)
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class AdoptionBlueprint:
++    benchmark: str
++    upstream_repository: str
++    license: str
++    gold_pearl: str
++    what_is_needed: str                 # "কতটুকু দরকার"
++    how_needed: str                     # "কীভাবে দরকার"
++    native_target: str
++    zero_bloat_plan: tuple[str, ...]
++    prohibited: tuple[str, ...]
++
++
++BENCHMARK_BLUEPRINTS: Final = (
++
++
++    AdoptionBlueprint(
++        benchmark="REA Evidence Ledger",
++        upstream_repository="morluto/rea",
++        license="MIT",
++        gold_pearl="EvidenceRecord interface + SHA-256 evidence fingerprint",
++        what_is_needed=(
++            "the ~30-line Evidence Record interface with its SHA-256 "
++            "fingerprinting routine — not the Ghidra/Java analysis engine"),
++        how_needed=(
++            "transcribe as a frozen python dataclass with hashlib-based "
++            "fail-closed fingerprint verification; stdlib only"),
++        native_target="python",
++        zero_bloat_plan=(
++            "single new file scripts/tower/evidence_ledger_reference.py",
++            "hashlib + dataclasses imports only (stdlib allowlist)",
++            "fail-closed: fingerprint mismatch raises, never warns",
++            "no JVM, no Ghidra runtime, no subprocess bridges"),
++        prohibited=("vendoring the full reverse-engineering engine",
++                    "JVM/Java runtime prerequisites",
++                    "witness GUI or CLI baggage"),
++    ),
++    AdoptionBlueprint(
++        benchmark="Moli Semantic Tree",
++        upstream_repository="lexmount/moli",
++        license="Apache-2.0",
++        gold_pearl="DOM-to-semantic-tree filtering algorithm",
++        what_is_needed=(
++            "the DOM node semantic filter that yields an on-demand tree "
++            "for ~80% prompt-token reduction — not the Rust browser runtime"),
++        how_needed=(
++            "re-express the filter over a parsed DOM snapshot in "
++            "typescript for the browser satellite; deterministic, "
++            "fail-closed on unknown node types"),
++        native_target="typescript",
++        zero_bloat_plan=(
++            "single new file under supremeai-browser src/semantic/",
++            "no cargo tree, no headless-browser binary bundling",
++            "input is a structured DOM snapshot — never a live browser",
++            "unknown node types fail closed instead of best-effort"),
++        prohibited=("shipping the custom Rust headless engine",
++                    "fingerprint-anomalous stealth runtimes",
++                    "vendoring the full Cargo build matrix"),
++    ),
++)
++
++
++def validate_blueprint(blueprint: AdoptionBlueprint) -> None:
++    """Every ecosystem report carries the কতটুকু দরকার / কীভাবে দরকার pair."""
++    for field_name in ("benchmark", "upstream_repository", "license",
++                       "gold_pearl", "what_is_needed", "how_needed"):
++        if not getattr(blueprint, field_name):
++            raise ExtractionError(f"blueprint field {field_name!r} is empty")
++    if blueprint.native_target not in ("python", "typescript"):
++        raise ExtractionError("blueprint must fit natively (python|typescript)")
++    if not blueprint.zero_bloat_plan or not blueprint.prohibited:
++        raise ExtractionError("blueprint needs zero_bloat_plan and prohibited lists")
++
++
++def self_test() -> bool:
++    # Build a deterministic in-budget slice (20-100 lines).
++    lines = ["import hashlib", "", ""]
++    lines.append("def evidence_fingerprint(payload: bytes) -> str:")
++    lines.append("    \"\"\"SHA-256 fingerprint, fail-closed.\"\"\"")
++    lines.append("    if not payload:")
++    lines.append("        raise ValueError('empty payload')")
++    for i in range(30):
++        lines.append(f"    stage_{i} = hashlib.sha256(payload + str({i}).encode()).hexdigest()")
++    lines.append("    return stage_29")
++    lines.append("")
++    lines.append("def unrelated():")
++    lines.append("    return 'noise'")
++    source = "\n".join(lines)
++
++    slice_ = extract_python_slice(source, "evidence_fingerprint")
++    assert slice_.language == "python"
++    assert slice_.line_count == 35, slice_.line_count
++    assert slice_.budget_ok
++    assert slice_.imports_needed == ("hashlib",)
++
++    # Fail-closed extraction.
++    for breaker, exc in (
++        (lambda: extract_python_slice(source, "ghost"), ExtractionError),
++        (lambda: extract_python_slice("", "x"), ExtractionError),
++        (lambda: extract_python_slice(source + "\n" + source, "evidence_fingerprint"),
++         ExtractionError),  # duplicate definition across docs — ambiguous
++        (lambda: _check_budget(ExtractedSlice(
++            "python", "big", "x\n" * 500, 1, 500, ())), ExtractionError),
++        (lambda: _check_budget(ExtractedSlice(
++            "python", "tiny", "x", 1, 1, ())), ExtractionError),
++    ):
++        try:
++            breaker()
++            raise SystemExit(f"extractor gate failed open: {exc}")
++        except exc:  # type: ignore[misc]
++            pass
++
++    # TS brace balancing.
++    ts_source = "\n".join(
++        ["import { Node } from './dom';", "",
++         "export function semanticFilter(nodes: Node[]): Node[] {",
++         "  const out: Node[] = [];"]
++        + [f"  if (!nodes[{i}]) throw new Error('unknown node');"
++           for i in range(20)]
++        + ["  return out;", "}", "",
++           "export const noise = 1;"])
++    ts_slice = extract_typescript_slice(ts_source, "semanticFilter")
++    assert ts_slice.language == "typescript"
++    assert ts_slice.line_count == 24, ts_slice.line_count
++    assert ts_slice.source_segment.startswith("export function semanticFilter")
++    assert ts_slice.source_segment.rstrip().endswith("}")
++
++    # Stub generation + standalone verification.
++    stub = generate_adaptation_stub(slice_, "morluto/rea", "MIT")
++    assert "github.com/morluto/rea" in stub and "MIT" in stub
++    verify_stub_standalone(stub)
++    ns: dict = {}
++    exec(compile(stub, "<stub>", "exec"), ns)  # runs 100% standalone
++    assert ns["evidence_fingerprint"](b"abc").startswith("0x") is False
++    assert len(ns["evidence_fingerprint"](b"abc")) == 64
++
++    # Foreign dependency rejection.
++    try:
++        verify_stub_standalone("import requests\nx = 1\n")
++        raise SystemExit("foreign import gate failed open")
++    except ExtractionError:
++        pass
++    try:
++        generate_adaptation_stub(ExtractedSlice(
++            "python", "needs_pandas", "import pandas as pd\ndef f():\n    return 1\n",
++            1, 3, ("pandas",)), "x/y", "MIT")
++        raise SystemExit("non-stdlib slice gate failed open")
++    except ExtractionError:
++        pass
++    try:
++        generate_adaptation_stub(ExtractedSlice(
++            "typescript", "ts_fn", "const x = 1", 1, 1, ()), "x/y", "MIT")
++        raise SystemExit("ts-to-python gate failed open")
++    except ExtractionError:
++        pass
++
++    # Transplant patches: atomic, canonical, new-file only.
++    patch = generate_transplant_patch(
++        "supremeai-mcp-control-plane", "src/ledger/evidence_record.ts",
++        "// standalone ts stub with no imports\nconst ok = true;\n")
++    assert patch.new_file is True and patch.byte_size > 0
++    for bad in (
++        ("unknown-sat", "a.ts", "x"),
++        ("supremeai-open", "/abs/path.ts", "x"),
++        ("supremeai-open", "../escape.ts", "x"),
++        ("supremeai-open", "ok.ts", "import requests\n"),
++    ):
++        try:
++            generate_transplant_patch(*bad)
++            raise SystemExit(f"transplant gate failed open: {bad}")
++        except ExtractionError:
++            pass
++
++    # Blueprints: both live benchmarks present and valid.
++    names = {b.benchmark for b in BENCHMARK_BLUEPRINTS}
++    assert names == {"REA Evidence Ledger", "Moli Semantic Tree"}, names
++    for blueprint in BENCHMARK_BLUEPRINTS:
++        validate_blueprint(blueprint)
++        assert "কতটুকু দরকার" not in blueprint.what_is_needed or True
++    try:
++        validate_blueprint(AdoptionBlueprint("", "r", "MIT", "g", "w", "h",
++                                             "python", ("z",), ("p",)))
++        raise SystemExit("blueprint gate failed open")
++    except ExtractionError:
++        pass
++
++    return True
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--extract", nargs=2, metavar=("FILE", "TARGET"),
++                        help="extract a Gold Pearl slice from a source file")
++    parser.add_argument("--json", action="store_true")
++    args = parser.parse_args()
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: scout_extractor")
++        return 0
++    if args.extract:
++        path, target = args.extract
++        source = open(path, encoding="utf-8").read()
++        slice_ = (extract_python_slice(source, target)
++                  if path.endswith(".py")
++                  else extract_typescript_slice(source, target))
++        print(slice_.source_segment if not args.json else json.dumps({
++            "language": slice_.language, "target": slice_.target_name,
++            "lines": slice_.line_count, "start": slice_.line_start,
++            "imports": list(slice_.imports_needed), "budget_ok": slice_.budget_ok,
++        }, ensure_ascii=False, indent=2))
++        return 0
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/scripts/ci/vendored_tree_guard.py b/scripts/ci/vendored_tree_guard.py
+new file mode 100644
+index 00000000..39e404a4
+--- /dev/null
++++ b/scripts/ci/vendored_tree_guard.py
+@@ -0,0 +1,216 @@
++#!/usr/bin/env python3
++"""S11 — Vendored-Tree Sanitization Guard (issue #498, criterion 1).
++
++Machine-enforces the Zero-Bloat & Lightweight Satellite Doctrine: PRs that
++add large 3rd-party vendored trees are FLAGGED by CI before landing.
++
++Deterministic, fail-closed rules over the structured PR file list
++(``{path, bytes}`` records — produced by the pipeline from ``git diff
++--numstat``; no free-text analysis):
++
++  R1  vendored directory paths  — vendor/, third_party/, node_modules/,
++      bowel_components-free bower_components/, .venv bundles
++  R2  oversize single additions — one added file above
++      VENDORED_FILE_MAX_BYTES
++  R3  mass-file new directory   — more than VENDORED_TREE_FILE_COUNT new
++      files under one first-level directory
++  R4  lockfile additions        — package-lock.json / yarn.lock /
++      poetry.lock / Cargo.lock / Pipfile.lock added as NEW files
++  R5  total mass addition       — sum of added bytes above
++      VENDORED_TREE_MAX_TOTAL_BYTES
++
++Exit codes: 0 = clean, 2 = vendored-tree violation (fail-closed on
++malformed input as well). Any single violation lists every offending
++record; the guard never passes partially.
++
++Pure stdlib. Run: python3 scripts/ci/vendored_tree_guard.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from dataclasses import dataclass
++from typing import Final, Mapping, Sequence
++
++VENDORED_DIR_MARKERS: Final = (
++    "/vendor/", "/third_party/", "/node_modules/",
++    "/bower_components/", "/vendors/",
++)
++VENDORED_DIR_ROOTS: Final = ("vendor/", "third_party/", "node_modules/",
++                             "bower_components/", "vendors/")
++VENDORED_FILE_MAX_BYTES: Final = 512 * 1024        # 512 KiB single file
++VENDORED_TREE_FILE_COUNT: Final = 50               # files per new top dir
++VENDORED_TREE_MAX_TOTAL_BYTES: Final = 2 * 1024 * 1024  # 2 MiB total
++LOCKFILE_NAMES: Final = frozenset({
++    "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock",
++    "Cargo.lock", "Pipfile.lock", "composer.lock",
++})
++OVERSIZE_LIBRARY_SUFFIXES: Final = (".jar", ".war", ".wasm", ".node",
++                                    ".so", ".dll", ".dylib", ".a", ".lib")
++
++EXIT_CLEAN: Final = 0
++EXIT_VIOLATION: Final = 2
++
++
++@dataclass(frozen=True)
++class AddedFile:
++    path: str
++    bytes: int
++
++
++@dataclass(frozen=True)
++class GuardVerdict:
++    exit_code: int
++    violations: tuple[str, ...]
++    offending_paths: tuple[str, ...]
++
++
++def _is_vendored_path(path: str) -> bool:
++    normalized = "/" + path.replace("\\", "/").lstrip("/")
++    return (any(marker in normalized for marker in VENDORED_DIR_MARKERS)
++            or any(normalized.startswith("/" + root)
++                   for root in VENDORED_DIR_ROOTS))
++
++
++def _top_dir(path: str) -> str:
++    parts = path.replace("\\", "/").split("/")
++    return parts[0] if len(parts) > 1 else "(root)"
++
++
++def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
++    """Run R1-R5 over the added-file list. Deterministic, fail-closed."""
++    violations: list[str] = []
++    offenders: set[str] = set()
++
++    vendored = [f for f in files if _is_vendored_path(f.path)]
++    if vendored:
++        violations.append(
++            f"R1 vendored directory paths: {len(vendored)} file(s)")
++        offenders.update(f.path for f in vendored)
++
++    oversize = [f for f in files
++                if f.bytes > VENDORED_FILE_MAX_BYTES
++                or f.path.lower().endswith(OVERSIZE_LIBRARY_SUFFIXES)]
++    if oversize:
++        violations.append(
++            f"R2 oversize/binary library additions: "
++            f"{[f.path for f in oversize]}")
++        offenders.update(f.path for f in oversize)
++
++    by_top: Mapping[str, list[AddedFile]] = {}
++    for f in files:
++        by_top.setdefault(_top_dir(f.path), []).append(f)
++    for top, group in sorted(by_top.items()):
++        if len(group) > VENDORED_TREE_FILE_COUNT:
++            violations.append(
++                f"R3 mass addition under {top!r}: {len(group)} new files "
++                f"(limit {VENDORED_TREE_FILE_COUNT})")
++            offenders.update(f.path for f in group)
++
++    lockfiles = [f for f in files
++                 if f.path.replace("\\", "/").split("/")[-1] in LOCKFILE_NAMES]
++    if lockfiles:
++        violations.append(
++            f"R4 dependency lockfile additions: "
++            f"{[f.path for f in lockfiles]} — vendoring manifests are "
++            "prohibited; surgical extraction needs no dependency tree")
++        offenders.update(f.path for f in lockfiles)
++
++    total = sum(f.bytes for f in files)
++    if total > VENDORED_TREE_MAX_TOTAL_BYTES:
++        violations.append(
++            f"R5 total added mass {total} bytes exceeds "
++            f"{VENDORED_TREE_MAX_TOTAL_BYTES} — extract the Gold Pearl, "
++            "not the repository")
++        offenders.update(f.path for f in files)
++
++    return GuardVerdict(
++        exit_code=EXIT_VIOLATION if violations else EXIT_CLEAN,
++        violations=tuple(violations),
++        offending_paths=tuple(sorted(offenders)),
++    )
++
++
++def _parse_records(raw: str) -> list[AddedFile]:
++    try:
++        payload = json.loads(raw)
++    except json.JSONDecodeError as exc:
++        print(f"EXIT_VIOLATION: malformed files payload: {exc}")
++        raise SystemExit(EXIT_VIOLATION)
++    if not isinstance(payload, list):
++        print("EXIT_VIOLATION: files payload must be a JSON list")
++        raise SystemExit(EXIT_VIOLATION)
++    parsed: list[AddedFile] = []
++    for item in payload:
++        if (not isinstance(item, dict) or not isinstance(item.get("path"), str)
++                or not isinstance(item.get("bytes"), int) or item["bytes"] < 0):
++            print("EXIT_VIOLATION: each record needs {path: str, bytes: int}")
++            raise SystemExit(EXIT_VIOLATION)
++        parsed.append(AddedFile(path=item["path"], bytes=item["bytes"]))
++    return parsed
++
++
++def self_test() -> bool:
++    clean = guard_added_files([
++        AddedFile("scripts/agents/scout_extractor.py", 9000),
++        AddedFile("tests/test_s11_surgical_adoption.py", 7000),
++        AddedFile("docs/S11_SURGICAL_ADOPTION_SPEC.md", 8000),
++    ])
++    assert clean.exit_code == EXIT_CLEAN and not clean.violations
++
++    cases: tuple[tuple[list[AddedFile], str], ...] = (
++        ([AddedFile("vendor/lib/foo.py", 100)], "R1"),
++        ([AddedFile("src/node_modules/left-pad/index.js", 10)], "R1"),
++        ([AddedFile("third_party/engine/core.py", 10)], "R1"),
++        ([AddedFile("src/blob.jar", 100)], "R2"),
++        ([AddedFile("src/huge.bin", VENDORED_FILE_MAX_BYTES + 1)], "R2"),
++        ([AddedFile(f"newpkg/mod{i}.py", 10) for i in range(
++            VENDORED_TREE_FILE_COUNT + 1)], "R3"),
++        ([AddedFile("package-lock.json", 400)], "R4"),
++        ([AddedFile("web/yarn.lock", 400)], "R4"),
++        ([AddedFile(f"f{i}.py", 300 * 1024) for i in range(8)], "R5"),
++    )
++    for files, rule in cases:
++        verdict = guard_added_files(files)
++        assert verdict.exit_code == EXIT_VIOLATION, (rule, verdict)
++        assert any(v.startswith(rule) for v in verdict.violations), (rule, verdict)
++        assert verdict.offending_paths
++
++    # Boundary: exactly at the limits is clean.
++    edge_files = [AddedFile("ok.bin", VENDORED_FILE_MAX_BYTES)]
++    edge_files += [AddedFile(f"pkg/mod{i}.py", 10)
++                   for i in range(VENDORED_TREE_FILE_COUNT)]
++    edge_files.append(AddedFile("tail.py", 400 * 1024))  # ≤ per-file cap
++    edge = guard_added_files(edge_files)
++    assert edge.exit_code == EXIT_CLEAN, edge
++
++    # Empty PR is clean.
++    assert guard_added_files([]).exit_code == EXIT_CLEAN
++    return True
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--files-json",
++                        help="inline JSON list of {path, bytes} records; "
++                             "omit to read stdin")
++    args = parser.parse_args()
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: vendored_tree_guard")
++        return EXIT_CLEAN
++    raw = args.files_json if args.files_json else sys.stdin.read()
++    verdict = guard_added_files(_parse_records(raw))
++    for violation in verdict.violations:
++        print(f"VIOLATION {violation}")
++    if verdict.violations:
++        print("VENDORED-TREE GUARD: BLOCKED (fail-closed)")
++        return EXIT_VIOLATION
++    print("VENDORED-TREE GUARD: clean")
++    return EXIT_CLEAN
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/tests/test_s11_surgical_adoption.py b/tests/test_s11_surgical_adoption.py
+new file mode 100644
+index 00000000..d7e5704a
+--- /dev/null
++++ b/tests/test_s11_surgical_adoption.py
+@@ -0,0 +1,291 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the S11 Surgical Adoption Engine (issue #498).
++
++Covers: Gold Pearl extraction (Python AST + TS brace balancing, budget,
++fail-closed), native zero-bloat fitting (stdlib-only stubs, standalone
++execution), the transplant generator (atomic single-new-file patches,
++canonical satellites), the vendored-tree CI guard (R1-R5 fail-closed) and
++the two live benchmark blueprints (REA + Moli) with the
++কতটুকু দরকার / কীভাবে দরকার breakdown.
++
++Pure stdlib. Run: python3 -m unittest test_s11_surgical_adoption -v
++"""
++import subprocess
++import sys
++import unittest
++from pathlib import Path
++
++AGENTS = Path(__file__).resolve().parent.parent / "scripts" / "agents"
++CI = Path(__file__).resolve().parent.parent / "scripts" / "ci"
++sys.path.insert(0, str(AGENTS))
++sys.path.insert(0, str(CI))
++
++import scout_extractor as ex  # noqa: E402
++import vendored_tree_guard as vg  # noqa: E402
++
++
++def fingerprint_source() -> str:
++    lines = ["import hashlib", "", ""]
++    lines.append("def evidence_fingerprint(payload: bytes) -> str:")
++    lines.append("    \"\"\"SHA-256 fingerprint, fail-closed.\"\"\"")
++    lines.append("    if not payload:")
++    lines.append("        raise ValueError('empty payload')")
++    for i in range(30):
++        lines.append(
++            "    stage_{i} = hashlib.sha256(payload + str({i}).encode())"
++            ".hexdigest()".replace("{i}", str(i)))
++    lines.append("    return stage_29")
++    lines.append("")
++    lines.append("def unrelated():")
++    lines.append("    return 'noise'")
++    return "\n".join(lines)
++
++
++TS_SOURCE = "\n".join(
++    ["import { Node } from './dom';", "",
++     "export function semanticFilter(nodes: Node[]): Node[] {",
++     "  const out: Node[] = [];"]
++    + [f"  if (!nodes[{i}]) throw new Error('unknown node');"
++       for i in range(20)]
++    + ["  return out;", "}", "",
++       "export const noise = 1;"])
++
++
++class GoldPearlExtraction(unittest.TestCase):
++    def test_01_python_slice_exact(self):
++        s = ex.extract_python_slice(fingerprint_source(),
++                                    "evidence_fingerprint")
++        self.assertEqual(s.language, "python")
++        self.assertEqual(s.line_count, 35)
++        self.assertTrue(s.budget_ok)
++        self.assertEqual(s.imports_needed, ("hashlib",))
++        self.assertTrue(s.source_segment.startswith("def evidence_fingerprint"))
++
++    def test_02_sibling_code_not_in_slice(self):
++        s = ex.extract_python_slice(fingerprint_source(),
++                                    "evidence_fingerprint")
++        self.assertNotIn("unrelated", s.source_segment)
++        self.assertNotIn("noise", s.source_segment)
++
++    def test_03_budget_bounds(self):
++        self.assertEqual(ex.GOLD_PEARL_MIN_LINES, 20)
++        self.assertEqual(ex.GOLD_PEARL_MAX_LINES, 100)
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_python_slice("def tiny():\n    return 1\n", "tiny")
++
++    def test_04_missing_and_ambiguous_targets(self):
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_python_slice(fingerprint_source(), "ghost")
++        doubled = fingerprint_source() + "\n\n" + fingerprint_source()
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_python_slice(doubled, "evidence_fingerprint")
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_python_slice("", "x")
++
++    def test_05_typescript_brace_balancing(self):
++        s = ex.extract_typescript_slice(TS_SOURCE, "semanticFilter")
++        self.assertEqual(s.language, "typescript")
++        self.assertEqual(s.line_count, 24)
++        self.assertTrue(s.source_segment.rstrip().endswith("}"))
++        self.assertNotIn("noise", s.source_segment)
++
++    def test_06_typescript_fail_closed(self):
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_typescript_slice(TS_SOURCE, "ghost")
++        with self.assertRaises(ex.ExtractionError):
++            ex.extract_typescript_slice(
++                "export function broken() {\n  return 1;\n", "broken")
++
++    def test_07_usage_driven_imports(self):
++        # `json` is imported at module level but UNUSED in the slice ->
++        # must not be reported; hashlib is used -> reported.
++        src = ("import json\nimport hashlib\n\n"
++               + "\n".join(fingerprint_source().splitlines()[2:]))
++        s = ex.extract_python_slice(src, "evidence_fingerprint")
++        self.assertEqual(s.imports_needed, ("hashlib",))
++
++
++class NativeZeroBloatFitting(unittest.TestCase):
++    def test_08_stub_generation_with_provenance(self):
++        s = ex.extract_python_slice(fingerprint_source(),
++                                    "evidence_fingerprint")
++        stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
++        self.assertIn("github.com/morluto/rea", stub)
++        self.assertIn("MIT", stub)
++        self.assertIn("zero-dependency", stub)
++
++    def test_09_stub_runs_standalone(self):
++        s = ex.extract_python_slice(fingerprint_source(),
++                                    "evidence_fingerprint")
++        stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
++        namespace: dict = {}
++        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
++        digest = namespace["evidence_fingerprint"](b"abc")
++        self.assertEqual(len(digest), 64)
++
++    def test_10_fail_closed_on_empty_payload(self):
++        s = ex.extract_python_slice(fingerprint_source(),
++                                    "evidence_fingerprint")
++        stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
++        namespace: dict = {}
++        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
++        with self.assertRaises(ValueError):
++            namespace["evidence_fingerprint"](b"")
++
++    def test_11_foreign_imports_rejected(self):
++        s = ex.ExtractedSlice("python", "needs_pandas",
++                              "import pandas as pd\ndef f():\n    return 1\n",
++                              1, 3, ("pandas",))
++        with self.assertRaises(ex.ExtractionError):
++            ex.generate_adaptation_stub(s, "x/y", "MIT")
++        with self.assertRaises(ex.ExtractionError):
++            ex.verify_stub_standalone("import requests\nx = 1\n")
++
++    def test_12_typescript_stubs_routed_not_pythonified(self):
++        s = ex.extract_typescript_slice(TS_SOURCE, "semanticFilter")
++        with self.assertRaises(ex.ExtractionError):
++            ex.generate_adaptation_stub(s, "lexmount/moli", "Apache-2.0")
++
++    def test_13_stdlib_allowlist_is_zero_dep(self):
++        for module in ex.STDLIB_ALLOWLIST:
++            root = module.split(".")[0]
++            self.assertIn(root, sys.stdlib_module_names, module)
++
++
++class TransplantGenerator(unittest.TestCase):
++    def test_14_atomic_new_file_patch(self):
++        patch = ex.generate_transplant_patch(
++            "supremeai-mcp-control-plane", "src/ledger/evidence_record.py",
++            ex.generate_adaptation_stub(
++                ex.extract_python_slice(fingerprint_source(),
++                                        "evidence_fingerprint"),
++                "morluto/rea", "MIT"))
++        self.assertTrue(patch.new_file)
++        self.assertGreater(patch.byte_size, 0)
++        self.assertIn("supremeai-mcp-control-plane", ex.CANONICAL_SATELLITES)
++
++    def test_15_canonical_satellite_enforced(self):
++        with self.assertRaises(ex.ExtractionError):
++            ex.generate_transplant_patch("unknown-sat", "a.py", "x = 1\n")
++
++    def test_16_unsafe_paths_rejected(self):
++        for path in ("/abs/path.py", "../escape.py", ""):
++            with self.assertRaises(ex.ExtractionError, msg=path):
++                ex.generate_transplant_patch("supremeai-open", path, "x = 1\n")
++
++    def test_17_stub_reverified_at_transplant(self):
++        with self.assertRaises(ex.ExtractionError):
++            ex.generate_transplant_patch("supremeai-open", "ok.py",
++                                         "import requests\n")
++        with self.assertRaises(ex.ExtractionError):
++            ex.generate_transplant_patch("supremeai-open", "bad.py",
++                                         "def broken(:\n")
++
++
++class VendoredTreeGuard(unittest.TestCase):
++    def test_18_rules_r1_to_r5(self):
++        self.assertEqual(vg.EXIT_VIOLATION, 2)
++        cases = (
++            ([vg.AddedFile("vendor/lib/foo.py", 100)], "R1"),
++            ([vg.AddedFile("src/node_modules/x/index.js", 10)], "R1"),
++            ([vg.AddedFile("src/blob.jar", 10)], "R2"),
++            ([vg.AddedFile("src/huge.bin", vg.VENDORED_FILE_MAX_BYTES + 1)],
++             "R2"),
++            ([vg.AddedFile(f"m{i}.py", 10) for i in range(
++                vg.VENDORED_TREE_FILE_COUNT + 1)], "R3"),
++            ([vg.AddedFile("package-lock.json", 400)], "R4"),
++            ([vg.AddedFile("Cargo.lock", 400)], "R4"),
++            ([vg.AddedFile(f"f{i}.py", 300 * 1024) for i in range(8)], "R5"),
++        )
++        for files, rule in cases:
++            verdict = vg.guard_added_files(files)
++            self.assertEqual(verdict.exit_code, 2, rule)
++            self.assertTrue(any(v.startswith(rule)
++                                for v in verdict.violations), rule)
++
++    def test_19_clean_pr_passes(self):
++        verdict = vg.guard_added_files([
++            vg.AddedFile("scripts/agents/scout_extractor.py", 9000),
++            vg.AddedFile("tests/test_s11_surgical_adoption.py", 7000),
++        ])
++        self.assertEqual(verdict.exit_code, 0)
++        self.assertEqual(vg.guard_added_files([]).exit_code, 0)
++
++    def test_20_constants_from_issue_doctrine(self):
++        self.assertEqual(vg.VENDORED_FILE_MAX_BYTES, 512 * 1024)
++        self.assertEqual(vg.VENDORED_TREE_MAX_TOTAL_BYTES, 2 * 1024 * 1024)
++        self.assertIn("node_modules/", vg.VENDORED_DIR_ROOTS)
++
++    def test_21_self_test_entrypoints_green(self):
++        self.assertTrue(ex.self_test())
++        self.assertTrue(vg.self_test())
++
++
++class BenchmarkBlueprints(unittest.TestCase):
++    def test_22_both_live_benchmarks_present(self):
++        names = {b.benchmark for b in ex.BENCHMARK_BLUEPRINTS}
++        self.assertEqual(names, {"REA Evidence Ledger", "Moli Semantic Tree"})
++
++    def test_23_breakdown_pair_present(self):
++        for b in ex.BENCHMARK_BLUEPRINTS:
++            ex.validate_blueprint(b)
++            self.assertTrue(b.what_is_needed)   # কতটুকু দরকার
++            self.assertTrue(b.how_needed)       # কীভাবে দরকার
++            self.assertTrue(b.prohibited)
++
++    def test_24_zero_bloat_plans_are_native(self):
++        for b in ex.BENCHMARK_BLUEPRINTS:
++            self.assertIn(b.native_target, ("python", "typescript"))
++            self.assertTrue(any("zero" in step or "stdlib" in step
++                                or "no cargo" in step or "no JVM" in step
++                                for step in b.zero_bloat_plan))
++
++    def test_25_upstream_attribution(self):
++        repos = {b.upstream_repository for b in ex.BENCHMARK_BLUEPRINTS}
++        self.assertEqual(repos, {"morluto/rea", "lexmount/moli"})
++        for b in ex.BENCHMARK_BLUEPRINTS:
++            self.assertIn(b.license, ("MIT", "Apache-2.0"))
++
++    def test_26_blueprint_fail_closed(self):
++        with self.assertRaises(ex.ExtractionError):
++            ex.validate_blueprint(ex.AdoptionBlueprint(
++                "", "r", "MIT", "g", "w", "h", "python", ("z",), ("p",)))
++        with self.assertRaises(ex.ExtractionError):
++            ex.validate_blueprint(ex.AdoptionBlueprint(
++                "b", "r", "MIT", "g", "w", "h", "java", ("z",), ("p",)))
++
++
++class CliSmoke(unittest.TestCase):
++    def test_27_extractor_cli_json(self):
++        import json
++        import tempfile
++        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as fh:
++            fh.write(fingerprint_source())
++            path = fh.name
++        try:
++            out = subprocess.run(
++                [sys.executable, str(AGENTS / "scout_extractor.py"),
++                 "--extract", path, "evidence_fingerprint", "--json"],
++                capture_output=True, text=True, timeout=60)
++        finally:
++            Path(path).unlink(missing_ok=True)
++        self.assertEqual(out.returncode, 0, out.stderr)
++        payload = json.loads(out.stdout)
++        self.assertEqual(payload["lines"], 35)
++        self.assertTrue(payload["budget_ok"])
++
++    def test_28_guard_cli_exit_semantics(self):
++        clean = subprocess.run(
++            [sys.executable, str(CI / "vendored_tree_guard.py"),
++             "--files-json", '[{"path": "src/ok.py", "bytes": 100}]'],
++            capture_output=True, text=True, timeout=60)
++        self.assertEqual(clean.returncode, 0)
++        dirty = subprocess.run(
++            [sys.executable, str(CI / "vendored_tree_guard.py"),
++             "--files-json", '[{"path": "vendor/x.py", "bytes": 10}]'],
++            capture_output=True, text=True, timeout=60)
++        self.assertEqual(dirty.returncode, 2)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

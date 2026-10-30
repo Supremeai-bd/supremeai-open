@@ -1,0 +1,186 @@
+diff --git a/.agents/skills/devtools-audit/package.json b/.agents/skills/devtools-audit/package.json
+index 704d5fc7..4dd3359b 100644
+--- a/.agents/skills/devtools-audit/package.json
++++ b/.agents/skills/devtools-audit/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "devtools-audit",
+   "version": "1.0.0",
++  "license": "MIT",
+   "description": "",
+   "main": "index.js",
+   "scripts": {
+diff --git a/browser/cloudflare-worker/package.json b/browser/cloudflare-worker/package.json
+index da7ae72d..c8e54b07 100644
+--- a/browser/cloudflare-worker/package.json
++++ b/browser/cloudflare-worker/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "supremeai-browser-worker",
+   "version": "1.0.0",
++  "license": "LicenseRef-Proprietary",
+   "type": "module",
+   "dependencies": {
+     "@cloudflare/puppeteer": "^0.0.15"
+diff --git a/infrastructure/cloudflare-studio-proxy/package.json b/infrastructure/cloudflare-studio-proxy/package.json
+index 5a76e3e6..7c9d3ca7 100644
+--- a/infrastructure/cloudflare-studio-proxy/package.json
++++ b/infrastructure/cloudflare-studio-proxy/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "supremeai-studio-proxy",
+   "version": "1.0.0",
++  "license": "LicenseRef-Proprietary",
+   "type": "module",
+   "scripts": {
+     "deploy": "wrangler deploy"
+diff --git a/scripts/ci/license_ssot_guard.py b/scripts/ci/license_ssot_guard.py
+index 04f77ee5..cc8a5d3c 100644
+--- a/scripts/ci/license_ssot_guard.py
++++ b/scripts/ci/license_ssot_guard.py
+@@ -115,22 +115,15 @@
+ 
+ # ---------------------------------------------------------------------------
+ # Known-drift baseline (shrink-only ratchet, dead-import #1598 pattern).
+-# Dated 2026-10-28 on main 203a562. (code, normalized path) pairs. When one of
++# Dated 2026-10-29 on main a996d30. (code, normalized path) pairs. When one of
+ # these is FIXED, delete the line and lower the test pin — never add entries
+ # for new drift; new drift must be fixed, not baselined.
++# History: baseline entered at 15 entries (#1773); the 9 PACKAGE_LICENSE_MISSING
++# entries were fixed and shrunk out in the same change (issue #1621, the
++# #1621<->#1678 class), landing the field-level license floor repo-wide.
+ # ---------------------------------------------------------------------------
+ KNOWN_DRIFTS: frozenset[tuple[str, str]] = frozenset(
+     {
+-        # -- 9 tracked package.json files with no `license` field (#1621<->#1678 class)
+-        ("PACKAGE_LICENSE_MISSING", ".agents/skills/devtools-audit/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "studio/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "studio/packages/shared-types/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "studio/packages/design-tokens/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "vscode/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "vscode/mobile/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "vscode/desktop/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "browser/cloudflare-worker/package.json"),
+-        ("PACKAGE_LICENSE_MISSING", "infrastructure/cloudflare-studio-proxy/package.json"),
+         # -- LICENSE-absent proprietary mirror surfaces (#1640/#1691 class).
+         #    The WO acceptance named 3 (core, browser, mcp-control-plane); the
+         #    guard's surface model also correctly flags the infrastructure/
+diff --git a/studio/package.json b/studio/package.json
+index 03c31e58..920099e2 100644
+--- a/studio/package.json
++++ b/studio/package.json
+@@ -8,6 +8,7 @@
+   },
+   "private": true,
+   "version": "2.0.0",
++  "license": "MIT",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/studio/packages/design-tokens/package.json b/studio/packages/design-tokens/package.json
+index b546dc4f..4f028a81 100644
+--- a/studio/packages/design-tokens/package.json
++++ b/studio/packages/design-tokens/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "@supremeai/design-tokens",
+   "version": "1.0.0",
++  "license": "MIT",
+   "type": "module",
+   "description": "Single source of truth for SupremeAI 2.0 design tokens",
+   "main": "outputs/tokens.js",
+diff --git a/studio/packages/shared-types/package.json b/studio/packages/shared-types/package.json
+index dc1e57e6..d316d014 100644
+--- a/studio/packages/shared-types/package.json
++++ b/studio/packages/shared-types/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "@supremeai/shared-types",
+   "version": "1.0.0",
++  "license": "MIT",
+   "type": "module",
+   "main": "./src/index.ts",
+   "types": "./src/index.ts",
+diff --git a/tests/test_license_ssot_guard.py b/tests/test_license_ssot_guard.py
+index 7ae785d2..b8743046 100644
+--- a/tests/test_license_ssot_guard.py
++++ b/tests/test_license_ssot_guard.py
+@@ -16,10 +16,12 @@
+     (exit 0), any finding OUTSIDE the baseline is new drift (exit 1), and
+     --strict flips every finding fail-closed;
+   - live baseline pin: on the real repo the guard reports EXACTLY the
+-    baselined drifts (the WO acceptance set: the 9 license-field-missing
+-    package.json files + the LICENSE-absent proprietary mirrors + the #1690
+-    model-contradiction class) — the shrink-only ratchet: fixing a drift
+-    requires shrinking the baseline in the same change;
++    baselined drifts (the WO acceptance set, post-#1621: the LICENSE-absent
++    proprietary mirrors + the #1690 model-contradiction class — the 9
++    license-field-missing package.json files were FIXED and shrunk out of
++    the baseline in the same change, landing the field-level floor) — the
++    shrink-only ratchet: fixing a drift requires shrinking the baseline in
++    the same change;
+   - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
+     and the LIVE .githooks/pre-push hook (never duplicated here).
+ 
+@@ -260,9 +262,14 @@ def test_live_repo_reports_exactly_the_baselined_drifts() -> None:
+         "shrink KNOWN_DRIFTS in scripts/ci/license_ssot_guard.py in the same "
+         "change (shrink-only ratchet); if drift was ADDED, fix it instead."
+     )
+-    # The WO acceptance core: the 9 package.json fields + the LICENSE-absent mirrors.
++    # The WO acceptance core, post-#1621: the license-field class is FIXED
++    # (zero PACKAGE_LICENSE_MISSING must remain), the LICENSE-absent mirrors
++    # and the #1690 contradiction class stay baselined.
+     missing = {p for c, p in keys if c == "PACKAGE_LICENSE_MISSING"}
+-    assert len(missing) >= 9, f"acceptance: at least the 9 known missing license fields, got {missing}"
++    assert not missing, (
++        "#1621 acceptance: the 9 package.json license fields were declared; "
++        f"a new PACKAGE_LICENSE_MISSING is a fix-it regression, not baseline material: {missing}"
++    )
+     absent = {p for c, p in keys if c == "LICENSE_FILE_ABSENT"}
+     assert {"core", "browser", "infrastructure/mcp-control-plane"} <= absent
+     contradiction = {p for c, p in keys if c == "MODEL_CONTRADICTION"}
+@@ -302,7 +309,7 @@ def test_json_report_is_machine_readable() -> None:
+     assert report["guard"] == "license_ssot_guard"
+     assert report["map"] == MAP
+     assert report["mode"] == "ratchet"
+-    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 12
++    assert isinstance(report["baseline_entries"], int) and report["baseline_entries"] >= 6
+     assert isinstance(report["findings"], list) and isinstance(report["notes"], list)
+     for f in report["findings"]:
+         assert set(f) == {"code", "path", "detail"}
+diff --git a/vscode/desktop/package.json b/vscode/desktop/package.json
+index b72e12c5..1d38ca71 100644
+--- a/vscode/desktop/package.json
++++ b/vscode/desktop/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "@supremeai/desktop",
+   "version": "0.1.0",
++  "license": "MIT",
+   "description": "SupremeAI Desktop Application — Native cross-platform desktop client (Tauri / Electron)",
+   "main": "dist/index.js",
+   "scripts": {
+diff --git a/vscode/mobile/package.json b/vscode/mobile/package.json
+index 4954aab7..f7b0f3b8 100644
+--- a/vscode/mobile/package.json
++++ b/vscode/mobile/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "@supremeai/mobile",
+   "version": "0.1.0",
++  "license": "MIT",
+   "description": "SupremeAI Mobile Application — Cross-platform iOS & Android Agent Supervisor",
+   "main": "src/App.tsx",
+   "scripts": {
+diff --git a/vscode/package.json b/vscode/package.json
+index f8e6fb14..dda53e3e 100644
+--- a/vscode/package.json
++++ b/vscode/package.json
+@@ -1,6 +1,7 @@
+ {
+   "name": "supremeai-client-hub",
+   "version": "1.0.0",
++  "license": "MIT",
+   "private": true,
+   "description": "SupremeAI Unified Client Hub — VS Code Extension, Desktop (Tauri/Electron), and Mobile (React Native)",
+   "workspaces": [

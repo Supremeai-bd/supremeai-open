@@ -1,0 +1,89 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 93626376..9ae324db 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -27,7 +27,7 @@
+     ".github/PULL_REQUEST_TEMPLATE.md",
+ )
+ # বাংলা: AGENT_RULES.md আর নেই — PR #1526 নিজেই ফাইলটি মুছে দিয়েছে (Single Door
+-# SSOT এখন AGENTS.md)। তালিকায় মুছে-যাওয়া ফাইল রাখলে step_2_rules()/run_cycle()
++# SSOT এখন AGENTS.md)। তালিকায় মুছে-যাওয়া ফাইল রাখলে step_2_rules()
+ # fresh main-এ সবসময় exit 1 দেয় (missing_local + rev-parse দুই জায়গাতেই fail) —
+ # নিজের মুছে-ফেলা ফাইলকে পূর্বশর্ত করে রাখা লুপের আত্ম-পরাজয়।
+ 
+@@ -365,32 +365,16 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
+     """Start-of-Work Rebase Mandate (#161, #514)."""
+     return pre_push_rebase_guard()
+ 
+-def step_4_branch(task: dict[str, Any] | None = None) -> str | None:
+-    """Step 4: Branch creation guarded by pre_work_rebase_guard()."""
+-    synced, behind, detail = pre_work_rebase_guard()
+-    if not synced:
+-        return None
+-    return "main"
+-
+-def step_6_verify(*_a: Any, **_k: Any) -> bool:
+-    return True
+-
+-def push_branch_to_fork(*_a: Any, **_k: Any) -> bool:
+-    return True
+-
+-def step_7_record(*_a: Any, **_k: Any) -> bool:
+-    ok, behind, detail = pre_push_rebase_guard()
+-    if not ok:
+-        return False
+-    if not step_6_verify():
+-        return False
+-    return push_branch_to_fork()
+-
+-def run_cycle(args: Any = None, *_a: Any, **_k: Any) -> int:
+-    """Run a single dispatch cycle with step_2_rules offline check."""
+-    if not step_2_rules(offline=getattr(args, "offline", False)):
+-        return 1
+-    return 0
++# বাংলা: পুরনো step-পাইপলাইনের মৃত ক্লাস্টার (step_4_branch, step_6_verify,
++# push_branch_to_fork, step_7_record, run_cycle) বাদ দেওয়া হলো। step_6_verify ও
++# push_branch_to_fork কোনো কাজ না করেই True ফেরাত — ভুয়া সাফল্য (U2)।
++# step_7_record সেই দুই মিথ্যার উপর দাঁড়িয়ে ছিল; step_4_branch শাখা না
++# বানিয়েও "main" নাম ফেরাত; run_cycle-এর একমাত্র কাজ ছিল step_2_rules ডাকা —
++# কোনোটিই main()-এর dispatch/envelope পথ থেকে ডাকা হত না (zero importers,
++# code-search যাচাইকৃত; SPEC/CONTRIBUTING-এও কোনো রেফারেন্স নেই)। ব্রাঞ্চ/
++# পুশ/রেকর্ডের আসল মালিক ব্রিজ পাইপলাইন — minimal লুপ নিজে git অপারেশন
++# চালায় না। সৎ pre-push/pre-work rebase গার্ড (#161, #514) অক্ষত রাখা হলো —
++# এরা সত্যিকারের কাজ করে; ভবিষ্যতে বাস্তব কনজিউমার এলে সরাসরি wire করা যাবে।
+ 
+ def classify_task_role(
+     title: str = "", labels: Iterable[str] = (), body: str = ""
+@@ -738,8 +722,21 @@ def main() -> int:
+         return 2
+ 
+     if args.verify_only:
+-        run_verify()
+-        print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
++        # বাংলা: run_verify()-এর ফল আগে ফেলে দেওয়া হত — টিয়ার FAIL হলেও
++        # exit 0 + মার্কার প্রিন্ট হত, অর্থাৎ যাচাই ছিল fail-open (U2 লঙ্ঘন;
++        # আগের r3.1 ফিক্সের রিগ্রেশন)। SPEC §4b অনুযায়ী মার্কার লাইনটি
++        # exit-code-independent — সেটি run_verify() নিজেই stdout-এর শেষ
++        # লাইনে এমিট করে, তাই main()-এর ডুপ্লিকেট প্রিন্ট বাদ। এখন সৎ exit
++        # কোড: যেকোনো টিয়ার ব্যর্থ হলে stderr-এ কারণসহ exit 1 (fail-closed)।
++        evidence = run_verify()
++        failed = [ev for ev in evidence if not ev.get("passed")]
++        if failed:
++            print(
++                "verification FAILED: "
++                + ", ".join(f"tier {ev['tier']} ({ev['name']})" for ev in failed),
++                file=sys.stderr,
++            )
++            return 1
+         return 0
+ 
+     cmd = [
+@@ -762,7 +759,7 @@ def main() -> int:
+     if _offline_requested(getattr(args, "offline", False)):
+         # বাংলা: --offline আগে শুধু parse হতো, main-path একে উপেক্ষা করত —
+         # অফলাইন মেশিনেও লুপ নেটওয়ার্কে gh কল করত ও timeout খেত। এখন সৎভাবে
+-        # বোর্ড-কোয়েরি বাদ (run_cycle()-এর offline আচরণের সাথে একরূপ)।
++        # বোর্ড-কোয়েরি বাদ (step_2_rules()-এর offline আচরণের সাথে একরূপ)।
+         board_unavailable = True
+         board_error = "offline mode (--offline/OFFLINE env): board query honestly skipped"
+     else:

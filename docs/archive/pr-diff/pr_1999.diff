@@ -1,0 +1,867 @@
+diff --git a/studio/src/__tests__/redecorGuardrails.test.ts b/studio/src/__tests__/redecorGuardrails.test.ts
+new file mode 100644
+index 00000000..ffbf933f
+--- /dev/null
++++ b/studio/src/__tests__/redecorGuardrails.test.ts
+@@ -0,0 +1,39 @@
++import { describe, it, expect, vi } from 'vitest';
++import { readFileSync, readdirSync, statSync } from 'fs';
++import path from 'path';
++import { fileURLToPath } from 'url';
++
++// Redecoration guardrails (PR-1): freeze the misconfiguration classes that
++// bit us before so the dashboard port cannot silently reintroduce them.
++const SRC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
++
++function walk(dir: string, out: string[] = []): string[] {
++  for (const name of readdirSync(dir)) {
++    const p = path.join(dir, name);
++    if (statSync(p).isDirectory()) walk(p, out);
++    else if (/\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name)) out.push(p);
++  }
++  return out;
++}
++
++describe('redecoration guardrails', () => {
++  it('no firebase SDK import anywhere in studio/src (Zero-Firebase)', () => {
++    const offenders = walk(SRC).filter((f) =>
++      /from\s+['"](firebase|@firebase)\//.test(readFileSync(f, 'utf-8')),
++    );
++    expect(offenders).toEqual([]);
++  });
++
++  it('audioFx does not create an AudioContext at import time (autoplay policy)', async () => {
++    const ctor = vi.fn();
++    vi.stubGlobal('AudioContext', ctor);
++    await import('../utils/audioFx');
++    expect(ctor).not.toHaveBeenCalled();
++    vi.unstubAllGlobals();
++  });
++
++  it('avatar defaults are a complete, serializable settings object', async () => {
++    const { DEFAULT_AVATAR_SETTINGS } = await import('../types/avatar');
++    expect(JSON.parse(JSON.stringify(DEFAULT_AVATAR_SETTINGS))).toEqual(DEFAULT_AVATAR_SETTINGS);
++  });
++});
+diff --git a/studio/src/data/previewTemplates.ts b/studio/src/data/previewTemplates.ts
+new file mode 100644
+index 00000000..c7da7a6d
+--- /dev/null
++++ b/studio/src/data/previewTemplates.ts
+@@ -0,0 +1,356 @@
++export interface PreviewTemplate {
++  id: string;
++  nameBn: string;
++  nameEn: string;
++  category: string;
++  tag: string;
++  html: string;
++}
++
++export const PREVIEW_TEMPLATES: PreviewTemplate[] = [
++  {
++    id: 'food-delivery',
++    nameBn: 'ফুড ডেলিভারি ও রেস্তোরাঁ প্ল্যাটফর্ম',
++    nameEn: 'Artisan Food Delivery Web App',
++    category: 'E-Commerce & Food',
++    tag: 'Popular',
++    html: `
++<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6">
++  <!-- Top Navigation -->
++  <header class="flex items-center justify-between pb-4 border-b border-slate-800">
++    <div class="flex items-center gap-2">
++      <div class="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center font-bold text-white text-sm">G</div>
++      <div>
++        <span class="font-bold text-lg text-white tracking-tight">Gusteau's Kitchen</span>
++        <span class="text-[10px] text-emerald-400 block font-mono">Organic & Farm-to-Table</span>
++      </div>
++    </div>
++    <div class="flex items-center gap-3 text-xs">
++      <span class="text-emerald-400 font-semibold font-mono">● 25-35 min delivery</span>
++      <button class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-colors shadow-sm">
++        Order Now
++      </button>
++    </div>
++  </header>
++
++  <!-- Hero Banner -->
++  <div class="relative bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-950 border border-emerald-900/40 rounded-2xl p-6 sm:p-8 overflow-hidden shadow-2xl">
++    <div class="space-y-3 max-w-lg">
++      <div class="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-800 text-[10px] font-mono text-emerald-400 uppercase tracking-widest">
++        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
++        Farm-to-Table Experience
++      </div>
++      <h1 class="text-2xl sm:text-4xl font-extrabold text-white tracking-tight leading-tight">Fresh Hand-Crafted Bowls & Organic Pasta</h1>
++      <p class="text-xs sm:text-sm text-slate-300 leading-relaxed">Artisanal cuisine prepared with 100% locally sourced organic ingredients and delivered hot to your doorstep.</p>
++      <div class="pt-2">
++        <button id="hero-order-cta" class="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">
++          Order Hot Bowl Now
++        </button>
++      </div>
++    </div>
++  </div>
++
++  <!-- Menu Filter Bar -->
++  <div class="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
++    <button class="px-3.5 py-1.5 bg-emerald-600 text-white font-semibold rounded-lg shrink-0">All Dishes (18)</button>
++    <button class="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg shrink-0 border border-slate-800">Fresh Bowls</button>
++    <button class="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg shrink-0 border border-slate-800">Handmade Pasta</button>
++    <button class="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-lg shrink-0 border border-slate-800">Artisan Beverages</button>
++  </div>
++
++  <!-- Dish Cards Grid -->
++  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
++    <div class="bg-slate-900/70 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between transition-colors">
++      <div>
++        <div class="flex justify-between items-start mb-2">
++          <h3 class="font-bold text-sm text-white">Wild Salmon Quinoa Bowl</h3>
++          <span class="font-mono text-emerald-400 font-bold text-sm">$16.50</span>
++        </div>
++        <p class="text-xs text-slate-400 leading-relaxed mb-3">Pacific wild-caught salmon, organic tricolor quinoa, Hass avocado, edamame, and toasted sesame ginger vinaigrette.</p>
++      </div>
++      <div class="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs">
++        <span class="text-slate-500 font-mono">540 kcal · 38g Protein</span>
++        <button class="px-2.5 py-1 bg-slate-800 hover:bg-emerald-600 text-white rounded font-medium transition-colors">+ Add</button>
++      </div>
++    </div>
++
++    <div class="bg-slate-900/70 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between transition-colors">
++      <div>
++        <div class="flex justify-between items-start mb-2">
++          <h3 class="font-bold text-sm text-white">Truffle Pappardelle Pasta</h3>
++          <span class="font-mono text-emerald-400 font-bold text-sm">$18.00</span>
++        </div>
++        <p class="text-xs text-slate-400 leading-relaxed mb-3">Freshly rolled egg pappardelle with wild porcini ragu, 24-month aged Parmigiano Reggiano, and black summer truffle oil.</p>
++      </div>
++      <div class="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs">
++        <span class="text-slate-500 font-mono">620 kcal · Vegetarian</span>
++        <button class="px-2.5 py-1 bg-slate-800 hover:bg-emerald-600 text-white rounded font-medium transition-colors">+ Add</button>
++      </div>
++    </div>
++
++    <div class="bg-slate-900/70 border border-slate-800 hover:border-slate-700 rounded-xl p-4 flex flex-col justify-between transition-colors">
++      <div>
++        <div class="flex justify-between items-start mb-2">
++          <h3 class="font-bold text-sm text-white">Mediterranean Falafel Bowl</h3>
++          <span class="font-mono text-emerald-400 font-bold text-sm">$14.00</span>
++        </div>
++        <p class="text-xs text-slate-400 leading-relaxed mb-3">Crisp chickpea falafel patties, roasted sumac cauliflower, pickled turnips, lemon tahini drizzle, and warm pita wedges.</p>
++      </div>
++      <div class="flex items-center justify-between pt-3 border-t border-slate-800/80 text-xs">
++        <span class="text-slate-500 font-mono">480 kcal · 100% Vegan</span>
++        <button class="px-2.5 py-1 bg-slate-800 hover:bg-emerald-600 text-white rounded font-medium transition-colors">+ Add</button>
++      </div>
++    </div>
++  </div>
++</div>
++`
++  },
++  {
++    id: 'saas-glassmorphism',
++    nameBn: 'SaaS ল্যান্ডিং পেজ (গ্লাসমরফিজম)',
++    nameEn: 'SaaS Landing Page with Glassmorphism Header',
++    category: 'Landing & SaaS',
++    tag: 'Tier 1 Mandate',
++    html: `
++<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-8 font-sans">
++  <!-- Top Glassmorphism Nav -->
++  <header class="sticky top-0 z-30 bg-slate-900/70 backdrop-blur-xl border border-white/[0.1] rounded-2xl px-5 py-3 flex items-center justify-between shadow-xl">
++    <div class="flex items-center gap-3">
++      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-bold text-sm shadow-md shadow-indigo-500/30">
++        ⚡
++      </div>
++      <span class="font-bold text-base text-white tracking-tight">Krypton AI</span>
++    </div>
++    <nav class="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
++      <a href="#features" class="hover:text-indigo-400 transition-colors">Platform</a>
++      <a href="#benchmarks" class="hover:text-indigo-400 transition-colors">Benchmarks</a>
++      <a href="#enterprise" class="hover:text-indigo-400 transition-colors">Enterprise</a>
++      <a href="#pricing" class="hover:text-indigo-400 transition-colors">Pricing</a>
++    </nav>
++    <div class="flex items-center gap-2">
++      <button class="px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white transition-colors">Sign in</button>
++      <button id="saas-cta" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/30 active:scale-95">
++        Start Free Trial
++      </button>
++    </div>
++  </header>
++
++  <!-- Hero Section -->
++  <section class="text-center space-y-4 py-8 relative">
++    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-950/80 border border-indigo-700/60 text-xs font-mono text-indigo-300 mb-2">
++      <span class="w-2 h-2 rounded-full bg-indigo-400 animate-ping"></span>
++      <span>INTRODUCING AUTONOMOUS AGENTS V3.0</span>
++    </div>
++    <h1 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight max-w-2xl mx-auto">
++      The Intelligent Cockpit for <br/>
++      <span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-400">
++        Frontier Engineering Teams
++      </span>
++    </h1>
++    <p class="text-xs sm:text-sm text-slate-400 max-w-xl mx-auto leading-relaxed">
++      Federate 140+ MCP micro-tools, automate continuous code deployment to Cloudflare Edge, and inspect runtime DOM trees in seconds.
++    </p>
++    <div class="flex items-center justify-center gap-3 pt-3">
++      <button class="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all active:scale-95">
++        Claim 14-Day Free Sandbox
++      </button>
++      <button class="px-5 py-3 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 font-semibold text-xs rounded-xl transition-colors">
++        View Live Interactive Demo →
++      </button>
++    </div>
++  </section>
++
++  <!-- Ticker Metrics -->
++  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs font-mono">
++    <div class="p-4 bg-slate-900/60 rounded-2xl border border-white/[0.08] backdrop-blur-sm">
++      <span class="text-slate-500 block font-sans">Active Federation Nodes</span>
++      <span class="text-2xl font-bold text-white tabular-nums">1,480+</span>
++      <span class="text-[10px] text-emerald-400 block mt-1">● 99.99% Uptime</span>
++    </div>
++    <div class="p-4 bg-slate-900/60 rounded-2xl border border-white/[0.08] backdrop-blur-sm">
++      <span class="text-slate-500 block font-sans">Time to First Byte</span>
++      <span class="text-2xl font-bold text-indigo-400 tabular-nums">28ms</span>
++      <span class="text-[10px] text-emerald-400 block mt-1">● Global Anycast</span>
++    </div>
++    <div class="p-4 bg-slate-900/60 rounded-2xl border border-white/[0.08] backdrop-blur-sm">
++      <span class="text-slate-500 block font-sans">Autonomous PR Solves</span>
++      <span class="text-2xl font-bold text-white tabular-nums">42,910</span>
++      <span class="text-[10px] text-purple-400 block mt-1">● Zero human friction</span>
++    </div>
++    <div class="p-4 bg-slate-900/60 rounded-2xl border border-white/[0.08] backdrop-blur-sm">
++      <span class="text-slate-500 block font-sans">Cost Efficiency</span>
++      <span class="text-2xl font-bold text-emerald-400 tabular-nums">84%</span>
++      <span class="text-[10px] text-slate-400 block mt-1">● vs Legacy Clouds</span>
++    </div>
++  </div>
++</div>
++`
++  },
++  {
++    id: 'fintech-analytics',
++    nameBn: 'রিয়েলটাইম ফিনান্সিয়াল অ্যানালিটিক্স',
++    nameEn: 'Realtime Financial Analytics Chart',
++    category: 'Finance & Trading',
++    tag: 'Tier 1 Mandate',
++    html: `
++<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-6 font-mono text-xs">
++  <!-- Header Bar -->
++  <div class="flex items-center justify-between pb-4 border-b border-slate-800">
++    <div class="flex items-center gap-3">
++      <div class="w-8 h-8 rounded-lg bg-emerald-950 border border-emerald-700/60 flex items-center justify-center font-bold text-emerald-400 text-sm">
++        $
++      </div>
++      <div>
++        <h2 class="text-sm font-bold text-white tracking-tight font-sans">Apex Liquidity Terminal</h2>
++        <span class="text-[10px] text-slate-400">Order Routing: London LND-4 · FIX 4.4 Engine</span>
++      </div>
++    </div>
++    <div class="flex items-center gap-2">
++      <span class="px-2 py-0.5 rounded text-[11px] bg-emerald-950 text-emerald-400 border border-emerald-800">LIVE FEED</span>
++      <span class="text-slate-400 text-[11px] tabular-nums">14:28:44 UTC</span>
++    </div>
++  </div>
++
++  <!-- Portfolio Metric Cards -->
++  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
++    <div class="p-4 bg-slate-900/80 rounded-xl border border-slate-800">
++      <span class="text-slate-400 block font-sans text-[11px]">Total Net Liquidity</span>
++      <span class="text-2xl font-bold text-white tabular-nums tracking-tight font-mono">$1,842,950.40</span>
++      <span class="text-[10px] text-emerald-400 block mt-1">▲ +$48,120.00 (+2.68%) 24h</span>
++    </div>
++    <div class="p-4 bg-slate-900/80 rounded-xl border border-slate-800">
++      <span class="text-slate-400 block font-sans text-[11px]">Unrealized P&L</span>
++      <span class="text-2xl font-bold text-emerald-400 tabular-nums tracking-tight font-mono">+$184,320.15</span>
++      <span class="text-[10px] text-slate-400 block mt-1">Margin Utilization: 24.2%</span>
++    </div>
++    <div class="p-4 bg-slate-900/80 rounded-xl border border-slate-800">
++      <span class="text-slate-400 block font-sans text-[11px]">Sharpe Ratio</span>
++      <span class="text-2xl font-bold text-indigo-400 tabular-nums tracking-tight font-mono">3.42</span>
++      <span class="text-[10px] text-emerald-400 block mt-1">Max Drawdown: -1.8%</span>
++    </div>
++  </div>
++
++  <!-- Candlestick Visualizer Mock Frame -->
++  <div class="p-4 bg-slate-900/90 rounded-2xl border border-slate-800 space-y-3">
++    <div class="flex items-center justify-between text-[11px]">
++      <div class="flex items-center gap-3">
++        <span class="font-bold text-white text-xs">BTC/USD PERP</span>
++        <span class="text-emerald-400 font-bold">$68,420.50</span>
++        <span class="text-slate-500">Vol: $4.2B</span>
++      </div>
++      <div class="flex gap-1 text-[10px]">
++        <button class="px-2 py-0.5 rounded bg-slate-800 text-white">1m</button>
++        <button class="px-2 py-0.5 rounded bg-indigo-600 text-white font-bold">5m</button>
++        <button class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">1h</button>
++        <button class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">1D</button>
++      </div>
++    </div>
++
++    <!-- Trend Visual Bars -->
++    <div class="h-36 flex items-end gap-1.5 pt-4 border-b border-slate-800/80 px-2">
++      <div class="flex-1 bg-emerald-500/40 hover:bg-emerald-400 rounded-t h-[40%] transition-all"></div>
++      <div class="flex-1 bg-emerald-500/60 hover:bg-emerald-400 rounded-t h-[55%] transition-all"></div>
++      <div class="flex-1 bg-rose-500/50 hover:bg-rose-400 rounded-t h-[45%] transition-all"></div>
++      <div class="flex-1 bg-emerald-500/70 hover:bg-emerald-400 rounded-t h-[68%] transition-all"></div>
++      <div class="flex-1 bg-emerald-500/80 hover:bg-emerald-400 rounded-t h-[82%] transition-all"></div>
++      <div class="flex-1 bg-rose-500/60 hover:bg-rose-400 rounded-t h-[60%] transition-all"></div>
++      <div class="flex-1 bg-emerald-500/90 hover:bg-emerald-400 rounded-t h-[92%] transition-all"></div>
++      <div class="flex-1 bg-emerald-400 rounded-t h-[100%] shadow-lg shadow-emerald-500/20"></div>
++    </div>
++
++    <div class="flex justify-between text-[10px] text-slate-500">
++      <span>14:00</span>
++      <span>14:10</span>
++      <span>14:20</span>
++      <span>14:30 (Current)</span>
++    </div>
++  </div>
++</div>
++`
++  },
++  {
++    id: 'kanban-workflow',
++    nameBn: 'ইন্টারঅ্যাক্টিভ কানবান ওয়ার্কফ্লো',
++    nameEn: 'Interactive KanBan Workflow Board',
++    category: 'Productivity & Agile',
++    tag: 'Tier 1 Mandate',
++    html: `
++<div class="max-w-4xl mx-auto p-4 sm:p-6 space-y-5 font-sans">
++  <!-- KanBan Header -->
++  <div class="flex items-center justify-between pb-3 border-b border-slate-800">
++    <div class="flex items-center gap-3">
++      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-sm">
++        📋
++      </div>
++      <div>
++        <h2 class="text-sm font-bold text-white tracking-tight">SupremeAI Sprint 42 (Q4 Roadmap)</h2>
++        <span class="text-[10px] text-slate-400 font-mono">14 issues · 3 assignees · Velocity: 84 pts</span>
++      </div>
++    </div>
++    <button class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm">
++      + New Task
++    </button>
++  </div>
++
++  <!-- Columns Grid -->
++  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
++    <!-- Column 1: Backlog -->
++    <div class="bg-slate-900/60 rounded-xl border border-slate-800 p-3 space-y-2.5">
++      <div class="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px] font-mono">
++        <span class="font-bold text-slate-300">TODO / BACKLOG</span>
++        <span class="px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">4</span>
++      </div>
++      <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 hover:border-slate-700 transition-colors cursor-pointer">
++        <span class="px-1.5 py-0.5 rounded bg-indigo-950 text-indigo-300 text-[10px] font-mono font-bold">API</span>
++        <h4 class="font-semibold text-white">Integrate WebSocket bridge for Live MCP streaming</h4>
++        <div class="flex justify-between items-center text-[10px] text-slate-500 pt-1">
++          <span>Est: 3h</span>
++          <span class="w-5 h-5 rounded-full bg-slate-700 flex items-center justify-center text-white text-[9px]">ZH</span>
++        </div>
++      </div>
++      <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 hover:border-slate-700 transition-colors cursor-pointer">
++        <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] font-mono font-bold">FE</span>
++        <h4 class="font-semibold text-white">Optimize tablet 768px responsive viewport breakpoints</h4>
++        <div class="flex justify-between items-center text-[10px] text-slate-500 pt-1">
++          <span>Est: 1h</span>
++          <span class="w-5 h-5 rounded-full bg-indigo-700 flex items-center justify-center text-white text-[9px]">AI</span>
++        </div>
++      </div>
++    </div>
++
++    <!-- Column 2: In Progress -->
++    <div class="bg-slate-900/60 rounded-xl border border-slate-800 p-3 space-y-2.5">
++      <div class="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px] font-mono">
++        <span class="font-bold text-amber-400">IN PROGRESS</span>
++        <span class="px-1.5 py-0.2 rounded bg-amber-950 text-amber-300">2</span>
++      </div>
++      <div class="bg-slate-950 p-3 rounded-lg border border-amber-800/40 space-y-2 hover:border-amber-600 transition-colors cursor-pointer">
++        <span class="px-1.5 py-0.5 rounded bg-amber-950 text-amber-300 text-[10px] font-mono font-bold">AUTONOMY</span>
++        <h4 class="font-semibold text-white">Wire Render 512MB RAM sentinel & cache purger</h4>
++        <div class="flex justify-between items-center text-[10px] text-slate-500 pt-1">
++          <span class="text-amber-400 font-mono">Active solve...</span>
++          <span class="w-5 h-5 rounded-full bg-amber-700 flex items-center justify-center text-white text-[9px]">JV</span>
++        </div>
++      </div>
++    </div>
++
++    <!-- Column 3: Completed / Done -->
++    <div class="bg-slate-900/60 rounded-xl border border-slate-800 p-3 space-y-2.5">
++      <div class="flex items-center justify-between pb-1 border-b border-slate-800 text-[11px] font-mono">
++        <span class="font-bold text-emerald-400">DONE (VERIFIED)</span>
++        <span class="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-300">8</span>
++      </div>
++      <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-2 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">
++        <span class="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 text-[10px] font-mono font-bold">INSPECTOR</span>
++        <h4 class="font-semibold text-slate-300 line-through">Click-to-Edit Visual Element Inspector with micro-prompt</h4>
++        <div class="flex justify-between items-center text-[10px] text-emerald-400 pt-1">
++          <span>✓ Shipped v1.3</span>
++          <span class="w-5 h-5 rounded-full bg-emerald-700 flex items-center justify-center text-white text-[9px]">✓</span>
++        </div>
++      </div>
++    </div>
++  </div>
++</div>
++`
++  }
++];
+diff --git a/studio/src/types/avatar.ts b/studio/src/types/avatar.ts
+new file mode 100644
+index 00000000..5e385153
+--- /dev/null
++++ b/studio/src/types/avatar.ts
+@@ -0,0 +1,121 @@
++export type AvatarPersonaId = 
++  | 'cybernetic-android' // Mark-VII Cybernetic AI (Cyan/Blue Hologram, Ocular HUD)
++  | 'futuristic-female'  // Athena AI (Amethyst/Rose-Gold, Concentric Halo, Elegant Matrix)
++  | 'space-commander'    // Titan Commander (Amber/Gold Tactical Mesh, Reinforced Hex Chassis)
++  | 'energy-orb'         // Quantum Core (Emerald/Pure Plasma Sphere, Oscillating Singularity)
++  | 'custom-companion';  // User's Favorite Person / Living Photo Hologram
++
++export type VoiceGender = 'male' | 'female' | 'neutral';
++export type VoiceAccent = 'british' | 'us' | 'bengali';
++export type CompanionTemperament = 'architect' | 'ironman_jarvis' | 'empathetic_copilot' | 'warm_mentor' | 'devoted_companion';
++export type HologramMode = 'cyber' | 'living_human';
++
++export interface AvatarSettings {
++  personaId: AvatarPersonaId;
++  name: string;
++  gender: VoiceGender;
++  pitch: number;    // 0.8 to 1.3
++  rate: number;     // 0.8 to 1.3
++  accent: VoiceAccent;
++  temperament: CompanionTemperament;
++  soundEnabled: boolean;
++  hologramMode: HologramMode;
++  customPhotoUrl?: string;
++  customPhotoName?: string;
++  relationshipArchetype?: string; // e.g. "Mother", "Partner", "Mentor", "Guardian Angel", "Chief of Staff"
++  eyeColor?: string; // hex
++  glowColor?: string; // hex
++}
++
++export const DEFAULT_AVATAR_SETTINGS: AvatarSettings = {
++  personaId: 'cybernetic-android',
++  name: 'JARVIS Mark-VII',
++  gender: 'male',
++  pitch: 1.0,
++  rate: 1.05,
++  accent: 'british',
++  temperament: 'ironman_jarvis',
++  soundEnabled: true,
++  hologramMode: 'cyber',
++  relationshipArchetype: 'AI Chief of Staff',
++  eyeColor: '#00f0ff',
++  glowColor: '#00f0ff',
++};
++
++export const AVATAR_PERSONAS = [
++  {
++    id: 'cybernetic-android' as AvatarPersonaId,
++    nameBn: 'জার্ভিস মার্ক-৭ (সাইবারনেটিক কোর)',
++    nameEn: 'JARVIS Mark-VII (Cybernetic Core)',
++    badge: 'Iron Man Canonical',
++    descriptionBn: 'সায়ান ও ব্লু ক্রিস্টালাইন হলো-মেটাবলিজম, অকুলার ট্র্যাকার ও আর্ক রিঅ্যাক্টর হার্ট।',
++    descriptionEn: 'Cyan & blue crystalline holo-mesh with ocular tracker and rotary arc reactor heart.',
++    primaryColor: '#00f0ff',
++    glowColor: 'rgba(0, 240, 255, ',
++    accentColor: '#3b82f6',
++    defaultGender: 'male' as VoiceGender,
++    defaultPitch: 1.0,
++    defaultRate: 1.05,
++    defaultAccent: 'british' as VoiceAccent,
++  },
++  {
++    id: 'futuristic-female' as AvatarPersonaId,
++    nameBn: 'এথিনা এআই (আম্যাথিস্ট নিউরাল মেট্রিক্স)',
++    nameEn: 'Athena AI (Amethyst Neural Matrix)',
++    badge: 'Celestial Architecture',
++    descriptionBn: 'ভায়োলেট ও রোজ-গোল্ড হলো-ফিলামেন্ট, ডবল কনসেন্ট্রিক সেলেস্টিয়াল হ্যালো ক্রাউন ও স্মুথ পারফেকশন।',
++    descriptionEn: 'Violet & rose-gold holo-filaments with dual celestial halo crown and harmonic symmetry.',
++    primaryColor: '#d946ef',
++    glowColor: 'rgba(217, 70, 239, ',
++    accentColor: '#f43f5e',
++    defaultGender: 'female' as VoiceGender,
++    defaultPitch: 1.15,
++    defaultRate: 1.02,
++    defaultAccent: 'us' as VoiceAccent,
++  },
++  {
++    id: 'space-commander' as AvatarPersonaId,
++    nameBn: 'টাইটান কমান্ডার (ট্যাকটিকাল গোল্ড মেস)',
++    nameEn: 'Titan Commander (Tactical Gold Mesh)',
++    badge: 'Mission Governor',
++    descriptionBn: 'অ্যাম্বার গোল্ড হেক্সাগোনাল ডিফেন্স গ্রিড, রিইনফোর্সড জলাইন এবং ডিপ স্পেস টেলিমেট্রি ক্রসহেয়ার।',
++    descriptionEn: 'Amber gold hexagonal defense grid with reinforced jawline and telemetry HUD crosshairs.',
++    primaryColor: '#f59e0b',
++    glowColor: 'rgba(245, 158, 11, ',
++    accentColor: '#ea580c',
++    defaultGender: 'male' as VoiceGender,
++    defaultPitch: 0.88,
++    defaultRate: 0.98,
++    defaultAccent: 'british' as VoiceAccent,
++  },
++  {
++    id: 'energy-orb' as AvatarPersonaId,
++    nameBn: 'কোয়ান্টাম কোর (এমারেল্ড প্লাজমা স্ফিয়ার)',
++    nameEn: 'Quantum Core (Emerald Plasma Singularity)',
++    badge: 'Abstract Singularity',
++    descriptionBn: '৪-লেয়ার পালসিং কোয়ান্টাম প্লাজমা, ইলেকট্রন অরবিটিং ক্লাউড ও হারমোনিক সাইন ওয়েভ এনার্জি।',
++    descriptionEn: '4-layer oscillating quantum plasma sphere with electron swarm and harmonic wave vortex.',
++    primaryColor: '#10b981',
++    glowColor: 'rgba(16, 185, 129, ',
++    accentColor: '#06b6d4',
++    defaultGender: 'neutral' as VoiceGender,
++    defaultPitch: 1.08,
++    defaultRate: 1.08,
++    defaultAccent: 'us' as VoiceAccent,
++  },
++  {
++    id: 'custom-companion' as AvatarPersonaId,
++    nameBn: 'প্রিয় মানুষ (লিভিং ফটো হলোগ্রাম)',
++    nameEn: 'Favorite Person (Living Photo Hologram)',
++    badge: 'Deep Emotional Anchor',
++    descriptionBn: 'আপনার মা, স্ত্রী, প্রিয় মানুষ বা মেন্টরের ছবি আপলোড করুন—হলোগ্রাফিক গ্লো ও প্রাকৃতিক মুভমেন্ট সহ জীবন্ত হয়ে উঠবে।',
++    descriptionEn: 'Upload personal photo of your loved one, mother, partner or mentor with glowing hologram contour.',
++    primaryColor: '#38bdf8',
++    glowColor: 'rgba(56, 189, 248, ',
++    accentColor: '#ec4899',
++    defaultGender: 'female' as VoiceGender,
++    defaultPitch: 1.05,
++    defaultRate: 1.0,
++    defaultAccent: 'us' as VoiceAccent,
++  },
++];
+diff --git a/studio/src/types/worldclass.ts b/studio/src/types/worldclass.ts
+new file mode 100644
+index 00000000..b1f830f5
+--- /dev/null
++++ b/studio/src/types/worldclass.ts
+@@ -0,0 +1,54 @@
++export interface ProjectFile {
++  path: string;
++  name: string;
++  language: string;
++  content: string;
++  icon?: string;
++  isModified?: boolean;
++}
++
++export interface VersionSnapshot {
++  id: string;
++  version: string;
++  title: string;
++  timestamp: string;
++  author: 'JARVIS Agent' | 'Developer';
++  summary: string;
++  files: Record<string, string>; // path -> content
++  diffSummary: {
++    added: number;
++    removed: number;
++    filesChanged: number;
++  };
++}
++
++export interface SelectedElementInfo {
++  selector: string;
++  tagName: string;
++  className: string;
++  textContent: string;
++  boundingRect: {
++    top: number;
++    left: number;
++    width: number;
++    height: number;
++  };
++}
++
++export interface LiveDeploymentState {
++  status: 'idle' | 'deploying' | 'live' | 'failed';
++  url?: string;
++  provider: 'Cloudflare Edge' | 'Vercel' | 'Render';
++  deployedAt?: string;
++  dnsRegion: string;
++  sslStatus: 'Active (TLS 1.3)' | 'Provisioning';
++  cdnHits: number;
++}
++
++export interface InjectedPackage {
++  name: string;
++  version: string;
++  cdnUrl: string;
++  installed: boolean;
++  category: 'UI' | 'Animation' | 'Icons' | 'Data';
++}
+diff --git a/studio/src/utils/audioFx.ts b/studio/src/utils/audioFx.ts
+new file mode 100644
+index 00000000..b86c0b8d
+--- /dev/null
++++ b/studio/src/utils/audioFx.ts
+@@ -0,0 +1,267 @@
++/**
++ * High-Tech Web Audio Sound Engine for JARVIS & Companion Hologram
++ * Pure browser-native synthesis with zero external MP3 dependencies.
++ */
++
++class JarvisAudioEngine {
++  private ctx: AudioContext | null = null;
++  public soundEnabled: boolean = true;
++  private visemeTimer: any = null;
++
++  private initContext() {
++    if (!this.ctx && typeof window !== 'undefined') {
++      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
++      if (AudioCtx) {
++        this.ctx = new AudioCtx();
++      }
++    }
++    if (this.ctx && this.ctx.state === 'suspended') {
++      this.ctx.resume();
++    }
++  }
++
++  /**
++   * Stark HUD Activation Chime (Two-tone ascending crystalline chime)
++   */
++  playActivate() {
++    if (!this.soundEnabled) return;
++    try {
++      this.initContext();
++      if (!this.ctx) return;
++      const now = this.ctx.currentTime;
++
++      const osc1 = this.ctx.createOscillator();
++      const osc2 = this.ctx.createOscillator();
++      const gain = this.ctx.createGain();
++
++      osc1.type = 'sine';
++      osc2.type = 'triangle';
++
++      osc1.frequency.setValueAtTime(587.33, now); // D5
++      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.12); // A5
++
++      osc2.frequency.setValueAtTime(880, now + 0.12);
++      osc2.frequency.exponentialRampToValueAtTime(1174.66, now + 0.25); // D6
++
++      gain.gain.setValueAtTime(0.08, now);
++      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
++
++      osc1.connect(gain);
++      osc2.connect(gain);
++      gain.connect(this.ctx.destination);
++
++      osc1.start(now);
++      osc2.start(now + 0.1);
++      osc1.stop(now + 0.35);
++      osc2.stop(now + 0.35);
++    } catch {}
++  }
++
++  /**
++   * Task Complete Chime (Harmonic triple pulse)
++   */
++  playSuccess() {
++    if (!this.soundEnabled) return;
++    try {
++      this.initContext();
++      if (!this.ctx) return;
++      const now = this.ctx.currentTime;
++
++      [523.25, 659.25, 1046.5].forEach((freq, i) => {
++        if (!this.ctx) return;
++        const osc = this.ctx.createOscillator();
++        const gain = this.ctx.createGain();
++        osc.type = 'sine';
++        osc.frequency.setValueAtTime(freq, now + i * 0.08);
++
++        gain.gain.setValueAtTime(0.07, now + i * 0.08);
++        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.2);
++
++        osc.connect(gain);
++        gain.connect(this.ctx.destination);
++
++        osc.start(now + i * 0.08);
++        osc.stop(now + i * 0.08 + 0.2);
++      });
++    } catch {}
++  }
++
++  /**
++   * Diagnostic / Scan Tone (Subtle high-tech data sweep)
++   */
++  playScan() {
++    if (!this.soundEnabled) return;
++    try {
++      this.initContext();
++      if (!this.ctx) return;
++      const now = this.ctx.currentTime;
++      const osc = this.ctx.createOscillator();
++      const gain = this.ctx.createGain();
++
++      osc.type = 'sine';
++      osc.frequency.setValueAtTime(400, now);
++      osc.frequency.exponentialRampToValueAtTime(1200, now + 0.15);
++
++      gain.gain.setValueAtTime(0.04, now);
++      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
++
++      osc.connect(gain);
++      gain.connect(this.ctx.destination);
++
++      osc.start(now);
++      osc.stop(now + 0.2);
++    } catch {}
++  }
++
++  /**
++   * Stark Warning / Alert Tone
++   */
++  playAlert() {
++    if (!this.soundEnabled) return;
++    try {
++      this.initContext();
++      if (!this.ctx) return;
++      const now = this.ctx.currentTime;
++      const osc = this.ctx.createOscillator();
++      const gain = this.ctx.createGain();
++
++      osc.type = 'sawtooth';
++      osc.frequency.setValueAtTime(320, now);
++      osc.frequency.setValueAtTime(280, now + 0.1);
++
++      gain.gain.setValueAtTime(0.08, now);
++      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
++
++      osc.connect(gain);
++      gain.connect(this.ctx.destination);
++
++      osc.start(now);
++      osc.stop(now + 0.25);
++    } catch {}
++  }
++
++  /**
++   * Voice Speech Synthesis with Avatar Customization and Phonetic Viseme Lip-Sync
++   */
++  speak(
++    text: string, 
++    lang: 'bn' | 'en' = 'en', 
++    onEnd?: () => void,
++    avatarConfig?: {
++      gender?: 'male' | 'female' | 'neutral';
++      pitch?: number;
++      rate?: number;
++      accent?: 'british' | 'us' | 'bengali';
++    },
++    onVisemeUpdate?: (visemeEnergy: number) => void
++  ) {
++    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
++      if (onEnd) onEnd();
++      return;
++    }
++
++    try {
++      this.stopSpeaking();
++
++      // Clean markdown code blocks for speech
++      const cleaned = text
++        .replace(/```[\s\S]*?```/g, 'Code block generated.')
++        .replace(/`([^`]+)`/g, '$1')
++        .replace(/[#*_~]/g, '')
++        .slice(0, 320);
++
++      const utterance = new SpeechSynthesisUtterance(cleaned);
++      utterance.rate = avatarConfig?.rate ?? 1.05;
++      utterance.pitch = avatarConfig?.pitch ?? 1.0;
++
++      // Select voice based on avatar settings
++      const voices = window.speechSynthesis.getVoices();
++      if (lang === 'bn' || avatarConfig?.accent === 'bengali') {
++        const bnVoice = voices.find(v => v.lang.includes('bn') || v.name.includes('Bangla') || v.name.includes('Bengali'));
++        if (bnVoice) utterance.voice = bnVoice;
++        utterance.lang = 'bn-BD';
++      } else {
++        const isFemale = avatarConfig?.gender === 'female';
++        const isBritish = avatarConfig?.accent === 'british';
++
++        let targetVoice: SpeechSynthesisVoice | undefined;
++
++        if (isFemale) {
++          targetVoice = voices.find(v => 
++            (isBritish && (v.name.includes('UK') || v.lang.includes('GB')) && (v.name.includes('Female') || v.name.includes('Victoria') || v.name.includes('Stephanie'))) ||
++            v.name.includes('Samantha') ||
++            v.name.includes('Zira') ||
++            v.name.includes('Karen') ||
++            (v.name.includes('Female') && v.lang.includes('en'))
++          );
++        } else {
++          // Male / Default Jarvis
++          targetVoice = voices.find(v => 
++            (isBritish && (v.name.includes('Daniel') || v.name.includes('UK English Male') || v.name.includes('Oliver') || v.name.includes('George'))) ||
++            v.name.includes('Daniel') ||
++            v.name.includes('David') ||
++            v.name.includes('Alex') ||
++            (v.name.includes('Male') && v.lang.includes('en'))
++          );
++        }
++
++        // Fallback to any English natural voice if specific one not found
++        if (!targetVoice) {
++          targetVoice = voices.find(v => v.name.includes('Natural') || v.lang.includes('en'));
++        }
++
++        if (targetVoice) utterance.voice = targetVoice;
++        utterance.lang = isBritish ? 'en-GB' : 'en-US';
++      }
++
++      // Viseme modulation during speech
++      if (onVisemeUpdate) {
++        this.visemeTimer = setInterval(() => {
++          // Natural speech oscillation between 0.2 and 0.85
++          const visemeEnergy = 0.25 + Math.random() * 0.65;
++          onVisemeUpdate(visemeEnergy);
++        }, 85);
++
++        utterance.onboundary = (e) => {
++          if (e.name === 'word') {
++            // Emphasize speech onset
++            onVisemeUpdate(0.75 + Math.random() * 0.25);
++          }
++        };
++      }
++
++      const cleanup = () => {
++        if (this.visemeTimer) {
++          clearInterval(this.visemeTimer);
++          this.visemeTimer = null;
++        }
++        if (onVisemeUpdate) onVisemeUpdate(0);
++        if (onEnd) onEnd();
++      };
++
++      utterance.onend = cleanup;
++      utterance.onerror = cleanup;
++
++      window.speechSynthesis.speak(utterance);
++    } catch {
++      if (this.visemeTimer) {
++        clearInterval(this.visemeTimer);
++        this.visemeTimer = null;
++      }
++      if (onVisemeUpdate) onVisemeUpdate(0);
++      if (onEnd) onEnd();
++    }
++  }
++
++  stopSpeaking() {
++    if (this.visemeTimer) {
++      clearInterval(this.visemeTimer);
++      this.visemeTimer = null;
++    }
++    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
++      window.speechSynthesis.cancel();
++    }
++  }
++}
++
++export const jarvisAudio = new JarvisAudioEngine();

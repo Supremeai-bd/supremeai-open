@@ -1,0 +1,59 @@
+diff --git a/docs/reports/ACS_EVAL_2026-10-29.md b/docs/reports/ACS_EVAL_2026-10-29.md
+new file mode 100644
+index 00000000..9b7c1e72
+--- /dev/null
++++ b/docs/reports/ACS_EVAL_2026-10-29.md
+@@ -0,0 +1,53 @@
++# Evaluation — OWASP Agent Control Standard (ACS) as declarative control vocabulary for SupremeAI's agent plane
++
++**Ticket:** #1739 · **Lane:** docs/process (scout envelope, zero code edits) · **Date:** 2026-10-29
++**Evaluated:** Agent Control Standard (ACS) v0.1.0, OWASP Gen AI Security Project (donated 2026-08-27, published 2026-09-01, Apache-2.0)
++**Sources (live, this cycle):** agentcontrolstandard.org; github.com/GenAI-Security-Project/agent-control-standard (specification/ tree, README, reference-implementations/)
++**Verdict up front: `adopt` — as vocabulary first, machinery second.** SupremeAI's agent plane already implements most of ACS's three-layer model in scattered, unnamed form; aligning the names costs near-zero and exposes exactly two real gaps (pre-action intercept, live capability inventory). This document IS the deliverable the ticket asks for.
++
++---
++
++## 1. What ACS actually is (grounded, not hype)
++
++ACS is a **wire specification** for runtime agent control, not a framework or product. Three documents compose it:
++
++- **Instrument** — platforms expose standardized middleware hooks at every agent decision point; the repo enumerates **nineteen native lifecycle hooks** (input, output, tool-call request/response, planning transitions, memory operations, lifecycle). The wire is JSON-RPC 2.0: a `steps/toolCallRequest` notification carries `acs_version`, `request_id`, `metadata.agent_id`/`session_id`, and the `payload` (tool name + arguments); the enforcement side answers a **final verdict object**: `{"type":"final","decision":"allow|deny|modify","reasoning":"...","modifications":{"parameter_overrides":{...}}}`.
++- **Trace** — structured observability via OpenTelemetry semantic conventions (spans for the hook steps), OCSF event mapping for SIEM ingestion, export via `ACS_OTEL_FILE`/`ACS_OTEL_ENDPOINT`.
++- **Inspect** — Agent Bill of Materials (AgBOM): a **live** inventory of an agent's models/tools/dependencies, serializable as CycloneDX/SPDX/SWID, updating as agents discover tools or connect MCP servers.
++
++Enforcement is three-layered: **Tier 1** platform hooks (one-time platform ask), **Tier 2** a framework-agnostic SDK evaluating **declarative policies** (deterministic engines named in the spec: OPA/Rego or Cedar), **Tier 3** enterprise classifiers plugging into the same hooks. A **Guardian Agent** inspects what an agent is about to do and returns the verdict — inline, before the action reaches production. The spec explicitly positions itself against MCP/A2A ("the industry standardized how agents communicate; not how to control them") and against post-hoc observability ("tells you what an agent did after the fact").
++
++Honest maturity note: v0.1.0, spec-first (prose + JSON Schema), single reference implementation generation, donated to OWASP under three months ago. This is an early-standard adoption call, not a mature-dependency call.
++
++## 2. The SupremeAI control surface, inventoried (all verifiable in-tree)
++
++| Surface | Where | ACS analogue |
++|---|---|---|
++| Bridge intake contract: `diffCaps` (maxBytes 204800, maxFiles 30), `secretScanFamilies` (10 families), `protectedPathsToAdminReview` (`.github/`, `docs/ledger/`, `docs/master_docs/`, `prisma/`, `*credential*`, `*.pem`, `*.key`, `*.p12`, `.env*`) | tower `bridge_submit_patch` contract (live, read this cycle from a WO payload) | **Tier-2 declarative policy set** + verdict (accept / reject / admin-review ≈ allow / deny / modify) |
++| Work-claim lease: 30-min TTL, `GRANT_NEW` decision, atomic single-runner | `work_claim` (live: GRANT_NEW 11:41:48Z, ttlMinutes 30, expiresAt) | **allow/deny verdict plane** at a decision point (claim) — the decision object is already verdict-shaped |
++| Universal Invariants + loop contract (`agent-loop-contract/1`, role/mandate/action envelope, `--verify-only`) | `scripts/agents/continuous_agent_loop.py`, AGENTS.md | declarative policy vocabulary for agent behavior (Tier-2 rules expressed in prose + code asserts) |
++| Tower tool surface: 151 tools, dotted-name fail-loud migration, `mcp_access_policy_guard` sanitized forms | mcp-control-plane | platform-layer hook surface (each `tools/call` is a decision point) |
++| Verdict/stamp plane: `bridge_read_feedback` `latestVerdict=APPLIED_LABEL_DERIVED`, labels `bridge:landed`/`bridge:queued`/`bridge:rejected`, `bridge:admin-review` | #2344 Option A (live: 8/8 rows stamped this cycle per c35 watch #2558) | **Guardian verdict vocabulary** — allow(landed)/deny(rejected)/modify(admin-review) already exist as stamps |
++| Post-hoc watchdogs: `bridge_landing_watchdog.py`, `satellite_ci_sentinel.py`, `radar_index_freshness_guard.py`, `federation_ci_watchdog.py` | scripts/ci | **Trace/Inspect analogues** — detection after the fact, receipt-grade audit trails |
++| Static capability map: ECOSYSTEM_MAP 2.3 SSOT classes, radar index | docs | **static AgBOM** — inventory without the live-update property |
++| Agent Review Workflow (ARW): `agent_review_workflow_execute`/`_status` | tower runtime | **SupremeAI's own Guardian-Agent plane — DARK** (#2557: `SUPREMEAI_BACKEND_URL` absent from 43-key env; backend route 404; operator-ordered remedy per #2562) |
++
++## 3. Mapping verdicts: what alignment buys, what's genuinely missing
++
++**Already ACS-shaped (rename, don't rebuild):** the intake contract is a declarative policy set with three-way verdicts; the claim plane is an allow/deny decision point with TTL semantics; the stamp plane already speaks landed/rejected/admin-review — a rename away from allow/deny/modify. Naming these surfaces in ACS vocabulary would (a) make the existing enforcement points legible to outsiders and to future agents reading the SSOT, (b) let the #1787 lease-wiring and #2119 gate work cite a standard instead of ad-hoc contracts, (c) future-proof the tower if ACS reaches platform-SDK maturity (v0.1.0 churn is the counter-risk — adopt the *vocabulary*, not the wire, until v1.x).
++
++**Gap 1 — pre-action intercept is the real one.** Every SupremeAI enforcement point above evaluates **submissions and claims** (intake, claim, gate). The in-repo equivalent of ACS's inline hook — intercepting an agent's *next tool call* before it fires — does not exist; the watchdogs are all post-hoc (they detect, file, and stamp, never intercept). ACS's Instrument spec is precisely the missing pre-action layer, and the ARW plane (#2557) shows SupremeAI already *designed* a Guardian-style runtime and left it dark. **The dossier's concrete recommendation: when the operator executes #2562's ordered remedy (deploy backend route → set env → redeploy), shape the ARW revival as an ACS-Instrument-shaped pilot — hook taxonomy + verdict object — rather than a bespoke protocol.** That converts a dark plane into a standards-aligned one at zero extra design cost.
++
++**Gap 2 — live AgBOM.** ECOSYSTEM_MAP and the radar index are static inventories with manual freshness contracts (passes 25–29 exist because rows go stale). ACS's AgBOM inverts this: inventory updated *by the act of observing*. Full adoption is overkill for a fleet this size; the tractable slice is deriving the tower's 151-tool surface + federation repo roster into a generated AgBOM artifact with the radar guard's freshness discipline — a small, falsifiable CI gate, and a candidate future scout/bridge lane (not filed here; this evaluation is the deliverable).
++
++**Trace:** the repo's receipt culture (every landing carries a receipt WO with git-anchored evidence) already satisfies the *intent* of ACS-Trace; adopting OTel span conventions would buy machine-correlatable traces across the tower + federation, useful the day the #2538 verdict-plane cadence problem is fixed and cross-plane joins need automation. Deferred: no current consumer.
++
++## 4. Rejected alternatives (honesty)
++
++(a) **Adopt the wire now** (implement Instrument hooks in mcp-control-plane against v0.1.0) — rejected: v0.1.0 churn risk on a control-plane surface where fail-loud migration has already bitten twice (R66/R67 rename waves); vocabulary-alignment is reversible, wire-commitment is not. (b) **Write our own standard instead** — rejected: the repo's control contracts are already ACS-shaped by convergence; forking the vocabulary forfeits interoperability for zero gained expressiveness. (c) **Treat this as an ARW-unblocking ticket** — rejected: #2557/#2562 own that chain and its remedy is operator-ordered; this document only recommends the *shape* of the revival. (d) **File the AgBOM CI gate now** — rejected: scope discipline (#1739 asks for an evaluation; the gate needs its own falsifiable design round and its own radar row if adopted).
++
++## 5. Limitations
++
++ACS facts are grounded in the live site + repo README/specification tree fetched this cycle (2026-10-29); the nineteen-hook enumeration and example payloads come from the repo's README/spec pages and were not validated against a running reference implementation. SupremeAI-side facts are read from the local tree at 15e31d3 and live tower probes this cycle (work_claim verdict, intake contract fields). The verdict `adopt` is scoped to **vocabulary alignment + ARW-revival shaping**; machinery adoption (wire, OPA/Cedar dependency, AgBOM generation) is explicitly out of scope and re-decidable at ACS v1.x.
++
++Refs #1739 #2557 #2562 #1787 #2119 #2538

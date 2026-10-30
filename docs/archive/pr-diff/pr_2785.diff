@@ -1,0 +1,95 @@
+diff --git a/browser/action_cascade.py b/browser/action_cascade.py
+index e2f4cc9c..49811ae3 100644
+--- a/browser/action_cascade.py
++++ b/browser/action_cascade.py
+@@ -25,12 +25,11 @@
+ from collections.abc import Callable
+ from typing import Any
+ 
+-from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
++from browser.semantic_dom import CONFIDENCE_VERIFY, confidence_band
+ from browser.vision_grounding import LowConfidenceGrounding, VisionGrounding
+ from core.monitoring.logging_config import logger
+ 
+ __all__ = [
+-    "CONFIDENCE_EXECUTE",
+     "CONFIDENCE_VERIFY",
+     "confidence_band",
+     "execute_click_cascade",
+diff --git a/core/adaptive_engine/approval_workflow.py b/core/adaptive_engine/approval_workflow.py
+index 79a23fb8..cb8f80a1 100644
+--- a/core/adaptive_engine/approval_workflow.py
++++ b/core/adaptive_engine/approval_workflow.py
+@@ -14,7 +14,6 @@
+ from __future__ import annotations
+ 
+ import enum
+-import hashlib
+ import uuid
+ from datetime import UTC, datetime, timedelta
+ from typing import Any
+diff --git a/core/adaptive_engine/capability_registry.py b/core/adaptive_engine/capability_registry.py
+index e96c0594..8351f08e 100644
+--- a/core/adaptive_engine/capability_registry.py
++++ b/core/adaptive_engine/capability_registry.py
+@@ -19,7 +19,7 @@
+ 
+ from pydantic import BaseModel, Field
+ 
+-from adaptive_engine._store import ensure_columns, get_conn, jdump, jload
++from adaptive_engine._store import get_conn, jdump, jload
+ 
+ # ---------------------------------------------------------------------------
+ # Enums
+diff --git a/core/adaptive_engine/correlation.py b/core/adaptive_engine/correlation.py
+index 99ca3e3b..7715bab2 100644
+--- a/core/adaptive_engine/correlation.py
++++ b/core/adaptive_engine/correlation.py
+@@ -12,7 +12,6 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from adaptive_engine._store import get_conn, jdump, jload
+ 
+ # বাংলা: ContextVar দিয়া same async task-এর ভেতরে correlation স্বয়ংক্রিয়ভাবে প্রবাহিত।
+ _current: ContextVar[CorrelationContext | None] = ContextVar(
+diff --git a/core/adaptive_engine/mcp_skeleton.py b/core/adaptive_engine/mcp_skeleton.py
+index 1e0dce6a..d9aaaaaf 100644
+--- a/core/adaptive_engine/mcp_skeleton.py
++++ b/core/adaptive_engine/mcp_skeleton.py
+@@ -16,11 +16,10 @@
+ import enum
+ from typing import Any
+ 
+-from adaptive_engine._store import jdump
+ from adaptive_engine.capability_registry import get_capability_registry
+ from adaptive_engine.correlation import current_correlation
+ from adaptive_engine.deployment_tracker import get_deployment_tracker
+-from adaptive_engine.governance import ActionRisk, get_governance_engine
++from adaptive_engine.governance import get_governance_engine
+ from adaptive_engine.health_model import get_health_aggregator
+ from adaptive_engine.resource_registry import get_resource_registry
+ 
+diff --git a/tests/test_dead_import_drift.py b/tests/test_dead_import_drift.py
+index 0bf2456c..16ed04a9 100644
+--- a/tests/test_dead_import_drift.py
++++ b/tests/test_dead_import_drift.py
+@@ -61,7 +61,17 @@
+ # consistent with the #1887-era −851-line prune wave plus the docs cuts
+ # removing import-carrying files entirely; per-commit scan determinism is
+ # what makes the number trustworthy, not the attribution.
+-BASELINE_UNUSED_IMPORTS = 388
++#
++# Re-armed 2026-10-30 at 932753b: the 388 baseline went stale-low when peer
++# landings introduced 4 NEW dead-binding files (browser/action_cascade.py,
++# core/adaptive_engine/{approval_workflow,capability_registry,correlation,
++# mcp_skeleton}.py — first fleet RED 392>388). Remediation PR removed all 8
++# dead bindings (CONFIDENCE_EXECUTE incl. its __all__ entry, hashlib,
++# ensure_columns, get_conn/jdump/jload, ActionRisk/jdump; each verified
++# dead by AST Name-load + zero consumer imports incl. _archive delegates)
++# and re-measured with this file's own _scan_live_scope -> 384 across a
++# smaller file set. Shrink-only preserved: 384 < 388 < 446.
++BASELINE_UNUSED_IMPORTS = 384
+ 
+ # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
+ # Each binding below was verified dead by AST Name-load analysis + word-boundary

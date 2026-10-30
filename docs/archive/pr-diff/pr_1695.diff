@@ -1,0 +1,322 @@
+diff --git a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+index ecf2df59..cb814509 100644
+--- a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
++++ b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+@@ -48,6 +48,22 @@ export const HEARTBEAT_KEY_PREFIX = "supremeai:agent-heartbeat:";
+ export const HEARTBEAT_HASH_KEY = "supremeai:agent-heartbeats";
+ export const HEARTBEAT_TTL_SECONDS = 300;
+ export const HEARTBEAT_ONLINE_THRESHOLD_SECONDS = 90;
++
++// #1641 (audit: tower slot registry retains expired heartbeats aged 21–24 days):
++// বাংলা: legacy individual key-র 300s TTL আছে, কিন্তু HEARTBEAT_HASH_KEY-এর
++// ফিল্ডের কোনো TTL নেই — HSET চিরকাল বাঁচে। ফলে মরা slot-গুলো রেজিস্ট্রিতে
++// জমতে থাকে (প্রমাণিত: 21–24 দিন ধরে expired, এক query window-এ 13→14)।
++// নিচের read-time lazy reaper: expired এবং grace (ডিফল্ট ২৪ঘ, env
++// REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS, 0 = expiry-তেই) ছাড়িয়ে গেলে সেই
++// ফিল্ড HDEL করে ডিফল্ট listing থেকে বাদ — একই পাঠে `archived`-এ একবার
++// দেখানো হয় (forensics), পরের পাঠে সম্পূর্ণ অদৃশ্য। ফিরে-আসা agent নিজেই
++// HSET করে নতুন রেকর্ড লেখে — মোছা কোনো তথ্য হারায় না।
++export const HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT = 86_400;
++
++export function archiveGraceSeconds(): number {
++  const raw = Number(process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS);
++  return Number.isFinite(raw) && raw >= 0 ? raw : HEARTBEAT_ARCHIVE_GRACE_SECONDS_DEFAULT;
++}
+ export const SLOT_PATTERN = /^(agent|z\.ai|claude|chatgpt|cursor|gemini|copilot|coder|planner|ci|pr-helper|browser|platform|super)-\d+$/;
+ 
+ export type HeartbeatSource = "mcp-tower" | "backend" | "dashboard" | "cli";
+@@ -119,6 +135,57 @@ export function ageSecondsOf(updatedAtMs: number, nowMs: number): number {
+   return Math.max(0, Math.floor((nowMs - updatedAtMs) / 1000));
+ }
+ 
++/**
++ * #1641: স্টোর-করা record → listing entry (pure, Redis ছাড়া টেস্টযোগ্য)।
++ * agentId normalization: পুরনো লেখকের রেকর্ডে agentId null/ফাঁকা থাকলে
++ * slot-id-ই সৎ পরিচয় — listing-এ কখনো null দেখাবে না।
++ */
++export function buildStatusEntry(
++  slot: string,
++  record: HeartbeatRecord,
++  nowMs: number,
++): HeartbeatStatusEntry {
++  return {
++    ...record,
++    slot,
++    agentId: record.agentId?.trim() || slot,
++    ageSeconds: ageSecondsOf(record.updatedAtMs, nowMs),
++    state: deriveState(record.updatedAtMs, nowMs),
++  };
++}
++
++export type SlotPartition = {
++  /** ডিফল্ট listing: online/stale + grace-ভিতরের expired (সৎ "expired" স্টেট দৃশ্যমান)। */
++  slots: HeartbeatStatusEntry[];
++  /** grace ছাড়ানো মরা entry — এই পাঠে একবার দেখানো হয়, তারপর reaped। */
++  archived: HeartbeatStatusEntry[];
++  /** HDEL করার জন্য slot নাম (hash ফিল্ড)। */
++  reapTargets: string[];
++};
++
++/**
++ * #1641 (pure): grace-সীমা অনুযায়ী listing ভাগ করে। expired = >300s;
++ * grace (ডিফল্ট ২৪ঘ) ছাড়িয়ে গেলেই archive+reap — ২৪ঘ-ভিতরের মরা slot
++ * অপারেটরকে দেখাতে থাকে (recent-death forensics), তারপর সৎভাবে সরে যায়।
++ */
++export function partitionSlots(
++  entries: HeartbeatStatusEntry[],
++  nowMs: number,
++  graceSeconds: number = archiveGraceSeconds(),
++): SlotPartition {
++  const grace = Math.max(0, graceSeconds);
++  const slots: HeartbeatStatusEntry[] = [];
++  const archived: HeartbeatStatusEntry[] = [];
++  for (const entry of entries) {
++    if (entry.state === "expired" && entry.ageSeconds > grace) {
++      archived.push(entry);
++    } else {
++      slots.push(entry);
++    }
++  }
++  return { slots, archived, reapTargets: archived.map((e) => e.slot) };
++}
++
+ // ── Redis transport: Upstash multi-account fallback chain ──────────────────
+ // Chain construction lives in lib/redis_chain.ts (shared with the read-only
+ // health adapter so fleet health reflects real chain capability). This module
+@@ -133,6 +200,8 @@ type HeartbeatRedisClient = {
+   keys: (pattern: string) => Promise<string[]>;
+   hset: (key: string, field: string, value: string) => Promise<void>;
+   hgetall: (key: string) => Promise<Record<string, string>>;
++  /** #1641: lazy reaper — মরা hash ফিল্ড মোছে (fields খালি হলে no-op)। */
++  hdel: (key: string, fields: string[]) => Promise<void>;
+ };
+ 
+ // buildAccountChain() moved to lib/redis_chain.ts (shared with adapters/redis)
+@@ -205,6 +274,10 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+       }
+       return result;
+     },
++    hdel: async (key, fields) => {
++      if (!fields.length) return;
++      await call(["HDEL", key, ...fields]);
++    },
+   };
+ }
+ 
+@@ -219,6 +292,7 @@ function makeTcpClient(account: RedisAccountConfig): HeartbeatRedisClient {
+       keys: (pattern: string) => Promise<string[]>;
+       hset: (key: string, field: string, value: string) => Promise<number>;
+       hgetall: (key: string) => Promise<Record<string, string>>;
++      hdel: (key: string, ...fields: string[]) => Promise<number>;
+       disconnect: () => void;
+     })(account.tcpUrl as string, { maxRetriesPerRequest: 1, connectTimeout: 5000 });
+   return {
+@@ -264,6 +338,15 @@ function makeTcpClient(account: RedisAccountConfig): HeartbeatRedisClient {
+         c.disconnect();
+       }
+     },
++    hdel: async (key, fields) => {
++      if (!fields.length) return;
++      const c = connect();
++      try {
++        await c.hdel(key, ...fields);
++      } finally {
++        c.disconnect();
++      }
++    },
+   };
+ }
+ 
+@@ -395,14 +478,22 @@ export type AccountReadStatus = {
+ 
+ /** Lists every live heartbeat record with derived real-time state.
+  *  #646 AC2: L1 read-through cache (default 5s, env REDIS_L1_CACHE_TTL_MS,
+- *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়। */
++ *  0 = off) — dashboard sweep burst একটি TTL উইন্ডোতে একবারই Redis-এ যায়।
++ *  #1641: expired-এর grace (ডিফল্ট ২৪ঘ) ছাড়িয়ে গেলে সেই slot ডিফল্ট listing
++ *  থেকে বাদ + hash থেকে lazy-reap (HDEL) — একই পাঠে `archived`-এ একবার
++ *  ফরেনসিক-ভিউ, পরের পাঠে অদৃশ্য। রেজিস্ট্রি এখন আর মরা slot জমায় না। */
+ export async function listHeartbeats(nowMs: number = Date.now()): Promise<{
+   ok: true;
+   now: string;
+   ttlSeconds: number;
+   onlineThresholdSeconds: number;
++  archiveGraceSeconds: number;
+   accounts: AccountReadStatus[];
+   slots: HeartbeatStatusEntry[];
++  /** #1641: grace ছাড়ানো মরা entry — এই পাঠেই সর্বশেষ দেখা। */
++  archived?: HeartbeatStatusEntry[];
++  /** #1641: যেসব hash ফিল্ড HDEL করা হলো। */
++  reapTargets?: string[];
+ }> {
+   return withL1Cache("l1:agent-heartbeats", l1CacheTtlMs(), () => listHeartbeatsFresh(nowMs), nowMs);
+ }
+@@ -412,8 +503,11 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
+   now: string;
+   ttlSeconds: number;
+   onlineThresholdSeconds: number;
++  archiveGraceSeconds: number;
+   accounts: AccountReadStatus[];
+   slots: HeartbeatStatusEntry[];
++  archived?: HeartbeatStatusEntry[];
++  reapTargets?: string[];
+ }> {
+   const chain = activeAccountChain();
+   if (chain.length === 0) {
+@@ -426,6 +520,8 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
+   // older copy of a slot that failed over to secondary — keep the freshest).
+   const freshest = new Map<string, HeartbeatRecord>();
+   const accounts: AccountReadStatus[] = [];
++  // #1641: reachable client-দের রেখে দিই — reaper-এর HDEL এদের কাছেই যাবে।
++  const reachableClients: HeartbeatRedisClient[] = [];
+ 
+   // বাংলা মন্তব্য (#2613 R2): পড়ার সময়ও cooldown-এ থাকা account-এ একটিও
+   // HGETALL পাঠাই না — তবে dashboard-সততার জন্য সেই account-গুলোকে স্পষ্ট
+@@ -452,6 +548,7 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
+       // Fast path (issue #1994): single HGETALL command instead of KEYS + N*GET per account
+       const hashRecords = await client.hgetall(HEARTBEAT_HASH_KEY);
+       status.reachable = true;
++      reachableClients.push(client);
+       let hasRecords = false;
+       for (const [slot, raw] of Object.entries(hashRecords)) {
+         if (!raw) continue;
+@@ -495,22 +592,37 @@ async function listHeartbeatsFresh(nowMs: number): Promise<{
+     accounts.push(status);
+   }
+ 
+-  const slots: HeartbeatStatusEntry[] = [...freshest.entries()]
+-    .map(([slot, record]) => ({
+-      ...record,
+-      slot,
+-      ageSeconds: ageSecondsOf(record.updatedAtMs, nowMs),
+-      state: deriveState(record.updatedAtMs, nowMs),
+-    }))
++  // #1641: buildStatusEntry — agentId normalization (null/ফাঁকা → slot-id),
++  // বয়স ও state ডেরিভেশন এক জায়গায় (pure, টেস্টযোগ্য)।
++  const entries = [...freshest.entries()]
++    .map(([slot, record]) => buildStatusEntry(slot, record, nowMs))
+     .sort((a, b) => a.slot.localeCompare(b.slot));
+ 
++  // #1641: grace ছাড়ানো মরা slot → ডিফল্ট listing থেকে বাদ + hash থেকে
++  // lazy-reap (HDEL)। জানা সীমাবদ্ধতা (সৎ মন্তব্য): read→HDEL মাইক্রো-সেকেন্ড
++  // window-এ ঠিক ওই slot ফিরে এসে re-ping করলে সদ্য-লেখা রেকর্ডও মুছে যেতে
++  // পারে — ২৪ দিনের মৃত agent-এর ঠিক ওই মুহূর্তে ফেরার সম্ভাবনা নগণ্য, আর
++  // ফিরলেও ৪৫s cadence-এ পরের ping-এ স্লট আবার online দেখায়।
++  const { slots, archived, reapTargets } = partitionSlots(entries, nowMs);
++  if (reapTargets.length) {
++    for (const client of reachableClients) {
++      try {
++        await client.hdel(HEARTBEAT_HASH_KEY, reapTargets);
++      } catch {
++        // বাংলা: reaping best-effort — এই পাঠে ব্যর্থ হলে পরের পাঠে আবার চেষ্টা
++      }
++    }
++  }
++
+   return {
+     ok: true,
+     now: new Date(nowMs).toISOString(),
+     ttlSeconds: HEARTBEAT_TTL_SECONDS,
+     onlineThresholdSeconds: HEARTBEAT_ONLINE_THRESHOLD_SECONDS,
++    archiveGraceSeconds: archiveGraceSeconds(),
+     accounts,
+     slots,
++    ...(archived.length ? { archived, reapTargets } : {}),
+   };
+ }
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/agent.tools.ts b/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
+index 656b23be..077897ff 100644
+--- a/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
+@@ -87,7 +87,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "agent_status",
+-    "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal).",
++    "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal, visible for 24h archive grace). Expired slots beyond the grace are reaped from the registry and returned once under `archived` (#1641).",
+     {},
+     async () => {
+       try {
+diff --git a/infrastructure/mcp-control-plane/test_heartbeat.ts b/infrastructure/mcp-control-plane/test_heartbeat.ts
+index 04b6f379..af2fd3ec 100644
+--- a/infrastructure/mcp-control-plane/test_heartbeat.ts
++++ b/infrastructure/mcp-control-plane/test_heartbeat.ts
+@@ -17,10 +17,13 @@ import {
+   HEARTBEAT_KEY_PREFIX,
+   HEARTBEAT_ONLINE_THRESHOLD_SECONDS,
+   HEARTBEAT_TTL_SECONDS,
++  archiveGraceSeconds,
+   buildAccountChain,
++  buildStatusEntry,
+   deriveState,
+   heartbeatKey,
+   listHeartbeats,
++  partitionSlots,
+   recordHeartbeat,
+   validateSlot,
+ } from "./src/registry/agent_heartbeat.js";
+@@ -143,4 +146,63 @@ assert.equal(tcpChain[0].label, "primary");
+ assert.equal(tcpChain[0].tcpUrl, "rediss://default:pw@primary.upstash.io:6379");
+ delete process.env.REDIS_URL;
+ 
++// ── 5. #1641 archive partition + entry normalization (pure logic) ──────────
++// Tower slot registry retained expired heartbeats aged 21–24 days because the
++// heartbeat HASH has no field TTL (legacy keys die at 300s, hash fields don't).
++// The read-time lazy reaper partitions expired-beyond-grace slots out of the
++// default listing and HDELs them (best-effort) — bounded registry growth.
++
++const t0 = 1_700_000_000_000;
++const rec = (ageMs: number, agentId?: string | null) => ({
++  slot: "agent-1",
++  agentId: (agentId ?? undefined) as string,
++  source: "mcp-tower" as const,
++  updatedAtMs: t0 - ageMs,
++  updatedAt: new Date(t0 - ageMs).toISOString(),
++});
++
++// agentId normalization: legacy null/blank records show the slot id, never null.
++assert.equal(buildStatusEntry("agent-9", rec(0, null as unknown as string), t0).agentId, "agent-9");
++assert.equal(buildStatusEntry("agent-9", rec(0, "   "), t0).agentId, "agent-9");
++assert.equal(
++  buildStatusEntry("agent-9", rec(0, "supremeai-coder-1"), t0).agentId,
++  "supremeai-coder-1",
++);
++assert.equal(buildStatusEntry("agent-9", rec(45_000), t0).state, "online");
++
++const entries = [
++  buildStatusEntry("agent-1", rec(45_000), t0), // online
++  buildStatusEntry("agent-2", rec(200_000), t0), // stale
++  buildStatusEntry("agent-3", rec(600_000), t0), // expired, within default 24h grace
++  buildStatusEntry("agent-5", rec(21 * 86_400_000), t0), // expired 21 days → archive
++  buildStatusEntry("agent-7", rec(86_400_000), t0), // exactly 24h old = grace boundary inclusive → still listed
++];
++
++// Default grace (24h): dead-beyond-grace leaves the listing; recent death stays visible.
++const pDefault = partitionSlots(entries, t0);
++assert.deepEqual(pDefault.slots.map((e) => e.slot), ["agent-1", "agent-2", "agent-3", "agent-7"]);
++assert.deepEqual(pDefault.archived.map((e) => e.slot), ["agent-5"]);
++assert.deepEqual(pDefault.reapTargets, ["agent-5"]);
++assert.equal(pDefault.archived[0].state, "expired"); // honest state, not silently rewritten
++
++// grace=0: every expired entry leaves the default listing immediately (audit-strict mode).
++const pZero = partitionSlots(entries, t0, 0);
++assert.deepEqual(pZero.slots.map((e) => e.slot), ["agent-1", "agent-2"]);
++assert.deepEqual(pZero.reapTargets, ["agent-3", "agent-5", "agent-7"]);
++
++// Tiny grace never archives online/stale entries (state machine preserved).
++const pTiny = partitionSlots(entries, t0, 100);
++assert.deepEqual(pTiny.slots.map((e) => e.slot), ["agent-1", "agent-2"]);
++assert.deepEqual(pTiny.reapTargets, ["agent-3", "agent-5", "agent-7"]);
++
++// Negative grace clamps to 0 (no accidental full-archive of fresh entries).
++process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "-5";
++assert.equal(archiveGraceSeconds(), 86_400); // invalid → default
++process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "0";
++assert.equal(archiveGraceSeconds(), 0);
++process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS = "3600";
++assert.equal(archiveGraceSeconds(), 3600);
++delete process.env.REDIS_HEARTBEAT_ARCHIVE_GRACE_SECONDS;
++assert.equal(archiveGraceSeconds(), 86_400);
++
+ console.log("agent heartbeat contract tests passed");

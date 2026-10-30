@@ -1,0 +1,51 @@
+diff --git a/docs/bridge/orders/bridge-20261027-studio-admin-guard.md b/docs/bridge/orders/bridge-20261027-studio-admin-guard.md
+new file mode 100644
+index 00000000..fe79c708
+--- /dev/null
++++ b/docs/bridge/orders/bridge-20261027-studio-admin-guard.md
+@@ -0,0 +1,45 @@
++# [P0] Enforce authentication on Studio /admin routes (AdminShell mounts for logged-out visitors)
++
++## Task ID
++`bridge-20261027-studio-admin-guard`
++
++## Target repository
++`Supremeai-bd/supremeai-studio` (tracked on the public `supremeai-open` task board per federation policy).
++
++## Severity
++**P0 — unauthenticated visitors can mount the full admin console UI.** Backend authorization is NOT claimed compromised; the defect is client-side route guarding that fails closed only by accident of backend 401s, while exposing the entire admin surface, module names, and internal UI structure to anonymous visitors.
++
++## Verified evidence (pulled live via MCP tower, 2026-10-26)
++- `github_read_file {repo:"supremeai-studio", path:"src/App.tsx"}` (12,506 chars): both `/admin` and `/admin/*` routes are wrapped ONLY in `<RoleGuard requiredRole="admin">` (+ ErrorBoundary) — **no `ProtectedRoute` wrapper**:
++  ```tsx
++  <Route path="/admin" element={<RoleGuard requiredRole="admin"><ErrorBoundary><AdminShell /></ErrorBoundary></RoleGuard>} />
++  <Route path="/admin/*" element={<RoleGuard requiredRole="admin"><ErrorBoundary><AdminShell /></ErrorBoundary></RoleGuard>} />
++  ```
++- `github_read_file {repo:"supremeai-studio", path:"src/components/core/guards/RoleGuard.tsx"}` (sha `c9b2e0658457`, 4,668 chars) contains:
++  ```tsx
++  if (isChecking) return <AuthLoadingSpinner />;
++  if (!isAuthenticated) return <>{children}</>; // ProtectedRoute already handles unauthenticated redirect
++  ```
++- The comment's assumption ("ProtectedRoute already handles unauthenticated redirect") is false on these routes — nothing else guards `/admin`, so `children` (the full `AdminShell`) renders for unauthenticated visitors.
++
++## Why this blocks production
++- Information disclosure: module inventory, route structure, internal labels, and UI flows of the admin console are visible pre-auth.
++- Defense-in-depth violation: the UI should never render an admin shell for an anonymous identity even if every backend call 401s.
++- If any admin child page renders meaningful content before its first API call (or caches state in localStorage), the exposure grows beyond structure.
++
++## Remediation plan (smallest safe change)
++1. Wrap both `/admin` routes with the existing `ProtectedRoute` component (outside `RoleGuard`), OR invert `RoleGuard`'s unauthenticated branch to render the redirect/denied state by default with an explicit opt-in for the deferred pattern.
++2. Add a route-guard test: unauthenticated visit to `/admin` and `/admin/*` must redirect to login (assert AdminShell never mounts).
++3. Sweep other privileged routes (`/jarvis`, OperatorCockpit paths) for the same pattern in the same change or an immediate follow-up.
++
++## Acceptance criteria
++- [ ] `/admin` + `/admin/*` unauthenticated → redirect to login; `AdminShell` never mounted
++- [ ] Regression test green in CI
++- [ ] Audit of other guarded routes documented
++
++## Related orders
++- Audit "SupremeAI সমন্বিত Executive Diagnosis" (2026-10-26), P0 item 6 (admin access-control defect).
++
++## Verification commands for the implementer
++- `github_read_file {repo:"supremeai-studio", path:"src/App.tsx"}`
++- `github_read_file {repo:"supremeai-studio", path:"src/components/core/guards/RoleGuard.tsx"}`

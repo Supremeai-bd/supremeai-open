@@ -1,0 +1,281 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 70d31b66..f0a1a0db 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -188,8 +188,9 @@ forever (eternally-open, unclaimable P0). `status:claimed` P0s still block —
+ another runner is actively on them, the invariant's intended behavior. Held
+ roles never reach `mark_role_run`, so they do not
+ consume their cadence window — once the board drains, the due role dispatches
+-immediately. The gate is board-availability-gated (skipped when the query
+-failed — fail-open to the pre-Rule-5 cadence path) and sits below the
++immediately. The gate is board-availability-gated (skipped when both the gh
++query and the tower board fallback fail — fail-open to the pre-Rule-5 cadence
++path) and sits below the
+ issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
+ invariant text into every dispatched mandate; the invariant's
+ idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
+@@ -199,6 +200,26 @@ held cadence while main CI was green (#1804/#1840) until admin hygiene closed
+ both issues (2026-10-28); label hygiene stays an admin action outside the agent
+ surface.
+ 
++**Tower board fallback (R78/J484751, gh-absent runtimes).** The documented
++external-agent runtime has no `gh` CLI, which used to leave the dispatch path
++dead exactly where the loop actually runs: solver dispatch skipped, the P0
++gate dark (fail-open), and the dispatch window capped at 100 rows while the
++live board exceeded it. The dispatch board query now falls back to the Tower's
++zero-credential `bridge.work_queue` (`_tower_board_rows()`: lazy sibling
++`mcp_tower_client` import for URL resolution — env / workspace `mcp.json` /
++documented default — then a stdlib-urllib streamable POST; large single-line
++SSE payloads are extracted bytes-safe because `requests.iter_lines` splits
++~134 KB lines at chunk boundaries). Fallback rows are mapped to gh shape
++(`{"name": …}` label dicts), so solver dispatch, `has_open_p0_blocker`, and
++priority sorting all operate on live data; the fallback runs only when gh
++failed (never on `--offline`, never on gh-present runtimes) and every failure
++mode degrades to the pre-existing honest skip line + gh-absent honesty floor.
++The `--verify-only` boot smoke additionally displays the five Universal
++Invariant Pillars and the fail-closed invariant checklist on stderr (rule-1
++contract was half-implemented: `_print_rule_version_and_checklist` was a
++silent stub and `mandatory_invariant_checklist` had no runtime consumer;
++stdout contracts — tier evidence + exactly-once final marker — unchanged).
++
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+ The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 939386e2..dbbc99be 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -12,7 +12,7 @@
+ 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
+ """
+ from __future__ import annotations
+-import argparse, json, os, subprocess, sys, threading, time
++import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
+ from collections.abc import Iterable
+ from pathlib import Path
+ from typing import Any
+@@ -330,6 +330,155 @@ def _probe() -> None:
+         return "tower board probe timed out — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+     return outcome.get("note", "P0-drainage gate (Invariant 5) is dark on this gh-less runtime")
+ 
++def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], str]:
++    """R78/J484751 — gh-absent tower board fallback (revives the dispatch path).
++
++    বাংলা: gh CLI নেই এমন ডকুমেন্টেড external-agent runtime-এ ডিসপ্যাচ পথের
++    বোর্ড-কোয়েরি সবসময় ব্যর্থ হয় — ফলে solver dispatch ও P0-drainage গেট (Invariant
++    ৫) দুটোই অন্ধকার থাকে, অথচ tower queue zero-credential থেকেই reachable (live
++    প্রমাণ 2026-10-30: bridge.work_queue, totalOpen=115)। R61 floor-প্রোব শুধু একটা
++    সত্য-নোট যোগ করত — বোর্ড-ডেটা নিজে ফেরত দিত না; ফলে লুপ যেখানে
++    আসলেই চলে সেখানে solver-পথ মৃত ছিল এবং P0-অবস্থা যাচাই অসম্ভব ছিল। এই fallback
++    সেই একই lazy sibling import প্যাটার্ন (daemon thread + hard join, কখনো raise/
++    hang নয় — প্রতিটি ব্যর্থতা সৎ নোটে নামে) দিয়ে bridge.work_queue-র সারিগুলোকে
++    gh-shaped বোর্ড আইটেমে ম্যাপ করে; একই পেলোড এখন দুই ভোক্তা পায় (floor-নোট +
++    বোর্ড-ডেটা)। gh-present runtime-এ এই ফাংশন ডাকা হয় না (CI অস্পৃষ্ট)।
++
++    Shape contract: workOrders[].labels স্ট্রিং-তালিকা, কিন্তু label_names() dict-শেপ
++    আশা করে — তাই {"name": l} এ মোড়া হয় (EXCLUDED_LABELS/P0-গেট/priority-scan
++    তিনটিই এভাবে কাজ করে); body অনুপস্থিত রাখা হয় — envelope hydrate-পথ (title/body
++    অনুপস্থিতিতে gh issue view + সৎ board_note) এটাকেই সামলায়। ফেরত: (rows, note) —
++    rows খালি মানে fallback-ব্যর্থতা, note-এ সৎ কারণ।
++
++    Transport note (live 2026-10-30): পুরো বোর্ডের (limit=200) tools/call রেসপন্স
++    একটাই ~১৩৪ KB-র SSE data-লাইন; সিবলিং ক্লায়েন্টের call_tool পথ requests-
++    এর iter_lines(decode_unicode=True) ব্যবহার করে, যা chunk-boundary-তে বড়
++    single-line পেলোড মাঝপথে ভেঙে দেয় (fragment 63,624 chars — id-match ব্যর্থ,
++    McpTowerTimeoutError)। তাই এই প্রোব urllib-এ (stdlib) raw streamable POST
++    করে এবং পুরো body থেকে bytes-স্তরে data-line এক্সট্র্যাক্ট করে — যেকোনো সাইজে
++    নিরাপদ (প্রমাণিত: একই পেলোড json.loads 134,253 bytes-এ পাস)। সিবলিং ক্লায়েন্ট
++    থেকে শুধু MCP_SERVER_URL রেজোলিউশন ধার নেওয়া হয় (env/mcp.json/default —
++    operator-এর mcp.json চুক্তি অক্ষত); heartbeat/status-এর মতো ছোট পেলোডে
++    ক্লায়েন্টের call_tool অক্ষত।
++    """
++    outcome: dict[str, Any] = {}
++
++    def _probe() -> None:
++        try:
++            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
++            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
++
++            base = _mtc.MCP_SERVER_URL.rstrip("/")
++            headers = {
++                "Content-Type": "application/json",
++                "Accept": "application/json, text/event-stream",
++            }
++
++            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
++                hdrs = dict(headers)
++                if sid:
++                    hdrs["mcp-session-id"] = sid
++                req = urllib.request.Request(
++                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
++                )
++                with urllib.request.urlopen(req, timeout=timeout) as resp:
++                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
++
++            # 1) initialize (handshake) 2) initialized notification 3) tools/call
++            init_id = "cal-board-fallback-1"
++            sid, _ = _post({
++                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
++                "params": {
++                    "protocolVersion": "2024-11-05", "capabilities": {},
++                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
++                },
++            }, None)
++            # বাংলা: initialize-থেকে mcp-session-id ধরে রাখা বাধ্যতামূলক — tower
++            # notification/call-এ header ছাড়া 4xx দেয় (live 2026-10-30, HTTPError);
++            # কিছু ডিপ্লয়মেন্ট session-id ছাড়াই চলে, তাই sid=None হলেও এগোনো নিরাপদ।
++            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
++            call_id = "cal-board-fallback-2"
++            _, body = _post({
++                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
++                "params": {"name": "bridge.work_queue", "arguments": {"limit": 200}},
++            }, sid, timeout=45)
++
++            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত।
++            # limit=200-এর মতো বড় single-line পেলোড splitlines/iter_lines-এ ভাঙে,
++            # তাই regex পুরো body-র উপর চলে (mcp_call.py-এর প্রমাণিত প্যাটার্ন)।
++            envelopes: list[dict[str, Any]] = []
++            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
++                try:
++                    envelopes.append(json.loads(m.group(1)))
++                except json.JSONDecodeError:
++                    pass
++            if not envelopes:
++                try:
++                    envelopes.append(json.loads(body))
++                except json.JSONDecodeError:
++                    pass
++            result: Any = None
++            for env in envelopes:
++                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
++                    result = env.get("result")
++                    break
++            text = ""
++            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
++                first = result["content"][0]
++                txt = first.get("text") if isinstance(first, dict) else None
++                if isinstance(txt, str):
++                    text = txt
++            q: Any = None
++            if text:
++                try:
++                    q = json.loads(text)
++                except json.JSONDecodeError:
++                    q = None
++            rows = q.get("workOrders") if isinstance(q, dict) else None
++            if not isinstance(rows, list):
++                outcome["error"] = "tower queue payload carried no workOrders list"
++                return
++            board: list[dict[str, Any]] = []
++            for row in rows:
++                if not isinstance(row, dict) or row.get("number") is None:
++                    continue
++                raw_labels = row.get("labels")
++                labels: list[Any] = []
++                if isinstance(raw_labels, list):
++                    labels = [{"name": str(l)} for l in raw_labels]
++                board.append(
++                    {
++                        "number": row.get("number"),
++                        "title": row.get("title"),
++                        "state": row.get("state") or "open",
++                        "labels": labels,
++                    }
++                )
++            outcome["rows"] = board
++            detail = ""
++            if isinstance(q, dict) and isinstance(q.get("totalOpen"), int):
++                detail += f" (totalOpen={q['totalOpen']}"
++                if q.get("windowTruncated"):
++                    detail += ", window truncated"
++                detail += ")"
++            elif isinstance(q, dict) and q.get("windowTruncated"):
++                detail = " (window truncated)"
++            outcome["note"] = f"tower board fallback: {len(board)} rows{detail}"
++        except Exception as exc:  # noqa: BLE001 — fallback must never raise
++            outcome["error"] = f"tower board fallback failed ({type(exc).__name__})"
++
++    try:
++        t = threading.Thread(target=_probe, daemon=True)
++        t.start()
++        t.join(timeout=timeout_s)
++    except Exception as exc:  # noqa: BLE001 — fallback must never raise
++        return [], f"tower board fallback error ({type(exc).__name__})"
++    if t.is_alive():
++        return [], "tower board fallback timed out"
++    if outcome.get("error"):
++        return [], str(outcome["error"])
++    return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
++
+ def run_cmd(
+     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
+ ) -> tuple[int, str, str]:
+@@ -432,7 +581,27 @@ def _offline_requested(flag: bool) -> bool:
+     )
+ 
+ def _print_rule_version_and_checklist() -> None:
+-    pass
++    """R78/J484751 — rule-1 contract surface (was a silent `pass` stub).
++
++    বাংলা: traffic-police নিয়ম ১ বলে "Always display the 5 Universal Invariant
++    Pillars (Common Rules)" — অথচ এই ফাংশনটি ছিল `pass` স্টাব; step_2_rules()
++    (freshness গেট) একে ডাকত কিন্তু কিছুই দৃশ্যমান হত না — চুক্তির অর্ধেক নীরব।
++    সাথে mandatory_invariant_checklist() নির্মিত ও টেস্ট-পিন্ড হয়েও (test_02/03/04)
++    কোনো রানটাইম ভোক্তা ছিল না — dead surface। এখন গেট-যাচাইকৃত রানে ৫টি পিলার
++    (COMMON_RULES) + চুক্তি-ভার্সন + fail-closed guard চেকলিস্ট stderr-এ দৃশ্যমান হয়।
++    stderr-ই চ্যানেল: --verify-only-র stdout চুক্তি পিন্ড (tier-এভিডেন্স + final
++    CONTRACT_VERSION marker exactly-once, test_23/26) — সেখানে নতুন stdout লাইন
++    parity-grep ভাঙত; dispatch-পথে COMMON_RULES আগের মতোই stdout-এ যায় (এই স্টাব
++    dispatch-পথে ডাকা হয় না — test_27 AST-পিন)। advisory সারফেস — প্রিন্ট-ব্যর্থতা
++    কখনো গেট ফেল করাবে না।
++    """
++    try:
++        print(COMMON_RULES, file=sys.stderr)
++        print(f"RULE SURFACE: {CONTRACT_VERSION} — fail-closed invariant checklist:", file=sys.stderr)
++        for entry in mandatory_invariant_checklist():
++            print(f"  - {entry['id']}: {entry['rule']}", file=sys.stderr)
++    except Exception:  # noqa: BLE001 — advisory surface must never break the gate
++        pass
+ 
+ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
+     """Step 2: Constitution freshness gate + governing-rules loading (#567)."""
+@@ -921,7 +1090,10 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         "--repo", UPSTREAM_REPO,
+         "--json", "number,labels",
+         "--state", "open",
+-        "--limit", "100",
++        # R78/J484751: 100 → 200 — pick_next_issue()-র নিজস্ব gh-কোয়েরির সাথে উইন্ডো
++        # SSOT-প্যারিটি; লাইভ বোর্ডে ১১৫+ খোলা সারি থাকায় ১০০-র জানালা নীরবে
++        # প্রাপ্য-তালিকা কেটে দিত (P1/P2 সারি পুরো দেখার আগেই উইন্ডো শেষ)।
++        "--limit", "200",
+     ]
+     # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
+     # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
+@@ -956,6 +1128,27 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             board_unavailable = True
+             board_error = "gh CLI not found on PATH"
+ 
++        # বাংলা: R78/J484751 — gh ব্যর্থ/অনুপস্থিত হলে tower-বোর্ড fallback। বোর্ড
++        # তখন খালি নয়, অদৃশ্য ছিল; tower queue zero-credential reachable হওয়ায়
++        # solver dispatch ও P0-গেট দুটোই প্রাণ ফিরে পায় (বিস্তারিত
++        # _tower_board_rows()-এর ডকস্ট্রিং-এ)। --offline পথ এই else-ব্রাঞ্চে আসেই না
++        # (offline মানে নেটওয়ার্ক নেই — fallback সেখানে অবাঞ্ছিত)। fallback সফল হলে
++        # board_unavailable=False; দুই প্লেনই অন্ধকার হলে আগের সৎ skip-লাইন ও
++        # gh-absent honesty floor (test-pinned) অপরিবর্তিত থাকে।
++        if board_unavailable and not raw:
++            fb_rows, fb_note = _tower_board_rows()
++            if fb_rows:
++                raw = fb_rows
++                board_unavailable = False
++                board_error = f"gh board query failed ({board_error}); revived via {fb_note}"
++                # বাংলা: fallback-নোট stderr-এ — dispatch-stdout মার্কার-গণনা ও
++                # envelope-মোডের stdout-purity অস্পৃষ্ট (hooks_path_advisory-এর
++                # একই চ্যানেল-শৃঙ্খলা)।
++                print(
++                    f"! board query revived: {board_error}",
++                    file=sys.stderr,
++                )
++
+     envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
+ 
+     if envelope_mode:

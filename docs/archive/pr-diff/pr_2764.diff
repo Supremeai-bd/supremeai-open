@@ -1,0 +1,25 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index dbbc99be..ad528a49 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -807,7 +807,7 @@ def build_task_envelope(
+             # scripts/queue_consistency_probe.py R2)। ভুল লেবেল-ডেটা লুপের কোডে ঠিক হয়
+             # না (b3dfbbe ব্রিজ-স্টেট বাদ দেয়, ভুল ডেটা নয়) — তাই সৎ প্রতিকার:
+             # এজেন্টকে claim-এর আগে feedback-plane যাচাইয়ের নির্দেশ।
+-            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
++            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
+         ]
+     )
+ 
+@@ -1301,9 +1301,9 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
+             # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
+             # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে
+-            # bridge.read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
++            # bridge_read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
+             # atomic-claim rejection হলে একই সারি রিট্রাই নয় — পরের প্রার্থী।
+-            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
++            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge_read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
+             return 0
+ 
+     cfg = load_cadence_config()

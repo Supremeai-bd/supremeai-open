@@ -1,0 +1,186 @@
+diff --git a/core/__init__.py b/core/__init__.py
+index c3861f12..cd33ae13 100644
+--- a/core/__init__.py
++++ b/core/__init__.py
+@@ -45,33 +45,86 @@
+ # ways. `core` is only ever imported as a package, so one canonical
+ # package-relative path per symbol is enough — the fallback ladder just
+ # tripled maintenance surface and hid real breakage behind silent orderings.
+-from .accessibility.wcag_compliance import (
+-    AccessibilityComplianceEngine,
+-    AccessibilityIssue,
+-    ColorContrastChecker,
+-    HTMLAccessibilityChecker,
+-    WCAGGuideline,
+-    WCAGLevel,
+-    WCAGPrinciple,
+-)
+-from .deployment.production_deploy import (
+-    ConfigManager,
+-    DeploymentConfig,
+-    DeploymentEnvironment,
+-    DeploymentManager,
+-    DeploymentStatus,
+-    HealthChecker,
+-    ImageBuilder,
+-    ProductionDeploymentSystem,
+-)
+-from .optimization.performance_optimizer import (
+-    AsyncLRUCache,
+-    LRUCache,
+-    OptimizationLevel,
+-    PerformanceOptimizer,
+-    get_performance_optimizer,
+-    performance_monitor,
+-)
++# bridge-20261027-fix-coreci-ci-green: accessibility/, deployment/ and
++# optimization/ are OPTIONAL platform submodules. Satellite deployments
++# (supremeai-core) ship without them — cleanup PRs removed the duplicated
++# trees — so the hard imports above made `import core` (and therefore every
++# `from core.X import …` consumer, e.g. decision_engine via core.logging_config)
++# fail at import time, which killed pytest collection and kept the Core CI red
++# across every sync. Same guard pattern as the qa_suite and evolution blocks
++# below: one canonical package-relative path per symbol (#1347), an
++# availability flag, and a PEP 562 lazy re-export on first access.
++try:
++    from .accessibility.wcag_compliance import (
++        AccessibilityComplianceEngine,
++        AccessibilityIssue,
++        ColorContrastChecker,
++        HTMLAccessibilityChecker,
++        WCAGGuideline,
++        WCAGLevel,
++        WCAGPrinciple,
++    )
++
++    ACCESSIBILITY_AVAILABLE = True
++except (ImportError, ValueError):
++    ACCESSIBILITY_AVAILABLE = False
++
++try:
++    from .deployment.production_deploy import (
++        ConfigManager,
++        DeploymentConfig,
++        DeploymentEnvironment,
++        DeploymentManager,
++        DeploymentStatus,
++        HealthChecker,
++        ImageBuilder,
++        ProductionDeploymentSystem,
++    )
++
++    DEPLOYMENT_AVAILABLE = True
++except (ImportError, ValueError):
++    DEPLOYMENT_AVAILABLE = False
++
++try:
++    from .optimization.performance_optimizer import (
++        AsyncLRUCache,
++        LRUCache,
++        OptimizationLevel,
++        PerformanceOptimizer,
++        get_performance_optimizer,
++        performance_monitor,
++    )
++
++    OPTIMIZATION_AVAILABLE = True
++except (ImportError, ValueError):
++    OPTIMIZATION_AVAILABLE = False
++
++# Optional platform re-exports: name -> (canonical module, attr). Resolved on
++# first access; None when the submodule is not shipped in this deployment
++# (same conditional-None contract as the evolution/QA blocks).
++_PLATFORM_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
++    "AccessibilityComplianceEngine": ("core.accessibility.wcag_compliance", "AccessibilityComplianceEngine"),
++    "AccessibilityIssue": ("core.accessibility.wcag_compliance", "AccessibilityIssue"),
++    "ColorContrastChecker": ("core.accessibility.wcag_compliance", "ColorContrastChecker"),
++    "HTMLAccessibilityChecker": ("core.accessibility.wcag_compliance", "HTMLAccessibilityChecker"),
++    "WCAGGuideline": ("core.accessibility.wcag_compliance", "WCAGGuideline"),
++    "WCAGLevel": ("core.accessibility.wcag_compliance", "WCAGLevel"),
++    "WCAGPrinciple": ("core.accessibility.wcag_compliance", "WCAGPrinciple"),
++    "ConfigManager": ("core.deployment.production_deploy", "ConfigManager"),
++    "DeploymentConfig": ("core.deployment.production_deploy", "DeploymentConfig"),
++    "DeploymentEnvironment": ("core.deployment.production_deploy", "DeploymentEnvironment"),
++    "DeploymentManager": ("core.deployment.production_deploy", "DeploymentManager"),
++    "DeploymentStatus": ("core.deployment.production_deploy", "DeploymentStatus"),
++    "HealthChecker": ("core.deployment.production_deploy", "HealthChecker"),
++    "ImageBuilder": ("core.deployment.production_deploy", "ImageBuilder"),
++    "ProductionDeploymentSystem": ("core.deployment.production_deploy", "ProductionDeploymentSystem"),
++    "AsyncLRUCache": ("core.optimization.performance_optimizer", "AsyncLRUCache"),
++    "LRUCache": ("core.optimization.performance_optimizer", "LRUCache"),
++    "OptimizationLevel": ("core.optimization.performance_optimizer", "OptimizationLevel"),
++    "PerformanceOptimizer": ("core.optimization.performance_optimizer", "PerformanceOptimizer"),
++    "get_performance_optimizer": ("core.optimization.performance_optimizer", "get_performance_optimizer"),
++    "performance_monitor": ("core.optimization.performance_optimizer", "performance_monitor"),
++}
+ 
+ # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
+ # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
+@@ -262,6 +315,14 @@ def __getattr__(name: str) -> Any:
+     """
+     import importlib
+ 
++    if name in _PLATFORM_LAZY_EXPORTS:
++        module_path, attr = _PLATFORM_LAZY_EXPORTS[name]
++        try:
++            value = getattr(importlib.import_module(module_path), attr)
++        except (ImportError, AttributeError):
++            value = None
++        globals()[name] = value
++        return value
+     if name in _EVOLUTION_LAZY_EXPORTS:
+         # Match the historical eager contract: torch/sympy-dependent research
+         # exports become None (not an ImportError) when their deps are absent.
+diff --git a/docs/bridge/bridge-20261027-fix-coreci-ci-green.md b/docs/bridge/bridge-20261027-fix-coreci-ci-green.md
+new file mode 100644
+index 00000000..1f24b9da
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-fix-coreci-ci-green.md
+@@ -0,0 +1,47 @@
++# 🌉 Bridge Work Order — [P0] Core CI green: guard optional platform submodule imports in core/__init__.py (fixes the red Core Pytest & Lint lane)
++
++Addresses the `handoff:coder` CI-failure orders on `Supremeai-bd/supremeai-core` main
++(#1418 and the sibling orders for runs 40388762313 / 40388071488 / 40387495325 / 40383561892 /
++40380388569 / 40379732594 / 40378104481 — one shared root cause).
++
++## Root cause (reproduced locally, not guessed)
++1. The satellite `Supremeai-bd/supremeai-core` ships **without** `core/accessibility/`,
++   `core/deployment/` and `core/optimization/` (removed by the duplicate-cleanup PRs:
++   "eliminate duplicate core/browser files", "resolve gap_finder package shadowing", …).
++2. Its `core/__init__.py` still carries the OLD triple-fallback import ladder:
++   `.optimization.*` → bare `optimization.*` / `accessibility.*` / `deployment.*` →
++   `core.optimization.*` / `core.accessibility.*` / `core.deployment.*`. **All three rungs fail**
++   → `import core` raises `ModuleNotFoundError: No module named 'core.accessibility'`.
++3. `decision_engine.py` does `from core.logging_config import logger` → the `core` package init
++   executes → crash. `tests/test_core_planner.py`'s top-level import branch fails, its
++   `from core.context_synthesizer import …` fallback also triggers the same broken package init
++   → **pytest collection error** → the "Core Pytest & Lint" job fails on every sync.
++4. Note the scheduled-run failures (e.g. run on SHA cf11b9cc08, which passed as a push) are the
++   separate PyErrorFix job — same repo, different job, not addressed here.
++
++## The fix (smallest safe change, public + monorepo compatible)
++The current public/monorepo `core/__init__.py` (the #1347-hygiene version, canonical relative
++imports) is kept **byte-identical except** the three platform-submodule import blocks, which
++become guarded — the exact pattern already used in this file for `testing.qa_suite` (aiohttp) and
++the evolution block (torch): one canonical path, an availability flag
++(`ACCESSIBILITY_AVAILABLE` / `DEPLOYMENT_AVAILABLE` / `OPTIMIZATION_AVAILABLE`), and a PEP 562
++lazy re-export (`_PLATFORM_LAZY_EXPORTS`) so `from core import PerformanceOptimizer` still
++resolves where the submodule exists and yields the conditional-None contract where it does not.
++
++## Verification evidence (real, local, reproducible)
++- **Reproduction**: satellite-layout sandbox (root planner modules + `core/` without
++  accessibility/deployment/optimization + top-level `monitoring/`) → current file:
++  collection error `ModuleNotFoundError: No module named 'core.accessibility'` (matches CI).
++- **After patch, same sandbox**: `import core` OK (v2.0.0); root `decision_engine` imports OK;
++  `pytest tests/ -v` → **11 passed**; `ruff check . --select=E9,F63,F7,F82` → **All checks passed**.
++- The guarded file is a strict superset where the submodules exist (monorepo has all three) —
++  behavior there is unchanged.
++
++## Sync note for operators
++The satellite's `core/__init__.py` has diverged from the public mirror (it still carries the
++pre-hygiene ladder). If the open→core sync skips locally-modified files, this fix needs a
++one-time `git checkout <public-sha> -- core/__init__.py` in the satellite, otherwise the sync
++may keep the broken local variant.
++
++## Labels
++`bridge:queued` `P0-critical` `area:ci` `repo:core` `handoff:coder`

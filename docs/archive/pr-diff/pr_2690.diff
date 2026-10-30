@@ -1,0 +1,382 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index a1e0ed54..84e43f92 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -54,6 +54,12 @@
+     pass
+ 
+ 
++# Targets where automated CI/deployment workflows should run on sync push
++# (e.g. Cloudflare Pages deploy in supremeai-studio)
++DEPLOY_TARGETS: set[str] = {
++    "Supremeai-bd/supremeai-studio",
++}
++
+ # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
+ # (source_rel_in_open, target_repo, target_rel_in_satellite)
+ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
+@@ -383,7 +389,8 @@ def sync_satellite(
+             cwd=str(tmp_repo),
+         )
+         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
+-        msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
++        ci_tag = "" if target_repo in DEPLOY_TARGETS else " [skip ci]"
++        msg = f"sync(open->{slug}): {commit_msg}{ci_tag}"
+         res = subprocess.run(
+             ["git", "commit", "--no-verify", "-m", msg],
+             cwd=str(tmp_repo),
+diff --git a/studio/src/components/admin/AdminDashboard.tsx b/studio/src/components/admin/AdminDashboard.tsx
+index c211b04c..6a80da85 100644
+--- a/studio/src/components/admin/AdminDashboard.tsx
++++ b/studio/src/components/admin/AdminDashboard.tsx
+@@ -116,13 +116,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+       setAutonomyLevel('L0');
+       try {
+         await onExecuteTool('autonomy_kill_switch', {});
+-      } catch {}
++      } catch (_err) {
++        /* ignore */
++      }
+       logAction('EMERGENCY_KILL_SWITCH', 'failed', 'CRITICAL: L2 Autonomy suspended. System placed into L0 Manual lockdown.');
+     } else {
+       setAutonomyLevel('L2');
+       try {
+         await onExecuteTool('autonomy_enable', {});
+-      } catch {}
++      } catch (_err) {
++        /* ignore */
++      }
+       logAction('EMERGENCY_KILL_SWITCH', 'success', 'Autonomy re-armed to L2 (Autonomous). Guardian review active.');
+     }
+   };
+@@ -142,7 +146,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
+       let parsed = {};
+       try {
+         parsed = JSON.parse(toolArgs);
+-      } catch {}
++      } catch (_err) {
++        /* fallback to empty */
++      }
+       const res = await onExecuteTool(selectedTool, parsed);
+       setTerminalOutput(res);
+       jarvisAudio.playSuccess();
+diff --git a/studio/src/components/guest/GuestDashboard.tsx b/studio/src/components/guest/GuestDashboard.tsx
+index 4327c344..f392bc3a 100644
+--- a/studio/src/components/guest/GuestDashboard.tsx
++++ b/studio/src/components/guest/GuestDashboard.tsx
+@@ -398,7 +398,9 @@ export const GuestDashboard: React.FC<GuestDashboardProps> = ({
+           const count = iframeRef.current.contentDocument.querySelectorAll('*').length;
+           if (count > 0) setDomCount(count);
+         }
+-      } catch {}
++      } catch (_err) {
++        /* cross-origin or detached iframe */
++      }
+     }, 600);
+     return () => clearTimeout(timer);
+   }, [liveRenderHtml]);
+diff --git a/studio/src/components/jarvis/JarvisHoloCall.tsx b/studio/src/components/jarvis/JarvisHoloCall.tsx
+index bf46e2fa..9a4e6d4e 100644
+--- a/studio/src/components/jarvis/JarvisHoloCall.tsx
++++ b/studio/src/components/jarvis/JarvisHoloCall.tsx
+@@ -56,7 +56,9 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
+     try {
+       const saved = localStorage.getItem('supremeai_avatar_settings');
+       if (saved) return JSON.parse(saved);
+-    } catch {}
++    } catch (_err) {
++      /* ignore invalid JSON in storage */
++    }
+     return DEFAULT_AVATAR_SETTINGS;
+   });
+ 
+@@ -112,6 +114,54 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
+   const rippleWaves = useRef<{ radius: number; maxRadius: number; alpha: number }[]>([]);
+   const recognitionRef = useRef<any>(null);
+ 
++  const handleUserDirective = useCallback((text: string) => {
++    if (!text.trim()) return;
++    setInternalState('thinking');
++    jarvisAudio.playActivate();
++
++    if (onSendMessage) {
++      onSendMessage(text);
++    }
++
++    // Contextual companion speech
++    setTimeout(() => {
++      setInternalState('speaking');
++      const prefix = currentAvatar.relationshipArchetype 
++        ? `${currentAvatar.relationshipArchetype}: ` 
++        : '';
++      const responseBn = `${prefix}"${text.slice(0, 36)}" এর কাজ শুরু করেছি। লাইভ স্যান্ডবক্স ও কোডবেস আপডেট করা হচ্ছে।`;
++      const responseEn = `${prefix}Acknowledged: "${text.slice(0, 36)}". Updating live sandbox and workspace codebase.`;
++      const finalMsg = language === 'bn' ? responseBn : responseEn;
++      setActiveSubtitle(finalMsg);
++
++      if (!isSpeakerMuted) {
++        jarvisAudio.speak(
++          finalMsg, 
++          language, 
++          () => {
++            setInternalState('idle');
++            jarvisAudio.playSuccess();
++            currentViseme.current = 0;
++          },
++          {
++            gender: currentAvatar.gender,
++            pitch: currentAvatar.pitch,
++            rate: currentAvatar.rate,
++            accent: currentAvatar.accent,
++          },
++          (energy) => {
++            currentViseme.current = energy;
++          }
++        );
++      } else {
++        setTimeout(() => {
++          setInternalState('idle');
++          currentViseme.current = 0;
++        }, 3000);
++      }
++    }, 1100);
++  }, [currentAvatar, isSpeakerMuted, language, onSendMessage]);
++
+   // Setup Web Speech Recognition
+   const initSpeech = useCallback(() => {
+     if (typeof window === 'undefined') return;
+@@ -156,7 +206,7 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
+     } catch (e) {
+       console.warn('Speech recognition not available:', e);
+     }
+-  }, [language]);
++  }, [handleUserDirective, language]);
+ 
+   useEffect(() => {
+     initSpeech();
+@@ -184,54 +234,6 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
+     }
+   };
+ 
+-  const handleUserDirective = (text: string) => {
+-    if (!text.trim()) return;
+-    setInternalState('thinking');
+-    jarvisAudio.playActivate();
+-
+-    if (onSendMessage) {
+-      onSendMessage(text);
+-    }
+-
+-    // Contextual companion speech
+-    setTimeout(() => {
+-      setInternalState('speaking');
+-      const prefix = currentAvatar.relationshipArchetype 
+-        ? `${currentAvatar.relationshipArchetype}: ` 
+-        : '';
+-      const responseBn = `${prefix}"${text.slice(0, 36)}" এর কাজ শুরু করেছি। লাইভ স্যান্ডবক্স ও কোডবেস আপডেট করা হচ্ছে।`;
+-      const responseEn = `${prefix}Acknowledged: "${text.slice(0, 36)}". Updating live sandbox and workspace codebase.`;
+-      const finalMsg = language === 'bn' ? responseBn : responseEn;
+-      setActiveSubtitle(finalMsg);
+-
+-      if (!isSpeakerMuted) {
+-        jarvisAudio.speak(
+-          finalMsg, 
+-          language, 
+-          () => {
+-            setInternalState('idle');
+-            jarvisAudio.playSuccess();
+-            currentViseme.current = 0;
+-          },
+-          {
+-            gender: currentAvatar.gender,
+-            pitch: currentAvatar.pitch,
+-            rate: currentAvatar.rate,
+-            accent: currentAvatar.accent,
+-          },
+-          (energy) => {
+-            currentViseme.current = energy;
+-          }
+-        );
+-      } else {
+-        setTimeout(() => {
+-          setInternalState('idle');
+-          currentViseme.current = 0;
+-        }, 3000);
+-      }
+-    }, 1100);
+-  };
+-
+   const sendQuickDirective = (directiveBn: string, directiveEn: string) => {
+     const text = language === 'bn' ? directiveBn : directiveEn;
+     setSpeechTranscript(text);
+@@ -244,7 +246,9 @@ export const JarvisHoloCall: React.FC<JarvisHoloCallProps> = ({
+     setCurrentAvatar(updated);
+     try {
+       localStorage.setItem('supremeai_avatar_settings', JSON.stringify(updated));
+-    } catch {}
++    } catch (_err) {
++      /* ignore storage quota/security error */
++    }
+     if (onUpdateAvatarSettings) onUpdateAvatarSettings(updated);
+     jarvisAudio.playScan();
+   };
+diff --git a/studio/src/components/settings/WorkspaceSettingsModal.tsx b/studio/src/components/settings/WorkspaceSettingsModal.tsx
+index 47bf6124..2f22e320 100644
+--- a/studio/src/components/settings/WorkspaceSettingsModal.tsx
++++ b/studio/src/components/settings/WorkspaceSettingsModal.tsx
+@@ -39,7 +39,9 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
+     try {
+       const saved = localStorage.getItem('supremeai_avatar_settings');
+       if (saved) return JSON.parse(saved);
+-    } catch {}
++    } catch (_err) {
++      /* ignore invalid JSON in storage */
++    }
+     return DEFAULT_AVATAR_SETTINGS;
+   });
+ 
+@@ -150,7 +152,9 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
+   const handleSave = () => {
+     try {
+       localStorage.setItem('supremeai_avatar_settings', JSON.stringify(avatar));
+-    } catch {}
++    } catch (_err) {
++      /* ignore storage quota/security error */
++    }
+ 
+     if (onSaveAvatarSettings) {
+       onSaveAvatarSettings(avatar);
+diff --git a/studio/src/components/studio/SplitStudioView.tsx b/studio/src/components/studio/SplitStudioView.tsx
+index 857a1b4c..2f279b5e 100644
+--- a/studio/src/components/studio/SplitStudioView.tsx
++++ b/studio/src/components/studio/SplitStudioView.tsx
+@@ -58,7 +58,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+     try {
+       const saved = localStorage.getItem('supremeai_avatar_settings');
+       if (saved) return JSON.parse(saved);
+-    } catch {}
++    } catch (_err) {
++      /* ignore invalid JSON in storage */
++    }
+     return DEFAULT_AVATAR_SETTINGS;
+   });
+ 
+@@ -75,6 +77,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+ 
+   // Bottom Trays Toggle
+   const [bottomTray, setBottomTray] = useState<'none' | 'files' | 'terminal'>('none');
++  const onSendMessageRef = useRef<(text?: string) => Promise<void>>(async () => {});
+   const [terminalLogs, setTerminalLogs] = useState<string[]>([
+     '[MCP Bridge] Connected to supremeai-mcp-tower.onrender.com',
+     '[Sandbox] Iframe renderer initialized with Tailwind CSS v4',
+@@ -259,7 +262,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+           const transcript = event.results[0][0].transcript;
+           setIsListening(false);
+           setInputMessage(transcript);
+-          handleSendMessage(transcript);
++          onSendMessageRef.current(transcript);
+         };
+ 
+         recognition.onerror = () => {
+@@ -290,9 +293,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+         } else {
+           const fallbackCmd = language === 'bn' ? 'একটি SaaS গ্লাসমরফিজম পেজ বানাও' : 'Build a SaaS landing page with glassmorphism';
+           setInputMessage(fallbackCmd);
+-          handleSendMessage(fallbackCmd);
++          onSendMessageRef.current(fallbackCmd);
+         }
+-      } catch {
++      } catch (_err) {
+         setIsListening(false);
+         setJarvisState('idle');
+       }
+@@ -319,11 +322,11 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+ 
+     const lower = text.toLowerCase();
+ 
+-    let isFoodRequest = lower.includes('food') || lower.includes('restaurant') || lower.includes('রেস্তোরাঁ') || lower.includes('ফুড');
+-    let isSaasRequest = lower.includes('saas') || lower.includes('glass') || lower.includes('ড্যাশবোর্ড') || lower.includes('dashboard') || lower.includes('ক্লিন');
+-    let isFinanceRequest = lower.includes('fintech') || lower.includes('trading') || lower.includes('chart') || lower.includes('ট্রেডিং') || lower.includes('ফিনটেক');
+-    let isKanbanRequest = lower.includes('kanban') || lower.includes('board') || lower.includes('agile') || lower.includes('কানবান');
+-    let isDeployRequest = lower.includes('deploy') || lower.includes('publish') || lower.includes('পাবলিশ');
++    const isFoodRequest = lower.includes('food') || lower.includes('restaurant') || lower.includes('রেস্তোরাঁ') || lower.includes('ফুড');
++    const isSaasRequest = lower.includes('saas') || lower.includes('glass') || lower.includes('ড্যাশবোর্ড') || lower.includes('dashboard') || lower.includes('ক্লিন');
++    const isFinanceRequest = lower.includes('fintech') || lower.includes('trading') || lower.includes('chart') || lower.includes('ট্রেডিং') || lower.includes('ফিনটেক');
++    const isKanbanRequest = lower.includes('kanban') || lower.includes('board') || lower.includes('agile') || lower.includes('কানবান');
++    const isDeployRequest = lower.includes('deploy') || lower.includes('publish') || lower.includes('পাবলিশ');
+ 
+     if (isDeployRequest) {
+       setIsPublishModalOpen(true);
+@@ -405,6 +408,10 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+     }, 800);
+   };
+ 
++  useEffect(() => {
++    onSendMessageRef.current = handleSendMessage;
++  });
++
+   // Human-Eye Autonomous UI Audit Handler
+   const handleFixWithHumanEye = () => {
+     setIsFixingAudit(true);
+diff --git a/studio/src/utils/audioFx.ts b/studio/src/utils/audioFx.ts
+index b86c0b8d..46606574 100644
+--- a/studio/src/utils/audioFx.ts
++++ b/studio/src/utils/audioFx.ts
+@@ -54,7 +54,9 @@ class JarvisAudioEngine {
+       osc2.start(now + 0.1);
+       osc1.stop(now + 0.35);
+       osc2.stop(now + 0.35);
+-    } catch {}
++    } catch (_err) {
++      /* AudioContext unavailable or autoplay blocked */
++    }
+   }
+ 
+   /**
+@@ -83,7 +85,9 @@ class JarvisAudioEngine {
+         osc.start(now + i * 0.08);
+         osc.stop(now + i * 0.08 + 0.2);
+       });
+-    } catch {}
++    } catch (_err) {
++      /* AudioContext unavailable or autoplay blocked */
++    }
+   }
+ 
+   /**
+@@ -110,7 +114,9 @@ class JarvisAudioEngine {
+ 
+       osc.start(now);
+       osc.stop(now + 0.2);
+-    } catch {}
++    } catch (_err) {
++      /* AudioContext unavailable or autoplay blocked */
++    }
+   }
+ 
+   /**
+@@ -137,7 +143,9 @@ class JarvisAudioEngine {
+ 
+       osc.start(now);
+       osc.stop(now + 0.25);
+-    } catch {}
++    } catch (_err) {
++      /* AudioContext unavailable or autoplay blocked */
++    }
+   }
+ 
+   /**
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index 77b4efea..2bbba7b5 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -45,5 +45,9 @@ def test_detect_changed_targets_empty(self, mock_run):
+         self.assertFalse(umbrella)
+ 
+ 
++    def test_deploy_targets_omits_skip_ci(self):
++        self.assertIn("Supremeai-bd/supremeai-studio", sync_mod.DEPLOY_TARGETS)
++
++
+ if __name__ == "__main__":
+     unittest.main()

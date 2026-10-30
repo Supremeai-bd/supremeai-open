@@ -1,0 +1,256 @@
+diff --git a/studio/src/components/chat/ChatInterface.test.tsx b/studio/src/components/chat/ChatInterface.test.tsx
+index 11aeddfe..813d6c1d 100644
+--- a/studio/src/components/chat/ChatInterface.test.tsx
++++ b/studio/src/components/chat/ChatInterface.test.tsx
+@@ -3,8 +3,8 @@
+ // ২) প্রথম মেসেজেই ক্লায়েন্ট-জেনারেটেড conversation_id প্রতিটি orchestration payload-এ
+ // যায় এবং পরের কলে একই id বজায় থাকে; ৩) S2 ThinkingPanel ও S3 ArtifactsPanel
+ // সত্যিই মাউন্ট/আনমাউন্ট হয়।
+-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
++import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
++import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ 
+ // বাংলা: jsdom scrollIntoView বাস্তবায়ন করে না — UnifiedChatBubble/ChatInterface
+@@ -223,3 +223,117 @@ describe('ChatInterface Tier-S wiring contract (M10)', () => {
+     }
+   });
+ });
++
++// বাংলা মন্তব্য (M8, issue #1519): ভয়েস-ইনপুট ওয়্যারিং চুক্তি-টেস্ট।
++// ১) SpeechRecognition-বিহীন ব্রাউজারে মাইক বোতাম সৎভাবে disabled (ভাঙা-বোতাম নয়);
++// ২) স্টাব করা SR-এ ক্লিক → recognition.start() সত্যিই চলে, ফাইনাল ট্রান্সক্রিপ্ট
++//    কম্পোজারে append হয় (overwrite নয় — দুইবার ফাইনাল = স্পেস-জোড়া),
++//    interim ট্রান্সক্রিপ্ট placeholder-এ লাইভ দেখায়;
++// ৩) STT lang চুক্তি: uiLang en → 'en-US', bn → 'bn-BD' — একক BCP-47 ট্যাগ;
++//    পুরনো অবৈধ 'bn-BD, en-US' মান কম্পোজারে পৌঁছাতেই পারে না।
++describe('ChatInterface M8 voice wiring contract (issue #1519)', () => {
++  const win = window as unknown as { SpeechRecognition?: unknown };
++
++  class FakeRecognition {
++    lang = '';
++    continuous = false;
++    interimResults = false;
++    started = false;
++    stopped = false;
++    aborted = false;
++    onresult: ((e: unknown) => void) | null = null;
++    onerror: ((e: unknown) => void) | null = null;
++    onend: (() => void) | null = null;
++    static instances: FakeRecognition[] = [];
++    constructor() {
++      FakeRecognition.instances.push(this);
++    }
++    start() {
++      this.started = true;
++    }
++    stop() {
++      this.stopped = true;
++    }
++    abort() {
++      this.aborted = true;
++    }
++    // বাংলা: হুকের SpeechRecognitionEventLike শেপ অনুযায়ী ইভেন্ট তৈরি
++    static finalEvent(text: string) {
++      return {
++        results: {
++          0: { 0: { transcript: text }, isFinal: true },
++          length: 1,
++        },
++      };
++    }
++    static interimEvent(text: string) {
++      return {
++        results: {
++          0: { 0: { transcript: text }, isFinal: false },
++          length: 1,
++        },
++      };
++    }
++  }
++
++  afterEach(() => {
++    delete win.SpeechRecognition;
++    try {
++      localStorage.removeItem('sa_ui_lang');
++    } catch {
++      /* noop */
++    }
++  });
++
++  it('honestly disables the mic button when SpeechRecognition is unavailable', () => {
++    localStorage.setItem('sa_ui_lang', 'en');
++    render(<ChatInterface />);
++    const mic = screen.getByTestId('chat-mic-button');
++    expect(mic).toBeDisabled();
++    // টুলটিপ থাকে — বোতাম নীরব-অদৃশ্য নয়
++    expect(mic).toHaveAttribute('aria-label', 'Start voice input');
++  });
++
++  it('starts recognition on click and appends final transcript into the composer', () => {
++    localStorage.setItem('sa_ui_lang', 'en');
++    win.SpeechRecognition = FakeRecognition;
++    render(<ChatInterface />);
++
++    const mic = screen.getByTestId('chat-mic-button');
++    expect(mic).not.toBeDisabled();
++    fireEvent.click(mic);
++
++    const inst = FakeRecognition.instances.at(-1);
++    expect(inst).toBeDefined();
++    expect(inst!.started).toBe(true);
++    expect(inst!.lang).toBe('en-US');
++    expect(inst!.continuous).toBe(false);
++    expect(inst!.interimResults).toBe(true);
++
++    // লাইভ interim ট্রান্সক্রিপ্ট placeholder-এ — ইনপুট state স্পর্শ করে না
++    act(() => inst!.onresult!(FakeRecognition.interimEvent('হ্যালো')));
++    // বাংলা: getByDisplayValue('') অন্য খালি ইনপুটেও ম্যাচ করে (অস্পষ্ট) —
++    // placeholder-এ খোঁজা textarea-র .value সরাসরি দেখি।
++    const ta = screen.getByPlaceholderText(/হ্যালো/) as HTMLTextAreaElement;
++    expect(ta.value).toBe('');
++
++    // ফাইনাল ১ + ফাইনাল ২ → append (স্পেস-জোড়া), overwrite নয়
++    act(() => inst!.onresult!(FakeRecognition.finalEvent('প্রথম কথা')));
++    act(() => inst!.onresult!(FakeRecognition.finalEvent('দ্বিতীয় কথা')));
++    expect(screen.getByDisplayValue('প্রথম কথা দ্বিতীয় কথা')).toBeInTheDocument();
++  });
++
++  it('uses bn-BD for STT when the UI language is Bangla', () => {
++    localStorage.setItem('sa_ui_lang', 'bn');
++    win.SpeechRecognition = FakeRecognition;
++    render(<ChatInterface />);
++
++    const inst = FakeRecognition.instances.at(-1);
++    expect(inst!.lang).toBe('bn-BD');
++    // বাংলা UI-তে মাইক টুলটিপও বাংলা
++    expect(screen.getByTestId('chat-mic-button')).toHaveAttribute(
++      'aria-label',
++      'ভয়েস ইনপুট শুরু করুন',
++    );
++  });
++});
+diff --git a/studio/src/components/chat/ChatInterface.tsx b/studio/src/components/chat/ChatInterface.tsx
+index 0c16db7a..ae3b7127 100644
+--- a/studio/src/components/chat/ChatInterface.tsx
++++ b/studio/src/components/chat/ChatInterface.tsx
+@@ -11,10 +11,12 @@ import { eventBus, Events } from '../../lib/componentEventBus';
+ import { getApiBaseUrl } from '../../utils/api';
+ import { getAdminToken, getUserToken } from '../../services/tokenStorage';
+ import { AudioPlaybackService } from '../../services/audio/AudioPlaybackService';
+-import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles, X } from 'lucide-react';
++import { BrainCircuit, Download, FileCode2, Volume2, VolumeX, Share2, Languages, Sparkles, X, Mic } from 'lucide-react';
+ 
+ import { ShareDialog } from '../share/ShareDialog';
+ import { ImageUploadButton } from './ImageUploadButton';
++// M8 (issue #1519): bn-BD/en-US স্পিচ-টু-টেক্সট হুক — মাইক বোতামে সংযুক্ত।
++import { useSmartVoice } from '../../hooks/useSmartVoice';
+ import ExportMenu from '../export/ExportMenu';
+ import BranchButton from '../branch/BranchButton';
+ import { SlashCommandMenu } from '../commands/SlashCommandMenu';
+@@ -141,6 +143,14 @@ export const ChatInterface: React.FC = () => {
+     }
+   };
+ 
++  // M8 (issue #1519) বাংলা: ভয়েস ইনপুট — ফাইনাল ট্রান্সক্রিপ্ট কম্পোজারে
++  // যোগ হয় (append, overwrite নয়) — ইউজার শনাক্তকরণ দেখে শুধরে Send চাপেন;
++  // অটো-সেন্ড নয় (P1 সেফটি: ভুল শনাক্তকরণে অনিচ্ছাকৃত পাঠানো ঝুঁকি)।
++  // STT ভাষা UI ভাষা অনুসরণ করে: bn → bn-BD, en → en-US (একক BCP-47 ট্যাগ)।
++  const voice = useSmartVoice((text) => {
++    setInput((prev) => (prev ? `${prev} ${text}` : text));
++  }, { lang: uiLang === 'bn' ? 'bn-BD' : 'en-US' });
++
+   const chatChips = [
+     { en: 'Audit my project', bn: 'প্রজেক্ট অডিট করুন' },
+     { en: 'Design a landing page', bn: 'ল্যান্ডিং পেজ ডিজাইন' },
+@@ -639,11 +649,39 @@ export const ChatInterface: React.FC = () => {
+               orchestration চলাকালীন নতুন আপলোড বন্ধ (কম্পোজারের বাকি অংশের মতো)। */}
+           <ImageUploadButton onUpload={handleImageUpload} disabled={isOrchestrating} />
+ 
++          {/* M8 (issue #1519): মাইক বোতাম — bn-BD/en-US ভয়েস ইনপুট। SpeechRecognition
++              অসমর্থ ব্রাউজারে সৎভাবে disabled (ভাঙা-বোতাম নয়); শোনার সময় লাল pulse। */}
++          <button
++            type="button"
++            data-testid="chat-mic-button"
++            onClick={voice.toggleListening}
++            disabled={isOrchestrating || !voice.micAvailable}
++            aria-label={voice.isListening
++              ? (uiLang === 'bn' ? 'শোনা বন্ধ করুন' : 'Stop listening')
++              : (uiLang === 'bn' ? 'ভয়েস ইনপুট শুরু করুন' : 'Start voice input')}
++            title={voice.isListening
++              ? (uiLang === 'bn' ? 'শোনা বন্ধ করুন' : 'Stop listening')
++              : (uiLang === 'bn' ? 'ভয়েস ইনপুট শুরু করুন' : 'Start voice input')}
++            className={`shrink-0 p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
++              voice.isListening
++                ? 'bg-red-600 text-white animate-pulse'
++                : 'text-slate-400 hover:bg-slate-800'
++            }`}
++          >
++            <Mic size={18} />
++          </button>
++
+           <textarea
+             value={input}
+             onChange={handleInputChange}
+             onKeyPress={handleKeyPress}
+-            placeholder={uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...'}
++            placeholder={
++              voice.isListening
++                // M8: লাইভ interim ট্রান্সক্রিপ্ট placeholder-এ — প্রমাণ যে শুনছে;
++                // input state আলাদা থাকে, তাই final append-এর সাথে কোনো রেস নেই।
++                ? (voice.transcript || (uiLang === 'bn' ? 'শুনছি…' : 'Listening…'))
++                : (uiLang === 'bn' ? 'এআই এজেন্টকে আপনার মেসেজ লিখুন...' : 'Type your message to the AI agent...')
++            }
+             className="min-w-0 flex-[1_1_12rem] bg-slate-800 text-white rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+             rows={2}
+             disabled={isOrchestrating}
+diff --git a/studio/src/hooks/useSmartVoice.ts b/studio/src/hooks/useSmartVoice.ts
+index 98c8a804..b43d83e7 100644
+--- a/studio/src/hooks/useSmartVoice.ts
++++ b/studio/src/hooks/useSmartVoice.ts
+@@ -37,7 +37,16 @@ function getSpeechRecognitionCtor(): SRCtor | null {
+   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+ }
+ 
+-export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
++// M8 (issue #1519) বাংলা: Web Speech API-র `lang` একটিমাত্র BCP-47 ট্যাগ গ্রহণ
++// করে — "bn-BD, en-US" অবৈধ মান, ব্রাউজার নীরবে default locale-এ ফিরে যায়,
++// ফলে বাংলা STT আসলে কখনোই চলত না। কলার এখন একটি সঠিক ট্যাগ পাঠায়
++// (ChatInterface: uiLang bn → bn-BD, en → en-US); ডিফল্ট bn-BD (ওয়ার্ক-অর্ডারের
++// প্রাথমিক লক্ষ্য)। lang বদলালে recognition নতুন করে তৈরি হয় (effect dep)।
++export function useSmartVoice(
++  onFinalTranscript?: (text: string) => void,
++  opts?: { lang?: string },
++) {
++  const sttLang = opts?.lang ?? 'bn-BD';
+   const [orbState, setOrbState] = useState<VoiceState>('idle');
+   const [isListening, setIsListening] = useState(false);
+   const [isSpeaking, setIsSpeaking] = useState(false);
+@@ -56,7 +65,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
+     onFinalTranscriptRef.current = onFinalTranscript;
+   }, [onFinalTranscript]);
+ 
+-  // Initialize Speech Recognition once on client
++  // Initialize Speech Recognition on client; rebuilt when sttLang changes
+   useEffect(() => {
+     const Ctor = getSpeechRecognitionCtor();
+     if (!Ctor) {
+@@ -68,7 +77,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
+       const recog = new Ctor();
+       recog.continuous = false;
+       recog.interimResults = true;
+-      recog.lang = 'bn-BD, en-US';
++      recog.lang = sttLang;
+ 
+       recog.onresult = (e: SpeechRecognitionEventLike) => {
+         let interimText = '';
+@@ -116,7 +125,7 @@ export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
+         /* noop */
+       }
+     };
+-  }, []);
++  }, [sttLang]);
+ 
+   const startListening = useCallback(() => {
+     if (!recognitionRef.current || isListening) return;

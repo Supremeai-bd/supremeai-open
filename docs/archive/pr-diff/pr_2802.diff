@@ -1,0 +1,210 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 479f195d..bf6b32e9 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,8 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:tool-tombstones",
++    "test:tool-tombstones": "tsx test_tool_tombstones.ts",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+diff --git a/infrastructure/mcp-control-plane/scripts/check_test_wiring.ts b/infrastructure/mcp-control-plane/scripts/check_test_wiring.ts
+index 69eda553..56cb9701 100644
+--- a/infrastructure/mcp-control-plane/scripts/check_test_wiring.ts
++++ b/infrastructure/mcp-control-plane/scripts/check_test_wiring.ts
+@@ -18,7 +18,9 @@
+ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+ import * as path from "node:path";
+ 
+-const pkgRoot = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
++import { fileURLToPath } from "node:url";
++
++const pkgRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+ 
+ type ExemptEntry = { reason: string; trackedBy: string };
+ 
+diff --git a/infrastructure/mcp-control-plane/src/registry/tool_tombstones.ts b/infrastructure/mcp-control-plane/src/registry/tool_tombstones.ts
+new file mode 100644
+index 00000000..7d040543
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/registry/tool_tombstones.ts
+@@ -0,0 +1,129 @@
++/**
++ * MCP Tool Tombstones & Renaming Deprecation Redirection (#2640).
++ *
++ * Implements self-describing tool migration redirects for retired/renamed MCP tools.
++ * When an external caller invokes a retired or renamed tool name, instead of a bare
++ * `-32602 Tool not found` error, the registry returns a structured `tool_moved`
++ * redirect specifying the canonical successor.
++ */
++
++export interface ToolTombstone {
++  retiredName: string;
++  canonicalName: string;
++  deprecatedSince: string;
++  reason?: string;
++}
++
++/**
++ * Registry of known renamed/retired tools mapping old names to their canonical successors.
++ */
++export const TOOL_TOMBSTONES: Record<string, ToolTombstone> = {
++  // Underscore -> Dotted canonicals
++  "bridge_work_queue": {
++    retiredName: "bridge_work_queue",
++    canonicalName: "bridge.work_queue",
++    deprecatedSince: "2026-10-29",
++    reason: "Canonical naming scheme adopted dotted names for queue operations (#2454)",
++  },
++  "bridge_work_order": {
++    retiredName: "bridge_work_order",
++    canonicalName: "bridge.work_order",
++    deprecatedSince: "2026-10-29",
++    reason: "Canonical naming scheme adopted dotted names for work order operations (#2454)",
++  },
++  "github_create_issue": {
++    retiredName: "github_create_issue",
++    canonicalName: "github.create_issue",
++    deprecatedSince: "2026-10-29",
++    reason: "Unified github family registration under github.* canonicals",
++  },
++  "github_list_issues": {
++    retiredName: "github_list_issues",
++    canonicalName: "github.list_issues",
++    deprecatedSince: "2026-10-29",
++    reason: "Unified github family registration under github.* canonicals",
++  },
++  "github_list_prs": {
++    retiredName: "github_list_prs",
++    canonicalName: "github.list_prs",
++    deprecatedSince: "2026-10-29",
++    reason: "Unified github family registration under github.* canonicals",
++  },
++
++  // #2488 Guide-named dotted variants -> canonical underscore/dotted handlers
++  "bridge.read_feedback": {
++    retiredName: "bridge.read_feedback",
++    canonicalName: "bridge_read_feedback",
++    deprecatedSince: "2026-10-29",
++    reason: "Operational bridge feedback reader handler",
++  },
++  "bridge.work.renew": {
++    retiredName: "bridge.work.renew",
++    canonicalName: "bridge_work_renew",
++    deprecatedSince: "2026-10-29",
++    reason: "Operational bridge lease renewal handler",
++  },
++  "bridge.work.release": {
++    retiredName: "bridge.work.release",
++    canonicalName: "bridge_work_release",
++    deprecatedSince: "2026-10-29",
++    reason: "Operational bridge lease release handler",
++  },
++  "work.claim": {
++    retiredName: "work.claim",
++    canonicalName: "work_claim",
++    deprecatedSince: "2026-10-29",
++    reason: "Operational atomic claim handler",
++  },
++};
++
++export interface ToolMovedResponse {
++  error: "tool_moved";
++  message: string;
++  retiredName: string;
++  use: string;
++  deprecatedSince: string;
++  code: number;
++}
++
++/**
++ * Checks whether a requested tool name is a tombstone and returns a structured redirect if so.
++ */
++export function resolveToolTombstone(toolName: string): ToolMovedResponse | null {
++  const tombstone = TOOL_TOMBSTONES[toolName];
++  if (!tombstone) {
++    return null;
++  }
++
++  return {
++    error: "tool_moved",
++    code: -32602,
++    message: `Tool '${toolName}' has moved to canonical name '${tombstone.canonicalName}'. Please update your call to use '${tombstone.canonicalName}'.`,
++    retiredName: tombstone.retiredName,
++    use: tombstone.canonicalName,
++    deprecatedSince: tombstone.deprecatedSince,
++  };
++}
++
++/**
++ * Returns nearest match suggestion for an unknown tool name from registered names.
++ */
++export function suggestNearestTool(unknownName: string, registeredNames: Iterable<string>): string | null {
++  const lowerUnknown = unknownName.toLowerCase().replace(/[-_.]/g, "");
++  let bestMatch: string | null = null;
++  let bestScore = 0;
++
++  for (const name of registeredNames) {
++    const lowerRegistered = name.toLowerCase().replace(/[-_.]/g, "");
++    if (lowerRegistered === lowerUnknown) {
++      return name;
++    }
++    if (lowerRegistered.includes(lowerUnknown) || lowerUnknown.includes(lowerRegistered)) {
++      bestMatch = name;
++      bestScore = 1;
++    }
++  }
++
++  return bestMatch;
++}
++
+diff --git a/infrastructure/mcp-control-plane/test_tool_tombstones.ts b/infrastructure/mcp-control-plane/test_tool_tombstones.ts
+new file mode 100644
+index 00000000..332795a7
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_tool_tombstones.ts
+@@ -0,0 +1,40 @@
++import assert from "node:assert/strict";
++import {
++  TOOL_TOMBSTONES,
++  resolveToolTombstone,
++  suggestNearestTool
++} from "./src/registry/tool_tombstones";
++
++console.log("[test_tool_tombstones] Starting test run...");
++
++// 1. Direct tombstone resolution
++const qTombstone = resolveToolTombstone("bridge_work_queue");
++assert.ok(qTombstone !== null, "bridge_work_queue must resolve as a tombstone");
++assert.equal(qTombstone?.error, "tool_moved");
++assert.equal(qTombstone?.use, "bridge.work_queue");
++assert.equal(qTombstone?.code, -32602);
++assert.match(qTombstone?.message ?? "", /has moved to canonical name/);
++
++// 2. Guide-named dotted tombstone resolution (#2488 recovery)
++const claimTombstone = resolveToolTombstone("work.claim");
++assert.ok(claimTombstone !== null, "work.claim must resolve as a tombstone");
++assert.equal(claimTombstone?.use, "work_claim");
++
++const feedbackTombstone = resolveToolTombstone("bridge.read_feedback");
++assert.ok(feedbackTombstone !== null, "bridge.read_feedback must resolve as a tombstone");
++assert.equal(feedbackTombstone?.use, "bridge_read_feedback");
++
++// 3. Unknown name returns null
++const unknown = resolveToolTombstone("totally_nonexistent_tool");
++assert.equal(unknown, null, "Unknown tool should not have a tombstone");
++
++// 4. Nearest tool suggestion
++const knownTools = ["bridge.work_queue", "bridge_submit_patch", "github.create_issue"];
++const suggestion1 = suggestNearestTool("bridge_work_queue", knownTools);
++assert.equal(suggestion1, "bridge.work_queue", "Should suggest bridge.work_queue for bridge_work_queue");
++
++const suggestion2 = suggestNearestTool("github_create_issue", knownTools);
++assert.equal(suggestion2, "github.create_issue", "Should suggest github.create_issue");
++
++console.log("[test_tool_tombstones] ALL 4 CHECKS PASSED.");
++

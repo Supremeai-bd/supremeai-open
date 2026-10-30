@@ -1,0 +1,364 @@
+diff --git a/studio/src/components/chat/UnifiedChatPanel.tsx b/studio/src/components/chat/UnifiedChatPanel.tsx
+index c7fa5068..b0f2bc63 100644
+--- a/studio/src/components/chat/UnifiedChatPanel.tsx
++++ b/studio/src/components/chat/UnifiedChatPanel.tsx
+@@ -7,6 +7,9 @@ import { brandFrom, brandTooltip, TIER_CLASS, type Brand } from '../../lib/brand
+ import { tryHandleIntent } from '../../lib/jarvis';
+ import { JarvisAvatar } from '../jarvis/JarvisAvatar';
+ import { ChatDockBar, type DockAction, type DockApp } from './ChatDockBar';
++// SATISFACTION PULSE (P2, 2026-10-25 report §7/Table 8): opt-in one-question
++// CSAT micro-survey; admin embeds that omit the prop stay pixel-identical.
++import { SatisfactionPulse } from '../feedback/SatisfactionPulse';
+ 
+ // UNIFIED CHAT (Phase 1, 2026-10-24): the chat core (engine + panel UI) was
+ // extracted from src/pages/PublicPages.tsx so guest, user and admin
+@@ -301,6 +304,13 @@ export interface UnifiedChatPanelProps {
+   dockActions?: DockAction[];
+   /** Right Apps menu entries (user-published overlay; hidden when empty). */
+   dockApps?: DockApp[];
++  /**
++   * P2 satisfaction measurement (report §7/Table 8): opt-in one-question
++   * CSAT micro-survey. Appears after 90s dwell, at most once per 14 days
++   * (submit OR dismiss starts the window). Defaults to false so dashboard
++   * embeds keep their exact current layout — mirrors the showDock pattern.
++   */
++  showSatisfactionPulse?: boolean;
+ }
+ 
+ export type { DockAction, DockApp } from './ChatDockBar';
+@@ -499,6 +509,7 @@ export function UnifiedChatPanel({
+   showDock = false,
+   dockActions,
+   dockApps,
++  showSatisfactionPulse = false,
+ }: UnifiedChatPanelProps) {
+   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string; brand?: Brand }[]>(() =>
+     initialConversationId ? loadStoredConversation(initialConversationId) : [],
+@@ -879,6 +890,10 @@ export function UnifiedChatPanel({
+         apps={dockApps}
+       />
+     )}
++    {/* P2 satisfaction measurement (report §7/Table 8): opt-in micro-survey;
++        self-timed (90s dwell) and self-throttled (14 days) inside the
++        component, so the chat flow itself is untouched. */}
++    {showSatisfactionPulse && <SatisfactionPulse surface="chat" />}
+     {demandRetry && (
+       <HighDemandScreen
+         attempt={demandRetry.attempt}
+diff --git a/studio/src/components/feedback/SatisfactionPulse.tsx b/studio/src/components/feedback/SatisfactionPulse.tsx
+new file mode 100644
+index 00000000..eabc024d
+--- /dev/null
++++ b/studio/src/components/feedback/SatisfactionPulse.tsx
+@@ -0,0 +1,145 @@
++import React from 'react';
++import { X } from 'lucide-react';
++import {
++  PULSE_DWELL_MS,
++  markPulseSeen,
++  recordSatisfaction,
++  shouldPulse,
++  type SatisfactionSurface,
++} from '../../lib/satisfaction';
++
++// Satisfaction pulse (P2, 2026-10-25 frontend research report §7/Table 8):
++// a one-question CSAT micro-survey. বাংলা: অ্যাক্টিভ চ্যাট সারফেসে ৯০ সেকেন্ড
++// থাকার পর একবার ভেসে ওঠে; ১৪ দিনে সর্বোচ্চ একবার (স্কোর দিলে বা বন্ধ করলে
++// দুই ক্ষেত্রেই থ্রটল চালু হয়)। রিপোর্টের অ্যাক্সেসিবিলিটি স্তম্ভ মেনে ৪৪px
++// টাচ-টার্গেট, দৃশ্যমান ফোকাস-রিং ও Esc-পথ রাখা হয়েছে। ডিফল্টে অফ — শুধুমাত্র
++// যে হোস্ট স্পষ্টভাবে opt-in করে (admin ড্যাশবোর্ড এম্বেড পিক্সেল-অপরিবর্তিত
++// থাকে, showDock-এর মতোই)।
++
++const SCORE_LABELS: Record<number, string> = {
++  1: 'Frustrating',
++  2: 'Rough',
++  3: 'Okay',
++  4: 'Good',
++  5: 'Excellent',
++};
++
++type Phase = 'waiting' | 'asking' | 'comment' | 'thanks';
++
++export function SatisfactionPulse({ surface = 'chat' }: { surface?: SatisfactionSurface }) {
++  const [phase, setPhase] = React.useState<Phase>('waiting');
++  const [score, setScore] = React.useState<number | null>(null);
++  const [comment, setComment] = React.useState('');
++  const timerRef = React.useRef<number | null>(null);
++
++  React.useEffect(() => {
++    timerRef.current = window.setTimeout(() => {
++      if (shouldPulse(surface)) setPhase('asking');
++    }, PULSE_DWELL_MS);
++    return () => {
++      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
++    };
++  }, [surface]);
++
++  const dismiss = React.useCallback(() => {
++    markPulseSeen(surface);
++    setPhase('waiting');
++  }, [surface]);
++
++  React.useEffect(() => {
++    if (phase !== 'asking' && phase !== 'comment') return;
++    const onKey = (e: KeyboardEvent) => {
++      if (e.key === 'Escape') dismiss();
++    };
++    window.addEventListener('keydown', onKey);
++    return () => window.removeEventListener('keydown', onKey);
++  }, [phase, dismiss]);
++
++  if (phase === 'waiting') return null;
++
++  if (phase === 'thanks') {
++    return (
++      <div
++        data-testid="satisfaction-pulse"
++        role="status"
++        className="pointer-events-none fixed bottom-24 right-4 z-30 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.85))] px-4 py-3 text-sm text-slate-200 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md sm:right-6"
++      >
++        Thanks — noted for the next release.
++      </div>
++    );
++  }
++
++  return (
++    <div
++      data-testid="satisfaction-pulse"
++      role="dialog"
++      aria-label="Rate your experience"
++      className="fixed bottom-24 right-4 z-30 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.85))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md sm:right-6"
++    >
++      <div className="mb-3 flex items-start justify-between gap-2">
++        <p className="text-sm font-medium text-slate-100">How is SupremeAI working for you?</p>
++        <button
++          type="button"
++          onClick={dismiss}
++          aria-label="Dismiss survey"
++          data-testid="satisfaction-dismiss"
++          className="-mt-1 -mr-1 flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--glow-accent-color,rgb(168,85,247))]"
++        >
++          <X size={16} />
++        </button>
++      </div>
++
++      {phase === 'asking' ? (
++        <div className="flex items-center justify-between gap-1.5">
++          {[1, 2, 3, 4, 5].map((value) => (
++            <button
++              key={value}
++              type="button"
++              onClick={() => { setScore(value); setPhase('comment'); }}
++              aria-label={`${value} — ${SCORE_LABELS[value]}`}
++              title={`${value} — ${SCORE_LABELS[value]}`}
++              data-testid={`satisfaction-score-${value}`}
++              className="h-11 min-w-11 flex-1 rounded-xl border border-white/10 bg-slate-900/70 text-sm font-semibold text-slate-300 transition hover:border-fuchsia-400/50 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--glow-accent-color,rgb(168,85,247))]"
++            >
++              {value}
++            </button>
++          ))}
++        </div>
++      ) : (
++        <form
++          onSubmit={(e) => {
++            e.preventDefault();
++            if (score === null) return;
++            recordSatisfaction(score, surface, comment);
++            setPhase('thanks');
++            window.setTimeout(() => setPhase('waiting'), 2600);
++          }}
++          className="flex flex-col gap-2.5"
++        >
++          <textarea
++            value={comment}
++            onChange={(e) => setComment(e.target.value)}
++            maxLength={280}
++            rows={2}
++            placeholder={`What earns the ${score}? (optional)`}
++            aria-label="Optional comment"
++            data-testid="satisfaction-comment"
++            className="w-full resize-none rounded-xl border border-white/10 bg-slate-950/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-fuchsia-400/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--glow-accent-color,rgb(168,85,247))]"
++          />
++          <div className="flex items-center justify-between gap-2">
++            <span className="text-xs text-slate-400">{score} — {score !== null ? SCORE_LABELS[score] : ''}</span>
++            <button
++              type="submit"
++              data-testid="satisfaction-submit"
++              className="h-11 rounded-xl border border-fuchsia-400/40 bg-fuchsia-500/10 px-4 text-sm font-semibold text-fuchsia-200 transition hover:bg-fuchsia-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--glow-accent-color,rgb(168,85,247))]"
++            >
++              Send
++            </button>
++          </div>
++        </form>
++      )}
++    </div>
++  );
++}
++
++export default SatisfactionPulse;
+diff --git a/studio/src/lib/satisfaction.ts b/studio/src/lib/satisfaction.ts
+new file mode 100644
+index 00000000..409fb539
+--- /dev/null
++++ b/studio/src/lib/satisfaction.ts
+@@ -0,0 +1,133 @@
++// SupremeAI — Satisfaction pulse telemetry (P2 item, 2026-10-25 frontend
++// research report §7 / Table 8: "satisfaction measurement — task completion,
++// SUS/CSAT survey").
++//
++// বাংলা: জিরো-কস্ট স্থানীয় টেলিমেট্রি। সব রেকর্ড localStorage-এ ('sa-csat-v1')
++// থাকে — কোনো নেটওয়ার্ক কল, ব্যাকএন্ড বা নতুন ডিপেন্ডেন্সি নেই। এটি পরবর্তী
++// সংস্করণের প্রমাণ-ভিত্তি: getSatisfactionStats() দিয়ে যেকোনো ভবিষ্যৎ admin
++// টাইল বা রিপোর্ট এই ডেটা পড়তে পারবে। CSAT-5 এখন স্কোপে; ১০-প্রশ্নের SUS
++// ইনস্ট্রুমেন্ট ইচ্ছাকৃতভাবে পরে (smallest-safe-change — এক প্রশ্নের পালস
++// সার্ভে রেসপন্স-রেট বেশি পায়, NN/g microsurvey গাইড)।
++//
++// থ্রটল পলিসি: প্রতি সারফেসে সর্বোচ্চ ১৪ দিনে একবার। স্কোর সাবমিট এবং
++// ডিসমিস — দুটোই একই থ্রটল জানালা সেট করে, তাই ইউজারকে ধাওয়া করা হয় না।
++
++export type SatisfactionSurface = 'chat';
++
++export interface SatisfactionRecord {
++  /** CSAT score 1..5 (5 = best). */
++  score: number;
++  surface: SatisfactionSurface;
++  /** Optional free-text reason, trimmed to 280 chars. */
++  comment?: string;
++  /** ISO-8601 timestamp of submission. */
++  at: string;
++}
++
++export interface SatisfactionStats {
++  total: number;
++  /** Arithmetic mean of scores, 1 decimal place (null when empty). */
++  avg: number | null;
++  /** Score -> count map for 1..5. */
++  distribution: Record<1 | 2 | 3 | 4 | 5, number>;
++  lastAt: string | null;
++}
++
++const STORAGE_KEY = 'sa-csat-v1';
++const THROTTLE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
++const MAX_RECORDS = 500;
++const MAX_COMMENT_CHARS = 280;
++/** Minimum on-surface dwell before a pulse may appear (caller mounts the
++ * component; this module owns the gate). */
++export const PULSE_DWELL_MS = 90_000;
++
++interface StoredState {
++  records: SatisfactionRecord[];
++  /** surface -> last pulse interaction (submit OR dismiss), epoch ms. */
++  lastPulse: Record<string, number>;
++}
++
++function emptyState(): StoredState {
++  return { records: [], lastPulse: {} };
++}
++
++function readState(): StoredState {
++  if (typeof localStorage === 'undefined') return emptyState();
++  try {
++    const raw = localStorage.getItem(STORAGE_KEY);
++    if (!raw) return emptyState();
++    const parsed = JSON.parse(raw) as Partial<StoredState>;
++    return {
++      records: Array.isArray(parsed.records) ? parsed.records.filter((r) => r && typeof r.score === 'number') : [],
++      lastPulse: parsed.lastPulse && typeof parsed.lastPulse === 'object' ? parsed.lastPulse : {},
++    };
++  } catch {
++    return emptyState();
++  }
++}
++
++function writeState(state: StoredState): void {
++  if (typeof localStorage === 'undefined') return;
++  try {
++    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
++  } catch {
++    /* storage full/blocked — telemetry must never break the UI */
++  }
++}
++
++/** True when the surface is allowed to ask right now (14-day window free). */
++export function shouldPulse(surface: SatisfactionSurface, now = Date.now()): boolean {
++  const last = readState().lastPulse[surface];
++  return typeof last !== 'number' || now - last >= THROTTLE_MS;
++}
++
++/** Record a dismissal (no score) — starts the same throttle window. */
++export function markPulseSeen(surface: SatisfactionSurface, now = Date.now()): void {
++  const state = readState();
++  state.lastPulse[surface] = now;
++  writeState(state);
++}
++
++/** Persist one CSAT response. Score is clamped to 1..5; comment to 280 chars. */
++export function recordSatisfaction(
++  score: number,
++  surface: SatisfactionSurface,
++  comment?: string,
++  now = Date.now(),
++): SatisfactionRecord {
++  const clamped = Math.min(5, Math.max(1, Math.round(score)));
++  const record: SatisfactionRecord = {
++    score: clamped,
++    surface,
++    at: new Date(now).toISOString(),
++  };
++  const trimmed = (comment ?? '').trim().slice(0, MAX_COMMENT_CHARS);
++  if (trimmed) record.comment = trimmed;
++  const state = readState();
++  state.records.push(record);
++  if (state.records.length > MAX_RECORDS) {
++    state.records = state.records.slice(-MAX_RECORDS);
++  }
++  state.lastPulse[surface] = now;
++  writeState(state);
++  return record;
++}
++
++/** Local analytics read-out — the evidence base for the next version. */
++export function getSatisfactionStats(surface?: SatisfactionSurface): SatisfactionStats {
++  const { records } = readState();
++  const scoped = surface ? records.filter((r) => r.surface === surface) : records;
++  const distribution: SatisfactionStats['distribution'] = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
++  for (const r of scoped) {
++    const s = Math.min(5, Math.max(1, Math.round(r.score))) as keyof typeof distribution;
++    distribution[s] += 1;
++  }
++  const total = scoped.length;
++  const sum = scoped.reduce((acc, r) => acc + r.score, 0);
++  return {
++    total,
++    avg: total ? Math.round((sum / total) * 10) / 10 : null,
++    distribution,
++    lastAt: total ? scoped[scoped.length - 1].at : null,
++  };
++}
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 0b7d6bd3..66c72dd0 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -89,7 +89,9 @@ const GUEST_DOCK_APPS = [
+ ];
+ 
+ export function GuestChat() {
+-  return <UnifiedChatPanel showDock dockApps={GUEST_DOCK_APPS} />;
++  // P2 satisfaction measurement (2026-10-25 report §7/Table 8): guest chat
++  // opts in to the one-question CSAT pulse; self-throttled, dismiss-safe.
++  return <UnifiedChatPanel showDock dockApps={GUEST_DOCK_APPS} showSatisfactionPulse />;
+ }
+ 
+ 
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+index b046cbe2..d71665a4 100644
+--- a/studio/src/pages/user/AIStudio.tsx
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -296,6 +296,7 @@ export const AIStudio: React.FC = () => {
+               initialInput={input}
+               onInputChange={setInput}
+               showDock
++              showSatisfactionPulse
+               dockActions={[
+                 { id: 'preview', label: 'Preview', icon: Globe, onClick: () => gotoSurface('preview') },
+                 { id: 'mobile', label: 'Mobile', icon: Smartphone, onClick: () => gotoSurface('mobile') },

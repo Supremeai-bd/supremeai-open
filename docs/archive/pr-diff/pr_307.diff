@@ -1,0 +1,461 @@
+diff --git a/api-schemas/fixtures/instruction-envelope.fixture.json b/api-schemas/fixtures/instruction-envelope.fixture.json
+new file mode 100644
+index 00000000..5c27469c
+--- /dev/null
++++ b/api-schemas/fixtures/instruction-envelope.fixture.json
+@@ -0,0 +1,111 @@
++{
++  "schema_version": "1.0",
++  "envelope_format": "instruction-envelope-v1",
++  "target": {
++    "task_id": "task-30",
++    "issue": "30",
++    "repository": "Supremeai-bd/supremeai-open",
++    "task_type": "IMPLEMENT",
++    "group": "schemas-contracts",
++    "priority": "P1"
++  },
++  "section_1_role_contract": {
++    "role": "coder",
++    "role_description": "Implementation specialist (features, bug fixes, refactoring)",
++    "operating_constraints": [
++      "Work strictly within the declared Touching Files; any out-of-bound edit fails the pipeline boundary guard.",
++      "Continuous-loop authorization: proceed task after task without confirmation prompts; escalate only on hard blockers.",
++      "Report progress in the contributor channel's assigned language; keep technical identifiers in English.",
++      "Never push to main directly; land work exclusively through the declared submission pathway."
++    ],
++    "stop_conditions": [
++      "A freshly synced main no longer contains the declared Touching Files' parent directories.",
++      "Another lane's open pull request already modifies the same files with the same objective."
++    ]
++  },
++  "section_2_task_scope": {
++    "objective": "Standardize the 5-section deterministic instruction envelope for AI coding agents as a JSON Schema with a full valid fixture.",
++    "problem_statement": "Instruction handoffs to autonomous agents were ad-hoc prose: role, scope, policies, verification and submission contracts were re-authored per task, allowing drift between what dispatchers promise and what the pipeline guards enforce. A single deterministic envelope schema removes that drift by construction.",
++    "touching_files": [
++      "api-schemas/instruction-envelope.schema.json",
++      "api-schemas/fixtures/instruction-envelope.fixture.json"
++    ],
++    "forbidden_paths": [
++      ".env*",
++      "secrets/**",
++      "credentials/**",
++      "vault/**"
++    ],
++    "acceptance_criteria": [
++      "Specification and schema created in api-schemas/instruction-envelope.schema.json.",
++      "Verification test suite passing with fixtures.",
++      "scripts/validate_schemas.py reports errors=0 warnings=0 across api-schemas/.",
++      "Schema cross-validates the fixture and rejects mutated negatives."
++    ]
++  },
++  "section_3_governing_rules": {
++    "policies": [
++      {
++        "id": "scope-gate",
++        "statement": "The Touching Files list is a hard boundary; out-of-bound edits fail CI.",
++        "source": "docs/AGENT_LOOP_SPEC.md section 2 (scope.touching_files)"
++      },
++      {
++        "id": "verification-contract",
++        "statement": "Every task must satisfy the 3-tier verification contract before submission.",
++        "source": "docs/AGENT_LOOP_SPEC.md section 7 (Verification quick-start)"
++      },
++      {
++        "id": "pr-issue-reference",
++        "statement": "Every PR must reference its task issue in title or body, and the body must carry the exact Closes #N line for auto-close.",
++        "source": ".github/workflows/pipeline.yml (Issue Reference Guard + merge gate)"
++      },
++      {
++        "id": "branch-naming",
++        "statement": "Head branches must follow the <type>/<slug> constitutional convention.",
++        "source": ".github/workflows/pipeline.yml (Branch-Naming Guard)"
++      }
++    ],
++    "admin_gate": {
++      "required": false,
++      "status": "NOT_REQUIRED"
++    }
++  },
++  "section_4_verification": {
++    "contract_version": "agent-loop-contract/1",
++    "tiers": [
++      {
++        "tier": 1,
++        "name": "reflection_check",
++        "command": "git status --porcelain",
++        "expectation": "Changed paths are exactly the declared Touching Files."
++      },
++      {
++        "tier": 2,
++        "name": "boot_smoke_test",
++        "command": "python -c \"import json; json.load(open('api-schemas/instruction-envelope.schema.json')); json.load(open('api-schemas/fixtures/instruction-envelope.fixture.json'))\"",
++        "expectation": "Both schema and fixture parse as valid JSON."
++      },
++      {
++        "tier": 3,
++        "name": "test_suite",
++        "command": "python scripts/validate_schemas.py --file api-schemas/instruction-envelope.schema.json api-schemas/fixtures/instruction-envelope.fixture.json",
++        "expectation": "Fixture validates against the schema and mutated negatives are rejected."
++      }
++    ],
++    "required_evidence": [
++      "porcelain diff listing limited to the two declared files",
++      "validate_schemas.py exit code 0 with errors=0 warnings=0",
++      "negative-mutation table showing each mutation rejected"
++    ]
++  },
++  "section_5_submission": {
++    "pathway": "pull_request",
++    "base_branch": "main",
++    "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/.+",
++    "pr_title_prefix": "feat(schemas):",
++    "issue_reference_required": true,
++    "closes_reference": "Closes #30",
++    "pr_body_template": "## Summary\n- Add api-schemas/instruction-envelope.schema.json: 5-section deterministic instruction envelope (role contract, task scope, governing rules, 3-tier verification, universal PR submission template) with closed vocabularies mirroring the dispatch registry.\n- Add api-schemas/fixtures/instruction-envelope.fixture.json: full valid envelope fixture for this task, cross-validated by scripts/validate_schemas.py.\n\nCloses #30"
++  }
++}
+diff --git a/api-schemas/instruction-envelope.schema.json b/api-schemas/instruction-envelope.schema.json
+new file mode 100644
+index 00000000..86f154e3
+--- /dev/null
++++ b/api-schemas/instruction-envelope.schema.json
+@@ -0,0 +1,338 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://supremeai.ai/schemas/instruction-envelope.schema.json",
++  "title": "SupremeAI 5-Section Deterministic Instruction Envelope",
++  "description": "Canonical instruction envelope handed to an AI coding agent for a single task. Deterministic: two renders of the same task must produce byte-identical envelopes. The five sections map 1:1 onto the task-delivery pipeline: (1) role contract and operating constraints, (2) task objective and scope boundary, (3) governing rules and policies, (4) the 3-tier verification contract (reflection check, boot smoke test, test suite; evidence tiers SSOT'd in docs/AGENT_LOOP_SPEC.md section 4), and (5) the universal PR submission template. Closed vocabularies (roles, task types, groups, priorities) mirror scripts/agents/continuous_agent_loop.py and docs/AGENT_LOOP_SPEC.md sections 2-3 so an envelope can never drift from the dispatch registry. See issue #30.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schema_version",
++    "envelope_format",
++    "target",
++    "section_1_role_contract",
++    "section_2_task_scope",
++    "section_3_governing_rules",
++    "section_4_verification",
++    "section_5_submission"
++  ],
++  "properties": {
++    "schema_version": {
++      "type": "string",
++      "pattern": "^\\d+\\.\\d+$",
++      "description": "Semantic version of this envelope document itself (e.g. \"1.0\"). Bump when the envelope shape changes."
++    },
++    "envelope_format": {
++      "const": "instruction-envelope-v1",
++      "description": "Format discriminator. A renderer emitting a different major layout MUST change this tag."
++    },
++    "target": {
++      "$ref": "#/$defs/target"
++    },
++    "section_1_role_contract": {
++      "$ref": "#/$defs/roleContract"
++    },
++    "section_2_task_scope": {
++      "$ref": "#/$defs/taskScope"
++    },
++    "section_3_governing_rules": {
++      "$ref": "#/$defs/governingRules"
++    },
++    "section_4_verification": {
++      "$ref": "#/$defs/verificationContract"
++    },
++    "section_5_submission": {
++      "$ref": "#/$defs/submissionTemplate"
++    }
++  },
++  "$defs": {
++    "target": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Coordinates of the task this envelope instructs the agent to execute.",
++      "required": [
++        "task_id",
++        "issue",
++        "repository",
++        "task_type",
++        "group",
++        "priority"
++      ],
++      "properties": {
++        "task_id": {
++          "type": "string",
++          "pattern": "^task-[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
++          "description": "Deterministic task identifier, conventionally 'task-<issue number>'."
++        },
++        "issue": {
++          "type": "string",
++          "pattern": "^[1-9][0-9]{0,7}$",
++          "description": "Tracking issue number in the target repository, as a string (mirrors task-envelope-v1)."
++        },
++        "repository": {
++          "type": "string",
++          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
++          "description": "Full name of the target repository (owner/repo)."
++        },
++        "task_type": {
++          "enum": ["AUDIT", "PLAN", "IMPLEMENT", "FIX_CI", "REVIEW", "SECURITY_AUDIT", "DISCOVERY", "MERGE", "ADMIN_DECISION"],
++          "description": "VALID_TASK_TYPES from scripts/agents/continuous_agent_loop.py — agents cannot invent task types."
++        },
++        "group": {
++          "enum": ["agent-orchestration", "mcp-tower", "core-engine", "schemas-contracts", "infra-ops"],
++          "description": "VALID_GROUPS execution registry (docs/AGENT_LOOP_SPEC.md section 3, fail-closed)."
++        },
++        "priority": {
++          "enum": ["P0", "P1", "P2", "P3"],
++          "description": "Priority tier, matching the issue label taxonomy (P0-critical..P3-low)."
++        }
++      }
++    },
++    "roleContract": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Section 1 — who the agent is for this task and the constraints it operates under.",
++      "required": ["role", "role_description", "operating_constraints", "stop_conditions"],
++      "properties": {
++        "role": {
++          "enum": ["coder", "auditor", "ci-fixer", "security-breaker", "browser-qa", "planner", "watcher"],
++          "description": "One of the 7 specialist roles from the dispatch registry."
++        },
++        "role_description": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Human-readable mandate of the assigned role (verbatim from the registry where applicable)."
++        },
++        "operating_constraints": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Hard behavioral constraints: continuous-loop authorization, confirmation policy, reporting language, escalation rules."
++        },
++        "stop_conditions": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Enumerated conditions under which the agent must abort the task instead of improvising (hard blockers only)."
++        }
++      }
++    },
++    "taskScope": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Section 2 — what to build and the exact boundary the work must stay inside.",
++      "required": ["objective", "touching_files", "forbidden_paths", "acceptance_criteria"],
++      "properties": {
++        "objective": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Single-sentence mission statement; must be specific enough that two agents would produce equivalent scopes."
++        },
++        "problem_statement": {
++          "type": "string",
++          "description": "Optional verbatim problem context from the source issue."
++        },
++        "touching_files": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Scope Gate boundary: repository paths the change may touch. Enforced by the pipeline boundary guard; any out-of-bound edit fails CI."
++        },
++        "forbidden_paths": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Paths never touchable by contributors (constitutional defaults: .env*, secrets/**, credentials/**, vault/**)."
++        },
++        "acceptance_criteria": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Checklist the final state must satisfy, verbatim from the issue where applicable."
++        }
++      }
++    },
++    "governingRules": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Section 3 — the policies this task is governed by and whether an admin gate applies.",
++      "required": ["policies", "admin_gate"],
++      "properties": {
++        "policies": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "description": "Citable policy bindings; every constraint in section 1 should trace to at least one policy here.",
++          "items": {
++            "$ref": "#/$defs/policyItem"
++          }
++        },
++        "admin_gate": {
++          "type": "object",
++          "additionalProperties": false,
++          "description": "Whether an ADMIN_DECISION must precede or approve this task (mirrors task-envelope-v1 admin_gate).",
++          "required": ["required", "status"],
++          "properties": {
++            "required": {
++              "type": "boolean",
++              "description": "True only for constitution-changing or taxonomy-changing work."
++            },
++            "status": {
++              "enum": ["NOT_REQUIRED", "REQUIRED", "APPROVED", "REJECTED"],
++              "description": "Gate lifecycle status as seen by the dispatching system."
++            }
++          }
++        }
++      }
++    },
++    "verificationContract": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Section 4 — the 3-tier verification contract every task must satisfy before submission.",
++      "required": ["contract_version", "tiers", "required_evidence"],
++      "properties": {
++        "contract_version": {
++          "const": "agent-loop-contract/1",
++          "description": "CONTRACT_VERSION parity tag shared with scripts/agents/continuous_agent_loop.py (docs/AGENT_LOOP_SPEC.md section 4b)."
++        },
++        "tiers": {
++          "type": "array",
++          "minItems": 3,
++          "maxItems": 3,
++          "uniqueItems": true,
++          "description": "Exactly the 3 tiers, each present exactly once: contains-clauses below pin tiers 1, 2 and 3.",
++          "items": {
++            "$ref": "#/$defs/verificationTier"
++          },
++          "allOf": [
++            {
++              "description": "Tier 1 (reflection_check) must be present.",
++              "contains": {
++                "type": "object",
++                "required": ["tier"],
++                "properties": { "tier": { "const": 1 } }
++              }
++            },
++            {
++              "description": "Tier 2 (boot_smoke_test) must be present.",
++              "contains": {
++                "type": "object",
++                "required": ["tier"],
++                "properties": { "tier": { "const": 2 } }
++              }
++            },
++            {
++              "description": "Tier 3 (test_suite) must be present.",
++              "contains": {
++                "type": "object",
++                "required": ["tier"],
++                "properties": { "tier": { "const": 3 } }
++              }
++            }
++          ]
++        },
++        "required_evidence": {
++          "$ref": "#/$defs/nonEmptyStringList",
++          "description": "Artifacts that must be pasted into the PR description as completion proof."
++        }
++      }
++    },
++    "submissionTemplate": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Section 5 — the universal PR submission template; encoded so the pipeline's issue-reference and branch-naming guards can never be failed by a compliant envelope.",
++      "required": [
++        "pathway",
++        "base_branch",
++        "branch_convention",
++        "issue_reference_required",
++        "closes_reference",
++        "pr_body_template"
++      ],
++      "properties": {
++        "pathway": {
++          "enum": ["pull_request", "bridge_submit_patch"],
++          "description": "Pathway 1 (pull_request) or Pathway 2 (bridge_submit_patch) per AGENTS.md section 2.1 and section 8."
++        },
++        "base_branch": {
++          "type": "string",
++          "pattern": "^[A-Za-z0-9._/-]{1,64}$",
++          "description": "Branch the change must land on; 'main' for the public repository."
++        },
++        "branch_convention": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Branch-naming regex enforced by .github/workflows/pipeline.yml (Branch-Naming Guard); quoted verbatim so the envelope is self-contained."
++        },
++        "pr_title_prefix": {
++          "type": "string",
++          "description": "Conventional-commit prefix to open the PR title (e.g. \"feat(schemas):\")."
++        },
++        "issue_reference_required": {
++          "const": true,
++          "description": "Immutable: the pipeline issue-reference guard rejects any PR whose title/body lacks an issue reference."
++        },
++        "closes_reference": {
++          "type": "string",
++          "pattern": "^Closes #[1-9][0-9]{0,7}$",
++          "description": "Exact close-keyword line that must appear in the PR body so the merge gate auto-closes the task issue."
++        },
++        "pr_body_template": {
++          "type": "string",
++          "minLength": 1,
++          "pattern": "Closes #[1-9][0-9]{0,7}",
++          "description": "Markdown skeleton of the PR body; MUST embed the same Closes #N line as closes_reference."
++        }
++      }
++    },
++    "nonEmptyStringList": {
++      "type": "array",
++      "minItems": 1,
++      "uniqueItems": true,
++      "items": {
++        "type": "string",
++        "minLength": 1
++      }
++    },
++    "policyItem": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "One citable policy: stable id, enforceable statement, and where it is written down.",
++      "required": ["id", "statement", "source"],
++      "properties": {
++        "id": {
++          "type": "string",
++          "pattern": "^[a-z][a-z0-9-]{1,63}$",
++          "description": "Stable kebab-case policy identifier."
++        },
++        "statement": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Enforceable one-sentence statement of the policy."
++        },
++        "source": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Canonical location (file/section) the policy is written down at."
++        }
++      }
++    },
++    "verificationTier": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "One tier of the 3-tier verification contract.",
++      "required": ["tier", "name", "command", "expectation"],
++      "properties": {
++        "tier": {
++          "type": "integer",
++          "minimum": 1,
++          "maximum": 3,
++          "description": "Tier ordinal: 1 = reflection check, 2 = boot smoke test, 3 = test suite."
++        },
++        "name": {
++          "enum": ["reflection_check", "boot_smoke_test", "test_suite"],
++          "description": "Canonical tier name; name and ordinal are pinned together by the envelope renderer."
++        },
++        "command": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Offline-safe shell command that executes the tier check from the repository root."
++        },
++        "expectation": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Pass criterion of the command, in one sentence."
++        }
++      }
++    }
++  }
++}

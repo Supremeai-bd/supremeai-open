@@ -1,0 +1,50 @@
+diff --git a/docs/bridge/bridge-20261030-2974-outage-reverify-r1-glm04.md b/docs/bridge/bridge-20261030-2974-outage-reverify-r1-glm04.md
+new file mode 100644
+index 00000000..7c8951fd
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2974-outage-reverify-r1-glm04.md
+@@ -0,0 +1,44 @@
++# #2974 evidence r1 ΓÇö outage re-verification: still LIVE at ~24h+ (probe identical, policy plane still empty), tool inventory now 158 ΓÇö third+ deploy window completed without the env fix; live reads 2026-10-30T13:15ΓÇô13:18Z
++
++- **Task ID:** `bridge-20261030-2974-evidence-r1`
++- **Agent:** GLM Agent 04 (Job 486718), continuous-loop dispatch of row 2974; claim `GRANT_NEW` 13:15:31Z, released after filing
++- **Lane:** report-only evidence refresh (docs-only, zero code, zero protected paths, no closure requested ΓÇö `audit:finding`/`report` row, anti-false-close U4)
++- **Lineage:** #2557 (the finding) ΓåÆ #2472/#2492/#2447 (deploy-config-regression family) ΓåÆ #2974 (cycle-51 post-observation receipt, 10-30T01:38Z) ΓåÆ **this receipt**
++- **Method:** zero-credential tower probes ΓÇö `agent_review_workflow_status` (the designed zero-arg probe), `policy_list_pending`, `tools/list` inventory count, same session 13:05ΓÇô13:18Z.
++
++**αª¼αª╛αªéαª▓αª╛ αª╕αª╛αª░αª╕αªéαªòαºìαª╖αºçαª¬:** #2974-αªÅ αª¿αªÑαª┐αª¡αºüαªòαºìαªñ αªåαªëαªƒαºçαª£ (αªƒαª╛αªôαª»αª╝αª╛αª░αºçαª░ `SUPREMEAI_BACKEND_URL` env αª¡αºìαª»αª╛αª░αª┐αª»αª╝αºçαª¼αª▓ αªàαª¿αºüαª¬αª╕αºìαªÑαª┐αªñ) αªÅαªûαª¿αºï αªÜαª▓αª¢αºç ΓÇö 13:16Z-αªÅ αªÅαªòαªç αª¬αºìαª░αºïαª¼ αªÅαªòαªç αªñαºìαª░αºüαªƒαª┐ αªªαºçαª»αª╝; αªàαª░αºìαªÑαª╛αºÄ αª¬αºìαª░αªÑαª« αª¬αª░αºìαª»αª¼αºçαªòαºìαª╖αªú (c31/c32, ~10-29 13:00Z) αªÑαºçαªòαºç **αº¿αº¬ αªÿαªúαºìαªƒαª╛αª░ αª¼αºçαª╢αª┐** αª¬αºçαª░αª┐αª»αª╝αºçαª¢αºçαÑñ αªƒαºüαª▓ αªçαª¿αª¡αºçαª¿αºìαªƒαª░αª┐ αªÅαªûαª¿ αººαº½αº« (c32-αªÅ αººαº½αºº, c51-αªÅ αººαº½αº¡) ΓÇö αªàαª░αºìαªÑαª╛αºÄ αªåαªëαªƒαºçαª£-αªÜαª▓αª╛αªòαª╛αª▓αºÇαª¿ **αªåαª░αªô αªÅαªòαªƒαª┐ αªíαª┐αª¬αºìαª▓αª»αª╝ αªëαªçαª¿αºìαªíαºï αª╕αª«αºìαª¬αª¿αºìαª¿ αª╣αª»αª╝αºçαª¢αºç**, αªòαª┐αª¿αºìαªñαºü env αª½αª┐αª░αºçαª¿αª┐: "deploy αª▓αºìαª»αª╛αª¿αºìαªí αªòαª░αºç, config-regression αªÑαºçαªòαºç αª»αª╛αª»αª╝" ΓÇö αªÅαªç αª¬αª░αª┐αª¼αª╛αª░αºçαª░ αªñαºâαªñαºÇαª»αª╝ αªçαª¿αª╕αºìαªƒαºìαª»αª╛αª¿αºìαª╕ αªåαª¼αª╛αª░αªô αª▓αª╛αªçαª¡ αª¬αºìαª░αª«αª╛αªúαª┐αªñαÑñ αª¬αª▓αª┐αª╕αª┐ αª¬αºìαª▓αºçαª¿αºç αªòαºïαª¿αºï HITL αªàαª¿αºüαª░αºïαªº αª╕αª╛αª░αª┐αª¼αªªαºìαªº αª¿αºçαªç (`policy_list_pending = []`), αªñαª╛αªç αªåαª¿αª¼αºìαª▓αªòαºçαª░ αªÅαªòαª«αª╛αªñαºìαª░ αª¬αªÑ αªÅαªûαª¿αºï #2974-αªÅαª░ αªàαºìαª»αª╛αªíαª«αª┐αª¿ αª░αª╛αª¿αª¼αºüαªòαÑñ αªÅαª£αºçαª¿αºìαªƒ-αª¬αªòαºìαª╖αºçαª░ αªòαºïαª¿αºï αª╕αª«αª╛αªºαª╛αª¿ αª╕αª«αºìαª¡αª¼ αª¿αª»αª╝: αªƒαª╛αªôαª»αª╝αª╛αª░ αª╕αª╛αª░αºìαª¡αª┐αª╕ αªòαºïαª¿αºï αªÅαª£αºçαª¿αºìαªƒ-αªªαºâαª╢αºìαª»αª«αª╛αª¿ Render αªàαºìαª»αª╛αªòαª╛αªëαª¿αºìαªƒαºç αª¿αºçαªç, αªÅαª¼αªé env-αª¬αª░αª┐αª¼αª░αºìαªñαª¿ αª¬αª▓αª┐αª╕αª┐ R3 (REQUIRE_APPROVAL)-αªÅ αªåαªƒαªòαª╛αª¿αºïαÑñ `agent_review_workflow_execute` αªçαªÜαºìαª¢αª╛αªòαºâαªñαª¡αª╛αª¼αºç αªòαª▓ αªòαª░αª╛ αª╣αª»αª╝αª¿αª┐ (αª½αºìαª»αª╛αª¿αºìαªƒαª«-αª░αª┐αªòαºïαª»αª╝αºçαª╕αºìαªƒ/αª▓αªò αª¥αºüαªüαªòαª┐)αÑñ
++
++## 1. U3 live verification (this session)
++
++| probe | result (13:16ΓÇô13:17Z) | verdict |
++|---|---|---|
++| `agent_review_workflow_status` (zero-arg) | `Error: SUPREMEAI_BACKEND_URL is not configured` | **identical to c31/c32/c51 ΓÇö outage LIVE ~24h+** |
++| `policy_list_pending` | `[]` | **no HITL request queued** ΓÇö admin has not been prompted via the policy plane |
++| `tools/list` inventory | **158 tools** | c32: 151 ΓåÆ c51: 157 ΓåÆ now 158 ΓÇö **ΓëÑ2 completed deploy windows span the outage** |
++
++Methodological hygiene preserved: `agent_review_workflow_execute` was deliberately NOT called ΓÇö per the finding itself, execute registers a workflow request before failing (phantom-request/lock risk); the zero-arg status probe is sufficient for U3.
++
++## 2. What the deltas mean
++
++1. **Duration:** first observation ~10-29T13:00Z ΓåÆ still failing 10-30T13:16Z ΓçÆ **~24h+**, now spanning ΓëÑ2 completed deploy windows (151ΓåÆ157ΓåÆ158). Every window re-proves the family pattern: the deploy pipeline lands builds, but the configuration payload regresses silently ΓÇö nothing in the pipeline checks required env completeness post-deploy.
++2. **Policy plane empty:** the HITL channel that should carry this remediation has no queued request. The runbook's step "admin sets the env var" has no pending ticket anywhere an admin triage would look ΓÇö the receipt chain (this file + #2974) is the only signal. If the tower's policy plane supports filing a pending request from a probe-only path, that is a candidate hardening item; from the agent vantage it does not exist, so the GitHub receipt remains the carrier.
++3. **Phantom-request ambiguity unchanged:** while status is dark, the c31 partial-start phantom workflow request ("An identical workflow request is already running" on immediate retry) cannot be inspected or cleared ΓÇö it stays runbook step 3.
++
++## 3. Admin runbook (unchanged, re-affirmed ΓÇö smallest safe path)
++
++1. On the tower-owner Render account (service behind `supremeai-mcp-tower.onrender.com`): set `SUPREMEAI_BACKEND_URL=<backend API base URL>` and redeploy.
++2. Verify: `agent_review_workflow_status` returns runtime-availability JSON (zero-arg probe).
++3. Clear the c31 phantom workflow request if it still holds locks (unverifiable while status is dark).
++4. Hardening (the family's root-cause closure): fail fast at tool-argument validation BEFORE request registration when required runtime config is absent; add an env-var completeness probe to the post-deploy checklist ΓÇö this is the third config-payload-without-deploy regression (#2447ΓåÆ#2472, R67ΓåÆ#2492, and now this).
++
++## 4. Envelope statement
++
++- Zero credentials; read-only probes; no deploy triggered, no env mutation attempted (service unreachable + policy R3), no claim churn (single atomic claim, released after filing).
++- No closure requested: the row stays open until the probe returns runtime-availability JSON; closure belongs to the verdict plane/admin.
++- Idempotency: single evidence receipt for this row this cycle; no sibling WO filed; #2974 is the carrier, not a duplicate.
++- Cross-plane note (adjacent family, same session): the #2756 sync-delivery lane already has its own receipt today (`bridge-20261030-2756-sync-delivery-asymmetry-r1.md`); nothing here contradicts it.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++- **why:** the loop dispatched the row ~11.5h after its filing; a guard receipt decays unless re-verified. The re-verification produced three material deltas (24h+ duration, one more deploy window 157ΓåÆ158, policy plane still empty) that (a) keep the admin runbook the blocking dependency, (b) rule out every agent-side remediation path with fresh evidence, and (c) add the third family datapoint for the env-completeness hardening ask.
++- **alternatives_rejected:** (1) calling `agent_review_workflow_execute` ΓÇö rejected: registers a workflow request before failing (phantom-request/lock risk, per the finding); (2) attempting the Render env fix ΓÇö rejected: the tower service is in no agent-reachable Render account and `policy_preview` verdict is R3 REQUIRE_APPROVAL; (3) filing a new follow-up issue ΓÇö rejected: #2974 already is the receipt; a second row would duplicate (anti-stampede); (4) closing #2974/#2557 ΓÇö rejected: the remedy has not landed; a Closes line on an un-remedied row is a false closure (#2211/#2225 family, #2738 challenge).

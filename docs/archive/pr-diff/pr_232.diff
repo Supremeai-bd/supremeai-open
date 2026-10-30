@@ -1,0 +1,295 @@
+diff --git a/.github/ISSUE_TEMPLATE/bug-report.yml b/.github/ISSUE_TEMPLATE/bug-report.yml
+new file mode 100644
+index 00000000..98994984
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/bug-report.yml
+@@ -0,0 +1,140 @@
++name: 🐛 Bug Report / Defect
++description: Report a bug, unexpected error, or reproducible defect.
++title: "fix(scope): brief description of bug"
++labels: ["kind:bug"]
++body:
++  - type: markdown
++    attributes:
++      value: |
++        ### 🐛 Bug Report
++        Thank you for reporting an issue! Please provide as much context and reproducible detail as possible.
++
++  - type: dropdown
++    id: target_repo
++    attributes:
++      label: Target Repository
++      description: Which repository in the SupremeAI Federation is affected?
++      options:
++        - Supremeai-bd/supremeai-open
++        - Supremeai-bd/supremeai
++        - Supremeai-bd/supremeai-command
++        - Supremeai-bd/supremeai-skills
++        - Supremeai-bd/supremeai-vscode
++        - Supremeai-bd/supremeai-agents
++        - Supremeai-bd/supremeai-browser
++        - Supremeai-bd/supremeai-api
++        - Supremeai-bd/supremeai-studio
++        - Supremeai-bd/supremeai-infrastructure
++        - Supremeai-bd/supremeai-core
++        - Supremeai-bd/supremeai-sdk
++        - Supremeai-bd/supremeai-mcp-control-plane
++        - Supremeai-bd/supremeai-archive
++    validations:
++      required: true
++
++  - type: dropdown
++    id: sub_group
++    attributes:
++      label: Sub-Group / Functional Domain (Area)
++      description: Affected functional area.
++      options:
++        - "security (Authentication, key-plane, boundaries, vulnerability)"
++        - "ci (Workflows, gates, lint, testing matrix)"
++        - "gateway (API endpoints, routing, provider failover)"
++        - "governance (Constitution, rules, templates, policies, ADRs)"
++        - "agent-orchestration (Lifecycle, loop, roles, worker dispatch)"
++        - "mcp-tower (MCP tools, JSON-RPC, SSE bridge, server endpoints)"
++        - "core-engine (Intelligence models, state machine, planning)"
++        - "frontend-ui (Studio, dashboard, visual UX, components)"
++        - "telemetry (Heartbeats, logging, watcher, metrics)"
++        - "memory (Archive, semantic memory, context history)"
++        - "llm-routing (Dynamic router, provider fallback, model selection)"
++        - "infra-ops (Docker, Terraform, actions runners, deployment configs)"
++        - "docs (Documentation, ecosystem maps, contributor guides)"
++    validations:
++      required: true
++
++  - type: dropdown
++    id: severity
++    attributes:
++      label: Severity / Priority Tier
++      description: How critical is this defect?
++      options:
++        - "P0-critical (Production outage, data loss, security vulnerability)"
++        - "P1-high (Blocker, broken CI gate, core flow failure)"
++        - "P2-medium (Standard bug, degraded experience, edge case failure)"
++        - "P3-low (Minor UI flaw, typo, cosmetic defect)"
++    validations:
++      required: true
++
++  - type: textarea
++    id: bug_description
++    attributes:
++      label: Bug Description
++      description: A clear and concise description of what the bug is.
++      placeholder: "When running command X, module Y crashes with..."
++    validations:
++      required: true
++
++  - type: textarea
++    id: reproduction_steps
++    attributes:
++      label: Reproduction Steps
++      description: Exact steps to reproduce the issue.
++      placeholder: |
++        1. Run `python scripts/agents/...`
++        2. Execute `...`
++        3. See error
++    validations:
++      required: true
++
++  - type: textarea
++    id: expected_behavior
++    attributes:
++      label: Expected Behavior
++      description: What did you expect to happen instead?
++      placeholder: "Expected command to return 0 and emit valid output..."
++    validations:
++      required: true
++
++  - type: textarea
++    id: actual_behavior
++    attributes:
++      label: Actual Behavior & Error Logs
++      description: Include full terminal output, traceback, error messages, or logs.
++      placeholder: "Paste traceback or logs here..."
++    validations:
++      required: true
++
++  - type: textarea
++    id: environment
++    attributes:
++      label: Environment & System Context
++      description: OS, Python/Node version, commit hash, or relevant environment details.
++      value: |
++        - OS: [e.g. Windows 11 / Ubuntu 22.04 / macOS]
++        - Python version: [e.g. 3.11 / 3.12 / 3.13]
++        - Node version: [e.g. 20.x / 22.x]
++        - Commit / Branch: [e.g. main @ commit-hash]
++    validations:
++      required: true
++
++  - type: textarea
++    id: proposed_fix
++    attributes:
++      label: Proposed Fix or Touching Files (Optional)
++      description: If you know how to fix it or which files are responsible, please note them here.
++      placeholder: |
++        - path/to/affected_file.py
++    validations:
++      required: false
++
++  - type: checkboxes
++    id: confirmation
++    attributes:
++      label: Confirmation
++      options:
++        - label: I have verified this is not a duplicate of an existing issue.
++          required: true
++        - label: No private credentials or sensitive secrets are included in this report.
++          required: true
+diff --git a/.github/ISSUE_TEMPLATE/config.yml b/.github/ISSUE_TEMPLATE/config.yml
+index d983d04a..7097c615 100644
+--- a/.github/ISSUE_TEMPLATE/config.yml
++++ b/.github/ISSUE_TEMPLATE/config.yml
+@@ -6,3 +6,9 @@ contact_links:
+   - name: 📜 AGENTS.md Constitution
+     url: https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md
+     about: 8-step autonomous task cycle, 3 work submission pathways, and bridge rules.
++  - name: 💬 SupremeAI Community & Discussions
++    url: https://github.com/Supremeai-bd/supremeai-open/discussions
++    about: Ask questions, share ideas, or discuss architecture with the team and community.
++  - name: 🛡️ Security Vulnerability Reporting
++    url: https://github.com/Supremeai-bd/supremeai-open/security/advisories/new
++    about: Privately report potential security vulnerabilities or leaks.
+diff --git a/.github/ISSUE_TEMPLATE/feature-request.yml b/.github/ISSUE_TEMPLATE/feature-request.yml
+new file mode 100644
+index 00000000..3e36dc46
+--- /dev/null
++++ b/.github/ISSUE_TEMPLATE/feature-request.yml
+@@ -0,0 +1,129 @@
++name: 💡 Feature Request / Proposal
++description: Suggest an enhancement, new feature, or architectural evolution.
++title: "feat(scope): brief feature title"
++labels: ["kind:feature"]
++body:
++  - type: markdown
++    attributes:
++      value: |
++        ### 💡 Feature Request Proposal
++        Thank you for suggesting an improvement to the SupremeAI ecosystem!
++        Before submitting, please ensure you have searched existing issues and pull requests to prevent duplicates (AGENT_RULES U4).
++
++  - type: dropdown
++    id: target_repo
++    attributes:
++      label: Target Repository
++      description: Which repository in the SupremeAI Federation is this feature for?
++      options:
++        - Supremeai-bd/supremeai-open
++        - Supremeai-bd/supremeai
++        - Supremeai-bd/supremeai-command
++        - Supremeai-bd/supremeai-skills
++        - Supremeai-bd/supremeai-vscode
++        - Supremeai-bd/supremeai-agents
++        - Supremeai-bd/supremeai-browser
++        - Supremeai-bd/supremeai-api
++        - Supremeai-bd/supremeai-studio
++        - Supremeai-bd/supremeai-infrastructure
++        - Supremeai-bd/supremeai-core
++        - Supremeai-bd/supremeai-sdk
++        - Supremeai-bd/supremeai-mcp-control-plane
++        - Supremeai-bd/supremeai-archive
++    validations:
++      required: true
++
++  - type: dropdown
++    id: task_group
++    attributes:
++      label: Task Group (VALID_GROUPS registry)
++      description: Canonical taxonomy — aligned with VALID_GROUPS registry.
++      options:
++        - agent-orchestration
++        - mcp-tower
++        - core-engine
++        - schemas-contracts
++        - infra-ops
++    validations:
++      required: true
++
++  - type: dropdown
++    id: sub_group
++    attributes:
++      label: Sub-Group / Functional Domain (Area)
++      description: Cross-cutting functional domain for ownership, labeling, and routing.
++      options:
++        - "security (Authentication, key-plane, boundaries, vulnerability)"
++        - "ci (Workflows, gates, lint, testing matrix)"
++        - "gateway (API endpoints, routing, provider failover)"
++        - "governance (Constitution, rules, templates, policies, ADRs)"
++        - "agent-orchestration (Lifecycle, loop, roles, worker dispatch)"
++        - "mcp-tower (MCP tools, JSON-RPC, SSE bridge, server endpoints)"
++        - "core-engine (Intelligence models, state machine, planning)"
++        - "frontend-ui (Studio, dashboard, visual UX, components)"
++        - "telemetry (Heartbeats, logging, watcher, metrics)"
++        - "memory (Archive, semantic memory, context history)"
++        - "llm-routing (Dynamic router, provider fallback, model selection)"
++        - "infra-ops (Docker, Terraform, actions runners, deployment configs)"
++        - "docs (Documentation, ecosystem maps, contributor guides)"
++    validations:
++      required: true
++
++  - type: dropdown
++    id: priority
++    attributes:
++      label: Priority Tier
++      description: Urgency and priority tier per SupremeAI constitution.
++      options:
++        - "P1-high (Important feature/blocker/architecture)"
++        - "P2-medium (Standard feature/enhancement)"
++        - "P3-low (Minor improvement/nice-to-have)"
++    validations:
++      required: true
++
++  - type: textarea
++    id: problem_statement
++    attributes:
++      label: Problem Statement / Motivation
++      description: What problem does this feature solve? What is the user or agent pain point?
++      placeholder: "Clear description of the problem or limitation..."
++    validations:
++      required: true
++
++  - type: textarea
++    id: proposed_solution
++    attributes:
++      label: Proposed Solution & Specification
++      description: Detailed description of what should be implemented and how it should work.
++      placeholder: "Describe the proposed solution, API changes, contracts, or UX..."
++    validations:
++      required: true
++
++  - type: textarea
++    id: touching_surfaces
++    attributes:
++      label: Touching Surfaces & Files (Scope Estimate)
++      description: Which files, packages, or schemas would be modified or created?
++      placeholder: |
++        - api-schemas/...
++        - src/...
++    validations:
++      required: false
++
++  - type: textarea
++    id: alternatives
++    attributes:
++      label: Alternatives Considered
++      description: Any other approaches or existing solutions considered and why they were rejected.
++    validations:
++      required: false
++
++  - type: checkboxes
++    id: terms
++    attributes:
++      label: Contributor Checklist
++      options:
++        - label: I have searched existing issues and confirmed this is not a duplicate.
++          required: true
++        - label: I have verified that this proposal follows the SupremeAI architecture guidelines (AGENTS.md).
++          required: true

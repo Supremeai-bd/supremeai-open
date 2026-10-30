@@ -1,0 +1,38 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 4fa2766a..44bd9a5e 100644
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -81,6 +81,18 @@ if test "${1:-}" = "--self-test"; then
+         git add huge.bin
+         sh "$HOOK" >/dev/null 2>&1 && echo "FAIL huge-file-rejected" || echo "PASS huge-file-rejected"
+         git rm -f -q huge.bin
++
++        # S6: Staged single-quoted secret -> REJECT (both quote styles must be caught)
++        echo "TOKEN = 'abcdefghijklmnopqrst'" > quoted_secret.py
++        git add quoted_secret.py
++        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL single-quoted-secret-rejected" || echo "PASS single-quoted-secret-rejected"
++        git rm -f -q quoted_secret.py
++
++        # S7: Unquoted x-delimited value is not a quoted secret -> PASS (no false positive)
++        echo "TOKEN = xabcdefghijklmnopqrstx" > unquoted_ok.py
++        git add unquoted_ok.py
++        sh "$HOOK" >/dev/null 2>&1 && echo "PASS unquoted-value-accepted" || echo "FAIL unquoted-value-accepted"
++        git rm -f -q unquoted_ok.py
+     )
+     rm -rf "$sandbox"
+     exit 0
+@@ -108,8 +120,12 @@ for file in $staged_files; do
+ done
+ 
+ # 2. Check for common raw credential patterns in staged diff
+-# Matches unmasked assignments like API_KEY = "..." or TOKEN = "..." (ignoring test allow annotations)
+-if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*["\x27][A-Za-z0-9_\-\.]{20,}["\x27]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
++# Matches unmasked assignments like API_KEY = "..." or TOKEN = '...' in BOTH quote
++# styles (ignoring test allow annotations). The delimiter bracket must carry the
++# literal single-quote: POSIX ERE bracket expressions treat \x27 as the four
++# literal characters x/2/7/backslash, which both missed single-quoted secrets
++# (fail-open) and matched x/2/7-delimited values (false positive).
++if git diff --cached -U0 | grep -E "^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*['\"][A-Za-z0-9_\-\.]{20,}['\"]" | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
+     reject "Potential raw secret literal detected in staged diff" \
+         "Secrets must be loaded from vault/environment, never hardcoded into source files." \
+         "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \

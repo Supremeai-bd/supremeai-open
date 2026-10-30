@@ -1,0 +1,78 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 35c63027..c719b0c0 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -290,7 +290,11 @@ def pick_next_issue(
+     exclude: set[str] | list[str] | None = None,
+     issues: list[dict[str, Any]] | None = None,
+     claim_probe: Callable[[int | str], tuple[bool, str]] | None = None,
++    log_fn: Callable[[str, str], None] | None = None,
+ ) -> str | None:
++    # বাংলা: log_fn=None → call-time-এ log-এ ফলব্যাক। ডিফল্ট-প্যারামিটারে সরাসরি log
++    # লিখলে def-time evaluation-এ NameError হত — log() এই ফাইলে pick_next_issue-
++    # এর পরে সংজ্ঞাত (forward reference def-time-এ মেলে না)।
+     """বাংলা: priority-অনুসারে পরবর্তী claimable issue বাছাই (P0 আগে, তারপর নম্বর)।
+ 
+     আগের সংস্করণে এই ফাংশনটিই একমাত্র priority-sorter ছিল কিন্তু main() কখনো ডাকতই না
+@@ -320,6 +324,7 @@ def pick_next_issue(
+                 pass
+     if not issues:
+         return None
++    log_fn = log_fn or log
+ 
+     lease_store = load_issue_lease_store()
+     now_ts = time.time()
+@@ -372,13 +377,13 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+         except Exception as exc:  # noqa: BLE001 — a broken probe must not break the pick
+             active, note = False, f"probe raised {type(exc).__name__}"
+         if active:
+-            log("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
++            log_fn("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
+             continue
+         if note and not note.startswith("no active claim"):
+-            log("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
++            log_fn("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
+         return num
+     if sorted_issues:
+-        log(
++        log_fn(
+             "!",
+             f"pick pre-verify: top {min(FEEDBACK_PREVERIFY_TOPN, len(sorted_issues))} candidates live-claimed — "
+             "no clean pick this run (rerun later or dispatch explicitly via --issue N); "
+@@ -466,6 +471,24 @@ def log(icon: str, msg: str) -> None:
+     except UnicodeEncodeError:
+         print(f"[*] {msg}")
+ 
++def _stderr_log(icon: str, msg: str) -> None:
++    """SPEC §4b stdout-purity logger for envelope-mode pick advisories.
++
++    বাংলা: --task-envelope মোডের stdout চুক্তি হলো শুধুই envelope JSON (SPEC §4b —
++    "stdout শুধুই envelope JSON থাকে যাতে pipe/parse নিরাপদ থাকে")। কিন্তু
++    pick_next_issue()-এর ভেতরের log() লাইনগুলো stdout-এই ছাপাত — লাইভ প্রমাণ
++    2026-10-29 ও 2026-10-30 (sha 35c6302): top-5 প্রার্থীতে live claim থাকলে
++    envelope JSON-এর আগে "! pick pre-verify: #N ..." লাইন এমিট হত, ফলে
++    json.loads(stdout) ভেঙে যেত — pipe-করে envelope খাওয়া প্রতিটি external
++    automation ঠিক এই কেসেই আটকায়। এই লগার একই মেসেজ stderr-এ পাঠায় —
++    ডিসপ্যাচ-পথ (stdout-মার্কার গণনা) অস্পৃষ্ট থাকে, কারণ সেখানে default log_fn=log
++    থাকে (pick_next_issue-এর নতুন log_fn প্যারামিটার, default = আগের আচরণ)।
++    """
++    try:
++        print(f"{icon} {msg}", file=sys.stderr)
++    except UnicodeEncodeError:
++        print(f"[*] {msg}", file=sys.stderr)
++
+ def _tower_queue_floor(timeout_s: float = 12.0) -> str:
+     """R61/#2318 option B — honesty floor for the gh-absent skip line.
+ 
+@@ -1515,7 +1538,10 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         elif board_unavailable:
+             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
+         else:
+-            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
++            # বাংলা: SPEC §4b stdout-purity — envelope-মোডে pick-প্রি-ভেরিফাই অ্যাডভাইজরি
++            # stderr-এ যায় (log_fn=_stderr_log), stdout শুধুই envelope JSON; ডিসপ্যাচ-পথে
++            # (নিচের সাইট) default log_fn=log অপরিবর্তিত — stdout-মার্কার গণনা অক্ষত।
++            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log)
+             if picked:
+                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
+                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list

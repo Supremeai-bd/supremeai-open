@@ -1,0 +1,39 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 1f1c5111..1dd5e868 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -280,22 +280,20 @@ for line in $updates; do
+         done
+     fi
+ 
+-    IFS="$nl"
+-done
+-IFS="$OIFS"
+-
+-# 6. Ruff strict name/syntax check (Federation CI Parity) on gateway/ and core/.
+-if command -v ruff >/dev/null 2>&1; then
+-    for d in gateway core; do
+-        if [ -d "$d" ]; then
+-            if ! ruff check "$d" --select=E9,F63,F7,F82; then
+-                reject "ruff check failed on $d/ (Federation CI Parity)" \
+-                    "Undefined names / syntax errors would break supremeai-api CI on dispatch." \
+-                    "Fix the reported ruff errors before pushing." \
++    # 8. MCP Tower & Studio TypeScript Typecheck
++    if command -v npm >/dev/null 2>&1; then
++        if [ -d "infrastructure/mcp-control-plane" ]; then
++            if ! npm --prefix infrastructure/mcp-control-plane run typecheck >/dev/null 2>&1; then
++                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
++                    "Run 'npm --prefix infrastructure/mcp-control-plane run typecheck' to inspect errors." \
++                    "Ensure all exported tools and adapters have strict TypeScript types." \
+                     "Deliberate admin bypass: git push --no-verify."
+             fi
+         fi
+-    done
+-fi
++    fi
++
++    IFS="$nl"
++done
++IFS="$OIFS"
+ 
+ exit 0

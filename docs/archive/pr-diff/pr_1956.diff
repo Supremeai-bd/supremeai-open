@@ -1,0 +1,10 @@
+diff --git a/.gitleaksignore b/.gitleaksignore
+index 6137246a..5f2e891c 100644
+--- a/.gitleaksignore
++++ b/.gitleaksignore
+@@ -21,3 +21,5 @@ b886c118154ef4b80a2d6afc5b50fcba1061a59f:docs/reports/FEDERATION_AUDIT_2026-10-2
+ b886c118154ef4b80a2d6afc5b50fcba1061a59f:docs/reports/FEDERATION_AUDIT_2026-10-28.md:supremeai-cloudflare-api-token:6
+ # False-positive filename in dependabot blocker dossier (issue #1771)
+ da0c80769f9d2376485efe3cbbd755444e6c4424:docs/AUDIT_2026-10-28-dependabot-lane-blocker.md:supremeai-cloudflare-api-token:34
++# RFC 9421 B.1.4 published Ed25519 test-key thumbprint in webbotauth probe (PR #1917, issue #1918) - public standard vector incl. private scalar, zero secrecy; fingerprint from verbatim v8.18.4 repro
++16f2a628a08efaceb0a86b5eaa9599275ab111ed:browser/scripts/webbotauth/probe.py:generic-api-key:71

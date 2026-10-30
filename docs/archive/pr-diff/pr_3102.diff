@@ -1,0 +1,83 @@
+diff --git a/docs/ops/SENTRY2058_CLOSURE_2026-10-30.md b/docs/ops/SENTRY2058_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..9b538be6
+--- /dev/null
++++ b/docs/ops/SENTRY2058_CLOSURE_2026-10-30.md
+@@ -0,0 +1,77 @@
++# Sentry Pass #2058 — Closure Record: superseded by the active series (docs-only)
++
++**Task ID:** bridge-20261030-sentry2058-closure · **Closes #2058** · **Probed:** 2026-10-30T08:10–08:13Z
++**Claim:** GRANT_TAKEOVER on #2058 at 08:12:18Z (prior claim `…Job-478342` @ 01:45:07Z TTL 30m
++lapsed ~6h without closure; row kept dispatching as the loop's top unclaimed candidate).
++**Precedent:** the #2009 closure record merged ~30 min ago (07:43:40Z, PR #3095, commit `edabeed`)
++— this document applies the same series convention to the next lapsed pass row.
++
++## 1. What the row is
++
++WO #2058 (P3-low, repo:api, status:unclaimed) is a **platform-guardian provider sentry pass**
++filed 2026-10-28T08:20Z — the fourth pass in the #1852 → #1934 → #2009 → #2058 monitoring
++generation: 7/8 AI providers ALIVE (v0 EXCLUDED by shape, 5th consecutive pass), production
++fallback chain protocol-alive, core-api RESOLVED contract on its 4th consecutive confirmation,
++primary/worker re-flag = documented #1874 false-negative polarity family, all external
++dependencies success-class. Report-only: zero code, zero config, zero credentials.
++
++## 2. Series convention: pass rows close after supersession (live-checked 08:12–08:13Z)
++
++| Row | Pass | State @ 08:13Z |
++|---|---|---|
++| #1934 | 10-28 03:21Z pass | **closed `completed`** (live-checked 07:41Z) |
++| #2226 | telegram-channel receipt | **closed `completed`** |
++| #1852 | 10-28 earlier pass | **closed** (was open/claimed at 07:41Z; state=closed verified via feedback plane this session) |
++| #2009 | 10-28 05:54Z pass | **closed** — closure record merged 07:43:40Z (PR #3095, commit `edabeed`) |
++| **#2058** | 10-28 08:20Z pass | **open — the last unclosed pass of the 10-28 generation; closure lapsed** |
++| #3049 | 10-30 04:45Z pass | open — current generation |
++| #3077 | 10-30 06:45Z pass | open — current generation, latest pass |
++
++## 3. Supersession evidence (probe-dated)
++
++The series is active and current; both later passes carry the SAME headline verdict family,
++so #2058's ~2-day-old snapshot (10-28T08:20Z → 08:12Z ≈ 47h52m) adds no unique signal anymore:
++
++- **#3049** (filed 10-30T04:40Z): "sentry pass 04:45Z — 7/8 alive (v0 EXCLUDED 354ms); core-api
++  RESOLVED >28h; sweep 31/33"
++- **#3077** (filed 10-30T06:40Z): "sentry pass 06:45Z — 7/8 ALIVE (v0 EXCLUDED 502ms); core-api
++  RESOLVED >30h; sweep 31/33; census 158/158 stable x2"
++
++Tower aliveness re-verified this session: the closure probes rode the same tower session
++(initialize 200 at 08:10Z; board fallback 126 rows; `bridge.work_order` + `bridge_read_feedback`
++reads all 200s; GRANT_TAKEOVER 200 at 08:12:18Z).
++
++## 4. Why close it
++
++- The row's own monitoring cycle completed: every finding it raised is either stable-confirmed
++  (7/8 alive and core-api RESOLVED confirmed by both later-generation passes) or explicitly NOT
++  re-filed per the anti-duplicate rule #1692 (primary/worker degraded-flag = documented #1874
++  polarity family).
++- Its claim TTL-lapsed ~6h (expired 02:15:07Z) with zero output, yet the row kept dispatching as
++  the loop's top unclaimed candidate (this cycle included) — a ~2-day-old monitoring snapshot
++  consuming one full guard pass per agent cycle, exactly the pattern the #2009 closure
++  documented 30 minutes earlier.
++- Closing completes the 10-28 generation: with #1934, #2226, #1852 and #2009 already closed,
++  #2058 is the generation's last unclosed pass row. The series itself continues in #3049/#3077
++  and successors — closing this row archives one superseded snapshot, nothing more.
++
++## 5. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #2058 হলো ২৮ তারিখের (০৮:২০Z) একটা নিয়মিত নজরদারি রিপোর্ট — ৮টা AI সেবার
++মধ্যে ৭টা জীবিত, core-api সুস্থ, সব ঠিক আছে।
++
++**সমস্যা কী:** এই সিরিজের নিয়ম — পরের রিপোর্ট এলে পুরনোটা বন্ধ। ২৮ তারিখের পুরো প্রজন্ম
++এখন বন্ধ হয়ে গেছে (#1934, #1852, #2009 — শেষেরটা আজ ভোর ৭টায় বন্ধ হলো), শুধু এটা খোলা
++রয়ে গেছে। একজন agent এটা claim করেছিল (রাত ১:৪৫Z), ৩০ মিনিট শেষ, প্রায় ৬ ঘণ্টা পেরিয়ে
++গেছে, কিছুই করেনি। ফলে লুপ প্রতি ঘণ্টায় এই ২ দিনের পুরনো রিপোর্ট সবার কাজ হিসেবে দিচ্ছিল।
++
++**নতুন প্রমাণ:** সিরিজটা চলছে — আজকের #3049 (০৪:৪৫Z) আর #3077 (০৬:৪৫Z) দুটোতেই একই ফলাফল:
++"৭/৮ জীবিত, core-api RESOLVED"। পুরনো রিপোর্টের কোনো তথ্যই এখন আলাদা মূল্য রাখে না।
++
++**এই ডকুমেন্ট merge হলে** `Closes #2058` দিয়ে টিকিটটা বন্ধ হবে, লুপ আর ওটা কাউকে দেবে না,
++আর নজরদারি সিরিজ তার নতুন রিপোর্টে (#3049/#3077 এবং পরবর্তী) চলতেই থাকবে।
++
++---
++*Docs-only: single file under docs/ops/, zero satellite code, protected paths untouched.
++Evidence discipline: every figure carries its probe timestamp.
++Precedent alignment: structure and series table mirror the merged #2009 closure record (PR #3095).*

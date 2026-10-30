@@ -1,0 +1,1416 @@
+diff --git a/command/services/__init__.py b/command/services/__init__.py
+new file mode 100644
+index 00000000..1422015d
+--- /dev/null
++++ b/command/services/__init__.py
+@@ -0,0 +1,29 @@
++"""src/services/__init__.py — service-layer package for supremeai-command.
++
++Voice domain services (zero-compute, network-leased capabilities):
++    voice_service - Edge Neural TTS adapter (Bangla-first, optional edge-tts)
++"""
++
++from .voice_service import (  # noqa: F401
++    DEFAULT_VOICE,
++    VOICE_CATALOG,
++    VoiceRequest,
++    VoiceRequestError,
++    VoiceService,
++    VoiceServiceUnavailable,
++    VoiceSynthesisError,
++    VoiceResult,
++    speak_bangla,
++)
++
++__all__ = [
++    "DEFAULT_VOICE",
++    "VOICE_CATALOG",
++    "VoiceRequest",
++    "VoiceRequestError",
++    "VoiceService",
++    "VoiceServiceUnavailable",
++    "VoiceSynthesisError",
++    "VoiceResult",
++    "speak_bangla",
++]
+diff --git a/command/services/voice_service.py b/command/services/voice_service.py
+new file mode 100644
+index 00000000..078527da
+--- /dev/null
++++ b/command/services/voice_service.py
+@@ -0,0 +1,361 @@
++"""src/services/voice_service.py — Zero-Compute High-Fidelity Bangla Voice Service.
++
++Design notes (honesty + portability + boundary limits):
++- ZERO-COMPUTE DOCTRINE: no local neural weights, no GPU, no megabytes of
++  model files. Synthesis is LEASED over the Microsoft Edge Neural TTS
++  WebSocket protocol by the optional third-party `edge-tts` client
++  (pip install edge-tts). The runtime core stays stdlib-only: `edge_tts`
++  is imported lazily and ONLY when real synthesis is requested. Without
++  it the service degrades LOUDLY (VoiceServiceUnavailable) — exactly the
++  Redis/KillSwitch precedent — never silently.
++- STREAMING: `stream()` yields raw MP3 chunks as they arrive from the
++  protocol; `synthesize()` assembles them into one bytes payload ready
++  for a Telegram sendVoice upload.
++- BANGLA-FIRST CATALOG: two bn-BD primaries (Pradeep = authoritative
++  system broadcasts, Nabanita = conversational assistant) plus two bn-IN
++  dialect fallbacks. Voice ids are validated fail-closed.
++- PARAMETER SAFETY: rate (e.g. "+10%") and pitch (e.g. "+5Hz") are
++  regex-validated before touching the wire; text length is capped.
++- TIMEOUTS: every outbound call carries an explicit timeout
++  (connect_timeout/receive_timeout into the protocol client plus a
++  total-wall-clock asyncio.wait_for guard) — guard doctrine: no IO
++  without a timeout.
++- CACHE: an injected AudioCache (SHA-256 keyed) eliminates redundant
++  network round-trips for repeated phrases (e.g. status summaries).
++- TESTABILITY: the synthesizer coroutine is injectable, so the whole
++  surface — validation, caching, streaming, error taxonomy — is unit
++  testable fully offline with zero sockets and zero optional imports.
++
++Public one-shot contract (skill schema: skills/voice/bangla_voice.yaml):
++    await speak_bangla(text, voice="bn-BD-PradeepNeural") -> bytes  (MP3)
++"""
++
++from __future__ import annotations
++
++import asyncio
++import re
++from dataclasses import dataclass, field
++from typing import AsyncIterator, Dict, Optional
++
++# ---------------------------------------------------------------------------
++# Voice catalog — Bangla-first (bn-BD primary, bn-IN dialect fallbacks)
++# ---------------------------------------------------------------------------
++
++DEFAULT_VOICE = "bn-BD-PradeepNeural"
++
++MAX_TEXT_CHARS = 4000  # abuse guard: one Telegram voice note, not an audiobook
++DEFAULT_TOTAL_TIMEOUT_S = 60.0  # wall-clock guard for a full synthesis
++
++
++@dataclass(frozen=True)
++class VoiceSpec:
++    """One neural voice in the catalog."""
++
++    voice_id: str
++    gender: str
++    dialect: str
++    role: str
++
++
++VOICE_CATALOG: Dict[str, VoiceSpec] = {
++    spec.voice_id: spec
++    for spec in (
++        VoiceSpec(
++            voice_id="bn-BD-PradeepNeural",
++            gender="male",
++            dialect="bn-BD",
++            role="authoritative system broadcasts / status reports",
++        ),
++        VoiceSpec(
++            voice_id="bn-BD-NabanitaNeural",
++            gender="female",
++            dialect="bn-BD",
++            role="interactive conversational assistant",
++        ),
++        VoiceSpec(
++            voice_id="bn-IN-BashkarNeural",
++            gender="male",
++            dialect="bn-IN",
++            role="alternate dialect fallback",
++        ),
++        VoiceSpec(
++            voice_id="bn-IN-TanishaaNeural",
++            gender="female",
++            dialect="bn-IN",
++            role="alternate dialect fallback",
++        ),
++    )
++}
++
++# Aliases accepted by validate/resolve (short names -> canonical ids).
++VOICE_ALIASES: Dict[str, str] = {
++    "pradeep": "bn-BD-PradeepNeural",
++    "nabanita": "bn-BD-NabanitaNeural",
++    "bashkar": "bn-IN-BashkarNeural",
++    "tanishaa": "bn-IN-TanishaaNeural",
++}
++
++_RATE_RE = re.compile(r"^[+-]\d{1,3}%$")
++_PITCH_RE = re.compile(r"^[+-]\d{1,4}Hz$")
++
++
++# ---------------------------------------------------------------------------
++# Error taxonomy — loud, specific, never silent
++# ---------------------------------------------------------------------------
++
++
++class VoiceRequestError(ValueError):
++    """Raised for invalid text, unknown voice, or malformed rate/pitch."""
++
++
++class VoiceServiceUnavailable(RuntimeError):
++    """Raised when the optional edge-tts client is not installed.
++
++    Degrades LOUDLY by contract (boundary limit: optional integrations
++    degrade loudly, never silently) — the caller must tell the user.
++    """
++
++
++class VoiceSynthesisError(RuntimeError):
++    """Raised when the remote synthesis protocol fails or times out."""
++
++
++# ---------------------------------------------------------------------------
++# Request model
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class VoiceRequest:
++    """A validated synthesis request."""
++
++    text: str
++    voice: str = DEFAULT_VOICE
++    rate: str = "+0%"
++    pitch: str = "+0Hz"
++    total_timeout_s: float = DEFAULT_TOTAL_TIMEOUT_S
++
++    @property
++    def cache_key_fields(self) -> Dict[str, str]:
++        return {"voice": self.voice, "rate": self.rate, "pitch": self.pitch}
++
++
++def resolve_voice(voice: str) -> str:
++    """Resolve an alias or full voice id to its canonical id (fail-closed)."""
++    candidate = (voice or "").strip()
++    if candidate in VOICE_CATALOG:
++        return candidate
++    if candidate.lower() in VOICE_ALIASES:
++        return VOICE_ALIASES[candidate.lower()]
++    raise VoiceRequestError(
++        "unknown voice %r; catalog: %s" % (voice, ", ".join(sorted(VOICE_CATALOG)))
++    )
++
++
++def validate_request(
++    text: str,
++    voice: str = DEFAULT_VOICE,
++    rate: str = "+0%",
++    pitch: str = "+0Hz",
++    total_timeout_s: float = DEFAULT_TOTAL_TIMEOUT_S,
++) -> VoiceRequest:
++    """Validate every field fail-closed and return an immutable request."""
++    body = (text or "").strip()
++    if not body:
++        raise VoiceRequestError("text must be a non-empty string")
++    if len(body) > MAX_TEXT_CHARS:
++        raise VoiceRequestError(
++            "text exceeds %d characters (got %d)" % (MAX_TEXT_CHARS, len(body))
++        )
++    canonical_voice = resolve_voice(voice)
++    if not _RATE_RE.match(rate or ""):
++        raise VoiceRequestError(
++            "rate %r malformed; expected sign+digits+%%, e.g. '+10%%' or '-5%%'" % rate
++        )
++    if not _PITCH_RE.match(pitch or ""):
++        raise VoiceRequestError(
++            "pitch %r malformed; expected sign+digits+Hz, e.g. '+5Hz' or '-10Hz'" % pitch
++        )
++    if total_timeout_s <= 0:
++        raise VoiceRequestError("total_timeout_s must be > 0")
++    return VoiceRequest(
++        text=body, voice=canonical_voice, rate=rate, pitch=pitch,
++        total_timeout_s=total_timeout_s,
++    )
++
++
++# ---------------------------------------------------------------------------
++# Result model
++# ---------------------------------------------------------------------------
++
++
++@dataclass
++class VoiceResult:
++    """Assembled synthesis output (+ cache provenance for honest telemetry)."""
++
++    audio: bytes
++    request: VoiceRequest
++    cached: bool = False
++    chunk_count: int = 0
++
++    @property
++    def size_bytes(self) -> int:
++        return len(self.audio)
++
++    @property
++    def mime_type(self) -> str:
++        return "audio/mpeg"
++
++
++# ---------------------------------------------------------------------------
++# Synthesizer protocol (dependency-invertible edge)
++# ---------------------------------------------------------------------------
++
++
++async def _edge_tts_stream(request: VoiceRequest) -> AsyncIterator[bytes]:
++    """Lease synthesis to the optional edge-tts client over its WebSocket
++    protocol. Imported lazily: absent package -> VoiceServiceUnavailable."""
++    try:
++        import edge_tts  # optional third-party client (lazy, loud degradation)
++    except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
++        raise VoiceServiceUnavailable(
++            "edge-tts client is not installed; run: pip3 install edge-tts "
++            "(zero-compute doctrine: synthesis is network-leased, never modeled locally)"
++        ) from exc
++    communicate = edge_tts.Communicate(
++        request.text,
++        request.voice,
++        rate=request.rate,
++        pitch=request.pitch,
++        connect_timeout=10,
++        receive_timeout=30,
++    )
++    try:
++        async for chunk in communicate.stream():
++            if chunk.get("type") == "audio":
++                data = chunk.get("data") or b""
++                if data:
++                    yield data
++    except VoiceServiceUnavailable:
++        raise
++    except asyncio.TimeoutError as exc:
++        raise VoiceSynthesisError("edge-tts protocol timed out") from exc
++    except Exception as exc:  # noqa: BLE001 - protocol taxonomy is client-defined
++        raise VoiceSynthesisError("edge-tts synthesis failed: %s" % exc) from exc
++
++
++# ---------------------------------------------------------------------------
++# The service
++# ---------------------------------------------------------------------------
++
++
++class VoiceService:
++    """Zero-compute Bangla voice adapter with ephemeral caching.
++
++    `synthesizer` is injectable for offline tests: an async callable
++    (request) -> AsyncIterator[bytes]. When omitted, the real edge-tts
++    leased stream is used and requires the optional package.
++    """
++
++    def __init__(self, cache=None, synthesizer=None) -> None:
++        # cache: src.utils.audio_cache.AudioCache or None (no caching)
++        self._cache = cache
++        self._synthesizer = synthesizer or _edge_tts_stream
++
++    async def stream(self, request: VoiceRequest) -> AsyncIterator[bytes]:
++        """Yield MP3 chunks (cache-miss path hits the leased protocol).
++
++        Chunks are yielded to the consumer as they arrive AND buffered so
++        the ephemeral cache can be populated without a second round-trip.
++        """
++        key = None
++        if self._cache is not None:
++            key = self._cache.key_for(request.text, **request.cache_key_fields)
++            hit = self._cache.get(key)
++            if hit is not None:
++                yield hit
++                return
++        buffer = bytearray()
++        async for chunk in self._synthesizer(request):
++            buffer += chunk
++            yield chunk
++        if self._cache is not None and key is not None and buffer:
++            self._cache.put(key, bytes(buffer))
++
++    async def synthesize(self, request: VoiceRequest) -> VoiceResult:
++        """Full synthesis with cache short-circuit and wall-clock guard.
++
++        Accepts a validated VoiceRequest (build one via validate_request);
++        anything else is rejected fail-closed with VoiceRequestError.
++        """
++        if not isinstance(request, VoiceRequest):
++            raise VoiceRequestError(
++                "synthesize() requires a VoiceRequest built via validate_request()"
++            )
++        key = None
++        if self._cache is not None:
++            key = self._cache.key_for(request.text, **request.cache_key_fields)
++            hit = self._cache.get(key)
++            if hit is not None:
++                return VoiceResult(audio=hit, request=request, cached=True, chunk_count=1)
++        try:
++            audio, chunk_count = await asyncio.wait_for(
++                self._collect(self._synthesizer(request)),
++                timeout=request.total_timeout_s,
++            )
++        except VoiceServiceUnavailable:
++            raise
++        except VoiceSynthesisError:
++            raise
++        except asyncio.TimeoutError as exc:
++            raise VoiceSynthesisError(
++                "synthesis exceeded %.0fs wall-clock guard" % request.total_timeout_s
++            ) from exc
++        except Exception as exc:  # noqa: BLE001 - own the error taxonomy
++            raise VoiceSynthesisError("synthesis failed: %s" % exc) from exc
++        if not audio:
++            raise VoiceSynthesisError("synthesis returned zero audio bytes")
++        if self._cache is not None and key is not None:
++            self._cache.put(key, audio)
++        return VoiceResult(audio=audio, request=request, cached=False, chunk_count=chunk_count)
++
++    # -- internals ----------------------------------------------------------
++
++    @staticmethod
++    async def _collect(chunks: AsyncIterator[bytes]):
++        buffer = bytearray()
++        count = 0
++        async for chunk in chunks:
++            buffer += chunk
++            count += 1
++        return bytes(buffer), count
++
++
++# ---------------------------------------------------------------------------
++# Public one-shot contract (skill schema: speak_bangla)
++# ---------------------------------------------------------------------------
++
++_SHARED_CACHE = None  # lazily built process-wide cache (ephemeral by design)
++
++
++async def speak_bangla(
++    text: str,
++    voice: str = DEFAULT_VOICE,
++    rate: str = "+0%",
++    pitch: str = "+0Hz",
++    cache=None,
++) -> bytes:
++    """One-shot Bangla speech synthesis -> MP3 bytes.
++
++    Skill contract (skills/voice/bangla_voice.yaml):
++        speak_bangla(text: str, voice: str = "bn-BD-PradeepNeural") -> bytes
++    """
++    global _SHARED_CACHE
++    if cache is None and _SHARED_CACHE is None:
++        from ..utils.audio_cache import AudioCache
++
++        _SHARED_CACHE = AudioCache()
++    request = validate_request(text, voice=voice, rate=rate, pitch=pitch)
++    service = VoiceService(cache=cache if cache is not None else _SHARED_CACHE)
++    result = await service.synthesize(request)
++    return result.audio
+diff --git a/command/telegram_bot.py b/command/telegram_bot.py
+index 8bfeafef..888ecde0 100644
+--- a/command/telegram_bot.py
++++ b/command/telegram_bot.py
+@@ -3,23 +3,39 @@
+ Design notes (honesty + portability):
+ - The COMMAND LAYER (RBAC, routing, payload shaping) is pure logic over
+   Telegram update dicts and is fully unit-testable offline.
+-- The TRANSPORT layer (long-polling + send_message) is a thin stdlib adapter
+-  used at runtime; tests inject fakes and never touch the network.
++- The TRANSPORT layer (long-polling + send_message/send_voice) is a thin
++  stdlib adapter used at runtime; tests inject fakes and never touch the
++  network.
+ - Every outbound HTTP call carries an explicit timeout (cross-platform guard
+   doctrine: no subprocess/IO call without a timeout).
+ - RBAC is fail-closed: an update whose chat id is not the configured
+   superadmin receives a denial and triggers nothing.
++- VOICE (zero-compute doctrine): /voice + the voice-alert toggle lease
++  synthesis to the Bangla VoiceService (services/voice_service.py) via an
++  injected SYNC synthesizer (async internals wrapped by the factory).
++  Without the optional edge-tts client the service degrades LOUDLY into
++  the reply text — the bot never pretends a voice note exists.
+ """
+ 
+ from __future__ import annotations
+ 
++import asyncio
+ import json
+ import time
+ import urllib.error
+ import urllib.request
++import uuid
++from dataclasses import dataclass
+ from typing import Any, Callable, Dict, List, Optional
+ 
+ from .config import CommandConfig
++from .services.voice_service import (
++    DEFAULT_VOICE,
++    VoiceRequestError,
++    VoiceServiceUnavailable,
++    VoiceSynthesisError,
++    validate_request as validate_voice_request,
++)
+ 
+ HELP_TEXT = (
+     "SupremeAI Omnichannel Admin Control\n"
+@@ -27,6 +43,9 @@
+     "  /status              - Control Tower runway + active agent claims\n"
+     "  /runway              - runway summary (alias of /status)\n"
+     "  /dispatch <issue-url> - dispatch an agent loop intake for an issue\n"
++    "  /voice <text>        - Bangla voice note (zero-compute Edge Neural TTS)\n"
++    "  /voiceon             - attach a Bangla voice note to /status summaries\n"
++    "  /voiceoff            - stop attaching voice notes to /status\n"
+     "  /stop                - arm the persistent emergency kill-switch\n"
+     "  /help                - this text"
+ )
+@@ -34,7 +53,90 @@
+ DENY_TEXT = "⛔ Unauthorized: this control channel accepts the Superadmin chat only."
+ 
+ ISSUE_URL_PREFIX = "https://github.com/"
+-VALID_COMMANDS = ("/status", "/runway", "/dispatch", "/stop", "/help", "/start")
++VALID_COMMANDS = (
++    "/status",
++    "/runway",
++    "/dispatch",
++    "/voice",
++    "/voiceon",
++    "/voiceoff",
++    "/stop",
++    "/help",
++    "/start",
++)
++
++VOICE_USAGE_TEXT = (
++    "⚠️ /voice requires text, e.g.\n/voice সিস্টেম সম্পূর্ণ স্বাভাবিক আছে"
++)
++
++# Canonical status phrase (also the warm-cache demo phrase in the docs).
++VOICE_STATUS_PHRASE = "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে"
++VOICE_TOWER_UP_BN = "কন্ট্রোল টাওয়ার সংযুক্ত আছে"
++VOICE_TOWER_DOWN_BN = "কন্ট্রোল টাওয়ার পৌঁছানো যাচ্ছে না"
++
++
++def build_voice_status_summary(status_text: str) -> str:
++    """Short Bangla voice summary derived from a /status report.
++
++    Deterministic by design: the same healthy status always maps to the
++    same phrase, so the ephemeral audio cache eliminates the round-trip.
++    The liveness probe matches the full "Control Tower: reachable" marker —
++    a bare "reachable" substring check would also match "unreachable".
++    """
++    body = status_text or ""
++    tower_part = (
++        VOICE_TOWER_UP_BN if "Control Tower: reachable" in body else VOICE_TOWER_DOWN_BN
++    )
++    return "%s। %s।" % (VOICE_STATUS_PHRASE, tower_part)
++
++
++@dataclass
++class VoiceOutcome:
++    """Result of one sync voice synthesis attempt (loud error taxonomy)."""
++
++    audio: Optional[bytes] = None
++    error: Optional[str] = None
++    voice_used: str = ""
++    size_bytes: int = 0
++
++    @property
++    def ok(self) -> bool:
++        return self.audio is not None
++
++
++def sync_voice_synthesizer(
++    service: Any,
++    voice: str = DEFAULT_VOICE,
++    total_timeout_s: float = 60.0,
++) -> Callable[[str], VoiceOutcome]:
++    """Wrap the async VoiceService into the sync callable the router needs.
++
++    Never raises: every failure mode becomes a VoiceOutcome(error=...) so
++    the Telegram reply degrades loudly instead of crashing the poll loop.
++    """
++
++    def _synthesize(text: str) -> VoiceOutcome:
++        try:
++            request = validate_voice_request(
++                text, voice=voice, total_timeout_s=total_timeout_s
++            )
++        except VoiceRequestError as exc:
++            return VoiceOutcome(error="invalid request: %s" % exc)
++        try:
++            result = asyncio.run(service.synthesize(request))
++        except VoiceServiceUnavailable as exc:
++            return VoiceOutcome(error="service unavailable: %s" % exc)
++        except VoiceSynthesisError as exc:
++            return VoiceOutcome(error="%s" % exc)
++        except Exception as exc:  # noqa: BLE001 - poll loop must survive
++            return VoiceOutcome(error="unexpected voice failure: %s" % exc)
++        return VoiceOutcome(
++            audio=result.audio,
++            voice_used=result.request.voice,
++            size_bytes=result.size_bytes,
++        )
++
++    return _synthesize
+ 
+ 
+ class TelegramUpdate:
+@@ -52,10 +154,19 @@ def from_payload(cls, payload: Dict[str, Any]) -> "TelegramUpdate":
+ 
+ 
+ class BotReply:
+-    def __init__(self, text: str, allowed: bool = True, action: str = "reply") -> None:
++    def __init__(
++        self,
++        text: str,
++        allowed: bool = True,
++        action: str = "reply",
++        voice_audio: Optional[bytes] = None,
++    ) -> None:
+         self.text = text
+         self.allowed = allowed
+         self.action = action
++        # When present the transport uploads this as a voice note (sendVoice)
++        # in addition to the text reply.
++        self.voice_audio = voice_audio
+ 
+ 
+ def _validate_issue_url(url: str) -> Optional[str]:
+@@ -79,11 +190,16 @@ def __init__(
+         fetch_status: Callable[[], str],
+         dispatch_issue: Callable[[str], str],
+         arm_kill_switch: Callable[[], str],
++        synthesize_voice: Optional[Callable[[str], "VoiceOutcome"]] = None,
+     ) -> None:
+         self.config = config
+         self._fetch_status = fetch_status
+         self._dispatch_issue = dispatch_issue
+         self._arm_kill_switch = arm_kill_switch
++        # Voice extension (zero-compute): optional sync synthesizer; None is
++        # answered with a loud "not wired" note, never a silent no-op.
++        self.synthesize_voice = synthesize_voice
++        self.voice_alerts_enabled = False
+ 
+     def route(self, update: TelegramUpdate) -> BotReply:
+         if not self.config.is_superadmin(update.chat_id):
+@@ -95,7 +211,48 @@ def route(self, update: TelegramUpdate) -> BotReply:
+         command = parts[0].lower()
+         argument = parts[1].strip() if len(parts) > 1 else ""
+         if command in ("/status", "/runway"):
+-            return BotReply(self._fetch_status())
++            status_text = self._fetch_status()
++            voice_audio: Optional[bytes] = None
++            if self.voice_alerts_enabled:
++                if self.synthesize_voice is None:
++                    status_text += (
++                        "\n🔊 voice alerts enabled but no synthesizer is wired "
++                        "into this router"
++                    )
++                else:
++                    outcome = self.synthesize_voice(
++                        build_voice_status_summary(status_text)
++                    )
++                    if outcome.ok:
++                        voice_audio = outcome.audio
++                    else:
++                        status_text += "\n🔊 voice alert unavailable: %s" % outcome.error
++            return BotReply(status_text, voice_audio=voice_audio)
++        if command == "/voice":
++            if not argument:
++                return BotReply(VOICE_USAGE_TEXT)
++            if self.synthesize_voice is None:
++                return BotReply(
++                    "🔊 voice service not wired into this router "
++                    "(synthesize_voice is None)"
++                )
++            outcome = self.synthesize_voice(argument)
++            if not outcome.ok:
++                return BotReply("🔊 voice synthesis failed: %s" % outcome.error)
++            return BotReply(
++                "🎙️ voice note ready (%s, %d bytes)"
++                % (outcome.voice_used, outcome.size_bytes),
++                action="voice",
++                voice_audio=outcome.audio,
++            )
++        if command == "/voiceon":
++            self.voice_alerts_enabled = True
++            return BotReply(
++                "🔊 voice alerts ENABLED — /status now carries a Bangla voice note"
++            )
++        if command == "/voiceoff":
++            self.voice_alerts_enabled = False
++            return BotReply("🔇 voice alerts DISABLED")
+         if command == "/dispatch":
+             issue_url = _validate_issue_url(argument)
+             if issue_url is None:
+@@ -112,7 +269,8 @@ def route(self, update: TelegramUpdate) -> BotReply:
+ 
+ 
+ class StdlibTelegramTransport:
+-    """Runtime transport: sendMessage + getUpdates long-polling (stdlib only)."""
++    """Runtime transport: sendMessage + sendVoice + getUpdates long-polling
++    (stdlib only)."""
+ 
+     def __init__(self, config: CommandConfig) -> None:
+         self.config = config
+@@ -131,6 +289,38 @@ def send_message(self, chat_id: str, text: str) -> None:
+             if resp.status != 200:
+                 raise RuntimeError("telegram sendMessage HTTP %d" % resp.status)
+ 
++    def send_voice(
++        self,
++        chat_id: str,
++        audio: bytes,
++        filename: str = "voice.mp3",
++        mime_type: str = "audio/mpeg",
++    ) -> None:
++        """Upload a voice note via sendVoice (multipart/form-data, stdlib only)."""
++        boundary = "supremeai-voice-%s" % uuid.uuid4().hex
++        parts = [
++            (
++                '--%s\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n%s\r\n'
++                % (boundary, chat_id)
++            ).encode("utf-8"),
++            (
++                '--%s\r\nContent-Disposition: form-data; name="voice"; filename="%s"\r\n'
++                "Content-Type: %s\r\n\r\n" % (boundary, filename, mime_type)
++            ).encode("utf-8"),
++            audio,
++            ("\r\n--%s--\r\n" % boundary).encode("utf-8"),
++        ]
++        body = b"".join(parts)
++        req = urllib.request.Request(
++            self.config.telegram_api_base + "/sendVoice",
++            data=body,
++            headers={"Content-Type": "multipart/form-data; boundary=%s" % boundary},
++            method="POST",
++        )
++        with urllib.request.urlopen(req, timeout=self.config.request_timeout_s) as resp:
++            if resp.status != 200:
++                raise RuntimeError("telegram sendVoice HTTP %d" % resp.status)
++
+     def poll_updates(self, router: CommandRouter, timeout_s: int = 25) -> None:  # pragma: no cover - runtime loop
+         offset = 0
+         url = self.config.telegram_api_base + "/getUpdates?timeout=%d" % max(1, timeout_s)
+@@ -153,15 +343,31 @@ def poll_updates(self, router: CommandRouter, timeout_s: int = 25) -> None:  # p
+                 message = (item.get("message") or {}).get("chat", {}).get("id")
+                 if message and reply.allowed:
+                     self.send_message(str(message), reply.text)
++                    if reply.voice_audio:
++                        self.send_voice(str(message), reply.voice_audio)
+                     if reply.action == "kill_switch":
+                         break  # emergency stop also ends the poll loop
+ 
+ 
+-def default_router(config: CommandConfig, dispatcher: Any, kill_switch: Any) -> CommandRouter:
+-    """Wire the router to the real dispatcher + kill-switch implementations."""
++def default_router(
++    config: CommandConfig,
++    dispatcher: Any,
++    kill_switch: Any,
++    voice_service: Any = None,
++    voice: str = DEFAULT_VOICE,
++) -> CommandRouter:
++    """Wire the router to the real dispatcher + kill-switch implementations.
++
++    When `voice_service` is provided, /voice and the /voiceon toggle become
++    live (sync wrapper over the async zero-compute VoiceService).
++    """
++    synthesize_voice = None
++    if voice_service is not None:
++        synthesize_voice = sync_voice_synthesizer(voice_service, voice=voice)
+     return CommandRouter(
+         config=config,
+         fetch_status=lambda: dispatcher.fetch_status(),
+         dispatch_issue=lambda issue_url: dispatcher.dispatch_issue(issue_url),
+         arm_kill_switch=lambda: kill_switch.arm(),
++        synthesize_voice=synthesize_voice,
+     )
+diff --git a/command/utils/__init__.py b/command/utils/__init__.py
+new file mode 100644
+index 00000000..f76fb5c0
+--- /dev/null
++++ b/command/utils/__init__.py
+@@ -0,0 +1,9 @@
++"""src/utils/__init__.py — utility package for supremeai-command.
++
++Cross-cutting helpers with zero business authority:
++    audio_cache - ephemeral SHA-256 keyed audio cache (memory or temp-file)
++"""
++
++from .audio_cache import AudioCache, AudioCacheError  # noqa: F401
++
++__all__ = ["AudioCache", "AudioCacheError"]
+diff --git a/command/utils/audio_cache.py b/command/utils/audio_cache.py
+new file mode 100644
+index 00000000..21eeebef
+--- /dev/null
++++ b/command/utils/audio_cache.py
+@@ -0,0 +1,197 @@
++"""src/utils/audio_cache.py — Ephemeral SHA-256 keyed audio cache.
++
++Design notes (honesty + portability):
++- EPHEMERAL BY CONTRACT: caches synthesized audio for repeated phrases
++  (e.g. "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে" status summaries) to eliminate
++  redundant network round-trips. Entries live in memory or a temp
++  directory — never in persistent storage, never across reboots, and
++  never treated as a source of truth.
++- KEY = SHA-256 over the exact synthesis inputs (text + voice + rate +
++  pitch) so a cache hit is byte-equivalent to a fresh synthesis.
++- TWO BACKENDS:
++    memory (default) — dict + LRU eviction + TTL via an injectable clock.
++    temp             — one file per key under a private temp directory
++                       (tempfile.mkdtemp), same TTL semantics, removed
++                       on close() (and best-effort on GC).
++- BOUNDS: max_entries (LRU eviction) + ttl_s (lazy expiry on read) keep
++  the cache O(bytes-cap), never unbounded.
++- ZERO DEPENDENCIES: hashlib + tempfile + collections only.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import os
++import tempfile
++import time
++from collections import OrderedDict
++from typing import Optional
++
++
++class AudioCacheError(RuntimeError):
++    """Raised when a cache backend cannot be initialized or written."""
++
++
++class AudioCache:
++    """Ephemeral audio cache keyed by SHA-256 of the synthesis inputs."""
++
++    def __init__(
++        self,
++        backend: str = "memory",
++        max_entries: int = 128,
++        ttl_s: float = 3600.0,
++        clock=time.monotonic,
++    ) -> None:
++        if backend not in ("memory", "temp"):
++            raise AudioCacheError(
++                "unknown cache backend %r; expected 'memory' or 'temp'" % backend
++            )
++        if max_entries < 1:
++            raise AudioCacheError("max_entries must be >= 1")
++        if ttl_s <= 0:
++            raise AudioCacheError("ttl_s must be > 0")
++        self.backend = backend
++        self.max_entries = int(max_entries)
++        self.ttl_s = float(ttl_s)
++        self._clock = clock
++        self._hits = 0
++        self._misses = 0
++        if backend == "memory":
++            self._store: "OrderedDict[str, tuple[bytes, float]]" = OrderedDict()
++            self._temp_dir: Optional[str] = None
++        else:
++            try:
++                self._temp_dir = tempfile.mkdtemp(prefix="supremeai-voice-cache-")
++            except OSError as exc:
++                raise AudioCacheError("cannot create temp cache dir: %s" % exc) from exc
++            self._store = OrderedDict()  # key -> (size, expires_at) index
++
++    # -- key derivation ------------------------------------------------------
++
++    @staticmethod
++    def key_for(text: str, voice: str = "", rate: str = "", pitch: str = "") -> str:
++        """SHA-256 over the exact synthesis inputs (stable, collision-safe)."""
++        digest = hashlib.sha256()
++        for part in (text, voice, rate, pitch):
++            digest.update(part.encode("utf-8"))
++            digest.update(b"\x1f")  # unit separator: no field-boundary bleed
++        return digest.hexdigest()
++
++    # -- core operations ------------------------------------------------------
++
++    def get(self, key: str) -> Optional[bytes]:
++        """Return cached audio or None (expired/absent). Counts statistics."""
++        entry = self._store.get(key)
++        if entry is None:
++            self._misses += 1
++            return None
++        if self.backend == "memory":
++            audio, expires_at = entry
++            if self._clock() >= expires_at:
++                del self._store[key]
++                self._misses += 1
++                return None
++            self._store.move_to_end(key)  # LRU touch
++            self._hits += 1
++            return audio
++        # temp backend: entry is (size, expires_at); file holds the bytes
++        _size, expires_at = entry
++        path = self._path(key)
++        if self._clock() >= expires_at or not os.path.exists(path):
++            self._store.pop(key, None)
++            self._delete_file(path)
++            self._misses += 1
++            return None
++        try:
++            with open(path, "rb") as handle:
++                audio = handle.read()
++        except OSError:
++            self._store.pop(key, None)
++            self._misses += 1
++            return None
++        self._store.move_to_end(key)
++        self._hits += 1
++        return audio
++
++    def put(self, key: str, audio: bytes) -> None:
++        """Store audio under key; evict LRU beyond max_entries."""
++        if not audio:
++            return  # never cache empty payloads
++        expires_at = self._clock() + self.ttl_s
++        if self.backend == "memory":
++            self._store[key] = (bytes(audio), expires_at)
++            self._store.move_to_end(key)
++            while len(self._store) > self.max_entries:
++                self._store.popitem(last=False)
++            return
++        path = self._path(key)
++        try:
++            with open(path, "wb") as handle:
++                handle.write(audio)
++        except OSError as exc:
++            raise AudioCacheError("temp cache write failed: %s" % exc) from exc
++        self._store[key] = (len(audio), expires_at)
++        self._store.move_to_end(key)
++        while len(self._store) > self.max_entries:
++            stale_key, _ = self._store.popitem(last=False)
++            self._delete_file(self._path(stale_key))
++
++    # -- statistics -----------------------------------------------------------
++
++    def stats(self) -> dict:
++        """Honest telemetry: hits, misses, entries, cached bytes."""
++        cached_bytes = 0
++        if self.backend == "memory":
++            cached_bytes = sum(len(audio) for audio, _ in self._store.values())
++        else:
++            cached_bytes = sum(size for size, _ in self._store.values())
++        return {
++            "backend": self.backend,
++            "entries": len(self._store),
++            "cached_bytes": cached_bytes,
++            "hits": self._hits,
++            "misses": self._misses,
++            "max_entries": self.max_entries,
++            "ttl_s": self.ttl_s,
++        }
++
++    # -- lifecycle ------------------------------------------------------------
++
++    def clear(self) -> None:
++        """Drop every entry (memory) or wipe the temp directory (temp)."""
++        if self.backend == "memory":
++            self._store.clear()
++            return
++        for key in list(self._store):
++            self._delete_file(self._path(key))
++        self._store.clear()
++
++    def close(self) -> None:
++        """Release resources; temp backend removes its private directory."""
++        self.clear()
++        if self._temp_dir:
++            try:
++                os.rmdir(self._temp_dir)
++            except OSError:
++                pass  # best-effort: dir may still hold raced files
++            self._temp_dir = None
++
++    def __del__(self):  # pragma: no cover - GC best effort
++        try:
++            self.close()
++        except Exception:
++            pass
++
++    # -- internals -------------------------------------------------------------
++
++    def _path(self, key: str) -> str:
++        if not self._temp_dir:  # pragma: no cover - post-close misuse
++            raise AudioCacheError("temp cache already closed")
++        return os.path.join(self._temp_dir, key)
++
++    @staticmethod
++    def _delete_file(path: str) -> None:
++        try:
++            os.unlink(path)
++        except OSError:
++            pass  # best-effort cleanup
+diff --git a/tests/test_voice_service.py b/tests/test_voice_service.py
+new file mode 100644
+index 00000000..45bdc7aa
+--- /dev/null
++++ b/tests/test_voice_service.py
+@@ -0,0 +1,471 @@
++"""tests/test_voice_service.py — 3-tier verification (tier 3, unit) for the
++Zero-Compute High-Fidelity Bangla Voice Service (issue #540).
++
++Minimum contract: 8 passing. Suite ships 33. Fully offline: synthesis is
++exercised through injected fake streams, the cache through injectable
++clocks/temp dirs, and the Telegram layer through fakes — zero sockets,
++zero optional imports (edge_tts is never required to run this suite).
++"""
++
++from __future__ import annotations
++
++import asyncio
++import os
++import sys
++from typing import AsyncIterator, List
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++try:
++    from command.services.voice_service import (  # noqa: E402
++        DEFAULT_VOICE,
++        VOICE_CATALOG,
++        VoiceRequest,
++        VoiceRequestError,
++        VoiceService,
++        VoiceServiceUnavailable,
++        VoiceSynthesisError,
++        validate_request,
++    )
++    from command.telegram_bot import (  # noqa: E402
++        CommandRouter,
++        TelegramUpdate,
++        VoiceOutcome,
++        build_voice_status_summary,
++        sync_voice_synthesizer,
++    )
++    from command.utils.audio_cache import AudioCache, AudioCacheError  # noqa: E402
++    from command.config import CommandConfig  # noqa: E402
++except ImportError:  # satellite layout (supremeai-command: src/ package)
++    from src.services.voice_service import (  # noqa: E402
++        DEFAULT_VOICE,
++        VOICE_CATALOG,
++        VoiceRequest,
++        VoiceRequestError,
++        VoiceService,
++        VoiceServiceUnavailable,
++        VoiceSynthesisError,
++        validate_request,
++    )
++    from src.telegram_bot import (  # noqa: E402
++        CommandRouter,
++        TelegramUpdate,
++        VoiceOutcome,
++        build_voice_status_summary,
++        sync_voice_synthesizer,
++    )
++    from src.utils.audio_cache import AudioCache, AudioCacheError  # noqa: E402
++    from src.config import CommandConfig  # noqa: E402
++
++
++# ---------------------------------------------------------------------------
++# Fakes (offline synthesizer + clock)
++# ---------------------------------------------------------------------------
++
++
++class FakeClock:
++    """Injectable monotonic clock for TTL tests."""
++
++    def __init__(self) -> None:
++        self.now = 1000.0
++
++    def __call__(self) -> float:
++        return self.now
++
++    def advance(self, seconds: float) -> None:
++        self.now += seconds
++
++
++class FakeSynthesizer:
++    """Deterministic offline stand-in for the edge-tts leased stream."""
++
++    def __init__(self, fail: Optional[Exception] = None, chunk_size: int = 4) -> None:
++        self.calls: List[VoiceRequest] = []
++        self.fail = fail
++        self.chunk_size = chunk_size
++
++    async def __call__(self, request: VoiceRequest) -> AsyncIterator[bytes]:
++        self.calls.append(request)
++        if self.fail is not None:
++            raise self.fail
++        payload = ("voice:%s|rate:%s|pitch:%s|" % (request.voice, request.rate, request.pitch)).encode("utf-8") * 3
++        for i in range(0, len(payload), self.chunk_size):
++            yield payload[i : i + self.chunk_size]
++
++
++def make_router(synthesize_voice=None) -> CommandRouter:
++    config = CommandConfig(
++        telegram_bot_token="123456:TEST-ONLY",
++        superadmin_chat_id="424242",
++        hmac_secret="x" * 32,
++    )
++    return CommandRouter(
++        config=config,
++        fetch_status=lambda: "🏰 Control Tower: reachable\n🌉 queued work orders: 2",
++        dispatch_issue=lambda url: "🛰️ dispatched",
++        arm_kill_switch=lambda: "🛑 armed",
++        synthesize_voice=synthesize_voice,
++    )
++
++
++def run(coro):
++    return asyncio.run(coro)
++
++
++# ---------------------------------------------------------------------------
++# 1. Request validation (fail-closed)
++# ---------------------------------------------------------------------------
++
++
++def test_validate_rejects_empty_text():
++    try:
++        validate_request("   ")
++    except VoiceRequestError as exc:
++        assert "non-empty" in str(exc)
++        return
++    raise AssertionError("empty text must be rejected")
++
++
++def test_validate_rejects_unknown_voice():
++    try:
++        validate_request("hello", voice="bn-XX-NobodyNeural")
++    except VoiceRequestError as exc:
++        assert "unknown voice" in str(exc)
++        return
++    raise AssertionError("unknown voice must be rejected")
++
++
++def test_validate_accepts_all_four_catalog_voices():
++    assert len(VOICE_CATALOG) == 4
++    for voice_id in VOICE_CATALOG:
++        request = validate_request("শুনছি", voice=voice_id)
++        assert request.voice == voice_id
++
++
++def test_validate_resolves_aliases_to_canonical_ids():
++    assert validate_request("x", voice="pradeep").voice == "bn-BD-PradeepNeural"
++    assert validate_request("x", voice="NABANITA").voice == "bn-BD-NabanitaNeural"
++    assert validate_request("x", voice="bashkar").voice == "bn-IN-BashkarNeural"
++    assert validate_request("x", voice="tanishaa").voice == "bn-IN-TanishaaNeural"
++
++
++def test_validate_rejects_malformed_rate_and_pitch():
++    for bad_rate in ("ten%", "+10", "10%", "++10%"):
++        try:
++            validate_request("x", rate=bad_rate)
++            raise AssertionError("rate %r must be rejected" % bad_rate)
++        except VoiceRequestError:
++            pass
++    for bad_pitch in ("+5hz", "5Hz", "+Hz", "+5"):
++        try:
++            validate_request("x", pitch=bad_pitch)
++            raise AssertionError("pitch %r must be rejected" % bad_pitch)
++        except VoiceRequestError:
++            pass
++
++
++def test_validate_accepts_wellformed_rate_and_pitch():
++    request = validate_request("x", rate="+15%", pitch="-20Hz")
++    assert request.rate == "+15%" and request.pitch == "-20Hz"
++
++
++def test_validate_caps_text_length():
++    try:
++        validate_request("x" * 4001)
++    except VoiceRequestError as exc:
++        assert "4000" in str(exc)
++        return
++    raise AssertionError("oversized text must be rejected")
++
++
++def test_default_voice_is_bd_pradeep():
++    assert DEFAULT_VOICE == "bn-BD-PradeepNeural"
++    assert validate_request("x").voice == "bn-BD-PradeepNeural"
++
++
++# ---------------------------------------------------------------------------
++# 2. Audio cache (SHA-256, TTL, LRU, temp backend)
++# ---------------------------------------------------------------------------
++
++
++def test_cache_key_is_deterministic_and_input_sensitive():
++    k1 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz")
++    k2 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-PradeepNeural", rate="+0%", pitch="+0Hz")
++    k3 = AudioCache.key_for("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে", voice="bn-BD-NabanitaNeural", rate="+0%", pitch="+0Hz")
++    assert k1 == k2 and k1 != k3
++    assert len(k1) == 64  # sha256 hex
++    k4 = AudioCache.key_for("ab", "c")  # field-boundary guard
++    k5 = AudioCache.key_for("a", "bc")
++    assert k4 != k5
++
++
++def test_cache_memory_roundtrip_and_stats():
++    cache = AudioCache()
++    key = cache.key_for("hello", voice="v")
++    assert cache.get(key) is None and cache._misses == 1
++    cache.put(key, b"MP3DATA")
++    assert cache.get(key) == b"MP3DATA" and cache._hits == 1
++    stats = cache.stats()
++    assert stats["entries"] == 1 and stats["cached_bytes"] == 7
++
++
++def test_cache_ttl_expiry_via_injected_clock():
++    clock = FakeClock()
++    cache = AudioCache(ttl_s=10.0, clock=clock)
++    key = cache.key_for("phrase")
++    cache.put(key, b"data")
++    assert cache.get(key) == b"data"
++    clock.advance(9.9)
++    assert cache.get(key) == b"data"
++    clock.advance(0.2)  # past ttl
++    assert cache.get(key) is None  # expired
++
++
++def test_cache_lru_eviction_respects_max_entries():
++    cache = AudioCache(max_entries=2)
++    for i in range(4):
++        cache.put(cache.key_for("phrase-%d" % i), b"x" * (i + 1))
++    stats = cache.stats()
++    assert stats["entries"] == 2  # only the 2 most recent survive
++    assert cache.get(cache.key_for("phrase-0")) is None
++    assert cache.get(cache.key_for("phrase-3")) is not None
++
++
++def test_cache_temp_backend_roundtrip_and_cleanup():
++    cache = AudioCache(backend="temp")
++    key = cache.key_for("temp phrase", voice="bn-IN-BashkarNeural")
++    cache.put(key, b"TEMPAUDIO")
++    assert cache.get(key) == b"TEMPAUDIO"
++    cache.close()
++    try:
++        cache.put(cache.key_for("post-close"), b"x")
++        raise AssertionError("put after close must fail loudly")
++    except AudioCacheError:
++        pass
++
++
++def test_cache_rejects_bad_backend_and_empty_payload():
++    for kwargs in ({"backend": "disk"}, {"max_entries": 0}, {"ttl_s": 0}):
++        try:
++            AudioCache(**kwargs)
++            raise AssertionError("AudioCache(%s) must be rejected" % kwargs)
++        except AudioCacheError:
++            pass
++    cache = AudioCache()
++    cache.put(cache.key_for("empty"), b"")
++    assert cache.stats()["entries"] == 0  # empty payloads are never cached
++
++
++# ---------------------------------------------------------------------------
++# 3. Voice service (synthesis, streaming, caching, error taxonomy)
++# ---------------------------------------------------------------------------
++
++
++def test_service_synthesizes_and_second_call_hits_cache():
++    fake = FakeSynthesizer()
++    cache = AudioCache()
++    service = VoiceService(cache=cache, synthesizer=fake)
++    request = validate_request("সিস্টেম সম্পূর্ণ স্বাভাবিক আছে")
++    first = run(service.synthesize(request))
++    assert first.audio and not first.cached
++    assert first.mime_type == "audio/mpeg"
++    second = run(service.synthesize(request))
++    assert second.cached and second.audio == first.audio
++    assert len(fake.calls) == 1  # network round-trip eliminated
++
++
++def test_service_cache_key_includes_rate_and_pitch():
++    fake = FakeSynthesizer()
++    service = VoiceService(cache=AudioCache(), synthesizer=fake)
++    run(service.synthesize(validate_request("x", rate="+0%", pitch="+0Hz")))
++    run(service.synthesize(validate_request("x", rate="+10%", pitch="+0Hz")))
++    assert len(fake.calls) == 2  # different params -> different key
++
++
++def test_service_streams_chunks_in_order():
++    fake = FakeSynthesizer(chunk_size=5)
++    service = VoiceService(synthesizer=fake)
++    request = validate_request("stream me")
++    chunks: List[bytes] = []
++
++    async def consume():
++        async for chunk in service.stream(request):
++            chunks.append(chunk)
++
++    run(consume())
++    assert len(chunks) > 1  # genuinely streamed, not a single blob
++    # exact-order check against the fake's deterministic payload
++    expected = ("voice:bn-BD-PradeepNeural|rate:+0%|pitch:+0Hz|" * 3).encode("utf-8")
++    assert b"".join(chunks) == expected
++
++
++def test_service_loud_degradation_without_edge_tts():
++    async def broken_stream(request):
++        raise VoiceServiceUnavailable("edge-tts client is not installed")
++        yield b""  # pragma: no cover - makes this an async generator
++
++    service = VoiceService(synthesizer=broken_stream)
++    try:
++        run(service.synthesize(validate_request("hello")))
++    except VoiceServiceUnavailable as exc:
++        assert "not installed" in str(exc)
++        return
++    raise AssertionError("absent optional client must degrade loudly")
++
++
++def test_service_maps_synthesizer_failure_to_synthesis_error():
++    fake = FakeSynthesizer(fail=RuntimeError("websocket exploded"))
++    service = VoiceService(synthesizer=fake)
++    try:
++        run(service.synthesize(validate_request("hello")))
++    except VoiceSynthesisError as exc:
++        assert "websocket exploded" in str(exc)
++        return
++    raise AssertionError("synthesizer failure must surface as VoiceSynthesisError")
++
++
++def test_service_rejects_non_voice_request():
++    service = VoiceService()
++    try:
++        run(service.synthesize("not a request"))
++    except VoiceRequestError:
++        return
++    raise AssertionError("raw string input must be rejected fail-closed")
++
++
++def test_service_passes_rate_pitch_through_to_synthesizer():
++    fake = FakeSynthesizer()
++    service = VoiceService(synthesizer=fake)
++    run(service.synthesize(validate_request("x", voice="nabanita", rate="-5%", pitch="+7Hz")))
++    sent = fake.calls[0]
++    assert sent.voice == "bn-BD-NabanitaNeural"
++    assert sent.rate == "-5%" and sent.pitch == "+7Hz"
++
++
++# ---------------------------------------------------------------------------
++# 4. Telegram integration (/voice, toggle, transport)
++# ---------------------------------------------------------------------------
++
++
++def test_router_voice_command_returns_voice_audio():
++    outcome = VoiceOutcome(audio=b"MP3", voice_used="bn-BD-PradeepNeural", size_bytes=3)
++    router = make_router(synthesize_voice=lambda text: outcome)
++    reply = router.route(TelegramUpdate("424242", "/voice শুনুন"))
++    assert reply.allowed and reply.voice_audio == b"MP3"
++    assert reply.action == "voice" and "voice note ready" in reply.text
++
++
++def test_router_voice_without_text_shows_usage_and_skips_synthesis():
++    calls = []
++
++    def spy(text):
++        calls.append(text)
++        return VoiceOutcome(audio=b"x")
++
++    router = make_router(synthesize_voice=spy)
++    reply = router.route(TelegramUpdate("424242", "/voice"))
++    assert reply.voice_audio is None and "requires text" in reply.text
++    assert calls == []
++
++
++def test_router_voice_denied_for_non_superadmin():
++    calls = []
++
++    def spy(text):
++        calls.append(text)
++        return VoiceOutcome(audio=b"x")
++
++    router = make_router(synthesize_voice=spy)
++    reply = router.route(TelegramUpdate("999999", "/voice শুনুন"))
++    assert not reply.allowed and reply.voice_audio is None
++    assert calls == []  # RBAC fires before any synthesis
++
++
++def test_router_voice_unwired_is_loud_not_silent():
++    router = make_router(synthesize_voice=None)
++    reply = router.route(TelegramUpdate("424242", "/voice শুনুন"))
++    assert reply.allowed and "not wired" in reply.text
++
++
++def test_router_voice_failure_degrades_to_text():
++    def failing(text):
++        return VoiceOutcome(error="service unavailable: edge-tts missing")
++
++    router = make_router(synthesize_voice=failing)
++    reply = router.route(TelegramUpdate("424242", "/voice শুনুন"))
++    assert reply.voice_audio is None
++    assert "voice synthesis failed" in reply.text and "service unavailable" in reply.text
++
++
++def test_router_voice_toggle_gates_status_voice_notes():
++    outcome = VoiceOutcome(audio=b"AUDIO", voice_used="bn-BD-PradeepNeural", size_bytes=5)
++    seen = []
++
++    def spy(text):
++        seen.append(text)
++        return outcome
++
++    router = make_router(synthesize_voice=spy)
++    plain = router.route(TelegramUpdate("424242", "/status"))
++    assert plain.voice_audio is None and seen == []
++    router.route(TelegramUpdate("424242", "/voiceon"))
++    voiced = router.route(TelegramUpdate("424242", "/status"))
++    assert voiced.voice_audio == b"AUDIO" and len(seen) == 1
++    assert "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে" in seen[0]
++    router.route(TelegramUpdate("424242", "/voiceoff"))
++    muted = router.route(TelegramUpdate("424242", "/status"))
++    assert muted.voice_audio is None
++
++
++def test_router_status_voice_failure_appends_warning_not_crash():
++    def failing(text):
++        return VoiceOutcome(error="synthesis timed out")
++
++    router = make_router(synthesize_voice=failing)
++    router.route(TelegramUpdate("424242", "/voiceon"))
++    reply = router.route(TelegramUpdate("424242", "/status"))
++    assert "reachable" in reply.text  # text runway still flows
++    assert "voice alert unavailable" in reply.text
++
++
++def test_router_status_voice_without_synthesizer_warns_loudly():
++    router = make_router(synthesize_voice=None)
++    router.route(TelegramUpdate("424242", "/voiceon"))
++    reply = router.route(TelegramUpdate("424242", "/status"))
++    assert "no synthesizer is wired" in reply.text
++
++
++def test_build_voice_status_summary_is_deterministic():
++    healthy = build_voice_status_summary("🏰 Control Tower: reachable\nBridge: 1")
++    down = build_voice_status_summary("🏰 Control Tower: unreachable")
++    assert healthy == build_voice_status_summary("🏰 Control Tower: reachable\nBridge: 1")
++    assert healthy != down
++    assert "সিস্টেম সম্পূর্ণ স্বাভাবিক আছে" in healthy
++    assert "পৌঁছানো যাচ্ছে না" in down
++
++
++def test_sync_voice_synthesizer_wraps_service_loudly():
++    class BoomService:
++        async def synthesize(self, request):
++            raise VoiceServiceUnavailable("edge-tts client is not installed")
++
++    synth = sync_voice_synthesizer(BoomService())
++    outcome = synth("শুনুন")
++    assert not outcome.ok and "service unavailable" in (outcome.error or "")
++
++
++def test_sync_voice_synthesizer_validation_error_never_raises():
++    class OkService:
++        async def synthesize(self, request):
++            raise AssertionError("must not be reached")
++
++    synth = sync_voice_synthesizer(OkService())
++    outcome = synth("")  # invalid: empty text
++    assert not outcome.ok and "invalid request" in (outcome.error or "")
++
++
++def test_help_text_documents_voice_commands():
++    router = make_router()
++    reply = router.route(TelegramUpdate("424242", "/help"))
++    for token in ("/voice", "/voiceon", "/voiceoff"):
++        assert token in reply.text

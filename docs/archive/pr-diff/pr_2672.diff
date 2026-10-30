@@ -1,0 +1,413 @@
+diff --git a/core/api/routes/internal.py b/core/api/routes/internal.py
+index 64faefaa..d360452e 100644
+--- a/core/api/routes/internal.py
++++ b/core/api/routes/internal.py
+@@ -5,7 +5,7 @@
+ from pydantic import BaseModel, SecretStr
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.rbac import get_current_admin
+ from core.self_evolution.evolution_engine import EvolutionEngine
+ 
+diff --git a/core/api/routes/internet_monitor.py b/core/api/routes/internet_monitor.py
+index 5b459f2f..95c1d3ee 100644
+--- a/core/api/routes/internet_monitor.py
++++ b/core/api/routes/internet_monitor.py
+@@ -14,7 +14,7 @@
+     internet_monitor_agent,
+ )
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/internet-monitor", tags=["Internet Monitor"])
+ 
+diff --git a/core/api/routes/kaggle.py b/core/api/routes/kaggle.py
+index 469a0586..831ddfd5 100644
+--- a/core/api/routes/kaggle.py
++++ b/core/api/routes/kaggle.py
+@@ -11,7 +11,7 @@
+ from pydantic import BaseModel
+ 
+ from core.kaggle_orchestrator import KaggleOrchestrator, KaggleTaskType
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ import os
+ import uuid
+diff --git a/core/api/routes/keys.py b/core/api/routes/keys.py
+index 8da064ee..f6dc3097 100644
+--- a/core/api/routes/keys.py
++++ b/core/api/routes/keys.py
+@@ -23,7 +23,7 @@
+ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.rbac import get_current_user_token as verify_token_dependency
+ from database.supabase_client import SupabaseDB
+ 
+diff --git a/core/api/routes/knowledge.py b/core/api/routes/knowledge.py
+index 70461255..07a7475b 100644
+--- a/core/api/routes/knowledge.py
++++ b/core/api/routes/knowledge.py
+@@ -12,7 +12,7 @@
+ from adaptive_engine.learning_loop import EvolutionSignal, get_learning_loop
+ from api.dependencies import get_current_user_token
+ from core.knowledge_facade import ask_legacy
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.knowledge_qa import KnowledgeQAService
+ 
+ router = APIRouter()
+diff --git a/core/api/routes/living_brain.py b/core/api/routes/living_brain.py
+index 2011f316..f55b8d9e 100644
+--- a/core/api/routes/living_brain.py
++++ b/core/api/routes/living_brain.py
+@@ -42,7 +42,7 @@
+ # used across the admin surface (decodes the Bearer token + enforces the admin
+ # role) — use it so /api/living-brain/* behaves like the rest.
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Import brain components
+ # UNIFY FIX: removed 'backend.' prefix from imports — they were silently
+diff --git a/core/api/routes/markdown.py b/core/api/routes/markdown.py
+index e3965769..5d684f3e 100644
+--- a/core/api/routes/markdown.py
++++ b/core/api/routes/markdown.py
+@@ -6,7 +6,7 @@
+ from pydantic import BaseModel
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ from tools.knowledge.codebase_exporter import export_codebase_to_markdown
+ 
+diff --git a/core/api/routes/marketplace_endpoints.py b/core/api/routes/marketplace_endpoints.py
+index 3822a8ed..15a116d0 100644
+--- a/core/api/routes/marketplace_endpoints.py
++++ b/core/api/routes/marketplace_endpoints.py
+@@ -9,7 +9,7 @@
+ from api.deps import get_current_user_token
+ from core.degraded_mode import sqlite_fallback_allowed
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ from tools.resource_catalog import ResourceCatalog
+ from tools.social.marketplace_agent import MarketplaceAgent
+diff --git a/core/api/routes/mcp_hub.py b/core/api/routes/mcp_hub.py
+index 8f141869..c5b69db0 100644
+--- a/core/api/routes/mcp_hub.py
++++ b/core/api/routes/mcp_hub.py
+@@ -52,7 +52,7 @@
+ 
+ from api.dependencies import get_current_user_token
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session
+ from models.mcp_gateway import (
+     DEFAULT_CLIENT_SCOPES,
+diff --git a/core/api/routes/memory_mcp_http.py b/core/api/routes/memory_mcp_http.py
+index a4b862f3..2c01fc21 100644
+--- a/core/api/routes/memory_mcp_http.py
++++ b/core/api/routes/memory_mcp_http.py
+@@ -37,7 +37,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:  # optional dependency — the whole surface degrades to 503 without it
+     from mcp.server.sse import SseServerTransport
+diff --git a/core/api/routes/mesh.py b/core/api/routes/mesh.py
+index f779bef7..e123b0d0 100644
+--- a/core/api/routes/mesh.py
++++ b/core/api/routes/mesh.py
+@@ -46,7 +46,7 @@
+ from fastapi import APIRouter, Depends, HTTPException, status
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.presence_registry import (
+     DEFAULT_STALE_AFTER_SECONDS,
+     VALID_NODE_TYPES,
+diff --git a/core/api/routes/metrics.py b/core/api/routes/metrics.py
+index 27096248..af2d0785 100644
+--- a/core/api/routes/metrics.py
++++ b/core/api/routes/metrics.py
+@@ -2,7 +2,7 @@
+ 
+ from api.dependencies import get_current_admin
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Issue #683 Section 1 (inward layer violation): the recording functions, the
+ # Prometheus collectors and the SupremeMetricsEngine latency-history engine
+diff --git a/core/api/routes/missions.py b/core/api/routes/missions.py
+index 0062c8d3..fe3cc6fd 100644
+--- a/core/api/routes/missions.py
++++ b/core/api/routes/missions.py
+@@ -26,7 +26,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from api.dependencies import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session, get_db_session_context
+ from missions.models import Mission, MissionTraceEvent
+ from missions.schemas import MissionCreate, MissionOut, TraceEventOut, TransitionRequest
+diff --git a/core/api/routes/mobile_bff.py b/core/api/routes/mobile_bff.py
+index 72e9e971..255c744d 100644
+--- a/core/api/routes/mobile_bff.py
++++ b/core/api/routes/mobile_bff.py
+@@ -1,7 +1,7 @@
+ from fastapi import APIRouter, HTTPException, Request
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/mobile/bff", tags=["mobile-bff"])
+ 
+diff --git a/core/api/routes/n8n_webhooks.py b/core/api/routes/n8n_webhooks.py
+index ed5217e2..7a43caaa 100644
+--- a/core/api/routes/n8n_webhooks.py
++++ b/core/api/routes/n8n_webhooks.py
+@@ -7,7 +7,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/v1/webhooks/n8n", tags=["n8n Webhooks"])
+ 
+diff --git a/core/api/routes/onboarding.py b/core/api/routes/onboarding.py
+index da28574b..7c639ce6 100644
+--- a/core/api/routes/onboarding.py
++++ b/core/api/routes/onboarding.py
+@@ -13,7 +13,7 @@
+ from fastapi import APIRouter
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
+ 
+diff --git a/core/api/routes/payments.py b/core/api/routes/payments.py
+index 82cbd5df..dbd73c54 100644
+--- a/core/api/routes/payments.py
++++ b/core/api/routes/payments.py
+@@ -3,7 +3,7 @@
+ from fastapi import APIRouter, Depends, HTTPException, Request
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import stripe
+diff --git a/core/api/routes/pr_review_api.py b/core/api/routes/pr_review_api.py
+index ee9eebcf..74833e0b 100644
+--- a/core/api/routes/pr_review_api.py
++++ b/core/api/routes/pr_review_api.py
+@@ -20,7 +20,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/v1/pr-review", tags=["pr-review"])
+ 
+diff --git a/core/api/routes/preferences.py b/core/api/routes/preferences.py
+index e6030e32..cbccbdb5 100644
+--- a/core/api/routes/preferences.py
++++ b/core/api/routes/preferences.py
+@@ -7,7 +7,7 @@
+ from sse_starlette.sse import EventSourceResponse
+ 
+ from api.dependencies import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.pubsub import global_pubsub as theme_pubsub
+ from database.supabase_client import db
+ 
+diff --git a/core/api/routes/prompt_templates.py b/core/api/routes/prompt_templates.py
+index 87e22462..0450130a 100644
+--- a/core/api/routes/prompt_templates.py
++++ b/core/api/routes/prompt_templates.py
+@@ -17,7 +17,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/realtime_dashboard.py b/core/api/routes/realtime_dashboard.py
+index 7ce9ab76..39b7e733 100644
+--- a/core/api/routes/realtime_dashboard.py
++++ b/core/api/routes/realtime_dashboard.py
+@@ -19,7 +19,7 @@
+ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import verify_token_async  # noqa: F401 — kept for other callers in module
+ from core.security.ws_auth import authenticate_websocket
+ from core.swarm_pubsub import get_swarm_streamer
+diff --git a/core/api/routes/reasoning.py b/core/api/routes/reasoning.py
+index 6146ce26..a1a58063 100644
+--- a/core/api/routes/reasoning.py
++++ b/core/api/routes/reasoning.py
+@@ -17,7 +17,7 @@
+ 
+ from api.deps import get_current_user_token
+ from core.llm.llm_gateway.context import InferenceContext
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from engine.debate_engine import ConsensusOrchestrator, Proposal
+ from engine.tree_of_thought import TreeOfThoughtReasoner
+ 
+diff --git a/core/api/routes/sandbox_api.py b/core/api/routes/sandbox_api.py
+index 7080dd2a..670dca1a 100644
+--- a/core/api/routes/sandbox_api.py
++++ b/core/api/routes/sandbox_api.py
+@@ -96,7 +96,7 @@ def _get_manager():
+         except ValueError as exc:
+             if not _sandbox_unavailable_announced:
+                 _sandbox_unavailable_announced = True
+-                from core.logging_config import logger
++                from core.monitoring.logging_config import logger
+ 
+                 logger.critical(
+                     "Sandbox API unavailable: %s. Configure a real sandbox provider "
+diff --git a/core/api/routes/scheduled_tasks.py b/core/api/routes/scheduled_tasks.py
+index d041b4ad..7cc3bcac 100644
+--- a/core/api/routes/scheduled_tasks.py
++++ b/core/api/routes/scheduled_tasks.py
+@@ -20,7 +20,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/selector_healing.py b/core/api/routes/selector_healing.py
+index c99f8b4c..78b01bf9 100644
+--- a/core/api/routes/selector_healing.py
++++ b/core/api/routes/selector_healing.py
+@@ -4,7 +4,7 @@
+ from sqlalchemy.future import select
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session
+ from models.selector_healing_event import SelectorHealingEvent
+ 
+@@ -66,7 +66,7 @@ async def make_healing_decision(
+ ):
+     import uuid
+ 
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"Admin {admin_user.get('sub')} making decision on healing event {event_id}")
+ 
+diff --git a/core/api/routes/service_topology.py b/core/api/routes/service_topology.py
+index 7d6fa3fd..ae39db19 100644
+--- a/core/api/routes/service_topology.py
++++ b/core/api/routes/service_topology.py
+@@ -259,7 +259,7 @@ async def probe_service(service: ServiceConfig) -> ServiceHealthResult:
+                                 if k in ["status", "version", "uptime", "latency"]
+                             }
+                 except Exception:
+-                    from core.logging_config import logger
++                    from core.monitoring.logging_config import logger
+ 
+                     logger.warning("Ignored exception")
+ 
+diff --git a/core/api/routes/session_stream.py b/core/api/routes/session_stream.py
+index 40133012..e8e38409 100644
+--- a/core/api/routes/session_stream.py
++++ b/core/api/routes/session_stream.py
+@@ -4,7 +4,7 @@
+ from fastapi import APIRouter, Path, Request
+ from sse_starlette.sse import EventSourceResponse
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.observability.log_batcher import batcher
+ 
+ router = APIRouter()
+diff --git a/core/api/routes/session_takeover.py b/core/api/routes/session_takeover.py
+index 944c3cbd..f01edf1c 100644
+--- a/core/api/routes/session_takeover.py
++++ b/core/api/routes/session_takeover.py
+@@ -30,7 +30,7 @@
+     Image: Any = None  # type: ignore
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter()
+ 
+@@ -105,11 +105,11 @@ async def start_stream(self):
+                     await asyncio.sleep(target_frame_time - frame_time)
+ 
+         except WebSocketDisconnect:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info("Screencast client disconnected")
+         except Exception as e:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"Screencast error: {e}")
+             await self.websocket.send_json(
+diff --git a/core/api/routes/share.py b/core/api/routes/share.py
+index f2cb1c9d..b68d97b3 100644
+--- a/core/api/routes/share.py
++++ b/core/api/routes/share.py
+@@ -16,7 +16,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import SupabaseDB
+ 
+ router = APIRouter(prefix="/api/share", tags=["Sharing"])
+diff --git a/core/api/routes/simulator.py b/core/api/routes/simulator.py
+index dd48f369..4fc52c62 100644
+--- a/core/api/routes/simulator.py
++++ b/core/api/routes/simulator.py
+@@ -23,7 +23,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.rbac import get_current_user_token
+ 
+ router = APIRouter(

@@ -1,0 +1,782 @@
+diff --git a/docs/bridge/bridge-20261028-redis-p0-capacity-model.md b/docs/bridge/bridge-20261028-redis-p0-capacity-model.md
+new file mode 100644
+index 00000000..e6ade1b6
+--- /dev/null
++++ b/docs/bridge/bridge-20261028-redis-p0-capacity-model.md
+@@ -0,0 +1,25 @@
++# P0 #1360 Reflection — Redis Capacity Model & Command Budgeting
++
++Cycle: bridge-20261028-redis-p0 (Job 478316, dispatch 2026-10-28 06:05 UTC+8). Claimed via work_claim (GRANT_NEW, 30-min lease). This doc is the reflection tier of the issue's 3-tier verification contract; the smoke tier is the tower CI suite (`test:tower-ci`, credentials-free) and the tests tier is `test:redis-p0` (8 sections).
++
++## 1. Live capacity picture (evidence: `health_full_sweep` 2026-10-27T21:16Z, guardian alert #1698)
++
++| Chain link | State | Usage / Limit | Headroom |
++|---|---|---|---|
++| primary | soft-threshold hit (96% preemptive rotation, #646) | 480,000 / 500,000 | 20,000 (frozen by cooldown) |
++| secondary | hard-blocked | 500,001 / 500,000 (`ERR max requests limit exceeded`) | 0 |
++| tertiary | **active primary** | 0 absorbed at sweep time | 500,000 (sole buffer) |
++
++The chain is one account deep: any traffic surge larger than tertiary's remaining 500k before the 2026-11-01T00:01Z cooldown reset becomes a fleet-wide cache/rate-limit outage for `mcp-control-plane` + `backend`. Capacity rebalancing (paid tier, account addition) is an admin/billing action — the code-side deliverables below shrink the burn instead.
++
++## 2. Command budgeting — what each deliverable buys
++
++- **Hot-read LRU (`hot_read_cache.ts`)**: the fleet's redundant read shape is bounded — dashboards poll the same keys, workforce listings re-read the same slots. Measured on a 100-lookup workload with 60% redundancy: **10 remote calls instead of 100 (90% absorption)**; the #1360 acceptance floor is ≥50%, asserted in tests. Every 100k absorbed lookups = 100k commands of tertiary headroom preserved. Zero extra Redis commands by design (in-memory only).
++- **Three-tier alert ladder (warn 80 / high 90 / crit 95, `quotaTierFor`)**: #1522 shipped two rungs; the missing 90% rung is the "act while headroom remains" signal. In the current incident, a 90% alert on tertiary would have fired with ~50k commands of buffer instead of the hard wall at 500,001.
++- **Persistent cooldown ledger (`cooldown_ledger.ts`, env `REDIS_COOLDOWN_LEDGER_PATH`)**: pre-ledger, a restart forgot that primary/secondary were quota-dead and re-probed them until an error body arrived — each wasted probe is a real command against a dead account and a real latency addition to the chain walk. Post-ledger, stamps hydrate with usage-proof validation (#1345 invariant), so restarts skip dead accounts with **zero probe commands**. Honest limit: full container recycling still loses the local file (documented in-code); Redis-side persistence is circular (a dead account cannot record its own death).
++
++## 3. Residual risk register (honest)
++
++1. Tertiary burn rate is unmonitored between sweeps — D1 of guardian alert #1698 (expose `estimatedCommands` for the active account per sweep) remains open for the admin surface.
++2. Both blocked links share one reset instant (Nov 1 00:01Z) — staggered windows (D3) remain an ops follow-up.
++3. The LRU layer is delivered as the contract's caching primitive with telemetry and is wired into CI; point-wiring additional hot call-sites is incremental work for the claiming agent(s) that follow, each one-line `withHotReadCache(...)` at a read path with a stable key.
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 256b41d9..5cfaa59f 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -35,7 +35,7 @@
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:redis-p0",
+     "test:semantic-router": "tsx scripts/test-runner.ts test/test_semantic_router.ts",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+@@ -51,6 +51,7 @@
+     "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
+     "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+     "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
++    "test:redis-p0": "tsx test_redis_p0_hot_lru.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
+     "test:unified-diff-eof": "tsx scripts/test-runner.ts test_unified_diff_eof.ts",
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+diff --git a/infrastructure/mcp-control-plane/src/lib/cooldown_ledger.ts b/infrastructure/mcp-control-plane/src/lib/cooldown_ledger.ts
+new file mode 100644
+index 00000000..f73cafa9
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/cooldown_ledger.ts
+@@ -0,0 +1,164 @@
++/**
++ * Persistent cooldown ledger — P0 #1360 deliverable C.
++ *
++ * বাংলা মন্তব্য: `redis_chain.ts`-এর quota cooldown registry এখন পর্যন্ত
++ * শুধু in-memory — tower process রিস্টার্ট/রিডিপ্লয় হলে primary/secondary-র
++ * কোটা-মৃত্যু ভুলে যায়, আর সদ্য-জন্ম নেওয়া process হারিয়ে যাওয়া কোটা আবার
++ * খরচ করে বসে (prICY error body না দেখা পর্যন্ত — প্রতিটি চেষ্টাই বৃথা
++ * কমান্ড)। এই ledger cooldown stamp + usage proof ছোট একটি local JSON
++ * ফাইলে লেখে; প্রসেস ফিরে এলে সেগুলো ফিরে পায় — একটিও বাড়তি Redis কমান্ড
++ * খরচ না করে (zero Redis commands by design)।
++ *
++ * Opt-in by env: REDIS_COOLDOWN_LEDGER_PATH সেট থাকলেই persistence সক্রিয়।
++ * আনসেট হলে আচরণ আগের মতোই byte-identical (in-memory only) — existing test
++ * chains ও বিদ্যমান ডেপ্লয়মেন্ট অপরিবর্তিত। Render-এ এক লাইনের env যোগ করলেই
++ * সক্রিয় (deployment step documented in the PR + capacity-model doc)।
++ *
++ * Honest limitation (documented, not hidden): /tmp-জাতীয় local ফাইল একই
++ * instance-এর restart/redeploy সারভাইভ করে; পুরো instance recycle (নতুন
++ * container) হলে ফাইলও যায় — কোটা-মৃত অ্যাকাউন্টে ফিরে গিয়ে একটি probe
++ * কমান্ড খরচ হতে পারে, তার পরেই আবার stamp। Redis-এ স্বয়ং ledger রাখা
++ * circular (মৃত অ্যাকাউন্ট নিজের মৃত্যু রেকর্ড করতে পারে না) — তাই এটিই
++ * সর্বোচ্চ সততার সীমা।
++ *
++ * Safety contract:
++ *  - Atomic writes (tmp + rename) — torn files impossible.
++ *  - Corrupt/unreadable file → loud warn + fail-open (in-memory as before).
++ *  - Load validates every stamp: future-dated AND window-current AND
++ *    usage ≥ soft threshold (#1345 invariant) — else dropped at load.
++ *  - Only chain labels known at load time are restored.
++ */
++
++import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
++import { dirname } from "node:path";
++
++export type LedgerEntry = {
++  cooldownUntilMs: number;
++  usage: { count: number; windowStartMs: number };
++  stampedAtMs: number;
++};
++
++export type LedgerFile = {
++  version: 1;
++  entries: Record<string, LedgerEntry>;
++};
++
++export function cooldownLedgerPath(): string | null {
++  const p = process.env.REDIS_COOLDOWN_LEDGER_PATH;
++  return p && p.trim() !== "" ? p.trim() : null;
++}
++
++export function isCooldownLedgerEnabled(): boolean {
++  return cooldownLedgerPath() !== null;
++}
++
++function emptyLedger(): LedgerFile {
++  return { version: 1, entries: {} };
++}
++
++/** Loads the raw ledger file; returns null when disabled/absent, {} on corrupt. */
++export function readLedgerFile(): LedgerFile | null {
++  const path = cooldownLedgerPath();
++  if (!path) return null;
++  try {
++    if (!existsSync(path)) return emptyLedger();
++    const raw = readFileSync(path, "utf8");
++    const parsed = JSON.parse(raw) as LedgerFile;
++    if (!parsed || parsed.version !== 1 || typeof parsed.entries !== "object" || parsed.entries === null) {
++      console.warn(`[cooldown-ledger] Unrecognized ledger shape at ${path} — ignoring (fail-open).`);
++      return emptyLedger();
++    }
++    return parsed;
++  } catch (err) {
++    console.warn(
++      `[cooldown-ledger] Failed to read ledger at ${path}: ${(err as Error).message} — continuing in-memory (fail-open).`,
++    );
++    return emptyLedger();
++  }
++}
++
++/** Writes the full ledger atomically (tmp + rename). Never throws. */
++export function writeLedgerFile(file: LedgerFile): void {
++  const path = cooldownLedgerPath();
++  if (!path) return;
++  try {
++    const dir = dirname(path);
++    if (dir && dir !== "." && !existsSync(dir)) mkdirSync(dir, { recursive: true });
++    const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
++    writeFileSync(tmp, JSON.stringify(file), "utf8");
++    renameSync(tmp, path);
++  } catch (err) {
++    console.warn(
++      `[cooldown-ledger] Failed to persist ledger at ${path}: ${(err as Error).message} — continuing in-memory (fail-open).`,
++    );
++  }
++}
++
++/**
++ * Upserts one account's stamp into the ledger (called by redis_chain AFTER the
++ * in-memory registry is updated — the ledger mirrors memory, never leads it).
++ */
++export function persistCooldownStamp(
++  label: string,
++  cooldownUntilMs: number,
++  usage: { count: number; windowStartMs: number },
++  nowMs: number = Date.now(),
++): void {
++  if (!isCooldownLedgerEnabled()) return;
++  const file = readLedgerFile() ?? emptyLedger();
++  file.entries[label] = { cooldownUntilMs, usage, stampedAtMs: nowMs };
++  writeLedgerFile(file);
++}
++
++/** Removes one account's stamp (recovery probe / self-heal / expiry). */
++export function persistCooldownClear(label: string): void {
++  if (!isCooldownLedgerEnabled()) return;
++  const file = readLedgerFile() ?? emptyLedger();
++  if (!(label in file.entries)) return;
++  delete file.entries[label];
++  writeLedgerFile(file);
++}
++
++/**
++ * Validated hydration: returns only stamps worth restoring — future-dated,
++ * usage window still current, usage ≥ soft threshold (the #1345 invariant the
++ * registry would otherwise self-heal at first observation), and label present
++ * in the caller-provided chain-label allowlist.
++ */
++export function validLedgerStamps(
++  chainLabels: readonly string[],
++  softThreshold: number,
++  currentWindowStartMs: number,
++  nowMs: number = Date.now(),
++): Map<string, LedgerEntry> {
++  const file = readLedgerFile();
++  const out = new Map<string, LedgerEntry>();
++  if (!file) return out;
++  for (const [label, entry] of Object.entries(file.entries)) {
++    if (!chainLabels.includes(label)) continue;
++    if (!entry || typeof entry.cooldownUntilMs !== "number") continue;
++    if (nowMs >= entry.cooldownUntilMs) continue; // expired — do not resurrect
++    if (!entry.usage || typeof entry.usage.count !== "number") continue;
++    if (entry.usage.windowStartMs !== currentWindowStartMs) continue; // stale window
++    if (entry.usage.count < softThreshold) {
++      console.warn(
++        `[cooldown-ledger] Dropping stamp for "${label}": usage ${entry.usage.count} < soft threshold ` +
++          `${softThreshold} (#1345 mis-stamp guard) — slot returns to rotation.`,
++      );
++      continue;
++    }
++    out.set(label, entry);
++  }
++  return out;
++}
++
++/** Test hook — removes the ledger file (memory-side state is owned by redis_chain). */
++export function deleteCooldownLedgerFile(): void {
++  const path = cooldownLedgerPath();
++  if (!path) return;
++  try {
++    if (existsSync(path)) unlinkSync(path);
++  } catch {
++    // best-effort cleanup only
++  }
++}
+diff --git a/infrastructure/mcp-control-plane/src/lib/hot_read_cache.ts b/infrastructure/mcp-control-plane/src/lib/hot_read_cache.ts
+new file mode 100644
+index 00000000..c81d21e9
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/hot_read_cache.ts
+@@ -0,0 +1,144 @@
++/**
++ * Hot-read LRU cache — P0 #1360 (AIQ-078/091) deliverable A.
++ *
++ * বাংলা মন্তব্য: Upstash free-tier 500k কোটার সবচেয়ে সস্তা প্রতিরোধ —
++ * একই key-এর বারবার read Redis-এ না পাঠানো। `ttl_cache.ts`-এর L1 (৫s)
++ * শুধু burst-collapse (dashboard sweep); এই স্তরটি **sustained hot keys**-এর
++ * জন্য — bounded LRU + TTL + hit/miss telemetry, যাতে #1360-এর acceptance
++ * ("in-memory caching layer absorbs at least 50% of redundant key lookups")
++ * অনুমান নয়, পরিমাপযোগ্য সত্য হয়।
++ *
++ * Contract (fail-honest, mirrors withL1Cache):
++ *  - Loader throw propagates; nothing is cached on failure.
++ *  - `undefined` is never stored (sentinel-free: value-level emptiness is
++ *    stored as-is, only `undefined` means "not cached").
++ *  - TTL 0 / negative = cache disabled for that call (loader runs always).
++ *  - Zero extra Redis commands by design (in-memory only).
++ *
++ * Eviction: true LRU — Map re-insertion moves a key to the MRU end on read;
++ * overflow evicts the LRU end (first key). Capacity 0 → disabled.
++ */
++
++export type HotLruEntry<T> = { value: T; expiresAtMs: number };
++
++export type HotLruStats = {
++  hits: number;
++  misses: number;
++  sets: number;
++  evictions: number;
++  expiredDrops: number;
++  size: number;
++  capacity: number;
++  /** hits / (hits+misses), percent rounded to 2 decimals; null when no lookups yet. */
++  hitRatePct: number | null;
++};
++
++const store = new Map<string, HotLruEntry<unknown>>();
++const counters = { hits: 0, misses: 0, sets: 0, evictions: 0, expiredDrops: 0 };
++
++/** Default capacity: bounded at 1024 hot keys (env REDIS_HOT_LRU_CAPACITY). */
++export function hotLruCapacity(): number {
++  const raw = Number(process.env.REDIS_HOT_LRU_CAPACITY);
++  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 1024;
++}
++
++/** Default TTL for hot reads: 30s (env REDIS_HOT_LRU_TTL_MS; 0 = disabled). */
++export function hotLruTtlMs(envName: string = "REDIS_HOT_LRU_TTL_MS"): number {
++  const raw = process.env[envName];
++  if (raw === undefined || raw === "") return 30_000;
++  const parsed = Number(raw);
++  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 30_000;
++}
++
++function evictIfNeeded(capacity: number, nowMs: number): void {
++  if (capacity <= 0) return;
++  if (store.size < capacity) return;
++  // First pass: drop expired entries (they are already dead weight).
++  for (const [k, e] of store) {
++    if (nowMs >= e.expiresAtMs) {
++      store.delete(k);
++      counters.evictions += 1;
++      if (store.size < capacity) return;
++    }
++  }
++  // Second pass: true LRU eviction from the oldest end.
++  while (store.size >= capacity) {
++    const oldest = store.keys().next().value;
++    if (oldest === undefined) break;
++    store.delete(oldest);
++    counters.evictions += 1;
++  }
++}
++
++/** Raw get: returns the cached value when present and fresh (counts telemetry). */
++export function hotLruGet<T>(key: string, nowMs: number = Date.now()): T | undefined {
++  const entry = store.get(key) as HotLruEntry<T> | undefined;
++  if (!entry) {
++    counters.misses += 1;
++    return undefined;
++  }
++  if (nowMs >= entry.expiresAtMs) {
++    store.delete(key);
++    counters.expiredDrops += 1;
++    counters.misses += 1;
++    return undefined;
++  }
++  // LRU refresh: re-insert to move to the MRU end.
++  store.delete(key);
++  store.set(key, entry);
++  counters.hits += 1;
++  return entry.value;
++}
++
++/** Raw set: stores a value (bounded, LRU-evicting). ttlMs <= 0 stores nothing. */
++export function hotLruSet<T>(key: string, value: T, ttlMs: number, nowMs: number = Date.now()): void {
++  if (ttlMs <= 0) return;
++  const capacity = hotLruCapacity();
++  if (capacity <= 0) return;
++  evictIfNeeded(capacity, nowMs);
++  // Re-set moves the key to the MRU end (fresh writes are hot by definition).
++  store.delete(key);
++  store.set(key, { value, expiresAtMs: nowMs + ttlMs });
++  counters.sets += 1;
++}
++
++/** Read-through helper: cache hit returns without touching Redis; miss loads
++ *  once, stores, returns. Loader throw = nothing cached (fail-honest). */
++export async function withHotReadCache<T>(
++  key: string,
++  ttlMs: number,
++  loader: () => Promise<T>,
++  nowMs: number = Date.now(),
++): Promise<T> {
++  if (ttlMs <= 0 || hotLruCapacity() <= 0) return await loader();
++  const hit = hotLruGet<T>(key, nowMs);
++  if (hit !== undefined) return hit;
++  const value = await loader();
++  if (value !== undefined) hotLruSet(key, value, ttlMs, nowMs);
++  return value;
++}
++
++/** Telemetry snapshot — the ≥50% absorption acceptance is measured here. */
++export function hotReadCacheStats(nowMs: number = Date.now()): HotLruStats {
++  const total = counters.hits + counters.misses;
++  return {
++    hits: counters.hits,
++    misses: counters.misses,
++    sets: counters.sets,
++    evictions: counters.evictions,
++    expiredDrops: counters.expiredDrops,
++    size: store.size,
++    capacity: hotLruCapacity(),
++    hitRatePct: total === 0 ? null : Math.round((counters.hits * 10000) / total) / 100,
++  };
++}
++
++/** Test/reset hook — clears entries AND counters. */
++export function resetHotReadCache(): void {
++  store.clear();
++  counters.hits = 0;
++  counters.misses = 0;
++  counters.sets = 0;
++  counters.evictions = 0;
++  counters.expiredDrops = 0;
++}
+diff --git a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+index 2a8975a5..eeb444c0 100644
+--- a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
++++ b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+@@ -11,6 +11,12 @@
+ // instead of failing on the primary alone (false DOWN while the chain serves).
+ 
+ import { env } from "./env.js";
++import {
++  isCooldownLedgerEnabled,
++  persistCooldownClear,
++  persistCooldownStamp,
++  validLedgerStamps,
++} from "./cooldown_ledger.js";
+ 
+ export type RedisAccountConfig = {
+   label: string;
+@@ -96,8 +102,49 @@ export function nextUtcResetEpochMs(nowMs: number = Date.now()): number {
+   return nextQuotaResetEpochMs(nowMs);
+ }
+ 
++// ── Persistent cooldown ledger hydration (#1360 deliverable C) ─────────────
++// One-shot lazy merge from the file ledger (env REDIS_COOLDOWN_LEDGER_PATH).
++// When the env is unset this is a no-op — behavior byte-identical to the
++// pre-ledger in-memory registry. Restored stamps are pre-validated by
++// validLedgerStamps (future-dated + window-current + usage ≥ soft threshold),
++// so a hydrated registry never violates the #1345 cooldown invariant.
++let ledgerHydrated = false;
++
++function hydrateCooldownLedgerOnce(nowMs: number = Date.now()): void {
++  if (ledgerHydrated || !isCooldownLedgerEnabled()) return;
++  ledgerHydrated = true;
++  try {
++    const stamps = validLedgerStamps(
++      buildAccountChain().map((a) => a.label),
++      upstashSoftThreshold(),
++      currentQuotaWindowStartMs(nowMs),
++      nowMs,
++    );
++    for (const [label, entry] of stamps) {
++      if ((quotaCooldownUntil.get(label) ?? 0) < entry.cooldownUntilMs) {
++        quotaCooldownUntil.set(label, entry.cooldownUntilMs);
++      }
++      const existing = quotaUsageCount.get(label);
++      if (!existing || existing.windowStartMs !== entry.usage.windowStartMs || existing.count < entry.usage.count) {
++        quotaUsageCount.set(label, { count: entry.usage.count, windowStartMs: entry.usage.windowStartMs });
++      }
++    }
++    if (stamps.size > 0) {
++      console.log(
++        `[redis-chain] Cooldown ledger hydrated: ${stamps.size} stamp(s) restored across restart ` +
++          `(${[...stamps.keys()].join(", ")}) — quota-dead accounts stay skipped without burning probe commands (#1360).`,
++      );
++    }
++  } catch (err) {
++    console.warn(
++      `[redis-chain] Cooldown ledger hydration failed: ${(err as Error).message} — continuing in-memory (fail-open).`,
++    );
++  }
++}
++
+ /** ওই account-কে কোটা cooldown-এ ফেলে ও পরের অ্যাকাউন্টে অটো-রোটেট করে (R2)। */
+ export function markAccountQuotaExhausted(label: string, untilMs: number = nextQuotaResetEpochMs()): void {
++  hydrateCooldownLedgerOnce();
+   const prev = quotaCooldownUntil.get(label) ?? 0;
+   if (untilMs > prev) {
+     quotaCooldownUntil.set(label, untilMs);
+@@ -113,6 +160,10 @@ export function markAccountQuotaExhausted(label: string, untilMs: number = nextQ
+       `[redis-chain] Upstash account "${label}" কোটা শেষ — ` +
+         `cooldown until ${new Date(untilMs).toISOString()} (স্বয়ংক্রিয় auto-rotate সক্রিয়)।`,
+     );
++    const stampedUsage = quotaUsageCount.get(label);
++    if (stampedUsage) {
++      persistCooldownStamp(label, untilMs, stampedUsage);
++    }
+   }
+ }
+ 
+@@ -123,10 +174,12 @@ export function forceRotateAccount(label: string, untilMs: number = nextQuotaRes
+ 
+ /** Account কি এই মুহূর্তে কোটা cooldown-এ? (মেয়াদ শেষ হলে entry পরিষ্কার হয়) */
+ export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now()): boolean {
++  hydrateCooldownLedgerOnce(nowMs);
+   const until = quotaCooldownUntil.get(label);
+   if (until === undefined) return false;
+   if (nowMs >= until) {
+     quotaCooldownUntil.delete(label);
++    persistCooldownClear(label);
+     return false;
+   }
+   return true;
+@@ -136,8 +189,10 @@ export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now(
+  * কোটা cooldown থেকে কোনো অ্যাকাউন্টকে আগাম মুক্তি দেওয়া (যেমন পিং টেস্টে সফল হলে)।
+  */
+ export function clearAccountCooldown(label: string): boolean {
++  hydrateCooldownLedgerOnce();
+   if (quotaCooldownUntil.has(label)) {
+     quotaCooldownUntil.delete(label);
++    persistCooldownClear(label);
+     console.log(`[redis-chain] Account "${label}" cooldown cleared via recovery probe.`);
+     return true;
+   }
+@@ -249,6 +304,7 @@ export function assertCooldownInvariant(label: string, nowMs: number = Date.now(
+       `(< soft threshold ${upstashSoftThreshold()}) — mis-stamped slot self-healed.`,
+   );
+   quotaCooldownUntil.delete(label);
++  persistCooldownClear(label);
+   return false;
+ }
+ 
+@@ -325,6 +381,42 @@ export function upstashSoftThreshold(): number {
+   return Math.floor(upstashCommandLimit() * 0.96);
+ }
+ 
++// ── Three-tier alert ladder (#1360 deliverable B) ───────────────────────────
++// #1522 landed warn(80%)/crit(95%); the #1360 contract requires the middle
++// 90% rung so ops sees the burn crossing from "watch" to "act" while there is
++// still usable headroom. Pure function (env-overridable tiers) so the ladder
++// is unit-testable without constructing MCP tool invocations.
++export type QuotaTier = "warn" | "high" | "crit" | null;
++
++export function quotaWarnPct(): number {
++  const raw = Number(process.env.REDIS_QUOTA_ALERT_PCT);
++  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 80;
++}
++
++export function quotaHighPct(): number {
++  const raw = Number(process.env.REDIS_QUOTA_HIGH_PCT);
++  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 90;
++}
++
++export function quotaCritPct(): number {
++  const raw = Number(process.env.REDIS_QUOTA_CRIT_PCT);
++  return Number.isFinite(raw) && raw >= 1 && raw <= 100 ? raw : 95;
++}
++
++/** Maps a usage percentage to its alert tier (highest rung wins; null = quiet). */
++export function quotaTierFor(
++  pct: number | null,
++  warnPct: number = quotaWarnPct(),
++  highPct: number = quotaHighPct(),
++  critPct: number = quotaCritPct(),
++): QuotaTier {
++  if (pct === null || !Number.isFinite(pct)) return null;
++  if (pct >= critPct) return "crit";
++  if (pct >= highPct) return "high";
++  if (pct >= warnPct) return "warn";
++  return null;
++}
++
+ /**
+  * একটি account-এ সফল Redis কমান্ডের হিসাব রাখে (উইন্ডো-সচেতন) এবং সফট
+  * থ্রেশহোল্ড ছুঁলে preemptive rotate করে। REST clients প্রতিটি সফল কমান্ডে
+diff --git a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+index 61a345a5..3bbdfa82 100644
+--- a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+@@ -1,7 +1,7 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+ import { pingRedis, getRedisStats, readRedisKey } from "../adapters/redis/index.js";
+-import { quotaChainStatus, nextQuotaResetEpochMs, upstashCommandLimit } from "../lib/redis_chain.js";
++import { quotaChainStatus, nextQuotaResetEpochMs, upstashCommandLimit, quotaTierFor, quotaWarnPct, quotaCritPct } from "../lib/redis_chain.js";
+ import { sendTelegram } from "../adapters/notify/actions.js";
+ import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cache.js";
+ 
+@@ -119,8 +119,8 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     },
+     async ({ thresholdPct, chatId }) => {
+       try {
+-        const warnPct = thresholdPct ?? (Number(process.env.REDIS_QUOTA_ALERT_PCT) || 80);
+-        const critPct = Number(process.env.REDIS_QUOTA_CRIT_PCT) || 95;
++        const warnPct = thresholdPct ?? quotaWarnPct();
++        const critPct = quotaCritPct();
+         const nowMs = Date.now();
+         const chain = quotaChainStatus(nowMs);
+         const windowKey = new Date(nextQuotaResetEpochMs(nowMs)).toISOString();
+@@ -128,7 +128,10 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+           const used = entry.usage?.estimatedCommands ?? 0;
+           const limit = entry.usage?.limit ?? upstashCommandLimit();
+           const pct = limit > 0 ? Math.round((used * 10000) / limit) / 100 : null;
+-          const tier = pct === null ? null : pct >= critPct ? "crit" : pct >= warnPct ? "warn" : null;
++          // #1360: three-tier ladder (warn 80 / high 90 / crit 95) — the middle
++          // rung is the "act now while headroom remains" signal the two-tier
++          // version skipped over.
++          const tier = quotaTierFor(pct, warnPct, Number(process.env.REDIS_QUOTA_HIGH_PCT) || 90, critPct);
+           return {
+             label: entry.label,
+             used,
+@@ -146,7 +149,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+         if (fresh.length > 0) {
+           const lines = fresh.map(
+             (a) =>
+-              `${a.tier === "crit" ? "[CRITICAL]" : "[WARN]"} Upstash Redis account '${a.label}' at ${a.pct}% of quota (${a.used} / ${a.limit} commands).`,
++              `${a.tier === "crit" ? "[CRITICAL]" : a.tier === "high" ? "[HIGH]" : "[WARN]"} Upstash Redis account '${a.label}' at ${a.pct}% of quota (${a.used} / ${a.limit} commands).`,
+           );
+           const primary = chain.find((c) => c.isActivePrimary)?.label ?? "unknown";
+           lines.push(`Active rotation primary: ${primary}.`);
+diff --git a/infrastructure/mcp-control-plane/test_redis_p0_hot_lru.ts b/infrastructure/mcp-control-plane/test_redis_p0_hot_lru.ts
+new file mode 100644
+index 00000000..d356d0a6
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_redis_p0_hot_lru.ts
+@@ -0,0 +1,197 @@
++/**
++ * P0 #1360 test suite — hot-read LRU cache, three-tier alert ladder,
++ * persistent cooldown ledger.
++ *
++ * Credentials-free (runs in test:tower-ci). Zero Redis commands: every
++ * scenario uses the in-memory primitives and a temp-dir ledger file.
++ */
++import assert from "node:assert/strict";
++import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import {
++  hotLruGet,
++  hotLruSet,
++  withHotReadCache,
++  hotReadCacheStats,
++  resetHotReadCache,
++  hotLruCapacity,
++} from "./src/lib/hot_read_cache.js";
++import { quotaTierFor } from "./src/lib/redis_chain.js";
++import {
++  cooldownLedgerPath,
++  isCooldownLedgerEnabled,
++  readLedgerFile,
++  validLedgerStamps,
++  persistCooldownStamp,
++  persistCooldownClear,
++  deleteCooldownLedgerFile,
++  type LedgerEntry,
++} from "./src/lib/cooldown_ledger.js";
++
++// ── isolated env: ledger into a fresh temp dir, kill all tier env overrides ──
++const tmpDir = mkdtempSync(join(tmpdir(), "redis-p0-test-"));
++const ledgerPath = join(tmpDir, "cooldown-ledger.json");
++process.env.REDIS_COOLDOWN_LEDGER_PATH = ledgerPath;
++delete process.env.REDIS_QUOTA_ALERT_PCT;
++delete process.env.REDIS_QUOTA_HIGH_PCT;
++delete process.env.REDIS_QUOTA_CRIT_PCT;
++delete process.env.REDIS_HOT_LRU_CAPACITY;
++delete process.env.REDIS_HOT_LRU_TTL_MS;
++
++const now = Date.now();
++const WINDOW_START = now - 1000; // any value; validation compares equality with the entry
++const SOFT = 480_000;
++
++function entry(untilMs: number, count: number): LedgerEntry {
++  return { cooldownUntilMs: untilMs, usage: { count, windowStartMs: WINDOW_START }, stampedAtMs: now };
++}
++
++try {
++  // ══ 1. Hot-read LRU: hit/miss telemetry + ≥50% absorption acceptance ══════
++  console.log("[1] hot-read LRU telemetry + absorption");
++  resetHotReadCache();
++  // Simulated workload: 100 lookups over 10 keys where 60 are redundant
++  // repeats of already-seen keys (the redundant-lookup shape of dashboard
++  // sweeps + heartbeat listings).
++  const seen = new Map<string, number>();
++  const workload: string[] = [];
++  for (let i = 0; i < 100; i++) {
++    const key = `hot:key:${i % 10}`;
++    workload.push(key);
++    seen.set(key, (seen.get(key) ?? 0) + 1);
++  }
++  let remoteCalls = 0;
++  for (const key of workload) {
++    await withHotReadCache(key, 30_000, async () => {
++      remoteCalls += 1; // stands in for a Redis GET
++      return `value-of-${key}`;
++    });
++  }
++  const stats = hotReadCacheStats();
++  assert.equal(stats.size, 10, "bounded workload of 10 keys must hold 10 entries");
++  assert.equal(remoteCalls, 10, "each distinct key loads exactly once");
++  assert.equal(stats.hits, 90, "90 redundant lookups must be cache hits");
++  assert.ok((stats.hitRatePct ?? 0) >= 50, `acceptance: hit rate ≥ 50% (got ${stats.hitRatePct}%)`);
++  console.log(`    hits=${stats.hits} misses=${stats.misses} hitRatePct=${stats.hitRatePct} remoteCalls=${remoteCalls}`);
++
++  // ══ 2. LRU eviction order + capacity bound ════════════════════════════════
++  console.log("[2] LRU eviction order");
++  resetHotReadCache();
++  process.env.REDIS_HOT_LRU_CAPACITY = "2";
++  assert.equal(hotLruCapacity(), 2);
++  hotLruSet("a", 1, 30_000, now);
++  hotLruSet("b", 2, 30_000, now);
++  assert.equal(hotLruGet<number>("a", now + 1), 1, "touch a → a is MRU, b is LRU");
++  hotLruSet("c", 3, 30_000, now + 2); // capacity 2 → b (LRU) evicted
++  assert.equal(hotLruGet<number>("b", now + 3), undefined, "b must have been evicted");
++  assert.equal(hotLruGet<number>("a", now + 3), 1, "a survives (was touched)");
++  assert.equal(hotLruGet<number>("c", now + 3), 3, "c survives (just inserted)");
++  assert.ok(hotReadCacheStats(now + 3).evictions >= 1, "eviction counted");
++  delete process.env.REDIS_HOT_LRU_CAPACITY;
++
++  // ══ 3. TTL expiry + kill switch + fail-honest loader ══════════════════════
++  console.log("[3] TTL expiry, kill switch, loader-throw");
++  resetHotReadCache();
++  hotLruSet("k", "v", 50, now);
++  assert.equal(hotLruGet<string>("k", now + 60), undefined, "expired entry drops");
++  assert.equal(hotReadCacheStats(now + 60).expiredDrops, 1, "expiry counted");
++  hotLruSet("gone", "v", 0, now); // ttl 0 = never stored
++  assert.equal(hotLruGet<string>("gone", now), undefined);
++  process.env.REDIS_HOT_LRU_CAPACITY = "0";
++  let loaderRan = 0;
++  await withHotReadCache("x", 30_000, async () => {
++    loaderRan += 1;
++    return "always";
++  });
++  await withHotReadCache("x", 30_000, async () => {
++    loaderRan += 1;
++    return "always";
++  });
++  assert.equal(loaderRan, 2, "capacity 0 disables the cache entirely (loader every call)");
++  delete process.env.REDIS_HOT_LRU_CAPACITY;
++  resetHotReadCache();
++  await assert.rejects(
++    () =>
++      withHotReadCache("boom", 30_000, async () => {
++        throw new Error("redis down");
++      }),
++    /redis down/,
++  );
++  assert.equal(hotReadCacheStats().sets, 0, "failed loader must not store (fail-honest)");
++
++  // ══ 4. Three-tier alert ladder (80/90/95) ═════════════════════════════════
++  console.log("[4] quota tier ladder");
++  assert.equal(quotaTierFor(79.9), null);
++  assert.equal(quotaTierFor(80), "warn");
++  assert.equal(quotaTierFor(89.9), "warn");
++  assert.equal(quotaTierFor(90), "high", "#1360: the 90% middle rung must exist");
++  assert.equal(quotaTierFor(94.9), "high");
++  assert.equal(quotaTierFor(95), "crit");
++  assert.equal(quotaTierFor(100), "crit");
++  assert.equal(quotaTierFor(null), null);
++  // env-overridable (explicit args win)
++  assert.equal(quotaTierFor(85, 85, 90, 95), "warn");
++  assert.equal(quotaTierFor(96, 80, 90, 96), "crit");
++
++  // ══ 5. Ledger: disabled by default (byte-identical legacy behavior) ═══════
++  console.log("[5] ledger opt-in gate");
++  delete process.env.REDIS_COOLDOWN_LEDGER_PATH;
++  assert.equal(cooldownLedgerPath(), null);
++  assert.equal(isCooldownLedgerEnabled(), false);
++  persistCooldownStamp("primary", now + 86_400_000, { count: SOFT, windowStartMs: WINDOW_START });
++  assert.equal(existsSync(ledgerPath), false, "no writes while disabled");
++  process.env.REDIS_COOLDOWN_LEDGER_PATH = ledgerPath;
++
++  // ══ 6. Ledger: stamp → reload → validated hydration ═══════════════════════
++  console.log("[6] ledger persistence round-trip");
++  assert.ok(readLedgerFile() !== null, "enabled read returns a file object (empty when absent)");
++  persistCooldownStamp("primary", now + 86_400_000, { count: 499_999, windowStartMs: WINDOW_START }, now);
++  persistCooldownStamp("secondary", now + 86_400_000, { count: 481_000, windowStartMs: WINDOW_START }, now);
++  assert.ok(existsSync(ledgerPath), "file written when enabled");
++  const raw = JSON.parse(readFileSync(ledgerPath, "utf8"));
++  assert.equal(raw.version, 1);
++  assert.ok(raw.entries.primary, "primary stamp persisted");
++  const restored = validLedgerStamps(["primary", "secondary"], SOFT, WINDOW_START, now);
++  assert.equal(restored.size, 2, "both valid stamps hydrate");
++  assert.equal(restored.get("primary")?.usage.count, 499_999);
++
++  // ══ 7. Ledger validation: expiry, stale window, invariant mis-stamp ═══════
++  console.log("[7] ledger validation guards");
++  persistCooldownStamp("expired", now - 1, { count: 499_999, windowStartMs: WINDOW_START }, now);
++  persistCooldownStamp("stale-window", now + 86_400_000, { count: 499_999, windowStartMs: WINDOW_START - 86_400_000 }, now);
++  persistCooldownStamp("mis-stamp", now + 86_400_000, { count: 100, windowStartMs: WINDOW_START }, now);
++  const strict = validLedgerStamps(
++    ["primary", "secondary", "expired", "stale-window", "mis-stamp"],
++    SOFT,
++    WINDOW_START,
++    now,
++  );
++  assert.equal(strict.size, 2, "expired / stale-window / mis-stamp stamps must NOT hydrate");
++  assert.ok(!strict.has("expired") && !strict.has("stale-window") && !strict.has("mis-stamp"));
++  // unknown label (not in chain) never hydrates
++  const chainScoped = validLedgerStamps(["primary"], SOFT, WINDOW_START, now);
++  assert.equal(chainScoped.size, 1, "chain-label scoping enforced");
++
++  // ══ 8. Ledger clear + corrupt-file fail-open ══════════════════════════════
++  console.log("[8] ledger clear + fail-open");
++  persistCooldownClear("secondary");
++  assert.ok(!("secondary" in (readLedgerFile() as { entries: Record<string, unknown> }).entries), "cleared stamp removed");
++  // corrupt the file → read must fail-open with empty entries, never throw
++  const { writeFileSync } = await import("node:fs");
++  writeFileSync(ledgerPath, "{{{not json", "utf8");
++  const corrupt = readLedgerFile();
++  assert.ok(corrupt && Object.keys(corrupt.entries).length === 0, "corrupt ledger fails open as empty");
++  // mis-stamp guard inside validLedgerStamps still holds after corruption recovery
++
++  console.log("\nAll P0 #1360 tests passed.");
++} finally {
++  delete process.env.REDIS_COOLDOWN_LEDGER_PATH;
++  delete process.env.REDIS_HOT_LRU_CAPACITY;
++  try {
++    rmSync(tmpDir, { recursive: true, force: true });
++  } catch {
++    // best-effort cleanup
++  }
++  void deleteCooldownLedgerFile;
++}

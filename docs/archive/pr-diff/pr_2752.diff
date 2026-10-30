@@ -1,0 +1,108 @@
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index 2acaa57e..daba2c67 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -226,48 +226,73 @@ async def execute_chain(
+     payload: bytes,
+     *,
+     attempt_fn: AttemptFn | None = None,
++    max_retries: int = 2,
++    backoff_base_s: float = 0.1,
+ ) -> AttemptResult:
+     """Try endpoints in order; fail over ONLY on retryable outcomes.
+ 
+-    - 2xx → success, ledger records the win.
+-    - 429/5xx from a provider → ledger + next endpoint (failover semantics).
+-    - 401/403 from a provider → that endpoint is misconfigured; ledger +
+-      failover (a different provider may be configured correctly).
+-    - Exhaustion → ProviderChainExhausted with the FULL ledger (→ 502).
++    On a retryable 5xx (esp. 503) from a provider, retry the SAME endpoint up
++    to ``max_retries`` times with exponential backoff (issue #2082) before
++    failing over to the next endpoint. Each retry is ledgered honestly.
+     """
+     attempt = attempt_fn or _default_attempt
+     ledger = ChainLedger()
+     for idx, endpoint in enumerate(chain):
+-        try:
+-            result = await attempt(endpoint, payload)
+-        except (
+-            RuntimeError,
+-            httpx.HTTPError,
+-            OSError,
+-            asyncio.TimeoutError,
+-        ) as exc:  # transport-level failure — honest ledger entry
++        last_result: AttemptResult | None = None
++        for retry in range(max_retries + 1):
++            try:
++                result = await attempt(endpoint, payload)
++            except (
++                RuntimeError,
++                httpx.HTTPError,
++                OSError,
++                asyncio.TimeoutError,
++            ) as exc:
++                ledger.record(
++                    index=idx,
++                    provider=endpoint.provider,
++                    model=endpoint.model,
++                    attempt=retry,
++                    outcome="transport_error",
++                    detail=str(exc)[:200],
++                )
++                # transport error: back off before retrying the same endpoint
++                if retry < max_retries:
++                    await asyncio.sleep(backoff_base_s * (2 ** retry))
++                    continue
++                last_result = None
++                break
++            last_result = result
+             ledger.record(
+                 index=idx,
+                 provider=endpoint.provider,
+                 model=endpoint.model,
+-                outcome="transport_error",
+-                detail=str(exc)[:200],
++                attempt=retry,
++                outcome="success" if result.status < 400 else "provider_error",
++                status=result.status,
++                latency_ms=result.latency_ms,
+             )
+-            continue
+-        ledger.record(
+-            index=idx,
+-            provider=endpoint.provider,
+-            model=endpoint.model,
+-            outcome="success" if result.status < 400 else "provider_error",
+-            status=result.status,
+-            latency_ms=result.latency_ms,
+-        )
+-        if result.status < 400:
+-            return result
+-        if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
+-            # Non-retryable, non-auth provider error (e.g. 400 bad request
+-            # shaped by the gateway itself): honest 4xx passthrough.
+-            return result
++            if result.status < 400:
++                return result
++            # Retryable 503 (and 429 with Retry-After): back off and retry same endpoint.
++            retryable = result.status == 503 or (
++                result.status == 429
++            )
++            if retryable and retry < max_retries:
++                delay = backoff_base_s * (2 ** retry)
++                ra = result.retry_after_s
++                if ra is not None and ra > 0:
++                    delay = min(delay, ra)
++                await asyncio.sleep(delay)
++                continue
++            # Non-retryable or exhausted retries: decide failover.
++            if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
++                return result
++            break
++        if last_result is not None and last_result.status in FAILOVER_STATUS:
++            # failed over after retries
++            pass
++    # If we get here, all endpoints exhausted.
+     raise ProviderChainExhausted(
+         "all providers in the chain failed — 502 upstream (zero silent fallback)",
+         ledger=ledger.entries,

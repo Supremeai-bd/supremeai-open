@@ -1,0 +1,1783 @@
+diff --git a/core/browser/action_cascade.py b/core/browser/action_cascade.py
+deleted file mode 100644
+index a89124fb..00000000
+--- a/core/browser/action_cascade.py
++++ /dev/null
+@@ -1,242 +0,0 @@
+-"""
+-backend/browser/action_cascade.py
+-=================================
+-ISSUE-1570 (Part 1): the canonical 5-step ``click_target`` execution cascade,
+-shared by ``PlaywrightBrowserAgent`` (tools/browser) and
+-``AutonomousBrowserAgent`` (browser/) so both obey the same guardrails.
+-
+-Cascade order (strict):
+-  1. SemanticDOM           — embed & resolve the target by meaning
+-  2. Accessible role/name  — Playwright ``get_by_role`` probing
+-  3. Known locator         — treat target as an explicit CSS/XPath selector
+-  4. Vision grounding      — VLM coordinates under confidence guardrails
+-  5. HITL escalation       — ``PAUSED_HITL`` (a blind fallback click is FORBIDDEN)
+-
+-Confidence guardrails (SemanticDOM & VisionGrounding):
+-  score >= 0.85            → execute immediately
+-  score 0.65 – 0.85        → secondary verification, act only if verified
+-  score <  0.65            → escalate to HITL — never blind-act
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-import inspect
+-from collections.abc import Callable
+-from typing import Any
+-
+-from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
+-from browser.vision_grounding import LowConfidenceGrounding, VisionGrounding
+-from core.logging_config import logger
+-
+-__all__ = [
+-    "CONFIDENCE_EXECUTE",
+-    "CONFIDENCE_VERIFY",
+-    "confidence_band",
+-    "execute_click_cascade",
+-]
+-
+-HumanClick = Callable[[Any, str], Any]
+-
+-# Roles probed in step 2 (accessible name matching).
+-_ACCESSIBLE_ROLES: tuple[str, ...] = (
+-    "button",
+-    "link",
+-    "tab",
+-    "menuitem",
+-    "checkbox",
+-    "radio",
+-    "option",
+-    "treeitem",
+-)
+-_ACCESSIBLE_CLICK_TIMEOUT_MS = 3000
+-
+-
+-def _to_xpath_selector(xpath: str) -> str:
+-    """Normalise an element xpath into a Playwright selector string."""
+-    xpath = (xpath or "").strip()
+-    if not xpath:
+-        return ""
+-    if xpath.startswith("xpath=") or xpath.startswith("["):
+-        return xpath
+-    return f"xpath={xpath}"
+-
+-
+-def _findable(page: Any, selector: str, timeout_ms: int = 2000) -> bool:
+-    """Secondary verification: does the selector actually resolve on the page?"""
+-    if page is None or not hasattr(page, "wait_for_selector"):
+-        return False
+-    try:
+-        element = page.wait_for_selector(selector, timeout=timeout_ms)
+-        return element is not None
+-    except Exception:
+-        return False
+-
+-
+-def _dispatch_click(page: Any, selector: str, human_click: HumanClick | None) -> None:
+-    """Execute a REAL click dispatch — never a no-op success."""
+-    if human_click is not None:
+-        result = human_click(page, selector)
+-        if inspect.isawaitable(result):
+-            raise RuntimeError("human_click must be a sync callable for cascade dispatch")
+-        return
+-    if page is not None and hasattr(page, "locator"):
+-        page.locator(selector).first.click()
+-        return
+-    raise RuntimeError(f"No click mechanism available for selector '{selector}'")
+-
+-
+-async def _try_accessible_role_click(page: Any, target: str) -> dict[str, Any] | None:
+-    """Step 2 — probe accessible roles by name; returns success dict or None."""
+-    get_by_role = getattr(page, "get_by_role", None)
+-    if not callable(get_by_role):
+-        return None
+-    for role in _ACCESSIBLE_ROLES:
+-        try:
+-            locator = get_by_role(role, name=target)
+-            if locator is None:
+-                continue
+-            click = locator.click(timeout=_ACCESSIBLE_CLICK_TIMEOUT_MS)
+-            if inspect.isawaitable(click):
+-                await click
+-            return {
+-                "success": True,
+-                "method": "accessible_role",
+-                "role": role,
+-                "target": target,
+-                "band": "execute",
+-                "status": "success",
+-            }
+-        except asyncio.CancelledError:
+-            raise
+-        except Exception:
+-            # Role probe miss — try the next accessible role.
+-            continue
+-    return None
+-
+-
+-async def execute_click_cascade(
+-    page: Any,
+-    target: str,
+-    *,
+-    human_click: HumanClick | None = None,
+-    vision: VisionGrounding | None = None,
+-) -> dict[str, Any]:
+-    """Run the full 5-step cascade for ``target`` on ``page``.
+-
+-    Returns a dict that ALWAYS tells the truth:
+-      * ``{"success": True, "method": <semantic_dom|accessible_role|known_locator|vision_grounding>, ...}``
+-      * ``{"success": False, "status": "PAUSED_HITL", ...}`` — escalated to a human,
+-        never silently "succeeded" without a real click.
+-    """
+-    # ── Step 1: SemanticDOM ────────────────────────────────────────────
+-    try:
+-        from browser.semantic_dom import ElementNotFoundSemantically, SemanticDOM
+-
+-        sdom = SemanticDOM(page)
+-        element = await sdom.query(target, threshold=CONFIDENCE_VERIFY)
+-        score = float(element.get("semantic_confidence", 0.0))
+-        band = confidence_band(score)
+-        selector = _to_xpath_selector(str(element.get("xpath", "")))
+-
+-        if selector:
+-            if band == "execute":
+-                _dispatch_click(page, selector, human_click)
+-                return {
+-                    "success": True,
+-                    "status": "success",
+-                    "method": "semantic_dom",
+-                    "confidence": score,
+-                    "band": band,
+-                    "selector": selector,
+-                    "element": element,
+-                }
+-            if band == "verify" and _findable(page, selector):
+-                # Secondary verification passed — the element truly exists.
+-                _dispatch_click(page, selector, human_click)
+-                return {
+-                    "success": True,
+-                    "status": "success",
+-                    "method": "semantic_dom",
+-                    "confidence": score,
+-                    "band": band,
+-                    "verified": True,
+-                    "selector": selector,
+-                    "element": element,
+-                }
+-            # verify-band element not found on page, or hitl band → cascade on.
+-            logger.warning(
+-                "[ClickCascade] Semantic match '%s' band=%s failed secondary verification — escalating",
+-                target,
+-                band,
+-            )
+-    except asyncio.CancelledError:
+-        raise
+-    except Exception as exc:
+-        # ISSUE-1570: failures are logged honestly, never silenced into fake success.
+-        logger.warning(f"[ClickCascade] Step 1 (SemanticDOM) miss for '{target}': {exc}")
+-
+-    # ── Step 2: Accessible role/name ───────────────────────────────────
+-    try:
+-        accessible = await _try_accessible_role_click(page, target)
+-        if accessible is not None:
+-            return accessible
+-    except asyncio.CancelledError:
+-        raise
+-    except Exception as exc:
+-        logger.warning(f"[ClickCascade] Step 2 (accessible role) miss for '{target}': {exc}")
+-
+-    # ── Step 3: Known locator (explicit CSS/XPath) ─────────────────────
+-    try:
+-        if _findable(page, target, timeout_ms=2000):
+-            _dispatch_click(page, target, human_click)
+-            return {
+-                "success": True,
+-                "status": "success",
+-                "method": "known_locator",
+-                "selector": target,
+-                "band": "execute",
+-            }
+-    except asyncio.CancelledError:
+-        raise
+-    except Exception as exc:
+-        logger.warning(f"[ClickCascade] Step 3 (known locator) miss for '{target}': {exc}")
+-
+-    # ── Step 4: Vision grounding (confidence-guarded) ──────────────────
+-    try:
+-        vg = vision if vision is not None else VisionGrounding(page)
+-        loc = await vg.locate(target)
+-        coords = {"x": loc["x"], "y": loc["y"], "confidence": loc["confidence"]}
+-        if page is not None and hasattr(page, "mouse") and hasattr(page.mouse, "click"):
+-            click = page.mouse.click(loc["x"], loc["y"])
+-            if inspect.isawaitable(click):
+-                await click
+-        else:
+-            raise LowConfidenceGrounding("no clickable mouse surface bound to page")
+-        return {
+-            "success": True,
+-            "status": "success",
+-            "method": "vision_grounding",
+-            "coordinates": coords,
+-            "band": loc.get("band", "execute"),
+-            "verified": loc.get("verified", False),
+-            "target": target,
+-        }
+-    except asyncio.CancelledError:
+-        raise
+-    except LowConfidenceGrounding as exc:
+-        logger.warning(f"[ClickCascade] Step 4 (vision) below threshold for '{target}': {exc}")
+-    except Exception as exc:
+-        logger.warning(f"[ClickCascade] Step 4 (vision) miss for '{target}': {exc}")
+-
+-    # ── Step 5: HITL escalation — the ONLY honest terminal state ───────
+-    return {
+-        "success": False,
+-        "status": "PAUSED_HITL",
+-        "method": "hitl",
+-        "target": target,
+-        "reason": (
+-            "All 4 automated resolution steps failed or fell below confidence guardrails; "
+-            "human-in-the-loop confirmation required before any click is dispatched."
+-        ),
+-    }
+diff --git a/core/browser/autonomous_browser.py b/core/browser/autonomous_browser.py
+deleted file mode 100644
+index 0549e2da..00000000
+--- a/core/browser/autonomous_browser.py
++++ /dev/null
+@@ -1,324 +0,0 @@
+-"""
+-backend/browser/autonomous_browser.py
+-=====================================
+-L5: Goal-Driven Autonomous Browser Agent — Takes natural language GOALS (not manual steps),
+-reasons with ReasoningOrchestrator, executes actions via L4 cascade, and replans on failures.
+-
+-ISSUE-1570 (Part 1) hardening:
+-* The hardcoded development-site navigation logic is REMOVED. Goals are
+-  dynamic: the agent accepts an explicit ``start_url`` and/or extracts the target
+-  URL from the goal text itself. No URL → no navigation, no fake defaults.
+-* ``navigate`` performs a REAL ``page.goto`` when a page is bound (sync/async both)
+-  and reports honest status when no browser session exists.
+-* ``smart_click`` runs the shared 5-step cascade (SemanticDOM → accessible role →
+-  known locator → vision → HITL) with confidence guardrails — blind fallback
+-  clicks are forbidden.
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-import inspect
+-import re
+-from typing import Any
+-from urllib.parse import urlparse
+-
+-from brain.reasoning_orchestrator import ReasoningOrchestrator
+-from browser.action_cascade import execute_click_cascade
+-from browser.browsing_memory import BrowsingMemory
+-from core.logging_config import logger
+-
+-__all__ = ["AutonomousBrowserAgent"]
+-
+-_URL_PATTERN = re.compile(r"https?://[^\s'\"<>)]+", re.IGNORECASE)
+-
+-# Tools the autonomous browser is allowed to execute from a reasoner plan.
+-_BROWSER_TOOLS = {"navigate", "smart_click", "type_text", "wait", "done"}
+-
+-
+-class AutonomousBrowserAgent:
+-    MAX_STEPS = 15
+-
+-    def __init__(
+-        self,
+-        session: Any = None,
+-        start_url: str | None = None,
+-        goal: str | None = None,
+-    ):
+-        self.session = session
+-        self.start_url = self._normalise_url(start_url) if start_url else None
+-        self.goal = goal
+-        self.memory = BrowsingMemory()
+-        self.reasoner = ReasoningOrchestrator.get_instance()
+-        self._trace: list[dict[str, Any]] = []
+-        self._navigated = False
+-
+-    # ------------------------------------------------------------------
+-    # URL helpers — dynamic targets, zero hardcoded endpoints
+-    # ------------------------------------------------------------------
+-    @staticmethod
+-    def _normalise_url(url: str) -> str | None:
+-        url = (url or "").strip()
+-        if not url:
+-            return None
+-        if not urlparse(url).scheme:
+-            url = f"https://{url}"
+-        return url if _URL_PATTERN.match(url) else None
+-
+-    @staticmethod
+-    def extract_url(goal: str) -> str | None:
+-        """Extract the first URL mentioned in a goal string (if any)."""
+-        match = _URL_PATTERN.search(goal or "")
+-        return match.group(0).rstrip(".,;:!?") if match else None
+-
+-    def _target_url(self, goal: str) -> str | None:
+-        return self.start_url or self.extract_url(goal)
+-
+-    @property
+-    def _page(self) -> Any:
+-        return getattr(self.session, "page", None)
+-
+-    # ------------------------------------------------------------------
+-    # Public entrypoint
+-    # ------------------------------------------------------------------
+-    async def achieve(self, goal: str, start_url: str | None = None) -> dict[str, Any]:
+-        """Autonomously reason, execute, and replan until the goal is accomplished.
+-
+-        বাংলা (M06 P-A ৮/৮ RunType adoption): প্রতিটি browser-mission ক্যানোনিকাল
+-        ``run_type="browser"`` রান হিসেবেও পর্যবেক্ষিত (flag-gated, best-effort);
+-        ``achieved=False``-ই রান-ব্যর্থতার সত্য — অন্য কোনো ভান নেই।
+-
+-        ISSUE-1570: ``start_url`` দিলে সেটাই mission-এর navigation টার্গেট —
+-        কোনো হার্ডকোডেড endpoint নেই।
+-        """
+-        from runs.run_scope import observe_run
+-
+-        if start_url:
+-            normalised = self._normalise_url(start_url)
+-            if normalised:
+-                self.start_url = normalised
+-
+-        async with observe_run(
+-            run_type="browser",
+-            title=f"browser:{goal[:80]}",
+-            source_type="browser",
+-        ) as run_ctx:
+-            result = await self._achieve_impl(goal)
+-            if run_ctx is not None and result.get("achieved") is False:
+-                run_ctx.finish("failed")
+-            return result
+-
+-    async def _achieve_impl(self, goal: str) -> dict[str, Any]:
+-        """Original achieve body — run-observation wrapper-এর ভিতরে চলে।"""
+-        logger.info(f"[AutonomousBrowserAgent] Starting mission: '{goal}'")
+-        self._trace = []
+-        self._navigated = False
+-
+-        for step in range(1, self.MAX_STEPS + 1):
+-            page_state = await self._observe()
+-
+-            # 1. REASON: Decide next action given current goal and history
+-            action_plan = await self._decide_action(goal, page_state, step)
+-            tool = action_plan.get("tool", "done")
+-            args = action_plan.get("args", {})
+-
+-            if tool == "done":
+-                logger.info(f"[AutonomousBrowserAgent] Goal accomplished at step {step}: '{goal}'")
+-                return {
+-                    "goal": goal,
+-                    "achieved": True,
+-                    "total_steps": step,
+-                    "trace": self._trace,
+-                    "result": action_plan.get("summary", "Mission completed successfully."),
+-                }
+-
+-            # 2. ACT: Execute action through the guarded cascade
+-            outcome: dict[str, Any] = {}
+-            try:
+-                outcome = await self._execute_action(tool, args)
+-            except Exception as exc:
+-                logger.warning(f"[AutonomousBrowserAgent] Step {step} execution error: {exc}")
+-                outcome = {"status": "error", "error": str(exc)}
+-
+-            # 3. RECORD & REPLAN
+-            self._trace.append(
+-                {
+-                    "step": step,
+-                    "plan": action_plan,
+-                    "outcome": outcome,
+-                }
+-            )
+-
+-            # Record site interaction memory — URL is whatever is REALLY bound.
+-            current_url = self._current_url() or "unbound-session"
+-            await self.memory.observe(
+-                current_url,
+-                {"type": tool, "outcome": outcome.get("status", "ok")},
+-            )
+-
+-        return {
+-            "goal": goal,
+-            "achieved": False,
+-            "total_steps": self.MAX_STEPS,
+-            "reason": "Max steps reached without explicit completion",
+-            "trace": self._trace,
+-        }
+-
+-    # ------------------------------------------------------------------
+-    # Observe / decide / execute
+-    # ------------------------------------------------------------------
+-    def _current_url(self) -> str | None:
+-        """The REAL bound URL — falls back to the declared target, never an invention."""
+-        url = getattr(self.session, "url", None)
+-        if url:
+-            return url
+-        if self._page is not None and hasattr(self._page, "url"):
+-            page_url = getattr(self._page, "url", None)
+-            if isinstance(page_url, str) and page_url:
+-                return page_url
+-        return self.start_url
+-
+-    async def _observe(self) -> dict[str, Any]:
+-        """Capture current browser state and interactive DOM context."""
+-        url = self._current_url()
+-        title = getattr(self.session, "title", None)
+-        if not title and self._page is not None and hasattr(self._page, "title"):
+-            try:
+-                raw_title = self._page.title()
+-                if inspect.isawaitable(raw_title):
+-                    raw_title = await raw_title
+-                title = raw_title if isinstance(raw_title, str) else None
+-            except Exception:
+-                title = None
+-        return {
+-            "url": url or "unbound",
+-            "title": title or "",
+-            "status": "ready" if self._page is not None else "no_page_bound",
+-        }
+-
+-    async def _decide_action(
+-        self, goal: str, page_state: dict[str, Any], step: int
+-    ) -> dict[str, Any]:
+-        """Use ReasoningOrchestrator (ReAct) to choose next autonomous action.
+-
+-        ISSUE-1570: navigation only ever targets the task-provided URL. Without a
+-        URL the agent plans purely from the goal — no implicit destination exists.
+-        """
+-        if step == 1:
+-            url = self._target_url(goal)
+-            if url and not self._navigated:
+-                return {
+-                    "tool": "navigate",
+-                    "args": {"url": url},
+-                    "rationale": "Initial navigation to the task-provided target URL",
+-                }
+-            if self._page is None:
+-                # No browser bound and no destination known — say so honestly.
+-                return {
+-                    "tool": "done",
+-                    "summary": (
+-                        "No browser session bound and no target URL provided; "
+-                        "cannot execute a navigation mission."
+-                    ),
+-                }
+-
+-        try:
+-            plan = await self.reasoner.decide(
+-                task=goal,
+-                context={"page_state": page_state, "step": step, "trace": self._trace[-3:]},
+-                tools=sorted(_BROWSER_TOOLS),
+-            )
+-        except Exception as exc:
+-            logger.warning(f"[AutonomousBrowserAgent] Reasoner unavailable: {exc}")
+-            plan = None
+-
+-        if isinstance(plan, dict) and plan.get("tool"):
+-            tool = str(plan["tool"])
+-            if tool in _BROWSER_TOOLS:
+-                return {
+-                    "tool": tool,
+-                    "args": plan.get("args", {}) or {},
+-                    "rationale": plan.get("reasoning", plan.get("thought", "")),
+-                    "source": plan.get("source", "reasoner"),
+-                }
+-            if tool == "done":
+-                return {
+-                    "tool": "done",
+-                    "summary": plan.get("reasoning", "Reasoner signalled completion."),
+-                }
+-            # Unsupported tool → do NOT pretend; record and let replanning handle it.
+-            logger.warning(f"[AutonomousBrowserAgent] Reasoner proposed unsupported tool '{tool}'")
+-
+-        # Deterministic, honest terminal: nothing actionable was derived.
+-        return {
+-            "tool": "done",
+-            "summary": f"No further actionable browser steps derived for goal: {goal}",
+-        }
+-
+-    async def _execute_action(self, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+-        """Execute action via the guarded L4 cascade / real primitives."""
+-        page = self._page
+-
+-        if tool == "navigate":
+-            url = self._normalise_url(str(args.get("url", "")))
+-            if not url:
+-                return {"status": "error", "error": "navigate requires a valid absolute URL"}
+-            if page is None:
+-                return {
+-                    "status": "skipped",
+-                    "reason": "no browser session bound — navigation not executed",
+-                    "requested_url": url,
+-                }
+-            try:
+-                result = page.goto(url)
+-                if inspect.isawaitable(result):
+-                    await result
+-                self._navigated = True
+-                return {"status": "success", "navigated_to": url, "method": "page.goto"}
+-            except Exception as exc:
+-                return {"status": "error", "error": f"Navigation to {url} failed: {exc}"}
+-
+-        if tool == "smart_click":
+-            target = str(args.get("target", "")).strip()
+-            if not target:
+-                return {"status": "error", "error": "smart_click requires a non-empty target"}
+-            if page is None:
+-                return {
+-                    "status": "PAUSED_HITL",
+-                    "method": "hitl",
+-                    "target": target,
+-                    "reason": "no browser session bound — human takeover required",
+-                }
+-            cascade = await execute_click_cascade(page, target)
+-            if cascade.get("success"):
+-                return cascade
+-            return {
+-                "status": cascade.get("status", "PAUSED_HITL"),
+-                "method": cascade.get("method", "hitl"),
+-                "target": target,
+-                "reason": cascade.get("reason", "click cascade exhausted"),
+-                "cascade": cascade,
+-            }
+-
+-        if tool == "type_text":
+-            selector = str(args.get("selector", ""))
+-            text = str(args.get("text", ""))
+-            if page is None:
+-                return {
+-                    "status": "PAUSED_HITL",
+-                    "reason": "no browser session bound — typing not executed",
+-                }
+-            try:
+-                typed = page.type(selector, text) if hasattr(page, "type") else None
+-                if inspect.isawaitable(typed):
+-                    await typed
+-                return {"status": "success", "selector": selector, "typed_chars": len(text)}
+-            except Exception as exc:
+-                return {"status": "error", "error": f"Typing into '{selector}' failed: {exc}"}
+-
+-        if tool == "wait":
+-            ms = int(args.get("ms", 1000))
+-            await asyncio.sleep(min(ms, 10_000) / 1000)
+-            return {"status": "success", "waited_ms": ms}
+-
+-        return {"status": "error", "error": f"unsupported browser tool '{tool}'"}
+diff --git a/core/browser/browser_session.py b/core/browser/browser_session.py
+deleted file mode 100644
+index bb5a7a46..00000000
+--- a/core/browser/browser_session.py
++++ /dev/null
+@@ -1,168 +0,0 @@
+-"""
+-backend/browser/browser_session.py
+-==================================
+-ISSUE-1571 (Part 2): Stateful ``BrowserSession`` — a durable handle over one
+-browser context/page so sequential actions (navigate → type → click → wait →
+-extract) execute across the SAME context using a stable ``session_id``,
+-instead of spinning up (and losing the state of) a fresh browser per call.
+-
+-Lifecycle hooks: :meth:`BrowserSession.close`, :meth:`BrowserSession.reset`
+-and :meth:`BrowserSession.screenshot` — all safe against missing/async
+-browser surfaces, never raising on double-close.
+-"""
+-
+-from __future__ import annotations
+-
+-import inspect
+-from datetime import UTC, datetime
+-from enum import StrEnum
+-from typing import Any
+-
+-from core.logging_config import logger
+-
+-__all__ = [
+-    "BrowserSession",
+-    "SessionStatus",
+-    "SESSION_TTL_SECONDS",
+-    "IDLE_TIMEOUT_SECONDS",
+-]
+-
+-# ISSUE-1571: hard TTL (15 min) and idle timeout (3 min) — enforced by the
+-# BrowserSessionManager cleanup daemon.
+-SESSION_TTL_SECONDS = 15 * 60
+-IDLE_TIMEOUT_SECONDS = 3 * 60
+-
+-
+-class SessionStatus(StrEnum):
+-    ACTIVE = "active"
+-    IDLE = "idle"
+-    CLOSED = "closed"
+-
+-
+-def _utcnow() -> datetime:
+-    return datetime.now(UTC)
+-
+-
+-def _close_quietly(surface: Any, method: str) -> None:
+-    """Close a sync browser surface without ever raising (reset() helper)."""
+-    if surface is None or not hasattr(surface, method):
+-        return
+-    try:
+-        getattr(surface, method)()
+-    except Exception as exc:
+-        logger.debug(f"[BrowserSession] {method}() close suppressed: {exc}")
+-
+-
+-class BrowserSession:
+-    """One stateful browser context/page bound to a stable ``session_id``."""
+-
+-    def __init__(
+-        self,
+-        session_id: str,
+-        provider: str = "chrome-dedicated",
+-        context: Any = None,
+-        page: Any = None,
+-        created_at: datetime | None = None,
+-        last_active_at: datetime | None = None,
+-        status: SessionStatus = SessionStatus.ACTIVE,
+-        metadata: dict[str, Any] | None = None,
+-    ) -> None:
+-        self.session_id = session_id
+-        self.provider = provider
+-        self.context = context
+-        self.page = page
+-        self.created_at = created_at or _utcnow()
+-        self.last_active_at = last_active_at or self.created_at
+-        self.status = status
+-        self.metadata: dict[str, Any] = metadata or {}
+-
+-    # ------------------------------------------------------------------
+-    # State helpers
+-    # ------------------------------------------------------------------
+-    def touch(self, now: datetime | None = None) -> datetime:
+-        """Mark the session as used right now (resets the idle clock)."""
+-        self.last_active_at = now or _utcnow()
+-        if self.status is SessionStatus.IDLE:
+-            self.status = SessionStatus.ACTIVE
+-        return self.last_active_at
+-
+-    @property
+-    def age_seconds(self) -> float:
+-        return (_utcnow() - self.created_at).total_seconds()
+-
+-    @property
+-    def idle_seconds(self) -> float:
+-        return (_utcnow() - self.last_active_at).total_seconds()
+-
+-    def is_expired(self, ttl_seconds: float = SESSION_TTL_SECONDS) -> bool:
+-        return self.age_seconds >= ttl_seconds
+-
+-    def is_idle(self, idle_seconds: float = IDLE_TIMEOUT_SECONDS) -> bool:
+-        return self.idle_seconds >= idle_seconds
+-
+-    @property
+-    def url(self) -> str | None:
+-        url = getattr(self.page, "url", None)
+-        return url if isinstance(url, str) and url else None
+-
+-    # ------------------------------------------------------------------
+-    # Lifecycle hooks — close / reset / screenshot
+-    # ------------------------------------------------------------------
+-    async def close(self) -> None:
+-        """Close page + context (idempotent, async-friendly, never raises)."""
+-        if self.status is SessionStatus.CLOSED:
+-            return
+-        page, context = self.page, self.context
+-        for surface, method in ((page, "close"), (context, "close")):
+-            if surface is None or not hasattr(surface, method):
+-                continue
+-            try:
+-                result = getattr(surface, method)()
+-                if inspect.isawaitable(result):
+-                    await result
+-            except Exception as exc:
+-                logger.debug(f"[BrowserSession] {method}() suppressed: {exc}")
+-        self.page = None
+-        self.context = None
+-        self.status = SessionStatus.CLOSED
+-        runtime = self.metadata.pop("playwright_runtime", None)
+-        if runtime is not None and hasattr(runtime, "stop"):
+-            try:
+-                runtime.stop()
+-            except Exception as exc:
+-                logger.debug(f"[BrowserSession] runtime stop suppressed: {exc}")
+-        logger.debug(f"[BrowserSession] session '{self.session_id}' closed cleanly")
+-
+-    async def reset(self) -> None:
+-        """Reopen a fresh page on the same context; state cleared, session kept."""
+-        if self.status is SessionStatus.CLOSED:
+-            raise RuntimeError(f"session '{self.session_id}' is closed and cannot be reset")
+-        if self.page is not None and hasattr(self.page, "close"):
+-            _close_quietly(self.page, "close")
+-        new_page = None
+-        if self.context is not None and hasattr(self.context, "new_page"):
+-            result = self.context.new_page()
+-            if inspect.isawaitable(result):
+-                result = await result
+-            new_page = result
+-        self.page = new_page
+-        self.status = SessionStatus.ACTIVE
+-        self.touch()
+-        logger.debug(f"[BrowserSession] session '{self.session_id}' reset (fresh page bound)")
+-
+-    async def screenshot(self, path: str | None = None) -> bytes | None:
+-        """Capture a screenshot of the bound page (sync/async pages)."""
+-        if self.page is None or not hasattr(self.page, "screenshot"):
+-            return None
+-        result = self.page.screenshot(path=path, full_page=False)
+-        if inspect.isawaitable(result):
+-            result = await result
+-        if isinstance(result, bytes):
+-            return result
+-        return None
+-
+-    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+-        return (
+-            f"BrowserSession(id={self.session_id!r}, provider={self.provider!r}, "
+-            f"status={self.status.value}, idle={self.idle_seconds:.0f}s)"
+-        )
+diff --git a/core/browser/browsing_memory.py b/core/browser/browsing_memory.py
+deleted file mode 100644
+index d13c70c0..00000000
+--- a/core/browser/browsing_memory.py
++++ /dev/null
+@@ -1,100 +0,0 @@
+-"""
+-backend/browser/browsing_memory.py
+-==================================
+-L3: Browsing Memory Engine — Retains and accumulates site behavior patterns,
+-common dialogs (e.g. cookie banners, auth popups), flow histories, and latencies.
+-"""
+-
+-from __future__ import annotations
+-
+-import time
+-from typing import Any
+-
+-from core.cache.semantic_cache import semantic_cache
+-from core.logging_config import logger
+-
+-
+-class BrowsingMemory:
+-    """Persistent cross-session site intelligence and preflight behavior synthesizer."""
+-
+-    _site_history: dict[str, list[dict[str, Any]]] = {}
+-
+-    async def observe(self, site: str, event: dict[str, Any]) -> None:
+-        """Record navigation, interaction, or outcome event for a site domain."""
+-        normalized_site = self._normalize_site(site)
+-        if normalized_site not in self._site_history:
+-            self._site_history[normalized_site] = []
+-
+-        event_entry = {
+-            "timestamp": time.time(),
+-            **event,
+-        }
+-        self._site_history[normalized_site].append(event_entry)
+-        if len(self._site_history[normalized_site]) > 200:
+-            self._site_history[normalized_site].pop(0)
+-
+-        # Invalidate site intelligence cache for immediate freshness
+-        try:
+-            await semantic_cache.set(f"siteintel::{normalized_site}", None, ttl=1)
+-        except Exception as e:
+-            logger.debug(f"BrowsingMemory cache invalidation error: {e}")
+-
+-    async def site_intel(self, site: str) -> dict[str, Any]:
+-        """Retrieve aggregated behavioral intelligence for a site."""
+-        normalized_site = self._normalize_site(site)
+-        cache_key = f"siteintel::{normalized_site}"
+-
+-        try:
+-            cached = await semantic_cache.get(cache_key)
+-            if cached and isinstance(cached, dict):
+-                return cached
+-        except Exception as e:
+-            logger.debug(f"BrowsingMemory cache read error: {e}")
+-
+-        history = self._site_history.get(normalized_site, [])
+-        total_visits = len(history)
+-
+-        cookie_events = sum(
+-            1 for e in history if e.get("has_cookie_banner") or e.get("dismissed_cookie")
+-        )
+-        cookie_rate = cookie_events / total_visits if total_visits > 0 else 0.0
+-
+-        latencies = [
+-            e["load_ms"]
+-            for e in history
+-            if "load_ms" in e and isinstance(e["load_ms"], int | float)
+-        ]
+-        avg_latency = sum(latencies) / len(latencies) if latencies else 250.0
+-
+-        intel = {
+-            "site": normalized_site,
+-            "total_observations": total_visits,
+-            "cookie_banner_rate": round(cookie_rate, 2),
+-            "avg_load_ms": round(avg_latency, 2),
+-            "known_selectors": list(set(e["selector"] for e in history if "selector" in e)),
+-            "common_failures": [e["error"] for e in history if "error" in e],
+-        }
+-
+-        try:
+-            await semantic_cache.set(cache_key, intel, ttl=3600)
+-        except Exception as e:
+-            logger.debug(f"BrowsingMemory cache write error: {e}")
+-
+-        return intel
+-
+-    async def preflight_actions(self, site: str) -> list[str]:
+-        """Determine automated preflight actions upon navigating to a site (e.g. dismiss cookie banner)."""
+-        intel = await self.site_intel(site)
+-        actions = []
+-        if intel.get("cookie_banner_rate", 0) > 0.5:
+-            actions.append("dismiss_cookie_banner")
+-        if intel.get("avg_load_ms", 0) > 2000:
+-            actions.append("extended_timeout_30s")
+-        return actions
+-
+-    @staticmethod
+-    def _normalize_site(site: str) -> str:
+-        s = site.lower().strip()
+-        if "://" in s:
+-            s = s.split("://")[1]
+-        return s.split("/")[0]
+diff --git a/core/browser/semantic_dom.py b/core/browser/semantic_dom.py
+deleted file mode 100644
+index fa311fb4..00000000
+--- a/core/browser/semantic_dom.py
++++ /dev/null
+@@ -1,218 +0,0 @@
+-"""
+-backend/browser/semantic_dom.py
+-================================
+-L4: Semantic DOM Engine — Embeds interactive DOM elements to resolve queries by MEANING,
+-not fragile CSS/XPath syntax (e.g. 'click the checkout button', 'open user profile').
+-"""
+-
+-from __future__ import annotations
+-
+-import inspect
+-import math
+-from typing import Any
+-
+-from core.embeddings import EmbeddingEngine
+-from core.logging_config import logger
+-
+-# ── Confidence Guardrails (issue #1570 Part 1) ────────────────────────────
+-# score >= 0.85   → execute immediately
+-# score 0.65–0.85 → secondary verification before acting
+-# score <  0.65   → escalate to HITL (never blind-act)
+-CONFIDENCE_EXECUTE = 0.85
+-CONFIDENCE_VERIFY = 0.65
+-
+-
+-def confidence_band(score: float) -> str:
+-    """Map a raw match score onto the guardrail decision bands."""
+-    if score >= CONFIDENCE_EXECUTE:
+-        return "execute"
+-    if score >= CONFIDENCE_VERIFY:
+-        return "verify"
+-    return "hitl"
+-
+-
+-class ElementNotFoundSemantically(Exception):
+-    """Raised when no element matches the query with sufficient confidence (triggers L4 Vision Grounding fallback)."""
+-
+-    pass
+-
+-
+-class SemanticDOM:
+-    def __init__(self, page: Any = None):
+-        self.page = page
+-        self.engine = EmbeddingEngine.get_instance()
+-        self._vectors: list[tuple[list[float], dict[str, Any]]] = []
+-
+-    @staticmethod
+-    def cosine_similarity(v1: list[float], v2: list[float]) -> float:
+-        """Compute cosine similarity between two vectors."""
+-        if not v1 or not v2 or len(v1) != len(v2):
+-            return 0.0
+-        dot = sum(a * b for a, b in zip(v1, v2, strict=True))
+-        norm1 = math.sqrt(sum(a * a for a in v1))
+-        norm2 = math.sqrt(sum(b * b for b in v2))
+-        if norm1 <= 0 or norm2 <= 0:
+-            return 0.0
+-        return dot / (norm1 * norm2)
+-
+-    async def build_index(self, elements_snapshot: list[dict[str, Any]] | None = None) -> int:
+-        """Embed all interactive elements of the current page state."""
+-        self._vectors = []
+-        elements: list[dict[str, Any]] = []
+-
+-        if elements_snapshot is not None:
+-            elements = elements_snapshot
+-        elif self.page is not None and hasattr(self.page, "evaluate"):
+-            try:
+-                # ISSUE-1570: page হতে পারে sync Playwright Page অথবা async Page —
+-                # sync page-এ evaluate() সরাসরি value দেয়, async page-এ coroutine.
+-                # isawaitable guard দুই ধরনের page-কেই সাপোর্ট করে।
+-                result = self.page.evaluate("""() => {
+-                    const results = [];
+-                    
+-                    const getXPath = (el) => {
+-                        if (el.id) return `//*[@id="${el.id}"]`;
+-                        if (el.name) return `//*[@name="${el.name}"]`;
+-                        return `//${el.tagName.toLowerCase()}[contains(text(), "${(el.innerText||'').slice(0,20).replace(/"/g, "'")}")]`;
+-                    };
+-                    
+-                    // Regular DOM elements
+-                    document.querySelectorAll('button, a, input, select, textarea, [role], [onclick]')
+-                        .forEach(el => results.push({
+-                            tag: (el.tagName || '').toLowerCase(),
+-                            text: (el.innerText || el.value || el.ariaLabel || el.title || el.placeholder || '').trim().slice(0, 120),
+-                            role: el.getAttribute('role') || '',
+-                            placeholder: el.placeholder || '',
+-                            xpath: getXPath(el),
+-                            is_shadow: false
+-                        }));
+-                    
+-                    // ✅ NEW: Shadow DOM support
+-                    document.querySelectorAll('*').forEach(host => {
+-                        if (host.shadowRoot) {
+-                            host.shadowRoot.querySelectorAll('button, a, input, [role]')
+-                                .forEach(el => results.push({
+-                                    tag: `shadow:${(el.tagName || '').toLowerCase()}`,
+-                                    text: (el.innerText || el.value || el.ariaLabel || el.title || el.placeholder || '').trim().slice(0, 120),
+-                                    role: el.getAttribute('role') || '',
+-                                    placeholder: el.placeholder || '',
+-                                    xpath: `[shadow-host] >> ${getXPath(el)}`,
+-                                    is_shadow: true
+-                                }));
+-                        }
+-                    });
+-                    
+-                    return results;
+-                }""")
+-                if inspect.isawaitable(result):
+-                    result = await result
+-                # ISSUE-1570: non-list result (যেমন mock page-এর string) গ্রহণ করা যাবে না —
+-                # একে mock-fallback path-এ পাঠানো হয় যাতে build_index কখনো ক্র্যাশ না করে।
+-                elements = result if isinstance(result, list) else []
+-            except Exception as exc:
+-                logger.debug(f"[SemanticDOM] Page evaluation fallback: {exc}")
+-
+-        if not elements:
+-            # Fallback mock elements for headless or decoupled mode
+-            elements = [
+-                {
+-                    "tag": "button",
+-                    "text": "Submit Checkout",
+-                    "role": "button",
+-                    "xpath": "//button[@type='submit']",
+-                    "is_shadow": False,
+-                },
+-                {
+-                    "tag": "a",
+-                    "text": "View Cart",
+-                    "role": "link",
+-                    "xpath": "//a[@href='/cart']",
+-                    "is_shadow": False,
+-                },
+-                {
+-                    "tag": "input",
+-                    "text": "Search Products",
+-                    "role": "searchbox",
+-                    "xpath": "//input[@name='q']",
+-                    "is_shadow": False,
+-                },
+-                {
+-                    "tag": "button",
+-                    "text": "Login",
+-                    "role": "button",
+-                    "xpath": "//button[@id='login']",
+-                    "is_shadow": False,
+-                },
+-            ]
+-
+-        # ✅ NEW: Enforce Token Budget (~500 tokens / 4 tokens per item avg = max 125 elements)
+-        # Prioritize important interactive elements
+-        priority = {"button": 5, "a": 4, "input": 3, "select": 2, "textarea": 2}
+-        elements.sort(
+-            key=lambda e: priority.get(e.get("tag", "").replace("shadow:", ""), 1), reverse=True
+-        )
+-        elements = elements[:125]
+-
+-        for el in elements:
+-            desc = f"{el.get('tag', '')} | {el.get('role', '')} | {el.get('text', '')} | {el.get('placeholder', '')}"
+-            vec = await self.engine.embed(desc)
+-            self._vectors.append((vec, el))
+-
+-        return len(self._vectors)
+-
+-    async def query(
+-        self,
+-        natural_language: str,
+-        top_k: int = 3,
+-        threshold: float = CONFIDENCE_VERIFY,
+-    ) -> dict[str, Any]:
+-        """Resolve a natural language intent ('the checkout button') to an element match.
+-
+-        ISSUE-1570: default threshold এখন CONFIDENCE_VERIFY (0.65) — 0.45-এর নিচের
+-        দুর্বল ম্যাচ আর নীলচোখে execute হয় না। রেজাল্টে ``confidence_band`` ও
+-        ``guardrail_action`` যুক্ত থাকে যাতে caller guardrail মানতে বাধ্য হয়।
+-        """
+-        if not self._vectors:
+-            await self.build_index()
+-
+-        q_vec = await self.engine.embed(natural_language)
+-        q_tokens = set(w.lower() for w in natural_language.split() if len(w) > 2)
+-        scored: list[tuple[float, dict[str, Any]]] = []
+-
+-        for vec, el in self._vectors:
+-            cos_score = self.cosine_similarity(q_vec, vec)
+-            # Compute token overlap bonus
+-            el_text = f"{el.get('text', '')} {el.get('role', '')} {el.get('tag', '')}".lower()
+-            el_tokens = set(el_text.split())
+-            overlap = len(q_tokens & el_tokens) / max(len(q_tokens), 1) if q_tokens else 0.0
+-
+-            # Composite match score: strong match if either semantic vector or keyword overlap matches
+-            composite_score = max(cos_score, overlap, 0.50 * cos_score + 0.50 * overlap)
+-            scored.append((composite_score, el))
+-
+-        scored.sort(key=lambda x: x[0], reverse=True)
+-
+-        if not scored or scored[0][0] < threshold:
+-            raise ElementNotFoundSemantically(
+-                f"No element matching '{natural_language}' found (best score: {scored[0][0] if scored else 0:.2f})"
+-            )
+-
+-        best_match = scored[0][1].copy()
+-        best_match["semantic_confidence"] = scored[0][0]
+-
+-        # ISSUE-1570: guardrail metadata — caller এই band মেনে চলবে:
+-        #   execute → সরাসরি act; verify → secondary verification; hitl → escalate.
+-        band = confidence_band(scored[0][0])
+-        best_match["confidence_band"] = band
+-        best_match["guardrail_action"] = (
+-            "execute"
+-            if band == "execute"
+-            else "secondary_verify"
+-            if band == "verify"
+-            else "escalate_hitl"
+-        )
+-
+-        # ✅ NEW: Add token and shadow DOM metadata
+-        best_match["is_shadow"] = best_match.get("is_shadow", False)
+-
+-        return best_match
+diff --git a/core/browser/session_manager.py b/core/browser/session_manager.py
+deleted file mode 100644
+index a440d5ec..00000000
+--- a/core/browser/session_manager.py
++++ /dev/null
+@@ -1,342 +0,0 @@
+-"""
+-backend/browser/session_manager.py
+-==================================
+-ISSUE-1571 (Part 2): Stateful ``BrowserSessionManager``.
+-
+-* Session pool indexed by a stable ``session_id`` — consecutive tool calls on
+-  the same id reuse the SAME context/page (state + cookies preserved).
+-* Cleanup daemon enforcing the hard TTL (15 min) and idle timeout (3 min):
+-  expired sessions are closed cleanly so no orphaned browser processes remain.
+-* Dedicated Chrome automation profile — ``--user-data-dir=C:/SupremeAI_Automation_Profile``
+-  (override with ``BROWSER_AUTOMATION_PROFILE_DIR``) with all surfaces bound to
+-  ``127.0.0.1``; the host's default browser profile is NEVER touched.
+-* Multi-Action Registry — a small executor registry (navigate / type / click /
+-  wait / extract) that runs sequential action plans against ONE bound page.
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-import os
+-from collections.abc import Callable
+-from datetime import UTC, datetime
+-from typing import Any
+-
+-from browser.browser_session import (
+-    IDLE_TIMEOUT_SECONDS,
+-    SESSION_TTL_SECONDS,
+-    BrowserSession,
+-    SessionStatus,
+-)
+-from core.logging_config import logger
+-
+-__all__ = [
+-    "BrowserSessionManager",
+-    "chrome_launch_args",
+-    "automation_profile_dir",
+-    "AUTOMATION_BIND_ADDRESS",
+-    "register_action",
+-    "run_action_sequence",
+-    "ACTION_REGISTRY",
+-]
+-
+-# Chrome DevTools পোর্ট যেখানে BIND করে — loopback-only (listen address,
+-# connect-host নয়): ডিবাগ পোর্ট কখনোই বাইরের নেটওয়ার্কে expose হবে না।
+-AUTOMATION_BIND_ADDRESS = "127.0.0.1"
+-
+-
+-def automation_profile_dir() -> str:
+-    """ISSUE-1571: the dedicated automation profile (never the user's own)."""
+-    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:" + "/" + "SupremeAI_Automation_Profile")
+-
+-
+-def chrome_launch_args(profile_dir: str | None = None) -> list[str]:
+-    """Chrome flags enforcing the dedicated profile + 127.0.0.1 binding."""
+-    return [
+-        f"--user-data-dir={profile_dir or automation_profile_dir()}",
+-        f"--remote-debugging-address={AUTOMATION_BIND_ADDRESS}",
+-        "--remote-debugging-port=0",
+-        "--no-first-run",
+-        "--no-default-browser-check",
+-    ]
+-
+-
+-def _default_session_factory(provider: str, session_id: str) -> dict[str, Any]:
+-    """Production factory: Playwright persistent context on the dedicated profile.
+-
+-    Kept lazy — heavy imports only happen when a REAL session is requested
+-    (unit tests inject their own factory/doubles).
+-    """
+-    from playwright.sync_api import sync_playwright
+-
+-    runtime = sync_playwright().start()
+-    try:
+-        context = runtime.chromium.launch_persistent_context(
+-            user_data_dir=automation_profile_dir(),
+-            args=chrome_launch_args(),
+-            headless=True,
+-        )
+-        page = context.new_page()
+-    except Exception:
+-        with_suppress = getattr(runtime, "stop", None)
+-        if callable(with_suppress):
+-            try:
+-                with_suppress()
+-            except Exception:  # pragma: no cover - best effort cleanup
+-                pass
+-        raise
+-    return {"context": context, "page": page, "playwright_runtime": runtime}
+-
+-
+-# ---------------------------------------------------------------------------
+-# Multi-Action Registry — sequential actions on ONE stateful page
+-# ---------------------------------------------------------------------------
+-ACTION_REGISTRY: dict[str, Callable[..., Any]] = {}
+-
+-
+-def register_action(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+-    """Register an action executor: ``executor(page, **args) -> dict``."""
+-
+-    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+-        ACTION_REGISTRY[name] = fn
+-        return fn
+-
+-    return decorator
+-
+-
+-@register_action("navigate")
+-def _action_navigate(page: Any, url: str = "", **_: Any) -> dict[str, Any]:
+-    if not url:
+-        return {"action": "navigate", "status": "error", "error": "navigate requires a url"}
+-    page.goto(url)
+-    return {"action": "navigate", "status": "success", "url": url}
+-
+-
+-@register_action("type")
+-def _action_type(page: Any, selector: str = "", text: str = "", **_: Any) -> dict[str, Any]:
+-    if not selector:
+-        return {"action": "type", "status": "error", "error": "type requires a selector"}
+-    for char in text or "":
+-        page.type(selector, char)
+-    return {
+-        "action": "type",
+-        "status": "success",
+-        "selector": selector,
+-        "typed_chars": len(text or ""),
+-    }
+-
+-
+-@register_action("click")
+-async def _action_click(page: Any, target: str = "", **_: Any) -> dict[str, Any]:
+-    from browser.action_cascade import execute_click_cascade
+-
+-    result = await execute_click_cascade(page, target)
+-    return {"action": "click", **result}
+-
+-
+-@register_action("wait")
+-async def _action_wait(page: Any, ms: int = 1000, **_: Any) -> dict[str, Any]:
+-    await asyncio.sleep(min(max(int(ms), 0), 10_000) / 1000)
+-    return {"action": "wait", "status": "success", "waited_ms": int(ms)}
+-
+-
+-@register_action("extract")
+-def _action_extract(page: Any, selector: str = "", **_: Any) -> dict[str, Any]:
+-    if not selector:
+-        return {"action": "extract", "status": "error", "error": "extract requires a selector"}
+-    text = page.text_content(selector) if hasattr(page, "text_content") else None
+-    return {"action": "extract", "status": "success", "selector": selector, "text": text or ""}
+-
+-
+-async def run_action_sequence(
+-    session: BrowserSession, actions: list[dict[str, Any]]
+-) -> list[dict[str, Any]]:
+-    """Execute a sequential action plan against the session's SINGLE bound page."""
+-    results: list[dict[str, Any]] = []
+-    if session.page is None:
+-        return [
+-            {"action": a.get("type", "?"), "status": "error", "error": "session has no bound page"}
+-            for a in actions
+-        ]
+-    for step in actions:
+-        name = str(step.get("type", "")).lower()
+-        executor = ACTION_REGISTRY.get(name)
+-        if executor is None:
+-            results.append({"action": name, "status": "error", "error": f"unknown action '{name}'"})
+-            continue
+-        args = {k: v for k, v in step.items() if k != "type"}
+-        try:
+-            outcome = executor(session.page, **args)
+-            if asyncio.iscoroutine(outcome) or asyncio.isfuture(outcome):
+-                outcome = await outcome
+-        except Exception as exc:
+-            outcome = {"status": "error", "error": str(exc)}
+-        outcome.setdefault("action", name)
+-        results.append(outcome)
+-        if outcome.get("status") == "error":
+-            break  # fail fast — the sequence is sequential by contract
+-    session.touch()
+-    return results
+-
+-
+-# ---------------------------------------------------------------------------
+-# BrowserSessionManager
+-# ---------------------------------------------------------------------------
+-class BrowserSessionManager:
+-    """Pool of stateful browser sessions with TTL/idle cleanup daemon."""
+-
+-    def __init__(
+-        self,
+-        session_factory: Callable[[str, str], dict[str, Any]] | None = None,
+-        ttl_seconds: float = SESSION_TTL_SECONDS,
+-        idle_seconds: float = IDLE_TIMEOUT_SECONDS,
+-        sweep_interval: float = 30.0,
+-        now_fn: Callable[[], datetime] | None = None,
+-    ) -> None:
+-        self._sessions: dict[str, BrowserSession] = {}
+-        self._session_factory = session_factory or _default_session_factory
+-        self.ttl_seconds = ttl_seconds
+-        self.idle_seconds = idle_seconds
+-        self.sweep_interval = sweep_interval
+-        self.now_fn = now_fn or (lambda: datetime.now(UTC))
+-        self._sweeper_task: asyncio.Task | None = None
+-
+-    # ------------------------------------------------------------------
+-    # Pool operations
+-    # ------------------------------------------------------------------
+-    def create_session(
+-        self, provider: str = "chrome-dedicated", session_id: str | None = None
+-    ) -> BrowserSession:
+-        session_id = session_id or f"bs-{provider}-{len(self._sessions) + 1:06d}"
+-        if (
+-            session_id in self._sessions
+-            and self._sessions[session_id].status is not SessionStatus.CLOSED
+-        ):
+-            return self._sessions[session_id]
+-        surfaces = self._session_factory(provider, session_id)
+-        session = BrowserSession(
+-            session_id=session_id,
+-            provider=provider,
+-            context=surfaces.get("context"),
+-            page=surfaces.get("page"),
+-            created_at=self.now_fn(),
+-            last_active_at=self.now_fn(),
+-            metadata={k: v for k, v in surfaces.items() if k not in ("context", "page")},
+-        )
+-        self._sessions[session_id] = session
+-        logger.info(f"[SessionManager] created session '{session_id}' (provider={provider})")
+-        return session
+-
+-    def get_session(self, session_id: str, touch: bool = True) -> BrowserSession | None:
+-        session = self._sessions.get(session_id)
+-        if session is None or session.status is SessionStatus.CLOSED:
+-            return None
+-        if touch:
+-            session.touch(self.now_fn())
+-        return session
+-
+-    def acquire(
+-        self, provider: str = "chrome-dedicated", session_id: str | None = None
+-    ) -> BrowserSession:
+-        """Stateful acquire: same id → same live session; else a new one."""
+-        if session_id:
+-            existing = self.get_session(session_id)
+-            if existing is not None:
+-                return existing
+-        return self.create_session(provider=provider, session_id=session_id)
+-
+-    async def release(self, session_id: str) -> bool:
+-        """Close and forget a session — no orphaned browser processes left."""
+-        session = self._sessions.pop(session_id, None)
+-        if session is None:
+-            return False
+-        await session.close()
+-        return True
+-
+-    # ------------------------------------------------------------------
+-    # Cleanup daemon — hard TTL + idle timeout
+-    # ------------------------------------------------------------------
+-    def sweep_expired(self) -> list[str]:
+-        """Close & drop TTL-expired or idle-expired sessions; return their ids."""
+-        now = self.now_fn()
+-        expired: list[str] = []
+-        for session_id, session in list(self._sessions.items()):
+-            if session.status is SessionStatus.CLOSED:
+-                expired.append(session_id)
+-                continue
+-            age = (now - session.created_at).total_seconds()
+-            idle = (now - session.last_active_at).total_seconds()
+-            if age >= self.ttl_seconds or idle >= self.idle_seconds:
+-                expired.append(session_id)
+-        removed: list[str] = []
+-        for session_id in expired:
+-            session = self._sessions.pop(session_id, None)
+-            if session is None:
+-                continue
+-            close_result = session.close()
+-            if asyncio.iscoroutine(close_result):
+-                # Drive async close to completion on a private loop (sync sweep).
+-                try:
+-                    asyncio.get_running_loop()
+-                except RuntimeError:
+-                    asyncio.run(close_result)
+-                else:
+-                    asyncio.get_running_loop().create_task(close_result)
+-            removed.append(session_id)
+-        if removed:
+-            logger.info(f"[SessionManager] swept {len(removed)} expired session(s): {removed}")
+-        return removed
+-
+-    async def sweep_expired_async(self) -> list[str]:
+-        now = self.now_fn()
+-        removed: list[str] = []
+-        for session_id, session in list(self._sessions.items()):
+-            age = (now - session.created_at).total_seconds()
+-            idle = (now - session.last_active_at).total_seconds()
+-            if (
+-                session.status is SessionStatus.CLOSED
+-                or age >= self.ttl_seconds
+-                or idle >= self.idle_seconds
+-            ):
+-                self._sessions.pop(session_id, None)
+-                await session.close()
+-                removed.append(session_id)
+-        return removed
+-
+-    async def start_sweeper(self) -> None:
+-        if self._sweeper_task is not None and not self._sweeper_task.done():
+-            return
+-        self._sweeper_task = asyncio.create_task(self._sweeper_loop())
+-        logger.debug(f"[SessionManager] cleanup daemon started (interval={self.sweep_interval}s)")
+-
+-    async def stop_sweeper(self) -> None:
+-        task = self._sweeper_task
+-        self._sweeper_task = None
+-        if task is not None and not task.done():
+-            task.cancel()
+-            try:
+-                await task
+-            except asyncio.CancelledError:
+-                pass
+-        logger.debug("[SessionManager] cleanup daemon stopped")
+-
+-    async def _sweeper_loop(self) -> None:
+-        try:
+-            while True:
+-                await asyncio.sleep(self.sweep_interval)
+-                await self.sweep_expired_async()
+-        except asyncio.CancelledError:
+-            raise
+-
+-    # ------------------------------------------------------------------
+-    def stats(self) -> dict[str, int]:
+-        statuses = [s.status for s in self._sessions.values()]
+-        return {
+-            "total": len(statuses),
+-            "active": sum(1 for s in statuses if s is SessionStatus.ACTIVE),
+-            "idle": sum(1 for s in statuses if s is SessionStatus.IDLE),
+-            "closed": sum(1 for s in statuses if s is SessionStatus.CLOSED),
+-        }
+-
+-    def __len__(self) -> int:
+-        return len(self._sessions)
+diff --git a/core/browser/swarm_browser.py b/core/browser/swarm_browser.py
+deleted file mode 100644
+index d3477736..00000000
+--- a/core/browser/swarm_browser.py
++++ /dev/null
+@@ -1,135 +0,0 @@
+-"""
+-backend/browser/swarm_browser.py
+-================================
+-L5+: Swarm Browser & Flow Digital Twin — Orchestrates parallel multi-agent swarms
+-exploring different sectors of a web platform simultaneously, and dry-runs flows in
+-a Digital Twin simulator before execution to guarantee zero downtime and zero failures.
+-
+-ISSUE-1571 (Part 2) refactor:
+-* ``AutonomousBrowserAgent(session=None)`` stateless hacks are GONE — every
+-  swarm member now acquires a REAL stateful session from
+-  ``BrowserSessionManager`` (stable ``session_id``, cookies + page preserved).
+-* Parallel tab coordination: each sub-goal runs on its own session/page while
+-  findings are merged through the unified synthesis report.
+-* Sessions are ALWAYS released after the mission — no orphaned browsers.
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-from typing import Any
+-
+-from brain.reasoning_orchestrator import ReasoningOrchestrator
+-from browser.autonomous_browser import AutonomousBrowserAgent
+-from browser.session_manager import BrowserSessionManager
+-from core.logging_config import logger
+-
+-__all__ = ["SwarmBrowser"]
+-
+-
+-class SwarmBrowser:
+-    def __init__(self, session_manager: BrowserSessionManager | None = None):
+-        self.reasoner = ReasoningOrchestrator.get_instance()
+-        # NOTE: `manager or default` লিখলে ভুল হতো — BrowserSessionManager-এ
+-        # `__len__` আছে, তাই খালি (0-session) manager falsy হয়ে যায়!
+-        self.session_manager = (
+-            session_manager if session_manager is not None else BrowserSessionManager()
+-        )
+-
+-    async def explore(self, site: str, sub_goals: list[str]) -> dict[str, Any]:
+-        """Deploy parallel agent swarm to explore sub-goals simultaneously and synthesize findings.
+-
+-        বাংলা (M06 P-A ৮/৮ RunType adoption): swarm-explore ক্যানোনিকাল
+-        ``run_type="browser"`` রান হিসেবেও পর্যবেক্ষিত (flag-gated, best-effort);
+-        প্রতিটি sub-agent-এর ব্যর্থতা ইতিমধ্যে result-এ সৎ-রেকর্ডেড — synthesize
+-        ব্যর্থতা ছাড়া রান failed হয় না।
+-        """
+-        from runs.run_scope import observe_run
+-
+-        async with observe_run(
+-            run_type="browser",
+-            title=f"swarm:{site[:80]}",
+-            source_type="browser",
+-            source_ref=site,
+-        ):
+-            result = await self._explore_impl(site, sub_goals)
+-            return result
+-
+-    async def _explore_impl(self, site: str, sub_goals: list[str]) -> dict[str, Any]:
+-        """Original explore body — run-observation wrapper-এর ভিতরে চলে।"""
+-        logger.info(f"[SwarmBrowser] Deploying {len(sub_goals)} parallel agents for site: {site}")
+-
+-        tasks = []
+-        sessions = []
+-        for i, goal in enumerate(sub_goals):
+-            # ISSUE-1571: real stateful session per sub-goal — parallel tabs with
+-            # a shared synthesis; stable session_ids keep cookies/state per tab.
+-            session_id = f"swarm-{site[:24]}-{i}"
+-            session = self.session_manager.acquire(provider="swarm-tab", session_id=session_id)
+-            session.metadata["swarm_site"] = site
+-            session.metadata["swarm_goal"] = goal
+-            sessions.append(session)
+-            agent = AutonomousBrowserAgent(session=session, start_url=site, goal=goal)
+-            tasks.append(agent.achieve(goal, start_url=site))
+-
+-        try:
+-            results = await asyncio.gather(*tasks, return_exceptions=True)
+-        finally:
+-            # ISSUE-1571: every acquired session is released — no orphans.
+-            for session in sessions:
+-                await self.session_manager.release(session.session_id)
+-
+-        successful_results = []
+-        for i, res in enumerate(results):
+-            if isinstance(res, dict):
+-                successful_results.append(res)
+-            else:
+-                successful_results.append(
+-                    {
+-                        "goal": sub_goals[i],
+-                        "achieved": False,
+-                        "error": str(res),
+-                    }
+-                )
+-
+-        return await self._synthesize(site, sub_goals, successful_results)
+-
+-    async def _synthesize(
+-        self,
+-        site: str,
+-        goals: list[str],
+-        results: list[dict[str, Any]],
+-    ) -> dict[str, Any]:
+-        """Synthesize multi-agent findings into a unified intelligence report."""
+-        achieved_count = sum(1 for r in results if r.get("achieved"))
+-        return {
+-            "status": "success",
+-            "site": site,
+-            "total_agents": len(goals),
+-            "goals_achieved": achieved_count,
+-            "findings": results,
+-            "synthesis_summary": f"Swarm exploration of {site} completed with {achieved_count}/{len(goals)} goals achieved.",
+-        }
+-
+-    async def dry_run_flow(self, site: str, flow: list[dict[str, Any]]) -> dict[str, Any]:
+-        """ADVANCED: Simulate action flow in the Digital Twin simulator before spending real browser compute."""
+-        logger.info(f"[SwarmBrowser] Dry-running flow of {len(flow)} steps for site: {site}")
+-        try:
+-            from core.self_evolution.digital_twin.simulator import DigitalTwinSimulator
+-
+-            DigitalTwinSimulator()
+-            # Simulation verification
+-            return {
+-                "safe": True,
+-                "site": site,
+-                "steps_simulated": len(flow),
+-                "predicted_success_rate": 0.96,
+-            }
+-        except Exception as exc:
+-            logger.debug(f"[SwarmBrowser] Digital twin simulation fallback: {exc}")
+-            return {
+-                "safe": True,
+-                "site": site,
+-                "steps_simulated": len(flow),
+-                "predicted_success_rate": 0.90,
+-            }
+diff --git a/core/browser/vision_grounding.py b/core/browser/vision_grounding.py
+deleted file mode 100644
+index 510690c3..00000000
+--- a/core/browser/vision_grounding.py
++++ /dev/null
+@@ -1,206 +0,0 @@
+-"""
+-backend/browser/vision_grounding.py
+-===================================
+-L4 Vision Grounding Fallback: When SemanticDOM fails (e.g. canvas, shadow DOM,
+-obfuscated HTML), capture a screenshot and visually ground target coordinates via VLM.
+-
+-ISSUE-1570 (Part 1) hardening:
+-* Zero fabricated coordinates — every previous "heuristic fallback" that returned
+-  invented (x, y) pairs is removed. If the VLM cannot ground the target, we raise
+-  ``LowConfidenceGrounding`` so the caller escalates to HITL instead of blind-clicking.
+-* Confidence guardrails enforced inside the module:
+-    - confidence >= 0.85            → execute
+-    - confidence 0.65–0.85          → secondary verification (second VLM pass must confirm)
+-    - confidence <  0.65            → LowConfidenceGrounding (HITL escalation)
+-* Sync/async page agnostic: coordinates dispatch works with both sync Playwright
+-  pages and async pages via an ``inspect.isawaitable`` guard.
+-"""
+-
+-from __future__ import annotations
+-
+-import base64
+-import inspect
+-import json
+-from typing import Any
+-
+-from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
+-from core.logging_config import logger
+-
+-__all__ = ["LowConfidenceGrounding", "VisionGrounding"]
+-
+-
+-class LowConfidenceGrounding(Exception):
+-    """Raised when VLM visual confidence falls below required threshold (triggers HITL takeover)."""
+-
+-    pass
+-
+-
+-class VisionGrounding:
+-    CONFIDENCE_EXECUTE = CONFIDENCE_EXECUTE
+-    CONFIDENCE_VERIFY = CONFIDENCE_VERIFY
+-
+-    def __init__(self, page: Any = None, router_factory: Any = None):
+-        self.page = page
+-        # router_factory দিলে সেটাই ModelRouter বানায় — টেস্টে VLM মক করা সহজ হয়।
+-        self._router_factory = router_factory
+-
+-    # ------------------------------------------------------------------
+-    # Screenshot (sync/async page agnostic)
+-    # ------------------------------------------------------------------
+-    async def _screenshot_b64(self) -> str | None:
+-        if self.page is None or not hasattr(self.page, "screenshot"):
+-            return None
+-        try:
+-            shot = self.page.screenshot(full_page=False)
+-            if inspect.isawaitable(shot):
+-                shot = await shot
+-            if isinstance(shot, bytes):
+-                return base64.b64encode(shot).decode()
+-            logger.debug("[VisionGrounding] Screenshot returned non-bytes payload")
+-            return None
+-        except Exception as e:
+-            logger.debug(f"[VisionGrounding] Screenshot capture fallback: {e}")
+-            return None
+-
+-    def _make_router(self) -> Any:
+-        if self._router_factory is not None:
+-            return self._router_factory()
+-        from brain.model_router import ModelRouter
+-
+-        return ModelRouter()
+-
+-    # ------------------------------------------------------------------
+-    # VLM grounding — NO fabricated fallbacks
+-    # ------------------------------------------------------------------
+-    def _parse_vlm_json(self, raw: str) -> dict[str, Any]:
+-        raw = (raw or "{}").strip()
+-        if raw.startswith("```"):
+-            lines = raw.splitlines()
+-            raw = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+-        data = json.loads(raw)
+-        if not isinstance(data, dict):
+-            raise ValueError("VLM grounding response is not a JSON object")
+-        return data
+-
+-    def _vlm_locate(self, router: Any, target: str, screenshot_b64: str | None) -> dict[str, Any]:
+-        prompt = (
+-            f"Identify the (x, y) click coordinates for '{target}' on the screen."
+-            + (
+-                f" [Image Context Base64 attached (len={len(screenshot_b64)})]"
+-                if screenshot_b64
+-                else ""
+-            )
+-            + '\nReturn JSON format: {"x": 250, "y": 320, "confidence": 0.88}'
+-        )
+-        res = router.route_and_generate(prompt=prompt, task_type="general", max_cost=0.01)
+-        return self._parse_vlm_json(res.get("text", ""))
+-
+-    async def _secondary_verify(
+-        self, router: Any, target: str, loc: dict[str, Any], screenshot_b64: str | None
+-    ) -> bool:
+-        """ISSUE-1570: 0.65–0.85 band-এর জন্য দ্বিতীয় স্বাধীন VLM যাচাই।"""
+-        prompt = (
+-            f"Verification pass: a previous model claims '{target}' is located at "
+-            f"approximately (x={loc['x']}, y={loc['y']}) on the screen."
+-            + (
+-                f" [Image Context Base64 attached (len={len(screenshot_b64)})]"
+-                if screenshot_b64
+-                else ""
+-            )
+-            + '\nConfirm independently. Return JSON: {"confirmed": true, "confidence": 0.9} '
+-            'or {"confirmed": false, "confidence": 0.4}'
+-        )
+-        try:
+-            res = router.route_and_generate(prompt=prompt, task_type="general", max_cost=0.01)
+-            data = self._parse_vlm_json(res.get("text", ""))
+-            confirmed = bool(data.get("confirmed", False))
+-            conf = float(data.get("confidence", 0.0))
+-            # যাচাইকারী নিজেই কম আত্মবিশ্বাসী হলে confirmation গ্রহণযোগ্য নয়।
+-            return confirmed and conf >= self.CONFIDENCE_VERIFY
+-        except Exception as exc:
+-            logger.warning(f"[VisionGrounding] Secondary verification errored: {exc}")
+-            return False
+-
+-    async def locate(
+-        self,
+-        target: str,
+-        min_confidence: float = CONFIDENCE_VERIFY,
+-        require_secondary: bool | None = None,
+-    ) -> dict[str, Any]:
+-        """Locate target bounding coordinates (x, y) from visual input.
+-
+-        ISSUE-1570: কোনো অবস্থাতেই fabricated coordinate return করা হয় না।
+-        VLM failure / low confidence / অসম্পূর্ণ payload → ``LowConfidenceGrounding``।
+-        """
+-        logger.info(f"[VisionGrounding] Visually locating target: '{target}'")
+-        screenshot_b64 = await self._screenshot_b64()
+-
+-        try:
+-            router = self._make_router()
+-            data = self._vlm_locate(router, target, screenshot_b64)
+-        except LowConfidenceGrounding:
+-            raise
+-        except Exception as exc:
+-            # আগে এখানে fake {"x": 100, "y": 100, "confidence": 0.75} বানানো হতো —
+-            # এটাই blind-fallback-click দুর্ঘটনার মূল উৎস। এখন fail → HITL।
+-            logger.warning(f"[VisionGrounding] VLM grounding unavailable for '{target}': {exc}")
+-            raise LowConfidenceGrounding(
+-                f"Visual grounding unavailable for '{target}': {exc}"
+-            ) from exc
+-
+-        if "x" not in data or "y" not in data:
+-            raise LowConfidenceGrounding(
+-                f"VLM grounding payload for '{target}' missing coordinates — refusing to guess"
+-            )
+-        conf = float(data.get("confidence", 0.0))
+-        if conf < self.CONFIDENCE_VERIFY or conf < min_confidence:
+-            raise LowConfidenceGrounding(
+-                f"Visual confidence {conf:.2f} < {max(min_confidence, self.CONFIDENCE_VERIFY):.2f} for '{target}'"
+-            )
+-
+-        band = confidence_band(conf)
+-        loc: dict[str, Any] = {
+-            "x": int(data["x"]),
+-            "y": int(data["y"]),
+-            "confidence": conf,
+-            "target": target,
+-            "band": band,
+-        }
+-
+-        want_secondary = (
+-            (band == "verify") if require_secondary is None else bool(require_secondary)
+-        )
+-        if want_secondary:
+-            verified = await self._secondary_verify(router, target, loc, screenshot_b64)
+-            if not verified:
+-                raise LowConfidenceGrounding(
+-                    f"Secondary verification failed for '{target}' (initial confidence {conf:.2f})"
+-                )
+-            loc["verified"] = True
+-
+-        return loc
+-
+-    async def click(self, target: str) -> dict[str, Any]:
+-        """Ground and click coordinates on page — only when guardrails allow."""
+-        loc = await self.locate(target)
+-        band = loc.get("band", "hitl")
+-        if band == "hitl":
+-            # Defence in depth: locate() already raises, but never blind-click.
+-            raise LowConfidenceGrounding(
+-                f"Confidence band '{band}' forbids visual click for '{target}'"
+-            )
+-        if (
+-            self.page is not None
+-            and hasattr(self.page, "mouse")
+-            and hasattr(self.page.mouse, "click")
+-        ):
+-            try:
+-                result = self.page.mouse.click(loc["x"], loc["y"])
+-                if inspect.isawaitable(result):
+-                    await result
+-            except Exception as e:
+-                logger.warning(f"[VisionGrounding] Mouse click dispatch failed: {e}")
+-                raise LowConfidenceGrounding(
+-                    f"Mouse click dispatch failed for '{target}': {e}"
+-                ) from e
+-        return {"action": "visual_click", "coordinates": loc, "target": target, "band": band}

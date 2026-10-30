@@ -1,0 +1,719 @@
+diff --git a/docs/CONTRIBUTING_BN.md b/docs/CONTRIBUTING_BN.md
+new file mode 100644
+index 00000000..62531e7f
+--- /dev/null
++++ b/docs/CONTRIBUTING_BN.md
+@@ -0,0 +1,92 @@
++# SupremeAI Open — কন্ট্রিবিউটর ও এজেন্ট গাইড (Bangla Contributing Guide)
++
++> **পাবলিক বাউন্ডারি ও জিরো-ক্রেডেনশিয়াল কন্ট্রিবিউশন সারসংক্ষেপ**  
++> সম্পর্কিত মূল নীতিমালা: [`AGENTS.md`](../AGENTS.md) · [`AGENT_RULES.md`](../AGENT_RULES.md) · ইংরেজি গাইড: [`CONTRIBUTING.md`](./CONTRIBUTING.md)  
++> গভর্নেন্স রেফারেন্স: [Issue #3095](https://github.com/Supremeai-bd/supremeai/issues/3095), [#155](https://github.com/Supremeai-bd/supremeai/issues/155)
++
++---
++
++## ১. সিস্টেম পরিচিতি ও পাবলিক বাউন্ডারি
++
++`Supremeai-bd/supremeai-open` হলো SupremeAI ফেডারেশনের **পাবলিক বাউন্ডারি (Public SSOT)**। 
++
++- **পাবলিক কাজ:** এখানে সব এজেন্ট ও ডেভেলপাররা উন্মুক্তভাবে কাজ করেন (Zero-Credential)।
++- **স্বয়ংক্রিয় ব্রিজিং:** পাবলিক রেপোতে অনুমোদিত ও মার্জ হওয়া কাজ সরাসরি এবং নিরাপদ পাইপলাইনের মাধ্যমে প্রাইভেট কোডবেসে স্থানান্তরিত হয়।
++- **বাউন্ডারি নিয়মাবলী:** প্রাইভেট কোর ইঞ্জিন (`backend/`, `supremeai-core`) এবং প্রোডাকশন সিক্রেট কোনোভাবেই এই পাবলিক রিপোজিটরিতে অন্তর্ভুক্ত করা যাবে না।
++
++---
++
++## ২. গেটহাব ওয়ার্কফ্লোজ ডায়েট (CI Topology)
++
++রিসোর্স ও সময় সাশ্রয়ের জন্য এই পাবলিক রিপোজিটরিতে মাত্র **২টি মূল ওয়ার্কফ্লো** রাখা হয়েছে:
++
++| ওয়ার্কফ্লো ফাইল | ভূমিকা ও দায়িত্ব |
++|---|---|
++| [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) | **ভ্যালিডেশন ও টেস্ট:** ব্রাঞ্চের নাম যাচাই, ইস্যু রেফারেন্স চেক, অ্যান্টি-ডুপ্লিকেট চেক, সিক্রেট স্ক্যান (Gitleaks), Python ম্যাট্রিক্স (3.10–3.13) এবং MCP Tower টেস্ট রান করে। |
++| [`.github/workflows/landing.yml`](../.github/workflows/landing.yml) | **অটো-মার্জ ও ব্রিজ:** সব গেট সফলভাবে পাস হলে পিআর অটো-স্কোয়াশ-মার্জ করে এবং প্রাইভেট ব্রিজ কিউতে ডিসপ্যাচ করে। |
++
++---
++
++## ৩. কন্ট্রিবিউশন পাথওয়ে (Zero-Admin Policy, §2.1)
++
++অ্যাডমিনের ওপর কোনো নির্ভরতা ছাড়াই (≤ 0.01% অ্যাডমিন হস্তক্ষেপ) স্বায়ত্তশাসিতভাবে কাজ জমা দেওয়ার ৩টি উপায় রয়েছে:
++
++### পাথওয়ে ১: MCP Control Tower Bridge (জিরো-ক্রেডেনশিয়াল)
++- **কাদের জন্য:** MCP ক্লায়েন্ট (Claude, Cursor, Antigravity) বা এক্সটার্নাল এআই এজেন্ট।
++- **সার্ভার এন্ডপয়েন্ট:** `https://supremeai-mcp-tower.onrender.com/mcp`
++- **পদ্ধতি:** এজেন্ট `bridge_work_order`, `bridge_guide` ও `github_read_file` দিয়ে কোড বিশ্লেষণ করে এবং `bridge_submit_patch` টুলের মাধ্যমে কোনো ব্যক্তিগত গিটহাব টোকেন ছাড়াই স্বয়ংক্রিয়ভাবে প্যাচ জমা দেয়।
++
++### পাথওয়ে ২: ফর্ক ও পুল রিকোয়েস্ট (Fork + PR)
++- **কাদের জন্য:** সাধারণ ডেভেলপার বা এক্সটার্নাল ওয়েব এজেন্ট।
++- **পদ্ধতি:** রিপোজিটরি ফর্ক করুন → নির্দিষ্ট ব্রাঞ্চে পরিবর্তন করুন → `Supremeai-bd/supremeai-open:main`-এ PR তৈরি করুন।
++
++### পাথওয়ে ৩: এফেমেরাল জেআইটি লিজ (JIT Lease)
++- **কাদের জন্য:** স্বয়ংক্রিয় স্ক্রিপ্ট বা সিএলআই রানার।
++- **পদ্ধতি:** `scripts/agents/credential_manager.py` দিয়ে ১ ঘণ্টার অস্থায়ী টোকেন সংগ্রহ করে পুশ করা হয়।
++
++---
++
++## ৪. গুরুত্বপূর্ণ নীতি ও অনুশাসন (Universal Rules)
++
++### 🔹 U4 — জিরো-ডুপ্লিকেট ম্যান্ডেট (Anti-Duplicate PR Mandate)
++- কাজ শুরু করার আগে সবসময় সক্রিয় পুল রিকোয়েস্ট চেক করুন (`gh pr list`)।
++- একই ইস্যুর জন্য একাধিক সমান্তরাল বা ডুপ্লিকেট PR খোলা **কঠোরভাবে নিষিদ্ধ**।
++- পাবলিক রিপোজিটরিতে কাজ সম্পন্ন হলে প্রাইভেট রিপোজিটরিতে ম্যানুয়ালি আরেকটি ডুপ্লিকেট PR খোলা যাবে না।
++
++### 🔹 ক্লেইম-বিফোর-PR নীতি (Atomic Claim Ordering)
++- কোড পরিবর্তন বা PR খোলার আগেই ইস্যুতে ক্লেইম থাকতে হবে (`atomic_claim.sh` বা সেশন মার্কার)।
++- ক্লেইম ছাড়া PR তৈরি করলে সিআই-এর Claim Gate সেটি স্বয়ংক্রিয়ভাবে বন্ধ করে দেবে (#2644, #2892)।
++
++### 🔹 U8 — স্কোয়াশ কমিট ডকট্রিন (Closing-Keyword Placement)
++- GitHub স্কোয়াশ-মার্জের সময় ইস্যু স্বয়ংক্রিয়ভাবে বন্ধ করার জন্য কমিট মেসেজে অবশ্যই `Closes #<issue-number>` উল্লেখ থাকতে হবে। শুধুমাত্র পিআর ডেসক্রিপশনে থাকলে ইস্যু ক্লোজ নাও হতে পারে।
++
++### 🔹 U5/U7 — বোর্ড ফ্রেশনেস রি-চেক (#4177)
++- কাজ সমাপ্তি ঘোষণা করার আগে অবশ্যই পুনরায় বোর্ড চেক (`gh pr list`) করুন। টাস্ক চলাকালীন সময়ে নতুন কোনো পিআর বা ইস্যু এসেছে কিনা তা নিশ্চিত হয়ে তবেই চূড়ান্ত রিপোর্ট দিন।
++
++### 🔹 U10 — লুপ-অনুমোদিত স্বায়ত্তশাসন (No Permission-Asking)
++- প্রি-কন্ডিশন ঠিক থাকলে অনুমতি না চেয়ে ("Should I proceed?", "শুরু করব?") সরাসরি কাজ সম্পন্ন করে ফ্যাক্ট-বেসড রিপোর্ট পেশ করুন।
++
++---
++
++## ৫. লোকাল ডেভেলপমেন্ট ও টেস্ট কমান্ড
++
++কোনো কোড পুশ করার আগে লোকালি যাচাই করে নেওয়া বাধ্যতামূলক:
++
++```bash
++# ১. বাউন্ডারি স্যানিটেশন গার্ড পরীক্ষা (প্রাইভেট কোড বা সিক্রেট প্রতিরোধ)
++python scripts/ci/boundary_sanitization_guard.py --check
++
++# ২. পাইথন টেস্ট স্যুট রান করা
++python -m pytest tests/
++
++# ৩. লুপ চুক্তি সমতা পরীক্ষা
++python scripts/agents/check_loop_contract_parity.py
++```
++
++---
++
++## ৬. ব্রাঞ্চ ও কমিট নামকরণের নিয়ম
++
++- **ব্রিজ টাস্ক ব্রাঞ্চ:** `bridge/<task-id>` (উদাঃ `bridge-20261016-fix-typo`)
++- **কন্ট্রিবিউটর ব্রাঞ্চ:** `fix/<short-slug>` অথবা `feat/<short-slug>`
++- **কমিট ফরম্যাট:** Conventional Commits মেনে চলুন (যেমন: `fix(scope): ...`, `docs(guide): ...`) এবং সাথে `Closes #<issue-number>` রাখুন।
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 618dd8d9..8bbb3038 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -34,7 +34,8 @@
+     "test:command-router": "tsx test_command_router.ts",
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe",
++    "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:account-chain": "tsx scripts/test-runner.ts test_account_chain_callers.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+diff --git a/infrastructure/mcp-control-plane/src/adapters/github/index.ts b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+index 175a0e60..89e26f42 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/github/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+@@ -3,23 +3,28 @@ import { httpRequest, bearerAuth } from "../../lib/http.js";
+ 
+ const DEFAULT_BASE_URL = "https://api.github.com/repos/Supremeai-bd/supremeai";
+ 
+-export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: string } {
++export function getAccountConfig(accountIdOrRepo?: string): { apiKey: string; baseUrl: string } {
++  const target = accountIdOrRepo || "github-primary";
+   const accounts = buildAccountRegistry();
+-  const account = accounts.find((a) => a.id === accountId && a.provider === "github");
+-  if (!account) throw new Error(`GitHub account not found: ${accountId}`);
+-  if (!account.available) throw new Error(`GitHub account is not configured/available: ${accountId}`);
++  const account = accounts.find((a) => (a.id === target || a.displayName.includes(`/${target})`)) && a.provider === "github");
+ 
+   // বাংলা (Task 35): vault-থেকে-লোড-হওয়া PAT-ও ফলব্যাক-চেইনে রাখা হলো —
+   // যাতে মূল personal account-এর (org-migration-এর আগের) প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
+   // দিয়েই সক্রিয় হয় (Infisical pullSecretsIntoProcessEnv() রানটাইমে এটি ভরে)।
+   const apiKey =
+-    process.env[account.apiKeyRef] ||
++    (account ? process.env[account.apiKeyRef] : "") ||
+     process.env.GITHUB_PAT_PAYKARIBAZARONLINE ||
+     process.env.GITHUB_TOKEN ||
+     process.env.GH_TOKEN ||
+     "";
+-  if (!apiKey) throw new Error(`Missing GitHub Token in env for: ${account.apiKeyRef}`);
+-  return { apiKey, baseUrl: account.url || DEFAULT_BASE_URL };
++  if (!apiKey) throw new Error(`Missing GitHub Token in env for target: ${target}`);
++
++  let baseUrl = account?.url;
++  if (!baseUrl) {
++    const cleanRepo = target.replace(/^github-pay-/, "").replace(/^Supremeai-bd\//i, "");
++    baseUrl = `https://api.github.com/repos/Supremeai-bd/${cleanRepo}`;
++  }
++  return { apiKey, baseUrl };
+ }
+ 
+ export function githubHeaders(token: string) {
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 6e2c21ad..dd90b589 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -35,6 +35,77 @@ function isAvailable(envRef: string): boolean {
+   return val.length > 0;
+ }
+ 
++/**
++ * Canonical federation repositories under the Supremeai-bd organization
++ * (SSOT: ECOSYSTEM_MAP.md §2). Used as the guaranteed baseline for discovery.
++ */
++export const CANONICAL_FEDERATION_REPOS = [
++  "supremeai",
++  "supremeai-open",
++  "supremeai-command",
++  "supremeai-skills",
++  "supremeai-vscode",
++  "supremeai-agents",
++  "supremeai-browser",
++  "supremeai-api",
++  "supremeai-studio",
++  "supremeai-infrastructure",
++  "supremeai-core",
++  "supremeai-sdk",
++  "supremeai-mcp-control-plane",
++  "supremeai-archive",
++] as const;
++
++export const GITHUB_ORGANIZATION = "Supremeai-bd";
++
++// In-memory registry of discovered repositories under the organization.
++// Initialized with canonical federation repos to guarantee zero-network baseline.
++const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
++
++/**
++ * Register a newly discovered repository name under the organization.
++ */
++export function registerDiscoveredOrgRepo(repoName: string): void {
++  const normalized = repoName.trim().toLowerCase();
++  if (normalized && !discoveredOrgRepos.has(normalized)) {
++    discoveredOrgRepos.add(normalized);
++  }
++}
++
++/**
++ * Get all tracked repository names under the organization.
++ */
++export function getTrackedOrgRepos(): string[] {
++  return Array.from(discoveredOrgRepos);
++}
++
++/**
++ * Dynamically discover repositories under Supremeai-bd from GitHub API.
++ * Updates discoveredOrgRepos in memory without requiring server restart or code edits.
++ */
++export async function refreshDiscoveredOrgRepos(): Promise<string[]> {
++  const token =
++    process.env["GITHUB_PAT_PAYKARIBAZARONLINE"] ||
++    process.env["GITHUB_TOKEN"] ||
++    process.env["GH_TOKEN"];
++  try {
++    const res = await fetch(`https://api.github.com/orgs/${GITHUB_ORGANIZATION}/repos?per_page=100`, {
++      headers: {
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        ...(token ? { Authorization: `Bearer ${token}` } : {}),
++      },
++    });
++    if (res.ok) {
++      const repos = (await res.json()) as Array<{ name?: string }>;
++      for (const r of repos) {
++        if (r.name) registerDiscoveredOrgRepo(r.name);
++      }
++    }
++  } catch {}
++  return getTrackedOrgRepos();
++}
++
+ /**
+  * Registry is built dynamically from env at startup.
+  * Adding a new account = add env vars + add entry here.
+@@ -107,115 +178,40 @@ export function buildAccountRegistry(): ProviderAccount[] {
+     {
+       id: "github-primary",
+       provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai)",
++      displayName: `GitHub Repo (${GITHUB_ORGANIZATION}/supremeai)`,
+       role: "source-control",
+       environment: "production",
+       capabilities: ["health", "logs", "metrics"],
+       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai",
++      url: `https://api.github.com/repos/${GITHUB_ORGANIZATION}/supremeai`,
+       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+     },
+ 
+-    // ── GitHub — Supremeai-bd federation (সম্পূর্ণ-কভারেজ) ──
+-    {
+-      id: "github-pay-supremeai",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-api",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-api)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-api",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-archive",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-archive)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-archive",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
++    // ── GitHub — Supremeai-bd Organization Level Monitor ──
+     {
+-      id: "github-pay-supremeai-core",
++      id: "github-org-supremeai-bd",
+       provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-core)",
+-      role: "source-control",
++      displayName: `GitHub Organization (${GITHUB_ORGANIZATION})`,
++      role: "organization",
+       environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-core",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-infrastructure",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-infrastructure)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-infrastructure",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-mcp-control-plane",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-mcp-control-plane)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-mcp-control-plane",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-open",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-open)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
+-      apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-open",
+-      available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
+-    {
+-      id: "github-pay-supremeai-sdk",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-sdk)",
+-      role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
++      capabilities: ["health", "metrics"],
+       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-sdk",
++      url: `https://api.github.com/orgs/${GITHUB_ORGANIZATION}`,
+       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+     },
+-    {
+-      id: "github-pay-supremeai-studio",
+-      provider: "github",
+-      displayName: "GitHub Repo (Supremeai-bd/supremeai-studio)",
++
++    // ── GitHub — Supremeai-bd federation (Dynamic Org-Wide Auto-Discovery) ──
++    ...getTrackedOrgRepos().map((repoName) => ({
++      id: `github-pay-${repoName}`,
++      provider: "github" as const,
++      displayName: `GitHub Repo (${GITHUB_ORGANIZATION}/${repoName})`,
+       role: "source-control",
+-      environment: "production",
+-      capabilities: ["health", "logs", "metrics"],
++      environment: "production" as const,
++      capabilities: ["health", "logs", "metrics"] as Capability[],
+       apiKeyRef: "GITHUB_PAT_PAYKARIBAZARONLINE",
+-      url: "https://api.github.com/repos/Supremeai-bd/supremeai-studio",
++      url: `https://api.github.com/repos/${GITHUB_ORGANIZATION}/${repoName}`,
+       available: isAvailable("GITHUB_PAT_PAYKARIBAZARONLINE") || isAvailable("GITHUB_TOKEN") || isAvailable("GH_TOKEN"),
+-    },
++    })),
+ 
+     // ── Supabase ──────────────────────────────────────────
+     {
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index a35faa74..9e7f25f6 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -13,7 +13,7 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
+  * (supremeai) কঠোরভাবে ব্লকড; repo_viewer সব রিপো রিড-অনলি পাবে; agent ও
+  * উর্ধ্বতন স্তর আগের মতোই read/write (টাস্ক স্কোপের মধ্যে)।
+  */
+-const SATELLITE_REPOS: ReadonlySet<string> = new Set([
++export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+   "supremeai-api",
+   "supremeai-open",
+   "supremeai-sdk",
+@@ -22,8 +22,19 @@ const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+   "supremeai-studio",
+   "supremeai-infrastructure",
+   "supremeai-mcp-control-plane",
++  "supremeai-command",
++  "supremeai-skills",
++  "supremeai-vscode",
++  "supremeai-agents",
++  "supremeai-browser",
+ ]);
+ 
++export function isSatelliteRepo(repoName: string): boolean {
++  const clean = repoName.replace(/^Supremeai-bd\//i, "").toLowerCase();
++  if (clean === "supremeai") return false;
++  return SATELLITE_REPOS.has(clean) || clean.startsWith("supremeai-");
++}
++
+ export type RepoAccess = "none" | "satellite-readonly" | "all-readonly" | "read-write";
+ 
+ export function repoAccessFor(role: UserRole): RepoAccess {
+@@ -55,7 +66,7 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
+   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
+   const shortName = fullName.split("/").pop() ?? fullName;
+-  if (access === "satellite-readonly" && !SATELLITE_REPOS.has(shortName)) {
++  if (access === "satellite-readonly" && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
+     return `Forbidden: restricted_viewer is limited to satellite repos; '${shortName}' is outside the allowlist (core repo is blocked).`;
+   }
+   const scopes = store.scopes ?? [];
+@@ -71,31 +82,41 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+   return null;
+ }
+ 
+-/** Resolves the account's repo base URL exactly as the adapter does (no I/O). */
+-function repoUrlFor(accountId: string): string {
++/** Resolves the account or target repo base URL exactly as the adapter does (no I/O). */
++export function repoUrlFor(accountId?: string, repo?: string): string {
++  if (repo) {
++    const cleanRepo = repo.replace(/^Supremeai-bd\//i, "");
++    return `https://api.github.com/repos/Supremeai-bd/${cleanRepo}`;
++  }
++  const id = accountId || "github-primary";
+   try {
+-    // বাংলা মন্তব্য: অ্যাকাউন্ট রেজিস্ট্রি থেকে baseUrl নেওয়া হয় — অ্যাডাপ্টারের সাথে একই উৎস, কোনো নেটওয়ার্ক I/O নেই।
+-    const account = buildAccountRegistry().find((a) => a.id === accountId && a.provider === "github");
+-    return account?.url || "https://api.github.com/repos/Supremeai-bd/supremeai";
++    const account = buildAccountRegistry().find(
++      (a) => (a.id === id || a.displayName.includes(`/${id})`)) && a.provider === "github"
++    );
++    if (account?.url) return account.url;
+   } catch {
+-    return "https://api.github.com/repos/Supremeai-bd/supremeai";
++    // fallback
+   }
++  const clean = id.replace(/^github-pay-/, "").replace(/^Supremeai-bd\//i, "");
++  return `https://api.github.com/repos/Supremeai-bd/${clean}`;
+ }
+ 
+ export async function registerGitHubTools(server: McpServer): Promise<void> {
+   server.tool(
+     "github.workflow_runs",
+-    "List recent GitHub Actions workflow runs for the repository.",
++    "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
+     {
+-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+       limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+     },
+-    async ({ accountId, limit }) => {
+-      // #110: repo-isolation gate — read-only tiers respect the allowlist.
+-      const deny = assertRepoReadAccess("github.workflow_runs", accountId, repoUrlFor(accountId));
++    async ({ accountId, repo, limit }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.workflow_runs", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const runs = await getWorkflowRuns(accountId, limit || 5);
++        const runs = await getWorkflowRuns(target, limit || 5);
+         return {
+           content: [{ type: "text", text: JSON.stringify(runs, null, 2) }],
+         };
+@@ -110,17 +131,19 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "github.get_failed_logs",
+-    "Get the trailing logs for any failed jobs in a specific workflow run.",
++    "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
+     {
+-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+       runId: z.string().describe("The GitHub Actions run ID"),
+     },
+-    async ({ accountId, runId }) => {
+-      // #110: repo-isolation gate.
+-      const deny = assertRepoReadAccess("github.get_failed_logs", accountId, repoUrlFor(accountId));
++    async ({ accountId, repo, runId }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.get_failed_logs", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const logs = await getFailedLogs(accountId, runId);
++        const logs = await getFailedLogs(target, runId);
+         return {
+           content: [{ type: "text", text: JSON.stringify(logs, null, 2) }],
+         };
+@@ -135,13 +158,18 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "github.list_secrets",
+-    "List all GitHub Actions secrets configured for the repository (names only).",
++    "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
+     {
+-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+     },
+-    async ({ accountId }) => {
++    async ({ accountId, repo }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.list_secrets", target, targetUrl);
++      if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const secrets = await listSecrets(accountId);
++        const secrets = await listSecrets(target);
+         return {
+           content: [{ type: "text", text: JSON.stringify(secrets, null, 2) }],
+         };
+@@ -156,18 +184,20 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "github.read_file",
+-    "Read the content of any file from the GitHub repository (Read-Only).",
++    "Read the content of any file from any repository across the organization (Read-Only).",
+     {
+-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
+-      path: z.string().describe("Relative path to the file (e.g. 'backend/main.py')"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
++      path: z.string().describe("Relative path to the file (e.g. 'package.json', 'backend/main.py')"),
+       ref: z.string().optional().describe("Branch, tag or commit SHA (default: 'main')"),
+     },
+-    async ({ accountId, path, ref }) => {
+-      // #110: repo-isolation gate (github.read_file — the issue's named tool).
+-      const deny = assertRepoReadAccess("github.read_file", accountId, repoUrlFor(accountId));
++    async ({ accountId, repo, path, ref }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.read_file", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const fileData = await readFile(accountId, path, ref ?? "main");
++        const fileData = await readFile(target, path, ref ?? "main");
+         return {
+           content: [{ type: "text", text: JSON.stringify(fileData, null, 2) }],
+         };
+@@ -182,18 +212,20 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+ 
+   server.tool(
+     "github.list_prs",
+-    "List pull requests for the repository (Read-Only).",
++    "List pull requests for any repository across Supremeai-bd (Read-Only).",
+     {
+-      accountId: z.string().describe("The account ID (e.g. github-primary)"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+       state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+       limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+     },
+-    async ({ accountId, state, limit }) => {
+-      // #110: repo-isolation gate.
+-      const deny = assertRepoReadAccess("github.list_prs", accountId, repoUrlFor(accountId));
++    async ({ accountId, repo, state, limit }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.list_prs", target, targetUrl);
+       if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
+       try {
+-        const prs = await listPullRequests(accountId, state ?? "open", limit ?? 5);
++        const prs = await listPullRequests(target, state ?? "open", limit ?? 5);
+         return {
+           content: [{ type: "text", text: JSON.stringify(prs, null, 2) }],
+         };
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+new file mode 100644
+index 00000000..2d1781fe
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -0,0 +1,136 @@
++import assert from "node:assert/strict";
++import {
++  buildAccountRegistry,
++  CANONICAL_FEDERATION_REPOS,
++  getTrackedOrgRepos,
++  registerDiscoveredOrgRepo,
++  GITHUB_ORGANIZATION,
++} from "./src/registry/account.registry.js";
++import { getAccountConfig } from "./src/adapters/github/index.js";
++import {
++  assertRepoReadAccess,
++  isSatelliteRepo,
++  repoAccessFor,
++  repoUrlFor,
++  SATELLITE_REPOS,
++} from "./src/tools/github.tools.js";
++import { RequestContextStore } from "./src/policy/auth.context.js";
++import { defaultClientScopes } from "./src/policy/client-registry.js";
++
++console.log("Starting hybrid repo access & organization discovery tests...");
++
++// 1. Verify organization registry configuration
++assert.equal(GITHUB_ORGANIZATION, "Supremeai-bd");
++assert.equal(CANONICAL_FEDERATION_REPOS.length, 14);
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-open"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-command"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-skills"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-vscode"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-agents"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-browser"));
++
++const initialTracked = getTrackedOrgRepos();
++assert.equal(initialTracked.length, 14);
++
++// Org-level monitor account presence in registry
++const accounts = buildAccountRegistry();
++const orgMonitor = accounts.find((a) => a.id === "github-org-supremeai-bd");
++assert.ok(orgMonitor, "Must have github-org-supremeai-bd account in registry");
++assert.equal(orgMonitor.url, "https://api.github.com/orgs/Supremeai-bd");
++assert.equal(orgMonitor.role, "organization");
++
++// Dynamic registration test
++registerDiscoveredOrgRepo("supremeai-experimental-lab");
++const updatedTracked = getTrackedOrgRepos();
++assert.ok(updatedTracked.includes("supremeai-experimental-lab"));
++const updatedAccounts = buildAccountRegistry();
++const dynAccount = updatedAccounts.find((a) => a.id === "github-pay-supremeai-experimental-lab");
++assert.ok(dynAccount, "Dynamic repo should register an account");
++assert.equal(dynAccount.url, "https://api.github.com/repos/Supremeai-bd/supremeai-experimental-lab");
++
++// 2. Hybrid repo URL resolution
++assert.equal(
++  repoUrlFor(undefined, "supremeai-skills"),
++  "https://api.github.com/repos/Supremeai-bd/supremeai-skills"
++);
++assert.equal(
++  repoUrlFor("github-primary", "Supremeai-bd/supremeai-command"),
++  "https://api.github.com/repos/Supremeai-bd/supremeai-command"
++);
++assert.equal(
++  repoUrlFor("github-primary"),
++  "https://api.github.com/repos/Supremeai-bd/supremeai"
++);
++
++// 3. Adapter getAccountConfig resolution
++process.env.GITHUB_TOKEN = process.env.GITHUB_TOKEN || "test-gh-token-dummy";
++const skillsConfig = getAccountConfig("supremeai-skills");
++assert.equal(skillsConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-skills");
++assert.ok(skillsConfig.apiKey);
++
++const cmdConfig = getAccountConfig("Supremeai-bd/supremeai-command");
++assert.equal(cmdConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-command");
++
++// 4. Satellite classification
++assert.equal(isSatelliteRepo("supremeai"), false, "supremeai is core monorepo, not satellite");
++assert.equal(isSatelliteRepo("supremeai-open"), true);
++assert.equal(isSatelliteRepo("supremeai-skills"), true);
++assert.equal(isSatelliteRepo("supremeai-command"), true);
++assert.equal(isSatelliteRepo("supremeai-vscode"), true);
++assert.equal(isSatelliteRepo("supremeai-agents"), true);
++assert.equal(isSatelliteRepo("supremeai-browser"), true);
++assert.equal(SATELLITE_REPOS.has("supremeai-skills"), true);
++assert.equal(SATELLITE_REPOS.has("supremeai-command"), true);
++
++// 5. Authority matrix checks across hybrid repositories
++const coreUrl = "https://api.github.com/repos/Supremeai-bd/supremeai";
++const skillsUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-skills";
++const cmdUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-command";
++
++// 5a. Agent authority (Rank >= 3) — can access any repo (core or satellite)
++RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.equal(denyCore, null, "Agent must be permitted to read core repo");
++
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.equal(denySkills, null, "Agent must be permitted to read satellite repo supremeai-skills");
++
++  const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
++  assert.equal(denyCmd, null, "Agent must be permitted to read satellite repo supremeai-command");
++});
++
++// 5b. Restricted viewer authority — satellite allowed, core blocked
++const rvScopes = defaultClientScopes("restricted_viewer");
++RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () => {
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.equal(denySkills, null, "restricted_viewer must be permitted to read satellite repo");
++
++  const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
++  assert.equal(denyCmd, null, "restricted_viewer must be permitted to read satellite repo");
++
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.ok(denyCore && denyCore.includes("satellite repos"), "restricted_viewer must be blocked from core repo");
++});
++
++// 5c. Repo viewer (Auditor) authority — all repos readable with scope
++const audScopes = defaultClientScopes("repo_viewer");
++RequestContextStore.run({ role: "repo_viewer", scopes: audScopes }, () => {
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.equal(denyCore, null, "repo_viewer must read core repo");
++
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.equal(denySkills, null, "repo_viewer must read satellite repo");
++});
++
++// 5d. Guest viewer authority — blocked from all repos (default-deny)
++const guestScopes = defaultClientScopes("viewer");
++RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.ok(denyCore && denyCore.includes("no repository read access"));
++
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.ok(denySkills && denySkills.includes("no repository read access"));
++});
++
++console.log("All hybrid repo access & organization discovery tests passed successfully!");

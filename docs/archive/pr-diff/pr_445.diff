@@ -1,0 +1,54 @@
+diff --git a/AUTONOMOUS_TRANSIT_PIPELINE.md b/AUTONOMOUS_TRANSIT_PIPELINE.md
+new file mode 100644
+index 00000000..7bbd259a
+--- /dev/null
++++ b/AUTONOMOUS_TRANSIT_PIPELINE.md
+@@ -0,0 +1,15 @@
++1. Claim & Branch: Agent claims issue; webhook creates task branch; agent pushes only there.
++2. Webhook PR & CI: Webhook opens PR on supremeai-open; public CI passes -> auto-merges to main.
++3. Bridge Barrier: Bridge does not exist before open:main merge; private intake ignores unmerged code.
++4. Dual Dispatch: On open:main merge, bridge dispatches code to target satellite and monorepo.
++5. Auto-Prune: Once target merges, webhook permanently deletes transit file from supremeai-open.
++6. No Claim No Push: Any push without active atomic claim on the issue is blocked fail-closed.
++7. No Push to Main: Direct push to main is strictly blocked across all federation repositories.
++8. No Agent Branching: Agents cannot create branches; unprovisioned branches are rejected.
++9. 30-Min Stale Expiry: If no push arrives within 30 minutes of claim, issue is auto-unclaimed.
++10. Anti-Tamper: Any action outside this exact pipeline is treated as intrusion and blocked.
++11. Loop Entry: Agent triggers continuous loop on arrival to inspect the live GitHub board.
++12. Queue Active Prompt: If open issue exists -> Prompt: "Claim issue, load all CODER rules, and fix inside scope."
++13. Queue Empty Prompt: If no issue exists -> Prompt: "Inspect codebase, load all AUDITOR rules, and run audit."
++14. Role Contract Routing: Issues matching other domains load exact role rules (ARCHITECT, REVIEWER, CI_FIXER).
++15. Continuous Reset: Upon task or audit completion, loop resets immediately to re-poll board with zero sleep.
+diff --git a/docs/AUTONOMOUS_TRANSIT_PIPELINE.md b/docs/AUTONOMOUS_TRANSIT_PIPELINE.md
+new file mode 100644
+index 00000000..7bbd259a
+--- /dev/null
++++ b/docs/AUTONOMOUS_TRANSIT_PIPELINE.md
+@@ -0,0 +1,15 @@
++1. Claim & Branch: Agent claims issue; webhook creates task branch; agent pushes only there.
++2. Webhook PR & CI: Webhook opens PR on supremeai-open; public CI passes -> auto-merges to main.
++3. Bridge Barrier: Bridge does not exist before open:main merge; private intake ignores unmerged code.
++4. Dual Dispatch: On open:main merge, bridge dispatches code to target satellite and monorepo.
++5. Auto-Prune: Once target merges, webhook permanently deletes transit file from supremeai-open.
++6. No Claim No Push: Any push without active atomic claim on the issue is blocked fail-closed.
++7. No Push to Main: Direct push to main is strictly blocked across all federation repositories.
++8. No Agent Branching: Agents cannot create branches; unprovisioned branches are rejected.
++9. 30-Min Stale Expiry: If no push arrives within 30 minutes of claim, issue is auto-unclaimed.
++10. Anti-Tamper: Any action outside this exact pipeline is treated as intrusion and blocked.
++11. Loop Entry: Agent triggers continuous loop on arrival to inspect the live GitHub board.
++12. Queue Active Prompt: If open issue exists -> Prompt: "Claim issue, load all CODER rules, and fix inside scope."
++13. Queue Empty Prompt: If no issue exists -> Prompt: "Inspect codebase, load all AUDITOR rules, and run audit."
++14. Role Contract Routing: Issues matching other domains load exact role rules (ARCHITECT, REVIEWER, CI_FIXER).
++15. Continuous Reset: Upon task or audit completion, loop resets immediately to re-poll board with zero sleep.
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 62c72813..601a2630 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -88,6 +88,7 @@
+     ".gitleaksignore",
+     "AGENTS.md",
+     "AGENT_RULES.md",
++    "AUTONOMOUS_TRANSIT_PIPELINE.md",
+     "ECOSYSTEM_MAP.md",
+     "LICENSE",
+     "README.md",

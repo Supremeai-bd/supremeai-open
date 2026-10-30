@@ -1,0 +1,84 @@
+diff --git a/docs/bridge/bridge-20261030-c61-ci3137-ts2304-handoff.md b/docs/bridge/bridge-20261030-c61-ci3137-ts2304-handoff.md
+new file mode 100644
+index 00000000..1b76f222
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c61-ci3137-ts2304-handoff.md
+@@ -0,0 +1,78 @@
++# Bridge Cycle 61 — CI #3138 Handoff Receipt: Tower TS Verification TS2304 on PR #3137 (fix recipe verified)
++
++**Task ID:** `bridge-20261030-c61-ci3137-ts2304-handoff`
++**Slot:** 2026-10-30 17:35+08 (09:35Z), Job 478338 continuous agent loop
++**Lane:** solver (loop dispatch), WO #3138 atomically claimed 09:47:44Z (`GRANT_NEW`, lease to 10:17:44Z, planes: label + comment)
++**Deliverable:** root-cause diagnosis + exact fix recipe + 3-tier verification for the `fix(ci)` handoff. Docs-only; the code fix itself lives on PR #3137's head branch, which the zero-credential bridge cannot write (envelope statement in §4).
++
++## 1. Incident verification (STALE-INCIDENT GUARD satisfied — live, not stale)
++
++| Datum | Value |
++|---|---|
++| Failing run | 41034017161 — "CI — Open Unified Pipeline" (`.github/workflows/pipeline.yml`), head branch `3137/merge`, ~09:31Z 2026-10-30 |
++| Failed job | **Tower TS Verification (typecheck + contract-safe tests)** (`mcp-tower` job) |
++| Main rerun | 41034066256 (run #7430), `repository_dispatch` event `federation_ci_failed`, head `b5606e6` (PR #3135), started 09:31:33Z — **conclusion success** |
++| Isolation | main is green; the failure exists only on the PR-merge surface (main + PR #3137) |
++| PR head freshness | re-fetched at 09:47Z: `74f600e` unchanged, broken import block still present — **the incident is live**, re-solving is legitimate |
++
++Reproduction: local merge of `origin/main` (`b5606e6`) + `pull/3137/head` (`74f600e`) — clean 4-file merge (exactly the PR's diff), then the two job steps (`npm ci` + `tsc --noEmit`, `npm run test:tower-ci`) re-run in `infrastructure/mcp-control-plane` with Node 24.22.1 / npm 11.19.1.
++
++## 2. Root cause (verified, not inferred)
++
++`tsc --noEmit` on the merge tree fails with exactly two errors:
++
++```
++src/tools/bridge.tools.ts(373,12): error TS2304: Cannot find name 'ClaimMarkerView'.
++src/tools/bridge.tools.ts(412,42): error TS2304: Cannot find name 'ClaimMarkerView'.
++```
++
++Mechanism: PR #3137 ("ROOT-CAUSE FIX (release-blind-spot): bridge.work.release writes an atomic-claim-release marker") relocates `ParsedClaimMarker` / `ClaimMarkerView` into the new `src/lib/claim_markers.ts` and keeps API compatibility in `src/tools/bridge.tools.ts` via:
++
++```ts
++export {
++  parseClaimMarkers, ATOMIC_CLAIM_RE, ATOMIC_CLAIM_RELEASE_RE, LEGACY_RELEASE_RE,
++} from "../lib/claim_markers.js";
++export type { ClaimMarkerView, ParsedClaimMarker } from "../lib/claim_markers.js";
++```
++
++A type-only **re**-export (`export type { X } from "…"`) publishes the name for downstream importers but does **not** create a binding in the exporting module's own scope. The two remaining local type annotations — `renewalDecision(markers: ClaimMarkerView, …)` (line 373) and `releaseDecision(markers: ClaimMarkerView, …)` (line 412) — therefore reference an unbound name. The value re-export (`export { parseClaimMarkers, … } from`) is unaffected, and `ParsedClaimMarker` is not referenced locally anywhere in the file, which is why tsc reports exactly these two errors and nothing else.
++
++## 3. The fix (2 lines) and its verification
++
++Extend the PR's existing import block in `src/tools/bridge.tools.ts`:
++
++```diff
++ import {
++   parseClaimMarkers,
+++  type ClaimMarkerView,
++ } from "../lib/claim_markers.js";
++```
++
++That is the whole fix — the import statement (unlike the re-export) creates the local binding the two annotations need, and it is the binding the PR author already intended (the same lib module, same relative path).
++
++Verification on the merge tree, before/after:
++
++| Tier | Before fix | After fix |
++|---|---|---|
++| `npx tsc --noEmit` | 2 × TS2304 (373,12 / 412,42) | **0 errors, exit 0** |
++| `npm run test:tower-ci` (full contract-safe suite, ~40 suites) | unreachable (typecheck gates the job) | **exit 0, all green** (chain reaches and passes the final `test_truncation_live_replay`) |
++| `npm run --silent test:claim-markers` (the PR's own new battery) | n/a | **PASS** — all 10 scenario groups green (epoch close on release markers, legacy prose, budget reset, cross-agent churn, fails-open on malformed input) |
++
++The third tier confirms the PR's functional payload is sound — only the type wiring is broken.
++
++## 4. Envelope statement
++
++- **The fixup belongs on PR #3137's head branch** (`bridge-20261030-claim-release-epoch`, author `paykaribazaronline`). `bridge_submit_patch` cuts branches from `main` and checkpoints every file against the main blob (#2333 `baseSha`) — there is no target-branch ingress, and the failing blob does not exist on `main` (main is green). A main-side patch would be a no-op at best and a corruptor at worst.
++- A rebased duplicate of PR #3137 carrying the fix was considered and rejected: it would duplicate the admin's open PR, strip authorship, and invite merge-conflict stampede in a fast-merge regime.
++- `originalIssueNumber=3138` with `closesOriginalIssue=false`: this receipt **closes nothing** — #3138 is resolved only when the PR head carries the fixup and the `3137/merge` run (or its successor) goes green. A `Closes` line now would be the #2211/#2225 false-closure family defect. The claim on #3138 (30-minute lease) signals the active coder lane; the receipt outlives the lease.
++- Zero credentials used end-to-end: the failing-run metadata came through the tower's zero-credential `github.workflow_runs` / `github.get_failed_logs`; the reproduction is entirely local git + npm against public refs.
++
++## 5. Free intel from the same dispatch
++
++- Tower handshake 09:37:38Z: **158 tools (stable, 10th consecutive session)**; health **19 healthy / 2 degraded / 0 unreachable** — the telegram-primary flap documented in the landed 09f8e31 profile was absent at this capture (no unreachable sample; consistent with the flap profile's own prediction that healthy hourly sweeps are not proof of resolution, so this is one datum, not a recovery record).
++- Board 95 open at the 09:37Z queue capture (loop's tower-fallback capture minutes later: 99 rows), 5 `status:unclaimed`: #3138 (this lane, now claimed), #3093 (guard post-closure verification — evidence complete per the c60 receipt), #2925 (scout R79, report-only), #2271 / #2237 (sentry family tail, skip-on-sight per the 2x-validated standing convention; the peer's closure series owns the generation).
++- Loop dispatch this slot: role **solver**; the picker's top row (#2271) carries an expired foreign claim (2105 min) and is standing skip-respect; this lane's claimed WO took the active slot.
++
++## 6. Handoff
++
++(a) **PR #3137 owner:** apply the §3 two-line import fixup; `tsc` + `test:tower-ci` will go green (verified here end-to-end); no other change is needed for CI. (b) **#3138:** closes when the fixup lands on the PR branch and the merge-surface run recovers — the guardian's watchdog will observe it; this receipt is the diagnosis record. (c) Standing: sentry-family tail #2237/#2271 skip-respect; R79 remedy in-gates watch (#2968/PR #368); #3093 verdict-plane residue; 158-tool baseline.

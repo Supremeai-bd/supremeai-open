@@ -1,0 +1,48 @@
+diff --git a/browser/scripts/webbotauth/probe.py b/browser/scripts/webbotauth/probe.py
+index 84ec66c7..38f4e13a 100644
+--- a/browser/scripts/webbotauth/probe.py
++++ b/browser/scripts/webbotauth/probe.py
+@@ -32,9 +32,7 @@
+ import base64
+ import hashlib
+ import json
+-import os
+ import secrets
+-import socket
+ import sys
+ import time
+ import urllib.error
+@@ -48,9 +46,7 @@
+ )
+ from cryptography.hazmat.primitives.serialization import (
+     Encoding,
+-    PrivateFormat,
+     PublicFormat,
+-    NoEncryption,
+ )
+ 
+ DEMO_ORIGIN = "https://http-message-signatures-example.research.cloudflare.com"
+diff --git a/browser/tests/test_webbotauth_probe.py b/browser/tests/test_webbotauth_probe.py
+index ab7d1c42..837dec3d 100644
+--- a/browser/tests/test_webbotauth_probe.py
++++ b/browser/tests/test_webbotauth_probe.py
+@@ -12,7 +12,6 @@
+ """
+ from __future__ import annotations
+ 
+-import base64
+ import importlib.util
+ import os
+ from pathlib import Path
+diff --git a/scripts/ops/tower_discovery_probe.py b/scripts/ops/tower_discovery_probe.py
+index 30aae529..b782ab69 100644
+--- a/scripts/ops/tower_discovery_probe.py
++++ b/scripts/ops/tower_discovery_probe.py
+@@ -30,7 +30,6 @@
+ 
+ import argparse
+ import json
+-import sys
+ import time
+ import urllib.error
+ import urllib.request

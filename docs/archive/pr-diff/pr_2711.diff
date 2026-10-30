@@ -1,0 +1,135 @@
+diff --git a/scripts/ci/check_dockerfile_security.py b/scripts/ci/check_dockerfile_security.py
+index 0407d001..20fa01be 100644
+--- a/scripts/ci/check_dockerfile_security.py
++++ b/scripts/ci/check_dockerfile_security.py
+@@ -82,9 +82,9 @@ def find_dockerfiles(root: Path) -> list[Path]:
+     dockerfiles = []
+     for p in root.rglob("*Dockerfile*"):
+         # Ignore test-runners, temporary files, python scripts or virtual environments
+-        if any(part.startswith(".") or part in ("node_modules", ".venv", "venv") for part in p.parts):
++        if any(part.startswith(".") or part in ("node_modules", ".venv", "venv", "__pycache__") for part in p.parts):
+             continue
+-        if p.suffix in (".py", ".sh", ".md", ".json", ".swp", ".bak", ".tmp"):
++        if p.suffix in (".py", ".sh", ".md", ".json", ".swp", ".bak", ".tmp", ".pyc"):
+             continue
+         if p.is_file() and ("dockerfile" in p.name.lower()):
+             dockerfiles.append(p)
+@@ -141,12 +141,12 @@ def check_dockerfile(dockerfile: Path) -> list[str]:
+             user_instructions.append((idx, match.group(1).strip()))
+ 
+     if not user_instructions:
+-        issues.append(f"Missing USER directive in {dockerfile.relative_to(REPO_ROOT)}. Container runs as root by default!")
++        issues.append(f"Missing USER directive in {dockerfile.relative_to(REPO_ROOT).as_posix()}. Container runs as root by default!")
+     else:
+         last_line_num, last_user = user_instructions[-1]
+         if last_user.lower() in ("root", "0"):
+             issues.append(
+-                f"Dockerfile {dockerfile.relative_to(REPO_ROOT)} specifies USER '{last_user}' on line {last_line_num}. Containers must run as non-root!"
++                f"Dockerfile {dockerfile.relative_to(REPO_ROOT).as_posix()} specifies USER '{last_user}' on line {last_line_num}. Containers must run as non-root!"
+             )
+ 
+     return issues
+@@ -159,7 +159,7 @@ def collect_from_surface(dockerfiles: list[Path]) -> dict[str, dict]:
+     """
+     surface: dict[str, dict] = {}
+     for df in sorted(dockerfiles):
+-        rel = str(df.relative_to(REPO_ROOT))
++        rel = df.relative_to(REPO_ROOT).as_posix()
+         if is_allowlisted(rel):
+             continue
+         content = df.read_text(encoding="utf-8", errors="ignore")
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 6c4258b9..f44a1c74 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -243,6 +243,32 @@ def find_mirror_in_items(
+     return None
+ 
+ 
++def find_mirror_by_commit(
++    items: list[dict[str, Any]], repo: str, branch: str, commit_sha: str
++) -> int | None:
++    """Pure scan: find an OPEN mirror issue for the same repo+branch+commit.
++
++    Complements find_mirror_in_items (which keys on run_id). Re-runs of the
++    same commit produce different run_ids but the same root cause; this
++    prevents duplicate P0/P2 work orders for one incident (#2705).
++    """
++    if not commit_sha or len(commit_sha) < 8:
++        return None
++    short = commit_sha[:12]
++    for item in items or []:
++        if item.get("pull_request"):
++            continue
++        body = item.get("body") or ""
++        if repo not in body:
++            continue
++        if short not in body:
++            continue
++        if branch and branch not in ("unknown",) and f"`{branch}`" not in body and branch not in body:
++            continue
++        return int(item["number"])
++    return None
++
++
+ def is_fresh_run(created_at: str, now_utc: datetime, max_age_hours: int) -> bool:
+     """Pure: True only if the failed run is younger than max_age_hours.
+ 
+@@ -370,6 +396,17 @@ def mirror_failure(
+                 f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
+             )
+             return True
++        # Enhanced dedup (#2705): same repo+branch+commit => same incident,
++        # even if the run_id differs (re-runs / different workflow runs on
++        # the same commit). Prevents duplicate P0/P2 WOs for one root cause.
++        if commit_sha:
++            dup_num = find_mirror_by_commit(items, repo, branch, commit_sha)
++            if dup_num is not None:
++                print(
++                    f"[watchdog] Duplicate incident (same commit {commit_sha[:8]}) "
++                    f"already mirrored as issue #{dup_num}. Skipping."
++                )
++                return True
+         if len(items) < 100:
+             break
+         page += 1
+@@ -504,6 +541,12 @@ def poll_federation_failures(
+             else:
+                 failed_count += 1
+ 
++    # Auto-close already-resolved incidents so the board drains.
++    try:
++        auto_resolve_fixed_incidents(token=token)
++    except Exception as exc:  # pragma: no cover - defensive
++        print(f"[watchdog] auto-resolve error: {exc}")
++
+     return mirrored_count, failed_count
+ 
+ 
+diff --git a/studio/src/App.test.tsx b/studio/src/App.test.tsx
+index f6f68ab6..883a68f0 100644
+--- a/studio/src/App.test.tsx
++++ b/studio/src/App.test.tsx
+@@ -231,7 +231,7 @@ describe('App component', () => {
+     );
+ 
+     // Workspace shell header & navigation elements
+-    expect(await screen.findByRole('button', { name: /SupremeAI home/i })).toBeInTheDocument();
+-    expect(await screen.findByRole('button', { name: /Open command palette/i })).toBeInTheDocument();
++    expect(await screen.findByRole('button', { name: /SupremeAI home/i }, { timeout: 4000 })).toBeInTheDocument();
++    expect(await screen.findByRole('button', { name: /Open command palette/i }, { timeout: 4000 })).toBeInTheDocument();
+   });
+ });
+diff --git a/studio/src/components/auth/ServiceHealthBar.tsx b/studio/src/components/auth/ServiceHealthBar.tsx
+index d1af4322..263080e1 100644
+--- a/studio/src/components/auth/ServiceHealthBar.tsx
++++ b/studio/src/components/auth/ServiceHealthBar.tsx
+@@ -37,7 +37,7 @@ const SERVICE_LABEL_MAP: Record<string, string> = {
+   application: 'Backend Core',
+   database: 'Data Store (Postgres)',
+   redis: 'Cache Cluster (Redis)',
+-  scraper: 'Scraper Relay',
++  scraper: 'Scraper Service',
+   tower: 'MCP Control Tower',
+   primary: 'Primary Core Node',
+   worker: 'Worker Node',

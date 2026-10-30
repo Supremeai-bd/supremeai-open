@@ -1,0 +1,384 @@
+diff --git a/core/tools/agent_tools.py b/core/tools/agent_tools.py
+index 92327502..92effe55 100644
+--- a/core/tools/agent_tools.py
++++ b/core/tools/agent_tools.py
+@@ -10,7 +10,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+diff --git a/core/tools/ai_federation_protocol.py b/core/tools/ai_federation_protocol.py
+index e00ea31b..964aaa51 100644
+--- a/core/tools/ai_federation_protocol.py
++++ b/core/tools/ai_federation_protocol.py
+@@ -2,7 +2,7 @@
+ import uuid
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AIFederationProtocol:
+diff --git a/core/tools/api_gateway.py b/core/tools/api_gateway.py
+index 489ce97d..ec0d2fd5 100644
+--- a/core/tools/api_gateway.py
++++ b/core/tools/api_gateway.py
+@@ -11,7 +11,7 @@
+ from core.automation.dispatcher import automation_dispatcher
+ from core.automation.models import AutomationEvent, ExecutionEnvelope
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.auth_middleware import AuthMiddleware
+ from middleware.rate_limiter import AsyncRateLimiter
+ 
+diff --git a/core/tools/bandwidth_optimizer.py b/core/tools/bandwidth_optimizer.py
+index 7ee11405..0c8898f4 100644
+--- a/core/tools/bandwidth_optimizer.py
++++ b/core/tools/bandwidth_optimizer.py
+@@ -1,7 +1,7 @@
+ import re
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class BandwidthOptimizer:
+diff --git a/core/tools/billing/cost_auditor.py b/core/tools/billing/cost_auditor.py
+index 5a18138d..48a923c6 100644
+--- a/core/tools/billing/cost_auditor.py
++++ b/core/tools/billing/cost_auditor.py
+@@ -1,6 +1,6 @@
+ import os
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from memory.sqlite_store import SQLiteMemoryStore
+ 
+ 
+diff --git a/core/tools/billing/monthly_cost_reporter.py b/core/tools/billing/monthly_cost_reporter.py
+index cc064e7e..fdd3a23e 100644
+--- a/core/tools/billing/monthly_cost_reporter.py
++++ b/core/tools/billing/monthly_cost_reporter.py
+@@ -6,7 +6,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class MonthlyCostReporter:
+diff --git a/core/tools/browser/browser_stealth.py b/core/tools/browser/browser_stealth.py
+index dd1f552f..d78e6cf6 100644
+--- a/core/tools/browser/browser_stealth.py
++++ b/core/tools/browser/browser_stealth.py
+@@ -17,7 +17,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ HAS_PLAYWRIGHT = True
+ try:  # pragma: no cover - optional dependency
+diff --git a/core/tools/browser/playwright_browser_agent.py b/core/tools/browser/playwright_browser_agent.py
+index 49896526..307cb976 100644
+--- a/core/tools/browser/playwright_browser_agent.py
++++ b/core/tools/browser/playwright_browser_agent.py
+@@ -13,7 +13,7 @@
+ from pathlib import Path
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from playwright.sync_api import Page
+diff --git a/core/tools/browser/stealth_http_client.py b/core/tools/browser/stealth_http_client.py
+index 20912557..b54c032a 100644
+--- a/core/tools/browser/stealth_http_client.py
++++ b/core/tools/browser/stealth_http_client.py
+@@ -3,7 +3,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.security_tools.proxy_manager import ProxyManager
+ 
+ # List of typical browser User-Agents for stealth scraping emulation
+diff --git a/core/tools/browser/web_fallback_agent.py b/core/tools/browser/web_fallback_agent.py
+index 37a2a785..ea707a61 100644
+--- a/core/tools/browser/web_fallback_agent.py
++++ b/core/tools/browser/web_fallback_agent.py
+@@ -1,4 +1,4 @@
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class WebFallbackAgent:
+diff --git a/core/tools/browser/web_scraper.py b/core/tools/browser/web_scraper.py
+index 6a221e61..ea8b5b9c 100644
+--- a/core/tools/browser/web_scraper.py
++++ b/core/tools/browser/web_scraper.py
+@@ -3,7 +3,7 @@
+ import httpx
+ from bs4 import BeautifulSoup
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import is_safe_url
+ 
+ 
+diff --git a/core/tools/checkpoint_manager.py b/core/tools/checkpoint_manager.py
+index 7b5c8b8c..01e703af 100644
+--- a/core/tools/checkpoint_manager.py
++++ b/core/tools/checkpoint_manager.py
+@@ -5,7 +5,7 @@
+ from typing import Any
+ 
+ from core.degraded_mode import SQLiteFallbackDisabledError, require_sqlite_allowed
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.persistence import pooled_pg
+ from core.persistence.write_behind import WriteBehindBatcher
+ 
+diff --git a/core/tools/cli_process_delegator.py b/core/tools/cli_process_delegator.py
+index 2212fd78..12fa9001 100644
+--- a/core/tools/cli_process_delegator.py
++++ b/core/tools/cli_process_delegator.py
+@@ -1,6 +1,6 @@
+ import asyncio
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class CliProcessDelegator:
+diff --git a/core/tools/code/ai_pair_programmer.py b/core/tools/code/ai_pair_programmer.py
+index 8c4daa54..c5d3e007 100644
+--- a/core/tools/code/ai_pair_programmer.py
++++ b/core/tools/code/ai_pair_programmer.py
+@@ -3,7 +3,7 @@
+ from fastapi import APIRouter, HTTPException
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/pair", tags=["ai-pair-programmer"])
+ 
+diff --git a/core/tools/code/auto_pr_pipeline.py b/core/tools/code/auto_pr_pipeline.py
+index 6162242e..9a42f7d9 100644
+--- a/core/tools/code/auto_pr_pipeline.py
++++ b/core/tools/code/auto_pr_pipeline.py
+@@ -10,7 +10,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.intelligence.guardian_ai import guardian_ai
+ 
+ 
+diff --git a/core/tools/code/auto_test_generator.py b/core/tools/code/auto_test_generator.py
+index 397072ff..b91abe14 100644
+--- a/core/tools/code/auto_test_generator.py
++++ b/core/tools/code/auto_test_generator.py
+@@ -16,7 +16,7 @@
+ from fastapi import APIRouter, File, HTTPException, UploadFile
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.upload_validator import validate_upload
+ from tools.learning.style_learner import StyleLearner
+ 
+diff --git a/core/tools/code/code_smell_detector.py b/core/tools/code/code_smell_detector.py
+index 1db83293..ac7fe2b0 100644
+--- a/core/tools/code/code_smell_detector.py
++++ b/core/tools/code/code_smell_detector.py
+@@ -7,7 +7,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class CodeSmellDetector:
+diff --git a/core/tools/code/cot_reasoner.py b/core/tools/code/cot_reasoner.py
+index e0350bb3..5646f18a 100644
+--- a/core/tools/code/cot_reasoner.py
++++ b/core/tools/code/cot_reasoner.py
+@@ -8,7 +8,7 @@
+ random = secrets.SystemRandom()
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ _ALLOWED_OPERATORS = {
+     ast.Add: operator.add,
+diff --git a/core/tools/code/dependency_manager_agent.py b/core/tools/code/dependency_manager_agent.py
+index d5c64fbb..73d6f437 100644
+--- a/core/tools/code/dependency_manager_agent.py
++++ b/core/tools/code/dependency_manager_agent.py
+@@ -4,7 +4,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class DependencyManagerAgent:
+diff --git a/core/tools/code/diagram_to_architecture.py b/core/tools/code/diagram_to_architecture.py
+index f26b8ee5..b1d2debc 100644
+--- a/core/tools/code/diagram_to_architecture.py
++++ b/core/tools/code/diagram_to_architecture.py
+@@ -5,7 +5,7 @@
+ 
+ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.upload_validator import validate_upload
+ 
+ router = APIRouter(prefix="/diagram", tags=["diagram-to-architecture"])
+diff --git a/core/tools/code/fuzz_sandbox.py b/core/tools/code/fuzz_sandbox.py
+index 4db3f7ec..8f694806 100644
+--- a/core/tools/code/fuzz_sandbox.py
++++ b/core/tools/code/fuzz_sandbox.py
+@@ -1,6 +1,6 @@
+ import ast
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Testing Suite Color Codes
+ GREEN = "\033[92m"
+diff --git a/core/tools/code/image_to_code.py b/core/tools/code/image_to_code.py
+index ed646bd7..468b4ba4 100644
+--- a/core/tools/code/image_to_code.py
++++ b/core/tools/code/image_to_code.py
+@@ -7,7 +7,7 @@
+ 
+ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.upload_validator import validate_upload
+ 
+ router = APIRouter(prefix="/tools", tags=["tools", "image-to-code"])
+diff --git a/core/tools/code/local_code_executor.py b/core/tools/code/local_code_executor.py
+index 40ce782b..b1ee7e61 100644
+--- a/core/tools/code/local_code_executor.py
++++ b/core/tools/code/local_code_executor.py
+@@ -1,7 +1,7 @@
+ import asyncio
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.devops.docker_sandbox import (
+     DockerSandbox,  # আমাদের এক্সিস্টিং সুনির্দিষ্ট টুল
+ )
+diff --git a/core/tools/code/lsp_bridge.py b/core/tools/code/lsp_bridge.py
+index 474db1ab..e15049ce 100644
+--- a/core/tools/code/lsp_bridge.py
++++ b/core/tools/code/lsp_bridge.py
+@@ -3,7 +3,7 @@
+ # GitHub Copilot-এর মত ডাইনামিক ইনলাইন কোড কমপ্লিশন জেনারেট করে।
+ 
+ from core.llm.llm_gateway import GatewayManager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class LanguageServerBridge:
+diff --git a/core/tools/code/pr_reviewer.py b/core/tools/code/pr_reviewer.py
+index db147800..7740950b 100644
+--- a/core/tools/code/pr_reviewer.py
++++ b/core/tools/code/pr_reviewer.py
+@@ -3,7 +3,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from github import Github
+diff --git a/core/tools/code/pre_commit_ai.py b/core/tools/code/pre_commit_ai.py
+index 49cf4485..d4048dcf 100644
+--- a/core/tools/code/pre_commit_ai.py
++++ b/core/tools/code/pre_commit_ai.py
+@@ -3,7 +3,7 @@
+ import subprocess
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from tools.code.pr_reviewer import PRReviewer
+diff --git a/core/tools/code/safe_executor.py b/core/tools/code/safe_executor.py
+index 1f263f88..c8946ad5 100644
+--- a/core/tools/code/safe_executor.py
++++ b/core/tools/code/safe_executor.py
+@@ -31,7 +31,7 @@
+     compile_restricted = None
+     default_globals = {}
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.codegen_gate import (
+     denied_reason,
+     inprocess_codegen_enabled,
+diff --git a/core/tools/code/voice_coder.py b/core/tools/code/voice_coder.py
+index b21563f3..0a59ea8b 100644
+--- a/core/tools/code/voice_coder.py
++++ b/core/tools/code/voice_coder.py
+@@ -4,7 +4,7 @@
+ 
+ from fastapi import APIRouter, File, UploadFile, WebSocket, WebSocketDisconnect
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.upload_validator import validate_upload
+ 
+ router = APIRouter(prefix="/voice", tags=["voice-coder"])
+diff --git a/core/tools/collaborative_editor.py b/core/tools/collaborative_editor.py
+index 254c51dd..6a59fda3 100644
+--- a/core/tools/collaborative_editor.py
++++ b/core/tools/collaborative_editor.py
+@@ -7,7 +7,7 @@
+ 
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext
+ 
+ router = APIRouter(prefix="/collaborate", tags=["collaborative-editor"])
+diff --git a/core/tools/comment_thread_ai.py b/core/tools/comment_thread_ai.py
+index 61059555..3b27f051 100644
+--- a/core/tools/comment_thread_ai.py
++++ b/core/tools/comment_thread_ai.py
+@@ -16,7 +16,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/comment-ai", tags=["comment-thread-ai"])
+ 

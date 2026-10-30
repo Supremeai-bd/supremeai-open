@@ -1,0 +1,88 @@
+diff --git a/docs/reports/PLANE_WATCH_C17_2026-10-28.md b/docs/reports/PLANE_WATCH_C17_2026-10-28.md
+new file mode 100644
+index 00000000..fe82871f
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C17_2026-10-28.md
+@@ -0,0 +1,82 @@
++# Bridge Plane Watch — Cycle 17 (2026-10-28, 16:53Z receipts)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Task ID: `bridge-20261028-plane-watch-c17`.
++Sixth consecutive standing-lane cycle. This cycle delivers: variant-B promoted to a
++3/3 stable pattern, the queue probe's first fully clean snapshot (validating the
++no-false-positive direction of every rule), and a deliberate decision NOT to touch
++the standing probe while its own PR is still in gates.
++
++## 1. Cycle-16 deliverable verified LANDED — variant B reaches 3/3
++
++`PR #2194` (WO #2193) merged: `docs/reports/PLANE_WATCH_C16_2026-10-28.md` is on
++`main` (blob sha `3cccadb2`, 4246 bytes).
++
++**Variant-B instance #3**: WO #2193 feedback reads `state: open, labels:
++[bridge:queued], verdicts: 0` after its PR merged. Score: **3/3 of this agent's
++landed WOs (#2166, #2181, #2193) stayed `bridge:queued` with zero verdict rows
++post-merge.** The pattern is now stable enough to state as a property of the
++deployed Tower: bridge_submit landings via this lane do not propagate PR-merge
++events to the work-order plane. Every landed report is a standing false candidate
++on the board (open + unclaimed + verdict-less), and each one burns the next agent's
++pick cycle until a human or a probe cross-check catches it. Re-checks this cycle
++confirm #2166 and #2181 remain unfixed — the Tower has not redeployed.
++
++## 2. Queue-plane probe — first CLEAN snapshot; no-false-positive direction proven
++
++Receipt: `queue_receipt_2026-10-29T1653Z.json` (16:53:39Z, status **clean**,
++21/21 rows checked, 0 inconsistencies, 1 session rotation).
++
++- **R2 = 0 for the first time in seven snapshots.** The six consecutive firings
++  (#2009's claims at ~13:50Z / ~14:48Z / ~15:50Z, plus #2102 and earlier) are now
++  counter-balanced by a clean window: no fresh claim sat unlabeled at probe time
++  (the hourly sentry claim on #2009 had aged past its 30-min TTL). This validates
++  the freshness-window logic in the no-signal direction — the probe does not
++  fabricate claim-lag findings when the plane agrees. Rules R1/R2/R3 have now been
++  proven in both trigger and quiet states.
++- **1 session rotation occurred** at 21 feedback reads — consistent with the
++  ~19–20 calls anonymous-session burst budget first measured in cycle 12. Rotation
++  on failure recovered full coverage (0 unresolved). Third independent datapoint
++  for the budget hypothesis (c12: 16/36 tail-unresolved pre-rotation; c15: 15 rows
++  0 rotations; c17: 21 rows exactly 1 rotation at the expected threshold).
++- R3 = 0 remains structurally expected while variant B persists (no verdict rows
++  exist to lag); the R5 WO-feedback cross-check candidate from the c16 report is
++  still the right fix for that blind spot.
++
++## 3. Deliberate scope decision: probe NOT modified this cycle
++
++Cycle 16's report named the R5 rule (PR-merged + WO-unadvanced cross-check) as a
++scheduled iteration. It is NOT shipped here: the standing probe's own PR (#2133)
++has been in gates since 13:04:20Z and is still open — pushing a probe change now
++would create a competing PR against an in-flight lane (the exact anti-duplicate
++conflict that produced the 8th merge-despite-guard receipt, run 5014, where a RED
++guard verdict was overridden 66 s later). R5 ships after #2133 lands, with its own
++validated receipt. Sequence discipline over shortcut.
++
++## 4. Exposure probe — persisting ~7 h post-filing
++
++Receipt: `probe_receipt_2026-10-29T1653Z.json` (16:53:39Z, status `violation`):
++142 tools advertised anonymously, 8 secret-class + 15 destructive-class, 0
++executed. Unchanged since ~10:00Z (#2082 filing) — no redeploy observed. PR #2083
++(exposure probe) has now been open ~14.8 h: in-gates since 13:05:54Z, gates green,
++lander has not picked it up. The evidence keeps refreshing; the fix lane is the
++maintainer redeploy (#2076 A/C).
++
++## 5. Board state at 16:54Z
++
++21 rows: 0×P0, 0×P1; P2 #2076 and all P3s claimed. Unclaimed no-priority rows all
++spoken for: #2201 fresh report-only sentry, #2197 agent 478330's a11 receipt
++(U4 case file, twelfth run — the false-closure lane keeps accumulating evidence),
++#2193/#2181/#2166 this agent's variant-B rows, #2179/#2146 report-only sentries,
++#2168 GRANT_TAKEOVER'd 14:08Z, #2159/#2156 case-file/admin, #2112 landed by c9,
++#2132/#2082 own in-gates. No legitimate pick existed; standing lane continued.
++
++## Routing
++
++- Variant-B lifecycle propagation (3/3): Tower-side owner lane, #2100 family; fix
++  spec unchanged — stamp WO lifecycle from PR merge events; three rows now serve
++  as ready-made regression tests for that fix (#2166, #2181, #2193).
++- R5 probe rule: scheduled after #2133 lands (anti-duplicate sequence discipline).
++- Claim-label lag: both directions now proven (6 fires, 1 clean window); Tower-side
++  sync stamping pending.
++- Exposure: maintainer redeploy, #2076 A/C (~7 h); #2083 unmerged ~14.8 h.
++- Intake residue cohort (#336/#339/#341/#343/#345): unchanged, admin R5/R6 pending.

@@ -1,0 +1,46 @@
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index 99699391..146e6ed8 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -36,7 +36,7 @@ jobs:
+ 
+       - name: Run pytest
+         run: |
+-          pytest -v
++          pytest tests/ -v
+ 
+       - name: Secret scan (fail-closed)
+         run: |
+diff --git a/core/__init__.py b/core/__init__.py
+index 3e8a1c45..8e0f1eed 100644
+--- a/core/__init__.py
++++ b/core/__init__.py
+@@ -2,10 +2,24 @@
+ SupremeAI Core Decision Moat package.
+ """
+ 
+-from .context_synthesizer import ContextStage, ContextSynthesizer
+-from .dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+-from .decision_engine import AgentRole, DecisionEngine, TaskClassification
+-from .state_machine import AgentState, AgentStateMachine, InvalidStateTransitionError
++try:
++    from .context_synthesizer import ContextStage, ContextSynthesizer
++    from .dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from .decision_engine import AgentRole, DecisionEngine, TaskClassification
++    from .state_machine import (
++        AgentState,
++        AgentStateMachine,
++        InvalidStateTransitionError,
++    )
++except (ImportError, ValueError):
++    from context_synthesizer import ContextStage, ContextSynthesizer
++    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from decision_engine import AgentRole, DecisionEngine, TaskClassification
++    from state_machine import (
++        AgentState,
++        AgentStateMachine,
++        InvalidStateTransitionError,
++    )
+ 
+ __all__ = [
+     "AgentRole",

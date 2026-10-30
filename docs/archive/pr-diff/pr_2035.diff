@@ -1,0 +1,57 @@
+diff --git a/scripts/ci/docs_link_integrity_baseline.json b/scripts/ci/docs_link_integrity_baseline.json
+index 15fec5d2..a8f338f4 100644
+--- a/scripts/ci/docs_link_integrity_baseline.json
++++ b/scripts/ci/docs_link_integrity_baseline.json
+@@ -3,15 +3,8 @@
+   "generatedAt": "2026-10-28",
+   "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
+   "probe": "scripts/ci/docs_link_integrity_guard.py",
+-  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (dated 2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): the single MANIFEST.md entry is satellite-lane debt — core/** routes to the satellite repo (bridge v2 routing law, the #1980 rejection), so its fix ships as a separate satellite order (bridge-20261028-r42-manifest-satellite-fix). SHRINK TO 0 once the mirror syncs: delete the entry, re-run --check.",
+-  "ratchetedFloor": [
+-    {
+-      "file": "core/_archive/MANIFEST.md",
+-      "target": "../../docs/plan-network/MAINTAINABILITY_PLAN.md",
+-      "reason": "missing-file",
+-      "allowed": 1
+-    }
+-  ],
++  "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): pinned core/_archive/MANIFEST.md as satellite-lane debt while its fix shipped via bridge-20261028-r42-manifest-satellite-fix. SHRUNK TO 0 same day: the satellite fix landed as bc810e7 (PR #2028) and mirrored to this tree before the r3 landing CI window closed — floor is EMPTY, the original r3 empty-floor endgame reached by the routing-legal route.",
++  "ratchetedFloor": [],
+   "knownReportOnly": [
+     {
+       "file": ".agents/skills/developing-genkit-python/references/agents-http.md",
+diff --git a/tests/test_docs_link_integrity_guard.py b/tests/test_docs_link_integrity_guard.py
+index a7560709..61cbe00d 100644
+--- a/tests/test_docs_link_integrity_guard.py
++++ b/tests/test_docs_link_integrity_guard.py
+@@ -201,19 +201,18 @@ def test_live_baseline_provenance_and_empty_floor() -> None:
+     data = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     assert data["schema"] == "docs-link-integrity-baseline/1"
+     assert "2026-10-28" in data["generatedAt"], "baseline must be dated"
+-    # r3 re-land: the floor is NOT empty by design. The original single-order
+-    # landing assumed all 8 fixes ship together; the bridge v2 one-target-per-order
+-    # routing law (the #1980 rejection) splits core/_archive/MANIFEST.md onto the
+-    # satellite repo. The genesis ratchet pins exactly that ONE satellite-lane
+-    # entry with a dated shrink path; every other writable lane ships at zero.
++    # r3 re-land then same-day shrink: the genesis ratchet pinned the ONE
++    # satellite-lane entry (core/** routes satellite — the #1980 rejection law)
++    # while its fix shipped via bridge-20261028-r42-manifest-satellite-fix; the
++    # fix landed as bc810e7 (PR #2028) and mirrored BEFORE the shrink order, so
++    # the floor is now EMPTY — the original r3 empty-floor endgame, reached by
++    # the routing-legal route. The note must keep the full dated history.
+     floor = data["ratchetedFloor"]
+-    assert len(floor) == 1, f"genesis floor must pin exactly the 1 satellite-lane entry, got {floor}"
+-    entry = floor[0]
+-    assert entry["file"] == "core/_archive/MANIFEST.md" and entry["allowed"] == 1, (
+-        "the only floor entry must be the satellite-lane MANIFEST finding at allowed=1"
+-    )
+-    assert "SHRINK TO 0" in data["note"], "the dated shrink path must be documented in the baseline note"
+-    assert "bridge-20261028-r42-manifest-satellite-fix" in data["note"], "the in-flight satellite order must be cited"
++    assert floor == [], f"floor must be empty post-shrink (endgame), got {floor}"
++    assert "SHRUNK TO 0" in data["note"], "the dated shrink stamp must be kept in the baseline note"
++    for token in ("bridge-20261028-r42-docs-link-integrity-r3",
++                  "bridge-20261028-r42-manifest-satellite-fix", "bc810e7"):
++        assert token in data["note"], f"shrink history must cite {token}"
+     assert len(data["knownReportOnly"]) == 3, "3 vendored findings stay pinned report-only (#1725 lane)"
+     assert len(data["knownExcluded"]) == 10, "10 AGENT_RULES ghosts stay pinned excluded (#1642->#1708 debt)"
+ 

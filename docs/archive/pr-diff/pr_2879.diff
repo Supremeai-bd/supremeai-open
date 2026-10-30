@@ -1,0 +1,16 @@
+diff --git a/tests/test_bridge_splitbrain_guard.py b/tests/test_bridge_splitbrain_guard.py
+index b67a3f30..7ccf4319 100644
+--- a/tests/test_bridge_splitbrain_guard.py
++++ b/tests/test_bridge_splitbrain_guard.py
+@@ -7,11 +7,8 @@
+ 
+ from __future__ import annotations
+ 
+-import json
+ from pathlib import Path
+ 
+-import pytest
+-
+ from scripts.bridge.bridge_intake import (
+     PRIVATE_REPO,
+     deletion_paths,

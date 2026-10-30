@@ -1,0 +1,416 @@
+diff --git a/.gitignore b/.gitignore
+index 80bfaaeb..24aa7bad 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -10,3 +10,6 @@ bun.lock
+ *.snapshot.txt
+ *_dump.txt
+ C?Users*
++node_modules/
++dist/
++.wrangler/
+diff --git a/infrastructure/mcp-control-plane/src/adapters/firecrawl/actions.ts b/infrastructure/mcp-control-plane/src/adapters/firecrawl/actions.ts
+index 2b4b6bd6..2afb7cd5 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/firecrawl/actions.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/firecrawl/actions.ts
+@@ -1,17 +1,17 @@
+ import { env } from "../../lib/env.js";
+ import { httpRequest } from "../../lib/http.js";
+-import { AIKeyPool } from "../ai/key-pool.js";
++import { SimpleKeyPool } from "../../lib/key-pool.js";
+ 
+ /**
+  * Firecrawl — web scraping для документации, гайдов, стиль-гайдов.
+  * https://api.firecrawl.dev/v1/scrape
+  */
+ 
+-let firecrawlPoolInstance: AIKeyPool | undefined;
+-function firecrawlPool(): AIKeyPool {
++let firecrawlPoolInstance: SimpleKeyPool | undefined;
++function firecrawlPool(): SimpleKeyPool {
+   const keys = env.firecrawl.apiKeys;
+   if (!firecrawlPoolInstance || (firecrawlPoolInstance.length === 0 && keys.length > 0)) {
+-    firecrawlPoolInstance = new AIKeyPool(keys);
++    firecrawlPoolInstance = new SimpleKeyPool(keys);
+   }
+   return firecrawlPoolInstance;
+ }
+diff --git a/infrastructure/mcp-control-plane/src/adapters/misc/index.ts b/infrastructure/mcp-control-plane/src/adapters/misc/index.ts
+index f4a5759b..ac3ab433 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/misc/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/misc/index.ts
+@@ -1,6 +1,6 @@
+ import { env } from "../../lib/env.js";
+ import { httpRequest, bearerAuth } from "../../lib/http.js";
+-import { AIKeyPool } from "../ai/key-pool.js";
++import { SimpleKeyPool } from "../../lib/key-pool.js";
+ 
+ export async function checkStripe(): Promise<unknown> {
+   const { secretKey } = env.stripe;
+@@ -55,11 +55,11 @@ export async function checkVercel(): Promise<unknown> {
+   };
+ }
+ 
+-let firecrawlPoolInstance: AIKeyPool | undefined;
+-function firecrawlPool(): AIKeyPool {
++let firecrawlPoolInstance: SimpleKeyPool | undefined;
++function firecrawlPool(): SimpleKeyPool {
+   const keys = env.firecrawl.apiKeys;
+   if (!firecrawlPoolInstance || (firecrawlPoolInstance.length === 0 && keys.length > 0)) {
+-    firecrawlPoolInstance = new AIKeyPool(keys);
++    firecrawlPoolInstance = new SimpleKeyPool(keys);
+   }
+   return firecrawlPoolInstance;
+ }
+@@ -99,16 +99,12 @@ export async function checkFirecrawl(): Promise<unknown> {
+ }
+ 
+ // Lazy singleton: env.kaggle.tokens must be read AFTER the Infisical secrets
+-// pull (main() -> pullSecretsIntoProcessEnv). A module-level
+-// `new AIKeyPool(env.kaggle.tokens)` snapshots an EMPTY pool because this
+-// module is imported before the pull runs — leaving kaggle permanently
+-// "not configured" in production even though the tokens are in env.
+-// Re-creates once if the first snapshot was taken too early (self-heal).
+-let kagglePoolInstance: AIKeyPool | undefined;
+-function kagglePool(): AIKeyPool {
++// pull (main() -> pullSecretsIntoProcessEnv).
++let kagglePoolInstance: SimpleKeyPool | undefined;
++function kagglePool(): SimpleKeyPool {
+   const tokens = env.kaggle.tokens;
+   if (!kagglePoolInstance || (kagglePoolInstance.length === 0 && tokens.length > 0)) {
+-    kagglePoolInstance = new AIKeyPool(tokens);
++    kagglePoolInstance = new SimpleKeyPool(tokens);
+   }
+   return kagglePoolInstance;
+ }
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index 8c5f8e5b..e1076732 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -22,7 +22,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  * import tree, so the `.env` file is available to every module body that
+  * reads process.env at import time (client-registry.ts, tenant.registry.ts).
+  */
+-dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
++const candidateEnvPaths = [
++  path.resolve(__dirname, "../../../../.env"),
++  path.resolve(__dirname, "../../../.env"),
++  path.resolve(process.cwd(), ".env"),
++  path.resolve(process.cwd(), "../../.env"),
++];
++for (const envPath of candidateEnvPaths) {
++  if (fs.existsSync(envPath)) {
++    dotenv.config({ path: envPath });
++    break;
++  }
++}
+ 
+ function required(name: string): string {
+   const v = process.env[name];
+diff --git a/infrastructure/mcp-control-plane/src/lib/key-pool.ts b/infrastructure/mcp-control-plane/src/lib/key-pool.ts
+new file mode 100644
+index 00000000..32c56a95
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/key-pool.ts
+@@ -0,0 +1,49 @@
++/**
++ * Simple key pool for non-LLM provider adapters (Firecrawl scraping, Kaggle, etc.).
++ * Supports round-robin rotation and automatic retry on rate-limit/quota errors.
++ */
++
++export class SimpleKeyPool {
++  private keys: string[];
++  private index = 0;
++
++  constructor(keys?: string[]) {
++    this.keys = (keys || []).map((k) => k.trim()).filter(Boolean);
++  }
++
++  get length(): number {
++    return this.keys.length;
++  }
++
++  public getNextKey(): string {
++    if (this.keys.length === 0) {
++      throw new Error("No keys available in pool.");
++    }
++    const key = this.keys[this.index % this.keys.length];
++    this.index++;
++    return key;
++  }
++
++  public async execute<T>(
++    operation: (key: string) => Promise<T>,
++    isRateLimitError: (error: unknown) => boolean,
++  ): Promise<T> {
++    if (this.keys.length === 0) {
++      throw new Error("No keys available in pool.");
++    }
++    let lastError: unknown;
++    for (let i = 0; i < this.keys.length; i++) {
++      const key = this.getNextKey();
++      try {
++        return await operation(key);
++      } catch (err) {
++        lastError = err;
++        if (isRateLimitError(err) && i < this.keys.length - 1) {
++          continue;
++        }
++        throw err;
++      }
++    }
++    throw lastError;
++  }
++}
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 38f60fc1..63ffcaec 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -2,6 +2,7 @@ import { env } from "../lib/env.js";
+ import { getActiveRedisAccount } from "../lib/redis_chain.js";
+ import { ProviderName } from "./provider.registry.js";
+ import { Capability } from "./capability.registry.js";
++import { roleRank, type UserRole } from "../policy/auth.context.js";
+ 
+ export interface ProviderAccount {
+   id: string;
+@@ -67,8 +68,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
+  */
+ export function registerDiscoveredOrgRepo(repoName: string): void {
+   const normalized = repoName.trim().toLowerCase();
+-  // Ghost Cloaking: supremeai-api is never tracked or exposed in regular repo lists
+-  if (normalized === "supremeai-api") return;
++  // Ghost Cloaking & Core Isolation: supremeai-api and supremeai are never exposed as generic satellites
++  if (normalized === "supremeai-api" || normalized === "supremeai") return;
+   if (normalized && !discoveredOrgRepos.has(normalized)) {
+     discoveredOrgRepos.add(normalized);
+   }
+@@ -236,7 +237,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
+       return {
+         id: "redis-primary",
+         provider: "redis" as const,
+-        displayName: label === "primary" ? "Upstash Redis (Cache + Queue)" : `Upstash Redis (Cache + Queue [auto-rotated: ${label}])`,
++        displayName: label === "primary" ? "Upstash Redis (Multi-Account Chain: 5 accounts)" : `Upstash Redis (Multi-Account Chain: 5 accounts [auto-rotated: ${label}])`,
+         role: "cache",
+         environment: "production" as const,
+         capabilities: ["health", "metrics", "storage"] as const,
+@@ -251,52 +252,18 @@ export function buildAccountRegistry(): ProviderAccount[] {
+     {
+       id: "cloudflare-primary",
+       provider: "cloudflare",
+-      displayName: "Cloudflare Primary (DNS + Workers + Edge)",
++      displayName: "Cloudflare Edge Mesh (Federation Pool: 5 accounts)",
+       role: "edge",
+       environment: "production",
+       capabilities: ["health", "metrics", "logs"],
+       apiKeyRef: "CLOUDFLARE_API_TOKEN",
+-      available: isAvailable("CLOUDFLARE_API_TOKEN") || isAvailable("CLOUDFLARE_GLOBAL_API_KEY"),
+-    },
+-    {
+-      id: "cloudflare-secondary",
+-      provider: "cloudflare",
+-      displayName: "Cloudflare Secondary (Edge Failover)",
+-      role: "edge-secondary",
+-      environment: "production",
+-      capabilities: ["health", "metrics", "logs"],
+-      apiKeyRef: "CLOUDFLARE_SECONDARY_GLOBAL_API_KEY",
+-      available: isAvailable("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY"),
+-    },
+-    {
+-      id: "cloudflare-tertiary",
+-      provider: "cloudflare",
+-      displayName: "Cloudflare Tertiary (Edge Failover)",
+-      role: "edge-tertiary",
+-      environment: "production",
+-      capabilities: ["health", "metrics", "logs"],
+-      apiKeyRef: "CLOUDFLARE_TERTIARY_GLOBAL_API_KEY",
+-      available: isAvailable("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY"),
+-    },
+-    {
+-      id: "cloudflare-quaternary",
+-      provider: "cloudflare",
+-      displayName: "Cloudflare Quaternary (Edge Failover)",
+-      role: "edge-quaternary",
+-      environment: "production",
+-      capabilities: ["health", "metrics", "logs"],
+-      apiKeyRef: "CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY",
+-      available: isAvailable("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY"),
+-    },
+-    {
+-      id: "cloudflare-quinary",
+-      provider: "cloudflare",
+-      displayName: "Cloudflare Quinary (Edge Failover)",
+-      role: "edge-quinary",
+-      environment: "production",
+-      capabilities: ["health", "metrics", "logs"],
+-      apiKeyRef: "CLOUDFLARE_QUINARY_GLOBAL_API_KEY",
+-      available: isAvailable("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
++      available:
++        isAvailable("CLOUDFLARE_API_TOKEN") ||
++        isAvailable("CLOUDFLARE_GLOBAL_API_KEY") ||
++        isAvailable("CLOUDFLARE_SECONDARY_GLOBAL_API_KEY") ||
++        isAvailable("CLOUDFLARE_TERTIARY_GLOBAL_API_KEY") ||
++        isAvailable("CLOUDFLARE_QUATERNARY_GLOBAL_API_KEY") ||
++        isAvailable("CLOUDFLARE_QUINARY_GLOBAL_API_KEY"),
+     },
+ 
+     // ── Infisical ─────────────────────────────────────────
+@@ -363,3 +330,42 @@ export function buildAccountRegistry(): ProviderAccount[] {
+     },
+   ];
+ }
++
++/**
++ * Role-aware repository & account filter:
++ * - Admin & supremeadmin (rank >= 4): see all accounts (core monorepo, org monitor, satellites).
++ * - Agent / repo_viewer / restricted_viewer (rank 1..3): see only satellite / federation accounts;
++ *   core monorepo ('supremeai'), API gateway ('supremeai-api'), and org monitor are excluded.
++ * - Viewer / guest (rank 0): only see public-safe accounts ('supremeai-open' for GitHub).
++ */
++export function getAccountsForRole(role?: UserRole): ProviderAccount[] {
++  const allAccounts = buildAccountRegistry();
++  const rank = roleRank(role);
++
++  if (rank >= 4) {
++    return allAccounts;
++  }
++
++  return allAccounts.filter((account) => {
++    if (account.provider !== "github") {
++      return true;
++    }
++    // Organization monitor: admin-only
++    if (account.id === "github-org-supremeai-bd" || account.role === "organization") {
++      return false;
++    }
++    // Core monorepo: admin-only
++    if (account.id === "github-primary" || account.url?.endsWith("/supremeai")) {
++      return false;
++    }
++    // Cloaked repo: admin-only
++    if (account.id.includes("supremeai-api") || account.url?.endsWith("/supremeai-api")) {
++      return false;
++    }
++    // Guest viewer: only public repo supremeai-open
++    if (rank === 0) {
++      return account.id.includes("supremeai-open") || account.url?.endsWith("/supremeai-open");
++    }
++    return true;
++  });
++}
+diff --git a/infrastructure/mcp-control-plane/src/registry/resource.registry.ts b/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
+index a638c572..7fa7dda8 100644
+--- a/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
+@@ -1,6 +1,7 @@
+-import { buildAccountRegistry, ProviderAccount } from "./account.registry.js";
++import { buildAccountRegistry, getAccountsForRole, ProviderAccount } from "./account.registry.js";
+ import { Capability } from "./capability.registry.js";
+ import { ProviderName } from "./provider.registry.js";
++import { RequestContextStore, type UserRole } from "../policy/auth.context.js";
+ 
+ export interface Resource {
+   id: string; // The fully qualified ID, e.g. "render/render-primary"
+@@ -14,10 +15,13 @@ export interface Resource {
+ }
+ 
+ /**
+- * Discovers and builds the active resource list based on available accounts.
++ * Discovers and builds the active resource list based on available accounts,
++ * filtered by the caller's role (core monorepo and org monitor restricted to admin).
+  */
+-export async function listResources(): Promise<Resource[]> {
+-  const accounts = buildAccountRegistry();
++export async function listResources(role?: UserRole): Promise<Resource[]> {
++  const store = RequestContextStore.get();
++  const effectiveRole = role ?? store?.role;
++  const accounts = getAccountsForRole(effectiveRole);
+   const resources: Resource[] = [];
+ 
+   for (const account of accounts) {
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 14c5ac91..21d5dc38 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -65,6 +65,12 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
+   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
+   const shortName = fullName.split("/").pop() ?? fullName;
++
++  // Organization-level access restriction: only admin and supremeadmin can query org-wide resources
++  if ((shortName.startsWith("github-org-") || accountRepoUrl.includes("/orgs/")) && roleRank(store.role) < 4) {
++    return `Forbidden: organization-level resources are strictly restricted to admin and supremeadmin roles (current role: '${store.role}').`;
++  }
++
+   // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents.
+   // Non-admin callers receive 'Repository not found' (stealth, zero-knowledge).
+   if (shortName === "supremeai-api" && roleRank(store.role) < 4) {
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index bc47bc43..00791b6f 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -1,6 +1,6 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+-import { buildAccountRegistry, ProviderAccount } from "../registry/account.registry.js";
++import { buildAccountRegistry, getAccountsForRole, ProviderAccount } from "../registry/account.registry.js";
+ import { listResources, getResourceStatus } from "../registry/resource.registry.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+@@ -412,7 +412,8 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     "Ping all backend services and report their HTTP health status",
+     {},
+     async () => {
+-      const registry = buildAccountRegistry();
++      const store = RequestContextStore.get();
++      const registry = getAccountsForRole(store?.role);
+ 
+       // Probe every registry row with bounded concurrency (8 workers) to avoid
+       // saturating container socket pools and inflating probe latencies.
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index a1239d73..404634d8 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -155,7 +155,7 @@ RequestContextStore.run({ role: "repo_viewer", scopes: audScopes }, () => {
+   assert.equal(denySkills, null, "repo_viewer must read satellite repo");
+ });
+ 
+-// 5d. Guest viewer authority — blocked from all repos (default-deny)
++// 5d. Guest viewer authority — blocked from all repos except public docs
+ const guestScopes = defaultClientScopes("viewer");
+ RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+@@ -165,4 +165,33 @@ RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
+   assert.ok(denySkills && denySkills.includes("no repository read access"));
+ });
+ 
++// 5e. Organization-level resource access: admin/supremeadmin allowed, agent blocked
++const orgUrl = "https://api.github.com/orgs/Supremeai-bd";
++RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
++  const denyOrg = assertRepoReadAccess("github.workflow_runs", "github-org-supremeai-bd", orgUrl);
++  assert.ok(denyOrg && denyOrg.includes("organization-level resources are strictly restricted to admin"), "agent must be blocked from org-level resources");
++});
++
++RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
++  const denyOrg = assertRepoReadAccess("github.workflow_runs", "github-org-supremeai-bd", orgUrl);
++  assert.equal(denyOrg, null, "admin must be allowed to access org-level resources");
++});
++
++// 6. Role-aware account registry filtering verification (getAccountsForRole)
++import { getAccountsForRole } from "./src/registry/account.registry.js";
++
++const adminAccs = getAccountsForRole("admin");
++assert.ok(adminAccs.some((a) => a.id === "github-primary"), "admin must see github-primary");
++assert.ok(adminAccs.some((a) => a.id === "github-org-supremeai-bd"), "admin must see github-org-supremeai-bd");
++
++const agentAccs = getAccountsForRole("agent");
++assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
++assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
++assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
++
++const viewerAccs = getAccountsForRole("viewer");
++const viewerGhAccs = viewerAccs.filter((a) => a.provider === "github");
++assert.equal(viewerGhAccs.length, 1, "viewer must only see 1 GitHub account (supremeai-open)");
++assert.ok(viewerGhAccs[0].id.includes("supremeai-open"), "viewer GitHub account must be supremeai-open");
++
+ console.log("All hybrid repo access & organization discovery tests passed successfully!");

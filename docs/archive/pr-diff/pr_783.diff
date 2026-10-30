@@ -1,0 +1,17 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 9298efd2..ed6103a9 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -720,7 +720,12 @@ jobs:
+           TARGET_REPOS: ${{ steps.check_scope.outputs.target_repos }}
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
++          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+         run: |
++          if [ -n "$PR_SHA" ]; then
++            git fetch origin "$PR_SHA" || git fetch origin main
++            git checkout "$PR_SHA"
++          fi
+           echo "🚀 Executing deterministic direct synchronization for: ${TARGET_REPOS}"
+           python3 scripts/ci/federation_satellite_sync.py \
+             --targets ${TARGET_REPOS} \

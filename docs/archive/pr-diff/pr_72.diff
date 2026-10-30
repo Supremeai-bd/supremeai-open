@@ -1,0 +1,99 @@
+diff --git a/infrastructure/mcp-control-plane/src/adapters/github/index.ts b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+index e971eb01..175a0e60 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/github/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+@@ -1,7 +1,7 @@
+ import { buildAccountRegistry } from "../../registry/account.registry.js";
+ import { httpRequest, bearerAuth } from "../../lib/http.js";
+ 
+-const DEFAULT_BASE_URL = "https://api.github.com/repos/paykaribazaronline/supremeai";
++const DEFAULT_BASE_URL = "https://api.github.com/repos/Supremeai-bd/supremeai";
+ 
+ export function getAccountConfig(accountId: string): { apiKey: string; baseUrl: string } {
+   const accounts = buildAccountRegistry();
+@@ -10,7 +10,7 @@ export function getAccountConfig(accountId: string): { apiKey: string; baseUrl:
+   if (!account.available) throw new Error(`GitHub account is not configured/available: ${accountId}`);
+ 
+   // বাংলা (Task 35): vault-থেকে-লোড-হওয়া PAT-ও ফলব্যাক-চেইনে রাখা হলো —
+-  // যাতে paykaribazaronline-এর প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
++  // যাতে মূল personal account-এর (org-migration-এর আগের) প্রতিটি রিপো-অ্যাকাউন্ট GITHUB_PAT_PAYKARIBAZARONLINE
+   // দিয়েই সক্রিয় হয় (Infisical pullSecretsIntoProcessEnv() রানটাইমে এটি ভরে)।
+   const apiKey =
+     process.env[account.apiKeyRef] ||
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index 463bbba1..f8a08367 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -1885,6 +1885,11 @@ async function main(): Promise<void> {
+     // #2596: টাস্ক-কিউ রেজিস্ট্রিও একই সারিতে হাইড্রেট — tower restart-এ
+     // চালু লিজ হারাবে না; সাথে প্রথম সিঙ্ক এগিয়ে ছোড়া (non-blocking)।
+     await initTaskRegistry();
++
++    // #66 taxonomy-drift guard: boot-এ resolved GitHub repo slug ছাপা হয়
++    // (zero-secret) — যাতে stale default বা ভুল GITHUB_REPO ভ্যালু সাইলেন্ট
++    // 404 হয়ে টুল-কলে ধরা না পড়ে, বরং স্টার্টআপ লগেই চোখে পড়ে।
++    console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
+     void refreshFromGitHub();
+ 
+     const server = await createMcpServer(memoryAdapter);
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index adecd889..427fdad2 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -112,7 +112,7 @@ export const env = {
+   // ── GitHub
+   github: {
+     get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
+-    get repo(): string { return optional("GITHUB_REPO", "paykaribazaronline/supremeai"); },
++    get repo(): string { return optional("GITHUB_REPO", "Supremeai-bd/supremeai"); },
+   },
+ 
+   // ── Cloudflare (5-account federation pool)
+diff --git a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+index bfe76c65..dd358ae3 100644
+--- a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++++ b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+@@ -40,7 +40,7 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
+   { name: "system.health", kind: "tool", access: "safe", requiredScope: "health:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "system.summary", kind: "tool", access: "safe", requiredScope: "system:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   // #123: Bridge onboarding surface — the zero-credential front door for
+-  // external agents working from `paykaribazaronline/supremeai-open`.
++  // external agents working from `Supremeai-bd/supremeai-open`.
+   // bridge.guide is pure static contract data (zero network); the queue tools
+   // only read PUBLIC repo content (issues) and never accept or return
+   // credentials. Read-only + public ⇒ callable by every access mode.
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index cccfe3c4..0e9995a0 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -90,7 +90,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
+     },
+ 
+     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
+-    // Note: SaifulHaqueNiloy/supremeai and paykaribazaronline/paykaribazar (e-commerce)
++    // Note: SaifulHaqueNiloy/supremeai and the pre-migration personal e-commerce namespace
+     // are excluded. Only canonical SupremeAI ecosystem repositories are monitored.
+     {
+       id: "github-primary",
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 7aa38205..8727ea09 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -7,7 +7,7 @@ import { env } from "../lib/env.js";
+ /**
+  * Bridge onboarding tools — the zero-credential front door for external agents.
+  *
+- * বাংলা মন্তব্য (#123): `paykaribazaronline/supremeai-open`-এ ঢুকা যেকোনো
++ * বাংলা মন্তব্য (#123): `Supremeai-bd/supremeai-open`-এ ঢুকা যেকোনো
+  * এজেন্ট (ChatGPT Web, Claude Web, Mistral, Cursor, community) — কোনো প্রাইভেট
+  * টোকেন ছাড়াই — টাওয়ারে সংযোগ করে সরাসরি দুটি জিনিস জানতে পারে:
+  *   ১. কীভাবে কাজ করতে হবে (canonical onboarding contract — `bridge.guide`)
+@@ -418,7 +418,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           branchName,
+           "",
+           "### Target Repo",
+-          "paykaribazaronline/supremeai",
++          "Supremeai-bd/supremeai",
+           "",
+           "### Agent Identity",
+           agentIdentity || "zero-credential-mcp-agent",

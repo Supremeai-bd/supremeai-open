@@ -1,0 +1,182 @@
+diff --git a/browser/action_cascade.py b/browser/action_cascade.py
+index a89124fb..e2f4cc9c 100644
+--- a/browser/action_cascade.py
++++ b/browser/action_cascade.py
+@@ -27,7 +27,7 @@
+ 
+ from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
+ from browser.vision_grounding import LowConfidenceGrounding, VisionGrounding
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = [
+     "CONFIDENCE_EXECUTE",
+diff --git a/browser/autonomous_browser.py b/browser/autonomous_browser.py
+index 0549e2da..5baa8396 100644
+--- a/browser/autonomous_browser.py
++++ b/browser/autonomous_browser.py
+@@ -26,7 +26,7 @@
+ from brain.reasoning_orchestrator import ReasoningOrchestrator
+ from browser.action_cascade import execute_click_cascade
+ from browser.browsing_memory import BrowsingMemory
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = ["AutonomousBrowserAgent"]
+ 
+diff --git a/browser/browser_session.py b/browser/browser_session.py
+index bb5a7a46..494431a8 100644
+--- a/browser/browser_session.py
++++ b/browser/browser_session.py
+@@ -18,7 +18,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = [
+     "BrowserSession",
+diff --git a/browser/browsing_memory.py b/browser/browsing_memory.py
+index d13c70c0..e8d38027 100644
+--- a/browser/browsing_memory.py
++++ b/browser/browsing_memory.py
+@@ -11,7 +11,7 @@
+ from typing import Any
+ 
+ from core.cache.semantic_cache import semantic_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class BrowsingMemory:
+diff --git a/browser/semantic_dom.py b/browser/semantic_dom.py
+index fa311fb4..d15dd4c2 100644
+--- a/browser/semantic_dom.py
++++ b/browser/semantic_dom.py
+@@ -12,7 +12,7 @@
+ from typing import Any
+ 
+ from core.embeddings import EmbeddingEngine
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Confidence Guardrails (issue #1570 Part 1) ────────────────────────────
+ # score >= 0.85   → execute immediately
+diff --git a/browser/session_manager.py b/browser/session_manager.py
+index a440d5ec..eb3b696b 100644
+--- a/browser/session_manager.py
++++ b/browser/session_manager.py
+@@ -28,7 +28,7 @@
+     BrowserSession,
+     SessionStatus,
+ )
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = [
+     "BrowserSessionManager",
+diff --git a/browser/swarm_browser.py b/browser/swarm_browser.py
+index d3477736..7c5cc245 100644
+--- a/browser/swarm_browser.py
++++ b/browser/swarm_browser.py
+@@ -22,7 +22,7 @@
+ from brain.reasoning_orchestrator import ReasoningOrchestrator
+ from browser.autonomous_browser import AutonomousBrowserAgent
+ from browser.session_manager import BrowserSessionManager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = ["SwarmBrowser"]
+ 
+diff --git a/browser/vision_grounding.py b/browser/vision_grounding.py
+index 510690c3..f8a79eac 100644
+--- a/browser/vision_grounding.py
++++ b/browser/vision_grounding.py
+@@ -24,7 +24,7 @@
+ from typing import Any
+ 
+ from browser.semantic_dom import CONFIDENCE_EXECUTE, CONFIDENCE_VERIFY, confidence_band
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = ["LowConfidenceGrounding", "VisionGrounding"]
+ 
+diff --git a/gateway/routes/admin_dashboard/__init__.py b/gateway/routes/admin_dashboard/__init__.py
+index a1c11f0e..da0279f0 100644
+--- a/gateway/routes/admin_dashboard/__init__.py
++++ b/gateway/routes/admin_dashboard/__init__.py
+@@ -47,7 +47,7 @@
+ from api.routes.admin_auth import admin_rate_limit, require_admin_token
+ from core.config import settings  # noqa: F401  (module-attr parity with pre-split module)
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ from models.ci_report import CIReportPayload, create_ci_report  # noqa: F401  (module-attr parity)
+ from tools.billing.cost_auditor import CostAuditor
+diff --git a/gateway/routes/browser/__init__.py b/gateway/routes/browser/__init__.py
+index 12075b5c..5793c9d3 100644
+--- a/gateway/routes/browser/__init__.py
++++ b/gateway/routes/browser/__init__.py
+@@ -63,7 +63,7 @@
+ from core.effective_policy import get_effective_policy, policy_store  # noqa: F401  (parity)
+ from core.errors.error_bus import with_error_bus  # noqa: F401  (module-attr parity)
+ from core.kernel.audit_logger import AuditLogger  # noqa: F401  (module-attr parity)
+-from core.logging_config import logger  # noqa: F401  (module-attr parity)
++from core.monitoring.logging_config import logger  # noqa: F401  (module-attr parity)
+ from core.neon_repository import (  # noqa: F401  (module-attr parity)
+     create_task as create_neon_task,
+ )
+diff --git a/gateway/routes/commandcenter/__init__.py b/gateway/routes/commandcenter/__init__.py
+index 7c923038..8d19fa18 100644
+--- a/gateway/routes/commandcenter/__init__.py
++++ b/gateway/routes/commandcenter/__init__.py
+@@ -18,7 +18,7 @@
+ from fastapi import APIRouter, Depends
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/admin-api/commandcenter",
+diff --git a/scripts/ci/render_recheck_scheduler.py b/scripts/ci/render_recheck_scheduler.py
+index 4993f83b..2b08415f 100644
+--- a/scripts/ci/render_recheck_scheduler.py
++++ b/scripts/ci/render_recheck_scheduler.py
+@@ -10,7 +10,7 @@
+ import sys
+ from datetime import datetime, timezone
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ from services.render_account_service import RenderAccountService
+ 
+diff --git a/scripts/ops/db/seed_knowledge_fts.py b/scripts/ops/db/seed_knowledge_fts.py
+index e3eb7501..50c9fa9a 100644
+--- a/scripts/ops/db/seed_knowledge_fts.py
++++ b/scripts/ops/db/seed_knowledge_fts.py
+@@ -10,7 +10,7 @@
+ if str(backend_dir) not in sys.path:
+     sys.path.insert(0, str(backend_dir))
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import chromadb
+diff --git a/scripts/ops/security/auto_secret_rotate.py b/scripts/ops/security/auto_secret_rotate.py
+index 47a817c7..c233b563 100644
+--- a/scripts/ops/security/auto_secret_rotate.py
++++ b/scripts/ops/security/auto_secret_rotate.py
+@@ -25,7 +25,7 @@
+     sys.path.insert(0, backend_dir)
+ 
+ from core.security.secret_vault import get_secret_vault
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def generate_secure_token(length: int = 32) -> str:

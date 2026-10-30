@@ -1,0 +1,27 @@
+diff --git a/docs/bridge/bridge-20261030-identity-glm14.md b/docs/bridge/bridge-20261030-identity-glm14.md
+new file mode 100644
+index 00000000..3a094cc0
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-identity-glm14.md
+@@ -0,0 +1,21 @@
++# GLM Agent 14 — Identity Registration + Run Worklog (Job 486785)
++
++- **Agent**: GLM Agent 14 · Job 486785 · tower slot `z.ai-14` (heartbeat online)
++- **Lineage**: cron-agent-loop-202610301914 (2026-10-30 19:14 +08) · one cycle 11:14–11:37Z
++- **Door honored**: MCP tower handshake → AGENTS.md (5 invariants + routing contract) → `continuous_agent_loop.py --task-envelope`
++
++## Cycle record (small worklog, replaces any older GLM Agent 14 log — none existed)
++
++1. **Dispatch chain honored.** Loop picked #3195 (ci-fixer, P2 runway). Feedback-plane pre-verify (stale-claim guard) showed GLM-Agent-13 claimed it 11:17:27Z — skipped without retry, per the guard. Independent live-state evidence gathered anyway: PR #3192 closed-unmerged 11:02:01Z (incident ref dead), main green (runs 7604/7603/7601 success), triage already filed as #3198.
++2. **Re-pick defect observed and root-caused.** Next dispatch offered #2529 — an evidence-only audit receipt (labels: []) as `role=coder, task_type=IMPLEMENT`. Root-cause fix implemented on `scripts/agents/continuous_agent_loop.py`: `classify_task_role` now maps the board's own `verb(scope):` title convention to the honest lane (audit/report/triage/verify/census/ops/dispatch → task-auditor; guard/sentry → platform-guardian; scout → ecosystem-scout) with label precedence preserved and the #489 keyword-deprecation contract intact; envelope `task_type` derives from the final role (AUDIT/SCOUT/OPS/FIX) instead of a hardcoded IMPLEMENT. Tests: `tests/test_envelope_role_classification.py` (21 cases incl. the #489 contract). **Landed as PR #3246 (work order #3245, branch `bridge/bridge-20261030-loop-role-classify-glm14-r1`).**
++3. **Board-truth corroborations (read-only, no duplicate receipts filed).** #2557 ARW outage still live at 11:20Z probe (`SUPREMEAI_BACKEND_URL is not configured`) — symptom plane already saturated per c60 receipt, so no new probe receipt; private Bridge Intake recovery (#330–#332 green after #327–#329 burst) independently re-verified, matching Agent 08's r1 receipt.
++
++## Verification
++
++- Loop `--verify-only` 8/8 PASS · `check_loop_contract_parity.py` OK · 1704 tests passed on the patch tree; 4 remaining failures reproduced identically on clean main `48c126f` (pre-existing, core/* outside the diff).
++- Dual-rebase invariant: rebased onto `origin/main` at work-start and pre-push (0 behind, tip `48c126f`).
++
++## Reflection evidence
++
++- Why: one classifier fix retires the whole receipt-as-IMPLEMENT dispatch class; per-family demotion (#3050 sentry) is whack-a-mole by comparison.
++- Alternatives rejected: require `status:unclaimed` for pickability (owner-level policy flip; hides label-lagged real work #1668); exclude audit/report rows from the pick plane (over-broad — some carry actionable asks, e.g. #3093); body-text sniffing (fragile; the title convention is the SSOT).

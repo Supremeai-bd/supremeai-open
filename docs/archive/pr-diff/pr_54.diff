@@ -1,0 +1,683 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index e420119a..7003b210 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -52,8 +52,10 @@ jobs:
+         with:
+           fetch-depth: 0
+ 
+-      - name: Run Gitleaks
+-        uses: gitleaks/gitleaks-action@v2
+-        env:
+-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-        continue-on-error: true
++      - name: Install Gitleaks
++        run: |
++          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
++          sudo mv gitleaks /usr/local/bin/
++
++      - name: Run Gitleaks Secret Detection
++        run: gitleaks detect --source=. --verbose --redact
+diff --git a/.gitleaksignore b/.gitleaksignore
+new file mode 100644
+index 00000000..97a3052d
+--- /dev/null
++++ b/.gitleaksignore
+@@ -0,0 +1,2 @@
++# Gitleaks ignore list for known mock test fixtures in git history
++ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_guardian.ts:generic-api-key:88
+diff --git a/infrastructure/mcp-control-plane/test_guardian.ts b/infrastructure/mcp-control-plane/test_guardian.ts
+index c75a1243..f140fbb3 100644
+--- a/infrastructure/mcp-control-plane/test_guardian.ts
++++ b/infrastructure/mcp-control-plane/test_guardian.ts
+@@ -85,7 +85,7 @@ const CLEANUP_PATCH = [
+ const DEBUG_ADDED_PATCH = ["@@ -10,1 +10,3 @@", "+  console.log(\"debug a\");", "+  console.log(\"debug b\");", "   return result;"].join("\n");
+ 
+ /** A patch that commits a credential — a severe, non-auto-fixable regression. */
+-const SECRET_PATCH = ["@@ -1,1 +1,2 @@", '+const api_key = "abcdef123456";'].join("\n");
++const SECRET_PATCH = ["@@ -1,1 +1,2 @@", '+const api_key = "abcdef123456";'].join("\n"); // gitleaks:allow
+ 
+ /** A patch that disables a test — a coverage regression the Guardian must not silently accept. */
+ const DISABLED_TEST_PATCH = ["@@ -1,1 +1,2 @@", "+  test.skip(\"important behaviour\", () => {});"].join("\n");
+diff --git a/mcp.json b/mcp.json
+index a4310b15..44fe990a 100644
+--- a/mcp.json
++++ b/mcp.json
+@@ -2,9 +2,13 @@
+   "$schema": "https://json.schemastore.org/mcp",
+   "mcpServers": {
+     "supremeai-control-tower": {
++      "url": "https://supremeai-mcp-tower.onrender.com/mcp"
++    },
++    "supremeai-control-tower-sse": {
+       "type": "sse",
+       "url": "https://supremeai-mcp-tower.onrender.com/sse",
+       "transport": "sse"
+     }
+   }
+ }
++
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index b3659765..c8af07d3 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -1,23 +1,17 @@
+ #!/usr/bin/env python3
+-"""Continuous Autonomous Agent Loop — Open Contributor Edition.
++"""Continuous Autonomous Agent Loop — Lazy Team Leader & Safety Dispatcher.
+ 
+ Target: External and autonomous agents contributing to SupremeAI Open Foundation
+ Repository: Supremeai-bd/supremeai-open
+ 
+-This loop automates the 8-step cycle defined in AGENTS.md §0:
+-  Step 1: Understand — fetch task issue / requirements
+-  Step 2: Rules      — load governing AGENT_RULES.md policies
+-  Step 3: Inspect    — check open PRs & local git status
+-  Step 4: Branch     — create clean contributor branch (contributor/issue-<id>)
+-  Step 5: Work       — guide minimal safe change within declared scope
+-  Step 6: Verify     — 3-tier checks: syntax, smoke, tests
+-  Step 7: Record     — generate PR with Universal PR Template & test evidence
+-  Step 8: Return     — fresh-board check & loop back
+-
+-Zero-Credential Guarantees:
+-  - Requires NO private tokens or credentials.
+-  - Can run autonomously via `gh` CLI (if installed) or interactively.
+-  - Seamlessly bridges changes to SupremeAI Private Monorepo via CI Guardian.
++This loop operates as the "Lazy Team Leader":
++  - Inspects open issues and task queues.
++  - Classifies the task and selects the specialized agent role (Coder, Auditor, CI Fixer, etc.).
++  - Builds a contract-bound, scoped prompt with strict file boundaries.
++  - Executes isolated branch and workspace setup.
++  - Enforces strict 3-tier automated safety gates.
++  - Records dynamic, verified test evidence in PRs.
++  - Performs fresh-board checks before looping to the next task.
+ """
+ 
+ from __future__ import annotations
+@@ -30,6 +24,7 @@
+ import sys
+ import time
+ from pathlib import Path
++from typing import Any
+ 
+ # Configure UTF-8 for cross-platform stability
+ if hasattr(sys.stdout, "reconfigure"):
+@@ -39,8 +34,6 @@
+     except Exception:
+         pass
+ 
+-from typing import Any
+-
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
+ AGENTS_MD_PATH = REPO_ROOT / "AGENTS.md"
+@@ -53,6 +46,17 @@
+ VALID_PRIORITIES = {"P0", "P1", "P2", "P3"}
+ VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
+ 
++# The 7 Specialist Agent Roles
++ROLES: dict[str, str] = {
++    "coder": "Implementation specialist (features, bug fixes, refactoring)",
++    "auditor": "Review & validation specialist (code audit, security review)",
++    "ci-fixer": "Pipeline & test repair specialist (GitHub Actions, build smoke)",
++    "security-breaker": "Security boundary & fail-closed validation specialist",
++    "browser-qa": "End-to-end integration & UI flow specialist",
++    "planner": "Architecture, contracts, and ADR specification specialist",
++    "watcher": "Telemetry, heartbeat health, and ecosystem drift specialist",
++}
++
+ 
+ def log(icon: str, msg: str) -> None:
+     print(f"{icon} {msg}")
+@@ -163,49 +167,141 @@ def build_task_contract(
+     }
+ 
+ 
++def classify_task_role(title: str, labels: list[str], body: str) -> str:
++    """Intelligently map issue context to one of the 7 specialist roles."""
++    combined = f"{title} {' '.join(labels)} {body}".lower()
++    if any(k in combined for k in ["sec", "security", "secret", "gitleaks", "credential", "vulnerability"]):
++        return "security-breaker"
++    if any(k in combined for k in ["ci", "workflow", "action", "pipeline", "matrix"]):
++        return "ci-fixer"
++    if any(k in combined for k in ["audit", "review", "parity", "drift", "readiness"]):
++        return "auditor"
++    if any(k in combined for k in ["plan", "adr", "architecture", "rfc", "contract"]):
++        return "planner"
++    if any(k in combined for k in ["browser", "e2e", "ui", "frontend", "playwright"]):
++        return "browser-qa"
++    if any(k in combined for k in ["telemetry", "heartbeat", "health", "watcher", "monitor"]):
++        return "watcher"
++    return "coder"
++
++
++def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
++    """Build a deterministic, contract-bound scoped prompt for the specialist agent."""
++    tc = contract.get("task_contract", {})
++    touching_files = tc.get("scope", {}).get("touching_files", [])
++    forbidden_paths = tc.get("scope", {}).get("forbidden_paths", [])
++
++    return f"""### 🤖 SupremeAI Task Assignment: {role.upper()}
++You are assigned as the **{role.upper()}** specialist by the SupremeAI Continuous Loop Team Leader.
++
++**1. Mission Objective:**
++{tc.get('objective')}
++
++**2. Task Context & Problem Statement:**
++Issue #{task.get('id')}: {task.get('title')}
++{task.get('body')}
++
++**3. Scope Boundary (STRICT):**
++- Authorized Touching Files: {touching_files if touching_files else 'Keep to smallest safe minimal set (1-5 files)'}
++- Forbidden Paths: {forbidden_paths}
++
++**4. Role Policy Contract ({role}):**
++{ROLES.get(role, '')}
++
++**5. Execution Instructions:**
++- Implement the smallest safe change strictly inside declared scope.
++- Maintain documentation and code comments integrity.
++- Do NOT hallucinate private credentials or internal monorepo scripts.
++- Satisfy the 3-Tier Verification Contract before handoff.
++"""
++
++
++def pick_next_issue() -> str | None:
++    """Fetch the highest priority unclaimed open issue from GitHub."""
++    code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--limit", "20", "--json", "number,title,labels"])
++    if code != 0 or not out.strip():
++        return None
++    try:
++        issues = json.loads(out)
++
++        def priority_key(item: dict[str, Any]) -> int:
++            title = item.get("title", "").lower()
++            labels = [l.get("name", "").lower() for l in item.get("labels", [])] if isinstance(item.get("labels"), list) else []
++            combined = f"{title} {' '.join(labels)}"
++            if "p0" in combined or "critical" in combined:
++                return 0
++            if "p1" in combined or "high" in combined:
++                return 1
++            if "p2" in combined or "medium" in combined:
++                return 2
++            if "p3" in combined or "low" in combined:
++                return 3
++            return 4
++
++        sorted_issues = sorted(issues, key=priority_key)
++        if sorted_issues:
++            return str(sorted_issues[0].get("number"))
++    except Exception:
++        pass
++    return None
++
++
+ try:
+     import yaml
+ except ImportError:
+     yaml = None
+ 
+ 
+-def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) -> dict[str, str] | None:
+-    """Step 1: Fetch and display task contract / issue context."""
++def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) -> dict[str, Any] | None:
++    """Step 1: Fetch and validate task contract / issue context fail-closed."""
+     log("📖", "[Step 1/8: Understand] Loading task contract...")
+     
+     if issue_id:
+-        code, out, _ = run_cmd(["gh", "issue", "view", str(issue_id), "--repo", UPSTREAM_REPO, "--json", "number,title,body,state"])
+-        if code == 0:
+-            try:
+-                data = json.loads(out)
+-                state = data.get("state", "OPEN").upper()
+-                if state == "CLOSED":
+-                    log("❌", f"[Fail-Closed] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.")
+-                    return None
+-                log("✅", f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}")
+-                return {
+-                    "id": str(data.get("number")),
+-                    "title": data.get("title", ""),
+-                    "body": data.get("body", ""),
+-                    "state": state,
+-                }
+-            except Exception as e:
+-                log("⚠️", f"Failed to parse issue JSON: {e}")
+-        else:
+-            log("ℹ️", f"Could not fetch issue #{issue_id} via gh CLI. Proceeding with offline task contract for #{issue_id}.")
++        code, out, err = run_cmd(["gh", "issue", "view", str(issue_id), "--repo", UPSTREAM_REPO, "--json", "number,title,body,state,labels"])
++        if code != 0:
++            log("❌", f"[Fail-Closed Gate] Could not fetch issue #{issue_id} from {UPSTREAM_REPO}: {err or out}")
++            log("❌", "Cannot verify issue validity or acceptance criteria. Aborting task.")
++            return None
++        try:
++            data = json.loads(out)
++            state = data.get("state", "OPEN").upper()
++            if state == "CLOSED":
++                log("❌", f"[Fail-Closed Gate] Issue #{data.get('number')} is CLOSED. Autonomous work on closed tasks is rejected.")
++                return None
++
++            # Duplicate work check: look for open PRs
++            pr_code, pr_out, _ = run_cmd(["gh", "pr", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--json", "number,title,headRefName"])
++            if pr_code == 0 and pr_out.strip():
++                try:
++                    open_prs = json.loads(pr_out)
++                    for pr in open_prs:
++                        pr_head = pr.get("headRefName", "")
++                        pr_title = pr.get("title", "")
++                        if f"issue-{issue_id}" in pr_head or f"#{issue_id}" in pr_title or f"task-{issue_id}" in pr_head:
++                            log("⚠️", f"Existing open PR found for issue #{issue_id}: PR #{pr.get('number')} ({pr_head}).")
++                            log("❌", "[Fail-Closed Gate] Duplicate PR work rejected. Coordinate or review existing PR first.")
++                            return None
++                except Exception:
++                    pass
++
++            labels_list = [l.get("name", "") for l in data.get("labels", [])] if isinstance(data.get("labels"), list) else []
++            log("✅", f"Loaded Issue #{data.get('number')} ({state}): {data.get('title')}")
+             return {
+-                "id": str(issue_id),
+-                "title": f"Task #{issue_id}",
+-                "body": f"Implement smallest safe change for #{issue_id}.",
+-                "state": "OFFLINE",
++                "id": str(data.get("number")),
++                "title": data.get("title", ""),
++                "body": data.get("body", ""),
++                "state": state,
++                "labels": labels_list,
+             }
++        except Exception as e:
++            log("❌", f"[Fail-Closed Gate] Failed to parse issue JSON for #{issue_id}: {e}")
++            return None
+ 
+     if not allow_adhoc:
+         log("❌", "[Fail-Closed Gate] No --issue specified! Multi-agent mode requires a specific issue contract.")
+-        log("ℹ️", "Please provide --issue <number> or pass --allow-adhoc explicitly for local testing.")
++        log("ℹ️", "Please provide --issue <number>, use --pick-next, or pass --allow-adhoc explicitly for local offline testing.")
+         return None
+ 
+-    # Fallback to interactive or default manual task
+     log("ℹ️", f"Checking active issues on {UPSTREAM_REPO}...")
+     code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--limit", "5", "--json", "number,title"])
+     if code == 0 and out.strip() != "[]":
+@@ -222,6 +318,7 @@ def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) ->
+         "title": "Autonomous Contribution Task",
+         "body": "Implement smallest safe change adhering to AGENTS.md contracts.",
+         "state": "ADHOC",
++        "labels": [],
+     }
+ 
+ 
+@@ -254,13 +351,12 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
+     return {"branch": branch, "dirty": str(dirty), "clean": str(not dirty)}
+ 
+ 
+-def step_4_branch(task: dict[str, str]) -> str:
+-    """Step 4: Create atomic branch for task with collision avoidance."""
++def step_4_branch(task: dict[str, Any]) -> str | None:
++    """Step 4: Create atomic branch for task with strict error checking."""
+     issue_num = task.get("id", "adhoc")
+     target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
+     log("🌿", f"[Step 4/8: Branch] Ensuring branch '{target_branch}'...")
+     
+-    # Check if branch exists
+     code, _, _ = run_cmd(["git", "rev-parse", "--verify", target_branch])
+     if code == 0:
+         _, curr_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+@@ -268,93 +364,121 @@ def step_4_branch(task: dict[str, str]) -> str:
+             log("✅", f"Already on active branch '{target_branch}'")
+             return target_branch
+         
+-        checkout_code, _, _ = run_cmd(["git", "checkout", target_branch])
++        checkout_code, _, checkout_err = run_cmd(["git", "checkout", target_branch])
+         if checkout_code != 0:
+             target_branch = f"contributor/issue-{issue_num}-{int(time.time())}"
+-            log("🌿", f"Switched to isolated collision-safe branch '{target_branch}'")
+-            run_cmd(["git", "checkout", "-b", target_branch])
++            log("🌿", f"Switching to isolated session branch '{target_branch}'")
++            create_code, _, create_err = run_cmd(["git", "checkout", "-b", target_branch])
++            if create_code != 0:
++                log("❌", f"Failed to create isolated branch '{target_branch}': {create_err}")
++                return None
+     else:
+-        run_cmd(["git", "checkout", "-b", target_branch])
++        create_code, _, create_err = run_cmd(["git", "checkout", "-b", target_branch])
++        if create_code != 0:
++            log("❌", f"Failed to create branch '{target_branch}': {create_err}")
++            return None
++
++    _, active_branch, _ = run_cmd(["git", "rev-parse", "--abbrev-ref", "HEAD"])
++    if active_branch != target_branch:
++        log("❌", f"Branch checkout verification failed! Expected '{target_branch}', got '{active_branch}'.")
++        return None
+ 
+-    log("✅", f"Active on branch '{target_branch}'")
++    log("✅", f"Active on verified branch '{target_branch}'")
+     return target_branch
+ 
+ 
+-def step_5_work_notice() -> None:
+-    """Step 5: Scope boundary guidance."""
+-    log("🔨", "[Step 5/8: Work] Execution Phase")
++def step_5_work_notice(role: str, prompt: str) -> None:
++    """Step 5: Scope boundary guidance and specialized prompt dispatch."""
++    log("🔨", f"[Step 5/8: Work] Dispatch Phase (Role: {role.upper()})")
++    print("----------------------------------------------------------------------")
++    print(f"Role: {role} ({ROLES.get(role, '')})")
++    print("Specialist Agent Prompt Prepared.")
+     print("   -> Keep changes atomic and minimal within declared scope.")
+     print("   -> Follow contracts in api-schemas/ and examples/.")
+-    print("   -> Make your edits now before running verification.")
++    print("----------------------------------------------------------------------")
+ 
+ 
+-def step_6_verify() -> bool:
+-    """Step 6: Run 3-tier verification (syntax, schemas, tests)."""
++def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
++    """Step 6: Run 3-tier verification and collect dynamic evidence."""
+     log("🧪", "[Step 6/8: Verify] Running 3-Tier Verification Contract...")
+-    
++    evidence: list[dict[str, Any]] = []
++
+     # 1. Python Syntax / Compile smoke
+-    py_files = list(REPO_ROOT.glob("**/*.py"))
++    py_files = [p for p in REPO_ROOT.glob("**/*.py") if "venv" not in str(p) and ".git" not in str(p)]
++    py_errors = []
+     for py in py_files:
+-        if "venv" in str(py) or ".git" in str(py):
+-            continue
+         code, _, err = run_cmd([sys.executable, "-m", "py_compile", str(py)])
+         if code != 0:
+-            log("❌", f"Syntax error in {py.name}: {err}")
+-            return False
++            py_errors.append(f"{py.name}: {err}")
++    if py_errors:
++        log("❌", f"Python syntax errors in {len(py_errors)} files: {py_errors[0]}")
++        evidence.append({"tier": 1, "name": "Python Syntax Compile", "passed": False, "count": len(py_files), "errors": py_errors})
++        return False, evidence
++    evidence.append({"tier": 1, "name": "Python Syntax Compile", "passed": True, "count": len(py_files)})
+ 
+     # 2. JSON Schema validation
+-    json_files = list(REPO_ROOT.glob("**/*.json"))
++    json_files = [j for j in REPO_ROOT.glob("**/*.json") if "node_modules" not in str(j) and ".git" not in str(j)]
++    json_errors = []
+     for jf in json_files:
+-        if "node_modules" in str(jf) or ".git" in str(jf):
+-            continue
+         try:
+             with open(jf, "r", encoding="utf-8") as f:
+                 json.load(f)
+         except Exception as e:
+-            log("❌", f"Invalid JSON in {jf.name}: {e}")
+-            return False
++            json_errors.append(f"{jf.name}: {e}")
++    if json_errors:
++        log("❌", f"Invalid JSON in {len(json_errors)} files: {json_errors[0]}")
++        evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": False, "count": len(json_files), "errors": json_errors})
++        return False, evidence
++    evidence.append({"tier": 2, "name": "JSON Schema Parse", "passed": True, "count": len(json_files)})
+ 
+     # 3. YAML & OpenAPI Schema validation
+     if yaml is not None:
+-        yaml_files = list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml"))
++        yaml_files = [y for y in list(REPO_ROOT.glob("**/*.yaml")) + list(REPO_ROOT.glob("**/*.yml")) if ".git" not in str(y) and "node_modules" not in str(y)]
++        yaml_errors = []
+         for yf in yaml_files:
+-            if ".git" in str(yf) or "node_modules" in str(yf):
+-                continue
+             try:
+                 with open(yf, "r", encoding="utf-8") as f:
+                     yaml.safe_load(f)
+             except Exception as e:
+-                log("❌", f"Invalid YAML in {yf.name}: {e}")
+-                return False
++                yaml_errors.append(f"{yf.name}: {e}")
++        if yaml_errors:
++            log("❌", f"Invalid YAML in {len(yaml_errors)} files: {yaml_errors[0]}")
++            evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": False, "count": len(yaml_files), "errors": yaml_errors})
++            return False, evidence
++        evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": True, "count": len(yaml_files)})
++    else:
++        evidence.append({"tier": 3, "name": "YAML/OpenAPI Safe Load", "passed": False, "skipped": True, "reason": "PyYAML not installed"})
+ 
+     # 4. Self-test smoke checks (P6 validation)
+     try:
+         res_code, _, _ = run_cmd(["__test_nonexistent_binary_xyz_123__"])
+         if res_code != 127:
+-            log("❌", f"run_cmd missing binary expected exit 127, got {res_code}")
+-            return False
++            evidence.append({"tier": 4, "name": "Missing Binary Fail-Honest Guard", "passed": False, "exit_code": res_code})
++            return False, evidence
++        evidence.append({"tier": 4, "name": "Missing Binary Fail-Honest Guard (Code 127)", "passed": True})
+ 
+         try:
+             build_task_contract("test", task_type="INVALID_TYPE")
+-            log("❌", "build_task_contract failed to reject invalid task_type")
+-            return False
++            evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard", "passed": False})
++            return False, evidence
+         except ValueError:
+-            pass  # Expected fail-closed
++            evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard (ValueError)", "passed": True})
+     except Exception as e:
+         log("❌", f"Self-test verification failed: {e}")
+-        return False
++        return False, evidence
+ 
+     log("✅", "3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.")
+-    return True
++    return True, evidence
+ 
+ 
+ def step_7_record(
+-    task: dict[str, str],
++    task: dict[str, Any],
+     branch: str,
+     contract: dict[str, Any] | None = None,
++    evidence: list[dict[str, Any]] | None = None,
+     auto_pr: bool = False,
+ ) -> bool:
+-    """Step 7: Prepare PR body and submit PR."""
++    """Step 7: Prepare PR body with dynamic test evidence and submit PR."""
+     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
+     issue_num = task.get("id", "adhoc")
+     
+@@ -382,6 +506,13 @@ def step_7_record(
+ ```
+ """
+ 
++    evidence_lines = []
++    for ev in (evidence or []):
++        status_icon = "✅" if ev.get("passed") else "❌"
++        extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
++        evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** PASS{extra}")
++    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All 3-tier checks verified."
++
+     pr_body = f"""## Summary
+ Autonomous contribution for issue #{issue_num}: {task.get('title')}.
+ 
+@@ -391,10 +522,8 @@ def step_7_record(
+ ## Type of Change
+ - [x] `feat` / `fix` / `docs` — Open contributor change
+ {contract_yaml_snippet}
+-## Test Evidence (3-Tier যাচাই-চুক্তি)
+-1. **Reflection Check:** Scoped to public open contracts.
+-2. **Syntax/Boot:** Verified with `continuous_agent_loop.py` compilation checks.
+-3. **Tests:** All schema and example contracts verified.
++## Dynamic Test Evidence (3-Tier যাচাই-চুক্তি)
++{evidence_block}
+ 
+ ## Rollback Path
+ - [x] `git revert`-safe (no private state dependencies)
+@@ -443,43 +572,9 @@ def step_8_return() -> None:
+     print("----------------------------------------------------------------------")
+ 
+ 
+-def main() -> int:
+-    parser = argparse.ArgumentParser(description="SupremeAI Continuous Agent Loop — Open Contributor Edition")
+-    parser.add_argument("--issue", type=str, help="Specific GitHub issue number to claim and resolve")
+-    parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
+-    parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
+-    parser.add_argument("--emit-contract", action="store_true", help="Emit JSON task contract adhering to AGENT_RULES.md §7 and exit")
+-    parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
+-    parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
+-    parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
+-    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
+-    parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
+-    args = parser.parse_args()
+-
+-    touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
+-
+-    if args.emit_contract:
+-        issue_id = args.issue or "adhoc"
+-        contract = build_task_contract(
+-            task_id=f"task-{issue_id}",
+-            issue=issue_id if issue_id != "adhoc" else None,
+-            task_type=args.task_type,
+-            priority=args.priority,
+-            objective=f"Resolve issue #{issue_id}",
+-            touching_files=touching_files,
+-        )
+-        print(json.dumps(contract, indent=2))
+-        return 0
+-
+-    print("======================================================================")
+-    print(" SupremeAI — Continuous Agent Loop (Open Contributor Runner) ")
+-    print(f" Target: {UPSTREAM_REPO}")
+-    print("======================================================================")
+-
+-    if args.verify_only:
+-        return 0 if step_6_verify() else 1
+-
+-    task = step_1_understand(args.issue, allow_adhoc=args.allow_adhoc)
++def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
++    """Execute a single complete task dispatch cycle."""
++    task = step_1_understand(issue_id, allow_adhoc=args.allow_adhoc)
+     if not task:
+         return 1
+ 
+@@ -490,6 +585,13 @@ def main() -> int:
+     if state.get("clean") != "True" and not args.force:
+         return 1
+ 
++    # Classify Role & Prompt
++    assigned_role = args.role or classify_task_role(
++        task.get("title", ""), task.get("labels", []), task.get("body", "")
++    )
++    log("🎯", f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})")
++
++    touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
+     contract = build_task_contract(
+         task_id=f"task-{task.get('id', 'adhoc')}",
+         issue=task.get("id"),
+@@ -497,17 +599,31 @@ def main() -> int:
+         priority=args.priority,
+         objective=task.get("title", ""),
+         touching_files=touching_files,
++        role_policy=assigned_role,
+     )
+ 
++    agent_prompt = build_agent_prompt(task, assigned_role, contract)
++
++    if args.emit_prompt:
++        print("\n" + "=" * 70)
++        print("--- SPECIALIST AGENT PROMPT ---")
++        print(agent_prompt)
++        print("=" * 70 + "\n")
++        return 0
++
+     branch = step_4_branch(task)
+-    step_5_work_notice()
++    if not branch:
++        return 1
++
++    step_5_work_notice(assigned_role, agent_prompt)
+ 
+-    # Run verification check
+-    if not step_6_verify():
++    # Verification check
++    passed, evidence = step_6_verify()
++    if not passed:
+         log("❌", "Verification failed. Please fix errors before proceeding.")
+         return 1
+ 
+-    if not step_7_record(task, branch, contract=contract, auto_pr=args.auto_pr):
++    if not step_7_record(task, branch, contract=contract, evidence=evidence, auto_pr=args.auto_pr):
+         log("❌", "Step 7 (Record) failed! Halting before completion return.")
+         return 1
+ 
+@@ -515,7 +631,74 @@ def main() -> int:
+     return 0
+ 
+ 
+-if __name__ == "__main__":
+-    sys.exit(main())
++def main() -> int:
++    parser = argparse.ArgumentParser(description="SupremeAI Continuous Agent Loop — Lazy Team Leader & Dispatcher")
++    parser.add_argument("--issue", type=str, help="Specific GitHub issue number to claim and resolve")
++    parser.add_argument("--pick-next", action="store_true", help="Automatically pick highest priority open issue from upstream board")
++    parser.add_argument("--loop", action="store_true", help="Continuous mode: process eligible issues sequentially")
++    parser.add_argument("--max-tasks", type=int, default=5, help="Maximum number of tasks to process in loop mode (default: 5)")
++    parser.add_argument("--role", type=str, help=f"Force specific agent role: {', '.join(ROLES.keys())}")
++    parser.add_argument("--emit-prompt", action="store_true", help="Emit specialist agent prompt and exit")
++    parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
++    parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
++    parser.add_argument("--emit-contract", action="store_true", help="Emit JSON task contract adhering to AGENT_RULES.md §7 and exit")
++    parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
++    parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
++    parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
++    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
++    parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
++    args = parser.parse_args()
++
++    print("======================================================================")
++    print(" SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) ")
++    print(f" Target: {UPSTREAM_REPO}")
++    print("======================================================================")
+ 
++    if args.verify_only:
++        passed, _ = step_6_verify()
++        return 0 if passed else 1
+ 
++    if args.emit_contract:
++        issue_id = args.issue or "adhoc"
++        contract = build_task_contract(
++            task_id=f"task-{issue_id}",
++            issue=issue_id if issue_id != "adhoc" else None,
++            task_type=args.task_type,
++            priority=args.priority,
++            objective=f"Resolve issue #{issue_id}",
++            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
++        )
++        print(json.dumps(contract, indent=2))
++        return 0
++
++    if args.loop:
++        log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")
++        processed = 0
++        while processed < args.max_tasks:
++            next_issue = pick_next_issue()
++            if not next_issue:
++                log("🏁", "No more eligible open issues in queue. Loop finished.")
++                break
++            log("🚀", f"Dispatching Task #{next_issue} ({processed + 1}/{args.max_tasks})...")
++            rc = run_cycle(args, next_issue)
++            if rc != 0:
++                log("⚠️", f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.")
++                return rc
++            processed += 1
++            time.sleep(2)  # Short cooldown between dispatches
++        log("🎉", f"Continuous loop completed {processed} task(s).")
++        return 0
++
++    issue_to_run = args.issue
++    if args.pick_next:
++        issue_to_run = pick_next_issue()
++        if not issue_to_run:
++            log("❌", "No eligible open issues found on board!")
++            return 1
++        log("🎯", f"Auto-selected highest priority Issue #{issue_to_run}")
++
++    return run_cycle(args, issue_to_run)
++
++
++if __name__ == "__main__":
++    sys.exit(main())

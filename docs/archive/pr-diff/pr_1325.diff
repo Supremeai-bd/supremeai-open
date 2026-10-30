@@ -1,0 +1,45 @@
+diff --git a/docs/bridge/orders/bridge-20261027-readyz-smoke-gates.md b/docs/bridge/orders/bridge-20261027-readyz-smoke-gates.md
+new file mode 100644
+index 00000000..98408073
+--- /dev/null
++++ b/docs/bridge/orders/bridge-20261027-readyz-smoke-gates.md
+@@ -0,0 +1,39 @@
++# [P0] Truthful readiness — add /readyz with deploy identity + post-deploy smoke gates
++
++## Task ID
++`bridge-20261027-readyz-smoke-gates`
++
++## Target repository
++`Supremeai-bd/supremeai-core` (and platform services; tracked on the public `supremeai-open` task board per federation policy).
++
++## Severity
++**P0 — "healthy" today means liveness, not readiness.** Health signals are contradictory while builds fail: a service can report `/health/live` 200 on a stale image, so outages and bad deploys are invisible to any consumer that trusts the health path.
++
++## Verified evidence (pulled live via MCP tower, 2026-10-26)
++- `render_service_health(srv-dau7c9ek1f9s73almn0g)` → `healthCheckPath: "/health/live"` while `lastDeployStatus: "build_failed"` — liveness of an old container coexists with a broken deploy (live-verified combination).
++- Per the 2026-10-26 comprehensive audit: the API service (`srv-dbappass728c7396p580`) has an **empty `healthCheckPath`**, and `/readyz` is absent or unconfigured across services. (API/worker service IDs were not resolvable from the tower's reachable Render account, so those two specifics remain audit-report evidence, not independently re-pulled.)
++- Audit §5 root cause: "health → liveness only; no truthful readiness".
++
++## Why this blocks production
++- No consumer (or human) can distinguish: healthy-new-image vs healthy-stale-image vs liveness-only. Release gates built on this signal are unsafe.
++- Post-deploy verification currently relies on nothing: a failed deploy is discovered by users, not by a gate.
++
++## Remediation plan
++1. Implement `GET /readyz` (separate from `/health/live`) that checks, and reports with per-check status: dependency contract (DB/Redis/provider reachability), image/build identity (git SHA + image digest exposed by the container), and config/secret contract (required env keys present, non-empty).
++2. Point Render `healthCheckPath` at `/readyz` once it is truthful (or keep `/health/live` for restart decisions and use `/readyz` in release gates).
++3. Add a post-deploy smoke gate (script or CI step): after deploy, call `/readyz`, verify reported SHA == deployed SHA, then run one authenticated contract probe per critical route (chat/completions, API, worker, webhook).
++4. Publish the readiness JSON schema so dashboards can consume it.
++
++## Acceptance criteria
++- [ ] `/readyz` returns per-check detail incl. build SHA; mismatch → 503
++- [ ] Post-deploy smoke gate wired and demonstrated catching a bad deploy (dry-run evidence)
++- [ ] Render health config updated and documented
++- [ ] `/readyz` does not leak secret values
++
++## Related orders
++- bridge-20261027-render-poetry-lock (the live build failure that makes this urgent)
++- Audit "SupremeAI সমন্বিত Executive Diagnosis" (2026-10-26), P0 item 2.
++
++## Verification commands for the implementer
++- `render_service_health {accountId:"render-primary", serviceId:"srv-dau7c9ek1f9s73almn0g"}`
++- `github_read_file {repo:"supremeai-core", path:"Dockerfile"}`

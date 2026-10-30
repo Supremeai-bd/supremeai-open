@@ -1,0 +1,328 @@
+diff --git a/api-schemas/gateway.openapi.yaml b/api-schemas/gateway.openapi.yaml
+index 83061013..a319bbe8 100644
+--- a/api-schemas/gateway.openapi.yaml
++++ b/api-schemas/gateway.openapi.yaml
+@@ -1,56 +1,21 @@
++# SupremeAI API v1 — স্থিতিশীল বাইরের চুক্তি (plan §৮, §১৭, §২১)
++# বাংলা মন্তব্য: OpenAI-compatible ইচ্ছাকৃত — বিদ্যমান টুলিং (Cursor/Aider/agents) শূন্য-পরিবর্তনে চলবে।
++# Provider কে handle করলো — consumer জানবে না (§২২)।
+ openapi: 3.1.0
+ info:
+-  title: SupremeAI Unified Gateway Shield
++  title: SupremeAI API
+   version: 1.0.0
+-  description: |
+-    Rule 18 (AUTONOMOUS_TRANSIT_PIPELINE.md): the single external entry
+-    point for all third-party AI providers, exposing an OpenAI-compatible
+-    surface. Rule 19: provider credentials live ONLY in the server-side
+-    vault (Infisical/Render) — no provider key material appears anywhere
+-    in this contract. Rule 21: downstream callers authenticate exclusively
+-    with the one-key SSOT (SUPREMEAI_API_KEY) via Bearer token or the
+-    X-SupremeAI-Key header. Rule 22: tenant quota (RPS/RPM) and usage
+-    attribution are governed through the gateway key-plane.
++  description: >
++    Unified provider gateway. One SUPREMEAI_API_KEY, provider-agnostic responses.
++    Provider credentials never leave the server side (plan §11).
+ servers:
+-  - url: https://supremeai-api.onrender.com
++  - url: /
+ security:
+-  - bearerAuth: []
+-  - supremeKeyHeader: []
++  - SupremeAIKey: []
+ paths:
+-  /v1/models:
+-    get:
+-      summary: List models exposed by the gateway
+-      operationId: listModels
+-      security:
+-        - bearerAuth: []
+-        - supremeKeyHeader: []
+-      responses:
+-        "200":
+-          description: Model catalog
+-          content:
+-            application/json:
+-              schema:
+-                type: object
+-                required: [object, data]
+-                properties:
+-                  object:
+-                    type: string
+-                    enum: [list]
+-                  data:
+-                    type: array
+-                    items:
+-                      $ref: "#/components/schemas/ModelRef"
+-        "401":
+-          $ref: "#/components/responses/Unauthorized"
+-        "429":
+-          $ref: "#/components/responses/QuotaExceeded"
+   /v1/chat/completions:
+     post:
+-      summary: OpenAI-compatible chat completion (provider resolved server-side)
+-      operationId: createChatCompletion
+-      security:
+-        - bearerAuth: []
+-        - supremeKeyHeader: []
++      summary: Chat completion (OpenAI-compatible)
+       requestBody:
+         required: true
+         content:
+@@ -59,121 +24,102 @@ paths:
+               $ref: "#/components/schemas/ChatCompletionRequest"
+       responses:
+         "200":
+-          description: Completion result (provider and failover hop recorded
+-            in the X-SupremeAI-Served-By response header, never in the key plane)
+-          headers:
+-            X-SupremeAI-Served-By:
+-              description: Provider chain hop that served the request (Rule 20)
+-              schema:
+-                $ref: "#/components/schemas/ProviderName"
++          description: Completion result (OpenAI-compatible shape)
+           content:
+             application/json:
+               schema:
+                 $ref: "#/components/schemas/ChatCompletionResponse"
+-        "401":
+-          $ref: "#/components/responses/Unauthorized"
+-        "429":
+-          $ref: "#/components/responses/QuotaExceeded"
++        "401": { description: Invalid or missing SupremeAI key }
++        "403": { description: Key lacks required scope }
++        "429": { description: Quota/rate limit exceeded (config-driven) }
++        "502": { description: All providers in fallback chain failed }
+         "503":
+-          description: Entire failover chain exhausted (Rule 20)
++          description: >
++            Keyplane/infrastructure unavailable (retry-able). Contract parity:
++            docs/CONSUMERS.md §3 and the reference client treat 503 as the
++            retry-able class — the spec previously omitted it, so generated
++            SDKs lost the retry semantics.
++  /v1/models:
++    get:
++      summary: Enabled models (from routing_policy config, not provider internals)
++      responses:
++        "200":
++          description: Model list
+           content:
+             application/json:
+               schema:
+-                $ref: "#/components/schemas/Error"
++                type: object
++                properties:
++                  object: { type: string, const: list }
++                  data:
++                    type: array
++                    items:
++                      type: object
++                      properties:
++                        id: { type: string }
++                        object: { type: string, const: model }
++                        owned_by: { type: string, const: supremeai }
++        "401": { description: Invalid or missing SupremeAI key }
++        "429": { description: Quota/rate limit exceeded (config-driven) }
++  /healthz:
++    get:
++      summary: Gateway health (no auth)
++      security: []
++      responses:
++        "200": { description: healthy }
+ components:
+   securitySchemes:
+-    bearerAuth:
+-      type: http
+-      scheme: bearer
+-      description: SUPREMEAI_API_KEY as Bearer token (Rule 21 SSOT)
+-    supremeKeyHeader:
++    SupremeAIKey:
+       type: apiKey
+       in: header
+       name: X-SupremeAI-Key
+-      description: SUPREMEAI_API_KEY via header (Rule 21 SSOT alternative)
+-  responses:
+-    Unauthorized:
+-      description: Missing or invalid SUPREMEAI_API_KEY credential
+-      content:
+-        application/json:
+-          schema:
+-            $ref: "#/components/schemas/Error"
+-    QuotaExceeded:
+-      description: Tenant RPS/RPM quota exceeded (Rule 22)
+-      content:
+-        application/json:
+-          schema:
+-            $ref: "#/components/schemas/Error"
++      description: >
++        SUPREMEAI_API_KEY — gateway access credential. NOT a provider credential copy.
+   schemas:
+-    ProviderName:
+-      type: string
+-      enum: [groq, gemini, openrouter, anthropic, fallback]
+-      description: Routing metadata only — carries zero credential material (Rule 19)
+-    ModelRef:
+-      type: object
+-      required: [id, object]
+-      properties:
+-        id:
+-          type: string
+-        object:
+-          type: string
+-          enum: [model]
+     ChatCompletionRequest:
+       type: object
+-      required: [model, messages]
++      required: [messages]
+       properties:
+         model:
+           type: string
+-          description: Logical model name; provider binding is resolved
+-            server-side behind the shield (Rules 18-20)
++          default: auto
++          description: "auto = router রায় (routing_policy.json অনুযায়ী)"
+         messages:
+           type: array
++          minItems: 1
+           items:
+-            $ref: "#/components/schemas/Message"
+-        stream:
+-          type: boolean
+-          default: false
+-    Message:
+-      type: object
+-      required: [role, content]
+-      properties:
+-        role:
+-          type: string
+-          enum: [system, user, assistant, tool]
+-        content:
+-          type: string
++            type: object
++            required: [role, content]
++            properties:
++              role: { type: string, enum: [system, user, assistant] }
++              content: { type: string }
++        temperature: { type: number, default: 0.7 }
++        # OAS 3.1: `nullable` was removed — the 3.1-valid form is a type array.
++        max_tokens: { type: [integer, "null"] }
++        stream: { type: boolean, default: false }
+     ChatCompletionResponse:
+       type: object
+-      required: [id, object, choices]
+       properties:
+-        id:
+-          type: string
+-        object:
+-          type: string
+-          enum: [chat.completion]
++        id: { type: string }
++        object: { type: string, const: chat.completion }
++        created: { type: integer }
++        model: { type: string, description: "যে মডেল সত্যিই সামলালো (গোপনীয়তা: provider-name দৃশ্যমান হতে পারে, key কখনো নয়)" }
+         choices:
+           type: array
+           items:
+             type: object
+-            required: [message]
+             properties:
++              index: { type: integer }
+               message:
+-                $ref: "#/components/schemas/Message"
++                type: object
++                properties:
++                  role: { type: string }
++                  content: { type: string }
++              finish_reason: { type: string }
+         usage:
+           type: object
+-          description: Usage attribution feeds Rule 22 tenant telemetry
++          description: provider-রিপোর্টেড usage — না পেলে বানানো নয়, ক্ষেত্রটি বাদ (সততা-মতবাদ)
+           properties:
+             prompt_tokens: { type: integer }
+             completion_tokens: { type: integer }
+             total_tokens: { type: integer }
+-    Error:
+-      type: object
+-      required: [error]
+-      properties:
+-        error:
+-          type: object
+-          required: [message, type]
+-          properties:
+-            message: { type: string }
+-            type: { type: string }
+-            code: { type: string }
+diff --git a/examples/gateway_client.py b/examples/gateway_client.py
+index fc575b0c..e48d78c1 100644
+--- a/examples/gateway_client.py
++++ b/examples/gateway_client.py
+@@ -7,6 +7,7 @@
+ - error চার রকম এবং সৎ: 401=অবৈধ/বাতিল key, 429=সীমা (rate_limit_rps×window),
+   502=সব provider ব্যর্থ, 503=keyplane/অবকাঠামো অপ্রাপ্য (retry-যোগ্য)
+ - retry শুধু 502/503-তে — 401/429 কখনো retry নয় (429-এ Retry-After সম্মান)
++- 429-এ server Retry-After হেডার দিলে সেটা `err.retry_after`-এ বহন হয় — caller সম্মান করতে পারে (CONSUMERS.md §৩)
+ """
+ from __future__ import annotations
+ 
+@@ -21,11 +22,21 @@
+ 
+ 
+ class GatewayError(RuntimeError):
+-    """বাংলা: সব gateway-ত্রুটির মূল — status_code বহন করে।"""
+-
+-    def __init__(self, message: str, status_code: int | None = None):
++    """বাংলা: সব gateway-ত্রুটির মূল — status_code বহন করে।
++
++    retry_after (str | None): শুধু 429-এ সেট হতে পারে — server-এর Retry-After
++    হেডারের raw মান (সেকেন্ড বা HTTP-date)। caller এটা সম্মান করবে (CONSUMERS.md §৩)।
++    """
++
++    def __init__(
++        self,
++        message: str,
++        status_code: int | None = None,
++        retry_after: str | None = None,
++    ):
+         super().__init__(message)
+         self.status_code = status_code
++        self.retry_after = retry_after
+ 
+ 
+ class GatewayAuthError(GatewayError):
+@@ -87,7 +98,13 @@ def chat(
+             if code == 401:
+                 raise GatewayAuthError(f"invalid key: {body}", 401) from exc
+             if code == 429:
+-                raise GatewayRateLimited(f"rate limited: {body}", 429) from exc
++                # বাংলা: CONSUMERS.md §৩ — "429 → Retry-After সম্মান"। হেডার না দিলে
++                # caller সম্মান করার কিছুই পেত না; এখন raw মান error-এই বহন হয়।
++                retry_after = exc.headers.get("Retry-After") if exc.headers else None
++                msg = f"rate limited: {body}"
++                if retry_after:
++                    msg = f"rate limited (Retry-After: {retry_after}): {body}"
++                raise GatewayRateLimited(msg, 429, retry_after=retry_after) from exc
+             if code == 502:
+                 last = GatewayProviderError(f"all providers failed: {body}", 502)
+             elif code == 503:
+@@ -110,12 +127,19 @@ def chat(
+ 
+ if __name__ == "__main__":
+     # বাংলা: one-shot CLI — agent-script/শেল-বান্ধব
++    # সৎ-ব্যর্থতা: typed GatewayError → এক-লাইন stderr + exit 1 (raw traceback নয়) —
++    # CI/GitHub-automation consumer (CONSUMERS.md §৬) non-blocking `||` পলিসি নির্ভর করে।
+     import argparse
++    import sys
+ 
+     parser = argparse.ArgumentParser(description="SupremeAI Gateway client")
+     parser.add_argument("--model", default="auto")
+     parser.add_argument("--prompt", required=True)
+     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+     args = parser.parse_args()
+-    out = chat([{"role": "user", "content": args.prompt}], model=args.model, base_url=args.base_url)
++    try:
++        out = chat([{"role": "user", "content": args.prompt}], model=args.model, base_url=args.base_url)
++    except GatewayError as err:
++        print(f"{type(err).__name__}: {err}", file=sys.stderr)
++        sys.exit(1)
+     print(out["choices"][0]["message"]["content"])

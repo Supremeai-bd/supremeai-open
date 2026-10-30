@@ -1,0 +1,1054 @@
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 7f6063d0..004806f4 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -84,6 +84,8 @@
+     "command",  # Federation bridge surface for Supremeai-bd/supremeai-command (issue #505)
+     "browser",  # Federation bridge surface for Supremeai-bd/supremeai-browser (issue #502)
+     "sdk",  # Federation bridge surface for Supremeai-bd/supremeai-sdk (issue #510)
++    "studio",  # Federation bridge surface for Supremeai-bd/supremeai-studio (issue #508)
++    "skills",  # Federation bridge surface for Supremeai-bd/supremeai-skills (issue #503)
+ }
+ 
+ APPROVED_ROOT_FILES = {
+diff --git a/studio/src/components/EmergencyConsole.tsx b/studio/src/components/EmergencyConsole.tsx
+new file mode 100644
+index 00000000..d5d84f9f
+--- /dev/null
++++ b/studio/src/components/EmergencyConsole.tsx
+@@ -0,0 +1,105 @@
++/**
++ * Federation Cockpit — emergency control console.
++ *
++ * Autonomy kill-switch with a two-step PIN confirmation modal. The PIN is
++ * supplied by the operator via props; the component holds no secrets and
++ * performs no network calls itself — it only raises onRequestKill.
++ */
++
++import { useState } from 'react';
++
++export interface EmergencyConsoleProps {
++  /** Whether the autonomy system is currently armed. */
++  armed: boolean;
++  /** Called after a valid PIN confirmation. */
++  onRequestKill?: (pin: string) => void;
++  /** Called when the operator re-arms from the console. */
++  onRearm?: () => void;
++}
++
++export function EmergencyConsole({ armed, onRequestKill, onRearm }: EmergencyConsoleProps) {
++  const [confirmOpen, setConfirmOpen] = useState(false);
++  const [pin, setPin] = useState('');
++  const [error, setError] = useState('');
++
++  const openConfirm = () => {
++    setPin('');
++    setError('');
++    setConfirmOpen(true);
++  };
++
++  const submitPin = () => {
++    if (pin.trim().length < 4) {
++      setError('PIN must be at least 4 characters');
++      return;
++    }
++    setConfirmOpen(false);
++    setPin('');
++    onRequestKill?.(pin);
++  };
++
++  const closeConfirm = () => {
++    setConfirmOpen(false);
++    setPin('');
++    setError('');
++  };
++
++  return (
++    <section className="cockpit-panel emergency-panel" aria-label="Emergency console">
++      <h2 className="cockpit-panel-title">Emergency Console</h2>
++      <p className={`emergency-state ${armed ? 'emergency-armed' : 'emergency-disarmed'}`}>
++        {armed ? 'Autonomy: ARMED' : 'Autonomy: KILLED'}
++      </p>
++      {armed ? (
++        <button type="button" className="kill-switch" onClick={openConfirm}>
++          Engage Kill-Switch
++        </button>
++      ) : (
++        <button type="button" className="rearm-switch" onClick={onRearm}>
++          Re-arm Autonomy
++        </button>
++      )}
++
++      {confirmOpen ? (
++        <div className="kill-modal-backdrop" role="presentation">
++          <div className="kill-modal" role="dialog" aria-modal="true" aria-labelledby="kill-modal-title">
++            <h3 id="kill-modal-title">Confirm Autonomy Kill-Switch</h3>
++            <p>This halts all agent claim activity federation-wide. Enter the operator PIN to confirm.</p>
++            <input
++              className="kill-pin-input"
++              type="password"
++              inputMode="numeric"
++              autoFocus
++              value={pin}
++              placeholder="operator PIN"
++              aria-label="Operator PIN"
++              onChange={(event) => setPin(event.target.value)}
++              onKeyDown={(event) => {
++                if (event.key === 'Enter') {
++                  submitPin();
++                } else if (event.key === 'Escape') {
++                  closeConfirm();
++                }
++              }}
++            />
++            {error ? (
++              <p className="kill-modal-error" role="alert">
++                {error}
++              </p>
++            ) : null}
++            <div className="kill-modal-actions">
++              <button type="button" className="kill-cancel" onClick={closeConfirm}>
++                Cancel
++              </button>
++              <button type="button" className="kill-confirm" onClick={submitPin}>
++                Confirm Kill
++              </button>
++            </div>
++          </div>
++        </div>
++      ) : null}
++    </section>
++  );
++}
++
++export default EmergencyConsole;
+diff --git a/studio/src/components/RunwayVisualizer.tsx b/studio/src/components/RunwayVisualizer.tsx
+new file mode 100644
+index 00000000..56a6b81b
+--- /dev/null
++++ b/studio/src/components/RunwayVisualizer.tsx
+@@ -0,0 +1,69 @@
++/**
++ * Federation Cockpit — Live PR Runway visualizer.
++ *
++ * Kanban runway for bridge work orders: Queued → In-Gates → Landed /
++ * Self-Healing, with CI status dots (green/red/amber) and hover failure
++ * diagnostics.
++ */
++
++import type { RunwayEntry, RunwayStage } from '../types/federation';
++
++const STAGE_ORDER: readonly RunwayStage[] = ['queued', 'in-gates', 'landed', 'self-healing'];
++
++const STAGE_LABELS: Record<RunwayStage, string> = {
++  queued: 'Queued',
++  'in-gates': 'In-Gates',
++  landed: 'Landed',
++  'self-healing': 'Self-Healing',
++};
++
++export interface RunwayVisualizerProps {
++  entries: RunwayEntry[];
++  /** Limits rendered cards per column (default 8). */
++  maxPerColumn?: number;
++}
++
++export function RunwayVisualizer({ entries, maxPerColumn = 8 }: RunwayVisualizerProps) {
++  return (
++    <section className="cockpit-panel" aria-label="Live PR runway">
++      <h2 className="cockpit-panel-title">Live PR Runway</h2>
++      <div className="runway-grid" role="list">
++        {STAGE_ORDER.map((stage) => {
++          const columnEntries = entries.filter((e) => e.stage === stage).slice(0, maxPerColumn);
++          return (
++            <div className={`runway-column runway-stage-${stage}`} role="listitem" key={stage}>
++              <header className="runway-column-header">
++                <span className="runway-column-title">{STAGE_LABELS[stage]}</span>
++                <span className="runway-column-count">{columnEntries.length}</span>
++              </header>
++              <div className="runway-cards">
++                {columnEntries.length === 0 ? (
++                  <p className="runway-empty">no work orders</p>
++                ) : (
++                  columnEntries.map((entry) => (
++                    <article
++                      className={`runway-card ci-${entry.ciStatus}`}
++                      key={entry.taskId}
++                      title={entry.ciStatus === 'red' ? entry.diagnostics ?? 'CI failed' : entry.title}
++                    >
++                      <span className={`ci-dot ci-dot-${entry.ciStatus}`} aria-hidden="true" />
++                      <div className="runway-card-body">
++                        <p className="runway-card-title">{entry.title}</p>
++                        <p className="runway-card-meta">
++                          {entry.taskId}
++                          {entry.prNumber ? ` · PR #${entry.prNumber}` : ''}
++                        </p>
++                      </div>
++                    </article>
++                  ))
++                )}
++              </div>
++            </div>
++          );
++        })}
++      </div>
++    </section>
++  );
++}
++
++export default RunwayVisualizer;
+diff --git a/studio/src/components/SatelliteMatrix.tsx b/studio/src/components/SatelliteMatrix.tsx
+new file mode 100644
+index 00000000..d86718f2
+--- /dev/null
++++ b/studio/src/components/SatelliteMatrix.tsx
+@@ -0,0 +1,73 @@
++/**
++ * Federation Cockpit — 11+1 Satellite health & parity matrix.
++ *
++ * Real-time grid of every canonical federation satellite: health dot,
++ * latest commit SHA, last Nightly Train sync, and active claim counts.
++ */
++
++import type { SatelliteHealth } from '../types/federation';
++
++export interface SatelliteMatrixProps {
++  satellites: SatelliteHealth[];
++}
++
++function shortSha(sha?: string): string {
++  return sha ? sha.slice(0, 7) : '—';
++}
++
++function relativeTime(iso?: string): string {
++  if (!iso) {
++    return 'never';
++  }
++  const then = Date.parse(iso);
++  if (Number.isNaN(then)) {
++    return 'unknown';
++  }
++  const minutes = Math.round((Date.now() - then) / 60000);
++  if (minutes < 1) return 'just now';
++  if (minutes < 60) return `${minutes}m ago`;
++  const hours = Math.round(minutes / 60);
++  if (hours < 24) return `${hours}h ago`;
++  return `${Math.round(hours / 24)}d ago`;
++}
++
++export function SatelliteMatrix({ satellites }: SatelliteMatrixProps) {
++  const healthyCount = satellites.filter((s) => s.healthy).length;
++  return (
++    <section className="cockpit-panel" aria-label="Satellite health matrix">
++      <h2 className="cockpit-panel-title">
++        Satellite Matrix{' '}
++        <span className="satellite-parity" data-healthy={healthyCount} data-total={satellites.length}>
++          {healthyCount}/{satellites.length} healthy
++        </span>
++      </h2>
++      <div className="satellite-grid" role="grid">
++        {satellites.map((satellite) => (
++          <div
++            className={`satellite-cell ${satellite.healthy ? 'satellite-up' : 'satellite-down'}`}
++            role="gridcell"
++            key={satellite.id}
++            aria-label={`${satellite.displayName}: ${satellite.healthy ? 'healthy' : 'unhealthy'}`}
++          >
++            <div className="satellite-cell-head">
++              <span className={`ci-dot ${satellite.healthy ? 'ci-dot-green' : 'ci-dot-red'}`} aria-hidden="true" />
++              <span className="satellite-name">{satellite.displayName}</span>
++              {typeof satellite.activeClaims === 'number' && satellite.activeClaims > 0 ? (
++                <span className="satellite-claims">{satellite.activeClaims} claim</span>
++              ) : null}
++            </div>
++            <div className="satellite-cell-meta">
++              <span className="satellite-sha">{shortSha(satellite.latestSha)}</span>
++              <span className="satellite-sync">{relativeTime(satellite.lastSyncedAt)}</span>
++              {typeof satellite.latencyMs === 'number' ? (
++                <span className="satellite-latency">{satellite.latencyMs}ms</span>
++              ) : null}
++            </div>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++}
++
++export default SatelliteMatrix;
+diff --git a/studio/src/components/SwarmDefenseGauge.tsx b/studio/src/components/SwarmDefenseGauge.tsx
+new file mode 100644
+index 00000000..dbdf663f
+--- /dev/null
++++ b/studio/src/components/SwarmDefenseGauge.tsx
+@@ -0,0 +1,54 @@
++/**
++ * Federation Cockpit — Swarm defense gauge.
++ *
++ * Visualizes atomic-claim pressure against the configured rate-limit
++ * ceiling plus Swarm DoS rejection telemetry.
++ */
++
++import type { SwarmDefenseState } from '../types/federation';
++
++export interface SwarmDefenseGaugeProps {
++  defense: SwarmDefenseState;
++}
++
++export function SwarmDefenseGauge({ defense }: SwarmDefenseGaugeProps) {
++  const capacity = Math.max(1, defense.rateLimitCapacity);
++  const utilization = Math.min(1, defense.activeClaims / capacity);
++  const utilizationPct = Math.round(utilization * 100);
++  const level = utilization >= 0.9 ? 'critical' : utilization >= 0.6 ? 'elevated' : 'nominal';
++
++  return (
++    <section className={`cockpit-panel defense-panel defense-${level}`} aria-label="Swarm defense gauge">
++      <h2 className="cockpit-panel-title">Swarm Defense</h2>
++      <div
++        className="defense-gauge"
++        role="meter"
++        aria-valuemin={0}
++        aria-valuemax={defense.rateLimitCapacity}
++        aria-valuenow={defense.activeClaims}
++        aria-label={`Claim capacity utilization ${utilizationPct} percent`}
++      >
++        <div className="defense-gauge-fill" style={{ width: `${utilizationPct}%` }} />
++        <span className="defense-gauge-label">
++          {defense.activeClaims}/{defense.rateLimitCapacity} claims
++        </span>
++      </div>
++      <dl className="defense-stats">
++        <div className="defense-stat">
++          <dt>Rejections</dt>
++          <dd data-testid="defense-rejections">{defense.claimRejections}</dd>
++        </div>
++        <div className="defense-stat">
++          <dt>Task velocity</dt>
++          <dd>{defense.taskVelocityPerHour}/h</dd>
++        </div>
++        <div className="defense-stat">
++          <dt>Pressure</dt>
++          <dd className={`defense-level defense-level-${level}`}>{level}</dd>
++        </div>
++      </dl>
++    </section>
++  );
++}
++
++export default SwarmDefenseGauge;
+diff --git a/studio/src/services/telemetryClient.ts b/studio/src/services/telemetryClient.ts
+new file mode 100644
+index 00000000..c58a86c7
+--- /dev/null
++++ b/studio/src/services/telemetryClient.ts
+@@ -0,0 +1,182 @@
++/**
++ * Federation Cockpit — telemetry service.
++ *
++ * Zero-dependency client for the MCP Tower monitoring surfaces: HTTP
++ * snapshot polling plus SSE live-tail parsing. Pure helpers are exported
++ * separately so the cockpit test battery can exercise them without a
++ * network or a component renderer.
++ */
++
++import type {
++  CiStatus,
++  FederationSnapshot,
++  RawTowerSnapshot,
++  RunwayEntry,
++  RunwayStage,
++  SatelliteHealth,
++  SwarmDefenseState,
++  SatelliteId,
++} from '../types/federation';
++import { SATELLITE_IDS as SATELLITE_ID_LIST } from '../types/federation';
++
++const VALID_STAGES: readonly RunwayStage[] = ['queued', 'in-gates', 'landed', 'self-healing'];
++const VALID_CI: readonly CiStatus[] = ['green', 'red', 'amber'];
++
++export class TelemetryError extends Error {
++  readonly status: number;
++  constructor(message: string, status = 0) {
++    super(message);
++    this.name = 'TelemetryError';
++    this.status = status;
++  }
++}
++
++/** Map a raw Tower payload onto the cockpit snapshot contract. */
++export function normalizeSnapshot(raw: RawTowerSnapshot, now = new Date()): FederationSnapshot {
++  const satellites: SatelliteHealth[] = SATELLITE_ID_LIST.map((id) => {
++    const entry = raw.satellites?.[id] ?? {};
++    return {
++      id: id as SatelliteId,
++      displayName: id.charAt(0).toUpperCase() + id.slice(1),
++      healthy: entry.healthy === true,
++      latestSha: entry.sha,
++      lastSyncedAt: entry.lastSyncedAt,
++      activeClaims: entry.activeClaims ?? 0,
++      latencyMs: entry.latencyMs,
++    };
++  });
++
++  const runway: RunwayEntry[] = (raw.workOrders ?? [])
++    .filter((w): w is typeof w & { taskId: string } => typeof w.taskId === 'string' && w.taskId.length > 0)
++    .map((w) => ({
++      taskId: String(w.taskId),
++      title: w.title ?? w.taskId,
++      stage: VALID_STAGES.includes(w.stage as RunwayStage) ? (w.stage as RunwayStage) : 'queued',
++      ciStatus: VALID_CI.includes(w.ciStatus as CiStatus) ? (w.ciStatus as CiStatus) : 'amber',
++      diagnostics: w.diagnostics,
++      prNumber: w.prNumber,
++      updatedAt: w.updatedAt,
++    }));
++
++  const defense: SwarmDefenseState = {
++    activeClaims: raw.defense?.activeClaims ?? 0,
++    claimRejections: raw.defense?.claimRejections ?? 0,
++    rateLimitCapacity: raw.defense?.rateLimitCapacity ?? 0,
++    taskVelocityPerHour: raw.defense?.taskVelocityPerHour ?? 0,
++  };
++
++  return { capturedAt: raw.capturedAt ?? now.toISOString(), satellites, runway, defense };
++}
++
++/** Minimal SSE frame parser: multi-line data, CRLF, [DONE] sentinel. */
++export class CockpitSSEParser {
++  private buffer = '';
++  private dataLines: string[] = [];
++
++  push(chunk: string): string[] {
++    this.buffer += chunk;
++    const out: string[] = [];
++    let idx = this.buffer.search(/\r?\n|\r/);
++    while (idx !== -1) {
++      const line = this.buffer.slice(0, idx);
++      const sep = this.buffer.startsWith('\r\n', idx) ? 2 : 1;
++      this.buffer = this.buffer.slice(idx + sep);
++      if (line === '') {
++        if (this.dataLines.length) {
++          out.push(this.dataLines.join('\n'));
++          this.dataLines = [];
++        }
++      } else if (!line.startsWith(':') && line.startsWith('data:')) {
++        this.dataLines.push(line.slice(5).replace(/^ /, ''));
++      }
++      idx = this.buffer.search(/\r?\n|\r/);
++    }
++    return out;
++  }
++
++  finish(): string[] {
++    if (this.buffer !== '') {
++      const line = this.buffer;
++      this.buffer = '';
++      if (!line.startsWith(':') && line.startsWith('data:')) {
++        this.dataLines.push(line.slice(5).replace(/^ /, ''));
++      }
++    }
++    const rest = this.dataLines;
++    this.dataLines = [];
++    return rest.length ? [rest.join('\n')] : [];
++  }
++}
++
++export interface TelemetryClientOptions {
++  /** Tower base URL; falsy means same-origin paths (reverse-proxy setups). */
++  baseUrl?: string;
++  /** Snapshot poll interval in milliseconds. Default 15000. */
++  pollIntervalMs?: number;
++  fetchImpl?: typeof fetch;
++}
++
++type SnapshotListener = (snapshot: FederationSnapshot) => void;
++
++/** Polling telemetry client with manual-tick support for tests. */
++export class TelemetryClient {
++  private readonly baseUrl: string;
++  private readonly pollIntervalMs: number;
++  private readonly fetchImpl: typeof fetch;
++  private timer: ReturnType<typeof setInterval> | undefined;
++  private readonly listeners = new Set<SnapshotListener>();
++
++  constructor(options: TelemetryClientOptions = {}) {
++    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env;
++    this.baseUrl = (options.baseUrl ?? env?.SUPREMEAI_TOWER_URL ?? '').replace(/\/+$/, '');
++    this.pollIntervalMs = options.pollIntervalMs ?? 15000;
++    this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
++  }
++
++  async fetchSnapshot(): Promise<FederationSnapshot> {
++    const response = await this.fetchImpl(this.baseUrl + '/monitoring/federation', {
++      headers: { accept: 'application/json' },
++    });
++    if (!response.ok) {
++      throw new TelemetryError('tower snapshot request failed', response.status);
++    }
++    const raw = (await response.json()) as RawTowerSnapshot;
++    return normalizeSnapshot(raw);
++  }
++
++  /** Subscribe to snapshots; fires immediately with a fresh fetch. */
++  async subscribe(listener: SnapshotListener): Promise<() => void> {
++    this.listeners.add(listener);
++    await this.tick();
++    this.timer = setInterval(() => {
++      void this.tick();
++    }, this.pollIntervalMs);
++    return () => {
++      this.listeners.delete(listener);
++      if (this.timer) {
++        clearInterval(this.timer);
++        this.timer = undefined;
++      }
++    };
++  }
++
++  /** One poll cycle; exported for deterministic tests. */
++  async tick(): Promise<void> {
++    try {
++      const snapshot = await this.fetchSnapshot();
++      for (const listener of this.listeners) {
++        listener(snapshot);
++      }
++    } catch {
++      /* degrade honestly: cockpit keeps the last good snapshot */
++    }
++  }
++
++  dispose(): void {
++    if (this.timer) {
++      clearInterval(this.timer);
++      this.timer = undefined;
++    }
++    this.listeners.clear();
++  }
++}
+diff --git a/studio/src/styles/cockpit.css b/studio/src/styles/cockpit.css
+new file mode 100644
+index 00000000..8563c773
+--- /dev/null
++++ b/studio/src/styles/cockpit.css
+@@ -0,0 +1,278 @@
++/* Federation Cockpit — dark glassmorphism theme, HSL palette, micro-animations. */
++
++:root {
++  --cockpit-bg: hsl(225 35% 7%);
++  --cockpit-panel: hsl(225 32% 11% / 0.72);
++  --cockpit-border: hsl(220 25% 30% / 0.45);
++  --cockpit-text: hsl(220 20% 92%);
++  --cockpit-text-dim: hsl(220 12% 62%);
++  --cockpit-accent: hsl(158 64% 52%);
++  --cockpit-green: hsl(152 60% 46%);
++  --cockpit-red: hsl(4 74% 58%);
++  --cockpit-amber: hsl(40 92% 56%);
++  --cockpit-radius: 14px;
++}
++
++.cockpit-panel {
++  background: var(--cockpit-panel);
++  border: 1px solid var(--cockpit-border);
++  border-radius: var(--cockpit-radius);
++  padding: 20px;
++  color: var(--cockpit-text);
++  backdrop-filter: blur(14px);
++  -webkit-backdrop-filter: blur(14px);
++  box-shadow: 0 12px 34px hsl(225 50% 3% / 0.45);
++  transition: border-color 200ms ease, transform 200ms ease;
++}
++
++.cockpit-panel:hover {
++  border-color: hsl(220 25% 42% / 0.6);
++}
++
++.cockpit-panel-title {
++  margin: 0 0 14px;
++  font-size: 0.95rem;
++  letter-spacing: 0.08em;
++  text-transform: uppercase;
++  color: var(--cockpit-text-dim);
++  display: flex;
++  align-items: center;
++  gap: 10px;
++}
++
++/* ---- CI status dots ---- */
++.ci-dot {
++  width: 9px;
++  height: 9px;
++  border-radius: 50%;
++  flex: none;
++  display: inline-block;
++}
++
++.ci-dot-green { background: var(--cockpit-green); box-shadow: 0 0 8px var(--cockpit-green); }
++.ci-dot-red { background: var(--cockpit-red); box-shadow: 0 0 8px var(--cockpit-red); animation: cockpit-pulse 1.6s ease-in-out infinite; }
++.ci-dot-amber { background: var(--cockpit-amber); box-shadow: 0 0 8px var(--cockpit-amber); }
++
++@keyframes cockpit-pulse {
++  0%, 100% { opacity: 1; }
++  50% { opacity: 0.45; }
++}
++
++/* ---- Runway ---- */
++.runway-grid {
++  display: grid;
++  grid-template-columns: repeat(4, minmax(0, 1fr));
++  gap: 12px;
++}
++
++.runway-column {
++  background: hsl(226 34% 9% / 0.6);
++  border: 1px solid var(--cockpit-border);
++  border-radius: 10px;
++  padding: 10px;
++  min-height: 140px;
++}
++
++.runway-column-header {
++  display: flex;
++  justify-content: space-between;
++  align-items: center;
++  margin-bottom: 8px;
++}
++
++.runway-column-title { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--cockpit-text-dim); }
++.runway-column-count { font-size: 0.72rem; color: var(--cockpit-accent); }
++
++.runway-cards { display: flex; flex-direction: column; gap: 8px; }
++.runway-empty { margin: 6px 2px; font-size: 0.75rem; color: var(--cockpit-text-dim); font-style: italic; }
++
++.runway-card {
++  display: flex;
++  gap: 8px;
++  align-items: flex-start;
++  background: hsl(225 30% 14% / 0.85);
++  border: 1px solid var(--cockpit-border);
++  border-radius: 8px;
++  padding: 8px 10px;
++  cursor: default;
++  transition: transform 160ms ease, border-color 160ms ease;
++  animation: cockpit-rise 260ms ease both;
++}
++
++.runway-card:hover { transform: translateY(-2px); border-color: var(--cockpit-accent); }
++.runway-card.ci-red { border-color: hsl(4 74% 58% / 0.55); }
++
++.runway-card-title { margin: 0; font-size: 0.8rem; line-height: 1.35; overflow-wrap: anywhere; }
++.runway-card-meta { margin: 3px 0 0; font-size: 0.68rem; color: var(--cockpit-text-dim); overflow-wrap: anywhere; }
++
++@keyframes cockpit-rise {
++  from { opacity: 0; transform: translateY(6px); }
++  to { opacity: 1; transform: translateY(0); }
++}
++
++/* ---- Satellite matrix ---- */
++.satellite-parity { font-size: 0.72rem; letter-spacing: 0; text-transform: none; color: var(--cockpit-accent); }
++
++.satellite-grid {
++  display: grid;
++  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
++  gap: 10px;
++}
++
++.satellite-cell {
++  background: hsl(226 34% 9% / 0.6);
++  border: 1px solid var(--cockpit-border);
++  border-radius: 10px;
++  padding: 10px 12px;
++  transition: border-color 160ms ease;
++}
++
++.satellite-up:hover { border-color: var(--cockpit-green); }
++.satellite-down { border-color: hsl(4 74% 58% / 0.5); animation: cockpit-pulse 2.4s ease-in-out infinite; }
++
++.satellite-cell-head { display: flex; align-items: center; gap: 7px; }
++.satellite-name { font-size: 0.82rem; font-weight: 600; }
++.satellite-claims { margin-left: auto; font-size: 0.66rem; color: var(--cockpit-amber); }
++
++.satellite-cell-meta { display: flex; gap: 10px; margin-top: 6px; font-size: 0.66rem; color: var(--cockpit-text-dim); flex-wrap: wrap; }
++.satellite-sha { font-family: ui-monospace, monospace; }
++
++/* ---- Swarm defense ---- */
++.defense-gauge {
++  position: relative;
++  height: 18px;
++  border-radius: 999px;
++  background: hsl(226 34% 9% / 0.9);
++  border: 1px solid var(--cockpit-border);
++  overflow: hidden;
++}
++
++.defense-gauge-fill {
++  height: 100%;
++  background: linear-gradient(90deg, var(--cockpit-green), var(--cockpit-amber));
++  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
++}
++
++.defense-gauge-label {
++  position: absolute;
++  inset: 0;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  font-size: 0.7rem;
++  color: var(--cockpit-text);
++}
++
++.defense-stats { display: flex; gap: 18px; margin: 14px 0 0; flex-wrap: wrap; }
++.defense-stat dt { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--cockpit-text-dim); }
++.defense-stat dd { margin: 3px 0 0; font-size: 1.05rem; font-weight: 600; }
++
++.defense-level-nominal { color: var(--cockpit-green); }
++.defense-level-elevated { color: var(--cockpit-amber); }
++.defense-level-critical { color: var(--cockpit-red); animation: cockpit-pulse 1.4s ease-in-out infinite; }
++
++.defense-critical .defense-gauge-fill { background: linear-gradient(90deg, var(--cockpit-amber), var(--cockpit-red)); }
++
++/* ---- Emergency console ---- */
++.emergency-state { font-size: 0.8rem; letter-spacing: 0.05em; margin: 0 0 12px; }
++.emergency-armed { color: var(--cockpit-green); }
++.emergency-disarmed { color: var(--cockpit-red); }
++
++.kill-switch,
++.rearm-switch {
++  width: 100%;
++  padding: 12px 16px;
++  border-radius: 10px;
++  border: 1px solid transparent;
++  font-weight: 700;
++  font-size: 0.85rem;
++  letter-spacing: 0.04em;
++  cursor: pointer;
++  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
++}
++
++.kill-switch {
++  background: linear-gradient(180deg, hsl(4 74% 52%), hsl(4 70% 42%));
++  color: hsl(0 0% 100%);
++  box-shadow: 0 6px 20px hsl(4 74% 40% / 0.4);
++}
++
++.kill-switch:hover { transform: translateY(-1px); filter: brightness(1.08); }
++.kill-switch:active { transform: translateY(1px); }
++
++.rearm-switch {
++  background: hsl(158 64% 40%);
++  color: hsl(160 40% 98%);
++}
++
++.rearm-switch:hover { filter: brightness(1.1); }
++
++.kill-modal-backdrop {
++  position: fixed;
++  inset: 0;
++  background: hsl(225 50% 3% / 0.7);
++  backdrop-filter: blur(4px);
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  z-index: 60;
++  animation: cockpit-fade 160ms ease both;
++}
++
++@keyframes cockpit-fade { from { opacity: 0; } to { opacity: 1; } }
++
++.kill-modal {
++  width: min(92vw, 380px);
++  background: hsl(225 32% 10%);
++  border: 1px solid hsl(4 74% 58% / 0.45);
++  border-radius: var(--cockpit-radius);
++  padding: 20px;
++  animation: cockpit-rise 220ms ease both;
++}
++
++.kill-modal h3 { margin: 0 0 8px; font-size: 0.95rem; }
++.kill-modal p { margin: 0 0 12px; font-size: 0.78rem; color: var(--cockpit-text-dim); line-height: 1.45; }
++
++.kill-pin-input {
++  width: 100%;
++  box-sizing: border-box;
++  background: hsl(226 34% 8%);
++  border: 1px solid var(--cockpit-border);
++  border-radius: 8px;
++  color: var(--cockpit-text);
++  padding: 10px 12px;
++  font-size: 0.9rem;
++  letter-spacing: 0.3em;
++}
++
++.kill-pin-input:focus { outline: none; border-color: var(--cockpit-accent); }
++
++.kill-modal-error { color: var(--cockpit-red); font-size: 0.74rem; margin: 8px 0 0; }
++
++.kill-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
++
++.kill-cancel,
++.kill-confirm {
++  padding: 9px 14px;
++  border-radius: 8px;
++  font-size: 0.78rem;
++  font-weight: 600;
++  cursor: pointer;
++  border: 1px solid var(--cockpit-border);
++  background: transparent;
++  color: var(--cockpit-text);
++}
++
++.kill-confirm { background: hsl(4 74% 48%); border-color: transparent; color: white; }
++.kill-cancel:hover { border-color: var(--cockpit-accent); }
++.kill-confirm:hover { filter: brightness(1.1); }
++
++/* ---- Responsive ---- */
++@media (max-width: 900px) {
++  .runway-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
++}
++
++@media (max-width: 560px) {
++  .runway-grid { grid-template-columns: 1fr; }
++  .cockpit-panel { padding: 14px; }
++}
+diff --git a/studio/src/types/federation.ts b/studio/src/types/federation.ts
+new file mode 100644
+index 00000000..40e57298
+--- /dev/null
++++ b/studio/src/types/federation.ts
+@@ -0,0 +1,79 @@
++/**
++ * Federation Cockpit — Satellite & Runway data schemas.
++ *
++ * Canonical telemetry contracts shared by the cockpit components and the
++ * telemetry service. Mirrors the MCP Tower monitoring surfaces.
++ */
++
++export const SATELLITE_IDS = [
++  'open',
++  'studio',
++  'browser',
++  'command',
++  'skills',
++  'vscode',
++  'agents',
++  'api',
++  'infra',
++  'sdk',
++  'core',
++  'archive',
++] as const;
++
++export type SatelliteId = (typeof SATELLITE_IDS)[number];
++
++export interface SatelliteHealth {
++  id: SatelliteId;
++  displayName: string;
++  healthy: boolean;
++  /** Short commit SHA of the satellite tip, when reported. */
++  latestSha?: string;
++  /** ISO timestamp of the last Nightly Train sync. */
++  lastSyncedAt?: string;
++  /** Count of atomic work-order claims currently held. */
++  activeClaims?: number;
++  /** Round-trip latency in milliseconds, when probed. */
++  latencyMs?: number;
++}
++
++export type RunwayStage = 'queued' | 'in-gates' | 'landed' | 'self-healing';
++
++export type CiStatus = 'green' | 'red' | 'amber';
++
++export interface RunwayEntry {
++  /** Bridge task id, e.g. bridge-YYYYMMDD-slug. */
++  taskId: string;
++  title: string;
++  stage: RunwayStage;
++  ciStatus: CiStatus;
++  /** Human-readable failure diagnostics shown on hover when ciStatus is red. */
++  diagnostics?: string;
++  prNumber?: number;
++  updatedAt?: string;
++}
++
++export interface SwarmDefenseState {
++  /** Work orders currently under atomic claim across the fleet. */
++  activeClaims: number;
++  /** Cumulative claim-contention rejections (Swarm DoS immunity telemetry). */
++  claimRejections: number;
++  /** Configured concurrent-claim ceiling. */
++  rateLimitCapacity: number;
++  /** Incoming WO creations per hour. */
++  taskVelocityPerHour: number;
++}
++
++export interface FederationSnapshot {
++  capturedAt: string;
++  satellites: SatelliteHealth[];
++  runway: RunwayEntry[];
++  defense: SwarmDefenseState;
++}
++
++/** Row shape the Tower health surface serves before normalization. */
++export interface RawTowerSnapshot {
++  capturedAt?: string;
++  satellites?: Record<string, { healthy?: boolean; latencyMs?: number; sha?: string; lastSyncedAt?: string; activeClaims?: number }>;
++  workOrders?: Array<{ taskId?: string; title?: string; stage?: string; ciStatus?: string; diagnostics?: string; prNumber?: number; updatedAt?: string }>;
++  defense?: Partial<SwarmDefenseState>;
++}
+diff --git a/studio/tests/telemetryClient.test.ts b/studio/tests/telemetryClient.test.ts
+new file mode 100644
+index 00000000..3b91838e
+--- /dev/null
++++ b/studio/tests/telemetryClient.test.ts
+@@ -0,0 +1,153 @@
++/**
++ * Federation Cockpit — telemetry logic test battery.
++ *
++ * Zero-dependency, runner-agnostic: execute directly (bun tests/telemetryClient.test.ts)
++ * and it self-asserts, prints per-check results, exits non-zero on failure.
++ * Covers normalizeSnapshot, CockpitSSEParser, and TelemetryClient with an
++ * injected fetch — no network, no component renderer.
++ */
++
++import {
++  CockpitSSEParser,
++  TelemetryClient,
++  TelemetryError,
++  normalizeSnapshot,
++} from '../src/services/telemetryClient';
++import type { RawTowerSnapshot } from '../src/types/federation';
++
++let passed = 0;
++let failed = 0;
++
++function check(name: string, condition: boolean, detail?: string): void {
++  if (condition) {
++    passed++;
++    console.log(`ok   ${name}`);
++  } else {
++    failed++;
++    console.log(`FAIL ${name}${detail ? ` — ${detail}` : ''}`);
++  }
++}
++
++function section(title: string): void {
++  console.log(`\n== ${title} ==`);
++}
++
++function testNormalizeSnapshot(): void {
++  section('normalizeSnapshot');
++  const raw: RawTowerSnapshot = {
++    capturedAt: '2026-10-17T10:00:00Z',
++    satellites: {
++      open: { healthy: true, sha: '0152050abcdef', lastSyncedAt: '2026-10-17T09:00:00Z', activeClaims: 2, latencyMs: 42 },
++      sdk: { healthy: true, sha: 'aabbccdd1122' },
++      core: {},
++    },
++    workOrders: [
++      { taskId: 'bridge-20261017-sdk-multilang', title: 'Multi-Language SDK', stage: 'landed', ciStatus: 'green', prNumber: 542, updatedAt: '2026-10-17T10:30:00Z' },
++      { taskId: 'bridge-20261017-fix-x', title: 'Fix X', stage: 'weird-stage', ciStatus: 'banana', diagnostics: 'retry exhausted' },
++      { title: 'no task id — dropped' },
++    ],
++    defense: { activeClaims: 3, claimRejections: 11, rateLimitCapacity: 8, taskVelocityPerHour: 24 },
++  };
++
++  const snapshot = normalizeSnapshot(raw);
++  check('twelve canonical satellites', snapshot.satellites.length === 12);
++  check('satellite order preserved', snapshot.satellites[0].id === 'open' && snapshot.satellites[11].id === 'archive');
++  check('healthy flag mapped', snapshot.satellites[0].healthy === true && snapshot.satellites[2].healthy === false);
++  check('sha + latency mapped', snapshot.satellites[0].latestSha === '0152050abcdef' && snapshot.satellites[0].latencyMs === 42);
++  check('missing claims default 0', snapshot.satellites[2].activeClaims === 0);
++  check('runway drops id-less entries', snapshot.runway.length === 2);
++  check('valid stage/ci pass through', snapshot.runway[0].stage === 'landed' && snapshot.runway[0].ciStatus === 'green');
++  check('invalid stage/ci fall back', snapshot.runway[1].stage === 'queued' && snapshot.runway[1].ciStatus === 'amber');
++  check('diagnostics carried', snapshot.runway[1].diagnostics === 'retry exhausted');
++  check('defense mapped', snapshot.defense.activeClaims === 3 && snapshot.defense.claimRejections === 11);
++  check('capturedAt honored', snapshot.capturedAt === '2026-10-17T10:00:00Z');
++
++  const empty = normalizeSnapshot({}, new Date('2026-10-17T11:00:00Z'));
++  check('empty raw degrades to defaults', empty.defense.rateLimitCapacity === 0 && empty.runway.length === 0 && empty.satellites.length === 12);
++  check('capturedAt falls back to now', empty.capturedAt === '2026-10-17T11:00:00.000Z');
++}
++
++function testSSEParser(): void {
++  section('CockpitSSEParser');
++  const parser = new CockpitSSEParser();
++  check('no complete frames yet', parser.push('data: {"type":"to').length === 0);
++  const first = parser.push('ken"}\n\n');
++  check('frame completes on blank line', first.length === 1 && first[0] === '{"type":"token"}');
++
++  const multi = parser.push('data: line-one\ndata: line-two\n\n: keep-alive\ndata: [DONE]\n\n');
++  check('multi-line data joined', multi[0] === 'line-one\nline-two');
++  check('comment lines ignored', multi.length === 2);
++  check('done sentinel passes through', multi[1] === '[DONE]');
++
++  const crlf = new CockpitSSEParser();
++  const crlfFrames = crlf.push('data: a\r\ndata: b\r\n\r\n');
++  check('CRLF endings handled', crlfFrames.length === 1 && crlfFrames[0] === 'a\nb');
++
++  const partial = new CockpitSSEParser();
++  partial.push('data: tail-without-blank');
++  check('finish flushes trailing frame', partial.finish()[0] === 'tail-without-blank');
++  check('finish clears state', partial.finish().length === 0);
++}
++
++async function testTelemetryClient(): Promise<void> {
++  section('TelemetryClient (injected fetch)');
++
++  const goodPayload = {
++    capturedAt: '2026-10-17T10:00:00Z',
++    satellites: { open: { healthy: true } },
++    workOrders: [{ taskId: 'bridge-20261017-t', title: 'T', stage: 'queued', ciStatus: 'amber' }],
++    defense: { activeClaims: 1, claimRejections: 0, rateLimitCapacity: 4, taskVelocityPerHour: 6 },
++  };
++
++  let calls = 0;
++  let failMode = false;
++  const fetchImpl = (async () => {
++    calls++;
++    if (failMode) {
++      return { ok: false, status: 503 } as Response;
++    }
++    return { ok: true, status: 200, json: async () => goodPayload } as unknown as Response;
++  }) as typeof fetch;
++
++  const client = new TelemetryClient({ baseUrl: '', pollIntervalMs: 60000, fetchImpl });
++  const seen: number[] = [];
++  const unsubscribe = await client.subscribe((snapshot) => seen.push(snapshot.satellites.length));
++
++  check('subscribe fires immediately', seen.length === 1 && seen[0] === 12);
++  check('snapshot endpoint hit', calls === 1);
++
++  await client.tick();
++  check('manual tick delivers again', seen.length === 2);
++  check('runway row normalized in tick', (await client.fetchSnapshot()).runway[0].taskId === 'bridge-20261017-t');
++
++  failMode = true;
++  await client.tick();
++  check('failed tick degrades silently', seen.length === 2);
++
++  unsubscribe();
++  await client.tick();
++  check('unsubscribe stops delivery', seen.length === 2);
++  client.dispose();
++
++  let threw = false;
++  try {
++    await new TelemetryClient({ baseUrl: '', pollIntervalMs: 1000, fetchImpl: (async () => ({ ok: false, status: 503 }) as Response) as typeof fetch }).fetchSnapshot();
++  } catch (err) {
++    threw = err instanceof TelemetryError && err.status === 503;
++  }
++  check('fetchSnapshot raises TelemetryError on bad status', threw);
++}
++
++async function main(): Promise<void> {
++  console.log('Federation Cockpit — telemetry test battery');
++  testNormalizeSnapshot();
++  testSSEParser();
++  await testTelemetryClient();
++  console.log(`\nRan ${passed + failed} checks: ${passed} passed, ${failed} failed`);
++  if (failed > 0) {
++    throw new Error(`${failed} checks failed`);
++  }
++  console.log('ALL CHECKS PASSED');
++}
++
++void main();

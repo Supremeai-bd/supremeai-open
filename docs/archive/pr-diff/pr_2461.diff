@@ -1,0 +1,44 @@
+diff --git a/scripts/ci/radar_index_freshness_guard.py b/scripts/ci/radar_index_freshness_guard.py
+index 0fae818e..3252d345 100644
+--- a/scripts/ci/radar_index_freshness_guard.py
++++ b/scripts/ci/radar_index_freshness_guard.py
+@@ -49,8 +49,10 @@
+     doc, issue, or main-history citation fails. Cite found ⇒ fail loud,
+     never advertise dirty; auto-advance is out of scope v1 (fail-loud
+     first, per the guard genre's ratchet semantics). The IO is the filer's
+-    capture step: bridge_work_queue {"limit": 200} saved to a file
+-    (permanent contract, #2286), the guard consumes the artifact.
++    capture step: bridge.work_queue {"limit": 200} saved to a file
++    (permanent contract, #2286; tool renamed from bridge_work_queue
++    2026-10-29, #2454 r3 deploy / #2457 migration), the guard consumes
++    the artifact.
+ 
+ Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
+ গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
+@@ -376,7 +378,7 @@ def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
+     """Pointer↔board agreement predicate over captured open-issue titles.
+ 
+     (#2372 option B / #2392 component 2, offline plane.) The IO is the
+-    filer's capture step — a zero-credential bridge_work_queue
++    filer's capture step — a zero-credential bridge.work_queue
+     {"limit": 200} snapshot saved to a file; the GUARD BINARY stays
+     network-free (Never-do). Rows are keyed `number`/`title` (post-#2286
+     schema; the older `issueNumber` key accepted). Pointer phrases are
+@@ -890,7 +892,7 @@ def main() -> int:
+     parser.add_argument("--allow", nargs="*", type=int, default=[],
+                         help="self-ref exception: the successor lane's own defining ticket number(s)")
+     parser.add_argument("--queue-file", default=None,
+-                        help='captured bridge_work_queue {"limit": 200} JSON artifact')
++                        help='captured bridge.work_queue {"limit": 200} JSON artifact')
+     parser.add_argument("--json", action="store_true", help="machine-readable auditor report")
+     parser.add_argument("--self-test", action="store_true", help="hermetic offline self-test suite")
+     args = parser.parse_args()
+@@ -919,7 +921,7 @@ def main() -> int:
+ 
+     if args.board_sweep:
+         if not args.queue_file:
+-            _evidence('FAIL board-sweep: --queue-file required — capture bridge_work_queue '
++            _evidence('FAIL board-sweep: --queue-file required — capture bridge.work_queue '
+                       '{"limit": 200} filer-side; the guard binary is network-free (Never-do)')
+             return 1
+         try:

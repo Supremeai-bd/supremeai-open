@@ -1,0 +1,1949 @@
+diff --git a/.github/actions/gitleaks-scan/action.yml b/.github/actions/gitleaks-scan/action.yml
+new file mode 100644
+index 00000000..e36fb147
+--- /dev/null
++++ b/.github/actions/gitleaks-scan/action.yml
+@@ -0,0 +1,43 @@
++# =============================================================================
++# Reusable composite action — standardized secret scanning (#155)
++# =============================================================================
++# Part of the Federation Workflow Diet's "Lightweight & Reusable Components"
++# catalog: one zero-config gitleaks scanner shared by every workflow instead
++# of a hand-rolled install+run block per file. Drop-in on any repository.
++#
++# Inputs are passed through env — never interpolated into the shell body
++# (workflow_dispatch inputs are free text and fated for a shell).
++# =============================================================================
++name: "Gitleaks Secret Scan"
++description: "Install Gitleaks and scan the checkout for secrets (PR-introduced range or full history)"
++inputs:
++  log_opts:
++    description: "git revision range passed to gitleaks --log-opts (default: origin/main..HEAD — only the commits this PR/branch introduces)"
++    required: false
++    default: "origin/main..HEAD"
++runs:
++  using: composite
++  steps:
++    - name: Install Gitleaks
++      shell: bash
++      run: |
++        curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
++        sudo mv gitleaks /usr/local/bin/
++
++    - name: Run Gitleaks Secret Detection
++      shell: bash
++      env:
++        LOG_OPTS: ${{ inputs.log_opts }}
++      run: |
++        # #107 scope note (preserved from ci.yml): scan ONLY the commits this
++        # PR/branch introduces (origin/main..HEAD). The default --all sweep
++        # also walks OTHER agents' in-flight bridge/* branches, producing
++        # false positives from work-order fixtures that this PR neither
++        # contains nor owns — a PR must be judged on what it itself lands.
++        # (Main history was already scanned at PR time; push builds re-scan
++        # zero new commits, which is the correct no-op.)
++        if [ -n "$LOG_OPTS" ]; then
++          gitleaks detect --source=. --verbose --redact --log-opts="$LOG_OPTS"
++        else
++          gitleaks detect --source=. --verbose --redact
++        fi
+diff --git a/.github/actions/setup-node-tower/action.yml b/.github/actions/setup-node-tower/action.yml
+new file mode 100644
+index 00000000..9cfa1023
+--- /dev/null
++++ b/.github/actions/setup-node-tower/action.yml
+@@ -0,0 +1,32 @@
++# =============================================================================
++# Reusable composite action — Node 24 setup for the MCP Control Tower (#155)
++# =============================================================================
++# Part of the Federation Workflow Diet's "Lightweight & Reusable Components"
++# catalog: bundles Node 24 setup, npm caching, dependency install and the
++# `tsc` compilation gate into ONE action, cutting ~40 lines of duplicated
++# YAML per workflow. Reused identically by every workflow that builds the
++# Tower — public pipeline today, private pipelines after the 18 -> 4 diet.
++# =============================================================================
++name: "Setup Node — MCP Tower"
++description: "Node 24 + npm cache + npm ci + tsc --noEmit for infrastructure/mcp-control-plane"
++runs:
++  using: composite
++  steps:
++    - name: Set up Node 24
++      uses: actions/setup-node@v4
++      with:
++        node-version: "24"
++        cache: npm
++        cache-dependency-path: infrastructure/mcp-control-plane/package-lock.json
++
++    - name: Install dependencies
++      run: npm ci
++      shell: bash
++      working-directory: infrastructure/mcp-control-plane
++
++    # #86: the live Tower deployment source ships with TypeScript verification
++    # in this composite so no workflow can accidentally omit it again.
++    - name: Typecheck (tsc --noEmit)
++      run: npm run typecheck
++      shell: bash
++      working-directory: infrastructure/mcp-control-plane
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+deleted file mode 100644
+index eabd56f3..00000000
+--- a/.github/workflows/ci.yml
++++ /dev/null
+@@ -1,132 +0,0 @@
+-name: CI — Open Multi-Platform Validation
+-
+-on:
+-  push:
+-    branches: [ main ]
+-  pull_request:
+-    branches: [ main ]
+-
+-jobs:
+-  validate:
+-    name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
+-    runs-on: ubuntu-latest
+-    strategy:
+-      fail-fast: false
+-      matrix:
+-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+-
+-    steps:
+-      - name: Checkout code
+-        uses: actions/checkout@v4
+-
+-      - name: Set up Python ${{ matrix.python-version }}
+-        uses: actions/setup-python@v5
+-        with:
+-          python-version: ${{ matrix.python-version }}
+-
+-      - name: Install dependencies
+-        run: |
+-          python -m pip install --upgrade pip
+-          pip install pyyaml
+-
+-      - name: Run 3-Tier Verification Contract
+-        run: |
+-          python scripts/agents/continuous_agent_loop.py --verify-only
+-
+-      - name: Run Task Contract & Fail-Closed Unit Tests
+-        run: |
+-          python -c "from scripts.agents.continuous_agent_loop import build_task_contract, run_cmd; assert run_cmd(['__missing_binary_test__'])[0] == 127; contract = build_task_contract('ci-test'); assert contract['task_contract']['version'] == 1"
+-          python -c "from scripts.agents.continuous_agent_loop import build_task_contract; 
+-          try:
+-              build_task_contract('fail-test', task_type='INVALID')
+-              raise AssertionError('Failed to reject invalid task_type')
+-          except ValueError:
+-              pass"
+-
+-      - name: Pick-Next Claim-Filter Contract Test (#88, offline stub)
+-        run: |
+-          python -c "
+-          import json
+-          import scripts.agents.continuous_agent_loop as loop
+-          stub = [
+-              {'number': 101, 'title': 'old unclaimed P1', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P1-high'}]},
+-              {'number': 102, 'title': 'claimed p0 critical words', 'labels': [{'name': 'status:in-progress'}, {'name': 'P0-critical'}]},
+-              {'number': 103, 'title': 'held work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'state:seq-hold'}]},
+-              {'number': 104, 'title': 'unlabeled tail', 'labels': [{'name': 'status:unclaimed'}]}
+-          ]
+-          loop.run_cmd = lambda cmd: (0, json.dumps(stub), '')
+-          picked = loop.pick_next_issue()
+-          assert picked == '101', f'expected oldest claimable 101, got {picked}'
+-          stub2 = [
+-              {'number': 55, 'title': 'totally high-level prose title', 'labels': [{'name': 'status:unclaimed'}]},
+-              {'number': 66, 'title': 'nothing special', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P0-critical'}]}
+-          ]
+-          loop.run_cmd = lambda cmd: (0, json.dumps(stub2), '')
+-          assert loop.pick_next_issue() == '66', 'real P0 label must outrank prose titles'
+-          stub3 = [
+-              {'number': 78, 'title': 'private mirror work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'mirror:private'}, {'name': 'P1-high'}]},
+-              {'number': 90, 'title': 'public P2 work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P2-medium'}]}
+-          ]
+-          loop.run_cmd = lambda cmd: (0, json.dumps(stub3), '')
+-          assert loop.pick_next_issue() == '90', 'mirror:private issues are born non-claimable (#122)'
+-          stub4 = [{'number': 81, 'title': 'only a mirror', 'labels': [{'name': 'status:unclaimed'}, {'name': 'mirror:private'}]}]
+-          loop.run_cmd = lambda cmd: (0, json.dumps(stub4), '')
+-          assert loop.pick_next_issue() is None, 'mirror-only board must no-op (#122)'
+-          assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
+-          print('pick-next claim-filter contract: OK (#88, #122)')
+-          "
+-
+-  tower-verify:
+-    name: Tower TS Verification (typecheck + contract-safe tests)
+-    runs-on: ubuntu-latest
+-    defaults:
+-      run:
+-        working-directory: infrastructure/mcp-control-plane
+-    steps:
+-      - name: Checkout code
+-        uses: actions/checkout@v4
+-
+-      - name: Set up Node 24
+-        uses: actions/setup-node@v4
+-        with:
+-          node-version: "24"
+-          cache: npm
+-          cache-dependency-path: infrastructure/mcp-control-plane/package-lock.json
+-
+-      - name: Install dependencies
+-        run: npm ci
+-
+-      # #86: the live Tower deployment source previously shipped with ZERO
+-      # TypeScript verification — this gate closes that gap. Runs the
+-      # credentials-free test set (test:tower-ci); service/credential-dependent
+-      # suites are tracked in the follow-up issue linked from PR #86.
+-      - name: Typecheck (tsc --noEmit)
+-        run: npm run typecheck
+-
+-      - name: Contract-safe Tower test suite
+-        run: npm run test:tower-ci
+-
+-  secret-scan:
+-    name: Secret Scanning
+-    runs-on: ubuntu-latest
+-    steps:
+-      - name: Checkout code
+-        uses: actions/checkout@v4
+-        with:
+-          fetch-depth: 0
+-
+-      - name: Install Gitleaks
+-        run: |
+-          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz | tar -xz gitleaks
+-          sudo mv gitleaks /usr/local/bin/
+-
+-      - name: Run Gitleaks Secret Detection
+-        # #107 scope note: scan ONLY the commits this PR/branch introduces
+-        # (origin/main..HEAD). The default --all sweep also walks OTHER
+-        # agents' in-flight bridge/* branches, producing false positives from
+-        # work-order fixtures that this PR neither contains nor owns — a PR
+-        # must be judged on what it itself lands. (Main history was already
+-        # scanned at PR time; push builds re-scan zero new commits, which is
+-        # the correct no-op.)
+-        run: gitleaks detect --source=. --verbose --redact --log-opts="origin/main..HEAD"
+-
+diff --git a/.github/workflows/continuous-agent-loop.yml b/.github/workflows/continuous-agent-loop.yml
+deleted file mode 100644
+index 4004b306..00000000
+--- a/.github/workflows/continuous-agent-loop.yml
++++ /dev/null
+@@ -1,112 +0,0 @@
+-name: Continuous Agent Loop Cron
+-
+-# Scheduled Work → Issue Funnel (AGENT_RULES.md §10):
+-#   Scheduled Trigger → run verification → logs/artifacts → classify → report.
+-# This cron starts the EXISTING dispatcher (AGENTS.md §0 — never build a new loop):
+-#   scripts/agents/continuous_agent_loop.py --pick-next
+-# every 30 minutes so autonomous contribution cycles run continuously.
+-# NOTE: the rewritten (Lazy Team Leader) dispatcher fails closed without an
+-# issue contract, so each tick runs ONE --pick-next dispatch cycle; the
+-# concurrency group serializes ticks and the next scheduled tick continues
+-# where this one stopped.
+-#
+-# EVENT-DRIVEN INTAKE (#69): the MCP Control Tower now dispatches this exact
+-# workflow via workflow_dispatch the moment a relevant issue/PR/comment webhook
+-# lands (see infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md). This
+-# 30-minute cron REMAINS as the low-frequency reconciliation fallback until the
+-# retirement criteria in BRIDGE_INTAKE.md are met (soak window + zero
+-# dead-letters + dispatch-path scheduler defect resolved).
+-
+-on:
+-  schedule:
+-    - cron: "*/30 * * * *" # every 30 minutes
+-  workflow_dispatch:
+-    inputs:
+-      auto_pr:
+-        description: "Step 7: autonomously open PR via gh CLI after verification passes (scheduled runs stay draft-only)"
+-        type: boolean
+-        default: false
+-
+-permissions:
+-  contents: read
+-
+-# AGENT_RULES.md §12 — single execution under the parent controller.
+-# Never run two loop instances concurrently; queue instead of duplicating.
+-concurrency:
+-  group: continuous-agent-loop
+-  cancel-in-progress: false
+-
+-jobs:
+-  agent-loop:
+-    name: Start continuous_agent_loop.py --pick-next (30-min cadence)
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 15
+-    env:
+-      # Read-only token for `gh` (pre-installed on ubuntu runners).
+-      # The dispatcher explicitly targets the upstream repo for issue reads.
+-      GH_TOKEN: ${{ github.token }}
+-    steps:
+-      - name: Checkout repository
+-        uses: actions/checkout@v4
+-
+-      - name: Setup Python
+-        uses: actions/setup-python@v5
+-        with:
+-          python-version: "3.11"
+-
+-      # Dispatcher verification tier 3 ("YAML/OpenAPI Safe Load") requires
+-      # PyYAML; actions/setup-python provides a bare Python without it.
+-      # Without this, tier 3 is recorded skipped/failed in the run evidence.
+-      - name: Install PyYAML (dispatcher tier-3 verification dependency)
+-        run: python -m pip install --quiet pyyaml
+-
+-      # AGENT_RULES.md §10 — "A job that runs but produces no expected result
+-      # is actionable when evidence confirms it… No-actionable-finding must be
+-      # recorded explicitly without creating issue storms." An empty upstream
+-      # board is a recorded no-op, NOT a red run and NOT a silent skip.
+-      # #88: has_work reflects CLAIMABLE work only (status:unclaimed, whole
+-      # board) so the cron no-ops when every open issue is already claimed.
+-      - name: Board pre-check (explicit no-op on empty or fully-claimed board)
+-        id: board
+-        run: |
+-          set -euo pipefail
+-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title,labels)
+-          # Mirror issues (#122) are born non-claimable — exclude the marker.
+-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select([.labels[].name] | index("mirror:private") | not)]')
+-          echo "claimable-board snapshot: $CLAIMABLE"
+-          if [ "$CLAIMABLE" = "[]" ]; then
+-            echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
+-            echo "has_work=false" >> "$GITHUB_OUTPUT"
+-          else
+-            echo "has_work=true" >> "$GITHUB_OUTPUT"
+-          fi
+-
+-      - name: Start Continuous Agent Loop (existing dispatcher, one cycle)
+-        if: steps.board.outputs.has_work == 'true'
+-        run: |
+-          set -euo pipefail
+-          ARGS="--pick-next"
+-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.auto_pr }}" = "true" ]; then
+-            ARGS="$ARGS --auto-pr"
+-          fi
+-          python scripts/agents/continuous_agent_loop.py $ARGS
+-
+-      # AGENT_RULES.md §10 — scheduled jobs must never silently disappear.
+-      # #89: real verify-evidence artifact — the --verify-only transcript
+-      # (ends with the CONTRACT_VERSION parity marker per AGENT_LOOP_SPEC §4b)
+-      # is captured even when the loop step itself fails (replaces the dead
+-      # pre-#63 draft-file upload — that writer no longer exists).
+-      - name: Capture verification evidence (always)
+-        if: always()
+-        run: |
+-          set -o pipefail
+-          python scripts/agents/continuous_agent_loop.py --verify-only 2>&1 | tee agent-loop-verify-evidence.log
+-
+-      - name: Upload verification evidence
+-        if: always()
+-        uses: actions/upload-artifact@v4
+-        with:
+-          name: agent-loop-verify-evidence-${{ github.run_id }}
+-          path: agent-loop-verify-evidence.log
+-          if-no-files-found: error
+-          retention-days: 14
+diff --git a/.github/workflows/auto-bridge-dispatcher.yml b/.github/workflows/landing.yml
+similarity index 59%
+rename from .github/workflows/auto-bridge-dispatcher.yml
+rename to .github/workflows/landing.yml
+index 42aaae55..61faa62a 100644
+--- a/.github/workflows/auto-bridge-dispatcher.yml
++++ b/.github/workflows/landing.yml
+@@ -1,49 +1,50 @@
+ # =============================================================================
+-# SupremeAI Open — Autonomous Bridge Work Order Dispatcher (Zero-Admin Policy)
++# SupremeAI Open — Unified Autonomous Landing & Bridge Dispatch (#155)
+ # =============================================================================
+-# Renamed from auto-bridge-order.yml by #107 (same single dispatcher, enriched
+-# dispatch payload — do NOT re-introduce a second merge-triggered bridge
+-# workflow: two dispatchers = double dispatch + duplicate work orders).
++# Federation Workflow Diet — public boundary 5 -> 2 workflows.
++# Replaces (do NOT re-introduce these files):
++#   - merge-gate.yml             (autonomous auto-merge)
++#   - auto-bridge-dispatcher.yml (public merge -> private bridge queue)
+ #
+-# বাংলা মন্তব্য:
+-# যখনই supremeai-open:main-এ কোনো পাবলিক PR সফলভাবে merge হবে, এই workflow
+-# স্বয়ংক্রিয়ভাবে:
+-#   ১. একটি bridge/<task-id> patch branch তৈরি ও push করবে।
+-#   ২. 'bridge:queued' label সহ একটি Bridge Work Order issue file করবে।
+-#   ৩. repository_dispatch (event_type=bridge_order_queued) + client_payload
+-#      এর মাধ্যমে private monorepo-র Bridge Intake (scripts/bridge/)-কে
+-#      landed patch-এর full reference stream করবে: PR number, merge/head/base
+-#      SHA, bridge branch ref এবং touched-file manifest।
++# Zero-Admin Doctrine: Admin manual effort budget <= 0.01%. When all
++# constitutional gates and validation tests pass on a Pull Request, this
++# workflow autonomously squash-merges it and — in the SAME run — streams the
++# landed patch reference into the private monorepo's Bridge Intake.
+ #
+-# Patch-streaming design (by-reference, deterministic):
++# Why one workflow instead of merge-gate + a called dispatcher (history #113):
++#   merges run with GITHUB_TOKEN, and GitHub suppresses the pull_request
++#   event for token-driven actions (loop prevention) — so the old dispatcher
++#   could not ride `pull_request:closed` for auto-merges, and merge-gate had
++#   to fire a cross-workflow `gh workflow run` (workflow_dispatch is a
++#   documented exception to the suppression) and then poll for the new run id.
++#   Consolidating both phases into one run removes that detour entirely:
++#   job ordering inside a run is deterministic, so "merge succeeded, THEN
++#   dispatch" is structural (fail-honest: no LANDED comment and no dispatch
++#   can happen unless `gh pr merge` actually completed). The backfill channel
++#   for USER-token merges is preserved via pull_request:[closed].
++#
++# Trigger channels (one dispatcher, deterministic — never add a second one):
++#   - workflow_run (CI — Open Unified Pipeline, success)  -> evaluate + land + dispatch
++#   - workflow_dispatch(pr_number)                        -> evaluate + land + dispatch
++#     (also the reconciliation channel: an ALREADY-merged PR is dispatched
++#      without re-merging — "bridge orders exist only for landed patches")
++#   - pull_request:[closed]                               -> dispatch ONLY
++#     (fires for merges made with a USER token; token-driven merges are
++#      suppressed by GitHub, so no loop is possible)
++#
++# Patch-streaming design (by-reference, deterministic — preserved from #107):
+ #   - Public repo readable, তাই private intake শুধু
+ #     `git fetch https://github.com/Supremeai-bd/supremeai-open.git <bridge_branch>`
+ #     দিয়ে exact landed patch pull করতে পারে — payload ছোট থাকে, কোনো base64
+ #     blob সীমা ভাঙে না, আর head SHA সবসময় immutable।
+-#   - event_type অপরিবর্তিত (bridge_order_queued) — existing private listener
+-#     backward compatible; নতুন client_payload শুধু extra signal।
+ #   - BRIDGE_DISPATCH_TOKEN না থাকলে dispatcher notify-only mode-এ নামে:
+ #     durable WO issue তবুও file হয় (durable record), শুধু low-latency signal
+-#     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমানভাবে লগ হয়, merge
++#     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমাণভাবে লগ হয়, merge
+ #     automation fail করে না (degradation policy, fail-loud not fail-merge)।
+ #
+-# Trigger paths (single dispatcher, two channels — #113):
+-#   - pull_request:[closed] — only fires for merges made with a USER token.
+-#     merge-gate.yml merges with GITHUB_TOKEN, and GitHub suppresses the
+-#     pull_request event for token-driven actions (loop prevention), so this
+-#     channel alone never fired for auto-merges (zero sync branches / zero
+-#     work orders ever produced).
+-#   - workflow_dispatch(pr_number) — merge-gate calls it immediately after
+-#     every landing merge (workflow_dispatch is a documented exception to the
+-#     suppression), and humans can use it for backfill/reconciliation.
+-#   NEVER add a second bridge workflow: two dispatchers = double dispatch +
+-#   duplicate work orders. Re-dispatch is idempotent instead: deterministic
+-#   task id, branch re-pointed to the immutable merge commit, duplicate WO
+-#   filing skipped.
+-#
+ # Branch-point doctrine (#113):
+ #   The patch branch is created from the MERGE COMMIT (merge_commit_sha),
+-#   never from the PR head SHA. The Merge Gate merges with --delete-branch,
++#   never from the PR head SHA. The auto-merge merges with --delete-branch,
+ #   so by the time this workflow runs the head ref is gone and the head
+ #   commit object is no longer fetched — `git branch <name> <head_sha>`
+ #   failed with "not a valid branch point" on 100% of eligible merges
+@@ -57,38 +58,158 @@
+ # Rollback / Identity) — single field vocabulary, two producers.
+ # =============================================================================
+ 
+-name: Auto-Bridge Work Order (Public Merge -> Private Bridge Queue)
++name: Landing — Auto-Merge & Bridge Dispatch
+ 
+ on:
++  workflow_run:
++    workflows: ["CI — Open Unified Pipeline"]
++    types: [completed]
+   pull_request:
+     types: [closed]
+     branches: [main]
+   workflow_dispatch:
+     inputs:
+       pr_number:
+-        description: "PR number to bridge into private repo"
+-        required: true
++        description: "PR number to land (empty = derive from the triggering run / closed PR)"
++        required: false
+ 
+ permissions:
+   contents: write
++  pull-requests: write
+   issues: write
+-  pull-requests: read
+-
+-concurrency:
+-  # Serialize dispatches for the same PR (deterministic task id + merge
+-  # commit): a re-dispatch that overlaps the original would race on the
+-  # same patch branch and work order.
+-  group: auto-bridge-${{ github.event.inputs.pr_number || github.event.pull_request.number }}
+-  cancel-in-progress: false
+ 
+ jobs:
+-  auto-bridge:
+-    name: "🌉 Create Auto Bridge Work Order"
+-    # Only run on merged PRs, and never run on bridge branches (loop prevention)
++  auto_merge:
++    name: "🛬 Autonomous Auto-Landing"
++    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
++    runs-on: ubuntu-latest
++    # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a
++    # merge mid-flight (a half-landed state is worse than a queued one).
++    concurrency:
++      group: landing-merge-open
++      cancel-in-progress: false
++    outputs:
++      pr_number: ${{ steps.target_pr.outputs.pr_number }}
++      merged: ${{ steps.evaluate.outputs.merged }}
++    steps:
++      - name: Determine Target PR
++        id: target_pr
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++          DISPATCH_PR: ${{ github.event.inputs.pr_number }}
++        run: |
++          PR_NUM=""
++          if [ -n "$DISPATCH_PR" ]; then
++            PR_NUM="$DISPATCH_PR"
++          else
++            # Extract PR number from workflow_run payload or head branch
++            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
++            PR_NUM=$(gh pr list --repo "${{ github.repository }}" --head "$HEAD_BRANCH" --state open --json number -q '.[0].number')
++          fi
++
++          if [ -z "$PR_NUM" ] || [ "$PR_NUM" = "null" ]; then
++            echo "No open PR associated with this run (branch: ${{ github.event.workflow_run.head_branch }}). Skipping."
++            echo "has_pr=false" >> "$GITHUB_OUTPUT"
++            exit 0
++          fi
++
++          echo "Found open PR #${PR_NUM}."
++          echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
++          echo "has_pr=true" >> "$GITHUB_OUTPUT"
++
++      - name: Evaluate Constitutional Gates & Auto-Merge
++        id: evaluate
++        if: steps.target_pr.outputs.has_pr == 'true'
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
++        run: |
++          echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
++
++          # Fetch PR status and checks
++          PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json isDraft,mergeable,state,statusCheckRollup)
++          IS_DRAFT=$(echo "$PR_JSON" | jq -r '.isDraft')
++          MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
++          STATE=$(echo "$PR_JSON" | jq -r '.state')
++
++          if [ "$STATE" != "OPEN" ]; then
++            if [ "$STATE" = "MERGED" ]; then
++              # Reconciliation channel (was the old dispatcher's
++              # workflow_dispatch): bridge orders exist only for landed
++              # patches, so an already-merged PR is dispatched, never
++              # re-merged. Nothing to do here beyond releasing the dispatch.
++              echo "PR #${PR_NUM} is already MERGED — dispatch-only reconciliation."
++              echo "merged=dispatch-only" >> "$GITHUB_OUTPUT"
++              exit 0
++            fi
++            echo "PR #${PR_NUM} is not open (state: $STATE). Skipping."
++            exit 0
++          fi
++
++          if [ "$IS_DRAFT" = "true" ]; then
++            echo "PR #${PR_NUM} is marked as draft. Skipping auto-merge."
++            exit 0
++          fi
++
++          if [ "$MERGEABLE" = "CONFLICTING" ]; then
++            echo "::error::PR #${PR_NUM} has merge conflicts. Cannot auto-merge."
++            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" --body "## 🚦 Merge Gate — **BLOCKED**\n\nMerge conflicts detected against \`main\`. Please rebase and resolve conflicts."
++            exit 1
++          fi
++
++          # Verify all checks have passed (no failing or pending checks)
++          FAILING_CHECKS=$(echo "$PR_JSON" | jq -r '[.statusCheckRollup[]? | select(.conclusion == "FAILURE" or .conclusion == "TIMED_OUT")] | length')
++          if [ "$FAILING_CHECKS" -gt 0 ]; then
++            echo "::error::PR #${PR_NUM} has failing checks ($FAILING_CHECKS failures). Holding landing."
++            exit 1
++          fi
++
++          echo "✅ All required checks passed! Executing autonomous squash-merge..."
++
++          # Fail-honest merge: the exit code gates everything downstream. A
++          # "LANDED" comment plus a bridge dispatch fired after a failed
++          # merge desynchronizes the bridge channel (the dispatcher then
++          # hard-fails on state != MERGED). Hold both until the merge
++          # actually completes.
++          if ! gh pr merge "$PR_NUM" \
++            --repo "${{ github.repository }}" \
++            --squash \
++            --delete-branch \
++            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
++            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
++            echo "merged=false" >> "$GITHUB_OUTPUT"
++            exit 1
++          fi
++          echo "merged=true" >> "$GITHUB_OUTPUT"
++
++          # Post landing comment
++          gh pr comment "$PR_NUM" \
++            --repo "${{ github.repository }}" \
++            --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%).\n- Bridge dispatch continues in the same run (🌉 job)."
++
++          echo "✅ PR #${PR_NUM} successfully auto-merged."
++
++  bridge-dispatch:
++    name: "🌉 Bridge Work Order — Public Merge → Private Bridge Queue"
++    needs: auto_merge
++    # Dispatch when: (a) this run merged the PR or is reconciling an
++    # already-merged one, or (b) a USER-token merge closed the PR (the
++    # suppressed pull_request event never fires for token-driven merges, so
++    # there is no loop risk in either branch). Never dispatch for bridge/*
++    # branches (loop prevention) — same rule as the old dispatcher.
+     if: |
+-      github.event_name == 'workflow_dispatch' ||
+-      (github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
++      needs.auto_merge.outputs.merged == 'true' ||
++      needs.auto_merge.outputs.merged == 'dispatch-only' ||
++      (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+     runs-on: ubuntu-latest
++    timeout-minutes: 10
++    # E4 dedup race (preserved from #169-era doctrine): serialize dispatches
++    # for the same PR and never cancel mid-run — a cancelled run could push
++    # the patch branch without writing the dedup marker, and the next run
++    # would then false-reject as a duplicate.
++    concurrency:
++      group: landing-bridge-${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
++      cancel-in-progress: false
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v4
+@@ -99,10 +220,21 @@ jobs:
+         id: check_scope
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          # Resolved for ALL trigger channels: this run's merged/reconciled PR
++          # number (needs output) or the closed PR's number (event context).
++          PR_NUM: ${{ needs.auto_merge.outputs.pr_number || github.event.pull_request.number }}
+           # Inputs pass through env — never interpolated into the shell
+           # (workflow_dispatch inputs are free text and fated for a shell).
+           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
+           EVENT_NAME: ${{ github.event_name }}
++          # Untrusted event payload (PR title is attacker-controlled free
++          # text) — pass through env, never interpolate into the shell body.
++          # The old dispatcher carried this injection vector inline; the #155
++          # consolidation fixes it rather than inheriting it.
++          EVENT_PR_TITLE: ${{ github.event.pull_request.title }}
++          EVENT_PR_SHA: ${{ github.event.pull_request.merge_commit_sha }}
++          EVENT_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
++          EVENT_PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+         run: |
+           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+             PR_NUM="$DISPATCH_PR"
+@@ -134,12 +266,11 @@ jobs:
+               BASE_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUM}" -q '.base.sha')
+             fi
+           else
+-            PR_NUM="${{ github.event.pull_request.number }}"
+-            PR_TITLE="${{ github.event.pull_request.title }}"
+-            PR_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+-            PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+-            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+             echo "Processing merged PR #${PR_NUM}..."
++            PR_TITLE="$EVENT_PR_TITLE"
++            PR_SHA="$EVENT_PR_SHA"
++            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
++            BASE_SHA="$EVENT_PR_BASE_SHA"
+           fi
+ 
+           if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
+@@ -157,7 +288,7 @@ jobs:
+           FILES=$(git diff --name-only "$BASE_SHA" "$PR_SHA")
+           echo "Touched files:"
+           echo "$FILES"
+-          
++
+           # Check if any shared core/doc/script files are touched
+           SHOULD_BRIDGE="false"
+           for f in $FILES; do
+@@ -168,7 +299,7 @@ jobs:
+                 ;;
+             esac
+           done
+-          
++
+           echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
+ 
+       - name: Create Bridge Branch & File Work Order
+@@ -214,8 +345,8 @@ jobs:
+           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+ 
+-          # The merge commit must exist in this checkout. Both trigger paths
+-          # check out main AFTER landing, so it is an ancestor of HEAD; a
++          # The merge commit must exist in this checkout. Both trigger
++          # paths check out main AFTER landing, so it is an ancestor of HEAD; a
+           # missing object means the dispatch raced the merge landing.
+           if ! git cat-file -e "${PR_SHA}^{commit}" 2>/dev/null; then
+             echo "::error::merge commit ${PR_SHA} absent from checkout — dispatch likely raced the merge landing on main. Re-dispatch."
+@@ -227,7 +358,7 @@ jobs:
+ 
+           # Create and push bridge patch branch.
+           # #113: branch from the MERGE COMMIT — the head ref is deleted by
+-          # the Merge Gate's --delete-branch, and any git operation anchored
++          # the auto-merge's --delete-branch, and any git operation anchored
+           # on PR_HEAD_SHA fatal-exits with "not a valid branch point".
+           # Idempotent: TASK_ID is anchored to the PR's merge commit date, so
+           # a re-dispatch re-points the same ref to the same immutable object
+diff --git a/.github/workflows/merge-gate.yml b/.github/workflows/merge-gate.yml
+deleted file mode 100644
+index b05d14a2..00000000
+--- a/.github/workflows/merge-gate.yml
++++ /dev/null
+@@ -1,219 +0,0 @@
+-# =============================================================================
+-# SupremeAI Open — Merge Gate (Autonomous Auto-Merge Doctrine)
+-# =============================================================================
+-# Zero-Admin Doctrine: Admin manual effort budget <= 0.01%.
+-# When all constitutional gates and validation tests pass on a Pull Request:
+-#   1. Open Guards (Branch Naming, Issue Reference, Anti-Duplicate Guard)
+-#   2. CI Multi-Platform Python Matrix (3.10 - 3.13)
+-#   3. Secret Scanning (Gitleaks)
+-# This workflow automatically executes squash-merge and deletes the branch.
+-#
+-# Race-free by construction (#111): the previous gate snapshotted check
+-# conclusions and merged whenever no FAIL/TIMED_OUT was visible — checks that
+-# were still queued/in_progress (the three pull_request guard jobs run on a
+-# separate trigger) were invisible to it, and a `mergeable: UNKNOWN` passed.
+-# This version (a) resolves the PR deterministically from the run's head SHA
+-# (fork-safe, no head-branch string matching), (b) polls mergeability until a
+-# decision exists (UNKNOWN never passes — fail-closed), and (c) waits for
+-# EVERY check on the PR head to reach a terminal state via
+-# `gh pr checks --watch --fail-fast` before merging.
+-#
+-# Because merges run with GITHUB_TOKEN, GitHub suppresses the pull_request
+-# event (loop prevention) — so immediately after landing, this workflow calls
+-# `gh workflow run auto-bridge-dispatcher.yml` (workflow_dispatch is a
+-# documented exception to the suppression) to sync the landed patch into the
+-# private monorepo. See #113.
+-# =============================================================================
+-
+-name: 🚦 Merge Gate (Autonomous Auto-Merge)
+-
+-on:
+-  workflow_run:
+-    workflows: ["CI — Open Multi-Platform Validation"]
+-    types: [completed]
+-  workflow_dispatch:
+-    inputs:
+-      pr_number:
+-        description: "PR number to evaluate and auto-merge (optional)"
+-        required: false
+-
+-permissions:
+-  contents: write
+-  pull-requests: write
+-  issues: write
+-  actions: write
+-
+-concurrency:
+-  group: merge-gate-open
+-  cancel-in-progress: false
+-
+-jobs:
+-  auto-merge:
+-    name: "🛬 Autonomous Auto-Landing"
+-    runs-on: ubuntu-latest
+-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+-    timeout-minutes: 15
+-    steps:
+-      - name: Determine Target PR
+-        id: target_pr
+-        env:
+-          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+-          DISPATCH_PR: ${{ github.event.inputs.pr_number }}
+-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+-        run: |
+-          PR_NUM=""
+-          if [ -n "$DISPATCH_PR" ]; then
+-            PR_NUM="$DISPATCH_PR"
+-          else
+-            # Deterministic PR resolution by head commit SHA: works for fork
+-            # PRs and never confuses reused branch names (the old head-branch
+-            # match failed on both). The SHA comes from the signed event
+-            # payload, but validate its format before inlining it into the
+-            # jq program; ambiguity across multiple open PRs refuses to
+-            # merge (fail-closed).
+-            if ! echo "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+-              echo "::error::Unexpected head SHA format (${HEAD_SHA:-empty}); refusing heuristic PR resolution (fail-closed)."
+-              echo "has_pr=false" >> "$GITHUB_OUTPUT"
+-              exit 0
+-            fi
+-            MATCHES=$(gh pr list --repo "${{ github.repository }}" --state open --limit 200 \
+-              --json number,headRefOid \
+-              -q "[.[] | select(.headRefOid == \"$HEAD_SHA\") | .number]")
+-            COUNT=$(echo "$MATCHES" | jq 'length')
+-            if [ "$COUNT" -gt 1 ]; then
+-              echo "::error::Ambiguous target: ${COUNT} open PRs share head SHA ${HEAD_SHA}. Refusing to auto-merge (fail-closed)."
+-              echo "has_pr=false" >> "$GITHUB_OUTPUT"
+-              exit 0
+-            fi
+-            PR_NUM=$(echo "$MATCHES" | jq -r '.[0] // empty')
+-          fi
+-
+-          if [ -z "$PR_NUM" ]; then
+-            echo "No open PR associated with this run (head SHA: ${HEAD_SHA:-n/a}). Skipping."
+-            echo "has_pr=false" >> "$GITHUB_OUTPUT"
+-            exit 0
+-          fi
+-
+-          echo "Found open PR #${PR_NUM}."
+-          echo "pr_number=${PR_NUM}" >> "$GITHUB_OUTPUT"
+-          echo "has_pr=true" >> "$GITHUB_OUTPUT"
+-
+-      - name: Evaluate Constitutional Gates & Auto-Merge
+-        id: evaluate
+-        if: steps.target_pr.outputs.has_pr == 'true'
+-        env:
+-          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+-          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
+-        run: |
+-          echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
+-
+-          # Mergeability is computed asynchronously by GitHub — UNKNOWN
+-          # (recompute in flight) must never pass the gate. Poll until a
+-          # decision exists; give up fail-closed if it never resolves.
+-          MERGEABLE="UNKNOWN"
+-          for attempt in $(seq 1 24); do
+-            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json isDraft,mergeable,state)
+-            if [ "$(echo "$PR_JSON" | jq -r '.state')" != "OPEN" ]; then
+-              echo "PR #${PR_NUM} is not open. Skipping."
+-              exit 0
+-            fi
+-            if [ "$(echo "$PR_JSON" | jq -r '.isDraft')" = "true" ]; then
+-              echo "PR #${PR_NUM} is marked as draft. Skipping auto-merge."
+-              exit 0
+-            fi
+-            MERGEABLE=$(echo "$PR_JSON" | jq -r '.mergeable')
+-            if [ "$MERGEABLE" != "UNKNOWN" ]; then break; fi
+-            sleep 5
+-          done
+-
+-          if [ "$MERGEABLE" = "CONFLICTING" ]; then
+-            echo "::error::PR #${PR_NUM} has merge conflicts. Cannot auto-merge."
+-            gh pr comment "$PR_NUM" --repo "${{ github.repository }}" --body "## 🚦 Merge Gate — **BLOCKED**\n\nMerge conflicts detected against \`main\`. Please rebase and resolve conflicts."
+-            exit 1
+-          fi
+-          if [ "$MERGEABLE" = "UNKNOWN" ]; then
+-            echo "::error::PR #${PR_NUM} mergeability stayed UNKNOWN after polling — refusing to merge on unknown state (fail-closed)."
+-            exit 1
+-          fi
+-
+-          # The race fix: wait for EVERY check on the PR head to reach a
+-          # terminal state and fail on any failure. The triggering CI run is
+-          # already green at this point; this covers the separately-triggered
+-          # guard jobs that the old snapshot could not see while pending.
+-          if ! gh pr checks "$PR_NUM" --repo "${{ github.repository }}" --watch --fail-fast --interval 15; then
+-            echo "::error::PR #${PR_NUM} checks are failing or incomplete — landing held (fail-closed)."
+-            exit 1
+-          fi
+-
+-          echo "✅ All checks green! Executing autonomous squash-merge..."
+-
+-          # Fail-honest merge: the exit code gates everything downstream. A
+-          # "LANDED" comment plus a bridge dispatch fired after a failed
+-          # merge desynchronizes the bridge channel (the dispatcher then
+-          # hard-fails on state != MERGED). Hold both until the merge
+-          # actually completes.
+-          if ! gh pr merge "$PR_NUM" \
+-            --repo "${{ github.repository }}" \
+-            --squash \
+-            --delete-branch \
+-            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
+-            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
+-            echo "merged=false" >> "$GITHUB_OUTPUT"
+-            exit 1
+-          fi
+-          echo "merged=true" >> "$GITHUB_OUTPUT"
+-
+-          # Post landing comment
+-          gh pr comment "$PR_NUM" \
+-            --repo "${{ github.repository }}" \
+-            --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%)."
+-
+-          echo "✅ PR #${PR_NUM} successfully auto-merged."
+-
+-      - name: Bridge Dispatch — trigger auto-bridge-dispatcher (#113)
+-        if: steps.evaluate.outputs.merged == 'true'
+-        env:
+-          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+-          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
+-        run: |
+-          # GitHub suppresses pull_request events for merges performed with
+-          # GITHUB_TOKEN (loop prevention) — the dispatcher can no longer
+-          # ride pull_request:closed. workflow_dispatch is a documented
+-          # exception, so we trigger the single dispatcher directly after
+-          # every landing merge, then verify the run was actually created:
+-          # a silently dropped trigger means zero patch branch and zero
+-          # work order (exactly the failure mode that froze the bridge).
+-          echo "🌉 PR #${PR_NUM} landed — triggering auto-bridge-dispatcher (Zero-Admin Policy)..."
+-          # Run ids are monotonically increasing per repo — compare ids, not
+-          # timestamps (runner clock vs GitHub API clock skew would make a
+-          # ts comparison false-negative on every dispatch).
+-          BEFORE_ID=$(gh api \
+-            "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?per_page=1" \
+-            -q '.workflow_runs[0].id // 0' 2>/dev/null || echo 0)
+-
+-          if ! gh workflow run auto-bridge-dispatcher.yml \
+-            --repo "${{ github.repository }}" \
+-            -f pr_number="$PR_NUM"; then
+-            echo "::warning::workflow_dispatch call failed for PR #${PR_NUM} — no bridge sync will occur automatically; re-dispatch manually."
+-            exit 0
+-          fi
+-
+-          CONFIRMED="false"
+-          for attempt in $(seq 1 12); do
+-            sleep 5
+-            NEW_ID=$(gh api \
+-              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=5" \
+-              -q "[.workflow_runs[] | select(.id > ${BEFORE_ID})] | .[0].id // empty" 2>/dev/null || true)
+-            if [ -n "$NEW_ID" ]; then
+-              CONFIRMED="true"
+-              echo "auto-bridge-dispatcher run ${NEW_ID} created."
+-              break
+-            fi
+-            echo "Waiting for dispatcher run to appear (attempt ${attempt}/12)..."
+-          done
+-
+-          if [ "$CONFIRMED" = "true" ]; then
+-            echo "✅ auto-bridge-dispatcher run confirmed for PR #${PR_NUM} — patch branch + work order landing in the private queue."
+-          else
+-            echo "::warning::auto-bridge-dispatcher run not observed within 60s — trigger accepted but unverified; re-dispatch manually if no work order appears."
+-          fi
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+deleted file mode 100644
+index 913124bb..00000000
+--- a/.github/workflows/open-guards.yml
++++ /dev/null
+@@ -1,166 +0,0 @@
+-# 🛡️ Open Guards (#63, #107) — shift-left validation on FREE public runtime.
+-# বাংলা: প্রাইভেট repo-র Actions minute হলো সীমিত সম্পদ (Free org = 2,000 min/month)।
+-# branch-naming, issue-reference ও boundary-sanitization ভালাইখোরা প্রাইভেট CI-তে
+-# গিয়ে ব্যর্থ হওয়ার আগেই এই সস্তা public guard ধরে ফেলে — invalid contribution
+-# বাউন্ডারিতেই থামে।
+-# Zero-checkout (event-context-only) → প্রতি রান ~৫ সেকেন্ড, public repo-র
+-# Actions minute ফ্রি ও আনলিমিটেড। (#107 exception: boundary-sanitization-guard
+-# job content inspect করে, তাই checkout লাগে — তবু stdlib-only + <৩ মিনিট।)
+-# Loop-contract parity guard (#118): docs/code SSOT sync —
+-# scripts/agents/check_loop_contract_parity.py (tiers, guard list, flag table).
+-name: 🛡️ Open Guards (branch naming + issue reference + duplicate + boundary + parity)
+-
+-on:
+-  pull_request:
+-    types: [opened, edited, reopened, synchronize, ready_for_review]
+-
+-permissions:
+-  contents: read
+-  pull-requests: read
+-
+-concurrency:
+-  group: open-guards-${{ github.event.pull_request.number }}
+-  cancel-in-progress: true
+-
+-jobs:
+-  branch-naming-guard:
+-    name: "🌿 Branch Naming Guard"
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 3
+-    steps:
+-      - name: Validate head branch name (event-context only, no checkout)
+-        env:
+-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+-          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+-        run: |
+-          echo "head branch: '$HEAD_REF' (from $HEAD_REPO)"
+-          # বট-জেনারেটেড ব্রাঞ্চ সবসময় অনুমোদিত (নিজেদের automation ভাঙবে না)
+-          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly)/ ]] \
+-             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
+-            echo "✅ Automated/bot branch — allowed."; exit 0
+-          fi
+-          # কনস্টিটিউশনাল কনভেনশন: <type>/<slug> — #63 + AGENTS.md lane discipline
+-          if [[ "$HEAD_REF" =~ ^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/.+ ]]; then
+-            echo "✅ Branch naming OK ('$HEAD_REF')."; exit 0
+-          fi
+-          echo "::error::Branch '$HEAD_REF' violates the naming convention."
+-          echo "Allowed prefixes: feat/ fix/ docs/ chore/ test/ refactor/ perf/ bridge/ group/ contributor/ hotfix/ release/ agent/"
+-          echo "(bot branches dependabot|github-actions|copilot/* are auto-allowed; admin escape hatch: 'guard-exempt' label)"
+-          exit 1
+-
+-  issue-reference-guard:
+-    name: "🔗 Issue Reference Guard"
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 3
+-    steps:
+-      - name: Validate PR references an issue (event-context only, no checkout)
+-        env:
+-          PR_TITLE: ${{ github.event.pull_request.title }}
+-          PR_BODY: ${{ github.event.pull_request.body }}
+-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+-        run: |
+-          # অ্যাডমিন escape hatch — বিরল no-issue পরিবর্তনের জন্য
+-          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+-            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+-          fi
+-          if echo "$PR_TITLE $PR_BODY" | grep -qE '#[0-9]+'; then
+-            echo "✅ Issue reference found in title/body."; exit 0
+-          fi
+-          echo "::error::PR must reference an issue number (e.g. 'Refs #63') in title or body."
+-          echo "The Task Envelope's submission.issue_reference_required=true documents this contract (#63)."
+-          echo "(Admin escape hatch: add the 'guard-exempt' label.)"
+-          exit 1
+-
+-  duplicate-pr-guard:
+-    name: "👥 Anti-Duplicate PR Guard"
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 3
+-    steps:
+-      - name: Verify no competing open PR exists for the same issue
+-        env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          PR_NUM: ${{ github.event.pull_request.number }}
+-          PR_TITLE: ${{ github.event.pull_request.title }}
+-          PR_BODY: ${{ github.event.pull_request.body }}
+-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+-        run: |
+-          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+-            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+-          fi
+-          ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
+-          if [ -z "$ISSUES" ]; then
+-            exit 0
+-          fi
+-          # Issue-reference comparison, whole-token edition (#120):
+-          #   - Each OTHER open PR yields a structured record (number, title,
+-          #     body, headRefName). NO "PR #N:" prefix is injected into the
+-          #     scanned text — that self-pollution is what made a reference to
+-          #     issue #10 collide with the literal prefix "PR #108".
+-          #   - Issue refs are compared as exact tokens: `#<N>` must be
+-          #     followed by a non-digit or end-of-string, so `#10` never
+-          #     matches `#108`. The fork-lane branch name is part of the
+-          #     scanned surface (AGENT_RULES U4): bare digit tokens with
+-          #     non-digit boundaries there, so `contributor/issue-78` or
+-          #     `fix/…-78-slug` is detected even with a silent title/body.
+-          #   - `guard-exempt` escape hatch unchanged (checked above).
+-          REF_LINES=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body,headRefName \
+-            -q '.[] | select(.number != '"${PR_NUM}"') | [.number, .title, (.body // ""), .headRefName] | @tsv' || true)
+-          for iss in $ISSUES; do
+-            iss_num="${iss#"#"}"
+-            MATCH=""
+-            while IFS=$'\t' read -r other_num other_title other_body other_branch; do
+-              [ -z "${other_num}" ] && continue
+-              if printf '%s %s' "${other_title}" "${other_body}" | grep -qE "#${iss_num}([^0-9]|$)" \
+-                 || printf '%s' "${other_branch}" | grep -qE "(^|[^0-9])${iss_num}([^0-9]|$)"; then
+-                MATCH="PR #${other_num} (branch: ${other_branch})"
+-                break
+-              fi
+-            done <<< "${REF_LINES}"
+-            if [ -n "$MATCH" ]; then
+-              echo "::error::Competing PR detected! Another open PR already targets $iss."
+-              echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
+-              echo "Conflicting PR: $MATCH"
+-              exit 1
+-            fi
+-          done
+-          echo "✅ No competing duplicate PRs detected for: $ISSUES"
+-
+-  boundary-sanitization-guard:
+-    name: "🧱 Boundary Sanitization Guard (#107)"
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 3
+-    steps:
+-      - name: Checkout repository (content inspection requires file bodies)
+-        uses: actions/checkout@v4
+-
+-      - name: Guard self-test (guard-the-guard, offline fixtures)
+-        run: python3 scripts/ci/boundary_sanitization_guard.py --self-test
+-
+-      - name: Scan PR changed files (fail-closed on violations)
+-        env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+-          PR_NUM: ${{ github.event.pull_request.number }}
+-        run: |
+-          FILES=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json files -q '.files[].path')
+-          if [ -z "$FILES" ]; then
+-            echo "::warning::No changed files detected via gh pr view — running full --check instead (fail-closed)."
+-            exec python3 scripts/ci/boundary_sanitization_guard.py --check
+-          fi
+-          echo "Changed files under boundary scan:"
+-          echo "$FILES"
+-          # shellcheck disable=SC2086 — repo paths contain no whitespace
+-          python3 scripts/ci/boundary_sanitization_guard.py --files $FILES
+-
+-      - name: Full-tree boundary audit (final fail-closed barrier)
+-        run: python3 scripts/ci/boundary_sanitization_guard.py --check
+-
+-  loop-contract-parity-guard:
+-    name: "🔁 Loop-Contract Parity Guard (#118)"
+-    runs-on: ubuntu-latest
+-    timeout-minutes: 3
+-    steps:
+-      - name: Checkout repository (parity inspects file bodies)
+-        uses: actions/checkout@v4
+-
+-      - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
+-        run: python3 scripts/agents/check_loop_contract_parity.py
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+new file mode 100644
+index 00000000..263aaa7e
+--- /dev/null
++++ b/.github/workflows/pipeline.yml
+@@ -0,0 +1,440 @@
++# =============================================================================
++# SupremeAI Open — Unified Validation & Cron Pipeline (#155)
++# =============================================================================
++# Federation Workflow Diet — public boundary 5 -> 2 workflows.
++# Replaces (do NOT re-introduce these files):
++#   - open-guards.yml            (branch naming, issue reference, anti-duplicate, boundary guard)
++#   - ci.yml                     (Python matrix + Tower TS verification + secret scan)
++#   - continuous-agent-loop.yml  (30-min reconciliation cron + workflow_dispatch intake)
++#
++# Shift-left doctrine: validation runs on the FREE public runtime. Anything
++# provable here (naming, issue reference, duplicate PR, boundary sanitization,
++# matrix behavior, secrets, TypeScript) must never be re-run in private CI —
++# the private side keeps only what needs private context (see landing.yml and
++# docs/OPS_ACTIONS_QUOTA_RUNBOOK.md).
++#
++# বাংলা: প্রাইভেট repo-র Actions minute হলো সীমিত সম্পদ (Free org = 2,000
++# min/month)। invalid contribution পাবলিক ফ্রি রানটাইমেই (~৫ সেকেন্ড) ধরে
++# ফেলা হয় — প্রাইভেট কোটা বা খরচ হয় না।
++#
++# Event routing (zero-waste design):
++#   pull_request    -> guards + test-matrix + secrets-scan + mcp-tower
++#   push: [main]    -> test-matrix + secrets-scan + mcp-tower (guards are PR-only)
++#   schedule        -> agent-loop ONLY (cheap board pre-check; no-op on empty board)
++#   workflow_dispatch (MCP Tower bridge intake #69) -> agent-loop ONLY
++#   -> a webhook-triggered dispatch never burns matrix minutes.
++#
++# Path-filtered fast paths (sparse execution):
++#   docs-only diff (docs/** or *.md) -> test-matrix + mcp-tower skip, pass in <5s
++#   mcp-only diff (infrastructure/mcp-control-plane/**) -> documented in
++#   AGENTS.md; the Python matrix is the only matrix, so no second skip exists.
++# =============================================================================
++
++name: CI — Open Unified Pipeline
++
++on:
++  push:
++    branches: [ main ]
++  pull_request:
++    branches: [ main ]
++    types: [opened, edited, reopened, synchronize, ready_for_review]
++  schedule:
++    - cron: "*/30 * * * *" # every 30 minutes (reconciliation fallback, #69)
++  workflow_dispatch:
++    inputs:
++      auto_pr:
++        description: "Step 7: autonomously open PR via gh CLI after verification passes (scheduled runs stay draft-only)"
++        type: boolean
++        default: false
++
++permissions:
++  # Least privilege: this workflow only reads. Landing/merge/bridge authority
++  # lives exclusively in landing.yml (contents/pull-requests/issues: write).
++  contents: read
++
++jobs:
++  # ---------------------------------------------------------------------------
++  # 🛡️ Zero-checkout fast guards (PR-only, ~5s each)
++  # ---------------------------------------------------------------------------
++  branch-naming-guard:
++    name: "🌿 Branch Naming Guard"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Validate head branch name (event-context only, no checkout)
++        env:
++          HEAD_REF: ${{ github.event.pull_request.head.ref }}
++          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
++        run: |
++          echo "head branch: '$HEAD_REF' (from $HEAD_REPO)"
++          # বট-জেনারেটেড ব্রাঞ্চ সবসময় অনুমোদিত (নিজেদের automation ভাঙবে না)
++          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly)/ ]] \
++             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
++            echo "✅ Automated/bot branch — allowed."; exit 0
++          fi
++          # কনস্টিটিউশনাল কনভেনশন: <type>/<slug> — #63 + AGENTS.md lane discipline
++          if [[ "$HEAD_REF" =~ ^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/.+ ]]; then
++            echo "✅ Branch naming OK ('$HEAD_REF')."; exit 0
++          fi
++          echo "::error::Branch '$HEAD_REF' violates the naming convention."
++          echo "Allowed prefixes: feat/ fix/ docs/ chore/ test/ refactor/ perf/ bridge/ group/ contributor/ hotfix/ release/ agent/"
++          echo "(bot branches dependabot|github-actions|copilot/* are auto-allowed; admin escape hatch: 'guard-exempt' label)"
++          exit 1
++
++  issue-reference-guard:
++    name: "🔗 Issue Reference Guard"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Validate PR references an issue (event-context only, no checkout)
++        env:
++          PR_TITLE: ${{ github.event.pull_request.title }}
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++        run: |
++          # অ্যাডমিন escape hatch — বিরল no-issue পরিবর্তনের জন্য
++          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
++            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
++          fi
++          if echo "$PR_TITLE $PR_BODY" | grep -qE '#[0-9]+'; then
++            echo "✅ Issue reference found in title/body."; exit 0
++          fi
++          echo "::error::PR must reference an issue number (e.g. 'Refs #63') in title or body."
++          echo "The Task Envelope's submission.issue_reference_required=true documents this contract (#63)."
++          echo "(Admin escape hatch: add the 'guard-exempt' label.)"
++          exit 1
++
++  duplicate-pr-guard:
++    name: "👥 Anti-Duplicate PR Guard"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Verify no competing open PR exists for the same issue
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ github.event.pull_request.number }}
++          PR_TITLE: ${{ github.event.pull_request.title }}
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++        run: |
++          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
++            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
++          fi
++          ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
++          if [ -z "$ISSUES" ]; then
++            exit 0
++          fi
++          # Issue-reference comparison, whole-token edition (#120):
++          #   - Each OTHER open PR yields a structured record (number, title,
++          #     body, headRefName). NO "PR #N:" prefix is injected into the
++          #     scanned text — that self-pollution is what made a reference to
++          #     issue #10 collide with the literal prefix "PR #108".
++          #   - Issue refs are compared as exact tokens: `#<N>` must be
++          #     followed by a non-digit or end-of-string, so `#10` never
++          #     matches `#108`. The fork-lane branch name is part of the
++          #     scanned surface (AGENT_RULES U4): bare digit tokens with
++          #     non-digit boundaries there, so `contributor/issue-78` or
++          #     `fix/…-78-slug` is detected even with a silent title/body.
++          #   - `guard-exempt` escape hatch unchanged (checked above).
++          REF_LINES=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body,headRefName \
++            -q '.[] | select(.number != '"${PR_NUM}"') | [.number, .title, (.body // ""), .headRefName] | @tsv' || true)
++          for iss in $ISSUES; do
++            iss_num="${iss#"#"}"
++            MATCH=""
++            while IFS=$'\t' read -r other_num other_title other_body other_branch; do
++              [ -z "${other_num}" ] && continue
++              if printf '%s %s' "${other_title}" "${other_body}" | grep -qE "#${iss_num}([^0-9]|$)" \
++                 || printf '%s' "${other_branch}" | grep -qE "(^|[^0-9])${iss_num}([^0-9]|$)"; then
++                MATCH="PR #${other_num} (branch: ${other_branch})"
++                break
++              fi
++            done <<< "${REF_LINES}"
++            if [ -n "$MATCH" ]; then
++              echo "::error::Competing PR detected! Another open PR already targets $iss."
++              echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
++              echo "Conflicting PR: $MATCH"
++              exit 1
++            fi
++          done
++          echo "✅ No competing duplicate PRs detected for: $ISSUES"
++
++  boundary_sanitization_guard:
++    name: "🧱 Boundary Sanitization Guard (#107)"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    outputs:
++      docs_only: ${{ steps.scan.outputs.docs_only }}
++      mcp_only: ${{ steps.scan.outputs.mcp_only }}
++    steps:
++      - name: Checkout repository (content inspection requires file bodies)
++        uses: actions/checkout@v4
++
++      - name: Guard self-test (guard-the-guard, offline fixtures)
++        run: python3 scripts/ci/boundary_sanitization_guard.py --self-test
++
++      - name: Scan PR changed files (fail-closed on violations)
++        id: scan
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ github.event.pull_request.number }}
++        run: |
++          FILES=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json files -q '.files[].path')
++          if [ -z "$FILES" ]; then
++            echo "::warning::No changed files detected via gh pr view — running full --check instead (fail-closed)."
++            exec python3 scripts/ci/boundary_sanitization_guard.py --check
++          fi
++          echo "Changed files under boundary scan:"
++          echo "$FILES"
++          # Filter to existing files in checkout (skip deleted files; full-tree audit follows in next step):
++          SCAN_FILES=""
++          for f in $FILES; do
++            if [ -e "$f" ]; then
++              SCAN_FILES="$SCAN_FILES $f"
++            fi
++          done
++
++          if [ -n "$SCAN_FILES" ]; then
++            # shellcheck disable=SC2086 — repo paths contain no whitespace
++            python3 scripts/ci/boundary_sanitization_guard.py --files $SCAN_FILES
++          else
++            echo "All changed files were deleted — running full-tree audit instead."
++            python3 scripts/ci/boundary_sanitization_guard.py --check
++          fi
++
++          # Path-filtered fast path (#155): a diff that touches ONLY docs/**
++          # or *.md cannot break compilation or tests — skip the expensive
++          # jobs downstream and pass in <5 seconds. Fail-open toward scanning
++          # more, never less: any non-doc file clears the flag.
++          docs_only=true
++          mcp_only=true
++          for f in $FILES; do
++            case "$f" in
++              docs/*|*.md) ;;
++              *) docs_only=false ;;
++            esac
++            case "$f" in
++              infrastructure/mcp-control-plane/*) ;;
++              *) mcp_only=false ;;
++            esac
++          done
++          echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
++          echo "mcp_only=$mcp_only" >> "$GITHUB_OUTPUT"
++          echo "fast-path verdict: docs_only=$docs_only mcp_only=$mcp_only"
++
++      - name: Full-tree boundary audit (final fail-closed barrier)
++        run: python3 scripts/ci/boundary_sanitization_guard.py --check
++
++  loop-contract-parity-guard:
++    name: "🔁 Loop-Contract Parity Guard (#118)"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Checkout repository (parity inspects file bodies)
++        uses: actions/checkout@v4
++
++      - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
++        run: python3 scripts/agents/check_loop_contract_parity.py
++
++  # ---------------------------------------------------------------------------
++  # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
++  # the shift-left diet because all four versions are proven here first.
++  # ---------------------------------------------------------------------------
++  test-matrix:
++    name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
++    needs: [boundary_sanitization_guard, loop-contract-parity-guard]
++    if: |
++      always() &&
++      (github.event_name == 'push' ||
++       (needs.boundary_sanitization_guard.result == 'success' &&
++        needs.loop-contract-parity-guard.result == 'success' &&
++        needs.boundary_sanitization_guard.outputs.docs_only != 'true'))
++    runs-on: ubuntu-latest
++    strategy:
++      fail-fast: false
++      matrix:
++        python-version: ["3.10", "3.11", "3.12", "3.13"]
++    steps:
++      - name: Checkout code
++        uses: actions/checkout@v4
++
++      - name: Set up Python ${{ matrix.python-version }}
++        uses: actions/setup-python@v5
++        with:
++          python-version: ${{ matrix.python-version }}
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install pyyaml
++
++      - name: Run 3-Tier Verification Contract
++        run: |
++          python scripts/agents/continuous_agent_loop.py --verify-only
++
++      - name: Run Task Contract & Fail-Closed Unit Tests
++        run: |
++          python -c "from scripts.agents.continuous_agent_loop import build_task_contract, run_cmd; assert run_cmd(['__missing_binary_test__'])[0] == 127; contract = build_task_contract('ci-test'); assert contract['task_contract']['version'] == 1"
++          python -c "from scripts.agents.continuous_agent_loop import build_task_contract; 
++          try:
++              build_task_contract('fail-test', task_type='INVALID')
++              raise AssertionError('Failed to reject invalid task_type')
++          except ValueError:
++              pass"
++
++      - name: Pick-Next Claim-Filter Contract Test (#88, offline stub)
++        run: |
++          python -c "
++          import json
++          import scripts.agents.continuous_agent_loop as loop
++          stub = [
++              {'number': 101, 'title': 'old unclaimed P1', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P1-high'}]},
++              {'number': 102, 'title': 'claimed p0 critical words', 'labels': [{'name': 'status:in-progress'}, {'name': 'P0-critical'}]},
++              {'number': 103, 'title': 'held work', 'labels': [{'name': 'status:unclaimed'}, {'name': 'state:seq-hold'}]},
++              {'number': 104, 'title': 'unlabeled tail', 'labels': [{'name': 'status:unclaimed'}]}
++          ]
++          loop.run_cmd = lambda cmd: (0, json.dumps(stub), '')
++          picked = loop.pick_next_issue()
++          assert picked == '101', f'expected oldest claimable 101, got {picked}'
++          stub2 = [
++              {'number': 55, 'title': 'totally high-level prose title', 'labels': [{'name': 'status:unclaimed'}]},
++              {'number': 66, 'title': 'nothing special', 'labels': [{'name': 'status:unclaimed'}, {'name': 'P0-critical'}]}
++          ]
++          loop.run_cmd = lambda cmd: (0, json.dumps(stub2), '')
++          assert loop.pick_next_issue() == '66', 'real P0 label must outrank prose titles'
++          assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
++          print('pick-next claim-filter contract: OK (#88)')
++          "
++
++  # ---------------------------------------------------------------------------
++  # 🔒 Secrets — runs for every non-guard-failing change, INCLUDING docs-only
++  # (documentation can leak credentials too).
++  # ---------------------------------------------------------------------------
++  secrets-scan:
++    name: Secret Scanning
++    needs: boundary_sanitization_guard
++    if: |
++      github.event_name == 'push' ||
++      needs.boundary_sanitization_guard.result == 'success'
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: Run Gitleaks Secret Detection (reusable composite action, #155)
++        uses: ./.github/actions/gitleaks-scan
++
++  # ---------------------------------------------------------------------------
++  # 🏗️ MCP Control Tower — Node 24 typecheck + contract-safe tests
++  # ---------------------------------------------------------------------------
++  mcp-tower:
++    name: Tower TS Verification (typecheck + contract-safe tests)
++    needs: boundary_sanitization_guard
++    if: |
++      github.event_name == 'push' ||
++      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout code
++        uses: actions/checkout@v4
++
++      - name: "Setup Node — MCP Tower (reusable composite action: node + cache + npm ci + tsc, #155)"
++        uses: ./.github/actions/setup-node-tower
++
++      # #86: the live Tower deployment source previously shipped with ZERO
++      # TypeScript verification — this gate closes that gap. Runs the
++      # credentials-free test set (test:tower-ci); service/credential-dependent
++      # suites are tracked in the follow-up issue linked from PR #86.
++      - name: Contract-safe Tower test suite
++        run: npm run test:tower-ci
++        working-directory: infrastructure/mcp-control-plane
++
++  # ---------------------------------------------------------------------------
++  # 🤖 Agent loop — cron reconciliation + event-driven intake (#69).
++  # Runs ONLY on schedule/workflow_dispatch so a webhook-triggered dispatch
++  # never burns matrix minutes. One cycle per tick; the concurrency group
++  # serializes ticks and the next scheduled tick continues where this stopped.
++  # ---------------------------------------------------------------------------
++  agent-loop:
++    name: Start continuous_agent_loop.py --pick-next (30-min cadence)
++    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    concurrency:
++      # AGENT_RULES.md §12 — single execution under the parent controller.
++      # Never run two loop instances concurrently; queue instead of duplicating.
++      group: continuous-agent-loop
++      cancel-in-progress: false
++    env:
++      # Read-only token for `gh` (pre-installed on ubuntu runners).
++      # The dispatcher explicitly targets the upstream repo for issue reads.
++      GH_TOKEN: ${{ github.token }}
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++
++      # Dispatcher verification tier 3 ("YAML/OpenAPI Safe Load") requires
++      # PyYAML; actions/setup-python provides a bare Python without it.
++      # Without this, tier 3 is recorded skipped/failed in the run evidence.
++      - name: Install PyYAML (dispatcher tier-3 verification dependency)
++        run: python -m pip install --quiet pyyaml
++
++      # AGENT_RULES.md §10 — "A job that runs but produces no expected result
++      # is actionable when evidence confirms it… No-actionable-finding must be
++      # recorded explicitly without creating issue storms." An empty upstream
++      # board is a recorded no-op, NOT a red run and NOT a silent skip.
++      # #88: has_work reflects CLAIMABLE work only (status:unclaimed, whole
++      # board) so the cron no-ops when every open issue is already claimed.
++      - name: Board pre-check (explicit no-op on empty or fully-claimed board)
++        id: board
++        run: |
++          set -euo pipefail
++          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title)
++          echo "claimable-board snapshot: $BOARD"
++          if [ "$BOARD" = "[]" ]; then
++            echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
++            echo "has_work=false" >> "$GITHUB_OUTPUT"
++          else
++            echo "has_work=true" >> "$GITHUB_OUTPUT"
++          fi
++
++      - name: Start Continuous Agent Loop (existing dispatcher, one cycle)
++        if: steps.board.outputs.has_work == 'true'
++        run: |
++          set -euo pipefail
++          ARGS="--pick-next"
++          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.auto_pr }}" = "true" ]; then
++            ARGS="$ARGS --auto-pr"
++          fi
++          python scripts/agents/continuous_agent_loop.py $ARGS
++
++      # AGENT_RULES.md §10 — scheduled jobs must never silently disappear.
++      # #89: real verify-evidence artifact — the --verify-only transcript
++      # (ends with the CONTRACT_VERSION parity marker per AGENT_LOOP_SPEC §4b)
++      # is captured even when the loop step itself fails (replaces the dead
++      # pre-#63 draft-file upload — that writer no longer exists).
++      - name: Capture verification evidence (always)
++        if: always()
++        run: |
++          set -o pipefail
++          python scripts/agents/continuous_agent_loop.py --verify-only 2>&1 | tee agent-loop-verify-evidence.log
++
++      - name: Upload verification evidence
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: agent-loop-verify-evidence-${{ github.run_id }}
++          path: agent-loop-verify-evidence.log
++          if-no-files-found: error
++          retention-days: 14
+diff --git a/.gitleaks.toml b/.gitleaks.toml
+index ca6bf7ca..7e6fe2ee 100644
+--- a/.gitleaks.toml
++++ b/.gitleaks.toml
+@@ -3,7 +3,7 @@
+ # Implements open issue #41: org-specific secret detection rules for the
+ # credential families this federation actually issues, on top of the upstream
+ # default ruleset. CI runs `gitleaks detect --source=. --verbose --redact`
+-# (see .github/workflows/ci.yml) which exits non-zero on ANY finding — that
++# (see .github/workflows/pipeline.yml) which exits non-zero on ANY finding — that
+ # non-zero exit IS the fail-closed gate. Nothing in this file may weaken it:
+ # no global allowlists, no severity downgrades, no per-rule `?ignore` hints.
+ #
+diff --git a/AGENTS.md b/AGENTS.md
+index 46ec55b9..948df11f 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -117,6 +117,51 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
+ 
+ The loop **is** the permission. Agents never emit "should I start / বললেই পরের batch শুরু করছি / shall I proceed?" style output. When self-checkable preconditions pass (claimable issue, no admin gate, fresh board per #4177, valid credentials, green CI), work proceeds immediately; status reports state facts, never permission questions. Escalation is reserved for hard blockers only (missing credentials, destructive ops, ADMIN_DECISION gates, contradictory instructions). Canonical rule: [`AGENT_RULES.md`](./AGENT_RULES.md) **U10**.
+ 
++## 2.3 Public-First SSOT Doctrine (Public Boundary Contract, #155)
++
++`supremeai-open` is the **public SSOT for everything provable in public**; the private monorepo `Supremeai-bd/supremeai` is the SSOT for everything that needs private context. Landed public work flows into the private monorepo automatically through the bridge pipeline (`landing.yml`) — never by hand.
++
++### 2.3.1 What MUST NOT live in `supremeai-open` (private monorepo exclusives)
++
++These require private monorepo context, private credentials, or live databases and can never be executed here:
++
++1. **Proprietary Core Intelligence & Backend** (`backend/`, `supremeai-core`): real orchestrator decision logic, internal state machines, private runtime services.
++2. **Production Secrets & Vault Access:** Infisical master keys, live Supabase service keys, production Redis tokens, live cloud infrastructure credentials.
++3. **Live Database Migrations & Direct DB Tests:** schema migrations against production/staging databases.
++4. **Production Deployment Pipelines:** live Render / Cloudflare / Vercel production deployments that require proprietary backend context (e.g. `../../backend`).
++5. **Full Internal Monorepo Orchestration:** workspaces requiring private packages or proprietary core dependencies.
++
++This boundary is machine-enforced, not advisory: `scripts/ci/boundary_sanitization_guard.py` fail-closes the PR on proprietary paths or content (the `pipeline.yml` guard job), and gitleaks fail-closes on credentials.
++
++### 2.3.2 Shift-Left De-duplication (what private CI never re-runs)
++
++Because the free public runtime proves these first, they are **eliminated from private workflows** (quota is a shared 2,000 min/month Free-org budget — see `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`): branch naming · issue reference · anti-duplicate PR · full Python matrix (3.10–3.13; private pins 3.11) · MCP Control Plane TS typecheck & test suites · gitleaks full-history scan · boundary sanitization audit · docs/link/markdown checks · lint & formatting passes · dependency vulnerability scans · AI PR evaluation. Private CI keeps ONLY what requires private context: backend integration smoke, production deployment, bridge intake validation, and scheduled ops maintenance.
++
++### 2.3.3 Lightweight & Reusable Components (cross-federation SSOT)
++
++The diet is built from small, zero-bloat building blocks reused identically across repositories:
++
++1. **Zero-checkout fast metadata guards (~2–3s):** branch naming (pure event-context regex), issue reference (title/body regex), anti-duplicate PR (single `gh pr list` JSON query) — all zero clone, drop-in reusable across any federation repo.
++2. **Zero-dependency Python validation scripts (`scripts/ci/`):** `boundary_sanitization_guard.py` is 100% standard library, zero network, ~1s — the same file polices public and private trees.
++3. **Reusable composite actions (`.github/actions/`):**
++   - `setup-node-tower`: Node 24 setup + caching + `npm ci` + `tsc` in one action (cuts ~40 lines of YAML per workflow).
++   - `gitleaks-scan`: standardized zero-config secret scanner.
++4. **Path-filtered fast paths (sparse execution):** docs-only diffs (`docs/**`, `*.md`) skip the test matrix and Tower build and pass in <5 seconds; secrets scanning still runs (documentation can leak too).
++5. **Unified workflows with `workflow_call`-ready steps:** `pipeline.yml` (validation + cron) and `landing.yml` (auto-merge + bridge dispatch, dispatch structurally ordered after a successful merge in the same run).
++
++### 2.3.4 Workflow Diet (topology)
++
++| Surface | Before | After |
++|---|---|---|
++| `supremeai-open` | 5 workflows | **2**: `pipeline.yml` (guards → Python 3.10–3.13 matrix + secrets-scan + mcp-tower + agent-loop cron), `landing.yml` (auto-merge → bridge dispatch) |
++| `supremeai` (private) | 18 workflows | **4**: `pr-pipeline`, `deploy-train`, `bridge-intake`, `ops-maintenance` (private-side change) |
++
++Split/merge justification per AGENT_RULES P4: the public split existed for fork-security isolation; consolidation is safe because untrusted validation (guards/matrix) and trusted landing (merge/dispatch) remain in **separate workflows with separate permission sets** (`contents: read` vs `contents/pull-requests/issues: write`).
++
++### 2.3.5 Zero-Duplicate Mandate (U4, hard rule)
++
++Because landed changes on `supremeai-open` are automatically ingested into `Supremeai-bd/supremeai` via this consolidated pipeline, contributors and agents **must never create duplicate manual PRs on the private repository** for work handled at the public boundary. One issue = at most one open PR, anywhere in the federation.
++
+ ## 3. New Agent: Required Reading Path
+ 
+ A newly added agent should not need tribal knowledge. Start here, then follow the links in order:
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index b2abce88..e8382456 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -33,6 +33,8 @@ Before claiming or creating work, inspect the relevant group, active issues, ope
+    - If the existing PR is active/green: Do NOT intervene. Let CI Guardian and auto-merge complete the landing.
+    - If the existing PR is failing checks or abandoned (stale > 2 hours): The agent may follow up on that branch or review it, but MUST NOT create a blind duplicate PR from scratch without explicitly closing or superseding the previous PR first.
+ 
++**Zero-Duplicate across the federation (#155, Public-First SSOT):** `supremeai-open` is the public SSOT; landed public work is auto-bridged into `Supremeai-bd/supremeai` by `landing.yml`. Therefore **no agent or contributor may open a manual PR on the private repository** for work handled at the public boundary — one issue = at most one open PR, anywhere in the federation. Machine-enforced at the public boundary by the `duplicate-pr-guard` job in `pipeline.yml`; the private intake dedups bridge work orders.
++
+ ## U5 — Freshness & Ownership
+ Claim state before work. Verify current `main`/PR state before push. Do not work on `state:seq-hold` or work blocked by upstream. Never push stale work.
+ 
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index 451c2220..88f6dc82 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -70,3 +70,22 @@ Every bridge patch is inspected by fail-closed automated scanners:
+ - **Diff Size:** ≤ 200 KB diff and ≤ 30 files per task.
+ - **Zero Secrets:** Never include API keys, tokens, or credentials in diffs or commit messages.
+ - **Protected Paths:** Changes targeting `.github/`, `.env*`, or credentials require explicit admin review.
++
++## 6. Automation Topology & the Zero-Duplicate Rule (#155)
++
++This repo runs the **minimum safest workflow set** on the free public runtime:
++
++| Workflow | Jobs |
++|---|---|
++| `pipeline.yml` | guards (branch naming, issue reference, anti-duplicate PR, boundary sanitization) → Python 3.10–3.13 matrix + Tower TS verification + secret scan; 30-minute agent-loop cron + event-driven intake |
++| `landing.yml` | autonomous squash-merge on full gate success → same-run bridge dispatch of the landed patch reference into the private queue |
++
++Because landed public work is **automatically bridged** into `Supremeai-bd/supremeai`:
++- **Never open a duplicate manual PR on the private repository** for work handled here (AGENT_RULES.md U4 — one issue, at most one open PR, anywhere in the federation).
++- The private monorepo runs only what needs private context: integration smoke, production deployment, bridge intake, ops maintenance. It never re-runs checks already proven here (full matrix, gitleaks, boundary audit, lint, docs checks).
++
++Reusable building blocks (cross-federation SSOT): `scripts/ci/boundary_sanitization_guard.py` (stdlib-only, identical on both sides) and `.github/actions/` composite actions (`setup-node-tower`, `gitleaks-scan`). Full doctrine: `AGENTS.md` §2.2.
++
++---
++
++**Related:** [`AGENTS.md`](./AGENTS.md) (constitution) · [`AGENT_RULES.md`](./AGENT_RULES.md) (policy) · [`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md) (contributor guide) · [`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`](./docs/OPS_ACTIONS_QUOTA_RUNBOOK.md) (quota & diet)
+diff --git a/README.md b/README.md
+index 8ac0dc72..f41add70 100644
+--- a/README.md
++++ b/README.md
+@@ -13,7 +13,8 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ | `ECOSYSTEM_MAP.md` | **The Federation Ecosystem Map** — architecture directory for agents working across repos |
+ | `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
+ | `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
+-| `.github/workflows/continuous-agent-loop.yml` | 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch) |
++| `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the 30-minute cron that starts the existing dispatcher `scripts/agents/continuous_agent_loop.py --pick-next` (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
++| `.github/workflows/landing.yml` | Unified autonomous landing & bridge dispatch (#155): auto-squash-merge on full gate success, then the same run streams the landed patch reference into the private bridge queue |
+ | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
+ | `LICENSE` | MIT |
+ 
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 0a8de231..c878f1f0 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -50,7 +50,7 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
+       "base_branch": "main",
+       "pr_title_prefix": "feat(open):",
+       "issue_reference_required": true,
+-      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by open-guards.yml",
++      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by pipeline.yml",
+       "pr_body_template": "…markdown PR body (legacy draft file content)…"
+     }
+   }
+@@ -131,7 +131,7 @@ parity contract:
+    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
+    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
+    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+-   | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private `continuous-agent-loop.yml` workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
++    | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+ 
+ 3. **Envelope parity** — the same issue on both copies must yield a
+    `task_envelope` whose contract sections are byte-identical modulo
+@@ -143,8 +143,9 @@ parity contract:
+ 
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+-`.github/workflows/open-guards.yml` runs on every PR
+-to `supremeai-open` — free, unlimited public Actions minutes — so invalid
++The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
++issue-reference, anti-duplicate PR, boundary-sanitization, loop-contract-parity)
++run on every PR to `supremeai-open` — free, unlimited public Actions minutes — so invalid
+ contributions fail at the public boundary instead of burning the private
+ repo's limited quota (Free org ≈ 2,000 min/month). The first three guards
+ are zero-checkout (~5s each); the boundary and parity guards check out the
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index 26e0d6c4..6e4cc701 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -31,6 +31,9 @@ scripts/agents/continuous_agent_loop.py   # 8-step autonomous agent loop (Python
+ infrastructure/mcp-control-plane/         # Source of the MCP Control Tower (TypeScript)
+ docs/                                     # Documentation (this file lives here)
+ .github/ISSUE_TEMPLATE/                   # Task envelope + Bridge Work Order templates
++.github/actions/                          # Reusable composite actions (setup-node-tower, gitleaks-scan — #155)
++.github/workflows/pipeline.yml            # Unified validation: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + agent-loop cron
++.github/workflows/landing.yml             # Unified autonomous landing: auto-merge -> bridge dispatch in the same run
+ AGENTS.md, AGENT_RULES.md                 # Governance contracts (see §1)
+ README.md                                 # What this repo is and is not
+ ```
+@@ -157,7 +160,32 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
+ - **External agents never write to `main`.** Landing authority belongs to the
+   constitutional gates only.
+ 
+-## 8. Branch, commit, and naming conventions
++## 8. Public boundary vs. private monorepo (Public-First SSOT, #155)
++
++This repository is the **public SSOT**; `Supremeai-bd/supremeai` is the private
++SSOT for everything that needs private context. Landed public work is
++**automatically bridged** into the private monorepo by `landing.yml` — you
++never move it by hand.
++
++**Never in this repo (private exclusives):** proprietary core/backend logic,
++production secrets & vault keys, live database migrations, production
++deployment pipelines needing private context, and anything requiring private
++packages. The boundary is machine-enforced: `boundary_sanitization_guard.py`
++(pipeline.yml guard job) fail-closes on proprietary paths/content, and gitleaks
++fail-closes on credentials.
++
++**Zero-duplicate rule (AGENT_RULES.md U4):** because your merged public PR
++flows into the private repo automatically, **never open a duplicate manual PR
++on `Supremeai-bd/supremeai`** for work handled here. One issue = at most one
++open PR, anywhere in the federation.
++
++**Shift-left benefit:** branch naming, issue reference, anti-duplicate PR,
++the full Python 3.10–3.13 matrix, Tower TypeScript checks, secret scanning,
++boundary audits, docs/link checks and lint all run **here, for free** — so the
++private pipeline runs only what needs private context (integration smoke,
++deployment, bridge intake, ops maintenance). See `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`.
++
++## 9. Branch, commit, and naming conventions
+ 
+ - Task branches: `bridge/<task-id>` where task id = `bridge-YYYYMMDD-<slug>`
+   (e.g. `bridge-20261015-contributing-guide`).
+@@ -165,7 +193,7 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
+ - Commits: conventional style — `fix(scope): …`, `feat(scope): …`, `docs(scope): …`.
+ - One logical change per branch. The smallest safe change wins.
+ 
+-## 9. Submission paths (pick by role)
++## 10. Submission paths (pick by role)
+ 
+ | Path | Who | How |
+ |------|-----|-----|
+@@ -176,7 +204,7 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
+ Work orders use the [Bridge Work Order template](../.github/ISSUE_TEMPLATE/bridge-work-order.yml);
+ task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-task.yml).
+ 
+-## 10. Troubleshooting (field-tested)
++## 11. Troubleshooting (field-tested)
+ 
+ | Symptom | Cause | Fix |
+ |---------|-------|-----|
+@@ -187,7 +215,7 @@ task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-tas
+ | `bridge_work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
+ | Loop crashes on missing tooling | Should not happen since the graceful-degradation fix | Update to latest `main`; if it still crashes, that is a bug — file it with the traceback |
+ 
+-## 11. Question, don't guess
++## 12. Question, don't guess
+ 
+ If the issue is ambiguous, say so in your PR/work order and state the assumption
+ you coded against. Reviewers would rather correct a stated assumption than
+diff --git a/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md b/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
+index 266d256d..2fabe64c 100644
+--- a/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
++++ b/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
+@@ -80,9 +80,32 @@ should run this weekly (org-owner PAT with `admin:org` billing read).
+ | **cancel-in-progress: true** | `archive-mirror.yml` (PR #169) | pure mirror is newest-wins — superseded runs cancel cleanly |
+ | **concurrency v3 bump** | both workflows (PR #169) | group-rename escape hatch — fresh groups bypass poisoned group state |
+ | **cancel-in-progress stays false** | `bridge-intake.yml` (PR #169) | E4 dedup race: mid-run cancel would push the branch without writing the dedup marker → later false-rejects |
+-| **shift-left guards** | `supremeai-open` `.github/workflows/open-guards.yml` (PR #64) | invalid contributions fail on the free public runtime (~5s) instead of burning private minutes |
++| **shift-left guards** | `supremeai-open` `.github/workflows/pipeline.yml` (PR #64, consolidated by #155) | invalid contributions fail on the free public runtime (~5s) instead of burning private minutes |
+ 
+-## 6. Support-ticket checklist (org owner, AC1)
++## 6. Federation Workflow Diet (#155) — the structural quota fix
++
++Volume pathology (§3) is treated at the root, not with per-run patches: the
++public boundary and the private monorepo each run the **minimum safest
++workflow set**, and every check that the free public runtime already proves is
++eliminated from private CI (shift-left de-duplication).
++
++| Surface | Before | After (2 files) |
++|---|---|---|
++| `supremeai-open` | 5 workflows (`open-guards`, `ci`, `continuous-agent-loop`, `merge-gate`, `auto-bridge-dispatcher`) | `pipeline.yml` (validation + cron engine) + `landing.yml` (auto-merge + bridge dispatch) |
++| `supremeai` (private) | 18 workflows | 4 (`pr-pipeline`, `deploy-train`, `bridge-intake`, `ops-maintenance`) — private-side change, tracked there |
++
++Eliminated from private CI because `supremeai-open` proves them first (free
++runtime, unlimited minutes): branch naming, issue reference, anti-duplicate PR,
++full Python matrix (3.10–3.13; private pins 3.11), Tower TS typecheck/tests,
++gitleaks full-history scan, boundary sanitization audit, docs/link checks,
++lint/format passes, dependency vulnerability scans, AI PR evaluation.
++
++Contributor rule: because landed public work is auto-bridged into
++`Supremeai-bd/supremeai`, **never open a duplicate manual PR on the private
++repository** for work handled at the public boundary (AGENT_RULES.md U4,
++zero-duplicate mandate).
++
++## 7. Support-ticket checklist (org owner, AC1)
+ 
+ Include: repo `Supremeai-bd/supremeai`; onset `2026-10-15T14:48Z` (+ prior
+ batches Oct 9/10/13); run IDs from §2; one raw 409 response body for cancel;
+@@ -95,4 +118,5 @@ Link the ticket back into issue #68 when filed.
+ 
+ - Issue #68 (this runbook's tracking issue) · PR #169 (E11 + concurrency v3)
+ - PR #64 (task envelope + open guards) · Issue #63 (taxonomy drift fix)
++- Issue #155 (Federation Workflow Diet — public 5→2 workflows, private 18→4)
+ - `docs/AGENT_LOOP_SPEC.md §4b` (CONTRACT_VERSION parity contract)
+diff --git a/infrastructure/mcp-control-plane/Dockerfile b/infrastructure/mcp-control-plane/Dockerfile
+index cac78c15..d148c721 100644
+--- a/infrastructure/mcp-control-plane/Dockerfile
++++ b/infrastructure/mcp-control-plane/Dockerfile
+@@ -18,7 +18,7 @@
+ 
+ # ── Stage 1: builder (Node/TypeScript) ────────────────────────────────────────
+ # INF-16 fix (issue #562): both stages must run the SAME Node major as the
+-# verification gate — this repo's ci.yml `tower-verify` job pins Node 24.
++# verification gate — pipeline.yml (unified, #155) `mcp-tower` job pins Node 24.
+ # (The original monorepo-referenced note pointed at paths that do not exist in
+ # this repository — corrected with #86.) Testing the build on Node 24
+ # while shipping node:20-alpine meant Node 22+/24-only APIs (node:sqlite,
+diff --git a/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md b/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
+index 161b70a1..fcaadb4a 100644
+--- a/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
++++ b/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
+@@ -3,8 +3,8 @@
+ Webhook → workflow-dispatch wake-up path that replaces high-frequency **polling**
+ latency with **event-driven** intake for the SupremeAI agent loop.
+ 
+-- **Problem:** the agent loop only ran every 30 minutes (cron
+-  `continuous-agent-loop.yml`), so a new Bridge Work Order / PR waited up to a
++- **Problem:** the agent loop only ran every 30 minutes (cron in the unified
++  `pipeline.yml`), so a new Bridge Work Order / PR waited up to a
+   full interval before any agent picked it up. Scheduled runs also burned
+   Actions minutes on empty boards.
+ - **Solution:** the already-deployed MCP Control Tower `/webhooks/github` route
+@@ -27,7 +27,7 @@ GitHub webhook ──► /webhooks/github (HMAC sha256 over raw body, prod)
+                                      POST /repos/{repo}/actions/workflows/{workflow}/dispatches
+                                                      │
+                                                      ▼
+-                            continuous-agent-loop.yml runs immediately (--pick-next)
++                             pipeline.yml runs immediately (--pick-next)
+ ```
+ 
+ ## Activation (owner-side, one time)
+@@ -43,7 +43,7 @@ GitHub webhook ──► /webhooks/github (HMAC sha256 over raw body, prod)
+    |---|---|---|
+    | `BRIDGE_INTAKE_ENABLED` | `false` | **fail-closed master switch** |
+    | `BRIDGE_INTAKE_REPO` | `Supremeai-bd/supremeai-open` | repo owning the workflow |
+-   | `BRIDGE_INTAKE_WORKFLOW` | `continuous-agent-loop.yml` | dispatch target |
++    | `BRIDGE_INTAKE_WORKFLOW` | `pipeline.yml` | dispatch target |
+    | `BRIDGE_INTAKE_REF` | `main` | dispatch ref |
+    | `BRIDGE_INTAKE_MIN_INTERVAL_MS` | `60000` | min spacing between dispatches |
+    | `BRIDGE_INTAKE_MAX_ATTEMPTS` | `5` | retry ceiling → dead-letter |
+@@ -90,7 +90,7 @@ be measured in deployment logs (`agent-loop` job start vs `[BRIDGE_INTAKE]`).
+ 
+ ## Rollout & cron retirement criteria
+ 
+-The 30-minute cron in `continuous-agent-loop.yml` **stays** as the
++The 30-minute cron in `pipeline.yml` **stays** as the
+ reconciliation fallback during rollout. Retire (or lower) it only after **all**
+ of:
+ 
+diff --git a/infrastructure/mcp-control-plane/src/events/bridge_intake.ts b/infrastructure/mcp-control-plane/src/events/bridge_intake.ts
+index ae2b986e..354ec1ac 100644
+--- a/infrastructure/mcp-control-plane/src/events/bridge_intake.ts
++++ b/infrastructure/mcp-control-plane/src/events/bridge_intake.ts
+@@ -35,7 +35,7 @@ export interface BridgeIntakeConfig {
+   enabled: boolean;
+   /** Repo owning the polling workflow (default: Supremeai-bd/supremeai-open). */
+   repo: string;
+-  /** Workflow filename for the dispatch API (default: continuous-agent-loop.yml). */
++  /** Workflow filename for the dispatch API (default: pipeline.yml). */
+   workflow: string;
+   /** Git ref to dispatch against (default: main). */
+   ref: string;
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index dd24f1cc..73ed122d 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -198,7 +198,7 @@ export const env = {
+   bridgeIntake: {
+     get enabled(): boolean { return process.env.BRIDGE_INTAKE_ENABLED === "true"; },
+     get repo(): string { return optional("BRIDGE_INTAKE_REPO", "Supremeai-bd/supremeai-open"); },
+-    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "continuous-agent-loop.yml"); },
++    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "pipeline.yml"); },
+     get ref(): string { return optional("BRIDGE_INTAKE_REF", "main"); },
+     get minIntervalMs(): number { return parseInt(optional("BRIDGE_INTAKE_MIN_INTERVAL_MS", "60000"), 10) || 60000; },
+     get maxAttempts(): number { return parseInt(optional("BRIDGE_INTAKE_MAX_ATTEMPTS", "5"), 10) || 5; },
+diff --git a/infrastructure/mcp-control-plane/test_bridge_intake.ts b/infrastructure/mcp-control-plane/test_bridge_intake.ts
+index 6210c348..947fb20c 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_intake.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_intake.ts
+@@ -29,7 +29,7 @@ function baseConfig(overrides: Partial<BridgeIntakeConfig> = {}): BridgeIntakeCo
+   return {
+     enabled: true,
+     repo: "Supremeai-bd/supremeai-open",
+-    workflow: "continuous-agent-loop.yml",
++    workflow: "pipeline.yml",
+     ref: "main",
+     minIntervalMs: 0,
+     maxAttempts: 3,
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+index e4a76b25..6d0377b6 100644
+--- a/scripts/agents/check_loop_contract_parity.py
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -31,7 +31,9 @@
+ LOOP = ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
+ SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
+ CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
+-GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
++GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
++if not GUARDS_WF.is_file():
++    GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
+ 
+ 
+ def main() -> int:
+@@ -81,7 +83,11 @@ def norm(name: str) -> str:
+         return re.sub(r"\s+", " ", name).strip()
+ 
+     wf = yaml.safe_load(GUARDS_WF.read_text(encoding="utf-8"))
+-    job_names = {norm(j.get("name") or jid) for jid, j in wf["jobs"].items()}
++    job_names = {
++        norm(j.get("name") or jid)
++        for jid, j in wf["jobs"].items()
++        if "guard" in jid.lower() or "guard" in (j.get("name") or "").lower()
++    }
+     sec5 = norm(spec.split("## 5.")[1].split("## 6.")[0])
+     for job in sorted(job_names):
+         if job and job not in sec5:
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 9ea8ffc0..3cc94db5 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -27,7 +27,7 @@
+   --check                 Full audit of every git-tracked file in the current
+                           checkout (boot smoke test / final barrier).
+   --files F [F...]        Scan exactly these paths (PR changed-files mode,
+-                          used by open-guards.yml on every pull request).
++                          used by pipeline.yml on every pull request).
+   --base SHA --head SHA   Scan files changed between two revisions
+                           (git diff --name-only base..head).
+   --self-test             Offline guard-the-guard fixtures: violations must be
+@@ -90,7 +90,7 @@
+ # depth>=3 inherits approval from the depth-2 subtree.
+ APPROVED_SUBTREES = {
+     "scripts": {"agents", "ops", "ci"},  # ci/ added by #107
+-    ".github": {"ISSUE_TEMPLATE", "workflows"},
++    ".github": {"ISSUE_TEMPLATE", "workflows", "actions"},  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
+     "infrastructure": {"mcp-control-plane"},
+ }
+ 

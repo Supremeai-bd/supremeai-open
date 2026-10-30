@@ -1,0 +1,730 @@
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+index 576ee958..65c206f8 100644
+--- a/.github/workflows/open-guards.yml
++++ b/.github/workflows/open-guards.yml
+@@ -89,14 +89,35 @@ jobs:
+           if [ -z "$ISSUES" ]; then
+             exit 0
+           fi
+-          # Check other open PRs for the same issue reference
+-          OTHER_PRS=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body -q ".[] | select(.number != ${PR_NUM}) | \"PR #\" + (.number|tostring) + \": \" + .title + \" \" + .body" || true)
++          # Issue-reference comparison, whole-token edition (#120):
++          #   - Each OTHER open PR yields a structured record (number, title,
++          #     body, headRefName). NO "PR #N:" prefix is injected into the
++          #     scanned text — that self-pollution is what made a reference to
++          #     issue #10 collide with the literal prefix "PR #108".
++          #   - Issue refs are compared as exact tokens: `#<N>` must be
++          #     followed by a non-digit or end-of-string, so `#10` never
++          #     matches `#108`. The fork-lane branch name is part of the
++          #     scanned surface (AGENT_RULES U4): bare digit tokens with
++          #     non-digit boundaries there, so `contributor/issue-78` or
++          #     `fix/…-78-slug` is detected even with a silent title/body.
++          #   - `guard-exempt` escape hatch unchanged (checked above).
++          REF_LINES=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body,headRefName \
++            -q '.[] | select(.number != '"${PR_NUM}"') | [.number, .title, (.body // ""), .headRefName] | @tsv' || true)
+           for iss in $ISSUES; do
+-            MATCH=$(echo "$OTHER_PRS" | grep -F "$iss" || true)
++            iss_num="${iss#"#"}"
++            MATCH=""
++            while IFS=$'\t' read -r other_num other_title other_body other_branch; do
++              [ -z "${other_num}" ] && continue
++              if printf '%s %s' "${other_title}" "${other_body}" | grep -qE "#${iss_num}([^0-9]|$)" \
++                 || printf '%s' "${other_branch}" | grep -qE "(^|[^0-9])${iss_num}([^0-9]|$)"; then
++                MATCH="PR #${other_num} (branch: ${other_branch})"
++                break
++              fi
++            done <<< "${REF_LINES}"
+             if [ -n "$MATCH" ]; then
+               echo "::error::Competing PR detected! Another open PR already targets $iss."
+               echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
+-              echo "Conflicting PR details: $MATCH"
++              echo "Conflicting PR: $MATCH"
+               exit 1
+             fi
+           done
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index b3f97b04..3cc8f146 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing",
+     "test:integration": "tsx test_resource_list.ts",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -31,7 +31,8 @@
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
+     "test:bridge-intake": "tsx test_bridge_intake.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake"
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake",
++    "test:quota-routing": "tsx test_redis_quota_routing.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+index 3faff7e6..4d4f23fb 100644
+--- a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
++++ b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+@@ -148,3 +148,94 @@ export function quotaChainStatus(nowMs: number = Date.now()): { label: string; c
+     };
+   });
+ }
++
++// ── Single account-chain walk engine (#110) ─────────────────────────────────
++// The first-responder fallback walk (try accounts in order, mark quota-exhausted
++// ones into cooldown, fail with aggregated errors) used to be re-implemented by
++// hand in four modules. This is the ONE walk — every fallback path routes
++// through it, so rotation policy is whatever this file says, not whichever
++// copy happened to execute.
++
++/** Thrown by an op when the response is a daily-quota exhaustion (auto-shift). */
++export class RedisQuotaExhaustedError extends Error {
++  readonly accountLabel: string;
++  constructor(accountLabel: string, message?: string) {
++    super(message ?? `Upstash [${accountLabel}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`);
++    this.name = "RedisQuotaExhaustedError";
++    this.accountLabel = accountLabel;
++  }
++}
++
++export type ChainWalkAttempt = {
++  account: string;
++  ok: boolean;
++  error?: string;
++};
++
++export type ChainWalkResult<T> = {
++  value: T;
++  /** The account whose op succeeded (the one that "answered"). */
++  account: RedisAccountConfig;
++  attempts: ChainWalkAttempt[];
++};
++
++export type RunWithAccountChainOptions = {
++  /**
++   * Skip an account without attempting it and without recording an attempt
++   * (e.g. REST-only callers skipping TCP-only accounts).
++   */
++  skip?: (account: RedisAccountConfig) => boolean;
++  /**
++   * Build the aggregated all-accounts-failed error. Defaults to
++   * `All <n> Redis account(s) failed: <label>: <err> | ...`. Callers that
++   * had a caller-specific message keep it byte-identical through this hook.
++   */
++  aggregateError?: (attempts: ChainWalkAttempt[]) => Error;
++};
++
++/**
++ * Walk the ACTIVE (cooldown-free) account chain; the first account whose op
++ * resolves wins. A thrown error records the attempt and moves to the next
++ * account; quota-shaped failures (RedisQuotaExhaustedError, or a message that
++ * matches responseIndicatesQuotaExhaustion) additionally mark the account into
++ * cooldown so the rest of the fleet skips it until UTC reset. When every
++ * account failed, throws the aggregated error (via aggregateError hook).
++ *
++ * This is the only place in src/ that iterates `activeAccountChain()` directly
++ * for failover (#110 AC1) — the canonical read-only health walker in
++ * adapters/redis keeps its own loop over a captured chain reference, and the
++ * fan-out MERGE readers (presence/heartbeat listing) are deliberately NOT
++ * routed here: their semantics are "read every account, freshest wins", not
++ * "stop at the first responder".
++ */
++export async function runWithAccountChain<T>(
++  op: (account: RedisAccountConfig) => Promise<T>,
++  opts: RunWithAccountChainOptions = {},
++): Promise<ChainWalkResult<T>> {
++  const chain = activeAccountChain();
++  if (chain.length === 0) {
++    throw new Error("No Redis configuration found (missing REST or TCP credentials)");
++  }
++  const attempts: ChainWalkAttempt[] = [];
++  for (const account of activeAccountChain()) {
++    if (opts.skip?.(account)) continue;
++    try {
++      const value = await op(account);
++      attempts.push({ account: account.label, ok: true });
++      return { value, account, attempts };
++    } catch (err) {
++      const message = err instanceof Error ? err.message : String(err);
++      if (err instanceof RedisQuotaExhaustedError || responseIndicatesQuotaExhaustion(0, message)) {
++        markAccountQuotaExhausted(account.label);
++      }
++      attempts.push({ account: account.label, ok: false, error: message });
++    }
++  }
++  if (opts.aggregateError) {
++    throw opts.aggregateError(attempts);
++  }
++  const failures = attempts
++    .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
++    .join(" | ");
++  throw new Error(`All ${attempts.length} Redis account(s) failed: ${failures}`);
++}
+diff --git a/infrastructure/mcp-control-plane/src/policy/client-registry.store.ts b/infrastructure/mcp-control-plane/src/policy/client-registry.store.ts
+index 3489971d..b29bfa82 100644
+--- a/infrastructure/mcp-control-plane/src/policy/client-registry.store.ts
++++ b/infrastructure/mcp-control-plane/src/policy/client-registry.store.ts
+@@ -1,6 +1,6 @@
+ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+ import { dirname } from "node:path";
+-import { buildAccountChain } from "../lib/redis_chain.js";
++import { RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig, buildAccountChain } from "../lib/redis_chain.js";
+ 
+ export interface PersistedClientRecord {
+   id: string;
+@@ -106,14 +106,26 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
+     return buildAccountChain().filter((account) => account.restUrl && account.restToken);
+   }
+ 
+-  private async restCall(restUrl: string, restToken: string, command: unknown[]): Promise<unknown> {
+-    const res = await fetch(restUrl, {
++  private async restCall(account: RedisAccountConfig, command: unknown[]): Promise<unknown> {
++    const res = await fetch(account.restUrl as string, {
+       method: "POST",
+-      headers: { Authorization: `Bearer ${restToken}`, "Content-Type": "application/json" },
++      headers: { Authorization: `Bearer ${account.restToken}`, "Content-Type": "application/json" },
+       body: JSON.stringify(command),
+       signal: AbortSignal.timeout(UpstashClientRegistryStore.REST_TIMEOUT_MS),
+     });
+-    if (!res.ok) throw new Error(`Upstash REST returned HTTP ${res.status}`);
++    if (!res.ok) {
++      // #110: quota-shape detection aligned with the other routed paths —
++      // the RedisQuotaExhaustedError is what runWithAccountChain marks into
++      // cooldown. (This store previously had NO quota marking at all.)
++      const errText = await res.text().catch(() => "");
++      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
++        throw new RedisQuotaExhaustedError(
++          account.label,
++          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
++        );
++      }
++      throw new Error(`Upstash REST returned HTTP ${res.status}`);
++    }
+     const payload = (await res.json()) as { result?: unknown; error?: string };
+     if (payload.error) throw new Error(`Upstash error: ${payload.error}`);
+     return payload.result;
+@@ -124,31 +136,43 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
+   }
+ 
+   async loadAsync(): Promise<PersistedClientRecord[]> {
++    // #110: the hydration walk routes through the single account-chain engine
++    // (REST-only via skip), replacing the hand-rolled loop. The fail-closed
++    // semantics and error text below are byte-identical to the old loop: an
++    // UNREACHABLE store must never look like an empty one (#48 Invariant 5).
+     const chain = this.chain();
+-    const errors: string[] = [];
+-    for (const account of chain) {
+-      try {
+-        const result = await this.restCall(account.restUrl as string, account.restToken as string, ["GET", this.key]);
+-        if (result == null) return []; // reachable account, fresh registry — nothing stored yet
+-        const parsed: unknown = JSON.parse(String(result));
+-        if (!Array.isArray(parsed)) throw new Error("stored registry is not an array");
+-        this.snapshot = parsed as PersistedClientRecord[];
+-        this.lastStableJson = stableJson(this.snapshot);
+-        return this.load();
+-      } catch (err) {
+-        errors.push(`${account.label}: ${err instanceof Error ? err.message : String(err)}`);
+-      }
++    const chainLength = chain.length;
++    try {
++      const { value } = await runWithAccountChain(
++        async (account) => {
++          const result = await this.restCall(account, ["GET", this.key]);
++          if (result == null) return [] as PersistedClientRecord[]; // reachable account, fresh registry — nothing stored yet
++          const parsed: unknown = JSON.parse(String(result));
++          if (!Array.isArray(parsed)) throw new Error("stored registry is not an array");
++          this.snapshot = parsed as PersistedClientRecord[];
++          this.lastStableJson = stableJson(this.snapshot);
++          return this.load();
++        },
++        {
++          skip: (account) => !account.restUrl || !account.restToken,
++          aggregateError: (attempts) =>
++            new Error(
++              `all ${chainLength} chain account(s) failed: ${attempts
++                .map((a) => `${a.account}: ${a.error ?? "unknown error"}`)
++                .join(" | ")}`,
++            ),
++        },
++      );
++      return value;
++    } catch (err) {
++      const reason = chainLength === 0
++        ? "no reachable Upstash account configured (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)"
++        : err instanceof Error
++          ? err.message
++          : String(err);
++      console.error(`[client-registry] hydration failed (${reason})`);
++      throw new Error(`Client registry store unverifiable: ${reason}`);
+     }
+-    // #48 Invariant 5 (fail-closed): an UNREACHABLE store must never look
+-    // like an empty one — authorization paths (refreshRegistryFromStore)
+-    // treat a throw as "store unverifiable" and deny privileged operations.
+-    // Boot-time callers (initClientRegistry) catch this and continue with
+-    // the last-known snapshot, so startup behavior is unchanged.
+-    const reason = chain.length === 0
+-      ? "no reachable Upstash account configured (set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN)"
+-      : `all ${chain.length} chain account(s) failed: ${errors.join(" | ")}`;
+-    console.error(`[client-registry] hydration failed (${reason})`);
+-    throw new Error(`Client registry store unverifiable: ${reason}`);
+   }
+ 
+   save(records: PersistedClientRecord[]): void {
+@@ -182,9 +206,7 @@ export class UpstashClientRegistryStore implements ClientRegistryStore {
+         if (chain.length === 0) return;
+         const body = JSON.stringify(this.snapshot);
+         const results = await Promise.allSettled(
+-          chain.map((account) =>
+-            this.restCall(account.restUrl as string, account.restToken as string, ["SET", this.key, body]),
+-          ),
++          chain.map((account) => this.restCall(account, ["SET", this.key, body])),
+         );
+         failures = results
+           .map((r, i) => (r.status === "rejected" ? `${chain[i].label}: ${String(r.reason)}` : null))
+diff --git a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+index 985001ae..eb04eb3b 100644
+--- a/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
++++ b/infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
+@@ -29,8 +29,9 @@ import Redis from "ioredis";
+ import {
+   activeAccountChain,
+   buildAccountChain,
+-  markAccountQuotaExhausted,
++  RedisQuotaExhaustedError,
+   responseIndicatesQuotaExhaustion,
++  runWithAccountChain,
+   type RedisAccountConfig,
+ } from "../lib/redis_chain.js";
+ 
+@@ -121,12 +122,13 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+       signal: AbortSignal.timeout(10_000),
+     });
+     if (!res.ok) {
+-      // বাংলা মন্তব্য (#2613 R2): কোটা-ত্রুটি সনাক্ত করে account-কে UTC রিসেট
+-      // পর্যন্ত cooldown-এ ফেলি — পরের মুহূর্তেই chain এই account skip করবে।
++      // বাংলা মন্তব্য (#2613 R2): কোটা-ত্রুটি সনাক্ত হলে cooldown-marking এখন
++      // runWithAccountChain ইঞ্জিন করে (#110) — client শুধু quota-শেপড error
++      // throw করে, একটাই marking policy থাকে।
+       const errText = await res.text().catch(() => "");
+       if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+-        markAccountQuotaExhausted(account.label);
+-        throw new Error(
++        throw new RedisQuotaExhaustedError(
++          account.label,
+           `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
+         );
+       }
+@@ -135,8 +137,8 @@ function makeRestClient(account: RedisAccountConfig): HeartbeatRedisClient {
+     const payload = (await res.json()) as { result?: unknown; error?: string };
+     if (payload.error) {
+       if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+-        markAccountQuotaExhausted(account.label);
+-        throw new Error(
++        throw new RedisQuotaExhaustedError(
++          account.label,
+           `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
+         );
+       }
+@@ -291,10 +293,12 @@ export async function recordHeartbeat(
+ 
+   // বাংলা মন্তব্য (#2613 R2): কোটা cooldown-এ থাকা account-এ একটিও request
+   // না পাঠিয়ে সরাসরি active chain (cooldown-মুক্ত) থেকে write শুরু করি।
+-  const failures: string[] = [];
+-  for (const account of activeAccountChain()) {
+-    try {
+-      const client = makeClient(account);
++  // #110: chain-walk + quota-marking এখন একটাই ইঞ্জিন (runWithAccountChain) —
++  // কপি করা loop নেই; ব্যর্থতার বার্তা আগের মতোই (byte-identical)।
++  const chainLength = chain.length;
++  const { account } = await runWithAccountChain(
++    async (acct) => {
++      const client = makeClient(acct);
+       // Primary write (issue #1994): write to hash for single-command HGETALL reading
+       await client.hset(HEARTBEAT_HASH_KEY, input.slot, value);
+       // Dual-write: maintain individual key with TTL for legacy readers
+@@ -303,22 +307,26 @@ export async function recordHeartbeat(
+         HEARTBEAT_TTL_SECONDS,
+         value,
+       ).catch(() => {});
+-      return {
+-        ok: true,
+-        slot: record.slot,
+-        agentId: record.agentId,
+-        heartbeatAt: record.updatedAt,
+-        ttlSeconds: HEARTBEAT_TTL_SECONDS,
+-        redisAccount: account.label,
+-        onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
+-      };
+-    } catch (err) {
+-      failures.push((err as Error).message);
+-    }
+-  }
+-  throw new Error(
+-    `All ${chain.length} Redis account(s) rejected the heartbeat write: ${failures.join(" | ")}`,
++      return acct.label;
++    },
++    {
++      aggregateError: (attempts) =>
++        new Error(
++          `All ${chainLength} Redis account(s) rejected the heartbeat write: ${attempts
++            .map((a) => a.error ?? "unknown error")
++            .join(" | ")}`,
++        ),
++    },
+   );
++  return {
++    ok: true,
++    slot: record.slot,
++    agentId: record.agentId,
++    heartbeatAt: record.updatedAt,
++    ttlSeconds: HEARTBEAT_TTL_SECONDS,
++    redisAccount: account.label,
++    onlineThreshold: `ping again within ${HEARTBEAT_ONLINE_THRESHOLD_SECONDS}s to stay 'online'`,
++  };
+ }
+ 
+ export type AccountReadStatus = {
+diff --git a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+index 7d0d3640..4f1d9b0c 100644
+--- a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
++++ b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+@@ -28,7 +28,7 @@ import {
+   listHeartbeats,
+   type HeartbeatStatusEntry,
+ } from "./agent_heartbeat.js";
+-import { activeAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
++import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+ 
+ export const PRESENCE_KEY_PREFIX = "supremeai:mcp-presence:";
+ export const PRESENCE_TTL_SECONDS = 300;
+@@ -124,9 +124,30 @@ function makeRestPresenceClient(account: RedisAccountConfig): PresenceRedisClien
+       body: JSON.stringify(body),
+       signal: AbortSignal.timeout(10_000),
+     });
+-    if (!res.ok) throw new Error(`Upstash REST [${account.label}] returned HTTP ${res.status}`);
++    if (!res.ok) {
++      // #110: quota-shape detection aligned with the heartbeat REST client —
++      // the RedisQuotaExhaustedError is what makes runWithAccountChain mark
++      // this account into cooldown and shift to the next one. Presence used
++      // to be the one routed path with NO quota marking; now all are identical.
++      const errText = await res.text().catch(() => "");
++      if (responseIndicatesQuotaExhaustion(res.status, errText)) {
++        throw new RedisQuotaExhaustedError(
++          account.label,
++          `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
++        );
++      }
++      throw new Error(`Upstash REST [${account.label}] returned HTTP ${res.status}`);
++    }
+     const payload = (await res.json()) as { result?: unknown; error?: string };
+-    if (payload.error) throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
++    if (payload.error) {
++      if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
++        throw new RedisQuotaExhaustedError(
++          account.label,
++          `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — UTC রিসেট পর্যন্ত cooldown`,
++        );
++      }
++      throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
++    }
+     return payload.result;
+   };
+   return {
+@@ -240,18 +261,24 @@ export async function recordPresence(
+   };
+   const key = presenceKey(record.clientName, record.clientId);
+   const value = JSON.stringify(record);
+-  const failures: string[] = [];
+-  for (const account of chain) {
+-    try {
+-      await makePresenceClient(account).setEx(key, PRESENCE_TTL_SECONDS, value);
+-      return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
+-    } catch (err) {
+-      failures.push((err as Error).message);
+-    }
+-  }
+-  throw new Error(
+-    `All ${chain.length} Redis account(s) rejected the presence write: ${failures.join(" | ")}`,
++  // #110: chain-walk + quota-marking through the single engine; the failure
++  // message stays byte-identical to the deleted hand-rolled loop.
++  const chainLength = chain.length;
++  await runWithAccountChain(
++    async (acct) => {
++      await makePresenceClient(acct).setEx(key, PRESENCE_TTL_SECONDS, value);
++      return acct.label;
++    },
++    {
++      aggregateError: (attempts) =>
++        new Error(
++          `All ${chainLength} Redis account(s) rejected the presence write: ${attempts
++            .map((a) => a.error ?? "unknown error")
++            .join(" | ")}`,
++        ),
++    },
+   );
++  return { ok: true, key, ttlSeconds: PRESENCE_TTL_SECONDS };
+ }
+ 
+ export type PresenceListResult = {
+diff --git a/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts b/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
+index c1bd282e..d87512f4 100644
+--- a/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
++++ b/infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
+@@ -17,8 +17,9 @@
+ 
+ import {
+   activeAccountChain,
+-  markAccountQuotaExhausted,
++  RedisQuotaExhaustedError,
+   responseIndicatesQuotaExhaustion,
++  runWithAccountChain,
+ } from "../lib/redis_chain.js";
+ import {
+   listHeartbeats,
+@@ -176,47 +177,61 @@ export async function makeDispatchStore(): Promise<DispatchStore> {
+   const restAccounts = chain.filter((account) => account.restUrl && account.restToken);
+   if (restAccounts.length > 0) {
+     const call = async (body: unknown[]): Promise<unknown> => {
+-      let lastErr: unknown = null;
+-      for (const account of activeAccountChain()) {
+-        if (!account.restUrl || !account.restToken) continue;
+-        try {
+-          const res = await fetch(account.restUrl as string, {
+-            method: "POST",
+-            headers: {
+-              Authorization: `Bearer ${account.restToken}`,
+-              "Content-Type": "application/json",
+-            },
+-            body: JSON.stringify(body),
+-            signal: AbortSignal.timeout(10_000),
+-          });
+-          if (!res.ok) {
+-            const errText = await res.text().catch(() => "");
+-            if (responseIndicatesQuotaExhaustion(res.status, errText)) {
+-              markAccountQuotaExhausted(account.label);
+-              throw new Error(
+-                `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
+-              );
++      // #110: the chain walk + quota marking is now the single engine
++      // (runWithAccountChain) — the hand-rolled loop (with its own lastErr
++      // bookkeeping and inline markAccountQuotaExhausted calls) is gone.
++      // Aggregation semantics preserved: rethrow the LAST failure, exactly
++      // like the old loop did.
++      try {
++        const { value } = await runWithAccountChain(
++          async (account) => {
++            const res = await fetch(account.restUrl as string, {
++              method: "POST",
++              headers: {
++                Authorization: `Bearer ${account.restToken}`,
++                "Content-Type": "application/json",
++              },
++              body: JSON.stringify(body),
++              signal: AbortSignal.timeout(10_000),
++            });
++            if (!res.ok) {
++              const errText = await res.text().catch(() => "");
++              if (responseIndicatesQuotaExhaustion(res.status, errText)) {
++                throw new RedisQuotaExhaustedError(
++                  account.label,
++                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ — UTC রিসেট পর্যন্ত cooldown`,
++                );
++              }
++              throw new Error(`Upstash REST [${account.label}] HTTP ${res.status}`);
+             }
+-            throw new Error(`Upstash REST [${account.label}] HTTP ${res.status}`);
+-          }
+-          const payload = (await res.json()) as { result?: unknown; error?: string };
+-          if (payload.error) {
+-            if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
+-              markAccountQuotaExhausted(account.label);
+-              throw new Error(
+-                `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
+-              );
++            const payload = (await res.json()) as { result?: unknown; error?: string };
++            if (payload.error) {
++              if (responseIndicatesQuotaExhaustion(res.status, String(payload.error))) {
++                throw new RedisQuotaExhaustedError(
++                  account.label,
++                  `Upstash REST [${account.label}] দৈনিক কোটা শেষ (body) — cooldown পর্যন্ত shift`,
++                );
++              }
++              throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+             }
+-            throw new Error(`Upstash error [${account.label}]: ${payload.error}`);
+-          }
+-          return payload.result;
+-        } catch (err) {
+-          lastErr = err;
+-        }
++            return payload.result;
++          },
++          {
++            skip: (account) => !account.restUrl || !account.restToken,
++            aggregateError: (attempts) => {
++              const last = attempts[attempts.length - 1]?.error;
++              return last
++                ? new Error(last)
++                : new Error("orchestrator dispatch: all chain accounts failed");
++            },
++          },
++        );
++        return value;
++      } catch (err) {
++        throw err instanceof Error
++          ? err
++          : new Error("orchestrator dispatch: all chain accounts failed");
+       }
+-      throw lastErr instanceof Error
+-        ? lastErr
+-        : new Error("orchestrator dispatch: all chain accounts failed");
+     };
+     return {
+       get: async (key) => (await call(["GET", key])) as string | null,
+diff --git a/infrastructure/mcp-control-plane/test_redis_quota_routing.ts b/infrastructure/mcp-control-plane/test_redis_quota_routing.ts
+new file mode 100644
+index 00000000..79985674
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_redis_quota_routing.ts
+@@ -0,0 +1,137 @@
++/**
++ * Quota-routing regression test (#110).
++ *
++ * AC2: quota-marking behavior must be identical for a quota-exhausted primary
++ * across ALL routed paths — every first-responder fallback now flows through
++ * the single runWithAccountChain engine in lib/redis_chain.ts, so one test
++ * forces the first account into quota exhaustion (via a mocked Upstash REST
++ * response carrying the quota marker) and asserts every routed caller lands on
++ * the NEXT account with the primary visibly in cooldown afterwards.
++ *
++ * Routed paths covered:
++ *   1. recordHeartbeat            (registry/agent_heartbeat.ts)
++ *   2. recordPresence             (registry/mcp_presence.ts)
++ *   3. orchestrator dispatch GET  (registry/orchestrator_dispatch.ts)
++ *   4. client-registry store load (policy/client-registry.store.ts)
++ *
++ * NOT routed (by design, documented in the PR): the fan-out MERGE readers
++ * (listPresence / listHeartbeats) and the fan-out flush writer — their
++ * semantics are "touch every account", not "stop at the first responder".
++ *
++ * Run: npm run test:quota-routing   (wired into test:unit)
++ */
++import assert from "node:assert/strict";
++
++import {
++  isAccountQuotaExhausted,
++  quotaChainStatus,
++} from "./src/lib/redis_chain.js";
++import { recordHeartbeat } from "./src/registry/agent_heartbeat.js";
++import { recordPresence } from "./src/registry/mcp_presence.js";
++import { makeDispatchStore } from "./src/registry/orchestrator_dispatch.js";
++import { UpstashClientRegistryStore } from "./src/policy/client-registry.store.js";
++
++// ── Chain under test: two REST accounts, primary will fake quota-exhaustion ─
++process.env.UPSTASH_REDIS_REST_URL = "https://primary.quota-test.invalid";
++process.env.UPSTASH_REDIS_REST_TOKEN = "t1";
++process.env.UPSTASH_REDIS_SECONDARY_REST_URL = "https://secondary.quota-test.invalid";
++process.env.UPSTASH_REDIS_SECONDARY_REST_TOKEN = "t2";
++// Also clear env vars that could add extra accounts on this machine.
++for (const k of ["UPSTASH_REDIS_TERTIARY_REST_URL", "UPSTASH_REDIS_TERTIARY_REST_TOKEN", "UPSTASH_REDIS_QUATERNARY_REST_URL", "UPSTASH_REDIS_QUATERNARY_REST_TOKEN", "UPSTASH_REDIS_QUINARY_REST_URL", "UPSTASH_REDIS_QUINARY_REST_TOKEN", "REDIS_URL"]) {
++  delete process.env[k];
++}
++
++/** Cooldown state is module-global — clear it before/after each scenario. */
++function resetCooldowns(): void {
++  // Expired-check deletes the entry: any nowMs beyond the stored until works.
++  for (const label of ["primary", "secondary"]) {
++    isAccountQuotaExhausted(label, 8_200_000_000_000);
++  }
++}
++
++// ── Host-keyed fetch mock: primary answers quota, secondary answers success ─
++type MockReply = { status: number; body: string | Record<string, unknown> };
++const realFetch = globalThis.fetch.bind(globalThis);
++const calls: { host: string; command: string }[] = [];
++
++(globalThis as unknown as { fetch: typeof fetch }).fetch = (async (input: unknown, init?: RequestInit) => {
++  const url = new URL(String(input));
++  const payload = JSON.parse(String(init?.body ?? "[]")) as string[];
++  calls.push({ host: url.host, command: payload[0] ?? "?" });
++  const quota = url.host.startsWith("primary.");
++  if (quota) {
++    // Upstash quota shape: any body containing the marker trips
++    // responseIndicatesQuotaExhaustion regardless of status.
++    return new Response("max requests limit exceeded for this account", { status: 429 });
++  }
++  // Secondary: answer the command like Upstash REST would.
++  let reply: MockReply;
++  switch (payload[0]) {
++    case "HSET":
++    case "SET":
++      reply = { status: 200, body: { result: "OK" } };
++      break;
++    case "GET":
++      reply = { status: 200, body: { result: payload[1]?.includes("registry") ? JSON.stringify([{ id: "client-1", roles: ["agent"], scopes: ["mcp:call"] }]) : "stored-value" } };
++      break;
++    default:
++      reply = { status: 200, body: { result: null } };
++  }
++  return new Response(JSON.stringify(reply.body), { status: reply.status });
++}) as typeof fetch;
++
++// ── 1. recordHeartbeat: quota on primary → write lands on secondary ─────────
++{
++  resetCooldowns();
++  calls.length = 0;
++  const result = await recordHeartbeat({ slot: "agent-1", source: "mcp-tower" });
++  assert.equal(result.ok, true);
++  assert.equal(result.redisAccount, "secondary", "heartbeat write must shift to secondary when primary is quota-exhausted");
++  assert.deepEqual(
++    calls.map((c) => c.host),
++    ["primary.quota-test.invalid", "secondary.quota-test.invalid", "secondary.quota-test.invalid"],
++    "primary attempted once (quota reply), then the write lands fully on secondary",
++  );
++  assert.ok(calls.slice(1).every((c) => c.command === "HSET" || c.command === "SET"), "hash-first write contract preserved");
++  const status = quotaChainStatus().find((s) => s.label === "primary");
++  assert.ok(status?.cooldownUntil, "primary must be visibly in cooldown after the quota error");
++}
++
++// ── 2. recordPresence: same policy, same engine ──────────────────────────────
++{
++  resetCooldowns();
++  calls.length = 0;
++  const result = await recordPresence({ clientName: "test-client", clientId: "cid-1", protocol: "http" });
++  assert.equal(result.ok, true);
++  assert.deepEqual(calls.map((c) => c.host), ["primary.quota-test.invalid", "secondary.quota-test.invalid"], "presence write must shift to secondary on primary quota error");
++  assert.equal(calls[0]?.command, "SET");
++  assert.ok(quotaChainStatus().find((s) => s.label === "primary")?.cooldownUntil, "primary cooldown marked by the presence path too (previously unmarked — now identical)");
++}
++
++// ── 3. Orchestrator dispatch store: GET shifts to secondary ──────────────────
++{
++  resetCooldowns();
++  calls.length = 0;
++  const store = await makeDispatchStore();
++  const value = await store.get("orchestrator:test");
++  assert.equal(value, "stored-value");
++  assert.deepEqual(calls.map((c) => c.host), ["primary.quota-test.invalid", "secondary.quota-test.invalid"], "orchestrator REST call must land on secondary after primary quota error");
++}
++
++// ── 4. Client-registry store hydration: shifts to secondary ──────────────────
++{
++  resetCooldowns();
++  calls.length = 0;
++  const store = new UpstashClientRegistryStore("supremeai:test:registry");
++  const records = await store.loadAsync();
++  assert.equal(records.length, 1);
++  assert.equal(records[0]?.id, "client-1");
++  assert.deepEqual(calls.map((c) => c.host), ["primary.quota-test.invalid", "secondary.quota-test.invalid"], "registry hydration must land on secondary after primary quota error");
++  assert.equal(store.load()[0]?.id, "client-1", "snapshot updated from the answering account");
++}
++
++// ── Cleanup: restore real fetch, clear cooldowns ─────────────────────────────
++resetCooldowns();
++(globalThis as unknown as { fetch: typeof fetch }).fetch = realFetch;
++
++console.log("ALL QUOTA-ROUTING REGRESSION TESTS PASSED (#110) — 4/4 routed paths shift on quota exhaustion");

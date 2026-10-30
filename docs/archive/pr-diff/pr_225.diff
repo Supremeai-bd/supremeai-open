@@ -1,0 +1,28 @@
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index e8382456..79f9e0b5 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -128,6 +128,14 @@ Whenever encountering any error, bug, or failure, the Coder must perform defect
+ 3. **Poka-Yoke (Mistake-Proofing at Root Cause):** Solve the problem so that the entire class of defect cannot happen again. Enforce prevention at the earliest possible stage—via machine-enforced creation/preflight guards, Single Source of Truth (SSOT) consolidation, schema/type constraints, fail-honest boundary assertions, and permanent regression tests.
+ 4. **U9 Sweep Mandate:** Run the U9 sweep before declaring any defect fix complete; include the sweep report in the handoff.
+ 
++**Coder Issue Authority — Task Blockers & Similar-Problem Findings (টাস্ক-বাধা ও অনুরূপ-সমস্যা ইস্যু তৈরির ক্ষমতা):**
++The Coder is an authorized issue-creating role in exactly two situations, with no permission-asking (U10):
++
++1. **Task-blocker issue:** when a problem prevents completing the assigned task — missing dependency, upstream defect, broken gate, invalid contract premise, unprovisionable broker credential — the Coder MUST file a blocker issue instead of silently failing, silently working around, or idling on admin. The issue carries: blocker statement + evidence (U2) + workarounds already attempted + the affected task/issue reference. The filed issue IS the escalation record; the agent then moves to the next claimable task per U10 and records `result: blocked` in the decision ledger (U8) with the blocker issue number as evidence.
++2. **Similar-problem (sweep) issues:** when the assigned work or a U9 sweep uncovers similar problems or other verified defects outside the current task's scope, the Coder files linked follow-up issue(s) through the §4 pipeline — fingerprint dedup (#3088 tooling) and #3211 living-issue appending for a shared root cause — and reports `similar found: N | fixed in-task: M | filed follow-up: K` in the handoff.
++
++Constraints: filing an issue never authorizes expanding the current change's scope (U1); search-before-create is mandatory (U4); every filed issue carries verifiable evidence and its source task reference; a filed blocker never halts the loop — the loop reruns on the next claimable task (§11).
++
+ ## CI Fixer
+ Verify the actual failing run and current commit. Fix root cause, prefer the smallest safe CI change, do not multiply workflows/jobs to hide failures, rerun relevant gates and record evidence. Route architecture/policy changes to Admin Decision.
+ 
+@@ -147,7 +155,7 @@ Evaluate only. Do not invent implementation changes to make a PR pass. Return `R
+ 
+ # 4. Issue Creation Policy
+ 
+-Authorized issue-generating roles must use:
++Authorized issue-generating roles (Auditor, Watcher, Ecosystem Scout/Planner; Coder limited to task-blocker and similar-problem/sweep findings per §3 Coder Issue Authority) must use:
+ 
+ ```text
+ Identify Group

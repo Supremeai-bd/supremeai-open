@@ -1,0 +1,313 @@
+diff --git a/docs/reports/HOLLOW_GUARD_PARSE_3031_2026-10-30.md b/docs/reports/HOLLOW_GUARD_PARSE_3031_2026-10-30.md
+new file mode 100644
+index 00000000..997dac32
+--- /dev/null
++++ b/docs/reports/HOLLOW_GUARD_PARSE_3031_2026-10-30.md
+@@ -0,0 +1,56 @@
++# Hollow-Read Guard — Parseability Addendum (#3031 slice)
++
++**Date**: 2026-10-30 · **Claim**: #3031 (GRANT_NEW 04:04:56Z, contributor-agent)
++**Lineage**: #2673 → #2999/#3007 (standing guard, merged) → **#3031 witness → this slice**
++
++## Finding being absorbed
++
++Witness WO #3031 (zai-agent-job-478709, 03:24Z) recorded a LIVE hollow-read
++instance 03:17–03:26Z: 4 of 5 `bridge.work_queue` reads returned a **66-byte
++truncated SSE body** cut mid-string at `{"repo": "Supremeai-bd`, with
++`error=False` throughout; raw-curl cross-checks on the same session succeeded;
++self-healed within ~9 minutes.
++
++The standing emptiness assertions (#3007, on main) **cannot catch this class**:
++the body is non-empty, so emptiness checks pass — but it is unparseable JSON.
++Silent consumption at the boundary.
++
++## Slice delivered (this bundle)
++
++1. `assert_parsable(plane, raw_body, context)` — standing boundary assertion:
++   empty body → HOLLOW; non-empty but unparseable → HOLLOW with `bodyLength`
++   + 60-char `excerpt` + #3031 class marker; valid JSON → CLEAN.
++2. `TowerHollowReadError(tool, body)` — RuntimeError subclass carrying
++   `body_length` and `excerpt`; replaces `tower_call`'s silent
++   `{"raw": ...}` fallback (the exact laundering path the witness flagged).
++3. `run_live_probe` wiring: `TowerHollowReadError` on any roster plane lands
++   as a **HOLLOW** finding (assertion `parsable`), distinct from generic
++   `UNREADABLE` — the probe flips to `HOLLOW_DETECTED` / exit 1.
++
++## Tests (born-red, offline, injected fakes)
++
++11 new tests: exact 66B envelope (`'{"repo": "Supremeai-bd' + pad`),
++valid-JSON CLEAN, empty/whitespace/None HOLLOW, excerpt capture,
++`_tower_rpc` monkeypatched SSE boundary (raise vs return paths),
++probe composition (1-plane and 3-plane HOLLOW_DETECTED).
++Full suite: **100/100 green** (was 89).
++
++## Live baseline (this cycle)
++
++`--probe live` → **exit 0 CLEAN** (4 findings CLEAN) — the 66B window had
++self-healed at probe time, matching the witness's own self-heal receipt.
++
++## Scope honesty
++
++- Deliberately **not** changed: UNREADABLE rows still do not flip the verdict
++  to HOLLOW_DETECTED (generic-unreachable planes vs proven-invalid bodies are
++  different classes; flipping them is a separate decision for the owner lane).
++- INDEX parity: content-only edit of an existing documented script — script
++  count, docstring presence census, and path list are unchanged, so the
++  generated `scripts/ops/_INDEX.md` needs no regeneration in this bundle.
++- Tower-side SSE cold-start path itself remains owner lane; the guard makes
++  it loud, it cannot fix it.
++
++## Rollback
++
++Single-commit revert of the two code files; the report doc is evidence-only.
+diff --git a/scripts/ci/hollow_read_guard.py b/scripts/ci/hollow_read_guard.py
+index 7706f7f2..9107a89a 100644
+--- a/scripts/ci/hollow_read_guard.py
++++ b/scripts/ci/hollow_read_guard.py
+@@ -7,7 +7,7 @@
+ caught by a guard, not by an agent's ad-hoc census — the #2673 falsification
+ clause names exactly this as the class-absorption condition.
+ 
+-Remedy mapping (#2673 numbering):
++Remedy mapping (#2673 numbering + #3031 addendum):
+   1. assert_non_empty        — domain semantics imply data, read returns n=0
+   2. assert_live_implies_fresh — timestamp advanced but content identically
+                                  empty across reads (#2665 signature)
+@@ -17,6 +17,13 @@
+                                  structural blind pages)
+   5. assert_ci_coverage      — a green run with zero jobs/assertions is not
+                                green (green-but-blind, #2529 class)
++  #3031 addendum: assert_parsable — emptiness alone misses the NON-EMPTY but
++                               INVALID class: a 66-byte SSE body cut mid-string
++                               passes every emptiness check yet is unparseable
++                               JSON (error=False throughout). Parseability is
++                               now a standing boundary assertion, and tower_call
++                               raises TowerHollowReadError instead of silently
++                               returning a {"raw": ...} fallback.
+ 
+ Scope honesty: this is the repo-reachable standing guard. It cannot fix the
+ tower-side planes themselves (owner lane); it makes their hollow answers loud
+@@ -47,7 +54,8 @@
+ TOWER_URL_DEFAULT = "https://supremeai-mcp-tower.onrender.com/mcp"
+ 
+ GUARD = "hollow_read_guard"
+-LINEAGE = "#2673 silent-empty class, Unified remedy 1/2/3(+5); #2704 fail-loud shape"
++LINEAGE = ("#2673 silent-empty class, Unified remedy 1/2/3(+5); #2704 fail-loud "
++           "shape; #3031 parseability addendum (66B SSE mid-body cut class)")
+ 
+ EXIT_CLEAN = 0
+ EXIT_HOLLOW = 1
+@@ -147,6 +155,50 @@ def assert_ci_coverage(run: dict) -> dict:
+             "conclusion": conclusion or None, "jobs": len(jobs) if isinstance(jobs, list) else None}
+ 
+ 
++class TowerHollowReadError(RuntimeError):
++    """#3031 66B class: consumed tower body was non-empty but unparseable.
++
++    The silent-consumption hazard is precisely error=False with a truncated
++    body (cut mid-string, e.g. at `{"repo": "Supremeai-bd`), so the boundary
++    must raise instead of laundering the body into a {"raw": ...} dict."""
++
++    def __init__(self, tool: str, body: str):
++        self.tool = tool
++        self.body_length = len(body or "")
++        self.excerpt = (body or "")[:60]
++        super().__init__(
++            f"hollow-read ({tool}): non-empty but unparseable body "
++            f"({self.body_length}B, excerpt={self.excerpt!r}) — #3031 66B class")
++
++
++def assert_parsable(plane: str, raw_body: str, context: str = "") -> dict:
++    """#3031 addendum: parseability alongside emptiness at the boundary.
++
++    An empty body and a non-empty-but-unparseable body are BOTH hollow —
++    the latter is worse because it passes every emptiness check while
++    carrying error=False."""
++    body = raw_body or ""
++    if not body.strip():
++        return {
++            "assertion": "parsable", "plane": plane, "verdict": "HOLLOW",
++            "bodyLength": len(body),
++            "detail": (f"{plane} returned an empty body at the consumption "
++                       f"boundary {context}").strip(),
++        }
++    try:
++        json.loads(body)
++    except (json.JSONDecodeError, ValueError) as exc:
++        return {
++            "assertion": "parsable", "plane": plane, "verdict": "HOLLOW",
++            "bodyLength": len(body), "excerpt": body[:60],
++            "detail": (f"{plane} body non-empty ({len(body)}B) but unparseable "
++                       f"JSON ({exc.__class__.__name__}) — silent-consumption "
++                       f"hazard, #3031 66B class {context}").strip(),
++        }
++    return {"assertion": "parsable", "plane": plane, "verdict": "CLEAN",
++            "bodyLength": len(body)}
++
++
+ # ---------------------------------------------------------------------------
+ # Live probe plane (zero-credential tower reads)
+ # ---------------------------------------------------------------------------
+@@ -179,10 +231,12 @@ def tower_call(tool: str, arguments: dict, tower_url: str, timeout: float = 30.0
+             texts = [c.get("text", "") for c in data.get("result", {}).get("content", [])
+                      if c.get("type") == "text"]
+             out = "\n".join(texts)
++            # #3031: a non-empty but unparseable body must be LOUD, never
++            # laundered through a {"raw": ...} fallback dict.
+             try:
+                 return json.loads(out)
+             except (json.JSONDecodeError, ValueError):
+-                return {"raw": out}
++                raise TowerHollowReadError(tool, out)
+     raise RuntimeError("tower returned no SSE data payload")
+ 
+ 
+@@ -211,6 +265,9 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
+         findings.append(assert_non_empty("github.list_prs", rows, semantic_floor=floor,
+                                          context=sidechannel))
+         findings.append(assert_truncation_flagged("github.list_prs", rows, requested_limit=30))
++    except TowerHollowReadError as exc:
++        findings.append({"assertion": "parsable", "plane": "github.list_prs",
++                         "verdict": "HOLLOW", "detail": str(exc)[:200]})
+     except Exception as exc:
+         findings.append({"assertion": "probe", "plane": "github.list_prs", "verdict": "UNREADABLE",
+                          "detail": str(exc)[:200]})
+@@ -228,6 +285,9 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
+                     "detail": (f"totalOpen {total} > returned {returned} "
+                                f"yet windowTruncated=false — flag/data divergence (#2190)"),
+                 })
++    except TowerHollowReadError as exc:
++        findings.append({"assertion": "parsable", "plane": "bridge.work_queue",
++                         "verdict": "HOLLOW", "detail": str(exc)[:200]})
+     except Exception as exc:
+         findings.append({"assertion": "probe", "plane": "bridge.work_queue", "verdict": "UNREADABLE",
+                          "detail": str(exc)[:200]})
+@@ -242,6 +302,9 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
+             {"rows": sorted(snaps.keys()) if isinstance(snaps, dict) else None},
+             semantic_floor=1,
+         ))
++    except TowerHollowReadError as exc:
++        findings.append({"assertion": "parsable", "plane": "health_full_sweep",
++                         "verdict": "HOLLOW", "detail": str(exc)[:200]})
+     except Exception as exc:
+         findings.append({"assertion": "probe", "plane": "health_full_sweep", "verdict": "UNREADABLE",
+                          "detail": str(exc)[:200]})
+diff --git a/tests/test_hollow_read_guard.py b/tests/test_hollow_read_guard.py
+index 9e7a9521..63b939ba 100644
+--- a/tests/test_hollow_read_guard.py
++++ b/tests/test_hollow_read_guard.py
+@@ -9,6 +9,7 @@
+ 
+ import io
+ import contextlib
++import json
+ import sys
+ import unittest
+ from pathlib import Path
+@@ -172,5 +173,106 @@ def boom(tool, arguments):
+         self.assertTrue(all(f["verdict"] == "UNREADABLE" for f in ev["findings"]))
+ 
+ 
++class TestParsableAssertion3031(unittest.TestCase):
++    """#3031: the NON-EMPTY but INVALID class — 66-byte SSE mid-body cut."""
++
++    def test_valid_json_body_is_clean(self):
++        body = json.dumps({"totalOpen": 110, "workOrders": []})
++        r = hrg.assert_parsable("bridge.work_queue", body)
++        self.assertEqual(r["verdict"], "CLEAN")
++        self.assertEqual(r["bodyLength"], len(body))
++
++    def test_empty_body_is_hollow(self):
++        r = hrg.assert_parsable("bridge.work_queue", "")
++        self.assertEqual(r["verdict"], "HOLLOW")
++        self.assertEqual(r["bodyLength"], 0)
++
++    def test_whitespace_only_body_is_hollow(self):
++        r = hrg.assert_parsable("bridge.work_queue", "   \n  ")
++        self.assertEqual(r["verdict"], "HOLLOW")
++
++    def test_66b_truncated_envelope_is_hollow(self):
++        """Exact live receipt from #3031: body cut mid-string, error=False."""
++        body = '{"repo": "Supremeai-bd' + "x" * (66 - len('{"repo": "Supremeai-bd'))
++        self.assertEqual(len(body), 66)
++        r = hrg.assert_parsable("bridge.work_queue", body)
++        self.assertEqual(r["verdict"], "HOLLOW")
++        self.assertEqual(r["bodyLength"], 66)
++        self.assertIn("#3031", r["detail"])
++        self.assertIn("silent-consumption", r["detail"])
++
++    def test_excerpt_captured_in_finding(self):
++        r = hrg.assert_parsable("bridge.work_queue", '{"repo": "Supremeai-bd')
++        self.assertEqual(r["excerpt"], '{"repo": "Supremeai-bd')
++
++    def test_none_body_treated_as_empty_hollow(self):
++        r = hrg.assert_parsable("plane.x", None)
++        self.assertEqual(r["verdict"], "HOLLOW")
++
++
++class TestTowerCallParseBoundary(unittest.TestCase):
++    """#3031 wiring: tower_call must raise, never launder via {"raw": ...}."""
++
++    @staticmethod
++    def _sse(text: str) -> str:
++        inner = json.dumps({"jsonrpc": "2.0", "id": 99, "result": {
++            "content": [{"type": "text", "text": text}]}})
++        return f"data: {inner}\n\n"
++
++    def test_unparseable_sse_body_raises_hollow_read_error(self):
++        cut = '{"repo": "Supremeai-bd'
++        import unittest.mock as mock
++        with mock.patch.object(hrg, "_tower_rpc",
++                               side_effect=[("sid-1", ""), ("", ""),
++                                            ("sid-1", self._sse(cut))]):
++            with self.assertRaises(hrg.TowerHollowReadError) as ctx:
++                hrg.tower_call("bridge.work_queue", {"limit": 120}, "http://tower")
++            self.assertEqual(ctx.exception.body_length, len(cut))
++            self.assertEqual(ctx.exception.tool, "bridge.work_queue")
++            self.assertEqual(ctx.exception.excerpt, cut)
++
++    def test_parseable_sse_body_returns_dict(self):
++        import unittest.mock as mock
++        with mock.patch.object(hrg, "_tower_rpc",
++                               side_effect=[("sid-1", ""), ("", ""),
++                                            ("sid-1", self._sse('{"ok": true}'))]):
++            out = hrg.tower_call("bridge.work_queue", {"limit": 3}, "http://tower")
++        self.assertEqual(out, {"ok": True})
++
++    def test_hollow_error_is_runtime_error_subclass(self):
++        """Generic RuntimeError handling paths still apply (advisory parity)."""
++        self.assertTrue(issubclass(hrg.TowerHollowReadError, RuntimeError))
++
++
++class TestProbeHollowOnUnparseable(unittest.TestCase):
++    def test_unparseable_plane_is_hollow_detected(self):
++        honest = _FakeRosterFetch([{"number": 1}, {"number": 2}])
++
++        def fetch(tool, arguments):
++            if tool == "bridge.work_queue":
++                raise hrg.TowerHollowReadError(
++                    "bridge.work_queue", '{"repo": "Supremeai-bd' + "x" * 41)
++            return honest(tool, arguments)
++
++        ev = hrg.run_live_probe(fetch)
++        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
++        self.assertEqual(ev["hollowCount"], 1)
++        f = [x for x in ev["findings"] if x.get("assertion") == "parsable"]
++        self.assertTrue(f and f[0]["plane"] == "bridge.work_queue")
++        self.assertIn("#3031", f[0]["detail"])
++
++    def test_unparseable_beats_unreadable_shape(self):
++        """TowerHollowReadError is distinct from generic UNREADABLE rows."""
++
++        def boom(tool, arguments):
++            raise hrg.TowerHollowReadError(tool, "cut-")
++
++        ev = hrg.run_live_probe(boom)
++        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
++        self.assertEqual(ev["hollowCount"], 3)
++        self.assertTrue(all(f["verdict"] == "HOLLOW" for f in ev["findings"]))
++        self.assertTrue(all(f["assertion"] == "parsable" for f in ev["findings"]))
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)

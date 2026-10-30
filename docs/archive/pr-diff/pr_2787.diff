@@ -1,0 +1,241 @@
+diff --git a/scripts/ci/mcp_registry_publisher.py b/scripts/ci/mcp_registry_publisher.py
+new file mode 100644
+index 00000000..a5ceaac6
+--- /dev/null
++++ b/scripts/ci/mcp_registry_publisher.py
+@@ -0,0 +1,167 @@
++#!/usr/bin/env python3
++"""
++Official MCP Registry Publisher & Preflight Validator (#2358).
++
++Implements Option A of Issue #2358:
++- Builds canonical ServerJSON descriptor for SupremeAI Control Tower
++  complying with the official schema (https://static.modelcontextprotocol.io/schema/2025-12-11/server.schema.json).
++- Implements pre-flight dry-run validation against POST /v0/validate.
++- Provides --self-test, --dry-run, and --validate CLI modes.
++- Zero mutation against registry by default (probe-first, zero-credential).
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++import urllib.error
++import urllib.request
++from typing import Any, Dict
++
++REGISTRY_BASE = "https://registry.modelcontextprotocol.io"
++SCHEMA_URI = "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
++USER_AGENT = "SupremeAI-Tower-Publisher/1.0.0 (https://github.com/Supremeai-bd/supremeai-open; probe-lane)"
++
++TOWER_SERVER_JSON: Dict[str, Any] = {
++    "$schema": SCHEMA_URI,
++    "name": "org.supremeai/control-tower",
++    "title": "SupremeAI MCP Control Tower",
++    "description": "Autonomous multi-agent intelligence and software engineering MCP proxy hub.",
++    "version": "1.0.0",
++    "websiteUrl": "https://supremeai.org",
++    "repository": {
++        "url": "https://github.com/Supremeai-bd/supremeai-open",
++        "source": "github"
++    },
++    "remotes": [
++        {
++            "type": "streamable-http",
++            "url": "https://supremeai-mcp-tower.onrender.com/mcp"
++        }
++    ]
++}
++
++
++def build_server_json() -> Dict[str, Any]:
++    """Returns the canonical ServerJSON dictionary."""
++    return dict(TOWER_SERVER_JSON)
++
++
++def validate_server_json_schema(payload: Dict[str, Any]) -> list[str]:
++    """Offline schema validation for required fields per official MCP Registry OpenAPI spec."""
++    errors = []
++    required_fields = ["$schema", "name", "description", "version"]
++    for field in required_fields:
++        if field not in payload or not payload[field]:
++            errors.append(f"Missing required field: '{field}'")
++
++    if "$schema" in payload and "server.schema.json" not in payload["$schema"]:
++        errors.append("Invalid $schema URI")
++
++    if "name" in payload and not payload["name"].startswith("org.supremeai/"):
++        errors.append("Server name must use domain-prefixed identifier")
++
++    return errors
++
++
++def validate_remote(server_json: Dict[str, Any], timeout: int = 15) -> Dict[str, Any]:
++    """Pre-flight dry-run validation against registry POST /v0/validate."""
++    target_url = f"{REGISTRY_BASE}/v0/validate"
++    data = json.dumps(server_json).encode("utf-8")
++    req = urllib.request.Request(
++        target_url,
++        data=data,
++        headers={
++            "User-Agent": USER_AGENT,
++            "Content-Type": "application/json",
++            "Accept": "application/json",
++        },
++        method="POST"
++    )
++
++    try:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:
++            body = resp.read().decode("utf-8")
++            return {
++                "status": resp.status,
++                "ok": True,
++                "response": json.loads(body) if body else {}
++            }
++    except urllib.error.HTTPError as e:
++        body = e.read().decode("utf-8") if e.fp else ""
++        return {
++            "status": e.code,
++            "ok": False,
++            "error": body
++        }
++    except Exception as ex:
++        return {
++            "status": 0,
++            "ok": False,
++            "error": str(ex)
++        }
++
++
++def run_self_test() -> int:
++    """Run self-tests verifying schema builder, validation, and constants."""
++    print("[mcp-registry-publisher] Running self-test...")
++
++    # 1. Builder check
++    doc = build_server_json()
++    assert doc["name"] == "org.supremeai/control-tower", "Name mismatch"
++    assert doc["version"] == "1.0.0", "Version mismatch"
++    assert doc["remotes"][0]["type"] == "streamable-http", "Remote type mismatch"
++
++    # 2. Schema check (valid)
++    errs = validate_server_json_schema(doc)
++    assert not errs, f"Expected clean validation, got: {errs}"
++
++    # 3. Schema check (missing field)
++    broken = dict(doc)
++    del broken["description"]
++    errs2 = validate_server_json_schema(broken)
++    assert "Missing required field: 'description'" in errs2, "Failed to catch missing description"
++
++    # 4. Schema check (bad prefix)
++    broken_name = dict(doc, name="random-server")
++    errs3 = validate_server_json_schema(broken_name)
++    assert any("domain-prefixed" in e for e in errs3), "Failed to catch invalid domain prefix"
++
++    print("  PASS schema builder & offline validations (4/4)")
++    print("[mcp-registry-publisher] self-test: ALL PASS")
++    return 0
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Official MCP Registry Publisher & Preflight Validator")
++    parser.add_argument("--self-test", action="store_true", help="Run local offline tests")
++    parser.add_argument("--print-json", action="store_true", help="Print canonical ServerJSON descriptor")
++    parser.add_argument("--validate", action="store_true", help="Execute remote pre-flight dry-run POST /v0/validate")
++    args = parser.parse_args()
++
++    if args.self_test:
++        return run_self_test()
++
++    payload = build_server_json()
++
++    if args.print_json:
++        print(json.dumps(payload, indent=2))
++        return 0
++
++    if args.validate:
++        local_errs = validate_server_json_schema(payload)
++        if local_errs:
++            print(f"Local validation errors: {local_errs}", file=sys.stderr)
++            return 1
++        print("Calling official MCP registry POST /v0/validate...")
++        res = validate_remote(payload)
++        print(json.dumps(res, indent=2))
++        return 0 if res.get("ok") else 1
++
++    parser.print_help()
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 6b830f7a..fb6a7b96 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-29 19:28:55 UTC · **521 scripts** (486 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-29 20:33:40 UTC · **522 scripts** (487 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (194 scripts)
++## scripts/ci/  (195 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -202,6 +202,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/mcp_access_policy_guard.py` | MCP access-policy deny-matrix guard (offline, static, fail-closed). |
+ | `ci/mcp_conformance_selftest.py` | MCP conformance self-test (#1329) — bridge-20261027-tower-self-capability. |
+ | `ci/mcp_registry_catalog.py` | mcp_registry_catalog.py — read-only MCP Registry catalog fetcher, report-only (issue #2161, R52 option A). |
++| `ci/mcp_registry_publisher.py` | Official MCP Registry Publisher & Preflight Validator (#2358). |
+ | `ci/merge_gate.py` | Merge Gate (Sequential Landing Controller) — Pipeline 2 of the 3-Pipeline Law. |
+ | `ci/merge_policy.py` | Deterministic policy loading, failure classification, and decision logging. |
+ | `ci/merge_train_rollup.py` | Batch PR Consolidation Engine (Merge Train & Rollup Consolidator). |
+diff --git a/tests/test_mcp_registry_publisher.py b/tests/test_mcp_registry_publisher.py
+new file mode 100644
+index 00000000..447bdabd
+--- /dev/null
++++ b/tests/test_mcp_registry_publisher.py
+@@ -0,0 +1,32 @@
++import pytest
++from scripts.ci.mcp_registry_publisher import (
++    build_server_json,
++    validate_server_json_schema,
++    run_self_test
++)
++
++def test_mcp_registry_publisher_self_test():
++    assert run_self_test() == 0
++
++def test_server_json_conformance():
++    server = build_server_json()
++    assert server["$schema"] == "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
++    assert server["name"] == "org.supremeai/control-tower"
++    assert len(server["description"]) <= 100
++    assert server["version"] == "1.0.0"
++    assert len(server["remotes"]) > 0
++    assert server["remotes"][0]["type"] == "streamable-http"
++
++    errs = validate_server_json_schema(server)
++    assert len(errs) == 0
++
++def test_server_json_validation_rejections():
++    broken = build_server_json()
++    del broken["name"]
++    errs = validate_server_json_schema(broken)
++    assert any("name" in e for e in errs)
++
++    bad_prefix = build_server_json()
++    bad_prefix["name"] = "unprefixed-name"
++    errs = validate_server_json_schema(bad_prefix)
++    assert any("domain-prefixed" in e for e in errs)

@@ -1,0 +1,204 @@
+diff --git a/studio/src/components/customer/BrowserPreview.tsx b/studio/src/components/customer/BrowserPreview.tsx
+index 7389bcba..61c1a035 100644
+--- a/studio/src/components/customer/BrowserPreview.tsx
++++ b/studio/src/components/customer/BrowserPreview.tsx
+@@ -101,9 +101,29 @@ export function BrowserPreview({
+   // OWNER UPGRADE (2026-10-25): real-browser chrome — live title + history
+   // depth tracking for honest back/forward enablement, download/copy perks.
+   const [pageTitle, setPageTitle] = useState<string | null>(null);
+-  const [histDepth, setHistDepth] = useState(0);
+-  const [backDepth, setBackDepth] = useState(0);
+   const [copied, setCopied] = useState(false);
++  const [histPos, setHistPos] = useState({ canBack: false, canForward: false });
++  const navHistoryRef = useRef<{ urls: string[]; index: number }>({ urls: [], index: -1 });
++
++  const syncHistoryButtons = useCallback(() => {
++    const h = navHistoryRef.current;
++    setHistPos({
++      canBack: h.index > 0,
++      canForward: h.index >= 0 && h.index < h.urls.length - 1,
++    });
++  }, []);
++
++  const pushNavHistory = useCallback((u: string) => {
++    if (!u) return;
++    const h = navHistoryRef.current;
++    const truncated = h.urls.slice(0, h.index + 1);
++    if (truncated[truncated.length - 1] !== u) {
++      truncated.push(u);
++    }
++    navHistoryRef.current = { urls: truncated, index: truncated.length - 1 };
++    syncHistoryButtons();
++  }, [syncHistoryButtons]);
++
+   // MOBILE DUAL-PATH (#1190, restored): keep the latest onNavigated callback
+   // in a ref so navigateAndRender's dependency list (and identity) stays stable.
+   const onNavigatedRef = useRef(onNavigated);
+@@ -164,9 +184,18 @@ export function BrowserPreview({
+     try {
+       const result = await browserService.execute(sessionId, { action: nav });
+       if (result.title) setPageTitle(result.title);
+-      if (nav === 'back') setBackDepth(depth => depth + 1);
+-      if (nav === 'forward') setBackDepth(depth => Math.max(0, depth - 1));
+-      if (nav !== 'reload') onNavigatedRef.current?.(result.url || currentUrl);
++      const h = navHistoryRef.current;
++      if (nav === 'back' && h.index > 0) {
++        h.index--;
++      } else if (nav === 'forward' && h.index < h.urls.length - 1) {
++        h.index++;
++      }
++      syncHistoryButtons();
++      const landed = result.url || h.urls[h.index] || currentUrl;
++      if (nav !== 'reload') {
++        setCurrentUrl(landed);
++        onNavigatedRef.current?.(landed);
++      }
+       const shot = await captureLiveScreenshot(sessionId);
+       if (shot) {
+         setLiveScreenshot(shot);
+@@ -182,9 +211,22 @@ export function BrowserPreview({
+   };
+ 
+   const copyPageText = async () => {
+-    if (!pageContent) return;
++    let text = pageContent;
++    if (!text && sessionId) {
++      try {
++        const result = await browserService.execute(sessionId, { action: 'content' });
++        text = result.content ?? null;
++        if (text) setPageContent(text);
++      } catch {
++        // fall through to clipboard copy check
++      }
++    }
++    if (!text) {
++      setAutomationError('No page content available to copy.');
++      return;
++    }
+     try {
+-      await navigator.clipboard.writeText(pageContent);
++      await navigator.clipboard.writeText(text);
+       setCopied(true);
+       window.setTimeout(() => setCopied(false), 2000);
+     } catch {
+@@ -192,6 +234,31 @@ export function BrowserPreview({
+     }
+   };
+ 
++  const downloadPagePng = async () => {
++    if (!sessionId || isLoading) return;
++    setIsLoading(true);
++    setAutomationError(null);
++    try {
++      const result = await browserService.execute(sessionId, { action: 'screenshot', full_page: true });
++      const b64 = result.screenshot || liveScreenshot;
++      if (!b64) {
++        setAutomationError('Could not capture screenshot for download.');
++        return;
++      }
++      const link = document.createElement('a');
++      link.href = `data:image/png;base64,${b64}`;
++      link.download = 'supremeai-screenshot.png';
++      document.body.appendChild(link);
++      link.click();
++      document.body.removeChild(link);
++      setAutomationStatus('Full-page screenshot downloaded.');
++    } catch (error) {
++      setAutomationError(error instanceof Error ? error.message : 'Download failed');
++    } finally {
++      setIsLoading(false);
++    }
++  };
++
+   const closeBrowserSession = async () => {
+     if (!sessionId) return;
+     setIsLoading(true);
+@@ -201,8 +268,8 @@ export function BrowserPreview({
+       setPageContent(null);
+       setLiveScreenshot(null);
+       setPageTitle(null);
+-      setHistDepth(0);
+-      setBackDepth(0);
++      navHistoryRef.current = { urls: [], index: -1 };
++      setHistPos({ canBack: false, canForward: false });
+       setAutomationStatus('Browser session closed.');
+     } catch (error) {
+       setAutomationError(error instanceof Error ? error.message : 'Could not close browser session');
+@@ -240,8 +307,7 @@ export function BrowserPreview({
+         const session = sessionId ? { session_id: sessionId } : await browserService.createSession();
+         setSessionId(session.session_id);
+         const navResult = await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
+-        setHistDepth(depth => depth + 1);
+-        setBackDepth(0);
++        pushNavHistory(targetUrl);
+         if (navResult.title) setPageTitle(navResult.title);
+         // MOBILE DUAL-PATH (#1190, restored): notify the parent (mobile mirror)
+         // as soon as the navigation really happened.
+@@ -262,7 +328,7 @@ export function BrowserPreview({
+         setIsLoading(false);
+       }
+     },
+-    [captureLiveScreenshot, sessionId],
++    [captureLiveScreenshot, pushNavHistory, sessionId],
+   );
+ 
+   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+@@ -421,7 +487,7 @@ export function BrowserPreview({
+           <button
+             type="button"
+             onClick={() => void runNavAction('back')}
+-            disabled={!sessionId || isLoading || histDepth - backDepth <= 0}
++            disabled={!sessionId || isLoading || !histPos.canBack}
+             className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+             title="Back"
+           >
+@@ -430,7 +496,7 @@ export function BrowserPreview({
+           <button
+             type="button"
+             onClick={() => void runNavAction('forward')}
+-            disabled={!sessionId || isLoading || backDepth <= 0}
++            disabled={!sessionId || isLoading || !histPos.canForward}
+             className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+             title="Forward"
+           >
+@@ -455,11 +521,21 @@ export function BrowserPreview({
+           </button>
+           <button
+             type="button"
+-            onClick={() => void runBrowserAction('screenshot')}
++            onClick={() => void downloadPagePng()}
+             disabled={!sessionId || isLoading}
+             className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
++            title="Download full-page PNG screenshot"
+           >
+-            Capture full-page screenshot
++            <span className="inline-flex items-center gap-1"><Download size={11} /> Download full-page PNG</span>
++          </button>
++          <button
++            type="button"
++            onClick={() => void copyPageText()}
++            disabled={!sessionId || isLoading}
++            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
++            title="Copy extracted page text"
++          >
++            <span className="inline-flex items-center gap-1">{copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}</span>
+           </button>
+           <button
+             type="button"
+@@ -479,16 +555,6 @@ export function BrowserPreview({
+               <span className="inline-flex items-center gap-1"><Download size={11} /> Download PNG</span>
+             </a>
+           )}
+-          {pageContent && (
+-            <button
+-              type="button"
+-              onClick={() => void copyPageText()}
+-              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
+-              title="Copy the extracted page text to the clipboard"
+-            >
+-              <span className="inline-flex items-center gap-1">{copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}</span>
+-            </button>
+-          )}
+           {automationStatus && <span role="status" className="text-[11px] text-emerald-300">{automationStatus}</span>}
+         </div>
+         {pageContent && (

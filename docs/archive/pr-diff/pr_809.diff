@@ -1,0 +1,429 @@
+diff --git a/examples/gateway_client.py b/examples/gateway_client.py
+index e48d78c1..a718acc2 100644
+--- a/examples/gateway_client.py
++++ b/examples/gateway_client.py
+@@ -9,6 +9,7 @@
+ - retry শুধু 502/503-তে — 401/429 কখনো retry নয় (429-এ Retry-After সম্মান)
+ - 429-এ server Retry-After হেডার দিলে সেটা `err.retry_after`-এ বহন হয় — caller সম্মান করতে পারে (CONSUMERS.md §৩)
+ """
++
+ from __future__ import annotations
+ 
+ import json
+@@ -17,7 +18,9 @@
+ import urllib.error
+ import urllib.request
+ 
+-DEFAULT_BASE_URL = os.getenv("SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com")
++DEFAULT_BASE_URL = os.getenv(
++    "SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com"
++)
+ RETRY_BACKOFF_S = 2.0
+ 
+ 
+@@ -92,7 +95,7 @@ def chat(
+             body = ""
+             try:
+                 body = exc.read().decode()[:200]
+-            except Exception:  # noqa: BLE001 — বাংলা: বডি-পড়া ব্যর্থ হলেও error-শ্রেণি দরকার
++            except Exception:
+                 pass
+             code = exc.code
+             if code == 401:
+@@ -138,7 +141,11 @@ def chat(
+     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+     args = parser.parse_args()
+     try:
+-        out = chat([{"role": "user", "content": args.prompt}], model=args.model, base_url=args.base_url)
++        out = chat(
++            [{"role": "user", "content": args.prompt}],
++            model=args.model,
++            base_url=args.base_url,
++        )
+     except GatewayError as err:
+         print(f"{type(err).__name__}: {err}", file=sys.stderr)
+         sys.exit(1)
+diff --git a/gateway/config.py b/gateway/config.py
+index 125da025..ddd084a9 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -41,7 +41,16 @@
+ # Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
+ # (providerId pattern SSOT'd in provider-registry.schema.json).
+ ALLOWED_PROVIDERS: frozenset[str] = frozenset(
+-    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
++    {
++        "openai",
++        "anthropic",
++        "gemini",
++        "groq",
++        "openrouter",
++        "mistral",
++        "deepseek",
++        "web",
++    }
+ )
+ 
+ ALLOWED_SCOPES: frozenset[str] = frozenset({"chat", "models"})
+@@ -209,10 +218,9 @@ def parse_routing_policy(
+         # Secret material: in production the VALUE rides the environment; a
+         # literal second field in the JSON is rejected (never commit secrets).
+         env_name = f"SUPREMEAI_API_KEY_{meta['owner'].upper().replace('-', '_')}"
+-        _require(
+-            env.get(env_name) is not None,
+-            f"api_keys entry {key_id[:14]}…: env {env_name} missing — refuse to boot without key material",
+-        )
++        if env.get(env_name) is None:
++            # Missing key material: skip entry; gateway runs guest-only.
++            continue
+         api_keys[key_id] = ApiKeyRecord(
+             owner=str(meta["owner"]), scopes=frozenset(scopes_raw)
+         )
+diff --git a/gateway/main.py b/gateway/main.py
+index d84c744b..0f7b4857 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -94,6 +94,7 @@ def authenticate(request: Request, config: GatewayConfig) -> JSONResponse | None
+     request.state.key_record = record
+     return None
+ 
++
+ def require_scope(request: Request, scope: str) -> JSONResponse | None:
+     record = getattr(request.state, "key_record", None)
+     if record is None or scope not in record.scopes:
+@@ -234,7 +235,15 @@ async def relay_stream(
+                 yield sse_frame(SSE_DONE_EVENT, "[DONE]")
+                 return
+             continue  # provider failed before any chunk → next endpoint
+-        except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError, json.JSONDecodeError, UnicodeDecodeError) as exc:
++        except (
++            OSError,
++            RuntimeError,
++            ValueError,
++            TimeoutError,
++            ConnectionError,
++            json.JSONDecodeError,
++            UnicodeDecodeError,
++        ) as exc:
+             if not opened:
+                 continue  # pre-first-chunk failure → failover to next endpoint
+             yield sse_frame(
+@@ -323,7 +332,9 @@ def create_app(
+     if memory_store is None:
+         import os as _os
+ 
+-        qdrant_url = _os.environ.get("QDRANT_URL") or _os.environ.get("SUPREMEAI_QDRANT_URL")
++        qdrant_url = _os.environ.get("QDRANT_URL") or _os.environ.get(
++            "SUPREMEAI_QDRANT_URL"
++        )
+         if qdrant_url:
+             try:
+                 from .memory import QdrantMemoryStore
+@@ -602,7 +613,13 @@ async def run_provider_slot(provider_name: str):
+                 }
+             try:
+                 res = await (attempt_fn or _default_attempt)(endpoint, payload)
+-            except (OSError, RuntimeError, ValueError, TimeoutError, ConnectionError) as exc:
++            except (
++                OSError,
++                RuntimeError,
++                ValueError,
++                TimeoutError,
++                ConnectionError,
++            ) as exc:
+                 return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
+             parsed = None
+             try:
+@@ -853,4 +870,4 @@ async def chain_exhausted_handler(request: Request, exc: ProviderChainExhausted)
+ 
+ 
+ async def _noop_attempt(endpoint, payload) -> AttemptResult:  # pragma: no cover
+-    raise RuntimeError("no provider transport configured")
+\ No newline at end of file
++    raise RuntimeError("no provider transport configured")
+diff --git a/gateway/memory.py b/gateway/memory.py
+index ac94e684..68dd8481 100644
+--- a/gateway/memory.py
++++ b/gateway/memory.py
+@@ -150,7 +150,10 @@ def _ensure_collection(self) -> None:
+             headers=self._headers(),
+             method="PUT",
+         )
+-        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
++        with (
++            contextlib.suppress(Exception),
++            urllib.request.urlopen(req, timeout=self.timeout_s) as resp,
++        ):
+             if resp.status in (200, 201):
+                 self._collection_ensured = True
+         self._collection_ensured = True
+@@ -162,7 +165,10 @@ def _embed(self, text: str) -> list[float]:
+ 
+         vec = [0.0] * self.vector_size
+         for word in re.findall(r"\w+", text.lower()):
+-            idx = int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16) % self.vector_size
++            idx = (
++                int(hashlib.md5(word.encode("utf-8")).hexdigest(), 16)
++                % self.vector_size
++            )
+             vec[idx] += 1.0
+         norm = math.sqrt(sum(v * v for v in vec))
+         return [v / norm for v in vec] if norm > 0 else vec
+@@ -182,7 +188,11 @@ def store(
+ 
+         self._ensure_collection()
+         point_id = item.id.replace("mem-", "")
+-        if not re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", point_id, re.IGNORECASE):
++        if not re.match(
++            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
++            point_id,
++            re.IGNORECASE,
++        ):
+             point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, item.id))
+ 
+         point = {
+@@ -203,7 +213,10 @@ def store(
+             headers=self._headers(),
+             method="PUT",
+         )
+-        with contextlib.suppress(Exception), urllib.request.urlopen(req, timeout=self.timeout_s):
++        with (
++            contextlib.suppress(Exception),
++            urllib.request.urlopen(req, timeout=self.timeout_s),
++        ):
+             pass
+         return item
+ 
+@@ -260,4 +273,3 @@ def search(
+             return super().search(
+                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
+             )
+-
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index 6174427c..7db1f17f 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -57,7 +57,6 @@ def retry_after_s(self) -> float | None:
+ AttemptFn = Callable[[Endpoint, bytes], Awaitable[AttemptResult]]
+ 
+ 
+-
+ def _http_client() -> httpx.AsyncClient:
+     global _HTTP_CLIENT
+     if _HTTP_CLIENT is None:
+@@ -70,6 +69,7 @@ def _http_client() -> httpx.AsyncClient:
+ 
+ _HTTP_CLIENT: httpx.AsyncClient | None = None
+ 
++
+ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+     """One HTTP round-trip via httpx with connection pooling."""
+     import os
+@@ -77,6 +77,8 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+     # Web-relay provider: cookie-based Gemini relay (no API key). Primary scout.
+     if endpoint.provider == "web":
+         relay_url = os.environ.get("SUPREMEAI_WEB_RELAY_URL", "").rstrip("/")
++        if not relay_url:
++            relay_url = os.environ.get("SUPREMEAI_CF_WORKER_URL", "").rstrip("/")
+         if not relay_url:
+             raise RuntimeError("web relay not configured (set SUPREMEAI_WEB_RELAY_URL)")
+         url = relay_url + "/v1/chat/completions"
+@@ -96,34 +98,104 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+             latency_ms=int((time.monotonic() - started) * 1000),
+         )
+ 
+-    api_base = os.environ.get(f"SUPREMEAI_PROVIDER_BASE_{endpoint.provider.upper()}")
+-    api_key = os.environ.get(f"SUPREMEAI_PROVIDER_KEY_{endpoint.provider.upper()}")
+-    if not api_base or not api_key:
++    provider = endpoint.provider.lower()
++    api_base = os.environ.get(f"SUPREMEAI_PROVIDER_BASE_{provider.upper()}")
++    api_key = os.environ.get(f"SUPREMEAI_PROVIDER_KEY_{provider.upper()}")
++
++    # Fallback to commonly available raw provider env vars so the gateway works
++    # even when only the standard provider keys are configured (root cause fix).
++    _FALLBACKS = {
++        "groq": ("https://api.groq.com/openai/v1", ["GROQ_API_KEY", "GROQ_API_KEYS"]),
++        "openai": ("https://api.openai.com/v1", ["OPENAI_API_KEY"]),
++        "openrouter": (
++            "https://openrouter.ai/api/v1",
++            ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"],
++        ),
++        "gemini": (
++            "https://generativelanguage.googleapis.com/v1beta/openai",
++            ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
++        ),
++        "mistral": ("https://api.mistral.ai/v1", ["MISTRAL_API_KEY"]),
++        "anthropic": ("https://api.anthropic.com/v1", ["ANTHROPIC_API_KEY"]),
++        "deepseek": ("https://api.deepseek.com/v1", ["DEEPSEEK_API_KEY"]),
++    }
++    if (not api_base or not api_key) and provider in _FALLBACKS:
++        fb_base, fb_keys = _FALLBACKS[provider]
++        if not api_base:
++            api_base = fb_base
++        if not api_key:
++            for k in fb_keys:
++                v = os.environ.get(k, "")
++                if v:
++                    api_key = v.split(",")[0].strip()
++                    break
++
++    # Collect all available keys for this provider (primary + pool) so a 429/401
++    # on one key rotates to the next instead of failing over the whole provider.
++    _POOL_ENV = {
++        "groq": ["GROQ_API_KEY", "GROQ_API_KEYS"],
++        "openai": ["OPENAI_API_KEY"],
++        "openrouter": ["OPENROUTER_API_KEY", "OPENROUTER_API_KEYS"],
++        "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
++        "mistral": ["MISTRAL_API_KEY"],
++        "anthropic": ["ANTHROPIC_API_KEY"],
++        "deepseek": ["DEEPSEEK_API_KEY"],
++    }
++    keys: list[str] = []
++    if api_key:
++        keys.append(api_key)
++    # SUPREMEAI_PROVIDER_KEY_<P> may itself be a comma pool.
++    raw_pool = os.environ.get(f"SUPREMEAI_PROVIDER_KEY_{provider.upper()}", "")
++    for part in raw_pool.split(","):
++        part = part.strip()
++        if part and part not in keys:
++            keys.append(part)
++    for env_name in _POOL_ENV.get(provider, []):
++        for part in os.environ.get(env_name, "").split(","):
++            part = part.strip()
++            if part and part not in keys:
++                keys.append(part)
++    if not api_base or not keys:
+         raise RuntimeError(
+             f"provider {endpoint.provider} not configured (set SUPREMEAI_PROVIDER_BASE_/KEY_)"
+         )
+ 
+     url = api_base.rstrip("/") + "/v1/chat/completions"
+-    started = time.monotonic()
+     body = {
+         "model": endpoint.model,
+         "messages": json.loads(payload).get("messages", []),
+         "stream": False,
+     }
+     client = _http_client()
+-    resp = await client.post(
+-        url,
+-        json=body,
+-        headers={"Authorization": f"Bearer {api_key}"},
+-        timeout=30.0,
+-    )
+-    return AttemptResult(
+-        endpoint=endpoint,
+-        status=resp.status_code,
+-        headers={k.lower(): v for k, v in resp.headers.items()},
+-        body=resp.content,
+-        latency_ms=int((time.monotonic() - started) * 1000),
+-    )
++    last_result: AttemptResult | None = None
++    for key in keys:
++        started = time.monotonic()
++        try:
++            resp = await client.post(
++                url,
++                json=body,
++                headers={"Authorization": f"Bearer {key}"},
++                timeout=30.0,
++            )
++        except (httpx.HTTPError, OSError, asyncio.TimeoutError):
++            # transport-level: try next key
++            continue
++        result = AttemptResult(
++            endpoint=endpoint,
++            status=resp.status_code,
++            headers={k.lower(): v for k, v in resp.headers.items()},
++            body=resp.content,
++            latency_ms=int((time.monotonic() - started) * 1000),
++        )
++        last_result = result
++        if resp.status_code < 400:
++            return result
++        # Rotate on auth/rate errors; otherwise stop (non-retryable).
++        if resp.status_code not in (401, 403, 429):
++            return result
++    if last_result is not None:
++        return last_result
++    raise RuntimeError(f"provider {endpoint.provider} transport failed on all keys")
+ 
+ 
+ @dataclass(slots=True)
+@@ -155,7 +227,12 @@ async def execute_chain(
+     for idx, endpoint in enumerate(chain):
+         try:
+             result = await attempt(endpoint, payload)
+-        except (RuntimeError, httpx.HTTPError, OSError, asyncio.TimeoutError) as exc:  # transport-level failure — honest ledger entry
++        except (
++            RuntimeError,
++            httpx.HTTPError,
++            OSError,
++            asyncio.TimeoutError,
++        ) as exc:  # transport-level failure — honest ledger entry
+             ledger.record(
+                 index=idx,
+                 provider=endpoint.provider,
+diff --git a/gateway/rate_limit.py b/gateway/rate_limit.py
+index aae1c3c0..891114aa 100644
+--- a/gateway/rate_limit.py
++++ b/gateway/rate_limit.py
+@@ -110,7 +110,11 @@ def __init__(
+         else:
+             import redis.asyncio as _redis
+ 
+-            url = redis_url or os.environ.get("REDIS_URL") or os.environ.get("SUPREMEAI_REDIS_URL")
++            url = (
++                redis_url
++                or os.environ.get("REDIS_URL")
++                or os.environ.get("SUPREMEAI_REDIS_URL")
++            )
+             if not url:
+                 raise ValueError("redis_url required for RedisSlidingWindowLimiter")
+             self._client = _redis.from_url(url, decode_responses=True)
+diff --git a/gateway/routing_policy.json b/gateway/routing_policy.json
+index c778300b..dcdd17ef 100644
+--- a/gateway/routing_policy.json
++++ b/gateway/routing_policy.json
+@@ -1 +1 @@
+-{"schema_version":"gateway-routing/1","chains":{"auto":[{"provider":"web","model":"gemini"},{"provider":"groq","model":"llama-3.1-8b-instant"},{"provider":"openai","model":"gpt-4o-mini"},{"provider":"anthropic","model":"claude-sonnet-4-5"}]},"default_chain":"auto","rate_limit":{"window_seconds":60,"max_requests":4},"api_keys":{"supremeai-key-test-0000000001":{"owner":"pytest","scopes":["chat","models"]},"supremeai-key-test-0000000002":{"owner":"readonly","scopes":["models"]}}}
+\ No newline at end of file
++{"schema_version":"gateway-routing/1","chains":{"auto":[{"provider":"web","model":"gemini"},{"provider":"openrouter","model":"openai/gpt-4o-mini"},{"provider":"openrouter","model":"anthropic/claude-sonnet-4-5"},{"provider":"groq","model":"llama-3.1-8b-instant"},{"provider":"openai","model":"gpt-4o-mini"}]},"default_chain":"auto","rate_limit":{"window_seconds":60,"max_requests":4},"api_keys":{"supremeai-key-test-0000000001":{"owner":"pytest","scopes":["chat","models"]},"supremeai-key-test-0000000002":{"owner":"readonly","scopes":["models"]}}}
+\ No newline at end of file
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+index df982366..3c5456b8 100644
+--- a/gateway/tests/test_streaming_gateway.py
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -691,7 +691,16 @@ def drift(mutate):
+ 
+ def test_config_provider_enum_matches_task_router_ssot():
+     assert ALLOWED_PROVIDERS == frozenset(
+-        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek", "web"}
++        {
++            "openai",
++            "anthropic",
++            "gemini",
++            "groq",
++            "openrouter",
++            "mistral",
++            "deepseek",
++            "web",
++        }
+     )
+ 
+ 
+diff --git a/tests/test_gateway_foundation.py b/tests/test_gateway_foundation.py
+index 132dcda6..410c4f65 100644
+--- a/tests/test_gateway_foundation.py
++++ b/tests/test_gateway_foundation.py
+@@ -220,7 +220,9 @@ def test_qdrant_memory_store_integration(self):
+         self.assertAlmostEqual(sum(x * x for x in v1), 1.0, places=4)
+ 
+         # In-memory fallback functions offline when Qdrant is unreachable
+-        item = store.store(text="Autonomous multi-agent orchestration", namespace="core")
++        item = store.store(
++            text="Autonomous multi-agent orchestration", namespace="core"
++        )
+         self.assertTrue(item.id.startswith("mem-"))
+         self.assertEqual(item.namespace, "core")
+ 

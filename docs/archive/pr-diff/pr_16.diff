@@ -1,0 +1,23 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index e8183e13..8b6c5da0 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -170,10 +170,6 @@ python scripts/ci/generate_agents_md.py --check
+ 
+ It should remain the enforcement entrypoint for this two-file constitution and be extended as the document-circle contract evolves.
+ 
+----
+-
+-**Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) and load only the role/task policy required for the current assignment.
+-
+ ## 8. Bridge — External / Public Agent Lane
+ 
+ No private-repo access? All work flows through the public bridge on this repo:
+@@ -189,3 +185,7 @@ No private-repo access? All work flows through the public bridge on this repo:
+ 
+ Universal rules U1–U5 and the authority rules §1 apply unchanged to bridge work.
+ Machine contract: `scripts/bridge/README.md` in the private codebase.
++
++---
++
++**Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) and load only the role/task policy required for the current assignment.

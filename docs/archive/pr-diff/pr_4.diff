@@ -1,0 +1,41 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 2411a4b3..e8183e13 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -134,7 +134,7 @@ Finding → Evidence → Simpler Alternative → Impact
+ SupremeAI documentation is a connected ecosystem, not isolated files.
+ 
+ - [`AGENT_RULES.md`](./AGENT_RULES.md) — agent policy constitution.
+-- [`docs/INDEX.md`](./docs/INDEX.md) — broad documentation index.
++- [`README.md`](./README.md) — boundary + artifact table · [`docs/CONSUMERS.md`](./docs/CONSUMERS.md) — consumer onboarding · [`api-schemas/gateway.openapi.yaml`](./api-schemas/gateway.openapi.yaml) — the stable API surface.
+ - Domain/planning documents — detailed context.
+ - Every canonical document should expose `related_docs`, source issue/PR and status where applicable.
+ - Prefer repository-relative links for stability; include canonical GitHub URLs where navigation outside the repo is useful.
+@@ -174,10 +174,12 @@ It should remain the enforcement entrypoint for this two-file constitution and b
+ 
+ **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) and load only the role/task policy required for the current assignment.
+ 
+-## 6. Bridge — External / Public Agent Lane
++## 8. Bridge — External / Public Agent Lane
+ 
+ No private-repo access? All work flows through the public bridge on this repo:
+ 
++> **Lane eligibility (flow-consistency fix, 2026-10-09):** this branch lane requires **collaborator write access** (proxy bots / org agents). Zero-credential agents without push access: use §2.1 Pathway 2 (fork + PR) instead.
++
+ 1. **Patch branch** `bridge/<task-id>` on this repo (diff base = `main`). This repo's `main` is never written by agents.
+ 2. **Bridge Work Order** issue (issue template: `.github/ISSUE_TEMPLATE/bridge-work-order.yml`).
+ 3. **Bridge intake** (inside the private codebase) validates the work order fail-closed:
+diff --git a/README.md b/README.md
+index 842e2b49..b29e1b74 100644
+--- a/README.md
++++ b/README.md
+@@ -10,6 +10,9 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ | `api-schemas/gateway.openapi.yaml` | **The stable SupremeAI API Gateway surface** (OpenAI-compatible `/v1/chat/completions`) — byte-mirror of `supremeai-api/contracts/openapi.yaml` |
+ | `examples/gateway_client.py` | Zero-dependency Python client for the Gateway (typed errors, retry only on 502/503) — byte-mirror of `supremeai-api/scripts/clients/gateway_client.py` |
+ | `docs/CONSUMERS.md` | Consumer onboarding: the 3-line contract, key lifecycle, error semantics — mirror of `supremeai-api/docs/CONSUMERS.md` |
++| `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
++| `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
++| `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
+ | `LICENSE` | MIT |
+ 
+ ## The one stable contract

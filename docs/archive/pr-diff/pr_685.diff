@@ -1,0 +1,59 @@
+diff --git a/tests/test_ci_guards.py b/tests/test_ci_guards.py
+index 459914ba..43a8cd0e 100644
+--- a/tests/test_ci_guards.py
++++ b/tests/test_ci_guards.py
+@@ -45,25 +45,38 @@
+ 
+ # Exact strings mandated verbatim by issue #392 (acceptance criteria).
+ CLAIM_ERROR_PREFIX = "::error::PR opened without a prior claim on Issue #"
++# 4301d9a loop variant: the guard now reports EVERY referenced issue (loop
++# over title/body/branch refs) when none carries an active claim plane.
++CLAIM_ERROR_ISSUES_PREFIX = "::error::PR opened without a prior claim on any referenced issue (#"
+ CLAIM_ERROR_TAIL = ". Per AGENTS.md Step 4 (No claim, no work), claim the issue before creating a branch or PR."
+ REFL_ERROR_EXACT = (
+     "::error::PR body missing required '## Reflection Evidence (why + alternatives_rejected)'. "
+     "AGENTS.md mandates knowledge capture on every contribution."
+ )
+ 
+-CLAIM_JQ_LABEL = 'any(.labels[]?; .name == "status:claimed" or .name == "status:in-progress")'
++# Byte-exact contract with the deployed claim-guard label plane. The plane
++# accepts the bridge lifecycle labels (bridge:queued/in-gates/landed) in
++# addition to the status labels — oracle re-synced after 4301d9a extended the
++# guard without updating this constant (2 tests red on main since then).
++CLAIM_JQ_LABEL = (
++    'any(.labels[]?; .name == "status:claimed" or .name == "status:in-progress"'
++    ' or .name == "bridge:queued" or .name == "bridge:in-gates"'
++    ' or .name == "bridge:landed")'
++)
+ CLAIM_JQ_MARKER = 'any(.comments[]?; (.body // "") | contains("<!-- atomic-claim -->"))'
+ 
+ # High fixture numbers — deliberately outside the real issue range.
+ FX_CLAIMED = 5001          # status:claimed label
+ FX_ATOMIC = 5002           # <!-- atomic-claim --> comment
+-FX_UNCLAIMED = 5003        # neither plane
++FX_UNCLAIMED = 5003        # neither plane (non-claim label only)
+ FX_MISSING = 5004          # gh lookup fails (no fixture) -> fail-closed
++FX_BRIDGE_QUEUED = 5005    # bridge:queued label — active claim plane per 4301d9a
+ 
+ FIXTURE_ISSUES = {
+     str(FX_CLAIMED): {"labels": [{"name": "status:claimed"}], "comments": []},
+     str(FX_ATOMIC): {"labels": [], "comments": [{"body": "<!-- atomic-claim -->\n🎯 **Claimed**"}]},
+-    str(FX_UNCLAIMED): {"labels": [{"name": "bridge:queued"}], "comments": [{"body": "regular comment"}]},
++    str(FX_UNCLAIMED): {"labels": [{"name": "question"}], "comments": [{"body": "regular comment"}]},
++    str(FX_BRIDGE_QUEUED): {"labels": [{"name": "bridge:queued"}], "comments": []},
+ }
+ 
+ GOOD_BODY = (
+@@ -322,9 +335,10 @@ def test_claim_guard_behavior_matrix():
+         script = _claim_script(h)
+         cases = [
+             ("claim label passes", _claim_env(FX_CLAIMED), 0, None),
++            ("bridge:queued label passes (4301d9a plane)", _claim_env(FX_BRIDGE_QUEUED), 0, None),
+             ("atomic-claim comment passes", _claim_env(FX_ATOMIC), 0, None),
+-            ("unclaimed fails with exact message", _claim_env(FX_UNCLAIMED), 1, f"{CLAIM_ERROR_PREFIX}{FX_UNCLAIMED}."),
+-            ("gh lookup failure fails closed", _claim_env(FX_MISSING), 1, f"{CLAIM_ERROR_PREFIX}{FX_MISSING}."),
++            ("unclaimed fails with exact message", _claim_env(FX_UNCLAIMED), 1, f"{CLAIM_ERROR_ISSUES_PREFIX}{FX_UNCLAIMED}){CLAIM_ERROR_TAIL}"),
++            ("gh lookup failure fails closed", _claim_env(FX_MISSING), 1, f"{CLAIM_ERROR_ISSUES_PREFIX}{FX_MISSING}){CLAIM_ERROR_TAIL}"),
+             ("guard-exempt bypasses", _claim_env(FX_UNCLAIMED, labels="guard-exempt"), 0, None),
+             ("bot branch bypasses", _claim_env(FX_UNCLAIMED, head_ref="dependabot/npm_and_yarn/pkg-1.2.3"), 0, None),
+             # No issue ref: the guard echoes the literal #<num> template form.

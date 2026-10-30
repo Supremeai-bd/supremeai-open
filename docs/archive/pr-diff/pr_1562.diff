@@ -1,0 +1,46 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 10f8c0ca..3a2dabf7 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -881,22 +881,37 @@ def run_continuous_loop(args: argparse.Namespace) -> int:
+     --loop-interval সেকেন্ড পরে নতুন সাইকেল (ডিফল্ট ৩০০s, ন্যূনতম ১s —
+     busy-spin নিষেধ); বোর্ড খালি হলে cadence রোল স্বয়ংক্রিয় সক্রিয় (নিয়ম ৩),
+     তাই চাকা কখনো অলস থাকে না। --max-cycles N = N সাইকেল পরে সৎ বন্ধ
+-    (CI/টেস্ট); Ctrl+C = পরিষ্কার বন্ধ (exit 0)।
++    (CI/টেস্ট); Ctrl+C = পরিষ্কার বন্ধ (exit 0)। একটি সাইকেলের অপ্রত্যাশিত
++    ব্যর্থতা চাকা বন্ধ করে না — সৎ stderr লগের পর নির্দিষ্ট বিরতিতে পরের
++    সাইকেল চলে (crash-resilient wheel)।
+     """
+     interval = max(1, int(getattr(args, "loop_interval", 300) or 0))
+     max_cycles = max(0, int(getattr(args, "max_cycles", 0) or 0))
+     log("*", f"continuous loop engaged: dispatch cycle runs immediately, then reruns every {interval}s (max_cycles={'unlimited' if max_cycles == 0 else max_cycles}; Ctrl+C stops cleanly).")
+     cycles = 0
++    failed_cycles = 0
+     try:
+         while True:
+             cycles += 1
+-            run_dispatch_cycle(args)
++            try:
++                run_dispatch_cycle(args)
++            except Exception as exc:
++                # বাংলা: একটি খারাপ সাইকেল পুরো চাকা মেরে দিতে পারে না —
++                # অপারেটরের নির্দেশ (2026-10-28): চাকা কখনো অলস থাকবে না।
++                # অপ্রত্যাশিত exception-এ সাইকেলটি সৎভাবে stderr-এ লগ হয় এবং
++                # নির্দিষ্ট বিরতি পরে পরের সাইকেল চলে। এটি নীরব গিলে-ফেলা নয়
++                # (U2): প্রতিটি ব্যর্থতা type+message সহ রিপোর্ট হয় এবং গণনা
++                # ধরে রাখা হয়, শেষ বন্ধ-বার্তায় জানানো হয়। KeyboardInterrupt
++                # Exception-এর বাইরে — সেটি ব্যবহারকারীর বন্ধ করার ইচ্ছা,
++                # নিচের হ্যান্ডলারেই পরিষ্কারভাবে যায়।
++                failed_cycles += 1
++                log("!", f"dispatch cycle {cycles} crashed: {type(exc).__name__}: {exc} — wheel keeps turning; next cycle after {interval}s.")
+             if max_cycles and cycles >= max_cycles:
+-                log("*", f"continuous loop finished {cycles} cycle(s) (--max-cycles reached).")
++                log("*", f"continuous loop finished {cycles} cycle(s) (--max-cycles reached; {failed_cycles} crashed).")
+                 return 0
+             time.sleep(interval)
+     except KeyboardInterrupt:
+-        log("*", f"continuous loop stopped cleanly after {cycles} cycle(s) — restart anytime; the wheel never sleeps on its own.")
++        log("*", f"continuous loop stopped cleanly after {cycles} cycle(s) ({failed_cycles} crashed) — restart anytime; the wheel never sleeps on its own.")
+         return 0
+ 
+ def main() -> int:

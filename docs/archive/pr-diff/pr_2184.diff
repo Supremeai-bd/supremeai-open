@@ -1,0 +1,334 @@
+diff --git a/scripts/ci/docs_link_integrity_baseline.json b/scripts/ci/docs_link_integrity_baseline.json
+index a8f338f4..48712854 100644
+--- a/scripts/ci/docs_link_integrity_baseline.json
++++ b/scripts/ci/docs_link_integrity_baseline.json
+@@ -1,7 +1,7 @@
+ {
+   "schema": "docs-link-integrity-baseline/1",
+   "generatedAt": "2026-10-28",
+-  "headAtGeneration": "R42 re-land r3 (post-#1980-routing-rejection) at open main f3f22a9 — monorepo lanes only; satellite fix in flight",
++  "headAtGeneration": "10a4727 (feat(bridge): docs(scout): register R52 row + next-free R53 (#2172). #2161 landed via #2165 (622)",
+   "probe": "scripts/ci/docs_link_integrity_guard.py",
+   "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). The floor may never grow. GENESIS RATCHET (2026-10-28, bridge-20261028-r42-docs-link-integrity-r3): pinned core/_archive/MANIFEST.md as satellite-lane debt while its fix shipped via bridge-20261028-r42-manifest-satellite-fix. SHRUNK TO 0 same day: the satellite fix landed as bc810e7 (PR #2028) and mirrored to this tree before the r3 landing CI window closed — floor is EMPTY, the original r3 empty-floor endgame reached by the routing-legal route.",
+   "ratchetedFloor": [],
+@@ -74,5 +74,5 @@
+       "reason": "missing-file"
+     }
+   ],
+-  "checkedAtGeneration": 269
++  "checkedAtGeneration": 268
+ }
+diff --git a/scripts/ci/docs_link_integrity_guard.py b/scripts/ci/docs_link_integrity_guard.py
+index d8aa0ae7..64ca373c 100644
+--- a/scripts/ci/docs_link_integrity_guard.py
++++ b/scripts/ci/docs_link_integrity_guard.py
+@@ -53,10 +53,12 @@ class with its own docs-debt allowlist. Counted for the
+ import json
+ import os
+ import re
++import subprocess
+ import sys
+ import tempfile
+ import unicodedata
+ from collections import Counter
++from datetime import datetime, timezone
+ from pathlib import Path
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+@@ -356,6 +358,35 @@ def tree(files: dict[str, str], baseline: dict | None) -> tuple[Path, Path]:
+     return ok
+ 
+ 
++def _git_head_provenance(root: Path) -> str:
++    """Live generation provenance for baseline stamps (#2180).
++
++    Returns "<short-hash> (<subject>)" for the repo at `root`; on any failure
++    (hermetic sandboxes without git) returns an honest fallback instead of a
++    frozen literal. Best-effort by design: provenance is informational — the
++    gate's load-bearing field is ratchetedFloor only. Same helper shape as the
++    radar guard's (#2180 class fix); deliberately duplicated, not shared, so
++    each guard stays standalone-runnable in pre-push.
++    """
++    try:
++        head = subprocess.run(
++            ["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
++            capture_output=True, text=True, timeout=10,
++        )
++        subj = subprocess.run(
++            ["git", "log", "-1", "--format=%s"], cwd=str(root),
++            capture_output=True, text=True, timeout=10,
++        )
++        if head.returncode == 0 and subj.returncode == 0:
++            h = head.stdout.strip()
++            s = " ".join(subj.stdout.split())[:96]
++            if h:
++                return f"{h} ({s})" if s else h
++    except (OSError, subprocess.SubprocessError):
++        pass
++    return "unknown (git unavailable at generation)"
++
++
+ def build_baseline(root: Path) -> dict:
+     checked, findings = sweep(root)
+     ratch: Counter = Counter()
+@@ -371,8 +402,8 @@ def build_baseline(root: Path) -> dict:
+             excluded.append(f)
+     return {
+         "schema": "docs-link-integrity-baseline/1",
+-        "generatedAt": "2026-10-28",
+-        "headAtGeneration": "post-#1938-fixes (R42 landing)",
++        "generatedAt": datetime.now(timezone.utc).date().isoformat(),
++        "headAtGeneration": _git_head_provenance(root),
+         "probe": "scripts/ci/docs_link_integrity_guard.py",
+         "note": "shrink-only floor: ratchetedFloor is an entry list; each entry pins (file, target, reason) -> allowed occurrence count; "
+                 "report_only = vendored .agents/skills (#1725 lane); excluded = AGENT_RULES.md ghosts (#1642->#1708). "
+@@ -403,6 +434,19 @@ def main() -> int:
+ 
+     if args.baseline:
+         data = build_baseline(root)
++        # #2180: the note is FILE-OWNED narrative history (genesis ratchet,
++        # dated shrink stamps — pinned by tests); a canonical regen must carry
++        # it forward instead of clobbering it with the builder's short template.
++        # Provenance/checked fields stay builder-owned live stamps. Best-effort:
++        # a missing/malformed prior baseline simply leaves the template note.
++        p = root / BASELINE_PATH
++        if p.is_file():
++            try:
++                prev = json.loads(p.read_text(encoding="utf-8"))
++                if isinstance(prev.get("note"), str) and prev["note"].strip():
++                    data["note"] = prev["note"]
++            except (OSError, json.JSONDecodeError):
++                pass
+         print(json.dumps(data, indent=2, ensure_ascii=False))
+         return 0
+ 
+diff --git a/scripts/ci/radar_index_freshness_baseline.json b/scripts/ci/radar_index_freshness_baseline.json
+index 0c19df0d..05a3e240 100644
+--- a/scripts/ci/radar_index_freshness_baseline.json
++++ b/scripts/ci/radar_index_freshness_baseline.json
+@@ -1,10 +1,10 @@
+ {
+   "schema": "radar-index-freshness-baseline/1",
+   "generatedAt": "2026-10-28",
+-  "headAtGeneration": "post-#2114 (aa9de7b)",
++  "headAtGeneration": "10a4727 (feat(bridge): docs(scout): register R52 row + next-free R53 (#2172). #2161 landed via #2165 (622)",
+   "probe": "scripts/ci/radar_index_freshness_guard.py",
+   "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. A/B invariant violations are NEVER floorable — they are structural and always fail.",
+   "floor": [],
+-  "pointerAtGeneration": 52,
+-  "registryRowsAtGeneration": "R1-R50"
++  "pointerAtGeneration": 53,
++  "registryRowsAtGeneration": "R1-R52"
+ }
+diff --git a/scripts/ci/radar_index_freshness_guard.py b/scripts/ci/radar_index_freshness_guard.py
+index 6e07b2b5..87557aa5 100644
+--- a/scripts/ci/radar_index_freshness_guard.py
++++ b/scripts/ci/radar_index_freshness_guard.py
+@@ -56,9 +56,11 @@
+ import json
+ import os
+ import re
++import subprocess
+ import sys
+ import tempfile
+ from collections import Counter
++from datetime import datetime, timezone
+ from pathlib import Path
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+@@ -338,7 +340,9 @@ def sweep(
+     a = invariant_a(text, tokens)
+     b = invariant_b(text, root, tokens, bases, pointer)
+     cits, report_only = invariant_c(root, bases, pointer, only_files)
+-    return {"pointer": pointer, "a": a, "b": b, "cits": cits, "report_only": report_only}
++    rows_range = (min(bases), max(bases)) if bases else None
++    return {"pointer": pointer, "a": a, "b": b, "cits": cits,
++            "report_only": report_only, "rows": rows_range}
+ 
+ 
+ def self_test() -> bool:
+@@ -481,19 +485,49 @@ def index(pointer: int, rows: list[int], anchors: str = "", extra_body: str = ""
+     return ok
+ 
+ 
++def _git_head_provenance(root: Path) -> str:
++    """Live generation provenance for baseline stamps (#2180).
++
++    Returns "<short-hash> (<subject>)" for the repo at `root`; on any failure
++    (hermetic sandboxes without git) returns an honest fallback instead of a
++    frozen literal. Best-effort by design: provenance is informational — the
++    gate's load-bearing fields are floor/pointer only.
++    """
++    try:
++        head = subprocess.run(
++            ["git", "rev-parse", "--short", "HEAD"], cwd=str(root),
++            capture_output=True, text=True, timeout=10,
++        )
++        subj = subprocess.run(
++            ["git", "log", "-1", "--format=%s"], cwd=str(root),
++            capture_output=True, text=True, timeout=10,
++        )
++        if head.returncode == 0 and subj.returncode == 0:
++            h = head.stdout.strip()
++            s = " ".join(subj.stdout.split())[:96]
++            if h:
++                return f"{h} ({s})" if s else h
++    except (OSError, subprocess.SubprocessError):
++        pass
++    return "unknown (git unavailable at generation)"
++
++
+ def build_baseline(root: Path) -> dict:
+     r = sweep(root)
+     counts = counts_of(r["cits"])
++    rows = r.get("rows")
+     return {
+         "schema": "radar-index-freshness-baseline/1",
+-        "generatedAt": "2026-10-28",
+-        "headAtGeneration": "post-#2114 (aa9de7b)",
++        "generatedAt": datetime.now(timezone.utc).date().isoformat(),
++        "headAtGeneration": _git_head_provenance(root),
+         "probe": "scripts/ci/radar_index_freshness_guard.py",
+         "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. "
+                 "A/B invariant violations are NEVER floorable — they are structural and always fail.",
+         "floor": [{"key": list(k), "allowed": v} for k, v in sorted(counts.items(), key=lambda kv: repr(kv[0]))],
+         "pointerAtGeneration": r["pointer"],
+-        "registryRowsAtGeneration": "R1-R50",
++        "registryRowsAtGeneration": (
++            f"R{rows[0]}-R{rows[1]}" if rows else "unknown (empty registry at generation)"
++        ),
+     }
+ 
+ 
+@@ -511,7 +545,21 @@ def main() -> int:
+ 
+     root = REPO_ROOT
+     if args.baseline:
+-        print(json.dumps(build_baseline(root), indent=2, ensure_ascii=False))
++        data = build_baseline(root)
++        # #2180: the note is FILE-OWNED narrative history; a canonical regen
++        # must carry it forward instead of clobbering it with the builder's
++        # template (the docs_link guard demonstrated this hazard live). Today
++        # the two notes match, so this is a no-op — until a lane hand-extends
++        # the note, exactly as the R42 genesis/shrink history did.
++        p = root / BASELINE_PATH
++        if p.is_file():
++            try:
++                prev = json.loads(p.read_text(encoding="utf-8"))
++                if isinstance(prev.get("note"), str) and prev["note"].strip():
++                    data["note"] = prev["note"]
++            except (OSError, json.JSONDecodeError):
++                pass
++        print(json.dumps(data, indent=2, ensure_ascii=False))
+         return 0
+ 
+     only = None
+diff --git a/tests/test_docs_link_integrity_guard.py b/tests/test_docs_link_integrity_guard.py
+index 61cbe00d..fd75b128 100644
+--- a/tests/test_docs_link_integrity_guard.py
++++ b/tests/test_docs_link_integrity_guard.py
+@@ -32,6 +32,8 @@
+ from __future__ import annotations
+ 
+ import json
++import re
++import subprocess
+ import sys
+ import tempfile
+ from pathlib import Path
+@@ -200,7 +202,11 @@ def test_missing_or_malformed_baseline_fails_closed() -> None:
+ def test_live_baseline_provenance_and_empty_floor() -> None:
+     data = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     assert data["schema"] == "docs-link-integrity-baseline/1"
+-    assert "2026-10-28" in data["generatedAt"], "baseline must be dated"
++    # #2180: the date is now stamped live at regen time — assert the FORMAT
++    # ("baseline must be dated"), not a frozen literal that would red on the
++    # first future regen (the literal itself was the same freeze class).
++    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(data["generatedAt"])), (
++        "baseline must be dated (YYYY-MM-DD)")
+     # r3 re-land then same-day shrink: the genesis ratchet pinned the ONE
+     # satellite-lane entry (core/** routes satellite — the #1980 rejection law)
+     # while its fix shipped via bridge-20261028-r42-manifest-satellite-fix; the
+@@ -217,6 +223,35 @@ def test_live_baseline_provenance_and_empty_floor() -> None:
+     assert len(data["knownExcluded"]) == 10, "10 AGENT_RULES ghosts stay pinned excluded (#1642->#1708 debt)"
+ 
+ 
++# --------------------------------------------------------------------------- #
++# #2180 — regen provenance is live; the file-owned narrative note survives     #
++# --------------------------------------------------------------------------- #
++
++def test_regen_note_preserved_and_provenance_live() -> None:
++    # The canonical regen path (main --baseline) stamps LIVE provenance and
++    # carries the file-owned narrative note forward — the genesis/shrink
++    # history pinned by test_live_baseline_provenance_and_empty_floor must
++    # never be clobbered by a regen. Exercises main(), not just the builder.
++    out = subprocess.run([sys.executable, str(GUARD), "--baseline"], cwd=str(REPO_ROOT),
++                         capture_output=True, text=True)
++    assert out.returncode == 0, f"--baseline must exit 0: {out.stderr[-300:]}"
++    regen = json.loads(out.stdout)
++    live = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
++    assert regen["note"] == live["note"], "regen must carry the file-owned narrative note forward"
++    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
++                          capture_output=True, text=True)
++    assert head.returncode == 0
++    assert regen["headAtGeneration"].startswith(head.stdout.strip()), (
++        "regen provenance must pin the actual HEAD at generation time (#2180)")
++
++
++def test_git_provenance_fallback_hermetic() -> None:
++    # A git-less directory gets the honest fallback — never a crash, never a
++    # stale literal carried forward as if it were fresh provenance.
++    tmp = Path(tempfile.mkdtemp(prefix="dlig-nogit-"))
++    assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
++
++
+ def test_live_repo_ratchet_holds() -> None:
+     checked, findings = guard.sweep(REPO_ROOT)
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index a905d083..149e93bf 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -36,6 +36,8 @@
+ from __future__ import annotations
+ 
+ import json
++import re
++import subprocess
+ import sys
+ import tempfile
+ from pathlib import Path
+@@ -239,6 +241,33 @@ def test_wiring_roster_and_pre_push() -> None:
+     assert guard.GUARD_TAG in hook, "hook must invoke the guard's evidence tag"
+ 
+ 
++# --------------------------------------------------------------------------- #
++# #2180 — baseline provenance is live, never a frozen literal                  #
++# --------------------------------------------------------------------------- #
++
++def test_build_baseline_provenance_is_live() -> None:
++    data = guard.build_baseline(REPO_ROOT)
++    head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(REPO_ROOT),
++                          capture_output=True, text=True)
++    if head.returncode == 0:
++        assert data["headAtGeneration"].startswith(head.stdout.strip()), (
++            "headAtGeneration must pin the actual HEAD at generation time (#2180)")
++    else:
++        assert data["headAtGeneration"] == "unknown (git unavailable at generation)"
++    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", data["generatedAt"]), (
++        "generatedAt must be a live UTC date (#2180)")
++    text = (REPO_ROOT / guard.INDEX_REL).read_text(encoding="utf-8")
++    _tokens, bases = guard.parse_registry(text)
++    expect = f"R{min(bases)}-R{max(bases)}" if bases else "unknown (empty registry at generation)"
++    assert data["registryRowsAtGeneration"] == expect, (
++        "registryRowsAtGeneration must derive from the live registry (#2180)")
++
++
++def test_git_provenance_fallback_hermetic() -> None:
++    tmp = Path(tempfile.mkdtemp(prefix="rifg-nogit-"))
++    assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
++
++
+ # --------------------------------------------------------------------------- #
+ # stdlib plain runner                                                          #
+ # --------------------------------------------------------------------------- #

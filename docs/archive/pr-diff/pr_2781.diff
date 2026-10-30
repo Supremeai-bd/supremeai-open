@@ -1,0 +1,134 @@
+diff --git a/docs/reports/mcp-rbac-pass4-redeploy-drift-20261030.md b/docs/reports/mcp-rbac-pass4-redeploy-drift-20261030.md
+new file mode 100644
+index 00000000..cf2725bb
+--- /dev/null
++++ b/docs/reports/mcp-rbac-pass4-redeploy-drift-20261030.md
+@@ -0,0 +1,128 @@
++# MCP RBAC pass-4 receipt: the deny-matrix drift survived a witnessed redeploy
++
++- **Cycle**: 04:05+08 2026-10-30, autonomous contributor dispatch (cron Job 478316, `zai-cron-agent-478316`)
++- **Lane**: verification receipt for the #2391 pass sequence (origin: closed #1843) — **pass 4, armed on the deploy-event discriminator**
++- **Type**: report-only evidence, execution-plane probe. Bounded, zero-credential, zero-capture. No closesOriginalIssue — the verification loop does NOT close this pass (outcome is not clean; see §4).
++
++## 1. Trigger: the discriminator fired
++
++Pass 4 was locked behind a deploy-event discriminator because re-probing an unchanged
++deployment can only reproduce pass-3's bytes. The lock held through 24 consecutive
++hourly `tools/list` observations at exactly 151 tools (22nd at the 02:05 cycle, 23rd at
++03:05). This cycle the count read **154** — exactly three additions
++(`marketplace_list_plugins`, `marketplace_connect_plugin`, `marketplace_list_connections`,
++landing the #1523 Phase-1 Marketplace MVP) and zero removals. Two independent signals
++corroborate that this reflects a genuinely new running build rather than an
++advertisement-plane edit: the restart detector receipt (#2774) witnessed
++`sweepCompletions` regressing 2→1 across cycles — a per-process reset — placing a tower
++restart at ~19:51Z, and the new tools actually execute (§6). Per #2391's "Smallest next
++step" #4 — *"On redeploy, this receipt's four probes become the before/after baseline; a
++clean re-run closes the verification loop"* — the matrix was re-run within ~20 minutes of
++the unlock.
++
++## 2. Method and register compliance
++
++All eight calls were anonymous (zero-Bearer), schema-valid (every denial below is
++RBAC-or-beyond, never zod), read-shaped, and bounded: the five #1843 flagged tools, the
++positive control, and two classification probes on the newly advertised marketplace
++surface. Output was shape-classified at capture time — byte length, top-level JSON keys,
++list lengths, boolean markers only. Consistent with the never-do register: **no secret
++names, values, tokens, rows, or PII were captured, printed, or persisted**;
++`keysOnly: true` where supported; bogus identifiers (`zz2391pass4probe` family,
++`srv-zz2391pass4probe`) for supabase, redis, and render probes; no destructive or
++state-changing tool touched; the probe script is persisted in the contributor workspace
++(cycle_0405_pass4_probe.py) with the scrubbing enforced in code, not by discipline.
++
++## 3. Pass-4 matrix (before/after)
++
++| tool | #2391 V-1 (2026-10-29T01:1xZ) | pass 4 (2026-10-29T20:12Z) | verdict |
++|---|---|---|---|
++| github_list_secrets | EXECUTED_OK — inventory returned (shape-classified) | **MCP error -32602: Tool not found**; absent from the 154-tool `tools/list` | closed-by-removal (see §5) |
++| supabase_read_table | EXECUTED_ERR — PGRST205 on bogus table (traversed RBAC, hit PostgREST with tower credentials) | EXECUTED — 159B, PGRST marker true, bogus table | drift persists |
++| redis_read_key | EXECUTED_OK — full upstash-rest topology on nonexistent key | EXECUTED — 130B, top keys `account/activePrimary/key/mode/value` (topology shape, bogus key) | drift persists |
++| memory_read_graph | (flagged five; not in V-1 matrix) | EXECUTED — 17,567B; `entities: 26`, `relations: 35` readable anonymously (counts only) | drift persists |
++| tenant_list | (flagged five; not in V-1 matrix) | EXECUTED — `count: 0`, `tenants: []` | executes; zero-data this pass (see §8) |
++| render_get_env_vars (positive control) | EXECUTED_ERR — "Render API error: not found: service srv-auditprobe1843" (REGRESSED: passed zod AND RBAC, reached vendor handler) | EXECUTED — 65B, "not found" marker true, bogus serviceId | **still regressed** |
++
++Self-serve positive controls held throughout the same cycle: `system_health`,
++`bridge.work_queue`, `bridge.work_order`, `work_claim` (GRANT_RENEW) all reachable.
++
++## 4. The upgrade: "predates" is dead, "diverges" is the only survivor
++
++Pass 3's conclusion was deliberately two-branched: *"the running build predates or
++diverges from the in-repo SSOT"*. Pass 4 kills the first branch. The deployment
++demonstrably changed (new tools exist and execute; a restart was witnessed by the
++independent watchdog plane), yet four of the five flagged tools still execute
++anonymously and the positive control still walks zod → RBAC → vendor handler. A rebuild
++that consumes `infrastructure/mcp-control-plane/src/policy/mcp-access.ts` cannot ship
++`marketplace_*` tools AND retain the anonymous five unless `classifyToolCapability` is
++not wired into the runtime gate at all. The evidence now supports the stronger claim:
++**the deployed build pipeline is not consuming the in-repo SSOT policy** (or deploys an
++artifact that never binds it). The source-side guard (`mcp_access_policy_guard.py`, wired
++into `run_all_guards.py`) keeps the mirror honest while the deployment floats free —
++exactly the gap the ADMIN RECIPE exists to close, and the recipe has now survived one
++full redeploy cycle unexecuted.
++
++## 5. github_list_secrets disposition: removal is not the prescribed pin
++
++The R4 tool is gone from both advertisement and execution. In practice the #1843 leak
++for this tool is closed — an anonymous caller can no longer enumerate secret names
++through it. But the SSOT prescribes a **pin** (restricted + secret classification block,
++enforced by `SECRET_FAMILY_EXPLICIT` in the guard), not absence. Two readings:
++
++1. The policy IS consumed and deliberately drops the tool — then the other four
++   tools' persistence contradicts the same pipeline consuming the same file, so this
++   reading requires two different build behaviors in one deploy. Unlikely.
++2. The tool was dropped upstream of the policy (registry/handler split — the same
++   dotted/underscore registry-split class documented in #2722 and #2751/#2764), and the
++   classification pin never got a chance to apply.
++
++Under either reading, the guard's expectation (pinned AND denied) is not what is
++deployed, and the guard stays green because it audits the source, not the deployment.
++The disposition question (re-register the tool under the pin, or amend the SSOT to
++codify its removal) is a maintainer decision this receipt surfaces but does not make.
++
++## 6. New-surface classification (marketplace, first anonymous pass)
++
++- `marketplace_list_plugins`: readOnly + idempotent annotations; returned 5 catalog
++  templates (3,046B). The advertisement text itself carries the #1843-class contract —
++  "credential fields are SPECS (names/labels), never values" — and the shape-classified
++  response is consistent with a templates-only catalog.
++- `marketplace_list_connections`: an anonymous, tenant-less call **executes** (not
++  denied), returning `count: 0`. No cross-tenant rows were witnessed this pass, but the
++  tool sits in the credential-adjacent family and its anonymous executability is the
++  same drift class as the flagged five: a call that should die at RBAC instead reaches
++  the handler and returns a well-formed (empty) payload. Recommendation: add it — and
++  each future credential-adjacent tool at advertisement time — to the deny-matrix probe
++  set, so the matrix grows with the surface instead of trailing it.
++
++## 7. Maintainer asks (recipe unchanged; one addition)
++
++1. The ADMIN RECIPE (rebuild + redeploy + anonymous deny-matrix probe expecting
++   Forbidden on all five) remains the closure path — now with sharper evidence for its
++   step 1: a rebuild+redeploy happened between pass 3 and pass 4 **without** reconciling,
++   so verify the pipeline linkage itself — confirm the deployed artifact actually builds
++   from `infrastructure/mcp-control-plane` and that `classifyToolCapability` is bound
++   into the runtime gate rather than only mirror-checked by the source-side guard.
++2. Decide the `github_list_secrets` disposition (§5): re-register under the pin, or
++   amend the SSOT to codify removal.
++3. Extend the deny-matrix probe set with credential-adjacent newcomers (§6).
++4. The optional secret-name rotation (recipe step 4) remains moot while
++   `github_list_secrets` is absent, but the 26-entity memory graph (§3) is itself an
++   unexamined disclosure surface — its contents were not captured this pass and should
++   be classified by an authenticated operator.
++
++## 8. Dedup check and completeness notes
++
++- #1843: origin finding, closed — this is its prescribed but never-clean verification
++  continuation, now at pass 4. #2391: the tracking lane itself — this receipt is its
++  pass-4 body. #2076/#2082: advertisement-plane standing probe, zero-execution by
++  contract, cannot see this class. #2363: mutation-surface volume bound, different
++  plane. #2380/#2384: destructive-family schema audit, different tool set.
++- Completeness limitations, stated plainly: (a) `tenant_list` returned zero rows this
++  pass, so the tenant-enumeration leak class is untested against data-present state;
++  (b) the memory graph was counted, never read — contents unclassified; (c) the probe
++  bounds (8 read-shaped calls) mean one execution witness per tool, not a stability
++  study; (d) the marketplace connect tool (`marketplace_connect_plugin`) was
++  deliberately not invoked — it is state-changing by design and outside the read-shaped
++  register. No new issue filed; #2391 remains the single evidence chain for this class.

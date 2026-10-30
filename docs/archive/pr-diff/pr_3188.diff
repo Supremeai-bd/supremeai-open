@@ -1,0 +1,89 @@
+diff --git a/docs/reports/WO_2516_CENSUS_R3_RECEIPT_2026-10-30.md b/docs/reports/WO_2516_CENSUS_R3_RECEIPT_2026-10-30.md
+new file mode 100644
+index 00000000..4c76564e
+--- /dev/null
++++ b/docs/reports/WO_2516_CENSUS_R3_RECEIPT_2026-10-30.md
+@@ -0,0 +1,83 @@
++# WO #2516 follow-through — full-board census r3 receipt + remedy-2 arm status (report-only, docs-only, zero-credential)
++
++**Agent:** GLM Agent 31 (Job 486848) · **Date:** 2026-10-30 · **Subject:** #2516 (open, evidence-only — no autoclose)
++**Claim:** atomic claim GRANT_NEW on #2516 at 2026-10-30T10:32:54Z (30-min lease), released after submission.
++**Tree:** rebase-clean at origin/main `066ee53` (0 behind). Self-test 54/54, test_ci_guards 12/12, loop --verify-only 8/8 PASS.
++
++## 1. Fresh census (r3, live run at 10:3xZ +08, HEAD e0c742b)
++
++`python scripts/ci/bridge_landing_watchdog.py` (zero-credential, read-only):
++
++```
++QUEUE PLANE: 99 rows (limit rung 200)
++REJECTED PLANE: 9 open 'bridge:rejected' rows (9 queue-omitted joined; tower fallback after github 403)
++QUEUE INTEGRITY: unchecked (github 403 — shared egress; tower fallback covers rejected plane)
++VERDICT: IN_GATES=1, MERGED_ON_MAIN=16, OPEN_PR=1
++TOWER VERDICT PLANE: 16/16 merged WOs carry NO Tower verdict stamp — blackout, report-only.
++NEVER-TOUCHED SIGNATURE: 16 landed WOs untouched since creation — flap fingerprint (#2401/#2430 class).
++```
++
++Interpretation: **the class is continuous** — r+~21h after #2516's r2 census (34/128), every landing of the
++last 2h (16/16, #3118→#3169) is again a stranded self-fulfilled receipt-WO. The board self-cleans nothing.
++
++## 2. Remedy-2 status split ("watchdog re-arm with FULL-BOARD scope")
++
++- **Scope half — ALREADY ON MAIN.** The queue plane is all-open full-board (limit ladder 200→50→default,
++  #2115/#2123) and `run_verdicts()` classifies every queued row regardless of lane/matrix (live: 99 rows,
++  unrelated lanes all present). The #2516 wording "re-scope it from cohort/matrix to all-open rows" is
++  satisfied by the landed state; no code change is needed for scope.
++- **Arm half — BLOCKED AT THE AGENT ENVELOPE (this receipt's delta).** The live census is scheduled NOWHERE:
++  `run_all_guards.py` runs only `--self-test` (hermetic), no workflow and no hook runs the live census, so
++  stragglers surface only when an agent manually runs the guard. The ready fix is one report-only step on the
++  existing scheduled `agent-loop` job. Prepared and verified on branch
++  `bridge/bridge-20261030-2516-watchdog-rearm-r1` (commit 7d1bba2, rebased 0-behind, pipeline.yml +16 lines,
++  YAML-valid, all pins green) — but the anonymous bridge lane fail-closed rejects it:
++  `Path '.github/workflows/pipeline.yml' is protected (.github/). Bridge lane does not accept automatic writes to protected paths.`
++  → an operator/admin must apply it (patch below) or fold it into the tower-side route-B work.
++
++### Operator-ready patch (apply verbatim to `.github/workflows/pipeline.yml`, agent-loop job)
++
++Insert after the "Smart Stale Claim Expirer" step:
++
++```yaml
++      # Bridge Landing Census (#2516 remedy-2 "watchdog re-arm"): the landed
++      # full-board reconciler (scripts/ci/bridge_landing_watchdog.py) computes
++      # the machine-readable stranded-receipt-WO worklist (MERGED_ON_MAIN +
++      # never-touched flap fingerprint) — but until now nothing scheduled ever
++      # ran it, so self-fulfilled receipt-WOs accumulated invisibly between
++      # manual agent runs (live 2026-10-30: 16/16 landings of the last 2h
++      # stranded while the board self-cleaned nothing). Running it on every
++      # scheduled/dispatched cycle makes stragglers surface within one cycle.
++      # Report-only by the guard's own contract (exit 0 with findings, exit 2
++      # SKIP on unreachable planes) — `|| true` + `timeout 300` keep this a
++      # detection surface, never a red gate, mirroring the sibling steps.
++      - name: Bridge Landing Census (full-board receipt-WO worklist, report-only)
++        run: |
++          set -euo pipefail
++          timeout 300 python scripts/ci/bridge_landing_watchdog.py || true
++```
++
++## 3. Remedy-1 / remedy-3 ownership (unchanged)
++
++Remedy-1 (admin batch-close of the stranded rows; each row's landed SHA is in the watchdog table above and in
++#2516's r2 tables) and remedy-3 (tower-side route-B reconciler, #2470: "Out of open-repo boundary") stay with
++their owners. This receipt deliberately files NO closer script: remedy-1 is prescribed "zero repo code", and a
++repo-side auto-closer would duplicate route-B authority (Anti-Stampede).
++
++## Reflection Evidence (why + alternatives_rejected)
++
++- **why:** #2516's only in-envelope remedy item (2) needed a status verdict: its scope half is provably already
++  on main, and its arm half is provably unreachable from the anonymous bridge lane (live rejection captured).
++  Landing this receipt turns the census into an auditable handoff: fresh r3 numbers, the exact ready-to-apply
++  CI step, and the boundary evidence — the next actor (operator or route-B) needs zero re-derivation.
++- **alternatives_rejected:**
++  - submitting the pipeline.yml step anyway via a fork PR — the anonymous lane has no credentials and the
++    protected-path gate is fail-closed by design; forcing it would bypass a constitutional gate.
++  - building a scripts/ci/ batch-close tool — contradicts remedy-1's "zero repo code" prescription and would
++    race the tower-side route-B reconciler (duplicate authority over WO lifecycle).
++  - wiring the census into continuous_agent_loop.py's dispatch path — pinned stdout contracts (SPEC §4b) plus
++    16-24 tower feedback probes would slow/break the dispatcher hot path; the scheduled job is the cadence owner.
++
++*Provenance: zero-credential tower handshake (bridge.work_queue / bridge.work_order / bridge_read_feedback /
++work_claim); watchdog + guards run from a clean rebased tree. Report-only, docs-only, no autoclose
++(#2516 stays open until its remedies land).*

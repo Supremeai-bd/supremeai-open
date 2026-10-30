@@ -1,0 +1,112 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 6a448e6d..46423e39 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -429,6 +429,61 @@ def pick_issue(all_issues: list[dict[str, Any]], exclude: set[str]) -> dict[str,
+     return sorted(candidates, key=_priority_key)[0]
+ 
+ 
++# ---------------------------------------------------------------------------
++# STEP 2b: STALE-CI RE-CHECK (U3 Live Validity — no ghost work)
++# ---------------------------------------------------------------------------
++
++_RUN_URL_RE = re.compile(r"actions/runs/(\d+)")
++_TARGET_REPO_RE = re.compile(
++    r"###\s*Target Repository\s*\n+\s*`?([\w.-]+/[\w.-]+)`?", re.IGNORECASE
++)
++
++
++def _ci_incident_refs(issue: dict[str, Any]) -> tuple[str | None, str | None]:
++    """Extract (repo, run_id) from a loop-created CI incident issue body.
++    Returns (None, None) for anything that is not a CI incident."""
++    title = str(issue.get("title", ""))
++    body = str(issue.get("body", ""))
++    if not title.lower().startswith("fix(ci):"):
++        return None, None
++    m = _RUN_URL_RE.search(body)
++    run_id = m.group(1) if m else None
++    m = _TARGET_REPO_RE.search(body)
++    repo = m.group(1) if m else None
++    return repo, run_id
++
++
++def _ci_issue_is_stale(issue: dict[str, Any]) -> bool:
++    """U3 Live Validity for auto-created CI incidents: if the referenced
++    workflow already has a NEWER successful run on the same branch, the
++    incident is resolved on live main and working on it would be ghost work.
++    Best-effort: any API failure returns False (never blocks valid work)."""
++    repo, run_id = _ci_incident_refs(issue)
++    if not repo or not run_id:
++        return False
++    code, run = gh_api(f"/repos/{repo}/actions/runs/{run_id}")
++    if code != 200 or not isinstance(run, dict) or run.get("message"):
++        return False
++    branch = run.get("head_branch") or "main"
++    wf_url = run.get("workflow_url") or ""
++    wf_id = wf_url.rstrip("/").rsplit("/", 1)[-1] if wf_url else None
++    if not wf_id:
++        return False
++    code, data = gh_api(
++        f"/repos/{repo}/actions/workflows/{wf_id}/runs"
++        f"?branch={branch}&status=success&per_page=1"
++    )
++    if code != 200 or not isinstance(data, dict):
++        return False
++    runs = data.get("workflow_runs") or []
++    if not runs:
++        return False
++    try:
++        return str(runs[0].get("created_at", "")) > str(run.get("created_at", ""))
++    except Exception:
++        return False
++
++
+ # ---------------------------------------------------------------------------
+ # STEP 3: DYNAMIC ISSUE CREATION (zero-duplicate)
+ # ---------------------------------------------------------------------------
+@@ -839,7 +894,7 @@ def run_cycle(
+ ) -> str:
+     """
+     Execute one work cycle.
+-    Returns: 'done' | 'idle' | 'green' | 'fail'
++    Returns: 'done' | 'idle' | 'green' | 'fail' | 'stale'
+     """
+     # ── SCAN ──────────────────────────────────────────────────────────────
+     scan_result = scan()
+@@ -904,6 +959,14 @@ def run_cycle(
+     title = str(issue.get("title", f"Issue #{issue_num}"))
+     log("🎯", f"[Target] #{issue_num}: {title}")
+ 
++    # ── STALE-CI RE-CHECK (U3 Live Validity — no ghost work) ─────────────
++    # Auto-created CI incidents must be re-verified against live CI state
++    # before claiming: if the referenced workflow is already green again,
++    # the incident is resolved and any fix would duplicate landed work.
++    if not args.dry_run and _ci_issue_is_stale(issue):
++        log("♻️", f"[Stale] #{issue_num} — pipeline already green on live main. Skipping ghost work.")
++        return "stale"
++
+     # ── CLAIM ─────────────────────────────────────────────────────────────
+     if not claim(issue_num, args.dry_run):
+         return "fail"
+@@ -1127,6 +1190,7 @@ def main() -> int:
+     exclude = set()
+     done = 0
+     consecutive_fails = 0
++    stale_skips = 0
+     max_tasks = args.max_tasks  # 0 = unlimited
+ 
+     while True:
+@@ -1140,6 +1204,13 @@ def main() -> int:
+                 log("🏁", f"Reached max-tasks ({max_tasks}). Stopping.")
+                 break
+ 
++        elif result == "stale":
++            # Stale CI incident skipped — issue already excluded, board shrinks.
++            stale_skips += 1
++            if stale_skips >= 25:
++                log("⏹️", "25 stale incidents skipped this session. Exiting to avoid churn.")
++                break
++
+         elif result == "green":
+             log("🟢", "System is GREEN. All issues resolved and health sweep clean. Exiting.")
+             break

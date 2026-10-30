@@ -1,0 +1,594 @@
+diff --git a/studio/src/components/customer/CustomerSupportEditorStudio.tsx b/studio/src/components/customer/CustomerSupportEditorStudio.tsx
+index ff74addf..e69de29b 100644
+--- a/studio/src/components/customer/CustomerSupportEditorStudio.tsx
++++ b/studio/src/components/customer/CustomerSupportEditorStudio.tsx
+@@ -1,89 +0,0 @@
+-import { QuickPresets } from './QuickPresets';
+-import { ChatPanel } from './ChatPanel';
+-import { HomeFeed } from './HomeFeed';
+-import { useState, lazy, Suspense } from 'react';
+-import type { ChatMessage } from '../../types';
+-
+-// বাংলা মন্তব্য: CodeEditor (Monaco) lazy load — ইনিশিয়াল বান্ডিল থেকে সরানো হয়েছে।
+-const CodeEditor = lazy(() => import('./CodeEditor').then(m => ({ default: m.CodeEditor })));
+-
+-interface CustomerSupportEditorStudioProps {
+-  code: string;
+-  setCode: (code: string) => void;
+-  customerMessages: ChatMessage[];
+-  customerInput: string;
+-  setCustomerInput: (val: string) => void;
+-  loading: boolean;
+-  handleSendCustomer: () => void;
+-  theme: 'dark' | 'light';
+-  toggleTheme: () => void;
+-}
+-
+-export function CustomerSupportEditorStudio({
+-  code,
+-  setCode,
+-  customerMessages,
+-  customerInput,
+-  setCustomerInput,
+-  loading,
+-  handleSendCustomer,
+-  theme,
+-  toggleTheme
+-}: CustomerSupportEditorStudioProps) {
+-  const [currentView, setCurrentView] = useState<'presets' | 'feed'>('presets');
+-
+-  return (
+-    <div className="flex-1 flex flex-col overflow-hidden">
+-      <div className="flex-shrink-0 p-4 border-b border-[#00f3ff]/20 flex justify-between items-center">
+-        <h2 className="text-xl font-bold font-['Space_Grotesk'] tracking-widest uppercase">
+-          Operator Studio
+-        </h2>
+-        <div className="flex items-center gap-2">
+-          <button
+-            onClick={toggleTheme}
+-            className="text-xs font-bold text-[#00f3ff] hover:text-cyan-400 tracking-wider transition-colors"
+-          >
+-            {theme === 'dark' ? '🌙 Light Mode' : '☀️ Dark Mode'}
+-          </button>
+-        </div>
+-      </div>
+-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+-        {/* Tab bar for Quick Presets and Home Feed */}
+-        <div className="flex-shrink-0 lg:w-64 lg:flex-shrink-0 w-full mb-4 lg:mb-0 flex items-center space-x-2 border-b border-[#00f3ff]/20 pb-2">
+-          <button
+-            onClick={() => setCurrentView('presets')}
+-            className={`flex-1 px-3 py-2 text-xs font-semibold rounded font-mono transition-colors ${currentView === 'presets' ? 'bg-[#00f3ff]/20 text-[#00f3ff]' : 'text-slate-400 hover:text-white'}`}
+-          >
+-            Quick Presets
+-          </button>
+-          <button
+-            onClick={() => setCurrentView('feed')}
+-            className={`flex-1 px-3 py-2 text-xs font-semibold rounded font-mono transition-colors ${currentView === 'feed' ? 'bg-[#00f3ff]/20 text-[#00f3ff]' : 'text-slate-400 hover:text-white'}`}
+-          >
+-            Home Feed
+-          </button>
+-        </div>
+-
+-        {/* Content area */}
+-        <div className="flex-1 flex flex-col gap-4">
+-          {currentView === 'presets' ? (
+-            <div className="w-full"><QuickPresets onSelectPreset={setCustomerInput} /></div>
+-          ) : (
+-            <HomeFeed />
+-          )}
+-          <div className="flex-1"><Suspense fallback={<div className="h-64 w-full animate-pulse rounded bg-zinc-800/40" />}><CodeEditor code={code} onChange={setCode} /></Suspense></div>
+-          <div className="flex-1">
+-            <ChatPanel
+-              messages={customerMessages}
+-              input={customerInput}
+-              onInputChange={setCustomerInput}
+-              onSend={handleSendCustomer}
+-              loading={loading}
+-              onSaveToProject={setCode}
+-            />
+-          </div>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+diff --git a/studio/src/components/customer/HomeFeed.tsx b/studio/src/components/customer/HomeFeed.tsx
+index 3da20c24..e69de29b 100644
+--- a/studio/src/components/customer/HomeFeed.tsx
++++ b/studio/src/components/customer/HomeFeed.tsx
+@@ -1,118 +0,0 @@
+-import { useEffect } from 'react';
+-import { SkeletonLoader } from '../ui/SkeletonLoader';
+-import { useCustomerStore } from '../../store/customerStore';
+-
+-interface Widget {
+-  id: string;
+-  title: string;
+-  content: string;
+-}
+-
+-const DEFAULT_WIDGETS: Widget[] = [
+-  { id: '1', title: 'AI Assistant', content: 'Chat with your AI assistant to get help with coding, debugging, and more.' },
+-  { id: '2', title: 'Code Snippets', content: 'Save and reuse your favorite code snippets.' },
+-  { id: '3', title: 'Project Stats', content: 'View statistics about your current project.' },
+-  { id: '4', title: 'Quick Commands', content: 'Execute common commands with one click.' },
+-  { id: '5', title: 'Resource Monitor', content: 'Monitor CPU, memory, and network usage.' },
+-  { id: '6', title: 'Latest News', content: 'Stay updated with the latest AI and tech news.' },
+-];
+-
+-export function HomeFeed() {
+-  const { widgets: storeWidgets, reorderWidgets } = useCustomerStore();
+-  const isLoading = false; // Data is from store, no loading needed
+-
+-  // Initialize store with defaults if empty
+-  useEffect(() => {
+-    if (!storeWidgets || storeWidgets.length === 0) {
+-      reorderWidgets(DEFAULT_WIDGETS.map(w => ({
+-        id: w.id,
+-        type: 'history' as const,
+-        title: w.title,
+-        position: { x: 0, y: 0, w: 1, h: 1 },
+-        settings: { content: w.content },
+-      })));
+-    }
+-  // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, []);
+-
+-  const displayWidgets: Widget[] = (storeWidgets && storeWidgets.length > 0)
+-    ? storeWidgets.map(w => ({
+-        id: w.id,
+-        title: w.title,
+-        content: (w.settings?.content as string) || '',
+-      }))
+-    : DEFAULT_WIDGETS;
+-
+-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
+-    e.dataTransfer.setData('text/plain', id);
+-  };
+-
+-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+-    e.preventDefault();
+-  };
+-
+-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, dropId: string) => {
+-    e.preventDefault();
+-    const draggedId = e.dataTransfer.getData('text/plain');
+-    if (draggedId === dropId) return;
+-
+-    const prev = storeWidgets && storeWidgets.length > 0
+-      ? storeWidgets
+-      : DEFAULT_WIDGETS.map(w => ({
+-          id: w.id,
+-          type: 'history' as const,
+-          title: w.title,
+-          position: { x: 0, y: 0, w: 1, h: 1 },
+-          settings: { content: w.content },
+-        }));
+-
+-    const draggedIndex = prev.findIndex(w => w.id === draggedId);
+-    const dropIndex = prev.findIndex(w => w.id === dropId);
+-    if (draggedIndex === -1 || dropIndex === -1) return;
+-
+-    const newWidgets = [...prev];
+-    const [draggedWidget] = newWidgets.splice(draggedIndex, 1);
+-    newWidgets.splice(dropIndex, 0, draggedWidget);
+-    reorderWidgets(newWidgets);
+-  };
+-
+-  return (
+-    <div className="p-4 bg-[#020205] min-h-[calc(100vh-64px)] overflow-y-auto page-transition-enter-active">
+-      <h2 className="text-2xl font-bold font-['Space_Grotesk'] tracking-widest mb-6 text-[#f8f9fa]">
+-        Personalized Home Feed
+-      </h2>
+-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+-        {isLoading
+-          ? Array.from({ length: 6 }).map((_, i) => (
+-              <div key={i} className="flex flex-col gap-3 p-4 border border-slate-800 rounded-xl bg-slate-900/30">
+-                <div className="flex gap-2 items-center">
+-                  <SkeletonLoader type="avatar" className="w-8 h-8" />
+-                  <SkeletonLoader className="w-32" />
+-                </div>
+-                <SkeletonLoader className="w-full mt-2" />
+-                <SkeletonLoader className="w-3/4" />
+-              </div>
+-            ))
+-          : displayWidgets.map(widget => (
+-              <div
+-                key={widget.id}
+-                draggable
+-                onDragStart={(e) => handleDragStart(e, widget.id)}
+-                onDragOver={(e) => handleDragOver(e)}
+-                onDrop={(e) => handleDrop(e, widget.id)}
+-                className="glass-card cursor-move p-4 flex flex-col gap-3 glass-hover"
+-              >
+-                <div className="flex items-center gap-2">
+-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--neon-blue)]/10 text-[var(--neon-blue)]">
+-                    <span className="text-[var(--neon-blue)]">🤖</span>
+-                  </div>
+-                  <h3 className="font-semibold text-[var(--foreground)]">{widget.title}</h3>
+-                </div>
+-                <p className="text-[var(--foreground)]/70 text-sm flex-1">{widget.content}</p>
+-              </div>
+-            ))
+-        }
+-      </div>
+-    </div>
+-  );
+-}
+diff --git a/studio/src/components/customer/index.ts b/studio/src/components/customer/index.ts
+index d6e74e61..b9c0e899 100644
+--- a/studio/src/components/customer/index.ts
++++ b/studio/src/components/customer/index.ts
+@@ -3,5 +3,4 @@ export { CodeEditor } from './CodeEditor';
+ export { ChatPanel } from './ChatPanel';
+ export { BrowserPreview } from './BrowserPreview';
+ export { MobileSimulator } from './MobileSimulator';
+-export { HomeFeed } from './HomeFeed';
+ export { UserDashboard } from './UserDashboard';
+diff --git a/studio/src/components/layout/MainLayout.tsx b/studio/src/components/layout/MainLayout.tsx
+index edb4a1df..e69de29b 100644
+--- a/studio/src/components/layout/MainLayout.tsx
++++ b/studio/src/components/layout/MainLayout.tsx
+@@ -1,64 +0,0 @@
+-import React, { useState } from 'react';
+-
+-export const MainLayout = ({ children }: { children: React.ReactNode }) => {
+-  const [isProMode, setIsProMode] = useState(false);
+-
+-  return (
+-    <div className="h-screen bg-slate-950 text-white flex flex-col">
+-      {/* Top Header */}
+-      <header className="p-4 border-b border-white/10 flex justify-between items-center bg-black/50 backdrop-blur-sm z-10">
+-        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+-          SupremeAI
+-        </h1>
+-        <button
+-          onClick={() => setIsProMode(!isProMode)}
+-          className="text-xs bg-white/5 px-4 py-1.5 rounded-full border border-white/10 hover:bg-white/10 transition-all duration-300 ease-in-out font-medium"
+-        >
+-          {isProMode ? "Switch to Simple View" : "Developer Mode"}
+-        </button>
+-      </header>
+-
+-      {/* Main Content Area */}
+-      <main className="flex-1 flex overflow-hidden relative">
+-        {/* Chat Panel */}
+-        <div
+-          className={`h-full transition-all duration-500 ease-in-out ${
+-            isProMode ? 'w-1/3 border-r border-white/10' : 'w-full max-w-4xl mx-auto'
+-          }`}
+-        >
+-          {children}
+-        </div>
+-
+-        {/* Pro Mode: Browser & Terminal (Glassmorphism) */}
+-        {isProMode && (
+-          <aside className="w-2/3 bg-white/[0.02] backdrop-blur-[12px] p-4 flex flex-col gap-4 animate-in fade-in slide-in-from-right-8 duration-500">
+-            {/* Browser View */}
+-            <div className="flex-1 bg-black/40 rounded-xl border border-white/10 overflow-hidden shadow-2xl flex flex-col">
+-              <div className="h-8 border-b border-white/10 bg-black/60 flex items-center px-4 gap-2">
+-                <div className="flex gap-1.5">
+-                  <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
+-                  <div className="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+-                  <div className="w-3 h-3 rounded-full bg-green-500/80"></div>
+-                </div>
+-                <div className="mx-auto text-[10px] text-gray-500 font-mono">Browser Preview</div>
+-              </div>
+-              <div className="flex-1 flex items-center justify-center text-gray-600 font-mono text-sm">
+-                Live Browser Feed...
+-              </div>
+-            </div>
+-
+-            {/* Terminal Output */}
+-            <div className="h-1/3 bg-black/60 rounded-xl border border-white/10 p-3 font-mono text-xs shadow-2xl overflow-hidden flex flex-col">
+-              <div className="text-gray-500 mb-2 border-b border-white/5 pb-1">~/supremeai-core</div>
+-              <div className="flex-1 overflow-y-auto text-green-400/80 space-y-1">
+-                <div>$ tail -f core_system.log</div>
+-                <div>[INFO] System initialized.</div>
+-                <div>[INFO] Waiting for agent commands...</div>
+-              </div>
+-            </div>
+-          </aside>
+-        )}
+-      </main>
+-    </div>
+-  );
+-};
+diff --git a/studio/src/components/layout/NavRail.test.tsx b/studio/src/components/layout/NavRail.test.tsx
+index 5b3e1add..e09bf54d 100644
+--- a/studio/src/components/layout/NavRail.test.tsx
++++ b/studio/src/components/layout/NavRail.test.tsx
+@@ -1,46 +1,21 @@
++// RETIRED (bridge-20261025-orphan-layout-r1): layout/NavRail was an orphaned
++// dead layout system - its only importer was this very test file (live nav
++// rides RoleAwareNavRail inside UnifiedAppShell). Disposed together with
++// Shell / MainLayout (layout/) and the dead customer chain (HomeFeed /
++// CustomerSupportEditorStudio) per P1 item 2 (XS-2) of the verified
++// 2026-10-25 frontend research report. The bridge lane cannot express file
++// deletions, so this tombstone keeps vitest green until an operator deletes
++// the husks together on merge:
++//   git rm studio/src/components/layout/Shell.tsx
++//   git rm studio/src/components/layout/MainLayout.tsx
++//   git rm studio/src/components/layout/NavRail.tsx
++//   git rm studio/src/components/layout/NavRail.test.tsx
++//   git rm studio/src/components/customer/HomeFeed.tsx
++//   git rm studio/src/components/customer/CustomerSupportEditorStudio.tsx
+ import { describe, it, expect } from 'vitest';
+-import { render, screen, fireEvent } from '@testing-library/react';
+-import { MemoryRouter } from 'react-router-dom';
+-import { NavRail } from './NavRail';
+ 
+-const renderRail = () =>
+-  render(
+-    <MemoryRouter>
+-      <NavRail />
+-    </MemoryRouter>,
+-  );
+-
+-const expandRail = () => {
+-  fireEvent.click(screen.getByRole('button', { name: 'Toggle Sidebar' }));
+-};
+-
+-describe('NavRail', () => {
+-  it('renders grouped navigation with group labels when expanded', () => {
+-    renderRail();
+-    expandRail();
+-    expect(screen.getByText('Workspace')).toBeInTheDocument();
+-    expect(screen.getByText('Discover')).toBeInTheDocument();
+-  });
+-
+-  it('renders all nav item labels when expanded', () => {
+-    renderRail();
+-    expandRail();
+-    for (const label of ['Agent Studio', 'Cloud IDE', 'Swarm Map', 'Architect Tower', 'Skill Catalog', 'Evolution Forge']) {
+-      expect(screen.getByText(label)).toBeInTheDocument();
+-    }
+-  });
+-
+-  it('renders bottom system actions when expanded', () => {
+-    renderRail();
+-    expandRail();
+-    expect(screen.getByText('Integrations')).toBeInTheDocument();
+-    expect(screen.getByText('Documentation')).toBeInTheDocument();
+-  });
+-
+-  it('keeps labels hidden in collapsed rail by default', () => {
+-    renderRail();
+-    expect(screen.queryByText('Agent Studio')).not.toBeInTheDocument();
+-    expect(screen.queryByText('Workspace')).not.toBeInTheDocument();
+-    expect(screen.getByRole('button', { name: 'Toggle Sidebar' })).toHaveAttribute('aria-expanded', 'false');
++describe('NavRail (retired)', () => {
++  it('was removed with the orphan layout systems (XS-2)', () => {
++    expect(true).toBe(true);
+   });
+ });
+diff --git a/studio/src/components/layout/NavRail.tsx b/studio/src/components/layout/NavRail.tsx
+index bbadb1ca..e69de29b 100644
+--- a/studio/src/components/layout/NavRail.tsx
++++ b/studio/src/components/layout/NavRail.tsx
+@@ -1,177 +0,0 @@
+-// apps/studio-client/src/components/layout/NavRail.tsx
+-// Smart Navigation Rail - Icon & Collapsible Drawer Navigation
+-// বাংলা মন্তব্য: স্মার্ট সাইড নেভিগেশন রেল — মিনিমাল আইকন মোড ও অটোম্যাটিক অ্যানিমেটেড এক্সপ্যানশন।
+-
+-import React, { useState } from 'react';
+-import { motion } from 'framer-motion';
+-import {
+-  Terminal,
+-  Folder,
+-  Cpu,
+-  Shield,
+-  Sparkles,
+-  Layers,
+-  ChevronLeft,
+-  ChevronRight,
+-  Settings,
+-  HelpCircle,
+-} from 'lucide-react';
+-import { useNavigate, useLocation } from 'react-router-dom';
+-
+-interface NavItem {
+-  id: string;
+-  label: string;
+-  icon: React.ElementType;
+-  path: string;
+-}
+-
+-interface NavGroup {
+-  id: string;
+-  label: string;
+-  items: NavItem[];
+-}
+-
+-export const NavRail: React.FC = () => {
+-  const [isExpanded, setIsExpanded] = useState(false);
+-  const [isHovered, setIsHovered] = useState(false);
+-  const navigate = useNavigate();
+-  const location = useLocation();
+-
+-  // বাংলা মন্তব্য: হোভার বা পিন (chevron) — যেকোনোটায় রেল এক্সপপান্ড হয়।
+-  const showLabels = isExpanded || isHovered;
+-
+-  const navGroups: NavGroup[] = [
+-    {
+-      id: 'workspace',
+-      label: 'Workspace',
+-      items: [
+-        { id: 'agent', label: 'Agent Studio', icon: Terminal, path: '/workspace/agent' },
+-        { id: 'ide', label: 'Cloud IDE', icon: Folder, path: '/workspace/ide' },
+-        { id: 'swarm', label: 'Swarm Map', icon: Cpu, path: '/swarm' },
+-      ],
+-    },
+-    {
+-      id: 'discover',
+-      label: 'Discover',
+-      items: [
+-        { id: 'architect', label: 'Architect Tower', icon: Shield, path: '/architect-tower' },
+-        { id: 'skills', label: 'Skill Catalog', icon: Sparkles, path: '/skills-catalog' },
+-        { id: 'evolution', label: 'Evolution Forge', icon: Layers, path: '/evolution-forge' },
+-      ],
+-    },
+-  ];
+-
+-  return (
+-    <motion.aside
+-      animate={{ width: showLabels ? 220 : 64 }}
+-      onHoverStart={() => setIsHovered(true)}
+-      onHoverEnd={() => setIsHovered(false)}
+-      transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+-      className="relative flex flex-col justify-between h-full border-r border-slate-800 bg-slate-950/95 p-3 select-none z-30"
+-      aria-label="Primary navigation"
+-    >
+-      {/* Top Header & Logo */}
+-      <div className="flex flex-col gap-6">
+-        <div className="flex items-center justify-between px-1">
+-          <div className="flex items-center gap-3 overflow-hidden">
+-            <div className="h-9 w-9 min-w-9 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center font-bold text-white shadow-lg shadow-cyan-500/20">
+-              S
+-            </div>
+-            {showLabels && (
+-              <motion.span
+-                initial={{ opacity: 0 }}
+-                animate={{ opacity: 1 }}
+-                className="font-semibold text-sm text-slate-100 whitespace-nowrap tracking-wide"
+-              >
+-                Supreme<span className="text-cyan-400">AI</span>
+-              </motion.span>
+-            )}
+-          </div>
+-          <button
+-            onClick={() => setIsExpanded(!isExpanded)}
+-            aria-label="Toggle Sidebar"
+-            aria-expanded={showLabels}
+-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors"
+-          >
+-            {isExpanded || isHovered ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+-          </button>
+-        </div>
+-
+-        {/* Navigation Rail Items */}
+-        <nav className="flex flex-col gap-1.5">
+-          {navGroups.map((group) => (
+-            <div key={group.id} className="flex flex-col gap-1">
+-              {showLabels && (
+-                <span className="px-3 pt-2 text-[10px] uppercase tracking-widest text-slate-600 font-semibold">
+-                  {group.label}
+-                </span>
+-              )}
+-              {group.items.map((item) => {
+-                const Icon = item.icon;
+-                const isActive = location.pathname === item.path;
+-
+-                return (
+-                  <button
+-                    key={item.id}
+-                    onClick={() => navigate(item.path)}
+-                    className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+-                      isActive
+-                        ? 'bg-cyan-500/15 text-cyan-400 font-semibold shadow-inner'
+-                        : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+-                    }`}
+-                  >
+-                    <Icon className={`h-5 w-5 min-w-5 ${isActive ? 'text-cyan-400' : 'text-slate-400'}`} />
+-                    {showLabels && (
+-                      <motion.span
+-                        initial={{ opacity: 0 }}
+-                        animate={{ opacity: 1 }}
+-                        className="whitespace-nowrap overflow-hidden text-ellipsis"
+-                      >
+-                        {item.label}
+-                      </motion.span>
+-                    )}
+-                    {isActive && (
+-                      <motion.div
+-                        layoutId="activeIndicator"
+-                        className="absolute left-0 top-2 bottom-2 w-1 rounded-r-full bg-cyan-400"
+-                      />
+-                    )}
+-                  </button>
+-                );
+-              })}
+-            </div>
+-          ))}
+-        </nav>
+-      </div>
+-
+-      {/* Bottom Actions */}
+-      <div className="flex flex-col gap-1 border-t border-slate-800/80 pt-3">
+-        <button
+-          onClick={() => navigate('/integrations')}
+-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+-        >
+-          <Settings className="h-5 w-5 min-w-5" />
+-          {showLabels && (
+-            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-nowrap">
+-              Integrations
+-            </motion.span>
+-          )}
+-        </button>
+-
+-        <button
+-          onClick={() => window.open('https://github.com/paykaribazaronline/supremeai', '_blank')}
+-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+-        >
+-          <HelpCircle className="h-5 w-5 min-w-5" />
+-          {showLabels && (
+-            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-nowrap">
+-              Documentation
+-            </motion.span>
+-          )}
+-        </button>
+-      </div>
+-    </motion.aside>
+-  );
+-};
+-
+-export default NavRail;
+diff --git a/studio/src/components/layout/Shell.tsx b/studio/src/components/layout/Shell.tsx
+index 597c82b6..e69de29b 100644
+--- a/studio/src/components/layout/Shell.tsx
++++ b/studio/src/components/layout/Shell.tsx
+@@ -1,43 +0,0 @@
+-import React from 'react';
+-import { cn } from '../../utils/cn';
+-
+-interface ShellProps extends React.HTMLAttributes<HTMLDivElement> {
+-  sidebar?: React.ReactNode;
+-  header?: React.ReactNode;
+-}
+-
+-export const Shell = React.forwardRef<HTMLDivElement, ShellProps>(
+-  ({ className, sidebar, header, children, ...props }, ref) => {
+-    return (
+-      <div
+-        ref={ref}
+-        className={cn("flex h-screen w-full bg-[var(--supremeai-color-bg-void-light)] dark:bg-[var(--supremeai-color-bg-void-dark)] overflow-hidden text-foreground", className)}
+-        {...props}
+-      >
+-        {/* Sidebar */}
+-        {sidebar && (
+-          <aside className="w-64 border-r border-[var(--supremeai-color-border-accent-light)] dark:border-[var(--supremeai-color-border-accent-dark)] bg-[var(--supremeai-color-bg-elevated-light)] dark:bg-[var(--supremeai-color-bg-elevated-dark)] flex flex-col transition-colors z-20">
+-            {sidebar}
+-          </aside>
+-        )}
+-
+-        {/* Main Content Area */}
+-        <div className="flex flex-1 flex-col overflow-hidden">
+-          {/* Header */}
+-          {header && (
+-            <header className="h-14 border-b border-[var(--supremeai-color-border-accent-light)] dark:border-[var(--supremeai-color-border-accent-dark)] bg-[var(--supremeai-color-bg-elevated-light)] dark:bg-[var(--supremeai-color-bg-elevated-dark)] flex items-center px-6 transition-colors z-10 shadow-sm">
+-              {header}
+-            </header>
+-          )}
+-
+-          {/* Scrollable Content */}
+-          <main className="flex-1 overflow-auto p-6 relative">
+-            {children}
+-          </main>
+-        </div>
+-      </div>
+-    );
+-  }
+-);
+-
+-Shell.displayName = 'Shell';

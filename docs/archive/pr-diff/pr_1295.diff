@@ -1,0 +1,270 @@
+diff --git a/studio/src/commandcenter/kit/CommandPalette.tsx b/studio/src/commandcenter/kit/CommandPalette.tsx
+index 51536a1a..7bf5707c 100644
+--- a/studio/src/commandcenter/kit/CommandPalette.tsx
++++ b/studio/src/commandcenter/kit/CommandPalette.tsx
+@@ -75,7 +75,7 @@ export function CommandPalette({ open, items, onClose, onSelect }: CommandPalett
+   }, {});
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm">
++    <div className="fixed inset-0 z-modal flex items-start justify-center pt-24 bg-black/60 backdrop-blur-sm">
+       <div className="w-full max-w-lg rounded-xl border border-[var(--sa-line)] bg-[var(--sa-bg-1)] shadow-2xl overflow-hidden">
+         <div className="flex items-center gap-3 px-4 py-3 border-b border-[var(--sa-line)]">
+           <Search size={16} className="text-[#00f3ff]" />
+diff --git a/studio/src/commandcenter/kit/ConfirmModal.tsx b/studio/src/commandcenter/kit/ConfirmModal.tsx
+index 93b61718..19865185 100644
+--- a/studio/src/commandcenter/kit/ConfirmModal.tsx
++++ b/studio/src/commandcenter/kit/ConfirmModal.tsx
+@@ -34,7 +34,7 @@ export function ConfirmModal({
+   if (!open) return null;
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
++    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 backdrop-blur-sm">
+       <div className="w-full max-w-md rounded-xl border border-[var(--sa-line)] bg-[var(--sa-bg-1)] p-6 shadow-2xl">
+         <div className="flex items-start justify-between mb-4">
+           <div className="flex items-center gap-3">
+diff --git a/studio/src/commandcenter/kit/ToastStack.tsx b/studio/src/commandcenter/kit/ToastStack.tsx
+index b8f32f80..bc91e852 100644
+--- a/studio/src/commandcenter/kit/ToastStack.tsx
++++ b/studio/src/commandcenter/kit/ToastStack.tsx
+@@ -30,7 +30,7 @@ const TOAST_STYLES: Record<ToastType, { icon: React.ReactNode; border: string; t
+ 
+ export function ToastStack({ toasts, onDismiss }: ToastStackProps) {
+   return (
+-    <div className="fixed bottom-20 right-4 z-50 space-y-2 w-80">
++    <div className="fixed bottom-20 right-4 z-modal space-y-2 w-80">
+       {toasts.map((toast) => {
+         const style = TOAST_STYLES[toast.type];
+         return (
+diff --git a/studio/src/commandcenter/shell/CommandPalette.tsx b/studio/src/commandcenter/shell/CommandPalette.tsx
+index 08fc44d2..22014910 100644
+--- a/studio/src/commandcenter/shell/CommandPalette.tsx
++++ b/studio/src/commandcenter/shell/CommandPalette.tsx
+@@ -78,7 +78,7 @@ export function CommandPalette() {
+ 
+   return (
+     <div
+-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[14vh] backdrop-blur-sm"
++      className="fixed inset-0 z-modal flex items-start justify-center bg-black/60 pt-[14vh] backdrop-blur-sm"
+       role="presentation"
+       onClick={() => setPaletteOpen(false)}
+     >
+diff --git a/studio/src/components/BanglaHint.tsx b/studio/src/components/BanglaHint.tsx
+index 844c9f5c..51b5fa9a 100644
+--- a/studio/src/components/BanglaHint.tsx
++++ b/studio/src/components/BanglaHint.tsx
+@@ -18,7 +18,7 @@ export const BanglaHint = ({ text }: BanglaHintProps) => {
+       </button>
+       {showTooltip && (
+         <div
+-          className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-2 bg-slate-900 border border-cyan-500/30 text-slate-200 text-xs rounded-md shadow-lg z-50 whitespace-nowrap tooltip-enter"
++          className="absolute top-full left-1/2 -translate-x-1/2 mt-2 px-3 py-2 bg-slate-900 border border-cyan-500/30 text-slate-200 text-xs rounded-md shadow-lg z-modal whitespace-nowrap tooltip-enter"
+           role="tooltip"
+         >
+           <p className="font-bengali">{text}</p>
+diff --git a/studio/src/components/admin/SciFiFlowNode.tsx b/studio/src/components/admin/SciFiFlowNode.tsx
+index 80336d73..db16c7c3 100644
+--- a/studio/src/components/admin/SciFiFlowNode.tsx
++++ b/studio/src/components/admin/SciFiFlowNode.tsx
+@@ -64,7 +64,7 @@ const AethelNode = ({ data, isConnectable }: AethelNodeProps) => {
+             animate={{ opacity: 1, y: 0, scale: 1 }}
+             exit={{ opacity: 0, y: 10, scale: 0.9 }}
+             transition={{ duration: 0.2 }}
+-            className="absolute -top-10 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
++            className="absolute -top-10 left-1/2 -translate-x-1/2 z-modal pointer-events-none"
+           >
+             <div className="bg-[var(--bg-main)] border border-[var(--border-accent)] text-[var(--accent-primary)] text-[8px] px-2 py-1 rounded backdrop-blur-md whitespace-nowrap shadow-lg font-mono transition-colors duration-500">
+                SYS TELEMETRY: {data.status || 'Nominal'}
+diff --git a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+index b240b7da..56e64952 100644
+--- a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
++++ b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+@@ -108,7 +108,7 @@ export function TwoFASentinelModal({
+     <div
+       role="dialog"
+       aria-modal="true"
+-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
++      className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+     >
+       <div className="relative w-full max-w-md rounded-2xl border border-red-500/40 bg-[#090d16] p-6 shadow-2xl shadow-red-950/40 text-left">
+         {/* Close Button */}
+diff --git a/studio/src/components/branch/BranchButton.tsx b/studio/src/components/branch/BranchButton.tsx
+index 37487e09..d772f0d9 100644
+--- a/studio/src/components/branch/BranchButton.tsx
++++ b/studio/src/components/branch/BranchButton.tsx
+@@ -115,7 +115,7 @@ export default function BranchButton({ conversationId, messageId, onBranchCreate
+               'absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 ' +
+               'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 ' +
+               'rounded-xl shadow-xl shadow-slate-900/10 dark:shadow-slate-950/40 ' +
+-              'overflow-hidden z-50'
++              'overflow-hidden z-modal'
+             }
+           >
+             {/* Arrow */}
+diff --git a/studio/src/components/chat/ChatDockBar.test.tsx b/studio/src/components/chat/ChatDockBar.test.tsx
+index 1b259132..a0a73ff5 100644
+--- a/studio/src/components/chat/ChatDockBar.test.tsx
++++ b/studio/src/components/chat/ChatDockBar.test.tsx
+@@ -3,7 +3,7 @@
+  *
+  * Contract under test:
+  *  - in-flow docked bar (no fixed positioning in the class string — the RC-3
+- *    defect class was a fixed z-40 floating dock),
++ *    defect class was a fixed floating dock on the old overlay tier (40),
+  *  - 44px touch targets on every interactive element (§7.2),
+  *  - Apps menu is user-published only (closed by default; opens on trigger;
+  *    closes on outside click and Escape),
+@@ -38,7 +38,11 @@ describe('ChatDockBar (RC-3, report §6.4)', () => {
+     const { getByTestId } = renderDock({ actions, apps });
+     const bar = getByTestId('chat-dock-bar');
+     expect(bar.className).not.toMatch(/\bfixed\b/);
+-    expect(bar.className).not.toMatch(/\bz-40\b/);
++    // RC-3 defect guard: the bar must never float on the old overlay tier.
++    // RegExp is assembled from fragments so Tailwind v4's source scanner (which
++    // reads test files too) never sees the bare tier token, and therefore never
++    // emits a dead utility into the prod CSS bundle.
++    expect(bar.className).not.toMatch(new RegExp("\\bz-" + "40\\b"));
+     expect(bar.className).toContain('max-w-[46rem]');
+   });
+ 
+diff --git a/studio/src/components/chat/ChatDockBar.tsx b/studio/src/components/chat/ChatDockBar.tsx
+index 3ce89ebb..b740d496 100644
+--- a/studio/src/components/chat/ChatDockBar.tsx
++++ b/studio/src/components/chat/ChatDockBar.tsx
+@@ -12,7 +12,7 @@
+  *
+  * z-policy (report §6.4 three buckets): this bar is shell-layer and stays
+  * IN FLOW (no fixed positioning, no z of its own); the Apps popover is
+- * user-published and sits at z-30 — strictly below the z-40+ overlay bucket.
++ * user-published and sits at z-shell — strictly below the z-overlay/z-modal buckets.
+  *
+  * Touch targets: every interactive element is 44×44px minimum (WCAG 2.2
+  * target-size / report §7.2).
+@@ -120,7 +120,7 @@ export const ChatDockBar: React.FC<ChatDockBarProps> = ({ left, actions = [], ap
+               role="menu"
+               aria-label="Apps"
+               data-testid="dock-apps-menu"
+-              className="absolute bottom-full right-0 z-30 mb-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#0d121f]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
++              className="absolute bottom-full right-0 z-shell mb-2 w-64 overflow-hidden rounded-xl border border-white/10 bg-[#0d121f]/95 shadow-2xl shadow-black/50 backdrop-blur-xl"
+             >
+               {apps.map((app) => (
+                 <Link
+diff --git a/studio/src/components/editor/AiOutputPanel.tsx b/studio/src/components/editor/AiOutputPanel.tsx
+index 1777325d..54623aa7 100644
+--- a/studio/src/components/editor/AiOutputPanel.tsx
++++ b/studio/src/components/editor/AiOutputPanel.tsx
+@@ -27,7 +27,7 @@ export const AiOutputPanel: React.FC<Props> = ({ output, loading, onClose }) =>
+   if (!output && !loading) return null;
+ 
+   return (
+-    <div className="absolute inset-0 z-40 bg-black/60 flex items-center justify-center p-6">
++    <div className="absolute inset-0 z-overlay bg-black/60 flex items-center justify-center p-6">
+       <div className="bg-[#1e1e1e] border border-gray-700 rounded-lg shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+         {/* Header */}
+         <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700 bg-[#252526] rounded-t-lg">
+diff --git a/studio/src/components/export/ExportMenu.tsx b/studio/src/components/export/ExportMenu.tsx
+index 7cc914ac..16f53f0b 100644
+--- a/studio/src/components/export/ExportMenu.tsx
++++ b/studio/src/components/export/ExportMenu.tsx
+@@ -170,7 +170,7 @@ export default function ExportMenu({ conversationId, conversationTitle }: Export
+               'absolute right-0 top-full mt-2 w-56 ' +
+               'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 ' +
+               'rounded-xl shadow-xl shadow-slate-900/10 dark:shadow-slate-950/40 ' +
+-              'overflow-hidden z-50'
++              'overflow-hidden z-modal'
+             }
+             role="menu"
+           >
+diff --git a/studio/src/components/layout/DashboardLayout.tsx b/studio/src/components/layout/DashboardLayout.tsx
+index 4924884b..b9a0cc61 100644
+--- a/studio/src/components/layout/DashboardLayout.tsx
++++ b/studio/src/components/layout/DashboardLayout.tsx
+@@ -42,14 +42,14 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed
+       <div className="dashboard-live-orb dashboard-live-orb-one" aria-hidden="true" />
+       <div className="dashboard-live-orb dashboard-live-orb-two" aria-hidden="true" />
+       {header && (
+-        <header className="surface-1 z-30 shrink-0">
++        <header className="surface-1 z-shell shrink-0">
+           {header}
+         </header>
+       )}
+ 
+       {/* P1 item 4: fixed bottom chrome on phones. Rendered BEFORE the content row
+-          in DOM so the drawer backdrop (same z-30, later in DOM) dims it while the
+-          drawer is open; the drawer itself (z-40) and CommandBar/modals (z-50) stay
++          in DOM so the drawer backdrop (same z-shell, later in DOM) dims it while the
++          drawer is open; the drawer itself (z-overlay) and CommandBar/modals (z-modal) stay
+           above. Bottom padding on <main> keeps page footers/composers unobscured. */}
+       {mobileTabBar}
+ 
+@@ -76,7 +76,7 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed
+                 exit={{ opacity: 0 }}
+                 transition={{ duration: 0.18 }}
+                 onClick={() => setMobileNavOpen(false)}
+-                className="fixed inset-0 z-30 bg-black/60 md:hidden"
++                className="fixed inset-0 z-shell bg-black/60 md:hidden"
+                 aria-hidden="true"
+               />
+               <motion.aside
+@@ -85,7 +85,7 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed
+                 animate={{ x: 0 }}
+                 exit={{ x: '-100%' }}
+                 transition={SIDEBAR_SPRING}
+-                className="surface-1 border-r border-border fixed inset-y-0 left-0 z-40 flex flex-col w-64 max-w-[85vw] overflow-hidden md:hidden"
++                className="surface-1 border-r border-border fixed inset-y-0 left-0 z-overlay flex flex-col w-64 max-w-[85vw] overflow-hidden md:hidden"
+                 aria-label="Navigation drawer"
+               >
+                 {sidebar}
+diff --git a/studio/src/components/shell/MobileTabBar.tsx b/studio/src/components/shell/MobileTabBar.tsx
+index 7040c4af..1e589488 100644
+--- a/studio/src/components/shell/MobileTabBar.tsx
++++ b/studio/src/components/shell/MobileTabBar.tsx
+@@ -53,7 +53,7 @@ export function MobileTabBar() {
+     <nav
+       aria-label="Mobile navigation"
+       data-testid="mobile-tab-bar"
+-      className="surface-1 border-t border-border fixed inset-x-0 bottom-0 z-30 flex md:hidden pb-[env(safe-area-inset-bottom)]"
++      className="surface-1 border-t border-border fixed inset-x-0 bottom-0 z-shell flex md:hidden pb-[env(safe-area-inset-bottom)]"
+     >
+       {routeTabs.map((item) => {
+         if (item.kind !== 'route') return null;
+diff --git a/studio/src/components/shell/ThemePicker.tsx b/studio/src/components/shell/ThemePicker.tsx
+index 78c1acfc..677532e1 100644
+--- a/studio/src/components/shell/ThemePicker.tsx
++++ b/studio/src/components/shell/ThemePicker.tsx
+@@ -81,7 +81,7 @@ export function ThemePicker() {
+         <div
+           role="menu"
+           aria-label="Color themes"
+-          className="absolute right-0 mt-2 w-52 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden py-1"
++          className="absolute right-0 mt-2 w-52 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden py-1"
+         >
+           {THEME_ORDER.map((t) => {
+             const meta = THEME_META[t];
+diff --git a/studio/src/pages/user/EvolutionForge/DebateOverlay.tsx b/studio/src/pages/user/EvolutionForge/DebateOverlay.tsx
+index ffa83d05..f30af8ec 100644
+--- a/studio/src/pages/user/EvolutionForge/DebateOverlay.tsx
++++ b/studio/src/pages/user/EvolutionForge/DebateOverlay.tsx
+@@ -15,7 +15,7 @@ export const DebateOverlay: React.FC<DebateOverlayProps> = ({ isOpen, logs }) =>
+   if (!isOpen) return null;
+ 
+   return (
+-    <div className="absolute bottom-4 left-4 w-96 max-h-[60vh] overflow-hidden bg-background/90 backdrop-blur-xl border border-border-subtle rounded-xl shadow-2xl z-50 flex flex-col animate-fade-in transition-all">
++    <div className="absolute bottom-4 left-4 w-96 max-h-[60vh] overflow-hidden bg-background/90 backdrop-blur-xl border border-border-subtle rounded-xl shadow-2xl z-modal flex flex-col animate-fade-in transition-all">
+       <div className="p-4 border-b border-border-subtle font-brand font-bold text-text-primary flex justify-between items-center bg-card-bg">
+         <span className="flex items-center gap-2">
+           <div className="w-2 h-2 rounded-full bg-neon-purple animate-pulse" />
+diff --git a/studio/src/pages/user/plugins/InstallModal.tsx b/studio/src/pages/user/plugins/InstallModal.tsx
+index 1e75118a..2e5a91d8 100644
+--- a/studio/src/pages/user/plugins/InstallModal.tsx
++++ b/studio/src/pages/user/plugins/InstallModal.tsx
+@@ -14,7 +14,7 @@ export const InstallModal: React.FC<Props> = ({ isOpen, onClose, plugin, onConfi
+     if (!isOpen) return null;
+ 
+     return (
+-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
++        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-modal p-4">
+             <div className="bg-white rounded-2xl w-full max-w-md p-6">
+                 <div className="flex items-center gap-3 mb-6">
+                     <img src={plugin.icon_url} alt={plugin.name} className="w-10 h-10 rounded" />

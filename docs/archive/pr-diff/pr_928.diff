@@ -1,0 +1,53 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 77da7edf..4d59cf0b 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -399,13 +399,18 @@ def detect_changed_targets(
+             text=True,
+             check=False,
+         )
+-        if r.returncode != 0 or not r.stdout.strip():
++        if r.returncode != 0:
+             # If diff against base fails (e.g. shallow clone or 1 commit), fallback to all
+             return list(DOMAIN_MAP.keys()), True
+ 
+         files = [line.strip() for line in r.stdout.splitlines() if line.strip()]
++        if not files:
++            return [], False
++
+         targets: set[str] = set()
+-        umbrella = False
++        # Central monorepo Supremeai-bd/supremeai is the umbrella repository
++        # and must always receive synchronization whenever any landed changes occur.
++        umbrella = True
+ 
+         for f in files:
+             if (
+@@ -429,8 +434,6 @@ def detect_changed_targets(
+                 targets.add("Supremeai-bd/supremeai-browser")
+             elif f.startswith("vscode/"):
+                 targets.add("Supremeai-bd/supremeai-vscode")
+-            else:
+-                umbrella = True
+ 
+         return sorted(targets), umbrella
+     except Exception:
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index 1c462fd3..77b4efea 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -34,6 +34,14 @@ def test_detect_changed_targets(self, mock_run):
+         targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
+         self.assertIn("Supremeai-bd/supremeai-studio", targets)
+         self.assertIn("Supremeai-bd/supremeai-api", targets)
++        self.assertTrue(umbrella)
++
++    @patch("subprocess.run")
++    def test_detect_changed_targets_empty(self, mock_run):
++        mock_run.return_value.returncode = 0
++        mock_run.return_value.stdout = "\n"
++        targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
++        self.assertEqual(targets, [])
+         self.assertFalse(umbrella)
+ 
+ 

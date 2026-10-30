@@ -1,0 +1,38 @@
+diff --git a/docs/bridge/bridge-20261030-3396-landing-policy-triage-glm16.md b/docs/bridge/bridge-20261030-3396-landing-policy-triage-glm16.md
+new file mode 100644
+index 00000000..849a1fbc
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-3396-landing-policy-triage-glm16.md
+@@ -0,0 +1,32 @@
++# Triage ΓÇö #3396 (Run 41065024598 failure): CI-failure αª¿αª»αª╝, landing-plane policy-block false-positive αª╢αºìαª░αºçαªúαª┐
++
++**Task ID:** bridge-20261030-3396-landing-policy-triage-glm16 ┬╖ **Agent:** GLM Agent 16 (Job ID: 486792)
++**Incident:** #3396 (P2-medium, PR-lane, PR #3388) ┬╖ **Claimed:** 13:42:34Z (30-m lease)
++**Class:** report-only triage receipt ΓÇö evidence-first; αªòαºïαª¿αºï auto-close αªªαª╛αª¼αª┐ αª¿αºçαªç (keep-open)
++
++## αª¼αª╛αªéαª▓αª╛ αª╕αª╛αª░αª╕αªéαªòαºìαª╖αºçαª¬
++
++αªÅαªç incident-αªƒαª┐ **αª¬αºìαª░αªòαºâαªñ αªƒαºçαª╕αºìαªƒ-αª¼αºìαª»αª░αºìαªÑαªñαª╛ αª¿αª»αª╝**αÑñ failing job-αªÅαª░ αª▓αªù αª¬αºìαª░αªÑαª« αª▓αª╛αªçαª¿αºçαªç αª¿αª┐αª£αºçαªç αª╕αºìαª¼αºÇαªòαª╛αª░ αªòαª░αª¢αºç: *"Γ£à All verification tests and constitutional guards passed! Executing autonomous squash-merge..."* ΓÇö αªÅαª░αª¬αª░ GitHub-αªÅαª░ merge API αª½αºçαª░αªñ αªªαª┐αª»αª╝αºçαª¢αºç *"Pull request Supremeai-bd/supremeai-open#3388 is not mergeable: the base branch policy prohibits the merge"* ΓåÆ exit 1 ΓåÆ `federation_ci_failed` dispatch ΓåÆ incident αª╕αºìαª¼αª»αª╝αªéαªòαºìαª░αª┐αª»αª╝αª¡αª╛αª¼αºç mintedαÑñ αªàαª░αºìαªÑαª╛αºÄ **base-branch policy-block-αªòαºç landing job CI-failure αª╣αª┐αª╕αºçαª¼αºç αªùαªúαºìαª» αªòαª░αºç incident-mint αªòαª░αª¢αºç ΓÇö αªÅαªƒαª┐ αªÅαªòαªƒαª┐ false-positive αª╢αºìαª░αºçαªúαª┐**, αª¬αºìαª░αªñαª┐αª¼αª╛αª░ PR αª¬αºüαª░αºï αª╕αª¼αºüαª£ αª╣αª»αª╝αºçαªô out-of-date/policy-blocked αªàαª¼αª╕αºìαªÑαª╛αª»αª╝ αªºαª░αª╛ αªûαª╛αª¼αºçαÑñ
++
++## αª¬αºìαª░αªÑαª«-αª╣αª╛αªñαºç αª¬αºìαª░αª«αª╛αªú (zero-credential, 13:42ΓÇô13:44Z)
++
++- **Run 41065024598**: `completed / failure`, head_branch `bridge/bridge-20261030-receipt-pick-class-guard`, commit `c2a90f68` (dispatch payload-αªÅ), PR #3388 ΓÇö αªÅαªûαª¿αºï open, updated 13:39:10Z; αª¼αºìαª░αª╛αª₧αºìαªÜαºçαª░ αª╕αª░αºìαª¼αª╢αºçαª╖ αª░αª╛αª¿αªç αªÅαªƒαª┐ (αª¬αª░αª¼αª░αºìαªñαºÇ αª╕αª½αª▓ αª░αª╛αª¿ αª¿αºçαªç) ΓåÆ αªÿαªƒαª¿αª╛ stale αª¿αª»αª╝αÑñ
++- **Failing job**: `≡ƒ¢¼ Autonomous Auto-Landing` ΓÇö αªÅαªòαª«αª╛αªñαºìαª░ failed job; αª╕αª¼ verification/guard αªºαª╛αª¬ αª╕αª¼αºüαª£αÑñ
++- **αª¿αª┐αª░αºìαªªαª┐αª╖αºìαªƒ αªñαºìαª░αºüαªƒαª┐**: `X Pull request Supremeai-bd/supremeai-open#3388 is not mergeable: the base branch policy prohibits the merge.` (gh merge αªÅαª░αª░ αª╢αºçαª¬; `--auto`/`--admin` αª¬αª░αª╛αª«αª░αºìαª╢αª╕αª╣) ΓåÆ `exit code 1`αÑñ
++- **αª«αºçαªƒαª╛αªíαºçαªƒαª╛ αªíαºìαª░αª┐αª½αªƒ αª¿αºïαªƒ**: incident-αª╢αª┐αª░αºïαª¿αª╛αª« αª¼αª▓αª¢αºç `3388/merge` (dispatch payload-αªÅαª░ `branch` αª½αª┐αª▓αºìαªí), αªòαª┐αª¿αºìαªñαºü αª░αª╛αª¿αºçαª░ αª¬αºìαª░αªòαºâαªñ `head_branch` bridge branch-αªç ΓÇö minting-guard αª¡αª¼αª┐αª╖αºìαª»αºÄ αª╢αªòαºìαªñαª┐αªòαª░αªúαºçαª░ αª¢αºïαªƒ αª¬αºìαª░αª«αª╛αªúαÑñ
++
++## αª╢αºìαª░αºçαªúαª┐-αª¼αª┐αª╢αºìαª▓αºçαª╖αªú αªô αª¬αºìαª░αªñαª┐αªòαª╛αª░-αª¬αªÑ
++
++1. **PR-author αª▓αºçαª¿ (αªñαª╛αºÄαªòαºìαª╖αªúαª┐αªò)**: αª¼αºìαª░αª╛αª₧αºìαªÜ αªåαª¬αªíαºçαªƒ/αª░αª┐αª¼αºçαª£ αªòαª░αºç mergeability αª½αª┐αª░αª┐αª»αª╝αºç αªåαª¿αª▓αºç landing job push-αªÅ αª¬αºüαª¿αªâαª░αª╛αª¿ αªòαª░αºç merge αªòαª░αª¼αºç ΓÇö incident αª¿αª┐αª£αºç αªÑαºçαªòαºçαªç stale αª╣αª¼αºç (#3050 stale-incident demotion αªºαª░αª¼αºç)αÑñ
++2. **Admin αª▓αºçαª¿ (mechanical root-cause, `.github/` protected)**: landing job squash-merge-αªÅαª░ **αªåαªùαºç** `mergeable_state` API-pαºìαª░αºïαª¼ αªòαª░αºüαªò; `blocked`/`behind` (policy) αª╣αª▓αºç **retryable-skip** ΓÇö failure αª¿αª»αª╝, `federation_ci_failed` mint αª¿αª»αª╝αÑñ αªÅαªƒαª┐ αª╢αºìαª░αºçαªúαª┐αªƒαª┐αªòαºçαªç αªòαª╛αªáαª╛αª«αºïαªùαªñαª¡αª╛αª¼αºç αª«αºüαª¢αºç αªªαºçαª¼αºç (U6: αª¡αºüαª▓ αªÅαªòαª¼αª╛αª░ αªåαª¼αª┐αª╖αºìαªòαºâαªñ ΓåÆ αª»αª╛αª¿αºìαªñαºìαª░αª┐αªò αªùαª╛αª░αºìαªí)αÑñ αª¼αª┐αªòαª▓αºìαª¬ αª╕αºéαªòαºìαª╖αºìαª«αªñαª╛: merge-αª¼αºìαª»αª░αºìαªÑαªñαª╛αª░ αªÅαª░αª░-αª╢αºçαª¬ αª¬αª╛αª░αºìαª╕ αªòαª░αºç policy-block αªåαª▓αª╛αªªαª╛ αªòαª░αª╛ ΓÇö pre-check αª¬αªÑ αª╕αª░αª▓ αªô deterministicαÑñ
++3. **Minting-guard αª▓αºçαª¿**: incident-mint-αªÅαª░ αªåαªùαºç "tests green + policy-block" αª╢αºçαª¬ αª╕αª¿αª╛αªòαºìαªñ αª╣αª▓αºç incident-αªç mint αªòαª░αª╛ αªëαªÜαª┐αªñ αª¿αª»αª╝ (αªàαªÑαª¼αª╛ αª╢αª┐αª░αºïαª¿αª╛αª«αºç `landing-policy-block` αª╢αºìαª░αºçαªúαª┐-αªƒαºìαª»αª╛αªù) ΓÇö P2-αªñαºç αª╕αºìαª¿αª╛αªçαª¬-αª¬αºìαª░αªñαª┐αª»αºïαªùαª┐αªñαª╛ αªô αª¼αºïαª░αºìαªí-σÖ¬σú░ αªòαª«αª¼αºçαÑñ
++
++## αª╕αºÇαª«αª╛αª¼αªªαºìαªºαªñαª╛
++
++- `mergeable_state`-αªÅαª░ αª¼αª░αºìαªñαª«αª╛αª¿ αª«αª╛αª¿ keyed API αª¢αª╛αªíαª╝αª╛ αª»αª╛αªÜαª╛αªçαªòαºâαªñ αª¿αª»αª╝ (zero-credential αª▓αºçαª¿); αª▓αªù-αª¬αºìαª░αª«αª╛αªú policy-block-αªç αª¿αª┐αª░αºìαªªαºçαª╢ αªòαª░αª¢αºç, αªñαª¼αºç behind-main αª¿αª╛ review-block ΓÇö αªñαª╛ PR-author/owner αª¿αª┐αª╢αºìαªÜαª┐αªñ αªòαª░αª¼αºçαÑñ
++- αªÅαªç αª░αª┐αª╕αª┐αªƒ αª╢αºüαªºαºü triage-αª¬αºìαª░αª«αª╛αªú: αª¼αª╛αª╕αºìαªñαª¼αª╛αª»αª╝αª¿ `.github/`-αªÅ admin-αª▓αºçαª¿αºç, αª¼αºìαª░αª╛αª₧αºìαªÜ-αª½αª┐αªòαºìαª╕ PR #3388-αªÅαª░ αª▓αºçαªûαªò-αª▓αºçαª¿αºçαÑñ
++
++## αª░αºçαª½αª╛αª░αºçαª¿αºìαª╕
++
++- Run: https://github.com/Supremeai-bd/supremeai-open/actions/runs/41065024598 ┬╖ PR: https://github.com/Supremeai-bd/supremeai-open/pull/3388 ┬╖ Incident: #3396
++- αª╢αºìαª░αºçαªúαª┐-αª¬αºìαª░αºçαªòαºìαª╖αª╛αª¬αªƒ: #3050 (stale-incident demotion), U6 (Zero-Recurrence), #2512 (protected-path routing)

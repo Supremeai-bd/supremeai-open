@@ -1,0 +1,75 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 97c933f3..a6e48364 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -22,6 +22,8 @@
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ CADENCE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence.json"
+ STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence_state.json"
++ISSUE_LEASE_FILE = REPO_ROOT / "scripts" / "agents" / "dispatched_issues_state.json"
++ISSUE_LEASE_SECONDS = 1800.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
+ 
+ RULE_FRESHNESS_FILES = (
+     "AGENTS.md",
+@@ -153,9 +155,20 @@ def label_names(item: dict[str, Any]) -> list[str]:
+             return []
+         return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+ 
++    lease_store = load_issue_lease_store()
++    now_ts = time.time()
++
+     def is_claimable(item: dict[str, Any]) -> bool:
+         names = label_names(item)
+-        return not (EXCLUDED_LABELS & set(names))
++        if EXCLUDED_LABELS & set(names):
++            return False
++        # বাংলা: ৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং — অন্য এজেন্ট যদি ৩০ মিনিটের মধ্যে কাজ শেষ না
++        # করে থাকে, তবে এটি নিজে থেকেই রিলিজ হয়ে রি-ক্লেইমযোগ্য হয়ে যাবে।
++        num_str = str(item.get("number", ""))
++        leased_at = lease_store.get(num_str)
++        if leased_at is not None and (now_ts - leased_at) < ISSUE_LEASE_SECONDS:
++            return False
++        return True
+ 
+     PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
+ 
+@@ -563,6 +576,31 @@ def save_last_run_store(store: dict[str, float], path: Path | None = None) -> bo
+     except Exception:
+         return False
+ 
++def load_issue_lease_store(path: Path | None = None) -> dict[str, float]:
++    """বাংলা: ডিসপ্যাচ করা ইস্যুগুলোর টাইমস্ট্যাম্প লোড করে (৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং)"""
++    target = path or ISSUE_LEASE_FILE
++    try:
++        if not target.exists():
++            return {}
++        with target.open("r", encoding="utf-8") as fh:
++            data = json.load(fh)
++        return {str(k): float(v) for k, v in data.items() if str(v).replace(".", "", 1).isdigit()}
++    except Exception:
++        return {}
++
++def mark_issue_leased(issue_number: str | int, now: float | None = None, path: Path | None = None) -> bool:
++    """বাংলা: ইস্যু ডিসপ্যাচ হওয়ার সাথে সাথে টাইমস্ট্যাম্প রেকর্ড করে অন্য এজেন্টের কনফ্লিক্ট আটকায়"""
++    target = path or ISSUE_LEASE_FILE
++    now_ts = now if now is not None else time.time()
++    store = load_issue_lease_store(target)
++    store[str(issue_number)] = now_ts
++    try:
++        target.parent.mkdir(parents=True, exist_ok=True)
++        target.write_text(json.dumps(store, indent=2), encoding="utf-8")
++        return True
++    except Exception:
++        return False
++
+ def role_is_due(
+     role: str,
+     last_run_ts: float | None,
+@@ -842,6 +880,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             )
+             concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
+             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
++            mark_issue_leased(picked)
+             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
+             print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR with 'Closes #{picked}' in PR description to close it on merge.")
+             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")

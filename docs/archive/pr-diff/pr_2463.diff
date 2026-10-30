@@ -1,0 +1,228 @@
+diff --git a/tests/test_vault_dir_posix.py b/tests/test_vault_dir_posix.py
+new file mode 100644
+index 00000000..e788e2e9
+--- /dev/null
++++ b/tests/test_vault_dir_posix.py
+@@ -0,0 +1,222 @@
++#!/usr/bin/env python3
++"""tests/test_vault_dir_posix.py — home-anchored vault-dir pin for #2276.
++
++Regression pin for the ghost-tower credential vault path resolution:
++
++  browser/ghost_tower/credential_vault.py carried
++      VAULT_DIR = Path(os.path.expanduser(r"~\\.supremeai_vault"))
++  On POSIX, expanduser() reads `~\\.supremeai_vault` as `~<username>` (a user
++  literally named `\\.supremeai_vault`); the pwd lookup fails and the string
++  is returned UNCHANGED, so VAULT_DIR became a CWD-relative garbage path on
++  every linux/macOS host:
++    - vault.key landed in a fresh CWD-relative directory per boot ->
++      get_or_create_master_key()'s keyfile layer could NEVER persist;
++    - credentials.enc.json was written where no configured reader looks.
++  (env-var-first chain from #2270 neutralizes the key half on Render only;
++  the path half stays broken for every other POSIX consumer.)
++
++  The fix (#2276) replaces the raw-string tilde with the canonical spelling
++  `Path.home() / ".supremeai_vault"` — expand-always on every platform, and
++  the exact directory the legacy pattern intended on Windows.
++
++Pins (all offline & deterministic; ACTIVE iff the fix is applied):
++  1. VAULT_DIR is ABSOLUTE (the old bug made it CWD-relative);
++  2. leaf name preserved: `.supremeai_vault`;
++  3. no literal `~` survives in the resolved string (expanduser-fail marker);
++  4. VAULT_FILE / KEY_FILE are VAULT_DIR children with the expected names;
++  5. keyfile round-trip under an isolated VAULT_DIR: create -> re-read
++     returns the same key (persistence contract the bug silently broke);
++  6. source pin: the legacy `expanduser(r"~` pattern must NOT return.
++
++PENDING-HANDOFF STATE (sequencing-honesty doctrine, cf. test_ci_guards /
++test_ci_supply_chain_guard):
++  The fix file browser/ghost_tower/credential_vault.py sits behind the
++  bridge lane's *credential* protected-path rule (solver receipt #2281):
++  the bridge lane does not accept automatic writes to it, so the one-line
++  fix must land via the admin / priv-repo lane. Until it does, this suite
++  detects the unfixed state at collection time and SKIPS every pin with
++  the ADMIN RECIPE in the skip message — a pending handoff is a pending
++  state, not a regression. The moment the fix lands on the checked-out
++  tree, all six pins activate permanently with zero further edits.
++
++  ADMIN RECIPE (one line in browser/ghost_tower/credential_vault.py):
++    replace  VAULT_DIR = Path(os.path.expanduser(r"~\\.supremeai_vault"))
++    with     VAULT_DIR = Path.home() / ".supremeai_vault"
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++  - pytest:  pytest tests/test_vault_dir_posix.py
++  - stdlib:  python3 tests/test_vault_dir_posix.py   (plain runner)
++
++The cryptography dependency is required by the module under test itself; if
++it is missing the behavior tests skip honestly instead of failing.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import os
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++TARGET = REPO_ROOT / "browser" / "ghost_tower" / "credential_vault.py"
++
++
++def _load_module():
++    spec = importlib.util.spec_from_file_location("credential_vault", TARGET)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def _source() -> str:
++    return TARGET.read_text(encoding="utf-8")
++
++
++def _code_no_comments() -> str:
++    """Source with naive comments stripped (executable plane only)."""
++    code_lines = []
++    for line in _source().splitlines():
++        stripped = line.strip()
++        if stripped.startswith("#"):
++            continue
++        code_lines.append(line.split(" # ")[0])
++    return "\n".join(code_lines)
++
++
++def _fix_state():
++    """Detect whether the #2276 fix is applied to the checked-out tree.
++
++    Returns (applied, reason). Applied iff the canonical Path.home()
++    spelling is present in code and the legacy raw-string tilde pattern
++    is gone from code. Absence of the target file itself is reported as
++    structural drift (honest skip, not a silent pass).
++    """
++    if not TARGET.exists():
++        return False, (
++            "STRUCTURAL DRIFT: browser/ghost_tower/credential_vault.py is "
++            "absent from the checked-out tree; pins moot until the module "
++            "reappears (re-evaluate then)."
++        )
++    code = _code_no_comments()
++    if "Path.home()" in code and 'expanduser(r"~' not in code:
++        return True, ""
++    return False, (
++        "PENDING HANDOFF (#2276 ADMIN RECIPE): the fix file sits behind "
++        "the bridge lane's *credential* protected-path rule (solver "
++        "receipt #2281), so the one-line fix must land via the admin / "
++        "priv-repo lane. Recipe: in "
++        "browser/ghost_tower/credential_vault.py replace "
++        'VAULT_DIR = Path(os.path.expanduser(r"~\\.supremeai_vault")) '
++        'with VAULT_DIR = Path.home() / ".supremeai_vault"; these pins '
++        "then activate permanently with zero further edits. Pending "
++        "handoff is a pending state, not a regression (test_ci_guards "
++        "sequencing-honesty doctrine)."
++    )
++
++
++class _HandoffGate(unittest.TestCase):
++    """Class-level gate: uniform pending-handoff skip until the fix lands."""
++
++    @classmethod
++    def setUpClass(cls):
++        applied, reason = _fix_state()
++        if not applied:
++            raise unittest.SkipTest(reason)
++        try:
++            cls.mod = _load_module()
++        except ImportError:
++            cls.mod = None
++
++
++class TestVaultDirResolution(_HandoffGate):
++    """Path-resolution pins (import-free of cryptography semantics)."""
++
++    def test_vault_dir_is_absolute(self):
++        if self.mod is None:
++            self.skipTest("cryptography unavailable")
++        self.assertTrue(
++            self.mod.VAULT_DIR.is_absolute(),
++            f"VAULT_DIR must be absolute, got CWD-relative {self.mod.VAULT_DIR!s} "
++            "(the #2276 POSIX expanduser-fail class)",
++        )
++
++    def test_vault_dir_leaf_name(self):
++        if self.mod is None:
++            self.skipTest("cryptography unavailable")
++        self.assertEqual(self.mod.VAULT_DIR.name, ".supremeai_vault")
++
++    def test_no_literal_tilde_in_resolution(self):
++        if self.mod is None:
++            self.skipTest("cryptography unavailable")
++        self.assertNotIn(
++            "~",
++            str(self.mod.VAULT_DIR),
++            "literal '~' in VAULT_DIR means expanduser() failed to expand "
++            "(exactly the #2276 POSIX failure signature)",
++        )
++
++    def test_vault_children_paths(self):
++        if self.mod is None:
++            self.skipTest("cryptography unavailable")
++        self.assertEqual(self.mod.VAULT_FILE, self.mod.VAULT_DIR / "credentials.enc.json")
++        self.assertEqual(self.mod.KEY_FILE, self.mod.VAULT_DIR / "vault.key")
++
++    def test_source_has_no_raw_tilde_expanduser(self):
++        # Pin the EXECUTABLE plane only: the explanatory comment block in the
++        # fix itself quotes the legacy pattern verbatim (documentation), so
++        # naive whole-file scanning would false-trip. Strip naive inline
++        # comments, then assert the legacy pattern is gone from code.
++        code = _code_no_comments()
++        self.assertNotIn(
++            'expanduser(r"~',
++            code,
++            "legacy raw-string tilde pattern must not return in code (shrink-only pin)",
++        )
++        self.assertIn(
++            "Path.home()",
++            code,
++            "canonical Path.home() spelling expected per the #2276 fix",
++        )
++
++
++class TestKeyfilePersistence(_HandoffGate):
++    """Behavior pin: keyfile create -> re-read round-trip (#2276 contract)."""
++
++    def test_keyfile_roundtrip_in_isolated_vault_dir(self):
++        if self.mod is None:
++            self.skipTest("cryptography unavailable")
++        mod = self.mod
++
++        old_env = os.environ.pop("CREDENTIAL_MASTER_KEY", None)
++        try:
++            with tempfile.TemporaryDirectory() as tmp:
++                vault_dir = Path(tmp) / ".supremeai_vault"
++                mod.VAULT_DIR = vault_dir
++                mod.VAULT_FILE = vault_dir / "credentials.enc.json"
++                mod.KEY_FILE = vault_dir / "vault.key"
++
++                key1 = mod.get_or_create_master_key()
++                self.assertTrue((vault_dir / "vault.key").exists())
++                key2 = mod.get_or_create_master_key()
++                self.assertEqual(key1, key2, "keyfile must persist across boots")
++                self.assertTrue(vault_dir.is_absolute())
++        finally:
++            if old_env is not None:
++                os.environ["CREDENTIAL_MASTER_KEY"] = old_env
++
++
++def main() -> int:
++    loader = unittest.TestLoader()
++    suite = unittest.TestSuite()
++    suite.addTests(loader.loadTestsFromTestCase(TestVaultDirResolution))
++    suite.addTests(loader.loadTestsFromTestCase(TestKeyfilePersistence))
++    runner = unittest.TextTestRunner(verbosity=2)
++    result = runner.run(suite)
++    return 0 if result.wasSuccessful() else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())

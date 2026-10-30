@@ -1,0 +1,47 @@
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 47e6045c..a21c425d 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -135,7 +135,17 @@
+         "actions",
+         "PULL_REQUEST_TEMPLATE.md",
+     },  # actions/ (reusable composite actions, #155 Federation Workflow Diet)
+-    "infrastructure": {"mcp-control-plane", "cloudflare-studio-proxy"},
++    "infrastructure": {
++        "mcp-control-plane",
++        "cloudflare-studio-proxy",
++        # FILE entry (issue #1640): proprietary LICENSE notice at the mirror
++        # surface root. Legal notices are boundary-neutral — license_ssot_guard
++        # owns placement SSOT; PR #2510 adds these notices and its gate red
++        # (run 40840030278, Boundary Sanitization Guard exit 1) is this
++        # registry's omission, not a leak. Same FILE-entry precedent as
++        # scripts/"validate_schemas.py" above.
++        "LICENSE",
++    },
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -514,6 +524,11 @@ def cmd_self_test() -> int:
+             ),
+             (".github/workflows/workflow_ref.yml", [secret_ref], False),
+             ("docs/empty_ref.env.example", [empty_ref], False),
++            (
++                "infrastructure/LICENSE",
++                ["Copyright (c) 2026 Supremeai-bd. Proprietary notice.\n"],
++                False,
++            ),
+             # --- must FAIL (real leak classes; placed in APPROVED surfaces so
+             # the CONTENT layer is what fires, not the surface layer) ---
+             ("docs/leak_vault.py", [vault_leak], True),
+@@ -529,6 +544,11 @@ def cmd_self_test() -> int:
+             ("vault/keys.txt", ["hvs.abc\n"], True),
+             ("unknown_surface/newfile.py", ["x = 1\n"], True),
+             ("scripts/notapproved/tool.py", ["x = 1\n"], True),
++            (
++                "infrastructure/notapproved/tool.py",
++                ["x = 1\n"],
++                True,
++            ),  # FILE entry must not over-allow the whole subtree
+         ]
+         for rel, lines, expect in cases:
+             _self_test_case(root, rel, lines, expect)

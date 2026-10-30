@@ -1,0 +1,1294 @@
+diff --git a/examples/dashboard-preview/index.css b/examples/dashboard-preview/index.css
+index 85b71cc6..bb8171aa 100644
+--- a/examples/dashboard-preview/index.css
++++ b/examples/dashboard-preview/index.css
+@@ -1,26 +1,29 @@
+ /*
+-  SupremeAI Studio — Dashboard Preview styles (issue #24).
+-  Token-driven dark glassmorphism. Every token below mirrors
+-  api-schemas/dashboard.schema.json $defs.DesignTokens 1:1 — the schema is the
+-  SSOT; this file is the reference mapping onto CSS custom properties.
++  SupremeAI Studio — Dashboard Preview styles (issue #337).
++  Token-driven dark & light glassmorphism.
++  Every token mirrors api-schemas/dashboard.schema.json $defs.DesignTokens 1:1.
+ 
+-  Normative guidelines (see schema description + index.html header):
++  Normative guidelines:
+   contrast >= 4.5:1 body text · 44px interactive targets · :focus-visible rings
+   · prefers-reduced-motion kills non-essential animation · mobile-first grid.
+ */
+ 
+-:root {
+-  /* color tokens ($defs.DesignTokens.color) */
++:root,
++html[data-theme="dark"] {
++  /* color tokens ($defs.DesignTokens.color) - Dark Mode */
+   --bg-base: #0a0f0d;
+-  --surface-glass: rgba(22, 32, 27, 0.55);
++  --surface-glass: rgba(22, 32, 27, 0.58);
+   --surface-border: rgba(148, 233, 194, 0.14);
++  --surface-hover: rgba(45, 212, 191, 0.08);
+   --text-primary: #eef7f2;
+   --text-secondary: #9db8ab;
++  --text-dim: #648074;
+   --accent: #10b981;
+   --accent-soft: #2dd4bf;
+   --success: #34d399;
+   --warning: #f59e0b;
+   --danger: #f87171;
++  --terminal-bg: rgba(10, 15, 13, 0.85);
+ 
+   /* typography tokens */
+   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+@@ -35,15 +38,30 @@
+   --radius-md: 14px;
+   --radius-lg: 22px;
+ 
+-  /* motion tokens (reduced-motion disables the showy ones) */
++  /* motion tokens */
+   --duration-fast: 140ms;
+   --duration-base: 320ms;
+   --easing: cubic-bezier(0.22, 1, 0.36, 1);
+ }
+ 
+-* { box-sizing: border-box; }
++html[data-theme="light"] {
++  /* color tokens - Light Mode (Frosted Glass, high contrast >= 4.5:1) */
++  --bg-base: #f3f6f4;
++  --surface-glass: rgba(255, 255, 255, 0.78);
++  --surface-border: rgba(16, 185, 129, 0.20);
++  --surface-hover: rgba(16, 185, 129, 0.06);
++  --text-primary: #0f1d16;
++  --text-secondary: #3b5247;
++  --text-dim: #627c70;
++  --accent: #059669;
++  --accent-soft: #0d9488;
++  --success: #059669;
++  --warning: #d97706;
++  --danger: #dc2626;
++  --terminal-bg: rgba(240, 246, 243, 0.92);
++}
+ 
+-html { color-scheme: dark; }
++* { box-sizing: border-box; }
+ 
+ body {
+   margin: 0;
+@@ -51,18 +69,18 @@ body {
+   display: flex;
+   flex-direction: column;
+   background:
+-    radial-gradient(1100px 500px at 85% -10%, rgba(45, 212, 191, 0.10), transparent 60%),
+-    radial-gradient(900px 480px at -10% 110%, rgba(16, 185, 129, 0.08), transparent 55%),
++    radial-gradient(1100px 500px at 85% -10%, rgba(45, 212, 191, 0.12), transparent 60%),
++    radial-gradient(900px 480px at -10% 110%, rgba(16, 185, 129, 0.10), transparent 55%),
+     var(--bg-base);
+   color: var(--text-primary);
+   font-family: var(--font-sans);
+   font-size: var(--size-body);
+   line-height: 1.55;
++  transition: background-color var(--duration-base) var(--easing), color var(--duration-base) var(--easing);
+   -webkit-font-smoothing: antialiased;
+ }
+ 
+-/* ---------- accessibility primitives ---------- */
+-
++/* Accessibility */
+ .skip-link {
+   position: absolute;
+   left: -9999px;
+@@ -72,7 +90,7 @@ body {
+   background: var(--accent);
+   color: #052e21;
+   font-weight: 700;
+-  z-index: 10;
++  z-index: 100;
+ }
+ .skip-link:focus { left: 0; }
+ 
+@@ -82,272 +100,417 @@ body {
+   border-radius: var(--radius-sm);
+ }
+ 
+-/* ---------- top bar ---------- */
+-
++/* Header Topbar */
+ .topbar {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   gap: 16px;
+   flex-wrap: wrap;
+-  padding: 18px clamp(16px, 4vw, 40px);
++  padding: 16px clamp(16px, 4vw, 40px);
+   border-bottom: 1px solid var(--surface-border);
+-  background: linear-gradient(180deg, rgba(22, 32, 27, 0.75), rgba(22, 32, 27, 0.35));
+-  backdrop-filter: blur(14px);
+-  -webkit-backdrop-filter: blur(14px);
++  background: var(--surface-glass);
++  backdrop-filter: blur(16px);
++  -webkit-backdrop-filter: blur(16px);
++  position: sticky;
++  top: 0;
++  z-index: 50;
+ }
+ 
+-.brand { display: flex; align-items: center; gap: 12px; }
+-
++.brand {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
+ .brand-mark {
+-  display: grid;
+-  place-items: center;
+-  width: 44px;
+-  height: 44px;
+-  border-radius: var(--radius-md);
+-  border: 1px solid var(--surface-border);
+-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(45, 212, 191, 0.10));
+-  color: var(--accent-soft);
+-  font-size: 1.25rem;
++  font-size: 1.8rem;
++  color: var(--accent);
++  filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.45));
+ }
+-
+ .brand-name {
+   margin: 0;
+-  font-size: var(--size-title);
+-  font-weight: 800;
+-  letter-spacing: 0.01em;
++  font-size: 1.15rem;
++  font-weight: 700;
++  letter-spacing: -0.01em;
++}
++.brand-name span {
++  color: var(--accent-soft);
++  font-weight: 400;
+ }
+-.brand-name span { color: var(--accent); }
+-
+ .brand-sub {
+-  margin: 0;
++  margin: 2px 0 0;
+   font-size: var(--size-caption);
+-  color: var(--text-secondary);
+-  letter-spacing: 0.08em;
+-  text-transform: uppercase;
++  color: var(--text-dim);
+ }
+ 
+-.topbar-status { display: flex; align-items: center; gap: 12px; }
++/* Header Stats Bar */
++.header-stats {
++  display: flex;
++  align-items: center;
++  gap: 10px;
++  flex-wrap: wrap;
++}
++.stat-pill {
++  display: flex;
++  flex-direction: column;
++  padding: 6px 14px;
++  background: var(--surface-glass);
++  border: 1px solid var(--surface-border);
++  border-radius: var(--radius-sm);
++  min-width: 90px;
++}
++.stat-label {
++  font-size: 0.70rem;
++  color: var(--text-dim);
++  text-transform: uppercase;
++  letter-spacing: 0.04em;
++}
++.stat-value {
++  font-size: 1rem;
++  font-weight: 700;
++  color: var(--text-primary);
++}
+ 
+-.pill {
+-  min-height: 44px;
++/* Controls */
++.topbar-controls {
++  display: flex;
++  align-items: center;
++  gap: 12px;
++}
++.control-btn {
+   display: inline-flex;
+   align-items: center;
+-  padding: 6px 16px;
+-  border-radius: 999px;
++  gap: 8px;
++  min-height: 44px;
++  padding: 0 14px;
++  border-radius: var(--radius-sm);
+   border: 1px solid var(--surface-border);
+   background: var(--surface-glass);
++  color: var(--text-primary);
++  font-family: inherit;
+   font-size: var(--size-caption);
+-  font-weight: 700;
+-  letter-spacing: 0.14em;
+-  color: var(--accent-soft);
++  cursor: pointer;
++  transition: all var(--duration-fast) var(--easing);
++}
++.control-btn:hover {
++  background: var(--surface-hover);
++  border-color: var(--accent-soft);
++}
++.icon-btn {
++  min-width: 44px;
++  justify-content: center;
++  padding: 0;
++  font-size: 1.1rem;
+ }
+ 
+ .live-dot {
+-  width: 10px;
+-  height: 10px;
++  width: 9px;
++  height: 9px;
+   border-radius: 50%;
+   background: var(--accent);
+-  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+-  animation: pulse 2.2s var(--easing) infinite;
++  box-shadow: 0 0 10px var(--accent);
++  animation: pulse 2s infinite var(--easing);
+ }
+-
+ @keyframes pulse {
+-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+-  70%  { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
++  0%, 100% { opacity: 1; transform: scale(1); }
++  50% { opacity: 0.45; transform: scale(0.85); }
+ }
+ 
++.pill {
++  font-family: var(--font-mono);
++  font-size: 0.72rem;
++  font-weight: 700;
++  letter-spacing: 0.06em;
++}
+ .clock {
+   font-family: var(--font-mono);
+   font-size: var(--size-caption);
+   color: var(--text-secondary);
+-  min-width: 9ch;
++  padding-left: 4px;
+ }
+ 
+-/* ---------- filters ---------- */
+-
+-.filters {
++/* Filter Bar */
++.filters-bar {
+   display: flex;
+-  gap: 10px;
++  align-items: center;
++  justify-content: space-between;
++  gap: 16px;
++  flex-wrap: wrap;
++  padding: 12px clamp(16px, 4vw, 40px);
++  border-bottom: 1px solid var(--surface-border);
++  background: rgba(10, 15, 13, 0.25);
++}
++.filter-group {
++  display: flex;
++  align-items: center;
++  gap: 8px;
+   flex-wrap: wrap;
+-  padding: 14px clamp(16px, 4vw, 40px);
+ }
+-
+ .filter {
+   min-height: 44px;
+-  padding: 8px 18px;
+-  border-radius: 999px;
++  padding: 0 16px;
++  border-radius: 9999px;
+   border: 1px solid var(--surface-border);
+   background: var(--surface-glass);
+   color: var(--text-secondary);
+-  font: inherit;
++  font-family: inherit;
+   font-size: var(--size-caption);
+-  font-weight: 600;
++  font-weight: 500;
+   cursor: pointer;
+-  transition: color var(--duration-fast) var(--easing),
+-              border-color var(--duration-fast) var(--easing),
+-              transform var(--duration-fast) var(--easing);
++  transition: all var(--duration-fast) var(--easing);
++}
++.filter:hover {
++  color: var(--text-primary);
++  border-color: var(--accent-soft);
+ }
+-.filter:hover { color: var(--text-primary); transform: translateY(-1px); }
+ .filter.is-active {
+-  color: #052e21;
+   background: var(--accent);
++  color: #052e21;
+   border-color: var(--accent);
++  font-weight: 700;
++  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
++}
++.stream-info {
++  font-size: var(--size-caption);
++  color: var(--text-dim);
++  font-family: var(--font-mono);
+ }
+ 
+-/* ---------- layout & cards ---------- */
+-
++/* Layout */
+ .layout {
+   flex: 1;
+-  display: flex;
+-  flex-direction: column;
+-  gap: 28px;
+   width: 100%;
+-  max-width: 1180px;
++  max-width: 1440px;
+   margin: 0 auto;
+-  padding: 8px clamp(16px, 4vw, 40px) 36px;
++  padding: clamp(20px, 3vw, 36px) clamp(16px, 4vw, 40px);
++  display: flex;
++  flex-direction: column;
++  gap: 32px;
+ }
+ 
++.section-header {
++  display: flex;
++  align-items: baseline;
++  justify-content: space-between;
++  gap: 16px;
++  flex-wrap: wrap;
++  margin-bottom: 16px;
++}
+ .section-title {
+-  margin: 0 0 14px;
++  margin: 0;
+   font-size: var(--size-title);
+-  font-weight: 700;
++  font-weight: 600;
++  letter-spacing: -0.01em;
+   display: flex;
+-  align-items: baseline;
++  align-items: center;
+   gap: 10px;
+ }
+-
++.section-tag {
++  font-size: var(--size-caption);
++  color: var(--text-dim);
++}
+ .count {
++  font-size: var(--size-body);
++  font-weight: 400;
++  color: var(--text-dim);
+   font-family: var(--font-mono);
+-  font-size: var(--size-caption);
+-  color: var(--text-secondary);
+ }
+ 
++/* Grids */
+ .grid {
+   display: grid;
+-  grid-template-columns: 1fr;
+   gap: 16px;
+ }
+-@media (min-width: 640px)  { .grid { grid-template-columns: repeat(2, 1fr); } }
+-@media (min-width: 1024px) { .grid { grid-template-columns: repeat(3, 1fr); } }
++.repos-grid {
++  grid-template-columns: 1fr;
++}
++@media (min-width: 640px) {
++  .repos-grid { grid-template-columns: repeat(2, 1fr); }
++  .agents-grid { grid-template-columns: repeat(2, 1fr); }
++}
++@media (min-width: 1024px) {
++  .repos-grid { grid-template-columns: repeat(3, 1fr); }
++  .agents-grid { grid-template-columns: repeat(3, 1fr); }
++}
++@media (min-width: 1280px) {
++  .repos-grid { grid-template-columns: repeat(4, 1fr); }
++}
+ 
++/* Cards */
+ .card {
+-  position: relative;
++  display: flex;
++  flex-direction: column;
++  gap: 10px;
+   padding: 18px;
+-  border-radius: var(--radius-lg);
+-  border: 1px solid var(--surface-border);
+   background: var(--surface-glass);
+-  backdrop-filter: blur(16px) saturate(1.15);
+-  -webkit-backdrop-filter: blur(16px) saturate(1.15);
+-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+-  transition: transform var(--duration-base) var(--easing),
+-              border-color var(--duration-base) var(--easing);
+-  animation: rise var(--duration-base) var(--easing) both;
++  border: 1px solid var(--surface-border);
++  border-radius: var(--radius-md);
++  backdrop-filter: blur(12px);
++  -webkit-backdrop-filter: blur(12px);
++  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
++  transition: transform var(--duration-fast) var(--easing), border-color var(--duration-fast) var(--easing);
+ }
+ .card:hover {
+-  transform: translateY(-4px);
+-  border-color: rgba(148, 233, 194, 0.30);
+-}
+-
+-@keyframes rise {
+-  from { opacity: 0; transform: translateY(10px); }
+-  to   { opacity: 1; transform: translateY(0); }
++  transform: translateY(-2px);
++  border-color: var(--accent-soft);
+ }
+ 
+ .card-head {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+-  gap: 10px;
+-  margin-bottom: 10px;
++  gap: 12px;
++  padding-bottom: 8px;
++  border-bottom: 1px solid var(--surface-border);
+ }
+-
+ .card-title {
+   margin: 0;
+-  font-size: var(--size-body);
+-  font-weight: 700;
+-  font-family: var(--font-mono);
+-  word-break: break-all;
++  font-size: 0.98rem;
++  font-weight: 600;
++  color: var(--text-primary);
++  overflow: hidden;
++  text-overflow: ellipsis;
++  white-space: nowrap;
++}
++.card-line {
++  display: flex;
++  align-items: center;
++  justify-content: space-between;
++  gap: 10px;
++  font-size: 0.85rem;
++  color: var(--text-secondary);
+ }
+ 
++/* Badges */
+ .badge {
+-  flex-shrink: 0;
+-  padding: 4px 12px;
+-  min-height: 24px;
+   display: inline-flex;
+   align-items: center;
+-  border-radius: 999px;
+-  font-size: var(--size-caption);
++  padding: 3px 8px;
++  border-radius: var(--radius-sm);
++  font-size: 0.70rem;
++  font-family: var(--font-mono);
+   font-weight: 700;
+-  letter-spacing: 0.06em;
+   text-transform: uppercase;
+-  border: 1px solid transparent;
+-}
+-.badge.healthy, .badge.passing, .badge.done    { color: var(--success); border-color: rgba(52, 211, 153, 0.4);  background: rgba(52, 211, 153, 0.10); }
+-.badge.degraded, .badge.waiting, .badge.running, .badge.unknown,
+-.badge.working                                  { color: var(--accent-soft); border-color: rgba(45, 212, 191, 0.4); background: rgba(45, 212, 191, 0.10); }
+-.badge.warning                                  { color: var(--warning); border-color: rgba(245, 158, 11, 0.45); background: rgba(245, 158, 11, 0.10); }
+-.badge.down, .badge.failing, .badge.error, .badge.blocked
+-                                                { color: var(--danger); border-color: rgba(248, 113, 113, 0.45); background: rgba(248, 113, 113, 0.10); }
+-
+-.card-line {
+-  display: flex;
+-  justify-content: space-between;
+-  gap: 12px;
+-  font-size: var(--size-caption);
+-  color: var(--text-secondary);
+-  padding: 3px 0;
++  letter-spacing: 0.04em;
++}
++.badge.healthy, .badge.passing, .badge.done {
++  background: rgba(52, 211, 153, 0.16);
++  color: var(--success);
++  border: 1px solid rgba(52, 211, 153, 0.32);
++}
++.badge.working, .badge.running {
++  background: rgba(45, 212, 191, 0.16);
++  color: var(--accent-soft);
++  border: 1px solid rgba(45, 212, 191, 0.32);
++}
++.badge.waiting, .badge.degraded {
++  background: rgba(245, 158, 11, 0.16);
++  color: var(--warning);
++  border: 1px solid rgba(245, 158, 11, 0.32);
++}
++.badge.blocked, .badge.failing, .badge.error, .badge.down {
++  background: rgba(248, 113, 113, 0.16);
++  color: var(--danger);
++  border: 1px solid rgba(248, 113, 113, 0.32);
++}
++.badge.unknown {
++  background: rgba(148, 163, 184, 0.16);
++  color: var(--text-dim);
++  border: 1px solid rgba(148, 163, 184, 0.25);
+ }
+-.card-line .mono { color: var(--text-primary); }
+ 
++/* Progress bar */
+ .progress {
+-  margin-top: 12px;
+-  height: 8px;
+-  border-radius: 999px;
+-  background: rgba(148, 233, 194, 0.12);
++  width: 100%;
++  height: 6px;
++  background: rgba(148, 163, 184, 0.18);
++  border-radius: 9999px;
+   overflow: hidden;
++  margin-top: 4px;
+ }
+ .progress-bar {
+   height: 100%;
+-  border-radius: 999px;
+   background: linear-gradient(90deg, var(--accent), var(--accent-soft));
++  border-radius: 9999px;
+   transition: width var(--duration-base) var(--easing);
++  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
++}
++
++/* Terminal Log Panel */
++.terminal-panel {
++  background: var(--terminal-bg);
++  border: 1px solid var(--surface-border);
++  border-radius: var(--radius-md);
++  padding: 16px;
++  max-height: 240px;
++  overflow-y: auto;
++  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25);
++}
++.event-feed {
++  display: flex;
++  flex-direction: column;
++  gap: 6px;
++  font-size: 0.78rem;
++  line-height: 1.45;
+ }
++.event-line {
++  display: flex;
++  align-items: baseline;
++  gap: 12px;
++  color: var(--text-secondary);
++}
++.event-time { color: var(--text-dim); }
++.event-tag {
++  font-weight: 700;
++  color: var(--accent-soft);
++}
++.event-msg { color: var(--text-primary); }
+ 
+-/* ---------- error banner (fail-closed) ---------- */
++.btn-dim {
++  background: transparent;
++  border: 1px solid var(--surface-border);
++  color: var(--text-secondary);
++  font-size: 0.75rem;
++  padding: 6px 12px;
++  border-radius: var(--radius-sm);
++  cursor: pointer;
++  min-height: 32px;
++}
++.btn-dim:hover { color: var(--text-primary); border-color: var(--accent); }
+ 
++/* Error Banner */
+ .error-banner {
+-  padding: 16px 18px;
+-  border-radius: var(--radius-md);
+-  border: 1px solid rgba(248, 113, 113, 0.5);
+-  background: rgba(248, 113, 113, 0.12);
+-  color: #ffd9d9;
++  padding: 14px 18px;
++  border-radius: var(--radius-sm);
++  background: rgba(248, 113, 113, 0.16);
++  border: 1px solid var(--danger);
++  color: var(--danger);
+   font-weight: 600;
+ }
+ 
+-/* ---------- footer (sticky) ---------- */
+-
++/* Footer */
+ .footer {
+-  margin-top: auto;
+-  padding: 18px clamp(16px, 4vw, 40px);
+-  padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
++  padding: 24px clamp(16px, 4vw, 40px);
+   border-top: 1px solid var(--surface-border);
+-  background: rgba(22, 32, 27, 0.5);
+-  backdrop-filter: blur(10px);
+-  -webkit-backdrop-filter: blur(10px);
+-  font-size: var(--size-caption);
++  text-align: center;
+   color: var(--text-secondary);
++  font-size: var(--size-caption);
++  background: var(--surface-glass);
+ }
+-.footer p { margin: 2px 0; }
+-.footer a { color: var(--accent-soft); }
+-.footer-dim { opacity: 0.7; }
++.footer p { margin: 4px 0; }
++.footer-dim { color: var(--text-dim); }
++.footer a { color: var(--accent-soft); text-decoration: none; }
++.footer a:hover { text-decoration: underline; }
+ 
+ .mono { font-family: var(--font-mono); }
+ 
+-/* ---------- reduced motion (normative) ---------- */
+-
++/* Reduced Motion Override */
+ @media (prefers-reduced-motion: reduce) {
+-  .live-dot, .card { animation: none; }
+-  * { transition-duration: 0.01ms !important; }
++  *, ::before, ::after {
++    animation-duration: 0.01ms !important;
++    animation-iteration-count: 1 !important;
++    transition-duration: 0.01ms !important;
++    scroll-behavior: auto !important;
++  }
++  .live-dot { animation: none; }
+ }
+diff --git a/examples/dashboard-preview/index.html b/examples/dashboard-preview/index.html
+index 9e3c86cc..6a6af64b 100644
+--- a/examples/dashboard-preview/index.html
++++ b/examples/dashboard-preview/index.html
+@@ -1,6 +1,6 @@
+ <!DOCTYPE html>
+ <!--
+-  SupremeAI Studio — Dashboard Preview (issue #24)
++  SupremeAI Studio — Federation Dashboard (issue #337)
+   Zero-dependency vanilla HTML/CSS/JS glassmorphism reference renderer for
+   api-schemas/dashboard.schema.json (DashboardSnapshot).
+ 
+@@ -15,11 +15,12 @@
+     core constraints at boot; on violation it renders an error banner instead of
+     untrustworthy data.
+ -->
+-<html lang="en">
++<html lang="en" data-theme="dark">
+ <head>
+   <meta charset="utf-8" />
+   <meta name="viewport" content="width=device-width, initial-scale=1" />
+-  <meta name="color-scheme" content="dark" />
++  <meta name="color-scheme" content="dark light" />
++  <meta name="description" content="SupremeAI Studio — Live Federation Dashboard & Real-Time Agent Telemetry" />
+   <title>SupremeAI Studio — Federation Dashboard</title>
+   <link rel="stylesheet" href="index.css" />
+ </head>
+@@ -31,48 +32,102 @@
+       <span class="brand-mark" aria-hidden="true">◈</span>
+       <div>
+         <p class="brand-name">SupremeAI <span>Studio</span></p>
+-        <p class="brand-sub">Federation Command Surface</p>
++        <p class="brand-sub">Federation Command & Telemetry Surface</p>
+       </div>
+     </div>
+-    <div class="topbar-status">
+-      <span class="live-dot" aria-hidden="true"></span>
+-      <span id="status-pill" class="pill" role="status">LIVE</span>
++
++    <!-- Quick Stats Meter -->
++    <div class="header-stats" role="region" aria-label="Federation Overview Meters">
++      <div class="stat-pill">
++        <span class="stat-label">Active Agents</span>
++        <span id="metric-active-agents" class="stat-value mono">0</span>
++      </div>
++      <div class="stat-pill">
++        <span class="stat-label">Total Tokens</span>
++        <span id="metric-total-tokens" class="stat-value mono">0</span>
++      </div>
++      <div class="stat-pill">
++        <span class="stat-label">Events/min</span>
++        <span id="metric-events-min" class="stat-value mono">0.0</span>
++      </div>
++    </div>
++
++    <div class="topbar-controls">
++      <!-- SSE Mode Toggle -->
++      <button id="sse-toggle-btn" class="control-btn" aria-label="Toggle SSE live transport mode" title="Switch between Live Tower SSE and Offline Simulation">
++        <span class="live-dot" aria-hidden="true"></span>
++        <span id="status-pill" class="pill" role="status">SIMULATION</span>
++      </button>
++
++      <!-- Theme Switcher -->
++      <button id="theme-toggle-btn" class="control-btn icon-btn" aria-label="Toggle dark or light theme" title="Toggle theme">
++        <span id="theme-icon" aria-hidden="true">☀️</span>
++      </button>
++
+       <time id="clock" class="clock" aria-label="UTC clock">--:--:--</time>
+     </div>
+   </header>
+ 
+-  <nav class="filters" role="navigation" aria-label="Agent filters">
+-    <button class="filter is-active" data-filter="all" aria-pressed="true">All agents</button>
+-    <button class="filter" data-filter="working" aria-pressed="false">Working</button>
+-    <button class="filter" data-filter="blocked" aria-pressed="false">Blocked</button>
+-    <button class="filter" data-filter="done" aria-pressed="false">Done</button>
++  <!-- Navigation Filters -->
++  <nav class="filters-bar" role="navigation" aria-label="Agent state filters">
++    <div class="filter-group">
++      <button class="filter is-active" data-filter="all" aria-pressed="true">All Agents</button>
++      <button class="filter" data-filter="working" aria-pressed="false">Working</button>
++      <button class="filter" data-filter="waiting" aria-pressed="false">Waiting</button>
++      <button class="filter" data-filter="blocked" aria-pressed="false">Blocked</button>
++      <button class="filter" data-filter="done" aria-pressed="false">Done</button>
++    </div>
++    <div class="stream-info">
++      <span class="stream-source" id="stream-source-label">Source: Local Verified Baseline</span>
++    </div>
+   </nav>
+ 
+   <main id="main" class="layout" role="main">
+     <div id="error-banner" class="error-banner" hidden role="alert"></div>
+ 
++    <!-- Federation Repositories Section -->
+     <section aria-labelledby="federation-heading">
+-      <h2 id="federation-heading" class="section-title">
+-        Federation status <span id="repo-count" class="count"></span>
+-      </h2>
+-      <div id="repos" class="grid" aria-live="polite"></div>
++      <div class="section-header">
++        <h2 id="federation-heading" class="section-title">
++          Federation Topology & Repositories <span id="repo-count" class="count">(0)</span>
++        </h2>
++        <span class="section-tag">Public & Private Monorepo Matrix</span>
++      </div>
++      <div id="repos" class="grid repos-grid" aria-live="polite"></div>
+     </section>
+ 
++    <!-- Live Agent Telemetry Section -->
+     <section aria-labelledby="agents-heading">
+-      <h2 id="agents-heading" class="section-title">
+-        Live agent telemetry <span id="agent-count" class="count"></span>
+-      </h2>
+-      <div id="agents" class="grid" aria-live="polite"></div>
++      <div class="section-header">
++        <h2 id="agents-heading" class="section-title">
++          Live Agent Execution Slots <span id="agent-count" class="count">(0)</span>
++        </h2>
++        <span class="section-tag">Deterministic 8-Step Lifecycle</span>
++      </div>
++      <div id="agents" class="grid agents-grid" aria-live="polite"></div>
++    </section>
++
++    <!-- Live SSE Event Terminal Stream -->
++    <section aria-labelledby="events-heading">
++      <div class="section-header">
++        <h2 id="events-heading" class="section-title">
++          Live Telemetry Event Log <span id="event-count" class="count">(0 events)</span>
++        </h2>
++        <button id="clear-events-btn" class="btn-dim">Clear Log</button>
++      </div>
++      <div class="terminal-panel" role="log" aria-live="polite" aria-atomic="false">
++        <div id="event-feed" class="event-feed mono"></div>
++      </div>
+     </section>
+   </main>
+ 
+   <footer class="footer" role="contentinfo">
+     <p>
+       Snapshot <span id="snapshot-id" class="mono">—</span> ·
+-      generated <time id="generated-at">—</time> ·
+-      contract <a href="../../api-schemas/dashboard.schema.json">dashboard.schema.json</a>
++      Generated <time id="generated-at">—</time> ·
++      Contract <a href="../../api-schemas/dashboard.schema.json">dashboard.schema.json</a>
+     </p>
+-    <p class="footer-dim">Zero dependencies · system fonts · token-driven dark glass · issue #24</p>
++    <p class="footer-dim">SupremeAI Federation · Zero external dependencies · System font stack · Mobile-first glassmorphism · Issue #337</p>
+   </footer>
+ 
+   <script src="index.js" defer></script>
+diff --git a/examples/dashboard-preview/index.js b/examples/dashboard-preview/index.js
+index 89ad4fce..7c3782ed 100644
+--- a/examples/dashboard-preview/index.js
++++ b/examples/dashboard-preview/index.js
+@@ -1,5 +1,5 @@
+ /*
+-  SupremeAI Studio — Dashboard Preview logic (issue #24).
++  SupremeAI Studio — Dashboard Preview logic (issue #337).
+   Zero-dependency vanilla JS reference renderer for api-schemas/dashboard.schema.json.
+ 
+   Boot contract (fail-closed):
+@@ -8,8 +8,8 @@
+        required fields, additionalProperties rejection).
+     2. On any violation the dashboard refuses to render and shows the error
+        banner — untrustworthy data never reaches the surface.
+-    3. On success it renders federation + telemetry cards and starts the live
+-       simulation loop (progress ticks, token spend, event clock).
++    3. On success it renders federation + telemetry cards, wires the live
++       SSE/Simulation engine, and manages dark/light theme switching.
+ 
+   DOM writes are textContent-only by construction (no innerHTML), so card
+   content cannot inject markup.
+@@ -22,11 +22,11 @@
+  * ----------------------------------------------------------------------- */
+ const SNAPSHOT = {
+   schema_version: "1.0",
+-  generated_at: "2026-10-16T05:30:00Z",
++  generated_at: "2026-10-16T08:00:00Z",
+   tokens: {
+     color: {
+       bg_base: "#0a0f0d",
+-      surface_glass: "rgba(22, 32, 27, 0.55)",
++      surface_glass: "rgba(22, 32, 27, 0.58)",
+       surface_border: "rgba(148, 233, 194, 0.14)",
+       text_primary: "#eef7f2",
+       text_secondary: "#9db8ab",
+@@ -51,16 +51,27 @@ const SNAPSHOT = {
+   },
+   federation: {
+     repos: [
+-      { name: "supremeai-open", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 4, last_sync: "2026-10-16T05:29:41Z" },
+-      { name: "supremeai-mcp-tower", health: "healthy", ci_status: "running", open_prs: 3, open_issues: 11, last_sync: "2026-10-16T05:28:57Z" },
+-      { name: "supremeai-studio", health: "degraded", ci_status: "failing", open_prs: 1, open_issues: 7, last_sync: "2026-10-16T05:12:03Z" },
++      { name: "supremeai-open", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 14, last_sync: "2026-10-16T07:58:00Z" },
++      { name: "supremeai", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 16, last_sync: "2026-10-16T07:13:16Z" },
++      { name: "supremeai-core", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 5, last_sync: "2026-10-16T07:00:00Z" },
++      { name: "supremeai-mcp-control-plane", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 4, last_sync: "2026-10-16T07:10:00Z" },
++      { name: "supremeai-command", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T06:45:00Z" },
++      { name: "supremeai-skills", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T06:50:00Z" },
++      { name: "supremeai-vscode", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T06:55:00Z" },
++      { name: "supremeai-agents", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T07:05:00Z" },
++      { name: "supremeai-browser", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T07:02:00Z" },
++      { name: "supremeai-api", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 6, last_sync: "2026-10-16T07:12:00Z" },
++      { name: "supremeai-studio", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 2, last_sync: "2026-10-16T07:55:00Z" },
++      { name: "supremeai-sdk", health: "healthy", ci_status: "passing", open_prs: 0, open_issues: 3, last_sync: "2026-10-16T07:15:00Z" },
+     ],
+   },
+   agents: [
+-    { agent_id: "agent-zai-core", state: "working", task_id: "24", current_issue: "studio dashboard spec + preview", progress: 72, tokens_used: 184320, events_per_min: 41.5, last_event: "2026-10-16T05:29:52Z" },
+-    { agent_id: "agent-bridge-tower", state: "waiting", task_id: "311", current_issue: "bridge work order — in gates", progress: 45, tokens_used: 96110, events_per_min: 6.2, last_event: "2026-10-16T05:28:20Z" },
+-    { agent_id: "agent-guard-fleet", state: "working", task_id: "316", current_issue: "bridge telemetry schema gates", progress: 88, tokens_used: 42875, events_per_min: 12.8, last_event: "2026-10-16T05:29:48Z" },
+-    { agent_id: "agent-studio-legacy", state: "blocked", task_id: "248", current_issue: "waiting on admin decision", progress: 15, tokens_used: 8902, events_per_min: 0.4, last_event: "2026-10-16T04:47:12Z" },
++    { agent_id: "agent-antigravity", state: "working", task_id: "337", current_issue: "studio glassmorphism dashboard + SSE", progress: 85, tokens_used: 124350, events_per_min: 44.2, last_event: "2026-10-16T07:59:45Z" },
++    { agent_id: "agent-monorepo-core", state: "working", task_id: "329", current_issue: "smart context selector L1-8 assembly", progress: 40, tokens_used: 82100, events_per_min: 28.5, last_event: "2026-10-16T07:58:30Z" },
++    { agent_id: "agent-router-engine", state: "working", task_id: "330", current_issue: "dynamic task router fallback cascade", progress: 30, tokens_used: 61400, events_per_min: 22.0, last_event: "2026-10-16T07:57:12Z" },
++    { agent_id: "agent-mcp-guard", state: "waiting", task_id: "340", current_issue: "persistent emergency kill switch r3", progress: 95, tokens_used: 48900, events_per_min: 8.4, last_event: "2026-10-16T07:56:50Z" },
++    { agent_id: "agent-gateway-stream", state: "waiting", task_id: "336", current_issue: "live SSE and HTTP streaming handlers", progress: 20, tokens_used: 31200, events_per_min: 15.6, last_event: "2026-10-16T07:55:20Z" },
++    { agent_id: "agent-vscode-dev", state: "done", task_id: "303", current_issue: "federation topology documentation", progress: 100, tokens_used: 18450, events_per_min: 0.0, last_event: "2026-10-16T07:24:19Z" },
+   ],
+ };
+ 
+@@ -146,7 +157,7 @@ function validateSnapshot(s) {
+ }
+ 
+ /* -------------------------------------------------------------------------
+- * Rendering (textContent-only DOM writes)
++ * DOM Utilities (textContent-only DOM writes)
+  * ----------------------------------------------------------------------- */
+ const $ = (id) => document.getElementById(id);
+ 
+@@ -161,8 +172,34 @@ function badge(value) {
+   return el("span", `badge ${value}`, value);
+ }
+ 
++function line(label, value) {
++  const row = el("div", "card-line");
++  const lab = el("span", null, label);
++  const val = el("span", "mono", value);
++  row.append(lab, val);
++  return row;
++}
++
++function formatTokens(n) {
++  if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M`;
++  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
++  return String(n);
++}
++
++function timeAgo(rfc3339) {
++  const then = new Date(rfc3339).getTime();
++  if (Number.isNaN(then)) return rfc3339;
++  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
++  if (s < 60) return `${s}s ago`;
++  if (s < 3600) return `${Math.round(s / 60)}m ago`;
++  return `${Math.round(s / 3600)}h ago`;
++}
++
++/* -------------------------------------------------------------------------
++ * Renderers
++ * ----------------------------------------------------------------------- */
+ function renderRepo(repo) {
+-  const card = el("article", "card");
++  const card = el("article", "card repo-card");
+   const head = el("div", "card-head");
+   head.append(el("h3", "card-title", repo.name), badge(repo.ci_status));
+   card.append(head);
+@@ -172,7 +209,7 @@ function renderRepo(repo) {
+ }
+ 
+ function renderAgent(agent) {
+-  const card = el("article", "card");
++  const card = el("article", "card agent-card");
+   card.dataset.state = agent.state;
+   const head = el("div", "card-head");
+   head.append(el("h3", "card-title", agent.agent_id), badge(agent.state));
+@@ -198,40 +235,102 @@ function renderAgent(agent) {
+   return card;
+ }
+ 
+-function line(label, value) {
+-  const row = el("div", "card-line");
+-  const lab = el("span", null, label);
+-  const val = el("span", "mono", value);
+-  row.append(lab, val);
+-  return row;
+-}
++function updateMeters(s) {
++  const activeCount = s.agents.filter((a) => a.state === "working").length;
++  const totalTokens = s.agents.reduce((sum, a) => sum + (a.tokens_used || 0), 0);
++  const totalEvents = s.agents.reduce((sum, a) => sum + (a.events_per_min || 0), 0);
+ 
+-function formatTokens(n) {
+-  if (n >= 1000000) return `${(n / 1000000).toFixed(2)}M`;
+-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+-  return String(n);
+-}
++  const activeEl = $("metric-active-agents");
++  if (activeEl) activeEl.textContent = String(activeCount);
+ 
+-function timeAgo(rfc3339) {
+-  const then = new Date(rfc3339).getTime();
+-  if (Number.isNaN(then)) return rfc3339;
+-  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+-  if (s < 60) return `${s}s ago`;
+-  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+-  return `${Math.round(s / 3600)}h ago`;
++  const tokensEl = $("metric-total-tokens");
++  if (tokensEl) tokensEl.textContent = formatTokens(totalTokens);
++
++  const eventsEl = $("metric-events-min");
++  if (eventsEl) eventsEl.textContent = totalEvents.toFixed(1);
+ }
+ 
+ function renderAll(s) {
+   const repos = $("repos");
+-  repos.replaceChildren(...s.federation.repos.map(renderRepo));
+-  $("repo-count").textContent = `(${s.federation.repos.length})`;
++  if (repos) {
++    repos.replaceChildren(...s.federation.repos.map(renderRepo));
++    $("repo-count").textContent = `(${s.federation.repos.length})`;
++  }
+ 
+   const agents = $("agents");
+-  agents.replaceChildren(...s.agents.map(renderAgent));
+-  $("agent-count").textContent = `(${s.agents.length})`;
++  if (agents) {
++    agents.replaceChildren(...s.agents.map(renderAgent));
++    $("agent-count").textContent = `(${s.agents.length})`;
++  }
++
++  updateMeters(s);
++
++  const snapEl = $("snapshot-id");
++  if (snapEl) snapEl.textContent = `${s.schema_version} @ ${s.generated_at}`;
+ 
+-  $("snapshot-id").textContent = `${s.schema_version} @ ${s.generated_at}`;
+-  $("generated-at").textContent = new Date(s.generated_at).toLocaleString();
++  const genEl = $("generated-at");
++  if (genEl) genEl.textContent = new Date(s.generated_at).toLocaleTimeString();
++}
++
++/* -------------------------------------------------------------------------
++ * Event Terminal Feed
++ * ----------------------------------------------------------------------- */
++const MAX_FEED_EVENTS = 50;
++let eventCounter = 0;
++
++function appendFeedEvent(tag, message) {
++  const feed = $("event-feed");
++  if (!feed) return;
++
++  eventCounter++;
++  const time = new Date().toISOString().slice(11, 19);
++
++  const row = el("div", "event-line");
++  row.append(
++    el("span", "event-time", `[${time}]`),
++    el("span", "event-tag", `[${tag}]`),
++    el("span", "event-msg", message)
++  );
++
++  feed.prepend(row);
++
++  while (feed.children.length > MAX_FEED_EVENTS) {
++    feed.lastElementChild.remove();
++  }
++
++  const countEl = $("event-count");
++  if (countEl) countEl.textContent = `(${eventCounter} events)`;
++}
++
++/* -------------------------------------------------------------------------
++ * Theme Management (Dark / Light Mode)
++ * ----------------------------------------------------------------------- */
++const THEME_KEY = "supremeai-studio-theme";
++
++function initTheme() {
++  const saved = localStorage.getItem(THEME_KEY);
++  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
++  const initialTheme = saved || (prefersDark ? "dark" : "light");
++  setTheme(initialTheme);
++
++  const toggleBtn = $("theme-toggle-btn");
++  if (toggleBtn) {
++    toggleBtn.addEventListener("click", () => {
++      const current = document.documentElement.dataset.theme;
++      const next = current === "dark" ? "light" : "dark";
++      setTheme(next);
++      appendFeedEvent("THEME", `Theme toggled to ${next.toUpperCase()}`);
++    });
++  }
++}
++
++function setTheme(theme) {
++  document.documentElement.dataset.theme = theme;
++  localStorage.setItem(THEME_KEY, theme);
++  const icon = $("theme-icon");
++  if (icon) {
++    icon.textContent = theme === "dark" ? "☀️" : "🌙";
++  }
+ }
+ 
+ /* -------------------------------------------------------------------------
+@@ -240,7 +339,9 @@ function renderAll(s) {
+ let activeFilter = "all";
+ 
+ function applyFilter() {
+-  for (const card of $("agents").children) {
++  const agentsContainer = $("agents");
++  if (!agentsContainer) return;
++  for (const card of agentsContainer.children) {
+     const show = activeFilter === "all" || card.dataset.state === activeFilter;
+     card.hidden = !show;
+   }
+@@ -257,32 +358,151 @@ function wireFilters() {
+         b.setAttribute("aria-pressed", String(on));
+       }
+       applyFilter();
++      appendFeedEvent("FILTER", `Agent filter set to: ${activeFilter.toUpperCase()}`);
+     });
+   }
+ }
+ 
+ /* -------------------------------------------------------------------------
+- * Live simulation loop (progress ticks, token spend, event clock)
++ * Live SSE & Simulation Engine
+  * ----------------------------------------------------------------------- */
++const TOWER_SSE_URL = "https://supremeai-mcp-tower.onrender.com/sse";
++let isLiveSSE = false;
++let sseConnection = null;
++let simInterval = null;
+ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+-const TICK_MS = 1500;
++const TICK_MS = 1600;
+ 
+-function tick() {
++function tickSimulation() {
+   for (const a of SNAPSHOT.agents) {
+     if (a.state === "working") {
+-      a.progress = Math.min(100, a.progress + 2 + Math.floor(Math.random() * 4));
+-      if (a.progress === 100) a.state = "done";
++      a.progress = Math.min(100, a.progress + 1 + Math.floor(Math.random() * 3));
++      if (a.progress === 100) {
++        a.state = "done";
++        appendFeedEvent("TASK_DONE", `${a.agent_id} completed task #${a.task_id}`);
++      }
++    } else if (a.state === "done" && Math.random() < 0.15) {
++      a.state = "working";
++      a.progress = 5;
++      appendFeedEvent("TASK_ASSIGN", `${a.agent_id} assigned new execution unit`);
+     }
+-    a.tokens_used += 180 + Math.floor(Math.random() * 900);
+-    a.events_per_min = Math.max(0, +(a.events_per_min + (Math.random() - 0.5) * 3).toFixed(1));
++    a.tokens_used += 120 + Math.floor(Math.random() * 450);
++    a.events_per_min = Math.max(0, +(a.events_per_min + (Math.random() - 0.5) * 2.5).toFixed(1));
+     a.last_event = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+   }
++
++  SNAPSHOT.generated_at = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+   renderAll(SNAPSHOT);
+   applyFilter();
+ }
+ 
++function startSimulation() {
++  if (simInterval) clearInterval(simInterval);
++  simInterval = setInterval(tickSimulation, reducedMotion ? 6000 : TICK_MS);
++  const pill = $("status-pill");
++  if (pill) {
++    pill.textContent = "SIMULATION";
++    pill.className = "pill";
++  }
++  const sourceLabel = $("stream-source-label");
++  if (sourceLabel) sourceLabel.textContent = "Source: Local High-Fidelity Simulation";
++  appendFeedEvent("ENGINE", "Simulation loop running (1.6s cycle)");
++}
++
++function stopSimulation() {
++  if (simInterval) {
++    clearInterval(simInterval);
++    simInterval = null;
++  }
++}
++
++function connectLiveSSE() {
++  stopSimulation();
++  const pill = $("status-pill");
++  const sourceLabel = $("stream-source-label");
++
++  if (pill) {
++    pill.textContent = "CONNECTING";
++    pill.className = "pill warning";
++  }
++  if (sourceLabel) sourceLabel.textContent = `Connecting to ${TOWER_SSE_URL}...`;
++  appendFeedEvent("SSE_CONN", `Opening stream to ${TOWER_SSE_URL}`);
++
++  try {
++    sseConnection = new EventSource(TOWER_SSE_URL);
++
++    sseConnection.onopen = () => {
++      isLiveSSE = true;
++      if (pill) {
++        pill.textContent = "LIVE SSE";
++        pill.className = "pill healthy";
++      }
++      if (sourceLabel) sourceLabel.textContent = "Source: Live Remote MCP Tower SSE Stream";
++      appendFeedEvent("SSE_OPEN", "Connected to SupremeAI MCP Tower event stream");
++    };
++
++    sseConnection.onmessage = (event) => {
++      try {
++        const data = JSON.parse(event.data);
++        appendFeedEvent("SSE_DATA", `Telemetry frame: ${JSON.stringify(data).slice(0, 60)}...`);
++        // If snapshot payload is received, re-validate and render
++        if (data && data.agents && data.federation) {
++          validateSnapshot(data);
++          renderAll(data);
++        }
++      } catch {
++        appendFeedEvent("SSE_FRAME", `Stream ping: ${event.data.slice(0, 40)}`);
++      }
++    };
++
++    sseConnection.onerror = () => {
++      appendFeedEvent("SSE_WARN", "Remote SSE unavailable (CORS/offline); failing over to simulation");
++      disconnectSSE();
++      startSimulation();
++    };
++  } catch (err) {
++    appendFeedEvent("SSE_ERR", `EventSource failed: ${err.message}`);
++    disconnectSSE();
++    startSimulation();
++  }
++}
++
++function disconnectSSE() {
++  if (sseConnection) {
++    sseConnection.close();
++    sseConnection = null;
++  }
++  isLiveSSE = false;
++}
++
++function wireSSEControls() {
++  const toggleBtn = $("sse-toggle-btn");
++  if (toggleBtn) {
++    toggleBtn.addEventListener("click", () => {
++      if (isLiveSSE) {
++        disconnectSSE();
++        startSimulation();
++      } else {
++        connectLiveSSE();
++      }
++    });
++  }
++
++  const clearBtn = $("clear-events-btn");
++  if (clearBtn) {
++    clearBtn.addEventListener("click", () => {
++      const feed = $("event-feed");
++      if (feed) feed.replaceChildren();
++      eventCounter = 0;
++      const countEl = $("event-count");
++      if (countEl) countEl.textContent = "(0 events)";
++    });
++  }
++}
++
+ function startClock() {
+   const clock = $("clock");
++  if (!clock) return;
+   const show = () => {
+     clock.textContent = new Date().toISOString().slice(11, 19) + " UTC";
+   };
+@@ -291,28 +511,35 @@ function startClock() {
+ }
+ 
+ /* -------------------------------------------------------------------------
+- * Boot (fail-closed)
++ * Boot Lifecycle (Fail-closed)
+  * ----------------------------------------------------------------------- */
+ function boot() {
+   try {
+     validateSnapshot(SNAPSHOT);
+   } catch (err) {
+     const banner = $("error-banner");
+-    banner.hidden = false;
+-    banner.textContent = `Fail-closed: embedded snapshot violates dashboard.schema.json — ${err.message}`;
+-    $("status-pill").textContent = "INVALID";
+-    return; // refuse to render untrustworthy data
++    if (banner) {
++      banner.hidden = false;
++      banner.textContent = `Fail-closed: embedded snapshot violates dashboard.schema.json — ${err.message}`;
++    }
++    const pill = $("status-pill");
++    if (pill) pill.textContent = "INVALID";
++    return; // Refuse to render untrustworthy data
+   }
+-  $("status-pill").textContent = "LIVE";
++
++  initTheme();
+   renderAll(SNAPSHOT);
+   wireFilters();
++  wireSSEControls();
+   startClock();
+-  setInterval(tick, reducedMotion ? 6000 : TICK_MS); // slower ticks when motion is reduced
++  startSimulation();
++
++  appendFeedEvent("BOOT", "Dashboard initialized successfully (100% schema conformant)");
+ 
+-  // Console self-check (visible in devtools): core invariants hold post-render.
+-  console.assert($("repos").children.length === SNAPSHOT.federation.repos.length, "repo cards rendered");
+-  console.assert($("agents").children.length === SNAPSHOT.agents.length, "agent cards rendered");
+-  console.assert(document.querySelector(".filter[aria-pressed='true']") !== null, "one active filter");
++  // Assertions for verification
++  console.assert($("repos").children.length === SNAPSHOT.federation.repos.length, "All repos rendered");
++  console.assert($("agents").children.length === SNAPSHOT.agents.length, "All agents rendered");
++  console.assert(document.querySelector(".filter[aria-pressed='true']") !== null, "Filter active");
+ }
+ 
+ if (document.readyState === "loading") {

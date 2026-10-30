@@ -1,0 +1,87 @@
+diff --git a/docs/reports/EVIDENCE_3028_RENDER_BOOTKILL_CHAIN_2026-10-30.md b/docs/reports/EVIDENCE_3028_RENDER_BOOTKILL_CHAIN_2026-10-30.md
+new file mode 100644
+index 00000000..79d61b8c
+--- /dev/null
++++ b/docs/reports/EVIDENCE_3028_RENDER_BOOTKILL_CHAIN_2026-10-30.md
+@@ -0,0 +1,81 @@
++# EVIDENCE #3028 — Render update_failed boot-kill chain: first build-log-level root cause (zero-credential)
++
++- **Date**: 2026-10-30 (probes 05:12–05:25Z / 13:12–13:25 +08)
++- **Agent**: contributor-agent, Job 478318 (cron-agent-loop-202610301310), MCP session 3469c676
++- **Targets**: #3028 (audit:finding, P1-major — ADMIN ESCALATION for #2225) · #2225 (closed, ack-not-acted)
++- **Tools**: `render_service_health`, `render_get_logs`, `github.read_file` — all zero-credential via MCP Control Tower, R70 protocol floor
++- **Claim**: atomic work_claim GRANT_NEW on #3028 at 05:12:32Z; this addendum is report-only (remedy outside agent envelope); no Closes line.
++
++## 1. Headline
++
++The ~2-day `update_failed` residual on render-primary and render-worker (#2225/#2918) is now **root-caused to a boot-crash loop, captured verbatim from Render runtime logs** — not a build failure, not billing, not a transient:
++
++1. Docker build **succeeds** (image export + layer push OK).
++2. New container starts `python main.py` → settings validation **fails while fetching secret `SUPABASE_URL`**.
++3. The error-reporting path then **crashes on itself**: `core/messaging/event_bus.py:388 emit()` does a raw `from monitoring import track_exception` → `ImportError` → process `Exited with status 1`.
++4. Render restarts the instance in a loop; the port is never bound → **`Port scan timeout`** → deploy `update_failed`.
++5. The **old** container keeps answering `/health/live 200 OK` throughout — which is why the tower health plane reports 21/21 services available while every deploy for 2+ days has failed.
++
++The satellite repo **supremeai-open already carries the exact hardening** that would have kept this container alive (telemetry-forward wrapped in try/except, degraded to a structured warning); the deploy source repo **supremeai-core does not** — its `emit()` at line 388 propagates the ImportError into the boot path.
++
++## 2. Live deploy state (05:13Z)
++
++| Service | ID | lastDeployStatus | freeLimitExhausted | repo |
++| --- | --- | --- | --- | --- |
++| supremeai-primary-node (core-api) | srv-dau7c9ek1f9s73almn0g | **update_failed** | false | Supremeai-bd/supremeai-core |
++| supremeai-worker-node (async-worker) | srv-dabm7evqj5pc738jkf30 | **update_failed** | false | Supremeai-bd/supremeai-core |
++
++- autoDeploy=commit, branch main, region singapore, plan free, suspended=not_suspended (both).
++- `resources_dashboard` reports both services **degraded**; `system_summary` reports 21/21 available — the degraded-but-running split that masks the deploy failure.
++
++## 3. Failure timeline (render-primary build+runtime logs)
++
++- **2026-10-28T01:17:11Z** — earliest `Port scan timeout` occurrence found in the probed window (15 hits through Oct 29 17:33Z; the event_bus.py hardening comment in supremeai-open independently cites "update_failed since 2026-10-24").
++- **2026-10-29T17:32:37Z → 2026-10-30T04:13:20Z** — **12 consecutive port-scan failures**, synchronized across primary and worker (same commits autoDeploy from the same repo). Every push to `supremeai-core:main` in ~35h produced a dead deploy.
++- **2026-10-30T03:58:12Z** — build attempt: all heavy layers CACHED, `#16 exporting to image … DONE 1.1s`, `#17 exporting cache to registry … DONE 1.6s`. **Build phase exonerated.**
++- **03:58:28Z** — `>>> SUPREMEAI BOOTSTRAP STARTING (ENV=production) <<<`
++- **03:58:40–45Z** — secret-plane warnings: "Bulk secret fetch unavailable", "BOOT-TIME ALERT", missing Stripe keys, "Production missing config vars".
++- **03:58:50Z** — the fatal traceback (verbatim frames):
++
++```
++File "/app/core/config_validation.py", line 263, in validate_all
++    if not getattr(self, "supabase_url", None):
++File "/app/core/config_secrets.py", line 598, in supabase_url
++    return self._get_cached_secret("SUPABASE_URL")
++File "/app/core/config_secrets.py", line 253, in _get_cached_secret
++    val = get_secret_vault().fetch_secret(key, default="")
++File "/app/core/errors/error_bus.py", line 57, in sync_wrapper
++    error_event_bus.emit(event)
++File "/app/core/messaging/event_bus.py", line 388, in emit
++    from monitoring import track_exception
++ImportError: cannot import name 'track_exception' from 'monitoring' (/app/monitoring/__init__.py)
++```
++
++- **03:58:52Z** — `==> Exited with status 1` → `Instance srv-dau7c9ek1f9s73almn0g-5srvv restarted` → next attempt hits `ImportError("cannot import name 'settings' from partially initialized module 'core.config' … circular import")` via the pydantic logfire-plugin loader → loop.
++- **`>>> CONFIG AND LOGGING LOADED <<<` — 0 occurrences in the whole window** (the boot never reaches the statement that follows `from core.config import settings` in main.py).
++- **04:13:20Z** — `==> Port scan timeout reached, no open ports detected` → deploy update_failed.
++- Throughout: old container serves `GET /health/live 200 OK` every ~5s.
++
++## 4. Fix-delta between the two repos (the actionable finding)
++
++- **supremeai-open** `core/messaging/event_bus.py` (~:390–405): the telemetry forward is wrapped — `try: from monitoring import track_exception; track_exception(...) except Exception as exc: logger.warning("[EventBus] telemetry forward unavailable …")` with an explicit anti-suppression contract comment (Bengali, cites live 2026-10-29 evidence and "update_failed since 2026-10-24"). This hardening is why the open mirror cannot reproduce the boot-kill.
++- **supremeai-core** `core/messaging/event_bus.py:388`: the same import is **unguarded inside emit()**, and `core/errors/error_bus.py:57` calls `error_event_bus.emit(event)` unguarded inside its own `except` handler — so the reporting path replaces the original settings failure with an ImportError and kills the process.
++- This cycle additionally hardens **supremeai-open** `core/errors/error_bus.py` (both sync/async wrappers now guard the emit call — defense in depth at the outermost layer; smoke-tested: original exception preserved when emit raises).
++
++## 5. Remedies (outside this agent's envelope — for the verdict/admin plane)
++
++1. **supremeai-core patch (code)**: apply the supremeai-open event_bus.py telemetry try/except hardening (and the error_bus wrapper guard) to `Supremeai-bd/supremeai-core` — the repo Render actually deploys. This is a satellite repo; per the Single Door doctrine this addendum does not carry a patch for it.
++2. **Secret plane (admin)**: the trigger is a boot-time `SUPABASE_URL` fetch failure inside config validation ("Bulk secret fetch unavailable"). Restore/verify that secret in the vault the new container reads at boot; without it every deploy will fail at the same line even after the code fix.
++3. **Redeploy (admin/HITL)**: after (1)+(2), trigger a fresh deploy; expect port bind within the scan window and `deploy_live`.
++
++## 6. Hypothesis ledger updates
++
++- **#2901 "single bad commit" hypothesis: refuted** — 12+ distinct commits over 35h all fail identically at boot; the build phase passes for all of them. Failure class is environment/startup-path, not one commit.
++- **#2918 "main unfroze while deploy stayed failed" discriminator: now mechanistically explained** — main advanced 5+ heads because pushes were fine; deploys died at the boot phase, not at build or platform quota.
++- **Ratchet relevance**: `from monitoring import track_exception` exists in supremeai-open only as a guarded forward-compat hook (target module deleted in the shim campaign); no unguarded reference remains after this cycle's error_bus hardening.
++
++## 7. Scope & provenance
++
++- All Render reads are read-only diagnostics via the governed tower plane; no deploy/restart/flush action was triggered; no claim-renew was needed inside the TTL.
++- Timestamps are verbatim from `render_get_logs` responses (GET /v1/logs); service IDs cross-checked against the #2918 addendum (identical).
++- Report-only: #3028 is `audit:finding` + P1-major; closure decision intentionally left to the verdict plane per the loop's false-closure guard (#2211/#2225 family).

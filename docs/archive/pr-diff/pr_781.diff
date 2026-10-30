@@ -1,0 +1,178 @@
+diff --git a/sdk/.github/workflows/package-sdk.yml b/sdk/.github/workflows/package-sdk.yml
+new file mode 100644
+index 00000000..02423c16
+--- /dev/null
++++ b/sdk/.github/workflows/package-sdk.yml
+@@ -0,0 +1,103 @@
++name: Package & Test SupremeAI SDK
++
++on:
++  push:
++    branches:
++      - main
++    paths:
++      - 'python/**'
++      - 'typescript/**'
++      - 'tests/**'
++      - '.github/workflows/package-sdk.yml'
++  pull_request:
++    paths:
++      - 'python/**'
++      - 'typescript/**'
++      - 'tests/**'
++  workflow_dispatch:
++
++permissions:
++  contents: write
++  packages: write
++
++jobs:
++  python-sdk:
++    name: "🐍 Python SDK (Build & Validate)"
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++          cache: "pip"
++
++      - name: Install Build Tools & Dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install build twine pytest
++
++      - name: Run Python Client Tests
++        run: |
++          if [ -d "tests" ]; then
++            pytest tests/
++          elif [ -d "sdk/tests" ]; then
++            pytest sdk/tests/
++          fi
++
++      - name: Build Python Distribution Package (sdist + wheel)
++        run: |
++          python -m build python/
++
++      - name: Validate Package Metadata & Syntax
++        run: |
++          twine check python/dist/*
++
++      - name: Upload Python Package Artifacts
++        uses: actions/upload-artifact@v4
++        with:
++          name: supremeai-python-sdk
++          path: python/dist/
++          if-no-files-found: error
++
++  typescript-sdk:
++    name: "🟦 TypeScript SDK (Typecheck & Pack)"
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: "20"
++
++      - name: Install TypeScript Compiler
++        run: |
++          npm install -g typescript
++
++      - name: Typecheck TypeScript Client
++        working-directory: typescript
++        run: |
++          npm run typecheck
++
++      - name: Run TypeScript Client Tests
++        working-directory: typescript
++        run: |
++          npm test
++
++      - name: Pack Distribution Tarball
++        working-directory: typescript
++        run: |
++          npm pack
++
++      - name: Upload TypeScript Tarball Artifact
++        uses: actions/upload-artifact@v4
++        with:
++          name: supremeai-typescript-sdk
++          path: typescript/*.tgz
++          if-no-files-found: error
+diff --git a/sdk/python/README.md b/sdk/python/README.md
+new file mode 100644
+index 00000000..73d84edd
+--- /dev/null
++++ b/sdk/python/README.md
+@@ -0,0 +1,35 @@
++# SupremeAI Python SDK
++
++Official Python client for the **SupremeAI Unified Gateway**.
++
++## Features
++
++- **Typed Endpoints**: High-level typed client for chat completions, run execution, and health checks.
++- **SSE Streaming**: Robust Server-Sent Events parser with reconnection and buffer safety.
++- **Resilience**: Automatic retry on 503 transient errors with exponential backoff.
++- **Zero Heavy Dependencies**: Pure standard library or optional `httpx` support.
++
++## Installation
++
++```bash
++pip install supremeai-sdk
++```
++
++## Quick Start
++
++```python
++from supremeai.client import GatewayClient
++
++client = GatewayClient(
++    base_url="https://supremeai-api.onrender.com",
++    bearer_token="your-token"
++)
++
++# Check health
++health = client.health()
++print("Gateway status:", health)
++```
++
++## License
++
++MIT License. See [LICENSE](file:///F:/supremeai-open/sdk/LICENSE) for details.
+diff --git a/sdk/python/pyproject.toml b/sdk/python/pyproject.toml
+index 3c47bfbe..a04f54ad 100644
+--- a/sdk/python/pyproject.toml
++++ b/sdk/python/pyproject.toml
+@@ -8,7 +8,7 @@ version = "0.1.0"
+ description = "Official Python client for the SupremeAI Unified Gateway: typed runs, SSE streaming, automatic failover retry."
+ readme = "README.md"
+ requires-python = ">=3.9"
+-license = { text = "MIT" }
++license = "MIT"
+ dependencies = []
+ keywords = ["supremeai", "gateway", "sse", "streaming", "client"]
+ classifiers = [
+diff --git a/sdk/typescript/package.json b/sdk/typescript/package.json
+index 6e8683d6..90664824 100644
+--- a/sdk/typescript/package.json
++++ b/sdk/typescript/package.json
+@@ -3,6 +3,10 @@
+   "version": "0.1.0",
+   "description": "Official TypeScript client for the SupremeAI Unified Gateway: typed endpoints, SSE streaming, automatic failover retry.",
+   "license": "MIT",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/Supremeai-bd/supremeai-sdk.git"
++  },
+   "type": "module",
+   "main": "./src/client.ts",
+   "types": "./src/client.ts",

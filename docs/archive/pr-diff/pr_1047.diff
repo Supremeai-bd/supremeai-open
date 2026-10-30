@@ -1,0 +1,38 @@
+diff --git a/gateway/.github/workflows/secret-scan.yml b/gateway/.github/workflows/secret-scan.yml
+index df4b8d5a..30c1e2b6 100644
+--- a/gateway/.github/workflows/secret-scan.yml
++++ b/gateway/.github/workflows/secret-scan.yml
+@@ -33,7 +33,7 @@ jobs:
+             if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null \
+                | grep -v 'env-templates/' \
+                | grep -v 'gitleaks:allow' \
+-               | grep -vE '^\s*(#|//|\*)' \
++               | grep -vE ':[0-9]+:\s*(#|//|\*)' \
+                | grep -v 'z.string().describe' \
+                | { if [ -n "${3:-}" ]; then grep -vE "$3"; else cat; fi; }; then
+               echo "::error::secret-pattern hit: $2"; HIT=1
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index edb10cad..08a1dba7 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -851,7 +851,7 @@ async def _execute_chat_completion(
+     # DO NOT (any human, AI agent, bot or automated PR):
+     #   - add an API-key / provider-pool fallback after the relay below
+     #   - set ENABLE_API_FALLBACK=true in Infisical or Render
+-    #   - re-add GEMINI_API_KEY to the scraper node (srv-dabm7gfqj5pc738jkicg)
++    #   - re-add GEMINI_API_KEY to the scraper node (scraper service node)
+     # Re-enabling requires an explicit, written ADMIN_DECISION issue from the
+     # admin. Any PR that re-enables fallback without it must be rejected.
+     # ═══════════════════════════════════════════════════════════════════════
+diff --git a/gateway/tests/test_storage_and_endpoints.py b/gateway/tests/test_storage_and_endpoints.py
+index 534721f6..a53b330c 100644
+--- a/gateway/tests/test_storage_and_endpoints.py
++++ b/gateway/tests/test_storage_and_endpoints.py
+@@ -100,6 +100,7 @@ def test_02_user_preferences_and_tool_cards(self):
+ 
+     def test_03_livelogs_ring_buffer(self):
+         logger = logging.getLogger("supremeai.gateway")
++        logger.setLevel(logging.INFO)
+         test_msg = "LiveLogs Verification Log Entry #42"
+         logger.info(test_msg)
+ 

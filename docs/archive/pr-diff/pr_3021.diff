@@ -1,0 +1,66 @@
+diff --git a/docs/bridge/bridge-20261030-c53-delayed-batch-label-plane-witness.md b/docs/bridge/bridge-20261030-c53-delayed-batch-label-plane-witness.md
+new file mode 100644
+index 00000000..dc93e0c4
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c53-delayed-batch-label-plane-witness.md
+@@ -0,0 +1,60 @@
++# Bridge Receipt — Cycle 53: delayed-batch label plane witnessed + gate in-gates
++
++- **Task ID**: bridge-20261030-c53-delayed-batch-label-plane-witness
++- **Slot**: 2026-10-30T10:58+08 (02:58Z) · Job 478712 · continuous_agent_loop contract · session 1a074889 · trace cron-agent-loop-202610301058
++- **Mode**: report-only, zero-credential, docs-only (single file under `docs/bridge/`)
++- **Preconditions honored**: peer check (worklog tail = cycle-52 → slot calibrated CYCLE 53); Universal Invariants displayed; ladder receipts read from main before any lane action.
++
++## 1. Opening ledger (contract ladder)
++
++- **Census**: 157/157 tools STABLE — 29th consecutive stable floor, zero drift (hint-key criterion).
++- **Board**: 133 → **105 (−28 batch closure sweep)**. The closed set is not enumerable from the open-only queue projection; three members of the flap lineage were verified individually (§2). All remaining rows open at read time.
++- **U3 sweep** (02:59:49Z): incidents = 0; overall degraded; 33-row snapshot — non-healthy = standing render pair only. **33rd consecutive proof line** (evidence text unchanged: "Container running previous build, but latest deployment update_failed").
++- **Redis**: tertiary active primary (1686/500k fresh); primary AND secondary softThresholdHit 480k/500k; **nextGlobalResetAt 2026-11-01T00:01Z (T-~21h)**.
++- **Watchdog re-scan**: `stale` / `lastCompletedSweepAt` / `sweepCompletions` STILL absent from dashboard + sweep — **recipe BLOCKED 3rd hour**; no restart-detection claim made (no-fabrication discipline).
++
++## 2. HEADLINE A — close-flap family resolved by retroactive batch: label plane is delayed-batch, not non-deterministic
++
++The C52 receipt characterized the queued→landed label transition as non-deterministic, based on the same-hour split: 4 fresh rows auto-closed while the #2883/#2941/#2964 lineage stayed open+queued despite merged PRs. This hour the transition FIRED for the entire backlog — board shed 28 rows, and individual read_feedback verification shows:
++
++| Row | Close-flap instance | State this hour | Labels | Verdict |
++|---|---|---|---|---|
++| #2883 | 3rd (c48) | **closed** | bridge:landed | APPLIED_LABEL_DERIVED |
++| #2941 | 4th (c50) | **closed** | bridge:landed | APPLIED_LABEL_DERIVED |
++| #2964 | 5th (c51, PR #2965 blob 0634d7d) | **closed** | bridge:landed | APPLIED_LABEL_DERIVED |
++
++All three: 1 comment each, verdictHistory empty. **Refinement of the defect**: the label plane is not non-deterministic — it is **delayed-batch**: transitions fire in periodic sweeps lagging the landing by roughly 1–3 hours. The C52 same-hour split was a phase artifact (rows submitted late in a batch window), not random per-row behavior. Micro-datum on annotation consistency: the C52 fresh-row verdicts carried `verdictSource: "label-fallback"` while this hour's backlog closures carry `verdictSource: None` — the read-side derivation's annotation is itself inconsistent across batches.
++
++**Family closure**: close-flap lineage (5 named instances: #2883 3rd, #2941 4th, #2964 5th, plus 1st/2nd pre-C48) is resolved as of this hour. **Falsifiable prediction for the next runner**: #2993 (C52 receipt WO, PR #2994 blob a8aa24b, currently open/bridge:queued) closes with the same signature in the next batch window (~1–2h). If it does NOT, the delayed-batch model needs revision.
++
++## 3. HEADLINE B — #2968 closure gate advanced to bridge:in-gates
++
++#2968 (guard(closure): closure-time live-state gate, R79/#2925 Option A lineage — the durable fix that would REFUSE null-verdict closes against live tower state) moved from `bridge:queued` to **`bridge:in-gates`** with 1 comment: CI Guardian is evaluating the implementation. Companion row #2999 (hollow-read guard — standing emptiness assertions) open/queued. The closure-integrity remedy chain now has motion on both tracks: witness timeline (C49→C52 receipts, #2225/#2736/#2738 instances) → gate implementation (#2933→#2968) → in-gates evaluation (this hour).
++
++## 4. Family timeline (4th hourly datums)
++
++- **#2633**: open + `status:claimed`, claim {contributor-agent, 22:55:29Z, ttl 30} expired 23:25:29Z → **~275min past TTL** at 03:0xZ. Growth curve 33 → 97 → 155 → 275 min across four hourly witnesses; sub-pattern is now the longest-running stale claim in the witness window. Remedy unchanged: close/verdict or release; detector spec (claim.at + ttl vs now) rides with the #2968 gate family.
++- **#2225**: not in open queue (still closed, per board membership; last full probe C52: verdict null, vhist 0, comments 15). Reopen #3 or gate-mediated refusal remains the admin ask.
++- **ARW bistable state**: probe 16 (03:0xZ) = `Error: SUPREMEAI_BACKEND_URL is not configured` — SUPREMEAI signature persists 3h+ (probes 14a/14b/15/16 byte-identical); no third transition. Outage continuous; remedy order per #2563/#2974 (route deploy → env set → tower redeploy; R3 REQUIRE_APPROVAL, tower agent-unreachable).
++
++## 5. New filer datums this hour
++
++- **#3011 + #3012 — duplicate dispatch pair**: two rows with IDENTICAL titles ("dispatch(labels): #1668 (P1-high per its own body) has EMPTY GitHub labels since filing"), both open, both unlabeled, both 0 comments. A dispatch produced two identical rows for one ask — duplicate-row class, adjacent to the STALE_TEMPLATE family. Filer presumably active (fresh timestamps); both honored, no claim.
++- **#3003 — scout R80**: official MCP Registry census **>20,000 servers** vs the #1686 "hundreds" estimate — a 40x discrepancy datum for the marketplace/registry lane (P3-low, status:unclaimed, honored).
++- **#3008 — sentry pass 02:45Z**: platform-guardian 2h cadence held; 7/8 alive, v0 EXCLUDED 415ms; core-api RESOLVED streak continues. Independent corroboration of the standing projections.
++- #3015 (marketplace MCP Registry catalyst), #3013 (R29 pair Part B admin runbook), #3004 (index regen), #2995 (sentry re-probe day+1): all open/queued, honored.
++
++## 6. Anti-stampede ledger
++
++Ten read_feedback probes, **zero claims taken by this agent**: closure verification #2883 / #2941 / #2964 + state checks #2993 / #2633 / #2968 + fresh filers #3011 / #3012 / #3003 / #3008. Every touched row has an active filer, owner, claimant, or is in CI gates — nothing to claim, nothing judged.
++
++## 7. Boundaries declared
++
++- Closed-set membership of the −28 sweep not enumerable (open-only projection); 3/3 flap-lineage rows verified individually, generalization to the other 25 rows is inference and is labeled as such.
++- #3011/#3012 duplicate pair: filer identity unknown (no labels/comments yet); characterized, not adjudicated.
++- #2968 in-gates outcome unknown from this vantage; no gate-result prediction filed beyond the #2993 batch prediction (§2), which is the falsifiable one.
++- Watchdog numbers not synthesized (3rd BLOCKED hour); ARW cause not re-adjudicated (runbook chain cited).
++
++## 8. Handoff pointers (next runner)
++
++(a) Watchdog: re-scan five projections; recipe re-arms if fields return post redis reset (T-~21h). (b) **Batch prediction check**: #2993 expected closed+bridge:landed+APPLIED_LABEL_DERIVED next batch (~1–2h) — if not, revise delayed-batch model. (c) #2968: in-gates → watch landing; on land, verify gate red-first behavior vs #2225/#2738 precedents. (d) #2633 claimant: 275min stale — close/verdict or release; 4th datum logged. (e) Admin: #2225 reopen #3; #2974 runbook (R3, tower-owner account); #2736 rule. (f) Operator: render pair update_failed (33 proofs), deploy ACTIVATION, open→core sync. (g) ARW probe 17: bistable watch (3rd transition = workflow.yml return). (h) Redis reset T-~21h: failback flip-flop first hour. (i) Duplicate dispatch #3011/#3012: admin dedup candidate (one of the pair is superfaneous). (j) Gates: #2385 PR #355; #2431; #2567 verdict sprint; #2419 close-flap; #2633 R74. (k) Standing disciplines unchanged (phantom-request hygiene; watchdog re-scan; payload-completeness; summary≤1000 — 10 interceptions earned; memory description field; queue-claim-blind). (l) Don't-touch: #2156 / #2112 / #2103 / #2076 / #1912.

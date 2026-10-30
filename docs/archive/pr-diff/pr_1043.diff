@@ -1,0 +1,30 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 435045df..01e47231 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -172,13 +172,24 @@ def sync_satellite(
+                 print(
+                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
+                 )
+-            # Sync CI workflow into supremeai-api
++            # Sync CI and secret-scan workflows into supremeai-api
+             api_ci_src = repo_root / "gateway" / ".github" / "workflows" / "ci.yml"
+             if api_ci_src.exists():
+                 target_wf_dir = tmp_repo / ".github" / "workflows"
+                 target_wf_dir.mkdir(parents=True, exist_ok=True)
+                 shutil.copy2(api_ci_src, target_wf_dir / "ci.yml")
+                 print(f"📋 Synced CI workflow to .github/workflows/ci.yml in {target_repo}")
++            api_secret_src = repo_root / "gateway" / ".github" / "workflows" / "secret-scan.yml"
++            if api_secret_src.exists():
++                target_wf_dir = tmp_repo / ".github" / "workflows"
++                target_wf_dir.mkdir(parents=True, exist_ok=True)
++                shutil.copy2(api_secret_src, target_wf_dir / "secret-scan.yml")
++                print(f"📋 Synced secret-scan workflow to .github/workflows/secret-scan.yml in {target_repo}")
++            # Sync clean admin_auth into root of supremeai-api
++            root_auth = repo_root / "gateway" / "admin_auth.py"
++            if root_auth.exists():
++                shutil.copy2(root_auth, tmp_repo / "admin_auth.py")
++                print(f"📋 Synced clean admin_auth.py to root in {target_repo}")
+             # Sync central API schemas into contracts/schemas/ in supremeai-api
+             schemas_src = repo_root / "api-schemas"
+             if schemas_src.exists():

@@ -1,0 +1,151 @@
+diff --git a/.github/workflows/federation-ci-watchdog.yml b/.github/workflows/federation-ci-watchdog.yml
+index 86785125..cb2a7666 100644
+--- a/.github/workflows/federation-ci-watchdog.yml
++++ b/.github/workflows/federation-ci-watchdog.yml
+@@ -15,7 +15,7 @@ jobs:
+     timeout-minutes: 5
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index ed6103a9..1b0c97f4 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -275,7 +275,7 @@ jobs:
+       cancel-in-progress: false
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+         with:
+           fetch-depth: 0
+ 
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 25767e41..fb832960 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -70,7 +70,7 @@ jobs:
+       issues: write
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:
+@@ -97,7 +97,7 @@ jobs:
+       issues: write
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:
+@@ -340,7 +340,7 @@ jobs:
+       mcp_only: ${{ steps.scan.outputs.mcp_only }}
+     steps:
+       - name: Checkout repository (content inspection requires file bodies)
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Guard self-test (guard-the-guard, offline fixtures)
+         run: python3 scripts/ci/boundary_sanitization_guard.py --self-test
+@@ -404,7 +404,7 @@ jobs:
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (parity inspects file bodies)
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
+         run: python3 scripts/agents/check_loop_contract_parity.py
+@@ -416,7 +416,7 @@ jobs:
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (hook body required)
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Verify pre-push guard (exec bit + syntax + offline self-test)
+         run: |
+@@ -433,7 +433,7 @@ jobs:
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (full history for merge-base arithmetic)
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+         with:
+           fetch-depth: 0
+ 
+@@ -458,7 +458,7 @@ jobs:
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:
+@@ -498,7 +498,7 @@ jobs:
+         python-version: ["3.10", "3.11", "3.12", "3.13"]
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Set up Python ${{ matrix.python-version }}
+         uses: actions/setup-python@v5
+@@ -570,7 +570,7 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+         with:
+           fetch-depth: 0
+ 
+@@ -589,7 +589,7 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: "Setup Node — MCP Tower (reusable composite action: node + cache + npm ci + tsc, #155)"
+         uses: ./.github/actions/setup-node-tower
+@@ -614,7 +614,7 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+       - name: Checkout code
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Setup Node
+         uses: actions/setup-node@v4
+@@ -652,7 +652,7 @@ jobs:
+       GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Setup Python
+         uses: actions/setup-python@v5
+diff --git a/.github/workflows/satellite-board-audit.yml b/.github/workflows/satellite-board-audit.yml
+index 572caf78..d53aed4b 100644
+--- a/.github/workflows/satellite-board-audit.yml
++++ b/.github/workflows/satellite-board-audit.yml
+@@ -15,7 +15,7 @@ jobs:
+     timeout-minutes: 10
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+       - name: Setup Python
+         uses: actions/setup-python@v5
+         with:

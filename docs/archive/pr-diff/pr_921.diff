@@ -1,0 +1,661 @@
+diff --git a/gateway/routing_policy.json b/gateway/routing_policy.json
+index dcdd17ef..68af104b 100644
+--- a/gateway/routing_policy.json
++++ b/gateway/routing_policy.json
+@@ -1 +1 @@
+-{"schema_version":"gateway-routing/1","chains":{"auto":[{"provider":"web","model":"gemini"},{"provider":"openrouter","model":"openai/gpt-4o-mini"},{"provider":"openrouter","model":"anthropic/claude-sonnet-4-5"},{"provider":"groq","model":"llama-3.1-8b-instant"},{"provider":"openai","model":"gpt-4o-mini"}]},"default_chain":"auto","rate_limit":{"window_seconds":60,"max_requests":4},"api_keys":{"supremeai-key-test-0000000001":{"owner":"pytest","scopes":["chat","models"]},"supremeai-key-test-0000000002":{"owner":"readonly","scopes":["models"]}}}
+\ No newline at end of file
++{"schema_version":"gateway-routing/1","chains":{"auto":[{"provider":"web","model":"gemini"},{"provider":"groq","model":"qwen/qwen3.8-27b"},{"provider":"groq","model":"openai/gpt-oss-120b"},{"provider":"gemini","model":"gemini-2.5-flash"},{"provider":"openrouter","model":"nvidia/nemotron-3.5-lightning:free"},{"provider":"openrouter","model":"cohere/north-mini-code:free"},{"provider":"openai","model":"gpt-4o-mini"}]},"default_chain":"auto","rate_limit":{"window_seconds":60,"max_requests":30},"api_keys":{"supremeai-key-test-0000000001":{"owner":"pytest","scopes":["chat","models"]},"supremeai-key-test-0000000002":{"owner":"readonly","scopes":["models"]}}}
+\ No newline at end of file
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index ef35a04a..5a41a6a7 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -419,57 +419,90 @@ async def chat_completions(
+             relay_detail = w_response.get("error") or w_response.get("detail") or w_response.get("message")
+         if not relay_detail and w_response is not None:
+             relay_detail = str(w_response)[:500]
++        logger.warning(
++            f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. "
++            f"Cascading to Tier-1/Tier-2 Squad..."
++        )
++
++    # ── Tier-1 / Tier-2 Dynamic Key-Plane Squad with Model Cascades ───────────
++    candidates = squad.get_candidate_slots(preferred_provider) if squad else []
++    if not candidates:
++        if use_priority_1:
++            raise HTTPException(
++                status_code=502,
++                detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}."
++            )
+         raise HTTPException(
+-            status_code=502,
+-            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. API fallback disabled."
++            status_code=503,
++            detail="No healthy AI provider keys available at this moment. All keys cooling down."
+         )
+ 
+-    raise HTTPException(
+-        status_code=503,
+-        detail="Stealth Webhook relay is currently unconfigured or offline. API key replies disabled per user mandate."
++    last_error = None
++    for provider, slot in candidates:
++        status, response_data = await forward_chat_completion(provider, slot.key, body)
++
++        if 200 <= status < 300:
++            headers = {
++                "X-SupremeAI-Provider": provider,
++                "X-SupremeAI-Slot": slot.name,
++                "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
++            }
++            if use_priority_1:
++                headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
++            if isinstance(response_data, dict):
++                return JSONResponse(status_code=status, content=response_data, headers=headers)
++            return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
++
++        pool = squad.pools.get(provider)
++        if pool:
++            pool.report_injury(slot, status)
++
++        last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
++        logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
++
++    return JSONResponse(
++        status_code=502,
++        content={
++            "error": "All healthy provider attempts failed during cross-provider failover.",
++            "last_error": last_error,
++        }
+     )
+ 
+-    # ── [COMMENTED OUT PER USER MANDATE: reply only webhook use korbe, API key squad disabled] ──
+-    # if not squad:
+-    #     raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
+-    #
+-    # candidates = squad.get_candidate_slots(preferred_provider)
+-    # if not candidates:
+-    #     raise HTTPException(
+-    #         status_code=503,
+-    #         detail="No healthy AI provider keys available at this moment. All keys cooling down."
+-    #     )
+-    #
+-    # last_error = None
+-    # for provider, slot in candidates:
+-    #     status, response_data = await forward_chat_completion(provider, slot.key, body)
+-    #
+-    #     if 200 <= status < 300:
+-    #         headers = {
+-    #             "X-SupremeAI-Provider": provider,
+-    #             "X-SupremeAI-Slot": slot.name,
+-    #             "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
+-    #         }
+-    #         if use_priority_1:
+-    #             headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
+-    #         if isinstance(response_data, dict):
+-    #             return JSONResponse(status_code=status, content=response_data, headers=headers)
+-    #         return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
+-    #
+-    #     pool = squad.pools.get(provider)
+-    #     if pool:
+-    #         pool.report_injury(slot, status)
+-    #
+-    #     last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
+-    #     logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
+-    #
+-    # return JSONResponse(
+-    #     status_code=502,
+-    #     content={
+-    #         "error": "All healthy provider attempts failed during cross-provider failover.",
+-    #         "last_error": last_error,
+-    #     }
+-    # )
++
++@app.post("/v1/ui/generate")
++async def generate_ui_component(
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key")
++):
++    """Specialized V0 / UI synthesis endpoint for SupremeAI Studio."""
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(status_code=401, detail="Unauthorized")
++    try:
++        body = await request.json()
++    except Exception:
++        raise HTTPException(status_code=400, detail="Invalid JSON payload")
++
++    prompt = body.get("prompt") or (body.get("messages", [{}])[-1].get("content", "") if body.get("messages") else "")
++    ui_payload = {
++        "model": "v0-web",
++        "messages": [
++            {
++                "role": "system",
++                "content": (
++                    "You are a master React Tailwind UI component synthesizer. "
++                    "Generate complete, beautiful, production-ready React code without markdown chatter."
++                ),
++            },
++            {"role": "user", "content": str(prompt)},
++        ],
++    }
++    candidates = squad.get_candidate_slots("v0") if squad else []
++    for provider, slot in candidates:
++        status, resp = await forward_chat_completion(provider, slot.key, ui_payload)
++        if 200 <= status < 300:
++            return JSONResponse(status_code=status, content=resp)
++    # If V0 slot unavailable, fallback to primary chat completion
++    return await chat_completions(request, x_supremeai_key)
+ 
+ 
+ # ── MCP Control Tower & Superadmin Management Surface ────────────────────────
+diff --git a/gateway/service/pool.py b/gateway/service/pool.py
+new file mode 100644
+index 00000000..48bf2331
+--- /dev/null
++++ b/gateway/service/pool.py
+@@ -0,0 +1,210 @@
++"""
++service/pool.py — Dynamic Load-Balanced Key Pool & Provider Orchestrator.
++
++Core Doctrine:
++- Zero hardcoding of key counts (handles 1, 12, 35, or 0 keys dynamically).
++- Concurrent round-robin distribution over all currently healthy keys.
++- Automatic injury/cooldown on HTTP 429/5xx, auto-healing when cooldown expires.
++- Cross-provider failover: if all keys of a provider are on cooldown, automatically
++  switches to the next available healthy provider.
++- Model-aware tracking per slot so verified working models are prioritized.
++"""
++from __future__ import annotations
++
++import logging
++import os
++import re
++import time
++from dataclasses import dataclass, field
++from typing import Dict, List, Optional, Tuple
++
++logger = logging.getLogger("supremeai.pool")
++
++# Cooldown durations in seconds
++COOLDOWN_RATE_LIMIT = 60       # 429 Too Many Requests
++COOLDOWN_SERVER_ERROR = 30     # 5xx Provider Outage
++COOLDOWN_AUTH_ERROR = 600      # 401/403 Invalid or quota-exhausted key
++
++
++@dataclass
++class KeySlot:
++    name: str                  # e.g., "GEMINI_API_KEY_3"
++    key: str                   # actual secret token
++    provider: str              # e.g., "gemini"
++    cooldown_until: float = 0.0
++    total_calls: int = 0
++    total_errors: int = 0
++    verified_model: Optional[str] = None
++
++    @property
++    def is_healthy(self) -> bool:
++        return time.time() >= self.cooldown_until
++
++
++class ProviderKeyPool:
++    """Manages the pool of keys for a single provider."""
++
++    def __init__(self, provider: str, prefixes: List[str] | str):
++        self.provider = provider
++        if isinstance(prefixes, str):
++            self.prefixes = [prefixes]
++        else:
++            self.prefixes = prefixes
++        self.slots: List[KeySlot] = []
++        self._index: int = 0
++        self.discover_keys()
++
++    def discover_keys(self) -> int:
++        """Scan os.environ for keys matching ^PREFIX(_\\d+)?$ across all assigned prefixes."""
++        found: List[Tuple[str, str]] = []
++
++        for prefix in self.prefixes:
++            pattern = re.compile(rf"^{prefix}(?:_\d+)?$", re.IGNORECASE)
++            for env_name, env_val in os.environ.items():
++                val = env_val.strip().strip("'\"")
++                if pattern.match(env_name) and len(val) > 5:
++                    # Exclude config vars like _MODEL, _BASE_URL, _URL
++                    if not any(env_name.upper().endswith(s) for s in ["_MODEL", "_BASE_URL", "_URL"]):
++                        if (env_name, val) not in found:
++                            found.append((env_name, val))
++
++        # Check comma-separated pools (e.g., GROQ_API_KEYS, OPENROUTER_API_KEYS)
++        for prefix in self.prefixes:
++            pool_env = f"{prefix}S"
++            pool_val = os.environ.get(pool_env, "").strip().strip("'\"")
++            if pool_val and "," in pool_val:
++                for idx, token in enumerate(pool_val.split(",")):
++                    t = token.strip().strip("'\"")
++                    if len(t) > 5:
++                        entry_name = f"{pool_env}_POOL_{idx+1}"
++                        if not any(f[1] == t for f in found):
++                            found.append((entry_name, t))
++
++        # Sort so ordering is deterministic
++        found.sort(key=lambda x: x[0])
++        self.slots = [
++            KeySlot(name=name, key=val, provider=self.provider)
++            for name, val in found
++        ]
++        self._index = 0
++        logger.info(f"[{self.provider}] Discovered {len(self.slots)} key(s)")
++        return len(self.slots)
++
++    @property
++    def total_count(self) -> int:
++        return len(self.slots)
++
++    @property
++    def healthy_slots(self) -> List[KeySlot]:
++        now = time.time()
++        return [s for s in self.slots if s.cooldown_until <= now]
++
++    def get_next_key(self) -> Optional[KeySlot]:
++        """Round-robin selection across currently healthy keys."""
++        healthy = self.healthy_slots
++        if not healthy:
++            return None
++        self._index = (self._index + 1) % len(healthy)
++        slot = healthy[self._index]
++        slot.total_calls += 1
++        return slot
++
++    def report_injury(self, slot: KeySlot, status_code: int):
++        """Mark a key injured and put it on the cooldown bench."""
++        slot.total_errors += 1
++        if status_code == 429:
++            duration = COOLDOWN_RATE_LIMIT
++            reason = "rate_limit"
++        elif status_code in (401, 403):
++            duration = COOLDOWN_AUTH_ERROR
++            reason = "auth_exhausted"
++        elif status_code == 402:
++            duration = COOLDOWN_AUTH_ERROR * 2
++            reason = "payment_required"
++        else:
++            duration = COOLDOWN_SERVER_ERROR
++            reason = "server_error"
++
++        slot.cooldown_until = time.time() + duration
++        logger.warning(
++            f"[{self.provider}] Key {slot.name} injured ({reason}, HTTP {status_code}). "
++            f"Benched for {duration}s."
++        )
++
++
++class FederationSquad:
++    """The master team orchestrator managing all provider pools."""
++
++    # Zero-cost free fallback priority
++    DEFAULT_PROVIDER_ORDER = [
++        "groq",
++        "gemini",
++        "openrouter",
++        "v0",
++        "mistral",
++        "openai",
++        "huggingface",
++    ]
++
++    PREFIX_MAP: Dict[str, List[str]] = {
++        "groq": ["GROQ_API_KEY"],
++        "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "JULES_API_KEY"],
++        "openrouter": ["OPENROUTER_API_KEY"],
++        "v0": ["V0_API_KEY"],
++        "mistral": ["MISTRAL_API_KEY"],
++        "openai": ["OPENAI_API_KEY"],
++        "huggingface": ["HF_API_KEY", "HUGGINGFACE_API_KEY"],
++    }
++
++    def __init__(self):
++        self.pools: Dict[str, ProviderKeyPool] = {}
++        self.reload_squad()
++
++    def reload_squad(self):
++        """Discovers/reloads all keys across all configured providers."""
++        for provider, prefixes in self.PREFIX_MAP.items():
++            self.pools[provider] = ProviderKeyPool(provider, prefixes)
++
++    def stats(self) -> dict:
++        """Returns operational telemetry for MCP Control Tower and /health endpoint."""
++        now = time.time()
++        summary = {
++            "total_providers": len(self.pools),
++            "providers": {},
++            "total_keys": 0,
++            "total_healthy_keys": 0,
++        }
++        for name, pool in self.pools.items():
++            healthy = pool.healthy_slots
++            cooldown_count = len(pool.slots) - len(healthy)
++            summary["providers"][name] = {
++                "total": len(pool.slots),
++                "healthy": len(healthy),
++                "cooling_down": cooldown_count,
++            }
++            summary["total_keys"] += len(pool.slots)
++            summary["total_healthy_keys"] += len(healthy)
++        return summary
++
++    def get_candidate_slots(self, preferred_provider: Optional[str] = None) -> List[Tuple[str, KeySlot]]:
++        """
++        Yields (provider, KeySlot) candidates to try.
++        Starts with preferred_provider if healthy, then falls back to others in priority order.
++        """
++        order = list(self.DEFAULT_PROVIDER_ORDER)
++        if preferred_provider and preferred_provider in order:
++            order.remove(preferred_provider)
++            order.insert(0, preferred_provider)
++
++        candidates = []
++        for p in order:
++            pool = self.pools.get(p)
++            if pool:
++                slot = pool.get_next_key()
++                if slot:
++                    candidates.append((p, slot))
++        return candidates
++
++
++# Singleton squad instance
++squad = FederationSquad()
+diff --git a/gateway/service/providers/adapters.py b/gateway/service/providers/adapters.py
+index 63a2de79..6f1ae93c 100644
+--- a/gateway/service/providers/adapters.py
++++ b/gateway/service/providers/adapters.py
+@@ -26,11 +26,11 @@
+     },
+     "groq": {
+         "base_url": os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+-        "default_model": os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"),
++        "default_model": os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b"),
+     },
+     "openrouter": {
+         "base_url": os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+-        "default_model": os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct"),
++        "default_model": os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3.5-lightning:free"),
+     },
+     "openai": {
+         "base_url": os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+@@ -44,6 +44,10 @@
+         "base_url": os.getenv("HF_BASE_URL", "https://router.huggingface.co/hf-inference/v1"),
+         "default_model": os.getenv("HF_MODEL", "meta-llama/Llama-3.2-3B-Instruct"),
+     },
++    "v0": {
++        "base_url": os.getenv("V0_BASE_URL", "https://api.v0.dev/v1"),
++        "default_model": os.getenv("V0_MODEL", "v0-web"),
++    },
+     "ghost_gemini": {
+         "base_url": os.getenv("GHOST_TOWER_URL", "http://127.0.0.1:8788"),
+         "default_model": "gemini-web",
+@@ -54,6 +58,49 @@
+     },
+ }
+ 
++# Exhaustive zero-waste model cascades: if top model hits quota/limit (429) or is unavailable (404/400),
++# the adapter seamlessly tries the next model in sequence without failing the client request.
++PROVIDER_MODEL_CASCADES: Dict[str, list[str]] = {
++    "groq": [
++        "qwen/qwen3.8-27b",
++        "openai/gpt-oss-120b",
++        "openai/gpt-oss-20b",
++        "allam-2-7b",
++        "llama-3.3-70b-versatile",
++        "llama-3.1-8b-instant",
++    ],
++    "gemini": [
++        "gemini-2.5-flash",
++        "gemini-flash-latest",
++        "gemini-2.5-flash-lite",
++        "gemini-2.5-pro",
++        "gemini-1.5-flash-latest",
++        "gemini-1.5-pro-latest",
++        "gemini-2.0-flash",
++    ],
++    "openrouter": [
++        "nvidia/nemotron-3.5-lightning:free",
++        "cohere/north-mini-code:free",
++        "dots-studio/dots-3-note-preview:free",
++        "poolside/laguna-s-2.1:free",
++        "liquid/lfm-2.5-2.6b:free",
++        "meta-llama/llama-3.3-70b-instruct:free",
++    ],
++    "mistral": [
++        "mistral-small-latest",
++        "open-mistral-7b",
++        "mistral-medium-latest",
++    ],
++    "openai": [
++        "gpt-4o-mini",
++        "gpt-4o",
++    ],
++    "v0": [
++        "v0-web",
++        "v0-preview",
++    ],
++}
++
+ 
+ def normalize_stealth_url(url: str) -> str:
+     """
+@@ -89,6 +136,8 @@ async def forward_chat_completion(
+ ) -> Tuple[int, Dict[str, Any] | str]:
+     """
+     Forwards an OpenAI-format chat completion request to the chosen provider.
++    Executes an in-flight model cascade: if the top model returns 429/404/400/503,
++    it automatically attempts the remaining prioritized models before reporting error.
+     Returns (status_code, parsed_json_or_text).
+     """
+     config = PROVIDER_CONFIGS.get(provider)
+@@ -98,12 +147,6 @@ async def forward_chat_completion(
+     base_url = config["base_url"].rstrip("/")
+     url = f"{base_url}/chat/completions"
+ 
+-    # Normalize model if "auto", empty, or provider-namespaced
+-    body = dict(payload)
+-    client_model = body.get("model", "auto")
+-    if client_model in ("auto", "default", "", None) or client_model.startswith("supremeai/"):
+-        body["model"] = config["default_model"]
+-
+     headers = {
+         "Authorization": f"Bearer {api_key}",
+         "Content-Type": "application/json",
+@@ -115,18 +158,66 @@ async def forward_chat_completion(
+         headers["HTTP-Referer"] = "https://supremeai-api-ulw0.onrender.com"
+         headers["X-Title"] = "SupremeAI Gateway"
+ 
++    # Build prioritized candidate models list
++    body = dict(payload)
++    client_model = body.get("model", "auto")
++    cascade = PROVIDER_MODEL_CASCADES.get(provider, [config["default_model"]])
++    candidate_models: list[str] = []
++
++    if client_model and client_model not in ("auto", "default", "") and not str(client_model).startswith("supremeai/"):
++        candidate_models.append(str(client_model))
++
++    for m in cascade:
++        if m not in candidate_models:
++            candidate_models.append(m)
++
++    last_status = 500
++    last_data: Any = {"error": f"No models available for provider {provider}"}
++
+     async with httpx.AsyncClient(timeout=timeout) as client:
+-        try:
+-            response = await client.post(url, json=body, headers=headers)
++        for model_name in candidate_models:
++            body["model"] = model_name
+             try:
+-                data = response.json()
+-            except Exception:  # noqa: BLE001
+-                data = response.text
+-            return response.status_code, data
+-        except httpx.TimeoutException:
+-            return 504, {"error": f"Provider {provider} timed out"}
+-        except httpx.RequestError as exc:
+-            return 502, {"error": f"Connection error to {provider}: {str(exc)}"}
++                response = await client.post(url, json=body, headers=headers)
++                status_code = response.status_code
++                try:
++                    data = response.json()
++                except Exception:  # noqa: BLE001
++                    data = response.text
++
++                # Success path (2xx)
++                if 200 <= status_code < 300:
++                    if isinstance(data, dict) and "model" not in data:
++                        data["model"] = model_name
++                    return status_code, data
++
++                # Skip paid tiers if requested payment (402)
++                if status_code == 402:
++                    logger.warning(f"[{provider}] Model {model_name} requested payment (402); skipping paid tier.")
++                    last_status, last_data = status_code, data
++                    continue
++
++                # Auto-downgrade on quota exhaustion, missing model slug, or temporary overload
++                if status_code in (404, 400, 429, 503):
++                    logger.warning(
++                        f"[{provider}] Model {model_name} returned {status_code}; "
++                        f"cascading to next available model..."
++                    )
++                    last_status, last_data = status_code, data
++                    continue
++
++                # For fatal authentication errors (401/403 on key), do not loop other models with same key
++                last_status, last_data = status_code, data
++                break
++
++            except httpx.TimeoutException:
++                logger.warning(f"[{provider}] Model {model_name} timed out after {timeout}s; trying next model...")
++                last_status, last_data = 504, {"error": f"Provider {provider} model {model_name} timed out"}
++                continue
++            except httpx.RequestError as exc:
++                return 502, {"error": f"Connection error to {provider}: {str(exc)}"}
++
++    return last_status, last_data
+ 
+ 
+ async def forward_stealth_webhook(
+diff --git a/gateway/tests/test_model_cascades.py b/gateway/tests/test_model_cascades.py
+new file mode 100644
+index 00000000..627f833a
+--- /dev/null
++++ b/gateway/tests/test_model_cascades.py
+@@ -0,0 +1,111 @@
++"""
++test_model_cascades.py — Tests for Zero-Waste Model Priority Cascade and Fallback.
++"""
++import pytest
++import asyncio
++from unittest.mock import AsyncMock, patch, MagicMock
++from gateway.service.providers.adapters import (
++    forward_chat_completion,
++    PROVIDER_MODEL_CASCADES,
++    PROVIDER_CONFIGS,
++)
++from gateway.service.pool import FederationSquad, ProviderKeyPool, KeySlot
++
++
++def test_provider_cascades_defined():
++    """Verify all major providers have non-empty prioritized model cascades."""
++    assert "groq" in PROVIDER_MODEL_CASCADES
++    assert "gemini" in PROVIDER_MODEL_CASCADES
++    assert "openrouter" in PROVIDER_MODEL_CASCADES
++
++    # Verify Groq contains live verified models
++    assert "qwen/qwen3.8-27b" in PROVIDER_MODEL_CASCADES["groq"]
++    assert "openai/gpt-oss-120b" in PROVIDER_MODEL_CASCADES["groq"]
++
++    # Verify Gemini contains live verified models
++    assert "gemini-2.5-flash" in PROVIDER_MODEL_CASCADES["gemini"]
++    assert "gemini-flash-latest" in PROVIDER_MODEL_CASCADES["gemini"]
++
++    # Verify Cerebras is strictly excluded (per user mandate)
++    assert "cerebras" not in PROVIDER_MODEL_CASCADES
++
++
++@pytest.mark.asyncio
++async def test_in_flight_model_cascade_on_404():
++    """If top model returns 404, adapter must automatically try the next model in cascade."""
++    call_history = []
++
++    async def mock_post(url, json=None, headers=None):
++        model = json.get("model")
++        call_history.append(model)
++        mock_resp = MagicMock()
++        if model == "qwen/qwen3.8-27b":
++            mock_resp.status_code = 404
++            mock_resp.json.return_value = {"error": "model_not_found"}
++            mock_resp.text = '{"error": "model_not_found"}'
++        else:
++            mock_resp.status_code = 200
++            mock_resp.json.return_value = {
++                "choices": [{"message": {"content": f"Success with {model}"}}]
++            }
++            mock_resp.text = "ok"
++        return mock_resp
++
++    with patch("httpx.AsyncClient.post", side_effect=mock_post):
++        status, data = await forward_chat_completion(
++            provider="groq",
++            api_key="gsk-test",
++            payload={"messages": [{"role": "user", "content": "hi"}]},
++        )
++        assert status == 200
++        assert isinstance(data, dict)
++        assert data.get("model") == "openai/gpt-oss-120b"
++        assert call_history == ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]
++
++
++@pytest.mark.asyncio
++async def test_skip_paid_tier_on_402():
++    """If a model returns 402 Payment Required, adapter skips paid tier and cascades."""
++    call_history = []
++
++    async def mock_post(url, json=None, headers=None):
++        model = json.get("model")
++        call_history.append(model)
++        mock_resp = MagicMock()
++        if model == "gemini-2.5-flash":
++            mock_resp.status_code = 402
++            mock_resp.json.return_value = {"error": "Payment required"}
++            mock_resp.text = '{"error": "Payment required"}'
++        else:
++            mock_resp.status_code = 200
++            mock_resp.json.return_value = {
++                "choices": [{"message": {"content": "ok"}}]
++            }
++            mock_resp.text = "ok"
++        return mock_resp
++
++    with patch("httpx.AsyncClient.post", side_effect=mock_post):
++        status, data = await forward_chat_completion(
++            provider="gemini",
++            api_key="AIza-test",
++            payload={"messages": [{"role": "user", "content": "hi"}]},
++        )
++        assert status == 200
++        assert data.get("model") == "gemini-flash-latest"
++
++
++def test_jules_key_included_in_gemini_pool(monkeypatch):
++    """Verify JULES_API_KEY is discovered and included as an additional Gemini key."""
++    monkeypatch.setenv("GEMINI_API_KEY", "AIzaSyTest1")
++    monkeypatch.setenv("JULES_API_KEY", "AQ.SyTestJules")
++
++    squad = FederationSquad()
++    gemini_pool = squad.pools.get("gemini")
++    assert gemini_pool is not None
++    slot_names = [s.name for s in gemini_pool.slots]
++    assert "GEMINI_API_KEY" in slot_names
++    assert "JULES_API_KEY" in slot_names
++
++
++if __name__ == "__main__":
++    pytest.main([__file__, "-v"])

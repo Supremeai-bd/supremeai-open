@@ -1,0 +1,30 @@
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index dd19fe26..1121e1a6 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -73,16 +73,20 @@ python3 scripts/agents/continuous_agent_loop.py --pick-next --max-tasks 1
+ python3 scripts/agents/continuous_agent_loop.py --loop --max-tasks 5
+ ```
+ 
+-Useful flags:
++Useful flags (regenerated from `--help` after #63/#67 — canonical details live in `docs/AGENT_LOOP_SPEC.md` §4):
+ 
+ | Flag | Meaning |
+ |------|---------|
+-| `--verify-only` | Run 3-tier verification and exit (use this first, always) |
++| `--verify-only` | Run 3-tier verification and exit (use this first, always); final stdout line is the `CONTRACT_VERSION` parity marker (#67) |
+ | `--issue N` | Claim and resolve a specific issue number |
+-| `--pick-next` | Auto-select the highest-priority open issue |
++| `--pick-next` | Auto-select the highest-priority **claimable** open issue (`status:unclaimed` only) |
+ | `--loop --max-tasks N` | Sequentially process up to N tasks |
+-| `--role NAME` | Force a specialist role (planner, coder, reviewer, …) |
+-| `--emit-prompt` | Print the specialist prompt instead of executing |
++| `--task-envelope` | **Canonical** (#63): emit the unified deterministic Task Envelope JSON and exit |
++| `--group NAME` | Canonical group override from the `VALID_GROUPS` registry (fail-closed: `agent-orchestration`, `mcp-tower`, `core-engine`, `schemas-contracts`, `infra-ops`) |
++| `--allow-adhoc` | Allow adhoc task execution without `--issue` (offline testing only) |
++| `--force` | Bypass dirty workspace isolation gate (not recommended) |
++| `--role NAME` | Force a specialist role — one of: `coder`, `auditor`, `ci-fixer`, `security-breaker`, `browser-qa`, `planner`, `watcher` |
++| `--emit-prompt` / `--emit-contract` | **DEPRECATED (#63)** — shims that emit the unified envelope with a deprecation warning; use `--task-envelope` |
+ | `--auto-pr` | Submit the PR via the `gh` CLI when tests pass |
+ | `--touching-files a,b` | Declare the exact scope (required by the task envelope) |
+ | `--task-type`, `--priority` | Task envelope metadata (defaults: `IMPLEMENT`, `P2`) |

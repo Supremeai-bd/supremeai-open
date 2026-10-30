@@ -1,0 +1,483 @@
+diff --git a/examples/sdk-client-ts/index.ts b/examples/sdk-client-ts/index.ts
+new file mode 100644
+index 00000000..cac80589
+--- /dev/null
++++ b/examples/sdk-client-ts/index.ts
+@@ -0,0 +1,442 @@
++/**
++ * SupremeAI TypeScript SDK — zero-dependency client contracts + core (issue #32).
++ *
++ * Layer-1 client contracts for external integrations, aligned with the
++ * repository's published schemas:
++ * - Task dispatch vocabulary ↔ api-schemas/task-router.schema.json
++ * - Status frames ↔ api-schemas/websocket-events.schema.json
++ * - Agent identity ↔ api-schemas/heartbeat.schema.json
++ * - Transport etiquette ↔ docs/MCP_CONNECT.md (Retry-After, session ids,
++ *   `?client=` identity, never credentials in URLs)
++ *
++ * Runtime compatibility: Node 18+ (fetch built-in; EventSource global from
++ * Node 20 — feature-detected below), Bun, and browsers. No third-party
++ * dependencies and no `@types/node`: platform surfaces are reached through
++ * `globalThis` casts only.
++ *
++ * Offline-safe import: network I/O happens only when client methods are
++ * awaited, never at module load.
++ */
++
++// ---------------------------------------------------------------------------
++// Task dispatch contracts (task-router aligned)
++// ---------------------------------------------------------------------------
++
++export type ComplexityTierName = "fast_light" | "coding_reasoning" | "complex_architecture";
++export type Priority = "P0" | "P1" | "P2" | "P3";
++
++export interface TaskDispatchRequest {
++  /** Deterministic task identifier, conventionally `task-<issue number>`. */
++  task_id: string;
++  /** Tracking issue number in the target repository. */
++  issue: string;
++  /** Mission statement — specific enough for two agents to scope identically. */
++  objective: string;
++  /** Scope Gate boundary: paths the change may touch. */
++  touching_files: string[];
++  /** Paths never touchable (constitutional defaults: .env*, secrets/**, ...). */
++  forbidden_paths?: string[];
++  /** Requested complexity tier; omit to let the router classify. */
++  tier?: ComplexityTierName;
++  priority?: Priority;
++  /** Free-form metadata; authentication NEVER goes here (nor in URLs). */
++  metadata?: Record<string, string | number | boolean>;
++}
++
++export interface TaskDispatchResult {
++  task_id: string;
++  /** Router decision: complexity tier the task was classified into. */
++  tier: ComplexityTierName;
++  /** Provider/model chain selected for execution (primary first). */
++  route: Array<{ provider: string; model: string }>;
++  /** Accepted for execution. */
++  accepted: boolean;
++  /** Human-readable rejection reason when accepted=false. */
++  reason?: string;
++}
++
++// ---------------------------------------------------------------------------
++// Tool invocation contracts (invocation_id correlation per websocket-events)
++// ---------------------------------------------------------------------------
++
++export interface ToolInvocation {
++  tool: string;
++  arguments: Record<string, unknown>;
++  /** Client-generated correlation id; echoed by ToolResult. */
++  invocation_id: string;
++  /** Abort signal propagated to the underlying fetch. */
++  signal?: AbortSignal;
++}
++
++export interface ToolResult<T = unknown> {
++  tool: string;
++  invocation_id: string;
++  status: "ok" | "error";
++  /** Tool-specific payload on success. */
++  result?: T;
++  /** Honest failure description on error. */
++  error?: { code: string; message: string; retryable: boolean };
++  duration_ms?: number;
++}
++
++// ---------------------------------------------------------------------------
++// Status streaming contracts (websocket-events frame envelope aligned)
++// ---------------------------------------------------------------------------
++
++export type AgentEventName =
++  | "agent:started"
++  | "agent:thought"
++  | "tool:invoking"
++  | "tool:result"
++  | "agent:done"
++  | "agent:error";
++
++export interface StatusFrame {
++  frame_type: "event" | "heartbeat";
++  seq: number;
++  timestamp: string;
++  event?: AgentEventName;
++  task_id?: string;
++  agent_id?: string;
++  payload?: unknown;
++  heartbeat?: { kind: "ping" | "pong"; interval_seconds?: number; timeout_seconds?: number };
++}
++
++export interface StatusStreamOptions {
++  /** Reconnect with exponential backoff + jitter (start 1s, cap 60s). */
++  reconnect?: boolean;
++  signal?: AbortSignal;
++}
++
++// ---------------------------------------------------------------------------
++// Error taxonomy (honest failures, status codes carried)
++// ---------------------------------------------------------------------------
++
++export class SdkError extends Error {
++  readonly statusCode?: number;
++  constructor(message: string, statusCode?: number) {
++    super(message);
++    this.name = "SdkError";
++    this.statusCode = statusCode;
++  }
++}
++export class SdkRateLimited extends SdkError {
++  readonly retryAfterMs?: number;
++  constructor(message: string, retryAfterMs?: number) {
++    super(message, 429);
++    this.name = "SdkRateLimited";
++    this.retryAfterMs = retryAfterMs;
++  }
++}
++export class SdkForbidden extends SdkError {
++  constructor(message: string) {
++    super(message, 403);
++    this.name = "SdkForbidden";
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Platform surface (globalThis-only — zero @types/node dependency)
++// ---------------------------------------------------------------------------
++
++interface PlatformLike {
++  fetch?: typeof fetch;
++  EventSource?: new (url: string) => EventSourceLike;
++  process?: { argv?: string[]; env?: Record<string, string | undefined>; exit?: (code: number) => void };
++}
++
++interface EventSourceLike {
++  close(): void;
++  addEventListener(type: "message", listener: (ev: MessageEventLike) => void): void;
++  addEventListener(type: "error", listener: (ev: unknown) => void): void;
++}
++
++interface MessageEventLike {
++  data: unknown;
++}
++
++function platform(): PlatformLike {
++  return globalThis as unknown as PlatformLike;
++}
++
++function requireFetch(): typeof fetch {
++  const f = platform().fetch;
++  if (typeof f !== "function") {
++    throw new SdkError("fetch is unavailable in this runtime (need Node 18+ / Bun / browser)");
++  }
++  return f.bind(globalThis);
++}
++
++/** EventSource feature detection: Node 18/19 lack the global (Node 20+ has it). */
++export function eventSourceAvailable(): boolean {
++  return typeof platform().EventSource === "function";
++}
++
++/** Minimal async queue bridging push-based EventSource into async iteration. */
++class AsyncQueue<T> {
++  private items: T[] = [];
++  private resolvers: Array<(v: IteratorResult<T>) => void> = [];
++  private closed = false;
++
++  push(item: T): void {
++    const r = this.resolvers.shift();
++    if (r) r({ value: item, done: false });
++    else this.items.push(item);
++  }
++
++  close(): void {
++    this.closed = true;
++    while (this.resolvers.length) this.resolvers.shift()?.({ value: undefined, done: true });
++  }
++
++  get isClosed(): boolean {
++    return this.closed;
++  }
++
++  next(): Promise<IteratorResult<T>> {
++    if (this.items.length) return Promise.resolve({ value: this.items.shift() as T, done: false });
++    if (this.closed) return Promise.resolve({ value: undefined, done: true });
++    return new Promise<IteratorResult<T>>((resolve) => this.resolvers.push(resolve));
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Client core
++// ---------------------------------------------------------------------------
++
++export interface SupremeAIClientOptions {
++  /** Tower or gateway base URL. Credentials NEVER go in URLs (MCP_CONNECT §5). */
++  baseUrl?: string;
++  /** Stable `?client=` identity; role adopts only with verified credentials. */
++  clientName?: string;
++  /** Outbound auth header value; kept out of logs and URLs by contract. */
++  apiKey?: string;
++}
++
++const DEFAULT_BASE_URL = "https://supremeai-mcp-tower.onrender.com";
++const DEFAULT_CLIENT_NAME = "sdk-ts-client";
++const MCP_ACCEPT = "application/json, text/event-stream";
++
++export class SupremeAIClient {
++  readonly baseUrl: string;
++  readonly clientName: string;
++  private readonly apiKey?: string;
++  private nextInvocationId = 1;
++
++  constructor(opts: SupremeAIClientOptions = {}) {
++    const env = platform().process?.env ?? {};
++    this.baseUrl = (opts.baseUrl ?? env.SUPREMEAI_MCP_TOWER_URL ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
++    this.clientName = opts.clientName ?? env.SUPREMEAI_CLIENT_NAME ?? DEFAULT_CLIENT_NAME;
++    this.apiKey = opts.apiKey ?? env.SUPREMEAI_API_KEY;
++  }
++
++  private url(path: string, query: Record<string, string> = {}): string {
++    const qs = new URLSearchParams({ client: this.clientName, ...query });
++    return `${this.baseUrl}${path}?${qs.toString()}`;
++  }
++
++  private headers(extra: Record<string, string> = {}): Record<string, string> {
++    const h: Record<string, string> = { Accept: MCP_ACCEPT, ...extra };
++    if (this.apiKey) h.Authorization = `Bearer ${this.apiKey}`;
++    return h;
++  }
++
++  private async jsonCall<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
++    const resp = await requireFetch()(this.url(path), {
++      method: "POST",
++      headers: this.headers({ "Content-Type": "application/json" }),
++      body: JSON.stringify(body),
++      signal,
++    });
++    const text = await resp.text();
++    if (resp.status === 429) {
++      const ra = resp.headers.get("Retry-After");
++      throw new SdkRateLimited(
++        `429 rate limited (Retry-After: ${ra ?? "unknown"}s) — ${text.slice(0, 200)}`,
++        ra ? Math.ceil(parseFloat(ra) * 1000) : undefined,
++      );
++    }
++    if (resp.status === 403) {
++      throw new SdkForbidden(`403 default-deny RBAC — ${text.slice(0, 200)}`);
++    }
++    if (!resp.ok) throw new SdkError(`HTTP ${resp.status} — ${text.slice(0, 200)}`, resp.status);
++    return JSON.parse(text) as T;
++  }
++
++  /** Health probe — public, credential-free. */
++  async health(signal?: AbortSignal): Promise<unknown> {
++    const resp = await requireFetch()(`${this.baseUrl}/health`, { headers: this.headers(), signal });
++    return JSON.parse(await resp.text()) as unknown;
++  }
++
++  /** Dispatch a task; the router classifies and returns the model chain. */
++  async dispatchTask(req: TaskDispatchRequest, signal?: AbortSignal): Promise<TaskDispatchResult> {
++    return this.jsonCall<TaskDispatchResult>("/tasks/dispatch", req, signal);
++  }
++
++  /** Invoke a Tower tool with invocation_id correlation. */
++  async invokeTool<T = unknown>(inv: ToolInvocation, signal?: AbortSignal): Promise<ToolResult<T>> {
++    const started = Date.now();
++    try {
++      const result = await this.jsonCall<T>("/mcp", {
++        jsonrpc: "2.0",
++        id: this.nextInvocationId++,
++        method: "tools/call",
++        params: { name: inv.tool, arguments: inv.arguments },
++      }, inv.signal ?? signal);
++      return {
++        tool: inv.tool,
++        invocation_id: inv.invocation_id,
++        status: "ok",
++        result,
++        duration_ms: Date.now() - started,
++      };
++    } catch (err) {
++      const e = err as SdkError;
++      return {
++        tool: inv.tool,
++        invocation_id: inv.invocation_id,
++        status: "error",
++        error: {
++          code: e.statusCode === 429 ? "rate_limited" : e.statusCode === 403 ? "forbidden" : "tool_failed",
++          message: e.message,
++          retryable: e.statusCode === 429 || e.statusCode === 503,
++        },
++        duration_ms: Date.now() - started,
++      };
++    }
++  }
++
++  /**
++   * Subscribe to the live status stream (SSE) via EventSource.
++   * Requires an EventSource-capable runtime (browsers, Bun, Node 20+);
++   * otherwise use streamStatusFetch(). Terminal frames end the stream.
++   */
++  streamStatus(taskId: string, opts: StatusStreamOptions = {}): AsyncGenerator<StatusFrame> {
++    if (!eventSourceAvailable()) {
++      throw new SdkError(
++        "EventSource unavailable in this runtime — use streamStatusFetch() (fetch-stream based) instead",
++      );
++    }
++    const EsCtor = platform().EventSource as new (url: string) => EventSourceLike;
++    const self = this;
++    return (async function* () {
++      let backoffMs = 1000;
++      while (!opts.signal?.aborted) {
++        const queue = new AsyncQueue<StatusFrame>();
++        const es = new EsCtor(self.url("/sse", { task_id: taskId }));
++        es.addEventListener("message", (ev: MessageEventLike) => {
++          try {
++            const frame = JSON.parse(String(ev.data)) as StatusFrame;
++            queue.push(frame);
++            if (frame.event === "agent:done" || frame.event === "agent:error") {
++              es.close();
++              queue.close();
++            }
++          } catch {
++            queue.close();
++          }
++        });
++        es.addEventListener("error", () => {
++          es.close();
++          queue.close();
++        });
++        try {
++          while (true) {
++            const item = await queue.next();
++            if (item.done) break;
++            yield item.value;
++          }
++        } finally {
++          es.close();
++          queue.close();
++        }
++        // Stream closed by terminal frame or server; decide on reconnect.
++        if (!opts.reconnect || opts.signal?.aborted) return;
++        const jitter = Math.floor(Math.random() * backoffMs * 0.3);
++        await new Promise((r) => setTimeout(r, backoffMs + jitter));
++        backoffMs = Math.min(backoffMs * 2, 60_000);
++      }
++    })();
++  }
++
++  /**
++   * Fetch-stream based status reader — works in every runtime with fetch
++   * (no EventSource needed). Parses SSE frames per docs/MCP_CONNECT.md §3.
++   * Terminal frames (`agent:done`/`agent:error`) end the stream; a seq gap is
++   * the consumer's resync signal per the websocket-events contract.
++   */
++  async *streamStatusFetch(taskId: string, opts: StatusStreamOptions = {}): AsyncGenerator<StatusFrame> {
++    const headers = this.headers({ Accept: "text/event-stream" });
++    let backoffMs = 1000;
++    while (!opts.signal?.aborted) {
++      try {
++        const resp = await requireFetch()(this.url("/sse", { task_id: taskId }), {
++          headers,
++          signal: opts.signal,
++        });
++        if (resp.status === 503) {
++          throw new SdkError("503 SSE session table full — backing off", 503);
++        }
++        if (!resp.ok || !resp.body) throw new SdkError(`HTTP ${resp.status} on /sse`, resp.status);
++        backoffMs = 1000; // reset on successful connect
++        const reader = resp.body.getReader();
++        const decoder = new TextDecoder();
++        let buffer = "";
++        let done = false;
++        while (!done) {
++          const chunk = await reader.read();
++          done = chunk.done;
++          if (chunk.value) buffer += decoder.decode(chunk.value, { stream: true });
++          let idx: number;
++          while ((idx = buffer.indexOf("\n\n")) !== -1) {
++            const rawFrame = buffer.slice(0, idx);
++            buffer = buffer.slice(idx + 2);
++            const dataLines: string[] = [];
++            for (const line of rawFrame.split("\n")) {
++              if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^ /, ""));
++            }
++            if (dataLines.length === 0) continue;
++            const frame = JSON.parse(dataLines.join("\n")) as StatusFrame;
++            yield frame;
++            if (frame.event === "agent:done" || frame.event === "agent:error") return;
++          }
++        }
++      } catch (err) {
++        if (opts.signal?.aborted || !(err instanceof Error)) return;
++        if (err instanceof SdkError && err.statusCode === 429) throw err; // honor Retry-After upstream
++      }
++      if (!opts.reconnect) return;
++      const jitter = Math.floor(Math.random() * backoffMs * 0.3);
++      await new Promise((r) => setTimeout(r, backoffMs + jitter));
++      backoffMs = Math.min(backoffMs * 2, 60_000);
++    }
++  }
++}
++
++// ---------------------------------------------------------------------------
++// Convenience factory
++// ---------------------------------------------------------------------------
++
++export function createClient(opts?: SupremeAIClientOptions): SupremeAIClient {
++  return new SupremeAIClient(opts);
++}
++
++// ---------------------------------------------------------------------------
++// CLI smoke (offline-safe: network only on explicit execution)
++// ---------------------------------------------------------------------------
++
++const argvRef = platform().process?.argv ?? [];
++if (argvRef[1] !== undefined && /sdk-client-ts[\\/]index\.ts$/.test(argvRef[1])) {
++  const client = createClient();
++  client
++    .health()
++    .then((h) => {
++      console.log(JSON.stringify(h, null, 2));
++      platform().process?.exit?.(0);
++    })
++    .catch((err: Error) => {
++      console.error(`ERROR: ${err.message}`);
++      platform().process?.exit?.(1);
++    });
++}
+diff --git a/examples/sdk-client-ts/package.json b/examples/sdk-client-ts/package.json
+new file mode 100644
+index 00000000..42cee38b
+--- /dev/null
++++ b/examples/sdk-client-ts/package.json
+@@ -0,0 +1,29 @@
++{
++  "name": "@supremeai/sdk-client-ts",
++  "version": "0.1.0",
++  "description": "Zero-dependency SupremeAI TypeScript SDK contracts and client core (task dispatch, tool invocation, status streaming). Node 18+ / Bun / browser.",
++  "license": "MIT",
++  "type": "module",
++  "main": "index.ts",
++  "types": "index.ts",
++  "files": [
++    "index.ts"
++  ],
++  "keywords": [
++    "supremeai",
++    "mcp",
++    "sdk",
++    "task-router",
++    "sse"
++  ],
++  "scripts": {
++    "typecheck": "tsc --noEmit --strict --target es2022 --lib es2022,dom --module esnext --moduleResolution bundler index.ts",
++    "smoke": "bun run index.ts"
++  },
++  "devDependencies": {
++    "typescript": "^5.9.0"
++  },
++  "engines": {
++    "node": ">=18"
++  }
++}

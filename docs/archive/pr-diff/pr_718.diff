@@ -1,0 +1,200 @@
+diff --git a/infrastructure/mcp-control-plane/src/health/engine.ts b/infrastructure/mcp-control-plane/src/health/engine.ts
+index e6c01663..77e4839e 100644
+--- a/infrastructure/mcp-control-plane/src/health/engine.ts
++++ b/infrastructure/mcp-control-plane/src/health/engine.ts
+@@ -14,7 +14,7 @@ import { getWorkerStatus } from "../adapters/cloudflare/index.js";
+ import { auditSecrets } from "../adapters/infisical/index.js";
+ import { checkStripe, checkVercel, checkFirecrawl, checkKaggle, checkQdrant } from "../adapters/misc/index.js";
+ import { testProvider, listProviders } from "../adapters/ai/index.js";
+-import { checkTelegram, checkWhatsApp } from "../adapters/notify/index.js";
++import { checkTelegram } from "../adapters/notify/index.js";
+ 
+ export interface SweepReport {
+   timestamp: string;
+@@ -115,7 +115,6 @@ export class HealthEngine {
+       "kaggle": () => checkKaggle(),
+       "qdrant": () => checkQdrant(),
+       "telegram": () => checkTelegram(),
+-      "whatsapp": () => checkWhatsApp(),
+     };
+ 
+     // Dynamically add AI providers
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 35dc6ef0..0b86beec 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -307,16 +307,6 @@ export function buildAccountRegistry(): ProviderAccount[] {
+       apiKeyRef: "TELEGRAM_BOT_TOKEN",
+       available: isAvailable("TELEGRAM_BOT_TOKEN"),
+     },
+-    {
+-      id: "whatsapp-primary",
+-      provider: "whatsapp",
+-      displayName: "WhatsApp Alerts Bot",
+-      role: "alerts",
+-      environment: "production",
+-      capabilities: ["health", "notify"],
+-      apiKeyRef: "WHATSAPP_ACCESS_TOKEN",
+-      available: isAvailable("WHATSAPP_ACCESS_TOKEN") || isAvailable("WHATSAPP_PHONE_NUMBER_ID") || isAvailable("WHATSAPP_WEBHOOK_URL"),
+-    },
+   ];
+ }
+ 
+diff --git a/infrastructure/mcp-control-plane/src/registry/provider.registry.ts b/infrastructure/mcp-control-plane/src/registry/provider.registry.ts
+index cbe7336d..58178302 100644
+--- a/infrastructure/mcp-control-plane/src/registry/provider.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/provider.registry.ts
+@@ -16,9 +16,7 @@ export type ProviderName =
+   | "qdrant"
+   | "vercel"
+   | "firecrawl"
+-  | "telegram"
+-  | "discord"
+-  | "whatsapp";
++  | "telegram";
+ 
+ export interface ProviderDefinition {
+   name: ProviderName;
+@@ -106,16 +104,4 @@ export const PROVIDERS: Record<ProviderName, ProviderDefinition> = {
+     description: "Messaging and alerts",
+     authType: "api_key",
+   },
+-  discord: {
+-    name: "discord",
+-    displayName: "Discord",
+-    description: "Messaging webhooks",
+-    authType: "api_key",
+-  },
+-  whatsapp: {
+-    name: "whatsapp",
+-    displayName: "WhatsApp",
+-    description: "Messaging and alerts via WhatsApp Cloud API or Webhook Gateway",
+-    authType: "api_key",
+-  },
+ };
+diff --git a/infrastructure/mcp-control-plane/src/service-circles.ts b/infrastructure/mcp-control-plane/src/service-circles.ts
+index 3e0efb0d..6ad26f74 100644
+--- a/infrastructure/mcp-control-plane/src/service-circles.ts
++++ b/infrastructure/mcp-control-plane/src/service-circles.ts
+@@ -22,7 +22,6 @@ export const serviceDescriptors: Array<Pick<ServiceDescriptor, "provider" | "cir
+   { provider: "infisical", circle: "security", requiredEnv: ["INFISICAL_PROJECT_ID"] },
+   { provider: "github", circle: "integration", requiredEnv: ["GITHUB_TOKEN"] },
+   { provider: "telegram", circle: "integration", requiredEnv: ["TELEGRAM_BOT_TOKEN"] },
+-  { provider: "whatsapp", circle: "integration", requiredEnv: ["WHATSAPP_ACCESS_TOKEN"] },
+   { provider: "stripe", circle: "integration", requiredEnv: ["STRIPE_SECRET_KEY"] },
+ ];
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/notify.tools.ts b/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
+index e6ffd4ae..1b8b8016 100644
+--- a/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
+@@ -1,7 +1,7 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+-import { checkTelegram, checkWhatsApp } from "../adapters/notify/index.js";
+-import { sendTelegram, sendWhatsApp } from "../adapters/notify/actions.js";
++import { checkTelegram } from "../adapters/notify/index.js";
++import { sendTelegram } from "../adapters/notify/actions.js";
+ 
+ export async function registerNotifyTools(server: McpServer): Promise<void> {
+   server.tool(
+@@ -40,40 +40,4 @@ export async function registerNotifyTools(server: McpServer): Promise<void> {
+       }
+     }
+   );
+-
+-  server.tool(
+-    "notify.whatsapp",
+-    "Ping the WhatsApp Cloud API / Webhook to check validity.",
+-    {},
+-    async () => {
+-      try {
+-        const status = await checkWhatsApp();
+-        return {
+-          content: [{ type: "text", text: JSON.stringify(status, null, 2) }],
+-        };
+-      } catch (err) {
+-        return {
+-          isError: true,
+-          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
+-        };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "notify.send_whatsapp",
+-    "Send a message via WhatsApp Bot (Meta Cloud API or Webhook Gateway) to configured recipient.",
+-    {
+-      message: z.string().min(1).max(4000).describe("Message text"),
+-      recipientPhone: z.string().optional().describe("Recipient phone number with country code (e.g. 88017XXXXXXXX)"),
+-    },
+-    async ({ message, recipientPhone }) => {
+-      try {
+-        const result = await sendWhatsApp(message, recipientPhone);
+-        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+ }
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 4e97f0b1..35a40c61 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -281,35 +281,6 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+     }
+   }
+ 
+-  // ── WhatsApp: Meta Graph API / Webhook health probe ──
+-  if (svc.provider === "whatsapp") {
+-    const maskedUrl = "https://graph.facebook.com/whatsapp";
+-    const { whatsappAccessToken, whatsappPhoneNumberId, whatsappWebhookUrl } = env.notify;
+-    if (!whatsappAccessToken && !whatsappWebhookUrl) {
+-      return { ...base, url: maskedUrl, status: "unconfigured", httpStatus: null, latencyMs: null, error: "WHATSAPP_ACCESS_TOKEN or WHATSAPP_WEBHOOK_URL missing in tower env" };
+-    }
+-    try {
+-      if (whatsappPhoneNumberId && whatsappAccessToken) {
+-        const res = await httpRequest<{ id?: string }>(`https://graph.facebook.com/v20.0/${whatsappPhoneNumberId}`, {
+-          timeoutMs: 6000,
+-          retries: 0,
+-          headers: { Authorization: `Bearer ${whatsappAccessToken}` },
+-        });
+-        const ok = Boolean(res.data?.id);
+-        return { ...base, url: maskedUrl, status: ok ? "healthy" : "degraded", httpStatus: res.status, latencyMs: res.latencyMs, ...(ok ? {} : { error: "Meta API rejected phone number or token" }) };
+-      }
+-      if (whatsappWebhookUrl) {
+-        const out = await probeHttp(whatsappWebhookUrl);
+-        if (out === "unreachable") return { ...base, url: "webhook://whatsapp", status: "unreachable", httpStatus: null, latencyMs: null, error: "webhook unreachable" };
+-        if (out === "degraded") return { ...base, url: "webhook://whatsapp", status: "degraded", httpStatus: null, latencyMs: null, error: "webhook returned non-2xx" };
+-        return { ...base, url: "webhook://whatsapp", status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
+-      }
+-      return { ...base, url: maskedUrl, status: "degraded", httpStatus: null, latencyMs: null, error: "WHATSAPP_PHONE_NUMBER_ID missing for Meta Cloud API" };
+-    } catch (err) {
+-      return { ...base, url: maskedUrl, status: "unreachable", httpStatus: null, latencyMs: null, error: (err as Error).message };
+-    }
+-  }
+-
+   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
+   if (!svc.url) {
+     return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no probeable URL for provider '${svc.provider}'` };
+diff --git a/infrastructure/mcp-control-plane/test_adapters.ts b/infrastructure/mcp-control-plane/test_adapters.ts
+index f70eba82..1040a91f 100644
+--- a/infrastructure/mcp-control-plane/test_adapters.ts
++++ b/infrastructure/mcp-control-plane/test_adapters.ts
+@@ -88,13 +88,10 @@ async function main() {
+ 
+   console.log("\n=== Testing Notify Adapter ===");
+   try {
+-    const { checkTelegram, checkDiscord } = await import("./src/adapters/notify/index.js");
++    const { checkTelegram } = await import("./src/adapters/notify/index.js");
+     try {
+       console.log("[Notify] Telegram:", await checkTelegram());
+     } catch(e) { console.error("[Notify] Telegram Error:", (e as Error).message); }
+-    try {
+-      console.log("[Notify] Discord:", await checkDiscord());
+-    } catch(e) { console.error("[Notify] Discord Error:", (e as Error).message); }
+   } catch (e) {
+     console.error("[Notify] Import Error:", (e as Error).message);
+   }

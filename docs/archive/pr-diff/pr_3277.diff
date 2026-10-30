@@ -1,0 +1,97 @@
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index 4c1234d6..3ccdef6f 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -47,6 +47,7 @@ Per Federation Charter (§329 consolidation), several historical standalone repo
+ The federation operates under a strict **Open-Core Embassy Model**:
+ - **Permissive Open-Source (MIT License):** Applied strictly to boundary layers, developer tooling, SDK packages, and UI surfaces (`supremeai-open`, `supremeai-studio`, `supremeai-vscode`). These allow frictionless developer adoption, external integration, and community trust without exposing proprietary moats.
+ - **Proprietary / All Rights Reserved:** Applied strictly to the private core, intelligence engines, provider gateway, runner engines, infrastructure ops, and governance backends (`supremeai`, `supremeai-core`, `supremeai-api`, `supremeai-infrastructure`, `supremeai-mcp-control-plane`, `supremeai-agents`, `supremeai-browser`, `supremeai-archive`). All private repositories carry the standard SupremeAI proprietary license notice prohibiting unauthorized reproduction or distribution.
++- **Mirror licensing precedence (nearest-LICENSE rule):** The root MIT grant of `supremeai-open` covers the boundary contracts and public tooling only — it does **not** extend downward into public satellite-mirror subtrees. Each mirror subtree carries its own `LICENSE` that **overrides the root grant for that path** (e.g. `gateway/**` ships the SupremeAI proprietary notice because `gateway/**` maps to proprietary `supremeai-api`). Consumers must read the nearest `LICENSE` along the copied path before reuse, and the satellite sync pipeline lands that same notice at each satellite root so the boundary and satellite IP postures can never drift apart (license-mismatch class: #1690).
+ 
+ ---
+ 
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 84e43f92..50d311a5 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -323,6 +323,20 @@ def sync_satellite(
+             if req_src.exists():
+                 shutil.copy2(req_src, tmp_repo / "requirements.txt")
+                 print(f"📋 Synced requirements.txt -> root in {target_repo}")
++            # Sync the proprietary license notice into the satellite root (#1690):
++            # ECOSYSTEM_MAP §2.3 guarantees "All private repositories carry the
++            # standard SupremeAI proprietary license notice", yet no pipeline ever
++            # landed one here — the api satellite head carries no LICENSE at all
++            # while the boundary mirror ships the SSOT notice at gateway/LICENSE
++            # (the root MIT of supremeai-open must never leak into this proprietary
++            # domain). gateway/LICENSE stays the single SSOT: mirror it
++            # byte-identically on every sync so the satellite IP posture can never
++            # drift from the boundary posture again (nearest-LICENSE rule,
++            # ECOSYSTEM_MAP §2.3).
++            gw_license = repo_root / "gateway" / "LICENSE"
++            if gw_license.exists():
++                shutil.copy2(gw_license, tmp_repo / "LICENSE")
++                print(f"📋 Synced license notice gateway/LICENSE -> LICENSE (root) in {target_repo}")
+         elif target_repo == "Supremeai-bd/supremeai-studio":
+             # Copy domain files into the satellite root (non-destructive)
+             copy_tree_contents(src_path, tmp_repo, prune=False)
+diff --git a/tests/test_gateway_satellite_package_layout.py b/tests/test_gateway_satellite_package_layout.py
+index 659b0ed1..6e0ddaa8 100644
+--- a/tests/test_gateway_satellite_package_layout.py
++++ b/tests/test_gateway_satellite_package_layout.py
+@@ -106,16 +106,54 @@ def test_app_namespace_imports_resolvable_under_package_layout() -> None:
+         assert spec is not None, f"package module must be importable: {mod_name}"
+ 
+ 
++def test_sync_lands_proprietary_license_at_api_root() -> None:
++    """#1690 regression pin: the api satellite root must receive the SSOT
++    proprietary notice (gateway/LICENSE) on every sync — ECOSYSTEM_MAP §2.3
++    guarantees every private repo carries the standard notice, yet no pipeline
++    ever landed one (the api head had no LICENSE while the boundary mirror
++    shipped the notice)."""
++    text = _read(SYNC)
++    assert 'gw_license = repo_root / "gateway" / "LICENSE"' in text, (
++        "sync must source the api satellite LICENSE from the SSOT mirror notice"
++    )
++    assert 'shutil.copy2(gw_license, tmp_repo / "LICENSE")' in text, (
++        "sync must land gateway/LICENSE at the satellite root"
++    )
++
++
++def test_boundary_license_is_proprietary_not_root_mit() -> None:
++    """#1690 posture pin: gateway/LICENSE is the SSOT notice for the mirrored
++    proprietary domain — the boundary root MIT must never lead it."""
++    lic = _read(REPO_ROOT / "gateway" / "LICENSE")
++    assert lic.lstrip().lower().startswith("proprietary license"), (
++        "gateway/LICENSE must carry the SupremeAI proprietary notice"
++    )
++    head = lic.split("roprietary", 1)[0]  # tolerate case variants of the lead
++    assert "MIT License" not in head, "the root MIT grant must not lead the gateway license"
++
++
++def test_ecosystem_map_declares_nearest_license_rule() -> None:
++    """#1690 SSOT pin: §2.3 must carry the nearest-LICENSE precedence rule so a
++    mirror subtree's own LICENSE always overrides the boundary root MIT grant."""
++    text = _read(REPO_ROOT / "ECOSYSTEM_MAP.md")
++    assert "Mirror licensing precedence" in text, "§2.3 must declare mirror licensing precedence"
++    assert "nearest-`LICENSE`" in text or "nearest-LICENSE" in text, (
++        "§2.3 must state the nearest-LICENSE rule"
++    )
++
++
+ if __name__ == "__main__":
+     failures = 0
++    total = 0
+     for name, fn in sorted(
+         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)
+     ):
++        total += 1
+         try:
+             fn()
+             print(f"PASS {name}")
+         except AssertionError as exc:
+             failures += 1
+             print(f"FAIL {name}: {exc}")
+-    print(f"{7 - failures}/7 checks passed" if failures else "all checks passed")
++    print(f"{total - failures}/{total} checks passed" if failures else "all checks passed")
+     sys.exit(1 if failures else 0)

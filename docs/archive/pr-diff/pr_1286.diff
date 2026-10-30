@@ -1,0 +1,111 @@
+diff --git a/studio/src/components/admin/CommandCenter.tsx b/studio/src/components/admin/CommandCenter.tsx
+index 3ad48615..94175326 100644
+--- a/studio/src/components/admin/CommandCenter.tsx
++++ b/studio/src/components/admin/CommandCenter.tsx
+@@ -364,7 +364,7 @@ export function CommandCenter() {
+ 
+         {/* ═══ CENTRAL ORC WORKSPACE — চ্যাট, ব্রাউজার, টার্মিনাল ═══ */}
+         {isCentralPanelOpen && (
+-          <div className="absolute inset-0 z-50 flex flex-col bg-[var(--bg-main)]/95 backdrop-blur-xl" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
++          <div className="absolute inset-0 z-modal flex flex-col bg-[var(--bg-main)]/95 backdrop-blur-xl" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()}>
+             {/* Header Bar */}
+             <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-accent)] bg-[var(--bg-cell)] transition-colors duration-500">
+               <div className="flex items-center gap-2">
+diff --git a/studio/src/components/chat/UnifiedChatPanel.tsx b/studio/src/components/chat/UnifiedChatPanel.tsx
+index d764e2b6..e51d5163 100644
+--- a/studio/src/components/chat/UnifiedChatPanel.tsx
++++ b/studio/src/components/chat/UnifiedChatPanel.tsx
+@@ -389,7 +389,7 @@ export function HighDemandScreen({ attempt, maxAttempts, nextIn, windowSeconds,
+       role="alertdialog"
+       aria-label="SupremeAI is experiencing high demand"
+       data-testid="high-demand-screen"
+-      className="absolute inset-0 z-40 flex items-center justify-center bg-[#080B11]/75 p-6 backdrop-blur-md"
++      className="absolute inset-0 z-overlay flex items-center justify-center bg-[#080B11]/75 p-6 backdrop-blur-md"
+     >
+       <div className="sa-surface-raised relative w-full max-w-md overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0d121f]/90 p-8 text-center shadow-[0_15px_40px_rgba(0,0,0,0.5),0_0_25px_rgba(6,182,212,0.15)] backdrop-blur-xl">
+         {/* Glowing top line */}
+diff --git a/studio/src/components/customer/UserDashboard.tsx b/studio/src/components/customer/UserDashboard.tsx
+index 4509247d..ccfe687a 100644
+--- a/studio/src/components/customer/UserDashboard.tsx
++++ b/studio/src/components/customer/UserDashboard.tsx
+@@ -356,7 +356,7 @@ export const UserDashboard: React.FC = () => {
+ 
+       {showTools && (
+         <div
+-          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-4 sm:items-center"
++          className="fixed inset-0 z-modal flex items-end justify-center bg-slate-950/30 p-4 sm:items-center"
+           role="dialog"
+           aria-modal="true"
+           aria-labelledby="tools-dialog-title"
+diff --git a/studio/src/components/dashboard/SiteActionsPage.tsx b/studio/src/components/dashboard/SiteActionsPage.tsx
+index 17f5d1ad..8191371a 100644
+--- a/studio/src/components/dashboard/SiteActionsPage.tsx
++++ b/studio/src/components/dashboard/SiteActionsPage.tsx
+@@ -375,7 +375,7 @@ export function SiteActionsPage() {
+ 
+       {/* Selector Test Modal */}
+       {testModal.show && (
+-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
++        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+            <div className="bg-[#1e1e1e] border border-gray-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden">
+               <div className="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-[#252526]">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+diff --git a/studio/src/index.css b/studio/src/index.css
+index 31c26517..f22e207c 100644
+--- a/studio/src/index.css
++++ b/studio/src/index.css
+@@ -12,6 +12,19 @@
+   --container-form: 42rem;
+   --container-feed: 48rem;
+   --container-dash: 72rem;
++  /* P2 item (verified 2026-10-25 frontend report, section 6.4): z-index 3-bucket
++     policy. Base content stays numeric 0..10; shell layer (header/rail/docked
++     bar/backdrop) = 20..30; overlays (drawer/modal/palette/HUD) = 40..50; 60+
++     is reserved for critical confirmation only (cockpit kill-switch). Identity
++     migrations only in phase 1: tier 30 -> z-shell, tier 40 -> z-overlay, tier
++     50 -> z-modal (values preserved exactly). Ad-hoc z-[90]/[100]/[999]/[9999]
++     escalations and inline zIndex styles are phase-2 cleanup candidates.
++     Tailwind v4 --z-index-* namespace emits the three named utilities.
++     (Comment deliberately avoids bare z-N tokens: the v4 scanner treats them
++     as class candidates and would emit dead utilities.) */
++  --z-index-shell: 30;
++  --z-index-overlay: 40;
++  --z-index-modal: 50;
+   --color-background: var(--background);
+   --color-foreground: var(--foreground);
+   --color-neon-blue: var(--neon-blue);
+@@ -602,7 +615,7 @@ body.light .glass-panel {
+   right: 0;
+   bottom: 0;
+   pointer-events: none;
+-  z-index: 40;
++  z-index: var(--z-index-overlay);
+   animation: scanlines-scroll 15s linear infinite;
+ }
+ 
+diff --git a/studio/src/pages/ProjectsPage.tsx b/studio/src/pages/ProjectsPage.tsx
+index bc43a0cc..2c4d8c2f 100644
+--- a/studio/src/pages/ProjectsPage.tsx
++++ b/studio/src/pages/ProjectsPage.tsx
+@@ -270,7 +270,7 @@ export function ProjectsPage() {
+ 
+       {modal && (
+         <div
+-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
++          className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4"
+           role="dialog"
+           aria-modal="true"
+           aria-label={modal.kind === 'rename' ? 'Rename project space' : 'Create a project space'}
+diff --git a/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx b/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
+index a25c80a9..1550d0f8 100644
+--- a/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
++++ b/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
+@@ -416,7 +416,7 @@ const EvolutionForgeCanvas = () => {
+ 
+       {/* Deploy to Marketplace Dialog */}
+       {showDeployDialog && (
+-        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
++        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center">
+           <div className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl p-6 w-[450px]">
+             <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
+               <Sparkles className="text-cyan-400" />

@@ -1,0 +1,21 @@
+diff --git a/studio/src/components/admin/shared/AdminSubTabContent.tsx b/studio/src/components/admin/shared/AdminSubTabContent.tsx
+index 700337eb..b9151ed5 100644
+--- a/studio/src/components/admin/shared/AdminSubTabContent.tsx
++++ b/studio/src/components/admin/shared/AdminSubTabContent.tsx
+@@ -23,6 +23,7 @@ import { GithubIntegration } from '../GithubIntegration';
+ import { BackupRestore } from '../BackupRestore';
+ import { SecurityDashboard } from '../security/SecurityDashboard';
+ import Dashboard from '../Dashboard';
++import AdminCommandCenter from '../AdminCommandCenter';
+ import { RateLimitManager } from '../security/RateLimitManager';
+ import { InteractiveChatTab } from '../InteractiveChatTab';
+ import { AdminAlertsTab } from '../AdminAlertsTab';
+@@ -81,7 +82,7 @@ interface SubTabContentProps {
+ 
+  
+ const MODULE_MAP: Record<string, React.FC<any>> = {
+-  'overview': Dashboard,
++  'overview': AdminCommandCenter,
+   'topology': CommandCenter, // Topology map
+   'service-explorer': CloudOrchestrator,
+   'agents-swarm': EnhancedSkillMarketplace, // Or ModelRouter depending on context

@@ -1,0 +1,78 @@
+diff --git a/docs/reports/PLANE_WATCH_C16_2026-10-28.md b/docs/reports/PLANE_WATCH_C16_2026-10-28.md
+new file mode 100644
+index 00000000..3cccadb2
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C16_2026-10-28.md
+@@ -0,0 +1,72 @@
++# Bridge Plane Watch — Cycle 16 (2026-10-28, 15:53Z receipts)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Task ID: `bridge-20261028-plane-watch-c16`.
++Fifth consecutive standing-lane cycle: every unclaimed row is another agent's live
++lane, an admin-owned report, or a variant-B false candidate. This report keeps the
++per-cycle record continuous (report-only, `docs/reports/` channel).
++
++## 1. Cycle-15 deliverable verified LANDED — variant B now a PATTERN
++
++`PR #2182` (WO #2181) merged: `docs/reports/PLANE_WATCH_C15_2026-10-28.md` is on
++`main` (blob sha `259bb4e2`, 4637 bytes).
++
++**Variant-B lifecycle defect — second confirmed instance**: WO #2181 feedback reads
++`state: open, labels: [bridge:queued], verdict rows: 0` — same as #2166 after its PR
++merged. Score: **2/2 of the most recent landed WOs stayed `bridge:queued` with zero
++verdict rows after merge**, while the older cohort (#2132/#2082) reached in-gates
++with blank-string verdicts (variant A). Variant B is now a reproducible pattern, not
++a one-off: every WO this agent lands is advertised to the fleet as open, unclaimed,
++verdict-less work after it is actually done and merged. Cost: each false candidate
++wastes the next agent's pick cycle until someone notices the PR is already on main.
++
++Also long: PR #2083 (exposure probe, #2082) opened ~10:00Z, flipped in-gates at
++13:05:54Z, still unmerged at 15:54Z (~5.8h open) — the gate lane is green-lit but
++the lander has not picked it up; contrast with sub-minute squash-merges observed
++elsewhere (#2110 in ~1 min).
++
++## 2. Queue-plane probe — R2 live-fire #6: third instance on #2009
++
++Receipt: `queue_receipt_2026-10-28T1554Z.json` (15:53:47Z, 18/18 rows checked,
++0 unresolved, 0 rotations; board 15 → 18 rows).
++
++- **R2 fired on #2009 for the THIRD time** (claim age 3 min, row `status:unclaimed`).
++  Three independent claims on the same row (~13:50Z, ~14:48Z, ~15:50Z — the hourly
++  sentry renew cycle), and every single claim was invisible on the board for minutes.
++  The structural-per-claim conclusion from cycle 15 is now three-for-three.
++- R1 = 0, R3 = 0. R3's continued silence is itself informative: the probe only flags
++  verdict-lag when a verdict row EXISTS on an in-flight row — variant B (no verdict
++  rows at all) is structurally invisible to R3, which is why the WO-feedback read in
++  §1 is the complementary check that catches it. Detection coverage gap documented:
++  R4-family follow-up should treat "PR merged + WO unadvanced" as a fifth rule.
++
++## 3. Exposure probe — persisting ~6 h post-filing
++
++Receipt: `probe_receipt_2026-10-28T1554Z.json` (15:54:10Z, status `violation`):
++142 tools advertised anonymously, 8 secret-class + 15 destructive-class, 0 executed.
++Unchanged since ~10:00Z (#2082 filing). The fix remains the maintainer redeploy lane
++(#2076 A/C); the probe keeps the standing evidence current while the redeploy is
++pending.
++
++## 4. Board state at 15:54Z
++
++18 rows: 0×P0, 0×P1; P2 #2076 and all P3s claimed. Unclaimed no-priority rows all
++spoken for, feedback-verified this cycle: #2191 queue-integrity WO whose PR #2192
++was just opened by another agent (15:53:14Z — same-plane sibling to this watch
++lane, welcome convergence on the queue-integrity problem space), #2185 is
++zai-cron-agent-loop-478330's a10 receipt (U4 case file, eleventh run), #2181/#2166
++are variant-B rows of this agent, #2179/#2146 report-only sentries, #2168
++GRANT_TAKEOVER'd 14:08Z, #2159/#2156 case-file/admin, #2112 landed by c9, #2132/
++#2082 own in-gates. No legitimate pick existed.
++
++## Routing
++
++- Variant-B lifecycle propagation (2/2 confirmed): Tower-side owner lane, #2100
++  family; fix spec unchanged — stamp WO lifecycle from PR merge events.
++- Detection gap: "PR merged + WO unadvanced" is invisible to current probe rules
++  (R1–R4); needs a WO-feedback cross-check rule (R5 candidate) in the standing
++  probe — noted for the next probe iteration, not silently patched into this
++  cycle's report.
++- Claim-label lag: 3/3 per-claim reproduction on #2009; detection #2133 + response
++  #2151 (with first external adoption) stand; Tower-side sync stamping pending.
++- Exposure: maintainer redeploy, #2076 A/C (~6 h).
++- Intake residue cohort (#336/#339/#341/#343/#345): unchanged, admin R5/R6 pending.

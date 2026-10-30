@@ -1,0 +1,47 @@
+diff --git a/tests/test_gateway_shield.py b/tests/test_gateway_shield.py
+index b6767c37..376a0b11 100644
+--- a/tests/test_gateway_shield.py
++++ b/tests/test_gateway_shield.py
+@@ -28,11 +28,20 @@ def test_01_openai_compatible_surface(self):
+ 
+     def test_02_schema_contract_structurally_valid(self):
+         raw = (ROOT / "api-schemas" / "gateway.openapi.yaml").read_text(encoding="utf-8")
+-        self.assertTrue(raw.startswith("openapi: 3.1.0"))
++        # The mirror is a byte-parity copy of the api SSOT (#648) and carries
++        # a comment header; the contract is the first declaration line, not
++        # byte offset zero.
++        decls = [line.strip() for line in raw.splitlines()
++                 if line.strip() and not line.lstrip().startswith("#")]
++        self.assertTrue(decls, "schema carries no declaration lines")
++        self.assertEqual(decls[0], "openapi: 3.1.0")
+         self.assertIn("/v1/chat/completions:", raw)
+         self.assertIn("/v1/models:", raw)
+         self.assertIn("X-SupremeAI-Key", raw)
+-        self.assertIn("bearerAuth", raw)
++        # SSOT auth scheme is the SupremeAIKey apiKey header (#648 byte-parity);
++        # the pre-sync bearerAuth name no longer exists in the contract.
++        self.assertIn("SupremeAIKey", raw)
++        self.assertIn("type: apiKey", raw)
+ 
+ 
+ class Rule19VaultOnlyKeys(unittest.TestCase):
+diff --git a/tests/test_satellite_board_guard.py b/tests/test_satellite_board_guard.py
+index 8e2461cb..409cad5b 100644
+--- a/tests/test_satellite_board_guard.py
++++ b/tests/test_satellite_board_guard.py
+@@ -103,9 +103,13 @@ def test_08_malformed_items_are_ignored_not_fatal(self):
+         r = sbg.audit_satellite("core", fetch=fake_fetch(["garbage", None, 17]))
+         self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
+ 
+-    def test_09_non_list_payload_treated_as_empty(self):
++    def test_09_non_list_payload_is_fail_closed_unreachable(self):
++        # #658 fail-closed contract: a 200 response whose body is not a JSON
++        # list is unverifiable — never silently CLEAN (never fail-open).
+         r = sbg.audit_satellite("core", fetch=fake_fetch(None))
+-        self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
++        self.assertEqual(r.verdict, sbg.VERDICT_UNREACHABLE)
++        self.assertIn("malformed payload", r.reason)
++        self.assertIn("NoneType", r.reason)
+ 
+ 
+ class UnreachablePathsTest(unittest.TestCase):

@@ -1,0 +1,361 @@
+diff --git a/.github/actions/report-ci-failure/action.yml b/.github/actions/report-ci-failure/action.yml
+index a56f79f6..79380911 100644
+--- a/.github/actions/report-ci-failure/action.yml
++++ b/.github/actions/report-ci-failure/action.yml
+@@ -67,7 +67,6 @@ runs:
+             print("::warning::No target_open_token provided — skipping CI failure mirroring.")
+             exit(0)
+ 
+-        # Check existing mirror marker
+         marker = f"<!-- MIRROR_RUN: {src_repo}/actions/runs/{run_id} -->"
+         headers = {
+             "Accept": "application/vnd.github+json",
+@@ -75,17 +74,30 @@ runs:
+             "User-Agent": "SupremeAI-CI-Reporter/1.0",
+         }
+ 
+-        search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=50"
+-        try:
+-            req = urllib.request.Request(search_url, headers=headers)
+-            with urllib.request.urlopen(req, timeout=15) as resp:
+-                issues = json.loads(resp.read().decode("utf-8"))
+-                for iss in issues:
+-                    if marker in (iss.get("body") or ""):
+-                        print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
+-                        exit(0)
+-        except Exception as e:
+-            print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
++        # Paginate all open issues so dedup survives a board with >50 open items.
++        page = 1
++        found = False
++        while True:
++            search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=100&page={page}"
++            try:
++                req = urllib.request.Request(search_url, headers=headers)
++                with urllib.request.urlopen(req, timeout=15) as resp:
++                    issues = json.loads(resp.read().decode("utf-8"))
++            except Exception as e:
++                print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
++                break
++            if not isinstance(issues, list) or not issues:
++                break
++            for iss in issues:
++                if marker in (iss.get("body") or ""):
++                    print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
++                    found = True
++                    break
++            if found or len(issues) < 100:
++                break
++            page += 1
++        if found:
++            exit(0)
+ 
+         # Short repo name
+         short_name = src_repo.split("/")[-1].lower()
+diff --git a/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts b/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
+index c0d73deb..98c73386 100644
+--- a/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
++++ b/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
+@@ -47,6 +47,9 @@ export const REPORT_SCHEMA_ID = "federated-ci-failure/v1";
+ /** Conclusion the reporter acts on. Strict: startup_failure/timed_out/etc. are out of scope for v1. */
+ export const WATCHED_CONCLUSION = "failure";
+ 
++/** CI Failure Hub issue number on the control-plane board (parent for mirrored incidents). */
++export const CI_FAILURE_ANCHOR = 761;
++
+ export interface FailedJobSummary {
+   name: string;
+   steps: string[];
+@@ -132,7 +135,7 @@ export interface IssueCreateRequest {
+ export type IssueCreateFn = (
+   req: IssueCreateRequest,
+   token?: string,
+-) => Promise<{ ok: boolean; status: number; issueUrl?: string; body?: any }>;
++) => Promise<{ ok: boolean; status: number; issueUrl?: string; issueNumber?: number; body?: any }>;
+ 
+ export type JobsFetchFn = (
+   repo: string,
+@@ -307,6 +310,15 @@ export class FederatedCiWatcherService {
+         this.config.token,
+       );
+       if (!res.ok) throw new Error(`GitHub issues API → HTTP ${res.status}`);
++      // Best-effort: link the new issue as a sub-issue under the CI Failure Hub
++      // so it is visible/claimable but not a loose root issue.
++      if (res.issueNumber) {
++        try {
++          await linkSubIssue(res.issueNumber, this.config.reportRepo, this.config.token);
++        } catch (e) {
++          this.log(`[CI_WATCHER] sub-issue link failed (non-fatal): ${e}`);
++        }
++      }
+       entry.status = "done";
+       this.emissionTimes.push(this.deps.now());
+       this.log(`[CI_WATCHER] reported ${entry.report.eventKey} → ${res.issueUrl ?? this.config.reportRepo}`);
+@@ -444,7 +456,7 @@ ${jobLines}
+ /** POST /repos/{repo}/issues — with one 422 fallback that drops the repo:<slug> label. */
+ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
+   if (!token) return { ok: false, status: 0 }; // fail-closed: no creds → caller retries → dead-letters visibly
+-  const attempt = async (labels: string[]) =>
++  const attempt = async (labels: string[], bodyOverride?: string) =>
+     fetch(`https://api.github.com/repos/${req.repo}/issues`, {
+       method: "POST",
+       headers: {
+@@ -453,7 +465,7 @@ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
+         "X-GitHub-Api-Version": "2022-11-28",
+         "User-Agent": "SupremeAI-MCP-Control-Tower",
+       },
+-      body: JSON.stringify({ title: req.title, body: req.body, labels }),
++      body: JSON.stringify({ title: req.title, body: bodyOverride ?? req.body, labels }),
+     });
+ 
+   let res = await attempt(req.labels);
+@@ -461,19 +473,66 @@ export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
+     // A label (most likely repo:<slug>) does not exist on the board — retry
+     // with the always-present core labels and note the drop in the body.
+     const note = `\n\n> ℹ️ Reporter note: the \`repo:<slug>\` label does not exist on this board yet — triage may want to add/relabel it (e.g. \`repo:open\` for \`Supremeai-bd/supremeai-open\`).`;
+-    res = await attempt([...req.labels.filter((l) => !l.startsWith("repo:"))]);
+-    return { ok: res.status === 201, status: res.status, issueUrl: undefined, body: { labelDropped: true, note } };
++    const fallbackLabels = req.labels.filter((l) => !l.startsWith("repo:"));
++    res = await attempt(fallbackLabels, req.body + note);
++    let issueUrl: string | undefined;
++    let issueNumber: number | undefined;
++    try {
++      const data = res.ok ? (await res.json() as any) : undefined;
++      issueUrl = data?.html_url ?? undefined;
++      issueNumber = data?.number ?? undefined;
++    } catch {
++      issueUrl = undefined;
++    }
++    return { ok: res.status === 201, status: res.status, issueUrl, issueNumber, body: { labelDropped: true, note } };
+   }
+   let issueUrl: string | undefined;
++  let issueNumber: number | undefined;
+   try {
+-    issueUrl = res.ok ? ((await res.json() as any)?.html_url ?? undefined) : undefined;
++    const data = res.ok ? (await res.json() as any) : undefined;
++    issueUrl = data?.html_url ?? undefined;
++    issueNumber = data?.number ?? undefined;
+   } catch {
+     issueUrl = undefined;
+   }
+-  return { ok: res.status === 201, status: res.status, issueUrl };
++  return { ok: res.status === 201, status: res.status, issueUrl, issueNumber };
+ };
+ 
+-/** GET /repos/{repo}/actions/runs/{runId}/jobs — best-effort failed-job enrichment. */
++/** Best-effort: link an issue as a sub-issue under the CI Failure Hub. Never throws. */
++export async function linkSubIssue(
++  childIssueNumber: number,
++  repo: string,
++  token?: string,
++): Promise<boolean> {
++  if (!token) return false;
++  try {
++    const childRes = await fetch(`https://api.github.com/repos/${repo}/issues/${childIssueNumber}`, {
++      headers: {
++        Authorization: `Bearer ${token}`,
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        "User-Agent": "SupremeAI-MCP-Control-Tower",
++      },
++    });
++    if (childRes.status !== 200) return false;
++    const child = (await childRes.json()) as any;
++    const childId = child?.id;
++    if (!childId) return false;
++    const linkRes = await fetch(`https://api.github.com/repos/${repo}/issues/${CI_FAILURE_ANCHOR}/sub-issues`, {
++      method: "POST",
++      headers: {
++        Authorization: `Bearer ${token}`,
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        "User-Agent": "SupremeAI-MCP-Control-Tower",
++      },
++      body: JSON.stringify({ sub_issue_id: childId }),
++    });
++    return linkRes.status === 201 || linkRes.status === 204;
++  } catch {
++    return false;
++  }
++}
+ export const defaultFetchJobs: JobsFetchFn = async (repo, runId, token) => {
+   if (!token) return { ok: false, status: 0, failedJobs: [] };
+   try {
+diff --git a/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts b/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts
+index 70e9cfeb..6ae443e7 100644
+--- a/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts
++++ b/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts
+@@ -15,6 +15,7 @@ import {
+   defaultCreateIssue,
+   defaultFetchJobs,
+   deriveFailureIssue,
++  linkSubIssue,
+   type CiFailureReport,
+   type FederatedCiWatcherConfig,
+   type IssueCreateFn,
+@@ -252,7 +253,7 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
+     if (parsed.labels.includes("repo:supremeai-api")) {
+       return new Response("Label does not exist", { status: 422 });
+     }
+-    return new Response(JSON.stringify({ html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/1" }), { status: 201, headers: { "content-type": "application/json" } });
++    return new Response(JSON.stringify({ html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/1", number: 1 }), { status: 201, headers: { "content-type": "application/json" } });
+   }) as any;
+   try {
+     const res = await defaultCreateIssue(
+@@ -262,6 +263,7 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
+     check("two HTTP calls (422 then fallback)", calls.length === 2, `calls=${calls.length}`);
+     check("second call dropped the repo:<slug> label", Array.isArray(calls[1]?.labels) && !calls[1].labels.some((l: string) => l.startsWith("repo:")));
+     check("fallback result ok", res.ok && res.status === 201);
++    check("issueUrl and issueNumber captured", res.issueNumber === 1 && res.issueUrl === "https://github.com/Supremeai-bd/supremeai-open/issues/1");
+ 
+     const noToken = await defaultCreateIssue({ repo: "r/x", title: "t", body: "b", labels: ["a"] }, undefined);
+     check("missing token → fail-closed (status 0, not ok)", !noToken.ok && noToken.status === 0);
+@@ -270,6 +272,30 @@ section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
+   }
+ }
+ 
++// ── 6b. linkSubIssue — attach as sub-issue under CI Failure Hub #761 ──────────
++section("linkSubIssue: link under anchor hub (stubbed fetch)");
++{
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = (async (url: any) => {
++    if (String(url).endsWith("/issues/100")) {
++      return new Response(JSON.stringify({ id: 555001, number: 100 }), { status: 200, headers: { "content-type": "application/json" } });
++    }
++    if (String(url).endsWith("/sub-issues")) {
++      return new Response(JSON.stringify({ success: true }), { status: 201 });
++    }
++    return new Response("Not found", { status: 404 });
++  }) as any;
++  try {
++    const linked = await linkSubIssue(100, "Supremeai-bd/supremeai-open", "tok");
++    check("linkSubIssue succeeds with 201", linked === true);
++
++    const noTok = await linkSubIssue(100, "Supremeai-bd/supremeai-open", undefined);
++    check("linkSubIssue returns false without token", noTok === false);
++  } finally {
++    globalThis.fetch = origFetch;
++  }
++}
++
+ // ── 7. defaultFetchJobs — enrichment extraction (stubbed fetch) ────────────────
+ section("defaultFetchJobs: failed-job/step extraction (stubbed fetch)");
+ {
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 4ab8a79f..9d852878 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -247,14 +247,20 @@ def check_existing_mirror(
+ ) -> int | None:
+     """Check if this run's marker already exists in CI Failure Hub #761 comments."""
+     needle = f"{repo}/actions/runs/{run_id}"
+-    code, comments = gh_api(
+-        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100",
+-        token=token,
+-    )
+-    if code == 200 and isinstance(comments, list):
++    page = 1
++    while True:
++        code, comments = gh_api(
++            f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments?per_page=100&page={page}",
++            token=token,
++        )
++        if code != 200 or not isinstance(comments, list) or not comments:
++            break
+         for c in comments:
+             if needle in (c.get("body") or ""):
+                 return int(c.get("id", 0))
++        if len(comments) < 100:
++            break
++        page += 1
+     return None
+ 
+ 
+@@ -268,35 +274,75 @@ def mirror_failure(
+     error_summary: str = "",
+     token: str | None = None,
+ ) -> bool:
+-    """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
+-    existing = check_existing_mirror(repo, run_id, token=token)
+-    if existing:
+-        print(
+-            f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping."
++    """Mirror CI failure as a sub-issue under CI Failure Hub #761 (visible, claimable, stays until fixed)."""
++    # Dedup: scan open issues for this run's marker (paginated).
++    page = 1
++    while True:
++        code, items = gh_api(
++            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
++            token=token,
+         )
+-        return True
++        if code != 200 or not isinstance(items, list) or not items:
++            break
++        existing_num = find_mirror_in_items(items, repo, run_id)
++        if existing_num is not None:
++            print(
++                f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
++            )
++            return True
++        if len(items) < 100:
++            break
++        page += 1
+ 
+     title = build_issue_title(workflow_name, repo, branch, run_id)
+     body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
+         repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+     )
++    labels = build_issue_labels(repo)
+ 
+     code, resp = gh_api(
+-        f"repos/{OPEN_REPO}/issues/{CI_FAILURE_ANCHOR}/comments",
++        f"repos/{OPEN_REPO}/issues",
+         token=token,
+         method="POST",
+-        data={"body": body},
++        data={"title": title, "body": body, "labels": labels},
+     )
++    if code == 422:
++        core_labels = [l for l in labels if not l.startswith("repo:")]
++        code, resp = gh_api(
++            f"repos/{OPEN_REPO}/issues",
++            token=token,
++            method="POST",
++            data={"title": title, "body": body, "labels": core_labels},
++        )
+     if code == 201:
+-        cid = resp.get("id")
+-        curl = resp.get("html_url")
++        issue_number = resp.get("number")
++        issue_url = resp.get("html_url")
+         print(
+-            f"✅ [watchdog] Mirrored CI failure from {repo} into CI Hub #{CI_FAILURE_ANCHOR} (comment #{cid}): {curl}"
++            f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
+         )
++        # Link as sub-issue under the CI Failure Hub (zero loose root issues).
++        if issue_number and link_sub_issue is not None:
++            try:
++                linked = link_sub_issue(
++                    parent_issue_number=CI_FAILURE_ANCHOR,
++                    child_issue_number=int(issue_number),
++                    repo=OPEN_REPO,
++                    token=token,
++                )
++                if linked:
++                    print(
++                        f"   ↳ linked as sub-issue under CI Hub #{CI_FAILURE_ANCHOR}."
++                    )
++                else:
++                    print(
++                        "   ↳ (could not link sub-issue; issue remains standalone)"
++                    )
++            except Exception as exc:
++                print(f"   ↳ sub-issue link error: {exc}")
+         return True
+     else:
+         print(
+-            f"❌ [watchdog] Failed to record incident into CI Hub #{CI_FAILURE_ANCHOR} (HTTP {code}): {resp}"
++            f"❌ [watchdog] Failed to mirror incident (HTTP {code}): {resp}"
+         )
+         return False
+ 

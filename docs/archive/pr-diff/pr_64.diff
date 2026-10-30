@@ -1,0 +1,558 @@
+diff --git a/.github/ISSUE_TEMPLATE/agent-task.yml b/.github/ISSUE_TEMPLATE/agent-task.yml
+index a3a5da5d..389f2a0a 100644
+--- a/.github/ISSUE_TEMPLATE/agent-task.yml
++++ b/.github/ISSUE_TEMPLATE/agent-task.yml
+@@ -57,6 +57,23 @@ body:
+     validations:
+       required: true
+ 
++  - type: dropdown
++    id: task_group
++    attributes:
++      label: Task Group (VALID_GROUPS registry)
++      description: >
++        Canonical taxonomy (#63) — arbitrary/invented group names are rejected
++        fail-closed by build_task_contract(). Keep aligned with VALID_GROUPS in
++        scripts/agents/continuous_agent_loop.py.
++      options:
++        - agent-orchestration
++        - mcp-tower
++        - core-engine
++        - schemas-contracts
++        - infra-ops
++    validations:
++      required: true
++
+   - type: textarea
+     id: mission
+     attributes:
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+new file mode 100644
+index 00000000..4c9cc64e
+--- /dev/null
++++ b/.github/workflows/open-guards.yml
+@@ -0,0 +1,68 @@
++# 🛡️ Open Guards (#63) — shift-left validation on FREE public runtime.
++# বাংলা: প্রাইভেট repo-র Actions minute হলো সীমিত সম্পদ (Free org = 2,000 min/month)।
++# branch-naming ও issue-reference ভালাইখোরা প্রাইভেট CI-তে গিয়ে ব্যর্থ হওয়ার আগেই
++# এই সস্তা public guard ধরে ফেলে — invalid contribution বাউন্ডারিতেই থামে।
++# Zero-checkout (event-context-only) → প্রতি রান ~৫ সেকেন্ড, public repo-র
++# Actions minute ফ্রি ও আনলিমিটেড।
++name: 🛡️ Open Guards (branch naming + issue reference)
++
++on:
++  pull_request:
++    types: [opened, edited, reopened, synchronize, ready_for_review]
++
++permissions:
++  contents: read
++  pull-requests: read
++
++concurrency:
++  group: open-guards-${{ github.event.pull_request.number }}
++  cancel-in-progress: true
++
++jobs:
++  branch-naming-guard:
++    name: "🌿 Branch Naming Guard"
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Validate head branch name (event-context only, no checkout)
++        env:
++          HEAD_REF: ${{ github.event.pull_request.head.ref }}
++          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
++        run: |
++          echo "head branch: '$HEAD_REF' (from $HEAD_REPO)"
++          # বট-জেনারেটেড ব্রাঞ্চ সবসময় অনুমোদিত (নিজেদের automation ভাঙবে না)
++          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly)/ ]] \
++             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
++            echo "✅ Automated/bot branch — allowed."; exit 0
++          fi
++          # কনস্টিটিউশনাল কনভেনশন: <type>/<slug> — #63 + AGENTS.md lane discipline
++          if [[ "$HEAD_REF" =~ ^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/.+ ]]; then
++            echo "✅ Branch naming OK ('$HEAD_REF')."; exit 0
++          fi
++          echo "::error::Branch '$HEAD_REF' violates the naming convention."
++          echo "Allowed prefixes: feat/ fix/ docs/ chore/ test/ refactor/ perf/ bridge/ group/ contributor/ hotfix/ release/ agent/"
++          echo "(bot branches dependabot|github-actions|copilot/* are auto-allowed; admin escape hatch: 'guard-exempt' label)"
++          exit 1
++
++  issue-reference-guard:
++    name: "🔗 Issue Reference Guard"
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Validate PR references an issue (event-context only, no checkout)
++        env:
++          PR_TITLE: ${{ github.event.pull_request.title }}
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++        run: |
++          # অ্যাডমিন escape hatch — বিরল no-issue পরিবর্তনের জন্য
++          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
++            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
++          fi
++          if echo "$PR_TITLE $PR_BODY" | grep -qE '#[0-9]+'; then
++            echo "✅ Issue reference found in title/body."; exit 0
++          fi
++          echo "::error::PR must reference an issue number (e.g. 'Refs #63') in title or body."
++          echo "The Task Envelope's submission.issue_reference_required=true documents this contract (#63)."
++          echo "(Admin escape hatch: add the 'guard-exempt' label.)"
++          exit 1
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+new file mode 100644
+index 00000000..9eea53e4
+--- /dev/null
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -0,0 +1,126 @@
++# AGENT LOOP SPEC — Single Deterministic Task Envelope (task-envelope-v1)
++
++> Source of truth: `scripts/agents/continuous_agent_loop.py`
++> Ref: issue #63 · Philosophy: `AGENTS.md` §6 — *"Simple + effective > clever + complex."*
++
++## 1. Why
++
++Before #63 the loop runner produced **4 disparate output formats** that external
++autonomous agents (Z.ai, Claude, Antigravity, …) had to reconcile:
++
++| # | Legacy format | Replaced by (envelope field) |
++|---|---------------|------------------------------|
++| 1 | Multi-step terminal console logs | `problem_statement` + `objective` |
++| 2 | `--emit-prompt` markdown specialist prompt | `specialist_prompt` |
++| 3 | `--emit-contract` raw JSON contract | embedded contract fields (`group`, `scope`, `admin_gate`, …) |
++| 4 | `.pr_template_draft.md` filesystem draft | `submission.pr_body_template` |
++
++Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JSON.
++
++## 2. Envelope schema (v1)
++
++```jsonc
++{
++  "task_envelope": {
++    "envelope_version": 1,
++    "output_format": "task-envelope-v1",
++    "task_id":   "task-63",
++    "issue":     "63",
++    "task_type": "IMPLEMENT",          // VALID_TASK_TYPES
++    "group":     "agent-orchestration",// VALID_GROUPS registry — fail-closed
++    "priority":  "P2",                 // P0..P3
++    "objective": "…",
++    "problem_statement": { "id", "title", "body", "labels", "state" },
++    "role": "coder",                   // one of the 7 specialist roles
++    "role_policy": "contributor",
++    "role_description": "…",
++    "scope": {
++      "touching_files": ["…"],         // Scope Gate boundary
++      "forbidden_paths": [".env*", "secrets/**", "credentials/**", "vault/**"]
++    },
++    "acceptance": ["…"],
++    "verification": ["…"],
++    "required_evidence": ["…"],
++    "stop_conditions": ["…"],
++    "admin_gate": { "required": false, "status": "NOT_REQUIRED" },
++    "specialist_prompt": "…markdown prompt (legacy --emit-prompt content)…",
++    "submission": {
++      "pathway": "bridge_submit_patch | pull_request",
++      "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
++      "base_branch": "main",
++      "pr_title_prefix": "feat(open):",
++      "issue_reference_required": true,
++      "branch_convention": "^(feat|fix|docs|…|agent)/<slug> — enforced by open-guards.yml",
++      "pr_body_template": "…markdown PR body (legacy draft file content)…"
++    }
++  }
++}
++```
++
++## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
++
++Agents **cannot** invent arbitrary group names. Any task contract with an
++unlisted group raises `ValueError` inside `build_task_contract()` **and**
++`resolve_group()` — invalid work never reaches private CI.
++
++| Group | Domain |
++|-------|--------|
++| `agent-orchestration` | continuous loop, agent dispatch, specialist roles, task envelopes, agent lifecycle |
++| `mcp-tower` | MCP Control Plane tools, health probes, bridge adapters, remote endpoints, server infra |
++| `core-engine` | core federation business logic, state machines, models |
++| `schemas-contracts` | OpenAPI schemas, contract definitions, protocol envelopes |
++| `infra-ops` | deployment configs, CI actions, cloud runtime configurations |
++
++**Resolution order (deterministic):**
++1. `--group <name>` CLI flag (must be in registry, else exit 2)
++2. Issue body/label scan (first registry match, sorted order)
++3. Default: `agent-orchestration`
++
++`.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
++registry** — keep the two in sync when the taxonomy changes.
++
++## 4. CLI surface after #63
++
++| Command | Status | Behaviour |
++|---------|--------|-----------|
++| `--task-envelope` | ✅ canonical | emits the unified envelope JSON, exit 0 |
++| `--emit-prompt` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
++| `--emit-contract` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
++| `--group <name>` | ✅ new | canonical group override |
++| `--verify-only` | ✅ extended | tiers 1–5 (syntax / JSON / YAML / binary guard / contract guard) + **tier 6** group-registry guard + **tier 7** envelope-determinism check |
++
++Deprecated shims keep running automation alive; removal is a future admin
++decision after private-mirror parity (do not remove in a drive-by change).
++
++## 5. Open Guards — shift-left on free public runtime
++
++`.github/workflows/open-guards.yml` runs **zero-checkout** (~5s) on every PR
++to `supremeai-open` — free, unlimited public Actions minutes — so invalid
++contributions fail at the public boundary instead of burning the private
++repo's limited quota (Free org ≈ 2,000 min/month):
++
++1. **Branch Naming Guard** — head branch must match
++   `^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/…`
++   (bot branches `dependabot|github-actions|copilot/*` auto-allowed).
++2. **Issue Reference Guard** — PR title/body must contain `#<number>`
++   (admin escape hatch: `guard-exempt` label).
++
++## 6. Submission flow (Pathway 1 wiring)
++
++Agents consume the envelope, implement inside `scope.touching_files`, then
++submit **without intermediate filesystem drafts**:
++
++- **Pull request** (zero-credential): fork/branch → PR to `supremeai-open:main`
++  using `submission.pr_body_template` + issue reference.
++- **Bridge lane** (collaborator): push `bridge/<task-id>` branch to this repo →
++  Bridge Work Order issue → private gate battery lands the change
++  (or `bridge_submit_patch` MCP tool per AGENTS.md §8).
++
++## 7. Verification quick-start
++
++```bash
++git grep -n "VALID_GROUPS" scripts/agents/continuous_agent_loop.py
++python scripts/agents/continuous_agent_loop.py --verify-only
++python scripts/agents/continuous_agent_loop.py --issue 63 --task-envelope
++python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group not-a-group   # → exit 2 (fail-closed demo)
++```
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index c8af07d3..2d1a59a6 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -46,6 +46,20 @@
+ VALID_PRIORITIES = {"P0", "P1", "P2", "P3"}
+ VALID_ADMIN_GATE_STATUSES = {"NOT_REQUIRED", "WAITING", "APPROVED", "REJECTED"}
+ 
++# Canonical group taxonomy (#63): agents CANNOT invent arbitrary group names.
++# Fail-closed: build_task_contract() / resolve_group() reject any group not
++# listed here. The .github/ISSUE_TEMPLATE/agent-task.yml dropdown must stay
++# aligned with this registry.
++VALID_GROUPS = frozenset({
++    "agent-orchestration",  # continuous loop, agent dispatch, roles, envelopes, lifecycle
++    "mcp-tower",            # MCP Control Plane tools, health probes, bridge adapters, endpoints
++    "core-engine",          # federation business logic, state machines, models
++    "schemas-contracts",    # OpenAPI schemas, contract definitions, protocol envelopes
++    "infra-ops",            # deploy configs, CI actions, cloud runtime configuration
++})
++DEFAULT_GROUP = "agent-orchestration"
++ENVELOPE_VERSION = 1  # task-envelope-v1 (#63)
++
+ # The 7 Specialist Agent Roles
+ ROLES: dict[str, str] = {
+     "coder": "Implementation specialist (features, bug fixes, refactoring)",
+@@ -92,7 +106,7 @@ def build_task_contract(
+     task_id: str,
+     issue: str | int | None = None,
+     task_type: str = "IMPLEMENT",
+-    group: str = "open",
++    group: str = DEFAULT_GROUP,
+     priority: str = "P2",
+     objective: str = "",
+     touching_files: list[str] | None = None,
+@@ -127,6 +141,13 @@ def build_task_contract(
+             f"Invalid admin_gate_status: '{admin_gate_status}'. Must be one of: {sorted(VALID_ADMIN_GATE_STATUSES)}"
+         )
+ 
++    # #63 fail-closed gate: arbitrary/invented group names are rejected here —
++    # invalid contracts can no longer travel downstream to private CI.
++    if group not in VALID_GROUPS:
++        raise ValueError(
++            f"Invalid group: '{group}'. Must be one of the canonical registry: {sorted(VALID_GROUPS)}"
++        )
++
+     return {
+         "task_contract": {
+             "version": 1,
+@@ -216,6 +237,141 @@ def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]
+ """
+ 
+ 
++def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> str:
++    """Deterministic group resolution (#63): --group flag > issue body/label scan > canonical default.
++
++    Fail-closed: an unknown explicit group raises ValueError — agents cannot
++    invent arbitrary group names outside the VALID_GROUPS registry.
++    """
++    if explicit:
++        group = explicit.strip().lower()
++        if group not in VALID_GROUPS:
++            raise ValueError(
++                f"Invalid group: '{explicit}'. Must be one of the canonical registry: {sorted(VALID_GROUPS)}"
++            )
++        return group
++    if task:
++        haystack = " ".join(task.get("labels", []) or []).lower() + "\n" + str(task.get("body") or "").lower()
++        for group in sorted(VALID_GROUPS):
++            if group in haystack:
++                return group
++    return DEFAULT_GROUP
++
++
++def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
++    """Build the Single Deterministic Task Envelope (#63).
++
++    One canonical JSON payload that replaces the four legacy output formats:
++      1. multi-step console logs   -> problem_statement + objective fields
++      2. --emit-prompt markdown    -> specialist_prompt field
++      3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
++      4. .pr_template_draft.md     -> submission.pr_body_template field
++    """
++    tc = contract["task_contract"]
++    issue_ref = tc.get("issue") or task.get("id")
++    pr_body_template = f"""## Summary
++Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
++
++## Linked Issue / Claim
++Refs #{issue_ref}
++
++## Type of Change
++- [x] `feat` / `fix` / `docs` — Open contributor change
++
++## Rollback Path
++- [x] `git revert`-safe (no private state dependencies)
++"""
++    return {
++        "task_envelope": {
++            "envelope_version": ENVELOPE_VERSION,
++            "output_format": "task-envelope-v1",
++            "task_id": tc.get("task_id"),
++            "issue": tc.get("issue"),
++            "task_type": tc.get("task_type"),
++            "group": tc.get("group"),
++            "priority": tc.get("priority"),
++            "objective": tc.get("objective"),
++            "problem_statement": {
++                "id": task.get("id"),
++                "title": task.get("title"),
++                "body": task.get("body"),
++                "labels": task.get("labels", []),
++                "state": task.get("state"),
++            },
++            "role": role,
++            "role_policy": tc.get("role_policy"),
++            "role_description": ROLES.get(role, ""),
++            "scope": tc.get("scope", {}),
++            "acceptance": tc.get("acceptance", []),
++            "verification": tc.get("verification", []),
++            "required_evidence": tc.get("required_evidence", []),
++            "stop_conditions": tc.get("stop_conditions", []),
++            "admin_gate": tc.get("admin_gate", {}),
++            "specialist_prompt": build_agent_prompt(task, role, contract),
++            "submission": {
++                "pathway": "bridge_submit_patch | pull_request",
++                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
++                "base_branch": "main",
++                "pr_title_prefix": "feat(open):",
++                "issue_reference_required": True,
++                "branch_convention": (
++                    "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
++                    "hotfix|release|copilot|agent)/<slug> — enforced by .github/workflows/open-guards.yml"
++                ),
++                "pr_body_template": pr_body_template,
++            },
++        }
++    }
++
++
++def emit_task_envelope(args: argparse.Namespace) -> int:
++    """Emit the Single Deterministic Task Envelope (#63) — read-only, fail-closed."""
++    issue_id = args.issue
++    task: dict[str, Any] | None = None
++    if issue_id:
++        task = step_1_understand(issue_id)  # fail-closed: missing/closed issue -> None
++        if not task:
++            return 1
++    elif args.allow_adhoc:
++        task = {
++            "id": "adhoc",
++            "title": "Autonomous Contribution Task",
++            "body": "Implement smallest safe change adhering to AGENTS.md contracts.",
++            "state": "ADHOC",
++            "labels": [],
++        }
++    else:
++        log("❌", "[Fail-Closed Gate] --task-envelope requires --issue <number> (or --allow-adhoc for offline testing).")
++        return 1
++
++    try:
++        group = resolve_group(args.group, task)
++    except ValueError as exc:
++        log("❌", f"[Group Registry Fail-Closed Gate] {exc}")
++        return 2
++
++    try:
++        contract = build_task_contract(
++            task_id=f"task-{task['id']}",
++            issue=task["id"] if task["id"] != "adhoc" else None,
++            task_type=args.task_type,
++            group=group,
++            priority=args.priority,
++            objective=task.get("title") or f"Resolve issue #{task['id']}",
++            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
++        )
++    except ValueError as exc:
++        log("❌", f"[Task Contract Fail-Closed Gate] {exc}")
++        return 2
++
++    role = args.role or classify_task_role(
++        task.get("title", ""), task.get("labels", []), task.get("body", "")
++    )
++    envelope = build_task_envelope(task, role, contract)
++    print(json.dumps(envelope, indent=2))
++    return 0
++
++
+ def pick_next_issue() -> str | None:
+     """Fetch the highest priority unclaimed open issue from GitHub."""
+     code, out, _ = run_cmd(["gh", "issue", "list", "--repo", UPSTREAM_REPO, "--state", "open", "--limit", "20", "--json", "number,title,labels"])
+@@ -463,6 +619,22 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
+             return False, evidence
+         except ValueError:
+             evidence.append({"tier": 5, "name": "Task Contract Fail-Closed Guard (ValueError)", "passed": True})
++
++        # Tier 6 (#63): group registry fail-closed guard — invented group names rejected
++        try:
++            build_task_contract("group-guard-test", group="not-a-canonical-group")
++            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard", "passed": False})
++            return False, evidence
++        except ValueError:
++            evidence.append({"tier": 6, "name": "Group Registry Fail-Closed Guard (ValueError)", "passed": True})
++
++        # Tier 7 (#63): envelope determinism — identical inputs produce byte-identical contracts
++        _c1 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
++        _c2 = build_task_contract("env-test", issue="0", group=DEFAULT_GROUP)
++        if json.dumps(_c1, sort_keys=True) != json.dumps(_c2, sort_keys=True):
++            evidence.append({"tier": 7, "name": "Envelope Determinism", "passed": False})
++            return False, evidence
++        evidence.append({"tier": 7, "name": "Envelope Determinism (byte-identical rebuild)", "passed": True})
+     except Exception as e:
+         log("❌", f"Self-test verification failed: {e}")
+         return False, evidence
+@@ -529,10 +701,9 @@ def step_7_record(
+ - [x] `git revert`-safe (no private state dependencies)
+ """
+ 
+-    pr_file = REPO_ROOT / ".pr_template_draft.md"
+-    pr_file.write_text(pr_body, encoding="utf-8")
+-    log("📄", f"PR body draft saved to {pr_file.name}")
+-
++    # #63: no intermediate filesystem draft — the PR body goes inline to gh,
++    # and agents consuming the Task Envelope get the same template via
++    # submission.pr_body_template (single source of truth).
+     if auto_pr:
+         log("🚀", f"Opening Pull Request against {UPSTREAM_REPO}:main...")
+         cmd = [
+@@ -541,7 +712,7 @@ def step_7_record(
+             "--base", "main",
+             "--head", branch,
+             "--title", f"feat(open): {task.get('title')}",
+-            "--body-file", str(pr_file)
++            "--body", pr_body
+         ]
+         code, out, err = run_cmd(cmd)
+         if code == 0:
+@@ -592,10 +763,12 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
+     log("🎯", f"Classified Task Role: '{assigned_role.upper()}' ({ROLES.get(assigned_role, '')})")
+ 
+     touching_files = [f.strip() for f in args.touching_files.split(",")] if args.touching_files else []
++    resolved_group = resolve_group(args.group, task)  # #63: canonical taxonomy, fail-closed
+     contract = build_task_contract(
+         task_id=f"task-{task.get('id', 'adhoc')}",
+         issue=task.get("id"),
+         task_type=args.task_type,
++        group=resolved_group,
+         priority=args.priority,
+         objective=task.get("title", ""),
+         touching_files=touching_files,
+@@ -604,13 +777,6 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
+ 
+     agent_prompt = build_agent_prompt(task, assigned_role, contract)
+ 
+-    if args.emit_prompt:
+-        print("\n" + "=" * 70)
+-        print("--- SPECIALIST AGENT PROMPT ---")
+-        print(agent_prompt)
+-        print("=" * 70 + "\n")
+-        return 0
+-
+     branch = step_4_branch(task)
+     if not branch:
+         return 1
+@@ -638,10 +804,12 @@ def main() -> int:
+     parser.add_argument("--loop", action="store_true", help="Continuous mode: process eligible issues sequentially")
+     parser.add_argument("--max-tasks", type=int, default=5, help="Maximum number of tasks to process in loop mode (default: 5)")
+     parser.add_argument("--role", type=str, help=f"Force specific agent role: {', '.join(ROLES.keys())}")
+-    parser.add_argument("--emit-prompt", action="store_true", help="Emit specialist agent prompt and exit")
++    parser.add_argument("--task-envelope", action="store_true", help="Emit the unified deterministic Task Envelope (canonical single payload, #63) and exit")
++    parser.add_argument("--group", type=str, default=None, help="Canonical group from the VALID_GROUPS registry (agent-orchestration, mcp-tower, core-engine, schemas-contracts, infra-ops)")
++    parser.add_argument("--emit-prompt", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
+     parser.add_argument("--auto-pr", action="store_true", help="Automatically submit PR via gh CLI upon test pass")
+     parser.add_argument("--verify-only", action="store_true", help="Only run 3-tier verification and exit")
+-    parser.add_argument("--emit-contract", action="store_true", help="Emit JSON task contract adhering to AGENT_RULES.md §7 and exit")
++    parser.add_argument("--emit-contract", action="store_true", help="DEPRECATED (#63): use --task-envelope — emits the unified envelope with a deprecation warning")
+     parser.add_argument("--touching-files", type=str, help="Comma-separated list of touching files for declared scope")
+     parser.add_argument("--task-type", type=str, default="IMPLEMENT", help="Task type (default: IMPLEMENT)")
+     parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
+@@ -649,27 +817,29 @@ def main() -> int:
+     parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
+     args = parser.parse_args()
+ 
+-    print("======================================================================")
+-    print(" SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) ")
+-    print(f" Target: {UPSTREAM_REPO}")
+-    print("======================================================================")
++    banner = (
++        "======================================================================\n"
++        " SupremeAI — Continuous Agent Loop (Lazy Team Leader Runner) \n"
++        f" Target: {UPSTREAM_REPO}\n"
++        "======================================================================"
++    )
++    if args.task_envelope or args.emit_prompt or args.emit_contract:
++        # #63: envelope mode keeps stdout PURE JSON (machine-parseable single
++        # payload) — the human banner goes to stderr instead.
++        print(banner, file=sys.stderr)
++    else:
++        print(banner)
+ 
+     if args.verify_only:
+         passed, _ = step_6_verify()
+         return 0 if passed else 1
+ 
+-    if args.emit_contract:
+-        issue_id = args.issue or "adhoc"
+-        contract = build_task_contract(
+-            task_id=f"task-{issue_id}",
+-            issue=issue_id if issue_id != "adhoc" else None,
+-            task_type=args.task_type,
+-            priority=args.priority,
+-            objective=f"Resolve issue #{issue_id}",
+-            touching_files=[f.strip() for f in args.touching_files.split(",")] if args.touching_files else [],
+-        )
+-        print(json.dumps(contract, indent=2))
+-        return 0
++    if args.emit_prompt or args.emit_contract:
++        print("⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.", file=sys.stderr)
++        print("    Use the canonical unified payload: --task-envelope", file=sys.stderr)
++
++    if args.task_envelope or args.emit_prompt or args.emit_contract:
++        return emit_task_envelope(args)
+ 
+     if args.loop:
+         log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")

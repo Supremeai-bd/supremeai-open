@@ -1,0 +1,258 @@
+diff --git a/studio/src/components/admin/RenderPreflightWidget.tsx b/studio/src/components/admin/RenderPreflightWidget.tsx
+index b6ec51c1..ded10db7 100644
+--- a/studio/src/components/admin/RenderPreflightWidget.tsx
++++ b/studio/src/components/admin/RenderPreflightWidget.tsx
+@@ -184,7 +184,7 @@ export function RenderPreflightWidget() {
+ 
+       {/* Override Modal */}
+       {overrideModalRole && (
+-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
++        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 p-4">
+           <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-[#0a0f1d] p-5 shadow-2xl">
+             <h3 className="text-sm font-bold font-mono text-white mb-2">
+               Manual Override: <span className="text-[#00f3ff] uppercase">{overrideModalRole}</span>
+diff --git a/studio/src/components/admin/auth/UserManager.tsx b/studio/src/components/admin/auth/UserManager.tsx
+index 2aea0a9e..40522317 100644
+--- a/studio/src/components/admin/auth/UserManager.tsx
++++ b/studio/src/components/admin/auth/UserManager.tsx
+@@ -78,7 +78,7 @@ export function UserManager({
+   return (
+     <div className="flex-grow bg-[#030611] p-6 overflow-y-auto font-sans relative">
+       {userToDelete && (
+-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
++        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-modal p-4">
+           <div className="bg-[#0c0d12] border border-red-900/60 rounded-xl p-6 max-w-md w-full shadow-2xl">
+             <h4 className="text-sm font-bold text-red-400 font-mono mb-2 uppercase tracking-wider">⚠️ Confirm Revoke Role</h4>
+             <p className="text-xs text-slate-300 mb-6 font-mono">
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+index 2dd48079..38a28c4a 100644
+--- a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+@@ -164,7 +164,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+   };
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
++    <div className="fixed inset-0 z-modal flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(14,165,183,0.12),transparent_70%)]" />
+ 
+       {/* Brand Header */}
+@@ -246,7 +246,7 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+         <div
+           role="dialog"
+           aria-modal="true"
+-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
++          className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
+         >
+           <div className="relative w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#060c18] p-6 shadow-2xl shadow-cyan-950/50 text-left">
+             <button
+@@ -356,7 +356,7 @@ export function JarvisBootSequence({ onDone }: { onDone: () => void }) {
+   }, [shown, onDone]);
+ 
+   return (
+-    <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-[#04070f] px-6 text-slate-100 select-none">
++    <div className="fixed inset-0 z-overlay flex flex-col items-center justify-center bg-[#04070f] px-6 text-slate-100 select-none">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(14,165,183,0.1),transparent_70%)]" />
+       <div className="relative w-full max-w-lg space-y-1.5 font-mono text-[13px] text-cyan-400">
+         {BOOT_LINES.slice(0, shown).map((l, i) => (
+diff --git a/studio/src/components/admin/security/RulesEnginePanel.tsx b/studio/src/components/admin/security/RulesEnginePanel.tsx
+index 7da2e0bc..2cb18d3d 100644
+--- a/studio/src/components/admin/security/RulesEnginePanel.tsx
++++ b/studio/src/components/admin/security/RulesEnginePanel.tsx
+@@ -58,7 +58,7 @@ const RulesEnginePanel: React.FC = () => {
+           animate={{ x: 0 }}
+           exit={{ x: '100%' }}
+           transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+-          className="fixed right-0 top-0 h-full w-[28rem] sci-fi-glass-panel p-6 z-50 shadow-2xl flex flex-col"
++          className="fixed right-0 top-0 h-full w-[28rem] sci-fi-glass-panel p-6 z-modal shadow-2xl flex flex-col"
+         >
+           {/* Header */}
+           <div className="flex items-center justify-between border-b border-[rgba(0,243,255,0.2)] pb-4 mb-4">
+diff --git a/studio/src/components/auth/ServiceHealthBar.tsx b/studio/src/components/auth/ServiceHealthBar.tsx
+index 27336ab0..8fd0ce7d 100644
+--- a/studio/src/components/auth/ServiceHealthBar.tsx
++++ b/studio/src/components/auth/ServiceHealthBar.tsx
+@@ -277,7 +277,7 @@ export const ServiceHealthBar: React.FC = () => {
+             animate={{ opacity: 1, y: 0, scale: 1 }}
+             exit={{ opacity: 0, y: -8, scale: 0.96 }}
+             transition={{ duration: 0.16 }}
+-            className="absolute top-10 z-50 w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
++            className="absolute top-10 z-modal w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
+           >
+             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+               <div className="flex items-center gap-1.5">
+diff --git a/studio/src/components/common/MobilePreviewPanel.tsx b/studio/src/components/common/MobilePreviewPanel.tsx
+index 38f55b30..feedf7ea 100644
+--- a/studio/src/components/common/MobilePreviewPanel.tsx
++++ b/studio/src/components/common/MobilePreviewPanel.tsx
+@@ -90,7 +90,7 @@ export function MobilePreviewPanel({ url }: { url: string }) {
+   if (!isOpen) return null;
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm">
++    <div className="fixed inset-0 z-modal flex flex-col bg-black/90 backdrop-blur-sm">
+       {/* Header */}
+       <div className="flex items-center justify-between border-b border-slate-700 bg-slate-900 p-4">
+         <div className="flex items-center gap-2">
+diff --git a/studio/src/components/core/Header.tsx b/studio/src/components/core/Header.tsx
+index c1bdbd2b..e6ecb8a0 100644
+--- a/studio/src/components/core/Header.tsx
++++ b/studio/src/components/core/Header.tsx
+@@ -32,7 +32,7 @@ export const Header: React.FC<HeaderProps> = ({
+   const isAdmin = pathname.startsWith('/admin');
+ 
+   return (
+-    <header className="bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/10 px-6 py-3.5 sticky top-0 z-30 shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
++    <header className="bg-white/70 dark:bg-slate-950/70 backdrop-blur-xl border-b border-gray-200/60 dark:border-white/10 px-6 py-3.5 sticky top-0 z-shell shadow-[0_4px_30px_rgba(0,0,0,0.1)]">
+       <div className="flex items-center justify-between">
+         <div className="flex items-center space-x-4">
+           <button
+@@ -178,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({
+               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+             </button>
+             {showNotifications && (
+-              <div className="absolute right-0 mt-2 w-72 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 p-4 z-50 animate-in fade-in zoom-in-95 duration-200">
++              <div className="absolute right-0 mt-2 w-72 bg-slate-900/95 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 p-4 z-modal animate-in fade-in zoom-in-95 duration-200">
+                 <div className="flex items-center justify-between mb-2">
+                   <p className="text-xs font-bold uppercase tracking-wider text-slate-300">Live Telemetry Alerts</p>
+                   <span className="text-[10px] font-mono text-cyan-400">All Clear</span>
+diff --git a/studio/src/components/customer/AddNewWizard.tsx b/studio/src/components/customer/AddNewWizard.tsx
+index ed90c561..58e4ff74 100644
+--- a/studio/src/components/customer/AddNewWizard.tsx
++++ b/studio/src/components/customer/AddNewWizard.tsx
+@@ -79,7 +79,7 @@ export function AddNewWizard({ capabilities, onClose, onAdd, onRegistered }: Add
+ 
+   return (
+     <div
+-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
++      className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 p-4"
+       role="dialog"
+       aria-modal="true"
+       aria-labelledby="add-capability-title"
+diff --git a/studio/src/components/dashboard/ConnectedPlatformsVault.tsx b/studio/src/components/dashboard/ConnectedPlatformsVault.tsx
+index 99a76c71..c1f112fe 100644
+--- a/studio/src/components/dashboard/ConnectedPlatformsVault.tsx
++++ b/studio/src/components/dashboard/ConnectedPlatformsVault.tsx
+@@ -197,7 +197,7 @@ const ConnectedPlatformsVault: React.FC = () => {
+ 
+       {/* Add Platform Modal */}
+       {showAddModal && (
+-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
++        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal p-4">
+           <div className="bg-gray-800 rounded-lg w-full max-w-md">
+             <div className="p-6">
+               <div className="flex justify-between items-center mb-4">
+@@ -281,7 +281,7 @@ const ConnectedPlatformsVault: React.FC = () => {
+ 
+       {/* Platform Details Modal */}
+       {showDetails && selectedPlatform && (
+-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
++        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal p-4">
+           <div className="bg-gray-800 rounded-lg w-full max-w-md">
+             <div className="p-6">
+               <div className="flex justify-between items-center mb-4">
+diff --git a/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx b/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
+index 22e90372..0b3a41e2 100644
+--- a/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
++++ b/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
+@@ -107,7 +107,7 @@ const HumanInTheLoopProtocol: React.FC<HumanInTheLoopProtocolProps> = ({ onAppro
+   };
+ 
+   return (
+-    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
++    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal p-4">
+       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+         <div className="p-6">
+           <div className="flex justify-between items-center mb-4">
+@@ -232,7 +232,7 @@ const HumanInTheLoopProtocol: React.FC<HumanInTheLoopProtocolProps> = ({ onAppro
+ 
+           {/* OTP Modal */}
+           {showOtpInput && (
+-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
++            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal">
+               <div className="bg-gray-800 rounded-lg p-6 w-96">
+                 <h3 className="text-lg font-semibold text-yellow-400 mb-4">Security Verification</h3>
+                 <p className="text-gray-300 mb-4">Enter the OTP sent to your registered device to authorize this critical action.</p>
+diff --git a/studio/src/components/layout/CommandBar.tsx b/studio/src/components/layout/CommandBar.tsx
+index 2e59bfec..2a2dc65d 100644
+--- a/studio/src/components/layout/CommandBar.tsx
++++ b/studio/src/components/layout/CommandBar.tsx
+@@ -117,7 +117,7 @@ export const CommandBar: React.FC<CommandBarProps> = ({ isOpen: controlledOpen,
+   return (
+     <AnimatePresence>
+       {isOpen && (
+-        <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-slate-950/80 backdrop-blur-xl">
++        <div className="fixed inset-0 z-modal flex items-start justify-center pt-16 px-4 bg-slate-950/80 backdrop-blur-xl">
+           <motion.div
+             initial={{ opacity: 0, scale: 0.96, y: -12 }}
+             animate={{ opacity: 1, scale: 1, y: 0 }}
+diff --git a/studio/src/components/shell/GlobalHeader.tsx b/studio/src/components/shell/GlobalHeader.tsx
+index 78dfe7c8..cc10cf1a 100644
+--- a/studio/src/components/shell/GlobalHeader.tsx
++++ b/studio/src/components/shell/GlobalHeader.tsx
+@@ -210,7 +210,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
+           )}
+         </button>
+         {notifOpen && (
+-          <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden">
++          <div className="absolute right-0 mt-2 w-80 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden">
+             <div className="px-4 py-2.5 text-xs font-bold uppercase tracking-widest text-muted border-b border-border">
+               Notifications
+             </div>
+@@ -256,7 +256,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
+           <ChevronDown size={14} className="text-secondary hidden sm:block" />
+         </button>
+         {profileOpen && (
+-          <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-surface-2 shadow-xl z-50 overflow-hidden">
++          <div className="absolute right-0 mt-2 w-64 rounded-xl border border-border bg-surface-2 shadow-xl z-modal overflow-hidden">
+             <div className="px-4 py-3 border-b border-border">
+               <div className="flex items-center gap-3">
+                 <HeaderAvatar label={initials} />
+diff --git a/studio/src/pages/LandingPage.tsx b/studio/src/pages/LandingPage.tsx
+index 4f541456..2e517c9f 100644
+--- a/studio/src/pages/LandingPage.tsx
++++ b/studio/src/pages/LandingPage.tsx
+@@ -16,7 +16,7 @@ export const LandingHeader: React.FC = () => {
+     navigate(path);
+   };
+   return (
+-    <header className="sticky top-0 z-40 flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
++    <header className="sticky top-0 z-overlay flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
+       <Link to="/" className="flex items-center gap-3">
+         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-bold text-white shadow-lg shadow-purple-500/20">
+           S
+@@ -73,7 +73,7 @@ export const LandingHeader: React.FC = () => {
+ 
+       {/* Mobile dropdown menu */}
+       {menuOpen && (
+-        <nav className="absolute top-16 left-0 right-0 z-50 flex flex-col gap-1 border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl md:hidden">
++        <nav className="absolute top-16 left-0 right-0 z-modal flex flex-col gap-1 border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl md:hidden">
+           {onLanding ? (
+             <a href="#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</a>
+           ) : (
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index bc9c108a..0b7d6bd3 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -40,7 +40,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
+ 
+ export function AuthPromptModal({ feature, onClose }: { feature: string; onClose: () => void }) {
+   // Issue #1460: "Sign in to access [Feature]" without navigating away.
+-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
++  return <div className="fixed inset-0 z-modal flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label={`Sign in to access ${feature}`} onClick={onClose}>
+     <div className="w-full max-w-sm rounded-3xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.9))] p-7 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+       <div className="flex items-start justify-between gap-3">
+         <h2 className="text-lg font-medium text-slate-100">Sign in to access {feature.toLowerCase()}</h2>
+diff --git a/studio/src/pages/user/AgentWorkspace.tsx b/studio/src/pages/user/AgentWorkspace.tsx
+index 84d2ea18..a423668e 100644
+--- a/studio/src/pages/user/AgentWorkspace.tsx
++++ b/studio/src/pages/user/AgentWorkspace.tsx
+@@ -117,7 +117,7 @@ export const AgentWorkspace: React.FC = () => {
+ 
+   return (
+     <div className="flex min-h-0 w-full flex-1 overflow-hidden bg-[#0d0f12] text-slate-100">
+-      <aside className={`${historyOpen ? 'w-64' : 'w-14'} flex shrink-0 flex-col border-r border-white/[0.08] bg-[#111318] transition-[width] duration-300 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-30 max-md:shadow-2xl max-md:shadow-cyan-500/10`}>
++      <aside className={`${historyOpen ? 'w-64' : 'w-14'} flex shrink-0 flex-col border-r border-white/[0.08] bg-[#111318] transition-[width] duration-300 max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-shell max-md:shadow-2xl max-md:shadow-cyan-500/10`}>
+         <div className="flex h-14 items-center justify-between border-b border-white/[0.08] px-3"><button className="rounded-lg p-2 text-slate-400 transition hover:bg-cyan-400/10 hover:text-cyan-200 hover:shadow-[0_0_16px_rgba(34,211,238,0.2)]" aria-label="Toggle session history" onClick={() => setHistoryOpen(!historyOpen)}>{historyOpen ? <PanelLeft size={17} /> : <ChevronRight size={17} />}</button>{historyOpen && <button className="rounded-lg p-2 text-slate-400 hover:bg-white/[0.06] hover:text-white" aria-label="New session"><Plus size={17} /></button>}</div>
+         {historyOpen && <><div className="border-b border-white/[0.08] p-3"><button className="flex w-full items-center gap-2 rounded-lg bg-emerald-400 px-3 py-2 text-left text-xs font-semibold text-slate-950"><Plus size={14} /> New session</button></div><div className="flex-1 overflow-y-auto p-3"><div className="mb-3 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500"><History size={12} /> Session history</div><div className="rounded-lg border border-dashed border-white/[0.1] p-3 text-[11px] leading-relaxed text-slate-500">No sessions yet. Your completed agent runs will appear here.</div></div><div className="border-t border-white/[0.08] p-3"><button className="flex w-full items-center gap-2 rounded-lg p-2 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-white"><Settings2 size={14} /> Workspace settings</button></div></>}
+       </aside>

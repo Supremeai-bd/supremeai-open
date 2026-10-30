@@ -1,0 +1,13 @@
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index d0c8b624..38b6dbf3 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -96,7 +96,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
+         ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
+       },
+       body: JSON.stringify({
+-        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'supremeai/groq',
++        model: modelName.toLowerCase().includes('reasoning') ? 'gemini-1.5-pro' : 'auto',
+         messages: [
+           { role: 'system', content: systemPrompt },
+           { role: 'user', content: prompt },

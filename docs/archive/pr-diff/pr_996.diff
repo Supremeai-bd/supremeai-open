@@ -1,0 +1,187 @@
+diff --git a/.github/workflows/kaggle-learning.yml b/.github/workflows/kaggle-learning.yml
+new file mode 100644
+index 00000000..bed6795f
+--- /dev/null
++++ b/.github/workflows/kaggle-learning.yml
+@@ -0,0 +1,38 @@
++name: Kaggle Empirical Learning (Scheduled)
++
++on:
++  schedule:
++    - cron: "0 12 * * *"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++jobs:
++  kaggle_learning:
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v5
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Run Kaggle Empirical Learning Bridge
++        env:
++          KAGGLE_API_TOKENS: ${{ secrets.KAGGLE_API_TOKENS }}
++          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
++          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
++          QDRANT_URL: ${{ secrets.QDRANT_URL }}
++          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
++          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/kaggle_learning_bridge.py --self-test
++          if [ -n "${KAGGLE_API_TOKENS:-}" ]; then
++            echo "Kaggle pool detected — executing empirical learning distillation..."
++            python scripts/ci/kaggle_learning_bridge.py --dry-run
++          else
++            echo "KAGGLE_API_TOKENS not configured on runner; self-test verified."
++          fi
+diff --git a/scripts/ci/ingest_pr_knowledge.py b/scripts/ci/ingest_pr_knowledge.py
+index 434eeb01..b2ca9961 100644
+--- a/scripts/ci/ingest_pr_knowledge.py
++++ b/scripts/ci/ingest_pr_knowledge.py
+@@ -22,6 +22,7 @@
+ import argparse
+ import json
+ import os
++import re
+ import subprocess
+ import sys
+ import time
+@@ -57,8 +58,83 @@
+ }
+ 
+ 
++def extract_markdown_reflection(body: str) -> Optional[dict]:
++    """Parse standard PR Markdown '## Reflection Evidence (why + alternatives_rejected)'.
++
++    Transforms standard GitHub PR reflection sections into structured v2 knowledge data
++    so all landed PRs automatically populate memory without requiring raw HTML comment tags.
++    """
++    if not body:
++        return None
++
++    lower_body = body.lower()
++    if "reflection evidence" not in lower_body and "why + alternatives_rejected" not in lower_body:
++        return None
++
++    # 1. Extract 'why'
++    why_match = re.search(
++        r"(?:-\s*)?\*\*why:\*\*\s*(.+?)(?=(?:-\s*)?\*\*alternatives_rejected:\*\*|##|\Z)",
++        body,
++        re.DOTALL | re.IGNORECASE,
++    )
++    why_text = why_match.group(1).strip() if why_match else ""
++    why_text = re.sub(r"\s+", " ", why_text).strip()
++
++    # 2. Extract 'alternatives_rejected'
++    alts_match = re.search(
++        r"(?:-\s*)?\*\*alternatives_rejected:\*\*\s*(.+?)(?=(?:##|\Z))",
++        body,
++        re.DOTALL | re.IGNORECASE,
++    )
++    alts_raw = alts_match.group(1).strip() if alts_match else ""
++
++    alts_list = []
++    if alts_raw:
++        for line in alts_raw.splitlines():
++            line_str = line.strip()
++            if not line_str or line_str.startswith("<!--"):
++                continue
++            cleaned = re.sub(r"^[-*]\s*", "", line_str).strip()
++            if not cleaned or "replace:" in cleaned.lower():
++                continue
++            if ":" in cleaned:
++                method, reason = cleaned.split(":", 1)
++                alts_list.append({"method": method.strip(" *`_"), "why_rejected": reason.strip()})
++            elif "rejected because" in cleaned.lower():
++                parts = re.split(r"rejected because", cleaned, flags=re.IGNORECASE)
++                alts_list.append({"method": parts[0].strip(" *`_"), "why_rejected": parts[1].strip()})
++            else:
++                alts_list.append({"method": cleaned.strip(" *`_"), "why_rejected": "Rejected during PR evaluation"})
++
++    if not alts_list:
++        alts_list = [{"method": "Ad-hoc workaround or speculative code expansion", "why_rejected": "Violates minimal elegance and fail-closed contract rules"}]
++
++    # 3. Extract Summary / Title if present
++    summary_match = re.search(r"##\s*Summary\s*(.+?)(?=(?:##|\Z))", body, re.DOTALL | re.IGNORECASE)
++    summary_text = summary_match.group(1).strip() if summary_match else ""
++    summary_text = re.sub(r"\s+", " ", summary_text).strip()
++
++    if not why_text and not summary_text:
++        return None
++
++    fix_mechanism = summary_text or why_text or "Automated reflection extraction from merged PR"
++    if not why_text:
++        why_text = summary_text
++
++    return {
++        "schema": "pr-knowledge-envelope/2",
++        "role": "coder",
++        "knowledge": {
++            "fix_mechanism": fix_mechanism,
++            "why_this_way": why_text,
++            "alternatives_rejected": alts_list,
++            "pitfalls_to_avoid": ["Ensure backward compatibility and zero performance regressions"],
++        },
++    }
++
++
+ def extract_envelope_json(body: str) -> Tuple[Optional[dict], str]:
+-    """Extract and parse either v2 (knowledge) or v1 (evidence) envelope."""
++    """Extract and parse v2 envelope, v1 envelope, or markdown reflection."""
+     if not body:
+         return None, "empty_body"
+ 
+@@ -82,6 +158,11 @@ def extract_envelope_json(body: str) -> Tuple[Optional[dict], str]:
+         except json.JSONDecodeError as err:
+             return None, f"v1_json_error: {err}"
+ 
++    # 3. Try Markdown Reflection Parsing Fallback
++    md_envelope = extract_markdown_reflection(body)
++    if md_envelope:
++        return md_envelope, "v2"
++
+     return None, "no_envelope_found"
+ 
+ 
+diff --git a/tests/test_ingest_pr_knowledge.py b/tests/test_ingest_pr_knowledge.py
+index b0353ff6..270eb011 100644
+--- a/tests/test_ingest_pr_knowledge.py
++++ b/tests/test_ingest_pr_knowledge.py
+@@ -58,6 +58,29 @@ def test_v2_missing_field_fails_validation(self):
+         self.assertFalse(valid)
+         self.assertIn("Missing role fields", reason)
+ 
++    def test_markdown_reflection_parsing(self):
++        body = """## Summary
++Fix gateway routing drift.
++
++## Reflection Evidence (why + alternatives_rejected)
++- **why:** The routing config omitted anthropic model which caused fail-closed error.
++- **alternatives_rejected:**
++  - Hardcode model aliases in code: Rejected because violates fail-closed doctrine.
++  - Disable contract test: Rejected because test is core SSOT.
++"""
++        data, ver = ingest_mod.extract_envelope_json(body)
++        self.assertEqual(ver, "v2")
++        self.assertIsNotNone(data)
++        valid, role, reason, k = ingest_mod.validate_knowledge(data, ver)
++        self.assertTrue(valid, f"Validation failed: {reason}")
++        self.assertEqual(role, "coder")
++        self.assertIn("routing config omitted", k["why_this_way"])
++        self.assertEqual(len(k["alternatives_rejected"]), 2)
++        self.assertEqual(k["alternatives_rejected"][0]["method"], "Hardcode model aliases in code")
++        facts = ingest_mod.format_learned_facts(992, role, k, "Fix gateway routing drift")
++        self.assertEqual(len(facts), 2)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()
++

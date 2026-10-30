@@ -1,0 +1,149 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 4906511e..ce614deb 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -738,16 +738,100 @@ def step_1_understand(issue_id: str | None = None, allow_adhoc: bool = False) ->
+     }
+ 
+ 
+-def step_2_rules() -> bool:
+-    """Step 2: Verify and display governing constitution rules."""
+-    log("⚖️", "[Step 2/8: Rules] Loading constitution rules...")
+-    if not AGENTS_MD_PATH.exists() or not AGENT_RULES_PATH.exists():
+-        log("⚠️", "AGENTS.md or AGENT_RULES.md missing from repository root!")
++def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
++    """Step 2: Constitution freshness gate + governing-rules loading (#567).
++
++    Verifies that every file in RULE_FRESHNESS_FILES matches origin/main
++    before any rule is loaded, so agents never execute against stale caches:
++
++    * offline escape hatch (--offline / SUPREMEAI_OFFLINE): skips every git
++      call — verifies local file presence only (explicit stale-context risk);
++    * online: `git fetch origin main`, then per-file worktree blob SHA
++      (`git hash-object`) vs origin blob SHA (`git rev-parse`);
++    * fail-closed matrix: git missing, fetch failure, unverifiable worktree
++      blob, or origin-side constitution deletion all return False;
++    * auto-sync (default): divergence triggers the issue-prescribed
++      `git checkout origin/main -- <path>` for diverged files only; a failed
++      checkout fails closed;
++    * report-only (auto_sync=False, boot smoke): drift is reported, the
++      result stays True, and the tree is NEVER mutated — governance PRs
++      intentionally carry constitution changes;
++    * prints the active rule version and the mandatory invariant checklist.
++    """
++    log("⚖️", "[Step 2/8: Rules] Constitution freshness gate (issue #567)...")
++    repo_root = REPO_ROOT
++
++    # Local presence is mandatory in BOTH modes (offline cannot heal absence).
++    missing_local = [p for p in RULE_FRESHNESS_FILES if not (repo_root / p).exists()]
++    if missing_local:
++        log("❌", f"[Rules Gate] Missing local constitution file(s): {missing_local}")
++        log("❌", "Refusing to load rules from an incomplete constitution.")
++        return False
++
++    if _offline_requested(offline):
++        log("⚠️", "[Rules Gate] OFFLINE mode requested — freshness NOT verified "
++                  "against origin/main (explicit stale-context risk).")
++        _print_rule_version_and_checklist()
++        log("✅", "Local constitution files present. Rules loaded (offline).")
++        return True
++
++    code, _, err = run_cmd(["git", "fetch", "origin", "main"], cwd=repo_root)
++    if code != 0:
++        log("❌", f"[Rules Gate] Cannot verify freshness: git fetch failed ({err or f'code {code}'}).")
++        log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
+         return False
+-    log("✅", "AGENTS.md and AGENT_RULES.md validated. Zero-Admin & Scope rules active.")
++
++    local_shas: dict[str, str | None] = {}
++    remote_shas: dict[str, str | None] = {}
++    for path in RULE_FRESHNESS_FILES:
++        h_code, h_out, h_err = run_cmd(["git", "hash-object", "--", path], cwd=repo_root)
++        if h_code != 0:
++            log("❌", f"[Rules Gate] Unverifiable worktree blob for {path}: {h_err or f'code {h_code}'}.")
++            log("❌", "Fail-closed: refusing to load rules from an unverifiable state.")
++            return False
++        local_shas[path] = h_out.strip() or None
++        r_code, r_out, _ = run_cmd(
++            ["git", "rev-parse", "--verify", "--quiet", f"origin/main:{path}"], cwd=repo_root
++        )
++        if r_code != 0:
++            log("❌", f"[Rules Gate] origin/main does not contain {path}. "
++                      "Origin-side constitution deletion must never be auto-synced.")
++            log("❌", "Fail-closed: escalate to an ADMIN_DECISION issue.")
++            return False
++        remote_shas[path] = r_out.strip() or None
++
++    diverged = diff_rule_freshness(local_shas, remote_shas)
++
++    if not diverged:
++        log("✅", "Constitution fresh: all rule files match origin/main.")
++    elif auto_sync:
++        log("⚠️", f"[Rules Gate] Constitution drift detected: {diverged} — auto-syncing from origin/main...")
++        for path in diverged:
++            c_code, _, c_err = run_cmd(
++                ["git", "checkout", "origin/main", "--", path], cwd=repo_root
++            )
++            if c_code != 0:
++                log("❌", f"[Rules Gate] Auto-sync checkout failed for {path}: {c_err}.")
++                log("❌", "Fail-closed: refusing to load rules from a diverged constitution.")
++                return False
++        log("✅", f"Constitution auto-synced from origin/main: {diverged}")
++    else:
++        log("⚠️", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
++        log("ℹ️", "Report-only mode: the tree is never mutated here (governance PRs "
++                 "intentionally carry constitution changes).")
++
++    _print_rule_version_and_checklist()
++    log("✅", "Rules loaded. Zero-Admin & Scope rules active.")
+     return True
+ 
+ 
++def _print_rule_version_and_checklist() -> None:
++    """Print the active rule version and the mandatory invariant checklist."""
++    log("📘", f"Active rule version: {CONTRACT_VERSION}")
++    for entry in mandatory_invariant_checklist():
++        log("   •", f"[{entry['id']}] {entry['rule']}")
++
++
+ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
+     """Step 3: Inspect local git status, branch, and active remote."""
+     log("🔍", "[Step 3/8: Inspect State] Checking git repository status...")
+@@ -1320,7 +1404,7 @@ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
+     if not task:
+         return 1
+ 
+-    if not step_2_rules():
++    if not step_2_rules(offline=getattr(args, "offline", False)):
+         return 1
+ 
+     state = step_3_inspect_state(force=args.force)
+@@ -1387,6 +1471,10 @@ def main() -> int:
+     parser.add_argument("--priority", type=str, default="P2", help="Task priority (P0, P1, P2, P3)")
+     parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc task execution without --issue (offline testing only)")
+     parser.add_argument("--force", action="store_true", help="Bypass dirty workspace isolation gate (not recommended)")
++    parser.add_argument("--offline", action="store_true",
++                        help="Offline escape hatch (#567): skip every git call in the rules freshness "
++                             "gate and verify local constitution presence only (explicit "
++                             "stale-context risk; env fallback: SUPREMEAI_OFFLINE=1).")
+     parser.add_argument("--fork-owner", type=str, default=None,
+                         help="Pathway 2: GitHub owner of your fork; step 7 pushes the branch "
+                              "there and opens the PR with head '<owner>:<branch>' "
+@@ -1433,11 +1521,16 @@ def main() -> int:
+         return run_scheduled_cycles(args)
+ 
+     if args.verify_only:
++        # Boot smoke (#567 tier 2): prove the freshness machinery WITHOUT
++        # mutating the tree — report-only mode (drift is printed, never
++        # reverted; governance PRs intentionally carry constitution changes).
++        # Infrastructure failures still fail closed (test_22 semantics).
++        rules_ok = step_2_rules(auto_sync=False, offline=getattr(args, "offline", False))
+         passed, _ = step_6_verify()
+         # #67 parity marker — final stdout line, byte-identical across the
+         # public and private copies (grep target for cross-repo parity check).
+         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+-        return 0 if passed else 1
++        return 0 if (passed and rules_ok) else 1
+ 
+     if args.emit_prompt or args.emit_contract:
+         print("⚠️  DEPRECATION WARNING (#63): --emit-prompt / --emit-contract are deprecated.", file=sys.stderr)

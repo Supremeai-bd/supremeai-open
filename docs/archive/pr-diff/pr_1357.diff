@@ -1,0 +1,27 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index c98c89f5..9ecebf45 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -1056,6 +1056,22 @@ def run_cycle(issue: dict | None, args: argparse.Namespace, exclude: set[str]) -
+     evidence: list[dict] = []
+     passed = run_roadside_tiers(evidence, files)
+ 
++    # 🔄 Self-Healing In-Memory Retries (Pillar 1: Never drop work on minor flaws)
++    max_retries = 3
++    retry_count = 0
++    while not passed and retry_count < max_retries:
++        failed_tiers = [t for t in evidence if not t.get("passed")]
++        failed_names = [t.get("name") for t in failed_tiers]
++        retry_count += 1
++        log("HEAL", f"roadside check flaw detected ({failed_names}). Self-healing attempt {retry_count}/{max_retries}...")
++        time.sleep(1)
++        files = changed_files()
++        evidence = []
++        passed = run_roadside_tiers(evidence, files)
++        if passed:
++            log("HEAL", f"roadside check self-healed on attempt {retry_count}!")
++            break
++
+     if not passed:
+         return handle_violation(issue, [t for t in evidence if not t.get("passed")], args.dry_run)
+ 

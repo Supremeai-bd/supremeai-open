@@ -1,0 +1,58 @@
+diff --git a/docs/reports/EVAL_1737_VALKEY_REDIS_QUOTA_ECONOMICS_SNAPSHOT_2026-10-30.md b/docs/reports/EVAL_1737_VALKEY_REDIS_QUOTA_ECONOMICS_SNAPSHOT_2026-10-30.md
+new file mode 100644
+index 00000000..8f2d23f3
+--- /dev/null
++++ b/docs/reports/EVAL_1737_VALKEY_REDIS_QUOTA_ECONOMICS_SNAPSHOT_2026-10-30.md
+@@ -0,0 +1,52 @@
++# #1737 Evaluation Snapshot — Valkey-vs-Redis Licensing Posture & Upstash Quota Economics (Pre-Reset Evidence Receipt)
++
++- **Refs:** #1737 (R28 proposal, classification `evaluate`) · radar row R28 → #1732 (`docs/SCOUT_RADAR_INDEX.md` L106, `adapt_cleanroom`, untouched here — scout-lane discipline)
++- **Trigger:** solver dispatch (Job 477792, cron 2026-10-30 08:45 +08), claim GRANT_NEW `2026-10-30T00:53:38Z`
++- **Lane:** report-only, keep-open. The owner receipt (below) already made the evaluate-lane decision; this dossier preserves the pre-reset saturation evidence, re-verifies the licensing facts live, and receipts an instrument gap that blocks the pre-registered 30-day trajectory. Closure stays with the verdict plane/admin.
++
++## 1. Owner receipt acknowledged (2026-10-29T22:23:44Z, issue comment by repo owner)
++
++The receipt decides the evaluate lane: immediate migration **rejected**; self-hosted **Valkey (BSD-3-Clause) remains the designated target** should chronic command saturation ever necessitate on-premise infrastructure; tracked under the long-term infrastructure roadmap. This dossier does not re-litigate that decision — it (a) records the last pre-reset state of the rotation chain, (b) re-verifies the licensing facts against official sources fetched live today, and (c) surfaces the gap between the pre-registered 30-day data criterion and the instruments actually running today, so the "data-driven revisit" the receipt promises has a start line.
++
++## 2. Live chain probe — 2026-10-30T00:53Z, T−49h to global reset
++
++Tower tools `redis_rotation_status` + `redis_quota_alert` + `redis_stats` (mode `upstash-rest`, zero-credential MCP handshake):
++
++| link | est. commands | limit | pct | soft-threshold hit | cooldown until | active |
++|---|---|---|---|---|---|---|
++| primary | 480,000 | 500,000 | 96% | yes (480k) | 2026-11-01T00:01Z | no |
++| secondary | 480,000 | 500,000 | 96% | yes (480k) | 2026-11-01T00:01Z | no |
++| tertiary | 1,047 | 500,000 | 0.21% | no | — | **yes** |
++| quaternary | 15 | 500,000 | ~0% | no | — | no |
++| quinary | 15 | 500,000 | ~0% | no | — | no |
++| tcp-fallback | 0 | 500,000 | 0% | no | — | no |
++
++- `alertsPending: 2`, Telegram delivery receipt `sent: true` (messageId 1941) — the tower-side alert lane is alive and the two crit accounts are its pending alerts.
++- **Chain depth:** the filing described a 3-link chain (`primary→secondary→tertiary`); the live chain is **6 links**. #1779's commit message ("6 links, 3 fresh standbys", live dry-run 2026-10-28) corroborates that depth existed at filing time — the filing under-described rather than the chain having grown since. This dossier is the first repo doc to record the full 6-link state table.
++- **Burn math (tower-estimated figures, no benchmark run):** tertiary grew 108 → 1,047 between the filing probe (~10-27T22:00Z) and this probe (~50.9 h) ≈ **443 commands/day** on the currently active link. Primary+secondary carry 480k each this window ⇒ federation burn this window ≈ **961k commands/month** ≈ 32k/day while links were active. Six-link capacity (6 × 500k = 3.0M/window) ≈ **3.1× the observed monthly burn** — rotation has converted the quota ceiling into a managed operating constraint, exactly the receipt's reading ("rotation bought availability, not quota", radar R28).
++
++## 3. Instrument gap — criterion 1 (30-day trajectory) has no running instrument (time-sensitive)
++
++The proposal's pre-registered criterion 1 requires logging rotation frequency + soft-threshold hits for 30 days via `redis_rotation_status` history before any revisit decision. Live wiring check today:
++
++- `scripts/ops/redis_quota_monitor.py` (landed #1593, burn projection #1779, persistent state #1848) needs a **scheduler** to accumulate its two-snapshot `[BURN]` history.
++- The #1848 runbook (`docs/workorders/bridge-20261028-redis-quota-wiring.md`) carries the verbatim 30-min Actions cron (`13,43 * * * *`, `actions/cache` keyed `rqm-state-*`) — but it is **not deployed**: `github.list_secrets` returns 13 secrets and **none are `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`** (the runbook's checklist step 1), and recent `github.workflow_runs` show **zero runs of any `redis-quota-monitor` workflow** (only the CI pipeline runs on this repo).
++- Consequence: the repo-side burn projection has never accumulated history, and the tower-side tools are on-demand instantaneous reads with no queryable multi-day history — so criterion 1 is currently unstartable by any agent or operator without new instrumentation.
++- **Urgency:** `nextGlobalResetAt = 2026-11-01T00:01:00Z` (~49 h after this probe). At reset, primary/secondary drop 480k→0 and the current 96%-crit saturation state disappears from the live plane. This dossier + the filing's numbers become the only durable record of this window's saturation — which is precisely why the snapshot was captured now, at T−49h.
++
++## 4. Recommendation for the data-driven revisit (owner/admin decision, not agent action)
++
++1. **Anchor the 30-day trajectory window to the 2026-11-01T00:01Z reset** — a clean monthly window starting at zero beats a mid-window start contaminated by the current saturation plateau; day 0 = Nov 1.
++2. **Deploy the #1848 runbook** (admin-lane: `.github/` protected + `TELEGRAM_*` secrets checklist) — this is the only instrument that produces criterion-1 data autonomously; `actions/cache` makes the two-snapshot burn projection survive ephemeral runners.
++3. **Interim fallback (works today, no deploy):** the hourly cron agent loop can append `redis_rotation_status` snapshots to a local (non-repo) accumulator each cycle; if the revisit ever needs that data it can be exported on request. This is a stopgap, not a substitute — it dies with the sandbox, hence recommendation 2 remains the real fix.
++
++## 5. Licensing posture memo — re-verified against official sources, live-fetched 2026-10-30
++
++- **Redis Open Source** (`raw.githubusercontent.com/redis/redis/unstable/README.md`, fetched 2026-10-30): license disclaimer in the official README operates in terms of **AGPLv3 / SSPLv1 / RSALv2** coexisting as license options, and discusses which optimizations are available under which of the three — corroborating the tri-license structure the filing recorded (Redis 8.0, 2025-05). Self-hosting Redis 8 inside a proprietary federation therefore carries real network-copyleft/AGPL exposure.
++- **Valkey** (`raw.githubusercontent.com/valkey-io/valkey/unstable/COPYING`, fetched 2026-10-30): header reads "**BSD 3-Clause License** — Copyright (c) 2024-present, Valkey contributors; Copyright (c) 2006-2020, Redis Ltd." — BSD-3-Clause confirmed, with a retained Redis Ltd attribution line (trivial but real: copies must keep the notice).
++- **Managed Upstash REST** (current mode per `redis_stats`): AGPL obligations attach to distribution/interaction terms of the software, not to consuming a managed service — the receipt's alignment statement stands unchanged.
++- Net: the receipt's designated target (self-hosted Valkey if saturation ever forces on-prem) remains the license-clean path; nothing in today's fetches contradicts it.
++
++## Honest limitations
++
++Single point-in-time probe (one tower handshake; `estimatedCommands` are tower-estimated, Upstash REST does not fully support `INFO` per `redis_stats.statsRaw`); no benchmark was executed and vendor capacity figures are quoted as claims; the 6-link burn split per link is not historical (tower exposes no per-window history endpoint) so the 961k/window figure is derived from endpoint states plus the filing's probe, not a time series; the radar row and any drift-log edits are deliberately untouched (scout-lane registration discipline); the #1848 deploy state was checked via `list_secrets` + `workflow_runs` absence, which proves the runbook is not running but cannot distinguish "rejected" from "pending".

@@ -1,0 +1,24 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 1d09ade8..1c09ae5c 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -1933,6 +1933,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
+       agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
+       if (action === "feedback") {
+         const repo = bridgeOpenRepo();
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 666f3b8f..4013c449 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -518,6 +518,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     {
+       scope: z.enum(["summary", "health", "dependencies", "dashboard", "resources"]).describe("Aspect of system state to inspect"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ scope }: { scope: string }) => {
+       try {
+         if (scope === "summary") {

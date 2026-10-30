@@ -1,0 +1,341 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 761c5918..27200326 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -50,7 +50,9 @@
+     "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
+     "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+     "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
+-    "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
++    "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
++    "test:unified-diff-eof": "tsx scripts/test-runner.ts test_unified_diff_eof.ts",
++    "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/test_http_retry.ts b/infrastructure/mcp-control-plane/test_http_retry.ts
+new file mode 100644
+index 00000000..d6db9d25
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_http_retry.ts
+@@ -0,0 +1,156 @@
++/**
++ * Timeout / retry contract tests for the shared HTTP client
++ * (defect-class guard: one AbortController per ATTEMPT).
++ *
++ * Background: httpRequest() previously created a single AbortController
++ * before the retry loop, so a timeout on attempt N permanently aborted the
++ * shared signal and every later retry failed instantly with AbortError —
++ * retries were dead code for the most common retry cause (cold-start
++ * spin-up of sleeping Render backends). These tests stub globalThis.fetch
++ * to prove the retry contract offline; no network access, no credentials.
++ *
++ * House style: node:assert + plain script; restores globalThis.fetch in a
++ * finally block so a failing assertion can never poison sibling suites.
++ * Run: tsx scripts/test-runner.ts test_http_retry.ts
++ */
++
++import assert from "node:assert/strict";
++import { httpRequest } from "./src/lib/http.js";
++
++type FetchStub = (url: unknown, init?: { signal?: AbortSignal }) => Promise<unknown>;
++
++async function withStubbedFetch(stub: FetchStub, fn: () => Promise<void>): Promise<void> {
++  const real = globalThis.fetch;
++  (globalThis as unknown as { fetch: unknown }).fetch = stub;
++  try {
++    await fn();
++  } finally {
++    (globalThis as unknown as { fetch: unknown }).fetch = real;
++  }
++}
++
++/** A fetch that never resolves unless its signal aborts (timeout case). */
++function hangUntilAborted(signal?: AbortSignal): Promise<never> {
++  return new Promise((_, reject) => {
++    signal?.addEventListener("abort", () => {
++      const err = new Error("This operation was aborted");
++      (err as unknown as { name: string }).name = "AbortError";
++      reject(err);
++    });
++  });
++}
++
++const jsonResponse = (body: unknown, status = 200) =>
++  new Response(JSON.stringify(body), {
++    status,
++    headers: { "content-type": "application/json" },
++  });
++
++let passed = 0;
++
++// 1. THE defect: attempt-0 times out, retry attempt must run with a FRESH
++//    (non-aborted) signal and succeed.
++{
++  const calls: boolean[] = [];
++  await withStubbedFetch(async (_url, init) => {
++    calls.push(init?.signal?.aborted ?? false);
++    if (calls.length === 1) return hangUntilAborted(init?.signal);
++    return jsonResponse({ ok: true });
++  }, async () => {
++    const res = await httpRequest("https://example.test/api", { method: "GET", timeoutMs: 120, retries: 2 });
++    assert.equal(res.ok, true, "retry after timeout must eventually succeed");
++    assert.ok(calls.length >= 2, `expected >=2 fetch attempts, got ${calls.length}`);
++    assert.equal(calls[1], false, "retry attempt inherited an ALREADY-ABORTED signal (defect regression)");
++  });
++  passed++;
++  console.log("✔ retry after timeout runs with a fresh signal");
++}
++
++// 2. Per-attempt timeout still enforced: every attempt hangs → throws after
++//    attempts + backoff, not instantly.
++{
++  let elapsed = 0;
++  await withStubbedFetch(async (_url, init) => hangUntilAborted(init?.signal), async () => {
++    const t0 = Date.now();
++    await assert.rejects(
++      () => httpRequest("https://example.test/slow", { method: "GET", timeoutMs: 100, retries: 1 }),
++      undefined,
++      "exhausted timeouts must throw"
++    );
++    elapsed = Date.now() - t0;
++  });
++  // 2 timeouts (2x100ms) + backoff (500ms) — floor proves sequential budgets.
++  assert.ok(elapsed >= 690, `retries exhausted too fast (${elapsed}ms) — per-attempt timeout not enforced`);
++  assert.ok(elapsed < 5000, `exhaustion took too long (${elapsed}ms)`);
++  passed++;
++  console.log(`✔ per-attempt timeout enforced (${elapsed}ms total)`);
++}
++
++// 3. First-attempt success: exactly one call, JSON parsed.
++{
++  const calls: boolean[] = [];
++  await withStubbedFetch(async () => {
++    calls.push(true);
++    return jsonResponse({ hello: "world" });
++  }, async () => {
++    const res = await httpRequest("https://example.test/good", { method: "GET", timeoutMs: 1000, retries: 2 });
++    assert.equal(res.ok, true);
++    assert.deepEqual(res.data, { hello: "world" });
++    assert.equal(calls.length, 1, "successful first attempt must not retry");
++  });
++  passed++;
++  console.log("✔ first-attempt success parses JSON without retry");
++}
++
++// 4. Non-2xx: returns ok:false WITHOUT throwing and WITHOUT retrying.
++{
++  const calls: boolean[] = [];
++  await withStubbedFetch(async () => {
++    calls.push(true);
++    return jsonResponse({ error: "nope" }, 500);
++  }, async () => {
++    const res = await httpRequest("https://example.test/boom", { method: "GET", timeoutMs: 1000, retries: 2 });
++    assert.equal(res.ok, false);
++    assert.equal(res.status, 500);
++    assert.equal(calls.length, 1, "HTTP error status must not trigger a network retry");
++  });
++  passed++;
++  console.log("✔ non-2xx returns ok:false without retry");
++}
++
++// 5. Non-JSON content type: raw text passthrough.
++{
++  await withStubbedFetch(async () =>
++    new Response("pong", { status: 200, headers: { "content-type": "text/plain" } })
++  , async () => {
++    const res = await httpRequest<string>("https://example.test/ping", { method: "GET", timeoutMs: 1000, retries: 0 });
++    assert.equal(res.data, "pong");
++  });
++  passed++;
++  console.log("✔ non-JSON response falls back to text");
++}
++
++// 6. Exhausted network errors: throws the LAST error after all attempts
++//    (retries:1 → 2 calls + one 500ms backoff).
++{
++  const calls: number[] = [];
++  let elapsed = 0;
++  await withStubbedFetch(async () => {
++    calls.push(1);
++    throw new Error("boom");
++  }, async () => {
++    const t0 = Date.now();
++    await assert.rejects(
++      () => httpRequest("https://example.test/flaky", { method: "GET", timeoutMs: 1000, retries: 1 }),
++      /boom/,
++      "last network error must surface after exhaustion"
++    );
++    elapsed = Date.now() - t0;
++  });
++  assert.equal(calls.length, 2, `expected exactly 2 attempts, got ${calls.length}`);
++  assert.ok(elapsed >= 490, `backoff schedule not honored (${elapsed}ms)`);
++  passed++;
++  console.log(`✔ exhausted retries throw last error after backoff (${elapsed}ms)`);
++}
++
++console.log(`http retry/timeout contract tests passed (${passed} cases)`);
+diff --git a/infrastructure/mcp-control-plane/test_unified_diff_eof.ts b/infrastructure/mcp-control-plane/test_unified_diff_eof.ts
+new file mode 100644
+index 00000000..c70c2711
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_unified_diff_eof.ts
+@@ -0,0 +1,149 @@
++/**
++ * Golden-file tests for the bridge-lane unified-diff applier's
++ * EOF / trailing-newline semantics (#539 defect-class guard).
++ *
++ * Background: the "\ No newline at end of file" marker is the most
++ * error-prone area of the applier. A one-sided marker was previously
++ * mis-attributed to BOTH sides, silently dropping or adding the final
++ * newline, and a last hunk that did not reach EOF unconditionally
++ * appended "\n". Each case below pins the EXACT expected output
++ * (golden), so any future drift in newline handling fails loudly.
++ *
++ * Offline, pure, zero-dep (house style: node:assert + plain script).
++ * Run: tsx scripts/test-runner.ts test_unified_diff_eof.ts
++ */
++
++import assert from "node:assert/strict";
++import { applyUnifiedDiff } from "./src/lib/unified_diff.js";
++
++interface GoldenCase {
++  name: string;
++  base: string;
++  diff: string;
++  expected: string;
++}
++
++const h = (body: string[]) => ["--- a/file.txt", "+++ b/file.txt", "@@ -1,3 +1,3 @@", ...body].join("\n");
++
++const GOLDEN: GoldenCase[] = [
++  {
++    // Diff ADDS a trailing newline: marker after the last "-" line only.
++    name: "adds trailing newline at EOF",
++    base: "line1\nline2\nline3",
++    diff: h([" line1", " line2", "-line3", "\\ No newline at end of file", "+line3"]),
++    expected: "line1\nline2\nline3\n",
++  },
++  {
++    // Diff REMOVES the trailing newline: marker after the last "+" line only.
++    name: "removes trailing newline at EOF",
++    base: "line1\nline2\nline3\n",
++    diff: h([" line1", " line2", "-line3", "+line3", "\\ No newline at end of file"]),
++    expected: "line1\nline2\nline3",
++  },
++  {
++    // Both sides lack the newline: two markers, one per side.
++    name: "both sides lack trailing newline",
++    base: "line1\nline2\nline3",
++    diff: h([" line1", " line2", "-line3", "\\ No newline at end of file", "+line3-modified", "\\ No newline at end of file"]),
++    expected: "line1\nline2\nline3-modified",
++  },
++  {
++    // Plain mid-file change: base newline state carried into the result.
++    name: "plain mid-file change keeps trailing newline",
++    base: "a\nb\nc\n",
++    diff: h([" a", "-b", "+B", " c"]),
++    expected: "a\nB\nc\n",
++  },
++  {
++    // Last hunk does NOT reach EOF: base WITHOUT trailing newline must be
++    // preserved (no silent "\n" append).
++    name: "non-EOF hunk preserves base without trailing newline",
++    base: "a\nb\nc",
++    diff: ["--- a/f", "+++ b/f", "@@ -1,1 +1,1 @@", "-a", "+A"].join("\n"),
++    expected: "A\nb\nc",
++  },
++  {
++    // Marker after "-" line while "+" lines follow: old side lacks the
++    // newline, new side (with added lines) HAS one.
++    name: "old-side marker with appended lines gains newline",
++    base: "x\ny",
++    diff: ["--- a/f", "+++ b/f", "@@ -1,2 +1,3 @@", " x", "-y", "\\ No newline at end of file", "+y2", "+z"].join("\n"),
++    expected: "x\ny2\nz\n",
++  },
++  {
++    // Two hunks applied in order, second rewrites the EOF line.
++    name: "multi-hunk monotone apply",
++    base: "a\nb\nc\nd\ne\n",
++    diff: ["--- a/f", "+++ b/f", "@@ -1,2 +1,2 @@", " a", "-b", "+B", "@@ -4,2 +4,2 @@", " d", "-e", "+E"].join("\n"),
++    expected: "a\nB\nc\nd\nE\n",
++  },
++];
++
++// Fail-closed guards: (name, base, diff, errorFragment)
++interface GuardCase {
++  name: string;
++  base: string;
++  diff: string;
++  errorFragment: string;
++}
++
++const GUARDS: GuardCase[] = [
++  {
++    name: "creation diff rejected",
++    base: "x\n",
++    diff: ["--- /dev/null", "+++ b/f", "@@ -0,0 +1,1 @@", "+x"].join("\n"),
++    errorFragment: "creation diff",
++  },
++  {
++    name: "deletion diff rejected",
++    base: "x\n",
++    diff: ["--- a/f", "+++ /dev/null", "@@ -1,1 +0,0 @@", "-x"].join("\n"),
++    errorFragment: "deletion diff",
++  },
++  {
++    name: "context mismatch rejected",
++    base: "a\nb\nc\n",
++    diff: h([" a", "-z", "+Z", " c"]),
++    errorFragment: "context mismatch",
++  },
++  {
++    name: "malformed @@ header rejected",
++    base: "a\n",
++    diff: ["--- a/f", "+++ b/f", "@@ junk @@", " a"].join("\n"),
++    errorFragment: "malformed @@ header",
++  },
++  {
++    // Hunk reaches EOF, base lacks the newline, but the diff carries NO
++    // old-side marker → inconsistent diff → fail-closed.
++    name: "EOF hunk without required old-side marker rejected",
++    base: "a\nb\nc",
++    diff: h([" a", " b", "-c", "+C"]),
++    errorFragment: "base lacks the trailing newline",
++  },
++  {
++    // Old-side marker present but base HAS the trailing newline → fail-closed.
++    name: "old-side marker against newline-terminated base rejected",
++    base: "a\nb\nc\n",
++    diff: h([" a", " b", "-c", "\\ No newline at end of file", "+C"]),
++    errorFragment: "not EOF-without-newline",
++  },
++];
++
++let passed = 0;
++for (const c of GOLDEN) {
++  const result = applyUnifiedDiff(c.base, c.diff);
++  assert.equal(result.result, c.expected, `golden case '${c.name}': exact output drift`);
++  passed++;
++  console.log(`✔ ${c.name}`);
++}
++for (const c of GUARDS) {
++  assert.throws(
++    () => applyUnifiedDiff(c.base, c.diff),
++    (err: Error) => err.message.includes(c.errorFragment),
++    `guard case '${c.name}' must fail-closed with '${c.errorFragment}'`
++  );
++  passed++;
++  console.log(`✔ ${c.name} (fail-closed)`);
++}
++
++console.log(`unified_diff EOF golden tests passed (${passed} cases)`);

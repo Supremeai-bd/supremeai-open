@@ -1,0 +1,22 @@
+diff --git a/vscode/desktop/src-tauri/Cargo.toml b/vscode/desktop/src-tauri/Cargo.toml
+index 99f1e116..47199081 100644
+--- a/vscode/desktop/src-tauri/Cargo.toml
++++ b/vscode/desktop/src-tauri/Cargo.toml
+@@ -2,6 +2,7 @@
+ name = "supremeai-desktop"
+ version = "0.1.0"
+ edition = "2021"
++build = "build.rs"
+ 
+ [dependencies]
+ tauri = { version = "2", features = [] }
+diff --git a/vscode/desktop/src-tauri/build.rs b/vscode/desktop/src-tauri/build.rs
+new file mode 100644
+index 00000000..82d481cc
+--- /dev/null
++++ b/vscode/desktop/src-tauri/build.rs
+@@ -0,0 +1,3 @@
++fn main() {
++    tauri_build::build()
++}
+\ No newline at end of file

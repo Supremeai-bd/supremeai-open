@@ -1,0 +1,119 @@
+diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+index a61c002f..5bd48a24 100644
+--- a/scripts/bridge/bridge_intake.py
++++ b/scripts/bridge/bridge_intake.py
+@@ -436,6 +436,66 @@ def already_intaked(token: str, task_id: str) -> bool:
+     return intake_marker_state(token, task_id) != "absent"
+ 
+ 
++def landing_truth_probe(token: str, task_id: str) -> tuple[str, str]:
++    """Landing-সত্য প্রোব (#2158 fallback protocol) — branch-মৃত্যু ≠ rejection-প্রমাণ।
++
++    বাংলা: squash-merge হলে patch branch মুছে যায় (post-merge branch delete)।
++    ওই অবস্থায় intake-এর `fetch_patch` "not found" দেখে terminal
++    `bridge:rejected` স্ট্যাম্প করত, অথচ কাজটা আগেই ল্যান্ডেড থাকত (লাইভ-প্রমাণিত
++    2026-10-28: landed #2020/#2056 ভুলভাবে rejected হলো, 13:07Z sweep)।
++    reject-এর আগে দুই-স্তরের landing-প্রমাণ প্রোব (#2158-এর fallback protocol):
++
++      স্তর ১ (PR-state lookup): প্রতিটি target repo-য় closed PR, head-filter
++        `bridge-land/<task_id>` — `merged_at` সেট থাকলে landing প্রমাণিত
++        (এই প্রোবে কোনো history-জানালা নেই — পুরোনো PR-ও ধরা পড়ে)।
++      স্তর ২ (squash detection): target main-এর সাম্প্রতিক commit-message-এর
++        প্রথম লাইনে task_id — private PR title (`feat(bridge): {task_id} —
++        external work order #N`) ও commit msg (`bridge({task_id}): ...`) দুটোই
++        task_id বহন করে, তাই squash ও merge-commit দুই ধারাতেই প্রথম লাইনে
++        মেলে।
++
++    রিটার্ন তিন-অবস্থা (E8-এর `intake_marker_state` চুক্তির সমান্তরাল):
++      ("landed", evidence) — landing প্রমাণিত; ("absent", "") — দুই স্তরই
++      নিশ্চিতভাবে নেতিবাচক (rejection সৎ); ("unknown", reason) — API-ব্যর্থতা,
++      fail-closed: terminal-rejected নয়, পরের রান আবার প্রোব করবে।
++    """
++    land_ref = f"bridge-land/{task_id}"
++    owner = OPEN_REPO.split("/")[0]
++    errors: list[str] = []
++    # স্তর ১: PR-state lookup — head-filtered তালিকা সস্তা ও সুনির্দিষ্ট।
++    for repo in BRIDGE_TARGET_REPOS:
++        try:
++            pulls = gh_paged(
++                f"/repos/{repo}/pulls?state=closed&head={owner}:{land_ref}&per_page=20",
++                token,
++                max_pages=1,
++            )
++        except BridgeError as exc:
++            errors.append(f"{repo}: pulls {str(exc)[:60]}")
++            continue
++        for pr in pulls:
++            if (pr.get("head") or {}).get("ref") == land_ref and pr.get("merged_at"):
++                return "landed", (
++                    f"merged PR #{pr.get('number')} @ {repo} "
++                    f"(merge {(pr.get('merge_commit_sha') or '')[:10]})"
++                )
++    # স্তর ২: squash detection — head-filter কোনো কারণে PR মিস করলেও main-এর
++    # commit-history-তে প্রমাণ থাকে (সাম্প্রতিক ১০০ commit-এর জানালা)।
++    for repo in BRIDGE_TARGET_REPOS:
++        try:
++            commits = gh_paged(f"/repos/{repo}/commits?per_page=100", token, max_pages=1)
++        except BridgeError as exc:
++            errors.append(f"{repo}: commits {str(exc)[:60]}")
++            continue
++        for c in commits:
++            first_line = (((c.get("commit") or {}).get("message") or "").split("\n", 1)[0])
++            if task_id in first_line:
++                return "landed", f"squash/merge commit {(c.get('sha') or '')[:10]} @ {repo} carries task"
++    if errors:
++        return "unknown", "; ".join(errors[:3])
++    return "absent", ""
++
++
+ def route_files(files: list[str], explicit_target: str | None = None) -> tuple[str | None, dict[str, str]]:
+     """প্রতিটি পাবলিক path → (target repo, canonical path)।
+ 
+@@ -583,6 +643,47 @@ def reject(reason: str, label: str = LABEL_REJECTED) -> None:
+     try:
+         diff, files = fetch_patch(public_dir, branch, token)
+     except BridgeError as exc:
++        # বাংলা (#2158): branch-অনুপস্থিতি নিজে rejection-প্রমাণ নয় — squash-merge-এর
++        # পরে patch branch মুছে যায়, আর marker-জানালার বাইরে থাকা landed WO আবার
++        # প্রসেস হয়ে ভুল `bridge:rejected` খেত (লাইভ-প্রমাণিত: #2020/#2056, 13:07Z
++        # sweep)। তাই reject-এর আগে landing-সত্য প্রোব: প্রমাণিত landed →
++        # verdict-history সত্যে ফিরিয়ে দিই; API-অনিশ্চয়তা → fail-closed
++        # পুনর্যাত্রাযোগ্য স্কিপ (E8-সমান্তরাল); দুই স্তরই নিশ্চিতভাবে নেতিবাচক
++        # হলেই কেবল সৎ rejection — ভুল terminal-label আর হবে না।
++        probe_state, probe_ev = landing_truth_probe(token, task_id)
++        if probe_state == "landed":
++            comment_issue(
++                OPEN_REPO, token, num,
++                sanitize_public_comment(
++                    "## ✅ Bridge — **LANDED** (truth-restored by intake probe, #2158)\n\n"
++                    f"- task: `{task_id}`\n"
++                    f"- evidence: {probe_ev}\n"
++                    f"- probe trigger: patch branch missing ({str(exc)[:120]})\n\n"
++                    "branch-মুছে-যাওয়া rejection নয় — merged-PR/squash-প্রমাণ অনুযায়ী "
++                    "কাজটি আগেই ল্যান্ডেড; ভুল terminal-label সংশোধন করা হলো।",
++                    token,
++                ),
++            )
++            set_labels(OPEN_REPO, token, num, [LABEL_LANDED])
++            gh("PATCH", f"/repos/{OPEN_REPO}/issues/{num}", token,
++               {"state": "closed", "state_reason": "completed"})
++            results.append(f"#{num} → landed (probe: {probe_ev[:90]})")
++            return
++        if probe_state == "unknown":
++            comment_issue(
++                OPEN_REPO, token, num,
++                sanitize_public_comment(
++                    "## 🌉 Bridge Intake — **IN-GATES** (skip)\n\n"
++                    f"- task: `{task_id}`\n"
++                    f"- reason: patch branch missing, landing-probe inconclusive — {probe_ev[:140]}\n\n"
++                    "fail-closed (E8-সমান্তরাল): rejection-সিদ্ধান্তের আগে landing-প্রমাণ "
++                    "দরকার — পরের intake রানে আবার প্রোব হবে।",
++                    token,
++                ),
++            )
++            set_labels(OPEN_REPO, token, num, [LABEL_INGATES])
++            results.append(f"#{num} → skip (landing-probe unknown: {probe_ev[:70]})")
++            return
+         reject(str(exc)[:300])
+         return
+ 

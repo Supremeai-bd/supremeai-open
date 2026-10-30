@@ -1,0 +1,32 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 97863e85..fa438787 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -169,8 +169,10 @@ Honest limitations, documented rather than hidden:
+   other's lease entries; same-machine reruns are deduped, cross-machine dedup
+   still depends on the `status:claimed` label path. Unifying the two protocols
+   is an owner-level policy decision, not an agent patch.
+-- **Unbounded store**: assignments accumulate until they expire semantically;
+-  expired entries are never pruned from the file (bounded-growth slice pending).
++- **Store hygiene**: `mark_issue_leased` prunes expired entries on every write,
++  so the file holds at most the leases inside the 30-minute window (plus the
++  entry being written); the claimability check ignores expired entries either
++  way, so pruning is behavior-neutral file hygiene.
+ - **No completion signal**: a task still running past 30 minutes re-becomes
+   claimable — the window is a fixed guess, not lease renewal (the bridge's own
+   lease allows renewal up to 180 minutes; the loop's local store cannot renew).
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index d2e4307e..720a8153 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -589,6 +589,10 @@ def mark_issue_leased(issue_number: str | int, now: float | None = None, path: P
+     target = path or ISSUE_LEASE_FILE
+     now_ts = now if now is not None else time.time()
+     store = load_issue_lease_store(target)
++    # বাংলা: লেখার সময় মেয়াদোত্তীর্ণ entry প্রুন হয় — ফাইলে সর্বোচ্চ ৩০-মিনিট উইন্ডোর
++    # তরুণ লিজ + এই মুহূর্তে লেখা entry থাকে। claimability-চেক উইন্ডোর বাইরের entry
++    # যেকোনো অবস্থাতেই উপেক্ষা করে, তাই প্রুনিং আচরণ-নিরপেক্ষ — শুধু ফাইল সীমাবদ্ধ থাকে।
++    store = {k: v for k, v in store.items() if (now_ts - v) < ISSUE_LEASE_SECONDS}
+     store[str(issue_number)] = now_ts
+     try:
+         target.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,605 @@
+diff --git a/docs/bridge/bridge-20261027-fix-1329-resources-argorder.md b/docs/bridge/bridge-20261027-fix-1329-resources-argorder.md
+new file mode 100644
+index 00000000..e8019b41
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-fix-1329-resources-argorder.md
+@@ -0,0 +1,59 @@
++# fix(tower): [P0] all 12 MCP resources unreadable — resources/list emits uri/name swapped (SDK arg order) (#1329)
++
++## Problem (live-reproduced 2026-10-27)
++Every `resources/read` on the deployed tower fails. Two distinct error signatures:
++- reading the URI that `resources/list` advertises (e.g. `system-health`) returns
++  `-32603 Invalid URL` — the SDK validates the requested uri as a URL first, and a
++  bare name is not a URL;
++- reading the true URI (e.g. `control-tower://system/health`) returns `-32602
++  not found` — valid URL, but no template registered under it.
++Net effect: 0/12 resources readable (regressed from 2/12 at first audit), and the
++conformance selftest reports 12/12 violations.
++
++## Root cause (wire evidence + SDK signature)
++`McpServer.resource(name, uriTemplate, config, readCallback)` — the SDK takes NAME
++first, URI TEMPLATE second. `infrastructure/mcp-control-plane/src/index.ts` registers
++all four built-in resources with the arguments swapped, e.g.:
++
++  server.resource("control-tower://system/health", "system-health", {...}, cb)
++
++so the registry stores name=`control-tower://system/health`,
++uriTemplate=`system-health`. The SDK's list handler then emits
++`{uri: "system-health", name: "control-tower://system/health"}` — exactly the
++swapped wire output observed. The same reversed pattern produces the eight
++`docs-*` resources (uri `docs-<provider>`, name `docs://<provider>`) from their
++registration site (docs module on the deployed image; apply the identical swap
++wherever they are registered).
++
++## Fix
++1. Swap the first two arguments at all four `server.resource` call sites in
++   `infrastructure/mcp-control-plane/src/index.ts` (manifest, system health,
++   system dependencies, client registry). Corrected full file shipped here as
++   `infrastructure/mcp-control-plane/src/index.fixed.ts`; minimal patch as
++   `docs/bridge/patches/mcp-index-resources-argorder.diff` (4 hunks, +8/-4).
++2. Apply the same argument swap to the `docs-*` registration site (loop over the
++   docs providers) so `docs://<provider>` becomes the URI and `docs-<provider>`
++   the name.
++3. No behavior change elsewhere: all four read callbacks ignore their arguments
++   and hardcode the correct `contents[].uri` — verified by reading the source.
++
++## Acceptance criteria
++- [ ] `resources/list` emits `uri=control-tower://...` / `docs://...` and short names
++- [ ] `resources/read` succeeds for ALL 12 advertised URIs (selftest prints 12/12 readable)
++- [ ] `docs_fetch` / docs tools unaffected (they were failing with the same
++      URL-construction class of error and share the provider table)
++- [ ] No change in tool surface: 130 tools still discovered; discovery filter untouched
++
++## Reflection Evidence
++**Why:** Resources are a contractual MCP pillar; 0/12 readable breaks every
++conforming client (mission-control, VS Code extension, external agents) and makes
++the advertised docs/health/manifest surfaces dead weight. The swap is a two-line
++per-site mechanical fix with zero runtime risk because the callbacks never used
++the mis-ordered arguments.
++**Alternatives rejected:**
++- Change the read path to accept bare names: fights the SDK's URL validation,
++  diverges from MCP spec, and leaves the list output still misleading.
++- Re-register resources under bare-name URIs with a custom scheme handler:
++  still fails SDK URL validation for scheme-less names; custom schemes add no value.
++- Wait for SDK upgrade: pinned SDK 1.30.0 is fine — the call sites, not the SDK,
++  are wrong; upgrades would keep the bug.
+diff --git a/docs/bridge/patches/mcp-index-resources-argorder.diff b/docs/bridge/patches/mcp-index-resources-argorder.diff
+new file mode 100644
+index 00000000..9e8225be
+--- /dev/null
++++ b/docs/bridge/patches/mcp-index-resources-argorder.diff
+@@ -0,0 +1,47 @@
++--- a/infrastructure/mcp-control-plane/src/index.ts
+++++ b/infrastructure/mcp-control-plane/src/index.ts
++@@ -188,8 +188,8 @@
++   attachDiscoveryFilter(server);
++ 
++   server.resource(
++-    MCP_MANIFEST_URI,
++     "server-manifest",
+++    MCP_MANIFEST_URI,
++     { description: "Verified SupremeAI MCP server identity and trust metadata", mimeType: "application/json" },
++     async () => ({
++       contents: [{
++@@ -201,9 +201,13 @@
++   );
++ 
++   // ── Resources (MCP Protocol — Data/State Exposure) ──
+++  // FIX #1329: SDK arg order is (name, uriTemplate, ...) — the registrations
+++  // below previously passed them swapped, which made every resources/read
+++  // return -32603 Invalid URL (bare name is not a URL) and -32602 not found
+++  // (the real URI was never registered).
++   server.resource(
++-    "control-tower://system/health",
++     "system-health",
+++    "control-tower://system/health",
++     { description: "Real-time health status of all SupremeAI services", mimeType: "application/json" },
++     async () => {
++       try {
++@@ -223,8 +227,8 @@
++   );
++ 
++   server.resource(
++-    "control-tower://system/dependencies",
++     "system-dependencies",
+++    "control-tower://system/dependencies",
++     { description: "Service dependency graph — which services depend on which", mimeType: "application/json" },
++     async () => {
++       const context = RequestContextStore.get();
++@@ -241,8 +245,8 @@
++   );
++ 
++   server.resource(
++-    "control-tower://clients/registry",
++     "client-registry",
+++    "control-tower://clients/registry",
++     { description: "Registered MCP clients and their roles/scopes", mimeType: "application/json" },
++     async () => {
++       const context = RequestContextStore.get();
+diff --git a/infrastructure/mcp-control-plane/src/index.fixed.ts b/infrastructure/mcp-control-plane/src/index.fixed.ts
+new file mode 100644
+index 00000000..cc0bb783
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/index.fixed.ts
+@@ -0,0 +1,481 @@
++#!/usr/bin/env node
++/**
++ * SupremeAI MCP Control Tower — Main Entry Point
++ * Supports both stdio (local: Claude Desktop, Cursor) and HTTP Streamable (remote)
++ *
++ * Environment loading (#109): ALL environment config — including the single
++ * repo-root `.env` load — lives in `lib/env.ts` (SSOT). This file must not
++ * parse `process.env` directly; every knob is a validated getter on `env`.
++ */
++
++import { timingSafeEqual, randomUUID } from "node:crypto";
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
++import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
++import { z } from "zod";
++import { env } from "./lib/env.js";
++import {
++  mcpRateBuckets,
++  toolIdentityRateBuckets,
++  mcpRateLimitConfig,
++  consumeSlidingWindow,
++  consumeMcpRateLimit,
++  toolRateLimitIdentity,
++  consumeToolRateLimit,
++  toolPayloadError,
++  ToolExecutionTimeoutError,
++  truncateToolResult,
++} from "./lib/mcp_rate_limit.js";
++import { registerAllTools } from "./tools/index.js";
++import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
++import { getServiceDescriptors } from "./service-circles.js";
++import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
++import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
++import { extractClientInfoName, recordPresence, listWorkforce, registerIoredis } from "./registry/mcp_presence.js";
++import { createBuiltinManifest } from "./registry/mcp.contracts.js";
++import { autoRegisterGuestClient, clientIpFor, isValidClientName } from "./policy/auto-register.js";
++import { executeGeminiFunctionCall, geminiAdapterInfo, listGeminiTools } from "./adapters/gemini/gemini.adapter.js";
++import { accessModeFor, publicAccessManifest, isPublicSafeResource, toolAccessErrorAsync } from "./policy/mcp-access.js";
++import {
++  assertSlotAuthorization,
++  resolveSlotSession,
++} from "./policy/slot-verification.js";
++import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibility.js";
++import { verifyApprovalLink } from "./policy/approvals/signing.js";
++import { hasWebhookSignature } from "./lib/webhook_signature.js";
++import { registerBridgeIntake } from "./events/bridge_intake.js";
++import { registerFederatedCiWatcher } from "./events/federated_ci_watcher.js";
++import { registerCommandRouter } from "./events/command_router.js";
++import { validateRuntimeKnobs } from "./lib/env.js";
++import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
++import { MemorySubAdapter } from "./adapters/memory/index.js";
++import {
++  activateTenant,
++  createTenant,
++  getTenant,
++  listTenants,
++  rotateTenantAdminToken,
++  suspendTenant,
++  updateTenant,
++  verifyTenantAdminToken,
++} from "./tenancy/tenant.registry.js";
++// #2596: সেন্ট্রাল টাস্ক কিউ — GitHub rate-limit ও ghost-state নির্মূলের লিজ-স্টেট মেশিন।
++import {
++  claimTask,
++  completeTask,
++  ensureFreshSync,
++  heartbeatTask,
++  initTaskRegistry,
++  listTasks,
++  refreshFromGitHub,
++  taskQueueStatus,
++  isGithubLocked,
++} from "./tasks/task-registry.js";
++
++import { startHttpServer } from "./http_server.js";
++const SERVER_NAME = "supremeai-control-tower";
++const SERVER_VERSION = "1.0.0";
++const MAX_REQUEST_BYTES = 1_048_576;
++const MCP_MANIFEST_URI = "control-tower://server/manifest";
++
++
++// ── Per-IP rate limiting on /mcp (#695) ──────────────────────────────────────
++// In-memory sliding window: MCP_RATE_LIMIT_MAX requests per client IP per
++// MCP_RATE_LIMIT_WINDOW_MS (defaults: 60 requests / 60 000 ms). Exceeding the
++// budget returns 429 with a Retry-After header.
++async function createMcpServer(memoryAdapter?: MemorySubAdapter): Promise<McpServer> {
++  const server = new McpServer({
++    name: SERVER_NAME,
++    version: SERVER_VERSION,
++  });
++
++  // Sanitize tool names: replace dots '.' with underscores '_' so that tool names
++  // strictly satisfy Anthropic / Cline / Antigravity regex ^[a-zA-Z0-9_-]{1,64}$
++  // AND (#695) wrap EVERY tool handler in the central default-deny RBAC gate:
++  // no tool callback executes without passing the role/capability check.
++  // AND (#686) the SAME wrapper also enforces the per-(identity,tool) rate
++  // limit, input payload validation, the hard execution timeout and output
++  // truncation — one choke point, no competing wrappers.
++  const originalTool = server.tool.bind(server);
++  (server as any).tool = (name: string, ...args: any[]) => {
++    const sanitizedName = typeof name === "string" ? name.replace(/\./g, "_") : name;
++    let handlerIndex = -1;
++    for (let i = args.length - 1; i >= 0; i--) {
++      if (typeof args[i] === "function") { handlerIndex = i; break; }
++    }
++    if (handlerIndex >= 0) {
++      const originalHandler = args[handlerIndex] as (toolArgs: unknown, extra: unknown) => unknown;
++      const wrappedArgs = args.slice();
++      wrappedArgs[handlerIndex] = async (toolArgs: unknown, extra: unknown) => {
++        // 1) Central default-deny RBAC gate (#695) + LIVE slot re-authorization
++        // (#48): credential-bound sessions are re-checked against the
++        // operational registry on every call — suspension, demotion, rotation
++        // and store outages all fail CLOSED on the immediate-next check.
++        const denial = await toolAccessErrorAsync(sanitizedName);
++        if (denial) {
++          return { isError: true, content: [{ type: "text", text: denial }] };
++        }
++
++        // 2) Per-(identity, tool) rate limit (#686 item 4).
++        const toolRate = consumeToolRateLimit(sanitizedName);
++        if (!toolRate.allowed) {
++          return {
++            isError: true,
++            content: [{
++              type: "text",
++              text: `Rate limit exceeded for tool '${sanitizedName}' (max ${env.runtime.toolRateLimitMax} per ${env.runtime.toolRateLimitWindowMs}ms per identity). Retry in ~${Math.ceil(toolRate.retryAfterMs / 1000)}s.`,
++            }],
++            metadata: { rateLimited: true, tool: sanitizedName, retryAfterMs: toolRate.retryAfterMs },
++          };
++        }
++
++        // 3) Input payload validation + strict size cap (#686 item 1).
++        const payloadError = toolPayloadError(sanitizedName, toolArgs);
++        if (payloadError) {
++          return { isError: true, content: [{ type: "text", text: payloadError }] };
++        }
++
++        // 4) Hard execution timeout (#686 item 3). The handler promise cannot
++        // be cancelled, but the caller is released with a structured isError
++        // denial as soon as the budget is spent.
++        const timeoutBudgetMs = env.runtime.toolTimeoutMs;
++        let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
++        let result: unknown;
++        try {
++          result = await Promise.race([
++            Promise.resolve(originalHandler(toolArgs, extra)),
++            new Promise<never>((_resolve, reject) => {
++              timeoutTimer = setTimeout(
++                () => reject(new ToolExecutionTimeoutError(sanitizedName, timeoutBudgetMs)),
++                timeoutBudgetMs,
++              );
++              if (typeof timeoutTimer === "object" && timeoutTimer !== null && typeof (timeoutTimer as { unref?: () => void }).unref === "function") {
++                (timeoutTimer as { unref: () => void }).unref();
++              }
++            }),
++          ]);
++        } catch (error) {
++          if (error instanceof ToolExecutionTimeoutError) {
++            return {
++              isError: true,
++              content: [{
++                type: "text",
++                text: `${error.message} (MCP_TOOL_TIMEOUT_MS). The call was aborted at the governance layer.`,
++              }],
++              metadata: { timedOut: true, tool: sanitizedName, timeoutMs: timeoutBudgetMs },
++            };
++          }
++          throw error; // non-timeout failures keep the SDK's normal error path
++        } finally {
++          if (timeoutTimer !== undefined) clearTimeout(timeoutTimer);
++        }
++
++        // 5) Output truncation (#686 item 2).
++        return truncateToolResult(sanitizedName, result);
++      };
++      args = wrappedArgs;
++    }
++    return (originalTool as any)(sanitizedName, ...args);
++  };
++
++  await registerAllTools(server, memoryAdapter);
++
++  // Tool Exposure Policy: one discovery choke point for ALL pillars. Wraps
++  // the SDK's tools/list handler so every caller sees only the tools their
++  // RBAC role AND client toolProfile allow (list ⊆ call). Reads the
++  // RequestContextStore per request — /sse, /messages, /mcp and /gemini are
++  // all covered by this single installation.
++  attachDiscoveryFilter(server);
++
++  server.resource(
++    "server-manifest",
++    MCP_MANIFEST_URI,
++    { description: "Verified SupremeAI MCP server identity and trust metadata", mimeType: "application/json" },
++    async () => ({
++      contents: [{
++        uri: MCP_MANIFEST_URI,
++        mimeType: "application/json",
++        text: JSON.stringify({ ...createBuiltinManifest(SERVER_VERSION), publicAccess: publicAccessManifest() }),
++      }],
++    }),
++  );
++
++  // ── Resources (MCP Protocol — Data/State Exposure) ──
++  // FIX #1329: SDK arg order is (name, uriTemplate, ...) — the registrations
++  // below previously passed them swapped, which made every resources/read
++  // return -32603 Invalid URL (bare name is not a URL) and -32602 not found
++  // (the real URI was never registered).
++  server.resource(
++    "system-health",
++    "control-tower://system/health",
++    { description: "Real-time health status of all SupremeAI services", mimeType: "application/json" },
++    async () => {
++      try {
++        const { globalHealthCache } = await import("./health/snapshot.js");
++        const snapshots = globalHealthCache.getAllSnapshots();
++        const services = Object.entries(snapshots).map(([provider, snapshot]) => ({
++          provider,
++          status: snapshot.status,
++          checkedAt: snapshot.checkedAt,
++          latencyMs: snapshot.latencyMs,
++        }));
++        return { contents: [{ uri: "control-tower://system/health", mimeType: "application/json", text: JSON.stringify({ status: services.some((s) => s.status !== "healthy") ? "degraded" : "healthy", services, timestamp: new Date().toISOString() }, null, 2) }] };
++      } catch (error) {
++        return { contents: [{ uri: "control-tower://system/health", mimeType: "application/json", text: JSON.stringify({ status: "unknown", error: String(error) }) }] };
++      }
++    }
++  );
++
++  server.resource(
++    "system-dependencies",
++    "control-tower://system/dependencies",
++    { description: "Service dependency graph — which services depend on which", mimeType: "application/json" },
++    async () => {
++      const context = RequestContextStore.get();
++      if (context?.accessMode === "public_viewer" && !isPublicSafeResource("control-tower://system/dependencies")) {
++        return { contents: [{ uri: "control-tower://system/dependencies", mimeType: "application/json", text: JSON.stringify({ error: "Authentication required for dependency details", code: "protected_capability" }) }] };
++      }
++      try {
++        const { globalDependencyGraph } = await import("./health/dependency.js");
++        return { contents: [{ uri: "control-tower://system/dependencies", mimeType: "application/json", text: JSON.stringify(globalDependencyGraph.getRawMap(), null, 2) }] };
++      } catch (error) {
++        return { contents: [{ uri: "control-tower://system/dependencies", mimeType: "application/json", text: JSON.stringify({ error: String(error) }) }] };
++      }
++    }
++  );
++
++  server.resource(
++    "client-registry",
++    "control-tower://clients/registry",
++    { description: "Registered MCP clients and their roles/scopes", mimeType: "application/json" },
++    async () => {
++      const context = RequestContextStore.get();
++      if (context?.accessMode !== "admin") {
++        return { contents: [{ uri: "control-tower://clients/registry", mimeType: "application/json", text: JSON.stringify({ error: "Admin authentication required", code: "protected_capability" }) }] };
++      }
++      return { contents: [{ uri: "control-tower://clients/registry", mimeType: "application/json", text: JSON.stringify({ clients: listClients(), timestamp: new Date().toISOString() }, null, 2) }] };
++    }
++  );
++
++  // ── Prompts (MCP Protocol — Reusable Workflow Templates) ──
++  server.prompt(
++    "diagnose_service",
++    "Diagnose a service issue by checking health, dependencies, and recent changes",
++    {
++      serviceName: z.string().describe("Name of the service to diagnose"),
++      includeHistory: z.boolean().optional().describe("Include recent health history"),
++    },
++    async ({ serviceName, includeHistory }) => {
++      const lines = [
++        "## Service Diagnosis - " + serviceName,
++        "",
++        "### Instructions",
++        "1. Use system.health tool to check current status of " + serviceName,
++        "2. Use system.summary tool to get service capabilities",
++        "3. Read control-tower://system/dependencies to check dependency chain",
++        "4. Read control-tower://system/health for full system health context",
++      ];
++      if (includeHistory) {
++        lines.push("5. Analyze recent health trends from the snapshot history");
++      }
++      lines.push(
++        "",
++        "### Output Format",
++        "Return a structured diagnosis report with:",
++        "- service: " + serviceName,
++        '- status: "healthy" | "degraded" | "down"',
++        "- root_cause: identified or suspected root cause",
++        "- dependencies_affected: list of dependent services impacted",
++        "- recommendations: array of suggested actions",
++        '- urgency: "low" | "medium" | "high" | "critical"'
++      );
++      return {
++        messages: [{
++          role: "user" as const,
++          content: { type: "text" as const, text: lines.join("\n") },
++        }],
++      };
++    }
++  );
++
++  server.prompt(
++    "onboard_client",
++    "Generate onboarding instructions for a new MCP client with appropriate scopes",
++    {
++      clientName: z.string().describe("Name for the new client"),
++      role: z.enum(["viewer", "agent", "admin"]).describe("Role for the new client"),
++      provider: z.string().optional().describe("Provider name (e.g. cursor, claude, custom)"),
++    },
++    async ({ clientName, role, provider }) => {
++      const lines = [
++        "## Client Onboarding - " + clientName,
++        "",
++        "### Task",
++        "Register a new MCP client with the following details:",
++        "- Name: " + clientName,
++        "- Role: " + role,
++        "- Provider: " + (provider || "generic"),
++        "",
++        "### Instructions",
++        "1. Use client.register tool to create the client with appropriate scopes",
++        "2. Display the generated credentials securely",
++        "3. Provide connection instructions based on role:",
++        "   - viewer: read-only access to health, resources, and prompts",
++        "   - agent: viewer + tool execution capabilities",
++        "   - admin: full access including client management and approvals",
++        "",
++        "### Security Notes",
++        "- Credentials should be shown ONCE and never logged",
++        "- Viewer tokens can be shared more freely",
++        "- Admin tokens require secure storage",
++        "- Set appropriate expiry based on use case",
++        "",
++        "### Output Format",
++        "Return the client credentials and connection configuration in a secure format.",
++      ];
++      return {
++        messages: [{
++          role: "user" as const,
++          content: { type: "text" as const, text: lines.join("\n") },
++        }],
++      };
++    }
++  );
++
++  return server;
++}
++
++
++// #112: UserRole has a single definition in policy/auth.context.ts (the #110
++// 6-tier ladder). The wire-level "anonymous" state is expressed at the USE
++// SITE as `UserRole | null`, not baked into the type — the old local
++// duplicate (`+ null`) had already drifted from the policy ladder.
++// বাংলা মন্তব্য: লোকাল ডুপ্লিকেট ইউনিয়ন মুছে SSOT re-export — null এখন শুধু
++// ব্যবহারস্থলে (anonymous caller) প্রকাশ করা হয়।
++export type { UserRole };
++
++
++
++// #69: signature verification extracted to src/lib/webhook_signature.ts for
++// unit testing — behavior unchanged (fail-closed, raw-body HMAC, constant-time).
++
++
++async function startStdioServer(server: McpServer): Promise<void> {
++  const transport = new StdioServerTransport();
++  await server.connect(transport);
++  // #698: RequestContextStore.getRole() is fail-closed — a missing request
++  // context no longer silently grants "admin". stdio IS a genuinely trusted
++  // local transport, so that trust is established EXPLICITLY here (the only
++  // transport-internal opt-in path): every inbound message is wrapped in an
++  // admin RequestContext. HTTP transports build their own per-request contexts
++  // with the caller's real role and must never rely on this.
++  const transportAny = transport as unknown as { onmessage?: (...args: unknown[]) => void };
++  const innerOnmessage = transportAny.onmessage;
++  if (typeof innerOnmessage === "function") {
++    transportAny.onmessage = (...args: unknown[]) =>
++      RequestContextStore.run(
++        { role: "admin", accessMode: "admin", authenticated: true, isGlobalAdmin: true, tenantBound: false, tenantId: "*", scopes: ["*"] },
++        () => innerOnmessage(...args),
++      );
++  } else {
++    // Unexpected SDK shape: fail safe — stdio callers degrade to the fail-closed
++    // default (viewer) instead of admin.
++    console.error("[MCP] stdio transport did not expose onmessage; context-less calls stay fail-closed (viewer)");
++  }
++  console.error("[MCP] SupremeAI Control Tower running in stdio mode");
++}
++
++async function main(): Promise<void> {
++  // #109: single SSOT read for transport + fail-fast validation of every
++  // numeric knob — a garbage value aborts boot here, loudly.
++  validateRuntimeKnobs();
++  const mode = env.runtime.transport;
++
++  // #3297 auto-presence: TCP-fallback account-গুলোর জন্য ioredis ctor
++  // presence-মডিউলে রেজিস্টার করা (Upstash REST হলে দরকারই পড়ে না)।
++  try {
++    const ioredisModule = await import("ioredis");
++    registerIoredis(ioredisModule.default as unknown as new (url: string, opts: object) => unknown);
++  } catch {
++    // ioredis নেই — REST-only deployment; presence REST chain দিয়েই চলবে
++  }
++
++  // Unified Gateway: internal Python memory sidecar (stdio bridge).
++  // Non-blocking start — tools degrade gracefully while it spawns.
++  // Disable with SUPREMEAI_DISABLE_MEMORY_SIDECAR=1.
++  const memoryAdapter = new MemorySubAdapter();
++  if (!env.disableMemorySidecar) {
++    memoryAdapter.start().catch((err) =>
++      console.error("[Memory Sidecar] Background start failed:", err),
++    );
++    const shutdown = () => {
++      memoryAdapter.stop().catch(() => undefined);
++    };
++    process.on("exit", shutdown);
++    process.on("SIGINT", () => { shutdown(); process.exit(0); });
++    process.on("SIGTERM", () => { shutdown(); process.exit(0); });
++  }
++  // For local dev / debugging only: block until the sidecar is ready.
++  const logReady = env.logMemoryReady;
++  if (logReady && logReady !== "0" && logReady !== "false") {
++    try {
++      const tools = await memoryAdapter.listTools();
++      console.error("[Memory Sidecar] Successfully listed", tools.length, "tools from live Python MCP server.");
++    } catch (err) {
++      console.error("[Memory Sidecar] Could not list tools from live Python MCP server:", err);
++    }
++  }
++
++  try {
++    const infisicalResult = await pullSecretsIntoProcessEnv();
++    if (infisicalResult.loaded > 0) {
++      console.error(`[Infisical] Successfully injected ${infisicalResult.loaded} secrets from Infisical vault.`);
++    }
++
++    // #1421: hydrate the client registry AFTER the vault pull (chain env fully
++    // populated) and BEFORE the server accepts requests, so registered agent
++    // identities survive redeploys/restarts without manual re-registration.
++    await initClientRegistry();
++
++    // #2596: টাস্ক-কিউ রেজিস্ট্রিও একই সারিতে হাইড্রেট — tower restart-এ
++    // চালু লিজ হারাবে না; সাথে প্রথম সিঙ্ক এগিয়ে ছোড়া (non-blocking)।
++    await initTaskRegistry();
++
++    // #66 taxonomy-drift guard: boot-এ resolved GitHub repo slug ছাপা হয়
++    // (zero-secret) — যাতে stale default বা ভুল GITHUB_REPO ভ্যালু সাইলেন্ট
++    // 404 হয়ে টুল-কলে ধরা না পড়ে, বরং স্টার্টআপ লগেই চোখে পড়ে।
++    console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
++    void refreshFromGitHub();
++
++    // #69: event-driven bridge intake — webhook → workflow_dispatch wake-up.
++    // Idempotent, fail-closed (no-op unless BRIDGE_INTAKE_ENABLED=true) and
++    // replays the durable outbox on boot. Must be armed BEFORE the server
++    // accepts webhook traffic.
++    registerBridgeIntake();
++
++    // #199: federated CI failure reporter — workflow_run.completed(failure)
++    // → actionable issue on the control-plane board. Idempotent, fail-closed
++    // (no-op unless FEDERATED_CI_WATCHER_ENABLED=true). Also armed BEFORE the
++    // server accepts webhook traffic.
++    await registerFederatedCiWatcher();
++
++    // #211 slice 1: post-merge lifecycle cleanup (auto-close issue +
++    // auto-delete head branch) + ChatOps slash-command parsing. Idempotent,
++    // fail-honest (tokenless boot degrades to notify-only), armed BEFORE the
++    // server accepts webhook traffic — same doctrine as registerBridgeIntake.
++    registerCommandRouter();
++
++    const server = await createMcpServer(memoryAdapter);
++
++    if (mode === "stdio") {
++      await startStdioServer(server);
++    } else {
++      await startHttpServer(() => createMcpServer(memoryAdapter));
++    }
++  } catch (err) {
++    console.error("[MCP] Fatal startup error:", err);
++    process.exit(1);
++  }
++}
++
++main();

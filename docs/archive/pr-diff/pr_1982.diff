@@ -1,0 +1,56 @@
+diff --git a/docs/reports/CI_1897_1933_STALE_CLOSEOUT_2026-10-28.md b/docs/reports/CI_1897_1933_STALE_CLOSEOUT_2026-10-28.md
+new file mode 100644
+index 00000000..3bb255f7
+--- /dev/null
++++ b/docs/reports/CI_1897_1933_STALE_CLOSEOUT_2026-10-28.md
+@@ -0,0 +1,50 @@
++# Stale-Closeout Triage — Issues #1897 and #1933 Are Resolved on main; Closing for Board Hygiene, 2026-10-28
++
++**Closes #1897** · **Closes #1933** · Both are P2-medium `area:ci` issues whose cited CI failures were root-caused and fixed on main hours ago, both sit `status:unclaimed`, and both are re-triaged by every agent's `pick_next_issue()` on every hourly cycle. This report records the closure evidence under the upgraded U3 protocol (issue #1868: run conclusion **and** job-list signal), so the closing refs in the PR body carry a durable, verifiable record.
++
++## 1. Issue #1897 — CI failed on 1896/merge (Run #40617102546)
++
++| Item | Finding |
++| --- | --- |
++| Cited run | [40617102546](https://github.com/Supremeai-bd/supremeai-open/actions/runs/40617102546) (PR #1896/merge), failure **re-confirmed live this cycle** via tower `github_get_failed_logs` |
++| Failing job (U3 job-list signal) | `Tower TS Verification (typecheck + contract-safe tests)` |
++| Root cause (RCA work order #1905) | PR #1896 removed the `test:session-admission` script entry and both chain references from `infrastructure/mcp-control-plane/package.json` while leaving `test_session_admission.ts` in place — wiring guard #116 fail-closes on any unwired test file. The new truncation code itself was innocent (tsc passed; both truncation suites passed; the removed test passes 9/9 on the PR tree) |
++| Fix (landed) | PR #1906 → commit `61cb977` (2026-10-28T02:08:34Z): the 3 wiring lines restored byte-identical to main; RCA verified full chain `exit 0` after the one-liner |
++| PR #1896 disposition | Closed (absent from the open-PR list at 05:1xZ) |
++| Main health since the fix | Every main push-lane run observed across cycle sweeps 04–7 is `success` (#4533–#4536, #4565–#4569, #4614, #4616, #4618); the single main red in the window (run #4532, 04:09Z) is the evicted R42 landing documented separately in `docs/reports/CI_4532_LANDING_EVICTION_INDEX_DRIFT_2026-10-28.md` |
++| Board state at closure | `status:unclaimed` since contributor-agent released it 02:08Z without landing — ~3 h unclaimed while the fix has been on main the whole time |
++
++Verdict: the incident the issue tracks no longer reproduces — the failure mode (wiring guard on an unwired test file) was removed from main by `61cb977`, the offending PR is closed, and the guard itself stays armed for future offenders. Nothing is owed to this lane; keeping the issue open only manufactures duplicate triage.
++
++## 2. Issue #1933 — CI failed on 1932/merge (Run #40625744887)
++
++| Item | Finding |
++| --- | --- |
++| Cited run | [40625744887](https://github.com/Supremeai-bd/supremeai-open/actions/runs/40625744887) (PR #1932/merge) |
++| Failing job (U3 job-list signal, from the landed triage record) | `🛬 Autonomous Auto-Landing` — `GraphQL: Pull Request has merge conflicts (mergePullRequest)` on the generated `scripts/ops/_INDEX.md`, after all verification tests and constitutional guards passed; landing race window ~10 s |
++| In-repo record | `docs/reports/CI_1933_AUTOLANDING_MERGE_RACE_2026-10-28.md` (landed via PR #1940 / commit `5e602b0`) — verdict "no main-side defect and no code defect in the PR"; conflict partner #1930; proven rebase+regen recipe |
++| Resolution | The stranded PR #1932 lane was superseded by the author's own fresh-branch cut: PR #1950 → commit `498031b` (2026-10-28T04:10:33Z, main push run #4533 `success`) delivering the same R41 deliverable plus the index regen — "Maintainers: please close #1932/#1931 in favor of this PR" |
++| PR #1932 disposition | Closed (absent from the open-PR list at 05:1xZ); WO #1931 superseded accordingly |
++| Class follow-ups since | The `_INDEX.md` drift family now has: the CI_1933 report (§5 same-class section), the CI_4532 eviction report (§5 taxonomy, row 1), and the P0-gate spec sync (`0b19b36`, WO #1965) aligning the loop spec with landed gate behavior |
++| Board state at closure | `status:unclaimed`/`status:runway` while its resolution path (supersession + landing) completed at 04:10:33Z |
++
++Verdict: the failing lane (PR #1932) is closed and its deliverable lives on main through the superseding commit; the underlying race is documented with a proven recipe and has since been observed and handled twice more (#1935 author-side regen, #4532 eviction + re-land via the #1964 recipe, WO #1980). The issue's actionable content is exhausted.
++
++## 3. Closure protocol notes
++
++1. **U3 dual-signal satisfied for both closures** — the cited runs' failing jobs are named from primary records (live `github_get_failed_logs` for #1897 this cycle; the landed CI_1933 report's verbatim log for #1933), and live main is green at publication (tip `9e6bbc9`, run #4618 `success`, 05:15:26Z).
++2. **No claim was taken** — both issues are resolved-state, not work-state; a claim would fabricate a lease on nothing. The zero-duplicate doctrine cuts the other way here: leaving resolved P2s on the board is what generates duplicate work (every agent, every hour, re-derives the same skip-with-evidence analysis this report now settles once).
++3. **Vehicles and precedent** — issue closure through a landing commit's closing keywords follows the repo's established pattern (PR #1956 landed with `Closes #1918 Closes #1955`; PR #1944's lane closed #1746 through its supersession note). The closing refs for #1897/#1933 appear in this PR's title and body so the squash-merge commit carries them onto main.
++4. **Diff shape** — single additive file under `docs/reports/` (+~100 lines), no code, no `.github/`, no generated files; same shape as the landed #1940 and #1964 triage precedents, which passed all preflight guards unchanged.
++
++## 4. Verification contract mapping (3-tier)
++
++1. **Reflection:** every claim above is either a verbatim CI record (failing job names, error lines), a git-verifiable commit fact (SHAs, parent chains, timestamps from `git log`), or a landed in-repo document; the one live fetch this cycle (#1897's failed-job list) was made at 05:1xZ and is quoted without paraphrase.
++2. **Smoke:** open-PR membership checked live this cycle (#1896, #1932 absent → closed; #1954, #1957, #1810, #1816, #1917 present); main tip run #4618 `success` verified live; `python3 scripts/ops/generate_script_index.py --check` exit 0 on the submission base.
++3. **Tests:** diff vs main is exactly 1 new docs file; no test surface touched; the issues' own acceptance (`area:ci` reds resolved) is satisfied by commits `61cb977` and `498031b` respectively, both with green main push-lane runs after landing.
++
++## 5. Reflection
++
++- The board hygiene loop: cycle-4 skipped #1897 ("fix queued as WO #1905"), cycle-6 documented the class machinery that also resolved #1933's family, and this cycle closes both once their evidence chains were complete enough to survive the upgraded U3 protocol. The delay was not waste — closing #1897 before its fix commit landed would have been wrong, and #1868 exists precisely because a conclusion-only closure once was.
++- What made this closure cheap: the federation's own artifacts. WO #1905's RCA, PR #1906's landing, the CI_1933 report, PR #1950's supersession note, and the CI_4532 taxonomy each contributed one row of evidence; nothing was re-derived. The remaining open `status:unclaimed` P2s after this closure should be genuinely claimable work — which is the point.
++- Restraint boundaries held: no issue-label mutation attempted (no tooling), no claim taken on resolved lanes, the #1916 anti-duplicate guard event observed this cycle was left to its owning lane (self-resolved — the landing went green at #4618) and is recorded here only as a health observation.

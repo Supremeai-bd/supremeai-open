@@ -1,0 +1,519 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 345b89ad..59eca3f2 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -70,7 +70,8 @@
+     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
+     "test:github-pagination": "tsx test_github_pagination.ts",
+     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+-    "test:r66-target-echo": "tsx test_r66_target_echo.ts"
++    "test:r66-target-echo": "tsx test_r66_target_echo.ts",
++    "test:annotations-floor": "tsx test_annotations_floor.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/tools/agent_review_workflow.tools.ts b/infrastructure/mcp-control-plane/src/tools/agent_review_workflow.tools.ts
+index 56c8d981..1bad8789 100644
+--- a/infrastructure/mcp-control-plane/src/tools/agent_review_workflow.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/agent_review_workflow.tools.ts
+@@ -47,6 +47,7 @@ export async function registerAgentReviewWorkflowTools(server: McpServer): Promi
+       context: contextSchema,
+       idempotencyKey: z.string().min(8).max(128).optional(),
+     },
++    { readOnlyHint: false, idempotentHint: false },
+     async ({ prompt, language, context, idempotencyKey }) => {
+       try {
+         const denied = accessError("agent");
+@@ -81,6 +82,7 @@ export async function registerAgentReviewWorkflowTools(server: McpServer): Promi
+     "agent_review_workflow.status",
+     "Report runtime availability of the Agent Review Workflow and its configured capabilities.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const denied = accessError("viewer");
+diff --git a/infrastructure/mcp-control-plane/src/tools/autonomy.tools.ts b/infrastructure/mcp-control-plane/src/tools/autonomy.tools.ts
+index c4a63fe3..1f631ce8 100644
+--- a/infrastructure/mcp-control-plane/src/tools/autonomy.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/autonomy.tools.ts
+@@ -7,6 +7,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
+     "autonomy.status",
+     "Check if Autonomous Remediation is currently ENABLED or DISABLED.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const enabled = globalKillSwitch.isAutonomyEnabled();
+       return {
+@@ -19,6 +20,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
+     "autonomy.kill_switch",
+     "Emergency stop! Instantly disable all autonomous remediations.",
+     {},
++    { readOnlyHint: false, destructiveHint: true },
+     async () => {
+       globalKillSwitch.emergencyStop();
+       return {
+@@ -31,6 +33,7 @@ export async function registerAutonomyTools(server: McpServer): Promise<void> {
+     "autonomy.enable",
+     "Re-enable autonomous remediations.",
+     {},
++    { readOnlyHint: false },
+     async () => {
+       globalKillSwitch.enableAutonomy();
+       return {
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 4cde1c2c..938808f7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -861,6 +861,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         workOrders: z.array(z.object(bridgeQueueItemSchema)),
+         nextStep: z.string(),
+       },
++      annotations: { readOnlyHint: true, idempotentHint: true },
+     },
+     async ({ limit, label }) => {
+       const repo = bridgeOpenRepo();
+@@ -955,6 +956,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         body: z.string(),
+         contract: z.record(z.string(), z.unknown()),
+       },
++      annotations: { readOnlyHint: true, idempotentHint: true },
+     },
+     async ({ number }) => {
+       const repo = bridgeOpenRepo();
+diff --git a/infrastructure/mcp-control-plane/src/tools/client.tools.ts b/infrastructure/mcp-control-plane/src/tools/client.tools.ts
+index f675c3d6..1ab75e62 100644
+--- a/infrastructure/mcp-control-plane/src/tools/client.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/client.tools.ts
+@@ -59,6 +59,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Your tenant ID (required when using tenant admin token)"),
+       adminToken: z.string().optional().describe("Your tenant admin token (required for non-global-admin callers)"),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -110,6 +111,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Tenant ID (tenant admin) — global admin may omit to see all"),
+       adminToken: z.string().optional().describe("Tenant admin token"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -126,6 +128,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Your tenant ID"),
+       adminToken: z.string().optional().describe("Your tenant admin token"),
+     },
++    { readOnlyHint: false },
+     async ({ clientId, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -148,6 +151,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Your tenant ID"),
+       adminToken: z.string().optional().describe("Your tenant admin token"),
+     },
++    { readOnlyHint: false },
+     async ({ clientId, role, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -179,6 +183,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Your tenant ID"),
+       adminToken: z.string().optional().describe("Your tenant admin token"),
+     },
++    { readOnlyHint: false },
+     async ({ clientId, toolProfile, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -211,6 +216,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false },
+     async ({ clientId, provider, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -232,6 +238,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ clientId, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -252,6 +259,7 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ clientId, tenantId, adminToken }) => {
+       const { scope, error } = requireScope({ tenantId, adminToken });
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+diff --git a/infrastructure/mcp-control-plane/src/tools/knowledge.tools.ts b/infrastructure/mcp-control-plane/src/tools/knowledge.tools.ts
+index bfda913e..d2906fa6 100644
+--- a/infrastructure/mcp-control-plane/src/tools/knowledge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/knowledge.tools.ts
+@@ -24,6 +24,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+         payload: z.record(z.string(), z.unknown()).optional().describe("Metadata payload"),
+       })).describe("Points to upsert"),
+     },
++    { readOnlyHint: false },
+     async ({ collection, points }) => {
+       try {
+         const result = await qdrantUpsert(collection, points);
+@@ -42,6 +43,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+       vector: z.array(z.number()).describe("Query embedding"),
+       limit: z.number().int().min(1).max(50).optional().describe("Max results (default: 5)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ collection, vector, limit }) => {
+       try {
+         const result = await qdrantSearch(collection, vector, limit ?? 5);
+@@ -60,6 +62,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+       vectorSize: z.number().int().min(64).max(4096).describe("Embedding dimension"),
+       distance: z.enum(["Cosine", "Euclid", "Dot"]).optional().describe("Distance metric (default: Cosine)"),
+     },
++    { readOnlyHint: false },
+     async ({ collection, vectorSize, distance }) => {
+       try {
+         const result = await qdrantEnsureCollection(collection, vectorSize, distance ?? "Cosine");
+@@ -74,6 +77,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+     "qdrant.collections",
+     "List all Qdrant collections.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const result = await qdrantListCollections();
+@@ -92,6 +96,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+       table: z.string().describe("Table name, e.g. 'best_practices'"),
+       data: z.record(z.string(), z.unknown()).describe("Row data"),
+     },
++    { readOnlyHint: false },
+     async ({ accountId, table, data }) => {
+       try {
+         const result = await insertRow(accountId, table, data);
+@@ -111,6 +116,7 @@ export async function registerKnowledgeTools(server: McpServer): Promise<void> {
+       data: z.record(z.string(), z.unknown()).describe("Update payload"),
+       filter: z.string().describe("PostgREST filter, e.g. 'id=eq.123'"),
+     },
++    { readOnlyHint: false },
+     async ({ accountId, table, data, filter }) => {
+       try {
+         const result = await updateRows(accountId, table, data, filter);
+diff --git a/infrastructure/mcp-control-plane/src/tools/memory.tools.ts b/infrastructure/mcp-control-plane/src/tools/memory.tools.ts
+index a3a67e6d..a2e51979 100644
+--- a/infrastructure/mcp-control-plane/src/tools/memory.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/memory.tools.ts
+@@ -37,6 +37,35 @@ const FALLBACK_TOOLS: Array<{ name: string; description: string; inputSchema: Re
+   { name: "search_learned_facts", description: "Search stored long-term facts.", inputSchema: { type: "object", properties: {} } },
+ ];
+ 
++// R72 revival (#2618): truthful per-tool annotation hints. The memory family
++// proxies a live Python sidecar inventory, so hints key on the exposed name;
++// unknown names ship WITHOUT annotations (honest spec default) rather than
++// guessed ones.
++const MEMORY_HINTS: Record<string, Record<string, boolean>> = {
++  "memory.create_entities": { readOnlyHint: false },
++  "memory.create_relations": { readOnlyHint: false },
++  "memory.add_observations": { readOnlyHint: false },
++  "memory.delete_entities": { readOnlyHint: false, destructiveHint: true },
++  "memory.delete_observations": { readOnlyHint: false, destructiveHint: true },
++  "memory.delete_relations": { readOnlyHint: false, destructiveHint: true },
++  "memory.store_document": { readOnlyHint: false },
++  "memory.ingest_document_rag": { readOnlyHint: false },
++  "memory.record_task": { readOnlyHint: false },
++  "memory.remember_fact": { readOnlyHint: false },
++  "memory.clear_session": { readOnlyHint: false, destructiveHint: true },
++  "memory.wipe_memory": { readOnlyHint: false, destructiveHint: true },
++  "memory.read_graph": { readOnlyHint: true, idempotentHint: true },
++  "memory.search_nodes": { readOnlyHint: true, idempotentHint: true },
++  "memory.search_semantic": { readOnlyHint: true, idempotentHint: true },
++  "memory.open_nodes": { readOnlyHint: true, idempotentHint: true },
++  "memory.search_learned_facts": { readOnlyHint: true, idempotentHint: true },
++  "memory.get_similar_tasks": { readOnlyHint: true, idempotentHint: true },
++  "memory.get_recent_episodes": { readOnlyHint: true, idempotentHint: true },
++  "memory.build_context": { readOnlyHint: true, idempotentHint: true },
++  "memory.get_session_stats": { readOnlyHint: true, idempotentHint: true },
++  "memory.export_memory": { readOnlyHint: true, idempotentHint: true },
++};
++
+ export async function registerMemoryTools(
+   server: McpServer,
+   adapter: MemorySubAdapter,
+@@ -58,7 +87,8 @@ export async function registerMemoryTools(
+       " [proxied to Python memory sidecar as '" + tool.name + "']" +
+       " tenant_id is injected automatically by the control tower from your authenticated tenant (#1440).";
+ 
+-    server.tool(exposed, desc, shape, async (rawArgs: unknown) => {
++    const hints = MEMORY_HINTS[exposed];
++    const handler = async (rawArgs: unknown) => {
+       const args = (rawArgs ?? {}) as Record<string, unknown>;
+       // Issue #1440: the Python sidecar's call gate REQUIRES a non-empty,
+       // non-"default" tenant_id on every memory.* call, but no tool schema
+@@ -79,24 +109,30 @@ export async function registerMemoryTools(
+         if (res.ok) {
+           const text = typeof res.data === "string"
+             ? res.data : JSON.stringify(res.data ?? null, null, 2);
+-          return { content: [{ type: "text", text }] };
++          return { content: [{ type: "text" as const, text }] };
+         }
+         return {
+           isError: !res.transient ? true : undefined,
+-          content: [{ type: "text", text: "Error: " + (res.error ?? "unknown") }],
++          content: [{ type: "text" as const, text: "Error: " + (res.error ?? "unknown") }],
+         };
+       } catch (err) {
+         return {
+-          content: [{ type: "text", text: "Error: " + (err as Error).message }],
++          content: [{ type: "text" as const, text: "Error: " + (err as Error).message }],
+         };
+       }
+-    });
++    };
++    if (hints) {
++      server.tool(exposed, desc, shape, hints, handler);
++    } else {
++      server.tool(exposed, desc, shape, handler);
++    }
+   }
+ 
+   server.tool(
+     "memory.status",
+     "Health of the internal Python memory sidecar (ready/starting, tool count, last error).",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const tools = await adapter.listTools();
+       const payload = {
+diff --git a/infrastructure/mcp-control-plane/src/tools/misc.tools.ts b/infrastructure/mcp-control-plane/src/tools/misc.tools.ts
+index cc22e233..27263f2a 100644
+--- a/infrastructure/mcp-control-plane/src/tools/misc.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/misc.tools.ts
+@@ -24,6 +24,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
+       t.name,
+       t.desc,
+       {},
++      { readOnlyHint: true, idempotentHint: true },
+       async () => {
+         try {
+           const status = await t.fn();
+@@ -50,6 +51,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
+       code: z.string().describe("Python code or notebook JSON string"),
+       isNotebook: z.boolean().optional().describe("True if code is notebook JSON (default false)"),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ username, slug, title, code, isNotebook }) => {
+       try {
+         const result = await pushKaggleKernel(username, slug, title, code, isNotebook ?? false);
+@@ -67,6 +69,7 @@ export async function registerMiscTools(server: McpServer): Promise<void> {
+       username: z.string().describe("Kaggle username"),
+       slug: z.string().describe("Kernel slug"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ username, slug }) => {
+       try {
+         const result = await getKaggleKernelStatus(username, slug);
+diff --git a/infrastructure/mcp-control-plane/src/tools/notify.tools.ts b/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
+index 1b8b8016..2258e0e5 100644
+--- a/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/notify.tools.ts
+@@ -8,6 +8,7 @@ export async function registerNotifyTools(server: McpServer): Promise<void> {
+     "notify.telegram",
+     "Ping the Telegram Bot API to check bot token validity.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const status = await checkTelegram();
+@@ -31,6 +32,7 @@ export async function registerNotifyTools(server: McpServer): Promise<void> {
+       chatId: z.string().optional().describe("Override chat id (default: TELEGRAM_CHAT_ID)"),
+       parseMode: z.enum(["Markdown", "HTML"]).optional().describe("Optional parse mode"),
+     },
++    { readOnlyHint: false, idempotentHint: false },
+     async ({ message, chatId, parseMode }) => {
+       try {
+         const result = await sendTelegram(message, chatId, parseMode);
+diff --git a/infrastructure/mcp-control-plane/src/tools/slot.tools.ts b/infrastructure/mcp-control-plane/src/tools/slot.tools.ts
+index 75851e28..6db6c0c1 100644
+--- a/infrastructure/mcp-control-plane/src/tools/slot.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/slot.tools.ts
+@@ -40,6 +40,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional().describe("Tenant ID (tenant admin)"),
+       adminToken: z.string().optional().describe("Tenant admin token"),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -75,6 +76,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -92,6 +94,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -109,6 +112,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -126,6 +130,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -143,6 +148,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -157,6 +163,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+     {
+       name: z.string().describe("Slot name or full slot id"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async (args) => {
+       const id = resolveSlotId(args.name);
+       const slot = getSlotRecord(id);
+@@ -185,6 +192,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       tenantId: z.string().optional(),
+       adminToken: z.string().optional(),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async (args) => {
+       const { scope, error } = requireScope(args);
+       if (error) return { isError: true, content: [{ type: "text", text: error }] };
+@@ -220,6 +228,7 @@ export async function registerSlotTools(server: McpServer): Promise<void> {
+       name: z.string().optional().describe("Filter by slot name/id"),
+       limit: z.number().int().min(1).max(500).optional().describe("Max events (newest last)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async (args) => {
+       const slotId = args.name ? resolveSlotId(args.name) : undefined;
+       const events = readSlotAudit({ slotId, limit: args.limit });
+diff --git a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+index 7adf2806..a31087b8 100644
+--- a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+@@ -16,6 +16,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+       limit: z.number().optional().describe("Maximum rows to fetch (default: 20, max: 100)"),
+       filter: z.string().optional().describe("PostgREST filter string (e.g. 'status=eq.active')"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ action, accountId, table, select, limit, filter }) => {
+       try {
+         if (action === "health") {
+@@ -50,6 +51,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+     {
+       accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId }) => {
+       try {
+         const health = await getHealth(accountId);
+@@ -71,6 +73,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+     {
+       accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId }) => {
+       try {
+         const users = await getAuthUsers(accountId);
+@@ -96,6 +99,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+       limit: z.number().optional().describe("Maximum rows to fetch (default: 20, max: 100)"),
+       filter: z.string().optional().describe("PostgREST filter string (e.g. 'status=eq.active')"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, table, select, limit, filter }) => {
+       try {
+         const data = await readTable(accountId, table, select ?? "*", limit ?? 20, filter);
+@@ -119,6 +123,7 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+         accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
+         table: z.string().optional().describe("Optional table name; omit to list all tables"),
+       },
++      { readOnlyHint: true, idempotentHint: true },
+       async ({ accountId, table }) => {
+         try {
+           const data = await getDatabaseSchema(accountId, table);
+diff --git a/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts b/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
+index c637448d..b872ad06 100644
+--- a/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
+@@ -30,6 +30,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+       maxClients: z.number().int().min(1).max(1000).optional().describe("Client limit override"),
+       maxToolsPerMinute: z.number().int().min(1).max(10000).optional().describe("Rate limit override"),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       try {
+         const result = createTenant({
+@@ -64,6 +65,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+     "tenant.list",
+     "List all tenants (admin & customer) with their status, plan, and limits. Global-admin only.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         // #698: tenant.list was the only tenant tool without the admin gate.
+@@ -90,6 +92,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+       maxClients: z.number().int().min(1).optional().describe("Client limit override"),
+       maxToolsPerMinute: z.number().int().min(1).optional().describe("Rate limit override"),
+     },
++    { readOnlyHint: false },
+     async (args) => {
+       try {
+         const tenant = updateTenant(args.tenantId, {
+@@ -113,6 +116,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+     "tenant.suspend",
+     "Suspend a tenant — all its AI clients immediately lose access. Global-admin only.",
+     { tenantId: z.string().describe("Tenant ID to suspend") },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ tenantId }) => {
+       try {
+         const tenant = suspendTenant(tenantId);
+@@ -128,6 +132,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+     "tenant.activate",
+     "Re-activate a suspended tenant. Global-admin only.",
+     { tenantId: z.string().describe("Tenant ID to activate") },
++    { readOnlyHint: false },
+     async ({ tenantId }) => {
+       try {
+         const tenant = activateTenant(tenantId);
+@@ -143,6 +148,7 @@ export async function registerTenantTools(server: McpServer): Promise<void> {
+     "tenant.rotate_admin_token",
+     "Rotate a tenant's admin token (old token stops working immediately). Global-admin only.",
+     { tenantId: z.string().describe("Tenant ID") },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ tenantId }) => {
+       try {
+         const result = rotateTenantAdminToken(tenantId);
+diff --git a/infrastructure/mcp-control-plane/test_annotations_floor.ts b/infrastructure/mcp-control-plane/test_annotations_floor.ts
+new file mode 100644
+index 00000000..e69de29b

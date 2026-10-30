@@ -1,0 +1,349 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 3ab974cb..8e224e28 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -309,6 +309,38 @@ jobs:
+           fi
+           echo "✅ Reflection Evidence present."
+ 
++  tower-verification-guard:
++    name: "🛡️ Tower Verification Signature Guard (#hybrid-agent)"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-24.04
++    timeout-minutes: 3
++    steps:
++      - name: Verify PR body carries Tower verification signature (event-context only, no checkout)
++        env:
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++          HEAD_REF: ${{ github.event.pull_request.head.ref }}
++        run: |
++          # Admin escape hatch
++          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
++            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
++          fi
++          # Bot-generated branches are allowed
++          if [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot|all-contributors|gh-readonly|bridge)/ ]] \
++             || [[ "$HEAD_REF" =~ ^(dependabot|github-actions|copilot)\[?[a-z_]* ]]; then
++            echo "✅ Automated/bridge branch — allowed."; exit 0
++          fi
++          # External agent PRs must carry the Tower verification signature
++          if ! printf '%s\n' "$PR_BODY" | grep -qE '^## Reflection Evidence'; then
++            echo "::error::PR body missing '## Reflection Evidence' (Tower verification signature)."
++            exit 1
++          fi
++          if ! printf '%s\n' "$PR_BODY" | grep -qiE '3[- ]?Tier|Test Evidence'; then
++            echo "::error::PR body missing '3-Tier Verify' / 'Test Evidence' (Tower verification signature)."
++            exit 1
++          fi
++          echo "✅ Tower verification signature present."
++
+   duplicate-pr-guard:
+     name: "👥 Anti-Duplicate PR Guard"
+     if: github.event_name == 'pull_request'
+@@ -803,7 +835,7 @@ jobs:
+   # ---------------------------------------------------------------------------
+   auto-landing:
+     name: "🛬 Autonomous Auto-Landing"
+-    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification]
++    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification, tower-verification-guard]
+     if: |
+       always() &&
+       github.event_name == 'pull_request' &&
+diff --git a/AGENTS.md b/AGENTS.md
+index 275a13b0..7306b8c0 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -41,3 +41,34 @@ All agents live, enter, and execute through exactly two unified pillars:
+   - **NO Backlog Starvation / Duplicate Stampede:** Never bypass open P0 blockers to create or pick up fast-follow research tickets, and never spawn duplicate PRs/work orders for the same task.
+ 
+ **Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
++
++---
++
++## 🌐 External Agent Hybrid Invariant
++
++External web agents (Devin, OpenHands, custom runners) participate through the
++hybrid bridge contract. The following rules are non-negotiable:
++
++- **READ Boundary:** External web agents MAY read the codebase, history, and
++  issue tracking through the direct `github-reader` MCP (`get_issue`,
++  `get_file_contents`, `search_repositories`). Read access is read-only.
++- **Single Write Gateway (Enforced):** No external agent may commit to GitHub
++  or open a direct PR. Every code change MUST arrive through the Tower's
++  `bridge_submit` / `bridge_submit_patch` API (`taskId`, `files`, `summary`,
++  `reflectionWhy`, `testsEvidence`, `agentIdentity`).
++- **Credential Zero-Leak Rule:** No agent may print or expose GitHub tokens or
++  secrets in plaintext in console output or prompt logs. Secrets are loaded
++  from Infisical into memory only (`GITHUB_READONLY_TOKEN`).
++
++### Tool Routing Contract
++
++- **Rule 1 (Intel / Reading):** Use only `github-reader` tools (`get_issue`,
++  `get_file_contents`, `search_repositories`) for GitHub issues, file contents,
++  discussions, and history.
++- **Rule 2 (Submission / PR):** Never call direct GitHub push tools. Send code
++  changes through the Tower `bridge_submit` / `bridge_submit_patch` API with
++  `taskId`, `files`, `summary`, `reflectionWhy`, `testsEvidence`, and
++  `agentIdentity`.
++- **Rule 3 (Infrastructure Health):** Use only Tower tools such as
++  `supabase_schema_inspect` and `render_service_health` for database, cache, or
++  deployment status.
+diff --git a/core/mcp_allowlist.py b/core/mcp_allowlist.py
+index c9b33967..7846033b 100644
+--- a/core/mcp_allowlist.py
++++ b/core/mcp_allowlist.py
+@@ -18,7 +18,18 @@
+ 
+ def get_mcp_servers() -> dict[str, Any]:
+     settings: dict[str, Any] = {
+-        "github": {
++        "github-reader": {
++        "command": "npx",
++        "args": ["-y", "@modelcontextprotocol/server-github"],
++        "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": os.getenv("GITHUB_READONLY_TOKEN", "")},
++        "allowed_paths": ["/api/v1/gateway"],
++        "allowed_tools": [
++            "get_issue",
++            "get_file_contents",
++            "search_repositories",
++        ],
++    },
++    "github": {
+             "command": "uvx",
+             "args": ["mcp-server-github"],
+             "env": {"GITHUB_TOKEN": os.getenv("GITHUB_TOKEN", "")},
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 87112eee..61ae6086 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -259,6 +259,8 @@ tree for content inspection (stdlib-only, still minutes-bounded):
+    before PR creation (AGENTS.md Step 4: no claim, no work).
+ 9. **Knowledge Sharing Guard (#392)** — verifies PR body carries filled Reflection Evidence
+    (`why` + `alternatives_rejected`).
++10. **Tower Verification Signature Guard (#hybrid-agent)** — verifies external agent PR carries
++    valid Tower verification signatures (`## Reflection Evidence` and 3-Tier test evidence).
+ 
+ ## 6. Submission flow (Pathway 1 wiring)
+ 
+diff --git a/infrastructure/mcp-control-plane/mcp_config.remote.json b/infrastructure/mcp-control-plane/mcp_config.remote.json
+index a49cb0f1..4eaca72a 100644
+--- a/infrastructure/mcp-control-plane/mcp_config.remote.json
++++ b/infrastructure/mcp-control-plane/mcp_config.remote.json
+@@ -1,5 +1,12 @@
+ {
+   "mcpServers": {
++    "github-reader": {
++      "command": "npx",
++      "args": ["-y", "@modelcontextprotocol/server-github"],
++      "env": {
++        "GITHUB_PERSONAL_ACCESS_TOKEN": "<GITHUB_READONLY_TOKEN_FROM_INFISICAL>"
++      }
++    },
+     "supremeai-control-tower": {
+       "url": "https://<YOUR-MCP-HOST>/mcp",
+       "headers": {
+@@ -11,6 +18,6 @@
+     "protocol": "streamable-http",
+     "authentication": "bearer-token",
+     "defaultRole": "viewer",
+-    "note": "Any MCP-compatible AI client can use the same endpoint and admin-issued token. Start with viewer access and explicitly promote only when needed. Replace placeholders and keep this file out of source control."
++    "note": "github-reader is read-only (GITHUB_READONLY_TOKEN). Tower uses admin-issued bearer token. Replace placeholders and keep this file out of source control."
+   }
+ }
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 2ecd8505..fc4f5523 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -156,6 +156,7 @@ export interface BridgePrBodyOptions {
+   reflectionWhy?: string;
+   alternativesRejected?: string;
+   rollbackPath?: string;
++  agentIdentity?: string;
+   /**
+    * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
+    * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
+@@ -207,6 +208,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+     lines.push("## Linked Work Order", ...linkedIssues, "");
+   }
+ 
++  lines.push("", "## Agent Identity", opts.agentIdentity || "zero-credential-mcp-agent", "");
+   lines.push(
+     REFLECTION_EVIDENCE_SECTION,
+     `- **why:** ${opts.reflectionWhy || ""}`,
+@@ -265,6 +267,8 @@ export function bridgeOpenRepo(): string {
+ 
+ /** The queue label upstream work orders carry in the open repo. */
+ export const BRIDGE_QUEUE_LABEL = "bridge:queued";
++/** Queue label for report-only / audit receipts (#3516 / zero-admin queue hygiene) */
++export const BRIDGE_RECEIPT_LABEL = "bridge:receipt";
+ /**
+  * #621 — Bridge hardening: satellite routing, queue scoping, claim lease
+  * lifecycle and machine-readable feedback.
+@@ -1471,6 +1475,14 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+         ].join("\n");
+ 
++        const isReportOnlyReceipt =
++          /\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b/i.test(summary) ||
++          /\b(receipt|report-only)\b/i.test(taskId);
++
++        const targetLabels = isReportOnlyReceipt
++          ? [BRIDGE_RECEIPT_LABEL, "report"]
++          : [BRIDGE_QUEUE_LABEL];
++
+         const issueRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
+           `https://api.github.com/repos/${repo}/issues`,
+           {
+@@ -1482,7 +1494,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+               // stranded the pushed branch. Clamp preserves the (taskId) tail
+               // (authoritative for #2136 dedup).
+               title: issueTitleFor(summary, taskId),
+-              labels: [BRIDGE_QUEUE_LABEL],
++              labels: targetLabels,
+               body: issueBody,
+             },
+             timeoutMs: 15_000,
+@@ -1512,6 +1524,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           alternativesRejected,
+           rollbackPath,
+           closesOriginalIssue,
++          agentIdentity,
+         });
+ 
+         let prNumber: number | undefined;
+diff --git a/mcp.json b/mcp.json
+index 44fe990a..e0532f0f 100644
+--- a/mcp.json
++++ b/mcp.json
+@@ -1,8 +1,18 @@
+ {
+   "$schema": "https://json.schemastore.org/mcp",
+   "mcpServers": {
++    "github-reader": {
++      "command": "npx",
++      "args": ["-y", "@modelcontextprotocol/server-github"],
++      "env": {
++        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_READONLY_TOKEN}"
++      }
++    },
+     "supremeai-control-tower": {
+-      "url": "https://supremeai-mcp-tower.onrender.com/mcp"
++      "url": "https://supremeai-mcp-tower.onrender.com/mcp",
++      "headers": {
++        "Authorization": "Bearer ${SUPREMEAI_TOWER_TOKEN}"
++      }
+     },
+     "supremeai-control-tower-sse": {
+       "type": "sse",
+@@ -11,4 +21,3 @@
+     }
+   }
+ }
+-
+diff --git a/scripts/agents/pr_lifecycle_guard.py b/scripts/agents/pr_lifecycle_guard.py
+index 44896996..1e5f6720 100644
+--- a/scripts/agents/pr_lifecycle_guard.py
++++ b/scripts/agents/pr_lifecycle_guard.py
+@@ -44,7 +44,7 @@
+ from dataclasses import dataclass, field
+ from typing import Any, Callable
+ 
+-REPO = os.environ.get("GH_REPO", "SaifulHaqueNiloy/supremeai")
++REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
+ API_BASE = "https://api.github.com"
+ 
+ # বাংলা মন্তব্য: evaluator-এর verdict-মার্কার চুক্তি (ai_pr_evaluator.py:verdict_marker_prefix)
+@@ -73,15 +73,27 @@
+ def real_api(endpoint: str, method: str = "GET", payload: dict | None = None) -> Any:
+     """GitHub REST কল — মান কখনো লগ নয়, শুধু স্ট্যাটাস।"""
+     token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
++    if not token:
++        try:
++            import subprocess
++            proc = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
++            if proc.returncode == 0:
++                token = proc.stdout.strip()
++        except Exception:
++            pass
++
++    headers = {
++        "Accept": "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++    }
++    if token:
++        headers["Authorization"] = f"token {token}"
++
+     req = urllib.request.Request(  # noqa: S310
+         f"{API_BASE}/{endpoint.lstrip('/')}",
+         data=json.dumps(payload).encode() if payload is not None else None,
+         method=method,
+-        headers={
+-            "Authorization": f"token {token}",
+-            "Accept": "application/vnd.github+json",
+-            "X-GitHub-Api-Version": "2022-11-28",
+-        },
++        headers=headers,
+     )
+     try:
+         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+@@ -198,8 +210,7 @@ def heal_freshness(api: Callable, apply: bool, report: GuardReport) -> None:
+         head_ref = pr["head"]["ref"]
+         if not is_bot_lane(head_ref):
+             continue  # মানুষের লেন — হস্তক্ষেপ নয়
+-        base_sha = pr["base"]["sha"]
+-        cmp_res = api(f"repos/{REPO}/compare/{base_sha}...{pr['head']['sha']}")
++        cmp_res = api(f"repos/{REPO}/compare/main...{head_ref}")
+         if behind_count(cmp_res) <= 0:
+             continue
+         if not apply:
+diff --git a/scripts/ci/auto_bridge_pr_opener.py b/scripts/ci/auto_bridge_pr_opener.py
+index 51911c9e..6e43b3d5 100644
+--- a/scripts/ci/auto_bridge_pr_opener.py
++++ b/scripts/ci/auto_bridge_pr_opener.py
+@@ -113,10 +113,16 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
+             except json.JSONDecodeError:
+                 pass
+ 
++        title = issue.get("title", "")
++        # Filter out report-only / audit receipts from executable stranded queue
++        if re.search(r"\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b", title, re.IGNORECASE):
++            print(f"ℹ️ Skipping report-only receipt work order #{issue.get('number')}: '{title}'", file=sys.stderr)
++            continue
++
+         stranded.append(
+             {
+                 "issue_number": issue.get("number"),
+-                "title": issue.get("title", ""),
++                "title": title,
+                 "branch": branch,
+                 "body": body,
+             }
+@@ -188,9 +194,26 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
+         run_cmd(["git", "config", "user.email", "bot@supremeai.org"])
+         reb_code, _, reb_err = run_cmd(["git", "rebase", "origin/main"])
+         if reb_code != 0:
+-            print(f"   ❌ Rebase failed with conflict: {reb_err}. Aborting.")
++            print(f"   ❌ Rebase failed with conflict: {reb_err}. Auto-recovering...")
+             run_cmd(["git", "rebase", "--abort"])
+             run_cmd(["git", "checkout", "-"])
++            # Self-healing: mark work order as conflicting/rejected and close to prevent permanent stranded clutter
++            run_cmd([
++                "gh", "issue", "comment", str(issue_num),
++                "--repo", UPSTREAM_REPO,
++                "--body", f"<!-- auto-bridge:conflict-close -->\n❌ **Automatic Closure**: Branch `{branch}` has git rebase conflicts against `origin/main`.\n\nError: `{reb_err}`\nPer Invariant 1 (Dual-Rebase) & Invariant 3 (Superior Replacement), this stranded work order is closed. Please rebase locally against fresh `origin/main` before resubmitting."
++            ])
++            run_cmd([
++                "gh", "issue", "edit", str(issue_num),
++                "--repo", UPSTREAM_REPO,
++                "--add-label", "bridge:rejected,conflict:needs-rebase",
++                "--remove-label", "bridge:queued"
++            ])
++            run_cmd([
++                "gh", "issue", "close", str(issue_num),
++                "--repo", UPSTREAM_REPO,
++                "--reason", "not planned"
++            ])
+             return False
+         # Push rebased branch back to remote
+         print(f"   🚀 Pushing rebased branch to origin/{branch}...")

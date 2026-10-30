@@ -1,0 +1,1293 @@
+diff --git a/README.md b/README.md
+index cd6827d3..ed783a20 100644
+--- a/README.md
++++ b/README.md
+@@ -145,7 +145,6 @@ flowchart TD
+ | [`docs/AGENT_PORTAL_SPEC.md`](./docs/AGENT_PORTAL_SPEC.md) | **Agent Portal & Federation Bridge architecture spec** (#23): two-repo relationship, the 3 submission pathways mapped to machinery, guard/gate/router map, clickable contract-schema references |
+ | [`docs/FAQ.md`](./docs/FAQ.md) | **Operational FAQ** (#23): symptom→cause→fix for every known validation-error class (naming, duplicates, boundary, stale-base, force-push, keyword propagation, env-skips) |
+ | `AGENTS.md` | Agent entrypoint: autonomous work-submission loop, submission pathways, bridge lane |
+-| `AGENT_RULES.md` | Agent policy constitution: universal rules, policies, roles, fail-closed guards |
+ | `.github/workflows/pipeline.yml` | Unified validation & cron engine (#155): guards → Python 3.10–3.13 matrix + Tower TS verification + secret scan, plus the agent-loop dispatch job (`scripts/agents/continuous_agent_loop.py --pick-next`) — triggerable by manual `workflow_dispatch`; the */30 schedule is currently disabled per admin directive (AGENTS.md §0 8-step cycle; draft-only scheduled runs with explicit §10 no-op on empty board, PR submission opt-in via manual dispatch; event-driven intake via the MCP Tower, see `infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md`) |
+ | `.github/workflows/landing.yml` | Unified autonomous landing & bridge dispatch (#155): auto-squash-merge on full gate success, then the same run streams the landed patch reference into the private bridge queue |
+ | `.github/ISSUE_TEMPLATE/bridge-work-order.yml` | Work-order template for bridge submissions (task id, patch branch, test evidence) |
+@@ -229,4 +228,4 @@ New here? Start with **[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)** — th
+ zero-credential contributor guide covering both human (fork + PR) and autonomous-agent
+ (8-step loop, MCP Tower lane) workflows, the 3-tier verification contract, scope caps,
+ and a field-tested troubleshooting table. The governance contracts live in
+-[`AGENTS.md`](./AGENTS.md) and [`AGENT_RULES.md`](./AGENT_RULES.md).
++[`AGENTS.md`](./AGENTS.md) — the Single Door SSOT (the former AGENT_RULES.md was deleted by #1526).
+diff --git a/api-schemas/context-assembly.schema.json b/api-schemas/context-assembly.schema.json
+index 94817da8..69d6b007 100644
+--- a/api-schemas/context-assembly.schema.json
++++ b/api-schemas/context-assembly.schema.json
+@@ -2,7 +2,7 @@
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "$id": "https://supremeai.ai/schemas/context-assembly.schema.json",
+   "title": "SupremeAI Smart Context Selector — Layer 1-8 Priority-Ranked Context Assembly",
+-  "description": "Layer-1 contract for the smart context selector: one deterministic, priority-ranked context assembly handed to a coding agent before it starts work. One contract document pairs the SelectionPolicy (token budget, base priority, decay factor) with the resulting ContextAssembly (8 priority layers, per-item inclusion verdicts, budget clipping state). Layer semantics: L1 core constitution (AGENTS.md, AGENT_RULES.md — never clipped), L2 task issue & acceptance criteria, L3 file scope & adjacent tests, L4 memory sidecars, L5 ADR history, L6 knowledge items, L7 environment/runtime state, L8 hygiene/noise transcripts. Priority decays per layer as priority = round(base_priority * decay_factor^(layer-1), 3). Budget clipping is a strict deterministic cutoff in priority order (priority desc, then layer asc, then label lexicographic): the first item that does not fit ends inclusion — no backfill, no cherry-picking. Fail-closed: layer-to-name pairs are if/then pinned in both failure directions, item kinds are a closed enum with kind-specific ref pinning (repo paths for file scope, memory namespace+document_id for sidecar refs per memory-search.schema.json, ADR ids for decision history), repo paths reject traversal ('..' anywhere), clipping state is bidirectionally consistent (budget_clipped true iff clipped_layers non-empty), and recorded instants carry an explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12). Cross-object numeric invariants (tokens_used <= token_budget, layer.tokens = sum of included item tokens, priority == decay formula) are declared here and enforced semantically by the spec's verification suite. See issue #29 and docs/CONTEXT_SELECTOR_SPEC.md.",
++  "description": "Layer-1 contract for the smart context selector: one deterministic, priority-ranked context assembly handed to a coding agent before it starts work. One contract document pairs the SelectionPolicy (token budget, base priority, decay factor) with the resulting ContextAssembly (8 priority layers, per-item inclusion verdicts, budget clipping state). Layer semantics: L1 core constitution (AGENTS.md — never clipped), L2 task issue & acceptance criteria, L3 file scope & adjacent tests, L4 memory sidecars, L5 ADR history, L6 knowledge items, L7 environment/runtime state, L8 hygiene/noise transcripts. Priority decays per layer as priority = round(base_priority * decay_factor^(layer-1), 3). Budget clipping is a strict deterministic cutoff in priority order (priority desc, then layer asc, then label lexicographic): the first item that does not fit ends inclusion — no backfill, no cherry-picking. Fail-closed: layer-to-name pairs are if/then pinned in both failure directions, item kinds are a closed enum with kind-specific ref pinning (repo paths for file scope, memory namespace+document_id for sidecar refs per memory-search.schema.json, ADR ids for decision history), repo paths reject traversal ('..' anywhere), clipping state is bidirectionally consistent (budget_clipped true iff clipped_layers non-empty), and recorded instants carry an explicit RFC 3339 pattern (format is annotation-only in Draft 2020-12). Cross-object numeric invariants (tokens_used <= token_budget, layer.tokens = sum of included item tokens, priority == decay formula) are declared here and enforced semantically by the spec's verification suite. See issue #29 and docs/CONTEXT_SELECTOR_SPEC.md.",
+   "type": "object",
+   "additionalProperties": false,
+   "required": ["schema_version", "selection", "assembly"],
+diff --git a/core/governance/routing_tiers.py b/core/governance/routing_tiers.py
+index ea7c47ca..e7aa0b56 100644
+--- a/core/governance/routing_tiers.py
++++ b/core/governance/routing_tiers.py
+@@ -95,7 +95,7 @@ def to_dict(self) -> dict[str, Any]:
+ 
+ # Tier-3 (Admin-only) — human approval required
+ TIER3_ACTIONS = {
+-    "constitutional_change",  # modify AGENTS.md / AGENT_RULES.md
++    "constitutional_change",  # modify AGENTS.md (Single Door SSOT)
+     "security_sensitive_provider",  # new provider with data exposure risk
+     "permission_escalation",  # grant new scope to agent
+     "new_external_capability",  # adopt new external repo
+diff --git a/core/memory/context_tiers.py b/core/memory/context_tiers.py
+index 1c1d3d8a..e0c14c8b 100644
+--- a/core/memory/context_tiers.py
++++ b/core/memory/context_tiers.py
+@@ -1,9 +1,9 @@
+ """Hierarchical context tiers (#4051 — Roadmap v2 §3.1, OpenViking-inspired).
+ 
+ বাংলা নোট: L0 শুধু memory নয় — এটা *governance context*। AGENTS.md +
+-AGENT_RULES.md + SECURITY.md সবসময় loaded থাকবে এবং সব আচরণকে নিয়ন্ত্রিত
++AGENTS.md (Single Door SSOT) + SECURITY.md সবসময় loaded থাকবে এবং সব আচরণকে নিয়ন্ত্রিত
+ রাখবে। L0-তে যেকোনো পরিবর্তন = Tier-3 constitutional change → ADMIN_DECISION
+-ছাড়া করা যাবে না (AGENT_RULES §6)।
++ছাড়া করা যাবে না (AGENTS.md constitution)।
+ 
+ Tier মডেল:
+   L0 (Immutable / Constitutional) — সবসময় loaded, parsed (raw dump নয়)
+@@ -14,7 +14,7 @@
+ L0 আগে reserved, তারপর L1, বাকিটা L2 পায়। কোনো tier বাজেট ছাড়িয়ে গেলে
+ sentence-boundary truncation (core.llm.token_budget-এর single owner) হয়।
+ 
+-Design guardrails (AGENT_RULES P1/P2):
++Design guardrails (AGENTS.md constitution):
+   * নতুন vector store / retrieval system তৈরি হয়নি — L2 বিদ্যমান
+     ExperienceDatabase.find_similar() + MemoryRepository.search_similar() ব্যবহার
+     করে (SSOT reuse; second retrieval stack নিষিদ্ধ)।
+@@ -51,7 +51,7 @@
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+ 
+ # L0 constitutional sources — parsed, raw dump নয় (acceptance #2)।
+-CONSTITUTION_FILES: tuple[str, ...] = ("AGENTS.md", "AGENT_RULES.md", "SECURITY.md")
++CONSTITUTION_FILES: tuple[str, ...] = ("AGENTS.md", "SECURITY.md")
+ 
+ # বাংলা (#4051): L0-ই constitutional context — এর পরিবর্তন সবসময় Tier-3
+ # admin approval দাবী করবে। এটা hard policy constant, caller override করতে পারবে না।
+@@ -111,7 +111,7 @@ class ConstitutionDrift:
+     """L0 constitutional hash পরিবর্তনের সনাক্তকরণ ফল।
+ 
+     changed=True মানে L0 content বদলেছে — Tier-3 ADMIN_DECISION ছাড়া
+-    এই পরিবর্তন গ্রহণযোগ্য নয় (AGENT_RULES §6)। requires_admin_approval
++    এই পরিবর্তন গ্রহণযোগ্য নয় (constitution — admin-only)। requires_admin_approval
+     সবসময় True — এটা policy, এটা কেউ কনফিগার করে False করতে পারবে না।
+     """
+ 
+@@ -141,7 +141,7 @@ class L0Context:
+ 
+     @classmethod
+     def load(cls, repo_root: Path | None = None) -> L0Context:
+-        """AGENTS.md + AGENT_RULES.md + SECURITY.md parse করে L0 গঠন করে।
++        """AGENTS.md + SECURITY.md parse করে L0 গঠন করে।
+ 
+         বাংলা: fail-honest — কোনো constitutional ফাইল পাওয়া না গেলে সেটা
+         missing_files-এ ঘোষণা হয়, চুপচাপ ঢাকা হয় না (U2 Truth & Evidence)।
+@@ -214,7 +214,7 @@ class L1Context:
+ 
+     @classmethod
+     def from_task_contract(cls, contract: dict[str, Any]) -> L1Context:
+-        """Standard Task Contract (AGENT_RULES §7) থেকে L1 গঠন করে।
++        """Standard Task Contract (AGENTS.md constitution) থেকে L1 গঠন করে।
+ 
+         বাংলা: contract খালি/None হলে খালি L1 — চুপচাপ placeholder বানানো হয় না।
+         """
+@@ -354,7 +354,7 @@ async def retrieve(
+         বাংলা: experience_db.find_similar sync, memory_repo.search_similar async —
+         দুটোই optional inject করা যায় (টেস্টে mock)। কোনো store ব্যর্থ হলে
+         degraded=True + সৎ লগ; কখনো কলার ক্র্যাশ করানো হয় না (graceful
+-        degradation — AGENT_RULES §13)।
++        degradation — AGENTS.md house doctrine)।
+         """
+         # Policy Engine scope (acceptance #7): tenant ছাড়া L2 নেই।
+         if not tenant_id:
+diff --git a/core/runner/agent_runner.py b/core/runner/agent_runner.py
+index 96a1066e..aa3cb1e9 100644
+--- a/core/runner/agent_runner.py
++++ b/core/runner/agent_runner.py
+@@ -5,8 +5,9 @@
+   - docs/AGENT_LOOP_SPEC.md (task-envelope-v1, §2 envelope, §4 verification tiers)
+   - AGENTS.md §3 8-step table: Understand → Rules → Inspect → Claim → Work
+     → Verify → Record → Return
+-  - AGENT_RULES.md: U1 scope, U2 evidence, U7 verification, U8 handoff
+-    (``Closes #N`` rides in the commit message — squash auto-close doctrine)
++  - AGENTS.md (Single Door SSOT): 4 Universal Invariants — Dual-Rebase,
++    Boundary, Superior Replacement, Verification & PR Blueprint
++    (``Closes #N`` rides in the PR description — squash auto-close doctrine)
+ 
+ The runner CONSUMES the canonical task envelope emitted by
+ ``scripts/agents/continuous_agent_loop.py --task-envelope`` — it never
+@@ -20,7 +21,7 @@
+ House style (mirrors examples/gateway_client.py and the telemetry logger):
+ - offline-safe import: module import performs zero file/network I/O;
+   all I/O happens on explicit construction/run/CLI action
+-- zero third-party dependencies (AGENT_RULES.md §13)
++- zero third-party dependencies (house doctrine — AGENTS.md)
+ - honest errors: every contract violation names the offending field/step/path
+ - credentials and payloads are never echoed — captured command output is
+   secret-redacted before it enters the evidence ledger
+@@ -461,14 +462,17 @@ def step_rules(self) -> dict[str, Any]:
+         forbidden.extend(missing_defaults)
+         scope["forbidden_paths"] = forbidden
+ 
+-        rules_path = self.repo_root / "AGENT_RULES.md"
++        # AGENT_RULES.md was deleted by #1526 — the Single Door SSOT is
++        # AGENTS.md now (authority-pointer sweep, #1642). Pointers are the
++        # real top-level sections of the live constitution, not a dead twin.
++        rules_path = self.repo_root / "AGENTS.md"
+         rule_pointers: list[str] = []
+         rules_source = "absent"
+         if rules_path.is_file():
+             try:
+                 text = rules_path.read_text(encoding="utf-8", errors="replace")
+-                rule_pointers = sorted(set(re.findall(r"^## ([UP]\d+) — ", text, re.M)))
+-                rules_source = "AGENT_RULES.md"
++                rule_pointers = sorted(set(re.findall(r"^## (.+?)\s*$", text, re.M)))
++                rules_source = "AGENTS.md"
+             except OSError as exc:
+                 rule_pointers = []
+                 rules_source = f"unreadable: {exc}"
+@@ -988,8 +992,8 @@ def ok(cond: bool, msg: str) -> None:
+ 
+     with tempfile.TemporaryDirectory() as td:
+         root = Path(td)
+-        (root / "AGENT_RULES.md").write_text(
+-            "# AGENT_RULES\n## U1 — Scope\n## U7 — Verification\n## P1 — Simple\n",
++        (root / "AGENTS.md").write_text(
++            "# AGENTS\n## The Single Door\n## The 4 Universal Invariants (Must Follow vs Must Avoid)\n",
+             encoding="utf-8",
+         )
+         pass_cmd = [sys.executable, "-c", "print('tier ok')"]
+diff --git a/docs/CONTEXT_SELECTOR_SPEC.md b/docs/CONTEXT_SELECTOR_SPEC.md
+index 2b127055..f446f684 100644
+--- a/docs/CONTEXT_SELECTOR_SPEC.md
++++ b/docs/CONTEXT_SELECTOR_SPEC.md
+@@ -21,7 +21,7 @@ The output of the selector is a **ContextAssembly payload** — not prose. Downs
+ 
+ | # | Name | Sources | Rationale |
+ |---|------|---------|-----------|
+-| 1 | `constitution` | `AGENTS.md`, `AGENT_RULES.md` | The baseline every other document defers to. **Never clipped.** |
++| 1 | `constitution` | `AGENTS.md` | The baseline every other document defers to. **Never clipped.** |
+ | 2 | `task-contract` | Task issue: mission, acceptance criteria, Touching Files | Defines "done" for this run. |
+ | 3 | `file-scope` | Declared Touching Files + adjacent tests/guards | The code surface this task may mutate. |
+ | 4 | `memory-sidecar` | Semantic memory hits (`memory-search.schema.json`, issue #36) | Prior episodes, resolved pitfalls, namespace-scoped facts. |
+@@ -135,7 +135,7 @@ Canonical example for task #29 with budget 6000, `base_priority = 1.0`, `decay_f
+           },
+           {
+             "kind": "constitution-doc",
+-            "label": "AGENT_RULES.md — behavior rules",
++            "label": "docs/AGENT_LOOP_SPEC.md — loop contract",
+             "tokens": 300,
+             "included": true,
+             "inclusion_reason": "constitution_never_clipped",
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index baafa0d2..340732dd 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -14,7 +14,7 @@ walked end-to-end with nothing but a clone and Python 3.
+ | File | Why |
+ |------|-----|
+ | [`AGENTS.md`](../AGENTS.md) | The three-pathway access model (MCP Tower / fork+PR / JIT lease) and the current board of open work |
+-| [`AGENT_RULES.md`](../AGENT_RULES.md) | U-rules (evidence-first, reproduce-first, sibling sweeps) and P-rules (root-cause fixes, defect-class prevention) that govern every change |
++| [`docs/AGENT_LOOP_SPEC.md`](../docs/AGENT_LOOP_SPEC.md) | task-envelope-v1 contract, 8-tier verification, and the evidence-first doctrine that governs every change |
+ 
+ Every reviewer — and every automated gate — assumes you have read them. The
+ short version:
+@@ -34,7 +34,7 @@ docs/                                     # Documentation (this file lives here)
+ .github/actions/                          # Reusable composite actions (setup-node-tower, gitleaks-scan — #155)
+ .github/workflows/pipeline.yml            # Unified validation: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + agent-loop cron
+ .github/workflows/landing.yml             # Unified autonomous landing: auto-merge -> bridge dispatch in the same run
+-AGENTS.md, AGENT_RULES.md                 # Governance contracts (see §1)
++AGENTS.md                                  # Governance contract — Single Door SSOT (see §1)
+ README.md                                 # What this repo is and is not
+ ```
+ 
+@@ -177,7 +177,7 @@ packages. The boundary is machine-enforced: `boundary_sanitization_guard.py`
+ (pipeline.yml guard job) fail-closes on proprietary paths/content, and gitleaks
+ fail-closes on credentials.
+ 
+-**Zero-duplicate rule (AGENT_RULES.md U4):** because your merged public PR
++**Zero-duplicate rule (federation doctrine — ECOSYSTEM_MAP.md):** because your merged public PR
+ flows into the private repo automatically, **never open a duplicate manual PR
+ on `Supremeai-bd/supremeai`** for work handled here. One issue = at most one
+ open PR, anywhere in the federation.
+diff --git a/docs/FEDERATION_CHARTER.md b/docs/FEDERATION_CHARTER.md
+index 3864bf21..3748f1be 100644
+--- a/docs/FEDERATION_CHARTER.md
++++ b/docs/FEDERATION_CHARTER.md
+@@ -2,7 +2,7 @@
+ 
+ **Work Order:** Supremeai-bd/supremeai-open#626 (P1-high, governance)
+ **Agent:** zai-autonomous-contributor (Z.ai Code, zero-credential bridge lane)
+-**Constitution anchors:** AGENTS.md §5 + AGENT_RULES.md §5 (machine-enforcement pointers) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
++**Constitution anchors:** AGENTS.md (the Single Door SSOT) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
+ **Enforced by:** `scripts/ci/satellite_board_guard.py` (Milestone 3 building block) · central nightly job per #612 (operator wiring)
+ 
+ ---
+@@ -122,7 +122,7 @@ information, and no contributor ever wonders where the "real" tracker is.
+ This charter is a governed document:
+ 
+ - The satellite registry in §2 Rule 2, `SATELLITES` in the guard script,
+-  and the constitution anchors (AGENTS.md §5, AGENT_RULES.md §5) MUST move
++  and the constitution anchors (AGENTS.md) MUST move
+   together in the same change (constitution and its enforcement move as one
+   commit — the #567 freshness principle applied to federation topology).
+ - Changes land via governance PRs on `supremeai-open` with Reflection
+diff --git a/examples/command-dispatch-reference/src/dispatch.mjs b/examples/command-dispatch-reference/src/dispatch.mjs
+index 8e05b1d2..ba13b783 100644
+--- a/examples/command-dispatch-reference/src/dispatch.mjs
++++ b/examples/command-dispatch-reference/src/dispatch.mjs
+@@ -211,7 +211,7 @@ export function createDispatcher(opts) {
+             id: "smallest-safe-change",
+             statement:
+               "Implement the smallest safe change strictly inside the declared Touching Files.",
+-            source: "AGENT_RULES.md U1",
++            source: "AGENTS.md",
+           },
+         ],
+         admin_gate: { required: false, status: "NOT_REQUIRED" },
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 741534bf..daa190ce 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -590,7 +590,7 @@ export function bridgeGuide() {
+       prTemplateSource: readPullRequestTemplate().source,
+       mandatoryReflectionFields: [...REQUIRED_REFLECTION_FIELDS],
+       requiredReflectionSection: REFLECTION_EVIDENCE_SECTION,
+-      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (AGENT_RULES.md P7)",
++      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (bridge diff caps)",
+       preValidation: "Submissions missing reflection evidence fail pre-push with STALE_TEMPLATE_ERROR",
+     },
+     escalation: {
+diff --git a/scripts/agents/a2a_messaging_bus.py b/scripts/agents/a2a_messaging_bus.py
+index 0a6ae3be..995a80e7 100644
+--- a/scripts/agents/a2a_messaging_bus.py
++++ b/scripts/agents/a2a_messaging_bus.py
+@@ -6,7 +6,7 @@
+ Any active agent can send a message to another agent's lane, and
+ dormant agents receive messages on their next wakeup.
+ 
+-Design (AGENT_RULES.md P1 — Simple + Effective):
++Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
+   - File-based message queue (no external broker — uses git repo as bus)
+   - Each agent lane has an inbox: .agents/a2a_inbox/{lane}.jsonl
+   - Messages are JSONL (append-only, idempotent by message_id)
+diff --git a/scripts/agents/context_graph_resolver.py b/scripts/agents/context_graph_resolver.py
+index 6966b795..306995ae 100644
+--- a/scripts/agents/context_graph_resolver.py
++++ b/scripts/agents/context_graph_resolver.py
+@@ -402,7 +402,7 @@ def incremental_update(
+ 
+ def self_test() -> bool:
+     sources = {
+-        "docs/AGENT_RULES.md": "# Rules\n\nU4 hold doctrine. See AGENT_RULES.md#U4 "
++        "docs/AGENT_LOOP_SPEC.md": "# Loop spec\n\nU4 hold doctrine. See AGENT_LOOP_SPEC.md#envelope "
+         "and GATEWAY.md#auth\n",
+         "docs/GATEWAY.md": "# Gateway SSOT\nBearer + key auth\n",
+         "scripts/agents/loop.py": (
+@@ -450,7 +450,7 @@ def self_test() -> bool:
+             pass
+ 
+     # 1-hop resolution within budget.
+-    resolution = graph.resolve_context("file:docs/AGENT_RULES.md")
++    resolution = graph.resolve_context("file:docs/AGENT_LOOP_SPEC.md")
+     assert resolution.budget_ok, resolution.tokens_estimate
+     # Anchor advisory: ref GATEWAY.md#auth resolves to the file-level node.
+     assert any(
+@@ -464,7 +464,7 @@ def self_test() -> bool:
+         pass
+ 
+     # Benchmark: graph 1-hop vs raw dump — synthetic >50x.
+-    big_rule = "docs/AGENT_RULES.md"
++    big_rule = "docs/AGENT_LOOP_SPEC.md"
+     raw = {
+         big_rule: ("line of doctrine text " * 4000),
+         "docs/GATEWAY.md": "line of gateway text " * 4000,
+diff --git a/scripts/agents/ecosystem_learning.py b/scripts/agents/ecosystem_learning.py
+index e1928119..ba9d9106 100644
+--- a/scripts/agents/ecosystem_learning.py
++++ b/scripts/agents/ecosystem_learning.py
+@@ -5,7 +5,7 @@
+ Captures structured traces for agent runs, scores selected traces,
+ and persists evidence/decision rationale for future improvement.
+ 
+-Design (AGENT_RULES.md P1 — Simple + Effective):
++Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
+   - Trace format: JSONL in docs/master_docs/AGENT_TRACES.jsonl
+   - Each trace = agent_run, decision, tool_call, outcome
+   - Evaluation: simple rubric (success/fail/partial + reason)
+diff --git a/scripts/agents/issue_revalidator.py b/scripts/agents/issue_revalidator.py
+index e165a056..d37ba14f 100644
+--- a/scripts/agents/issue_revalidator.py
++++ b/scripts/agents/issue_revalidator.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """Issue Revalidator — machine-readable live-issue gate (#3215).
+ 
+-নীতি (AGENT_RULES.md U3 + #3215): "No live validation = no implementation."
++নীতি (#3215 live-validation doctrine): "No live validation = no implementation."
+ একটি open issue কেবল তার অস্তিত্বের কারণে valid নয়। যেকোনো agent claim-এর
+ আগে এই gate চালাবে — রায় machine-readable state হিসেবে আসবে:
+ 
+diff --git a/scripts/agents/mcp_presence_tracker.py b/scripts/agents/mcp_presence_tracker.py
+index 913d9f3d..52141ac0 100644
+--- a/scripts/agents/mcp_presence_tracker.py
++++ b/scripts/agents/mcp_presence_tracker.py
+@@ -6,7 +6,7 @@
+ Copilot) connected via MCP Control Tower. Makes them visible in the
+ active agent workspace alongside autonomous Git workers.
+ 
+-Design (AGENT_RULES.md P1 — Simple + Effective):
++Design (Law of Minimal Elegance — FEDERATION_CHARTER.md):
+   - Polls MCP Tower API for connected clients
+   - Writes presence to docs/master_docs/MCP_PRESENCE_LEDGER.json
+   - Integrates with agent_dashboard.py for unified view
+diff --git a/scripts/agents/skill_bundle.py b/scripts/agents/skill_bundle.py
+index 0d6c998c..33762288 100644
+--- a/scripts/agents/skill_bundle.py
++++ b/scripts/agents/skill_bundle.py
+@@ -48,6 +48,7 @@
+ import re
+ import sqlite3
+ import sys
++import unicodedata
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+@@ -66,11 +67,11 @@
+ BUNDLE_SCHEMA_VERSION = 1
+ 
+ # Canonical source files — seed-এর উপাদান, bundle-এর authority নয়।
+-# বাংলা মন্তব্য: AGENTS.md = immutable entry contract (শুধু hash ধরা হয়),
+-# AGENT_RULES.md + rules.yml = seed material যা DB-তে versioned কপি হয়।
++# বাংলা মন্তব্য: AGENTS.md = immutable entry contract (hash ধরা হয়) এবং
++# #1526-এর পর এটিই Single Door SSOT — seed material ও এখান থেকেই আসে
++# (AGENT_RULES.md মুছে ফেলা হয়েছে; constitution rules.yml = DB-তে versioned কপি)।
+ CANONICAL_FILES = {
+     "agents_md": ROOT_DIR / "AGENTS.md",
+-    "agent_rules_md": ROOT_DIR / "AGENT_RULES.md",
+     "constitution_rules_yml": ROOT_DIR / ".github" / "constitution" / "rules.yml",
+ }
+ 
+@@ -106,36 +107,32 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
+ 
+ 
+ # ---------------------------------------------------------------------------
+-# Canonical seed parsing — AGENT_RULES.md + constitution rules.yml → DB rows
++# Canonical seed parsing — AGENTS.md (Single Door SSOT) + constitution rules.yml → DB rows
+ # ---------------------------------------------------------------------------
+-_RULE_HEADER_RE = re.compile(r"^## (U\d+|P\d+) — (.+?)\s*$")
+-
+-
+-# বাংলা মন্তব্য: role header → canonical role scope কী (AGENT_RULES.md §3-এর
+-# ৮টি role এবং continuous_agent_loop.py-র ROLE_ALIASES-এর সাথে সামঞ্জস্যপূর্ণ)।
+-_ROLE_HEADER_TO_SCOPE = {
+-    "Auditor": "auditor",
+-    "Ecosystem Scout / Planner": "planner",
+-    "Coder": "coder",
+-    "CI Fixer": "ci-fixer",
+-    "Watcher": "watcher",
+-    "Human-Eyes / Browser Agent": "human-eyes",
+-    "Breaker / Adversarial Auditor": "breaker",
+-    "Merge Agent": "merge-agent",
+-}
++_H2_HEADER_RE = re.compile(r"^## (.+?)\s*$")
++_SLUG_RE = re.compile(r"[^a-z0-9]+")
++
+ 
++def _section_slug(title: str) -> str:
++    """`## 🚪 The Single Door` → `the-single-door` — stable DB rule_id।"""
++    stripped = "".join(ch for ch in title if not unicodedata.combining(ch))
++    ascii_only = stripped.encode("ascii", "ignore").decode("ascii")
++    slug = _SLUG_RE.sub("-", ascii_only.lower()).strip("-")
++    return slug or "section"
+ 
+-def parse_agent_rules_md(path: Path) -> list[dict]:
+-    """AGENT_RULES.md পার্স করে policy row dict তৈরি করে।
+ 
+-    # বাংলা মন্তব্য: §1 Universal (U*) → scope='universal', mandatory=1;
+-    # §2 Engineering (P*) → scope='engineering', mandatory=1 (Non-Negotiable);
+-    # §3 Role সেকশন → scope='role:<name>', mandatory=0 (role-filterable)।
++def parse_agents_md(path: Path) -> list[dict]:
++    """AGENTS.md (Single Door SSOT) পার্স করে policy row dict তৈরি করে।
++
++    # বাংলা মন্তব্য: আগের parse_agent_rules_md U*/P*/role হেডার পার্স করত —
++    # সেই ফাইল #1526-এ মুছে গেছে, ফলে seed পথটাই মৃত ছিল (#1642)। এখন জীবন্ত
++    # SSOT-এর প্রতিটি `## ` সেকশন → একটি universal mandatory row; MUST FOLLOW /
++    # MUST AVOID invariant-গুলো সেকশন body-তেই থাকে।
+     """
+     text = path.read_text(encoding="utf-8")
+     lines = text.splitlines()
+     rules: list[dict] = []
+-    section = None  # (kind, key, title) — kind: 'rule' | 'role'
++    section: tuple[str, str] | None = None  # (rule_id, title)
+     buf: list[str] = []
+ 
+     def _flush():
+@@ -145,38 +142,23 @@ def _flush():
+             return
+         body = "\n".join(buf).strip()
+         if body:
+-            kind, key, title = section
+-            if kind == "rule":
+-                # U* = universal contract, P* = engineering policy — দুটোই mandatory
+-                scope = "universal" if key.startswith("U") else "engineering"
+-                rules.append({
+-                    "rule_id": key, "scope": scope, "category": scope,
+-                    "title": title, "body": body, "mandatory": 1,
+-                    "source": "seed:AGENT_RULES.md",
+-                })
+-            else:
+-                rules.append({
+-                    "rule_id": f"role:{key}", "scope": f"role:{key}", "category": "role",
+-                    "title": title, "body": body, "mandatory": 0,
+-                    "source": "seed:AGENT_RULES.md",
+-                })
++            rule_id, title = section
++            rules.append({
++                "rule_id": rule_id, "scope": "universal", "category": "universal",
++                "title": title, "body": body, "mandatory": 1,
++                "source": "seed:AGENTS.md",
++            })
+         buf = []
+ 
+     for line in lines:
+-        m = _RULE_HEADER_RE.match(line)
++        m = _H2_HEADER_RE.match(line)
+         if m:
+             _flush()
+-            section = ("rule", m.group(1), m.group(2))
++            title = m.group(1)
++            section = (f"agents-md:{_section_slug(title)}", title)
+             continue
+-        if line.startswith("## "):
+-            role_name = line[3:].strip()
+-            if role_name in _ROLE_HEADER_TO_SCOPE:
+-                _flush()
+-                section = ("role", _ROLE_HEADER_TO_SCOPE[role_name], role_name)
+-                continue
+         if line.startswith("# "):
+-            # H1 — নতুন top-level সেকশন, চলমান rule/role flush করা ঠিক নয়;
+-            # শুধু buf ধরে রাখি (§ হেডারের পরের প্রথম H1 এসে flush হবে)।
++            # H1 — নতুন top-level সেকশন, চলমান rule flush করে সীমানা টানা হয়।
+             _flush()
+             section = None
+             continue
+@@ -221,8 +203,16 @@ def seed_from_canonical(db_path: Path | None = None, force: bool = False) -> dic
+     # নতুন version row তৈরি হয় এবং পুরনো version superseded=1 হয়।
+     # ফলে DB-ই সত্যের উৎস, ফাইল শুধু bootstrap material।
+     """
+-    parsed = parse_agent_rules_md(CANONICAL_FILES["agent_rules_md"])
+-    parsed += parse_constitution_rules_yml(CANONICAL_FILES["constitution_rules_yml"])
++    parsed = parse_agents_md(CANONICAL_FILES["agents_md"])
++    missing_sources: list[str] = []
++    rules_yml = CANONICAL_FILES["constitution_rules_yml"]
++    if rules_yml.is_file():
++        parsed += parse_constitution_rules_yml(rules_yml)
++    else:
++        # বাংলা: প্রাইভেট-মিরর রিলোকেশন — .github/constitution/rules.yml শুধু
++        # প্রাইভেট monorepo-তে থাকে; open মিররে অনুপস্থিতি সৎভাবে ঘোষণা হয়,
++        # চুপচাপ ক্র্যাশ নয় (U2 Truth & Evidence)।
++        missing_sources.append(str(rules_yml))
+     now = datetime.now(timezone.utc).isoformat()
+     conn = _connect(db_path)
+     try:
+@@ -263,7 +253,7 @@ def seed_from_canonical(db_path: Path | None = None, force: bool = False) -> dic
+                 unchanged += 1
+         conn.commit()
+         return {"added": added, "updated": updated, "unchanged": unchanged,
+-                "total_parsed": len(parsed)}
++                "total_parsed": len(parsed), "missing_sources": missing_sources}
+     finally:
+         conn.close()
+ 
+diff --git a/scripts/agents/smart_context_selector.py b/scripts/agents/smart_context_selector.py
+index cbaa3be5..3a75e47a 100644
+--- a/scripts/agents/smart_context_selector.py
++++ b/scripts/agents/smart_context_selector.py
+@@ -225,7 +225,7 @@ def _sample_inputs() -> tuple[dict, list[dict]]:
+     policy = {"token_budget": 6000, "base_priority": 1.0, "decay_factor": 0.8, "strategy": STRATEGY}
+     items = [
+         {"kind": "constitution-doc", "label": "AGENTS.md — core constitution", "tokens": 600},
+-        {"kind": "constitution-doc", "label": "AGENT_RULES.md — behavior rules", "tokens": 300},
++        {"kind": "constitution-doc", "label": "docs/AGENT_LOOP_SPEC.md — loop contract", "tokens": 300},
+         {"kind": "issue-contract", "label": "Issue #29 — mission, acceptance criteria, Touching Files", "tokens": 450},
+         {"kind": "file-scope", "label": "api-schemas/context-assembly.schema.json", "tokens": 700,
+          "ref": {"path": "api-schemas/context-assembly.schema.json"}},
+diff --git a/scripts/ci/ai_pr_evaluator.py b/scripts/ci/ai_pr_evaluator.py
+index 40095973..f0ad4813 100644
+--- a/scripts/ci/ai_pr_evaluator.py
++++ b/scripts/ci/ai_pr_evaluator.py
+@@ -683,7 +683,7 @@ def _llm_providers() -> list[dict[str, str]]:
+     """কী-পুল (env) — Groq→Gemini→OpenRouter রাউন্ড-রবিন; কী না থাকলে খালি।
+ 
+     বাংলা: কী শুধুই approved credential broker/env থেকে — কখনো hardcode নয়
+-    (AGENT_RULES §13)। CI-তে কী না থাকলে deterministic-evidence-ই সত্য।
++    (AGENTS.md house doctrine)। CI-তে কী না থাকলে deterministic-evidence-ই সত্য।
+     """
+     providers: list[dict[str, str]] = []
+     if os.getenv("GROQ_API_KEY"):
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index f3f106ab..d4829ff7 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -99,7 +99,8 @@
+     ".gitleaksignore",
+     ".pre-commit-config.yaml",
+     "AGENTS.md",
+-    "AGENT_RULES.md",
++    # "AGENT_RULES.md" deliberately NOT approved — deleted by #1526 (#1642);
++    # keeping it here would invite re-creating the dead constitution at root.
+     "AUTONOMOUS_TRANSIT_PIPELINE.md",
+     "ECOSYSTEM_MAP.md",
+     "LICENSE",
+diff --git a/scripts/ci/constitution_pointer_guard.py b/scripts/ci/constitution_pointer_guard.py
+new file mode 100644
+index 00000000..b39e60d1
+--- /dev/null
++++ b/scripts/ci/constitution_pointer_guard.py
+@@ -0,0 +1,409 @@
++#!/usr/bin/env python3
++"""constitution_pointer_guard.py — dead-authority-pointer guard (#1642).
++
++AGENT_RULES.md — the former constitution — was deleted by PR #1526 (Single
++Door SSOT consolidated into AGENTS.md). 55+ tracked files kept citing the
++deleted file: live code read it at runtime (agent_runner.step_rules,
++skill_bundle.seed_from_canonical), docs linked to it, routing tables routed
++it. A citation to a non-existent authority file is either a dead-end for an
++agent resolving policy (broken autonomy) or an invitation to "helpfully"
++re-create the deleted constitution — the exact revert-shape
++docs/AUDIT_2026-10-28.md warns against (F2).
++
++This guard fails closed on any NEW citation of a constitutionally-deleted
++path outside the reviewed ALLOWLIST below. The allowlist is explicit and
++reasoned: historical records (audits, ADRs, loop comments documenting the
++deletion itself), admin-owned protected paths (.github/), mirror-parity
++files, and an enumerated docs debt list to be swept by a fast-follow work
++order (30-file bridge cap forces the two-slice split).
++
++Doctrine (single paragraph form):
++  1. AGENTS.md is the Single Door SSOT; citations must resolve to live
++     tracked files (git ls-files), never to a deleted twin.
++  2. Historical mentions (audits, ADRs, deletion-documentation) are legal
++     ONLY inside this file's reviewed allowlist — the list is the ratchet.
++  3. The allowlist must track reality: a stale allowlist entry (file no
++     longer tracked) fails the guard — no ghost entries.
++
++Regex precision (why stem-level matching): `\\bAGENT_RULES\\b` matches
++"AGENT_RULES.md", "AGENT_RULES §6", "AGENT_RULES U4" but NOT
++"AGENT_RULES_PATH" (underscore is a word char → no boundary) and NOT
++"agent_rules.json" (case-sensitive). Those name a live config file
++(config/agent_rules.json) — a different surface, deliberately out of class.
++
++Exit codes: 0 = clean (allowlisted mentions allowed) · 1 = violations ·
++2 = usage/scan error (fail-closed on scan failure, never fail-open).
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import re
++import subprocess
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++
++# Constitutionally-deleted paths. Each entry: (dead_path, citation_regex, why_dead)
++DEAD_CONSTITUTION_PATHS: tuple[tuple[str, str, str], ...] = (
++    (
++        "AGENT_RULES.md",
++        r"\bAGENT_RULES\b",
++        "deleted by PR #1526 — Single Door SSOT consolidated into AGENTS.md",
++    ),
++)
++
++# Reviewed allowlist — every entry needs a reason. Structured as
++# {relative_path: (class, reason)}. Classes:
++#   historical    — documents/logs the deletion era itself; rewriting history
++#                   would falsify the record (U2 Truth & Evidence)
++#   protected     — admin-owned .github/ paths (bridge contract: admin review)
++#   mirror-parity — byte-parity mirrors of private-repo files; the private
++#                   twin carries the same historical text
++#   enforcement   — this guard and its test: their citations ARE the dead-path
++#                   registry definitions (pattern source, not drift)
++#   debt          — live stale pointer, enumerated for the fast-follow docs
++#                   sweep WO (30-file cap split of #1642); enforced-against-
++#                   growth ratchet: new files may never join this class
++ALLOWLIST: dict[str, tuple[str, str]] = {
++    # -- enforcement: the registry source itself ----------------------------
++    "scripts/ci/constitution_pointer_guard.py": (
++        "enforcement",
++        "defines DEAD_CONSTITUTION_PATHS + ALLOWLIST; citations are pattern definitions",
++    ),
++    "tests/test_constitution_pointer_guard.py": (
++        "enforcement",
++        "pins the guard contract with fixture citations",
++    ),
++    # -- historical: the deletion is documented here BY DESIGN --------------
++    "scripts/agents/continuous_agent_loop.py": (
++        "historical",
++        "documents the #1526 deletion inside the freshness-gate skip logic",
++    ),
++    "core/runner/agent_runner.py": (
++        "historical",
++        "step_rules comment records the #1526 re-point (#1642)",
++    ),
++    "scripts/agents/skill_bundle.py": (
++        "historical",
++        "seed comment records the #1526 re-point (#1642)",
++    ),
++    "scripts/ci/boundary_sanitization_guard.py": (
++        "historical",
++        "anti-revert note explains why the root file is not approved (#1642)",
++    ),
++    "scripts/ci/hourly_satellite_batcher.py": (
++        "historical",
++        "quarantine pin asserts the deleted file stays unrouted (#1642)",
++    ),
++    "README.md": (
++        "historical",
++        "one line records 'the former AGENT_RULES.md was deleted by #1526'",
++    ),
++    "tests/test_constitution_freshness.py": (
++        "historical",
++        "pins the deleted-file freshness-gate behavior (#1526 contract)",
++    ),
++    "core/github/scripts/constitution/freshness_gate.py": (
++        "mirror-parity",
++        "private .github/scripts twin; 2026-10-01 incident record",
++    ),
++    "core/github/scripts/constitution/template_gate.py": (
++        "mirror-parity",
++        "private .github/scripts twin; historical template contract note",
++    ),
++    "scripts/agents/instruction_builder.py": (
++        "historical",
++        "documents the drift discovery that motivated the SSOT consolidation",
++    ),
++    "docs/AGENT_LOOP_SPEC.md": (
++        "historical",
++        "one line records 'the former AGENT_RULES.md was deleted by #1526'",
++    ),
++    "docs/AUDIT_2026-10-15.md": ("historical", "audit record — never rewritten"),
++    "docs/AUDIT_2026-10-15-duplicate-sweep.md": (
++        "historical",
++        "audit record — never rewritten",
++    ),
++    "docs/AUDIT_2026-10-16-external-audit.md": (
++        "historical",
++        "audit record — never rewritten",
++    ),
++    "docs/AUDIT_2026-10-27.md": ("historical", "audit record — never rewritten"),
++    "docs/AUDIT_2026-10-28.md": ("historical", "audit record — never rewritten"),
++    "docs/adrs/README.md": ("historical", "ADR index — decision records"),
++    "docs/PROJECT_FULL_AUDIT_BN.md": ("historical", "audit snapshot (BN)"),
++    # -- protected: admin-owned .github/ ------------------------------------
++    ".github/ISSUE_TEMPLATE/auditor-rule-breaker-report.yml": (
++        "protected",
++        "admin-owned issue template (bridge contract: admin review)",
++    ),
++    ".github/ISSUE_TEMPLATE/feature-request.yml": (
++        "protected",
++        "admin-owned issue template (bridge contract: admin review)",
++    ),
++    ".github/workflows/pipeline.yml": (
++        "protected",
++        "admin-owned workflow (bridge contract: admin review)",
++    ),
++    # -- debt: live stale pointers, enumerated for the fast-follow sweep ----
++    "docs/ZERO_ADMIN_GUIDE.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists",
++    ),
++    "docs/FAQ.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists + related link",
++    ),
++    "docs/AUTONOMY_LOOP_CONTRACT.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists + §47 authority pointer",
++    ),
++    "docs/CI_MINIMUM_PIPELINE_STANDARD.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists + §13 quota pointer",
++    ),
++    "docs/CONTRIBUTING_BN.md": ("debt", "docs sweep WO-2: BN mirror link line"),
++    "docs/README.bn.md": ("debt", "docs sweep WO-2: BN mirror pointer"),
++    "docs/CURRENT_ONLY_FILES.md": ("debt", "docs sweep WO-2: file roster"),
++    "docs/CONTINUOUS_AGENT_LOOP_AND_SKILL_ARCHITECTURE.md": (
++        "debt",
++        "docs sweep WO-2: roadmap status header + §57 + §232",
++    ),
++    "docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md": (
++        "debt",
++        "docs sweep WO-2: root-inventory table row",
++    ),
++    "docs/FEDERATION_SPECS_SSOT.md": (
++        "debt",
++        "docs sweep WO-2: companion-to header",
++    ),
++    "docs/GUARDIAN_EVALUATION.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists",
++    ),
++    "docs/INGRESS_SECURITY_POLICY.md": (
++        "debt",
++        "docs sweep WO-2: related-docs lists; §5.4/U6 rows are delivery "
++        "history (ADR-class) and stay",
++    ),
++    "docs/ADMIN_SOVEREIGNTY_WIRING_APPENDIX.md": (
++        "debt",
++        "docs sweep WO-2: 'append verbatim' instruction",
++    ),
++    "docs/OPS_ACTIONS_QUOTA_RUNBOOK.md": (
++        "debt",
++        "docs sweep WO-2: U4 pointer in runbook body",
++    ),
++    "docs/S14_REQUIREMENT_AND_TRAINING_SPEC.md": (
++        "debt",
++        "docs sweep WO-2: companion-to header",
++    ),
++    "docs/CI_REMEDIATION_ROADMAP_BN.md": (
++        "debt",
++        "docs sweep WO-2: BN roadmap evidence line",
++    ),
++}
++
++
++def _compile_patterns() -> list[tuple[str, re.Pattern[str], str]]:
++    return [
++        (dead_path, re.compile(regex), why)
++        for dead_path, regex, why in DEAD_CONSTITUTION_PATHS
++    ]
++
++
++def tracked_files(repo_root: Path) -> list[str]:
++    """git ls-files — the tracked universe the guard scans (fail-closed)."""
++    proc = subprocess.run(  # noqa: S603
++        ["git", "ls-files", "-z"],
++        cwd=str(repo_root),
++        capture_output=True,
++        timeout=30,
++        check=False,
++    )
++    if proc.returncode != 0:
++        raise RuntimeError(
++            f"git ls-files failed (exit {proc.returncode}): "
++            f"{proc.stderr.decode('utf-8', errors='replace').strip()}"
++        )
++    return [p for p in proc.stdout.decode("utf-8", errors="replace").split("\0") if p]
++
++
++def scan_tree(
++    repo_root: Path,
++    files: list[str],
++    patterns: list[tuple[str, re.Pattern[str], str]] | None = None,
++    allowlist: dict[str, tuple[str, str]] | None = None,
++) -> tuple[list[dict], list[str]]:
++    """Scan tracked files for dead-path citations outside the allowlist.
++
++    Returns (violations, stale_allowlist_entries). Violations are dicts with
++    file/line/dead_path/why/text. Binary files and unreadable entries are
++    skipped silently only if the OS reports them absent from disk (tracked
++    but deleted working-tree copies); read errors on present files fail the
++    scan loudly (honesty over availability).
++    """
++    patterns = patterns if patterns is not None else _compile_patterns()
++    allow = allowlist if allowlist is not None else ALLOWLIST
++    violations: list[dict] = []
++    stale: list[str] = []
++    tracked_set = set(files)
++
++    for path in allow:
++        if path not in tracked_set:
++            stale.append(path)
++
++    for rel in files:
++        if rel in allow:
++            continue
++        abs_path = repo_root / rel
++        if not abs_path.is_file():
++            continue  # tracked but absent in working tree (CI checkout edge)
++        try:
++            blob = abs_path.read_bytes()
++        except OSError as exc:
++            raise RuntimeError(f"unreadable tracked file {rel}: {exc}") from exc
++        if b"\x00" in blob:
++            continue  # binary — textual citation class only
++        text = blob.decode("utf-8", errors="replace")
++        for lineno, line in enumerate(text.splitlines(), start=1):
++            for dead_path, regex, why in patterns:
++                if regex.search(line):
++                    violations.append(
++                        {
++                            "file": rel,
++                            "line": lineno,
++                            "dead_path": dead_path,
++                            "why": why,
++                            "text": line.strip()[:160],
++                        }
++                    )
++    return violations, stale
++
++
++def run(repo_root: Path) -> tuple[list[dict], list[str], list[str]]:
++    files = tracked_files(repo_root)
++    violations, stale = scan_tree(repo_root, files)
++    return violations, stale, files
++
++
++def self_test() -> bool:
++    """Hermetic contract check — no network, no git, no repo mutation."""
++    import tempfile
++
++    patterns = _compile_patterns()
++    ok = True
++
++    def check(label: str, cond: bool) -> None:
++        nonlocal ok
++        print(f"  [{'PASS' if cond else 'FAIL'}] {label}")
++        if not cond:
++            ok = False
++
++    with tempfile.TemporaryDirectory() as td:
++        root = Path(td)
++        (root / "clean.md").write_text(
++            "# Governance\nSee AGENTS.md — the Single Door SSOT.\n", encoding="utf-8"
++        )
++        (root / "doc.md").write_text(
++            "policy lives in AGENT_RULES.md §3\n", encoding="utf-8"
++        )
++        (root / "code.py").write_text(
++            '# legacy comment: AGENT_RULES U4 doctrine\nx = "AGENT_RULES_PATH ok"\n'
++            'y = "agent_rules.json ok"\n',
++            encoding="utf-8",
++        )
++        (root / "allowed.md").write_text(
++            "historical: AGENT_RULES.md was deleted\n", encoding="utf-8"
++        )
++        (root / "bin.dat").write_bytes(b"\x00\x01AGENT_RULES.md inside binary")
++        files = ["clean.md", "doc.md", "code.py", "allowed.md", "bin.dat"]
++
++        allow = {"allowed.md": ("historical", "test entry")}
++        violations, stale = scan_tree(root, files, patterns, allow)
++
++        check("clean file not flagged", not any(v["file"] == "clean.md" for v in violations))
++        check("md citation flagged", any(
++            v["file"] == "doc.md" and v["line"] == 1 for v in violations))
++        check("py comment flagged", any(
++            v["file"] == "code.py" and v["line"] == 1 for v in violations))
++        check("AGENT_RULES_PATH not flagged (word-boundary)", not any(
++            v["file"] == "code.py" and v["line"] == 2 for v in violations))
++        check("agent_rules.json not flagged (case-sensitive)", not any(
++            v["file"] == "code.py" and v["line"] == 3 for v in violations))
++        check("binary skipped", not any(v["file"] == "bin.dat" for v in violations))
++        check("allowlisted file skipped", not any(
++            v["file"] == "allowed.md" for v in violations))
++        check("dead_path reason carried", all(
++            v["why"].startswith("deleted by PR #1526") for v in violations))
++        check("violation count exact", len(violations) == 2)
++
++        # stale allowlist detection
++        _, stale2 = scan_tree(root, ["clean.md"], patterns, {"ghost.md": ("debt", "x")})
++        check("stale allowlist entry detected", stale2 == ["ghost.md"])
++
++        # allowlist carries no dead entries in the shipped configuration
++        real_files = tracked_files(REPO_ROOT)
++        _, shipped_stale = scan_tree(REPO_ROOT, real_files)
++        check("shipped ALLOWLIST has no stale entries", not shipped_stale)
++
++    return ok
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="Fail closed on citations of constitutionally-deleted paths (#1642)"
++    )
++    parser.add_argument("--self-test", action="store_true", help="hermetic contract check")
++    parser.add_argument("--json", action="store_true", help="machine-readable output")
++    args = parser.parse_args()
++
++    if args.self_test:
++        print("constitution_pointer_guard self-test:")
++        return 0 if self_test() else 1
++
++    try:
++        violations, stale, files = run(REPO_ROOT)
++    except RuntimeError as exc:
++        print(f"SCAN ERROR (fail-closed): {exc}", file=sys.stderr)
++        return 2
++
++    if args.json:
++        print(
++            json.dumps(
++                {
++                    "scanned": len(files),
++                    "violations": violations,
++                    "stale_allowlist": stale,
++                    "allowlist_size": len(ALLOWLIST),
++                },
++                indent=2,
++            )
++        )
++        return 1 if violations or stale else 0
++
++    print(
++        f"Dead-authority-pointer guard — {len(files)} tracked files scanned, "
++        f"allowlist {len(ALLOWLIST)} entries (doctrine #1642)"
++    )
++    if stale:
++        print(f"STALE ALLOWLIST ({len(stale)}): allowlist drift — entries no longer tracked:")
++        for path in stale:
++            print(f"  {path}")
++    if violations:
++        print(f"VIOLATIONS ({len(violations)}): citations of deleted constitution paths:")
++        for v in violations:
++            print(f"  {v['file']}:{v['line']}: [{v['dead_path']}] {v['text']}")
++        print("Fix: re-point to AGENTS.md (Single Door SSOT) or extend ALLOWLIST with a reason.")
++        return 1
++    if stale:
++        return 1
++    debt = sorted(p for p, (cls, _) in ALLOWLIST.items() if cls == "debt")
++    print(f"clean — {len(debt)} enumerated debt entries pending the docs fast-follow sweep")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/hourly_satellite_batcher.py b/scripts/ci/hourly_satellite_batcher.py
+index 00e67e4d..44a5eefd 100644
+--- a/scripts/ci/hourly_satellite_batcher.py
++++ b/scripts/ci/hourly_satellite_batcher.py
+@@ -97,7 +97,7 @@
+ )
+ 
+ #: §3.1 monorepo-designated literal files (repo-root, always-synced channel).
+-MONOREPO_ROOT_FILES: Final = ("AGENTS.md", "AGENT_RULES.md")
++MONOREPO_ROOT_FILES: Final = ("AGENTS.md",)  # AGENT_RULES.md deleted by #1526 (#1642)
+ 
+ 
+ class BatchError(ValueError):
+@@ -443,7 +443,7 @@ def self_test() -> bool:
+     assert route_path("docs/AGENT_LOOP_SPEC.md") == "monorepo"
+     assert route_path("patches/x.patch") == "monorepo"
+     assert route_path("AGENTS.md") == "monorepo"
+-    assert route_path("AGENT_RULES.md") == "monorepo"
++    assert route_path("AGENT_RULES.md") is None  # deleted constitution — fail-closed quarantine (#1642)
+     # fail-closed quarantine
+     assert route_path("README.md") is None
+     assert route_path("mcp.json") is None
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index ed4f691b..c8348a50 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -17,6 +17,8 @@
+     ["python", "scripts/ci/deploy_preflight_guard.py", "--step1-syntax"],
+     ["python", "scripts/ci/deploy_preflight_guard.py", "--self-test"],
+     ["python", "scripts/ci/issue_template_guard.py", "--self-test"],
++    ["python", "scripts/ci/constitution_pointer_guard.py", "--self-test"],
++    ["python", "scripts/ci/constitution_pointer_guard.py"],
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+     ["python", "scripts/ci/test_parity_guard.py"],
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
+diff --git a/scripts/ci/satellite_board_guard.py b/scripts/ci/satellite_board_guard.py
+index f657fad7..a3b39e43 100644
+--- a/scripts/ci/satellite_board_guard.py
++++ b/scripts/ci/satellite_board_guard.py
+@@ -4,7 +4,7 @@
+ 
+ Milestone 3 of the Single Central Task Board SSOT doctrine (#626): the
+ doctrine's home is docs/FEDERATION_CHARTER.md, with machine-enforcement
+-anchors in AGENTS.md §5 and AGENT_RULES.md §5. This guard audits the
++anchors in AGENTS.md §5. This guard audits the
+ 12 federation satellite repositories for the mandated zero-open-issues /
+ zero-open-PRs clean state, so any stray issue or PR created on a satellite
+ is flagged at the central board instead of orphaning work off-SSOT.
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 9aa13ef1..75b72fd6 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-27 20:33:03 UTC · **253 scripts** (227 py · 22 sh · 4 js/mjs · 0 other) across 36 groups · 0 empty files skipped · 42 missing docstrings.
++> Last generated: 2026-10-27 21:03:53 UTC · **253 scripts** (227 py · 22 sh · 4 js/mjs · 0 other) across 36 groups · 0 empty files skipped · 42 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+diff --git a/scripts/validate_schemas.py b/scripts/validate_schemas.py
+index e0f9c8d0..5c360417 100644
+--- a/scripts/validate_schemas.py
++++ b/scripts/validate_schemas.py
+@@ -52,7 +52,7 @@
+ 
+ Fail-closed doctrine: unknown keyword -> error, unresolved $ref -> error,
+ unknown $schema draft -> error. Skipped checks do not exist — a file that
+-cannot be read is an error, never a silent pass (AGENT_RULES.md §13).
++cannot be read is an error, never a silent pass (zero-dependency house doctrine — AGENTS.md).
+ """
+ 
+ from __future__ import annotations
+diff --git a/tests/test_constitution_pointer_guard.py b/tests/test_constitution_pointer_guard.py
+new file mode 100644
+index 00000000..e3cdb908
+--- /dev/null
++++ b/tests/test_constitution_pointer_guard.py
+@@ -0,0 +1,129 @@
++#!/usr/bin/env python3
++"""Contract tests for scripts/ci/constitution_pointer_guard.py (#1642).
++
++Pins the dead-authority-pointer guard end-to-end:
++  - hermetic scan semantics (flag / skip / boundary precision)
++  - stale-allowlist detection (no ghost entries)
++  - the shipped configuration scans the REAL repo clean (the #1642 sweep
++    acceptance criterion — this is the anti-regression ratchet)
++
++This file legitimately contains AGENT_RULES.md fixture strings; it is
++allowlisted in the guard's ALLOWLIST under the `enforcement` class.
++"""
++
++from __future__ import annotations
++
++import subprocess
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "constitution_pointer_guard.py"
++
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++
++import constitution_pointer_guard as cpg  # noqa: E402
++
++
++class HermeticScanTests(unittest.TestCase):
++    """scan_tree semantics on a tempdir — no git, no network, no repo writes."""
++
++    def setUp(self) -> None:
++        self._td = tempfile.TemporaryDirectory()
++        self.root = Path(self._td.name)
++        (self.root / "clean.md").write_text(
++            "Governance lives in AGENTS.md — the Single Door SSOT.\n", encoding="utf-8"
++        )
++        (self.root / "doc.md").write_text(
++            "see AGENT_RULES.md §3 for the U-rules\n", encoding="utf-8"
++        )
++        (self.root / "code.py").write_text(
++            "# legacy: AGENT_RULES U4 doctrine\n"
++            'x = "AGENT_RULES_PATH is a different, live surface"\n'
++            'y = "agent_rules.json too"\n',
++            encoding="utf-8",
++        )
++        (self.root / "allowed.md").write_text(
++            "historical: AGENT_RULES.md was deleted by #1526\n", encoding="utf-8"
++        )
++        (self.root / "bin.dat").write_bytes(b"\x00 AGENT_RULES.md inside binary")
++
++    def tearDown(self) -> None:
++        self._td.cleanup()
++
++    def _scan(self, files, allowlist):
++        violations, stale = cpg.scan_tree(
++            self.root, files, cpg._compile_patterns(), allowlist
++        )
++        return violations, stale
++
++    def test_clean_file_not_flagged(self):
++        violations, _ = self._scan(["clean.md"], {})
++        self.assertEqual([v["file"] for v in violations], [])
++
++    def test_md_citation_flagged_with_line(self):
++        violations, _ = self._scan(["doc.md"], {})
++        self.assertEqual(len(violations), 1)
++        self.assertEqual(violations[0]["file"], "doc.md")
++        self.assertEqual(violations[0]["line"], 1)
++        self.assertEqual(violations[0]["dead_path"], "AGENT_RULES.md")
++
++    def test_py_comment_flagged(self):
++        violations, _ = self._scan(["code.py"], {})
++        self.assertEqual(len(violations), 1)
++        self.assertEqual(violations[0]["file"], "code.py")
++        self.assertEqual(violations[0]["line"], 1)
++
++    def test_word_boundary_precision(self):
++        """AGENT_RULES_PATH / agent_rules.json name a live config file — out of class."""
++        violations, _ = self._scan(["code.py"], {})
++        self.assertTrue(all(v["line"] == 1 for v in violations))
++
++    def test_binary_skipped(self):
++        violations, _ = self._scan(["bin.dat"], {})
++        self.assertEqual(violations, [])
++
++    def test_allowlisted_file_skipped(self):
++        violations, _ = self._scan(
++            ["allowed.md"], {"allowed.md": ("historical", "test entry")}
++        )
++        self.assertEqual(violations, [])
++
++    def test_stale_allowlist_entry_detected(self):
++        _, stale = self._scan(["clean.md"], {"ghost.md": ("debt", "x")})
++        self.assertEqual(stale, ["ghost.md"])
++
++
++class ShippedConfigurationTests(unittest.TestCase):
++    """Integration against the real repo — the #1642 acceptance ratchet."""
++
++    def test_guard_self_test_mode_passes(self):
++        proc = subprocess.run(  # noqa: S603
++            [sys.executable, str(GUARD), "--self-test"],
++            cwd=str(REPO_ROOT),
++            capture_output=True,
++            text=True,
++            timeout=60,
++            check=False,
++        )
++        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
++
++    def test_real_repo_scan_is_clean(self):
++        """The sweep landed: zero non-allowlisted citations on the live tree."""
++        violations, stale = cpg.scan_tree(REPO_ROOT, cpg.tracked_files(REPO_ROOT))
++        self.assertEqual(
++            violations, [], "new citation of a deleted constitution path introduced"
++        )
++        self.assertEqual(stale, [], "allowlist drift — entry no longer tracked")
++
++    def test_allowlist_classes_are_reasoned(self):
++        """Every allowlist entry carries a non-empty class + reason."""
++        for path, (cls, reason) in cpg.ALLOWLIST.items():
++            self.assertIn(cls, {"historical", "protected", "mirror-parity", "enforcement", "debt"})
++            self.assertTrue(reason.strip(), f"empty reason for {path}")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_federation_transit.py b/tests/test_federation_transit.py
+index 5a0a0818..b1d838e2 100644
+--- a/tests/test_federation_transit.py
++++ b/tests/test_federation_transit.py
+@@ -98,7 +98,6 @@ def test_04_monorepo_paths_never_ride_a_satellite(self):
+             "docs/SPEC.md",
+             "patches/x.patch",
+             "AGENTS.md",
+-            "AGENT_RULES.md",
+         ):
+             self.assertEqual(hb.route_path(path), "monorepo", msg=path)
+ 
+diff --git a/tests/test_s13_knowledge_graph.py b/tests/test_s13_knowledge_graph.py
+index faed2ee9..07d2b6b9 100644
+--- a/tests/test_s13_knowledge_graph.py
++++ b/tests/test_s13_knowledge_graph.py
+@@ -26,7 +26,7 @@
+ 
+ def sources() -> dict[str, str]:
+     return {
+-        "docs/AGENT_RULES.md": "# Rules\n\nU4 hold doctrine. See GATEWAY.md#auth for keys\n",
++        "docs/AGENT_LOOP_SPEC.md": "# Rules\n\nU4 hold doctrine. See GATEWAY.md#auth for keys\n",
+         "docs/GATEWAY.md": "# Gateway SSOT\nBearer + key auth\n",
+         "scripts/agents/loop.py": '"""Agent loop."""\nimport json\n\n'
+         'def run():\n    """Run the loop."""\n'
+@@ -123,7 +123,7 @@ def test_05_import_edges_inferred_and_resolved(self):
+ 
+     def test_06_markdown_refs_resolved(self):
+         g = graph()
+-        edge = next(e for e in g.edges if e.source == "file:docs/AGENT_RULES.md")
++        edge = next(e for e in g.edges if e.source == "file:docs/AGENT_LOOP_SPEC.md")
+         self.assertEqual(edge.relation, "enforces")
+         self.assertEqual(edge.confidence, "explicit")
+         self.assertEqual(edge.target, "file:docs/GATEWAY.md")
+@@ -154,12 +154,12 @@ def test_10_broken_python_fail_closed(self):
+ class OneHopResolution(unittest.TestCase):
+     def test_11_budget_contract(self):
+         self.assertEqual(kg.TOKEN_BUDGET_PER_QUERY, 500)
+-        r = graph().resolve_context("file:docs/AGENT_RULES.md")
++        r = graph().resolve_context("file:docs/AGENT_LOOP_SPEC.md")
+         self.assertTrue(r.budget_ok)
+         self.assertLessEqual(r.tokens_estimate, kg.TOKEN_BUDGET_PER_QUERY)
+ 
+     def test_12_neighbors_via_edges(self):
+-        r = graph().resolve_context("file:docs/AGENT_RULES.md")
++        r = graph().resolve_context("file:docs/AGENT_LOOP_SPEC.md")
+         self.assertIn("file:docs/GATEWAY.md", {n.id for n in r.neighbors})
+ 
+     def test_13_unknown_node_fail_closed(self):
+@@ -169,18 +169,18 @@ def test_13_unknown_node_fail_closed(self):
+     def test_14_bidirectional_hop(self):
+         # Resolving the TARGET also sees the incoming edge.
+         r = graph().resolve_context("file:docs/GATEWAY.md")
+-        self.assertTrue(any(e.source == "file:docs/AGENT_RULES.md" for e in r.edges))
++        self.assertTrue(any(e.source == "file:docs/AGENT_LOOP_SPEC.md" for e in r.edges))
+ 
+ 
+ class TokenDietBenchmark(unittest.TestCase):
+     def test_15_ratio_gate(self):
+         self.assertGreaterEqual(kg.MIN_TOKEN_SAVINGS_RATIO, 50.0)
+         big = "word " * 4000
+-        raw = {"docs/AGENT_RULES.md": big, "docs/GATEWAY.md": big}
++        raw = {"docs/AGENT_LOOP_SPEC.md": big, "docs/GATEWAY.md": big}
+         slim = kg.KnowledgeGraph(
+             nodes=(
+                 kg.KnowledgeNode(
+-                    "file:docs/AGENT_RULES.md", "policy", "one line", "a" * 64
++                    "file:docs/AGENT_LOOP_SPEC.md", "policy", "one line", "a" * 64
+                 ),
+                 kg.KnowledgeNode(
+                     "file:docs/GATEWAY.md", "contract", "one line", "b" * 64
+@@ -188,7 +188,7 @@ def test_15_ratio_gate(self):
+             ),
+             edges=(
+                 kg.KnowledgeEdge(
+-                    "file:docs/AGENT_RULES.md",
++                    "file:docs/AGENT_LOOP_SPEC.md",
+                     "file:docs/GATEWAY.md",
+                     "enforces",
+                     "explicit",
+@@ -196,7 +196,7 @@ def test_15_ratio_gate(self):
+             ),
+         )
+         ratio = kg.benchmark_savings(
+-            raw, slim.resolve_context("file:docs/AGENT_RULES.md")
++            raw, slim.resolve_context("file:docs/AGENT_LOOP_SPEC.md")
+         )
+         self.assertGreater(ratio, kg.MIN_TOKEN_SAVINGS_RATIO)
+ 
+diff --git a/tests/test_validate_schemas.py b/tests/test_validate_schemas.py
+index 515511a3..6f29ce13 100644
+--- a/tests/test_validate_schemas.py
++++ b/tests/test_validate_schemas.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """tests/test_validate_schemas.py — test suite for scripts/validate_schemas.py (issue #45).
+ 
+-Dual-mode by design (zero-dependency doctrine, AGENT_RULES.md §13):
++Dual-mode by design (zero-dependency house doctrine — AGENTS.md):
+   - pytest:  pytest tests/test_validate_schemas.py
+   - stdlib:  python3 tests/test_validate_schemas.py   (plain runner, no pytest import)
+ 
+diff --git a/vscode/AGENTS.md b/vscode/AGENTS.md
+index 565652b5..55a542ff 100644
+--- a/vscode/AGENTS.md
++++ b/vscode/AGENTS.md
+@@ -8,7 +8,7 @@
+ ## 1. Authority & Governance
+ 
+ 1. **Admin Decision Mandate:** Admin explicit instructions hold the highest authority. Destructive operations or architecture deviations require prior approval.
+-2. **Constitutional SSOT:** This document and the central [`AGENT_RULES.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENT_RULES.md) govern all extension code.
++2. **Constitutional SSOT:** This document and the central [`AGENTS.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md) govern all extension code.
+ 3. **Public-First Ingress (Two-Tier Invariant #430):**
+    - **No Claim -> No Branch:** Claim marker (`status:claimed` + `<!-- atomic-claim -->`) must exist before branch checkout.
+    - **No Branch -> No Push:** Pushes to unclaiimed issues are rejected. All PRs flow through `Supremeai-bd/supremeai-open` via bridge dispatches.

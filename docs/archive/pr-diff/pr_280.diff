@@ -1,0 +1,228 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index e9c1758f..ecfb56db 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -371,7 +371,7 @@ jobs:
+ 
+           echo "should_bridge=$SHOULD_BRIDGE" >> "$GITHUB_OUTPUT"
+ 
+-      - name: Create Bridge Branch & File Work Order
++      - name: Create Bridge Branch
+         id: create_wo
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+@@ -380,20 +380,8 @@ jobs:
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+-          # GITHUB_TOKEN can never hold the `workflows` scope (it is not a
+-          # grantable token scope), so it cannot push bridge branches that
+-          # touch .github/workflows/* — and the bridge branch is created FROM
+-          # the merge commit, so the #155 diet makes that the common case.
+-          # The PAT (the same credential the auto-merge job uses) carries
+-          # repo-wide scope. When unset the App token is still used: branches
+-          # without workflow changes push fine, workflow-touching ones fail
+-          # loudly (never silently) exactly as before.
+           BRIDGE_PUSH_TOKEN: ${{ secrets.MERGE_PAT }}
+         run: |
+-          # Deterministic identity: the task id date is the MERGE COMMIT date,
+-          # not the run date — re-dispatching the same PR on a later UTC day
+-          # reproduces the identical task id, patch branch, and work order.
+-          # One PR = at most one bridge branch + one WO issue, forever.
+           DATE_STR=$(git show -s --format=%cd --date=format:%Y%m%d "${PR_SHA}" 2>/dev/null || true)
+           if [ -z "$DATE_STR" ]; then
+             DATE_STR=$(date +%Y%m%d)
+@@ -401,31 +389,9 @@ jobs:
+           TASK_ID="bridge-${DATE_STR}-pr${PR_NUM}-sync"
+           BRANCH_NAME="bridge/${TASK_ID}"
+ 
+-          # Date-independent re-dispatch detection: a work order filed for
+-          # THIS PR on any earlier UTC day (older date-stamped task id) is
+-          # still the same sync — adopt its task id/branch instead of
+-          # creating a twin. PR number match is suffix-anchored ("pr<N>-sync")
+-          # so PR #12 can never collide with PR #128.
+-          EXISTING_WS=$(gh issue list --repo "${{ github.repository }}" --state open --label "bridge:queued" --limit 50 \
+-            --json number,title \
+-            -q ".[] | select(.title | contains(\"pr${PR_NUM}-sync\")) | \"\(.number) \(.title)\"" | head -n 1)
+-          EXISTING_WO_NUM=""
+-          if [ -n "$EXISTING_WS" ]; then
+-            EXISTING_WO_NUM=${EXISTING_WS%% *}
+-            REUSED_TASK=$(printf '%s\n' "${EXISTING_WS#* }" | sed -n 's/.*(\(bridge-[0-9]\{8\}-[a-z0-9-]*pr'"${PR_NUM}"'-sync\)).*/\1/p' | head -n 1)
+-            if [ -n "$REUSED_TASK" ]; then
+-              TASK_ID="$REUSED_TASK"
+-              BRANCH_NAME="bridge/${TASK_ID}"
+-            fi
+-          fi
+-
+-          # Expose identity to the dispatch step (patch-stream payload)
+           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+ 
+-          # The merge commit must exist in this checkout. Both trigger
+-          # paths check out main AFTER landing, so it is an ancestor of HEAD; a
+-          # missing object means the dispatch raced the merge landing.
+           if ! git cat-file -e "${PR_SHA}^{commit}" 2>/dev/null; then
+             echo "::error::merge commit ${PR_SHA} absent from checkout — dispatch likely raced the merge landing on main. Re-dispatch."
+             exit 1
+@@ -434,94 +400,28 @@ jobs:
+           git config user.name "github-actions[bot]"
+           git config user.email "github-actions[bot]@users.noreply.github.com"
+ 
+-          # Push with the PAT when available (see the env note: the App token
+-          # cannot carry workflow-file changes). The token is embedded in the
+-          # ephemeral runner's remote URL and never echoed.
+           if [ -n "$BRIDGE_PUSH_TOKEN" ]; then
+             git remote set-url origin "https://x-access-token:${BRIDGE_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+           fi
+ 
+-          # Create and push bridge patch branch.
+-          # #113: branch from the MERGE COMMIT — the head ref is deleted by
+-          # the auto-merge's --delete-branch, and any git operation anchored
+-          # on PR_HEAD_SHA fatal-exits with "not a valid branch point".
+-          # Idempotent: TASK_ID is anchored to the PR's merge commit date, so
+-          # a re-dispatch re-points the same ref to the same immutable object
+-          # instead of crashing with "already exists".
++          # Create and push bridge patch branch
+           git branch -f "${BRANCH_NAME}" "${PR_SHA}"
+           git push origin "${BRANCH_NAME}"
++          echo "✅ Bridge branch ${BRANCH_NAME} pushed successfully. Streaming via Webhook/Dispatch (zero issue spam)."
+ 
+-          # Prepare Work Order body. Field order mirrors the canonical human
+-          # template (.github/workflows/bridge-work-order.yml) — see header
+-          # note. The heredoc lines below sit at the SAME indentation as the
+-          # surrounding script: the YAML block scalar strips that common
+-          # prefix, so the shell sees a top-level heredoc (content and EOF
+-          # terminator flush-left) — no indentation-repair pass needed (#113).
+-          if [ -n "$EXISTING_WO_NUM" ]; then
+-            echo "Work order for PR #${PR_NUM} already filed (#${EXISTING_WO_NUM}, task ${TASK_ID}) — skipping duplicate creation, continuing to dispatch."
+-          else
+-            cat <<EOF > /tmp/bridge_wo.md
+-          ### Task ID
+-          ${TASK_ID}
+-
+-          ### Patch Branch
+-          ${BRANCH_NAME}
+-
+-          ### Target Repo
+-          Supremeai-bd/supremeai
+-
+-          ### Summary (what + why)
+-          Auto-bridged from merged public PR #${PR_NUM} (${PR_TITLE}). Automated synchronization of shared ecosystem assets into private monorepo.
+-
+-          ### Scope Paths (files touched)
+-          $(git diff --name-only "${BASE_SHA}" "${PR_SHA}" | sed 's/^/- /')
+-
+-          ### Test Evidence (3-tier contract)
+-          1. **Reflection Check:** Automatically ported from public PR #${PR_NUM} (merge commit ${PR_SHA}).
+-          2. **Syntax/Boot:** Public CI passed all verification guards prior to merge.
+-          3. **Tests:** Full constitutional gate battery evaluates this patch upon intake.
+-
+-          ### Rollback Path
+-          - [x] \`git revert\`-নিরাপদ (autonomous sync commit; zero breaking database migration).
+-
+-          ### Agent Identity
+-          auto-bridge-workflow / github-actions[bot]
+-          EOF
+-
+-            echo "Submitting Bridge Work Order issue..."
+-            gh issue create \
+-              --repo "${{ github.repository }}" \
+-              --title "🌉 Auto-Bridge: Sync PR #${PR_NUM} to private codebase (${TASK_ID})" \
+-              --body-file /tmp/bridge_wo.md \
+-              --label "bridge:queued"
+-          fi
+-
+-      - name: Stream landed patch reference to private Bridge Intake (#107)
++      - name: Stream landed patch reference via Webhook / Bridge Intake (#107)
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
++          BRIDGE_WEBHOOK_URL: ${{ secrets.BRIDGE_WEBHOOK_URL || 'https://supremeai-mcp-tower.onrender.com/webhooks/github' }}
+           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+-          # #113: bound from the resolved context output for BOTH trigger
+-          # paths — was read by the python payload below but missing from
+-          # env (KeyError -> empty payload -> broken dispatch) ever since the
+-          # workflow_dispatch refactor. head_sha is metadata only: the private
+-          # intake fetches the patch by branch ref, never by head object.
+           PR_HEAD_SHA: ${{ steps.check_scope.outputs.pr_head_sha }}
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+           TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+           BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
+         run: |
+-          if [ -z "${BRIDGE_DISPATCH_TOKEN}" ]; then
+-            echo "::warning::BRIDGE_DISPATCH_TOKEN not configured — repository_dispatch skipped (notify-only mode)."
+-            echo "Durable Bridge Work Order issue was already filed; private intake will reconcile on its next poll."
+-            exit 0
+-          fi
+-
+-          # Build the patch-stream payload deterministically (JSON-safe quoting via python3).
+-          # #113: file manifest diffs base..MERGE COMMIT — same reachable pair
+-          # the scope check uses; the head-object-anchored diff fatal-exited here.
+           export FILES_RAW="$(git diff --name-only "${BASE_SHA}" "${PR_SHA}")"
+           PAYLOAD=$(python3 - <<'PYEOF'
+           import json, os
+@@ -534,9 +434,6 @@ jobs:
+               "task_id": os.environ["TASK_ID"],
+               "bridge_branch": os.environ["BRANCH_NAME"],
+               "merge_sha": os.environ["PR_SHA"],
+-              # .get + fallback: a missing binding degrades to an empty
+-              # string instead of a KeyError that silently empties the whole
+-              # payload (head SHA is metadata only — see env note above).
+               "head_sha": os.environ.get("PR_HEAD_SHA", ""),
+               "base_sha": os.environ["BASE_SHA"],
+               "file_count": len(files),
+@@ -547,24 +444,37 @@ jobs:
+           PYEOF
+           )
+ 
+-          # A python KeyError/crash leaves PAYLOAD empty — curl would POST an
+-          # empty body (4xx) while the log still implies a dispatch attempt.
+-          # Fail-honest: no payload, no request.
+           if [ -z "$PAYLOAD" ]; then
+-            echo "::error::dispatch payload build failed — refusing to POST an empty body. WO issue is filed; private poll still converges."
++            echo "::error::dispatch payload build failed — refusing to POST an empty body."
+             exit 1
+           fi
+ 
+-          echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
+-          echo "  task_id: ${TASK_ID} | bridge branch: ${BRANCH_NAME} | merge: ${PR_SHA} (head ${PR_HEAD_SHA} may be GC'd — metadata only)"
+-          HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+-            -H "Accept: application/vnd.github+json" \
+-            -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
+-            https://api.github.com/repos/Supremeai-bd/supremeai/dispatches \
+-            -d "${PAYLOAD}")
+-          if [ "${HTTP}" = "204" ]; then
+-            echo "✅ Private Bridge Intake dispatched (HTTP 204) — landed patch reference streamed."
++          # 1. Stream directly to Webhook (MCP Tower / Bridge Ingress)
++          if [ -n "${BRIDGE_WEBHOOK_URL}" ]; then
++            echo "Streaming patch event to Webhook: ${BRIDGE_WEBHOOK_URL}..."
++            HTTP_WH=$(curl -s -o /tmp/webhook_resp.txt -w "%{http_code}" -X POST \
++              -H "Content-Type: application/json" \
++              -H "User-Agent: SupremeAI-Bridge-Webhook/1.0" \
++              -H "X-GitHub-Event: bridge_order_queued" \
++              "${BRIDGE_WEBHOOK_URL}" \
++              -d "${PAYLOAD}" || true)
++            echo "Bridge Webhook returned HTTP ${HTTP_WH}"
++          fi
++
++          # 2. Repository Dispatch to Private Repository (if token configured)
++          if [ -n "${BRIDGE_DISPATCH_TOKEN}" ]; then
++            echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
++            HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
++              -H "Accept: application/vnd.github+json" \
++              -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
++              https://api.github.com/repos/Supremeai-bd/supremeai/dispatches \
++              -d "${PAYLOAD}")
++            if [ "${HTTP}" = "204" ]; then
++              echo "✅ Private Bridge Intake dispatched (HTTP 204) — landed patch reference streamed."
++            else
++              echo "::warning::Private dispatch returned HTTP ${HTTP}."
++              cat /tmp/dispatch_resp.txt || true
++            fi
+           else
+-            echo "::warning::Private dispatch returned HTTP ${HTTP} (response below). Durable WO issue already filed — degradation is visible, merge automation not failed."
+-            cat /tmp/dispatch_resp.txt || true
++            echo "BRIDGE_DISPATCH_TOKEN not set; webhook delivery completed."
+           fi

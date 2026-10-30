@@ -1,0 +1,15 @@
+diff --git a/studio/src/components/chat/ChatInterface.tsx b/studio/src/components/chat/ChatInterface.tsx
+index 466a8ba9..c0ca1f8b 100644
+--- a/studio/src/components/chat/ChatInterface.tsx
++++ b/studio/src/components/chat/ChatInterface.tsx
+@@ -107,7 +107,9 @@ export const ChatInterface: React.FC = () => {
+     setUiLang(next);
+     try {
+       localStorage.setItem('sa_ui_lang', next);
+-    } catch {}
++    } catch (e) {
++      void e;
++    }
+   };
+ 
+   const chatChips = [

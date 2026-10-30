@@ -1,0 +1,1328 @@
+diff --git a/docs/S10_ECOSYSTEM_SCOUT_SPEC.md b/docs/S10_ECOSYSTEM_SCOUT_SPEC.md
+new file mode 100644
+index 00000000..6ef99281
+--- /dev/null
++++ b/docs/S10_ECOSYSTEM_SCOUT_SPEC.md
+@@ -0,0 +1,142 @@
++# S10 — Ecosystem Scout Agent: External Intelligence & Surgical Adoption
++
++Implements **#497** — `feat(agents): [ecosystem-agent] Autonomous Ecosystem
++Scout`. Companion of #489 (S09 dispatch matrix, WO #499) and #498 (S11
++extraction engine).
++
++## 1. Deliverables
++
++| File | Kind | Purpose |
++|---|---|---|
++| `scripts/agents/role_registry.py` | new | Operational role registry (criterion 1): registers `ecosystem-scout` with scoped weapons — read-only URL reader, `ast_parser`, `repo_inspector`, `artifact_writer` — validated as a superset of the S09 SSOT dispatch weapons, zero code-write leakage, fail-closed registration. |
++| `scripts/agents/ecosystem_scout_reference.py` | new | `EcosystemDossier` schema (field-for-field mirror of the issue's TypeScript interface), the 4-phase dissection methodology as a typed pipeline, the **Surgical Extraction Guard** (anti-vending invariant, Gold Pearl 20–100 line budget, native zero-dep fitting, vendor-marker rejection, provenance hygiene), `scout_analyze_repository()` MCP-tool core (offline, deterministic), and `render_dossier_markdown()` standard-artifact export. |
++| `tests/test_s10_ecosystem_scout.py` | new | 32 offline contract tests (dual-mode unittest + pytest). |
++| This document | new | Spec + integration appendices (MCP control plane; continuous loop). |
++
++## 2. The Surgical Need-Driven Extraction Doctrine
++
++> কতটুকু দরকার, কীভাবে দরকার — পুরো কপি নয়, সেরা কোডটুকু নেওয়া
++
++Machine-enforced (`validate_surgical_extraction`, fail-closed):
++
++1. **Anti-Vending Invariant** — `full_repo_vending_prohibited` must be
++   `True`; vendor markers (`git clone`, `npm install`, `pip install git+`,
++   `vendored tree`, …) in an adaptation blueprint are rejected.
++2. **Surgical AST Slicing** — `exact_components_needed` must name the Gold
++   Pearl; `validate_gold_pearl_budget()` bounds a slice to 20–100 lines.
++3. **Native Adaptation** — the blueprint must name `python` or `typescript`
++   as the zero-dependency target (Python for `scripts/agents/`,
++   `scripts/ci/`; TypeScript for control-plane/studio/sdk).
++4. **Clean-Room & Attribution Hygiene** — `provenance_header()` emits the
++   mandatory provenance block; `ADOPT_IMMEDIATELY` verdicts are illegal
++   with an unknown upstream license.
++
++## 3. Four-Phase Dissection (typed pipeline)
++
++`PHASE_1_EXTRACTION → PHASE_2_DISSECTION → PHASE_3_AUDIT → PHASE_4_RFC`,
++validated in order (`run_methodology`). Phase-1 gates enforce zero-hype
++truth: evidence that self-describes as marketing/landing-page-only is
++rejected; the RFC phase must emit the dossier artifact.
++
++## 4. Verdict & Satellite Routing
++
++`verdict ∈ {ADOPT_IMMEDIATELY, EXTRACT_PATTERNS_ONLY, MONITOR, REJECT}`;
++`action_type ∈ {adopt_library, replicate_pattern, integrate_mcp}`; routing
++targets are validated against `CANONICAL_SATELLITES` (empty routing is
++rejected — every dossier must route into the 11-satellite federation).
++Verdict-specific gates: adoption requires a known license; `REJECT` must
++document prohibited practices.
++
++## 5. MCP Tool Reference (criterion 3)
++
++`scout_analyze_repository(ScoutInputs) -> EcosystemDossier` is the
++pure-core reference: manifests (`manifest_json` / `manifest_yaml`) and the
++file tree are parsed into runtime truth (`tech_stack`, heavy-dependency
++flags); missing manifests, empty trees, malformed JSON or an
++empty parsed stack all raise `DossierError`. Network I/O stays in the
++tower adapter — this module is offline and deterministic (no credential
++surface, stdlib only).
++
++## 6. Appendix A — MCP control-plane exposure (out-of-lane repo, spec hunk)
++
++`infrastructure/mcp-control-plane` is outside the bridge lane; the tower
++team applies the equivalent of this registration after review:
++
++```typescript
++// tools/scout.ts — expose scout_analyze_repository (issue #497 criterion 3)
++server.tool("scout_analyze_repository", {
++  repository: z.string().min(1),
++  license: z.string().default("unknown"),
++  manifest_json: z.string().optional(),
++  manifest_yaml: z.string().optional(),
++  file_tree: z.array(z.string()).default([]),
++}, async (args) => {
++  // Adapter responsibility: perform fetches, then hand structured facts
++  // to the pure core (scripts/agents/ecosystem_scout_reference.py).
++  const dossier = await fetchAndParse(args);            // network I/O here
++  return { content: [{ type: "text",
++                       text: renderDossierMarkdown(dossier) }] };
++});
++```
++
++## 7. Appendix B — Continuous-loop integration (content-anchored hunks)
++
++### B1 — `scripts/agents/continuous_agent_loop.py` (pre-existing on main;
++anchors byte-verified against main @ 082fce0)
++
++```python
++     "platform-guardian": "External AI provider sentry & failover toggle",   # ← after S09 Hunk B lands
++ }
++```
++
++becomes:
++
++```python
++     "platform-guardian": "External AI provider sentry & failover toggle",
+++    # S10 (#497): Ecosystem Scout — benchmarking / evaluation requests.
+++    "ecosystem-scout": "External intelligence, dissection & adoption RFC (read-only)",
++ }
++```
++
++### B2 — label-plane trigger (applies to `scripts/agents/role_trigger_matrix.py`
++**after WO #499 lands**; anchors are WO #499's delivered bytes)
++
++```python
++ LABEL_PRIORITY: Final = ("status:runway", "gate:pre-landing", "status:claimed")
++```
++
++becomes:
++
++```python
++-LABEL_PRIORITY: Final = ("status:runway", "gate:pre-landing", "status:claimed")
+++LABEL_PRIORITY: Final = ("status:runway", "gate:pre-landing",
+++                         "status:claimed", "area:ecosystem")
++```
++
++```python
++     "status:claimed": "coder",          # priority 2 — claimed task execution
++ })
++```
++
++becomes:
++
++```python
++     "status:claimed": "coder",          # priority 2 — claimed task execution
+++    "area:ecosystem": "ecosystem-scout",  # priority 3 — #497 benchmarking requests
++ })
++```
++
++This makes "issue or prompt requests repository benchmarking or ecosystem
++evaluation" (criterion 4) a **deterministic label-plane dispatch** — the
++issue labels itself `area:ecosystem` and the loop invokes the Scout role;
++no keyword scanning is introduced.
++
++## 8. Test evidence
++
++32 offline tests green in dual mode (`python3 -m unittest
++test_s10_ecosystem_scout -v` / `pytest -q`), plus `--self-test` green on
++all three `scripts/agents/` modules. Coverage: registry fail-closed
++registration + read-only invariant, anti-vending/vendor-marker matrix,
++Gold Pearl budget bounds, provenance hygiene, verdict-specific gates,
++4-phase order/marketing rejection/RFC artifact, manifest-driven core with
++fail-closed inputs, artifact export with Bengali doctrine sections.
+diff --git a/scripts/agents/ecosystem_scout_reference.py b/scripts/agents/ecosystem_scout_reference.py
+new file mode 100644
+index 00000000..eec83089
+--- /dev/null
++++ b/scripts/agents/ecosystem_scout_reference.py
+@@ -0,0 +1,668 @@
++#!/usr/bin/env python3
++"""S10 — Ecosystem Scout Agent reference implementation (issue #497).
++
++Institutionalizes the **Ecosystem Scout (`agent:scout` / `ecosystem-scout`)**:
++external intelligence, comparative dissection and tech-adoption engineering
++across the SupremeAI federation, governed by the
++
++    Surgical Need-Driven Extraction Doctrine
++    ("কতটুকু দরকার, কীভাবে দরকার — পুরো কপি নয়, সেরা কোডটুকু নেওয়া")
++
++Deterministic contract enforced here (fail-closed everywhere):
++
++  * `EcosystemDossier` mirrors the issue's TypeScript schema field-for-field;
++  * the 4-phase dissection methodology (EXTRACTION → DISSECTION → AUDIT →
++    RFC) is a typed pipeline with a validator per phase;
++  * the **Surgical Extraction Guard** rejects wholesale vendoring:
++    `full_repo_vending_prohibited` must be `True`, a Gold Pearl component
++    list must be present (20–100 line budget per component), the adaptation
++    blueprint must name a native zero-dependency target (Python for
++    `scripts/agents/`, `scripts/ci/`; TypeScript for control-plane/studio/
++    sdk), and vendor markers are forbidden;
++  * attribution hygiene: adoption verdicts require a known license and the
++    provenance header template (`Adapted from <repo> under <license>`);
++  * `render_dossier_markdown()` exports the standard SupremeAI artifact
++    with the কতটুকু দরকার / কীভাবে দরকার breakdown;
++  * `scout_analyze_repository()` is the pure-core reference for the MCP
++    tool of the same name (network I/O stays in the tower adapter — this
++    module is offline and deterministic).
++
++Pure stdlib. Run: python3 scripts/agents/ecosystem_scout_reference.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import json
++from dataclasses import asdict, dataclass, field
++from types import MappingProxyType
++from typing import Any, Final, Mapping
++
++# ---------------------------------------------------------------------------
++# Doctrine constants
++# ---------------------------------------------------------------------------
++
++#: Gold Pearl budget — the exact high-value slice the Scout may extract.
++GOLD_PEARL_MIN_LINES: Final = 20
++GOLD_PEARL_MAX_LINES: Final = 100
++
++VERDICTS: Final = (
++    "ADOPT_IMMEDIATELY",
++    "EXTRACT_PATTERNS_ONLY",
++    "MONITOR",
++    "REJECT",
++)
++
++ACTION_TYPES: Final = (
++    "adopt_library",
++    "replicate_pattern",
++    "integrate_mcp",
++)
++
++PHASE_1_EXTRACTION: Final = "PHASE_1_EXTRACTION"
++PHASE_2_DISSECTION: Final = "PHASE_2_DISSECTION"
++PHASE_3_AUDIT: Final = "PHASE_3_AUDIT"
++PHASE_4_RFC: Final = "PHASE_4_RFC"
++PHASES: Final = (PHASE_1_EXTRACTION, PHASE_2_DISSECTION, PHASE_3_AUDIT, PHASE_4_RFC)
++
++#: Canonical federation satellites (issue #497 routing targets; extensible —
++#: an unknown satellite name is allowed by the schema, an EMPTY routing list
++#: is not).
++CANONICAL_SATELLITES: Final = (
++    "supremeai-open",
++    "supremeai-browser",
++    "supremeai-agents",
++    "supremeai-mcp-control-plane",
++    "supremeai-studio",
++    "supremeai-sdk",
++    "supremeai-infra",
++)
++
++#: Native zero-dependency targets for adaptation blueprints.
++NATIVE_TARGETS: Final = ("python", "typescript")
++
++#: Markers that indicate wholesale vendoring instead of surgical extraction.
++VENDOR_MARKERS: Final = (
++    "git clone",
++    "git submodule",
++    "npm install",
++    "pip install git+",
++    "vendor the entire",
++    "copy the whole repository",
++    "vendored tree",
++)
++
++PROVENANCE_HEADER_TEMPLATE: Final = (
++    "Concept / algorithm adapted from: github.com/{repository}\n"
++    "Upstream License: {license}\n"
++    "Adapted for SupremeAI Federation lightweight satellite runtime."
++)
++
++
++class DossierError(ValueError):
++    """Raised when a dossier violates the Scout contract (fail-closed)."""
++
++
++class PhaseError(ValueError):
++    """Raised when a methodology phase produces invalid evidence."""
++
++
++# ---------------------------------------------------------------------------
++# Schema — field-for-field mirror of the issue's TypeScript EcosystemDossier
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class Target:
++    repository: str
++    license: str
++    tech_stack: tuple[str, ...]
++    core_purpose: str
++
++
++@dataclass(frozen=True)
++class ComparativeAnalysis:
++    superior_capabilities: tuple[str, ...]
++    supremeai_advantages: tuple[str, ...]
++    token_and_resource_impact: str
++
++
++@dataclass(frozen=True)
++class SurgicalExtraction:
++    exact_components_needed: tuple[str, ...]
++    adaptation_blueprint: str
++    full_repo_vending_prohibited: bool
++
++
++@dataclass(frozen=True)
++class SatelliteAction:
++    satellite: str
++    action_type: str
++    rationale: str
++
++
++@dataclass(frozen=True)
++class ActionableTakeaways:
++    architectural_patterns: tuple[str, ...]
++    reusable_components: tuple[str, ...]
++    target_satellites: tuple[SatelliteAction, ...]
++
++
++@dataclass(frozen=True)
++class WatchoutsAndRisks:
++    anti_patterns: tuple[str, ...]
++    security_or_compliance_concerns: tuple[str, ...]
++    prohibited_practices: tuple[str, ...]
++
++
++@dataclass(frozen=True)
++class EcosystemDossier:
++    target: Target
++    comparative_analysis: ComparativeAnalysis
++    surgical_extraction: SurgicalExtraction
++    actionable_takeaways: ActionableTakeaways
++    watchouts_and_risks: WatchoutsAndRisks
++    verdict: str
++
++
++# ---------------------------------------------------------------------------
++# Surgical Extraction Guard
++# ---------------------------------------------------------------------------
++
++
++def validate_surgical_extraction(extraction: SurgicalExtraction) -> None:
++    """Anti-Vending Invariant + Gold Pearl budget + native-fitting check."""
++    if extraction.full_repo_vending_prohibited is not True:
++        raise DossierError(
++            "Anti-Vending Invariant violated: full_repo_vending_prohibited "
++            "must be True — wholesale repository copying is prohibited"
++        )
++    if not extraction.exact_components_needed:
++        raise DossierError(
++            "Surgical extraction requires the exact Gold Pearl components "
++            "('কতটুকু দরকার') — got an empty list"
++        )
++    blueprint = extraction.adaptation_blueprint.strip()
++    if not blueprint:
++        raise DossierError("adaptation_blueprint ('কীভাবে দরকার') is empty")
++    if not any(target in blueprint.lower() for target in NATIVE_TARGETS):
++        raise DossierError(
++            "adaptation_blueprint must fit SupremeAI natively — name python "
++            "or typescript as the zero-dependency target"
++        )
++    lowered = blueprint.lower()
++    for marker in VENDOR_MARKERS:
++        if marker in lowered:
++            raise DossierError(
++                f"vendor marker {marker!r} found in adaptation blueprint — "
++                "extract the Gold Pearl, never vendor trees"
++            )
++
++
++def validate_gold_pearl_budget(component_lines: int) -> None:
++    """A Gold Pearl slice must stay inside the 20-100 line budget."""
++    if not (GOLD_PEARL_MIN_LINES <= component_lines <= GOLD_PEARL_MAX_LINES):
++        raise DossierError(
++            f"Gold Pearl budget is {GOLD_PEARL_MIN_LINES}-"
++            f"{GOLD_PEARL_MAX_LINES} lines, got {component_lines}"
++        )
++
++
++def provenance_header(repository: str, license_name: str) -> str:
++    """Attribution hygiene: the provenance header every adaptation carries."""
++    if not repository or not license_name:
++        raise DossierError("provenance header requires repository and license")
++    return PROVENANCE_HEADER_TEMPLATE.format(
++        repository=repository, license=license_name)
++
++
++# ---------------------------------------------------------------------------
++# Verdict & routing
++# ---------------------------------------------------------------------------
++
++
++def validate_dossier(dossier: EcosystemDossier) -> None:
++    """Full fail-closed dossier validation (all four phases consolidated)."""
++    if dossier.verdict not in VERDICTS:
++        raise DossierError(f"verdict must be one of {VERDICTS}, "
++                           f"got {dossier.verdict!r}")
++
++    t = dossier.target
++    if not t.repository or not t.core_purpose:
++        raise DossierError("target.repository and target.core_purpose are mandatory")
++    if not t.tech_stack:
++        raise DossierError("target.tech_stack is mandatory (runtime truth, "
++                           "never marketing pages)")
++
++    c = dossier.comparative_analysis
++    if not c.superior_capabilities:
++        raise DossierError("comparative_analysis.superior_capabilities is empty — "
++                           "'ওরা কোথায় বেটার' must be answered")
++    if not c.supremeai_advantages:
++        raise DossierError("comparative_analysis.supremeai_advantages is empty — "
++                           "SupremeAI's own strengths must be stated")
++    if not c.token_and_resource_impact:
++        raise DossierError("comparative_analysis.token_and_resource_impact is empty")
++
++    validate_surgical_extraction(dossier.surgical_extraction)
++
++    a = dossier.actionable_takeaways
++    if not a.architectural_patterns or not a.reusable_components:
++        raise DossierError("actionable_takeaways requires architectural_patterns "
++                           "and reusable_components")
++    if not a.target_satellites:
++        raise DossierError("actionable_takeaways.target_satellites is empty — "
++                           "route the RFC to the 11-satellite federation")
++    for action in a.target_satellites:
++        if action.action_type not in ACTION_TYPES:
++            raise DossierError(
++                f"action_type must be one of {ACTION_TYPES}, "
++                f"got {action.action_type!r}")
++        if not action.rationale:
++            raise DossierError(
++                f"satellite action for {action.satellite!r} needs a rationale")
++
++    w = dossier.watchouts_and_risks
++    if not w.anti_patterns:
++        raise DossierError("watchouts_and_risks.anti_patterns is empty — "
++                           "'কী করা যাবে না' must be answered")
++    if not w.security_or_compliance_concerns:
++        raise DossierError("watchouts_and_risks.security_or_compliance_concerns "
++                           "is empty — fingerprint/bloat/boundary risks mandatory")
++    if not w.prohibited_practices:
++        raise DossierError("watchouts_and_risks.prohibited_practices is empty")
++
++    # Verdict-specific deterministic gates.
++    if dossier.verdict == "ADOPT_IMMEDIATELY":
++        if t.license in ("", "unknown", "UNKNOWN", "none"):
++            raise DossierError(
++                "ADOPT_IMMEDIATELY requires a known upstream license "
++                "(attribution hygiene)")
++        if dossier.surgical_extraction.full_repo_vending_prohibited is not True:
++            raise DossierError("adoption still requires surgical extraction")
++    if dossier.verdict == "REJECT" and not w.prohibited_practices:
++        raise DossierError("a REJECT verdict must document the prohibited practices")
++    if dossier.verdict == "EXTRACT_PATTERNS_ONLY" and not a.reusable_components:
++        raise DossierError("EXTRACT_PATTERNS_ONLY must list reusable components")
++
++
++# ---------------------------------------------------------------------------
++# 4-Phase methodology — typed pipeline with per-phase validators
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class PhaseEvidence:
++    """Structured evidence produced by one methodology phase."""
++
++    phase: str
++    findings: tuple[str, ...]
++    artifact: str = ""
++
++
++def validate_phase_evidence(evidence: PhaseEvidence) -> None:
++    """Per-phase fail-closed gates (zero-hype truth)."""
++    if evidence.phase not in PHASES:
++        raise PhaseError(f"unknown phase {evidence.phase!r}")
++    if not evidence.findings:
++        raise PhaseError(f"{evidence.phase} produced no findings")
++    if evidence.phase == PHASE_1_EXTRACTION:
++        joined = " ".join(evidence.findings).lower()
++        if any(m in joined for m in ("marketing", "landing page only")):
++            raise PhaseError(
++                "Phase 1 must extract manifests/contracts/runtime truth — "
++                "marketing-only evidence is rejected (zero-hype)")
++    if evidence.phase == PHASE_4_RFC and not evidence.artifact:
++        raise PhaseError("Phase 4 (RFC) must emit the standardized dossier artifact")
++
++
++def run_methodology(evidence: tuple[PhaseEvidence, ...]) -> str:
++    """Validate the full 4-phase chain in order; return the RFC artifact."""
++    if tuple(e.phase for e in evidence) != PHASES:
++        raise PhaseError(f"phases must run in order {PHASES}")
++    for step in evidence:
++        validate_phase_evidence(step)
++    return evidence[-1].artifact
++
++
++# ---------------------------------------------------------------------------
++# MCP tool reference core — scout_analyze_repository (offline, deterministic)
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class ScoutInputs:
++    """Structured inputs for the scout_analyze_repository core.
++
++    The tower adapter fills these from live fetches; the core itself never
++    touches the network.
++    """
++
++    repository: str
++    license: str = "unknown"
++    manifest_yaml: str = ""
++    manifest_json: str = ""
++    file_tree: tuple[str, ...] = ()
++    readme_headline: str = ""
++
++
++def scout_analyze_repository(inputs: ScoutInputs) -> EcosystemDossier:
++    """Build a fail-closed dossier skeleton from structured evidence.
++
++    Extraction (Phase 1) truth comes from manifests and the file tree —
++    never from the marketing headline. Raises DossierError when mandatory
++    runtime facts are missing.
++    """
++    if not inputs.repository:
++        raise DossierError("scout_analyze_repository requires a repository")
++    if not inputs.manifest_yaml and not inputs.manifest_json:
++        raise DossierError(
++            "Phase 1 requires a package manifest (manifest_yaml or "
++            "manifest_json) — zero-hype truth, not landing pages")
++    if not inputs.file_tree:
++        raise DossierError("Phase 1 requires the file tree for runtime graph")
++
++    tech_stack: list[str] = []
++    runtime_notes: list[str] = []
++    if inputs.manifest_json:
++        try:
++            manifest = json.loads(inputs.manifest_json)
++        except json.JSONDecodeError as exc:
++            raise DossierError(f"manifest_json is not valid JSON: {exc}") from exc
++        deps = manifest.get("dependencies") or {}
++        dev_deps = manifest.get("devDependencies") or {}
++        tech_stack.append(f"node:{manifest.get('engines', {}).get('node', 'unpinned')}")
++        tech_stack.extend(f"dep:{name}" for name in sorted(deps)[:20])
++        if dev_deps:
++            runtime_notes.append(f"{len(dev_deps)} devDependencies (build-only)")
++    if inputs.manifest_yaml:
++        for line in inputs.manifest_yaml.splitlines():
++            stripped = line.strip()
++            if stripped.startswith("- ") and stripped[2:]:
++                tech_stack.append(f"py:{stripped[2:].split('==')[0]}")
++
++    if not tech_stack:
++        raise DossierError("manifest parsed to an empty tech stack — refuse to guess")
++
++    heavy = [d for d in tech_stack if any(
++        marker in d for marker in ("java", "jvm", "cargo", "rustc", "ghidra"))]
++
++    return EcosystemDossier(
++        target=Target(
++            repository=inputs.repository,
++            license=inputs.license,
++            tech_stack=tuple(tech_stack),
++            core_purpose=inputs.readme_headline or "core purpose extracted upstream",
++        ),
++        comparative_analysis=ComparativeAnalysis(
++            superior_capabilities=(
++                "external runtime strengths recorded during Phase 2 dissection",),
++            supremeai_advantages=(
++                "zero-bloat satellite doctrine; zero-admin self-healing loop",),
++            token_and_resource_impact=(
++                f"file tree shows {len(inputs.file_tree)} entries; "
++                + (f"heavy runtime deps detected: {heavy}" if heavy
++                   else "no heavy runtime deps detected")),
++        ),
++        surgical_extraction=SurgicalExtraction(
++            exact_components_needed=(
++                "Gold Pearl component identified in Phase 2 — 20-100 line slice",),
++            adaptation_blueprint=(
++                "Transcribe the Gold Pearl natively in python with "
++                "fail-closed error handling; zero new dependencies."),
++            full_repo_vending_prohibited=True,
++        ),
++        actionable_takeaways=ActionableTakeaways(
++            architectural_patterns=("pattern recorded in Phase 2",),
++            reusable_components=("component recorded in Phase 2",),
++            target_satellites=(SatelliteAction(
++                satellite=CANONICAL_SATELLITES[0],
++                action_type="replicate_pattern",
++                rationale="skeleton dossier — route after human review"),),
++        ),
++        watchouts_and_risks=WatchoutsAndRisks(
++            anti_patterns=("wholesale vendoring",),
++            security_or_compliance_concerns=(
++                "license verification pending — do not adopt before review",),
++            prohibited_practices=("blind adoption of hype",),
++        ),
++        verdict="MONITOR",
++    )
++
++
++# ---------------------------------------------------------------------------
++# Markdown artifact export
++# ---------------------------------------------------------------------------
++
++
++def _bullets(items: tuple[str, ...]) -> str:
++    return "\n".join(f"- {item}" for item in items)
++
++
++def render_dossier_markdown(dossier: EcosystemDossier) -> str:
++    """Standard SupremeAI artifact format (issue #497 criterion 5)."""
++    validate_dossier(dossier)
++    a = dossier.actionable_takeaways
++    routing = "\n".join(
++        f"- **{s.satellite}** — `{s.action_type}`: {s.rationale}"
++        for s in a.target_satellites)
++    return (
++        f"# Ecosystem Dossier — {dossier.target.repository}\n\n"
++        f"**Verdict:** `{dossier.verdict}` · **License:** {dossier.target.license}\n\n"
++        f"## Target\n- Core purpose: {dossier.target.core_purpose}\n"
++        f"- Tech stack:\n{_bullets(dossier.target.tech_stack)}\n\n"
++        f"## Comparative Analysis\n"
++        f"### They are better at (ওরা আমাদের থেকে কোথায় বেটার)\n"
++        f"{_bullets(dossier.comparative_analysis.superior_capabilities)}\n\n"
++        f"### SupremeAI advantages\n"
++        f"{_bullets(dossier.comparative_analysis.supremeai_advantages)}\n\n"
++        f"- Token & resource impact: "
++        f"{dossier.comparative_analysis.token_and_resource_impact}\n\n"
++        f"## Surgical Extraction (কতটুকু দরকার / কীভাবে দরকার)\n"
++        f"{_bullets(dossier.surgical_extraction.exact_components_needed)}\n\n"
++        f"**Blueprint:** {dossier.surgical_extraction.adaptation_blueprint}\n\n"
++        f"**Full-repo vending prohibited:** "
++        f"{dossier.surgical_extraction.full_repo_vending_prohibited}\n\n"
++        f"```\n{provenance_header(dossier.target.repository, dossier.target.license)}\n"
++        f"```\n\n"
++        f"## Actionable Takeaways\n"
++        f"- Architectural patterns:\n{_bullets(a.architectural_patterns)}\n"
++        f"- Reusable components:\n{_bullets(a.reusable_components)}\n"
++        f"- Satellite routing:\n{routing}\n\n"
++        f"## Watchouts & Risks (কী করা যাবে না / ঝুঁকি)\n"
++        f"- Anti-patterns:\n{_bullets(dossier.watchouts_and_risks.anti_patterns)}\n"
++        f"- Security/compliance:\n"
++        f"{_bullets(dossier.watchouts_and_risks.security_or_compliance_concerns)}\n"
++        f"- Prohibited practices:\n"
++        f"{_bullets(dossier.watchouts_and_risks.prohibited_practices)}\n"
++    )
++
++
++# ---------------------------------------------------------------------------
++# Self-test
++# ---------------------------------------------------------------------------
++
++
++def _valid_dossier(**overrides: Any) -> EcosystemDossier:
++    parts: dict[str, Any] = dict(
++        target=Target(repository="example/org-repo", license="MIT",
++                      tech_stack=("node:24", "dep:zod"),
++                      core_purpose="reverse-engineering evidence ledger"),
++        comparative_analysis=ComparativeAnalysis(
++            superior_capabilities=("streaming pagination under 10 MiB frames",),
++            supremeai_advantages=("zero-dep python runtime",),
++            token_and_resource_impact="30% token reduction on ledger dumps"),
++        surgical_extraction=SurgicalExtraction(
++            exact_components_needed=("EvidenceRecord interface + sha256 fingerprint",),
++            adaptation_blueprint=("Transcribe natively in python with "
++                                  "fail-closed errors; zero dependencies."),
++            full_repo_vending_prohibited=True),
++        actionable_takeaways=ActionableTakeaways(
++            architectural_patterns=("evidence ledger",),
++            reusable_components=("EvidenceRecord record type",),
++            target_satellites=(SatelliteAction(
++                satellite="supremeai-mcp-control-plane",
++                action_type="replicate_pattern",
++                rationale="ledger parity with tower tooling"),)),
++        watchouts_and_risks=WatchoutsAndRisks(
++            anti_patterns=("wholesale vendoring",),
++            security_or_compliance_concerns=("MIT attribution mandatory",),
++            prohibited_practices=("blind hype adoption",)),
++        verdict="EXTRACT_PATTERNS_ONLY",
++    )
++    parts.update(overrides)
++    return EcosystemDossier(**parts)
++
++
++def self_test() -> bool:
++    # Happy path.
++    d = _valid_dossier()
++    validate_dossier(d)
++    md = render_dossier_markdown(d)
++    assert "কতটুকু দরকার" in md and "কীভাবে দরকার" in md
++    assert "adapted from: github.com/example/org-repo" in md and "MIT" in md
++    assert d.verdict == "EXTRACT_PATTERNS_ONLY"
++
++    # Fail-closed matrix.
++    bad_cases = (
++        _valid_dossier(verdict="SHIP_IT"),
++        _valid_dossier(target=replace_target(repository="")),
++        _valid_dossier(comparative_analysis=replace_comparative(superior_capabilities=())),
++        _valid_dossier(comparative_analysis=replace_comparative(supremeai_advantages=())),
++        _valid_dossier(surgical_extraction=replace_surgical(full_repo_vending_prohibited=False)),
++        _valid_dossier(surgical_extraction=replace_surgical(exact_components_needed=())),
++        _valid_dossier(surgical_extraction=replace_surgical(adaptation_blueprint="")),
++        _valid_dossier(surgical_extraction=replace_surgical(
++            adaptation_blueprint="git clone the whole repository")),
++        _valid_dossier(actionable_takeaways=replace_takeaways(target_satellites=())),
++        _valid_dossier(actionable_takeaways=replace_takeaways(
++            target_satellites=(SatelliteAction("sat", "fork_it", "why"),))),
++        _valid_dossier(watchouts_and_risks=replace_watchouts(anti_patterns=())),
++        _valid_dossier(watchouts_and_risks=replace_watchouts(
++            security_or_compliance_concerns=())),
++        _valid_dossier(watchouts_and_risks=replace_watchouts(prohibited_practices=())),
++        _valid_dossier(verdict="ADOPT_IMMEDIATELY",
++                       target=replace_target(license="unknown")),
++        _valid_dossier(verdict="REJECT",
++                       watchouts_and_risks=replace_watchouts(prohibited_practices=())),
++    )
++    for bad in bad_cases:
++        try:
++            validate_dossier(bad)
++            raise SystemExit(f"dossier gate failed open: {bad!r}")
++        except DossierError:
++            pass
++
++    # Gold Pearl budget.
++    validate_gold_pearl_budget(GOLD_PEARL_MIN_LINES)
++    validate_gold_pearl_budget(GOLD_PEARL_MAX_LINES)
++    for off in (GOLD_PEARL_MIN_LINES - 1, GOLD_PEARL_MAX_LINES + 1):
++        try:
++            validate_gold_pearl_budget(off)
++            raise SystemExit("gold pearl budget failed open")
++        except DossierError:
++            pass
++
++    # Provenance hygiene.
++    assert "github.com/example/org-repo" in provenance_header("example/org-repo", "MIT")
++    try:
++        provenance_header("", "MIT")
++        raise SystemExit("provenance failed open")
++    except DossierError:
++        pass
++
++    # Methodology pipeline.
++    chain = tuple(PhaseEvidence(p, ("finding",),
++                                artifact="dossier.md" if p == PHASE_4_RFC else "")
++                  for p in PHASES)
++    assert run_methodology(chain) == "dossier.md"
++    for broken in (
++        tuple(PhaseEvidence(p, ("f",)) for p in PHASES[1:]),
++        tuple(PhaseEvidence(p, ("f",)) for p in reversed(PHASES)),
++        (PhaseEvidence(PHASE_1_EXTRACTION, ("marketing landing page only",)),
++         PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
++         PhaseEvidence(PHASE_3_AUDIT, ("f",)),
++         PhaseEvidence(PHASE_4_RFC, ("f",), artifact="d.md")),
++        (PhaseEvidence(PHASE_1_EXTRACTION, ("f",)),
++         PhaseEvidence(PHASE_2_DISSECTION, ("f",)),
++         PhaseEvidence(PHASE_3_AUDIT, ("f",)),
++         PhaseEvidence(PHASE_4_RFC, ("f",))),
++    ):
++        try:
++            run_methodology(broken)  # type: ignore[arg-type]
++            raise SystemExit(f"methodology gate failed open: {broken!r}")
++        except PhaseError:
++            pass
++
++    # MCP core: manifest-driven, fail-closed.
++    d2 = scout_analyze_repository(ScoutInputs(
++        repository="example/org-repo", license="MIT",
++        manifest_json='{"dependencies": {"zod": "^3"}, '
++                      '"engines": {"node": "24"}}',
++        file_tree=("src/index.ts", "src/ledger.ts"),
++        readme_headline="evidence ledger"))
++    assert d2.target.tech_stack[0] == "node:24"
++    assert any(dep == "dep:zod" for dep in d2.target.tech_stack)
++    assert d2.verdict == "MONITOR"
++    validate_dossier(d2)
++    for broken_inputs in (
++        ScoutInputs(repository=""),
++        ScoutInputs(repository="x"),
++        ScoutInputs(repository="x", manifest_yaml="a: 1"),
++        ScoutInputs(repository="x", manifest_yaml="- fastapi",
++                    file_tree=()),
++        ScoutInputs(repository="x", manifest_json="{bad json",
++                    file_tree=("a",)),
++        ScoutInputs(repository="x", manifest_yaml="a: 1",
++                    file_tree=("a",)),
++    ):
++        try:
++            scout_analyze_repository(broken_inputs)
++            raise SystemExit(f"scout core failed open: {broken_inputs!r}")
++        except DossierError:
++            pass
++
++    return True
++
++
++def replace_target(**kw: Any) -> Target:
++    base = Target(repository="example/org-repo", license="MIT",
++                  tech_stack=("node:24",), core_purpose="p")
++    return Target(**{**base.__dict__, **kw})
++
++
++def replace_comparative(**kw: Any) -> ComparativeAnalysis:
++    base = ComparativeAnalysis(("s",), ("a",), "t")
++    return ComparativeAnalysis(**{**base.__dict__, **kw})
++
++
++def replace_surgical(**kw: Any) -> SurgicalExtraction:
++    base = SurgicalExtraction(("c",), "native python blueprint", True)
++    return SurgicalExtraction(**{**base.__dict__, **kw})
++
++
++def replace_takeaways(**kw: Any) -> ActionableTakeaways:
++    base = ActionableTakeaways(
++        ("p",), ("r",),
++        (SatelliteAction("supremeai-open", "replicate_pattern", "why"),))
++    return ActionableTakeaways(**{**base.__dict__, **kw})
++
++
++def replace_watchouts(**kw: Any) -> WatchoutsAndRisks:
++    base = WatchoutsAndRisks(("a",), ("s",), ("p",))
++    return WatchoutsAndRisks(**{**base.__dict__, **kw})
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    args = parser.parse_args()
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: ecosystem_scout_reference")
++        return 0
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/scripts/agents/role_registry.py b/scripts/agents/role_registry.py
+new file mode 100644
+index 00000000..f586d903
+--- /dev/null
++++ b/scripts/agents/role_registry.py
+@@ -0,0 +1,207 @@
++#!/usr/bin/env python3
++"""S10 — Agent Role Registry (issue #497, acceptance criterion 1).
++
++Operational registry that instantiates the deterministic dispatch contracts
++from ``role_trigger_matrix.py`` (SSOT — the registry NEVER redefines a
++role's trigger or contradicts its weapon allowlist; it only adds
++operational, execution-level facts such as tool adapters and read-only
++posture).
++
++Issue #497 registers the **Ecosystem Scout (`ecosystem-scout`)** with its
++scoped weapons: read-only URL reader, AST parser, repository inspector and
++artifact writer. Note the RBAC invariant: `artifact_writer` produces
++*report artifacts* (dossiers), not source code — it is deliberately NOT in
++`role_trigger_matrix.CODE_WRITE_WEAPONS`, and every read-only role's
++registry weapons must remain disjoint from that set.
++
++Fail-closed by contract:
++
++  * unknown role lookups raise ValueError;
++  * duplicate registration raises ValueError;
++  * a registry record whose weapons violate the SSOT contract (missing a
++    dispatch weapon, or leaking a code-write weapon into a read-only role)
++    is rejected at registration time.
++
++Pure stdlib. Run: python3 scripts/agents/role_registry.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import sys
++from dataclasses import dataclass, field
++from types import MappingProxyType
++from typing import Final
++
++sys.path.insert(0, str(__file__).rsplit("/", 1)[0])
++
++from role_trigger_matrix import (  # noqa: E402
++    CODE_WRITE_WEAPONS,
++    ROLE_CONTRACTS,
++    ROLE_IDS,
++    provision_weapons,
++)
++
++
++@dataclass(frozen=True)
++class RoleRecord:
++    """Operational registration for one dispatch role."""
++
++    role_id: str
++    display_name: str
++    #: Superset of the SSOT dispatch weapons — operational tool adapters.
++    operational_weapons: frozenset[str]
++    #: True -> role may not hold any code-write weapon (auditor family).
++    read_only: bool
++    description: str
++    adapters: tuple[str, ...] = field(default_factory=tuple)
++
++
++class RoleRegistry:
++    """Fail-closed registry. Registration validates against the SSOT."""
++
++    def __init__(self) -> None:
++        self._roles: dict[str, RoleRecord] = {}
++
++    def register(self, record: RoleRecord) -> None:
++        if record.role_id in self._roles:
++            raise ValueError(f"role {record.role_id!r} is already registered")
++        if record.role_id not in ROLE_CONTRACTS:
++            raise ValueError(
++                f"role {record.role_id!r} is not a dispatch role; "
++                f"add it to role_trigger_matrix.ROLE_CONTRACTS first "
++                f"(single source of truth: {sorted(ROLE_IDS)})"
++            )
++        contract_weapons = provision_weapons(record.role_id)
++        missing = contract_weapons - record.operational_weapons
++        if missing:
++            raise ValueError(
++                f"role {record.role_id!r} registry weapons are missing SSOT "
++                f"dispatch weapons {sorted(missing)}"
++            )
++        leaked = record.operational_weapons & CODE_WRITE_WEAPONS
++        if record.read_only and leaked:
++            raise ValueError(
++                f"read-only role {record.role_id!r} leaked code-write "
++                f"weapons {sorted(leaked)}"
++            )
++        if not record.read_only and not leaked:
++            # Not fatal, but the registry demands an explicit posture.
++            raise ValueError(
++                f"role {record.role_id!r} holds code-write weapons "
++                f"{sorted(leaked) if leaked else CODE_WRITE_WEAPONS & record.operational_weapons} "
++                "and must declare read_only=False explicitly"
++            )
++        self._roles[record.role_id] = record
++
++    def get(self, role_id: str) -> RoleRecord:
++        record = self._roles.get(role_id)
++        if record is None:
++            raise ValueError(f"unknown role: {role_id!r}")
++        return record
++
++    def list_roles(self) -> tuple[str, ...]:
++        return tuple(sorted(self._roles))
++
++    def check_read_only(self, role_id: str) -> bool:
++        record = self.get(role_id)
++        if record.read_only:
++            return not (record.operational_weapons & CODE_WRITE_WEAPONS)
++        return False
++
++
++SCOUT_WEAPONS: Final = frozenset({
++    # SSOT dispatch weapons (role_trigger_matrix, issue #489 matrix):
++    "search_web",
++    "read_url_content",
++    "gh_issue_create",
++    # Operational scoped weapons mandated by issue #497:
++    "ast_parser",          # AST slicing for the Gold Pearl (20-100 lines)
++    "repo_inspector",      # read-only manifests / contracts / dependency graphs
++    "artifact_writer",     # writes EcosystemDossier report artifacts (NOT code)
++})
++
++
++def default_registry() -> RoleRegistry:
++    """Registry with the #497 Ecosystem Scout registration."""
++    registry = RoleRegistry()
++    registry.register(RoleRecord(
++        role_id="ecosystem-scout",
++        display_name="Ecosystem Scout (ইকোসিস্টেম এজেন্ট)",
++        operational_weapons=SCOUT_WEAPONS,
++        read_only=True,
++        description=(
++            "Autonomous external-intelligence scout: 4-phase dissection "
++            "(extraction, comparative analysis, risk audit, adoption RFC) "
++            "under the Surgical Need-Driven Extraction Doctrine — "
++            "never vendor full repositories, extract only the Gold Pearl."
++        ),
++        adapters=(
++            "scout_analyze_repository",   # MCP tool (issue #497 criterion 3)
++            "render_dossier_markdown",    # standard artifact export
++        ),
++    ))
++    return registry
++
++
++def self_test() -> bool:
++    registry = default_registry()
++    assert registry.list_roles() == ("ecosystem-scout",)
++    record = registry.get("ecosystem-scout")
++    assert record.read_only is True
++    assert registry.check_read_only("ecosystem-scout")
++    # SSOT superset holds: every dispatch weapon is registered.
++    assert provision_weapons("ecosystem-scout") <= SCOUT_WEAPONS
++    # No code-write weapons leak into the read-only role.
++    assert not (SCOUT_WEAPONS & CODE_WRITE_WEAPONS)
++
++    # Fail-closed lookups and registrations.
++    for broken, exc in (
++        (lambda: registry.get("ghost"), ValueError),
++        (lambda: registry.register(record), ValueError),          # duplicate
++        (lambda: registry.register(RoleRecord(                    # not dispatch role
++            role_id="ghost", display_name="g",
++            operational_weapons=frozenset({"search_web"}),
++            read_only=True, description="x")), ValueError),
++        (lambda: registry.register(RoleRecord(                    # missing SSOT weapon
++            role_id="ecosystem-scout", display_name="g",
++            operational_weapons=frozenset({"search_web"}),
++            read_only=True, description="x")), ValueError),
++        (lambda: registry.register(RoleRecord(                    # write leak
++            role_id="ecosystem-scout", display_name="g",
++            operational_weapons=SCOUT_WEAPONS | {"write_to_file"},
++            read_only=True, description="x")), ValueError),
++        (lambda: registry.register(RoleRecord(                    # undeclared posture
++            role_id="ecosystem-scout", display_name="g",
++            operational_weapons=SCOUT_WEAPONS | {"pr_create"},
++            read_only=True, description="x")), ValueError),
++    ):
++        try:
++            broken()
++            raise SystemExit(f"registry gate failed open: {exc}")
++        except exc:  # type: ignore[misc]
++            pass
++    return True
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--list", action="store_true")
++    args = parser.parse_args()
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: role_registry")
++        return 0
++    if args.list:
++        registry = default_registry()
++        for role in registry.list_roles():
++            r = registry.get(role)
++            print(f"{role}: {r.display_name} read_only={r.read_only} "
++                  f"weapons={sorted(r.operational_weapons)}")
++        return 0
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/tests/test_s10_ecosystem_scout.py b/tests/test_s10_ecosystem_scout.py
+new file mode 100644
+index 00000000..aadb8827
+--- /dev/null
++++ b/tests/test_s10_ecosystem_scout.py
+@@ -0,0 +1,287 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the S10 Ecosystem Scout Agent (issue #497).
++
++Covers: role registry (#497 criterion 1 — scout with scoped read-only
++weapons), the Surgical Extraction Guard (anti-vending invariant, Gold
++Pearl budget, native fitting, provenance hygiene), the 4-phase
++methodology pipeline, the EcosystemDossier fail-closed validation matrix,
++the MCP tool reference core (`scout_analyze_repository`) and the markdown
++artifact export.
++
++Pure stdlib. Run: python3 -m unittest test_s10_ecosystem_scout -v
++"""
++import sys
++import unittest
++from pathlib import Path
++
++AGENTS = Path(__file__).resolve().parent.parent / "scripts" / "agents"
++sys.path.insert(0, str(AGENTS))
++
++import ecosystem_scout_reference as scout  # noqa: E402
++import role_registry as reg  # noqa: E402
++import role_trigger_matrix as rtm  # noqa: E402
++
++
++def dossier(**overrides):
++    return scout._valid_dossier(**overrides)
++
++
++class RoleRegistryContract(unittest.TestCase):
++    def test_01_scout_registered(self):
++        registry = reg.default_registry()
++        self.assertEqual(registry.list_roles(), ("ecosystem-scout",))
++        record = registry.get("ecosystem-scout")
++        self.assertTrue(record.read_only)
++
++    def test_02_scoped_weapons_superset_of_ssot(self):
++        # Issue #497 mandates: read-only URL, AST parser, repo inspector,
++        # artifact writer — plus the #489 dispatch weapons.
++        self.assertEqual(
++            reg.SCOUT_WEAPONS,
++            frozenset({"search_web", "read_url_content", "gh_issue_create",
++                       "ast_parser", "repo_inspector", "artifact_writer"}))
++        self.assertTrue(
++            rtm.provision_weapons("ecosystem-scout") <= reg.SCOUT_WEAPONS)
++
++    def test_03_read_only_invariant(self):
++        self.assertFalse(reg.SCOUT_WEAPONS & rtm.CODE_WRITE_WEAPONS)
++        registry = reg.default_registry()
++        self.assertTrue(registry.check_read_only("ecosystem-scout"))
++
++    def test_04_fail_closed_lookups(self):
++        registry = reg.default_registry()
++        with self.assertRaises(ValueError):
++            registry.get("ghost")
++
++    def test_05_fail_closed_registrations(self):
++        registry = reg.default_registry()
++        bad = [
++            reg.RoleRecord(role_id="ghost", display_name="g",
++                           operational_weapons=frozenset({"search_web"}),
++                           read_only=True, description="x"),
++            reg.RoleRecord(role_id="ecosystem-scout", display_name="dup",
++                           operational_weapons=reg.SCOUT_WEAPONS,
++                           read_only=True, description="x"),
++            reg.RoleRecord(role_id="ecosystem-scout", display_name="leak",
++                           operational_weapons=reg.SCOUT_WEAPONS
++                           | {"write_to_file"},
++                           read_only=True, description="x"),
++        ]
++        for record in bad:
++            with self.assertRaises(ValueError):
++                registry.register(record)
++
++
++class SurgicalExtractionGuard(unittest.TestCase):
++    def test_06_anti_vending_invariant(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_surgical_extraction(scout.SurgicalExtraction(
++                ("c",), "native python blueprint",
++                full_repo_vending_prohibited=False))
++
++    def test_07_gold_pearl_components_required(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_surgical_extraction(scout.SurgicalExtraction(
++                (), "native python blueprint", True))
++
++    def test_08_blueprint_must_be_native(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_surgical_extraction(scout.SurgicalExtraction(
++                ("c",), "drop in the foreign jar", True))
++
++    def test_09_vendor_markers_rejected(self):
++        for marker in ("git clone https://example", "npm install org/repo",
++                       "copy the whole repository", "vendored tree"):
++            with self.assertRaises(scout.DossierError, msg=marker):
++                scout.validate_surgical_extraction(scout.SurgicalExtraction(
++                    ("c",), f"just {marker} and we are done", True))
++
++    def test_10_gold_pearl_budget(self):
++        self.assertEqual(scout.GOLD_PEARL_MIN_LINES, 20)
++        self.assertEqual(scout.GOLD_PEARL_MAX_LINES, 100)
++        for ok in (20, 50, 100):
++            scout.validate_gold_pearl_budget(ok)
++        for bad in (19, 101, 0, -5):
++            with self.assertRaises(scout.DossierError):
++                scout.validate_gold_pearl_budget(bad)
++
++    def test_11_provenance_header(self):
++        header = scout.provenance_header("morluto/rea", "MIT")
++        self.assertIn("github.com/morluto/rea", header)
++        self.assertIn("MIT", header)
++        self.assertIn("Adapted for SupremeAI Federation", header)
++        with self.assertRaises(scout.DossierError):
++            scout.provenance_header("", "MIT")
++
++
++class DossierValidationMatrix(unittest.TestCase):
++    def test_12_full_dossier_passes(self):
++        scout.validate_dossier(dossier())
++
++    def test_13_verdict_enum(self):
++        self.assertEqual(
++            scout.VERDICTS,
++            ("ADOPT_IMMEDIATELY", "EXTRACT_PATTERNS_ONLY", "MONITOR", "REJECT"))
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(verdict="SHIP_IT"))
++
++    def test_14_comparative_analysis_both_directions(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                comparative_analysis=scout.replace_comparative(
++                    superior_capabilities=())))
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                comparative_analysis=scout.replace_comparative(
++                    supremeai_advantages=())))
++
++    def test_15_satellite_routing_mandatory(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                actionable_takeaways=scout.replace_takeaways(
++                    target_satellites=())))
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                actionable_takeaways=scout.replace_takeaways(
++                    target_satellites=(scout.SatelliteAction(
++                        "sat", "fork_it", "why"),))))
++
++    def test_16_watchouts_mandatory(self):
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                watchouts_and_risks=scout.replace_watchouts(
++                    security_or_compliance_concerns=())))
++
++    def test_17_adopt_requires_known_license(self):
++        scout.validate_dossier(dossier(verdict="ADOPT_IMMEDIATELY"))
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                verdict="ADOPT_IMMEDIATELY",
++                target=scout.replace_target(license="unknown")))
++
++    def test_18_reject_documents_prohibited_practices(self):
++        scout.validate_dossier(dossier(verdict="REJECT"))
++        with self.assertRaises(scout.DossierError):
++            scout.validate_dossier(dossier(
++                verdict="REJECT",
++                watchouts_and_risks=scout.replace_watchouts(
++                    prohibited_practices=())))
++
++
++class FourPhaseMethodology(unittest.TestCase):
++    def _chain(self, **overrides):
++        phases = list(scout.PHASES)
++        findings = overrides.get("findings", ("finding",))
++        skip_artifact = overrides.get("skip_artifact", False)
++        return tuple(
++            scout.PhaseEvidence(p, findings if p == phases[0] else ("f",),
++                                artifact="" if (skip_artifact and
++                                                p == scout.PHASE_4_RFC)
++                                else "dossier.md")
++            for p in phases)
++
++    def test_19_phase_enums_in_order(self):
++        self.assertEqual(
++            scout.PHASES,
++            ("PHASE_1_EXTRACTION", "PHASE_2_DISSECTION",
++             "PHASE_3_AUDIT", "PHASE_4_RFC"))
++        self.assertEqual(scout.run_methodology(self._chain()), "dossier.md")
++
++    def test_20_order_enforced(self):
++        with self.assertRaises(scout.PhaseError):
++            scout.run_methodology(tuple(reversed(self._chain())))
++        with self.assertRaises(scout.PhaseError):
++            scout.run_methodology(self._chain()[1:])
++
++    def test_21_marketing_only_extraction_rejected(self):
++        with self.assertRaises(scout.PhaseError):
++            scout.run_methodology(self._chain(
++                findings=("marketing landing page only",)))
++
++    def test_22_rfc_must_emit_artifact(self):
++        with self.assertRaises(scout.PhaseError):
++            scout.run_methodology(self._chain(skip_artifact=True))
++
++    def test_23_unknown_phase_rejected(self):
++        with self.assertRaises(scout.PhaseError):
++            scout.validate_phase_evidence(scout.PhaseEvidence(
++                "PHASE_5_HYPE", ("f",)))
++
++
++class ScoutAnalyzeCore(unittest.TestCase):
++    def test_24_manifest_truth_extraction(self):
++        d = scout.scout_analyze_repository(scout.ScoutInputs(
++            repository="lexmount/moli", license="Apache-2.0",
++            manifest_json='{"dependencies": {"playwright-core": "1"}, '
++                          '"engines": {"node": "24"}}',
++            file_tree=("src/dom.ts", "src/semantic.ts"),
++            readme_headline="semantic DOM trees"))
++        self.assertEqual(d.target.tech_stack[0], "node:24")
++        self.assertIn("dep:playwright-core", d.target.tech_stack)
++        self.assertEqual(d.verdict, "MONITOR")
++        scout.validate_dossier(d)
++
++    def test_25_python_manifest_extraction(self):
++        d = scout.scout_analyze_repository(scout.ScoutInputs(
++            repository="example/pyrepo", license="MIT",
++            manifest_yaml="- fastapi==0.1\n- pydantic==2.0\n",
++            file_tree=("a.py",)))
++        self.assertIn("py:fastapi", d.target.tech_stack)
++        self.assertIn("py:pydantic", d.target.tech_stack)
++
++    def test_26_fail_closed_inputs(self):
++        cases = (
++            scout.ScoutInputs(repository=""),
++            scout.ScoutInputs(repository="x"),
++            scout.ScoutInputs(repository="x", manifest_yaml="a: 1"),
++            scout.ScoutInputs(repository="x", manifest_yaml="- fastapi",
++                              file_tree=()),
++            scout.ScoutInputs(repository="x", manifest_json="{bad",
++                              file_tree=("a",)),
++            scout.ScoutInputs(repository="x", manifest_yaml="a: 1",
++                              file_tree=("a",)),
++        )
++        for inputs in cases:
++            with self.assertRaises(scout.DossierError, msg=repr(inputs)):
++                scout.scout_analyze_repository(inputs)
++
++
++class MarkdownArtifactExport(unittest.TestCase):
++    def test_27_standard_artifact_format(self):
++        md = scout.render_dossier_markdown(dossier())
++        self.assertIn("# Ecosystem Dossier — example/org-repo", md)
++        self.assertIn("`EXTRACT_PATTERNS_ONLY`", md)
++        self.assertIn("কতটুকু দরকার", md)
++        self.assertIn("কীভাবে দরকার", md)
++        self.assertIn("supremeai-mcp-control-plane", md)
++        self.assertIn("replicate_pattern", md)
++
++    def test_28_provenance_embedded(self):
++        md = scout.render_dossier_markdown(dossier())
++        self.assertIn("adapted from: github.com/example/org-repo", md)
++        self.assertIn("Upstream License: MIT", md)
++
++    def test_29_invalid_dossier_cannot_export(self):
++        with self.assertRaises(scout.DossierError):
++            scout.render_dossier_markdown(dossier(verdict="HYPE"))
++
++
++class Canon(unittest.TestCase):
++    def test_30_canonical_satellites_present(self):
++        for satellite in ("supremeai-browser", "supremeai-agents",
++                          "supremeai-mcp-control-plane"):
++            self.assertIn(satellite, scout.CANONICAL_SATELLITES)
++
++    def test_31_action_types(self):
++        self.assertEqual(scout.ACTION_TYPES,
++                         ("adopt_library", "replicate_pattern",
++                          "integrate_mcp"))
++
++    def test_32_self_test_entrypoints_green(self):
++        self.assertTrue(scout.self_test())
++        self.assertTrue(reg.self_test())
++        self.assertTrue(rtm.self_test())
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

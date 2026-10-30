@@ -1,0 +1,137 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 6ce2c12a..b6e141fc 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -28,9 +28,11 @@ All agents live, enter, and execute through exactly two unified pillars:
+   2. **Boundary:** Satellite code lives strictly in its approved domain mirror (`studio/*`, `gateway/*`, `core/*`, `browser/*`, `vscode/*`).
+   3. **Superior Replacement:** Discard broken legacy code/tests rather than hacking new code to appease past mistakes. Work must tangibly benefit Machine, Admin, or User.
+   4. **Verification & PR Blueprint:** 3-Tier Verify (Reflection -> Smoke -> Tests). PRs must carry `Closes #N` and `## Reflection Evidence (why + alternatives_rejected)`.
++  5. **P0 Drainage & Anti-Stampede Invariant:** Open architectural blockers (`P0-critical`) supersede all speculative research, routine audits, and lower-priority work. Agents and Bridge pipelines MUST verify idempotency (zero duplicate work orders, zero duplicate issues/PRs for the same task/branch) before filing or claiming.
+ - **MUST AVOID:**
+   - **NO Direct Push:** Never push directly to satellites or protected branches without PR gate.
+   - **NO Root Shadowing:** Never put satellite code in repo root (`src/*`, `service/*`, `packages/*`).
+   - **NO Ghost Fixes:** Never mask errors or fix issues not reproduced on live `main`.
++  - **NO Backlog Starvation / Duplicate Stampede:** Never bypass open P0 blockers to create or pick up fast-follow research tickets, and never spawn duplicate PRs/work orders for the same task.
+ 
+ **Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 720a8153..9ccefd3d 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -122,6 +122,22 @@ def build_task_contract(
+         }
+     }
+ 
++def label_names(item: dict[str, Any]) -> list[str]:
++    labels = item.get("labels")
++    if not isinstance(labels, list):
++        return []
++    return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
++
++def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
++    """Check if there is any open P0-critical architectural issue on the board."""
++    for item in issues:
++        if not isinstance(item, dict):
++            continue
++        names = label_names(item)
++        if any(name == "p0" or name.startswith("p0-") or name.startswith("p0 ") for name in names):
++            return True
++    return False
++
+ def pick_next_issue(
+     exclude: set[str] | list[str] | None = None,
+     issues: list[dict[str, Any]] | None = None,
+@@ -149,12 +165,6 @@ def pick_next_issue(
+     if not issues:
+         return None
+ 
+-    def label_names(item: dict[str, Any]) -> list[str]:
+-        labels = item.get("labels")
+-        if not isinstance(labels, list):
+-            return []
+-        return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+-
+     lease_store = load_issue_lease_store()
+     now_ts = time.time()
+ 
+@@ -219,7 +229,8 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+ 1. Dual-Rebase: Rebase origin/main at work-start AND pre-push (0 behind).
+ 2. Boundary: Zero satellite code in repo root (src/*, service/*, packages/*).
+ 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
+-4. Verification: No direct push to protected branches; all PRs require local proof."""
++4. Verification: No direct push to protected branches; all PRs require local proof.
++5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory."""
+ 
+ def log(icon: str, msg: str) -> None:
+     try:
+@@ -920,6 +931,15 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+     # role আগের মতোই প্রথমটি — ডিসপ্যাচ টেক্সট ও ক্রম বাইট-অপরিবর্তিত;
+     # ডিফল্ট কনফিগে canonical_role() identity, তাই আচরণে কোনো পরিবর্তন নেই।
+     # immediate state-advance (নিয়ম ৪) অক্ষত: mark → save → print → return।
++    # বাংলা: P0 Drainage Invariant (Rule 5) — যদি বোর্ডে কোনো P0-critical
++    # ইস্যু সক্রিয় থাকে (এমনকি অন্য রানার যদি অস্থায়ী লিজ নিয়েও থাকে), তবুও
++    # কোনো রুটিন অডিট/স্কাউট রোল রান হবে না যাতে ব্যাকলগ আটকে রেখে অগুরুত্বপূর্ণ
++    # কাজ না হয়। P0 সমাধান না হওয়া পর্যন্ত ক্যাডেন্স স্থগিত থাকবে।
++    if not board_unavailable and has_open_p0_blocker(raw):
++        log("!", "P0 Drainage Invariant: Active P0-critical blocker detected on board. Holding cadence roles until P0 issues are resolved.")
++        print("ACTION: System is draining P0-critical architectural backlog. Routine cadence roles held.")
++        return 0
++
+     for role in due_roles(state, now, cfg):
+         mark_role_run(role, state, now, cfg)
+         save_last_run_store(state)
+diff --git a/scripts/ci/auto_bridge_pr_opener.py b/scripts/ci/auto_bridge_pr_opener.py
+index 42dc2fa8..51911c9e 100644
+--- a/scripts/ci/auto_bridge_pr_opener.py
++++ b/scripts/ci/auto_bridge_pr_opener.py
+@@ -122,7 +122,19 @@ def find_stranded_bridge_work_orders() -> list[dict[str, Any]]:
+             }
+         )
+ 
+-    return stranded
++    # Anti-stampede idempotency: Deduplicate items targeting the same patch branch,
++    # keeping the earliest/lowest issue number to prevent race-condition duplicate PRs.
++    deduped_stranded: list[dict[str, Any]] = []
++    seen_branches: set[str] = set()
++    for s in stranded:
++        b = s["branch"]
++        if b in seen_branches:
++            print(f"⚠️ Skipping duplicate stranded work order #{s['issue_number']} for branch '{b}'.", file=sys.stderr)
++            continue
++        seen_branches.add(b)
++        deduped_stranded.append(s)
++
++    return deduped_stranded
+ 
+ 
+ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
+diff --git a/tests/test_agent_cadence.py b/tests/test_agent_cadence.py
+index c6ef1300..d4f5458b 100644
+--- a/tests/test_agent_cadence.py
++++ b/tests/test_agent_cadence.py
+@@ -99,5 +99,25 @@ def test_missing_returns_empty(self):
+             self.assertEqual(cal.load_last_run_store(p), {})
+ 
+ 
++class TestP0Drainage(unittest.TestCase):
++    def test_has_open_p0_blocker_positive(self):
++        issues = [
++            {"number": 101, "labels": [{"name": "P1-high"}]},
++            {"number": 102, "labels": [{"name": "P0-critical"}]},
++        ]
++        self.assertTrue(cal.has_open_p0_blocker(issues))
++
++    def test_has_open_p0_blocker_negative(self):
++        issues = [
++            {"number": 101, "labels": [{"name": "P1-high"}]},
++            {"number": 103, "labels": [{"name": "P2-medium"}]},
++        ]
++        self.assertFalse(cal.has_open_p0_blocker(issues))
++
++    def test_label_names_extraction(self):
++        item = {"labels": [{"name": "P0-critical"}, {"name": "Status:Unclaimed"}]}
++        self.assertEqual(cal.label_names(item), ["p0-critical", "status:unclaimed"])
++
++
+ if __name__ == "__main__":
+     unittest.main()

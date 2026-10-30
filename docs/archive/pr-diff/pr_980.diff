@@ -1,0 +1,126 @@
+diff --git a/gateway/SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md b/gateway/SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md
+index 9d0f94c9..883da934 100644
+--- a/gateway/SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md
++++ b/gateway/SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md
+@@ -3,8 +3,8 @@
+ > **Document Version:** 3.0.0  
+ > **Status:** Production / Live  
+ > **Target Frontend:** [https://supremeai-studio.pages.dev](https://supremeai-studio.pages.dev)  
+-> **Target API Service:** `https://supremeai-api-ulw0.onrender.com`  
+-> **Target Scraper Relay:** `https://supremeai-scraper-node.onrender.com`  
++> **Target API Service:** `supremeai-api-ulw0.onrender.com`  
++> **Target Scraper Relay:** `supremeai-scraper-node.onrender.com`  
+ > **Zero-Local Dependency:** 100% Cloud-native ($0 Cost / 24/7 High-Availability)
+ 
+ ---
+@@ -58,7 +58,7 @@ flowchart TD
+ ### Layer 1: ক্লায়েন্ট ও ফ্রন্টএন্ড এজ (Cloudflare Pages)
+ - **হোস্টিং:** Cloudflare Pages (`supremeai-studio.pages.dev`)
+ - **প্রযুক্তি:** Vite + React + TypeScript + TailwindCSS (Cosmic Dark Design)
+-- **গেটওয়ে ইউআরএল বাইন্ডিং:** ফ্রন্টএন্ড বিল্ডের সময় `VITE_SUPREMEAI_API_URL` সরাসরি রেন্ডার গেটওয়ে (`https://supremeai-api-ulw0.onrender.com`) পয়েন্ট করে।
++- **গেটওয়ে ইউআরএল বাইন্ডিং:** ফ্রন্টএন্ড বিল্ডের সময় `VITE_SUPREMEAI_API_URL` সরাসরি রেন্ডার গেটওয়ে (`supremeai-api-ulw0.onrender.com` / `RENDER_EXTERNAL_URL`) পয়েন্ট করে।
+ - **গেস্ট চ্যাট ও ব্র্যান্ড ব্যাজ রেন্ডারিং:**
+   - প্রতিটি মেসেজের নিচে পুরোনো `[auto]` টেক্সটের পরিবর্তে প্রিমিয়াম ডাইনামিক ব্যাজ প্রদর্শিত হয়:
+     - **ব্র্যান্ড:** `SupremeAI` (গ্রিন-পার্পল কসমিক গ্রেডিয়েন্ট)
+diff --git a/gateway/main.py b/gateway/main.py
+index dee2bc5b..c242ba5e 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -399,13 +399,16 @@ async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+     import os as _cors_os
+ 
+     _cors_origins = [
++        "https://supremeai-studio.pages.dev",
+         "https://supremeai-studio.paykaribazaronline.workers.dev",
+-        "https://supremeai-studio.vercel.app",
+         "http://localhost:3000",
+         "http://localhost:5173",
+         "http://127.0.0.1:3000",
+         "http://127.0.0.1:5173",
+     ]
++    _studio_url = _cors_os.environ.get("STUDIO_FRONTEND_URL", "").strip()
++    if _studio_url and _studio_url not in _cors_origins:
++        _cors_origins.append(_studio_url)
+     _extra = _cors_os.environ.get("SUPREMEAI_CORS_ORIGINS", "")
+     if _extra:
+         _cors_origins.extend(o.strip() for o in _extra.split(",") if o.strip())
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 3e9b0fee..425e0b87 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -106,12 +106,15 @@ def normalize_stealth_url(url: str) -> str:  # type: ignore[no-redef]
+ _default_cors = [
+     "https://supremeai-studio.pages.dev",
+     "https://supremeai-studio.paykaribazaronline.workers.dev",
+-    "https://supremeai-studio.vercel.app",
+     "http://localhost:3000",
+     "http://localhost:5173",
+     "http://127.0.0.1:3000",
+     "http://127.0.0.1:5173",
+ ]
++_studio_preview = os.getenv("STUDIO_FRONTEND_URL", "").strip()
++if _studio_preview and _studio_preview not in _default_cors:
++    _default_cors.append(_studio_preview)
++
+ _cors_env = os.getenv("CORS_ORIGINS", "").strip()
+ if _cors_env:
+     allowed_origins = list(dict.fromkeys([o.strip() for o in _cors_env.split(",") if o.strip()] + _default_cors))
+@@ -159,12 +162,12 @@ def _is_guest_request(request: Request, token: Optional[str]) -> bool:
+     can never drift apart."""
+     origin = (request.headers.get("origin") or "").lower()
+     referer = (request.headers.get("referer") or "").lower()
++    studio_preview = os.getenv("STUDIO_FRONTEND_URL", "").lower().strip()
+     return (
+         request.headers.get("x-guest-mode", "").lower() == "true"
+         or "https://supremeai-studio.pages.dev" in origin
+         or "https://supremeai-studio.pages.dev" in referer
+-        or "https://supremeai-studio.vercel.app" in origin
+-        or "https://supremeai-studio.vercel.app" in referer
++        or (bool(studio_preview) and (studio_preview in origin or studio_preview in referer))
+         or token in {"guest", "demo", "public-guest"}
+     )
+ 
+@@ -479,11 +482,11 @@ async def health_aggregation():
+     Probes all 5 Render nodes in parallel and returns green/yellow/red status for Studio circles.
+     """
+     nodes = [
+-        {"id": "api", "name": "API Gateway", "url": "https://supremeai-api-ulw0.onrender.com/health"},
+-        {"id": "scraper", "name": "Scraper Relay", "url": "https://supremeai-scraper-node.onrender.com/health"},
+-        {"id": "tower", "name": "MCP Control Tower", "url": "https://supremeai-mcp-tower.onrender.com/health"},
+-        {"id": "primary", "name": "Primary Core Node", "url": "https://supremeai-primary-node-5xso.onrender.com/health"},
+-        {"id": "worker", "name": "Worker Node", "url": "https://supremeai-worker-node.onrender.com/health"},
++        {"id": "api", "name": "API Gateway", "url": os.getenv("RENDER_API_URL", "https://supremeai-api.onrender.com/health")},
++        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "http://localhost:8001/health")},
++        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "http://localhost:3771/health")},
++        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "http://localhost:8002/health")},
++        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "http://localhost:8003/health")},
+     ]
+ 
+     checks = {}
+diff --git a/gateway/service/providers/adapters.py b/gateway/service/providers/adapters.py
+index 6bf7fdf2..d6617976 100644
+--- a/gateway/service/providers/adapters.py
++++ b/gateway/service/providers/adapters.py
+@@ -224,7 +224,11 @@ async def forward_chat_completion(
+ 
+     # OpenRouter requires optional referer/title headers
+     if provider == "openrouter":
+-        headers["HTTP-Referer"] = "https://supremeai-api-ulw0.onrender.com"
++        headers["HTTP-Referer"] = (
++            os.getenv("OPENROUTER_REFERER")
++            or os.getenv("RENDER_EXTERNAL_URL")
++            or "https://supremeai-api.onrender.com"
++        )
+         headers["X-Title"] = "SupremeAI Gateway"
+ 
+     # Build prioritized candidate models list
+@@ -306,7 +310,8 @@ async def forward_stealth_webhook(
+     target_url = normalize_stealth_url(webhook_url)
+ 
+     # Self-loop protection: if STEALTH_WEBHOOK_URL points to gateway itself
+-    if "supremeai-api-ulw0.onrender.com" in target_url:
++    self_url = os.getenv("RENDER_EXTERNAL_URL", "")
++    if (self_url and self_url in target_url) or "supremeai-api" in target_url:
+         logger.warning("Stealth webhook points to gateway itself; skipping loop.")
+         return 400, {"error": "Stealth webhook target points to self (loop prevented)"}
+ 

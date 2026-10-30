@@ -1,0 +1,893 @@
+diff --git a/gateway/services/browser/main.py b/gateway/services/browser/main.py
+index cbca5b15..a48d86b4 100644
+--- a/gateway/services/browser/main.py
++++ b/gateway/services/browser/main.py
+@@ -1,82 +1,2 @@
+-"""SupremeAI Browser Service — Phase 11 (ROADMAP §33).
+-
+-বাংলা: Browser/scraper আলাদা microservice. Playwright এখানে, Core API-তে নয়।
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-import logging
+-import os
+-
+-from aiohttp import web
+-
+-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
+-logging.basicConfig(
+-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+-    format="%(asctime)s | %(levelname)-7s | %(message)s",
+-)
+-logger = logging.getLogger("supremeai.browser")
+-logger.info(f">>> booting browser service (env={os.getenv('ENV', 'production')})")
+-
+-
+-async def scrape(request: web.Request) -> web.Response:
+-    """Phase 11 — scrape a URL (ROADMAP §33)."""
+-    data = await request.json()
+-    url = data.get("url", "")
+-    if not url:
+-        return web.json_response({"ok": False, "error": "url required"}, status=400)
+-    try:
+-        from playwright.async_api import async_playwright
+-
+-        async with async_playwright() as p:
+-            browser = await p.chromium.launch(headless=True)
+-            page = await browser.new_page()
+-            await page.goto(url, timeout=30000)
+-            title = await page.title()
+-            content = await page.content()
+-            await browser.close()
+-        return web.json_response(
+-            {"ok": True, "url": url, "title": title, "content_length": len(content)}
+-        )
+-    except ImportError:
+-        return web.json_response({"ok": False, "error": "playwright not installed"}, status=500)
+-    except Exception as e:
+-        return web.json_response({"ok": False, "error": str(e)}, status=500)
+-
+-
+-async def screenshot(request: web.Request) -> web.Response:
+-    """Take screenshot of a URL."""
+-    data = await request.json()
+-    url = data.get("url", "")
+-    if not url:
+-        return web.json_response({"ok": False, "error": "url required"}, status=400)
+-    try:
+-        from playwright.async_api import async_playwright
+-
+-        async with async_playwright() as p:
+-            browser = await p.chromium.launch(headless=True)
+-            page = await browser.new_page()
+-            await page.goto(url, timeout=30000)
+-            screenshot_bytes = await page.screenshot()
+-            await browser.close()
+-        return web.Response(body=screenshot_bytes, content_type="image/png")
+-    except ImportError:
+-        return web.json_response({"ok": False, "error": "playwright not installed"}, status=500)
+-    except Exception as e:
+-        return web.json_response({"ok": False, "error": str(e)}, status=500)
+-
+-
+-async def health(request: web.Request) -> web.Response:
+-    return web.json_response({"status": "ok", "service": "supremeai-browser"})
+-
+-
+-app = web.Application()
+-app.router.add_get("/health", health)
+-app.router.add_post("/scrape", scrape)
+-app.router.add_post("/screenshot", screenshot)
+-
+-
+-if __name__ == "__main__":
+-    port = int(os.getenv("PORT", "8002"))
+-    web.run_app(app, host="0.0.0.0", port=port)
++"""Canonical re-export from core.services.browser.main (SSOT #751)."""
++from core.services.browser.main import *  # noqa: F401, F403
+diff --git a/gateway/services/scraper/browser_agent.py b/gateway/services/scraper/browser_agent.py
+index 92e8df7f..81bc9673 100644
+--- a/gateway/services/scraper/browser_agent.py
++++ b/gateway/services/scraper/browser_agent.py
+@@ -1,247 +1,2 @@
+-"""
+-Browser automation agent for the scraper microservice.
+-Extracted from backend/tools/ai_agents/browser_agent.py and backend/tools/browser/playwright_browser_agent.py.
+-Uses a per-request Playwright sandbox (no global singleton) to avoid
+-blocking the main backend worker.
+-"""
+-
+-import asyncio
+-import base64
+-import os
+-from typing import Any
+-
+-try:
+-    from bs4 import BeautifulSoup
+-except ImportError:
+-    BeautifulSoup = None  # type: ignore[misc, assignment]
+-
+-from pydantic import BaseModel
+-
+-from core.human_behavior import HumanBehaviorSimulators
+-from core.logging_config import logger
+-
+-# বাংলা মন্তব্য: Dual-path import — standalone scraper-এ top-level `security`/
+-# `web_scraper`, backend-এ embedded হলে `services.scraper.*`। Scraper-এর নিজস্ব
+-# self-contained security.py ব্যবহার হয় (core.security টানে না — SSRF-minimal)।
+-try:
+-    from security import is_safe_url  # standalone scraper microservice
+-except ImportError:  # embedded in main backend
+-    from services.scraper.security import is_safe_url  # type: ignore[no-redef]
+-
+-try:
+-    from web_scraper import WebScraper  # standalone scraper microservice
+-except ImportError:  # embedded in main backend
+-    from services.scraper.web_scraper import WebScraper  # type: ignore[no-redef]
+-
+-# 🔧 DYNAMIC BROWSER CONFIG: All values from environment variables
+-_BROWSER_VIEWPORT_W = int(os.getenv("BROWSER_VIEWPORT_WIDTH", "1280"))
+-_BROWSER_VIEWPORT_H = int(os.getenv("BROWSER_VIEWPORT_HEIGHT", "1080"))
+-_BROWSER_PAGE_TIMEOUT = int(os.getenv("BROWSER_PAGE_TIMEOUT_MS", "30000"))
+-_BROWSER_SELECTOR_TIMEOUT = int(os.getenv("BROWSER_SELECTOR_TIMEOUT_MS", "10000"))
+-_BROWSER_NETWORK_TIMEOUT = int(os.getenv("BROWSER_NETWORK_IDLE_TIMEOUT_MS", "10000"))
+-_BROWSER_USER_AGENT = os.getenv(
+-    "BROWSER_USER_AGENT",
+-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+-)
+-
+-try:
+-    from playwright.async_api import async_playwright
+-except ImportError:
+-    async_playwright = None  # type: ignore[assignment]
+-
+-
+-class BrowseRequest(BaseModel):
+-    url: str
+-    action: str | None = "fetch"
+-    selector: str | None = None
+-    text: str | None = None
+-    wait_for: str | None = None
+-
+-
+-class BrowserAgent:
+-    """Controls browser actions — Playwright with httpx fallback.
+-
+-    Self-contained: does NOT import core.playwright_manager (which uses a
+-    global singleton that blocks the main backend worker).
+-    """
+-
+-    def __init__(self, headless: bool = True):
+-        self._pw_browser = None
+-        self.headless = headless
+-        self.scraper = WebScraper()
+-        # Concurrency guard — prevent OOM on Render free tier (512MB RAM)
+-        _max = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
+-        self._semaphore = asyncio.Semaphore(_max)
+-        logger.info(
+-            f"Initialized BrowserAgent (max_concurrency={_max}, "
+-            f"viewport={_BROWSER_VIEWPORT_W}x{_BROWSER_VIEWPORT_H}) for scraper microservice"
+-        )
+-
+-    async def navigate_and_interact(
+-        self,
+-        url: str,
+-        action: str = "fetch",
+-        selector: str | None = None,
+-        text: str | None = None,
+-        wait_for: str | None = None,
+-    ) -> dict[str, Any]:
+-        if not is_safe_url(url):
+-            logger.error(f"SSRF Attempt Blocked: {url}")
+-            return {
+-                "success": False,
+-                "error": "SSRF check failed: Unauthorized internal access",
+-                "url": url,
+-            }
+-
+-        if not callable(async_playwright):
+-            logger.warning("Playwright not installed — falling back to httpx scraper")
+-            return self.scraper.fetch_page(url)
+-
+-        # Per-request sandbox — no shared global state
+-        async with self._semaphore, async_playwright() as p:
+-            browser = await p.chromium.launch(
+-                headless=self.headless,
+-                args=[
+-                    "--no-sandbox",
+-                    "--disable-setuid-sandbox",
+-                    "--disable-dev-shm-usage",
+-                    "--disable-blink-features=AutomationControlled",
+-                ],
+-            )
+-            context = await browser.new_context(  # 🔧 DYNAMIC config
+-                viewport={"width": _BROWSER_VIEWPORT_W, "height": _BROWSER_VIEWPORT_H},
+-                user_agent=_BROWSER_USER_AGENT,
+-            )
+-            page = await context.new_page()
+-            # Feature 3 (old plan): stealth fingerprint — canvas/WebGL noise,
+-            # webdriver trace removal, realistic viewport (never raises)
+-            await HumanBehaviorSimulators.apply_stealth_fingerprint(page)
+-            try:
+-                await page.goto(url, wait_until="domcontentloaded", timeout=_BROWSER_PAGE_TIMEOUT)
+-
+-                if wait_for:
+-                    await page.wait_for_selector(wait_for, timeout=_BROWSER_SELECTOR_TIMEOUT)
+-
+-                if action == "click" and selector:
+-                    await page.click(selector)
+-                    await page.wait_for_load_state("networkidle", timeout=_BROWSER_NETWORK_TIMEOUT)
+-
+-                elif action == "type" and selector and text:
+-                    await page.fill(selector, text)
+-
+-                elif action == "scroll":
+-                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+-                    await asyncio.sleep(1)
+-
+-                elif action == "screenshot":
+-                    screenshot = await page.screenshot(type="png")
+-                    b64 = base64.b64encode(screenshot).decode()
+-                    title = await page.title()
+-                    return {
+-                        "success": True,
+-                        "url": url,
+-                        "title": title,
+-                        "screenshot_base64": b64,
+-                    }
+-
+-                title = await page.title()
+-                content_html = await page.content()
+-                if BeautifulSoup is not None:
+-                    soup = BeautifulSoup(content_html, "html.parser")
+-                    for tag in soup(["script", "style"]):
+-                        tag.decompose()
+-                    text_content = " ".join(soup.get_text(separator=" ").split())[:3000]
+-                    links = [a.get("href", "") for a in soup.find_all("a", href=True)][:20]
+-                else:
+-                    text_content = await page.inner_text("body")
+-                    links = []
+-
+-                current_url = page.url
+-                return {
+-                    "success": True,
+-                    "url": current_url,
+-                    "title": title,
+-                    "content": text_content,
+-                    "links": links,
+-                    "action": action,
+-                }
+-            except (TimeoutError, Exception) as e:  # noqa: BLE001
+-                logger.error(f"Playwright action failed: {e}")
+-                return {"success": False, "error": str(e), "url": url}
+-            finally:
+-                await page.close()
+-                await context.close()
+-                await browser.close()
+-
+-    async def execute_recipe(self, steps: list, initial_url: str | None = None) -> dict:
+-        """Execute a recipe of browser actions sequentially."""
+-        if not callable(async_playwright):
+-            return {"status": "failed", "error": "Playwright is not installed"}
+-
+-        if not steps:
+-            return {"status": "success", "data": {}}
+-
+-        logger.info(f"Initializing Recipe Interpreter with {len(steps)} steps.")
+-        extracted_data: dict[str, Any] = {}
+-
+-        async with self._semaphore, async_playwright() as p:
+-            browser = await p.chromium.launch(
+-                headless=self.headless,
+-                args=[
+-                    "--no-sandbox",
+-                    "--disable-setuid-sandbox",
+-                    "--disable-blink-features=AutomationControlled",
+-                ],
+-            )
+-            context = await browser.new_context(
+-                viewport={
+-                    "width": _BROWSER_VIEWPORT_W,
+-                    "height": _BROWSER_VIEWPORT_H,
+-                },  # 🔧 DYNAMIC
+-                user_agent=_BROWSER_USER_AGENT,  # 🔧 DYNAMIC
+-            )
+-            page = await context.new_page()
+-            # Feature 3 (old plan): stealth fingerprint for recipe execution too
+-            await HumanBehaviorSimulators.apply_stealth_fingerprint(page)
+-            index = -1  # Guard: prevents NameError in except if loop never runs
+-
+-            try:
+-                if initial_url:
+-                    logger.info(f"Navigating to initial target: {initial_url}")
+-                    await page.goto(initial_url, wait_until="networkidle", timeout=30000)
+-
+-                for index, step in enumerate(steps):
+-                    action = step.get("action", "").lower()
+-                    selector = step.get("selector")
+-                    value = step.get("value")
+-
+-                    if action == "navigate":
+-                        await page.goto(step["url"], wait_until="networkidle", timeout=30000)
+-                    elif action == "click" and selector:
+-                        await page.click(selector)
+-                        await page.wait_for_load_state("networkidle", timeout=10000)
+-                    elif action == "type" and selector and value:
+-                        await page.fill(selector, str(value))
+-                    elif action == "wait":
+-                        if str(value).isdigit():
+-                            await asyncio.sleep(float(value))
+-                        else:
+-                            await page.wait_for_selector(str(value), state="visible", timeout=15000)
+-                    elif action == "extract" and selector:
+-                        await page.wait_for_selector(selector, state="visible", timeout=10000)
+-                        if step.get("type") == "list":
+-                            elements = await page.query_selector_all(selector)
+-                            extracted_data[selector] = [await el.inner_text() for el in elements]
+-                        else:
+-                            extracted_data[selector] = await page.inner_text(selector)
+-                        logger.success(f"Extracted data from: {selector}")
+-
+-                return {"status": "success", "data": extracted_data}
+-            except (TimeoutError, Exception) as e:  # noqa: BLE001
+-                logger.error(f"Recipe Interpreter crashed at step {index + 1}: {e!s}")
+-                return {"status": "failed", "error": str(e), "step": index + 1}
+-            finally:
+-                await page.close()
+-                await context.close()
+-                await browser.close()
+-                logger.info("Playwright sandbox context cleaned up.")
++"""Canonical re-export from core.services.scraper.browser_agent (SSOT #751)."""
++from core.services.scraper.browser_agent import *  # noqa: F401, F403
+diff --git a/gateway/services/scraper/main.py b/gateway/services/scraper/main.py
+index 20cae8f1..1cd08f2e 100644
+--- a/gateway/services/scraper/main.py
++++ b/gateway/services/scraper/main.py
+@@ -1,112 +1,2 @@
+-"""SupremeAI standalone scraper microservice.
+-
+-Self-contained FastAPI app. Deployed as its own Docker image / Render service so
+-Chromium + Playwright never live in the main backend API image.
+-
+-Endpoints:
+-  GET  /health  — liveness + capability probe
+-  POST /scrape  — lightweight HTTP scraping (httpx + BeautifulSoup)
+-  POST /browse  — full browser automation (Playwright/Chromium)
+-  POST /recipe  — scripted multi-step browser actions
+-"""
+-
+-from __future__ import annotations
+-
+-import os
+-
+-try:
+-    from browser_agent import BrowserAgent, BrowseRequest
+-    from security import is_safe_url
+-    from web_scraper import WebScraper
+-except ImportError:
+-    from services.scraper.browser_agent import BrowserAgent, BrowseRequest
+-    from services.scraper.security import is_safe_url
+-    from services.scraper.web_scraper import WebScraper
+-from fastapi import APIRouter, FastAPI, HTTPException
+-from pydantic import BaseModel
+-
+-MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
+-TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
+-
+-app = FastAPI(title="SupremeAI Scraper", docs_url="/docs", redoc_url="/redoc")
+-router = APIRouter(tags=["scraper"])
+-
+-_scraper = WebScraper()
+-_agent = BrowserAgent(headless=True)
+-
+-
+-class ScrapeRequest(BaseModel):
+-    url: str
+-    extraction_prompt: str | None = None
+-
+-
+-@router.get("/health")
+-async def health_check():
+-    try:
+-        import playwright.async_api as _pw
+-
+-        playwright_ok = callable(getattr(_pw, "async_playwright", None))
+-    except ImportError:
+-        playwright_ok = False
+-
+-    return {
+-        "status": "healthy",
+-        "service": "supremeai-scraper",
+-        "max_concurrency": MAX_CONCURRENCY,
+-        "timeout_seconds": TIMEOUT_SECONDS,
+-        "playwright_available": playwright_ok,
+-    }
+-
+-
+-@router.post("/scrape")
+-async def scrape(request: ScrapeRequest):
+-    if not request.url:
+-        raise HTTPException(status_code=400, detail="URL is required")
+-    if not is_safe_url(request.url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
+-        )
+-    # FIX (P1, review 2026-09-12): fetch_page is a SYNC httpx call (up to 15s
+-    # timeout). Calling it directly froze the single event loop — one slow target
+-    # stalled /browse, /recipe and /health for the whole service. Offload to a
+-    # worker thread so concurrent scrapes stay responsive.
+-    import asyncio as _asyncio
+-
+-    result = await _asyncio.to_thread(_scraper.fetch_page, request.url)
+-    return result
+-
+-
+-@router.post("/browse")
+-async def browse(request: BrowseRequest):
+-    if not request.url:
+-        raise HTTPException(status_code=400, detail="URL is required")
+-    if not is_safe_url(request.url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
+-        )
+-    result = await _agent.navigate_and_interact(
+-        url=request.url,
+-        action=request.action or "fetch",
+-        selector=request.selector,
+-        text=request.text,
+-        wait_for=request.wait_for,
+-    )
+-    return result
+-
+-
+-class RecipeRequest(BaseModel):
+-    steps: list = []
+-    initial_url: str | None = None
+-
+-
+-@router.post("/recipe")
+-async def recipe(request: RecipeRequest):
+-    if request.initial_url and not is_safe_url(request.initial_url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
+-        )
+-    result = await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
+-    return result
+-
+-
+-app.include_router(router)
++"""Canonical re-export from core.services.scraper.main (SSOT #751)."""
++from core.services.scraper.main import *  # noqa: F401, F403
+diff --git a/gateway/services/scraper/security.py b/gateway/services/scraper/security.py
+index 38d1cbf2..033b4509 100644
+--- a/gateway/services/scraper/security.py
++++ b/gateway/services/scraper/security.py
+@@ -1,171 +1,2 @@
+-"""
+-Minimal SSRF protection for the standalone scraper service.
+-Self-contained — does NOT import from backend/core/security to avoid
+-pulling in DB/Redis/asyncpg dependencies.
+-
+-Two layers (issue #511, BE-05 — SSRF via HTTP redirects + DNS rebinding):
+-
+-  1. ``is_safe_url()`` — synchronous parse-time screening (scheme + hostname
+-     literals). Cheap, no DNS. Suitable for request intake.
+-  2. ``is_safe_url_resolved()`` — request-time screening: resolves the
+-     hostname to ALL its A/AAAA records and rejects the URL if ANY resolved
+-     IP is private/loopback/link-local/metadata/reserved. The fetch path must
+-     call this immediately before EVERY HTTP request (initial URL and every
+-     redirect hop), closing the redirect and DNS-rebinding bypasses of
+-     layer 1.
+-
+-Residual risk (documented per issue #511): between the resolved-IP check and
+-the actual TCP connect, httpx re-resolves DNS on its own. A rebinding server
+-flipping its answer inside that TOCTOU window could still land the connection
+-on a private IP. Full mitigation requires pinning the validated IP at the
+-transport layer (custom httpcore backend) — intentionally out of scope here;
+-per-hop re-validation shrinks the window to a single connect.
+-"""
+-
+-from ipaddress import IPv6Address, ip_address, ip_network
+-from socket import gaierror, getaddrinfo
+-from urllib.parse import urlparse
+-
+-_BLOCKED_SCHEMES = {"file", "ftp", "gopher", "dict", "ldap", "javascript", "data"}
+-_BLOCKED_HOSTS = {
+-    "localhost",
+-    "127.0.0.1",
+-    "0.0.0.0",
+-    "::1",
+-    "metadata",  # GCP metadata (resolvable via /etc/hosts on GCP)
+-    "metadata.google.internal",  # GCP metadata endpoint
+-}  # is_local()
+-_PRIVATE_PREFIXES = ("10.", "172.16.", "192.168.", "169.254.", "100.64.", "fc", "fe80:")
+-
+-# Issue #511: networks that must never be dialed, matched against *resolved*
+-# IPs (not just URL literals). Superset of the legacy _PRIVATE_PREFIXES list —
+-# adds CGNAT 100.64/10 (which also covers Alibaba metadata 100.100.100.200),
+-# multicast, benchmarking and documentation/reserved ranges.
+-_BLOCKED_V4_NETWORKS = tuple(
+-    ip_network(n)
+-    for n in (
+-        "0.0.0.0/8",  # unspecified / "this host"
+-        "10.0.0.0/8",  # private (RFC1918)
+-        "100.64.0.0/10",  # CGNAT / carrier NAT
+-        "127.0.0.0/8",  # loopback
+-        "169.254.0.0/16",  # link-local (AWS/GCP/Azure metadata lives here)
+-        "172.16.0.0/12",  # private (RFC1918)
+-        "192.0.0.0/24",  # IETF protocol assignments
+-        "192.0.2.0/24",  # TEST-NET-1 (documentation)
+-        "192.168.0.0/16",  # private (RFC1918)
+-        "198.18.0.0/15",  # benchmarking
+-        "198.51.100.0/24",  # TEST-NET-2 (documentation)
+-        "203.0.113.0/24",  # TEST-NET-3 (documentation)
+-        "224.0.0.0/4",  # multicast
+-        "240.0.0.0/4",  # reserved (incl. 255.255.255.255)
+-    )
+-)
+-_BLOCKED_V6_NETWORKS = tuple(
+-    ip_network(n)
+-    for n in (
+-        "::/128",  # unspecified
+-        "::1/128",  # loopback
+-        "100::/64",  # discard-only
+-        "2001:db8::/32",  # documentation
+-        "fc00::/7",  # unique-local (private)
+-        "fe80::/10",  # link-local
+-        "ff00::/8",  # multicast
+-    )
+-)
+-
+-
+-def _is_private_ip(hostname: str) -> bool:
+-    """Parse-time literal-IP check (kept for backward compatibility)."""
+-    try:
+-        ip = ip_address(hostname)
+-        return ip.is_private or ip.is_loopback or ip.is_link_local
+-    except ValueError:
+-        return False
+-
+-
+-def _is_blocked_ip(ip: str) -> bool:
+-    """True if ``ip`` may never be dialed. Fails closed on malformed input."""
+-    try:
+-        addr = ip_address(ip)
+-    except ValueError:
+-        return True
+-    if isinstance(addr, IPv6Address) and addr.ipv4_mapped is not None:
+-        # Screen the embedded IPv4 address of an IPv4-mapped IPv6 literal
+-        # (::ffff:10.0.0.1 is just 10.0.0.1 in disguise).
+-        addr = addr.ipv4_mapped
+-    networks = _BLOCKED_V4_NETWORKS if addr.version == 4 else _BLOCKED_V6_NETWORKS
+-    return any(addr in net for net in networks)
+-
+-
+-def resolve_hostname(hostname: str) -> list[str]:
+-    """Resolve ``hostname`` to every A/AAAA record.
+-
+-    No caching on purpose — a DNS cache would widen the rebinding TOCTOU
+-    window (issue #511). Returns [] when resolution fails; callers must fail
+-    closed (a hostile resolver answering NXDOMAIN to us and 127.0.0.1 to
+-    httpx must not slip through).
+-    """
+-    try:
+-        infos = getaddrinfo(hostname, None)
+-    except (gaierror, OSError, UnicodeError):
+-        return []
+-    ips: list[str] = []
+-    for info in infos:
+-        candidate = str(info[4][0])
+-        if candidate not in ips:
+-            ips.append(candidate)
+-    return ips
+-
+-
+-def is_safe_url(url: str) -> bool:
+-    """Validate URL to prevent SSRF attacks in the standalone scraper service.
+-
+-    Parse-time checks only (scheme + hostname literals) — does NOT resolve
+-    DNS and does NOT see redirect targets. The fetch path must additionally
+-    call :func:`is_safe_url_resolved` immediately before every request
+-    (issue #511).
+-    """
+-    try:
+-        parsed = urlparse(url)
+-        scheme = parsed.scheme.lower()
+-        if scheme not in {"http", "https"} or scheme in _BLOCKED_SCHEMES:
+-            return False
+-
+-        hostname = parsed.hostname or ""
+-        if not hostname:
+-            return False
+-
+-        if hostname.lower() in _BLOCKED_HOSTS:
+-            return False
+-
+-        if _is_private_ip(hostname):
+-            return False
+-
+-        for prefix in _PRIVATE_PREFIXES:
+-            if hostname.lower().startswith(prefix):
+-                return False
+-
+-        return True
+-    except Exception:  # noqa: BLE001
+-        return False
+-
+-
+-def is_safe_url_resolved(url: str) -> bool:
+-    """Request-time SSRF validation for the fetch path (issue #511).
+-
+-    Runs the parse-time checks, then resolves the hostname and rejects the
+-    URL if ANY resolved A/AAAA record is private/loopback/link-local/etc.
+-    Fails closed when DNS resolution fails.
+-    """
+-    if not is_safe_url(url):
+-        return False
+-    try:
+-        hostname = urlparse(url).hostname or ""
+-    except Exception:  # noqa: BLE001
+-        return False
+-    if not hostname:
+-        return False
+-    resolved = resolve_hostname(hostname)
+-    if not resolved:
+-        return False  # DNS failure — fail closed (issue #511)
+-    return all(not _is_blocked_ip(ip) for ip in resolved)
++"""Canonical re-export from core.services.scraper.security (SSOT #751)."""
++from core.services.scraper.security import *  # noqa: F401, F403
+diff --git a/gateway/services/scraper/web_scraper.py b/gateway/services/scraper/web_scraper.py
+index df727be7..d476f500 100644
+--- a/gateway/services/scraper/web_scraper.py
++++ b/gateway/services/scraper/web_scraper.py
+@@ -1,113 +1,2 @@
+-"""
+-Web scraper with HTTP fallback (extracted from backend/tools/browser/web_scraper.py).
+-Uses httpx + BeautifulSoup for lightweight HTTP fetching when Playwright
+-is unavailable or overkill.
+-
+-Issue #511 (BE-05): httpx runs with follow_redirects=False. fetch_page walks
+-each redirect hop itself and re-runs the full SSRF gate (parse-time
+-is_safe_url + resolved-IP is_safe_url_resolved) on EVERY target before it is
+-requested, closing the redirect-to-metadata and DNS-rebinding bypasses of the
+-old follow_redirects=True call.
+-"""
+-
+-import os
+-from typing import Any
+-from urllib.parse import urljoin
+-
+-import httpx
+-from bs4 import BeautifulSoup
+-
+-from core.logging_config import logger
+-
+-# বাংলা মন্তব্য: Dual-path import — standalone scraper service-এ `security`
+-# top-level (conftest sys.path), backend এর ভিতরে embedded হলে
+-# `services.scraper.security`।
+-try:
+-    from security import is_safe_url, is_safe_url_resolved  # standalone scraper microservice
+-except ImportError:  # embedded in main backend
+-    from services.scraper.security import (  # type: ignore[no-redef]
+-        is_safe_url,
+-        is_safe_url_resolved,
+-    )
+-
+-# 🔧 DYNAMIC CONFIG: User-Agent from env, with safe default
+-_DEFAULT_USER_AGENT = os.getenv(
+-    "SCRAPER_USER_AGENT",
+-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+-)
+-_HTTP_TIMEOUT = float(os.getenv("SCRAPER_HTTP_TIMEOUT", "15.0"))  # 🔧 DYNAMIC timeout
+-
+-# Issue #511: manual redirect walking — every hop is re-validated.
+-_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+-_MAX_REDIRECTS = int(os.getenv("SCRAPER_MAX_REDIRECTS", "5"))
+-
+-_SSRF_BLOCKED_RESULT = {
+-    "success": False,
+-    "error": "SSRF check failed: Unauthorized internal access",
+-}
+-
+-
+-def _is_safe_to_fetch(url: str) -> bool:
+-    """Full request-time SSRF gate for the fetch path (issue #511).
+-
+-    Layer 1: parse-time ``is_safe_url`` (scheme/hostname literals).
+-    Layer 2: ``is_safe_url_resolved`` — resolves the hostname and screens
+-    every A/AAAA record against private/loopback/link-local/metadata ranges.
+-    Called immediately before each httpx request: the initial URL and every
+-    redirect hop. Residual TOCTOU risk (httpx re-resolves at connect time)
+-    is documented in security.py.
+-    """
+-    return is_safe_url(url) and is_safe_url_resolved(url)
+-
+-
+-class WebScraper:
+-    def fetch_page(self, url: str) -> dict[str, Any]:
+-        logger.info(f"Fetching page: {url}")
+-        if not _is_safe_to_fetch(url):
+-            logger.error(f"SSRF Attempt Blocked: {url}")
+-            return {**_SSRF_BLOCKED_RESULT, "url": url}
+-        try:
+-            headers = {"User-Agent": _DEFAULT_USER_AGENT}  # 🔧 DYNAMIC
+-            # Issue #511: follow_redirects=False — httpx must never hop without
+-            # re-validation. Each redirect target is screened (parse-time +
+-            # resolved IPs) before the next request is issued.
+-            response: Any = None
+-            current_url = url
+-            for _hop in range(_MAX_REDIRECTS + 1):
+-                response = httpx.get(
+-                    current_url, headers=headers, timeout=_HTTP_TIMEOUT, follow_redirects=False
+-                )
+-                if response.status_code not in _REDIRECT_STATUSES:
+-                    break
+-                location = response.headers.get("location")
+-                if not location:
+-                    break  # malformed 3xx without Location — nothing to follow
+-                current_url = urljoin(current_url, location)
+-                if not _is_safe_to_fetch(current_url):
+-                    logger.error(f"SSRF Attempt Blocked (redirect target): {current_url}")
+-                    return {**_SSRF_BLOCKED_RESULT, "url": url}
+-            else:
+-                logger.error(f"Too many redirects (>{_MAX_REDIRECTS}) fetching: {url}")
+-                return {
+-                    "success": False,
+-                    "error": f"Too many redirects (>{_MAX_REDIRECTS})",
+-                    "url": url,
+-                }
+-            response.raise_for_status()
+-            soup = BeautifulSoup(response.text, "html.parser")
+-            title = soup.title.get_text(strip=True) if soup.title else "No Title"
+-            for tag in soup(["script", "style", "nav", "footer", "header"]):
+-                tag.decompose()
+-            text = " ".join(soup.get_text(separator=" ").split())[:3000]
+-            links = [a.get("href", "") for a in soup.find_all("a", href=True)][:20]
+-            return {
+-                "success": True,
+-                "url": url,
+-                "title": title,
+-                "content": text,
+-                "links": links,
+-                "status_code": response.status_code,
+-            }
+-        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+-            logger.error(f"Failed to fetch {url}: {e}")
+-            return {"success": False, "error": str(e), "url": url}
++"""Canonical re-export from core.services.scraper.web_scraper (SSOT #751)."""
++from core.services.scraper.web_scraper import *  # noqa: F401, F403
+diff --git a/gateway/services/worker/main.py b/gateway/services/worker/main.py
+index da05ebfc..042d9a31 100644
+--- a/gateway/services/worker/main.py
++++ b/gateway/services/worker/main.py
+@@ -1,126 +1,2 @@
+-"""SupremeAI Worker — Render Service 2 (Phase 10, ROADMAP §32).
+-
+-বাংলা: Background task executor. Redis queue থেকে task নেয়, execute করে।
+-Core API থেকে আলাদা — heavy runtime এখানে, Core API light থাকে।
+-"""
+-
+-from __future__ import annotations
+-
+-import asyncio
+-import json
+-import logging
+-import os
+-import sys
+-import time
+-
+-LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
+-logging.basicConfig(
+-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+-    format="%(asctime)s | %(levelname)-7s | %(message)s",
+-)
+-logger = logging.getLogger("supremeai.worker")
+-logger.info(f">>> booting SupremeAI ecosystem worker (env={os.getenv('ENV', 'production')})")
+-
+-REDIS_URL = os.getenv("REDIS_URL", "")
+-_CORE_API_URL_RAW = os.getenv("CORE_API_URL", "")
+-env = os.getenv("ENV", "production").lower()
+-
+-if not _CORE_API_URL_RAW:
+-    if env == "local":
+-        # Local development fallback — production must set CORE_API_URL explicitly.
+-        _CORE_API_URL_RAW = "http://localhost:8000"
+-    else:
+-        logger.error(
+-            "CORE_API_URL is not configured. Worker cannot reach Core API in production. "
+-            "Please set the CORE_API_URL environment variable."
+-        )
+-
+-CORE_API_URL = _CORE_API_URL_RAW
+-POLL_INTERVAL = float(os.getenv("POLL_INTERVAL", "2.0"))
+-WORKER_ID = f"worker-{os.getpid()}"
+-
+-
+-async def poll_and_execute() -> None:
+-    """Phase 10 — poll Redis queue, execute tasks (ROADMAP §32)."""
+-    if not REDIS_URL:
+-        logger.warning("REDIS_URL not set — worker idling")
+-        while True:
+-            await asyncio.sleep(60)
+-        return
+-    try:
+-        import redis.asyncio as aioredis
+-    except ImportError:
+-        logger.error("redis package not installed")
+-        sys.exit(1)
+-    r = aioredis.from_url(REDIS_URL, decode_responses=True)
+-    await r.ping()
+-    logger.info(">>> Redis connected")
+-    logger.info(f">>> worker {WORKER_ID} polling 'ecosystem:tasks'")
+-    while True:
+-        try:
+-            result = await r.blpop("ecosystem:tasks", timeout=30)
+-            if result is None:
+-                continue
+-            _, task_json = result
+-            task = json.loads(task_json)
+-            logger.info(f">>> task: {task.get('task_id', '?')} — {task.get('goal', '?')[:50]}")
+-            await _execute(task, r)
+-        except asyncio.CancelledError:
+-            break
+-        except Exception as e:
+-            logger.error(f"poll error: {e}")
+-            await asyncio.sleep(POLL_INTERVAL)
+-
+-
+-async def _execute(task: dict, redis) -> None:
+-    await asyncio.sleep(1)
+-    result = {
+-        "task_id": task.get("task_id"),
+-        "status": "completed",
+-        "result": {"message": f"processed by {WORKER_ID}"},
+-        "completed_at": time.time(),
+-    }
+-    await redis.lpush("ecosystem:results", json.dumps(result))
+-    logger.info(f">>> task {task.get('task_id')} done")
+-
+-
+-async def heartbeat() -> None:
+-    if not REDIS_URL:
+-        return
+-    try:
+-        import redis.asyncio as aioredis
+-
+-        r = aioredis.from_url(REDIS_URL, decode_responses=True)
+-        while True:
+-            await r.hset(
+-                "ecosystem:workers",
+-                WORKER_ID,
+-                json.dumps({"id": WORKER_ID, "last_heartbeat": time.time()}),
+-            )
+-            await asyncio.sleep(10)
+-    except Exception as e:
+-        logger.debug(f"heartbeat: {e}")
+-
+-
+-async def health_server() -> None:
+-    from aiohttp import web
+-
+-    async def health(request):
+-        return web.json_response({"status": "ok", "worker_id": WORKER_ID})
+-
+-    app = web.Application()
+-    app.router.add_get("/health", health)
+-    app.router.add_get("/", health)
+-    runner = web.AppRunner(app)
+-    await runner.setup()
+-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", "8001")))
+-    await site.start()
+-    logger.info(f">>> health server on port {os.getenv('PORT', '8001')}")
+-
+-
+-async def main():
+-    await asyncio.gather(health_server(), poll_and_execute(), heartbeat())
+-
+-
+-if __name__ == "__main__":
+-    asyncio.run(main())
++"""Canonical re-export from core.services.worker.main (SSOT #751)."""
++from core.services.worker.main import *  # noqa: F401, F403

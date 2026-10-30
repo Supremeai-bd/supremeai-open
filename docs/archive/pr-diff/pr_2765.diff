@@ -1,0 +1,244 @@
+diff --git a/gateway/circuit_breaker.py b/gateway/circuit_breaker.py
+new file mode 100644
+index 00000000..66c6b3a6
+--- /dev/null
++++ b/gateway/circuit_breaker.py
+@@ -0,0 +1,128 @@
++"""gateway/circuit_breaker.py — Circuit breaker for degraded upstream LLM APIs (#2228).
++
++Stdlib-only. Tracks per-provider state (closed/open/half-open) based on
++consecutive failures. When a provider trips the threshold it is skipped for
++a cooldown window, then probed once (half-open) before re-closing.
++
++States:
++  CLOSED    — normal operation; failures increment counter.
++  OPEN      — provider skipped; after cooldown transitions to HALF_OPEN.
++  HALF_OPEN — one probe allowed; success -> CLOSED, failure -> OPEN.
++"""
++
++from __future__ import annotations
++
++import time
++from dataclasses import dataclass, field
++from enum import Enum
++from threading import Lock
++from typing import Any
++
++
++class CircuitState(str, Enum):
++    CLOSED = "closed"
++    OPEN = "open"
++    HALF_OPEN = "half_open"
++
++
++@dataclass
++class _ProviderState:
++    state: CircuitState = CircuitState.CLOSED
++    failure_count: int = 0
++    last_failure: float = 0.0
++    opened_at: float = 0.0
++
++
++class CircuitBreaker:
++    def __init__(
++        self,
++        failure_threshold: int = 5,
++        cooldown_s: float = 30.0,
++        half_open_max: int = 1,
++    ) -> None:
++        self.failure_threshold = failure_threshold
++        self.cooldown_s = cooldown_s
++        self.half_open_max = half_open_max
++        self._states: dict[str, _ProviderState] = {}
++        self._half_open_in_flight: dict[str, int] = {}
++        self._lock = Lock()
++
++    def _get(self, provider: str) -> _ProviderState:
++        if provider not in self._states:
++            self._states[provider] = _ProviderState()
++        return self._states[provider]
++
++    def allow(self, provider: str) -> bool:
++        """Return True if a request to this provider should be attempted."""
++        with self._lock:
++            st = self._get(provider)
++            now = time.monotonic()
++            if st.state == CircuitState.CLOSED:
++                return True
++            if st.state == CircuitState.OPEN:
++                if now - st.opened_at >= self.cooldown_s:
++                    st.state = CircuitState.HALF_OPEN
++                    self._half_open_in_flight[provider] = 0
++                    # fall through
++                else:
++                    return False
++            if st.state == CircuitState.HALF_OPEN:
++                if self._half_open_in_flight.get(provider, 0) < self.half_open_max:
++                    self._half_open_in_flight[provider] = self._half_open_in_flight.get(provider, 0) + 1
++                    return True
++                return False
++            return True
++
++    def record_success(self, provider: str) -> None:
++        with self._lock:
++            st = self._get(provider)
++            st.state = CircuitState.CLOSED
++            st.failure_count = 0
++            self._half_open_in_flight.pop(provider, None)
++
++    def record_failure(self, provider: str) -> None:
++        with self._lock:
++            st = self._get(provider)
++            st.failure_count += 1
++            st.last_failure = time.monotonic()
++            if st.state == CircuitState.HALF_OPEN:
++                st.state = CircuitState.OPEN
++                st.opened_at = time.monotonic()
++                self._half_open_in_flight.pop(provider, None)
++            elif st.failure_count >= self.failure_threshold:
++                st.state = CircuitState.OPEN
++                st.opened_at = time.monotonic()
++
++    def state_of(self, provider: str) -> CircuitState:
++        with self._lock:
++            return self._get(provider).state
++
++    def reset(self, provider: str | None = None) -> None:
++        with self._lock:
++            if provider is None:
++                self._states.clear()
++                self._half_open_in_flight.clear()
++            else:
++                self._states.pop(provider, None)
++                self._half_open_in_flight.pop(provider, None)
++
++    def snapshot(self) -> dict[str, Any]:
++        with self._lock:
++            return {k: {"state": v.state.value, "failures": v.failure_count} for k, v in self._states.items()}
++
++
++# Module-level singleton (configurable via env at import not needed; callers may
++# instantiate their own).
++default_breaker = CircuitBreaker()
++
++
++def allow(provider: str) -> bool:
++    return default_breaker.allow(provider)
++
++
++def record_success(provider: str) -> None:
++    default_breaker.record_success(provider)
++
++
++def record_failure(provider: str) -> None:
++    default_breaker.record_failure(provider)
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index daba2c67..978e3e25 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -228,6 +228,7 @@ async def execute_chain(
+     attempt_fn: AttemptFn | None = None,
+     max_retries: int = 2,
+     backoff_base_s: float = 0.1,
++    circuit_breaker: Any = None,
+ ) -> AttemptResult:
+     """Try endpoints in order; fail over ONLY on retryable outcomes.
+ 
+@@ -235,10 +236,26 @@ async def execute_chain(
+     to ``max_retries`` times with exponential backoff (issue #2082) before
+     failing over to the next endpoint. Each retry is ledgered honestly.
+     """
++    if circuit_breaker is None:
++        from .circuit_breaker import default_breaker as circuit_breaker
+     attempt = attempt_fn or _default_attempt
+     ledger = ChainLedger()
+     for idx, endpoint in enumerate(chain):
+-        last_result: AttemptResult | None = None
++        provider = endpoint.provider
++        try:
++            allowed = circuit_breaker.allow(provider)
++        except Exception:
++            allowed = True
++        if not allowed:
++            ledger.record(
++                index=idx,
++                provider=provider,
++                model=endpoint.model,
++                outcome="circuit_open",
++                detail="circuit breaker open; provider skipped",
++            )
++            continue
++        last_result = None
+         for retry in range(max_retries + 1):
+             try:
+                 result = await attempt(endpoint, payload)
+@@ -250,13 +267,16 @@ async def execute_chain(
+             ) as exc:
+                 ledger.record(
+                     index=idx,
+-                    provider=endpoint.provider,
++                    provider=provider,
+                     model=endpoint.model,
+                     attempt=retry,
+                     outcome="transport_error",
+                     detail=str(exc)[:200],
+                 )
+-                # transport error: back off before retrying the same endpoint
++                try:
++                    circuit_breaker.record_failure(provider)
++                except Exception:
++                    pass
+                 if retry < max_retries:
+                     await asyncio.sleep(backoff_base_s * (2 ** retry))
+                     continue
+@@ -265,7 +285,7 @@ async def execute_chain(
+             last_result = result
+             ledger.record(
+                 index=idx,
+-                provider=endpoint.provider,
++                provider=provider,
+                 model=endpoint.model,
+                 attempt=retry,
+                 outcome="success" if result.status < 400 else "provider_error",
+@@ -273,11 +293,12 @@ async def execute_chain(
+                 latency_ms=result.latency_ms,
+             )
+             if result.status < 400:
++                try:
++                    circuit_breaker.record_success(provider)
++                except Exception:
++                    pass
+                 return result
+-            # Retryable 503 (and 429 with Retry-After): back off and retry same endpoint.
+-            retryable = result.status == 503 or (
+-                result.status == 429
+-            )
++            retryable = result.status == 503 or result.status == 429
+             if retryable and retry < max_retries:
+                 delay = backoff_base_s * (2 ** retry)
+                 ra = result.retry_after_s
+@@ -285,15 +306,18 @@ async def execute_chain(
+                     delay = min(delay, ra)
+                 await asyncio.sleep(delay)
+                 continue
+-            # Non-retryable or exhausted retries: decide failover.
+             if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
++                try:
++                    circuit_breaker.record_failure(provider)
++                except Exception:
++                    pass
+                 return result
++            try:
++                circuit_breaker.record_failure(provider)
++            except Exception:
++                pass
+             break
+-        if last_result is not None and last_result.status in FAILOVER_STATUS:
+-            # failed over after retries
+-            pass
+-    # If we get here, all endpoints exhausted.
+-    raise ProviderChainExhausted(
++        raise ProviderChainExhausted(
+         "all providers in the chain failed — 502 upstream (zero silent fallback)",
+         ledger=ledger.entries,
+     )

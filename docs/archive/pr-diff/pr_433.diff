@@ -1,0 +1,12 @@
+diff --git a/scripts/ci/auto_bridge_pr_opener.py b/scripts/ci/auto_bridge_pr_opener.py
+index dda8be40..61486aa9 100644
+--- a/scripts/ci/auto_bridge_pr_opener.py
++++ b/scripts/ci/auto_bridge_pr_opener.py
+@@ -119,6 +119,7 @@ def create_pr_for_work_order(issue: dict[str, Any], branch: str, repo: str = UPS
+ {pr_title}
+ 
+ {closes_line}
++Closes #{wo_num}
+ Refs #{wo_num}
+ """
+     cmd = [

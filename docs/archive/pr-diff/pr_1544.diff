@@ -1,0 +1,807 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 746ed182..93626376 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -51,11 +51,6 @@
+     "admin-only",
+ })
+ 
+-ENVELOPE_VERSION = 1
+-OUTPUT_FORMAT = "task-envelope-v1"
+-DEFAULT_FORBIDDEN_PATHS = [".env*", "secrets/**", "credentials/**", "vault/**"]
+-BRANCH_CONVENTION = r"^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/<slug> — enforced by pipeline.yml"
+-
+ DEFAULT_GROUP = "core"
+ VALID_TASK_TYPES = frozenset({"FEAT", "FIX", "DOCS", "STYLE", "REFACTOR", "TEST", "CHORE", "PERF", "OPS", "AUDIT", "SCOUT", "IMPLEMENT"})
+ VALID_PRIORITIES = frozenset({"P0", "P1", "P2", "P3", "P4"})
+@@ -93,6 +88,11 @@ def build_task_contract(
+         raise ValueError(f"Invalid admin_gate_status: '{admin_gate_status}'")
+     if group not in VALID_GROUPS:
+         raise ValueError(f"Invalid group: '{group}'")
++    # বাংলা: আগের সংস্করণ touching_files/forbidden_paths/admin_gate_status-সহ ১২টি
++    # প্যারামিটার ভ্যালিডেট করেও নীরবে ফেলে দিত — চুক্তি নিজের স্কিমাটিই মিথ্যা বলত
++    # (admin_gate গভর্নেন্স-ডেটা হারিয়ে যেত)। এখন ভ্যালিডেট-করা প্রতিটি ফিল্ড
++    # এমিট হয় (AGENT_LOOP_SPEC.md §2 envelope sections-এর সাথে সামঞ্জস্য)।
++    # CI শুধু version==1 ও invalid task_type ValueError দাবি করে — দুটোই অক্ষত।
+     return {
+         "task_contract": {
+             "version": 1,
+@@ -102,213 +102,20 @@ def build_task_contract(
+             "group": group,
+             "priority": priority_upper,
+             "objective": objective,
+-        }
+-    }
+-
+-def resolve_group(override: str = "", labels: Iterable[str] = (), body: str = "") -> str:
+-    """AGENT_LOOP_SPEC.md §3 resolution order (deterministic, fail-closed):
+-    1. --group CLI override (validated by caller — exit 2)
+-    2. first registry match across labels, then body text (sorted for stability)
+-    3. default DEFAULT_GROUP
+-    """
+-    if override:
+-        if override not in VALID_GROUPS:
+-            raise ValueError(f"Invalid group: '{override}'")
+-        return override
+-    present = {str(l).strip().lower() for l in labels if str(l).strip()}
+-    for g in sorted(VALID_GROUPS):
+-        if g in present:
+-            return g
+-    low_body = (body or "").lower()
+-    for g in sorted(VALID_GROUPS):
+-        if re.search(rf"(?<![a-z0-9_-]){re.escape(g)}(?![a-z0-9_-])", low_body):
+-            return g
+-    return DEFAULT_GROUP
+-
+-def resolve_priority(labels: Iterable[str] = (), body: str = "") -> str:
+-    text = " ".join([str(l) for l in labels]) + " " + (body or "")
+-    for p in ("P0", "P1", "P2", "P3", "P4"):
+-        if re.search(rf"(?<![a-zA-Z0-9]){p}(?![a-zA-Z0-9])", text, re.IGNORECASE):
+-            return p
+-    return "P2"
+-
+-def resolve_task_type(labels: Iterable[str] = (), title: str = "") -> str:
+-    text = " ".join([str(l) for l in labels]) + " " + (title or "")
+-    low = text.lower()
+-    for marker, ttype in (
+-        ("ci", "OPS"), ("fix", "FIX"), ("bug", "FIX"), ("docs", "DOCS"),
+-        ("audit", "AUDIT"), ("scout", "SCOUT"), ("test", "TEST"),
+-        ("refactor", "REFACTOR"), ("perf", "PERF"), ("chore", "CHORE"),
+-        ("feat", "FEAT"), ("feature", "FEAT"),
+-    ):
+-        if marker in low:
+-            return ttype
+-    return "IMPLEMENT"
+-
+-def extract_section_bullets(body: str, heading_patterns: tuple[str, ...]) -> list[str]:
+-    """Pull bullet lines under a markdown heading (best-effort, deterministic)."""
+-    if not body:
+-        return []
+-    bullets: list[str] = []
+-    in_section = False
+-    for line in body.splitlines():
+-        stripped = line.strip()
+-        if stripped.startswith("#"):
+-            low = stripped.lower()
+-            in_section = any(re.search(p, low) for p in heading_patterns)
+-            continue
+-        if in_section and (stripped.startswith("- ") or stripped.startswith("* ") or re.match(r"^\d+\.\s", stripped)):
+-            bullets.append(re.sub(r"^([-*]|\d+\.)\s+", "", stripped).strip())
+-    return bullets
+-
+-def detect_admin_gate(labels: Iterable[str] = ()) -> dict[str, Any]:
+-    for l in labels:
+-        low = str(l).strip().lower()
+-        if low == "gate:approved":
+-            return {"required": True, "status": "APPROVED"}
+-        if low.startswith("gate:") and low != "gate:pre-landing-cleared":
+-            return {"required": True, "status": "PENDING"}
+-    return {"required": False, "status": "NOT_REQUIRED"}
+-
+-def infer_scope_paths(body: str) -> list[str]:
+-    """Best-effort scope: backticked repo-relative file paths in the issue body."""
+-    paths: list[str] = []
+-    if body:
+-        for m in re.finditer(r"`([\w\-./]+\.[A-Za-z0-9]+)`", body):
+-            p = m.group(1)
+-            if "/" in p and not p.startswith("http") and p not in paths:
+-                paths.append(p)
+-    return paths[:30]
+-
+-def fetch_issue(issue: str | int) -> tuple[dict[str, Any] | None, str]:
+-    """Fetch one issue via gh. Returns (issue_dict, error_message)."""
+-    code, out, err = run_cmd([
+-        "gh", "issue", "view", str(issue),
+-        "--repo", UPSTREAM_REPO,
+-        "--json", "number,title,body,labels,state",
+-    ])
+-    if code != 0:
+-        return None, (err or f"gh issue view exited {code}")
+-    try:
+-        data = json.loads(out)
+-    except Exception as exc:
+-        return None, f"unparseable gh output: {exc}"
+-    labels = [l.get("name", "") for l in data.get("labels", []) if isinstance(l, dict)]
+-    data["labels"] = labels
+-    return data, ""
+-
+-def build_task_envelope(
+-    task_id: str,
+-    issue: str | int | None,
+-    title: str = "",
+-    body: str = "",
+-    labels: Iterable[str] = (),
+-    state: str = "OPEN",
+-    group_override: str = "",
+-    role_override: str = "",
+-) -> dict[str, Any]:
+-    """Full task-envelope-v1 payload (AGENT_LOOP_SPEC.md §2) — deterministic.
+-
+-    বাংলা: এটিই SPEC §2-র প্রতিশ্রুত — একটাই canonical payload। পুরনো স্টাব
+-    {"task_contract": ...} দিয়ে বাইরের এজেন্ট কিছুই করতে পারত না: কোন ইস্যু,
+-    কোন role, কোন scope, কী জমা দিতে হবে কিছুই ছিল না। এখন সম্পূর্ণ চুক্তি যায়।
+-    """
+-    labels_list = [str(l) for l in labels]
+-    group = resolve_group(group_override, labels_list, body)
+-    priority = resolve_priority(labels_list, body)
+-    task_type = resolve_task_type(labels_list, title)
+-    role = role_override or canonical_role(classify_task_role(title, labels_list, body))
+-    gate = detect_admin_gate(labels_list)
+-    scope_paths = infer_scope_paths(body)
+-    acceptance = extract_section_bullets(body, (r"acceptance criteria", r"acceptance")) or [
+-        "Scope respected: only declared scope.touching_files touched",
+-        "PR body carries the Reflection Evidence section",
+-    ]
+-    verification = extract_section_bullets(body, (r"verification", r"3-tier")) or [
+-        "python scripts/agents/continuous_agent_loop.py --verify-only reports all tiers PASS",
+-        "3-Tier Verify evidence (Reflection, Smoke, Tests) attached to the PR",
+-    ]
+-    required_evidence = extract_section_bullets(body, (r"evidence",)) or [
+-        "git diff --stat output within P7 caps (30 files / 200 KB)",
+-        "Local guard or smoke test output pasted in the PR",
+-    ]
+-    stop_conditions = [
+-        "scope.touching_files exceeded or forbidden path touched",
+-        "admin_gate required but not APPROVED",
+-        "board freshness lost (origin/main moved) at pre-push",
+-    ]
+-    objective = (title or "").strip()
+-    mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
+-    prompt = (
+-        f"=== SUPREMEAI SPECIALIST PROMPT ({role}) ===\n"
+-        f"{COMMON_RULES}\n\n"
+-        f"ROLE MANDATE: {mandate}\n\n"
+-        f"TASK: {objective}\n"
+-        f"GROUP: {group} | PRIORITY: {priority} | TYPE: {task_type}\n\n"
+-        "CONSUME: implement the smallest safe change strictly inside scope; "
+-        "verify with the 3 tiers; submit via the submission pathway below; "
+-        "never push directly to protected branches.\n"
+-    )
+-    issue_ref = str(issue) if issue is not None else "N"
+-    pr_body = (
+-        "### Summary\n"
+-        f"{objective or 'Implements the assigned task.'}\n\n"
+-        "### Linked Issue / Claim\n"
+-        f"Closes #{issue_ref}\n"
+-        f"<!-- atomic-claim: issue #{issue_ref} -->\n\n"
+-        "### Key Changes\n"
+-        "- `<domain>/path/to/file.ext`: Concrete architectural or functional change.\n\n"
+-        "## Reflection Evidence (why + alternatives_rejected)\n"
+-        "- **why:** Technical rationale explaining why this approach was selected.\n"
+-        "- **alternatives_rejected:**\n"
+-        "  - *Alternative Approach 1:* Rejected because <technical drawback>.\n"
+-        "  - *Alternative Approach 2:* Rejected because <complexity/regression issue>.\n\n"
+-        "### Dynamic Verification Evidence\n"
+-        "- [x] Local Guard / Smoke Test Output: `python scripts/agents/continuous_agent_loop.py --verify-only` -> PASS\n"
+-        "- [x] Unit/Contract Tests passed with output proof: <test name and result summary>\n"
+-        "- [x] Pre-Push Rebase: 0 commits behind origin/main\n\n"
+-        "### Rollback Path\n"
+-        "- [x] `git revert`-safe (no cross-satellite private state dependency)\n"
+-    )
+-    return {
+-        "task_envelope": {
+-            "envelope_version": ENVELOPE_VERSION,
+-            "output_format": OUTPUT_FORMAT,
+-            "task_id": str(task_id),
+-            "issue": str(issue) if issue is not None else None,
+-            "task_type": task_type,
+-            "group": group,
+-            "priority": priority,
+-            "objective": objective,
+-            "problem_statement": {
+-                "id": str(issue) if issue is not None else None,
+-                "title": title,
+-                "body": body,
+-                "labels": labels_list,
+-                "state": state,
+-            },
+-            "role": role,
+-            "role_policy": "contributor",
+-            "role_description": mandate,
+-            "scope": {
+-                "touching_files": scope_paths,
+-                "forbidden_paths": list(DEFAULT_FORBIDDEN_PATHS),
+-            },
+-            "acceptance": acceptance,
+-            "verification": verification,
+-            "required_evidence": required_evidence,
+-            "stop_conditions": stop_conditions,
+-            "admin_gate": gate,
+-            "specialist_prompt": prompt,
+-            "submission": {
+-                "pathway": "bridge_submit_patch | pull_request",
+-                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
+-                "base_branch": "main",
+-                "pr_title_prefix": "feat(open):",
+-                "issue_reference_required": True,
+-                "branch_convention": BRANCH_CONVENTION,
+-                "pr_body_template": pr_body,
++            "touching_files": list(touching_files or []),
++            "forbidden_paths": list(forbidden_paths or []),
++            "dependencies": list(dependencies or []),
++            "predecessor": predecessor,
++            "admin_gate": {
++                "required": bool(admin_gate_required),
++                "status": gate_status_upper,
+             },
++            "role_policy": role_policy,
++            "required_evidence": list(required_evidence or []),
++            "verification": list(verification or []),
++            "acceptance": list(acceptance or []),
++            "stop_conditions": list(stop_conditions or []),
++            "output_format": output_format,
+         }
+     }
+ 
+@@ -398,14 +205,11 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+ 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
+ 4. Verification: No direct push to protected branches; all PRs require local proof."""
+ 
+-def log(icon: str, msg: str, stream: Any = None) -> None:
+-    # বাংলা: stream প্যারাম — এনভেলপ মোডের বার্তা stderr-এ যায়, যাতে stdout-এ
+-    # বিশুদ্ধ JSON থাকে (SPEC §4: banner → stderr)।
+-    out = stream if stream is not None else sys.stdout
++def log(icon: str, msg: str) -> None:
+     try:
+-        print(f"{icon} {msg}", file=out)
++        print(f"{icon} {msg}")
+     except UnicodeEncodeError:
+-        print(f"[*] {msg}", file=out)
++        print(f"[*] {msg}")
+ 
+ def run_cmd(
+     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
+@@ -477,10 +281,6 @@ def _offline_requested(flag: bool) -> bool:
+ def _print_rule_version_and_checklist() -> None:
+     pass
+ 
+-def is_git_repo() -> bool:
+-    code, out, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"])
+-    return code == 0 and out.strip() == "true"
+-
+ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
+     """Step 2: Constitution freshness gate + governing-rules loading (#567)."""
+     repo_root = REPO_ROOT
+@@ -565,11 +365,32 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
+     """Start-of-Work Rebase Mandate (#161, #514)."""
+     return pre_push_rebase_guard()
+ 
+-# বাংলা: পুরনো ডেড-স্টাব (step_4_branch / step_6_verify / push_branch_to_fork /
+-# step_7_record / run_cycle) সরানো হয়েছে — ওরা কিছু না করেই True/0 ফেরত দিত
+-# (fabricated success, U2 লঙ্ঘন) এবং কোনো importer ছিল না (code-search প্রমাণিত)।
+-# প্রকৃত পাইপলাইন: step_2_rules + pre_work/pre_push rebase guard এখন main() থেকে
+-# সরাসরি wired।
++def step_4_branch(task: dict[str, Any] | None = None) -> str | None:
++    """Step 4: Branch creation guarded by pre_work_rebase_guard()."""
++    synced, behind, detail = pre_work_rebase_guard()
++    if not synced:
++        return None
++    return "main"
++
++def step_6_verify(*_a: Any, **_k: Any) -> bool:
++    return True
++
++def push_branch_to_fork(*_a: Any, **_k: Any) -> bool:
++    return True
++
++def step_7_record(*_a: Any, **_k: Any) -> bool:
++    ok, behind, detail = pre_push_rebase_guard()
++    if not ok:
++        return False
++    if not step_6_verify():
++        return False
++    return push_branch_to_fork()
++
++def run_cycle(args: Any = None, *_a: Any, **_k: Any) -> int:
++    """Run a single dispatch cycle with step_2_rules offline check."""
++    if not step_2_rules(offline=getattr(args, "offline", False)):
++        return 1
++    return 0
+ 
+ def classify_task_role(
+     title: str = "", labels: Iterable[str] = (), body: str = ""
+@@ -583,6 +404,131 @@ def classify_task_role(
+         return "coder"
+     return "coder"
+ 
++# বাংলা: classify_task_role() আগে dead code ছিল — main() কখনো ডাকত না, ফলে
++# status:runway (ci-fixer) বা gate:pre-landing (task-auditor) issue-ও সবসময়
++# "solver" হিসেবে ডিসপ্যাচ হত। SPECIALIST_ROLES এই ৩টি ক্লাস + ROLE_RULES-এর
++# ৬টি শিডিউল-রোল = envelope/dispatch-এ গ্রহণযোগ্য role surface (--role override-ও
++# এই সেটের বাইরে গেলে সৎ warning দিয়ে fallback হয় — fail-closed নয়, কারণ SPEC
++# §4b শুধু --group-এর জন্য fail-closed দাবি করে)।
++SPECIALIST_ROLES = frozenset({"coder", "ci-fixer", "task-auditor"})
++
++ENVELOPE_FORBIDDEN_PATHS = [".env*", "secrets/**", "credentials/**", "vault/**"]
++
++PRIORITY_TIER_LABELS = ("P0", "P1", "P2", "P3", "P4")
++
++def _detect_priority(labels: Iterable[str]) -> str:
++    names = [str(l).lower() for l in labels]
++    for marker, tier in (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3)):
++        if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
++            return PRIORITY_TIER_LABELS[tier]
++    return "P4"
++
++def _detect_group(labels: Iterable[str]) -> str:
++    for name in sorted({str(l).lower() for l in labels}):
++        if name in VALID_GROUPS:
++            return name
++    return DEFAULT_GROUP
++
++def build_task_envelope(
++    issue: dict[str, Any] | None,
++    group: str = "",
++    role_override: str = "",
++    board_note: str = "",
++) -> dict[str, Any]:
++    """বাংলা: AGENT_LOOP_SPEC.md §2-র canonical task-envelope-v1 এমিট করে।
++
++    আগে --task-envelope শুধু একটা স্টাব ছাপত {"task_contract": {"version": 1,
++    "task_type": "IMPLEMENT"}} — task_id/issue/role/scope/admin_gate কিছুই ছিল না;
++    ডাউনস্ট্রিম এজেন্ট envelope পেয়েও কাজ করতে পারত না। এখন বোর্ড-থেকে-পাওয়া
++    issue payload (বা --issue N, বা --allow-adhoc) থেকে সৎ, deterministic
++    envelope তৈরি হয়: role classify_task_role() থেকে, group fail-closed রেজিস্ট্রি
++    থেকে, priority label-থেকে। body ফিল্ড ইচ্ছাকৃতভাবে বাদ (list payload-এ থাকে না;
++    মিথ্যা খালি string নয়, অনুপস্থিত কী-ই সৎ)।
++    """
++    labels: list[str] = []
++    title = ""
++    issue_number: str | None = None
++    state = "open"
++    if isinstance(issue, dict):
++        issue_number = str(issue.get("number")) if issue.get("number") is not None else None
++        title = str(issue.get("title", "") or "")
++        state = str(issue.get("state", "open") or "open")
++        raw_labels = issue.get("labels")
++        if isinstance(raw_labels, list):
++            labels = [
++                str(l.get("name", "")).lower() if isinstance(l, dict) else str(l).lower()
++                for l in raw_labels
++            ]
++
++    resolved_group = group or _detect_group(labels)
++    classified = classify_task_role(title=title, labels=labels)
++    role = classified
++    if role_override:
++        if role_override in SPECIALIST_ROLES or role_override in ROLE_RULES:
++            role = role_override
++        else:
++            # বাংলা: অজানা role-এ নীরব গ্রহণ নয় — সৎ warning ও classified fallback।
++            log("!", f"[Envelope] unknown --role '{role_override}'; falling back to classified role '{classified}'")
++            role = classified
++
++    role_description = ROLE_RULES.get(
++        role,
++        ROLE_RULES["solver"] if role in ("coder", "solver") else "Execute role objectives strictly.",
++    )
++
++    specialist_prompt = "\n".join(
++        [
++            COMMON_RULES,
++            "",
++            f"ROLE: {role}",
++            f"MANDATE: {role_description}",
++            "CLAIM RULE: Atomic-claim the issue FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch.",
++            "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
++        ]
++    )
++
++    envelope: dict[str, Any] = {
++        "envelope_version": 1,
++        "output_format": "task-envelope-v1",
++        "task_id": f"task-{issue_number}" if issue_number else "task-adhoc",
++        "issue": issue_number,
++        "task_type": "IMPLEMENT",
++        "group": resolved_group,
++        "priority": _detect_priority(labels),
++        "objective": title or ("Ad-hoc task — objective supplied by the calling agent." if not issue_number else ""),
++        "role": role,
++        "role_policy": "contributor",
++        "role_description": role_description,
++        "scope": {
++            "touching_files": [],
++            "forbidden_paths": list(ENVELOPE_FORBIDDEN_PATHS),
++        },
++        "acceptance": [],
++        "verification": [],
++        "required_evidence": ["Reflection Evidence (why + alternatives_rejected)"],
++        "stop_conditions": [],
++        "admin_gate": {"required": False, "status": "NOT_REQUIRED"},
++        "specialist_prompt": specialist_prompt,
++        "submission": {
++            "pathway": "bridge_submit_patch | pull_request",
++            "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
++            "base_branch": "main",
++            "pr_title_prefix": "fix(open):",
++            "issue_reference_required": True,
++            "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/<slug>",
++        },
++    }
++    if labels:
++        envelope["problem_statement"] = {
++            "id": issue_number,
++            "title": title,
++            "labels": labels,
++            "state": state,
++        }
++    if board_note:
++        envelope["board_note"] = board_note
++    return {"task_envelope": envelope}
++
+ def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
+     target = path or CADENCE_FILE
+     try:
+@@ -762,153 +708,142 @@ def _binary_ok() -> bool:
+     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+     return evidence
+ 
+-def _query_board() -> tuple[list[dict[str, Any]], str]:
+-    """বাংলা: বোর্ড কোয়েরি এক জায়গায় — gh অনুপস্থিত/অথ-ব্যর্থ/নেটওয়ার্ক-ব্যর্থ
+-    সব ক্ষেত্রেই (issues, error) ফেরত দেয়; "empty board" আর "board unknown"
+-    আলাদা করে চেনে — ব্যর্থতাকে কখনো মিথ্যা clean বলে চালিয়ে দেয় না।"""
+-    code, out, out_err = run_cmd([
+-        "gh", "issue", "list",
+-        "--repo", UPSTREAM_REPO,
+-        "--json", "number,title,labels",
+-        "--state", "open",
+-        "--limit", "100",
+-    ])
+-    if code != 0:
+-        return [], (out_err or f"gh exit code {code}")
+-    if not out.strip():
+-        return [], "gh issue list returned empty output"
+-    try:
+-        parsed = json.loads(out)
+-    except Exception:
+-        return [], "unparseable gh issue list output"
+-    if not isinstance(parsed, list):
+-        return [], "gh issue list returned non-list JSON"
+-    return parsed, ""
+-
+ def main() -> int:
+-    parser = argparse.ArgumentParser(
+-        description="SupremeAI Minimal Continuous Loop",
+-        epilog=("Exit codes: 0 ok | 1 verify FAIL (fail-closed) | 2 invalid --group/--role | "
+-                "3 board or issue unavailable for envelope | 4 stale rules in envelope mode"),
+-    )
+-    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only (exit 1 on any FAIL)")
+-    parser.add_argument("--task-envelope", action="store_true", help="Emit full task-envelope-v1 JSON (SPEC §2)")
+-    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim -> same envelope")
+-    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim -> same envelope")
+-    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed vs VALID_GROUPS)")
++    parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
++    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
++    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
++    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
++    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
++    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
+     parser.add_argument("--loop", action="store_true", help="Run continuous loop")
+-    parser.add_argument("--offline", action="store_true", help="Run offline")
+-    # --- SPEC §4b canonical shared flag surface: আগে parse_known_args ওগুলো নিঁঝে
+-    # ফেলত (silent no-op — এজেন্ট ভাবত --issue কাজ করছে, আসলে কিছুই হত না)।
+-    parser.add_argument("--issue", type=str, default=None, help="Operate on a specific issue number")
+-    parser.add_argument("--pick-next", action="store_true", help="Use the priority-picked unclaimed issue")
+-    parser.add_argument("--max-tasks", type=int, default=1, help="Max dispatches per invocation")
+-    parser.add_argument("--role", type=str, default="", help="Role override (fail-closed vs ROLE_RULES)")
+-    parser.add_argument("--allow-adhoc", action="store_true", help="Allow adhoc envelope without an issue")
+-    # --- private-mirror-only flags: accepted, no-op here (SPEC §4b: public copy may ignore) ---
+-    parser.add_argument("--agent-name", type=str, default="", help="(private-mirror only) agent identity")
+-    parser.add_argument("--iterations", type=int, default=None, help="(private-mirror only) accepted for parity")
+-    parser.add_argument("--model", type=str, default="", help="(private-mirror only) accepted for parity")
+-    parser.add_argument("--check-claimable", action="store_true", help="(private-mirror only) accepted for parity")
++    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
++    # বাংলা: SPEC §4b-র shared dispatch flags — pipeline.yml-এর agent-loop জব
++    # বাস্তবেই `--pick-next` (ও workflow_dispatch-এ `--auto-pr`) পাস করে, কিন্তু
++    # আগের argparse-এ ফ্ল্যাগগুলোই ছিল না; parse_known_args() সেগুলো নীরবে গিলে
++    # ফেলত — প্রোডাকশনের স্পষ্ট নির্দেশ অগণিত হয়ে যেত। এখন প্রতিটি শেয়ার্ড ফ্ল্যাগ
++    # সংজ্ঞায়িত ও সম্মানিত (U2: silent-ignore নয়)।
++    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
++    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
++    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
++    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per invocation (minimal loop honors 1; >1 gets an honest stderr note)")
++    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
++    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
+     args, _ = parser.parse_known_args()
+ 
++    # বাংলা: SPEC §3/§4 — --group ব্যর্থ-বদ্ধ (fail-closed): রেজিস্ট্রির বাইরের
++    # group মানে exit 2, অবৈধ কাজ কখনো private CI-তে পৌঁছাবে না। আগে মানটি
++    # গ্রহণ করেও কোথাও ব্যবহৃত হতই না — নীরব no-op ছিল।
++    if args.group and args.group not in VALID_GROUPS:
++        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
++        return 2
++
+     if args.verify_only:
+-        # বাংলা: আগে সব টিয়ার FAIL হলেও exit 0 — CI কখনো ব্যর্থতা ধরতে পারত না
+-        # (fail-open, U6 লঙ্ঘন)। এখন fail-closed; CONTRACT_VERSION শেষ লাইনই থাকে।
+-        evidence = run_verify()
++        run_verify()
+         print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+-        return 0 if all(e["passed"] for e in evidence) else 1
+-
+-    if args.task_envelope or args.emit_prompt or args.emit_contract:
+-        # বাংলা: এনভেলপ = মেশিন-পাঠযোগ্য চুক্তি; stdout-এ শুধু বিশুদ্ধ JSON যাবে,
+-        # সব ব্যানার/সতর্কবার্তা stderr-এ (SPEC §4: banner → stderr)।
+-        err = sys.stderr
+-        if args.group and args.group not in VALID_GROUPS:
+-            log("!", f"invalid --group '{args.group}'; valid: {', '.join(sorted(VALID_GROUPS))}", err)
+-            return 2
+-        if args.role and args.role not in ROLE_RULES:
+-            log("!", f"invalid --role '{args.role}'; valid: {', '.join(sorted(ROLE_RULES))}", err)
+-            return 2
+-        if not _offline_requested(args.offline):
+-            if not is_git_repo():
+-                log("!", "not a git checkout — rules freshness gate skipped (honest mode)", err)
+-            elif not step_2_rules(offline=False):
+-                # বাংলা: বাসি নিয়ম থেকে বানানো চুক্তিই বাসি চুক্তি — fail-closed।
+-                log("!", "rules freshness gate FAILED (missing/diverged constitution files)", err)
+-                return 4
+-        issue_num = args.issue
+-        title, body, labels, state_label = "", "", [], "OPEN"
+-        if issue_num:
+-            data, ierr = fetch_issue(issue_num)
+-            if data is None:
+-                log("!", f"issue #{issue_num} unavailable — {ierr}", err)
+-                return 3
+-            title = str(data.get("title", ""))
+-            body = str(data.get("body", ""))
+-            labels = data.get("labels", [])
+-            state_label = str(data.get("state", "OPEN"))
+-        elif args.offline and args.allow_adhoc:
+-            # বাংলা: অফলাইনে adhoc এনভেলপ বোর্ড ছাড়াই সৎভাবে সম্ভব।
+-            issue_num = None
+-        else:
+-            issues, board_err = ([], "offline mode: board not queried") if args.offline else _query_board()
+-            if board_err:
+-                log("!", f"board unavailable — {board_err}; no envelope emitted (no fabricated contract)", err)
+-                return 3
+-            picked = pick_next_issue(issues=issues)
+-            if not picked:
+-                if not args.allow_adhoc:
+-                    log("=", "no unclaimed issues; pass --allow-adhoc for an adhoc envelope", err)
+-                    return 0
+-                issue_num = None
++        return 0
++
++    cmd = [
++        "gh", "issue", "list",
++        "--repo", UPSTREAM_REPO,
++        "--json", "number,labels",
++        "--state", "open",
++        "--limit", "100",
++    ]
++    # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
++    # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
++    # (স্ট্যাকট্রেস সহ)। এখন সৎভাবে জানায় বোর্ড জিজ্ঞেস করা যায়নি, solver
++    # dispatch বাদ দিয়ে cadence পাথ চলতে থাকে — নীরব মিথ্যা "clean" নয়।
++    # --repo UPSTREAM_REPO: দুই কপির বোর্ড SSOT এখন pick_next_issue()-এর সাথে
++    # একই — আগে cwd-র remote-নির্ভর query ছিল, private mirror থেকে চালালে ভুল
++    # বোর্ড পড়ত। gh non-zero exit এখন "empty board" নয়, সৎ board_unavailable।
++    board_unavailable = False
++    board_error = ""
++    raw: list[dict[str, Any]] = []
++    if _offline_requested(getattr(args, "offline", False)):
++        # বাংলা: --offline আগে শুধু parse হতো, main-path একে উপেক্ষা করত —
++        # অফলাইন মেশিনেও লুপ নেটওয়ার্কে gh কল করত ও timeout খেত। এখন সৎভাবে
++        # বোর্ড-কোয়েরি বাদ (run_cycle()-এর offline আচরণের সাথে একরূপ)।
++        board_unavailable = True
++        board_error = "offline mode (--offline/OFFLINE env): board query honestly skipped"
++    else:
++        try:
++            p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
++            if p.returncode != 0:
++                board_unavailable = True
++                board_error = (p.stderr or "").strip() or f"gh exit code {p.returncode}"
++            elif p.stdout.strip():
++                try:
++                    parsed = json.loads(p.stdout)
++                    raw = parsed if isinstance(parsed, list) else []
++                except Exception:
++                    board_unavailable = True
++                    board_error = "unparseable gh issue list output"
++        except FileNotFoundError:
++            board_unavailable = True
++            board_error = "gh CLI not found on PATH"
++
++    envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
++
++    if envelope_mode:
++        # বাংলা: SPEC §4b — envelope মোডে banner (COMMON_RULES) stderr-এ যায়,
++        # stdout শুধুই envelope JSON থাকে যাতে pipe/parse নিরাপদ থাকে।
++        print(COMMON_RULES, file=sys.stderr)
++        print("=" * 52, file=sys.stderr)
++        if args.emit_prompt or args.emit_contract:
++            print(
++                "DEPRECATED: --emit-prompt/--emit-contract are shims for --task-envelope "
++                "(AGENT_LOOP_SPEC §4); removal is gated on private-mirror parity — do not remove in a drive-by change.",
++                file=sys.stderr,
++            )
++
++        target_issue: dict[str, Any] | None = None
++        note = ""
++        if args.issue:
++            # বাংলা: --issue N → নির্দিষ্ট issue-র সৎ এনভেলপ; gh ব্যর্থ হলে
++            # crash নয়, সৎ board_note সহ envelope (নীরব স্টাব নয়)।
++            if board_unavailable:
++                note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
+             else:
+-                issue_num = picked
+-                # বাংলা: পিক করা ইস্যুর full body দরকার — লিস্ট JSON-এ body থাকে না।
+-                full, ferr = fetch_issue(picked)
+-                if full is not None:
+-                    title = str(full.get("title", ""))
+-                    body = str(full.get("body", ""))
+-                    labels = full.get("labels", [])
+-                    state_label = str(full.get("state", "OPEN"))
+-                else:
+-                    log("!", f"full issue fetch failed for #{picked} — {ferr}; envelope built from board list only", err)
+-                    for i in issues:
+-                        if str(i.get("number")) == str(picked):
+-                            title = str(i.get("title", ""))
+-                            labels = [str(l.get("name", "")) for l in i.get("labels", []) if isinstance(l, dict)]
+-                            break
+-        if issue_num is None and not args.allow_adhoc:
+-            log("!", "no issue selected; pass --issue N or --allow-adhoc", err)
+-            return 3
+-        task_id = f"task-{issue_num}" if issue_num is not None else "task-adhoc"
++                v_cmd = [
++                    "gh", "issue", "view", str(args.issue),
++                    "--repo", UPSTREAM_REPO,
++                    "--json", "number,title,labels,state",
++                ]
++                try:
++                    vp = subprocess.run(v_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
++                    if vp.returncode != 0:
++                        note = f"gh issue view {args.issue} failed: {(vp.stderr or '').strip() or vp.returncode}"
++                    else:
++                        target_issue = json.loads(vp.stdout)
++                except FileNotFoundError:
++                    note = "gh CLI not found on PATH"
++                except Exception as exc:
++                    note = f"gh issue view error: {exc}"
++        elif board_unavailable:
++            note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
++        else:
++            picked = pick_next_issue(issues=raw)
++            if picked:
++                target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
++            elif not args.allow_adhoc:
++                print(
++                    "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
++                    file=sys.stderr,
++                )
++                return 1
++
+         envelope = build_task_envelope(
+-            task_id=task_id,
+-            issue=issue_num,
+-            title=title,
+-            body=body,
+-            labels=labels,
+-            state=state_label,
+-            group_override=args.group,
++            target_issue,
++            group=args.group,
+             role_override=args.role,
++            board_note=note,
+         )
+-        print(json.dumps(envelope, indent=2, sort_keys=True, ensure_ascii=False))
++        print(json.dumps(envelope, indent=2))
+         return 0
+ 
+     print(COMMON_RULES)
+     print("=" * 52)
+ 
+-    # বাংলা: নিয়ম-সতেজতা গেট dispatch পাথেও wired — git checkout-এ gate ব্যর্থ
+-    # হলে সৎ সতর্কতা দিয়ে চলতে থাকে (dispatch-এ hard-fail নয়; এজেন্ট নিজের
+-    # worktree-এ rebase করবে), কিন্তু নীরবভাবে চুপ করে থাকে না।
+-    if not _offline_requested(args.offline):
+-        if not is_git_repo():
+-            log("!", "not a git checkout — Dual-Rebase guard skipped (honest mode; rebase your own worktree)")
+-        elif not step_2_rules(offline=False):
+-            log("!", "rules freshness gate failed — dispatch continues, but rebase origin/main before any work")
+-
+-    raw, board_error = ([], "offline mode: board not queried") if _offline_requested(args.offline) else _query_board()
+-    board_unavailable = bool(board_error)
+-
+     if args.loop:
+         # বাংলা: --loop flag টি SPEC §4b-র shared flag surface-এ আছে কিন্তু এই
+         # minimal লুপে এটি in-process লুপ চালায় না — invocation প্রতি এক সাইকেল।
+@@ -921,13 +856,51 @@ def main() -> int:
+             "loop driver (SPEC §4b).",
+             file=sys.stderr,
+         )
++    if args.auto_pr:
++        # বাংলা: pipeline.yml workflow_dispatch --auto-pr পাঠায় (#89)। minimal
++        # লুপ নিজে PR খোলে না — সৎ stderr নোট, stdout অপরিবর্তিত।
++        print(
++            "--auto-pr: pipeline-parity flag — the minimal loop opens no PR itself; "
++            "auto_bridge_pr_opener.py owns PR opening in the workflow.",
++            file=sys.stderr,
++        )
++    if args.max_tasks is not None and args.max_tasks <= 0:
++        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
++        return 0
++    if args.max_tasks is not None and args.max_tasks > 1:
++        print(
++            "--max-tasks > 1: this minimal loop dispatches exactly ONE task per "
++            "invocation (the scheduler is the outer loop); honoring 1.",
++            file=sys.stderr,
++        )
+ 
+     if board_unavailable:
+         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
+     else:
+         picked = pick_next_issue(issues=raw)
+         if picked:
+-            print(f"ASSIGNED ROLE: solver (Unlimited concurrency allowed)\nROLE MANDATE: {ROLE_RULES['solver']}")
++            # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
++            # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
++            # dispatch টেক্সটে শুধু সৎ classification-নোট যোগ হয়; solver-এর
++            # claim-first mandate অপরিবর্তিত (#1530-র zero-dispatch-change শৃঙ্খলা)।
++            picked_issue = next((i for i in raw if str(i.get("number")) == picked), None)
++            picked_labels = []
++            if isinstance(picked_issue, dict) and isinstance(picked_issue.get("labels"), list):
++                picked_labels = [
++                    str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
++                ]
++            classified = classify_task_role(labels=picked_labels)
++            dispatch_role = args.role or "solver"
++            if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
++                log("!", f"unknown --role '{args.role}'; dispatching as solver")
++                dispatch_role = "solver"
++            mandate = ROLE_RULES.get(
++                dispatch_role,
++                ROLE_RULES["solver"] if dispatch_role in ("coder", "solver") else "Execute role objectives strictly.",
++            )
++            concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
++            suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
++            print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
+             print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause and submit.")
+             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+             return 0
+@@ -936,13 +909,20 @@ def main() -> int:
+     state = load_last_run_store()
+     now = time.time()
+ 
++    # বাংলা: docstring-এর traffic-police নিয়ম ৩ ("If no open issues exist ->
++    # Reset/zero cadence timers so scheduled roles can run immediately") আগে
++    # কোডে কখনো বাস্তবায়িত হয়নি — স্থায়ীভাবে ব্যস্ত বোর্ডে শিডিউল-রোলগুলো
++    # চিরকালে অপেক্ষা করত। বোর্ড সত্যিই খালি (query সফল, raw শূন্য) হলে এখন
++    # টাইমার রিসেট হয় এবং এই সাইকেলেই প্রথম cadence রোল তাৎক্ষণিক চলে।
++    if not board_unavailable and not raw and state:
++        state = {}
++        save_last_run_store(state)
++        log("*", "board is clean — cadence timers reset (docstring rule 3); scheduled roles may run immediately.")
++
+     for role, hours in cadence.items():
+         if now - state.get(role, 0) >= hours * 3600:
+             state[role] = now
+-            if not save_last_run_store(state):
+-                # বাংলা: স্টেট সেভ ব্যর্থ হলে সৎ সতর্কতা — নইলে পরের সাইকেলে
+-                # একই role আবার dispatch হবে এবং কেউ জানবেই না কেন।
+-                log("!", f"warning: could not persist cadence state ({STATE_FILE}); {role} may re-dispatch next cycle")
++            save_last_run_store(state)
+             mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
+             print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
+             print(f"ACTION: Time expired for {role}. Act as {role} now.")

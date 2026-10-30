@@ -1,0 +1,48 @@
+diff --git a/core/messaging/event_bus.py b/core/messaging/event_bus.py
+index a7d07ba3..50128dc3 100644
+--- a/core/messaging/event_bus.py
++++ b/core/messaging/event_bus.py
+@@ -383,19 +383,31 @@ def emit(self, event: ErrorEvent) -> None:
+         event.structured_context.system_state = self._get_current_metrics()
+         self._check_and_escalate_pattern(event)
+ 
+-        # Forward severe errors to Sentry via monitoring
++        # Forward severe errors to Sentry via monitoring.
++        # বাংলা: এটি error-REPORTING path — এখানে raise মানে মূল error mask হয়ে বুট-মৃত্যু
++        # (live প্রমাণ 2026-10-29: Render deploy update_failed since 2026-10-24; boot crash
++        # "cannot import name 'track_exception' from 'monitoring'" — monitoring shim-ের
++        # legacy মডিয়ুল মুছে ফেলা হয়েছে, track_exception এখন কোথাও নেই)।
++        # ফাইল-হেডার-ইন চুক্তি (Anti-Suppression Pipeline): telemetry ব্যর্থতা কখনো
++        # মূল error-কে প্রতিস্থাপন করতে পারবে না — সেক্ষেত্রে structured log-ে degrade করুক।
+         if event.severity in ["CRITICAL", "ERROR", "HIGH"]:
+-            from monitoring import track_exception
+-
+-            track_exception(
+-                Exception(f"[{event.error_type}] {event.message}"),
+-                context={
+-                    "module": event.module,
+-                    "service": event.service,
+-                    **event.context,
+-                    **event.structured_context.model_dump(),
+-                },
+-            )
++            try:
++                from monitoring import track_exception
++
++                track_exception(
++                    Exception(f"[{event.error_type}] {event.message}"),
++                    context={
++                        "module": event.module,
++                        "service": event.service,
++                        **event.context,
++                        **event.structured_context.model_dump(),
++                    },
++                )
++            except Exception as exc:  # noqa: BLE001 — telemetry must never mask the original error
++                logger.warning(
++                    "[EventBus] telemetry forward unavailable "
++                    f"({type(exc).__name__}: {exc}); event remains recorded via structured log"
++                )
+ 
+         super().emit(event)
+ 

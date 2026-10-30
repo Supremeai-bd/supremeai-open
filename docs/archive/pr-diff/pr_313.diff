@@ -1,0 +1,495 @@
+diff --git a/api-schemas/websocket-events.schema.json b/api-schemas/websocket-events.schema.json
+new file mode 100644
+index 00000000..c4927c08
+--- /dev/null
++++ b/api-schemas/websocket-events.schema.json
+@@ -0,0 +1,324 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://supremeai.ai/schemas/websocket-events.schema.json",
++  "title": "SupremeAI WebSocket Live Event Stream Frames",
++  "description": "Wire contract for streaming live agent execution over WebSocket: agent thoughts, tool invocations/results, lifecycle events, and heartbeat frames. Every frame is one JSON object on the wire. Frames are strictly ordered per connection by the monotonically increasing seq and carry an RFC 3339 timestamp. The 6 event types are a closed vocabulary; each event tag is pinned to exactly one payload shape via if/then discrimination, so a mismatched payload is structurally invalid. Heartbeat ping/pong frames share the same envelope under frame_type=heartbeat. Contract-first: the MCP Tower serves its transports today (see docs/MCP_CONNECT.md); this schema pins the live event stream format for agent execution. See issue #40.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": ["frame_type", "seq", "timestamp"],
++  "properties": {
++    "frame_type": {
++      "enum": ["event", "heartbeat"],
++      "description": "Frame discriminator: execution events vs heartbeat ping/pong keepalives."
++    },
++    "seq": {
++      "type": "integer",
++      "minimum": 0,
++      "description": "Monotonically increasing per-connection sequence number; receivers detect gaps and trigger resync on discontinuity."
++    },
++    "timestamp": {
++      "type": "string",
++      "format": "date-time",
++      "pattern": "^\\d{4}-\\d{2}-\\d{2}[Tt]\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([Zz]|[+-]\\d{2}:\\d{2})$",
++      "description": "RFC 3339 UTC instant at which the server emitted the frame (ordering authority). Explicit pattern: format is annotation-only in Draft 2020-12, so the pattern gives the ordering contract teeth in every validator."
++    },
++    "event": {
++      "enum": ["agent:started", "agent:thought", "tool:invoking", "tool:result", "agent:done", "agent:error"],
++      "description": "Closed vocabulary of the 6 execution event types."
++    },
++    "task_id": {
++      "type": "string",
++      "pattern": "^task-[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$",
++      "description": "Task whose execution this stream carries (present on event frames)."
++    },
++    "agent_id": {
++      "type": "string",
++      "pattern": "^agent-[a-zA-Z0-9_-]{1,64}$",
++      "description": "Emitting agent (present on event frames; mirrors heartbeat.schema.json identity)."
++    },
++    "payload": {
++      "description": "Event-tagged payload; shape pinned by the if/then arms below."
++    },
++    "heartbeat": {
++      "$ref": "#/$defs/HeartbeatBody"
++    }
++  },
++  "allOf": [
++    {
++      "description": "Event frames carry task_id, agent_id and a payload.",
++      "if": {
++        "type": "object",
++        "required": ["frame_type"],
++        "properties": { "frame_type": { "const": "event" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["event", "task_id", "agent_id", "payload"],
++        "properties": { "heartbeat": { "not": {} } }
++      }
++    },
++    {
++      "description": "agent:started pins the AgentStartedPayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "agent:started" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/AgentStartedPayload" } }
++      }
++    },
++    {
++      "description": "agent:thought pins the AgentThoughtPayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "agent:thought" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/AgentThoughtPayload" } }
++      }
++    },
++    {
++      "description": "tool:invoking pins the ToolInvokingPayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "tool:invoking" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/ToolInvokingPayload" } }
++      }
++    },
++    {
++      "description": "tool:result pins the ToolResultPayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "tool:result" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/ToolResultPayload" } }
++      }
++    },
++    {
++      "description": "agent:done pins the AgentDonePayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "agent:done" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/AgentDonePayload" } }
++      }
++    },
++    {
++      "description": "agent:error pins the AgentErrorPayload.",
++      "if": {
++        "type": "object",
++        "required": ["event"],
++        "properties": { "event": { "const": "agent:error" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["payload"],
++        "properties": { "payload": { "$ref": "#/$defs/AgentErrorPayload" } }
++      }
++    },
++    {
++      "description": "Heartbeat frames carry the heartbeat body.",
++      "if": {
++        "type": "object",
++        "required": ["frame_type"],
++        "properties": { "frame_type": { "const": "heartbeat" } }
++      },
++      "then": {
++        "type": "object",
++        "required": ["heartbeat"],
++        "properties": { "event": { "not": {} } }
++      }
++    }
++  ],
++  "$defs": {
++    "HeartbeatBody": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Keepalive ping/pong. Client sends kind=ping; server MUST answer kind=pong echoing the ping seq. A missed pong within the timeout closes the connection and triggers reconnection with backoff.",
++      "required": ["kind"],
++      "properties": {
++        "kind": {
++          "enum": ["ping", "pong"],
++          "description": "Ping initiates the probe; pong echoes it."
++        },
++        "interval_seconds": {
++          "type": "integer",
++          "minimum": 5,
++          "maximum": 300,
++          "description": "Negotiated keepalive cadence (advisory on ping, binding on pong)."
++        },
++        "timeout_seconds": {
++          "type": "integer",
++          "minimum": 5,
++          "maximum": 600,
++          "description": "Max wait for the pong before the connection is considered dead."
++        }
++      }
++    },
++    "AgentStartedPayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Emitted once when the agent begins working a task.",
++      "required": ["goal"],
++      "properties": {
++        "goal": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Objective the agent is starting on."
++        },
++        "mode": {
++          "type": "string",
++          "pattern": "^[a-z][a-z0-9-]{0,63}$",
++          "description": "Execution mode tag (e.g. implement, audit, observe)."
++        },
++        "attempt": {
++          "type": "integer",
++          "minimum": 1,
++          "description": "1-based attempt number for this task."
++        }
++      }
++    },
++    "AgentThoughtPayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Streaming thought/plan narration. Content is truncated by emitters at max_length; clients must not rely on completeness.",
++      "required": ["content"],
++      "properties": {
++        "content": {
++          "type": "string",
++          "minLength": 1,
++          "maxLength": 8192,
++          "description": "Thought text (server-side truncated)."
++        },
++        "step": {
++          "type": "integer",
++          "minimum": 1,
++          "description": "Reasoning step counter within the task."
++        },
++        "truncated": {
++          "type": "boolean",
++          "description": "True when content was cut by the emitter's cap."
++        }
++      }
++    },
++    "ToolInvokingPayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Emitted immediately before a tool call is dispatched.",
++      "required": ["tool"],
++      "properties": {
++        "tool": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
++          "description": "Tool identifier being invoked."
++        },
++        "arguments_digest": {
++          "type": "string",
++          "maxLength": 512,
++          "description": "Arguments summary or hash for correlation; never full secrets."
++        },
++        "invocation_id": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{4,63}$",
++          "description": "Correlates the matching tool:result frame."
++        }
++      }
++    },
++    "ToolResultPayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Emitted when a tool call completes.",
++      "required": ["tool", "status"],
++      "properties": {
++        "tool": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$",
++          "description": "Tool identifier that produced the result."
++        },
++        "status": {
++          "enum": ["ok", "error"],
++          "description": "Outcome of the invocation."
++        },
++        "invocation_id": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{4,63}$",
++          "description": "Echo of the tool:invoking correlation id."
++        },
++        "duration_ms": {
++          "type": "integer",
++          "minimum": 0,
++          "description": "Round-trip duration of the tool call."
++        },
++        "summary": {
++          "type": "string",
++          "maxLength": 2048,
++          "description": "Human-readable result summary (truncated; never raw secrets)."
++        }
++      }
++    },
++    "AgentDonePayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Terminal success frame; stream ends after agent:done.",
++      "required": [],
++      "properties": {
++        "summary": {
++          "type": "string",
++          "maxLength": 4096,
++          "description": "Outcome summary."
++        },
++        "artifacts": {
++          "type": "array",
++          "uniqueItems": true,
++          "items": {
++            "type": "string",
++            "minLength": 1
++          },
++          "description": "Repository paths or identifiers produced by the task."
++        }
++      }
++    },
++    "AgentErrorPayload": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Terminal failure frame; stream ends after agent:error.",
++      "required": ["error_code", "message", "retryable"],
++      "properties": {
++        "error_code": {
++          "type": "string",
++          "pattern": "^[a-z][a-z0-9_]{2,63}$",
++          "description": "Stable snake_case machine-readable error code."
++        },
++        "message": {
++          "type": "string",
++          "minLength": 1,
++          "maxLength": 4096,
++          "description": "Honest human-readable failure description."
++        },
++        "retryable": {
++          "type": "boolean",
++          "description": "Whether the task may be safely re-dispatched."
++        }
++      }
++    }
++  }
++}
+diff --git a/docs/WEBSOCKET_SPEC.md b/docs/WEBSOCKET_SPEC.md
+new file mode 100644
+index 00000000..d0dda95e
+--- /dev/null
++++ b/docs/WEBSOCKET_SPEC.md
+@@ -0,0 +1,159 @@
++# WebSocket Spec — Live Agent Execution Event Stream
++
++Wire specification for streaming live agent execution (thoughts, tool calls,
++outputs) over WebSocket. The frame format is SSOT'd in
++[`api-schemas/websocket-events.schema.json`](../api-schemas/websocket-events.schema.json).
++
++> **Contract-first note:** the MCP Tower currently serves the transports
++> documented in [`docs/MCP_CONNECT.md`](MCP_CONNECT.md) (Streamable HTTP + SSE).
++> This document pins the **live event stream wire format** so Tower servers and
++> clients can adopt WebSocket without renegotiating the contract.
++
++---
++
++## 1. Frame envelope
++
++One JSON object per WebSocket message. Every frame carries:
++
++| Field | Type | Always | Description |
++|---|---|---|---|
++| `frame_type` | `"event"` \| `"heartbeat"` | ✅ | Frame discriminator |
++| `seq` | integer ≥ 0 | ✅ | **Monotonically increasing** per connection |
++| `timestamp` | RFC 3339 UTC | ✅ | Server emission instant — the ordering authority |
++| `event` | 6-value enum | event only | Which execution event this is |
++| `task_id` | `task-<id>` | event only | Task whose execution is streaming |
++| `agent_id` | `agent-<id>` | event only | Emitting agent |
++| `payload` | object | event only | Shape pinned to the event tag (see §2) |
++| `heartbeat` | object | heartbeat only | ping/pong body (see §3) |
++
++**Ordering guarantee:** `seq` increases by 1 per frame on a connection.
++A receiver seeing a gap (`seq` jumps) MUST trigger a resync (reconnect or
++snapshot request) rather than replaying stale state. `timestamp` breaks ties
++across connections; within one connection `seq` is authoritative.
++
++**Payload pinning (poka-yoke):** each `event` tag admits exactly one payload
++shape — e.g. a `tool:invoking` frame carrying an error payload is
++structurally invalid and rejected by the schema.
++
++---
++
++## 2. Event catalog
++
++| Event | Meaning | Payload (required fields) |
++|---|---|---|
++| `agent:started` | Agent begins working the task | `goal`; optional `mode`, `attempt` |
++| `agent:thought` | Streaming thought narration | `content` (≤8192 chars, truncatable, `truncated` flag); optional `step` |
++| `tool:invoking` | Tool call about to dispatch | `tool`; optional `arguments_digest`, `invocation_id` |
++| `tool:result` | Tool call completed | `tool`, `status` (`ok`/`error`); optional `invocation_id`, `duration_ms`, `summary` |
++| `agent:done` | Terminal success — stream ends | optional `summary`, `artifacts` |
++| `agent:error` | Terminal failure — stream ends | `error_code`, `message`, `retryable` |
++
++Correlation: pair `tool:invoking` ↔ `tool:result` via `invocation_id`.
++Terminal frames (`agent:done` / `agent:error`) are final: servers close or
++drain the stream after emitting one; clients MUST NOT expect further events
++for the same `task_id` on the stream.
++
++### 2.1 Example event frame
++
++```json
++{
++  "frame_type": "event",
++  "event": "tool:result",
++  "seq": 42,
++  "timestamp": "2026-02-14T09:30:12Z",
++  "task_id": "task-40",
++  "agent_id": "agent-1",
++  "payload": {
++    "tool": "repo_read",
++    "status": "ok",
++    "invocation_id": "inv-771f2c",
++    "duration_ms": 340,
++    "summary": "read 2 files"
++  }
++}
++```
++
++---
++
++## 3. Heartbeat protocol (ping/pong)
++
++Keepalives share the envelope under `frame_type: "heartbeat"`:
++
++```json
++{ "frame_type": "heartbeat", "seq": 7, "timestamp": "2026-02-14T09:30:30Z",
++  "heartbeat": { "kind": "ping", "interval_seconds": 30, "timeout_seconds": 60 } }
++```
++
++Rules:
++
++1. The **client sends `kind: "ping"`** on the negotiated cadence
++   (`interval_seconds`, 5–300 s).
++2. The **server answers `kind: "pong"`** echoing the ping's `seq`.
++3. If no pong arrives within `timeout_seconds` (5–600 s), the connection is
++   dead → close it and follow §4 (reconnect with backoff).
++4. Heartbeats occupy the same `seq` space as events — gaps mean lost frames
++   regardless of kind.
++5. Note for operators: WebSocket protocol-level ping/pong (RFC 6455 control
++   frames) may run in parallel; the JSON heartbeat exists so that proxies and
++   thin clients that surface only data frames stay observable.
++
++---
++
++## 4. Connection and reconnection rules
++
++1. **Connect** to the Tower's WebSocket endpoint with `?client=<your-unique-name>`
++   (identity rules identical to [`docs/MCP_CONNECT.md` §1](MCP_CONNECT.md):
++   anonymous → viewer; role adopts only with a live-verified credential).
++2. **Subscribe** by task: send
++   `{"action":"subscribe","task_id":"task-<id>"}`; the server then streams
++   that task's frames on this connection.
++3. **Resync on gap:** on `seq` discontinuity, close and reconnect; after
++   reconnect, re-subscribe and reconcile state from terminal frames or the
++   task API.
++4. **Backoff:** reconnect with exponential backoff + jitter (start 1 s, cap
++   60 s). Honor `429`/`Retry-After` from HTTP upgrade failures — the Tower's
++   rate limiter is per-IP and hot-looping hurts every agent behind your
++   egress IP.
++5. **Cleanup:** unsubscribe/close cleanly on shutdown; do not leak ghost
++   subscriptions.
++
++### 4.1 Minimal browser client (JS)
++
++```js
++const ws = new WebSocket("wss://supremeai-mcp-tower.onrender.com/ws?client=demo-web");
++ws.onopen = () => ws.send(JSON.stringify({ action: "subscribe", task_id: "task-40" }));
++ws.onmessage = (ev) => {
++  const frame = JSON.parse(ev.data);
++  if (frame.frame_type === "heartbeat" && frame.heartbeat.kind === "ping") {
++    ws.send(JSON.stringify({ ...frame, heartbeat: { ...frame.heartbeat, kind: "pong" } }));
++    return;
++  }
++  if (frame.seq !== (lastSeq ?? frame.seq) && lastSeq !== undefined && frame.seq !== lastSeq + 1) {
++    // gap → resync per §4.3
++  }
++  lastSeq = frame.seq;
++  if (frame.frame_type === "event") console.log(frame.event, frame.payload);
++};
++```
++
++### 4.2 Minimal stdlib-oriented Python sketch
++
++```python
++# zero-extra-deps sketch: any RFC 6455 client works; the wire contract is
++# plain JSON text messages validated against websocket-events.schema.json.
++import json, websocket  # pip install websocket-client — transport only
++ws = websocket.create_connection("wss://supremeai-mcp-tower.onrender.com/ws?client=demo-py")
++ws.send(json.dumps({"action": "subscribe", "task_id": "task-40"}))
++for raw in ws:
++    frame = json.loads(raw)
++    ...  # handle heartbeat pong echo + seq-gap resync per §3/§4
++```
++
++---
++
++## 5. Validation
++
++Frames are JSON Schema (Draft 2020-12) instances of
++`api-schemas/websocket-events.schema.json`. Emitting servers SHOULD validate
++before send; clients MUST fail-closed on frames that do not validate
++(log, drop, resync — never guess).

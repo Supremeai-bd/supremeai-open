@@ -1,0 +1,546 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 4de82a56..e8259fa0 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R64**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R65**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers). **Freeness predicate (codified pass 25, enforced by the freshness guard's `--board-sweep` + invariant E):** a number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption); cite found ⇒ fail loud, never advertise dirty.
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -52,6 +52,7 @@
+ > **Drift log:** *2026-10-29, pass 23 — **the pass-9 cell-clobber class recurred with a mechanical witness, and this pass is the reconciliation (union restore, no body-text rewrites).** The #2322 filer (R61 registration, #2318) cut their branch while the index advertised `next free: R61` — before #2314's pass-21 (R62 row + pointer 61→63) landed at 93aa098 — and their whole-file index overwrite landed AFTER it at ebe630c, silently reverting the pointer to its pre-advance value and evicting the landed R62 row (#2311's list-tools per_page lane). The eviction was NOT invisible: the R48 gate's invariant D flagged the landed #2314 squash subject citing the now-rowless number (commit-subject-ghost, first D-plane witness of a registry eviction), surfacing at the next rebase in this cycle — push-CI remained dark per #2111, and the suite's own pin test stayed green because the pointer regressed WITH the row (pin 62 == clobbered pointer 62), exactly the co-regression blind spot the pin-accompanies-pointer discipline cannot see. This pass restores the union state byte-honestly: the pointer re-advertises the #2314 truth value (next free: **R63**), the R62 row re-landed verbatim from 93aa098, the evicted pass entry restored as pass 22 (renumbered — the live tree's pass 21 belongs to #2322's R61 registration, which itself is legitimate landed work and is neither re-slotted nor re-written), and the pin advanced 62→63 in the same PR per the test's own instruction — a landed index-pointer advance (the pass-9 re-head precedent, where the pin moved with the restored pointer). Process receipt: two filers, both following the landed rules as written from their respective branch-time states — the allocation rule's 'update this index in the same PR that lands a radar' has no rebase-checkpoint step; a filer whose branch goes stale between cut and land overwrites the registry blind. Residual logged as observed fact (second live occurrence after pass 8b/9), remedy deferred to a future guard lane (§5): a pre-land index-diff check (the guard already computes the roster — landing on a roster regression could fail closed). Rule 7 stands: the index is the only counter.*
+ >
+ > **Drift log:** *2026-10-29, pass 24 — **the pass-3/4 adoption-staleness class recurred as a double-adoption variant (first occurrence; velocity doubled while the pointer stayed frozen), and this pass is the reconciliation — scout option A executed verbatim (#2372).** The index advertised `next free: R63` (re-advertised by pass-23's own reconciliation at 9d0e6a7, 23:13:44Z), and TWO separate filers adopted R63 issue-side within 24 minutes while it stayed frozen: #2343 (23:34Z, `.githooks/` Board-Freshness gate never runs on agent clones — zero core.hooksPath bootstrap repo-wide) and #2358 (23:58Z, Tower absent from the official MCP Registry — the discoverability/publication lane radar XIV explicitly held back, claimed with fresh probe receipts). Neither had a registry row (the table ended at R62; per the #2137 division of labor each filer registers its own row when it lands a radar doc), so the advertisement went doubly dirty — four board citations (#2334/#2343/#2351/#2358), more citations than pass 18's 13-minute trap had, and any filer acting on the live pointer today would collide three ways. Scout #2372 (ecosystem-scout, Job 478520 08:25Z cycle, verdict `adapt`, options A/B/C with A recommended) traced the class lineage (pass-3/4 single-adoption occurrences, pointer advanced reactively) and prescribed this pass's exact payload: rows registered in the disambiguated form, suffix order = adoption order — **R63-I = #2343 hooks-bootstrap**, **R63-II = #2358 MCP-Registry** — per the allocation rule's own collision text and the radar V↔VI precedent (numbers not re-issued; suffixes anchor cross-references). Coordination disclosure — first same-filer variant of the race: R63-I's filer IS this pass's executor, and its landing vehicle PR #2352 (WO #2351, in gates since ~23:55Z, first API attempt) carries its own pass-24 filer registration + single R63 row + pin 63→64, superseded by this pass on landing; #2352's rebase drops its registration block (docs-only) and keeps the A+B+C code adoption, re-anchoring its drift entry to the then-next pass per the append-only doctrine (pass-9/13 editor-note discipline — landed history is never rewritten; in-flight entries re-anchor). Mechanism disclosure — the disambiguated form required a guard vocabulary widening: the R48 gate's REGISTRY_ROW_RE/R_TOKEN_RE suffix class (V|VI|c, built for the radar-doc-identity suffixes R23-V/R23-VI/R26-c) could not parse the prescribed ordinals — live parse probe reproduced the invisibility (base 63 absent from the parsed set, the row tokens unregistered, the ghost red persisting); widened +I{1,2} in the same PR per the R53 POINTER_PHRASE_RE widening precedent (#2189), self-test F6b added proving suffixed rows register the base and resolve docs citations; the widening also resolves the pre-existing citation-ghost red on clean main (the gate was red at HEAD d24bcd2 before this pass — #2357's C24 plane-watch citations to the then-rowless R63, a post-c25 landing window the last full-green receipt predated). Pointer advance: the successor slot's only citation is the scout ticket's own title token (the token names the successor lane's address — #2372's option B, the pointer↔board agreement guard extending pass-23's deferred pre-land index-diff check with an issue-side-adoption sweep; self-ref class per the pass-15 honesty-note precedent, and per the pass-4 doctrine adoption ≠ allocation: the token names the lane, the first filer to land it registers the row per #2137) — advertised next free: **R64** per the scout's explicit prescription (the pass-19/22 narrative discipline observed: the unregistered successor is named only by the pointer line, never in prose), verified free repo-wide at HEAD d24bcd2 (tracked word-boundary scan zero hits; index-body scan zero hits outside pointer context; board sweep 00:41Z limit:200, 92 rows, totalOpen/windowTruncated echo live, one citation = the self-ref above; pass-24 number uniqueness-checked per the #2137 lesson). The live-sweep pin (tests :252) bumped 63→64 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, ninth consecutive cycle targeting zero red-chain debt. Rule 7 stands: the index is the only counter.*
++> **Drift log:** *2026-10-29, pass 25 — **pass-24's reserved successor lane adopted and landed in the same cycle it was claimed (the pass-5 contract applied from the adoption side — the sixth same-cycle lane after R43 (pass 5), R46 (pass 7), R47 (pass 8), R55 (pass 17), and R63 (pass 24)), and this pass is the guard payload itself (#2372 option B executed via #2392).** The index advertised `next free: R64` (pass-24's own advance, feba75e 01:04:28Z), the scout filed the reserved lane's address as #2392 (ecosystem-scout, Job 478520 09:25Z cycle, verdict `adapt`, options A–C with A recommended and B complementary) at 01:34Z, and this executor claimed it first (GRANT_NEW 01:44:20Z — the claim-then-read discipline, ten minutes after filing) and landed the full option set: (A) the freeness predicate codified in the guard's module spec — a successor number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class, pass-15 honesty-note precedent) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption) — pass-22 and pass-24 reconciled into one executable rule with pass-4 as the strict outer bound; the pre-advertise sweep landed as the guard's `--board-sweep --queue-file --token --allow` mode — offline by constitution: the #2091 Never-do forbids network in the guard binary, so the IO plane is the filer's own zero-credential limit-200 capture (the permanent #2286 contract) and the guard consumes the artifact (rows keyed `number` post-#2286, the legacy `issueNumber` shape accepted; pointer-phrase stripping keeps WO mirrors quoting the allocation rule from self-tripping); (B) the predicate's written spec appended to the allocation rule above; the scout's status-quo option rejected. Invariant E mechanizes pass-23's deferred pre-land roster check: the baseline schema is /2 with an enforced roster (pointer + full row tokens) — a landing that reverts the pointer or evicts a row fails closed even when every citation count stays green (the ebe630c co-regression blind spot: the pin regressed WITH the pointer and the suite could not see it); the roster updates in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline; /1 baselines honest-skip E (evidence, never a fabricated PASS). Auto-advance is out of scope v1 (fail-loud first, per the guard genre's ratchet semantics). Pointer advance verified free at branch time (HEAD 146ec0d): tracked word-boundary scan zero hits outside the pointer-context set (the allocation line above and the freshness suite's pin comment carrying the advance record — both mechanism text of the advertisement, class (b)); the predicate's own fixtures were token-neutralized to a synthetic number so the suite never embeds the live successor (the pass-15 honesty-note class applied to test corpora); board sweep 01:5xZ over the 100-row limit-200 capture: zero citations outside the self-ref (the lane's own defining ticket, allow-listed), receipt `OK board-sweep` at branch HEAD; the pass-25 number itself uniqueness-checked per the #2137 lesson — no pass-25 subject existed on origin/main. The live-sweep pin (tests :259) bumped 64→65 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, tenth consecutive cycle targeting zero red-chain debt. Rule 7 stands: the index is the only counter.*
+ 
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -124,6 +125,7 @@
+ | R62 | *(issue-filed — scout lane, no radar doc; registered by the filer at filing time — same-cycle registration per the pass-5 contract and the #2137 division of labor, applied at birth; row open until the per_page contract fix lands — landed #2379 (da3ef36), live-verified by receipt #2395)* | tower github_list_prs + github_workflow_runs ignore per_page entirely — hard 5-row window, zero truncation signal (R59 silent-under-enumeration class, two new GitHub-facing surfaces): zero-credential sweep 06:5x+08 at tower v1.0.0 shows per_page ∈ {1,3,5,8,12,25} → exactly 5 rows each on list_prs (range #2309..#2299, state=all) and per_page ∈ {5,8,25} → 5 on workflow_runs; per_page=1 → 5 rows is the discriminator (a clamp would honor 1 — the argument is discarded outright); state:"open" → 5 rows (#2133/#2119/#2086/#2083/#1957); impact: every fleet handshake passing per_page≥12 believes it controls its window and landing scans ("any PR newer than X?") are silently windowed to newest-5 — live near-miss during the #2195 Step-E-strand adjudication where the 5-row window was the visible evidence plane; open-PR inventory via tower hard-caps at 5; class depth: R59 (work_queue, limit ignored above hidden ceiling) + #2293 (rejected plane 52 vs 20) + this = three distinct surfaces → systemic list-handler pattern, supporting R59's option set without scope overlap; options routed: A handlers honor per_page with sane clamp 1..100 (recommended, matches GitHub REST semantics callers assume), B keep fixed window + R59-class hasMore/total signal (one shared fix pattern for three surfaces), C docs-only stopgap in bridge_guide ("list tools return newest-5 regardless of per_page"); probe artifact scripts/scout_probe_c15.py, re-runnable zero-credential | #2311 | `adapt` | **fixed (per_page contract honored post-#2379; live-verified per receipt #2395: per_page=1→1 discriminator flipped, 3/5/12/25 compliance on list_prs + workflow_runs; filed 2026-10-29)** |
+ | R63-**I** | *(issue-filed — scout lane #2343, no radar doc; registered by the lane's own filer at this registry pass — double-adoption disambiguation per #2372 option A, suffix order = adoption order; landing vehicle PR #2352 (WO #2351, Closes #2343) in gates carries the A+B+C adoption and its own in-PR registration, superseded by this row on merge — merge updates this cell, not the pointer)* | `.githooks/` Board-Freshness gate (#4177) never runs on agent clones — zero `core.hooksPath` bootstrap repo-wide (27-cycle gateless clone; the gate shipped but dark; first full reject→rebase→accept lifecycle of the gate recorded on cycle one of activation by its own adopter; A docs activation in AGENTS.md + AGENT_PORTAL_SPEC §3.3, B `_hooks_path_boot_advisory()` report-only stderr under the #1551 stdout contract, C idempotent `scripts/setup_git_hooks.sh` with fail-closed verify + `--check`) | #2343 | `adapt` | **in gates (PR #2352; merge closes #2343)** |
+ | R63-**II** | *(issue-filed — scout lane #2358, no radar doc; the publication/discoverability lane radar XIV explicitly held back ("observed, live-proven, NOT filed — anti-spam"), claimed 2026-10-29 with a fresh probe replica; registered here at this registry pass per the double-adoption reconciliation — cell updates when its own filer lands the publication PR per the #2137 division of labor)* | Tower absent from the official MCP Registry (registry.modelcontextprotocol.io v1.8.6, build one day old) — `search=supremeai` → count 0, absence persists (replicates XIV); publish path live-probed: POST /v0/publish (bearer, ServerJSON, required `$schema`/`name`/`description`/`version`), POST /v0/validate pre-flight dry-run, github-oidc/dns/http auth endpoints, reverse-DNS server names | #2358 | `adapt` | **open (filed 2026-10-29; publication lane pending its filer's PR)** |
++| R64 | *(issue-filed — scout lane #2392, no radar doc; registered by the filer at landing — same-cycle registration per the pass-5 contract, executing pass-24's reservation: "the first filer to land it registers the row per #2137")* | pointer↔board agreement guard (#2372 option B — the adoption-staleness class closer): codified the three-drift-log freeness readings into one executable predicate (module spec), added the pre-advertise captured-title sweep (`--board-sweep --queue-file --token --allow`, offline by constitution — the guard binary stays network-free per the #2091 Never-do; the IO is the filer's zero-credential limit-200 capture), and mechanized pass-23's deferred pre-land roster check as invariant E (baseline /2 enforced roster: pointer regression or row eviction fails closed — the ebe630c co-regression blind spot closed; forward motion never fails); options A+B landed together (B complements A as the predicate's written spec), C (reactive reconciliations) rejected per the scout | #2392 | `adapt` | **landed (guard live at HEAD; auto-advance out of scope v1 — fail-loud first per the ratchet semantics)** |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+diff --git a/scripts/ci/radar_index_freshness_baseline.json b/scripts/ci/radar_index_freshness_baseline.json
+index 05a3e240..165afb2b 100644
+--- a/scripts/ci/radar_index_freshness_baseline.json
++++ b/scripts/ci/radar_index_freshness_baseline.json
+@@ -1,10 +1,82 @@
+ {
+-  "schema": "radar-index-freshness-baseline/1",
+-  "generatedAt": "2026-10-28",
+-  "headAtGeneration": "10a4727 (feat(bridge): docs(scout): register R52 row + next-free R53 (#2172). #2161 landed via #2165 (622)",
++  "schema": "radar-index-freshness-baseline/2",
++  "generatedAt": "2026-10-29",
++  "headAtGeneration": "146ec0d (feat(bridge): docs(scout): R62 row disposition - per_page fix landed #2379, verified receipt #23)",
+   "probe": "scripts/ci/radar_index_freshness_guard.py",
+   "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. A/B invariant violations are NEVER floorable — they are structural and always fail.",
+   "floor": [],
+-  "pointerAtGeneration": 53,
+-  "registryRowsAtGeneration": "R1-R52"
++  "roster": {
++    "pointer": 65,
++    "rows": [
++      "R1",
++      "R2",
++      "R3",
++      "R4",
++      "R5",
++      "R6",
++      "R7",
++      "R8",
++      "R9",
++      "R10",
++      "R11",
++      "R12",
++      "R13",
++      "R14",
++      "R15",
++      "R16",
++      "R17",
++      "R18",
++      "R19",
++      "R20",
++      "R21",
++      "R22",
++      "R23-V",
++      "R23-VI",
++      "R24-V",
++      "R24-VI",
++      "R25",
++      "R26",
++      "R27",
++      "R28",
++      "R29",
++      "R30",
++      "R31",
++      "R32",
++      "R33",
++      "R34",
++      "R35",
++      "R36",
++      "R37",
++      "R38",
++      "R39",
++      "R40",
++      "R41",
++      "R42",
++      "R43",
++      "R44",
++      "R45",
++      "R46",
++      "R47",
++      "R48",
++      "R49",
++      "R50",
++      "R51",
++      "R52",
++      "R53",
++      "R54",
++      "R55",
++      "R56",
++      "R57",
++      "R58",
++      "R59",
++      "R60",
++      "R61",
++      "R62",
++      "R63-I",
++      "R63-II",
++      "R64"
++    ]
++  },
++  "pointerAtGeneration": 65,
++  "registryRowsAtGeneration": "R1-R64"
+ }
+diff --git a/scripts/ci/radar_index_freshness_guard.py b/scripts/ci/radar_index_freshness_guard.py
+index de87dfe1..0fae818e 100644
+--- a/scripts/ci/radar_index_freshness_guard.py
++++ b/scripts/ci/radar_index_freshness_guard.py
+@@ -31,6 +31,26 @@
+     D  commit-subject — সাম্প্রতিক squash-merge subject-এ এমন R-citation
+        যার registry row নেই (#2187 offline port; জন্মে floor ফাঁকা —
+        first-run-clean, shrink-only)।
++    E  roster-regression (#2392 component 1 — pass-23's deferred pre-land
++       check, mechanized) — baseline /2-এর enforced roster-এর তুলনায় pointer
++       পিছনে গেলে বা নথিভুক্ত row token অদৃশ্য হলে FAIL (stale-branch
++       whole-file overwrite class, pass-9/22/23); forward motion কখনো fail
++       করে না। /1 baseline থাকলে honest-skip — কখনো মিথ্যা PASS নয়।
++
++Pointer↔board agreement predicate (#2372 option B / #2392 component 2,
++offline plane — the guard binary stays network-free per the Never-do):
++    A successor number R<N> is advertisable iff the tracked tree carries
++    zero R<N> citations (invariants A–D) AND the captured open-issue-title
++    queue carries zero R<N> citations (--board-sweep), except (a) the
++    successor lane's own defining ticket (self-ref class, --allow — the
++    pass-15 honesty-note precedent) and (b) citations inside the
++    pointer-advance commit performing the advertisement (mechanism text,
++    not lane adoption). Pass-4 strict outer bound: any third-party radar
++    doc, issue, or main-history citation fails. Cite found ⇒ fail loud,
++    never advertise dirty; auto-advance is out of scope v1 (fail-loud
++    first, per the guard genre's ratchet semantics). The IO is the filer's
++    capture step: bridge_work_queue {"limit": 200} saved to a file
++    (permanent contract, #2286), the guard consumes the artifact.
+ 
+ Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
+ গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
+@@ -44,7 +64,14 @@
+     --check        roster mode: full sweep vs baseline (default)
+     --files <p..>  pre-push mode: content scans limited to these changed
+                    files (pointer + filename scans stay global — cheap)
+-    --baseline     print a freshly swept baseline JSON (admin/regenerate)
++    --baseline     print a freshly swept baseline JSON (admin/regenerate;
++                   /2 seeds the enforced roster — update it in the same PR
++                   that moves the registry, mirroring the pin discipline)
++    --board-sweep  pointer↔board agreement (#2372 opt-B): scan a CAPTURED
++                   queue artifact (--queue-file) for open-issue-title
++                   citations of the candidate successor (--token, default
++                   pointer+1), --allow lists the self-ref defining ticket;
++                   offline by constitution — no network in this binary
+     --json         machine-readable auditor report on stdout
+     --self-test    hermetic offline fixture suite (guard-the-guard)
+ 
+@@ -314,6 +341,68 @@ def invariant_d(root: Path, bases: set[int]) -> tuple[list[dict], bool]:
+     return scan_subjects(proc.stdout.splitlines(), bases), True
+ 
+ 
++def invariant_e(
++    pointer: int | None, tokens_now: set[str], baseline: dict,
++) -> tuple[list[dict], bool]:
++    """Roster regression — pass-23's deferred pre-land check, mechanized.
++
++    (#2392 component 1.) A landing REGRESSES the registry when the pointer
++    moves backward or a baseline-recorded row token vanishes: the
++    stale-branch whole-file overwrite class (pass-9/22/23) whose
++    co-regression blind spot the pin discipline cannot see (pin regressed
++    WITH the pointer at ebe630c and every citation count stayed green).
++    Forward motion — pointer advance, rows added — never fails. A /1
++    baseline (no enforced roster) honest-skips: evidence, never a
++    fabricated PASS. Update the roster in the same PR that moves the
++    registry — the baseline companion of the pin-accompanies-pointer rule.
++    """
++    roster = baseline.get("roster") if isinstance(baseline, dict) else None
++    if not (isinstance(roster, dict)
++            and isinstance(roster.get("rows"), list)
++            and isinstance(roster.get("pointer"), int)):
++        _evidence("SKIP invariant E: baseline has no enforced roster (schema /1) — "
++                  "seed one in the same PR that moves the registry")
++        return [], False
++    findings: list[dict] = []
++    if pointer is not None and pointer < roster["pointer"]:
++        findings.append({"kind": "roster-pointer-regressed",
++                         "was": roster["pointer"], "now": pointer})
++    for tok in sorted(set(roster["rows"]) - set(tokens_now)):
++        findings.append({"kind": "roster-row-evicted", "token": tok})
++    return findings, True
++
++
++def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
++    """Pointer↔board agreement predicate over captured open-issue titles.
++
++    (#2372 option B / #2392 component 2, offline plane.) The IO is the
++    filer's capture step — a zero-credential bridge_work_queue
++    {"limit": 200} snapshot saved to a file; the GUARD BINARY stays
++    network-free (Never-do). Rows are keyed `number`/`title` (post-#2286
++    schema; the older `issueNumber` key accepted). Pointer phrases are
++    stripped first so WO mirrors quoting the allocation rule do not
++    self-trip. See the module docstring for the full predicate spec.
++    """
++    if isinstance(queue, dict):
++        queue = queue.get("workOrders") or queue.get("rows") or []
++    findings: list[dict] = []
++    for row in queue:
++        if not isinstance(row, dict):
++            continue
++        num = row.get("number", row.get("issueNumber"))
++        title = row.get("title") or ""
++        for m in R_TOKEN_RE.finditer(strip_pointer_phrases(str(title))):
++            if int(m.group(1)) == token and num not in allow:
++                suffix = m.group(2)
++                findings.append({
++                    "issue": num,
++                    "token": f"R{m.group(1)}" + (f"-{suffix}" if suffix else ""),
++                    "title": " ".join(str(title).split())[:160],
++                })
++                break
++    return findings
++
++
+ def key_of(f: dict) -> tuple:
+     kind = f.get("kind", "citation-ghost")
+     if kind == "commit-subject-ghost":
+@@ -345,6 +434,10 @@ def load_baseline(repo_root: Path) -> dict:
+     if not isinstance(data, dict) or not isinstance(data.get("floor"), list):
+         _evidence("FAIL baseline schema unrecognised (need schema + floor list)")
+         raise SystemExit(1)
++    if data.get("schema") not in ("radar-index-freshness-baseline/1",
++                                  "radar-index-freshness-baseline/2"):
++        _evidence("FAIL baseline schema unrecognised (need /1 or /2)")
++        raise SystemExit(1)
+     return data
+ 
+ 
+@@ -373,9 +466,19 @@ def render(
+     a: list[dict], b: list[dict], cits: list[dict], report_only: list[dict],
+     drift: list[dict], improvements: list[dict], pointer: int | None,
+     d: list[dict] | None = None, d_ran: bool = False,
++    e: list[dict] | None = None, e_ran: bool = False,
+ ) -> None:
+     if d is None:
+         d = []
++    if e is None:
++        e = []
++    for f in e:
++        if f["kind"] == "roster-pointer-regressed":
++            _evidence(f"E-FAIL roster-pointer-regressed: pointer {f['was']} -> {f['now']} "
++                      "— registry motion is forward-only (#2392 invariant E)")
++        else:
++            _evidence(f"E-FAIL roster-row-evicted: {f['token']} present in the baseline "
++                      "roster is gone from the registry (#2392 invariant E)")
+     for f in d:
+         _evidence(f"D-FAIL commit-subject-ghost: recent subject '{f['subject']}' cites "
+                   f"{f['token']} — no registry row for R{f['base']} (#2187 commit-plane)")
+@@ -413,8 +516,8 @@ def render(
+         for d in drift:
+             _evidence(f"DRIFT {d['kind']}: key={d['key']} {d['now']}/{d['allowed']}")
+         _evidence(f"FAIL {len(a) + len(b) + len(unpinned)} invariant finding(s), {len(drift)} ratchet drift — the floor may never grow")
+-    elif a or b or unpinned:
+-        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL lines)")
++    elif a or b or unpinned or e:
++        _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL/E-FAIL lines)")
+     elif d:
+         _evidence(f"PINNED {len(d)} commit-subject ghost(s) in the landing window — "
+                   "pre-existing debt, shrink-only (#2187); register the row to shrink")
+@@ -422,6 +525,10 @@ def render(
+         _evidence("OK invariant D: recent commit subjects carry no unregistered R-token (commit-plane clean, #2187)")
+     else:
+         _evidence("OK invariants A/B/C hold; registry, pointer and docs citations agree (D honest-skipped: no git)")
++    if e:
++        pass  # E-FAIL lines already emitted above — never reached on a fail verdict
++    elif e_ran:
++        _evidence("OK invariant E: roster agrees with the enforced baseline — no pointer regression, no row eviction (#2392)")
+ 
+ 
+ def sweep(
+@@ -436,13 +543,14 @@ def sweep(
+     a = invariant_a(text, tokens)
+     b = invariant_b(text, root, tokens, bases, pointer)
+     cits, report_only = invariant_c(root, bases, pointer, only_files)
++    row_tokens = set(tokens)
+     # #2187: invariant D rides the same sweep — global commit-plane scan,
+     # not scoped to --files (pre-push content limits stay A/B/C-scoped).
+     ghosts, d_ran = invariant_d(root, bases)
+     rows_range = (min(bases), max(bases)) if bases else None
+     return {"pointer": pointer, "a": a, "b": b, "cits": cits,
+             "report_only": report_only, "rows": rows_range,
+-            "d": ghosts, "d_ran": d_ran}
++            "d": ghosts, "d_ran": d_ran, "row_tokens": row_tokens}
+ 
+ 
+ def self_test() -> bool:
+@@ -661,6 +769,47 @@ def git(*a: str) -> None:
+     check("F16-commit-subject-ghost-found",
+           len(ghosts) == 1 and ghosts[0]["base"] == 97 and ghosts[0]["token"] == "R97")
+ 
++    # F17: invariant E — roster regression, pass-23's deferred pre-land
++    # check mechanized (#2392 component 1). The ebe630c clobber class:
++    # pointer reverted + rows evicted by a stale-branch whole-file
++    # overwrite while every citation count stayed green (the pin
++    # regressed WITH the pointer — the co-regression blind spot).
++    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
++             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
++    idx_txt = index(64, [1, 63, 64])  # pointer reverted 65 -> 64
++    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
++    check("F17a-pointer-regression-fails", e_ran and
++          any(f["kind"] == "roster-pointer-regressed" and f["was"] == 65 and f["now"] == 64
++              for f in e_find))
++    idx_txt = index(65, [1, 63])  # R64 row evicted, pointer intact
++    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
++    check("F17b-row-eviction-fails", e_ran and
++          any(f["kind"] == "roster-row-evicted" and f["token"] == "R64" for f in e_find))
++    idx_txt = index(66, [1, 63, 64, 66])  # forward motion: advance + additions
++    e_find, e_ran = invariant_e(parse_pointer(idx_txt), set(parse_registry(idx_txt)[0]), base2)
++    check("F17c-forward-motion-passes", e_ran and e_find == [])
++    e_find, e_ran = invariant_e(None, set(), {"schema": "radar-index-freshness-baseline/1", "floor": []})
++    check("F17d-v1-baseline-honest-skips", e_find == [] and not e_ran)
++
++    # F18: board sweep predicate over captured titles (#2392 component 2,
++    # #2372 option B) — offline by constitution; the IO artifact is
++    # filer-captured. Word-boundary citation fails; the self-ref defining
++    # ticket passes via --allow; a WO mirror quoting the allocation rule
++    # (pointer phrase) must not self-trip.
++    queue = {"workOrders": [
++        {"number": 2401, "title": "scout(R97): a third-party lane citing the successor"},
++        {"number": 2402, "title": "guard(docs): register R60 row + next-free R97 (WO mirror quote)"},
++        {"number": 2403, "title": "unrelated lane with R59 only"},
++        {"number": 2392, "title": "scout(R64): the successor lane's own defining ticket"},
++    ]}
++    fnd = board_sweep(queue, 97, set())
++    check("F18a-title-cite-fails", any(f["issue"] == 2401 and f["token"] == "R97" for f in fnd))
++    check("F18b-pointer-phrase-in-mirror-ignored", not any(f["issue"] == 2402 for f in fnd))
++    check("F18c-self-ref-allow-passes", board_sweep(queue, 97, {2401}) == [])
++    check("F18d-issue-number-key-accepted",
++          board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
++          and board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())[0]["issue"] == 9)
++
+     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
+     return ok
+ 
+@@ -692,20 +841,34 @@ def _git_head_provenance(root: Path) -> str:
+     return "unknown (git unavailable at generation)"
+ 
+ 
++def _row_sort_key(tok: str) -> tuple[int, int]:
++    """Roster ordering: numeric base, then suffix rank (document order family)."""
++    m = re.fullmatch(r"R(\d+)(?:-(I{1,2}|V|VI|c))?", tok)
++    base = int(m.group(1)) if m else 9999
++    rank = {None: 0, "I": 1, "II": 2, "V": 5, "VI": 6, "c": 7}.get(
++        m.group(2) if m else None, 9)
++    return (base, rank)
++
++
+ def build_baseline(root: Path) -> dict:
+     r = sweep(root)
+     counts = counts_of(r["cits"])
+     rows = r.get("rows")
+     return {
+-        "schema": "radar-index-freshness-baseline/1",
++        "schema": "radar-index-freshness-baseline/2",
+         "generatedAt": datetime.now(timezone.utc).date().isoformat(),
+         "headAtGeneration": _git_head_provenance(root),
+         "probe": "scripts/ci/radar_index_freshness_guard.py",
+         "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes "
+                 "(#2187: D lands first-run-clean — its floor is born empty); "
+                 "key = [kind, file, base] / [kind, base, subject]. "
+-                "A/B invariant violations are NEVER floorable — they are structural and always fail.",
++                "A/B invariant violations are NEVER floorable — they are structural and always fail. "
++                "/2 adds the enforced roster (invariant E, #2392 component 1): a pointer "
++                "regression or row eviction fails closed — update roster in the same PR that "
++                "moves the registry, mirroring the pin-accompanies-pointer discipline.",
+         "floor": [{"key": list(k), "allowed": v} for k, v in sorted(counts.items(), key=lambda kv: repr(kv[0]))],
++        "roster": {"pointer": r["pointer"],
++                   "rows": sorted(r["row_tokens"], key=_row_sort_key)},
+         "pointerAtGeneration": r["pointer"],
+         "registryRowsAtGeneration": (
+             f"R{rows[0]}-R{rows[1]}" if rows else "unknown (empty registry at generation)"
+@@ -718,6 +881,16 @@ def main() -> int:
+     parser.add_argument("--check", action="store_true", help="roster mode: full sweep (default)")
+     parser.add_argument("--files", nargs="*", help="pre-push mode: restrict content scans to these files")
+     parser.add_argument("--baseline", action="store_true", help="print freshly swept baseline JSON")
++    parser.add_argument("--board-sweep", action="store_true",
++                        help="pointer-board agreement (#2372 opt-B): scan a CAPTURED queue "
++                             "artifact for open-issue-title citations of the candidate "
++                             "successor; offline — capture filer-side, no network here")
++    parser.add_argument("--token", type=int, default=None,
++                        help="candidate successor base for --board-sweep (default: pointer+1)")
++    parser.add_argument("--allow", nargs="*", type=int, default=[],
++                        help="self-ref exception: the successor lane's own defining ticket number(s)")
++    parser.add_argument("--queue-file", default=None,
++                        help='captured bridge_work_queue {"limit": 200} JSON artifact')
+     parser.add_argument("--json", action="store_true", help="machine-readable auditor report")
+     parser.add_argument("--self-test", action="store_true", help="hermetic offline self-test suite")
+     args = parser.parse_args()
+@@ -744,6 +917,36 @@ def main() -> int:
+         print(json.dumps(data, indent=2, ensure_ascii=False))
+         return 0
+ 
++    if args.board_sweep:
++        if not args.queue_file:
++            _evidence('FAIL board-sweep: --queue-file required — capture bridge_work_queue '
++                      '{"limit": 200} filer-side; the guard binary is network-free (Never-do)')
++            return 1
++        try:
++            queue = json.loads(Path(args.queue_file).read_text(encoding="utf-8"))
++        except (OSError, json.JSONDecodeError) as exc:
++            _evidence(f"FAIL board-sweep: unreadable queue artifact {args.queue_file}: {exc}")
++            return 1
++        idx_text = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
++        pointer = parse_pointer(idx_text)
++        token = args.token if args.token is not None else (pointer + 1 if pointer is not None else None)
++        if token is None:
++            _evidence("FAIL board-sweep: no --token and the index advertises no pointer")
++            return 1
++        allow = set(args.allow or [])
++        findings = board_sweep(queue, token, allow)
++        for f in findings:
++            _evidence(f"BOARD-FAIL title-citation: #{f['issue']} cites {f['token']} — '{f['title']}'")
++        n_rows = len(queue) if isinstance(queue, list) else len(
++            queue.get("workOrders") or queue.get("rows") or [])
++        if findings:
++            _evidence(f"FAIL board-sweep: R{token} cited by {len(findings)} open title(s) outside "
++                      f"allow={sorted(allow)} — never advertise dirty (auto-advance out of scope v1)")
++            return 1
++        _evidence(f"OK board-sweep: R{token} zero title citations outside allow={sorted(allow)} "
++                  f"over {n_rows} captured row(s) — advertisable per the #2392 predicate")
++        return 0
++
+     only = None
+     if args.files:
+         only = [p if p.is_absolute() else root / p for p in args.files]
+@@ -755,6 +958,9 @@ def main() -> int:
+         return 1
+ 
+     baseline = load_baseline(root)
++    # #2392 invariant E: roster regression (pointer revert / row eviction) —
++    # the pass-23 deferred check. Structural, never floorable.
++    e_findings, e_ran = invariant_e(r["pointer"], r["row_tokens"], baseline)
+     # #2187: invariant D joins the SAME shrink-only ratchet — commit-subject
+     # keys are never in the born-empty floor, so any ghost is fresh drift,
+     # and a registered row (base now in the registry) makes it vanish.
+@@ -765,14 +971,15 @@ def main() -> int:
+             "guard": GUARD_TAG, "pointer": r["pointer"],
+             "a": r["a"], "b": r["b"], "citationGhosts": r["cits"],
+             "commitSubjectGhosts": r["d"], "commitPlaneScanned": r["d_ran"],
++            "rosterRegressions": e_findings, "rosterChecked": e_ran,
+             "reportOnly": r["report_only"], "drift": drift,
+             "improvements": improvements,
+-            "verdict": "fail" if (r["a"] or r["b"] or drift) else "pass",
++            "verdict": "fail" if (r["a"] or r["b"] or drift or e_findings) else "pass",
+         }, indent=2, ensure_ascii=False))
+     else:
+         render(r["a"], r["b"], r["cits"], r["report_only"], drift, improvements, r["pointer"],
+-               d=r["d"], d_ran=r["d_ran"])
+-    return 1 if (r["a"] or r["b"] or drift) else 0
++               d=r["d"], d_ran=r["d_ran"], e=e_findings, e_ran=e_ran)
++    return 1 if (r["a"] or r["b"] or drift or e_findings) else 0
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index a1e61ca1..889cfbf5 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -252,13 +252,67 @@ def test_live_repo_sweep_passes() -> None:
+     # the disambiguated rows R63-I (#2343 hooks-bootstrap) / R63-II (#2358
+     # MCP-Registry) and advanced it R63 -> R64 (the successor slot's only
+     # citation is the scout ticket's own title token — pass-15 self-ref class).
++    # and after #2392 (R64 pointer-board agreement guard, pass 25) registered
++    # the R64 row and advanced it R64 -> R65 (verified free: tracked scan
++    # zero hits; 100-row board sweep zero citations outside the self-ref).
+     # Bump this literal ONLY together with a landed index-pointer advance.
+-    assert r["pointer"] == 64, "pointer drifted — regenerate expectation with the index"
++    assert r["pointer"] == 65, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])
+     assert not drift, f"live citation-ghost drift: {drift}"
+ 
+ 
++def test_invariant_e_roster_regressions_fail() -> None:
++    """#2392 component 1: pointer revert / row eviction fail closed (ebe630c class)."""
++    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
++             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
++    # Pointer regression: the pass-9/22/23 stale-branch overwrite signature.
++    findings, ran = guard.invariant_e(64, {"R1", "R63", "R64"}, base2)
++    assert ran
++    assert any(f["kind"] == "roster-pointer-regressed" and f["was"] == 65 and f["now"] == 64
++               for f in findings)
++    # Row eviction with the pointer intact — the co-regression blind spot
++    # the pin discipline cannot see, now enforced.
++    findings, ran = guard.invariant_e(65, {"R1", "R63"}, base2)
++    assert ran
++    assert any(f["kind"] == "roster-row-evicted" and f["token"] == "R64" for f in findings)
++
++
++def test_invariant_e_forward_motion_and_v1_skip() -> None:
++    """Forward motion (advance + additions) never fails; /1 baselines honest-skip."""
++    base2 = {"schema": "radar-index-freshness-baseline/2", "floor": [],
++             "roster": {"pointer": 65, "rows": ["R1", "R63", "R64"]}}
++    findings, ran = guard.invariant_e(66, {"R1", "R63", "R64", "R66"}, base2)
++    assert ran and findings == []
++    findings, ran = guard.invariant_e(None, set(),
++                                      {"schema": "radar-index-freshness-baseline/1", "floor": []})
++    assert findings == [] and not ran
++
++
++def test_board_sweep_predicate_offline() -> None:
++    """#2392 component 2 / #2372 option B: the captured-title sweep predicate."""
++    # Fixture token R97: a neutral synthetic successor — the tracked-tree
++    # freeness scan for the REAL advertised successor must stay zero-hit
++    # outside pointer context (pass-4/22 standard), so the suite never
++    # embeds the live next-free token in fixture strings.
++    queue = {"workOrders": [
++        {"number": 2401, "title": "scout(R97): a third-party lane citing the candidate"},
++        {"number": 2402, "title": "guard(docs): register R60 row + next-free R97 (WO mirror)"},
++        {"number": 2403, "title": "unrelated lane with R59 only"},
++        {"number": 2392, "title": "scout(R64): the successor lane's own defining ticket"},
++    ]}
++    # Third-party title citation of the candidate fails, naming the issue.
++    fnd = guard.board_sweep(queue, 97, set())
++    assert any(f["issue"] == 2401 and f["token"] == "R97" for f in fnd)
++    # A WO mirror quoting the allocation rule (pointer phrase) never self-trips.
++    assert not any(f["issue"] == 2402 for f in fnd)
++    # The self-ref exception (a): the successor lane's own defining ticket.
++    assert guard.board_sweep(queue, 97, {2401}) == []
++    # Legacy `issueNumber` key accepted (pre-#2286 shape).
++    legacy = guard.board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
++    assert len(legacy) == 1 and legacy[0]["issue"] == 9
++
++
+ def test_wiring_roster_and_pre_push() -> None:
+     roster = (REPO_ROOT / "scripts" / "ci" / "run_all_guards.py").read_text(encoding="utf-8")
+     assert "scripts/ci/radar_index_freshness_guard.py" in roster, "guard missing from the live roster"

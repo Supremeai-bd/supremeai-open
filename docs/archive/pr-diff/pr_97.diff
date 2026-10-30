@@ -1,0 +1,142 @@
+diff --git a/docs/AUDIT_2026-10-15.md b/docs/AUDIT_2026-10-15.md
+new file mode 100644
+index 00000000..dca7ae0e
+--- /dev/null
++++ b/docs/AUDIT_2026-10-15.md
+@@ -0,0 +1,136 @@
++---
++id: audit-2026-10-15-deep-audit
++title: "Deep Audit Record — 2026-10-15 (supremeai-open)"
++document_role: audit
++status: active
++canonical: true
++owner: auditor
++last_verified: 2026-10-15
++related_docs:
++  - AGENTS.md
++  - AGENT_RULES.md
++  - README.md
++  - ECOSYSTEM_MAP.md
++  - docs/AGENT_LOOP_SPEC.md
++  - docs/CONTRIBUTING.md
++  - docs/CONSUMERS.md
++  - docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
++supersedes: []
++superseded_by: []
++source_issue: 95
++source_pr: null
++---
++
++# Deep Audit Record — 2026-10-15
++
++> **Auditor:** external autonomous contributor agent (AGENTS.md §2.1 Pathway 2 — fork + PR lane)
++> **Role contract:** AGENT_RULES.md §3 *Auditor*
++> **Tracking issue:** [#95](https://github.com/Supremeai-bd/supremeai-open/issues/95)
++> **Findings:** [#86](https://github.com/Supremeai-bd/supremeai-open/issues/86) · [#87](https://github.com/Supremeai-bd/supremeai-open/issues/87) · [#88](https://github.com/Supremeai-bd/supremeai-open/issues/88) · [#89](https://github.com/Supremeai-bd/supremeai-open/issues/89) · [#90](https://github.com/Supremeai-bd/supremeai-open/issues/90) · [#91](https://github.com/Supremeai-bd/supremeai-open/issues/91) · [#92](https://github.com/Supremeai-bd/supremeai-open/issues/92) · [#93](https://github.com/Supremeai-bd/supremeai-open/issues/93)
++
++## 1. Method & Scope
++
++Full sweep of every tracked file family in the repository: all 3 GitHub workflows, both Python programs, all 4 docs, README, ECOSYSTEM_MAP, AGENTS.md + AGENT_RULES.md, both issue templates, the complete `infrastructure/mcp-control-plane/` tree (~150 files), `api-schemas/`, `examples/`, plus live verification through `gh`, local reproduction, and the canonical validator.
++
++Auditor policy applied: verify the finding → check existing issues/PRs for duplicates → explain root cause with evidence → propose the smallest safe change → file atomic slices with group/priority. Nothing in this audit was inferred without reproduction.
++
++## 2. Findings (filed as issues)
++
++| Issue | Pri | Group | Finding | Key evidence |
++|---|---|---|---|---|
++| [#86](https://github.com/Supremeai-bd/supremeai-open/issues/86) | P1 | mcp-tower | Live Tower deployment source has zero TypeScript verification in CI | `git grep -nE "npm \\|node \\|tsc \\|tsx \\|typecheck" -- .github/workflows/` → 0 matches; `render.yaml` proves public repo deploys the live Tower |
++| [#87](https://github.com/Supremeai-bd/supremeai-open/issues/87) | P2 | schemas-contracts | CONSUMERS.md quickstart references non-existent `scripts/clients/gateway_client.py` | `git ls-files scripts/` → only 2 Python programs; client lives at `examples/gateway_client.py` |
++| [#88](https://github.com/Supremeai-bd/supremeai-open/issues/88) | P2 | agent-orchestration | `--pick-next` ignores claim status and truncates the board at 20 | `pick_next_issue()` lines 381–408; `gh issue list --state open` → 35 open |
++| [#89](https://github.com/Supremeai-bd/supremeai-open/issues/89) | P2 | infra-ops | Dead `.pr_template_draft.md` upload + ❌ rendered as "PASS" | `git grep pr_template_draft` → no writer since #63; `if-no-files-found: ignore`; loop lines 689–691 |
++| [#90](https://github.com/Supremeai-bd/supremeai-open/issues/90) | P2 | agent-orchestration | AGENT_RULES §5 groups conflict with VALID_GROUPS registry | `build_task_contract(group='SECURITY')` → ValueError (reproduced) |
++| [#91](https://github.com/Supremeai-bd/supremeai-open/issues/91) | P2 | mcp-tower | Public-boundary drift: README "never here" classes shipped; 4 orphan Guardian engine dumps | README lines 8–18/31–33 vs shipped `improvement/policy/signals.snapshot.txt`, `_imp_dump.txt`, `src/guardian|remediation|policy/risk.engine|adapters/ai/key-pool` |
++| [#92](https://github.com/Supremeai-bd/supremeai-open/issues/92) | P3 | agent-orchestration | CONTRIBUTING.md flag table drifted from CLI after #63/#67 | `--help` output vs §4 table; roles list mismatch (`reviewer` phantom) |
++| [#93](https://github.com/Supremeai-bd/supremeai-open/issues/93) | P3 | infra-ops | agent-task.yml duplicate repo option; ECOSYSTEM_MAP missing 4 live repos | `agent-task.yml` lines 25 & 34; `gh repo view` × 9 all exist |
++
++## 3. U9 Sweep Report
++
++```
++similar found: 8 | fixed in-task: 0 | filed follow-up: 8
++```
++
++Defect classes swept: dead repo slugs (#65/#66/#70 lineage), broken doc paths (GUARD-DOC-LINK), taxonomy drift, CI coverage gaps, scheduled-work evidence (§10), claim/freshness logic (U5), public-boundary classification. Sibling checks: all workflows, both templates, all docs, both Python programs, tower tree inventory vs README contract.
++
++## 4. Explicit No-Actionable-Finding Records (verified NOT defects)
++
++Recorded per AGENT_RULES §10 — these were investigated and deliberately **not** filed:
++
++| Candidate finding | Verification | Verdict |
++|---|---|---|
++| Local `.env` contains live PATs | `.gitignore:5` ignores it; `git log --all -- .env` empty | Not a repository leak — no issue |
++| `ci.yml` multi-line `python -c` contract test looks malformed | Reproduced the exact snippet locally → exit 0 (valid Python) | Not a defect |
++| `config.yml` emoji looks mojibake'd | Raw bytes `F0 9F 93 96` / `F0 9F 93 9C` = valid UTF-8 (📖/📜) | PowerShell 5.1 console artifact — file is correct |
++| Template dropdown repo slugs may be dead (post-#65 class) | `gh repo view` × 9 → all `Supremeai-bd/*` repos exist | Live; only the duplicate option is a defect (#93) |
++| `.gitleaksignore` fingerprints may be stale | Commit `ceb5270525eb…` exists (`git cat-file -t`) | Valid |
++| CONTRACT_VERSION parity (§4b) | `--verify-only` → exit 0, final line `CONTRACT_VERSION=agent-loop-contract/1` | Contract holds |
++
++## 5. Board Freshness at Audit Time (U5 / #4177)
++
++- **PR #85 merged mid-audit** (implements #69 — event-driven bridge intake). No overlap with findings.
++- **PRs #84 (auto-bridge-order workflow) and #94 (anti-duplicate PR doctrine + guard) also landed mid-audit** — re-verified all findings against `origin/main@1d4d2f7`; none invalidated.
++- **PR #77 closed** after #82 landed the same constitution-slug sweep — duplicate already resolved.
++- Open board: 35 issues at audit start; 44 after filing (8 findings + this record = 9 new, no duplicates of existing work).
++- Final re-poll at completion: **0 open PRs** — no competing or duplicate PRs against any filed finding.
++
++## 6. Verification Evidence (Test Evidence for the accompanying PR)
++
++Run from a clean clone; commands below were executed on the audited commit (`40bb8c0`) and **re-verified against `origin/main` `1d4d2f7`** after PRs #84/#85/#94 merged mid-audit (no finding's evidence changed):
++
++1. **Canonical validator / 3-tier contract**
++   ```
++   $ python scripts/agents/continuous_agent_loop.py --verify-only
++   ✅ 3-tier checks passed! Syntax, JSON/YAML schemas, and contracts are verified.
++   CONTRACT_VERSION=agent-loop-contract/1
++   exit 0
++   ```
++2. **Taxonomy conflict reproduction (#90)**
++   ```
++   $ python -c "from scripts.agents.continuous_agent_loop import build_task_contract; build_task_contract('demo', group='SECURITY')"
++   ValueError: Invalid group: 'SECURITY'. Must be one of the canonical registry: ['agent-orchestration', 'core-engine', 'infra-ops', 'mcp-tower', 'schemas-contracts']
++   ```
++3. **CI coverage gap reproduction (#86)**
++   ```
++   $ git grep -nE "npm |node |tsc |tsx |typecheck" -- .github/workflows/
++   (no matches)
++   ```
++4. **Dead artifact reproduction (#89)**
++   ```
++   $ git grep -n pr_template_draft
++   .github/workflows/continuous-agent-loop.yml:90  (upload path only — no writer)
++   .gitignore:4
++   docs/AGENT_LOOP_SPEC.md:16 (doc mention)
++   scripts/agents/continuous_agent_loop.py:274 (doc mention)
++   ```
++5. **Board truncation reproduction (#88)**
++   ```
++   $ gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 100 --json number | measure
++   35   # exceeds --limit 20 in pick_next_issue()
++   ```
++6. **Broken quickstart path reproduction (#87)**
++   ```
++   $ git ls-files scripts/
++   scripts/agents/continuous_agent_loop.py
++   scripts/ops/actions_quota_check.py
++   (no scripts/clients/ → CONSUMERS.md §4 path is broken)
++   ```
++7. **Federation inventory verification (#93)** — `gh repo view` returned exists for all 9 `Supremeai-bd/*` repos.
++8. **Secret-scan posture** — CI `secret-scan` job green on all recent runs; `.gitleaksignore` fingerprints valid.
++
++No production code, workflow, or policy file was modified by this audit — the deliverable is the issue set above plus this record.
++
++## 7. Rollback Path
++
++`git revert`-safe: this change adds one documentation record only. No runtime behavior depends on it.
++
++## Related Documents
++
++- [AGENTS.md](../../AGENTS.md) — agent entrypoint & submission pathways
++- [AGENT_RULES.md](../../AGENT_RULES.md) — policy constitution (U1–U9, Auditor role §3, §4 issue policy, §5 groups)
++- [ECOSYSTEM_MAP.md](../../ECOSYSTEM_MAP.md) — federation repository directory
++- [docs/AGENT_LOOP_SPEC.md](../AGENT_LOOP_SPEC.md) — dispatcher/envelope contract
++- [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](../OPS_ACTIONS_QUOTA_RUNBOOK.md) — OPS context referenced by #86
++- Tracking issue: [#95](https://github.com/Supremeai-bd/supremeai-open/issues/95) · Findings: #86–#93

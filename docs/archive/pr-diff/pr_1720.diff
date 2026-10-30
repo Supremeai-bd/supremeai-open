@@ -1,0 +1,652 @@
+diff --git a/docs/workorders/bridge-20261028-satellite-sentinel-gate.md b/docs/workorders/bridge-20261028-satellite-sentinel-gate.md
+new file mode 100644
+index 00000000..30a000b5
+--- /dev/null
++++ b/docs/workorders/bridge-20261028-satellite-sentinel-gate.md
+@@ -0,0 +1,81 @@
++# Admin Work Order — Satellite Sentinel Gate (#1689)
++
++**Task ID:** `bridge-20261028-satellite-sentinel`
++**Filed by:** zai-mcp-tower-agent (cron Job 477795, run 7) · 2026-10-28 05:35 +08:00
++**Carrier PR:** bridge/bridge-20261028-satellite-sentinel — lands the sync-script mapping, the sentinel verifier, the manifest, and this doc. The CI gate below is `.github/` (protected path) and is NOT in the PR diff — admin applies it verbatim.
++
++## 1. Verified finding (audit #1689, re-verified live this run)
++
++| Surface | Size | sha256(16) | Status |
++|---|---|---|---|
++| `supremeai-open:gateway/main.py` | 38,818 B | `8fa890e8442c39ab` | hardened (sanitization imports + `sanitize_error_message` + `payload.update(sanitize(extra))`) |
++| `supremeai-api:main.py` (satellite **root**) | 35,428 B | `680da93d6c6dabf7` | **STALE** — 956-line revision, missing all sanitization hardening (90 lines behind) |
++| `supremeai-api:gateway/main.py` (in-package) | 38,818 B | `8fa890e8442c39ab` | hardened — byte-identical to mirror |
++
++**Impact correction (honesty first):** the audit's headline ("live api satellite is running the unsanitized error path") is **overstated**. The in-package `gateway/main.py` on the satellite — the surface the sync maintains and that `service/`/module imports resolve through — already carries the full hardening. The drifted surface is the satellite **root** `main.py`, a legacy mirror artifact that (a) uses relative imports (`from .config import ...`) and therefore cannot execute standalone from the satellite root, and (b) is no longer mapped by `sync_satellite()` — so *no re-dispatch of the current sync can ever fix it*. The residual risks are: humans/runbooks/tools copying or executing the stale root file, and the mirror↔satellite parity invariant being violated on a visible surface. Both are real; neither is a live leak.
++
++**Root cause:** the `Supremeai-bd/supremeai-api` block of `sync_satellite()` maps `gateway/` → `gateway/`, `gateway/service` → `service/`, `admin_auth.py` → root, `api-schemas/` → `contracts/schemas/` — but never `gateway/main.py` → root `main.py`. The audit's remediation 1 ("re-run `federation_satellite_sync.py --all`") alone would leave this drift in place forever.
++
++## 2. What the carrier PR already lands (no admin action needed)
++
++1. **`scripts/ci/federation_satellite_sync.py`** — (a) api satellite now syncs `gateway/main.py` → root `main.py` (admin_auth.py precedent, #1689 comment); (b) new `--verify-only` sentinel mode comparing open-side checkout bytes vs live satellite heads (GitHub contents API, stdlib only) with exit contract `0` clean / `1` drift / `2` verification errors (fail-closed — a network or auth failure fails the gate rather than silently passing); (c) observational post-sync sentinel check in normal sync runs (never flips the sync exit code — API freshness can lag a just-pushed ref); (d) self-test extended with the sentinel contract (defaults↔manifest alignment, mandatory api root pair).
++2. **`scripts/ci/satellite_sentinels.json`** — config-driven manifest of 7 sentinel pairs (the auditor's 7-point sweep). All 7 pairs were re-verified live this run: 6 byte-identical, 1 drifted (the pair this PR fixes). Ops can extend the sweep by editing the manifest — no code change.
++3. **`tests/test_federation_sentinels.py`** — 12 offline unit tests (manifest load/fallback/corruption, clean/drift/absent/infra-error/malformed/filter paths, source-level regression pin for the root mapping). All passing; `--self-test` passing.
++
++## 3. Admin action 1 — heal the live drift (after PR lands)
++
++```bash
++# Re-dispatch sync for the api satellite with the patched script.
++# This copies gateway/main.py -> satellite root main.py and pushes it.
++python scripts/ci/federation_satellite_sync.py \
++  --targets Supremeai-bd/supremeai-api \
++  --commit-msg "sync(open->api): heal root main.py sanitization parity (#1689)"
++
++# Then confirm the gate is green:
++python scripts/ci/federation_satellite_sync.py --verify-only
++# expect: 7 clean / 0 drift / 0 errors, exit 0
++```
++
++## 4. Admin action 2 — CI sentinel gate (protected path, apply verbatim)
++
++Create **`.github/workflows/satellite-sentinel-gate.yml`** in `Supremeai-bd/supremeai-open`:
++
++```yaml
++name: satellite-sentinel-gate
++on:
++  workflow_dispatch: {}
++  schedule:
++    - cron: "23 * * * *"   # hourly, offset from other crons
++  workflow_run:
++    workflows: ["satellite-dispatch-and-sync"]  # rename if the sync workflow is named differently
++    types: [completed]
++permissions:
++  contents: read
++jobs:
++  sentinel-gate:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v4
++        with:
++          fetch-depth: 1
++      - uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Wait for push propagation (skip on manual runs)
++        if: github.event_name == 'workflow_run'
++        run: sleep 60
++      - name: Verify mirror<->satellite sentinel parity (#1689)
++        env:
++          SAT_SYNC_PAT: ${{ secrets.SAT_SYNC_PAT }}
++        run: python scripts/ci/federation_satellite_sync.py --verify-only
++```
++
++The job fails (exit 1 drift / exit 2 infra) → gate red → the drift class of #1689 can no longer silently recur. If the sync workflow has a different `name:` than `satellite-dispatch-and-sync`, adjust the `workflow_run.workflows` value (the schedule + dispatch triggers make the gate independent of that name).
++
++## 5. Admin action 3 — investigate the original skip
++
++Audit remediation 3 asks *why* `satellite-dispatch-and-sync` skipped `Supremeai-bd/supremeai-api` on the sanitization landing. The sync script's api block has multiple graceful-degradation paths (clone/push permission errors print `[GRACEFUL-DEGRADATION]` and return success). Review those workflow logs around the sanitization commit; if degradation-during-incident is confirmed, consider making `[GRACEFUL-DEGRADATION]` post a Telegram notification so silent skips become visible. The sentinel gate from §4 makes any future skip detectable within an hour regardless.
++
++## 6. Rollback
++
++The PR is revert-safe: the mapping addition is one guarded copy (`if root_main.exists()`), `--verify-only` is opt-in (nothing in existing flows changes behavior — the observational post-sync check prints but never fails), the manifest is a new file, the tests are a new file. Reverting the PR restores the previous blobs byte-for-byte; the CI gate in §4 is admin-owned and removable independently.
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 6bc23f40..e813393c 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -18,6 +18,7 @@
+ 
+ import argparse
+ import contextlib
++import json
+ import os
+ import shutil
+ import subprocess
+@@ -76,6 +77,49 @@
+     ),
+ ]
+ 
++# Post-sync sentinel verification (#1689): mirror<->satellite pairs that must stay
++# byte-identical. The manifest scripts/ci/satellite_sentinels.json is config-driven;
++# the built-in defaults below are used when the manifest is absent or unreadable.
++SENTINEL_MANIFEST_PATH = Path("scripts/ci/satellite_sentinels.json")
++DEFAULT_SENTINEL_PAIRS: list[dict[str, str]] = [
++    {
++        "open": "gateway/main.py",
++        "satellite": "Supremeai-bd/supremeai-api",
++        "path": "main.py",
++        "note": "satellite root entrypoint artifact - drift source of #1689",
++    },
++    {
++        "open": "core/main.py",
++        "satellite": "Supremeai-bd/supremeai-core",
++        "path": "main.py",
++    },
++    {
++        "open": "browser/main.py",
++        "satellite": "Supremeai-bd/supremeai-browser",
++        "path": "main.py",
++    },
++    {
++        "open": "studio/package.json",
++        "satellite": "Supremeai-bd/supremeai-studio",
++        "path": "package.json",
++    },
++    {
++        "open": "vscode/package.json",
++        "satellite": "Supremeai-bd/supremeai-vscode",
++        "path": "package.json",
++    },
++    {
++        "open": "api-schemas/gateway.openapi.yaml",
++        "satellite": "Supremeai-bd/supremeai-api",
++        "path": "contracts/openapi.yaml",
++    },
++    {
++        "open": "examples/gateway_client.py",
++        "satellite": "Supremeai-bd/supremeai-api",
++        "path": "scripts/clients/gateway_client.py",
++    },
++]
++
+ # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
+ MONOREPO_EXCLUDES = {
+     ".git",
+@@ -241,6 +285,15 @@ def sync_satellite(
+             if root_auth.exists():
+                 shutil.copy2(root_auth, tmp_repo / "admin_auth.py")
+                 print(f"📋 Synced clean admin_auth.py to root in {target_repo}")
++            # Sync root entrypoint artifact into satellite root (#1689): the satellite
++            # root main.py is a mirrored copy of gateway/main.py and must track it
++            # byte-identically, or the root surface silently drifts to an older
++            # unsanitized revision (observed live: satellite root main.py was 90 lines
++            # behind, missing the entire sanitization hardening).
++            root_main = repo_root / "gateway" / "main.py"
++            if root_main.exists():
++                shutil.copy2(root_main, tmp_repo / "main.py")
++                print(f"📋 Synced root entrypoint gateway/main.py -> main.py (root) in {target_repo}")
+             # Sync central API schemas into contracts/schemas/ in supremeai-api
+             schemas_src = repo_root / "api-schemas"
+             if schemas_src.exists():
+@@ -665,6 +718,114 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
+             print(f"  ⚠️ Could not remove {pf.name}: {e}")
+ 
+ 
++def load_sentinel_pairs(repo_root: Path) -> list[dict[str, str]]:
++    """Load sentinel pairs from the config manifest, falling back to built-in defaults."""
++    manifest = repo_root / SENTINEL_MANIFEST_PATH
++    if manifest.exists():
++        try:
++            data = json.loads(manifest.read_text(encoding="utf-8"))
++            pairs = data.get("pairs") if isinstance(data, dict) else None
++            if isinstance(pairs, list) and pairs:
++                return [dict(p) for p in pairs if isinstance(p, dict)]
++            print("⚠️ Sentinel manifest has no usable 'pairs' list; using built-in defaults.")
++        except Exception as e:
++            print(f"⚠️ Sentinel manifest unreadable ({e}); using built-in defaults.")
++    return [dict(p) for p in DEFAULT_SENTINEL_PAIRS]
++
++
++def _fetch_remote_bytes(repo: str, path: str, token: str, ref: str = "main") -> bytes | None:
++    """Fetch a file blob via the GitHub contents API (stdlib only).
++
++    Returns decoded bytes, or None for definitive absence (404).
++    Raises on infrastructure errors (auth, network, rate limit) - callers must
++    treat raised errors as fail-closed verification failures, not drift.
++    """
++    import base64 as _b64
++    import urllib.error as _ue
++    import urllib.request as _uq
++
++    api = f"https://api.github.com/repos/{repo}/contents/{path}?ref={ref}"
++    req = _uq.Request(
++        api,
++        headers={
++            "Authorization": f"Bearer {token}",
++            "Accept": "application/vnd.github+json",
++            "X-GitHub-Api-Version": "2022-11-28",
++            "User-Agent": "federation-satellite-sync-sentinel",
++        },
++    )
++    try:
++        with _uq.urlopen(req, timeout=30) as resp:
++            data = json.loads(resp.read().decode("utf-8"))
++    except _ue.HTTPError as e:
++        if e.code == 404:
++            return None
++        raise
++    content = data.get("content")
++    if content is None:
++        return None
++    return _b64.b64decode(content)
++
++
++def verify_sentinels(
++    repo_root: Path,
++    token: str,
++    ref: str = "main",
++    only_satellites: list[str] | None = None,
++) -> tuple[list[dict], list[dict], list[dict]]:
++    """Verify mirror<->satellite sentinel pairs are byte-identical (#1689).
++
++    Open side is read from the local checkout (repo_root); satellite side is
++    fetched live from the GitHub contents API. Returns (clean, drift, errors):
++      - clean  : pairs verified byte-identical
++      - drift  : pairs present on both sides but differing (actionable)
++      - errors : pairs that could not be verified (fail-closed, not drift)
++    """
++    import hashlib as _h
++
++    pairs = load_sentinel_pairs(repo_root)
++    clean: list[dict] = []
++    drift: list[dict] = []
++    errors: list[dict] = []
++    for p in pairs:
++        open_rel = str(p.get("open", "")).strip()
++        sat_repo = str(p.get("satellite", "")).strip()
++        sat_rel = str(p.get("path", "")).strip()
++        if not (open_rel and sat_repo and sat_rel):
++            errors.append({**p, "detail": "malformed pair (requires open/satellite/path)"})
++            continue
++        if only_satellites and sat_repo not in only_satellites:
++            continue
++        local = repo_root / open_rel
++        if not local.exists():
++            errors.append({**p, "detail": f"open-side file missing in checkout: {open_rel}"})
++            continue
++        try:
++            local_bytes = local.read_bytes()
++            remote_bytes = _fetch_remote_bytes(sat_repo, sat_rel, token, ref)
++        except Exception as e:
++            errors.append({**p, "detail": f"verification fetch failed: {e}"})
++            continue
++        if remote_bytes is None:
++            drift.append({**p, "detail": f"satellite surface absent: {sat_repo}:{sat_rel}"})
++            print(
++                f"  ❌ sentinel DRIFT  {open_rel} != {sat_repo}:{sat_rel} (satellite surface absent)"
++            )
++            continue
++        l_sha = _h.sha256(local_bytes).hexdigest()
++        r_sha = _h.sha256(remote_bytes).hexdigest()
++        if l_sha == r_sha:
++            clean.append(p)
++            print(f"  ✅ sentinel OK    {open_rel} == {sat_repo}:{sat_rel}")
++        else:
++            drift.append({**p, "detail": f"sha256 local={l_sha[:16]} remote={r_sha[:16]}"})
++            print(
++                f"  ❌ sentinel DRIFT  {open_rel} != {sat_repo}:{sat_rel}"
++                f" ({p.get('note') or 'content divergence'})"
++            )
++    return clean, drift, errors
++
++
+ def self_test() -> bool:
+     """Self-test verifying contract and mappings."""
+     assert len(DOMAIN_MAP) == 5, (
+@@ -715,6 +876,44 @@ def self_test() -> bool:
+         assert (d_wf / "ci.yml").exists(), "Active workflow must be copied"
+         assert not (d_wf / "old-pipeline.yml").exists(), "Stale workflow must be pruned"
+ 
++    # Sentinel pair contract (#1689)
++    for p in DEFAULT_SENTINEL_PAIRS:
++        assert p.get("open") and p.get("satellite") and p.get("path"), (
++            f"Malformed sentinel pair: {p}"
++        )
++        assert p["satellite"] in DOMAIN_MAP, (
++            f"Sentinel target {p['satellite']} must be a mapped satellite"
++        )
++    assert any(
++        p["open"] == "gateway/main.py" and p["path"] == "main.py"
++        for p in DEFAULT_SENTINEL_PAIRS
++    ), "api satellite root main.py parity pair is mandatory (#1689)"
++    with tempfile.TemporaryDirectory() as td:
++        fake_root = Path(td)
++        assert load_sentinel_pairs(fake_root) == [dict(p) for p in DEFAULT_SENTINEL_PAIRS], (
++            "Manifest fallback must return built-in defaults"
++        )
++        man_dir = fake_root / "scripts" / "ci"
++        man_dir.mkdir(parents=True)
++        (man_dir / "satellite_sentinels.json").write_text(
++            json.dumps(
++                {
++                    "pairs": [
++                        {
++                            "open": "x.py",
++                            "satellite": "Supremeai-bd/supremeai-core",
++                            "path": "y.py",
++                        }
++                    ]
++                }
++            ),
++            encoding="utf-8",
++        )
++        loaded = load_sentinel_pairs(fake_root)
++        assert len(loaded) == 1 and loaded[0]["open"] == "x.py", (
++            "Manifest pairs must override built-in defaults"
++        )
++
+     return True
+ 
+ 
+@@ -753,6 +952,19 @@ def main() -> int:
+         action="store_true",
+         help="Auto-prune ephemeral patches in patches/",
+     )
++    parser.add_argument(
++        "--verify-only",
++        action="store_true",
++        help=(
++            "Verify sentinel pairs (mirror<->satellite byte parity) without syncing. "
++            "Exit codes: 0 clean, 1 drift, 2 verification errors (fail-closed)."
++        ),
++    )
++    parser.add_argument(
++        "--sentinel-ref",
++        default="main",
++        help="Git ref used for sentinel verification (default: main)",
++    )
+ 
+     args = parser.parse_args()
+ 
+@@ -774,6 +986,27 @@ def main() -> int:
+         print(f"❌ Authentication Error: {e}")
+         return 2
+ 
++    if args.verify_only:
++        only = [t for t in (args.targets or []) if t in DOMAIN_MAP] or None
++        clean, drift, errors = verify_sentinels(repo_root, token, ref=args.sentinel_ref, only_satellites=only)
++        print(
++            f"🛡️ Sentinel verification: {len(clean)} clean / {len(drift)} drift / {len(errors)} errors"
++        )
++        if drift:
++            print("❌ Sentinel drift detected (mirror<->satellite parity broken):")
++            for d in drift:
++                print(f"   - {d.get('open')} != {d.get('satellite')}:{d.get('path')} :: {d.get('detail')}")
++        if errors:
++            print("❌ Sentinel verification could not complete for some pairs (fail-closed):")
++            for e in errors:
++                print(f"   - {e.get('satellite')}:{e.get('path')} :: {e.get('detail')}")
++        if errors:
++            return 2
++        if drift:
++            return 1
++        print("✅ All sentinel pairs byte-identical.")
++        return 0
++
+     # Determine targets
+     targets_to_sync: list[str] = []
+     sync_umbrella = False
+@@ -827,6 +1060,24 @@ def main() -> int:
+         if not ok:
+             success = False
+ 
++    # Post-sync sentinel observation (#1689). CI should still run --verify-only as a
++    # separate fail-closed gate step after a short propagation delay; this inline
++    # check is observational only (the contents API can lag a just-pushed ref) and
++    # never flips the sync exit code.
++    try:
++        obs_clean, obs_drift, obs_errors = verify_sentinels(repo_root, token)
++        print(
++            f"🛡️ [observe] post-sync sentinels: "
++            f"{len(obs_clean)} clean / {len(obs_drift)} drift / {len(obs_errors)} errors"
++        )
++        for d in obs_drift:
++            print(
++                f"   ⚠️ drift: {d.get('open')} != {d.get('satellite')}:{d.get('path')}"
++                f" :: {d.get('detail')}"
++            )
++    except Exception as e:
++        print(f"⚠️ [observe] post-sync sentinel check skipped: {e}")
++
+     if not success:
+         print("❌ One or more repository sync operations failed.")
+         return 1
+diff --git a/scripts/ci/satellite_sentinels.json b/scripts/ci/satellite_sentinels.json
+new file mode 100644
+index 00000000..d34fd015
+--- /dev/null
++++ b/scripts/ci/satellite_sentinels.json
+@@ -0,0 +1,47 @@
++{
++  "version": 1,
++  "description": "Mirror<->satellite sentinel pairs that federation_satellite_sync.py --verify-only checks byte-identical after every sync (#1689). Each pair maps an open-repo path to the satellite-repo surface the sync contract maintains. Extend this manifest to grow the sweep; no code edit needed.",
++  "provenance": {
++    "issue": 1689,
++    "auditorSweep": "7-point parity sweep, 2026-10-27T21:04Z (SupremeAI Federation Auditor, Job 478524)",
++    "liveVerification": "2026-10-28T05:30+08:00 by zai-mcp-tower-agent run 7: 6/7 pairs byte-identical by git blob SHA; gateway/main.py<->supremeai-api:main.py confirmed drifted (satellite root main.py = 956-line unsanitized revision vs 1046-line hardened mirror)"
++  },
++  "pairs": [
++    {
++      "open": "gateway/main.py",
++      "satellite": "Supremeai-bd/supremeai-api",
++      "path": "main.py",
++      "note": "satellite root entrypoint artifact - drift source of #1689; sync now maps gateway/main.py to root (admin_auth.py precedent)"
++    },
++    {
++      "open": "core/main.py",
++      "satellite": "Supremeai-bd/supremeai-core",
++      "path": "main.py"
++    },
++    {
++      "open": "browser/main.py",
++      "satellite": "Supremeai-bd/supremeai-browser",
++      "path": "main.py"
++    },
++    {
++      "open": "studio/package.json",
++      "satellite": "Supremeai-bd/supremeai-studio",
++      "path": "package.json"
++    },
++    {
++      "open": "vscode/package.json",
++      "satellite": "Supremeai-bd/supremeai-vscode",
++      "path": "package.json"
++    },
++    {
++      "open": "api-schemas/gateway.openapi.yaml",
++      "satellite": "Supremeai-bd/supremeai-api",
++      "path": "contracts/openapi.yaml"
++    },
++    {
++      "open": "examples/gateway_client.py",
++      "satellite": "Supremeai-bd/supremeai-api",
++      "path": "scripts/clients/gateway_client.py"
++    }
++  ]
++}
+diff --git a/tests/test_federation_sentinels.py b/tests/test_federation_sentinels.py
+new file mode 100644
+index 00000000..7b00d5ef
+--- /dev/null
++++ b/tests/test_federation_sentinels.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""Offline unit tests for the #1689 sentinel verification layer in
++scripts/ci/federation_satellite_sync.py.
++
++The GitHub fetch (_fetch_remote_bytes) is monkeypatched - no network access is
++required. Run:  python -m unittest tests.test_federation_sentinels -v
++(or: python tests/test_federation_sentinels.py)
++"""
++
++from __future__ import annotations
++
++import inspect
++import json
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++
++import federation_satellite_sync as sync  # noqa: E402
++
++
++class SentinelPairLoading(unittest.TestCase):
++    def test_fallback_to_defaults_when_manifest_absent(self):
++        with tempfile.TemporaryDirectory() as td:
++            pairs = sync.load_sentinel_pairs(Path(td))
++            self.assertEqual(pairs, [dict(p) for p in sync.DEFAULT_SENTINEL_PAIRS])
++
++    def test_manifest_pairs_override_defaults(self):
++        with tempfile.TemporaryDirectory() as td:
++            root = Path(td)
++            man = root / "scripts" / "ci" / "satellite_sentinels.json"
++            man.parent.mkdir(parents=True)
++            man.write_text(
++                json.dumps(
++                    {
++                        "pairs": [
++                            {"open": "a.py", "satellite": "Supremeai-bd/supremeai-core", "path": "b.py"}
++                        ]
++                    }
++                ),
++                encoding="utf-8",
++            )
++            loaded = sync.load_sentinel_pairs(root)
++            self.assertEqual(len(loaded), 1)
++            self.assertEqual(loaded[0]["open"], "a.py")
++
++    def test_corrupt_manifest_falls_back_to_defaults(self):
++        with tempfile.TemporaryDirectory() as td:
++            root = Path(td)
++            man = root / "scripts" / "ci" / "satellite_sentinels.json"
++            man.parent.mkdir(parents=True)
++            man.write_text("{not valid json", encoding="utf-8")
++            pairs = sync.load_sentinel_pairs(root)
++            self.assertEqual(pairs, [dict(p) for p in sync.DEFAULT_SENTINEL_PAIRS])
++
++    def test_default_pairs_contract(self):
++        for p in sync.DEFAULT_SENTINEL_PAIRS:
++            self.assertTrue(p.get("open") and p.get("satellite") and p.get("path"), p)
++            self.assertIn(p["satellite"], sync.DOMAIN_MAP)
++        self.assertTrue(
++            any(
++                p["open"] == "gateway/main.py" and p["path"] == "main.py"
++                for p in sync.DEFAULT_SENTINEL_PAIRS
++            ),
++            "api satellite root main.py parity pair is mandatory (#1689)",
++        )
++
++    def test_api_root_main_mapping_present_in_source(self):
++        """Regression pin: the sync must map gateway/main.py to the api satellite root."""
++        src = inspect.getsource(sync)
++        self.assertIn('tmp_repo / "main.py"', src)
++        self.assertIn('repo_root / "gateway" / "main.py"', src)
++
++
++class SentinelVerification(unittest.TestCase):
++    @staticmethod
++    def _write_manifest(root: Path, pairs: list[dict]) -> None:
++        man = root / "scripts" / "ci" / "satellite_sentinels.json"
++        man.parent.mkdir(parents=True, exist_ok=True)
++        man.write_text(json.dumps({"pairs": pairs}), encoding="utf-8")
++
++    def setUp(self):
++        self.root = Path(tempfile.mkdtemp())
++        self.pairs = [
++            {"open": "gateway/main.py", "satellite": "Supremeai-bd/supremeai-api", "path": "main.py"},
++            {"open": "core/main.py", "satellite": "Supremeai-bd/supremeai-core", "path": "main.py"},
++        ]
++        self._write_manifest(self.root, self.pairs)
++        (self.root / "gateway").mkdir()
++        (self.root / "gateway" / "main.py").write_bytes(b"hardened-main")
++        (self.root / "core").mkdir()
++        (self.root / "core" / "main.py").write_bytes(b"core-main")
++
++    def tearDown(self):
++        import shutil
++
++        shutil.rmtree(self.root, ignore_errors=True)
++
++    def test_clean_when_remote_matches(self):
++        orig = sync._fetch_remote_bytes
++
++        def per_pair(repo, path, token, ref="main"):
++            return b"hardened-main" if repo == "Supremeai-bd/supremeai-api" else b"core-main"
++
++        sync._fetch_remote_bytes = per_pair
++        try:
++            clean, drift, errors = sync.verify_sentinels(self.root, "t")
++            self.assertEqual(len(clean), 2)
++            self.assertEqual(drift, [])
++            self.assertEqual(errors, [])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_drift_detected_with_sha_detail(self):
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = lambda repo, path, token, ref="main": b"stale-unsanitized"
++        try:
++            clean, drift, errors = sync.verify_sentinels(self.root, "t")
++            self.assertEqual(clean, [])
++            self.assertEqual(len(drift), 2)
++            self.assertIn("sha256 local=", drift[0]["detail"])
++            self.assertEqual(errors, [])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_absent_remote_surface_is_drift_not_error(self):
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = lambda repo, path, token, ref="main": None
++        try:
++            clean, drift, errors = sync.verify_sentinels(self.root, "t")
++            self.assertEqual(len(drift), 2)
++            self.assertIn("absent", drift[0]["detail"])
++            self.assertEqual(errors, [])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_infra_error_is_fail_closed_error(self):
++        def boom(repo, path, token, ref="main"):
++            raise RuntimeError("rate limited")
++
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = boom
++        try:
++            clean, drift, errors = sync.verify_sentinels(self.root, "t")
++            self.assertEqual(clean, [])
++            self.assertEqual(drift, [])
++            self.assertEqual(len(errors), 2)
++            self.assertIn("verification fetch failed", errors[0]["detail"])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_satellite_filter_skips_other_pairs(self):
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = lambda repo, path, token, ref="main": b"hardened-main"
++        try:
++            clean, drift, errors = sync.verify_sentinels(
++                self.root, "t", only_satellites=["Supremeai-bd/supremeai-api"]
++            )
++            self.assertEqual(len(clean), 1)
++            self.assertEqual(clean[0]["satellite"], "Supremeai-bd/supremeai-api")
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_malformed_pair_is_error(self):
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = lambda repo, path, token, ref="main": b"x"
++        try:
++            with tempfile.TemporaryDirectory() as td:
++                root = Path(td)
++                self._write_manifest(root, [{"open": "only-open"}])
++                clean, drift, errors = sync.verify_sentinels(root, "t")
++                self.assertEqual(len(errors), 1)
++                self.assertIn("malformed", errors[0]["detail"])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++    def test_missing_open_side_file_is_error_not_drift(self):
++        orig = sync._fetch_remote_bytes
++        sync._fetch_remote_bytes = lambda repo, path, token, ref="main": b"x"
++        try:
++            with tempfile.TemporaryDirectory() as td:
++                root = Path(td)
++                self._write_manifest(root, self.pairs)
++                clean, drift, errors = sync.verify_sentinels(root, "t")
++                self.assertEqual(len(errors), 2)
++                self.assertIn("missing in checkout", errors[0]["detail"])
++        finally:
++            sync._fetch_remote_bytes = orig
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

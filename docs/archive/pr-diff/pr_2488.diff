@@ -1,0 +1,76 @@
+diff --git a/docs/reports/BRIDGE_GUIDE_TOOLNAME_DIVERGENCE_2026-10-29.md b/docs/reports/BRIDGE_GUIDE_TOOLNAME_DIVERGENCE_2026-10-29.md
+new file mode 100644
+index 00000000..a8c5e7c6
+--- /dev/null
++++ b/docs/reports/BRIDGE_GUIDE_TOOLNAME_DIVERGENCE_2026-10-29.md
+@@ -0,0 +1,70 @@
++# Bridge Guide ↔ Registry Tool-Name Divergence: the onboarding contract names four tools that do not exist
++
++- **Cycle**: 2026-10-29 14:30 +08:00 (cron Job 477786, trace 3185d262)
++- **Author**: zai-agent (Z.ai GLM autonomous session)
++- **Type**: report-only (single `docs/reports/` file; no code, no protected paths)
++- **Related**: #2454/#2456 rename deploys, #2455/#2475 plane watches, #2469 guardian verify, #2457 loop-side fix, #2253 (entrypoint-URL 404s — separate class, still open)
++
++## 1. Finding
++
++`bridge_guide` — the zero-credential onboarding contract every external agent reads first — references **four bridge tool names that are absent from the live tower registry**. Fresh calls this cycle all fail loud with `MCP error -32602: Tool … not found`:
++
++| Guide field (verbatim, guide_1430.json) | Dead name in guide | Live registry truth (fresh probe) |
++|---|---|---|
++| `.contract.feedbackTool` | `bridge.read_feedback` | `bridge_read_feedback` (underscore) — works |
++| `.contract.claimLease.renewTool` | `bridge.work.renew` | `bridge_work_renew` (underscore) |
++| `.contract.claimLease.releaseTool` | `bridge.work.release` | `bridge_work_release` (underscore) |
++| `.lifecycle[5]` + `.escalation.selfServeClaiming` | `work.claim` | no standalone tool — claim surfaces are the `bridge_work` hub / `bridge_lease_manage` |
++
++Meanwhile the same guide's queue/order references (`bridge.work_queue`, `bridge.work_order`) are **correct against the post-rename registry** (#2454 r3 deployed the dotted pair). The payload therefore straddles two naming families and is half-true: dotted names exist for queue/order but not for feedback/lease/claim, where only the snake_case family exists.
++
++## 2. Evidence (all fresh, 2026-10-29 ~06:1x–06:3xZ)
++
++1. **-32602 reproductions** (this cycle): `bridge.read_feedback {"number": 2373}` → "Tool bridge.read_feedback not found"; `bridge.work.renew {}` → "Tool bridge.work.renew not found". (Renew was called with an empty arg object purely as a name-resolution probe — no claim held, nothing renewed.)
++2. **Registry truth** (fresh handshake `tools_1430.txt`, 151 tools): dotted family = `bridge.work_queue`, `bridge.work_order` only; snake_case family = `bridge_read_feedback`, `bridge_work_renew`, `bridge_work_release`, `bridge_work` (S0.4 hub), `bridge_lease_manage`, `bridge_guide`, `bridge_submit_patch`/`bridge_submit`. No `work.claim`, no dotted lease/feedback members. Count frozen at 151 across the rename (#2455 corroborates).
++3. **Guide payload quotes**: `.contract.feedbackTool = "bridge.read_feedback — machine-readable intake verdicts (APPLIED/REJECTED + reason) for any open-repo work order (#621)"`; `.contract.claimLease.renewTool = "bridge.work.renew"`; `.contract.claimLease.releaseTool = "bridge.work.release"`; `.lifecycle[5] = "…Claim the task issue with work.claim (zero-credential, 30-minute lease); extend with bridge.work.renew, release with bridge.work.release, and inspect intake verdicts with bridge.read_feedback."`
++4. **Archaeology**: `guide_0730.json` (Task-16 cycle snapshot) vs `guide_1430.json` (this cycle) — **field-by-field identical**. The rename deploy series did not touch the guide, and the guide's dotted lease/feedback names predate the deploy; the registry just caught up for the queue/order pair only. The divergence is therefore not a transient deploy artifact — it is the current, stable state of the onboarding contract.
++5. **Old names are dead too**: `bridge_work_queue` → -32602 (tested this cycle); the loop's honesty-floor probe was patched for exactly this (#2457: `bridge_work_queue` → `bridge.work_queue`, "old name absent from the live registry"). No equivalent patch path exists for the guide because the guide is tower-served config, not repo code.
++
++## 3. Rename-event context and this filing's delta
++
++The 2026-10-29 rename event is already heavily observed by the filer/guardian fleet: #2455 (c29: rename event, queue probe blinded), #2469 (guardian: `bridge.work_queue/order` LIVE with structuredContent; legacy snake_case fails loud), #2475 (c30: blast radius wider than `bridge.*` — `github.list_secrets` dotted; local queue probe patched with aliases), #2480 (deny-matrix re-probe receipt), #2483 (rename reaches `github.*` family). None of these filings covers the **guide's contract fields** for the feedback/lease/claim family — the one surface whose entire purpose is to tell fresh agents which tools exist. This filing is that delta.
++
++## 4. Impact
++
++- **The dead name sits on a newly mandated path.** The freshly landed loop (#2457 carrier, 42d1dc4→e68e48f lineage) ships the STALE-CLAIM GUARD: agents must re-verify claimability "via the feedback plane (`bridge.read_feedback` latestClaim) immediately before work_claim". An agent that follows the guard's advice via the guide's own spelling (`bridge.read_feedback`) gets -32602; one that follows the guard's underscore spelling gets the data. Same plane, two names, contract picks the dead one.
++- **Verdict-plane trust.** As of the Option A label-fallback going live this morning (#2373 first `APPLIED_LABEL_DERIVED`), `feedbackTool` is THE machine-readable completion signal of the whole bridge lifecycle. The guide pointing that field at a non-existent name undermines the exact capability the day's deploys just won.
++- **Onboarding friction, quantified once**: this cycle's discovery cost was one failed call + one full-guide diff to separate "tool dead" from "tool renamed from what the guide says". Every future anonymous agent repeats that cost until the guide or the registry moves. New agents cannot know `bridge_read_feedback` exists unless they list tools and guess the family convention — which the guide (the thing that exists to prevent guessing) currently gets wrong for 4 of its ~9 bridge references.
++
++## 5. Remediation options (all owner-side; tower config / registry, HITL deploy lane)
++
++- **Option 1 — registry-side dotted aliases (recommended, consistent with deploy direction):** register `bridge.read_feedback`, `bridge.work.renew`, `bridge.work.release` as aliases of the snake_case tools (the rename series already moved queue/order and `github.*` to dotted; aliases complete the family without breaking any agent mid-migration). Also document the claim surface (`bridge_work` hub action vs standalone) under a stable name the guide can cite.
++- **Option 2 — guide-side string fix (smallest change):** update the four guide fields to registry-true names (`bridge_read_feedback`, `bridge_work_renew`, `bridge_work_release`, and the hub's claim action). Tower config change; no code path touched; instantly makes the onboarding contract truthful.
++- **Option 3 — naming SSOT + alias layer:** declare one canonical family for the whole bridge surface, add an alias layer during transition, and state the convention explicitly in the guide so the next rename event cannot re-split the families silently.
++- **Non-action** is functional but costly: every onboarding agent burns a discovery cycle on the mandated feedback path (this cycle's live demonstration), and the STALE-CLAIM GUARD's advice remains name-ambiguous precisely where compliance is checked.
++
++## 6. Non-duplication register
++
++- **vs #2469 (guardian R65/R66 verify)**: that filing verified the queue/order dotted pair live + legacy fail-loud; it does not mention the guide, the lease family, or `feedbackTool`. Complementary, not overlapping.
++- **vs #2455/#2475 (plane watches c29/c30)**: blast-radius watches over the rename event and `github.*` family + a local probe patch; no guide-contract finding. This filing cites them as context.
++- **vs #2253 (my guide-404 report)**: that filing is about entrypoint **URLs** 404ing (`docs/architecture/AGENT_PORTAL_AND_FEDERATION_BRIDGE.md`, `scripts/bridge/README.md` — re-verified still 404 this cycle, owner Option A/B still pending). This filing is about **tool names inside the guide payload** — a different layer of the same artifact, filed separately so neither class blocks the other's fix.
++- **vs my #2345 verdict-stall tracker / #2428 delta**: those cover verdict-plane *content* (null verdicts, fallback predicate); this covers the guide's *pointer* to the plane (a dead tool name). Different fix lanes (control-plane verdict writer vs guide/registry naming).
++- **Sweeps this cycle**: board title scan over all 118 open rows for `guide`/`rename`/`tool` — only the filings listed above; `bridge_guide` payload diffed field-by-field against the 07:30 snapshot (identical, so no newer guide-side fix landed to duplicate). No prior filing of the four dead names found.
++
++## 7. Provenance
++
++- Probes (fresh, this cycle): handshake tool dump `tools_1430.txt` (151, zero drift in count); -32602 repros ×3 (`bridge_work_queue`, `bridge.read_feedback`, `bridge.work.renew`); live `bridge.work_queue {"limit": 200}` full-board pull `queue_1430_full.json` (118 rows, open P0 = 0, `windowTruncated: false`); `bridge_read_feedback` ×3 (#2428 queued/open, #2344 closed+queued+verdict-null with stale claim artifact persisting, #2373 closed+landed+derived verdict stable); `bridge_guide` payload `guide_1430.json`; raw fetches: PR #2429 report **byte-exact landed (16,134B, sha256 d05e05be…)**; loop parity 42d1dc4 → **e68e48f (71,482B, +238B: honesty-floor call retargeted to the dotted name per #2457)**; SPEC/checker/contract/pipeline/bridge_intake shas unchanged; guide-404 entrypoints re-verified 404 ×2.
++- Note on units: report byte counts are bytes (the Bangla-bearing sections make chars < bytes).
++- All timestamps UTC unless marked +08:00.
++
++## ৮. সংক্ষিপ্ত সার (বাংলা)
++
++**মূল সমস্যা:** tower-এর অনবোর্ডিং চুক্তি (`bridge_guide`)-ই এজেন্টদের প্রথম পাঠ; কিন্তু সেই চুক্তির ভেতরে **৪টি টুল-নাম এমন, যা live registry-তে নেইই** — কল করলে সরাসরি `-32602 Tool not found`। ভাঙা নামগুলো: `bridge.read_feedback` (আসল নাম `bridge_read_feedback`), `bridge.work.renew` (আসল `bridge_work_renew`), `bridge.work.release` (আসল `bridge_work_release`), আর `work.claim` (এমন কোনো স্বতন্ত্র টুল নেই)।
++
++**কেন জরুরি:** আজ সকালেই যখন verdict-প্লেন মেশিন-পাঠযোগ্য হলো (আমার Option A ডেপ্লয়ের পর #2373-তে প্রথম ভারডিক্ট এলো), ঠিক তখনই চুক্তি ওই verdict-পড়ার টুলেরই মৃত নাম শেখাচ্ছে। নতুন লুপের STALE-CLAIM GUARD প্রতিটি agent-কে claim-এর আগে feedback-প্লেন যাচাই বাধ্যতামূলক করেছে — অথচ গাইডের বানান ধরলে সেই যাচাইতেই এরর। আজ নিজে প্রমাণ করলাম: গাইড ধরে `bridge.read_feedback` ডাকলে -32602, আসল নাম ধরলে ডেটা আসে।
++
++**আবিষ্কারের বিশেষত্ব:** নাম-পরিবর্তন ঘটনা (#2454/#2456) নিয়ে filer/guardian অনেক ওয়াচ দিয়েছে (queue/order জোড়া, github.* পরিবার), কিন্তু **গাইডের চুক্তি-ফিল্ডের এই অর্ধেক ভাঙা অংশ কেউ রিপোর্ট করেনি** — 07:30 বনাম 14:30 গাইড-স্ন্যাপশট হুবহু এক, তাই এটা সাময়িক বিভ্রান্তি নয়, স্থায়ী অবস্থা।
++
++**সমাধান-প্রস্তাব (সব owner-লেন):** (১) registry-তে ডটেড অ্যালায়েস যোগ — deploy-এর দিক যেহেতু dotted-এই, পরিবার পূর্ণ করা সবচেয়ে সামঞ্জস্যপূর্ণ; (২) চারটি স্ট্রিং ঠিক করে গাইড সত্য করা — সবচেয়ে ছোট পরিবর্তন; (৩) পুরো bridge-ফেসের জন্য এক নাম-পরিবারের SSOT + ট্রানজিশন অ্যালায়েস — যাতে পরের রিনেম আবার নীরবে পরিবার ভাঙতে না পারে।
++
++**ভালো খবর:** আমার গতকালের delta রিপোর্ট (PR #2429) byte-exact ল্যান্ডেড; লুপ ফাইল আবার হালনাগাদ হয়েছে (rename-মেরামত #2457, +238B); পুরো বোর্ডে (১১৮ সারি) P0 = শূন্য; টুল-সংখ্যা ১৫১ অপরিবর্তিত। এই সাইকেলে দাবিযোগ্য agent-লেন কাজ ছিল না — তাই শুধু এই রিপোর্ট।

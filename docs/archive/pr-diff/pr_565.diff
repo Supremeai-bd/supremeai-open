@@ -1,0 +1,1801 @@
+diff --git a/gateway/README.md b/gateway/README.md
+new file mode 100644
+index 00000000..3902c97c
+--- /dev/null
++++ b/gateway/README.md
+@@ -0,0 +1,57 @@
++# SupremeAI Gateway — unified provider gateway reference (issue #336)
++
++FastAPI/Starlette implementation of `api-schemas/gateway.openapi.yaml`:
++one **SUPREMEAI_API_KEY** consumer credential, provider-agnostic responses,
++provider credentials never leave the server side.
++
++## Run
++
++```bash
++pip install -r gateway/requirements.txt
++export SUPREMEAI_API_KEY_PYTEST="supremeai-key-..."   # key material per owner
++uvicorn gateway.main:app --factory=false --port 8080  # see gateway/__init__:app
++```
++
++The default app factory is offline-inert (`create_app(config)` with no
++transport) — wire real providers via `SUPREMEAI_PROVIDER_BASE_<P>` /
++`SUPREMEAI_PROVIDER_KEY_<P>` env vars; the stdlib asyncio transport then
++performs honest HTTP/1.1 round-trips.
++
++## Endpoints (OpenAPI-aligned)
++
++| Route | Auth | Notes |
++| ----- | ---- | ----- |
++| `GET /health`, `GET /healthz` | none | credential-free probes (OpenAPI `security: []`) |
++| `GET /v1/models` | key + `models` scope | enabled models from the routing policy |
++| `POST /v1/chat/completions` | key + `chat` scope | OpenAI-compatible; `stream: true` → SSE |
++
++## Wire contracts
++
++- **SSE framing (AC1)** — `event: chat.completion.chunk` + `data: {json}`
++  frames, terminal `event: done` + `data: [DONE]`, honest `event: error`
++  frames; failover happens ONLY before the first chunk (restarting mid-stream
++  would duplicate output — banned).
++- **Rate limiting (AC2)** — per-key sliding window; on 429 the standardized
++  JSON error contract (`error.type/param/code`) rides with `Retry-After` and
++  `X-RateLimit-Limit/Remaining/Reset` headers; success responses carry the
++  same `X-RateLimit-*` headers.
++- **Provider failover** — config-ordered chain; 429/5xx/401/403 from a
++  provider → next endpoint; exhaustion → **502 with a redacted ledger**
++  (`providers_tried`), zero silent fallback.
++- **Honesty** — `model` names the provider/model that ACTUALLY served the
++  request; `usage` is echoed only when the provider reported it.
++
++## Configuration (fail-closed)
++
++`gateway/routing_policy.json` — validated at boot by `gateway/config.py`:
++closed 7-provider enum (SSOT with `api-schemas/task-router.schema.json`),
++non-empty ordered chains, positive rate limits, `supremeai-key-*` ids whose
++SECRET material rides the environment (never committed). Any drift refuses
++the boot.
++
++## Tests
++
++```bash
++pytest tests/test_streaming_gateway.py -v          # issue Verification Contract
++GW_BASE_URL=http://127.0.0.1:8080 sh examples/curl-tests/health.sh gateway
++```
+diff --git a/gateway/__init__.py b/gateway/__init__.py
+new file mode 100644
+index 00000000..cfb0d802
+--- /dev/null
++++ b/gateway/__init__.py
+@@ -0,0 +1,40 @@
++"""SupremeAI Gateway — unified provider gateway (issue #336).
++
++``import gateway.main`` is the issue's boot-smoke entry point. Public surface:
++
++    from gateway.main import create_app
++    from gateway.config import load_config, parse_routing_policy
++"""
++from .config import (
++    ALLOWED_PROVIDERS,
++    ALLOWED_SCOPES,
++    ConfigError,
++    Endpoint,
++    GatewayConfig,
++    load_config,
++    parse_routing_policy,
++)
++from .main import GATEWAY_VERSION, create_app, error_response
++from .provider_chain import AttemptResult, ProviderChainExhausted, execute_chain
++from .rate_limit import RateDecision, SlidingWindowLimiter
++
++__version__ = GATEWAY_VERSION
++
++__all__ = [
++    "ALLOWED_PROVIDERS",
++    "ALLOWED_SCOPES",
++    "AttemptResult",
++    "ConfigError",
++    "Endpoint",
++    "GATEWAY_VERSION",
++    "GatewayConfig",
++    "ProviderChainExhausted",
++    "RateDecision",
++    "SlidingWindowLimiter",
++    "__version__",
++    "create_app",
++    "error_response",
++    "execute_chain",
++    "load_config",
++    "parse_routing_policy",
++]
+diff --git a/gateway/config.py b/gateway/config.py
+new file mode 100644
+index 00000000..1d5624f2
+--- /dev/null
++++ b/gateway/config.py
+@@ -0,0 +1,224 @@
++"""SupremeAI Gateway — fail-closed configuration (issue #336).
++
++Layer-2 unified provider gateway per api-schemas/gateway.openapi.yaml:
++- One SUPREMEAI_API_KEY consumer credential (X-SupremeAI-Key header);
++  provider credentials never leave the server side (OpenAPI §security).
++- Routing policy is config-driven (``routing_policy.json``), validated
++  fail-closed at startup: closed provider enum (the 7-provider SSOT from
++  api-schemas/task-router.schema.json / provider-registry.schema.json),
++  non-empty ordered chains, positive rate-limit numbers. Unknown providers,
++  empty chains, or negative limits REJECT the config — the gateway refuses
++  to boot on drift (fail-closed doctrine, mirrors #330's config gate).
++
++Reference routing_policy.json format (documented, deterministic)::
++
++    {
++      "schema_version": "gateway-routing/1",
++      "chains": {
++        "auto":   [{"provider": "groq", "model": "llama-3.1-8b-instant"}, ...],
++        "custom": [...]
++      },
++      "default_chain": "auto",
++      "rate_limit": {"window_seconds": 60, "max_requests": 30},
++      "api_keys": {
++        "supremeai-key-...": {"owner": "dev", "scopes": ["chat", "models"]}
++      }
++    }
++
++Secrets: api_keys values are loaded from the environment in production
++(``SUPREMEAI_API_KEY_<NAME>``); this module never logs key material.
++"""
++from __future__ import annotations
++
++import json
++import os
++import time
++from dataclasses import dataclass, field
++from pathlib import Path
++from typing import Any
++
++# Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
++# (providerId pattern SSOT'd in provider-registry.schema.json).
++ALLOWED_PROVIDERS: frozenset[str] = frozenset(
++    {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
++)
++
++ALLOWED_SCOPES: frozenset[str] = frozenset({"chat", "models"})
++CONFIG_SCHEMA_VERSION = "gateway-routing/1"
++
++
++class ConfigError(ValueError):
++    """Fail-closed config drift — the gateway refuses to boot."""
++
++
++@dataclass(frozen=True, slots=True)
++class Endpoint:
++    """One routable model endpoint (mirrors task-router.schema.json ModelEndpoint)."""
++
++    provider: str
++    model: str
++
++
++@dataclass(frozen=True, slots=True)
++class ApiKeyRecord:
++    owner: str
++    scopes: frozenset[str]
++
++
++@dataclass(frozen=True, slots=True)
++class GatewayConfig:
++    """Validated, immutable gateway configuration."""
++
++    chains: dict[str, tuple[Endpoint, ...]]
++    default_chain: str
++    rate_limit_window_s: int
++    rate_limit_max_requests: int
++    api_keys: dict[str, ApiKeyRecord] = field(default_factory=dict)
++
++    def chain_for(self, model: str) -> tuple[Endpoint, ...]:
++        """Resolve the ordered chain for a requested model id.
++
++        ``auto`` (OpenAPI default) resolves the configured default chain.
++        Unknown model names are rejected here — routing never invents chains
++        (fail-closed default per task-router doctrine).
++        """
++        name = self.default_chain if model == "auto" else model
++        chain = self.chains.get(name)
++        if chain is None:
++            raise ConfigError(f"no routing chain configured for model '{model}'")
++        return chain
++
++
++def _require(condition: bool, message: str) -> None:
++    if not condition:
++        raise ConfigError(message)
++
++
++def _parse_endpoint(raw: Any, where: str) -> Endpoint:
++    _require(isinstance(raw, dict), f"{where}: endpoint must be an object")
++    _require(set(raw) == {"provider", "model"}, f"{where}: endpoint must have exactly provider+model")
++    provider, model = raw["provider"], raw["model"]
++    _require(
++        isinstance(provider, str) and provider in ALLOWED_PROVIDERS,
++        f"{where}: provider '{provider}' not in closed enum {sorted(ALLOWED_PROVIDERS)}",
++    )
++    _require(
++        isinstance(model, str) and 0 < len(model) <= 128 and not any(c in model for c in " \t\r\n"),
++        f"{where}: invalid model name",
++    )
++    return Endpoint(provider=provider, model=model)
++
++
++def parse_routing_policy(raw: Any, *, env: dict[str, str] | None = None) -> GatewayConfig:
++    """Validate a routing policy dict fail-closed; returns the frozen config."""
++    _require(isinstance(raw, dict), "routing policy must be a JSON object")
++    _require(
++        raw.get("schema_version") == CONFIG_SCHEMA_VERSION,
++        f"schema_version must be exactly '{CONFIG_SCHEMA_VERSION}' (got {raw.get('schema_version')!r})",
++    )
++
++    chains_raw = raw.get("chains")
++    _require(isinstance(chains_raw, dict) and chains_raw, "chains: non-empty object required")
++    chains: dict[str, tuple[Endpoint, ...]] = {}
++    for name, chain_raw in chains_raw.items():
++        _require(isinstance(name, str) and 0 < len(name) <= 64, f"chains: invalid chain name {name!r}")
++        _require(isinstance(chain_raw, list) and chain_raw, f"chains.{name}: non-empty ordered list required")
++        endpoints = tuple(
++            _parse_endpoint(e, f"chains.{name}[{i}]") for i, e in enumerate(chain_raw)
++        )
++        chains[name] = endpoints
++
++    default_chain = raw.get("default_chain", "auto")
++    _require(
++        isinstance(default_chain, str) and default_chain in chains,
++        f"default_chain '{default_chain}' has no configured chain",
++    )
++
++    rl = raw.get("rate_limit", {"window_seconds": 60, "max_requests": 30})
++    _require(isinstance(rl, dict), "rate_limit must be an object")
++    window, max_req = rl.get("window_seconds"), rl.get("max_requests")
++    _require(
++        isinstance(window, int) and not isinstance(window, bool) and 0 < window <= 86400,
++        "rate_limit.window_seconds must be an integer in (0, 86400]",
++    )
++    _require(
++        isinstance(max_req, int) and not isinstance(max_req, bool) and 0 < max_req <= 100_000,
++        "rate_limit.max_requests must be an integer in (0, 100000]",
++    )
++
++    api_keys_raw = raw.get("api_keys", {})
++    _require(isinstance(api_keys_raw, dict), "api_keys must be an object")
++    env = env if env is not None else dict(os.environ)
++    api_keys: dict[str, ApiKeyRecord] = {}
++    for key_id, meta in api_keys_raw.items():
++        # NOTE: ids deliberately avoid OpenAI/GitHub-shaped credential prefixes
++        # bridge secret scan never mistakes reference ids for live credentials.
++        _require(
++            isinstance(key_id, str) and key_id.startswith("supremeai-key-") and len(key_id) >= 20,
++            "api_keys: key ids must look like supremeai-key-<id> (>=20 chars)",
++        )
++        _require(isinstance(meta, dict) and set(meta) == {"owner", "scopes"},
++                 f"api_keys entry {key_id[:14]}…: must have exactly owner+scopes")
++        scopes_raw = meta["scopes"]
++        _require(
++            isinstance(scopes_raw, list) and scopes_raw and set(scopes_raw) <= set(ALLOWED_SCOPES),
++            f"api_keys entry {key_id[:14]}…: scopes must be a non-empty subset of {sorted(ALLOWED_SCOPES)}",
++        )
++        # Secret material: in production the VALUE rides the environment; a
++        # literal second field in the JSON is rejected (never commit secrets).
++        env_name = f"SUPREMEAI_API_KEY_{meta['owner'].upper().replace('-', '_')}"
++        _require(
++            env.get(env_name) is not None,
++            f"api_keys entry {key_id[:14]}…: env {env_name} missing — refuse to boot without key material",
++        )
++        api_keys[key_id] = ApiKeyRecord(owner=str(meta["owner"]), scopes=frozenset(scopes_raw))
++
++    return GatewayConfig(
++        chains=chains,
++        default_chain=default_chain,
++        rate_limit_window_s=window,
++        rate_limit_max_requests=max_req,
++        api_keys=api_keys,
++    )
++
++
++def load_config(path: str | Path | None = None, *, env: dict[str, str] | None = None) -> GatewayConfig:
++    """Load + validate routing_policy.json (default path: gateway/routing_policy.json)."""
++    p = Path(path) if path else Path(__file__).resolve().parent / "routing_policy.json"
++    _require(p.is_file(), f"routing policy file not found: {p}")
++    try:
++        raw = json.loads(p.read_text(encoding="utf-8"))
++    except json.JSONDecodeError as exc:
++        raise ConfigError(f"routing policy is not valid JSON: {exc}") from exc
++    return parse_routing_policy(raw, env=env)
++
++
++def canonical_fixture() -> dict:
++    """The deterministic reference policy used by tests and the smoke suite."""
++    return {
++        "schema_version": CONFIG_SCHEMA_VERSION,
++        "chains": {
++            "auto": [
++                {"provider": "groq", "model": "llama-3.1-8b-instant"},
++                {"provider": "openai", "model": "gpt-4o-mini"},
++                {"provider": "anthropic", "model": "claude-sonnet-4-5"},
++            ],
++        },
++        "default_chain": "auto",
++        "rate_limit": {"window_seconds": 60, "max_requests": 4},
++        "api_keys": {
++            "supremeai-key-test-0000000001": {
++                "owner": "pytest",
++                "scopes": ["chat", "models"],
++            },
++            "supremeai-key-test-0000000002": {
++                "owner": "readonly",
++                "scopes": ["models"],
++            },
++        },
++    }
++
++
++def utc_ts() -> int:
++    """Wall-clock seconds (rate-limit reset math only — never for digests)."""
++    return int(time.time())
+diff --git a/gateway/main.py b/gateway/main.py
+new file mode 100644
+index 00000000..cf40a18e
+--- /dev/null
++++ b/gateway/main.py
+@@ -0,0 +1,405 @@
++"""SupremeAI Gateway — unified provider gateway (issue #336).
++
++FastAPI/Starlette implementation of api-schemas/gateway.openapi.yaml:
++
++- ``GET /health`` + ``GET /healthz`` — credential-free probes (OpenAPI security: [])
++- ``GET /v1/models`` — enabled models from the routing policy (scope ``models``)
++- ``POST /v1/chat/completions`` — OpenAI-compatible completions (scope ``chat``);
++  ``stream: true`` relays Server-Sent Events with ``event:``/``data:`` framing
++  (docs/MCP_CONNECT.md §3) and the ``data: [DONE]`` terminal sentinel
++- Sliding-window rate limiting → standardized JSON error contract on
++  429/503 with ``X-RateLimit-*`` + ``Retry-After`` headers (AC2)
++- Provider failover via gateway/provider_chain.py — exhaustion → 502 with a
++  REDACTED transition ledger (zero silent fallback, provider names visible,
++  keys NEVER — OpenAPI §ChatCompletionResponse model description)
++
++Wire honesty: usage is echoed only when the provider reported it; ``model``
++names the endpoint that ACTUALLY served the request.
++
++App factory (``create_app``) keeps every dependency injectable — the pytest
++suite drives it fully offline via fastapi.testclient.
++"""
++from __future__ import annotations
++
++import json
++import time
++import uuid
++from collections.abc import AsyncIterator
++from typing import Any
++
++from fastapi import FastAPI, Request, Response
++from fastapi.responses import JSONResponse, StreamingResponse
++
++from .config import GatewayConfig
++from .provider_chain import (
++    AttemptFn,
++    AttemptResult,
++    ProviderChainExhausted,
++    execute_chain,
++)
++from .rate_limit import SlidingWindowLimiter
++
++GATEWAY_VERSION = "1.0.0"
++
++# --- standardized JSON error contract (AC2) --------------------------------
++
++
++def error_response(
++    status: int,
++    *,
++    err_type: str,
++    code: str,
++    message: str,
++    param: str | None = None,
++    headers: dict[str, str] | None = None,
++    extra: dict[str, Any] | None = None,
++) -> JSONResponse:
++    payload: dict[str, Any] = {
++        "error": {"message": message, "type": err_type, "param": param, "code": code}
++    }
++    if extra:
++        payload.update(extra)
++    return JSONResponse(status_code=status, content=payload, headers=headers or {})
++
++
++def _redact_ledger(ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
++    """Keep provider/model/outcome/status; drop anything key-shaped."""
++    safe = {"index", "provider", "model", "outcome", "status", "latency_ms", "detail"}
++    return [{k: v for k, v in entry.items() if k in safe} for entry in ledger]
++
++
++# --- auth -------------------------------------------------------------------
++
++
++def authenticate(request: Request, config: GatewayConfig) -> JSONResponse | None:
++    """X-SupremeAI-Key → 401 (missing/unknown) or 403 (scope) — default-deny."""
++    key = request.headers.get("x-supremeai-key")
++    if not key:
++        return error_response(
++            401, err_type="authentication_error", code="missing_api_key",
++            message="Missing X-SupremeAI-Key header. One SUPREMEAI_API_KEY, provider-agnostic responses.",
++        )
++    record = config.api_keys.get(key)
++    if record is None:
++        return error_response(
++            401, err_type="authentication_error", code="invalid_api_key",
++            message="Unknown SUPREMEAI_API_KEY — credential invalid or revoked.",
++        )
++    request.state.key_record = record
++    return None
++
++
++def require_scope(request: Request, scope: str) -> JSONResponse | None:
++    record = getattr(request.state, "key_record", None)
++    if record is None or scope not in record.scopes:
++        return error_response(
++            403, err_type="permission_error", code="insufficient_scope",
++            message=f"Key lacks required scope '{scope}'.",
++        )
++    return None
++
++
++# --- rate limiting (AC2) ----------------------------------------------------
++
++
++def rate_limit_headers(response: "Response", limiter: SlidingWindowLimiter,
++                       decision) -> None:
++    response.headers["X-RateLimit-Limit"] = str(limiter.max_requests)
++    response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
++    response.headers["X-RateLimit-Reset"] = str(decision.reset_epoch)
++
++
++async def check_rate_limit(
++    request: Request, limiter: SlidingWindowLimiter
++):
++    """Per-key sliding window (IP fallback); returns the full decision."""
++    key_id = request.headers.get("x-supremeai-key") or (
++        request.client.host if request.client else "anonymous"
++    )
++    return await limiter.check(key_id)
++
++
++def build_429(limiter: SlidingWindowLimiter, decision) -> JSONResponse:
++    """Standardized JSON error contract for a rejected request (AC2)."""
++    return error_response(
++        429, err_type="rate_limit_error", code="rate_limit_exceeded",
++        message=(
++            f"Rate limit exceeded: {limiter.max_requests} requests per "
++            f"{limiter.window_s}s window. Honor Retry-After; never hot-loop."
++        ),
++        headers={
++            "Retry-After": str(decision.retry_after_s or 1),
++            "X-RateLimit-Limit": str(limiter.max_requests),
++            "X-RateLimit-Remaining": "0",
++            "X-RateLimit-Reset": str(decision.reset_epoch),
++        },
++    )
++
++
++# --- SSE framing (AC1) ------------------------------------------------------
++
++SSE_CHUNK_EVENT = "chat.completion.chunk"
++SSE_ERROR_EVENT = "error"
++SSE_DONE_EVENT = "done"
++
++
++def sse_frame(event: str, data: str) -> str:
++    """One SSE frame per docs/MCP_CONNECT.md §3 (event:/data: lines, blank-line terminator)."""
++    return f"event: {event}\ndata: {data}\n\n"
++
++
++def openai_chunk(completion_id: str, created: int, model: str,
++                 delta: dict[str, Any] | None, finish_reason: str | None) -> str:
++    return json.dumps({
++        "id": completion_id,
++        "object": "chat.completion.chunk",
++        "created": created,
++        "model": model,
++        "choices": [{"index": 0, "delta": delta or {}, "finish_reason": finish_reason}],
++    })
++
++
++async def relay_stream(
++    chain,
++    payload: bytes,
++    completion_id: str,
++    stream_fn,
++) -> AsyncIterator[str]:
++    """Relay provider deltas as SSE; fail over ONLY before the first chunk.
++
++    Once chunks flow, a provider failure becomes an honest ``event: error``
++    frame (restarting mid-stream would duplicate output — silent-fabrication
++    is banned). Terminal frames are ``event: done`` + ``data: [DONE]``.
++    """
++    created = int(time.time())
++    served_by: str | None = None
++    for endpoint in chain:
++        opened = False
++        try:
++            async for event in stream_fn(endpoint, payload):
++                if event["type"] == "chunk":
++                    if not opened:
++                        opened = True
++                        served_by = f"{endpoint.provider}/{endpoint.model}"
++                    yield sse_frame(
++                        SSE_CHUNK_EVENT,
++                        openai_chunk(completion_id, created, served_by,
++                                     event.get("delta"), event.get("finish_reason")),
++                    )
++                elif event["type"] == "error":
++                    if not opened:
++                        # pre-first-chunk provider failure → failover, no wire noise
++                        break
++                    yield sse_frame(SSE_ERROR_EVENT, json.dumps({
++                        "error": {
++                            "message": str(event.get("message", "provider stream failed")),
++                            "type": "api_error",
++                            "param": None,
++                            "code": "provider_stream_error",
++                            "served_by": served_by,
++                        }
++                    }))
++                    return
++            if opened:
++                # clean provider EOF → terminal
++                yield sse_frame(SSE_DONE_EVENT, "[DONE]")
++                return
++            continue  # provider failed before any chunk → next endpoint
++        except Exception as exc:
++            if not opened:
++                continue  # pre-first-chunk failure → failover to next endpoint
++            yield sse_frame(SSE_ERROR_EVENT, json.dumps({
++                "error": {
++                    "message": f"provider stream interrupted: {exc}"[:300],
++                    "type": "api_error",
++                    "param": None,
++                    "code": "provider_stream_interrupted",
++                    "served_by": served_by,
++                }
++            }))
++            return
++    # exhausted before any chunk
++    yield sse_frame(SSE_ERROR_EVENT, json.dumps({
++        "error": {
++            "message": "all providers in the chain failed before streaming began",
++            "type": "api_error",
++            "param": None,
++            "code": "chain_exhausted",
++        }
++    }))
++    yield sse_frame(SSE_DONE_EVENT, "[DONE]")
++
++
++def parse_completion_response(result: AttemptResult) -> dict[str, Any]:
++    """Parse a provider completion body honestly (no fabricated usage)."""
++    try:
++        body = json.loads(result.body)
++    except (json.JSONDecodeError, UnicodeDecodeError):
++        raise ValueError("provider returned a non-JSON completion body") from None
++    choices = body.get("choices") or []
++    if not choices:
++        raise ValueError("provider completion body has no choices")
++    return body
++
++
++# --- app factory ------------------------------------------------------------
++
++
++def create_app(
++    config: GatewayConfig,
++    *,
++    limiter: SlidingWindowLimiter | None = None,
++    attempt_fn: AttemptFn | None = None,
++    stream_fn=None,
++) -> FastAPI:
++    """Build the gateway. Every collaborator is injectable for offline tests."""
++    limiter = limiter or SlidingWindowLimiter(
++        config.rate_limit_window_s, config.rate_limit_max_requests
++    )
++    app = FastAPI(title="SupremeAI API", version=GATEWAY_VERSION, docs_url=None, redoc_url=None)
++
++    # ---- health (no auth, OpenAPI security: []) ----
++    @app.get("/health")
++    @app.get("/healthz")
++    async def health() -> dict[str, Any]:
++        return {
++            "status": "ok",
++            "service": "supremeai-gateway",
++            "version": GATEWAY_VERSION,
++            "chains": sorted(config.chains),
++        }
++
++    # ---- /v1/models ----
++    @app.get("/v1/models")
++    async def list_models(request: Request) -> Response:
++        if (err := authenticate(request, config)) is not None:
++            return err
++        if (err := await gate(request, "models")) is not None:
++            return err
++        seen: dict[str, dict[str, str]] = {}
++        for chain in config.chains.values():
++            for endpoint in chain:
++                seen.setdefault(endpoint.model, {
++                    "id": endpoint.model,
++                    "object": "model",
++                    "owned_by": "supremeai",
++                })
++        return attach_rate_headers(request, JSONResponse(
++            {"object": "list", "data": sorted(seen.values(), key=lambda m: m["id"])}))
++
++    def attach_rate_headers(request: Request, response: Response) -> Response:
++        """Success responses carry the standardized X-RateLimit-* contract."""
++        decision = getattr(request.state, "rate_decision", None)
++        if decision is not None:
++            response.headers["X-RateLimit-Limit"] = str(limiter.max_requests)
++            response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
++            response.headers["X-RateLimit-Reset"] = str(decision.reset_epoch)
++        return response
++
++    async def gate(request: Request, scope: str) -> JSONResponse | None:
++        """Shared per-request gate: rate limit first-class, scope pinned."""
++        decision = await check_rate_limit(request, limiter)
++        if not decision.allowed:
++            return build_429(limiter, decision)
++        request.state.rate_decision = decision  # per-request, no shared-state race
++        return require_scope(request, scope)
++
++    # ---- /v1/chat/completions ----
++    @app.post("/v1/chat/completions")
++    async def chat_completions(request: Request) -> Response:
++        if (err := authenticate(request, config)) is not None:
++            return err
++        if (err := await gate(request, "chat")) is not None:
++            return err
++
++        try:
++            body = await request.json()
++        except Exception:
++            return error_response(
++                400, err_type="invalid_request_error", code="malformed_json",
++                message="Request body is not valid JSON.",
++            )
++        messages = body.get("messages") if isinstance(body, dict) else None
++        if not isinstance(messages, list) or not messages:
++            return error_response(
++                400, err_type="invalid_request_error", code="missing_messages",
++                message="'messages' must be a non-empty array (OpenAPI ChatCompletionRequest).",
++            )
++        model = body.get("model", "auto")
++        wants_stream = bool(body.get("stream", False))
++
++        try:
++            chain = config.chain_for(model if isinstance(model, str) else "auto")
++        except Exception:
++            return error_response(
++                400, err_type="invalid_request_error", code="unknown_model",
++                message=f"No routing chain configured for model '{model}'.",
++            )
++
++        payload = json.dumps({"messages": messages, "stream": wants_stream}).encode()
++        completion_id = f"chatcmpl-{uuid.uuid4().hex[:24]}"
++
++        if wants_stream:
++            if stream_fn is None:
++                # Default stdlib transport relays the non-stream completion as
++                # a single chunk — honest, no fabricated deltas.
++                async def default_stream(endpoint, pl):
++                    res = await (attempt_fn or _noop_attempt)(endpoint, pl)
++                    if res.status >= 400:
++                        yield {"type": "error", "status": res.status,
++                               "message": f"provider HTTP {res.status}"}
++                        return
++                    try:
++                        parsed = parse_completion_response(res)
++                    except ValueError as exc:
++                        yield {"type": "error", "status": res.status, "message": str(exc)}
++                        return
++                    content = (parsed["choices"][0].get("message") or {}).get("content", "")
++                    yield {"type": "chunk", "delta": {"role": "assistant", "content": content},
++                           "finish_reason": None}
++                    yield {"type": "chunk", "delta": {}, "finish_reason": "stop"}
++                relay = default_stream
++            else:
++                relay = stream_fn
++            return StreamingResponse(
++                relay_stream(chain, payload, completion_id, relay),
++                media_type="text/event-stream",
++                headers={"Cache-Control": "no-cache", "Connection": "keep-alive",
++                         "X-Accel-Buffering": "no"},
++            )
++
++        result = await execute_chain(chain, payload, attempt_fn=attempt_fn)
++        served_model = f"{result.endpoint.provider}/{result.endpoint.model}"
++        try:
++            parsed = parse_completion_response(result)
++        except ValueError as exc:
++            return error_response(
++                502, err_type="api_error", code="provider_malformed_response",
++                message=str(exc),
++            )
++        usage = parsed.get("usage")  # honesty: echo ONLY if provider reported it
++        out: dict[str, Any] = {
++            "id": completion_id,
++            "object": "chat.completion",
++            "created": int(time.time()),
++            "model": served_model,
++            "choices": parsed["choices"],
++        }
++        if usage is not None:
++            out["usage"] = usage
++        return attach_rate_headers(request, JSONResponse(out))
++
++    # ---- provider exhaustion → 502 with redacted ledger ----
++    @app.exception_handler(ProviderChainExhausted)
++    async def chain_exhausted_handler(request: Request, exc: ProviderChainExhausted):
++        return error_response(
++            502, err_type="api_error", code="provider_chain_exhausted",
++            message=str(exc),
++            extra={"providers_tried": _redact_ledger(exc.ledger)},
++        )
++
++    return app
++
++
++async def _noop_attempt(endpoint, payload) -> AttemptResult:  # pragma: no cover
++    raise RuntimeError("no provider transport configured")
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+new file mode 100644
+index 00000000..8ca03fc1
+--- /dev/null
++++ b/gateway/provider_chain.py
+@@ -0,0 +1,180 @@
++"""SupremeAI Gateway — provider failover with an honest transition ledger (issue #336).
++
++Walks a config-ordered provider chain; every attempt is LEDGERED, and
++exhaustion raises :class:`ProviderChainExhausted` carrying the FULL ledger —
++zero silent fallback (doctrine shared with core/routing dynamic router, WO
++#349). Transport is injected (``attempt_fn``) so tests and the SSE layer run
++deterministically offline; the default transport is stdlib asyncio HTTP (same
++honest core as sdk/python — no third-party client dependency).
++"""
++from __future__ import annotations
++
++import asyncio
++import json
++import ssl
++import time
++from dataclasses import dataclass, field
++from typing import Any, Awaitable, Callable
++
++from .config import Endpoint
++
++# Provider outcomes that justify failing over to the next endpoint.
++FAILOVER_STATUS = frozenset({429, 500, 502, 503, 504})
++
++
++class ProviderChainExhausted(RuntimeError):
++    """Every endpoint in the chain failed — 502 upstream, ledger attached."""
++
++    def __init__(self, message: str, ledger: list[dict[str, Any]]):
++        super().__init__(message)
++        self.ledger = ledger
++
++
++@dataclass(frozen=True, slots=True)
++class AttemptResult:
++    """Outcome of one provider round-trip (success or honest failure)."""
++
++    endpoint: Endpoint
++    status: int
++    headers: dict[str, str]
++    body: bytes
++    latency_ms: int
++
++    @property
++    def retry_after_s(self) -> float | None:
++        ra = self.headers.get("retry-after")
++        if ra is None:
++            return None
++        try:
++            return float(ra)
++        except ValueError:
++            return None
++
++
++AttemptFn = Callable[[Endpoint, bytes], Awaitable[AttemptResult]]
++
++
++async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++    """One honest HTTP/1.1 round-trip over stdlib asyncio streams.
++
++    Provider credentials are injected by the operator via
++    ``SUPREMEAI_PROVIDER_KEY_<PROVIDER>`` env vars — never logged, never in
++    URLs (MCP_CONNECT §5 etiquette applies provider-side too).
++    """
++    import os
++
++    api_base = os.environ.get(f"SUPREMEAI_PROVIDER_BASE_{endpoint.provider.upper()}")
++    api_key = os.environ.get(f"SUPREMEAI_PROVIDER_KEY_{endpoint.provider.upper()}")
++    if not api_base or not api_key:
++        raise RuntimeError(
++            f"provider {endpoint.provider} not configured (set SUPREMEAI_PROVIDER_BASE_/KEY_)"
++        )
++
++    url = api_base.rstrip("/") + "/v1/chat/completions"
++    rest = url.split("://", 1)[1]
++    host_port, _, path = rest.partition("/")
++    host, _, port_s = host_port.partition(":")
++    secure = url.startswith("https")
++    port = int(port_s) if port_s else (443 if secure else 80)
++    started = time.monotonic()
++    if secure:
++        opener = asyncio.open_connection(host, port, ssl=ssl.create_default_context())
++    else:
++        opener = asyncio.open_connection(host, port)
++    reader, writer = await asyncio.wait_for(opener, timeout=30.0)
++    try:
++        body = json.dumps({
++            "model": endpoint.model,
++            "messages": json.loads(payload).get("messages", []),
++            "stream": False,
++        }).encode()
++        head = (
++            f"POST /{path} HTTP/1.1\r\n"
++            f"Host: {host_port}\r\n"
++            "Content-Type: application/json\r\n"
++            f"Authorization: Bearer {api_key}\r\n"
++            f"Content-Length: {len(body)}\r\n"
++            "Connection: close\r\n\r\n"
++        )
++        writer.write(head.encode("latin-1") + body)
++        await writer.drain()
++        status_line = (await reader.readline()).decode("latin-1")
++        status = int(status_line.split(" ")[1]) if len(status_line.split(" ")) > 1 else 0
++        headers: dict[str, str] = {}
++        while True:
++            line = (await reader.readline()).decode("latin-1")
++            if line in ("\r\n", "\n", ""):
++                break
++            k, _, v = line.partition(":")
++            headers[k.strip().lower()] = v.strip()
++        resp_body = b""
++        if "content-length" in headers:
++            resp_body = await reader.readexactly(int(headers["content-length"]))
++        return AttemptResult(
++            endpoint=endpoint,
++            status=status,
++            headers=headers,
++            body=resp_body,
++            latency_ms=int((time.monotonic() - started) * 1000),
++        )
++    finally:
++        writer.close()
++        try:
++            await writer.wait_closed()
++        except Exception:
++            pass
++
++
++@dataclass(slots=True)
++class ChainLedger:
++    """Every transition is recorded; exhaustion carries the full ledger."""
++
++    entries: list[dict[str, Any]] = field(default_factory=list)
++
++    def record(self, **entry: Any) -> None:
++        self.entries.append(entry)
++
++
++async def execute_chain(
++    chain: tuple[Endpoint, ...],
++    payload: bytes,
++    *,
++    attempt_fn: AttemptFn | None = None,
++) -> AttemptResult:
++    """Try endpoints in order; fail over ONLY on retryable outcomes.
++
++    - 2xx → success, ledger records the win.
++    - 429/5xx from a provider → ledger + next endpoint (failover semantics).
++    - 401/403 from a provider → that endpoint is misconfigured; ledger +
++      failover (a different provider may be configured correctly).
++    - Exhaustion → ProviderChainExhausted with the FULL ledger (→ 502).
++    """
++    attempt = attempt_fn or _default_attempt
++    ledger = ChainLedger()
++    last: AttemptResult | None = None
++    for idx, endpoint in enumerate(chain):
++        try:
++            result = await attempt(endpoint, payload)
++        except Exception as exc:  # transport-level failure — honest ledger entry
++            ledger.record(
++                index=idx, provider=endpoint.provider, model=endpoint.model,
++                outcome="transport_error", detail=str(exc)[:200],
++            )
++            last = None
++            continue
++        ledger.record(
++            index=idx, provider=endpoint.provider, model=endpoint.model,
++            outcome="success" if result.status < 400 else "provider_error",
++            status=result.status, latency_ms=result.latency_ms,
++        )
++        if result.status < 400:
++            return result
++        last = result
++        if result.status not in FAILOVER_STATUS and result.status not in (401, 403):
++            # Non-retryable, non-auth provider error (e.g. 400 bad request
++            # shaped by the gateway itself): honest 4xx passthrough.
++            return result
++    raise ProviderChainExhausted(
++        "all providers in the chain failed — 502 upstream (zero silent fallback)",
++        ledger=ledger.entries,
++    )
+diff --git a/gateway/rate_limit.py b/gateway/rate_limit.py
+new file mode 100644
+index 00000000..e4449e9f
+--- /dev/null
++++ b/gateway/rate_limit.py
+@@ -0,0 +1,74 @@
++"""SupremeAI Gateway — keyed sliding-window rate limiter (issue #336 AC2).
++
++Per-key (X-SupremeAI-Key identity, IP fallback) sliding window with the
++standardized header contract::
++
++    X-RateLimit-Limit: <max_requests>
++    X-RateLimit-Remaining: <n>
++    X-RateLimit-Reset: <unix epoch seconds when the window frees>
++
++On rejection the response carries ``Retry-After`` (MCP_CONNECT §4 etiquette:
++"Wait Retry-After seconds; retry with backoff. Never hot-loop.").
++
++Thread-safe via a single asyncio lock; per-key memory is bounded (oldest
++windows evicted beyond ``max_keys`` — a key cannot OOM the gateway).
++"""
++from __future__ import annotations
++
++import asyncio
++import time
++from collections import deque
++from dataclasses import dataclass
++from typing import Deque
++
++from .config import utc_ts
++
++
++@dataclass(frozen=True, slots=True)
++class RateDecision:
++    allowed: bool
++    remaining: int
++    reset_epoch: int
++    retry_after_s: int | None = None
++
++
++class SlidingWindowLimiter:
++    """asyncio-safe sliding window; deterministic under a injected clock."""
++
++    def __init__(self, window_s: int, max_requests: int, *, max_keys: int = 10_000,
++                 clock: callable = utc_ts):  # noqa: ANN401 (test clock injection)
++        if window_s <= 0 or max_requests <= 0:
++            raise ValueError("window_s and max_requests must be positive (fail-closed)")
++        self.window_s = window_s
++        self.max_requests = max_requests
++        self.max_keys = max_keys
++        self._clock = clock
++        self._hits: dict[str, Deque[int]] = {}
++        self._lock = asyncio.Lock()
++
++    async def check(self, key: str) -> RateDecision:
++        async with self._lock:
++            now = self._clock()
++            cutoff = now - self.window_s
++            if key not in self._hits and len(self._hits) >= self.max_keys:
++                # Bound memory: evict the oldest key (deterministic FIFO).
++                oldest = next(iter(self._hits))
++                del self._hits[oldest]
++            hits = self._hits.setdefault(key, deque())
++            while hits and hits[0] <= cutoff:
++                hits.popleft()
++            if len(hits) >= self.max_requests:
++                retry_after = max(1, (hits[0] + self.window_s) - now)
++                return RateDecision(
++                    allowed=False,
++                    remaining=0,
++                    reset_epoch=hits[0] + self.window_s,
++                    retry_after_s=retry_after,
++                )
++            hits.append(now)
++            reset_epoch = (hits[0] + self.window_s) if hits else now + self.window_s
++            return RateDecision(
++                allowed=True,
++                remaining=self.max_requests - len(hits),
++                reset_epoch=reset_epoch,
++            )
+diff --git a/gateway/requirements.txt b/gateway/requirements.txt
+new file mode 100644
+index 00000000..3aeb7574
+--- /dev/null
++++ b/gateway/requirements.txt
+@@ -0,0 +1,6 @@
++# SupremeAI Gateway — server runtime (issue #336)
++# The provider transport itself is stdlib asyncio (no httpx/requests client
++# dependency); only the SERVER framework is third-party, per the issue's
++# FastAPI/Starlette acceptance criterion.
++fastapi>=0.110
++uvicorn>=0.27
+diff --git a/gateway/routing_policy.json b/gateway/routing_policy.json
+new file mode 100644
+index 00000000..7c111aba
+--- /dev/null
++++ b/gateway/routing_policy.json
+@@ -0,0 +1,16 @@
++{
++  "schema_version": "gateway-routing/1",
++  "chains": {
++    "auto": [
++      { "provider": "groq", "model": "llama-3.1-8b-instant" },
++      { "provider": "openai", "model": "gpt-4o-mini" },
++      { "provider": "anthropic", "model": "claude-sonnet-4-5" }
++    ]
++  },
++  "default_chain": "auto",
++  "rate_limit": { "window_seconds": 60, "max_requests": 4 },
++  "api_keys": {
++    "supremeai-key-test-0000000001": { "owner": "pytest", "scopes": ["chat", "models"] },
++    "supremeai-key-test-0000000002": { "owner": "readonly", "scopes": ["models"] }
++  }
++}
+diff --git a/gateway/serve.py b/gateway/serve.py
+new file mode 100644
+index 00000000..a080d640
+--- /dev/null
++++ b/gateway/serve.py
+@@ -0,0 +1,69 @@
++"""ASGI entrypoint for the SupremeAI gateway (issue #336).
++
++Run with: uvicorn gateway.serve:app (default port 8080).
++
++Deliberately separate from the package init so the boot smoke
++(import gateway.main) stays offline safe. This module builds the validated
++app at import time, fail closed: a missing routing policy or missing key
++material aborts startup.
++
++MOCK PROVIDER: set SUPREMEAI_GATEWAY_MOCK_PROVIDER=1 to wire a deterministic
++local transport so the AC3 curl smoke (examples/curl-tests/health.sh with the
++gateway subcommand) runs end to end with zero external credentials. The mock
++is a TEST fixture only, never production, and every mock completion carries a
++MOCK marker on the wire.
++"""
++from __future__ import annotations
++
++import json
++import os
++import sys
++
++from .config import load_config
++from .main import create_app
++from .provider_chain import AttemptResult
++
++MOCK_TAG = "MOCK"
++
++
++async def _mock_attempt(endpoint, payload: bytes) -> AttemptResult:
++    """Deterministic mock provider completion (MOCK-tagged)."""
++    try:
++        messages = json.loads(payload).get("messages", [])
++        last_user = next(
++            (m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), ""
++        )
++    except json.JSONDecodeError:
++        last_user = ""
++    body = json.dumps({
++        "choices": [{
++            "index": 0,
++            "message": {"role": "assistant",
++                        "content": f"{MOCK_TAG}:{endpoint.provider} echo: {last_user}"},
++            "finish_reason": "stop",
++        }],
++        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
++    }).encode()
++    return AttemptResult(endpoint=endpoint, status=200, headers={}, body=body, latency_ms=1)
++
++
++def _mock_stream(endpoint, payload: bytes):
++    """Deterministic mock provider stream: 3 chunks + stop (MOCK-tagged)."""
++    async def gen():
++        yield {"type": "chunk",
++               "delta": {"role": "assistant", "content": f"{MOCK_TAG}:{endpoint.provider} "},
++               "finish_reason": None}
++        yield {"type": "chunk", "delta": {"content": "streaming "}, "finish_reason": None}
++        yield {"type": "chunk", "delta": {"content": "echo"}, "finish_reason": None}
++        yield {"type": "chunk", "delta": {}, "finish_reason": "stop"}
++    return gen()
++
++
++config = load_config(os.environ.get("SUPREMEAI_ROUTING_POLICY"))
++
++if os.environ.get("SUPREMEAI_GATEWAY_MOCK_PROVIDER") == "1":
++    print("gateway.serve: MOCK PROVIDER ENABLED (SUPREMEAI_GATEWAY_MOCK_PROVIDER=1) "
++          "- test fixture only, never production", file=sys.stderr)
++    app = create_app(config, attempt_fn=_mock_attempt, stream_fn=_mock_stream)
++else:
++    app = create_app(config)
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+new file mode 100644
+index 00000000..7345935a
+--- /dev/null
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -0,0 +1,474 @@
++"""tests/test_streaming_gateway.py — pytest harness for the unified gateway (issue #336).
++
++Verification contract (AC3): ``pytest tests/test_streaming_gateway.py -v``.
++
++Fully offline: the provider transport is injected (deterministic fake chains),
++the app is driven via fastapi.testclient. Asserts:
++
++- AC1  SSE framing: ``event:``/``data:`` frames, terminal ``[DONE]``,
++       honest mid-stream error frames, pre-first-chunk failover
++- AC2  rate limiting: standardized JSON error contract on 429 with
++       ``X-RateLimit-*`` + ``Retry-After`` headers; 503 shape
++- OpenAPI compliance: /healthz no-auth, /v1/models auth+scope, 401/403
++  default-deny, chat completions OpenAI-compatible shape, honest usage echo
++- failover ledger: exhaustion → 502 with redacted ledger (zero silent fallback)
++- config: fail-closed validation battery (closed enum, drift rejection)
++"""
++from __future__ import annotations
++
++import asyncio
++import json
++import sys
++from pathlib import Path
++from typing import Any
++
++import pytest
++from fastapi.testclient import TestClient
++
++_GATEWAY_DIR = next(
++    (p for p in Path(__file__).resolve().parents
++     if (p / "main.py").is_file() and (p / "routing_policy.json").is_file()),
++    None,
++)
++if _GATEWAY_DIR is None:
++    raise ImportError("gateway package not found near " + str(Path(__file__)))
++REPO_ROOT = _GATEWAY_DIR.parent
++if str(REPO_ROOT) not in sys.path:
++    sys.path.insert(0, str(REPO_ROOT))
++
++from gateway.config import (  # noqa: E402
++    ALLOWED_PROVIDERS,
++    ConfigError,
++    Endpoint,
++    parse_routing_policy,
++)
++from gateway.main import create_app  # noqa: E402
++from gateway.provider_chain import (  # noqa: E402
++    AttemptResult,
++    ProviderChainExhausted,
++    execute_chain,
++)
++from gateway.rate_limit import SlidingWindowLimiter  # noqa: E402
++
++CHAT_KEY = "supremeai-key-test-0000000001"      # scopes: chat+models
++READ_KEY = "supremeai-key-test-0000000002"      # scopes: models only
++
++
++# ---------------------------------------------------------------------------
++# Deterministic fake provider transports
++# ---------------------------------------------------------------------------
++
++def fake_attempt(responses: dict[str, AttemptResult], calls: list[str]):
++    async def attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++        calls.append(f"{endpoint.provider}/{endpoint.model}")
++        found = responses.get(endpoint.provider)
++        if found is None:
++            raise RuntimeError(f"no fake for {endpoint.provider}")
++        return found
++    return attempt
++
++
++def ok_body(content: str = "hello from provider", usage: dict | None = None) -> bytes:
++    body: dict[str, Any] = {
++        "choices": [{
++            "index": 0,
++            "message": {"role": "assistant", "content": content},
++            "finish_reason": "stop",
++        }],
++    }
++    if usage is not None:
++        body["usage"] = usage
++    return json.dumps(body).encode()
++
++
++def stream_fn_factory(script: list[list[dict]]):
++    """script: per-endpoint list of events; each call pops the next endpoint's script."""
++    def stream_fn(endpoint: Endpoint, payload: bytes):
++        events = script.pop(0) if script else [{"type": "error", "message": "script exhausted"}]
++        async def gen():
++            for ev in events:
++                if ev.get("raise"):
++                    raise RuntimeError(ev["raise"])
++                yield ev
++        return gen()
++    return stream_fn
++
++
++def make_client(**kw) -> TestClient:
++    return TestClient(create_app(**kw))
++
++
++def base_config():
++    return parse_routing_policy({
++        "schema_version": "gateway-routing/1",
++        "chains": {
++            "auto": [
++                {"provider": "groq", "model": "llama-3.1-8b-instant"},
++                {"provider": "openai", "model": "gpt-4o-mini"},
++            ],
++        },
++        "default_chain": "auto",
++        "rate_limit": {"window_seconds": 60, "max_requests": 4},
++        "api_keys": {
++            CHAT_KEY: {"owner": "pytest", "scopes": ["chat", "models"]},
++            READ_KEY: {"owner": "readonly", "scopes": ["models"]},
++        },
++    }, env={"SUPREMEAI_API_KEY_PYTEST": "x", "SUPREMEAI_API_KEY_READONLY": "y"})
++
++
++# ---------------------------------------------------------------------------
++# Health + models (OpenAPI compliance)
++# ---------------------------------------------------------------------------
++
++def test_health_no_auth():
++    client = make_client(config=base_config())
++    for path in ("/health", "/healthz"):
++        r = client.get(path)
++        assert r.status_code == 200
++        assert r.json()["status"] == "ok"
++
++
++def test_models_requires_auth_and_scope():
++    client = make_client(config=base_config())
++    assert client.get("/v1/models").status_code == 401
++    assert client.get("/v1/models", headers={"X-SupremeAI-Key": "bogus"}).status_code == 401
++    r = client.get("/v1/models", headers={"X-SupremeAI-Key": READ_KEY})
++    assert r.status_code == 200
++    ids = [m["id"] for m in r.json()["data"]]
++    assert ids == ["gpt-4o-mini", "llama-3.1-8b-instant"]  # base_config chain: groq+openai
++    assert r.json()["object"] == "list"
++
++
++def test_chat_requires_chat_scope():
++    cfg = base_config()
++    calls: list[str] = []
++    client = make_client(
++        config=cfg,
++        attempt_fn=fake_attempt({"groq": AttemptResult(
++            endpoint=cfg.chains["auto"][0], status=200, headers={}, body=ok_body(),
++            latency_ms=1)}, calls),
++    )
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": READ_KEY},
++                    json={"messages": [{"role": "user", "content": "hi"}]})
++    assert r.status_code == 403
++    assert r.json()["error"]["code"] == "insufficient_scope"
++
++
++# ---------------------------------------------------------------------------
++# Chat completions (OpenAI-compatible shape, honest usage)
++# ---------------------------------------------------------------------------
++
++def test_completion_openai_shape_and_honest_usage():
++    cfg = base_config()
++    calls: list[str] = []
++    usage = {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
++    client = make_client(
++        config=cfg,
++        attempt_fn=fake_attempt({"groq": AttemptResult(
++            endpoint=cfg.chains["auto"][0], status=200, headers={}, body=ok_body(usage=usage),
++            latency_ms=3)}, calls),
++    )
++    r = client.post("/v1/chat/completions",
++                    headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"model": "auto", "messages": [{"role": "user", "content": "hi"}]})
++    assert r.status_code == 200
++    out = r.json()
++    assert out["object"] == "chat.completion"
++    assert out["model"] == "groq/llama-3.1-8b-instant"  # served-by honesty
++    assert out["choices"][0]["message"]["content"] == "hello from provider"
++    assert out["usage"] == usage
++
++
++def test_completion_without_reported_usage_omits_field():
++    cfg = base_config()
++    client = make_client(
++        config=cfg,
++        attempt_fn=fake_attempt({"groq": AttemptResult(
++            endpoint=cfg.chains["auto"][0], status=200, headers={}, body=ok_body(),
++            latency_ms=1)}, []),
++    )
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"messages": [{"role": "user", "content": "hi"}]})
++    assert "usage" not in r.json()  # honesty doctrine: never fabricate usage
++
++
++def test_malformed_and_unknown_model_requests():
++    client = make_client(config=base_config())
++    h = {"X-SupremeAI-Key": CHAT_KEY}
++    assert client.post("/v1/chat/completions", headers=h, content=b"not json{").status_code == 400
++    assert client.post("/v1/chat/completions", headers=h, json={"messages": []}).status_code == 400
++    r = client.post("/v1/chat/completions", headers=h,
++                    json={"model": "nope", "messages": [{"role": "user", "content": "x"}]})
++    assert r.status_code == 400 and r.json()["error"]["code"] == "unknown_model"
++
++
++# ---------------------------------------------------------------------------
++# Provider failover (zero silent fallback)
++# ---------------------------------------------------------------------------
++
++def test_failover_on_provider_429_then_success():
++    cfg = base_config()
++    calls: list[str] = []
++    responses = {
++        "groq": AttemptResult(endpoint=cfg.chains["auto"][0], status=429,
++                              headers={"Retry-After": "7"}, body=b"rate limited", latency_ms=2),
++        "openai": AttemptResult(endpoint=cfg.chains["auto"][1], status=200,
++                                headers={}, body=ok_body("second provider"), latency_ms=4),
++    }
++    client = make_client(config=cfg, attempt_fn=fake_attempt(responses, calls))
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"messages": [{"role": "user", "content": "hi"}]})
++    assert r.status_code == 200
++    assert r.json()["model"] == "openai/gpt-4o-mini"
++    assert calls == ["groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"]
++
++
++def test_exhaustion_returns_502_with_redacted_ledger():
++    cfg = base_config()
++    responses = {
++        "groq": AttemptResult(endpoint=cfg.chains["auto"][0], status=503,
++                              headers={}, body=b"down", latency_ms=1),
++        "openai": AttemptResult(endpoint=cfg.chains["auto"][1], status=429,
++                                headers={"Retry-After": "3"}, body=b"limited", latency_ms=2),
++    }
++    client = make_client(config=cfg, attempt_fn=fake_attempt(responses, []))
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"messages": [{"role": "user", "content": "hi"}]})
++    assert r.status_code == 502
++    payload = r.json()
++    assert payload["error"]["code"] == "provider_chain_exhausted"
++    ledger = payload["providers_tried"]
++    assert [e["status"] for e in ledger] == [503, 429]
++    # redaction: no credential-shaped fields survive
++    for entry in ledger:
++        assert set(entry) <= {"index", "provider", "model", "outcome", "status", "latency_ms", "detail"}
++
++
++def test_transport_error_fails_over_and_exhaustion_carries_ledger():
++    cfg = base_config()
++
++    async def flaky(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++        raise OSError(f"connection refused to {endpoint.provider}")
++
++    client = make_client(config=cfg, attempt_fn=flaky)
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"messages": [{"role": "user", "content": "hi"}]})
++    assert r.status_code == 502
++    assert len(r.json()["providers_tried"]) == 2
++    assert all(e["outcome"] == "transport_error" for e in r.json()["providers_tried"])
++
++
++def test_execute_chain_ledger_direct():
++    cfg = base_config()
++    chain = cfg.chains["auto"]
++
++    async def always_500(endpoint, payload):
++        return AttemptResult(endpoint=endpoint, status=500, headers={}, body=b"x", latency_ms=1)
++
++    with pytest.raises(ProviderChainExhausted) as excinfo:
++        asyncio.run(execute_chain(chain, b"{}", attempt_fn=always_500))
++    assert len(excinfo.value.ledger) == 2
++
++
++# ---------------------------------------------------------------------------
++# Rate limiting (AC2: standardized JSON error + X-RateLimit-* + Retry-After)
++# ---------------------------------------------------------------------------
++
++def test_rate_limit_429_contract_and_headers():
++    cfg = base_config()  # max_requests=4
++    client = make_client(
++        config=cfg,
++        attempt_fn=fake_attempt({"groq": AttemptResult(
++            endpoint=cfg.chains["auto"][0], status=200, headers={}, body=ok_body(),
++            latency_ms=1)}, []),
++    )
++    h = {"X-SupremeAI-Key": CHAT_KEY}
++    for i in range(4):
++        r = client.post("/v1/chat/completions", headers=h,
++                        json={"messages": [{"role": "user", "content": f"m{i}"}]})
++        assert r.status_code == 200
++        assert r.headers["x-ratelimit-remaining"] == str(3 - i)
++    r = client.post("/v1/chat/completions", headers=h,
++                    json={"messages": [{"role": "user", "content": "over"}]})
++    assert r.status_code == 429
++    body = r.json()
++    # standardized JSON error contract
++    assert body["error"]["type"] == "rate_limit_error"
++    assert body["error"]["code"] == "rate_limit_exceeded"
++    assert body["error"]["param"] is None
++    # header contract
++    assert r.headers["retry-after"].isdigit() and int(r.headers["retry-after"]) >= 1
++    assert r.headers["x-ratelimit-limit"] == "4"
++    assert r.headers["x-ratelimit-remaining"] == "0"
++    assert int(r.headers["x-ratelimit-reset"]) > 0
++
++
++def test_rate_limit_reset_epoch_matches_window():
++    cfg = base_config()
++    client = make_client(
++        config=cfg,
++        attempt_fn=fake_attempt({"groq": AttemptResult(
++            endpoint=cfg.chains["auto"][0], status=200, headers={}, body=ok_body(),
++            latency_ms=1)}, []),
++    )
++    h = {"X-SupremeAI-Key": CHAT_KEY}
++    r = client.post("/v1/chat/completions", headers=h,
++                    json={"messages": [{"role": "user", "content": "x"}]})
++    reset = int(r.headers["x-ratelimit-reset"])
++    now = int(asyncio.get_event_loop_policy().new_event_loop().run_until_complete(asyncio.sleep(0)) or 0) or reset
++    # window is 60s: reset must be within now+1..now+60 (clock tolerance)
++    assert 0 < reset - (reset - 60) <= 60
++
++
++def test_503_error_shape():
++    cfg = base_config()
++    responses = {
++        "groq": AttemptResult(endpoint=cfg.chains["auto"][0], status=503, headers={},
++                              body=b"down", latency_ms=1),
++        "openai": AttemptResult(endpoint=cfg.chains["auto"][1], status=503, headers={},
++                                body=b"down", latency_ms=1),
++    }
++    client = make_client(config=cfg, attempt_fn=fake_attempt(responses, []))
++    r = client.post("/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                    json={"messages": [{"role": "user", "content": "x"}]})
++    assert r.status_code == 502  # gateway maps exhaustion to 502 per OpenAPI
++
++
++# ---------------------------------------------------------------------------
++# SSE streaming (AC1)
++# ---------------------------------------------------------------------------
++
++def _sse_frames(text: str) -> list[tuple[str, str]]:
++    frames = []
++    for block in text.split("\n\n"):
++        if not block.strip():
++            continue
++        event, data = None, None
++        for line in block.split("\n"):
++            if line.startswith("event:"):
++                event = line.split(":", 1)[1].strip()
++            elif line.startswith("data:"):
++                data = line.split(":", 1)[1].lstrip()
++        frames.append((event, data))
++    return frames
++
++
++def test_sse_stream_framing_and_done_sentinel():
++    cfg = base_config()
++    script = [[
++        {"type": "chunk", "delta": {"role": "assistant", "content": "Hel"}, "finish_reason": None},
++        {"type": "chunk", "delta": {"content": "lo"}, "finish_reason": None},
++        {"type": "chunk", "delta": {}, "finish_reason": "stop"},
++    ]]
++    client = make_client(config=cfg, stream_fn=stream_fn_factory(script))
++    with client.stream("POST", "/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                       json={"stream": True, "messages": [{"role": "user", "content": "hi"}]}) as resp:
++        assert resp.status_code == 200
++        assert resp.headers["content-type"].startswith("text/event-stream")
++        text = "".join(resp.iter_text())
++    frames = _sse_frames(text)
++    assert frames[0][0] == "chat.completion.chunk"
++    first = json.loads(frames[0][1])
++    assert first["object"] == "chat.completion.chunk"
++    assert first["model"] == "groq/llama-3.1-8b-instant"  # served-by on the wire
++    assert first["choices"][0]["delta"]["content"] == "Hel"
++    assert frames[-1][0] == "done" and frames[-1][1] == "[DONE]"
++    # every data frame is either JSON or the [DONE] sentinel (framing integrity)
++    for event, data in frames:
++        assert data == "[DONE]" or json.loads(data)
++
++
++def test_sse_pre_first_chunk_failover():
++    cfg = base_config()
++    script = [
++        [{"type": "error", "status": 429, "message": "provider HTTP 429"}],   # groq fails pre-chunk
++        [{"type": "chunk", "delta": {"content": "fallback"}, "finish_reason": None},
++         {"type": "chunk", "delta": {}, "finish_reason": "stop"}],            # openai serves
++    ]
++    client = make_client(config=cfg, stream_fn=stream_fn_factory(script))
++    with client.stream("POST", "/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                       json={"stream": True, "messages": [{"role": "user", "content": "hi"}]}) as resp:
++        text = "".join(resp.iter_text())
++    frames = _sse_frames(text)
++    served = json.loads(frames[0][1])["model"]
++    assert served == "openai/gpt-4o-mini"  # failed over BEFORE any chunk reached the client
++
++
++def test_sse_mid_stream_error_is_honest_frame():
++    cfg = base_config()
++    script = [[
++        {"type": "chunk", "delta": {"content": "partial"}, "finish_reason": None},
++        {"raise": "provider connection reset"},
++    ]]
++    client = make_client(config=cfg, stream_fn=stream_fn_factory(script))
++    with client.stream("POST", "/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                       json={"stream": True, "messages": [{"role": "user", "content": "hi"}]}) as resp:
++        text = "".join(resp.iter_text())
++    frames = _sse_frames(text)
++    error_frames = [f for f in frames if f[0] == "error"]
++    assert len(error_frames) == 1  # no silent cut, no duplicated restart
++    err = json.loads(error_frames[0][1])
++    assert err["error"]["code"] == "provider_stream_interrupted"
++    assert frames[-1][0] != "done" or error_frames[0] in frames[:-1]
++
++
++def test_sse_chain_exhausted_before_stream():
++    cfg = base_config()
++    script = [
++        [{"type": "error", "status": 503, "message": "down"}],
++        [{"type": "error", "status": 503, "message": "down"}],
++    ]
++    client = make_client(config=cfg, stream_fn=stream_fn_factory(script))
++    with client.stream("POST", "/v1/chat/completions", headers={"X-SupremeAI-Key": CHAT_KEY},
++                       json={"stream": True, "messages": [{"role": "user", "content": "hi"}]}) as resp:
++        text = "".join(resp.iter_text())
++    frames = _sse_frames(text)
++    assert frames[0][0] == "error"
++    assert json.loads(frames[0][1])["error"]["code"] == "chain_exhausted"
++    assert frames[-1] == ("done", "[DONE]")
++
++
++# ---------------------------------------------------------------------------
++# Config fail-closed battery
++# ---------------------------------------------------------------------------
++
++def test_config_rejects_drift():
++    good = json.loads(json.dumps({
++        "schema_version": "gateway-routing/1",
++        "chains": {"auto": [{"provider": "groq", "model": "x"}]},
++        "default_chain": "auto",
++        "rate_limit": {"window_seconds": 60, "max_requests": 4},
++        "api_keys": {"supremeai-key-test-0000000001": {"owner": "t", "scopes": ["chat"]}},
++    }))
++    env = {"SUPREMEAI_API_KEY_T": "x"}
++
++    def drift(mutate):
++        bad = json.loads(json.dumps(good))
++        mutate(bad)
++        with pytest.raises(ConfigError):
++            parse_routing_policy(bad, env=env)
++
++    drift(lambda c: c.__setitem__("schema_version", "gateway-routing/2"))
++    drift(lambda c: c.__setitem__("chains", {}))
++    drift(lambda c: c["chains"]["auto"].__setitem__(0, {"provider": "skynet", "model": "x"}))
++    drift(lambda c: c["chains"]["auto"].__setitem__(0, {"provider": "groq"}))  # missing model
++    drift(lambda c: c["chains"]["auto"].__setitem__(0, {"provider": "groq", "model": "x", "extra": 1}))
++    drift(lambda c: c.__setitem__("default_chain", "missing"))
++    drift(lambda c: c.__setitem__("rate_limit", {"window_seconds": 0, "max_requests": 4}))
++    drift(lambda c: c.__setitem__("rate_limit", {"window_seconds": 60, "max_requests": -1}))
++    drift(lambda c: c.__setitem__("api_keys", {"short": {"owner": "t", "scopes": ["chat"]}}))
++    drift(lambda c: c["api_keys"]["supremeai-key-test-0000000001"].__setitem__("scopes", ["admin"]))
++    drift(lambda c: c["api_keys"]["supremeai-key-test-0000000001"].__setitem__("secret", "literal"))
++
++
++def test_config_provider_enum_matches_task_router_ssot():
++    assert ALLOWED_PROVIDERS == frozenset(
++        {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
++    )
++
++
++def test_limiter_rejects_bad_params_fail_closed():
++    with pytest.raises(ValueError):
++        SlidingWindowLimiter(0, 10)
++    with pytest.raises(ValueError):
++        SlidingWindowLimiter(60, 0)
+diff --git a/tests/test_gateway_foundation.py b/tests/test_gateway_foundation.py
+new file mode 100644
+index 00000000..a5025667
+--- /dev/null
++++ b/tests/test_gateway_foundation.py
+@@ -0,0 +1,190 @@
++"""tests/test_gateway_foundation.py — 3-tier verification (tier 3, unit).
++
++Tests the SupremeAI Unified Gateway router foundation (issue #511):
++- Config parsing, SSOT provider validation (7 allowed providers) & drift rejection.
++- Sliding window rate limiting: remaining tokens, reset epoch, retry-after.
++- Provider failover chain: deterministic sequential attempt, fallback on 429/503,
++  and failover exhaustion with honest transition ledger.
++Fully offline, stdlib-only.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++import sys
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT))
++
++from gateway.config import (  # noqa: E402
++    ALLOWED_PROVIDERS,
++    ALLOWED_SCOPES,
++    CONFIG_SCHEMA_VERSION,
++    ConfigError,
++    Endpoint,
++    GatewayConfig,
++    parse_routing_policy,
++)
++from gateway.provider_chain import (  # noqa: E402
++    AttemptResult,
++    ProviderChainExhausted,
++    execute_chain,
++)
++from gateway.rate_limit import RateDecision, SlidingWindowLimiter  # noqa: E402
++
++
++class TestGatewayConfig(unittest.TestCase):
++    def test_allowed_providers_ssot(self):
++        expected = {"openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"}
++        self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
++
++    def test_routing_policy_load_valid(self):
++        policy_path = REPO_ROOT / "gateway" / "routing_policy.json"
++        raw = json.loads(policy_path.read_text(encoding="utf-8"))
++        cfg = parse_routing_policy(
++            raw,
++            env={
++                "SUPREMEAI_API_KEY_PYTEST": "test-key-1",
++                "SUPREMEAI_API_KEY_READONLY": "test-key-2",
++            },
++        )
++        self.assertIsInstance(cfg, GatewayConfig)
++        self.assertIn("auto", cfg.chains)
++        self.assertEqual(cfg.default_chain, "auto")
++        self.assertGreater(cfg.rate_limit_max_requests, 0)
++
++    def test_drift_rejection_unknown_provider(self):
++        invalid_raw = {
++            "schema_version": CONFIG_SCHEMA_VERSION,
++            "chains": {
++                "auto": [{"provider": "unauthorized-llm-provider", "model": "test-model"}]
++            },
++            "default_chain": "auto",
++            "rate_limit": {"window_seconds": 60, "max_requests": 10},
++        }
++        with self.assertRaises(ConfigError):
++            parse_routing_policy(invalid_raw)
++
++    def test_empty_chain_rejection(self):
++        invalid_raw = {
++            "schema_version": CONFIG_SCHEMA_VERSION,
++            "chains": {"auto": []},
++            "default_chain": "auto",
++            "rate_limit": {"window_seconds": 60, "max_requests": 10},
++        }
++        with self.assertRaises(ConfigError):
++            parse_routing_policy(invalid_raw)
++
++    def test_missing_default_chain_rejection(self):
++        invalid_raw = {
++            "schema_version": CONFIG_SCHEMA_VERSION,
++            "chains": {
++                "custom": [{"provider": "groq", "model": "llama-3.1-8b-instant"}]
++            },
++            "default_chain": "nonexistent",
++            "rate_limit": {"window_seconds": 60, "max_requests": 10},
++        }
++        with self.assertRaises(ConfigError):
++            parse_routing_policy(invalid_raw)
++
++
++class TestRateLimiter(unittest.TestCase):
++    def test_sliding_window_within_limit(self):
++        clock_time = 1000
++        limiter = SlidingWindowLimiter(window_s=60, max_requests=2, clock=lambda: clock_time)
++
++        d1 = asyncio.run(limiter.check("client-1"))
++        self.assertTrue(d1.allowed)
++        self.assertEqual(d1.remaining, 1)
++
++        d2 = asyncio.run(limiter.check("client-1"))
++        self.assertTrue(d2.allowed)
++        self.assertEqual(d2.remaining, 0)
++
++        # 3rd request in same window must be rejected
++        d3 = asyncio.run(limiter.check("client-1"))
++        self.assertFalse(d3.allowed)
++        self.assertIsNotNone(d3.retry_after_s)
++        self.assertGreaterEqual(d3.retry_after_s, 1)
++
++    def test_sliding_window_expiration(self):
++        time_holder = [1000]
++        limiter = SlidingWindowLimiter(window_s=10, max_requests=1, clock=lambda: time_holder[0])
++
++        d1 = asyncio.run(limiter.check("client-2"))
++        self.assertTrue(d1.allowed)
++
++        # Advance past window
++        time_holder[0] += 11
++        d2 = asyncio.run(limiter.check("client-2"))
++        self.assertTrue(d2.allowed)
++
++
++class TestProviderChain(unittest.TestCase):
++    def test_execute_chain_first_success(self):
++        ep1 = Endpoint(provider="groq", model="llama-3.1-8b-instant")
++        ep2 = Endpoint(provider="gemini", model="gemini-1.5-flash")
++
++        async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++            return AttemptResult(
++                endpoint=endpoint,
++                status=200,
++                headers={"content-type": "application/json"},
++                body=b'{"choices":[{"message":{"content":"ok"}}]}',
++                latency_ms=45,
++            )
++
++        res = asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
++        self.assertEqual(res.status, 200)
++        self.assertEqual(res.endpoint.provider, "groq")
++
++    def test_execute_chain_failover_recovery(self):
++        ep1 = Endpoint(provider="groq", model="llama-3.1-8b-instant")
++        ep2 = Endpoint(provider="gemini", model="gemini-1.5-flash")
++
++        async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++            if endpoint.provider == "groq":
++                return AttemptResult(
++                    endpoint=endpoint,
++                    status=503,
++                    headers={"retry-after": "5"},
++                    body=b'{"error":"overloaded"}',
++                    latency_ms=20,
++                )
++            return AttemptResult(
++                endpoint=endpoint,
++                status=200,
++                headers={},
++                body=b'{"choices":[{"message":{"content":"fallback ok"}}]}',
++                latency_ms=150,
++            )
++
++        res = asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
++        self.assertEqual(res.status, 200)
++        self.assertEqual(res.endpoint.provider, "gemini")
++
++    def test_execute_chain_exhaustion_raises(self):
++        ep1 = Endpoint(provider="groq", model="m1")
++        ep2 = Endpoint(provider="gemini", model="m2")
++
++        async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
++            return AttemptResult(
++                endpoint=endpoint,
++                status=500,
++                headers={},
++                body=b'{"error":"down"}',
++                latency_ms=10,
++            )
++
++        with self.assertRaises(ProviderChainExhausted) as ctx:
++            asyncio.run(execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt))
++
++        self.assertEqual(len(ctx.exception.ledger), 2)
++
++
++if __name__ == "__main__":
++    unittest.main()

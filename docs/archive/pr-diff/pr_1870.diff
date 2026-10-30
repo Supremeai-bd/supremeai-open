@@ -1,0 +1,1008 @@
+diff --git a/gateway/middleware/anti_hacking.py b/gateway/middleware/anti_hacking.py
+index a77cc9a8..74fabb35 100644
+--- a/gateway/middleware/anti_hacking.py
++++ b/gateway/middleware/anti_hacking.py
+@@ -1,160 +1,4 @@
+-"""Anti-Hacking Agent — context-aware checks + JIT OTP routing (Admin API only).
+-
+-Alert-only by default (ENFORCE_ANTI_HACKING=false): logs + notifies on context
+-mismatch but never blocks. Flip the env var to enforce once false-positive
+-rate from VPNs/CGNAT/mobile-switching has been observed and is acceptable.
+-
+-বাংলা মন্তব্য: অ্যাডমিন সিকিউরিটি ওটিপি মিডলওয়্যার। এটি ইউজারের আইপি, কান্ট্রি ও ডিভাইস ফিঙ্গারপ্রিন্ট ভেরিফিকেশন চেক করে।
+-"""
+-
++"""Canonical re-export from core.middleware.anti_hacking (Single Source of Truth)."""
+ from __future__ import annotations
+ 
+-import json
+-import os
+-import secrets
+-
+-from fastapi import Request
+-from fastapi.responses import JSONResponse
+-from starlette.middleware.base import BaseHTTPMiddleware
+-
+-from core.cache.redis_manager import redis_manager
+-from core.config import settings
+-from core.otp_router import send_otp
+-
+-_CONTEXT_KEY_PREFIX = "security:last_context:"
+-_CONTEXT_TTL = int(os.getenv("SECURITY_CONTEXT_TTL") or "86400")
+-_OTP_COOLDOWN_PREFIX = "security:otp_cooldown:"
+-_CAUTION_LOG_PREFIX = "security:caution_log:"
+-_CAUTION_LOG_TTL = int(os.getenv("SECURITY_CAUTION_LOG_TTL") or "86400")
+-
+-
+-def _octet3(ip: str) -> str:
+-    """First 3 octets of an IPv4 address (e.g. '1.2.3.4' -> '1.2.3'). Falls back to
+-    the full value for IPv6/unknown so those never spuriously match each other.
+-
+-    বাংলা: IPv4-এর প্রথম ৩টি অক্টেট বের করে — CGNAT/mobile handoff-এ সাধারণত শেষ অক্টেটই বদলায়।
+-    """
+-    parts = ip.split(".")
+-    return ".".join(parts[:3]) if len(parts) >= 3 else ip
+-
+-
+-class AntiHackingContextMiddleware(BaseHTTPMiddleware):
+-    async def dispatch(self, request: Request, call_next):
+-        from utils.client_ip import get_client_ip
+-
+-        signal = {
+-            "ip": get_client_ip(request),
+-            "country": request.headers.get("cf-ipcountry", "unknown"),
+-            "ua": request.headers.get("user-agent", "unknown"),
+-            "fingerprint": request.headers.get("x-device-fingerprint", "unknown"),
+-        }
+-        request.state.security_signal = signal
+-
+-        admin_id = getattr(getattr(request.state, "user", None), "get", lambda *_: None)("sub")
+-        if admin_id:
+-            if redis_manager and redis_manager.client:
+-                key = f"{_CONTEXT_KEY_PREFIX}{admin_id}"
+-                raw_last = await redis_manager.get_cache(key)
+-                last = json.loads(raw_last) if raw_last else None
+-
+-                mismatch = False
+-                caution = False
+-                if last:
+-                    mismatch = (
+-                        last.get("ip") != signal["ip"] or last.get("country") != signal["country"]
+-                    )
+-
+-                    fingerprint_match = (
+-                        last.get("fingerprint") not in (None, "unknown")
+-                        and signal["fingerprint"] not in (None, "unknown")
+-                        and last.get("fingerprint") == signal["fingerprint"]
+-                    )
+-
+-                    if mismatch:
+-                        same_ua = (
+-                            last.get("ua") not in (None, "unknown")
+-                            and last.get("ua") == signal["ua"]
+-                        )
+-                        same_subnet = bool(signal["ip"]) and _octet3(last.get("ip", "")) == _octet3(
+-                            signal["ip"]
+-                        )
+-                        # বাংলা মন্তব্য: একই ইউজার-এজেন্ট অথবা সাবনেট পাওয়া গেলে সেটিকে আংশিক ম্যাচ (Caution) হিসেবে ধরা হবে এবং OTP ট্রিগার হবে না।
+-                        if same_ua or same_subnet or fingerprint_match:
+-                            caution = True
+-                            mismatch = False
+-
+-                if caution:
+-                    from core.logging_config import logger as _logger
+-
+-                    _logger.info(
+-                        f"CAUTION: partial context match for admin {admin_id} (same_ua/subnet, no OTP fired): {signal} vs last {last}"
+-                    )
+-                    if redis_manager and redis_manager.client:
+-                        await redis_manager.client.lpush(
+-                            f"{_CAUTION_LOG_PREFIX}{admin_id}", json.dumps(signal)
+-                        )
+-                        await redis_manager.client.ltrim(f"{_CAUTION_LOG_PREFIX}{admin_id}", 0, 49)
+-                        await redis_manager.client.expire(
+-                            f"{_CAUTION_LOG_PREFIX}{admin_id}", _CAUTION_LOG_TTL
+-                        )
+-
+-                if mismatch:
+-                    cooldown_key = f"{_OTP_COOLDOWN_PREFIX}{admin_id}"
+-                    cooldown_active = False
+-                    if redis_manager and redis_manager.client:
+-                        acquired = await redis_manager.client.set(
+-                            cooldown_key, "1", nx=True, ex=settings.otp_cooldown_seconds
+-                        )
+-                        cooldown_active = not bool(acquired)
+-
+-                    if cooldown_active:
+-                        from core.logging_config import logger as _logger2
+-
+-                        _logger2.info(
+-                            f"OTP cooldown active for admin {admin_id} - suppressing duplicate send/notification."
+-                        )
+-                        request.state.security_otp_pending = True
+-                        if settings.enforce_anti_hacking:
+-                            return JSONResponse(
+-                                status_code=403,
+-                                content={
+-                                    "error": "context_mismatch",
+-                                    "detail": "OTP verification required — check your configured channel.",
+-                                },
+-                            )
+-                        await redis_manager.set_cache(
+-                            key, json.dumps(signal), ex_seconds=_CONTEXT_TTL
+-                        )
+-                        return await call_next(request)
+-
+-                    code = f"{secrets.randbelow(900000) + 100000}"
+-                    await send_otp(admin_id, code, signal)
+-                    request.state.security_otp_pending = True
+-
+-                    # বাংলা মন্তব্য: ওটিপি কোড যাচাইয়ের জন্য Redis-এ রাখা হচ্ছে
+-                    # (M13 P-B: TTL এখন config-চালিত — SECURITY_OTP_PENDING_TTL,
+-                    # ডিফল্ট 300s অপরিবর্তিত)।
+-                    await redis_manager.set_cache(
+-                        f"security:otp_pending:{admin_id}",
+-                        json.dumps({"code": code, "signal": signal}),
+-                        ex_seconds=settings.security_otp_pending_ttl,
+-                    )
+-
+-                    if settings.enforce_anti_hacking:
+-                        return JSONResponse(
+-                            status_code=403,
+-                            content={
+-                                "error": "context_mismatch",
+-                                "detail": "OTP verification required — check your configured channel.",
+-                            },
+-                        )
+-                    # alert-only: log and continue
+-                    from core.logging_config import logger
+-
+-                    logger.warning(
+-                        f"🔓 [ALERT-ONLY] Context mismatch for admin {admin_id}: {signal} vs last {last}"
+-                    )
+-
+-                await redis_manager.set_cache(key, json.dumps(signal), ex_seconds=_CONTEXT_TTL)
+-
+-        return await call_next(request)
++from core.middleware.anti_hacking import *  # noqa: F401, F403
+diff --git a/gateway/middleware/chaos_injector.py b/gateway/middleware/chaos_injector.py
+index 2bb6e2ea..6faae714 100644
+--- a/gateway/middleware/chaos_injector.py
++++ b/gateway/middleware/chaos_injector.py
+@@ -1,65 +1,4 @@
+-import asyncio
+-import os
+-import random
++"""Canonical re-export from core.middleware.chaos_injector (Single Source of Truth)."""
++from __future__ import annotations
+ 
+-from starlette.middleware.base import BaseHTTPMiddleware
+-from starlette.requests import Request
+-from starlette.responses import JSONResponse, Response
+-
+-from core.logging_config import logger
+-
+-# বাংলা মন্তব্য: ChaosInjectorMiddleware — LOCAL_CHAOS_MODE env var দিয়ে নিয়ন্ত্রিত।
+-# Production-এ সম্পূর্ণ নিষ্ক্রিয়। শুধুমাত্র local dev/test-এ random delay ও packet drop inject করে।
+-
+-
+-# DROP_THRESHOLD এর নিচে random() হলে packet drop হবে
+-_DROP_THRESHOLD = 0.15
+-# DELAY_THRESHOLD এর নিচে random() হলে delay inject হবে
+-_DELAY_THRESHOLD = 0.3
+-_DELAY_MIN = 0.5
+-_DELAY_MAX = 3.5
+-
+-
+-class ChaosInjectorMiddleware(BaseHTTPMiddleware):
+-    """
+-    Chaos Engineering Middleware — LOCAL_CHAOS_MODE=true হলে random delay ও packet drop inject করে।
+-    Production Safety: ENV=production হলে সম্পূর্ণ bypass।
+-    """
+-
+-    def __init__(self, app, **kwargs):
+-        super().__init__(app, **kwargs)
+-        # বাংলা মন্তব্য: LOCAL_CHAOS_MODE env var থেকে chaos_enabled নির্ধারণ করা হয়
+-        self.chaos_enabled = os.getenv("LOCAL_CHAOS_MODE", "false").lower() == "true"
+-
+-    async def dispatch(self, request: Request, call_next) -> Response:
+-        env = os.getenv("ENV", "local").lower()
+-        # Production safety switch — production is completely bypassed regardless of
+-        # LOCAL_CHAOS_MODE. self.chaos_enabled (explicit LOCAL_CHAOS_MODE=true opt-in) is
+-        # the only other gate needed: nothing in .github/workflows/ or render.yaml ever sets
+-        # that var, so no test/CI run is affected unless it deliberately opts in (as this
+-        # middleware's own unit tests do, to verify the injection logic itself). An earlier
+-        # blanket "pytest in sys.modules" / CI/GITHUB_ACTIONS bypass here broke exactly those
+-        # tests, in both local pytest runs and real GitHub Actions CI (GITHUB_ACTIONS=true is
+-        # always set there).
+-        if env == "production" or not self.chaos_enabled:
+-            return await call_next(request)
+-
+-        roll = random.random()  # — intentional non-crypto random for chaos
+-
+-        # packet drop — 504 Gateway Timeout
+-        if roll < _DROP_THRESHOLD:
+-            logger.warning(f"[CHAOS] Packet drop for {request.url.path}")
+-            return JSONResponse(status_code=504, content={"detail": "Chaos: packet dropped"})
+-
+-        # latency injection — random sleep
+-        if roll < _DELAY_THRESHOLD:
+-            delay = _DELAY_MIN + random.random() * (_DELAY_MAX - _DELAY_MIN)
+-            logger.warning(f"[CHAOS] Injecting {delay:.2f}s delay for {request.url.path}")
+-            await asyncio.sleep(delay)
+-            # packet drop after delay (values[1] < threshold triggers drop)
+-            if random.random() < _DROP_THRESHOLD:
+-                return JSONResponse(
+-                    status_code=504, content={"detail": "Chaos: packet dropped after delay"}
+-                )
+-
+-        return await call_next(request)
++from core.middleware.chaos_injector import *  # noqa: F401, F403
+diff --git a/gateway/middleware/cors_policy.py b/gateway/middleware/cors_policy.py
+index ea4d5180..cc57a3fc 100644
+--- a/gateway/middleware/cors_policy.py
++++ b/gateway/middleware/cors_policy.py
+@@ -1,177 +1,4 @@
+-"""SupremeAI 2.0 — Portal-ভিত্তিক CORS নীতি (pure functions, কোনো side-effect নেই)।
+-
+-বাংলা মন্তব্য: User API ও Admin API সম্পূর্ণ আলাদা ব্রাউজার-অরিজিন সেট ট্রাস্ট করে।
+-এই মডিউলটি সেই নীতিকে একটি জায়গায় কেন্দ্রীভূত করে যাতে:
+-  1. app_user.py / app_admin.py দুটোই একই সোর্স-অফ-ট্রুথ ব্যবহার করে;
+-  2. misconfigured env var (যেমন USER_CORS_ORIGINS-এ admin console origin) থাকলেও
+-     boot-টাইমে সেটি ছেঁকে ফেলা হয় — defense in depth;
+-  3. টেস্ট ফাইল (tests/test_app_isolation.py) কোনো FastAPI app বুট না করেই
+-     এবং ENV=production সিমুলেট না করেই নীতিটি যাচাই করতে পারে।
+-
+-কোনো FastAPI/pydantic import নেই — ইচ্ছাকৃতভাবে dependency-free রাখা হয়েছে।
+-"""
+-
++"""Canonical re-export from core.middleware.cors_policy (Single Source of Truth)."""
+ from __future__ import annotations
+ 
+-import os
+-from collections.abc import Iterable
+-
+-from core.config_parsers import parse_origin_list
+-
+-
+-def _vault_origin_env(env_var: str) -> str:
+-    """Vault-backed fallback for origin env vars (issues #1483/#1484/#1455).
+-
+-    বাংলা মন্তব্য: 12-factor ক্রম — প্রসেস env সবসময় আগে; সেখানে না থাকলে
+-    settings-এর Infisical vault cache থেকে পড়া হয়। Production deploy-গুলোতে
+-    CORS_ORIGINS/USER_CORS_ORIGINS/ADMIN_CORS_ORIGINS vault-এ আছে কিন্তু
+-    Render env-এ না থাকলে আগে এখানে খালি দেখাত → সব browser preflight 400।
+-
+-    Guarded by design: কোনো ব্যর্থতা (import cycle, vault নিচে, tests/CI) চুপচাপ
+-    "" ফেরত দেয় — এই মডিউলের dependency-free নীতি অটুট থাকে এবং কখনো raise করে না।
+-    """
+-    try:
+-        from core.config import settings
+-
+-        if settings._is_test_environment():
+-            return ""
+-        return settings.get_secret(env_var) or ""
+-    except Exception:  # pragma: no cover — defensive: boot must never crash here
+-        return ""
+-
+-
+-def _load_origins(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]:
+-    # Roadmap 1.4 (issue #1173): canonical single parser — JSON-array বা
+-    # comma-separated যেভাবেই operator লিখুক, একই stripped/filtered ফলাফল।
+-    # core.config_parsers শুধু json/typing import করে, তাই এই মডিউলের
+-    # "dependency-free (no pydantic)" নীতি অটুট।
+-    # Issues #1483/#1484/#1455: os.getenv → vault-cache fallback যোগ হলো।
+-    val = os.getenv(env_var) or _vault_origin_env(env_var)
+-    if val:
+-        return tuple(parse_origin_list(val))
+-    return default
+-
+-
+-# USER_CORS_ORIGINS is the explicit portal-specific setting. Keep CORS_ORIGINS
+-# as the backwards-compatible fallback for older deployments.
+-#
+-# Issues #1483/#1455 (CRITICAL): the deployed user portal lives at
+-# https://supremeai-a.web.app (Firebase Hosting) and was rejected by every
+-# preflight because the historical default here was an empty tuple — if the
+-# env var was missing/stale on the host, the frontend got zero CORS headers
+-# (login/chat 100% broken). The known production browser origins are now
+-# safe code-level defaults; explicit env vars still win when present.
+-#
+-# Issue #1491 (LOW): https://supremeai-lac.vercel.app is dead in production
+-# (verified HTTP 404 on 2026-09-26) — removed from the defaults so we stop
+-# advertising an origin that can no longer serve the portal. It stays in
+-# hardcode_config_scanner.py's banned-domain list, so any reintroduction
+-# gets flagged. Operators who still need it can re-add it via
+-# USER_CORS_ORIGINS (env values can only ADD origins — see #1518 floor).
+-DEFAULT_USER_ALLOWED_ORIGINS: tuple[str, ...] = (
+-    "https://supremeai-a.web.app",  # Firebase Hosting user portal (production)
+-    "https://supremeai-studio.vercel.app",  # Vercel studio
+-)
+-
+-# Issue #1484 (CRITICAL): same story for the admin console — the admin origin
+-# must stay preflight-able even when ADMIN_CORS_ORIGINS fails to sync to the host.
+-# Admin-host retirement (2026-10-25, follows PR #1247): the legacy Firebase
+-# Hosting admin console site is FULLY RETIRED — a stale Cloudflare edge
+-# redirect used to bounce /admin visitors to it, and keeping it in the CORS
+-# floor kept advertising a dead origin. The admin console now lives inside
+-# the Studio SPA at https://supremeai-studio.pages.dev (route /admin) —
+-# same failsafe-defaults class as before: env vars only ADD origins, they
+-# can never evict this floor.
+-DEFAULT_ADMIN_ALLOWED_ORIGINS: tuple[str, ...] = (
+-    "https://supremeai-studio.pages.dev",  # Studio SPA admin console (route /admin)
+-)
+-
+-
+-def _dedupe(origins: Iterable[str]) -> list[str]:
+-    """অর্ডার রক্ষা করে ডুপ্লিকেট বাদ দেয়।"""
+-    seen: set[str] = set()
+-    result: list[str] = []
+-    for origin in origins:
+-        cleaned = (origin or "").strip()
+-        if not cleaned or cleaned in seen:
+-            continue
+-        seen.add(cleaned)
+-        result.append(cleaned)
+-    return result
+-
+-
+-def _origins_with_floor(
+-    defaults: tuple[str, ...], env_var: str, compat_var: str
+-) -> tuple[str, ...]:
+-    """Issue #1518 (CRITICAL): the production origins are a MANDATORY floor.
+-
+-    বাংলা মন্তব্য: #1483/#1484/#1455 ফিক্সে default শুধু তখনই কাজ করত যখন env
+-    ভ্যারিয়েবল সম্পূর্ণ অনুপস্থিত ছিল। কিন্তু হোস্টে পুরোনো (stale) env বসে থাকলে —
+-    যেমন Render-এ পুরোনো CORS_ORIGINS যাতে supremeai-a.web.app নেই — সেটি
+-    ডিফল্টকে সম্পূর্ণ replace করে দিত এবং preflight আবার 400 হতো। নতুন সেম্যান্টিকস:
+-    production অরিজিনগুলো সবসময় থাকবে; env শুধু নতুন অরিজিন ADD করতে পারে,
+-    production অরিজিন সরাতে পারে না।
+-    """
+-    env_origins = _load_origins(env_var, _load_origins(compat_var, ()))
+-    return tuple(_dedupe([*defaults, *env_origins]))
+-
+-
+-USER_ALLOWED_ORIGINS: tuple[str, ...] = _origins_with_floor(
+-    DEFAULT_USER_ALLOWED_ORIGINS, "USER_CORS_ORIGINS", "CORS_ORIGINS"
+-)
+-
+-ADMIN_ALLOWED_ORIGINS: tuple[str, ...] = _origins_with_floor(
+-    DEFAULT_ADMIN_ALLOWED_ORIGINS, "ADMIN_CORS_ORIGINS", "ADMIN_CORS_ORIGINS"
+-)
+-
+-# বাংলা মন্তব্য: সিঙ্গেল ব্যাকএন্ড আর্কিটেকচারের জন্য Denylist ফাঁকা রাখা হলো
+-USER_ORIGIN_DENYLIST: frozenset[str] = frozenset()
+-
+-# বাংলা মন্তব্য: সিঙ্গেল ব্যাকএন্ড আর্কিটেকচারের জন্য Denylist ফাঁকা রাখা হলো
+-ADMIN_ORIGIN_DENYLIST: frozenset[str] = frozenset()
+-
+-
+-def resolve_user_cors_origins(configured: Iterable[str] | None) -> list[str]:
+-    """User API-এর চূড়ান্ত allow_origins তালিকা তৈরি করে।
+-
+-    বাংলা মন্তব্য:
+-      - wildcard ('*') সবসময় বাদ — credentialed CORS-এর সাথে এটি অবৈধ ও অনিরাপদ;
+-      - admin surface অরিজিন সবসময় বাদ — আর্কিটেকচারাল আইসোলেশন;
+-      - কিছুই না থাকলে নিরাপদ ডিফল্ট user অরিজিন সেট করা হয় (boot crash এড়াতে)।
+-    """
+-    cleaned = [o for o in _dedupe(configured or []) if o != "*" and o not in ADMIN_ORIGIN_DENYLIST]
+-    if not cleaned:
+-        return list(USER_ALLOWED_ORIGINS)
+-    # Issue #1518: a stale env override can no longer evict the production
+-    # portal origins — they are a mandatory floor; configured values only ADD.
+-    for required in USER_ALLOWED_ORIGINS:
+-        if required not in cleaned:
+-            cleaned.append(required)
+-    return cleaned
+-
+-
+-def resolve_admin_cors_origins(configured: Iterable[str] | None) -> list[str]:
+-    """Admin API-এর চূড়ান্ত allow_origins তালিকা তৈরি করে।
+-
+-    বাংলা মন্তব্য:
+-      - wildcard ('*') সবসময় বাদ;
+-      - user surface অরিজিন সবসময় বাদ (denylist) — admin/user mixing প্রতিরোধ;
+-      - admin console origin সবসময় উপস্থিত থাকবে — না থাকলে preflight 403/500 হয়।
+-    """
+-    cleaned = [o for o in _dedupe(configured or []) if o != "*" and o not in USER_ORIGIN_DENYLIST]
+-    for required in ADMIN_ALLOWED_ORIGINS:
+-        if required not in cleaned:
+-            cleaned.append(required)
+-    return cleaned
+-
+-
+-__all__ = [
+-    "ADMIN_ALLOWED_ORIGINS",
+-    "DEFAULT_ADMIN_ALLOWED_ORIGINS",
+-    "DEFAULT_USER_ALLOWED_ORIGINS",
+-    "ADMIN_ORIGIN_DENYLIST",
+-    "USER_ALLOWED_ORIGINS",
+-    "USER_ORIGIN_DENYLIST",
+-    "resolve_admin_cors_origins",
+-    "resolve_user_cors_origins",
+-]
++from core.middleware.cors_policy import *  # noqa: F401, F403
+diff --git a/gateway/middleware/idempotency.py b/gateway/middleware/idempotency.py
+index 5d3e3376..b7fe6212 100644
+--- a/gateway/middleware/idempotency.py
++++ b/gateway/middleware/idempotency.py
+@@ -1,5 +1,4 @@
+-# বাংলা মন্তব্য: core.idempotency_middleware কে middleware প্যাকেজে সরানো হয়েছে;
+-# এখান থেকে সরাসরি re-export করে unified idempotency module তৈরি করা হলো।
+-from .idempotency_middleware import IdempotencyMiddleware
++"""Canonical re-export from core.middleware.idempotency (Single Source of Truth)."""
++from __future__ import annotations
+ 
+-__all__ = ["IdempotencyMiddleware"]
++from core.middleware.idempotency import *  # noqa: F401, F403
+diff --git a/gateway/middleware/idempotency_middleware.py b/gateway/middleware/idempotency_middleware.py
+index 149c9498..53a11a88 100644
+--- a/gateway/middleware/idempotency_middleware.py
++++ b/gateway/middleware/idempotency_middleware.py
+@@ -1,202 +1,4 @@
++"""Canonical re-export from core.middleware.idempotency_middleware (Single Source of Truth)."""
+ from __future__ import annotations
+ 
+-# বাংলা মন্তব্য: নন-ব্লকিং অপারেশনের জন্য asyncio এবং redis.asyncio ইম্পোর্ট করা হলো
+-import base64
+-import json
+-
+-from fastapi.responses import JSONResponse
+-
+-from core.config import settings
+-from core.logging_config import logger
+-
+-try:
+-    import redis.asyncio as aioredis
+-except ImportError:
+-    aioredis = None
+-
+-# শেয়ার্ড ইউটিলিটি — টেস্ট এনভায়রনমেন্ট চেক কেন্দ্রীভূত
+-from utils.environment import is_test_environment
+-
+-
+-class IdempotencyMiddleware:
+-    def __init__(self, app) -> None:
+-        self.app = app
+-        self._redis_client = None
+-
+-    async def _get_redis(self):
+-        """
+-        বাংলা মন্তব্য: শেয়ার্ড অ্যাসিঙ্ক্রোনাস Redis ক্লায়েন্ট (redis_manager) ব্যবহার করা হচ্ছে।
+-        """
+-        from core.cache.redis_manager import redis_manager
+-
+-        return getattr(redis_manager, "client", None)
+-
+-    async def __call__(self, scope, receive, send) -> None:
+-        if scope["type"] != "http":
+-            await self.app(scope, receive, send)
+-            return
+-
+-        # রিফ্যাক্টর: লোকাল is_test চেকের বদলে শেয়ার্ড ইউটিলিটি ব্যবহার
+-        if is_test_environment():
+-            await self.app(scope, receive, send)
+-            return
+-
+-        # Only check idempotency for modifying operations
+-        method = scope.get("method")
+-        if method not in ("POST", "PUT", "PATCH"):
+-            await self.app(scope, receive, send)
+-            return
+-
+-        headers = scope.get("headers", [])
+-        idempotency_key = None
+-        for k, v in headers:
+-            if k.lower() == b"idempotency-key":
+-                idempotency_key = v.decode("utf-8")
+-                break
+-
+-        path = scope.get("path", "")
+-        # For critical mutating endpoints, enforce the presence of the key.
+-        if not idempotency_key:
+-            # P1 Security Fix: Enforce idempotency key for critical mutating endpoints
+-            # This prevents accidental duplicate task executions or billing events.
+-            if any(p in path for p in settings.idempotency_critical_paths):
+-                logger.warning(
+-                    f"Rejected request to '{path}' due to missing Idempotency-Key header."
+-                )
+-                response = JSONResponse(
+-                    status_code=400,
+-                    content={
+-                        "detail": "Idempotency-Key header is required for this endpoint to prevent duplicate operations."
+-                    },
+-                )
+-                await response(scope, receive, send)
+-                return
+-            await self.app(scope, receive, send)
+-            return
+-
+-        redis = await self._get_redis()
+-        if not redis:
+-            await self.app(scope, receive, send)
+-            return
+-
+-        # AUD-3.7 (P1): the idempotency namespace is now scoped per caller
+-        # credential. Previously the key space was global — user B replaying
+-        # user A's Idempotency-Key would receive A's cached response. This
+-        # middleware sits OUTSIDE AuthMiddleware in the ASGI stack, so the
+-        # identity is derived from the raw credential (hashed — never stored
+-        # in plaintext) instead of request.state.user.
+-        import hashlib
+-
+-        credential = b""
+-        for k, v in headers:
+-            if k.lower() in (b"authorization", b"x-api-key"):
+-                credential = v
+-                break
+-        caller_scope = hashlib.sha256(credential).hexdigest()[:16] if credential else "anon"
+-        redis_key = f"idempotency:{caller_scope}:{idempotency_key}"
+-
+-        # 1. Check if the request key exists in Redis
+-        existing = await redis.get(redis_key)
+-        if existing:
+-            try:
+-                data = json.loads(existing)
+-                if data.get("status") == "processing":
+-                    response = JSONResponse(
+-                        status_code=409,
+-                        content={
+-                            "detail": "Conflict: Request is already being processed. Please wait."
+-                        },
+-                    )
+-                    await response(scope, receive, send)
+-                    return
+-                elif data.get("status") == "completed":
+-                    # Replay the cached response
+-                    from starlette.responses import Response
+-
+-                    body = data.get("body")
+-                    if isinstance(body, dict):
+-                        response = JSONResponse(content=body, status_code=data.get("status_code"))
+-                    else:
+-                        response = Response(
+-                            # বাংলা মন্তব্য: বাইনারি ডেটা হ্যান্ডেল করার জন্য Base64 ডিকোড করা হচ্ছে
+-                            content=base64.b64decode(body),
+-                            status_code=data.get("status_code"),
+-                            media_type=data.get("media_type"),
+-                        )
+-                    await response(scope, receive, send)
+-                    return
+-            except (json.JSONDecodeError, TypeError) as exc:
+-                # বল মনতবয: কযশকরত idempotency রকরড পরস করত বযরথ হল রকয়সট পনরায় পরসস হব;
+-                # নরবভ ডট করাপশন লকয় রখত warning লগ যকত কর হল
+-                logger.warning(
+-                    f"Could not parse cached idempotency record for key '{idempotency_key}': {exc}. Reprocessing request."
+-                )
+-
+-        # 2. অ্যাটমিকভাবে idempotency key লক করা (Race Condition প্রতিরোধ)
+-        # `nx=True` নিশ্চিত করে যে শুধুমাত্র যদি key-টি আগে থেকে না থাকে, তবেই এটি সেট হবে।
+-        # এটি `get` এবং `set` এর মধ্যে অন্য রিকোয়েস্ট আসার সুযোগ বন্ধ করে দেয়।
+-        is_locked = await redis.set(
+-            redis_key, json.dumps({"status": "processing"}), ex=600, nx=True
+-        )
+-        if not is_locked:
+-            # যদি অন্য কোনো থ্রেড এইমাত্র কী-টি লক করে ফেলে, তবে কনফ্লিক্ট রেসপন্স পাঠানো হবে
+-            response = JSONResponse(
+-                status_code=409,
+-                content={"detail": "Conflict: Request is already being processed."},
+-            )
+-            await response(scope, receive, send)
+-            return
+-
+-        # 3. Call the next request handler and capture response
+-        response_body_bytes = b""
+-        response_headers = []
+-        response_status = 200
+-
+-        async def custom_send(message):
+-            nonlocal response_body_bytes, response_headers, response_status
+-            if message["type"] == "http.response.start":
+-                response_status = message["status"]
+-                response_headers = message.get("headers", [])
+-            elif message["type"] == "http.response.body":
+-                response_body_bytes += message.get("body", b"")
+-            await send(message)
+-
+-        try:
+-            await self.app(scope, receive, custom_send)
+-
+-            # Get media_type from response headers if possible
+-            media_type = "application/json"
+-            for k, v in response_headers:
+-                if k.lower() == b"content-type":
+-                    media_type = v.decode("utf-8")
+-                    break
+-
+-            # বাংলা মন্তব্য: রেসপন্স বডি JSON নাকি বাইনারি তা নির্ধারণ করা
+-            try:
+-                # যদি JSON হয়, তাহলে সরাসরি সেইভ করা হবে
+-                body_to_cache = json.loads(response_body_bytes)
+-            except json.JSONDecodeError:
+-                # যদি JSON না হয় (যেমন ছবি বা ফাইল), তাহলে Base64 এনকোড করে সেইভ করা হবে
+-                body_to_cache = base64.b64encode(response_body_bytes).decode("utf-8")
+-
+-            # সম্পন্ন হওয়া রেসপন্সটি Redis-এ ২৪ ঘণ্টার জন্য ক্যাশ করা হচ্ছে
+-            await redis.set(
+-                redis_key,
+-                json.dumps(
+-                    {
+-                        "status": "completed",
+-                        "status_code": response_status,
+-                        "media_type": media_type,
+-                        "body": body_to_cache,
+-                    }
+-                ),
+-                ex=86400,
+-            )
+-        except (
+-            Exception
+-        ):  # বাংলা মন্তব্য: কোনো কারণে রিকোয়েস্ট ফেইল হলে কী-টি মুছে ফেলা হবে, যাতে ক্লায়েন্ট আবার চেষ্টা করতে পারে
+-            try:
+-                await redis.delete(redis_key)
+-            except Exception as exc:
+-                logger.exception(f"Failed to delete idempotency key {redis_key}: {exc}")
+-            raise
++from core.middleware.idempotency_middleware import *  # noqa: F401, F403
+diff --git a/gateway/middleware/rate_limiter.py b/gateway/middleware/rate_limiter.py
+index 7a98f43b..e93b9862 100644
+--- a/gateway/middleware/rate_limiter.py
++++ b/gateway/middleware/rate_limiter.py
+@@ -1,214 +1,4 @@
++"""Canonical re-export from core.middleware.rate_limiter (Single Source of Truth)."""
+ from __future__ import annotations
+ 
+-import os
+-import time
+-
+-from core.cache.redis_manager import redis_manager
+-from core.config import settings
+-from core.logging_config import logger
+-
+-# Issue #437 (log-storm dampener): under provider quota exhaustion every request
+-# used to log a fallback warning (42–51% of all boot log lines during the
+-# Upstash incident). Warn at most once per 5 minutes per process instead.
+-_FALLBACK_WARN_INTERVAL = 300.0
+-_last_fallback_warn: float = 0.0
+-
+-
+-def _warn_fallback_throttled(message: str) -> None:
+-    global _last_fallback_warn
+-    now = time.monotonic()
+-    if now - _last_fallback_warn >= _FALLBACK_WARN_INTERVAL:
+-        _last_fallback_warn = now
+-        logger.warning(message)
+-
+-
+-class InMemoryFallbackLimiter:
+-    """Sliding-window rate limiter scoped per API key prefix as a fallback when Redis is down."""
+-
+-    # Audit B-11 fix (2026-09-17): keys of clients that stop calling were
+-    # never deleted (only the CURRENT key got pruned) — slow growth during
+-    # Redis outages. A bounded sweep now evicts expired keys once the map
+-    # grows past the cap.
+-    _MAX_KEYS = 1000
+-
+-    def __init__(self, burst: int = 20, window: float = 60.0) -> None:
+-        self.burst = burst
+-        self.window = window
+-        self._hits: dict[str, list[float]] = {}
+-
+-    def _sweep_expired(self, now: float) -> None:
+-        if len(self._hits) <= self._MAX_KEYS:
+-            return
+-        expired = [k for k, ts in self._hits.items() if not ts or now - ts[-1] >= self.window]
+-        for k in expired:
+-            self._hits.pop(k, None)
+-
+-    def _cleanup(self, key: str, now: float) -> None:
+-        # বাংলা মন্তব্ব্য: মেমোরি লিক এড়াতে যদি কোনো কী-তে নতুন কোনো হিট না থাকে, তবে ডিকশনারি থেকে কী-টি ডিলিট করা হচ্ছে।
+-        if key in self._hits:
+-            self._hits[key] = [t for t in self._hits[key] if now - t < self.window]
+-            if not self._hits[key]:
+-                del self._hits[key]
+-
+-    def is_allowed(self, key: str, limit: int = 6) -> bool:
+-        now = time.time()
+-        self._cleanup(key, now)
+-        self._sweep_expired(now)
+-        hits = self._hits.setdefault(key, [])
+-        if len(hits) >= limit:
+-            return False
+-        hits.append(now)
+-        return True
+-
+-
+-_SLIDING_WINDOW_LUA = """
+-local key = KEYS[1]
+-local now = tonumber(ARGV[1])
+-local window = tonumber(ARGV[2])
+-local limit = tonumber(ARGV[3])
+-local member = ARGV[4]
+-
+-local clear_before = now - window
+-redis.call('ZREMRANGEBYSCORE', key, 0, clear_before)
+-local current_requests = redis.call('ZCARD', key)
+-
+-if current_requests < limit then
+-    redis.call('ZADD', key, now, member)
+-    redis.call('EXPIRE', key, math.ceil(window))
+-    return {1, current_requests + 1}
+-else
+-    return {0, current_requests}
+-end
+-"""
+-
+-
+-class AsyncRateLimiter:
+-    """
+-    Async Redis rate limiter using centralized redis_manager.
+-    Pipeline reduces network round-trips.
+-    Includes an in-memory fallback (Pre-Deletion Safety Check).
+-
+-    বাংলা: কেন্দ্রীয় redis_manager ব্যবহার করে — আলাদা Redis connection তৈরি করে না।
+-    Zero-Cost, ফ্রি-টিয়ার Upstash Redis এর সাথে সামঞ্জস্যপূর্ণ।
+-    """
+-
+-    def __init__(self) -> None:
+-        self._rate_limit_enabled: bool = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in {
+-            "true",
+-            "1",
+-            "yes",
+-        }
+-
+-        # Initialize fallback limiter
+-        self._fallback_limiter = InMemoryFallbackLimiter()
+-
+-        # Enhanced rate limiting tiers
+-        # M13 P-B (zero-hardcode): tier-সীমা এখন config-চালিত — ডিফল্ট অপরিবর্তিত
+-        # (free 60 / pro 600 / premium 1200 / enterprise 6000 প্রতি window)।
+-        self._tier_limits = {
+-            "free": {
+-                "requests": settings.rate_limit_tier_free,
+-                "window": settings.rate_limit_tier_window_seconds,
+-            },
+-            "pro": {
+-                "requests": settings.rate_limit_tier_pro,
+-                "window": settings.rate_limit_tier_window_seconds,
+-            },
+-            "premium": {
+-                "requests": settings.rate_limit_tier_premium,
+-                "window": settings.rate_limit_tier_window_seconds,
+-            },
+-            "enterprise": {
+-                "requests": settings.rate_limit_tier_enterprise,
+-                "window": settings.rate_limit_tier_window_seconds,
+-            },
+-        }
+-
+-    async def _get_redis(self):
+-        """Helper for test mock compatibility."""
+-        return await redis_manager.get_client_async()
+-
+-    async def close(self) -> None:
+-        """No-op: this limiter does not own a Redis connection.
+-
+-        It shares the centralized `redis_manager` connection, which has its
+-        own lifecycle. This method exists for interface completeness so
+-        callers can treat AsyncRateLimiter symmetrically with other
+-        resources that need explicit shutdown.
+-        """
+-        return None
+-
+-    async def acquire(self, key: str, limit: int | None = None, window: int | None = None) -> bool:
+-        """Redis-based sliding window rate limiting with fail-closed behavior.
+-
+-        Issue #460 optimization: Uses atomic single-op Lua script on Upstash Redis,
+-        reducing command quota usage by 75% compared to multi-command pipelines.
+-
+-        বাংলা মন্তব্ব্য: Redis-ভিত্তিক sliding window রেট লিমিটিং।
+-        """
+-        if not self._rate_limit_enabled or os.getenv("TESTING") == "true":
+-            return True
+-
+-        # M13 P-B: ডিফল্ট limit/window এখন config-চালিত (ডিফল্ট অপরিবর্তিত 100/60)।
+-        limit = limit or settings.rate_limit_default_limit
+-        window = window or settings.rate_limit_default_window
+-
+-        try:
+-            client = await self._get_redis()
+-            if client is None:
+-                _warn_fallback_throttled(
+-                    f"Rate limiter Redis unavailable — in-memory sliding window fallback active "
+-                    f"(per-instance, NOT aggregate-safe). Last key: {key}."
+-                )
+-                return self._fallback_limiter.is_allowed(key, limit)
+-
+-            now = time.time()
+-            import secrets
+-
+-            member = f"{now}_{secrets.token_hex(4)}"
+-            zset_key = f"rate_limit:{key}"
+-
+-            # 1. Primary path: Atomic Lua Script (Issue #460 - Upstash quota optimization: 1 op vs 4 ops)
+-            if hasattr(client, "eval"):
+-                try:
+-                    res = await client.eval(
+-                        _SLIDING_WINDOW_LUA,
+-                        1,
+-                        zset_key,
+-                        str(now),
+-                        str(window),
+-                        str(limit),
+-                        member,
+-                    )
+-                    if isinstance(res, (list, tuple)) and len(res) >= 2:
+-                        is_allowed = bool(res[0])
+-                        count = int(res[1])
+-                        if count > limit * 0.8:
+-                            logger.warning(f"Rate limit approaching for {key}: {count}/{limit}")
+-                        return is_allowed
+-                except (AttributeError, TypeError) as exc:
+-                    logger.debug("Redis eval not supported (%s); falling back to pipeline", exc)
+-
+-            # 2. Fallback path: Pipeline execution
+-            pipe = client.pipeline()
+-            pipe.zadd(zset_key, {member: now})
+-            pipe.zremrangebyscore(zset_key, 0, now - window)
+-            pipe.zcard(zset_key)
+-            pipe.expire(zset_key, window)
+-
+-            results = await pipe.execute()
+-            count = results[2]  # result of zcard
+-            is_allowed = count <= limit
+-
+-            # Log near-limit cases for monitoring (M13 P-B: ratio config-চালিত)
+-            if count > limit * settings.rate_limit_warn_ratio:
+-                logger.warning(f"Rate limit approaching for {key}: {count}/{limit}")
+-
+-            return is_allowed
+-        except Exception as e:
+-            redis_manager.report_failure(e)
+-            _warn_fallback_throttled(
+-                f"Rate limiter Redis operation failed ({e}) — in-memory sliding window fallback "
+-                f"active (per-instance, NOT aggregate-safe). Last key: {key}."
+-            )
+-            return self._fallback_limiter.is_allowed(key, limit)
++from core.middleware.rate_limiter import *  # noqa: F401, F403
+diff --git a/gateway/middleware/tenant_rate_limiter.py b/gateway/middleware/tenant_rate_limiter.py
+index ff1c654d..b6c49fa7 100644
+--- a/gateway/middleware/tenant_rate_limiter.py
++++ b/gateway/middleware/tenant_rate_limiter.py
+@@ -1,133 +1,4 @@
+-# backend/middleware/tenant_rate_limiter.py
+-"""Upstash / Redis atomics-based tenant rate limiter middleware.
++"""Canonical re-export from core.middleware.tenant_rate_limiter (Single Source of Truth)."""
++from __future__ import annotations
+ 
+-বাংলা মন্তব্য: ডিস্ট্রিবিউটেড টেন্যান্ট রেট লিমিটিং। race condition রোধ করতে Redis pipeline/incr পরমাণু (atomic) অপারেশন ব্যবহার করা হয়েছে।
+-
+-M13 (P-B + P-C): সীমা/জানালা config-চালিত (TENANT_RATE_LIMIT_MAX_HITS /
+-TENANT_RATE_LIMIT_WINDOW_SECONDS — ডিফল্ট অপরিবর্তিত 100/60); Redis-বিভ্রাটে
+-fail-মোড config-চালিত (TENANT_RATE_LIMIT_FAIL_MODE): "open" (ডিফল্ট = আজকের
+-আচরণ, loud লগসহ) | "fallback" (বাউন্ডেড ইন-মেমরি sliding window — per-instance,
+-aggregate-safe নয়, লাউড লগ) | "closed" (429 — কঠোর পরিবেশে fail-closed)।
+-নীতি-প্যাটার্ন: V5.1 is_token_revoked env-aware fail-policy।
+-"""
+-
+-from fastapi import HTTPException, Request
+-
+-from core.config import settings
+-from core.logging_config import logger
+-
+-# M13 P-C: Redis-বিভ্রাটে fallback ব্যবহারের জন্য বাউন্ডেড ইন-মেমরি limiter
+-# (InMemoryFallbackLimiter-প্যাটার্ন পুনঃব্যবহার) — "fallback" মোডে কেবল।
+-from middleware.rate_limiter import InMemoryFallbackLimiter
+-
+-_tenant_fallback_limiter = InMemoryFallbackLimiter(burst=100, window=60.0)
+-
+-
+-def _rate_limit_identity(request: Request) -> str:
+-    """Return an identity that is never controlled by a tenant header.
+-
+-    Authentication middleware may run after this dependency, so unauthenticated
+-    requests are isolated by source IP until a verified tenant is available.
+-    """
+-    tenant_id = getattr(request.state, "tenant_id", None)
+-    if tenant_id:
+-        return f"tenant:{tenant_id}"
+-
+-    user = getattr(request.state, "user", None) or {}
+-    subject = user.get("sub") or user.get("subject")
+-    if subject:
+-        return f"subject:{subject}"
+-
+-    client_ip = request.client.host if request.client else "unknown"
+-    return f"ip:{client_ip}"
+-
+-
+-def _resolve_fail_mode() -> str:
+-    """Config fail-মোড সৎ-সংকল্প — অজানা মান fail-closed নয়, 'open'-এ পড়ে না;
+-    অজানা মান = loud 'open' + সতর্কবার্তা (নীরব পছন্দ নিষিদ্ধ)।"""
+-    mode = (settings.tenant_rate_limit_fail_mode or "").strip().lower()
+-    if mode in {"open", "fallback", "closed"}:
+-        return mode
+-    logger.warning(
+-        f"⚠️ Unknown TENANT_RATE_LIMIT_FAIL_MODE={settings.tenant_rate_limit_fail_mode!r} "
+-        f"— treating as 'open' (loud, not silent)."
+-    )
+-    return "open"
+-
+-
+-def _degraded_response(identity: str, mode: str) -> None:
+-    """Redis-অনুপস্থিতিতে fail-মোড অনুযায়ী সিদ্ধান্ত — কোনো নীরব শাখা নেই।"""
+-    if mode == "closed":
+-        # M13 P-C: fail-closed — কঠোর পরিবেশে Redis ছাড়া টেন্যান্ট-সীমা
+-        # অনুপস্থিত থাকা = পুরো গেট অর্থহীন; তাই স্পষ্ট 429।
+-        logger.critical(
+-            f"🚨 Tenant rate limiter Redis unavailable and fail-mode='closed' — "
+-            f"rejecting {identity} (fail-closed policy)."
+-        )
+-        raise HTTPException(
+-            status_code=429,
+-            detail="Rate limiter unavailable — request rejected (fail-closed policy).",
+-        )
+-    if mode == "fallback":
+-        allowed = _tenant_fallback_limiter.is_allowed(identity, settings.tenant_rate_limit_max_hits)
+-        logger.warning(
+-            f"⚠️ Tenant rate limiter Redis unavailable — bounded in-memory fallback "
+-            f"active for {identity} (per-instance, NOT aggregate-safe). allowed={allowed}"
+-        )
+-        if not allowed:
+-            raise HTTPException(status_code=429, detail="Too Many Requests. Rate limit exceeded.")
+-        return
+-    # mode == "open" (ডিফল্ট): আজকের আচরণ — loud লগ + bypass।
+-    logger.warning(
+-        f"⚠️ Tenant rate limiter Redis unavailable — failing OPEN for {identity} "
+-        f"(TENANT_RATE_LIMIT_FAIL_MODE=open). Set 'fallback'/'closed' to enforce."
+-    )
+-    return
+-
+-
+-async def enforce_tenant_rate_limit(request: Request):
+-    """Upstash / Redis atomic sliding window rate limiting guard."""
+-    identity = _rate_limit_identity(request)
+-    fail_mode = _resolve_fail_mode()
+-
+-    from core.cache.redis_manager import redis_manager
+-
+-    if not redis_manager or not getattr(redis_manager, "client", None):
+-        _degraded_response(identity, fail_mode)
+-        return
+-
+-    # Issue #460: dedicated namespace. The old "rate_limit:{identity}" name
+-    # collides with AsyncRateLimiter's ZSET keys ("rate_limit:ip:{ip}") —
+-    # a counter INCR against a ZSET is WRONGTYPE, so the two limiters used
+-    # to fight over the same keys.
+-    cache_key = f"tenant_rl:{identity}"
+-
+-    try:
+-        # Issue #460: single atomic EVAL (1 billable op) instead of the
+-        # INCR+EXPIRE 2-command pipeline.
+-        # M13 P-B (union-merge): window config-চালিত — hardcode 60 নয়।
+-        from core.cache.rate_limit_atomic import atomic_window_incr
+-
+-        # Issue #936: raise_on_failure=True পাস করা হলো যাতে Redis pipeline/EVAL
+-        # exception propagate করে নিচের `except Exception` branch-এ যায় — সেখানে
+-        # `_degraded_response(identity, fail_mode)` tenant fail_mode policy apply
+-        # করে (closed=429 / fallback=in-memory bounded / open=loud log bypass)।
+-        # ডিফল্ট False হলে atomic_window_incr নিজেই fail-open return 0 করত (Issue
+-        # #895 contract), কিন্তু তাতে fail_mode apply হত না — test_pipeline_error_
+-        # applies_fail_mode contract ভেঙে যেত।
+-        current_hits = await atomic_window_incr(
+-            redis_manager.client,
+-            cache_key,
+-            settings.tenant_rate_limit_window_seconds,
+-            raise_on_failure=True,
+-        )
+-
+-        if current_hits > settings.tenant_rate_limit_max_hits:
+-            logger.critical(f"🚨 Rate Limit Exceeded for {identity} ({current_hits} hits)!")
+-            raise HTTPException(status_code=429, detail="Too Many Requests. Rate limit exceeded.")
+-    except HTTPException:
+-        raise
+-    except Exception as exc:
+-        logger.warning(f"⚠️ Rate limiter error: {exc}. Applying fail-mode '{fail_mode}'.")
+-        _degraded_response(identity, fail_mode)
+-        return
++from core.middleware.tenant_rate_limiter import *  # noqa: F401, F403

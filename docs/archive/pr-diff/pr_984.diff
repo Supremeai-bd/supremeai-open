@@ -1,0 +1,1056 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 425e0b87..b541a046 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -12,18 +12,20 @@
+ """
+ from __future__ import annotations
+ 
++import asyncio
++from collections import deque
++from datetime import datetime, timezone
++import json
+ import logging
+ import os
+ import socket
+ import time
+-import asyncio
+-from collections import deque
+-from datetime import datetime, timezone
+ from typing import Optional, Tuple
++import uuid
+ 
+ from fastapi import FastAPI, Header, HTTPException, Request, Response
+ from fastapi.middleware.cors import CORSMiddleware
+-from fastapi.responses import JSONResponse
++from fastapi.responses import JSONResponse, StreamingResponse
+ 
+ try:
+     from service.branding import build_brand
+@@ -91,10 +93,96 @@ def normalize_stealth_url(url: str) -> str:  # type: ignore[no-redef]
+             from service.telegram_webhook import telegram_router
+         except ImportError:
+             telegram_router = None  # type: ignore[assignment]
++try:
++    from service.webhook_scout import webhook_scout
++except ImportError:
++    try:
++        from gateway.service.webhook_scout import webhook_scout
++    except ImportError:
++        webhook_scout = None  # type: ignore[assignment]
++
++try:
++    from service.storage import (
++        add_message,
++        delete_conversation,
++        get_conversation,
++        get_user_preferences,
++        list_conversations,
++        save_conversation,
++        save_user_preferences,
++    )
++except ImportError:
++    try:
++        from gateway.service.storage import (
++            add_message,
++            delete_conversation,
++            get_conversation,
++            get_user_preferences,
++            list_conversations,
++            save_conversation,
++            save_user_preferences,
++        )
++    except ImportError:
++        add_message = None  # type: ignore[assignment]
++        delete_conversation = None  # type: ignore[assignment]
++        get_conversation = None  # type: ignore[assignment]
++        get_user_preferences = None  # type: ignore[assignment]
++        list_conversations = None  # type: ignore[assignment]
++        save_conversation = None  # type: ignore[assignment]
++        save_user_preferences = None  # type: ignore[assignment]
+ 
+ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+ logger = logging.getLogger("supremeai.gateway")
+ 
++
++# ── LiveLogs Ring Buffer (Admin Console Server-Side Log Streaming) ───────────
++
++class RingBufferLogHandler(logging.Handler):
++    """In-memory thread-safe ring buffer capturing recent logs for Admin LiveLogs & SSE."""
++
++    def __init__(self, maxlen: int = 1000):
++        super().__init__()
++        self.buffer: deque = deque(maxlen=maxlen)
++        self.subscribers: set = set()
++
++    def emit(self, record: logging.LogRecord):
++        try:
++            msg = self.format(record)
++            entry = {
++                "id": f"log-{int(record.created * 1000)}-{os.urandom(2).hex()}",
++                "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
++                "time": record.created,
++                "level": record.levelname,
++                "name": record.name,
++                "message": msg,
++            }
++            self.buffer.append(entry)
++
++            # Broadcast to live SSE subscribers
++            if self.subscribers:
++                for q in list(self.subscribers):
++                    try:
++                        q.put_nowait(entry)
++                    except Exception:
++                        pass
++        except Exception:
++            self.handleError(record)
++
++    def get_logs(self, limit: int = 100, level: Optional[str] = None, search: Optional[str] = None) -> list:
++        items = list(self.buffer)
++        if level:
++            items = [item for item in items if item["level"].upper() == level.upper()]
++        if search:
++            s = search.lower()
++            items = [item for item in items if s in item["message"].lower() or s in item["name"].lower()]
++        return items[-limit:]
++
++
++log_ring_buffer = RingBufferLogHandler(maxlen=1000)
++log_ring_buffer.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
++logger.addHandler(log_ring_buffer)
++logging.getLogger().addHandler(log_ring_buffer)
++
+ # Priority-1 Stealth Webhook & Web Session Configuration
+ STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
+ STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
+@@ -250,6 +338,14 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
+     return token in valid_keys
+ 
+ 
++def _extract_user_id(request: Request) -> str:
++    """Resolve caller user ID from header or authenticated session."""
++    explicit_uid = request.headers.get("x-user-id")
++    if explicit_uid and explicit_uid.strip():
++        return explicit_uid.strip()
++    return "usr-admin-primary"
++
++
+ # ── Liveness & Readiness Probes ──────────────────────────────────────────────
+ 
+ # Stealth relay DNS capability state (cached, TTL-refreshed). Oct-23 lesson:
+@@ -332,6 +428,7 @@ async def health_check():
+         "stealth_dns": stealth_dns,
+         "web_sessions_active": bool(web_bridge and web_bridge.has_active_accounts),
+         "web_session_status": web_bridge.status() if web_bridge else {},
++        "webhook_scout": webhook_scout.get_status() if webhook_scout else {},
+         "telegram_webhook_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+         "active_providers": [
+             p for p, data in telemetry.get("providers", {}).items() if data.get("healthy", 0) > 0
+@@ -339,6 +436,15 @@ async def health_check():
+     }
+ 
+ 
++@app.get("/webhook/scout/status")
++@app.get("/api/v1/webhook/scout")
++async def webhook_scout_status():
++    """Returns live fleet status of all Webhook & Multi-AI Session slots."""
++    if not webhook_scout:
++        return {"status": "unavailable", "detail": "Webhook Scout not initialized"}
++    return webhook_scout.get_status()
++
++
+ @app.get("/readyz")
+ async def readiness_check():
+     """Capability probe (distinct from liveness): 200 only when a chat reply path
+@@ -616,6 +722,20 @@ async def chat_completions(
+     elif requested_model in PROVIDER_CONFIGS:
+         preferred_provider = requested_model
+ 
++    # Conversation-ID carry-over & persistence
++    conv_id = (
++        body.get("conversation_id")
++        or body.get("session_id")
++        or request.headers.get("x-conversation-id")
++        or request.headers.get("x-session-id")
++    )
++    user_id = _extract_user_id(request)
++    if conv_id and add_message:
++        incoming_msgs = body.get("messages", [])
++        last_user_msg = next((m.get("content") for m in reversed(incoming_msgs) if m.get("role") == "user"), None)
++        if last_user_msg:
++            add_message(conv_id, "user", str(last_user_msg), user_id=user_id)
++
+     # ═══════════════════════════════════════════════════════════════════════
+     # 🔒 HEADLINE — ADMIN ER COMMAND CHARA ENABLE KORA JABE NA
+     # (অ্যাডমিনের সরাসরি নির্দেশ ছাড়া API fallback চালু করা সম্পূর্ণ নিষিদ্ধ)
+@@ -696,6 +816,52 @@ async def chat_completions(
+                 "X-SupremeAI-Slot": "priority-1",
+                 "X-SupremeAI-Tier": "priority-1-free",
+             }
++
++            if conv_id:
++                w_response["conversation_id"] = conv_id
++                w_response["session_id"] = conv_id
++                if add_message and chat_content:
++                    add_message(
++                        conv_id,
++                        "assistant",
++                        chat_content,
++                        extra={"supremeai": w_response.get("supremeai")},
++                        user_id=user_id,
++                    )
++
++            if body.get("stream"):
++                async def stream_generator():
++                    # Stream tokens in progressive chunks
++                    words = chat_content.split(" ")
++                    for idx, word in enumerate(words):
++                        chunk_text = word + (" " if idx < len(words) - 1 else "")
++                        chunk_payload = {
++                            "id": w_response.get("id", "chatcmpl-stream"),
++                            "object": "chat.completion.chunk",
++                            "created": int(time.time()),
++                            "model": served_model,
++                            "choices": [
++                                {
++                                    "index": 0,
++                                    "delta": {"content": chunk_text},
++                                    "finish_reason": None if idx < len(words) - 1 else "stop",
++                                }
++                            ],
++                            "supremeai": w_response.get("supremeai"),
++                        }
++                        if conv_id:
++                            chunk_payload["conversation_id"] = conv_id
++                            chunk_payload["session_id"] = conv_id
++                        yield f"data: {json.dumps(chunk_payload)}\n\n"
++                        await asyncio.sleep(0.012)
++                    yield "data: [DONE]\n\n"
++
++                return StreamingResponse(
++                    stream_generator(),
++                    media_type="text/event-stream",
++                    headers={**headers, "Cache-Control": "no-cache", "Connection": "keep-alive"},
++                )
++
+             return JSONResponse(status_code=w_status, content=w_response, headers=headers)
+ 
+         relay_detail = None
+@@ -849,3 +1015,211 @@ async def admin_squad_reload(
+     if squad:
+         squad.reload_squad()
+     return {"status": "reloaded", "stats": squad.stats() if squad else {}}
++
++
++# ── Conversation Carry-over & Chat History Endpoints ─────────────────────────
++
++@app.get("/api/v1/chat/conversations")
++@app.get("/v1/chat/conversations")
++async def get_conversations(
++    request: Request,
++    limit: int = 50,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """List recent conversation sessions for the current user."""
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(status_code=401, detail="Unauthorized")
++    user_id = _extract_user_id(request)
++    convs = list_conversations(user_id=user_id, limit=limit) if list_conversations else []
++    return {"status": "ok", "conversations": convs, "count": len(convs)}
++
++
++@app.get("/api/v1/chat/conversations/{conversation_id}")
++@app.get("/v1/chat/conversations/{conversation_id}")
++async def get_conversation_details(
++    conversation_id: str,
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Retrieve full message history for a conversation session."""
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(status_code=401, detail="Unauthorized")
++    user_id = _extract_user_id(request)
++    conv = get_conversation(conversation_id, user_id=user_id) if get_conversation else None
++    if not conv:
++        raise HTTPException(status_code=404, detail=f"Conversation {conversation_id} not found")
++    return conv
++
++
++@app.post("/api/v1/chat/conversations")
++@app.post("/v1/chat/conversations")
++async def create_or_update_conversation(
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Create or update conversation metadata."""
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(status_code=401, detail="Unauthorized")
++    try:
++        body = await request.json()
++    except Exception:
++        raise HTTPException(status_code=400, detail="Invalid JSON payload")
++
++    conv_id = str(body.get("id") or body.get("conversation_id") or f"conv-{uuid.uuid4().hex[:12]}").strip()
++    title = body.get("title")
++    metadata = body.get("metadata")
++    user_id = _extract_user_id(request)
++
++    res = save_conversation(conv_id, user_id=user_id, title=title, metadata=metadata) if save_conversation else {"id": conv_id}
++    return {"status": "ok", "conversation": res}
++
++
++@app.delete("/api/v1/chat/conversations/{conversation_id}")
++@app.delete("/v1/chat/conversations/{conversation_id}")
++async def delete_conversation_endpoint(
++    conversation_id: str,
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Delete a conversation session and all its messages."""
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(status_code=401, detail="Unauthorized")
++    user_id = _extract_user_id(request)
++    ok = delete_conversation(conversation_id, user_id=user_id) if delete_conversation else False
++    return {"status": "deleted" if ok else "not_found", "id": conversation_id}
++
++
++# ── LiveLogs Endpoints (Admin Console Server-Side Log Streaming) ─────────────
++
++@app.get("/admin-api/logs")
++@app.get("/api/v1/admin/logs")
++@app.get("/admin/logs")
++async def get_admin_logs(
++    request: Request,
++    limit: int = 100,
++    level: Optional[str] = None,
++    search: Optional[str] = None,
++    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key"),
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Fetches recent service logs for the Admin Console."""
++    is_super = bool(SUPERADMIN_KEY and x_superadmin_key == SUPERADMIN_KEY)
++    is_client = _verify_client_auth(request, x_supremeai_key)
++    if not is_super and not is_client:
++        raise HTTPException(status_code=403, detail="Admin authorization required to view server logs")
++
++    logs = log_ring_buffer.get_logs(limit=limit, level=level, search=search)
++    return {
++        "status": "ok",
++        "total": len(logs),
++        "limit": limit,
++        "logs": logs,
++    }
++
++
++@app.get("/admin-api/logs/stream")
++@app.get("/api/v1/admin/logs/stream")
++@app.get("/admin/logs/stream")
++async def stream_admin_logs(
++    request: Request,
++    limit: int = 50,
++    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key"),
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Real-time Server-Sent Events (SSE) log streamer for Admin Console."""
++    is_super = bool(SUPERADMIN_KEY and x_superadmin_key == SUPERADMIN_KEY)
++    is_client = _verify_client_auth(request, x_supremeai_key)
++    if not is_super and not is_client:
++        raise HTTPException(status_code=403, detail="Admin authorization required to stream server logs")
++
++    subscriber_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
++    log_ring_buffer.subscribers.add(subscriber_queue)
++
++    async def log_event_generator():
++        try:
++            # Initial backlog burst
++            initial_logs = log_ring_buffer.get_logs(limit=limit)
++            for entry in initial_logs:
++                yield f"data: {json.dumps(entry)}\n\n"
++
++            # Stream real-time logs with heartbeat keep-alive
++            while True:
++                try:
++                    entry = await asyncio.wait_for(subscriber_queue.get(), timeout=12.0)
++                    yield f"data: {json.dumps(entry)}\n\n"
++                except asyncio.TimeoutError:
++                    yield ": ping\n\n"
++        except asyncio.CancelledError:
++            pass
++        finally:
++            log_ring_buffer.subscribers.discard(subscriber_queue)
++
++    return StreamingResponse(
++        log_event_generator(),
++        media_type="text/event-stream",
++        headers={
++            "Cache-Control": "no-cache",
++            "Connection": "keep-alive",
++            "X-Accel-Buffering": "no",
++        },
++    )
++
++
++# ── User Preferences & Tool-Card Persistence Endpoints ───────────────────────
++
++@app.get("/api/v1/user/preferences")
++@app.get("/api/user/preferences")
++async def get_preferences(
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Retrieve stored user preferences (including hidden tool cards, pinned tools, theme)."""
++    user_id = _extract_user_id(request)
++    prefs = get_user_preferences(user_id=user_id) if get_user_preferences else {"user_id": user_id, "preferences": {}}
++    return prefs
++
++
++@app.post("/api/v1/user/preferences")
++@app.post("/api/user/preferences")
++@app.put("/api/v1/user/preferences")
++async def update_preferences(
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Update user preferences (e.g. tool card removal / preference saving)."""
++    try:
++        body = await request.json()
++    except Exception:
++        raise HTTPException(status_code=400, detail="Invalid JSON payload")
++
++    user_id = _extract_user_id(request)
++    res = save_user_preferences(user_id=user_id, patch_data=body) if save_user_preferences else {"user_id": user_id, "preferences": body}
++    return {"status": "ok", "user_preferences": res}
++
++
++@app.delete("/api/v1/user/preferences/tool-card/{tool_id}")
++@app.post("/api/v1/user/preferences/tool-card/{tool_id}/hide")
++async def hide_tool_card(
++    tool_id: str,
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Persistently hides/removes a tool card from the user's dashboard."""
++    user_id = _extract_user_id(request)
++    patch = {"action": "hide_tool", "tool_id": tool_id}
++    res = save_user_preferences(user_id=user_id, patch_data=patch) if save_user_preferences else {"user_id": user_id}
++    return {"status": "ok", "action": "hidden", "tool_id": tool_id, "user_preferences": res}
++
++
++@app.delete("/api/v1/user/preferences/tool-card/{tool_id}/restore")
++@app.post("/api/v1/user/preferences/tool-card/{tool_id}/restore")
++async def restore_tool_card(
++    tool_id: str,
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key"),
++):
++    """Restores a previously hidden tool card in the user's dashboard."""
++    user_id = _extract_user_id(request)
++    patch = {"action": "unhide_tool", "tool_id": tool_id}
++    res = save_user_preferences(user_id=user_id, patch_data=patch) if save_user_preferences else {"user_id": user_id}
++    return {"status": "ok", "action": "restored", "tool_id": tool_id, "user_preferences": res}
+diff --git a/gateway/service/storage.py b/gateway/service/storage.py
+new file mode 100644
+index 00000000..6ac868a4
+--- /dev/null
++++ b/gateway/service/storage.py
+@@ -0,0 +1,427 @@
++"""
++service/storage.py — Resilient SQLite/In-Memory Persistence for SupremeAI Gateway.
++
++Provides persistent storage for:
++1. Conversation-ID & Session carry-over with message history persistence.
++2. User preferences (hidden tool cards, pinned tools, dashboard layout, theme).
++3. Thread-safe execution with automated schema migrations.
++"""
++from __future__ import annotations
++
++import json
++import logging
++import os
++import sqlite3
++import time
++import uuid
++from contextlib import contextmanager
++from typing import Any, Dict, List, Optional
++
++logger = logging.getLogger("supremeai.gateway.storage")
++
++import tempfile
++
++_DATA_DIR = os.getenv("SUPREMEAI_DATA_DIR", "").strip() or os.path.join(tempfile.gettempdir(), "supremeai_data")
++
++os.makedirs(_DATA_DIR, exist_ok=True)
++_DB_PATH = os.getenv("SUPREMEAI_DB_PATH", os.path.join(_DATA_DIR, "gateway_state.db")).strip()
++
++_MEM_FALLBACK: Dict[str, Any] = {
++    "conversations": {},
++    "messages": {},
++    "preferences": {},
++}
++_USE_MEM_FALLBACK = False
++
++
++@contextmanager
++def get_db():
++    """Provides a SQLite connection with WAL mode and row factory."""
++    global _USE_MEM_FALLBACK
++    if _USE_MEM_FALLBACK:
++        yield None
++        return
++
++    conn = None
++    try:
++        conn = sqlite3.connect(_DB_PATH, timeout=10.0)
++        conn.row_factory = sqlite3.Row
++        conn.execute("PRAGMA journal_mode = WAL;")
++        conn.execute("PRAGMA synchronous = NORMAL;")
++        yield conn
++        conn.commit()
++    except Exception as exc:
++        if conn:
++            try:
++                conn.rollback()
++            except Exception:
++                pass
++        logger.warning(f"SQLite DB error ({exc}), falling back to in-memory store.")
++        yield None
++    finally:
++        if conn:
++            try:
++                conn.close()
++            except Exception:
++                pass
++
++
++def init_db() -> None:
++    """Initialize database tables for conversations, messages, and user preferences."""
++    global _USE_MEM_FALLBACK
++    try:
++        with get_db() as conn:
++            if conn is None:
++                _USE_MEM_FALLBACK = True
++                return
++            conn.execute("""
++            CREATE TABLE IF NOT EXISTS conversations (
++                id TEXT PRIMARY KEY,
++                user_id TEXT NOT NULL,
++                title TEXT NOT NULL,
++                created_at REAL NOT NULL,
++                updated_at REAL NOT NULL,
++                metadata_json TEXT
++            );
++            """)
++            conn.execute("""
++            CREATE TABLE IF NOT EXISTS messages (
++                id TEXT PRIMARY KEY,
++                conversation_id TEXT NOT NULL,
++                role TEXT NOT NULL,
++                content TEXT NOT NULL,
++                created_at REAL NOT NULL,
++                extra_json TEXT,
++                FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
++            );
++            """)
++            conn.execute("""
++            CREATE TABLE IF NOT EXISTS user_preferences (
++                user_id TEXT PRIMARY KEY,
++                preferences_json TEXT NOT NULL,
++                updated_at REAL NOT NULL
++            );
++            """)
++            conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_user ON conversations(user_id);")
++            conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id);")
++        logger.info(f"Gateway SQLite storage initialized at {_DB_PATH}")
++    except Exception as exc:
++        logger.warning(f"Failed to initialize SQLite storage: {exc}. Using memory fallback.")
++        _USE_MEM_FALLBACK = True
++
++
++# ── Conversation & Message Persistence ───────────────────────────────────────
++
++def save_conversation(
++    conv_id: str,
++    user_id: str = "usr-admin-primary",
++    title: Optional[str] = None,
++    metadata: Optional[Dict[str, Any]] = None,
++) -> Dict[str, Any]:
++    """Creates or updates a conversation record."""
++    now = time.time()
++    clean_title = (title or "New Conversation").strip()[:120]
++    meta_str = json.dumps(metadata or {})
++
++    with get_db() as conn:
++        if conn is not None:
++            conn.execute(
++                """
++                INSERT INTO conversations (id, user_id, title, created_at, updated_at, metadata_json)
++                VALUES (?, ?, ?, ?, ?, ?)
++                ON CONFLICT(id) DO UPDATE SET
++                    title = COALESCE(excluded.title, conversations.title),
++                    updated_at = excluded.updated_at,
++                    metadata_json = COALESCE(excluded.metadata_json, conversations.metadata_json);
++                """,
++                (conv_id, user_id, clean_title, now, now, meta_str),
++            )
++        else:
++            if conv_id not in _MEM_FALLBACK["conversations"]:
++                _MEM_FALLBACK["conversations"][conv_id] = {
++                    "id": conv_id,
++                    "user_id": user_id,
++                    "title": clean_title,
++                    "created_at": now,
++                    "updated_at": now,
++                    "metadata": metadata or {},
++                }
++            else:
++                _MEM_FALLBACK["conversations"][conv_id]["updated_at"] = now
++                if title:
++                    _MEM_FALLBACK["conversations"][conv_id]["title"] = clean_title
++
++    return {
++        "id": conv_id,
++        "user_id": user_id,
++        "title": clean_title,
++        "updated_at": now,
++    }
++
++
++def add_message(
++    conversation_id: str,
++    role: str,
++    content: str,
++    msg_id: Optional[str] = None,
++    extra: Optional[Dict[str, Any]] = None,
++    user_id: str = "usr-admin-primary",
++) -> Dict[str, Any]:
++    """Appends a message to a conversation, updating the conversation's timestamp."""
++    mid = msg_id or f"msg-{uuid.uuid4().hex[:12]}"
++    now = time.time()
++    extra_str = json.dumps(extra or {})
++
++    # Auto-create conversation if missing
++    save_conversation(conversation_id, user_id=user_id, title=(content[:40] if role == "user" else None))
++
++    with get_db() as conn:
++        if conn is not None:
++            conn.execute(
++                """
++                INSERT INTO messages (id, conversation_id, role, content, created_at, extra_json)
++                VALUES (?, ?, ?, ?, ?, ?);
++                """,
++                (mid, conversation_id, role, content, now, extra_str),
++            )
++            conn.execute(
++                "UPDATE conversations SET updated_at = ? WHERE id = ?;",
++                (now, conversation_id),
++            )
++        else:
++            if conversation_id not in _MEM_FALLBACK["messages"]:
++                _MEM_FALLBACK["messages"][conversation_id] = []
++            _MEM_FALLBACK["messages"][conversation_id].append({
++                "id": mid,
++                "role": role,
++                "content": content,
++                "created_at": now,
++                "extra": extra or {},
++            })
++
++    return {
++        "id": mid,
++        "conversation_id": conversation_id,
++        "role": role,
++        "content": content,
++        "created_at": now,
++        "extra": extra or {},
++    }
++
++
++def get_conversation(conversation_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
++    """Returns conversation metadata along with ordered message history."""
++    with get_db() as conn:
++        if conn is not None:
++            query = "SELECT * FROM conversations WHERE id = ?"
++            params: List[Any] = [conversation_id]
++            if user_id:
++                query += " AND user_id = ?"
++                params.append(user_id)
++            conv_row = conn.execute(query, params).fetchone()
++            if not conv_row:
++                return None
++
++            msg_rows = conn.execute(
++                "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC;",
++                (conversation_id,),
++            ).fetchall()
++
++            messages = [
++                {
++                    "id": m["id"],
++                    "role": m["role"],
++                    "content": m["content"],
++                    "created_at": m["created_at"],
++                    "extra": json.loads(m["extra_json"] or "{}"),
++                }
++                for m in msg_rows
++            ]
++
++            return {
++                "id": conv_row["id"],
++                "user_id": conv_row["user_id"],
++                "title": conv_row["title"],
++                "created_at": conv_row["created_at"],
++                "updated_at": conv_row["updated_at"],
++                "metadata": json.loads(conv_row["metadata_json"] or "{}"),
++                "messages": messages,
++                "message_count": len(messages),
++            }
++        else:
++            conv = _MEM_FALLBACK["conversations"].get(conversation_id)
++            if not conv:
++                return None
++            if user_id and conv.get("user_id") != user_id:
++                return None
++            msgs = _MEM_FALLBACK["messages"].get(conversation_id, [])
++            return {
++                **conv,
++                "messages": msgs,
++                "message_count": len(msgs),
++            }
++
++
++def list_conversations(user_id: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
++    """Returns summary list of recent conversations ordered by updated_at descending."""
++    with get_db() as conn:
++        if conn is not None:
++            query = "SELECT c.*, (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id) as msg_count FROM conversations c"
++            params: List[Any] = []
++            if user_id:
++                query += " WHERE c.user_id = ?"
++                params.append(user_id)
++            query += " ORDER BY c.updated_at DESC LIMIT ?;"
++            params.append(limit)
++
++            rows = conn.execute(query, params).fetchall()
++            return [
++                {
++                    "id": r["id"],
++                    "user_id": r["user_id"],
++                    "title": r["title"],
++                    "created_at": r["created_at"],
++                    "updated_at": r["updated_at"],
++                    "message_count": r["msg_count"],
++                }
++                for r in rows
++            ]
++        else:
++            all_convs = list(_MEM_FALLBACK["conversations"].values())
++            if user_id:
++                all_convs = [c for c in all_convs if c.get("user_id") == user_id]
++            all_convs.sort(key=lambda x: x.get("updated_at", 0), reverse=True)
++            res = []
++            for c in all_convs[:limit]:
++                msgs = _MEM_FALLBACK["messages"].get(c["id"], [])
++                res.append({
++                    "id": c["id"],
++                    "user_id": c.get("user_id"),
++                    "title": c.get("title"),
++                    "created_at": c.get("created_at"),
++                    "updated_at": c.get("updated_at"),
++                    "message_count": len(msgs),
++                })
++            return res
++
++
++def delete_conversation(conversation_id: str, user_id: Optional[str] = None) -> bool:
++    """Deletes conversation and associated messages."""
++    with get_db() as conn:
++        if conn is not None:
++            query = "DELETE FROM conversations WHERE id = ?"
++            params: List[Any] = [conversation_id]
++            if user_id:
++                query += " AND user_id = ?"
++                params.append(user_id)
++            cur = conn.execute(query, params)
++            conn.execute("DELETE FROM messages WHERE conversation_id = ?;", (conversation_id,))
++            return cur.rowcount > 0
++        else:
++            if conversation_id in _MEM_FALLBACK["conversations"]:
++                del _MEM_FALLBACK["conversations"][conversation_id]
++                _MEM_FALLBACK["messages"].pop(conversation_id, None)
++                return True
++            return False
++
++
++# ── User Preferences & Tool Card Persistence ────────────────────────────────
++
++import copy
++
++DEFAULT_PREFERENCES: Dict[str, Any] = {
++    "hidden_tool_cards": [],
++    "pinned_tools": [],
++    "theme": "cosmic-dark",
++    "dashboard_layout": "standard",
++    "auto_scroll": True,
++}
++
++
++def _default_prefs() -> Dict[str, Any]:
++    return copy.deepcopy(DEFAULT_PREFERENCES)
++
++
++def get_user_preferences(user_id: str = "usr-admin-primary") -> Dict[str, Any]:
++    """Retrieves user preferences, returning defaults if not found."""
++    with get_db() as conn:
++        if conn is not None:
++            row = conn.execute(
++                "SELECT preferences_json, updated_at FROM user_preferences WHERE user_id = ?;",
++                (user_id,),
++            ).fetchone()
++            if row:
++                try:
++                    loaded = json.loads(row["preferences_json"])
++                    merged = {**_default_prefs(), **loaded}
++                    return {
++                        "user_id": user_id,
++                        "preferences": merged,
++                        "updated_at": row["updated_at"],
++                    }
++                except Exception:
++                    pass
++        else:
++            if user_id in _MEM_FALLBACK["preferences"]:
++                return {
++                    "user_id": user_id,
++                    "preferences": {**_default_prefs(), **_MEM_FALLBACK["preferences"][user_id]},
++                    "updated_at": time.time(),
++                }
++
++    return {
++        "user_id": user_id,
++        "preferences": _default_prefs(),
++        "updated_at": time.time(),
++    }
++
++
++def save_user_preferences(user_id: str, patch_data: Dict[str, Any]) -> Dict[str, Any]:
++    """Merges and stores updated user preferences."""
++    current = copy.deepcopy(get_user_preferences(user_id)["preferences"])
++
++    # Support directly updating hidden_tool_cards
++    if "hidden_tool_cards" in patch_data and isinstance(patch_data["hidden_tool_cards"], list):
++        current["hidden_tool_cards"] = list(dict.fromkeys(patch_data["hidden_tool_cards"]))
++
++    # Support action: "hide_tool" / "unhide_tool"
++    action = patch_data.get("action")
++    tool_id = patch_data.get("tool_id")
++    if action == "hide_tool" and tool_id:
++        if tool_id not in current["hidden_tool_cards"]:
++            current["hidden_tool_cards"].append(tool_id)
++    elif action == "unhide_tool" and tool_id:
++        current["hidden_tool_cards"] = [t for t in current["hidden_tool_cards"] if t != tool_id]
++
++    # Merge any other preference keys
++    for k, v in patch_data.items():
++        if k not in ("action", "tool_id", "user_id"):
++            current[k] = v
++
++    now = time.time()
++    pref_str = json.dumps(current)
++
++    with get_db() as conn:
++        if conn is not None:
++            conn.execute(
++                """
++                INSERT INTO user_preferences (user_id, preferences_json, updated_at)
++                VALUES (?, ?, ?)
++                ON CONFLICT(user_id) DO UPDATE SET
++                    preferences_json = excluded.preferences_json,
++                    updated_at = excluded.updated_at;
++                """,
++                (user_id, pref_str, now),
++            )
++        else:
++            _MEM_FALLBACK["preferences"][user_id] = current
++
++    return {
++        "user_id": user_id,
++        "preferences": current,
++        "updated_at": now,
++    }
++
++
++# Auto-run initialization on module load
++init_db()
+diff --git a/gateway/tests/test_storage_and_endpoints.py b/gateway/tests/test_storage_and_endpoints.py
+new file mode 100644
+index 00000000..7fb9016b
+--- /dev/null
++++ b/gateway/tests/test_storage_and_endpoints.py
+@@ -0,0 +1,166 @@
++"""
++gateway/tests/test_storage_and_endpoints.py — Offline tests for:
++1. Conversation-ID carry-over and history persistence.
++2. Server-side LiveLogs ring buffer and admin endpoints.
++3. User preferences and Tool-card removal persistence.
++"""
++from __future__ import annotations
++
++import asyncio
++import json
++import logging
++import os
++import sys
++import time
++import unittest
++from unittest.mock import AsyncMock, patch
++
++BASE = os.path.dirname(os.path.abspath(__file__))
++SAT = os.path.abspath(os.path.join(BASE, ".."))
++if SAT not in sys.path:
++    sys.path.insert(0, SAT)
++
++try:
++    from service import storage
++    from service.app import app, log_ring_buffer
++except ImportError:
++    from gateway.service import storage
++    from gateway.service.app import app, log_ring_buffer
++
++from starlette.testclient import TestClient
++
++
++class TestStorageAndEndpoints(unittest.TestCase):
++    @classmethod
++    def setUpClass(cls):
++        storage.init_db()
++        cls.client = TestClient(app)
++
++    def test_01_conversation_persistence(self):
++        conv_id = "test-conv-001"
++        user_id = "usr-test-123"
++
++        # Save conversation
++        c = storage.save_conversation(conv_id, user_id=user_id, title="Test Session")
++        self.assertEqual(c["id"], conv_id)
++        self.assertEqual(c["title"], "Test Session")
++
++        # Add user message
++        m1 = storage.add_message(conv_id, "user", "Hello AI", user_id=user_id)
++        self.assertEqual(m1["role"], "user")
++        self.assertEqual(m1["content"], "Hello AI")
++
++        # Add assistant message
++        m2 = storage.add_message(conv_id, "assistant", "Hello human!", extra={"model": "w.ge"}, user_id=user_id)
++        self.assertEqual(m2["role"], "assistant")
++
++        # Retrieve conversation
++        conv = storage.get_conversation(conv_id, user_id=user_id)
++        self.assertIsNotNone(conv)
++        self.assertEqual(conv["message_count"], 2)
++        self.assertEqual(len(conv["messages"]), 2)
++        self.assertEqual(conv["messages"][0]["content"], "Hello AI")
++        self.assertEqual(conv["messages"][1]["content"], "Hello human!")
++
++        # List conversations
++        convs = storage.list_conversations(user_id=user_id)
++        self.assertGreaterEqual(len(convs), 1)
++        found = [x for x in convs if x["id"] == conv_id]
++        self.assertTrue(bool(found))
++        self.assertEqual(found[0]["message_count"], 2)
++
++        # Delete conversation
++        ok = storage.delete_conversation(conv_id, user_id=user_id)
++        self.assertTrue(ok)
++        self.assertIsNone(storage.get_conversation(conv_id, user_id=user_id))
++
++    def test_02_user_preferences_and_tool_cards(self):
++        user_id = f"usr-pref-test-{time.time()}"
++
++        # Initial preferences should have default structure
++        p0 = storage.get_user_preferences(user_id)
++        self.assertEqual(p0["preferences"]["hidden_tool_cards"], [])
++
++        # Hide a tool card via action
++        storage.save_user_preferences(user_id, {"action": "hide_tool", "tool_id": "card-browser"})
++        p1 = storage.get_user_preferences(user_id)
++        self.assertIn("card-browser", p1["preferences"]["hidden_tool_cards"])
++
++        # Hide another tool card directly in list
++        storage.save_user_preferences(user_id, {"hidden_tool_cards": ["card-browser", "card-deployer"], "theme": "cosmic-dark"})
++        p2 = storage.get_user_preferences(user_id)
++        self.assertEqual(p2["preferences"]["hidden_tool_cards"], ["card-browser", "card-deployer"])
++        self.assertEqual(p2["preferences"]["theme"], "cosmic-dark")
++
++        # Unhide a tool card
++        storage.save_user_preferences(user_id, {"action": "unhide_tool", "tool_id": "card-browser"})
++        p3 = storage.get_user_preferences(user_id)
++        self.assertNotIn("card-browser", p3["preferences"]["hidden_tool_cards"])
++        self.assertIn("card-deployer", p3["preferences"]["hidden_tool_cards"])
++
++    def test_03_livelogs_ring_buffer(self):
++        logger = logging.getLogger("supremeai.gateway")
++        test_msg = "LiveLogs Verification Log Entry #42"
++        logger.info(test_msg)
++
++        logs = log_ring_buffer.get_logs(limit=20, search="LiveLogs Verification")
++        self.assertGreaterEqual(len(logs), 1)
++        self.assertEqual(logs[-1]["level"], "INFO")
++        self.assertIn(test_msg, logs[-1]["message"])
++
++    def test_04_conversation_endpoints(self):
++        headers = {"X-Guest-Mode": "true", "X-User-Id": "usr-endpoint-test"}
++
++        # Create conversation
++        r_create = self.client.post("/api/v1/chat/conversations", json={"title": "Dashboard Session"}, headers=headers)
++        self.assertEqual(r_create.status_code, 200)
++        c_id = r_create.json()["conversation"]["id"]
++
++        # List conversations
++        r_list = self.client.get("/api/v1/chat/conversations", headers=headers)
++        self.assertEqual(r_list.status_code, 200)
++        self.assertIn("conversations", r_list.json())
++
++        # Get conversation details
++        r_get = self.client.get(f"/api/v1/chat/conversations/{c_id}", headers=headers)
++        self.assertEqual(r_get.status_code, 200)
++        self.assertEqual(r_get.json()["id"], c_id)
++
++        # Delete conversation
++        r_del = self.client.delete(f"/api/v1/chat/conversations/{c_id}", headers=headers)
++        self.assertEqual(r_del.status_code, 200)
++        self.assertEqual(r_del.json()["status"], "deleted")
++
++    def test_05_admin_livelogs_endpoint(self):
++        headers = {"X-Guest-Mode": "true"}
++        r = self.client.get("/admin-api/logs?limit=10", headers=headers)
++        self.assertEqual(r.status_code, 200)
++        data = r.json()
++        self.assertEqual(data["status"], "ok")
++        self.assertIsInstance(data["logs"], list)
++
++    def test_06_preferences_and_tool_card_endpoints(self):
++        headers = {"X-Guest-Mode": "true", "X-User-Id": "usr-endpoint-pref"}
++
++        # Get preferences
++        r_get = self.client.get("/api/v1/user/preferences", headers=headers)
++        self.assertEqual(r_get.status_code, 200)
++        self.assertIn("preferences", r_get.json())
++
++        # Hide tool card
++        r_hide = self.client.delete("/api/v1/user/preferences/tool-card/card-voice", headers=headers)
++        self.assertEqual(r_hide.status_code, 200)
++        self.assertEqual(r_hide.json()["status"], "ok")
++
++        # Verify hidden in GET
++        r_check = self.client.get("/api/v1/user/preferences", headers=headers)
++        self.assertIn("card-voice", r_check.json()["preferences"]["hidden_tool_cards"])
++
++        # Restore tool card
++        r_restore = self.client.post("/api/v1/user/preferences/tool-card/card-voice/restore", headers=headers)
++        self.assertEqual(r_restore.status_code, 200)
++        self.assertEqual(r_restore.json()["action"], "restored")
++
++
++if __name__ == "__main__":
++    unittest.main()

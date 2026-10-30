@@ -1,0 +1,250 @@
+diff --git a/studio/src/components/layout/DashboardLayout.tsx b/studio/src/components/layout/DashboardLayout.tsx
+index 70dec699..4924884b 100644
+--- a/studio/src/components/layout/DashboardLayout.tsx
++++ b/studio/src/components/layout/DashboardLayout.tsx
+@@ -8,11 +8,14 @@ export interface DashboardLayoutProps {
+   sidebar?: React.ReactNode;
+   children: React.ReactNode;
+   isSidebarCollapsed?: boolean;
++  /** P1 wave item 4 (2026-10-25 report): mobile-only bottom tab bar (md:hidden).
++   *  Rendered by the shell for user context; admin keeps the drawer-only surface. */
++  mobileTabBar?: React.ReactNode;
+ }
+ 
+ const SIDEBAR_SPRING = { type: 'spring', stiffness: 320, damping: 32 } as const;
+ 
+-export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed = false }: DashboardLayoutProps) {
++export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed = false, mobileTabBar }: DashboardLayoutProps) {
+   // Issue #1526 (LOW): the sidebar used to render at a fixed 256px on every
+   // viewport — on phones it swallowed most of the screen and the content
+   // overlapped. Below md it now becomes an overlay drawer: closed by default,
+@@ -44,6 +47,12 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed
+         </header>
+       )}
+ 
++      {/* P1 item 4: fixed bottom chrome on phones. Rendered BEFORE the content row
++          in DOM so the drawer backdrop (same z-30, later in DOM) dims it while the
++          drawer is open; the drawer itself (z-40) and CommandBar/modals (z-50) stay
++          above. Bottom padding on <main> keeps page footers/composers unobscured. */}
++      {mobileTabBar}
++
+       <div className="flex-1 flex overflow-hidden relative">
+         {sidebar && (
+           <motion.aside
+@@ -85,7 +94,11 @@ export function DashboardLayout({ header, sidebar, children, isSidebarCollapsed
+           )}
+         </AnimatePresence>
+ 
+-        <main className="flex-1 min-w-0 overflow-hidden relative z-10 flex flex-col">
++        <main
++          className={`flex-1 min-w-0 overflow-hidden relative z-10 flex flex-col ${
++            mobileTabBar ? 'pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0' : ''
++          }`}
++        >
+           {children}
+         </main>
+       </div>
+diff --git a/studio/src/components/shell/MobileTabBar.test.tsx b/studio/src/components/shell/MobileTabBar.test.tsx
+new file mode 100644
+index 00000000..01b57388
+--- /dev/null
++++ b/studio/src/components/shell/MobileTabBar.test.tsx
+@@ -0,0 +1,80 @@
++import { describe, it, expect, beforeEach } from 'vitest';
++import { render, screen } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import { MemoryRouter } from 'react-router-dom';
++import { MobileTabBar } from './MobileTabBar';
++import { DashboardLayout } from '../layout/DashboardLayout';
++import { useMobileNav } from '../../hooks/useMobileNav';
++
++// বাংলা: P1 wave item 4 (2026-10-25 report) — মোবাইল বটম ট্যাব বার। এন্ট্রি
++// navigationRegistry (SIMPLE_VIEWER_ENTRY_IDS) থেকে derive হয় — টেস্টটি যাচাই করে
++// (১) registry-derived ৩+More ট্যাব, (২) active state, (৩) More → ড্রয়ার স্টোর,
++// (৪) DashboardLayout স্লট রেন্ডার + main bottom padding, (৫) admin-safe surface।
++
++function renderTabBar(initialPath: string) {
++  return render(
++    <MemoryRouter initialEntries={[initialPath]}>
++      <MobileTabBar />
++    </MemoryRouter>,
++  );
++}
++
++beforeEach(() => {
++  useMobileNav.setState({ isMobileNavOpen: false });
++});
++
++describe('MobileTabBar (P1 wave item 4)', () => {
++  it('renders the registry-derived user level-1 tabs plus More', () => {
++    // Owner decision 2026-10-24: user rail = nav-chat, nav-profile, nav-settings.
++    renderTabBar('/workspace');
++    expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
++    expect(screen.getByTestId('mobile-tab-nav-chat')).toHaveTextContent('Chat');
++    expect(screen.getByTestId('mobile-tab-nav-profile')).toHaveTextContent('Profile');
++    expect(screen.getByTestId('mobile-tab-nav-settings')).toHaveTextContent('Settings');
++    expect(screen.getByTestId('mobile-tab-more')).toHaveTextContent('More');
++    // Tabs navigate via routes — links carry real hrefs (dead-link prevention).
++    expect(screen.getByTestId('mobile-tab-nav-chat')).toHaveAttribute('href', '/workspace/live');
++  });
++
++  it('marks the tab whose route prefix matches the current path active', () => {
++    renderTabBar('/workspace/live');
++    expect(screen.getByTestId('mobile-tab-nav-chat')).toHaveAttribute('aria-current', 'page');
++    expect(screen.getByTestId('mobile-tab-nav-profile')).not.toHaveAttribute('aria-current');
++  });
++
++  it('opens the existing mobile nav drawer (level-2 surface) from More', async () => {
++    const user = userEvent.setup();
++    renderTabBar('/workspace');
++    expect(useMobileNav.getState().isMobileNavOpen).toBe(false);
++    await user.click(screen.getByTestId('mobile-tab-more'));
++    expect(useMobileNav.getState().isMobileNavOpen).toBe(true);
++  });
++
++  it('DashboardLayout renders the mobileTabBar slot and pads main content on mobile', () => {
++    render(
++      <MemoryRouter initialEntries={['/workspace']}>
++        <DashboardLayout mobileTabBar={<MobileTabBar />}>
++          <div>page-body</div>
++        </DashboardLayout>
++      </MemoryRouter>,
++    );
++    expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
++    expect(screen.getByText('page-body')).toBeInTheDocument();
++    const main = screen.getByText('page-body').parentElement as HTMLElement;
++    expect(main.className).toContain('pb-[calc(4rem+env(safe-area-inset-bottom))]');
++    expect(main.className).toContain('md:pb-0');
++  });
++
++  it('without the slot, main has no bottom padding (admin surface unchanged)', () => {
++    render(
++      <MemoryRouter initialEntries={['/workspace']}>
++        <DashboardLayout>
++          <div>admin-body</div>
++        </DashboardLayout>
++      </MemoryRouter>,
++    );
++    expect(screen.queryByTestId('mobile-tab-bar')).not.toBeInTheDocument();
++    const main = screen.getByText('admin-body').parentElement as HTMLElement;
++    expect(main.className).not.toContain('pb-');
++  });
++});
+diff --git a/studio/src/components/shell/MobileTabBar.tsx b/studio/src/components/shell/MobileTabBar.tsx
+new file mode 100644
+index 00000000..7040c4af
+--- /dev/null
++++ b/studio/src/components/shell/MobileTabBar.tsx
+@@ -0,0 +1,89 @@
++// SupremeAI — MobileTabBar (verified 2026-10-25 frontend report, P1 wave item 4)
++// বাংলা মন্তব্য: মোবাইল বটম ট্যাব বার — থাম্ব-রিচ প্রাইমারি নেভিগেশন (রিপোর্ট §3:
++// মোবাইল নেভ এখন ডেস্কটপ সাইডবারের ড্রয়ার-ক্লোন, বটম ট্যাব বার নেই)।
++//
++// এটি দ্বিতীয় কোনো nav definition নয় (roadmap Rule 8/§11): এন্ট্রি হুবহু
++// RoleAwareNavRail-এর মতোই getNavigationForContext('user') থেকে derive হয় —
++// মালিকানা-সিদ্ধান্ত (2026-10-24, 3-tab progressive disclosure) অনুযায়ী আজ
++// Chat/Profile/Settings রেন্ডার হয়। রিপোর্টের ৫-স্তর-১ টার্গেটে গেলে কেবল
++// registry/SIMPLE_VIEWER_ENTRY_IDS আপডেট করলেই বার অটো-ফলো করবে
++// (ক্যাপাসিটি: ৪ ট্যাব + More = ৫ স্লট; বাকি এন্ট্রি More → ড্রয়ার = স্তর ২)।
++//
++// Admin context-এ বার নেই — রিপোর্ট §6.1 অনুযায়ী admin আলাদা role-shell;
++// ২৫+ action subtab (route নয়, context-switch) ট্যাব-বার মডেলে খাপছাড়া।
++// Admin-এর মোবাইল সারফেস আজও হেডার-টগল → ড্রয়ার (অপরিবর্তিত)।
++
++import React from 'react';
++import { Link, useLocation, useNavigate } from 'react-router-dom';
++import { MoreHorizontal } from 'lucide-react';
++import { getNavigationForContext } from '../../config/navigationRegistry';
++import { useAuthStore } from '../../store/authStore';
++import { useWorkspaceSettings } from '../../hooks/useWorkspaceSettings';
++import { useMobileNav } from '../../hooks/useMobileNav';
++import { getCanonicalRole } from '../../auth/identity';
++
++export function MobileTabBar() {
++  const location = useLocation();
++  const navigate = useNavigate();
++  const role = useAuthStore((state) => state.role);
++  const permissions = useAuthStore((state) => state.permissions);
++  const enabledModules = useWorkspaceSettings((state) => state.enabledModules);
++  const setMobileNavOpen = useMobileNav((state) => state.setMobileNavOpen);
++
++  // RoleAwareNavRail-এর acquisition + filtering semantics হুবহু (একক truth)।
++  const routeTabs = getNavigationForContext('user', {
++    role: role || getCanonicalRole(),
++    permissions,
++  })
++    .flatMap((group) => group.items)
++    .filter((item) => item.kind === 'route')
++    .filter((item) => item.id !== 'nav-ide' || enabledModules.includes('code'))
++    .slice(0, 4);
++
++  // Rail-এর active semantics হুবহু — exact match, অথবা non-root path prefix।
++  const isRouteActive = (path: string) =>
++    location.pathname === path || (path !== '/workspace' && location.pathname.startsWith(path));
++
++  const tabCls = (active: boolean) =>
++    `flex min-h-[3.5rem] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 ${
++      active ? 'text-accent-primary' : 'text-secondary hover:text-text'
++    }`;
++
++  return (
++    <nav
++      aria-label="Mobile navigation"
++      data-testid="mobile-tab-bar"
++      className="surface-1 border-t border-border fixed inset-x-0 bottom-0 z-30 flex md:hidden pb-[env(safe-area-inset-bottom)]"
++    >
++      {routeTabs.map((item) => {
++        if (item.kind !== 'route') return null;
++        const active = isRouteActive(item.path);
++        return (
++          <Link
++            key={item.id}
++            to={item.path}
++            data-testid={`mobile-tab-${item.id}`}
++            aria-current={active ? 'page' : undefined}
++            onClick={(event) => {
++              event.preventDefault();
++              navigate(item.path);
++            }}
++            className={tabCls(active)}
++          >
++            <item.icon size={20} aria-hidden="true" />
++            <span>{item.label}</span>
++          </Link>
++        );
++      })}
++      <button
++        type="button"
++        data-testid="mobile-tab-more"
++        onClick={() => setMobileNavOpen(true)}
++        className={tabCls(false)}
++      >
++        <MoreHorizontal size={20} aria-hidden="true" />
++        <span>More</span>
++      </button>
++    </nav>
++  );
++}
+diff --git a/studio/src/components/shell/UnifiedAppShell.tsx b/studio/src/components/shell/UnifiedAppShell.tsx
+index afede86f..11501228 100644
+--- a/studio/src/components/shell/UnifiedAppShell.tsx
++++ b/studio/src/components/shell/UnifiedAppShell.tsx
+@@ -10,6 +10,7 @@ import React from 'react';
+ import { DashboardLayout } from '../layout/DashboardLayout';
+ import { GlobalHeader, type HeaderNotification } from './GlobalHeader';
+ import { RoleAwareNavRail } from './RoleAwareNavRail';
++import { MobileTabBar } from './MobileTabBar';
+ import { useWorkspaceSettings } from '../../hooks/useWorkspaceSettings';
+ 
+ export interface UnifiedAppShellProps {
+@@ -59,6 +60,10 @@ export function UnifiedAppShell({
+         />
+       }
+       isSidebarCollapsed={isSidebarCollapsed}
++      // P1 wave item 4 (verified 2026-10-25 report): mobile bottom tab bar for the
++      // user context only. Admin keeps the drawer (§6.1 — separate role shell;
++      // 25+ action subtabs are context switches, not route tabs).
++      mobileTabBar={context === 'user' ? <MobileTabBar /> : undefined}
+     >
+       {children}
+     </DashboardLayout>

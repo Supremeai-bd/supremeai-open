@@ -1,0 +1,148 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-XIII.md b/docs/SCOUT_RADAR_2026-10-28-XIII.md
+new file mode 100644
+index 00000000..30497b42
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-XIII.md
+@@ -0,0 +1,111 @@
++# Scout Radar XIII — Tower control-plane MCP protocol ceiling (R49)
++
++Sweep: ecosystem-scout, Job 477792, cycle 2026-10-28 18:45+08. Method: read-only live probes
++(2 initialize handshakes + 1 `tools/list`) and web-verified spec state; zero mutations, zero
++load, zero code edits. Companion: the R-number registration lives in `SCOUT_RADAR_INDEX.md`
++(same-PR rule) and the filed lane is #2103.
++
++## R49 · Tower MCP protocol ceiling: 2025-11-25 — one revision behind the current spec, zero conformance baseline
++
++### Finding (one line)
++
++The Tower control plane — `https://supremeai-mcp-tower.onrender.com/mcp`, the surface every cron
++agent, the bridge, and the work-order pipeline run through — negotiates an MCP protocol ceiling of
++**2025-11-25** while the current spec is **2026-07-28**; the repo carries **zero MCP conformance
++evidence** in an ecosystem that has begun mandating conformance tests (SEP-2484, official
++`modelcontextprotocol/conformance` framework).
++
++### Live evidence (2026-10-28, ~10:15Z)
++
++Two discriminating `initialize` handshakes, request/response verbatim:
++
++| # | Offered `protocolVersion` | Tower echoed | Inference |
++|---|---------------------------|--------------|-----------|
++| 1 | `2025-06-18` | `2025-06-18` | supports that revision |
++| 2 | `2026-07-28` (current) | **`2025-11-25`** | **ceiling = 2025-11-25** — per the MCP version-negotiation rule the server replies with its highest supported version ≤ the offered one; a 2026-07-28-capable server would have echoed it |
++
++Constant across both: `serverInfo: {"name":"supremeai-control-tower","version":"1.0.0"}`;
++advertised capabilities `tools` / `resources` / `prompts` (each `listChanged: true`); Streamable
++HTTP transport with a `Mcp-Session-Id` session header returned on initialize. The transport layer
++is modern; the protocol layer is pinned one revision back. Reproduction: any JSON-RPC client POSTs
++`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"<offered>","capabilities":{},"clientInfo":{"name":"x","version":"1"}}}` to the `/mcp` endpoint and reads
++`result.protocolVersion` from the SSE `data:` frame — the two rows above are the full transcript.
++
++Tower tool-surface datum collected in the same probe window (dedup audit): `tools/list` returns
++**142 tools** including `github_create_issue` (used to file #2103) — the count has grown from the
++135 reported by earlier cycles, consistent with active Tower development (which raises, not
++lowers, the value of a standing conformance baseline).
++
++### Spec + ecosystem state (web-verified 2026-10-28)
++
++- Current published spec: **2026-07-28** — described by secondary coverage as the largest update
++  since MCP's introduction; introduces opt-in **extensions**: **Tasks** (asynchronous long-running
++  operations with polling, mid-flight input, durable handles), **Skills over MCP** (structured
++  agent-workflow instructions discovered and consumed through MCP), **MCP Apps** (inline UI
++  elements), plus client-side elicitation as a first-class feature. The interim **2025-11-25**
++  protocol release precedes it; the Tower's ceiling matches that interim release exactly.
++- Conformance era: **SEP-2484** (modelcontextprotocol.io, dated 2026-03-27) adds a conformance-test
++  requirement for a SEP to transition Accepted → Final; the official
++  **`modelcontextprotocol/conformance`** repository ships a client+server conformance framework
++  with an SDK integration guide; the official **MCP Inspector** remains the standard interactive
++  server-audit tool.
++
++### Why this is concrete value, not hype
++
++1. **Tasks ↔ the bridge pipeline's async shape.** Every long-running bridge work order (submit →
++   CI Guardian → land, with verdicts read back hours later) is polled today by agents re-reading
++   `bridge_read_feedback` / `bridge_work_queue` on hourly cron loops. That is precisely the
++   async-workflow pattern the Tasks extension standardizes (durable handles, mid-flight input,
++   polling). At a 2025-11-25 ceiling the Tower cannot negotiate the extension at all — the
++   bridge's polling choreography stays a hand-rolled convention instead of a protocol primitive.
++2. **Skills over MCP ↔ this repo's own skills tree.** The fleet vendors `.agents/skills/` (9+
++   folders, 3 frontmatter conventions, a pydantic schema in `skills/schema.py` — see the R17
++   lane's conformance work #1672). The spec-level Skills extension is the interop path between
++   that tree and MCP-native hosts; the same ceiling blocks it.
++3. **No baseline exists.** Repo-wide grep for conformance/inspector wiring returns nothing (the
++   landed MCP-adjacent lanes are R18 chrome-devtools-mcp as a browser tool backend #1673 and R22
++   official MCP Registry discovery ingest #1686 — neither audits the Tower itself). If a Render
++   redeploy swaps or misconfigures the Tower's MCP SDK, nothing detects a protocol regression
++   until agent cycles start failing opaquely — the failure mode would surface as scattered
++   per-agent breakage, not a red guard.
++
++### Options routed (report-only; no code edit in this lane)
++
++- **A — scout/guard lane**: run the official `modelcontextprotocol/conformance` suite against the
++  Tower in report-only mode; produces the first conformance baseline and a repeatable artifact.
++- **B — cheap first step**: MCP Inspector smoke pass; snapshot the negotiated-vs-declared
++  capability/extension matrix; disambiguates the proxy-shadow caveat below.
++- **C — maintainer lane**: SDK/protocol upgrade evaluation 2025-11-25 → 2026-07-28, with the
++  Tasks extension assessed as the bridge's async primitive (the single highest-leverage item).
++- **D — admin/runbook**: document the ceiling + the two-handshake re-probe in the operator
++  runbook so the ceiling is a recorded fact, not tribal knowledge.
++
++### Dedup register (checked before filing)
++
++- **R14** OTel GenAI `gen_ai.*` semantics (#1648, landed) — observability taxonomy. Distinct plane.
++- **R18** chrome-devtools-mcp tool backend (#1673) — browser tool supply. Distinct.
++- **R20** Web Bot Auth (#1675) — signed-agent HTTP identity. Orthogonal.
++- **R22** MCP Registry discovery (#1686) — marketplace ingest. Distinct.
++- **R17** Agent Skills standard conformance (#1672) — the skills tree vs the agentskills standard;
++  R49's Skills-over-MCP is the MCP-transport side of that world, not the metadata side. Related
++  but non-overlapping; cross-referenced.
++- No prior radar doc, issue, or main-history lane covers the Tower's own protocol version ceiling
++  or conformance state (repo-wide grep + index scan at pass-10 time).
++
++### Never-do
++
++Two `initialize` handshakes and one `tools/list` total — read-only, zero mutations, zero
++fuzzing/load, no credentials handled, no code edits in this lane (the issue filing itself used the
++Tower's own `github_create_issue`, which is the lane's only write action by design). The ceiling
++inference follows the MCP version-negotiation rule; nothing was exploited or stressed.
++
++### Honest limitations
++
++- Echo-based ceiling is protocol-standard but a proxy-mediated deployment could shadow a newer
++  core behind the 2025-11-25 edge (disclosed; option B's inspector pass disambiguates).
++- Spec recency is sourced from the official spec mirror and secondary analyses dated 2026; the
++  2026-07-28 release's extension set is quoted from its specification pages.
++- The conformance framework is early-stage but official (its own README's words); a report-only
++  baseline (option A) is sized accordingly — a first snapshot, not a compliance certificate.
++- Statuses here are point-in-time probes (2026-10-28); the lane's facts (ceiling echo, spec
++  versions) are the stable half, reproducible from the transcripts above.
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index aa486bba..e6fc49b0 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R49**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R50**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -25,7 +25,9 @@
+ > **Drift log:** *2026-10-28, pass 8b — conflicting second registration (landed 9a44555/PR #2095 from a branch cut before f0e2bec; re-headed by pass 9, body text unedited)* — R47 was filed issue-side (#2091, ecosystem-scout, Job 478318; the radar-index freshness gate itself: three same-day collision-imminent allocation occurrences — passes 3, 4, and 6 above — falsify the self-policing contract; the check spec is this index's own §5 proposal, already upgraded to 'three-time-recurrence evidenced' by pass 6 and explicitly deferred to a future guard lane; #2091 registers that deferred lane with the #1644 script-index-gate mirror spec — invariants A registry-completeness, B pointer-truth, C citation-existence — plus replayable negative fixtures built from each logged collision, and wiring options routed per the protected-path law: A pre-push agent-plane, B admin fast-lint per #1769/#1822) **AND registered in this index within the same cycle by the filer itself** — the third same-cycle lane after pass 5's R43 and pass 7's R46; the gate that would have caught the day's three collisions mechanically is now itself an allocated lane. This pass consumed the free pool {47} as advertised at its branch time and moved next free to R48 (verified free repo-wide: no radar doc, issue, or main-history citation). Rule 7 stands: the index is the only counter.
+ >
+ > **Drift log:** *2026-10-28, pass 9 — FIRST DOUBLE-CLAIM ADJUDICATION (auditor cycle, Job 478344)* — two issue-side lanes independently self-assigned R47 within the same day: #2084 (base-image pinning + Node coherence, registered by the pass-8 first landing f0e2bec/PR #2088) and #2091 (radar-index freshness gate, registered by the pass-8b second landing 9a44555/PR #2095, branch cut before f0e2bec). The second landing silently overwrote three first-landing cells: the pass-8 drift block, the R47 row, and the R43 closed-refresh — reverting #2064 to "open" on main while the issue is verifiably closed-as-completed (maintainer paykaribazaronline, issue-page close event), a factual regression and not a mere preference. Adjudication per §3's standing doctrine (landing order is ground truth; never renumber landed history): **R47 = #2084** (row restored verbatim); **#2091's lane re-pointed to R48** (verified free repo-wide) with its row text preserved verbatim and only its radar-file cell annotated; the first pass-8 block restored; the second landing preserved above as pass 8b (append-only, unedited); the R43 closed-refresh restored. This pass consumes the free pool {48} (by the re-pointed #2091 row) and moves next free to **R49** (verified free repo-wide: no radar doc, issue, or main-history citation). Meta-finding for the #2091 gate itself: same-cycle registration — pass 5/7's own contract — can RACE; two filers each honestly take the advertised next-free and both land, and the landing gates have no cell-level conflict detection, so the freshness gate needs a fourth invariant **D (landing-order rebase)**: a registration PR must diff against the index at push time, not at branch time, and fail closed on cell clobber; the day produced four collision events, the fourth BETWEEN two same-cycle registrations. Rule 7 stands: the index is the only counter.
+-
++>
++> **Drift log:** *2026-10-28, pass 10 — R49 was filed issue-side (#2103, ecosystem-scout, Job 477792; Tower control-plane MCP protocol ceiling: two live discriminating initialize handshakes against supremeai-mcp-tower.onrender.com/mcp — offered 2026-07-28 → server echoed 2025-11-25, i.e. exactly one spec revision behind the current 2026-07-28 spec whose Tasks (async long-running ops ↔ the bridge pipeline's polling choreography) and Skills-over-MCP (↔ the repo's own .agents/skills tree) extensions the Tower cannot negotiate; zero MCP conformance evidence repo-wide in the SEP-2484 (2026-03-27) era with the official modelcontextprotocol/conformance framework + Inspector available; options A–D routed (conformance baseline report-only / Inspector smoke + capability matrix / SDK upgrade eval / runbook); 2 read-only handshakes + 1 tools/list total, never-do enforced) **AND registered in this index within the same cycle by the filer itself** — the fourth same-cycle lane after R43 (pass 5), R46 (pass 7), and R47 (pass 8). This pass consumed the free pool {49} (verified free repo-wide by pass 9 minutes before) and moves next free to R50 (verified free repo-wide: no radar doc, issue, or main-history citation). Rule 7 stands: the index is the only counter.
++>
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+ | R# | Radar file | Lane (one line) | Filed issue | Verdict | Status (2026-10-28) |
+@@ -80,6 +82,7 @@
+ | R46 | *(issue-filed — guard lane, no radar doc; filed + registered same-cycle, see Drift log pass 7)* | npm dep-gate coverage blind spot 3 — browser/cloudflare-worker + vscode npm locks outside every CVE gate (js_dep reads studio pnpm only; npm_dep LOCK_PATHS = tower + vendored skill); live OSV sweep 2026-10-28 @ 09a007c: cf-worker 88 keys / 0 dev → 87 prod pairs, 4 vulnerable / 9 GHSAs (tar-fs 3.0.4, ws 8.13.0, extract-zip 2.0.1, basic-ftp 5.3.1 — FP spot-verified), vscode 10 prod pairs 0 vuln, vscode/extension all-dev; deploy surface = wrangler.toml browser worker, sole direct dep `@cloudflare/puppeteer ^0.0.15` unpinned float | #2075 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ | R47 | *(issue-filed — guard lane, no radar doc; filed + registered same-cycle, see Drift log pass 8; re-asserted by pass-9 adjudication)* | Deploy-surface base-image pinning + Node runtime-coherence blind spot — 15 Dockerfiles / 20 FROM instructions / 0 digest pins (python:3.11-slim ×12, python:3.12-slim ×3, node:24-alpine ×3, nginx:1.27-alpine, devcontainers/python:3.11): every prod base image a mutable tag float, invisible to the CVE-gate family (planes = packages, R37/R41/R45/R46) and to check_dockerfile_security.py (USER only); coherence triangle: control-plane lockfile @types/node 26.5.1 + ts 7.0.2 ships FROM node:24-alpine, no engines, CI node split "24"/"22" (pipeline.yml:719/776), studio floor >=22 — types-26/runtime-24 latent breakage class; options A–D routed (digest-pin / report-only FROM guard / version tags / engines + major-align), non-prod allowlist never-do; EOL honestly not imminent (node 24 LTS → 2028-04) | #2084 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ | R48 | *(issue-filed — guard lane, no radar doc; filed+registered as R47 by Job 478318 but second-landed after #2084 — re-pointed to R48 by pass-9 adjudication, lane text preserved)* | Radar-index freshness gate — mechanical backstop for the allocation contract (#1644 script-index-gate mirror): invariant A registry-completeness (every R<number> in the summary tables has exactly one row), B pointer-truth (advertised next-free absent from registry/drift-log/radar docs repo-wide), C citation-existence (docs R-citations resolve to rows); three same-day collision-imminent occurrences (passes 3/4/6) as replayable negative fixtures; honest-skip doctrine #1760 for offline citation scans; wiring options A pre-push agent-plane (no `.github/**`) / B admin fast-lint per #1769/#1822; pass 9 adds proposed invariant D landing-order rebase (fail closed on cell clobber) | #2091 | `adapt_cleanroom` | open (filed 2026-10-28) |
++| R49 | *(issue-filed — radar doc `SCOUT_RADAR_2026-10-28-XIII.md` landing in the same PR as this row; filed + registered same-cycle, see Drift log pass 10)* | Tower control-plane MCP protocol ceiling — live discriminating handshakes (2026-10-28): offered 2026-07-28 → echoed 2025-11-25, one revision behind the current spec; Tasks/Skills-over-MCP/MCP-Apps extensions unnegotiable at that ceiling (Tasks ↔ bridge pipeline async, Skills ↔ .agents/skills); zero conformance baseline in the SEP-2484 era (official conformance framework + Inspector unused repo-wide); options A–D routed; 2 read-only handshakes, never-do enforced | #2103 | `adapt_cleanroom` | open (filed 2026-10-28) |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 

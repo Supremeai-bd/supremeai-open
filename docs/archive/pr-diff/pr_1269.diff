@@ -1,0 +1,1081 @@
+diff --git a/studio/src/components/core/Sidebar.tsx b/studio/src/components/core/Sidebar.tsx
+index 68a4efb5..e69de29b 100644
+--- a/studio/src/components/core/Sidebar.tsx
++++ b/studio/src/components/core/Sidebar.tsx
+@@ -1,108 +0,0 @@
+-import React from "react";
+-import { Link, useLocation } from "react-router-dom";
+-import { useAuthStore } from "../../store/authStore";
+-
+-interface SidebarProps {
+-  isOpen: boolean;
+-  onClose: () => void;
+-}
+-
+-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
+-  const location = useLocation();
+-  const user = useAuthStore((state) => state.user);
+-
+-  // বাংলা মন্তব্য: টেস্ট আইডি সহ নেভিগেশন আইটেম লিস্ট তৈরি করা হলো
+-  const navItems = [
+-    { id: "workspace", name: "Dashboard", path: "/workspace", icon: "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" },
+-    { id: "agent", name: "AI Assistant", path: "/workspace/agent", icon: "M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" },
+-    { id: "ide", name: "Code Editor", path: "/workspace/ide", icon: "M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" },
+-    { id: "skills", name: "Skills", path: "/skills-catalog", icon: "M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" },
+-    { id: "integrations", name: "Integrations", path: "/integrations", icon: "M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" },
+-    { id: "analytics", name: "Analytics", path: "/workspace/live", icon: "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" },
+-    { id: "profile", name: "Profile", path: "/profile", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
+-  ];
+-
+-  return (
+-    <>
+-      {/* Overlay for mobile */}
+-      {isOpen && (
+-        <div
+-          className="fixed inset-0 z-20 bg-black bg-opacity-50 lg:hidden"
+-          onClick={onClose}
+-        />
+-      )}
+-
+-      {/* Sidebar */}
+-      {/* বাংলা মন্তব্য: টেস্টের সুবিধার্থে dashboard-sidebar আইডি যুক্ত করা হলো */}
+-      <aside
+-        data-testid="dashboard-sidebar"
+-        className={`fixed top-0 left-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-gray-200 dark:border-slate-800 transform ${
+-          isOpen ? 'translate-x-0' : '-translate-x-full'
+-        } transition-transform duration-300 ease-in-out z-30 lg:translate-x-0 lg:static lg:inset-0`}
+-      >
+-        <div className="p-4">
+-          <div className="flex items-center space-x-2">
+-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 flex items-center justify-center shadow-[0_0_14px_rgba(139,92,246,0.55)]">
+-              <span className="text-white font-bold">S</span>
+-            </div>
+-            <span className="font-bold text-lg bg-gradient-to-r from-indigo-500 to-fuchsia-500 bg-clip-text text-transparent dark:text-transparent">SupremeAI</span>
+-          </div>
+-        </div>
+-
+-        <nav className="px-2 py-4">
+-          <ul className="space-y-1">
+-            {navItems.map((item) => (
+-              <li key={item.name}>
+-                <Link
+-                  to={item.path}
+-                  data-testid={`nav-${item.id}`}
+-                  onClick={onClose}
+-                  aria-current={location.pathname === item.path || location.pathname.startsWith(`${item.path}/`) ? 'page' : undefined}
+-                  className={`flex items-center px-4 py-3 text-base font-medium rounded-lg transition-all duration-200 ${
+-                    location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+-                      ? "bg-gradient-to-r from-indigo-500/20 to-fuchsia-500/10 text-indigo-700 dark:text-indigo-300 border-r-2 border-indigo-500 shadow-[inset_0_0_12px_rgba(99,102,241,0.12)]"
+-                      : "text-gray-700 dark:text-slate-300 hover:bg-gray-100 dark:hover:bg-slate-800 hover:translate-x-0.5"
+-                  }`}
+-                >
+-                  <svg
+-                    xmlns="http://www.w3.org/2000/svg"
+-                    className="h-5 w-5 mr-3"
+-                    fill="none"
+-                    viewBox="0 0 24 24"
+-                    stroke="currentColor"
+-                  >
+-                    <path
+-                      strokeLinecap="round"
+-                      strokeLinejoin="round"
+-                      strokeWidth={2}
+-                      d={item.icon}
+-                    />
+-                  </svg>
+-                  {item.name}
+-                </Link>
+-              </li>
+-            ))}
+-          </ul>
+-        </nav>
+-
+-        <div className="absolute bottom-0 w-full p-4 border-t border-gray-200 dark:border-slate-800">
+-          <div className="flex items-center">
+-            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mr-3">
+-              <span className="text-green-800 dark:text-green-400 font-medium">
+-                {user ? user.name.charAt(0).toUpperCase() : 'U'}
+-              </span>
+-            </div>
+-            <div>
+-              <p className="text-sm font-medium text-gray-800 dark:text-slate-200">
+-                {user ? user.name : 'Guest User'}
+-              </p>
+-              <p className="text-xs text-gray-500 dark:text-slate-500">
+-                {user ? user.email : 'guest@supremeai.dev'}
+-              </p>
+-            </div>
+-          </div>
+-        </div>
+-      </aside>
+-    </>
+-  );
+-};
+diff --git a/studio/src/components/dashboard/ActionDock.tsx b/studio/src/components/dashboard/ActionDock.tsx
+index f470c5c0..e69de29b 100644
+--- a/studio/src/components/dashboard/ActionDock.tsx
++++ b/studio/src/components/dashboard/ActionDock.tsx
+@@ -1,233 +0,0 @@
+-// বাংলা মন্তব্য: Bottom Action-Dock — dnd-kit দিয়ে ড্র্যাগেবল, শুধু user-enabled ইন্টিগ্রেশনগুলো রেন্ডার করে
+-// (hardcoded নয়, useWorkspaceSettingsStore থেকে ডাইনামিকভাবে আসে)
+-import { useState } from 'react';
+-import {
+-  DndContext,
+-  closestCenter,
+-  PointerSensor,
+-  useSensor,
+-  useSensors,
+-  type DragEndEvent,
+-} from '@dnd-kit/core';
+-import {
+-  SortableContext,
+-  horizontalListSortingStrategy,
+-  useSortable,
+-  arrayMove,
+-} from '@dnd-kit/sortable';
+-import { CSS } from '@dnd-kit/utilities';
+-import { motion, AnimatePresence } from 'framer-motion';
+-import {
+-  Code2,
+-  Mail,
+-  Globe,
+-  MessagesSquare,
+-  NotebookText,
+-  HardDrive,
+-  Settings2,
+-  Loader2,
+-  Check,
+-  X,
+-} from 'lucide-react';
+-import { useWorkspaceSettingsStore, type DockIntegration } from '../../store/useWorkspaceSettingsStore';
+-import { useDashboardActions } from '../../hooks/useDashboardActions';
+-
+-// বাংলা মন্তব্য: icon name (string, store-এ persist হয়) থেকে আসল lucide কম্পোনেন্টে ম্যাপ করা হয়
+-const ICON_MAP: Record<string, React.ComponentType<{ size?: number }>> = {
+-  Github: Code2,
+-  Mail,
+-  Facebook: Globe,
+-  MessagesSquare,
+-  NotebookText,
+-  HardDrive,
+-};
+-
+-type RunStatus = 'idle' | 'running' | 'success' | 'error';
+-
+-function DockButton({
+-  integration,
+-  status,
+-  onRun,
+-}: {
+-  integration: DockIntegration;
+-  status: RunStatus;
+-  onRun: (id: string) => void;
+-}) {
+-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+-    id: integration.id,
+-  });
+-  const Icon = ICON_MAP[integration.icon] ?? Settings2;
+-
+-  return (
+-    <motion.button
+-      ref={setNodeRef}
+-      {...attributes}
+-      {...listeners}
+-      onClick={() => onRun(integration.id)}
+-      style={{
+-        transform: CSS.Transform.toString(transform),
+-        transition,
+-      }}
+-      whileHover={{ y: -4 }}
+-      whileTap={{ scale: 0.94 }}
+-      className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border transition-colors ${
+-        isDragging
+-          ? 'opacity-50 border-[var(--supremeai-color-brand-500)]'
+-          : 'border-[var(--supremeai-color-border-accent-dark)] bg-[var(--supremeai-color-bg-elevated-dark)] hover:border-[var(--supremeai-color-brand-500)]/60'
+-      }`}
+-      title={integration.label}
+-      data-testid={`dock-item-${integration.id}`}
+-    >
+-      <Icon size={18} />
+-
+-      {/* বাংলা মন্তব্য: এক্সিকিউশন চলাকালীন নিয়ন-পালস রিং */}
+-      {status === 'running' && (
+-        <motion.span
+-          className="absolute inset-0 rounded-2xl border-2 border-[var(--supremeai-color-brand-500)]"
+-          animate={{ opacity: [0.9, 0.15, 0.9], scale: [1, 1.12, 1] }}
+-          transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+-        />
+-      )}
+-      {status === 'running' && (
+-        <span className="absolute -top-1 -right-1">
+-          <Loader2 size={12} className="animate-spin text-[var(--supremeai-color-brand-500)]" />
+-        </span>
+-      )}
+-      {status === 'success' && (
+-        <span className="absolute -top-1 -right-1 rounded-full bg-emerald-500 p-0.5">
+-          <Check size={10} className="text-white" />
+-        </span>
+-      )}
+-      {status === 'error' && (
+-        <span className="absolute -top-1 -right-1 rounded-full bg-red-500 p-0.5">
+-          <X size={10} className="text-white" />
+-        </span>
+-      )}
+-    </motion.button>
+-  );
+-}
+-
+-export function ActionDock() {
+-  const integrations = useWorkspaceSettingsStore((s) => s.integrations);
+-  const reorderIntegrations = useWorkspaceSettingsStore((s) => s.reorderIntegrations);
+-  const { runIntegrationAction } = useDashboardActions();
+-  const [statuses, setStatuses] = useState<Record<string, RunStatus>>({});
+-  const [configOpen, setConfigOpen] = useState(false);
+-
+-  const enabled = integrations.filter((i) => i.enabled);
+-
+-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+-
+-  const handleDragEnd = (event: DragEndEvent) => {
+-    const { active, over } = event;
+-    if (!over || active.id === over.id) return;
+-    const ids = enabled.map((i) => i.id);
+-    const oldIndex = ids.indexOf(String(active.id));
+-    const newIndex = ids.indexOf(String(over.id));
+-    reorderIntegrations(arrayMove(ids, oldIndex, newIndex));
+-  };
+-
+-  const handleRun = async (id: string) => {
+-    setStatuses((s) => ({ ...s, [id]: 'running' }));
+-    const result = await runIntegrationAction(id);
+-    setStatuses((s) => ({ ...s, [id]: result.ok ? 'success' : 'error' }));
+-    window.setTimeout(() => {
+-      setStatuses((s) => ({ ...s, [id]: 'idle' }));
+-    }, 1800);
+-  };
+-
+-  return (
+-    <div
+-      data-testid="action-dock"
+-      className="relative z-10 flex items-center gap-3 border-t border-[var(--supremeai-color-border-accent-dark)] bg-[var(--supremeai-color-bg-elevated-dark)]/80 px-4 py-3 backdrop-blur-md"
+-    >
+-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+-        <SortableContext items={enabled.map((i) => i.id)} strategy={horizontalListSortingStrategy}>
+-          <div className="flex items-center gap-2 overflow-x-auto">
+-            <AnimatePresence initial={false}>
+-              {enabled.map((integration) => (
+-                <motion.div
+-                  key={integration.id}
+-                  layout
+-                  initial={{ opacity: 0, scale: 0.8 }}
+-                  animate={{ opacity: 1, scale: 1 }}
+-                  exit={{ opacity: 0, scale: 0.8 }}
+-                >
+-                  <DockButton
+-                    integration={integration}
+-                    status={statuses[integration.id] ?? 'idle'}
+-                    onRun={handleRun}
+-                  />
+-                </motion.div>
+-              ))}
+-            </AnimatePresence>
+-            {enabled.length === 0 && (
+-              <span className="text-xs text-[var(--supremeai-color-neutral-500)]">
+-                No integrations enabled — configure below.
+-              </span>
+-            )}
+-          </div>
+-        </SortableContext>
+-      </DndContext>
+-
+-      <button
+-        onClick={() => setConfigOpen((v) => !v)}
+-        className="ml-auto flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[var(--supremeai-color-neutral-500)] hover:text-foreground hover:bg-[var(--supremeai-color-neutral-900)] transition-colors"
+-        data-testid="dock-configure-toggle"
+-        title="Configure dock"
+-      >
+-        <Settings2 size={16} />
+-      </button>
+-
+-      <AnimatePresence>
+-        {configOpen && <DockConfigPanel onClose={() => setConfigOpen(false)} />}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+-
+-function DockConfigPanel({ onClose }: { onClose: () => void }) {
+-  const integrations = useWorkspaceSettingsStore((s) => s.integrations);
+-  const toggleIntegration = useWorkspaceSettingsStore((s) => s.toggleIntegration);
+-
+-  return (
+-    <motion.div
+-      initial={{ opacity: 0, y: 8 }}
+-      animate={{ opacity: 1, y: 0 }}
+-      exit={{ opacity: 0, y: 8 }}
+-      className="absolute bottom-16 right-4 w-64 rounded-xl border border-[var(--supremeai-color-border-accent-dark)] bg-[var(--supremeai-color-bg-elevated-dark)] p-3 shadow-xl"
+-      data-testid="dock-config-panel"
+-    >
+-      <div className="mb-2 flex items-center justify-between">
+-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--supremeai-color-neutral-500)]">
+-          Dock integrations
+-        </span>
+-        <button onClick={onClose} className="text-[var(--supremeai-color-neutral-500)] hover:text-foreground">
+-          <X size={14} />
+-        </button>
+-      </div>
+-      <div className="space-y-1">
+-        {integrations.map((integration) => {
+-          const Icon = ICON_MAP[integration.icon] ?? Settings2;
+-          return (
+-            <label
+-              key={integration.id}
+-              className="flex items-center justify-between rounded-lg px-2 py-1.5 hover:bg-[var(--supremeai-color-neutral-900)] cursor-pointer"
+-            >
+-              <span className="flex items-center gap-2 text-sm">
+-                <Icon size={14} />
+-                {integration.label}
+-              </span>
+-              <input
+-                type="checkbox"
+-                checked={integration.enabled}
+-                onChange={() => toggleIntegration(integration.id)}
+-                className="accent-[var(--supremeai-color-brand-500)]"
+-              />
+-            </label>
+-          );
+-        })}
+-      </div>
+-    </motion.div>
+-  );
+-}
+diff --git a/studio/src/components/dashboard/DashboardLayout.tsx b/studio/src/components/dashboard/DashboardLayout.tsx
+index 1d89116c..e69de29b 100644
+--- a/studio/src/components/dashboard/DashboardLayout.tsx
++++ b/studio/src/components/dashboard/DashboardLayout.tsx
+@@ -1,39 +0,0 @@
+-import React, { useState } from "react";
+-import { Header } from "../core/Header";
+-import { Sidebar } from "../core/Sidebar";
+-import { useTheme } from "../../contexts/useTheme";
+-
+-interface DashboardLayoutProps {
+-  title: string;
+-  children: React.ReactNode;
+-}
+-
+-export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ title, children }) => {
+-  const [sidebarOpen, setSidebarOpen] = useState(false);
+-  const { theme, toggleTheme } = useTheme();
+-
+-  const toggleSidebar = () => {
+-    setSidebarOpen(!sidebarOpen);
+-  };
+-
+-  return (
+-    <div className="dashboard-aurora flex h-screen bg-gray-50 dark:bg-slate-950">
+-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+-      
+-      <div className="flex-1 flex flex-col overflow-hidden">
+-        <Header 
+-          title={title} 
+-          onToggleSidebar={toggleSidebar} 
+-          onToggleTheme={toggleTheme}
+-          theme={theme}
+-        />
+-        
+-        <main className="flex-1 overflow-y-auto p-6">
+-          <div className="max-w-7xl mx-auto">
+-            {children}
+-          </div>
+-        </main>
+-      </div>
+-    </div>
+-  );
+-};
+diff --git a/studio/src/components/dashboard/LiveSimulator.tsx b/studio/src/components/dashboard/LiveSimulator.tsx
+index c74f8e87..e69de29b 100644
+--- a/studio/src/components/dashboard/LiveSimulator.tsx
++++ b/studio/src/components/dashboard/LiveSimulator.tsx
+@@ -1,156 +0,0 @@
+-// apps/studio-client/src/components/dashboard/LiveSimulator.tsx
+-// বাংলা মন্তব্য: Magic Window — SVG Transformation Map, Chat node → Integration nodes, DAG health nodeStatus থেকে সরাসরি রেন্ডার হয়
+-import { motion, AnimatePresence, type Variants } from 'framer-motion';
+-import { AlertCircle } from 'lucide-react';
+-import type { IntegrationMeta } from '../../hooks/useWorkspaceSettings';
+-import type { DockActionResult, DockNodeStatus } from '../../hooks/useDynamicDock';
+-
+-interface LiveSimulatorProps {
+-  // বাংলা মন্তব্য: aggregate status — Chat নোডের নিজস্ব পালস ড্রাইভ করে
+-  state: DockNodeStatus;
+-  nodeStatus: Record<string, DockActionResult>;
+-  enabledIntegrations: IntegrationMeta[];
+-}
+-
+-const NODE_COLORS: Record<DockNodeStatus, { fill: string; glow: string; stroke: string }> = {
+-  idle: { fill: '#334155', glow: 'rgba(51,65,85,0)', stroke: '#475569' },
+-  pending: { fill: '#4338ca', glow: 'rgba(99,102,241,0.55)', stroke: '#818cf8' },
+-  success: { fill: '#059669', glow: 'rgba(16,185,129,0.65)', stroke: '#34d399' },
+-  error: { fill: '#be123c', glow: 'rgba(244,63,94,0.6)', stroke: '#fb7185' },
+-};
+-
+-const chatPulse: Variants = {
+-  idle: { scale: [1, 1.04, 1], transition: { duration: 2.6, repeat: Infinity, ease: 'easeInOut' } },
+-  pending: { scale: [1, 1.1, 1], transition: { duration: 0.8, repeat: Infinity, ease: 'easeOut' } },
+-  success: { scale: [1, 1.06, 1], transition: { duration: 0.6 } },
+-  error: { scale: [1, 1.06, 1], transition: { duration: 0.6 } },
+-};
+-
+-const LAYOUT = { width: 320, height: 340, chatX: 46, chatY: 170, nodeX: 262 };
+-
+-function layoutY(index: number, total: number): number {
+-  if (total <= 1) return LAYOUT.chatY;
+-  const span = 240;
+-  const start = LAYOUT.chatY - span / 2;
+-  return start + (span / (total - 1)) * index;
+-}
+-
+-export function LiveSimulator({ state, nodeStatus, enabledIntegrations }: LiveSimulatorProps) {
+-  const errorLogs = Object.entries(nodeStatus || {})
+-    .filter(([_, info]) => info.status === 'error')
+-    .map(([platform, info]) => ({ platform, message: info.message }));
+-
+-  // বাংলা মন্তব্য: কোনো ইন্টিগ্রেশন enabled না থাকলে dummy নোড বসানো হয় না — খালি স্টেট সরাসরি জানানো হয়
+-  const integrations = enabledIntegrations || [];
+-  if (integrations.length === 0) {
+-    return (
+-      <div className="flex-1 flex items-center justify-center text-xs text-slate-500 px-6 text-center">
+-        No integrations enabled — turn one on in Sidebar → Integrations to see the transformation map.
+-      </div>
+-    );
+-  }
+-
+-  return (
+-    <div className="flex-1 flex flex-col w-full h-full p-4 overflow-hidden">
+-      <div className="flex-1 flex items-center justify-center relative min-h-[220px]">
+-      <svg
+-        viewBox={`0 0 ${LAYOUT.width} ${LAYOUT.height}`}
+-        className="w-full h-full max-h-[420px]"
+-        role="img"
+-        aria-label="Live orchestrator transformation map"
+-      >
+-        {integrations.map((integration, i) => {
+-          const status = nodeStatus[integration.id]?.status ?? 'idle';
+-          const y = layoutY(i, integrations.length);
+-          const colors = NODE_COLORS[status];
+-          const path = `M ${LAYOUT.chatX + 20} ${LAYOUT.chatY} C ${LAYOUT.chatX + 120} ${LAYOUT.chatY}, ${LAYOUT.nodeX - 100} ${y}, ${LAYOUT.nodeX - 20} ${y}`;
+-
+-          return (
+-            <g key={integration.id}>
+-              {/* বাংলা মন্তব্য: pending হলে dash-flow অ্যানিমেশন — data physically চলছে এমন অনুভূতি দেয় */}
+-              <motion.path
+-                d={path}
+-                fill="none"
+-                stroke={colors.stroke}
+-                strokeWidth={status === 'idle' ? 1 : 2}
+-                strokeLinecap="round"
+-                strokeDasharray={status === 'pending' ? '6 6' : undefined}
+-                initial={false}
+-                animate={
+-                  status === 'pending'
+-                    ? { strokeDashoffset: [0, -24], opacity: 1 }
+-                    : { strokeDashoffset: 0, opacity: status === 'idle' ? 0.35 : 0.9 }
+-                }
+-                transition={
+-                  status === 'pending'
+-                    ? { duration: 0.9, repeat: Infinity, ease: 'linear' }
+-                    : { duration: 0.3 }
+-                }
+-              />
+-
+-              <motion.circle
+-                cx={LAYOUT.nodeX}
+-                cy={y}
+-                r={16}
+-                fill={colors.fill}
+-                stroke={colors.stroke}
+-                strokeWidth={1.5}
+-                initial={false}
+-                animate={{
+-                  r: status === 'success' ? [16, 20, 16] : 16,
+-                  filter: `drop-shadow(0 0 ${status === 'idle' ? 0 : 8}px ${colors.glow})`,
+-                }}
+-                transition={{ duration: 0.5, ease: 'easeOut' }}
+-              />
+-              <text x={LAYOUT.nodeX} y={y + 30} textAnchor="middle" className="fill-slate-400" fontSize={9}>
+-                {integration.label}
+-              </text>
+-            </g>
+-          );
+-        })}
+-
+-        {/* Chat node — root of the DAG visualization */}
+-        <motion.circle
+-          cx={LAYOUT.chatX}
+-          cy={LAYOUT.chatY}
+-          r={20}
+-          fill="#1e293b"
+-          stroke={NODE_COLORS[state].stroke}
+-          strokeWidth={2}
+-          variants={chatPulse}
+-          animate={state}
+-        />
+-        <text x={LAYOUT.chatX} y={LAYOUT.chatY + 36} textAnchor="middle" className="fill-slate-300 font-medium" fontSize={10}>
+-          Chat
+-        </text>
+-      </svg>
+-      </div>
+-
+-      <AnimatePresence>
+-        {errorLogs.length > 0 && (
+-          <motion.div
+-            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+-            animate={{ opacity: 1, height: 'auto', marginTop: 16 }}
+-            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+-            className="w-full shrink-0"
+-          >
+-            <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex flex-col gap-2">
+-              <div className="flex items-center gap-2 text-rose-400 mb-1">
+-                <AlertCircle className="w-4 h-4" />
+-                <span className="font-semibold text-xs tracking-wide uppercase">Incident Dashboard</span>
+-              </div>
+-              <div className="max-h-28 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
+-                {errorLogs.map((log) => (
+-                  <div key={log.platform} className="bg-slate-900/60 p-2 rounded-lg border border-rose-500/10">
+-                    <span className="text-rose-400 font-medium capitalize text-[11px] block mb-0.5">{log.platform} Incident</span>
+-                    <span className="text-slate-300 font-mono text-[10px] break-all leading-tight">{log.message}</span>
+-                  </div>
+-                ))}
+-              </div>
+-            </div>
+-          </motion.div>
+-        )}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+diff --git a/studio/src/components/dashboard/LivingActionDock.tsx b/studio/src/components/dashboard/LivingActionDock.tsx
+index 8c87c6d2..e69de29b 100644
+--- a/studio/src/components/dashboard/LivingActionDock.tsx
++++ b/studio/src/components/dashboard/LivingActionDock.tsx
+@@ -1,161 +0,0 @@
+-// apps/studio-client/src/components/dashboard/LivingActionDock.tsx
+-// বাংলা মন্তব্য: real dnd-kit droppable targets per enabled integration — status visuals driven purely by the nodeStatus prop
+-import { useDroppable } from '@dnd-kit/core';
+-import { AnimatePresence, motion, type Variants } from 'framer-motion';
+-import { GitBranch, Hash, FileText, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
+-import type { IntegrationMeta } from '../../hooks/useWorkspaceSettings';
+-import type { DockActionResult } from '../../hooks/useDynamicDock';
+-
+-interface LivingActionDockProps {
+-  enabledIntegrations: IntegrationMeta[];
+-  nodeStatus: Record<string, DockActionResult>;
+-}
+-
+-const ICON_MAP: Record<IntegrationMeta['icon'], React.ComponentType<{ size?: number; className?: string }>> = {
+-  Github: GitBranch,
+-  Slack: Hash,
+-  FileText,
+-};
+-
+-// বাংলা মন্তব্য: প্রতিটি স্ট্যাটাসের জন্য variant — dnd-kit-এর isOver স্টেট এর সাথে conflict না করার জন্য বর্ডার/রিং আলাদা রাখা হয়েছে
+-const nodeVariants: Variants = {
+-  idle: {
+-    scale: [1, 1.035, 1],
+-    opacity: [0.82, 1, 0.82],
+-    boxShadow: '0 0 0 0 rgba(99,102,241,0)',
+-    transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' },
+-  },
+-  pending: {
+-    scale: [1, 1.09, 1],
+-    boxShadow: [
+-      '0 0 0 0 rgba(99,102,241,0.55)',
+-      '0 0 0 10px rgba(99,102,241,0)',
+-      '0 0 0 0 rgba(99,102,241,0)',
+-    ],
+-    transition: { duration: 0.65, repeat: Infinity, ease: 'easeOut' },
+-  },
+-  success: {
+-    scale: [1, 1.18, 1],
+-    backgroundColor: ['rgba(16,185,129,0.05)', 'rgba(16,185,129,0.35)', 'rgba(16,185,129,0.08)'],
+-    boxShadow: ['0 0 0 0 rgba(16,185,129,0)', '0 0 24px 4px rgba(16,185,129,0.6)', '0 0 0 0 rgba(16,185,129,0)'],
+-    transition: { duration: 0.55, ease: 'easeOut' },
+-  },
+-  error: {
+-    x: [0, -7, 7, -6, 6, -3, 3, 0],
+-    backgroundColor: ['rgba(244,63,94,0.05)', 'rgba(244,63,94,0.3)', 'rgba(244,63,94,0.08)'],
+-    boxShadow: ['0 0 0 0 rgba(244,63,94,0)', '0 0 20px 3px rgba(244,63,94,0.55)', '0 0 0 0 rgba(244,63,94,0)'],
+-    transition: { duration: 0.5, ease: 'easeInOut' },
+-  },
+-};
+-
+-const overlayVariants: Variants = {
+-  initial: { opacity: 0, scale: 0.4 },
+-  animate: { opacity: 1, scale: 1, transition: { type: 'spring', stiffness: 500, damping: 24 } },
+-  exit: { opacity: 0, scale: 0.4, transition: { duration: 0.15 } },
+-};
+-
+-const dockVariants: Variants = {
+-  hidden: { opacity: 0, y: 24, scale: 0.96 },
+-  visible: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 260, damping: 26 } },
+-  exit: { opacity: 0, y: 24, scale: 0.96, transition: { duration: 0.15 } },
+-};
+-
+-function DockNode({ integration, status }: { integration: IntegrationMeta; status: DockActionResult }) {
+-  // বাংলা মন্তব্য: dnd-kit droppable target — id === platform, যা useDynamicDock.handleDragEnd এর over.id এর সাথে মেলে
+-  const { isOver, setNodeRef } = useDroppable({ id: integration.id });
+-  const Icon = ICON_MAP[integration.icon];
+-
+-  return (
+-    <div className="flex flex-col items-center gap-1.5">
+-      <motion.div
+-        ref={setNodeRef}
+-        variants={nodeVariants}
+-        animate={status.status}
+-        className={`relative w-16 h-16 rounded-2xl border flex items-center justify-center transition-colors duration-200 ${
+-          isOver ? 'border-indigo-400 bg-indigo-500/15' : 'border-white/10 bg-white/[0.04]'
+-        }`}
+-      >
+-        <Icon size={22} className="text-slate-200" />
+-
+-        <AnimatePresence>
+-          {status.status === 'pending' && (
+-            <motion.div
+-              key="pending"
+-              variants={overlayVariants}
+-              initial="initial"
+-              animate="animate"
+-              exit="exit"
+-              className="absolute -top-1.5 -right-1.5 bg-indigo-500 rounded-full p-1"
+-            >
+-              <Loader2 size={11} className="text-white animate-spin" />
+-            </motion.div>
+-          )}
+-          {status.status === 'success' && (
+-            <motion.div
+-              key="success"
+-              variants={overlayVariants}
+-              initial="initial"
+-              animate="animate"
+-              exit="exit"
+-              className="absolute -top-1.5 -right-1.5 bg-emerald-500 rounded-full p-1"
+-            >
+-              <CheckCircle2 size={11} className="text-white" />
+-            </motion.div>
+-          )}
+-          {status.status === 'error' && (
+-            <motion.div
+-              key="error"
+-              variants={overlayVariants}
+-              initial="initial"
+-              animate="animate"
+-              exit="exit"
+-              className="absolute -top-1.5 -right-1.5 bg-rose-500 rounded-full p-1"
+-            >
+-              <AlertTriangle size={11} className="text-white" />
+-            </motion.div>
+-          )}
+-        </AnimatePresence>
+-      </motion.div>
+-
+-      <span className="text-[10px] font-medium text-slate-400">{integration.label}</span>
+-
+-      <AnimatePresence>
+-        {status.message && (status.status === 'error' || status.status === 'success') && (
+-          <motion.span
+-            key={status.message}
+-            initial={{ opacity: 0, height: 0 }}
+-            animate={{ opacity: 1, height: 'auto' }}
+-            exit={{ opacity: 0, height: 0 }}
+-            className={`text-[9px] text-center max-w-[80px] leading-tight ${
+-              status.status === 'error' ? 'text-rose-400' : 'text-emerald-400'
+-            }`}
+-          >
+-            {status.message}
+-          </motion.span>
+-        )}
+-      </AnimatePresence>
+-    </div>
+-  );
+-}
+-
+-// বাংলা মন্তব্য: enter/exit AnimatePresence প্যারেন্ট (LivingDashboardShell) থেকে কন্ট্রোল হয় — এই কম্পোনেন্ট সবসময় একটাই root motion.div রেন্ডার করে
+-export function LivingActionDock({ enabledIntegrations, nodeStatus }: LivingActionDockProps) {
+-  return (
+-    <motion.div
+-      variants={dockVariants}
+-      initial="hidden"
+-      animate="visible"
+-      exit="exit"
+-      data-testid="living-action-dock"
+-      className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-end gap-6 px-6 py-4 rounded-2xl border border-white/10 bg-[var(--supremeai-color-bg-elevated-dark)]/90 backdrop-blur-xl shadow-2xl shadow-black/40"
+-    >
+-      {enabledIntegrations.map((integration) => (
+-        <DockNode
+-          key={integration.id}
+-          integration={integration}
+-          status={nodeStatus[integration.id] ?? { status: 'idle', message: '' }}
+-        />
+-      ))}
+-    </motion.div>
+-  );
+-}
+diff --git a/studio/src/components/dashboard/LivingDashboardShell.tsx b/studio/src/components/dashboard/LivingDashboardShell.tsx
+index 466e4d9f..e69de29b 100644
+--- a/studio/src/components/dashboard/LivingDashboardShell.tsx
++++ b/studio/src/components/dashboard/LivingDashboardShell.tsx
+@@ -1,51 +0,0 @@
+-import type { ReactNode } from 'react';
+-import { LiveSimulator } from './LiveSimulator';
+-import { useAuthStore, AuthStatus } from '../../store/authStore';
+-import { Link } from 'react-router-dom';
+-import { AlertCircle } from 'lucide-react';
+-
+-interface LivingDashboardShellProps {
+-  // বাংলা মন্তব্য: কেন্দ্রীয় চ্যাট ইন্টারফেস — বিদ্যমান OperatorStudio/ChatPanel এখানে ইনজেক্ট হবে
+-  chatPanel: ReactNode;
+-}
+-
+-
+-export function LivingDashboardShell({ chatPanel }: LivingDashboardShellProps) {
+-  const isAuthenticated = useAuthStore((s) => s.status === AuthStatus.LOGGED_IN);
+-  
+-  return (
+-    <div className="surface-0 relative flex-1 w-full flex overflow-hidden">
+-      {/* কেন্দ্র: চ্যাট */}
+-      <div className="flex-1 flex flex-col min-w-0 relative">
+-        {!isAuthenticated && (
+-            <div className="shrink-0 bg-rose-500/10 border-b border-rose-500/20 px-4 py-2 flex items-center justify-center gap-3 shadow-sm z-10">
+-              <AlertCircle className="w-4 h-4 text-rose-400" />
+-              <span className="text-xs font-medium text-slate-300">
+-                You are exploring in <span className="text-rose-400">Guest Mode</span>.
+-              </span>
+-              <div className="h-3 w-px bg-slate-700"></div>
+-              <Link to="/login" className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition-colors">
+-                Login / Sign Up
+-              </Link>
+-              <span className="text-xs text-slate-500 hidden sm:inline">to save your progress.</span>
+-            </div>
+-          )}
+-
+-        <main className="flex-1 overflow-y-auto">{chatPanel}</main>
+-      </div>
+-
+-      {/* ডান দিক: সবসময়-দৃশ্যমান Magic Window (Live Simulator) */}
+-      <aside
+-        data-testid="magic-window"
+-        className="surface-1 hidden lg:flex shrink-0 w-96 border-l border-border flex-col"
+-      >
+-        <div className="px-4 py-3 border-b border-border text-xs font-semibold text-text">
+-          Live Simulator — Transformation Map
+-        </div>
+-        <div className="flex-1 flex items-center justify-center text-xs text-slate-500">
+-          <LiveSimulator state={'idle'} nodeStatus={{}} enabledIntegrations={[]} />
+-        </div>
+-      </aside>
+-    </div>
+-  );
+-}
+diff --git a/studio/src/components/dock/DynamicActionDock.tsx b/studio/src/components/dock/DynamicActionDock.tsx
+index 69a34d4e..e69de29b 100644
+--- a/studio/src/components/dock/DynamicActionDock.tsx
++++ b/studio/src/components/dock/DynamicActionDock.tsx
+@@ -1,59 +0,0 @@
+-// apps/studio-client/src/components/dock/DynamicActionDock.tsx
+-// Dynamic Action Dock with dnd-kit integration
+-// বাংলা মন্তব্য: dnd-kit ড্র্যাগ-অ্যান্ড-ড্রপ এবং ডাইনামিক ইন্টিগ্রেশন কন্ট্রোল করে।
+-
+-import React from 'react';
+-import { useWorkspaceStore } from '../../store/useWorkspaceStore';
+-
+-interface IntegrationItemProps {
+-  id: string;
+-  name: string;
+-  active: boolean;
+-  onToggle: (id: string) => void;
+-}
+-
+-const IntegrationItem: React.FC<IntegrationItemProps> = ({ id, name, active, onToggle }) => (
+-  <button
+-    onClick={() => onToggle(id)}
+-    className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+-      active
+-        ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
+-        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+-    }`}
+-  >
+-    {name}
+-  </button>
+-);
+-
+-export const DynamicActionDock: React.FC = () => {
+-  const { activeIntegrations, toggleIntegration } = useWorkspaceStore();
+-
+-  const availableIntegrations = [
+-    { id: 'github', name: 'GitHub' },
+-    { id: 'slack', name: 'Slack' },
+-    { id: 'discord', name: 'Discord' },
+-    { id: 'notion', name: 'Notion' },
+-    { id: 'linear', name: 'Linear' },
+-  ];
+-
+-  return (
+-    <div className="bg-slate-800/80 backdrop-blur-md rounded-xl p-4 border border-slate-700 shadow-xl">
+-      <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">
+-        Active Integrations
+-      </h3>
+-      <div className="flex flex-wrap gap-2">
+-        {availableIntegrations.map((integration) => (
+-          <IntegrationItem
+-            key={integration.id}
+-            id={integration.id}
+-            name={integration.name}
+-            active={activeIntegrations.includes(integration.id)}
+-            onToggle={toggleIntegration}
+-          />
+-        ))}
+-      </div>
+-    </div>
+-  );
+-};
+-
+-export default DynamicActionDock;
+diff --git a/studio/src/hooks/useDashboardActions.ts b/studio/src/hooks/useDashboardActions.ts
+index afcf576e..e69de29b 100644
+--- a/studio/src/hooks/useDashboardActions.ts
++++ b/studio/src/hooks/useDashboardActions.ts
+@@ -1,18 +0,0 @@
+-import { useCallback } from 'react';
+-import { workspaceCapabilitiesApi } from '../utils/api';
+-
+-export function useDashboardActions() {
+-  const runIntegrationAction = useCallback(async (id: string) => {
+-    // Wire to the real capability execution engine via workspace API.
+-    // health() POST triggers the capability's execution flow.
+-    try {
+-      await workspaceCapabilitiesApi.health(id);
+-      return { ok: true };
+-    } catch (error) {
+-      console.error('[Dashboard] Integration action failed:', error);
+-      return { ok: false, error: error instanceof Error ? error.message : 'Execution failed' };
+-    }
+-  }, []);
+-
+-  return { runIntegrationAction };
+-}
+diff --git a/studio/src/hooks/useDynamicDock.ts b/studio/src/hooks/useDynamicDock.ts
+index 80e64524..e69de29b 100644
+--- a/studio/src/hooks/useDynamicDock.ts
++++ b/studio/src/hooks/useDynamicDock.ts
+@@ -1,103 +0,0 @@
+-// বাংলা মন্তব্য: Action-Dock-এর ড্র্যাগ-ড্রপ থেকে real /api/v1/agent/action কলে যাওয়ার বিজনেস লজিক — payload, loading, error সব এখানে
+-import { useCallback, useRef, useState } from 'react';
+-import type { DragEndEvent } from '@dnd-kit/core';
+-import { apiClient, ApiError } from '../services/apiClient';
+-import { useToast } from '../contexts/useToast';
+-
+-export type DockNodeStatus = 'idle' | 'pending' | 'success' | 'error';
+-
+-export interface DockActionResult {
+-  status: DockNodeStatus;
+-  message: string;
+-}
+-
+-interface UseDynamicDockOptions {
+-  // বাংলা মন্তব্য: ড্র্যাগ করা আইটেমের id থেকে প্রকৃত content/context রিজলভ করে (ফাইল, চ্যাট মেসেজ ইত্যাদি)
+-  resolveContent: (draggedId: string) => { content: string; context?: Record<string, unknown> };
+-  // বাংলা মন্তব্য: backend DAG-তে এখনো wire না হওয়া প্ল্যাটফর্মগুলো ব্লক করার জন্য (যেমন 'github')
+-  unsupportedPlatforms?: string[];
+-}
+-
+-const AUTO_RESET_MS = 4000;
+-
+-export function useDynamicDock({ resolveContent, unsupportedPlatforms = [] }: UseDynamicDockOptions) {
+-  const { showToast } = useToast();
+-  const [nodeStatus, setNodeStatus] = useState<Record<string, DockActionResult>>({});
+-  const [pendingAction, setPendingAction] = useState<{ platform: string; content: string; context: Record<string, unknown> } | null>(null);
+-  const resetTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+-
+-  const setStatus = useCallback((platform: string, status: DockNodeStatus, message: string) => {
+-    setNodeStatus((prev) => ({ ...prev, [platform]: { status, message } }));
+-    if (resetTimers.current[platform]) clearTimeout(resetTimers.current[platform]);
+-    if (status === 'success' || status === 'error') {
+-      resetTimers.current[platform] = setTimeout(() => {
+-        setNodeStatus((prev) => ({ ...prev, [platform]: { status: 'idle', message: '' } }));
+-      }, AUTO_RESET_MS);
+-    }
+-  }, []);
+-
+-  // বাংলা মন্তব্য: এটাই আসল E2E API কল — /api/v1/agent/action, apiClient দিয়ে (auth header, retry, failover — সব বিল্ট-ইন)
+-  const executeAction = useCallback(
+-    async (platform: string, content: string, context: Record<string, unknown> = {}) => {
+-      if (unsupportedPlatforms.includes(platform)) {
+-        setStatus(platform, 'error', `${platform} এখনো orchestrator DAG-এ wire করা হয়নি`);
+-        showToast('error', `${platform} integration চালু নেই — backend DAG সাপোর্ট নেই।`);
+-        return;
+-      }
+-
+-      setStatus(platform, 'pending', `Syncing to ${platform}...`);
+-      try {
+-        const result = await apiClient.post<{ status: string; result?: Record<string, unknown> }>(
+-          '/api/v1/agent/action',
+-          {
+-            target_platform: platform,
+-            content,
+-            context,
+-          }
+-        );
+-        setStatus(platform, 'success', 'Synced successfully');
+-        showToast('success', `${platform}-এ সফলভাবে sync হয়েছে।`);
+-        return result;
+-      } catch (err) {
+-        // বাংলা মন্তব্য: 400 মানে সাধারণত Integration token পাওয়া যায়নি — ইউজারকে Settings/Vault-এ পাঠানো দরকার
+-        const message = err instanceof ApiError ? err.message : 'Unknown error occurred';
+-        setStatus(platform, 'error', message);
+-        showToast('error', `${platform} sync failed: ${message}`);
+-        throw err;
+-      }
+-    },
+-    [setStatus, showToast, unsupportedPlatforms]
+-  );
+-
+-  // বাংলা মন্তব্য: dnd-kit DndContext-এর onDragEnd-এ সরাসরি বসানোর জন্য
+-  const handleDragEnd = useCallback(
+-    (event: DragEndEvent) => {
+-      const { over, active } = event;
+-      if (!over) return;
+-      const platform = String(over.id);
+-      const draggedId = String(active.id);
+-      const { content, context } = resolveContent(draggedId);
+-
+-      // HITL: Hold the action and set node to pending
+-      setPendingAction({ platform, content, context: context ?? {} });
+-      setStatus(platform, 'pending', 'Awaiting your confirmation...');
+-    },
+-    [resolveContent, setStatus]
+-  );
+-
+-  const confirmAction = useCallback(async () => {
+-    if (!pendingAction) return;
+-    const { platform, content, context } = pendingAction;
+-    setPendingAction(null);
+-    await executeAction(platform, content, context);
+-  }, [pendingAction, executeAction]);
+-
+-  const cancelAction = useCallback(() => {
+-    if (!pendingAction) return;
+-    setStatus(pendingAction.platform, 'idle', '');
+-    setPendingAction(null);
+-    showToast('info', 'Action cancelled by user.');
+-  }, [pendingAction, setStatus, showToast]);
+-
+-  return { nodeStatus, executeAction, handleDragEnd, pendingAction, confirmAction, cancelAction };
+-}
+diff --git a/studio/src/store/useWorkspaceSettingsStore.test.ts b/studio/src/store/useWorkspaceSettingsStore.test.ts
+index ffa846a1..0f274868 100644
+--- a/studio/src/store/useWorkspaceSettingsStore.test.ts
++++ b/studio/src/store/useWorkspaceSettingsStore.test.ts
+@@ -1,31 +1,14 @@
+-import { describe, it, expect, beforeEach } from 'vitest';
+-import { useWorkspaceSettingsStore } from './useWorkspaceSettingsStore';
+-
+-describe('useWorkspaceSettingsStore', () => {
+-  beforeEach(() => {
+-    localStorage.clear();
+-    useWorkspaceSettingsStore.setState({
+-      integrations: [
+-        { id: 'github', icon: 'Github', label: 'GitHub', enabled: true },
+-        { id: 'slack', icon: 'MessagesSquare', label: 'Slack', enabled: true },
+-        { id: 'linear', icon: 'NotebookText', label: 'Linear', enabled: false },
+-      ],
+-    });
+-  });
+-
+-  it('toggles an integration enabled flag by id', () => {
+-    useWorkspaceSettingsStore.getState().toggleIntegration('linear');
+-    const linear = useWorkspaceSettingsStore.getState().integrations.find((i) => i.id === 'linear');
+-    expect(linear?.enabled).toBe(true);
+-
+-    useWorkspaceSettingsStore.getState().toggleIntegration('github');
+-    const github = useWorkspaceSettingsStore.getState().integrations.find((i) => i.id === 'github');
+-    expect(github?.enabled).toBe(false);
+-  });
+-
+-  it('reorders integrations according to the provided id list', () => {
+-    useWorkspaceSettingsStore.getState().reorderIntegrations(['linear', 'slack', 'github']);
+-    const ids = useWorkspaceSettingsStore.getState().integrations.map((i) => i.id);
+-    expect(ids).toEqual(['linear', 'slack', 'github']);
++// RETIRED (bridge-20261025-rc3-floating-orphan-r1): the dock-only
++// useWorkspaceSettingsStore was neutralized together with the orphaned
++// floating-widget layer (LivingActionDock / LivingDashboardShell /
++// ActionDock / DynamicActionDock / LiveSimulator). The bridge lane cannot
++// express file deletions, so this tombstone keeps vitest green until an
++// operator deletes both husks together on merge:
++//   git rm studio/src/store/useWorkspaceSettingsStore{,.test.ts}
++import { describe, it, expect } from 'vitest';
++
++describe('useWorkspaceSettingsStore (retired)', () => {
++  it('was removed with the orphan floating-widget layer (RC-3)', () => {
++    expect(true).toBe(true);
+   });
+ });
+diff --git a/studio/src/store/useWorkspaceSettingsStore.ts b/studio/src/store/useWorkspaceSettingsStore.ts
+index 03577bf5..e69de29b 100644
+--- a/studio/src/store/useWorkspaceSettingsStore.ts
++++ b/studio/src/store/useWorkspaceSettingsStore.ts
+@@ -1,55 +0,0 @@
+-import { create } from 'zustand';
+-import { persist } from 'zustand/middleware';
+-
+-export interface DockIntegration {
+-  id: string;
+-  icon: string;
+-  label: string;
+-  enabled: boolean;
+-}
+-
+-interface WorkspaceSettingsState {
+-  integrations: DockIntegration[];
+-  toggleIntegration: (id: string) => void;
+-  reorderIntegrations: (ids: string[]) => void;
+-}
+-
+-const DEFAULT_INTEGRATIONS: DockIntegration[] = [
+-  { id: 'github', icon: 'Github', label: 'GitHub', enabled: true },
+-  { id: 'slack', icon: 'MessagesSquare', label: 'Slack', enabled: true },
+-  { id: 'linear', icon: 'NotebookText', label: 'Linear', enabled: false },
+-  { id: 'jira', icon: 'HardDrive', label: 'Jira', enabled: false },
+-  { id: 'email', icon: 'Mail', label: 'Email', enabled: false },
+-  { id: 'facebook', icon: 'Facebook', label: 'Facebook', enabled: false },
+-];
+-
+-export const useWorkspaceSettingsStore = create<WorkspaceSettingsState>()(
+-  persist(
+-    (set) => ({
+-      integrations: DEFAULT_INTEGRATIONS,
+-
+-      toggleIntegration: (id) =>
+-        set((state) => ({
+-          integrations: state.integrations.map((i) =>
+-            i.id === id ? { ...i, enabled: !i.enabled } : i
+-          ),
+-        })),
+-
+-      reorderIntegrations: (ids) =>
+-        set((state) => {
+-          const newIntegrations = [...state.integrations].sort((a, b) => {
+-            const indexA = ids.indexOf(a.id);
+-            const indexB = ids.indexOf(b.id);
+-            if (indexA === -1 && indexB === -1) return 0;
+-            if (indexA === -1) return 1;
+-            if (indexB === -1) return -1;
+-            return indexA - indexB;
+-          });
+-          return { integrations: newIntegrations };
+-        }),
+-    }),
+-    {
+-      name: 'supreme-workspace-settings-storage',
+-    }
+-  )
+-);

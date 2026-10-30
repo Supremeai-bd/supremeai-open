@@ -1,0 +1,553 @@
+diff --git a/browser/ghost_tower/sync_cookies_to_infisical.py b/browser/ghost_tower/sync_cookies_to_infisical.py
+index 815f5519..7eafe14a 100644
+--- a/browser/ghost_tower/sync_cookies_to_infisical.py
++++ b/browser/ghost_tower/sync_cookies_to_infisical.py
+@@ -179,6 +179,12 @@ async def export_and_sync():
+     token = infisical_login()
+     logger.info("Infisical Universal Auth successful.")
+ 
++    # Filter Gemini-specific cookies for the cloud scraper node (SUPREMEAI_GEMINI_COOKIES)
++    gemini_cookies = [
++        c for c in cookies if "google" in c.get("domain", "").lower()
++    ]
++    logger.info(f"Found {len(gemini_cookies)} Gemini (google.com) session cookies.")
++
+     # 4. Upload to Infisical
+     # A. Compressed Base64 format (ready for immediate headless injection in cloud runners)
+     set_infisical_secret(token, "AI_FLEET_COOKIES_GZIP_B64", b64_compressed)
+@@ -186,11 +192,14 @@ async def export_and_sync():
+     # B. AES-256 Encrypted format
+     set_infisical_secret(token, "AI_FLEET_COOKIES_ENC", enc_payload)
+ 
++    # C. Gemini cookie bundle for cloud scraper node (dynamic hot-reload, no Render redeploy)
++    set_infisical_secret(token, "SUPREMEAI_GEMINI_COOKIES", json.dumps(gemini_cookies))
++
+     print("\n=================================================================")
+     print("   [SUCCESS]: AI Fleet Cookies Synced to Infisical Cloud Vault!")
+     print(f"   - Total AI Cookies: {len(ai_cookies)}")
+     print(f"   - Target Vault: Infisical Production ({WORKSPACE_ID})")
+-    print("   - Keys Synced: AI_FLEET_COOKIES_GZIP_B64, AI_FLEET_COOKIES_ENC")
++    print(f"   - Keys Synced: AI_FLEET_COOKIES_GZIP_B64, AI_FLEET_COOKIES_ENC, SUPREMEAI_GEMINI_COOKIES")
+     print("   All cloud microservices can now use these sessions 24/7!")
+     print("=================================================================")
+ 
+diff --git a/browser/main.py b/browser/main.py
+new file mode 100644
+index 00000000..9323c848
+--- /dev/null
++++ b/browser/main.py
+@@ -0,0 +1,169 @@
++"""SupremeAI standalone scraper microservice.
++
++Self-contained FastAPI app. Deployed as its own Docker image / Render service so
++Chromium + Playwright never live in the main backend API image.
++
++Endpoints:
++  GET  /health  — liveness + capability probe
++  POST /scrape  — lightweight HTTP scraping (httpx + BeautifulSoup)
++  POST /browse  — full browser automation (Playwright/Chromium)
++  POST /recipe  — scripted multi-step browser actions
++"""
++
++from __future__ import annotations
++
++import os
++
++try:
++    from browser_agent import BrowserAgent, BrowseRequest
++    from security import is_safe_url
++    from web_scraper import WebScraper
++except ImportError:
++    from services.scraper.browser_agent import BrowserAgent, BrowseRequest
++    from services.scraper.security import is_safe_url
++    from services.scraper.web_scraper import WebScraper
++from fastapi import APIRouter, FastAPI, HTTPException
++from pydantic import BaseModel
++
++MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
++TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
++
++app = FastAPI(title="SupremeAI Scraper", docs_url="/docs", redoc_url="/redoc")
++router = APIRouter(tags=["scraper"])
++
++_scraper = WebScraper()
++_agent = BrowserAgent(headless=True)
++
++
++class ScrapeRequest(BaseModel):
++    url: str
++    extraction_prompt: str | None = None
++
++
++@router.get("/health")
++async def health_check():
++    try:
++        import playwright.async_api as _pw
++
++        playwright_ok = callable(getattr(_pw, "async_playwright", None))
++    except ImportError:
++        playwright_ok = False
++
++    return {
++        "status": "healthy",
++        "service": "supremeai-scraper",
++        "max_concurrency": MAX_CONCURRENCY,
++        "timeout_seconds": TIMEOUT_SECONDS,
++        "playwright_available": playwright_ok,
++    }
++
++
++@router.post("/scrape")
++async def scrape(request: ScrapeRequest):
++    if not request.url:
++        raise HTTPException(status_code=400, detail="URL is required")
++    if not is_safe_url(request.url):
++        raise HTTPException(
++            status_code=400, detail="SSRF check failed: Unauthorized internal access"
++        )
++    # FIX (P1, review 2026-09-12): fetch_page is a SYNC httpx call (up to 15s
++    # timeout). Calling it directly froze the single event loop — one slow target
++    # stalled /browse, /recipe and /health for the whole service. Offload to a
++    # worker thread so concurrent scrapes stay responsive.
++    import asyncio as _asyncio
++
++    result = await _asyncio.to_thread(_scraper.fetch_page, request.url)
++    return result
++
++
++@router.post("/browse")
++async def browse(request: BrowseRequest):
++    if not request.url:
++        raise HTTPException(status_code=400, detail="URL is required")
++    if not is_safe_url(request.url):
++        raise HTTPException(
++            status_code=400, detail="SSRF check failed: Unauthorized internal access"
++        )
++    result = await _agent.navigate_and_interact(
++        url=request.url,
++        action=request.action or "fetch",
++        selector=request.selector,
++        text=request.text,
++        wait_for=request.wait_for,
++    )
++    return result
++
++
++class RecipeRequest(BaseModel):
++    steps: list = []
++    initial_url: str | None = None
++
++
++@router.post("/recipe")
++async def recipe(request: RecipeRequest):
++    if request.initial_url and not is_safe_url(request.initial_url):
++        raise HTTPException(
++            status_code=400, detail="SSRF check failed: Unauthorized internal access"
++        )
++    result = await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
++    return result
++
++
++app.include_router(router)
++
++# ── Integrated Priority-1 Gemini Cookie Relay Surface ────────────────────────
++try:
++    import json
++    import time
++    from fastapi import Request
++    from fastapi.responses import JSONResponse
++    from server import ChatRequest, relay_engine
++
++    @app.post("/v1/chat/completions")
++    async def chat_completions(req: ChatRequest) -> JSONResponse:
++        prompt = "\n".join(m.content for m in req.messages if m.role == "user")
++        if not prompt.strip():
++            raise HTTPException(status_code=400, detail="Missing user message in payload")
++
++        reply = await relay_engine.ask(prompt.strip())
++        return JSONResponse(
++            {
++                "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
++                "object": "chat.completion",
++                "created": int(time.time()),
++                "model": req.model or "gemini-web-relay",
++                "choices": [
++                    {
++                        "index": 0,
++                        "message": {
++                            "role": "assistant",
++                            "content": reply,
++                        },
++                        "finish_reason": "stop",
++                    }
++                ],
++                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
++            }
++        )
++
++    @app.post("/api/chat")
++    async def api_chat(request: Request):
++        try:
++            body = await request.json()
++        except Exception:
++            raise HTTPException(status_code=400, detail="Invalid JSON payload")
++
++        prompt = body.get("message") or body.get("prompt") or ""
++        if not prompt.strip():
++            raise HTTPException(status_code=400, detail="Empty prompt or message")
++
++        reply = await relay_engine.ask(prompt.strip())
++        return {
++            "reply": reply,
++            "source": "gemini.google.com (Cookie Relay)",
++            "cost": "$0.00",
++        }
++except Exception as _relay_err:
++    import logging
++    logging.getLogger("scraper.main").warning(f"Could not initialize cookie relay surface: {_relay_err}")
++
+diff --git a/browser/server.py b/browser/server.py
+index a22d4cc3..9b52e5e8 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -7,6 +7,8 @@
+ 
+ from __future__ import annotations
+ 
++import base64
++import gzip
+ import json
+ import logging
+ import os
+@@ -53,8 +55,16 @@ def __init__(self) -> None:
+         self._bl: str = "boq_gemini-web-uiserver_20261022.00_p0"
+         self._token_expiry: float = 0
+         self._cookies: Dict[str, str] = {}
++        self._infisical_cookies: Dict[str, str] = {}
++        self._infisical_expiry: float = 0
++        self._infisical_ttl: float = 3600.0
+ 
+     def get_cookies(self) -> Dict[str, str]:
++        # Prefer Infisical cached cookies if fresh (TTL 1h)
++        if self._infisical_cookies and time.time() < self._infisical_expiry:
++            self._cookies = self._infisical_cookies
++            return self._cookies
++
+         if self._cookies:
+             return self._cookies
+ 
+@@ -98,12 +108,138 @@ def get_cookies(self) -> Dict[str, str]:
+ 
+         return self._cookies
+ 
++    async def fetch_cookies_from_infisical(self) -> Dict[str, str]:
++        """Dynamically fetch Gemini cookies from Infisical Vault (in-memory, TTL 1h)."""
++        now = time.time()
++        if self._infisical_cookies and now < self._infisical_expiry:
++            self._cookies = self._infisical_cookies
++            return self._infisical_cookies
++
++        client_id = os.getenv("INFISICAL_CLIENT_ID", "").strip()
++        client_secret = os.getenv("INFISICAL_CLIENT_SECRET", "").strip()
++        workspace_id = (os.getenv("INFISICAL_WORKSPACE_ID", "") or os.getenv("INFISICAL_PROJECT_ID", "")).strip()
++        if not client_id or not client_secret or not workspace_id:
++            return self.get_cookies()
++
++        environment = os.getenv("INFISICAL_ENV", "prod").strip() or "prod"
++        base_url = os.getenv("INFISICAL_API_URL", "https://app.infisical.com").rstrip("/")
++        secret_name = os.getenv("INFISICAL_GEMINI_COOKIES_SECRET", "SUPREMEAI_GEMINI_COOKIES").strip() or "SUPREMEAI_GEMINI_COOKIES"
++
++        old_cookies = dict(self._infisical_cookies)
++        try:
++            async with httpx.AsyncClient(timeout=15.0) as client:
++                login_resp = await client.post(
++                    f"{base_url}/api/v1/auth/universal-auth/login",
++                    json={"clientId": client_id, "clientSecret": client_secret},
++                )
++                login_resp.raise_for_status()
++                token = login_resp.json().get("accessToken")
++                if not token:
++                    raise ValueError("Infisical auth did not return accessToken")
++
++                url = f"{base_url}/api/v3/secrets/raw/{secret_name}"
++                params = {"workspaceId": workspace_id, "environment": environment, "secretPath": "/"}
++                resp = await client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
++                resp.raise_for_status()
++                data = resp.json()
++
++                raw_value = None
++                if isinstance(data, dict):
++                    if isinstance(data.get("secret"), dict):
++                        raw_value = data["secret"].get("secretValue")
++                    elif isinstance(data.get("secrets"), list) and data["secrets"]:
++                        raw_value = data["secrets"][0].get("secretValue")
++                    else:
++                        raw_value = data.get("secretValue")
++                if not raw_value:
++                    raise ValueError("Infisical secret value is empty")
++
++                cookies = self._parse_infisical_cookie_value(str(raw_value))
++                if not cookies:
++                    raise ValueError("No Gemini cookies parsed from Infisical secret")
++
++                # Reset token cache if cookies changed
++                if cookies != old_cookies:
++                    self._snl = None
++                    self._token_expiry = 0
++
++                self._infisical_cookies = cookies
++                self._infisical_expiry = time.time() + self._infisical_ttl
++                self._cookies = cookies
++                logger.info(f"Fetched {len(cookies)} Gemini cookies from Infisical (TTL {int(self._infisical_ttl)}s)")
++                return cookies
++        except Exception as exc:
++            logger.warning(f"Could not fetch cookies from Infisical: {exc}")
++            return self.get_cookies()
++
++    def _parse_infisical_cookie_value(self, raw: str) -> Dict[str, str]:
++        text = raw.strip()
++        # Try gzip/base64 compressed payload
++        try:
++            decoded = base64.b64decode(text, validate=True)
++            try:
++                text = gzip.decompress(decoded).decode("utf-8")
++            except Exception:
++                try:
++                    text = decoded.decode("utf-8")
++                except Exception:
++                    pass
++        except Exception:
++            pass
++
++        # Try JSON
++        try:
++            data = json.loads(text)
++        except Exception:
++            cookies: Dict[str, str] = {}
++            for part in text.split(";"):
++                if "=" in part:
++                    k, v = part.strip().split("=", 1)
++                    cookies[k.strip()] = v.strip()
++            known = {"__Secure-1PSID", "__Secure-3PSID", "SID", "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC"}
++            filtered = {k: v for k, v in cookies.items() if k in known}
++            return filtered if filtered else cookies
++
++        cookies = {}
++        if isinstance(data, dict):
++            if isinstance(data.get("cookies"), list):
++                data = data["cookies"]
++            else:
++                mapping: Dict[str, str] = {}
++                for k, v in data.items():
++                    if isinstance(v, str):
++                        mapping[k] = v
++                if mapping:
++                    normalized: Dict[str, str] = {}
++                    for k, v in mapping.items():
++                        name = k
++                        if k in ("1PSID", "3PSID", "SID", "1PSIDTS", "3PSIDTS", "1PSIDCC", "3PSIDCC"):
++                            name = f"__Secure-{k}" if "PSID" in k else k
++                        normalized[name] = v
++                    return normalized
++        if isinstance(data, list):
++            for cookie in data:
++                if not isinstance(cookie, dict):
++                    continue
++                name = cookie.get("name")
++                value = cookie.get("value")
++                domain = str(cookie.get("domain", ""))
++                if name and value and ("google" in domain.lower() or str(name).startswith("__Secure-") or name == "SID"):
++                    cookies[str(name)] = str(value)
++
++        known = {"__Secure-1PSID", "__Secure-3PSID", "SID", "__Secure-1PSIDTS", "__Secure-3PSIDTS", "__Secure-1PSIDCC", "__Secure-3PSIDCC"}
++        filtered = {k: v for k, v in cookies.items() if k in known}
++        return filtered if filtered else cookies
++
+     async def _ensure_tokens(self, client: httpx.AsyncClient) -> tuple[str, str]:
+         now = time.time()
+         if self._snl and now < self._token_expiry:
+             return self._snl, self._bl
+ 
+-        cookies = self.get_cookies()
++        if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
++            cookies = await self.fetch_cookies_from_infisical()
++        else:
++            cookies = self.get_cookies()
+         if not cookies:
+             raise ValueError("No Gemini cookies configured (missing env vars and local vault)")
+ 
+@@ -155,7 +291,10 @@ def _extract_reply_text(self, raw_text: str) -> str:
+         return best_text.strip()
+ 
+     async def ask(self, prompt: str) -> str:
+-        cookies = self.get_cookies()
++        if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
++            cookies = await self.fetch_cookies_from_infisical()
++        else:
++            cookies = self.get_cookies()
+         if not cookies:
+             raise HTTPException(status_code=503, detail="No Gemini cookies configured")
+ 
+@@ -163,6 +302,9 @@ async def ask(self, prompt: str) -> str:
+             try:
+                 snl, bl = await self._ensure_tokens(client)
+             except PermissionError as exc:
++                self._infisical_cookies = {}
++                self._infisical_expiry = 0
++                self._cookies = {}
+                 raise HTTPException(status_code=502, detail=str(exc))
+             except Exception as exc:
+                 raise HTTPException(status_code=502, detail=f"Token initialization error: {exc}")
+@@ -219,14 +361,25 @@ async def ask(self, prompt: str) -> str:
+ relay_engine = GeminiCookieEngine()
+ 
+ 
++@app.on_event("startup")
++async def on_startup():
++    if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
++        logger.info("Initializing Infisical cookie prefetch on startup...")
++        try:
++            await relay_engine.fetch_cookies_from_infisical()
++        except Exception as exc:
++            logger.warning(f"Startup Infisical prefetch notice: {exc}")
++
++
+ @app.get("/health")
+ async def health() -> Dict[str, Any]:
+-    cookies = relay_engine.get_cookies()
++    cookies = relay_engine._infisical_cookies or relay_engine.get_cookies()
+     return {
+         "status": "healthy",
+         "service": "supremeai-browser-cookie-relay",
+         "cookies_loaded": bool(cookies),
+         "total_cookies": len(cookies),
++        "infisical_configured": bool(os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET")),
+         "timestamp": time.time(),
+     }
+ 
+@@ -283,4 +436,4 @@ async def chat_completions(req: ChatRequest) -> JSONResponse:
+ 
+     port = int(os.environ.get("PORT", "8788"))
+     logger.info(f"Starting SupremeAI Gemini Cookie Relay on port {port}...")
+-    uvicorn.run("server:app", host="0.0.0.0", port=port, reload=False)
++    uvicorn.run(app, host="0.0.0.0", port=port)
+diff --git a/browser/web_scraper.py b/browser/web_scraper.py
+new file mode 100644
+index 00000000..98bf911a
+--- /dev/null
++++ b/browser/web_scraper.py
+@@ -0,0 +1,114 @@
++"""
++Web scraper with HTTP fallback (extracted from backend/tools/browser/web_scraper.py).
++Uses httpx + BeautifulSoup for lightweight HTTP fetching when Playwright
++is unavailable or overkill.
++
++Issue #511 (BE-05): httpx runs with follow_redirects=False. fetch_page walks
++each redirect hop itself and re-runs the full SSRF gate (parse-time
++is_safe_url + resolved-IP is_safe_url_resolved) on EVERY target before it is
++requested, closing the redirect-to-metadata and DNS-rebinding bypasses of the
++old follow_redirects=True call.
++"""
++
++import os
++from typing import Any
++from urllib.parse import urljoin
++
++import httpx
++from bs4 import BeautifulSoup
++
++import logging
++logger = logging.getLogger('supremeai.scraper')
++
++# বাংলা মন্তব্য: Dual-path import — standalone scraper service-এ `security`
++# top-level (conftest sys.path), backend এর ভিতরে embedded হলে
++# `services.scraper.security`।
++try:
++    from security import is_safe_url, is_safe_url_resolved  # standalone scraper microservice
++except ImportError:  # embedded in main backend
++    from services.scraper.security import (  # type: ignore[no-redef]
++        is_safe_url,
++        is_safe_url_resolved,
++    )
++
++# 🔧 DYNAMIC CONFIG: User-Agent from env, with safe default
++_DEFAULT_USER_AGENT = os.getenv(
++    "SCRAPER_USER_AGENT",
++    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
++)
++_HTTP_TIMEOUT = float(os.getenv("SCRAPER_HTTP_TIMEOUT", "15.0"))  # 🔧 DYNAMIC timeout
++
++# Issue #511: manual redirect walking — every hop is re-validated.
++_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
++_MAX_REDIRECTS = int(os.getenv("SCRAPER_MAX_REDIRECTS", "5"))
++
++_SSRF_BLOCKED_RESULT = {
++    "success": False,
++    "error": "SSRF check failed: Unauthorized internal access",
++}
++
++
++def _is_safe_to_fetch(url: str) -> bool:
++    """Full request-time SSRF gate for the fetch path (issue #511).
++
++    Layer 1: parse-time ``is_safe_url`` (scheme/hostname literals).
++    Layer 2: ``is_safe_url_resolved`` — resolves the hostname and screens
++    every A/AAAA record against private/loopback/link-local/metadata ranges.
++    Called immediately before each httpx request: the initial URL and every
++    redirect hop. Residual TOCTOU risk (httpx re-resolves at connect time)
++    is documented in security.py.
++    """
++    return is_safe_url(url) and is_safe_url_resolved(url)
++
++
++class WebScraper:
++    def fetch_page(self, url: str) -> dict[str, Any]:
++        logger.info(f"Fetching page: {url}")
++        if not _is_safe_to_fetch(url):
++            logger.error(f"SSRF Attempt Blocked: {url}")
++            return {**_SSRF_BLOCKED_RESULT, "url": url}
++        try:
++            headers = {"User-Agent": _DEFAULT_USER_AGENT}  # 🔧 DYNAMIC
++            # Issue #511: follow_redirects=False — httpx must never hop without
++            # re-validation. Each redirect target is screened (parse-time +
++            # resolved IPs) before the next request is issued.
++            response: Any = None
++            current_url = url
++            for _hop in range(_MAX_REDIRECTS + 1):
++                response = httpx.get(
++                    current_url, headers=headers, timeout=_HTTP_TIMEOUT, follow_redirects=False
++                )
++                if response.status_code not in _REDIRECT_STATUSES:
++                    break
++                location = response.headers.get("location")
++                if not location:
++                    break  # malformed 3xx without Location — nothing to follow
++                current_url = urljoin(current_url, location)
++                if not _is_safe_to_fetch(current_url):
++                    logger.error(f"SSRF Attempt Blocked (redirect target): {current_url}")
++                    return {**_SSRF_BLOCKED_RESULT, "url": url}
++            else:
++                logger.error(f"Too many redirects (>{_MAX_REDIRECTS}) fetching: {url}")
++                return {
++                    "success": False,
++                    "error": f"Too many redirects (>{_MAX_REDIRECTS})",
++                    "url": url,
++                }
++            response.raise_for_status()
++            soup = BeautifulSoup(response.text, "html.parser")
++            title = soup.title.get_text(strip=True) if soup.title else "No Title"
++            for tag in soup(["script", "style", "nav", "footer", "header"]):
++                tag.decompose()
++            text = " ".join(soup.get_text(separator=" ").split())[:3000]
++            links = [a.get("href", "") for a in soup.find_all("a", href=True)][:20]
++            return {
++                "success": True,
++                "url": url,
++                "title": title,
++                "content": text,
++                "links": links,
++                "status_code": response.status_code,
++            }
++        except (httpx.RequestError, httpx.HTTPStatusError) as e:
++            logger.error(f"Failed to fetch {url}: {e}")
++            return {"success": False, "error": str(e), "url": url}

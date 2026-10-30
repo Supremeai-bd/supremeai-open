@@ -1,0 +1,104 @@
+diff --git a/core/services/scraper/web_scraper.py b/core/services/scraper/web_scraper.py
+index df727be7..fd3d2ec2 100644
+--- a/core/services/scraper/web_scraper.py
++++ b/core/services/scraper/web_scraper.py
+@@ -17,7 +17,7 @@
+ import httpx
+ from bs4 import BeautifulSoup
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: Dual-path import — standalone scraper service-এ `security`
+ # top-level (conftest sys.path), backend এর ভিতরে embedded হলে
+diff --git a/core/services/self_correction.py b/core/services/self_correction.py
+index 825101ca..8cf8446a 100644
+--- a/core/services/self_correction.py
++++ b/core/services/self_correction.py
+@@ -15,7 +15,7 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.dynamic_planner import TaskDAG, TaskNode
+ from services.memory_service import CascadeMemoryService
+ from services.memory_service import memory_service as global_memory_service
+diff --git a/core/services/storage/cloud_storage.py b/core/services/storage/cloud_storage.py
+index fd2bfae9..6234dc23 100644
+--- a/core/services/storage/cloud_storage.py
++++ b/core/services/storage/cloud_storage.py
+@@ -17,7 +17,7 @@
+ from fastapi import HTTPException, status
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.http_client import DEFAULT_TIMEOUT, create_async_client
+ 
+ 
+diff --git a/core/services/storage/gcp_firestore.py b/core/services/storage/gcp_firestore.py
+index c8dd6acd..65d46ee0 100644
+--- a/core/services/storage/gcp_firestore.py
++++ b/core/services/storage/gcp_firestore.py
+@@ -24,7 +24,7 @@
+ from typing import Any
+ 
+ from core.degraded_mode import InMemoryRing, sqlite_fallback_allowed
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from google.cloud import firestore  # type: ignore[import-untyped]
+diff --git a/core/services/tool_forge.py b/core/services/tool_forge.py
+index 9df52470..f3f2bd26 100644
+--- a/core/services/tool_forge.py
++++ b/core/services/tool_forge.py
+@@ -22,7 +22,7 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.codegen_gate import (
+     denied_reason,
+     inprocess_codegen_enabled,
+diff --git a/core/services/video_to_code_pipeline.py b/core/services/video_to_code_pipeline.py
+index fa9e3fae..e5ed6cdf 100644
+--- a/core/services/video_to_code_pipeline.py
++++ b/core/services/video_to_code_pipeline.py
+@@ -29,7 +29,7 @@
+ 
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.upload_validator import validate_upload
+ from services.config_service import ConfigService
+ 
+diff --git a/core/services/vision_service.py b/core/services/vision_service.py
+index 8a7c3ded..32db93db 100644
+--- a/core/services/vision_service.py
++++ b/core/services/vision_service.py
+@@ -8,7 +8,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Issue #444 doctrine (real work or loud failure, never fabricated success):
+ # the old implementation returned one HARDCODED description ("Identified 3-tier
+diff --git a/core/services/voice_service.py b/core/services/voice_service.py
+index 614a45e5..3c19f6ee 100644
+--- a/core/services/voice_service.py
++++ b/core/services/voice_service.py
+@@ -7,7 +7,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Issue #445 doctrine (real work or loud failure, never fabricated success):
+ # the old implementation returned a FIXED Bengali transcript with confidence

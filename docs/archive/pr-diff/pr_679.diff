@@ -1,0 +1,21 @@
+diff --git a/.gitattributes b/.gitattributes
+new file mode 100644
+index 00000000..5528a5cf
+--- /dev/null
++++ b/.gitattributes
+@@ -0,0 +1,3 @@
++# Enforce LF endings for git hooks and shell scripts across Windows/Linux/macOS
++.githooks/* text eol=lf
++*.sh text eol=lf
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 4d663522..d0063874 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -93,6 +93,7 @@
+ }
+ 
+ APPROVED_ROOT_FILES = {
++    ".gitattributes",
+     ".gitignore",
+     ".gitleaks.toml",
+     ".gitleaksignore",

@@ -1,0 +1,44 @@
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+index 576ee958..65c206f8 100644
+--- a/.github/workflows/open-guards.yml
++++ b/.github/workflows/open-guards.yml
+@@ -89,14 +89,35 @@ jobs:
+           if [ -z "$ISSUES" ]; then
+             exit 0
+           fi
+-          # Check other open PRs for the same issue reference
+-          OTHER_PRS=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body -q ".[] | select(.number != ${PR_NUM}) | \"PR #\" + (.number|tostring) + \": \" + .title + \" \" + .body" || true)
++          # Issue-reference comparison, whole-token edition (#120):
++          #   - Each OTHER open PR yields a structured record (number, title,
++          #     body, headRefName). NO "PR #N:" prefix is injected into the
++          #     scanned text — that self-pollution is what made a reference to
++          #     issue #10 collide with the literal prefix "PR #108".
++          #   - Issue refs are compared as exact tokens: `#<N>` must be
++          #     followed by a non-digit or end-of-string, so `#10` never
++          #     matches `#108`. The fork-lane branch name is part of the
++          #     scanned surface (AGENT_RULES U4): bare digit tokens with
++          #     non-digit boundaries there, so `contributor/issue-78` or
++          #     `fix/…-78-slug` is detected even with a silent title/body.
++          #   - `guard-exempt` escape hatch unchanged (checked above).
++          REF_LINES=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body,headRefName \
++            -q '.[] | select(.number != '"${PR_NUM}"') | [.number, .title, (.body // ""), .headRefName] | @tsv' || true)
+           for iss in $ISSUES; do
+-            MATCH=$(echo "$OTHER_PRS" | grep -F "$iss" || true)
++            iss_num="${iss#"#"}"
++            MATCH=""
++            while IFS=$'\t' read -r other_num other_title other_body other_branch; do
++              [ -z "${other_num}" ] && continue
++              if printf '%s %s' "${other_title}" "${other_body}" | grep -qE "#${iss_num}([^0-9]|$)" \
++                 || printf '%s' "${other_branch}" | grep -qE "(^|[^0-9])${iss_num}([^0-9]|$)"; then
++                MATCH="PR #${other_num} (branch: ${other_branch})"
++                break
++              fi
++            done <<< "${REF_LINES}"
+             if [ -n "$MATCH" ]; then
+               echo "::error::Competing PR detected! Another open PR already targets $iss."
+               echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
+-              echo "Conflicting PR details: $MATCH"
++              echo "Conflicting PR: $MATCH"
+               exit 1
+             fi
+           done

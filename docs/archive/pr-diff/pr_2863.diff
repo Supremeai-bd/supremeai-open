@@ -1,0 +1,7 @@
+diff --git a/docs/bridge/__iso_procsub__.md b/docs/bridge/__iso_procsub__.md
+new file mode 100644
+index 00000000..6357e122
+--- /dev/null
++++ b/docs/bridge/__iso_procsub__.md
+@@ -0,0 +1 @@
++diff <(tail -n +3 /tmp/fresh.lock) <(tail -n +3 requirements-dev.lock)

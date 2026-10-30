@@ -1,0 +1,149 @@
+diff --git a/sdk/python/README.md b/sdk/python/README.md
+index 73d84edd..9e8f4d87 100644
+--- a/sdk/python/README.md
++++ b/sdk/python/README.md
+@@ -21,8 +21,7 @@ pip install supremeai-sdk
+ from supremeai.client import GatewayClient
+ 
+ client = GatewayClient(
+-    base_url="https://supremeai-api.onrender.com",
+-    bearer_token="your-token"
++    base_url="https://supremeai-api.onrender.com", bearer_token="your-token"
+ )
+ 
+ # Check health
+diff --git a/sdk/python/supremeai/client.py b/sdk/python/supremeai/client.py
+index 89d76bb8..87e67b92 100644
+--- a/sdk/python/supremeai/client.py
++++ b/sdk/python/supremeai/client.py
+@@ -134,6 +134,7 @@ def consensus(self, messages: Any, **kwargs: Any) -> Any:
+         body.update(kwargs)
+         return self.request("POST", "/v1/consensus", body)
+ 
++
+ class AsyncSupremeAIClient:
+     """Async facade over the sync client: executor-backed HTTP, queue-backed SSE."""
+ 
+diff --git a/sdk/tests/test_py_client.py b/sdk/tests/test_py_client.py
+index 38f9d788..fdc415a3 100644
+--- a/sdk/tests/test_py_client.py
++++ b/sdk/tests/test_py_client.py
+@@ -69,7 +69,9 @@ def do_POST(self):
+                 200,
+                 {
+                     "id": "chat_123",
+-                    "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}],
++                    "choices": [
++                        {"message": {"content": "hello"}, "finish_reason": "stop"}
++                    ],
+                 },
+             )
+         elif self.path == "/v1/runs":
+@@ -147,7 +149,9 @@ def test_header_signing_and_chat_submission(self):
+         response = self.client.chat([{"role": "user", "content": "hello"}])
+         self.assertEqual(response["id"], "chat_123")
+         self.assertEqual(self.gateway.state["last_auth"], "Bearer test-key-123")
+-        self.assertEqual(self.gateway.state["last_body"]["messages"][0]["content"], "hello")
++        self.assertEqual(
++            self.gateway.state["last_body"]["messages"][0]["content"], "hello"
++        )
+ 
+     def test_retry_backoff_succeeds_on_third_attempt(self):
+         response = self.client.request("GET", "/v1/flaky")
+@@ -173,5 +177,6 @@ def test_sse_listener_multiline_and_finish(self):
+         self.assertEqual(events[0].id, "42")
+         self.assertEqual(listener.finish(), [])
+ 
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)
+diff --git a/skills/agent-cadence-dispatcher/scripts/dispatch.py b/skills/agent-cadence-dispatcher/scripts/dispatch.py
+index 36e39ec2..50c420fc 100644
+--- a/skills/agent-cadence-dispatcher/scripts/dispatch.py
++++ b/skills/agent-cadence-dispatcher/scripts/dispatch.py
+@@ -4,6 +4,7 @@
+ Prints due roles and, when requested, creates an empty-board audit issue.
+ Stdlib-only. Fail-closed.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+@@ -19,10 +20,16 @@
+ 
+ def main() -> int:
+     parser = argparse.ArgumentParser(description="Agent cadence dispatcher skill")
+-    parser.add_argument("--create-audit-issue", action="store_true",
+-                        help="Create a full-project audit issue (empty-board handling)")
+-    parser.add_argument("--mark-run", metavar="ROLE",
+-                        help="Record that ROLE just ran (update last_run store)")
++    parser.add_argument(
++        "--create-audit-issue",
++        action="store_true",
++        help="Create a full-project audit issue (empty-board handling)",
++    )
++    parser.add_argument(
++        "--mark-run",
++        metavar="ROLE",
++        help="Record that ROLE just ran (update last_run store)",
++    )
+     args = parser.parse_args()
+ 
+     cfg = cal.load_cadence_config()
+diff --git a/skills/tests/test_agent_cadence_skill.py b/skills/tests/test_agent_cadence_skill.py
+index 429604a8..95327a55 100644
+--- a/skills/tests/test_agent_cadence_skill.py
++++ b/skills/tests/test_agent_cadence_skill.py
+@@ -1,4 +1,5 @@
+ """Parity test for the agent-cadence-dispatcher pilot skill."""
++
+ from __future__ import annotations
+ 
+ import sys
+@@ -29,6 +30,7 @@ def test_entry_script_exists(self):
+ 
+     def test_progressive_loader_discovers(self):
+         from registry.progressive_loader import ProgressiveLoader
++
+         loader = ProgressiveLoader([ROOT])
+         index = loader.discover()
+         self.assertIn("agent-cadence-dispatcher", index)
+diff --git a/tests/test_agent_cadence.py b/tests/test_agent_cadence.py
+index 7b17ad67..c6ef1300 100644
+--- a/tests/test_agent_cadence.py
++++ b/tests/test_agent_cadence.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline contract tests for role-cadence + empty-board issue creation helpers."""
++
+ from __future__ import annotations
+ 
+ import json
+@@ -25,7 +26,14 @@ def test_defaults_when_missing(self):
+     def test_loads_valid_config(self):
+         with tempfile.TemporaryDirectory() as td:
+             p = Path(td) / "c.json"
+-            p.write_text(json.dumps({"cadences_hours": {"ecosystem-scout": 6}, "merged_roles": {"x": "auditor"}}))
++            p.write_text(
++                json.dumps(
++                    {
++                        "cadences_hours": {"ecosystem-scout": 6},
++                        "merged_roles": {"x": "auditor"},
++                    }
++                )
++            )
+             cfg = cal.load_cadence_config(p)
+             self.assertEqual(cfg["cadences_hours"]["ecosystem-scout"], 6)
+             self.assertEqual(cfg["merged_roles"]["x"], "auditor")
+@@ -38,7 +46,10 @@ def test_invalid_config_falls_back(self):
+             self.assertEqual(cfg["cadences_hours"], cal.DEFAULT_CADENCE_HOURS)
+ 
+     def test_canonical_role_merge(self):
+-        cfg = {"cadences_hours": cal.DEFAULT_CADENCE_HOURS, "merged_roles": {"federation-auditor": "auditor"}}
++        cfg = {
++            "cadences_hours": cal.DEFAULT_CADENCE_HOURS,
++            "merged_roles": {"federation-auditor": "auditor"},
++        }
+         self.assertEqual(cal.canonical_role("federation-auditor", cfg), "auditor")
+         self.assertEqual(cal.canonical_role("ecosystem-scout", cfg), "ecosystem-scout")
+ 

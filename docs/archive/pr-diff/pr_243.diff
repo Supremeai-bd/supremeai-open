@@ -1,0 +1,19 @@
+diff --git a/docs/AUDIT_2026-10-15.md b/docs/AUDIT_2026-10-15.md
+index dca7ae0e..76aef211 100644
+--- a/docs/AUDIT_2026-10-15.md
++++ b/docs/AUDIT_2026-10-15.md
+@@ -128,9 +128,9 @@ No production code, workflow, or policy file was modified by this audit — the
+ 
+ ## Related Documents
+ 
+-- [AGENTS.md](../../AGENTS.md) — agent entrypoint & submission pathways
+-- [AGENT_RULES.md](../../AGENT_RULES.md) — policy constitution (U1–U9, Auditor role §3, §4 issue policy, §5 groups)
+-- [ECOSYSTEM_MAP.md](../../ECOSYSTEM_MAP.md) — federation repository directory
+-- [docs/AGENT_LOOP_SPEC.md](../AGENT_LOOP_SPEC.md) — dispatcher/envelope contract
+-- [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](../OPS_ACTIONS_QUOTA_RUNBOOK.md) — OPS context referenced by #86
++- [AGENTS.md](../AGENTS.md) — agent entrypoint & submission pathways
++- [AGENT_RULES.md](../AGENT_RULES.md) — policy constitution (U1–U9, Auditor role §3, §4 issue policy, §5 groups)
++- [ECOSYSTEM_MAP.md](../ECOSYSTEM_MAP.md) — federation repository directory
++- [docs/AGENT_LOOP_SPEC.md](AGENT_LOOP_SPEC.md) — dispatcher/envelope contract
++- [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](OPS_ACTIONS_QUOTA_RUNBOOK.md) — OPS context referenced by #86
+ - Tracking issue: [#95](https://github.com/Supremeai-bd/supremeai-open/issues/95) · Findings: #86–#93

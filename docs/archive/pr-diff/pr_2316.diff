@@ -1,0 +1,107 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index bf1f17d7..cd84051e 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -721,8 +721,11 @@ export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
+ }
+ 
+ /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
+-export function queueFromIssues(rawIssues: unknown, limit = 20,
+-                                opts: { keepBridgeStateRows?: boolean } = {}) {
++/** Shared filter+rank stage (#2286 option B): the queue semantics WITHOUT the
++ *  window slice, so callers can echo the true open total alongside the window.
++ *  queueFromIssues keeps its slice contract on top of this stage. */
++export function filterQueueItems(rawIssues: unknown,
++                                 opts: { keepBridgeStateRows?: boolean } = {}) {
+   const items = Array.isArray(rawIssues) ? rawIssues : [];
+   return items
+     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
+@@ -736,7 +739,12 @@ export function queueFromIssues(rawIssues: unknown, limit = 20,
+     // live-proven across the redeploy boundary).
+     .filter((item) => opts.keepBridgeStateRows || !isRejectedOrLanded(item))
+     .map(normalizeQueueItem)
+-    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
++    .sort((a, b) => (b.number ?? 0) - (a.number ?? 0));
++}
++
++export function queueFromIssues(rawIssues: unknown, limit = 20,
++                                opts: { keepBridgeStateRows?: boolean } = {}) {
++  return filterQueueItems(rawIssues, opts)
+     .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
+ }
+ 
+@@ -811,11 +819,19 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           if (rows.length < QUEUE_PAGE_SIZE) break;
+           page += 1;
+         }
+-        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20,
++        const filtered = filterQueueItems(mergeIssuePages(pages),
+           { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
+         // Expose all active open issues so agents discover claimable federation work
+         const anonymous = RequestContextStore.get()?.authenticated !== true;
+-        const workOrders = queued;
++        const workOrders = filtered.slice(0, Math.min(Math.max(1, limit ?? 20), QUEUE_LIMIT_MAX));
++        // Window-contract echo (#2286 option B): count alone mirrors the window,
++        // not the board — a default-depth scan read 20 of 87 live open rows
++        // (77% dark) with zero signal, and every fleet snapshot that day scanned
++        // at depth <= 50. The enumeration pass already walked all pages, so the
++        // exact open total is free here; echo it with a truncation flag so the
++        // window contract is observable instead of silent. Additive fields,
++        // mirrors the R54 stateReason passthrough shape.
++        const totalOpen = filtered.length;
+         return {
+           content: [{
+             type: "text",
+@@ -826,6 +842,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+               authenticatedRead: Boolean(env.github.token || process.env["GH_TOKEN"]),
+               callerAuthenticated: !anonymous,
+               count: workOrders.length,
++              totalOpen,
++              windowTruncated: workOrders.length < totalOpen,
+               workOrders,
+               nextStep: "Call bridge.work_order with a number, then follow bridge.guide.",
+             }, null, 2),
+diff --git a/infrastructure/mcp-control-plane/test_queue_fidelity.ts b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+index 301af55a..ad043953 100644
+--- a/infrastructure/mcp-control-plane/test_queue_fidelity.ts
++++ b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+@@ -4,6 +4,7 @@ import {
+   QUEUE_MAX_PAGES,
+   QUEUE_PAGE_SIZE,
+   buildQueueQueryUrl,
++  filterQueueItems,
+   mergeIssuePages,
+   normalizeQueueItem,
+   queueFromIssues,
+@@ -183,4 +184,31 @@ function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown
+   console.log("  ✓ R7 label-filtered bridge-state queries survive (#2163 arc)");
+ }
+ 
++// ─── R8: window-contract echo fields (#2286 option B) ────────────────────────
++{
++  // The filter stage exposes the un-sliced open set so the tool handler can
++  // echo totalOpen + windowTruncated; queueFromIssues keeps its slice cap.
++  // Live shape this fixes: a default-depth scan (limit unset -> 20) read 20 of
++  // 87 live open rows (77% dark) with zero signal; every fleet snapshot that
++  // day scanned at depth <= 50 while the shadow tail held a live P1.
++  const rows = Array.from({ length: 30 }, (_, i) => issue(2600 - i));
++  const filtered = filterQueueItems(mergeIssuePages([rows]));
++  assert.equal(filtered.length, 30, "filter stage returns the full filtered set, un-sliced");
++  assert.equal(filtered[0].number, 2600, "filter stage keeps the newest-first rank");
++
++  const q = queueFromIssues(mergeIssuePages([rows]), 20);
++  assert.equal(q.length, 20, "slice contract unchanged at default depth");
++  assert.ok(filtered.length > q.length, "default window is a minority slice here");
++
++  // Handler-side derivation contract: totalOpen = filtered.length;
++  // windowTruncated = count < totalOpen. Pinned so the echo cannot drift.
++  const totalOpen = filtered.length;
++  const windowTruncated = q.length < totalOpen;
++  assert.equal(windowTruncated, true, "default-depth window must be flagged truncated");
++  const qFull = queueFromIssues(mergeIssuePages([rows]), QUEUE_LIMIT_MAX);
++  assert.equal(qFull.length < totalOpen, false, "full-board scan must NOT be flagged truncated");
++
++  console.log("  ✓ R8 window-contract echo (totalOpen + windowTruncated) derivable from the filter stage (#2286)");
++}
++
+ console.log("Queue-fidelity contract tests passed (#2115/#2123)");

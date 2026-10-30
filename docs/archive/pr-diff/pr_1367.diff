@@ -1,0 +1,161 @@
+diff --git a/core/eval/task_eval_set_v1.json b/core/eval/task_eval_set_v1.json
+new file mode 100644
+index 00000000..7682a2ca
+--- /dev/null
++++ b/core/eval/task_eval_set_v1.json
+@@ -0,0 +1,27 @@
++{
++  "version": "v1",
++  "created": "2026-10-27",
++  "purpose": "First representative user-task eval set (AIQ-102) — 20 tasks across research/write/build/analyze x easy/hard, each with an expected-behavior rubric. Stored here versioned; seed into task_records by the feedback-loop closer.",
++  "tasks": [
++    {"id": "T01", "category": "research", "difficulty": "easy", "prompt": "Summarize this URL's main argument in 3 bullets.", "rubric": "Uses browsing; bullets map to the page's actual claims; no invented citations."},
++    {"id": "T02", "category": "research", "difficulty": "hard", "prompt": "Compare Monica vs Sider feature sets and list 5 gaps for SupremeAI.", "rubric": "Retrieves both product surfaces; gaps are specific and testable."},
++    {"id": "T03", "category": "research", "difficulty": "easy", "prompt": "What changed in the last 7 days on our GitHub org?", "rubric": "Uses github tools; answers with concrete PR/CI events, no hallucination."},
++    {"id": "T04", "category": "research", "difficulty": "hard", "prompt": "Find the root cause of CI failure in run 40168281579 and cite the failing log line.", "rubric": "Pulls failed logs via tower; quotes exact line; proposes smallest fix."},
++    {"id": "T05", "category": "write", "difficulty": "easy", "prompt": "Write a 120-word release note for v2.0.0 based on the changelog.", "rubric": "Facts only from changelog; correct tone; no placeholder text."},
++    {"id": "T06", "category": "write", "difficulty": "hard", "prompt": "Draft a bilingual (EN/BN) onboarding email for SupremeAI Studio.", "rubric": "Both languages grammatical; consistent feature names; CTA present."},
++    {"id": "T07", "category": "write", "difficulty": "easy", "prompt": "Rewrite this paragraph to be 30% shorter without losing meaning.", "rubric": "Length target met; no meaning loss; no new claims."},
++    {"id": "T08", "category": "write", "difficulty": "hard", "prompt": "Produce a PR description from this diff including risk assessment.", "rubric": "Accurate diff summary; risk section names blast radius; test plan included."},
++    {"id": "T09", "category": "build", "difficulty": "easy", "prompt": "Create a React component that renders a paginated table.", "rubric": "Compiles; controlled pagination props; no a11y violations."},
++    {"id": "T10", "category": "build", "difficulty": "hard", "prompt": "Add streaming chat to the VS Code extension using the shared service.", "rubric": "Uses streamChatMessage; abort handled; UI renders progressive tokens."},
++    {"id": "T11", "category": "build", "difficulty": "easy", "prompt": "Write a Python function that validates Bangladeshi phone numbers.", "rubric": "Correct prefixes (+880/01); test cases included; rejects malformed."},
++    {"id": "T12", "category": "build", "difficulty": "hard", "prompt": "Wire a cron job that ingests docs daily and alerts on failure.", "rubric": "Uses ingest_project_docs.py; alert path goes to Telegram lane; idempotent."},
++    {"id": "T13", "category": "analyze", "difficulty": "easy", "prompt": "What does redis_chain.ts do in one paragraph?", "rubric": "Correct mechanism summary (chain walk, cooldown, rotation); cites file path."},
++    {"id": "T14", "category": "analyze", "difficulty": "hard", "prompt": "Why is overallStatus degraded while all snapshots are healthy?", "rubric": "Identifies deploy-status cross-reference vs service liveness; proposes fix."},
++    {"id": "T15", "category": "analyze", "difficulty": "easy", "prompt": "Count open P0/P1 work orders in the bridge queue.", "rubric": "Calls bridge_work_queue; numbers match live state."},
++    {"id": "T16", "category": "analyze", "difficulty": "hard", "prompt": "Estimate the cost saving of fixing the secondary-slot cooldown bug.", "rubric": "Quantifies wasted capacity (500k cmds slot); reasons about exhaustion cascade."},
++    {"id": "T17", "category": "research", "difficulty": "easy", "prompt": "Explain EWC to a junior engineer.", "rubric": "Correct intuition (quadratic penalty on important weights); no fake math."},
++    {"id": "T18", "category": "build", "difficulty": "hard", "prompt": "Add a 'remembered context' chip UI wired to memory_read_graph.", "rubric": "Renders real entities; per-item forget calls memory_delete_entities; tenant-namespaced."},
++    {"id": "T19", "category": "analyze", "difficulty": "easy", "prompt": "Is our Supabase backup restore verified? What evidence exists?", "rubric": "Answers honestly (not verified) and proposes a drill; no fabrication."},
++    {"id": "T20", "category": "write", "difficulty": "hard", "prompt": "Write acceptance criteria for the tenant dogfood week.", "rubric": "Maps to negative battery; measurable; includes rollback criteria."}
++  ]
++}
+diff --git a/scripts/ops/ingest_project_docs.py b/scripts/ops/ingest_project_docs.py
+new file mode 100644
+index 00000000..723c183d
+--- /dev/null
++++ b/scripts/ops/ingest_project_docs.py
+@@ -0,0 +1,122 @@
++#!/usr/bin/env python3
++"""Project-docs knowledge ingest (#1337) — bridge-20261027-knowledge-loop.
++
++Feeds the repos' own documentation into the RAG layer via the tower tool
++`memory_ingest_document_rag`, so docs_search can answer project questions
++(docs_search("supremeai") currently returns []).
++
++Dry-run by default; pass --apply to actually ingest. Designed to run from the
++Bridge Intake schedule (see work order) or manually.
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import sys
++import urllib.request
++
++TOWER_URL = os.environ.get("SUPREMEAI_MCP_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
++HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
++
++# (repo, path prefix, doc collection label) — keep in sync with the work order
++TARGETS = [
++    ("supremeai", "docs/", "architecture"),
++    ("supremeai-core", "docs/", "core"),
++    ("supremeai-api", "docs/", "api"),
++    ("supremeai-studio", "docs/", "studio"),
++]
++ROOT_DOCS = ["README.md", "ERROR_COMPENDIUM.md", "COVERAGE_90_PLAN.md", "API-swagger.yaml"]
++
++
++def post(payload: dict, session_id: str | None = None, timeout: int = 90):
++    headers = dict(HEADERS)
++    if session_id:
++        headers["mcp-session-id"] = session_id
++    req = urllib.request.Request(TOWER_URL, data=json.dumps(payload).encode(), headers=headers, method="POST")
++    with urllib.request.urlopen(req, timeout=timeout) as resp:
++        sid = resp.headers.get("mcp-session-id", session_id)
++        raw = resp.read().decode("utf-8", errors="replace")
++        payloads = []
++        if raw.lstrip().startswith("event:") or "\ndata:" in raw:
++            for line in raw.splitlines():
++                if line.startswith("data:"):
++                    try:
++                        payloads.append(json.loads(line[5:].strip()))
++                    except json.JSONDecodeError:
++                        pass
++        else:
++            payloads.append(json.loads(raw))
++        return sid, payloads
++
++
++def ensure_session() -> str:
++    sid, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
++                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
++                              "clientInfo": {"name": "docs-ingest", "version": "1.0"}}})
++    post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
++    return sid
++
++
++def call(sid: str, name: str, args: dict, rid: int):
++    _, resps = post({"jsonrpc": "2.0", "id": rid, "method": "tools/call",
++                     "params": {"name": name, "arguments": args}}, sid)
++    return resps[0] if resps else {}
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--apply", action="store_true", help="actually ingest (default: dry-run)")
++    ap.add_argument("--max-docs", type=int, default=100)
++    args = ap.parse_args()
++
++    sid = ensure_session()
++    rid = 10
++    manifest = []
++
++    for repo, prefix, label in TARGETS:
++        tree = call(sid, "github_repo_tree", {"repo": repo}, rid)
++        rid += 1
++        try:
++            text = json.dumps(tree.get("result", {}).get("content", [{}])[0].get("text", ""))
++        except Exception:  # noqa: BLE001
++            text = json.dumps(tree)
++        # tree entries look like "docs/..." in the filtered listing
++        doc_paths = [seg for seg in set(text.replace('"', " ").split()) if seg.startswith(prefix) and seg.endswith(".md")]
++        for root_doc in ROOT_DOCS:
++            if root_doc in text:
++                doc_paths.append(root_doc)
++        print(f"{repo}: {len(doc_paths)} candidate docs")
++        for path in sorted(doc_paths)[: args.max_docs]:
++            read = call(sid, "github_read_file", {"repo": repo, "path": path}, rid)
++            rid += 1
++            try:
++                inner = json.loads(read.get("result", {}).get("content", [{}])[0].get("text", "{}"))
++                content = inner.get("content", "")
++            except Exception:  # noqa: BLE001
++                content = ""
++            if len(content) < 200:
++                continue
++            source = f"https://github.com/Supremeai-bd/{repo}/blob/main/{path}"
++            manifest.append({"repo": repo, "path": path, "chars": len(content), "source": source})
++            if args.apply:
++                res = call(sid, "memory_ingest_document_rag",
++                           {"title": f"{repo}:{path}", "content": content,
++                            "metadata": {"repo": repo, "path": path, "source": source, "ingested_by": "docs-ingest"}},
++                           rid)
++                rid += 1
++                print(f"  ingested {path} -> {json.dumps(res)[:120]}")
++            else:
++                print(f"  (dry-run) would ingest {path} ({len(content)} chars)")
++
++    print(f"\nmanifest: {len(manifest)} docs")
++    with open("docs_ingest_manifest.json", "w") as fh:
++        json.dump(manifest, fh, indent=2)
++    # CI assertion helper: project docs must be reachable afterwards
++    probe = call(sid, "docs_search", {"query": "supremeai streaming"}, rid)
++    print("post-probe docs_search:", json.dumps(probe)[:200])
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())

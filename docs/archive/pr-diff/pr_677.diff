@@ -1,0 +1,382 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+new file mode 100644
+index 00000000..d0cf9a1b
+--- /dev/null
++++ b/.githooks/pre-commit
+@@ -0,0 +1,193 @@
++#!/bin/sh
++# SupremeAI — Pre-Commit Shift-Left Quality & Security Guard
++#
++# Poka-yoke for local defect prevention before commits enter git history.
++# Fast (< 2s) inspection applied strictly to staged files (git diff --cached).
++#
++# Enforced:
++#   1. No staged .env or secret configuration files.
++#   2. No raw credential / token assignments in staged code diffs.
++#   3. No stale base: if origin/main is ahead, rebase before committing.
++#   4. Python syntax compile check for staged .py files.
++#   5. JSON syntax validity check for staged .json files.
++#   6. TypeScript verification for staged infrastructure/mcp-control-plane code.
++#   7. Sizing ceiling: no individual file > 250 KB (Rule P7).
++#
++# Install:   git config core.hooksPath .githooks
++# Self-test: sh .githooks/pre-commit --self-test
++# Bypass:    git commit --no-verify
++
++set -u
++
++reject() {
++    echo >&2 ""
++    echo >&2 "┌──────────────────────────────────────────────────────────────"
++    echo >&2 "│ PRE-COMMIT GUARD (Shift-Left Security & Integrity Gate): $1"
++    echo >&2 "└──────────────────────────────────────────────────────────────"
++    shift
++    for line in "$@"; do echo >&2 "│ $line"; done
++    echo >&2 ""
++    exit 1
++}
++
++# ---------------------------------------------------------------------------
++# Self-test mode: offline fixtures, hermetic verification
++# ---------------------------------------------------------------------------
++if test "${1:-}" = "--self-test"; then
++    HOOK_ABS="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
++    sandbox="$(mktemp -d)" || exit 2
++    (
++        cd "$sandbox" || exit 2
++        git init -q
++        git config user.email "guard-selftest@example.invalid"
++        git config user.name "Pre-Commit Guard Self-Test"
++        HOOK="$HOOK_ABS"
++
++        # S1: Clean commit -> PASS
++        echo "clean content" > clean.txt
++        git add clean.txt
++        sh "$HOOK" >/dev/null 2>&1 && echo "PASS clean-commit-accepted" || echo "FAIL clean-commit-accepted"
++        git commit -qm "clean"
++
++        # S2: Staged .env -> REJECT
++        echo "SECRET=123" > .env
++        git add .env
++        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL env-file-rejected" || echo "PASS env-file-rejected"
++        git rm -f -q .env
++
++        # S3: Staged bad Python -> REJECT
++        echo "def broken(: pass" > bad.py
++        git add bad.py
++        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-python-rejected" || echo "PASS bad-python-rejected"
++        git rm -f -q bad.py
++
++        # S4: Staged bad JSON -> REJECT
++        echo "{not a json}" > bad.json
++        git add bad.json
++        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL bad-json-rejected" || echo "PASS bad-json-rejected"
++        git rm -f -q bad.json
++
++        # S5: Staged oversized file -> REJECT
++        dd if=/dev/zero of=huge.bin bs=1024 count=300 >/dev/null 2>&1
++        git add huge.bin
++        sh "$HOOK" >/dev/null 2>&1 && echo "FAIL huge-file-rejected" || echo "PASS huge-file-rejected"
++        git rm -f -q huge.bin
++    )
++    rm -rf "$sandbox"
++    exit 0
++fi
++
++# ---------------------------------------------------------------------------
++# Active Pre-Commit Inspection (Only inspecting staged changes)
++# ---------------------------------------------------------------------------
++
++staged_files=$(git diff --cached --name-only --diff-filter=ACMR)
++if [ -z "$staged_files" ]; then
++    exit 0
++fi
++
++# 1. Staged Secret / Env Files
++for file in $staged_files; do
++    case "$file" in
++        *.env|*.env.*|.env)
++            reject "Staged secret file detected: $file" \
++                "Never commit .env or secret configuration files to version control." \
++                "Remove it from the staging area: git reset HEAD $file" \
++                "Deliberate admin bypass: git commit --no-verify."
++            ;;
++    esac
++done
++
++# 2. Check for common raw credential patterns in staged diff
++# Matches unmasked assignments like API_KEY = "..." or TOKEN = "..." (ignoring test allow annotations)
++if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*["\x27][A-Za-z0-9_\-\.]{20,}["\x27]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
++    reject "Potential raw secret literal detected in staged diff" \
++        "Secrets must be loaded from vault/environment, never hardcoded into source files." \
++        "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \
++        "Deliberate admin bypass: git commit --no-verify."
++fi
++
++# 3. Freshness / Stale-Base Check (Dual-Rebase Mandate)
++if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
++    main_ref=$(git rev-parse refs/remotes/origin/main 2>/dev/null || echo "")
++    if [ -n "$main_ref" ]; then
++        merge_base=$(git merge-base HEAD "$main_ref" 2>/dev/null || echo "")
++        if [ -n "$merge_base" ]; then
++            behind=$(git rev-list --count "$merge_base..$main_ref" 2>/dev/null || echo 0)
++            if [ "$behind" -gt 0 ]; then
++                reject "stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)" \
++                    "Rebase onto latest main before committing new work:" \
++                    "  git fetch origin main && git rebase origin/main" \
++                    "Working on a stale base leads to merge conflicts and CI failure." \
++                    "Deliberate admin bypass: git commit --no-verify."
++            fi
++        fi
++    fi
++fi
++
++# 4. Python syntax compile for staged .py files
++for file in $staged_files; do
++    case "$file" in
++        *.py)
++            if [ -f "$file" ]; then
++                if ! python -m py_compile "$file" 2>/dev/null; then
++                    reject "Python syntax error in staged file: $file" \
++                        "Fix syntax errors before committing." \
++                        "Test command: python -m py_compile $file" \
++                        "Deliberate admin bypass: git commit --no-verify."
++                fi
++            fi
++            ;;
++    esac
++done
++
++# 5. JSON parse check for staged .json files
++for file in $staged_files; do
++    case "$file" in
++        *.json)
++            if [ -f "$file" ]; then
++                if ! python -c "import json; json.load(open(r'$file', encoding='utf-8'))" 2>/dev/null; then
++                    reject "Invalid JSON syntax in staged file: $file" \
++                        "Check JSON formatting before committing." \
++                        "Deliberate admin bypass: git commit --no-verify."
++                fi
++            fi
++            ;;
++    esac
++done
++
++# 6. TypeScript check for infrastructure/mcp-control-plane
++mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\.(ts|tsx)$' || true)
++if [ -n "$mcp_staged" ]; then
++    if [ -d "infrastructure/mcp-control-plane" ]; then
++        if command -v bunx >/dev/null 2>&1; then
++            if ! (cd infrastructure/mcp-control-plane && bunx tsc --noEmit >/dev/null 2>&1); then
++                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
++                    "Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
++                    "Ensure all imports, exports, and types are valid." \
++                    "Deliberate admin bypass: git commit --no-verify."
++            fi
++        elif command -v npx >/dev/null 2>&1; then
++            if ! (cd infrastructure/mcp-control-plane && npx tsc --noEmit >/dev/null 2>&1); then
++                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
++                    "Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
++                    "Ensure all imports, exports, and types are valid." \
++                    "Deliberate admin bypass: git commit --no-verify."
++            fi
++        fi
++    fi
++fi
++
++# 7. Sizing ceiling (Rule P7: <= 250 KB per file)
++for file in $staged_files; do
++    if [ -f "$file" ]; then
++        fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
++        if [ "$fsize" -gt 256000 ]; then
++            reject "Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)" \
++                "Individual source files in PRs must not exceed the P7 sizing limit." \
++                "Deliberate admin bypass: git commit --no-verify."
++        fi
++    fi
++done
++
++exit 0
+diff --git a/AGENTS.md b/AGENTS.md
+index fdfd5643..3e90be4b 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -20,10 +20,10 @@ flowchart TD
+     subgraph LOOP ["2. The 8-Step Agent Lifecycle (§3)"]
+         OPEN --> S1["1. Understand & 2. Load Rules"]
+         S1 --> S2["3. Inspect State & Preflight (§2.4)"]
+-        S2 --> S3["4. Atomic Claim (No Claim = No Branch/Work)"]
++        S2 --> S3["4. Atomic Claim & Start Sync (Rebase onto main)"]
+         S3 --> S4["5. Smallest Safe Diff (≤ 30 files, ≤ 200 KB)"]
+         S4 --> S5["6. 3-Tier Verification (Reflection → Smoke → Tests)"]
+-        S5 --> S6["7. PR Record + 8. Board Freshness Re-Check (#4177)"]
++        S5 --> S6["7. Pre-Push Rebase & PR Record + 8. Board Freshness"]
+     end
+ 
+     subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
+@@ -56,6 +56,7 @@ flowchart TD
+ ## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
+ 
+ যেকোনো কোড বা অ্যাকশনের পূর্বে প্রতিটি রোলের ৩-সেকেন্ড প্রি-ফ্লাইট চেক:
++- **All Agents (Dual-Rebase Mandate):** কাজ শুরুর আগে `origin/main` থেকে রিবেস করে ব্রাঞ্চ খোলা হয়েছে তো? এবং পুশ করার ঠিক আগে রিবেস ও ৩-টিয়ার ভেরিফিকেশন ছাড়া পুশ করা সম্পূর্ণ নিষিদ্ধ।
+ - **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
+ - **Coder:** ইস্যু কি লাইভ `main`-এ সক্রিয়? ইস্যুতে সাজেস্ট করার চেয়ে সহজ ১-লাইনের সেরা কোনো বিকল্প আছে কি?
+ - **Auditor:** নিয়মলঙ্ঘন কি বর্তমান `main`-এ প্রমাণযোগ্য? এটি চিরতরে বন্ধে স্বয়ংক্রিয় সিআই গেট কী দেওয়া হচ্ছে?
+@@ -70,7 +71,7 @@ flowchart TD
+ ### Agent Freedom vs Hard Boundaries
+ - **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
+ - **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
+-- **Hard Ordering:** **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first; no `atomic_claim.sh` exists in-repo) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
++- **Hard Ordering:** **Start-of-Work Sync** (fetch/rebase `origin/main` before branch) · **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first) · **Pre-Push Rebase Guard** (0 behind `origin/main`) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
+ 
+ ### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
+ - **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 8cdb7e35..2f997c2b 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -46,7 +46,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
+ | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
+ | **U4** | **Zero-Duplicate PRs** | Mandatory preflight `gh pr list`. Never open parallel/competing PRs for an issue with an active PR. One issue = at most one PR across the federation. |
+-| **U5** | **Freshness & Ownership** | Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. |
++| **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
+ | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
+ | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
+ | **U8** | **Handoff & Decision Ledger** | Finish with JSON decision ledger (`why`, `alternatives_rejected`, `evidence`). Squash commit must carry `Closes #N`. Rerun loop immediately (no sleep). |
+@@ -67,7 +67,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ ### 3.2 💻 Coder / Contributor Agent
+ - **Work Area:** Target repository implementations, unit tests, bug fixes, feature slices (≤ 30 files, ≤ 200 KB).
+ - **Core Policy:**
+-  1. **Live Preflight:** Reproduce issue on current `main` before modifying files. Never fix ghost issues.
++  1. **Live Preflight & Dual-Rebase:** Synchronize with latest `origin/main` (rebase before branch). Reproduce issue on current `main` before modifying files. Rebase and re-verify before push. Never fix ghost issues.
+   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
+   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
+   4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 10cfb3eb..b310c53a 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -122,8 +122,8 @@ def mandatory_invariant_checklist() -> list[dict[str, str]]:
+         },
+         {
+             "id": "stale-base-guard",
+-            "rule": "Stale-base guard: rebase onto current origin/main before push; "
+-            "branches behind main are rejected by the pre-push gate.",
++            "rule": "Stale-base guard (Dual-Rebase Mandate): rebase onto latest origin/main at work start (pre-branch) "
++            "and before push (pre-push); branches behind main are rejected by the pre-push gate.",
+         },
+     ]
+ 
+@@ -845,8 +845,53 @@ def step_3_inspect_state(force: bool = False) -> dict[str, str]:
+     return {"branch": branch, "dirty": str(dirty), "clean": str(not dirty)}
+ 
+ 
++def pre_work_rebase_guard() -> tuple[bool, int, str]:
++    """Start-of-Work Rebase Mandate (#161, #514).
++
++    Before creating or switching to a work branch, fetch upstream main and ensure
++    the local branch/HEAD is synchronized with latest upstream main (0 commits behind).
++    If behind, rebase onto FETCH_HEAD. Fail-closed: rebase conflicts or unverifiable
++    state aborts branch creation.
++
++    Returns (synced, behind, detail):
++      synced=True  → safe to proceed with branch creation;
++      synced=False → branch creation MUST NOT proceed (detail explains why).
++    """
++    fetch_code, _, fetch_err = run_cmd(
++        ["git", "fetch", f"https://github.com/{UPSTREAM_REPO}.git", "main"],
++        check=False,
++    )
++    if fetch_code != 0:
++        return False, 0, f"pre-work fetch of upstream main failed: {fetch_err or 'unknown'}"
++    count_code, count_out, count_err = run_cmd(
++        ["git", "rev-list", "--count", "HEAD..FETCH_HEAD"], check=False
++    )
++    if count_code != 0:
++        return False, 0, f"pre-work behind-count failed: {count_err or 'unknown'}"
++    try:
++        behind = int((count_out or "0").strip() or "0")
++    except ValueError:
++        return False, 0, f"unparseable behind-count: {count_out!r}"
++    if behind <= 0:
++        return True, 0, "fresh work-start base (0 commits behind upstream main)"
++    log("🔄", f"[Start-of-Work Rebase] Local is {behind} commit(s) behind upstream main. Rebasing before branch creation...")
++    rebase_code, _, rebase_err = run_cmd(["git", "rebase", "FETCH_HEAD"], check=False)
++    if rebase_code != 0:
++        run_cmd(["git", "rebase", "--abort"], check=False)
++        return False, behind, f"start-of-work rebase onto upstream main failed — aborted, branch blocked: {rebase_err or 'conflict'}"
++    return True, behind, f"rebased onto upstream main (+{behind} commit(s)) — fresh start"
++
++
+ def step_4_branch(task: dict[str, Any]) -> str | None:
+     """Step 4: Atomic Claim -> Branch Creation Contract (No claim -> no branch, #430)."""
++    # 🔒 GATE 0: START-OF-WORK REBASE GUARD (Dual-Rebase Mandate: start & pre-push)
++    synced, behind, sync_detail = pre_work_rebase_guard()
++    if not synced:
++        log("❌", f"[Fail-Closed Gate] Start-of-work rebase guard blocked branch creation: {sync_detail}")
++        return None
++    if behind > 0:
++        log("✅", f"[Start-of-Work Rebase] Branch point aligned with latest upstream main ({sync_detail}).")
++
+     issue_num = task.get("id", "adhoc")
+     target_branch = f"contributor/issue-{issue_num}" if issue_num != "adhoc" else f"contributor/work-{int(time.time())}"
+ 
+diff --git a/tests/test_federation_transit.py b/tests/test_federation_transit.py
+index 4fcc4c41..ffcd1f09 100644
+--- a/tests/test_federation_transit.py
++++ b/tests/test_federation_transit.py
+@@ -464,6 +464,53 @@ def test_38_guard_contract_documented(self):
+         self.assertIn("#514", doc)
+         self.assertIn("Fail-closed", doc)
+ 
++    def test_39_pre_work_fresh_base_passes(self):
++        cal.run_cmd = self._script([
++            ("git rev-list", (0, "0\n", "")),
++        ])
++        synced, behind, detail = cal.pre_work_rebase_guard()
++        self.assertTrue(synced)
++        self.assertEqual(behind, 0)
++        self.assertIn("fresh", detail)
++
++    def test_40_pre_work_stale_base_rebases(self):
++        cal.run_cmd = self._script([
++            ("git rev-list", (0, "2\n", "")),
++            ("git rebase", (0, "", "")),
++        ])
++        synced, behind, detail = cal.pre_work_rebase_guard()
++        self.assertTrue(synced)
++        self.assertEqual(behind, 2)
++        self.assertIn("rebased", detail)
++
++    def test_41_pre_work_failed_rebase_aborts_fail_closed(self):
++        seen = []
++        script = [
++            ("git rev-list", (0, "2\n", "")),
++            ("git rebase", (1, "", "conflict")),
++        ]
++
++        def fake_run(cmd, cwd=None, check=False):
++            text = " ".join(cmd)
++            seen.append(text)
++            for prefix, outcome in script:
++                if text.startswith(prefix):
++                    return outcome
++            return (0, "", "")
++
++        cal.run_cmd = fake_run
++        synced, behind, detail = cal.pre_work_rebase_guard()
++        self.assertFalse(synced)
++        self.assertEqual(behind, 2)
++        self.assertIn("aborted", detail)
++        self.assertTrue(any("rebase --abort" in t for t in seen))
++
++    def test_42_step_4_branch_wired_with_pre_work_guard(self):
++        source = inspect.getsource(cal.step_4_branch)
++        self.assertIn("pre_work_rebase_guard()", source)
++        doc = cal.pre_work_rebase_guard.__doc__ or ""
++        self.assertIn("Start-of-Work Rebase Mandate", doc)
++
+ 
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)

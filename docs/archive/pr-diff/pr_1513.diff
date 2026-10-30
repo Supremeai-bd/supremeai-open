@@ -1,0 +1,843 @@
+diff --git a/studio/src/App.routes.test.tsx b/studio/src/App.routes.test.tsx
+index a58e7e19..b09351f3 100644
+--- a/studio/src/App.routes.test.tsx
++++ b/studio/src/App.routes.test.tsx
+@@ -83,6 +83,7 @@ vi.mock('./pages/auth/LoginPage', () => ({ LoginPage: () => <div>Login page</div
+ vi.mock('./pages/auth/RegisterPage', () => ({ RegisterPage: () => <div>Register page</div> }));
+ vi.mock('./pages/user/UserDashboard', () => ({ UserDashboard: () => <div>Dashboard</div> }));
+ vi.mock('./components/customer/UserDashboard', () => ({ UserDashboard: () => <div>Dashboard</div> }));
++vi.mock('./pages/user/AIStudio', () => ({ AIStudio: () => <div>AI Studio</div> }));
+ vi.mock('./routes/workspaceFeatureRoutes', () => ({ workspaceFeatureRoutes: [] }));
+ vi.mock('./auth/identity', () => ({ resolveLandingPath: () => '/login' }));
+ 
+diff --git a/studio/src/components/browser/BrowserViewport.tsx b/studio/src/components/browser/BrowserViewport.tsx
+new file mode 100644
+index 00000000..7d0b3679
+--- /dev/null
++++ b/studio/src/components/browser/BrowserViewport.tsx
+@@ -0,0 +1,92 @@
++import React, { useRef } from 'react';
++import { motion } from 'framer-motion';
++import type { BrowserController } from './useBrowserController';
++import { DEVICE_SPECS } from './useBrowserController';
++
++export interface BrowserViewportProps {
++  controller?: BrowserController;
++  device?: string;
++  orientation?: 'portrait' | 'landscape';
++  url?: string;
++  src?: string;
++  effectiveUrl?: string;
++  viewportHeight?: number;
++  keyboardVisible?: boolean;
++  inspectMode?: boolean;
++  onElementInspect?: (meta: { selector: string; tag: string; text: string }) => void;
++  isLoading?: boolean;
++  onLoad?: () => void;
++  onError?: () => void;
++}
++
++export const BrowserViewport: React.FC<BrowserViewportProps> = (props) => {
++  const c = props.controller;
++  const device = (c ? c.state.device : (props.device ?? 'desktop')) as keyof typeof DEVICE_SPECS;
++  const orientation = c ? c.state.orientation : (props.orientation ?? 'portrait');
++  const url = c ? c.state.url : (props.url ?? props.src ?? '');
++  const effectiveUrl = c ? c.effectiveUrl : (props.effectiveUrl ?? props.src ?? url);
++  const viewportHeight = c ? c.viewportHeight : (props.viewportHeight ?? 800);
++  const keyboardVisible = c ? c.state.keyboardVisible : (props.keyboardVisible ?? false);
++  const inspectMode = c ? c.state.inspectMode : (props.inspectMode ?? false);
++  const isLoading = c ? c.state.isLoading : (props.isLoading ?? false);
++
++  const iframeRef = useRef<HTMLIFrameElement>(null);
++  const spec = DEVICE_SPECS[device] ?? DEVICE_SPECS.desktop;
++  const portrait = orientation === 'portrait';
++  const width = device === 'desktop' ? '100%' : `${portrait ? spec.width : spec.height}px`;
++  const height = device === 'desktop' ? '100%' : `${viewportHeight}px`;
++
++  const isMobile = device !== 'desktop';
++
++  return (
++    <div className="flex-1 flex flex-col bg-[#0d1117] relative overflow-hidden">
++      {isLoading && (
++        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 bg-[#161b22] px-3 py-1 rounded-full flex items-center gap-2 shadow-lg">
++          <span className="w-3 h-3 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
++          <span className="text-xs text-slate-300">Loading...</span>
++        </div>
++      )}
++
++      <div className={`flex-1 flex ${isMobile ? 'justify-center items-start bg-[#1c2128] p-4' : ''} overflow-auto`}>
++        <motion.div
++          layout
++          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
++          style={{ width, height, maxWidth: '100%' }}
++          className={`${isMobile ? 'bg-white rounded-[2.5rem] shadow-2xl overflow-hidden relative border-8 border-black' : 'h-full w-full relative'}`}
++        >
++          {isMobile && spec.hasDynamicIsland && (
++            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-7 bg-black rounded-full z-20" />
++          )}
++          <iframe
++            ref={iframeRef}
++            src={effectiveUrl || 'about:blank'}
++            className="w-full h-full border-0 bg-white"
++            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
++            onLoad={() => { if (c) c.setLoading(false); props.onLoad?.(); }}
++            onError={() => { if (c) c.setError('Failed to load'); props.onError?.(); }}
++            title="SupremeAI Browser"
++          />
++          {inspectMode && (
++            <div
++              className="absolute inset-0 z-30 cursor-crosshair"
++              onClick={(_e) => {
++                const meta = { selector: 'body', tag: 'div', text: '' };
++                props.onElementInspect?.(meta);
++                if (c) c.setInspectMode(false);
++              }}
++            >
++              <div className="absolute top-2 left-2 bg-cyan-500 text-black text-xs px-2 py-1 rounded">Inspect mode: click an element</div>
++            </div>
++          )}
++          {keyboardVisible && isMobile && (
++            <div className="absolute bottom-0 left-0 right-0 h-[260px] bg-[#222] border-t border-slate-600 flex items-center justify-center text-slate-400 text-xs z-20">
++              Simulated mobile keyboard
++            </div>
++          )}
++        </motion.div>
++      </div>
++    </div>
++  );
++};
++
++export default BrowserViewport;
+\ No newline at end of file
+diff --git a/studio/src/components/browser/SmartOmnibox.tsx b/studio/src/components/browser/SmartOmnibox.tsx
+new file mode 100644
+index 00000000..396f594d
+--- /dev/null
++++ b/studio/src/components/browser/SmartOmnibox.tsx
+@@ -0,0 +1,117 @@
++import React, { useState } from 'react';
++import { ArrowLeft, ArrowRight, RotateCw, Home, Search, Smartphone, Monitor, Target, Keyboard, RotateCcw, QrCode } from 'lucide-react';
++import type { BrowserController, DeviceProfile } from './useBrowserController';
++
++export interface SmartOmniboxProps {
++  controller?: BrowserController;
++  url?: string;
++  inputUrl?: string;
++  onNavigate?: (raw: string) => void;
++  onInputChange?: (v: string) => void;
++  onBack?: () => void;
++  onForward?: () => void;
++  onReload?: () => void;
++  onHome?: () => void;
++  viewMode?: 'desktop' | 'mobile';
++  device?: DeviceProfile;
++  onToggleViewMode?: () => void;
++  onSetDevice?: (d: DeviceProfile) => void;
++  inspectMode?: boolean;
++  onToggleInspect?: () => void;
++  keyboardVisible?: boolean;
++  onToggleKeyboard?: () => void;
++  orientation?: 'portrait' | 'landscape';
++  onToggleOrientation?: () => void;
++  onShowQr?: () => void;
++}
++
++export const SmartOmnibox: React.FC<SmartOmniboxProps> = (props) => {
++  const c = props.controller;
++  const url = c ? c.state.url : (props.url ?? '');
++  const inputUrl = c ? c.state.inputUrl : (props.inputUrl ?? url);
++  const viewMode = c ? c.state.viewMode : (props.viewMode ?? 'desktop');
++  const device = c ? c.state.device : (props.device ?? 'desktop');
++  const inspectMode = c ? c.state.inspectMode : (props.inspectMode ?? false);
++  const keyboardVisible = c ? c.state.keyboardVisible : (props.keyboardVisible ?? false);
++
++  const [local, setLocal] = useState(inputUrl);
++  React.useEffect(() => setLocal(inputUrl), [inputUrl]);
++
++  const navigate = (raw: string) => {
++    if (c) c.navigate(raw); else props.onNavigate?.(raw);
++  };
++  const back = () => { if (c) c.goBack(); else props.onBack?.(); };
++  const fwd = () => { if (c) c.goForward(); else props.onForward?.(); };
++  const reload = () => { if (c) c.reload(); else props.onReload?.(); };
++  const home = () => { if (c) c.home(); else props.onHome?.(); };
++  const toggleView = () => { if (c) c.toggleViewMode(); else props.onToggleViewMode?.(); };
++  const setDevice = (d: DeviceProfile) => { if (c) c.setDevice(d); else props.onSetDevice?.(d); };
++  const toggleInspect = () => { if (c) c.toggleInspect(); else props.onToggleInspect?.(); };
++  const toggleKb = () => { if (c) c.toggleKeyboard(); else props.onToggleKeyboard?.(); };
++  const toggleOrient = () => { if (c) c.toggleOrientation(); else props.onToggleOrientation?.(); };
++
++  const onSubmit = (e: React.FormEvent) => {
++    e.preventDefault();
++    navigate(local);
++  };
++
++  return (
++    <div className="flex items-center gap-2 px-3 py-2 bg-[#161b22] border-b border-slate-700">
++      <button onClick={back} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Back" aria-label="back">
++        <ArrowLeft size={16} />
++      </button>
++      <button onClick={fwd} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Forward" aria-label="forward">
++        <ArrowRight size={16} />
++      </button>
++      <button onClick={reload} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Reload" aria-label="reload">
++        <RotateCw size={16} />
++      </button>
++      <button onClick={home} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Home" aria-label="home">
++        <Home size={16} />
++      </button>
++
++      <form onSubmit={onSubmit} className="flex-1 flex items-center">
++        <div className="flex-1 flex items-center bg-[#0d1117] border border-slate-600 rounded-lg px-3 py-1.5">
++          <Search size={14} className="text-slate-500 mr-2" />
++          <input
++            value={local}
++            onChange={(e) => { setLocal(e.target.value); props.onInputChange?.(e.target.value); if (c) c.setInputUrl(e.target.value); }}
++            className="flex-1 bg-transparent outline-none text-sm text-slate-200"
++            placeholder="Enter URL or search..."
++            aria-label="url-input"
++          />
++        </div>
++      </form>
++
++      <select
++        value={device}
++        onChange={(e) => setDevice(e.target.value as DeviceProfile)}
++        className="bg-[#0d1117] border border-slate-600 text-slate-200 text-xs rounded px-2 py-1.5"
++        aria-label="device-select"
++      >
++        <option value="desktop">Desktop</option>
++        <option value="iphone16pro">iPhone 16 Pro</option>
++        <option value="galaxy-s24">Galaxy S24</option>
++        <option value="ipad">iPad</option>
++      </select>
++
++      <button onClick={toggleView} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Toggle view" aria-label="toggle-view">
++        {viewMode === 'desktop' ? <Smartphone size={16} /> : <Monitor size={16} />}
++      </button>
++      <button onClick={toggleInspect} className={`p-1.5 rounded hover:bg-slate-700 ${inspectMode ? 'text-cyan-400' : 'text-slate-300'}`} title="Inspect" aria-label="inspect">
++        <Target size={16} />
++      </button>
++      <button onClick={toggleKb} className={`p-1.5 rounded hover:bg-slate-700 ${keyboardVisible ? 'text-cyan-400' : 'text-slate-300'}`} title="Keyboard" aria-label="keyboard">
++        <Keyboard size={16} />
++      </button>
++      <button onClick={toggleOrient} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="Rotate" aria-label="rotate">
++        <RotateCcw size={16} />
++      </button>
++      <button onClick={() => (props.onShowQr ? props.onShowQr() : null)} className="p-1.5 rounded hover:bg-slate-700 text-slate-300" title="QR" aria-label="qr">
++        <QrCode size={16} />
++      </button>
++    </div>
++  );
++};
++
++export default SmartOmnibox;
+\ No newline at end of file
+diff --git a/studio/src/components/browser/browserInspectBridge.ts b/studio/src/components/browser/browserInspectBridge.ts
+new file mode 100644
+index 00000000..0273f246
+--- /dev/null
++++ b/studio/src/components/browser/browserInspectBridge.ts
+@@ -0,0 +1,105 @@
++export interface ElementMeta {
++  selector: string;
++  tag: string;
++  id?: string;
++  className?: string;
++  text?: string;
++  attributes?: Record<string, string>;
++}
++
++export function elementToSelector(el: Element | null): string {
++  if (!el) return '';
++  const tag = el.tagName.toLowerCase();
++  if (el.id) return `#${el.id}`;
++  const classes = Array.from(el.classList).slice(0, 2).join('.');
++  if (classes) return `${tag}.${classes}`;
++  const parent = el.parentElement;
++  if (parent) {
++    const siblings = Array.from(parent.children).filter((c) => c.tagName === el.tagName);
++    const idx = siblings.indexOf(el) + 1;
++    return `${tag}:nth-of-type(${idx})`;
++  }
++  return tag;
++}
++
++export function inspectElement(el: Element | null): ElementMeta {
++  if (!el) return { selector: '', tag: '' };
++  const attrs: Record<string, string> = {};
++  for (let i = 0; i < el.attributes.length; i++) {
++    const a = el.attributes[i];
++    attrs[a.name] = a.value;
++  }
++  return {
++    selector: elementToSelector(el),
++    tag: el.tagName.toLowerCase(),
++    id: el.id || undefined,
++    className: el.className || undefined,
++    text: (el.textContent || '').trim().slice(0, 120),
++    attributes: attrs,
++  };
++}
++
++export type InspectCallback = (meta: ElementMeta) => void;
++
++export function createInspectHandler(onInspect: InspectCallback): (e: MouseEvent) => void {
++  return (e: MouseEvent) => {
++    e.preventDefault();
++    e.stopPropagation();
++    const target = e.target as Element | null;
++    onInspect(inspectElement(target));
++  };
++}
++
++export interface ConsoleBridgeMessage {
++  type: 'log' | 'error' | 'warn' | 'info';
++  message: string;
++  source?: string;
++  line?: number;
++  column?: number;
++  timestamp: number;
++}
++
++export function listenConsoleMessages(cb: (msg: ConsoleBridgeMessage) => void): () => void {
++  if (typeof window === 'undefined') return () => {};
++  const handler = (event: MessageEvent) => {
++    if (event.data?.source !== 'iframe-console') return;
++    cb({
++      type: event.data.type ?? 'log',
++      message: String(event.data.message ?? ''),
++      source: event.data.source,
++      line: event.data.line,
++      column: event.data.column,
++      timestamp: Date.now(),
++    });
++  };
++  window.addEventListener('message', handler);
++  return () => window.removeEventListener('message', handler);
++}
++
++export function injectConsoleTrap(iframe: HTMLIFrameElement | null): void {
++  if (!iframe?.contentWindow) return;
++  try {
++    const targetOrigin = iframe.src && iframe.src !== 'about:blank'
++      ? new URL(iframe.src, window.location.href).origin
++      : window.location.origin;
++    iframe.contentWindow.postMessage({ type: 'CONSOLE_TRAP_INIT' }, targetOrigin);
++  } catch {
++    // ignore
++  }
++}
++
++export function formatInspectTag(meta: ElementMeta): string {
++  return `[Inspecting: <${meta.tag}${meta.id ? '#' + meta.id : ''}${meta.className ? '.' + meta.className.split(' ')[0] : ''}>]`;
++}
++
++const browserInspectBridge = {
++  inspectElement,
++  elementToSelector,
++  createInspectHandler,
++  listenConsoleMessages,
++  injectConsoleTrap,
++  formatInspectTag,
++};
++
++export { browserInspectBridge };
++export default browserInspectBridge;
+\ No newline at end of file
+diff --git a/studio/src/components/browser/useBrowserController.ts b/studio/src/components/browser/useBrowserController.ts
+new file mode 100644
+index 00000000..d5cda84b
+--- /dev/null
++++ b/studio/src/components/browser/useBrowserController.ts
+@@ -0,0 +1,220 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++
++export type ViewMode = 'desktop' | 'mobile';
++export type DeviceProfile = 'iphone16pro' | 'galaxy-s24' | 'ipad' | 'desktop';
++export type Orientation = 'portrait' | 'landscape';
++
++export interface DeviceSpec {
++  id: DeviceProfile;
++  label: string;
++  width: number;
++  height: number;
++  bezel: string;
++  hasDynamicIsland: boolean;
++}
++
++export const DEVICE_SPECS: Record<DeviceProfile, DeviceSpec> = {
++  desktop: { id: 'desktop', label: 'Desktop', width: 1280, height: 800, bezel: '', hasDynamicIsland: false },
++  iphone16pro: { id: 'iphone16pro', label: 'iPhone 16 Pro', width: 393, height: 852, bezel: 'black', hasDynamicIsland: true },
++  'galaxy-s24': { id: 'galaxy-s24', label: 'Galaxy S24', width: 360, height: 780, bezel: 'black', hasDynamicIsland: false },
++  ipad: { id: 'ipad', label: 'iPad', width: 820, height: 1180, bezel: 'black', hasDynamicIsland: false },
++};
++
++export interface BrowserControllerState {
++  url: string;
++  inputUrl: string;
++  history: string[];
++  historyIndex: number;
++  viewMode: ViewMode;
++  device: DeviceProfile;
++  orientation: Orientation;
++  keyboardVisible: boolean;
++  inspectMode: boolean;
++  isLoading: boolean;
++  proxyEnabled: boolean;
++  lastError: string | null;
++}
++
++export interface BrowserController {
++  state: BrowserControllerState;
++  navigate: (raw: string) => void;
++  goBack: () => void;
++  goForward: () => void;
++  reload: () => void;
++  home: () => void;
++  setViewMode: (mode: ViewMode) => void;
++  toggleViewMode: () => void;
++  setDevice: (device: DeviceProfile) => void;
++  toggleOrientation: () => void;
++  toggleKeyboard: () => void;
++  setKeyboardVisible: (v: boolean) => void;
++  toggleInspect: () => void;
++  setInspectMode: (v: boolean) => void;
++  setInputUrl: (v: string) => void;
++  setLoading: (v: boolean) => void;
++  setError: (e: string | null) => void;
++  canGoBack: boolean;
++  canGoForward: boolean;
++  effectiveUrl: string;
++  viewportHeight: number;
++}
++
++const HOME_URL = 'https://supremeai.dev';
++const PROXY_PREFIX = '/api/proxy?url=';
++
++export function normalizeUrl(raw: string): string {
++  const trimmed = raw.trim();
++  if (!trimmed) return HOME_URL;
++  if (/^https?:\/\//i.test(trimmed)) return trimmed;
++  if (trimmed.includes('.') && !trimmed.includes(' ')) return `https://${trimmed}`;
++  return `https://www.google.com/search?q=${encodeURIComponent(trimmed)}`;
++}
++
++export function needsProxy(url: string): boolean {
++  try {
++    const u = new URL(url);
++    if (typeof window !== 'undefined' && u.origin === window.location.origin) return false;
++    return true;
++  } catch {
++    return false;
++  }
++}
++
++export function useBrowserController(initialUrl: string = HOME_URL): BrowserController {
++  const [url, setUrl] = useState<string>(initialUrl);
++  const [inputUrl, setInputUrl] = useState<string>(initialUrl);
++  const [history, setHistory] = useState<string[]>([initialUrl]);
++  const [historyIndex, setHistoryIndex] = useState<number>(0);
++  const [viewMode, setViewModeState] = useState<ViewMode>('desktop');
++  const [device, setDeviceState] = useState<DeviceProfile>('iphone16pro');
++  const [orientation, setOrientation] = useState<Orientation>('portrait');
++  const [keyboardVisible, setKeyboardVisible] = useState<boolean>(false);
++  const [inspectMode, setInspectMode] = useState<boolean>(false);
++  const [isLoading, setIsLoading] = useState<boolean>(false);
++  const [lastError, setLastError] = useState<string | null>(null);
++  const historyRef = useRef(history);
++  useEffect(() => {
++    historyRef.current = history;
++  }, [history]);
++
++  const navigate = useCallback((raw: string) => {
++    const next = normalizeUrl(raw);
++    setUrl(next);
++    setInputUrl(next);
++    setHistory((prev) => {
++      const base = prev.slice(0, historyIndex + 1);
++      const updated = [...base, next];
++      return updated;
++    });
++    setHistoryIndex((i) => i + 1);
++    setIsLoading(true);
++    setLastError(null);
++  }, [historyIndex]);
++
++  const goBack = useCallback(() => {
++    setHistoryIndex((i) => {
++      if (i <= 0) return i;
++      const next = i - 1;
++      const target = historyRef.current[next];
++      if (target) {
++        setUrl(target);
++        setInputUrl(target);
++        setIsLoading(true);
++      }
++      return next;
++    });
++  }, []);
++
++  const goForward = useCallback(() => {
++    setHistoryIndex((i) => {
++      const arr = historyRef.current;
++      if (i >= arr.length - 1) return i;
++      const next = i + 1;
++      const target = arr[next];
++      if (target) {
++        setUrl(target);
++        setInputUrl(target);
++        setIsLoading(true);
++      }
++      return next;
++    });
++  }, []);
++
++  const reload = useCallback(() => {
++    setIsLoading(true);
++    setUrl((u) => u);
++  }, []);
++
++  const home = useCallback(() => navigate(HOME_URL), [navigate]);
++
++  const setViewMode = useCallback((mode: ViewMode) => {
++    setViewModeState(mode);
++    if (mode === 'mobile' && device === 'desktop') setDeviceState('iphone16pro');
++    if (mode === 'desktop') setDeviceState('desktop');
++  }, [device]);
++
++  const toggleViewMode = useCallback(() => {
++    setViewModeState((m) => (m === 'desktop' ? 'mobile' : 'desktop'));
++  }, []);
++
++  const setDevice = useCallback((d: DeviceProfile) => {
++    setDeviceState(d);
++    setViewModeState(d === 'desktop' ? 'desktop' : 'mobile');
++  }, []);
++
++  const toggleOrientation = useCallback(() => {
++    setOrientation((o) => (o === 'portrait' ? 'landscape' : 'portrait'));
++  }, []);
++
++  const toggleKeyboard = useCallback(() => setKeyboardVisible((v) => !v), []);
++  const toggleInspect = useCallback(() => setInspectMode((v) => !v), []);
++
++  const spec = DEVICE_SPECS[device];
++  const portrait = orientation === 'portrait';
++  const baseHeight = portrait ? spec.height : spec.width;
++  const keyboardOffset = keyboardVisible ? (viewMode === 'mobile' ? 260 : 0) : 0;
++  const viewportHeight = Math.max(200, baseHeight - keyboardOffset);
++
++  const proxyEnabled = needsProxy(url);
++  const effectiveUrl = proxyEnabled ? `${PROXY_PREFIX}${encodeURIComponent(url)}` : url;
++
++  const state: BrowserControllerState = {
++    url,
++    inputUrl,
++    history,
++    historyIndex,
++    viewMode,
++    device,
++    orientation,
++    keyboardVisible,
++    inspectMode,
++    isLoading,
++    proxyEnabled,
++    lastError,
++  };
++
++  return {
++    ...state,
++    state,
++    navigate,
++    goBack,
++    goForward,
++    reload,
++    home,
++    setViewMode,
++    toggleViewMode,
++    setDevice,
++    toggleOrientation,
++    toggleKeyboard,
++    setKeyboardVisible,
++    toggleInspect,
++    setInspectMode,
++    setInputUrl,
++    setLoading: setIsLoading,
++    setError: setLastError,
++    canGoBack: historyIndex > 0,
++    canGoForward: historyIndex < history.length - 1,
++    effectiveUrl,
++    viewportHeight,
++  };
++}
+\ No newline at end of file
+diff --git a/studio/src/components/preview/QrSyncModal.tsx b/studio/src/components/preview/QrSyncModal.tsx
+new file mode 100644
+index 00000000..c85ed986
+--- /dev/null
++++ b/studio/src/components/preview/QrSyncModal.tsx
+@@ -0,0 +1,46 @@
++import React, { useEffect, useState } from 'react';
++import { X, Download } from 'lucide-react';
++import QRCode from 'qrcode';
++
++export interface QrSyncModalProps {
++  open: boolean;
++  url: string;
++  onClose: () => void;
++}
++
++export const QrSyncModal: React.FC<QrSyncModalProps> = ({ open, url, onClose }) => {
++  const [dataUrl, setDataUrl] = useState<string>('');
++
++  useEffect(() => {
++    if (!open) return;
++    let cancelled = false;
++    QRCode.toDataURL(url || 'https://supremeai.dev', { width: 240, margin: 2 })
++      .then((u) => { if (!cancelled) setDataUrl(u); })
++      .catch(() => { if (!cancelled) setDataUrl(''); });
++    return () => { cancelled = true; };
++  }, [open, url]);
++
++  if (!open) return null;
++
++  return (
++    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
++      <div className="bg-[#161b22] border border-slate-700 rounded-xl p-6 w-[320px] shadow-2xl">
++        <div className="flex items-center justify-between mb-4">
++          <h3 className="text-sm font-semibold text-white">Scan on your phone</h3>
++          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16} /></button>
++        </div>
++        <div className="flex justify-center mb-4">
++          {dataUrl ? <img src={dataUrl} alt="QR" className="rounded" /> : <div className="w-[240px] h-[240px] bg-slate-800 animate-pulse rounded" />}
++        </div>
++        <p className="text-xs text-slate-400 break-all mb-3">{url}</p>
++        {dataUrl && (
++          <a href={dataUrl} download="supremeai-qr.png" className="flex items-center justify-center gap-2 w-full py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white text-sm">
++            <Download size={14} /> Download
++          </a>
++        )}
++      </div>
++    </div>
++  );
++};
++
++export default QrSyncModal;
+\ No newline at end of file
+diff --git a/studio/src/components/workspace/ChatBrowserPanel.tsx b/studio/src/components/workspace/ChatBrowserPanel.tsx
+new file mode 100644
+index 00000000..74b5f643
+--- /dev/null
++++ b/studio/src/components/workspace/ChatBrowserPanel.tsx
+@@ -0,0 +1,111 @@
++import React, { useState } from 'react';
++import { Send, Terminal, AlertTriangle, Wrench } from 'lucide-react';
++import type { BrowserController } from '../browser/useBrowserController';
++
++export interface ConsoleErrorAlert {
++  id?: string;
++  message: string;
++  source?: string;
++}
++
++export interface ChatBrowserPanelProps {
++  controller?: BrowserController;
++  onNavigate?: (url: string) => void;
++  inspectTag?: string | null;
++  onClearInspect?: () => void;
++  consoleErrors?: ConsoleErrorAlert[];
++  onFixError?: (err: ConsoleErrorAlert) => void;
++  className?: string;
++}
++
++interface Msg { role: 'user' | 'assistant'; text: string }
++
++function parseNavCommand(input: string): string | null {
++  const t = input.trim();
++  const m1 = t.match(/^\/?navigate\s+(.+)$/i);
++  if (m1) return m1[1].trim();
++  const m2 = t.match(/agent:navigate\(([^)]+)\)/i);
++  if (m2) return m2[1].trim().replace(/^['"]|['"]$/g, '');
++  const m3 = t.match(/^go to\s+(.+)$/i);
++  if (m3) return m3[1].trim();
++  return null;
++}
++
++export const ChatBrowserPanel: React.FC<ChatBrowserPanelProps> = (props) => {
++  const [messages, setMessages] = useState<Msg[]>([
++    { role: 'assistant', text: 'Hi, I am Jerbez. I can navigate, inspect, and fix errors. Try "/navigate supremeai.dev".' },
++  ]);
++  const [input, setInput] = useState('');
++
++  const doNavigate = (url: string) => {
++    if (props.controller) props.controller.navigate(url);
++    props.onNavigate?.(url);
++  };
++
++  const send = () => {
++    const text = input.trim();
++    if (!text) return;
++    const nav = parseNavCommand(text);
++    if (nav) {
++      setMessages((m) => [...m, { role: 'user', text }, { role: 'assistant', text: `Navigating to ${nav}...` }]);
++      doNavigate(nav);
++      setInput('');
++      return;
++    }
++    const finalText = props.inspectTag ? `${props.inspectTag}\n${text}` : text;
++    setMessages((m) => [...m, { role: 'user', text: finalText }, { role: 'assistant', text: 'Working on it...' }]);
++    setInput('');
++  };
++
++  return (
++    <div className={`flex flex-col h-full bg-[#0d1117] ${props.className ?? ''}`}>
++      <div className="flex-1 overflow-auto p-3 space-y-3">
++        {messages.map((m, i) => (
++          <div key={i} className={`text-sm ${m.role === 'user' ? 'text-cyan-200' : 'text-slate-200'}`}>
++            <span className="font-semibold mr-1">{m.role === 'user' ? 'You' : 'Jerbez'}:</span>
++            <span className="whitespace-pre-wrap">{m.text}</span>
++          </div>
++        ))}
++        {(props.consoleErrors ?? []).length > 0 && (
++          <div className="space-y-2">
++            {(props.consoleErrors ?? []).map((err, i) => (
++              <div key={i} className="flex items-center gap-2 p-2 bg-red-900/30 border border-red-700 rounded text-xs text-red-200">
++                <AlertTriangle size={14} />
++                <span className="flex-1 truncate">{err.message}</span>
++                <button
++                  onClick={() => props.onFixError?.(err)}
++                  className="flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-500 rounded text-white"
++                >
++                  <Wrench size={12} /> Fix with AI
++                </button>
++              </div>
++            ))}
++          </div>
++        )}
++      </div>
++      <div className="border-t border-slate-700 p-3">
++        {props.inspectTag && (
++          <div className="mb-2 inline-flex items-center gap-2 text-xs bg-cyan-900/40 border border-cyan-700 rounded px-2 py-1 text-cyan-200">
++            <Terminal size={12} />
++            {props.inspectTag}
++            <button onClick={props.onClearInspect} className="ml-1 text-cyan-400 hover:text-white">x</button>
++          </div>
++        )}
++        <div className="flex gap-2">
++          <input
++            value={input}
++            onChange={(e) => setInput(e.target.value)}
++            onKeyDown={(e) => { if (e.key === 'Enter') send(); }}
++            className="flex-1 bg-[#161b22] border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 outline-none"
++            placeholder="Ask Jerbez or type /navigate <url>"
++          />
++          <button onClick={send} className="px-3 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-white">
++            <Send size={16} />
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++};
++
++export default ChatBrowserPanel;
+\ No newline at end of file
+diff --git a/studio/src/components/workspace/StudioSplitCanvas.tsx b/studio/src/components/workspace/StudioSplitCanvas.tsx
+new file mode 100644
+index 00000000..5915ee0e
+--- /dev/null
++++ b/studio/src/components/workspace/StudioSplitCanvas.tsx
+@@ -0,0 +1,91 @@
++import React, { useCallback, useRef, useState } from 'react';
++import { ChevronLeft, ChevronRight, GripVertical } from 'lucide-react';
++
++export interface StudioSplitCanvasProps {
++  left?: React.ReactNode;
++  right?: React.ReactNode;
++  defaultLeftSize?: number;
++  minLeftSize?: number;
++  minRightSize?: number;
++  collapsed?: boolean;
++  onToggleCollapse?: () => void;
++  className?: string;
++}
++
++export const StudioSplitCanvas: React.FC<StudioSplitCanvasProps> = ({
++  left,
++  right,
++  defaultLeftSize = 35,
++  minLeftSize = 20,
++  minRightSize = 30,
++  collapsed = false,
++  onToggleCollapse,
++  className = '',
++}) => {
++  const [leftSize, setLeftSize] = useState<number>(defaultLeftSize);
++  const containerRef = useRef<HTMLDivElement>(null);
++  const draggingRef = useRef(false);
++
++  const onMouseDown = useCallback((e: React.MouseEvent) => {
++    e.preventDefault();
++    draggingRef.current = true;
++    const onMove = (ev: MouseEvent) => {
++      if (!draggingRef.current || !containerRef.current) return;
++      const rect = containerRef.current.getBoundingClientRect();
++      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
++      const clamped = Math.min(100 - minRightSize, Math.max(minLeftSize, pct));
++      setLeftSize(clamped);
++    };
++    const onUp = () => {
++      draggingRef.current = false;
++      window.removeEventListener('mousemove', onMove);
++      window.removeEventListener('mouseup', onUp);
++    };
++    window.addEventListener('mousemove', onMove);
++    window.addEventListener('mouseup', onUp);
++  }, [minLeftSize, minRightSize]);
++
++  if (collapsed) {
++    return (
++      <div className={`flex h-full w-full ${className}`}>
++        <button
++          onClick={onToggleCollapse}
++          className="w-10 flex items-center justify-center bg-[#161b22] border-r border-slate-700 text-slate-300 hover:text-white"
++          aria-label="expand-left"
++        >
++          <ChevronRight size={16} />
++        </button>
++        <div className="flex-1">{right}</div>
++      </div>
++    );
++  }
++
++  return (
++    <div ref={containerRef} className={`flex h-full w-full ${className}`}>
++      <div style={{ width: `${leftSize}%` }} className="flex flex-col min-w-0">
++        <div className="flex items-center justify-between px-2 py-1 border-b border-slate-700 bg-[#161b22]">
++          <span className="text-xs text-slate-400">Jerbez Copilot</span>
++          {onToggleCollapse && (
++            <button onClick={onToggleCollapse} className="p-1 text-slate-400 hover:text-white" aria-label="collapse-left">
++              <ChevronLeft size={14} />
++            </button>
++          )}
++        </div>
++        <div className="flex-1 overflow-hidden">{left}</div>
++      </div>
++      <div
++        onMouseDown={onMouseDown}
++        className="w-1 bg-slate-700 hover:bg-cyan-500 transition-colors cursor-col-resize flex items-center justify-center"
++        role="separator"
++        aria-orientation="vertical"
++      >
++        <GripVertical size={10} className="text-slate-500" />
++      </div>
++      <div style={{ width: `${100 - leftSize}%` }} className="flex flex-col min-w-0">
++        <div className="flex-1 overflow-hidden">{right}</div>
++      </div>
++    </div>
++  );
++};
++
++export default StudioSplitCanvas;
+\ No newline at end of file

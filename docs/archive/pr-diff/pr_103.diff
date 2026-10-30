@@ -1,0 +1,65 @@
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 6b18a3b3..f9e83de0 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -175,7 +175,39 @@ INTELLIGENCE
+ INFRASTRUCTURE
+ ```
+ 
+-Every issue has exactly one primary group. Secondary `area:*` labels may describe cross-cutting scope.
++Every issue has exactly one primary group. Secondary `area:*` labels may describe cross-cutting scope.
++
++### Registry relationship (reconciled with the dispatch contract — #90)
++
++The §5 Primary Groups and the dispatcher's `VALID_GROUPS` registry are **two
++different taxonomies serving two different surfaces** — not a contradiction:
++
++- **§5 Primary Groups (8)** are **policy domains**: constitutional
++  classification of what *kind of concern* work is. They govern private/mono
++  governance tooling (e.g. the #3088 group-first enforcement scripts referenced
++  above — those live in the private codebase, not in this public repository).
++- **`VALID_GROUPS` (5)** in `scripts/agents/continuous_agent_loop.py` is the
++  **machine registry of execution surfaces** for the public board: fail-closed
++  enforced by `build_task_contract()`/`resolve_group()` and mirrored by the
++  `agent-task.yml` dropdown. It is authoritative for dispatch.
++
++When an issue carries only a §5 domain, route it to the registry surface with
++this default mapping; when the template dropdown is filled, the **registry
++group governs dispatch** and the §5 domain rides along as a policy tag:
++
++| §5 policy domain | Default `VALID_GROUPS` surface |
++|---|---|
++| GOVERNANCE | `agent-orchestration` |
++| SECURITY | `mcp-tower` |
++| PIPELINE | `infra-ops` |
++| ARCHITECTURE | `core-engine` |
++| RELIABILITY | `infra-ops` |
++| PRODUCT | `schemas-contracts` |
++| INTELLIGENCE | `agent-orchestration` |
++| INFRASTRUCTURE | `infra-ops` |
++
++Renaming or merging either taxonomy is an **ADMIN_DECISION** (§1.3) and must
++not be done by agents. Full taxonomy table: `docs/AGENT_LOOP_SPEC.md` §3.
+ 
+ ## Priority
+ - `P0-critical` — production/security/data-loss/merge-train emergency.
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index c67b410a..975d559c 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -79,6 +79,15 @@ unlisted group raises `ValueError` inside `build_task_contract()` **and**
+ `.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
+ registry** — keep the two in sync when the taxonomy changes.
+ 
++**Relationship to `AGENT_RULES.md` §5 (#90):** §5's eight Primary Groups
++(GOVERNANCE, SECURITY, PIPELINE, ARCHITECTURE, RELIABILITY, PRODUCT,
++INTELLIGENCE, INFRASTRUCTURE) are *policy domains* of the constitutional
++taxonomy — a different surface from this *execution registry*. They are
++reconciled by a default-routing map in `AGENT_RULES.md` §5 ("Registry
++relationship"); on the public board the registry group below is authoritative
++for dispatch, and a §5 domain never substitutes for a registry group. Changing
++either list is an ADMIN_DECISION.
++
+ ## 4. CLI surface after #63
+ 
+ | Command | Status | Behaviour |

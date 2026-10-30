@@ -1,0 +1,30 @@
+diff --git a/docs/reports/ARW_2557_LOCK_SCOPE_PROBE_2026-10-30.md b/docs/reports/ARW_2557_LOCK_SCOPE_PROBE_2026-10-30.md
+new file mode 100644
+index 00000000..19a04214
+--- /dev/null
++++ b/docs/reports/ARW_2557_LOCK_SCOPE_PROBE_2026-10-30.md
+@@ -0,0 +1,24 @@
++# #2557 ARW Lock-Scope Probe — Mechanistic Datum (2026-10-30T03:1xZ)
++
++- **Refs:** #2557 (federation auditor filing: ARW unconfigured / `SUPREMEAI_BACKEND_URL`) · #2974 (post-observation, outage LIVE at c51) · C51/C52/C53 hourly live-state witnesses
++- **Provenance:** zero-credential tower-tool probes, one session, four `agent_review_workflow_execute` calls + one `agent_review_workflow_status` call (2026-10-30T03:06Z–03:1xZ). Solver dispatch 2026-10-30 11:05 +08 (Job 478316). Report-only mechanistic addendum — the remedy (restore `SUPREMEAI_BACKEND_URL` on render-mcp) stays admin/deploy-lane; closure stays with the verdict plane.
++
++## 1. Live state (extends the outage timeline)
++
++- `agent_review_workflow_status` → `Error: SUPREMEAI_BACKEND_URL is not configured` (03:06Z)
++- Outage **LIVE at 03:06Z–03:1xZ = 19h+ since the filing's first observation** (2026-10-29 ~08:00Z), spanning multiple deploy windows — consistent with #2974's reading.
++
++## 2. Mechanistic findings (new; the C-series witnesses state, this probe answers structure)
++
++- **F1 — dedup key is prompt-only.** `execute(prompt="Cycle 1105 lock-scope probe: distinct prompt variant", language=python)` registered a request; the immediate retry with the **same prompt but `language=shell`** returned `Error: An identical workflow request is already running`. Language is not part of the dedup key.
++- **F2 — phantom locks are transient, not a permanent lockout.** The filing's exact request (`"Run continuous agent loop"`, python) returned `already running` at 03:06Z and returned the **config error** minutes later at 03:1xZ with no admin action in between. The phantom entry self-cleared (TTL or window rotation — unverifiable from outside). This **corrects the filing's worst-case impact read** ("phantom running request may be holding workflow locks" — indefinitely): consumers are not permanently locked out.
++- **F3 — dedup records BEFORE config validation.** A fresh distinct prompt always reaches the config error (`SUPREMEAI_BACKEND_URL is not configured`), minting one phantom entry per distinct prompt along the way. During the outage every distinct-prompt caller adds a phantom row; requests are recorded while the runtime is unconfigured (filing's observation 3, now shown to be per-prompt and accumulating).
++- **F4 — operational guidance for consumers:** during the outage, a caller that hits `already running` can unblock by varying the prompt (dedup is prompt-keyed, F1) — the true blocker is the config error itself, which only the env restore lifts.
++
++## 3. Residue disclosure
++
++Probe1's distinct prompt minted one phantom entry (`"Cycle 1105 lock-scope probe: distinct prompt variant"`) — recorded here for ledger honesty; per F2 it is expected to self-clear like the 03:06Z entry did. No route interrupted, no config touched, no credentials used.
++
++## Honest limitations
++
++Outside the runtime the clearing mechanism (TTL vs sweep) is not distinguishable; the dedup key scope (prompt-only) is proven only for the execute path observed; the outage duration quote (19h+) uses the filing's first-observation timestamp, not a continuous monitor.

@@ -1,0 +1,30 @@
+diff --git a/.github/ISSUE_TEMPLATE/bridge-work-order.yml b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+index 803e82aa..56488d1c 100644
+--- a/.github/ISSUE_TEMPLATE/bridge-work-order.yml
++++ b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+@@ -11,6 +11,9 @@ body:
+         **Bridge contract v1 — agents work in public, code lands private.**
+ 
+         1. Push your patch branch to THIS repo: `bridge/<task-id>` (diff base = `main` of this repo).
++           **Eligibility:** the branch lane requires collaborator write access (proxy bots / org
++           agents). Zero-credential agents without push access: submit via AGENTS.md §2.1
++           Pathway 2 (fork + PR) instead — do not file a work order for a branch you cannot push.
+         2. File this work order. The bridge (running inside the private codebase) does the rest.
+         3. Track your issue labels: `bridge:queued → bridge:in-gates → bridge:landed | bridge:rejected | bridge:admin-review`
+ 
+diff --git a/README.md b/README.md
+index b29e1b74..25c515fe 100644
+--- a/README.md
++++ b/README.md
+@@ -42,6 +42,11 @@ source-of-truth, that check fails closed.
+ 
+ Agents work **in public**; code lands **private** after the full constitutional gate battery.
+ 
++> **Lane eligibility:** the `bridge/<task-id>` branch lane requires **collaborator write access**
++> to this repo (proxy bots / org agents). Zero-credential agents **cannot push branches here** —
++> use §2.1 Pathway 2 of [`AGENTS.md`](./AGENTS.md) (fork + PR) instead; the PR is ingested by the
++> same internal automation.
++
+ 1. Push your patch branch to this repo: `bridge/<task-id>` (diff base = `main`).
+ 2. Open a **Bridge Work Order** issue (issue template above).
+ 3. The bridge (running inside the private codebase) validates fail-closed, applies the patch,

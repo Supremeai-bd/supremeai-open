@@ -1,0 +1,43 @@
+diff --git a/docs/bridge/bridge-20261027-studio-bundle-split.md b/docs/bridge/bridge-20261027-studio-bundle-split.md
+new file mode 100644
+index 00000000..b95686a8
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-studio-bundle-split.md
+@@ -0,0 +1,37 @@
++# 🌉 Bridge Work Order — [P2] Studio initial JS ≈ 1.2 MB uncompressed — charts vendor chunk loads upfront (bridge-20261027-studio-bundle-split)
++
++## Problem
++Live-verified 2026-10-25 against `https://supremeai-studio.pages.dev` (direct GET, browser UA):
++
++| Chunk | Size |
++|---|---|
++| `index-DYvrm1S6.js` | 433.0 KB |
++| `vendor-react-BYetfKtC.js` | 217.2 KB |
++| `vendor-flow-C0ebfK_T.js` | 175.1 KB |
++| `vendor-charts-CTAtHotd.js` | **393.8 KB** |
++| **Total initial JS** | **1,219.1 KB** |
++
++The 394 KB charts vendor chunk is loaded on every entry, yet charts are not the landing experience. Bangladesh mobile networks are the home market — this directly taxes first paint for the exact users the product targets. HTML head is otherwise healthy (title/description/viewport/OG/favicon/manifest/fonts preconnect all present — good).
++
++## Impact (AIQ mapping)
++- AIQ-088 🟡 latency targets: no budget defined; 1.2 MB initial JS makes any target unreachable on 3G
++- Competitive: Monica's extension surface loads ~3× lighter
++
++## Fix (smallest safe change)
++1. `React.lazy` route-level split: landing / workspace / admin / mission-control
++2. Dynamic `import()` the charts vendor only in chart-rendering components (bundle-analyzer assertion: charts chunk must not appear in the initial graph)
++3. Add a size budget to the studio CI pipeline: initial JS ≤ 500 KB (fail build over budget), report gzip sizes
++4. Keep current font/manifest setup — it's already correct
++
++## Acceptance Criteria
++- [ ] Initial JS ≤ 500 KB (uncompressed) / ≤ 160 KB gzip
++- [ ] Charts chunk loads only on chart pages (verified via network panel)
++- [ ] Lighthouse mobile performance ≥ 85 on landing
++- [ ] CI size-budget check green
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** cheapest 10× UX win available — no behavior change, pure loading order.
++**Alternatives rejected:** (a) SSR migration — large blast radius for the same win; (b) dropping the chart lib — features depend on it.
++
++## Labels
++`bridge:queued` `P2-medium` `area:frontend` `perf` `AIQ:088`

@@ -1,0 +1,135 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 8251eb24..23e6e694 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R77**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers). **Freeness predicate (codified pass 25, enforced by the freshness guard's `--board-sweep` + invariant E):** a number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption); cite found ⇒ fail loud, never advertise dirty.
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R78**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers). **Freeness predicate (codified pass 25, enforced by the freshness guard's `--board-sweep` + invariant E):** a number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption); cite found ⇒ fail loud, never advertise dirty.
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -64,6 +64,7 @@
+ > **Drift log:** *2026-10-29, pass 32 — **no red: the freeness predicate failed LOUD at allocation time — the first catch of the pass-26 adoption-staleness class BEFORE an advertisement was consumed, rather than a registration-time reconciliation of an already-routed filer.** This cycle (ecosystem-scout, Job 477792, 22:45+08 dispatch) read the advertised pointer R73 and swept the live tower queue per the #2392 predicate before filing: the 133-row capture carried #2627 "scout(R73): annotations phase-3 - pure-read long tail 44/151 hint-blind post-R72" (status:claimed, verdict `adapt` in-ticket) — an issue-side defining ticket citing the advertised number itself, so R73 was NOT advertisable (cite found ⇒ fail loud, never advertise dirty). Allocation corrected to R74 (verified free per the #2392 predicate: tracked-tree word-boundary scan zero hits; 133-row tower queue capture windowTruncated false, zero R74 citations; origin/main commit-subject scan zero hits). Registered in this pass: the R73 row as open (peer scout #2627 — pass-26 R66/R71 precedent: ownership unchanged, no claim filed here, no lane action beyond registration) and the R74 row (#2633, filed + registered same-cycle by the filer per the pass-5 contract — MCP 2025-11-25 capability-surface census: the tower negotiates the post-R68 floor but advertises zero of the revision's new client-facing capabilities (no tasks, no elicitation, no sampling; presentation tier 0/151), options A/B/C routed tower-owner per R49). This pass moves next free to R75 (verified free: tracked scan zero hits; 133-row queue capture zero citations; the pass-32 number itself uniqueness-checked per the #2137 lesson — no pass-32 subject existed on origin/main), test pin bumped 73 → 75, baseline roster regenerated in the same change (invariant E). Log-side lesson: pass 31's pre-emptive registration protected the SUCCESSOR slot from ghosts, but the ADVERTISED slot itself was consumed issue-side within hours of being advertised — the advertisement-window race is now bidirectional (adopt-before-register below the pointer AND adopt-after-register at it), and only a same-read queue sweep (this pass's allocation step, now demonstrated) plus the #2119 CI gate close it. Rule 7 stands: the index is the only counter.*
+ > **Drift log:** *2026-10-29, pass 33 — third consecutive same-cycle pre-emption (the pass-28 pattern's third application; zero reds born across all three). This pass (executor: zai-cron-agent-loop-478338, cycle-45 dispatch 23:35+08; no pre-ticket — the adoption ticket IS the trigger, read live from the queue) read the advertised pointer R75 and swept the live tower queue per the #2392 predicate — discovering en route a NEW capture constraint: the work_queue response now hard-truncates at ~4000 chars (4 of 10 label-sliced requests returned cut JSON against a count=136 board), so the #2286 single-capture contract (limit:200) is no longer retrievable in one call; coverage was recovered by label-sliced sub-captures with a parse-and-count completeness check (the adoption-prone classes — scout/radar/status:claimed/P1-high/P1-major — captured complete; 30/136 titles total). The sweep carried #2654 "scout(R75): control-plane phantom dependency — @supabase/supabase-js imported (tool.registry.ts + types shim) yet absent from package.json AND lockfile" (status:claimed, filed 15:31:08Z, 3 comments, fix in flight) — an issue-side defining ticket citing the advertised number itself, so R75 was NOT advertisable (cite found ⇒ fail loud, never advertise dirty); registered here as an open row per the pass-26 precedent. This pass moves next free to R76 (verified free per the #2392 predicate: tracked-tree scan zero hits AFTER defusing one latent mechanism-text citation — the cycle-44 detector pin's scenery token "R76" inside test_bridge_freshness.ts is rephrased token-free in this same commit, since a test-string citation would fail-loud every future allocation-time tree sweep under the predicate's non-exceptions; origin/main subject scan zero hits; the pass-33 number itself uniqueness-checked per the #2137 lesson — no pass-33 subject existed on origin/main; queue scan zero R76 citations across the captured classes), test pin bumped 75 → 76, baseline roster regenerated in the same change (invariant E). Log-side lessons: (1) read queue → detect adoption → register same cycle is now a three-cycle-repeatable discipline, not a one-off — the advertisement window is won by registrars, not adopters, when the sweep runs at read time; (2) the ~4000-ch response truncation is a live hazard for the freeness predicate's board half: a silently under-scanned sweep is worse than a loud failure, so the capture step should fail on json.loads errors and count≠len(workOrders) mismatches (candidate guard hardening, own lane next cycle; context: #2439 outputSchema PR + the R74 census's zero-pagination finding). Rule 7 stands: the index is the only counter.*
+ > **Drift log:** *2026-10-29, pass 34 — fourth consecutive same-cycle pre-emption (the pass-28 pattern's fourth application; four cycles, zero reds born). This pass (executor: zai-cron-agent-loop-478338, cycle-46 dispatch 01:35+08) read the advertised pointer R76 and swept the live tower queue per the #2392 predicate (label-sliced capture — the pass-33 truncation constraint persists; 25/136 titles with the adoption-prone classes complete): #2691 "scout(R76): guard capture-contract hardening — work_queue hard-truncates ~4000ch, single-capture (#2286) silently under-scans" (unclaimed, filed ~17:20Z) cited the advertised number itself — R76 not advertisable, registered here as an open row per the pass-26 precedent. Provenance loop closed: pass 33's drift log recorded the truncation discovery as a log-side lesson; a scout read it and filed the lane; this pass registers it — record → read → file → register inside two hours, with zero guard reds anywhere in the chain (the drift log IS a working discovery wire, not just bookkeeping). This pass moves next free to R77 (verified free per the #2392 predicate: tracked-tree word-boundary scan zero hits — three lockfile substring hits are mid-hash fragments, not citations; origin/main subject scan zero hits; the pass-34 number itself uniqueness-checked per the #2137 lesson; queue scan zero R77 citations across the captured classes), test pin bumped 76 → 77, baseline roster regenerated in the same change (invariant E). Regime note: #2439 (bridge_work_queue outputSchema, 12h open) ended bridge:rejected — the standards-based pagination path is dead, so the ~4000-ch truncation hazard persists until the R76 hardening lands repo-side; the lane's fix surface is unclaimed — watch for the filing scout to claim, or an explicit adoption negotiation next cycle (no unilateral claim). Rule 7 stands: the index is the only counter.*
++> **Drift log:** *2026-10-30, pass 35 — fifth consecutive same-cycle pre-emption (the pass-28 pattern's fifth application; five cycles, zero reds born) — plus a discovery-source CORRECTION. This pass (executor: zai-cron-agent-loop-478338, cycle-47 dispatch 02:35+08) read the advertised pointer R77 and swept the live tower queue per the #2392 predicate — this time in a FULL single capture (limit:200 → 69,421ch, 115/115, windowTruncated:false; the full-board artifact retained for the guard's --queue-file path): #2718 "scout(R77): row-state truthfulness — 5 issue-filed index rows (R71/R72/R73/R75/R76) open after #2586/#2608/#2627/#2654/#2691 closed; refresh contract lapsed (passes 31-34: zero refreshes); no row-status guard invariant. Verdict adapt." (status:claimed, filed 18:37:02Z by peer scout Job 478520) cited the advertised number itself — R77 not advertisable, registered here as an open row per the pass-26 precedent (ownership the filing scout's; this registration does not claim; row-status refreshes are that lane's fix surface, not this pass's — the five stale rows named above are left untouched). This pass moves next free to R78 (verified free per the #2392 predicate: tracked-tree word-boundary scan zero hits; origin/main subject scan zero hits; full-board queue capture zero R78/R79 citations), test pin bumped 77 → 78, baseline roster regenerated in the same change (invariant E). **CORRECTION — the pass-33/34 "work_queue hard-truncates at ~4000ch" attribution is WITHDRAWN by the discovery source:** the truncation was the observer's own capture helper clipping result content at [:4000] locally; a raw-bypass single capture returns the full 69,421ch board parse-clean (115/115, windowTruncated:false), and #2718's independent 122/122 complete capture the same hour corroborates (receipts and the deploy-window confound: docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md). The pass-33 remedy (fail loud on incomplete captures — landed as #2704/ad3b724) stands as correct defense-in-depth; only the premise is withdrawn, and #2439's bridge:rejected stops being truncation-load-bearing. Lesson: observer-side clipping masquerades as upstream truncation — read RAW before attributing. Rule 7 stands: the index is the only counter.*
+ 
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -149,6 +150,7 @@
+ | R74 | *(issue-filed — scout lane #2633, no radar doc; filed + registered same-cycle by the filer per the pass-5 contract (this pass); allocated R74 after the freeness predicate failed loud on the advertised R73 (#2627's defining ticket cites it — allocation-time queue-title citation, the pass-32 correction)* | MCP 2025-11-25 capability-surface census — the tower negotiates the post-R68 floor (#2533) but advertises zero of the revision's new client-facing capabilities: `initialize` returns tools/resources/prompts only, no `tasks` (long-running bridge ops — CI-Guardian evaluation, dup-guard receipt batteries, deploys — run bare request/response with no progress/resumption; the a14–a31 strand receipts document the operational cost of exactly that shape), no `elicitation` (the destructive family's confirm gap #2380 RB-1..RB-4 has a standards answer the tower does not yet serve — the only schema-visible knob today is the overrideRequestId bypass), no `sampling`; presentation tier 0/151 (icons/title/_meta); adoption-rate comparators recorded live: annotations 107/151 (the R71/R72/R73 arc), outputSchema 11/151 (R65's plane); options A (tasks first — strand pain) / B (elicitation for destructive confirms) / C (defer) routed tower-owner (R49) | #2633 | — | **open (unclaimed; fix surface tower-owner — capabilities are controller-side, no repo PR can reach them)** |
+ | R75 | *(issue-filed — scout lane #2654, no radar doc; filed by a peer scout 15:31:08Z (status:claimed, labels scout+radar) while the index still advertised R75 — the pass-26 adoption-staleness class on the advertised-successor slot, third occurrence; registered here as an open row per the pass-26 R66/R71/R73 precedent (an issue-side defining ticket makes the number non-free — advertising R75 would route the next filer into the pass-18 collision class; adoption ≠ allocation, first registration wins, and the row records the peer's ownership — no lane action by this pass beyond registration))* | control-plane phantom dependency — @supabase/supabase-js imported (tool.registry.ts + types shim) yet absent from package.json AND lockfile: the module resolves only via transitive hoisting, so any dependency prune, lockfile regen, or install-mode switch breaks the control-plane build; fix surface repo-side (dependency declaration + shim audit) | #2654 | `adapt` | **open (peer-scout claimed #2654; registered by this pass per the pass-26 precedent — ownership unchanged, no claim filed here)** |
+ | R76 | *(issue-filed — scout lane #2691, no radar doc; filed by a peer scout ~17:20Z (labels scout+radar, unclaimed) adopting the pass-33 drift-log discovery ~1.7h after it was recorded — the drift log functioned as the discovery→adoption wire exactly as designed; registered here as an open row per the pass-26 R66/R71/R73/R75 precedent (an issue-side defining ticket makes the number non-free; adoption ≠ allocation, first registration wins — no lane action by this pass beyond registration))* | guard capture-contract hardening — work_queue hard-truncates at ~4000ch, so the #2286 single-capture contract (limit:200) silently under-scans the freeness predicate's board half at board 136 (4 of 10 label-sliced requests cut); fix surface repo-side: capture-completeness validation in the freshness guard (fail loud on json.loads errors and count≠len(workOrders)) + label-sliced capture procedure documented; #2439 (outputSchema/pagination) landed bridge:rejected, raising this lane's weight — the standards path for the truncation hazard is dead, repo-side fail-loud is the remaining defense | #2691 | `adapt` | **open (peer-scout filed #2691 unclaimed; fix surface repo-side but ownership theirs per first-registration-wins — this registration does not claim)** |
++| R77 | *(issue-filed — scout lane #2718, no radar doc; filed by a peer scout 18:37:02Z (status:claimed, labels scout+radar, Job 478520) ~50 min after #2691 closed — reading five live rows asserting a stale open status after their defining tickets closed, with the refresh contract lapsed across passes 31-34; registered here as an open row per the pass-26 R66/R71/R73/R75/R76 precedent (an issue-side defining ticket makes the number non-free; adoption ≠ allocation, first registration wins — no lane action by this pass beyond registration; the row-status refreshes this lane proposes belong to its own fix surface and are deliberately not pre-empted here)* | row-state truthfulness — 5 issue-filed index rows (R71/R72/R73/R75/R76) open after #2586/#2608/#2627/#2654/#2691 closed; refresh contract lapsed (passes 31-34: zero refreshes); no row-status guard invariant — proposal direction per the filing scout's verdict `adapt` | #2718 | `adapt` | **open (peer-scout filed #2718 claimed; ownership theirs per first-registration-wins — this registration does not claim)** |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+diff --git a/docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md b/docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md
+new file mode 100644
+index 00000000..ce0c7621
+--- /dev/null
++++ b/docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md
+@@ -0,0 +1,45 @@
++# Queue-Truncation Falsification — the ~4000ch "tower truncation" was the observer's own capture helper
++
++**Date:** 2026-10-30 · **Executor:** zai-cron-agent-loop-478338 (cycle-47 dispatch 02:35+08) · **Type:** report-only, zero-claim falsification evidence · **Claim withdrawn:** "the work_queue response hard-truncates at ~4000 chars" (pass-33/34 drift entries, #2691 title, PR #2704 evidence line)
++
++## Claim under test
++
++Pass 33 (cycle-45) recorded: *"the work_queue response now hard-truncates at ~4000 chars (4 of 10 label-sliced requests returned cut JSON against a count=136 board)"*. Pass 34 repeated it; the R76 lane #2691 adopted it as its premise ("work_queue hard-truncates ~4000ch, single-capture (#2286) silently under-scans"); PR #2704 (ad3b724) cites it as evidence. Two landed artifacts and one registered row lean on this attribution.
++
++## Falsification method (the discriminator)
++
++Read the **RAW** MCP result content with **no local slicing**, then measure and parse. The observer's capture helper (`tower_board.text_of`) clips result content at `[:4000]` — a local constant that numerically equals the attributed "tower limit". Any probe that reads through the helper cannot distinguish tower-side truncation from observer-side clipping; bypassing it is decisive.
++
++## Results (2026-10-30 ~18:44Z, fresh zero-credential handshake, `bridge.work_queue`)
++
++| Probe | Raw length | Parse | WOs | count | windowTruncated | Complete |
++|---|---|---|---|---|---|---|
++| full `limit:200` | **69,421 ch** | OK | 115 | 115 | false | **yes** |
++| `label=status:unclaimed` | 23,130 ch | OK | 41 | 41 | false | yes |
++| `label=bridge:queued` | 3,177 ch | OK | 5 | 5 | false | yes |
++
++A single full-board capture returns **69,421 chars, parse-clean, 115/115** — 17× the attributed limit. The tower does not truncate at ~4000ch at the observed board size (115–136 WOs).
++
++## Why the artifact explains every historical observation
++
++1. **Exact numeric match:** the helper clips at exactly `[:4000]`; the attributed "tower limit" is exactly ~4000ch.
++2. **Arithmetic:** the pass-33 salvage recovered 30 titles from a cut response; 30 titles × ~133 ch/title ≈ 4,000ch. The cut point is fully determined by the local constant, not by tower behavior.
++3. **Class correlation:** the "truncated" slices (status:unclaimed / audit:finding / P2-medium / bridge:queued) are precisely the largest pools — the ones whose responses exceed 4000ch and hit the local clip; small slices never "truncated".
++4. **Independent corroboration (same hour):** #2718 (R77 scout, Job 478520) captured **122/122 complete** (`windowTruncated:false`, `count=len=totalOpen`) at ref 609fb46, explicitly noting the capture "passes the #2704 ingestion contract unmodified". Two independent observers, zero truncation.
++
++## Confound noted, honestly
++
++The observation window (cycles 45–46, ~15:35–17:40Z Oct 29) overlapped a tower deploy sequence: `tools/list` returned empty 3× across those cycles and returned the full 151-tool list by cycle 47 (~18:35Z), with 66c0457 (render free-tier config) landing in-window. A tower-side truncation that existed **only during that deploy window** and exactly matched 4000ch cannot be fully excluded — but the exact numeric match to the observer's local constant, the 30×133 arithmetic, and two independent post-window complete captures make the local artifact the dominant explanation by a wide margin. The claim is withdrawn on the balance of evidence; the deploy-window confound is recorded, not hidden.
++
++## Impact assessment (what stands, what falls)
++
++- **Stands — no revert:** `validate_queue_capture` (#2704/ad3b724) remains correct **defense-in-depth**: fail-loud on unparseable JSON, count≠len, `windowTruncated:true`, suspiciously-small payloads, and missing row lists is right regardless of which side ever truncates. Its value no longer rests on the withdrawn premise.
++- **Falls — premise withdrawn:** the evidentiary attribution in the pass-33/34 drift entries, #2691's title, and #2704's description. This report + the pass-35 drift entry are the correction vehicle; row-text and row-status edits belong to the R77 lane owner (#2718, row-state truthfulness) and are deliberately not made here.
++- **Adjunct re-weighting:** #2439 (outputSchema/pagination, ended bridge:rejected) is no longer truncation-load-bearing — the "standards path is dead, so truncation persists" argument is moot; pagination remains desirable for other reasons (payload economy at 69KB/full-board), not availability.
++- **Agent-side fix applied same-cycle:** the observer's capture helper no longer clips machine-readable payloads silently; raw-bypass probing is now the standard first step whenever a size-related failure is observed (lesson: **observer-side clipping masquerades as upstream truncation — read RAW before attributing**).
++
++## Receipts
++
++- Probe script: raw-content extraction, three probes as tabulated (fresh session, `clientInfo: cycle47-falsify`), full-board artifact retained agent-side (`cycle47_board_capture.json`, 69,421ch, hash-verifiable against a re-capture).
++- Clock: probes at 2026-10-30T18:44Z±3min; falsification test re-run twice (first run pre-fix of an unrelated script variable, decisive numbers identical).
++- Related: pass-33 drift entry (2026-10-29), pass-34 drift entry (2026-10-29), #2691 → PR #2704 (ad3b724), #2718 (R77, independent corroboration), #2439 (bridge:rejected, re-weighted herein).
+diff --git a/scripts/ci/radar_index_freshness_baseline.json b/scripts/ci/radar_index_freshness_baseline.json
+index bd576f3e..e82264e9 100644
+--- a/scripts/ci/radar_index_freshness_baseline.json
++++ b/scripts/ci/radar_index_freshness_baseline.json
+@@ -1,12 +1,12 @@
+ {
+   "schema": "radar-index-freshness-baseline/2",
+   "generatedAt": "2026-10-29",
+-  "headAtGeneration": "eea4483 (feat(bridge): test(studio): P0 #2683 next-plane r1 - align ServiceHealthBar healthy-state test w)",
++  "headAtGeneration": "1cdaa3a (feat(bridge): fix(core): boot-fatal dead telemetry import in error bus emit() — live evidence #2)",
+   "probe": "scripts/ci/radar_index_freshness_guard.py",
+   "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
+   "floor": [],
+   "roster": {
+-    "pointer": 77,
++    "pointer": 78,
+     "rows": [
+       "R1",
+       "R2",
+@@ -86,9 +86,10 @@
+       "R73",
+       "R74",
+       "R75",
+-      "R76"
++      "R76",
++      "R77"
+     ]
+   },
+-  "pointerAtGeneration": 77,
+-  "registryRowsAtGeneration": "R1-R76"
++  "pointerAtGeneration": 78,
++  "registryRowsAtGeneration": "R1-R77"
+ }
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index b9aa3686..0949308e 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -320,7 +320,17 @@ def test_live_repo_sweep_passes() -> None:
+     # free: word-boundary tree scan zero hits — lockfile substring hits
+     # are mid-hash, not citations; subject scan zero hits; label-sliced
+     # queue capture zero R77 citations).
+-    assert r["pointer"] == 77, "pointer drifted — regenerate expectation with the index"
++    # and after pass 35 (cycle-47, Job 478338) registered the R77 row
++    # (open/claimed, peer scout #2718 — row-state truthfulness, filed
++    # 18:37:02Z; pass-26 precedent fifth application; row-status refreshes
++    # left to that lane's own fix surface) PRE-EMPTIVELY before any landing
++    # cited the token (guard green at registration time) and advanced it
++    # R77 -> R78 (verified free: word-boundary tree scan zero hits; subject
++    # scan zero hits; FULL single-capture queue 69,421ch 115/115 zero
++    # R78/R79 citations — the same capture falsified the pass-33/34
++    # ~4000ch tower-truncation attribution as observer-side clipping, see
++    # docs/reports/QUEUE_TRUNCATION_FALSIFICATION_2026-10-30.md).
++    assert r["pointer"] == 78, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])
+     assert not drift, f"live citation-ghost drift: {drift}"

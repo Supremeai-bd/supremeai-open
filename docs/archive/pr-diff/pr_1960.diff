@@ -1,0 +1,306 @@
+diff --git a/scripts/knowledge/convert_curriculum_to_jsonl.py b/scripts/knowledge/convert_curriculum_to_jsonl.py
+index 4d869686..1288fe10 100644
+--- a/scripts/knowledge/convert_curriculum_to_jsonl.py
++++ b/scripts/knowledge/convert_curriculum_to_jsonl.py
+@@ -2,7 +2,7 @@
+ """Convert the Banglish/Bangla intent curriculum (sonet.json) into JSONL datasets.
+ 
+ Usage:
+-    python scripts/brain/convert_curriculum_to_jsonl.py \
++    python scripts/knowledge/convert_curriculum_to_jsonl.py \
+         --input knowledge/sonet.json \
+         --output-dir data/brain \
+         --format sharegpt
+diff --git a/tests/fixtures/brain_curriculum_fixture.json b/tests/fixtures/brain_curriculum_fixture.json
+new file mode 100644
+index 00000000..cb47e6ad
+--- /dev/null
++++ b/tests/fixtures/brain_curriculum_fixture.json
+@@ -0,0 +1,101 @@
++{
++  "_comment": "Minimal schema-faithful test fixture for the curriculum pipeline (sonet.json shape: phases -> skills -> examples). Committed companion to tests/test_brain_curriculum.py so the converter/augmentor tests exercise REAL committed inputs instead of the never-committed knowledge/sonet.json (#1952). 8 examples total drives the deterministic count assertions in the tests.",
++  "phases": [
++    {
++      "phase": 1,
++      "title": "Onboarding Basics",
++      "skills": [
++        {
++          "skill": "create_task",
++          "examples": [
++            {
++              "input": "ami ekta task banate chai",
++              "normalized": "i want to create a task",
++              "confidence": 0.92,
++              "intent": "task.create",
++              "urgency": "low",
++              "needs_clarification": false
++            },
++            {
++              "input": "notun task add koro bhai",
++              "normalized": "add a new task please",
++              "confidence": 0.88,
++              "intent": "task.create",
++              "urgency": "low",
++              "needs_clarification": false
++            }
++          ]
++        },
++        {
++          "skill": "check_status",
++          "examples": [
++            {
++              "input": "task er status ki",
++              "normalized": "what is the task status",
++              "confidence": 0.9,
++              "intent": "task.status",
++              "urgency": "medium",
++              "needs_clarification": false
++            },
++            {
++              "input": "amar kaj kemon cholche",
++              "normalized": "how is my work going",
++              "confidence": 0.74,
++              "intent": "task.status",
++              "urgency": "low",
++              "needs_clarification": true
++            }
++          ]
++        }
++      ]
++    },
++    {
++      "phase": 2,
++      "title": "Advanced Ops",
++      "skills": [
++        {
++          "skill": "schedule_report",
++          "examples": [
++            {
++              "input": "report schedule koro daily",
++              "normalized": "schedule the report daily",
++              "confidence": 0.95,
++              "intent": "report.schedule",
++              "urgency": "medium",
++              "needs_clarification": false
++            },
++            {
++              "input": "weekly report pathao",
++              "normalized": "send the weekly report",
++              "confidence": 0.81,
++              "intent": "report.send",
++              "urgency": "low",
++              "needs_clarification": false
++            }
++          ]
++        },
++        {
++          "skill": "escalate_alert",
++          "examples": [
++            {
++              "input": "alert escalate koro joldi",
++              "normalized": "escalate the alert immediately",
++              "confidence": 0.97,
++              "intent": "alert.escalate",
++              "urgency": "high",
++              "needs_clarification": false
++            },
++            {
++              "input": "boro problem hole ke ke bojhabe",
++              "normalized": "who will be informed on a major issue",
++              "confidence": 0.7,
++              "intent": "alert.escalate",
++              "urgency": "high",
++              "needs_clarification": true
++            }
++          ]
++        }
++      ]
++    }
++  ]
++}
+diff --git a/tests/test_brain_curriculum.py b/tests/test_brain_curriculum.py
+index 177bf9e1..d67aadf0 100644
+--- a/tests/test_brain_curriculum.py
++++ b/tests/test_brain_curriculum.py
+@@ -1,36 +1,161 @@
+-"""tests/test_brain_curriculum.py — verification for curriculum conversion."""
++"""tests/test_brain_curriculum.py — verification for curriculum conversion.
++
++Revival of the suite landed by #1928 (dc9e8b9), which had failed 2/2 on every
++tree since landing because it invoked `scripts/brain/` (a path that never
++existed) with `knowledge/sonet.json` (a file that was never committed) —
++invisible to CI, which does not run the full pytest suite (#1952).
++
++Honest-revival contract (#1760 house pattern, option (a)):
++- invokes the REAL landed scripts under `scripts/knowledge/` (#1935 layout);
++- consumes a REAL committed fixture (`tests/fixtures/brain_curriculum_fixture.json`,
++  schema-faithful sonet.json slice) — no fabricated PASS, no skip-on-missing-input;
++- asserts deterministic outputs (exact row counts and payload shapes) of the
++  converter and the augmentor, end-to-end through their CLIs;
++- writes outputs to tempfile dirs — zero worktree pollution (the legacy test
++  created untracked `data/brain_test/` dirs; `data/` is not gitignored).
++
++The intended production input `knowledge/sonet.json` remains the data owner's
++call (#1952 option (c)); these tests deliberately do not depend on it.
++"""
+ 
+ from __future__ import annotations
+ 
+ import json
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ REPO_ROOT = Path(__file__).resolve().parent.parent
+ 
++CONVERTER = REPO_ROOT / "scripts" / "knowledge" / "convert_curriculum_to_jsonl.py"
++AUGMENTOR = REPO_ROOT / "scripts" / "knowledge" / "augment_curriculum_data.py"
++FIXTURE = REPO_ROOT / "tests" / "fixtures" / "brain_curriculum_fixture.json"
+ 
+-def test_converter_produces_valid_jsonl():
+-    subprocess.run(
+-        [sys.executable, "scripts/brain/convert_curriculum_to_jsonl.py", "--input", "knowledge/sonet.json", "--output-dir", str(REPO_ROOT / "data" / "brain_test")],
++FIXTURE_INPUTS = sorted(
++    ex["input"]
++    for phase in json.loads(FIXTURE.read_text(encoding="utf-8"))["phases"]
++    for skill in phase["skills"]
++    for ex in skill["examples"]
++)
++N_EXAMPLES = len(FIXTURE_INPUTS)  # 8 in the committed fixture
++
++
++def _assert_sharegpt_row(row: dict) -> None:
++    """Every pipeline row is a sharegpt conversation: system -> user -> assistant payload."""
++    assert "messages" in row
++    assert len(row["messages"]) == 3
++    assert row["messages"][0]["role"] == "system"
++    assert row["messages"][1]["role"] == "user"
++    assert row["messages"][2]["role"] == "assistant"
++    payload = json.loads(row["messages"][2]["content"])
++    assert "skill" in payload and "phase" in payload
++    assert isinstance(payload["confidence"], (int, float))
++    assert 0.0 <= payload["confidence"] <= 1.0
++
++
++def _run(script: Path, args: list[str]) -> None:
++    proc = subprocess.run(
++        [sys.executable, str(script.relative_to(REPO_ROOT)), *args],
+         cwd=REPO_ROOT,
+-        check=True,
++        capture_output=True,
++        text=True,
++    )
++    assert proc.returncode == 0, (
++        f"{script.name} exited {proc.returncode}\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+     )
+-    train = REPO_ROOT / "data" / "brain_test" / "train.jsonl"
+-    assert train.exists()
+-    rows = [json.loads(line) for line in train.read_text(encoding="utf-8").splitlines() if line.strip()]
+-    assert rows
+-    for row in rows:
+-        assert "messages" in row
+-        assert len(row["messages"]) == 3
+-        assert row["messages"][0]["role"] == "system"
++
++
++def test_converter_produces_valid_jsonl():
++    with tempfile.TemporaryDirectory(prefix="brain-convert-") as td:
++        _run(
++            CONVERTER,
++            ["--input", str(FIXTURE), "--output-dir", td, "--format", "sharegpt"],
++        )
++        out = Path(td)
++        train = out / "train.jsonl"
++        val = out / "val.jsonl"
++        all_rows_path = out / "all.jsonl"
++        assert train.exists() and val.exists() and all_rows_path.exists()
++
++        all_rows = [
++            json.loads(line)
++            for line in all_rows_path.read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++        train_rows = [
++            json.loads(line)
++            for line in train.read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++        val_rows = [
++            json.loads(line)
++            for line in val.read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++
++        # Deterministic 80/20 split over the committed fixture (val_ratio 0.2).
++        assert len(all_rows) == N_EXAMPLES
++        split = int(N_EXAMPLES * 0.8)
++        assert len(train_rows) == split
++        assert len(val_rows) == N_EXAMPLES - split
++
++        for row in all_rows:
++            _assert_sharegpt_row(row)
++
++        # Every fixture example reaches the dataset, with its injected skill/phase
++        # metadata (iter_examples setdefault contract) and nothing else.
++        user_contents = sorted(row["messages"][1]["content"] for row in all_rows)
++        assert user_contents == FIXTURE_INPUTS
++
++
++def test_converter_alpaca_format():
++    """The alpaca branch (to_alpaca) is exported but was never exercised by any test."""
++    with tempfile.TemporaryDirectory(prefix="brain-alpaca-") as td:
++        _run(
++            CONVERTER,
++            ["--input", str(FIXTURE), "--output-dir", td, "--format", "alpaca"],
++        )
++        rows = [
++            json.loads(line)
++            for line in (Path(td) / "all.jsonl").read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++        assert len(rows) == N_EXAMPLES
++        for row in rows:
++            assert set(row) == {"instruction", "input", "output"}
++            payload = json.loads(row["output"])
++            assert "normalized_text" in payload and "intents" in payload
+ 
+ 
+ def test_augmented_dataset_size():
+-    subprocess.run(
+-        [sys.executable, "scripts/brain/augment_curriculum_data.py", "--input", "knowledge/sonet.json", "--output-dir", str(REPO_ROOT / "data" / "brain_aug_test"), "--per-skill", "5"],
+-        cwd=REPO_ROOT,
+-        check=True,
+-    )
+-    all_rows = (REPO_ROOT / "data" / "brain_aug_test" / "all.jsonl").read_text(encoding="utf-8").splitlines()
+-    assert len(all_rows) >= 19  # at least original count
++    # per-skill 3 x 8 fixture examples = 24 rows, deterministic (seeded templates).
++    per_skill = 3
++    with tempfile.TemporaryDirectory(prefix="brain-aug-") as td:
++        _run(
++            AUGMENTOR,
++            [
++                "--input",
++                str(FIXTURE),
++                "--output-dir",
++                td,
++                "--per-skill",
++                str(per_skill),
++            ],
++        )
++        all_rows = [
++            json.loads(line)
++            for line in (Path(td) / "all.jsonl").read_text(encoding="utf-8").splitlines()
++            if line.strip()
++        ]
++        assert len(all_rows) == N_EXAMPLES * per_skill
++        for row in all_rows:
++            _assert_sharegpt_row(row)
++
++        # Every original example survives augmentation; every synthetic wrap
++        # template contains the base text, so each fixture input appears
++        # exactly per_skill times across the dataset.
++        user_contents = [row["messages"][1]["content"] for row in all_rows]
++        for base_input in FIXTURE_INPUTS:
++            hits = sum(1 for text in user_contents if base_input in text)
++            assert hits == per_skill, f"{base_input!r} appeared {hits}x, want {per_skill}x"

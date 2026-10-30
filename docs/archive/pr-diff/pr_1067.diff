@@ -1,0 +1,497 @@
+diff --git a/.github/actions/setup-node-tower/action.yml b/.github/actions/setup-node-tower/action.yml
+index 9cfa1023..09b854ae 100644
+--- a/.github/actions/setup-node-tower/action.yml
++++ b/.github/actions/setup-node-tower/action.yml
+@@ -13,7 +13,7 @@ runs:
+   using: composite
+   steps:
+     - name: Set up Node 24
+-      uses: actions/setup-node@v4
++      uses: actions/setup-node@v5
+       with:
+         node-version: "24"
+         cache: npm
+diff --git a/.github/workflows/federation-ci-watchdog.yml b/.github/workflows/federation-ci-watchdog.yml
+index 41489e2b..1c5d8c24 100644
+--- a/.github/workflows/federation-ci-watchdog.yml
++++ b/.github/workflows/federation-ci-watchdog.yml
+@@ -15,13 +15,13 @@ permissions:
+ 
+ jobs:
+   watchdog:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Poll federation repos for CI failures
+diff --git a/.github/workflows/kaggle-learning.yml b/.github/workflows/kaggle-learning.yml
+index f2acba68..deb79c43 100644
+--- a/.github/workflows/kaggle-learning.yml
++++ b/.github/workflows/kaggle-learning.yml
+@@ -14,13 +14,13 @@ permissions:
+ 
+ jobs:
+   kaggle_learning:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 15
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Run Kaggle Empirical Learning Bridge
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 9ef9c4f4..76d6002e 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -91,7 +91,7 @@ jobs:
+       (github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 15
+     # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a
+     # merge mid-flight (a half-landed state is worse than a queued one).
+@@ -299,7 +299,7 @@ jobs:
+       needs.auto_merge.outputs.merged == 'true' ||
+       needs.auto_merge.outputs.merged == 'dispatch-only' ||
+       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     # E4 dedup race (preserved from #169-era doctrine): serialize dispatches
+     # for the same PR and never cancel mid-run — a cancelled run could push
+@@ -793,14 +793,14 @@ jobs:
+       (needs.auto_merge.outputs.merged == 'true' ||
+        needs.auto_merge.outputs.merged == 'dispatch-only' ||
+        (github.event_name == 'pull_request' && github.event.pull_request.merged == true))
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+ 
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+ 
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index e6015c56..2946ca8c 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -69,7 +69,7 @@ jobs:
+   federation-ci-mirror:
+     name: "📢 Federation CI Failure Ingress"
+     if: github.event_name == 'repository_dispatch' && github.event.action == 'federation_ci_failed'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: read
+@@ -78,7 +78,7 @@ jobs:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Mirror Failure to Open Queue
+@@ -95,7 +95,7 @@ jobs:
+   bridge-intake-instant:
+     name: "⚡ Instant Bridge Intake & PR Opener"
+     if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/bridge/')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     permissions:
+       contents: write
+@@ -105,7 +105,7 @@ jobs:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Run Auto-Bridge PR Opener
+@@ -121,7 +121,7 @@ jobs:
+   branch-naming-guard:
+     name: "🌿 Branch Naming Guard"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Validate head branch name (event-context only, no checkout)
+@@ -147,7 +147,7 @@ jobs:
+   issue-reference-guard:
+     name: "🔗 Issue Reference Guard"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Validate PR references an issue (event-context only, no checkout)
+@@ -171,7 +171,7 @@ jobs:
+   claim-guard:
+     name: "🔒 Claim Gate Guard (#392)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     permissions:
+       issues: read
+@@ -230,7 +230,7 @@ jobs:
+   knowledge-sharing-guard:
+     name: "🧠 Knowledge Sharing Guard (#392)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Verify PR body carries Reflection Evidence (event-context only, no checkout)
+@@ -275,7 +275,7 @@ jobs:
+   duplicate-pr-guard:
+     name: "👥 Anti-Duplicate PR Guard"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Verify no competing open PR exists for the same issue
+@@ -339,7 +339,7 @@ jobs:
+   boundary_sanitization_guard:
+     name: "🧱 Boundary Sanitization Guard (#107)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     outputs:
+       docs_only: ${{ steps.scan.outputs.docs_only }}
+@@ -406,7 +406,7 @@ jobs:
+   loop_contract_parity_guard:
+     name: "🔁 Loop-Contract Parity Guard (#118)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (parity inspects file bodies)
+@@ -418,7 +418,7 @@ jobs:
+   ingress_hook_guard:
+     name: "🛡️ Ingress Hook Guard (#161)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (hook body required)
+@@ -435,7 +435,7 @@ jobs:
+   stale_base_guard:
+     name: "⏳ Stale-Base Guard (#161)"
+     if: github.event_name == 'pull_request'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository (full history for merge-base arithmetic)
+@@ -460,13 +460,13 @@ jobs:
+   fast-lint-syntax-preflight:
+     name: "⚡ Step 1: Fast Lint & Syntax Preflight (<10s)"
+     if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 3
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Install PyYAML
+@@ -502,7 +502,7 @@ jobs:
+       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (needs.boundary_sanitization_guard.result == 'success' &&
+         needs.loop_contract_parity_guard.result == 'success'))
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     strategy:
+       fail-fast: false
+       matrix:
+@@ -512,7 +512,7 @@ jobs:
+         uses: actions/checkout@v5
+ 
+       - name: Set up Python ${{ matrix.python-version }}
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: ${{ matrix.python-version }}
+ 
+@@ -578,7 +578,7 @@ jobs:
+     if: |
+       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       needs.boundary_sanitization_guard.result == 'success'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+@@ -597,7 +597,7 @@ jobs:
+     if: |
+       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     steps:
+       - name: Checkout code
+         uses: actions/checkout@v5
+@@ -622,7 +622,7 @@ jobs:
+     if: |
+       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+       (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     steps:
+       - name: Checkout code
+         uses: actions/checkout@v5
+@@ -639,7 +639,7 @@ jobs:
+ 
+       - name: Setup Node
+         if: steps.check_sdk_ts.outputs.exists == 'true'
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@v5
+         with:
+           node-version: "24"
+ 
+@@ -661,7 +661,7 @@ jobs:
+   instant-satellite-sync:
+     name: "🚀 Instant Satellite Synchronizer"
+     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     concurrency:
+       group: instant-satellite-sync
+@@ -673,7 +673,7 @@ jobs:
+           fetch-depth: 2
+ 
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+ 
+@@ -699,7 +699,7 @@ jobs:
+   agent-loop:
+     name: Start continuous_agent_loop.py --pick-next (30-min cadence)
+     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 15
+     permissions:
+       contents: read
+@@ -716,7 +716,7 @@ jobs:
+         uses: actions/checkout@v5
+ 
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+ 
+@@ -791,7 +791,7 @@ jobs:
+ 
+       - name: Upload verification evidence
+         if: always()
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@v6
+         with:
+           name: agent-loop-verify-evidence-${{ github.run_id }}
+           path: agent-loop-verify-evidence.log
+diff --git a/.github/workflows/satellite-board-audit.yml b/.github/workflows/satellite-board-audit.yml
+index d363975b..8ae5bf06 100644
+--- a/.github/workflows/satellite-board-audit.yml
++++ b/.github/workflows/satellite-board-audit.yml
+@@ -15,13 +15,13 @@ permissions:
+ 
+ jobs:
+   audit:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     steps:
+       - name: Checkout repository
+         uses: actions/checkout@v5
+       - name: Setup Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+       - name: Authenticated satellite board audit
+diff --git a/gateway/.github/workflows/ci.yml b/gateway/.github/workflows/ci.yml
+index 0d8cde92..967534f9 100644
+--- a/gateway/.github/workflows/ci.yml
++++ b/gateway/.github/workflows/ci.yml
+@@ -14,13 +14,13 @@ permissions:
+ 
+ jobs:
+   test:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@v5
+ 
+       - name: Set up Python
+-        uses: actions/setup-python@v5
++        uses: actions/setup-python@v6
+         with:
+           python-version: "3.11"
+ 
+diff --git a/gateway/.github/workflows/secret-scan.yml b/gateway/.github/workflows/secret-scan.yml
+index 30c1e2b6..01403b8d 100644
+--- a/gateway/.github/workflows/secret-scan.yml
++++ b/gateway/.github/workflows/secret-scan.yml
+@@ -18,10 +18,10 @@ permissions:
+ 
+ jobs:
+   scan:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@v5
+ 
+       - name: 13-pattern secret scan (fail-closed)
+         run: |
+diff --git a/vscode/.github/workflows/release-client-hub.yml b/vscode/.github/workflows/release-client-hub.yml
+index cc61ad11..e235b49d 100644
+--- a/vscode/.github/workflows/release-client-hub.yml
++++ b/vscode/.github/workflows/release-client-hub.yml
+@@ -11,17 +11,17 @@ concurrency:
+ 
+ jobs:
+   build-extension:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
++      - uses: actions/checkout@v5
++      - uses: actions/setup-node@v5
+         with:
+           node-version: 20
+       - run: npm ci --workspace=extension
+       - run: npm run compile --workspace=extension
+       - run: npx --yes @vscode/vsce package --no-git-tag-version --out supremeai-vscode.vsix
+         working-directory: extension
+-      - uses: actions/upload-artifact@v4
++      - uses: actions/upload-artifact@v6
+         with:
+           name: vsix
+           path: extension/*.vsix
+@@ -29,8 +29,8 @@ jobs:
+   build-desktop:
+     runs-on: windows-latest
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
++      - uses: actions/checkout@v5
++      - uses: actions/setup-node@v5
+         with:
+           node-version: 20
+       - uses: dtolnay/rust-toolchain@stable
+@@ -39,19 +39,19 @@ jobs:
+       - run: New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null; Set-Content -Path desktop/dist/index.html -Value '<!DOCTYPE html><html><body>SupremeAI Desktop</body></html>'
+       - run: npx tauri build --config src-tauri/tauri.conf.json --no-bundle
+         working-directory: desktop
+-      - uses: actions/upload-artifact@v4
++      - uses: actions/upload-artifact@v6
+         with:
+           name: exe
+           path: desktop/src-tauri/target/release/*.exe
+ 
+   build-mobile:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-node@v4
++      - uses: actions/checkout@v5
++      - uses: actions/setup-node@v5
+         with:
+           node-version: 20
+-      - uses: actions/setup-java@v4
++      - uses: actions/setup-java@v5
+         with:
+           distribution: temurin
+           java-version: 17
+@@ -63,7 +63,7 @@ jobs:
+       - run: npx cap sync android
+         working-directory: mobile
+       - run: cd mobile/android && ./gradlew assembleDebug
+-      - uses: actions/upload-artifact@v4
++      - uses: actions/upload-artifact@v6
+         with:
+           name: apk
+           path: mobile/android/app/build/outputs/apk/debug/*.apk
+diff --git a/vscode/.github/workflows/release-extension.yml b/vscode/.github/workflows/release-extension.yml
+index 29ade083..93114dc5 100644
+--- a/vscode/.github/workflows/release-extension.yml
++++ b/vscode/.github/workflows/release-extension.yml
+@@ -27,14 +27,14 @@ concurrency:
+ jobs:
+   package:
+     name: "Package & Publish VSIX"
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     steps:
+       - name: Checkout repository
+-        uses: actions/checkout@v4
++        uses: actions/checkout@v5
+ 
+       - name: Setup Node.js (LTS)
+-        uses: actions/setup-node@v4
++        uses: actions/setup-node@v5
+         with:
+           node-version: "20"
+           cache: "npm"
+@@ -53,7 +53,7 @@ jobs:
+         working-directory: extension
+ 
+       - name: Upload VSIX Artifact
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@v6
+         with:
+           name: supremeai-vscode-vsix
+           path: extension/supremeai-vscode.vsix
+@@ -67,7 +67,7 @@ jobs:
+ 
+       - name: Create or Update GitHub Release
+         if: github.ref == 'refs/heads/main' || github.event.inputs.create_release == 'true'
+-        uses: softprops/action-gh-release@v2
++        uses: softprops/action-gh-release@v3
+         with:
+           files: extension/supremeai-vscode.vsix
+           tag_name: ${{ steps.version.outputs.version }}

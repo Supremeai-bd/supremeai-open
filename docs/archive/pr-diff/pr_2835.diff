@@ -1,0 +1,7 @@
+diff --git a/docs/bridge/__micro__.md b/docs/bridge/__micro__.md
+new file mode 100644
+index 00000000..d39b8495
+--- /dev/null
++++ b/docs/bridge/__micro__.md
+@@ -0,0 +1 @@
++python -m pip install --upgrade pip

@@ -1,0 +1,351 @@
+diff --git a/core/services/auto_healer.py b/core/services/auto_healer.py
+index 0603d2f0..27d12f16 100644
+--- a/core/services/auto_healer.py
++++ b/core/services/auto_healer.py
+@@ -29,7 +29,7 @@
+ from typing import Any, Optional
+ 
+ from core.health.proactive_healer import get_proactive_healer
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.resilience.circuit_breaker import CircuitBreakerState
+ 
+ proactive_healer_instance = get_proactive_healer()
+diff --git a/core/services/billing/billing_plans.py b/core/services/billing/billing_plans.py
+index 4f6c3394..17f2b397 100644
+--- a/core/services/billing/billing_plans.py
++++ b/core/services/billing/billing_plans.py
+@@ -22,7 +22,7 @@
+ 
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def _load_tier_prices() -> dict[str, Decimal]:
+diff --git a/core/services/config_service.py b/core/services/config_service.py
+index 0caec949..b23bb373 100644
+--- a/core/services/config_service.py
++++ b/core/services/config_service.py
+@@ -6,7 +6,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy.orm import Session
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from models.system_config import SystemConfig
+ from services.config_registry import get_definition, safe_defaults, validate_value
+ 
+diff --git a/core/services/delivery_fleet_tracker.py b/core/services/delivery_fleet_tracker.py
+index 603c70af..2338a6a1 100644
+--- a/core/services/delivery_fleet_tracker.py
++++ b/core/services/delivery_fleet_tracker.py
+@@ -20,7 +20,7 @@
+ from typing import Any
+ 
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ LOCATION_TTL = 3600  # 1 hour
+diff --git a/core/services/diagram_parser_service.py b/core/services/diagram_parser_service.py
+index 3efa288b..fb8b0613 100644
+--- a/core/services/diagram_parser_service.py
++++ b/core/services/diagram_parser_service.py
+@@ -26,7 +26,7 @@
+ 
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.config_service import ConfigService
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+diff --git a/core/services/dynamic_ai/learning_engine.py b/core/services/dynamic_ai/learning_engine.py
+index 2bf9d489..50e94d0b 100644
+--- a/core/services/dynamic_ai/learning_engine.py
++++ b/core/services/dynamic_ai/learning_engine.py
+@@ -19,7 +19,7 @@
+ from __future__ import annotations
+ 
+ from core.learning import get_learning_store
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য (ROOT-CAUSE FIX 2): কীওয়ার্ড-ভিত্তিক হালকা task detector।
+ # এখানে `.orchestrator` মডিউলের `TaskType`-কে import করা যাবে না (circular
+diff --git a/core/services/dynamic_ai/local_fallback.py b/core/services/dynamic_ai/local_fallback.py
+index e4bdebcb..7adb18d3 100644
+--- a/core/services/dynamic_ai/local_fallback.py
++++ b/core/services/dynamic_ai/local_fallback.py
+@@ -12,7 +12,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class OllamaModelStatus(Enum):
+diff --git a/core/services/dynamic_ai/orchestrator.py b/core/services/dynamic_ai/orchestrator.py
+index fb10c413..c6d7f36f 100644
+--- a/core/services/dynamic_ai/orchestrator.py
++++ b/core/services/dynamic_ai/orchestrator.py
+@@ -11,7 +11,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from .circuit_breaker import CircuitBreakerManager
+diff --git a/core/services/dynamic_ai/provider_registry.py b/core/services/dynamic_ai/provider_registry.py
+index b2a459d2..6759f446 100644
+--- a/core/services/dynamic_ai/provider_registry.py
++++ b/core/services/dynamic_ai/provider_registry.py
+@@ -9,7 +9,7 @@
+ from dataclasses import dataclass, field
+ from enum import Enum
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ProviderStatus(Enum):
+diff --git a/core/services/dynamic_planner.py b/core/services/dynamic_planner.py
+index 97db4ca5..4dbd19b9 100644
+--- a/core/services/dynamic_planner.py
++++ b/core/services/dynamic_planner.py
+@@ -16,7 +16,7 @@
+ from typing import Any
+ 
+ from core.llm.advanced_model_router import ExpertType
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.intent_deciphering import IntentAnalysis
+ 
+ 
+diff --git a/core/services/email/email_service.py b/core/services/email/email_service.py
+index 1791104f..0065f0f0 100644
+--- a/core/services/email/email_service.py
++++ b/core/services/email/email_service.py
+@@ -25,7 +25,7 @@
+ 
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ from utils.http_client import create_async_client
+ 
+diff --git a/core/services/escrow_service.py b/core/services/escrow_service.py
+index 4c786157..8c66eae8 100644
+--- a/core/services/escrow_service.py
++++ b/core/services/escrow_service.py
+@@ -19,7 +19,7 @@
+ from typing import Any
+ 
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ ESCROW_TTL = 30 * 24 * 3600  # 30 days
+diff --git a/core/services/hitl/dispatch.py b/core/services/hitl/dispatch.py
+index a12f43c2..e8712a0c 100644
+--- a/core/services/hitl/dispatch.py
++++ b/core/services/hitl/dispatch.py
+@@ -21,7 +21,7 @@
+ from typing import Any
+ 
+ from core.code_validator import AICodeValidator
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Executor চুক্তি: payload → execution-result dict। যেকোনো ব্যর্থতা
+ # exception দিয়ে loud — কখনো {"status": "failed"} ফেরত দিয়ে ভান নয়।
+diff --git a/core/services/hitl/engine.py b/core/services/hitl/engine.py
+index 410c2c34..ce886476 100644
+--- a/core/services/hitl/engine.py
++++ b/core/services/hitl/engine.py
+@@ -1,7 +1,7 @@
+ from datetime import UTC, datetime, timedelta
+ from typing import Any, Optional
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.tenant_db import TenantAwareFirestore
+ 
+ from .dispatch import ApprovalDispatchError, execute_approved, resolve_executor
+diff --git a/core/services/hitl/hitl_ledger.py b/core/services/hitl/hitl_ledger.py
+index 0ae44128..47942bc4 100644
+--- a/core/services/hitl/hitl_ledger.py
++++ b/core/services/hitl/hitl_ledger.py
+@@ -3,7 +3,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.cryptographic_ledger import CryptographicLedger
+ from database.tenant_db import TenantAwareFirestore
+ 
+diff --git a/core/services/hitl/resume_token.py b/core/services/hitl/resume_token.py
+index 882cda2a..5aa33347 100644
+--- a/core/services/hitl/resume_token.py
++++ b/core/services/hitl/resume_token.py
+@@ -25,7 +25,7 @@
+ from datetime import UTC, datetime, timedelta
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ MAX_TOKENS_PER_RECORD = 10
+ DEFAULT_RESUME_TTL_SECONDS = 24 * 3600
+diff --git a/core/services/integration_discovery.py b/core/services/integration_discovery.py
+index 2d664c53..0a00d7c4 100644
+--- a/core/services/integration_discovery.py
++++ b/core/services/integration_discovery.py
+@@ -26,7 +26,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা: SSRF প্রোটেকশন — এই রেঞ্জগুলোতে কখনোই আউটবাউন্ড রিকোয়েস্ট যেতে দেওয়া
+ # যাবে না (loopback, RFC1918 প্রাইভেট রেঞ্জ, link-local, এবং ক্লাউড মেটাডেটা
+diff --git a/core/services/intent_deciphering.py b/core/services/intent_deciphering.py
+index 2641576f..401090b7 100644
+--- a/core/services/intent_deciphering.py
++++ b/core/services/intent_deciphering.py
+@@ -13,7 +13,7 @@
+ from typing import Any
+ 
+ from core.llm.advanced_model_router import DomainExpertAnalyzer, TaskComplexityAnalyzer
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.memory_service import (
+     CascadeMemoryService,
+     hash_vectorize,
+diff --git a/core/services/internet_monitor_service.py b/core/services/internet_monitor_service.py
+index 7a9e4e90..31493278 100644
+--- a/core/services/internet_monitor_service.py
++++ b/core/services/internet_monitor_service.py
+@@ -8,7 +8,7 @@
+ 
+ # Fixed import path - using absolute import from backend
+ from agents.internet_monitor_agent import internet_monitor_agent
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class InternetMonitorService:
+diff --git a/core/services/knowledge_qa.py b/core/services/knowledge_qa.py
+index d10f292e..0d8b44ac 100644
+--- a/core/services/knowledge_qa.py
++++ b/core/services/knowledge_qa.py
+@@ -12,7 +12,7 @@
+ 
+ from core.kernel.audit_logger import AuditLogger
+ from core.llm.llm_gateway import GatewayManager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from memory.chromadb_store import ChromaDBStore
+ 
+ MANIFEST_PATH = (
+diff --git a/core/services/living_engine.py b/core/services/living_engine.py
+index c5af29f4..52b5c678 100644
+--- a/core/services/living_engine.py
++++ b/core/services/living_engine.py
+@@ -22,7 +22,7 @@
+ from adapters.ux_adapter import UXAdapter
+ from core.advanced_reasoning import AdvancedReasoningEngine, ReasoningChain
+ from core.evolution_module import EvolutionModule, EvolutionResult
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from evolution.auto_evolution_controller import AutoEvolutionController
+ from learning.pattern_recognizer import PatternMatch, PatternRecognizer
+ from services.dynamic_planner import DynamicPlanningEngine, TaskDAG, TaskNode
+diff --git a/core/services/memory_service.py b/core/services/memory_service.py
+index 1e7cbf56..65b58716 100644
+--- a/core/services/memory_service.py
++++ b/core/services/memory_service.py
+@@ -11,7 +11,7 @@
+ from core.config import settings
+ from core.degraded_mode import InMemoryRing, sqlite_fallback_allowed
+ from core.embeddings import hash_vectorize as _canonical_hash_vectorize
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.persistence import pooled_pg
+ from core.state_store import durable_state
+ 
+diff --git a/core/services/minio_client.py b/core/services/minio_client.py
+index edfdd888..4b36c8e9 100644
+--- a/core/services/minio_client.py
++++ b/core/services/minio_client.py
+@@ -19,7 +19,7 @@
+ from typing import Any
+ 
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ URL_CACHE_TTL = 3600  # 1 hour
+diff --git a/core/services/project_context_service.py b/core/services/project_context_service.py
+index 71c62126..91efe81c 100644
+--- a/core/services/project_context_service.py
++++ b/core/services/project_context_service.py
+@@ -20,7 +20,7 @@
+ from pathlib import Path
+ 
+ from core.cache import get_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ CONTEXT_CACHE_TTL = 3600
+diff --git a/core/services/render_account_service.py b/core/services/render_account_service.py
+index b78b1618..23a796ca 100644
+--- a/core/services/render_account_service.py
++++ b/core/services/render_account_service.py
+@@ -12,7 +12,7 @@
+ from typing import Any
+ 
+ from core.clients.render_api import render_get_json
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ 
+ DEFAULT_COOLDOWN_DAYS = 10
+diff --git a/core/services/sandbox_service.py b/core/services/sandbox_service.py
+index 3e315232..e14c681d 100644
+--- a/core/services/sandbox_service.py
++++ b/core/services/sandbox_service.py
+@@ -4,7 +4,7 @@
+ from docker.errors import ContainerError
+ 
+ import docker
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SandboxService:
+diff --git a/core/services/scraper/browser_agent.py b/core/services/scraper/browser_agent.py
+index 92e8df7f..92b0194a 100644
+--- a/core/services/scraper/browser_agent.py
++++ b/core/services/scraper/browser_agent.py
+@@ -18,7 +18,7 @@
+ from pydantic import BaseModel
+ 
+ from core.human_behavior import HumanBehaviorSimulators
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: Dual-path import — standalone scraper-এ top-level `security`/
+ # `web_scraper`, backend-এ embedded হলে `services.scraper.*`। Scraper-এর নিজস্ব

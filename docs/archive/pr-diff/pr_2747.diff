@@ -1,0 +1,103 @@
+diff --git a/scripts/ci/deploy_preflight_guard.py b/scripts/ci/deploy_preflight_guard.py
+index be99612e..a07a36ca 100644
+--- a/scripts/ci/deploy_preflight_guard.py
++++ b/scripts/ci/deploy_preflight_guard.py
+@@ -310,6 +310,72 @@ def run_step3_quota(
+         return True, {"service": target, "error": str(e)}
+ 
+ 
++def run_step4_migrations() -> tuple[bool, list[str]]:
++    versions_dir = REPO_ROOT / "core" / "alembic_migrations" / "versions"
++    errors = []
++    if not versions_dir.is_dir():
++        print("[Step 4: Migration Guard] Skipped: versions dir not found.")
++        return True, []
++    files = sorted(f for f in versions_dir.glob("*.py") if not f.name.startswith("__"))
++    revisions = {}
++    down_revisions = {}
++    import ast
++    for f in files:
++        try:
++            py_compile.compile(str(f), doraise=True)
++        except py_compile.PyCompileError as e:
++            errors.append("compile error in %s: %s" % (f.name, e))
++            continue
++        try:
++            tree = ast.parse(f.read_text(encoding="utf-8"))
++        except (SyntaxError, OSError) as e:
++            errors.append("parse error in %s: %s" % (f.name, e))
++            continue
++        rev = None
++        down = None
++        for node in ast.walk(tree):
++            targets = []
++            value = None
++            if isinstance(node, ast.Assign):
++                targets = node.targets
++                value = node.value
++            elif isinstance(node, ast.AnnAssign):
++                targets = [node.target]
++                value = node.value
++            for t in targets:
++                if isinstance(t, ast.Name) and t.id == "revision":
++                    if isinstance(value, ast.Constant):
++                        rev = value.value
++                if isinstance(t, ast.Name) and t.id == "down_revision":
++                    if isinstance(value, ast.Constant):
++                        down = value.value
++                    elif isinstance(value, ast.Tuple):
++                        down = tuple((e.value if isinstance(e, ast.Constant) else None) for e in value.elts)
++        if rev is None:
++            errors.append("%s: missing revision assignment" % f.name)
++            continue
++        if rev in revisions:
++            errors.append("duplicate revision id %r" % rev)
++        revisions[rev] = f
++        down_revisions[rev] = down
++    for rev, down in down_revisions.items():
++        if down is None:
++            continue
++        if isinstance(down, tuple):
++            for d in down:
++                if d is not None and d not in revisions:
++                    errors.append("revision %r references unknown down_revision %r" % (rev, d))
++        else:
++            if down not in revisions:
++                errors.append("revision %r references unknown down_revision %r" % (rev, down))
++    if errors:
++        for e in errors:
++            print("[Step 4: Migration Guard] %s" % e)
++        return False, errors
++    print("[Step 4: Migration Guard] OK: %d migration files, %d revisions, chain consistent" % (len(files), len(revisions)))
++    return True, []
++
++
+ def run_self_test() -> int:
+     """Offline self-test for all preflight functions."""
+     print("Running deploy_preflight_guard offline self-test...")
+@@ -364,6 +430,11 @@ def main() -> int:
+         default=SAFE_BUILD_THRESHOLD_MINUTES,
+         help="Build minutes threshold (default: 450.0)",
+     )
++    parser.add_argument(
++        "--step4-migrations",
++        action="store_true",
++        help="Run Step 4 (DB migration chain check, #1691)",
++    )
+     parser.add_argument(
+         "--self-test", action="store_true", help="Run offline deterministic self-test"
+     )
+@@ -404,6 +475,13 @@ def main() -> int:
+         )
+         results["step3_quota"] = s3_data
+ 
++    # Step 4: Migrations
++    if run_all or args.step4_migrations:
++        s4_pass, s4_errs = run_step4_migrations()
++        results["step4_migrations"] = {"passed": s4_pass, "errors": s4_errs}
++        if not s4_pass:
++            overall_pass = False
++
+     if args.json:
+         print(json.dumps(results, indent=2))
+ 

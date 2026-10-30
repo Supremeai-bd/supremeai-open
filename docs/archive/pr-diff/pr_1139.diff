@@ -1,0 +1,263 @@
+diff --git a/studio/src/auth/identity.ts b/studio/src/auth/identity.ts
+index 0aa5bd17..e6c3f2c2 100644
+--- a/studio/src/auth/identity.ts
++++ b/studio/src/auth/identity.ts
+@@ -6,6 +6,7 @@
+ // authorize হয়। URL বা localStorage role key কখনোই এখানে ব্যবহৃত হয় না।
+ 
+ import { normalizeRole, type Role } from '../config/permissions';
++import { getAdminToken } from '../services/tokenStorage';
+ 
+ /** Get the resolved canonical application role (fallback to 'user'). */
+ export function getCanonicalRole(): Role {
+@@ -29,9 +30,10 @@ interface AdminJwtClaims {
+ export function readAdminJwtClaims(): AdminJwtClaims | null {
+   if (typeof window === 'undefined') return null;
+   try {
+-    // Issue #521 (FE-04): sessionStorage only — the localStorage duplicate write/read
+-    // (which survived browser restarts) is gone; legacy entries are swept.
+-    const token = sessionStorage.getItem(ADMIN_JWT_KEY);
++    const token =
++      getAdminToken() ||
++      sessionStorage.getItem(ADMIN_JWT_KEY) ||
++      localStorage.getItem(ADMIN_JWT_KEY);
+     if (!token) return null;
+     const part = token.split('.')[1];
+     if (!part) return null;
+diff --git a/studio/src/components/admin/auth/AdminLogin.tsx b/studio/src/components/admin/auth/AdminLogin.tsx
+index 2ed7ffc3..66e0a7cc 100644
+--- a/studio/src/components/admin/auth/AdminLogin.tsx
++++ b/studio/src/components/admin/auth/AdminLogin.tsx
+@@ -105,7 +105,7 @@ export function LoginView({
+   const isLocked = lockedUntil !== null && currentTime < lockedUntil;
+   const lockoutRemaining = lockedUntil ? Math.max(0, Math.ceil((lockedUntil - currentTime) / 1000)) : 0;
+ 
+-  const handleSubmit = (e: React.FormEvent) => {
++  const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+ 
+     // Rate limiting check
+@@ -139,7 +139,7 @@ export function LoginView({
+     setIsSubmitting(true);
+ 
+     try {
+-      handleAdminLogin(localPassword);
++      await handleAdminLogin(localPassword);
+       if (!otpRequired) {
+         setLocalPassword('');
+       }
+diff --git a/studio/src/services/apiClient.ts b/studio/src/services/apiClient.ts
+index aff2efcd..1497df47 100644
+--- a/studio/src/services/apiClient.ts
++++ b/studio/src/services/apiClient.ts
+@@ -6,7 +6,7 @@
+ import { getApiBaseUrl } from '../utils/api';
+ import { buildUrl } from '@supremeai/shared-services';
+ import { getDeviceFingerprint } from '../utils/deviceFingerprint';
+-import { clearAdminToken, clearUserToken, getAdminToken, getUserToken, setUserToken } from './tokenStorage';
++import { clearAdminToken, clearUserToken, getAdminToken, getTrustedBrowserToken, getUserToken, setUserToken } from './tokenStorage';
+ import PQueue from 'p-queue';
+ 
+ // বাংলা মন্তব্য: কাস্টম এরর ক্লাস — status প্রপার্টি দিয়ে React Query retry ফাংশন সঠিকভাবে 401/403/429 চিহ্নিত করতে পারে
+@@ -141,6 +141,12 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
+     headers['Authorization'] = `Bearer ${effectiveToken}`;
+   }
+ 
++  // 🛡️ Trusted browser token for 7-day MFA bypass
++  const trustedBrowserToken = getTrustedBrowserToken();
++  if (trustedBrowserToken) {
++    headers['X-Trusted-Browser'] = trustedBrowserToken;
++  }
++
+   // 🔐 CSRF Protection
+   const csrfToken = getCSRFToken();
+   if (csrfToken) {
+diff --git a/studio/src/services/authService.ts b/studio/src/services/authService.ts
+index 38c4c5d1..00b1003f 100644
+--- a/studio/src/services/authService.ts
++++ b/studio/src/services/authService.ts
+@@ -2,16 +2,28 @@
+ // বাংলা মন্তব্য: এটি পিওর নেটিভ অ্যাডমিন লগইন ও টিওটিপি অথেন্টিকেশন সার্ভিস প্রোভাইড করে।
+ 
+ import { apiClient } from './apiClient';
++import { clearTrustedBrowserToken, getTrustedBrowserToken, setTrustedBrowserToken } from './tokenStorage';
+ 
+ export const authService = {
+   // Native (zero-firebase) admin auth endpoints
+   adminLogin: async (email: string, password: string): Promise<{ status: string; token?: string; uid?: string; email?: string }> => {
+-    const response = await apiClient.post<{ status: string; token?: string; access_token?: string; jwt?: string; uid?: string; email?: string }>('/api/admin/login', { email, password });
++    const trustedBrowserToken = getTrustedBrowserToken();
++    const response = await apiClient.post<{ status: string; token?: string; access_token?: string; jwt?: string; uid?: string; email?: string }>(
++      '/api/admin/login',
++      { email, password, trusted_browser_token: trustedBrowserToken || undefined }
++    );
+     return { ...response, token: response.token ?? response.access_token ?? response.jwt };
+   },
+ 
+-  adminTotpVerify: async (otp: string, rememberBrowser = false): Promise<{ status: string; token: string }> => {
+-    return apiClient.post<{ status: string; token: string }>('/api/admin/totp-verify', { otp, remember_browser: rememberBrowser });
++  adminTotpVerify: async (otp: string, rememberBrowser = false): Promise<{ status: string; token: string; trusted_browser_token?: string }> => {
++    const response = await apiClient.post<{ status: string; token: string; trusted_browser_token?: string }>(
++      '/api/admin/totp-verify',
++      { otp, remember_browser: rememberBrowser }
++    );
++    if (response.trusted_browser_token) {
++      setTrustedBrowserToken(response.trusted_browser_token);
++    }
++    return response;
+   },
+ 
+   adminTotpSetup: async (): Promise<{ secret: string; provisioning_uri: string; recovery_codes?: string[] }> => {
+@@ -25,4 +37,13 @@ export const authService = {
+       // best-effort
+     }
+   },
++
++  revokeTrustedBrowser: async (): Promise<void> => {
++    clearTrustedBrowserToken();
++    try {
++      await apiClient.delete('/api/admin/trusted-browsers');
++    } catch {
++      // best-effort
++    }
++  },
+ };
+diff --git a/studio/src/services/tokenStorage.ts b/studio/src/services/tokenStorage.ts
+index 11db6671..0cd5cde7 100644
+--- a/studio/src/services/tokenStorage.ts
++++ b/studio/src/services/tokenStorage.ts
+@@ -45,17 +45,39 @@ const readToken = (key: string): string | null => {
+   const local = getLocal();
+   if (hasStorage(local)) {
+     try {
+-      const legacy = local.getItem(key);
+-      if (legacy) {
++      const persistent = local.getItem(key);
++      if (persistent) {
++        // Validate unexpired if JWT
++        try {
++          const part = persistent.split('.')[1];
++          if (part) {
++            const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
++            const payload = JSON.parse(
++              decodeURIComponent(
++                atob(base64)
++                  .split('')
++                  .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
++                  .join('')
++              )
++            );
++            if (typeof payload?.exp === 'number' && payload.exp * 1000 <= Date.now()) {
++              local.removeItem(key);
++              return null;
++            }
++          }
++        } catch {
++          // Non-JWT token preserved
++        }
++
++        // Hydrate sessionStorage cache without destroying persistent localStorage
+         if (hasStorage(session)) {
+           try {
+-            session.setItem(key, legacy);
++            session.setItem(key, persistent);
+           } catch (err) {
+-            console.warn('[tokenStorage] legacy token migration to sessionStorage failed:', err);
++            console.warn('[tokenStorage] session hydration failed:', err);
+           }
+         }
+-        local.removeItem(key);
+-        return legacy;
++        return persistent;
+       }
+     } catch (err) {
+       console.warn('[tokenStorage] localStorage read failed:', err);
+@@ -65,7 +87,7 @@ const readToken = (key: string): string | null => {
+   return null;
+ };
+ 
+-const writeToken = (key: string, token: string): void => {
++const writeToken = (key: string, token: string, persistToLocal = false): void => {
+   const session = getSession();
+   if (hasStorage(session)) {
+     try {
+@@ -74,6 +96,16 @@ const writeToken = (key: string, token: string): void => {
+       console.warn('[tokenStorage] sessionStorage write failed, token kept in memory only:', err);
+     }
+   }
++  if (persistToLocal) {
++    const local = getLocal();
++    if (hasStorage(local)) {
++      try {
++        local.setItem(key, token);
++      } catch (err) {
++        console.warn('[tokenStorage] localStorage write failed:', err);
++      }
++    }
++  }
+ };
+ 
+ const clearToken = (key: string): void => {
+@@ -95,12 +127,60 @@ const clearToken = (key: string): void => {
+   }
+ };
+ 
++// Trusted browser token for 7-day MFA bypass
++const TRUSTED_BROWSER_KEY = 'supreme_trusted_browser_token';
++export const TRUSTED_BROWSER_STORAGE_KEY = TRUSTED_BROWSER_KEY;
++
++export const getTrustedBrowserToken = (): string | null => {
++  const local = getLocal();
++  if (hasStorage(local)) {
++    try {
++      const tok = local.getItem(TRUSTED_BROWSER_KEY);
++      if (tok) return tok;
++    } catch (err) {
++      console.warn('[tokenStorage] trusted browser token read failed:', err);
++    }
++  }
++  const session = getSession();
++  if (hasStorage(session)) {
++    try {
++      return session.getItem(TRUSTED_BROWSER_KEY);
++    } catch {
++      return null;
++    }
++  }
++  return null;
++};
++
++export const setTrustedBrowserToken = (token: string): void => {
++  const local = getLocal();
++  if (hasStorage(local)) {
++    try {
++      local.setItem(TRUSTED_BROWSER_KEY, token);
++    } catch (err) {
++      console.warn('[tokenStorage] trusted browser token localStorage write failed:', err);
++    }
++  }
++  const session = getSession();
++  if (hasStorage(session)) {
++    try {
++      session.setItem(TRUSTED_BROWSER_KEY, token);
++    } catch (err) {
++      console.warn('[tokenStorage] trusted browser token sessionStorage write failed:', err);
++    }
++  }
++};
++
++export const clearTrustedBrowserToken = (): void => {
++  clearToken(TRUSTED_BROWSER_KEY);
++};
++
+ // User session token
+ export const getUserToken = (): string | null => readToken(USER_TOKEN_KEY);
+ export const setUserToken = (token: string): void => writeToken(USER_TOKEN_KEY, token);
+ export const clearUserToken = (): void => clearToken(USER_TOKEN_KEY);
+ 
+-// Admin step-up JWT
++// Admin step-up JWT — persists to localStorage so closing the tab or browser doesn't trigger auto-logout
+ export const getAdminToken = (): string | null => readToken(ADMIN_TOKEN_KEY);
+-export const setAdminToken = (token: string): void => writeToken(ADMIN_TOKEN_KEY, token);
++export const setAdminToken = (token: string, persistToLocal = true): void => writeToken(ADMIN_TOKEN_KEY, token, persistToLocal);
+ export const clearAdminToken = (): void => clearToken(ADMIN_TOKEN_KEY);

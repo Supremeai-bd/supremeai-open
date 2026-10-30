@@ -1,0 +1,744 @@
+diff --git a/core/database/migrations/20261030_mcp_plugins_license_gate.sql b/core/database/migrations/20261030_mcp_plugins_license_gate.sql
+new file mode 100644
+index 00000000..22014a20
+--- /dev/null
++++ b/core/database/migrations/20261030_mcp_plugins_license_gate.sql
+@@ -0,0 +1,38 @@
++-- ============================================================================
++-- #1668 — License + provenance gate: catalog metadata columns for mcp_plugins
++-- Additive follow-up to 20261030_mcp_plugins_registry.sql (#1523 Phase-1 MVP).
++--
++-- The control-plane gate (infrastructure/mcp-control-plane
++-- src/registry/license-gate.ts) rejects GPL-family licenses, unknown/
++-- unverifiable licenses (S10: never accept a plugin whose upstream license
++-- cannot be verified), and non-repository upstreams at catalog INGRESS.
++-- These columns pin the machine-checkable metadata the gate evaluates so
++-- the SQL registry and the control-plane catalog stay in sync.
++--
++-- NULL is an honest value for the Phase-1 provider-official / BYO rows that
++-- pin no OSS upstream (telegram, web-search, google-drive, notion): their
++-- gate verdict is REJECT_UNKNOWN_LICENSE by construction, surfaced (not
++-- hidden) by marketplace.list_plugins. Seeded github row: MIT +
++-- https://github.com/github/github-mcp-server (verified public repository).
++-- ============================================================================
++
++ALTER TABLE mcp_plugins
++    ADD COLUMN IF NOT EXISTS license VARCHAR(128);
++
++ALTER TABLE mcp_plugins
++    ADD COLUMN IF NOT EXISTS upstream_url TEXT;
++
++COMMENT ON COLUMN mcp_plugins.license IS
++    '#1668 SPDX license expression of the upstream project; NULL = unverifiable (gate-rejected at ingress for NEW registrations).';
++COMMENT ON COLUMN mcp_plugins.upstream_url IS
++    '#1668 upstream repository URL (https, code-hosting host, owner/repo); marketing/docs pages are rejected as vendored markers.';
++
++-- Seed parity with the control-plane catalog: the GitHub row pins its
++-- verified upstream. The other Phase-1 rows stay NULL (no verified OSS
++-- upstream pinned at MVP time — filling them is an admin-lane verification
++-- task, never a default).
++UPDATE mcp_plugins
++   SET license = 'MIT',
++       upstream_url = 'https://github.com/github/github-mcp-server'
++ WHERE plugin_id = 'github'
++   AND license IS NULL;
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index a65e7220..09630fd4 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:license-gate && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
+     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+     "test:tool-tombstones": "tsx test_tool_tombstones.ts",
+     "test:devtools-adapter": "tsx test_devtools_adapter.ts",
+@@ -75,6 +75,7 @@
+     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
+     "test:github-pagination": "tsx test_github_pagination.ts",
+     "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
++    "test:license-gate": "tsx test_license_gate.ts",
+     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+     "test:r66-target-echo": "tsx test_r66_target_echo.ts",
+     "test:annotations-floor": "tsx test_annotations_floor.ts"
+diff --git a/infrastructure/mcp-control-plane/src/registry/license-gate.ts b/infrastructure/mcp-control-plane/src/registry/license-gate.ts
+new file mode 100644
+index 00000000..9e359f21
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/registry/license-gate.ts
+@@ -0,0 +1,139 @@
++/**
++ * #1668 — License + provenance gate for the mcp_plugins registry.
++ *
++ * Mechanical enforcement point for the repo's standing verdict rules
++ * (MIT/Apache=accept, GPL=reject, license re-checked at each pin bump) and
++ * the S10 doctrine: "Never accept a plugin whose upstream license cannot be
++ * verified; ADOPT_IMMEDIATELY verdicts are illegal with an unknown upstream
++ * license."
++ *
++ * The gate runs at CATALOG INGRESS — the plane where third-party code
++ * actually enters the trust boundary (marketplace.register_plugin). It is
++ * deliberately fail-closed: every rule mismatch yields REJECT with a
++ * machine-readable code; only an explicit permissive license verified
++ * against a real repository URL passes.
++ *
++ * Vendor-marker rejection (open-washing anti-pattern, radar R6) takes the
++ * mechanical form of the provenance rule: the upstream must be a code-hosting
++ * repository URL (github.com/gitlab.com/bitbucket.org, owner/repo shape) —
++ * marketing pages, docs sites, and non-https "upstreams" are markers of
++ * vendored distribution and are rejected without human judgment.
++ */
++
++export type LicenseGateCode =
++  | "REJECT_GPL"
++  | "REJECT_UNKNOWN_LICENSE"
++  | "REJECT_UNRECOGNIZED_LICENSE"
++  | "REJECT_NO_UPSTREAM"
++  | "REJECT_PROVENANCE"
++  | "ACCEPT";
++
++export interface LicenseGateInput {
++  /** SPDX license expression of the upstream project, or null when unknown. */
++  license: string | null;
++  /** Upstream repository URL, or null when not pinned. */
++  upstreamUrl: string | null;
++}
++
++export interface LicenseGateVerdict {
++  verdict: "ACCEPT" | "REJECT";
++  code: LicenseGateCode;
++  reason: string;
++}
++
++/**
++ * Permissive allow-list (repo verdict rules). Everything outside this list
++ * that is not GPL-family is still REJECTed (fail-closed): adding a new
++ * accepted license is a deliberate, auditable code change, not a default.
++ */
++export const LICENSE_GATE_ACCEPTED: readonly string[] = Object.freeze([
++  "MIT",
++  "MIT-0",
++  "Apache-2.0",
++  "BSD-2-Clause",
++  "BSD-3-Clause",
++  "ISC",
++]);
++
++/** Code-hosting hosts accepted as provenance anchors (repo URLs only). */
++export const LICENSE_GATE_REPO_HOSTS: readonly string[] = Object.freeze([
++  "github.com",
++  "gitlab.com",
++  "bitbucket.org",
++]);
++
++function isGplFamily(license: string): boolean {
++  // Substring test on the uppercased SPDX expression: covers GPL-2.0/3.0
++  // (-only/-or-later), LGPL-*, and AGPL-* — the whole copyleft family is
++  // rejected by the repo rule. No non-family SPDX ID contains "GPL".
++  return license.toUpperCase().includes("GPL");
++}
++
++function isPermissiveAccepted(license: string): boolean {
++  return LICENSE_GATE_ACCEPTED.some((l) => l === license);
++}
++
++/** Repo URL shape: https + code-hosting host + owner/repo (>=2 path segments). */
++export function isRepoUrl(upstreamUrl: string): boolean {
++  let url: URL;
++  try {
++    url = new URL(upstreamUrl);
++  } catch {
++    return false;
++  }
++  if (url.protocol !== "https:") return false;
++  if (!LICENSE_GATE_REPO_HOSTS.includes(url.hostname.toLowerCase())) return false;
++  const segments = url.pathname.split("/").filter((s) => s.length > 0);
++  return segments.length >= 2;
++}
++
++/**
++ * Mechanical license + provenance verdict for a plugin's pinned metadata.
++ * Order matters: license rules first (S10 emphasis), then provenance.
++ */
++export function evaluateLicenseProvenance(input: LicenseGateInput): LicenseGateVerdict {
++  const license = (input.license ?? "").trim();
++  const upstreamUrl = (input.upstreamUrl ?? "").trim();
++
++  if (license.length === 0) {
++    return {
++      verdict: "REJECT",
++      code: "REJECT_UNKNOWN_LICENSE",
++      reason: "Upstream license is unknown/unverifiable (S10: never accept a plugin whose upstream license cannot be verified).",
++    };
++  }
++  if (isGplFamily(license)) {
++    return {
++      verdict: "REJECT",
++      code: "REJECT_GPL",
++      reason: `License '${license}' is GPL-family (copyleft) — rejected by repo verdict rule (GPL=reject).`,
++    };
++  }
++  if (!isPermissiveAccepted(license)) {
++    return {
++      verdict: "REJECT",
++      code: "REJECT_UNRECOGNIZED_LICENSE",
++      reason: `License '${license}' is not on the permissive accept-list (${LICENSE_GATE_ACCEPTED.join(", ")}) — fail-closed.`,
++    };
++  }
++  if (upstreamUrl.length === 0) {
++    return {
++      verdict: "REJECT",
++      code: "REJECT_NO_UPSTREAM",
++      reason: "No upstream repository pinned — provenance unverifiable (reject at ingress).",
++    };
++  }
++  if (!isRepoUrl(upstreamUrl)) {
++    return {
++      verdict: "REJECT",
++      code: "REJECT_PROVENANCE",
++      reason: `Upstream '${upstreamUrl}' is not a code-hosting repository URL (https + github/gitlab/bitbucket + owner/repo) — vendored/vendor-marketing distribution is rejected.`,
++    };
++  }
++
++  return {
++    verdict: "ACCEPT",
++    code: "ACCEPT",
++    reason: `License '${license}' is permissive-accepted; upstream repo verified (${upstreamUrl}).`,
++  };
++}
+diff --git a/infrastructure/mcp-control-plane/src/registry/marketplace-plugins.ts b/infrastructure/mcp-control-plane/src/registry/marketplace-plugins.ts
+index b826eb94..2d1db813 100644
+--- a/infrastructure/mcp-control-plane/src/registry/marketplace-plugins.ts
++++ b/infrastructure/mcp-control-plane/src/registry/marketplace-plugins.ts
+@@ -1,5 +1,6 @@
+ import { registerRemoteServer, listRemoteServers, type RemoteMcpServer } from "./remote-mcp-servers.js";
+ import { mcpTrustLevelSchema, mcpProtocolSchema, type McpProtocol, type McpTrustLevel } from "./mcp.contracts.js";
++import { evaluateLicenseProvenance, type LicenseGateVerdict } from "./license-gate.js";
+ 
+ /**
+  * #1523 — Marketplace MVP: MCP plugin catalog + BYO connection ledger.
+@@ -36,6 +37,10 @@ export interface MarketplacePlugin {
+   credentialFields: MarketplaceCredentialField[];
+   trustLevel: McpTrustLevel;
+   docsUrl: string | null;
++  /** SPDX expression of the upstream project, or null when not pinned. */
++  license: string | null;
++  /** Upstream repository URL, or null when not pinned (#1668 provenance). */
++  upstreamUrl: string | null;
+ }
+ 
+ export interface MarketplaceConnection {
+@@ -75,6 +80,8 @@ function seed(
+   endpointTemplate: string | null,
+   credentialFields: MarketplaceCredentialField[],
+   docsUrl: string | null,
++  license: string | null,
++  upstreamUrl: string | null,
+ ): MarketplacePlugin {
+   return {
+     pluginId,
+@@ -87,6 +94,8 @@ function seed(
+     credentialFields,
+     trustLevel: "untrusted",
+     docsUrl,
++    license,
++    upstreamUrl,
+   };
+ }
+ 
+@@ -108,6 +117,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
+     "https://api.githubcopilot.com/mcp/",
+     [vaultField("github-token", "GitHub personal access token (vault ref)")],
+     "https://github.com/github/github-mcp-server",
++    "MIT",
++    "https://github.com/github/github-mcp-server",
+   ),
+   seed(
+     "telegram",
+@@ -118,6 +129,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
+     null,
+     [vaultField("bot-token", "Telegram bot token (vault ref)")],
+     null,
++    null,
++    null,
+   ),
+   seed(
+     "web-search",
+@@ -128,6 +141,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
+     null,
+     [vaultField("search-api-key", "Search API key (vault ref)")],
+     null,
++    null,
++    null,
+   ),
+   seed(
+     "google-drive",
+@@ -138,6 +153,8 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
+     null,
+     [vaultField("drive-token", "Google OAuth token (vault ref)")],
+     null,
++    null,
++    null,
+   ),
+   seed(
+     "notion",
+@@ -148,11 +165,100 @@ export const MARKETPLACE_PLUGINS: readonly MarketplacePlugin[] = Object.freeze([
+     "https://mcp.notion.com/mcp",
+     [vaultField("notion-token", "Notion integration token (vault ref)")],
+     "https://developers.notion.com/docs/mcp",
++    null,
++    null,
+   ),
+ ]);
+ 
+ export function getMarketplacePlugin(pluginId: string): MarketplacePlugin | undefined {
+-  return MARKETPLACE_PLUGINS.find((p) => p.pluginId === pluginId);
++  return (
++    MARKETPLACE_PLUGINS.find((p) => p.pluginId === pluginId) ??
++    marketplaceRegistryExtras.find((p) => p.pluginId === pluginId)
++  );
++}
++
++/** Runtime additions from #1668 catalog ingress (seeds stay frozen/SQL-synced). */
++const marketplaceRegistryExtras: MarketplacePlugin[] = [];
++
++/** Combined catalog view: frozen Phase-1 seeds + gate-admitted registrations. */
++export function listMarketplacePlugins(): MarketplacePlugin[] {
++  return [...MARKETPLACE_PLUGINS, ...marketplaceRegistryExtras];
++}
++
++/** #1668 — mechanical license + provenance verdict for any catalog row. */
++export function marketplaceLicenseGate(plugin: MarketplacePlugin): LicenseGateVerdict {
++  return evaluateLicenseProvenance({ license: plugin.license, upstreamUrl: plugin.upstreamUrl });
++}
++
++export interface RegisterMarketplacePluginInput {
++  pluginId: string;
++  name: string;
++  category: string;
++  description: string;
++  provider: string;
++  endpointTemplate: string | null;
++  protocol: McpProtocol;
++  credentialFields: MarketplaceCredentialField[];
++  docsUrl: string | null;
++  license: string | null;
++  upstreamUrl: string | null;
++}
++
++export type RegisterMarketplacePluginResult =
++  | { ok: true; plugin: MarketplacePlugin; gate: LicenseGateVerdict }
++  | { ok: false; error: string; gate: LicenseGateVerdict | null };
++
++/**
++ * #1668 — Catalog ingress. Third-party plugins enter the registry ONLY
++ * through this gate: GPL-family licenses, unknown/unverifiable licenses,
++ * and non-repository upstreams are rejected fail-closed (S10 doctrine);
++ * every admission lands 'untrusted' and is never merged into the frozen
++ * seed list (which must stay in sync with the SQL migration).
++ */
++export function registerMarketplacePlugin(input: RegisterMarketplacePluginInput): RegisterMarketplacePluginResult {
++  const pluginId = (input.pluginId ?? "").trim();
++  if (!/^[a-z0-9-]{2,64}$/.test(pluginId)) {
++    return { ok: false, error: `pluginId must match ^[a-z0-9-]{2,64}$ (got '${pluginId}').`, gate: null };
++  }
++  if (getMarketplacePlugin(pluginId)) {
++    return { ok: false, error: `Plugin already registered in the catalog: ${pluginId}.`, gate: null };
++  }
++  // Gate FIRST — a rejected plugin never reaches catalog state.
++  const gate = evaluateLicenseProvenance({ license: input.license, upstreamUrl: input.upstreamUrl });
++  if (gate.verdict === "REJECT") {
++    return { ok: false, error: `License/provenance gate rejected plugin '${pluginId}': ${gate.reason}`, gate };
++  }
++  if (!input.name || input.name.trim().length < 2) {
++    return { ok: false, error: "name must be a real plugin name (>=2 chars).", gate };
++  }
++  if (!input.description || input.description.trim().length < 20) {
++    return { ok: false, error: "description must be substantive (>=20 chars) — the catalog is templates-only, never tenant data.", gate };
++  }
++  for (const field of input.credentialFields ?? []) {
++    if (!field?.name || !/^[a-zA-Z0-9._:-]+$/.test(field.name)) {
++      return { ok: false, error: `credential field name invalid: '${field?.name}'`, gate };
++    }
++    if (looksLikePlaintextSecret(field.label ?? "")) {
++      return { ok: false, error: `credential field '${field.name}' label looks like a live token value — specs only (name/label), never values.`, gate };
++    }
++  }
++  mcpProtocolSchema.parse(input.protocol);
++  const plugin: MarketplacePlugin = {
++    pluginId,
++    name: input.name.trim(),
++    category: input.category?.trim() || "productivity",
++    description: input.description.trim(),
++    provider: input.provider?.trim() || pluginId,
++    endpointTemplate: input.endpointTemplate,
++    protocol: input.protocol,
++    credentialFields: (input.credentialFields ?? []).map((f) => ({ ...f })),
++    trustLevel: "untrusted",
++    docsUrl: input.docsUrl,
++    license: input.license,
++    upstreamUrl: input.upstreamUrl,
++  };
++  marketplaceRegistryExtras.push(plugin);
++  return { ok: true, plugin, gate };
+ }
+ 
+ const connections = new Map<string, MarketplaceConnection>();
+@@ -258,3 +364,8 @@ export function clearMarketplaceConnections(): void {
+   connections.clear();
+   connectionSeq = 0;
+ }
++
++/** Test hygiene: drop runtime registrations (frozen seeds are untouched). */
++export function clearMarketplaceRegistry(): void {
++  marketplaceRegistryExtras.length = 0;
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/client.tools.ts b/infrastructure/mcp-control-plane/src/tools/client.tools.ts
+index 124e1113..d134c79d 100644
+--- a/infrastructure/mcp-control-plane/src/tools/client.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/client.tools.ts
+@@ -15,10 +15,12 @@ import {
+ import { isGlobalAdmin, verifyTenantAdminToken } from "../tenancy/tenant.registry.js";
+ import { env } from "../lib/env.js";
+ import {
+-  MARKETPLACE_PLUGINS,
+   connectPlugin,
+   getMarketplacePlugin,
+   listMarketplaceConnections,
++  listMarketplacePlugins,
++  marketplaceLicenseGate,
++  registerMarketplacePlugin,
+   listTenantRemoteServersForMarketplace,
+ } from "../registry/marketplace-plugins.js";
+ 
+@@ -291,10 +293,17 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+     {},
+     { readOnlyHint: true, idempotentHint: true },
+     async () => {
++      // #1668: the catalog view carries each row's mechanical license +
++      // provenance verdict so the trust boundary is machine-checkable, not
++      // editorial. Seeds without pinned upstreams honestly show REJECT codes.
++      const plugins = listMarketplacePlugins().map((p) => ({
++        ...p,
++        licenseGate: marketplaceLicenseGate(p),
++      }));
+       return {
+         content: [{
+           type: "text",
+-          text: JSON.stringify({ count: MARKETPLACE_PLUGINS.length, plugins: MARKETPLACE_PLUGINS }, null, 2),
++          text: JSON.stringify({ count: plugins.length, plugins }, null, 2),
+         }],
+       };
+     }
+@@ -367,4 +376,74 @@ export async function registerClientTools(server: McpServer): Promise<void> {
+       };
+     }
+   );
++
++  // ── #1668 License + provenance gate: catalog INGRESS (global admin) ─────
++  // Third-party plugins enter the mcp_plugins registry ONLY through this
++  // tool. The gate is mechanical and fail-closed: GPL-family licenses are
++  // rejected (repo verdict rule), unknown/unverifiable licenses are rejected
++  // (S10 doctrine), and the upstream must be a code-hosting repository URL
++  // (vendor-marketing/distribution pages are the open-washing marker and
++  // are rejected). Admissions land 'untrusted' — the governed connect path
++  // (pending -> descriptor pinning -> fail-closed relay) is unchanged.
++  server.tool(
++    "marketplace.register_plugin",
++    "Register a NEW third-party plugin into the mcp_plugins catalog (GLOBAL admin only). Runs the #1668 license + provenance gate first: GPL-family licenses, unknown licenses, and non-repository upstreams are rejected fail-closed. Pass the upstream's SPDX license expression and its code-hosting repository URL.",
++    {
++      pluginId: z.string().regex(/^[a-z0-9-]{2,64}$/, "pluginId must match ^[a-z0-9-]{2,64}$"),
++      name: z.string().min(2).describe("Plugin display name"),
++      description: z.string().min(20).describe("What the plugin does (templates-only catalog, never tenant data)"),
++      category: z.string().optional().describe("Catalog category (default: productivity)"),
++      provider: z.string().optional().describe("Provider/vendor identifier (default: pluginId)"),
++      endpointTemplate: z.string().url().nullable().optional().describe("Official hosted endpoint, or null for self-hosted BYO"),
++      protocol: z.enum(["streamable-http", "sse", "stdio"]).optional().describe("MCP transport protocol (default: streamable-http)"),
++      credentialFields: z.array(z.object({
++        name: z.string().min(1),
++        label: z.string().min(1),
++        required: z.boolean().optional(),
++        secret: z.boolean().optional(),
++      })).optional().describe("Credential FIELD SPECS only ({name,label,required,secret}) — never values"),
++      docsUrl: z.string().url().nullable().optional().describe("Documentation URL"),
++      license: z.string().nullable().describe("SPDX license expression of the upstream project (e.g. 'MIT', 'Apache-2.0') — null is rejected"),
++      upstreamUrl: z.string().nullable().describe("Upstream repository URL (https, github/gitlab/bitbucket, owner/repo) — null is rejected"),
++      tenantId: z.string().optional().describe("Ignored for catalog registration (global-admin plane)"),
++      adminToken: z.string().optional().describe("Tenant admin token (not sufficient — catalog registration is global-admin only)"),
++    },
++    { readOnlyHint: false },
++    async (args) => {
++      const { scope, error } = requireScope(args);
++      if (error) return { isError: true, content: [{ type: "text", text: error }] };
++      if (scope !== "*") {
++        return { isError: true, content: [{ type: "text", text: "marketplace.register_plugin is a global-admin plane: the mcp_plugins catalog is registry-wide (public catalog table), not tenant-scoped." }] };
++      }
++      const result = registerMarketplacePlugin({
++        pluginId: args.pluginId,
++        name: args.name,
++        description: args.description,
++        category: args.category ?? "productivity",
++        provider: args.provider ?? args.pluginId,
++        endpointTemplate: args.endpointTemplate ?? null,
++        protocol: args.protocol ?? "streamable-http",
++        credentialFields: (args.credentialFields ?? []).map((f) => ({
++          name: f.name,
++          label: f.label,
++          required: f.required ?? true,
++          secret: f.secret ?? true,
++        })),
++        docsUrl: args.docsUrl ?? null,
++        license: args.license,
++        upstreamUrl: args.upstreamUrl,
++      });
++      if (!result.ok) return { isError: true, content: [{ type: "text", text: `Registration failed: ${result.error}` }] };
++      return {
++        content: [{
++          type: "text",
++          text: JSON.stringify({
++            message: `Plugin '${result.plugin.pluginId}' registered into the catalog (trust_level: untrusted).`,
++            gate: result.gate,
++            plugin: result.plugin,
++          }, null, 2),
++        }],
++      };
++    }
++  );
+ }
+\ No newline at end of file
+diff --git a/infrastructure/mcp-control-plane/test_license_gate.ts b/infrastructure/mcp-control-plane/test_license_gate.ts
+new file mode 100644
+index 00000000..9fa094aa
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_license_gate.ts
+@@ -0,0 +1,209 @@
++import assert from "node:assert/strict";
++import {
++  LICENSE_GATE_ACCEPTED,
++  evaluateLicenseProvenance,
++  isRepoUrl,
++} from "./src/registry/license-gate.js";
++import {
++  MARKETPLACE_PLUGINS,
++  clearMarketplaceConnections,
++  clearMarketplaceRegistry,
++  connectPlugin,
++  getMarketplacePlugin,
++  listMarketplacePlugins,
++  marketplaceLicenseGate,
++  registerMarketplacePlugin,
++} from "./src/registry/marketplace-plugins.js";
++import { clearRemoteServerRegistry as clearFederation } from "./src/registry/remote-mcp-servers.js";
++
++// ── #1668 License + provenance gate — mechanical, fail-closed, S10-aware ───
++
++clearFederation();
++clearMarketplaceConnections();
++clearMarketplaceRegistry();
++
++// 1. GPL family rejection (repo verdict rule: GPL=reject), all SPDX shapes.
++for (const gpl of ["GPL-3.0-only", "GPL-2.0-or-later", "AGPL-3.0-only", "LGPL-2.1", "GPL-3.0"]) {
++  const v = evaluateLicenseProvenance({ license: gpl, upstreamUrl: "https://github.com/owner/repo" });
++  assert.equal(v.verdict, "REJECT", `${gpl} must reject`);
++  assert.equal(v.code, "REJECT_GPL", `${gpl} -> REJECT_GPL`);
++}
++
++// 2. Unknown license = unverifiable upstream -> S10 rejection.
++const unknown = evaluateLicenseProvenance({ license: null, upstreamUrl: "https://github.com/owner/repo" });
++assert.equal(unknown.verdict, "REJECT");
++assert.equal(unknown.code, "REJECT_UNKNOWN_LICENSE");
++assert.equal(evaluateLicenseProvenance({ license: "  ", upstreamUrl: "https://github.com/owner/repo" }).code, "REJECT_UNKNOWN_LICENSE");
++
++// 3. Fail-closed: licenses outside the permissive allow-list are rejected.
++for (const odd of ["Artistic-2.0", "EPL-2.0", "MPL-2.0", "Proprietary", "EUPL-1.2"]) {
++  const v = evaluateLicenseProvenance({ license: odd, upstreamUrl: "https://github.com/owner/repo" });
++  assert.equal(v.verdict, "REJECT", `${odd} must reject (fail-closed)`);
++  assert.equal(v.code, "REJECT_UNRECOGNIZED_LICENSE");
++}
++
++// 4. Permissive accept-list passes the license half.
++for (const ok of LICENSE_GATE_ACCEPTED) {
++  const v = evaluateLicenseProvenance({ license: ok, upstreamUrl: "https://github.com/owner/repo" });
++  assert.equal(v.verdict, "ACCEPT", `${ok} must accept`);
++}
++
++// 5. Provenance: upstream must be pinned AND a repo URL (vendor markers).
++const noUpstream = evaluateLicenseProvenance({ license: "MIT", upstreamUrl: null });
++assert.equal(noUpstream.verdict, "REJECT");
++assert.equal(noUpstream.code, "REJECT_NO_UPSTREAM");
++
++for (const bad of [
++  "https://notion.so/docs/mcp",              // vendor docs/marketing page
++  "http://github.com/owner/repo",            // not https
++  "https://example.com/owner/repo",          // not a code host
++  "https://github.com/owner",                // missing repo segment
++  "https://github.com/",                     // no path at all
++  "not-a-url",                               // garbage
++]) {
++  const v = evaluateLicenseProvenance({ license: "MIT", upstreamUrl: bad });
++  assert.equal(v.verdict, "REJECT", `${bad} must reject`);
++  assert.equal(v.code, "REJECT_PROVENANCE");
++}
++assert.equal(isRepoUrl("https://github.com/github/github-mcp-server"), true);
++assert.equal(isRepoUrl("https://gitlab.com/owner/repo/-/tree/main"), true);
++
++// 6. Seed catalog honesty: verdicts are visible per row (machine-checkable).
++const ghSeed = getMarketplacePlugin("github");
++assert.ok(ghSeed);
++assert.equal(ghSeed.license, "MIT");
++assert.equal(ghSeed.upstreamUrl, "https://github.com/github/github-mcp-server");
++assert.equal(marketplaceLicenseGate(ghSeed).code, "ACCEPT");
++// Rows without a pinned upstream honestly show their gate status.
++for (const id of ["telegram", "web-search", "google-drive", "notion"]) {
++  const p = getMarketplacePlugin(id);
++  assert.ok(p);
++  assert.equal(p.license, null, `${id} has no pinned license (honest null)`);
++  assert.equal(marketplaceLicenseGate(p).code, "REJECT_UNKNOWN_LICENSE");
++}
++// Frozen seeds stay exactly the Phase-1 five (SQL-sync anchor).
++assert.equal(MARKETPLACE_PLUGINS.length, 5);
++
++// 7. Catalog ingress: GPL plugin never reaches catalog state.
++const gplAttempt = registerMarketplacePlugin({
++  pluginId: "copyleft-tool",
++  name: "Copyleft Tool",
++  description: "A third-party MCP plugin whose upstream is GPL-licensed.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [],
++  docsUrl: null,
++  license: "GPL-3.0-only",
++  upstreamUrl: "https://github.com/third-party/copyleft-tool",
++});
++assert.ok(!gplAttempt.ok, "GPL registration must be rejected");
++assert.ok(!gplAttempt.ok && gplAttempt.gate?.code === "REJECT_GPL");
++assert.equal(getMarketplacePlugin("copyleft-tool"), undefined, "rejected plugin has no catalog state");
++
++// 8. Unknown license and vendor-marketing upstream rejected at ingress.
++const unknownAttempt = registerMarketplacePlugin({
++  pluginId: "mystery-plugin",
++  name: "Mystery Plugin",
++  description: "A third-party MCP plugin with no verifiable upstream license.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [],
++  docsUrl: null,
++  license: null,
++  upstreamUrl: "https://github.com/third-party/mystery",
++});
++assert.ok(!unknownAttempt.ok && unknownAttempt.gate?.code === "REJECT_UNKNOWN_LICENSE");
++const vendorAttempt = registerMarketplacePlugin({
++  pluginId: "open-washed",
++  name: "Open Washed",
++  description: "A plugin whose 'upstream' is a marketing page, not a repository.",
++  provider: "vendor",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [],
++  docsUrl: null,
++  license: "MIT",
++  upstreamUrl: "https://vendor.example.com/open-washed",
++});
++assert.ok(!vendorAttempt.ok && vendorAttempt.gate?.code === "REJECT_PROVENANCE");
++
++// 9. Happy path: permissive license + real repo URL is admitted.
++const goodAttempt = registerMarketplacePlugin({
++  pluginId: "permissive-plugin",
++  name: "Permissive Plugin",
++  description: "A third-party MCP plugin under a verified MIT license.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [{ name: "api-key", label: "API key (vault ref)", required: true, secret: true }],
++  docsUrl: null,
++  license: "MIT",
++  upstreamUrl: "https://github.com/third-party/permissive-plugin",
++});
++assert.ok(goodAttempt.ok, "permissive + repo upstream must be admitted");
++if (goodAttempt.ok) {
++  assert.equal(goodAttempt.plugin.trustLevel, "untrusted", "admissions land untrusted");
++  assert.equal(goodAttempt.gate.code, "ACCEPT");
++}
++assert.ok(listMarketplacePlugins().some((p) => p.pluginId === "permissive-plugin"), "admitted plugin appears in the combined catalog view");
++assert.equal(MARKETPLACE_PLUGINS.length, 5, "frozen seed list is never mutated by admissions");
++
++// 10. Admitted plugin is connectable through the SAME governed path.
++const connect = connectPlugin({
++  pluginId: "permissive-plugin",
++  tenantId: "tenant-a",
++  credentialVaultRef: "vault:api-key",
++  endpoint: "https://self-hosted.example.com/mcp",
++});
++assert.ok(connect.ok, "admitted plugin connects through the governed registry");
++
++// 11. Duplicates and bad shapes fail closed.
++const dup = registerMarketplacePlugin({
++  pluginId: "permissive-plugin",
++  name: "Permissive Plugin",
++  description: "Duplicate registration attempt for the same pluginId.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [],
++  docsUrl: null,
++  license: "MIT",
++  upstreamUrl: "https://github.com/third-party/permissive-plugin",
++});
++assert.ok(!dup.ok && dup.error.includes("already registered"));
++const badId = registerMarketplacePlugin({
++  pluginId: "Bad_ID!",
++  name: "Bad Id",
++  description: "A plugin registration with an invalid pluginId shape.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [],
++  docsUrl: null,
++  license: "MIT",
++  upstreamUrl: "https://github.com/owner/repo",
++});
++assert.ok(!badId.ok && badId.error.includes("pluginId must match"));
++const leaky = registerMarketplacePlugin({
++  pluginId: "leaky-spec",
++  name: "Leaky Spec",
++  description: "A registration whose credential label carries a live token shape.",
++  provider: "third-party",
++  endpointTemplate: null,
++  protocol: "streamable-http",
++  credentialFields: [{ name: "token", label: "ghp_AbCdEf123456" }], // gitleaks:allow — detector fixture
++  docsUrl: null,
++  license: "MIT",
++  upstreamUrl: "https://github.com/owner/repo",
++});
++assert.ok(!leaky.ok && leaky.error.includes("specs only"), "credential specs are never live values");
++
++// 12. Test hygiene.
++clearMarketplaceConnections();
++clearMarketplaceRegistry();
++clearFederation();
++assert.equal(listMarketplacePlugins().length, 5);
++
++console.log("license gate tests passed");
+diff --git a/infrastructure/mcp-control-plane/test_marketplace_plugins.ts b/infrastructure/mcp-control-plane/test_marketplace_plugins.ts
+index 8417d6d6..74d75098 100644
+--- a/infrastructure/mcp-control-plane/test_marketplace_plugins.ts
++++ b/infrastructure/mcp-control-plane/test_marketplace_plugins.ts
+@@ -33,6 +33,14 @@ assert.equal(getMarketplacePlugin("notion")?.endpointTemplate, "https://mcp.noti
+ assert.equal(getMarketplacePlugin("telegram")?.endpointTemplate, null);
+ assert.equal(getMarketplacePlugin("web-search")?.endpointTemplate, null);
+ assert.equal(getMarketplacePlugin("google-drive")?.endpointTemplate, null);
++// #1668: license + provenance metadata is pinned per row and honestly null
++// where no upstream repo is verified (gate verdicts: see test_license_gate.ts).
++assert.equal(getMarketplacePlugin("github")?.license, "MIT");
++assert.equal(getMarketplacePlugin("github")?.upstreamUrl, "https://github.com/github/github-mcp-server");
++for (const id of ["telegram", "web-search", "google-drive", "notion"]) {
++  assert.equal(getMarketplacePlugin(id)?.license, null, `${id} has no pinned license (honest null)`);
++  assert.equal(getMarketplacePlugin(id)?.upstreamUrl, null, `${id} has no pinned upstream (honest null)`);
++}
+ 
+ // 2. Plaintext-secret detector (defense in depth at the connect guard).
+ assert.equal(looksLikePlaintextSecret("vault:github-token"), false);

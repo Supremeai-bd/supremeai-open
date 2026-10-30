@@ -1,0 +1,46 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 8339f899..7cda0557 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -479,8 +479,17 @@ def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
+     return [ln for ln in out.stdout.splitlines() if ln.strip()]
+ 
+ 
+-def _open_pr_titles() -> list[str]:
+-    txt = _tower_text("github_list_prs", {"state": "open", "per_page": 50})
++def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
++    # Flight plane pins the OPEN repo and the schema-conformant limit knob.
++    # Two stacked silent defects found live (cycle 23/24, Job 478338): (1) a
++    # repo-less call resolved github-primary's account url = the CORE
++    # satellite (Supremeai-bd/supremeai), so open-repo bridge PRs were never
++    # in the listing at all; (2) the tool schema has no per_page — it was
++    # silently ignored and limit fell back to its default 5 (five newest
++    # rows only). Neither defect raises; classification just degraded to the
++    # age ladder (LANDING_AT_RISK false positives for WOs whose PR was
++    # genuinely in flight).
++    txt = fetch_text("github_list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
+     titles = []
+     for line in txt.splitlines():
+         line = line.strip()
+@@ -815,6 +824,21 @@ def _dead(name, arguments):
+     except Exception as e:  # noqa: BLE001 — wrong failure class is a FAIL
+         cases.append(("ladder transport failure fail-close", False, type(e).__name__))
+ 
++    # flight plane arguments lock (wrong-repo + ignored per_page, both silent)
++    sent = {}
++
++    def _cap(name, arguments):
++        sent["name"], sent["args"] = name, arguments
++        return json.dumps([{"number": 2220, "title": "feat: x (bridge-20261029-y)"}])
++
++    titles = _open_pr_titles(fetch_text=_cap)
++    cases.append(("flight plane pins open repo + schema limit (no per_page)",
++                  sent.get("name") == "github_list_prs"
++                  and sent.get("args", {}).get("repo") == OPEN_REPO
++                  and sent.get("args", {}).get("limit") == 50
++                  and "per_page" not in sent.get("args", {})
++                  and bool(titles), json.dumps(sent.get("args", {}))[:120]))
++
+     # rejected plane (GitHub-side enumeration, #2158)
+     page1 = [{"number": 1000 + i, "title": f"w{i}", "state": "open",
+               "labels": ["bridge:rejected"]} for i in range(100)]

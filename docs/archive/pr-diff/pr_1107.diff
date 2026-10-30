@@ -1,0 +1,47 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index ff549ca9..c78fd1ee 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -733,12 +733,15 @@ async def health_aggregation():
+     5-Node Render Fleet Live Health Aggregator.
+     Probes all 5 Render nodes in parallel and returns green/yellow/red status for Studio circles.
+     """
++    # FIX(health 2026-10-24): stale/localhost defaults replaced. Defaults now point
++    # only at hosts verified live on 2026-10-24 (api-ulw0, mcp-tower); nodes without
++    # a configured URL report "unknown" instead of a meaningless localhost probe.
+     nodes = [
+-        {"id": "api", "name": "API Gateway", "url": os.getenv("RENDER_API_URL", "https://supremeai-api.onrender.com/health")},
+-        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "http://localhost:8001/health")},
+-        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "http://localhost:3771/health")},
+-        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "http://localhost:8002/health")},
+-        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "http://localhost:8003/health")},
++        {"id": "api", "name": "API Gateway", "url": os.getenv("RENDER_API_URL", "https://supremeai-api-ulw0.onrender.com/health")},
++        {"id": "scraper", "name": "Scraper Relay", "url": os.getenv("RENDER_SCRAPER_URL", "")},
++        {"id": "tower", "name": "MCP Control Tower", "url": os.getenv("RENDER_MCP_URL", "https://supremeai-mcp-tower.onrender.com/health")},
++        {"id": "primary", "name": "Primary Core Node", "url": os.getenv("RENDER_PRIMARY_URL", "")},
++        {"id": "worker", "name": "Worker Node", "url": os.getenv("RENDER_WORKER_URL", "")},
+     ]
+ 
+     import httpx
+@@ -752,13 +755,17 @@ def _candidate_urls(raw_url: str) -> list[str]:
+     async def _probe_node(client: httpx.AsyncClient, node: dict) -> dict:
+         start_t = time.time()
+         try:
+-            if node["id"] == "api":
++            # FIX(health 2026-10-24): the old code short-circuited the "api" node to a
++            # hardcoded healthy/5ms response WITHOUT any network request (false green).
++            # Every configured node is now actually probed; unconfigured nodes are
++            # reported honestly as "unknown".
++            if not str(node.get("url") or "").strip():
+                 return {
+                     "id": node["id"],
+                     "name": node["name"],
+-                    "status": "healthy",
+-                    "message": f"{node['name']} online (5ms)",
+-                    "response_time_ms": 5,
++                    "status": "unknown",
++                    "message": f"{node['name']} probe not configured (set RENDER_{node['id'].upper()}_URL)",
++                    "response_time_ms": 0,
+                 }
+ 
+             candidates = _candidate_urls(node["url"])

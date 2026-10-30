@@ -1,0 +1,63 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 01d725a3..25705b59 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -99,4 +99,5 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
+ 
+ - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
++- **14 Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 14 persistent root hubs (#761 CI, #760 Bridge, 12 Domains); all tasks/failures are Sub-Issues.
+ - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 2f997c2b..91d971d9 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -45,7 +45,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U1** | **Scope** | Work strictly inside assigned issue touching files. Zero unrelated refactoring or scope creep. |
+ | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
+ | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
+-| **U4** | **Zero-Duplicate PRs** | Mandatory preflight `gh pr list`. Never open parallel/competing PRs for an issue with an active PR. One issue = at most one PR across the federation. |
++| **U4** | **Zero-Duplicate PRs & 14 Anchor Hub SSOT** | Mandatory preflight `gh pr list`. The public board (`supremeai-open`) maintains strictly **14 persistent parent Anchor Hubs** (#749–#762; CI Incident Hub #761, Bridge Desk #760, 12 Domain Repos). All tasks, pipeline failures, and bridge sync orders attach strictly as **Sub-Issues** inside their respective Anchor Hub. Zero loose root issues permitted. One issue = at most one PR across the federation. |
+ | **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
+ | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
+ | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
+@@ -119,3 +119,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
+ - **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
++- **14 Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 14 persistent root anchor hubs
+diff --git a/docs/FEDERATION_CHARTER.md b/docs/FEDERATION_CHARTER.md
+index b3d3bdb5..e311f3d8 100644
+--- a/docs/FEDERATION_CHARTER.md
++++ b/docs/FEDERATION_CHARTER.md
+@@ -62,6 +62,15 @@ proprietary backlogs and decision registers. All public or cross-federation
+ work routes through `supremeai-open`. The private monorepo is out of this
+ charter's audit scope by design (private plane, §2.3.1 of AGENTS.md).
+ 
++### Rule 4 — The 14 Persistent Anchor Hubs & Sub-Issue Architecture (১৪টি রুট হাব)
++
++The sole public task board maintains strictly **14 persistent parent Anchor Hubs**:
++- `[Federation Hub] 🚨 CI Pipeline Failures & Incident Desk (#761)`: all cross-repo CI breakages, workflow failures, and test crashes attach here.
++- `[Federation Hub] 🌉 Bridge Transit, Orders & Rejections Desk (#760)`: all transit orders, patch distributions, and bridge rejections attach here.
++- 12 Domain Repository Anchor Hubs (#749–#759, #762): all repository-specific features, bugs, and tasks attach here.
++
++All incoming work items, failure alerts, and bridge work orders are ingested strictly as **Sub-Issues** within their assigned Anchor Hub. Loose root issues on `supremeai-open` are strictly prohibited.
++
+ ## 3. Enforcement
+ 
+ ### 3.1 The Guard (automated, this charter's teeth)
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+index 6cf307d5..5c6f4b15 100644
+--- a/tests/test_federation_ci_watchdog.py
++++ b/tests/test_federation_ci_watchdog.py
+@@ -26,8 +26,9 @@
+ 
+ class TestFederationCiWatchdog(unittest.TestCase):
+     def test_federation_repos_count_and_composition(self):
+-        self.assertEqual(len(FEDERATION_REPOS), 11)
++        self.assertEqual(len(FEDERATION_REPOS), 12)
+         expected = [
++            "Supremeai-bd/supremeai-open",
+             "Supremeai-bd/supremeai-command",
+             "Supremeai-bd/supremeai-skills",
+             "Supremeai-bd/supremeai-vscode",

@@ -1,0 +1,55 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo1b.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo1b.md
+new file mode 100644
+index 00000000..e15c6afd
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo1b.md
+@@ -0,0 +1,49 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo1b
++## SupremeAI Studio Frontend "Cosmic" — Addendum to WO1: Top-level App.tsx Federation Shell Tokenization
++
++**Target subsystem:** supremeai-studio (frontend) — `src/App.tsx`
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Depends on:** bridge-20261022-frontend-cosmic-wo1 (#855) — tokens + GlobalHeader unification
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow)
++
++## Context (audit finding, 2026-10-22 — surfaced during post-WO compliance recheck)
++
++`src/App.tsx` renders a federation operations shell (SatelliteMatrix, RunwayVisualizer, ConsensusWidget, SwarmDefenseGauge, EmergencyConsole) but:
++
++1. **Hardcoded legacy styling:** raw hex `bg-[#0d0f12]`, `text-slate-100`, `border-slate-800`, `bg-slate-900/40`, `text-slate-400` — bypasses the entire `--sa-*` token system that WO1 consolidates.
++2. **Two token sources:** `App.tsx` imports `./styles/tokens.css` while `src/index.css` imports `@supremeai/design-tokens/outputs/tokens.css` — duplicate/misaligned token imports create two sources of truth.
++3. **Dead data stubs:** `satellites`, `runway`, `defense` are hardcoded empty arrays (`useState([])`) — the widgets render permanently empty, which violates the honest-state convention (a permanently empty gauge is indistinguishable from a broken one).
++4. This shell bypasses GlobalHeader/GlobalErrorBoundary entirely (own inline `<header>`).
++
++## Scope of this work order
++
++1. **Token migration:** replace every raw hex/slate class with `--sa-*` token classes; remove the `./styles/tokens.css` import in favor of the single canonical token entry already loaded by `index.css`.
++2. **Honest data states:** widgets receive data from the existing federation hooks where available; where a metric has no frontend data source, render an explicit "not reported" state instead of permanently-empty arrays (same honesty rule as WO5's Availability KPI).
++3. **Shell consistency:** route this shell's chrome through the unified GlobalHeader/`GlobalErrorBoundary` pattern where applicable (no second global shell — Rule 8).
++4. **Kill-switch:** `VITE_COSMIC_FEDSHELL` (default true) governs the visual layer only; data bindings identical.
++
++## Out of scope
++
++Widget internals (SatelliteMatrix etc. stay as components), backend endpoints, routing changes, all WO2–WO5 scopes. No new dependencies.
++
++## Acceptance criteria
++
++- [ ] Zero raw hex / slate classes in `App.tsx` (grep-verified); single token import path.
++- [ ] No permanently-empty widget without an explicit honest state.
++- [ ] `npm test` + typecheck green; no visual regression in the user app routes.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** WO1 unified headers and tokens, but this top-level shell is the one remaining surface that both bypasses the token system and duplicates the token import. Every subsequent Cosmic phase would inherit its dual-token ambiguity, so closing it now keeps the token consolidation claim of WO1 honest.
++
++**Alternatives rejected:**
++- *Delete App.tsx outright* — rejected: no-file-delete doctrine; the federation widgets behind it are real components with tests; deprecation/flag path is reversible.
++- *Defer into WO5 (admin polish)* — rejected: this is a token-foundation issue, not admin polish; mixing it would blur single-domain PR discipline (AGENTS.md single-domain rule).
++- *Leave it because it is an internal/ops shell* — rejected: an ops shell showing fake-empty gauges misleads the operator exactly where truth matters most.
++
++## Verification evidence
++
++- Doc-only spec. `App.tsx` read via MCP Tower on 2026-10-22 (raw hex `bg-[#0d0f12]`, slate classes, empty `useState([])` stubs, dual token import vs `src/index.css`).
++- Submission follows AGENTS.md: docs/work-orders/* spec routes to monorepo; bridge/* branch intentionally skips satellite dispatch; implementation PR will use studio/ mirror folder + feat/* branch per landing.yml domain routing.
++- Reflection evidence included (mandatory fields: why, alternatives_rejected).

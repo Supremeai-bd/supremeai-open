@@ -1,0 +1,138 @@
+diff --git a/gateway/main.py b/gateway/main.py
+index a003fdf7..6492002c 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -340,6 +340,7 @@ def create_app(
+     stealth_webhook_fn=None,
+     memory_store=None,
+     capability_router=None,
++    circuit_breaker: Any = None,
+ ) -> FastAPI:
+     """Build the gateway. Every collaborator is injectable for offline tests."""
+     if limiter is None:
+@@ -716,7 +717,9 @@ async def default_stream(endpoint, pl):
+                 },
+             )
+ 
+-        result = await execute_chain(chain, payload, attempt_fn=attempt_fn)
++        result = await execute_chain(
++            chain, payload, attempt_fn=attempt_fn, circuit_breaker=circuit_breaker
++        )
+         cap_name = getattr(request.state, "capability_name", None)
+         alias = getattr(request.state, "capability_alias", None)
+         if cap_name is not None and alias is not None and capability_router is not None:
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+index f0de061a..20aff2af 100644
+--- a/gateway/tests/test_streaming_gateway.py
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -111,6 +111,16 @@ async def gen():
+ 
+ 
+ def make_client(**kw) -> TestClient:
++    # Fresh breaker per client: the default singleton is process-global and
++    # #2765 made execute_chain mutate it (record_failure on every retryable
++    # exhaustion / transport-error attempt), so sharing it across tests let
++    # one test's exhaustion trip circuits for every later test (rate-limit
++    # assertions then saw 502s instead of 200s). Injected breakers keep each
++    # test's failure accounting local, matching create_app's injectable-
++    # collaborators contract.
++    from gateway.circuit_breaker import CircuitBreaker
++
++    kw.setdefault("circuit_breaker", CircuitBreaker())
+     return TestClient(create_app(**kw))
+ 
+ 
+@@ -307,7 +317,15 @@ def test_failover_on_provider_429_then_success():
+     )
+     assert r.status_code == 200
+     assert r.json()["model"] == "openai/gpt-4o-mini"
+-    assert calls == ["groq/llama-3.1-8b-instant", "openai/gpt-4o-mini"]
++    # #2082/#2752 contract: a retryable 429 is retried on the SAME endpoint
++    # up to max_retries (default 2) times with backoff BEFORE failing over,
++    # so groq is attempted 3x total, then the chain fails over to openai.
++    assert calls == [
++        "groq/llama-3.1-8b-instant",
++        "groq/llama-3.1-8b-instant",
++        "groq/llama-3.1-8b-instant",
++        "openai/gpt-4o-mini",
++    ]
+ 
+ 
+ def test_exhaustion_returns_502_with_redacted_ledger():
+@@ -338,7 +356,9 @@ def test_exhaustion_returns_502_with_redacted_ledger():
+     payload = r.json()
+     assert payload["error"]["code"] == "provider_chain_exhausted"
+     ledger = payload["providers_tried"]
+-    assert [e["status"] for e in ledger] == [503, 429]
++    # #2082/#2752 contract: each retryable endpoint is attempted max_retries+1
++    # times (default 3) before failover, and every attempt is ledgered.
++    assert [e["status"] for e in ledger] == [503, 503, 503, 429, 429, 429]
+     # redaction: no credential-shaped fields survive
+     for entry in ledger:
+         assert set(entry) <= {
+@@ -365,7 +385,10 @@ async def flaky(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+         json={"messages": [{"role": "user", "content": "hi"}]},
+     )
+     assert r.status_code == 502
+-    assert len(r.json()["providers_tried"]) == 2
++    # #2082/#2752 contract: transport errors are retried on the SAME endpoint
++    # up to max_retries times before failover, each attempt ledgered, so the
++    # 2-endpoint chain yields 6 ledgered attempts.
++    assert len(r.json()["providers_tried"]) == 6
+     assert all(e["outcome"] == "transport_error" for e in r.json()["providers_tried"])
+ 
+ 
+diff --git a/tests/test_gateway_foundation.py b/tests/test_gateway_foundation.py
+index 1bd41864..25809dde 100644
+--- a/tests/test_gateway_foundation.py
++++ b/tests/test_gateway_foundation.py
+@@ -28,6 +28,7 @@
+     GatewayConfig,
+     parse_routing_policy,
+ )
++from gateway.circuit_breaker import CircuitBreaker
+ from gateway.memory import QdrantMemoryStore
+ from gateway.provider_chain import (
+     AttemptResult,
+@@ -169,7 +170,12 @@ async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+             )
+ 
+         res = asyncio.run(
+-            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
++            execute_chain(
++                (ep1, ep2),
++                b'{"messages":[]}',
++                attempt_fn=fake_attempt,
++                circuit_breaker=CircuitBreaker(),
++            )
+         )
+         self.assertEqual(res.status, 200)
+         self.assertEqual(res.endpoint.provider, "groq")
+@@ -196,7 +202,12 @@ async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+             )
+ 
+         res = asyncio.run(
+-            execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
++            execute_chain(
++                (ep1, ep2),
++                b'{"messages":[]}',
++                attempt_fn=fake_attempt,
++                circuit_breaker=CircuitBreaker(),
++            )
+         )
+         self.assertEqual(res.status, 200)
+         self.assertEqual(res.endpoint.provider, "gemini")
+@@ -216,7 +227,12 @@ async def fake_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+ 
+         with self.assertRaises(ProviderChainExhausted) as ctx:
+             asyncio.run(
+-                execute_chain((ep1, ep2), b'{"messages":[]}', attempt_fn=fake_attempt)
++                execute_chain(
++                    (ep1, ep2),
++                    b'{"messages":[]}',
++                    attempt_fn=fake_attempt,
++                    circuit_breaker=CircuitBreaker(),
++                )
+             )
+ 
+         self.assertEqual(len(ctx.exception.ledger), 2)

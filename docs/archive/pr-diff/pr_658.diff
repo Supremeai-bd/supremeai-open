@@ -1,0 +1,85 @@
+diff --git a/scripts/ci/pr_improvement_regression_guard.py b/scripts/ci/pr_improvement_regression_guard.py
+index def7734d..0afadf7f 100644
+--- a/scripts/ci/pr_improvement_regression_guard.py
++++ b/scripts/ci/pr_improvement_regression_guard.py
+@@ -76,7 +76,7 @@ def is_dependency_manifest(path: str) -> bool:
+ 
+ def is_hard_protected(path: str) -> bool:
+     name = path.rsplit("/", 1)[-1]
+-    if path.startswith(".github/") or path == ".env" or name == ".env":
++    if path.startswith(".github/") or name == ".env" or name.startswith(".env"):
+         return True
+     for pat in HARD_PROTECTED:
+         if pat.startswith("*") and name.endswith(pat[1:]):
+@@ -123,32 +123,6 @@ def _strip_semantics(line: str) -> Optional[str]:
+     return s
+ 
+ 
+-def _semantic_units(changed: Dict[str, List[str]]) -> Tuple[List[str], List[str]]:
+-    """Classify one file's diff into semantic and churn unit pairs."""
+-    semantic: List[str] = []
+-    removed = [_strip_semantics(x) for x in changed.get("removed", [])]
+-    added = [_strip_semantics(x) for x in changed.get("added", [])]
+-    rem_alive = [x for x in removed if x is not None]
+-    add_alive = [x for x in added if x is not None]
+-    # pair pure whitespace-only and rename units
+-    used = [False] * len(rem_alive)
+-    for a in add_alive:
+-        for i, r in enumerate(rem_alive):
+-            if used[i]:
+-                continue
+-            if r == a or r.strip() == a.strip():
+-                used[i] = True  # whitespace-only move
+-                break
+-            if _is_pure_rename(r, a):
+-                used[i] = True  # rename unit
+-                break
+-    unmatched_removed = [r for i, r in enumerate(rem_alive) if not used[i]]
+-    unmatched_added = [a for a in add_alive]
+-    semantic.extend(unmatched_removed)
+-    semantic.extend(unmatched_added)
+-    return semantic, []
+-
+-
+ def _assertions_added(path: str, added: List[str]) -> int:
+     if not is_test_file(path):
+         return 0
+@@ -309,6 +283,9 @@ def evaluate(request: dict) -> dict:
+     migration_notes = request.get("migration_notes") or []
+     if not isinstance(migration_notes, list):
+         raise ValueError("migration_notes must be a list")
++    fixed_claim = request.get("fixed_failing_tests")
++    if fixed_claim is not None and not isinstance(fixed_claim, list):
++        raise ValueError("fixed_failing_tests must be a list of test ids")
+     allow_new = request.get("allow_new_dependencies") is True
+ 
+     violations: List[dict] = []
+diff --git a/scripts/ci/satellite_board_guard.py b/scripts/ci/satellite_board_guard.py
+index 2df1df21..63190a59 100644
+--- a/scripts/ci/satellite_board_guard.py
++++ b/scripts/ci/satellite_board_guard.py
+@@ -187,7 +187,12 @@ def audit_satellite(
+         return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
+     except UnreachableError as exc:
+         return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
+-    issues, prs, details = classify_items(items if isinstance(items, list) else [])
++    if not isinstance(items, list):
++        return SatelliteReport(
++            repo, VERDICT_UNREACHABLE,
++            reason="malformed payload: expected a JSON list of open items, got "
++                   f"{type(items).__name__}")
++    issues, prs, details = classify_items(items)
+     if issues == 0 and prs == 0:
+         return SatelliteReport(repo, VERDICT_CLEAN)
+     return SatelliteReport(repo, VERDICT_VIOLATION, issues, prs, details)
+@@ -206,7 +211,9 @@ def decide_exit_code(reports: list[SatelliteReport]) -> int:
+     """Map the audit matrix onto the documented exit codes."""
+     if any(r.verdict == VERDICT_VIOLATION for r in reports):
+         return 1
+-    if reports and all(r.verdict == VERDICT_UNREACHABLE for r in reports):
++    if any(r.verdict == VERDICT_UNREACHABLE for r in reports):
++        # Degraded visibility is itself a failure: partial blindness (some
++        # satellites unreachable, e.g. API rate-limit) must not read as pass.
+         return 2
+     return 0
+ 

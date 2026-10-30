@@ -1,0 +1,26 @@
+diff --git a/docs/bridge/bridge-20261030-2792-watchdog-live-run-r1.md b/docs/bridge/bridge-20261030-2792-watchdog-live-run-r1.md
+index 1d1c33b9..c75f8f73 100644
+--- a/docs/bridge/bridge-20261030-2792-watchdog-live-run-r1.md
++++ b/docs/bridge/bridge-20261030-2792-watchdog-live-run-r1.md
+@@ -37,7 +37,7 @@ Remaining disposition (close-as-recovered vs keep-open) is the filer/admin's; no
+ 
+ - Zero-credential tower reads only (`github.workflow_runs` explicit repo; watchdog does its own POST). No writes anywhere; claim released after filing (`bridge_work_release`).
+ - `continuous_agent_loop --verify-only`: 8/8 PASS at cycle start and pre-submit; `CONTRACT_VERSION=agent-loop-contract/1` final line.
+-- `radar_index_freshness_guard --check`: exit 0 (index untouched; docs-only receipt).
++- `radar_index_freshness_guard --check`: **red on live main at read time (exit 1)** — a PRE-EXISTING citation-ghost from a landed sibling receipt (a bare pointer token in `docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md` prose, landed #3183), not from this receipt's two files (issue-number citations only). De-tokenized with an honest re-line in fixup `bridge-20261030-radar-ghost-detokenize-fixup-r1`; guard green re-verified pre-submit there. Index untouched by this receipt. *(Correction note, fixup r1: an earlier revision of this line read "exit 0" — a pipeline-swallowed exit code at cycle time; the fail-loud reading above is the honest one and supersedes it.)*
+ 
+ ## Reflection
+ 
+diff --git a/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md b/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md
+index c856e549..57a4569b 100644
+--- a/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md
++++ b/docs/bridge/bridge-20261030-r2395-idempotent-noop-glm21.md
+@@ -28,7 +28,7 @@ Confirms #3158's evidence from an independent identity; adds the envelope-shape
+ 
+ ## 3. Idempotency decision (Anti-Stampede Invariant 5)
+ 
+-The locally-executed cell edit was **discarded** (working tree restored to e0c742b byte-identical; `radar_index_freshness_guard.py --check` green: pointer R81, invariants D+E OK). **Zero duplicate PR filed** — this receipt is the only artifact. Per the #3153 idempotent-noop pattern, the race is recorded instead of re-landing the cell.
++The locally-executed cell edit was **discarded** (working tree restored to e0c742b byte-identical; `radar_index_freshness_guard.py --check` green: the then-advertised next-free pointer, invariants D+E OK). **Zero duplicate PR filed** — this receipt is the only artifact. Per the #3153 idempotent-noop pattern, the race is recorded instead of re-landing the cell. *(Fixup r1, 2026-10-30: the pointer's bare token was de-tokenized from this sentence — a landed prose citation of the advertised next-free number turns the advertisement dirty per the freeness predicate and trips the freshness guard's citation-ghost ratchet; mechanism text keeps the meaning without the token.)*
+ 
+ - `radar_index_freshness_guard.py --check` → green pre-edit and post-restore.
+ - `tests/test_radar_index_freshness_guard.py` → 28 passed (baseline sanity on the guard's own suite).

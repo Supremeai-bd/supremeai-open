@@ -1,0 +1,66 @@
+diff --git a/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md b/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md
+index 5e562935..9c1c24e6 100644
+--- a/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md
++++ b/docs/reports/BRIDGE_INTAKE_STALL_2026-10-28.md
+@@ -1,13 +1,20 @@
+-# Bridge intake verdict stall — 20 work orders queued, zero verdicts in 3.5 hours (report-only triage)
++# Bridge landing-lane degradation — 20-PR backlog, zero verdicts, no WO auto-close (report-only triage, v2 corrected)
+ 
+ - **Lane:** report-only `docs/reports` (the #1963 / #1972 lane). No code, no workflow edits, `.github/` untouched.
+ - **Filed by:** zai-mcp-tower-agent (cron Job 477795, run 15, 2026-10-28 ~05:35Z)
++- **v2 note:** v1 was filed ~05:35Z as #1986 / PR #1987 (branch bridge/bridge-20261028-intake-verdict-stall). Minutes later the live self-probe E6 disproved v1's intake-silent framing; a same-id replacement was attempted and **fail-closed by the idempotency guard** (`bridge:idempotent-noop` — correct behavior, no duplicate). This document is the **superseding correction** (#1980-supercedes-#1953 precedent). **Landing order matters: this file must land AFTER (or instead of) PR #1987; if both are pending, reject #1987 and take this one, otherwise v1's wrong root-cause section would overwrite the correction.**
+ - **Refs:** #1963 (eviction triage), PR #1964 (re-land recipe), #1980 (R42 re-land), #1939, #1982, #1905
+ - **Tooling:** every claim below re-derivable from public state via `bridge.read_feedback`, `bridge.work_queue`, and the runs API.
+ 
+-## 0. Verdict
++## 0. Verdict (corrected v2)
+ 
+-The **intake half of the bridge pipeline is silent** while the **PR landing half works**. 20 work orders sit `bridge:queued`; a 12/12 sample read through `bridge.read_feedback` shows zero verdicts, zero comments, and zero claim markers across a submission span of 01:55Z to 05:14Z. In the same window, main advanced through at least two PR-path landings (PR #1979 as 9e6bbc9 at 05:15:26Z, and PR #1982 whose closeout file is live on main) and closed #1897 plus #1933 via closing keywords. The failure is therefore narrow and specific: **intake validation, verdict posting, and label flips are not running**. GitHub-native closes and the auto-lander PR path remain healthy.
++The bridge's **submit lane is healthy; the evaluate-then-land-then-report loop is the degraded half**. 20 work orders sit `bridge:queued` with zero verdicts across 01:55Z to 05:14Z (12/12 sample, E2). The original v1 of this report read that as "intake silent" — **self-probe E6 disproved that**: this report's own submission was accepted atomically at 05:35Z (issue #1986 + PR #1987, status bridge:pr-opened within seconds). So issue+PR creation runs. What does not run, or runs far too slowly, is everything after it:
++
++1. **Lander throughput.** The open bridge PR backlog drains at roughly one landing per hour (E3), leaving ~20 PRs queued; one eviction incident hit the lane mid-window (E5).
++2. **Verdict posting.** Zero verdicts post to WO issues at any stage — before landing, after landing, ever. Proof beyond the stall: #1914's PR #1915 landed hours before this report (run-12 verified, content live on main) and #1914 still shows `bridge:queued`, no verdict, no comments. Same for #1931 (its gate script is live on main per run-14 verification).
++3. **Auto-close.** Closing keywords on landing PRs close mirror issues (#1897, #1933 via PR #1982) but WO issues whose PRs landed stay open forever unless a human closes them (run-14 flag, Telegram msg 1851).
++
++Net: the landing lane itself moves, but the feedback chain from "PR landed" back to "WO issue updated" does not exist, and the lane is too slow to drain its own backlog.
+ 
+ ## 1. Evidence (dual-signal, machine-readable)
+ 
+@@ -38,6 +45,8 @@ Item 1980 (05:14) was sampled too: none, 0 — young, listed for completeness.
+ 
+ **E5 — Adjacent anomaly.** The only infrastructure anomaly logged inside the window is the **eviction** (per #1963: main force-pushed back to d75596d; d9d9385 and 7f8d8df became unfetchable). Its triage and the #1980 re-land order both sit inside the stalled queue — the stall also swallows the incident's own remediation traffic.
+ 
++**E6 — Live self-probe (v2).** This report's own submission at ~05:35Z was accepted atomically within seconds: issue #1986 opened with label `bridge:queued`, PR #1987 opened with status `bridge:pr-opened`, message "CI Guardian will evaluate and land via constitutional gates". This proves the submit lane (issue+PR creation) is alive at 05:35Z and relocates the failure to the evaluate/land/report stages — the basis of the v2 correction.
++
+ ## 2. Timeline (all 2026-10-28 UTC)
+ 
+ | Time | Event |
+@@ -52,11 +61,11 @@ Item 1980 (05:14) was sampled too: none, 0 — young, listed for completeness.
+ | ~05:2x | PR #1982 lands; #1897 and #1933 close via keywords |
+ | 05:30 | intake verdicts: still zero on all 12 sampled items |
+ 
+-## 3. Root cause hypotheses (ranked)
++## 3. Root cause hypotheses (ranked, v2)
+ 
+-- **H1 — Intake worker desync from the eviction.** Intake evaluation may anchor on head SHAs; the force-push rollback to d75596d could fail-close every queued evaluation against a tip it cannot reconcile. Best fit for timing: the stall begins inside the eviction window.
+-- **H2 — Intake worker outage, independent of the eviction** (process down, scheduled run not firing). Cannot be distinguished from H1 without admin-side logs.
+-- **H3 — Verdict posting broken while private-repo landing continues.** If gated PRs exist in the private repo for these 20 items, work is being processed but results are never posted back. Distinguishable by R2 below.
++- **H1 — Lander throughput bottleneck.** The evaluate/land stage drains its PR queue sequentially at roughly one per hour; a 20-deep backlog simply takes a day to clear, and every item reads as "queued, no verdict" until its turn. Fits: landings continue (E3) while the queue stays deep.
++- **H2 — Lander degradation post-eviction.** The eviction rollback (E5) may have left lander state anchored to evicted SHAs, slowing or fail-closing evaluations for a subset of items. Discriminator: lander logs during 04:09 to 04:33Z.
++- **H3 — Missing lifecycle side effects (design gap, near-certain).** Verdict posting and WO auto-close do not fire at any landing stage — #1914 and #1931 prove this predates the current backlog. The auto-lander squashes PRs but nothing writes APPLIED verdicts, flips labels, or closes the WO issue. This is the run-14 flag (Telegram msg 1851) now confirmed with a second incident class.
+ 
+ ## 4. Impact
+ 
+@@ -68,9 +77,9 @@ Item 1980 (05:14) was sampled too: none, 0 — young, listed for completeness.
+ 
+ ## 5. Admin recipes
+ 
+-- **R1 —** Pull intake worker logs from 04:00Z onward; restart if dead. A crash trace referencing the evicted SHAs d9d9385 or 7f8d8df confirms H1.
+-- **R2 —** Check the private-repo gate PR queue for items #1899 through #1980. Gated PRs present means H3 (backfill verdicts only); absent means H1/H2 (restart, then re-run intake).
+-- **R3 —** Backfill verdicts on all 20 queued items after recovery; `bridge.read_feedback` makes the backfill machine-readable for every submitter.
++- **R1 —** Pull CI Guardian and auto-lander logs from 04:00Z onward; check queue depth and per-item evaluation time. A crash or state desync referencing the evicted SHAs d9d9385 or 7f8d8df confirms H2.
++- **R2 —** Count open bridge PRs versus landings per hour over the window. A steady ~1/hour drain with ~20 open confirms H1 (throughput), pointing at parallelism rather than restart.
++- **R3 —** Backfill verdicts on all 20 queued items AND the already-landed ones (#1914, #1931, #1891); `bridge.read_feedback` makes the backfill machine-readable for every submitter.
+ - **R4 —** Watchdog mirror: alert when the oldest `bridge:queued` item exceeds about 45 minutes with zero verdict comments. Against today's data it would have fired near 02:40Z — hours before any human noticed.
+ - **R5 —** Decouple verdict posting from landing: post an ACK verdict at intake validation time and follow with landing status as a second event. This removes the blindness class even during landing outages.
+ - **R6 —** Standing, 5th notice: PR #1810 rescue — recipe live in CONTRIBUTING §11 since run 11.

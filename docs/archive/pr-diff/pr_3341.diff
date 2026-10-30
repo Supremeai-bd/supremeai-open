@@ -1,0 +1,270 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 29ae7880..7c5ac198 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -1051,6 +1051,7 @@ jobs:
+           GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+         run: |
+           python scripts/agents/pr_lifecycle_guard.py --all --apply || true
++          python scripts/ci/bridge_landing_watchdog.py --apply || true
+ 
+       # AGENTS.md ┬º10 ΓÇö "A job that runs but produces no expected result
+       # is actionable when evidence confirms itΓÇª No-actionable-finding must be
+diff --git a/scripts/agents/pr_lifecycle_guard.py b/scripts/agents/pr_lifecycle_guard.py
+index f8acce35..68f32f1f 100644
+--- a/scripts/agents/pr_lifecycle_guard.py
++++ b/scripts/agents/pr_lifecycle_guard.py
+@@ -369,34 +369,23 @@ def guard_lifecycle(api: Callable, apply: bool, report: GuardReport) -> None:
+ SENTRY_PASS_RE = re.compile(r"^(?:guard\([^)]*\):\s*(?:provider\s+)?sentry\s+pass|sentry:)", re.IGNORECASE)
+ 
+ 
+-def is_historical_sentry(title: str, created_at_iso: str, now: datetime | None = None) -> bool:
+-    """αººαº¿ αªÿαªúαºìαªƒαª╛αª░ αª¼αºçαª╢αª┐ αª¬αºüαª░αºïαª¿αºï αªÉαªñαª┐αª╣αª╛αª╕αª┐αªò sentry pass αª╢αª¿αª╛αªòαºìαªñαªòαª░αªúαÑñ"""
+-    if not SENTRY_PASS_RE.search(title):
+-        return False
+-    if not created_at_iso:
+-        return False
+-    now = now or datetime.now(timezone.utc)
+-    try:
+-        created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
+-        return (now - created) > timedelta(hours=12)
+-    except Exception:
+-        return False
+-
+-
+-def is_completed_receipt(title: str, labels: list[str], created_at_iso: str, now: datetime | None = None) -> bool:
+-    """αº¼ αªÿαªúαºìαªƒαª╛αª░ αª¼αºçαª╢αª┐ αª¬αºüαª░αºïαª¿αºï αª╕αª«αºìαª¬αª¿αºìαª¿ αª╣αªôαºƒαª╛ bridge:receipt/αªôαª»αª╝αª╛αª░αºìαªòαª▓αªù αª╢αª¿αª╛αªòαºìαªñαªòαª░αªúαÑñ"""
+-    if "anchor-hub" in labels:
+-        return False
+-    is_receipt_label = "bridge:receipt" in labels or "report" in labels
+-    is_wo_title = "Bridge Work Order" in title
+-    if is_receipt_label and is_wo_title:
+-        now = now or datetime.now(timezone.utc)
+-        try:
+-            created = datetime.fromisoformat(created_at_iso.replace("Z", "+00:00"))
+-            return (now - created) > timedelta(hours=6)
+-        except Exception:
+-            return False
+-    return False
++def find_superseded_sentry_passes(issues: list[dict]) -> list[tuple[int, int]]:
++    """αªçαª╕αºìαª»αºü αª¼αºïαª░αºìαªíαºçαª░ αª¬αºüαª░αª╛αªñαª¿ superseded sentry pass αª╢αª¿αª╛αªòαºìαªñαªòαª░αªúαÑñ
++    αªÅαªòαªƒαª┐ αª╕αºçαª¿αºìαªƒαºìαª░αª┐ αª¬αª╛αª╕ αªòαºçαª¼αª▓ αªñαªûαª¿αªç superseded αªùαªúαºìαª» αª╣αª¼αºç αª»αªªαª┐ αª¼αºïαª░αºìαªíαºç αªñαºüαª▓αª¿αª╛αª«αºéαª▓αªò αª¿αªñαºüαª¿
++    (αªëαªÜαºìαªÜαªñαª░ αª╕αªéαªûαºìαª»αª╛αª»αºüαªòαºìαªñ) αªòαºïαª¿αºï αª╕αºçαª¿αºìαªƒαºìαª░αª┐ αª¬αª╛αª╕ αªôαª¬αºçαª¿ αªÑαª╛αªòαºçαÑñ αªòαºïαª¿αºï αªàαª¿αºìαªº αª╕αª«αª»αª╝ αª¼αª╛ TTL-αª¡αª┐αªñαºìαªñαª┐αªò
++    αªòαºìαª▓αºïαª£αª┐αªé αª¿αª»αª╝; αª¬αºìαª░αª«αª╛αªúαª¡αª┐αªñαºìαªñαª┐αªò (evidence-based) αª¬αºìαª░αªñαª┐αª╕αºìαªÑαª╛αª¬αª¿αÑñ
++    """
++    sentry_rows: list[int] = []
++    for iss in issues:
++        title = iss.get("title", "")
++        if SENTRY_PASS_RE.search(title):
++            num = iss.get("number")
++            if isinstance(num, int):
++                sentry_rows.append(num)
++    if not sentry_rows:
++        return []
++    newest = max(sentry_rows)
++    return [(num, newest) for num in sentry_rows if num < newest]
+ 
+ 
+ def find_duplicate_issues(issues: list[dict]) -> list[tuple[int, int]]:
+@@ -421,9 +410,9 @@ def find_duplicate_issues(issues: list[dict]) -> list[tuple[int, int]]:
+ 
+ def clean_board_issues(api: Callable, apply: bool, report: GuardReport) -> None:
+     """αª¼αºïαª░αºìαªíαºçαª░ αªàαª¬αºìαª░αºƒαºïαª£αª¿αºÇαºƒ/αªàαª¬αºìαª░αª╛αª╕αªÖαºìαªùαª┐αªò Issue αª¬αª░αª┐αª╖αºìαªòαª╛αª░:
+-    (αºº) αººαº¿ αªÿαªúαºìαªƒαª╛αª░ αª¼αºçαª╢αª┐ αª¬αºüαª░αºïαª¿αºï αªÉαªñαª┐αª╣αª╛αª╕αª┐αªò sentry pass αª╕αºìαª¿αºìαª»αª╛αª¬αª╢αªƒ αªòαºìαª▓αºïαª£αÑñ
+-    (αº¿) αº¼ αªÿαªúαºìαªƒαª╛αª░ αª¼αºçαª╢αª┐ αª¬αºüαª░αºïαª¿αºï αª╕αª«αºìαª¬αª¿αºìαª¿ αª╣αªôαºƒαª╛ bridge:receipt/αªôαª»αª╝αª╛αª░αºìαªòαª▓αªù αªòαºìαª▓αºïαª£αÑñ
+-    (αº⌐) αª╣αºüαª¼αª╣αºü αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒ Issue αª╢αª¿αª╛αªòαºìαªñ αªô αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒαªƒαª┐ αªòαºìαª▓αºïαª£αÑñ
++    (αºº) αª¬αºìαª░αª«αª╛αªúαª¡αª┐αªñαºìαªñαª┐αªò αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒ Issue αª╢αª¿αª╛αªòαºìαªñ αªô αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒαªƒαª┐ αªòαºìαª▓αºïαª£αÑñ
++    (αº¿) αª¬αºüαª░αª╛αªñαª¿ superseded sentry pass αªòαºìαª▓αºïαª£ (αª»αªûαª¿ αª¼αºïαª░αºìαªíαºç αª¿αªñαºüαª¿ αª╕αºçαª¿αºìαªƒαºìαª░αª┐ αª¬αª╛αª╕ αª¼αª┐αªªαºìαª»αª«αª╛αª¿ αªÑαª╛αªòαºç)αÑñ
++    * αª¿αºïαªƒ: αªòαºïαª¿αºï αªàαª¿αºìαªº TTL αª¼αª╛ αª╕αª«αºƒ-αª¡αª┐αªñαºìαªñαª┐αªò αªòαºìαª▓αºïαª£αª┐αªé αª¿αºçαªç; αªòαºçαª¼αª▓ αª¬αºìαª░αª«αª╛αªúαª¡αª┐αªñαºìαªñαª┐αªò αª╕αª«αª╛αªºαª╛αª¿αÑñ
+     """
+     issues = api(f"repos/{REPO}/issues?state=open&per_page=100") or []
+     if isinstance(issues, dict):
+@@ -442,40 +431,17 @@ def clean_board_issues(api: Callable, apply: bool, report: GuardReport) -> None:
+         api(f"repos/{REPO}/issues/{dup_num}", method="PATCH", payload={"state": "closed"})
+         report.add(GuardAction(dup_num, "duplicate_issue_close", detail, applied=True))
+ 
+-    now = datetime.now(timezone.utc)
+-    for iss in issues:
+-        num = iss.get("number")
+-        if "pull_request" in iss:
+-            continue  # PR αª¼αª╛αªª
+-        labels = [l.get("name") if isinstance(l, dict) else l for l in iss.get("labels", [])]
+-        if "anchor-hub" in labels:
+-            continue
+-        title = iss.get("title", "")
+-        created_at_iso = iss.get("created_at", "")
+-
+-        # αº¿. αªÉαªñαª┐αª╣αª╛αª╕αª┐αªò sentry pass αªòαºìαª▓αºïαª£
+-        if is_historical_sentry(title, created_at_iso, now=now):
+-            detail = "historical sentry pass expired (>12h)"
+-            if not apply:
+-                report.add(GuardAction(num, "sentry_pass_close", detail + " (dry-run)"))
+-                continue
+-            body = "<!-- janitor:auto-close:sentry-snapshot --> Closed: historical sentry health pass snapshot has expired."
+-            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
+-            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
+-            report.add(GuardAction(num, "sentry_pass_close", detail, applied=True))
+-            continue
+-
+-        # αº⌐. αª╕αª«αºìαª¬αª¿αºìαª¿ αª╣αªôαºƒαª╛ bridge receipt αªòαºìαª▓αºïαª£
+-        if is_completed_receipt(title, labels, created_at_iso, now=now):
+-            detail = "completed bridge receipt (>6h)"
+-            if not apply:
+-                report.add(GuardAction(num, "receipt_close", detail + " (dry-run)"))
+-                continue
+-            body = "<!-- janitor:auto-close:receipt --> Closed: completed run/worklog receipt."
+-            api(f"repos/{REPO}/issues/{num}/comments", method="POST", payload={"body": body})
+-            api(f"repos/{REPO}/issues/{num}", method="PATCH", payload={"state": "closed"})
+-            report.add(GuardAction(num, "receipt_close", detail, applied=True))
++    # αº¿. αª¬αºüαª░αª╛αªñαª¿ superseded sentry pass αªòαºìαª▓αºïαª£ (αª¿αªñαºüαª¿ sentry pass-αªÅαª░ αª¬αºìαª░αª«αª╛αªúαºçαª░ αª¡αª┐αªñαºìαªñαª┐αªñαºç)
++    superseded = find_superseded_sentry_passes(issues)
++    for old_num, newest_num in superseded:
++        detail = f"superseded by newer sentry pass #{newest_num}"
++        if not apply:
++            report.add(GuardAction(old_num, "sentry_pass_superseded", detail + " (dry-run)"))
+             continue
++        body = f"<!-- janitor:auto-close:superseded --> Closed: superseded by newer platform sentry pass #{newest_num}."
++        api(f"repos/{REPO}/issues/{old_num}/comments", method="POST", payload={"body": body})
++        api(f"repos/{REPO}/issues/{old_num}", method="PATCH", payload={"state": "closed"})
++        report.add(GuardAction(old_num, "sentry_pass_superseded", detail, applied=True))
+ 
+ 
+ # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ CLI ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 43238453..7ba0775f 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -1151,6 +1151,8 @@ def main(argv: list[str] | None = None) -> int:
+                    help=f"age past which an unmatched WO flags (default {DEFAULT_AT_RISK_HOURS:g}h)")
+     p.add_argument("--strict", action="store_true",
+                    help="exit 1 on at-risk/aging findings (report-only default)")
++    p.add_argument("--apply", action="store_true",
++                   help="auto-close work orders that are MERGED_ON_MAIN or FALSE_REJECTION")
+     args = p.parse_args(argv)
+ 
+     if args.self_test:
+@@ -1247,6 +1249,26 @@ def main(argv: list[str] | None = None) -> int:
+         print(f"NEVER-TOUCHED SIGNATURE: {len(untouched)} landed WOs untouched since creation ΓÇö "
+               "close-on-merge flap fingerprint (#2401/#2430 class), the reconciler's "
+               "exact worklist, report-only.")
++
++    if args.apply:
++        to_close = [v for v in verdicts if v["verdict"] in ("MERGED_ON_MAIN", "FALSE_REJECTION")]
++        print(f"APPLY: Auto-closing {len(to_close)} landed / false-rejected work orders...")
++        for item in to_close:
++            num = item.get("number")
++            evidence = item.get("evidence", "")
++            if not num:
++                continue
++            comment = f"<!-- watchdog:auto-close --> Closed: work order deliverable landed on main ({evidence[:120]})."
++            try:
++                subprocess.run(
++                    ["gh", "issue", "close", str(num), "--comment", comment],
++                    capture_output=True,
++                    text=True,
++                    check=False,
++                )
++                print(f"  [OK] Auto-closed #{num}")
++            except Exception as err:
++                print(f"  [WARN] Failed to close #{num}: {err}")
+     risky = [v for v in verdicts
+              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
+              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]
+diff --git a/scripts/ci/issue_template_guard.py b/scripts/ci/issue_template_guard.py
+index d4b499c7..3f37f18d 100644
+--- a/scripts/ci/issue_template_guard.py
++++ b/scripts/ci/issue_template_guard.py
+@@ -44,6 +44,11 @@
+ )
+ MIN_BODY_CHARS = 50
+ 
++ROUTINE_GREEN_SENTRY = re.compile(
++    r"^(?:\[P[0-3]\]\s*)?(?:guard\([^)]*\):\s*(?:provider\s+)?sentry\s+pass|sentry:).*(?:all[- ]green|[0-9]+/[0-9]+\s+alive)",
++    re.IGNORECASE,
++)
++
+ PLACEHOLDER_TITLES = {
+     "test",
+     "tests",
+@@ -155,6 +160,11 @@ def validate_issue(payload: dict) -> dict:
+     ):
+         reasons.append(f"placeholder title: {stripped!r}")
+ 
++    if ROUTINE_GREEN_SENTRY.search(stripped):
++        reasons.append(
++            "routine green sentry telemetry passes must not open new issues "
++            "(record routine success in run worklogs or memory plane)"
++        )
+     if len(body) < MIN_BODY_CHARS:
+         reasons.append(f"body too short ({len(body)} < {MIN_BODY_CHARS} chars)")
+     elif not SECTION_MARKER.search(body):
+@@ -227,6 +237,9 @@ def _self_test() -> int:
+         {**good, "body": "task contract: deliver the guard plus offline self-tests."}
+     )
+     assert v4["verdict"] == "pass", v4
++    # Routine green sentry rejected
++    sentry_rej = validate_issue({**good, "title": "[P2] guard(platform): sentry pass 12:00Z ΓÇö 7/8 alive"})
++    assert sentry_rej["verdict"] == "reject" and any("routine green sentry" in r for r in sentry_rej["reasons"]), sentry_rej
+     print("self-test OK: issue_template_guard")
+     return 0
+ 
+diff --git a/tests/test_board_issue_janitor.py b/tests/test_board_issue_janitor.py
+index 7e4758de..04cfd04a 100644
+--- a/tests/test_board_issue_janitor.py
++++ b/tests/test_board_issue_janitor.py
+@@ -1,24 +1,34 @@
+ import unittest
+-from datetime import datetime, timezone, timedelta
+ from scripts.agents.pr_lifecycle_guard import (
+-    is_historical_sentry,
+-    is_completed_receipt,
++    find_superseded_sentry_passes,
+     find_duplicate_issues,
+ )
+ 
++
+ class TestBoardIssueJanitor(unittest.TestCase):
+-    def test_sentry_pass_older_than_12h(self):
+-        old_time = (datetime.now(timezone.utc) - timedelta(hours=14)).isoformat()
+-        recent_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+-        
+-        self.assertTrue(is_historical_sentry("guard(platform): sentry pass 22:44Z ΓÇö 7/8 alive", old_time))
+-        self.assertFalse(is_historical_sentry("guard(platform): sentry pass 22:44Z ΓÇö 7/8 alive", recent_time))
+-        self.assertFalse(is_historical_sentry("fix: something else", old_time))
++    def test_superseded_sentry_passes_evidence_based(self):
++        # Multiple sentry passes on the board
++        issues = [
++            {"number": 2902, "title": "guard(platform): sentry pass 22:44Z ΓÇö 7/8 alive"},
++            {"number": 3049, "title": "guard(platform): provider sentry pass 04:45Z ΓÇö 7/8 alive"},
++            {"number": 3111, "title": "guard(platform): sentry pass 08:45Z ΓÇö 7/8 alive"},
++            {"number": 3200, "title": "fix: auth token expiration bug"},
++        ]
++        superseded = find_superseded_sentry_passes(issues)
++        # 2902 and 3049 should be superseded by 3111
++        self.assertEqual(superseded, [(2902, 3111), (3049, 3111)])
++        # The newest (3111) is never closed ΓÇö sentinel evidence is continuously preserved!
++        self.assertNotIn((3111, 3111), superseded)
++        # Non-sentry bug (3200) is never closed
++        self.assertFalse(any(old == 3200 for old, _ in superseded))
+ 
+-    def test_completed_receipt(self):
+-        old_time = (datetime.now(timezone.utc) - timedelta(hours=8)).isoformat()
+-        self.assertTrue(is_completed_receipt("≡ƒîë Bridge Work Order ΓÇö Identity registration receipt", ["report", "bridge:receipt"], old_time))
+-        self.assertFalse(is_completed_receipt("[Anchor Hub] Core Embassy", ["anchor-hub"], old_time))
++    def test_single_sentry_pass_never_closed(self):
++        # A single sentry pass on the board is never closed by timer
++        issues = [
++            {"number": 3111, "title": "guard(platform): sentry pass 08:45Z ΓÇö 7/8 alive"},
++        ]
++        superseded = find_superseded_sentry_passes(issues)
++        self.assertEqual(superseded, [])
+ 
+     def test_duplicate_issues(self):
+         issues = [
+@@ -30,5 +40,6 @@ def test_duplicate_issues(self):
+         dups = find_duplicate_issues(issues)
+         self.assertEqual(dups, [(3012, 3011)])
+ 
++
+ if __name__ == "__main__":
+     unittest.main()

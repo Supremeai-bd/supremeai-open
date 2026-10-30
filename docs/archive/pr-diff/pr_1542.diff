@@ -1,0 +1,1282 @@
+diff --git a/browser/main.py b/browser/main.py
+index 65ce3ec3..486ab6fc 100644
+--- a/browser/main.py
++++ b/browser/main.py
+@@ -20,9 +20,9 @@
+ 
+ # Import primary application from server.py (Cookie Relay Engine)
+ try:
+-    from server import app, relay_engine, ChatRequest
++    from server import app, relay_engine, duck_engine, ChatRequest
+ except ImportError:
+-    from browser.server import app, relay_engine, ChatRequest  # type: ignore
++    from browser.server import app, relay_engine, duck_engine, ChatRequest  # type: ignore
+ 
+ # Register optional browser scraper routes if dependencies are available
+ try:
+diff --git a/browser/server.py b/browser/server.py
+index 8794bf53..1caba4ce 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -446,6 +446,155 @@ async def _try_api_fallback(self, prompt: str) -> Optional[str]:
+ relay_engine = GeminiCookieEngine()
+ 
+ 
++class DuckAiEngine:
++    """Duck.ai (DuckDuckGo AI Chat) headless & API relay ($0 cost, no account cookies required).
++
++    Duck.ai supports models including:
++    - gpt-4o-mini
++    - claude-3-haiku-20240307
++    - meta-llama/Llama-3.3-70B-Instruct-Turbo
++    - mistralai/Mixtral-8x7B-Instruct-v0.1
++    """
++
++    MODEL_ALIASES: Dict[str, str] = {
++        "duck": "gpt-4o-mini",
++        "duck-ai": "gpt-4o-mini",
++        "duck-gpt": "gpt-4o-mini",
++        "duck-gpt-4o-mini": "gpt-4o-mini",
++        "duck-claude": "claude-3-haiku-20240307",
++        "duck-claude-haiku": "claude-3-haiku-20240307",
++        "duck-llama": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
++        "duck-llama-70b": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
++        "duck-mixtral": "mistralai/Mixtral-8x7B-Instruct-v0.1",
++    }
++
++    def __init__(self) -> None:
++        self._vqd_token: Optional[str] = None
++        self._vqd_expiry: float = 0.0
++
++    def resolve_model(self, model_name: Optional[str]) -> str:
++        if not model_name:
++            return "gpt-4o-mini"
++        cleaned = model_name.strip().lower()
++        return self.MODEL_ALIASES.get(cleaned, cleaned if "gpt-" in cleaned or "claude-" in cleaned or "llama" in cleaned or "mixtral" in cleaned else "gpt-4o-mini")
++
++    async def _fetch_vqd_token(self, client: httpx.AsyncClient) -> Optional[str]:
++        """Fetch fresh vqd session token from duckduckgo status endpoint."""
++        now = time.time()
++        if self._vqd_token and now < self._vqd_expiry:
++            return self._vqd_token
++
++        headers = {
++            "User-Agent": (
++                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
++                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
++            ),
++            "x-vqd-accept": "1",
++            "Referer": "https://duck.ai/",
++            "Origin": "https://duck.ai",
++        }
++        try:
++            resp = await client.get("https://duckduckgo.com/duckchat/v1/status", headers=headers)
++            token = resp.headers.get("x-vqd-4")
++            if token:
++                self._vqd_token = token
++                self._vqd_expiry = now + 600.0  # 10 min cache
++                return token
++        except Exception as exc:
++            logger.warning(f"[DuckAI] Failed to fetch vqd token via HTTP: {exc}")
++
++        return None
++
++    async def ask(self, prompt: str, model: Optional[str] = None) -> str:
++        """Query duck.ai directly. First tries lightweight HTTP with token, then falls back gracefully."""
++        target_model = self.resolve_model(model)
++        headers = {
++            "User-Agent": (
++                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
++                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
++            ),
++            "Content-Type": "application/json",
++            "Accept": "text/event-stream",
++            "Referer": "https://duck.ai/",
++            "Origin": "https://duck.ai",
++        }
++
++        async with httpx.AsyncClient(timeout=25.0) as client:
++            token = await self._fetch_vqd_token(client)
++            if token:
++                headers["x-vqd-4"] = token
++                payload = {
++                    "model": target_model,
++                    "messages": [{"role": "user", "content": prompt}],
++                }
++                try:
++                    resp = await client.post("https://duckduckgo.com/duckchat/v1/chat", headers=headers, json=payload)
++                    if resp.status_code == 200:
++                        # Update token if renewed
++                        new_token = resp.headers.get("x-vqd-4")
++                        if new_token:
++                            self._vqd_token = new_token
++                            self._vqd_expiry = time.time() + 600.0
++                        # Parse SSE stream text
++                        reply_parts: list[str] = []
++                        for line in resp.text.split("\n"):
++                            line = line.strip()
++                            if line.startswith("data:"):
++                                data_str = line[5:].strip()
++                                if data_str == "[DONE]":
++                                    break
++                                try:
++                                    parsed = json.loads(data_str)
++                                    msg = parsed.get("message")
++                                    if msg:
++                                        reply_parts.append(msg)
++                                except Exception:
++                                    continue
++                        if reply_parts:
++                            return "".join(reply_parts)
++                    else:
++                        logger.warning(f"[DuckAI] HTTP chat returned status {resp.status_code}")
++                except Exception as exc:
++                    logger.warning(f"[DuckAI] HTTP chat request failed: {exc}")
++
++        # If HTTP direct mode was blocked by bot check or challenge, try headless browser execution
++        try:
++            from playwright.async_api import async_playwright
++            async with async_playwright() as p:
++                browser = await p.chromium.launch(
++                    headless=True,
++                    args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
++                )
++                context = await browser.new_context(
++                    user_agent=headers["User-Agent"]
++                )
++                page = await context.new_page()
++                await page.goto("https://duck.ai/chat", wait_until="networkidle")
++                await page.wait_for_timeout(1000)
++                ta = page.locator("textarea")
++                if await ta.count() > 0:
++                    await ta.fill(prompt)
++                    ask = page.get_by_role("button", name="Ask")
++                    if await ask.count() > 0:
++                        await ask.first.click()
++                    else:
++                        await page.keyboard.press("Enter")
++                    await page.wait_for_timeout(4000)
++                    text = await page.evaluate("() => document.body.innerText")
++                    lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
++                    await browser.close()
++                    if lines:
++                        return lines[-1]
++                await browser.close()
++        except Exception as exc:
++            logger.warning(f"[DuckAI] Playwright fallback failed: {exc}")
++
++        raise HTTPException(status_code=502, detail="Duck.ai upstream challenge or rate-limit encountered")
++
++
++duck_engine = DuckAiEngine()
++
++
+ @app.on_event("startup")
+ async def on_startup():
+     if os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET"):
+@@ -499,10 +648,26 @@ async def api_chat(request: Request) -> Dict[str, Any]:
+     if not prompt.strip():
+         raise HTTPException(status_code=400, detail="Empty prompt or message")
+ 
+-    reply = await relay_engine.ask(prompt.strip())
++    model = str(body.get("model") or "").strip().lower()
++    source = "gemini.google.com (Cookie Relay)"
++
++    if "duck" in model:
++        reply = await duck_engine.ask(prompt.strip(), model=model)
++        source = f"duck.ai ({duck_engine.resolve_model(model)})"
++    else:
++        try:
++            reply = await relay_engine.ask(prompt.strip())
++        except Exception as exc:
++            logger.warning(f"Gemini relay failed ({exc}); attempting Duck.ai fallback...")
++            try:
++                reply = await duck_engine.ask(prompt.strip(), model="gpt-4o-mini")
++                source = "duck.ai (gpt-4o-mini fallback)"
++            except Exception:
++                raise exc
++
+     return {
+         "reply": reply,
+-        "source": "gemini.google.com (Cookie Relay)",
++        "source": source,
+         "cost": "$0.00",
+     }
+ 
+@@ -514,19 +679,42 @@ async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
+     if not prompt.strip():
+         raise HTTPException(status_code=400, detail="Missing user message in payload")
+ 
+-    reply = await relay_engine.ask(prompt.strip())
++    req_model = str(req.model or "gemini-web").strip().lower()
++    served_model = "gemini-web"
++    engine_code = "ge"
++    engine_label = "SupremeAI w.ge Turbo"
++
++    if "duck" in req_model:
++        duck_target = duck_engine.resolve_model(req_model)
++        reply = await duck_engine.ask(prompt.strip(), model=req_model)
++        served_model = f"duck-{duck_target}"
++        engine_code = "dk"
++        engine_label = f"SupremeAI w.dk ({duck_target})"
++    else:
++        try:
++            reply = await relay_engine.ask(prompt.strip())
++        except Exception as exc:
++            logger.warning(f"Gemini relay failed ({exc}); falling back to Duck.ai...")
++            try:
++                reply = await duck_engine.ask(prompt.strip(), model="gpt-4o-mini")
++                served_model = "duck-gpt-4o-mini"
++                engine_code = "dk"
++                engine_label = "SupremeAI w.dk (gpt-4o-mini)"
++            except Exception:
++                raise exc
++
+     return JSONResponse(
+         {
+-            "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
++            "id": "chatcmpl-stealth-relay-" + os.urandom(6).hex(),
+             "object": "chat.completion",
+             "created": int(time.time()),
+-            "model": "gemini-web",
+-            "supremeai_engine": "ge",
++            "model": served_model,
++            "supremeai_engine": engine_code,
+             "supremeai": {
+                 "channel": "w",
+-                "engine": "ge",
++                "engine": engine_code,
+                 "tier": "Turbo",
+-                "label": "SupremeAI w.ge Turbo",
++                "label": engine_label,
+             },
+             "choices": [
+                 {
+@@ -543,6 +731,7 @@ async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
+     )
+ 
+ 
++
+ if __name__ == "__main__":
+     import uvicorn
+ 
+diff --git a/browser/tests/test_relay_entrypoint.py b/browser/tests/test_relay_entrypoint.py
+index 4536af79..495f3388 100644
+--- a/browser/tests/test_relay_entrypoint.py
++++ b/browser/tests/test_relay_entrypoint.py
+@@ -70,3 +70,38 @@ def test_stealth_secret_auth_guard() -> None:
+             assert resp_bearer.status_code == 200
+             data = resp_bearer.json()
+             assert data["choices"][0]["message"]["content"] == "authenticated reply"
++
++
++def test_duck_ai_routing_and_fallback() -> None:
++    """Verify Duck.ai explicit model routing and Gemini failure fallback."""
++    client = TestClient(main.app)
++
++    # 1. Explicit duck model routes to duck_engine
++    with mock.patch.object(main.duck_engine, "ask", return_value="duck reply") as mock_duck:
++        resp = client.post(
++            "/v1/chat/completions",
++            json={
++                "model": "duck-gpt-4o-mini",
++                "messages": [{"role": "user", "content": "test prompt"}],
++            },
++        )
++        assert resp.status_code == 200
++        data = resp.json()
++        assert data["choices"][0]["message"]["content"] == "duck reply"
++        assert data["model"] == "duck-gpt-4o-mini"
++        assert data["supremeai_engine"] == "dk"
++        mock_duck.assert_called_once_with("test prompt", model="duck-gpt-4o-mini")
++
++    # 2. When Gemini fails, it seamlessly falls back to Duck.ai
++    with mock.patch.object(main.relay_engine, "ask", side_effect=Exception("Gemini cookie expired")):
++        with mock.patch.object(main.duck_engine, "ask", return_value="fallback reply") as mock_fallback:
++            resp = client.post(
++                "/v1/chat/completions",
++                json={"messages": [{"role": "user", "content": "prompt needing fallback"}]},
++            )
++            assert resp.status_code == 200
++            data = resp.json()
++            assert data["choices"][0]["message"]["content"] == "fallback reply"
++            assert data["model"] == "duck-gpt-4o-mini"
++            assert data["supremeai_engine"] == "dk"
++            mock_fallback.assert_called_once_with("prompt needing fallback", model="gpt-4o-mini")
+diff --git a/core/config_fields.py b/core/config_fields.py
+index 2f5f31d2..47f7d4f1 100644
+--- a/core/config_fields.py
++++ b/core/config_fields.py
+@@ -356,6 +356,9 @@ def route_ladders(self) -> dict[str, list[str]]:
+             # with secrets.compare_digest — forged completions are rejected).
+             "/api/v1/kaggle/callback",
+             "/actuator",
++            "/api/admin/login",
++            "/api/admin/totp-setup",
++            "/api/admin/totp-verify",
+             "/api/admin/firebase-auth",
+             "/api/admin/firebase-login",
+             "/api/admin/firebase-totp-setup",
+diff --git a/core/firebase_auth.py b/core/firebase_auth.py
+index 62925171..3eb340b2 100644
+--- a/core/firebase_auth.py
++++ b/core/firebase_auth.py
+@@ -1,4 +1,10 @@
+-import os
++"""Legacy Firebase Auth Stub (Zero-Firebase Architecture).
++
++Firebase Admin SDK has been deprecated and replaced by SupremeAI Native Auth (Supabase + JWT).
++This stub returns None safely without throwing errors or requiring firebase-admin imports.
++"""
++
++from __future__ import annotations
+ 
+ from core.logging_config import logger
+ 
+@@ -6,66 +12,7 @@
+ 
+ 
+ def get_firebase_auth():
++    """Deprecated: Returns None as Firebase is decommissioned in favor of Native Auth."""
+     global auth
+-    if auth is not None:
+-        return auth
+-
+-    try:
+-        import firebase_admin
+-        from firebase_admin import auth as firebase_auth
+-        from firebase_admin import credentials as fb_credentials
+-
+-        if not firebase_admin._apps:
+-            from core.config import settings
+-
+-            _gac = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
+-            _sa_json = getattr(settings, "firebase_service_account_json", "")
+-            _sa_path = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH") or "service-account.json"
+-
+-            if _sa_json:
+-                import json as _json
+-
+-                _cred = fb_credentials.Certificate(_json.loads(_sa_json))
+-                firebase_admin.initialize_app(_cred)
+-                logger.info("Firebase Admin initialized from FIREBASE_SERVICE_ACCOUNT_JSON")
+-            elif _sa_path:
+-                _resolved_path = None
+-                for p in [
+-                    _sa_path,
+-                    os.path.join("backend", _sa_path),
+-                    os.path.join("..", _sa_path),
+-                ]:
+-                    clean_p = p.replace("backend/backend/", "backend/")
+-                    if not os.path.exists(clean_p) and clean_p.startswith("backend/"):
+-                        clean_p = clean_p[8:]
+-                    if os.path.exists(clean_p):
+-                        _resolved_path = clean_p
+-                        break
++    return None
+ 
+-                if _resolved_path:
+-                    _cred = fb_credentials.Certificate(_resolved_path)
+-                    firebase_admin.initialize_app(_cred)
+-                    logger.info(f"Firebase Admin initialized from file: {_resolved_path}")
+-                elif _sa_path != "service-account.json":
+-                    logger.warning(f"Firebase service account file not found at {_sa_path}")
+-                    raise RuntimeError(f"Service account file not found: {_sa_path}")
+-                elif _gac and os.path.exists(_gac):
+-                    firebase_admin.initialize_app()
+-                    logger.info("Firebase Admin initialized via GOOGLE_APPLICATION_CREDENTIALS")
+-                else:
+-                    logger.warning("Firebase Admin SDK: No credentials found.")
+-                    raise RuntimeError("No Firebase credentials configured")
+-            elif _gac and os.path.exists(_gac):
+-                firebase_admin.initialize_app()
+-                logger.info("Firebase Admin initialized via GOOGLE_APPLICATION_CREDENTIALS")
+-            else:
+-                logger.warning(
+-                    "Firebase Admin SDK: No credentials found. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_SERVICE_ACCOUNT_PATH in .env"
+-                )
+-                raise RuntimeError("No Firebase credentials configured")
+-        auth = firebase_auth
+-        logger.info("Firebase Admin SDK ready ✅")
+-        return auth
+-    except Exception as e:
+-        logger.warning(f"Firebase Admin SDK not available: {e}")
+-        return None
+diff --git a/gateway/routes/service_topology.py b/gateway/routes/service_topology.py
+index abbc80cf..7d6fa3fd 100644
+--- a/gateway/routes/service_topology.py
++++ b/gateway/routes/service_topology.py
+@@ -120,26 +120,6 @@ def to_dict(self) -> dict:
+         },
+         check_type="api",
+     ),
+-    ServiceConfig(
+-        name="firebase_auth",
+-        display_name="Firebase Authentication",
+-        category="auth",
+-        url="https://identitytoolkit.googleapis.com",
+-        health_endpoint="/v1/projects/<project-id>:lookup",
+-        critical=True,
+-        timeout=8.0,
+-        check_type="api",
+-    ),
+-    ServiceConfig(
+-        name="firebase_firestore",
+-        display_name="Cloud Firestore",
+-        category="database",
+-        url="https://firestore.googleapis.com",
+-        health_endpoint="/v1/projects/<project-id>/databases/(default)/documents",
+-        critical=True,
+-        timeout=8.0,
+-        check_type="api",
+-    ),
+     # ─── EDGE & CDN ───────────────────────────────────────────────────────
+     ServiceConfig(
+         name="cloudflare_worker",
+@@ -409,8 +389,6 @@ def calculate_topology_data(services: list[ServiceHealthResult]) -> dict[str, An
+     # Define edges (dependencies)
+     edge_definitions = [
+         ("render_backend", "supabase_db"),
+-        ("render_backend", "firebase_auth"),
+-        ("render_admin", "firebase_auth"),
+         ("render_admin", "supabase_db"),
+         ("scraper_service", "render_backend"),
+         ("cloudflare_worker", "render_backend"),
+diff --git a/scripts/ops/deploy/generate_firebase_config.py b/scripts/ops/deploy/generate_firebase_config.py
+deleted file mode 100644
+index 9cbfde20..00000000
+--- a/scripts/ops/deploy/generate_firebase_config.py
++++ /dev/null
+@@ -1,265 +0,0 @@
+-#!/usr/bin/env python3
+-"""
+-Deterministic Firebase Configuration Generator.
+-
+-Reads `firebase.template.json` and deterministically substitutes the backend URLs.
+-Zero-hardcode policy — fails fast (exit 1) if any of the following hold:
+-  - the template file is missing
+-  - BACKEND_URL (or equivalents) is not configured in the environment
+-  - unresolved `{{...}}` placeholders remain after substitution
+-  - the substituted output is not valid JSON
+-  - the SPA fallback rewrite (`**` -> `/index.html`) is missing
+-  - any rewrite destination is an absolute URL (external-origin proxying is
+-    NOT supported by Firebase Hosting rewrites — the docs define rewrite
+-    `destination` as "a local file that must exist"; the 2026-09-18 live
+-    incident proved an API-rewrite layer like this silently 404s every
+-    `/api/*` path while looking configured. The SPA calls the API origin
+-    DIRECTLY with CORS instead — see frontend/src/utils/api.ts)
+-  - BACKEND_URL (when provided) points at a Firebase Hosting domain
+-    (`*.web.app` / `*.firebaseapp.com`) — hosting sites are not API origins
+-
+-Hosting targets (FB-06, issue #587) — status after the admin-host retirement
+-(2026-10-25, follows PR #1247):
+-  the template historically defined TWO hosting targets, `user` (site
+-  `supremeai-a`) and `admin` (site `supremeai-admin`), both shipping the
+-  identical unified SPA bundle (`"public": "frontend/dist"`). The admin/user
+-  distinction is runtime route-based inside ONE frontend build — the
+-  portal-split build architecture (VITE_PORTAL_TYPE, dist-admin/dist-user,
+-  build:admin/build:user) is OBSOLETE and FORBIDDEN by the CI gate
+-  `scripts/ci/check_single_frontend.py` (Gate A).
+-
+-  RETIRED: the `admin` Firebase Hosting site https://supremeai-admin.web.app
+-  is fully decommissioned. A stale Cloudflare edge redirect used to bounce
+-  studio.pages.dev/admin visitors to it (fixed in studio/public/_redirects
+-  with `200!` force rewrites), and the backend CORS floors no longer list it.
+-  The admin console now lives in the Studio SPA at
+-  https://supremeai-studio.pages.dev (route /admin). Operators must drop the
+-  `admin` target from the deploy-time firebase.template.json (root, gitignored)
+-  and release the Firebase site; the generator only validates rewrite/header
+-  contracts and does not depend on either target existing.
+-"""
+-
+-import json
+-import os
+-import re
+-import sys
+-from urllib.parse import urlsplit
+-
+-if hasattr(sys.stdout, "reconfigure"):
+-    sys.stdout.reconfigure(encoding="utf-8")
+-
+-# বাংলা: Firebase Hosting rewrite-এর `destination` হলো "a local file that must
+-# exist" — external-origin proxy (যেমন Render API) সমর্থিত নয়। SPA সরাসরি
+-# CORS দিয়ে API origin কল করে (frontend/src/utils/api.ts)। তাই একমাত্র বৈধ
+-# rewrite হলো SPA fallback; absolute-URL destination = মিথ্যা artifact — fail-closed।
+-SPA_FALLBACK_SOURCE = "**"
+-SPA_FALLBACK_DESTINATION = "/index.html"
+-
+-
+-def _origin_of(url: str) -> str:
+-    """Return lowercase scheme://host[:port] for an absolute URL, else ''."""
+-    parts = urlsplit(str(url))
+-    if not parts.scheme or not parts.netloc:
+-        return ""
+-    return f"{parts.scheme.lower()}://{parts.netloc.lower()}"
+-
+-
+-def _validate_hosting(hosting: list[dict]) -> list[str]:
+-    """Return a list of human-readable errors (empty list == valid).
+-
+-    বাংলা: চুক্তি — (১) SPA fallback থাকতেই হবে; (২) কোনো rewrite destination
+-    absolute URL হতে পারবে না (Firebase Hosting external proxy সমর্থন করে না —
+-    এমন entry থাকা মানে মিথ্যা artifact: configured দেখায় কিন্তু কাজ করে না)।
+-    """
+-    errors: list[str] = []
+-    for site in hosting:
+-        target = site.get("target", "default")
+-        rewrites = site.get("rewrites", [])
+-        if not isinstance(rewrites, list):
+-            errors.append(f"[{target}] 'rewrites' is not a list")
+-            continue
+-
+-        by_source: dict[str, dict] = {}
+-        for rw in rewrites:
+-            src = rw.get("source")
+-            if src and src not in by_source:
+-                by_source[src] = rw
+-
+-        # বাংলা: absolute-URL destination নিষিদ্ধ — মিথ্যা artifact (2026-09-18
+-        # ইনসিডেন্ট: এমন একটি স্তর প্রতিটি /api/* পাথে নীরবে 404 দিচ্ছিল)।
+-        for rw in rewrites:
+-            dest = str(rw.get("destination", ""))
+-            if _origin_of(dest):
+-                errors.append(
+-                    f"[{target}] rewrite {rw.get('source')!r} destination is an "
+-                    f"absolute URL ({dest!r}) — external-origin proxying is not "
+-                    f"supported by Firebase Hosting rewrites; the SPA must call "
+-                    f"the API origin directly with CORS (see frontend/src/utils/api.ts)"
+-                )
+-
+-        spa = by_source.get(SPA_FALLBACK_SOURCE)
+-        if spa is None:
+-            errors.append(
+-                f"[{target}] missing SPA fallback rewrite {SPA_FALLBACK_SOURCE!r} "
+-                f"-> {SPA_FALLBACK_DESTINATION!r}"
+-            )
+-        elif str(spa.get("destination", "")) != SPA_FALLBACK_DESTINATION:
+-            errors.append(
+-                f"[{target}] SPA fallback destination "
+-                f"{spa.get('destination')!r} != {SPA_FALLBACK_DESTINATION!r}"
+-            )
+-
+-        # বাংলা: সিকিউরিটি হেডার চুক্তি যাচাই (FB-02, FB-03)
+-        # যদি সাইটে headers সংজ্ঞায়িত থাকে, তবে Content-Security-Policy বাধ্যতামূলক
+-        # এবং অবচিত X-XSS-Protection: 1; mode=block নিষিদ্ধ।
+-        headers = site.get("headers")
+-        if headers is not None:
+-            if not isinstance(headers, list):
+-                errors.append(f"[{target}] 'headers' is not a list")
+-            else:
+-                found_csp = False
+-                for h_rule in headers:
+-                    if not isinstance(h_rule, dict):
+-                        continue
+-                    h_list = h_rule.get("headers", [])
+-                    if not isinstance(h_list, list):
+-                        continue
+-                    for h in h_list:
+-                        if not isinstance(h, dict):
+-                            continue
+-                        k = str(h.get("key", "")).strip().lower()
+-                        v = str(h.get("value", "")).strip()
+-                        if k == "content-security-policy" and v:
+-                            found_csp = True
+-                        if k == "x-xss-protection" and v not in ("", "0"):
+-                            errors.append(
+-                                f"[{target}] deprecated header X-XSS-Protection: {v!r} detected. "
+-                                f"OWASP/FB-03 requires removing it or setting value to '0'."
+-                            )
+-                if not found_csp:
+-                    errors.append(
+-                        f"[{target}] missing Content-Security-Policy header in hosting configuration (FB-02)."
+-                    )
+-    return errors
+-
+-
+-def generate_firebase_config(require_build: bool = False) -> None:
+-    template_path = "firebase.template.json"
+-    output_path = "firebase.json"
+-
+-    print("=== Generating Firebase Configuration ===")
+-
+-    if require_build:
+-        dist_index = os.path.join("frontend", "dist", "index.html")
+-        if not os.path.exists(dist_index) or os.path.getsize(dist_index) == 0:
+-            print(
+-                f"❌ ERROR: Frontend build artifact missing or empty at {dist_index}. "
+-                f"Run `pnpm build` before deploying (FB-04)."
+-            )
+-            sys.exit(1)
+-
+-    if not os.path.exists(template_path):
+-        print(f"❌ ERROR: Template file {template_path} not found.")
+-        sys.exit(1)
+-
+-    # বাংলা: SPA fallback-only টেমপ্লেটে BACKEND_URL-এর কোনো placeholder নেই,
+-    # তাই এটি আর আবশ্যক নয়। তবে সেট থাকলে এবং মান যদি Hosting ডোমেন হয় —
+-    # fail-closed (Hosting সাইট কখনো API origin নয়; 2026-09-18 ইনসিডেন্ট)।
+-    backend_url = (
+-        os.getenv("BACKEND_URL")
+-        or os.getenv("VITE_BACKEND_URL")
+-        or os.getenv("VITE_API_URL")
+-        or os.getenv("USER_BACKEND_URL")
+-        or os.getenv("VITE_USER_BACKEND")
+-    )
+-
+-    # বাংলা নীতি (False-Assurance doctrine): BACKEND_URL যদি নিজেই একটি Firebase
+-    # Hosting ডোমেন হয়, তবে /api/** rewrite destination-ও একটি Hosting সাইট —
+-    # অর্থাৎ API চেইন নিজেকে (self-loop) বা অন্য কোনো Hosting সাইটকে (ফাঁকা সাইট)
+-    # প্রক্সি কে। ফলাফল: প্রতিটি /api/* রিকোয়েস্ট Firebase-এর HTML "Page Not Found"
+-    # পেজ ফেরত দেয় (2026-09-18 লাইভ ইনসিডেন্ট — দৈনিক স্মোক এটাই ধরেছিল)।
+-    # API origin অবশ্যই API সার্ভিস (Render core) হবে, Hosting সাইট নয় —
+-    # এই ভুল কনফিগ নীরবে ডিপ্লয় হতে পারবে না — fail-closed।
+-    _backend_host = (urlsplit(backend_url or "").hostname or "").lower()
+-    if _backend_host.endswith(".web.app") or _backend_host.endswith(".firebaseapp.com"):
+-        print(
+-            "❌ ERROR: BACKEND_URL points at a Firebase Hosting domain "
+-            f"({_backend_host}). The /api/** rewrite destination must be the API "
+-            "service origin (e.g. the Render core service URL), never a hosting "
+-            "site — a hosting destination makes every API path return Firebase's "
+-            "404 page (2026-09-18 live incident)."
+-        )
+-        sys.exit(1)
+-
+-    with open(template_path, "r", encoding="utf-8") as f:
+-        config_text = f.read()
+-
+-    # বাংলা: placeholder থাকলে কেবল তখনই substitution — SPA-fallback-only টেমপ্লেটে
+-    # placeholder নেই, তাই BACKEND_URL ছাড়াও এটি deterministic ভাবে কাজ করে।
+-    if backend_url:
+-        config_text = config_text.replace("{{BACKEND_URL}}", backend_url)
+-        config_text = config_text.replace("{{USER_BACKEND_URL}}", backend_url)
+-        config_text = config_text.replace("{{ADMIN_BACKEND_URL}}", backend_url)
+-
+-    # Placeholder detection must match the *pattern* {{NAME}}, not a bare "}}"
+-    # substring: any JSON doc ending in two closing braces (e.g. {"hosting":
+-    # {...}}) contains "}}" legitimately. The old substring check was a latent
+-    # false-positive waiting for such a template shape.
+-    unresolved = re.search(r"\{\{[^{}]*\}\}", config_text)
+-    if unresolved:
+-        print(
+-            f"❌ ERROR: Unresolved placeholder {unresolved.group(0)!r} remains in "
+-            f"the generated firebase.json."
+-        )
+-        sys.exit(1)
+-
+-    try:
+-        config_json = json.loads(config_text)
+-    except json.JSONDecodeError as e:
+-        print(f"❌ ERROR: Generated firebase.json is not valid JSON. {e}")
+-        sys.exit(1)
+-
+-    # Verify rewrite semantics — fail closed (was WARNING-only before zero-hardcode)
+-    hosting = config_json.get("hosting", [])
+-    if isinstance(hosting, dict):
+-        hosting = [hosting]
+-
+-    errors = _validate_hosting(hosting)
+-    if errors:
+-        print("❌ ERROR: firebase.json hosting rewrite contract violated:")
+-        for err in errors:
+-            print(f"   - {err}")
+-        print(
+-            "   Fix firebase.template.json: keep only the SPA fallback rewrite "
+-            "(`**` -> `/index.html`) — the SPA calls the API origin directly "
+-            "with CORS; external-origin rewrite destinations are unsupported."
+-        )
+-        sys.exit(1)
+-
+-    with open(output_path, "w", encoding="utf-8") as f:
+-        json.dump(config_json, f, indent=2)
+-
+-    print(f"✅ Successfully generated {output_path}")
+-    if backend_url:
+-        print(f"   Backend URL present (informational, unused by SPA-fallback-only config): {backend_url}")
+-    print(
+-        f"   Hosting contract: SPA fallback validated on {len(hosting)} site(s); "
+-        f"no external-origin rewrite destinations (unsupported by Firebase Hosting)"
+-    )
+-    # FB-06 (issue #587): make the intentionally-shared artifact explicit at
+-    # deploy time — both targets ship the same unified SPA bundle; admin/user
+-    # separation is runtime route-based (single-frontend CI gate enforces it).
+-    if len(hosting) > 1:
+-        targets = ", ".join(str(site.get("target", "default")) for site in hosting)
+-        publics = {str(site.get("public", "")) for site in hosting}
+-        if len(publics) == 1:
+-            print(
+-                f"   Hosting targets [{targets}] all ship the SAME public dir "
+-                f"'{publics.pop()}' — intentional (unified single-frontend SPA; "
+-                f"admin/user is route-based, see check_single_frontend.py Gate A)"
+-            )
+-
+-
+-if __name__ == "__main__":
+-    require_build_flag = "--require-build" in sys.argv
+-    generate_firebase_config(require_build=require_build_flag)
+diff --git a/scripts/ops/render_build_frontend.sh b/scripts/ops/render_build_frontend.sh
+index ba8f6da5..5444d100 100644
+--- a/scripts/ops/render_build_frontend.sh
++++ b/scripts/ops/render_build_frontend.sh
+@@ -74,9 +74,6 @@ cd frontend
+ pnpm run build
+ cd ..
+ 
+-echo "🔧 Generating Firebase config..."
+-python scripts/deploy/generate_firebase_config.py
+-
+ # 🔬 Evolution v3.0: Post-build verification
+ echo "🔬 Running post-build verification..."
+ 
+diff --git a/studio/nginx.conf b/studio/nginx.conf
+index 467d3205..0d3b4c8d 100644
+--- a/studio/nginx.conf
++++ b/studio/nginx.conf
+@@ -24,7 +24,7 @@ server {
+     # matches the SAMEORIGIN X-Frame-Options choice above. script-src keeps
+     # 'unsafe-eval': @monaco-editor/react loads Monaco via the jsDelivr AMD
+     # loader (which evals) — removing it needs the sandboxed-iframe refactor.
+-    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://www.gstatic.com https://www.googletagmanager.com https://cdn.firebase.com https://*.firebaseio.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' wss: https: https://*.firebaseapp.com https://*.web.app https://api.openai.com https://generativelanguage.googleapis.com https://*.supremeai.dev https://*.firebaseio.com; frame-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests" always;
++    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdn.jsdelivr.net https://www.gstatic.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self' wss: https: https://api.openai.com https://generativelanguage.googleapis.com https://*.supremeai.dev; frame-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; upgrade-insecure-requests" always;
+ 
+     # ERR-A04 FIX (2026-09-16): @webcontainer/api (AgentWorkspace / IDE code
+     # execution) requires cross-origin isolation — COOP same-origin + COEP
+diff --git a/studio/packages/shared-services/src/services/CrossAiObserverService.ts b/studio/packages/shared-services/src/services/CrossAiObserverService.ts
+index d3f47aed..1dc2fedc 100644
+--- a/studio/packages/shared-services/src/services/CrossAiObserverService.ts
++++ b/studio/packages/shared-services/src/services/CrossAiObserverService.ts
+@@ -41,7 +41,7 @@ export class CrossAiObserverService {
+       // বাংলা মন্তব্য (#3078): backendUrl অনুপস্থিত — একবারই সতর্ক করে স্কিপ (graceful degradation)।
+       if (!CrossAiObserverService._warnedNoBackend) {
+         CrossAiObserverService._warnedNoBackend = true;
+-        // eslint-disable-next-line no-console
++         
+         console.warn(
+           '📡 [Cross-AI Observer] backendUrl অনুপস্থিত — learning-report স্কিপ করা হচ্ছে (#3078: মৃত Cloud Run ডিফল্ট সরানো হয়েছে)।'
+         );
+@@ -63,7 +63,7 @@ export class CrossAiObserverService {
+       // eslint-disable-next-line no-console
+       console.log('💾 [Cross-AI Learned] Intercepted workflow synced to Supreme Database Pool.');
+     } catch (error) {
+-      // eslint-disable-next-line no-console
++       
+       console.error('❌ Failed to stream cross-AI observed metrics to backend:', error);
+     }
+   }
+diff --git a/studio/packages/shared-services/src/services/SupremeAIService.ts b/studio/packages/shared-services/src/services/SupremeAIService.ts
+index 917bd534..f1a28b6d 100644
+--- a/studio/packages/shared-services/src/services/SupremeAIService.ts
++++ b/studio/packages/shared-services/src/services/SupremeAIService.ts
+@@ -111,7 +111,7 @@ export class SupremeAIService {
+         request.headers.set('Authorization', `Bearer ${token}`);
+       }
+       if (this.isDebugEnabled()) {
+-        // eslint-disable-next-line no-console
++         
+         console.debug(`[SupremeAI] ${request.method?.toUpperCase()} ${request.url}`);
+       }
+       return request;
+@@ -122,7 +122,7 @@ export class SupremeAIService {
+       (response) => response,
+       (error) => {
+         const apiError = normalizeApiError(error, 'API request failed');
+-        // eslint-disable-next-line no-console
++         
+         console.error(`[SupremeAI] API Error ${apiError.code}: ${apiError.userMessage}`);
+         return Promise.reject(apiError);
+       }
+@@ -201,7 +201,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to send code edit');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] sendCodeEdit failed (${apiError.code}): ${apiError.userMessage}`);
+       return { success: false, message: apiError.userMessage };
+     }
+@@ -217,7 +217,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (err: unknown) {
+       const apiError = normalizeApiError(err, 'Failed to report error');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] reportError failed (${apiError.code}): ${apiError.userMessage}`);
+       return { success: false, message: apiError.userMessage };
+     }
+@@ -234,7 +234,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to send feedback');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] sendSuggestionFeedback failed (${apiError.code}): ${apiError.userMessage}`);
+       return { success: false, message: apiError.userMessage };
+     }
+@@ -248,7 +248,7 @@ export class SupremeAIService {
+       // Typed failure surfaced on the error channel instead of a silent empty
+       // fallback (#1333). Shape stays backward-compatible for existing callers.
+       const apiError = normalizeApiError(error, 'Failed to load learning stats');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getLearningStats failed (${apiError.code}): ${apiError.userMessage}`);
+       return { recentActivity: [] };
+     }
+@@ -268,7 +268,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to analyze code');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] sendCodeAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
+       return { success: false, message: apiError.userMessage };
+     }
+@@ -303,7 +303,7 @@ export class SupremeAIService {
+       return { suggestions };
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Inline completion failed');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getInlineCompletions failed (${apiError.code}): ${apiError.userMessage}`);
+       return { suggestions: [] };
+     }
+@@ -375,7 +375,7 @@ export class SupremeAIService {
+       if (!resp.ok || !resp.body) {
+         // Non-streaming failure — fall back to the retrying non-stream path so
+         // callers always get a usable answer (e.g. proxy stripped SSE).
+-        // eslint-disable-next-line no-console
++         
+         console.error(`[SupremeAI] stream unavailable (HTTP ${resp.status}); falling back to buffered chat`);
+         return this.sendChatMessage(request);
+       }
+@@ -430,7 +430,7 @@ export class SupremeAIService {
+         throw new ApiError('ABORTED', 'Stream cancelled by caller');
+       }
+       const apiError = normalizeApiError(error, 'Streaming chat failed');
+-      // eslint-disable-next-line no-console
++       
+       console.error(
+         `[SupremeAI] streamChatMessage failed after ${Date.now() - started}ms (${apiError.code}); falling back to buffered chat`
+       );
+@@ -470,7 +470,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'CodeFlow analysis failed');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] CodeFlow analysis failed (${apiError.code}): ${apiError.userMessage}`);
+       return null;
+     }
+@@ -484,7 +484,7 @@ export class SupremeAIService {
+       return res.data.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to get codeflow analysis');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getCodeFlowAnalysis failed (${apiError.code}): ${apiError.userMessage}`);
+       return null;
+     }
+@@ -496,7 +496,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Error resolution failed');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] resolveError failed (${apiError.code}): ${apiError.userMessage}`);
+       return null;
+     }
+@@ -512,7 +512,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to get security issues');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getRepositorySecurityIssues failed (${apiError.code}): ${apiError.userMessage}`);
+       return [];
+     }
+@@ -526,7 +526,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to get dependency graph');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getDependencyGraph failed (${apiError.code}): ${apiError.userMessage}`);
+       return null;
+     }
+@@ -540,7 +540,7 @@ export class SupremeAIService {
+       return res.data;
+     } catch (error: unknown) {
+       const apiError = normalizeApiError(error, 'Failed to get health score');
+-      // eslint-disable-next-line no-console
++       
+       console.error(`[SupremeAI] getHealthScore failed (${apiError.code}): ${apiError.userMessage}`);
+       return null;
+     }
+diff --git a/studio/packages/shared-services/src/services/TelemetryTracker.ts b/studio/packages/shared-services/src/services/TelemetryTracker.ts
+index 2d4beeb5..300c2ab9 100644
+--- a/studio/packages/shared-services/src/services/TelemetryTracker.ts
++++ b/studio/packages/shared-services/src/services/TelemetryTracker.ts
+@@ -107,7 +107,7 @@ export class TelemetryTracker {
+       // eslint-disable-next-line no-console
+       console.log(`[SupremeAI Telemetry] Sent: ${result.status} (Score: ${result.similarityScore.toFixed(2)})`);
+     } catch (err) {
+-      // eslint-disable-next-line no-console
++       
+       console.error('[SupremeAI Telemetry] Failed to send telemetry:', err);
+     }
+   }
+diff --git a/studio/packages/shared-services/src/services/apiBridge.ts b/studio/packages/shared-services/src/services/apiBridge.ts
+index 9cd029b1..62bc9d42 100644
+--- a/studio/packages/shared-services/src/services/apiBridge.ts
++++ b/studio/packages/shared-services/src/services/apiBridge.ts
+@@ -52,7 +52,7 @@ export class SupremeExtensionBridge {
+     this.baseUrl = (configured || DEFAULT_BACKEND_URL).replace(/\/$/, '');
+     if (!this.baseUrl) {
+       // বাংলা মন্তব্য (#3078): backendUrl অনুপস্থিত — স্পষ্ট সতর্কতা (ফেক ডিফল্ট নয়)।
+-      // eslint-disable-next-line no-console
++       
+       console.warn(
+         '[SupremeExtensionBridge] backendUrl কনফিগার করা হয়নি — SupremeAIConfig.backendUrl সেট করুন। পুরনো Cloud Run ডিফল্ট অবসরপ্রাপ্ত (503, #3078)。'
+       );
+@@ -92,7 +92,7 @@ export class SupremeExtensionBridge {
+             'SupremeAI: Auth Token Expired. Please login again.'
+           );
+         }
+-        // eslint-disable-next-line no-console
++         
+         console.error('[SupremeAI Bridge] API Error:', error.message);
+         return Promise.reject(error);
+       }
+diff --git a/studio/pnpm-workspace.yaml b/studio/pnpm-workspace.yaml
+index 6686d2f6..dd604d34 100644
+--- a/studio/pnpm-workspace.yaml
++++ b/studio/pnpm-workspace.yaml
+@@ -2,6 +2,5 @@ packages:
+   - "."
+   - "packages/*"
+ allowBuilds:
+-  '@firebase/util': true
+   esbuild: true
+   protobufjs: true
+diff --git a/studio/src/components/admin/CommandCenter.tsx b/studio/src/components/admin/CommandCenter.tsx
+index 94175326..4f762f77 100644
+--- a/studio/src/components/admin/CommandCenter.tsx
++++ b/studio/src/components/admin/CommandCenter.tsx
+@@ -330,7 +330,7 @@ export function CommandCenter() {
+           </div>
+ 
+           {/* Floating Telemetry Waveform Panel at Bottom of Canvas */}
+-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[380px] bg-[var(--waveform-bg)] border border-[var(--border-accent)] rounded-lg p-3 shadow-lg backdrop-blur-md z-20 flex flex-col items-center transition-colors duration-500">
++          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-[380px] bg-[var(--waveform-bg)] border border-[var(--border-accent)] rounded-lg p-3 shadow-lg backdrop-blur-md z-20 flex flex-col items-center transition-colors duration-500">
+             <div className="flex justify-between w-full text-[9px] text-[var(--text-secondary)] font-bold mb-1">
+               <span>CMD | v3.0</span>
+               <button
+diff --git a/studio/src/components/admin/admin-browser/AIAssistantPanel.tsx b/studio/src/components/admin/admin-browser/AIAssistantPanel.tsx
+index 7760e0cb..f59f5474 100644
+--- a/studio/src/components/admin/admin-browser/AIAssistantPanel.tsx
++++ b/studio/src/components/admin/admin-browser/AIAssistantPanel.tsx
+@@ -35,7 +35,7 @@ export const AIAssistantPanel: React.FC<AIAssistantPanelProps> = ({
+            #1303): the wrapper owns a fixed 320px column (one reflow on mount/
+            unmount) and the inner panel slides in via transform - no per-frame
+            width layout of the browser viewport row. */
+-        <div className="w-[320px] shrink-0 overflow-hidden bg-gradient-to-b from-[#0d1117] to-[#161b22] border-l border-purple-500/30 flex flex-col">
++        <div className="hidden lg:flex w-[320px] shrink-0 overflow-hidden bg-gradient-to-b from-[#0d1117] to-[#161b22] border-l border-purple-500/30 flex-col">
+           <motion.div
+             initial={{ x: 320, opacity: 0 }}
+             animate={{ x: 0, opacity: 1 }}
+diff --git a/studio/src/components/admin/admin-browser/BookmarksPanel.tsx b/studio/src/components/admin/admin-browser/BookmarksPanel.tsx
+index 03d79a79..ecef1985 100644
+--- a/studio/src/components/admin/admin-browser/BookmarksPanel.tsx
++++ b/studio/src/components/admin/admin-browser/BookmarksPanel.tsx
+@@ -29,7 +29,7 @@ export const BookmarksPanel: React.FC<BookmarksPanelProps> = ({
+            #1303): fixed 220px clip wrapper + transform slide from the left
+            edge; scroll moves to the inner layer so the slide is compositor-
+            only instead of animating the flex row's width. */
+-        <div className="w-[220px] shrink-0 overflow-hidden bg-[#0d1117] border-r border-cyan-500/20">
++        <div className="hidden lg:block w-[220px] shrink-0 overflow-hidden bg-[#0d1117] border-r border-cyan-500/20">
+           <motion.div
+             initial={{ x: -220, opacity: 0 }}
+             animate={{ x: 0, opacity: 1 }}
+diff --git a/studio/src/components/admin/admin-browser/HistoryPanel.tsx b/studio/src/components/admin/admin-browser/HistoryPanel.tsx
+index ba5465c5..57a19551 100644
+--- a/studio/src/components/admin/admin-browser/HistoryPanel.tsx
++++ b/studio/src/components/admin/admin-browser/HistoryPanel.tsx
+@@ -37,7 +37,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
+             animate={{ scale: 1, opacity: 1 }}
+             exit={{ scale: 0.95, opacity: 0 }}
+             onClick={(e) => e.stopPropagation()}
+-            className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl w-[500px] max-h-[400px] overflow-hidden"
++            className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl w-full max-w-[500px] mx-4 max-h-[400px] overflow-hidden"
+           >
+             <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+               <h3 className="font-bold text-white flex items-center gap-2">
+diff --git a/studio/src/components/admin/infra/DeploymentModal.tsx b/studio/src/components/admin/infra/DeploymentModal.tsx
+index 18dd7c61..c33f41fe 100644
+--- a/studio/src/components/admin/infra/DeploymentModal.tsx
++++ b/studio/src/components/admin/infra/DeploymentModal.tsx
+@@ -183,7 +183,7 @@ const DeploymentModal: React.FC<DeploymentModalProps> = ({
+             animate={{ scale: 1, y: 0 }}
+             exit={{ scale: 0.95, y: 20 }}
+             transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+-            className="w-[500px] max-h-[85vh] sci-fi-glass-panel rounded-2xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,243,255,0.15)]"
++            className="w-full max-w-[500px] max-h-[85vh] mx-4 sci-fi-glass-panel rounded-2xl p-6 flex flex-col shadow-[0_0_40px_rgba(0,243,255,0.15)]"
+           >
+             <div className="flex items-center justify-between border-b border-[rgba(0,243,255,0.25)] pb-4 mb-4">
+               <div className="flex items-center gap-3">
+diff --git a/studio/src/components/admin/infra/ServiceHealthMonitor.tsx b/studio/src/components/admin/infra/ServiceHealthMonitor.tsx
+index 9dd23ef4..dd978524 100644
+--- a/studio/src/components/admin/infra/ServiceHealthMonitor.tsx
++++ b/studio/src/components/admin/infra/ServiceHealthMonitor.tsx
+@@ -78,24 +78,6 @@ const SERVICE_REGISTRY: ServiceConfig[] = [
+     icon: <Database size={16} />,
+     category: 'database',
+   },
+-  {
+-    name: 'firebase_auth',
+-    displayName: 'Firebase Auth',
+-    url: import.meta.env.VITE_FIREBASE_AUTH_URL || '',
+-    description: 'Authentication Service',
+-    critical: true,
+-    icon: <Shield size={16} />,
+-    category: 'auth',
+-  },
+-  {
+-    name: 'firebase_firestore',
+-    displayName: 'Firestore',
+-    url: import.meta.env.VITE_FIRESTORE_URL || '',
+-    description: 'NoSQL Document Store',
+-    critical: true,
+-    icon: <Database size={16} />,
+-    category: 'database',
+-  },
+ 
+   // ─── EDGE & CDN ───────────────────────────────────────────────────────
+   {
+diff --git a/studio/src/components/chat/UnifiedChatPanel.tsx b/studio/src/components/chat/UnifiedChatPanel.tsx
+index e443ab4e..46ca6829 100644
+--- a/studio/src/components/chat/UnifiedChatPanel.tsx
++++ b/studio/src/components/chat/UnifiedChatPanel.tsx
+@@ -746,7 +746,7 @@ export function UnifiedChatPanel({
+   // HIGH DEMAND AUTO-RETRY countdown: ticks the surge screen every second and
+   // fires the automatic retry at zero. send is a hoisted function declaration
+   // in this component scope — stable identity, intentionally not a dep.
+-  // eslint-disable-next-line react-hooks/exhaustive-deps
++   
+   React.useEffect(() => {
+     if (!demandRetry) return;
+     if (demandRetry.nextIn <= 0) {
+diff --git a/studio/src/components/core/guards/RoleGuard.tsx b/studio/src/components/core/guards/RoleGuard.tsx
+index c9b2e065..4363c0b0 100644
+--- a/studio/src/components/core/guards/RoleGuard.tsx
++++ b/studio/src/components/core/guards/RoleGuard.tsx
+@@ -17,7 +17,7 @@ import { getRoutePolicy } from '../../../auth/routePolicies';
+ /** বাংলা: Access Denied — fake available functionality নয়, স্পষ্ট প্রত্যাখ্যান UX। */
+ export const AccessDenied: React.FC<{ reason: string }> = ({ reason }) => (
+   <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-slate-100 font-sans">
+-    <div className="w-[420px] p-8 rounded-2xl bg-white/5 border border-red-500/30 text-center flex flex-col items-center gap-4">
++    <div className="w-full max-w-[420px] mx-4 p-8 rounded-2xl bg-white/5 border border-red-500/30 text-center flex flex-col items-center gap-4">
+       <ShieldAlert className="w-14 h-14 text-red-500" />
+       <h1 className="text-2xl font-semibold">Access Denied</h1>
+       <p className="text-sm text-gray-400">{reason}</p>
+diff --git a/studio/src/components/dashboard/SessionDetailPage.tsx b/studio/src/components/dashboard/SessionDetailPage.tsx
+index 7e741416..553a6738 100644
+--- a/studio/src/components/dashboard/SessionDetailPage.tsx
++++ b/studio/src/components/dashboard/SessionDetailPage.tsx
+@@ -46,19 +46,21 @@ export function SessionDetailPage({ sessionId, onBack }: SessionDetailPageProps)
+       </div>
+ 
+       {/* 3-Pane Layout */}
+-      <div className="flex flex-1 overflow-hidden">
+-        {/* Left: File Tree Panel (approx 20%) */}
+-        <div className="w-1/5 min-w-[200px] max-w-[300px] shrink-0 border-r border-gray-800">
++      <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
++        {/* Left: File Tree Panel */}
++        <div className="w-full lg:w-1/5 lg:min-w-[200px] lg:max-w-[300px] shrink-0 border-b lg:border-b-0 lg:border-r border-gray-800 overflow-y-auto max-h-[40vh] lg:max-h-none">
+           <FileTreePanel />
+         </div>
+ 
+-        {/* Center: Execution Shell (approx 55%) */}
+-        <div className="flex-1 min-w-[400px]">
++        {/* Center: Execution Shell */}
++        <div className="flex-1 min-w-0">
+           <ExecutionShell />
+         </div>
+ 
+-        {/* Right: Reasoning Log Panel (approx 25%) */}
+-        <ReasoningLog />
++        {/* Right: Reasoning Log Panel */}
++        <div className="w-full lg:w-1/4 lg:min-w-[240px] lg:max-w-[320px] shrink-0 border-t lg:border-t-0 lg:border-l border-gray-800 overflow-y-auto max-h-[40vh] lg:max-h-none">
++          <ReasoningLog />
++        </div>
+       </div>
+ 
+       {/* Bottom Timeline Scrubber (Placeholder for future iteration) */}
+diff --git a/studio/src/components/editor/EditorTabs.tsx b/studio/src/components/editor/EditorTabs.tsx
+index c6ee135d..34ce31ea 100644
+--- a/studio/src/components/editor/EditorTabs.tsx
++++ b/studio/src/components/editor/EditorTabs.tsx
+@@ -22,7 +22,7 @@ export const EditorTabs: React.FC = () => {
+             key={path}
+             onClick={() => setActiveFile(path)}
+             className={`
+-              flex items-center group cursor-pointer px-3 py-2 min-w-[120px] max-w-[200px] border-r border-[#1e1e1e]
++              flex items-center group cursor-pointer px-3 py-2 min-w-[90px] sm:min-w-[120px] max-w-[200px] border-r border-[#1e1e1e]
+               ${isActive ? 'bg-[#1e1e1e] text-blue-400' : 'bg-[#2d2d2d] text-gray-400 hover:bg-[#252526]'}
+             `}
+           >
+diff --git a/studio/src/components/editor/JitOtpDialogHost.tsx b/studio/src/components/editor/JitOtpDialogHost.tsx
+index ebcc2867..15f17eba 100644
+--- a/studio/src/components/editor/JitOtpDialogHost.tsx
++++ b/studio/src/components/editor/JitOtpDialogHost.tsx
+@@ -50,7 +50,7 @@ export const JitOtpDialogHost: React.FC = () => {
+ 
+   return (
+     <div className="fixed inset-0 z-critical bg-black/70 flex items-center justify-center">
+-      <div className="bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl w-[420px] p-5">
++      <div className="bg-[#1e1e1e] border border-gray-700 rounded-xl shadow-2xl w-full max-w-[420px] mx-4 p-5">
+         {/* Header */}
+         <div className="flex items-center justify-between mb-3">
+           <div className="text-blue-400 font-bold text-sm">{data?.title || "SupremeAI"}</div>
+diff --git a/studio/src/components/preview/QrSyncModal.tsx b/studio/src/components/preview/QrSyncModal.tsx
+index c85ed986..fa830570 100644
+--- a/studio/src/components/preview/QrSyncModal.tsx
++++ b/studio/src/components/preview/QrSyncModal.tsx
+@@ -24,7 +24,7 @@ export const QrSyncModal: React.FC<QrSyncModalProps> = ({ open, url, onClose })
+ 
+   return (
+     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+-      <div className="bg-[#161b22] border border-slate-700 rounded-xl p-6 w-[320px] shadow-2xl">
++      <div className="bg-[#161b22] border border-slate-700 rounded-xl p-6 w-full max-w-[320px] mx-4 shadow-2xl">
+         <div className="flex items-center justify-between mb-4">
+           <h3 className="text-sm font-semibold text-white">Scan on your phone</h3>
+           <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={16} /></button>
+diff --git a/studio/src/components/shell/GlobalHeader.tsx b/studio/src/components/shell/GlobalHeader.tsx
+index cc10cf1a..18d68e61 100644
+--- a/studio/src/components/shell/GlobalHeader.tsx
++++ b/studio/src/components/shell/GlobalHeader.tsx
+@@ -14,6 +14,7 @@ import { useStore } from '../../store/useStore';
+ import { useTheme } from '../../contexts/useTheme';
+ import { useWorkspaceSettings } from '../../hooks/useWorkspaceSettings';
+ import { useMobileNav } from '../../hooks/useMobileNav';
++import { useBreakpoint } from '../../hooks/useBreakpoint';
+ import { canAccessAdminContext, resolveLandingPath } from '../../auth/identity';
+ import { PANEL_OPEN_EVENT } from './shellEvents';
+ 
+@@ -52,6 +53,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
+   // misleading "SYSTEM UNAVAILABLE" during cold start.
+   const isServerStatusChecking = useStore((s) => s.isServerStatusChecking);
+   const { isSidebarCollapsed, toggleSidebar } = useWorkspaceSettings();
++  const isMd = useBreakpoint('md');
+   // Issue #1526: mobile drawer state — GlobalHeader's sidebar button opens the
+   // overlay nav below md; DashboardLayout closes it on route change/backdrop.
+   const { isMobileNavOpen, toggleMobileNav } = useMobileNav();
+@@ -107,7 +109,7 @@ export function GlobalHeader({ context, onLogout, notifications = [], actions }:
+       <button
+         type="button"
+         onClick={() => {
+-          if (typeof window !== 'undefined' && window.innerWidth < 768) {
++          if (!isMd) {
+             toggleMobileNav();
+           } else {
+             toggleSidebar();
+diff --git a/studio/src/hooks/useBreakpoint.ts b/studio/src/hooks/useBreakpoint.ts
+new file mode 100644
+index 00000000..cc00c811
+--- /dev/null
++++ b/studio/src/hooks/useBreakpoint.ts
+@@ -0,0 +1,43 @@
++import { useEffect, useState } from 'react';
++
++const QUERIES = {
++  sm: '(min-width: 640px)',
++  md: '(min-width: 768px)',
++  lg: '(min-width: 1024px)',
++  xl: '(min-width: 1280px)',
++} as const;
++
++type Breakpoint = keyof typeof QUERIES;
++
++function matches(query: string): boolean {
++  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
++  return window.matchMedia(query).matches;
++}
++
++export function useBreakpoint(bp: Breakpoint): boolean {
++  const [value, setValue] = useState<boolean>(() => matches(QUERIES[bp]));
++
++  useEffect(() => {
++    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
++    const mql = window.matchMedia(QUERIES[bp]);
++    const handler = (event: MediaQueryListEvent) => setValue(event.matches);
++    setValue(mql.matches);
++    if (typeof mql.addEventListener === 'function') {
++      mql.addEventListener('change', handler);
++      return () => mql.removeEventListener('change', handler);
++    }
++    // Safari < 14 fallback
++    mql.addListener(handler);
++    return () => mql.removeListener(handler);
++  }, [bp]);
++
++  return value;
++}
++
++export function useIsMobile(): boolean {
++  return !useBreakpoint('md');
++}
++
++export function useIsDesktop(): boolean {
++  return useBreakpoint('lg');
++}
+diff --git a/studio/src/main.tsx b/studio/src/main.tsx
+index 4b98cf8c..8734af06 100644
+--- a/studio/src/main.tsx
++++ b/studio/src/main.tsx
+@@ -48,13 +48,6 @@ if (import.meta.env.PROD) {
+   startAntiSleepHeartbeat();
+ }
+ 
+-// ROOT-CAUSE FIX (#2734): Firebase App+Auth eager init loaded 60-70KB auth SDK
+-// on every guest boot — even the `/` funnel which never touches auth. Now:
+-// Firebase is lazy-imported on the auth path (login/ProtectedRoute/AdminLogin).
+-// The lazy caller already awaits init via `initFirebase()` which is idempotent.
+-// Static import removed; dynamic import happens on first auth-path render.
+-// বাংলা: গেস্ট বুটে Firebase SDK আর eager লোড হয় না — auth path-এ lazy import।
+-
+ import { ThemeProvider } from './contexts/ThemeProvider'
+ // Shared providers (react-query, monaco defaults)
+ import { SharedProviders } from '@supremeai/ui-components'
+diff --git a/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx b/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
+index 1550d0f8..4a8b2fa7 100644
+--- a/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
++++ b/studio/src/pages/user/EvolutionForge/EvolutionForge.tsx
+@@ -417,7 +417,7 @@ const EvolutionForgeCanvas = () => {
+       {/* Deploy to Marketplace Dialog */}
+       {showDeployDialog && (
+         <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center">
+-          <div className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl p-6 w-[450px]">
++          <div className="bg-[#161b22] border border-cyan-500/30 rounded-xl shadow-2xl p-6 w-full max-w-[450px] mx-4">
+             <h3 className="text-xl font-bold text-white flex items-center gap-2 mb-4">
+               <Sparkles className="text-cyan-400" />
+               Deploy to Skill Marketplace
+diff --git a/studio/src/vite-env.d.ts b/studio/src/vite-env.d.ts
+index 4e9cc8b4..0f3593c6 100644
+--- a/studio/src/vite-env.d.ts
++++ b/studio/src/vite-env.d.ts
+@@ -34,18 +34,8 @@ interface ImportMetaEnv {
+   readonly VITE_CIRCUIT_FAILURE_THRESHOLD?: string;
+   readonly VITE_CIRCUIT_RECOVERY_MS?: string;
+ 
+-  // --- Firebase ---
+-  readonly VITE_FIREBASE_API_KEY?: string;
+-  readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
+-  readonly VITE_FIREBASE_PROJECT_ID?: string;
+-  readonly VITE_FIREBASE_STORAGE_BUCKET?: string;
+-  readonly VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
+-  readonly VITE_FIREBASE_APP_ID?: string;
+-  readonly VITE_FIREBASE_AUTH_URL?: string;
+-
+   // --- Infra service health probes (ServiceHealthMonitor) ---
+   readonly VITE_SUPABASE_URL?: string;
+-  readonly VITE_FIRESTORE_URL?: string;
+   readonly VITE_EDGE_WORKER_URL?: string;
+   readonly VITE_GITHUB_API_URL?: string;
+   readonly VITE_VERCEL_API_URL?: string;

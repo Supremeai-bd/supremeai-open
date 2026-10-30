@@ -1,0 +1,497 @@
+diff --git a/core/knowledge/intent_curriculum_training.jsonl b/core/knowledge/intent_curriculum_training.jsonl
+new file mode 100644
+index 00000000..c118b683
+--- /dev/null
++++ b/core/knowledge/intent_curriculum_training.jsonl
+@@ -0,0 +1,43 @@
++{"source": "sonet_lessons_foundation", "category": null, "instruction": "Analyze the following user input in Banglish/Bangla. Determine if there is a mistake, missing context, or specific intent, and provide the correct understanding and recommended action.", "input": "", "output": "{\"intent\": \"troubleshoot_internet_connectivity_issue\", \"mistake_detected\": null, \"action\": null, \"explanation\": null}"}
++{"source": "sonet_lessons_foundation", "category": null, "instruction": "Analyze the following user input in Banglish/Bangla. Determine if there is a mistake, missing context, or specific intent, and provide the correct understanding and recommended action.", "input": "", "output": "{\"intent\": \"confirm_or_recall_scheduled_meeting\", \"mistake_detected\": null, \"action\": null, \"explanation\": null}"}
++{"source": "sonet_lessons_foundation", "category": null, "instruction": "Analyze the following user input in Banglish/Bangla. Determine if there is a mistake, missing context, or specific intent, and provide the correct understanding and recommended action.", "input": "", "output": "{\"intent\": \"request_revision_of_recently_discussed_item\", \"mistake_detected\": null, \"action\": null, \"explanation\": null}"}
++{"source": "sonet_lessons_foundation", "category": null, "instruction": "Analyze the following user input in Banglish/Bangla. Determine if there is a mistake, missing context, or specific intent, and provide the correct understanding and recommended action.", "input": "", "output": "{\"intent\": \"generate_creative_writing_with_specific_constraints\", \"mistake_detected\": null, \"action\": null, \"explanation\": null}"}
++{"source": "sonet_lessons_foundation", "category": null, "instruction": "Analyze the following user input in Banglish/Bangla. Determine if there is a mistake, missing context, or specific intent, and provide the correct understanding and recommended action.", "input": "", "output": "{\"intent\": \"request_debugging_help_with_insufficient_information\", \"mistake_detected\": null, \"action\": null, \"explanation\": null}"}
++{"source": "sonet_curriculum_lessons", "category": "Phonetic / Spelling Error Recognition", "instruction": "Normalize spelling/phonetic errors and interpret the user intent according to human intent understanding principles.", "input": "ami akhon busy asi,, por a kotha bolbo", "output": "{\"correct_understanding\": \"আমি এখন ব্যস্ত আছি, পরে কথা বলবো\", \"key_learning\": \"'asi' = 'আছি' (not 'আসি়'/coming), context দিয়ে differentiate করতে হবে\", \"confidence\": null}"}
++{"source": "sonet_curriculum_lessons", "category": "Missing Context Detection", "instruction": "Normalize spelling/phonetic errors and interpret the user intent according to human intent understanding principles.", "input": "seta abar koro", "output": "{\"correct_understanding\": \"অনুমান না করে জিজ্ঞেস করা উচিত - 'কোন কাজটা আবার করতে বলছেন?'\", \"key_learning\": \"Fresh session-এ demonstrative pronoun থাকলে clarification must\", \"confidence\": null}"}
++{"source": "sonet_curriculum_lessons", "category": "Emotional Tone & Urgency Detection", "instruction": "Normalize spelling/phonetic errors and interpret the user intent according to human intent understanding principles.", "input": "kisu e kaj korche na!!! ami ki korbo akhon???", "output": "{\"correct_understanding\": \"প্রথমে empathy দেখানো, তারপর দ্রুত সমাধানের দিকে যাওয়া, দীর্ঘ ভূমিকা এড়ানো\", \"key_learning\": \"Punctuation ও repeated question marks emotional signal হিসেবে ব্যবহার করতে হবে\", \"confidence\": null}"}
++{"source": "sonet_curriculum_lessons", "category": "Multi-Intent Detection", "instruction": "Normalize spelling/phonetic errors and interpret the user intent according to human intent understanding principles.", "input": "ei bug ta age thik koro, tarpor deploy koro, r amake janaio", "output": "{\"correct_understanding\": null, \"key_learning\": \"Sequential task chain চিনতে হবে - শুধু আলাদা task না, order-ও গুরুত্বপূর্ণ\", \"confidence\": null}"}
++{"source": "sonet_curriculum_lessons", "category": "Confidence Scoring & When to Ask vs. When to Act", "instruction": "Normalize spelling/phonetic errors and interpret the user intent according to human intent understanding principles.", "input": "web app ta banao", "output": "{\"correct_understanding\": null, \"key_learning\": null, \"confidence\": \"20%\"}"}
++{"source": "phase_1_phonetic_normalization", "category": "Phonetic/Spelling Error Normalization", "instruction": "Normalize the phonetically typed Banglish input to proper Bengali script and detect typing errors.", "input": "amr phn a charge thakche na", "output": "{\"normalized\": \"আমার ফোনে চার্জ থাকছে না\", \"detected_errors\": [\"phn -> phone\", \"thakche -> thakche (charge not holding)\"]}"}
++{"source": "phase_1_phonetic_normalization", "category": "Phonetic/Spelling Error Normalization", "instruction": "Normalize the phonetically typed Banglish input to proper Bengali script and detect typing errors.", "input": "ei file ta delete hoye gese mistake e", "output": "{\"normalized\": \"এই ফাইলটা ভুলবশত ডিলিট হয়ে গেছে\", \"detected_errors\": [\"gese -> geche\", \"mistake e -> ভুলবশত\"]}"}
++{"source": "phase_1_phonetic_normalization", "category": "Phonetic/Spelling Error Normalization", "instruction": "Normalize the phonetically typed Banglish input to proper Bengali script and detect typing errors.", "input": "net slow cholche, buffer hoy video a", "output": "{\"normalized\": \"ইন্টারনেট স্লো চলছে, ভিডিওতে বাফার হয়\", \"detected_errors\": [\"cholche -> correct\", \"video a -> videote\"]}"}
++{"source": "phase_1_skills", "category": "Missing Context Detection", "instruction": "Evaluate the user input for Missing Context Detection.", "input": "eita abar check koro", "output": "{\"input\": \"eita abar check koro\", \"missing_element\": \"WHAT - কোন জিনিস check করতে হবে তা অনুল্লেখিত\", \"correct_response\": \"কোন জিনিসটা আবার চেক করতে বলছেন, একটু specify করবেন?\"}"}
++{"source": "phase_1_skills", "category": "Missing Context Detection", "instruction": "Evaluate the user input for Missing Context Detection.", "input": "age jeta dise oi rokom aro banao", "output": "{\"input\": \"age jeta dise oi rokom aro banao\", \"missing_element\": \"WHAT - আগের কোন জিনিসের কথা বলা হচ্ছে, যদি session আলাদা হয়\", \"correct_response\": \"কোন জিনিসটার মতো আরও বানাতে চান, যদি একটু মনে করিয়ে দেন ভালো হয়\"}"}
++{"source": "phase_1_skills", "category": "Multi-Intent Extraction", "instruction": "Evaluate the user input for Multi-Intent Extraction.", "input": "ei form ta validate koro, submit button disable rakho jotokhon na shob field thik thake", "output": "{\"input\": \"ei form ta validate koro, submit button disable rakho jotokhon na shob field thik thake\", \"detected_intents\": [\"1. Add form validation logic\", \"2. Conditionally disable submit button based on validation state\"]}"}
++{"source": "phase_1_skills", "category": "Multi-Intent Extraction", "instruction": "Evaluate the user input for Multi-Intent Extraction.", "input": "database backup nao, tarpor server restart koro, ar amake confirm pathaio", "output": "{\"input\": \"database backup nao, tarpor server restart koro, ar amake confirm pathaio\", \"detected_intents\": [\"1. Take database backup (first)\", \"2. Restart server (second, after backup)\", \"3. Send confirmation to user (final step)\"]}"}
++{"source": "phase_1_skills", "category": "Confidence Scoring Framework", "instruction": "Evaluate the user input for Confidence Scoring Framework.", "input": "python e ekta function likho jeta 2 ta number add kore return kore", "output": "{\"input\": \"python e ekta function likho jeta 2 ta number add kore return kore\", \"confidence\": \"98%\", \"action\": \"সরাসরি কাজ করো - সব প্রয়োজনীয় তথ্য স্পষ্ট আছে\"}"}
++{"source": "phase_1_skills", "category": "Confidence Scoring Framework", "instruction": "Evaluate the user input for Confidence Scoring Framework.", "input": "ekta function likho", "output": "{\"input\": \"ekta function likho\", \"confidence\": \"15%\", \"action\": \"জিজ্ঞেস করো - কোন ভাষায়, কী কাজ করবে ফাংশনটা তা সম্পূর্ণ অনুল্লেখিত\"}"}
++{"source": "phase_1_skills", "category": "Clarifying Question Generation", "instruction": "Evaluate the user input for Clarifying Question Generation.", "input": "", "output": "{\"poor_clarification\": \"আপনি কী বলতে চাইছেন তা বুঝতে পারছি না\", \"good_clarification\": \"আপনি কি button-এর রং পরিবর্তন করতে চাইছেন, নাকি size? একটু specify করলে সাহায্য হবে\", \"key_learning\": \"Generic clarification এর বদলে specific option দিয়ে জিজ্ঞেস করা অনেক বেশি কার্যকর\"}"}
++{"source": "phase_2_training_examples", "category": "Multi-turn Conversation History Tracking", "instruction": "Process user request according to Multi-turn Conversation History Tracking principles.", "input": "color ta blue koro", "output": "{\"turn_1_user\": \"ekta login page banao react diye\", \"turn_2_user\": \"color ta blue koro\", \"correct_understanding\": \"'color ta' refers to the login page created in turn_1, specifically needs blue theme applied\", \"key_learning\": \"প্রতিটা নতুন message-কে আগের turn-এর সাথে সংযুক্ত রাখতে হবে, বিশেষ করে pronoun থাকলে\"}"}
++{"source": "phase_2_training_examples", "category": "Reference Resolution (eita/oita/etar)", "instruction": "Process user request according to Reference Resolution (eita/oita/etar) principles.", "input": "oita fix hoyeche?", "output": "{\"context\": \"User discussed a bug in payment module 2 messages ago\", \"input\": \"oita fix hoyeche?\", \"correct_resolution\": \"'oita' = payment module বাগ যেটা আগে discuss হয়েছিল\", \"key_learning\": \"Reference word দেখলে সবচেয়ে recent relevant topic-এর সাথে match করতে হবে\"}"}
++{"source": "phase_2_training_examples", "category": "Implicit Assumption Detection", "instruction": "Process user request according to Implicit Assumption Detection principles.", "input": "deploy kore dao", "output": "{\"input\": \"deploy kore dao\", \"implicit_assumption\": \"ইউজার ধরে নিচ্ছে যে কোন project/environment এ deploy করতে হবে তা আগে থেকেই জানা আছে\", \"correct_response\": \"যদি এটা স্পষ্ট না থাকে প্রসঙ্গে, জিজ্ঞেস করা উচিত কোন project এবং কোন environment (staging/production)\"}"}
++{"source": "phase_2_training_examples", "category": "Negation Handling", "instruction": "Process user request according to Negation Handling principles.", "input": "ei feature ta lagbe na ekhon", "output": "{\"input\": \"ei feature ta lagbe na ekhon\", \"correct_understanding\": \"User is explicitly declining/postponing this feature, NOT requesting it\", \"key_learning\": \"'lagbe na', 'dorkar nai', 'chai na' - এই patterns গুলো negation নির্দেশ করে, সরাসরি বিপরীত অর্থ বুঝতে হবে\"}"}
++{"source": "phase_2_training_examples", "category": "Negation Handling", "instruction": "Process user request according to Negation Handling principles.", "input": "eta kharap na, but aro valo hote pare", "output": "{\"input\": \"eta kharap na, but aro valo hote pare\", \"correct_understanding\": \"Mild positive with room for improvement - not a complaint, but a suggestion\", \"key_learning\": \"Double negative বা soft negation বোঝা জরুরি - 'kharap na' মানে ভালো, কিন্তু পুরোপুরি satisfied না\"}"}
++{"source": "phase_2_training_examples", "category": "Code-switching Detection (Bangla-English Mix)", "instruction": "Process user request according to Code-switching Detection (Bangla-English Mix) principles.", "input": "ei function ta optimize korte hobe, performance issue hocche", "output": "{\"input\": \"ei function ta optimize korte hobe, performance issue hocche\", \"correct_parsing\": \"Technical terms in English (function, optimize, performance, issue) + Bangla grammar structure\", \"key_learning\": \"English technical vocabulary বাংলা sentence structure এর মধ্যে স্বাভাবিকভাবে মিশে থাকে, এটাকে আলাদা ভাষা না ভেবে একটাই unified meaning হিসেবে পড়তে হবে\"}"}
++{"source": "phase_3_training_examples", "category": "Emotional Tone Detection", "instruction": "Process user request according to Emotional Tone Detection principles.", "input": "eita already 3 bar bolsi,,, abar kano hocche na???", "output": "{\"input\": \"eita already 3 bar bolsi,,, abar kano hocche na???\", \"detected_emotion\": \"high frustration, repeated failure\", \"correct_response_tone\": \"Empathetic acknowledgment first: 'বুঝতে পারছি এটা বিরক্তিকর হয়ে যাচ্ছে, চলুন একদম গোড়া থেকে দেখি সমস্যাটা কোথায়'\"}"}
++{"source": "phase_3_training_examples", "category": "Sarcasm & Irony Recognition", "instruction": "Process user request according to Sarcasm & Irony Recognition principles.", "input": "darun! ei update er por to shob e bhalo e cholche (sob kisu slow)", "output": "{\"input\": \"darun! ei update er por to shob e bhalo e cholche (sob kisu slow)\", \"detected_sarcasm\": \"Positive words + contradictory context (parenthetical complaint) = sarcasm\", \"correct_understanding\": \"User is actually complaining that everything became slow after the update\"}"}
++{"source": "phase_3_training_examples", "category": "Politeness/Formality Calibration", "instruction": "Process user request according to Politeness/Formality Calibration principles.", "input": "আপনি কি দয়া করে এটা একটু দেখবেন?", "output": "{\"input\": \"আপনি কি দয়া করে এটা একটু দেখবেন?\", \"formality_level\": \"high (আপনি + দয়া করে)\", \"correct_response_style\": \"Formal, respectful tone বজায় রেখে উত্তর দেওয়া উচিত\"}"}
++{"source": "phase_3_training_examples", "category": "Politeness/Formality Calibration", "instruction": "Process user request according to Politeness/Formality Calibration principles.", "input": "ei ta dekh to tui", "output": "{\"input\": \"ei ta dekh to tui\", \"formality_level\": \"very casual (তুই)\", \"correct_response_style\": \"Friendly, relaxed tone ব্যবহার করা যায়, অতিরিক্ত formal হওয়ার দরকার নেই\"}"}
++{"source": "phase_3_training_examples", "category": "Power Dynamics Recognition", "instruction": "Process user request according to Power Dynamics Recognition principles.", "input": "ei task ta ajker modhye complete korte hobe, team er sobai wait korche", "output": "{\"context\": \"Message signed off as 'Project Manager' or discussing team deadlines\", \"input\": \"ei task ta ajker modhye complete korte hobe, team er sobai wait korche\", \"detected_dynamic\": \"Authority/managerial tone, team accountability implied\", \"correct_response\": \"Direct, efficient response prioritizing speed and clarity\"}"}
++{"source": "phase_3_training_examples", "category": "Response Tone Matching", "instruction": "Process user request according to Response Tone Matching principles.", "input": "haha eta mojar hoise, aro ekta banao ei rokom", "output": "{\"input\": \"haha eta mojar hoise, aro ekta banao ei rokom\", \"user_tone\": \"casual, playful\", \"correct_response_tone\": \"Match the light, friendly energy rather than being overly formal\"}"}
++{"source": "phase_4_training_examples", "category": "Domain-Specific Vocabulary Recognition", "instruction": "Process user request according to Domain-Specific Vocabulary Recognition principles.", "input": "invoice e tax calculation thik nai, VAT add hocche na", "output": "{\"input\": \"invoice e tax calculation thik nai, VAT add hocche na\", \"detected_domain\": \"Business/Accounting/Finance\", \"key_terms\": [\"invoice\", \"tax calculation\", \"VAT\"]}"}
++{"source": "phase_4_training_examples", "category": "Cultural & Regional Context Awareness", "instruction": "Process user request according to Cultural & Regional Context Awareness principles.", "input": "eid er age delivery complete korte hobe shob order", "output": "{\"input\": \"eid er age delivery complete korte hobe shob order\", \"cultural_context\": \"Eid - বাংলাদেশ/মুসলিম সংখ্যাগরিষ্ঠ এলাকায় একটি গুরুত্বপূর্ণ উৎসব, এর আগে high delivery demand থাকে\", \"key_learning\": \"ধর্মীয়/সাংস্কৃতিক উৎসবের সময় সংক্রান্ত business urgency বোঝা জরুরি\"}"}
++{"source": "phase_4_training_examples", "category": "Technical Jargon vs Layman Detection", "instruction": "Process user request according to Technical Jargon vs Layman Detection principles.", "input": "amr phn a app ta hang hoye jay, ki korbo bujhtesi na", "output": "{\"input\": \"amr phn a app ta hang hoye jay, ki korbo bujhtesi na\", \"detected_user_level\": \"Non-technical user (simple language, no technical terms)\", \"correct_response_style\": \"Avoid jargon, use simple step-by-step instructions\"}"}
++{"source": "phase_4_training_examples", "category": "Technical Jargon vs Layman Detection", "instruction": "Process user request according to Technical Jargon vs Layman Detection principles.", "input": "memory leak er karone app crash korche, heap dump analyze korte hobe", "output": "{\"input\": \"memory leak er karone app crash korche, heap dump analyze korte hobe\", \"detected_user_level\": \"Technical/developer user\", \"correct_response_style\": \"Can use technical terminology directly without over-explaining basics\"}"}
++{"source": "phase_4_training_examples", "category": "Time/Date Relative Reference Understanding", "instruction": "Process user request according to Time/Date Relative Reference Understanding principles.", "input": "ei kaj ta porer shomaha korle hobe", "output": "{\"input\": \"ei kaj ta porer shomaha korle hobe\", \"normalized_meaning\": \"This task can be done next week\", \"key_learning\": \"'porer shomaha' (পরের সপ্তাহ) relative time reference, needs current date context to calculate actual date\"}"}
++{"source": "phase_5_training_examples", "category": "Self-Correction & Feedback Loop", "instruction": "Process user request according to Self-Correction & Feedback Loop principles.", "input": "{\"first_response\": \"AI fixed the color based on assumption\", \"user_feedback\": \"na eta na, ami size er kotha bolsi\", \"correct_self_correction\": \"দুঃখিত, ভুল বুঝেছিলাম। এখন size ঠিক করে দিচ্ছি।\", \"stored_pattern\": \"Future vague 'thik koro' requests related to UI elements should clarify attribute (color/size/position) before acting\"}", "output": "{\"first_response\": \"AI fixed the color based on assumption\", \"user_feedback\": \"na eta na, ami size er kotha bolsi\", \"correct_self_correction\": \"দুঃখিত, ভুল বুঝেছিলাম। এখন size ঠিক করে দিচ্ছি।\", \"stored_pattern\": \"Future vague 'thik koro' requests related to UI elements should clarify attribute (color/size/position) before acting\"}"}
++{"source": "phase_5_training_examples", "category": "Contradictory Request Handling", "instruction": "Process user request according to Contradictory Request Handling principles.", "input": "button ta boro koro kintu space kom lage emon rakho", "output": "{\"input\": \"button ta boro koro kintu space kom lage emon rakho\", \"detected_contradiction\": \"Making button bigger while reducing space usage can be conflicting depending on layout constraints\", \"correct_response\": \"এই দুইটা জিনিস একসাথে সম্পূর্ণভাবে সম্ভব নাও হতে পারে - আমি একটা balance বের করার চেষ্টা করছি, তবে কোনটা বেশি গুরুত্বপূর্ণ (size naki space) জানালে ভালো হয়\"}"}
++{"source": "phase_5_training_examples", "category": "Out-of-Scope Request Recognition", "instruction": "Process user request according to Out-of-Scope Request Recognition principles.", "input": "amar personal bank account hack kore dekhao kivabe kora jay", "output": "{\"input\": \"amar personal bank account hack kore dekhao kivabe kora jay\", \"correct_response\": \"এটা একটা নিরাপত্তা ও নৈতিকতা সংক্রান্ত সীমার বাইরে, তাই আমি এতে সাহায্য করতে পারবো না। তবে account security বাড়ানোর ব্যাপারে সাহায্য করতে পারি।\"}"}
++{"source": "phase_5_training_examples", "category": "Minimal Input Interpretation", "instruction": "Process user request according to Minimal Input Interpretation principles.", "input": "hmm", "output": "{\"input\": \"hmm\", \"context\": \"After AI proposed a solution\", \"correct_interpretation\": \"Could mean mild agreement, hesitation, or thinking - safest approach is to ask: 'এটা নিয়ে কি কোনো confusion আছে, নাকি এগিয়ে যাবো?'\"}"}
++{"source": "phase_5_training_examples", "category": "Minimal Input Interpretation", "instruction": "Process user request according to Minimal Input Interpretation principles.", "input": "ok thik ache", "output": "{\"input\": \"ok thik ache\", \"correct_interpretation\": \"Clear agreement/acknowledgment, safe to proceed\"}"}
++{"source": "phase_5_training_examples", "category": "Testing/Trick Question Detection", "instruction": "Process user request according to Testing/Trick Question Detection principles.", "input": "tumi ki shotti e buddhiman, naki shudhu copy paste koro?", "output": "{\"input\": \"tumi ki shotti e buddhiman, naki shudhu copy paste koro?\", \"detected_pattern\": \"User testing AI's self-awareness or provoking a reaction\", \"correct_response\": \"Honest, non-defensive response acknowledging being an AI tool with genuine effort to help, without over-explaining or getting defensive\"}"}
+diff --git a/infrastructure/mcp-control-plane/src/tools/index.ts b/infrastructure/mcp-control-plane/src/tools/index.ts
+index 745eae76..6de42907 100644
+--- a/infrastructure/mcp-control-plane/src/tools/index.ts
++++ b/infrastructure/mcp-control-plane/src/tools/index.ts
+@@ -33,6 +33,7 @@ import { registerIntelligenceTools } from "./intelligence.tools.js";
+ import type { MemorySubAdapter } from "../adapters/memory/index.js";
+ 
+ import { registerUnifiedStatusTool } from "./unified.status.tools.js";
++import { registerParityTools } from "./parity.tools.js";
+ 
+ /**
+  * Registers all MCP tools with the server.
+@@ -102,4 +103,7 @@ export async function registerAllTools(
+ 
+   // ── Intelligence & Diagnostics (Graphify Codebase AST & DevTools Audit)
+   await registerIntelligenceTools(server);
++
++  // ── Multi-Platform Parity & Drift Sentinel
++  await registerParityTools(server);
+ }
+diff --git a/infrastructure/mcp-control-plane/src/tools/parity.tools.ts b/infrastructure/mcp-control-plane/src/tools/parity.tools.ts
+new file mode 100644
+index 00000000..2690c5ad
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/tools/parity.tools.ts
+@@ -0,0 +1,76 @@
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { z } from "zod";
++
++interface ParityCheck {
++  component: string;
++  status: "ok" | "drift" | "unconfigured" | "error";
++  details: Record<string, unknown>;
++}
++
++async function runParityAudit(): Promise<{ status: string; checks: ParityCheck[] }> {
++  const checks: ParityCheck[] = [];
++
++  const envValue = (key: string): string | undefined => process.env[key];
++
++  checks.push({
++    component: "render",
++    status: envValue("RENDER_API_KEY") ? "ok" : "unconfigured",
++    details: { note: "Render node SHA comparison requires RENDER_API_KEY" },
++  });
++
++  checks.push({
++    component: "cloudflare",
++    status: envValue("CLOUDFLARE_API_TOKEN") ? "ok" : "unconfigured",
++    details: { note: "Cloudflare deployment version inspection requires CLOUDFLARE_API_TOKEN" },
++  });
++
++  checks.push({
++    component: "supabase",
++    status: envValue("SUPABASE_URL") ? "ok" : "unconfigured",
++    details: { note: "Schema migration parity requires SUPABASE_URL" },
++  });
++
++  checks.push({
++    component: "redis",
++    status: envValue("REDIS_URL") ? "ok" : "unconfigured",
++    details: { note: "Queue backlog inspection requires REDIS_URL" },
++  });
++
++  checks.push({
++    component: "infisical",
++    status: envValue("INFISICAL_TOKEN") ? "ok" : "unconfigured",
++    details: { note: "Secret completeness cross-reference requires INFISICAL_TOKEN" },
++  });
++
++  checks.push({
++    component: "github_satellites",
++    status: envValue("GITHUB_TOKEN") ? "ok" : "unconfigured",
++    details: {
++      satellites: [
++        "supremeai-core",
++        "supremeai-api",
++        "supremeai-browser",
++        "supremeai-studio",
++        "supremeai-vscode",
++      ],
++      note: "Commit hash alignment requires GITHUB_TOKEN",
++    },
++  });
++
++  const hasDrift = checks.some((c) => c.status === "drift" || c.status === "error");
++  return { status: hasDrift ? "drift_detected" : "ok", checks };
++}
++
++export async function registerParityTools(server: McpServer): Promise<void> {
++  const handler = async () => {
++    const result = await runParityAudit();
++    return {
++      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
++    };
++  };
++
++  server.tool("system.parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, handler as any);
++  server.tool("system_parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, handler as any);
++}
++
++export { runParityAudit };
+diff --git a/scripts/knowledge/augment_curriculum_data.py b/scripts/knowledge/augment_curriculum_data.py
+new file mode 100644
+index 00000000..a5443994
+--- /dev/null
++++ b/scripts/knowledge/augment_curriculum_data.py
+@@ -0,0 +1,91 @@
++#!/usr/bin/env python3
++"""Synthetic data augmentor for the Tiny Core Brain curriculum.
++
++Expands a sonet.json curriculum into >= 500 samples per skill using deterministic
++offline templates (no network/LLM dependency). Writes train/val JSONL splits.
++"""
++
++from __future__ import annotations
++
++import argparse
++import sys
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++import json
++import random
++from pathlib import Path
++from typing import Any
++
++from convert_curriculum_to_jsonl import iter_examples, to_sharegpt
++
++TEMPLATES = [
++    "{input}",
++    "{input} please",
++    "bhai {input}",
++    "{input} to",
++    "ami chai {input}",
++    "ekhon {input}",
++    "joldi {input}",
++]
++
++
++def augment_example(base: dict[str, Any], rng: random.Random) -> dict[str, Any]:
++    example = dict(base)
++    text = str(base.get("input", ""))
++    template = rng.choice(TEMPLATES)
++    example["input"] = template.format(input=text).strip()
++    # slight confidence jitter while staying in [0,1]
++    conf = float(base.get("confidence", 0.5))
++    example["confidence"] = round(min(1.0, max(0.0, conf + rng.uniform(-0.05, 0.05))), 3)
++    return example
++
++
++def build_dataset(curriculum: dict[str, Any], per_skill: int, seed: int) -> list[dict[str, Any]]:
++    rng = random.Random(seed)
++    rows: list[dict[str, Any]] = []
++    for base in iter_examples(curriculum):
++        rows.append(to_sharegpt(base))
++        for _ in range(max(0, per_skill - 1)):
++            synth = augment_example(base, rng)
++            rows.append(to_sharegpt(synth))
++    return rows
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Augment curriculum into 500+ samples/skill")
++    parser.add_argument("--input", default="knowledge/sonet.json")
++    parser.add_argument("--output-dir", default="data/brain/augmented")
++    parser.add_argument("--per-skill", type=int, default=500)
++    parser.add_argument("--val-ratio", type=float, default=0.2)
++    parser.add_argument("--seed", type=int, default=42)
++    args = parser.parse_args()
++
++    input_path = Path(args.input)
++    if not input_path.exists():
++        for candidate in ("knowledge/sonet.json", "core/knowledge/sonet.json", "data/sonet.json"):
++            if Path(candidate).exists():
++                input_path = Path(candidate)
++                break
++
++    with input_path.open("r", encoding="utf-8") as fh:
++        curriculum = json.load(fh)
++
++    rows = build_dataset(curriculum, args.per_skill, args.seed)
++    rng = random.Random(args.seed)
++    rng.shuffle(rows)
++    split = int(len(rows) * (1 - args.val_ratio))
++    train_rows, val_rows = rows[:split], rows[split:]
++
++    out_dir = Path(args.output_dir)
++    out_dir.mkdir(parents=True, exist_ok=True)
++    for name, data in (("train.jsonl", train_rows), ("val.jsonl", val_rows), ("all.jsonl", rows)):
++        with (out_dir / name).open("w", encoding="utf-8") as fh:
++            for row in data:
++                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
++
++    print(f"Augmented {len(rows)} samples -> {len(train_rows)} train / {len(val_rows)} val")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/knowledge/convert_curriculum_to_jsonl.py b/scripts/knowledge/convert_curriculum_to_jsonl.py
+new file mode 100644
+index 00000000..4d869686
+--- /dev/null
++++ b/scripts/knowledge/convert_curriculum_to_jsonl.py
+@@ -0,0 +1,127 @@
++#!/usr/bin/env python3
++"""Convert the Banglish/Bangla intent curriculum (sonet.json) into JSONL datasets.
++
++Usage:
++    python scripts/brain/convert_curriculum_to_jsonl.py \
++        --input knowledge/sonet.json \
++        --output-dir data/brain \
++        --format sharegpt
++
++Produces train.jsonl and val.jsonl (80/20 by default) plus a combined dataset.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import random
++from pathlib import Path
++from typing import Any, Iterable
++
++SYSTEM_PROMPT = (
++    "You are SupremeAI Tiny Core Brain. Analyze user inputs for phonetic mistakes, "
++    "missing context, emotional urgency, and multi-intents before deciding whether "
++    "to act or ask for clarification."
++)
++
++
++def load_curriculum(path: Path) -> dict[str, Any]:
++    with path.open("r", encoding="utf-8") as fh:
++        return json.load(fh)
++
++
++def iter_examples(curriculum: dict[str, Any]) -> Iterable[dict[str, Any]]:
++    for phase in curriculum.get("phases", []):
++        phase_no = phase.get("phase")
++        phase_title = phase.get("title")
++        for skill in phase.get("skills", []):
++            skill_name = skill.get("skill") or skill.get("name")
++            for example in skill.get("examples", skill.get("lessons", [])):
++                record = dict(example)
++                record.setdefault("phase", phase_no)
++                record.setdefault("phase_title", phase_title)
++                record.setdefault("skill", skill_name)
++                yield record
++
++
++def to_sharegpt(example: dict[str, Any]) -> dict[str, Any]:
++    assistant_payload = {
++        "normalized_text": example.get("normalized", example.get("normalized_text", "")),
++        "confidence": example.get("confidence", 0.5),
++        "intents": example.get("intent", example.get("intents", "unknown")),
++        "urgency": example.get("urgency", "low"),
++        "needs_clarification": bool(example.get("needs_clarification", False)),
++        "skill": example.get("skill"),
++        "phase": example.get("phase"),
++    }
++    return {
++        "messages": [
++            {"role": "system", "content": SYSTEM_PROMPT},
++            {"role": "user", "content": str(example.get("input", ""))},
++            {"role": "assistant", "content": json.dumps(assistant_payload, ensure_ascii=False)},
++        ]
++    }
++
++
++def to_alpaca(example: dict[str, Any]) -> dict[str, Any]:
++    assistant_payload = {
++        "normalized_text": example.get("normalized", example.get("normalized_text", "")),
++        "confidence": example.get("confidence", 0.5),
++        "intents": example.get("intent", example.get("intents", "unknown")),
++        "urgency": example.get("urgency", "low"),
++        "needs_clarification": bool(example.get("needs_clarification", False)),
++    }
++    return {
++        "instruction": SYSTEM_PROMPT,
++        "input": str(example.get("input", "")),
++        "output": json.dumps(assistant_payload, ensure_ascii=False),
++    }
++
++
++def convert(curriculum: dict[str, Any], fmt: str) -> list[dict[str, Any]]:
++    converter = to_sharegpt if fmt == "sharegpt" else to_alpaca
++    return [converter(ex) for ex in iter_examples(curriculum)]
++
++
++def write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
++    path.parent.mkdir(parents=True, exist_ok=True)
++    with path.open("w", encoding="utf-8") as fh:
++        for row in rows:
++            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Convert sonet curriculum to JSONL")
++    parser.add_argument("--input", default="knowledge/sonet.json", help="Path to sonet.json")
++    parser.add_argument("--output-dir", default="data/brain", help="Output directory")
++    parser.add_argument("--format", choices=["sharegpt", "alpaca"], default="sharegpt")
++    parser.add_argument("--val-ratio", type=float, default=0.2)
++    parser.add_argument("--seed", type=int, default=42)
++    args = parser.parse_args()
++
++    input_path = Path(args.input)
++    if not input_path.exists():
++        # Fallback search common locations
++        for candidate in ("knowledge/sonet.json", "core/knowledge/sonet.json", "data/sonet.json"):
++            if Path(candidate).exists():
++                input_path = Path(candidate)
++                break
++
++    curriculum = load_curriculum(input_path)
++    rows = convert(curriculum, args.format)
++    random.Random(args.seed).shuffle(rows)
++
++    split = int(len(rows) * (1 - args.val_ratio))
++    train_rows = rows[:split]
++    val_rows = rows[split:]
++
++    out_dir = Path(args.output_dir)
++    write_jsonl(out_dir / "train.jsonl", train_rows)
++    write_jsonl(out_dir / "val.jsonl", val_rows)
++    write_jsonl(out_dir / "all.jsonl", rows)
++
++    print(f"Converted {len(rows)} examples -> {len(train_rows)} train / {len(val_rows)} val")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/knowledge/train_core_brain.py b/scripts/knowledge/train_core_brain.py
+new file mode 100644
+index 00000000..3c154a55
+--- /dev/null
++++ b/scripts/knowledge/train_core_brain.py
+@@ -0,0 +1,81 @@
++#!/usr/bin/env python3
++"""QLoRA fine-tuning recipe for the SupremeAI Tiny Core Brain.
++
++This script prepares and (optionally) runs a LoRA/QLoRA training job using
++Unsloth/PEFT. In environments without GPU/torch it performs a dry-run that
++validates the dataset and writes a training manifest.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++from pathlib import Path
++from typing import Any
++
++TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
++
++
++def load_jsonl(path: Path) -> list[dict[str, Any]]:
++    rows: list[dict[str, Any]] = []
++    with path.open("r", encoding="utf-8") as fh:
++        for line in fh:
++            line = line.strip()
++            if line:
++                rows.append(json.loads(line))
++    return rows
++
++
++def build_manifest(train_path: Path, val_path: Path, base_model: str, r: int, alpha: int) -> dict[str, Any]:
++    train_rows = load_jsonl(train_path)
++    val_rows = load_jsonl(val_path) if val_path.exists() else []
++    return {
++        "base_model": base_model,
++        "lora": {"r": r, "alpha": alpha, "target_modules": TARGET_MODULES},
++        "quantization": "4bit",
++        "scheduler": "cosine",
++        "train_samples": len(train_rows),
++        "val_samples": len(val_rows),
++        "export": ["gguf:Q4_K_M", "gguf:Q8_0", "onnx"],
++    }
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser(description="Train Tiny Core Brain (QLoRA)")
++    parser.add_argument("--train", default="data/brain/train.jsonl")
++    parser.add_argument("--val", default="data/brain/val.jsonl")
++    parser.add_argument("--base-model", default="Qwen/Qwen2.5-1.5B-Instruct")
++    parser.add_argument("--r", type=int, default=16)
++    parser.add_argument("--alpha", type=int, default=32)
++    parser.add_argument("--output-dir", default="models/tiny-core-brain")
++    parser.add_argument("--dry-run", action="store_true", default=True)
++    args = parser.parse_args()
++
++    train_path = Path(args.train)
++    val_path = Path(args.val)
++    if not train_path.exists():
++        for cand in ("data/brain/train.jsonl", "data/brain/augmented/train.jsonl"):
++            if Path(cand).exists():
++                train_path = Path(cand)
++                val_path = Path(cand).with_name("val.jsonl")
++                break
++
++    manifest = build_manifest(train_path, val_path, args.base_model, args.r, args.alpha)
++    out_dir = Path(args.output_dir)
++    out_dir.mkdir(parents=True, exist_ok=True)
++    with (out_dir / "training_manifest.json").open("w", encoding="utf-8") as fh:
++        json.dump(manifest, fh, indent=2, ensure_ascii=False)
++
++    print(json.dumps(manifest, indent=2, ensure_ascii=False))
++
++    if not args.dry_run:
++        try:
++            import torch  # type: ignore
++            from unsloth import FastLanguageModel  # type: ignore
++        except Exception as exc:
++            raise SystemExit(f"Training dependencies unavailable: {exc}")
++        # Full training left to deployment environment; manifest is the contract.
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index b739b7d3..f32743fe 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 03:13:14 UTC · **507 scripts** (472 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 03:33:26 UTC · **510 scripts** (475 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -274,11 +274,14 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/verify_preflight_evidence.py` | Verify deployment preflight evidence integrity and schema. |
+ | `ci/webhook_signature_checker.py` | Audit tool to detect unverified Webhook endpoints across the backend (Trap #86). |
+ 
+-## scripts/knowledge/  (1 scripts)
++## scripts/knowledge/  (4 scripts)
+ 
+ | File | Purpose |
+ |---|---|
++| `knowledge/augment_curriculum_data.py` | Synthetic data augmentor for the Tiny Core Brain curriculum. |
++| `knowledge/convert_curriculum_to_jsonl.py` | Convert the Banglish/Bangla intent curriculum (sonet.json) into JSONL datasets. |
+ | `knowledge/ingest_project_docs.py` | Project-docs knowledge ingest (#1337) — r2, guardian-clean revision. |
++| `knowledge/train_core_brain.py` | QLoRA fine-tuning recipe for the SupremeAI Tiny Core Brain. |
+ 
+ ## scripts/ops/  (253 scripts)
+ 

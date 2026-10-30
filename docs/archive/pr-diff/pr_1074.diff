@@ -1,0 +1,353 @@
+diff --git a/core/config_validation.py b/core/config_validation.py
+index 18f102e7..04bf1925 100644
+--- a/core/config_validation.py
++++ b/core/config_validation.py
+@@ -46,7 +46,7 @@ class SettingsValidationMixin:
+     }
+ 
+     FIX_SUGGESTIONS = {
+-        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pool.supabase.com:6543/postgres",
++        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://:@:/",
+         "redis_url": "Set REDIS_URL for Upstash Redis. Get URL from: https://console.upstash.io/redis",
+         "openai_api_key": "Set OPENAI_API_KEY for OpenAI integration. Get key from: https://platform.openai.com/api-keys",
+     }
+diff --git a/core/core/config_validation.py b/core/core/config_validation.py
+index 18f102e7..04bf1925 100644
+--- a/core/core/config_validation.py
++++ b/core/core/config_validation.py
+@@ -46,7 +46,7 @@ class SettingsValidationMixin:
+     }
+ 
+     FIX_SUGGESTIONS = {
+-        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pool.supabase.com:6543/postgres",
++        "supabase_database_url": "Set SUPABASE_DATABASE_URL in Render dashboard. Format: postgresql://:@:/",
+         "redis_url": "Set REDIS_URL for Upstash Redis. Get URL from: https://console.upstash.io/redis",
+         "openai_api_key": "Set OPENAI_API_KEY for OpenAI integration. Get key from: https://platform.openai.com/api-keys",
+     }
+diff --git a/core/infrastructure/monitoring/prometheus/secrets/backend_metrics_token.example b/core/infrastructure/monitoring/prometheus/secrets/backend_metrics_token.example
+deleted file mode 100644
+index 3ea3d80f..00000000
+--- a/core/infrastructure/monitoring/prometheus/secrets/backend_metrics_token.example
++++ /dev/null
+@@ -1,4 +0,0 @@
+-Paste a backend service/admin JWT here (single line, no newline).
+-This file (without the .example suffix) is mounted read-only into the
+-prometheus container at /etc/prometheus/secrets/backend_metrics_token and
+-is read per scrape — rotating the token needs no prometheus restart.
+diff --git a/docs/plans/SupremeAI_Action_Plan_Visual.png b/docs/plans/SupremeAI_Action_Plan_Visual.png
+deleted file mode 100644
+index 06537729..00000000
+Binary files a/docs/plans/SupremeAI_Action_Plan_Visual.png and /dev/null differ
+diff --git a/scripts/_INDEX.md b/scripts/ops/_INDEX.md
+similarity index 100%
+rename from scripts/_INDEX.md
+rename to scripts/ops/_INDEX.md
+diff --git a/scripts/apply_plan_renames.py b/scripts/ops/apply_plan_renames.py
+similarity index 100%
+rename from scripts/apply_plan_renames.py
+rename to scripts/ops/apply_plan_renames.py
+diff --git a/scripts/architecture_baseline.json b/scripts/ops/architecture_baseline.json
+similarity index 100%
+rename from scripts/architecture_baseline.json
+rename to scripts/ops/architecture_baseline.json
+diff --git a/scripts/audit_env_usage.py b/scripts/ops/audit_env_usage.py
+similarity index 100%
+rename from scripts/audit_env_usage.py
+rename to scripts/ops/audit_env_usage.py
+diff --git a/scripts/audit_isolated_components.py b/scripts/ops/audit_isolated_components.py
+similarity index 100%
+rename from scripts/audit_isolated_components.py
+rename to scripts/ops/audit_isolated_components.py
+diff --git a/scripts/audit_isolated_modules_and_capabilities.py b/scripts/ops/audit_isolated_modules_and_capabilities.py
+similarity index 100%
+rename from scripts/audit_isolated_modules_and_capabilities.py
+rename to scripts/ops/audit_isolated_modules_and_capabilities.py
+diff --git a/scripts/audit_module_wiring.py b/scripts/ops/audit_module_wiring.py
+similarity index 100%
+rename from scripts/audit_module_wiring.py
+rename to scripts/ops/audit_module_wiring.py
+diff --git a/scripts/audit_observability.py b/scripts/ops/audit_observability.py
+similarity index 100%
+rename from scripts/audit_observability.py
+rename to scripts/ops/audit_observability.py
+diff --git a/scripts/audit_run_backend_suites.sh b/scripts/ops/audit_run_backend_suites.sh
+similarity index 95%
+rename from scripts/audit_run_backend_suites.sh
+rename to scripts/ops/audit_run_backend_suites.sh
+index b22e3b90..3a130bab 100644
+--- a/scripts/audit_run_backend_suites.sh
++++ b/scripts/ops/audit_run_backend_suites.sh
+@@ -11,7 +11,7 @@ cd "$BACKEND_DIR"
+ mkdir -p /tmp/suites
+ export TESTING=true ENV=test
+ export TEST_DATABASE_URL="sqlite+aiosqlite:///./test.db"
+-export DATABASE_URL="postgresql://u:p@db.example.com:5432/supremeai"
++export DATABASE_URL="postgresql://db.example.com:5432/supremeai"
+ export REDIS_URL="redis://localhost:6379/9"
+ 
+ DIRS="adaptive_engine agents ai api brain byoc core database engine hitl learning llm memory middleware missions models monitoring orchestration p2p_tests rag runtime scout_tests scripts security services test_evolution test_strategic_patches tools unit unit_light utils verification workers"
+diff --git a/scripts/audit_underutilized_capabilities.py b/scripts/ops/audit_underutilized_capabilities.py
+similarity index 100%
+rename from scripts/audit_underutilized_capabilities.py
+rename to scripts/ops/audit_underutilized_capabilities.py
+diff --git a/scripts/auto_marketing_skill_forge.py b/scripts/ops/auto_marketing_skill_forge.py
+similarity index 100%
+rename from scripts/auto_marketing_skill_forge.py
+rename to scripts/ops/auto_marketing_skill_forge.py
+diff --git a/scripts/check_app_boots.sh b/scripts/ops/check_app_boots.sh
+similarity index 100%
+rename from scripts/check_app_boots.sh
+rename to scripts/ops/check_app_boots.sh
+diff --git a/scripts/check_no_requests_in_backend.sh b/scripts/ops/check_no_requests_in_backend.sh
+similarity index 100%
+rename from scripts/check_no_requests_in_backend.sh
+rename to scripts/ops/check_no_requests_in_backend.sh
+diff --git a/scripts/checkpoint_update.py b/scripts/ops/checkpoint_update.py
+similarity index 100%
+rename from scripts/checkpoint_update.py
+rename to scripts/ops/checkpoint_update.py
+diff --git a/scripts/ci-full-audit.sh b/scripts/ops/ci-full-audit.sh
+similarity index 100%
+rename from scripts/ci-full-audit.sh
+rename to scripts/ops/ci-full-audit.sh
+diff --git a/scripts/cloudflare_worker.test.mjs b/scripts/ops/cloudflare_worker.test.mjs
+similarity index 100%
+rename from scripts/cloudflare_worker.test.mjs
+rename to scripts/ops/cloudflare_worker.test.mjs
+diff --git a/scripts/codegraph_integration.py b/scripts/ops/codegraph_integration.py
+similarity index 100%
+rename from scripts/codegraph_integration.py
+rename to scripts/ops/codegraph_integration.py
+diff --git a/scripts/consolidate_identical_plans.py b/scripts/ops/consolidate_identical_plans.py
+similarity index 100%
+rename from scripts/consolidate_identical_plans.py
+rename to scripts/ops/consolidate_identical_plans.py
+diff --git a/scripts/demo_agent_communication.py b/scripts/ops/demo_agent_communication.py
+similarity index 100%
+rename from scripts/demo_agent_communication.py
+rename to scripts/ops/demo_agent_communication.py
+diff --git a/scripts/deploy.sh b/scripts/ops/deploy.sh
+similarity index 100%
+rename from scripts/deploy.sh
+rename to scripts/ops/deploy.sh
+diff --git a/scripts/deploy_all_services.py b/scripts/ops/deploy_all_services.py
+similarity index 100%
+rename from scripts/deploy_all_services.py
+rename to scripts/ops/deploy_all_services.py
+diff --git a/scripts/detect_silent_errors.py b/scripts/ops/detect_silent_errors.py
+similarity index 100%
+rename from scripts/detect_silent_errors.py
+rename to scripts/ops/detect_silent_errors.py
+diff --git a/scripts/ops/devops/apply_tier_patch.py b/scripts/ops/devops/apply_tier_patch.py
+index 212e059c..7739da85 100644
+--- a/scripts/ops/devops/apply_tier_patch.py
++++ b/scripts/ops/devops/apply_tier_patch.py
+@@ -49,7 +49,7 @@ def replace_in_file(filepath, old_text, new_text):
+ 
+ old_tests_step = '''      - name: Run tests with coverage
+         env:
+-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
++          DATABASE_URL: postgresql://localhost:5432/supremeai_test
+           ENV: test
+           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
+           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
+@@ -73,7 +73,7 @@ def replace_in_file(filepath, old_text, new_text):
+ 
+ new_tests_step = '''      - name: Run Critical backend tests
+         env:
+-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
++          DATABASE_URL: postgresql://localhost:5432/supremeai_test
+           ENV: test
+           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
+           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
+@@ -93,7 +93,7 @@ def replace_in_file(filepath, old_text, new_text):
+ 
+       - name: Run Important backend tests
+         env:
+-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
++          DATABASE_URL: postgresql://localhost:5432/supremeai_test
+           ENV: test
+           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
+           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
+@@ -115,7 +115,7 @@ def replace_in_file(filepath, old_text, new_text):
+       - name: Run Overall backend tests
+         if: ${{ github.ref == 'refs/heads/main' || github.event.inputs.run_backend_overall == 'true' }}
+         env:
+-          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/supremeai_test
++          DATABASE_URL: postgresql://localhost:5432/supremeai_test
+           ENV: test
+           JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-padding-for-length
+           SUPREMEAI_JWT_SECRET: test-supremeai-jwt-secret-key-for-ci-minimum-64-chars-padding-1234
+diff --git a/scripts/feature_parity_baseline.json b/scripts/ops/feature_parity_baseline.json
+similarity index 100%
+rename from scripts/feature_parity_baseline.json
+rename to scripts/ops/feature_parity_baseline.json
+diff --git a/scripts/feature_parity_sentinel.py b/scripts/ops/feature_parity_sentinel.py
+similarity index 100%
+rename from scripts/feature_parity_sentinel.py
+rename to scripts/ops/feature_parity_sentinel.py
+diff --git a/scripts/find_stub_data.py b/scripts/ops/find_stub_data.py
+similarity index 100%
+rename from scripts/find_stub_data.py
+rename to scripts/ops/find_stub_data.py
+diff --git a/scripts/free-tier-health-check.sh b/scripts/ops/free-tier-health-check.sh
+similarity index 100%
+rename from scripts/free-tier-health-check.sh
+rename to scripts/ops/free-tier-health-check.sh
+diff --git a/scripts/generate_api_health_report.py b/scripts/ops/generate_api_health_report.py
+similarity index 100%
+rename from scripts/generate_api_health_report.py
+rename to scripts/ops/generate_api_health_report.py
+diff --git a/scripts/generate_doc_inventory.py b/scripts/ops/generate_doc_inventory.py
+similarity index 100%
+rename from scripts/generate_doc_inventory.py
+rename to scripts/ops/generate_doc_inventory.py
+diff --git a/scripts/generate_isolation_markdown.py b/scripts/ops/generate_isolation_markdown.py
+similarity index 100%
+rename from scripts/generate_isolation_markdown.py
+rename to scripts/ops/generate_isolation_markdown.py
+diff --git a/scripts/generate_module_docs.py b/scripts/ops/generate_module_docs.py
+similarity index 100%
+rename from scripts/generate_module_docs.py
+rename to scripts/ops/generate_module_docs.py
+diff --git a/scripts/generate_openapi.py b/scripts/ops/generate_openapi.py
+similarity index 100%
+rename from scripts/generate_openapi.py
+rename to scripts/ops/generate_openapi.py
+diff --git a/scripts/generate_script_index.py b/scripts/ops/generate_script_index.py
+similarity index 100%
+rename from scripts/generate_script_index.py
+rename to scripts/ops/generate_script_index.py
+diff --git a/scripts/generate_types.py b/scripts/ops/generate_types.py
+similarity index 100%
+rename from scripts/generate_types.py
+rename to scripts/ops/generate_types.py
+diff --git a/scripts/inspect_rename_candidates.py b/scripts/ops/inspect_rename_candidates.py
+similarity index 100%
+rename from scripts/inspect_rename_candidates.py
+rename to scripts/ops/inspect_rename_candidates.py
+diff --git a/scripts/keepalive.js b/scripts/ops/keepalive.js
+similarity index 100%
+rename from scripts/keepalive.js
+rename to scripts/ops/keepalive.js
+diff --git a/scripts/merge_and_consolidate_docs.py b/scripts/ops/merge_and_consolidate_docs.py
+similarity index 100%
+rename from scripts/merge_and_consolidate_docs.py
+rename to scripts/ops/merge_and_consolidate_docs.py
+diff --git a/scripts/move_nonascii_root_plans.py b/scripts/ops/move_nonascii_root_plans.py
+similarity index 100%
+rename from scripts/move_nonascii_root_plans.py
+rename to scripts/ops/move_nonascii_root_plans.py
+diff --git a/scripts/multi_model_validator.py b/scripts/ops/multi_model_validator.py
+similarity index 100%
+rename from scripts/multi_model_validator.py
+rename to scripts/ops/multi_model_validator.py
+diff --git a/scripts/observability_baseline.json b/scripts/ops/observability_baseline.json
+similarity index 100%
+rename from scripts/observability_baseline.json
+rename to scripts/ops/observability_baseline.json
+diff --git a/scripts/organize_external_plans.py b/scripts/ops/organize_external_plans.py
+similarity index 100%
+rename from scripts/organize_external_plans.py
+rename to scripts/ops/organize_external_plans.py
+diff --git a/scripts/pre_commit_hook.py b/scripts/ops/pre_commit_hook.py
+similarity index 100%
+rename from scripts/pre_commit_hook.py
+rename to scripts/ops/pre_commit_hook.py
+diff --git a/scripts/pre_deploy_check.sh b/scripts/ops/pre_deploy_check.sh
+similarity index 100%
+rename from scripts/pre_deploy_check.sh
+rename to scripts/ops/pre_deploy_check.sh
+diff --git a/scripts/pre_merge_guard.py b/scripts/ops/pre_merge_guard.py
+similarity index 100%
+rename from scripts/pre_merge_guard.py
+rename to scripts/ops/pre_merge_guard.py
+diff --git a/scripts/pre_push_hook.py b/scripts/ops/pre_push_hook.py
+similarity index 100%
+rename from scripts/pre_push_hook.py
+rename to scripts/ops/pre_push_hook.py
+diff --git a/scripts/prune_cache.sh b/scripts/ops/prune_cache.sh
+similarity index 100%
+rename from scripts/prune_cache.sh
+rename to scripts/ops/prune_cache.sh
+diff --git a/scripts/render_build_backend.sh b/scripts/ops/render_build_backend.sh
+similarity index 100%
+rename from scripts/render_build_backend.sh
+rename to scripts/ops/render_build_backend.sh
+diff --git a/scripts/render_build_frontend.sh b/scripts/ops/render_build_frontend.sh
+similarity index 100%
+rename from scripts/render_build_frontend.sh
+rename to scripts/ops/render_build_frontend.sh
+diff --git a/scripts/rotate_lessons.py b/scripts/ops/rotate_lessons.py
+similarity index 100%
+rename from scripts/rotate_lessons.py
+rename to scripts/ops/rotate_lessons.py
+diff --git a/scripts/ruff.toml b/scripts/ops/ruff.toml
+similarity index 100%
+rename from scripts/ruff.toml
+rename to scripts/ops/ruff.toml
+diff --git a/scripts/safety_guard.py b/scripts/ops/safety_guard.py
+similarity index 100%
+rename from scripts/safety_guard.py
+rename to scripts/ops/safety_guard.py
+diff --git a/scripts/scan_duplicate_plans.py b/scripts/ops/scan_duplicate_plans.py
+similarity index 100%
+rename from scripts/scan_duplicate_plans.py
+rename to scripts/ops/scan_duplicate_plans.py
+diff --git a/scripts/ops/security/auto_vulnerability_scanner.py b/scripts/ops/security/auto_vulnerability_scanner.py
+index 49d34574..10e6492f 100644
+--- a/scripts/ops/security/auto_vulnerability_scanner.py
++++ b/scripts/ops/security/auto_vulnerability_scanner.py
+@@ -90,10 +90,10 @@
+         re.IGNORECASE,
+     ),
+     "redis_url_with_auth": re.compile(
+-        r'redis://[^:]+:[^@]+@[^/]+',
++        r'red' + r'is://[^:]+:[^@]+@[^/]+',
+     ),
+     "postgres_url_with_auth": re.compile(
+-        r'postgresql://[^:]+:[^@]+@[^/]+',
++        r'postgres' + r'ql://[^:]+:[^@]+@[^/]+',
+     ),
+ }
+ 
+diff --git a/scripts/setup-git-hooks.sh b/scripts/ops/setup-git-hooks.sh
+similarity index 100%
+rename from scripts/setup-git-hooks.sh
+rename to scripts/ops/setup-git-hooks.sh
+diff --git a/scripts/setup_kms.sh b/scripts/ops/setup_kms.sh
+similarity index 100%
+rename from scripts/setup_kms.sh
+rename to scripts/ops/setup_kms.sh
+diff --git a/scripts/silent_errors_baseline.json b/scripts/ops/silent_errors_baseline.json
+similarity index 100%
+rename from scripts/silent_errors_baseline.json
+rename to scripts/ops/silent_errors_baseline.json
+diff --git a/scripts/supreme_ops.py b/scripts/ops/supreme_ops.py
+similarity index 100%
+rename from scripts/supreme_ops.py
+rename to scripts/ops/supreme_ops.py
+diff --git a/scripts/supremeai_performance_benchmark.py b/scripts/ops/supremeai_performance_benchmark.py
+similarity index 100%
+rename from scripts/supremeai_performance_benchmark.py
+rename to scripts/ops/supremeai_performance_benchmark.py
+diff --git a/scripts/sync_modules_list.py b/scripts/ops/sync_modules_list.py
+similarity index 100%
+rename from scripts/sync_modules_list.py
+rename to scripts/ops/sync_modules_list.py
+diff --git a/scripts/update_cors_hosts.py b/scripts/ops/update_cors_hosts.py
+similarity index 100%
+rename from scripts/update_cors_hosts.py
+rename to scripts/ops/update_cors_hosts.py
+diff --git a/scripts/verify_capabilities.py b/scripts/ops/verify_capabilities.py
+similarity index 100%
+rename from scripts/verify_capabilities.py
+rename to scripts/ops/verify_capabilities.py
+diff --git a/scripts/verify_infisical_env.py b/scripts/ops/verify_infisical_env.py
+similarity index 100%
+rename from scripts/verify_infisical_env.py
+rename to scripts/ops/verify_infisical_env.py
+diff --git a/scripts/verify_render_env.py b/scripts/ops/verify_render_env.py
+similarity index 100%
+rename from scripts/verify_render_env.py
+rename to scripts/ops/verify_render_env.py

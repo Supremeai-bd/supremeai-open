@@ -1,0 +1,100 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 38cafbec..33e7e837 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -24,7 +24,9 @@
+                     legitimate unless main history proves otherwise.
+   - history plane : landed commit subjects on origin/main (squash-merge
+                     convention embeds the same slug and the PR number).
+-  - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
++  - flight plane  : open PR titles (Tower github.list_prs — dotted form since
++                    the 2026-10-29 github-family rename wave, #2486) — same
++                    slug token.
+   - verdict plane : Tower bridge_read_feedback per WO number — the feedback-
+                     plane reader this file's own scope note called for. Used
+                     ONLY to enrich MERGED_ON_MAIN rows (tower_verdict /
+@@ -554,8 +556,11 @@ def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
+     # silently ignored and limit fell back to its default 5 (five newest
+     # rows only). Neither defect raises; classification just degraded to the
+     # age ladder (LANDING_AT_RISK false positives for WOs whose PR was
+-    # genuinely in flight).
+-    txt = fetch_text("github_list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
++    # genuinely in flight). Third silent mode (cycle 36, #2486): the
++    # github-family dotted-wave rename turned the legacy wire name into a
++    # -32602 error whose text flowed into the classifier as pseudo-titles
++    # (OPEN_PR=0 while PRs were open) — migrated to the dotted name.
++    txt = fetch_text("github.list_prs", {"state": "open", "repo": OPEN_REPO, "limit": 50})
+     titles = []
+     for line in txt.splitlines():
+         line = line.strip()
+@@ -925,7 +930,7 @@ def _cap(name, arguments):
+ 
+     titles = _open_pr_titles(fetch_text=_cap)
+     cases.append(("flight plane pins open repo + schema limit (no per_page)",
+-                  sent.get("name") == "github_list_prs"
++                  sent.get("name") == "github.list_prs"
+                   and sent.get("args", {}).get("repo") == OPEN_REPO
+                   and sent.get("args", {}).get("limit") == 50
+                   and "per_page" not in sent.get("args", {})
+diff --git a/scripts/ci/satellite_ci_sentinel.py b/scripts/ci/satellite_ci_sentinel.py
+index a98226f3..e72b33a6 100644
+--- a/scripts/ci/satellite_ci_sentinel.py
++++ b/scripts/ci/satellite_ci_sentinel.py
+@@ -8,7 +8,8 @@
+ 
+ Zero-credential by contract: exactly ONE anonymous MCP Tower handshake per sweep
+ (initialize -> notifications/initialized -> tools/call), then read-only
+-`github_workflow_runs` per satellite repo. No tokens, no gh CLI, no writes.
++`github.workflow_runs` per satellite repo (dotted form since the 2026-10-29
++github-family rename wave, #2486). No tokens, no gh CLI, no writes.
+ 
+ Never-do compliance (audit trail):
+   - no `.github/**` touching (protected-path law #1643); scheduling is routed,
+@@ -265,7 +266,7 @@ def live_sweep(repos, max_age_hours: float, tower_url: str = TOWER_URL, timeout:
+     skips: list = []
+     for name in repos:
+         try:
+-            data = client.tool("github_workflow_runs", {"repo": f"{ORG}/{name}", "per_page": 15})
++            data = client.tool("github.workflow_runs", {"repo": f"{ORG}/{name}", "per_page": 15})
+         except Exception as exc:  # noqa: BLE001 - honest-skip, never fabricate
+             sweep[name] = {"runs": None, "note": f"skip ({exc})"}
+             skips.append(f"{ORG}/{name}: skip ({exc})")
+diff --git a/scripts/knowledge/ingest_project_docs.py b/scripts/knowledge/ingest_project_docs.py
+index cae901f4..bc50ce25 100644
+--- a/scripts/knowledge/ingest_project_docs.py
++++ b/scripts/knowledge/ingest_project_docs.py
+@@ -107,7 +107,7 @@ def main() -> int:
+                 doc_paths.append(root_doc)
+         LOGGER.info("%s (%s): %d candidate docs", repo, label, len(doc_paths))
+         for path in sorted(doc_paths)[: args.max_docs]:
+-            read = call(sid, "github_read_file", {"repo": repo, "path": path}, rid)
++            read = call(sid, "github.read_file", {"repo": repo, "path": path}, rid)
+             rid += 1
+             try:
+                 inner = json.loads(read.get("result", {}).get("content", [{}])[0].get("text", "{}"))
+diff --git a/scripts/ops/auto_doctor.py b/scripts/ops/auto_doctor.py
+index 03927577..ec333544 100644
+--- a/scripts/ops/auto_doctor.py
++++ b/scripts/ops/auto_doctor.py
+@@ -167,7 +167,7 @@ def diagnose_log(self, log_content: str) -> list[DiagnosticPrescription]:
+                     severity="P2_MEDIUM",
+                     root_cause="No recognized pattern in snippet",
+                     healable=False,
+-                    suggested_action="Inspect full raw run logs via github_get_failed_logs.",
++                    suggested_action="Inspect full raw run logs via github.get_failed_logs.",
+                     remedy_blueprint="Escalate to operator or human supervisor.",
+                 )
+             )
+diff --git a/scripts/ops/ingest_project_docs.py b/scripts/ops/ingest_project_docs.py
+index 723c183d..9eee95fe 100644
+--- a/scripts/ops/ingest_project_docs.py
++++ b/scripts/ops/ingest_project_docs.py
+@@ -88,7 +88,7 @@ def main() -> int:
+                 doc_paths.append(root_doc)
+         print(f"{repo}: {len(doc_paths)} candidate docs")
+         for path in sorted(doc_paths)[: args.max_docs]:
+-            read = call(sid, "github_read_file", {"repo": repo, "path": path}, rid)
++            read = call(sid, "github.read_file", {"repo": repo, "path": path}, rid)
+             rid += 1
+             try:
+                 inner = json.loads(read.get("result", {}).get("content", [{}])[0].get("text", "{}"))

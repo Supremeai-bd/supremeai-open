@@ -1,0 +1,60 @@
+diff --git a/core/circles/contracts.py b/core/circles/contracts.py
+index 719600be..ef814d1a 100644
+--- a/core/circles/contracts.py
++++ b/core/circles/contracts.py
+@@ -117,6 +117,10 @@ class ExecutionResult(BaseModel):
+     finished_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++CircleExecutionResult = ExecutionResult
++
++
+ class EventEnvelope(BaseModel):
+     model_config = ConfigDict(extra="forbid")
+ 
+diff --git a/core/multi_platform_orchestrator.py b/core/multi_platform_orchestrator.py
+index 63bc9de0..938fdab6 100644
+--- a/core/multi_platform_orchestrator.py
++++ b/core/multi_platform_orchestrator.py
+@@ -75,6 +75,10 @@ class ExecutionResult:
+     errors: list[str] = field(default_factory=list)
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++MultiPlatformExecutionResult = ExecutionResult
++
++
+ class MultiPlatformOrchestrator:
+     """
+     মাল্টি-প্ল্যাটফর্ম এআই আউটপুট ইন্টারসেপ্টর ও কোডস্পেস অর্কেস্ট্রেটর।
+diff --git a/core/orchestration/swarm_orchestrator.py b/core/orchestration/swarm_orchestrator.py
+index 01570cf0..8415837c 100644
+--- a/core/orchestration/swarm_orchestrator.py
++++ b/core/orchestration/swarm_orchestrator.py
+@@ -58,6 +58,10 @@ class ExecutionResult(BaseModel):
+     errors: list[str] = Field(default_factory=list)
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++SwarmExecutionResult = ExecutionResult
++
++
+ class SwarmOrchestrator:
+     """
+     Universal Cognitive Engine (Architecture 2.0)
+diff --git a/core/sandbox/base.py b/core/sandbox/base.py
+index dee72d2a..7b0db161 100644
+--- a/core/sandbox/base.py
++++ b/core/sandbox/base.py
+@@ -104,6 +104,10 @@ def is_failure(self) -> bool:
+         return not self.success or self.exit_code != 0 or self.timed_out or self.resource_exceeded
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++SandboxExecutionResult = ExecutionResult
++
++
+ class SandboxProvider(abc.ABC):
+     """Abstract base class representing an isolated code execution environment."""
+ 

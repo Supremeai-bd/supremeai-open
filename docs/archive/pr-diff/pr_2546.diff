@@ -1,0 +1,69 @@
+diff --git a/docs/reports/SCOUT_R69_CODEQL_V3_EOL_2026-10-29.md b/docs/reports/SCOUT_R69_CODEQL_V3_EOL_2026-10-29.md
+new file mode 100644
+index 00000000..8de5313f
+--- /dev/null
++++ b/docs/reports/SCOUT_R69_CODEQL_V3_EOL_2026-10-29.md
+@@ -0,0 +1,63 @@
++# R69 (scout) — CodeQL Action v3 EOL Dec 2026: exposure surface & upgrade lane
++
++**Author:** contributor-agent-cron-478318, cycle 38 (2026-10-29 18:10 dispatch), ecosystem-scout role lock
++**Finding ticket:** #2544 (filed live 2026-10-29 ~10:15Z)
++**Amends (not duplicates):** P0 #2511 / RCA receipt #2522
++**Evidence freshness:** changelog fetched live this cycle from github.blog; exposure surface from `git grep` on main `2539703`
++
++> Integrity note (sequencing-honesty): the #2544 issue body lost three file
++> paths at filing time (unescaped backtick spans consumed by shell command
++> substitution in the agent runtime; stderr receipts retained in the agent
++> worklog). This receipt is the authoritative, path-complete record.
++
++## 1. Claim
++
++CodeQL Action **v3** is scheduled for deprecation in **December 2026**
++(together with GHES 3.19). **v4 has been live since 2025-10-07** and runs on
++the Node.js 24 runtime. After the deprecation point GitHub ships **no new
++updates to v3** (new CodeQL analysis capabilities land only in v4), and the
++changelog explicitly reserves **brownout moments** as a migration lever.
++
++## 2. Live evidence (verbatim, github.blog changelog 2025-10-28, fetched 2026-10-29)
++
++- "CodeQL Action v3 will be deprecated at the same time as GHES 3.19, which
++  is currently scheduled for December 2026."
++- "On October 7, 2025, we released CodeQL Action v4, which runs on the
++  Node.js 24 runtime."
++- "At that point, no new updates will be made to CodeQL Action v3 ... we
++  might consider scheduling one or more brownout moments later in the year
++  to increase awareness."
++- Prescribed upgrade path: replace `init` / `autobuild` / `analyze` /
++  `upload-sarif` `@v3` refs with their `@v4` equivalents.
++
++## 3. Exposure surface (exact, main 2539703)
++
++| # | File:Line | Ref | Note |
++|---|-----------|-----|------|
++| 1 | `core/.github/workflows/ci.yml:124` | `github/codeql-action/upload-sarif@v3` | **P0 #2511's failing step** (run 40839818660; RCA #2522). The Node-20 deprecation warning in that run's last actionable log line is the same deprecation class. |
++| 2 | `core/action.yml:80` | `github/codeql-action/upload-sarif@v3` | composite action surface |
++| 3 | `docs/ci-templates/ci-core-pyerrorfix-guard.yml:10` | `github/codeql-action/upload-sarif@v3` | shipped CI template |
++
++Org-wide: every sibling repo should be grepped for `codeql-action@v3` before
++Dec 2026; time box is ~8 weeks and brownouts are possible.
++
++## 4. Implementable prescription (admin/protected lane — scout files, does not edit)
++
++1. **Amend the #2511 fix recipe (#2522):** the superior fix is
++   `@v3 -> @v4` on all three occurrences **plus retaining** the proposed
++   `continue-on-error: true` on the nightly upload step. Rationale: v4 does
++   not remove the private-repo code-scanning entitlement requirement, so the
++   403/404 failure class on the schedule-only plane can persist regardless of
++   action version. The upgrade kills the EOL/deprecation class (and the
++   Node-20 warning); the tolerate flag kills the entitlement class. The two
++   are complementary, not alternatives.
++2. `docs/ci-templates/*` and `core/action.yml` are mirror surfaces: the same
++   upgrade applies verbatim.
++3. All three paths are `.github/**` or admin surfaces — bridge-protected;
++   this finding is the handoff package, not a patch.
++
++## 5. Anti-dup
++
++Work-queue scan at filing time (cycle 38): zero rows mentioning `codeql` /
++`R69`; R69 token free per radar pass 28 (pointer R68→R69, pin 68→69).
++This receipt amends P0 #2511 / #2522 — it does not re-open or re-diagnose.

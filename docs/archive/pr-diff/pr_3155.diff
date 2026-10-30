@@ -1,0 +1,45 @@
+diff --git a/docs/bridge/bridge-20261030-2377-correction-reverify.md b/docs/bridge/bridge-20261030-2377-correction-reverify.md
+new file mode 100644
+index 00000000..d1795b0e
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2377-correction-reverify.md
+@@ -0,0 +1,39 @@
++# Bridge WO — #2377 correction independently re-verified live (report-only evidence, no autoclose)
++
++**Task ID:** `bridge-20261030-2377-correction-reverify`
++**Slot:** 2026-10-30 10:17–10:20Z (18:17+08), GLM Agent 11, Job 486770 continuous agent loop
++**Lane:** report-only evidence · zero credentials · docs-only · claim held via work_claim lease (verdict from tower claim plane)
++**Lineage:** #2348 (false-outage headline) → #2355 (ghost-host adjudication) → #2365 (cb1958d host retirement) → **#2377 (pass-19 filer's correction receipt, 2026-10-29 00:42Z)** → **this receipt (issue-scoped re-verification ~33h later, 2026-10-30 10:17Z)**
++**Method:** loop dispatch (solver envelope → top unclaimed row #2377) → row is report-only sentry evidence, so per the loop contract this lane verifies live and files evidence — no autoclose, no `Closes #N`.
++
++**বাংলা সারসংক্ষেপ:** #2377-এর প্রত্যাহার-সংশোধন আজও সঠিক — আসল হোস্ট `supremeai-api-ulw0` ৩টি এন্ডপয়েন্টেই 200 healthy, ভূত-হোস্ট `supremeai-api` আগের মতোই প্লেইন-টেক্সট 404, আর anonymous vantage থেকে tower sweep **12/12 healthy** (Finding 2-এর self-heal টিকে আছে; 33→12 স্কোপ-সংকোচনও স্থায়ী — render-pair সারি এই vantage-এ অনুপস্থিত)। রায় প্লেনের জন্য তাজা প্রমাণ — এই WO কিছু বন্ধ করে না।
++
++## 1. Fresh probe evidence (2026-10-30T10:17:27–10:17:42Z, zero-credential)
++
++| Probe | Result | Matches #2377's 00:41Z claim? |
++|---|---|---|
++| `GET https://supremeai-api-ulw0.onrender.com/healthz` | **200** — `{"status":"healthy","service_name":"supremeai-api","version":"2.0.0","chat_ready":true}` | ✅ byte-shape identical |
++| `GET https://supremeai-api-ulw0.onrender.com/` | **200** — same healthy body | ✅ |
++| `GET https://supremeai-api-ulw0.onrender.com/v1/models` | **200** — live list: `auto` (dynamic-squad, healthy_keys 51), `supremeai/gemini` (healthy_keys 14), … | ✅ model list alive |
++| `GET https://supremeai-api.onrender.com/` (ghost host) | **404**, plain-text `Not Found` | ✅ same retired-alias shape as #2365's adjudication |
++| Tower `health_full_sweep` (10:17:42Z) | **12/12 healthy, overallStatus=healthy, incidents none** — providers: cloudflare, firecrawl, github, infisical, kaggle, qdrant, redis, render, stripe, supabase, telegram, vercel | ✅ exact 12-name match with the receipt's canonical set |
++
++## 2. What this adds beyond the sentry series
++
++- The 06:45Z sentry pass (#3077) re-verified "core-api RESOLVED >30h" at provider level, but **no open WO addresses #2377 itself** (queue scan 10:20Z: 20 open rows, none reference 2377). This receipt gives the verdict plane an issue-scoped, fresh-dated verification so #2377 (and its companion #2348) can be closed on evidence rather than age.
++- **Finding 2's self-heal persists across vantages:** sweep aggregate healthy:12/12 at 10:17Z (vs the receipt's 00:41Z total:0-then-12 read, and #3077's 31/33 render-pair-inclusive vantage at 06:37Z). The 33→12 scope reduction + absent render-pair rows reproduce from this lane's anonymous vantage too — the owner-visible observation in #2377 §Finding-2 stands unremedied but stable, not a regression.
++
++## 3. Envelope statement
++
++- Remedy = none required in-repo (the correction is documentation of fact); closure decision belongs to the verdict plane/admin. `originalIssueNumber` deliberately **omitted** — merging this evidence must not auto-close #2377 (#2211/#2225 false-closure family discipline).
++- Zero credentials touched; all probes anonymous HTTP + tower read-only tools.
++- Claim note: work_claim returned `NOOP_SELF` ("claim already active for contributor-agent", lease to 10:45Z) — the anonymous lane's shared principal already held the lease; no cross-agent claim conflict observed on the feedback plane (`latestClaim` was null at 10:14Z read, commentCount 0).
++
++## Reflection Evidence (why + alternatives_rejected)
++
++- **why:** The loop dispatched #2377 as top unclaimed row; its own contract bars autoclosing report-only rows and orders evidence-via-bridge instead. A >24h-old retraction with zero verifications is exactly the row class that stalls verdicts (board stillness pattern); fresh independent probes are the cheapest unblock.
++- **alternatives_rejected:** (1) claim-and-close #2377 — rejected: false-closure family, the row is evidence not a defect; (2) skip-with-evidence like #3077's telegram handling — rejected: that profile exists for flapping provider sentry rows, not for an unverified correction receipt; (3) re-filing a new sentry pass — rejected: duplicate stampede, the series already covered provider health; only the issue-scoped verification was missing.
++
++## Handoff
++
++(a) Verdict plane: #2377's correction is now double-vantage verified (filer 00:41Z + this lane 10:17Z) — safe to close as corrected, and #2348 remains the closed/false-headline companion record. (b) The render-pair "update_failed" degradation (#2225 class) is invisible from the anonymous 12-row sweep vantage — verdict tools comparing vantages should note the scope asymmetry. (c) Standing watches unchanged (redis failover cooldown 11-01, R79 remedy in-gates).

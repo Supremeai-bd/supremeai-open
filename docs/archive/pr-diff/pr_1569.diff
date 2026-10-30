@@ -1,0 +1,61 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 3a2dabf7..04e839e7 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -587,7 +587,13 @@ def due_roles(
+     cfg = config or load_cadence_config()
+     store = last_runs or {}
+     now = now_ts if now_ts is not None else time.time()
+-    return [r for r in cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS) if role_is_due(r, store.get(r), now, cfg)]
++    # বাংলা: state কী-ও অবশ্যই canonical হতে হবে। mark_role_run() একটি
++    # merged-source role-এর টাইমস্ট্যাম্প canonical কী-তে লেখে (যেমন
++    # task-auditor → auditor), তাই read-ও সেই একই কী থেকে হতে হবে —
++    # নইলে canonical API নিজের mark নিজেই দেখে না এবং role প্রতি সাইকেলে
++    # আবার due হয়ে যায় (state-key drift, ট্রাফিক-পুলিশ নিয়ম ৪ ভাঙে)।
++    # ডিফল্ট কনফিগে canonical_role() identity — আচরণ বাইট-অপরিবর্তিত।
++    return [r for r in cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS) if role_is_due(r, store.get(canonical_role(r, cfg)), now, cfg)]
+ 
+ def mark_role_run(
+     role: str,
+@@ -846,7 +852,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+             return 0
+ 
+-    cadence = load_cadence_config().get("cadences_hours", {})
++    cfg = load_cadence_config()
++    cadence = cfg.get("cadences_hours", {})
+     state = load_last_run_store()
+     now = time.time()
+ 
+@@ -860,14 +867,23 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         save_last_run_store(state)
+         log("*", "board is clean — cadence timers reset (docstring rule 3); scheduled roles may run immediately.")
+ 
+-    for role, hours in cadence.items():
+-        if now - state.get(role, 0) >= hours * 3600:
+-            state[role] = now
+-            save_last_run_store(state)
+-            mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
+-            print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
+-            print(f"ACTION: Time expired for {role}. Act as {role} now.")
+-            return 0
++    # বাংলা: cadence due-check এখন এক SSOT-এ — canonical API (due_roles →
++    # role_is_due → mark_role_run)। আগের inline হিসাব state[role] কাঁচা কী-তে
++    # পড়ত-লিখত এবং merged_roles উপেক্ষা করত; ফলে canonical mark অদৃশ্য হয়ে
++    # একই লজিক্যাল role বারবার ডিসপ্যাচ হত (live main 3a2dabf-এ প্রমাণিত:
++    # mark_role_run('task-auditor') → store['auditor'], inline loop
++    # store['task-auditor'] খোঁজে — ১০ ঘণ্টা পরেও পুনঃ-ডিসপ্যাচ; ট্রাফিক-পুলিশ
++    # নিয়ম ৪ ভাঙে)। due_roles() cadences_hours-এর ক্রমেই ফেরে, তাই প্রথম due
++    # role আগের মতোই প্রথমটি — ডিসপ্যাচ টেক্সট ও ক্রম বাইট-অপরিবর্তিত;
++    # ডিফল্ট কনফিগে canonical_role() identity, তাই আচরণে কোনো পরিবর্তন নেই।
++    # immediate state-advance (নিয়ম ৪) অক্ষত: mark → save → print → return।
++    for role in due_roles(state, now, cfg):
++        mark_role_run(role, state, now, cfg)
++        save_last_run_store(state)
++        mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
++        print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
++        print(f"ACTION: Time expired for {role}. Act as {role} now.")
++        return 0
+ 
+     print("ACTION: System is clean and up to date.")
+     return 0

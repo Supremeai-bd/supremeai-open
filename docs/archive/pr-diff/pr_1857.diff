@@ -1,0 +1,92 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index b6e141fc..0f073a0e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -17,11 +17,11 @@ All agents live, enter, and execute through exactly two unified pillars:
+    Run `python scripts/agents/continuous_agent_loop.py`. The loop self-dispatches:  
+    - Inspects board for unclaimed issues -> dispatches `solver`.  
+    - Checks role cadence timers -> dispatches scheduled routine role.  
+-   - Directly injects the 4 Universal Invariants and role mandate into execution.
++   - Directly injects the 5 Universal Invariants and role mandate into execution.
+ 
+ ---
+ 
+-## 📜 The 4 Universal Invariants (Must Follow vs Must Avoid)
++## 📜 The 5 Universal Invariants (Must Follow vs Must Avoid)
+ 
+ - **MUST FOLLOW:**
+   1. **Dual-Rebase:** Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 8 Anchor Hubs (#749–#762); all work attaches as Sub-Issues.
+diff --git a/core/runner/agent_runner.py b/core/runner/agent_runner.py
+index aa3cb1e9..dfb1f268 100644
+--- a/core/runner/agent_runner.py
++++ b/core/runner/agent_runner.py
+@@ -5,8 +5,9 @@
+   - docs/AGENT_LOOP_SPEC.md (task-envelope-v1, §2 envelope, §4 verification tiers)
+   - AGENTS.md §3 8-step table: Understand → Rules → Inspect → Claim → Work
+     → Verify → Record → Return
+-  - AGENTS.md (Single Door SSOT): 4 Universal Invariants — Dual-Rebase,
+-    Boundary, Superior Replacement, Verification & PR Blueprint
++  - AGENTS.md (Single Door SSOT): 5 Universal Invariants — Dual-Rebase,
++    Boundary, Superior Replacement, Verification & PR Blueprint, P0
++    Drainage & Anti-Stampede
+     (``Closes #N`` rides in the PR description — squash auto-close doctrine)
+ 
+ The runner CONSUMES the canonical task envelope emitted by
+@@ -993,7 +994,7 @@ def ok(cond: bool, msg: str) -> None:
+     with tempfile.TemporaryDirectory() as td:
+         root = Path(td)
+         (root / "AGENTS.md").write_text(
+-            "# AGENTS\n## The Single Door\n## The 4 Universal Invariants (Must Follow vs Must Avoid)\n",
++            "# AGENTS\n## The Single Door\n## The 5 Universal Invariants (Must Follow vs Must Avoid)\n",
+             encoding="utf-8",
+         )
+         pass_cmd = [sys.executable, "-c", "print('tier ok')"]
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index fa438787..0f54a615 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -88,7 +88,7 @@ must track this registry — keep the two in sync when the taxonomy changes.
+ 
+ **Relationship to `AGENTS.md` (Single Door SSOT):** the constitution is
+ `AGENTS.md` — the Single Door SSOT (the former `AGENT_RULES.md` was deleted by
+-#1526; citing it is a dangling reference). It defines the 4 Universal
++#1526; citing it is a dangling reference). It defines the 5 Universal
+ Invariants and the Single Door execution surface — it defines no group
+ taxonomy. The execution registry below is the authoritative group surface for
+ dispatch; no constitutional section substitutes for a registry group. Changing
+@@ -177,6 +177,22 @@ Honest limitations, documented rather than hidden:
+   claimable — the window is a fixed guess, not lease renewal (the bridge's own
+   lease allows renewal up to 180 minutes; the loop's local store cannot renew).
+ 
++**P0 Drainage gate (Universal Invariant 5, AGENTS.md):** the cadence path is
++not free-running. After a successful board query and before the due-role loop,
++`has_open_p0_blocker` scans the raw board items: any open item whose lowercased
++labels include `p0`, `p0-*`, or `p0 ` holds every routine cadence role (warning
++log + early return). Held roles never reach `mark_role_run`, so they do not
++consume their cadence window — once the board drains, the due role dispatches
++immediately. The gate is board-availability-gated (skipped when the query
++failed — fail-open to the pre-Rule-5 cadence path) and sits below the
++issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
++invariant text into every dispatched mandate; the invariant's
++idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
++and Claim Gate Guard. Honest caveat: stale `P0-critical` labels on
++already-resolved incidents keep the gate closed indefinitely (live:
++#1788/#1772 held while main CI was green — #1804/#1840 document the hygiene
++closure); label hygiene is an admin action outside the agent surface.
++
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+ The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index d9ab33fd..01965bc6 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -4,7 +4,7 @@
+ CONTRACT_VERSION = "agent-loop-contract/1"
+ 
+ Traffic-police logic:
+-1. Always display the 4 Universal Invariant Pillars (Common Rules).
++1. Always display the 5 Universal Invariant Pillars (Common Rules).
+ 2. If unclaimed issues exist -> Unlimited Solvers allowed: prompt agent with solver mandate & auto-dispatch.
+ 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
+ 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).

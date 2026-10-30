@@ -1,0 +1,244 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 08cc8730..ae86502f 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -12,7 +12,7 @@
+ 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
+ """
+ from __future__ import annotations
+-import argparse, json, os, subprocess, sys, time
++import argparse, json, os, subprocess, sys, threading, time
+ from collections.abc import Iterable
+ from pathlib import Path
+ from typing import Any
+@@ -264,6 +264,69 @@ def log(icon: str, msg: str) -> None:
+     except UnicodeEncodeError:
+         print(f"[*] {msg}")
+ 
++def _tower_queue_floor(timeout_s: float = 12.0) -> str:
++    """R61/#2318 option B — honesty floor for the gh-absent skip line.
++
++    On the documented external-agent runtime (no gh CLI) the skip line used to
++    say only "issue board unavailable", which reads as an EMPTY board while the
++    Tower queue is in fact reachable zero-credential — and the P0-drainage gate
++    (Universal Invariant 5) is dark there BY CONSTRUCTION (AGENT_LOOP_SPEC
++    scans the same gh-derived items). This best-effort probe appends the live
++    queue depth so the skip line stops lying by omission (the R61 body's live
++    quantification: 93 open rows incl. a P1 invisible to this runtime).
++
++    Never raises, never hangs: lazy sibling import (same sys.path pattern as
++    tests/test_tower_url_resolution.py), daemon probe thread + hard join, and
++    every failure mode degrades to the plain P0-dark note. Runs ONLY on the
++    gh-absent path, so gh-present runtimes (CI) are untouched."""
++    outcome: dict[str, str] = {}
++
++    def _probe() -> None:
++        try:
++            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
++            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
++
++            client = _mtc.McpTowerClient()
++            client.connect()
++            q = client.call_tool("bridge_work_queue", {})
++            # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
++            # the queue dict rides as JSON inside content[0].text (same extraction
++            # the client's own CLI does). Tolerate both envelope and parsed shapes.
++            if isinstance(q, dict) and isinstance(q.get("content"), list) and q["content"]:
++                first = q["content"][0]
++                txt = first.get("text") if isinstance(first, dict) else None
++                if isinstance(txt, str):
++                    try:
++                        q = json.loads(txt)
++                    except Exception:
++                        q = None
++            total = q.get("totalOpen") if isinstance(q, dict) else None
++            if isinstance(total, int):
++                outcome["note"] = (
++                    f"tower board reachable: {total} open work orders — "
++                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
++                )
++            else:
++                outcome["note"] = (
++                    "tower board probe returned no totalOpen — "
++                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
++                )
++        except Exception as exc:  # noqa: BLE001 — floor must never raise
++            outcome["note"] = (
++                f"tower board probe failed ({type(exc).__name__}) — "
++                "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
++            )
++
++    try:
++        t = threading.Thread(target=_probe, daemon=True)
++        t.start()
++        t.join(timeout=timeout_s)
++    except Exception as exc:  # noqa: BLE001 — floor must never raise
++        return f"tower board probe error ({type(exc).__name__}) — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
++    if t.is_alive():
++        return "tower board probe timed out — P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
++    return outcome.get("note", "P0-drainage gate (Invariant 5) is dark on this gh-less runtime")
++
+ def run_cmd(
+     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
+ ) -> tuple[int, str, str]:
+@@ -963,6 +1026,12 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         )
+     if board_unavailable:
+         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
++        if board_error == "gh CLI not found on PATH":
++            # R61/#2318 option B honesty floor — on a gh-less runtime the board
++            # is not empty, it is UNSEEN: report the dark P0 gate + live tower
++            # queue depth instead of implying an empty board. Best-effort,
++            # never raises/hangs (see _tower_queue_floor).
++            log("!", _tower_queue_floor())
+     else:
+         picked = pick_next_issue(issues=raw)
+         if picked:
+diff --git a/tests/test_dispatch_honesty_floor.py b/tests/test_dispatch_honesty_floor.py
+new file mode 100644
+index 00000000..4662384c
+--- /dev/null
++++ b/tests/test_dispatch_honesty_floor.py
+@@ -0,0 +1,142 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the R61/#2318 dispatch honesty floor.
++
++Covers _tower_queue_floor() failure modes only — the live tower probe is
++network I/O and stays out of unit scope; the gh-present path never calls it.
++"""
++
++from __future__ import annotations
++
++import sys
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal  # noqa: E402
++
++
++class _FakeReachableClient:
++    """Stands in for McpTowerClient when the tower is reachable.
++
++    Returns the raw MCP envelope shape call_tool actually produces:
++    the queue dict rides as JSON inside content[0].text.
++    """
++
++    def connect(self) -> None:
++        return None
++
++    def call_tool(self, name: str, arguments: dict | None = None) -> dict:
++        assert name == "bridge_work_queue"
++        import json as _json
++
++        payload = _json.dumps(
++            {"count": 20, "totalOpen": 87, "windowTruncated": True, "nextStep": "n/a"}
++        )
++        return {"content": [{"type": "text", "text": payload}]}
++
++
++class _FakeParsedDictClient:
++    """Defensive shape: a future client that returns the parsed dict directly."""
++
++    def connect(self) -> None:
++        return None
++
++    def call_tool(self, name: str, arguments: dict | None = None) -> dict:
++        return {"count": 20, "totalOpen": 87, "windowTruncated": True}
++
++
++class _FakeShapelessClient:
++    """Tower reachable but payload lacks the totalOpen echo (pre-#2316 shape)."""
++
++    def connect(self) -> None:
++        return None
++
++    def call_tool(self, name: str, arguments: dict | None = None) -> dict:
++        return {"count": 20}
++
++
++def _with_fake_client(monkey_patch_target: str, fake_cls: type) -> None:
++    """Install a fake mcp_tower_client module on the import path."""
++    import types
++
++    fake_mod = types.ModuleType("mcp_tower_client")
++    fake_mod.McpTowerClient = fake_cls
++    sys.modules[monkey_patch_target] = fake_mod
++
++
++class TestTowerQueueFloor(unittest.TestCase):
++    def setUp(self) -> None:
++        self._saved = sys.modules.get("mcp_tower_client")
++
++    def tearDown(self) -> None:
++        if self._saved is not None:
++            sys.modules["mcp_tower_client"] = self._saved
++        else:
++            sys.modules.pop("mcp_tower_client", None)
++
++    def test_reachable_tower_reports_live_count(self) -> None:
++        _with_fake_client("mcp_tower_client", _FakeReachableClient)
++        note = cal._tower_queue_floor(timeout_s=5.0)
++        self.assertIn("87 open work orders", note)
++        self.assertIn("P0-drainage gate", note)
++        self.assertIn("dark", note)
++
++    def test_parsed_dict_shape_also_accepted(self) -> None:
++        _with_fake_client("mcp_tower_client", _FakeParsedDictClient)
++        note = cal._tower_queue_floor(timeout_s=5.0)
++        self.assertIn("87 open work orders", note)
++
++    def test_payload_without_totolopen_degrades_to_p0_dark(self) -> None:
++        _with_fake_client("mcp_tower_client", _FakeShapelessClient)
++        note = cal._tower_queue_floor(timeout_s=5.0)
++        self.assertIn("no totalOpen", note)
++        self.assertIn("P0-drainage gate", note)
++
++    def test_import_failure_degrades_to_p0_dark(self) -> None:
++        # No fake installed AND any pre-existing real module removed -> the
++        # lazy import itself must not be what breaks the floor. Point the
++        # module at a class whose constructor explodes.
++        class _BoomClient:
++            def __init__(self, *a: object, **k: object) -> None:
++                raise RuntimeError("boom")
++
++        _with_fake_client("mcp_tower_client", _BoomClient)
++        note = cal._tower_queue_floor(timeout_s=5.0)
++        self.assertIn("probe failed (RuntimeError)", note)
++        self.assertIn("P0-drainage gate", note)
++
++    def test_hang_degrades_to_timeout_note(self) -> None:
++        import threading
++        import time as _time
++
++        class _HangingClient:
++            def connect(self) -> None:
++                _time.sleep(30)
++
++            def call_tool(self, name: str, arguments: dict | None = None) -> dict:
++                return {}
++
++        _with_fake_client("mcp_tower_client", _HangingClient)
++        note = cal._tower_queue_floor(timeout_s=1.0)
++        self.assertIn("timed out", note)
++        self.assertIn("P0-drainage gate", note)
++        # The daemon probe thread must not block the interpreter exit.
++        self.assertLess(threading.active_count(), 64)
++
++    def test_floor_not_invoked_on_gh_error_paths(self) -> None:
++        # Source-level contract: the floor call is guarded by the exact
++        # gh-absent error, so gh-present-but-erroring runtimes are untouched.
++        src = (_ROOT / "scripts" / "agents" / "continuous_agent_loop.py").read_text(encoding="utf-8")
++        guard_idx = src.find('if board_error == "gh CLI not found on PATH"')
++        floor_idx = src.find("_tower_queue_floor()")
++        skip_idx = src.find("issue board unavailable (")
++        self.assertGreater(guard_idx, -1, "gh-absent guard missing")
++        self.assertGreater(floor_idx, guard_idx, "floor call must sit inside the gh-absent guard")
++        self.assertGreater(skip_idx, -1)
++        self.assertLess(skip_idx, guard_idx, "guard must follow the generic skip line")
++
++
++if __name__ == "__main__":
++    unittest.main()

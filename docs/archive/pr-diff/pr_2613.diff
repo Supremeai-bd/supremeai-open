@@ -1,0 +1,39 @@
+diff --git a/docs/bridge/bridge-20261029-constitution-pointer-2477-closure-receipt.md b/docs/bridge/bridge-20261029-constitution-pointer-2477-closure-receipt.md
+new file mode 100644
+index 00000000..a001016d
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-constitution-pointer-2477-closure-receipt.md
+@@ -0,0 +1,33 @@
++# Constitution Pointer Closure Receipt — #2477 (dead-authority-pointer guard red on main)
++
++- **Work order:** #2477 (guard(constitution), status:unclaimed, filed by Job 478712 cycle 32) — claimed atomically via bridge `work_claim` **GRANT_TAKEOVER** 2026-10-29T13:43:21Z (agent `zai-glm-agent-c26`, Job 478342, 30-min lease, expires 14:13:21Z)
++- **Verdict: RESOLVED-BY-#2479.** The remedy landed on main as commit `18664d0` (PR #2479) while the work order row stayed open; this artifact is the closure evidence, filed per the #1896/#2405/#2466 receipt precedent, submitted with `closesOriginalIssue=true` so the merge closes #2477.
++
++## 1. The finding (recap)
++
++#2477 reported `tests/test_constitution_pointer_guard.py::ShippedConfigurationTests::test_real_repo_scan_is_clean` red on a clean tree at `b4bcc73` (1 failed / 1423 passed — breaking the C28–C31 four-cycle zero-red streak): the #2466 receipt landing (`7aab0c2`, `docs/bridge/bridge-20261029-ci2368-closure-receipt.md`) quoted a CI-log line verbatim, and that quoted line cited the former constitution path deleted by PR #1526 (Single Door SSOT consolidated into `AGENTS.md`). The #1708 dead-authority-pointer guard (landed `9dba2f8`, "re-point 30 live files … + dead-authority-pointer guard") correctly tripped. The guard worked as designed; the receipt had imported a dead pointer inside a quotation. The deterministic 0.76s failure was reproduced on isolated rerun in the original finding.
++
++## 2. Resolution already on main
++
++PR #2479 (commit `18664d0`, merged the same day, branch `bridge-20261029-constitution-pointer-2466-receipt-2477`) applied the #1708 precedent remedy — one line class: it elided the pre-#1526 constitution filename inside the quoted CI log (the trip evidence and the competing-PR line preserved verbatim), disclosed the elision inline per the guard's doctrine, and recorded the admin-lane residual: `pipeline.yml`'s U4 refusal message still emits the pre-consolidation filename and needs an admin-lane edit, `.github/*` being bridge-protected per #1769. After the fix, the dead stem has zero occurrences in the receipt file.
++
++## 3. Verification (current main `77ed7fe`, 2026-10-29 ~13:45–13:55Z)
++
++| Check | Result | Verdict |
++| --- | --- | --- |
++| `tests/test_constitution_pointer_guard.py` (full file, isolated rerun) | 10 passed in 1.36s | guard green on live main |
++| dead-stem occurrences in `docs/bridge/bridge-20261029-ci2368-closure-receipt.md` | 0 (`rg -c`) | pointer eliminated |
++| `git merge-base --is-ancestor 18664d0 origin/main` | true | fix landed |
++| full local suite | 1557 passed / 10 skipped / 12 subtests / 0 failed | zero regression |
++| `continuous_agent_loop.py --verify-only` | 8/8 PASS | loop contract intact |
++| `run_all_guards.py` battery | 34/34 passed | all gates green |
++
++This receipt itself was written under the #2479 elision discipline (the dead stem appears zero times in this file), so `test_real_repo_scan_is_clean` stays green with the receipt in tree.
++
++## 4. Residual (admin lane, pre-disclosed — not a blocker for this closure)
++
++`pipeline.yml`'s U4 refusal message still names the pre-#1526 constitution filename (`.github/*` bridge-protected per #1769; the same residual disclosed in the landed #2466 text and #2477's own finding). Any future receipt quoting that CI log verbatim must re-apply the #2479 elision pattern — it is the standing template for this recurring class. The residual remains the maintainer's one-line edit within the #1912 CI-wiring-gap family and does not affect this closure: the tree-level guard is green and the dead pointer is gone from the docs plane.
++
++## 5. Stampede disclosure
++
++`github.list_prs state=open` returned an empty face from this vantage this cycle (consistent with #2609's gates-face observability collapse — the page-lock degradation reported there has deepened on the read plane), so the PR-plane duplicate check was corroborated by secondary evidence: #2477 carries zero comments, the 127-row board sweep shows no work order claiming a #2477 closure receipt, and the only landed PR touching this class (#2479) targeted #2466. Claim plane: `GRANT_TAKEOVER` on an unclaimed row, single writer this cycle.

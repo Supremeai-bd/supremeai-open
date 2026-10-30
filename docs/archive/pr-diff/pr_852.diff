@@ -1,0 +1,223 @@
+diff --git a/browser/cloudflare-worker/src/index.js b/browser/cloudflare-worker/src/index.js
+index ae72ca16..c0926222 100644
+--- a/browser/cloudflare-worker/src/index.js
++++ b/browser/cloudflare-worker/src/index.js
+@@ -12,7 +12,38 @@ export default {
+       });
+     }
+ 
+-    const targetUrl = url.searchParams.get("url") || "https://example.com";
++    const targetUrlRaw = url.searchParams.get("url");
++    if (!targetUrlRaw) {
++      return Response.json({ success: false, error: "missing url parameter" }, { status: 400 });
++    }
++    let targetUrl;
++    try {
++      targetUrl = new URL(targetUrlRaw);
++    } catch {
++      return Response.json({ success: false, error: "invalid url" }, { status: 400 });
++    }
++    if (!["http:", "https:"].includes(targetUrl.protocol)) {
++      return Response.json({ success: false, error: "unsupported protocol" }, { status: 400 });
++    }
++    const host = targetUrl.hostname.toLowerCase();
++    if (
++      host === "localhost" ||
++      host === "127.0.0.1" ||
++      host === "::1" ||
++      host.startsWith("10.") ||
++      host.startsWith("192.168.") ||
++      /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
++      host === "169.254.169.254"
++    ) {
++      return Response.json({ success: false, error: "target host not allowed" }, { status: 403 });
++    }
++    const expectedToken = env.SUPREMEAI_WORKER_TOKEN;
++    if (expectedToken) {
++      const auth = request.headers.get("authorization") || "";
++      if (auth !== `Bearer ${expectedToken}`) {
++        return Response.json({ success: false, error: "unauthorized" }, { status: 401 });
++      }
++    }
+ 
+     let browser;
+     try {
+@@ -30,14 +61,14 @@ export default {
+         }
+       });
+ 
+-      await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 15000 });
++      await page.goto(targetUrl.href, { waitUntil: "domcontentloaded", timeout: 15000 });
+       const title = await page.title();
+       const text = await page.evaluate(() => document.body ? document.body.innerText.slice(0, 2500) : "");
+       await browser.close();
+ 
+       return Response.json({
+         success: true,
+-        url: targetUrl,
++        url: targetUrl.href,
+         title: title,
+         content: text
+       });
+@@ -48,7 +79,7 @@ export default {
+       return Response.json({
+         success: false,
+         error: err.message,
+-        url: targetUrl
++        url: targetUrl.href
+       }, { status: 500 });
+     }
+   }
+diff --git a/browser/ghost_tower/__init__.py b/browser/ghost_tower/__init__.py
+index 3fe14efd..f3494df9 100644
+--- a/browser/ghost_tower/__init__.py
++++ b/browser/ghost_tower/__init__.py
+@@ -6,6 +6,9 @@
+ Transit surface for the supremeai-browser satellite (browser/ghost_tower/*).
+ """
+ 
++from .credential_vault import CredentialVault
++from .gemini_web_engine import GeminiWebEngine
++
+ __all__ = [
+     "CredentialVault",
+     "GeminiWebEngine",
+diff --git a/browser/ghost_tower/credential_vault.py b/browser/ghost_tower/credential_vault.py
+index f2e9a3d7..488dfe89 100644
+--- a/browser/ghost_tower/credential_vault.py
++++ b/browser/ghost_tower/credential_vault.py
+@@ -39,11 +39,13 @@ def get_or_create_master_key() -> bytes:
+ 
+     # Generate new key
+     new_key = Fernet.generate_key()
++    VAULT_DIR.mkdir(parents=True, exist_ok=True)
+     KEY_FILE.write_bytes(new_key)
+-    print(f"[KEY] [VAULT] New Master Key generated and secured at: {KEY_FILE}")
+-    print(
+-        f"[INFO] You can also set this in your environment: CREDENTIAL_MASTER_KEY={new_key.decode()}"
+-    )
++    try:
++        os.chmod(KEY_FILE, 0o600)
++    except OSError:
++        pass
++    print("[OK] [VAULT] New Master Key generated and secured.")
+     return new_key
+ 
+ 
+@@ -152,14 +154,21 @@ def _read_raw_store(self) -> dict[str, Any]:
+             return {}
+         try:
+             with open(VAULT_FILE, "r", encoding="utf-8") as f:
+-                return json.load(f)
+-        except Exception:
+-            return {}
++                data = json.load(f)
++        except (json.JSONDecodeError, OSError, ValueError) as exc:
++            raise ValueError("vault store is corrupted or unreadable") from exc
++        if not isinstance(data, dict):
++            raise ValueError("vault store is corrupted: expected object")
++        return data
+ 
+     def _write_raw_store(self, data: dict[str, Any]):
+         VAULT_DIR.mkdir(parents=True, exist_ok=True)
+         with open(VAULT_FILE, "w", encoding="utf-8") as f:
+             json.dump(data, f, indent=2)
++        try:
++            os.chmod(VAULT_FILE, 0o600)
++        except OSError:
++            pass
+ 
+ 
+ if __name__ == "__main__":
+diff --git a/browser/ghost_tower/ghost_bridge_server.py b/browser/ghost_tower/ghost_bridge_server.py
+index a7b921d0..fee071ac 100644
+--- a/browser/ghost_tower/ghost_bridge_server.py
++++ b/browser/ghost_tower/ghost_bridge_server.py
+@@ -33,10 +33,10 @@
+ 
+ app.add_middleware(
+     CORSMiddleware,
+-    allow_origins=["*"],
+-    allow_credentials=True,
+-    allow_methods=["*"],
+-    allow_headers=["*"],
++    allow_origins=["http://localhost:8788", "http://127.0.0.1:8788"],
++    allow_credentials=False,
++    allow_methods=["GET", "POST", "OPTIONS"],
++    allow_headers=["Content-Type", "Authorization"],
+ )
+ 
+ # Initialize the Gemini Web Engine (headless=False so user can see and log in once if needed)
+@@ -362,4 +362,4 @@ async def web_chat_page():
+     logger.info(
+         f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}..."
+     )
+-    uvicorn.run(app, host="0.0.0.0", port=port)
++    uvicorn.run(app, host="127.0.0.1", port=port)
+diff --git a/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py b/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
+index 133cb5aa..0c24f012 100644
+--- a/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
++++ b/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
+@@ -81,11 +81,9 @@ def build(self) -> list[ScrollStep]:
+         """Round-by-round plan; stops at stall_limit stagnant rounds."""
+         step = max(1, int(self.viewport_height * self.step_ratio))
+         plan: list[ScrollStep] = []
+-        stagnant = 0
+         y = 0
+-        last_height = self.page_height
+         round_index = 0
+-        while round_index < self.max_rounds and stagnant < self.stall_limit:
++        while round_index < self.max_rounds and y < self.page_height:
+             y = min(y + step, self.page_height)
+             plan.append(
+                 ScrollStep(
+@@ -96,7 +94,6 @@ def build(self) -> list[ScrollStep]:
+                 )
+             )
+             round_index += 1
+-            stagnant += 1  # without page growth, every round is stagnant
+         return plan
+ 
+ 
+diff --git a/browser/pyproject.toml b/browser/pyproject.toml
+index 23ad9cba..4c233c0c 100644
+--- a/browser/pyproject.toml
++++ b/browser/pyproject.toml
+@@ -10,7 +10,12 @@ readme = "README.md"
+ requires-python = ">=3.10"
+ license = { text = "Proprietary" }
+ authors = [{ name = "SupremeAI Federation" }]
+-dependencies = []
++dependencies = [
++    "playwright>=1.40",
++    "lxml>=4.9",
++    "cryptography>=41.0",
++    "fastapi>=0.110",
++]
+ 
+ [project.optional-dependencies]
+ runtime = ["playwright>=1.40", "lxml>=4.9"]
+diff --git a/browser/runtime/infinite_scanner.py b/browser/runtime/infinite_scanner.py
+index 74824cda..0c24f012 100644
+--- a/browser/runtime/infinite_scanner.py
++++ b/browser/runtime/infinite_scanner.py
+@@ -81,10 +81,9 @@ def build(self) -> list[ScrollStep]:
+         """Round-by-round plan; stops at stall_limit stagnant rounds."""
+         step = max(1, int(self.viewport_height * self.step_ratio))
+         plan: list[ScrollStep] = []
+-        stagnant = 0
+         y = 0
+         round_index = 0
+-        while round_index < self.max_rounds and stagnant < self.stall_limit:
++        while round_index < self.max_rounds and y < self.page_height:
+             y = min(y + step, self.page_height)
+             plan.append(
+                 ScrollStep(
+@@ -95,7 +94,6 @@ def build(self) -> list[ScrollStep]:
+                 )
+             )
+             round_index += 1
+-            stagnant += 1  # without page growth, every round is stagnant
+         return plan
+ 
+ 

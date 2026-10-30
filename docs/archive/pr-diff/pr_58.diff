@@ -1,0 +1,129 @@
+diff --git a/.gitleaks.toml b/.gitleaks.toml
+new file mode 100644
+index 00000000..ca6bf7ca
+--- /dev/null
++++ b/.gitleaks.toml
+@@ -0,0 +1,114 @@
++# SupremeAI Open — hardened Gitleaks configuration (fail-closed)
++#
++# Implements open issue #41: org-specific secret detection rules for the
++# credential families this federation actually issues, on top of the upstream
++# default ruleset. CI runs `gitleaks detect --source=. --verbose --redact`
++# (see .github/workflows/ci.yml) which exits non-zero on ANY finding — that
++# non-zero exit IS the fail-closed gate. Nothing in this file may weaken it:
++# no global allowlists, no severity downgrades, no per-rule `?ignore` hints.
++#
++# Rule-writing constraints (learned in field operation, see CONTRIBUTING.md §7):
++#   1. Rules must not contain value-shaped credential literals — a detector
++#      config that itself looks like a leaked key will trip the intake scanner
++#      and CI. Keep regex classes between the prefix and the quantifier.
++#   2. Every rule needs a unique, stable ID — Gitleaks fails closed on
++#      duplicate IDs, and downstream `.gitleaksignore` entries are keyed by ID.
++#   3. `entropy` thresholds are deliberately omitted: presence + structure
++#      beats statistical luck for fail-closed behavior (false positives are
++#      resolved via `.gitleaksignore`, never by loosening a rule).
++
++title = "SupremeAI Open — hardened secret detection"
++
++[extend]
++# Keep the full upstream ruleset (generic-api-key, aws-access-token,
++# github-pat, github-fine-grained-pat, openai-api-key, stripe keys, private
++# keys, and ~150 more). We only ADD org-specific coverage below.
++useDefault = true
++
++# ---------------------------------------------------------------------------
++# 1. OpenAI — explicit org rule (upstream exists; we pin a stricter shape so
++#    partial prefixes in docs cannot masquerade as documentation).
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-openai-key"
++description = "OpenAI API key (project-scoped sk- form)"
++regex = '''sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}'''
++keywords = ["sk-proj", "sk-svcacct", "sk-admin"]
++
++# ---------------------------------------------------------------------------
++# 2. GitHub — fine-grained PAT + OAuth/ App tokens (upstream has these; the
++#    org rule adds the server-token families the bridge lanes mint).
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-github-pat-finegrained"
++description = "GitHub fine-grained personal access token"
++regex = '''github_pat_[A-Za-z0-9_]{22,}'''
++keywords = ["github_pat"]
++
++[[rules]]
++id = "supremeai-github-app-server"
++description = "GitHub App server-to-server installation token"
++regex = '''ghs_[A-Za-z0-9]{16,}'''
++keywords = ["ghs_"]
++
++# ---------------------------------------------------------------------------
++# 3. Anthropic — not in the upstream default set.
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-anthropic-key"
++description = "Anthropic API key"
++regex = '''sk-ant-(?:api|admin)[0-9]{0,2}-[A-Za-z0-9_-]{24,}'''
++keywords = ["sk-ant"]
++
++# ---------------------------------------------------------------------------
++# 4. AWS — explicit org rule for the access-key id + secret pair shape.
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-aws-access-key"
++description = "AWS access key id (AKIA/ASIA long-term + temporary forms)"
++regex = '''(?:AKIA|ASIA)[0-9A-Z]{16}'''
++keywords = ["AKIA", "ASIA"]
++
++[[rules]]
++id = "supremeai-aws-secret-key"
++description = "AWS secret access key adjacent to an access key id"
++regex = '''(?i)aws.{0,30}["']?[A-Za-z0-9/+=]{40}["']?'''
++keywords = ["aws"]
++
++# ---------------------------------------------------------------------------
++# 5. Cloudflare — global API key (37 hex) and API token (40 base62).
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-cloudflare-global-key"
++description = "Cloudflare Global API key (37-char hex, keyed by name)"
++regex = '''[a-f0-9]{37}'''
++keywords = ["cloudflare", "x-auth-key", "global_api_key", "CLOUDFLARE_GLOBAL"]
++
++[[rules]]
++id = "supremeai-cloudflare-api-token"
++description = "Cloudflare API token (40-char base62, keyed by name)"
++# NOTE: Go/RE2 has no lookahead — use word-boundary semantics (same approach
++# as the upstream Cloudflare rule) to prevent over-extended matches.
++regex = '''(?i)\b[A-Za-z0-9_-]{40}\b'''
++keywords = ["cloudflare", "x-auth-bearer", "api_token", "CLOUDFLARE_API"]
++
++# ---------------------------------------------------------------------------
++# 6. SupremeAI-issued credentials — the families this federation mints.
++# ---------------------------------------------------------------------------
++[[rules]]
++id = "supremeai-mcp-bearer"
++description = "SupremeAI MCP bearer key (mcp_ prefixed)"
++regex = '''mcp_(?:api|admin|agent|viewer)_[A-Za-z0-9]{16,}'''
++keywords = ["mcp_api", "mcp_admin"]
++
++[[rules]]
++id = "supremeai-jwt-signing-secret"
++description = "SupremeAI JWT/ credential encryption key assignment"
++regex = '''(?i)(JWT_SECRET|CREDENTIAL_ENC_KEY|API_KEY_SIGNING_SECRET)\s*[:=]\s*["']?[A-Za-z0-9+/_=-]{24,}["']?'''
++keywords = ["JWT_SECRET", "CREDENTIAL_ENC_KEY", "API_KEY_SIGNING_SECRET"]
++
++[[rules]]
++id = "supremeai-internal-database-url"
++description = "Internal database / redis URL with inline credentials"
++regex = '''(?i)(?:postgres|postgresql|mysql|redis|mongodb)(?:\+[a-z0-9]+)?:\/\/[^\s:@\/]+:[^\s@\/]+@'''
++keywords = ["postgres", "redis", "mongodb", "SUPABASE_DATABASE_URL", "KEYPLANE_DATABASE_URL"]
+diff --git a/.gitleaksignore b/.gitleaksignore
+index 97a3052d..6ab7f2f8 100644
+--- a/.gitleaksignore
++++ b/.gitleaksignore
+@@ -1,2 +1,4 @@
+ # Gitleaks ignore list for known mock test fixtures in git history
+ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_guardian.ts:generic-api-key:88
++# Placeholder docstring example in threat-model prose of masking.ts (issue #695), not a real credential - see org rule for the matched shape in .gitleaks.toml
++ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6

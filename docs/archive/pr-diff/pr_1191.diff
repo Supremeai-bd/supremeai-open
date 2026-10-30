@@ -1,0 +1,23 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 6b45e89f..3568e0e6 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -237,6 +237,11 @@ def sync_satellite(
+         elif target_repo == "Supremeai-bd/supremeai-studio":
+             # Copy domain files into the satellite root (non-destructive)
+             copy_tree_contents(src_path, tmp_repo, prune=False)
++            # Prune deleted files within public/ and src/ so route/asset removals reflect cleanly
++            if (src_path / "public").exists():
++                copy_tree_contents(src_path / "public", tmp_repo / "public", prune=True)
++            if (src_path / "src").exists():
++                copy_tree_contents(src_path / "src", tmp_repo / "src", prune=True)
+             # Sync workflows with pruning
+             studio_wf_src = src_path / ".github" / "workflows"
+             if studio_wf_src.exists():
+diff --git a/studio/public/_redirects b/studio/public/_redirects
+index ad37e2c2..fcface1b 100644
+--- a/studio/public/_redirects
++++ b/studio/public/_redirects
+@@ -1 +1,2 @@
++# Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
+ /*    /index.html   200

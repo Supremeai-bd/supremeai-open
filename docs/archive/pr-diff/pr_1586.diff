@@ -1,0 +1,39 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index e980103a..97c933f3 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -5,7 +5,7 @@
+ 
+ Traffic-police logic:
+ 1. Always display the 4 Universal Invariant Pillars (Common Rules).
+-2. If unclaimed issues exist -> Unlimited Solvers allowed: prompt agent with solver mandate & status:claimed rule.
++2. If unclaimed issues exist -> Unlimited Solvers allowed: prompt agent with solver mandate & auto-dispatch.
+ 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
+ 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
+ 5. Problematic/stuck issues -> Agents autonomously decide and handle them.
+@@ -192,7 +192,7 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+ }
+ 
+ ROLE_RULES: dict[str, str] = {
+-    "solver": "Unlimited concurrent solvers allowed. Mandatory rule: Label 'status:claimed' on the issue before branching. Solve root cause, verify boundary, submit PR.",
++    "solver": "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, and submit PR.",
+     "ecosystem-scout": "Scan federation for new expansion opportunities and file sub-issues under 8 Anchor Hubs (no code edits). Issue creation rules: format title as 'type(scope): description', attach priority ('P0-critical'/'P1-high'), status ('status:unclaimed'), and repo label ('repo:<domain>').",
+     "auditor": "Audit codebase for dead code, compliance drifts, and propose automated CI gates.",
+     "human-eye": "Inspect user-facing public funnel speed (FCP < 1.0s) and responsive UI performance.",
+@@ -467,7 +467,6 @@ def build_task_envelope(
+             "",
+             f"ROLE: {role}",
+             f"MANDATE: {role_description}",
+-            "CLAIM RULE: Atomic-claim the issue FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch.",
+             "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
+             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
+             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
+@@ -844,7 +843,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
+             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
+             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
+-            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause, submit PR with 'Closes #{picked}' in PR description to close it on merge.")
++            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR with 'Closes #{picked}' in PR description to close it on merge.")
+             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+             return 0

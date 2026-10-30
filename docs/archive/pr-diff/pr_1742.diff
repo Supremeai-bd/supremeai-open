@@ -1,0 +1,239 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-VIII.md b/docs/SCOUT_RADAR_2026-10-28-VIII.md
+new file mode 100644
+index 00000000..42099135
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-VIII.md
+@@ -0,0 +1,233 @@
++# 🧭 SCOUT RADAR VIII — 2026-10-28 (Redis Quota Economics, OWASP GenAI Mapping, Runtime Agent Control)
++
++> **Role:** Ecosystem Scout · **Job:** 478621 (05:47 dispatch) · **Cycle:** single-dispatch · **Doctrine:** high-signal
++> only (per #1658). Every external signal below was **live-probed 2026-10-28** against primary sources (official
++> docs, the genai.owasp.org project site, valkey.io, agentclientprotocol.com, public repos) before filing; each
++> issue carries dated evidence, a smallest-safe-slice proposal mapped to named paths already on `main`, acceptance
++> criteria, and a never-do register.
++> **Non-duplication:** R1–R12 (#1611) models/MCP-spec/eval studies; R13–R16 (#1652) x402/OTel-GenAI/A2A/Firecracker;
++> R17–R20 (#1682) Agent-Skills/chrome-devtools-mcp/sigstore/Web-Bot-Auth; R21–R22 (#1688) provider lanes/MCP
++> Registry; R23–R25 (#1702/#1709/#1710) agents.md/Python-CI/Spec Kit; **R26–R27 (radar VII, #1726 → #1723/#1724)
++> Snyk Agent Scan + radar index SSOT.** This cycle files R28–R30 — zero content overlap with radar VII; both
++> sweeps survive the #1682/#1688/#1706 collision class because this Task ID was renamed **radar-viii** after
++> #1726 claimed `…radar-vii` mid-cycle (same pattern as radar V→VI).
++> **Task ID:** `bridge-20261028-scout-radar-viii`
++> **Benchmark honesty:** no synthetic benchmark was run this cycle. Vendor-published figures are cited with their
++> dates and labeled as vendor-published. Internal telemetry (rotation chain command estimates, service health) was
++> observed read-only via the tower's own tools and is reproducible by anyone with `redis.rotation.status` access.
++
++---
++
++## 1. Radar Summary Table
++
++| # | Signal | Live proof (2026-10-28) | One-line | Verdict → Issue |
++|---|--------|--------------------------|----------|-----------------|
++| R28 | Upstash quota economics: pipeline/`MULTI` do **not** reduce billable commands; free tier = 500K cmds/mo per database; PAYG $0.20/100K; Fixed from $10/mo; `INFO`/`PING` unbilled; Valkey 9.0.5 (BSD-3, Linux Foundation) is the self-host escape hatch — rotation (already landed) buys availability, not quota | upstash.com/docs/redis/overall/billing + /features/restapi (live fetches); valkey.io/releases v9.0.5; valkey-io/valkey 27.5k stars BSD-3-Clause; live chain telemetry: primary+secondary at 480K/500K soft-threshold-hit, tertiary active (92 cmds), quaternary 0, reset 2026-11-01 (#1698) | One decision memo + command-shaping audit checklist over named call sites (`core/state_store.py` already mirror-fronts reads to 0 ops; `core.cache.redis_manager` federation pool is the remaining shaping surface); tier comparison table incl. Valkey lock-in math | `adapt_cleanroom` → **#1732** |
++| R29 | OWASP Top 10 for LLM Applications 2025 is the canonical risk taxonomy (LLM01 Prompt Injection … LLM10 Unbounded Consumption); a 2026 refresh is in flight (legacy repo marked 2026-08-05); SupremeAI's live quota crisis **is** LLM10 Unbounded Consumption in production | genai.owasp.org/llm-top-10/ (live fetch: 2025 list canonical, LLM01–LLM10); github.com/owasp/www-project-top-10-for-large-language-model-applications commit "Mark legacy repository and point to 2026 release" (2026-08-05); GenAI Security Project shipped Agent Control Standard 2026-09-01, Red Teaming Manual v1.0 2026-10-20, LLM Exploit Generation Guide 2.0 2026-10-27 | Docs-only guard-chain mapping: 4 Universal Invariants + policy HITL + slot fail-closed suspend + slot_audit_trail → LLM01–LLM10 table with named gap (LLM10 ↔ #1698); zero code | `adapt_cleanroom` → **#1733** |
++| R30 | OWASP Agent Control Standard (ACS, 2026-09-01, Apache-2.0): open standard for runtime agent control — middleware hooks + declarative, portable policy enforcement + observability; SupremeAI's policy chain (`policy_preview` → `policy_approve` → gated actions with `overrideRequestId`, slot suspend fail-closed, immutable slot_audit_trail) already implements the *concept* in-house | genai.owasp.org/resource/agent-control-standard-acs/ (live fetch: published 2026-09-01); GenAI-Security-Project/agent-control-standard: Apache-2.0 (accept tier), 220 stars / 73 forks, default branch `integration`, TS reference implementations (agt-bridge, conformance) | Doc-only conformance pilot: express the existing guard chain in ACS vocabulary, identify portability gaps; no code, no dependency | `quarantine_eval` → **#1739** |
++| — | Agent Client Protocol (ACP): v1 stable + v2 Draft (2026-07-20); Apache-2.0; 4,526 stars; Zed + JetBrains; SDKs Rust/TS at 1.0; RFD process with 15+ landed | agentclientprotocol.com live fetch (v1 "Latest", v2 "Draft", announcement dated 2026-07-20); agentclientprotocol/agent-client-protocol repo probe | Real and maturing editor↔agent standard; relevant only when SupremeAI exposes studio/IDE-driven agent sessions — no named-files slice on `main` this cycle | `MONITOR` (probed, not filed — zero-hype) |
++
++---
++
++## 2. Full-Spectrum Evaluations
++
++### R28 · Redis quota economics: rotation bought availability, not quota — `adapt_cleanroom` → Issue #1732
++
++**Internal evidence (live telemetry, 2026-10-28):** the tower's `redis.rotation.status` and `redis.stats` tools
++report the Upstash chain exactly as #1698 states: **primary and secondary at 480,000/500,000 estimated commands
++(soft threshold 480K hit), cooldown until 2026-11-01T00:01Z; tertiary promoted active with 92 commands used;
++quaternary fresh at 0; monthly window, next global reset 2026-11-01; auto-rotation enabled.** The existing
++mitigation set (`REDIS_QUOTA_PREEMPTIVE_ROTATION.md` under `infrastructure/mcp-control-plane/docs/`, the
++rotation rule landed 2026-10-27 per `docs/bridge/bridge-20261027-redis-rotation-rule.md`, and the quota ledger)
++is a **failover** design: it keeps the federation alive *within* the same total 500K-per-account budget. It does
++not raise the budget. If tertiary + quaternary burn 500K before the reset, the outage horizon in #1698 closes.
++
++**External evidence (primary sources, probed 2026-10-28):**
++
++- Upstash official billing docs (live fetch of `upstash.com/docs/redis/overall/billing`): free tier = **500K
++  monthly commands, 250 MB, per database**; PAYG = **$0.20 per 100K commands**; Fixed plans from **$10/mo
++  (250 MB, 50 GB bandwidth)** — the docs explicitly name "worker-heavy setups such as Sidekiq, BullMQ, Celery,
++  and cron jobs" as the Fixed-plan fit. Budgets on PAYG are enforced by **rate-limiting, not surprise billing**.
++- Billing semantics that refute the obvious "just pipeline it" instinct (same page, quoted): *"Pricing is based
++  on the number of commands (requests) executed… one command is one billable request"*; *"each command inside a
++  pipeline or transaction is still billed individually, and MULTI and EXEC are billed as well"* (N+2); *"EVAL…
++  billed as one command, plus one command for every redis.call"* — a script doing GET+SET bills as 3 commands.
++- What **is** free: `AUTH`, `HELLO`, `RESET`, `PING`, `SELECT`, `QUIT`, `INFO`, `CONFIG`, `COMMAND` — the
++  tower's health/polling lane (`redis_ping`, `redis_stats`, `redis_rotation_status`) is already zero-cost.
++- Official REST docs (`/features/restapi`, live fetch): `/pipeline` batches N commands into **one HTTP request**
++  with a JSON-array response — a round-trip and latency win, **not** a command-count win. Non-atomic by default.
++- Escape hatch: **Valkey 9.0.5** (valkey.io/releases, live page) — Linux Foundation, **BSD-3-Clause**
++  (valkey-io/valkey probe: 27,537 stars, accept tier), 9.0 line released 2025-10-21 per the Linux Foundation
++  press release. Self-hosting Valkey on existing Render/VPS capacity converts the per-command budget into a
++  flat ops cost — at the price of losing Upstash's serverless REST surface, durability snapshots, and the
++  multi-account rotation logic that already exists.
++
++- **Pros:** the decision memo ends the recurring "rotation saves us" assumption with vendor-published math; the
++  command-shaping audit has at least one already-proven pattern on `main` (`core/state_store.py`: mirror-served
++  reads = 0 ops, 1 SET/DEL per mutation, bounded 200-key SCAN at boot); `MGET`/`MSET`-shaping of N-call loops is
++  a 1-command-saves-N trade the billing doc itself sanctions; the tier table gives maintainers a dated,
++  prices-in-hand comparison instead of a mid-outage improvisation.
++- **Cons:** PAYG/Fixed spend real money (the free chain exists precisely to avoid that); Valkey self-host adds
++  ops burden (persistence, failover, version churn) that a 4-person federation may not want; command-shaping
++  wins depend on call-site patterns that must be measured, not assumed.
++- **Risks:** billing docs are versioned prose — prices move, so the memo must carry its probe date (2026-10-28)
++  and be re-verified before any purchase decision; MGET on huge key sets can hit the 10 MB request cap; Lua is
++  a *trap* here (billed 1 + internal calls, so it saves round-trips but can *raise* billable commands).
++- **এটা করা যাবে না:** no migration to Valkey "now" (rejected below — costs outweigh the $10/mo alternative at
++  current scale); no EVAL-based batching as a quota strategy (it bills more); no client rewrite in this lane —
++  the audit is a checklist, the fixes land as separate reviewed WOs; no new dependency.
++- **Adoption path → Issue [#1732](https://github.com/Supremeai-bd/supremeai-open/issues/1732)** (docs-only:
++  1 decision memo `docs/ops/REDIS_QUOTA_ECONOMICS.md` + audit checklist mapped to `core/cache/redis_manager`
++  call sites; maintainer decides stay-free / PAYG / Fixed / self-host with the table in hand).
++
++### R29 · OWASP LLM Top 10 as the guard chain's risk vocabulary — `adapt_cleanroom` → Issue #1733
++
++**Evidence trail (probed 2026-10-28):** the official project page `genai.owasp.org/llm-top-10/` (live fetch)
++presents the **2025 Top 10 Risk & Mitigations for LLMs and Gen AI Apps** as the current canonical list:
++LLM01 Prompt Injection, LLM02 Sensitive Information Disclosure, LLM03 Supply Chain, LLM04 Data and Model
++Poisoning, LLM05 Improper Output Handling, LLM06 Excessive Agency, LLM07 System Prompt Leakage, LLM08 Vector
++and Embedding Weaknesses, LLM09 Misinformation, LLM10 Unbounded Consumption (v2025 published 2024-11; official
++translations landed through 2025-07). The GitHub mirror `owasp/www-project-top-10-for-large-language-model-applications`
++carries the commit **"Mark legacy repository and point to 2026 release" (2026-08-05)** — a 2026 refresh exists or
++is imminent, so the mapping must pin the version it cites and expect the successor. The same GenAI Security
++Project shipped the Agent Control Standard (2026-09-01, → R30), a GenAI Red Teaming Manual v1.0 (2026-10-20)
++and an LLM Exploit Generation Guide 2.0 (2026-10-27) — the initiative is actively maintained, CC BY-SA v4.0.
++
++**Why this maps cleanly onto what SupremeAI already runs:** the federation's control surface is unusually
++well-aligned with the 2025 taxonomy — policy HITL (`policy_preview` risk verdicts, `policy_approve`, gated
++`action_*` tools with `overrideRequestId`) addresses LLM06 Excessive Agency; slot architecture (credential
++fingerprinting, fail-closed `slot_suspend`, one-time credentials, `slot_audit_trail`) addresses LLM02/LLM03
++disclosure and supply-chain posture; the semantic cache and Qdrant lanes touch LLM08 Vector/Embedding
++weaknesses. The striking synthesis: **the live Redis quota crisis (#1698) is LLM10 Unbounded Consumption
++executed in production** — a background consumer with no per-tenant command budget burning a hard 500K cap.
++A taxonomy row that names a current P1 incident is the strongest possible argument that the mapping is not
++ceremony.
++
++- **Pros:** one docs file gives every future RFC a shared risk vocabulary (issues can reference "LLM06-style
++  agency" instead of re-deriving threats); the gap column will likely expose LLM07 System Prompt Leakage and
++  LLM09 Misinformation as the least-covered rows — cheap to verify, valuable to know; zero code, zero deps.
++- **Cons:** a taxonomy is only as good as its freshness — the 2026 refresh will require a re-base (tracked in
++  the issue as an explicit follow-up trigger); risk of checkbox theater if rows are marked "covered" without a
++  named control.
++- **Risks:** over-claiming — the mapping must distinguish *enforced* controls (loop-injected invariants, guard
++  chain) from *documented* ones; the CC BY-SA license requires attribution when quoting list text (paraphrase
++  or attribute; no verbatim copy-paste of the PDF).
++- **এটা করা যাবে না:** no verbatim copying of OWASP content without attribution; no "security theater" claim
++  that a mapping is a control; no modification of the guard chain itself in this lane.
++- **Adoption path → Issue [#1733](https://github.com/Supremeai-bd/supremeai-open/issues/1733)** (docs-only:
++  `docs/security/OWASP_LLM_TOP10_MAPPING.md` — control-vs-gap table, every "covered" cell names the enforcing
++  file/tool on main; LLM10 row cross-links #1698).
++
++### R30 · OWASP Agent Control Standard as declarative vocabulary for the policy chain — `quarantine_eval` → Issue #1739
++
++**Evidence trail (probed 2026-10-28):** `genai.owasp.org/resource/agent-control-standard-acs/` (live fetch)
++announces ACS on **2026-09-01** under the OWASP GenAI Security Project: agents must be *"inspectable, traceable
++and instrumentable"*, and ACS "defines how agent platforms expose middleware hooks and how safety policies can
++be enforced through them, enabling declarative controls that are portable across agent frameworks and enforced
++at runtime." The repo `GenAI-Security-Project/agent-control-standard` probes at **Apache-2.0 (accept tier),
++220 stars / 73 forks, default branch `integration`**, with TypeScript reference implementations
++(`agt-bridge`, `conformance`, OPA-path integration) inside the tree. Maturity is honest-to-say: two months old,
++modest adoption, reference-quality tooling — a standard to *track*, not to bet the guard chain on.
++
++**Why it still earns a lane:** SupremeAI already built the *thing* ACS standardizes — a preview/approve policy
++gate over credential-bound actions, fail-closed slot suspension, and an immutable audit trail. The evaluation
++question is concrete: can the existing chain be *expressed* in ACS's declarative vocabulary, and would that
++buy interoperability (third-party agents arriving with their own ACS-conformant policies) or just a second
++process truth? That is exactly the Spec-Kit-shaped question radar VI's R25 (#1710) taught the board to run as
++a doc-only pilot with per-field adopt/reject.
++
++- **Pros:** a vocabulary pilot costs one docs page; conformance thinking hardens the policy engine's own spec;
++  if ACS gains traction, SupremeAI is already expressive in it; the conformance suite in the repo is a
++  ready-made acceptance-criteria generator for a future `evaluate` verdict.
++- **Cons:** 220 stars + single-org governance = real adoption risk; hooks are TS-first (reference impls), and
++  the federation's control plane is Python; adopting the vocabulary without adopting value drift requires
++  discipline (same conflict class as `/speckit-constitution` vs AGENTS.md in R25).
++- **Risks:** standard churn before 1.0 (`integration` default branch signals pre-release state); license is
++  fine (Apache-2.0) but the *brand* is OWASP's — derivative claims must respect attribution.
++- **এটা করা যাবে না:** no runtime adoption, no new dependency, no rewrite of the policy engine to "ACS-native"
++  shapes; no claim of conformance without the conformance suite actually passing.
++- **Adoption path → Issue [#1739](https://github.com/Supremeai-bd/supremeai-open/issues/1739)** (doc-only
++  pilot: map `policy_preview`/`policy_approve`/`slot_*` semantics onto ACS hook vocabulary in
++  `docs/security/ACS_VOCABULARY_PILOT.md`; per-field adopt/reject; explicit exit criteria → promote to
++  `evaluate` with conformance target, or file as `reject` with reasons).
++
++### Held as MONITOR (probed, deliberately not filed — zero-hype doctrine)
++
++- **Agent Client Protocol (ACP) v1 stable / v2 draft.** Probed live: `agentclientprotocol.com` docs index shows
++  v1 "Latest" and v2 "Draft" (announcement dated **2026-07-20**); repo `agentclientprotocol/agent-client-protocol`
++  probes **Apache-2.0, 4,526 stars, 457 forks**; SDKs Rust/TypeScript at 1.0 plus Kotlin/Java/Python; Zed
++  Industries + JetBrains backing; 15+ RFDs landed under a working RFD process. It is the editor↔agent
++  counterpart of the MCP (tool transport) and A2A (agent↔agent, R15/#1703) lanes. **Not filed because** the
++  high-signal bar (#1658) demands a smallest-safe slice mapped to named files on `main`, and no current
++  SupremeAI surface drives agent sessions from an editor client — the studio lane (#1696) is a UI-latency fix,
++  not an ACP integration. Revisit when an editor-facing agent session feature enters an RFC.
++
++---
++
++## 3. Cross-Signal Synthesis
++
++1. **Unbounded consumption is this cycle's through-line.** R28 (vendor billing math), the live #1698 chain
++   state, and R29's LLM10 row are the same phenomenon at three altitudes: a hard per-account command budget,
++   an active rotation strategy that cannot raise it, and an industry taxonomy that names the failure mode.
++   The three issues cross-reference so a maintainer reading any one lands on the full picture.
++2. **OWASP GenAI Security Project is now a *family*, not a list.** R29 (Top 10) and R30 (ACS) come from the
++   same initiative, which shipped three resources in the last 37 days (ACS 09-01, Red Teaming Manual 10-20,
++   Exploit Guide 10-27). Treat it as an upstream to track with dated re-probes, like Python insider posts in
++   R24 — not a one-shot citation.
++3. **The federation's asymmetric pattern repeats.** As with AGENTS.md (R23) and Spec Kit (R25), the ecosystem
++   is standardizing patterns SupremeAI already runs in enforced form — runtime agent control (ACS/R30) being
++   this cycle's instance. The honest stance stays the same: document compatibility, borrow vocabulary, never
++   let a foreign tool regenerate the SSOT.
++4. **Collision discipline held.** #1726 claimed radar VII mid-cycle; this sweep renamed to VIII before filing
++   anything (the #1682/#1688/#1706 precedent), and the R-number register above now accounts for R1–R30 in one
++   place. #1724's index SSOT proposal, once landed, retires this register's duplication cost.
++
++## 4. Reflection Evidence
++
++**Why these three lanes:** each has (a) a dated primary-source probe from this cycle — Upstash billing/REST
++docs, genai.owasp.org pages and repos, valkey.io, agentclientprotocol.com; (b) a smallest-safe slice mappable
++to named paths already on `main` — `core/state_store.py` and the rotation docs under
++`infrastructure/mcp-control-plane/docs/` for R28, the guard-chain tools (`policy_*`, `slot_*`) as the mapped
++surface for R29/R30; (c) an immediate implementation path that is docs-only in every case. The MONITOR row
++(ACP v2) demonstrates the gate rejecting a signal that has (a) but not (b)/(c). No synthetic benchmark was run;
++all performance/pricing figures are vendor-published and dated, and internal telemetry is tool-reproducible.
++
++**Filing artifact ledger (full transparency, in filing order):**
++
++| Artifact | What | Disposition |
++|---|---|---|
++| #1732 | R28 filing — Redis quota economics + command-shaping audit | **KEEP** |
++| #1733 | R29 filing — OWASP LLM Top 10 guard-chain mapping | **KEEP** |
++| #1739 | R30 filing — ACS vocabulary pilot | **KEEP** |
++| concurrent-filer observation | issue numbers moved #1732 → #1733 → #1739 (other agents landed #1734–1738 mid-cycle) — each number captured from the create response immediately after filing, so no placeholder numbers exist in this radar | **disclosed** |
++| queue re-check at cycle start + pre-filing | detected #1726 claiming radar VII; Task ID renamed radar-viii; R-numbers shifted to R28–R30 | **collision avoided, zero overlap** |
++
++WAF handling learned from radar VI's ledger applied verbatim: issues filed one per script run, compact bodies
++(depth lives in the radar file), ≥60 s spacing between creations, and no retry-without-recheck — each creation
++is preceded by re-reading the queue so a 403-after-accept cannot produce a silent duplicate. All three filings
++succeeded on the first attempt with zero duplicates this cycle.
++
++**alternatives_rejected:**
++
++1. *File the Redis lane as "migrate to Valkey self-host now"* — rejected: at 500K cmds/mo the paid escape is
++   $10/mo Fixed while Valkey self-host adds persistence/failover ops the 4-account chain was built to avoid;
++   the memo (not a migration) is the honest slice, and Valkey stays the named escape hatch if tiers price out.
++2. *Adopt EVAL/Lua batching as the quota fix* — rejected on the vendor's own billing semantics: EVAL bills as
++   1 + every internal `redis.call`, so it can *raise* billable commands; it saves round-trips, not quota.
++3. *File ACP v2 as an `evaluate` lane with a studio pilot* — rejected: no named-files slice exists on main;
++   filing it would be exactly the hype ticket #1658 forbids. Held as MONITOR with the gap named.
++4. *Wait for the OWASP 2026 refresh and map that instead* — rejected: the 2025 list is the canonical citation
++   today (2026 refresh confirmed only as "legacy repo marked"); R29 pins its version and pre-registers the
++   re-base trigger instead of going unfiled while waiting.
++5. *Adopt ACS middleware hooks in the policy engine now* — rejected: two-month-old standard, TS-first
++   reference tooling, Python control plane; vocabulary pilot first, runtime adoption only after conformance
++   evidence exists.
++6. *Keep the radar-vii Task ID (dispatched first in the cron trace)* — rejected: #1726 is already
++   bridge:queued with that name and Task ID; the rename preserves both sweeps at the cost of one roman
++   numeral, exactly per the radar V→VI precedent.
++
++## 5. Rollback
++
++Docs-only, single file (`docs/SCOUT_RADAR_2026-10-28-VIII.md`). `git revert` removes the radar; the filed
++issues (#1732, #1733, #1739) stand on their own and can be closed independently. No source, no CI paths, no
++labels or board structure touched.

@@ -1,0 +1,441 @@
+diff --git a/docs/CONSUMERS.md b/docs/CONSUMERS.md
+index 90429a12..1d5fa4ca 100644
+--- a/docs/CONSUMERS.md
++++ b/docs/CONSUMERS.md
+@@ -14,6 +14,12 @@ Contract SSOT: [`api-schemas/gateway.openapi.yaml`](../api-schemas/gateway.opena
+ > **Live status (সৎ-নোট):** এই লেখার সময় Render deployment সব route-এ
+ > `x-render-routing: no-server` দিচ্ছে — deployment debugging Phase 0 Seq 0.1-এ
+ > ট্র্যাকড (#401)। Liveness প্রোব (auth ছাড়া): `GET /healthz` → `200` মানে লাইভ।
++>
++> **আপডেট (#1729):** পাবলিক `GET /` এখন শুধু `{status, service_name, version, chat_ready}`
++> ফেরত দেয় এবং `/healthz` শুধু liveness ফিল্ড — HTTP-200 চুক্তি অপরিবর্তিত (চুক্তি
++> এই ডক অনুযায়ীই body-ফিল্ড নয়, HTTP status-এ শাখা দেওয়া)। ফ্লিট বিস্তারিত — key
++> inventory, stealth posture, web-session ম্যাপ — এখন auth-যুক্ত `GET /internal/status`-এ
++> (বৈধ `sk-supreme-`/admin key লাগবে, guest bypass নেই)।
+ > নিচের snippet-গুলো OpenAPI চুক্তির সাথে শব্দে-শব্দে মিলে — deployment লাইভ হওয়ার
+ > সাথে সাথেই কাজ করবে। কোনো snippet লাইভ-কল দিয়ে "প্রমাণিত" দাবি করা হয়নি।
+ 
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index d0e7ff30..af85d98e 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -34,6 +34,19 @@
+ except ImportError:  # pragma: no cover - package-relative fallback
+     from gateway.service.branding import build_brand
+ 
++try:
++    from service.status_publication import (
++        assert_no_operator_fields,
++        build_liveness_payload,
++        build_public_root_payload,
++    )
++except ImportError:  # pragma: no cover - package-relative fallback
++    from gateway.service.status_publication import (
++        assert_no_operator_fields,
++        build_liveness_payload,
++        build_public_root_payload,
++    )
++
+ try:
+     from service.keygen import verify_key
+     try:
+@@ -427,6 +440,38 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
+     return token in valid_keys
+ 
+ 
++def _require_operator_key(request: Request, x_supremeai_key: Optional[str] = None) -> bool:
++    """Strict credential gate for operator-grade surfaces (#1729).
++
++    Unlike _verify_client_auth this deliberately has NO guest pass-through:
++    _is_guest_request trusts spoofable client headers (x-guest-mode, Origin/
++    Referer containing the Studio host, well-known demo tokens), which is fine
++    for chat-rate-limiting but must never gate operator fleet detail.
++    Fails closed: no key configured -> False (set SUPREMEAI_API_KEY / SUPREMEAI_API_KEYS
++    / SUPREMEAI_SUPERADMIN_KEY to enable operator access).
++    """
++    token = _extract_token(request, x_supremeai_key)
++    if not token:
++        return False
++    if token.startswith("sk-supreme-"):
++        try:
++            if verify_key(token):
++                return True
++        except Exception:  # noqa: BLE001 - fail closed on keygen errors
++            return False
++    valid_keys = set()
++    master = os.getenv("SUPREMEAI_API_KEY", "").strip()
++    if master:
++        valid_keys.add(master)
++    pool_str = os.getenv("SUPREMEAI_API_KEYS", "").strip()
++    for k in pool_str.split(","):
++        if k.strip():
++            valid_keys.add(k.strip())
++    if SUPERADMIN_KEY:
++        valid_keys.add(SUPERADMIN_KEY)
++    return token in valid_keys
++
++
+ def _extract_user_id(request: Request) -> str:
+     """Resolve caller user ID from a VERIFIED session token only.
+ 
+@@ -515,17 +560,72 @@ def _short(h: str) -> str:
+ 
+ 
+ @app.api_route("/", methods=["GET", "HEAD"])
++async def public_root():
++    """Public landing status (#1729): exactly the four consumer-relevant fields.
++
++    HEAD support on this route predates this slice (#1728's header lane) and is
++    preserved. The former root payload doubled as an operator dashboard (key
++    inventory, provider topology, stealth posture, per-account web-session
++    detail) - a reconnaissance gift on the advertised public hostname. Fleet
++    detail moved to GET /internal/status behind a strict credential gate;
++    contracts that only check HTTP 200 are unaffected (status contract:
++    docs/CONSUMERS.md).
++    """
++    return assert_no_operator_fields(
++        build_public_root_payload(chat_ready=bool(STEALTH_WEBHOOK_URL))
++    )
++
++
+ @app.get("/health")
+ @app.get("/healthz")
+ @app.get("/api/health")
+ @app.get("/api/v1/health")
+ @app.get("/v1/health")
+ async def health_check():
+-    """Unauthenticated liveness probe. Always 200 OK when service is running."""
++    """Unauthenticated liveness probe. Always 200 OK when service is running.
++
++    Redacted (#1729): fleet inventory, stealth posture and web-session detail no
++    longer ship on the public probe surface - only the liveness fields watchdogs
++    consume. Probe contract preserved: HTTP 200, no auth, status="healthy",
++    chat_ready semantics unchanged (docs/CONSUMERS.md pins HTTP-status branching,
++    not body fields). Full operator detail: GET /internal/status with a key.
++    """
++    return assert_no_operator_fields(
++        build_liveness_payload(
++            status="healthy",
++            service_name="supremeai-api",
++            version="2.0.0",
++            chat_ready=bool(STEALTH_WEBHOOK_URL),
++            timestamp=datetime.now(timezone.utc).isoformat(),
++        )
++    )
++
++
++@app.get("/internal/status")
++async def internal_status(
++    request: Request, x_supremeai_key: Optional[str] = Header(default=None)
++):
++    """Operator-grade fleet status (#1729) - requires a valid gateway key.
++
++    Same payload shape the public root used to leak, so existing operator
++    dashboards only change the URL. Gate is _require_operator_key: HMAC
++    sk-supreme-... keys or configured env keys, NO guest pass-through,
++    fail-closed when no keys are configured.
++    """
++    if not _require_operator_key(request, x_supremeai_key):
++        return JSONResponse(
++            status_code=401,
++            content={
++                "error": {
++                    "message": "operator fleet status requires a valid gateway key",
++                    "type": "authentication_error",
++                }
++            },
++        )
+     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
+     try:
+         stealth_dns = await _stealth_dns_snapshot()
+-    except Exception:  # noqa: BLE001 — liveness must never fail because of a probe
++    except Exception:  # noqa: BLE001 - operator status must not crash on probe errors
+         stealth_dns = {"ok": None, "checked_at": 0.0, "detail": "probe error"}
+     return {
+         "status": "healthy",
+@@ -549,8 +649,25 @@ async def health_check():
+ 
+ @app.get("/webhook/scout/status")
+ @app.get("/api/v1/webhook/scout")
+-async def webhook_scout_status():
+-    """Returns live fleet status of all Webhook & Multi-AI Session slots."""
++async def webhook_scout_status(
++    request: Request, x_supremeai_key: Optional[str] = Header(default=None)
++):
++    """Returns live fleet status of all Webhook & Multi-AI Session slots.
++
++    Auth-gated (#1729): this sibling route leaked the same operator-grade
++    fleet detail as the old public root; the same strict key gate applies
++    (no guest pass-through, fail-closed).
++    """
++    if not _require_operator_key(request, x_supremeai_key):
++        return JSONResponse(
++            status_code=401,
++            content={
++                "error": {
++                    "message": "webhook scout fleet status requires a valid gateway key",
++                    "type": "authentication_error",
++                }
++            },
++        )
+     if not webhook_scout:
+         return {"status": "unavailable", "detail": "Webhook Scout not initialized"}
+     return webhook_scout.get_status()
+diff --git a/gateway/service/status_publication.py b/gateway/service/status_publication.py
+new file mode 100644
+index 00000000..dd049fe9
+--- /dev/null
++++ b/gateway/service/status_publication.py
+@@ -0,0 +1,84 @@
++"""status_publication.py — public status payload contracts for the SupremeAI
++unified gateway (#1729).
++
++Splits the former single health_check() payload (which leaked operator-grade
++fleet detail on every public probe route) into three tiers:
++
++  - public root (GET /): exactly the four consumer-relevant fields
++  - liveness probes (GET /health, /healthz, /api/health, /api/v1/health,
++    /v1/health): HTTP-200 probe fields only — the documented consumer contract
++    (docs/CONSUMERS.md) branches on HTTP status, not body fields, and the
++    SEQ453 watchdog + federation CI consume status/chat_ready semantics,
++    which are preserved
++  - operator fleet detail (GET /internal/status, GET /webhook/scout/status):
++    full inventory behind the strict key gate (_require_operator_key in
++    service/app.py — no guest pass-through, fail-closed)
++
++stdlib-only and import-safe without fastapi so the payload contracts are
++unit-testable offline (tests/test_status_publication.py).
++"""
++
++from __future__ import annotations
++
++PUBLIC_ROOT_FIELDS: tuple[str, ...] = ("status", "service_name", "version", "chat_ready")
++LIVENESS_FIELDS: tuple[str, ...] = ("status", "service_name", "version", "chat_ready", "timestamp")
++
++# Recon-relevant fields that must never appear on an unauthenticated surface (#1729):
++# capacity, provider topology, stealth infrastructure posture, internal naming
++# conventions and cooldown/captcha states.
++OPERATOR_ONLY_FIELDS: tuple[str, ...] = (
++    "total_keys",
++    "total_healthy_keys",
++    "stealth_priority1_configured",
++    "stealth_dns",
++    "web_sessions_active",
++    "web_session_status",
++    "webhook_scout",
++    "telegram_webhook_configured",
++    "active_providers",
++)
++
++
++def build_public_root_payload(
++    status: str = "healthy",
++    service_name: str = "supremeai-api",
++    version: str = "2.0.0",
++    chat_ready: bool = False,
++) -> dict:
++    """Exactly the four public fields of the consumer contract (HTTP 200 unchanged)."""
++    return {
++        "status": status,
++        "service_name": service_name,
++        "version": version,
++        "chat_ready": bool(chat_ready),
++    }
++
++
++def build_liveness_payload(
++    status: str,
++    service_name: str,
++    version: str,
++    chat_ready: bool,
++    timestamp: str,
++) -> dict:
++    """200-OK liveness probe body: watchdog-consumed semantics preserved, no fleet detail."""
++    return {
++        "status": status,
++        "service_name": service_name,
++        "version": version,
++        "chat_ready": bool(chat_ready),
++        "timestamp": timestamp,
++    }
++
++
++def assert_no_operator_fields(payload: dict) -> dict:
++    """Guard: raise if any operator-only field leaks into a public payload.
++
++    Called by every public status handler so a future field added to the fleet
++    payload cannot silently re-appear on the public surface (the #1729 drift
++    class made structural, not procedural).
++    """
++    leaked = sorted(set(payload) & set(OPERATOR_ONLY_FIELDS))
++    if leaked:
++        raise ValueError(f"operator-only fields leaked into public payload: {leaked}")
++    return payload
+diff --git a/tests/test_status_publication.py b/tests/test_status_publication.py
+new file mode 100644
+index 00000000..29ad20b7
+--- /dev/null
++++ b/tests/test_status_publication.py
+@@ -0,0 +1,162 @@
++#!/usr/bin/env python3
++"""Offline tests for the #1729 gateway root lockdown.
++
++Two layers:
++  1. Pure-function contract tests on service/status_publication.py (importable
++     without fastapi).
++  2. AST-level regression pins on gateway/service/app.py: the public root
++     handler must not reference operator-only fields; the operator surface must
++     exist behind the strict gate. Pins survive without importing the app.
++
++Run:  python -m unittest tests.test_status_publication -v
++(or: python tests/test_status_publication.py)
++"""
++
++from __future__ import annotations
++
++import ast
++import sys
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT / "gateway" / "service"))
++
++import status_publication as sp  # noqa: E402
++
++APP_PATH = REPO_ROOT / "gateway" / "service" / "app.py"
++
++
++class PayloadContract(unittest.TestCase):
++    def test_public_root_is_exactly_four_fields(self):
++        p = sp.build_public_root_payload(chat_ready=True)
++        self.assertEqual(tuple(sorted(p)), tuple(sorted(sp.PUBLIC_ROOT_FIELDS)))
++        self.assertEqual(p["status"], "healthy")
++        self.assertTrue(p["chat_ready"])
++
++    def test_liveness_has_no_fleet_detail(self):
++        p = sp.build_liveness_payload(
++            status="healthy",
++            service_name="supremeai-api",
++            version="2.0.0",
++            chat_ready=True,
++            timestamp="2026-10-28T00:00:00+00:00",
++        )
++        self.assertEqual(tuple(sorted(p)), tuple(sorted(sp.LIVENESS_FIELDS)))
++        self.assertEqual(p["status"], "healthy")
++        self.assertEqual(p["timestamp"], "2026-10-28T00:00:00+00:00")
++
++    def test_no_operator_fields_in_public_payloads(self):
++        for payload in (
++            sp.build_public_root_payload(),
++            sp.build_liveness_payload("healthy", "s", "v", False, "t"),
++        ):
++            self.assertEqual(sp.assert_no_operator_fields(payload), payload)
++
++    def test_guard_raises_on_any_operator_field(self):
++        for field in sp.OPERATOR_ONLY_FIELDS:
++            with self.assertRaises(ValueError):
++                sp.assert_no_operator_fields({"status": "healthy", field: "x"})
++
++    def test_operator_only_fields_cover_audit_findings(self):
++        # The eight sensitive field families the #1729 auditor observed live.
++        for field in (
++            "total_keys",
++            "total_healthy_keys",
++            "stealth_priority1_configured",
++            "stealth_dns",
++            "web_session_status",
++            "webhook_scout",
++            "telegram_webhook_configured",
++            "active_providers",
++        ):
++            self.assertIn(field, sp.OPERATOR_ONLY_FIELDS)
++
++    def test_liveness_timestamp_is_passthrough(self):
++        p = sp.build_liveness_payload("healthy", "s", "v", True, "ts-123")
++        self.assertEqual(p["timestamp"], "ts-123")
++
++
++class AppRegressionPins(unittest.TestCase):
++    """AST-level pins on app.py (no fastapi import needed)."""
++
++    @classmethod
++    def setUpClass(cls):
++        src = APP_PATH.read_text(encoding="utf-8")
++        cls.tree = ast.parse(src)
++        cls.handlers = {}
++        for node in ast.walk(cls.tree):
++            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
++                cls.handlers.setdefault(node.name, node)
++
++    def _route_decorators(self, fn):
++        routes = []
++        for dec in fn.decorator_list:
++            if isinstance(dec, ast.Call) and isinstance(dec.func, ast.Attribute):
++                if dec.func.attr in ("get", "api_route") and dec.args:
++                    routes.append(ast.literal_eval(dec.args[0]))
++                elif dec.func.attr in ("get", "api_route"):
++                    routes.append(dec.func.attr)
++        return routes
++
++    def test_public_root_exists_and_is_minimal(self):
++        fn = self.handlers.get("public_root")
++        self.assertIsNotNone(fn, "public_root handler missing")
++        body_src = ast.unparse(fn)
++        for field in sp.OPERATOR_ONLY_FIELDS:
++            self.assertNotIn(field, body_src, f"operator field {field} in public_root")
++        self.assertIn("build_public_root_payload", body_src)
++        self.assertIn("assert_no_operator_fields", body_src)
++
++    def test_root_route_no_longer_shares_liveness_handler(self):
++        fn = self.handlers.get("public_root")
++        routes = self._route_decorators(fn)
++        self.assertEqual(routes, ["/"], f"public_root must serve only '/', got {routes}")
++
++    def test_health_check_is_redacted(self):
++        fn = self.handlers.get("health_check")
++        self.assertIsNotNone(fn)
++        body_src = ast.unparse(fn)
++        for field in sp.OPERATOR_ONLY_FIELDS:
++            self.assertNotIn(field, body_src, f"operator field {field} in health_check")
++        self.assertIn("build_liveness_payload", body_src)
++
++    def test_liveness_routes_preserved(self):
++        routes = self._route_decorators(self.handlers["health_check"])
++        for r in ("/health", "/healthz", "/api/health", "/api/v1/health", "/v1/health"):
++            self.assertIn(r, routes, f"liveness route {r} lost")
++
++    def test_internal_status_exists_behind_strict_gate(self):
++        fn = self.handlers.get("internal_status")
++        self.assertIsNotNone(fn, "internal_status handler missing")
++        body_src = ast.unparse(fn)
++        self.assertIn("_require_operator_key", body_src)
++        self.assertIn("total_keys", body_src)  # full fleet detail lives here now
++
++    def test_scout_status_is_gated(self):
++        fn = self.handlers.get("webhook_scout_status")
++        self.assertIsNotNone(fn)
++        self.assertIn("_require_operator_key", ast.unparse(fn))
++
++    def test_strict_gate_has_no_guest_passthrough(self):
++        fn = self.handlers.get("_require_operator_key")
++        self.assertIsNotNone(fn, "_require_operator_key missing")
++        # Call-level check (docstring may legitimately explain why guest trust is banned):
++        calls = {
++            ast.unparse(n.func) for n in ast.walk(fn) if isinstance(n, ast.Call)
++        }
++        self.assertNotIn("_is_guest_request", calls, "operator gate must not call guest pass-through")
++        body_src = ast.unparse(fn)
++        self.assertIn("verify_key", body_src)
++        self.assertIn("SUPREMEAI_API_KEY", body_src)
++
++    def test_guest_mode_still_serves_chat(self):
++        # The guest pass-through must remain for the chat surface (scope discipline):
++        # _verify_client_auth keeps its _is_guest_request branch.
++        fn = self.handlers.get("_verify_client_auth")
++        self.assertIsNotNone(fn)
++        self.assertIn("_is_guest_request", ast.unparse(fn))
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

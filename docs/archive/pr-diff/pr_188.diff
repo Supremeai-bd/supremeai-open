@@ -1,0 +1,54 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index bd496544..92b322aa 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -240,19 +240,6 @@ jobs:
+       (github.event_name == 'pull_request' && github.event.pull_request.merged == true && !startsWith(github.event.pull_request.head.ref, 'bridge/'))
+     runs-on: ubuntu-latest
+     timeout-minutes: 10
+-    # The bridge branch is created FROM the merge commit, so it can contain
+-    # .github/workflows/* changes — exactly what the #155 diet lands most.
+-    # GitHub refuses an App-token push that creates/updates workflow files
+-    # without the `workflows` scope (observed live: PR #184's dispatch failed
+-    # with "refusing to allow a GitHub App to create or update workflow
+-    # .github/workflows/landing.yml without `workflows` permission" and its
+-    # work order never filed). Job-level permissions replace the workflow-level
+-    # set, so this job declares its full least-privilege set explicitly.
+-    permissions:
+-      contents: write
+-      pull-requests: read
+-      issues: write
+-      workflows: write
+     # E4 dedup race (preserved from #169-era doctrine): serialize dispatches
+     # for the same PR and never cancel mid-run — a cancelled run could push
+     # the patch branch without writing the dedup marker, and the next run
+@@ -372,6 +359,15 @@ jobs:
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
++          # GITHUB_TOKEN can never hold the `workflows` scope (it is not a
++          # grantable token scope), so it cannot push bridge branches that
++          # touch .github/workflows/* — and the bridge branch is created FROM
++          # the merge commit, so the #155 diet makes that the common case.
++          # The PAT (the same credential the auto-merge job uses) carries
++          # repo-wide scope. When unset the App token is still used: branches
++          # without workflow changes push fine, workflow-touching ones fail
++          # loudly (never silently) exactly as before.
++          BRIDGE_PUSH_TOKEN: ${{ secrets.MERGE_PAT }}
+         run: |
+           # Deterministic identity: the task id date is the MERGE COMMIT date,
+           # not the run date — re-dispatching the same PR on a later UTC day
+@@ -417,6 +413,13 @@ jobs:
+           git config user.name "github-actions[bot]"
+           git config user.email "github-actions[bot]@users.noreply.github.com"
+ 
++          # Push with the PAT when available (see the env note: the App token
++          # cannot carry workflow-file changes). The token is embedded in the
++          # ephemeral runner's remote URL and never echoed.
++          if [ -n "$BRIDGE_PUSH_TOKEN" ]; then
++            git remote set-url origin "https://x-access-token:${BRIDGE_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
++          fi
++
+           # Create and push bridge patch branch.
+           # #113: branch from the MERGE COMMIT — the head ref is deleted by
+           # the auto-merge's --delete-branch, and any git operation anchored

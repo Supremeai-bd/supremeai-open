@@ -1,0 +1,42 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index d69d40e0..e9c1758f 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -208,18 +208,31 @@ jobs:
+           # merge desynchronizes the bridge channel (the dispatcher then
+           # hard-fails on state != MERGED). Hold both until the merge
+           # actually completes.
++
++          # Squash semantics that preserve issue auto-close (#220): repo
++          # doctrine puts "Closes #N" in the PR title / PR description /
++          # commit message, but GitHub only processes closing keywords from
++          # the FINAL squash commit message — and the previously hardcoded
++          # subject ("Auto-merged PR #N via Merge Gate") dropped them
++          # (evidence: #161/#98/#214 stayed open after #207/#212/#215
++          # landed). Derive GitHub-default squash fields from live PR data;
++          # on any fetch failure fall back to the previous hardcoded subject
++          # so a metadata outage can never block a landing (fail-safe).
++          PR_SUBJECT="$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title -q .title 2>/dev/null || true)"
++          PR_BODY="$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json body -q .body 2>/dev/null || true)"
++          [ -n "$PR_SUBJECT" ] || PR_SUBJECT="Auto-merged PR #${PR_NUM} via Merge Gate"
++
++          MERGE_ARGS=(--squash --delete-branch --subject "${PR_SUBJECT} (#${PR_NUM})")
++          if [ -n "$PR_BODY" ]; then MERGE_ARGS+=(--body "$PR_BODY"); fi
++
+           if ! gh pr merge "$PR_NUM" \
+             --repo "${{ github.repository }}" \
+-            --squash \
+-            --delete-branch \
+-            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
++            "${MERGE_ARGS[@]}"; then
+             echo "Standard gh pr merge failed — attempting with --admin fallback..."
+             if ! gh pr merge "$PR_NUM" \
+               --repo "${{ github.repository }}" \
+-              --squash \
+-              --delete-branch \
+               --admin \
+-              --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
++              "${MERGE_ARGS[@]}"; then
+               echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
+               echo "merged=false" >> "$GITHUB_OUTPUT"
+               exit 1

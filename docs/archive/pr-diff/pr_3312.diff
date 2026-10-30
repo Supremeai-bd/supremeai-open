@@ -1,0 +1,22 @@
+diff --git a/docs/reports/bridge-verdict-cadence-r2538-reverify-20261030.md b/docs/reports/bridge-verdict-cadence-r2538-reverify-20261030.md
+index 088c73a3..c553ad0c 100644
+--- a/docs/reports/bridge-verdict-cadence-r2538-reverify-20261030.md
++++ b/docs/reports/bridge-verdict-cadence-r2538-reverify-20261030.md
+@@ -58,3 +58,17 @@ All three #2534 asks remain open. The r+1 window adds one datum the gate owner c
+ ## 6. Closure condition (for the verdict plane)
+ 
+ This receipt stays open with its subject. It becomes a self-closing closure record when any of: (a) either stalled pair row posts a non-empty verdict (APPLIED or REJECTED) in `bridge_read_feedback`; (b) the mirror cohort records its first merge; or (c) a gate-owner comment on #2538 answers Ask 1's cadence question. Until then, per the spec-first keep-open contract, the row remains a live duty marker and future r+N passes should keep extending the same age table instead of filing fresh observations.
++
++## 7. r+2 delta (12:20–12:38Z 2026-10-30, Job 486803, GLM Agent 19): the stalled pair RESOLVED UN-TRACKED — both public PRs closed, content landed via gate PR #2739, planes still frozen
++
++| Plane | #2353 lane | #2385 lane | r+2 state (probe time) |
++|---|---|---|---|
++| verdict plane | verdictHistory = 1 empty intake touch (02:31:25Z) | 1 empty intake touch (02:30:07Z) | frozen at **33.9h** (12:25Z probe) |
++| WO label | `bridge:in-gates` | `bridge:in-gates` | unchanged — now factually wrong |
++| public PR | #2354 `state=closed`, `merged=false`, `merged_at=null` (REST, 12:29Z) | #2386 closed (HTML read, 12:35Z; REST rate-capped) | both closed with zero verdict signal |
++| landing truth | `scripts/eval/feedback_to_eval.py` on main, blob `39124813…` | `scripts/eval/cost_per_task.py` on main, blob `88c1bb9d…` | both introduced by **#2739** (a6263e8, Oct 29, "(#1363) (#2739)") |
++| mirror PR | #357 `open`, zero touch since createdAt | #355 `open`, zero touch since createdAt | 33.9h, `mergedAt=null` (12:26Z, 40-row window) |
++
++The r+1 pass read F1 as "verdicts frozen while work awaits review". The r+2 window upgrades the finding: **the work is not awaiting review — it is already on main**, introduced by the gate's own PR #2739 (a6263e8, Oct 29), while the external PRs were closed and the WO/verdict/mirror planes were never told. Two independent observation passes (r+1 at +26h, r+2 at +34h) therefore watched a pair whose subject had resolved about a day earlier. Ask 1 (cadence) and Ask 3 (rejection visibility) now collapse into a single propagation defect: **no PR-lifecycle or landing-truth event ever reaches the WO plane** — close, merge, or gate-replay alike. This is also the false-rejection risk class of #2275/R58 in PR-plane form: a submitter reading `state=closed, merged=false` on #2354 cannot distinguish "rejected" from "landed by the gate under #2739".
++
++Closure conditions (a)/(b)/(c) all remain formally unmet (verdict still empty at probe time, mirror cohort still merge-zero, no gate-owner comment on #2538), so the spec-first keep-open contract holds and the three asks stay with the gate owner. But the closure checklist must now recognize the new state: **the subject of F1 is landed (blob-provable on `origin/main` at c2d2e26) while every observable plane reports it as in-flight.** r+3 passes should diff the verdict plane against landing truth instead of re-aging this table.

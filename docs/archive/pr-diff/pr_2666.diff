@@ -1,0 +1,78 @@
+diff --git a/docs/reports/human-eye-health-live-but-empty-20261029.md b/docs/reports/human-eye-health-live-but-empty-20261029.md
+new file mode 100644
+index 00000000..34d263bb
+--- /dev/null
++++ b/docs/reports/human-eye-health-live-but-empty-20261029.md
+@@ -0,0 +1,72 @@
++# Addendum #2 to #2205 (health staleness guard): NEW failure mode — "live-but-empty" /health (timestamp live, service checks never repopulate, status misleadingly `ok`)
++
++**Date**: 2026-10-29 23:57+08 (Cycle 42) · **Role**: human-eye · **Endpoint**: `GET https://supremeai-mcp-tower.onrender.com/health` · **Cross-ref**: #2205 (original stale-frozen WO), Cycle-36 browser-context /health 503 evidence (mapped to #2205 scope)
++
++## Summary
++
++The tower's `/health` has entered a **third distinct failure state**: after a restart (between
++readings #36 and #37), the endpoint serves a **live timestamp with an EMPTY check table** for
++**3+ consecutive hours** — `{"status":"ok","services":{"healthy":0,"degraded":0,"total":0}}`. The
++timestamp updates on every read (fresh each minute), so any staleness-guard keyed on timestamp age
++would pass it as healthy. Nothing is wrong *and* nothing was checked — indistinguishable from
++"all 33 services verified healthy" for any consumer reading only `status`.
++
++## Evidence (curl-only readings, per established methodology — WebFetch path carries a stale cache)
++
++| Reading | Time (UTC, == local reading time) | Shape | Status field |
++|---|---|---|---|
++| #37 (Cycle 40) | 2026-10-29T13:57:23.140Z | `{healthy:0, degraded:0, total:0}` | `ok` |
++| #38 (Cycle 41) | 2026-10-29T14:57:22.246Z | `{healthy:0, degraded:0, total:0}` | `ok` |
++| #38 re-probe (+91s) | 2026-10-29T14:58:53.932Z | `{healthy:0, degraded:0, total:0}` | `ok` |
++| #39 (Cycle 42) | 2026-10-29T15:57:21.791Z | `{healthy:0, degraded:0, total:0}` | `ok` |
++
++- Timestamps continuously **live** (each == its reading time) ⇒ NOT the Oct-24 stale-frozen mode of
++  the original #2205.
++- Historical boot-state (`{0,0,0}`) repopulation variance across 5 prior occurrences (C24–C33 era):
++  **67s – 4min**. Current persistence: **>2h across 3 hourly readings** — far outside any prior
++  variance; the check loop on this boot never repopulated.
++- The tower itself is functional: MCP handshake succeeds each cycle (sessions C40–C42).
++- The API-side check subsystem is unaffected: `GET /api/health-aggregation` (API backend) returns
++  5/5 services online throughout the same window — the dead loop is the **tower's own** service
++  checker, not shared checking infrastructure.
++
++## Why this matters (extends #2205's rationale)
++
++1. **Staleness guard keyed on timestamp age is insufficient.** The original #2205 asked for a
++   freshness guard against the Oct-24 frozen snapshot (stale timestamp). Live-but-empty passes every
++   timestamp-age check while carrying strictly less information than a frozen snapshot.
++2. **`status:"ok"` with `total:0` is semantically wrong.** Zero performed checks is not "healthy".
++   Monitoring/alerting and the human-eye QA lane consume this endpoint; an empty `ok` can mask a dead
++   checker for hours (as observed: 2h+).
++3. **The watchdog ask in #2205 covers this if scoped correctly**: the loop watchdog must alarm not
++   only on "checks frozen at timestamp T" but also on **"check table empty for > X minutes after
++   boot"** (X ≈ 10min, an order of magnitude above the observed 4min repopulation ceiling).
++
++## Smallest safe fix (incremental to #2205's fix, same subsystem)
++
++1. `status` derivation: `total === 0` ⇒ `status:"starting"` (or `unknown`), never `ok`.
++2. Freshness/emptiness guard: `/health` reports `stale:true` + `checksAgeMs`/`lastCompletedSweepAt`
++   when the check table is empty for > 10min post-boot, or the last sweep is older than the sweep
++   interval.
++3. Watchdog: alarm when `total == 0` persists beyond the boot-repopulation window (observed normal
++   ceiling: 4min).
++
++## Regression test
++
++1. Restart the tower in a staging env → assert `/health` reads `status:"starting"` (not `ok`) while
++   `total == 0`, and flips to `ok` only after the first completed sweep.
++2. Kill the sweep loop (fault injection) → assert `stale:true` + watchdog alarm within the window,
++   while timestamp stays live (proves the guard keys on check-table state, not timestamp).
++3. Golden check: normal boot repopulates within 10min and `status` transitions
++   `starting → ok` exactly once.
++
++## Duplicates / alternatives
++
++- Same WO as #2205 (same endpoint, same subsystem, same fix family: guard + watchdog). Filed as
++  addendum, not a new WO — consistent with how the Cycle-36 browser-context /health 503 evidence was
++  mapped into #2205 scope.
++- Alternative rejected: new standalone WO — splits one subsystem's health-integrity story across two
++  issues; the fixer needs the full failure-mode matrix (frozen / live-but-empty / boot-window 503) in
++  one place.
++- Alternative rejected: client-side "treat total==0 as degraded" workarounds in consumers — masks the
++  server bug and violates the no-workaround discipline.

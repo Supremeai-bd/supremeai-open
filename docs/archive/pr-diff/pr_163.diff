@@ -1,0 +1,38 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index c07c3c3c..9a7c599f 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -113,6 +113,10 @@ Admin work budget is **≤ 0.01%**. Agents (local, cloud, web AI, or external bo
+      ```
+   3. Create the PR via GitHub REST API. Internal CI Guardian evaluates and merges autonomously.
+ 
++### 2.2 Loop-Granted Authority — No Permission-Asking (U10)
++
++The loop **is** the permission. Agents never emit "should I start / বললেই পরের batch শুরু করছি / shall I proceed?" style output. When self-checkable preconditions pass (claimable issue, no admin gate, fresh board per #4177, valid credentials, green CI), work proceeds immediately; status reports state facts, never permission questions. Escalation is reserved for hard blockers only (missing credentials, destructive ops, ADMIN_DECISION gates, contradictory instructions). Canonical rule: [`AGENT_RULES.md`](./AGENT_RULES.md) **U10**.
++
+ ## 3. New Agent: Required Reading Path
+ 
+ A newly added agent should not need tribal knowledge. Start here, then follow the links in order:
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index f9e83de0..bb76cf34 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -61,6 +61,18 @@ After clean exit (locks released, heartbeat stopped), the agent loop must **reru
+ When any defect, antipattern, stale reference, or policy gap is found, the agent MUST NOT treat it as isolated by default. First classify: isolated one-off, or member of a defect/problem class? Perform a targeted sweep for sibling occurrences — same pattern, same file family, same reference-set, same CI/checker surface. If siblings share the same root cause AND the same scope, address them within the same task (or an explicitly linked task series) before closing the original. If they fall outside scope or risk, file linked follow-up issue(s) instead of silently expanding. Report format: `similar found: N | fixed in-task: M | filed follow-up: K`.
+ 
+ **Similar ≠ blindly fix everything.** Evidence decides class membership; scope and safety decide the fix boundary. Scope-expanding mass changes without a sweep report are a contract violation.
++## U10 — Loop-Granted Authority (No Permission-Asking)
++
++Agents do not ask permission to start, continue, or batch work. **The continuous loop itself is the authorization** (§11, AGENTS.md §2.1 Zero-Admin policy): when the preconditions an agent can self-check pass — issue claimable, no admin gate, credentials valid, CI green, base fresh per U5 — the agent proceeds immediately and silently.
++
++**Banned output patterns (non-exhaustive):** "বললেই পরের batch শুরু করছি" · "শুরু করবো কিনা" · "শুরু করতে পারি?" · "should I start?" · "shall I proceed / continue?" · "confirm?" · "waiting for your go-ahead". A status report states facts (done / running / next / blocked-with-evidence); it never ends in a permission question.
++
++**Self-check instead of ask:** before every step, re-verify preconditions from board and repo state (open PRs, claim labels, gates, freshness, CI). A failed self-check routes to its matching rule — U4 duplicate → yield, U5 stale → refresh, §6 gate → document and defer — never to a question.
++
++**Hard blockers — the only escalation cases:** missing credentials/secrets that cannot be self-provisioned through the approved broker; destructive/irreversible operations (AGENTS.md §1 safety stop); ADMIN_DECISION-gated choices (§6); contradictory instructions that repo state cannot resolve. Escalation format: blocker statement + evidence + workarounds already attempted + the next claimable task the agent is moving to instead.
++
++**"Waiting for admin" is not a terminal state.** While any claimable task exists, a blocked agent records the blocker and reruns the loop on the next task (§11). Idling on an admin reply while claimable work exists violates this rule.
++
+ 
+ ---
+ 

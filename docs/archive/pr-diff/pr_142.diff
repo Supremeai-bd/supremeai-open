@@ -1,0 +1,385 @@
+diff --git a/.github/workflows/auto-bridge-dispatcher.yml b/.github/workflows/auto-bridge-dispatcher.yml
+index eb7f165b..1b19354d 100644
+--- a/.github/workflows/auto-bridge-dispatcher.yml
++++ b/.github/workflows/auto-bridge-dispatcher.yml
+@@ -27,6 +27,20 @@
+ #     miss হয় — ::warning:: annotation দিয়ে দৃশ্যমানভাবে লগ হয়, merge
+ #     automation fail করে না (degradation policy, fail-loud not fail-merge)।
+ #
++# Trigger paths (single dispatcher, two channels — #113):
++#   - pull_request:[closed] — only fires for merges made with a USER token.
++#     merge-gate.yml merges with GITHUB_TOKEN, and GitHub suppresses the
++#     pull_request event for token-driven actions (loop prevention), so this
++#     channel alone never fired for auto-merges (zero sync branches / zero
++#     work orders ever produced).
++#   - workflow_dispatch(pr_number) — merge-gate calls it immediately after
++#     every landing merge (workflow_dispatch is a documented exception to the
++#     suppression), and humans can use it for backfill/reconciliation.
++#   NEVER add a second bridge workflow: two dispatchers = double dispatch +
++#   duplicate work orders. Re-dispatch is idempotent instead: deterministic
++#   task id, branch re-pointed to the immutable merge commit, duplicate WO
++#   filing skipped.
++#
+ # Branch-point doctrine (#113):
+ #   The patch branch is created from the MERGE COMMIT (merge_commit_sha),
+ #   never from the PR head SHA. The Merge Gate merges with --delete-branch,
+@@ -60,6 +74,13 @@ permissions:
+   issues: write
+   pull-requests: read
+ 
++concurrency:
++  # Serialize dispatches for the same PR (deterministic task id + merge
++  # commit): a re-dispatch that overlaps the original would race on the
++  # same patch branch and work order.
++  group: auto-bridge-${{ github.event.inputs.pr_number || github.event.pull_request.number }}
++  cancel-in-progress: false
++
+ jobs:
+   auto-bridge:
+     name: "🌉 Create Auto Bridge Work Order"
+@@ -78,35 +99,58 @@ jobs:
+         id: check_scope
+         env:
+           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          # Inputs pass through env — never interpolated into the shell
++          # (workflow_dispatch inputs are free text and fated for a shell).
++          DISPATCH_PR: ${{ github.event.inputs.pr_number }}
++          EVENT_NAME: ${{ github.event_name }}
+         run: |
+-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+-            PR_NUM="${{ github.event.inputs.pr_number }}"
++          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
++            PR_NUM="$DISPATCH_PR"
++            case "$PR_NUM" in
++              ''|*[!0-9]*)
++                echo "::error::pr_number input is empty or non-numeric — refusing to resolve a PR."
++                exit 1
++                ;;
++            esac
+             echo "Processing dispatch for PR #${PR_NUM}..."
+-            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title,mergeCommit,baseRefOid,headRefName,state)
++            PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title,mergeCommit,baseRefOid,headRefOid,headRefName,state)
+             STATE=$(echo "$PR_JSON" | jq -r '.state')
+             if [ "$STATE" != "MERGED" ]; then
+-              echo "PR #${PR_NUM} is not merged (state: $STATE). Exiting."
++              echo "::error::PR #${PR_NUM} is not merged (state: $STATE) — bridge orders exist only for landed patches."
+               exit 1
+             fi
+             HEAD_REF=$(echo "$PR_JSON" | jq -r '.headRefName')
+             if [[ "$HEAD_REF" =~ ^bridge/ ]]; then
+-              echo "PR #${PR_NUM} is from a bridge branch ($HEAD_REF). Skipping loop."
++              echo "PR #${PR_NUM} came from a bridge branch ($HEAD_REF) — loop prevention, skipping."
+               exit 0
+             fi
+             PR_TITLE=$(echo "$PR_JSON" | jq -r '.title')
+             PR_SHA=$(echo "$PR_JSON" | jq -r '.mergeCommit.oid')
++            PR_HEAD_SHA=$(echo "$PR_JSON" | jq -r '.headRefOid')
+             BASE_SHA=$(echo "$PR_JSON" | jq -r '.baseRefOid')
++            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "null" ]; then
++              # gh without baseRefOid: REST fallback (base.sha is a reachable
++              # recorded base head — diff pair stays valid).
++              BASE_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUM}" -q '.base.sha')
++            fi
+           else
+             PR_NUM="${{ github.event.pull_request.number }}"
+             PR_TITLE="${{ github.event.pull_request.title }}"
+             PR_SHA="${{ github.event.pull_request.merge_commit_sha }}"
++            PR_HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+             BASE_SHA="${{ github.event.pull_request.base.sha }}"
+             echo "Processing merged PR #${PR_NUM}..."
+           fi
+-          
++
++          if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
++            echo "::error::merge commit for PR #${PR_NUM} unavailable — cannot anchor the patch branch."
++            exit 1
++          fi
++
+           echo "pr_num=$PR_NUM" >> "$GITHUB_OUTPUT"
+           echo "pr_title=$PR_TITLE" >> "$GITHUB_OUTPUT"
+           echo "pr_sha=$PR_SHA" >> "$GITHUB_OUTPUT"
++          echo "pr_head_sha=$PR_HEAD_SHA" >> "$GITHUB_OUTPUT"
+           echo "base_sha=$BASE_SHA" >> "$GITHUB_OUTPUT"
+ 
+           # Get list of files touched in this PR
+@@ -144,25 +188,45 @@ jobs:
+           # Expose identity to the dispatch step (patch-stream payload)
+           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+-          
+-          echo "Creating patch branch ${BRANCH_NAME} pointing to merge commit ${PR_SHA}..."
++
++          # The merge commit must exist in this checkout. Both trigger paths
++          # check out main AFTER landing, so it is an ancestor of HEAD; a
++          # missing object means the dispatch raced the merge landing.
++          if ! git cat-file -e "${PR_SHA}^{commit}" 2>/dev/null; then
++            echo "::error::merge commit ${PR_SHA} absent from checkout — dispatch likely raced the merge landing on main. Re-dispatch."
++            exit 1
++          fi
++
+           git config user.name "github-actions[bot]"
+           git config user.email "github-actions[bot]@users.noreply.github.com"
+-          
++
+           # Create and push bridge patch branch.
+-          # #113: branch from the MERGE COMMIT — the head commit object is
+-          # gone by now (Merge Gate merges with --delete-branch), so any
+-          # git operation anchored on PR_HEAD_SHA fatal-exits here.
+-          git branch "${BRANCH_NAME}" "${PR_SHA}"
++          # #113: branch from the MERGE COMMIT — the head ref is deleted by
++          # the Merge Gate's --delete-branch, and any git operation anchored
++          # on PR_HEAD_SHA fatal-exits with "not a valid branch point".
++          # Idempotent: TASK_ID is deterministic per (PR, UTC date) and the
++          # merge SHA is immutable, so a re-dispatch re-points the same ref
++          # to the same object instead of crashing with "already exists".
++          git branch -f "${BRANCH_NAME}" "${PR_SHA}"
+           git push origin "${BRANCH_NAME}"
+-          
+           # Prepare Work Order body. Field order mirrors the canonical human
+           # template (.github/workflows/bridge-work-order.yml) — see header
+           # note. The heredoc lines below sit at the SAME indentation as the
+           # surrounding script: the YAML block scalar strips that common
+           # prefix, so the shell sees a top-level heredoc (content and EOF
+           # terminator flush-left) — no indentation-repair pass needed (#113).
+-          cat <<EOF > /tmp/bridge_wo.md
++          # Idempotent work-order filing: a re-dispatched PR (manual backfill,
++          # merge-gate retry) must not file a second bridge:queued issue —
++          # duplicate WOs cause label churn and repeated intake processing.
++          # One deterministic task id -> at most one WO issue.
++          EXISTING_WO=$(gh issue list --repo "${{ github.repository }}" --state open --label "bridge:queued" --limit 50 \
++            --json number,title \
++            -q ".[] | select(.title | contains(\"${TASK_ID}\")) | .number" | head -n 1)
++
++          if [ -n "$EXISTING_WO" ]; then
++            echo "Work order for ${TASK_ID} already filed (#${EXISTING_WO}) — skipping duplicate creation, continuing to dispatch."
++          else
++            cat <<EOF > /tmp/bridge_wo.md
+           ### Task ID
+           ${TASK_ID}
+ 
+@@ -190,12 +254,13 @@ jobs:
+           auto-bridge-workflow / github-actions[bot]
+           EOF
+ 
+-          echo "Submitting Bridge Work Order issue..."
+-          gh issue create \
+-            --repo "${{ github.repository }}" \
+-            --title "🌉 Auto-Bridge: Sync PR #${PR_NUM} to private codebase (${TASK_ID})" \
+-            --body-file /tmp/bridge_wo.md \
+-            --label "bridge:queued"
++            echo "Submitting Bridge Work Order issue..."
++            gh issue create \
++              --repo "${{ github.repository }}" \
++              --title "🌉 Auto-Bridge: Sync PR #${PR_NUM} to private codebase (${TASK_ID})" \
++              --body-file /tmp/bridge_wo.md \
++              --label "bridge:queued"
++          fi
+ 
+       - name: Stream landed patch reference to private Bridge Intake (#107)
+         if: steps.check_scope.outputs.should_bridge == 'true'
+@@ -204,6 +269,12 @@ jobs:
+           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
++          # #113: bound from the resolved context output for BOTH trigger
++          # paths — was read by the python payload below but missing from
++          # env (KeyError -> empty payload -> broken dispatch) ever since the
++          # workflow_dispatch refactor. head_sha is metadata only: the private
++          # intake fetches the patch by branch ref, never by head object.
++          PR_HEAD_SHA: ${{ steps.check_scope.outputs.pr_head_sha }}
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+           TASK_ID: ${{ steps.create_wo.outputs.task_id }}
+           BRANCH_NAME: ${{ steps.create_wo.outputs.branch_name }}
+@@ -229,7 +300,10 @@ jobs:
+               "task_id": os.environ["TASK_ID"],
+               "bridge_branch": os.environ["BRANCH_NAME"],
+               "merge_sha": os.environ["PR_SHA"],
+-              "head_sha": os.environ["PR_HEAD_SHA"],
++              # .get + fallback: a missing binding degrades to an empty
++              # string instead of a KeyError that silently empties the whole
++              # payload (head SHA is metadata only — see env note above).
++              "head_sha": os.environ.get("PR_HEAD_SHA", ""),
+               "base_sha": os.environ["BASE_SHA"],
+               "file_count": len(files),
+               "files_truncated": len(files) > 100,
+@@ -239,6 +313,14 @@ jobs:
+           PYEOF
+           )
+ 
++          # A python KeyError/crash leaves PAYLOAD empty — curl would POST an
++          # empty body (4xx) while the log still implies a dispatch attempt.
++          # Fail-honest: no payload, no request.
++          if [ -z "$PAYLOAD" ]; then
++            echo "::error::dispatch payload build failed — refusing to POST an empty body. WO issue is filed; private poll still converges."
++            exit 1
++          fi
++
+           echo "Dispatching bridge_order_queued → Supremeai-bd/supremeai (private Bridge Intake)..."
+           echo "  task_id: ${TASK_ID} | bridge branch: ${BRANCH_NAME} | merge: ${PR_SHA} (head ${PR_HEAD_SHA} may be GC'd — metadata only)"
+           HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+diff --git a/.github/workflows/merge-gate.yml b/.github/workflows/merge-gate.yml
+index 4c0d59fe..79affc9c 100644
+--- a/.github/workflows/merge-gate.yml
++++ b/.github/workflows/merge-gate.yml
+@@ -7,6 +7,11 @@
+ #   2. CI Multi-Platform Python Matrix (3.10 - 3.13)
+ #   3. Secret Scanning (Gitleaks)
+ # This workflow automatically executes squash-merge and deletes the branch.
++# Because merges run with GITHUB_TOKEN, GitHub suppresses the pull_request
++# event (loop prevention) — so immediately after landing, this workflow calls
++# `gh workflow run auto-bridge-dispatcher.yml` (workflow_dispatch is a
++# documented exception to the suppression) to sync the landed patch into the
++# private monorepo. See #113.
+ # =============================================================================
+ 
+ name: 🚦 Merge Gate (Autonomous Auto-Merge)
+@@ -41,7 +46,7 @@ jobs:
+       - name: Determine Target PR
+         id: target_pr
+         env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+           DISPATCH_PR: ${{ github.event.inputs.pr_number }}
+         run: |
+           PR_NUM=""
+@@ -64,9 +69,10 @@ jobs:
+           echo "has_pr=true" >> "$GITHUB_OUTPUT"
+ 
+       - name: Evaluate Constitutional Gates & Auto-Merge
++        id: evaluate
+         if: steps.target_pr.outputs.has_pr == 'true'
+         env:
+-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+           PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
+         run: |
+           echo "Evaluating PR #${PR_NUM} for autonomous auto-merge..."
+@@ -101,12 +107,22 @@ jobs:
+           fi
+ 
+           echo "✅ All required checks passed! Executing autonomous squash-merge..."
+-          
+-          gh pr merge "$PR_NUM" \
++
++          # Fail-honest merge: the exit code gates everything downstream. A
++          # "LANDED" comment plus a bridge dispatch fired after a failed
++          # merge desynchronizes the bridge channel (the dispatcher then
++          # hard-fails on state != MERGED). Hold both until the merge
++          # actually completes.
++          if ! gh pr merge "$PR_NUM" \
+             --repo "${{ github.repository }}" \
+             --squash \
+             --delete-branch \
+-            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"
++            --subject "Auto-merged PR #${PR_NUM} via Merge Gate"; then
++            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
++            echo "merged=false" >> "$GITHUB_OUTPUT"
++            exit 1
++          fi
++          echo "merged=true" >> "$GITHUB_OUTPUT"
+ 
+           # Post landing comment
+           gh pr comment "$PR_NUM" \
+@@ -115,8 +131,44 @@ jobs:
+ 
+           echo "✅ PR #${PR_NUM} successfully auto-merged."
+ 
+-          # Trigger auto-bridge-dispatcher autonomously (Zero-Admin Policy)
+-          echo "🌉 Dispatching auto-bridge work order for PR #${PR_NUM}..."
+-          gh workflow run auto-bridge-dispatcher.yml \
++      - name: Bridge Dispatch — trigger auto-bridge-dispatcher (#113)
++        if: steps.evaluate.outputs.merged == 'true'
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ steps.target_pr.outputs.pr_number }}
++        run: |
++          # GitHub suppresses pull_request events for merges performed with
++          # GITHUB_TOKEN (loop prevention) — the dispatcher can no longer
++          # ride pull_request:closed. workflow_dispatch is a documented
++          # exception, so we trigger the single dispatcher directly after
++          # every landing merge, then verify the run was actually created:
++          # a silently dropped trigger means zero patch branch and zero
++          # work order (exactly the failure mode that froze the bridge).
++          echo "🌉 PR #${PR_NUM} landed — triggering auto-bridge-dispatcher (Zero-Admin Policy)..."
++          BEFORE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++
++          if ! gh workflow run auto-bridge-dispatcher.yml \
+             --repo "${{ github.repository }}" \
+-            -f pr_number="$PR_NUM" || echo "::warning::auto-bridge-dispatcher trigger skipped or failed"
++            -f pr_number="$PR_NUM"; then
++            echo "::warning::workflow_dispatch call failed for PR #${PR_NUM} — no bridge sync will occur automatically; re-dispatch manually."
++            exit 0
++          fi
++
++          CONFIRMED="false"
++          for attempt in $(seq 1 12); do
++            sleep 5
++            RUN_COUNT=$(gh api \
++              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=10" \
++              -q "[.workflow_runs[] | select(.created_at > \"$BEFORE_TS\")] | length" 2>/dev/null || echo 0)
++            if [ "${RUN_COUNT:-0}" -gt 0 ] 2>/dev/null; then
++              CONFIRMED="true"
++              break
++            fi
++            echo "Waiting for dispatcher run to appear (attempt ${attempt}/12)..."
++          done
++
++          if [ "$CONFIRMED" = "true" ]; then
++            echo "✅ auto-bridge-dispatcher run confirmed for PR #${PR_NUM} — patch branch + work order landing in the private queue."
++          else
++            echo "::warning::auto-bridge-dispatcher run not observed within 60s — trigger accepted but unverified; re-dispatch manually if no work order appears."
++          fi
+diff --git a/infrastructure/mcp-control-plane/src/policy/client-registry.ts b/infrastructure/mcp-control-plane/src/policy/client-registry.ts
+index 5b385737..883ca9a7 100644
+--- a/infrastructure/mcp-control-plane/src/policy/client-registry.ts
++++ b/infrastructure/mcp-control-plane/src/policy/client-registry.ts
+@@ -496,8 +496,8 @@ export function getOrCreateGuestClient(
+     name: finalName,  // AUDIT-FIX (#2030): use auto-incremented name
+     provider,
+     protocol,
+-    role: "agent",
+-    scopes: defaultClientScopes("agent"),
++    role: "viewer",
++    scopes: defaultClientScopes("viewer"),
+     toolProfile, // Tool Exposure Policy: provider-derived default (chatgpt → curated surface)
+     createdAt: now,
+     updatedAt: now,
+diff --git a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+index 21423048..fcba9592 100644
+--- a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
++++ b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+@@ -398,9 +398,9 @@ function viewerFallback(
+   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
+   return {
+     client: guest,
+-    role: "agent",
+-    authenticated: true,
+-    scopes: defaultClientScopes("agent"),
++    role: "viewer",
++    authenticated: false,
++    scopes: defaultClientScopes("viewer"),
+     slotId,
+     slotVerified: false,
+     fallbackReason: reason,
+diff --git a/infrastructure/mcp-control-plane/test_client_registry.ts b/infrastructure/mcp-control-plane/test_client_registry.ts
+index 40d45a59..69bcfc91 100644
+--- a/infrastructure/mcp-control-plane/test_client_registry.ts
++++ b/infrastructure/mcp-control-plane/test_client_registry.ts
+@@ -21,7 +21,7 @@ assert.equal(resolveClient(rotated!.token), undefined);
+ // Zero-manual-registration for no-auth AI clients + live protocol refresh.
+ const guestSse = getOrCreateGuestClient("guest_test_registry_1", "Test Guest (1.2.3.4)", "cursor", "sse");
+ assert.equal(guestSse.status, "active");
+-assert.equal(guestSse.role, "agent");
++assert.equal(guestSse.role, "viewer");
+ assert.equal(guestSse.protocol, "sse");
+ 
+ // Reconnect over streamable-http → SAME record, protocol follows the latest transport.
+@@ -97,7 +97,7 @@ assert.ok(promoted?.scopes.includes("repos:all:read"));
+ // 5. Named client record: stable id, role upgrades persist (database truth).
+ const namedA = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
+ assert.equal(namedA.id, "named_pko_main");
+-assert.equal(namedA.role, "agent");
++assert.equal(namedA.role, "viewer");
+ changeClientRole("named_pko_main", "agent");
+ const namedB = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "sse");
+ assert.equal(namedB.id, "named_pko_main");

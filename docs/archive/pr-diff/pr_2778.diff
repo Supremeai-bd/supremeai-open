@@ -1,0 +1,21 @@
+diff --git a/tests/test_stale_claim_guard.py b/tests/test_stale_claim_guard.py
+index 5cffc0fa..dfce05d8 100644
+--- a/tests/test_stale_claim_guard.py
++++ b/tests/test_stale_claim_guard.py
+@@ -28,8 +28,15 @@
+ LOOP_SRC = LOOP_PATH.read_text(encoding="utf-8")
+ 
+ GUARD_KEY = "STALE-CLAIM GUARD"
++# বাংলা: পিন লাইভ-রেজিস্ট্রি অনুসরণ করবে (#2775)। 2026-10-30 04:08Z লাইভ-প্রোব:
++# `bridge.read_feedback` (ডটেড) -> -32602 Tool not found (মৃত নাম);
++# `bridge_read_feedback` (আন্ডারস্কোর) -> args-ভ্যালিডেশন চলে (টুল জীবিত) —
++# #2640 A-1/A-3-এর হাইব্রিড-রেজিস্ট্রি মানচিত্রের সাথে সামঞ্জস্যপূর্ণ। রিগ্রেশন:
++# R78 guard-টেক্সট সঠিকভাবে জীবিত নামে সরেছিল, কিন্তু পিন মৃত ডটেড নামেই ছিল —
++# landed suite main-এ 1/35 RED হয়ে গিয়েছিল। টুল-নাম ভবিষ্যতে আবার বদলালে
++# guard-টেক্সট ও এই পিন একই স্লাইসে একসাথে সরবে (SSOT-first ডকট্রিন)।
+ REQUIRED_TOKENS = (
+-    "bridge.read_feedback",
++    "bridge_read_feedback",
+     "latestClaim",
+     "work_claim",
+     "never retry the same row",

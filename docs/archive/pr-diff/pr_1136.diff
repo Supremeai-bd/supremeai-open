@@ -1,0 +1,138 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index d3de7464..61d0456c 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -7,7 +7,7 @@
+ 
+ > [!NOTE]
+ > **Orientation for New AI Agents (Directory Mapping & Single Door):**  
+-> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the 12 satellite repositories.  
++> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the federation satellites (consolidated into 5 active product satellites: `studio`, `api`, `core`, `browser`, `vscode`, plus `archive`).  
+ > - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
+ > - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.  
+ > - **Satellite Dispatch Invariants:**  
+@@ -38,7 +38,7 @@ flowchart TD
+     subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
+         S6 --> GATE{"Merge Gate<br>(Fail-Closed)"}
+         GATE -- Green --> MERGE["Landing to main"]
+-        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / 1 of 12 Satellites)"]
++        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / Target Satellite)"]
+         DISPATCH --> PRUNE["Auto-Prune Transit Patch<br>(Zero-Residue #416)"]
+     end
+ 
+diff --git a/README.md b/README.md
+index f9568c98..866a5532 100644
+--- a/README.md
++++ b/README.md
+@@ -12,7 +12,7 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ > 1. **Single Door for Work:** All tasks, bug reports, and PRs live exclusively in **`Supremeai-bd/supremeai-open`**. Satellite repositories maintain a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).
+ > 2. **Where to Write Code:** Edit the corresponding domain folders inside this repository (`studio/`, `command/`, `core/`, `vscode/`, etc.). Do NOT attempt to push directly to satellite repos.
+ > 3. **Automated Dispatch & Zero Residue:** When your PR merges into `supremeai-open:main`, the automated bridge pipeline dispatches your changes to the target satellite repo and cleans up transit files automatically ([`AUTONOMOUS_TRANSIT_PIPELINE.md`](./AUTONOMOUS_TRANSIT_PIPELINE.md)).
+-> 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other 12 satellites are accessible via MCP.
++> 4. **Boundary Restrictions:** You do not need private credentials. Access to `supremeai` (core monorepo) is restricted to admin, and `supremeai-api` is air-gapped (ghost-cloaked). All other satellites are accessible via MCP.
+ >
+ > **MCP Tower call conventions (avoid argument/format errors):**
+ > - Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
+diff --git a/docs/FEDERATION_CHARTER.md b/docs/FEDERATION_CHARTER.md
+index bd5d152d..3864bf21 100644
+--- a/docs/FEDERATION_CHARTER.md
++++ b/docs/FEDERATION_CHARTER.md
+@@ -69,7 +69,7 @@ All incoming work items, failure alerts, and bridge work orders are ingested str
+ 
+ ### 3.1 The Guard (automated, this charter's teeth)
+ 
+-`scripts/ci/satellite_board_guard.py` audits all 12 satellites against the
++`scripts/ci/satellite_board_guard.py` audits all active satellites against the
+ 0/0 mandate using the same zero-credential plane external bridge agents
+ operate on:
+ 
+diff --git a/docs/FEDERATION_TAXONOMY_AND_LICENSING.md b/docs/FEDERATION_TAXONOMY_AND_LICENSING.md
+index 3962e59a..bcdbe491 100644
+--- a/docs/FEDERATION_TAXONOMY_AND_LICENSING.md
++++ b/docs/FEDERATION_TAXONOMY_AND_LICENSING.md
+@@ -85,7 +85,7 @@ flowchart TD
+ 
+ ### 3.2 Single Public Door & Zero Satellite Residue
+ - External contributors, autonomous AI agents (Claude, Cursor, Antigravity), and web bots enter exclusively via **`Supremeai-bd/supremeai-open`**.
+-- All 12 satellite repositories enforce the **Zero-Issue / Zero-PR Mandate** ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
++- All active satellite repositories enforce the **Zero-Issue / Zero-PR Mandate** ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
+ - Contributors edit matching domain folders inside `supremeai-open` (`studio/`, `command/`, `core/`, `vscode/`, etc.). On merge into `main`, `landing.yml` automatically dispatches the changes to the target satellite repo and prunes ephemeral transit artifacts.
+ 
+ ### 3.3 Boundary Security & Air-Gapping
+@@ -94,7 +94,7 @@ flowchart TD
+ 
+ ### 3.4 Decoupled Operations: Zero-Workload Passive Umbrella Mandate
+ `Supremeai-bd/supremeai` executes **zero active CI workloads, zero nightly cron jobs, and zero operational dependencies**:
+-- **Self-Contained Satellites:** Each of the 12 satellite repositories runs its own builds, unit tests, and CI/CD pipelines in total independence. No satellite depends on `supremeai` to test, deploy, or validate itself.
++- **Self-Contained Satellites:** Each of the active satellite repositories runs its own builds, unit tests, and CI/CD pipelines in total independence. No satellite depends on `supremeai` to test, deploy, or validate itself.
+ - **Ingress Telemetry:** Any federation-wide cross-satellite telemetry or health checks run exclusively through `supremeai-open` (the public front desk).
+ - **Pure Passive Master Mirror:** `supremeai` is strictly a passive, read-only panoramic mirror that receives mirror commits on merge to give an aggregated snapshot of the entire federation. No active workflows or scheduled cron jobs run on `supremeai`.
+ 
+diff --git a/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+index 98f5d92b..9f2dce86 100644
+--- a/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
++++ b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+@@ -14,7 +14,7 @@ The SupremeAI federation consists of **14 interconnected repositories** operatin
+ 1. **Single Public Ingress:** All tasks, community PRs, and AI agent work enter exclusively through **`Supremeai-bd/supremeai-open`**.
+ 2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
+ 3. **Passive Umbrella Monorepo:** The central monorepo (**`Supremeai-bd/supremeai`**) receives the entire panoramic commit, while satellites receive only their scoped slices.
+-4. **Zero-Issue / Zero-PR Satellite Mandate:** All 12 satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
++4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
+ 5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
+ 
+ ---
+@@ -100,11 +100,11 @@ The central board guard [`scripts/ci/satellite_board_guard.py`](file:///f:/supre
+ 
+ However:
+ 1. **GitHub Security Cloaking:** GitHub REST API returns `HTTP 404` when an unauthenticated caller requests any private repository.
+-2. **Resulting Blind Spot:** Because only `supremeai-studio` is currently public among the 12 satellites, an unauthenticated run yields:
++2. **Resulting Blind Spot:** Because only `supremeai-studio` and `supremeai-vscode` are currently public among the active satellites, an unauthenticated run yields:
+    ```text
+-   totals: 1 clean / 0 violations / 11 unreachable of 12
++   totals: 2 clean / 0 violations / 4 unreachable of 6
+    ```
+-3. `UNREACHABLE` is treated as a loud warning rather than a failure, but leaves 11 private satellites unverified in unauthenticated environments.
++3. `UNREACHABLE` is treated as a loud warning rather than a failure, but leaves 4 private satellites unverified in unauthenticated environments.
+ 
+ ### 5.2 Resolution: Authenticated Verification
+ Providing a valid token (`GH_TOKEN` or `GITHUB_TOKEN`) with organization read permissions eliminates the blind spot.
+@@ -123,14 +123,8 @@ Zero-Issue Satellite Mandate audit — org Supremeai-bd (doctrine #626, docs/FED
+   vscode             CLEAN       open_issues=0 open_prs=0
+   browser            CLEAN       open_issues=0 open_prs=0
+   core               CLEAN       open_issues=0 open_prs=0
+-  command            CLEAN       open_issues=0 open_prs=0
+-  skills             CLEAN       open_issues=0 open_prs=0
+-  agents             CLEAN       open_issues=0 open_prs=0
+-  sdk                CLEAN       open_issues=0 open_prs=0
+   archive            CLEAN       open_issues=0 open_prs=0
+-  infrastructure     CLEAN       open_issues=0 open_prs=0
+-  mcp-control-plane  CLEAN       open_issues=0 open_prs=0
+-  totals: 12 clean / 0 violations / 0 unreachable of 12
++  totals: 6 clean / 0 violations / 0 unreachable of 6
+ ```
+ 
+ ### 5.3 CI Nightly / Automated Pipeline Integration
+@@ -147,8 +141,8 @@ To ensure the scheduled watchdog runs with full visibility without leaking crede
+ 
+ ## 6. Summary Checklist for AI Agents & Maintainers
+ 
+-- [x] **No Direct Satellite Writes:** Never push directly or open issues/PRs on the 12 satellites.
++- [x] **No Direct Satellite Writes:** Never push directly or open issues/PRs on the satellites.
+ - [x] **Single Door Policy:** Open all PRs and track all tasks in `supremeai-open`.
+ - [x] **Multi-Domain Changes:** When modifying multiple domain directories, verify that `landing.yml` generates proper slice branches (`bridge/{task_id}-{slug}`).
+ - [x] **Sovereignty Boundary:** Do not attempt direct interaction with `supremeai` (monorepo) or `supremeai-api` vault; route exclusively via the public contracts.
+-- [x] **100% Board Cleanliness:** Maintain the 12/12 CLEAN status across all satellites at all times.
++- [x] **100% Board Cleanliness:** Maintain the 6/6 CLEAN status across all active satellites at all times.
+diff --git a/docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md b/docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md
+index 4fbbfe98..6cbf2198 100644
+--- a/docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md
++++ b/docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md
+@@ -43,7 +43,7 @@
+ 8. **Zero-Admin / ≤0.01%:** দুটোই "human-in-the-loop কম, automation বেশি" ফিলোসফি।
+ 9. **Open-core embassy:** দুটোই public boundary + private core।
+ 
+-**মূল পার্থক্য:** Infinity = single engineer, Rust-first, from-scratch engines, heavy on academies/dev-tools. SupremeAI = federation of 12 satellites, Python/TS, FastAPI gateway, agent orchestration focus. Infinity-এর **content/education + dev-tools + anti-sycophancy** দিকগুলো SupremeAI-তে দুর্বল — এখানেই অনুসরণের সুযোগ।
++**মূল পার্থক্য:** Infinity = single engineer, Rust-first, from-scratch engines, heavy on academies/dev-tools. SupremeAI = consolidated federation of active product satellites, Python/TS, FastAPI gateway, agent orchestration focus. Infinity-এর **content/education + dev-tools + anti-sycophancy** দিকগুলো SupremeAI-তে দুর্বল — এখানেই অনুসরণের সুযোগ।
+ 
+ ---
+ 

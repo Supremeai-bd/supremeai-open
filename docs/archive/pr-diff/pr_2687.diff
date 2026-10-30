@@ -1,0 +1,247 @@
+diff --git a/core/api/routes/skills.py b/core/api/routes/skills.py
+index 606937ed..c2c832fd 100644
+--- a/core/api/routes/skills.py
++++ b/core/api/routes/skills.py
+@@ -10,7 +10,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.dependencies import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/skills",
+diff --git a/core/api/routes/slash_commands.py b/core/api/routes/slash_commands.py
+index c96b7795..be472328 100644
+--- a/core/api/routes/slash_commands.py
++++ b/core/api/routes/slash_commands.py
+@@ -18,7 +18,7 @@
+ 
+ from api.deps import get_current_user_token
+ from core.llm.llm_gateway.context import InferenceContext
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/api/commands",
+diff --git a/core/api/routes/sso.py b/core/api/routes/sso.py
+index 209284ec..866b66ca 100644
+--- a/core/api/routes/sso.py
++++ b/core/api/routes/sso.py
+@@ -8,7 +8,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ _sso_instance = None
+ _sso_error = None
+diff --git a/core/api/routes/stream_chat_sse.py b/core/api/routes/stream_chat_sse.py
+index 096adfe4..e66d9431 100644
+--- a/core/api/routes/stream_chat_sse.py
++++ b/core/api/routes/stream_chat_sse.py
+@@ -42,7 +42,7 @@
+ 
+ from core.llm.llm_gateway import llm_gateway
+ from core.llm.llm_gateway.context import InferenceContext
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.memory.auto_rag_injector import auto_rag_injector
+ from core.security import verify_token_async
+ 
+diff --git a/core/api/routes/stream_hitl_sse.py b/core/api/routes/stream_hitl_sse.py
+index 503e67b4..fd438634 100644
+--- a/core/api/routes/stream_hitl_sse.py
++++ b/core/api/routes/stream_hitl_sse.py
+@@ -21,7 +21,7 @@
+ from fastapi.responses import StreamingResponse
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorEvent, error_event_bus
+ 
+ router = APIRouter(prefix="/api/v1/stream", tags=["SSE HITL Stream"])
+diff --git a/core/api/routes/task.py b/core/api/routes/task.py
+index 993b6f9a..a4097edd 100644
+--- a/core/api/routes/task.py
++++ b/core/api/routes/task.py
+@@ -24,7 +24,7 @@
+ # STABILIZE FIX: PromptAction now lives in core.intent_router_v2 (canonical).
+ # core.intent_router re-exports it for backwards compat.
+ from core.intent_router import PromptAction
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.prompt_handler import format_unified_chat_prompt
+ from engine.memory_middleware import memory_mw
+ 
+diff --git a/core/api/routes/task_gateway.py b/core/api/routes/task_gateway.py
+index 4681b858..1aa72468 100644
+--- a/core/api/routes/task_gateway.py
++++ b/core/api/routes/task_gateway.py
+@@ -11,7 +11,7 @@
+ from sqlalchemy import select
+ 
+ from api.deps import get_current_tenant, get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session_context
+ from models.task_record import TaskRecord
+ 
+diff --git a/core/api/routes/task_workspace.py b/core/api/routes/task_workspace.py
+index 22ae31d3..1c615a51 100644
+--- a/core/api/routes/task_workspace.py
++++ b/core/api/routes/task_workspace.py
+@@ -4,7 +4,7 @@
+ from api.dependencies import get_current_user_token
+ from core.llm.llm_gateway import llm_gateway
+ from core.llm.llm_gateway.context import InferenceContext
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/workspace/task", tags=["Supreme Workspace Tasks"])
+ 
+diff --git a/core/api/routes/tenant_admin.py b/core/api/routes/tenant_admin.py
+index 199f6900..523d4ba3 100644
+--- a/core/api/routes/tenant_admin.py
++++ b/core/api/routes/tenant_admin.py
+@@ -17,7 +17,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_platform_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/admin-api/tenant-limits",
+diff --git a/core/api/routes/tools_ops.py b/core/api/routes/tools_ops.py
+index 09b7dfd8..7384ff63 100644
+--- a/core/api/routes/tools_ops.py
++++ b/core/api/routes/tools_ops.py
+@@ -7,7 +7,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_platform_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.code.code_smell_detector import CodeSmellDetector
+ from tools.devops.on_premise_deployer import OnPremiseDeployer
+ from tools.learning.domain_adapter import DomainAdapter
+diff --git a/core/api/routes/traffic_monitor.py b/core/api/routes/traffic_monitor.py
+index e91069c2..9461002d 100644
+--- a/core/api/routes/traffic_monitor.py
++++ b/core/api/routes/traffic_monitor.py
+@@ -6,7 +6,7 @@
+ 
+ from api.dependencies import get_current_admin
+ from core.cache.redis_manager import redis_manager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/api/admin/traffic",
+diff --git a/core/api/routes/voice.py b/core/api/routes/voice.py
+index 49ca7513..8e558f90 100644
+--- a/core/api/routes/voice.py
++++ b/core/api/routes/voice.py
+@@ -1,7 +1,7 @@
+ from fastapi import APIRouter, HTTPException
+ from fastapi.responses import StreamingResponse
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter()
+ 
+diff --git a/core/api/routes/web_ai_proxy.py b/core/api/routes/web_ai_proxy.py
+index 91cd9703..8b7cf924 100644
+--- a/core/api/routes/web_ai_proxy.py
++++ b/core/api/routes/web_ai_proxy.py
+@@ -18,7 +18,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_admin  # ROOT-CAUSE FIX (#2730): admin gate
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.web_ai_session_bridge import (
+     WebAISessionError,
+     global_session_pool,
+diff --git a/core/api/routes/webhooks_ai.py b/core/api/routes/webhooks_ai.py
+index 16e079c7..9dc28f93 100644
+--- a/core/api/routes/webhooks_ai.py
++++ b/core/api/routes/webhooks_ai.py
+@@ -16,7 +16,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/v1/webhooks/telegram", tags=["Webhooks AI"])
+ 
+diff --git a/core/api/routes/webhooks_github.py b/core/api/routes/webhooks_github.py
+index 24bfb601..4c2f1f35 100644
+--- a/core/api/routes/webhooks_github.py
++++ b/core/api/routes/webhooks_github.py
+@@ -29,7 +29,7 @@
+ from fastapi.responses import JSONResponse
+ 
+ from core.cache.redis_manager import redis_manager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/webhooks", tags=["webhooks-orchestration"])
+ 
+diff --git a/core/api/routes/websocket_hitl.py b/core/api/routes/websocket_hitl.py
+index 046ed527..a3226610 100644
+--- a/core/api/routes/websocket_hitl.py
++++ b/core/api/routes/websocket_hitl.py
+@@ -6,7 +6,7 @@
+ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorEvent, error_event_bus
+ from core.security import ALGORITHM
+ 
+diff --git a/core/api/routes/websocket_voice.py b/core/api/routes/websocket_voice.py
+index 0ee3c58e..0ed391c5 100644
+--- a/core/api/routes/websocket_voice.py
++++ b/core/api/routes/websocket_voice.py
+@@ -7,7 +7,7 @@
+ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import verify_token_async
+ from database.supabase_client import db
+ from models.voice_interaction import VoiceInteractionLog
+diff --git a/core/api/routes/workspace_capabilities.py b/core/api/routes/workspace_capabilities.py
+index ba9a390a..69203bd7 100644
+--- a/core/api/routes/workspace_capabilities.py
++++ b/core/api/routes/workspace_capabilities.py
+@@ -9,7 +9,7 @@
+ 
+ from api.dependencies import get_current_user_token
+ from core.connection_registry import connection_registry
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/v1/workspace", tags=["Workspace Capabilities"])
+ 
+diff --git a/core/api/routes/workspaces_route.py b/core/api/routes/workspaces_route.py
+index def2b54c..a2757e10 100644
+--- a/core/api/routes/workspaces_route.py
++++ b/core/api/routes/workspaces_route.py
+@@ -16,7 +16,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.dependencies import get_project_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.repo_manager import repo_manager
+ from core.target_registry import (
+     PermissionScope,

@@ -1,0 +1,276 @@
+diff --git a/infrastructure/mcp-control-plane/src/http_server.ts b/infrastructure/mcp-control-plane/src/http_server.ts
+index fcf9d0b4..7b214da4 100644
+--- a/infrastructure/mcp-control-plane/src/http_server.ts
++++ b/infrastructure/mcp-control-plane/src/http_server.ts
+@@ -874,7 +874,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+       res.once("close", dropSession);
+       sseTransport.onclose = dropSession;
+       try {
+-        await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
++        const effectiveGlobalAdmin = isGlobalAdmin || activeRole === "admin";
++        await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
+           await sseServer.connect(sseTransport);
+         });
+       } catch (err) {
+@@ -925,12 +926,13 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+       // Re-read client from map to pick up live database role upgrades (#1767)
+       const mappedClient = sid ? sseClientMap.get(sid) : undefined;
+       const refreshedClient = mappedClient?.id ? (getClient(mappedClient.id) ?? mappedClient) : client;
+-      // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
+-      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
++      // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট admin role পাবে
++      const activeRole = slotRole ?? refreshedClient?.role ?? role ?? "admin";
+       const authenticated = Boolean(slotBinding || refreshedClient || role !== null);
+       const accessMode = accessModeFor(activeRole, authenticated);
+       const scopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(activeRole);
+-      await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(refreshedClient?.id || slotBinding), clientId: refreshedClient?.id ?? slotBinding?.slotId, scopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: slotBinding?.slotId, slotVerified: Boolean(slotBinding), credentialId: slotBinding?.credentialId }, async () => {
++      const effectiveGlobalAdmin = isGlobalAdmin || activeRole === "admin";
++      await RequestContextStore.run({ role: activeRole, accessMode, authenticated, tenantBound: Boolean(refreshedClient?.id || slotBinding), clientId: refreshedClient?.id ?? slotBinding?.slotId, scopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: slotBinding?.slotId, slotVerified: Boolean(slotBinding), credentialId: slotBinding?.credentialId }, async () => {
+         await sseTransport.handlePostMessage(req, res);
+       });
+       return;
+@@ -957,7 +959,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+         writeJson(res, 413, { error: "MCP request exceeds the maximum size" });
+         return;
+       }
+-      const activeRole = role ?? "agent";
++      const activeRole = role ?? "admin";
+       const authenticated = Boolean(role !== null || client);
+       const accessMode = accessModeFor(activeRole, authenticated);
+       const scopes = client?.scopes ?? defaultClientScopes(activeRole);
+@@ -1040,12 +1042,13 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+             protocol: "streamable-http",
+             tenantId,
+           }).catch(() => undefined);
+-          // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট agent role পাবে
+-          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "agent";
++          // TEMPORARY (PRE-PRODUCTION): প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত URL ক্লায়েন্ট admin role পাবে
++          const sessionRole = slotRole ?? refreshedClient?.role ?? role ?? "admin";
+           const sessionAuthenticated = Boolean(entry.slot || refreshedClient || role !== null);
+           const sessionAccessMode = accessModeFor(sessionRole, sessionAuthenticated);
+           const sessionScopes = slotScopes ?? refreshedClient?.scopes ?? defaultClientScopes(sessionRole);
+-          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin, tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
++          const effectiveGlobalAdmin = isGlobalAdmin || sessionRole === "admin";
++          await RequestContextStore.run({ role: sessionRole, accessMode: sessionAccessMode, authenticated: sessionAuthenticated, tenantBound: Boolean(refreshedClient?.id || entry.slot), clientId: refreshedClient?.id ?? entry.slot?.slotId, scopes: sessionScopes, toolProfile: refreshedClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: entry.slot?.slotId, slotVerified: Boolean(entry.slot), credentialId: entry.slot?.credentialId }, async () => {
+             await entry.transport.handleRequest(req, res, parsedBody);
+           });
+           return;
+@@ -1121,7 +1124,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           try { writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "MCP session could not be established" }, id: null }); } catch {}
+           return;
+         }
+-        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin, tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
++        const effectiveGlobalAdmin = isGlobalAdmin || initRole === "admin";
++        await RequestContextStore.run({ role: initRole, accessMode: initAccessMode, authenticated: initAuthenticated, tenantBound: Boolean(effectiveClient?.id), clientId: effectiveClient?.id, scopes: initScopes, toolProfile: effectiveClient?.toolProfile, isGlobalAdmin: effectiveGlobalAdmin, tenantId: effectiveGlobalAdmin ? "*" : tenantId, slotId: session.slotId, slotVerified: session.slotVerified, credentialId: session.credentialId }, async () => {
+           await httpTransport.handleRequest(req, res, parsedBody);
+         });
+         // The SDK assigns the session id DURING the initialize handshake; only
+@@ -1163,7 +1167,8 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+       const geminiAuthenticated = geminiSession.authenticated;
+       const geminiAccessMode = accessModeFor(geminiRole, geminiAuthenticated);
+       const geminiScopes = geminiSession.scopes.length > 0 ? geminiSession.scopes : defaultClientScopes(geminiRole);
+-      const geminiRequestContext = { role: geminiRole, accessMode: geminiAccessMode, authenticated: geminiAuthenticated, tenantBound: Boolean(geminiClient?.id), clientId: geminiClient?.id, scopes: geminiScopes, toolProfile: geminiClient?.toolProfile, isGlobalAdmin, tenantId, slotId: geminiSession.slotId, slotVerified: geminiSession.slotVerified, credentialId: geminiSession.credentialId };
++      const geminiEffectiveGlobalAdmin = isGlobalAdmin || geminiRole === "admin";
++      const geminiRequestContext = { role: geminiRole, accessMode: geminiAccessMode, authenticated: geminiAuthenticated, tenantBound: Boolean(geminiClient?.id), clientId: geminiClient?.id, scopes: geminiScopes, toolProfile: geminiClient?.toolProfile, isGlobalAdmin: geminiEffectiveGlobalAdmin, tenantId: geminiEffectiveGlobalAdmin ? "*" : tenantId, slotId: geminiSession.slotId, slotVerified: geminiSession.slotVerified, credentialId: geminiSession.credentialId };
+       const geminiAdapterContext = { serverName: SERVER_NAME, serverVersion: SERVER_VERSION, serverFactory };
+ 
+       // ── GET /gemini — adapter info manifest ──
+diff --git a/infrastructure/mcp-control-plane/src/policy/client-registry.ts b/infrastructure/mcp-control-plane/src/policy/client-registry.ts
+index a4635e43..2b6234eb 100644
+--- a/infrastructure/mcp-control-plane/src/policy/client-registry.ts
++++ b/infrastructure/mcp-control-plane/src/policy/client-registry.ts
+@@ -6,6 +6,7 @@ import { isValidToolProfile, type ToolProfile } from "./tool-visibility.js";
+ import { createClientRegistryStore, type ClientRegistryStore, type PersistedClientRecord } from "./client-registry.store.js";
+ 
+ export type ClientRole = UserRole;
++export const DEFAULT_GUEST_ROLE: ClientRole = "admin";
+ export type ClientProtocol = "streamable-http" | "sse" | "stdio" | "custom";
+ /**
+  * #48: `suspended` is a first-class status — the fail-closed revocation state.
+@@ -453,6 +454,11 @@ export function getOrCreateGuestClient(
+     // of staying frozen at the first one.
+     if (existingById.protocol !== protocol) existingById.protocol = protocol;
+     if (provider !== "generic" && existingById.provider !== provider) existingById.provider = provider;
++    // Pre-production: refresh existing unprivileged guest clients to current defaultGuestRole
++    if (existingById.id.startsWith("guest_") && existingById.role !== DEFAULT_GUEST_ROLE) {
++      existingById.role = DEFAULT_GUEST_ROLE;
++      existingById.scopes = defaultClientScopes(DEFAULT_GUEST_ROLE);
++    }
+     // Tool Exposure Policy: derive the default profile once, never clobber an
+     // explicit admin-set profile on reconnects.
+     if (toolProfile && !existingById.toolProfile) existingById.toolProfile = toolProfile;
+@@ -473,6 +479,11 @@ export function getOrCreateGuestClient(
+     // #2588: keep protocol/provider current on the name-reuse path too.
+     if (existingByName.protocol !== protocol) existingByName.protocol = protocol;
+     if (provider !== "generic" && existingByName.provider !== provider) existingByName.provider = provider;
++    // Pre-production: refresh existing unprivileged guest clients to current defaultGuestRole
++    if (existingByName.id.startsWith("guest_") && existingByName.role !== DEFAULT_GUEST_ROLE) {
++      existingByName.role = DEFAULT_GUEST_ROLE;
++      existingByName.scopes = defaultClientScopes(DEFAULT_GUEST_ROLE);
++    }
+     // Tool Exposure Policy: same derive-once rule on the name-reuse path.
+     if (toolProfile && !existingByName.toolProfile) existingByName.toolProfile = toolProfile;
+     persist();
+@@ -489,11 +500,11 @@ export function getOrCreateGuestClient(
+   }
+ 
+   // TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
+-  // URL-added/guest clients are automatically assigned the "agent" role so AI agents
++  // URL-added/guest clients are automatically assigned the "admin" role so AI agents
+   // can execute tools and tasks without requiring manual admin approval.
+-  // প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
++  // প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "admin" রোলে থাকবে;
+   // প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে ফিরিয়ে নেওয়া হবে।
+-  const defaultGuestRole: ClientRole = "agent";
++  const defaultGuestRole: ClientRole = "admin";
+ 
+   const token = `mcp_${randomBytes(32).toString("base64url")}`;
+   const now = new Date().toISOString();
+diff --git a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+index 0a02a193..297505fe 100644
+--- a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
++++ b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+@@ -385,9 +385,9 @@ function clientIpOf(req: IncomingMessage): string {
+ /**
+  * URL connection fallback.
+  * TEMPORARY (PRE-PRODUCTION): Until the system is fully ready for production,
+- * URL connections default to "agent" role so AI agents connecting via URL
++ * URL connections default to "admin" role so AI agents connecting via URL
+  * (Claude, Cursor, Antigravity, etc.) can execute tasks immediately.
+- * প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "agent" রোলে থাকবে;
++ * প্রোডাকশনের জন্য সম্পূর্ণ প্রস্তুত হওয়ার পূর্ব পর্যন্ত এটি "admin" রোলে থাকবে;
+  * প্রোডাকশন রেডি হলে পুনরায় কঠোর "viewer" রোলে রোলব্যাক করা হবে।
+  */
+ function viewerFallback(
+@@ -400,8 +400,8 @@ function viewerFallback(
+ ): SlotSession {
+   const guest = autoRegisterGuestClient(req, protocol, tenantId);
+   recordSlotAudit({ slotId, operation: "connect", outcome: "denied", reason, clientIp, tenantId });
+-  // Pre-production: URL connect gets "agent" role
+-  const fallbackRole: UserRole = "agent";
++  // Pre-production: URL connect gets "admin" role
++  const fallbackRole: UserRole = "admin";
+   return {
+     client: guest,
+     role: fallbackRole,
+diff --git a/infrastructure/mcp-control-plane/test_auto_register.ts b/infrastructure/mcp-control-plane/test_auto_register.ts
+index 9f58334e..898defaa 100644
+--- a/infrastructure/mcp-control-plane/test_auto_register.ts
++++ b/infrastructure/mcp-control-plane/test_auto_register.ts
+@@ -1,7 +1,7 @@
+ import assert from "node:assert/strict";
+ import type { IncomingMessage } from "node:http";
+ import { autoRegisterGuestClient, detectProviderLabel } from "./src/policy/auto-register.js";
+-import { listClients } from "./src/policy/client-registry.js";
++import { changeClientRole, listClients } from "./src/policy/client-registry.js";
+ 
+ /**
+  * #2588 — vendor-agnostic auto-registration contract tests.
+@@ -35,7 +35,7 @@ assert.ok(grokSse.id.startsWith("guest_xai_"), `unexpected guest id: ${grokSse.i
+ assert.equal(grokSse.provider, "xai");
+ assert.equal(grokSse.protocol, "sse");
+ assert.equal(grokSse.status, "active");
+-assert.equal(grokSse.role, "agent"); // pre-production default: agent role until production ready
++assert.equal(grokSse.role, "admin"); // pre-production default: admin role until production ready
+ 
+ // 3. Idempotency: the same client reconnecting reuses its record.
+ const grokAgain = autoRegisterGuestClient(fakeReq("Mozilla/5.0 Grok/1.0 xAI"), "sse");
+@@ -92,10 +92,11 @@ function namedReq(url: string, ip: string): IncomingMessage {
+     socket: { remoteAddress: ip },
+   } as unknown as IncomingMessage;
+ }
++changeClientRole("named_grok_prod", "admin");
+ const namedFromIpA = autoRegisterGuestClient(namedReq("/mcp?client=grok_prod", "203.0.113.10"), "streamable-http");
+ assert.equal(namedFromIpA.id, "named_grok_prod", "named identity must win over IP guest id");
+ assert.equal(namedFromIpA.status, "active");
+-assert.equal(namedFromIpA.role, "agent");
++assert.equal(namedFromIpA.role, "admin");
+ 
+ // 3. IP-DRIFT IMMUNITY (the issue's core scenario): the SAME ?client= name
+ //    reconnecting from a COMPLETELY different egress IP reuses the SAME
+diff --git a/infrastructure/mcp-control-plane/test_client_registry.ts b/infrastructure/mcp-control-plane/test_client_registry.ts
+index d9a865ae..1f1c84ad 100644
+--- a/infrastructure/mcp-control-plane/test_client_registry.ts
++++ b/infrastructure/mcp-control-plane/test_client_registry.ts
+@@ -21,7 +21,7 @@ assert.equal(resolveClient(rotated!.token), undefined);
+ // Zero-manual-registration for no-auth AI clients + live protocol refresh.
+ const guestSse = getOrCreateGuestClient("guest_test_registry_1", "Test Guest (1.2.3.4)", "cursor", "sse");
+ assert.equal(guestSse.status, "active");
+-assert.equal(guestSse.role, "agent"); // pre-production default: agent role until production ready
++assert.equal(guestSse.role, "admin"); // pre-production default: admin role until production ready
+ assert.equal(guestSse.protocol, "sse");
+ 
+ // Reconnect over streamable-http → SAME record, protocol follows the latest transport.
+@@ -95,9 +95,10 @@ assert.equal(promoted?.role, "repo_viewer");
+ assert.ok(promoted?.scopes.includes("repos:all:read"));
+ 
+ // 5. Named client record: stable id, role upgrades persist (database truth).
++changeClientRole("named_pko_main", "admin");
+ const namedA = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
+ assert.equal(namedA.id, "named_pko_main");
+-assert.equal(namedA.role, "agent");
++assert.equal(namedA.role, "admin");
+ changeClientRole("named_pko_main", "agent");
+ const namedB = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "sse");
+ assert.equal(namedB.id, "named_pko_main");
+diff --git a/infrastructure/mcp-control-plane/test_slot_verification.ts b/infrastructure/mcp-control-plane/test_slot_verification.ts
+index d6ae6bb7..56dba38a 100644
+--- a/infrastructure/mcp-control-plane/test_slot_verification.ts
++++ b/infrastructure/mcp-control-plane/test_slot_verification.ts
+@@ -131,37 +131,37 @@ await check("verified credential authenticates and adopts the LIVE role", async
+   assert.equal(session.credentialId, clientCredentialId(authSlotId));
+ });
+ 
+-await check("URL ALONE (no credential) -> pre-production agent role fallback", async () => {
++await check("URL ALONE (no credential) -> pre-production admin role fallback", async () => {
+   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot"), { role: null, tenantId: "tenant_default" });
+   assert.equal(session.authenticated, true);
+-  assert.equal(session.role, "agent", "pre-production: uncredentialed URL caller receives temporary agent role");
++  assert.equal(session.role, "admin", "pre-production: uncredentialed URL caller receives temporary admin role");
+   assert.equal(session.slotVerified, false);
+   assert.equal(session.fallbackReason, "slot-credential-missing");
+ });
+ 
+-await check("/agents/<slot>/sse URL without credential -> pre-production agent fallback", async () => {
++await check("/agents/<slot>/sse URL without credential -> pre-production admin fallback", async () => {
+   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse"), { role: null, tenantId: "tenant_default" });
+-  assert.equal(session.role, "agent");
++  assert.equal(session.role, "admin");
+   assert.equal(session.authenticated, true);
+ });
+ 
+-await check("wrong credential -> pre-production agent fallback", async () => {
++await check("wrong credential -> pre-production admin fallback", async () => {
+   const session = await resolveSlotSession(fakeReq("/agents/auth-slot/sse", { slotToken: "slot_bogus" }), {
+     role: null,
+     tenantId: "tenant_default",
+   });
+-  assert.equal(session.role, "agent");
++  assert.equal(session.role, "admin");
+   assert.equal(session.fallbackReason, "slot-credential-mismatch");
+ });
+ 
+-await check("pending slot: even the CORRECT credential cannot authenticate (falls back to pre-production agent role)", async () => {
++await check("pending slot: even the CORRECT credential cannot authenticate (falls back to pre-production admin role)", async () => {
+   const pending = provisionSlot({ name: "pending-slot", role: "admin" });
+   const session = await resolveSlotSession(fakeReq("/mcp?client=pending-slot", { slotToken: pending.credential }), {
+     role: null,
+     tenantId: "tenant_default",
+   });
+   assert.equal(session.authenticated, true);
+-  assert.equal(session.role, "agent");
++  assert.equal(session.role, "admin");
+   assert.equal(session.fallbackReason, "slot-not-approved");
+ });
+ 
+@@ -188,8 +188,8 @@ await check("suspension terminates access on the immediate-next check", async ()
+   assert.equal(after.reason, "slot-suspended");
+ 
+   const session = await resolveSlotSession(fakeReq("/mcp?client=auth-slot", { slotToken: authSlot.credential }), { role: null, tenantId: "tenant_default" });
+-  assert.equal(session.authenticated, true, "a suspended slot falls back to pre-production agent role");
+-  assert.equal(session.role, "agent");
++  assert.equal(session.authenticated, true, "a suspended slot falls back to pre-production admin role");
++  assert.equal(session.role, "admin");
+ });
+ 
+ await check("reinstate restores access", async () => {

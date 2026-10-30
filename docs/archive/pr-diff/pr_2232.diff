@@ -1,0 +1,212 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts b/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts
+index f2615fac..d5443a8f 100644
+--- a/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts
++++ b/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts
+@@ -53,3 +53,35 @@ export function isWorkOrderForTaskId(
+ export function taskIdSearchQuery(repo: string, taskId: string): string {
+   return `repo:${repo}+is:issue+is:open+%22${encodeURIComponent(taskId)}%22`;
+ }
++
++/**
++ * #2227 — branch-aware ingress resolution (restores the #2112 semantics).
++ *
++ * Failure being fixed (live evidence 2026-10-28 ~18:05-18:16Z, post-#2217
++ * redeploy): once a verified work order exists for the taskId, Step 0 hard-noop'd
++ * the WHOLE submission — no branch, no commit, no PR — even when that WO was the
++ * very target the solver was solving (manually-filed WOs, or prior rounds that
++ * stranded before Step B). The solver's completed work was stranded locally with
++ * nothing reaching origin, so Invariant #514 could not even see it. The old
++ * (#2112) semantics keyed dedup on BRANCH STATE — "a same-taskId resubmit is
++ * impossible: the remote branch already sits at final state" — i.e. the
++ * zero-duplicate invariant guards duplicate WO GENERATION and competing
++ * landings, never the FIRST legitimate landing against a pre-existing WO.
++ *
++ * Contract (pure decision, wiring in bridge.tools.ts Step 0):
++ * - work order active + patch branch EXISTS on the remote -> idempotent-noop
++ *   (work already in flight or landed; a resubmit would clobber a live branch).
++ * - work order active + patch branch MISSING (GitHub /git/ref 404, the same
++ *   "non-ok = missing" semantics Step B already relies on to create the ref)
++ *   -> pair-and-land: proceed with the landing, pair the PR with the EXISTING
++ *   work order, and skip duplicate WO generation in Step D.
++ */
++export type Step0IngressAction =
++  | { action: "idempotent-noop"; branchExists: true; reason: "wo-active-branch-in-flight" }
++  | { action: "pair-and-land"; branchExists: false; reason: "wo-active-branch-missing" };
++
++export function resolveIngressAction(branchExists: boolean): Step0IngressAction {
++  return branchExists
++    ? { action: "idempotent-noop", branchExists: true, reason: "wo-active-branch-in-flight" }
++    : { action: "pair-and-land", branchExists: false, reason: "wo-active-branch-missing" };
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 792f1b86..df64ec65 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -6,7 +6,7 @@ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+-import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
++import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+ import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+@@ -1099,23 +1099,41 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         const existing = searchRes.ok
+           ? (searchRes.data?.items ?? []).find((it) => isWorkOrderForTaskId(it.title ?? "", it.body, taskId))
+           : undefined;
++        // #2227: a verified active WO is no longer a whole-run stop. The
++        // zero-duplicate invariant guards duplicate WO GENERATION and competing
++        // landings, not the FIRST legitimate landing against a pre-existing WO
++        // (manually-filed WOs, or prior rounds that stranded before Step B —
++        // the #2195 stranded-branch class). Branch-aware resolution restores
++        // the #2112 semantics: noop only when the patch branch is already in
++        // flight/landed on the remote; otherwise pair with the existing WO and
++        // land (Step D skips duplicate generation for the same taskId).
++        let pairedWorkOrder: { number: number; html_url: string } | undefined;
+         if (existing) {
+-          return {
+-            content: [{
+-              type: "text",
+-              text: JSON.stringify({
+-                ok: true,
+-                taskId,
+-                targetRepo: targetRepoResolution.repo,
+-                targetAnchor: targetRepoResolution.anchor,
+-                targetMode: targetRepoResolution.mode,
+-                issueNumber: existing.number,
+-                issueUrl: existing.html_url,
+-                status: "bridge:idempotent-noop",
+-                message: `Work order for task '${taskId}' is already active (#${existing.number}). Duplicate generation prevented.`,
+-              }, null, 2),
+-            }],
+-          };
++          const branchProbeRes = await httpRequest<{ ref?: string }>(
++            `https://api.github.com/repos/${repo}/git/ref/heads/bridge/${taskId}`,
++            { headers, timeoutMs: 15_000 }
++          );
++          const ingress = resolveIngressAction(!!(branchProbeRes.ok && branchProbeRes.data?.ref));
++          if (ingress.action === "idempotent-noop") {
++            return {
++              content: [{
++                type: "text",
++                text: JSON.stringify({
++                  ok: true,
++                  taskId,
++                  targetRepo: targetRepoResolution.repo,
++                  targetAnchor: targetRepoResolution.anchor,
++                  targetMode: targetRepoResolution.mode,
++                  issueNumber: existing.number,
++                  issueUrl: existing.html_url,
++                  status: "bridge:idempotent-noop",
++                  branchExists: true,
++                  message: `Work order for task '${taskId}' is already active (#${existing.number}) and its patch branch is already in flight. Duplicate generation prevented.`,
++                }, null, 2),
++              }],
++            };
++          }
++          pairedWorkOrder = { number: existing.number, html_url: existing.html_url };
+         }
+ 
+         // Step A: Get main branch SHA
+@@ -1209,7 +1227,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           }
+         }
+ 
+-        // Step D: Create Bridge Work Order Issue
++        // Step D: Create Bridge Work Order Issue — SKIPPED when pairing with an
++        // existing active WO (#2227): the zero-duplicate invariant guards WO
++        // generation, so the paired PR closes/ref's the EXISTING work order
++        // instead of spawning a duplicate issue for the same taskId.
++        let issueNumber: number | undefined;
++        let issueUrl: string | undefined;
++        if (pairedWorkOrder) {
++          issueNumber = pairedWorkOrder.number;
++          issueUrl = pairedWorkOrder.html_url;
++        } else {
+         const issueBody = [
+           "### Task ID",
+           taskId,
+@@ -1261,12 +1288,15 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+             content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}${msg}` }],
+           };
+         }
++        issueNumber = issueRes.data?.number;
++        issueUrl = issueRes.data?.html_url;
++        }
+ 
+         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
+         const prBody = buildBridgePrBody({
+           taskId,
+           summary,
+-          issueNumber: issueRes.data?.number,
++          issueNumber,
+           originalIssueNumber: detectedIssueNum,
+           scopePaths,
+           testsEvidence,
+@@ -1328,14 +1358,17 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+               files: fileResults,
+               branch: branchName,
+               branchUrl: `https://github.com/${repo}/tree/${branchName}`,
+-              issueNumber: issueRes.data?.number,
+-              issueUrl: issueRes.data?.html_url,
++              issueNumber,
++              issueUrl,
+               prNumber,
+               prUrl,
+               prError,
++              pairedWithExistingWorkOrder: pairedWorkOrder ? pairedWorkOrder.number : undefined,
+               status: prNumber ? "bridge:pr-opened" : "bridge:queued",
+               message: prNumber
+-                ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
++                ? pairedWorkOrder
++                  ? `Work submitted and PR #${prNumber} opened atomically, paired with existing work order #${pairedWorkOrder.number} (no duplicate generated)! CI Guardian will evaluate and land via constitutional gates.`
++                  : `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+                 : prError
+                   ? `Branch + work order created, but PR creation FAILED (${prError.status}: ${prError.message}) — branch stranded pending admin pairing or a resubmit; do NOT treat this round as landed.`
+                   : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+diff --git a/infrastructure/mcp-control-plane/test_bridge_dedup.ts b/infrastructure/mcp-control-plane/test_bridge_dedup.ts
+index 0a55f52f..fd72b8e9 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_dedup.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_dedup.ts
+@@ -10,7 +10,7 @@
+  * The fix: quoted-phrase full-text query + authoritative-position verification
+  * (title tail `(${taskId})` or body `### Task ID` field equality).
+  */
+-import { isWorkOrderForTaskId, taskIdSearchQuery } from "./src/lib/bridge_dedup.js";
++import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "./src/lib/bridge_dedup.js";
+ 
+ let failures = 0;
+ function check(name: string, cond: boolean, detail?: string): void {
+@@ -84,11 +84,29 @@ check("taskId is phrase-quoted", q.includes(`%22${encodeURIComponent(NOVEL_R2)}%
+ check("no in:title (body Task ID field is authoritative)", !q.includes("in:title"), q);
+ check("hyphen-split token-AND form is gone", !q.includes("+bridge-20261028"), q);
+ 
++// ─── 6. #2227 branch-aware ingress resolution ───────────────────────────────
++section("6. #2227 branch-aware ingress resolution (restores #2112 semantics)");
++// Live repro shape (WO #2205 casualty): manually-filed WO active, patch branch
++// never landed (bridge/bridge-20261029-health-staleness-guard = 404). The old
++// whole-run noop stranded the solver's completed work with nothing on origin.
++const pairAndLand = resolveIngressAction(false);
++check("WO active + branch MISSING -> pair-and-land (the #2227 fix)", pairAndLand.action === "pair-and-land");
++check("pair-and-land carries the wo-active-branch-missing reason", pairAndLand.reason === "wo-active-branch-missing");
++check("pair-and-land records branchExists=false", pairAndLand.branchExists === false);
++const inFlight = resolveIngressAction(true);
++check("WO active + branch EXISTS -> idempotent-noop (resubmit protection kept)", inFlight.action === "idempotent-noop");
++check("noop carries the wo-active-branch-in-flight reason", inFlight.reason === "wo-active-branch-in-flight");
++check("noop records branchExists=true", inFlight.branchExists === true);
++check("decisions are discriminated on action (exhaustive switch shape)", pairAndLand.action !== inFlight.action);
++// The #2136 precision layer still gates entry into the branch-aware decision:
++// a WO for a DIFFERENT taskId must never reach it (verified in sections 1-3);
++// resolveIngressAction only decides WHAT to do once authority is established.
++
+ // ─── Verdict ────────────────────────────────────────────────────────────────
+ console.log("\n=============================================");
+ if (failures === 0) {
+-  console.log("ALL BRIDGE DEDUP TESTS PASSED (#2136)");
++  console.log("ALL BRIDGE DEDUP TESTS PASSED (#2136+#2227)");
+ } else {
+-  console.error(`${failures} TEST(S) FAILED (#2136)`);
++  console.error(`${failures} TEST(S) FAILED (#2136+#2227)`);
+ }
+ process.exit(failures === 0 ? 0 : 1);

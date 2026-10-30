@@ -1,0 +1,470 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index ddf30183..2582374e 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:github-pagination",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -23,6 +23,7 @@
+     "test:access": "tsx test_mcp_access.ts",
+     "test:health-history": "tsx test_health_history.ts",
+     "test:health-hollow-guard": "tsx test_health_hollow_guard.ts",
++    "test:health-watchdog": "tsx test_health_watchdog.ts",
+     "test:guardian": "tsx test_guardian.ts",
+     "test:heartbeat": "tsx test_heartbeat.ts",
+     "test:redis-rotation": "tsx test_redis_auto_rotation.ts",
+diff --git a/infrastructure/mcp-control-plane/src/health/engine.ts b/infrastructure/mcp-control-plane/src/health/engine.ts
+index 4670fb2a..469be0cc 100644
+--- a/infrastructure/mcp-control-plane/src/health/engine.ts
++++ b/infrastructure/mcp-control-plane/src/health/engine.ts
+@@ -207,6 +207,12 @@ export class HealthEngine {
+       overallStatus,
+       snapshot: undefined,
+     });
++    // #2710 watchdog increment: stamp the completion on the success path so
++    // /health staleness telemetry (lastCompletedSweepAt/stale) and the >10min
++    // sweep-gap alarm see EVERY completion — scheduled or manual. A manual
++    // sweep buys one staleness window of silence; it cannot permanently
++    // silence the alarm (anti-false-clear, the #2665 lesson).
++    globalHealthCache.markSweepCompleted();
+     return {
+       timestamp: new Date().toISOString(), durationMs: Date.now() - start, incidents, snapshots,
+       dependencyImpact, overallStatus,
+diff --git a/infrastructure/mcp-control-plane/src/health/snapshot.ts b/infrastructure/mcp-control-plane/src/health/snapshot.ts
+index 7a7d68ed..fb19ecca 100644
+--- a/infrastructure/mcp-control-plane/src/health/snapshot.ts
++++ b/infrastructure/mcp-control-plane/src/health/snapshot.ts
+@@ -14,6 +14,12 @@ export interface HealthSnapshot {
+ export class HealthCache {
+   private cache = new Map<string, HealthSnapshot>();
+   private defaultTtlMs: number;
++  // #2710 watchdog increment: sweep-completion telemetry (anti-false-clear —
++  // the #2665 live-but-empty class). Stamped by HealthEngine.runFullSweep on
++  // every successful completion; exposed via /health so external watchdogs can
++  // compute freshness instead of trusting a possibly one-off manual re-seed.
++  private lastCompletedSweepMs: number | null = null;
++  private sweepCompletions = 0;
+ 
+   constructor(defaultTtlMs = 30000) {
+     this.defaultTtlMs = defaultTtlMs;
+@@ -63,6 +69,24 @@ export class HealthCache {
+     return this.cache.get(provider)?.consecutiveFailures || 0;
+   }
+ 
++  /**
++   * #2710: stamps a sweep completion (scheduled or manual). A manual sweep
++   * refreshes this clock, buying exactly one staleness window of silence —
++   * the watchdog alarm re-arms unless completions recur (anti-false-clear).
++   */
++  public markSweepCompleted(atMs: number = Date.now()) {
++    this.lastCompletedSweepMs = atMs;
++    this.sweepCompletions += 1;
++  }
++
++  public getLastCompletedSweepMs(): number | null {
++    return this.lastCompletedSweepMs;
++  }
++
++  public getSweepCompletions(): number {
++    return this.sweepCompletions;
++  }
++
+   /**
+    * Fully clears the cache.
+    */
+diff --git a/infrastructure/mcp-control-plane/src/health/watchdog.ts b/infrastructure/mcp-control-plane/src/health/watchdog.ts
+new file mode 100644
+index 00000000..4bafef34
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/health/watchdog.ts
+@@ -0,0 +1,99 @@
++import { randomUUID } from "node:crypto";
++import { globalHealthHistoryStore } from "./history.js";
++
++/**
++ * #2665 watchdog increment — post-restart live-but-empty honesty telemetry
++ * (#2710, #2673 remedy pt.2).
++ *
++ * The #2665 mechanism: after a tower restart the scheduled check loop can stay
++ * dead while the snapshot registry sits empty for hours (hollow "ok" shape).
++ * A single MANUAL health.full_sweep re-seeds the registry, and every external
++ * watchdog that sampled the post-sweep moment read an all-clear that the next
++ * hour falsified (first-hand: c42 receipt 16:01-16:03Z corroboration).
++ *
++ * Therefore freshness is defined by SWEEP-COMPLETION AGE, not registry
++ * emptiness: any completed sweep (scheduled or manual) re-stamps the clock,
++ * which buys exactly one staleness window of silence — after that the alarm
++ * re-arms by itself unless completions RECUR. An all-clear must never be
++ * permanently purchasable; that is the anti-false-clear property.
++ */
++
++/** A sweep completion older than this makes the plane stale (10 minutes). */
++export const SWEEP_STALE_AFTER_MS = 600_000;
++
++/** Boot grace: never alarm before the process has had this long to sweep. */
++export const WATCHDOG_BOOT_GRACE_MS = 600_000;
++
++export interface WatchdogView {
++  /** ISO timestamp of process boot (when this module was first imported). */
++  bootedAt: string;
++  /** ISO timestamp of the last completed sweep, or null if none ever completed. */
++  lastCompletedSweepAt: string | null;
++  /** How many sweep completions have been stamped since boot. */
++  sweepCompletions: number;
++  /** True when the plane must NOT be read as all-clear (no data or data too old). */
++  stale: boolean;
++  /** Rising-edge alarm condition: stale AND boot grace elapsed. */
++  alarmDue: boolean;
++}
++
++/**
++ * Pure staleness derivation — exported for the semantic truth table in
++ * test_health_watchdog.ts (the #2681 hollow-guard precedent: the contract
++ * lives in code, not documentation, so prose cannot defeat assertions).
++ *
++ * Boundary semantics: a completion EXACTLY at the window edge is still fresh
++ * (strictly-greater comparison); the alarm fires only strictly past the edge.
++ */
++export function deriveWatchdog(
++  nowMs: number,
++  bootedAtMs: number,
++  lastCompletedSweepMs: number | null,
++  sweepCompletions: number
++): WatchdogView {
++  const lastCompletedSweepAt =
++    lastCompletedSweepMs === null ? null : new Date(lastCompletedSweepMs).toISOString();
++  const sinceLastSweepMs =
++    lastCompletedSweepMs === null ? null : nowMs - lastCompletedSweepMs;
++  const stale =
++    lastCompletedSweepMs === null || (sinceLastSweepMs as number) > SWEEP_STALE_AFTER_MS;
++  const alarmDue = stale && nowMs - bootedAtMs > WATCHDOG_BOOT_GRACE_MS;
++  return {
++    bootedAt: new Date(bootedAtMs).toISOString(),
++    lastCompletedSweepAt,
++    sweepCompletions,
++    stale,
++    alarmDue,
++  };
++}
++
++/**
++ * Append a __watchdog__ row to the durable health history. Best-effort by
++ * contract (mirrors the history store's own persistence posture): a failure
++ * to record the alarm must never break the live tower.
++ */
++export async function recordWatchdogAlarm(view: WatchdogView): Promise<void> {
++  try {
++    await globalHealthHistoryStore.append({
++      provider: "__watchdog__",
++      status: "unknown",
++      overallStatus: "unknown",
++      incident: {
++        id: randomUUID(),
++        provider: "__watchdog__",
++        timestamp: new Date().toISOString(),
++        type: "DEGRADED",
++        message:
++          `No sweep completion in >10min (completions=${view.sweepCompletions}, ` +
++          `lastCompletedSweepAt=${String(view.lastCompletedSweepAt)}) — live-but-empty ` +
++          `class #2665: registry is stale, not verified-healthy; manual sweeps only ` +
++          `bound this window temporarily.`,
++        impactedServices: [],
++      },
++    });
++  } catch (err) {
++    console.warn(
++      `[HealthWatchdog] history append failed (${(err as Error).message}) — alarm stays console-side`
++    );
++  }
++}
+diff --git a/infrastructure/mcp-control-plane/src/http_server.ts b/infrastructure/mcp-control-plane/src/http_server.ts
+index 4865dbbd..b32fbfe5 100644
+--- a/infrastructure/mcp-control-plane/src/http_server.ts
++++ b/infrastructure/mcp-control-plane/src/http_server.ts
+@@ -31,6 +31,7 @@ import { registerAllTools } from "./tools/index.js";
+ import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
+ import { getServiceDescriptors } from "./service-circles.js";
+ import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
++import { deriveWatchdog, recordWatchdogAlarm } from "./health/watchdog.js";
+ import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
+ import { extractClientInfoName, recordPresence, listWorkforce, registerIoredis } from "./registry/mcp_presence.js";
+ import { createBuiltinManifest } from "./registry/mcp.contracts.js";
+@@ -237,6 +238,42 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+   // Never hold the process open just for the reaper — Render spin-down must
+   // stay possible; the timer dies with the event loop.
+ 
++  // #2710 watchdog increment (#2673 remedy pt.2): >10min without ANY sweep
++  // completion (scheduled or manual) is the #2665 live-but-empty class
++  // signature — alarm on the RISING EDGE only, re-arm on the next completion.
++  // Anti-false-clear: a one-off manual sweep re-stamps the completion clock
++  // and buys exactly one staleness window of silence; it cannot permanently
++  // silence this alarm. The alarm is also mirrored into the durable health
++  // history (__watchdog__ rows) so post-mortems survive restarts.
++  const healthWatchdogBootedAtMs = Date.now();
++  let healthWatchdogAlarmActive = false;
++  const healthWatchdogTimer = setInterval(() => {
++    void (async () => {
++      try {
++        const { globalHealthCache } = await import("./health/snapshot.js");
++        const view = deriveWatchdog(
++          Date.now(),
++          healthWatchdogBootedAtMs,
++          globalHealthCache.getLastCompletedSweepMs(),
++          globalHealthCache.getSweepCompletions(),
++        );
++        if (view.alarmDue && !healthWatchdogAlarmActive) {
++          healthWatchdogAlarmActive = true;
++          console.error(
++            `[HealthWatchdog] no sweep completion in >10min (completions=${view.sweepCompletions}, lastCompletedSweepAt=${String(view.lastCompletedSweepAt)}) — live-but-empty class #2665: registry is stale, not verified-healthy`,
++          );
++          await recordWatchdogAlarm(view);
++        } else if (!view.stale) {
++          // Fresh completion landed — re-arm so the NEXT gap re-alarms.
++          healthWatchdogAlarmActive = false;
++        }
++      } catch {
++        // The watchdog must never throw into the event loop.
++      }
++    })();
++  }, 60_000);
++  if (typeof healthWatchdogTimer.unref === "function") healthWatchdogTimer.unref();
++
+   /** True when the parsed JSON-RPC body is an `initialize` request (or batch containing one). */
+   function isMcpInitializeRequest(body: unknown): boolean {
+     if (!body) return false;
+@@ -344,19 +381,32 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+         // unhealthy === 0 is vacuously true over services = [].
+         const status: string = services.length === 0 ? "starting" : unhealthy === 0 ? "ok" : unhealthy < services.length ? "degraded" : "outage";
+         const httpStatus = status === "outage" ? 503 : 200;
++        // #2710 watchdog increment: additive staleness telemetry so consumers
++        // can distinguish "all-clear" from "no data / data too old" (the #2665
++        // anti-false-clear requirement). Additive keys only — existing
++        // consumers read status/services and are unaffected.
++        const watchdogView = deriveWatchdog(
++          Date.now(),
++          healthWatchdogBootedAtMs,
++          globalHealthCache.getLastCompletedSweepMs(),
++          globalHealthCache.getSweepCompletions(),
++        );
+         res.writeHead(httpStatus, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+         res.end(JSON.stringify(withTimestamp({
+           status,
+           server: SERVER_NAME,
+           version: SERVER_VERSION,
+           services: { healthy: services.length - unhealthy, degraded: unhealthy, total: services.length },
++          lastCompletedSweepAt: watchdogView.lastCompletedSweepAt,
++          sweepCompletions: watchdogView.sweepCompletions,
++          stale: watchdogView.stale,
+         })));
+       } catch {
+         // Fallback: if health cache isn't loaded yet (cold start), report "starting" —
+         // #2681: an unreadable cache is never evidence that everything is healthy,
+         // so the fallback must not emit a bare "ok" either.
+         res.writeHead(200, { "Content-Type": "application/json" });
+-        res.end(JSON.stringify(withTimestamp({ status: "starting", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded" })));
++        res.end(JSON.stringify(withTimestamp({ status: "starting", server: SERVER_NAME, version: SERVER_VERSION, note: "health cache not yet loaded", stale: true, lastCompletedSweepAt: null, sweepCompletions: 0 })));
+       }
+       return;
+     }
+diff --git a/infrastructure/mcp-control-plane/test_health_watchdog.ts b/infrastructure/mcp-control-plane/test_health_watchdog.ts
+new file mode 100644
+index 00000000..3236160d
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_health_watchdog.ts
+@@ -0,0 +1,190 @@
++/**
++ * #2665 watchdog increment guard — deploy-independent pin for the monitoring-lane
++ * remedies (#2710; #2673 remedy pt.2; follows the #2681 hollow-guard precedent).
++ *
++ * What it asserts:
++ *   1. COMPLETION STAMPING — HealthCache exposes markSweepCompleted() telemetry
++ *      (lastCompletedSweepMs + sweepCompletions) and HealthEngine.runFullSweep
++ *      stamps it on the SUCCESS path, after the durable history append.
++ *   2. /health STALENESS TELEMETRY — the /health response carries additive
++ *      lastCompletedSweepAt / sweepCompletions / stale keys (both the main and
++ *      the cold-start fallback branches), so consumers can distinguish
++ *      "all-clear" from "no data / data too old".
++ *   3. SWEEP-GAP ALARM (anti-false-clear) — a 60s watchdog interval alarms on
++ *      the RISING EDGE only (>10min without any completion, past boot grace)
++ *      and RE-ARMS when a fresh completion lands: a one-off manual sweep buys
++ *      exactly one silence window, never a permanent all-clear.
++ *   4. SEMANTIC TRUTH TABLE — deriveWatchdog() is imported and pinned as pure
++ *      data: null-completion / grace / fresh / boundary (exactly 10min is still
++ *      fresh — strictly-greater comparison) / stale-rearm.
++ *
++ * Static source scans follow the test_annotations_floor.ts /
++ * test_health_hollow_guard.ts precedent (deploy-independent; live-plane
++ * behavior is separately witnessed by hourly curl readings, e.g. #2665's
++ * evidence series and the cycle-42/43/44 receipts).
++ *
++ * Run: tsx test_health_watchdog.ts  (wired as `test:health-watchdog` in test:unit)
++ */
++import { readFileSync } from "node:fs";
++import { join, dirname } from "node:path";
++import { fileURLToPath } from "node:url";
++import { deriveWatchdog, SWEEP_STALE_AFTER_MS, WATCHDOG_BOOT_GRACE_MS } from "./src/health/watchdog.js";
++
++const ROOT = dirname(fileURLToPath(import.meta.url));
++const SERVER_SRC = join(ROOT, "src", "http_server.ts");
++const CACHE_SRC = join(ROOT, "src", "health", "snapshot.ts");
++const ENGINE_SRC = join(ROOT, "src", "health", "engine.ts");
++
++let failed = false;
++function check(name: string, ok: boolean, detail = "") {
++  if (ok) {
++    console.log(`[health-watchdog] ok — ${name}`);
++  } else {
++    failed = true;
++    console.error(`[health-watchdog] FAIL — ${name}${detail ? ` (${detail})` : ""}`);
++  }
++}
++
++/** Strip line comments and block comments so prose inside explanatory comments
++ *  can never satisfy or defeat a code-shape assertion (#2681 precedent). */
++function stripComments(s: string): string {
++  let out = "";
++  let i = 0;
++  while (i < s.length) {
++    if (s.startsWith("//", i)) {
++      while (i < s.length && s[i] !== "\n") i++;
++    } else if (s.startsWith("/*", i)) {
++      const close = s.indexOf("*/", i + 2);
++      i = close === -1 ? s.length : close + 2;
++    } else if (s.startsWith('"', i) || s.startsWith("'", i) || s.startsWith("`", i)) {
++      const q = s[i];
++      out += s[i++];
++      while (i < s.length && s[i] !== q) {
++        if (s[i] === "\\") out += s[i++];
++        out += s[i++] ?? "";
++      }
++      if (i < s.length) out += s[i++];
++    } else {
++      out += s[i++];
++    }
++  }
++  return out;
++}
++
++// ── 1. Completion stamping (snapshot.ts + engine.ts) ──────────────────────────
++const cacheSrc = stripComments(readFileSync(CACHE_SRC, "utf8"));
++check(
++  "HealthCache.markSweepCompleted stamps lastCompletedSweepMs",
++  /markSweepCompleted\([\s\S]{0,60}?\)\s*\{[\s\S]{0,200}?this\.lastCompletedSweepMs\s*=\s*atMs/.test(cacheSrc),
++);
++check(
++  "markSweepCompleted increments sweepCompletions",
++  /this\.sweepCompletions\s*\+=\s*1/.test(cacheSrc),
++);
++check(
++  "HealthCache exposes getLastCompletedSweepMs + getSweepCompletions",
++  cacheSrc.includes("getLastCompletedSweepMs(): number | null") && cacheSrc.includes("getSweepCompletions(): number"),
++);
++
++const engineSrc = stripComments(readFileSync(ENGINE_SRC, "utf8"));
++const stampIdx = engineSrc.indexOf("globalHealthCache.markSweepCompleted()");
++const histIdx = engineSrc.indexOf('provider: "__sweep__"');
++check(
++  "engine.runFullSweep stamps completion on the success path",
++  stampIdx !== -1,
++  "markSweepCompleted() call missing from engine.ts",
++);
++check(
++  "stamping happens AFTER the durable history append (telemetry never outruns persistence)",
++  stampIdx !== -1 && histIdx !== -1 && stampIdx > histIdx,
++);
++
++// ── 2. /health staleness telemetry (http_server.ts) ───────────────────────────
++const rawServer = readFileSync(SERVER_SRC, "utf8");
++const serverSrc = stripComments(rawServer);
++const hStart = rawServer.indexOf('url === "/health"');
++if (hStart === -1) {
++  check("/health handler present in src/http_server.ts", false, "route anchor not found");
++} else {
++  const hEnd = rawServer.indexOf("return;", hStart);
++  const region = stripComments(rawServer.slice(hStart, hEnd === -1 ? rawServer.length : hEnd));
++  check(
++    "/health response carries lastCompletedSweepAt",
++    region.includes("lastCompletedSweepAt:"),
++  );
++  check(
++    "/health response carries sweepCompletions",
++    region.includes("sweepCompletions:"),
++  );
++  check(
++    "/health response carries stale flag",
++    region.includes("stale:"),
++  );
++  const catchIdx = region.indexOf("} catch {");
++  const catchTail = catchIdx === -1 ? "" : region.slice(catchIdx);
++  check(
++    "cold-start fallback also reports stale:true + null telemetry",
++    catchTail.includes("stale: true") && catchTail.includes("lastCompletedSweepAt: null"),
++    "an unreadable cache is not all-clear evidence",
++  );
++}
++
++// ── 3. Sweep-gap alarm with rising edge + re-arm (anti-false-clear) ──────────
++const timerIdx = serverSrc.indexOf("healthWatchdogTimer");
++check(
++  "watchdog interval exists in http_server.ts",
++  timerIdx !== -1 && /const\s+healthWatchdogTimer\s*=\s*setInterval/.test(serverSrc),
++);
++const timerAnchor = serverSrc.indexOf("healthWatchdogTimer = setInterval");
++check(
++  "watchdog interval cadence is 60s",
++  timerAnchor !== -1 && /\},\s*60_000\)/.test(serverSrc.slice(timerAnchor, timerAnchor + 2500)),
++);
++check(
++  "rising-edge alarm: alarmDue && !healthWatchdogAlarmActive",
++  /view\.alarmDue\s*&&\s*!healthWatchdogAlarmActive/.test(serverSrc),
++);
++check(
++  "re-arm branch: fresh completion clears the alarm latch",
++  /!\s*view\.stale\s*\)?\s*\{[\s\S]{0,200}?healthWatchdogAlarmActive\s*=\s*false/.test(serverSrc),
++);
++const watchdogModuleSrc = stripComments(readFileSync(join(ROOT, "src", "health", "watchdog.ts"), "utf8"));
++check(
++  "alarm mirrors into durable history (__watchdog__ rows)",
++  /recordWatchdogAlarm\(/.test(serverSrc) && /__watchdog__/.test(watchdogModuleSrc),
++);
++check(
++  "watchdog timer is unref'd (Render spin-down must stay possible)",
++  /healthWatchdogTimer\.unref/.test(serverSrc),
++);
++
++// ── 4. Semantic truth table for deriveWatchdog (imported, not re-stated) ─────
++const T0 = 1_700_000_000_000;
++const MIN = 60_000;
++check("constants: SWEEP_STALE_AFTER_MS = 600_000 (10min)", SWEEP_STALE_AFTER_MS === 600_000);
++check("constants: WATCHDOG_BOOT_GRACE_MS = 600_000 (10min)", WATCHDOG_BOOT_GRACE_MS === 600_000);
++
++// never swept, inside boot grace -> stale, but alarm held back
++const a = deriveWatchdog(T0 + 1 * MIN, T0, null, 0);
++check("truth: never-swept within grace -> stale=true alarmDue=false", a.stale === true && a.alarmDue === false);
++// never swept, past grace -> alarm
++const b = deriveWatchdog(T0 + 11 * MIN, T0, null, 0);
++check("truth: never-swept past grace -> stale=true alarmDue=true", b.stale === true && b.alarmDue === true);
++// fresh completion 3min ago (e.g. one-off manual sweep) -> all-clear window
++const c = deriveWatchdog(T0 + 20 * MIN, T0, T0 + 17 * MIN, 1);
++check("truth: 3min-old completion -> stale=false alarmDue=false", c.stale === false && c.alarmDue === false);
++// boundary: EXACTLY 10min old is still fresh (strictly-greater comparison)
++const d = deriveWatchdog(T0 + 30 * MIN, T0, T0 + 20 * MIN, 2);
++check("truth: exactly-at-edge completion -> still fresh (strictly-greater)", d.stale === false);
++// 10.5min old -> stale again (manual window expired; alarm re-arms)
++const e = deriveWatchdog(T0 + 30 * MIN + 30_000, T0, T0 + 20 * MIN, 2);
++check("truth: past-edge completion -> stale=true alarmDue=true (re-arm)", e.stale === true && e.alarmDue === true);
++// ISO shaping
++check("truth: lastCompletedSweepAt is ISO or null", c.lastCompletedSweepAt !== null && !Number.isNaN(Date.parse(c.lastCompletedSweepAt as string)) && a.lastCompletedSweepAt === null);
++check("truth: bootedAt is ISO", !Number.isNaN(Date.parse(a.bootedAt)));
++check("truth: sweepCompletions passes through", c.sweepCompletions === 1 && e.sweepCompletions === 2);
++
++if (failed) {
++  process.exit(1);
++}
++console.log("[health-watchdog] PASS — sweep-completion telemetry + rising-edge gap alarm + anti-false-clear re-arm pinned (#2710)");

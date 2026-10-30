@@ -1,0 +1,180 @@
+diff --git a/browser/Dockerfile b/browser/Dockerfile
+new file mode 100644
+index 00000000..687d4fea
+--- /dev/null
++++ b/browser/Dockerfile
+@@ -0,0 +1,23 @@
++# SupremeAI Browser - headless Gemini web relay (Playwright + Chromium)
++FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
++
++WORKDIR /app
++
++# Install Python deps
++COPY pyproject.toml ./
++RUN pip install --no-cache-dir -e ".[runtime]" fastapi uvicorn[standard] httpx
++
++# Copy source
++COPY . .
++
++ENV PYTHONUNBUFFERED=1
++ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
++
++# Persisted browser profile (mount a Render disk at /data/profile)
++ENV GEMINI_PROFILE_DIR=/data/profile
++ENV PORT=8000
++
++EXPOSE 8000
++
++CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
++
+diff --git a/browser/render.yaml b/browser/render.yaml
+new file mode 100644
+index 00000000..09ef0f3c
+--- /dev/null
++++ b/browser/render.yaml
+@@ -0,0 +1,14 @@
++services:
++  - type: web
++    name: supremeai-browser
++    runtime: docker
++    plan: starter
++    dockerfilePath: ./Dockerfile
++    healthCheckPath: /health
++    envVars:
++      - key: GEMINI_PROFILE_DIR
++        value: /data/profile
++    disk:
++      name: browser-profile
++      mountPath: /data/profile
++      sizeGB: 1
+diff --git a/browser/server.py b/browser/server.py
+new file mode 100644
+index 00000000..b665284c
+--- /dev/null
++++ b/browser/server.py
+@@ -0,0 +1,125 @@
++"""SupremeAI Browser - HTTP wrapper around the Gemini web relay.
++
++Exposes an OpenAI-compatible /v1/chat/completions endpoint backed by the
++headless Playwright Gemini engine, so the gateway can treat this service as
++a first-class provider (webhook/browser primary, API keys as failover).
++"""
++from __future__ import annotations
++
++import asyncio
++import logging
++import os
++from typing import Any
++
++from fastapi import FastAPI, HTTPException
++from fastapi.responses import JSONResponse
++from pydantic import BaseModel
++
++from ghost_tower.gemini_web_engine import GeminiWebEngine
++
++logging.basicConfig(level=logging.INFO)
++logger = logging.getLogger("supremeai-browser")
++
++app = FastAPI(title="SupremeAI Browser Relay")
++
++_engine: GeminiWebEngine | None = None
++_engine_lock = asyncio.Lock()
++
++
++class ChatMessage(BaseModel):
++    role: str
++    content: str
++
++
++class ChatRequest(BaseModel):
++    model: str = "gemini"
++    messages: list[ChatMessage]
++    stream: bool = False
++
++
++async def get_engine() -> GeminiWebEngine:
++    global _engine
++    async with _engine_lock:
++        if _engine is None:
++            profile = os.environ.get("GEMINI_PROFILE_DIR", "/data/profile")
++            _engine = GeminiWebEngine(headless=True, user_data_dir=profile)
++            await _engine.initialize()
++        return _engine
++
++
++@app.on_event("startup")
++async def startup() -> None:
++    try:
++        await get_engine()
++        logger.info("Gemini web engine initialized")
++    except Exception as exc:  # noqa: BLE001
++        logger.error("Engine init failed: %s", exc)
++
++
++@app.get("/health")
++async def health() -> dict[str, Any]:
++    eng = _engine
++    ok = eng is not None and getattr(eng, "_is_ready", False)
++    return {"status": "ok" if ok else "degraded", "engine_ready": ok}
++
++
++@app.post("/v1/chat/completions")
++async def chat_completions(req: ChatRequest) -> JSONResponse:
++    eng = await get_engine()
++    if not getattr(eng, "_is_ready", False):
++        raise HTTPException(status_code=503, detail="engine not ready")
++
++    # Build prompt from messages
++    prompt = "\n".join(m.content for m in req.messages if m.role == "user")
++    if not prompt.strip():
++        raise HTTPException(status_code=400, detail="missing user message")
++
++    try:
++        # gemini_web_engine exposes a query method; fall back to page scrape
++        answer = await _query_engine(eng, prompt)
++    except Exception as exc:  # noqa: BLE001
++        logger.error("Query failed: %s", exc)
++        raise HTTPException(status_code=502, detail=str(exc))
++
++    if not answer or "[GEMINI Web Session Active]" in answer:
++        raise HTTPException(status_code=502, detail="engine returned status, not answer")
++
++    return JSONResponse(
++        {
++            "id": "chatcmpl-browser",
++            "object": "chat.completion",
++            "created": 0,
++            "model": "gemini-web",
++            "choices": [{"index": 0, "message": {"role": "assistant", "content": answer}, "finish_reason": "stop"}],
++        }
++    )
++
++
++async def _query_engine(eng: GeminiWebEngine, prompt: str) -> str:
++    """Type prompt into Gemini web and extract the response text."""
++    page = eng.page
++    if page is None or page.is_closed():
++        await eng.initialize()
++        page = eng.page
++    # Locate the input box and send
++    await page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
++    await asyncio.sleep(2)
++    # Try common selectors
++    for selector in ["rich-textarea", "textarea", "div[contenteditable='true']"]:
++        try:
++            await page.fill(selector, prompt, timeout=5000)
++            break
++        except Exception:  # noqa: BLE001
++            continue
++    await page.keyboard.press("Enter")
++    # Wait for response to finish (up to 60s)
++    await asyncio.sleep(15)
++    # Extract last model response
++    texts = await page.eval_on_selector_all(
++        "model-response, .model-response, [data-response]",
++        "els => els.map(e => e.innerText).filter(Boolean)",
++    )
++    if texts:
++        return texts[-1]
++    return await page.inner_text("body")
++

@@ -1,0 +1,55 @@
+diff --git a/docs/bridge/bridge-20261030-2360-evidence-refresh-r1.md b/docs/bridge/bridge-20261030-2360-evidence-refresh-r1.md
+new file mode 100644
+index 00000000..61e1e5fa
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-2360-evidence-refresh-r1.md
+@@ -0,0 +1,49 @@
++# Evidence Refresh — #2360 (audit: CI follow-through gap) — live probes 2026-10-30T12:12Z-12:15Z
++
++- **Task ID:** `bridge-20261030-2360-evidence-refresh-r1`
++- **Agent:** GLM Agent 11 (Job 486770, tower slot agent-11) — continuous-loop dispatch of audit row 2360
++- **Lane:** report-only evidence refresh (docs-only, zero code, zero protected paths, no closure requested)
++- **Method:** in-tree sentinel live sweep + Tower workflow-runs drill-down (same method as the original audit); no fixes attempted (all remedy options are admin-lane).
++
++## Fresh receipts (2026-10-30)
++
++### Sentinel live sweep at 12:12:44Z (report-only exit, freshness window 48h)
++
++| repo | verdict | last completed (UTC) |
++|---|---|---|
++| supremeai | green | 2026-10-30T09:27:44Z |
++| supremeai-api | green, stale 64.7h | 2026-10-27T19:28:16Z |
++| supremeai-browser | green, stale 68.2h | 2026-10-27T15:59:16Z |
++| supremeai-core | **RED** | 2026-10-30T08:09:25Z |
++| supremeai-studio | green | 2026-10-30T10:27:05Z |
++| supremeai-vscode | green, stale 140.2h | 2026-10-24T16:01:26Z |
++
++### Finding 1 — the original gap persists and widened
++
++vscode silence grew 104h → 140.2h with still no owner (last run of any kind 2026-10-24T16:01:26Z, all-recent-runs push lane). NEW since the audit: **api (64.7h) and browser (68.2h) have now also crossed the 48h freshness window** — the CI-freshness gap covers 4 of 6 satellites (api, browser, core, vscode), up from 2 at audit time.
++
++### Finding 2 — core push plane still dark, daily schedule red unchanged
++
++Main-lane drill-down (Tower workflow-runs): last push-plane run remains 2026-10-27T16:53:58Z (832b27e, success). Schedule plane fires daily and fails every time: 10-28 07:58:01Z (feda45e), 10-29 08:06:48Z (feda45e), 10-30 08:09:25Z (32dccbb) — three consecutive failures of the same class recorded by the 2111 → 2125 chain.
++
++### Finding 3 — NEW: the dark-push ambiguity is now resolved
++
++The original audit could not distinguish "no pushes since" from "pushes occurring dark". First-hand resolution: the 10-29 schedule run executed at head feda45e while the 10-30 schedule run executed at head 32dccbb — core main advanced feda45e → 32dccbb inside that window **with zero push-lane CI runs**. Pushes are occurring dark; the 2125 mechanism is confirmed live. Every commit landing on core main since 10-27 16:53:58Z has had no push-plane verification.
++
++### Finding 4 — no open ticket owns the repair
++
++Re-checked: no landed receipt or open row tracks the core yml repair (the audit's option A). The follow-through gap the audit named is still unowned after ~36h.
++
++## Requested admin actions (unchanged options, sharpened evidence)
++
++- **A (recommended):** core push.branches yml restoration (one-line recipe per 2125; protected path, admin lane) — now proven urgent: pushes are landing dark, so main integrity is unverified at the source.
++- **B:** vscode freshness decision (accept-and-document, or wire the sentinel exit-1 into a watchdog surface).
++- **C (widened):** the freshness gap now spans api + browser too — a single scheduled sentinel surface would cover all four stale/red satellites at once.
++
++## Reflection Evidence (why + alternatives_rejected)
++- **why:** the loop dispatched audit row 2360 with an expired prior claim; the row's own contract names evidence-refresh as the agent-side work. A live re-sweep converts a 36h-old finding into current, decision-grade evidence (dark push now proven, gap widened to 4 satellites) without burning any admin surface.
++- **alternatives_rejected:** attempting the yml repair directly (rejected — protected path, admin-only per the audit's never-do); skipping the row as non-actionable (rejected — the finding is live, worsening, and the refresh itself is the row's named deliverable); waiting for the 5-green-run mechanical demotion (rejected — this is an audit row, not a CI-failure incident; it would never demote).
++
++## Rollback
++
++git revert-safe: delete this single receipt file.

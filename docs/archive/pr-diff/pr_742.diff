@@ -1,0 +1,223 @@
+diff --git a/.github/workflows/federation-ci-watchdog.yml b/.github/workflows/federation-ci-watchdog.yml
+new file mode 100644
+index 00000000..fdeacb28
+--- /dev/null
++++ b/.github/workflows/federation-ci-watchdog.yml
+@@ -0,0 +1,28 @@
++name: Federation CI Watchdog (Scheduled Poll)
++
++on:
++  schedule:
++    - cron: "*/15 * * * *"
++  workflow_dispatch:
++
++permissions:
++  contents: read
++  issues: write
++
++jobs:
++  watchdog:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Poll federation repos for CI failures
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/federation_ci_watchdog.py --poll --max-age-hours 1
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 9115601f..0778d162 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -540,24 +540,117 @@ jobs:
+             echo "Bridge Webhook returned HTTP ${HTTP_WH}"
+           fi
+ 
+-          # 2. Repository Dispatch to all resolved Federation Repositories
++          # 2. Durable Bridge Work Order issue (the missing link). Satellite repos do
++          #    not ship a repository_dispatch receiver, so a bare HTTP 204 dispatch
++          #    is silently dropped and never applies the patch. Instead, file a
++          #    bridge:queued Work Order in this repo — the central bridge bot and
++          #    the MCP tower (bridge_list_work_orders) consume that label and apply
++          #    the landed patch to every resolved satellite. This is the reliable,
++          #    durable trigger; the curl dispatch below is kept only as an optional
++          #    low-latency signal.
++          # 2. Durable Bridge Work Order issues (auto-split by target repo).
++          #    Satellite repos do not ship a repository_dispatch receiver, so a
++          #    bare HTTP 204 dispatch is silently dropped and never applies the
++          #    patch. Instead, file one bridge:queued Work Order per resolved
++          #    target repo, each carrying only that repo's file subset (bridge v2
++          #    single-target rule: "one order per target"). The central bridge bot
++          #    and the MCP tower (bridge_list_work_orders) consume the label and
++          #    apply the landed patch to each satellite. This is the reliable,
++          #    durable trigger; the curl dispatch below is kept only as an
++          #    optional low-latency signal.
++          python3 - "$TASK_ID" "$BRANCH_NAME" "$PR_NUM" "$PR_TITLE" "$FILES_RAW" "$TARGET_REPOS" <<'PYEOF'
++          import os, subprocess, sys
++
++          task_id, branch, pr_num, title = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
++          files = [f for f in sys.argv[5].splitlines() if f.strip()]
++          targets = [t for t in sys.argv[6].split() if t.strip()]
++
++          def route(f):
++              out = set()
++              if f.startswith("studio/") or f.startswith("examples/dashboard-preview/") or f.startswith("api-schemas/dashboard."):
++                  out.add("Supremeai-bd/supremeai-studio")
++              if f.startswith("api/") or f.startswith("gateway/") or f.startswith("api-schemas/gateway."):
++                  out.add("Supremeai-bd/supremeai-api")
++              if f.startswith("core/") or f.startswith("api-schemas/task-router."):
++                  out.add("Supremeai-bd/supremeai-core")
++              if f.startswith("command/") or f.startswith("handlers/telegram"):
++                  out.add("Supremeai-bd/supremeai-command")
++              if f.startswith("skills/") or f.startswith("examples/langchain-") or f.startswith("examples/vercel-"):
++                  out.add("Supremeai-bd/supremeai-skills")
++              if f.startswith("vscode/"):
++                  out.add("Supremeai-bd/supremeai-vscode")
++              if f.startswith("agents/") or f.startswith("runner/"):
++                  out.add("Supremeai-bd/supremeai-agents")
++              if f.startswith("browser/") or f.startswith("sandbox/"):
++                  out.add("Supremeai-bd/supremeai-browser")
++              if f.startswith("sdk/") or f.startswith("examples/sdk-") or f.startswith("api-schemas/telemetry-log.") or f.startswith("api-schemas/websocket-events."):
++                  out.add("Supremeai-bd/supremeai-sdk")
++              if f.startswith("infrastructure/mcp-control-plane/") or f.startswith("api-schemas/heartbeat."):
++                  out.add("Supremeai-bd/supremeai-mcp-control-plane")
++              if f.startswith("deployments/") or f.startswith("infra/"):
++                  out.add("Supremeai-bd/supremeai-infrastructure")
++              # central monorepo receives everything (umbrella)
++              out.add("Supremeai-bd/supremeai")
++              return out
++
++          # group files by target
++          groups = {t: [] for t in targets}
++          for f in files:
++              for t in route(f):
++                  if t in groups:
++                      groups[t].append(f)
++          # central always gets the full file list
++          if "Supremeai-bd/supremeai" in groups:
++              groups["Supremeai-bd/supremeai"] = list(files)
++
++          for target in targets:
++              tfiles = groups.get(target, [])
++              if not tfiles:
++                  continue
++              slug = target.split("/")[-1]
++              scope = "\n".join(f"- {f}" for f in tfiles)
++              body = (
++                  "### Task ID\n" + task_id + "-" + slug + "\n\n"
++                  "### Patch Branch\n" + branch + "\n\n"
++                  "### Target Repo\n" + target + "\n\n"
++                  "### Agent Identity\nlanding.yml (auto) — PR #" + pr_num + "\n\n"
++                  "### Summary (what + why)\n" + title + " (satellite slice: " + slug + ")\n\n"
++                  "### Scope Paths\n" + scope + "\n\n"
++                  "### Test Evidence (3-tier contract)\n"
++                  "Automated: landing.yml gates (CI — Open Unified Pipeline) green; merge squashed into main.\n\n"
++                  "### Rollback Path\n- [x] git revert-safe (pure code change; zero migration/config side effects)\n"
++              )
++              body_path = "/tmp/bridge_wo_" + slug + ".md"
++              with open(body_path, "w", encoding="utf-8") as fh:
++                  fh.write(body)
++              issue_title = "Bridge Work Order — " + title + " (" + task_id + ") [target: " + slug + "]"
++              try:
++                  r = subprocess.run(
++                      ["gh", "issue", "create", "--repo", os.environ["GITHUB_REPOSITORY"],
++                       "--title", issue_title, "--body-file", body_path, "--label", "bridge:queued"],
++                      capture_output=True, text=True, check=False,
++                  )
++                  if r.returncode == 0:
++                      print("✅ " + slug + " -> " + r.stdout.strip())
++                  else:
++                      print("::warning::issue create failed for " + slug + ": " + r.stderr.strip())
++              except Exception as exc:  # noqa: BLE001
++                  print("::warning::issue create exception for " + slug + ": " + str(exc))
++          PYEOF
++
++          # 3. Optional low-latency signal (best-effort; satellites may ignore it)
+           if [ -n "${BRIDGE_DISPATCH_TOKEN}" ]; then
+             for TARGET in ${TARGET_REPOS}; do
+-              echo "Dispatching bridge_order_queued → ${TARGET}..."
++              echo "Dispatching bridge_order_queued → ${TARGET} (best-effort)..."
+               HTTP=$(curl -s -o /tmp/dispatch_resp.txt -w "%{http_code}" -X POST \
+                 -H "Accept: application/vnd.github+json" \
+                 -H "Authorization: Bearer ${BRIDGE_DISPATCH_TOKEN}" \
+                 "https://api.github.com/repos/${TARGET}/dispatches" \
+-                -d "${PAYLOAD}")
+-              if [ "${HTTP}" = "204" ]; then
+-                echo "✅ Dispatched to ${TARGET} (HTTP 204) — landed patch streamed."
+-              else
+-                echo "::warning::Dispatch to ${TARGET} returned HTTP ${HTTP}."
+-                cat /tmp/dispatch_resp.txt || true
+-              fi
++                -d "${PAYLOAD}" || true)
++              echo "  ${TARGET} → HTTP ${HTTP:-n/a}"
+             done
+           else
+-            echo "BRIDGE_DISPATCH_TOKEN not set; webhook delivery completed."
++            echo "BRIDGE_DISPATCH_TOKEN not set; issue-based trigger is the durable path."
+           fi
+ 
+       - name: Auto-Prune Ephemeral Transit Patches (#416)
+diff --git a/AGENTS.md b/AGENTS.md
+index 2cb0da13..01d725a3 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -84,7 +84,7 @@ flowchart TD
+ - **Token & Context Efficiency:** ৭২৮ লাইনের কথা যদি মারমেইড গ্রাফ ও পাঞ্চি চেকলিস্টে ৮৮ লাইনে (৭০-৮০% রিডাকশন) প্রকাশ করা যায় যার কার্যকারিতা ১% কমবে না বরং টোকেন ও ক্ল্যারিটি বাঁচাবে—সেটাই হলো সুপ্রিমএআই স্ট্যান্ডার্ড।
+ - **Simple + effective > clever + complex.**
+ - **Existing work before new work.** (80% reuse rule; ১৭ লাইনে ৫টি রিপোর সমন্বয় প্রমাণ করেছে মিনিমালিজমের শক্তি)
+-- **Complexity must earn its existence.**
++- **Single-domain PRs.** One PR touches one federation target domain (e.g. `studio/*` OR `gateway/*`), never both in the same change — keeps patches small, testable, and avoids partial-landing drift across satellites. Cross-domain work is split into separate PRs.
+ - **Issue validity before implementation.** (Never fix a ghost issue)
+ - **Evidence before action.** (Claims without proof are rejected)
+ - **System guards enforce boundaries; agents do not police themselves.**
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 4bb33d72..73346f87 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -32,7 +32,6 @@
+ OPEN_REPO = "Supremeai-bd/supremeai-open"
+ 
+ FEDERATION_REPOS: tuple[str, ...] = (
+-    "Supremeai-bd/supremeai",
+     "Supremeai-bd/supremeai-command",
+     "Supremeai-bd/supremeai-skills",
+     "Supremeai-bd/supremeai-vscode",
+@@ -363,13 +362,13 @@ def self_test() -> int:
+     print("[self-test] Running Federation CI Watchdog offline contract test...")
+ 
+     # 1. Repos registry verification
+-    assert len(FEDERATION_REPOS) == 12, (
+-        f"Expected 12 federation repos, got {len(FEDERATION_REPOS)}"
++    assert len(FEDERATION_REPOS) == 11, (
++        f"Expected 11 federation repos (excluding supremeai + archive), got {len(FEDERATION_REPOS)}"
+     )
+-    assert "Supremeai-bd/supremeai" in FEDERATION_REPOS
+     assert "Supremeai-bd/supremeai-command" in FEDERATION_REPOS
+     assert "Supremeai-bd/supremeai-skills" in FEDERATION_REPOS
+     assert "Supremeai-bd/supremeai-studio" in FEDERATION_REPOS
++    assert "Supremeai-bd/supremeai" not in FEDERATION_REPOS
+ 
+     # 2. Short name mapping
+     assert repo_short_name("Supremeai-bd/supremeai") == "monorepo"
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+index bcb347fc..6cf307d5 100644
+--- a/tests/test_federation_ci_watchdog.py
++++ b/tests/test_federation_ci_watchdog.py
+@@ -26,9 +26,8 @@
+ 
+ class TestFederationCiWatchdog(unittest.TestCase):
+     def test_federation_repos_count_and_composition(self):
+-        self.assertEqual(len(FEDERATION_REPOS), 12)
++        self.assertEqual(len(FEDERATION_REPOS), 11)
+         expected = [
+-            "Supremeai-bd/supremeai",
+             "Supremeai-bd/supremeai-command",
+             "Supremeai-bd/supremeai-skills",
+             "Supremeai-bd/supremeai-vscode",

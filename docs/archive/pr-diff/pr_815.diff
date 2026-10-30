@@ -1,0 +1,787 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 4016c191..95894c5e 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -204,7 +204,6 @@ def _offline_requested(flag: bool) -> bool:
+ # log() and run_cmd() are provided by loop_common (imported above).
+ 
+ 
+-
+ def build_task_contract(
+     task_id: str,
+     issue: str | int | None = None,
+@@ -652,7 +651,14 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+                         for i in raw_data
+                         if isinstance(i, dict) and "pull_request" not in i
+                     ]
+-        except (urllib.error.URLError, OSError, TimeoutError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as http_err:
++        except (
++            urllib.error.URLError,
++            OSError,
++            TimeoutError,
++            ValueError,
++            json.JSONDecodeError,
++            UnicodeDecodeError,
++        ) as http_err:
+             log(
+                 "âš ï¸",
+                 f"[Board Fetch] gh unavailable ({err or out or f'code {code}'}) and HTTP fallback error: {http_err}",
+@@ -705,7 +711,14 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+         sorted_issues = sorted(candidates, key=priority_key)
+         if sorted_issues:
+             return str(sorted_issues[0].get("number"))
+-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
++    except (
++        RuntimeError,
++        ValueError,
++        TypeError,
++        KeyError,
++        AttributeError,
++        OSError,
++    ) as exc:
+         # Selection failure must also stay diagnosable (never looks like an empty board).
+         log("âš ï¸", f"[Board Fetch] selection failed: {exc}")
+     return None
+@@ -956,7 +969,10 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
+                 return False
+         log("âœ…", f"Constitution auto-synced from origin/main: {diverged}")
+     else:
+-        log("âš ï¸", f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}")
++        log(
++            "âš ï¸",
++            f"[Rules Gate] Constitution drift DETECTED (report-only): {diverged}",
++        )
+         log(
+             "â„¹ï¸",
+             "Report-only mode: the tree is never mutated here (governance PRs "
+@@ -1459,7 +1475,16 @@ def step_6_verify() -> tuple[bool, list[dict[str, Any]]]:
+                 "files_scanned": len(scan_targets),
+             }
+         )
+-    except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as e:
++    except (
++        RuntimeError,
++        ValueError,
++        TypeError,
++        OSError,
++        TimeoutError,
++        ConnectionError,
++        AttributeError,
++        KeyError,
++    ) as e:
+         log("âŒ", f"Self-test verification failed: {e}")
+         return False, evidence
+ 
+@@ -1483,11 +1508,15 @@ def pre_push_rebase_and_verify(
+        newly landed commits on main did not introduce logical regressions.
+     """
+     log(
+-        "ðŸ”„", f"[Pre-Push Invariant] Checking branch freshness against {remote}/main..."
++        "ðŸ”„",
++        f"[Pre-Push Invariant] Checking branch freshness against {remote}/main...",
+     )
+     fetch_code, _, fetch_err = run_cmd(["git", "fetch", remote, "main"], check=False)
+     if fetch_code != 0:
+-        log("âš ï¸", f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}")
++        log(
++            "âš ï¸",
++            f"Warning: git fetch {remote} main exited {fetch_code}: {fetch_err}",
++        )
+ 
+     # Check how many commits HEAD is behind remote/main
+     behind_code, behind_out, _ = run_cmd(
+@@ -1527,7 +1556,9 @@ def pre_push_rebase_and_verify(
+         log("âœ…", "Post-rebase verification tiers passed cleanly!")
+         return True, f"Rebased past {behind} commits and verified", re_evidence
+ 
+-    log("âœ…", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind).")
++    log(
++        "âœ…", f"Branch '{branch}' is 100% fresh with {remote}/main (0 commits behind)."
++    )
+     return True, "Fresh base verified", None
+ 
+ 
+@@ -1897,7 +1928,10 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
+             cycle_no += 1
+             next_start = time.monotonic() + interval
+             label = f"{cycle_no}/{total}" if total else str(cycle_no)
+-            log("ðŸš€", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
++            log(
++                "ðŸš€",
++                f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.",
++            )
+             rc, dispatched_id = _run_one_scheduled_tick(args, exclude=dispatched)
+             if dispatched_id:
+                 dispatched.add(str(dispatched_id))
+@@ -2215,7 +2249,6 @@ def main() -> int:
+     return run_cycle(args, issue_to_run)
+ 
+ 
+-
+ # Role-cadence + empty-board issue creation (extracted to loop_cadence).
+ from loop_cadence import *
+ 
+diff --git a/scripts/agents/execution_bridge.py b/scripts/agents/execution_bridge.py
+index 852e69bb..9244ae63 100644
+--- a/scripts/agents/execution_bridge.py
++++ b/scripts/agents/execution_bridge.py
+@@ -9,6 +9,7 @@
+ 
+ Stdlib-only. Fail-closed on invalid envelope / IO errors.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+@@ -62,7 +63,9 @@ def validate_envelope(env: dict[str, Any]) -> list[str]:
+     return errors
+ 
+ 
+-def build_dispatch_record(envelope: dict[str, Any], dry_run: bool = True) -> dict[str, Any]:
++def build_dispatch_record(
++    envelope: dict[str, Any], dry_run: bool = True
++) -> dict[str, Any]:
+     te = envelope["task_envelope"]
+     return {
+         "schema": "dispatch-intent/1",
+@@ -113,14 +116,30 @@ def main() -> int:
+     parser = argparse.ArgumentParser(description="Execution bridge for task envelopes")
+     parser.add_argument("--envelope", required=True, help="path to task envelope JSON")
+     parser.add_argument("--queue", default=".dispatch_queue", help="queue directory")
+-    parser.add_argument("--results", default=".execution_results", help="results directory (used with --execute)")
+-    parser.add_argument("--dry-run", action="store_true", default=True, help="record only (default)")
+-    parser.add_argument("--execute", action="store_true", help="run safe executor (verify) on the dispatch record")
+-    parser.add_argument("--executor", default="verify", choices=("null", "verify"), help="executor for --execute")
++    parser.add_argument(
++        "--results",
++        default=".execution_results",
++        help="results directory (used with --execute)",
++    )
++    parser.add_argument(
++        "--dry-run", action="store_true", default=True, help="record only (default)"
++    )
++    parser.add_argument(
++        "--execute",
++        action="store_true",
++        help="run safe executor (verify) on the dispatch record",
++    )
++    parser.add_argument(
++        "--executor",
++        default="verify",
++        choices=("null", "verify"),
++        help="executor for --execute",
++    )
+     parser.add_argument("--repo-root", default=".", help="repository root")
+     args = parser.parse_args()
+ 
+     import sys as _sys
++
+     root = Path(args.repo_root).resolve()
+     env = load_envelope(Path(args.envelope))
+     if env is None:
+@@ -140,6 +159,7 @@ def main() -> int:
+     if args.execute:
+         _sys.path.insert(0, str(Path(__file__).resolve().parent))
+         import execution_executor as _ee
++
+         res_path = _ee.run(rec_path, Path(args.results), args.executor, root)
+         if res_path is None:
+             print("ERROR: execution failed", file=_sys.stderr)
+diff --git a/scripts/agents/execution_executor.py b/scripts/agents/execution_executor.py
+index 2cb579b7..f596f593 100644
+--- a/scripts/agents/execution_executor.py
++++ b/scripts/agents/execution_executor.py
+@@ -10,6 +10,7 @@
+ 
+ Stdlib-only. Fail-closed on invalid intent / IO errors.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+@@ -35,9 +36,11 @@ def load_intent(path: Path) -> dict[str, Any] | None:
+ 
+ def _run_cmd(cmd: str, cwd: Path, timeout: int = 300) -> tuple[int, str]:
+     try:
+-        p = subprocess.run(cmd, cwd=cwd, shell=True, capture_output=True, timeout=timeout, check=False)
++        p = subprocess.run(
++            cmd, cwd=cwd, shell=True, capture_output=True, timeout=timeout, check=False
++        )
+         return p.returncode, (p.stderr or b"").decode("utf-8", errors="replace")[:200]
+-    except Exception as exc:  # noqa: BLE001
++    except Exception as exc:
+         return 127, str(exc)[:200]
+ 
+ 
+@@ -76,7 +79,9 @@ def execute_verify(intent: dict[str, Any], repo_root: Path) -> dict[str, Any]:
+     }
+ 
+ 
+-def execute(intent: dict[str, Any], executor: str, repo_root: Path) -> dict[str, Any] | None:
++def execute(
++    intent: dict[str, Any], executor: str, repo_root: Path
++) -> dict[str, Any] | None:
+     """Run the chosen executor. Returns result dict or None on failure/unknown executor."""
+     if executor not in VALID_EXECUTORS:
+         return None
+@@ -112,10 +117,16 @@ def run(
+ 
+ 
+ def main() -> int:
+-    parser = argparse.ArgumentParser(description="Execution executor for dispatch-intent records")
++    parser = argparse.ArgumentParser(
++        description="Execution executor for dispatch-intent records"
++    )
+     parser.add_argument("--intent", required=True, help="path to dispatch-intent JSON")
+-    parser.add_argument("--results", default=".execution_results", help="results directory")
+-    parser.add_argument("--executor", default="null", choices=VALID_EXECUTORS, help="executor to use")
++    parser.add_argument(
++        "--results", default=".execution_results", help="results directory"
++    )
++    parser.add_argument(
++        "--executor", default="null", choices=VALID_EXECUTORS, help="executor to use"
++    )
+     parser.add_argument("--repo-root", default=".", help="repository root")
+     args = parser.parse_args()
+ 
+@@ -123,10 +134,15 @@ def main() -> int:
+     if not intent_path.is_file():
+         print("ERROR: intent file not found", __import__("sys").stderr)
+         return 1
+-    out = run(intent_path, Path(args.results), args.executor, Path(args.repo_root).resolve())
++    out = run(
++        intent_path, Path(args.results), args.executor, Path(args.repo_root).resolve()
++    )
+     if out is None:
+         if args.executor == "mcp":
+-            print("ERROR: mcp executor not wired yet (fail-closed)", __import__("sys").stderr)
++            print(
++                "ERROR: mcp executor not wired yet (fail-closed)",
++                __import__("sys").stderr,
++            )
+         else:
+             print("ERROR: execution failed", __import__("sys").stderr)
+         return 1
+diff --git a/scripts/agents/learning_feedback.py b/scripts/agents/learning_feedback.py
+index 99cfa59b..54b58101 100644
+--- a/scripts/agents/learning_feedback.py
++++ b/scripts/agents/learning_feedback.py
+@@ -4,6 +4,7 @@
+ On a successful, verified merge, record the verified solution so future compatible
+ skills/agents can reuse it. Stdlib-only. Fail-closed on IO errors (logged, never crash).
+ """
++
+ from __future__ import annotations
+ 
+ import hashlib
+@@ -123,7 +124,11 @@ def main() -> int:
+ 
+     if args.list:
+         sols = load_verified_solutions()
+-        print(json.dumps({"count": len(sols), "solutions": sols}, indent=2, sort_keys=True))
++        print(
++            json.dumps(
++                {"count": len(sols), "solutions": sols}, indent=2, sort_keys=True
++            )
++        )
+         return 0
+     if args.record_issue is not None:
+         rec = record_verified_solution(args.record_issue, scope_paths=[])
+diff --git a/scripts/agents/loop_cadence.py b/scripts/agents/loop_cadence.py
+index e8c8e8f4..6c18fa03 100644
+--- a/scripts/agents/loop_cadence.py
++++ b/scripts/agents/loop_cadence.py
+@@ -54,8 +54,18 @@ def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
+                 cleaned[str(role)] = h
+         if not cleaned:
+             cleaned = dict(DEFAULT_CADENCE_HOURS)
+-        return {"cadences_hours": cleaned, "merged_roles": merged or dict(DEFAULT_MERGED_ROLES)}
+-    except (OSError, RuntimeError, ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:  # fail-closed: never crash the loop on bad config
++        return {
++            "cadences_hours": cleaned,
++            "merged_roles": merged or dict(DEFAULT_MERGED_ROLES),
++        }
++    except (
++        OSError,
++        RuntimeError,
++        ValueError,
++        TypeError,
++        KeyError,
++        json.JSONDecodeError,
++    ) as exc:  # fail-closed: never crash the loop on bad config
+         log("âš ï¸", f"[Cadence] config load failed ({exc}); using defaults.")
+         return {
+             "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
+@@ -99,7 +109,13 @@ def save_last_run_store(store: dict[str, float], path: Path | None = None) -> bo
+         with target.open("w", encoding="utf-8") as fh:
+             json.dump(store, fh, indent=2, sort_keys=True)
+         return True
+-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
++    except (
++        OSError,
++        ValueError,
++        TypeError,
++        json.JSONDecodeError,
++        UnicodeDecodeError,
++    ) as exc:
+         log("âš ï¸", f"[Cadence] last_run store save failed: {exc}")
+         return False
+ 
+@@ -209,6 +225,3 @@ def create_full_project_audit_issue() -> str | None:
+         return num
+     log("âš ï¸", f"[Empty-Board] audit issue created but number unparseable: {out!r}")
+     return None
+-
+-
+-
+diff --git a/scripts/agents/loop_common.py b/scripts/agents/loop_common.py
+index f3eea7dc..c01456c6 100644
+--- a/scripts/agents/loop_common.py
++++ b/scripts/agents/loop_common.py
+@@ -1,4 +1,5 @@
+ """Shared primitives for the continuous agent loop modules."""
++
+ from __future__ import annotations
+ 
+ import json
+@@ -18,7 +19,11 @@ def run_cmd(
+ ) -> tuple[int, str, str]:
+     try:
+         p = subprocess.run(
+-            cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False,
++            cmd,
++            cwd=cwd,
++            capture_output=True,
++            timeout=timeout,
++            check=False,
+         )
+         stdout = p.stdout.decode("utf-8", errors="replace").strip()
+         stderr = p.stderr.decode("utf-8", errors="replace").strip()
+@@ -38,7 +43,13 @@ def run_cmd(
+         if check:
+             raise RuntimeError(err)
+         return 124, "", err
+-    except (OSError, ValueError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
++    except (
++        OSError,
++        ValueError,
++        TypeError,
++        json.JSONDecodeError,
++        UnicodeDecodeError,
++    ) as exc:
+         err = f"Execution error for {' '.join(cmd)}: {exc}"
+         if check:
+             raise RuntimeError(err) from exc
+diff --git a/scripts/agents/scout_extractor.py b/scripts/agents/scout_extractor.py
+index 701dfaac..50966423 100644
+--- a/scripts/agents/scout_extractor.py
++++ b/scripts/agents/scout_extractor.py
+@@ -605,7 +605,7 @@ def self_test() -> bool:
+     assert "github.com/morluto/rea" in stub and "MIT" in stub
+     verify_stub_standalone(stub)
+     ns: dict = {}
+-    exec(compile(stub, "<stub>", "exec"), ns)  # noqa: S102  # runs 100% standalone
++    exec(compile(stub, "<stub>", "exec"), ns)  # runs 100% standalone
+     assert ns["evidence_fingerprint"](b"abc").startswith("0x") is False
+     assert len(ns["evidence_fingerprint"](b"abc")) == 64
+ 
+diff --git a/scripts/agents/self_healing_reporter.py b/scripts/agents/self_healing_reporter.py
+index 9db3b258..56a16762 100644
+--- a/scripts/agents/self_healing_reporter.py
++++ b/scripts/agents/self_healing_reporter.py
+@@ -134,7 +134,9 @@ def is_ci_failure_issue(title: str, labels: list[str]) -> bool:
+ 
+ def _run(cmd: list[str], timeout: int = 30) -> tuple[int, str, str]:
+     try:
+-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
++        p = subprocess.run(
++            cmd, capture_output=True, text=True, timeout=timeout, check=False
++        )
+         return p.returncode, p.stdout, p.stderr
+     except FileNotFoundError:
+         return 127, "", f"executable not found: {cmd[0]}"
+diff --git a/tests/test_admin_sovereignty.py b/tests/test_admin_sovereignty.py
+index 70f0b9bd..4f7e6b5c 100644
+--- a/tests/test_admin_sovereignty.py
++++ b/tests/test_admin_sovereignty.py
+@@ -165,18 +165,25 @@ def test_missing_domain_denied(self):
+         self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
+ 
+     def test_quarantine_decision_with_domain(self):
+-        d = guard.quarantine_decision(SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"])
++        d = guard.quarantine_decision(
++            SWARM, 4, issue_domain="core", agent_allowed_domains=["studio"]
++        )
+         self.assertFalse(d.allowed)
+         self.assertEqual(d.code, guard.DOMAIN_MISMATCH_CODE)
+ 
+     def test_quarantine_decision_domain_ok(self):
+-        d = guard.quarantine_decision(SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"])
++        d = guard.quarantine_decision(
++            SWARM, 5, issue_domain="studio", agent_allowed_domains=["studio"]
++        )
+         self.assertTrue(d.allowed)
+ 
+     def test_extract_domain(self):
+-        self.assertEqual(guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio")
++        self.assertEqual(
++            guard.extract_domain_from_labels(["domain:studio", "P1-high"]), "studio"
++        )
+         self.assertEqual(guard.extract_domain_from_labels(["repo:core"]), "core")
+         self.assertIsNone(guard.extract_domain_from_labels(["enhancement"]))
++
+     def test_module_self_test_passes(self):
+         self.assertTrue(guard.self_test())
+ 
+diff --git a/tests/test_ci_guards.py b/tests/test_ci_guards.py
+index e941cad5..4d8ed3cb 100644
+--- a/tests/test_ci_guards.py
++++ b/tests/test_ci_guards.py
+@@ -590,7 +590,18 @@ def test_unfilled_template_body_fails_ks_guard():
+         except AssertionError as exc:
+             failed += 1
+             print(f"  FAIL | {fn.__name__}: {exc}")
+-        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:
++        except (
++            RuntimeError,
++            ValueError,
++            TypeError,
++            OSError,
++            TimeoutError,
++            ConnectionError,
++            AttributeError,
++            KeyError,
++            ImportError,
++            ModuleNotFoundError,
++        ) as exc:
+             failed += 1
+             print(f"  ERROR | {fn.__name__}: {type(exc).__name__}: {exc}")
+     passed = len(fns) - failed - skipped
+diff --git a/tests/test_controller_evidence.py b/tests/test_controller_evidence.py
+index 66f005fe..cb019d98 100644
+--- a/tests/test_controller_evidence.py
++++ b/tests/test_controller_evidence.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline tests for controller-side evidence verifier."""
++
+ from __future__ import annotations
+ 
+ import sys
+diff --git a/tests/test_execution_bridge.py b/tests/test_execution_bridge.py
+index c16a7502..c7a615d9 100644
+--- a/tests/test_execution_bridge.py
++++ b/tests/test_execution_bridge.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline tests for execution bridge."""
++
+ from __future__ import annotations
+ 
+ import json
+@@ -50,7 +51,9 @@ def test_empty_prompt(self):
+ 
+     def test_scope_too_wide(self):
+         env = _valid_envelope()
+-        env["task_envelope"]["scope"]["touching_files"] = [f"f{i}.py" for i in range(31)]
++        env["task_envelope"]["scope"]["touching_files"] = [
++            f"f{i}.py" for i in range(31)
++        ]
+         errs = eb.validate_envelope(env)
+         self.assertIn("E_SCOPE_TOO_WIDE", errs)
+ 
+diff --git a/tests/test_execution_executor.py b/tests/test_execution_executor.py
+index 77f498f4..a387b4e5 100644
+--- a/tests/test_execution_executor.py
++++ b/tests/test_execution_executor.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline tests for execution executor."""
++
+ from __future__ import annotations
+ 
+ import json
+@@ -16,18 +17,23 @@
+ 
+ 
+ def _intent():
+-    return eb.build_dispatch_record(eb._valid_envelope() if hasattr(eb, "_valid_envelope") else {
+-        "task_envelope": {
+-            "task_id": "task-1",
+-            "role": "coder",
+-            "objective": "do thing",
+-            "specialist_prompt": "implement smallest safe change",
+-            "scope": {"touching_files": ["a.py"], "forbidden_paths": []},
+-            "acceptance": ["tests pass"],
+-            "verification": ["python -c \"print('ok')\""],
+-            "submission": {"base_branch": "main"},
+-        }
+-    }, dry_run=True)
++    return eb.build_dispatch_record(
++        eb._valid_envelope()
++        if hasattr(eb, "_valid_envelope")
++        else {
++            "task_envelope": {
++                "task_id": "task-1",
++                "role": "coder",
++                "objective": "do thing",
++                "specialist_prompt": "implement smallest safe change",
++                "scope": {"touching_files": ["a.py"], "forbidden_paths": []},
++                "acceptance": ["tests pass"],
++                "verification": ["python -c \"print('ok')\""],
++                "submission": {"base_branch": "main"},
++            }
++        },
++        dry_run=True,
++    )
+ 
+ 
+ class TestLoadIntent(unittest.TestCase):
+@@ -63,7 +69,7 @@ def test_verify_executor_pass(self):
+ 
+     def test_verify_executor_fail(self):
+         intent = _intent()
+-        intent["verification"] = ["python -c \"import sys; sys.exit(1)\""]
++        intent["verification"] = ['python -c "import sys; sys.exit(1)"']
+         res = ee.execute(intent, "verify", Path("."))
+         self.assertIsNotNone(res)
+         self.assertFalse(res["passed"])
+diff --git a/tests/test_federation_anchors.py b/tests/test_federation_anchors.py
+index f15b7495..c2752a0f 100644
+--- a/tests/test_federation_anchors.py
++++ b/tests/test_federation_anchors.py
+@@ -2,13 +2,12 @@
+ """tests/test_federation_anchors.py — Unit tests for Federation Anchor Hubs SSOT Registry."""
+ 
+ import unittest
++
+ from scripts.ci.federation_anchors import (
+     ANCHOR_HUBS,
+-    ANCHOR_ALIASES,
+-    CI_FAILURE_ANCHOR,
+     BRIDGE_ORDER_ANCHOR,
++    CI_FAILURE_ANCHOR,
+     get_anchor_issue_number,
+-    normalize_repo_key,
+     self_test,
+ )
+ 
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index a805ce60..710b5ad4 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -1,6 +1,5 @@
+ import unittest
+-from pathlib import Path
+-from unittest.mock import MagicMock, patch
++from unittest.mock import patch
+ 
+ from scripts.ci import federation_satellite_sync as sync_mod
+ 
+diff --git a/tests/test_federation_transit.py b/tests/test_federation_transit.py
+index 8b5d9f91..472cc94d 100644
+--- a/tests/test_federation_transit.py
++++ b/tests/test_federation_transit.py
+@@ -380,7 +380,8 @@ def test_28_deterministic_slot_resolution_and_wrap(self):
+             srt.active_slot(epoch + _dt.timedelta(minutes=110 + 45)).satellite, "skills"
+         )
+         self.assertEqual(
+-            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite, "api"  # noqa: DTZ001
++            srt.active_slot(_dt.datetime(1970, 1, 1, 0, 30)).satellite,
++            "api",
+         )  # naive=UTC
+ 
+     def test_29_slot_type_and_bounds_enforced(self):
+diff --git a/tests/test_learning_feedback.py b/tests/test_learning_feedback.py
+index e5a89e4d..464def44 100644
+--- a/tests/test_learning_feedback.py
++++ b/tests/test_learning_feedback.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline tests for learning feedback loop."""
++
+ from __future__ import annotations
+ 
+ import sys
+@@ -17,7 +18,9 @@ class TestRecord(unittest.TestCase):
+     def test_record_and_load(self):
+         with tempfile.TemporaryDirectory() as td:
+             p = Path(td) / "sol.jsonl"
+-            rec = lf.record_verified_solution(42, ["a.py", "b.py"], digests={"a.py": "sha256:abc"}, path=p)
++            rec = lf.record_verified_solution(
++                42, ["a.py", "b.py"], digests={"a.py": "sha256:abc"}, path=p
++            )
+             self.assertIsNotNone(rec)
+             self.assertEqual(rec["issue_ref"], 42)
+             sols = lf.load_verified_solutions(p)
+@@ -32,7 +35,10 @@ def test_load_missing_returns_empty(self):
+     def test_load_skips_malformed(self):
+         with tempfile.TemporaryDirectory() as td:
+             p = Path(td) / "sol.jsonl"
+-            p.write_text('{"schema":"verified-solution/1","issue_ref":1}\nnot json\n', encoding="utf-8")
++            p.write_text(
++                '{"schema":"verified-solution/1","issue_ref":1}\nnot json\n',
++                encoding="utf-8",
++            )
+             sols = lf.load_verified_solutions(p)
+             self.assertEqual(len(sols), 1)
+ 
+diff --git a/tests/test_s01_atomic_claim_contract.py b/tests/test_s01_atomic_claim_contract.py
+index 23a348da..24fa87f0 100644
+--- a/tests/test_s01_atomic_claim_contract.py
++++ b/tests/test_s01_atomic_claim_contract.py
+@@ -254,7 +254,18 @@ def tools(self):
+     def test_21_tool_advertised(self):
+         try:
+             names = self.tools()
+-        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:  # network variance must skip, not fail
++        except (
++            RuntimeError,
++            ValueError,
++            TypeError,
++            OSError,
++            TimeoutError,
++            ConnectionError,
++            AttributeError,
++            KeyError,
++            ImportError,
++            ModuleNotFoundError,
++        ) as exc:  # network variance must skip, not fail
+             self.skipTest(f"tower unreachable: {exc}")
+         self.assertIn("work_claim", [n.replace(".", "_") for n in names])
+ 
+diff --git a/tests/test_s06_claim_quota.py b/tests/test_s06_claim_quota.py
+index e2836242..ebc816d8 100644
+--- a/tests/test_s06_claim_quota.py
++++ b/tests/test_s06_claim_quota.py
+@@ -242,7 +242,9 @@ def test_26_naive_clock_rejected(self):
+ 
+         with self.assertRaises(ValueError):
+             cref.scan_active_claims(
+-                {"issues": []}, "a", dt.datetime(2026, 10, 17, 6, 10)  # noqa: DTZ001
++                {"issues": []},
++                "a",
++                dt.datetime(2026, 10, 17, 6, 10),
+             )
+ 
+     def test_27_max_active_must_be_positive(self):
+diff --git a/tests/test_s11_surgical_adoption.py b/tests/test_s11_surgical_adoption.py
+index a603148c..dcea28e2 100644
+--- a/tests/test_s11_surgical_adoption.py
++++ b/tests/test_s11_surgical_adoption.py
+@@ -121,7 +121,7 @@ def test_09_stub_runs_standalone(self):
+         s = ex.extract_python_slice(fingerprint_source(), "evidence_fingerprint")
+         stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
+         namespace: dict = {}
+-        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
++        exec(compile(stub, "<stub>", "exec"), namespace)
+         digest = namespace["evidence_fingerprint"](b"abc")
+         self.assertEqual(len(digest), 64)
+ 
+@@ -129,7 +129,7 @@ def test_10_fail_closed_on_empty_payload(self):
+         s = ex.extract_python_slice(fingerprint_source(), "evidence_fingerprint")
+         stub = ex.generate_adaptation_stub(s, "morluto/rea", "MIT")
+         namespace: dict = {}
+-        exec(compile(stub, "<stub>", "exec"), namespace)  # noqa: S102
++        exec(compile(stub, "<stub>", "exec"), namespace)
+         with self.assertRaises(ValueError):
+             namespace["evidence_fingerprint"](b"")
+ 
+diff --git a/tests/test_satellite_board_guard.py b/tests/test_satellite_board_guard.py
+index 132965bb..d652c4fe 100644
+--- a/tests/test_satellite_board_guard.py
++++ b/tests/test_satellite_board_guard.py
+@@ -240,8 +240,17 @@ def test_22_via_tower_scoped_satellites(self):
+         from unittest.mock import patch
+ 
+         with patch.dict(os.environ, {"AGENT_ALLOWED_DOMAINS": "studio,api"}):
+-            with patch("sys.argv", ["satellite_board_guard.py", "--via-tower", "--report"]):
+-                with patch.object(sbg, "audit_all", return_value=[sbg.SatelliteReport("studio", sbg.VERDICT_CLEAN), sbg.SatelliteReport("api", sbg.VERDICT_CLEAN)]):
++            with patch(
++                "sys.argv", ["satellite_board_guard.py", "--via-tower", "--report"]
++            ):
++                with patch.object(
++                    sbg,
++                    "audit_all",
++                    return_value=[
++                        sbg.SatelliteReport("studio", sbg.VERDICT_CLEAN),
++                        sbg.SatelliteReport("api", sbg.VERDICT_CLEAN),
++                    ],
++                ):
+                     code = sbg.main()
+                     self.assertEqual(code, 0)
+ 
+diff --git a/tests/test_self_healing_pipeline.py b/tests/test_self_healing_pipeline.py
+index db6e34e6..2d624f22 100644
+--- a/tests/test_self_healing_pipeline.py
++++ b/tests/test_self_healing_pipeline.py
+@@ -202,7 +202,11 @@ def test_12_fail_closed_on_clock_skew(self):
+ 
+ 
+ class Rule16DedupGuard(unittest.TestCase):
+-    EV: ClassVar[dict[str, Any]] = {"repo": "supremeai-open", "kind": "ci_failure", "key": "guard-392"}
++    EV: ClassVar[dict[str, Any]] = {
++        "repo": "supremeai-open",
++        "kind": "ci_failure",
++        "key": "guard-392",
++    }
+ 
+     def test_13_fingerprint_deterministic(self):
+         self.assertEqual(
+diff --git a/tests/test_test_parity_guard.py b/tests/test_test_parity_guard.py
+index a377fa55..f49abaa0 100644
+--- a/tests/test_test_parity_guard.py
++++ b/tests/test_test_parity_guard.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Offline tests for test parity guard."""
++
+ from __future__ import annotations
+ 
+ import sys
+@@ -23,7 +24,9 @@ def test_missing_script_detected(self):
+             root = Path(td)
+             (root / "scripts" / "agents").mkdir(parents=True)
+             (root / "scripts" / "ci").mkdir(parents=True)
+-            (root / "scripts" / "agents" / "foo_bar.py").write_text("# x", encoding="utf-8")
++            (root / "scripts" / "agents" / "foo_bar.py").write_text(
++                "# x", encoding="utf-8"
++            )
+             (root / "tests").mkdir()
+             ok, missing = tpg.run_guard(root)
+             self.assertFalse(ok)
+@@ -34,7 +37,9 @@ def test_allowlisted_script_ok(self):
+             root = Path(td)
+             (root / "scripts" / "agents").mkdir(parents=True)
+             (root / "scripts" / "ci").mkdir(parents=True)
+-            (root / "scripts" / "agents" / "self_healing_reporter.py").write_text("# x", encoding="utf-8")
++            (root / "scripts" / "agents" / "self_healing_reporter.py").write_text(
++                "# x", encoding="utf-8"
++            )
+             ok, _missing = tpg.run_guard(root)
+             self.assertTrue(ok)
+ 
+diff --git a/tests/test_validate_schemas.py b/tests/test_validate_schemas.py
+index 326f1836..515511a3 100644
+--- a/tests/test_validate_schemas.py
++++ b/tests/test_validate_schemas.py
+@@ -287,7 +287,18 @@ def test_format_registry_has_repo_formats():
+         except AssertionError as exc:
+             failed += 1
+             print(f"  FAIL | {fn.__name__}: {exc}")
+-        except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError, ImportError, ModuleNotFoundError) as exc:
++        except (
++            RuntimeError,
++            ValueError,
++            TypeError,
++            OSError,
++            TimeoutError,
++            ConnectionError,
++            AttributeError,
++            KeyError,
++            ImportError,
++            ModuleNotFoundError,
++        ) as exc:
+             failed += 1
+             print(f"  ERROR | {fn.__name__}: {type(exc).__name__}: {exc}")
+     print(f"{len(fns) - failed}/{len(fns)} tests passed")

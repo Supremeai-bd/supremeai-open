@@ -1,0 +1,38 @@
+diff --git a/docs/bridge/bridge-20261027-knowledge-loop.md b/docs/bridge/bridge-20261027-knowledge-loop.md
+new file mode 100644
+index 00000000..93d76565
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-knowledge-loop.md
+@@ -0,0 +1,32 @@
++# 🌉 Bridge Work Order — [P1] Knowledge loop dead: project docs unindexed in RAG, feedback_loop table never closes, no user-task eval set (bridge-20261027-knowledge-loop)
++
++## Problem
++Three connected failures verified live 2026-10-25 — the system cannot learn from its own documents or its own users:
++
++1. **Project docs unreachable:** `docs_search {"query":"supremeai"}` → `[]`; `docs_search {"query":"agent architecture"}` → zero project results. The docs index holds only generic sources (supabase/vercel/render/nextjs/fastapi/python/typescript). Meanwhile the repos contain rich docs: `COVERAGE_90_PLAN.md`, `ERROR_COMPENDIUM`, architecture specs (`docs/architecture/AGENT_PORTAL_AND_FEDERATION_BRIDGE.md`), roadmaps. The RAG machinery exists (`memory_ingest_document_rag`, Qdrant healthy) — nothing feeds it.
++2. **Feedback loop never closes:** `feedback_loop` table contains exactly 1 row — seed data (`user_rating: 4.5`, `adjusted: false`, dated 2026-07-01). AIQ-107 requires feedback → redacted test case → fix → re-test traceability; zero conversions have ever happened.
++3. **No user-task eval set:** AIQ-102 requires a representative test set for main user tasks; none found (COVERAGE_90_PLAN is code-coverage, not task eval).
++
++## Impact (AIQ mapping)
++- AIQ-095 ❌ retrieval, AIQ-107 ❌ feedback→tests, AIQ-102 ❌ eval set
++- AIQ-116 ❌ your own AI cannot answer questions about your own system
++- AIQ-122 🟡 limitations exist in docs but are uncitable
++
++## Fix (smallest safe change)
++1. Ingest pipeline (scheduled, in Bridge Intake): sync all root `*.md` + `docs/**` from the 4 core repos into `memory_ingest_document_rag` with source-URL + timestamp metadata (satisfies AIQ-097)
++2. Close the feedback loop: when `feedback_loop.user_rating ≤ 3`, auto-create a redacted eval case row + link; add `adjusted=true` write path
++3. Seed the first task-eval set: 20 representative user tasks (research/write/build/analyze × easy/hard) with expected-behavior rubrics, stored versioned in `task_records`
++4. CI assertion: `docs_search("supremeai streaming")` must return ≥1 project doc
++
++## Acceptance Criteria
++- [ ] `docs_search` returns project docs for repo-specific queries
++- [ ] A low rating produces a visible eval case within one cycle
++- [ ] `task_records` holds a versioned 20-task eval set
++- [ ] Eval set runs green in CI smoke mode
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** "work like Monica" is a retrieval-and-learning race before it is a model race; Monica's engine is average but its loop is closed.
++**Alternatives rejected:** (a) embedding docs manually one-off — rots on next doc change; (b) new vector DB — Qdrant already healthy, zero reason.
++
++## Labels
++`bridge:queued` `P1-high` `area:memory` `area:docs` `AIQ:095` `AIQ:102` `AIQ:107` `AIQ:116`

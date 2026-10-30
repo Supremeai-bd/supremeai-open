@@ -1,0 +1,1466 @@
+diff --git a/docs/S09_ROLE_TRIGGER_MATRIX_SPEC.md b/docs/S09_ROLE_TRIGGER_MATRIX_SPEC.md
+new file mode 100644
+index 00000000..d169cbd3
+--- /dev/null
++++ b/docs/S09_ROLE_TRIGGER_MATRIX_SPEC.md
+@@ -0,0 +1,204 @@
++# S09 — Deterministic Role Trigger Matrix (Continuous Agent Loop Triad)
++
++Implements **#489** — `feat(agents): [role-dispatch] Deterministic Role Trigger Matrix`.
++
++## 1. Problem
++
++Specialized agent roles are currently selected by fragile **keyword matching**
++against free text — `classify_task_role()` in
++`scripts/agents/continuous_agent_loop.py` lower-cases the issue title, labels
++and body and scans for substrings such as the literal word `"audit"`. This is
++the exact anti-pattern #489 deprecates: false positives, missed audits,
++ambiguous role contracts.
++
++## 2. Deliverables
++
++| File | Kind | Purpose |
++|---|---|---|
++| `scripts/agents/role_trigger_matrix.py` | new (SSOT) | Two-Paradigm Deterministic Dispatch Engine: 8 role contracts carrying the full Triad, bijective event router, exact label-plane lookup, least-privilege RBAC provisioning, role-specific output validators, `--self-test`. |
++| `tests/test_s09_role_trigger_matrix.py` | new | 39 offline contract tests (dual-mode unittest + pytest). Imports the SSOT constants — zero duplication. |
++| This document | new | Spec + **content-anchored integration hunks** for the pre-existing `scripts/agents/continuous_agent_loop.py` (Appendix A — the loop file is pre-existing; per repo doctrine it is retrofitted by content-anchored hunks, not rewritten). |
++
++## 3. The Triad (দায়িত্ব · নীতি · অস্ত্র)
++
++Every role contract (`RoleContract`) carries:
++
++1. **দায়িত্ব অর্পণ — Responsibility Assignment**: `responsibility`
++2. **নীতি ও সীমারেখা — Rule Constraints**: `must_follow` (মানতে হবে) vs
++   `must_not` (মানবে না / নিষেধ)
++3. **অস্ত্র বরাদ্দ — Weapon Provisioning**: `weapons` (exact tool allowlist),
++   `forbidden_operations`, `commit_scopes`, `issue_labels`
++
++## 4. Two-Paradigm Deterministic Dispatch
++
++| Paradigm | Roles | Trigger plane |
++|---|---|---|
++| TASK-DRIVEN (Event, Queue & Runway) | `coder`, `ci-fixer`, `task-auditor` | exact event type + label/payload gates |
++| TIME-DRIVEN / PLATFORM (Cron & Periodic Probe) | `ecosystem-scout`, `federation-auditor`, `human-eye`, `rules-breaker`, `platform-guardian` | exact event type + `schedule_kind` gate (`cron` / `fixed_rate`) + schedule expression present |
++
++### 4a. Event router (bijective — exactly one role per canonical event)
++
++| Event type | Role | Deterministic gates (fail-closed) |
++|---|---|---|
++| `event:task.claimed` | coder | labels ⊇ `status:claimed` (No Claim No Branch) |
++| `event:pr.ci_failed` | ci-fixer | payload `pr_number` truthy ∧ `checks_state == "failing"` |
++| `event:pr.pre_landing` | task-auditor | payload `landing_gate == "armed"` |
++| `event:schedule.ecosystem_scan` | ecosystem-scout | `schedule_kind == "cron"` ∧ `schedule_expr` present |
++| `event:schedule.federation_audit` | federation-auditor | `schedule_kind == "cron"` ∧ `schedule_expr` present |
++| `event:schedule.visual_review` | human-eye | `schedule_kind == "fixed_rate"` ∧ `schedule_expr` present |
++| `event:schedule.adversarial_probe` | rules-breaker | `schedule_kind == "fixed_rate"` ∧ `schedule_expr` present |
++| `event:provider.health_alert` | platform-guardian | payload `alert_state == "unhealthy"` |
++
++Unknown event → `DENY(UNKNOWN_EVENT)`. Missing label → `DENY(LABEL_GATE)`
++with the missing labels enumerated. Wrong payload value →
++`DENY(PAYLOAD_MISMATCH)`. **No gate ever falls open.**
++
++### 4b. Label-plane lookup (`dispatch_from_labels`)
++
++Exact-match equality on the structured label plane (the same plane the claim
++guard trusts: *"claim = label plane OR atomic-claim comment"*), with fixed
++priority:
++
++1. `status:runway` → **ci-fixer** (runway-first)
++2. `gate:pre-landing` → **task-auditor**
++3. `status:claimed` → **coder**
++
++Anything else → `DENY(NO_TRIGGER)`. A label that merely *contains* a trigger
++string (e.g. `xstatus:claimedx`) does not match.
++
++## 5. Keyword Matching — Deprecated
++
++`KEYWORD_MATCHING_DEPRECATED = True` is the machine-readable tombstone.
++The matrix module has **no** free-text classification API
++(`classify_task_role` / `classify_from_text` / `match_keywords` do not exist
++there). `DispatchSignal` is structural by construction — its only fields are
++`event_type` (exact enum), `labels` (exact frozenset) and `payload`
++(exact-equality key/value facts). Tests enforce all three properties.
++
++## 6. Least-Privilege RBAC (লাঠি বনাম ছুরি)
++
++| Role | Weapon Type | Weapons (exact allowlist) | Forbidden |
++|---|---|---|---|
++| coder | Surgical Knife 🔪 | `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `test_runner`, `git_branch_create`, `pr_create` | claim without atomic lock, breaking scope |
++| ci-fixer | Emergency Defibrillator ⚡ | `replace_file_content`, `multi_replace_file_content`, `write_to_file`, `ci_log_inspector`, `test_preflight`, `pr_branch_commit` | new backlog issues, bypassing checks |
++| task-auditor | Policy Stamp 📋 | `boundary_sanitization_guard_runner`, `gitleaks_scanner`, `pr_review_approve_block` | modifying source code |
++| ecosystem-scout | Long-Range Telescope 🔭 | `search_web`, `read_url_content`, `gh_issue_create` | local code modifications, uncritical hype |
++| federation-auditor | Ledger Microscope 🔬 | `multi_repo_git_inspector`, `gh_issue_create` | direct code edits |
++| human-eye | Stylist Camera & Mirror 📸 | `browser_subagent`, `gh_issue_create` | CSS/TS edits, git push |
++| rules-breaker | Sledgehammer & Lockpick 🔨 | `adversarial_fuzzer`, `adversarial_attack_runner`, `adversarial_commit` (scoped to `tests/adversarial/`), `gh_issue_create` | production changes, self-patch |
++| platform-guardian | Routing Circuit Breaker 🔌 | `provider_prober`, `failover_toggle`, `gh_issue_create` | modifying permanent config files |
++
++Enforcement: `provision_weapons()` returns the exact allowlist;
++`authorize()` fails closed; `assert_least_privilege()` raises
++`LeastPrivilegeViolation` on any foreign weapon; `assert_commit_scope()`
++enforces `commit_scopes` (rules-breaker may commit **only** under
++`tests/adversarial/`). Invariant (tested): the auditor family — task-auditor,
++ecosystem-scout, federation-auditor, human-eye, platform-guardian — holds
++**zero** `CODE_WRITE_WEAPONS`; rules-breaker holds no file-edit weapons
++(self-patch forbidden) and only the scoped commit weapon.
++
++## 7. Role Output Contracts (acceptance criteria)
++
++* **Ecosystem Scout** — `validate_scout_batch()`: ≥ `MIN_SCOUT_PROPOSALS = 10`
++  proposals, each with non-empty `pros`, `cons`, `risks` and
++  `dont_do_this` ("এটা করা যাবে না") plus a `philosophy_verdict` that must be
++  one of `CORE_PHILOSOPHY_FILTERS = ("Simple > Clever", "Complexity must earn
++  existence", "Zero-Admin")`. Fail-closed otherwise.
++* **Rules Breaker** — `validate_exploit_report()`: dual vector
++  (`guard_evasion` | `unguarded_damage`), failing test **must** live under
++  `tests/adversarial/`, a `P0-critical` issue **must** be filed,
++  `patch_code_present` **must** be False (no self-patch), and the
++  `unguarded_damage` vector requires measured damage evidence.
++* **Human Eye** — `validate_visual_finding()`: issue-only role;
++  `code_edit_proposed` must stay False; every finding carries surface,
++  finding and a `recommended_issue` with aesthetic direction.
++
++## 8. Appendix A — Integration hunks for `scripts/agents/continuous_agent_loop.py`
++
++`scripts/agents/continuous_agent_loop.py` is a **pre-existing** file; these
++content-anchored hunks are applied by the maintainer/gate chain when wiring
++the matrix in. Call sites (the two `classify_task_role(...)` invocations)
++need **no change** — the replacement keeps the legacy signature.
++
++### Hunk A — import the matrix (anchor: the stdlib import block)
++
++```python
++ import sys
++ import time
++ from pathlib import Path
++ from typing import Any
+++
+++sys.path.insert(0, str(Path(__file__).resolve().parent))
+++from role_trigger_matrix import (  # S09 (#489): deterministic role trigger matrix
+++    DECISION_DISPATCH,
+++    dispatch_from_labels,
+++)
++ 
++ # Configure UTF-8 for cross-platform stability
++```
++
++### Hunk B — extend the role registry (anchor: the `ROLES` dict closing entries)
++
++```python
++     "watcher": "Telemetry, heartbeat health, and ecosystem drift specialist",
+++    # S09 (#489): Deterministic Role Trigger Matrix — contracts live in
+++    # scripts/agents/role_trigger_matrix.py (single source of truth).
+++    "task-auditor": "Pre-landing compliance, boundary & ledger auditor",
+++    "ecosystem-scout": "Global tech radar & strategic critic (read-only)",
+++    "federation-auditor": "11-satellite parity & drift auditor (read-only)",
+++    "human-eye": "PR styling & aesthetic director (issue-only)",
+++    "rules-breaker": "Red-team chaos engineer (tests/adversarial/ only)",
+++    "platform-guardian": "External AI provider sentry & failover toggle",
++ }
++```
++
++### Hunk C — replace the keyword matcher (anchor: the full legacy body)
++
++```python
++ def classify_task_role(title: str, labels: list[str], body: str) -> str:
++-    """Intelligently map issue context to one of the 7 specialist roles."""
++-    combined = f"{title} {' '.join(labels)} {body}".lower()
++-    if any(k in combined for k in ["sec", "security", "secret", "gitleaks", "credential", "vulnerability"]):
++-        return "security-breaker"
++-    if any(k in combined for k in ["ci", "workflow", "action", "pipeline", "matrix"]):
++-        return "ci-fixer"
++-    if any(k in combined for k in ["audit", "review", "parity", "drift", "readiness"]):
++-        return "auditor"
++-    if any(k in combined for k in ["plan", "adr", "architecture", "rfc", "contract"]):
++-        return "planner"
++-    if any(k in combined for k in ["browser", "e2e", "ui", "frontend", "playwright"]):
++-        return "browser-qa"
++-    if any(k in combined for k in ["telemetry", "heartbeat", "health", "watcher", "monitor"]):
++-        return "watcher"
++-    return "coder"
+++    """DEPRECATED free-text matcher (#489) — deterministic label-plane dispatch.
+++
+++    Issue #489 deprecates keyword matching in titles/bodies. ``title`` and
+++    ``body`` are retained for call-site compatibility but are NEVER
+++    inspected: dispatch is an exact-match lookup on the structured label
+++    plane via scripts/agents/role_trigger_matrix.py (fail-closed). The
+++    legacy contract of falling through to "coder" is preserved for unrouted
+++    signals so existing call sites and prompts keep working unchanged.
+++    """
+++    decision = dispatch_from_labels(frozenset(labels))
+++    if decision.decision != DECISION_DISPATCH or decision.role_id is None:
+++        return "coder"
+++    return decision.role_id
++```
++
++### Parity note
++
++`CONTRACT_VERSION = "agent-loop-contract/1"` is untouched and no flag
++behaviour changes (`--verify-only` output is identical), so the #67 parity
++marker between the public and mirror copies of the loop program remains
++valid. The legacy 7 role ids (`auditor`, `security-breaker`, `browser-qa`,
++`planner`, `watcher`, …) stay registered; Hunk B is purely additive.
++
++## 9. Test evidence
++
++39 offline tests green in dual mode (`python3 -m unittest
++test_s09_role_trigger_matrix -v` and `pytest -q`), plus the module
++self-test (`--self-test` → `SELF-TEST OK`). Coverage: directory shape
++(8 roles, Triad completeness, Bengali identity), bijective event router,
++every fail-closed deny path, label-plane priority & substring immunity,
++RBAC invariants, Scout/Exploit/Visual contracts, deprecation tombstones.
+diff --git a/scripts/agents/role_trigger_matrix.py b/scripts/agents/role_trigger_matrix.py
+new file mode 100644
+index 00000000..d931fe6a
+--- /dev/null
++++ b/scripts/agents/role_trigger_matrix.py
+@@ -0,0 +1,889 @@
++#!/usr/bin/env python3
++"""S09 — Deterministic Role Trigger Matrix (issue #489).
++
++Two-Paradigm Dispatch Engine for the Continuous Agent Loop:
++
++  1. দায়িত্ব অর্পণ       (Role & Responsibility Assignment)
++  2. নীতি ও সীমারেখা     (Must-Follow Rules vs Negative Constraints)
++  3. অস্ত্র বরাদ্দ        (Weapon/Tool Provisioning: Scoped RBAC)
++
++Design contract (issue #489, acceptance criteria):
++
++  * Dispatch is STRUCTURALLY DETERMINISTIC. Roles are selected by an exact
++    event-type router plus an exact label-plane lookup — never by scanning
++    free text. Keyword matching in issue titles/bodies (the legacy
++    ``classify_task_role`` anti-pattern, e.g. matching the literal word
++    "audit") is deprecated and has NO equivalent API in this module.
++  * Least-Privilege RBAC: a role receives ONLY its designated weapons.
++    ``assert_least_privilege`` and ``authorize`` fail closed on any tool
++    outside the role's allowlist.
++  * Every gate fails closed: unknown event, missing label, wrong payload
++    value, or unknown role yields a DENY decision / ValueError — never a
++    best-effort guess.
++  * Single source of truth: tests and integrations import these constants;
++    nothing here is duplicated downstream.
++
++Pure stdlib. Dual-mode: ``python3 -m unittest`` compatible and runnable
++directly:
++
++    python3 scripts/agents/role_trigger_matrix.py --self-test
++    python3 scripts/agents/role_trigger_matrix.py --dispatch-event \
++        event:task.claimed --labels status:claimed,P1-high
++"""
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from collections.abc import Iterable, Mapping
++from dataclasses import dataclass, field, replace
++from types import MappingProxyType
++from typing import Any, Final
++
++# ---------------------------------------------------------------------------
++# Doctrine constants
++# ---------------------------------------------------------------------------
++
++TASK_DRIVEN: Final = "task_driven"      # Event, Queue & Runway paradigm
++TIME_DRIVEN: Final = "time_driven"      # Cron & Periodic Probe paradigm
++PARADIGMS: Final = (TASK_DRIVEN, TIME_DRIVEN)
++
++#: Issue #489 deprecates fragile keyword matching outright. This constant is
++#: the machine-readable tombstone: integrations may assert it to prove the
++#: dispatch plane never inspects free text.
++KEYWORD_MATCHING_DEPRECATED: Final = True
++
++#: Free-text parameters that legacy call sites still pass (title/body) are
++#: ignored by contract. This tuple documents the deprecated channel.
++DEPRECATED_TEXT_CHANNELS: Final = ("title", "body")
++
++CORE_PHILOSOPHY_FILTERS: Final = (
++    "Simple > Clever",
++    "Complexity must earn existence",
++    "Zero-Admin",
++)
++MIN_SCOUT_PROPOSALS: Final = 10
++ADVERSARIAL_SCOPE: Final = "tests/adversarial/"
++P0_LABEL: Final = "P0-critical"
++
++DECISION_DISPATCH: Final = "DISPATCH"
++DECISION_DENY: Final = "DENY"
++
++#: Weapons that write code or mutate the repository. The auditor family and
++#: every read-only role MUST hold none of these (Least-Privilege invariant).
++CODE_WRITE_WEAPONS: Final = frozenset({
++    "replace_file_content",
++    "multi_replace_file_content",
++    "write_to_file",
++    "git_branch_create",
++    "pr_create",
++    "pr_branch_commit",
++    "adversarial_commit",
++})
++
++#: The scoped-commit weapon is special: rules-breaker holds it, but only for
++#: paths inside ADVERSARIAL_SCOPE. File-edit weapons remain forbidden.
++SCOPED_COMMIT_WEAPON: Final = "adversarial_commit"
++
++# ---------------------------------------------------------------------------
++# Contract records
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class TriggerSpec:
++    """Structured, deterministic trigger for one role.
++
++    Only exact-match fields exist. There is no field capable of carrying
++    free text to match on — by construction the dispatch plane cannot
++    regress into keyword scanning.
++    """
++
++    event_type: str
++    required_labels: tuple[str, ...] = ()
++    schedule_kind: str | None = None          # "cron" | "fixed_rate" | None
++    required_payload: tuple[str, ...] = ()    # keys that must be present+truthy
++    payload_expectations: tuple[tuple[str, str], ...] = ()  # key -> exact value
++
++
++@dataclass(frozen=True)
++class RoleContract:
++    """The Triad: responsibility + rule constraints + weapon provisioning."""
++
++    role_id: str
++    name: str
++    name_bn: str
++    weapon_type: str                     # লাঠি বনাম ছুরি — from the issue matrix
++    paradigm: str                        # TASK_DRIVEN | TIME_DRIVEN
++    responsibility: str                  # দায়িত্ব
++    must_follow: tuple[str, ...]         # মানতে হবে
++    must_not: tuple[str, ...]            # মানবে না (নিষেধ)
++    weapons: frozenset[str]              # অস্ত্র (exact tool names)
++    forbidden_operations: tuple[str, ...]
++    trigger: TriggerSpec
++    commit_scopes: tuple[str, ...] = ()  # empty = no path restriction by matrix
++    issue_labels: tuple[str, ...] = ()   # labels the role may file (e.g. P0-critical)
++
++
++# ---------------------------------------------------------------------------
++# The 8 canonical role contracts (issue #489 — Comprehensive Role Directory)
++# ---------------------------------------------------------------------------
++
++ROLE_CONTRACTS: Final[Mapping[str, RoleContract]] = MappingProxyType({
++    "coder": RoleContract(
++        role_id="coder",
++        name="Coder (Task Executor)",
++        name_bn="টাস্ক এক্সিকিউটর",
++        weapon_type="Surgical Knife 🔪",
++        paradigm=TASK_DRIVEN,
++        responsibility=(
++            "Implement the precise feature code or bug fix for an unclaimed "
++            "backlog issue (ব্যাকলগে থাকা আনক্লেমড ইস্যুতে সুনির্দিষ্ট ফিচার কোড "
++            "বা বাগ ফিক্স বাস্তবায়ন)।"
++        ),
++        must_follow=(
++            "smallest safe change inside scope (স্কোপের ভেতর সবচেয়ে ছোট নিরাপদ পরিবর্তন)",
++            "single-lock policy (সিঙ্গেল-লক নীতি)",
++            "test evidence (টেস্ট এভিডেন্স)",
++        ),
++        must_not=(
++            "writing code without a claim (ক্লেইম ছাড়া কোড লেখা নিষেধ)",
++            "working while the PR runway is jammed (PR রানওয়ে জ্যাম থাকলে কাজ করা নিষেধ)",
++            "architectural rewrites (আর্কিটেকচারাল রিরাইট নিষিদ্ধ)",
++        ),
++        weapons=frozenset({
++            "replace_file_content",
++            "multi_replace_file_content",
++            "write_to_file",
++            "test_runner",
++            "git_branch_create",
++            "pr_create",
++        }),
++        forbidden_operations=(
++            "claiming without atomic lock",
++            "breaking scope",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:task.claimed",
++            required_labels=("status:claimed",),
++        ),
++    ),
++    "ci-fixer": RoleContract(
++        role_id="ci-fixer",
++        name="CI Fixer (Runway Healer)",
++        name_bn="রানওয়ে হিলার",
++        weapon_type="Emergency Defibrillator ⚡",
++        paradigm=TASK_DRIVEN,
++        responsibility=(
++            "Heal failing CI checks on in-flight PRs immediately — "
++            "Runway-First priority (ইন-ফ্লাইট PR ফেইল করলে তাৎক্ষণিকভাবে সিআই "
++            "চেক/গার্ড সবুজ করা)।"
++        ),
++        must_follow=(
++            "root-cause resolution (রুট-কজ সমাধান)",
++            "evidence update (এভিডেন্স আপডেট)",
++            "permanent guard or test fix (পার্মানেন্ট গার্ড বা টেস্ট ফিক্স)",
++        ),
++        must_not=(
++            "taking new feature/backlog work (নতুন ফিচার বা ব্যাকলগ ধরা নিষেধ)",
++            "force-merge or rule bypass (রুলস বাইপাস করে ফোর্স-মার্জ সম্পূর্ণ নিষিদ্ধ)",
++        ),
++        weapons=frozenset({
++            "replace_file_content",
++            "multi_replace_file_content",
++            "write_to_file",
++            "ci_log_inspector",
++            "test_preflight",
++            "pr_branch_commit",
++        }),
++        forbidden_operations=(
++            "opening new backlog issues",
++            "bypassing checks",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:pr.ci_failed",
++            required_payload=("pr_number",),
++            payload_expectations=(("checks_state", "failing"),),
++        ),
++    ),
++    "task-auditor": RoleContract(
++        role_id="task-auditor",
++        name="Task Auditor (Pre-Landing Compliance)",
++        name_bn="পিআর ল্যান্ডিং ও কমপ্লায়েন্স নিরীক্ষক",
++        weapon_type="Policy Stamp 📋",
++        paradigm=TASK_DRIVEN,
++        responsibility=(
++            "Verify boundary rules, decision ledger and secret scanning just "
++            "before a PR lands (পিআর ল্যান্ড করার ঠিক পূর্বে বাউন্ডারি রুলস, "
++            "ডিসিশন লেজার ও সিক্রেট স্ক্যানিং ভেরিফাই)।"
++        ),
++        must_follow=(
++            "fail-closed policy (ফেইল-ক্লোজড পলিসি)",
++            "zero-residual check (জিরো-রেসিডুয়াল চেক)",
++        ),
++        must_not=(
++            "writing or editing feature code (নিজে ফিচার কোড লেখা বা এডিট করা সম্পূর্ণ নিষিদ্ধ)",
++        ),
++        weapons=frozenset({
++            "boundary_sanitization_guard_runner",
++            "gitleaks_scanner",
++            "pr_review_approve_block",
++        }),
++        forbidden_operations=(
++            "modifying source code",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:pr.pre_landing",
++            payload_expectations=(("landing_gate", "armed"),),
++        ),
++    ),
++    "ecosystem-scout": RoleContract(
++        role_id="ecosystem-scout",
++        name="Ecosystem Scout (Global Tech Radar & Strategic Critic)",
++        name_bn="গ্লোবাল টেক রাডার ও স্ট্র্যাটেজিক ক্রিটিক",
++        weapon_type="Long-Range Telescope 🔭",
++        paradigm=TIME_DRIVEN,
++        responsibility=(
++            "Observe external AI releases (Meta, Anthropic, OpenAI, DeepSeek…) "
++            "and deliver full-spectrum evaluations — pros, cons, anti-patterns, "
++            "risks and 'এটা করা যাবে না' — proposing at least 10 actionable "
++            "issues (মিনিমাম ১০টি অ্যাকশনেবল ইস্যু প্রপোজ)।"
++        ),
++        must_follow=(
++            "SupremeAI core philosophy filter (সুপ্রিমএআই কোর ফিলোসফি ফিল্টার)",
++            "objective criticism (অবজেক্টিভ ক্রিটিসিজম)",
++        ),
++        must_not=(
++            "blindly following hype (অন্ধভাবে কোনো হাইপ ফলো করা নিষেধ)",
++            "editing or pushing local code (লোকাল কোডবেজে ফাইল এডিট বা কোড পুশ সম্পূর্ণ নিষিদ্ধ)",
++        ),
++        weapons=frozenset({
++            "search_web",
++            "read_url_content",
++            "gh_issue_create",
++        }),
++        forbidden_operations=(
++            "local code modifications",
++            "uncritical hype",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:schedule.ecosystem_scan",
++            schedule_kind="cron",
++            required_payload=("schedule_expr",),
++        ),
++    ),
++    "federation-auditor": RoleContract(
++        role_id="federation-auditor",
++        name="Federation Auditor (11 Internal Satellites)",
++        name_bn="অভ্যন্তরীণ ১১টি রিপোর নিরীক্ষক",
++        weapon_type="Ledger Microscope 🔬",
++        paradigm=TIME_DRIVEN,
++        responsibility=(
++            "Inspect the 11 canonical satellite repos: head-commit parity, "
++            "drift, license compliance and transit cleanliness (১১টি স্যাটেলাইট "
++            "রিপো হেড কমিট প্যারিটি, ড্রিফট, লাইসেন্স কমপ্লায়েন্স ও ট্রানজিট "
++            "ক্লিনলিনেস নিরীক্ষা)।"
++        ),
++        must_follow=(
++            "impartial audit report (পক্ষপাতহীন অডিট রিপোর্ট)",
++            "SSOT mapping of the 11 satellites (১১টি স্যাটেলাইটের এসএসওটি ম্যাপিং)",
++        ),
++        must_not=(
++            "changing source code (সোর্স কোডে নিজে কোনো পরিবর্তন আনবে না)",
++        ),
++        weapons=frozenset({
++            "multi_repo_git_inspector",
++            "gh_issue_create",
++        }),
++        forbidden_operations=(
++            "direct code edits",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:schedule.federation_audit",
++            schedule_kind="cron",
++            required_payload=("schedule_expr",),
++        ),
++    ),
++    "human-eye": RoleContract(
++        role_id="human-eye",
++        name="Human Eye (PR, Styling & Aesthetic Team)",
++        name_bn="সুপ্রিমএআই-এর পিআর, স্টাইলিং ও এস্থেটিক টিম",
++        weapon_type="Stylist Camera & Mirror 📸",
++        paradigm=TIME_DRIVEN,
++        responsibility=(
++            "Act as SupremeAI's personal stylist & PR QA director: fix the "
++            "presentation before it takes the stage — visual excellence, "
++            "color harmony, typography, premium feel (অ্যাপের ভিজ্যুয়াল "
++            "এক্সিলেন্স নিশ্চিত করা)।"
++        ),
++        must_follow=(
++            "aesthetic excellence (এস্থেটিক এক্সিলেন্স)",
++            "first-impression quality (ফার্স্ট ইমপ্রেশন কোয়ালিটি)",
++        ),
++        must_not=(
++            "editing source code (নিজে সোর্স কোড এডিট করবে না — কেবল ডিজাইন ও "
++            "এস্থেটিক নির্দেশনাসহ ইস্যু তৈরি করবে)",
++        ),
++        weapons=frozenset({
++            "browser_subagent",
++            "gh_issue_create",
++        }),
++        forbidden_operations=(
++            "modifying CSS/TS code directly",
++            "git push / code write",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:schedule.visual_review",
++            schedule_kind="fixed_rate",
++            required_payload=("schedule_expr",),
++        ),
++    ),
++    "rules-breaker": RoleContract(
++        role_id="rules-breaker",
++        name="Rules Breaker (Red Team, Chaos Engineer & Boundary Hacker)",
++        name_bn="রেড-টিম, কেওস ইঞ্জিনিয়ার ও বাউন্ডারি হ্যাকার",
++        weapon_type="Sledgehammer & Lockpick 🔨",
++        paradigm=TIME_DRIVEN,
++        responsibility=(
++            "Dual-vector hacker attacks: (1) break the guards when you see "
++            "them — race conditions, double claims, encoded payloads; "
++            "(2) measure the damage ceiling where no guard exists — memory "
++            "leaks, CPU spikes, DoS proof (ডুয়াল-ভেক্টর আক্রমণ)।"
++        ),
++        must_follow=(
++            "commit failing exploit tests as damage proof (ধ্বংসের প্রমাণ হিসেবে "
++            "ফেইলিং এক্সপ্লয়েট টেস্ট কমিট)",
++            f"file {P0_LABEL} issues (P0-critical ইস্যু ফাইল করা বাধ্যতামূলক)",
++        ),
++        must_not=(
++            "writing the security patch yourself (নিজে সিকিউরিটি প্যাচ কোড লিখবে না)",
++            "causing permanent production damage (প্রোডাকশনে কোনো পার্মানেন্ট ক্ষতি করবে না)",
++        ),
++        weapons=frozenset({
++            "adversarial_fuzzer",
++            "adversarial_attack_runner",
++            SCOPED_COMMIT_WEAPON,
++            "gh_issue_create",
++        }),
++        forbidden_operations=(
++            "production changes",
++            "attempting self-patch",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:schedule.adversarial_probe",
++            schedule_kind="fixed_rate",
++            required_payload=("schedule_expr",),
++        ),
++        commit_scopes=(ADVERSARIAL_SCOPE,),
++        issue_labels=(P0_LABEL,),
++    ),
++    "platform-guardian": RoleContract(
++        role_id="platform-guardian",
++        name="3rd-Party Platform Guardian (External Service Sentry)",
++        name_bn="এক্সটার্নাল সার্ভিস সেন্ট্রি",
++        weapon_type="Routing Circuit Breaker 🔌",
++        paradigm=TIME_DRIVEN,
++        responsibility=(
++            "Monitor uptime, latency and quota freshness of every AI model "
++            "provider (সমস্ত এআই মডেল প্রোভাইডারের আপটাইম, লেটেন্সি ও কোটা "
++            "ফ্রেশনেস মনিটর)।"
++        ),
++        must_follow=(
++            "zero-admin self-healing: auto-failover when possible, otherwise "
++            "file an issue immediately (জিরো-অ্যাডমিন সেলফ-হিলিং)",
++        ),
++        must_not=(
++            "interrupting healthy routes without cause (সুস্থ রাউটে অহেতুক "
++            "ট্রাফিক ইন্টারাপ্ট নিষেধ)",
++        ),
++        weapons=frozenset({
++            "provider_prober",
++            "failover_toggle",
++            "gh_issue_create",
++        }),
++        forbidden_operations=(
++            "modifying permanent config files",
++        ),
++        trigger=TriggerSpec(
++            event_type="event:provider.health_alert",
++            payload_expectations=(("alert_state", "unhealthy"),),
++        ),
++    ),
++})
++
++ROLE_IDS: Final = tuple(ROLE_CONTRACTS)
++
++#: Deterministic event router: exactly one role per canonical event type.
++EVENT_INDEX: Final[Mapping[str, str]] = MappingProxyType({
++    contract.trigger.event_type: role_id
++    for role_id, contract in ROLE_CONTRACTS.items()
++})
++
++# ---------------------------------------------------------------------------
++# Deterministic label-plane lookup (replaces legacy keyword classification)
++# ---------------------------------------------------------------------------
++
++#: Exact label -> role with deterministic priority. Labels are the structured
++#: signal plane already trusted by the claim guard ("claim = label plane OR
++#: atomic-claim comment"); matching here is exact-string equality, never
++#: substring scanning of titles/bodies.
++LABEL_TRIGGER_INDEX: Final[Mapping[str, str]] = MappingProxyType({
++    "status:runway": "ci-fixer",       # priority 0 — jammed runway first
++    "gate:pre-landing": "task-auditor",  # priority 1 — landing gate armed
++    "status:claimed": "coder",          # priority 2 — claimed task execution
++})
++LABEL_PRIORITY: Final = ("status:runway", "gate:pre-landing", "status:claimed")
++
++
++# ---------------------------------------------------------------------------
++# Dispatch
++# ---------------------------------------------------------------------------
++
++
++@dataclass(frozen=True)
++class DispatchSignal:
++    """Structured dispatch input. NO free-text field exists by design.
++
++    ``payload`` carries structured key/value facts only (pr numbers, check
++    states, schedule expressions) — values are compared by exact equality,
++    never scanned.
++    """
++
++    event_type: str
++    labels: frozenset[str] = frozenset()
++    payload: Mapping[str, Any] = field(default_factory=lambda: MappingProxyType({}))
++
++
++@dataclass(frozen=True)
++class DispatchDecision:
++    decision: str                       # DISPATCH | DENY
++    role_id: str | None
++    reason: str
++    paradigm: str | None = None
++    weapons: frozenset[str] = frozenset()
++    missing_labels: tuple[str, ...] = ()
++
++    def to_json(self) -> str:
++        return json.dumps({
++            "decision": self.decision,
++            "role_id": self.role_id,
++            "reason": self.reason,
++            "paradigm": self.paradigm,
++            "weapons": sorted(self.weapons),
++            "missing_labels": list(self.missing_labels),
++        }, ensure_ascii=False, sort_keys=True)
++
++
++def _deny(reason: str, *, labels_missing: Iterable[str] = ()) -> DispatchDecision:
++    return DispatchDecision(
++        decision=DECISION_DENY,
++        role_id=None,
++        reason=reason,
++        missing_labels=tuple(sorted(labels_missing)),
++    )
++
++
++def dispatch(signal: DispatchSignal) -> DispatchDecision:
++    """Route a structured signal to a role. Deterministic, fail-closed."""
++    if not isinstance(signal, DispatchSignal):
++        raise TypeError("dispatch() accepts only a structured DispatchSignal")
++    role_id = EVENT_INDEX.get(signal.event_type)
++    if role_id is None:
++        return _deny("UNKNOWN_EVENT")
++    contract = ROLE_CONTRACTS[role_id]
++    spec = contract.trigger
++
++    labels = frozenset(signal.labels)
++    missing = tuple(lbl for lbl in spec.required_labels if lbl not in labels)
++    if missing:
++        return _deny("LABEL_GATE", labels_missing=missing)
++
++    if spec.schedule_kind is not None:
++        if signal.payload.get("schedule_kind") != spec.schedule_kind:
++            return _deny("SCHEDULE_GATE")
++
++    for key in spec.required_payload:
++        if not signal.payload.get(key):
++            return _deny("PAYLOAD_GATE")
++
++    for key, expected in spec.payload_expectations:
++        if signal.payload.get(key) != expected:
++            return _deny("PAYLOAD_MISMATCH")
++
++    return DispatchDecision(
++        decision=DECISION_DISPATCH,
++        role_id=role_id,
++        reason="OK",
++        paradigm=contract.paradigm,
++        weapons=provision_weapons(role_id),
++    )
++
++
++def dispatch_from_labels(labels: Iterable[str]) -> DispatchDecision:
++    """Deterministic label-plane dispatch (legacy classify_task_role successor).
++
++    Exact-match lookup on the structured label plane with fixed priority:
++    runway healing > landing gate > claimed task. Anything else is a DENY —
++    never a keyword guess.
++    """
++    present = frozenset(labels)
++    for label in LABEL_PRIORITY:
++        if label in present:
++            role_id = LABEL_TRIGGER_INDEX[label]
++            contract = ROLE_CONTRACTS[role_id]
++            return DispatchDecision(
++                decision=DECISION_DISPATCH,
++                role_id=role_id,
++                reason=f"LABEL_TRIGGER:{label}",
++                paradigm=contract.paradigm,
++                weapons=provision_weapons(role_id),
++            )
++    return _deny("NO_TRIGGER")
++
++
++# ---------------------------------------------------------------------------
++# RBAC — Least-Privilege weapon provisioning
++# ---------------------------------------------------------------------------
++
++
++class LeastPrivilegeViolation(ValueError):
++    """Raised when a role is offered a weapon outside its allowlist."""
++
++
++def get_contract(role_id: str) -> RoleContract:
++    """Fail-closed contract lookup."""
++    contract = ROLE_CONTRACTS.get(role_id)
++    if contract is None:
++        raise ValueError(
++            f"Unknown role_id: {role_id!r}. Must be one of {sorted(ROLE_CONTRACTS)}"
++        )
++    return contract
++
++
++def provision_weapons(role_id: str) -> frozenset[str]:
++    """Return the exact weapon allowlist for a role (Least Privilege)."""
++    return get_contract(role_id).weapons
++
++
++def authorize(role_id: str, tool: str) -> bool:
++    """Fail-closed authorization: unknown role or foreign tool -> False."""
++    contract = ROLE_CONTRACTS.get(role_id)
++    if contract is None:
++        return False
++    return tool in contract.weapons
++
++
++def assert_least_privilege(role_id: str, requested: Iterable[str]) -> None:
++    """Raise unless every requested tool is inside the role's allowlist."""
++    contract = get_contract(role_id)
++    foreign = sorted(set(requested) - contract.weapons)
++    if foreign:
++        raise LeastPrivilegeViolation(
++            f"role {role_id!r} may not receive weapons {foreign} "
++            f"(allowlist: {sorted(contract.weapons)})"
++        )
++
++
++def assert_commit_scope(role_id: str, path: str) -> None:
++    """Enforce commit path scopes declared on the contract (fail-closed)."""
++    contract = get_contract(role_id)
++    if not contract.commit_scopes:
++        return
++    for scope in contract.commit_scopes:
++        if path.replace("\\", "/").startswith(scope):
++            return
++    raise LeastPrivilegeViolation(
++        f"role {role_id!r} may only commit under {list(contract.commit_scopes)}, "
++        f"got {path!r}"
++    )
++
++
++# ---------------------------------------------------------------------------
++# Role-specific output contracts (issue #489 acceptance criteria)
++# ---------------------------------------------------------------------------
++
++
++class ScoutBatchError(ValueError):
++    """Raised when an Ecosystem Scout batch violates its contract."""
++
++
++@dataclass(frozen=True)
++class ScoutProposal:
++    """Full-spectrum evaluation record (pros + cons + anti-patterns + risks
++    + 'এটা করা যাবে না'), filtered through the core philosophy."""
++
++    title: str
++    source: str
++    pros: tuple[str, ...]
++    cons: tuple[str, ...]
++    anti_patterns: tuple[str, ...]
++    risks: tuple[str, ...]
++    dont_do_this: tuple[str, ...]        # "এটা করা যাবে না"
++    philosophy_verdict: str              # one of CORE_PHILOSOPHY_FILTERS
++
++
++def validate_scout_batch(proposals: Iterable[ScoutProposal]) -> tuple[int, ...]:
++    """Fail-closed validation. Returns accepted indices (all of them)."""
++    batch = tuple(proposals)
++    if len(batch) < MIN_SCOUT_PROPOSALS:
++        raise ScoutBatchError(
++            f"Ecosystem Scout must propose at least {MIN_SCOUT_PROPOSALS} "
++            f"actionable issues, got {len(batch)}"
++        )
++    for i, p in enumerate(batch):
++        if not isinstance(p, ScoutProposal):
++            raise ScoutBatchError(f"proposal #{i} is not a ScoutProposal")
++        for field_name in ("title", "source", "philosophy_verdict"):
++            if not getattr(p, field_name):
++                raise ScoutBatchError(f"proposal #{i}: empty {field_name}")
++        for field_name in ("pros", "cons", "risks", "dont_do_this"):
++            if not getattr(p, field_name):
++                raise ScoutBatchError(
++                    f"proposal #{i}: full-spectrum field {field_name!r} is empty "
++                    "(pros/cons/risks/'এটা করা যাবে না' are all mandatory)"
++                )
++        if p.philosophy_verdict not in CORE_PHILOSOPHY_FILTERS:
++            raise ScoutBatchError(
++                f"proposal #{i}: philosophy_verdict {p.philosophy_verdict!r} "
++                f"not in {list(CORE_PHILOSOPHY_FILTERS)}"
++            )
++    return tuple(range(len(batch)))
++
++
++class ExploitContractError(ValueError):
++    """Raised when a Rules Breaker exploit report violates its contract."""
++
++
++@dataclass(frozen=True)
++class ExploitReport:
++    """Dual-vector damage-proof record committed under tests/adversarial/."""
++
++    vector: str                          # guard_evasion | unguarded_damage
++    failing_test_path: str               # must live under tests/adversarial/
++    p0_issue_filed: bool                 # P0-critical issue mandatory
++    damage_evidence: str = ""
++    patch_code_present: bool = False     # self-patch forbidden
++
++
++def validate_exploit_report(report: ExploitReport) -> None:
++    if report.vector not in ("guard_evasion", "unguarded_damage"):
++        raise ExploitContractError(
++            f"vector must be guard_evasion|unguarded_damage, got {report.vector!r}"
++        )
++    normalized = report.failing_test_path.replace("\\", "/")
++    if not normalized.startswith(ADVERSARIAL_SCOPE):
++        raise ExploitContractError(
++            f"failing exploit tests MUST live under {ADVERSARIAL_SCOPE}/ "
++            f"(commit scope), got {report.failing_test_path!r}"
++        )
++    if not report.p0_issue_filed:
++        raise ExploitContractError(f"a {P0_LABEL} issue MUST be filed")
++    if report.patch_code_present:
++        raise ExploitContractError("self-patching is forbidden for rules-breaker")
++    if report.vector == "unguarded_damage" and not report.damage_evidence:
++        raise ExploitContractError(
++            "unguarded_damage vector requires measured damage evidence "
++            "(memory leak / CPU spike / DoS proof)"
++        )
++
++
++class VisualFindingError(ValueError):
++    """Raised when a Human Eye finding proposes direct code edits."""
++
++
++@dataclass(frozen=True)
++class VisualFinding:
++    """Human Eye output: an issue with design direction, never a code edit."""
++
++    surface: str
++    finding: str
++    color_harmony_ok: bool
++    typography_ok: bool
++    premium_feel_ok: bool
++    recommended_issue: str               # aesthetic direction for the filed issue
++    code_edit_proposed: bool = False     # must stay False — issue-only role
++
++
++def validate_visual_finding(finding: VisualFinding) -> None:
++    if finding.code_edit_proposed:
++        raise VisualFindingError(
++            "human-eye files issues only; direct CSS/TS edits are forbidden"
++        )
++    for field_name in ("surface", "finding", "recommended_issue"):
++        if not getattr(finding, field_name):
++            raise VisualFindingError(f"empty {field_name}")
++
++
++# ---------------------------------------------------------------------------
++# Self-test (doctrine: every reference module ships one)
++# ---------------------------------------------------------------------------
++
++
++def self_test() -> bool:
++    """Offline invariants. Returns True, or raises AssertionError."""
++    # Directory shape: 8 roles, bijective events, paradigm partition.
++    assert len(ROLE_CONTRACTS) == 8, len(ROLE_CONTRACTS)
++    assert len(EVENT_INDEX) == 8
++    assert set(EVENT_INDEX) == {c.trigger.event_type for c in ROLE_CONTRACTS.values()}
++    task_roles = {r for r, c in ROLE_CONTRACTS.items() if c.paradigm == TASK_DRIVEN}
++    time_roles = {r for r, c in ROLE_CONTRACTS.items() if c.paradigm == TIME_DRIVEN}
++    assert task_roles == {"coder", "ci-fixer", "task-auditor"}, task_roles
++    assert time_roles == {
++        "ecosystem-scout", "federation-auditor", "human-eye",
++        "rules-breaker", "platform-guardian",
++    }, time_roles
++
++    # Triad completeness.
++    for contract in ROLE_CONTRACTS.values():
++        assert contract.responsibility
++        assert contract.must_follow and contract.must_not
++        assert contract.weapons
++        assert contract.forbidden_operations
++        assert contract.paradigm in PARADIGMS
++        assert contract.trigger.event_type in EVENT_INDEX
++
++    # Dispatch: happy paths.
++    ok = dispatch(DispatchSignal("event:task.claimed", frozenset({"status:claimed"})))
++    assert ok.decision == DECISION_DISPATCH and ok.role_id == "coder"
++    ok = dispatch(DispatchSignal("event:pr.ci_failed", payload={
++        "pr_number": 42, "checks_state": "failing"}))
++    assert ok.decision == DECISION_DISPATCH and ok.role_id == "ci-fixer"
++    ok = dispatch(DispatchSignal("event:schedule.ecosystem_scan", payload={
++        "schedule_kind": "cron", "schedule_expr": "0 9 * * 1"}))
++    assert ok.decision == DECISION_DISPATCH and ok.role_id == "ecosystem-scout"
++
++    # Dispatch: fail-closed paths.
++    assert dispatch(DispatchSignal("event:unknown")).reason == "UNKNOWN_EVENT"
++    assert dispatch(DispatchSignal("event:task.claimed")).reason == "LABEL_GATE"
++    assert dispatch(DispatchSignal("event:pr.ci_failed", payload={
++        "pr_number": 1, "checks_state": "passing"})).reason == "PAYLOAD_MISMATCH"
++    assert dispatch(DispatchSignal("event:schedule.visual_review", payload={
++        "schedule_kind": "cron", "schedule_expr": "x"})).reason == "SCHEDULE_GATE"
++    assert dispatch(DispatchSignal("event:provider.health_alert", payload={
++        "alert_state": "healthy"})).reason == "PAYLOAD_MISMATCH"
++
++    # Label plane: exact-match with priority, deny otherwise.
++    assert dispatch_from_labels(["status:runway", "status:claimed"]).role_id == "ci-fixer"
++    assert dispatch_from_labels(["gate:pre-landing", "status:claimed"]).role_id == "task-auditor"
++    assert dispatch_from_labels(["status:claimed"]).role_id == "coder"
++    assert dispatch_from_labels(["P1-high", "area:ci"]).reason == "NO_TRIGGER"
++    assert dispatch_from_labels([]).reason == "NO_TRIGGER"
++
++    # RBAC: least privilege holds.
++    assert provision_weapons("coder") == ROLE_CONTRACTS["coder"].weapons
++    assert authorize("coder", "write_to_file")
++    assert not authorize("coder", "pr_review_approve_block")
++    assert not authorize("nonexistent-role", "write_to_file")
++    read_only_roles = ("task-auditor", "ecosystem-scout", "federation-auditor",
++                       "human-eye", "platform-guardian")
++    for role in read_only_roles:
++        assert not (provision_weapons(role) & CODE_WRITE_WEAPONS), role
++    assert not (provision_weapons("rules-breaker") & {
++        "replace_file_content", "multi_replace_file_content", "write_to_file"})
++    try:
++        assert_least_privilege("task-auditor", ["write_to_file"])
++        raise SystemExit("least-privilege gate failed open")
++    except LeastPrivilegeViolation:
++        pass
++    assert_commit_scope("rules-breaker", "tests/adversarial/x.py")
++    try:
++        assert_commit_scope("rules-breaker", "src/main.py")
++        raise SystemExit("adversarial scope gate failed open")
++    except LeastPrivilegeViolation:
++        pass
++
++    # Scout contract.
++    def _proposal(n: int) -> ScoutProposal:
++        return ScoutProposal(
++            title=f"proposal {n}", source="web", pros=("p",), cons=("c",),
++            anti_patterns=("a",), risks=("r",), dont_do_this=("d",),
++            philosophy_verdict=CORE_PHILOSOPHY_FILTERS[0])
++    assert validate_scout_batch([_proposal(i) for i in range(MIN_SCOUT_PROPOSALS)])
++    try:
++        validate_scout_batch([_proposal(i) for i in range(MIN_SCOUT_PROPOSALS - 1)])
++        raise SystemExit("scout minimum failed open")
++    except ScoutBatchError:
++        pass
++    try:
++        validate_scout_batch([replace(_proposal(0), risks=())
++                              for _ in range(MIN_SCOUT_PROPOSALS)])
++        raise SystemExit("scout risk field failed open")
++    except ScoutBatchError:
++        pass
++
++    # Exploit contract.
++    validate_exploit_report(ExploitReport(
++        vector="guard_evasion", failing_test_path="tests/adversarial/t.py",
++        p0_issue_filed=True))
++    for bad in (
++        ExploitReport("other", "tests/adversarial/t.py", True),
++        ExploitReport("guard_evasion", "src/t.py", True),
++        ExploitReport("guard_evasion", "tests/adversarial/t.py", False),
++        ExploitReport("guard_evasion", "tests/adversarial/t.py", True,
++                      patch_code_present=True),
++        ExploitReport("unguarded_damage", "tests/adversarial/t.py", True),
++    ):
++        try:
++            validate_exploit_report(bad)
++            raise SystemExit(f"exploit contract failed open: {bad!r}")
++        except ExploitContractError:
++            pass
++
++    # Human Eye contract.
++    validate_visual_finding(VisualFinding(
++        surface="dashboard", finding="contrast too low",
++        color_harmony_ok=False, typography_ok=True, premium_feel_ok=True,
++        recommended_issue="raise contrast on KPI cards"))
++    try:
++        validate_visual_finding(VisualFinding(
++            surface="dashboard", finding="x", color_harmony_ok=True,
++            typography_ok=True, premium_feel_ok=True, recommended_issue="y",
++            code_edit_proposed=True))
++        raise SystemExit("human-eye write gate failed open")
++    except VisualFindingError:
++        pass
++
++    # Keyword deprecation tombstones.
++    assert KEYWORD_MATCHING_DEPRECATED is True
++    assert set(DispatchSignal.__dataclass_fields__) == {
++        "event_type", "labels", "payload"}
++    assert not hasattr(sys.modules[__name__], "classify_task_role"), \
++        "deprecated keyword API must not exist on the matrix module"
++    assert not hasattr(sys.modules[__name__], "classify_from_text")
++
++    return True
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--dispatch-event", metavar="EVENT_TYPE")
++    parser.add_argument("--labels", default="", help="comma-separated exact labels")
++    parser.add_argument("--payload", default="",
++                        help="comma-separated key=value pairs")
++    args = parser.parse_args()
++
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: role_trigger_matrix")
++        return 0
++
++    if args.dispatch_event:
++        payload_kwargs: dict[str, Any] = {}
++        for chunk in filter(None, (p.strip() for p in args.payload.split(","))):
++            key, _, value = chunk.partition("=")
++            payload_kwargs[key] = value
++        signal = DispatchSignal(
++            event_type=args.dispatch_event,
++            labels=frozenset(filter(None, (l.strip() for l in args.labels.split(",")))),
++            payload=MappingProxyType(payload_kwargs),
++        )
++        print(dispatch(signal).to_json())
++        return 0
++
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/tests/test_s09_role_trigger_matrix.py b/tests/test_s09_role_trigger_matrix.py
+new file mode 100644
+index 00000000..2201e81b
+--- /dev/null
++++ b/tests/test_s09_role_trigger_matrix.py
+@@ -0,0 +1,355 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the S09 Deterministic Role Trigger Matrix
++(issue #489).
++
++Asserts the Continuous Agent Loop role plane satisfies:
++
++  * 8 canonical role contracts carrying the full Triad (responsibility,
++    must-follow rules, negative constraints, scoped weapons);
++  * two-paradigm partition (task-driven vs time-driven) with a bijective
++    deterministic event router;
++  * fail-closed structured dispatch (labels/payload gates, no keyword
++    matching anywhere);
++  * least-privilege RBAC provisioning;
++  * role-specific output contracts (Scout ≥10 proposals, adversarial
++    exploit scope, Human-Eye issue-only findings).
++
++Pure stdlib. Run: python3 -m unittest test_s09_role_trigger_matrix -v
++"""
++import sys
++import unittest
++from dataclasses import replace
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "agents"))
++
++import role_trigger_matrix as rtm  # noqa: E402
++
++
++def proposal(n: int, **overrides) -> rtm.ScoutProposal:
++    base = dict(
++        title=f"proposal {n}", source="web", pros=("p",), cons=("c",),
++        anti_patterns=("a",), risks=("r",), dont_do_this=("d",),
++        philosophy_verdict=rtm.CORE_PHILOSOPHY_FILTERS[0])
++    base.update(overrides)
++    return rtm.ScoutProposal(**base)
++
++
++class RoleDirectory(unittest.TestCase):
++    def test_01_exactly_eight_roles(self):
++        self.assertEqual(len(rtm.ROLE_CONTRACTS), 8)
++        self.assertEqual(
++            sorted(rtm.ROLE_IDS),
++            ["ci-fixer", "coder", "ecosystem-scout", "federation-auditor",
++             "human-eye", "platform-guardian", "rules-breaker", "task-auditor"])
++
++    def test_02_triad_complete_every_role(self):
++        for role in rtm.ROLE_IDS:
++            c = rtm.ROLE_CONTRACTS[role]
++            self.assertTrue(c.responsibility, role)
++            self.assertTrue(c.must_follow, role)
++            self.assertTrue(c.must_not, role)
++            self.assertTrue(c.weapons, role)
++            self.assertTrue(c.forbidden_operations, role)
++            self.assertIn(c.paradigm, rtm.PARADIGMS)
++
++    def test_03_bengali_identity_present(self):
++        for role in rtm.ROLE_IDS:
++            self.assertTrue(rtm.ROLE_CONTRACTS[role].name_bn, role)
++
++    def test_04_paradigm_partition_matches_issue_diagram(self):
++        task = {r for r, c in rtm.ROLE_CONTRACTS.items()
++                if c.paradigm == rtm.TASK_DRIVEN}
++        time_ = {r for r, c in rtm.ROLE_CONTRACTS.items()
++                 if c.paradigm == rtm.TIME_DRIVEN}
++        self.assertEqual(task, {"coder", "ci-fixer", "task-auditor"})
++        self.assertEqual(time_, {"ecosystem-scout", "federation-auditor",
++                                 "human-eye", "rules-breaker",
++                                 "platform-guardian"})
++        self.assertEqual(task | time_, set(rtm.ROLE_IDS))
++        self.assertFalse(task & time_)
++
++    def test_05_weapon_types_from_issue_matrix(self):
++        expected = {
++            "coder": "Surgical Knife",
++            "ci-fixer": "Emergency Defibrillator",
++            "task-auditor": "Policy Stamp",
++            "ecosystem-scout": "Long-Range Telescope",
++            "federation-auditor": "Ledger Microscope",
++            "human-eye": "Stylist Camera",
++            "rules-breaker": "Sledgehammer",
++            "platform-guardian": "Circuit Breaker",
++        }
++        for role, weapon in expected.items():
++            self.assertIn(weapon, rtm.ROLE_CONTRACTS[role].weapon_type)
++
++    def test_06_get_contract_fail_closed(self):
++        with self.assertRaises(ValueError):
++            rtm.get_contract("nonexistent")
++        self.assertIs(rtm.get_contract("coder"), rtm.ROLE_CONTRACTS["coder"])
++
++
++class TriggerMatrix(unittest.TestCase):
++    def test_07_event_router_bijective(self):
++        self.assertEqual(len(rtm.EVENT_INDEX), 8)
++        self.assertEqual(set(rtm.EVENT_INDEX),
++                         {c.trigger.event_type for c in rtm.ROLE_CONTRACTS.values()})
++        for event, role in rtm.EVENT_INDEX.items():
++            self.assertEqual(rtm.ROLE_CONTRACTS[role].trigger.event_type, event)
++
++    def test_08_dispatch_coder_requires_claim_label(self):
++        d = rtm.dispatch(rtm.DispatchSignal(
++            "event:task.claimed", frozenset({"status:claimed", "P1-high"})))
++        self.assertEqual(d.decision, rtm.DECISION_DISPATCH)
++        self.assertEqual(d.role_id, "coder")
++        self.assertEqual(d.paradigm, rtm.TASK_DRIVEN)
++        self.assertIn("write_to_file", d.weapons)
++
++    def test_09_label_gate_deny_carries_missing_labels(self):
++        d = rtm.dispatch(rtm.DispatchSignal("event:task.claimed"))
++        self.assertEqual(d.decision, rtm.DECISION_DENY)
++        self.assertEqual(d.reason, "LABEL_GATE")
++        self.assertEqual(d.missing_labels, ("status:claimed",))
++
++    def test_10_unknown_event_denied(self):
++        d = rtm.dispatch(rtm.DispatchSignal("event:totally.unknown"))
++        self.assertEqual(d.reason, "UNKNOWN_EVENT")
++
++    def test_11_payload_gates(self):
++        ok = rtm.dispatch(rtm.DispatchSignal("event:pr.ci_failed", payload={
++            "pr_number": 7, "checks_state": "failing"}))
++        self.assertEqual(ok.role_id, "ci-fixer")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:pr.ci_failed", payload={"pr_number": 7,
++                                           "checks_state": "passing"})).reason,
++            "PAYLOAD_MISMATCH")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:pr.ci_failed", payload={"checks_state": "failing"})).reason,
++            "PAYLOAD_GATE")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:pr.pre_landing", payload={"landing_gate": "disarmed"})).reason,
++            "PAYLOAD_MISMATCH")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:pr.pre_landing", payload={"landing_gate": "armed"})).role_id,
++            "task-auditor")
++
++    def test_12_schedule_gates(self):
++        ok = rtm.dispatch(rtm.DispatchSignal(
++            "event:schedule.federation_audit",
++            payload={"schedule_kind": "cron", "schedule_expr": "0 3 * * *"}))
++        self.assertEqual(ok.role_id, "federation-auditor")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:schedule.federation_audit",
++            payload={"schedule_kind": "fixed_rate",
++                     "schedule_expr": "5m"})).reason, "SCHEDULE_GATE")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:schedule.adversarial_probe",
++            payload={"schedule_expr": "15m"})).reason, "SCHEDULE_GATE")
++
++    def test_13_provider_alert_gate(self):
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:provider.health_alert",
++            payload={"alert_state": "unhealthy"})).role_id, "platform-guardian")
++        self.assertEqual(rtm.dispatch(rtm.DispatchSignal(
++            "event:provider.health_alert",
++            payload={"alert_state": "healthy"})).reason, "PAYLOAD_MISMATCH")
++
++    def test_14_label_plane_priority_and_deny(self):
++        self.assertEqual(
++            rtm.dispatch_from_labels(["status:runway", "status:claimed"]).role_id,
++            "ci-fixer")
++        self.assertEqual(
++            rtm.dispatch_from_labels(["gate:pre-landing", "status:claimed"]).role_id,
++            "task-auditor")
++        self.assertEqual(
++            rtm.dispatch_from_labels(["status:claimed"]).role_id, "coder")
++        d = rtm.dispatch_from_labels(["P1-high", "area:ci", "enhancement"])
++        self.assertEqual(d.reason, "NO_TRIGGER")
++        self.assertEqual(rtm.dispatch_from_labels([]).reason, "NO_TRIGGER")
++
++    def test_15_signal_is_structural_only(self):
++        self.assertEqual(set(rtm.DispatchSignal.__dataclass_fields__),
++                         {"event_type", "labels", "payload"})
++        self.assertTrue(rtm.KEYWORD_MATCHING_DEPRECATED)
++
++    def test_16_dispatch_rejects_non_signal(self):
++        with self.assertRaises(TypeError):
++            rtm.dispatch("event:task.claimed")  # type: ignore[arg-type]
++
++    def test_17_decision_json_round_trip(self):
++        import json
++        d = rtm.dispatch(rtm.DispatchSignal("event:task.claimed",
++                                            frozenset({"status:claimed"})))
++        parsed = json.loads(d.to_json())
++        self.assertEqual(parsed["decision"], "DISPATCH")
++        self.assertEqual(parsed["role_id"], "coder")
++        self.assertIn("test_runner", parsed["weapons"])
++
++
++class RbacLeastPrivilege(unittest.TestCase):
++    def test_18_provision_exact_allowlist(self):
++        for role in rtm.ROLE_IDS:
++            self.assertEqual(rtm.provision_weapons(role),
++                             rtm.ROLE_CONTRACTS[role].weapons)
++
++    def test_19_authorize_fail_closed(self):
++        self.assertTrue(rtm.authorize("ci-fixer", "pr_branch_commit"))
++        self.assertFalse(rtm.authorize("ci-fixer", "pr_review_approve_block"))
++        self.assertFalse(rtm.authorize("ghost", "anything"))
++        self.assertFalse(rtm.authorize("coder", "pr_merge_admin"))
++
++    def test_20_auditor_family_holds_no_write_weapons(self):
++        for role in ("task-auditor", "ecosystem-scout", "federation-auditor",
++                     "human-eye", "platform-guardian"):
++            overlap = rtm.provision_weapons(role) & rtm.CODE_WRITE_WEAPONS
++            self.assertEqual(overlap, frozenset(), role)
++
++    def test_21_rules_breaker_cannot_self_patch(self):
++        weapons = rtm.provision_weapons("rules-breaker")
++        self.assertFalse(weapons & {"replace_file_content",
++                                    "multi_replace_file_content",
++                                    "write_to_file"})
++        self.assertIn(rtm.SCOPED_COMMIT_WEAPON, weapons)
++
++    def test_22_least_privilege_violation_raises(self):
++        with self.assertRaises(rtm.LeastPrivilegeViolation):
++            rtm.assert_least_privilege("human-eye", ["browser_subagent",
++                                                     "write_to_file"])
++        rtm.assert_least_privilege("human-eye", ["browser_subagent",
++                                                 "gh_issue_create"])
++
++    def test_23_adversarial_commit_scope(self):
++        rtm.assert_commit_scope("rules-breaker", "tests/adversarial/probe.py")
++        rtm.assert_commit_scope("rules-breaker", "tests/adversarial/nested/t.py")
++        with self.assertRaises(rtm.LeastPrivilegeViolation):
++            rtm.assert_commit_scope("rules-breaker", "src/app.py")
++        with self.assertRaises(rtm.LeastPrivilegeViolation):
++            rtm.assert_commit_scope("rules-breaker", "tests/test_x.py")
++
++    def test_24_unrestricted_roles_have_no_scope(self):
++        self.assertEqual(rtm.ROLE_CONTRACTS["coder"].commit_scopes, ())
++
++
++class ScoutContract(unittest.TestCase):
++    def test_25_minimum_ten_proposals(self):
++        self.assertEqual(rtm.MIN_SCOUT_PROPOSALS, 10)
++        batch = [proposal(i) for i in range(10)]
++        self.assertEqual(rtm.validate_scout_batch(batch), tuple(range(10)))
++        with self.assertRaises(rtm.ScoutBatchError):
++            rtm.validate_scout_batch(batch[:9])
++
++    def test_26_full_spectrum_fields_mandatory(self):
++        for field_name in ("pros", "cons", "risks", "dont_do_this"):
++            batch = [proposal(0, **{field_name: ()})
++                     for _ in range(rtm.MIN_SCOUT_PROPOSALS)]
++            with self.assertRaises(rtm.ScoutBatchError):
++                rtm.validate_scout_batch(batch)
++
++    def test_27_philosophy_filter_enforced(self):
++        batch = [proposal(0, philosophy_verdict="follow the hype")
++                 for _ in range(rtm.MIN_SCOUT_PROPOSALS)]
++        with self.assertRaises(rtm.ScoutBatchError):
++            rtm.validate_scout_batch(batch)
++        self.assertEqual(rtm.CORE_PHILOSOPHY_FILTERS,
++                         ("Simple > Clever", "Complexity must earn existence",
++                          "Zero-Admin"))
++
++    def test_28_scout_is_read_only(self):
++        self.assertEqual(rtm.provision_weapons("ecosystem-scout"),
++                         frozenset({"search_web", "read_url_content",
++                                    "gh_issue_create"}))
++
++
++class ExploitContract(unittest.TestCase):
++    def test_29_valid_guard_evasion(self):
++        rtm.validate_exploit_report(rtm.ExploitReport(
++            vector="guard_evasion",
++            failing_test_path="tests/adversarial/double_claim.py",
++            p0_issue_filed=True))
++
++    def test_30_scope_enforced(self):
++        for path in ("src/attack.py", "tests/unit/attack.py",
++                     "adversarial/attack.py", "tests/adversarial_evil/t.py"):
++            with self.assertRaises(rtm.ExploitContractError):
++                rtm.validate_exploit_report(rtm.ExploitReport(
++                    vector="guard_evasion", failing_test_path=path,
++                    p0_issue_filed=True))
++
++    def test_31_p0_and_vector_and_no_self_patch(self):
++        with self.assertRaises(rtm.ExploitContractError):
++            rtm.validate_exploit_report(rtm.ExploitReport(
++                vector="guard_evasion",
++                failing_test_path="tests/adversarial/t.py",
++                p0_issue_filed=False))
++        with self.assertRaises(rtm.ExploitContractError):
++            rtm.validate_exploit_report(rtm.ExploitReport(
++                vector="race_condition",
++                failing_test_path="tests/adversarial/t.py",
++                p0_issue_filed=True))
++        with self.assertRaises(rtm.ExploitContractError):
++            rtm.validate_exploit_report(rtm.ExploitReport(
++                vector="guard_evasion",
++                failing_test_path="tests/adversarial/t.py",
++                p0_issue_filed=True, patch_code_present=True))
++
++    def test_32_unguarded_damage_requires_evidence(self):
++        rtm.validate_exploit_report(rtm.ExploitReport(
++            vector="unguarded_damage",
++            failing_test_path="tests/adversarial/memory_leak.py",
++            p0_issue_filed=True, damage_evidence="cpu 100% spike 3min"))
++        with self.assertRaises(rtm.ExploitContractError):
++            rtm.validate_exploit_report(rtm.ExploitReport(
++                vector="unguarded_damage",
++                failing_test_path="tests/adversarial/memory_leak.py",
++                p0_issue_filed=True))
++
++    def test_33_p0_label_is_issue_ssot(self):
++        self.assertEqual(rtm.P0_LABEL, "P0-critical")
++        self.assertEqual(rtm.ROLE_CONTRACTS["rules-breaker"].issue_labels,
++                         (rtm.P0_LABEL,))
++        self.assertEqual(rtm.ADVERSARIAL_SCOPE, "tests/adversarial/")
++
++
++class HumanEyeContract(unittest.TestCase):
++    def test_34_issue_only_findings(self):
++        rtm.validate_visual_finding(rtm.VisualFinding(
++            surface="landing page", finding="font pair clashes",
++            color_harmony_ok=False, typography_ok=False, premium_feel_ok=True,
++            recommended_issue="swap heading font to the display family"))
++
++    def test_35_code_edit_proposals_rejected(self):
++        with self.assertRaises(rtm.VisualFindingError):
++            rtm.validate_visual_finding(rtm.VisualFinding(
++                surface="dashboard", finding="bad spacing",
++                color_harmony_ok=True, typography_ok=True,
++                premium_feel_ok=True, recommended_issue="fix it",
++                code_edit_proposed=True))
++
++    def test_36_no_git_weapons(self):
++        weapons = rtm.provision_weapons("human-eye")
++        self.assertFalse(weapons & rtm.CODE_WRITE_WEAPONS)
++        self.assertEqual(weapons, frozenset({"browser_subagent",
++                                             "gh_issue_create"}))
++
++
++class DeprecationGuarantees(unittest.TestCase):
++    def test_37_no_keyword_api_on_matrix_module(self):
++        self.assertFalse(hasattr(rtm, "classify_task_role"))
++        self.assertFalse(hasattr(rtm, "classify_from_text"))
++        self.assertFalse(hasattr(rtm, "match_keywords"))
++        self.assertTrue(rtm.KEYWORD_MATCHING_DEPRECATED)
++
++    def test_38_label_matching_is_exact_not_substring(self):
++        # A label that merely CONTAINS a trigger string must not trigger.
++        d = rtm.dispatch_from_labels(["xstatus:claimedx"])
++        self.assertEqual(d.reason, "NO_TRIGGER")
++        # Event type must match exactly too.
++        self.assertEqual(rtm.dispatch(
++            rtm.DispatchSignal("event:task.claimedX")).reason, "UNKNOWN_EVENT")
++
++    def test_39_self_test_entrypoint_green(self):
++        self.assertTrue(rtm.self_test())
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

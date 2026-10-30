@@ -1,0 +1,46 @@
+diff --git a/docs/workorders/bridge-20261028-ci1912-lint-imports-revalidation.md b/docs/workorders/bridge-20261028-ci1912-lint-imports-revalidation.md
+new file mode 100644
+index 00000000..e996118e
+--- /dev/null
++++ b/docs/workorders/bridge-20261028-ci1912-lint-imports-revalidation.md
+@@ -0,0 +1,40 @@
++# CI Admin Re-validation Receipt — WO #1912 lint-imports activation diff holds at current main
++
++Task ID: bridge-20261028-ci1912-lint-imports-revalidation
++Refs: #1912 (P2-medium, admin-runbook), #1791 (R37 import-contract lane), #1889, #1769, #1643
++Lane: **report-only re-validation receipt.** The ready-to-land diff lives in WO #1912 and stays there; `.github/` remains admin-owned (#1643). This document gives the applying admin current-tip proof so the activation commit needs zero re-derivation.
++
++## Why this receipt exists
++
++WO #1912 was filed 2026-10-28T02:20Z against a 61cb977-era main and carries a validated +6-line diff for the pipeline fast-lint preflight. Since then main advanced ~40 commits (9530edb era and beyond). Before an admin lands a protected-path edit, the only question that matters is: does the diff still apply to the file as it exists right now, and does the guard still pass on that tip. This receipt answers both at HEAD cbb9ab2, dated 2026-10-28.
++
++## Receipt 1 — anchor fidelity at cbb9ab2
++
++- `.github/` has zero commits between 9530edb and cbb9ab2 (drift check), and the diff's target context (the two contract_parity_guard.py lines ending the Contract Parity and Byte-Hygiene Guard step, immediately followed by the Frontend Code-Splitting step) is **unique and byte-matched** in the current pipeline.yml.
++- The diff applies cleanly: the fast-lint-syntax-preflight job gains exactly one step (7 to 8), inserted between Contract Parity and Frontend Code-Splitting as the WO specifies.
++
++## Receipt 2 — guard green at cbb9ab2
++
++Fresh venv, install from requirements-dev.txt (resolves import-linter 2.15, matching the pin recorded on main), then run the documented command from the repo root:
++
++- Result: **2 contracts kept, 0 broken, exit 0**; analyzed 1264 files, 2123 dependencies.
++  - gateway must not import core private internals (cross-domain private ban) — KEPT
++  - core.api routes consume monitoring through the public facade — KEPT
++- Consistent with the ratchet-flip state landed by #1889 (zero ignored entries).
++
++## Receipt 3 — YAML footgun regression reproduced
++
++The WO's quoting warning is real and still load-bearing. Re-applying the diff with an **unquoted** step name and parsing with yaml.safe_load truncates the step name at the # character — reproduced exactly: the step arrives as "Import-Contract Guard (lint-imports, issue". With the quoted variant the full name parses intact and the workflow job set is unchanged apart from the single added step. Admins copy-pasting from the WO must keep the quotes.
++
++## Landing checklist for admin (unchanged from WO, now current-tip-verified)
++
++1. Apply the +6-line diff from WO #1912 verbatim (quoted step name).
++2. Sanity: yaml.safe_load of the amended workflow parses; fast-lint-syntax-preflight shows the Import-Contract Guard step between Contract Parity and Frontend Code-Splitting.
++3. The job's timeout-minutes is 3; measured guard wall time 0.28s plus a one-off pip install keeps ample headroom.
++4. Landing activates the lane's CI enforcement for every PR and push to main; the ratchet stays shrink-only per the #1889 flip.
++
++## never-do
++
++- Agents never edit `.github/**` (#1643; #1769 live evidence); this receipt and the WO diff are the whole agent surface.
++- No re-file of the diff as a new WO (duplicate PR churn); #1912 remains the single SSOT for the patch.
++- No baseline edits: 2 kept / 0 broken is the floor; a broken contract blocks landing, not the ratchet.

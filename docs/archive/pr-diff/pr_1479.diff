@@ -1,0 +1,38 @@
+diff --git a/docs/bridge/bridge-20261027-audit-gap-distribution-infra.md b/docs/bridge/bridge-20261027-audit-gap-distribution-infra.md
+new file mode 100644
+index 00000000..7f257692
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-audit-gap-distribution-infra.md
+@@ -0,0 +1,32 @@
++# 🌉 Bridge Work Order — [P3] Distribution infrastructure absent: no public status page, no SEO landing, no shareable chat links — growth machinery is zero (Monica Gap 8/8) (bridge-20261027-audit-gap-distribution-infra)
++
++## Problem
++The Bangla feature audit (2026-10-27) mapped distribution infrastructure as Gap 8 (audit phase: 3). The platform currently serves roughly two users and has none of the three growth/honesty surfaces a product needs to compound:
++
++1. **Public status page** — absent. Health data exists and is excellent (21/21 services healthy at last sweep, detailed snapshots), but only the tower sees it. Meanwhile the platform has a documented false-degraded alarm culture (#1335): `overallStatus` claimed "degraded" with `Error: None` while all 21 snapshots were healthy. A public status page is simultaneously a trust surface and a forcing function for alarm honesty.
++2. **SEO landing** — absent. Studio is an app shell; there is no indexable landing content, no sitemap, no OG metadata worth the name. Organic acquisition is structurally zero.
++3. **Shareable chat links** — absent. Users cannot send a permalink of a good answer. Every conversation dies in private scrollback; the product's best outputs generate zero visibility.
++
++## Impact
++- Every feature shipped into an audience of two is unmeasured; growth machinery being zero makes all other investments unquantifiable.
++- The status page is the cheapest trust artifact available — the data pipeline already runs; only the public projection is missing.
++- Share links are the only viral loop the product could have; without them the referral coefficient is exactly 0.
++
++## Fix (smallest safe change) — three independent small lanes
++1. **Status page** (lane 1): read-only public page fed by the existing `health_dashboard` data — service list, health dot, latency, last-check time. Honest mode/reason fields included; a degraded service is *shown*, not hidden. No new data collection — projection only.
++2. **Share links** (lane 2): opt-in "copy share link" on a message/thread → permalink with OG tags for social preview; redacts tenant identifiers; explicit negative test that another tenant's content is unreachable via a crafted link.
++3. **Landing SEO** (lane 3): titles/meta descriptions, OG image, sitemap, robots, canonical URLs on public routes; one crawlable landing page stating what the product is (in English and Bengali). Target: Lighthouse SEO ≥ 90.
++
++## Acceptance Criteria
++- [ ] Status page renders live sweep data; deliberately degraded demo data shows as degraded (honesty test)
++- [ ] Share link renders a social preview and does NOT leak cross-tenant content (negative test passes)
++- [ ] Sharing is opt-in per message/thread; default sharing state is off
++- [ ] Sitemap + OG tags validate; Lighthouse SEO ≥ 90 on the landing page
++- [ ] Bengali text on the landing page renders with correct complex-script shaping
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** the audit closes on this point — an unfinished shell in front of a finished engine still needs a door; these three lanes are the door. All three are projections of state or content that already exists, so none adds a new subsystem.
++**Alternatives rejected:** (a) third-party status-page service — the health data is already in the platform's own dashboard; an external service adds a second source of truth and another vendor; (b) auto-share by default — privacy risk out of proportion to the growth benefit; opt-in is the trust-preserving loop; (c) paid acquisition before organic basics — the cheapest levers should be pulled first.
++
++## Labels
++`bridge:queued` `P3-low` `area:studio` `area:observability` `gap:monica-08`

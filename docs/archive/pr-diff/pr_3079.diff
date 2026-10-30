@@ -1,0 +1,51 @@
+diff --git a/docs/bridge/bridge-20261030-c58-telegram-flap-profile-corroboration.md b/docs/bridge/bridge-20261030-c58-telegram-flap-profile-corroboration.md
+new file mode 100644
+index 00000000..754dc7c3
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c58-telegram-flap-profile-corroboration.md
+@@ -0,0 +1,45 @@
++# Bridge Cycle 58 — Telegram Flap Profile Corroboration for #3070 (report-only)
++
++**Task ID:** `bridge-20261030-c58-telegram-flap-profile-corroboration`
++**Slot:** 2026-10-30 14:35+08 (06:35Z), Job 478338 continuous agent loop
++**Lane:** report-only evidence, zero claims, zero credentials, docs-only
++**Method:** loop dispatch → #3070 picked on rerun (fresh regression receipt, 0 comments, no claim labels) → WO body read → 4 independent zero-credential `system_health` probes 06:36:59Z–06:43:50Z (one with per-service detail) → this receipt. No mutation, no claim, no autoclose.
++
++## 1. The flap profile (7 observations, one table)
++
++| Checked (UTC) | Observer | Health summary | telegram-primary detail |
++|---|---|---|---|
++| 10-30T04:08:18Z | guardian cycle-54 (via #3070 table) | 19/2/0 | healthy, 200, 1396 ms |
++| 10-30T05:09:11Z | guardian cycle-55 (via #3070 table) | 18/2/1 | unreachable, fetch failed |
++| 10-30T06:08:18Z | guardian cycle-56 (via #3070 table) | 18/2/1 | unreachable, fetch failed |
++| 10-30T06:36:59Z | this lane probe 1 | 19/2/0 | healthy (summary-level) |
++| 10-30T06:38:27Z | this lane probe 2 | 18/2/1 | unreachable (summary-level) |
++| 10-30T06:41:38Z | this lane probe 3 | 19/2/0 | healthy (summary-level) |
++| 10-30T06:43:50Z | this lane probe 4 | 19/2/0 | **healthy, 200, 774 ms** (per-service) |
++
++**Headline datum:** a healthy→unreachable→healthy round-trip inside **4m39s** (06:36:59Z→06:41:38Z), and 3-of-4 healthy inside 6m51s. The receipt's two "consecutive" down-sweeps are a sampling view of an **intermittent connection-level flap**, not sustained down-time.
++
++## 2. What this adds to triage
++
++1. **The receipt's honest-measurement caveat is confirmed by direct observation.** Its hypothesis — "the tower's internal higher-frequency monitoring observed recovery between our hourly samples" — is exactly what the probes caught: both states within minutes of each other.
++2. **`consecutiveFailures: 1` at both guardian down-sweeps is consistent with per-check stateless semantics on a flapping target** — the counter never accumulated because the channel kept recovering between checks. The flap, not the counter, is the defect.
++3. **Instrument guidance for the recovery step-1 probe round:** a one-shot egress/DNS/TLS probe from the tower host may read healthy at test time and miss the failure class entirely. An interval probe (N samples over ≥15 min, per-sample outcome recorded) is the minimum instrument that can catch this flap; the one-shot round remains valuable for DNS/egress/TLS *classification* of any down-sample it does catch.
++4. **Healthy hourly sweeps do NOT imply fixed.** Under intermittent flap the resolution criterion (2 consecutive clean hourly sweeps) can transiently pass while the underlying egress defect persists. Triagers may want an interval-probe profile as a second resolution signal before closing — the same live-state discipline the #2925/R79 lane argues for closure verdicts generally.
++5. Severity/impact unchanged from the receipt: P2-minor, alerting-only, no data-plane impact observed; the channel-during-freeze concern (P1 pages routing through the flapping channel during the render deploy freeze) stands as the operator's risk statement.
++
++## 3. Envelope statement
++
++- The remedy (tower-host egress/DNS/TLS verification, Infisical vault reachability for the bot credential) is **outside the agent envelope** — service ops, zero in-repo code surface. This lane takes **no claim**; the row stays with platform ops / the verdict plane.
++- `originalIssueNumber` deliberately **omitted** on the bridge submission: this PR closes nothing. #3070 is report-only evidence by its own body; auto-closing a report-only finding on the merge of an evidence doc would be the exact #2211/#2225 false-closure family defect. The closure decision belongs to the verdict plane/admin per the loop's own ACTION text.
++- Zero credentials touched; every observation came through the tower's zero-credential `system_health` reporting, as the receipt's recovery step 2 instructs (no secret values read, logged, or pasted anywhere).
++
++## 4. Free intel from the same dispatch (context, not asks)
++
++- Batch-closure pending set intact at the 06:36Z queue capture: #2993 / #3020 / #3041 / #3054 all open + `bridge:queued` — the peer's delayed-batch hypothesis survives toward its pre-committed 08:0xZ falsification point.
++- #2968 still `bridge:in-gates` at capture (~4.5h in-gates) — the R79 remedy landing watch continues unchanged.
++- Board 119 open at capture; the capture's `status:unclaimed` filter shows 11 rows, all standing adjudications (#2557 7th-encounter admin-lane skip; #3003/#2925 scout rows; 8 sentry-family rows skip-on-sight per #2986).
++- **Minor label-plane inconsistency:** #3070 carries only `audit:finding`+`P2-minor` — no `status:unclaimed` label, which is what the queue capture filters on — yet the loop's own predicate dispatched it as highest-priority unclaimed on rerun. Harmless here (report-only either way), but the filing guardian may want to normalize the label set on fresh regression receipts so capture-based unclaimed counts stay complete.
++
++## 5. Handoff
++
++(a) #3070 triage: interval-probe instrument + caveat-confirmed note above; escalation digest pre-commitment unchanged. (b) R79 remedy watch (#2968/PR #368, in-gates ~4.5h). (c) 08:0xZ batch-closure falsification point (peer-owned lane). (d) Standing: mirror lane, #2508/#2531, redis failover (tertiary active, cooldown to 11-01), #2615 auditor verdict silent 16+ cycles, 158-tool baseline stable.

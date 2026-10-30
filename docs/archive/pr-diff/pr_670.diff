@@ -1,0 +1,116 @@
+diff --git a/examples/langchain-mcp-bot/README.md b/examples/langchain-mcp-bot/README.md
+index 684567c3..ed13df7f 100644
+--- a/examples/langchain-mcp-bot/README.md
++++ b/examples/langchain-mcp-bot/README.md
+@@ -18,7 +18,7 @@ python bot.py --self-test
+ #    → mode: LangChain StructuredTool
+ 
+ # 3) Optional: run against the live Tower (network + credential)
+-export SUPREMAI_TOKEN=...           # Tower credential — header-only, never in URLs
++export SUPREMEAI_API_KEY=...           # Tower credential — header-only, never in URLs
+ python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
+ ```
+ 
+@@ -64,7 +64,7 @@ python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
+ | `description` | tool description (agent-visible doc) |
+ | `inputSchema.properties` | pydantic args model fields (`create_model`, types mapped string/integer/number/boolean) |
+ | `tools/call` result `{content, isError}` | `ainvoke({...}) → {"ok", "invocation_id", "result", "error"}` |
+-| transport/auth | `Authorization: Bearer $SUPREMAI_TOKEN` header — **never** in URLs |
++| transport/auth | `Authorization: Bearer $SUPREMEAI_API_KEY` header — **never** in URLs |
+ 
+ ## Honest limitations
+ 
+diff --git a/examples/langchain-mcp-bot/bot.py b/examples/langchain-mcp-bot/bot.py
+index 7311717c..9de5d349 100644
+--- a/examples/langchain-mcp-bot/bot.py
++++ b/examples/langchain-mcp-bot/bot.py
+@@ -24,7 +24,7 @@
+ 
+ Optional live run (network + deps):
+     pip install langchain-core
+-    export SUPREMAI_TOKEN=...            # Tower credential, header-only
++    export SUPREMEAI_API_KEY=...            # Tower credential, header-only
+     python bot.py --live --base-url https://supremeai-mcp-tower.onrender.com
+ """
+ from __future__ import annotations
+@@ -613,7 +613,7 @@ def main(argv: list[str]) -> int:
+         return _self_test()
+ 
+     if args.live:
+-        token = os.environ.get("SUPREMAI_TOKEN")  # header-only, never in URLs
++        token = os.environ.get("SUPREMEAI_API_KEY")  # header-only, never in URLs
+ 
+         async def live():
+             client = McpSseClient(args.base_url, args.client_name, token=token)
+diff --git a/examples/mcp-client-py/client.py b/examples/mcp-client-py/client.py
+index 8303184b..f210fae1 100644
+--- a/examples/mcp-client-py/client.py
++++ b/examples/mcp-client-py/client.py
+@@ -159,11 +159,14 @@ def initialize(self) -> dict:
+         return result
+ 
+     def list_tools(self) -> list:
+-        result = self._rpc("tools/list")
+-        return result.get("tools", [])
++        envelope = self._rpc("tools/list")
++        result = envelope.get("result") if isinstance(envelope, dict) else None
++        return result.get("tools", []) if isinstance(result, dict) else []
+ 
+     def call_tool(self, name: str, arguments: dict | None = None) -> dict:
+-        return self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
++        envelope = self._rpc("tools/call", {"name": name, "arguments": arguments or {}})
++        result = envelope.get("result") if isinstance(envelope, dict) else None
++        return result if isinstance(result, dict) else envelope
+ 
+     def close(self) -> None:
+         """DELETE /mcp — always release the session on shutdown (etiquette §5)."""
+diff --git a/examples/mcp-client-ts/client.ts b/examples/mcp-client-ts/client.ts
+index 817c28fa..e61ff2a9 100644
+--- a/examples/mcp-client-ts/client.ts
++++ b/examples/mcp-client-ts/client.ts
+@@ -239,7 +239,9 @@ export async function sseRead(
+     while (frames.length < maxFrames && !done) {
+       const chunk = await reader.read();
+       done = chunk.done;
+-      buffer += decoder.decode(chunk.value ?? { length: 0 }, { stream: !chunk.done });
++      if (chunk.value) {
++        buffer += decoder.decode(chunk.value, { stream: !chunk.done });
++      }
+       let idx: number;
+       while (frames.length < maxFrames && (idx = buffer.indexOf("\n\n")) !== -1) {
+         const rawFrame = buffer.slice(0, idx);
+diff --git a/examples/vercel-ai-mcp/README.md b/examples/vercel-ai-mcp/README.md
+index 63f8f974..ce6882f8 100644
+--- a/examples/vercel-ai-mcp/README.md
++++ b/examples/vercel-ai-mcp/README.md
+@@ -69,7 +69,7 @@ import { yourModel } from "your-provider";        // e.g. @ai-sdk/openai
+ import { mcpToolsToAiSdkTools, connect } from "./index.ts";
+ 
+ const transport = await connect("https://supremeai-mcp-tower.onrender.com",
+-                                "vercel-ai-mcp-agent", process.env.SUPREMAI_TOKEN);
++                                "vercel-ai-mcp-agent", process.env.SUPREMEAI_API_KEY);
+ const tools = await mcpToolsToAiSdkTools(transport);
+ 
+ const { text } = await generateText({
+@@ -90,7 +90,7 @@ the model wiring are independent concerns, and the demo must run offline.
+ | `description` | `tool.description` (agent-visible) |
+ | `inputSchema` (JSON Schema) | `parameters: ai.jsonSchema(inputSchema)` |
+ | `tools/call` result `{content, isError}` | `execute(args) → {ok, invocation_id, result, error}` |
+-| transport/auth | `Authorization: Bearer $SUPREMAI_TOKEN` header — never in URLs |
++| transport/auth | `Authorization: Bearer $SUPREMEAI_API_KEY` header — never in URLs |
+ 
+ ## Honest limitations
+ 
+diff --git a/examples/vercel-ai-mcp/index.ts b/examples/vercel-ai-mcp/index.ts
+index 591f43d5..aa66578c 100644
+--- a/examples/vercel-ai-mcp/index.ts
++++ b/examples/vercel-ai-mcp/index.ts
+@@ -474,7 +474,7 @@ async function main(argv: string[]): Promise<number> {
+   if (selfTestFlag) return selfTest();
+ 
+   if (liveFlag) {
+-    const token = process.env.SUPREMAI_TOKEN; // header-only, never in URLs
++    const token = process.env.SUPREMEAI_API_KEY; // header-only, never in URLs
+     const transport = await connect(baseUrl, "vercel-ai-mcp-agent", token);
+     try {
+       const outcomes = await runDemoLoop(transport);

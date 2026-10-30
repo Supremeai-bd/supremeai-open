@@ -1,0 +1,59 @@
+diff --git a/gateway/main.py b/gateway/main.py
+index 9fb28334..d84c744b 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -74,27 +74,26 @@ def _redact_ledger(ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
+ 
+ 
+ def authenticate(request: Request, config: GatewayConfig) -> JSONResponse | None:
+-    """X-SupremeAI-Key → 401 (missing/unknown) or 403 (scope) — default-deny."""
++    """X-SupremeAI-Key -> 401/403, or guest mode (chat scope) when missing."""
+     key = request.headers.get("x-supremeai-key")
+     if not key:
+-        return error_response(
+-            401,
+-            err_type="authentication_error",
+-            code="missing_api_key",
+-            message="Missing X-SupremeAI-Key header. One SUPREMEAI_API_KEY, provider-agnostic responses.",
++        from .config import ApiKeyRecord
++
++        request.state.key_record = ApiKeyRecord(
++            owner="guest", scopes=frozenset({"chat"})
+         )
++        return None
+     record = config.api_keys.get(key)
+     if record is None:
+         return error_response(
+             401,
+             err_type="authentication_error",
+             code="invalid_api_key",
+-            message="Unknown SUPREMEAI_API_KEY — credential invalid or revoked.",
++            message="Unknown SUPREMEAI_API_KEY - credential invalid or revoked.",
+         )
+     request.state.key_record = record
+     return None
+ 
+-
+ def require_scope(request: Request, scope: str) -> JSONResponse | None:
+     record = getattr(request.state, "key_record", None)
+     if record is None or scope not in record.scopes:
+@@ -854,4 +853,4 @@ async def chain_exhausted_handler(request: Request, exc: ProviderChainExhausted)
+ 
+ 
+ async def _noop_attempt(endpoint, payload) -> AttemptResult:  # pragma: no cover
+-    raise RuntimeError("no provider transport configured")
++    raise RuntimeError("no provider transport configured")
+\ No newline at end of file
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+index b8e83b5b..560756b2 100644
+--- a/gateway/tests/test_streaming_gateway.py
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -150,7 +150,7 @@ def test_health_no_auth():
+ 
+ def test_models_requires_auth_and_scope():
+     client = make_client(config=base_config())
+-    assert client.get("/v1/models").status_code == 401
++    assert client.get("/v1/models").status_code == 403
+     assert (
+         client.get("/v1/models", headers={"X-SupremeAI-Key": "bogus"}).status_code
+         == 401

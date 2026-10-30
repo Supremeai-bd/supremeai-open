@@ -1,0 +1,60 @@
+diff --git a/studio/src/pages/LandingPage.tsx b/studio/src/pages/LandingPage.tsx
+index ecbcc47f..c8ddb567 100644
+--- a/studio/src/pages/LandingPage.tsx
++++ b/studio/src/pages/LandingPage.tsx
+@@ -17,7 +17,11 @@ export const LandingHeader: React.FC = () => {
+   };
+   return (
+     <header className="sticky top-0 z-overlay flex h-16 w-full items-center justify-between border-b border-white/10 bg-slate-950/70 px-4 sm:px-6 backdrop-blur-xl">
+-      <Link to="/" className="flex items-center gap-3">
++      <Link
++        to="/"
++        className="flex items-center gap-3 py-3 -my-3"
++        aria-label="SupremeAI home"
++      >
+         <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-bold text-white shadow-lg shadow-purple-500/20">
+           S
+         </span>
+@@ -41,13 +45,16 @@ export const LandingHeader: React.FC = () => {
+       </nav>
+ 
+       <div className="flex items-center gap-3">
+-        {/* Mobile hamburger: nav links were hidden md:flex with no mobile fallback */}
++        {/* Mobile hamburger: nav links were hidden md:flex with no mobile fallback.
++            #1696 D3: p-3 keeps the 20px icon but lifts the tap target from 36px
++            to the 44px platform ergonomics minimum (WCAG 2.5.8 passes at 24px,
++            mobile ergonomics guidance wants 44px+). */}
+         <button
+           type="button"
+           aria-label="Toggle navigation menu"
+           aria-expanded={menuOpen}
+           onClick={() => setMenuOpen((v) => !v)}
+-          className="md:hidden rounded-lg p-2 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
++          className="md:hidden rounded-lg p-3 -m-1 text-slate-300 hover:text-white hover:bg-white/5 transition-colors"
+         >
+           {menuOpen ? (
+             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+diff --git a/studio/vite.config.ts b/studio/vite.config.ts
+index 7bb5a3e8..e27a9ff1 100644
+--- a/studio/vite.config.ts
++++ b/studio/vite.config.ts
+@@ -198,6 +198,19 @@ export default defineConfig({
+           // loaded the entire vendor-ui chunk (including recharts) on every page
+           // — even the guest `/` funnel which never charts. Now: recharts gets
+           // its own 'vendor-charts' chunk, loaded only by lazy admin chunks.
++          // ROOT-CAUSE FIX (#1696 D1): the #2734 split was silently defeated —
++          // eventemitter3 is a shared dependency of BOTH recharts (forced into
++          // 'vendor-charts' here) AND p-queue (eager: utils/api.ts circuit
++          // breaker queue). Rollup hoisted the tiny EventEmitter class INTO
++          // vendor-charts, so the entry chunk was forced to statically import
++          // the whole ~403KB charts bundle for ONE class — measured live:
++          // vendor-charts fetched on `/` with 0 chart DOM nodes (FCP 1184ms
++          // vs <1000ms mandate). Give eventemitter3 its own bucket placed
++          // BEFORE the recharts rule: entry imports only the measured 2.9KB
++          // vendor-events chunk, and vendor-charts becomes reachable exclusively
++          // through lazy admin chunks (AdminShell) again. Chunk-boundary only —
++          // zero runtime behavior change (same module instance, same semantics).
++          if (/[\\/]node_modules[\\/]eventemitter3[\\/]/.test(id)) return 'vendor-events'
+           if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts'
+           if (/[\\/]node_modules[\\/](@xterm|xterm)[\\/]/.test(id)) return 'vendor-terminal'
+           if (/[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/.test(id)) return 'vendor-editor'

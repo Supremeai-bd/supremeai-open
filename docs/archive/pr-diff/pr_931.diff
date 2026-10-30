@@ -1,0 +1,677 @@
+diff --git a/docs/DEPLOYMENT_NOTES.md b/docs/DEPLOYMENT_NOTES.md
+new file mode 100644
+index 00000000..2073b412
+--- /dev/null
++++ b/docs/DEPLOYMENT_NOTES.md
+@@ -0,0 +1,134 @@
++# scripts/DEPLOYMENT_NOTES.md — Permanent Clock & Agent Scheduling Runbook
++
++> Owner-directed runbook (explicit administrative authorization recorded in the
++> bridge work order that landed this file). Companion to
++> `scripts/agents/continuous_agent_loop.py`, `.github/workflows/federation-ci-watchdog.yml`,
++> and `docs/CONTINUOUS_AGENT_LOOP_AND_SKILL_ARCHITECTURE.md`.
++
++## TL;DR (বাংলা)
++
++স্যান্ডবক্স সেশনে cron ডেমন নেই এবং সেশন শেষ হলে ব্যাকগ্রাউন্ড প্রসেস বন্ধ হয়ে যায় —
++তাই কোনো ভার্চুয়াল এজেন্ট **নিজের ঘড়ি নিজে ধরে রাখতে পারে না**। সমাধান: ঘড়িটাকে
++স্থায়ী কোনো সারফেসে রাখতে হবে — (A) GitHub Actions schedule (রেকমেন্ডেড, ফ্রি),
++(B) পার্মানেন্ট হোস্টে crontab/systemd timer, (C) run_forever.py প্রসেস-রির‍্যাপার।
++`continuous_agent_loop.py --schedule N` ইতিমধ্যেই start-to-start anchored
++self-scheduler; ঘড়ি একবার টিক দিলেই লুপ নিজেই কাজ বেছে এজেন্ট ডিসপ্যাচ করে।
++ভার্চুয়াল এজেন্টদের "জাগানো" লাগে না — তারা ক্লেইমেবল ইস্যু/bridge queue থেকে
++কাজ তুলে নেয়; ঘড়ি শুধু কাজ তৈরি/রাউট করে।
++
++## 1. The clock problem (why "agents wake themselves" needs a permanent surface)
++
++- A virtual agent session (Z.ai, Claude, ChatGPT, Cursor) is **ephemeral**: when
++  the session ends, its processes die and nothing it "scheduled" in-memory survives.
++- The repo's own architecture doc is explicit: *"Skills do NOT run in the
++  background by themselves. Hourly auditors and event-driven workers still need
++  the Runtime/Orchestrator + scheduler/webhook."*
++- Therefore the schedule must live on a **permanent surface** (Actions runner,
++  VPS cron, systemd, or an always-on service), and the *loop* — not any single
++  agent — owns dispatch. This is exactly the "Lazy Team Leader" contract.
++
++## 2. Option A (recommended): GitHub Actions scheduled workflows — already 50% wired
++
++`.github/workflows/federation-ci-watchdog.yml` already runs every 15 minutes:
++
++```
++cron: "*/15 * * * *"  ->  python scripts/ci/federation_ci_watchdog.py --poll --max-age-hours 1
++```
++
++The agent-loop equivalent (admin drops this as `.github/workflows/agent-loop.yml`;
++`.github/*` is a protected path, hence documented here rather than patched):
++
++```yaml
++name: Continuous Agent Loop (Scheduled Dispatch)
++on:
++  schedule:
++    - cron: "0 * * * *"   # hourly; start-to-start anchored inside the loop
++  workflow_dispatch:
++    inputs:
++      cycles: { description: "cycles (0=indefinite)", default: "1" }
++permissions:
++  contents: read
++  issues: write
++  pull-requests: write
++jobs:
++  loop:
++    runs-on: ubuntu-latest
++    timeout-minutes: 55
++    steps:
++      - uses: actions/checkout@v5
++      - uses: actions/setup-python@v5
++        with: { python-version: "3.11" }
++      - name: One scheduled dispatch tick
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
++        run: |
++          python scripts/agents/continuous_agent_loop.py \
++            --schedule 60 --cycles ${CYCLES:-1}
++```
++
++Cost note: public repo → GitHub-hosted runners are free; the watchdog already
++proves the pattern (per-tick `--cycles 1` keeps each run short and observable).
++
++## 3. Option B: permanent host (VPS/home server) — crontab or systemd
++
++- crontab (the loop prints its own line): `python3 scripts/agents/continuous_agent_loop.py --print-cron --schedule 60`
++- systemd timer pair (user units are enough):
++
++```ini
++# supremeai-agent-loop.timer
++[Unit] Description=SupremeAI agent loop tick
++[Timer]
++OnCalendar=hourly
++Persistent=true
++[Install] WantedBy=timers.target
++
++# supremeai-agent-loop.service
++[Unit] Description=SupremeAI agent loop (one tick)
++[Service]
++Type=oneshot
++WorkingDirectory=/opt/supremeai-open
++Environment=GH_TOKEN=...           # least-privilege PAT: issues:write + PR:write
++ExecStart=/usr/bin/python3 scripts/agents/continuous_agent_loop.py --schedule 60 --cycles 1
++```
++
++`Persistent=true` + the loop's monotonic start-to-start anchor = missed ticks
++catch up instead of drifting.
++
++## 4. Option C: run_forever.py process wrapper (crash-resilient host process)
++
++For a host where you want a single long-lived process instead of timer units:
++
++```python
++#!/usr/bin/env python3
++"""run_forever.py — restart the scheduled loop if it ever dies (never on Ctrl-C)."""
++import subprocess, sys, time
++CMD = [sys.executable, "scripts/agents/continuous_agent_loop.py", "--schedule", "60"]
++backoff = 15
++while True:
++    rc = subprocess.call(CMD)
++    if rc == 130:                      # KeyboardInterrupt — clean stop
++        break
++    print(f"[run_forever] loop exited rc={rc}; restart in {backoff}s", flush=True)
++    time.sleep(backoff)
++    backoff = min(backoff * 2, 300)
++```
++
++Run it under `nohup`, `tmux`, `supervisord`, or a Render background worker.
++
++## 5. How virtual agents plug into the scheduled clock
++
++1. The clock ticks (Option A/B/C) → `continuous_agent_loop.py --schedule N` runs.
++2. The loop picks the highest-priority claimable issue (or emits the
++   `event:schedule.ecosystem_scan` auditor dispatch when the board is empty).
++3. It builds the task envelope; an agent — Z.ai, Claude, a CLI runner — claims
++   the issue (`work_claim` / atomic-claim comment), works, submits via bridge.
++4. Nothing above requires any agent to "stay awake between ticks": agents are
++   event-driven workers; the loop + board are the memory. External web agents
++   (no repo credentials) simply read `bridge_work_queue` when invoked.
++
++## 6. Related: board self-healing (same landing)
++
++`federation_ci_watchdog.py --poll` now ends with an idempotent relink pass that
++re-attaches any loose mirrored CI incident under CI Hub #761, and `--relink`
++runs it standalone. After this lands, the next scheduled tick repairs the root
++board back to exactly the 8 anchor hubs with zero admin clicks.
+diff --git a/scripts/ci/federation_anchors.py b/scripts/ci/federation_anchors.py
+index 43948fdc..0933f7d1 100644
+--- a/scripts/ci/federation_anchors.py
++++ b/scripts/ci/federation_anchors.py
+@@ -170,13 +170,87 @@ def get_default_token() -> str:
+     return ""
+ 
+ 
++# GitHub REST sub-issue endpoints use SNAKE_CASE `sub_issues` (verified live:
++# GET /repos/{o}/{r}/issues/761/sub_issues -> 200; the hyphenated /sub-issues
++# variant returns 404 "Not Found", which silently killed every REST link
++# attempt and left mirrored CI incidents floating loose on the board).
++SUB_ISSUES_PATH: str = "sub_issues"
++
++
++def _gh_headers(tok: str) -> dict[str, str]:
++    return {
++        "Authorization": f"Bearer {tok}",
++        "Accept": "application/vnd.github+json",
++        "User-Agent": "SupremeAI-Federation-Anchors/1.0",
++    }
++
++
++def list_sub_issue_ids(
++    parent_issue_number: int,
++    repo: str = OPEN_REPO,
++    token: str | None = None,
++    max_pages: int = 10,
++) -> set[int]:
++    """Return the database IDs of every current sub-issue under a parent issue.
++
++    Paginated GET /repos/{owner}/{repo}/issues/{parent}/sub_issues.
++    Fail-honest: network/API problems return whatever was collected so far
++    (possibly empty) after printing the error — callers treat an empty set
++    combined with a link failure as 'board state unknown', never as success.
++    """
++    tok = token or get_default_token()
++    ids: set[int] = set()
++    if not parent_issue_number:
++        return ids
++    for page in range(1, max(1, max_pages) + 1):
++        url = (
++            f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/"
++            f"{SUB_ISSUES_PATH}?per_page=100&page={page}"
++        )
++        req = urllib.request.Request(url, headers=_gh_headers(tok or ""))
++        try:
++            with urllib.request.urlopen(req, timeout=10) as resp:
++                items = json.loads(resp.read().decode("utf-8"))
++        except urllib.error.HTTPError as exc:
++            print(f"[anchors] list_sub_issue_ids HTTP {exc.code} for parent #{parent_issue_number}")
++            return ids
++        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
++            print(f"[anchors] list_sub_issue_ids failed for parent #{parent_issue_number}: {exc}")
++            return ids
++        if not isinstance(items, list):
++            return ids
++        for item in items:
++            item_id = item.get("id")
++            if isinstance(item_id, int):
++                ids.add(item_id)
++        if len(items) < 100:
++            break
++    return ids
++
++
+ def link_sub_issue(
+     parent_issue_number: int,
+     child_issue_number: int,
+     repo: str = OPEN_REPO,
+     token: str | None = None,
+ ) -> bool:
+-    """Link an existing issue as a native sub-issue under a parent anchor issue."""
++    """Link an existing issue as a native sub-issue under a parent anchor issue.
++
++    Idempotent: if the child is already linked the call returns True without
++    re-posting (makes backfill/relink passes safe to re-run).
++    """
++    tok = token or get_default_token()
++
++    # 0. Idempotency pre-check: already linked? (GET is cheaper than a
++    # duplicate POST and avoids 422 'already a sub-issue' noise.)
++    try:
++        if child_issue_number in list_sub_issue_ids(
++            parent_issue_number, repo=repo, token=tok
++        ):
++            return True
++    except Exception as exc:  # noqa: BLE001 - pre-check must never block linking
++        print(f"[anchors] sub-issue pre-check skipped: {exc}")
++
+     # 1. Try gh issue edit --parent
+     cmd = [
+         "gh",
+@@ -200,48 +274,47 @@ def link_sub_issue(
+     except (OSError, subprocess.SubprocessError):
+         pass
+ 
+-    # 2. Try REST API fallback: POST /repos/{owner}/{repo}/issues/{parent}/sub-issues
++    # 2. REST fallback: POST /repos/{owner}/{repo}/issues/{parent}/sub_issues
++    # (snake_case segment; the hyphenated form 404s — see SUB_ISSUES_PATH).
+     if tok:
+         try:
+             # First fetch child issue database id
+             url_child = (
+                 f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
+             )
+-            req_c = urllib.request.Request(
+-                url_child,
+-                headers={
+-                    "Authorization": f"Bearer {tok}",
+-                    "Accept": "application/vnd.github+json",
+-                    "User-Agent": "SupremeAI-Federation-Anchors/1.0",
+-                },
+-            )
++            req_c = urllib.request.Request(url_child, headers=_gh_headers(tok))
+             with urllib.request.urlopen(req_c, timeout=10) as resp_c:
+                 c_data = json.loads(resp_c.read().decode("utf-8"))
+                 child_id = c_data.get("id")
+ 
+             if child_id:
+-                url_link = f"https://api.github.com/repos/{repo}/issues/{parent_issue_number}/sub-issues"
++                url_link = (
++                    f"https://api.github.com/repos/{repo}/issues/"
++                    f"{parent_issue_number}/{SUB_ISSUES_PATH}"
++                )
+                 data_bytes = json.dumps({"sub_issue_id": child_id}).encode("utf-8")
+                 req_l = urllib.request.Request(
+                     url_link,
+                     data=data_bytes,
+-                    headers={
+-                        "Authorization": f"Bearer {tok}",
+-                        "Accept": "application/vnd.github+json",
+-                        "User-Agent": "SupremeAI-Federation-Anchors/1.0",
+-                    },
++                    headers=_gh_headers(tok),
+                     method="POST",
+                 )
+                 with urllib.request.urlopen(req_l, timeout=10) as resp_l:
+                     if resp_l.status in (200, 201):
+                         return True
+-        except (
+-            urllib.error.HTTPError,
+-            urllib.error.URLError,
+-            json.JSONDecodeError,
+-            OSError,
+-        ):
+-            pass
++        except urllib.error.HTTPError as exc:
++            # Fail LOUD: a silent False here cost the board 9 loose CI
++            # incidents (#910-#918) that nobody noticed for days.
++            try:
++                detail = exc.read().decode("utf-8", errors="replace")[:300]
++            except OSError:
++                detail = ""
++            print(
++                f"[anchors] link_sub_issue REST failed: HTTP {exc.code} "
++                f"for child #{child_issue_number} -> parent #{parent_issue_number}: {detail}"
++            )
++        except (urllib.error.URLError, json.JSONDecodeError, OSError) as exc:
++            print(f"[anchors] link_sub_issue REST failed: {exc}")
+ 
+     return False
+ 
+@@ -373,6 +446,15 @@ def self_test() -> int:
+     # 5. Unknown repo returns None (fail-honest)
+     assert get_anchor_issue_number("nonexistent-repo") is None
+ 
++    # 6. Sub-issue REST endpoint contract: snake_case `sub_issues` only.
++    # The hyphenated variant is a live-verified 404; pinning the constant
++    # here makes a regression to it fail this self-test immediately.
++    assert SUB_ISSUES_PATH == "sub_issues", (
++        "GitHub sub-issue endpoints are snake_case /sub_issues; "
++        "hyphenated /sub-issues returns 404"
++    )
++    assert "sub-issues" not in SUB_ISSUES_PATH
++
+     print("✅ [self-test] All 14 Anchor Hub contracts verified successfully!")
+     return 0
+ 
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 9d852878..56c6b1ff 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -30,12 +30,21 @@
+     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+ 
+ try:
+-    from scripts.ci.federation_anchors import get_anchor_issue_number, link_sub_issue
++    from scripts.ci.federation_anchors import (
++        get_anchor_issue_number,
++        list_sub_issue_ids,
++        link_sub_issue,
++    )
+ except ImportError:
+     try:
+-        from federation_anchors import get_anchor_issue_number, link_sub_issue
++        from federation_anchors import (
++            get_anchor_issue_number,
++            list_sub_issue_ids,
++            link_sub_issue,
++        )
+     except ImportError:
+         get_anchor_issue_number = None
++        list_sub_issue_ids = None
+         link_sub_issue = None
+ 
+ OPEN_REPO = "Supremeai-bd/supremeai-open"
+@@ -335,10 +344,21 @@ def mirror_failure(
+                     )
+                 else:
+                     print(
+-                        "   ↳ (could not link sub-issue; issue remains standalone)"
++                        f"   ↳ ❌ sub-issue link FAILED for #{issue_number} -> "
++                        f"#{CI_FAILURE_ANCHOR}; counting mirror as FAILED so the "
++                        f"scheduler surfaces it (a loose P0 on the root board "
++                        f"violates the 8-anchor SSOT invariant)."
+                     )
++                    return False
+             except Exception as exc:
+-                print(f"   ↳ sub-issue link error: {exc}")
++                print(f"   ↳ ❌ sub-issue link error: {exc}")
++                return False
++        elif issue_number and link_sub_issue is None:
++            print(
++                "   ↳ ❌ federation_anchors.link_sub_issue unavailable — cannot "
++                "guarantee zero loose incidents; counting mirror as FAILED."
++            )
++            return False
+         return True
+     else:
+         print(
+@@ -416,6 +436,105 @@ def poll_federation_failures(
+     return mirrored_count, failed_count
+ 
+ 
++def find_loose_mirrors(
++    items: list[dict[str, Any]] | None,
++    linked_ids: set[int] | None = None,
++) -> list[int]:
++    """Pure: open issues carrying a MIRROR_RUN marker that are NOT sub-issues.
++
++    `items` are /issues list entries (PRs excluded — they share the numbering
++    plane and can never be mirrors). `linked_ids` are the parent hub's current
++    sub-issue DATABASE ids; each list item carries its own `id` field, so
++    linkage is compared db-id to db-id (never issue number to db id). An item
++    whose id is missing counts as loose — over-counting is safe because
++    link_sub_issue is idempotent, under-counting would leave drift.
++    """
++    loose: list[int] = []
++    linked = linked_ids or set()
++    for item in items or []:
++        if item.get("pull_request"):
++            continue
++        body = item.get("body") or ""
++        if "MIRROR_RUN:" in body and "/actions/runs/" in body:
++            number = item.get("number")
++            if isinstance(number, int) and item.get("id") not in linked:
++                loose.append(number)
++    return loose
++
++
++def relink_loose_mirrors(
++    token: str | None = None,
++    parent_issue_number: int = CI_FAILURE_ANCHOR,
++) -> tuple[int, int]:
++    """Backfill: attach every loose mirrored incident under the CI Failure Hub.
++
++    Self-healing board invariant (8-anchor SSOT): after a merge of the relink
++    machinery, the next scheduled `--poll` tick repairs the board without any
++    manual step. Idempotent end-to-end: already-linked children are skipped
++    via list_sub_issue_ids before any POST.
++
++    Returns (relinked_count, failed_count).
++    """
++    relinked = 0
++    failed = 0
++    if link_sub_issue is None or list_sub_issue_ids is None:
++        print("❌ [relink] federation_anchors helpers unavailable; cannot relink.")
++        return 0, 1
++
++    # Snapshot the hub's current sub-issues once (db ids).
++    linked_ids = list_sub_issue_ids(
++        parent_issue_number, repo=OPEN_REPO, token=token
++    )
++
++    # Scan open issues for mirror markers (paginated).
++    loose_numbers: list[int] = []
++    page = 1
++    while True:
++        code, items = gh_api(
++            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
++            token=token,
++        )
++        if code != 200 or not isinstance(items, list) or not items:
++            if code not in (200,):
++                print(f"❌ [relink] could not list open issues (HTTP {code}).")
++                return relinked, failed + 1
++            break
++        loose_numbers.extend(find_loose_mirrors(items, linked_ids))
++        if len(items) < 100:
++            break
++        page += 1
++
++    if not loose_numbers:
++        print(
++            f"✅ [relink] board clean — every mirrored incident already sits "
++            f"under Hub #{parent_issue_number} (0 actions)."
++        )
++        return 0, 0
++
++    print(
++        f"🔧 [relink] {len(loose_numbers)} loose mirrored incident(s) found: "
++        f"{', '.join('#' + str(n) for n in loose_numbers)}"
++    )
++    for number in sorted(loose_numbers):
++        ok = link_sub_issue(
++            parent_issue_number=parent_issue_number,
++            child_issue_number=int(number),
++            repo=OPEN_REPO,
++            token=token,
++        )
++        if ok:
++            relinked += 1
++            print(f"   ↳ #{number} linked under CI Hub #{parent_issue_number}.")
++        else:
++            failed += 1
++            print(f"   ↳ ❌ #{number} link failed (see anchors error above).")
++    print(
++        f"🏁 [relink] done: {relinked} relinked, {failed} failed "
++        f"-> root board now shows only anchor hubs."
++    )
++    return relinked, failed
++
++
+ def self_test() -> int:
+     """Hermetic self-test suite (zero network)."""
+     print("[self-test] Running Federation CI Watchdog offline contract test...")
+@@ -507,7 +626,42 @@ def self_test() -> int:
+                 f"Repo {r} must map to a valid anchor hub, got {anc}"
+             )
+ 
+-    print("✅ [self-test] All 7 contract assertion groups passed!")
++    # 8. Loose-mirror detection (8-anchor SSOT backfill, #910-#918 class)
++    mk = build_mirror_marker("Supremeai-bd/supremeai-api", 424242)
++    board = [
++        {"number": 910, "id": 9001, "body": f"x {mk} y"},  # loose mirror
++        {"number": 911, "id": 9002, "body": "no marker issue"},  # not a mirror
++        {
++            "number": 912,
++            "id": 9003,
++            "pull_request": {"url": "p"},
++            "body": mk,
++        },  # PR: never a mirror
++        {"number": 913, "id": 9004, "body": None},  # empty body
++    ]
++    assert find_loose_mirrors(board, set()) == [910]
++    assert find_loose_mirrors(board, None) == [910]
++    assert find_loose_mirrors([], set()) == []
++    assert find_loose_mirrors(None, set()) == []
++    # db-id based exclusion: the linked child (id 9001) is not loose; an
++    # item without an id always counts loose (idempotent relink makes the
++    # over-count safe, the under-count would leave drift).
++    assert find_loose_mirrors(board, {9001}) == []
++
++    # 9. Sub-issue endpoint contract pin (snake_case; hyphen 404s live)
++    try:
++        from scripts.ci.federation_anchors import SUB_ISSUES_PATH as _ssp
++    except ImportError:
++        try:
++            from federation_anchors import SUB_ISSUES_PATH as _ssp
++        except ImportError:
++            _ssp = None
++    if _ssp is not None:
++        assert _ssp == "sub_issues", (
++            f"sub-issue endpoint must be snake_case 'sub_issues', got {_ssp!r}"
++        )
++
++    print("✅ [self-test] All 9 contract assertion groups passed!")
+     return 0
+ 
+ 
+@@ -521,6 +675,18 @@ def main() -> int:
+         action="store_true",
+         help="Poll all 12 federation repositories for recent failures",
+     )
++    parser.add_argument(
++        "--no-relink",
++        action="store_true",
++        help="Poll mode: skip the automatic loose-mirror relink pass "
++        "(default: poll ends with a self-healing relink under the CI Hub)",
++    )
++    parser.add_argument(
++        "--relink",
++        action="store_true",
++        help="Standalone backfill: scan open mirrored incidents and attach "
++        "every loose one as a sub-issue of the CI Failure Hub (idempotent)",
++    )
+     parser.add_argument(
+         "--max-age-hours",
+         type=int,
+@@ -549,6 +715,16 @@ def main() -> int:
+     if args.self_test:
+         return self_test()
+ 
++    if args.relink:
++        relink_token = (
++            os.environ.get("OPEN_SYNC_PAT")
++            or os.environ.get("GH_TOKEN")
++            or os.environ.get("GITHUB_TOKEN")
++            or get_default_token()
++        )
++        _relinked, _failed = relink_loose_mirrors(token=relink_token)
++        return 1 if _failed else 0
++
+     token = (
+         os.environ.get("OPEN_SYNC_PAT")
+         or os.environ.get("GH_TOKEN")
+@@ -594,7 +770,14 @@ def main() -> int:
+         _mirrored, _failed = poll_federation_failures(
+             token=token, max_age_hours=args.max_age_hours
+         )
+-        return 1 if _failed else 0
++        # Self-healing board invariant: every poll tick ends with a relink
++        # pass so mirrored incidents can never drift loose on the root board
++        # again (the #910-#918 failure mode). Fail the tick if either half
++        # fails so the scheduled workflow surfaces breakage loudly.
++        _relinked, _relink_failed = (0, 0)
++        if not args.no_relink:
++            _relinked, _relink_failed = relink_loose_mirrors(token=token)
++        return 1 if (_failed or _relink_failed) else 0
+ 
+     parser.print_help()
+     return 1
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+index 5c6f4b15..8197d660 100644
+--- a/tests/test_federation_ci_watchdog.py
++++ b/tests/test_federation_ci_watchdog.py
+@@ -18,12 +18,99 @@
+     build_issue_labels,
+     build_issue_title,
+     build_mirror_marker,
++    find_loose_mirrors,
+     find_mirror_in_items,
+     is_fresh_run,
++    relink_loose_mirrors,
+     repo_short_name,
+ )
+ 
+ 
++class TestLooseMirrorRelink(unittest.TestCase):
++    """8-anchor SSOT backfill: mirrored incidents must never drift loose.
++
++    Live incident class: #910-#918 were mirrored as root issues because
++    link_sub_issue's REST fallback POSTed to /sub-issues (404) instead of
++    /sub_issues, and the failure was swallowed. These tests pin the repair.
++    """
++
++    def _board(self) -> list[dict]:
++        marker = build_mirror_marker("Supremeai-bd/supremeai-api", 424242)
++        return [
++            {"number": 910, "id": 7770001, "body": f"incident body\n{marker}"},
++            {"number": 911, "id": 7770002, "body": "regular non-mirror issue"},
++            {
++                "number": 912,
++                "id": 7770003,
++                "pull_request": {"url": "x"},
++                "body": marker,
++            },
++            {"number": 913, "id": 7770004, "body": None},
++            {
++                "number": 914,
++                "id": 7770005,
++                "body": build_mirror_marker(
++                    "Supremeai-bd/supremeai-studio", 424243
++                ),
++            },
++        ]
++
++    def test_find_loose_mirrors_detects_only_loose_issue_mirrors(self):
++        loose = find_loose_mirrors(self._board(), set())
++        self.assertEqual(loose, [910, 914])
++
++    def test_find_loose_mirrors_excludes_already_linked_by_db_id(self):
++        # db ids are opaque GitHub database ids compared item-id to linked-id.
++        loose = find_loose_mirrors(self._board(), {7770001})
++        self.assertEqual(loose, [914])
++
++    def test_find_loose_mirrors_handles_none_and_empty(self):
++        self.assertEqual(find_loose_mirrors(None, None), [])
++        self.assertEqual(find_loose_mirrors([], set()), [])
++
++    def test_find_loose_mirrors_never_counts_prs(self):
++        items = [
++            {
++                "number": 999,
++                "pull_request": {"url": "x"},
++                "body": build_mirror_marker("Supremeai-bd/supremeai-core", 1),
++            }
++        ]
++        self.assertEqual(find_loose_mirrors(items, set()), [])
++
++    def test_relink_helpers_available(self):
++        # The relink pass depends on the anchors helpers; if the import
++        # chain breaks, relink must degrade to an explicit failure, not a
++        # silent zero-action success.
++        import scripts.ci.federation_ci_watchdog as wd
++
++        if wd.link_sub_issue is None:  # pragma: no cover - degraded env only
++            self.fail("federation_anchors.link_sub_issue import chain broken")
++
++    def test_sub_issue_endpoint_is_snake_case(self):
++        # Live-verified 2026-10-24: GET .../issues/761/sub_issues -> 200;
++        # GET .../issues/761/sub-issues -> 404 Not Found. A regression to
++        # the hyphenated path re-opens the loose-incident failure mode.
++        import scripts.ci.federation_anchors as anchors
++
++        self.assertEqual(anchors.SUB_ISSUES_PATH, "sub_issues")
++        self.assertNotIn("sub-issues", anchors.SUB_ISSUES_PATH)
++
++    def test_relink_returns_failure_tuple_when_helpers_missing(self):
++        # Degraded-import contract: (0, 1) so callers exit non-zero.
++        import scripts.ci.federation_ci_watchdog as wd
++
++        original = wd.link_sub_issue
++        original_list = wd.list_sub_issue_ids
++        try:
++            wd.link_sub_issue = None
++            wd.list_sub_issue_ids = None
++            self.assertEqual(relink_loose_mirrors(token=""), (0, 1))
++        finally:
++            wd.link_sub_issue = original
++            wd.list_sub_issue_ids = original_list
++
++
+ class TestFederationCiWatchdog(unittest.TestCase):
+     def test_federation_repos_count_and_composition(self):
+         self.assertEqual(len(FEDERATION_REPOS), 12)

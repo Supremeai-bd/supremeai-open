@@ -1,0 +1,53 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 966362f4..cd05e430 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -6,7 +6,9 @@
+ >
+ > **Second collision notice (the "radar V" name):** a later issue-only sweep re-used the radar-V name (issues #1735–#1738, no landed file) and assigned its own R-numbers, later corrected by #1746. §3 adjudicates those contested numbers. Landed radar docs on `main` are the allocation ground truth; this file is the registry that makes that truth legible without re-reading every sweep.
+ >
+-> **Status provenance:** every filed-issue status below was probed live on **2026-10-28 (this cycle)** via the Tower `bridge.work_order` read surface (40 issue numbers verified). Statuses drift; the R-number → issue mapping does not.
++> **Status provenance:** every filed-issue status below was probed live on **2026-10-28** via the Tower `bridge.work_order` read surface (42 issue numbers verified across two same-day freshness passes). Statuses drift; the R-number → issue mapping does not.
++>
++> **Drift log:** *2026-10-28, pass 2* — R40/R41 were adopted issue-side (#1898, #1913) before any index row existed, skipping the allocation rule. Registered below as issue-filed placeholders by the freshness pass; R37–R39 remain free and are NOT retro-claimed by the R40/R41 adopters' count. Rule 1 stands: never derive your number by counting runs, sweeps, or issues — the only count that exists is this registry.
+ 
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -39,8 +41,8 @@
+ | R23-**VI** | `SCOUT_RADAR_2026-10-28-VI.md` | agents.md de-facto standard — constitution portability (⚠ collides with R23-V) | #1702 | `adapt_cleanroom` | landed (closed) |
+ | R24-**VI** | VI | CI Python matrix honesty + supply-chain freshness (⚠ collides with R24-V) | #1709 | `adapt_cleanroom` (admin lane) | open |
+ | R25 | VI | GitHub Spec Kit process primitives as bridge-WO lifecycle overlay | #1710 | `quarantine_eval` | open |
+-| R26 | `SCOUT_RADAR_2026-10-28-VII.md` | Agent-component security scanning (Snyk Agent Scan, ex-mcp-scan) over skills + MCP | #1723 | `ADAPT_CLEANROOM` | open |
+-| R27 | VII | Radar index — R-number SSOT for the scout artifact chain (**this file**) | #1724 | `ACCEPT_VERBATIM` | **claimed — this index PR** |
++| R26 | `SCOUT_RADAR_2026-10-28-VII.md` | Agent-component security scanning (Snyk Agent Scan, ex-mcp-scan) over skills + MCP | #1723 | `ADAPT_CLEANROOM` | **landed (closed — PR #1923, scan baseline in `SKILLS_AGENT_SCAN_BASELINE_2026-10-28.md`)** |
++| R27 | VII | Radar index — R-number SSOT for the scout artifact chain (**this file**) | #1724 | `ACCEPT_VERBATIM` | **landed (closed — PR #1900)** |
+ | R28 | `SCOUT_RADAR_2026-10-28-VIII.md` | Upstash quota economics — rotation bought availability, not quota | #1732 | `adapt_cleanroom` | open |
+ | R29 | VIII | OWASP LLM Top 10 as the guard chain's canonical risk vocabulary | #1733 | `adapt_cleanroom` | open |
+ | R30 | VIII | OWASP Agent Control Standard as declarative vocabulary for the policy chain | #1739 | `quarantine_eval` | open |
+@@ -50,6 +52,8 @@
+ | R34 | *(issue-filed — radar-X doc pending landing; allocation recorded by radar XI's register)* | Machine license-SSOT drift gate for ECOSYSTEM_MAP §2.3 (SPDX-anchored) | #1773 | `adapt_cleanroom` | **landed (closed)** |
+ | R35 | *(issue-filed — radar-X doc pending landing)* | Admin-lane workflow hardening — zizmor 60 findings (report-only, admin-owned) | #1776 | `adapt_cleanroom` (admin lane) | open |
+ | R36 | `SCOUT_RADAR_2026-10-28-XI.md` | Free-text PII redaction gap — Microsoft Presidio report-only pilot → `adapt_cleanroom` | #1784 | `adapt_cleanroom` | open (claimed) |
++| R40 | *(issue-filed — radar doc pending landing; adopted issue-side pre-registration, see Drift log)* | Runtime contract-fuzzing gate — Schemathesis 4.32.7 (MIT) live in-memory over the gateway API | #1898 | `adapt_cleanroom` | open (claimed) |
++| R41 | *(issue-filed — radar doc pending landing; adopted issue-side pre-registration, see Drift log)* | JS-dependency CVE gate — OSV querybatch baseline (719 pkgs, 6 vulnerable / 13 findings) | #1913 | `adapt_cleanroom` | open |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+@@ -67,6 +71,7 @@
+ | X | *(no landed file — issues only)* | #1773 (R34), #1776 (R35) | allocation attested by radar XI's non-duplication register |
+ | XI | `SCOUT_RADAR_2026-10-28-XI.md` (R36) | #1784 | carries the full R1–R36 register; see §3 for its contested line |
+ | XII | *(no landed file)* | WO #1793 (closed) | closed with index seeding explicitly deferred to #1724 (this file) |
++| *(issue-filed guard lanes)* | *(no landed radar file)* | #1898 (R40), #1913 (R41) | registered by the 2026-10-28 drift pass (pass 2) |
+ 
+ ## 3. Contested-number adjudication (the #1746 correction map)
+ 
+@@ -93,7 +98,8 @@ Two consistency notes this adjudication settles: (1) radar XI's register line sa
+ 4. **Issue-filed lanes get placeholder radar rows** — R34/R35 were filed as issues before their radar doc landed; they hold their numbers and show a placeholder radar-file cell until the doc lands and the row is completed.
+ 5. **Contested numbers cite by issue** — if a correction note (like #1746) proposes renumbering into occupied space, record the contested label as withdrawn in §3 and cite the lane by its issue number thereafter. Never re-issue a contested label into the free-number pool.
+ 6. **Machine-checkable invariant:** every registry row must start with `| R<digits>` in column 1; a collision-free pre-flight is `rg -c "^\| R[0-9]+" docs/SCOUT_RADAR_INDEX.md` cross-checked against `rg -h "^\| R[0-9]+" docs/SCOUT_RADAR_2026-10-28*.md` (radar summary tables remain the lane SSOT; this file is the allocation registry).
++7. **The index is the only counter** — the R40/R41 drift (see Drift log) shows what happens when a lane derives its number from run/sweep counts instead of this file: the number skips registered state and the freshness pass has to reconcile it after the fact. If you cannot take a number from this table (because the index is not landed where you are), file the lane by issue number and register the R-number here in the same PR — do not guess.
+ 
+ ## 5. Honest limitations
+ 
+-An index is only as fresh as its last update — exactly the drift the script-index gate (#1644) solved for `scripts/`. If allocation drift recurs, a later cycle can mirror that freshness-gate pattern onto this file (CI check: every `R<number>` defined in a radar summary table must appear exactly once here). Statuses in the "Status" columns are point-in-time probe results (2026-10-28), not live state; the R-number → issue mapping and the §3 adjudication are the stable half of this registry. The R1–R12 rows carry no filed issue because radar I predates the issue-filing cadence; their verdicts are recorded in the radar-I file itself and are reproducible from it.
++An index is only as fresh as its last update — exactly the drift the script-index gate (#1644) solved for `scripts/`, and exactly the failure the Drift log records on day one (R40/R41 adopted issue-side before registration; reconciled same-day by pass 2). If allocation drift recurs, a later cycle can mirror that freshness-gate pattern onto this file (CI check: every `R<number>` defined in a radar summary table must appear exactly once here, and every `R<number>` cited in an issue body must exist in this registry). Statuses in the "Status" columns are point-in-time probe results (2026-10-28), not live state; the R-number → issue mapping and the §3 adjudication are the stable half of this registry. The R1–R12 rows carry no filed issue because radar I predates the issue-filing cadence; their verdicts are recorded in the radar-I file itself and are reproducible from it.

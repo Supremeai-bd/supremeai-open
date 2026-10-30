@@ -1,0 +1,61 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index b15916ef..3f984898 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -163,7 +163,15 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+     status:claimed P0 আগের মতোই ব্লক করবে (অন্য রানার সক্রিয়ভাবে কাজ করছে —
+     নিয়ম ৫-এর উদ্দিষ্ট আচরণ)।
+     """
+-    unactionable_in_lane = frozenset({"blocked-by-upstream"})
++    unactionable_in_lane = frozenset({"blocked-by-upstream", "admin-only", "mirror:private"})
++    # বাংলা: admin-only / mirror:private P0-ও একই starvation শ্রেণি —
++    # pick_next_issue()-এর EXCLUDED_LABELS এই দুই লেবেলযুক্ত সারি কখনোই pick করে
++    # না, অর্থাৎ এই লেনের কোনো এজেন্ট সেগুলো চিরকালের জন্য কাজ করতে পারবে না;
++    # অথচ ব্লকার-গণনা সেগুলোকে গুনলে cadence রোল চিরকাল থেমে থাকে — একই SSOT-এর
++    # দুই ভোক্তায় দুই আচরণ, ঠিক এই ফাইলের board-exclusion কমেন্টে নথিভুক্ত
++    # dual-SSOT drift-শ্রেণি। তাই ব্লকার-গণনাও একই লেন-অ্যাকশনেবিলিটি SSOT মানে।
++    # বৈপরীত্যে status:claimed সাময়িক (claim TTL শেষে পুনঃদাবিযোগ্য), লেন-সীমা
++    # লেবেলগুলো স্থায়ী — তাই claimed P0 আগের মতোই ব্লক করবে (নিয়ম ৫-এর অন্তর্গত)।
+     for item in issues:
+         if not isinstance(item, dict):
+             continue
+diff --git a/tests/test_agent_cadence.py b/tests/test_agent_cadence.py
+index d4f5458b..89f4bb32 100644
+--- a/tests/test_agent_cadence.py
++++ b/tests/test_agent_cadence.py
+@@ -114,6 +114,35 @@ def test_has_open_p0_blocker_negative(self):
+         ]
+         self.assertFalse(cal.has_open_p0_blocker(issues))
+ 
++    def test_has_open_p0_blocker_blocked_by_upstream_excluded(self):
++        # বাংলা: লেনে-অ্যাকশনেবল-নয় P0 ব্লকার-গণনা থেকে বাদ (docstring চুক্তি)।
++        issues = [
++            {"number": 104, "labels": [{"name": "P0-critical"}, {"name": "blocked-by-upstream"}]},
++        ]
++        self.assertFalse(cal.has_open_p0_blocker(issues))
++
++    def test_has_open_p0_blocker_admin_only_excluded(self):
++        # বাংলা: admin-only P0 এই লেনে কখনোই pickযোগ্য নয় (EXCLUDED_LABELS) —
++        # এটিকে ব্লকার গুনলে cadence চিরকাল অবরুদ্ধ (starvation) হত।
++        issues = [
++            {"number": 105, "labels": [{"name": "P0-critical"}, {"name": "admin-only"}]},
++        ]
++        self.assertFalse(cal.has_open_p0_blocker(issues))
++
++    def test_has_open_p0_blocker_mirror_private_excluded(self):
++        # বাংলা: mirror:private P0-ও একই স্থায়ী লেন-সীমা — ব্লকার-গণনা থেকে বাদ।
++        issues = [
++            {"number": 106, "labels": [{"name": "p0"}, {"name": "mirror:private"}]},
++        ]
++        self.assertFalse(cal.has_open_p0_blocker(issues))
++
++    def test_has_open_p0_blocker_claimed_still_blocks(self):
++        # বাংলা: claimed P0 সাময়িক বাধা (সক্রিয় কাজ চলছে) — ব্লক করবেই (নিয়ম ৫)।
++        issues = [
++            {"number": 107, "labels": [{"name": "P0-critical"}, {"name": "status:claimed"}]},
++        ]
++        self.assertTrue(cal.has_open_p0_blocker(issues))
++
+     def test_label_names_extraction(self):
+         item = {"labels": [{"name": "P0-critical"}, {"name": "Status:Unclaimed"}]}
+         self.assertEqual(cal.label_names(item), ["p0-critical", "status:unclaimed"])

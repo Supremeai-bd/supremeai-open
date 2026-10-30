@@ -1,0 +1,20 @@
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index d4829ff7..47e6045c 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -97,6 +97,7 @@
+     ".gitignore",
+     ".gitleaks.toml",
+     ".gitleaksignore",
++    ".importlinter",  # import-contract gate config (issue 1791): repo-root TOML consumed by lint-imports; dev-only, no runtime surface
+     ".pre-commit-config.yaml",
+     "AGENTS.md",
+     # "AGENT_RULES.md" deliberately NOT approved ΓÇö deleted by #1526 (#1642);
+@@ -106,6 +107,7 @@
+     "LICENSE",
+     "README.md",
+     "mcp.json",
++    "requirements-dev.txt",  # dev/CI-only tooling pins (issue 1791): import-linter==2.15 for the .importlinter gate; nothing at runtime imports it
+     "ruff.toml",
+ }
+ 

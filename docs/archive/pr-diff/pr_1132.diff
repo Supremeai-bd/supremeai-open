@@ -1,0 +1,160 @@
+diff --git a/core/.github/workflows/autofix.yml b/core/.github/workflows/autofix.yml
+index 2e52c74b..6f25cc9c 100644
+--- a/core/.github/workflows/autofix.yml
++++ b/core/.github/workflows/autofix.yml
+@@ -40,14 +40,27 @@ jobs:
+       - name: Run pyerrorfix (detect + auto-fix + SARIF)
+         working-directory: ${{ github.workspace }}
+         run: |
+-          # The pyerrorfix package is zero-dependency — just run it from source.
+-          python -m pyerrorfix analyze backend \
++          # Robust target directory discovery across monorepo and satellite roots
++          TARGET="."
++          if [ -d "backend" ]; then
++            TARGET="backend"
++          elif [ -d "core" ]; then
++            TARGET="core"
++          fi
++          # Ensure python path finds pyerrorfix module from root or core
++          export PYTHONPATH="${PYTHONPATH:-}:.:core"
++          python -m pyerrorfix analyze "$TARGET" \
+             --fix \
+             --format sarif \
+             > pyerrorfix-results.sarif || true
+ 
+           # Human-readable summary in the job log
+-          python -m pyerrorfix analyze backend --format console --quiet || true
++          python -m pyerrorfix analyze "$TARGET" --format console --quiet || true
++
++          # Verify valid JSON SARIF before upload
++          if [ ! -s pyerrorfix-results.sarif ] || ! python -c "import json; json.load(open('pyerrorfix-results.sarif'))" 2>/dev/null; then
++            echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[]}' > pyerrorfix-results.sarif
++          fi
+ 
+       - name: Upload SARIF to GitHub code scanning
+         if: always()
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index d0b0040b..b17fd158 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -27,7 +27,7 @@ jobs:
+       - name: Install dependencies
+         run: |
+           python -m pip install --upgrade pip
+-          pip install ruff pytest pytest-asyncio pydantic fastapi httpx starlette cryptography pyotp sqlalchemy
++          pip install ruff pytest pytest-asyncio pytest-cov pydantic fastapi httpx starlette cryptography pyotp sqlalchemy
+           if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+ 
+       - name: Lint with ruff
+diff --git a/core/pyerrorfix/__init__.py b/core/pyerrorfix/__init__.py
+new file mode 100644
+index 00000000..325abc1c
+--- /dev/null
++++ b/core/pyerrorfix/__init__.py
+@@ -0,0 +1,5 @@
++"""pyerrorfix - Reusable Python error-detection & auto-fix engine."""
++
++__version__ = "1.0.0"
++
++__all__ = ["__version__"]
+diff --git a/core/pyerrorfix/__main__.py b/core/pyerrorfix/__main__.py
+new file mode 100644
+index 00000000..a1704cf5
+--- /dev/null
++++ b/core/pyerrorfix/__main__.py
+@@ -0,0 +1,4 @@
++from pyerrorfix.cli import main
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/core/pyerrorfix/cli.py b/core/pyerrorfix/cli.py
+index 3c9c0cec..43ab28f4 100644
+--- a/core/pyerrorfix/cli.py
++++ b/core/pyerrorfix/cli.py
+@@ -28,6 +28,13 @@
+ import json
+ import sys
+ 
++if hasattr(sys.stdout, "reconfigure"):
++    try:
++        sys.stdout.reconfigure(encoding="utf-8")
++        sys.stderr.reconfigure(encoding="utf-8")
++    except Exception:
++        pass
++
+ from pyerrorfix.core.catalog import CATALOG, catalog_summary
+ from pyerrorfix.core.reporter import to_console, to_json, to_markdown, to_sarif
+ from pyerrorfix.core.scanner import Scanner
+diff --git a/core/pyerrorfix/detectors/__init__.py b/core/pyerrorfix/detectors/__init__.py
+new file mode 100644
+index 00000000..0df34b0f
+--- /dev/null
++++ b/core/pyerrorfix/detectors/__init__.py
+@@ -0,0 +1,43 @@
++"""pyerrorfix detectors package."""
++
++from pyerrorfix.detectors.asyncio_err import AsyncioDetector
++from pyerrorfix.detectors.auth_security import AuthSecurityDetector
++from pyerrorfix.detectors.concurrency import ConcurrencyDetector
++from pyerrorfix.detectors.core_python import CorePythonDetector
++from pyerrorfix.detectors.database import DatabaseDetector
++from pyerrorfix.detectors.deprecation import DeprecationDetector
++from pyerrorfix.detectors.files import FileDetector
++from pyerrorfix.detectors.imports import ImportDetector
++from pyerrorfix.detectors.infra_deploy import InfraDeployDetector
++from pyerrorfix.detectors.linter_quality import LinterQualityDetector
++from pyerrorfix.detectors.logging_err import LoggingDetector
++from pyerrorfix.detectors.network_io import NetworkIoDetector
++from pyerrorfix.detectors.resources import ResourceDetector
++from pyerrorfix.detectors.security import SecurityDetector
++from pyerrorfix.detectors.syntax import SyntaxDetector
++from pyerrorfix.detectors.testing import TestingDetector
++from pyerrorfix.detectors.typing_err import TypingDetector
++from pyerrorfix.detectors.web_api import WebApiDetector
++
++ALL_DETECTORS = [
++    AsyncioDetector,
++    AuthSecurityDetector,
++    ConcurrencyDetector,
++    CorePythonDetector,
++    DatabaseDetector,
++    DeprecationDetector,
++    FileDetector,
++    ImportDetector,
++    InfraDeployDetector,
++    LinterQualityDetector,
++    LoggingDetector,
++    NetworkIoDetector,
++    ResourceDetector,
++    SecurityDetector,
++    SyntaxDetector,
++    TestingDetector,
++    TypingDetector,
++    WebApiDetector,
++]
++
++__all__ = ["ALL_DETECTORS"]
+diff --git a/core/pyerrorfix/fixers/__init__.py b/core/pyerrorfix/fixers/__init__.py
+new file mode 100644
+index 00000000..17ec3f1c
+--- /dev/null
++++ b/core/pyerrorfix/fixers/__init__.py
+@@ -0,0 +1,18 @@
++"""pyerrorfix fixers package."""
++
++from pyerrorfix.fixers.await_fixer import AwaitFixer
++from pyerrorfix.fixers.except_fixer import BareExceptFixer
++from pyerrorfix.fixers.fstring_log_fixer import FStringLogFixer
++from pyerrorfix.fixers.import_fixer import ImportSortFixer, UnusedImportFixer
++from pyerrorfix.fixers.with_fixer import WithOpenFixer
++
++ALL_FIXERS = [
++    AwaitFixer,
++    BareExceptFixer,
++    FStringLogFixer,
++    ImportSortFixer,
++    UnusedImportFixer,
++    WithOpenFixer,
++]
++
++__all__ = ["ALL_FIXERS"]

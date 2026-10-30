@@ -1,0 +1,691 @@
+diff --git a/scripts/ci/check_dockerfile_security.py b/scripts/ci/check_dockerfile_security.py
+index 2ff93e34..0407d001 100644
+--- a/scripts/ci/check_dockerfile_security.py
++++ b/scripts/ci/check_dockerfile_security.py
+@@ -2,20 +2,80 @@
+ """
+ check_dockerfile_security.py
+ ============================
+-Audit tool to enforce non-root execution in all production Dockerfiles (Trap #97).
+-Checks:
++Audit tool to enforce non-root execution in all production Dockerfiles (Trap #97),
++extended with the R47 base-image FROM-pin ratchet (issue #2084, radar lane R47).
++
++Legacy check (Trap #97, unchanged semantics):
+ 1. Dockerfile has a USER directive that is NOT 'root' or '0'.
+ 2. USER directive is declared after package installations or setup.
+ 3. Fails or warns if a container runs as root.
++
++R47 FROM-pin plane (issue #2084, report-only by default):
++    Every production base image in the tree is a mutable tag float
++    (15 Dockerfiles / 20 FROM instructions / 0 digest pins at ccb6bb1,
++    scout-verified live). A re-pushed upstream tag silently changes every
++    deploy built from it, and no guard in the family read a FROM line before
++    this check (check_dockerfile_security.py audited USER directives only).
++
++    Classification per FROM image reference:
++      digest   - name@sha256:<64hex>                      -> pinned (immutable)
++      version  - tag starts with MAJOR.MINOR.PATCH         -> auditable pin (option C)
++      float    - everything else (3.11-slim, 24-alpine,    -> unpinned
++                 1.27-alpine, latest, no tag)
++
++    Shrink-only ratchet (the #1796/#1829/#1913/#1969 doctrine):
++      scripts/ci/dockerfile_from_baseline.json carries the KNOWN unpinned
++      set, keyed by repo-relative path -> sorted image refs. Live unpinned
++      references not present in the baseline are DRIFT. The baseline may
++      only ever shrink; fixing a FROM shrinks its entry in the same change.
++
++    Non-production surfaces are allowlisted and never audited (the #2084
++    never-do note): docs/devcontainer/Dockerfile,
++    core/ecosystem/Dockerfile.test.
++
++    This check never edits a Dockerfile and never pre-computes digests
++    (#2084 honesty note: implementers pin at build time; stale digests are
++    worse than honest pointers).
++
++Exit codes:
++    0 = USER pass (or legacy usage) and, when --from-strict is given, no
++        new unpinned FROM outside the baseline
++    1 = USER violation (legacy path) or FROM ratchet drift (--from-strict)
++    2 = usage error
++
++Usage:
++    python scripts/ci/check_dockerfile_security.py                 # legacy USER audit (unchanged)
++    python scripts/ci/check_dockerfile_security.py --from-strict   # roster ratchet mode (R47)
++    python scripts/ci/check_dockerfile_security.py --from-baseline # regenerate the floor
++    python scripts/ci/check_dockerfile_security.py --json          # machine report (both planes)
++    python scripts/ci/check_dockerfile_security.py --self-test     # hermetic proof, no repo writes
+ """
+ 
+ from __future__ import annotations
+ 
++import argparse
++import json
+ import re
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
++GUARD_TAG = "[from-pin-guard]"
++BASELINE_PATH = Path("scripts/ci/dockerfile_from_baseline.json")
++
++FROM_ALLOWLIST_PREFIXES = (
++    "docs/devcontainer/",          # non-prod dev image (#2084 never-do note)
++    "core/ecosystem/Dockerfile.test",  # non-prod test image (#2084 never-do note)
++)
++
++FROM_RE = re.compile(r"^FROM\s+(.+)$", re.IGNORECASE)
++DIGEST_RE = re.compile(r"@sha256:[0-9a-fA-F]{64}$")
++VERSION_TAG_RE = re.compile(r":\s*(\d+\.\d+\.\d+)")  # option C: MAJOR.MINOR.PATCH leading tag
++
++EXIT_OK = 0
++EXIT_VIOLATION = 1
++EXIT_USAGE = 2
+ 
+ 
+ def find_dockerfiles(root: Path) -> list[Path]:
+@@ -31,6 +91,40 @@ def find_dockerfiles(root: Path) -> list[Path]:
+     return dockerfiles
+ 
+ 
++def is_allowlisted(rel: str) -> bool:
++    return any(rel == pref or rel.startswith(pref) for pref in FROM_ALLOWLIST_PREFIXES)
++
++
++def parse_froms(content: str) -> list[tuple[int, str]]:
++    """Return (line_no, image_ref) for every FROM instruction.
++
++    Tolerates build flags (FROM --platform=...), multi-stage
++    (FROM x AS y) and comment lines; image_ref is the first non-flag token.
++    """
++    out: list[tuple[int, str]] = []
++    for idx, line in enumerate(content.splitlines(), 1):
++        stripped = line.strip()
++        if stripped.startswith("#"):
++            continue
++        m = FROM_RE.match(stripped)
++        if not m:
++            continue
++        tokens = [t for t in m.group(1).split() if not t.startswith("--")]
++        if not tokens:
++            continue
++        out.append((idx, tokens[0]))
++    return out
++
++
++def classify_image(image_ref: str) -> str:
++    """digest | version | float (see module docstring)."""
++    if DIGEST_RE.search(image_ref):
++        return "digest"
++    if VERSION_TAG_RE.search(image_ref):
++        return "version"
++    return "float"
++
++
+ def check_dockerfile(dockerfile: Path) -> list[str]:
+     issues = []
+     content = dockerfile.read_text(encoding="utf-8", errors="ignore")
+@@ -58,16 +152,189 @@ def check_dockerfile(dockerfile: Path) -> list[str]:
+     return issues
+ 
+ 
+-def main() -> int:
+-    # Ensure UTF-8 output on Windows console
++def collect_from_surface(dockerfiles: list[Path]) -> dict[str, dict]:
++    """Live FROM surface, allowlist applied.
++
++    Returns {rel_path: {"froms": [(line, ref, class)], "unpinned": sorted refs}}.
++    """
++    surface: dict[str, dict] = {}
++    for df in sorted(dockerfiles):
++        rel = str(df.relative_to(REPO_ROOT))
++        if is_allowlisted(rel):
++            continue
++        content = df.read_text(encoding="utf-8", errors="ignore")
++        froms = parse_froms(content)
++        classified = [(ln, ref, classify_image(ref)) for ln, ref in froms]
++        unpinned = sorted({ref for _, ref, cls in classified if cls == "float"})
++        surface[rel] = {"froms": classified, "unpinned": unpinned}
++    return surface
++
++
++def load_baseline() -> dict[str, list[str]]:
++    if not BASELINE_PATH.exists():
++        return {}
++    try:
++        data = json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
++    except Exception:
++        return {}
++    return data.get("unpinned_froms", {})
++
++
++def run_from_ratchet(dockerfiles: list[Path], *, json_out: bool) -> int:
++    """R47 ratchet: drift = live unpinned refs outside the shrink-only baseline."""
++    surface = collect_from_surface(dockerfiles)
++    baseline = load_baseline()
++
++    live = {rel: info["unpinned"] for rel, info in surface.items() if info["unpinned"]}
++
++    drift: dict[str, list[str]] = {}
++    for rel, refs in sorted(live.items()):
++        known = set(baseline.get(rel, []))
++        new = sorted(set(refs) - known)
++        if new:
++            drift[rel] = new
++
++    shrunk: list[str] = []
++    for rel, refs in sorted(baseline.items()):
++        now = set(live.get(rel, []))
++        fixed = sorted(set(refs) - now)
++        if fixed:
++            shrunk.append(f"{rel}: {fixed}")
++
++    total_live = sum(len(v) for v in live.values())
++    if json_out:
++        print(json.dumps({
++            "guard": "from-pin",
++            "baseline_file": str(BASELINE_PATH),
++            "live_unpinned_files": len(live),
++            "live_unpinned_refs": total_live,
++            "drift": drift,
++            "shrinkable": shrunk,
++            "verdict": "DRIFT" if drift else "COMPLIANT",
++        }, indent=1))
++    else:
++        print(f"{GUARD_TAG} R47 FROM-pin ratchet over {len(surface)} production Dockerfile(s)")
++        print(f"{GUARD_TAG} live unpinned refs: {total_live} across {len(live)} file(s); baseline: {sum(len(v) for v in baseline.values())} refs")
++        for rel, info in surface.items():
++            for ln, ref, cls in info["froms"]:
++                mark = "PIN" if cls != "float" else "float"
++                print(f"{GUARD_TAG}   [{mark:>5}] {rel}:{ln} {ref}")
++        if shrunk:
++            print(f"{GUARD_TAG} baseline shrink available (fix and regenerate in the same change):")
++            for s in shrunk:
++                print(f"{GUARD_TAG}   - {s}")
++        if drift:
++            print(f"{GUARD_TAG} DRIFT: {sum(len(v) for v in drift.values())} new unpinned FROM ref(s) not in the baseline:")
++            for rel, refs in drift.items():
++                print(f"{GUARD_TAG}   + {rel}: {refs}")
++            print(f"{GUARD_TAG} fix by digest/full-version pinning the new FROM(s), or extend the baseline only for non-prod surfaces")
++            return EXIT_VIOLATION
++        print(f"{GUARD_TAG} COMPLIANT: no unpinned FROM outside the shrink-only baseline")
++    return EXIT_OK
++
++
++def regenerate_baseline(dockerfiles: list[Path]) -> int:
++    surface = collect_from_surface(dockerfiles)
++    live = {rel: info["unpinned"] for rel, info in surface.items() if info["unpinned"]}
++    doc = {
++        "_comment": (
++            "R47 FROM-pin baseline (shrink-only ratchet, #2084). Known unpinned base-image "
++            "refs per production Dockerfile. Never grows automatically: new unpinned refs "
++            "fail --from-strict. Shrink entries in the same change that pins the FROM. "
++            "Non-prod surfaces (docs/devcontainer/, core/ecosystem/Dockerfile.test) are "
++            "allowlisted, never audited."
++        ),
++        "unpinned_froms": dict(sorted(live.items())),
++    }
++    BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
++    BASELINE_PATH.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
++    print(f"{GUARD_TAG} baseline written: {BASELINE_PATH} ({sum(len(v) for v in live.values())} refs / {len(live)} files)")
++    return EXIT_OK
++
++
++def self_test() -> int:
++    """Hermetic proof: classification, parsing, ratchet polarity. No repo writes."""
++    tmp = Path(tempfile.mkdtemp(prefix="frompin-selftest-"))
++    checks: list[tuple[str, bool]] = []
++
++    # 1. classification
++    checks.append(("digest classified", classify_image("python:3.11-slim@sha256:" + "a" * 64) == "digest"))
++    checks.append(("full version classified", classify_image("python:3.11.14-slim") == "version"))
++    checks.append(("float classified", classify_image("python:3.11-slim") == "float"))
++    checks.append(("latest classified", classify_image("node:latest") == "float"))
++    checks.append(("bare name classified", classify_image("alpine") == "float"))
++
++    # 2. parsing: flags, aliases, comments
++    content = "\n".join([
++        "# FROM python:3.9 (a comment, ignored)",
++        "FROM --platform=linux/amd64 python:3.11-slim AS builder",
++        "FROM python:3.11.14-slim",
++        "FROM node:24-alpine AS runtime",
++    ])
++    froms = parse_froms(content)
++    checks.append(("comment skipped", len(froms) == 3))
++    checks.append(("flag stripped", froms[0][1] == "python:3.11-slim"))
++    checks.append(("alias tolerated", froms[2][1] == "node:24-alpine"))
++
++    # 3. allowlist routing
++    checks.append(("devcontainer allowlisted", is_allowlisted("docs/devcontainer/Dockerfile")))
++    checks.append(("test image allowlisted", is_allowlisted("core/ecosystem/Dockerfile.test")))
++    checks.append(("prod NOT allowlisted", not is_allowlisted("gateway/Dockerfile")))
++
++    # 4. ratchet polarity via the module's pure functions (no repo-root coupling)
++    prod_content = "FROM python:3.11-slim\nUSER app\n"
++    froms = parse_froms(prod_content)
++    unpinned = sorted({ref for _, ref in froms if classify_image(ref) == "float"})
++    checks.append(("prod float detected", unpinned == ["python:3.11-slim"]))
++
++    baseline = {"svc/Dockerfile": ["python:3.11-slim"]}
++    live = {"svc/Dockerfile": unpinned}
++    drift = {rel: sorted(set(refs) - set(baseline.get(rel, []))) for rel, refs in live.items()}
++    drift = {k: v for k, v in drift.items() if v}
++    checks.append(("baselined ref -> no drift", not drift))
++
++    new_content = "FROM python:3.12-slim\nUSER app\n"
++    unpinned2 = sorted({ref for _, ref in parse_froms(new_content) if classify_image(ref) == "float"})
++    live2 = {"svc/Dockerfile": unpinned2}
++    drift2 = {rel: sorted(set(refs) - set(baseline.get(rel, []))) for rel, refs in live2.items()}
++    drift2 = {k: v for k, v in drift2.items() if v}
++    checks.append(("new ref -> DRIFT", drift2.get("svc/Dockerfile") == ["python:3.12-slim"]))
++
++    ok = all(passed for _, passed in checks)
++    for name, passed in checks:
++        print(f"{'PASS' if passed else 'FAIL'}: {name}")
++    print(f"self-test: {sum(p for _, p in checks)}/{len(checks)}")
++    return EXIT_OK if ok else EXIT_VIOLATION
++
++
++def main(argv: list[str] | None = None) -> int:
+     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+ 
++    parser = argparse.ArgumentParser(description="Dockerfile non-root audit (Trap #97) + R47 FROM-pin ratchet")
++    parser.add_argument("--from-strict", action="store_true",
++                        help="ratchet mode: exit 1 on unpinned FROM refs outside the baseline (roster)")
++    parser.add_argument("--from-baseline", action="store_true",
++                        help="regenerate the shrink-only baseline from the live surface")
++    parser.add_argument("--json", action="store_true", help="machine-readable report (with --from-strict)")
++    parser.add_argument("--self-test", action="store_true", help="hermetic detector proof, no repo writes")
++    args = parser.parse_args(argv)
++
++    if args.self_test:
++        return self_test()
++
+     dockerfiles = find_dockerfiles(REPO_ROOT)
+     if not dockerfiles:
+         print("[INFO] No Dockerfiles found to inspect.")
+         return 0
+ 
++    if args.from_baseline:
++        return regenerate_baseline(dockerfiles)
++
++    if args.from_strict:
++        return run_from_ratchet(dockerfiles, json_out=args.json)
++
++    # Legacy path (unchanged): USER audit; FROM plane reported informationally only.
+     print(f"Auditing {len(dockerfiles)} Dockerfile(s) for non-root USER compliance (Trap #97)...")
+     all_issues = []
+     for df in sorted(dockerfiles):
+@@ -79,6 +346,15 @@ def main() -> int:
+         else:
+             print(f"[PASS] {df.relative_to(REPO_ROOT)}")
+ 
++    # R47 informational plane: never affects the legacy exit code.
++    surface = collect_from_surface(dockerfiles)
++    floats = {rel: info["unpinned"] for rel, info in surface.items() if info["unpinned"]}
++    total = sum(len(v) for v in floats.values())
++    if total:
++        print(f"\n[INFO] R47 FROM-pin plane (report-only, run --from-strict for the ratchet): "
++              f"{total} float-tag base image(s) across {len(floats)} Dockerfile(s); "
++              f"0 digest pins fleet-wide as of the #2084 sweep.")
++
+     if all_issues:
+         print(f"\nTotal violations found: {len(all_issues)}")
+         return 1
+diff --git a/scripts/ci/dockerfile_from_baseline.json b/scripts/ci/dockerfile_from_baseline.json
+new file mode 100644
+index 00000000..a6e2f5e2
+--- /dev/null
++++ b/scripts/ci/dockerfile_from_baseline.json
+@@ -0,0 +1,45 @@
++{
++  "_comment": "R47 FROM-pin baseline (shrink-only ratchet, #2084). Known unpinned base-image refs per production Dockerfile. Never grows automatically: new unpinned refs fail --from-strict. Shrink entries in the same change that pins the FROM. Non-prod surfaces (docs/devcontainer/, core/ecosystem/Dockerfile.test) are allowlisted, never audited.",
++  "unpinned_froms": {
++    "browser/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "core/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "core/Dockerfile.ci": [
++      "python:3.11-slim"
++    ],
++    "core/docker/swarm-worker.Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "core/services/browser/Dockerfile": [
++      "python:3.12-slim"
++    ],
++    "core/services/scraper/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "core/services/worker/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "gateway/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "gateway/services/browser/Dockerfile": [
++      "python:3.12-slim"
++    ],
++    "gateway/services/scraper/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "gateway/services/worker/Dockerfile": [
++      "python:3.11-slim"
++    ],
++    "infrastructure/mcp-control-plane/Dockerfile": [
++      "node:24-alpine"
++    ],
++    "studio/Dockerfile": [
++      "nginx:1.27-alpine",
++      "node:24-alpine"
++    ]
++  }
++}
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index aae4d7f3..44464e8f 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -31,6 +31,7 @@
+     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
+     ["python", "scripts/ci/js_dep_cve_guard.py", "--check"],
+     ["python", "scripts/ci/py_dep_cve_guard.py", "--check"],
++    ["python", "scripts/ci/check_dockerfile_security.py", "--from-strict"],
+     ["python", "scripts/ci/npm_dep_cve_guard.py", "--self-test"],
+     ["python", "scripts/ci/npm_dep_cve_guard.py", "--check"],
+     ["python", "scripts/ci/docs_link_integrity_guard.py", "--self-test"],
+diff --git a/scripts/ci/test_parity_baseline.json b/scripts/ci/test_parity_baseline.json
+index ee559537..088c139b 100644
+--- a/scripts/ci/test_parity_baseline.json
++++ b/scripts/ci/test_parity_baseline.json
+@@ -65,7 +65,6 @@
+     "scripts/ci/check_config_control_plane.py",
+     "scripts/ci/check_critical_invariants.py",
+     "scripts/ci/check_database_schema.py",
+-    "scripts/ci/check_dockerfile_security.py",
+     "scripts/ci/check_free_tier_limits.py",
+     "scripts/ci/check_frontend_secrets.py",
+     "scripts/ci/check_gateway_bypass.py",
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index ef94ff7b..f7e12c33 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 10:12:43 UTC · **516 scripts** (481 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 10:17:41 UTC · **516 scripts** (481 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -118,7 +118,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/check_config_control_plane.py` | Fail only on structural violations of the canonical configuration contract. |
+ | `ci/check_critical_invariants.py` | Critical invariant guard — protects core logic from merge/rebase silent drops. |
+ | `ci/check_database_schema.py` | Connects to the REAL database (production or whatever DATABASE_URL points |
+-| `ci/check_dockerfile_security.py` | Audit tool to enforce non-root execution in all production Dockerfiles (Trap #97). |
++| `ci/check_dockerfile_security.py` | Audit tool to enforce non-root execution in all production Dockerfiles (Trap #97), |
+ | `ci/check_free_tier_limits.py` | বাংলা মন্তব্য: pre-commit hook এবং Nightly CI guard হিসেবে কাজ করে। |
+ | `ci/check_frontend_secrets.py` | (no docstring — run scripts/devops/devops_ai_scribe.py or add one) |
+ | `ci/check_gateway_bypass.py` | M03 P0 — Zero-Bypass inference gate (static analysis, ratchet-style). |
+diff --git a/tests/test_check_dockerfile_security.py b/tests/test_check_dockerfile_security.py
+new file mode 100644
+index 00000000..e7275052
+--- /dev/null
++++ b/tests/test_check_dockerfile_security.py
+@@ -0,0 +1,252 @@
++"""R47 FROM-pin ratchet tests for check_dockerfile_security.py (#2084).
++
++Covers: image classification (digest / full-version / float), FROM parsing
++(comments, build flags, stage aliases), the non-prod allowlist, legacy USER
++audit regression, the live FROM surface collector, and the shrink-only
++baseline ratchet polarity — plus hermetic subprocess proofs against the real
++repository state.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import json
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "check_dockerfile_security.py"
++BASELINE = REPO_ROOT / "scripts" / "ci" / "dockerfile_from_baseline.json"
++
++_spec = importlib.util.spec_from_file_location("cds", GUARD)
++cds = importlib.util.module_from_spec(_spec)
++_spec.loader.exec_module(cds)
++
++
++# --------------------------------------------------------------------------- #
++# classification
++# --------------------------------------------------------------------------- #
++
++@pytest.mark.parametrize(
++    ("ref", "expected"),
++    [
++        ("python:3.11-slim@sha256:" + "a" * 64, "digest"),
++        ("nginx:1.27.4-alpine@sha256:" + "B" * 64, "digest"),
++        ("python:3.11.14-slim", "version"),
++        ("node:24.22.1-alpine3.22", "version"),
++        ("python:3.11-slim", "float"),
++        ("node:24-alpine", "float"),
++        ("nginx:1.27-alpine", "float"),
++        ("node:latest", "float"),
++        ("alpine", "float"),
++        ("mcr.microsoft.com/devcontainers/python:3.11", "float"),
++    ],
++)
++def test_classify_image(ref, expected):
++    assert cds.classify_image(ref) == expected
++
++
++# --------------------------------------------------------------------------- #
++# FROM parsing
++# --------------------------------------------------------------------------- #
++
++def test_parse_froms_flags_aliases_comments():
++    content = "\n".join([
++        "# FROM python:3.9 (comment must be ignored)",
++        "FROM --platform=linux/amd64 python:3.11-slim AS builder",
++        "",
++        "FROM python:3.11.14-slim",
++        "from node:24-alpine as runtime",  # case-insensitive instruction
++    ])
++    froms = cds.parse_froms(content)
++    assert [(ln, ref) for ln, ref in froms] == [
++        (2, "python:3.11-slim"),
++        (4, "python:3.11.14-slim"),
++        (5, "node:24-alpine"),
++    ]
++
++
++def test_parse_froms_multi_stage_names_not_confused_with_image():
++    content = "FROM golang:1.22 AS build\nFROM scratch\n"
++    froms = cds.parse_froms(content)
++    # 'AS' alias tokens are dropped; the image is always the first non-flag token
++    assert [ref for _, ref in froms] == ["golang:1.22", "scratch"]
++
++
++# --------------------------------------------------------------------------- #
++# non-prod allowlist (#2084 never-do note)
++# --------------------------------------------------------------------------- #
++
++@pytest.mark.parametrize(
++    ("rel", "expected"),
++    [
++        ("docs/devcontainer/Dockerfile", True),
++        ("core/ecosystem/Dockerfile.test", True),
++        ("gateway/Dockerfile", False),
++        ("studio/Dockerfile", False),
++        ("infrastructure/mcp-control-plane/Dockerfile", False),
++    ],
++)
++def test_allowlist_routing(rel, expected):
++    assert cds.is_allowlisted(rel) is expected
++
++
++# --------------------------------------------------------------------------- #
++# legacy USER audit regression (Trap #97 semantics unchanged)
++# --------------------------------------------------------------------------- #
++
++def _write(tmp_path: Path, rel: str, text: str) -> Path:
++    p = tmp_path / rel
++    p.parent.mkdir(parents=True, exist_ok=True)
++    p.write_text(text, encoding="utf-8")
++    return p
++
++
++@pytest.fixture()
++def _repoint_repo_root(tmp_path, monkeypatch):
++    monkeypatch.setattr(cds, "REPO_ROOT", tmp_path)
++    return tmp_path
++
++
++def test_user_audit_non_root_passes(_repoint_repo_root):
++    df = _write(_repoint_repo_root, "svc/Dockerfile", "FROM python:3.11.14-slim\nUSER app\n")
++    assert cds.check_dockerfile(df) == []
++
++
++def test_user_audit_root_fails(_repoint_repo_root):
++    df = _write(_repoint_repo_root, "svc/Dockerfile", "FROM python:3.11.14-slim\nUSER root\n")
++    issues = cds.check_dockerfile(df)
++    assert len(issues) == 1 and "must run as non-root" in issues[0]
++
++
++def test_user_audit_missing_fails(_repoint_repo_root):
++    df = _write(_repoint_repo_root, "svc/Dockerfile", "FROM python:3.11.14-slim\n")
++    issues = cds.check_dockerfile(df)
++    assert len(issues) == 1 and "Missing USER directive" in issues[0]
++
++
++# --------------------------------------------------------------------------- #
++# live FROM surface collector
++# --------------------------------------------------------------------------- #
++
++def test_collect_from_surface_skips_allowlist_and_classifies(_repoint_repo_root):
++    _write(_repoint_repo_root, "svc/Dockerfile", "FROM python:3.11-slim AS b\nFROM python:3.11.14-slim\n")
++    _write(_repoint_repo_root, "docs/devcontainer/Dockerfile", "FROM python:3.11-slim\n")
++    surface = cds.collect_from_surface(cds.find_dockerfiles(_repoint_repo_root))
++    assert set(surface) == {"svc/Dockerfile"}
++    info = surface["svc/Dockerfile"]
++    assert info["unpinned"] == ["python:3.11-slim"]
++    assert [(ref, cls) for _, ref, cls in info["froms"]] == [
++        ("python:3.11-slim", "float"),
++        ("python:3.11.14-slim", "version"),
++    ]
++
++
++# --------------------------------------------------------------------------- #
++# shrink-only ratchet polarity
++# --------------------------------------------------------------------------- #
++
++def _ratchet(tmp_path: Path, dockerfiles_text: dict[str, str], baseline_doc: dict) -> tuple[int, str]:
++    for rel, text in dockerfiles_text.items():
++        _write(tmp_path, rel, text)
++    bl = tmp_path / "baseline.json"
++    bl.write_text(json.dumps(baseline_doc), encoding="utf-8")
++    monkey_bl = str(bl)
++    old = cds.BASELINE_PATH
++    cds.BASELINE_PATH = Path(monkey_bl)
++    try:
++        code = cds.run_from_ratchet(cds.find_dockerfiles(tmp_path), json_out=False)
++        return code, monkey_bl
++    finally:
++        cds.BASELINE_PATH = old
++
++
++def test_ratchet_baselined_refs_compliant(_repoint_repo_root, capsys):
++    code, _ = _ratchet(
++        _repoint_repo_root,
++        {"svc/Dockerfile": "FROM python:3.11-slim\nUSER app\n"},
++        {"unpinned_froms": {"svc/Dockerfile": ["python:3.11-slim"]}},
++    )
++    assert code == 0
++    assert "COMPLIANT" in capsys.readouterr().out
++
++
++def test_ratchet_new_ref_is_drift_exit1(_repoint_repo_root, capsys):
++    code, _ = _ratchet(
++        _repoint_repo_root,
++        {"svc/Dockerfile": "FROM python:3.12-slim\nUSER app\n"},
++        {"unpinned_froms": {"svc/Dockerfile": ["python:3.11-slim"]}},
++    )
++    assert code == 1
++    assert "DRIFT" in capsys.readouterr().out
++
++
++def test_ratchet_new_file_is_drift_exit1(_repoint_repo_root):
++    code, _ = _ratchet(
++        _repoint_repo_root,
++        {
++            "svc/Dockerfile": "FROM python:3.11-slim\nUSER app\n",
++            "svc2/Dockerfile": "FROM alpine\nUSER app\n",
++        },
++        {"unpinned_froms": {"svc/Dockerfile": ["python:3.11-slim"]}},
++    )
++    assert code == 1
++
++
++def test_ratchet_pinned_from_never_drifts(_repoint_repo_root):
++    code, _ = _ratchet(
++        _repoint_repo_root,
++        {
++            "svc/Dockerfile": (
++                "FROM python:3.11-slim@sha256:" + "a" * 64 + "\nUSER app\n"
++            ),
++        },
++        {"unpinned_froms": {}},
++    )
++    assert code == 0
++
++
++# --------------------------------------------------------------------------- #
++# real-repo subprocess proofs (the landed floor is compliant; self-test green)
++# --------------------------------------------------------------------------- #
++
++def test_repo_strict_ratchet_compliant():
++    """The landed baseline must cover the live production surface (shrink-only floor)."""
++    r = subprocess.run(
++        [sys.executable, str(GUARD), "--from-strict"],
++        capture_output=True, text=True, timeout=120, cwd=str(REPO_ROOT),
++    )
++    assert r.returncode == 0, r.stdout + r.stderr
++    assert "COMPLIANT" in r.stdout
++
++
++def test_repo_baseline_matches_live_surface():
++    """Regenerating the baseline in a scratch copy must produce the same refs
++    (baseline == live floor at landing time; only real fixes shrink it)."""
++    doc = json.loads(BASELINE.read_text(encoding="utf-8"))
++    r = subprocess.run(
++        [sys.executable, str(GUARD), "--json", "--from-strict"],
++        capture_output=True, text=True, timeout=120, cwd=str(REPO_ROOT),
++    )
++    assert r.returncode == 0, r.stdout + r.stderr
++    report = json.loads(r.stdout)
++    # The JSON report carries drift/shrinkable; at landing both must be empty.
++    assert report["drift"] == {}, report["drift"]
++    assert report["shrinkable"] == [], report["shrinkable"]
++    # Baseline content sanity: 13 prod files, 14 refs, scout numbers (#2084).
++    assert len(doc["unpinned_froms"]) == 13
++    assert sum(len(v) for v in doc["unpinned_froms"].values()) == 14
++    assert "docs/devcontainer" not in json.dumps(doc["unpinned_froms"])
++    assert "core/ecosystem" not in json.dumps(doc["unpinned_froms"])
++
++
++def test_self_test_hermetic_green():
++    r = subprocess.run(
++        [sys.executable, str(GUARD), "--self-test"],
++        capture_output=True, text=True, timeout=120, cwd=str(REPO_ROOT),
++    )
++    assert r.returncode == 0, r.stdout + r.stderr
++    assert "self-test: 14/14" in r.stdout

@@ -1,0 +1,193 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+old mode 100644
+new mode 100755
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index ef4277a2..de150e08 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -277,6 +277,45 @@ jobs:
+       - name: Assert loop-contract SSOT parity (tiers, guards, flag table)
+         run: python3 scripts/agents/check_loop_contract_parity.py
+ 
++  ingress_hook_guard:
++    name: "🛡️ Ingress Hook Guard (#161)"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Checkout repository (hook body required)
++        uses: actions/checkout@v4
++
++      - name: Verify pre-push guard (exec bit + syntax + offline self-test)
++        run: |
++          set -euo pipefail
++          test -x .githooks/pre-push || { echo "::error::.githooks/pre-push must be executable (git mode 100755) — git silently skips a non-executable hook."; exit 1; }
++          bash -n .githooks/pre-push
++          sh .githooks/pre-push --self-test
++          echo "✅ pre-push guard: exec-bit + bash -n + 5-scenario offline self-test PASS (docs/INGRESS_SECURITY_POLICY.md §5.2)"
++
++  stale_base_guard:
++    name: "⏳ Stale-Base Guard (#161)"
++    if: github.event_name == 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Checkout repository (full history for merge-base arithmetic)
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: Reject PR branches built behind main (docs/INGRESS_SECURITY_POLICY.md §5.3)
++        run: |
++          BASE="${{ github.event.pull_request.base.sha }}"
++          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
++          git fetch --no-tags origin "+$BASE:refs/tmp-base" "+$HEAD_SHA:refs/tmp-head"
++          BEHIND="$(git rev-list --count refs/tmp-head..refs/tmp-base)"
++          if [ "$BEHIND" -gt 0 ]; then
++            echo "::error::Branch is stale: main advanced $BEHIND commit(s) past the merge-base. Rebase onto latest origin/main before submission."
++            exit 1
++          fi
++
+   # ---------------------------------------------------------------------------
+   # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
+   # the shift-left diet because all four versions are proven here first.
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 79f9e0b5..f8dda1d3 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -41,7 +41,7 @@ Claim state before work. Verify current `main`/PR state before push. Do not work
+ **Board-freshness at completion (#4177):** the snapshot taken at task-start is NOT the whole mission. Before declaring any task, batch or founder-directed mission complete, re-poll the board (open PRs, claim queue, new issues). A completion declaration is valid only against a board snapshot taken **at declaration time**. If new actionable items arrived during the work, handle them or explicitly report them as outstanding — never silently drop them from scope.
+ 
+ ## U6 — Safety & Permissions
+-Never bypass protected branches/paths, credential policy, security gates, scope gates, Admin gates or merge gates. Destructive/irreversible actions require the appropriate authority.
++Never bypass protected branches/paths, credential policy, security gates, scope gates, Admin gates or merge gates. Destructive/irreversible actions require the appropriate authority. The Zero-Force-Push / Stale-Base / Public-First ingress policy and its enforcement surfaces (local pre-push hook + CI guards) are specified in `docs/INGRESS_SECURITY_POLICY.md` (#161).
+ 
+ ## U7 — Verification
+ A task is complete only when required tests, gates, evidence and acceptance conditions pass **and the board has been re-checked for new arrivals since task start** (#4177).
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index c878f1f0..6eb8f0ff 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -144,7 +144,8 @@ parity contract:
+ ## 5. Open Guards — shift-left on free public runtime
+ 
+ The guard jobs in `.github/workflows/pipeline.yml` (branch-naming,
+-issue-reference, anti-duplicate PR, boundary-sanitization, loop-contract-parity)
++issue-reference, anti-duplicate PR, boundary-sanitization, loop-contract-parity,
++ingress-hook, stale-base)
+ run on every PR to `supremeai-open` — free, unlimited public Actions minutes — so invalid
+ contributions fail at the public boundary instead of burning the private
+ repo's limited quota (Free org ≈ 2,000 min/month). The first three guards
+@@ -165,6 +166,14 @@ tree for content inspection (stdlib-only, still minutes-bounded):
+    surface stays in sync: evidence tier count (code emission vs §4),
+    this guard list vs the workflow job set, and no flag-table copies
+    in CONTRIBUTING.
++6. **Ingress Hook Guard (#161)** — asserts the §5.2 ingress hook
++   surface (`docs/INGRESS_SECURITY_POLICY.md`): executable bit (git
++   silently skips a non-executable hook), `bash -n` syntax gate, and
++   the hook's own 5-scenario offline `--self-test`.
++7. **Stale-Base Guard (#161)** — rejects PR branches built behind
++   `main` (`rev-list` count base..head > 0 → rebase required;
++   Board-Freshness #4177 at CI time, mirroring the local pre-push
++   hook's freshness check).
+ 
+ ## 6. Submission flow (Pathway 1 wiring)
+ 
+diff --git a/docs/INGRESS_SECURITY_POLICY.md b/docs/INGRESS_SECURITY_POLICY.md
+index c14c94f7..b118d260 100644
+--- a/docs/INGRESS_SECURITY_POLICY.md
++++ b/docs/INGRESS_SECURITY_POLICY.md
+@@ -134,6 +134,10 @@ the ancestry check is skipped (the server-side protection remains the
+ barrier). It never blocks what it cannot verify — it also never claims
+ verification it did not do (U2).
+ 
++The hook file is committed executable (git mode `100755`); git silently
++skips a non-executable hook, so the executable bit is part of the policy
++surface and is asserted in CI by the 🛡️ Ingress Hook Guard job (below).
++
+ Install (one line, per clone):
+ 
+ ```sh
+@@ -147,19 +151,35 @@ the human hand and visible in shell history:
+ git push --no-verify
+ ```
+ 
+-### 5.3 CI stale-base guard (ready-to-apply artifact — admin review)
+-
+-`.github/` is a protected path for the zero-credential bridge lane, so
+-the guard below is delivered as a ready-to-apply artifact inside this
+-document rather than as a workflow edit. It is designed to slot into
+-`.github/workflows/open-guards.yml` as one more event-context job:
++### 5.3 CI guards (APPLIED — `.github/workflows/pipeline.yml`)
++
++The guard below was originally delivered as a ready-to-apply artifact
++inside this document because `.github/` was a protected path for the
++zero-credential bridge lane, and it targeted `open-guards.yml`, which
++has since been removed (guards consolidated into `pipeline.yml` — see
++#214/#242). It is now applied verbatim as the ⏳ **Stale-Base Guard**
++job in `.github/workflows/pipeline.yml` (event-context, PR-only), with
++two operational deltas: `actions/checkout` runs with `fetch-depth: 0`
++(full history, so fetching the base/head SHAs cannot fail on a shallow
++clone) and a 3-minute job timeout. A sibling 🛡️ **Ingress Hook Guard**
++job asserts the §5.2 hook surface in CI: executable bit (git silently
++skips a non-executable hook), `bash -n` syntax gate, and the hook's own
++5-scenario offline `--self-test` — the issue's 3-tier boot smoke and
++hook test suite, now continuously enforced.
+ 
+ ```yaml
+-  stale-base-guard:
++  stale_base_guard:
+     name: "⏳ Stale-Base Guard (#161)"
++    if: github.event_name == 'pull_request'
+     runs-on: ubuntu-latest
++    timeout-minutes: 3
+     steps:
+-      - name: Reject PR branches built behind main
++      - name: Checkout repository (full history for merge-base arithmetic)
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 0
++
++      - name: Reject PR branches built behind main (docs/INGRESS_SECURITY_POLICY.md §5.3)
+         run: |
+           BASE="${{ github.event.pull_request.base.sha }}"
+           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+@@ -171,26 +191,26 @@ document rather than as a workflow edit. It is designed to slot into
+           fi
+ ```
+ 
+-### 5.4 Constitutional cross-reference (planned)
++### 5.4 Constitutional cross-reference (delivered)
+ 
+-A one-line pointer from AGENT_RULES.md **U6** to this policy is part of
+-the declared scope of issue #161, but is intentionally deferred in this
+-submission: an open PR (#169) already touches the same constitutional
+-files for issue #155, and the anti-duplicate doctrine (U4) forbids
+-competing edits to the same files. The cross-ref lands as a follow-up
+-after #169 merges. All other sections of this policy are self-contained
+-here.
++The one-line pointer from AGENT_RULES.md **U6** to this policy was
++declared as part of issue #161 and initially deferred because PR #169
++(issue #155) was touching the same constitutional files (U4
++anti-duplicate doctrine). #169 has merged, and the pointer is now in
++place under U6 — Safety & Permissions. All sections of this policy are
++self-contained here.
+ 
+ ## 6. U9 Similar-Problem Sweep
+ 
+-`similar found: 3 | fixed in-task: 2 | filed follow-up: 1`
++`similar found: 4 | fixed in-task: 3 | filed follow-up: 0 (deferred cross-ref delivered in this update)`
+ 
+ | Surface | Status |
+ |---|---|
+-| Local pushes (both repos) | fixed in-task — `.githooks/pre-push` (§5.2) |
+-| PR head freshness at CI time | fixed in-task — ready-to-apply guard (§5.3) |
++| Local pushes (both repos) | fixed in-task — `.githooks/pre-push` (§5.2), executable bit enforced in CI |
++| PR head freshness at CI time | fixed in-task — ⏳ Stale-Base Guard applied in `.github/workflows/pipeline.yml` (§5.3) |
++| Hook regressions at CI time | fixed in-task — 🛡️ Ingress Hook Guard (exec bit + `bash -n` + `--self-test`) in `pipeline.yml` (§5.3) |
+ | Merge-time strictness | already enforced upstream — Merge Gate polls mergeability and never passes UNKNOWN (PR #166); `strict: true` branch protection closes the same class server-side (§5.1) |
+-| Constitutional cross-ref | follow-up, deferred deliberately (§5.4) |
++| Constitutional cross-ref | delivered — AGENT_RULES.md U6 pointer (§5.4) |
+ 
+ ## 7. Verification Evidence
+ 

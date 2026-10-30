@@ -1,0 +1,26 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 1b7c38a1..fc4f5523 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -609,11 +609,10 @@ export function bridgeGuide() {
+       // convention lives here, not only in the z-schema description.
+       receiptClosureConvention:
+         "Docs-only (spec-only) submissions default to Refs #N — the spec-first keep-open contract (open until code lands). " +
+-        "Boundary (#2531): the keep-open contract keys on the scope-path class, not content semantics — it applies ONLY when EVERY scopePath is under docs/ (docs/, docs/bridge/, docs/work-orders/); ANY path outside docs/ makes the payload code-class and the PR auto-emits Closes #N, even if every changed file is a .md. " +
+         "When the docs-only patch IS the resolution of its target (closure receipts, verification receipts that resolve their finding), " +
+         "pass closesOriginalIssue: true in bridge_submit_patch so the landed PR emits Closes #N and the work order closes on merge. " +
+         "Watch/census receipts that do NOT resolve their subject keep the default — they are correctly open until their subject resolves. " +
+-        "Evidence: #2405 stayed open after #2427 landed; #2368 after #2466; #2508's 17-row cohort; #2531's triad (#2517 textual-under-scripts auto-closed +3s vs #2521/#2523 docs/ receipts stuck open).",
++        "Evidence: #2405 stayed open after #2427 landed; #2368 after #2466; #2508's 17-row cohort.",
+       externalAgentsNeverWriteToMain: true,
+       landingAuthority: "constitutional gates only — the bridge never merges",
+     },
+@@ -1624,7 +1623,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+     alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+-    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Boundary (#2531): the keep-open contract applies only when EVERY scopePath is under docs/; any path outside docs/ is code-class and auto-emits Closes #N regardless of this flag. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
++    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
+   };
+ 
+   server.tool(

@@ -1,0 +1,49 @@
+diff --git a/tests/test_pick_feedback_preverify.py b/tests/test_pick_feedback_preverify.py
+index 65ffc3c5..5e4f434e 100644
+--- a/tests/test_pick_feedback_preverify.py
++++ b/tests/test_pick_feedback_preverify.py
+@@ -32,6 +32,7 @@
+ 
+ from __future__ import annotations
+ 
++import ast
+ import sys
+ import unittest
+ import unittest.mock
+@@ -175,11 +176,35 @@ def test_loop_source_wires_live_probe_at_both_dispatch_sites(self):
+         Comment-immune source check (wiring-pin precedent): the two
+         pick_next_issue call sites in run_dispatch_cycle must carry the live
+         probe kwarg, so the pre-verify cannot silently regress to prose-only.
++
++        #2899-heal: the exact-substring pin (count of
++        "pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)")
++        was born-red when the stdout-purity fix added a third kwarg
++        (log_fn=_stderr_log) to the envelope-mode call site — the probe
++        wiring was intact, only the signature evolved. The pin now counts
++        pick_next_issue Call nodes whose keywords include
++        claim_probe=_feedback_claim_active (signature-robust, still
++        comment-immune), so future kwarg additions cannot fake a regression
++        nor mask a real one.
+         """
+         src = cal.__file__
+         self.assertTrue(src.endswith("continuous_agent_loop.py"))
+         loop_src = Path(src).read_text(encoding="utf-8")
+-        wired = loop_src.count("pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)")
++        tree = ast.parse(loop_src)
++        wired = 0
++        for node in ast.walk(tree):
++            if not isinstance(node, ast.Call):
++                continue
++            fname = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
++            if fname != "pick_next_issue":
++                continue
++            for kw in node.keywords:
++                if (
++                    kw.arg == "claim_probe"
++                    and isinstance(kw.value, ast.Name)
++                    and kw.value.id == "_feedback_claim_active"
++                ):
++                    wired += 1
+         self.assertEqual(
+             wired,
+             2,

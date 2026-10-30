@@ -1,0 +1,390 @@
+diff --git a/core/api/routes/admin_auth.py b/core/api/routes/admin_auth.py
+index 70e8ff59..b5feda6b 100644
+--- a/core/api/routes/admin_auth.py
++++ b/core/api/routes/admin_auth.py
+@@ -10,7 +10,7 @@
+ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য (JWT-COOKIE-MIGRATION): auto_error=False করা হলো যাতে
+ # Authorization header না থাকলে exception না ছুঁড়ে httpOnly cookie
+diff --git a/core/api/routes/async_task_router.py b/core/api/routes/async_task_router.py
+index 68afca7e..d918d96b 100644
+--- a/core/api/routes/async_task_router.py
++++ b/core/api/routes/async_task_router.py
+@@ -3,7 +3,7 @@
+ from fastapi import APIRouter, Request
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.orchestration.agent_orchestrator import async_task_manager
+ 
+ router = APIRouter(prefix="/api/task", tags=["async-task"])
+diff --git a/core/api/routes/billing_api.py b/core/api/routes/billing_api.py
+index a8f2eaa6..c6ae5d10 100644
+--- a/core/api/routes/billing_api.py
++++ b/core/api/routes/billing_api.py
+@@ -16,7 +16,7 @@
+ from api.dependencies import get_current_user_token
+ from core.config import settings
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session
+ from models.wallet import TransactionLedgerEntry, UserWallet
+ from services.billing.billing_plans import SUBSCRIPTION_PLANS, CheckoutRequest
+diff --git a/core/api/routes/branch_conversations.py b/core/api/routes/branch_conversations.py
+index 0cfa08dd..c146bb91 100644
+--- a/core/api/routes/branch_conversations.py
++++ b/core/api/routes/branch_conversations.py
+@@ -20,7 +20,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/browser/__init__.py b/core/api/routes/browser/__init__.py
+index 12075b5c..5793c9d3 100644
+--- a/core/api/routes/browser/__init__.py
++++ b/core/api/routes/browser/__init__.py
+@@ -63,7 +63,7 @@
+ from core.effective_policy import get_effective_policy, policy_store  # noqa: F401  (parity)
+ from core.errors.error_bus import with_error_bus  # noqa: F401  (module-attr parity)
+ from core.kernel.audit_logger import AuditLogger  # noqa: F401  (module-attr parity)
+-from core.logging_config import logger  # noqa: F401  (module-attr parity)
++from core.monitoring.logging_config import logger  # noqa: F401  (module-attr parity)
+ from core.neon_repository import (  # noqa: F401  (module-attr parity)
+     create_task as create_neon_task,
+ )
+diff --git a/core/api/routes/browser/_health.py b/core/api/routes/browser/_health.py
+index 967a08de..fe865331 100644
+--- a/core/api/routes/browser/_health.py
++++ b/core/api/routes/browser/_health.py
+@@ -20,7 +20,7 @@
+ 
+ from fastapi import APIRouter
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Dependency-free by design (see module docstring): NO router-level auth
+ # dependency here, unlike the package's main ``router``.
+diff --git a/core/api/routes/browser/_render_proxy.py b/core/api/routes/browser/_render_proxy.py
+index c623ef85..5f8b0886 100644
+--- a/core/api/routes/browser/_render_proxy.py
++++ b/core/api/routes/browser/_render_proxy.py
+@@ -19,7 +19,7 @@
+ 
+ from api.routes.browser import router
+ from core.config_parsers import parse_origin_list
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: ইন-অ্যাপ ব্রাউজার proxy (public) — বাহিরের সাইট X-Frame-Options/frame-ancestors দিয়ে
+ # iframe ব্লক করে, তাই সার্ভার-সাইড ফেচ করে iframe-এ রেন্ডার করা হয়। SSRF প্রতিরোধ জরুরি।
+diff --git a/core/api/routes/browser/_scraping.py b/core/api/routes/browser/_scraping.py
+index dbbab635..428d7385 100644
+--- a/core/api/routes/browser/_scraping.py
++++ b/core/api/routes/browser/_scraping.py
+@@ -18,7 +18,7 @@
+ from api.routes.browser import router
+ from core.cache.redis_manager import MultiLevelCache
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.ai_agents.browser_agent import BrowseRequest
+ 
+ 
+diff --git a/core/api/routes/browser/_session_store.py b/core/api/routes/browser/_session_store.py
+index 2844f9a9..ae45c072 100644
+--- a/core/api/routes/browser/_session_store.py
++++ b/core/api/routes/browser/_session_store.py
+@@ -43,7 +43,7 @@ def _hydrate_sessions() -> None:
+                 record = {k: v for k, v in data.items() if k != "__id__"}
+                 SESSIONS[sid] = record
+     except Exception as hydrate_err:
+-        from core.logging_config import logger
++        from core.monitoring.logging_config import logger
+ 
+         logger.warning("browser session store hydrate failed (mirror-only): %s", hydrate_err)
+ 
+diff --git a/core/api/routes/byoc_api.py b/core/api/routes/byoc_api.py
+index 1974d04a..7780fa56 100644
+--- a/core/api/routes/byoc_api.py
++++ b/core/api/routes/byoc_api.py
+@@ -11,7 +11,7 @@
+ from byoc.cloud_connector import GCPCredentialManager
+ from byoc.container_orchestrator import ContainerOrchestrator
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from models.byoc_payloads import BYOCCredentialsPayload, BYOCDeployRequest
+ from models.deployment_logs import DeploymentJob
+ 
+diff --git a/core/api/routes/cdc_webhooks.py b/core/api/routes/cdc_webhooks.py
+index df8a00dc..31e06d22 100644
+--- a/core/api/routes/cdc_webhooks.py
++++ b/core/api/routes/cdc_webhooks.py
+@@ -7,7 +7,7 @@
+ 
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/cdc", tags=["cdc"])
+ 
+diff --git a/core/api/routes/chat.py b/core/api/routes/chat.py
+index 3f3550be..7a6b068e 100644
+--- a/core/api/routes/chat.py
++++ b/core/api/routes/chat.py
+@@ -14,7 +14,7 @@
+ )
+ from core.llm.llm_gateway import llm_gateway
+ from core.llm.llm_gateway.context import InferenceContext
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.orchestration.conversation_orchestrator import (
+     ConversationCommand,
+     get_conversation_orchestrator,
+diff --git a/core/api/routes/chat_export.py b/core/api/routes/chat_export.py
+index 0458346d..a7509a0d 100644
+--- a/core/api/routes/chat_export.py
++++ b/core/api/routes/chat_export.py
+@@ -17,7 +17,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/chat_search.py b/core/api/routes/chat_search.py
+index c16cb8f0..22a4bd23 100644
+--- a/core/api/routes/chat_search.py
++++ b/core/api/routes/chat_search.py
+@@ -13,7 +13,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import SupabaseDB
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/chat_upload.py b/core/api/routes/chat_upload.py
+index 69e1d802..e05fed3d 100644
+--- a/core/api/routes/chat_upload.py
++++ b/core/api/routes/chat_upload.py
+@@ -9,7 +9,7 @@
+ from pydantic import BaseModel
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import SupabaseDB
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/circles.py b/core/api/routes/circles.py
+index 107d6d4a..847524c7 100644
+--- a/core/api/routes/circles.py
++++ b/core/api/routes/circles.py
+@@ -23,7 +23,7 @@
+ from core.circles.contracts import CircleName
+ from core.circles.envelopes import ExecutionEnvelope
+ from core.circles.governance_core import get_governance_core
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/v1/circles", tags=["Federated Circles"])
+ 
+diff --git a/core/api/routes/cloud_mesh.py b/core/api/routes/cloud_mesh.py
+index 98b59e49..5248f9b6 100644
+--- a/core/api/routes/cloud_mesh.py
++++ b/core/api/routes/cloud_mesh.py
+@@ -4,7 +4,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # For this demo/implementation we use dummy functions that would hook into actual services
+ # (e.g. GCP, Cloudflare, Upstash, OpenAI keys manager).
+diff --git a/core/api/routes/commandcenter/__init__.py b/core/api/routes/commandcenter/__init__.py
+index 7c923038..8d19fa18 100644
+--- a/core/api/routes/commandcenter/__init__.py
++++ b/core/api/routes/commandcenter/__init__.py
+@@ -18,7 +18,7 @@
+ from fastapi import APIRouter, Depends
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="/admin-api/commandcenter",
+diff --git a/core/api/routes/commandcenter/overview.py b/core/api/routes/commandcenter/overview.py
+index cf7c1448..255cec93 100644
+--- a/core/api/routes/commandcenter/overview.py
++++ b/core/api/routes/commandcenter/overview.py
+@@ -2,7 +2,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(
+     prefix="",
+diff --git a/core/api/routes/conversations.py b/core/api/routes/conversations.py
+index ade7d113..e03dc408 100644
+--- a/core/api/routes/conversations.py
++++ b/core/api/routes/conversations.py
+@@ -18,7 +18,7 @@
+ from fastapi import APIRouter, Depends, HTTPException, Query
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.rbac import get_current_user_token as verify_token_dependency
+ from database.supabase_client import SupabaseDB
+ 
+diff --git a/core/api/routes/crawler_admin.py b/core/api/routes/crawler_admin.py
+index f25d9cfe..3ad19986 100644
+--- a/core/api/routes/crawler_admin.py
++++ b/core/api/routes/crawler_admin.py
+@@ -25,7 +25,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.dependencies import get_project_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from scout import persistence
+ from scout.models import CrawlHistoryRecord, CrawlPolicy, DomainRule, TrustLevel
+ 
+diff --git a/core/api/routes/dock_integrations.py b/core/api/routes/dock_integrations.py
+index 3cac53a9..f5661663 100644
+--- a/core/api/routes/dock_integrations.py
++++ b/core/api/routes/dock_integrations.py
+@@ -5,7 +5,7 @@
+ from pydantic import BaseModel
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # STABILIZE FIX: PyGithub (`github` package) is an optional dependency.
+ # Make it a lazy import so the app boots even when PyGithub is not installed.
+diff --git a/core/api/routes/execution_policies.py b/core/api/routes/execution_policies.py
+index 87b9a1fd..f3f7ab7c 100644
+--- a/core/api/routes/execution_policies.py
++++ b/core/api/routes/execution_policies.py
+@@ -6,7 +6,7 @@
+ from sqlalchemy.future import select
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import get_db_session
+ from models.execution_policy import ExecutionPolicy
+ 
+diff --git a/core/api/routes/feedback.py b/core/api/routes/feedback.py
+index 9ea7cf31..b67218e2 100644
+--- a/core/api/routes/feedback.py
++++ b/core/api/routes/feedback.py
+@@ -14,7 +14,7 @@
+ 
+ from core.degraded_mode import sqlite_fallback_allowed
+ from core.feedback_loop import FeedbackLoop
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def _get_db_path() -> Path:
+diff --git a/core/api/routes/files.py b/core/api/routes/files.py
+index 0f8cde7e..2a141fd6 100644
+--- a/core/api/routes/files.py
++++ b/core/api/routes/files.py
+@@ -22,7 +22,7 @@
+ 
+ from api.dependencies import get_current_user_token
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/files", tags=["Workspace Files"])
+ 
+diff --git a/core/api/routes/github.py b/core/api/routes/github.py
+index a4860190..a68c0397 100644
+--- a/core/api/routes/github.py
++++ b/core/api/routes/github.py
+@@ -8,7 +8,7 @@
+ 
+ from api.dependencies import get_current_user_token, get_tenant_db
+ from database.session import get_db_session
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ try:
+     from core.service_container import global_http_client  # FIX: reuse shared connection pool
+ except ImportError:
+diff --git a/core/api/routes/global_memory.py b/core/api/routes/global_memory.py
+index 226565c7..9e8758d7 100644
+--- a/core/api/routes/global_memory.py
++++ b/core/api/routes/global_memory.py
+@@ -14,7 +14,7 @@
+ from pydantic import BaseModel, Field
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db as supabase_db
+ 
+ router = APIRouter(
+diff --git a/core/api/routes/graph.py b/core/api/routes/graph.py
+index 9257ad9b..d62d1222 100644
+--- a/core/api/routes/graph.py
++++ b/core/api/routes/graph.py
+@@ -3,7 +3,7 @@
+ from fastapi import APIRouter, Depends, HTTPException, Query
+ 
+ from api.routes.auth import optional_current_user
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: ফ্রন্টএন্ডে নলেজ গ্রাফ ডেটা (Nodes & Edges) এবং লার্নিং পাথ এক্সপোজ করার API রাউটার।
+ 
+diff --git a/core/api/routes/health.py b/core/api/routes/health.py
+index 63e494f9..70fb4bfa 100644
+--- a/core/api/routes/health.py
++++ b/core/api/routes/health.py
+@@ -20,7 +20,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.db_schema_gate import check_schema_status, production_schema_incompatible
+ from core.degraded_mode import db_degraded
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter()
+ 
+diff --git a/core/api/routes/integrations.py b/core/api/routes/integrations.py
+index 64b68fc2..0107391c 100644
+--- a/core/api/routes/integrations.py
++++ b/core/api/routes/integrations.py
+@@ -14,7 +14,7 @@
+ 
+ from api.dependencies import get_current_user_token
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.security_vault import encrypt_token
+ from database.session import get_db_session
+ from models.integration import Integration

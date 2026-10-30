@@ -1,0 +1,38 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 26434299..717d28ac 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -79,15 +79,11 @@ unlisted group raises `ValueError` inside `build_task_contract()` **and**
+ `.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
+ registry** — keep the two in sync when the taxonomy changes.
+ 
+-**Relationship to `AGENT_RULES.md` §5 (#90):** §5's eight Primary Groups
+-(GOVERNANCE, SECURITY, PIPELINE, ARCHITECTURE, RELIABILITY, PRODUCT,
+-INTELLIGENCE, INFRASTRUCTURE) are *policy domains* of the constitutional
+-taxonomy — a different surface from this *execution registry*. They are
+-reconciled by a default-routing map in `AGENT_RULES.md` §5 ("Registry
+-relationship"); on the public board the registry group below is authoritative
+-for dispatch, and a §5 domain never substitutes for a registry group. Changing
+-either list is an ADMIN_DECISION.
+-
++**Relationship to `AGENT_RULES.md` (#90):** the canonical U1–U10 universal rules and
++P0–P7 engineering policies live in `AGENT_RULES.md` (§2 and §4 respectively); its §5 is
++*Machine Enforcement* (task-validation and board-SSOT guard commands) — it defines no
++group taxonomy. The execution registry below is the authoritative group surface for
++dispatch; no constitutional section substitutes for a registry group. Changing
+ ## 4. CLI surface after #63
+ 
+ | Command | Status | Behaviour |
+diff --git a/docs/ZERO_ADMIN_GUIDE.md b/docs/ZERO_ADMIN_GUIDE.md
+index 4f20a807..cfa90f08 100644
+--- a/docs/ZERO_ADMIN_GUIDE.md
++++ b/docs/ZERO_ADMIN_GUIDE.md
+@@ -96,7 +96,7 @@ A PR that satisfies this checklist has historically landed **without any admin a
+ ## Related Documents
+ 
+ - [AGENTS.md](../AGENTS.md) — agent constitution; §2.1 Zero-Admin policy and the 3 submission pathways
+-- [AGENT_RULES.md](../AGENT_RULES.md) — operational policy contracts (U1–U12; U4 anti-duplicate, U8 closing-keyword doctrine, U10 loop-granted authority)
++- [AGENT_RULES.md](../AGENT_RULES.md) — operational policy contracts (U1–U10; U4 anti-duplicate, U8 decision-ledger & closing-keyword doctrine, U10 loop-granted authority)
+ - [docs/GUARDIAN_EVALUATION.md](./GUARDIAN_EVALUATION.md) — CI Guardian verdict SSOT (checks, scores, healing instructions)
+ - [docs/INGRESS_SECURITY_POLICY.md](./INGRESS_SECURITY_POLICY.md) — Zero-Force-Push, stale-base rejection, and public-first ingress enforcement
+ - [docs/OPS_ACTIONS_QUOTA_RUNBOOK.md](./OPS_ACTIONS_QUOTA_RUNBOOK.md) — the 2-workflow quota diet that makes shift-left enforcement free

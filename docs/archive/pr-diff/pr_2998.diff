@@ -1,0 +1,211 @@
+diff --git a/core/llm/advanced_model_router.py b/core/llm/advanced_model_router.py
+index 0a8deaff..c4ad3a37 100644
+--- a/core/llm/advanced_model_router.py
++++ b/core/llm/advanced_model_router.py
+@@ -19,7 +19,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Tier 0 Deterministic Patterns ──────────────────────────────────────────
+ _DETERMINISTIC_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+diff --git a/core/llm/free_tier_tracker.py b/core/llm/free_tier_tracker.py
+index 1400b3b9..1709a6c3 100644
+--- a/core/llm/free_tier_tracker.py
++++ b/core/llm/free_tier_tracker.py
+@@ -17,7 +17,7 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ..config import settings  # Fixed import path - using relative import
+ from ..messaging.event_bus import (
+diff --git a/core/llm/llm_gateway/__init__.py b/core/llm/llm_gateway/__init__.py
+index 5a8b5bb6..966775ba 100644
+--- a/core/llm/llm_gateway/__init__.py
++++ b/core/llm/llm_gateway/__init__.py
+@@ -32,7 +32,7 @@
+ 
+ from core.errors.error_bus import with_error_bus
+ from core.llm.telemetry import track_llm_call
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.firestore_helpers import get_firestore_db
+ 
+ from ...config import settings  # Fixed import path - using relative import
+diff --git a/core/llm/llm_gateway/completion.py b/core/llm/llm_gateway/completion.py
+index 8925bbc1..be2ee035 100644
+--- a/core/llm/llm_gateway/completion.py
++++ b/core/llm/llm_gateway/completion.py
+@@ -24,7 +24,7 @@
+ 
+ from core.errors.error_bus import with_error_bus
+ from core.llm.telemetry import track_llm_call
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...config import settings  # Fixed import path - using relative import
+ from ...cost_guard import CostGuard  # Fixed import path - using relative import
+diff --git a/core/llm/llm_gateway/gateway.py b/core/llm/llm_gateway/gateway.py
+index 11dd2614..08860425 100644
+--- a/core/llm/llm_gateway/gateway.py
++++ b/core/llm/llm_gateway/gateway.py
+@@ -11,7 +11,7 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...config import settings  # Fixed import path - using relative import
+ from ...observability.providers.langfuse_adapter import LangfuseAdapter
+diff --git a/core/llm/llm_gateway/http_client.py b/core/llm/llm_gateway/http_client.py
+index aa87b704..2d12df44 100644
+--- a/core/llm/llm_gateway/http_client.py
++++ b/core/llm/llm_gateway/http_client.py
+@@ -12,7 +12,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...config import settings  # Fixed import path - using relative import
+ 
+diff --git a/core/llm/llm_gateway/litellm_runtime.py b/core/llm/llm_gateway/litellm_runtime.py
+index 5098b9c5..99282b7e 100644
+--- a/core/llm/llm_gateway/litellm_runtime.py
++++ b/core/llm/llm_gateway/litellm_runtime.py
+@@ -9,7 +9,7 @@
+ import asyncio
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...messaging.event_bus import (  # Fixed import path - using relative import
+     ErrorContext,
+diff --git a/core/llm/llm_gateway/resilience.py b/core/llm/llm_gateway/resilience.py
+index 69f8b35a..1412546b 100644
+--- a/core/llm/llm_gateway/resilience.py
++++ b/core/llm/llm_gateway/resilience.py
+@@ -10,7 +10,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...resilience.circuit_breaker import (
+     CircuitBreaker,  # Fixed import path - using relative import
+diff --git a/core/llm/llm_gateway/routing.py b/core/llm/llm_gateway/routing.py
+index 330f6b77..08a7b3ba 100644
+--- a/core/llm/llm_gateway/routing.py
++++ b/core/llm/llm_gateway/routing.py
+@@ -10,7 +10,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...config import settings  # Fixed import path - using relative import
+ from ...messaging.event_bus import (  # Fixed import path - using relative import
+diff --git a/core/llm/llm_gateway/spend_meter.py b/core/llm/llm_gateway/spend_meter.py
+index 8823bb76..1beb62c9 100644
+--- a/core/llm/llm_gateway/spend_meter.py
++++ b/core/llm/llm_gateway/spend_meter.py
+@@ -20,7 +20,7 @@
+ import math
+ from typing import Any
+ 
+-from core.logging_config import logger  # loguru logger (monitoring.logging_config shim)
++from core.monitoring.logging_config import logger  # loguru logger (monitoring.logging_config shim)
+ 
+ 
+ def _finite_non_negative(value: Any) -> float | None:
+diff --git a/core/llm/llm_gateway/streaming.py b/core/llm/llm_gateway/streaming.py
+index cc041830..a378d801 100644
+--- a/core/llm/llm_gateway/streaming.py
++++ b/core/llm/llm_gateway/streaming.py
+@@ -15,7 +15,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .registry import _resolve_litellm_target
+ from .spend_meter import settle_gateway_spend
+diff --git a/core/llm/providers/cloud_adapter.py b/core/llm/providers/cloud_adapter.py
+index 96a26d5a..1a59c08e 100644
+--- a/core/llm/providers/cloud_adapter.py
++++ b/core/llm/providers/cloud_adapter.py
+@@ -1,7 +1,7 @@
+ from collections.abc import AsyncGenerator, Sequence
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ..interfaces import ModelProvider
+ 
+diff --git a/core/llm/providers/ollama_adapter.py b/core/llm/providers/ollama_adapter.py
+index 7c507891..d429e511 100644
+--- a/core/llm/providers/ollama_adapter.py
++++ b/core/llm/providers/ollama_adapter.py
+@@ -4,7 +4,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from ...config import settings
+ from ..interfaces import ModelProvider
+diff --git a/core/llm/telemetry.py b/core/llm/telemetry.py
+index 22644617..22763a67 100644
+--- a/core/llm/telemetry.py
++++ b/core/llm/telemetry.py
+@@ -31,9 +31,9 @@
+ from typing import Any
+ 
+ try:
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ except ImportError:
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+ 
+diff --git a/core/llm/token_budget.py b/core/llm/token_budget.py
+index 7096c9c5..f8c27e07 100644
+--- a/core/llm/token_budget.py
++++ b/core/llm/token_budget.py
+@@ -22,7 +22,7 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/core/llm/token_deductor.py b/core/llm/token_deductor.py
+index 794f0851..ebc178d1 100644
+--- a/core/llm/token_deductor.py
++++ b/core/llm/token_deductor.py
+@@ -18,7 +18,7 @@
+ from enum import Enum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # রিলেটিভ ইম্পোর্ট পাথ ঠিক করা হলো
+ from ..cache.redis_manager import redis_manager

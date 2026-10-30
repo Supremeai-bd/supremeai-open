@@ -1,0 +1,74 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index c8572b5b..a0dcd9a8 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -309,12 +309,34 @@ def _fetch_rejected_rows_tower(fetch_text=_tower_text) -> list[dict]:
+     #2020/#2056 enumerated 0 rows; live post-fix 2026-10-29, zero-credential
+     vantage: 20 rows). Rows carry number/title/labels/createdAt in the same
+     normalize shape as the github plane (no body — run_verdicts needs none
+-    and refine_satellites fetches bodies itself)."""
+-    data = json.loads(fetch_text("bridge_work_queue", {"label": REJECTED_LABEL}))
+-    if not isinstance(data, dict) or not isinstance(data.get("workOrders"), list):
+-        raise TypeError("bridge_work_queue: expected {workOrders: [...]}, got "
+-                        f"{type(data).__name__}")
+-    return data["workOrders"]
++    and refine_satellites fetches bodies itself).
++
++    Limit ladder (#2292 evidence, #2286 class): the no-limit call fetched
++    only the tower default page — 20 rows against a 52-row rejected plane
++    (R58 sweep, 2026-10-29), silently truncating the FALSE_REJECTION
++    worklist. Walks the SAME QUEUE_LIMIT_LADDER as the queue plane, label
++    preserved per rung: an r2 tower answers 200; a lagging pre-r2 deploy
++    descends to 50, then the tower default (exact pre-ladder behavior as
++    the last rung). Transport rejections (non-JSON error text, isError
++    envelope) descend; a payload that ANSWERS with the wrong shape stays
++    fail-loud — a contract violation is never read as an empty truth."""
++    last_err: Exception = RuntimeError("rejected-plane tower ladder exhausted")
++    for limit in QUEUE_LIMIT_LADDER:
++        arguments = {"label": REJECTED_LABEL} if limit is None else {
++            "label": REJECTED_LABEL, "limit": limit}
++        try:
++            payload = json.loads(fetch_text("bridge_work_queue", arguments))
++        except json.JSONDecodeError as err:  # error-envelope text, not JSON
++            last_err = err
++            continue
++        if not isinstance(payload, dict) or payload.get("isError"):
++            last_err = TypeError(f"rejected rung {limit} answered a non-payload")
++            continue
++        if not isinstance(payload.get("workOrders"), list):
++            raise TypeError("bridge_work_queue: expected {workOrders: [...]}, got "
++                            f"{type(payload).__name__}")
++        return payload["workOrders"]
++    raise last_err
+ 
+ 
+ def _load_rejected_plane(fetch_rows=_fetch_rejected_rows,
+@@ -924,6 +946,28 @@ def _ratelimited():
+     except TypeError:
+         cases.append(("tower rejected plane missing workOrders fails loud",
+                       True, ""))
++    sent_args: list = []
++    _fetch_rejected_rows_tower(fetch_text=lambda n, a: (sent_args.append(dict(a)) or
++        json.dumps({"count": 1, "workOrders": [{"number": 2056, "title": "x",
++                                                "labels": ["bridge:rejected"]}]})))
++    cases.append(("rejected tower ladder asks label+limit 200 first",
++                  sent_args and sent_args[0].get("label") == REJECTED_LABEL
++                  and sent_args[0].get("limit") == 200,
++                  f"args={sent_args[:1]}"))
++    rung_calls: list = []
++
++    def _pre_r2(n, a):
++        rung_calls.append(dict(a))
++        if len(rung_calls) == 1:
++            return "MCP error -32602: limit 200 above pre-r2 cap"
++        return json.dumps({"count": 1, "workOrders": [{"number": 2056}]})
++
++    descended = _fetch_rejected_rows_tower(fetch_text=_pre_r2)
++    cases.append(("rejected tower ladder descends to 50, label preserved",
++                  descended == [{"number": 2056}] and len(rung_calls) == 2
++                  and rung_calls[1].get("label") == REJECTED_LABEL
++                  and rung_calls[1].get("limit") == 50,
++                  f"calls={rung_calls}"))
+     joined, joined_n = _join_rejected_plane([{"number": 5, "title": "q"}], rows)
+     cases.append(("rejected plane queue rows win on collision",
+                   joined_n == 100 and joined[0]["title"] == "q"

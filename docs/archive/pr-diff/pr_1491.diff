@@ -1,0 +1,717 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 7475f134..1f1c5111 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -284,4 +284,18 @@ for line in $updates; do
+ done
+ IFS="$OIFS"
+ 
++# 6. Ruff strict name/syntax check (Federation CI Parity) on gateway/ and core/.
++if command -v ruff >/dev/null 2>&1; then
++    for d in gateway core; do
++        if [ -d "$d" ]; then
++            if ! ruff check "$d" --select=E9,F63,F7,F82; then
++                reject "ruff check failed on $d/ (Federation CI Parity)" \
++                    "Undefined names / syntax errors would break supremeai-api CI on dispatch." \
++                    "Fix the reported ruff errors before pushing." \
++                    "Deliberate admin bypass: git push --no-verify."
++            fi
++        fi
++    done
++fi
++
+ exit 0
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 354139a4..2c2316e5 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -740,11 +740,57 @@ jobs:
+             -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
+ 
+   # ---------------------------------------------------------------------------
++  # 🎨 Studio — TypeScript verification (mirrors supremeai-studio CI)
++  # ---------------------------------------------------------------------------
++  studio-verification:
++    name: Studio TypeScript Verification (tsc)
++    needs: boundary_sanitization_guard
++    if: |
++      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
++      (needs.boundary_sanitization_guard.result == 'success' && needs.boundary_sanitization_guard.outputs.docs_only != 'true')
++    runs-on: ubuntu-24.04
++    timeout-minutes: 10
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v5
++
++      - name: Check if Studio exists
++        id: check_studio
++        run: |
++          if [ -d "studio" ]; then
++            echo "exists=true" >> "$GITHUB_OUTPUT"
++          else
++            echo "exists=false" >> "$GITHUB_OUTPUT"
++          fi
++
++      - name: Setup pnpm
++        if: steps.check_studio.outputs.exists == 'true'
++        uses: pnpm/action-setup@v4
++        with:
++          version: 9.15.4
++
++      - name: Setup Node
++        if: steps.check_studio.outputs.exists == 'true'
++        uses: actions/setup-node@v5
++        with:
++          node-version: "22"
++          cache: "pnpm"
++          cache-dependency-path: studio/pnpm-lock.yaml
++
++      - name: Typecheck Studio
++        if: steps.check_studio.outputs.exists == 'true'
++        run: |
++          set -euo pipefail
++          cd studio
++          pnpm install --frozen-lockfile --prefer-offline || npm ci
++          pnpm run typecheck
++
++    # ---------------------------------------------------------------------------
+   # 🛬 Autonomous Auto-Landing (Squash-Merge PR on Green Verification)
+   # ---------------------------------------------------------------------------
+   auto-landing:
+     name: "🛬 Autonomous Auto-Landing"
+-    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower]
++    needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard, test-matrix, secrets-scan, mcp-tower, studio-verification]
+     if: |
+       always() &&
+       github.event_name == 'pull_request' &&
+diff --git a/docs/AUDIT_PREMATURELY_CLOSED_ISSUES.md b/docs/AUDIT_PREMATURELY_CLOSED_ISSUES.md
+new file mode 100644
+index 00000000..e6e4d84a
+--- /dev/null
++++ b/docs/AUDIT_PREMATURELY_CLOSED_ISSUES.md
+@@ -0,0 +1,74 @@
++# Audit Report: Prematurely Closed Issues (Doc/Spec Only, Unimplemented in Code)
++
++> **Generated on:** 2026-10-27  
++> **Repository:** `Supremeai-bd/supremeai-open`  
++> **Investigation Root Cause:** Automated bridge submissions generated PRs with `Closes #<ID>` for documentation/specification-only commits (`docs/bridge/*`), prematurely closing critical feature and bug-fix issues in GitHub before any implementation code reached `studio/*`, `gateway/*`, or `core/*`.
++
++---
++
++## 1. Executive Summary
++
++A comprehensive scan of the repository commit history reveals **30 issues** that were marked **Closed (Completed)** on GitHub via automated PR merges, where **only a markdown specification or documentation was committed**. 
++
++In reality, **no corresponding functional frontend or backend code was merged** for these issues.
++
++---
++
++## 2. Categorized Inventory of Prematurely Closed Issues
++
++### Category A: Missing Core Product Features (Monica Gap Map — Bangla Audit)
++These are high-priority user-facing features that users expect to see, but only have markdown specifications in `docs/bridge/`:
++
++| Issue # | Priority | Feature Name / Scope | Premature Commit | Files Touched (Specs Only) | Actual Code Status |
++|:---:|:---:|:---|:---:|:---|:---:|
++| **#1462** | **P1** | **Studio Multi-Model Picker** | `7b8096ac` | `docs/bridge/bridge-20261027-audit-gap-model-picker.md` | ❌ **Unimplemented** (Studio UI has no provider health dots or multi-model selector) |
++| **#1464** | **P2** | **AI Multi-Chat (Side-by-Side View)** | `9c7d30c7` | `docs/bridge/bridge-20261027-audit-gap-multichat-compare.md` | ❌ **Unimplemented** (No side-by-side comparison screen) |
++| **#1466** | **P2** | **Agent Mode (Task Plan & HITL UI)** | `c52cf06f` | `docs/bridge/bridge-20261027-audit-gap-agent-mode.md` | ❌ **Unimplemented** (Agent toggle & approval cards not in Studio) |
++| **#1468** | **P2** | **Tools Suite (Translate, Mindmap, Doc)** | `ae790fa2` | `docs/bridge/bridge-20261027-audit-gap-tools-suite.md` | ❌ **Unimplemented** (Zero tools surfaced in user UI) |
++| **#1470** | **P1** | **Memory-Aware Chat UX (Graph View)** | *(Queue)* | `docs/bridge/bridge-20261027-audit-gap-memory-chat-ux.md` | ❌ **Unimplemented** (Memory entities hidden from chat) |
++| **#1474** | **P2** | **Image Generation Studio Tab** | `120cd8a7` | `docs/bridge/bridge-20261027-audit-gap-image-gen.md` | ❌ **Unimplemented** (No image generation tab or route) |
++| **#1476** | **P3** | **Browser Extension Store Artifact** | *(Queue)* | `docs/bridge/bridge-20261027-audit-gap-extension-store.md` | ❌ **Unimplemented** (No build artifact prepared for store) |
++| **#1478** | **P3** | **Distribution Infra (Status/SEO/Share)** | `c4433ec3` | `docs/bridge/bridge-20261027-audit-gap-distribution-infra.md` | ❌ **Unimplemented** (No public status page or SEO metadata) |
++| **#1480** | **P1** | **Consolidated Broken-Feature Tracker** | `09dec15b` | `docs/bridge/bridge-20261027-audit-broken-tracker.md` | ❌ **Tracker Closed** (Closed as soon as doc was added!) |
++
++---
++
++### Category B: Critical System & Production Defects (Unresolved Findings)
++These issues describe runtime flaws, security gaps, and operational bottlenecks. The issues were closed when the finding was documented:
++
++| Issue # | Priority | Description / Bug Scope | Premature Commit | Files Touched (Specs Only) | Actual Code Status |
++|:---:|:---:|:---|:---:|:---|:---:|
++| **#1314** | **P0** | **Render primary-node deploy failure** | `1469dc3e` | `docs/bridge/orders/bridge-20261027-render-poetry-lock.md` | ❌ Lockfile fix not verified in code |
++| **#1316** | **P0** | **Plaintext OTP Logging in Browser Sandbox** | `07ceec72` | `docs/bridge/orders/bridge-20261027-otp-plaintext-log.md` | ❌ Security vulnerability open |
++| **#1318** | **P0** | **Ghost Bridge Server XSS / Injection Risk** | `3a462d8c` | `docs/bridge/orders/bridge-20261027-ghost-bridge-xss.md` | ❌ Unpatched in code |
++| **#1320** | **P0** | **Studio `/admin` Route Guard Bypass** | `178251cf` | `docs/bridge/orders/bridge-20261027-studio-admin-guard.md` | ❌ Client-only route protection flaw |
++| **#1322** | **P0** | **Upstash Redis Primary Quota Exhaustion** | `c56c0947` | `docs/bridge/orders/bridge-20261027-redis-quota-ledger.md` | ❌ In-memory ledger fallback not deployed |
++| **#1324** | **P0** | **Readiness vs Liveness Smoke Gates** | `e45f7b5f` | `docs/bridge/orders/bridge-20261027-readyz-smoke-gates.md` | ❌ Health checks remain superficial |
++| **#1326** | **P1** | **CI failure-masking in `supremeai-core`** | `3fc60268` | `docs/bridge/orders/bridge-20261027-ci-failure-masking.md` | ❌ Core CI error masking still present |
++| **#1329** | **P0** | **MCP Tower self-capability broken** | `9000c405` | `docs/bridge/bridge-20261027-tower-self-capability.md` | ❌ Tower tools still report empty AST graphs |
++| **#1331** | **P1** | **Guardian Verdict Executor Not Enacted** | `fa4b1720` | `docs/bridge/bridge-20261027-guardian-verdict-executor.md` | ❌ Verdicts evaluated but not executed |
++| **#1333** | **P1** | **Client Streaming Retry (SupremeAIService)** | `ae6fd633` | `docs/bridge/bridge-20261027-client-streaming-retry.md` | ❌ Retry mechanism missing in desktop/VSCode |
++| **#1335** | **P1** | **Frontend Observability & Error Telemetry** | `6c29c9a5` | `docs/bridge/bridge-20261027-frontend-observability.md` | ❌ Sentry/telemetry missing from UI |
++| **#1337** | **P1** | **Feedback Loop / Knowledge Loop Dead** | `5e4cb099` | `docs/bridge/bridge-20261027-knowledge-loop.md` | ❌ Feedback table has 0 active learner rows |
++| **#1339** | **P2** | **Studio Bundle Splitting (~1.2 MB uncompressed)** | `e337e402` | `docs/bridge/bridge-20261027-studio-bundle-split.md` | ❌ Heavy chunks not code-split |
++| **#1341** | **P2** | **Memory Graph Store Structurally Empty** | `260846be` | `docs/bridge/bridge-20261027-memory-graph-empty.md` | ❌ Node relations not automatically hydrated |
++| **#1343** | **P2** | **Tenant Isolation Never Exercised** | `c7d1a2b0` | `docs/bridge/bridge-20261027-tenant-dogfood.md` | ❌ Multi-tenant testing missing |
++| **#1345** | **P2** | **Redis Rotation Rule Cooldown Flaw** | `17bb0926` | `docs/bridge/bridge-20261027-redis-rotation-rule.md` | ❌ Buggy cooldown calculation intact |
++| **#1347** | **P2** | **Core God-Init Hygiene (`core/__init__.py`)** | `7fe08716` | `docs/bridge/bridge-20261027-core-hygiene.md` | ❌ Bloated 16KB `__init__.py` untouched |
++| **#1384** | **P1** | **Verdict-Executor Cron Pipeline Installation** | `6740e43d` | `docs/ci-templates/verdict-executor.yml` | ❌ Template committed to `docs/`, not `.github/` |
++| **#1386** | **P2** | **Edge WAF Filter Blocking MCP Tool Calls** | `8e992cee` | `docs/bridge/bridge-20261027-waf-body-filter-hazard.md` | ❌ Request payload sanitizer not active |
++| **#1442** | **P2** | **Bridge v2 Unified Diff Lane Gap** | `25d806fa` | `docs/bridge/bridge-20261027-bridge-unified-diff-lane-gap.md` | ❌ Patch applier lacks fallback lane |
++| **#1446** | **P0** | **Nightly PyErrorFix SARIF Failure Mask** | `29838b39` | `docs/ci-templates/ci-core-pyerrorfix-guard.yml` | ❌ Guard template not active in satellite |
++| **#1456** | **P0** | **AST Sync Nightly Cron Activation** | `517c5c0c` | `docs/ci-templates/graphify-ast-sync.yml` | ❌ Template not wired to workflow |
++| **#1458** | **P2** | **Stale CI Orders Cleanup (19 orders)** | `7c44efde` | `docs/bridge/bridge-20261027-housekeeping-stale-ci-orders.md` | ❌ Closed with a markdown doc |
++
++---
++
++## 3. Recommended Remediation Plan
++
++1. **Reopen the 9 Bangla Audit Feature Gaps:**
++   - Issues **#1462, #1464, #1466, #1468, #1470, #1474, #1476, #1478, #1480** should be marked as **Reopened** or converted into actionable satellite Sub-Issues under `#749 (Studio)` and `#750 (API)`.
++2. **Execute Actual Implementation Branches:**
++   - Agents should pick these issues, read their respective specifications in `docs/bridge/`, and submit code changes directly targeting `studio/*` and `gateway/*`.
++3. **Strict Policy Enforcement:**
++   - With our newly applied root fix in `bridge.tools.ts`, `bridge_intake.py`, and `auto_bridge_pr_opener.py`, future spec files will strictly use `Refs #N` without `Closes #N`, preventing any further false completions.
+diff --git a/scripts/ci/deploy_preflight_guard.py b/scripts/ci/deploy_preflight_guard.py
+index 5d08b4db..0f20807b 100644
+--- a/scripts/ci/deploy_preflight_guard.py
++++ b/scripts/ci/deploy_preflight_guard.py
+@@ -25,6 +25,7 @@
+ import json
+ import os
+ import py_compile
++import subprocess
+ import sys
+ from pathlib import Path
+ from typing import Any
+@@ -64,6 +65,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
+     if targets is None:
+         scan_paths = [
+             REPO_ROOT / "core",
++            REPO_ROOT / "gateway",
+             REPO_ROOT / "api",
+             REPO_ROOT / "agents",
+             REPO_ROOT / "skills",
+@@ -89,6 +91,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
+     py_count = 0
+     json_count = 0
+     yaml_count = 0
++    python_files: list[Path] = []
+ 
+     for file_path in files_to_check:
+         ext = file_path.suffix.lower()
+@@ -96,6 +99,7 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
+         # 1. Python Syntax
+         if ext == ".py":
+             py_count += 1
++            python_files.append(file_path)
+             try:
+                 py_compile.compile(str(file_path), doraise=True)
+             except py_compile.PyCompileError as e:
+@@ -125,6 +129,20 @@ def run_step1_syntax(targets: list[Path] | None = None) -> tuple[bool, list[str]
+                     f"YAML Syntax Error in {file_path.relative_to(REPO_ROOT)}: {e}"
+                 )
+ 
++    # Ruff strict name/syntax check (mirrors satellite CI: E9,F63,F7,F82)
++    ruff_dirs = [d for d in (REPO_ROOT / "gateway", REPO_ROOT / "core") if d.is_dir()]
++    if ruff_dirs:
++        try:
++            result = subprocess.run(
++                ["ruff", "check", "--select=E9,F63,F7,F82"] + [str(d) for d in ruff_dirs],
++                capture_output=True,
++                text=True,
++            )
++            if result.returncode != 0:
++                for line in (result.stdout + result.stderr).strip().splitlines()[:50]:
++                    errors.append(f"Ruff: {line}")
++        except FileNotFoundError as exc:
++            print(f"[Step 1: Syntax & Lint] INFO: ruff not installed ({exc!r}); skipping ruff check.")
+     passed = len(errors) == 0
+     print(
+         f"[Step 1: Syntax & Lint] Checked: {py_count} Python, {json_count} JSON, {yaml_count} YAML files."
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 46e3035a..4f9370dd 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -23,6 +23,7 @@
+ import subprocess
+ import sys
+ import tempfile
++import time
+ from pathlib import Path
+ 
+ if hasattr(sys.stdout, "reconfigure"):
+diff --git a/studio/src/components/chat/UnifiedChatPanel.tsx b/studio/src/components/chat/UnifiedChatPanel.tsx
+index b0f2bc63..e443ab4e 100644
+--- a/studio/src/components/chat/UnifiedChatPanel.tsx
++++ b/studio/src/components/chat/UnifiedChatPanel.tsx
+@@ -10,6 +10,7 @@ import { ChatDockBar, type DockAction, type DockApp } from './ChatDockBar';
+ // SATISFACTION PULSE (P2, 2026-10-25 report §7/Table 8): opt-in one-question
+ // CSAT micro-survey; admin embeds that omit the prop stay pixel-identical.
+ import { SatisfactionPulse } from '../feedback/SatisfactionPulse';
++import { useSmartVoice } from '../../hooks/useSmartVoice';
+ 
+ // UNIFIED CHAT (Phase 1, 2026-10-24): the chat core (engine + panel UI) was
+ // extracted from src/pages/PublicPages.tsx so guest, user and admin
+@@ -519,11 +520,28 @@ export function UnifiedChatPanel({
+   const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
+   const [busy, setBusy] = React.useState(false);
+   const [awaitingFirst, setAwaitingFirst] = React.useState(false);
++  // CHAT MODE (2-type separation): 'standard' = plain AI chat (no Jarvis intents/avatar);
++  // 'jarvis' = system copilot with intent router + hologram avatar + voice-first UX.
++  const [chatMode, setChatMode] = React.useState<'standard' | 'jarvis'>('standard');
++  // SMART VOICE (unified chat & voice): Web Speech STT + browser TTS.
++  const voice = useSmartVoice((text) => {
++    voiceInitiatedRef.current = true;
++    setInput(text);
++    setTimeout(() => { void send(text); }, 50);
++  });
++
++  // Live STT: render spoken words into the composer while listening.
++  React.useEffect(() => {
++    if (voice.isListening && voice.transcript) {
++      setInput(voice.transcript);
++    }
++  }, [voice.isListening, voice.transcript]);
+   // HIGH DEMAND AUTO-RETRY state: while set, the surge screen is visible and
+   // the countdown effect owns the automatic retry. The ref mirrors the attempt
+   // count for the failure path (the state is cleared while a retry runs).
+   const [demandRetry, setDemandRetry] = React.useState<{ prompt: string; attempt: number; nextIn: number; windowSeconds: number } | null>(null);
+   const demandRetryRef = React.useRef(0);
++  const voiceInitiatedRef = React.useRef(false);
+   const [conversationId, setConversationId] = React.useState<string>(() => {
+     if (initialConversationId) {
+       if (typeof localStorage !== 'undefined') {
+@@ -614,6 +632,8 @@ export function UnifiedChatPanel({
+   async function send(overrideText?: string, isRetry = false) {
+     const text = (overrideText ?? input).trim();
+     if (!text || busy) return;
++    const wasVoice = voiceInitiatedRef.current;
++    voiceInitiatedRef.current = false;
+     if (!isRetry) {
+       // A fresh (human-initiated) send clears the composer; an automatic
+       // high-demand retry must NOT wipe whatever the user is typing.
+@@ -641,16 +661,19 @@ export function UnifiedChatPanel({
+       // zero-quota commands (/help /status /remember /recall /forget /todo
+       // /remind /search) resolve instantly without hitting the AI relay —
+       // free-tier friendly and they work offline. Anything unmatched falls
+-      // through to the normal relay path below.
+-      try {
+-        const jarvis = await tryHandleIntent(text);
+-        if (jarvis) {
+-          setAwaitingFirst(false);
+-          dismissDemandScreen();
++      // through to the normal relay path below. Only active in JARVIS mode.
++      if (chatMode === 'jarvis') {
++        try {
++          const jarvis = await tryHandleIntent(text);
++          if (jarvis) {
++            setAwaitingFirst(false);
++            dismissDemandScreen();
+           setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: jarvis.text, via: jarvis.via }]);
++          if (wasVoice && !voice.isMuted) voice.speak(jarvis.text);
+           return;
+-        }
+-      } catch { /* a misfiring local command must never break the chat */ }
++          }
++        } catch { /* a misfiring local command must never break the chat */ }
++      }
+       if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
+       let activeConvId = conversationId;
+       if (!activeConvId) {
+@@ -691,6 +714,7 @@ export function UnifiedChatPanel({
+       }
+       dismissDemandScreen();
+       setMessages((m) => [...m.slice(0, -1), { role: 'assistant', text: reply.text, via: reply.via, brand: reply.brand }]);
++      if (wasVoice && !voice.isMuted) voice.speak(reply.text);
+     } catch {
+       setAwaitingFirst(false);
+       if (stopRequestedRef.current) {
+@@ -775,6 +799,25 @@ export function UnifiedChatPanel({
+ 
+   return <section className={`relative mx-auto flex w-full ${fit === 'fill' ? 'h-full min-h-0' : 'flex-1 min-h-0'} flex-col gap-3 rounded-2xl border border-white/10 bg-[var(--surface-glass,rgba(15,23,42,0.6))] p-4 shadow-[var(--glow-accent,0_0_24px_rgba(168,85,247,0.15))] backdrop-blur-md overflow-hidden ${className}`}>
+     <div className="mx-auto flex w-full max-w-[46rem] items-center gap-2">
++      {/* 2-TYPE CHAT SEPARATION (standard AI chat vs JARVIS system copilot) */}
++      <div className="flex shrink-0 items-center rounded-lg border border-white/10 bg-slate-900/60 p-0.5 text-xs font-mono">
++        <button
++          type="button"
++          onClick={() => setChatMode('standard')}
++          className={`rounded-md px-2.5 py-1.5 transition ${chatMode === 'standard' ? 'bg-white/10 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`}
++          title="Standard AI chat — content, coding, research"
++        >
++          💬 Chat
++        </button>
++        <button
++          type="button"
++          onClick={() => setChatMode('jarvis')}
++          className={`rounded-md px-2.5 py-1.5 transition ${chatMode === 'jarvis' ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-400 hover:text-slate-200'}`}
++          title="JARVIS copilot — system commands, voice, automation"
++        >
++          ⚡ JARVIS
++        </button>
++      </div>
+       <select value={model} onChange={(e) => setModel(e.target.value)} className="flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50">
+         {chatModels.map((m) => <option key={m.name} value={m.name}>{m.name} — {m.detail}</option>)}
+       </select>
+@@ -783,7 +826,7 @@ export function UnifiedChatPanel({
+           male/female variant persisted per customer preference. Zero runtime AI cost.
+           RC-3 (report §6.4): when the dock is shown, the orb lives in the dock's
+           left slot instead of the model row (one Jarvis, in the docked bar). */}
+-      {!showDock && <JarvisAvatar busy={busy} />}
++      {!showDock && chatMode === 'jarvis' && <JarvisAvatar busy={busy} />}
+       {messages.length > 0 && (
+         <button
+           type="button"
+@@ -851,11 +894,28 @@ export function UnifiedChatPanel({
+         onChange={(e) => handleInputChange(e.target.value)}
+         onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+         rows={2}
+-        placeholder="Ask SupremeAI…"
++        placeholder={chatMode === 'jarvis' ? 'Command JARVIS…' : 'Ask SupremeAI…'}
+         aria-label="Message SupremeAI"
+         data-testid="chat-input"
+         className="flex-1 resize-none rounded-xl border border-white/10 bg-slate-900 px-3 py-2 text-sm text-slate-200 outline-none transition focus:border-purple-400/50"
+       />
++      <button
++        type="button"
++        onClick={voice.toggleListening}
++        disabled={!voice.micAvailable}
++        aria-label={voice.isListening ? 'Stop listening' : 'Start voice input'}
++        className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${voice.isListening ? 'border-red-400/60 bg-red-500/20 text-red-200 animate-pulse' : 'border-white/10 bg-slate-900/80 text-slate-300 hover:border-cyan-400/40 hover:text-white'} disabled:opacity-40`}
++      >
++        {voice.isListening ? '🎙️' : '🎤'}
++      </button>
++      <button
++        type="button"
++        onClick={voice.toggleMute}
++        aria-label={voice.isMuted ? 'Unmute voice replies' : 'Mute voice replies'}
++        className="rounded-xl border border-white/10 bg-slate-900/80 px-2.5 py-2 text-sm text-slate-300 transition hover:text-white"
++      >
++        {voice.isMuted ? '🔇' : '🔊'}
++      </button>
+       <button
+         type="button"
+         onClick={() => { void send(); }}
+@@ -885,7 +945,7 @@ export function UnifiedChatPanel({
+         moves and the dock can never cover it. */}
+     {showDock && (
+       <ChatDockBar
+-        left={<JarvisAvatar busy={busy} compact />}
++        left={chatMode === 'jarvis' ? <JarvisAvatar busy={busy} compact /> : undefined}
+         actions={dockActions}
+         apps={dockApps}
+       />
+diff --git a/studio/src/hooks/useSmartVoice.ts b/studio/src/hooks/useSmartVoice.ts
+new file mode 100644
+index 00000000..98c8a804
+--- /dev/null
++++ b/studio/src/hooks/useSmartVoice.ts
+@@ -0,0 +1,258 @@
++import { useCallback, useEffect, useRef, useState } from 'react';
++
++type VoiceState = 'idle' | 'listening' | 'thinking' | 'speaking';
++
++interface SpeechRecognitionEventLike {
++  results: {
++    [index: number]: {
++      [index: number]: {
++        transcript: string;
++      };
++      isFinal?: boolean;
++    };
++    length: number;
++  };
++}
++
++interface SpeechRecognitionLike {
++  lang: string;
++  continuous: boolean;
++  interimResults: boolean;
++  start(): void;
++  stop(): void;
++  abort(): void;
++  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
++  onerror: ((e: unknown) => void) | null;
++  onend: (() => void) | null;
++}
++
++type SRCtor = new () => SpeechRecognitionLike;
++
++function getSpeechRecognitionCtor(): SRCtor | null {
++  if (typeof window === 'undefined') return null;
++  const w = window as unknown as {
++    SpeechRecognition?: SRCtor;
++    webkitSpeechRecognition?: SRCtor;
++  };
++  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
++}
++
++export function useSmartVoice(onFinalTranscript?: (text: string) => void) {
++  const [orbState, setOrbState] = useState<VoiceState>('idle');
++  const [isListening, setIsListening] = useState(false);
++  const [isSpeaking, setIsSpeaking] = useState(false);
++  const [transcript, setTranscript] = useState('');
++  const [isMuted, setIsMuted] = useState(false);
++  const [micAvailable, setMicAvailable] = useState(true);
++
++  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
++  const isMutedRef = useRef(isMuted);
++  useEffect(() => {
++    isMutedRef.current = isMuted;
++  }, [isMuted]);
++
++  const onFinalTranscriptRef = useRef(onFinalTranscript);
++  useEffect(() => {
++    onFinalTranscriptRef.current = onFinalTranscript;
++  }, [onFinalTranscript]);
++
++  // Initialize Speech Recognition once on client
++  useEffect(() => {
++    const Ctor = getSpeechRecognitionCtor();
++    if (!Ctor) {
++      setMicAvailable(false);
++      return;
++    }
++
++    try {
++      const recog = new Ctor();
++      recog.continuous = false;
++      recog.interimResults = true;
++      recog.lang = 'bn-BD, en-US';
++
++      recog.onresult = (e: SpeechRecognitionEventLike) => {
++        let interimText = '';
++        let finalText = '';
++
++        for (let i = 0; i < e.results.length; i++) {
++          const item = e.results[i];
++          if (item && item[0]) {
++            if (item.isFinal) {
++              finalText += item[0].transcript;
++            } else {
++              interimText += item[0].transcript;
++            }
++          }
++        }
++
++        const currentText = (finalText || interimText).trim();
++        setTranscript(currentText);
++
++        if (finalText.trim()) {
++          onFinalTranscriptRef.current?.(finalText.trim());
++          setOrbState('thinking');
++        }
++      };
++
++      recog.onerror = () => {
++        setIsListening(false);
++        setOrbState((prev) => (prev === 'listening' ? 'idle' : prev));
++      };
++
++      recog.onend = () => {
++        setIsListening(false);
++        setOrbState((prev) => (prev === 'listening' ? 'idle' : prev));
++      };
++
++      recognitionRef.current = recog;
++    } catch {
++      setMicAvailable(false);
++    }
++
++    return () => {
++      try {
++        recognitionRef.current?.abort();
++      } catch {
++        /* noop */
++      }
++    };
++  }, []);
++
++  const startListening = useCallback(() => {
++    if (!recognitionRef.current || isListening) return;
++    try {
++      // Cancel any ongoing speech synthesis first
++      if (typeof window !== 'undefined' && window.speechSynthesis) {
++        window.speechSynthesis.cancel();
++      }
++      setIsSpeaking(false);
++      setTranscript('');
++      setOrbState('listening');
++      setIsListening(true);
++      recognitionRef.current.start();
++    } catch {
++      setIsListening(false);
++      setOrbState('idle');
++    }
++  }, [isListening]);
++
++  const stopListening = useCallback(() => {
++    if (!recognitionRef.current || !isListening) return;
++    try {
++      recognitionRef.current.stop();
++    } catch {
++      /* noop */
++    }
++    setIsListening(false);
++    setOrbState('idle');
++  }, [isListening]);
++
++  const toggleListening = useCallback(() => {
++    if (isListening) {
++      stopListening();
++    } else {
++      startListening();
++    }
++  }, [isListening, startListening, stopListening]);
++
++  // Clean conversational text-to-speech using browser synthesis
++  const speak = useCallback((text: string, onEnd?: () => void) => {
++    if (isMutedRef.current || typeof window === 'undefined' || !window.speechSynthesis) {
++      onEnd?.();
++      return;
++    }
++
++    try {
++      window.speechSynthesis.cancel();
++
++      // Clean markdown, symbols, and brackets before reading aloud
++      const cleanText = text
++        .replace(/[*#`_~[\]()<>]/g, ' ')
++        .replace(/\s+/g, ' ')
++        .trim();
++
++      if (!cleanText) {
++        onEnd?.();
++        return;
++      }
++
++      const utterance = new SpeechSynthesisUtterance(cleanText);
++      utterance.rate = 1.05;
++      utterance.pitch = 0.95; // Slightly deeper, classic British JARVIS tone
++
++      // Select best matching voice
++      const voices = window.speechSynthesis.getVoices();
++      const preferredVoice = voices.find(
++        (v) =>
++          v.lang.startsWith('en-GB') ||
++          v.name.includes('Ryan') ||
++          v.name.includes('Daniel') ||
++          v.name.includes('UK English') ||
++          v.name.includes('Natural')
++      ) || voices.find((v) => v.lang.startsWith('en')) || voices[0];
++
++      if (preferredVoice) {
++        utterance.voice = preferredVoice;
++      }
++
++      utterance.onstart = () => {
++        setIsSpeaking(true);
++        setOrbState('speaking');
++      };
++
++      utterance.onend = () => {
++        setIsSpeaking(false);
++        setOrbState('idle');
++        onEnd?.();
++      };
++
++      utterance.onerror = () => {
++        setIsSpeaking(false);
++        setOrbState('idle');
++        onEnd?.();
++      };
++
++      window.speechSynthesis.speak(utterance);
++    } catch {
++      setIsSpeaking(false);
++      setOrbState('idle');
++      onEnd?.();
++    }
++  }, []);
++
++  const stopSpeaking = useCallback(() => {
++    if (typeof window !== 'undefined' && window.speechSynthesis) {
++      window.speechSynthesis.cancel();
++    }
++    setIsSpeaking(false);
++    setOrbState('idle');
++  }, []);
++
++  const toggleMute = useCallback(() => {
++    setIsMuted((prev) => {
++      const next = !prev;
++      if (next && typeof window !== 'undefined' && window.speechSynthesis) {
++        window.speechSynthesis.cancel();
++        setIsSpeaking(false);
++        setOrbState('idle');
++      }
++      return next;
++    });
++  }, []);
++
++  return {
++    orbState,
++    setOrbState,
++    isListening,
++    isSpeaking,
++    transcript,
++    isMuted,
++    micAvailable,
++    startListening,
++    stopListening,
++    toggleListening,
++    speak,
++    stopSpeaking,
++    toggleMute,
++  };
++}
+diff --git a/studio/src/pages/auth/LoginPage.tsx b/studio/src/pages/auth/LoginPage.tsx
+index b1a902d9..de1242b2 100644
+--- a/studio/src/pages/auth/LoginPage.tsx
++++ b/studio/src/pages/auth/LoginPage.tsx
+@@ -6,6 +6,10 @@ import { AuthShell } from '../../components/auth/AuthShell';
+ import { apiClient } from '../../services/apiClient';
+ import { Fingerprint } from 'lucide-react';
+ import { loginWithPasskey, isPasskeySupported } from '../../services/passkeyService';
++import { isRole } from '../../config/permissions';
++import type { Role } from '../../config/permissions';
++import { setUserToken } from '../../services/tokenStorage';
++import { updateTokenCache } from '../../services/apiClient';
+ 
+ // ROOT-CAUSE UNIFY (Refs #890 funnel / owner request "2 rokom na ase"):
+ // বাংলা মন্তব্য: লগইন পেজের সব shell (header, hero, health bar, card, footer)
+@@ -132,15 +136,17 @@ export const LoginPage: React.FC = () => {
+     setError('');
+     setIsLoading(true);
+     try {
+-      const res = await loginWithPasskey('user');
++const res = await loginWithPasskey('user');
+       if (res && res.access_token) {
++        setUserToken(res.access_token);
++        updateTokenCache(res.access_token);
+         useAuthStore.setState({
+-          token: res.access_token,
+           user: {
+             id: res.user_id,
+             email: `${res.user_id}@supremeai.local`,
+-            role: res.role,
++            name: res.device_name || res.user_id,
+           },
++          role: isRole(res.role) ? (res.role as Role) : 'user',
+           status: AuthStatus.LOGGED_IN,
+         });
+         navigate('/workspace');
+diff --git a/studio/src/services/passkeyService.ts b/studio/src/services/passkeyService.ts
+index c0e9f439..3b40b07f 100644
+--- a/studio/src/services/passkeyService.ts
++++ b/studio/src/services/passkeyService.ts
+@@ -79,7 +79,7 @@ export async function registerPasskey(params: RegisterPasskeyParams): Promise<{
+   const publicKeyCreationOptions: CredentialCreationOptions = {
+     publicKey: {
+       ...options,
+-      challenge: bufferFromBase64Url(options.challenge),
++      challenge: bufferFromBase64Url(options.challenge).buffer as ArrayBuffer,
+       user: {
+         ...options.user,
+         id: bufferFromBase64Url(options.user.id),
+@@ -137,7 +137,7 @@ export async function loginWithPasskey(role: 'user' | 'admin' = 'user'): Promise
+   // 2. Prepare credential request options
+   const publicKeyRequestOptions: CredentialRequestOptions = {
+     publicKey: {
+-      challenge: bufferFromBase64Url(options.challenge),
++      challenge: bufferFromBase64Url(options.challenge).buffer as ArrayBuffer,
+       timeout: options.timeout,
+       rpId: options.rpId,
+       userVerification: options.userVerification || 'required',

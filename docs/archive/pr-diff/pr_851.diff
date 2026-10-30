@@ -1,0 +1,266 @@
+diff --git a/gateway/README.md b/gateway/README.md
+index 3902c97c..074b65a3 100644
+--- a/gateway/README.md
++++ b/gateway/README.md
+@@ -9,7 +9,7 @@ provider credentials never leave the server side.
+ ```bash
+ pip install -r gateway/requirements.txt
+ export SUPREMEAI_API_KEY_PYTEST="supremeai-key-..."   # key material per owner
+-uvicorn gateway.main:app --factory=false --port 8080  # see gateway/__init__:app
++uvicorn gateway.serve:app --port 8080  # see gateway/serve.py
+ ```
+ 
+ The default app factory is offline-inert (`create_app(config)` with no
+diff --git a/gateway/admin_auth.py b/gateway/admin_auth.py
+index f3757749..4d8fe230 100644
+--- a/gateway/admin_auth.py
++++ b/gateway/admin_auth.py
+@@ -53,11 +53,13 @@ def _b64url_decode(data: str) -> bytes:
+ 
+ 
+ def get_jwt_secret() -> str:
+-    return (
+-        os.environ.get("SUPREMEAI_JWT_SECRET")
+-        or os.environ.get("JWT_SECRET")
+-        or "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
+-    )
++    secret = os.environ.get("SUPREMEAI_JWT_SECRET") or os.environ.get("JWT_SECRET")
++    if secret:
++        return secret
++    env_name = os.environ.get("ENV", "local").lower()
++    if env_name in ("local", "dev", "development", "test"):
++        return "supremeai-local-dev-jwt-secret-do-not-use-in-production-32b"
++    raise RuntimeError("SUPREMEAI_JWT_SECRET is required in production")
+ 
+ 
+ def issue_admin_jwt(uid: str, email: str, role: str = "admin", expiry_hours: int = DEFAULT_JWT_EXPIRY_HOURS) -> str:
+@@ -250,6 +252,12 @@ async def admin_login(payload: AdminLoginRequest):
+ @router.post("/totp-setup")
+ async def admin_totp_setup(request: Request):
+     """Initiate TOTP setup, generating a fresh secret and provisioning URI."""
++    env_name = os.environ.get("ENV", "local").lower()
++    if env_name not in ("local", "dev", "development", "test"):
++        auth = request.headers.get("authorization")
++        if not auth or not auth.lower().startswith("bearer "):
++            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Bearer token required.")
++        verify_admin_jwt(auth.split(" ", 1)[1])
+     secret = generate_totp_secret()
+     recovery_codes = [secrets.token_hex(4).upper() for _ in range(4)]
+     email = os.environ.get("ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL)
+diff --git a/gateway/main.py b/gateway/main.py
+index 38ee802f..242cc73e 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -284,6 +284,8 @@ def parse_completion_response(result: AttemptResult) -> dict[str, Any]:
+         body = json.loads(result.body)
+     except (json.JSONDecodeError, UnicodeDecodeError):
+         raise ValueError("provider returned a non-JSON completion body") from None
++    if not isinstance(body, dict):
++        raise TypeError("provider returned a non-object completion body")
+     choices = body.get("choices") or []
+     if not choices:
+         raise ValueError("provider completion body has no choices")
+@@ -753,7 +755,9 @@ async def _stealth():
+                         [
+                             r
+                             for r in safe
+-                            if not (isinstance(r, dict) and r.get("status", 0) >= 400)
++                            if isinstance(r, dict)
++                            and isinstance(r.get("status"), int)
++                            and 200 <= r.get("status", 0) < 300
+                         ]
+                     ),
+                     "responses": safe,
+@@ -794,6 +798,13 @@ async def memory_store_endpoint(request: Request) -> Response:
+                 code="missing_text",
+                 message="'text' must be a non-empty string.",
+             )
++        if len(text) > 10000:
++            return error_response(
++                400,
++                err_type="invalid_request_error",
++                code="text_too_large",
++                message="'text' must be at most 10000 characters.",
++            )
+         namespace = body.get("namespace", "default")
+         if not isinstance(namespace, str):
+             return error_response(
+@@ -802,6 +813,13 @@ async def memory_store_endpoint(request: Request) -> Response:
+                 code="invalid_namespace",
+                 message="'namespace' must be a string.",
+             )
++        if not namespace or len(namespace) > 64:
++            return error_response(
++                400,
++                err_type="invalid_request_error",
++                code="invalid_namespace",
++                message="'namespace' must be 1..64 characters.",
++            )
+         item_id = body.get("id")
+         if item_id is not None and not isinstance(item_id, str):
+             return error_response(
+@@ -821,6 +839,11 @@ async def memory_store_endpoint(request: Request) -> Response:
+         item = memory_store.store(
+             text=text, namespace=namespace, item_id=item_id, metadata=metadata
+         )
++        persisted = True
++        degraded = False
++        if hasattr(memory_store, "degraded"):
++            degraded = bool(memory_store.degraded)
++            persisted = not degraded
+         return attach_rate_headers(
+             request,
+             JSONResponse(
+@@ -829,6 +852,8 @@ async def memory_store_endpoint(request: Request) -> Response:
+                     "id": item.id,
+                     "namespace": item.namespace,
+                     "created": item.created,
++                    "persisted": persisted,
++                    "degraded": degraded,
+                 }
+             ),
+         )
+diff --git a/gateway/memory.py b/gateway/memory.py
+index 68dd8481..94601622 100644
+--- a/gateway/memory.py
++++ b/gateway/memory.py
+@@ -9,7 +9,7 @@
+ 
+ from __future__ import annotations
+ 
+-import contextlib
++import logging
+ import re
+ import time
+ import urllib.error
+@@ -18,6 +18,9 @@
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
++logger = logging.getLogger(__name__)
++
++
+ 
+ @dataclass
+ class MemoryItem:
+@@ -128,6 +131,12 @@ def __init__(
+         self.vector_size = vector_size
+         self.timeout_s = timeout_s
+         self._collection_ensured = False
++        self._qdrant_ok = True
++        self._last_error: str | None = None
++
++    @property
++    def degraded(self) -> bool:
++        return not self._qdrant_ok or not self._collection_ensured
+ 
+     def _headers(self) -> dict[str, str]:
+         h = {"Content-Type": "application/json"}
+@@ -150,13 +159,26 @@ def _ensure_collection(self) -> None:
+             headers=self._headers(),
+             method="PUT",
+         )
+-        with (
+-            contextlib.suppress(Exception),
+-            urllib.request.urlopen(req, timeout=self.timeout_s) as resp,
+-        ):
+-            if resp.status in (200, 201):
++        try:
++            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
++                if resp.status in (200, 201, 409):
++                    self._collection_ensured = True
++                    self._qdrant_ok = True
++                    self._last_error = None
++                    return
++                self._last_error = f"unexpected status {resp.status}"
++        except urllib.error.HTTPError as exc:
++            if exc.code == 409:
+                 self._collection_ensured = True
+-        self._collection_ensured = True
++                self._qdrant_ok = True
++                self._last_error = None
++                return
++            self._last_error = f"HTTP {exc.code}: {exc.reason}"
++            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
++        except Exception as exc:  # noqa: BLE001 - degraded fallback
++            self._last_error = str(exc)[:200]
++            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
++        self._qdrant_ok = False
+ 
+     def _embed(self, text: str) -> list[float]:
+         """Deterministic embedding vector (dimension vector_size)."""
+@@ -213,11 +235,16 @@ def store(
+             headers=self._headers(),
+             method="PUT",
+         )
+-        with (
+-            contextlib.suppress(Exception),
+-            urllib.request.urlopen(req, timeout=self.timeout_s),
+-        ):
+-            pass
++        try:
++            with urllib.request.urlopen(req, timeout=self.timeout_s) as resp:
++                if resp.status not in (200, 201, 202):
++                    raise RuntimeError(f"unexpected status {resp.status}")
++            self._qdrant_ok = True
++            self._last_error = None
++        except Exception as exc:  # noqa: BLE001 - degraded fallback
++            self._qdrant_ok = False
++            self._last_error = str(exc)[:200]
++            logger.warning("Qdrant memory store failed: %s", self._last_error)
+         return item
+ 
+     def search(
+@@ -270,6 +297,9 @@ def search(
+                     )
+                 return results
+         except (urllib.error.URLError, OSError, ValueError):
++            self._qdrant_ok = False
++            self._last_error = "qdrant search failed"
++            logger.warning("Qdrant memory search failed; using in-memory fallback")
+             return super().search(
+                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
+             )
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index 28336552..2acaa57e 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -83,7 +83,11 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+             relay_url = os.environ.get("STEALTH_WEBHOOK_URL", "").rstrip("/")
+         if not relay_url:
+             relay_url = "https://supremeai-worker.paykaribazaronline.workers.dev"
+-        url = relay_url + "/v1/chat/completions"
++        base = relay_url.rstrip("/")
++        if base.endswith("/v1"):
++            url = base + "/chat/completions"
++        else:
++            url = base + "/v1/chat/completions"
+         started = time.monotonic()
+         req_model = endpoint.model
+         if req_model in ("gemini", "gemini-web"):
+@@ -165,7 +169,11 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+             f"provider {endpoint.provider} not configured (set SUPREMEAI_PROVIDER_BASE_/KEY_)"
+         )
+ 
+-    url = api_base.rstrip("/") + "/v1/chat/completions"
++    base = api_base.rstrip("/")
++    if base.endswith("/v1"):
++        url = base + "/chat/completions"
++    else:
++        url = base + "/v1/chat/completions"
+     body = {
+         "model": endpoint.model,
+         "messages": json.loads(payload).get("messages", []),
+diff --git a/gateway/requirements.txt b/gateway/requirements.txt
+index 3aeb7574..b4c3490e 100644
+--- a/gateway/requirements.txt
++++ b/gateway/requirements.txt
+@@ -1,6 +1,4 @@
+-# SupremeAI Gateway — server runtime (issue #336)
+-# The provider transport itself is stdlib asyncio (no httpx/requests client
+-# dependency); only the SERVER framework is third-party, per the issue's
+-# FastAPI/Starlette acceptance criterion.
++# SupremeAI Gateway - server runtime (issue #336)
+ fastapi>=0.110
+ uvicorn>=0.27
++httpx>=0.27

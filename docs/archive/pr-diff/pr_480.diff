@@ -1,0 +1,610 @@
+diff --git a/api-schemas/gateway.openapi.yaml b/api-schemas/gateway.openapi.yaml
+index c3830f2b..83061013 100644
+--- a/api-schemas/gateway.openapi.yaml
++++ b/api-schemas/gateway.openapi.yaml
+@@ -1,21 +1,56 @@
+-# SupremeAI API v1 — স্থিতিশীল বাইরের চুক্তি (plan §৮, §১৭, §২১)
+-# বাংলা মন্তব্য: OpenAI-compatible ইচ্ছাকৃত — বিদ্যমান টুলিং (Cursor/Aider/agents) শূন্য-পরিবর্তনে চলবে।
+-# Provider কে handle করলো — consumer জানবে না (§২২)।
+ openapi: 3.1.0
+ info:
+-  title: SupremeAI API
++  title: SupremeAI Unified Gateway Shield
+   version: 1.0.0
+-  description: >
+-    Unified provider gateway. One SUPREMEAI_API_KEY, provider-agnostic responses.
+-    Provider credentials never leave the server side (plan §11).
++  description: |
++    Rule 18 (AUTONOMOUS_TRANSIT_PIPELINE.md): the single external entry
++    point for all third-party AI providers, exposing an OpenAI-compatible
++    surface. Rule 19: provider credentials live ONLY in the server-side
++    vault (Infisical/Render) — no provider key material appears anywhere
++    in this contract. Rule 21: downstream callers authenticate exclusively
++    with the one-key SSOT (SUPREMEAI_API_KEY) via Bearer token or the
++    X-SupremeAI-Key header. Rule 22: tenant quota (RPS/RPM) and usage
++    attribution are governed through the gateway key-plane.
+ servers:
+-  - url: /
++  - url: https://supremeai-api.onrender.com
+ security:
+-  - SupremeAIKey: []
++  - bearerAuth: []
++  - supremeKeyHeader: []
+ paths:
++  /v1/models:
++    get:
++      summary: List models exposed by the gateway
++      operationId: listModels
++      security:
++        - bearerAuth: []
++        - supremeKeyHeader: []
++      responses:
++        "200":
++          description: Model catalog
++          content:
++            application/json:
++              schema:
++                type: object
++                required: [object, data]
++                properties:
++                  object:
++                    type: string
++                    enum: [list]
++                  data:
++                    type: array
++                    items:
++                      $ref: "#/components/schemas/ModelRef"
++        "401":
++          $ref: "#/components/responses/Unauthorized"
++        "429":
++          $ref: "#/components/responses/QuotaExceeded"
+   /v1/chat/completions:
+     post:
+-      summary: Chat completion (OpenAI-compatible)
++      summary: OpenAI-compatible chat completion (provider resolved server-side)
++      operationId: createChatCompletion
++      security:
++        - bearerAuth: []
++        - supremeKeyHeader: []
+       requestBody:
+         required: true
+         content:
+@@ -24,93 +59,121 @@ paths:
+               $ref: "#/components/schemas/ChatCompletionRequest"
+       responses:
+         "200":
+-          description: Completion result (OpenAI-compatible shape)
++          description: Completion result (provider and failover hop recorded
++            in the X-SupremeAI-Served-By response header, never in the key plane)
++          headers:
++            X-SupremeAI-Served-By:
++              description: Provider chain hop that served the request (Rule 20)
++              schema:
++                $ref: "#/components/schemas/ProviderName"
+           content:
+             application/json:
+               schema:
+                 $ref: "#/components/schemas/ChatCompletionResponse"
+-        "401": { description: Invalid or missing SupremeAI key }
+-        "403": { description: Key lacks required scope }
+-        "429": { description: Quota/rate limit exceeded (config-driven) }
+-        "502": { description: All providers in fallback chain failed }
+-  /v1/models:
+-    get:
+-      summary: Enabled models (from routing_policy config, not provider internals)
+-      responses:
+-        "200":
+-          description: Model list
++        "401":
++          $ref: "#/components/responses/Unauthorized"
++        "429":
++          $ref: "#/components/responses/QuotaExceeded"
++        "503":
++          description: Entire failover chain exhausted (Rule 20)
+           content:
+             application/json:
+               schema:
+-                type: object
+-                properties:
+-                  object: { type: string, const: list }
+-                  data:
+-                    type: array
+-                    items:
+-                      type: object
+-                      properties:
+-                        id: { type: string }
+-                        object: { type: string, const: model }
+-                        owned_by: { type: string, const: supremeai }
+-  /healthz:
+-    get:
+-      summary: Gateway health (no auth)
+-      security: []
+-      responses:
+-        "200": { description: healthy }
++                $ref: "#/components/schemas/Error"
+ components:
+   securitySchemes:
+-    SupremeAIKey:
++    bearerAuth:
++      type: http
++      scheme: bearer
++      description: SUPREMEAI_API_KEY as Bearer token (Rule 21 SSOT)
++    supremeKeyHeader:
+       type: apiKey
+       in: header
+       name: X-SupremeAI-Key
+-      description: >
+-        SUPREMEAI_API_KEY — gateway access credential. NOT a provider credential copy.
++      description: SUPREMEAI_API_KEY via header (Rule 21 SSOT alternative)
++  responses:
++    Unauthorized:
++      description: Missing or invalid SUPREMEAI_API_KEY credential
++      content:
++        application/json:
++          schema:
++            $ref: "#/components/schemas/Error"
++    QuotaExceeded:
++      description: Tenant RPS/RPM quota exceeded (Rule 22)
++      content:
++        application/json:
++          schema:
++            $ref: "#/components/schemas/Error"
+   schemas:
++    ProviderName:
++      type: string
++      enum: [groq, gemini, openrouter, anthropic, fallback]
++      description: Routing metadata only — carries zero credential material (Rule 19)
++    ModelRef:
++      type: object
++      required: [id, object]
++      properties:
++        id:
++          type: string
++        object:
++          type: string
++          enum: [model]
+     ChatCompletionRequest:
+       type: object
+-      required: [messages]
++      required: [model, messages]
+       properties:
+         model:
+           type: string
+-          default: auto
+-          description: "auto = router রায় (routing_policy.json অনুযায়ী)"
++          description: Logical model name; provider binding is resolved
++            server-side behind the shield (Rules 18-20)
+         messages:
+           type: array
+-          minItems: 1
+           items:
+-            type: object
+-            required: [role, content]
+-            properties:
+-              role: { type: string, enum: [system, user, assistant] }
+-              content: { type: string }
+-        temperature: { type: number, default: 0.7 }
+-        max_tokens: { type: integer, nullable: true }
+-        stream: { type: boolean, default: false }
++            $ref: "#/components/schemas/Message"
++        stream:
++          type: boolean
++          default: false
++    Message:
++      type: object
++      required: [role, content]
++      properties:
++        role:
++          type: string
++          enum: [system, user, assistant, tool]
++        content:
++          type: string
+     ChatCompletionResponse:
+       type: object
++      required: [id, object, choices]
+       properties:
+-        id: { type: string }
+-        object: { type: string, const: chat.completion }
+-        created: { type: integer }
+-        model: { type: string, description: "যে মডেল সত্যিই সামলালো (গোপনীয়তা: provider-name দৃশ্যমান হতে পারে, key কখনো নয়)" }
++        id:
++          type: string
++        object:
++          type: string
++          enum: [chat.completion]
+         choices:
+           type: array
+           items:
+             type: object
++            required: [message]
+             properties:
+-              index: { type: integer }
+               message:
+-                type: object
+-                properties:
+-                  role: { type: string }
+-                  content: { type: string }
+-              finish_reason: { type: string }
++                $ref: "#/components/schemas/Message"
+         usage:
+           type: object
+-          description: provider-রিপোর্টেড usage — না পেলে বানানো নয়, ক্ষেত্রটি বাদ (সততা-মতবাদ)
++          description: Usage attribution feeds Rule 22 tenant telemetry
+           properties:
+             prompt_tokens: { type: integer }
+             completion_tokens: { type: integer }
+             total_tokens: { type: integer }
++    Error:
++      type: object
++      required: [error]
++      properties:
++        error:
++          type: object
++          required: [message, type]
++          properties:
++            message: { type: string }
++            type: { type: string }
++            code: { type: string }
+diff --git a/gateway/gateway_shield_reference.py b/gateway/gateway_shield_reference.py
+new file mode 100644
+index 00000000..617b4fad
+--- /dev/null
++++ b/gateway/gateway_shield_reference.py
+@@ -0,0 +1,198 @@
++#!/usr/bin/env python3
++"""Gateway shield reference implementation (#469, Rules 18-22).
++
++Executable spec for the unified provider gateway (supremeai-api):
++- Rule 18: single external entry point; OpenAI-compatible surface
++  (/v1/models, /v1/chat/completions) — ROUTES is the contract.
++- Rule 19: vault-only provider keys. This module NEVER reads provider
++  credentials; provider access is via opaque handles only. A structural
++  invariant test asserts no provider key material exists here.
++- Rule 20: deterministic failover chain (groq -> gemini -> fallback)
++  with transparent rotation and model degradation metadata.
++- Rule 21: one-key SSOT. Downstream callers authenticate with
++  SUPREMEAI_API_KEY via Bearer token or X-SupremeAI-Key header. Any
++  direct provider credential presented by a caller is rejected.
++- Rule 22: tenant quota (RPS/RPM) + usage attribution events.
++
++Pure-stdlib, deterministic, offline-testable, fail-closed.
++Self-test: python3 gateway_shield_reference.py --self-test
++"""
++from __future__ import annotations
++
++import json
++import re
++import sys
++from datetime import datetime, timezone
++
++ROUTES = ("/v1/models", "/v1/chat/completions")
++SSOT_KEY_NAME = "SUPREMEAI_API_KEY"
++SSOT_HEADER = "X-SupremeAI-Key"
++DEFAULT_CHAIN = ("groq", "gemini", "fallback")
++PROVIDER_ENV_NAMES = frozenset({
++    "GEMINI_API_KEY", "GROQ_API_KEY", "OPENROUTER_API_KEY",
++    "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
++})
++
++
++class GatewayError(Exception):
++    def __init__(self, status: int, code: str, message: str):
++        super().__init__(message)
++        self.status, self.code, self.message = status, code, message
++
++
++def authenticate(headers: dict, env: dict) -> dict:
++    """Rule 21 SSOT auth (fail-closed).
++
++    Accepts exactly one credential form: Bearer <key> or X-SupremeAI-Key.
++    The presented secret must equal env[SSOT_KEY_NAME]. Provider keys
++    presented by callers are rejected on principle (they are not SSOT
++    material and MUST not be accepted downstream).
++    """
++    ssot = env.get(SSOT_KEY_NAME)
++    if not ssot or not isinstance(ssot, str) or len(ssot) < 16:
++        raise GatewayError(500, "ssot_unconfigured",
++                           "gateway has no SUPREMEAI_API_KEY configured")
++    presented = None
++    authz = headers.get("authorization") or headers.get("Authorization")
++    if authz and authz.startswith("Bearer "):
++        presented = authz[len("Bearer "):].strip()
++    elif headers.get(SSOT_HEADER):
++        presented = headers[SSOT_HEADER].strip()
++    if not presented:
++        raise GatewayError(401, "missing_credential",
++                           f"present Bearer token or {SSOT_HEADER} header")
++    if presented != ssot:
++        if presented.lower().startswith(("gsk_", "aiza=", "sk-or-", "sk-ant")):
++            raise GatewayError(401, "provider_key_rejected",
++                               "direct provider credentials are never "
++                               "accepted at the gateway (Rule 19/21)")
++        raise GatewayError(401, "invalid_credential", "SSOT key mismatch")
++    return {"authenticated": True, "scheme": "ssot"}
++
++
++def next_target(chain: tuple = DEFAULT_CHAIN, failed: tuple = ()) -> str | None:
++    """Rule 20: first chain hop not yet failed; None when exhausted."""
++    if not chain:
++        raise GatewayError(500, "chain_unconfigured", "empty failover chain")
++    bad = set(failed or ())
++    for hop in chain:
++        if hop not in bad:
++            return hop
++    return None
++
++
++def failover_decision(chain: tuple = DEFAULT_CHAIN, failed: tuple = ()) -> dict:
++    """Deterministic Rule 20 decision record for a request lifecycle."""
++    target = next_target(chain, failed)
++    return {"chain": list(chain), "failed_hops": list(failed or ()),
++            "target": target, "exhausted": target is None,
++            "status": 503 if target is None else 200,
++            "served_by_header": target}
++
++
++def quota_check(tenant: dict, counters: dict, now_ts: float) -> dict:
++    """Rule 22: RPS/RPM sliding-window admission for one tenant.
++
++    tenant: {"tenant": str, "rps": int, "rpm": int}
++    counters: {"second_bucket": [ts...], "minute_bucket": [ts...]}
++    Mutates counters (append + prune). Deterministic.
++    """
++    name = tenant.get("tenant")
++    if not name or not isinstance(tenant.get("rps"), int) or \
++            not isinstance(tenant.get("rpm"), int):
++        raise GatewayError(500, "bad_tenant_config", "tenant/rps/rpm required")
++    sec = [t for t in counters.get("second_bucket", []) if now_ts - t < 1.0]
++    minute = [t for t in counters.get("minute_bucket", []) if now_ts - t < 60.0]
++    allowed = len(sec) < tenant["rps"] and len(minute) < tenant["rpm"]
++    if allowed:
++        sec.append(now_ts)
++        minute.append(now_ts)
++    counters["second_bucket"], counters["minute_bucket"] = sec, minute
++    return {"tenant": name, "allowed": allowed,
++            "limit": {"rps": tenant["rps"], "rpm": tenant["rpm"]},
++            "usage": {"rps_window": len(sec), "rpm_window": len(minute)}}
++
++
++def attribution_event(tenant: str, model: str, provider: str,
++                      tokens: int, now: datetime | None = None) -> dict:
++    """Rule 22: usage telemetry attribution (key-plane safe: no secrets)."""
++    if tokens < 0:
++        raise GatewayError(500, "bad_usage", "negative tokens")
++    return {"tenant": tenant, "model": model, "provider": provider,
++            "total_tokens": tokens,
++            "ts": (now or datetime.now(timezone.utc)).strftime(
++                "%Y-%m-%dT%H:%M:%SZ")}
++
++
++def no_provider_key_material(text: str) -> bool:
++    """Structural invariant helper (Rule 19): a config blob must carry no
++    provider credential assignments. NAME=value / NAME: value with real
++    material fails; vault/indirection placeholders pass."""
++    for name in PROVIDER_ENV_NAMES:
++        for m in re.finditer(rf"{name}\s*[=:]\s*(\S+)", text):
++            value = m.group(1).strip("'\"").rstrip(",")
++            if value and not value.startswith(("<", "${", "vault:", "vault://")):
++                return False
++    return True
++
++
++def _self_test() -> int:
++    env = {SSOT_KEY_NAME: "ssot-key-0123456789abcdef"}  # gitleaks:allow
++    assert authenticate({"Authorization": "Bearer ssot-key-0123456789abcdef"}, env)
++    assert authenticate({SSOT_HEADER: "ssot-key-0123456789abcdef"}, env)
++    for h in ({}, {"Authorization": "Basic abc"},
++              {"Authorization": "Bearer wrong-key-0123456789"},
++              {SSOT_HEADER: "wrong-key-0123456789abcdef"}):
++        try:
++            authenticate(h, env)
++            raise AssertionError("expected 401")
++        except GatewayError as e:
++            assert e.status == 401, e.status
++    try:
++        authenticate({"Authorization": "Bearer gsk_provider_material_123"}, env)
++        raise AssertionError("provider key must be rejected")
++    except GatewayError as e:
++        assert e.code == "provider_key_rejected"
++    try:
++        authenticate({}, {})
++        raise AssertionError("unconfigured ssot must 500")
++    except GatewayError as e:
++        assert e.status == 500
++    assert next_target(DEFAULT_CHAIN, ()) == "groq"
++    assert next_target(DEFAULT_CHAIN, ("groq",)) == "gemini"
++    assert next_target(DEFAULT_CHAIN, ("groq", "gemini")) == "fallback"
++    assert next_target(DEFAULT_CHAIN, DEFAULT_CHAIN) is None
++    d = failover_decision(DEFAULT_CHAIN, ("groq",))
++    assert d["target"] == "gemini" and d["served_by_header"] == "gemini"
++    d2 = failover_decision(DEFAULT_CHAIN, DEFAULT_CHAIN)
++    assert d2["exhausted"] and d2["status"] == 503
++    t, c = {"tenant": "acme", "rps": 2, "rpm": 3}, {}
++    assert quota_check(t, c, 1.0)["allowed"]
++    assert quota_check(t, c, 1.1)["allowed"]
++    assert not quota_check(t, c, 1.2)["allowed"], "3rd hit within 1s > rps=2"
++    assert quota_check(t, c, 2.0)["allowed"], "new second window; minute=3"
++    assert not quota_check(t, c, 2.1)["allowed"], "minute bucket full (rpm=3)"
++    assert quota_check(t, c, 120.0)["allowed"], "windows pruned"
++    ev = attribution_event("acme", "llm-large", "groq", 128)
++    assert ev["tenant"] == "acme" and ev["total_tokens"] == 128
++    assert no_provider_key_material("GEMINI_MODEL=x\n# safe") is True
++    names = sorted(PROVIDER_ENV_NAMES)
++    sample = names[0] + "=abc123"
++    assert no_provider_key_material(sample) is False
++    vaulted = names[1] + ": vault://render"
++    assert no_provider_key_material(vaulted) is True
++    try:
++        quota_check({"tenant": "x"}, {}, 1.0)
++        raise AssertionError("bad tenant config must fail-closed")
++    except GatewayError:
++        pass
++    print("self-test OK: gateway_shield_reference")
++    return 0
++
++
++if __name__ == "__main__":
++    if "--self-test" in sys.argv:
++        sys.exit(_self_test())
++    print(json.dumps({"routes": ROUTES, "chain": list(DEFAULT_CHAIN),
++                      "ssot": {"env": SSOT_KEY_NAME, "header": SSOT_HEADER}}))
++    sys.exit(0)
+diff --git a/tests/test_gateway_shield.py b/tests/test_gateway_shield.py
+new file mode 100644
+index 00000000..b6767c37
+--- /dev/null
++++ b/tests/test_gateway_shield.py
+@@ -0,0 +1,153 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the unified gateway shield (#469).
++
++Rules 18-22 verification, tier 3 (offline unit tests): failover chain
++transitions, SSOT key authentication contract, quota admission, usage
++attribution, and the Rule 19 no-provider-key-material invariant.
++Also validates api-schemas/gateway.openapi.yaml structurally.
++
++Pure stdlib. Run: python3 -m unittest test_gateway_shield -v
++"""
++import json
++import sys
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(ROOT / "gateway"))
++
++import gateway_shield_reference as gw  # noqa: E402
++
++ENV = {gw.SSOT_KEY_NAME: "ssot-key-0123456789abcdef"}  # gitleaks:allow
++
++
++class Rule18Surface(unittest.TestCase):
++    def test_01_openai_compatible_surface(self):
++        self.assertIn("/v1/models", gw.ROUTES)
++        self.assertIn("/v1/chat/completions", gw.ROUTES)
++
++    def test_02_schema_contract_structurally_valid(self):
++        raw = (ROOT / "api-schemas" / "gateway.openapi.yaml").read_text(encoding="utf-8")
++        self.assertTrue(raw.startswith("openapi: 3.1.0"))
++        self.assertIn("/v1/chat/completions:", raw)
++        self.assertIn("/v1/models:", raw)
++        self.assertIn("X-SupremeAI-Key", raw)
++        self.assertIn("bearerAuth", raw)
++
++
++class Rule19VaultOnlyKeys(unittest.TestCase):
++    def test_03_module_never_reads_provider_credentials(self):
++        src = (ROOT / "gateway" / "gateway_shield_reference.py").read_text(
++            encoding="utf-8")
++        for name in gw.PROVIDER_ENV_NAMES:
++            self.assertNotIn(f'getenv("{name}"', src)
++            self.assertNotIn(f'environ["{name}"]', src)
++            self.assertNotIn(f"environ.get(\"{name}\"", src)
++            # Provider env names may appear ONLY in the declaration set.
++            decl_start = src.index("PROVIDER_ENV_NAMES")
++            decl_end = src.index("})", decl_start)
++            occurrences = [i for i in range(len(src))
++                           if src.startswith(name, i)]
++            outside = [i for i in occurrences
++                       if not (decl_start <= i < decl_end)]
++            self.assertEqual(outside, [],
++                             f"{name} referenced outside declaration: {outside}")
++
++    def test_04_no_provider_key_material_in_schema(self):
++        raw = (ROOT / "api-schemas" / "gateway.openapi.yaml").read_text(
++            encoding="utf-8")
++        self.assertTrue(gw.no_provider_key_material(raw))
++
++    def test_05_provider_credentials_never_accepted_by_auth(self):
++        for bogus in ("gsk_groq_material_012345", "aiza=gemini_material_12",
++                      "sk-or-xx", "sk-ant-yy"):
++            with self.assertRaises(gw.GatewayError) as cm:
++                gw.authenticate({"Authorization": f"Bearer {bogus}"}, ENV)
++            self.assertEqual(cm.exception.code, "provider_key_rejected")
++
++
++class Rule21SsotAuth(unittest.TestCase):
++    def test_06_bearer_ssot_key_accepted(self):
++        self.assertTrue(gw.authenticate(
++            {"Authorization": "Bearer ssot-key-0123456789abcdef"}, ENV))
++
++    def test_07_header_ssot_key_accepted(self):
++        self.assertTrue(gw.authenticate(
++            {gw.SSOT_HEADER: "ssot-key-0123456789abcdef"}, ENV))
++
++    def test_08_missing_credential_401(self):
++        with self.assertRaises(gw.GatewayError) as cm:
++            gw.authenticate({}, ENV)
++        self.assertEqual((cm.exception.status, cm.exception.code),
++                         (401, "missing_credential"))
++
++    def test_09_wrong_key_401(self):
++        with self.assertRaises(gw.GatewayError) as cm:
++            gw.authenticate({gw.SSOT_HEADER: "wrong-key-0123456789ab"}, ENV)
++        self.assertEqual((cm.exception.status, cm.exception.code),
++                         (401, "invalid_credential"))
++
++    def test_10_unconfigured_gateway_fails_closed_500(self):
++        with self.assertRaises(gw.GatewayError) as cm:
++            gw.authenticate({}, {})
++        self.assertEqual(cm.exception.status, 500)
++
++
++class Rule20FailoverChain(unittest.TestCase):
++    def test_11_full_chain_walk(self):
++        self.assertEqual(gw.next_target(gw.DEFAULT_CHAIN, ()), "groq")
++        self.assertEqual(gw.next_target(gw.DEFAULT_CHAIN, ("groq",)), "gemini")
++        self.assertEqual(gw.next_target(gw.DEFAULT_CHAIN, ("groq", "gemini")),
++                         "fallback")
++
++    def test_12_chain_exhaustion_503(self):
++        d = gw.failover_decision(gw.DEFAULT_CHAIN, gw.DEFAULT_CHAIN)
++        self.assertTrue(d["exhausted"])
++        self.assertEqual(d["status"], 503)
++
++    def test_13_decision_record_shape(self):
++        d = gw.failover_decision(gw.DEFAULT_CHAIN, ("groq", "gemini"))
++        self.assertEqual(d["target"], "fallback")
++        self.assertEqual(d["served_by_header"], "fallback")
++        self.assertEqual(d["chain"], ["groq", "gemini", "fallback"])
++
++    def test_14_empty_chain_fail_closed(self):
++        with self.assertRaises(gw.GatewayError):
++            gw.next_target((), ())
++
++
++class Rule22QuotaAndAttribution(unittest.TestCase):
++    def test_15_rps_limit_enforced(self):
++        tenant = {"tenant": "acme", "rps": 2, "rpm": 100}
++        counters = {}
++        self.assertTrue(gw.quota_check(tenant, counters, 1.0)["allowed"])
++        self.assertTrue(gw.quota_check(tenant, counters, 1.1)["allowed"])
++        self.assertFalse(gw.quota_check(tenant, counters, 1.2)["allowed"])
++
++    def test_16_rpm_limit_enforced_then_window_prunes(self):
++        tenant = {"tenant": "acme", "rps": 100, "rpm": 2}
++        counters = {}
++        self.assertTrue(gw.quota_check(tenant, counters, 1.0)["allowed"])
++        self.assertTrue(gw.quota_check(tenant, counters, 1.1)["allowed"])
++        self.assertFalse(gw.quota_check(tenant, counters, 1.2)["allowed"])
++        self.assertTrue(gw.quota_check(tenant, counters, 120.0)["allowed"])
++
++    def test_17_bad_tenant_config_fail_closed(self):
++        with self.assertRaises(gw.GatewayError):
++            gw.quota_check({"tenant": "x"}, {}, 1.0)
++
++    def test_18_attribution_event_shape_no_secrets(self):
++        ev = gw.attribution_event("acme", "llm-large", "groq", 128,
++                                  now=None)
++        self.assertEqual(set(ev), {"tenant", "model", "provider",
++                                   "total_tokens", "ts"})
++        blob = json.dumps(ev)
++        self.assertNotIn("ssot-key", blob)
++
++    def test_19_negative_tokens_fail_closed(self):
++        with self.assertRaises(gw.GatewayError):
++            gw.attribution_event("acme", "m", "groq", -1)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

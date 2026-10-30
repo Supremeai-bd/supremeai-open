@@ -1,0 +1,127 @@
+diff --git a/infrastructure/mcp-control-plane/src/adapters/infisical/index.ts b/infrastructure/mcp-control-plane/src/adapters/infisical/index.ts
+index 9fa260ea..d8f84f79 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/infisical/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/infisical/index.ts
+@@ -3,7 +3,14 @@ import { httpRequest, bearerAuth } from "../../lib/http.js";
+ 
+ const INFISICAL_URL = "https://app.infisical.com";
+ 
++let cachedToken: string | null = null;
++let tokenExpiresAt = 0;
++
+ async function getAccessToken(): Promise<string> {
++  if (cachedToken && Date.now() < tokenExpiresAt) {
++    return cachedToken;
++  }
++
+   const { clientId, clientSecret } = env.infisical;
+   if (!clientId || !clientSecret) {
+     throw new Error("Missing INFISICAL_CLIENT_ID or INFISICAL_CLIENT_SECRET");
+@@ -15,11 +22,18 @@ async function getAccessToken(): Promise<string> {
+       clientId,
+       clientSecret,
+     },
++    timeoutMs: 6000,
++    retries: 1,
+   });
+ 
+   const data = res.data as any;
+   if (data.accessToken) {
+-    return data.accessToken;
++    const token = String(data.accessToken);
++    cachedToken = token;
++    // Default expiry 15 minutes (or data.expiresIn - 60s)
++    const ttlSec = typeof data.expiresIn === "number" ? Math.max(data.expiresIn - 60, 300) : 900;
++    tokenExpiresAt = Date.now() + ttlSec * 1000;
++    return token;
+   }
+   throw new Error("Failed to get Infisical access token");
+ }
+diff --git a/infrastructure/mcp-control-plane/src/health/engine.ts b/infrastructure/mcp-control-plane/src/health/engine.ts
+index 77e4839e..cfa9abed 100644
+--- a/infrastructure/mcp-control-plane/src/health/engine.ts
++++ b/infrastructure/mcp-control-plane/src/health/engine.ts
+@@ -105,6 +105,18 @@ export class HealthEngine {
+         if (deployDerived) return { ...data, status: deployDerived };
+         return data;
+       },
++      "github": async () => {
++        const { getAccountConfig, githubHeaders } = await import("../adapters/github/index.js");
++        const { httpRequest } = await import("../lib/http.js");
++        const { apiKey: token, baseUrl } = getAccountConfig("github-primary");
++        const res = await httpRequest(baseUrl, {
++          headers: githubHeaders(token),
++          timeoutMs: 6000,
++          retries: 0,
++        });
++        if (!res.ok) throw new Error(`GitHub API responded ${res.status}`);
++        return res.data;
++      },
+       "supabase": () => getSupabaseHealth("supabase-primary"),
+       "redis": () => pingRedis(),
+       "cloudflare": () => getWorkerStatus(),
+diff --git a/infrastructure/mcp-control-plane/src/registry/resource.registry.ts b/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
+index 7fa7dda8..f6490d9c 100644
+--- a/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/resource.registry.ts
+@@ -47,7 +47,27 @@ export async function listResources(role?: UserRole): Promise<Resource[]> {
+ 
+ export async function getResourceStatus(resourceId: string): Promise<string> {
+   const { globalHealthCache } = await import("../health/snapshot.js");
+-  const provider = resourceId.split("/")[0];
+-  const snapshot = globalHealthCache.getSnapshot(provider);
+-  return snapshot?.status ?? "unknown";
++  const parts = resourceId.split("/");
++  const provider = parts[0];
++  const accountId = parts[1] || "";
++
++  // 1. Check account-specific snapshot first, then provider-level snapshot
++  const snapshot =
++    globalHealthCache.getSnapshot(resourceId) ??
++    globalHealthCache.getSnapshot(accountId) ??
++    globalHealthCache.getSnapshot(provider);
++  if (snapshot?.status && snapshot.status !== "unknown") {
++    return snapshot.status;
++  }
++
++  // 2. If no snapshot exists in cache, check account registry availability
++  const { getAccountsForRole } = await import("./account.registry.js");
++  const accounts = getAccountsForRole("admin");
++  const account = accounts.find((a) => a.id === accountId || `${a.provider}/${a.id}` === resourceId);
++  if (account) {
++    return account.available ? "healthy" : "down";
++  }
++
++  return "unknown";
+ }
++
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 35a40c61..e21b4967 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -389,6 +389,25 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+         }
+       );
+ 
++      // Update globalHealthCache with individual service probe outcomes
++      const { globalHealthCache } = await import("../health/snapshot.js");
++      for (const entry of results) {
++        if (entry.status === "fulfilled") {
++          const val = entry.value as HealthProbe;
++          const status = val.status === "healthy" ? "healthy" : val.status === "degraded" ? "degraded" : val.status === "unconfigured" ? "unknown" : "down";
++          globalHealthCache.setSnapshot({
++            provider: val.id,
++            status,
++            lastCheckMs: Date.now(),
++            checkedAt: new Date().toISOString(),
++            latencyMs: val.latencyMs ?? 0,
++            evidence: { kind: val.error ? "error" : "provider_response", summary: val.error ?? "probed" },
++            impactedServices: [],
++            consecutiveFailures: status === "down" ? 1 : 0,
++          });
++        }
++      }
++
+       const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
+       const count = (s: string) => health.filter((h: Record<string, unknown>) => h.status === s).length;
+       const healthy = count("healthy");

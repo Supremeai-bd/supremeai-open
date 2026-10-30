@@ -1,0 +1,68 @@
+diff --git a/docs/reports/AUDIT_1690_LICENSE_CONTRACT_MISMATCH_2026-10-30.md b/docs/reports/AUDIT_1690_LICENSE_CONTRACT_MISMATCH_2026-10-30.md
+new file mode 100644
+index 00000000..dbf114f3
+--- /dev/null
++++ b/docs/reports/AUDIT_1690_LICENSE_CONTRACT_MISMATCH_2026-10-30.md
+@@ -0,0 +1,62 @@
++# Audit #1690 Evidence Dossier — License Contract Mismatch (2026-10-30)
++
++**Report-only, keep-open.** #1690 is a licensing **owner decision**; this dossier
++verifies the mismatch is still live on every cited surface and stages both
++sanctioned remedies. No agent can legitimately choose between "gateway is
++public" and "gateway is proprietary" — that call reclassifies intellectual
++property.
++
++## Live state verified 2026-10-30 ~22:00 UTC (zero-credential probes)
++
++| Surface | #1690 claim | Live probe | Verdict |
++| --- | --- | --- | --- |
++| `gateway/LICENSE` (open repo) | MIT (c) 2026 | 1074 bytes, "MIT License, Copyright (c) 2026 SaifulHaque Niloy" | **still MIT** |
++| `Supremeai-bd/supremeai-api` head | no license | `licenseVerdict: unknown/no-license` (repo info probe) | **still unlicensed** |
++| `ECOSYSTEM_MAP.md` §2.3 (L48) | MIT strictly `open`/`studio`/`vscode` | unchanged | **api excluded from MIT** |
++| `ECOSYSTEM_MAP.md` §2.3 (L49) | api = Proprietary ("provider gateway") | unchanged | **api in proprietary list** |
++| Routing matrix | `gateway/**` → api satellite | `scripts/bridge/bridge_intake.py` `route_files()`: `gateway/` prefix → `Supremeai-bd/supremeai-api` | **confirmed** |
++| Public exposure | mirror ships implementation | `git ls-files 'gateway/'` = **324 files** incl. Dockerfile, CI, full Python implementation | **confirmed** |
++
++The four operator commits referencing #1690 (2026-10-27, "replace gateway/LICENSE
++MIT with proprietary notice", "proprietary LICENSE notices for mirror surfaces")
++did **not** reach the open-repo `gateway/LICENSE` or the api satellite head —
++both still show the pre-fix state, so the finding is **not stale** (U3 verified).
++
++## The mismatch, stated once
++
++The public boundary currently distributes 324 gateway files under an MIT grant,
++while the SSOT map classifies the same subsystem as Private · Proprietary with
++only contracts public in open. Depending on which surface a court or a
++downstream consumer reads first, the federation either grants perpetual
++MIT rights to the whole gateway or forbids its reproduction entirely. Both
++documents claim to be the contract; they cannot both be right.
++
++## Remedies (verbatim from #1690, decision belongs to the owner)
++
++1. **Gateway is a public boundary** → update `ECOSYSTEM_MAP.md` §2.3 + the api
++   repo description to declare the gateway mirror MIT; keep satellite internals
++   proprietary below the contract surface.
++   - Consequence: the map's MIT list grows by one; 324 already-public files
++     become legitimately MIT; zero deletion work; the "moat" moves to the
++     private-side gateway internals.
++2. **Gateway is proprietary** → replace `gateway/LICENSE` with the standard
++   proprietary notice and expose only `api-schemas/*` + client examples per the
++   map's "(Contracts public in open)" note.
++   - Consequence: the MIT grant is revoked *after* it was public — existing
++     forks/clients hold MIT copies from the grant window regardless; requires
++     an exposure review (what shipped, for how long) and moving non-contract
++     files out of the public boundary; larger remediation surface.
++
++**Observed operator signal** (not a decision): the 2026-10-27 commit titles
++lean toward remedy 2. If remedy 2 is confirmed, the open-repo change is a
++single-file `gateway/LICENSE` swap (agent-lane, `baseSha`-carried full_file
++order) plus a follow-up scoping decision on the other 323 files that needs its
++own admin ruling before any deletion order is filed.
++
++## Why report-only
++
++Both remedies mutate a legal grant. Picking one autonomously would make the
++agent a licensing authority, which no bridge rule delegates. The honest
++agent-lane deliverable is verified evidence + staged options; this report is
++that deliverable. Recommend labelling #1690 for admin decision; the live probes
++above can be re-run byte-for-byte to confirm either fix lands.

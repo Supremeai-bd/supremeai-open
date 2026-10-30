@@ -1,0 +1,365 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index e6b6dbd0..9a88ffe5 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "supremeai-mcp-control-plane",
+   "version": "1.0.0",
+-  "description": "SupremeAI Unified MCP Control Tower \u2014 connects all services into a single AI-accessible interface",
++  "description": "SupremeAI Unified MCP Control Tower — connects all services into a single AI-accessible interface",
+   "type": "module",
+   "main": "dist/index.js",
+   "scripts": {
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -62,7 +62,8 @@
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+     "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts",
+     "test:queue-fidelity": "tsx test_queue_fidelity.ts",
+-    "test:bridge-dedup": "tsx test_bridge_dedup.ts"
++    "test:bridge-dedup": "tsx test_bridge_dedup.ts",
++    "test:bridge-titles": "tsx test_bridge_titles.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/lib/bridge_titles.ts b/infrastructure/mcp-control-plane/src/lib/bridge_titles.ts
+new file mode 100644
+index 00000000..38aca7e9
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/bridge_titles.ts
+@@ -0,0 +1,101 @@
++/**
++ * #2195 — Bridge title length clamps (Failure 1 root cause).
++ *
++ * GitHub began enforcing a ~256-char cap on issue titles (live-proven
++ * 2026-10-28 23:55Z: a 938-char summary submitted fine at ~22:50Z, then 422'd
++ * deterministically at 23:55Z+ with the same code; a 185-char title passed).
++ * Both bridge planes derive titles by interpolating the raw agent-supplied
++ * summary:
++ *   Step D (issue):  `🌉 Bridge Work Order — ${summary} (${taskId})`
++ *   Step E (PR):     `feat(bridge): ${summary} (${taskId})`
++ * A 980-char summary therefore yields a ~1050-char title and a deterministic
++ * HTTP 422 that strands the already-pushed patch branch.
++ *
++ * The clamp preserves the ` (${taskId})` TAIL verbatim: #2136's dedup fix
++ * (bridge_dedup.ts isWorkOrderForTaskId) treats the title tail `(taskId)` as
++ * an AUTHORITATIVE position — a clamp that could eat the suffix would break
++ * idempotency matching for every resubmitted round. The summary is truncated
++ * with an ellipsis only when the assembled title exceeds the cap; short
++ * titles pass through byte-identical.
++ *
++ * Cap is measured in UTF-16 code units (JS .length), set at 240 — a strict
++ * subset of GitHub's ~256-char server-side cap under any unit convention
++ * (code units >= unicode scalar chars, so 240 units can never exceed 256
++ * chars), leaving headroom for server-side counting differences.
++ */
++
++export const BRIDGE_TITLE_CAP = 240;
++const ELLIPSIS = "…";
++
++/**
++ * Assemble a bridge plane title with a hard length guarantee.
++ *
++ * buildBridgeTitle(prefix, summary, taskId) ->
++ *   `${prefix}${summary} (${taskId})`            (when it fits)
++ *   `${prefix}${clipped}${ELLIPSIS} (${taskId})` (when it does not)
++ *
++ * The ` (${taskId})` suffix is always present and never clipped. Degenerate
++ * inputs (empty summary) produce `${prefix} (${taskId})` — the caller's
++ * zod validation already floors summary length, this is fail-safe only.
++ */
++export function buildBridgeTitle(prefix: string, summary: string, taskId: string): string {
++  const suffix = ` (${taskId})`;
++  const fitted = summary.length > 0 ? summary : "(no summary)";
++  const full = `${prefix}${fitted}${suffix}`;
++  if (full.length <= BRIDGE_TITLE_CAP) return full;
++
++  const budget = BRIDGE_TITLE_CAP - prefix.length - suffix.length - ELLIPSIS.length;
++  const clipped = budget > 0 ? fitted.slice(0, budget) : "";
++  const body = clipped.length > 0 ? `${clipped}${ELLIPSIS}` : ELLIPSIS;
++  const assembled = `${prefix}${body}${suffix}`;
++  // Fail-closed guard: the assembled title must NEVER exceed the cap, and the
++  // suffix must always survive. If the caller's prefix/suffix alone blow the
++  // cap (misuse), the honest move is to hard-truncate the tail rather than
++  // emit a title that would deterministically 422 and strand the branch.
++  if (assembled.length <= BRIDGE_TITLE_CAP) return assembled;
++  return `${assembled.slice(0, BRIDGE_TITLE_CAP - ELLIPSIS.length)}${ELLIPSIS}`;
++}
++
++/** Step D (work-order issue) title, clamped. Prefix mirrors the deployed template. */
++export function issueTitleFor(summary: string, taskId: string): string {
++  return buildBridgeTitle(`🌉 Bridge Work Order — `, summary, taskId);
++}
++
++/** Step E (patch PR) title, clamped. Prefix mirrors the deployed template. */
++export function prTitleFor(summary: string, taskId: string): string {
++  return buildBridgeTitle(`feat(bridge): `, summary, taskId);
++}
++
++/**
++ * #2195 — Step-E PR-failure surfacing (Failure 2/3 amplifier).
++ *
++ * The deployed Step-E ran `if (prRes.ok && prRes.data) {...}` with no else:
++ * a failed PR creation (422 head-not-found, validation, caps) was swallowed
++ * and the round returned ok:true/bridge:queued with prNumber undefined —
++ * branches stranded with zero diagnostics, contra Invariant #514 (zero
++ * stranded branches). The intake verifier that saved the r1/r2 diagnosis was
++ * manual git forensics; this helper makes the tower return the reason.
++ *
++ * Pure extraction so the shape mapping is unit-testable offline: GitHub's
++ * POST /pulls failure body is `{message, errors?: [{message}]}`; network
++ * failures throw before any response exists.
++ */
++export interface PrFailure {
++  status: number; // HTTP status, 0 when the call threw (transport-level)
++  message: string; // GitHub's message plus a compact errors[] digest when present
++}
++
++export function prFailureFromHttp(
++  status: number,
++  data: { message?: string; errors?: Array<{ message?: string }> } | undefined
++): PrFailure {
++  const ghMessage = data?.message || "";
++  const errList = Array.isArray(data?.errors) ? data.errors : [];
++  const digest = errList
++    .map((e) => (e && typeof e.message === "string" ? e.message : ""))
++    .filter((m) => m.length > 0)
++    .slice(0, 3)
++    .join("; ");
++  const message = digest ? `${ghMessage} (${digest})` : ghMessage || `HTTP ${status}`;
++  return { status, message: message.slice(0, 300) };
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index aeb830ce..8deb347f 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -7,6 +7,7 @@ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+ import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
++import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+ export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
+@@ -1239,7 +1240,11 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+             method: "POST",
+             headers,
+             body: {
+-              title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
++              // #2195 Failure 1: GitHub now caps issue titles at ~256 chars;
++              // an unclamped 980-char summary 422'd deterministically and
++              // stranded the pushed branch. Clamp preserves the (taskId) tail
++              // (authoritative for #2136 dedup).
++              title: issueTitleFor(summary, taskId),
+               labels: [BRIDGE_QUEUE_LABEL],
+               body: issueBody,
+             },
+@@ -1270,25 +1275,43 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+ 
+         let prNumber: number | undefined;
+         let prUrl: string | undefined;
+-
+-        const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string }>(
+-          `https://api.github.com/repos/${repo}/pulls`,
+-          {
+-            method: "POST",
+-            headers,
+-            body: {
+-              title: `feat(bridge): ${summary} (${taskId})`,
+-              head: branchName,
+-              base: "main",
+-              body: prBody,
+-            },
+-            timeoutMs: 15_000,
++        // #2195 Failure 2/3: the deployed plane ran `if (prRes.ok && prRes.data)`
++        // with NO else — a failed PR creation (validation, head-not-found, the
++        // new ~256-char title cap) was silently swallowed and the round returned
++        // ok:true/bridge:queued with prNumber undefined, stranding branches with
++        // zero diagnostics (contra Invariant #514). Surface the failure as
++        // prError while keeping the bridge:queued state machine unchanged: the
++        // branch and work-order issue already exist, so the round is still a
++        // recoverable queued state — but now the agent and the admin can see WHY.
++        let prError: PrFailure | undefined;
++        try {
++          const prRes = await httpRequest<{ number?: number; html_url?: string; message?: string; errors?: Array<{ message?: string }> }>(
++            `https://api.github.com/repos/${repo}/pulls`,
++            {
++              method: "POST",
++              headers,
++              body: {
++                // #2195 Failure 1 twin: same GitHub ~256-char cap applies to PR
++                // titles; clamp with the (taskId) tail preserved.
++                title: prTitleFor(summary, taskId),
++                head: branchName,
++                base: "main",
++                body: prBody,
++              },
++              timeoutMs: 15_000,
++            }
++          );
++          if (prRes.ok && prRes.data) {
++            prNumber = prRes.data.number;
++            prUrl = prRes.data.html_url;
++          } else if (!prRes.ok) {
++            prError = prFailureFromHttp(prRes.status, prRes.data);
+           }
+-        );
+-
+-        if (prRes.ok && prRes.data) {
+-          prNumber = prRes.data.number;
+-          prUrl = prRes.data.html_url;
++        } catch (prErr) {
++          // Transport-level throw (timeout/DNS): keep the round's existing
++          // artifacts visible instead of letting the outer catch discard
++          // fileResults + issueNumber behind a generic isError.
++          prError = { status: 0, message: (prErr as Error).message };
+         }
+ 
+         return {
+@@ -1307,10 +1330,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+               issueUrl: issueRes.data?.html_url,
+               prNumber,
+               prUrl,
++              prError,
+               status: prNumber ? "bridge:pr-opened" : "bridge:queued",
+               message: prNumber
+                 ? `Work submitted and PR #${prNumber} opened atomically! CI Guardian will evaluate and land via constitutional gates.`
+-                : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
++                : prError
++                  ? `Branch + work order created, but PR creation FAILED (${prError.status}: ${prError.message}) — branch stranded pending admin pairing or a resubmit; do NOT treat this round as landed.`
++                  : "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
+             }, null, 2),
+           }],
+         };
+diff --git a/infrastructure/mcp-control-plane/test_bridge_titles.ts b/infrastructure/mcp-control-plane/test_bridge_titles.ts
+new file mode 100644
+index 00000000..38e643f6
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_titles.ts
+@@ -0,0 +1,118 @@
++/**
++ * #2195 — Bridge title clamp + PR-failure surfacing test battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Live motivation (2026-10-28 23:55Z outage, WO #2195):
++ *  - Failure 1: GitHub began enforcing a ~256-char issue-title cap; the
++ *    unclamped `🌉 Bridge Work Order — ${summary} (${taskId})` template turned
++ *    a 980-char summary into a deterministic 422 that stranded the pushed
++ *    branch. Same exposure on the Step-E PR title.
++ *  - Failure 2/3: Step-E's `if (prRes.ok && prRes.data)` had no else — PR
++ *    creation failures were swallowed (ok:true, prNumber undefined), stranding
++ *    branches with zero diagnostics, contra Invariant #514.
++ *
++ * The clamp MUST preserve the ` (${taskId})` tail verbatim: #2136's
++ * isWorkOrderForTaskId treats the title tail `(taskId)` as an authoritative
++ * position, so eating the suffix would break idempotency matching.
++ */
++import {
++  buildBridgeTitle,
++  issueTitleFor,
++  prTitleFor,
++  prFailureFromHttp,
++  BRIDGE_TITLE_CAP,
++} from "./src/lib/bridge_titles.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++const TASK = "bridge-20261028-radar-index-freshness-r2";
++
++// ─── 1. Pass-through (byte-identical when short) ─────────────────────────────
++section("1. Short titles pass through byte-identical");
++const short = "guard(bridge): fix the thing";
++check(
++  "short PR title unchanged",
++  prTitleFor(short, TASK) === `feat(bridge): ${short} (${TASK})`,
++  prTitleFor(short, TASK)
++);
++check(
++  "short issue title unchanged",
++  issueTitleFor(short, TASK) === `🌉 Bridge Work Order — ${short} (${TASK})`,
++  issueTitleFor(short, TASK)
++);
++
++// ─── 2. Clamp (Failure 1 regression) ─────────────────────────────────────────
++section("2. Long summaries clamp to the cap, suffix preserved");
++const long980 = "x".repeat(980);
++const prClamped = prTitleFor(long980, TASK);
++check("clamped PR title within cap", prClamped.length <= BRIDGE_TITLE_CAP, `len=${prClamped.length}`);
++check("clamped issue title within cap", issueTitleFor(long980, TASK).length <= BRIDGE_TITLE_CAP);
++check("taskId tail preserved verbatim", prClamped.endsWith(` (${TASK})`));
++check("ellipsis marker present", prClamped.includes("…"));
++check("prefix preserved", prClamped.startsWith("feat(bridge): "));
++
++// Tail preservation is a #2136-dedup contract, not a nicety.
++section("3. Tail survival is the #2136 dedup contract");
++const tailRe = /\(([^()]+)\)$/;
++const m = prClamped.match(tailRe);
++check("title tail parses as (taskId)", m !== null && m![1] === TASK, prClamped.slice(-70));
++
++// ─── 3. Boundary arithmetic ──────────────────────────────────────────────────
++section("4. Boundary arithmetic");
++const exact = prTitleFor("y".repeat(BRIDGE_TITLE_CAP), TASK);
++check("at-cap-length summary clamps (prefix+suffix counted)", exact.length <= BRIDGE_TITLE_CAP, `len=${exact.length}`);
++check("at-cap summary still keeps tail", exact.endsWith(` (${TASK})`));
++const fit = prTitleFor("y".repeat(50), TASK);
++check("small summary not clipped (no ellipsis)", !fit.includes("…"));
++check("cap constant is under GitHub's ~256", BRIDGE_TITLE_CAP <= 250, `cap=${BRIDGE_TITLE_CAP}`);
++
++// Degenerate: huge prefix misuse still fails closed under the cap.
++section("5. Fail-closed on caller misuse");
++const hugePrefix = "p".repeat(500);
++const degenerate = buildBridgeTitle(hugePrefix, "s", TASK);
++check("degenerate title still <= cap", degenerate.length <= BRIDGE_TITLE_CAP, `len=${degenerate.length}`);
++
++// Empty summary floor (zod floors upstream; fail-safe here).
++section("6. Empty summary fail-safe");
++const emptyCase = issueTitleFor("", TASK);
++check("empty summary does not produce dangling space", !emptyCase.includes("  "), emptyCase);
++check("empty summary keeps tail", emptyCase.endsWith(` (${TASK})`));
++
++// ─── 7. prFailureFromHttp (Failure 2/3 surfacing) ────────────────────────────
++section("7. prFailureFromHttp shape mapping");
++const f1 = prFailureFromHttp(422, {
++  message: "Validation Failed",
++  errors: [{ message: "head repository does not exist" }, { message: "invalid code" }],
++});
++check("status carried", f1.status === 422);
++check("gh message carried", f1.message.startsWith("Validation Failed"), f1.message);
++check("errors[] digested", f1.message.includes("head repository does not exist"), f1.message);
++check("digest capped at 3 entries", f1.message.split(";").length <= 4);
++
++const f2 = prFailureFromHttp(500, { message: "Server Error" });
++check("no errors[] -> message only", f2.message === "Server Error");
++
++const f3 = prFailureFromHttp(502, undefined);
++check("no body -> honest HTTP fallback", f3.message === "HTTP 502", f3.message);
++
++const f4 = prFailureFromHttp(422, { message: "m", errors: [{}, { message: "" }, { message: "real one" }] });
++check("empty error entries filtered", f4.message.includes("real one") && !f4.message.includes(";;"), f4.message);
++
++const long500 = "e".repeat(600);
++const f5 = prFailureFromHttp(422, { message: long500 });
++check("message capped at 300 units", f5.message.length <= 300, `len=${f5.message.length}`);
++
++// ─── verdict ─────────────────────────────────────────────────────────────────
++console.log(`\n${failures === 0 ? "SELF-TEST OK" : `SELF-TEST FAILED: ${failures}`}`);
++if (failures > 0) process.exit(1);

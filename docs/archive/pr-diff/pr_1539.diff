@@ -1,0 +1,57 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index b77263d8..0c5caf4f 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -266,10 +266,12 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
+     """Step 2: Constitution freshness gate + governing-rules loading (#567)."""
+     repo_root = REPO_ROOT
+     missing_local = [p for p in RULE_FRESHNESS_FILES if not (repo_root / p).exists()]
+-    if missing_local:
+-        return False
+ 
+     if _offline_requested(offline):
++        # বাংলা: অফলাইনে সেলফ-হিল অসম্ভব — আচরণ অপরিবর্তিত (missing মানে fail)।
++        if missing_local:
++            log("❌", f"[Rules] offline and missing local freshness files: {missing_local}")
++            return False
+         _print_rule_version_and_checklist()
+         return True
+ 
+@@ -280,16 +282,32 @@ def step_2_rules(offline: bool = False, auto_sync: bool = True) -> bool:
+     local_shas: dict[str, str | None] = {}
+     remote_shas: dict[str, str | None] = {}
+     for path in RULE_FRESHNESS_FILES:
+-        h_code, h_out, h_err = run_cmd(["git", "hash-object", "--", path], cwd=repo_root)
+-        if h_code != 0:
+-            return False
+-        local_shas[path] = h_out.strip() or None
+         r_code, r_out, _ = run_cmd(
+             ["git", "rev-parse", "--verify", "--quiet", f"origin/main:{path}"], cwd=repo_root
+         )
+         if r_code != 0:
+-            return False
++            # বাংলা: ফাইলটি origin/main-এ আর নেই (deleted/renamed upstream)।
++            # মুছে-ফেলা ফাইলকে পূর্বশর্ত করে রাখা লুপের আত্ম-পরাজয় — AGENT_RULES.md
++            # ঠিক এভাবেই #1526-এ লুপটা মেরেছিল (rev-parse fail মানে exit 1 চিরকাল)।
++            # তাই এই রানে গেট থেকে বাদ; fail-closed নয়, honest-skip।
++            log("!", f"[Rules] {path} no longer exists on origin/main — deleted upstream; skipping this run.")
++            continue
+         remote_shas[path] = r_out.strip() or None
++        h_code, h_out, h_err = run_cmd(["git", "hash-object", "--", path], cwd=repo_root)
++        if h_code != 0:
++            # বাংলা: স্থানীয় কপি নেই কিন্তু origin/main-এ আছে —
++            # fetch ইমেধেই ব্যর্থ ঘোষণা নিজের সেলফ-হিল-প্রণালীকে প্রতারাধ করত।
++            # এখন diverged-sync ব্রাঞ্চের মেকানিসম দিয়ে পুনরুদ্ধার করে hash করা হয়।
++            c_code, _, _ = run_cmd(
++                ["git", "checkout", "origin/main", "--", path], cwd=repo_root
++            )
++            if c_code != 0:
++                log("❌", f"[Rules] {path} missing locally and self-heal from origin/main failed.")
++                return False
++            h_code, h_out, h_err = run_cmd(["git", "hash-object", "--", path], cwd=repo_root)
++            if h_code != 0:
++                return False
++        local_shas[path] = h_out.strip() or None
+ 
+     diverged = diff_rule_freshness(local_shas, remote_shas)
+ 

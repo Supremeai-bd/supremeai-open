@@ -1,0 +1,160 @@
+diff --git a/core/github/scripts/platform_agent_check.py b/core/github/scripts/platform_agent_check.py
+index 0cae31cf..c905c5ab 100644
+--- a/core/github/scripts/platform_agent_check.py
++++ b/core/github/scripts/platform_agent_check.py
+@@ -198,11 +198,11 @@ def probe_tower(sec: dict) -> None:
+         headers={
+             "Authorization": f"Bearer {api_key}" if api_key else "",
+             "Content-Type": "application/json",
+-            "MCP-Protocol-Version": "2025-03-26",
++            "MCP-Protocol-Version": "2025-11-25",
+             "Accept": "application/json, text/event-stream",
+         },
+         body=json_body({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+-            "protocolVersion": "2025-03-26",
++            "protocolVersion": "2025-11-25",
+             "capabilities": {},
+             "clientInfo": {"name": "platform-agent-sweep", "version": "1.0"},
+         }}),
+diff --git a/scripts/agents/heartbeat_ping.py b/scripts/agents/heartbeat_ping.py
+index c4d69c1f..cc1d98a5 100644
+--- a/scripts/agents/heartbeat_ping.py
++++ b/scripts/agents/heartbeat_ping.py
+@@ -120,7 +120,7 @@ def ping_mcp(slot: str, agent_id: str, mcp_url: str, api_key: str, client_label:
+     """Full inline MCP handshake (initialize → initialized → tools/call)."""
+     headers = {
+         "Authorization": f"Bearer {api_key}",
+-        "MCP-Protocol-Version": "2025-03-26",
++        "MCP-Protocol-Version": "2025-11-25",
+         "Accept": "application/json, text/event-stream",
+         "Content-Type": "application/json",
+     }
+@@ -141,7 +141,7 @@ def post(body: dict, session: str | None = None):
+             "id": 1,
+             "method": "initialize",
+             "params": {
+-                "protocolVersion": "2025-03-26",
++                "protocolVersion": "2025-11-25",
+                 "capabilities": {},
+                 "clientInfo": {"name": client_label, "version": "1.0.0"},
+             },
+diff --git a/scripts/agents/mcp_tower_client.py b/scripts/agents/mcp_tower_client.py
+index 484ad4dc..588c6bda 100644
+--- a/scripts/agents/mcp_tower_client.py
++++ b/scripts/agents/mcp_tower_client.py
+@@ -84,9 +84,10 @@ def resolve_mcp_server_url() -> str:
+ MCP_SERVER_URL = resolve_mcp_server_url()
+ MCP_SSE_PATH = "/sse"
+ MCP_STREAMABLE_PATH = "/mcp"
+-# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the legacy SSE
+-# transport keeps negotiating the revision the old path always used.
+-PROTOCOL_VERSION_STREAMABLE = "2025-03-26"
++# Protocol revisions: 2025-03-26 introduced Streamable HTTP; the streamable
++# floor tracks the tower's verified max (2025-11-25, live ladder probe R68/#2530).
++# The legacy SSE transport keeps negotiating the revision the old path always used.
++PROTOCOL_VERSION_STREAMABLE = "2025-11-25"
+ PROTOCOL_VERSION_SSE = "2024-11-05"
+ REQUEST_TIMEOUT = 30
+ SSE_READ_TIMEOUT = 600
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 33e7e837..2647983c 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -191,7 +191,7 @@ def _text_of(res) -> str:
+ 
+ 
+ def _tower_text(name: str, arguments: dict) -> str:
+-    _, sid = _rpc("initialize", {"protocolVersion": "2025-03-26", "capabilities": {},
++    _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
+                                  "clientInfo": {"name": "bridge-landing-watchdog", "version": "1.0"}})
+     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
+     res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
+diff --git a/scripts/ci/mcp_conformance_selftest.py b/scripts/ci/mcp_conformance_selftest.py
+index d09f18ed..50cd7e93 100644
+--- a/scripts/ci/mcp_conformance_selftest.py
++++ b/scripts/ci/mcp_conformance_selftest.py
+@@ -48,7 +48,7 @@ def post(url: str, payload: dict, session_id: str | None = None, timeout: int =
+ def initialize(url: str) -> str:
+     sid, resps = post(url, {
+         "jsonrpc": "2.0", "id": 1, "method": "initialize",
+-        "params": {"protocolVersion": "2025-03-26", "capabilities": {},
++        "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                    "clientInfo": {"name": "mcp-conformance-selftest", "version": "1.0"}},
+     })
+     post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+diff --git a/scripts/knowledge/ingest_project_docs.py b/scripts/knowledge/ingest_project_docs.py
+index bc50ce25..82c080b6 100644
+--- a/scripts/knowledge/ingest_project_docs.py
++++ b/scripts/knowledge/ingest_project_docs.py
+@@ -68,7 +68,7 @@ def post(payload: dict, session_id: str | None = None, timeout: int = 90):
+ 
+ def ensure_session() -> str:
+     sid, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+-                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
++                   "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                               "clientInfo": {"name": "docs-ingest", "version": "1.0"}}})
+     post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+     return sid
+diff --git a/scripts/ops/ingest_project_docs.py b/scripts/ops/ingest_project_docs.py
+index 9eee95fe..c8de983f 100644
+--- a/scripts/ops/ingest_project_docs.py
++++ b/scripts/ops/ingest_project_docs.py
+@@ -52,7 +52,7 @@ def post(payload: dict, session_id: str | None = None, timeout: int = 90):
+ 
+ def ensure_session() -> str:
+     sid, _ = post({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+-                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
++                   "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                               "clientInfo": {"name": "docs-ingest", "version": "1.0"}}})
+     post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+     return sid
+diff --git a/tests/test_s01_atomic_claim_contract.py b/tests/test_s01_atomic_claim_contract.py
+index 24fa87f0..4e456598 100644
+--- a/tests/test_s01_atomic_claim_contract.py
++++ b/tests/test_s01_atomic_claim_contract.py
+@@ -224,7 +224,7 @@ def rpc(session, req_id, method, params):
+         1,
+         "initialize",
+         {
+-            "protocolVersion": "2025-03-26",
++            "protocolVersion": "2025-11-25",
+             "capabilities": {},
+             "clientInfo": {"name": "s01-contract-test", "version": "1.0.0"},
+         },
+diff --git a/tests/test_streamable_http_transition_2307.py b/tests/test_streamable_http_transition_2307.py
+index fcd0604d..d26985af 100644
+--- a/tests/test_streamable_http_transition_2307.py
++++ b/tests/test_streamable_http_transition_2307.py
+@@ -6,7 +6,7 @@
+ The tower already serves both transports, so the client plane was the last
+ holdout. These tests pin the contract offline (no network): POST-first,
+ session-header capture + propagation, spec Accept header, protocol revision
+-2025-03-26 on the streamable path, 2024-11-05 untouched on the SSE path,
++2025-11-25 on the streamable path, 2024-11-05 untouched on the SSE path,
+ and the fallback preserving every currently-working configuration.
+ """
+ from __future__ import annotations
+@@ -120,12 +120,12 @@ def test_streamable_happy_path_post_first_json_body():
+     assert init_kw["headers"]["Content-Type"] == "application/json"
+     payload = init_kw["json"]
+     assert payload["method"] == "initialize"
+-    assert payload["params"]["protocolVersion"] == "2025-03-26"
++    assert payload["params"]["protocolVersion"] == "2025-11-25"
+     # session header propagates to follow-up requests
+     assert http.posts[1][1]["headers"]["mcp-session-id"] == "sess-123"
+     assert http.posts[2][1]["headers"]["mcp-session-id"] == "sess-123"
+     # MCP-Protocol-Version header on post-initialize requests
+-    assert http.posts[2][1]["headers"]["MCP-Protocol-Version"] == "2025-03-26"
++    assert http.posts[2][1]["headers"]["MCP-Protocol-Version"] == "2025-11-25"
+     # notifications carry no id
+     assert "id" not in http.posts[1][1]["json"]
+     assert result == []  # list_tools() unwraps .get("tools") internally
+@@ -213,7 +213,7 @@ def test_rpc_error_in_streamable_body_raises_mcp_error():
+ 
+ def test_legacy_sse_revision_constant_untouched():
+     assert mtc.PROTOCOL_VERSION_SSE == "2024-11-05"
+-    assert mtc.PROTOCOL_VERSION_STREAMABLE == "2025-03-26"
++    assert mtc.PROTOCOL_VERSION_STREAMABLE == "2025-11-25"
+ 
+ 
+ def test_transport_reset_on_close():

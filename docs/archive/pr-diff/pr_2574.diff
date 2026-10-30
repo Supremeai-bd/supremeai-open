@@ -1,0 +1,136 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 2647983c..0564cd1a 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -155,7 +155,12 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
+         _id[0] += 1
+         payload["id"] = _id[0]
+     headers = {"Content-Type": "application/json",
+-               "Accept": "application/json, text/event-stream"}
++               "Accept": "application/json, text/event-stream",
++               # Streamable HTTP (spec rev >= 2025-06-18): every post-initialize request
++               # must carry the negotiated version; a missing header makes the server
++               # assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70).
++               # Mirrors PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
++               "MCP-Protocol-Version": "2025-11-25"}
+     if session_id:
+         headers["Mcp-Session-Id"] = session_id
+     last = None
+diff --git a/scripts/ci/mcp_conformance_selftest.py b/scripts/ci/mcp_conformance_selftest.py
+index 50cd7e93..4610e6f6 100644
+--- a/scripts/ci/mcp_conformance_selftest.py
++++ b/scripts/ci/mcp_conformance_selftest.py
+@@ -2,6 +2,8 @@
+ """MCP conformance self-test (#1329) — bridge-20261027-tower-self-capability.
+ 
+ Asserts that everything the tower ADVERTISES is actually usable:
++  0. post-initialize requests carry MCP-Protocol-Version (wire self-check; a missing
++     header makes the server assume 2025-03-26, voiding the 2025-11-25 floor — #2568).
+   1. resources/list  -> every advertised URI is readable (no -32602).
+   2. codebase_graph_query("chat") -> returns symbols (graph.json reachable).
+   3. devtools_audit -> never reports verdict PASS while mode is a fallback.
+@@ -21,18 +23,34 @@
+ import urllib.request
+ 
+ DEFAULT_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
+-HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
++# Streamable floor — one constant per site, mirrors PROTOCOL_VERSION_STREAMABLE in
++# scripts/agents/mcp_tower_client.py (landed via #2533, radar R68).
++PROTOCOL_VERSION = "2025-11-25"
++# Spec (streamable HTTP, rev >= 2025-06-18): every request after initialize MUST carry
++# MCP-Protocol-Version: <negotiated>; a missing header makes the server assume
++# 2025-03-26, silently voiding the negotiated floor (#2568, radar R70 header debt).
++HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
++           "MCP-Protocol-Version": PROTOCOL_VERSION}
++LAST_HEADERS: dict | None = None  # wire self-check surface: headers of the most recent POST
+ 
+ 
+ def post(url: str, payload: dict, session_id: str | None = None, timeout: int = 60):
++    global LAST_HEADERS
+     headers = dict(HEADERS)
+     if session_id:
+         headers["mcp-session-id"] = session_id
++    LAST_HEADERS = headers
+     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+     with urllib.request.urlopen(req, timeout=timeout) as resp:
+         sid = resp.headers.get("mcp-session-id", session_id)
+         raw = resp.read().decode("utf-8", errors="replace")
+         payloads = []
++        if not raw.strip():
++            # HTTP 202 with empty body is the spec response to notifications
++            # (notifications/initialized); the watchdog's _rpc() uses the same
++            # {"accepted": True} convention. Without this, json.loads("") crashes
++            # every live run at the notification step (#2568 follow-through).
++            return sid, [{"accepted": True}]
+         if raw.lstrip().startswith("event:") or "\ndata:" in raw:
+             for line in raw.splitlines():
+                 if line.startswith("data:"):
+@@ -48,7 +66,7 @@ def post(url: str, payload: dict, session_id: str | None = None, timeout: int =
+ def initialize(url: str) -> str:
+     sid, resps = post(url, {
+         "jsonrpc": "2.0", "id": 1, "method": "initialize",
+-        "params": {"protocolVersion": "2025-11-25", "capabilities": {},
++        "params": {"protocolVersion": PROTOCOL_VERSION, "capabilities": {},
+                    "clientInfo": {"name": "mcp-conformance-selftest", "version": "1.0"}},
+     })
+     post(url, {"jsonrpc": "2.0", "method": "notifications/initialized"}, sid)
+@@ -74,6 +92,23 @@ def main() -> int:
+ 
+     violations: list[str] = []
+ 
++    # ---- 0. post-initialize protocol-version header self-check (#2568, radar R70) ----
++    # Any post-initialize request observed on the wire must carry MCP-Protocol-Version,
++    # else the server assumes 2025-03-26 and every later check runs on the wrong floor.
++    # LAST_HEADERS captures exactly what this selftest sent for the ping below — this
++    # single assert would have caught the 4-caller header debt at #2533 review time.
++    # Response content is irrelevant here (ping is protocol-mandatory); only wire
++    # headers matter.
++    try:
++        rpc(url, sid, "ping", {}, rid=10)
++    except Exception as err:  # noqa: BLE001 — transport failure is unreachability, not a violation
++        print(f"FATAL: post-initialize ping to {url} failed: {err}")
++        return 2
++    if (LAST_HEADERS or {}).get("MCP-Protocol-Version") != PROTOCOL_VERSION:
++        violations.append(
++            "post-initialize request missing MCP-Protocol-Version: "
++            f"{PROTOCOL_VERSION} header (server assumes 2025-03-26, voiding the floor)")
++
+     # ---- 1. every advertised resource must be readable ----
+     listing = rpc(url, sid, "resources/list", {}, rid=11)
+     uris = [r.get("uri") for r in listing.get("result", {}).get("resources", [])]
+diff --git a/scripts/knowledge/ingest_project_docs.py b/scripts/knowledge/ingest_project_docs.py
+index 82c080b6..7945e059 100644
+--- a/scripts/knowledge/ingest_project_docs.py
++++ b/scripts/knowledge/ingest_project_docs.py
+@@ -30,7 +30,12 @@
+ LOGGER = logging.getLogger("docs_ingest")
+ 
+ TOWER_URL = os.environ.get("SUPREMEAI_MCP_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
+-HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
++# MCP-Protocol-Version on every request: streamable HTTP (spec rev >= 2025-06-18)
++# requires the negotiated version post-initialize; a missing header makes the server
++# assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70). Mirrors
++# PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
++HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
++           "MCP-Protocol-Version": "2025-11-25"}
+ 
+ # (repo, path prefix, doc collection label) — keep in sync with the work order
+ TARGETS = [
+diff --git a/scripts/ops/ingest_project_docs.py b/scripts/ops/ingest_project_docs.py
+index c8de983f..bc1a9158 100644
+--- a/scripts/ops/ingest_project_docs.py
++++ b/scripts/ops/ingest_project_docs.py
+@@ -17,7 +17,12 @@
+ import urllib.request
+ 
+ TOWER_URL = os.environ.get("SUPREMEAI_MCP_URL", "https://supremeai-mcp-tower.onrender.com/mcp")
+-HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
++# MCP-Protocol-Version on every request: streamable HTTP (spec rev >= 2025-06-18)
++# requires the negotiated version post-initialize; a missing header makes the server
++# assume 2025-03-26, voiding the 2025-11-25 floor (#2568, radar R70). Mirrors
++# PROTOCOL_VERSION_STREAMABLE in scripts/agents/mcp_tower_client.py.
++HEADERS = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
++           "MCP-Protocol-Version": "2025-11-25"}
+ 
+ # (repo, path prefix, doc collection label) — keep in sync with the work order
+ TARGETS = [

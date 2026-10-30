@@ -1,0 +1,130 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index dbcb7ddb..3f7c863f 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -203,8 +203,20 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+ STALE_INCIDENT_PROBE_TIMEOUT_S = 10.0
+ STALE_INCIDENT_RUNS_WINDOW = 60  # per_page for the runs fetch (newest-first)
+ 
+-_INCIDENT_RUN_RE = re.compile(r"Run\s*#(\d+)", re.IGNORECASE)
+-_INCIDENT_FAIL_MARKER = " failed on main"
++# GLM Agent 07 (Job 486733, 2026-10-30): the recognition shape was
++# " failed on main" only — but the bridge mirror stamps PR-lane incidents as
++# "... failed on <ref> (Run #N)" (e.g. " failed on 3192/merge"), so every
++# PR-lane incident stayed servable forever after going stale. Live witness:
++# "fix(ci): [open] CI — Open Unified Pipeline failed on 3192/merge
++# (Run #41042525263)" was dispatched at 11:07Z with 11 newer green main runs
++# (#7560-#7596, zero reds) already on the board. The ref token is
++# recognition-only: staleness is still judged on MAIN-branch supersession
++# (same-workflow, >=N greens, zero newer reds) exactly per the #3050
++# contract — a title that names ANY ref must not bypass the U3 filter.
++_INCIDENT_TITLE_RE = re.compile(
++    r"\s+failed on (?P<ref>[^\s()]+)\s*\(Run\s*#(?P<run>\d+)\)",
++    re.IGNORECASE,
++)
+ 
+ 
+ def _incident_stale_note(
+@@ -215,7 +227,9 @@ def _incident_stale_note(
+     """#3050 — demotion note for a superseded CI-failure incident, else None.
+ 
+     Recognizes the mirror's incident-title shape
+-    "...[<state>] <workflow> failed on main (Run #<id>)"; resolves the run's
++    "...[<state>] <workflow> failed on <ref> (Run #<id>)" (ref = main, a
++    PR-lane merge ref like 3192/merge, or any branch — recognition only,
++    the staleness judgment stays main-scoped); resolves the run's
+     workflow name and run_number via the runs surface, then checks whether
+     min_green (default STALE_INCIDENT_GREEN_RUNS) SUCCESS runs of the same
+     workflow on main exist strictly newer than it with zero newer FAILURES
+@@ -226,16 +240,14 @@ def _incident_stale_note(
+     """
+     n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
+     title = str(item.get("title", ""))
+-    if _INCIDENT_FAIL_MARKER not in title:
+-        return None
+-    run_match = _INCIDENT_RUN_RE.search(title)
+-    if not run_match:
++    title_match = _INCIDENT_TITLE_RE.search(title)
++    if not title_match:
+         return None
+     try:
+-        incident_run_id = int(run_match.group(1))
++        incident_run_id = int(title_match.group("run"))
+     except ValueError:
+         return None
+-    head = title.split(_INCIDENT_FAIL_MARKER)[0]
++    head = title[: title_match.start()]
+     if "] " not in head:
+         return None
+     workflow = head.rsplit("] ", 1)[1].strip()
+diff --git a/tests/test_stale_incident_demotion.py b/tests/test_stale_incident_demotion.py
+index 6defa670..e1c1db7b 100644
+--- a/tests/test_stale_incident_demotion.py
++++ b/tests/test_stale_incident_demotion.py
+@@ -98,12 +98,29 @@ def _green_fetcher(
+     return runs
+ 
+ 
++def _merge_ref_incident(number: int, run_id: int = 41042525263) -> dict:
++    """Bridge-mirror PR-lane incident shape (live #3195 title, 2026-10-30).
++
++    The mirror stamps PR-lane failures with the merge ref, not "main" —
++    the recognition shape must not require the literal main ref (GLM
++    Agent 07, Job 486733): the ref token is recognition-only, staleness
++    stays main-scoped.
++    """
++    return {
++        "number": number,
++        "title": f"fix(ci): [open] {WORKFLOW} failed on 3192/merge (Run #{run_id})",
++        "labels": [{"name": "P2-medium"}, {"name": "status:unclaimed"}],
++    }
++
++
+ class TestIncidentStaleNote(unittest.TestCase):
+     def test_non_incident_title_is_never_judged(self):
+         for title in (
+             "row 3001",
+             "fix(ci): something else entirely",
+             f"fix(ci): [open] {WORKFLOW} failed on main (no run id)",
++            f"fix(ci): [open] {WORKFLOW} failed on 3192/merge (no run id)",
++            f"fix(ci): [open] {WORKFLOW} failed on 3192/merge Run #123",
+         ):
+             self.assertIsNone(
+                 cal._incident_stale_note(
+@@ -123,6 +140,36 @@ def test_superseded_incident_gets_demotion_note(self):
+         self.assertIn("40994815953", note)
+         self.assertIn("#3050", note)
+ 
++    def test_merge_ref_mirror_title_is_recognized(self):
++        """GLM Agent 07 (Job 486733): the live #3195 shape — the bridge
++        mirror stamps PR-lane incidents with the merge ref (" failed on
++        3192/merge"), which the pre-fix " failed on main" marker never
++        matched, so stale PR-lane incidents stayed servable forever
++        (live: dispatched 11:07Z with 11 newer green main runs on the
++        board). The merge-ref title must get the same demotion as a
++        main-ref title.
++        """
++        note = cal._incident_stale_note(
++            _merge_ref_incident(3195),
++            fetch_runs=lambda p: _green_fetcher(41042525263, 7556, greens=5),
++        )
++        self.assertIsNotNone(note)
++        self.assertIn("incident-stale", note)
++        self.assertIn("41042525263", note)
++
++    def test_merge_ref_title_with_newer_red_vetoes_demotion(self):
++        """Recognition widening must not weaken the judgment: a newer red
++        still vetoes the demotion for a merge-ref incident (the incident
++        may be live).
++        """
++        runs = _green_fetcher(41042525263, 7556, greens=5)
++        runs.insert(0, _run(910002, 7566, "failure"))  # newest concluded is red
++        self.assertIsNone(
++            cal._incident_stale_note(
++                _merge_ref_incident(3195), fetch_runs=lambda p: runs
++            )
++        )
++
+     def test_newer_red_vetoes_demotion(self):
+         runs = _green_fetcher(40994815953, 7183, greens=5)
+         runs.insert(0, _run(910001, 7193, "failure"))  # newest concluded is red

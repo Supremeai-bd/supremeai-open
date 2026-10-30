@@ -1,0 +1,104 @@
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+index c5e1bab5..4731a92c 100644
+--- a/scripts/agents/check_loop_contract_parity.py
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -16,6 +16,13 @@
+   6. Every ``.github/workflows/*.yml`` reference in the loop code or the SPEC
+      must resolve to an existing workflow file on disk (the deleted
+      ``open-guards.yml`` drift class — #214).
++  7. The ``pipeline.yml`` board pre-check's CLAIMABLE exclusion label array
++     must not hide claimable work from the dispatcher: any label it excludes
++     that the loop's ``EXCLUDED_LABELS`` frozenset (SSOT) does not, fails the
++     guard (starvation direction). The opposite lag (the pre-check missing
++     SSOT labels, dispatcher burning a job the loop then refuses) is reported
++     as a warning line — the workflow file is admin-lane (``.github/`` is
++     bridge-protected), so waste-direction drift cannot be fixed agent-side.
+ 
+ Exit codes: 0 = parity held · 1 = drift detected · 2 = guard environment error.
+ """
+@@ -130,6 +137,73 @@ def norm(name: str) -> str:
+                     f".github/workflows/{wf_name}"
+                 )
+ 
++    # 7. Board pre-check claim-exclusion set vs the loop EXCLUDED_LABELS SSOT.
++    #    The pre-check hand-copies pick_next_issue()'s exclusion set inside a
++    #    jq filter (#88/#222). Asymmetric severity: a label the pipeline
++    #    excludes but the loop doesn't means real claimable work is hidden
++    #    from the dispatcher (starvation — fail-closed). The opposite lag only
++    #    burns a dispatcher job on a board the loop refuses (waste — warn:
++    #    pipeline.yml is admin-lane, agents cannot sync it).
++    warnings: list[str] = []
++    loop_labels_m = re.search(
++        r"EXCLUDED_LABELS\s*=\s*frozenset\(\{(.*?)\}\)", code, re.S
++    )
++    pipe_lines = [
++        ln
++        for ln in GUARDS_WF.read_text(encoding="utf-8").splitlines()
++        if "CLAIMABLE=" in ln and "select((" in ln
++    ]
++    if loop_labels_m is None:
++        failures.append(
++            "loop code lost the EXCLUDED_LABELS frozenset "
++            "(claim-exclusion SSOT, guard 7)"
++        )
++    elif len(pipe_lines) != 1:
++        failures.append(
++            "pipeline.yml must contain exactly one CLAIMABLE claim-exclusion "
++            f"jq filter for guard 7, found {len(pipe_lines)}"
++        )
++    else:
++        loop_labels = {
++            s.lower() for s in re.findall(r'"([^"]+)"', loop_labels_m.group(1))
++        }
++        labels_m = re.search(r"select\(\(\[([^\]]*)\]", pipe_lines[0])
++        if labels_m is None:
++            failures.append(
++                "pipeline.yml CLAIMABLE filter lost the exclusion label array "
++                "(select(([...]) shape, guard 7)"
++            )
++        else:
++            pipe_labels = {
++                s.strip().strip('"\'').lower()
++                for s in labels_m.group(1).split(",")
++                if s.strip()
++            }
++            starvation = pipe_labels - loop_labels
++            waste = loop_labels - pipe_labels
++            if starvation:
++                failures.append(
++                    "claim-exclusion drift (guard 7, starvation): "
++                    "pipeline.yml board pre-check excludes label(s) the loop "
++                    f"EXCLUDED_LABELS SSOT does not: {sorted(starvation)} — "
++                    "claimable work is hidden from the dispatcher; remove them "
++                    "from the CLAIMABLE jq array or add them to the loop SSOT "
++                    "deliberately"
++                )
++            elif waste:
++                warnings.append(
++                    "claim-exclusion lag (guard 7, waste direction): "
++                    "pipeline.yml board pre-check is missing loop "
++                    f"EXCLUDED_LABELS SSOT label(s) {sorted(waste)} — the "
++                    "dispatcher burns a job on a board the loop then refuses; "
++                    "admin-lane fix: extend the CLAIMABLE jq array with the "
++                    "loop SSOT set (workflow is .github/, bridge-protected)"
++                )
++
++    if warnings:
++        for warning in warnings:
++            print(f"⚠ {warning}")
++
+     if failures:
+         print("❌ Loop-contract parity FAILED:")
+         for failure in failures:
+@@ -141,7 +215,10 @@ def norm(name: str) -> str:
+         f"(code == SPEC §4 declared 1..{declared}), "
+         f"{len(job_names)} guards (workflow == SPEC §5), "
+         "no flag-table copy, SSOT pointers present, "
+-        "all workflow references resolve."
++        "all workflow references resolve, "
++        f"claim-exclusion parity ({len(loop_labels)} labels"
++        + ("" if not warnings else ", waste-direction lag warned above")
++        + ")."
+     )
+     return 0
+ 

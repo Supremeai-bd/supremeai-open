@@ -1,0 +1,577 @@
+diff --git a/scripts/ci/pr_patch_recorder.py b/scripts/ci/pr_patch_recorder.py
+new file mode 100644
+index 00000000..5d0a6540
+--- /dev/null
++++ b/scripts/ci/pr_patch_recorder.py
+@@ -0,0 +1,483 @@
++#!/usr/bin/env python3
++"""
++SupremeAI Open — PR Patch Recorder & Verification Tool (Rule #416 & Ephemeral Transit).
++
++Purpose:
++  When multiple autonomous agents or contributors work concurrently, this script
++  automatically captures each PR's full changes into a structured `.patch` file
++  under `patches/`.
++
++Features:
++  - Fetches PR metadata and unified diff via gh CLI (or GitHub API fallback).
++  - Annotates each patch with metadata header (PR number, author, branch, domain, file list).
++  - Automated Mistake Detection: warns about cross-domain violations (> 1 satellite touched),
++    excessive diff size (> 200KB or > 30 files), or missing issue references.
++  - Ephemeral Lifecycle: provides clean removal/prune options (--remove, --prune, --prune-merged)
++    to ensure zero residue after review.
++  - Self-test mode: offline unit tests for constitutional CI conformance.
++
++Usage:
++  python scripts/ci/pr_patch_recorder.py --sync                  # Fetch & record all open PRs
++  python scripts/ci/pr_patch_recorder.py --pr 906               # Record a specific PR
++  python scripts/ci/pr_patch_recorder.py --list                 # List currently recorded patches
++  python scripts/ci/pr_patch_recorder.py --inspect 906          # View summary & sanity check
++  python scripts/ci/pr_patch_recorder.py --remove 906           # Remove verified patch for PR 906
++  python scripts/ci/pr_patch_recorder.py --prune                # Remove all patch files in patches/
++  python scripts/ci/pr_patch_recorder.py --prune-merged         # Remove patches whose PRs are merged/closed
++  python scripts/ci/pr_patch_recorder.py --self-test            # Run offline verification test suite
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import re
++import shutil
++import subprocess
++import sys
++from datetime import datetime, timezone
++from pathlib import Path
++from typing import Any, Dict, List, Optional, Tuple
++
++if hasattr(sys.stdout, "reconfigure"):
++    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++if hasattr(sys.stderr, "reconfigure"):
++    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++PATCHES_DIR = REPO_ROOT / "patches"
++
++# Federation domains mapped from paths (AGENTS.md §4)
++DOMAIN_PREFIXES = {
++    "studio/": "studio",
++    "gateway/": "api",
++    "core/": "core",
++    "browser/": "browser",
++    "vscode/": "vscode",
++    "command/": "command",
++    "infra/": "infrastructure",
++    "infrastructure/": "infrastructure",
++    "sdk/": "sdk",
++    "skills/": "skills",
++    "docs/": "monorepo-docs",
++    "scripts/": "monorepo-scripts",
++    "tests/": "monorepo-tests",
++}
++
++
++def sanitize_filename(text: str) -> str:
++    """Turn PR title or branch name into a clean, safe filename slug."""
++    text = re.sub(r"[^\w\-_]", "_", text).strip("_")
++    return re.sub(r"_+", "_", text)[:40]
++
++
++def detect_domains(file_paths: List[str]) -> List[str]:
++    """Detect all targeted federation domains from touched file paths."""
++    domains = set()
++    for fp in file_paths:
++        matched = False
++        for prefix, domain in DOMAIN_PREFIXES.items():
++            if fp.startswith(prefix):
++                domains.add(domain)
++                matched = True
++                break
++        if not matched:
++            domains.add("root")
++    return sorted(domains)
++
++
++def run_command(cmd: List[str], cwd: Optional[Path] = None, timeout: int = 30) -> Tuple[int, str, str]:
++    """Run shell command safely and return (exit_code, stdout, stderr)."""
++    tool = cmd[0] if cmd else ""
++    if tool and not shutil.which(tool):
++        return 127, "", f"Tool '{tool}' not found in PATH"
++
++    try:
++        proc = subprocess.run(
++            cmd,
++            cwd=cwd or REPO_ROOT,
++            stdout=subprocess.PIPE,
++            stderr=subprocess.PIPE,
++            text=True,
++            encoding="utf-8",
++            errors="replace",
++            timeout=timeout,
++            check=False,
++        )
++        return proc.returncode, proc.stdout, proc.stderr
++    except FileNotFoundError as fnf:
++        return 127, "", str(fnf)
++    except subprocess.TimeoutExpired as te:
++        return 124, "", f"Command timed out after {timeout}s: {te}"
++    except Exception as e:
++        return 1, "", str(e)
++
++
++def fetch_pr_metadata_gh(pr_number: int) -> Optional[Dict[str, Any]]:
++    """Fetch PR details using gh CLI."""
++    fields = "number,title,author,headRefName,baseRefName,url,state,updatedAt,files"
++    code, stdout, _ = run_command(["gh", "pr", "view", str(pr_number), "--json", fields])
++    if code != 0 or not stdout.strip():
++        return None
++    try:
++        return json.loads(stdout)
++    except json.JSONDecodeError:
++        return None
++
++
++def fetch_pr_diff_gh(pr_number: int) -> Optional[str]:
++    """Fetch PR unified diff using gh CLI."""
++    code, stdout, _ = run_command(["gh", "pr", "diff", str(pr_number), "--color=never"])
++    if code != 0:
++        return None
++    return stdout
++
++
++def fetch_prs_gh(state: str = "merged", limit: int = 50) -> List[Dict[str, Any]]:
++    """List PRs by state (merged, open, etc.) using gh CLI."""
++    fields = "number,title,author,headRefName,baseRefName,url,state,updatedAt"
++    code, stdout, _ = run_command(
++        ["gh", "pr", "list", "--state", state, "--limit", str(limit), "--json", fields]
++    )
++    if code != 0 or not stdout.strip():
++        return []
++    try:
++        return json.loads(stdout)
++    except json.JSONDecodeError:
++        return []
++
++
++def fetch_open_prs_gh() -> List[Dict[str, Any]]:
++    """List all open PRs using gh CLI."""
++    return fetch_prs_gh(state="open", limit=100)
++
++
++def format_patch_content(meta: Dict[str, Any], diff_text: str) -> Tuple[str, List[str]]:
++    """Format patch header with metadata and run sanity/mistake checks."""
++    pr_num = meta.get("number", 0)
++    title = meta.get("title", "Untitled")
++    author = meta.get("author", {}).get("login", "unknown")
++    branch = meta.get("headRefName", "unknown")
++    base = meta.get("baseRefName", "main")
++    state = meta.get("state", "OPEN")
++    url = meta.get("url", f"https://github.com/Supremeai-bd/supremeai-open/pull/{pr_num}")
++
++    raw_files = meta.get("files", [])
++    file_paths = [f.get("path", "") for f in raw_files if isinstance(f, dict)]
++    domains = detect_domains(file_paths)
++
++    # Sanity & Mistake Warnings
++    warnings: List[str] = []
++    if len(domains) > 1 and "root" not in domains:
++        # AGENTS.md §4: Single-domain PR mandate
++        warnings.append(f"[WARN] Multi-domain violation: touches {domains} (Policy: single domain PR)")
++    if len(file_paths) > 30:
++        warnings.append(f"[WARN] High file count: {len(file_paths)} files (Policy: <= 30 files)")
++    diff_size_kb = len(diff_text.encode("utf-8")) / 1024
++    if diff_size_kb > 200:
++        warnings.append(f"[WARN] Large diff size: {diff_size_kb:.1f} KB (Policy: <= 200 KB)")
++    if not re.search(r"(?:#\d+|Refs\s+#\d+|Fixes\s+#\d+)", title, re.IGNORECASE):
++        warnings.append("[WARN] Missing issue reference in title (e.g., Refs #123)")
++
++    header_lines = [
++        "# ==============================================================================",
++        f"# SupremeAI PR Patch: #{pr_num}",
++        f"# Title: {title}",
++        f"# Author: {author}",
++        f"# Branch: {branch} -> {base}",
++        f"# State: {state}",
++        f"# Target Domain(s): {', '.join(domains) if domains else 'unknown'}",
++        f"# Files Changed: {len(file_paths)}",
++        f"# Diff Size: {diff_size_kb:.1f} KB",
++        f"# Exported At (UTC): {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}",
++        f"# PR URL: {url}",
++    ]
++
++    if warnings:
++        header_lines.append("#")
++        header_lines.append("# [AUTOMATED SANITY CHECKS / POTENTIAL MISTAKES]:")
++        for w in warnings:
++            header_lines.append(f"#   {w}")
++
++    header_lines.append("#")
++    header_lines.append("# Changed Files List:")
++    for f in raw_files:
++        path = f.get("path", "")
++        adds = f.get("additions", 0)
++        dels = f.get("deletions", 0)
++        header_lines.append(f"#   - {path} (+{adds}, -{dels})")
++
++    header_lines.append("# ==============================================================================")
++    header_lines.append("")
++
++    full_content = "\n".join(header_lines) + diff_text
++    return full_content, warnings
++
++
++def record_pr(pr_number: int, only_merged: bool = False) -> bool:
++    """Capture a single PR into a patch file."""
++    print(f"[SEARCH] Fetching PR #{pr_number}...")
++    meta = fetch_pr_metadata_gh(pr_number)
++    if not meta:
++        print(f"[ERROR] Could not fetch metadata for PR #{pr_number}")
++        return False
++
++    state = meta.get("state", "").upper()
++    if only_merged and state != "MERGED":
++        print(f"[SKIP] PR #{pr_number} is {state} (not MERGED). Ignoring.")
++        return False
++
++    diff_text = fetch_pr_diff_gh(pr_number)
++    if diff_text is None:
++        print(f"[ERROR] Could not fetch diff for PR #{pr_number}")
++        return False
++
++    PATCHES_DIR.mkdir(parents=True, exist_ok=True)
++
++    title_slug = sanitize_filename(meta.get("title", ""))
++    filename = f"pr_{pr_number}_{title_slug}.patch"
++    patch_path = PATCHES_DIR / filename
++
++    content, warnings = format_patch_content(meta, diff_text)
++    patch_path.write_text(content, encoding="utf-8")
++
++    print(f"[SAVED] {patch_path.relative_to(REPO_ROOT)}")
++    if warnings:
++        for w in warnings:
++            print(f"   {w}")
++    return True
++
++
++def sync_prs(state: str = "merged", limit: int = 20) -> int:
++    """Fetch and record PRs by state (default: 'merged')."""
++    prs = fetch_prs_gh(state=state, limit=limit)
++    if not prs:
++        print(f"[INFO] No {state} pull requests found.")
++        return 0
++
++    print(f"[START] Found {len(prs)} {state} PR(s). Syncing patches to patches/...\n")
++    success = 0
++    for pr in prs:
++        pr_num = pr.get("number")
++        if pr_num and record_pr(pr_num, only_merged=(state == "merged")):
++            success += 1
++
++    print(f"\n[SUMMARY] Successfully recorded {success}/{len(prs)} {state} PR patch(es).")
++    return 0 if success == len(prs) else 1
++
++
++def sync_all_open() -> int:
++    """Fetch and record all currently open PRs."""
++    return sync_prs(state="open", limit=100)
++
++
++def sync_all_merged(limit: int = 20) -> int:
++    """Fetch and record recently merged PRs only."""
++    return sync_prs(state="merged", limit=limit)
++
++
++def list_patches() -> None:
++    """List all recorded patch files in patches/."""
++    if not PATCHES_DIR.exists():
++        print("[INFO] No patches directory found.")
++        return
++
++    patches = sorted(PATCHES_DIR.glob("*.patch"))
++    if not patches:
++        print("[INFO] No patch files found in patches/.")
++        return
++
++    print(f"[FILES] Recorded Patches in {PATCHES_DIR.relative_to(REPO_ROOT)} ({len(patches)} files):\n")
++    print(f"{'PR':<8} {'Size (KB)':<12} {'Filename'}")
++    print("-" * 60)
++    for p in patches:
++        size_kb = p.stat().st_size / 1024
++        match = re.match(r"pr_(\d+)", p.name)
++        pr_id = match.group(1) if match else "-"
++        print(f"#{pr_id:<7} {size_kb:<11.1f} {p.name}")
++
++
++def remove_pr_patch(pr_number: int) -> bool:
++    """Remove patch file for a specific PR."""
++    if not PATCHES_DIR.exists():
++        print("[INFO] No patches directory found.")
++        return False
++
++    targets = list(PATCHES_DIR.glob(f"pr_{pr_number}_*.patch")) + list(
++        PATCHES_DIR.glob(f"pr_{pr_number}.patch")
++    )
++    if not targets:
++        print(f"[INFO] No patch file found for PR #{pr_number}")
++        return False
++
++    for t in targets:
++        t.unlink(missing_ok=True)
++        print(f"[REMOVED] {t.name}")
++    return True
++
++
++def prune_all_patches(only_merged: bool = False) -> int:
++    """Prune patch files in patches/ directory (Rule #416)."""
++    if not PATCHES_DIR.exists():
++        print("[INFO] No patches directory found.")
++        return 0
++
++    patch_files = list(PATCHES_DIR.glob("*.patch"))
++    if not patch_files:
++        print("[INFO] No patch files found to prune.")
++        return 0
++
++    removed = 0
++    for pf in patch_files:
++        if only_merged:
++            match = re.match(r"pr_(\d+)", pf.name)
++            if match:
++                pr_num = int(match.group(1))
++                meta = fetch_pr_metadata_gh(pr_num)
++                state = meta.get("state") if meta else ""
++                if state not in ("MERGED", "CLOSED"):
++                    continue
++        pf.unlink(missing_ok=True)
++        removed += 1
++        print(f"  - Removed: {pf.name}")
++
++    print(f"[PRUNED] {removed} patch file(s) from patches/.")
++    return 0
++
++
++def inspect_pr_patch(pr_number: int) -> None:
++    """Inspect the recorded patch file and print header information."""
++    if not PATCHES_DIR.exists():
++        print("[INFO] No patches directory found.")
++        return
++
++    targets = list(PATCHES_DIR.glob(f"pr_{pr_number}_*.patch")) + list(
++        PATCHES_DIR.glob(f"pr_{pr_number}.patch")
++    )
++    if not targets:
++        print(f"[ERROR] Patch file for PR #{pr_number} not found in patches/.")
++        return
++
++    patch_file = targets[0]
++    print(f"\n[INSPECT] {patch_file.name}\n")
++    with open(patch_file, "r", encoding="utf-8", errors="replace") as f:
++        for line in f:
++            if line.startswith("#"):
++                print(line, end="")
++            elif line.startswith("diff --git"):
++                print("...\n[Diff body begins - inspect directly in editor or with git apply --check]")
++                break
++
++
++def self_test() -> bool:
++    """Self-test for offline validation of PR patch logic and contracts."""
++    print("[self-test] Validating PR Patch Recorder invariants...")
++
++    # 1. Sanitize filename test
++    slug = sanitize_filename("fix(studio): fix guest chat & auth (Refs #749)")
++    assert "fix_studio_fix_guest_chat" in slug, f"Unexpected slug: {slug}"
++
++    # 2. Domain detection test
++    domains = detect_domains(["studio/src/App.tsx", "studio/package.json"])
++    assert domains == ["studio"], f"Expected ['studio'], got {domains}"
++
++    multi_domains = detect_domains(["studio/src/App.tsx", "gateway/src/index.ts"])
++    assert set(multi_domains) == {"studio", "api"}, f"Expected multi-domains, got {multi_domains}"
++
++    # 3. Patch formatting and warning detection test
++    mock_meta = {
++        "number": 9999,
++        "title": "feat: cross-domain change without issue ref",
++        "author": {"login": "test-bot"},
++        "headRefName": "feat/cross-change",
++        "baseRefName": "main",
++        "state": "OPEN",
++        "url": "https://github.com/test/pull/9999",
++        "files": [
++            {"path": "studio/src/index.tsx", "additions": 10, "deletions": 2},
++            {"path": "gateway/src/index.ts", "additions": 5, "deletions": 1},
++        ],
++    }
++    content, warnings = format_patch_content(mock_meta, "diff --git a/test b/test\n+hello\n")
++    assert "# SupremeAI PR Patch: #9999" in content
++    assert any("Multi-domain violation" in w for w in warnings), "Expected multi-domain warning"
++    assert any("Missing issue reference" in w for w in warnings), "Expected issue ref warning"
++
++    # 4. Ephemeral directory writing & pruning test
++    test_patches_dir = REPO_ROOT / "patches_test_ephemeral"
++    test_patches_dir.mkdir(parents=True, exist_ok=True)
++    test_file = test_patches_dir / "pr_9999_test.patch"
++    test_file.write_text(content, encoding="utf-8")
++    assert test_file.exists()
++    test_file.unlink()
++    test_patches_dir.rmdir()
++
++    print("[self-test] PASS - All PR patch recorder contract checks passed!")
++    return True
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(
++        description="SupremeAI Open — PR Patch Recorder & Verification Tool."
++    )
++    parser.add_argument(
++        "--merged",
++        action="store_true",
++        help="Record recently MERGED PRs only (excludes closed without merge and failed PRs)",
++    )
++    parser.add_argument("--sync", action="store_true", help="Sync/record all open PRs into patches/")
++    parser.add_argument("--limit", type=int, default=10, help="Maximum number of PRs to fetch (default: 10)")
++    parser.add_argument("--pr", type=int, help="Fetch and record patch for a specific PR number")
++    parser.add_argument(
++        "--only-merged",
++        action="store_true",
++        help="When recording a specific PR, ensure it is in MERGED state (skip if closed/failed)",
++    )
++    parser.add_argument("--list", action="store_true", help="List all currently recorded patches")
++    parser.add_argument("--inspect", type=int, help="Inspect header and sanity checks for a PR patch")
++    parser.add_argument("--remove", type=int, help="Remove patch for a specific PR number after check")
++    parser.add_argument("--prune", action="store_true", help="Remove all patch files in patches/")
++    parser.add_argument(
++        "--prune-merged",
++        action="store_true",
++        help="Remove only patch files whose PRs are already merged or closed",
++    )
++    parser.add_argument("--self-test", action="store_true", help="Run contract verification self-test")
++
++    args = parser.parse_args()
++
++    if args.self_test:
++        return 0 if self_test() else 1
++
++    if args.merged:
++        return sync_all_merged(limit=args.limit)
++
++    if args.sync:
++        return sync_all_open()
++
++    if args.pr:
++        return 0 if record_pr(args.pr, only_merged=args.only_merged) else 1
++
++    if args.list:
++        list_patches()
++        return 0
++
++    if args.inspect:
++        inspect_pr_patch(args.inspect)
++        return 0
++
++    if args.remove:
++        return 0 if remove_pr_patch(args.remove) else 1
++
++    if args.prune:
++        return prune_all_patches(only_merged=False)
++
++    if args.prune_merged:
++        return prune_all_patches(only_merged=True)
++
++    parser.print_help()
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_pr_patch_recorder.py b/tests/test_pr_patch_recorder.py
+new file mode 100644
+index 00000000..ff2c7162
+--- /dev/null
++++ b/tests/test_pr_patch_recorder.py
+@@ -0,0 +1,82 @@
++#!/usr/bin/env python3
++"""
++Unit tests for scripts/ci/pr_patch_recorder.py.
++Offline, deterministic, stdlib-only.
++"""
++
++from __future__ import annotations
++
++import unittest
++from pathlib import Path
++
++from scripts.ci.pr_patch_recorder import (
++    detect_domains,
++    format_patch_content,
++    sanitize_filename,
++    self_test,
++)
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++
++
++class TestPRPatchRecorder(unittest.TestCase):
++    def test_sanitize_filename(self):
++        slug = sanitize_filename("fix(studio): repair auth routes & guest chat! (Refs #749)")
++        self.assertIn("fix_studio_repair_auth_routes", slug)
++        self.assertNotIn(" ", slug)
++        self.assertNotIn("!", slug)
++
++    def test_detect_domains(self):
++        files = ["studio/src/App.tsx", "studio/package.json"]
++        self.assertEqual(detect_domains(files), ["studio"])
++
++        multi = ["studio/src/App.tsx", "gateway/src/index.ts"]
++        self.assertEqual(detect_domains(multi), ["api", "studio"])
++
++        core_files = ["core/src/index.ts"]
++        self.assertEqual(detect_domains(core_files), ["core"])
++
++        root_files = ["README.md", "AGENTS.md"]
++        self.assertEqual(detect_domains(root_files), ["root"])
++
++    def test_format_patch_and_sanity_warnings(self):
++        # Single domain, compliant diff
++        meta_ok = {
++            "number": 100,
++            "title": "feat(studio): add new button (Refs #100)",
++            "author": {"login": "antigravity"},
++            "headRefName": "feat/studio-button",
++            "baseRefName": "main",
++            "state": "OPEN",
++            "url": "https://github.com/Supremeai-bd/supremeai-open/pull/100",
++            "files": [{"path": "studio/src/Button.tsx", "additions": 10, "deletions": 0}],
++        }
++        content, warnings = format_patch_content(meta_ok, "diff --git a/test b/test\n+content\n")
++        self.assertIn("# SupremeAI PR Patch: #100", content)
++        self.assertIn("# Target Domain(s): studio", content)
++        self.assertEqual(len(warnings), 0)
++
++        # Multi-domain violation & missing issue ref
++        meta_bad = {
++            "number": 101,
++            "title": "feat: touch multiple targets without issue",
++            "author": {"login": "antigravity"},
++            "headRefName": "feat/wide",
++            "baseRefName": "main",
++            "state": "OPEN",
++            "url": "https://github.com/Supremeai-bd/supremeai-open/pull/101",
++            "files": [
++                {"path": "studio/src/Button.tsx", "additions": 5, "deletions": 1},
++                {"path": "gateway/src/index.ts", "additions": 5, "deletions": 1},
++            ],
++        }
++        content_bad, warnings_bad = format_patch_content(meta_bad, "diff --git a/test b/test\n+content\n")
++        self.assertTrue(any("Multi-domain violation" in w for w in warnings_bad))
++        self.assertTrue(any("Missing issue reference" in w for w in warnings_bad))
++
++    def test_self_test_contract(self):
++        self.assertTrue(self_test())
++
++
++if __name__ == "__main__":
++    unittest.main()

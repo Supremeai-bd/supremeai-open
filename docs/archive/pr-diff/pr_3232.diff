@@ -1,0 +1,25 @@
+diff --git a/docs/bridge/bridge-20261030-identity-glm06.md b/docs/bridge/bridge-20261030-identity-glm06.md
+new file mode 100644
+index 00000000..fa47d52f
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-identity-glm06.md
+@@ -0,0 +1,19 @@
++# Identity Registration — GLM Agent 06 (Job 486721) + run worklog 2026-10-30
++
++- **Task ID:** `bridge-20261030-identity-glm06`
++- **Agent:** GLM Agent 06 (Job 486721) — identity resolved on the anonymous zero-credential surface (named MCP client `glm-agent-06`); heartbeat slot `agent-6` online 11:16:59Z (TTL 300s); no bearer slot claimed
++- **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
++- **Worklog kept deliberately small** per operator instruction — only decisions and evidence pointers.
++
++## Worklog (one cycle, 2026-10-30 ~11:06Z–11:45Z)
++
++1. **Door honored:** MCP tower handshake (`?client=glm-agent-06`, 157 tools) → AGENTS.md + AGENT_LOOP_SPEC read → `continuous_agent_loop.py` run (`--verify-only` 8/8 PASS; `--task-envelope` dispatch). Dual-rebase 0 behind at cycle start and pre-submit.
++2. **task-2792 (P1, Bridge Intake gate) served as top pick — skip-with-evidence + independent corroboration:** atomic `work_claim` REJECTED (`CLAIM_CONFLICT_OTHER`: GLM Agent 08 active lease to 11:43:43Z) → moved on per the STALE-CLAIM GUARD, zero retries. Independent live verification completed BEFORE the conflict and handed to the claim owner via this worklog: (a) gate recovered — intake runs #330/#331/#332 all SUCCESS (21:50Z/01:59Z/08:43Z), zero newer reds; (b) **runtime-pickup confirmation** — the private `scripts/bridge/bridge_intake.py` on main carries all four `#2792 RCA` guard markers (guard-1 zero-diff reject, guard-2 no-effective-commit belt, amp-3 `errors[]` detail in `gh_ok`, guard-4 sync-runs-regardless), read via tower `github.read_file` — this is exactly the closure step PR #2907's receipt left open; (c) guard-5 watchdog live on public main (`bridge_intake_gate_watchdog.py`: self-test 18/18, pytest 7 passed). No duplicate closure WO filed — the lane belongs to Agent 08's active claim.
++3. **task-2281 (solver receipt c26) served:** report-only by its own body ("do NOT re-claim #2276") — honest no-op. Its closure landed mid-cycle independently (PR #3218, `Closes #2281`).
++4. **Convergent repair, discarded unsubmitted (Anti-Stampede):** the radar pointer-ghost (a landed receipt quoting the freshness guard's green output with the bare advertised next-free token; guard exit 1, one C-FAIL) was independently diagnosed and de-tokenized locally — then PR #3216 (`bridge-20261030-radar-ghost-detokenize-fixup-r1`) landed the identical fixup at 11:21Z. Local edit discarded, tree restored byte-identical; guard `--check` exit 0 and guard suite 28/28 PASS on fresh main. Receipt recorded per the #3153/#3209 idempotent-noop precedent.
++5. **Verification:** zero-credential reads only (tower queue/feedback/work_order/read_file/workflow_runs + local git/guards); no production writes; no protected paths; no auto-close lines.
++
++## Notes for the next agent on this slot
++
++- The `#2792` closure lane is Agent 08's (lease to 11:43Z): the runtime-pickup confirmation datum above is the missing evidence their closure receipt needs — claim, cite, close.
++- Convention for receipts (the ghost class of item 4): quote guard verdicts WITHOUT the bare advertised pointer token — "the then-advertised next-free pointer" keeps meaning without consuming the number.

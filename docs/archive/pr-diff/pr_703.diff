@@ -1,0 +1,59 @@
+diff --git a/docs/work-orders/bridge-20261018-redis-near-zero.md b/docs/work-orders/bridge-20261018-redis-near-zero.md
+new file mode 100644
+index 00000000..21effc81
+--- /dev/null
++++ b/docs/work-orders/bridge-20261018-redis-near-zero.md
+@@ -0,0 +1,53 @@
++# Bridge Work Order: Redis daily command burn → near-zero
++
++## ব্যাকগ্রাউন্ড (Root Cause)
++
++Dev phase-এ (১ জন ব্যবহারকারী, ২-৪ জন হলেও) Upstash free-tier-এর **500k commands/day** কোটা ২-৩ দিনেই শেষ হয়ে যাচ্ছে। Render live logs-এ প্রমাণিত:
++
++- প্রতি ~5s-এ `GET /health` + `POST /api/v1/health` → প্রতিটিতেই security rate-limit কাউন্টার (`atomic_window_incr` = 2 কমান্ড/request) → **~35-50k+ কমান্ড/দিন শুধু হেলথ-ট্রাফিকে**
++- LLM কী ভাঙার কারণে প্রতি চ্যাট attempt-এ circuit breaker + ৫-লেয়ার cache round-trip
++- Agent-10 heartbeat: 45s ক্যাডেন্সে ~1,920 কমান্ড/দিন
++
++**সিদ্ধান্ত:** failover chain প্রথম লাইনের সমাধান নয় — খরচের root থেকে কমিয়ে 500k-এর ভেতরেই চালাতে হবে। Failover bonus হিসেবে থাকবে।
++
++## Cache লেয়ার রায় (কোড পড়ে যাচাই: Supremeai-bd/supremeai backend/)
++
++### রাখব (MUST)
++- **L1 Exact-match cache** (multi_layer_cache.py) — 1 GET/request, ভুল উত্তরের ঝুঁকি শূন্য
++- **Session LRU (in-memory)** — Redis খরচ শূন্য
++- **RedisCircuitBreaker** (core/resilience/circuit_breaker.py) — resilience, অপরিহার্য
++
++### Off করব (Over-engineering — নিরাপত্তা-যাচাই সহ)
++- **L2 Semantic cache**: multi_layer_cache.get() মিস হলে None → AI-call পাথ অটো চালু; কোনো call-site ভাঙে না। একই কাজ recall_memories (RAG/pgvector) করছে = ডুপ্লিকেশন
++- **L3 Prefix cache**: মিস-এ None → AI fallback; আংশিক-ম্যাচ ভুল উত্তরের ঝুঁকি, বেনিফিট ~শূন্য
++- **DB-driven threshold config** (get_cache_threshold): L2 off হলে কলার থাকবে না
++- **Swarm cache invalidator** (start_swarm_cache_invalidator → swarm_stream): numInstances=1 → multi-instance invalidation-এর কাজই নেই
++
++### বন্ধ করব (Fully removable — flag দিয়ে, ফাইল ডিলিট নয়)
++- ENABLE_AGENT_HEARTBEAT=false — dev-এ দরকার নেই, 1,920/day সেভ
++- MCP tower sweep interval বাড়ানো (follow-up)
++
++## কাজের তালিকা
++
++1. Env-only (আজই, deploy লাগে না):
++   - [ ] RATE_LIMIT_ENABLED=false (Render env)
++   - [ ] ENABLE_AGENT_HEARTBEAT=false
++   - [ ] AGENT_HEARTBEAT_INTERVAL=120 (production-এ ফিরলে)
++2. ছোট কোড প্যাচ:
++   - [ ] multi_layer_cache.get()/set() এ L2+L3 লেয়ার CACHE_SIMPLE_MODE=true (default dev) ফ্ল্যাগের পেছনে
++   - [ ] Rate limiter exempt paths: /health, /api/v1/health, /metrics
++   - [ ] dev/local হলে AsyncRateLimiter primary-ই in-memory (InMemoryFallbackLimiter আগেই আছে)
++   - [ ] start_swarm_cache_invalidator off-ফ্ল্যাগে (ENABLE_SWARM_STREAM=false, default dev)
++3. ভবিষ্যতের জন্য রাখুন: L2/L3 কোড থাকবে — ফ্ল্যাগ উল্টেই ফিরে আসবে
++
++## Acceptance Criteria
++
++- [ ] দৈনিক Upstash কমান্ড < 5k (500k-এর <1%) — ২-৪ সক্রিয় ব্যবহারকারীতেও
++- [ ] চ্যাট রেসপন্স L1-hit ও miss দুই পাথেই ঠিকঠাক
++- [ ] /health কোনো Redis কমান্ড খরচ করে না
++- [ ] দৈনিক কমান্ড গণনার যাচাইযোগ্য লগ (heartbeat মডিউলের #2613 প্যাটার্নে)
++
++## সংশ্লিষ্ট
++
++- Related (MCP tower quota routing, closed): #653
++- Render লগ প্রমাণ: atomic_window_incr "max requests limit exceeded" প্রতি health ping-এ; Gemini 404 + OpenRouter 401 (আলাদা কী-ফিক্স, scope-এর বাইরে)

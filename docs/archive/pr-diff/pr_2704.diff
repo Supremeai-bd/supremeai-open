@@ -1,0 +1,176 @@
+diff --git a/scripts/ci/radar_index_freshness_guard.py b/scripts/ci/radar_index_freshness_guard.py
+index 3252d345..214164b4 100644
+--- a/scripts/ci/radar_index_freshness_guard.py
++++ b/scripts/ci/radar_index_freshness_guard.py
+@@ -52,7 +52,13 @@
+     capture step: bridge.work_queue {"limit": 200} saved to a file
+     (permanent contract, #2286; tool renamed from bridge_work_queue
+     2026-10-29, #2454 r3 deploy / #2457 migration), the guard consumes
+-    the artifact.
++    the artifact. R76 fail-loud (#2691): that contract is now ENFORCED
++    at ingestion — validate_queue_capture refuses any capture whose
++    completeness cannot be proven (unparseable JSON, count≠rows,
++    windowTruncated:true, rows<totalOpen, missing row list), because a
++    silently under-scanned sweep is worse than a loud failure (pass-33
++    drift log: the tower hard-truncates response bodies at ~4000 chars
++    at board sizes ≥~130, measured 4/10 cut captures against count=136).
+ 
+ Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
+ গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
+@@ -374,6 +380,81 @@ def invariant_e(
+     return findings, True
+ 
+ 
++def validate_queue_capture(queue: object, source: str = "queue artifact") -> None:
++    """Fail-loud completeness check on a captured bridge.work_queue artifact
++    (#2691 / R76 — the pass-33 drift-log hardening, own-lane carrier).
++
++    The #2286 capture contract — one bridge.work_queue {"limit": 200} call
++    IS the complete open-issue-title universe — silently degrades at board
++    sizes ≥~130: the tower hard-truncates response bodies at ~4000 chars
++    mid-JSON, and pass 33 measured 4/10 label-sliced requests returning cut
++    JSON against a count=136 board. The last three same-cycle radar
++    pre-emptions (passes 31/32/33) all trusted that board half; the next
++    collision will too. A silently under-scanned sweep is worse than a loud
++    failure, so ingestion refuses any capture that cannot prove it is the
++    whole board:
++
++      (a) unparseable JSON — handled by the caller's json.loads (kept out
++          of here so the parse error message stays verbatim); this function
++          catches the residue: a capture that is neither envelope nor list,
++      (b) envelope `count` ≠ len(workOrders) mismatches,
++      (c) `windowTruncated: true` — with the #2286 limit:200 the whole
++          open board must fit; a truncated window is incomplete BY DEFINITION,
++      (d) a workOrders payload suspiciously small vs `totalOpen` — the
++          #2190 omission class gains its earlier tripwire here,
++      (e) an envelope carrying NO row list at all (workOrders/rows both
++          absent — a schema drift would otherwise sweep zero titles
++          silently). A healthy EMPTY board (workOrders: [] with count=0)
++          still passes: absence of rows is only a crime when the envelope
++          never declared them.
++
++    Pre-envelope raw row lists (the F18d shape) carry no contract-bearing
++    fields and pass through untouched. Raises SystemExit(1) after a FAIL
++    evidence line — the guard's standard fail-closed idiom (mirrors
++    load_baseline). Rollback: single-commit revert returns ingestion to
++    parse-what-you-get (the current, silent-on-truncation state).
++    """
++    if isinstance(queue, list):
++        return  # pre-envelope raw capture: nothing contract-bearing to check
++    if not isinstance(queue, dict):
++        _evidence(f"FAIL board-sweep capture contract: {source} is neither a work_queue "
++                  f"envelope nor a row list (got {type(queue).__name__}) — refusing to "
++                  "sweep a capture whose completeness cannot be checked (R76 fail-loud)")
++        raise SystemExit(1)
++    orders = queue.get("workOrders") or queue.get("rows") or []
++    if not isinstance(orders, list):
++        _evidence(f"FAIL board-sweep capture contract: {source} — workOrders is not a list "
++                  f"(got {type(orders).__name__}); a row field the sweep cannot count would "
++                  "scan zero titles silently (R76 fail-loud)")
++        raise SystemExit(1)
++    n = len(orders)
++    count = queue.get("count")
++    if isinstance(count, int) and not isinstance(count, bool) and count != n:
++        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) but the "
++                  f"envelope advertises count={count} — capture is incomplete (R76 fail-loud; "
++                  "pass-33 ~4000-ch truncation class: a silently under-scanned sweep is "
++                  "worse than a loud failure)")
++        raise SystemExit(1)
++    if queue.get("windowTruncated") is True:
++        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) with "
++                  "windowTruncated=true — with the #2286 limit:200 capture the whole open "
++                  "board must fit; a truncated window is incomplete by definition "
++                  "(R76 fail-loud)")
++        raise SystemExit(1)
++    total_open = queue.get("totalOpen")
++    if isinstance(total_open, int) and not isinstance(total_open, bool) and n < total_open:
++        _evidence(f"FAIL board-sweep capture contract: {source} captured {n} row(s) but the "
++                  f"envelope advertises totalOpen={total_open} — suspiciously small payload "
++                  "vs the board it names; count reconciliation is also #2190's "
++                  "omission-class tripwire (R76 fail-loud)")
++        raise SystemExit(1)
++    if "workOrders" not in queue and "rows" not in queue:
++        _evidence(f"FAIL board-sweep capture contract: {source} carries no workOrders/rows "
++                  "list at all — a schema drift here would sweep zero titles silently "
++                  "(R76 fail-loud); a healthy empty board declares workOrders: []")
++        raise SystemExit(1)
++
++
+ def board_sweep(queue: dict | list, token: int, allow: set[int]) -> list[dict]:
+     """Pointer↔board agreement predicate over captured open-issue titles.
+ 
+@@ -812,6 +893,63 @@ def git(*a: str) -> None:
+           board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())
+           and board_sweep([{"issueNumber": 9, "title": "cites R97 here"}], 97, set())[0]["issue"] == 9)
+ 
++    # F19: capture-contract fail-loud (#2691 / R76 — the pass-33 drift-log
++    # hardening). The #2286 single-capture contract (limit:200 = the whole
++    # open set) silently degrades at board sizes ≥~130: the tower truncates
++    # response bodies at ~4000 chars mid-JSON, and pass 33 measured 4/10
++    # label-sliced requests returning cut JSON against a count=136 board.
++    # Ingestion must refuse captures whose completeness cannot be proven —
++    # a silently under-scanned sweep is worse than a loud failure. CLI
++    # fixtures run the real binary via subprocess (offline, tempdir) and
++    # require a nonzero exit; F19e is the positive control — a healthy
++    # envelope must still exit 0, the hardening must not false-positive.
++    def queue_file(content: str) -> Path:
++        p = Path(tempfile.mkdtemp(prefix="rifg-f19-")) / "queue.json"
++        p.write_text(content, encoding="utf-8")
++        return p
++
++    def cli_exit(qf: Path) -> int:
++        return subprocess.run(
++            [sys.executable, str(Path(__file__).resolve()),
++             "--board-sweep", "--queue-file", str(qf), "--token", "97"],
++            capture_output=True, text=True, timeout=60).returncode
++
++    trunc = '{"workOrders": [{"number": 2401, "ti'  # pass-33 cut-JSON shape
++    check("F19a-truncated-json-exits-nonzero", cli_exit(queue_file(trunc)) != 0)
++    mismatch = json.dumps({"count": 136, "totalOpen": 136, "windowTruncated": False,
++                           "workOrders": [{"number": 2401, "title": "row one"},
++                                          {"number": 2402, "title": "row two"}]})
++    check("F19b-count-rows-mismatch-exits-nonzero", cli_exit(queue_file(mismatch)) != 0)
++    window = json.dumps({"count": 2, "totalOpen": 2, "windowTruncated": True,
++                         "workOrders": [{"number": 2401, "title": "row one"},
++                                        {"number": 2402, "title": "row two"}]})
++    check("F19c-window-truncated-exits-nonzero", cli_exit(queue_file(window)) != 0)
++    small = json.dumps({"count": 2, "totalOpen": 136, "windowTruncated": False,
++                        "workOrders": [{"number": 2401, "title": "row one"},
++                                       {"number": 2402, "title": "row two"}]})
++    check("F19d-small-payload-vs-totalopen-exits-nonzero", cli_exit(queue_file(small)) != 0)
++    healthy = json.dumps({"count": 2, "totalOpen": 2, "windowTruncated": False,
++                          "workOrders": [{"number": 2401, "title": "row one"},
++                                         {"number": 2402, "title": "row two"}]})
++    check("F19e-healthy-envelope-still-passes", cli_exit(queue_file(healthy)) == 0)
++
++    def exits_loud(fn) -> bool:
++        try:
++            fn()
++        except SystemExit as exc:
++            return int(exc.code or 0) != 0
++        return False
++
++    check("F19f-envelope-without-row-list-fails-loud",
++          exits_loud(lambda: validate_queue_capture(
++              {"count": 0, "totalOpen": 0, "windowTruncated": False})))
++    check("F19g-raw-list-capture-passthrough",
++          not exits_loud(lambda: validate_queue_capture(
++              [{"number": 2401, "title": "pre-envelope raw capture"}])))
++    check("F19h-healthy-empty-board-passes",
++          not exits_loud(lambda: validate_queue_capture(
++              {"count": 0, "totalOpen": 0, "windowTruncated": False, "workOrders": []})))
++
+     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
+     return ok
+ 
+@@ -929,6 +1067,10 @@ def main() -> int:
+         except (OSError, json.JSONDecodeError) as exc:
+             _evidence(f"FAIL board-sweep: unreadable queue artifact {args.queue_file}: {exc}")
+             return 1
++        # R76 fail-loud ingestion (#2691): the #2286 capture contract degrades
++        # silently at board sizes ≥~130 (pass-33 ~4000-ch truncation class);
++        # refuse to sweep a capture that cannot prove it is the whole board.
++        validate_queue_capture(queue, source=args.queue_file)
+         idx_text = (REPO_ROOT / INDEX_REL).read_text(encoding="utf-8", errors="replace")
+         pointer = parse_pointer(idx_text)
+         token = args.token if args.token is not None else (pointer + 1 if pointer is not None else None)

@@ -1,0 +1,230 @@
+diff --git a/studio/src/components/admin/AdminAlertsTab.tsx b/studio/src/components/admin/AdminAlertsTab.tsx
+index 07e49cce..035f4a2f 100644
+--- a/studio/src/components/admin/AdminAlertsTab.tsx
++++ b/studio/src/components/admin/AdminAlertsTab.tsx
+@@ -59,7 +59,7 @@ export function AdminAlertsTab() {
+   };
+ 
+   return (
+-    <div className="flex-1 flex flex-col p-6 overflow-hidden max-w-6xl mx-auto w-full">
++    <div className="flex-1 flex flex-col p-6 overflow-hidden max-w-dash mx-auto w-full">
+       <div className="flex items-center justify-between mb-8">
+         <div>
+           <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+diff --git a/studio/src/components/auth/AuthShell.tsx b/studio/src/components/auth/AuthShell.tsx
+index c4fb699e..dfb436fd 100644
+--- a/studio/src/components/auth/AuthShell.tsx
++++ b/studio/src/components/auth/AuthShell.tsx
+@@ -17,7 +17,7 @@ export const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children })
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.16)_0%,transparent_60%)]" />
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.10)_0%,transparent_50%)]" />
+ 
+-      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl flex-col">
++      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] max-w-dash flex-col">
+         <header className="flex items-center justify-between gap-4 py-2">
+           <Link to="/" className="flex items-center gap-3" aria-label="SupremeAI home">
+             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span>
+diff --git a/studio/src/components/customer/UserDashboard.tsx b/studio/src/components/customer/UserDashboard.tsx
+index b90f051d..4509247d 100644
+--- a/studio/src/components/customer/UserDashboard.tsx
++++ b/studio/src/components/customer/UserDashboard.tsx
+@@ -138,7 +138,7 @@ export const UserDashboard: React.FC = () => {
+ 
+   return (
+     <main className="min-h-full bg-[var(--sa-canvas)] text-[var(--sa-ink)]">
+-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 py-8 sm:px-8 lg:py-10">
++      <div className="mx-auto flex w-full max-w-dash flex-col gap-8 px-5 py-8 sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+           <div>
+             <p className="sa-eyebrow mb-3">Your workspace</p>
+diff --git a/studio/src/components/dashboard/HealingLogPanel.tsx b/studio/src/components/dashboard/HealingLogPanel.tsx
+index 5629249c..7b7a6436 100644
+--- a/studio/src/components/dashboard/HealingLogPanel.tsx
++++ b/studio/src/components/dashboard/HealingLogPanel.tsx
+@@ -59,7 +59,7 @@ export function HealingLogPanel() {
+   };
+ 
+   return (
+-    <div className="max-w-6xl mx-auto px-6 py-8">
++    <div className="max-w-dash mx-auto px-6 py-8">
+       <div className="flex items-center gap-3 mb-6">
+         <Activity size={24} className="text-amber-500" />
+         <div>
+diff --git a/studio/src/components/dashboard/KnowledgePage.tsx b/studio/src/components/dashboard/KnowledgePage.tsx
+index b9d0b3da..55b9ec8e 100644
+--- a/studio/src/components/dashboard/KnowledgePage.tsx
++++ b/studio/src/components/dashboard/KnowledgePage.tsx
+@@ -71,7 +71,7 @@ export function KnowledgePage() {
+   const displayStatus = loadError ? `Search failed: ${loadError}` : status;
+ 
+   return (
+-    <div className="max-w-2xl mx-auto px-6 py-8">
++    <div className="max-w-form mx-auto px-6 py-8">
+       <div className="flex items-center justify-between mb-1">
+         <h1 className="text-lg font-semibold text-white">Knowledge</h1>
+         <button
+diff --git a/studio/src/components/dashboard/LlmGatewayPage.tsx b/studio/src/components/dashboard/LlmGatewayPage.tsx
+index 9c7c950f..56122954 100644
+--- a/studio/src/components/dashboard/LlmGatewayPage.tsx
++++ b/studio/src/components/dashboard/LlmGatewayPage.tsx
+@@ -97,7 +97,7 @@ export function LlmGatewayPage() {
+   };
+ 
+   return (
+-    <div className="max-w-3xl mx-auto px-6 py-8">
++    <div className="max-w-feed mx-auto px-6 py-8">
+       <div className="flex items-center justify-between mb-1">
+         <h1 className="text-lg font-semibold text-white flex items-center gap-2">
+           <Cpu size={17} className="text-blue-400" />
+diff --git a/studio/src/components/dashboard/SecretsPage.tsx b/studio/src/components/dashboard/SecretsPage.tsx
+index 667fe98c..1ad391cb 100644
+--- a/studio/src/components/dashboard/SecretsPage.tsx
++++ b/studio/src/components/dashboard/SecretsPage.tsx
+@@ -86,7 +86,7 @@ export function SecretsPage() {
+   };
+ 
+   return (
+-    <div className="max-w-2xl mx-auto px-6 py-8">
++    <div className="max-w-form mx-auto px-6 py-8">
+       <h1 className="text-lg font-semibold text-white mb-1">Secrets & API Keys</h1>
+       <p className="text-xs text-slate-400 mb-6">
+         Create and manage API keys for programmatic access. Keys are shown only once at creation.
+diff --git a/studio/src/components/dashboard/SessionsPage.tsx b/studio/src/components/dashboard/SessionsPage.tsx
+index 674e3dbb..4d6e764c 100644
+--- a/studio/src/components/dashboard/SessionsPage.tsx
++++ b/studio/src/components/dashboard/SessionsPage.tsx
+@@ -90,7 +90,7 @@ export function SessionsPage({ onOpenSession }: SessionsPageProps) {
+   };
+ 
+   return (
+-    <div className="max-w-3xl mx-auto px-6 py-10">
++    <div className="max-w-feed mx-auto px-6 py-10">
+       <h1 className="text-2xl font-semibold text-white text-center mb-6">
+         What do you want to build today?
+       </h1>
+diff --git a/studio/src/components/dashboard/SettingsPage.tsx b/studio/src/components/dashboard/SettingsPage.tsx
+index 12d04d7f..2b6d2021 100644
+--- a/studio/src/components/dashboard/SettingsPage.tsx
++++ b/studio/src/components/dashboard/SettingsPage.tsx
+@@ -149,7 +149,7 @@ export function SettingsPage({ theme, toggleTheme }: SettingsPageProps) {
+   }
+ 
+   return (
+-    <div className="max-w-2xl mx-auto px-6 py-8">
++    <div className="max-w-form mx-auto px-6 py-8">
+       <h1 className="text-lg font-semibold text-text mb-1">Settings</h1>
+       <p className="text-xs text-secondary mb-6">Manage your workspace preferences.</p>
+ 
+diff --git a/studio/src/components/dashboard/SiteActionsPage.tsx b/studio/src/components/dashboard/SiteActionsPage.tsx
+index acfe43ac..17f5d1ad 100644
+--- a/studio/src/components/dashboard/SiteActionsPage.tsx
++++ b/studio/src/components/dashboard/SiteActionsPage.tsx
+@@ -172,7 +172,7 @@ export function SiteActionsPage() {
+   };
+ 
+   return (
+-    <div className="max-w-6xl mx-auto px-6 py-8">
++    <div className="max-w-dash mx-auto px-6 py-8">
+       <h1 className="text-2xl font-semibold text-white flex items-center gap-3 mb-2">
+         <Table2 size={24} className="text-blue-500" />
+         Site Actions Registry
+diff --git a/studio/src/components/dashboard/UsagePage.tsx b/studio/src/components/dashboard/UsagePage.tsx
+index 5a6f7dce..e13c830e 100644
+--- a/studio/src/components/dashboard/UsagePage.tsx
++++ b/studio/src/components/dashboard/UsagePage.tsx
+@@ -48,7 +48,7 @@ export function UsagePage() {
+   }));
+ 
+   return (
+-    <div className="max-w-3xl mx-auto px-6 py-8">
++    <div className="max-w-feed mx-auto px-6 py-8">
+       <h1 className="text-lg font-semibold text-white mb-1">Usage</h1>
+       <p className="text-xs text-slate-400 mb-6">
+         Platform usage over the last 30 days. SupremeAI is free — no billing, ever.
+diff --git a/studio/src/components/dashboard/VaultPage.tsx b/studio/src/components/dashboard/VaultPage.tsx
+index 7cb5be51..c493b085 100644
+--- a/studio/src/components/dashboard/VaultPage.tsx
++++ b/studio/src/components/dashboard/VaultPage.tsx
+@@ -132,7 +132,7 @@ export function VaultPage() {
+   };
+ 
+   return (
+-    <div className="max-w-6xl mx-auto px-6 py-8">
++    <div className="max-w-dash mx-auto px-6 py-8">
+       <div className="flex items-center justify-between mb-8">
+         <div>
+           <h1 className="text-2xl font-semibold text-white flex items-center gap-3">
+diff --git a/studio/src/index.css b/studio/src/index.css
+index be64ae1c..31c26517 100644
+--- a/studio/src/index.css
++++ b/studio/src/index.css
+@@ -2,6 +2,16 @@
+ @import "tailwindcss";
+ 
+ @theme {
++  /* XS-1 container-width tokens (verified 2026-10-25 frontend report, section 6.3):
++     4-bucket page-container scale - form (form/read pages), feed (feed/chat pages),
++     dash (dashboard pages), full-bleed (= w-full, no token needed). Identity aliases
++     of the migrated families (2xl/3xl/6xl); 4xl/5xl/7xl/[1500px]/[1600px] stay
++     un-migrated pending their Table-6 resize sign-offs - do NOT add new free-form
++     container widths, pick one of these buckets. Tailwind v4 --container-* namespace
++     emits max-w-form / max-w-feed / max-w-dash utilities. */
++  --container-form: 42rem;
++  --container-feed: 48rem;
++  --container-dash: 72rem;
+   --color-background: var(--background);
+   --color-foreground: var(--foreground);
+   --color-neon-blue: var(--neon-blue);
+diff --git a/studio/src/pages/BillingPage.tsx b/studio/src/pages/BillingPage.tsx
+index 10110fc2..a38a60eb 100644
+--- a/studio/src/pages/BillingPage.tsx
++++ b/studio/src/pages/BillingPage.tsx
+@@ -98,7 +98,7 @@ export const BillingPage: React.FC = () => {
+     // বাংলা (single-frontend migration): page-level NavRail shell সরিয়ে একক shared
+     // shell-এ আনা হলো (roadmap Rule 8: no duplicate global shells)।
+     <WorkspaceLayout>
+-      <main className="p-8 max-w-6xl mx-auto w-full">
++      <main className="p-8 max-w-dash mx-auto w-full">
+         <header className="mb-10">
+           <div className="flex items-center gap-3">
+             <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+diff --git a/studio/src/pages/SharedConversationPage.tsx b/studio/src/pages/SharedConversationPage.tsx
+index d6c0f71a..7a9614cf 100644
+--- a/studio/src/pages/SharedConversationPage.tsx
++++ b/studio/src/pages/SharedConversationPage.tsx
+@@ -104,7 +104,7 @@ function SkeletonMessage({ align }: { align: 'left' | 'right' }) {
+ function SkeletonPage() {
+   return (
+     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+-      <div className="max-w-3xl mx-auto px-4 py-8">
++      <div className="max-w-feed mx-auto px-4 py-8">
+         {/* Header skeleton */}
+         <div className="text-center mb-8 space-y-3">
+           <div className="h-7 w-64 rounded-lg bg-slate-200 dark:bg-slate-700 animate-pulse mx-auto" />
+@@ -190,7 +190,7 @@ export default function SharedConversationPage() {
+     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col">
+       {/* Header */}
+       <header className="flex-shrink-0 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+-        <div className="max-w-3xl mx-auto px-4 py-6 text-center">
++        <div className="max-w-feed mx-auto px-4 py-6 text-center">
+           <motion.div
+             initial={{ opacity: 0, y: -12 }}
+             animate={{ opacity: 1, y: 0 }}
+@@ -221,7 +221,7 @@ export default function SharedConversationPage() {
+ 
+       {/* Messages */}
+       <main className="flex-1 overflow-y-auto">
+-        <div className="max-w-3xl mx-auto px-4 py-8">
++        <div className="max-w-feed mx-auto px-4 py-8">
+           <div className="space-y-6">
+             {data.messages.map((message, index) => {
+               const isUser = message.role === 'user';
+@@ -271,7 +271,7 @@ export default function SharedConversationPage() {
+ 
+       {/* CTA Footer */}
+       <footer className="flex-shrink-0 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+-        <div className="max-w-3xl mx-auto px-4 py-6 text-center">
++        <div className="max-w-feed mx-auto px-4 py-6 text-center">
+           <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
+             Powered by SupremeAI — have your own AI conversations
+           </p>

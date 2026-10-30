@@ -1,0 +1,117 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index d5568597..666603b3 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -286,7 +286,8 @@ def _load_rejected_plane(fetch_rows=_fetch_rejected_rows) -> tuple:
+     except urllib.error.HTTPError as err:
+         if err.code == 403:
+             return [], ("unreachable (HTTP 403 — unauthenticated GitHub API "
+-                        "rate limit for this egress IP; resets hourly)")
++                        "rate limit for this egress IP (shared egress may "
++                        "exhaust it continuously); budget resets hourly)")
+         return [], f"unreachable (HTTP {err.code})"
+     except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
+         return [], f"unreachable ({err.__class__.__name__})"
+@@ -473,6 +474,20 @@ def _fetch_wo_feedback(number: int) -> dict | None:
+         return None
+ 
+ 
++def _verdict_string(latest) -> str | None:
++    """Extract a non-blank verdict token from the plane's evolving shapes.
++
++    The stamp plane migrated live within hours (2026-10-28, cbb9ab2 plane
++    watch): latestVerdict went from null to plain strings to OBJECTS
++    carrying EMPTY verdict strings. A blank stamp is a blackout, not a
++    stamp: '' / whitespace / {'verdict': ''} must read unstamped, and a
++    real {'verdict': 'X'} must surface its token (never a dict repr)."""
++    val = latest.get("verdict") if isinstance(latest, dict) else latest
++    if isinstance(val, str):
++        val = val.strip()
++    return str(val) if val else None
++
++
+ def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedback,
+                           max_probes: int = MAX_FEEDBACK_PROBES) -> list[dict]:
+     """Cross-check MERGED_ON_MAIN rows against Tower's own verdict plane.
+@@ -486,7 +501,8 @@ def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedbac
+     Fail-open by contract: enrichment is best-effort and NEVER changes a
+     verdict class or the strict surface — a transient Tower condition must
+     not red a gate. Non-merged rows cost zero probes (healthy-board steady
+-    state: zero round-trips, mirroring refine_satellites).
++    state: zero round-trips, mirroring refine_satellites). Shape evolution
++    (null -> string -> blank-stamp object) is handled by _verdict_string.
+     """
+     out = list(verdicts)
+     probed = 0
+@@ -502,9 +518,9 @@ def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedbac
+         if not isinstance(fb, dict):
+             out[i] = {**v, "tower_verdict": "unreadable", "tower_unstamped": None}
+             continue
+-        latest = fb.get("latestVerdict")
+-        if latest:
+-            out[i] = {**v, "tower_verdict": str(latest), "tower_unstamped": False}
++        verdict_str = _verdict_string(fb.get("latestVerdict"))
++        if verdict_str:
++            out[i] = {**v, "tower_verdict": verdict_str, "tower_unstamped": False}
+         else:
+             out[i] = {**v, "tower_verdict": "none", "tower_unstamped": True}
+     return out
+@@ -781,6 +797,22 @@ def _ratelimited():
+     cases.append(("rejected plane queue rows win on collision",
+                   joined_n == 100 and joined[0]["title"] == "q"
+                   and all(r["number"] != 5 for r in joined[1:]), f"n={joined_n}"))
++    # verdict-shape hardening (cbb9ab2: blank-stamp objects are blackout)
++    def _fb(n, latest):
++        return {"issueNumber": n, "latestVerdict": latest, "verdictHistory": []}
++
++    vs = enrich_tower_verdicts(
++        [{"number": 60, "verdict": "MERGED_ON_MAIN"}],
++        fetch_feedback=lambda n: _fb(n, {"verdict": "", "at": "x"}))
++    cases.append(("enrich blank-stamp object reads unstamped",
++                  vs[0]["tower_unstamped"] is True
++                  and vs[0]["tower_verdict"] == "none", str(vs[0])))
++    vs = enrich_tower_verdicts(
++        [{"number": 61, "verdict": "MERGED_ON_MAIN"}],
++        fetch_feedback=lambda n: _fb(n, {"verdict": "MERGED_ON_MAIN", "at": "x"}))
++    cases.append(("enrich stamped object surfaces its token",
++                  vs[0]["tower_unstamped"] is False
++                  and vs[0]["tower_verdict"] == "MERGED_ON_MAIN", str(vs[0])))
+     return cases
+ 
+ 
+diff --git a/tests/test_bridge_landing_watchdog.py b/tests/test_bridge_landing_watchdog.py
+index 584f5362..ef6ce80b 100644
+--- a/tests/test_bridge_landing_watchdog.py
++++ b/tests/test_bridge_landing_watchdog.py
+@@ -419,6 +419,31 @@ def boom():
+     assert rows == [] and "unreachable" in note and "ConnectionError" in note
+ 
+ 
++def test_enrich_tower_verdicts_blank_stamp_shapes():
++    """The stamp plane migrated live within hours (cbb9ab2 plane watch):
++    latestVerdict went null -> strings -> objects carrying EMPTY verdict
++    strings. A blank stamp is a blackout (unstamped), never a stamp; a real
++    object stamp must surface its verdict token, not a dict repr."""
++    mod = _load_watchdog_module()
++    row = {"number": 70, "verdict": "MERGED_ON_MAIN",
++           "slug": "(bridge-20261028-a)", "age_hours": 1.0}
++
++    def run(latest):
++        return mod.enrich_tower_verdicts(
++            [dict(row)],
++            fetch_feedback=lambda n: {"issueNumber": n, "latestVerdict": latest})[0]
++
++    blank = run({"verdict": "", "at": "x"})
++    assert blank["tower_unstamped"] is True and blank["tower_verdict"] == "none"
++    ws = run("   ")
++    assert ws["tower_unstamped"] is True and ws["tower_verdict"] == "none"
++    stamped = run({"verdict": "MERGED_ON_MAIN", "at": "x"})
++    assert (stamped["tower_unstamped"] is False
++            and stamped["tower_verdict"] == "MERGED_ON_MAIN")
++    plain = run("MERGED_ON_MAIN")
++    assert plain["tower_unstamped"] is False and plain["tower_verdict"] == "MERGED_ON_MAIN"
++
++
+ def test_load_rejected_plane_403_discloses_rate_limit():
+     """A 403 is transient (per-IP unauthenticated budget, resets hourly) and
+     must be reported by cause — not folded into a generic outage note."""

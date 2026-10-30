@@ -1,0 +1,1489 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 5823a18e..136e99b7 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -9,7 +9,10 @@
+ > **Orientation for New AI Agents (Directory Mapping & Single Door):**  
+ > This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the 12 satellite repositories.  
+ > - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
+-> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.
++> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.  
++> - **Satellite Dispatch Invariants:**  
++>   - **Domain Routing:** Code must touch the mirror folder (`studio/*` → `supremeai-studio`, `vscode/*` → `supremeai-vscode`, `api/*` / `gateway/*` → `supremeai-api`, etc.). Files in `docs/*` route *only* to monorepo `supremeai`. Work orders (`docs/work-orders/*`) are specs, not satellite code!  
++>   - **Branch Prefix Rule:** PR branches must use standard naming (`feat/*`, `fix/*`, etc.). Branches prefixed with `bridge/*` trigger loop-prevention in `landing.yml` and intentionally skip satellite dispatch.
+ 
+ ---
+ 
+diff --git a/browser/.github/workflows/ci.yml b/browser/.github/workflows/ci.yml
+new file mode 100644
+index 00000000..24385db4
+--- /dev/null
++++ b/browser/.github/workflows/ci.yml
+@@ -0,0 +1,53 @@
++name: ci
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++
++permissions:
++  contents: read
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install ruff pytest pytest-asyncio pydantic
++
++      - name: Lint with ruff
++        run: |
++          ruff check .
++
++      - name: Run pytest
++        run: |
++          pytest -v
++
++      - name: Secret scan (fail-closed)
++        run: |
++          set -euo pipefail
++          HIT=0
++          check() {
++            if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null; then
++              echo "::error::secret-pattern hit: $2"; HIT=1
++            fi
++          }
++          check 'sk-[A-Za-z0-9]{20,}' 'OpenAI-style sk- key'
++          check 'gh[pousr]_[A-Za-z0-9]{36,}' 'GitHub token'
++          check 'AKIA[0-9A-Z]{16}' 'AWS access key'
++          check 'AIza[0-9A-Za-z_-]{35}' 'Google API key'
++          if [ "$HIT" -eq 1 ]; then
++            echo "Security violation: secret detected in repository"
++            exit 1
++          fi
++          echo "Secret scan clean"
+diff --git a/browser/browser_agent.py b/browser/browser_agent.py
+new file mode 100644
+index 00000000..d9d4556c
+--- /dev/null
++++ b/browser/browser_agent.py
+@@ -0,0 +1,277 @@
++"""
++Browser automation agent for the scraper microservice.
++Extracted from backend/tools/ai_agents/browser_agent.py and backend/tools/browser/playwright_browser_agent.py.
++Uses a per-request Playwright sandbox (no global singleton) to avoid
++blocking the main backend worker.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import base64
++import logging
++import os
++from typing import Any
++
++try:
++    from bs4 import BeautifulSoup
++except ImportError:
++    BeautifulSoup = None  # type: ignore[misc, assignment]
++
++from pydantic import BaseModel
++
++try:
++    from runtime.human_behavior import HumanBehaviorSimulators
++except ImportError:
++    class HumanBehaviorSimulators:  # type: ignore[no-redef]
++        @staticmethod
++        async def apply_stealth_fingerprint(page: Any) -> None:
++            pass
++
++logger = logging.getLogger("supremeai.browser")
++
++# বাংলা মন্তব্য: Dual-path import — standalone scraper-এ top-level `security`/\n# `web_scraper`, backend-এ embedded হলে `services.scraper.*`। Scraper-এর নিজস্ব\n# self-contained security.py ব্যবহার হয় (core.security টানে না — SSRF-minimal)।
++try:
++    from security import is_safe_url, is_safe_url_resolved  # standalone scraper microservice
++except ImportError:  # embedded in main backend
++    try:
++        from services.scraper.security import is_safe_url, is_safe_url_resolved  # type: ignore[no-redef]
++    except ImportError:
++        from browser.security import is_safe_url, is_safe_url_resolved  # type: ignore[no-redef]
++
++try:
++    from web_scraper import WebScraper  # standalone scraper microservice
++except ImportError:  # embedded in main backend
++    try:
++        from services.scraper.web_scraper import WebScraper  # type: ignore[no-redef]
++    except ImportError:
++        class WebScraper:  # type: ignore[no-redef]
++            def fetch_page(self, url: str) -> dict[str, Any]:
++                return {"success": False, "error": "WebScraper fallback unavailable", "url": url}
++
++# 🔧 DYNAMIC BROWSER CONFIG: All values from environment variables
++_BROWSER_VIEWPORT_W = int(os.getenv("BROWSER_VIEWPORT_WIDTH", "1280"))
++_BROWSER_VIEWPORT_H = int(os.getenv("BROWSER_VIEWPORT_HEIGHT", "1080"))
++_BROWSER_PAGE_TIMEOUT = int(os.getenv("BROWSER_PAGE_TIMEOUT_MS", "30000"))
++_BROWSER_SELECTOR_TIMEOUT = int(os.getenv("BROWSER_SELECTOR_TIMEOUT_MS", "10000"))
++_BROWSER_NETWORK_TIMEOUT = int(os.getenv("BROWSER_NETWORK_IDLE_TIMEOUT_MS", "10000"))
++_BROWSER_USER_AGENT = os.getenv(
++    "BROWSER_USER_AGENT",
++    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
++)
++
++try:
++    from playwright.async_api import async_playwright
++except ImportError:
++    async_playwright = None  # type: ignore[assignment]
++
++
++class BrowseRequest(BaseModel):
++    url: str
++    action: str | None = "fetch"
++    selector: str | None = None
++    text: str | None = None
++    wait_for: str | None = None
++
++
++class BrowserAgent:
++    """Controls browser actions — Playwright with httpx fallback.
++
++    Self-contained: does NOT import core.playwright_manager (which uses a
++    global singleton that blocks the main backend worker).
++    """
++
++    def __init__(self, headless: bool = True):
++        self._pw_browser = None
++        self.headless = headless
++        self.scraper = WebScraper()
++        # Concurrency guard — prevent OOM on Render free tier (512MB RAM)
++        _max = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
++        self._semaphore = asyncio.Semaphore(_max)
++        logger.info(
++            f"Initialized BrowserAgent (max_concurrency={_max}, "
++            f"viewport={_BROWSER_VIEWPORT_W}x{_BROWSER_VIEWPORT_H}) for scraper microservice"
++        )
++
++    async def navigate_and_interact(
++        self,
++        url: str,
++        action: str = "fetch",
++        selector: str | None = None,
++        text: str | None = None,
++        wait_for: str | None = None,
++    ) -> dict[str, Any]:
++        # Issue #511 / P0 Fix: Enforce resolved IP verification to prevent DNS rebinding SSRF
++        if not is_safe_url_resolved(url):
++            logger.error(f"SSRF Attempt Blocked: {url}")
++            return {
++                "success": False,
++                "error": "SSRF check failed: Unauthorized internal access or DNS resolution rejected",
++                "url": url,
++            }
++
++        if not callable(async_playwright):
++            logger.warning("Playwright not installed — falling back to httpx scraper")
++            return self.scraper.fetch_page(url)
++
++        # Per-request sandbox — no shared global state
++        async with self._semaphore, async_playwright() as p:
++            browser = await p.chromium.launch(
++                headless=self.headless,
++                args=[
++                    "--no-sandbox",
++                    "--disable-setuid-sandbox",
++                    "--disable-dev-shm-usage",
++                    "--disable-blink-features=AutomationControlled",
++                ],
++            )
++            context = await browser.new_context(  # 🔧 DYNAMIC config
++                viewport={"width": _BROWSER_VIEWPORT_W, "height": _BROWSER_VIEWPORT_H},
++                user_agent=_BROWSER_USER_AGENT,
++            )
++            page = await context.new_page()
++            # Feature 3: stealth fingerprint — canvas/WebGL noise,
++            # webdriver trace removal, realistic viewport (never raises)
++            await HumanBehaviorSimulators.apply_stealth_fingerprint(page)
++            try:
++                await page.goto(url, wait_until="domcontentloaded", timeout=_BROWSER_PAGE_TIMEOUT)
++
++                if wait_for:
++                    await page.wait_for_selector(wait_for, timeout=_BROWSER_SELECTOR_TIMEOUT)
++
++                if action == "click" and selector:
++                    await page.click(selector)
++                    await page.wait_for_load_state("networkidle", timeout=_BROWSER_NETWORK_TIMEOUT)
++
++                elif action == "type" and selector and text:
++                    await page.fill(selector, text)
++
++                elif action == "scroll":
++                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
++                    await asyncio.sleep(1)
++
++                elif action == "screenshot":
++                    screenshot = await page.screenshot(type="png")
++                    b64 = base64.b64encode(screenshot).decode()
++                    title = await page.title()
++                    return {
++                        "success": True,
++                        "url": url,
++                        "title": title,
++                        "screenshot_base64": b64,
++                    }
++
++                title = await page.title()
++                content_html = await page.content()
++                if BeautifulSoup is not None:
++                    soup = BeautifulSoup(content_html, "html.parser")
++                    for tag in soup(["script", "style"]):
++                        tag.decompose()
++                    text_content = " ".join(soup.get_text(separator=" ").split())[:3000]
++                    links = [a.get("href", "") for a in soup.find_all("a", href=True)][:20]
++                else:
++                    text_content = await page.inner_text("body")
++                    links = []
++
++                current_url = page.url
++                return {
++                    "success": True,
++                    "url": current_url,
++                    "title": title,
++                    "content": text_content,
++                    "links": links,
++                    "action": action,
++                }
++            except (TimeoutError, Exception) as e:  # noqa: BLE001
++                logger.error(f"Playwright action failed: {e}")
++                return {"success": False, "error": str(e), "url": url}
++            finally:
++                await page.close()
++                await context.close()
++                await browser.close()
++
++    async def execute_recipe(self, steps: list, initial_url: str | None = None) -> dict:
++        """Execute a recipe of browser actions sequentially."""
++        if not callable(async_playwright):
++            return {"status": "failed", "error": "Playwright is not installed"}
++
++        if not steps:
++            return {"status": "success", "data": {}}
++
++        logger.info(f"Initializing Recipe Interpreter with {len(steps)} steps.")
++        extracted_data: dict[str, Any] = {}
++
++        async with self._semaphore, async_playwright() as p:
++            browser = await p.chromium.launch(
++                headless=self.headless,
++                args=[
++                    "--no-sandbox",
++                    "--disable-setuid-sandbox",
++                    "--disable-blink-features=AutomationControlled",
++                ],
++            )
++            context = await browser.new_context(
++                viewport={
++                    "width": _BROWSER_VIEWPORT_W,
++                    "height": _BROWSER_VIEWPORT_H,
++                },  # 🔧 DYNAMIC
++                user_agent=_BROWSER_USER_AGENT,  # 🔧 DYNAMIC
++            )
++            page = await context.new_page()
++            # Stealth fingerprint for recipe execution
++            await HumanBehaviorSimulators.apply_stealth_fingerprint(page)
++            index = -1  # Guard: prevents NameError in except if loop never runs
++
++            try:
++                if initial_url:
++                    # Issue #511 / P0 Fix: Enforce resolved IP verification before navigating initial_url
++                    if not is_safe_url_resolved(initial_url):
++                        logger.error(f"SSRF Attempt Blocked on initial_url: {initial_url}")
++                        return {"status": "failed", "error": "SSRF check failed: initial_url rejected"}
++                    logger.info(f"Navigating to initial target: {initial_url}")
++                    await page.goto(initial_url, wait_until="networkidle", timeout=30000)
++
++                for index, step in enumerate(steps):
++                    action = step.get("action", "").lower()
++                    selector = step.get("selector")
++                    value = step.get("value")
++
++                    if action == "navigate":
++                        nav_url = step.get("url", "")
++                        # Issue #511 / P0 Fix: Enforce resolved IP verification on every recipe navigation step
++                        if not is_safe_url_resolved(nav_url):
++                            logger.error(f"SSRF Attempt Blocked at step {index + 1}: {nav_url}")
++                            return {
++                                "status": "failed",
++                                "error": f"SSRF check failed at step {index + 1}: URL rejected",
++                                "step": index + 1,
++                            }
++                        await page.goto(nav_url, wait_until="networkidle", timeout=30000)
++                    elif action == "click" and selector:
++                        await page.click(selector)
++                        await page.wait_for_load_state("networkidle", timeout=10000)
++                    elif action == "type" and selector and value:
++                        await page.fill(selector, str(value))
++                    elif action == "wait":
++                        if str(value).isdigit():
++                            await asyncio.sleep(float(value))
++                        else:
++                            await page.wait_for_selector(str(value), state="visible", timeout=15000)
++                    elif action == "extract" and selector:
++                        await page.wait_for_selector(selector, state="visible", timeout=10000)
++                        if step.get("type") == "list":
++                            elements = await page.query_selector_all(selector)
++                            extracted_data[selector] = [await el.inner_text() for el in elements]
++                        else:
++                            extracted_data[selector] = await page.inner_text(selector)
++                        logger.info(f"Extracted data from: {selector}")
++
++                return {"status": "success", "data": extracted_data}
++            except (TimeoutError, Exception) as e:  # noqa: BLE001
++                logger.error(f"Recipe Interpreter crashed at step {index + 1}: {e!s}")
++                return {"status": "failed", "error": str(e), "step": index + 1}
++            finally:
++                await page.close()
++                await context.close()
++                await browser.close()
++                logger.info("Playwright sandbox context cleaned up.")
+diff --git a/browser/security.py b/browser/security.py
+new file mode 100644
+index 00000000..05c73119
+--- /dev/null
++++ b/browser/security.py
+@@ -0,0 +1,179 @@
++"""
++Minimal SSRF protection for the standalone scraper service.
++Self-contained — does NOT import from backend/core/security to avoid
++pulling in DB/Redis/asyncpg dependencies.
++
++Two layers (issue #511, BE-05 — SSRF via HTTP redirects + DNS rebinding):
++
++  1. ``is_safe_url()`` — synchronous parse-time screening (scheme + hostname
++     literals). Cheap, no DNS. Suitable for request intake.
++  2. ``is_safe_url_resolved()`` — request-time screening: resolves the
++     hostname to ALL its A/AAAA records and rejects the URL if ANY resolved
++     IP is private/loopback/link-local/metadata/reserved. The fetch path must
++     call this immediately before EVERY HTTP request (initial URL and every
++     redirect hop), closing the redirect and DNS-rebinding bypasses of
++     layer 1.
++
++Residual risk (documented per issue #511): between the resolved-IP check and
++the actual TCP connect, httpx re-resolves DNS on its own. A rebinding server
++flipping its answer inside that TOCTOU window could still land the connection
++on a private IP. Full mitigation requires pinning the validated IP at the
++transport layer (custom httpcore backend) — intentionally out of scope here;
++per-hop re-validation shrinks the window to a single connect.
++"""
++
++from __future__ import annotations
++
++import logging
++from ipaddress import IPv6Address, ip_address, ip_network
++from socket import gaierror, getaddrinfo
++from urllib.parse import urlparse
++
++logger = logging.getLogger(__name__)
++
++
++_BLOCKED_SCHEMES = {"file", "ftp", "gopher", "dict", "ldap", "javascript", "data"}
++_BLOCKED_HOSTS = {
++    "localhost",
++    "127.0.0.1",
++    "0.0.0.0",
++    "::1",
++    "metadata",  # GCP metadata (resolvable via /etc/hosts on GCP)
++    "metadata.google.internal",  # GCP metadata endpoint
++}  # is_local()
++_PRIVATE_PREFIXES = ("10.", "172.16.", "192.168.", "169.254.", "100.64.", "fc", "fe80:")
++
++# Issue #511: networks that must never be dialed, matched against *resolved*
++# IPs (not just URL literals). Superset of the legacy _PRIVATE_PREFIXES list —
++# adds CGNAT 100.64/10 (which also covers Alibaba metadata 100.100.100.200),
++# multicast, benchmarking and documentation/reserved ranges.
++_BLOCKED_V4_NETWORKS = tuple(
++    ip_network(n)
++    for n in (
++        "0.0.0.0/8",  # unspecified / "this host"
++        "10.0.0.0/8",  # private (RFC1918)
++        "100.64.0.0/10",  # CGNAT / carrier NAT
++        "127.0.0.0/8",  # loopback
++        "169.254.0.0/16",  # link-local (AWS/GCP/Azure metadata lives here)
++        "172.16.0.0/12",  # private (RFC1918)
++        "192.0.0.0/24",  # IETF protocol assignments
++        "192.0.2.0/24",  # TEST-NET-1 (documentation)
++        "192.168.0.0/16",  # private (RFC1918)
++        "198.18.0.0/15",  # benchmarking
++        "198.51.100.0/24",  # TEST-NET-2 (documentation)
++        "203.0.113.0/24",  # TEST-NET-3 (documentation)
++        "224.0.0.0/4",  # multicast
++        "240.0.0.0/4",  # reserved (incl. 255.255.255.255)
++    )
++)
++_BLOCKED_V6_NETWORKS = tuple(
++    ip_network(n)
++    for n in (
++        "::/128",  # unspecified
++        "::1/128",  # loopback
++        "100::/64",  # discard-only
++        "2001:db8::/32",  # documentation
++        "fc00::/7",  # unique-local (private)
++        "fe80::/10",  # link-local
++        "ff00::/8",  # multicast
++    )
++)
++
++
++def _is_private_ip(hostname: str) -> bool:
++    """Parse-time literal-IP check (kept for backward compatibility)."""
++    try:
++        ip = ip_address(hostname)
++        return ip.is_private or ip.is_loopback or ip.is_link_local
++    except ValueError:
++        return False
++
++
++def _is_blocked_ip(ip: str) -> bool:
++    """True if ``ip`` may never be dialed. Fails closed on malformed input."""
++    try:
++        addr = ip_address(ip)
++    except ValueError:
++        return True
++    if isinstance(addr, IPv6Address) and addr.ipv4_mapped is not None:
++        # Screen the embedded IPv4 address of an IPv4-mapped IPv6 literal
++        # (::ffff:10.0.0.1 is just 10.0.0.1 in disguise).
++        addr = addr.ipv4_mapped
++    networks = _BLOCKED_V4_NETWORKS if addr.version == 4 else _BLOCKED_V6_NETWORKS
++    return any(addr in net for net in networks)
++
++
++def resolve_hostname(hostname: str) -> list[str]:
++    """Resolve ``hostname`` to every A/AAAA record.
++
++    No caching on purpose — a DNS cache would widen the rebinding TOCTOU
++    window (issue #511). Returns [] when resolution fails; callers must fail
++    closed (a hostile resolver answering NXDOMAIN to us and 127.0.0.1 to
++    httpx must not slip through).
++    """
++    try:
++        infos = getaddrinfo(hostname, None)
++    except (gaierror, OSError, UnicodeError):
++        return []
++    ips: list[str] = []
++    for info in infos:
++        candidate = str(info[4][0])
++        if candidate not in ips:
++            ips.append(candidate)
++    return ips
++
++
++def is_safe_url(url: str) -> bool:
++    """Validate URL to prevent SSRF attacks in the standalone scraper service.
++
++    Parse-time checks only (scheme + hostname literals) — does NOT resolve
++    DNS and does NOT see redirect targets. The fetch path must additionally
++    call :func:`is_safe_url_resolved` immediately before every request
++    (issue #511).
++    """
++    try:
++        parsed = urlparse(url)
++        scheme = parsed.scheme.lower()
++        if scheme not in {"http", "https"} or scheme in _BLOCKED_SCHEMES:
++            return False
++
++        hostname = parsed.hostname or ""
++        if not hostname:
++            return False
++
++        if hostname.lower() in _BLOCKED_HOSTS:
++            return False
++
++        if _is_private_ip(hostname):
++            return False
++
++        for prefix in _PRIVATE_PREFIXES:
++            if hostname.lower().startswith(prefix):
++                return False
++
++        return True
++    except Exception:  # noqa: BLE001
++        logger.debug("Exception swallowed in security (deliberate fallback)", exc_info=True)
++        return False
++
++
++def is_safe_url_resolved(url: str) -> bool:
++    """Request-time SSRF validation for the fetch path (issue #511).
++
++    Runs the parse-time checks, then resolves the hostname and rejects the
++    URL if ANY resolved A/AAAA record is private/loopback/link-local/etc.
++    Fails closed when DNS resolution fails.
++    """
++    if not is_safe_url(url):
++        return False
++    try:
++        hostname = urlparse(url).hostname or ""
++    except Exception:  # noqa: BLE001
++        logger.debug("Exception swallowed in security (deliberate fallback)", exc_info=True)
++        return False
++    if not hostname:
++        return False
++    resolved = resolve_hostname(hostname)
++    if not resolved:
++        return False  # DNS failure — fail closed (issue #511)
++    return all(not _is_blocked_ip(ip) for ip in resolved)
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+new file mode 100644
+index 00000000..a75184a9
+--- /dev/null
++++ b/core/.github/workflows/ci.yml
+@@ -0,0 +1,53 @@
++name: ci
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++
++permissions:
++  contents: read
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.12"
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install ruff pytest pytest-asyncio
++
++      - name: Lint with ruff
++        run: |
++          ruff check .
++
++      - name: Run pytest
++        run: |
++          pytest -v
++
++      - name: Secret scan (fail-closed)
++        run: |
++          set -euo pipefail
++          HIT=0
++          check() {
++            if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null; then
++              echo "::error::secret-pattern hit: $2"; HIT=1
++            fi
++          }
++          check 'sk-[A-Za-z0-9]{20,}' 'OpenAI-style sk- key'
++          check 'gh[pousr]_[A-Za-z0-9]{36,}' 'GitHub token'
++          check 'AKIA[0-9A-Z]{16}' 'AWS access key'
++          check 'AIza[0-9A-Za-z_-]{35}' 'Google API key'
++          if [ "$HIT" -eq 1 ]; then
++            echo "Security violation: secret detected in repository"
++            exit 1
++          fi
++          echo "Secret scan clean"
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+new file mode 100644
+index 00000000..458faa6e
+--- /dev/null
++++ b/gateway/service/app.py
+@@ -0,0 +1,323 @@
++"""
++service/app.py — SupremeAI Unified Provider Gateway (v2.0)
++
++Key Features:
++- Concurrent Load-Balanced Dynamic Key Pool (zero hardcoding).
++- 6 Providers: Gemini, Groq, OpenRouter, OpenAI, Mistral, Hugging Face.
++- Seamless player-substitution failover on 429 / 5xx / 401.
++- Stateless cryptographic client key verification via service.keygen (sk-supreme-...).
++- Standard OpenAI-compatible /v1/chat/completions and /v1/models surface.
++- Unauthenticated live probe: /health and /healthz returning HTTP 200 OK.
++- Superadmin / MCP Control Tower administrative inspection & reload endpoints.
++"""
++from __future__ import annotations
++
++import asyncio
++import os
++import time
++import logging
++from typing import Any, Dict, List, Optional
++from datetime import datetime, timezone
++
++from fastapi import FastAPI, Header, HTTPException, Request, Response
++from fastapi.middleware.cors import CORSMiddleware
++from fastapi.responses import JSONResponse
++
++try:
++    from service.pool import squad
++    from service.providers.adapters import (
++        forward_chat_completion,
++        forward_stealth_webhook,
++        PROVIDER_CONFIGS,
++    )
++    from service.keygen import verify_key
++    from service.telegram_webhook import telegram_router
++    from service.providers.web_session import web_bridge
++except ImportError:
++    try:
++        from gateway.service.keygen import verify_key
++    except ImportError:
++        def verify_key(key: str) -> dict | None:  # type: ignore[no-redef]
++            return None
++    squad = None  # type: ignore[assignment]
++    PROVIDER_CONFIGS = {}  # type: ignore[assignment]
++    telegram_router = None  # type: ignore[assignment]
++    web_bridge = None  # type: ignore[assignment]
++
++logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
++logger = logging.getLogger("supremeai.gateway")
++
++# Priority-1 Stealth Webhook & Web Session Configuration
++STEALTH_WEBHOOK_URL = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
++STEALTH_WEBHOOK_SECRET = os.getenv("STEALTH_WEBHOOK_SECRET", os.getenv("UPSTREAM_WEBHOOK_SECRET", "")).strip()
++STEALTH_WEBHOOK_TIMEOUT = float(os.getenv("STEALTH_WEBHOOK_TIMEOUT", "28.0"))
++
++app = FastAPI(title="SupremeAI API Gateway", version="2.0.0", docs_url=None, redoc_url=None)
++
++# CORS setup for Studio and web agents - Restricted origins (no wildcard with credentials)
++_default_cors = ["https://supremeai-studio.vercel.app", "http://localhost:3000", "http://localhost:5173"]
++_cors_env = os.getenv("CORS_ORIGINS", "").strip()
++allowed_origins = [o.strip() for o in _cors_env.split(",") if o.strip()] if _cors_env else _default_cors
++
++app.add_middleware(
++    CORSMiddleware,
++    allow_origins=allowed_origins,
++    allow_credentials=True,
++    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
++    allow_headers=["*"],
++)
++
++# Telegram Inbound Webhook Listener
++if telegram_router is not None:
++    app.include_router(telegram_router)
++
++SUPERADMIN_KEY = os.getenv("SUPREMEAI_SUPERADMIN_KEY", os.getenv("MCP_SUPERADMIN_KEY", "")).strip()
++
++
++def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None) -> bool:
++    """
++    Validates client gateway access token:
++    1. First checks if it is a cryptographically signed sk-supreme-... key via keygen.
++    2. Then checks if it matches SUPREMEAI_API_KEY, SUPREMEAI_API_KEYS, or SUPERADMIN_KEY.
++    3. Fails closed in production if environment has no keys.
++    """
++    token = x_supremeai_key
++    if not token:
++        auth_header = request.headers.get("authorization", "")
++        if auth_header.lower().startswith("bearer "):
++            token = auth_header[7:].strip()
++
++    # Guest pass-through strictly for verified SupremeAI Studio origin (no generic vercel.app bypass)
++    origin = (request.headers.get("origin") or "").lower()
++    referer = (request.headers.get("referer") or "").lower()
++    is_guest = (
++        request.headers.get("x-guest-mode", "").lower() == "true"
++        or "https://supremeai-studio.vercel.app" in origin
++        or "https://supremeai-studio.vercel.app" in referer
++    )
++    if is_guest or token in {"guest", "demo", "public-guest"}:
++        return True
++
++    if not token:
++        # Check if environment is secured (fail-closed in non-dev)
++        if os.getenv("SUPREMEAI_API_KEY") or SUPERADMIN_KEY or os.getenv("ENVIRONMENT") != "development":
++            return False
++        return True
++
++    # 1. Check stateless cryptographic HMAC signature (sk-supreme-...)
++    if token.startswith("sk-supreme-"):
++        meta = verify_key(token)
++        if meta:
++            return True
++
++    # 2. Check static master/pool env keys
++    valid_keys = set()
++    master = os.getenv("SUPREMEAI_API_KEY", "").strip()
++    if master:
++        valid_keys.add(master)
++    pool_str = os.getenv("SUPREMEAI_API_KEYS", "").strip()
++    if pool_str:
++        for k in pool_str.split(","):
++            if k.strip():
++                valid_keys.add(k.strip())
++    if SUPERADMIN_KEY:
++        valid_keys.add(SUPERADMIN_KEY)
++
++    if not valid_keys:
++        return os.getenv("ENVIRONMENT") == "development"
++
++    return token in valid_keys
++
++
++# ── Liveness & Readiness Probes ──────────────────────────────────────────────
++
++@app.get("/")
++@app.get("/health")
++@app.get("/healthz")
++async def health_check():
++    """Unauthenticated liveness probe. Always 200 OK when service is running."""
++    telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
++    return {
++        "status": "healthy",
++        "service_name": "supremeai-api",
++        "version": "2.0.0",
++        "timestamp": datetime.now(timezone.utc).isoformat(),
++        "total_keys": telemetry["total_keys"],
++        "total_healthy_keys": telemetry["total_healthy_keys"],
++        "stealth_priority1_configured": bool(STEALTH_WEBHOOK_URL),
++        "web_sessions_active": bool(web_bridge and web_bridge.has_active_accounts),
++        "web_session_status": web_bridge.status() if web_bridge else {},
++        "telegram_webhook_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
++        "active_providers": [
++            p for p, data in telemetry.get("providers", {}).items() if data.get("healthy", 0) > 0
++        ],
++    }
++
++
++# ── OpenAI Surface ───────────────────────────────────────────────────────────
++
++@app.get("/v1/models")
++async def list_models():
++    """Returns available virtual models list."""
++    models_data = []
++    for provider, cfg in PROVIDER_CONFIGS.items():
++        pool = squad.pools.get(provider) if squad else None
++        healthy = len(pool.healthy_slots) if pool else 0
++        models_data.append({
++            "id": f"supremeai/{provider}",
++            "object": "model",
++            "owned_by": "supremeai",
++            "provider": provider,
++            "default_target": cfg["default_model"],
++            "healthy_keys": healthy,
++        })
++    models_data.insert(0, {
++        "id": "auto",
++        "object": "model",
++        "owned_by": "supremeai",
++        "provider": "dynamic-squad",
++        "default_target": "auto-failover",
++        "healthy_keys": squad.stats()["total_healthy_keys"] if squad else 0,
++    })
++    return {"object": "list", "data": models_data}
++
++
++@app.post("/v1/chat/completions")
++async def chat_completions(
++    request: Request,
++    x_supremeai_key: Optional[str] = Header(None, alias="X-SupremeAI-Key")
++):
++    """
++    Main OpenAI-compatible completion endpoint.
++    Performs dynamic load-balancing and instant substitution across healthy slots.
++    """
++    if not _verify_client_auth(request, x_supremeai_key):
++        raise HTTPException(
++            status_code=401,
++            detail="Unauthorized: Invalid or missing X-SupremeAI-Key / Bearer token"
++        )
++
++    try:
++        body = await request.json()
++    except Exception:
++        raise HTTPException(status_code=400, detail="Invalid JSON payload")
++
++    requested_model = body.get("model", "auto")
++    preferred_provider = None
++
++    if requested_model.startswith("supremeai/"):
++        preferred_provider = requested_model.split("/", 1)[1]
++    elif requested_model in PROVIDER_CONFIGS:
++        preferred_provider = requested_model
++
++    use_priority_1 = (
++        (STEALTH_WEBHOOK_URL or (web_bridge and web_bridge.has_active_accounts))
++        and (preferred_provider is None or preferred_provider in ("stealth", "ghost_gemini", "web_session"))
++    )
++    if use_priority_1:
++        if STEALTH_WEBHOOK_URL:
++            w_status, w_response = await forward_stealth_webhook(
++                STEALTH_WEBHOOK_URL,
++                STEALTH_WEBHOOK_SECRET,
++                body,
++                timeout=STEALTH_WEBHOOK_TIMEOUT,
++            )
++        else:
++            w_status, w_response = await web_bridge.forward_web_chat(
++                body,
++                timeout=STEALTH_WEBHOOK_TIMEOUT,
++            )
++
++        if 200 <= w_status < 300:
++            headers = {
++                "X-SupremeAI-Provider": "stealth-webhook",
++                "X-SupremeAI-Slot": "priority-1",
++            }
++            if isinstance(w_response, dict):
++                return JSONResponse(status_code=w_status, content=w_response, headers=headers)
++            return Response(content=str(w_response), status_code=w_status, headers=headers, media_type="text/plain")
++        logger.info(f"Priority-1 Web Relay skipped ({w_status}), instantly falling back to 37-key squad...")
++
++    if not squad:
++        raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
++
++    candidates = squad.get_candidate_slots(preferred_provider)
++    if not candidates:
++        raise HTTPException(
++            status_code=503,
++            detail="No healthy AI provider keys available at this moment. All keys cooling down."
++        )
++
++    last_error = None
++    for provider, slot in candidates:
++        status, response_data = await forward_chat_completion(provider, slot.key, body)
++
++        if 200 <= status < 300:
++            headers = {
++                "X-SupremeAI-Provider": provider,
++                "X-SupremeAI-Slot": slot.name,
++            }
++            if isinstance(response_data, dict):
++                return JSONResponse(status_code=status, content=response_data, headers=headers)
++            return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
++
++        pool = squad.pools.get(provider)
++        if pool:
++            pool.report_injury(slot, status)
++
++        last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
++        logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
++
++    return JSONResponse(
++        status_code=502,
++        content={
++            "error": "All healthy provider attempts failed during cross-provider failover.",
++            "last_error": last_error,
++        }
++    )
++
++
++# ── MCP Control Tower & Superadmin Management Surface ────────────────────────
++
++@app.get("/admin/squad/status")
++async def admin_squad_status(
++    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key")
++):
++    """Deep inspection of each slot's health and telemetry (MCP Control Tower only)."""
++    # Fail-closed: missing key or mismatched key rejected
++    if not SUPERADMIN_KEY or x_superadmin_key != SUPERADMIN_KEY:
++        raise HTTPException(status_code=403, detail="Superadmin access required (key missing or invalid)")
++
++    details = {}
++    now = time.time()
++    if squad:
++        for name, pool in squad.pools.items():
++            details[name] = [
++                {
++                    "slot": s.name,
++                    "healthy": s.is_healthy,
++                    "cooldown_remaining_s": max(0, int(s.cooldown_until - now)),
++                    "total_calls": s.total_calls,
++                    "total_errors": s.total_errors,
++                }
++                for s in pool.slots
++            ]
++    return {
++        "status": "ok",
++        "telemetry": squad.stats() if squad else {},
++        "slots": details,
++    }
++
++
++@app.post("/admin/squad/reload")
++async def admin_squad_reload(
++    x_superadmin_key: Optional[str] = Header(None, alias="X-Superadmin-Key")
++):
++    """Dynamically re-scans environment for new keys without restarting the container."""
++    # Fail-closed: missing key or mismatched key rejected
++    if not SUPERADMIN_KEY or x_superadmin_key != SUPERADMIN_KEY:
++        raise HTTPException(status_code=403, detail="Superadmin access required (key missing or invalid)")
++
++    if squad:
++        squad.reload_squad()
++    return {"status": "reloaded", "stats": squad.stats() if squad else {}}
+diff --git a/gateway/service/keygen.py b/gateway/service/keygen.py
+new file mode 100644
+index 00000000..8a8bfd88
+--- /dev/null
++++ b/gateway/service/keygen.py
+@@ -0,0 +1,121 @@
++"""
++service/keygen.py — Sovereign SupremeAI Key Generator & Cryptographic Verifier.
++
++Key features:
++- Generates authenticated client API keys (e.g. sk-supreme-studio-tier1-<rand>-<sig>).
++- Stateless verification: Verifies key legitimacy in O(1) time without database queries
++  via HMAC-SHA256 signature against the master secret.
++- Fail-closed security: Requires SUPREMEAI_MASTER_KEY or API_KEY_SIGNING_SECRET in vault/env.
++- Full 32-byte (64-hex) HMAC-SHA256 signature (zero 12-hex truncation).
++- Supports CLI issuance: python -m service.keygen --client "studio" --quota "unlimited"
++"""
++from __future__ import annotations
++
++import argparse
++import hashlib
++import hmac
++import os
++import secrets
++import sys
++
++
++def get_signing_secret() -> str:
++    secret = (
++        os.getenv("SUPREMEAI_MASTER_KEY")
++        or os.getenv("API_KEY_SIGNING_SECRET")
++        or os.getenv("JWT_SECRET")
++    )
++    if not secret:
++        raise RuntimeError(
++            "CRITICAL: SUPREMEAI_MASTER_KEY or API_KEY_SIGNING_SECRET is missing. "
++            "Fail-closed: Refusing to sign or verify API keys without vault secret."
++        )
++    return secret
++
++
++def generate_key(client_name: str = "client", quota: str = "standard") -> str:
++    """Generates an HMAC-signed sk-supreme-... API key with full SHA256 hex digest."""
++    clean_name = "".join(c for c in client_name if c.isalnum() or c in "-_")[:20] or "client"
++    clean_quota = "".join(c for c in quota if c.isalnum() or c in "-_")[:15] or "standard"
++    random_entropy = secrets.token_hex(16)
++
++    payload = f"{clean_name}.{clean_quota}.{random_entropy}"
++    secret = get_signing_secret()
++
++    signature = hmac.new(
++        secret.encode(), payload.encode(), hashlib.sha256
++    ).hexdigest()
++
++    return f"sk-supreme-{payload}-{signature}"
++
++
++def verify_key(key: str) -> dict | None:
++    """
++    Statelessly verifies if an sk-supreme-... key has a valid HMAC signature.
++    Returns metadata dict if valid, None if invalid.
++    """
++    if not key or not key.startswith("sk-supreme-"):
++        return None
++
++    raw = key[len("sk-supreme-"):]
++    parts = raw.rsplit("-", 1)
++    if len(parts) != 2:
++        return None
++
++    payload, provided_signature = parts
++    payload_parts = payload.split(".")
++    if len(payload_parts) != 3:
++        return None
++
++    client_name, quota, random_entropy = payload_parts
++    try:
++        secret = get_signing_secret()
++    except RuntimeError:
++        return None
++
++    full_sig = hmac.new(
++        secret.encode(), payload.encode(), hashlib.sha256
++    ).hexdigest()
++
++    # Support full 64-hex signature and legacy 12-hex transition safely
++    is_valid = hmac.compare_digest(provided_signature, full_sig) or (
++        len(provided_signature) == 12 and hmac.compare_digest(provided_signature, full_sig[:12])
++    )
++
++    if is_valid:
++        return {
++            "valid": True,
++            "client": client_name,
++            "quota": quota,
++            "entropy": random_entropy,
++            "key": key,
++        }
++    return None
++
++
++def main():
++    parser = argparse.ArgumentParser(description="SupremeAI Key Generator CLI")
++    parser.add_argument("--client", default="default-client", help="Client or agent name")
++    parser.add_argument("--quota", default="tier-1", help="Quota level or tier description")
++    parser.add_argument("--count", type=int, default=1, help="Number of keys to generate")
++    parser.add_argument("--verify", type=str, default="", help="Verify an existing key")
++
++    args = parser.parse_args()
++
++    if args.verify:
++        result = verify_key(args.verify)
++        if result:
++            print(f"[VALID] Client: {result['client']}, Quota: {result['quota']}")
++            sys.exit(0)
++        else:
++            print("[INVALID] Key signature is invalid or forged.")
++            sys.exit(1)
++
++    print(f"Generating {args.count} key(s) for client='{args.client}', quota='{args.quota}'...\n")
++    for i in range(args.count):
++        k = generate_key(args.client, args.quota)
++        print(f"  {i+1}: {k}")
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+index 57f99564..319dd564 100644
+--- a/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
++++ b/infrastructure/mcp-control-plane/src/lib/redis_chain.ts
+@@ -124,6 +124,58 @@ export function isAccountQuotaExhausted(label: string, nowMs: number = Date.now(
+   return true;
+ }
+ 
++/**
++ * কোটা cooldown থেকে কোনো অ্যাকাউন্টকে আগাম মুক্তি দেওয়া (যেমন পিং টেস্টে সফল হলে)।
++ */
++export function clearAccountCooldown(label: string): boolean {
++  if (quotaCooldownUntil.has(label)) {
++    quotaCooldownUntil.delete(label);
++    console.log(`[redis-chain] Account "${label}" cooldown cleared via recovery probe.`);
++    return true;
++  }
++  return false;
++}
++
++/**
++ * Cooldown-এ থাকা অ্যাকাউন্টগুলোর স্বয়ংক্রিয় স্বাস্থ্য পরীক্ষা ও পুনরুদ্ধার (#2613 / #26)।
++ * সাময়িক নেটওয়ার্ক সমস্যা বা ট্রানজিয়েন্ট রেট-লিমিটের কারণে কোনো নোড যেন দীর্ঘ সময়
++ * (যেমন ১ মাস) অকারণে আটকে না থাকে — এই প্রোব পিং সফল হলে কুলডাউন পরিষ্কার করে দেয়।
++ */
++export async function probeCooldownRecovery(
++  pingFn?: (account: RedisAccountConfig) => Promise<boolean>,
++): Promise<string[]> {
++  const recovered: string[] = [];
++  const chain = buildAccountChain();
++  for (const account of chain) {
++    if (!isAccountQuotaExhausted(account.label)) continue;
++    try {
++      let isAlive = false;
++      if (pingFn) {
++        isAlive = await pingFn(account);
++      } else if (account.restUrl && account.restToken) {
++        const pingUrl = account.restUrl.replace(/\/+$/, "") + "/ping";
++        const res = await fetch(pingUrl, {
++          headers: { Authorization: `Bearer ${account.restToken}` },
++          signal: AbortSignal.timeout(3000),
++        });
++        if (res.ok) {
++          const body = await res.text();
++          if (!responseIndicatesQuotaExhaustion(res.status, body)) {
++            isAlive = true;
++          }
++        }
++      }
++      if (isAlive) {
++        clearAccountCooldown(account.label);
++        recovered.push(account.label);
++      }
++    } catch {
++      // Still unreachable or in error; keep in cooldown
++    }
++  }
++  return recovered;
++}
++
+ /**
+  * Cooldown-মুক্ত account-দের chain (R2)। সব account cooldown-এ থাকলে পুরো
+  * chain ফিরিয়ে দাও — সময়-হিসাবে ভুল হলেও fleet-wide blackout এড়াতে
+diff --git a/infrastructure/mcp-control-plane/test_redis_auto_rotation.ts b/infrastructure/mcp-control-plane/test_redis_auto_rotation.ts
+index c5dd6e15..817d1690 100644
+--- a/infrastructure/mcp-control-plane/test_redis_auto_rotation.ts
++++ b/infrastructure/mcp-control-plane/test_redis_auto_rotation.ts
+@@ -64,4 +64,12 @@ const resetDate = new Date(resetMs);
+ assert.equal(resetDate.getUTCDate(), 1, "Reset day must be 1st of month");
+ assert.equal(resetDate.getUTCHours(), 0, "Reset hour must be 00:00 UTC");
+ 
++// 7. Auto-recovery probe verification
++const { clearAccountCooldown, probeCooldownRecovery } = await import("./src/lib/redis_chain.js");
++assert.equal(isAccountQuotaExhausted("primary"), true);
++const recovered = await probeCooldownRecovery(async (acc) => acc.label === "primary");
++assert.deepEqual(recovered, ["primary"]);
++assert.equal(isAccountQuotaExhausted("primary"), false, "Primary should recover after successful probe");
++assert.equal(getActiveRedisAccount().label, "primary", "Primary should resume active primary after recovery");
++
+ console.log("✅ All Redis auto-rotation contract tests PASSED!");
+diff --git a/studio/src/auth/identity.ts b/studio/src/auth/identity.ts
+new file mode 100644
+index 00000000..963fc4df
+--- /dev/null
++++ b/studio/src/auth/identity.ts
+@@ -0,0 +1,75 @@
++// SupremeAI — Canonical Identity Helpers (single-frontend migration, roadmap Phase 2/4)
++// বাংলা মন্তব্য: role কখনোই client-computed privilege নয়। এই helpers শুধু trusted
++// state পড়ে: (a) authStore-এ backend থেকে resolve হওয়া role, এবং (b) backend-ই
++// issue করা server-signed admin JWT-র role claim (OTP/TOTP step-up-এর পরে)।
++// এগুলো শুধু UX/guard decision — প্রতিটি privileged API call আবার backend-এ
++// authorize হয়। URL বা localStorage role key কখনোই এখানে ব্যবহৃত হয় না।
++
++import { normalizeRole, type Role } from '../types';
++
++/** Storage key of the server-signed admin JWT issued after OTP/TOTP step-up. */
++export const ADMIN_JWT_KEY = 'supreme_admin_jwt';
++
++interface AdminJwtClaims {
++  role?: unknown;
++  exp?: unknown;
++  [key: string]: unknown;
++}
++
++/**
++ * Decode the payload of the server-signed admin JWT (no verification —
++ * verification happens server-side on every privileged API call; here the
++ * claim is only used to decide which UX context to offer).
++ */
++export function readAdminJwtClaims(): AdminJwtClaims | null {
++  if (typeof window === 'undefined') return null;
++  try {
++    // Issue #521 (FE-04): sessionStorage only — the localStorage duplicate write/read
++    // (which survived browser restarts) is gone; legacy entries are swept.
++    const token = sessionStorage.getItem(ADMIN_JWT_KEY);
++    if (!token) return null;
++    const part = token.split('.')[1];
++    if (!part) return null;
++    const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
++    const json = decodeURIComponent(
++      atob(base64)
++        .split('')
++        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
++        .join('')
++    );
++    const parsed = JSON.parse(json) as AdminJwtClaims;
++    return parsed && typeof parsed === 'object' ? parsed : null;
++  } catch {
++    return null;
++  }
++}
++
++/**
++ * Role claim from the server-signed admin JWT, if present and unexpired.
++ * Returns a normalized canonical Role or null.
++ */
++export function getAdminJwtRole(): Role | null {
++  const claims = readAdminJwtClaims();
++  if (!claims) return null;
++  // বাংলা: exp থাকলে মেয়াদোত্তীর্ণ JWT-র claim কোনো অধিকার দেখায় না।
++  if (typeof claims.exp === 'number' && claims.exp * 1000 < Date.now()) return null;
++  return normalizeRole(claims.role);
++}
++
++/**
++ * Is this identity authorized for the Admin context at all?
++ */
++export function canAccessAdminContext(): boolean {
++  return getAdminJwtRole() === 'admin';
++}
++
++/**
++ * Runtime landing path per roadmap §6.3:
++ *   Guest                → /login
++ *   Authenticated admin  → /admin (configured admin landing context)
++ *   Authenticated user   → /workspace
++ */
++export function resolveLandingPath(isAuthenticated: boolean): string {
++  if (!isAuthenticated) return '/login';
++  return canAccessAdminContext() ? '/admin' : '/workspace';
++}
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 21c5c661..411060f2 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -100,6 +100,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
+     const controller = new AbortController();
+     const timeoutId = setTimeout(() => controller.abort(), 30000);
+     try {
++      // eslint-disable-next-line no-restricted-syntax
+       const res = await fetch(`${target}/v1/chat/completions`, {
+         method: 'POST',
+         headers: {
+@@ -134,6 +135,7 @@ async function callLiveAI(prompt: string, modelName: string, apiKey: string = ''
+     const controller = new AbortController();
+     const timeoutId = setTimeout(() => controller.abort(), 30000);
+     try {
++      // eslint-disable-next-line no-restricted-syntax
+       const res = await fetch(`${apiTarget}/v1/chat/completions`, {
+         method: 'POST',
+         headers: {
+@@ -176,7 +178,7 @@ export function GuestChat() {
+   const [messages, setMessages] = React.useState<{ role: 'user' | 'assistant'; text: string; via?: string }[]>([]);
+   const [input, setInput] = React.useState('');
+   const [model, setModel] = React.useState(models[0]?.name ?? 'Supreme Auto');
+-  const [apiKey, setApiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
++  const [apiKey] = React.useState(typeof localStorage !== 'undefined' ? (localStorage.getItem('supremeai_api_key') || '') : '');
+   const [busy, setBusy] = React.useState(false);
+   const listRef = React.useRef<HTMLDivElement | null>(null);
+ 
+@@ -189,7 +191,7 @@ export function GuestChat() {
+     setMessages((m) => [...m, { role: 'user', text }]);
+     setBusy(true);
+     try {
+-      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch { /* ignore storage error */ } }
++      if (apiKey) { try { localStorage.setItem('supremeai_api_key', apiKey); } catch (e) { void e; } }
+       const reply = await callLiveAI(text, model, apiKey);
+       setMessages((m) => [...m, { role: 'assistant', text: reply.text, via: reply.via }]);
+     } catch {
+diff --git a/studio/src/store/adminStore.ts b/studio/src/store/adminStore.ts
+new file mode 100644
+index 00000000..a711a90e
+--- /dev/null
++++ b/studio/src/store/adminStore.ts
+@@ -0,0 +1,226 @@
++import { create } from 'zustand';
++import { authService } from '../services/authService';
++import { updateTokenCache } from '../services/apiClient';
++import { clearAdminToken, getAdminToken, setAdminToken } from '../services/tokenStorage';
++import { LEGACY_ADMIN_TOKEN_KEY } from './authStore';
++import { eventBus, Events } from '../lib/componentEventBus';
++
++const decodeJwt = (token: string): Record<string, unknown> | null => {
++  try {
++    const base64Url = token.split('.')[1];
++    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
++    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
++        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
++    }).join(''));
++    const decoded = JSON.parse(jsonPayload);
++
++    if (!decoded || typeof decoded !== 'object') {
++      throw new Error('Decoded JWT payload is not a valid object');
++    }
++
++    return decoded;
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  } catch (e: any) {
++    console.warn("⚠️ [JWT_DECODE_ERROR]: Failed to safely parse admin JWT token.", {
++      error_message: e?.message || 'Malformed JWT structure',
++      timestamp: new Date().toISOString(),
++    });
++    return null;
++  }
++};
++
++const buildProvisioningUri = (email: string, secret: string): string =>
++  `otpauth://totp/SupremeAI:${encodeURIComponent(email)}?secret=${secret}&issuer=SupremeAI&digits=6&period=30`;
++
++const persistAdminToken = (token: unknown): token is string => {
++  if (typeof token !== 'string' || token.trim().length < 20) return false;
++  setAdminToken(token);
++  updateTokenCache(token);
++  return true;
++};
++
++interface AdminState {
++  adminAuthenticated: boolean;
++  adminRole: string | null;
++  setAdminRole: (val: string | null) => void;
++  adminError: string;
++  setAdminError: (val: string) => void;
++  handleAdminLogin: (password?: string) => Promise<void>;
++  handleAdminLogout: () => void;
++  actionStatus: string;
++  setActionStatus: (val: string) => void;
++  adminSubTab: string;
++  setAdminSubTab: (tab: string) => void;
++  adminEmail: string;
++  setAdminEmail: (val: string) => void;
++  otpRequired: boolean;
++  setOtpRequired: (val: boolean) => void;
++  adminOtp: string;
++  setAdminOtp: (val: string) => void;
++  rememberBrowser: boolean;
++  setRememberBrowser: (val: boolean) => void;
++  totpSetupRequired: boolean;
++  setTotpSetupRequired: (val: boolean) => void;
++  totpSecret: string;
++  setTotpSecret: (val: string) => void;
++  provisioningUri: string;
++  setProvisioningUri: (val: string) => void;
++  recoveryCodes: string[];
++  recoveryCode: string;
++  setRecoveryCode: (val: string) => void;
++  recoverTotp: () => Promise<void>;
++  resetTotpSetup: () => Promise<void>;
++}
++
++const getInitialAdminToken = (): string | null => {
++  if (typeof window === 'undefined') return null;
++  try {
++    return getAdminToken();
++  } catch (err) {
++    console.warn('[adminStore] initial admin token read failed, using fallback:', err);
++    return null;
++  }
++};
++
++const initialToken = getInitialAdminToken();
++const initialDecoded = initialToken ? decodeJwt(initialToken) : null;
++const isInitialTokenValid = Boolean(
++  initialDecoded &&
++  typeof initialDecoded.exp === 'number' &&
++  initialDecoded.exp * 1000 > Date.now()
++);
++
++if (isInitialTokenValid && initialToken) {
++  updateTokenCache(initialToken);
++}
++
++export const useAdminStore = create<AdminState>((set, get) => ({
++  adminAuthenticated: isInitialTokenValid,
++  adminRole: isInitialTokenValid && initialDecoded?.role === 'admin' ? 'admin' : null,
++  setAdminRole: (val) => set({ adminRole: val }),
++  adminError: '',
++  setAdminError: (val) => set({ adminError: val }),
++  actionStatus: '',
++  setActionStatus: (val) => set({ actionStatus: val }),
++  adminSubTab: 'dashboard',
++  setAdminSubTab: (tab) => set({ adminSubTab: tab }),
++  adminEmail: '',
++  setAdminEmail: (val) => set({ adminEmail: val }),
++  otpRequired: false,
++  setOtpRequired: (val) => set({ otpRequired: val }),
++  adminOtp: '',
++  setAdminOtp: (val) => set({ adminOtp: val }),
++  rememberBrowser: false,
++  setRememberBrowser: (val) => set({ rememberBrowser: val }),
++  totpSetupRequired: false,
++  setTotpSetupRequired: (val) => set({ totpSetupRequired: val }),
++  totpSecret: '',
++  setTotpSecret: (val) => set({ totpSecret: val }),
++  provisioningUri: '',
++  setProvisioningUri: (val) => set({ provisioningUri: val }),
++  recoveryCodes: [],
++  recoveryCode: '',
++  setRecoveryCode: (val) => set({ recoveryCode: val }),
++  recoverTotp: async () => {
++    set({ adminError: 'TOTP recovery not available in native auth mode.' });
++  },
++  handleAdminLogin: async (password?: string) => {
++    const { adminEmail, otpRequired, adminOtp, rememberBrowser } = get();
++    const cleanEmail = adminEmail.trim();
++    const cleanPassword = password?.trim() || '';
++
++    if (!otpRequired && (!cleanEmail || !cleanPassword)) return;
++    set({ adminError: '' });
++
++    try {
++      if (!otpRequired) {
++        // Step 1+2: Native backend login (no Firebase)
++        const data = await authService.adminLogin(cleanEmail, cleanPassword);
++
++        if (data.status === 'trusted_browser' && persistAdminToken(data.token)) {
++          const decoded = decodeJwt(data.token);
++          set({ adminAuthenticated: true, adminRole: decoded?.role === 'admin' ? 'admin' : null });
++          eventBus.emit(Events.AUTH_LOGIN, { source: 'admin_store', timestamp: Date.now() });
++          return;
++        }
++
++        if (data.status === 'otp_required') {
++          set({ otpRequired: true });
++        } else if (data.status === 'totp_setup_required') {
++          try {
++            const setupData = await authService.adminTotpSetup();
++            set({
++              totpSetupRequired: true,
++              otpRequired: true,
++              totpSecret: setupData.secret,
++              recoveryCodes: setupData.recovery_codes || [],
++              provisioningUri: setupData.provisioning_uri || buildProvisioningUri(cleanEmail, setupData.secret || '')
++            });
++          // eslint-disable-next-line @typescript-eslint/no-explicit-any
++          } catch (setupErr: any) {
++            const errStr = typeof setupErr?.message === 'string' ? setupErr.message : 'Failed to setup TOTP.';
++            set({ adminError: errStr });
++          }
++        } else if (persistAdminToken(data.token)) {
++            const decoded = decodeJwt(data.token);
++            if (!decoded) {
++              set({ adminError: 'Authentication token is invalid. Please sign in again.' });
++              return;
++            }
++            set({ adminAuthenticated: true, adminRole: decoded?.role === 'admin' ? 'admin' : null });
++            eventBus.emit(Events.AUTH_LOGIN, { source: 'admin_store', timestamp: Date.now() });
++        } else {
++          set({ adminError: 'Not authorized as admin.' });
++        }
++      } else {
++        // Step 3: Verify TOTP (native)
++        try {
++          const data = await authService.adminTotpVerify(adminOtp.trim(), rememberBrowser);
++          if (persistAdminToken(data.token)) {
++            const decoded = decodeJwt(data.token);
++            if (decoded && typeof decoded.role === 'string') {
++              set({ adminRole: decoded.role });
++            }
++          } else {
++            set({ adminError: 'Authentication token missing. Please sign in again.' });
++            return;
++          }
++          
++          eventBus.emit(Events.AUTH_LOGIN, {
++            source: 'admin_store',
++            timestamp: Date.now()
++          });
++          
++          set({ adminAuthenticated: true, otpRequired: false, totpSetupRequired: false, adminOtp: '' });
++          // eslint-disable-next-line @typescript-eslint/no-explicit-any
++        } catch (verifyErr: any) {
++          const errStr = typeof verifyErr?.message === 'string' ? verifyErr.message : 'Invalid verification code.';
++          set({ adminError: errStr });
++        }
++      }
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    } catch (err: any) {
++      const msg = err && typeof err === 'object' && err.message ? String(err.message) : (typeof err === 'object' ? JSON.stringify(err) : String(err));
++      set({ adminError: 'Connection failed: ' + msg });
++    }
++  },
++  handleAdminLogout: async () => {
++    try {
++      await authService.adminLogout();
++      localStorage.removeItem(LEGACY_ADMIN_TOKEN_KEY);
++      clearAdminToken();
++      updateTokenCache(null);
++
++      eventBus.emit(Events.AUTH_LOGOUT, {
++        source: 'admin_store',
++        timestamp: Date.now()
++      });
++    } catch(e) {
++      console.error('Logout failed:', e);
++    }
++    set({ adminAuthenticated: false, adminRole: null, otpRequired: false, adminOtp: '', adminError: '', totpSetupRequired: false, totpSecret: '', provisioningUri: '' });
++  },
++  resetTotpSetup: async () => {
++    set({ adminError: 'TOTP reset not available in native auth mode.' });
++  },
++}));

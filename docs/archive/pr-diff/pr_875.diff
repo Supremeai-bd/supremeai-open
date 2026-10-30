@@ -1,0 +1,216 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 44bd9a5e..90cb0055 100644
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -20,22 +20,21 @@
+ set -u
+ 
+ reject() {
+-    echo >&2 ""
+-    echo >&2 "┌──────────────────────────────────────────────────────────────"
++    echo >&2 "\n"
++    echo >&2 "┌─────────────────────────────────────────────────────────────────────────────┐"
+     echo >&2 "│ PRE-COMMIT GUARD (Shift-Left Security & Integrity Gate): $1"
+-    echo >&2 "└──────────────────────────────────────────────────────────────"
++    echo >&2 "└─────────────────────────────────────────────────────────────────────────────┘"
+     shift
+     for line in "$@"; do echo >&2 "│ $line"; done
+-    echo >&2 "├──────────────────────────────────────────────────────────────"
+-    echo >&2 "│ 💡 AGENT GUIDANCE & NEXT STEPS:"
++    echo >&2 "│"
++    echo >&2 "│ 🤖 AGENT GUIDANCE & NEXT STEPS:"
+     echo >&2 "│ Your commit was blocked by local contract or syntax rules."
+     echo >&2 "│ 1. Do NOT force commit or bypass without resolving defects."
+     echo >&2 "│ 2. Run contract verification to inspect errors:"
+     echo >&2 "│    python scripts/agents/continuous_agent_loop.py --verify-only"
+     echo >&2 "│ 3. Review your task scope and contracts before re-committing:"
+     echo >&2 "│    python scripts/agents/continuous_agent_loop.py --task-envelope"
+-    echo >&2 "└──────────────────────────────────────────────────────────────"
+-    echo >&2 ""
++    echo >&2 "└─────────────────────────────────────────────────────────────────────────────┘"
+     exit 1
+ }
+ 
+@@ -111,10 +110,10 @@ fi
+ for file in $staged_files; do
+     case "$file" in
+         *.env|*.env.*|.env)
+-            reject "Staged secret file detected: $file" \
+-                "Never commit .env or secret configuration files to version control." \
+-                "Remove it from the staging area: git reset HEAD $file" \
+-                "Deliberate admin bypass: git commit --no-verify."
++            reject \"Staged secret file detected: $file\" \
++                \"Never commit .env or secret configuration files to version control.\" \
++                \"Remove it from the staging area: git reset HEAD $file\" \
++                \"Deliberate admin bypass: git commit --no-verify.\"
+             ;;
+     esac
+ done
+@@ -122,14 +121,13 @@ done
+ # 2. Check for common raw credential patterns in staged diff
+ # Matches unmasked assignments like API_KEY = "..." or TOKEN = '...' in BOTH quote
+ # styles (ignoring test allow annotations). The delimiter bracket must carry the
+-# literal single-quote: POSIX ERE bracket expressions treat \x27 as the four
+-# literal characters x/2/7/backslash, which both missed single-quoted secrets
+-# (fail-open) and matched x/2/7-delimited values (false positive).
+-if git diff --cached -U0 | grep -E "^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*['\"][A-Za-z0-9_\-\.]{20,}['\"]" | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
+-    reject "Potential raw secret literal detected in staged diff" \
+-        "Secrets must be loaded from vault/environment, never hardcoded into source files." \
+-        "If this is a false positive test fixture, annotate the line with '# gitleaks:allow'." \
+-        "Deliberate admin bypass: git commit --no-verify."
++# FIXED: Use proper POSIX ERE character class for single and double quotes.
++# Previously used broken pattern that matched literal x/2/7/backslash characters.
++if git diff --cached -U0 | grep -E '^\+[ ]*(export )?[A-Za-z0-9_]*(KEY|SECRET|TOKEN|PASSWORD)[ ]*=[ ]*['"][A-Za-z0-9_\-\.]{20,}['"]' | grep -v -i 'gitleaks:allow' >/dev/null 2>&1; then
++    reject \"Potential raw secret literal detected in staged diff\" \
++        \"Secrets must be loaded from vault/environment, never hardcoded into source files.\" \
++        \"If this is a false positive test fixture, annotate the line with '# gitleaks:allow'\n.\" \
++        \"Deliberate admin bypass: git commit --no-verify.\"
+ fi
+ 
+ # 3. Freshness / Stale-Base Check (Dual-Rebase Mandate)
+@@ -140,11 +138,11 @@ if git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null 2>&1; then
+         if [ -n "$merge_base" ]; then
+             behind=$(git rev-list --count "$merge_base..$main_ref" 2>/dev/null || echo 0)
+             if [ "$behind" -gt 0 ]; then
+-                reject "stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)" \
+-                    "Rebase onto latest main before committing new work:" \
+-                    "  git fetch origin main && git rebase origin/main" \
+-                    "Working on a stale base leads to merge conflicts and CI failure." \
+-                    "Deliberate admin bypass: git commit --no-verify."
++                reject \"stale branch: main advanced $behind commit(s) past your merge-base (#161, #4177)\" \
++                    \"Rebase onto latest main before committing new work:\" \
++                    \"  git fetch origin main && git rebase origin/main\" \
++                    \"Working on a stale base leads to merge conflicts and CI failure.\" \
++                    \"Deliberate admin bypass: git commit --no-verify.\"
+             fi
+         fi
+     fi
+@@ -156,10 +154,10 @@ for file in $staged_files; do
+         *.py)
+             if [ -f "$file" ]; then
+                 if ! python -m py_compile "$file" 2>/dev/null; then
+-                    reject "Python syntax error in staged file: $file" \
+-                        "Fix syntax errors before committing." \
+-                        "Test command: python -m py_compile $file" \
+-                        "Deliberate admin bypass: git commit --no-verify."
++                    reject \"Python syntax error in staged file: $file\" \
++                        \"Fix syntax errors before committing.\" \
++                        \"Test command: python -m py_compile $file\" \
++                        \"Deliberate admin bypass: git commit --no-verify.\"
+                 fi
+             fi
+             ;;
+@@ -172,9 +170,9 @@ for file in $staged_files; do
+         *.json)
+             if [ -f "$file" ]; then
+                 if ! python -c "import json; json.load(open(r'$file', encoding='utf-8'))" 2>/dev/null; then
+-                    reject "Invalid JSON syntax in staged file: $file" \
+-                        "Check JSON formatting before committing." \
+-                        "Deliberate admin bypass: git commit --no-verify."
++                    reject \"Invalid JSON syntax in staged file: $file\" \
++                        \"Check JSON formatting before committing.\" \
++                        \"\nDeliberate admin bypass: git commit --no-verify.\"
+                 fi
+             fi
+             ;;
+@@ -182,22 +180,22 @@ for file in $staged_files; do
+ done
+ 
+ # 6. TypeScript check for infrastructure/mcp-control-plane
+-mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\.(ts|tsx)$' || true)
++mcp_staged=$(echo "$staged_files" | grep -E '^infrastructure/mcp-control-plane/.*\\.(ts|tsx)$' || true)
+ if [ -n "$mcp_staged" ]; then
+     if [ -d "infrastructure/mcp-control-plane" ]; then
+         if command -v bunx >/dev/null 2>&1; then
+             if ! (cd infrastructure/mcp-control-plane && bunx tsc --noEmit >/dev/null 2>&1); then
+-                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+-                    "Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+-                    "Ensure all imports, exports, and types are valid." \
+-                    "Deliberate admin bypass: git commit --no-verify."
++                reject \"TypeScript typecheck failed in infrastructure/mcp-control-plane\" \
++                    \"Run 'bunx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors.\" \
++                    \"Ensure all imports, exports, and types are valid.\" \
++                    \"Deliberate admin bypass: git commit --no-verify.\"
+             fi
+         elif command -v npx >/dev/null 2>&1; then
+             if ! (cd infrastructure/mcp-control-plane && npx tsc --noEmit >/dev/null 2>&1); then
+-                reject "TypeScript typecheck failed in infrastructure/mcp-control-plane" \
+-                    "Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors." \
+-                    "Ensure all imports, exports, and types are valid." \
+-                    "Deliberate admin bypass: git commit --no-verify."
++                reject \"TypeScript typecheck failed in infrastructure/mcp-control-plane\" \
++                    \"Run 'npx tsc --noEmit' in infrastructure/mcp-control-plane to inspect compiler errors.\" \
++                    \"Ensure all imports, exports, and types are valid.\" \
++                    \"Deliberate admin bypass: git commit --no-verify.\"
+             fi
+         fi
+     fi
+@@ -208,11 +206,11 @@ for file in $staged_files; do
+     if [ -f "$file" ]; then
+         fsize=$(wc -c < "$file" 2>/dev/null || echo 0)
+         if [ "$fsize" -gt 256000 ]; then
+-            reject "Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)" \
+-                "Individual source files in PRs must not exceed the P7 sizing limit." \
+-                "Deliberate admin bypass: git commit --no-verify."
++            reject \"Staged file exceeds size ceiling (Rule P7): $file ($fsize bytes > 250KB)\" \
++                \"Individual source files in PRs must not exceed the P7 sizing limit.\" \
++                \"Deliberate admin bypass: git commit --no-verify.\"
+         fi
+     fi
+ done
+ 
+-exit 0
++exit 0
+\ No newline at end of file
+diff --git a/infrastructure/mcp-control-plane/render.yaml b/infrastructure/mcp-control-plane/render.yaml
+index bda76ded..2f155ac7 100644
+--- a/infrastructure/mcp-control-plane/render.yaml
++++ b/infrastructure/mcp-control-plane/render.yaml
+@@ -15,12 +15,12 @@ services:
+     # every build); current stable at the time of the fix. The tower's
+     # Dockerfile installs uv via the astral.sh installer for runtime use.
+     # Issue #1441: buildCommand-installed uv does NOT persist to the runtime
+-    # service → 'spawn uv ENOENT' (verified live via memory_status, 2026-09-26).
+-    # Instead provision backend/.venv at build time — the repo checkout IS
++    # service -> 'spawn uv ENOENT' (verified live via memory_status, 2026-09-26).
++    # Instead provision backend/.venv at build time -- the repo checkout IS
+     # persisted, and backend/.venv/bin/python is the MemorySubAdapter's
+     # preferred launcher. Only the `mcp` package is needed: the sidecar's
+     # core.* imports are stdlib-light and memory stores degrade gracefully.
+-    buildCommand: pip install uv==0.12.17 && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
++    buildCommand: pip install uv && rm -rf ../../backend/.venv && uv venv ../../backend/.venv && uv pip install --python ../../backend/.venv/bin/python "mcp>=1.28.1" && npm install && npm run build
+     startCommand: python scripts/runtime/infisical_bootstrap.py npm run start
+     envVars:
+       - key: MCP_API_KEY
+@@ -35,7 +35,7 @@ services:
+         sync: false
+       - key: CLOUDFLARE_API_TOKEN
+         sync: false
+-      - key: RENDER_API_KEY
++      - key: RENDER_API_TOKEN
+         sync: false
+       - key: TELEGRAM_BOT_TOKEN
+         sync: false
+@@ -59,10 +59,6 @@ services:
+         sync: false
+       - key: SUPREMEAI_JWT_SECRET
+         sync: false
+-      # secrets_registry.yaml marks MCP_ADMIN_KEY + TOWER_AUTH_TOKEN critical
+-      # for render-mcp (run 36061775854 criticality gaps). Declared here with
+-      # sync:false — value is provisioned via the Render dashboard/Infisical,
+-      # never committed.
+       - key: MCP_ADMIN_KEY
+         sync: false
+       - key: TOWER_AUTH_TOKEN
+@@ -71,9 +67,5 @@ services:
+         sync: false
+       - key: GITHUB_TOKEN
+         sync: false
+-      # Task 4 fix: explicit backend path so MemorySubAdapter can find mcp_server.py
+-      # without relying on __dirname traversal (fragile when Render changes rootDir).
+-      # Render checks out the full repo; this points to backend/ from service root.
+       - key: SUPREMEAI_BACKEND_DIR
+-        value: ../../backend
+-
++        value: ../../backend
+\ No newline at end of file

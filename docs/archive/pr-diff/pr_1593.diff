@@ -1,0 +1,975 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/semantic_cache.ts b/infrastructure/mcp-control-plane/src/lib/semantic_cache.ts
+new file mode 100644
+index 00000000..00d8eaf0
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/semantic_cache.ts
+@@ -0,0 +1,271 @@
++// ── Qdrant semantic cache (#1522 / Q1 — Redis command-burn reduction) ────────
++// বাংলা মন্তব্য: একই রকম প্রশ্ন বারবার এলে প্রতিবার Redis-ভিত্তিক downstream
++// পথ (session, rate-limit, dispatch state ইত্যাদি) বারবার কমান্ড খরচ করে —
++// Upstash free tier-এর 500k সিলিং-এর প্রধান শত্রু এই পুনরাবৃত্তি। এই মডিউল
++// top-20 প্রশ্ন-প্যাটার্নের উত্তর Qdrant-এ জমা রাখে; cosine-সদৃশ স্কোর থ্রেশহোল্ড
++// ছাড়িয়ে গেলে সরাসরি cached উত্তর ফেরত — Redis কমান্ড শূন্য।
++//
++// Embedder honesty (U2 tiering — কোনো ভুয়া "semantic" দাবি নয়):
++//   1. GEMINI_API_KEY থাকলে → Gemini text-embedding-004 (প্রকৃত semantic vector)।
++//   2. না থাকলে → char-trigram lexical cosine fallback। এটি প্রকৃত embedding নয় —
++//      কিন্তু "top-20 question patterns" বাস্তবে প্রায়-অভিন্ন স্ট্রিং হয়, তাই
++//      পুনরাবৃত্ত-প্রশ্ন ধরার কাজটি করে; এবং প্রতিটি ফলাফলে `embedder` ফিল্ডে
++//      সত্য পরিচয় বহন করে ("gemini" বনা "trigram-lexical-fallback")।
++//
++// Fail-open policy (AGENTS.md invariant #3 graceful degradation): Qdrant না
++// চললে/না কনফিগার থাকলে প্রতিটি কল {hit:false, reason} দেয় — cache-এর ব্যর্থতা
++// কখনো caller-এর মূল পথ ব্লক করে না, শুধু saving হারায়।
++
++import { createHash } from "node:crypto";
++import { env } from "./env.js";
++import { httpRequest } from "./http.js";
++import {
++  qdrantEnsureCollection,
++  qdrantSearch,
++  qdrantUpsert,
++} from "../adapters/qdrant/actions.js";
++
++const DEFAULT_COLLECTION = "semantic_cache_v1";
++const DEFAULT_HIT_THRESHOLD = 0.93;
++const DEFAULT_MAX_ENTRIES = 20;
++const DEFAULT_MAX_ANSWER_CHARS = 4000;
++const TRIGRAM_DIM = 512;
++
++export type CacheHit = {
++  hit: boolean;
++  score?: number;
++  question?: string;
++  answer?: string;
++  embedder?: string;
++  reason?: string;
++};
++
++export type CacheConfigStatus = {
++  qdrantConfigured: boolean;
++  embedder: "gemini" | "trigram-lexical-fallback";
++  collection: string;
++  hitThreshold: number;
++  maxEntries: number;
++  maxAnswerChars: number;
++  topK: number;
++};
++
++function collection(): string {
++  return process.env.SEMANTIC_CACHE_COLLECTION || DEFAULT_COLLECTION;
++}
++
++function hitThreshold(): number {
++  const raw = Number(process.env.SEMANTIC_CACHE_HIT_THRESHOLD);
++  return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : DEFAULT_HIT_THRESHOLD;
++}
++
++function maxEntries(): number {
++  const raw = Number(process.env.SEMANTIC_CACHE_MAX_ENTRIES);
++  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_ENTRIES;
++}
++
++function maxAnswerChars(): number {
++  const raw = Number(process.env.SEMANTIC_CACHE_MAX_ANSWER_CHARS);
++  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_MAX_ANSWER_CHARS;
++}
++
++function topK(): number {
++  return Math.max(3, Math.min(10, maxEntries()));
++}
++
++export function cacheConfigStatus(): CacheConfigStatus {
++  return {
++    qdrantConfigured: Boolean(env.qdrant.url),
++    embedder: process.env.GEMINI_API_KEY ? "gemini" : "trigram-lexical-fallback",
++    collection: collection(),
++    hitThreshold: hitThreshold(),
++    maxEntries: maxEntries(),
++    maxAnswerChars: maxAnswerChars(),
++    topK: topK(),
++  };
++}
++
++// ── embedder tiering ──────────────────────────────────────────────────────────
++
++function normalizeQuestion(text: string): string {
++  return (text || "").toLowerCase().replace(/\s+/g, " ").trim();
++}
++
++/** FNV-1a → bucket index (deterministic, stdlib-free arithmetic). */
++function fnv1a(str: string): number {
++  let hash = 0x811c9dc5;
++  for (let i = 0; i < str.length; i++) {
++    hash ^= str.charCodeAt(i);
++    hash = Math.imul(hash, 0x01000193) >>> 0;
++  }
++  return hash >>> 0;
++}
++
++/** Char-trigram bag-of-words, L2-normalized. Lexical similarity, NOT semantics. */
++function trigramVector(text: string): number[] {
++  const padded = `  ${normalizeQuestion(text)}  `;
++  const vec = new Array<number>(TRIGRAM_DIM).fill(0);
++  for (let i = 0; i + 3 <= padded.length; i++) {
++    vec[fnv1a(padded.slice(i, i + 3)) % TRIGRAM_DIM] += 1;
++  }
++  let norm = 0;
++  for (const v of vec) norm += v * v;
++  norm = Math.sqrt(norm);
++  return norm > 0 ? vec.map((v) => v / norm) : vec;
++}
++
++async function geminiEmbed(text: string): Promise<number[]> {
++  const key = process.env.GEMINI_API_KEY;
++  const res = await httpRequest(
++    `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
++    {
++      method: "POST",
++      headers: { "Content-Type": "application/json" },
++      body: {
++        model: "models/text-embedding-004",
++        content: { parts: [{ text }] },
++      },
++      timeoutMs: 15_000,
++    },
++  );
++  const data = res.data as { embedding?: { values?: number[] } };
++  const values = data?.embedding?.values;
++  if (!res.ok || !Array.isArray(values) || values.length === 0) {
++    throw new Error(`Gemini embedding failed (${res.status})`);
++  }
++  return values;
++}
++
++/** Embedder tier 1 = Gemini (semantic); tier 2 = trigram (lexical, labeled). */
++async function embed(text: string): Promise<{ vector: number[]; embedder: "gemini" | "trigram-lexical-fallback" }> {
++  if (process.env.GEMINI_API_KEY) {
++    try {
++      return { vector: await geminiEmbed(text), embedder: "gemini" };
++    } catch {
++      // Provider hiccup → fall through to the lexical fallback (never block).
++    }
++  }
++  return { vector: trigramVector(text), embedder: "trigram-lexical-fallback" };
++}
++
++// ── Qdrant plumbing (ensure-once, count, prune-oldest) ────────────────────────
++
++let ensuredDim = 0;
++
++async function ensureCollection(dim: number): Promise<void> {
++  if (ensuredDim === dim) return;
++  await qdrantEnsureCollection(collection(), dim, "Cosine");
++  ensuredDim = dim;
++}
++
++async function countPoints(): Promise<number> {
++  const { url, apiKey } = { url: env.qdrant.url, apiKey: env.qdrant.apiKey || undefined };
++  const res = await httpRequest(`${url}/collections/${collection()}/points/count`, {
++    method: "POST",
++    headers: apiKey ? { "api-key": apiKey, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
++    body: { exact: true },
++    timeoutMs: 10_000,
++  });
++  const data = res.data as { count?: number };
++  return res.ok && Number.isFinite(data?.count) ? Number(data.count) : 0;
++}
++
++async function deletePoints(ids: string[]): Promise<void> {
++  if (ids.length === 0) return;
++  const { url, apiKey } = { url: env.qdrant.url, apiKey: env.qdrant.apiKey || undefined };
++  await httpRequest(`${url}/collections/${collection()}/points/delete?wait=true`, {
++    method: "POST",
++    headers: apiKey ? { "api-key": apiKey, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
++    body: { points: ids },
++    timeoutMs: 10_000,
++  });
++}
++
++/** Keep only the newest maxEntries points (oldest by payload.storedAt die). */
++async function pruneToMax(): Promise<number> {
++  const cap = maxEntries();
++  const count = await countPoints();
++  if (count <= cap) return 0;
++  const { url, apiKey } = { url: env.qdrant.url, apiKey: env.qdrant.apiKey || undefined };
++  const res = await httpRequest(`${url}/collections/${collection()}/points/scroll`, {
++    method: "POST",
++    headers: apiKey ? { "api-key": apiKey, "Content-Type": "application/json" } : { "Content-Type": "application/json" },
++    body: { limit: 256, with_payload: true, with_vector: false },
++    timeoutMs: 10_000,
++  });
++  const data = res.data as { points?: Array<{ id: string; payload?: Record<string, unknown> }> };
++  const points = data?.points ?? [];
++  if (points.length <= cap) return 0;
++  const sorted = [...points].sort((a, b) =>
++    String(a.payload?.storedAt ?? "").localeCompare(String(b.payload?.storedAt ?? "")),
++  );
++  const doomed = sorted.slice(0, points.length - cap).map((p) => String(p.id));
++  await deletePoints(doomed);
++  return doomed.length;
++}
++
++/** Deterministic UUID-shaped id from the normalized question — same question overwrites itself. */
++function pointIdFor(question: string): string {
++  const hex = createHash("sha256").update(normalizeQuestion(question), "utf8").digest("hex").slice(0, 32);
++  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
++}
++
++// ── public API ────────────────────────────────────────────────────────────────
++
++export async function cacheLookup(question: string): Promise<CacheHit> {
++  if (!env.qdrant.url) {
++    return { hit: false, reason: "QDRANT_URL not configured — cache is dormant (fail-open)." };
++  }
++  const normalized = normalizeQuestion(question);
++  if (!normalized) {
++    return { hit: false, reason: "empty question" };
++  }
++  const { vector, embedder } = await embed(normalized);
++  await ensureCollection(vector.length);
++  const raw = await qdrantSearch(collection(), vector, topK());
++  const points = Array.isArray((raw as { result?: unknown[] }).result)
++    ? ((raw as { result: Array<{ score: number; payload?: Record<string, unknown> }> }).result)
++    : [];
++  if (points.length === 0) {
++    return { hit: false, embedder, reason: "cache empty for this embedder space" };
++  }
++  const best = points[0];
++  const threshold = hitThreshold();
++  if (best.score >= threshold && typeof best.payload?.answer === "string") {
++    return {
++      hit: true,
++      score: best.score,
++      question: String(best.payload?.question ?? ""),
++      answer: String(best.payload?.answer),
++      embedder,
++    };
++  }
++  return { hit: false, score: best.score, embedder, reason: `best score ${best.score.toFixed(4)} < threshold ${threshold}` };
++}
++
++export async function cacheStore(question: string, answer: string): Promise<{ stored: boolean; pruned: number; reason?: string }> {
++  if (!env.qdrant.url) {
++    return { stored: false, pruned: 0, reason: "QDRANT_URL not configured — cache is dormant (fail-open)." };
++  }
++  const normalized = normalizeQuestion(question);
++  if (!normalized || !answer) {
++    return { stored: false, pruned: 0, reason: "empty question or answer" };
++  }
++  const cappedAnswer = answer.slice(0, maxAnswerChars());
++  const { vector, embedder } = await embed(normalized);
++  await ensureCollection(vector.length);
++  await qdrantUpsert(collection(), [
++    {
++      id: pointIdFor(normalized),
++      vector,
++      payload: {
++        question: normalized,
++        answer: cappedAnswer,
++        embedder,
++        storedAt: new Date().toISOString(),
++      },
++    },
++  ]);
++  const pruned = await pruneToMax();
++  return { stored: true, pruned };
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+index 363cbd59..61a345a5 100644
+--- a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+@@ -1,6 +1,13 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+ import { pingRedis, getRedisStats, readRedisKey } from "../adapters/redis/index.js";
++import { quotaChainStatus, nextQuotaResetEpochMs, upstashCommandLimit } from "../lib/redis_chain.js";
++import { sendTelegram } from "../adapters/notify/actions.js";
++import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cache.js";
++
++// #1522 (Q1): in-memory per-window dedup for quota alerts. Resets on deploy —
++// the persistent, cron-side dedup lives in scripts/ops/redis_quota_monitor.py.
++const quotaAlertSent = new Map<string, string>();
+ 
+ export async function registerRedisTools(server: McpServer): Promise<void> {
+   server.tool(
+@@ -98,5 +105,145 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+       }
+     }
+   );
+-}
++  // ── #1522 (Q1): 80% quota warning + Qdrant semantic cache surfaces ──────────
++  // বাংলা মন্তব্য: 96% preemptive rotation (#646) ট্রাফিক বাঁচায়, কিন্তু "কোটা
++  // শেষ হচ্ছে" খবরটি কাউকে দেয় না — redis.quota_alert সেই খবর Telegram-এ পাঠায়
++  // (window-প্রতি একবার; স্থায়ী dedup ক্রন-পাশে scripts/ops/redis_quota_monitor.py-তে)।
++
++  server.tool(
++    "redis.quota_alert",
++    "Evaluate the Upstash account-chain quota usage and send a Telegram warning when any account crosses the threshold (default 80%, critical at 95%). Deduplicated per account per tier per quota window (in-memory).",
++    {
++      thresholdPct: z.number().min(1).max(100).optional().describe("Warning threshold percent (default 80, env REDIS_QUOTA_ALERT_PCT)"),
++      chatId: z.string().optional().describe("Optional Telegram chat id override"),
++    },
++    async ({ thresholdPct, chatId }) => {
++      try {
++        const warnPct = thresholdPct ?? (Number(process.env.REDIS_QUOTA_ALERT_PCT) || 80);
++        const critPct = Number(process.env.REDIS_QUOTA_CRIT_PCT) || 95;
++        const nowMs = Date.now();
++        const chain = quotaChainStatus(nowMs);
++        const windowKey = new Date(nextQuotaResetEpochMs(nowMs)).toISOString();
++        const accounts = chain.map((entry) => {
++          const used = entry.usage?.estimatedCommands ?? 0;
++          const limit = entry.usage?.limit ?? upstashCommandLimit();
++          const pct = limit > 0 ? Math.round((used * 10000) / limit) / 100 : null;
++          const tier = pct === null ? null : pct >= critPct ? "crit" : pct >= warnPct ? "warn" : null;
++          return {
++            label: entry.label,
++            used,
++            limit,
++            pct,
++            tier,
++            cooldownUntil: entry.cooldownUntil,
++            isActivePrimary: entry.isActivePrimary,
++          };
++        });
++        const active = accounts.filter((a) => a.tier !== null);
++        const alertKey = (a: (typeof accounts)[number]) => `${a.label}:${a.tier}`;
++        const fresh = active.filter((a) => quotaAlertSent.get(alertKey(a)) !== windowKey);
++        let telegram: { sent: boolean; messageId?: unknown; reason?: string } = { sent: false };
++        if (fresh.length > 0) {
++          const lines = fresh.map(
++            (a) =>
++              `${a.tier === "crit" ? "[CRITICAL]" : "[WARN]"} Upstash Redis account '${a.label}' at ${a.pct}% of quota (${a.used} / ${a.limit} commands).`,
++          );
++          const primary = chain.find((c) => c.isActivePrimary)?.label ?? "unknown";
++          lines.push(`Active rotation primary: ${primary}.`);
++          lines.push(`Quota window resets: ${windowKey}.`);
++          lines.push(
++            "Auto-rotation (#646) protects traffic at 96%, but capacity is running out — top up, downgrade burn, or add an account.",
++          );
++          try {
++            const sent = (await sendTelegram(lines.join("\n"), chatId)) as { messageId?: unknown };
++            telegram = { sent: true, messageId: sent?.messageId };
++            for (const a of fresh) quotaAlertSent.set(alertKey(a), windowKey);
++          } catch (notifyErr) {
++            // Graceful degradation (#3): a Telegram outage must not fail the report.
++            telegram = { sent: false, reason: (notifyErr as Error).message };
++          }
++        }
++        return {
++          content: [
++            {
++              type: "text",
++              text: JSON.stringify(
++                {
++                  thresholdPct: warnPct,
++                  criticalPct: critPct,
++                  window: windowKey,
++                  accounts,
++                  alertsPending: fresh.length,
++                  telegram,
++                  persistentDedupCounterpart: "scripts/ops/redis_quota_monitor.py",
++                },
++                null,
++                2
++              ),
++            },
++          ],
++        };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
++        };
++      }
++    }
++  );
+ 
++  server.tool(
++    "cache.semantic_lookup",
++    "Look up a semantically similar cached answer for a question in the Qdrant semantic cache (#1522); falls back to char-trigram lexical similarity when no embedding provider is configured (result honestly labels which embedder ran). A hit avoids the Redis-backed downstream path entirely.",
++    {
++      question: z.string().min(1).describe("The user question to look up"),
++    },
++    async ({ question }) => {
++      try {
++        const result = await cacheLookup(question);
++        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
++        };
++      }
++    }
++  );
++
++  server.tool(
++    "cache.semantic_store",
++    "Store a question/answer pair in the Qdrant semantic cache (#1522). Keeps only the newest SEMANTIC_CACHE_MAX_ENTRIES (default 20) patterns — oldest points are pruned by storedAt.",
++    {
++      question: z.string().min(1).describe("The user question"),
++      answer: z.string().min(1).describe("The grounded answer to cache"),
++    },
++    async ({ question, answer }) => {
++      try {
++        const result = await cacheStore(question, answer);
++        return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
++        };
++      }
++    }
++  );
++
++  server.tool(
++    "cache.status",
++    "Report the semantic cache configuration honestly: embedder tier (gemini vs trigram-lexical-fallback), collection, hit threshold, caps.",
++    {},
++    async () => {
++      try {
++        return { content: [{ type: "text", text: JSON.stringify(cacheConfigStatus(), null, 2) }] };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
++        };
++      }
++    }
++  );
++}
+diff --git a/scripts/ops/redis_quota_monitor.py b/scripts/ops/redis_quota_monitor.py
+new file mode 100644
+index 00000000..b0f3e506
+--- /dev/null
++++ b/scripts/ops/redis_quota_monitor.py
+@@ -0,0 +1,383 @@
++#!/usr/bin/env python3
++"""Redis quota monitor — 80% Telegram warning for the Upstash account chain (#1522 / Q1).
++
++বাংলা মন্তব্য: Upstash free-tier চেইনের যেকোনো account মাসিক কোটার 80% ছুঁলে
++Telegram-এ একটি সতর্কতা যাবে (95% হলে CRITICAL)। উদ্দেশ্য — 500k সিলিং ভাঙার
++*আগেই* মানুষ/অ্যাডমিন জানবে, কারণ tower-এর 96% preemptive rotation (#646)
++কেবল ট্রাফিক অন্য account-এ সরায়, কিন্তু "কোটা শেষ হচ্ছে" সংবাদটি কাউকে দেয় না।
++
++Data honesty (U2 tiering):
++  1. PRIMARY source: the running tower's own `redis_rotation_status` MCP tool —
++     the same in-memory usage estimates (noteRedisCommands lower bound + quota
++     error-body corrections) that drive live rotation. No fabricated numbers:
++     if the tower is unreachable the monitor SKIPS (exit 0, honest skip) instead
++     of inventing usage. Set REDIS_QUOTA_STRICT=1 to turn tower-unreachable
++     into exit 3 for cron alerting on monitor failures.
++  2. The estimates are a LOWER bound (other services may share the account);
++     the message reports the tower's own view, not a fabricated total.
++
++Deduplication: one alert per (account, tier) per quota window, persisted in a
++small JSON state file — repeated cron runs never spam Telegram.
++
++Stdlib-only, zero dependencies, cron-friendly exit codes:
++  0 = ok / skipped / no alert   1 = warning sent   2 = critical sent   3 = strict-mode fetch failure
++"""
++
++import argparse
++import json
++import os
++import sys
++import tempfile
++import urllib.request
++import urllib.error
++from datetime import datetime, timezone
++
++DEFAULT_TOWER_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
++DEFAULT_WARN_PCT = 80.0
++DEFAULT_CRIT_PCT = 95.0
++
++STATE_ENV = "REDIS_QUOTA_STATE_FILE"
++
++
++# ── pure logic (unit-testable, no network) ────────────────────────────────────
++
++
++def compute_pct(used, limit):
++    """Usage percent as float, or None when the limit is unknown/invalid."""
++    try:
++        limit_f = float(limit)
++        used_f = float(used)
++    except (TypeError, ValueError):
++        return None
++    if limit_f <= 0:
++        return None
++    return round(used_f * 100.0 / limit_f, 2)
++
++
++def tier_for(pct, warn_pct=DEFAULT_WARN_PCT, crit_pct=DEFAULT_CRIT_PCT):
++    """None (quiet) / 'warn' (>= warn_pct) / 'crit' (>= crit_pct)."""
++    if pct is None:
++        return None
++    if pct >= crit_pct:
++        return "crit"
++    if pct >= warn_pct:
++        return "warn"
++    return None
++
++
++def evaluate_accounts(accounts, warn_pct=DEFAULT_WARN_PCT, crit_pct=DEFAULT_CRIT_PCT):
++    """Return the alert list for a quotaChainStatus-shaped chain array."""
++    alerts = []
++    for account in accounts or []:
++        usage = account.get("usage") or {}
++        used = usage.get("estimatedCommands", 0)
++        limit = usage.get("limit")
++        pct = compute_pct(used, limit)
++        tier = tier_for(pct, warn_pct, crit_pct)
++        if tier:
++            alerts.append(
++                {
++                    "label": account.get("label", "unknown"),
++                    "pct": pct,
++                    "tier": tier,
++                    "used": used,
++                    "limit": limit,
++                    "cooldownUntil": account.get("cooldownUntil"),
++                }
++            )
++    return alerts
++
++
++def compose_message(alerts, active_primary=None, next_reset=None):
++    """One Telegram message describing every crossed threshold (empty → None)."""
++    if not alerts:
++        return None
++    lines = []
++    for a in alerts:
++        tag = "[CRITICAL]" if a["tier"] == "crit" else "[WARN]"
++        lines.append(
++            "%s Upstash Redis account '%s' at %.2f%% of quota (%s / %s commands)."
++            % (tag, a["label"], a["pct"], a["used"], a["limit"])
++        )
++    if active_primary:
++        lines.append("Active rotation primary: %s." % active_primary)
++    if next_reset:
++        lines.append("Quota window resets: %s." % next_reset)
++    lines.append(
++        "Auto-rotation (#646) protects traffic at 96%, but capacity is running out "
++        "across the chain — top up, downgrade burn, or add an account."
++    )
++    return "\n".join(lines)
++
++
++def load_state(path):
++    try:
++        with open(path, "r", encoding="utf-8") as fh:
++            data = json.load(fh)
++        return data if isinstance(data, dict) else {}
++    except (OSError, ValueError):
++        return {}
++
++
++def save_state(path, state):
++    try:
++        with open(path, "w", encoding="utf-8") as fh:
++            json.dump(state, fh)
++        return True
++    except OSError:
++        return False
++
++
++def should_alert(state, label, tier, window_key):
++    """True iff this (label, tier) has not already alerted in THIS window."""
++    entry = state.get("%s:%s" % (label, tier))
++    if not isinstance(entry, dict):
++        return True
++    return entry.get("window") != window_key
++
++
++def record_alert(state, label, tier, window_key, sent_at_iso):
++    state["%s:%s" % (label, tier)] = {"window": window_key, "sentAt": sent_at_iso}
++
++
++# ── tower MCP client (self-contained, no SDK) ─────────────────────────────────
++
++
++def parse_tool_response_text(body):
++    """Extract the first text content from an MCP SSE/JSON tools/call response."""
++    for line in body.split("\n"):
++        if line.startswith("data: "):
++            payload = json.loads(line[6:])
++            if "error" in payload:
++                raise RuntimeError("MCP error: %s" % json.dumps(payload["error"])[:300])
++            content = (payload.get("result") or {}).get("content") or []
++            for chunk in content:
++                if chunk.get("type") == "text":
++                    return chunk["text"]
++            return ""
++    # plain JSON response (no SSE framing)
++    payload = json.loads(body)
++    if "error" in payload:
++        raise RuntimeError("MCP error: %s" % json.dumps(payload["error"])[:300])
++    content = (payload.get("result") or {}).get("content") or []
++    for chunk in content:
++        if chunk.get("type") == "text":
++            return chunk["text"]
++    return ""
++
++
++def _mcp_post(url, payload, session_id=None, timeout=90):
++    headers = {
++        "Content-Type": "application/json",
++        "Accept": "application/json, text/event-stream",
++    }
++    if session_id:
++        headers["mcp-session-id"] = session_id
++    req = urllib.request.Request(
++        url, data=json.dumps(payload).encode("utf-8"), headers=headers
++    )
++    resp = urllib.request.urlopen(req, timeout=timeout)
++    return resp.read().decode("utf-8"), resp.headers.get("mcp-session-id")
++
++
++def fetch_chain_status(tower_url=DEFAULT_TOWER_URL):
++    """Fresh MCP session → tools/call redis_rotation_status → parsed dict."""
++    init_body, session_id = _mcp_post(
++        tower_url,
++        {
++            "jsonrpc": "2.0",
++            "id": 1,
++            "method": "initialize",
++            "params": {
++                "protocolVersion": "2024-11-05",
++                "capabilities": {},
++                "clientInfo": {"name": "redis-quota-monitor", "version": "1.0"},
++            },
++        },
++    )
++    if not session_id:
++        raise RuntimeError("tower did not return an mcp-session-id")
++    try:
++        _mcp_post(
++            tower_url,
++            {"jsonrpc": "2.0", "method": "notifications/initialized"},
++            session_id,
++            timeout=30,
++        )
++    except urllib.error.HTTPError:
++        pass  # notification response is best-effort
++    call_body, _ = _mcp_post(
++        tower_url,
++        {
++            "jsonrpc": "2.0",
++            "id": 2,
++            "method": "tools/call",
++            "params": {"name": "redis_rotation_status", "arguments": {}},
++        },
++        session_id,
++    )
++    text = parse_tool_response_text(call_body)
++    return json.loads(text)
++
++
++def send_telegram(message, token, chat_id, timeout=15):
++    url = "https://api.telegram.org/bot%s/sendMessage" % token
++    payload = json.dumps(
++        {"chat_id": chat_id, "text": message[:4096], "disable_web_page_preview": True}
++    ).encode("utf-8")
++    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
++    resp = urllib.request.urlopen(req, timeout=timeout)
++    data = json.loads(resp.read().decode("utf-8"))
++    if not data.get("ok"):
++        raise RuntimeError("telegram send failed: %s" % json.dumps(data)[:200])
++    return data.get("result", {}).get("message_id")
++
++
++# ── self-test battery (offline, fake transport) ───────────────────────────────
++
++
++def run_self_test():
++    failures = []
++
++    def check(name, condition):
++        if condition:
++            print("PASS %s" % name)
++        else:
++            print("FAIL %s" % name)
++            failures.append(name)
++
++    # compute_pct
++    check("pct basic", compute_pct(400000, 500000) == 80.0)
++    check("pct rounding", compute_pct(1, 3) == 33.33)
++    check("pct zero limit", compute_pct(10, 0) is None)
++    check("pct none limit", compute_pct(10, None) is None)
++    check("pct garbage", compute_pct("x", "y") is None)
++
++    # tier_for boundaries
++    check("tier below warn", tier_for(79.99) is None)
++    check("tier warn boundary", tier_for(80.0) == "warn")
++    check("tier mid", tier_for(94.9) == "warn")
++    check("tier crit boundary", tier_for(95.0) == "crit")
++    check("tier unknown pct", tier_for(None) is None)
++
++    # evaluate_accounts on a quotaChainStatus-shaped fake
++    fake_chain = [
++        {"label": "primary", "usage": {"estimatedCommands": 412500, "limit": 500000}},
++        {"label": "secondary", "usage": {"estimatedCommands": 480001, "limit": 500000}},
++        {"label": "tertiary", "usage": {"estimatedCommands": 50000, "limit": 500000}},
++        {"label": "broken", "usage": None},
++    ]
++    alerts = evaluate_accounts(fake_chain)
++    check("evaluate two alerts", [a["label"] for a in alerts] == ["primary", "secondary"])
++    check("evaluate tiers", alerts[0]["tier"] == "warn" and alerts[1]["tier"] == "crit")
++    check("evaluate honest pct", abs(alerts[0]["pct"] - 82.5) < 1e-9)
++
++    # dedup state machine
++    state = {}
++    check("dedup first", should_alert(state, "primary", "warn", "W1") is True)
++    record_alert(state, "primary", "warn", "W1", "2026-10-27T19:00:00Z")
++    check("dedup same window suppressed", should_alert(state, "primary", "warn", "W1") is False)
++    check("dedup other tier independent", should_alert(state, "primary", "crit", "W1") is True)
++    check("dedup new window fires", should_alert(state, "primary", "warn", "W2") is True)
++
++    # state persistence round-trip
++    tmp = os.path.join(tempfile.gettempdir(), "rqm_selftest_state.json")
++    save_state(tmp, state)
++    check("state roundtrip", load_state(tmp) == state)
++    os.unlink(tmp)
++
++    # message composition
++    msg = compose_message(alerts, active_primary="secondary", next_reset="2026-11-01T00:00:00Z")
++    check("message mentions label", "primary" in msg and "secondary" in msg)
++    check("message has tags", "[WARN]" in msg and "[CRITICAL]" in msg)
++    check("message has reset", "2026-11-01T00:00:00Z" in msg)
++    check("message empty when quiet", compose_message([]) is None)
++
++    # SSE parser on a canned MCP response
++    canned = (
++        "event: message\n"
++        'data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\\"autoRotateEnabled\\": true, \\"chain\\": []}"}]}}\n'
++    )
++    text = parse_tool_response_text(canned)
++    check("sse parse", json.loads(text)["autoRotateEnabled"] is True)
++
++    print("REDIS_QUOTA_MONITOR_SELFTEST=%s" % ("PASS" if not failures else "FAIL"))
++    return 0 if not failures else 1
++
++
++# ── main ──────────────────────────────────────────────────────────────────────
++
++
++def main(argv=None):
++    parser = argparse.ArgumentParser(description="Upstash chain quota → Telegram 80% warning (#1522)")
++    parser.add_argument("--self-test", action="store_true", help="offline self-test battery, no network")
++    parser.add_argument("--dry-run", action="store_true", help="evaluate + print report, send nothing")
++    parser.add_argument("--tower-url", default=os.environ.get("SUPREMEAI_TOWER_URL", DEFAULT_TOWER_URL))
++    parser.add_argument("--warn-pct", type=float, default=float(os.environ.get("REDIS_QUOTA_WARN_PCT", DEFAULT_WARN_PCT)))
++    parser.add_argument("--crit-pct", type=float, default=float(os.environ.get("REDIS_QUOTA_CRIT_PCT", DEFAULT_CRIT_PCT)))
++    parser.add_argument(
++        "--state-file",
++        default=os.environ.get(STATE_ENV, os.path.join(tempfile.gettempdir(), "redis_quota_alert_state.json")),
++    )
++    args = parser.parse_args(argv)
++
++    if args.self_test:
++        return run_self_test()
++
++    token = os.environ.get("TELEGRAM_BOT_TOKEN")
++    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
++
++    try:
++        report = fetch_chain_status(args.tower_url)
++    except Exception as exc:  # honest skip — never fabricate usage (U2)
++        if os.environ.get("REDIS_QUOTA_STRICT"):
++            print("ERROR: tower unreachable and REDIS_QUOTA_STRICT=1: %s" % exc)
++            return 3
++        print("SKIPPED: tower unreachable (%s) — no fabricated data sent (U2)." % exc)
++        return 0
++
++    chain = report.get("chain") or []
++    window_key = report.get("nextGlobalResetAt") or "unknown-window"
++    alerts = evaluate_accounts(chain, args.warn_pct, args.crit_pct)
++    state = load_state(args.state_file)
++    active = [a for a in alerts if should_alert(state, a["label"], a["tier"], window_key)]
++
++    now_iso = datetime.now(timezone.utc).isoformat()
++    message = compose_message(active, report.get("activePrimary"), report.get("nextGlobalResetAt"))
++
++    print("window=%s accounts=%d alerts=%d pending=%d" % (window_key, len(chain), len(alerts), len(active)))
++    already = {(a["label"], a["tier"]) for a in active}
++    for a in alerts:
++        suffix = "" if (a["label"], a["tier"]) in already else " (already alerted this window)"
++        print(
++            "  %-12s %6.2f%% (%s/%s) tier=%s%s"
++            % (a["label"], a["pct"], a["used"], a["limit"], a["tier"], suffix)
++        )
++
++    if not active:
++        print("REDIS_QUOTA_MONITOR=no_alert")
++        return 0
++
++    if args.dry_run:
++        print("--- dry run, would send ---")
++        print(message)
++        print("--- end would-send ---")
++    elif not token or not chat_id:
++        print("SKIPPED: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not configured — nothing sent (U2 honest skip).")
++        print(message)
++        print("REDIS_QUOTA_MONITOR=unconfigured")
++        return 0
++    else:
++        message_id = send_telegram(message, token, chat_id)
++        for a in active:
++            record_alert(state, a["label"], a["tier"], window_key, now_iso)
++        save_state(args.state_file, state)
++        print("telegram message_id=%s" % message_id)
++
++    highest = "crit" if any(a["tier"] == "crit" for a in active) else "warn"
++    print("REDIS_QUOTA_MONITOR=%s_sent" % highest)
++    return 2 if highest == "crit" else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_redis_quota_monitor.py b/tests/test_redis_quota_monitor.py
+new file mode 100644
+index 00000000..fc9da85e
+--- /dev/null
++++ b/tests/test_redis_quota_monitor.py
+@@ -0,0 +1,138 @@
++#!/usr/bin/env python3
++"""Contract & Unit Tests for the Redis quota monitor pure logic (#1522 / Q1)."""
++
++import importlib.util
++import json
++import sys
++import unittest
++from pathlib import Path
++
++HERE = Path(__file__).resolve().parent
++REPO_ROOT = HERE.parent
++MONITOR_PATH = REPO_ROOT / "scripts" / "ops" / "redis_quota_monitor.py"
++
++_spec = importlib.util.spec_from_file_location("redis_quota_monitor", MONITOR_PATH)
++rqm = importlib.util.module_from_spec(_spec)
++if MONITOR_PATH.parent not in sys.path:
++    sys.path.insert(0, str(MONITOR_PATH.parent))
++_spec.loader.exec_module(rqm)
++
++
++class TestQuotaMath(unittest.TestCase):
++    def test_compute_pct_basic(self):
++        self.assertEqual(rqm.compute_pct(400000, 500000), 80.0)
++
++    def test_compute_pct_rounding(self):
++        self.assertEqual(rqm.compute_pct(1, 3), 33.33)
++
++    def test_compute_pct_zero_limit_is_none(self):
++        """A zero/unknown limit must be None — never a fabricated 0% or crash."""
++        self.assertIsNone(rqm.compute_pct(10, 0))
++        self.assertIsNone(rqm.compute_pct(10, None))
++        self.assertIsNone(rqm.compute_pct("x", "y"))
++
++    def test_tier_boundaries(self):
++        self.assertIsNone(rqm.tier_for(79.99))
++        self.assertEqual(rqm.tier_for(80.0), "warn")
++        self.assertEqual(rqm.tier_for(94.9), "warn")
++        self.assertEqual(rqm.tier_for(95.0), "crit")
++        self.assertIsNone(rqm.tier_for(None))
++
++
++class TestEvaluateAccounts(unittest.TestCase):
++    def test_chain_evaluation(self):
++        chain = [
++            {"label": "primary", "usage": {"estimatedCommands": 412500, "limit": 500000}},
++            {"label": "secondary", "usage": {"estimatedCommands": 480001, "limit": 500000}},
++            {"label": "tertiary", "usage": {"estimatedCommands": 50000, "limit": 500000}},
++            {"label": "broken", "usage": None},
++        ]
++        alerts = rqm.evaluate_accounts(chain)
++        self.assertEqual([a["label"] for a in alerts], ["primary", "secondary"])
++        self.assertEqual(alerts[0]["tier"], "warn")
++        self.assertEqual(alerts[1]["tier"], "crit")
++        self.assertAlmostEqual(alerts[0]["pct"], 82.5)
++
++    def test_empty_chain_is_quiet(self):
++        self.assertEqual(rqm.evaluate_accounts([]), [])
++        self.assertEqual(rqm.evaluate_accounts(None), [])
++
++
++class TestDedupStateMachine(unittest.TestCase):
++    def test_one_alert_per_label_tier_window(self):
++        state = {}
++        self.assertTrue(rqm.should_alert(state, "primary", "warn", "W1"))
++        rqm.record_alert(state, "primary", "warn", "W1", "2026-10-27T19:00:00Z")
++        self.assertFalse(rqm.should_alert(state, "primary", "warn", "W1"))
++        # independent per tier and per window
++        self.assertTrue(rqm.should_alert(state, "primary", "crit", "W1"))
++        self.assertTrue(rqm.should_alert(state, "primary", "warn", "W2"))
++
++    def test_state_roundtrip(self):
++        import os
++        import tempfile
++
++        state = {"primary:warn": {"window": "W1", "sentAt": "t"}}
++        fd, path = tempfile.mkstemp()
++        os.close(fd)
++        try:
++            self.assertTrue(rqm.save_state(path, state))
++            self.assertEqual(rqm.load_state(path), state)
++        finally:
++            os.unlink(path)
++
++    def test_corrupt_state_is_empty(self):
++        import os
++        import tempfile
++
++        fd, path = tempfile.mkstemp()
++        os.close(fd)
++        try:
++            with open(path, "w") as fh:
++                fh.write("{not json")
++            self.assertEqual(rqm.load_state(path), {})
++        finally:
++            os.unlink(path)
++
++
++class TestMessageComposition(unittest.TestCase):
++    def test_message_contains_facts(self):
++        alerts = [
++            {"label": "primary", "pct": 82.5, "tier": "warn", "used": 412500, "limit": 500000, "cooldownUntil": None},
++            {"label": "secondary", "pct": 96.0, "tier": "crit", "used": 480001, "limit": 500000, "cooldownUntil": None},
++        ]
++        msg = rqm.compose_message(alerts, active_primary="secondary", next_reset="2026-11-01T00:00:00Z")
++        self.assertIn("[WARN]", msg)
++        self.assertIn("[CRITICAL]", msg)
++        self.assertIn("82.50%", msg)
++        self.assertIn("96.00%", msg)
++        self.assertIn("2026-11-01T00:00:00Z", msg)
++        self.assertIn("secondary", msg)  # active primary reported
++
++    def test_quiet_chain_message_is_none(self):
++        self.assertIsNone(rqm.compose_message([]))
++
++
++class TestSseParser(unittest.TestCase):
++    def test_parse_sse_tool_response(self):
++        canned = (
++            "event: message\n"
++            'data: {"jsonrpc":"2.0","id":2,"result":{"content":'
++            '[{"type":"text","text":"{\\"chain\\": [], \\"autoRotateEnabled\\": true}"}]}}\n'
++        )
++        text = rqm.parse_tool_response_text(canned)
++        self.assertTrue(json.loads(text)["autoRotateEnabled"])
++
++    def test_parse_plain_json_response(self):
++        canned = '{"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text","text":"{\\"ok\\": 1}"}]}}'
++        text = rqm.parse_tool_response_text(canned)
++        self.assertEqual(json.loads(text)["ok"], 1)
++
++    def test_parse_error_raises(self):
++        canned = 'data: {"jsonrpc":"2.0","id":2,"error":{"code":-32602,"message":"bad"}}'
++        with self.assertRaises(RuntimeError):
++            rqm.parse_tool_response_text(canned)
++
++
++if __name__ == "__main__":
++    unittest.main()

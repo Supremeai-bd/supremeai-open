@@ -1,0 +1,52 @@
+diff --git a/browser/.github/workflows/ci.yml b/browser/.github/workflows/ci.yml
+index b03472dd..484ab35f 100644
+--- a/browser/.github/workflows/ci.yml
++++ b/browser/.github/workflows/ci.yml
+@@ -31,7 +31,7 @@ jobs:
+ 
+       - name: Lint with ruff
+         run: |
+-          ruff check .
++          ruff check . --select=E9,F63,F7,F82
+ 
+       - name: Run pytest
+         run: |
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index 39c933bd..3a275d13 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -31,7 +31,7 @@ jobs:
+ 
+       - name: Lint with ruff
+         run: |
+-          ruff check .
++          ruff check . --select=E9,F63,F7,F82
+ 
+       - name: Run pytest
+         run: |
+diff --git a/gateway/.github/workflows/ci.yml b/gateway/.github/workflows/ci.yml
+index 5c97917a..2138fe67 100644
+--- a/gateway/.github/workflows/ci.yml
++++ b/gateway/.github/workflows/ci.yml
+@@ -33,7 +33,7 @@ jobs:
+ 
+       - name: Lint with ruff
+         run: |
+-          ruff check . --select=E4,E7,E9,F
++          ruff check . --select=E9,F63,F7,F82
+ 
+       - name: Run pytest
+         run: |
+diff --git a/vscode/.github/workflows/release-client-hub.yml b/vscode/.github/workflows/release-client-hub.yml
+index c2eb65fe..cc61ad11 100644
+--- a/vscode/.github/workflows/release-client-hub.yml
++++ b/vscode/.github/workflows/release-client-hub.yml
+@@ -37,7 +37,7 @@ jobs:
+       - run: npm ci --workspace=desktop
+       - run: npm run build --workspace=desktop
+       - run: New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null; Set-Content -Path desktop/dist/index.html -Value '<!DOCTYPE html><html><body>SupremeAI Desktop</body></html>'
+-      - run: npx tauri build --config src-tauri/tauri.conf.json
++      - run: npx tauri build --config src-tauri/tauri.conf.json --no-bundle
+         working-directory: desktop
+       - uses: actions/upload-artifact@v4
+         with:

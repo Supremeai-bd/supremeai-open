@@ -1,0 +1,53 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo2b.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo2b.md
+new file mode 100644
+index 00000000..a9ac1504
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo2b.md
+@@ -0,0 +1,47 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo2b
++## Cosmic Phase 2 Follow-up: LandingPage Tokenization + Typed-Demo Reduced-Motion + Token Value Conflict Fix
++
++**Target subsystem:** supremeai-studio — `src/pages/LandingPage.tsx`, `src/styles/tokens.css` (mirror: `studio/src/pages/LandingPage.tsx`, `studio/src/styles/tokens.css` in supremeai-open)
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Refs:** WO2 spec (#859) · WO1 tokens landed in `src/styles/tokens.css` (Refs #855, #856) · dual-token issue tracked in WO1b (#868/#869)
++
++## Context (post-implementation audit, 2026-10-22)
++
++The LandingPage implementation landed but does not yet meet WO2's acceptance criteria:
++
++1. **Raw Tailwind palette classes throughout** — `bg-slate-950`, `text-slate-100`, `text-slate-300`, `border-white/10`, emerald/purple gradient buttons, arbitrary radial-gradient values. WO2 criteria require `--sa-*` token consumption only (grep: zero raw slate classes).
++2. **Typed-demo animation ignores `prefers-reduced-motion`** — the hero demo types via `setInterval` unconditionally; WO2 criteria require all motion reduced-motion-safe (show full static text when reduced).
++3. **`--neon-purple` defined twice with different values** — `src/styles/tokens.css` defines `--neon-purple: #bc13fe` while `src/index.css` (canonical theme system) defines `--neon-purple: #A855F7`. Load order makes the rendered purple non-deterministic; the same symbol must resolve to one value. Also `--danger` is redefined in tokens.css (#f43f5e, matches index.css — harmless but duplicate).
++
++## Scope
++
++1. **Tokenize LandingPage**: replace raw palette classes with the landed Cosmic tokens (`--sa-bg-dark`, `--sa-card-bg`, `--sa-border`, `--aurora-green`, `--aurora-purple`, `--nebula-gradient`, `--glow-accent`) or Tailwind theme aliases from `index.css`'s `@theme` mapping; keep visual output equivalent.
++2. **Reduced-motion typing**: gate the `setInterval` typing loop behind a `matchMedia('(prefers-reduced-motion: reduce)')` check; reduced users see the complete demo text statically.
++3. **Token value conflict**: remove the duplicate `--neon-purple`/`--danger` definitions from `src/styles/tokens.css` (they already exist in the canonical theme blocks); keep tokens.css additive-only (aurora/nebula/glass/glow/sa-*). Coordinate with WO1b (#869) which owns the broader dual-import consolidation — this work order fixes only the conflicting duplicate values so the two files stop disagreeing.
++4. **Verify** `/about` (Our Story) route exists from LandingHeader; if absent, that remains WO2 scope (separate implementation), not this diff.
++
++## Out of scope
++
++WO1b's App.tsx work, admin (WO5), chat (WO4), UserDashboard (WO3), backend. No new dependencies.
++
++## Acceptance criteria
++
++- [ ] Zero raw `slate-`/`emerald-`/`purple-` palette classes in LandingPage (grep-verified; token-driven equivalents only).
++- [ ] Typed demo honors `prefers-reduced-motion`; full text visible without animation.
++- [ ] `--neon-purple` has exactly one definition across the app's CSS entries; no visual purple shift between pages.
++- [ ] `npm test` + typecheck green; LandingPage renders identically (screenshot diff acceptable).
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** The LandingPage is the public first impression; shipping it with raw palette classes defeats the token consolidation the whole Cosmic roadmap is built on, and the duplicate `--neon-purple` makes the brand color non-deterministic between pages — a bug users see even if they cannot name it.
++
++**Alternatives rejected:**
++- *Leave the raw classes since the page looks fine* — rejected: WO2's acceptance criteria are explicit; every later page copies patterns from the landing page, so the debt would spread.
++- *Fix the duplicate tokens only inside WO1b's App.tsx work order* — rejected: the conflict is LandingPage-visible today and WO1b is already in the queue; a one-line value-conflict fix belongs in the domain diff that introduced it (single-domain PR discipline).
++- *Rename tokens.css's purple to a new symbol* — rejected: two purples with different names is still a dual source of truth; removing the duplicate is smaller and honest.
++
++## Verification evidence
++
++- Post-implementation audit via MCP Tower on 2026-10-22: `src/pages/LandingPage.tsx` (raw slate/emerald classes, unconditional setInterval typing), `src/styles/tokens.css` (duplicate `--neon-purple: #bc13fe`, `--danger`), `src/index.css` (`--neon-purple: #A855F7` in the SupremeAI 2.0 theme block). Implementation state of WO1 tokens/shim and WO4 UnifiedChatBubble confirmed landed in satellite + open mirror.
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest + typecheck output.

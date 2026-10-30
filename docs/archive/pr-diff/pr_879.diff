@@ -1,0 +1,57 @@
+diff --git a/docs/work-orders/bridge-20261023-frontend-guestchat-cosmic.md b/docs/work-orders/bridge-20261023-frontend-guestchat-cosmic.md
+new file mode 100644
+index 00000000..ce12e9ff
+--- /dev/null
++++ b/docs/work-orders/bridge-20261023-frontend-guestchat-cosmic.md
+@@ -0,0 +1,51 @@
++# Bridge Work Order — bridge-20261023-frontend-guestchat-cosmic
++## P1: Guest Chat Cosmic Restyle (PublicPages GuestChat / LiveChatPage)
++
++**Target subsystem:** supremeai-studio — `src/pages/PublicPages.tsx` (GuestChat, PublicHeader, CapabilityStrip, AuthPromptModal) and `/chat` route composition in App.tsx (mirror: `studio/src/pages/PublicPages.tsx`)
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-23
++**Refs:** WO4 spec (#861) · UnifiedChatBubble landed (Refs #861/#862) · Cosmic tokens landed in `src/styles/tokens.css` (Refs #855) · P0 router restore (bridge-20261023-frontend-router-restore, #876) — this work order assumes its route fix
++
++## Defect / gap (verified 2026-10-23)
++
++The public guest chat (`/chat`, also aliased from /workspace/live per current App.tsx) is still on the OLD pre-Cosmic design while the landing page and in-app chat surface moved to Cosmic:
++
++1. **Legacy palette classes throughout PublicPages**: `bg-slate-950`, `text-slate-100`, `bg-slate-900/50`, `border-cyan-300/30`, `bg-cyan-300` — none of the landed Cosmic tokens (`--aurora-green/--aurora-purple/--nebula-gradient/--surface-glass/--glow-accent/--sa-*`).
++2. **Guest chat does not use UnifiedChatBubble**: the product already has the token-based bubble component (`src/components/chat/UnifiedChatBubble.tsx`, neon-purple user / surface-glass system, copy/preview/regenerate) — the guest surface duplicates an older inline bubble style instead of reusing it (80% reuse rule violation).
++3. **Visual discontinuity**: a guest moving from the Cosmic landing (`/`) to `/chat` experiences a jarring theme switch — brand identity breaks at the exact moment we most want them engaged.
++4. Quick-action intent chips exist (intents array: Research/Write/Build/Analyze) — good — but styled in legacy classes.
++
++## Scope
++
++1. **Restyle PublicPages to Cosmic tokens**: replace raw slate/cyan palette classes with token equivalents (`--sa-bg-dark`, `--sa-card-bg`, `--sa-border`, aurora accents, `--glow-accent` hover). Keep layout/UX identical — this is a style-layer change only.
++2. **Reuse UnifiedChatBubble in GuestChat**: render guest conversation through `UnifiedChatBubble` (it already supports user/system senders, timestamp, copy state). Do not fork a second bubble implementation.
++3. **Keep honest behavior intact**: CapabilityStrip's in-page AuthPromptModal (issue #1460: no navigation away from guest chat) must be preserved — only restyled.
++4. **Reduced-motion safety**: any new animation (aurora wash on /chat header, typing indicator) respects `prefers-reduced-motion`.
++5. **AuthPromptModal CTA targets**: link to `/login` and `/register` (fix any `/signup`/mismatched targets to the canonical routes restored by P0 work order).
++
++## Out of scope
++
++Router structure itself (P0 #876 owns it), backend, auth logic, in-app (authenticated) chat styling, landing page (WO2b #870 owns its tokenization). No new dependencies.
++
++## Acceptance criteria
++
++- [ ] Zero raw `slate-`/`cyan-` palette classes in PublicPages.tsx (grep-verified; token equivalents only).
++- [ ] Guest conversation renders via UnifiedChatBubble (single bubble implementation across guest + app chat).
++- [ ] AuthPromptModal behavior unchanged (state-preserving, issue #1460); links point to /login and /register.
++- [ ] Theme continuity: `/` → `/chat` shows consistent Cosmic identity (manual + screenshot check).
++- [ ] `npm test` + typecheck green; guest-chat e2e (`e2e/guest-chat.spec.ts`) still passes.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** Guest chat is the conversion surface: it is where a visitor decides to create an account. Shipping the new Cosmic identity on the landing page but bouncing the same visitor into an old-style chat breaks trust at the decisive moment, and duplicating bubble logic when UnifiedChatBubble exists creates two components to maintain for one job.
++
++**Alternatives rejected:**
++- *Restyle in place without reusing UnifiedChatBubble* — rejected: two bubble implementations diverge over time; the unified component already covers the needed props.
++- *Redirect guests to the authenticated chat page* — rejected: guest chat exists precisely to serve unauthenticated visitors; auth-walling it destroys the funnel (and issue #1460's state-preserving pattern).
++- *Ship this before the P0 router restore* — rejected: styling a page whose route buttons are dead optimizes the wrong thing; P0 first, this immediately after (dependency declared).
++- *Wait and restyle during WO4's authenticated-chat work* — rejected: guest surface is a different file/flow (PublicPages) from the app chat; single-domain discipline favors a focused diff.
++
++## Verification evidence
++
++- Code verified via MCP Tower 2026-10-23: `src/pages/PublicPages.tsx` (legacy slate/cyan classes, AuthPromptModal → /login//register, capability chips, intents), `src/App.tsx` (/chat → LiveChatPage → GuestChat), `src/components/chat/UnifiedChatBubble.tsx` (token-based, landed Refs #861), `src/styles/tokens.css` (Cosmic tokens, landed Refs #855), `e2e/guest-chat.spec.ts` exists.
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest + typecheck output and a before/after screenshot of /chat.

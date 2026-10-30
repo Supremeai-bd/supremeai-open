@@ -1,0 +1,159 @@
+diff --git a/docs/FEDERATION_CHARTER.md b/docs/FEDERATION_CHARTER.md
+index 8251f672..bd5d152d 100644
+--- a/docs/FEDERATION_CHARTER.md
++++ b/docs/FEDERATION_CHARTER.md
+@@ -30,9 +30,9 @@ desk** of the federation. All tasks, bridge work orders, CI failure alerts,
+ feature proposals, and community contributions across all 14 repositories
+ are submitted and tracked exclusively here. There is no second door.
+ 
+-### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (৮টি স্যাটেলাইটে ০/০)
++### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (৬টি স্যাটেলাইটে ০/০)
+ 
+-The 8 active satellite repositories:
++The 6 active satellite repositories:
+ 
+ | # | Satellite | Role |
+ |---|-----------|------|
+@@ -40,10 +40,8 @@ The 8 active satellite repositories:
+ | 2 | `api` | Unified provider gateway & commands (Render) |
+ | 3 | `vscode` | IDE extension & native client hub |
+ | 4 | `browser` | Stealth automation sandbox (Render) |
+-| 5 | `core` | Decision intelligence & primary node (Render) |
+-| 6 | `agents` | Autonomous agent lifecycle & worker (Render) |
+-| 7 | `archive` | Append-only memory & ADRs |
+-| 8 | `mcp-control-plane` | MCP tower on Render |
++| 5 | `core` | Decision intelligence & primary/worker node (Render) |
++| 6 | `archive` | Append-only memory & ADRs |
+ 
+ must maintain **zero open issues and zero open PRs — permanently**. Direct
+ manual issue creation or PR opening on a satellite is deprecated; all
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 9b75017c..64f8c5dd 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -39,8 +39,6 @@
+     "Supremeai-bd/supremeai-api": "gateway",
+     "Supremeai-bd/supremeai-browser": "browser",
+     "Supremeai-bd/supremeai-vscode": "vscode",
+-    "Supremeai-bd/supremeai-agents": "agents",
+-    "Supremeai-bd/supremeai-mcp-control-plane": "infrastructure/mcp-control-plane",
+ }
+ 
+ # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
+@@ -347,14 +345,14 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
+ 
+ def self_test() -> bool:
+     """Self-test verifying contract and mappings."""
+-    assert len(DOMAIN_MAP) == 7, (
+-        f"Expected 7 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
++    assert len(DOMAIN_MAP) == 5, (
++        f"Expected 5 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+     )
+     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
+     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
+     assert "Supremeai-bd/supremeai-api" in DOMAIN_MAP
+-    assert "Supremeai-bd/supremeai-agents" in DOMAIN_MAP
+-    assert "Supremeai-bd/supremeai-mcp-control-plane" in DOMAIN_MAP
++    assert "Supremeai-bd/supremeai-browser" in DOMAIN_MAP
++    assert "Supremeai-bd/supremeai-vscode" in DOMAIN_MAP
+     assert len(CONTRACT_MIRROR_PAIRS) >= 2, (
+         "Expected at least 2 mirrored contract pairs"
+     )
+diff --git a/scripts/ci/satellite_board_guard.py b/scripts/ci/satellite_board_guard.py
+index 738a98b3..f657fad7 100644
+--- a/scripts/ci/satellite_board_guard.py
++++ b/scripts/ci/satellite_board_guard.py
+@@ -75,9 +75,7 @@
+     "vscode",
+     "browser",
+     "core",
+-    "agents",
+     "archive",
+-    "mcp-control-plane",
+ )
+ 
+ # Short satellite key -> actual GitHub repository name. The #626 doctrine uses
+@@ -90,9 +88,7 @@
+     "vscode": "supremeai-vscode",
+     "browser": "supremeai-browser",
+     "core": "supremeai-core",
+-    "agents": "supremeai-agents",
+     "archive": "supremeai-archive",
+-    "mcp-control-plane": "supremeai-mcp-control-plane",
+ }
+ 
+ 
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index 894b1059..b273a603 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -15,8 +15,6 @@ def test_domain_map_coverage(self):
+             "Supremeai-bd/supremeai-api",
+             "Supremeai-bd/supremeai-browser",
+             "Supremeai-bd/supremeai-vscode",
+-            "Supremeai-bd/supremeai-agents",
+-            "Supremeai-bd/supremeai-mcp-control-plane",
+         }
+         self.assertEqual(set(sync_mod.DOMAIN_MAP.keys()), expected_slugs)
+ 
+diff --git a/tests/test_satellite_board_guard.py b/tests/test_satellite_board_guard.py
+index 9612d7db..c96c9fff 100644
+--- a/tests/test_satellite_board_guard.py
++++ b/tests/test_satellite_board_guard.py
+@@ -53,16 +53,14 @@ class RegistryDoctrineTest(unittest.TestCase):
+         "vscode",
+         "browser",
+         "core",
+-        "agents",
+         "archive",
+-        "mcp-control-plane",
+     }
+ 
+     def test_01_registry_matches_issue_626_doctrine(self):
+         self.assertEqual(set(sbg.SATELLITES), self.EXPECTED)
+ 
+-    def test_02_registry_has_exactly_twelve_satellites(self):
+-        self.assertEqual(len(sbg.SATELLITES), 8)
++    def test_02_registry_has_exactly_six_satellites(self):
++        self.assertEqual(len(sbg.SATELLITES), 6)
+ 
+     def test_03_private_monorepo_is_out_of_scope(self):
+         self.assertNotIn("supremeai", sbg.SATELLITES)
+@@ -152,7 +150,7 @@ def mixed(org, repo, token=None):
+     def test_14_exit_code_all_unreachable_is_two(self):
+         reports = sbg.audit_all(fetch=fetch_404)
+         self.assertEqual(sbg.decide_exit_code(reports), 2)
+-        self.assertEqual(len(reports), 8)
++        self.assertEqual(len(reports), 6)
+ 
+     def test_15_json_output_shape_and_totals(self):
+         reports = sbg.audit_all(fetch=fake_fetch([]))
+@@ -160,16 +158,16 @@ def test_15_json_output_shape_and_totals(self):
+         self.assertEqual(payload["org"], "Supremeai-bd")
+         self.assertEqual(payload["issue"], 626)
+         self.assertEqual(payload["doctrine"], "zero-issue-satellite-mandate")
+-        self.assertEqual(payload["clean"], 8)
++        self.assertEqual(payload["clean"], 6)
+         self.assertEqual(payload["violations"], 0)
+         self.assertEqual(payload["unreachable"], 0)
+-        self.assertEqual(len(payload["satellites"]), 8)
++        self.assertEqual(len(payload["satellites"]), 6)
+ 
+     def test_16_json_serializable(self):
+         reports = sbg.audit_all(fetch=fetch_rate_limited)
+         payload = sbg.build_json(reports, "Supremeai-bd")
+         roundtrip = json.loads(json.dumps(payload))
+-        self.assertEqual(roundtrip["unreachable"], 8)
++        self.assertEqual(roundtrip["unreachable"], 6)
+ 
+     def test_17_report_mode_prints_matrix_and_totals(self):
+         buf = io.StringIO()
+@@ -180,7 +178,7 @@ def test_17_report_mode_prints_matrix_and_totals(self):
+         out = buf.getvalue()
+         self.assertIn("studio", out)
+         self.assertIn("CLEAN", out)
+-        self.assertIn("mcp-control-plane", out)
++        self.assertIn("archive", out)
+ 
+     def test_18_summary_line_format(self):
+         r = sbg.SatelliteReport("api", sbg.VERDICT_CLEAN)

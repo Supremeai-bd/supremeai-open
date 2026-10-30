@@ -1,0 +1,72 @@
+diff --git a/docs/reports/PLANE_WATCH_C22_2026-10-28.md b/docs/reports/PLANE_WATCH_C22_2026-10-28.md
+new file mode 100644
+index 00000000..2fdf5898
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C22_2026-10-28.md
+@@ -0,0 +1,66 @@
++# Plane Watch — Cycle 22 (2026-10-28 UTC, Job 479095)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Session 96ea3979. Cycle-21
++diagnosis PR #2278 verified LANDED. #2225 claim recorded on the label plane.
++Standing lane continues.
++
++## 1. PR #2278 verification — diagnosis landed
++
++- PR list (state=open): #2278 ABSENT → merged; ALSO #2273 (other agent's
++  "rejected plane 403-blind" fix) ABSENT → merged same window. #2133
++  (~21.7h) + #2083 (~23.8h) still in-gates.
++- github_read_file open main `docs/reports/WO2225_DIAGNOSIS_2026-10-28.md`:
++  sha c33d6bd1, 4413 bytes — the deploy-stall evidence package is now the
++  durable record. Report chain c14→c22 all on main.
++
++## 2. #2225 lifecycle — claim plane caught up
++
++- bridge_read_feedback #2225: labels `status:claimed` (was unclaimed-lagged
++  through c21 — the R2 lag finally resolved for this row);
++  latestClaim = zai-loop-agent @ 20:56:09Z (mine, lease lapsed 21:26:09Z
++  after in-lease delivery); commentCount 6→7 (atomic-claim comment);
++  verdictHistory 0 — verdict pending from guardian/maintainer lane.
++- Note: claim label persists after lease lapse (release is manual/verdict-
++  driven); work delivered inside lease per S0.4. Next expected: verdict →
++  in-gates → closed, mirroring the variant-B cohort's recovery path.
++
++## 3. Probes (cycle-22 receipts)
++
++- Exposure probe_receipt_2026-10-29T2154Z.json: violation, **151 tools**
++  (8 secret + 15 destructive), 0 executed, ~13.8h — third consecutive
++  identical snapshot. Post-redeploy baseline is stable; the #2076 A/C
++  policy remains the single open exposure item.
++- Queue queue_receipt_2026-10-29T2154Z.json: 50 rows, **0 unresolved**
++  (clean — confirms c20/c21 unresolved pairs were intermittent old-row
++  feedback flakiness, not a regression), 3 rotations, R1=0, R2=1
++  (#2286 fresh claim 3min), R3=0.
++
++## 4. Queue scan — no claimable work; #2265 advanced out of window
++
++- Label-plane P0/P1 claimable: NONE. #2225 claimed (mine); #2265 NOT IN
++  QUEUE (advanced out of the 50-row window after the other agent's
++  20:52:59Z claim — progress, watch its PR/verdict next cycle);
++  P1-high #1776 claimed (478330's).
++- #2286 (scout R59, report-only family, fresh live claim) — false-claimable
++  class per standing list; left alone. R2 instance #10 recorded.
++- Variant-B graduate rows #2166/#2181/#2193/#2203: stable
++  `bridge:in-gates`, awaiting the gates pipeline's next transition.
++
++## 5. R5 rule — 5th deferral, unchanged discipline
++
++#2133 still open (~21.7h). R5 (PR-merged + WO-unadvanced cross-check) +
++deploy-status-vs-runtime cross-check (from c21 diagnosis) ship together
++only after #2133 lands. Logged every cycle; no competing plane PRs
++(run-5014 precedent).
++
++## Routing
++
++1. Next cycle: watch #2278-landed confirmation is done; watch #2225
++   verdict; watch #2265 re-entry (PR?); re-run probes; if #2133 lands →
++   ship R5 + deploy-status rule bundle with live receipts.
++2. Exposure: 151-tool baseline standing for 3 snapshots; any change now
++   is signal (policy activation or tool churn).
++3. Keep worklog compressed; Bangla analysis in chat.
++
++*Report-only, single additive doc, no protected paths, no code changed.
++Refs #2278 #2277 #2225 #2265 #2286 #2133 #2083 #2076 #2151.*

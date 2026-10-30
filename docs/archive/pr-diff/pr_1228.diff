@@ -1,0 +1,533 @@
+diff --git a/core/__init__.py b/core/__init__.py
+index 80e50bcc..49e837ca 100644
+--- a/core/__init__.py
++++ b/core/__init__.py
+@@ -32,37 +32,99 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
+-
+-from .accessibility.wcag_compliance import (
+-    AccessibilityComplianceEngine,
+-    AccessibilityIssue,
+-    ColorContrastChecker,
+-    HTMLAccessibilityChecker,
+-    WCAGGuideline,
+-    WCAGLevel,
+-    WCAGPrinciple,
+-)
+-from .deployment.production_deploy import (
+-    ConfigManager,
+-    DeploymentConfig,
+-    DeploymentEnvironment,
+-    DeploymentManager,
+-    DeploymentStatus,
+-    HealthChecker,
+-    ImageBuilder,
+-    ProductionDeploymentSystem,
+-)
+-
+-# Import all core components
+-from .optimization.performance_optimizer import (
+-    AsyncLRUCache,
+-    LRUCache,
+-    OptimizationLevel,
+-    PerformanceOptimizer,
+-    get_performance_optimizer,
+-    performance_monitor,
+-)
++try:
++    from core.logging_config import logger
++except ImportError:
++    try:
++        from logging_config import logger
++    except ImportError:
++        logger = None
++
++try:
++    from .accessibility.wcag_compliance import (
++        AccessibilityComplianceEngine,
++        AccessibilityIssue,
++        ColorContrastChecker,
++        HTMLAccessibilityChecker,
++        WCAGGuideline,
++        WCAGLevel,
++        WCAGPrinciple,
++    )
++    from .deployment.production_deploy import (
++        ConfigManager,
++        DeploymentConfig,
++        DeploymentEnvironment,
++        DeploymentManager,
++        DeploymentStatus,
++        HealthChecker,
++        ImageBuilder,
++        ProductionDeploymentSystem,
++    )
++    from .optimization.performance_optimizer import (
++        AsyncLRUCache,
++        LRUCache,
++        OptimizationLevel,
++        PerformanceOptimizer,
++        get_performance_optimizer,
++        performance_monitor,
++    )
++except (ImportError, ValueError):
++    try:
++        from accessibility.wcag_compliance import (
++            AccessibilityComplianceEngine,
++            AccessibilityIssue,
++            ColorContrastChecker,
++            HTMLAccessibilityChecker,
++            WCAGGuideline,
++            WCAGLevel,
++            WCAGPrinciple,
++        )
++        from deployment.production_deploy import (
++            ConfigManager,
++            DeploymentConfig,
++            DeploymentEnvironment,
++            DeploymentManager,
++            DeploymentStatus,
++            HealthChecker,
++            ImageBuilder,
++            ProductionDeploymentSystem,
++        )
++        from optimization.performance_optimizer import (
++            AsyncLRUCache,
++            LRUCache,
++            OptimizationLevel,
++            PerformanceOptimizer,
++            get_performance_optimizer,
++            performance_monitor,
++        )
++    except (ImportError, ValueError):
++        from core.accessibility.wcag_compliance import (
++            AccessibilityComplianceEngine,
++            AccessibilityIssue,
++            ColorContrastChecker,
++            HTMLAccessibilityChecker,
++            WCAGGuideline,
++            WCAGLevel,
++            WCAGPrinciple,
++        )
++        from core.deployment.production_deploy import (
++            ConfigManager,
++            DeploymentConfig,
++            DeploymentEnvironment,
++            DeploymentManager,
++            DeploymentStatus,
++            HealthChecker,
++            ImageBuilder,
++            ProductionDeploymentSystem,
++        )
++        from core.optimization.performance_optimizer import (
++            AsyncLRUCache,
++            LRUCache,
++            OptimizationLevel,
++            PerformanceOptimizer,
++            get_performance_optimizer,
++            performance_monitor,
++        )
+ 
+ # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
+ # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
+@@ -88,22 +150,56 @@
+     )
+ 
+     QA_SUITE_AVAILABLE = True
+-except ImportError:
+-    QA_SUITE_AVAILABLE = False
+-    import sys
+-
+-    _mod = sys.modules[__name__]
+-    _mod.ChaosEngineer = None
+-    _mod.IntegrationTestRunner = None
+-    _mod.PerformanceTester = None
+-    _mod.QASuite = None
+-    _mod.SecurityTester = None
+-    _mod.TestCase = None
+-    _mod.TestCategory = None
+-    _mod.TestPriority = None
+-    _mod.TestResult = None
+-    _mod.TestSuite = None
+-    _mod.UnitTestGenerator = None
++except (ImportError, ValueError):
++    try:
++        from testing.qa_suite import (
++            ChaosEngineer,
++            IntegrationTestRunner,
++            PerformanceTester,
++            QASuite,
++            SecurityTester,
++            TestCase,
++            TestCategory,
++            TestPriority,
++            TestResult,
++            TestSuite,
++            UnitTestGenerator,
++        )
++
++        QA_SUITE_AVAILABLE = True
++    except (ImportError, ValueError):
++        try:
++            from core.testing.qa_suite import (
++                ChaosEngineer,
++                IntegrationTestRunner,
++                PerformanceTester,
++                QASuite,
++                SecurityTester,
++                TestCase,
++                TestCategory,
++                TestPriority,
++                TestResult,
++                TestSuite,
++                UnitTestGenerator,
++            )
++
++            QA_SUITE_AVAILABLE = True
++        except (ImportError, ValueError):
++            QA_SUITE_AVAILABLE = False
++            import sys
++
++            _mod = sys.modules[__name__]
++            _mod.ChaosEngineer = None
++            _mod.IntegrationTestRunner = None
++            _mod.PerformanceTester = None
++            _mod.QASuite = None
++            _mod.SecurityTester = None
++            _mod.TestCase = None
++            _mod.TestCategory = None
++            _mod.TestPriority = None
++            _mod.TestResult = None
++            _mod.TestSuite = None
++            _mod.UnitTestGenerator = None
+ 
+ # Import evolution components — LAZY (PEP 562)
+ # বাংলা মন্তব্য: evolution প্যাকেজের কিছু সাব-মডিউল (EWC, adversarial defense,
+@@ -273,7 +369,13 @@ def get_complete_ai_system():
+     Returns:
+         A comprehensive system with all major components
+     """
+-    from ..evolution import get_evolution_pipeline
++    try:
++        from ..evolution import get_evolution_pipeline
++    except (ImportError, ValueError):
++        try:
++            from evolution import get_evolution_pipeline
++        except (ImportError, ValueError):
++            from core.evolution import get_evolution_pipeline
+ 
+     # Get all evolution components
+     evolution_components = get_evolution_pipeline()
+diff --git a/core/core/__init__.py b/core/core/__init__.py
+index 80e50bcc..49e837ca 100644
+--- a/core/core/__init__.py
++++ b/core/core/__init__.py
+@@ -32,37 +32,99 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
+-
+-from .accessibility.wcag_compliance import (
+-    AccessibilityComplianceEngine,
+-    AccessibilityIssue,
+-    ColorContrastChecker,
+-    HTMLAccessibilityChecker,
+-    WCAGGuideline,
+-    WCAGLevel,
+-    WCAGPrinciple,
+-)
+-from .deployment.production_deploy import (
+-    ConfigManager,
+-    DeploymentConfig,
+-    DeploymentEnvironment,
+-    DeploymentManager,
+-    DeploymentStatus,
+-    HealthChecker,
+-    ImageBuilder,
+-    ProductionDeploymentSystem,
+-)
+-
+-# Import all core components
+-from .optimization.performance_optimizer import (
+-    AsyncLRUCache,
+-    LRUCache,
+-    OptimizationLevel,
+-    PerformanceOptimizer,
+-    get_performance_optimizer,
+-    performance_monitor,
+-)
++try:
++    from core.logging_config import logger
++except ImportError:
++    try:
++        from logging_config import logger
++    except ImportError:
++        logger = None
++
++try:
++    from .accessibility.wcag_compliance import (
++        AccessibilityComplianceEngine,
++        AccessibilityIssue,
++        ColorContrastChecker,
++        HTMLAccessibilityChecker,
++        WCAGGuideline,
++        WCAGLevel,
++        WCAGPrinciple,
++    )
++    from .deployment.production_deploy import (
++        ConfigManager,
++        DeploymentConfig,
++        DeploymentEnvironment,
++        DeploymentManager,
++        DeploymentStatus,
++        HealthChecker,
++        ImageBuilder,
++        ProductionDeploymentSystem,
++    )
++    from .optimization.performance_optimizer import (
++        AsyncLRUCache,
++        LRUCache,
++        OptimizationLevel,
++        PerformanceOptimizer,
++        get_performance_optimizer,
++        performance_monitor,
++    )
++except (ImportError, ValueError):
++    try:
++        from accessibility.wcag_compliance import (
++            AccessibilityComplianceEngine,
++            AccessibilityIssue,
++            ColorContrastChecker,
++            HTMLAccessibilityChecker,
++            WCAGGuideline,
++            WCAGLevel,
++            WCAGPrinciple,
++        )
++        from deployment.production_deploy import (
++            ConfigManager,
++            DeploymentConfig,
++            DeploymentEnvironment,
++            DeploymentManager,
++            DeploymentStatus,
++            HealthChecker,
++            ImageBuilder,
++            ProductionDeploymentSystem,
++        )
++        from optimization.performance_optimizer import (
++            AsyncLRUCache,
++            LRUCache,
++            OptimizationLevel,
++            PerformanceOptimizer,
++            get_performance_optimizer,
++            performance_monitor,
++        )
++    except (ImportError, ValueError):
++        from core.accessibility.wcag_compliance import (
++            AccessibilityComplianceEngine,
++            AccessibilityIssue,
++            ColorContrastChecker,
++            HTMLAccessibilityChecker,
++            WCAGGuideline,
++            WCAGLevel,
++            WCAGPrinciple,
++        )
++        from core.deployment.production_deploy import (
++            ConfigManager,
++            DeploymentConfig,
++            DeploymentEnvironment,
++            DeploymentManager,
++            DeploymentStatus,
++            HealthChecker,
++            ImageBuilder,
++            ProductionDeploymentSystem,
++        )
++        from core.optimization.performance_optimizer import (
++            AsyncLRUCache,
++            LRUCache,
++            OptimizationLevel,
++            PerformanceOptimizer,
++            get_performance_optimizer,
++            performance_monitor,
++        )
+ 
+ # বাংলা মন্তব্য: core.testing.qa_suite নিজে aiohttp আমদানি করে (একটা optional/dev-only
+ # dependency — production API path কখনো এটা ব্যবহার করে না)। কিন্তু এই ব্লকটা আগে
+@@ -88,22 +150,56 @@
+     )
+ 
+     QA_SUITE_AVAILABLE = True
+-except ImportError:
+-    QA_SUITE_AVAILABLE = False
+-    import sys
+-
+-    _mod = sys.modules[__name__]
+-    _mod.ChaosEngineer = None
+-    _mod.IntegrationTestRunner = None
+-    _mod.PerformanceTester = None
+-    _mod.QASuite = None
+-    _mod.SecurityTester = None
+-    _mod.TestCase = None
+-    _mod.TestCategory = None
+-    _mod.TestPriority = None
+-    _mod.TestResult = None
+-    _mod.TestSuite = None
+-    _mod.UnitTestGenerator = None
++except (ImportError, ValueError):
++    try:
++        from testing.qa_suite import (
++            ChaosEngineer,
++            IntegrationTestRunner,
++            PerformanceTester,
++            QASuite,
++            SecurityTester,
++            TestCase,
++            TestCategory,
++            TestPriority,
++            TestResult,
++            TestSuite,
++            UnitTestGenerator,
++        )
++
++        QA_SUITE_AVAILABLE = True
++    except (ImportError, ValueError):
++        try:
++            from core.testing.qa_suite import (
++                ChaosEngineer,
++                IntegrationTestRunner,
++                PerformanceTester,
++                QASuite,
++                SecurityTester,
++                TestCase,
++                TestCategory,
++                TestPriority,
++                TestResult,
++                TestSuite,
++                UnitTestGenerator,
++            )
++
++            QA_SUITE_AVAILABLE = True
++        except (ImportError, ValueError):
++            QA_SUITE_AVAILABLE = False
++            import sys
++
++            _mod = sys.modules[__name__]
++            _mod.ChaosEngineer = None
++            _mod.IntegrationTestRunner = None
++            _mod.PerformanceTester = None
++            _mod.QASuite = None
++            _mod.SecurityTester = None
++            _mod.TestCase = None
++            _mod.TestCategory = None
++            _mod.TestPriority = None
++            _mod.TestResult = None
++            _mod.TestSuite = None
++            _mod.UnitTestGenerator = None
+ 
+ # Import evolution components — LAZY (PEP 562)
+ # বাংলা মন্তব্য: evolution প্যাকেজের কিছু সাব-মডিউল (EWC, adversarial defense,
+@@ -273,7 +369,13 @@ def get_complete_ai_system():
+     Returns:
+         A comprehensive system with all major components
+     """
+-    from ..evolution import get_evolution_pipeline
++    try:
++        from ..evolution import get_evolution_pipeline
++    except (ImportError, ValueError):
++        try:
++            from evolution import get_evolution_pipeline
++        except (ImportError, ValueError):
++            from core.evolution import get_evolution_pipeline
+ 
+     # Get all evolution components
+     evolution_components = get_evolution_pipeline()
+diff --git a/core/pyproject.toml b/core/pyproject.toml
+index 759c9930..89f010bc 100644
+--- a/core/pyproject.toml
++++ b/core/pyproject.toml
+@@ -221,7 +221,7 @@ minversion = "6.0"
+ testpaths = ["tests"]
+ # বাংলা মন্তব্য: লোকাল রানে coverage threshold-এর কারণে টেস্ট "পাস" সত্ত্বেও ফেইল করার ঝুঁকি
+ # এড়াতে --cov-fail-under সরানো হলো; CI নিজেই threshold এনফোর্স করে (supreme-core-ci.yml)।
+-addopts = "-ra -v --tb=short --strict-markers --strict-config --import-mode=importlib --cov=core --cov-report=term-missing --cov-report=html --cov-report=xml"
++addopts = "-ra -v --tb=short --strict-markers --strict-config --cov=core --cov-report=term-missing --cov-report=html --cov-report=xml"
+ python_files = ["test_*.py", "*_test.py"]
+ python_classes = ["Test*"]
+ python_functions = ["test_*"]
+diff --git a/core/queue/__init__.py b/core/queue/__init__.py
+index bc174f56..b74a81f7 100644
+--- a/core/queue/__init__.py
++++ b/core/queue/__init__.py
+@@ -1,7 +1,30 @@
+ """Backward-compatibility shim for core.queue -> core.task_queue."""
+ from __future__ import annotations
+ 
++import importlib.util
++import os
++import sys
++
++# Re-export Python standard library queue symbols to prevent breaking
++# stdlib and third-party libraries (e.g. urllib3, requests, concurrent.futures)
++# if core/ is added to sys.path.
++for _path in sys.path:
++    _candidate = os.path.join(_path, "queue.py")
++    if os.path.isfile(_candidate):
++        _spec = importlib.util.spec_from_file_location("_stdlib_queue", _candidate)
++        if _spec and _spec.loader:
++            _stdlib_queue = importlib.util.module_from_spec(_spec)
++            _spec.loader.exec_module(_stdlib_queue)
++            for _attr in ("Queue", "LifoQueue", "PriorityQueue", "SimpleQueue", "Empty", "Full"):
++                if hasattr(_stdlib_queue, _attr):
++                    globals()[_attr] = getattr(_stdlib_queue, _attr)
++            break
++
+ from core.task_queue import *  # noqa: F401, F403
+ from core.task_queue.task_contract import TaskEnvelope, TaskState  # noqa: F401
+ from core.task_queue.task_queue import RedisTaskQueue, redis_configured, task_queue  # noqa: F401
+-from core.task_queue.task_queue_enhanced import EnhancedTaskQueue, celery_app, get_task_queue  # noqa: F401
++from core.task_queue.task_queue_enhanced import (  # noqa: F401
++    EnhancedTaskQueue,
++    celery_app,
++    get_task_queue,
++)
+diff --git a/core/tests/test_core_planner.py b/core/tests/test_core_planner.py
+index 016f6902..330b2277 100644
+--- a/core/tests/test_core_planner.py
++++ b/core/tests/test_core_planner.py
+@@ -6,24 +6,25 @@
+ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ 
+ try:
+-    from core.context_synthesizer import ContextStage, ContextSynthesizer
+-    from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+-    from core.decision_engine import AgentRole, DecisionEngine
+-    from core.state_machine import (
++    from context_synthesizer import ContextStage, ContextSynthesizer
++    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from decision_engine import AgentRole, DecisionEngine
++    from state_machine import (
+         AgentState,
+         AgentStateMachine,
+         InvalidStateTransitionError,
+     )
+ except ImportError:
+-    from context_synthesizer import ContextStage, ContextSynthesizer
+-    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+-    from decision_engine import AgentRole, DecisionEngine
+-    from state_machine import (
++    from core.context_synthesizer import ContextStage, ContextSynthesizer
++    from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from core.state_machine import (
+         AgentState,
+         AgentStateMachine,
+         InvalidStateTransitionError,
+     )
+ 
++    from core.decision_engine import AgentRole, DecisionEngine
++
+ 
+ class TestAgentStateMachine(unittest.TestCase):
+     def test_initial_state_idle(self):

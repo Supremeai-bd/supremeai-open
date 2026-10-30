@@ -1,0 +1,12 @@
+diff --git a/studio/vercel.json b/studio/vercel.json
+index 2fb873d8..7b6eb342 100644
+--- a/studio/vercel.json
++++ b/studio/vercel.json
+@@ -1,6 +1,6 @@
+ {
+   "rewrites": [
+-    { "source": "/(.*)", "destination": "/" }
++    { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
+   ],
+   "headers": [
+     {

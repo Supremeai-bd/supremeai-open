@@ -1,0 +1,1000 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index da1b8f66..e1e19d53 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -62,17 +62,6 @@
+ # pick_next_issue landed/in-flight αªòαª╛αª£αªòαºç αª¬αºüαª¿αªâαªªαª╛αª¼αª┐αª»αºïαªùαºìαª» αª¡αª╛αª¼αªñ; live αª¬αºìαª░αª«αª╛αªú 2026-10-28:
+ # αªûαºïαª▓αª╛ αª¼αºïαª░αºìαªíαºçαª░ αº¿αº¡αªƒαª╛ non-excluded αª╕αª╛αª░αª┐αª░ αº¿αºªαªƒαª╛αªç bridge:queued αª«αª┐αª░αª░ (landed #2071/#2056
+ # αª╕αª╣), αª½αª▓αºç drained board-αªÅ αª╕αªñαºìαª»αª┐αªòαª╛αª░αºçαª░ αª¿αªñαºüαª¿ αªòαª╛αª£αºçαª░ (#2103) αªåαªùαºç αª¡αºüαª▓αª¡αª╛αª¼αºç αª¼αºçαª¢αºç αª¿αºçαªôαª»αª╝αª╛ αª╣αªñαÑñ
+-# αª¼αª╛αªéαª▓αª╛: bridge:receipt = αª╕αª╛αª¼αª«αª┐αª╢αª¿ αª¬αª╛αªçαª¬αª▓αª╛αªçαª¿ αª¿αª┐αª£αºçαªç αª¬αºìαª░αªñαª┐αªƒαª┐ receipt/report-only WO-αªñαºç
+-# αª╕αºìαªƒαºìαª»αª╛αª«αºìαª¬ αªòαª░αºç (mcp-control-plane bridge.tools.ts BRIDGE_RECEIPT_LABEL: taskId-αªñαºç
+-# receipt|report-only αª╣αª▓αºç [bridge:receipt, report]) ΓÇö αªÅαª░αª╛ submission-αªÅαª░ intake
+-# artifact, solver-αªƒαª╛αª╕αºìαªò αª¿αª»αª╝; αªñαª╛αªªαºçαª░ αªòαª╛αª£ αª¿αª┐αª£αºçαª░ PR-αªÅαªç αªÑαª╛αªòαºçαÑñ αª╕αºçαªƒαºç αª¿αª╛ αªÑαª╛αªòαª╛αª»αª╝ picker
+-# self-fulfilled receipt-WO αª¿αªñαºüαª¿ αªƒαª╛αª╕αºìαªò αª╣αª┐αª╕αºçαª¼αºç αª¬αºüαª¿αªâdispatch αªòαª░αªñ (#2516 drain census:
+-# 34/128 self-fulfilled receipt-WO; αª▓αª╛αªçαª¡ αª¬αºìαª░αª«αª╛αªú 2026-10-30: #3345 dispatch αª╣αª▓αºï αªàαªÑαªÜ
+-# αªñαª╛αª░ αªòαª╛αª£ αªçαªñαºïαª«αªºαºìαª»αºç #3346-αªÅ landed)αÑñ #3315 coverage-probe αªÅαªç αª╢αºìαª░αºçαªúαª┐ αªºαª░αªñαºç αª¬αª╛αª░αºç αª¿αª╛ ΓÇö
+-# αª╕αºç αªëαª▓αºìαªƒαºï αªªαª┐αªò αªªαºçαªûαºç (αªàαª¿αºìαª» αªòαºïαª¿αºï αªûαºïαª▓αª╛ WO candidate-αªòαºç cite αªòαª░αª¢αºç αªòαª┐ αª¿αª╛), αªàαªÑαªÜ receipt
+-# αª¿αª┐αª£αºçαªòαºç cite αªòαª░αºç αª¿αª╛; label-exclusion αªÅαªç αª╢αºìαª░αºçαªúαª┐αª░ αª╕αªáαª┐αªò αªºαª░αª╛αª░ αª£αª╛αª»αª╝αªùαª╛ (#2100-αª░ αªÅαªòαªç
+-# αª«αºçαªòαª╛αª¿αª┐αª£αª«, αªÅαªòαªç SSOT)αÑñ αª╕αª╛αªºαª╛αª░αªú report-only scout/ops αª░αºï αª¼αª╛αªª αª»αª╛αª»αª╝ αª¿αª╛ ΓÇö αª╢αºüαªºαºü
+-# αª¬αª╛αªçαª¬αª▓αª╛αªçαª¿-αª╕αºìαªƒαºìαª»αª╛αª«αºìαª¬ αªòαª░αª╛ receipt αª╢αºìαª░αºçαªúαª┐αÑñ
+ EXCLUDED_LABELS = frozenset({
+     "status:claimed",
+     "status:in-progress",
+@@ -86,7 +75,6 @@
+     "bridge:in-gates",
+     "bridge:rejected",
+     "bridge:idempotent-noop",
+-    "bridge:receipt",
+ })
+ 
+ DEFAULT_GROUP = "core"
+@@ -215,20 +203,8 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+ STALE_INCIDENT_PROBE_TIMEOUT_S = 10.0
+ STALE_INCIDENT_RUNS_WINDOW = 60  # per_page for the runs fetch (newest-first)
+ 
+-# GLM Agent 07 (Job 486733, 2026-10-30): the recognition shape was
+-# " failed on main" only ΓÇö but the bridge mirror stamps PR-lane incidents as
+-# "... failed on <ref> (Run #N)" (e.g. " failed on 3192/merge"), so every
+-# PR-lane incident stayed servable forever after going stale. Live witness:
+-# "fix(ci): [open] CI ΓÇö Open Unified Pipeline failed on 3192/merge
+-# (Run #41042525263)" was dispatched at 11:07Z with 11 newer green main runs
+-# (#7560-#7596, zero reds) already on the board. The ref token is
+-# recognition-only: staleness is still judged on MAIN-branch supersession
+-# (same-workflow, >=N greens, zero newer reds) exactly per the #3050
+-# contract ΓÇö a title that names ANY ref must not bypass the U3 filter.
+-_INCIDENT_TITLE_RE = re.compile(
+-    r"\s+failed on (?P<ref>[^\s()]+)\s*\(Run\s*#(?P<run>\d+)\)",
+-    re.IGNORECASE,
+-)
++_INCIDENT_RUN_RE = re.compile(r"Run\s*#(\d+)", re.IGNORECASE)
++_INCIDENT_FAIL_MARKER = " failed on main"
+ 
+ 
+ def _incident_stale_note(
+@@ -239,9 +215,7 @@ def _incident_stale_note(
+     """#3050 ΓÇö demotion note for a superseded CI-failure incident, else None.
+ 
+     Recognizes the mirror's incident-title shape
+-    "...[<state>] <workflow> failed on <ref> (Run #<id>)" (ref = main, a
+-    PR-lane merge ref like 3192/merge, or any branch ΓÇö recognition only,
+-    the staleness judgment stays main-scoped); resolves the run's
++    "...[<state>] <workflow> failed on main (Run #<id>)"; resolves the run's
+     workflow name and run_number via the runs surface, then checks whether
+     min_green (default STALE_INCIDENT_GREEN_RUNS) SUCCESS runs of the same
+     workflow on main exist strictly newer than it with zero newer FAILURES
+@@ -252,14 +226,16 @@ def _incident_stale_note(
+     """
+     n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
+     title = str(item.get("title", ""))
+-    title_match = _INCIDENT_TITLE_RE.search(title)
+-    if not title_match:
++    if _INCIDENT_FAIL_MARKER not in title:
++        return None
++    run_match = _INCIDENT_RUN_RE.search(title)
++    if not run_match:
+         return None
+     try:
+-        incident_run_id = int(title_match.group("run"))
++        incident_run_id = int(run_match.group(1))
+     except ValueError:
+         return None
+-    head = title[: title_match.start()]
++    head = title.split(_INCIDENT_FAIL_MARKER)[0]
+     if "] " not in head:
+         return None
+     workflow = head.rsplit("] ", 1)[1].strip()
+@@ -444,26 +420,67 @@ def _sentry_superseded_note(item: dict[str, Any], newest: int | None) -> str | N
+ # αª¼αª╛αªéαª▓αª╛: αª╢αºüαªºαºüαª«αª╛αªñαºìαª░ αª¼αºìαª»αª╛αªòαªƒαª┐αªòαºç αªÿαºçαª░αª╛ αª░αª┐αª¬αºï-αªåαª¬αºçαªòαºìαª╖αª┐αªò αª¬αªÑ ΓÇö αªòαª«αª¬αªòαºìαª╖αºç αªÅαªòαªƒαª┐ "/" αªÑαª╛αªòαªñαºç αª╣αª¼αºç,
+ # "/" αª¼αª╛ ".." αªªαª┐αª»αª╝αºç αª╢αºüαª░αºü/αªÅαª╕αªòαºçαª¬ αªòαª░αª╛ αª¬αªÑ αª¼αª╛αªª (tree-escape αª¬αºìαª░αªñαª┐αª░αºïαªº)αÑñ
+ PROMISED_PATH_RE = re.compile(r"`(\w[\w.-]*(?:/[\w.-]+)+)`")
++# item 15 R2 (GLM Agent 23, 2026-10-30) ΓÇö bridge WO receipt shape. The tower
++# mints every submit receipt with the SAME structured headers (### Task ID /
++# ### Patch Branch / ### Scope Paths / ### Test Evidence); "Scope Paths" is a
++# markdown list of repo-relative paths, NOT prose promise markers, so the
++# marker-only scanner never saw the receipt class's own deliverable list.
++# Receipt-shape gate: the scope scan only fires when the body carries the
++# receipt's own headers (### Task ID / ### Patch Branch) ΓÇö a fresh admin WO
++# that merely lists files to CREATE must never demote off this scan alone.
++RECEIPT_SHAPE_RE = re.compile(
++    r"^#{1,6}\s*(?:task\s*id|patch\s*branch)\s*$", re.IGNORECASE | re.MULTILINE,
++)
++SCOPE_HEADING_RE = re.compile(
++    r"^#{1,6}\s*scope\s*paths\s*:?[ \t]*$", re.IGNORECASE | re.MULTILINE,
++)
++SCOPE_ITEM_RE = re.compile(r"^[-*][ \t]+`?([^\s`]+)`?[ \t]*$")
++# bridge:receipt ΓÇö the tower labels a WO receipt issue at mint time. A receipt
++# row is BY CONSTRUCTION a record of already-submitted work (its own body says
++# "Bridge Work Order ΓÇª Target Repo ΓÇª Test Evidence"); a coder-IMPLEMENT solver
++# dispatch on it can only mint a duplicate. Label-plane truth, zero network.
++RECEIPT_LABEL = "bridge:receipt"
+ MERGED_LANDING_WINDOW = 80  # /pulls?state=closed newest-updated window (one fetch per pick run)
+ PREMISE_PROBE_TIMEOUT_S = 10.0
+-TOWER_LANDING_FALLBACK_TIMEOUT_S = 20.0  # hard join cap for the tower fallback probe
+ 
+ # αª¼αª╛αªéαª▓αª╛: αª¬αºìαª░αªòαºìαª░αª┐αª»αª╝αª╛-αª╕αºìαªñαª░αºçαª░ αªÅαªòαªò αª½αºçαªÜ ΓÇö αª¬αºìαª░αªñαª┐ pick αª░αª╛αª¿αºç αª╕αª░αºìαª¼αºïαªÜαºìαªÜ αªÅαªòαª¼αª╛αª░ REST αªòαª▓
+ # (rate-limit αª¿αª┐αª»αª╝αª¿αºìαªñαºìαª░αªú); αª¼αºìαª»αª░αºìαªÑαªñαª╛αªô αªòαºìαª»αª╛αª╢ αª╣αª»αª╝ (αªûαª╛αª▓αª┐ αªñαª╛αª▓αª┐αªòαª╛) αª»αª╛αªñαºç αªÅαªòαªç αª░αª╛αª¿αºçαª░
+ # αª¬αª░αª¼αª░αºìαªñαºÇ αª¬αºìαª░αª╛αª░αºìαªÑαºÇαª░αª╛ αª¼αª╛αª░αª¼αª╛αª░ αª¿αºçαªƒαªôαª»αª╝αª╛αª░αºìαªòαºç αª¿αª╛ αª»αª╛αª»αª╝αÑñ αª¼αºìαª»αª░αºìαªÑ αª½αºçαªÜ = αªòαºïαª¿αºï demotion αª¿αª»αª╝
+ # (fail-open αªªαª┐αªò: αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü dispatch αª╕αª░αª╛αª»αª╝, αªòαªûαª¿αºï αª¼αºìαª▓αªò αªòαª░αºç αª¿αª╛)αÑñ
+-# αª¼αª╛αªéαª▓αª╛ (root-cause note, GLM Agent 22, Job 486813, αª▓αª╛αªçαª¡ 2026-10-30): REST-αªàαª¿αºìαªºαªòαª╛αª░
+-# (αª╢αºçαª»αª╝αª╛αª░αºìαªí IP-αª░ 60 req/h αª¼αª╛αª£αºçαªƒ αª½αºüαª░αª╛αª¿αºï)-αªñαºç fail-open αª¬αºìαª░αª┐αª«αª╛αªçαª£-αªíαºçαª▓αª┐αª¡αª╛αª░αºìαªí αª░αºï αªåαª¼αª╛αª░
+-# serve αªòαª░αªñ ΓÇö αªÅαªòαªç αª╕αºçαª╢αª¿αºç 11:22Z-αªÅ #2792 demote, 11:37Z-αªÅ αªÅαªòαªç αª¼αºïαª░αºìαªí-αªàαª¼αª╕αºìαªÑαª╛αª»αª╝ serve
+-# (αª«αª╛αª░αºìαª£αªí αª¬αºìαª░αª«αª╛αªú #3209 αªñαªñαªòαºìαª╖αªúαªô main-αªÅ)αÑñ αªñαª╛αªç αªÅαªûαª¿ REST αª¼αºìαª»αª░αºìαªÑ αª╣αª▓αºç αª¬αºìαª░αª«αª╛αªúαª┐αªñ
+-# tower fallback αªƒαºìαª░αª╛αª¿αºìαª╕αª¬αºïαª░αºìαªƒ (_tower_board_rows-αªÅαª░ αª╕αºçαªç αªÅαªòαªç αª¬αºìαª»αª╛αªƒαª╛αª░αºìαª¿) αªÜαª▓αºç ΓÇö
+-# αª╕αª┐αªªαºìαªºαª╛αª¿αºìαªñ αª¿αª»αª╝, αª¿αª┐αª░αºìαª¡αª░αª»αºïαªùαºìαª»αªñαª╛: merged-only αª╕αª┐αªùαª¿αºìαª»αª╛αª▓ αªô fail-open αªàαªòαºìαª╖αªñαÑñ
+ _LANDING_FETCH_DONE = False
+ _LANDING_ROWS: list[dict[str, Any]] = []
++# item 15 R2 (GLM Agent 23): a failed fetch used to be indistinguishable from
++# a healthy empty scan ΓÇö the fail-open dispatch was SILENT, so a rate-limited
++# run re-dispatched premise-delivered rows as fresh work with no trace (live
++# 2026-10-30: same sandbox, run 1 demoted #2360 via the citation scan, run 3
++# re-picked it after the anonymous 60 req/h quota burned out; #3351's landed
++# artifact rode the same dark run). The failure is now a first-class state
++# surfaced at the pick log and on the task envelope's board_note.
++_LANDING_FETCH_FAILED = False
++
++
++def landing_crossscan_advisory() -> str | None:
++    """Honest dark-scan advisory, or None when the scan never failed.
++
++    αª¼αª╛αªéαª▓αª╛: fail-open dispatch αªÑαª╛αªòαª¼αºç (never-raise αªÜαºüαªòαºìαªñαª┐ αªàαªƒαºüαªƒ), αªòαª┐αª¿αºìαªñαºü αªåαª░ αª¿αºÇαª░αª¼ αª¿αª»αª╝ ΓÇö
++    αª½αºçαªÜ-αª¼αºìαª»αª░αºìαªÑαªñαª╛ αª╣αª▓αºç αª░αª┐αª╕αª┐αª¡αª┐αªé αªÅαª£αºçαª¿αºìαªƒ envelope-αªÅαªç αªªαºçαªûαª¼αºç αª»αºç premise αª╕αºìαªòαºìαª»αª╛αª¿ αªàαª¿αºìαªºαªòαª╛αª░
++    αª¢αª┐αª▓, αªªαª╛αª¼αª┐ αªòαª░αª╛αª░ αªåαªùαºç αª¿αª┐αª£αºç αª»αª╛αªÜαª╛αªç αªòαª░αªñαºç αª╣αª¼αºçαÑñ Hermetic callers (injected
++    fetch_merged) αªÅαªç αªùαºìαª▓αºïαª¼αª╛αª▓ αª╕αºìαª¬αª░αºìαª╢ αªòαª░αºç αª¿αª╛ ΓÇö αªñαª╛αªªαºçαª░ αª£αª¿αºìαª» αª╕αª¼αª╕αª«αª»αª╝ NoneαÑñ
++    """
++    if not _LANDING_FETCH_FAILED:
++        return None
++    return (
++        "landing cross-scan DARK this run (anonymous /pulls fetch failed ΓÇö "
++        "rate-limit/timeout/parse): merged-citation premise scan was not "
++        "performed; re-verify the row's premise on live main before claiming"
++    )
+ 
+ 
+-def _rest_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+-    """Direct unauthenticated REST fetch of the closed-PR window; raises on any failure."""
++def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
++    global _LANDING_FETCH_DONE, _LANDING_ROWS
++    if _LANDING_FETCH_DONE:
++        return _LANDING_ROWS
++    _LANDING_FETCH_DONE = True
+     url = (
+         f"https://api.github.com/repos/{UPSTREAM_REPO}/pulls"
+         f"?state=closed&sort=updated&direction=desc&per_page={per_page}"
+@@ -475,172 +492,15 @@ def _rest_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+             "User-Agent": "supremeai-agent-loop-landing-receipt-probe",
+         },
+     )
+-    with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
+-        payload = json.loads(resp.read().decode("utf-8"))
+-    return list(payload if isinstance(payload, list) else [])
+-
+-
+-def _map_tower_landing_rows(rows: Any) -> list[dict[str, Any]]:
+-    """Map tower ``github.list_prs`` rows onto the REST shape scan B reads.
+-
+-    αª¼αª╛αªéαª▓αª╛: tower αª░αºçαª╕αª¬αª¿αºìαª╕αºç camelCase ``mergedAt`` αªÑαª╛αªòαºç αªÅαª¼αªé ``body`` αªÑαª╛αªòαºç αª¿αª╛ ΓÇö
+-    REST αª╢αºçαª¬αºç (``merged_at``, ``body=""``) αª«αºìαª»αª╛αª¬ αªòαª░αª╛ αª╣αª»αª╝; αª¼αª┐αªòαºâαªñ/number-αª╣αºÇαª¿ αª░αºï
+-    αª¼αª╛αªªαÑñ Scan B title+body αªªαºüαªƒαºïαªç αª╕αºìαªòαºìαª»αª╛αª¿ αªòαª░αºç, αªñαª╛αªç body αª¿αª╛ αªÑαª╛αªòαª▓αºçαªô title-citation
+-    αªºαª░αª╛ αª¬αªíαª╝αºç (αª▓αºìαª»αª╛αª¿αºìαªíαª┐αªé αª░αª┐αª╕αª┐αªƒαºçαª░ squash subject-αªÅαªç αª¼αºçαª╢αª┐αª░αª¡αª╛αªù citation ΓÇö αª▓αª╛αªçαª¡
+-    αª¬αºìαª░αª«αª╛αªú #3209 ΓåÆ #2792 demotion)αÑñ αª╕αºÄ αªƒαºìαª░αºçαªíαªàαª½: fallback αªëαªçαª¿αºìαªíαºï title-only,
+-    REST αªëαªçαª¿αºìαªíαºï title+bodyαÑñ
+-    """
+-    out: list[dict[str, Any]] = []
+-    for row in rows if isinstance(rows, list) else []:
+-        if not isinstance(row, dict) or row.get("number") is None:
+-            continue
+-        out.append(
+-            {
+-                "number": row.get("number"),
+-                "title": row.get("title") or "",
+-                "state": row.get("state") or "closed",
+-                "merged_at": row.get("mergedAt") or row.get("merged_at"),
+-                "body": row.get("body") or "",
+-            }
+-        )
+-    return out
+-
+-
+-def _parse_tower_landing_payload(body: str, call_id: str) -> list[Any]:
+-    """Extract the tools/call result rows from an SSE-or-JSON tower body (pure).
+-
+-    αª¼αª╛αªéαª▓αª╛: body αª╣αª»αª╝ SSE (``data:`` αª▓αª╛αªçαª¿) αª¿αª»αª╝αªñαºï αª╕αª░αª╛αª╕αª░αª┐ JSON ΓÇö αªªαºüαªç αª╢αºçαª¬αªç αª╕αª«αª░αºìαªÑαª┐αªñ
+-    (_tower_board_rows-αªÅαª░ αª¬αºìαª░αª«αª╛αªúαª┐αªñ regex αª¬αªªαºìαªºαªñαª┐; αª¼αªíαª╝ single-line αª¬αºçαª▓αºïαªí
+-    splitlines/iter_lines-αªÅ αª¡αª╛αªÖαºç αª¼αª▓αºç αª¬αºüαª░αºï body-αª░ αªëαª¬αª░ regex αªÜαª▓αºç)αÑñ id-αª«αºìαª»αª╛αªÜαª╣αºÇαª¿ αª¼αª╛
+-    error-envelope αªëαª¬αºçαªòαºìαª╖αª┐αªñ; αª¬αª╛αª░αºìαª╕-αª¼αºìαª»αª░αºìαªÑαªñαª╛ = αªûαª╛αª▓αª┐ αªñαª╛αª▓αª┐αªòαª╛ (αªòαªûαª¿αºï raise αª¿αª»αª╝ ΓÇö
+-    non-str αªçαª¿αª¬αºüαªƒαªô αªûαª╛αª▓αª┐ αªñαª╛αª▓αª┐αªòαª╛, bytes/int αªçαªñαºìαª»αª╛αªªαª┐αª░ finditer-TypeError αª¼αª¿αºìαªº)αÑñ
+-    """
+-    body = body if isinstance(body, str) else ""
+-    envelopes: list[dict[str, Any]] = []
+-    for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+-        try:
+-            envelopes.append(json.loads(m.group(1)))
+-        except json.JSONDecodeError:
+-            pass
+-    if not envelopes:
+-        try:
+-            envelopes.append(json.loads(body))
+-        except json.JSONDecodeError:
+-            return []
+-    result: Any = None
+-    for env in envelopes:
+-        if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+-            result = env.get("result")
+-            break
+-    text = ""
+-    if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+-        first = result["content"][0]
+-        txt = first.get("text") if isinstance(first, dict) else None
+-        if isinstance(txt, str):
+-            text = txt
+-    if not text:
+-        return []
+-    try:
+-        rows = json.loads(text)
+-    except json.JSONDecodeError:
+-        return []
+-    return rows if isinstance(rows, list) else []
+-
+-
+-def _tower_merged_landing_prs(
+-    per_page: int, timeout_s: float = TOWER_LANDING_FALLBACK_TIMEOUT_S
+-) -> list[dict[str, Any]]:
+-    """Tower fallback transport for scan B (zero-credential, never hangs the pick path).
+-
+-    αª¼αª╛αªéαª▓αª╛: raw urllib streamable POST (initialize ΓåÆ initialized ΓåÆ tools/call
+-    ``github.list_prs`` state=closed, limit=min(per_page,100)) ΓÇö daemon thread +
+-    hard join (_tower_board_rows-αªÅαª░ αª¬αºìαª░αª«αª╛αªúαª┐αªñ αª¬αºìαª»αª╛αªƒαª╛αª░αºìαª¿; iter_lines chunk-boundary
+-    αª¼αª┐αª¡αª╛αª£αª¿ αªÅαªíαª╝αª╛αªñαºç bytes-αª╕αºìαªñαª░αºç data-line αªÅαªòαºìαª╕αªƒαºìαª░αºìαª»αª╛αªòαºìαªƒ)αÑñ αª»αºçαªòαºïαª¿αºï αª¼αºìαª»αª░αºìαªÑαªñαª╛ raise αªòαª░αºç ΓÇö
+-    αªëαª¬αª░αºçαª░ fail-open αª╕αºìαªñαª░ (αª¿αºïαªƒαºçαª░ try/except) αª╕αºçαªƒαª┐αªòαºç αª╕αºÄ serve-αªÅ αª¿αª╛αª«αª╛αª»αª╝; αªƒαª╛αªçαª«αªåαªëαªƒαºç
+-    hard join αª¬αª┐αªò-αª¬αªÑ αªåαªƒαªòαª╛αª»αª╝ αª¿αª╛αÑñ
+-    """
+-    call_id = "cal-landing-fallback-1"
+-    holder: dict[str, Any] = {}
+-
+-    def _probe() -> None:
+-        try:
+-            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+-            import mcp_tower_client as _mtc  # lazy sibling import (same-dir or repo-root both resolve)
+-
+-            base = _mtc.MCP_SERVER_URL.rstrip("/")
+-            headers = {
+-                "Content-Type": "application/json",
+-                "Accept": "application/json, text/event-stream",
+-            }
+-
+-            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+-                hdrs = dict(headers)
+-                if sid:
+-                    hdrs["mcp-session-id"] = sid
+-                req = urllib.request.Request(
+-                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+-                )
+-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+-                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode(
+-                        "utf-8", errors="replace"
+-                    )
+-
+-            sid, _ = _post(
+-                {
+-                    "jsonrpc": "2.0",
+-                    "id": call_id + "-init",
+-                    "method": "initialize",
+-                    "params": {
+-                        "protocolVersion": "2024-11-05",
+-                        "capabilities": {},
+-                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+-                    },
+-                },
+-                None,
+-            )
+-            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+-            _, body = _post(
+-                {
+-                    "jsonrpc": "2.0",
+-                    "id": call_id,
+-                    "method": "tools/call",
+-                    "params": {
+-                        "name": "github.list_prs",
+-                        "arguments": {
+-                            "repo": UPSTREAM_REPO,
+-                            "state": "closed",
+-                            "limit": min(int(per_page), 100),
+-                        },
+-                    },
+-                },
+-                sid,
+-                timeout=45,
+-            )
+-            holder["body"] = body
+-        except Exception as exc:  # fallback must never raise out of the thread
+-            holder["error"] = f"tower landing fallback failed ({type(exc).__name__})"
+-
+-    t = threading.Thread(target=_probe, daemon=True)
+-    t.start()
+-    t.join(timeout=timeout_s)
+-    if t.is_alive():
+-        raise TimeoutError("tower landing fallback timed out")
+-    if holder.get("error"):
+-        raise RuntimeError(str(holder["error"]))
+-    return _map_tower_landing_rows(_parse_tower_landing_payload(str(holder.get("body") or ""), call_id))
+-
+-
+-def _fetch_merged_landing_prs(per_page: int) -> list[dict[str, Any]]:
+-    global _LANDING_FETCH_DONE, _LANDING_ROWS
+-    if _LANDING_FETCH_DONE:
+-        return _LANDING_ROWS
+-    _LANDING_FETCH_DONE = True
++    global _LANDING_FETCH_FAILED  # single-writer run-scoped cache
+     try:
+-        _LANDING_ROWS = _rest_merged_landing_prs(per_page)
++        with urllib.request.urlopen(req, timeout=PREMISE_PROBE_TIMEOUT_S) as resp:
++            payload = json.loads(resp.read().decode("utf-8"))
++    except Exception:  # fail-open, but NOT silent (item 15 R2)
++        _LANDING_FETCH_FAILED = True
++        _LANDING_ROWS = []
+         return _LANDING_ROWS
+-    except Exception:  # REST dark ΓçÆ tower fallback; both dark ΓçÆ fail-open serve
+-        pass
+-    _LANDING_ROWS = _tower_merged_landing_prs(per_page)  # raise ΓçÆ upstream catch ΓåÆ serve
++    _LANDING_ROWS = list(payload if isinstance(payload, list) else [])
+     return _LANDING_ROWS
+ 
+ 
+@@ -677,6 +537,43 @@ def _promised_artifact_paths(body: str) -> list[str]:
+         return []
+ 
+ 
++def _receipt_scope_paths(body: str) -> list[str]:
++    """Repo-relative paths from a bridge WO receipt's structured Scope Paths block.
++
++    αª¼αª╛αªéαª▓αª╛ (item 15 R2): tower-αª«αª┐αª¿αºìαªƒαºçαªí αª░αª┐αª╕αª┐αªƒαºçαª░ αªíαºçαª▓αª┐αª¡αª╛αª░αºçαª¼αª▓ αªñαª╛αª▓αª┐αªòαª╛ αªùαªªαºìαª»-αª«αª╛αª░αºìαªòαª╛αª░αºç αª¿αª»αª╝,
++    `### Scope Paths` αª╣αºçαªíαª┐αªé-αªÅαª░ αª¿αª┐αªÜαºçαª░ αª▓αª┐αª╕αºìαªƒαºç αªÑαª╛αªòαºçαÑñ αª░αª┐αª╕αª┐αªƒ-αª╢αºçαª¬ αªùαºçαªƒ (### Task ID /
++    ### Patch Branch αª╣αºçαªíαª╛αª░) αª¢αª╛αªíαª╝αª╛ αªÅαªç αª╕αºìαªòαºìαª»αª╛αª¿ αªÜαª▓αºç αª¿αª╛ ΓÇö αª½αª╛αªçαª▓-αªñαª╛αª▓αª┐αªòαª╛ αªåαª¢αºç αªÅαª«αª¿ αª╕αª╛αªºαª╛αª░αªú
++    αª¿αªñαºüαª¿ αªòαª╛αª£αºçαª░ body αªòαªûαª¿αºï αª╢αºüαªºαºü αªÅαªç αª╕αºìαªòαºìαª»αª╛αª¿αºç αªíαª┐αª«αºïαªƒ αª╣αª¼αºç αª¿αª╛αÑñ αªòαªûαª¿αºïαªç raise αªòαª░αºç αª¿αª╛αÑñ
++    """
++    try:
++        text = str(body or "")
++        if not RECEIPT_SHAPE_RE.search(text):
++            return []
++        paths: list[str] = []
++        seen: set[str] = set()
++        for heading in SCOPE_HEADING_RE.finditer(text):
++            window = text[heading.end(): heading.end() + 800]
++            for line in window.splitlines():
++                stripped = line.strip()
++                if not stripped:
++                    continue
++                if stripped.startswith("#"):
++                    break  # next receipt section ΓÇö scope block ended
++                item = SCOPE_ITEM_RE.match(stripped)
++                if not item:
++                    break  # prose resumed ΓÇö scope block ended
++                path = item.group(1)
++                parts = path.split("/")
++                if "/" not in path or path.startswith("/") or ".." in parts:
++                    continue
++                if path not in seen:
++                    seen.add(path)
++                    paths.append(path)
++        return paths
++    except Exception:  # fail-open
++        return []
++
++
+ def _premise_delivered_note(
+     item: dict[str, Any],
+     tree_root: Path | None = None,
+@@ -684,15 +581,28 @@ def _premise_delivered_note(
+ ) -> str | None:
+     """Item 15 ΓÇö demotion note when a row's premise is already delivered, else None.
+ 
+-    αª¼αª╛αªéαª▓αª╛: αªªαºüαªç αª╕αºìαªòαºìαª»αª╛αª¿, αªªαºüαªƒαºïαªç αª╕αºÄ-αª¿αºïαªƒαª¼αª╣αª¿: (A) body-αª░ αª¬αºìαª░αªñαª┐αª╢αºìαª░αºüαªñ αªåαª░αºìαªƒαª┐αª½αºìαª»αª╛αªòαºìαªƒ
+-    αª¼αª░αºìαªñαª«αª╛αª¿ αªùαª╛αª¢αºç αªåαª¢αºç αªòαª┐ αª¿αª╛; (B) αª«αª╛αª░αºìαª£αªí PR αªòαª┐ αªíαºçαª▓αª┐αª¡αª╛αª░αª┐-αª½αª░αºìαª«αºç (closes/fixes/
+-    resolves/for/receipt #N), αªòαª«αºìαª¬αª╛αªëαª¿αºìαªí αª░αª┐αª╕αª┐αªƒ-αª╣αºçαªíαª╛αª░ αª½αª░αºìαª«αºç (R<n>/#N, #<n>/#N)
+-    αª¼αª╛ αª¼αºïαª░αºìαªíαºçαª░ R-idiom bare αª½αª░αºìαª«αºç (R<n>) αª░αºï-αª¿αª«αºìαª¼αª░ αªëαªªαºìαªºαºâαªñ αªòαª░αª¢αºçαÑñ αª»αºçαªòαºïαª¿αºï
+-    αª¬αºìαª░αºïαª¼-αª¼αºìαª»αª░αºìαªÑαªñαª╛ (rate limit, timeout, parse) αª░αºï αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ αª╕αª╛αª░αºìαª¡ αªòαª░αºç ΓÇö
+-    αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü αªÅαªòαªƒαª┐ dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªòαªûαª¿αºï αª¼αºìαª▓αªò αªòαª░αºç αª¿αª╛αÑñ
+-    αª╣αª╛αª░αª«αºçαªƒαª┐αªò αªòαª▓αª╛αª░ tree_root/fetch_merged αªçαª¿αª£αºçαªòαºìαªƒ αªòαª░αºç (zero network)αÑñ
++    αª¼αª╛αªéαª▓αª╛: αª╕αºìαªòαºìαª»αª╛αª¿αªùαºüαª▓αºï αª╕αª¼αªç αª╕αºÄ-αª¿αºïαªƒαª¼αª╣αª¿: (A) body-αª░ αª¬αºìαª░αªñαª┐αª╢αºìαª░αºüαªñ αªåαª░αºìαªƒαª┐αª½αºìαª»αª╛αªòαºìαªƒ αª¼αª░αºìαªñαª«αª╛αª¿
++    αªùαª╛αª¢αºç αªåαª¢αºç αªòαª┐ αª¿αª╛; (A2, R2) bridge:receipt αª▓αºçαª¼αºçαª▓ = αª╕αª╛αª¼αª«αª┐αªƒ-αª╣αª»αª╝αºç-αª»αª╛αªôαª»αª╝αª╛ αªòαª╛αª£αºçαª░
++    αª░αºçαªòαª░αºìαªí ΓÇö coder αªíαª┐αª╕αª¬αºìαª»αª╛αªÜ αª╢αºüαªºαºü αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒ αª«αª┐αª¿αºìαªƒ αªòαª░αºç; (A3, R2) αª░αª┐αª╕αª┐αªƒ-αª╢αºçαª¬ body-αª░
++    `### Scope Paths` αª¼αºìαª▓αªòαºçαª░ αª╕αª¼ αª¬αªÑ αª¼αª░αºìαªñαª«αª╛αª¿ αªùαª╛αª¢αºç αªÑαª╛αªòαª▓αºç αªòαª╛αª£αªƒαª┐ αª▓αºìαª»αª╛αª¿αºìαªíαºçαªí αª¼αª╛ αªçαªñαª┐αª«αªºαºìαª»αºç
++    αª╕αª╛αª¼αª«αª┐αªƒαºçαªí; (B) αª«αª╛αª░αºìαª£αªí PR αªòαª┐ αªíαºçαª▓αª┐αª¡αª╛αª░αª┐-αª½αª░αºìαª«αºç αª░αºï-αª¿αª«αºìαª¼αª░ αªëαªªαºìαªºαºâαªñ αªòαª░αª¢αºçαÑñ αª»αºçαªòαºïαª¿αºï
++    αª¬αºìαª░αºïαª¼-αª¼αºìαª»αª░αºìαªÑαªñαª╛ (rate limit, timeout, parse) αª░αºï αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ αª╕αª╛αª░αºìαª¡ αªòαª░αºç ΓÇö αª½αª┐αª▓αºìαªƒαª╛αª░
++    αª╢αºüαªºαºü αªÅαªòαªƒαª┐ dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªòαªûαª¿αºï αª¼αºìαª▓αªò αªòαª░αºç αª¿αª╛αÑñ αª╣αª╛αª░αª«αºçαªƒαª┐αªò αªòαª▓αª╛αª░
++    tree_root/fetch_merged αªçαª¿αª£αºçαªòαºìαªƒ αªòαª░αºç (zero network)αÑñ
+     """
+     try:
++        # A2 (R2): label-plane receipt truth ΓÇö zero network, zero heuristics.
++        raw_labels = item.get("labels") or []
++        label_names = {
++            str(l.get("name", "")).lower() if isinstance(l, dict) else str(l).lower()
++            for l in raw_labels if isinstance(l, (dict, str))
++        }
++        if RECEIPT_LABEL in label_names:
++            return (
++                "premise-delivered (bridge:receipt label, item 15/┬º6ak R2): this row is a "
++                "work-order receipt for already-submitted work, not solver-actionable "
++                "IMPLEMENT surface ΓÇö a fresh dispatch would mint a duplicate"
++            )
+         promised = _promised_artifact_paths(str(item.get("body") or ""))
+         if promised:
+             root = tree_root if tree_root is not None else REPO_ROOT
+@@ -703,6 +613,17 @@ def _premise_delivered_note(
+                     f"in-repo artifact(s) already exist on main: {', '.join(promised)} ΓÇö "
+                     "the row's own deliverable is landed; claiming would mint a duplicate landing"
+                 )
++        # A3 (R2): receipt-shape scope-block existence ΓÇö zero network.
++        scope = _receipt_scope_paths(str(item.get("body") or ""))
++        if scope:
++            root = tree_root if tree_root is not None else REPO_ROOT
++            missing = [p for p in scope if not (root / p).exists()]
++            if not missing:
++                return (
++                    "premise-delivered (receipt scope cross-scan, item 15/┬º6ak R2): receipt's "
++                    f"scope artifact(s) all exist on main: {', '.join(scope)} ΓÇö the work order "
++                    "is landed or already submitted; a fresh solver dispatch would mint a duplicate"
++                )
+         if fetch_merged is None:
+             fetch_merged = _fetch_merged_landing_prs
+         rows = fetch_merged(MERGED_LANDING_WINDOW)
+@@ -710,23 +631,12 @@ def _premise_delivered_note(
+     except Exception:  # noqa: BLE001 ΓÇö fail-open: a dark plane serves the row
+         return None
+     cite = re.compile(rf"(?:closes|fixes|resolves|for|receipt)\s+#{num}\b", re.IGNORECASE)
+-    # Compound receipt-header form (R1776/#2766, #1776/#2766): slash-adjacent
+-    # row citation with NO whitespace, invisible to the keyword regex. Live
+-    # miss (2026-10-30 12:52Z): merged #3338's subject "R1776/#2766 evidence
+-    # refresh r2" sailed past the cross-scan and the loop re-dispatched #2766
+-    # ~20 minutes later ΓÇö the exact duplicate-minting invitation (U4).
+-    compound = re.compile(rf"(?:\bR\d+|#\d+)/#{num}\b", re.IGNORECASE)
+-    # Bare board R-idiom (R1776 = row #1776 in this board's own shorthand,
+-    # cf. the R62 schema-note idiom): the same receipt names the PARENT row
+-    # without a compound ΓÇö the predicted next miss when the loop serves the
+-    # parent while a fresh family receipt still rides the window.
+-    rref = re.compile(rf"\bR{num}\b", re.IGNORECASE)
+     try:
+         for pr in rows:
+             if not isinstance(pr, dict) or not pr.get("merged_at"):
+                 continue
+             hay = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
+-            m = cite.search(hay) or compound.search(hay) or rref.search(hay)
++            m = cite.search(hay)
+             if not m:
+                 continue
+             title = str(pr.get("title") or "").strip()[:80]
+@@ -850,66 +760,6 @@ def _probe() -> None:
+         f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
+     )
+ 
+-
+-def _receipt_covered_note(item: dict[str, Any], board: list[dict[str, Any]]) -> str | None:
+-    """#3315 ΓÇö receipt-coverage demotion probe (pure, in-memory, never raises).
+-
+-    αª¼αª╛αªéαª▓αª╛: #2794-αªÅαª░ claim-probe αª▓αª╛αªçαª¡ claim αªºαª░αºç, αªòαª┐αª¿αºìαªñαºü αªûαºïαª▓αª╛ (unmerged) bridge
+-    WO/receipt αª»αºç αª░αºï-αªòαºç reference αªòαª░αºç αª╕αºçαªƒαª╛ αªºαª░αºç αª¿αª╛ ΓÇö αª▓αª╛αªçαª¡ αª¬αºìαª░αª«αª╛αªú 2026-10-30:
+-    #2360 dispatch αª╣αª»αª╝αºçαª¢αºç αª░αª┐αª╕αª┐αª¬αºìαªƒ #3272 αª½αª╛αªçαª▓ αª╣αªôαª»αª╝αª╛αª░ αº¬ αª«αª┐αª¿αª┐αªƒ αª¬αª░αºç, #2633 αª╣αª»αª╝αºçαª¢αºç
+-    αª░αª┐αª╕αª┐αª¬αºìαªƒ #3281-αªÅαª░ αººαºª αª«αª┐αª¿αª┐αªƒ αª¬αª░αºç (αªªαºüαªç αªòαºìαª╖αºçαªñαºìαª░αºçαªç latestClaim null αª¢αª┐αª▓, αªñαª╛αªç
+-    claim-probe αª¬αª╛αª╕ αªòαª░αºçαª¢αª┐αª▓); #1676-αªô WO #3292-αªÅαª░ "detection half" αª░αºçαª½αª╛αª░αºçαª¿αºìαª╕
+-    αªÑαª╛αªòαª╛ αª╕αªñαºìαªñαºìαª¼αºçαªô dispatch αª╣αª»αª╝αºçαª¢αª┐αª▓αÑñ αªÅαªç αª¬αºìαª░αºïαª¼ candidate-αªÅαª░ αª¿αª«αºìαª¼αª░ αª¼αºïαª░αºìαªíαºçαª░ αªàαª¿αºìαª»
+-    αªòαºïαª¿αºï αªûαºïαª▓αª╛ Bridge-WO-αªåαªòαºâαªñαª┐ αª╕αª╛αª░αª┐αª░ αªƒαª╛αªçαªƒαºçαª▓αºç αªåαª¢αºç αªòαª┐ αª¿αª╛ αªªαºçαªûαºç αª╕αºÄ note αªªαºçαª»αª╝ ΓÇö
+-    coverage αª«αª╛αª¿αºç αª╕αºçαªç αª░αºï-αª░ αªòαª╛αª£ αªçαª¿-αª½αºìαª▓αª╛αªçαªƒ (anti-stampede U5), αª¬αºüαª¿αªâ-dispatch
+-    αªíαºüαª¬αºìαª▓αª┐αªòαºçαªƒ αªôαª»αª╝αª╛αª░αºìαªò αªàαª░αºìαªíαª╛αª░αºçαª░ αª¥αºüαªüαªòαª┐αÑñ αª½αª┐αª▓αºìαªƒαª╛αª░ αª╢αºüαªºαºü dispatch αª╕αª░αª╛αªñαºç αª¬αª╛αª░αºç, αªåαªƒαªòαª╛αªñαºç
+-    αª¬αª╛αª░αºç αª¿αª╛; `--issue N` explicit override escape-hatch αªÑαºçαªòαºç αª»αª╛αª»αª╝αÑñ
+-
+-    Board-local and pure: the WO titles ride the same in-memory list the
+-    picker already holds (gh path and tower fallback alike), so this adds
+-    zero network. Fail-open contract: any malformed row / parse error returns
+-    None (the filter can only REMOVE a dispatch, never break the pick).
+-    Conservative issuer gate: only titles containing "Bridge Work Order" count
+-    as coverage issuers ΓÇö a plain issue that merely cites #N is related work,
+-    not a receipt for it. Number matches are word-bounded (`#N`, `row N`,
+-    `bridge-YYYYMMDD-N`) so #263 never matches #2633.
+-    """
+-    try:
+-        num_raw = item.get("number") if isinstance(item, dict) else None
+-        if num_raw is None:
+-            return None
+-        n = int(num_raw)
+-        pat_hash = re.compile(rf"(?<![0-9])#{n}(?![0-9])")
+-        pat_row = re.compile(rf"(?<![0-9])row\s+{n}(?![0-9])")
+-        pat_task = re.compile(rf"bridge-\d{{6,8}}-{n}(?![0-9])")
+-        hits: list[str] = []
+-        for row in board or []:
+-            if not isinstance(row, dict):
+-                continue  # malformed rows fail open
+-            try:
+-                if str(row.get("number", "")) == str(n):
+-                    continue  # a row never covers itself
+-                state = row.get("state")
+-                if state is not None and str(state).lower() != "open":
+-                    continue
+-                title = str(row.get("title") or "")
+-                if "Bridge Work Order" not in title:
+-                    continue  # conservative issuer gate (receipt-shaped WOs only)
+-                if pat_hash.search(title) or pat_row.search(title) or pat_task.search(title):
+-                    hits.append(f"#{row.get('number')}")
+-            except Exception:  # noqa: BLE001 ΓÇö per-row fail-open
+-                continue
+-        if not hits:
+-            return None
+-        return (
+-            "open bridge WO receipt already references this row "
+-            f"({', '.join(hits[:3])}) ΓÇö coverage in flight (anti-stampede U5); "
+-            "explicit --issue override available"
+-        )
+-    except Exception:  # noqa: BLE001 ΓÇö a demotion probe must never raise
+-        return None
+-
+-
+ def pick_next_issue(
+     exclude: set[str] | list[str] | None = None,
+     issues: list[dict[str, Any]] | None = None,
+@@ -1021,37 +871,6 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+                     f"filtered from the pick ΓÇö newest open sibling #{newest_sentry} carries the sentinel duty",
+                 )
+             candidates = survivors
+-        # #3315 ΓÇö receipt-coverage demotion (live mode only, sentry-precedent
+-        # shape): a candidate covered by an OPEN bridge WO/receipt elsewhere on
+-        # the same board is skipped BEFORE the priority sort (window-preserving:
+-        # a covered candidate inside the top-FEEDBACK_PREVERIFY_TOPN window
+-        # would otherwise burn a window slot plus a network probe on a row whose
+-        # work is already in flight ΓÇö live 2026-10-30: #2360 dispatched 4 min
+-        # after receipt #3272, #2633 10 min after #3281). Pure mode (claim_probe
+-        # is None) keeps the byte-identical pre-#3315 label-only contract for
+-        # hermetic callers; the filter can only REMOVE a dispatch, never block
+-        # one, and the explicit --issue N override stays the escape hatch.
+-        coverage_survivors: list[dict[str, Any]] = []
+-        covered = 0
+-        for cand in candidates:
+-            covered_note = _receipt_covered_note(cand, issues or [])
+-            if covered_note is not None:
+-                covered += 1
+-                log_fn(
+-                    "!",
+-                    f"receipt-coverage demotion: #{cand.get('number')} skipped ΓÇö {covered_note}",
+-                )
+-                continue
+-            coverage_survivors.append(cand)
+-        if covered:
+-            candidates = coverage_survivors
+-            if not candidates:
+-                log_fn(
+-                    "!",
+-                    "receipt-coverage demotion: every open candidate is covered by an "
+-                    "open bridge WO receipt ΓÇö no clean pick this run (rerun later or "
+-                    "dispatch explicitly via --issue N)",
+-                )
+     sorted_issues = sorted(candidates, key=priority_key)
+     if claim_probe is None:
+         # Pure mode ΓÇö label-only pick, exactly the pre-#2794 contract (hermetic
+@@ -1104,6 +923,13 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+             if delivered_note:
+                 log_fn("!", f"pick pre-verify: #{num} skipped ΓÇö {delivered_note}; advancing to next candidate (item 15 premise-delivered demotion)")
+                 continue
++            # item 15 R2 ΓÇö dark-scan honesty: a served row whose citation scan
++            # never ran (anonymous fetch failed) must not LOOK verified. The
++            # advisory is log-only here; the envelope path threads it into
++            # board_note so the receiving agent sees it in the JSON itself.
++            dark = landing_crossscan_advisory()
++            if dark:
++                log_fn("!", f"pick pre-verify: #{num} {dark}")
+         if note and not note.startswith("no active claim"):
+             log_fn("!", f"pick pre-verify: #{num} {note} ΓÇö proceeding on labels (live advisory to the agent stays in force)")
+         return num
+@@ -1773,43 +1599,6 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
+ # αªÜαª╛αª▓αª╛αª»αª╝ αª¿αª╛αÑñ αª╕αºÄ pre-push/pre-work rebase αªùαª╛αª░αºìαªí (#161, #514) αªàαªòαºìαª╖αªñ αª░αª╛αªûαª╛ αª╣αª▓αºï ΓÇö
+ # αªÅαª░αª╛ αª╕αªñαºìαª»αª┐αªòαª╛αª░αºçαª░ αªòαª╛αª£ αªòαª░αºç; αª¡αª¼αª┐αª╖αºìαª»αªñαºç αª¼αª╛αª╕αºìαªñαª¼ αªòαª¿αª£αª┐αªëαª«αª╛αª░ αªÅαª▓αºç αª╕αª░αª╛αª╕αª░αª┐ wire αªòαª░αª╛ αª»αª╛αª¼αºçαÑñ
+ 
+-# αª¼αª╛αªéαª▓αª╛: αª¼αºïαª░αºìαªíαºçαª░ αª¿αª┐αª£αª╕αºìαª¼ αªƒαª╛αªçαªƒαºçαª▓-αªòαª¿αª¡αºçαª¿αª╢αª¿ ΓÇö "verb(scope):" αª¬αºìαª░αª┐αª½αª┐αªòαºìαª╕ αª░αºï-αªÅαª░ αª¬αºìαª░αªòαºâαªñ
+-# αª▓αºçαª¿ αª¿αª┐αª░αºìαªªαºçαª╢ αªòαª░αºçαÑñ αª▓αª╛αªçαª¡ αª¬αºìαª░αª«αª╛αªú 2026-10-30: #1690 "audit(api): ΓÇª" (12:15Z) αªô
+-# #2360 "audit(federation): ΓÇª" (12:16Z) αªªαºüαªƒαºïαªç role=coder + task_type=IMPLEMENT
+-# αªÅαª¿αª¡αºçαª▓αª¬αºç αªíαª┐αª╕αª¬αºìαª»αª╛αªÜ αª╣αª»αª╝αºçαª¢αª┐αª▓, αªàαªÑαªÜ αª░αºï-αªªαºüαªƒαª┐αª░ αª¿αª┐αª£αºçαª░ αª¼αªíαª╝αª┐αªç αªÿαºïαª╖αªúαª╛ αªòαª░αºç auditor/report-only
+-# αª▓αºçαª¿αÑñ αª½αª▓αª╛αª½αª▓: αª¬αºìαª░αª«αª╛αªú-αª░αª┐αª╕αª┐αª¬αºìαªƒ αª░αºï αª¼αª╛αª╕αºìαªñαª¼αª╛αª»αª╝αª¿-αªƒαª╛αª╕αºìαªò αª╣αª┐αª╕αºçαª¼αºç αªíαª┐αª╕αª¬αºìαª»αª╛αªÜ αª╣αª»αª╝αºç αªÅαª£αºçαª¿αºìαªƒ-αª╕αª╛αªçαªòαºçαª▓
+-# αª¿αª╖αºìαªƒ αª╣αª»αª╝ ΓÇö αªáαª┐αªò αª╕αºçαªç αªàαª¬αªÜαª»αª╝-αª╢αºìαª░αºçαªúαª┐ αª»αºçαªƒαª╛ stale-incident/stale-claim αªùαª╛αª░αºìαªíαª░αª╛ αªáαºçαªòαª╛αªñαºç
+-# αªÜαª╛αª»αª╝ (root-cause fix: αªÅαªò αª¼αª╛αª░ αª╢αºìαª░αºçαªúαª┐αª¼αª┐αª¿αºìαª»αª╛αª╕ αªáαª┐αªò, αª¬αºìαª░αªñαª┐-αª░αºï αª¬αºìαª»αª╛αªÜ αª¿αª»αª╝)αÑñ αª▓αºçαª¼αºçαª▓-αª╕αªéαªòαºçαªñ
+-# (status:runway, gate:pre-landing) αªåαªùαºç αªÜαª▓αºç ΓÇö αªƒαª╛αªçαªƒαºçαª▓-αª¬αºìαª░αª┐αª½αª┐αªòαºìαª╕ αª╢αºüαªºαºü αªàαª¼αª╢αª┐αª╖αºìαªƒ αªòαºìαª╖αºçαªñαºìαª░αºç
+-# αª«αºìαª»αª╛αª¬ αªòαª░αºç, αªñαª╛αªç fix(ci)+status:runway αªåαª£αªô ci-fixer αª¬αª╛αª»αª╝αÑñ αªàαºìαª»αª╛αª¿αªòαª«αª¿ αª¬αºìαª░αª┐αª½αª┐αªòαºìαª╕
+-# (fix/feat/chore ΓÇª) αªà-αª«αºìαª»αª╛αª¬αªí ΓåÆ αª¬αºüαª░αºïαª¿αºï αª▓αª£αª┐αªò αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñαÑñ
+-# αªçαªñαª┐αª╣αª╛αª╕: r1 αªÜαºçαª╖αºìαªƒαª╛ PR #3246-αªÅ αª¬αºîαªüαª¢αºçαª¢αª┐αª▓ αªòαª┐αª¿αºìαªñαºü branch αª½αª╛αªçαª▓αºç αª¡αºüαª▓ αªòαª¿αªƒαºçαª¿αºìαªƒ
+-# (full_file-αªÅ diff-αªƒαºçαªòαºìαª╕αªƒ) + αª¬αª░αª¼αª░αºìαªñαºÇ main αªòαª«αª┐αªƒαºç conflict ΓÇö merge-αªàαª»αºïαªùαºìαª»αÑñ αªÅαªç r2
+-# αª╕αªéαª╕αºìαªòαª░αªú αª¼αª░αºìαªñαª«αª╛αª¿ main (418cdee) αªƒαºìαª░αª┐-αªñαºç αª╕αª░αª╛αª╕αª░αª┐ αª¬αºìαª░αª»αª╝αºïαªùαªòαºâαªñαÑñ
+-EVIDENCE_LANE_TITLE_ROLES: dict[str, str] = {
+-    "audit": "task-auditor",
+-    "report": "task-auditor",
+-    "triage": "task-auditor",
+-    "verify": "task-auditor",
+-    "census": "task-auditor",
+-    "ops": "task-auditor",
+-    "dispatch": "task-auditor",
+-    "guard": "platform-guardian",
+-    "sentry": "platform-guardian",
+-    "scout": "ecosystem-scout",
+-}
+-
+-# αª¼αª╛αªéαª▓αª╛: envelope-αªÅαª░ task_type αªÅαªûαª¿ role-αªÑαºçαªòαºç αª╕αºÄαª¡αª╛αª¼αºç αª¿αºçαªôαª»αª╝αª╛ αª╣αª»αª╝ ΓÇö αª¬αºìαª░αª«αª╛αªú-αª▓αºçαª¿ αª░αºï
+-# αªåαª░ "IMPLEMENT" αª¡αºüαªûαªúαºìαªí αª¬αª╛αª»αª╝ αª¿αª╛ (SPEC ┬º2 task_type αª░αºçαª£αª┐αª╕αºìαªƒαºìαª░αª┐: AUDIT/SCOUT/OPS/FIX)αÑñ
+-ROLE_TASK_TYPES: dict[str, str] = {
+-    "task-auditor": "AUDIT",
+-    "auditor": "AUDIT",
+-    "ecosystem-scout": "SCOUT",
+-    "platform-guardian": "OPS",
+-    "ci-fixer": "FIX",
+-}
+-
+-
+ def classify_task_role(
+     title: str = "", labels: Iterable[str] = (), body: str = ""
+ ) -> str:
+@@ -1818,16 +1607,6 @@ def classify_task_role(
+         return "ci-fixer"
+     if "gate:pre-landing" in present:
+         return "task-auditor"
+-    # αª¼αª╛αªéαª▓αª╛: αªƒαª╛αªçαªƒαºçαª▓-αª¬αºìαª░αª┐αª½αª┐αªòαºìαª╕ αª«αºìαª»αª╛αª¬ ΓÇö αª¼αºïαª░αºìαªíαºçαª░ "verb(scope):" αªòαª¿αª¡αºçαª¿αª╢αª¿ αª░αºï-αªÅαª░ αª▓αºçαª¿
+-    # αªÿαºïαª╖αªúαª╛ αªòαª░αºç; αª¬αºìαª░αªÑαª« αªƒαºïαªòαºçαª¿ case-insensitive αª«αºìαª»αª╛αªÜ (EVIDENCE_LANE_TITLE_ROLES)αÑñ
+-    # αªòαªáαºïαª░ αªåαªòαºâαªñαª┐: αªƒαºïαªòαºçαª¿αºçαª░ αª¬αª░αºç (αªÉαªÜαºìαª¢αª┐αªò αª╕αºìαª¬αºçαª╕ αª╕αª╣) `(` αª¼αª╛ `:` αªÑαª╛αªòαªñαºç αª╣αª¼αºç ΓÇö αªòαºÇαªôαª»αª╝αª╛αª░αºìαªí
+-    # αª¼αª╛αªòαºìαª» αª¿αª»αª╝αÑñ #489 αªÜαºüαªòαºìαªñαª┐: "audit readiness report"-αª£αª╛αªñαºÇαª»αª╝ αªòαºÇαªôαª»αª╝αª╛αª░αºìαªí-αªƒαª╛αªçαªƒαºçαª▓ αªåαª░
+-    # role αªåαª¼αª┐αª╖αºìαªòαª╛αª░ αªòαª░αªñαºç αª¬αª╛αª░αºç αª¿αª╛ ΓÇö αª╕αºçαª░αª╛ coder αªíαª┐αª½αª▓αºìαªƒαºçαªç αª»αª╛αª»αª╝αÑñ
+-    head = str(title or "").lstrip().lower()
+-    token_match = re.match(r"([a-z][a-z-]*)\s*[:(]", head)
+-    mapped = EVIDENCE_LANE_TITLE_ROLES.get(token_match.group(1)) if token_match else None
+-    if mapped is not None:
+-        return mapped
+     if "status:claimed" in present:
+         return "coder"
+     return "coder"
+@@ -1896,12 +1675,6 @@ def build_task_envelope(
+             log("!", f"[Envelope] unknown --role '{role_override}'; falling back to classified role '{classified}'")
+             role = classified
+ 
+-    # αª¼αª╛αªéαª▓αª╛: task_type αªÅαªûαª¿ final role αªÑαºçαªòαºç αª╕αºÄ derivation (role_override-αª╕αª╣) ΓÇö
+-    # αª¬αºìαª░αª«αª╛αªú-αª▓αºçαª¿ αª░αºï (audit/report/triage/verify/guard/scout αªƒαª╛αªçαªƒαºçαª▓) αªåαª░ IMPLEMENT
+-    # αª¡αºüαªûαªúαºìαªí αª¬αª╛αª»αª╝ αª¿αª╛ (αª▓αª╛αªçαª¡ #1690/#2360 αª«αª┐αª╕-αªíαª┐αª╕αª¬αºìαª»αª╛αªÜ, 2026-10-30)αÑñ αªàαª£αª╛αª¿αª╛ role ΓåÆ
+-    # αªåαªùαºçαª░ αªåαªÜαª░αªú (IMPLEMENT)αÑñ
+-    task_type = ROLE_TASK_TYPES.get(role, "IMPLEMENT")
+-
+     role_description = ROLE_RULES.get(
+         role,
+         ROLE_RULES["solver"] if role in ("coder", "solver") else "Execute role objectives strictly.",
+@@ -1931,7 +1704,7 @@ def build_task_envelope(
+         "output_format": "task-envelope-v1",
+         "task_id": f"task-{issue_number}" if issue_number else "task-adhoc",
+         "issue": issue_number,
+-        "task_type": task_type,
++        "task_type": "IMPLEMENT",
+         "group": resolved_group,
+         "priority": _detect_priority(labels),
+         "objective": title or ("Ad-hoc task ΓÇö objective supplied by the calling agent." if not issue_number else ""),
+@@ -2383,6 +2156,13 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         # αª╢αºüαªºαºü αª╕αªñαºìαª»αª┐αªòαª╛αª░αºçαª░ resolved target-αªÅ mark ΓÇö board-unavailable/ad-hoc αªÅαª¿αª¡αºçαª▓αª¬αºç αª¿αª»αª╝αÑñ
+         if target_issue is not None and target_issue.get("number") is not None:
+             mark_issue_leased(target_issue["number"])
++        # item 15 R2 ΓÇö dark-scan honesty on the envelope: when the anonymous
++        # merged-citation fetch failed this run, the envelope carries an
++        # explicit board_note instead of silently serving an unverified premise.
++        dark_note = landing_crossscan_advisory()
++        if dark_note:
++            note = f"{note}; {dark_note}" if note else dark_note
++            _stderr_log("!", f"envelope premise advisory: {dark_note}")
+         envelope = build_task_envelope(
+             target_issue,
+             group=args.group,
+@@ -2420,17 +2200,11 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             # claim-first mandate αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ (#1530-αª░ zero-dispatch-change αª╢αºâαªÖαºìαªûαª▓αª╛)αÑñ
+             picked_issue = next((i for i in raw if str(i.get("number")) == picked), None)
+             picked_labels = []
+-            picked_title = ""
+-            if isinstance(picked_issue, dict):
+-                # αª¼αª╛αªéαª▓αª╛: αªƒαª╛αªçαªƒαºçαª▓αªô αª¬αºìαª░αºçαª░αªú ΓÇö classify_task_role-αªÅαª░ αª¿αªñαºüαª¿ αªƒαª╛αªçαªƒαºçαª▓-αª¬αºìαª░αª┐αª½αª┐αªòαºìαª╕
+-                # αª«αºìαª»αª╛αª¬ (audit(/report(/guard(/scout(ΓÇª) dispatch-αª¬αªÑαºçαªô αªòαª╛αª£ αªòαª░αºç; αªåαªùαºç
+-                # labels-only αªòαª▓αºç αª¬αºìαª░αª«αª╛αªú-αª░αª┐αª╕αª┐αª¬αºìαªƒ αª░αºï coder-αª╢αºìαª░αºçαªúαª┐ αª╣αªñαÑñ
+-                picked_title = str(picked_issue.get("title", "") or "")
+-                if isinstance(picked_issue.get("labels"), list):
+-                    picked_labels = [
+-                        str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
+-                    ]
+-            classified = classify_task_role(title=picked_title, labels=picked_labels)
++            if isinstance(picked_issue, dict) and isinstance(picked_issue.get("labels"), list):
++                picked_labels = [
++                    str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
++                ]
++            classified = classify_task_role(labels=picked_labels)
+             dispatch_role = args.role or "solver"
+             if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
+                 log("!", f"unknown --role '{args.role}'; dispatching as solver")
+diff --git a/tests/test_premise_delivered_demotion.py b/tests/test_premise_delivered_demotion.py
+index b725a820..f588af31 100644
+--- a/tests/test_premise_delivered_demotion.py
++++ b/tests/test_premise_delivered_demotion.py
+@@ -17,9 +17,8 @@
+      artifact existing ΓçÆ demote (any missing path keeps the row).
+   B. merged-landing citation: one cached /pulls?state=closed fetch per pick
+      run; a MERGED PR citing the row in delivery form (closes/fixes/resolves/
+-     for/receipt #N), compound receipt-header form (R<n>/#N, #<n>/#N) or the
+-     board's bare R-idiom (R<n>) ΓçÆ demote with the citing PR named.
+-     Closed-unmerged and in-gates vehicles never demote.
++     for/receipt #N) ΓçÆ demote with the citing PR named. Closed-unmerged and
++     in-gates vehicles never demote.
+ 
+ Pins enforced here (zero gh/network dependency ΓÇö tree roots and fetchers are
+ injected fakes):
+@@ -28,12 +27,10 @@
+      nothing (never raises).
+   2. Check A: all promised artifacts exist (temp tree) ΓçÆ demotion note;
+      any missing ΓçÆ serve; markerless body falls through to Check B.
+-  3. Check B: merged "for #N"/"receipt #N"/"Closes #N", compound receipt
+-     headers ("R<n>/#N", "#<n>/#N") and the board's bare R-idiom ("R<n>")
+-     ΓçÆ demotion note with the citing PR number; closed-unmerged ΓçÆ serve;
+-     non-delivery citations ("refs #N", "#N false-close receipt", bare
+-     "#N") ΓçÆ serve; number-boundary safe (#N1, R<n>/#N1 and R<n>0 do not
+-     match #N; branch-slug "...-r<n>-..." never demotes a compound check).
++  3. Check B: merged "for #N"/"receipt #N"/"Closes #N" ΓçÆ demotion note with
++     the citing PR number; closed-unmerged ΓçÆ serve; non-delivery citations
++     ("refs #N", "#N false-close receipt") ΓçÆ serve; number-boundary safe
++     (#N1 does not match #N).
+   4. Check A hit short-circuits Check B (fetcher never called).
+   5. Raising fetcher ΓçÆ serve (fail-open); unparseable number ΓçÆ serve.
+   6. Live wrapper never raises.
+@@ -181,80 +178,6 @@ def test_closes_citation_demotes(self):
+         note = cal._premise_delivered_note(self._row_plain(2794), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+         self.assertIsNotNone(note)
+ 
+-    def test_merged_compound_citation_demotes(self):
+-        # Live miss (2026-10-30 12:52Z): merged #3338's subject carried the
+-        # row as "R1776/#2766" ΓÇö slash-adjacent, no whitespace ΓÇö the keyword
+-        # regex sailed past it and the loop re-dispatched #2766 ~20 minutes
+-        # after its own evidence refresh landed.
+-        rows = [
+-            _pr(
+-                3338,
+-                "report(guard): R1776/#2766 evidence refresh r2 ΓÇö zizmor 1.31.1 rescan on current main (bridge-20261030-r1776-zizmor-refresh-glm25)",
+-            )
+-        ]
+-        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        self.assertIsNotNone(note)
+-        self.assertIn("#3338", note)
+-        self.assertIn("R1776/#2766", note)
+-
+-    def test_merged_hash_compound_citation_demotes(self):
+-        rows = [_pr(3400, "evidence refresh #1776/#2766 ΓÇö zero-delta receipt")]
+-        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        self.assertIsNotNone(note)
+-        self.assertIn("#1776/#2766", note)
+-
+-    def test_lowercase_compound_citation_demotes(self):
+-        # "receipt r1776/#2766" defeats the KEYWORD form ("receipt" is not
+-        # adjacent to #2766) ΓÇö the compound form must carry it, case-blind.
+-        rows = [_pr(3401, "rescan r3 receipt r1776/#2766")]
+-        note = cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        self.assertIsNotNone(note)
+-
+-    def test_bare_r_idiom_demotes_parent_row(self):
+-        # The same receipt names the parent row bare ("R1776") ΓÇö the loop's
+-        # next #1776 serve must see the fresh family receipt too.
+-        rows = [
+-            _pr(
+-                3338,
+-                "report(guard): R1776/#2766 evidence refresh r2 ΓÇö zizmor 1.31.1 rescan on current main",
+-            )
+-        ]
+-        note = cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        self.assertIsNotNone(note)
+-        self.assertIn("R1776", note)
+-
+-    def test_bare_number_mention_serves(self):
+-        # Non-delivery: bare "#N" with no delivery keyword and no compound
+-        # slash is related-work context, never a landing receipt.
+-        rows = [_pr(3402, "per #2766 precedent the refresh method stays pinned-version")]
+-        self.assertIsNone(
+-            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        )
+-
+-    def test_compound_number_boundary_safe(self):
+-        rows = [_pr(3403, "R1776/#27661 wrong-row compound")]
+-        self.assertIsNone(
+-            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        )
+-
+-    def test_bare_r_idiom_number_boundary_safe(self):
+-        # "R17760" must not demote row 1776 (boundary), and the title carries
+-        # NO standalone "R1776" token.
+-        rows = [_pr(3404, "R17760 and R17761 tokens only")]
+-        self.assertIsNone(
+-            cal._premise_delivered_note(self._row_plain(1776), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        )
+-
+-    def test_branch_slug_alone_never_demotes_compound_check(self):
+-        # "...-r1776-..." inside a branch slug matches \bR<n>\b ONLY when a
+-        # slash follows for the compound; as a bare token it IS the board's
+-        # R-idiom and demotes ΓÇö pin the compound's slug-neutrality instead:
+-        # a slug WITHOUT the R-token (plain dash-number) must not demote.
+-        rows = [_pr(3405, "watchdog live run (bridge-20261030-2766-watchdog-live-run-r1) (#3405)")]
+-        self.assertIsNone(
+-            cal._premise_delivered_note(self._row_plain(2766), tree_root=Path("/nonexistent"), fetch_merged=lambda p: rows)
+-        )
+-
+     def test_raising_fetcher_fails_open(self):
+         def boom(per_page):
+             raise RuntimeError("rate limited")
+@@ -382,5 +305,181 @@ def test_loop_source_wires_premise_probe_at_both_dispatch_sites(self):
+         )
+ 
+ 
++class TestReceiptLabelDemotion(unittest.TestCase):
++    """Item 15 R2 (GLM Agent 23, Job 486814, 2026-10-30) ΓÇö label-plane truth.
++
++    Live anatomy: the picker dispatched #3351 (bridge:receipt ΓÇö GLM Agent 10's
++    zizmor-guard receipt) as a fresh coder-IMPLEMENT task while its own scope
++    artifact tests/test_zizmor_profile_guard.py was already byte-on-main, and
++    re-picked #2360 one run after demoting it ΓÇö both because the anonymous
++    /pulls citation scan silently failed open on the burned-out 60 req/h IP
++    quota. A receipt row is a record of already-submitted work by
++    construction; the label check demotes it with ZERO network dependency.
++    """
++
++    def test_bridge_receipt_label_demotes_with_zero_fetch(self):
++        row = _row(3351, labels=["report", "bridge:receipt"], body="Bridge Work Order receipt body.")
++        note = cal._premise_delivered_note(
++            row,
++            tree_root=Path("/nonexistent"),
++            fetch_merged=lambda p: (_ for _ in ()).throw(AssertionError("fetch must not run for a receipt row")),
++        )
++        self.assertIsNotNone(note)
++        self.assertIn("bridge:receipt", note)
++        self.assertIn("already-submitted", note)
++
++    def test_receipt_label_check_runs_before_tree_scans(self):
++        # A receipt row with NO body at all still demotes ΓÇö the label alone
++        # is the plane of truth (zero-network, zero-heuristic).
++        row = _row(3353, labels=["bridge:receipt"])
++        note = cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
++        self.assertIsNotNone(note)
++
++    def test_non_receipt_labels_serve(self):
++        row = _row(2360, labels=["p2-medium", "status:unclaimed", "repo:core", "audit:finding"], body="audit prose only.")
++        self.assertIsNone(
++            cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
++        )
++
++    def test_dict_labels_and_str_labels_both_recognized(self):
++        for labels in (["bridge:receipt"], [{"name": "bridge:receipt"}]):
++            row = {"number": 3345, "title": "r", "labels": labels, "body": ""}
++            note = cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
++            self.assertIsNotNone(note, f"label shape {labels!r} must be recognized")
++
++    def test_malformed_labels_never_raise(self):
++        for bad in (None, 42, [object()], [{"name": 42}]):
++            row = {"number": 1, "title": "r", "labels": bad, "body": ""}
++            try:
++                cal._premise_delivered_note(row, tree_root=Path("/nonexistent"), fetch_merged=lambda p: [])
++            except Exception as exc:  # noqa: BLE001
++                self.fail(f"malformed labels {bad!r} raised {type(exc).__name__}")
++
++
++class TestReceiptScopePaths(unittest.TestCase):
++    """Item 15 R2 ΓÇö structured `### Scope Paths` extraction (receipt-shape gated)."""
++
++    RECEIPT_BODY = (
++        "### Task ID\nbridge-20261030-x\n\n### Patch Branch\nbridge/x\n\n"
++        "### Summary\nwork already submitted elsewhere.\n\n"
++        "### Scope Paths\n- scripts/ci/guard.py\n- tests/test_guard.py\n\n"
++        "### Test Evidence\nTier-1 reflection.\n"
++    )
++
++    def test_scope_block_extracts_list_paths(self):
++        self.assertEqual(
++            cal._receipt_scope_paths(self.RECEIPT_BODY),
++            ["scripts/ci/guard.py", "tests/test_guard.py"],
++        )
++
++    def test_receipt_shape_gate_blocks_non_receipt_bodies(self):
++        # A fresh work order that merely lists files to create must NOT be
++        # demotable off this scan alone (no ### Task ID / ### Patch Branch).
++        body = "### Deliverables\nPlease create:\n- scripts/new_thing.py\n"
++        self.assertEqual(cal._receipt_scope_paths(body), [])
++
++    def test_backticked_scope_items_extracted(self):
++        body = "### Task ID\nx\n\n### Scope Paths\n- `docs/report.md`\n"
++        self.assertEqual(cal._receipt_scope_paths(body), ["docs/report.md"])
++
++    def test_tree_escape_and_absolute_paths_filtered(self):
++        body = (
++            "### Task ID\nx\n\n### Scope Paths\n- ../escape.md\n- /abs.md\n"
++            "- ok/rel.md\n- no-slash.md\n"
++        )
++        self.assertEqual(cal._receipt_scope_paths(body), ["ok/rel.md"])
++
++    def test_prose_after_scope_block_ends_extraction(self):
++        body = (
++            "### Task ID\nx\n\n### Scope Paths\n- docs/a.md\n"
++            "Some prose line that is not a list item.\n- docs/b.md\n"
++        )
++        self.assertEqual(cal._receipt_scope_paths(body), ["docs/a.md"])
++
++    def test_malformed_body_never_raises(self):
++        for bad in (None, "", 42, object()):
++            self.assertEqual(cal._receipt_scope_paths(bad), [])
++
++    def test_all_scope_artifacts_exist_demotes(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            (root / "tests").mkdir()
++            (root / "tests" / "test_zizmor_profile_guard.py").write_text("guard", encoding="utf-8")
++            row = _row(
++                3351,
++                body="### Task ID\nx\n\n### Scope Paths\n- tests/test_zizmor_profile_guard.py\n",
++            )
++            note = cal._premise_delivered_note(
++                row,
++                tree_root=root,
++                fetch_merged=lambda p: (_ for _ in ()).throw(AssertionError("fetch must not run when the scope scan hits")),
++            )
++            self.assertIsNotNone(note)
++            self.assertIn("receipt scope cross-scan", note)
++            self.assertIn("tests/test_zizmor_profile_guard.py", note)
++
++    def test_missing_scope_artifact_serves(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            root = Path(tmp)
++            row = _row(3360, body="### Task ID\nx\n\n### Scope Paths\n- scripts/ci/not_yet.py\n")
++            self.assertIsNone(
++                cal._premise_delivered_note(row, tree_root=root, fetch_merged=lambda p: [])
++            )
++
++
++class TestDarkScanHonesty(unittest.TestCase):
++    """Item 15 R2 ΓÇö a failed anonymous fetch is a first-class dark state.
++
++    Fail-open dispatch stays (never-raise contract), but the silence is gone:
++    the advisory surfaces at landing_crossscan_advisory() for the pick log and
++    the envelope board_note.
++    """
++
++    def setUp(self):
++        self._orig = cal._LANDING_FETCH_FAILED
++
++    def tearDown(self):
++        cal._LANDING_FETCH_FAILED = self._orig
++
++    def test_healthy_scan_advisory_is_none(self):
++        cal._LANDING_FETCH_FAILED = False
++        self.assertIsNone(cal.landing_crossscan_advisory())
++
++    def test_failed_scan_advisory_honest(self):
++        cal._LANDING_FETCH_FAILED = True
++        advisory = cal.landing_crossscan_advisory()
++        self.assertIsNotNone(advisory)
++        self.assertIn("DARK", advisory)
++        self.assertIn("re-verify", advisory)
++
++    def test_live_fetch_failure_sets_dark_state(self):
++        # The LIVE fetcher (not an injected one) must flip the dark flag on
++        # any failure ΓÇö that is the exact silent path this R2 closes.
++        cal._LANDING_FETCH_FAILED = False
++        cal._LANDING_FETCH_DONE = False
++        with unittest.mock.patch.object(
++            cal.urllib.request, "urlopen", side_effect=OSError("rate limited")
++        ):
++            rows = cal._fetch_merged_landing_prs(80)
++        self.assertEqual(rows, [])
++        self.assertTrue(cal._LANDING_FETCH_FAILED)
++        self.assertIsNotNone(cal.landing_crossscan_advisory())
++        cal._LANDING_FETCH_DONE = True  # keep the module cache coherent
++
++    def test_envelope_carries_dark_advisory_in_board_note(self):
++        # build_task_envelope itself stays pure; the threading lives in
++        # run_dispatch_cycle. Pin the SOURCE so the advisory cannot silently
++        # regress out of the envelope path (same AST-pin style as above).
++        loop_src = Path(cal.__file__).read_text(encoding="utf-8")
++        self.assertIn("landing_crossscan_advisory()", loop_src)
++        self.assertIn("board_note=note", loop_src)
++        # the dark advisory must be threaded INTO note before the envelope call
++        self.assertLess(
++            loop_src.index("dark_note = landing_crossscan_advisory()"),
++            loop_src.rindex("board_note=note"),
++            "dark advisory must be computed before build_task_envelope consumes board_note",
++        )
++
++
+ if __name__ == "__main__":
+     unittest.main()

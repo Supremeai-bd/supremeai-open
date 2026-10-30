@@ -1,0 +1,61 @@
+diff --git a/examples/gateway_client.py b/examples/gateway_client.py
+index a718acc2..ea624bc4 100644
+--- a/examples/gateway_client.py
++++ b/examples/gateway_client.py
+@@ -19,7 +19,7 @@
+ import urllib.request
+ 
+ DEFAULT_BASE_URL = os.getenv(
+-    "SUPREMEAI_GATEWAY_URL", "https://supremeai-api.onrender.com"
++    "SUPREMEAI_GATEWAY_URL", "https://supremeai-api-ulw0.onrender.com"
+ )
+ RETRY_BACKOFF_S = 2.0
+ 
+diff --git a/gateway/service/providers/adapters.py b/gateway/service/providers/adapters.py
+index 2f0cfb51..c12573cb 100644
+--- a/gateway/service/providers/adapters.py
++++ b/gateway/service/providers/adapters.py
+@@ -244,7 +244,7 @@ async def forward_chat_completion(
+         headers["HTTP-Referer"] = (
+             os.getenv("OPENROUTER_REFERER")
+             or os.getenv("RENDER_EXTERNAL_URL")
+-            or "https://supremeai-api.onrender.com"
++            or "https://supremeai-api-ulw0.onrender.com"
+         )
+         headers["X-Title"] = "SupremeAI Gateway"
+ 
+diff --git a/scripts/ci/probe_live_status_453.py b/scripts/ci/probe_live_status_453.py
+index 57645027..28829012 100644
+--- a/scripts/ci/probe_live_status_453.py
++++ b/scripts/ci/probe_live_status_453.py
+@@ -22,7 +22,7 @@
+ Usage:
+   python3 scripts/ci/probe_live_status_453.py --selftest        # offline
+   python3 scripts/ci/probe_live_status_453.py                    # probe now
+-  GATEWAY_URL=https://supremeai-api.onrender.com \
++  GATEWAY_URL=https://supremeai-api-ulw0.onrender.com \
+   CORS_ORIGINS="https://studio.example,https://a.example2" \
+       python3 scripts/ci/probe_live_status_453.py --json-out probe.json
+ 
+@@ -40,7 +40,7 @@
+ from datetime import datetime, timezone
+ from urllib.parse import urlparse
+ 
+-DEFAULT_GATEWAY_URL = "https://supremeai-api.onrender.com"
++DEFAULT_GATEWAY_URL = "https://supremeai-api-ulw0.onrender.com"
+ PROBE_PATHS = ("/health", "/healthz")
+ USER_AGENT = "supremeai-probe-453/1.0 (autonomous contributor)"
+ TIMEOUT_S = 20
+diff --git a/scripts/ci/tenant_negative_battery.py b/scripts/ci/tenant_negative_battery.py
+index a335e3bc..c402d6b4 100644
+--- a/scripts/ci/tenant_negative_battery.py
++++ b/scripts/ci/tenant_negative_battery.py
+@@ -6,7 +6,7 @@
+ so CI can assert zero cross-tenant successes.
+ 
+ Env:
+-  SUPREMEAI_API_URL   e.g. https://supremeai-api.onrender.com
++  SUPREMEAI_API_URL   e.g. https://supremeai-api-ulw0.onrender.com
+   CUSTOMER_TOKEN      admin token of the dogfood CUSTOMER tenant
+   ADMIN_ENDPOINT_TOKEN  (optional) default-tenant token used only to verify it is NOT accepted cross-tenant
+ 

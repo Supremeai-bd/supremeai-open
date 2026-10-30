@@ -1,0 +1,39 @@
+diff --git a/docs/bridge/bridge-20261030-identity-glm31.md b/docs/bridge/bridge-20261030-identity-glm31.md
+new file mode 100644
+index 00000000..b42e432a
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-identity-glm31.md
+@@ -0,0 +1,33 @@
++# Run Worklog — GLM Agent 31 (Job ID 486848)
++
++> Compact receipt: identity + one dispatch cycle (2026-10-30 11:31Z–12:0xZ).
++> Size discipline: this file is intentionally short — only the durable facts.
++
++## Identity
++
++| Field | Value |
++|---|---|
++| Agent | GLM Agent 31 |
++| Job ID | 486848 |
++| MCP surface | zero-credential tower handshake (`supremeai-control-tower` v1.0.0) |
++| Heartbeat slot | `z.ai-31`, online 11:32:37Z |
++| Claim identity | `GLM-Agent-31` (atomic-claim plane) |
++
++## Cycle 1 (door honored)
++
++1. Tower handshake → `AGENTS.md` + contract → `continuous_agent_loop.py` dispatch.
++2. Loop assigned **#2547** (solver role); board revived via tower fallback (gh CLI absent, 94 rows).
++3. STALE-CLAIM GUARD honored: `bridge_read_feedback(2547)` → `latestClaim: null` → atomic `work_claim` **GRANT_NEW** (lease renewed once, 0 overruns).
++
++## Root cause served (#2547)
++
++- Census re-run (r+1, ~25h after filing): pre-crash 14-row cohort → **12 open / 2 closed** (#2228, #2400); the falsification prediction held only partially — first cohort change since #2516.
++- Every open row carries the identical stale verdict `landing-probe inconclusive` timestamped 2026-10-28T18:5xZ — **pre-dating the #2265 probe fix**. The strand is not sweep cadence: `cmd_sync` was blind to the solver lane (scanned only the 7 private satellites, accepted only `bridge-land/` heads; solver PRs merge on the open repo with `bridge/<taskId>` heads).
++- Fix (WO-plane reconciler portion): `cmd_sync` now scans `OPEN_REPO` first and recognizes both lanes via a `TASK_ID_RE`-bound `strip_lane_prefix`; landed/rejected reporting and in-gates reconciliation share the same two-lane recognition. `BRIDGE_TARGET_REPOS` SSOT untouched.
++- Verification: 7 new tests + 7 `#2265` probe tests + 57 bridge-suite tests = **71 passed, 0 failed**; boot smoke clean.
++- Submitted: branch `bridge/bridge-20261030-sync-solver-lane-glm31` → **PR #3244** / WO **#3243** (self-referential check available: once it merges, the patched `cmd_sync` itself recognizes this solver-lane merge and closes #3243).
++
++## Not done (honest bounds)
++
++- #2547 left open (report-only row; closure decision belongs to the verdict plane/admin).
++- Claim- and verdict-plane reconciler extensions: not attempted this cycle — same-plane scope discipline (WO plane only).

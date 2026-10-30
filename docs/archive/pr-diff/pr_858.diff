@@ -1,0 +1,65 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo3.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo3.md
+new file mode 100644
+index 00000000..39302182
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo3.md
+@@ -0,0 +1,59 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo3
++## SupremeAI Studio Frontend "Cosmic" Modernization — Phase 3: UserDashboard Glow-Up
++
++**Target subsystem:** supremeai-studio (frontend) — `src/components/customer/UserDashboard.tsx` and closely-related presentational files
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Depends on:** bridge-20261022-frontend-cosmic-wo1 (token consolidation + aurora/nebula tokens) — issue #855 / PR #856
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow)
++
++## Context (audit findings, 2026-10-22)
++
++`UserDashboard.tsx` is functionally strong (intent-carryover fix, honest recent-work panel, hybrid progressive disclosure of capabilities, graceful degradation) but visually flat:
++
++- "Calm intent-first" layout has zero visual identity: no aurora/cosmic accents, no micro-interactions, no motion.
++- Quick-start cards (`quickStarts` array) are static; recent conversations list has no skeleton loading state visible to the user while `recentLoading` is true.
++- Ask-box is a plain input; reference design uses quick-action chips to lower the blank-page barrier.
++- All styling must come only from the `--sa-*` token system added/consolidated in WO1.
++
++## Scope of this work order
++
++1. **Aurora greeting section:**
++   - Behind the greeting/ask-box, add a subtle animated aurora wash using the WO1 `--nebula-gradient`/`--aurora-green`/`--aurora-purple` tokens (CSS only — keyframe gradient drift; respect `prefers-reduced-motion` by rendering the static gradient).
++2. **Quick-start card micro-interactions:**
++   - Hover: `--glow-accent` soft outer shadow + icon translate; focus-visible ring from existing token.
++   - Entrance: staggered fade-up on mount (CSS animation, reduced-motion safe).
++3. **Skeleton loading states:**
++   - While `recentLoading`/`loadingWorkspace` is true, render token-styled skeleton rows instead of nothing; keep existing honest empty states ("Nothing here yet") for the genuinely-empty case.
++4. **Dynamic quick-action chips:**
++   - Below the ask-box, render up to 3 chips: derived from the user's recent conversation titles (fallback to the existing static `quickStarts` when history is empty — no new backend endpoint needed).
++   - Chip click pre-fills the ask-box and submits (reuses `submitAsk` intent-carryover path to `/workspace/live?intent=`).
++5. **Tests:**
++   - Extend `UserDashboard.test.tsx`: chips render from recent conversations; chip click navigates with intent param; skeleton shows during loading; empty-state still honest. All token classes asserted (no raw slate/blue).
++
++## Out of scope (kept smallest safe change)
++
++- No layout/IA changes, no new routes, no backend API changes, no auth flow changes, no chat page work (WO4), no landing page (WO2), no admin work (WO5).
++
++## Acceptance criteria
++
++- [ ] All new styling consumes `--sa-*` tokens only (grep: no `slate-`, no `bg-white/`, no raw hex in JSX).
++- [ ] `prefers-reduced-motion` honored for every animation.
++- [ ] `npm test` + typecheck green; existing intent-carryover + empty-state tests unchanged and passing.
++- [ ] Fallback behavior verified: backend conversations fetch fails → static quickStarts chips, honest empty recent-work.
++- [ ] `VITE_COSMIC_DASHBOARD=false` (default true) feature flag disables aurora/motion but keeps all function (kill-switch precedent).
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** UserDashboard is the screen the (currently single) active user sees every day; making it visually delightful is the highest value-per-risk change in the roadmap. It is presentational-only, so it can ship before the riskier public landing page (WO2) without touching routing, auth, or backend contracts.
++
++**Alternatives rejected:**
++- *Start with landing page (WO2)* — rejected again at this phase: public marketing page needs the aurora/motion primitives proven in a lower-stakes internal screen first.
++- *JavaScript-driven animations (framer-motion etc.)* — rejected: adds a dependency for what CSS keyframes do; violates the smallest-safe-change principle and 512MB cold-start budget.
++- *New backend endpoint for personalized chips* — rejected: recent-conversation titles already arrive via the existing `GET /api/v1/conversations/` call in the component; deriving chips client-side needs zero backend work.
++
++## Verification evidence
++
++- Doc-only work-order spec; content verified against live `UserDashboard.tsx` + `UserDashboard.test.tsx` read via MCP Tower on 2026-10-22.
++- Reflection evidence included (mandatory fields: why, alternatives_rejected).
++- Implementation PRs will attach vitest + typecheck output per the acceptance criteria above.

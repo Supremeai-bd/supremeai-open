@@ -1,0 +1,50 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index e54b69e2..03023a15 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -118,7 +118,7 @@ export const env = {
+   get backendUrl(): string { return optional("SUPREMEAI_BACKEND_URL"); },
+   get backendServiceToken(): string { return optional("SUPREMEAI_BACKEND_SERVICE_TOKEN"); },
+ 
+-  // ── Render (4 accounts)
++  // ── Render (5 accounts)
+   render: {
+     primary: {
+       get apiKey(): string { return optional("RENDER_API_KEY_1", optional("RENDER_API_KEY")); },
+@@ -143,6 +143,11 @@ export const env = {
+       get serviceId(): string { return optional("RENDER_MCP_SVC_ID"); },
+       get url(): string { return optional("RENDER_MCP_URL"); },
+     },
++    api: {
++      get apiKey(): string { return optional("RENDER_API_KEY_5", optional("RENDER_API_KEY_API")); },
++      get serviceId(): string { return optional("RENDER_API_SVC_ID", "srv-dbappass728c7396p580"); },
++      get url(): string { return optional("RENDER_API_URL", "https://supremeai-api-ulw0.onrender.com"); },
++    },
+   },
+ 
+   // ── Supabase
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 0b86beec..c25214e1 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -174,6 +174,20 @@ export function buildAccountRegistry(): ProviderAccount[] {
+       // render.* tool failed even though a valid key was provisioned.
+       available: isAvailable("RENDER_API_KEY_4") || isAvailable("RENDER_API_KEY"),
+     },
++    {
++      id: "render-api",
++      provider: "render",
++      displayName: "Render API (Gateway Shield)",
++      role: "gateway-api",
++      environment: "production",
++      capabilities: ["health", "logs", "deploy", "restart", "env_vars"],
++      apiKeyRef: "RENDER_API_KEY_5",
++      apiKeyRefs: ["RENDER_API_KEY_API"],
++      url: env.render.api.url,
++      serviceId: env.render.api.serviceId,
++      healthPath: "/healthz",
++      available: isAvailable("RENDER_API_KEY_5") || isAvailable("RENDER_API_KEY_API"),
++    },
+ 
+     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
+     // Note: SaifulHaqueNiloy/supremeai and the pre-migration personal e-commerce namespace

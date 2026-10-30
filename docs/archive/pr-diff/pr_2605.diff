@@ -1,0 +1,297 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/action.tools.ts b/infrastructure/mcp-control-plane/src/tools/action.tools.ts
+index 92f35aac..17d95ad4 100644
+--- a/infrastructure/mcp-control-plane/src/tools/action.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/action.tools.ts
+@@ -14,6 +14,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
+       clearCache: z.boolean().optional().describe("Whether to clear build cache"),
+       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     async ({ serviceId, clearCache, overrideRequestId }) => {
+       try {
+         const plan = buildRenderDeployAction(serviceId, clearCache);
+@@ -32,6 +33,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
+       prefix: z.string().optional().describe("Prefix to match keys. If empty, flushes all."),
+       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ prefix, overrideRequestId }) => {
+       try {
+         const plan = buildRedisFlushAction(prefix);
+@@ -49,6 +51,7 @@ export async function registerActionTools(server: McpServer): Promise<void> {
+     {
+       overrideRequestId: z.string().optional().describe("Approved Request ID to bypass policy engine")
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ overrideRequestId }) => {
+       try {
+         const plan = buildCloudflarePurgeCacheAction();
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 2d7e054f..4cde1c2c 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -828,6 +828,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     "bridge.guide",
+     "Zero-credential onboarding contract for external agents working from the public open-source repo: lifecycle, branch convention, diff caps, protected paths and the submission flow. No network required.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
+     }
+@@ -1012,6 +1013,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
+       label: z.string().optional().describe("Optional label filter for queue."),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ view, taskId, limit, label }) => {
+       const repo = bridgeOpenRepo();
+       if (view === "guide") {
+@@ -1629,6 +1631,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     "bridge.submit_patch",
+     "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
+     submitPatchSchema,
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     submitPatchHandler as any
+   );
+ 
+@@ -1637,6 +1640,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     "bridge.submit",
+     "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
+     submitPatchSchema,
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     submitPatchHandler as any
+   );
+ 
+@@ -1841,6 +1845,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       issueNumber: z.number().int().positive().describe("Task issue number to claim"),
+       agentId: z.string().optional().describe("Optional caller identity (defaults to authenticated client or contributor)"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     claimHandler
+   );
+ 
+@@ -1851,6 +1856,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     {
+       number: z.number().int().positive().describe("Work-order issue number in the public open-source repo"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ number }) => {
+       const repo = bridgeOpenRepo();
+       try {
+@@ -1951,6 +1957,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
+       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     async ({ issueNumber, agentId }) => {
+       const repo = bridgeOpenRepo();
+       const agent = resolveIssueAgent(agentId);
+@@ -2009,6 +2016,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       issueNumber: z.number().int().positive().describe("Claimed task issue number"),
+       agentId: z.string().optional().describe("Caller identity — must match the claiming agent"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     async ({ issueNumber, agentId }) => {
+       const repo = bridgeOpenRepo();
+       const agent = resolveIssueAgent(agentId);
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 4cd6fac7..79bd2401 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -157,6 +157,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.actions_op",
+     {
+       description: "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+@@ -197,6 +198,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.workflow_runs",
+     {
+       description: "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+@@ -230,6 +232,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.get_failed_logs",
+     {
+       description: "Get trailing logs for failed jobs in a workflow run for any repository across Supremeai-bd.",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+@@ -261,6 +264,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.list_secrets",
+     {
+       description: "List GitHub Actions secret names for any repository across Supremeai-bd (names only).",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+@@ -291,6 +295,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.read_file",
+     {
+       description: "Read the content of any file from any repository across the organization (Read-Only).",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills', 'supremeai-command') or 'Supremeai-bd/<repo>'"),
+@@ -323,6 +328,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.list_prs",
+     {
+       description: "List pull requests for any repository across Supremeai-bd (Read-Only).",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'"),
+@@ -357,6 +363,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.code_search",
+     {
+       description: "Search code across Supremeai-bd repositories (Read-Only). Useful for finding method/type references without manual tree traversal.",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+         repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+@@ -386,6 +393,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.search_code",
+     {
+       description: "Alias of github.code_search — search code across Supremeai-bd repositories (Read-Only).",
++      annotations: { readOnlyHint: true, idempotentHint: true },
+       inputSchema: {
+         query: z.string().describe("Search query (code terms, symbol names, etc.)"),
+         repo: z.string().optional().describe("Optional target repo (e.g. 'supremeai-open'); omit to search the whole org"),
+@@ -414,6 +422,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+     "github.create_issue",
+     {
+       description: "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
++      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+       inputSchema: {
+         title: z.string().min(5).max(250).describe("Issue title"),
+         body: z.string().min(10).describe("Issue description / markdown body"),
+diff --git a/infrastructure/mcp-control-plane/src/tools/parity.tools.ts b/infrastructure/mcp-control-plane/src/tools/parity.tools.ts
+index 8563e64d..cb1a6f07 100644
+--- a/infrastructure/mcp-control-plane/src/tools/parity.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/parity.tools.ts
+@@ -74,7 +74,7 @@ export async function registerParityTools(server: McpServer): Promise<void> {
+   // server.tool() call throws "already registered" at startup - which crashed the
+   // whole registerAllTools chain and left Render deploys update_failed (WO #2211,
+   // live 2026-10-28: build succeeds, container boot crashes, Render rolls back).
+-  server.tool("system_parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, handler as any);
++  server.tool("system_parity_audit", "Run a multi-platform commit/schema/secret parity audit", {}, { readOnlyHint: true, idempotentHint: true }, handler as any);
+ }
+ 
+ export { runParityAudit };
+diff --git a/infrastructure/mcp-control-plane/src/tools/policy.tools.ts b/infrastructure/mcp-control-plane/src/tools/policy.tools.ts
+index 45511b9f..5d645a11 100644
+--- a/infrastructure/mcp-control-plane/src/tools/policy.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/policy.tools.ts
+@@ -13,6 +13,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
+       provider: z.string().describe("The provider, e.g., 'render', 'supabase', 'system'"),
+       action: z.string().describe("The action, e.g., 'deploy', 'restart', 'delete'"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ provider, action }) => {
+       try {
+         const result = globalPolicyEngine.evaluateAction({ provider, action });
+@@ -48,6 +49,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
+       requestId: z.string().describe("The Request ID, e.g., REQ-123"),
+       decision: z.enum(["APPROVED", "REJECTED"]).describe("The decision to make.")
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+     async ({ requestId, decision }) => {
+       try {
+         const callerRole = RequestContextStore.getRole();
+@@ -81,6 +83,7 @@ export async function registerPolicyTools(server: McpServer): Promise<void> {
+     "policy.list_pending",
+     "List all currently pending approval requests.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+        const pending = globalApprovalManager.getPendingRequests();
+        return {
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.summary.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.summary.tools.ts
+index afaca1bf..6fe9528e 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.summary.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.summary.tools.ts
+@@ -9,6 +9,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
+     "health.full_sweep",
+     "Universal Observe Layer: Forces a fresh sweep of all adapters (bypassing cache) and returns the incident report and snapshots.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const report = await globalHealthEngine.runFullSweep();
+@@ -28,6 +29,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
+     "health.dashboard",
+     "Universal Observe Layer: Returns the latest cached health snapshot instantly (no network requests).",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const snapshots = globalHealthCache.getAllSnapshots();
+@@ -52,6 +54,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
+     "resources.dashboard",
+     "Returns the account-aware resource inventory with the latest cached provider status.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const resources = await listResources();
+@@ -66,6 +69,7 @@ export async function registerSystemSummaryTools(server: McpServer): Promise<voi
+     "system.dependencies",
+     "Universal Observe Layer: Returns the dependency graph map.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const deps = globalDependencyGraph.getRawMap();
+       return {
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 9bb5767a..666f3b8f 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -552,6 +552,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     "system.summary",
+     "Get a high-level summary of all SupremeAI services — availability, roles, and capabilities",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const store = RequestContextStore.get();
+       const registry = getAccountsForRole(store?.role);
+@@ -598,6 +599,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     "system.health",
+     "Ping all backend services and report their HTTP health status",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const store = RequestContextStore.get();
+       const registry = getAccountsForRole(store?.role);
+@@ -694,6 +696,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     "resource.list",
+     "List all discovered resources across all configured providers.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       const resources = await listResources();
+       return {
+@@ -721,6 +724,7 @@ export async function registerSystemTools(server: McpServer): Promise<void> {
+     {
+       resourceId: z.string().describe("The ID of the resource (e.g. render/render-primary)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ resourceId }) => {
+       const status = await getResourceStatus(resourceId);
+       return {
+diff --git a/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts b/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts
+index ce3ad4e7..b5989ed2 100644
+--- a/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts
+@@ -35,6 +35,7 @@ export async function registerUnifiedStatusTool(server: McpServer): Promise<void
+         .optional()
+         .describe("Optional target ID or agent slot to filter (e.g., 'agent-1', 'render-primary')."),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ scope, targetId }) => {
+       const store = RequestContextStore.get();
+       const role = store?.role;

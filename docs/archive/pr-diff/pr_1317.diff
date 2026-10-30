@@ -1,0 +1,47 @@
+diff --git a/docs/bridge/orders/bridge-20261027-otp-plaintext-log.md b/docs/bridge/orders/bridge-20261027-otp-plaintext-log.md
+new file mode 100644
+index 00000000..5cd0398e
+--- /dev/null
++++ b/docs/bridge/orders/bridge-20261027-otp-plaintext-log.md
+@@ -0,0 +1,41 @@
++# [P0] Stop plaintext OTP logging in ghost_tower SSO auto-login (secret exposure)
++
++## Task ID
++`bridge-20261027-otp-plaintext-log`
++
++## Target repository
++`Supremeai-bd/supremeai-browser` (tracked on the public `supremeai-open` task board per federation policy).
++
++## Severity
++**P0 — live secret (2FA TOTP) exposure in application logs.** A time-based 2FA code is written verbatim into logs; anything that can read logs (log aggregation, support tooling, screenshots) can hijack the session within the TOTP validity window.
++
++## Verified evidence (pulled live via MCP tower, 2026-10-26)
++- `github_read_file {repo:"supremeai-browser", path:"ghost_tower/auto_login.py"}` (sha `ba3176242e21…`, 12,904 chars) contains:
++  ```python
++  current_otp = pyotp.TOTP(totp_secret).now()
++  await totp_elem.fill(current_otp)
++  await page.keyboard.press("Enter")
++  logger.info(f"[SSO] Submitted 2FA code: {current_otp}")
++  ```
++- The OTP value is interpolated directly into the log message — no redaction.
++
++## Why this blocks production
++- TOTP codes are short-lived but fully sufficient for an attacker with log access to complete the 2FA challenge while valid.
++- The same audit flags a second, related surface: VS Code extension plaintext config path `supremeai.apiKey` / `process.env.SUPREMEAI_API_KEY` (SecretStorage migration unproven). That item is tracked separately; do not expand scope here.
++
++## Remediation plan (smallest safe change)
++1. Replace the log line with a redacted form, e.g. `logger.info("[SSO] 2FA code submitted (redacted)")` — or drop the value entirely.
++2. Grep `ghost_tower/` (and browser repo broadly) for other secret interpolations in logs (`otp`, `totp`, `password`, `token`, `key`) and redact the same way.
++3. Add a regression test that captures log output during a mocked SSO flow and asserts no TOTP-like 6-digit value appears.
++
++## Acceptance criteria
++- [ ] No log statement in `supremeai-browser` prints a full OTP/TOTP value
++- [ ] Redaction regression test added and green
++- [ ] Scan of the repo for similar patterns documented (findings + dispositions)
++
++## Related orders
++- Audit "SupremeAI সমন্বিত Executive Diagnosis" (2026-10-26), P0 item 3 (secret exposure risk).
++
++## Verification commands for the implementer
++- `github_read_file {repo:"supremeai-browser", path:"ghost_tower/auto_login.py"}`
++- `github_code_search {query:"Submitted 2FA code repo:Supremeai-bd/supremeai-browser"}`

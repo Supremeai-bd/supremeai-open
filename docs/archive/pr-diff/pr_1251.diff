@@ -1,0 +1,217 @@
+diff --git a/core/config_fields.py b/core/config_fields.py
+index 343cbe16..2f5f31d2 100644
+--- a/core/config_fields.py
++++ b/core/config_fields.py
+@@ -161,7 +161,11 @@ def frontend_base_url(self) -> str:
+     )
+     admin_cors_origins: str | list[str] = Field(
+         default=[
+-            "https://supremeai-admin.web.app",  # Firebase Hosting admin console
++            # Admin-host retirement (2026-10-25, follows PR #1247): the legacy
++            # Firebase Hosting admin console is fully removed from the defaults —
++            # the admin console now lives in the Studio SPA at
++            # https://supremeai-studio.pages.dev (route /admin).
++            "https://supremeai-studio.pages.dev",
+         ],
+         validation_alias="ADMIN_CORS_ORIGINS",
+     )
+diff --git a/core/core/config_fields.py b/core/core/config_fields.py
+index 343cbe16..2f5f31d2 100644
+--- a/core/core/config_fields.py
++++ b/core/core/config_fields.py
+@@ -161,7 +161,11 @@ def frontend_base_url(self) -> str:
+     )
+     admin_cors_origins: str | list[str] = Field(
+         default=[
+-            "https://supremeai-admin.web.app",  # Firebase Hosting admin console
++            # Admin-host retirement (2026-10-25, follows PR #1247): the legacy
++            # Firebase Hosting admin console is fully removed from the defaults —
++            # the admin console now lives in the Studio SPA at
++            # https://supremeai-studio.pages.dev (route /admin).
++            "https://supremeai-studio.pages.dev",
+         ],
+         validation_alias="ADMIN_CORS_ORIGINS",
+     )
+diff --git a/core/middleware/cors_policy.py b/core/middleware/cors_policy.py
+index 049bcb0b..ea4d5180 100644
+--- a/core/middleware/cors_policy.py
++++ b/core/middleware/cors_policy.py
+@@ -73,11 +73,17 @@ def _load_origins(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]:
+     "https://supremeai-studio.vercel.app",  # Vercel studio
+ )
+ 
+-# Issue #1484 (CRITICAL): same story for the admin console —
+-# https://supremeai-admin.web.app must stay preflight-able even when
+-# ADMIN_CORS_ORIGINS fails to sync to the host.
++# Issue #1484 (CRITICAL): same story for the admin console — the admin origin
++# must stay preflight-able even when ADMIN_CORS_ORIGINS fails to sync to the host.
++# Admin-host retirement (2026-10-25, follows PR #1247): the legacy Firebase
++# Hosting admin console site is FULLY RETIRED — a stale Cloudflare edge
++# redirect used to bounce /admin visitors to it, and keeping it in the CORS
++# floor kept advertising a dead origin. The admin console now lives inside
++# the Studio SPA at https://supremeai-studio.pages.dev (route /admin) —
++# same failsafe-defaults class as before: env vars only ADD origins, they
++# can never evict this floor.
+ DEFAULT_ADMIN_ALLOWED_ORIGINS: tuple[str, ...] = (
+-    "https://supremeai-admin.web.app",  # Firebase Hosting admin console
++    "https://supremeai-studio.pages.dev",  # Studio SPA admin console (route /admin)
+ )
+ 
+ 
+diff --git a/gateway/middleware/cors_policy.py b/gateway/middleware/cors_policy.py
+index 049bcb0b..ea4d5180 100644
+--- a/gateway/middleware/cors_policy.py
++++ b/gateway/middleware/cors_policy.py
+@@ -73,11 +73,17 @@ def _load_origins(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]:
+     "https://supremeai-studio.vercel.app",  # Vercel studio
+ )
+ 
+-# Issue #1484 (CRITICAL): same story for the admin console —
+-# https://supremeai-admin.web.app must stay preflight-able even when
+-# ADMIN_CORS_ORIGINS fails to sync to the host.
++# Issue #1484 (CRITICAL): same story for the admin console — the admin origin
++# must stay preflight-able even when ADMIN_CORS_ORIGINS fails to sync to the host.
++# Admin-host retirement (2026-10-25, follows PR #1247): the legacy Firebase
++# Hosting admin console site is FULLY RETIRED — a stale Cloudflare edge
++# redirect used to bounce /admin visitors to it, and keeping it in the CORS
++# floor kept advertising a dead origin. The admin console now lives inside
++# the Studio SPA at https://supremeai-studio.pages.dev (route /admin) —
++# same failsafe-defaults class as before: env vars only ADD origins, they
++# can never evict this floor.
+ DEFAULT_ADMIN_ALLOWED_ORIGINS: tuple[str, ...] = (
+-    "https://supremeai-admin.web.app",  # Firebase Hosting admin console
++    "https://supremeai-studio.pages.dev",  # Studio SPA admin console (route /admin)
+ )
+ 
+ 
+diff --git a/scripts/ci/check_hardcoded_deployment_config.py b/scripts/ci/check_hardcoded_deployment_config.py
+index a4561cdd..a3dd98f3 100644
+--- a/scripts/ci/check_hardcoded_deployment_config.py
++++ b/scripts/ci/check_hardcoded_deployment_config.py
+@@ -155,34 +155,31 @@
+     # fire when CORS env sync to the host fails (live incident guard). This is
+     # an allow-list of browser origins, NOT a deployment pin (the app never
+     # calls these hosts) — same sanctioned class as config_validation.py's
+-    # ALLOWED_HOSTS derivation. Guarded by
+-    # tests/middleware/test_cors_policy.py::test_production_frontend_origins_are_safe_defaults.
++    # ALLOWED_HOSTS derivation.
++    # Admin-host retirement (2026-10-25, PR #1247 follow-up):
++    # https://supremeai-admin.web.app is fully removed from the codebase — the
++    # admin console now lives at https://supremeai-studio.pages.dev (route
++    # /admin), which needs no exception here because *.pages.dev is not a
++    # banned pattern class. Anchors updated from the retired backend/* layout
++    # to the live core/* + gateway/* duplicates.
+     (
+-        "backend/middleware/cors_policy.py",
+-        r"supremeai-a\.web\.app|supremeai-admin\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
++        "core/middleware/cors_policy.py",
++        r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
+         None,
+     ),
+     (
+-        "backend/core/config_fields.py",
+-        r"supremeai-a\.web\.app|supremeai-admin\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
++        "gateway/middleware/cors_policy.py",
++        r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
+         None,
+     ),
+-    # Issue #1468 (PR #1468/#1549 wave): portal identity bootstrap. The SPA is
+-    # one build for user + admin portals; the host-detection module seeds
+-    # detection with the known Firebase Hosting admin console so the admin URL
+-    # renders the admin console out of the box. VITE_ADMIN_HOSTS (env) always
+-    # extends/overrides — same failsafe-defaults class as the CORS origins
+-    # above, not a deployment pin (the app never calls out to the host).
+-    # Two files carry the reference: the detection util + the admin entry
+-    # component (moved here by the #1549 admin-route consolidation).
+     (
+-        "frontend/src/utils/portalHosts.ts",
+-        r"supremeai-admin\.web\.app",
++        "core/config_fields.py",
++        r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
+         None,
+     ),
+     (
+-        "frontend/src/router/AdminHostEntry.tsx",
+-        r"supremeai-admin\.web\.app",
++        "core/core/config_fields.py",
++        r"supremeai-a\.web\.app|supremeai-lac\.vercel\.app|supremeai-studio\.vercel\.app",
+         None,
+     ),
+ ]
+diff --git a/scripts/ops/advanced_analysis/hardcode_config_scanner.py b/scripts/ops/advanced_analysis/hardcode_config_scanner.py
+index fe921ba6..be850118 100644
+--- a/scripts/ops/advanced_analysis/hardcode_config_scanner.py
++++ b/scripts/ops/advanced_analysis/hardcode_config_scanner.py
+@@ -44,8 +44,7 @@
+     "supremeai-backend-v2.onrender.com",
+     "supremeai-backend-v2.onrender.com",
+     "supremeai-lac.vercel.app",
+-    "supremeai-studio.vercel.app",
+-    "supremeai-admin.web.app"
++    "supremeai-studio.vercel.app"
+ ]
+ 
+ # বাংলা: SCRIPT-INTELLIGENCE v9 — domain-rule-এর জন্য ফাইল-ভিত্তিক অব্যাহতি।
+@@ -55,10 +54,10 @@
+ # check_hardcoded_deployment_config.py-র EXCEPTION_SPECS-এর একই sanctioned
+ # শ্রেণি; গার্ড টেস্ট: tests/middleware/test_cors_policy.py.
+ DOMAIN_RULE_EXEMPT_FILES = {
+-    "backend/middleware/cors_policy.py",
+-    "backend/core/config_fields.py",
+-    "frontend/src/utils/portalHosts.ts",
+-    "frontend/src/router/AdminHostEntry.tsx",
++    "core/middleware/cors_policy.py",
++    "gateway/middleware/cors_policy.py",
++    "core/config_fields.py",
++    "core/core/config_fields.py",
+ }
+ 
+ # 2. No scattered os.getenv for canonical endpoints
+diff --git a/scripts/ops/deploy/generate_firebase_config.py b/scripts/ops/deploy/generate_firebase_config.py
+index 4e425ccc..9cbfde20 100644
+--- a/scripts/ops/deploy/generate_firebase_config.py
++++ b/scripts/ops/deploy/generate_firebase_config.py
+@@ -18,24 +18,25 @@
+   - BACKEND_URL (when provided) points at a Firebase Hosting domain
+     (`*.web.app` / `*.firebaseapp.com`) — hosting sites are not API origins
+ 
+-Hosting targets (FB-06, issue #587) — documented intentionally-same artifact:
+-  the template defines TWO hosting targets, `user` (site `supremeai-a`) and
+-  `admin` (site `supremeai-admin`), and BOTH ship the identical unified SPA
+-  bundle (`"public": "frontend/dist"`). This is deliberate, not a bug: the
+-  admin/user distinction is runtime route-based inside ONE frontend build —
+-  the portal-split build architecture (VITE_PORTAL_TYPE, dist-admin/
+-  dist-user, build:admin/build:user) was declared OBSOLETE and is FORBIDDEN
+-  by the CI gate `scripts/ci/check_single_frontend.py` (Gate A). Consequences
+-  that are accepted and intended:
+-  - `supremeai-admin.web.app` serves the exact same SPA as
+-    `supremeai-a.web.app` (same bundle hash/ETag) — access control to
+-    admin functionality lives in the app (route guards + backend
+-    /admin-api authZ), not in a different bundle.
+-  - `firebase deploy --only hosting` necessarily deploys the same artifact
+-    to both sites; a deploy of "just admin" is not meaningful while both
+-    targets share the bundle. If a genuinely separate admin build is ever
+-    needed, that is an architecture change requiring the single-frontend
+-    gate to be revisited first — not a config tweak here.
++Hosting targets (FB-06, issue #587) — status after the admin-host retirement
++(2026-10-25, follows PR #1247):
++  the template historically defined TWO hosting targets, `user` (site
++  `supremeai-a`) and `admin` (site `supremeai-admin`), both shipping the
++  identical unified SPA bundle (`"public": "frontend/dist"`). The admin/user
++  distinction is runtime route-based inside ONE frontend build — the
++  portal-split build architecture (VITE_PORTAL_TYPE, dist-admin/dist-user,
++  build:admin/build:user) is OBSOLETE and FORBIDDEN by the CI gate
++  `scripts/ci/check_single_frontend.py` (Gate A).
++
++  RETIRED: the `admin` Firebase Hosting site https://supremeai-admin.web.app
++  is fully decommissioned. A stale Cloudflare edge redirect used to bounce
++  studio.pages.dev/admin visitors to it (fixed in studio/public/_redirects
++  with `200!` force rewrites), and the backend CORS floors no longer list it.
++  The admin console now lives in the Studio SPA at
++  https://supremeai-studio.pages.dev (route /admin). Operators must drop the
++  `admin` target from the deploy-time firebase.template.json (root, gitignored)
++  and release the Firebase site; the generator only validates rewrite/header
++  contracts and does not depend on either target existing.
+ """
+ 
+ import json

@@ -1,0 +1,54 @@
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index 3a275d13..99699391 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -27,7 +27,8 @@ jobs:
+       - name: Install dependencies
+         run: |
+           python -m pip install --upgrade pip
+-          pip install ruff pytest pytest-asyncio
++          pip install ruff pytest pytest-asyncio pydantic fastapi httpx starlette cryptography pyotp sqlalchemy
++          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
+ 
+       - name: Lint with ruff
+         run: |
+diff --git a/core/tests/test_core_planner.py b/core/tests/test_core_planner.py
+index c9efe837..016f6902 100644
+--- a/core/tests/test_core_planner.py
++++ b/core/tests/test_core_planner.py
+@@ -3,15 +3,26 @@
+ from pathlib import Path
+ 
+ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+-
+-from core.context_synthesizer import ContextStage, ContextSynthesizer
+-from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
+-from core.decision_engine import AgentRole, DecisionEngine
+-from core.state_machine import (
+-    AgentState,
+-    AgentStateMachine,
+-    InvalidStateTransitionError,
+-)
++sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
++
++try:
++    from core.context_synthesizer import ContextStage, ContextSynthesizer
++    from core.dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from core.decision_engine import AgentRole, DecisionEngine
++    from core.state_machine import (
++        AgentState,
++        AgentStateMachine,
++        InvalidStateTransitionError,
++    )
++except ImportError:
++    from context_synthesizer import ContextStage, ContextSynthesizer
++    from dag_planner import CycleDetectedError, DAGPlanner, TaskNode
++    from decision_engine import AgentRole, DecisionEngine
++    from state_machine import (
++        AgentState,
++        AgentStateMachine,
++        InvalidStateTransitionError,
++    )
+ 
+ 
+ class TestAgentStateMachine(unittest.TestCase):

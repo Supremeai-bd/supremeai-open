@@ -1,0 +1,154 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 19f428b9..7475f134 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -226,6 +226,60 @@ for line in $updates; do
+             fi
+         fi
+     fi
++    # 6. BOUNDARY SANITIZATION GUARD (#107, #508).
++    # Prevent unauthorized root files or invalid domain mirroring (e.g. root service/ or packages/) before push.
++    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/boundary_sanitization_guard.py ]; then
++        if ZERO_TEST "$remote_sha"; then
++            # New branch push — diff against main
++            changed_files=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
++        else
++            # Existing branch update — diff against remote tip
++            changed_files=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
++        fi
++        if [ -n "$changed_files" ]; then
++            # Filter to existing files in worktree
++            valid_scan_files=""
++            for f in $changed_files; do
++                if [ -f "$f" ]; then
++                    valid_scan_files="$valid_scan_files $f"
++                fi
++            done
++            if [ -n "$valid_scan_files" ]; then
++                py_cmd=""
++                if python3 -c "import sys" >/dev/null 2>&1; then
++                    py_cmd="python3"
++                elif python -c "import sys" >/dev/null 2>&1; then
++                    py_cmd="python"
++                elif py -3 -c "import sys" >/dev/null 2>&1; then
++                    py_cmd="py -3"
++                fi
++                if [ -n "$py_cmd" ]; then
++                    if ! $py_cmd scripts/ci/boundary_sanitization_guard.py --files $valid_scan_files; then
++                        reject "BOUNDARY SANITIZATION GUARD (#107, #508) FAILED" \
++                            "Changed files violate the public surface registry or proprietary path boundaries." \
++                            "Do not place satellite code at root (e.g. root service/ or packages/)." \
++                            "Use proper domain mirrors (gateway/service/, studio/packages/, etc.)." \
++                            "Deliberate admin bypass: git push --no-verify."
++                    fi
++                fi
++            fi
++        fi
++    fi
++
++    # 7. Ruff strict name/syntax check (Federation CI Parity) on gateway/ and core/.
++    if command -v ruff >/dev/null 2>&1; then
++        for d in gateway core; do
++            if [ -d "$d" ]; then
++                if ! ruff check "$d" --select=E9,F63,F7,F82; then
++                    reject "ruff check failed on $d/ (Federation CI Parity)" \
++                        "Undefined names / syntax errors would break supremeai-api CI on dispatch." \
++                        "Fix the reported ruff errors before pushing." \
++                        "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        done
++    fi
++
+     IFS="$nl"
+ done
+ IFS="$OIFS"
+diff --git a/AGENTS.md b/AGENTS.md
+index 6b4b5874..273620ef 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -75,7 +75,7 @@ flowchart TD
+ > ২. **Missing Claim / Issue Link (Claim Gate Guard #392):** কোনো ইস্যু ক্লেইম না করে অন্ধভাবে PR খোলা।  
+ > ৩. **Stale Base (Stale-Base Guard #161):** কাজ শুরুর সময় বা পুশের ঠিক আগে `origin/main` থেকে রিবেস না করা।  
+ > ৪. **Invalid Branch Name (Branch Naming Guard):** ভুল প্রিফিক্স ব্যবহার করা (স্যাটেলাইট কোডে ভুলেও `bridge/*` প্রিফিক্স দেওয়া যাবে না, দিলে `landing.yml` স্যাটেলাইটে ডিসপ্যাচ স্কিপ করবে)।  
+-> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** রুট `src/*`-এ কোড পুশ করা বা একই PR-এ একাধিক স্যাটেলাইট ডোমেন স্পর্শ করা।  
++> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** স্যাটেলাইট কোড রুট ডিরেক্টরিতে পুশ করা (যেমন: `supremeai-api` এর কোড সরাসরি রুটে `service/*`-এ রাখা যা অবশ্যই `gateway/service/*`-এ হতে হবে, কিংবা শেয়ার্ড সার্ভিস রুটে `packages/*`-এ রাখা যা অবশ্যই `studio/packages/*`-এ হতে হবে)। রুট `src/*`, `service/*`, `packages/*`-এ কোড পুশ করা কঠোরভাবে নিষিদ্ধ।
+ > ৬. **Blind Coder Syndrome:** বিদ্যমান কোড, ইমপোর্ট বা টাইপস না পড়ে মনগড়া কোড লিখে টাইপচেক/বিল্ড নষ্ট করা (P3 Non-Regression লঙ্ঘন)।
+ 
+ #### 📋 The Canonical PR Body Blueprint (Copy-Paste Ready)
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 994a194a..192d0a93 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -74,8 +74,16 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+   1. **Live Preflight & Dual-Rebase:** Synchronize with latest `origin/main` (rebase before branch). Reproduce issue on current `main` before modifying files. Rebase and re-verify before push. Never fix ghost issues.
+   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
+   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
+-  4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
+-  5. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
++  4. **Domain Mirror Invariant (No Root Poisoning):**
++     Code destined for satellites must NEVER be placed at the root level (`service/*`, `packages/*`, `src/*`, etc.).
++     - `supremeai-api` targets MUST live inside `gateway/` (e.g. `gateway/service/...`, never root `service/`).
++     - `supremeai-studio` packages MUST live inside `studio/packages/` (e.g. `studio/packages/shared-services/...`, never root `packages/`).
++     - `supremeai-browser` targets MUST live inside `browser/`.
++     - `supremeai-vscode` targets MUST live inside `vscode/`.
++     - `supremeai-core` targets MUST live inside `core/`.
++     Any PR violating this will immediately fail `Boundary Sanitization Guard (#107)`.
++  5. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
++  6. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
+ 
+ ### 3.3 🔍 Auditor / Rules-Breaker Agent
+ - **Work Area:** Governance compliance, boundary audits, secret scan triage, dead code & workflow consolidation.
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 9af93c2a..36364a9b 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -137,10 +137,14 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+   ];
+ 
+   if (opts.issueNumber) {
++    const isSpecOnly = opts.scopePaths.length > 0 && opts.scopePaths.every((p) =>
++      p.startsWith("docs/") || p.startsWith("docs/bridge/") || p.startsWith("docs/work-orders/")
++    );
+     lines.push(
+       "## Linked Work Order",
+-      `Closes #${opts.issueNumber}`,
+-      `Refs #${opts.issueNumber}`,
++      ...(isSpecOnly
++        ? [`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`]
++        : [`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`]),
+       ""
+     );
+   }
+diff --git a/infrastructure/mcp-control-plane/test_bridge_freshness.ts b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+index f37e585c..b70f59ff 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_freshness.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+@@ -175,7 +175,7 @@ const LIVE_TEMPLATE = [
+     taskId: "bridge-20261017-freshness",
+     summary: "Enforce constitution freshness",
+     issueNumber: 567,
+-    scopePaths: ["docs/CONSTITUTION_FRESHNESS_INVARIANT.md"],
++    scopePaths: ["core/freshness.py"],
+     testsEvidence: "25/25 unittest green",
+     reflectionWhy: "Stale-context submissions waste full cycles on mechanical CI rejections.",
+     alternativesRejected: "post-merge lint warning\nmanual operator review",
+@@ -191,6 +191,18 @@ const LIVE_TEMPLATE = [
+   assert.match(body, /## Test Evidence \(3-tier contract\)/);
+   assert.deepEqual(validateReflectionEvidence(body), []);
+ 
++  const specOnlyBody = buildBridgePrBody({
++    taskId: "bridge-20261027-spec",
++    summary: "Add spec order",
++    issueNumber: 888,
++    scopePaths: ["docs/bridge/bridge-spec.md"],
++    testsEvidence: "doc valid",
++    reflectionWhy: "Spec needed first",
++    alternativesRejected: "no spec",
++  });
++  assert.match(specOnlyBody, /Refs #888/);
++  assert.ok(!specOnlyBody.includes("Closes #888"), "spec-only PR must NEVER auto-close issue");
++
+   const noIssue = buildBridgePrBody({
+     taskId: "bridge-20261017-freshness",
+     summary: "Enforce constitution freshness",

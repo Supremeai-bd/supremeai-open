@@ -1,0 +1,61 @@
+diff --git a/.github/ISSUE_TEMPLATE/agent-task.yml b/.github/ISSUE_TEMPLATE/agent-task.yml
+index 389f2a0a..df2eafd9 100644
+--- a/.github/ISSUE_TEMPLATE/agent-task.yml
++++ b/.github/ISSUE_TEMPLATE/agent-task.yml
+@@ -22,9 +22,15 @@ body:
+       label: Target Repository
+       description: Which repository in the SupremeAI Federation should receive this change?
+       options:
+-        - paykaribazaronline/supremeai
+-        - paykaribazaronline/supremeai-api
+-        - paykaribazaronline/supremeai-studio
++        - Supremeai-bd/supremeai-open
++        - Supremeai-bd/supremeai
++        - Supremeai-bd/supremeai-api
++        - Supremeai-bd/supremeai-archive
++        - Supremeai-bd/supremeai-core
++        - Supremeai-bd/supremeai-infrastructure
++        - Supremeai-bd/supremeai-mcp-control-plane
++        - Supremeai-bd/supremeai-sdk
++        - Supremeai-bd/supremeai-studio
+         - Supremeai-bd/supremeai-open
+     validations:
+       required: true
+diff --git a/.github/ISSUE_TEMPLATE/bridge-work-order.yml b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+index 578ff686..b8d9196e 100644
+--- a/.github/ISSUE_TEMPLATE/bridge-work-order.yml
++++ b/.github/ISSUE_TEMPLATE/bridge-work-order.yml
+@@ -41,9 +41,15 @@ body:
+     attributes:
+       label: Target Repo
+       options:
+-        - paykaribazaronline/supremeai
+-        - paykaribazaronline/supremeai-api
+-        - paykaribazaronline/supremeai-studio
++        - Supremeai-bd/supremeai-open
++        - Supremeai-bd/supremeai
++        - Supremeai-bd/supremeai-api
++        - Supremeai-bd/supremeai-archive
++        - Supremeai-bd/supremeai-core
++        - Supremeai-bd/supremeai-infrastructure
++        - Supremeai-bd/supremeai-mcp-control-plane
++        - Supremeai-bd/supremeai-sdk
++        - Supremeai-bd/supremeai-studio
+     validations:
+       required: true
+   - type: textarea
+diff --git a/.github/ISSUE_TEMPLATE/config.yml b/.github/ISSUE_TEMPLATE/config.yml
+index ccf12224..d983d04a 100644
+--- a/.github/ISSUE_TEMPLATE/config.yml
++++ b/.github/ISSUE_TEMPLATE/config.yml
+@@ -1,8 +1,8 @@
+ blank_issues_enabled: false
+ contact_links:
+   - name: 📖 SupremeAI Federation Ecosystem Map
+-    url: https://github.com/paykaribazaronline/supremeai-open/blob/main/ECOSYSTEM_MAP.md
++    url: https://github.com/Supremeai-bd/supremeai-open/blob/main/ECOSYSTEM_MAP.md
+     about: Read repository directories, boundary classifications, and federation policies.
+   - name: 📜 AGENTS.md Constitution
+-    url: https://github.com/paykaribazaronline/supremeai-open/blob/main/AGENTS.md
++    url: https://github.com/Supremeai-bd/supremeai-open/blob/main/AGENTS.md
+     about: 8-step autonomous task cycle, 3 work submission pathways, and bridge rules.

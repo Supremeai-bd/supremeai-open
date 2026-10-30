@@ -1,0 +1,22 @@
+diff --git a/docs/STUDIO_FRONTEND_MASTER_PLAN.md b/docs/STUDIO_FRONTEND_MASTER_PLAN.md
+index 11d708ff..4daee179 100644
+--- a/docs/STUDIO_FRONTEND_MASTER_PLAN.md
++++ b/docs/STUDIO_FRONTEND_MASTER_PLAN.md
+@@ -187,10 +187,10 @@ f:\supremeai-open\studio\src\
+ ## 5. Execution & Verification Checklist
+ 
+ - [x] **Phase 1: Architecture & Plan Finalization** — Formulate the 6-pillar canonical Master Plan with full 3D Holo Call and Avatar Freedom specs.
+-- [ ] **Phase 2: Component Deployment into Studio** — Copy all 14 modular components from `zip_oct28_1042` into `f:\supremeai-open\studio\src\components\`.
+-- [ ] **Phase 3: Avatar Personalization Engine** — Wire Avatar Freedom options (Gender, Timbre, Accent, Persona) into `WorkspaceSettingsModal.tsx` and connect to `JarvisHoloCall.tsx`.
+-- [ ] **Phase 4: Split-View & Guest Flow Wiring** — Connect `SplitStudioView` and `GuestDashboard` into `AIStudio.tsx` and public routes.
+-- [ ] **Phase 5: 3-Tier Verification Gate** —
+-  - Tier 1: Invariant & reflection check against `AGENTS.md` (no root-shadowing, clean commit).
+-  - Tier 2: TypeScript typecheck compilation (`npm run build` / `tsc --noEmit`).
+-  - Tier 3: Route & visual regression verification (`npm run test:routes`).
++- [x] **Phase 2: Component Deployment into Studio** — Deployed Preview Cockpit (PR #2003 / #2000): DevicePreviewFrame, MiniDevToolsBar, LiveSandboxRenderer, VisualElementInspector, CodeDiffViewer, TimeTravelBar, and projectFiles.
++- [x] **Phase 3: Avatar Personalization Engine** — Wired Avatar Freedom options (Gender, Timbre, Accent, Persona, Photo Mask) into `WorkspaceSettingsModal.tsx` and connected to 60 FPS Dual-Engine `JarvisHoloCall.tsx` & `JarvisHudOrb.tsx` (PR #2007 / #2004).
++- [x] **Phase 4: Split-View & Guest Flow Wiring** — Integrated `SplitStudioView` (45/55 Cockpit) into `AIStudio.tsx` (PR #2012 / #2008), deployed `GuestDashboard` to dedicated `/playground` route (PR #2016 / #2013), and ported `AdminDashboard` with anti-ghost telemetry (PR #2018 / #2017).
++- [x] **Phase 5: 3-Tier Verification Gate** —
++  - Tier 1: Invariant & reflection check against `AGENTS.md` (no root-shadowing, clean commits, zero ghost fixes, sub-issues #2000, #2004, #2008, #2013, #2017, #2019 under Hub #750).
++  - Tier 2: TypeScript typecheck compilation (`pnpm run typecheck` — 0 errors across entire workspace).
++  - Tier 3: Route & visual regression verification (`App.routes.test.tsx` + `redecorGuardrails.test.ts` — 17 passed).

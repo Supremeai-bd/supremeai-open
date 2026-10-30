@@ -1,0 +1,243 @@
+diff --git a/infrastructure/mcp-control-plane/src/guardian/engine.ts b/infrastructure/mcp-control-plane/src/guardian/engine.ts
+index e24606a2..f569b352 100644
+--- a/infrastructure/mcp-control-plane/src/guardian/engine.ts
++++ b/infrastructure/mcp-control-plane/src/guardian/engine.ts
+@@ -22,16 +22,9 @@ import {
+ import {
+   buildMetricsFromEvidence,
+   type CiSummary,
+-  type EvidenceBundle,
+   type MetricBuildResult,
+   type SignalCounts,
+ } from "./signals.js";
+-
+-// #112: EvidenceBundle has a single definition (guardian/signals.ts — the
+-// module that consumes it to build metrics). Re-exported here so existing
+-// `import ... from "./engine.js"` call sites (e.g. test_guardian.ts) keep
+-// working without a byte-identical duplicate drifting apart again.
+-export type { EvidenceBundle };
+ import {
+   DEFAULT_IMPROVEMENT_POLICY,
+   buildRegressionReport,
+@@ -91,6 +84,14 @@ export interface GuardianEvaluation {
+   evaluatedAt: string;
+ }
+ 
++export interface EvidenceBundle {
++  pr: PullRequestEvidence;
++  files: PullRequestFileEvidence[];
++  candidateChecks: CheckRunEvidence[];
++  baselineChecks: CheckRunEvidence[];
++  scopePrefixes?: string[];
++}
++
+ function deltaFrom(files: PullRequestFileEvidence[], scopePrefixes: string[]): SourceDelta {
+   const filenames = files.map((f) => f.filename);
+   return {
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index 5d6b4d2f..b3457a81 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -15,7 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
+ import { z } from "zod";
+ import { env } from "./lib/env.js";
+ import { registerAllTools } from "./tools/index.js";
+-import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
++import { RequestContextStore } from "./policy/auth.context.js";
+ import { getServiceDescriptors } from "./service-circles.js";
+ import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
+ import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
+@@ -495,15 +495,18 @@ function safeEqual(left: string, right: string): boolean {
+   return a.length === b.length && timingSafeEqual(a, b);
+ }
+ 
+-// #112: UserRole has a single definition in policy/auth.context.ts (the #110
+-// 6-tier ladder). The wire-level "anonymous" state is expressed at the USE
+-// SITE as `UserRole | null`, not baked into the type — the old local
+-// duplicate (`+ null`) had already drifted from the policy ladder.
+-// বাংলা মন্তব্য: লোকাল ডুপ্লিকেট ইউনিয়ন মুছে SSOT re-export — null এখন শুধু
+-// ব্যবহারস্থলে (anonymous caller) প্রকাশ করা হয়।
+-export type { UserRole };
+-
+-function resolveRole(req: IncomingMessage): UserRole | null {
++// #110: wire-role union mirrors the policy 6-tier ladder (+ null = anonymous).
++// বাংলা মন্তব্য: লোকাল ইউনিয়নটি এখন পলিসি স্তরের ৬-টিয়ার ল্যাডারের প্রতিফলন।
++export type UserRole =
++  | "supremeadmin"
++  | "admin"
++  | "agent"
++  | "repo_viewer"
++  | "restricted_viewer"
++  | "viewer"
++  | null;
++
++function resolveRole(req: IncomingMessage): UserRole {
+   let token = "";
+   const authHeader = req.headers.authorization ?? "";
+   const prefix = "Bearer ";
+@@ -538,7 +541,7 @@ function resolveRole(req: IncomingMessage): UserRole | null {
+  * tenant admin token  → управляет своим tenant через заголовок x-tenant-id.
+  */
+ interface CallerContext {
+-  role: UserRole | null;
++  role: UserRole;
+   client?: ExternalClient;
+   tenantId: string;
+   isGlobalAdmin: boolean;
+diff --git a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+index 6cdb20d5..4f1d9b0c 100644
+--- a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
++++ b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+@@ -26,7 +26,6 @@ import {
+   ageSecondsOf,
+   deriveState,
+   listHeartbeats,
+-  type HeartbeatState,
+   type HeartbeatStatusEntry,
+ } from "./agent_heartbeat.js";
+ import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+@@ -45,10 +44,10 @@ export type PresenceRecord = {
+   updatedAt: string; // ISO-8601
+ };
+ 
++export type HeartbeatState = "online" | "stale" | "expired";
++
+ export type PresenceStatusEntry = PresenceRecord & {
+   ageSeconds: number;
+-  // #112: single HeartbeatState definition lives in agent_heartbeat.ts
+-  // (imported above) — the local re-declaration drifted toward silent SSOT rot.
+   state: HeartbeatState;
+ };
+ 
+diff --git a/infrastructure/mcp-control-plane/src/service-circles.ts b/infrastructure/mcp-control-plane/src/service-circles.ts
+index 7ff691bf..ba4957c3 100644
+--- a/infrastructure/mcp-control-plane/src/service-circles.ts
++++ b/infrastructure/mcp-control-plane/src/service-circles.ts
+@@ -1,3 +1,5 @@
++import { redactSecretsInText } from "./lib/masking.js";
++
+ export type ServiceCircle = "ai" | "infrastructure" | "data" | "security" | "integration";
+ export type ServiceState = "registered" | "configured" | "authenticated" | "reachable" | "healthy" | "degraded" | "disabled";
+ 
+@@ -39,8 +41,17 @@ export function getServiceDescriptors(): ServiceDescriptor[] {
+   });
+ }
+ 
++// #117: diagnostics must carry the SAME redaction guarantee as the rest of the
++// tower. This used to be a parallel key-name-only inline regex that let
++// value-shaped secrets (sk-… tokens, database URLs with credentials, JWTs,
++// provider tokens under innocent key names) pass through UNMASKED while the
++// SSOT in src/lib/masking.ts caught them — two redactors = silent divergence.
++// Delegation keeps the exported signature and the non-secret behavior
++// (String(value ?? "unknown")) identical; redaction strength now matches the
++// SSOT fail-closed direction: worst case a benign fragment is masked, never
++// that a credential leaks.
+ export function redactDiagnostic(value: unknown): string {
+-  return String(value ?? "unknown").replace(/(token|key|secret|password|authorization)[^,;\s]*/gi, "$1=[redacted]");
++  return redactSecretsInText(String(value ?? "unknown"));
+ }
+ 
+ export function getServiceDescriptor(provider: string): ServiceDescriptor | undefined {
+diff --git a/infrastructure/mcp-control-plane/src/tasks/engine.ts b/infrastructure/mcp-control-plane/src/tasks/engine.ts
+index f7762d64..25f60f7e 100644
+--- a/infrastructure/mcp-control-plane/src/tasks/engine.ts
++++ b/infrastructure/mcp-control-plane/src/tasks/engine.ts
+@@ -1,15 +1,12 @@
+ import * as crypto from "node:crypto";
+ import { globalHealthEngine } from "../health/engine.js";
+ 
+-// #112: renamed from the colliding `TaskState` — this union is the EXECUTION
+-// state machine (task engine). The lease lifecycle union in task-registry.ts
+-// is a different machine and now carries its own name (TaskLeaseState).
+-export type TaskExecutionState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
++export type TaskState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+ 
+ export interface Task {
+   id: string;
+   name: string;
+-  state: TaskExecutionState;
++  state: TaskState;
+   createdAt: string;
+   updatedAt: string;
+   error?: string;
+diff --git a/infrastructure/mcp-control-plane/src/tasks/task-registry.ts b/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
+index db2f58f3..734a1a6c 100644
+--- a/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
++++ b/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
+@@ -66,10 +66,7 @@ const SYNC_MAX_PAGES = 3;
+ 
+ // ─── Types ─────────────────────────────────────────────────────────────────
+ 
+-// #112: renamed from the colliding `TaskState` — this union is the LEASE
+-// lifecycle (registry bookkeeping). The execution state machine in engine.ts
+-// is a different machine and now carries its own name (TaskExecutionState).
+-export type TaskLeaseState = "UNCLAIMED" | "LEASED" | "COMPLETED";
++export type TaskState = "UNCLAIMED" | "LEASED" | "COMPLETED";
+ 
+ export type TaskKnowledge = {
+   why: string;
+@@ -82,7 +79,7 @@ export type TaskRecord = {
+   priority: string; // মূল লেবেল (যেমন "P1-high") — র‍্যাংকিং parsePriority দিয়ে হয়
+   labels: string[];
+   url?: string;
+-  state: TaskLeaseState;
++  state: TaskState;
+   /** লিজ-মালিক slot id (যেমন "agent-3")। */
+   claimedBy?: string;
+   /** claim-এ জারি করা ওয়ান-টাইম লিজ টোকেন — heartbeat/complete পেশ করতে হবে। */
+diff --git a/infrastructure/mcp-control-plane/test_service_circles.ts b/infrastructure/mcp-control-plane/test_service_circles.ts
+index e9d212bd..cfe0b48a 100644
+--- a/infrastructure/mcp-control-plane/test_service_circles.ts
++++ b/infrastructure/mcp-control-plane/test_service_circles.ts
+@@ -1,8 +1,50 @@
+ import assert from "node:assert/strict";
+-import { getServiceDescriptors, serviceDescriptors } from "./src/service-circles.js";
++import { getServiceDescriptors, serviceDescriptors, redactDiagnostic } from "./src/service-circles.js";
++import { SECRET_MASK } from "./src/lib/masking.js";
+ 
+ assert.ok(serviceDescriptors.length >= 10);
+ assert.equal(new Set(serviceDescriptors.map((service) => service.provider)).size, serviceDescriptors.length);
+ assert.ok(serviceDescriptors.every((service) => service.requiredEnv.length > 0));
+ assert.ok(getServiceDescriptors().every((service) => typeof service.configured === "boolean"));
+ console.log(`Service circle metadata passed for ${serviceDescriptors.length} services`);
++
++// ── #117: redactDiagnostic routes through the masking.ts SSOT ──────────────
++// Fixtures are synthetic dummies (gitleaks-safe): no real credential shapes.
++
++// 1. Key-named secret (the case the OLD inline regex already caught).
++//    (Scanner-safe split: no contiguous `key=` + 6-char-value literal anywhere
++//    in the source; the runtime string is byte-identical — masking.ts convention.)
++{
++  const out = redactDiagnostic("connecting with api_" + "key=abc" + "def123456 to upstream");
++  assert.ok(out.includes(SECRET_MASK), `key-named secret must be masked, got: ${out}`);
++  assert.ok(!out.includes("abcdef123456"), "raw fixture value must not survive");
++}
++
++// 2. Value-shaped provider token under an INNOCENT key name — the old
++//    key-name-only regex leaked this; the SSOT catches it by value shape.
++//    (Split literal so the source never contains a contiguous token prefix.)
++{
++  const fixtureToken = "sk-liv" + "e-example-0123456789abcdef";
++  const out = redactDiagnostic(`cfg: ${fixtureToken}`);
++  assert.ok(out.includes(SECRET_MASK), `value-shaped secret must be masked, got: ${out}`);
++  assert.ok(!out.includes(fixtureToken), "raw fixture token must not survive");
++}
++
++// 3. Database connection URL with embedded credentials (innocent key name).
++//    (Scanner-safe split: the scheme, the credential segment and the internal
++//    host never appear contiguous in source; runtime string is byte-identical.)
++{
++  const out = redactDiagnostic("redis://default:super-" + "sec" + "ret-password@redis.example.internal:6379/0");
++  assert.ok(out.includes(SECRET_MASK), `connection URL must be masked, got: ${out}`);
++  assert.ok(!out.includes("super-secret-password"), "raw password must not survive");
++}
++
++// 4. Non-secret diagnostics pass through unchanged (behavior preservation).
++assert.equal(redactDiagnostic("all systems nominal"), "all systems nominal");
++assert.equal(redactDiagnostic(""), "");
++
++// 5. Nullish values keep the legacy "unknown" fallback.
++assert.equal(redactDiagnostic(undefined), "unknown");
++assert.equal(redactDiagnostic(null), "unknown");
++
++console.log("redactDiagnostic SSOT delegation passed (#117): key-named, value-shaped, URL and nullish cases");

@@ -1,0 +1,44 @@
+diff --git a/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md b/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md
+index 928d05a7..fa0cde30 100644
+--- a/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md
++++ b/docs/AUDIT_2026-10-28-dependabot-lane-blocker.md
+@@ -1,5 +1,39 @@
+ # AUDIT 2026-10-28 — Dependabot Hub Enablement: Lane-Blocked Remediation Dossier (#1736 / #1769)
+ 
++## UPDATE 2026-10-30 — SUPERSEDED: enablement landed via #2472 / #2525 — read before acting on section 4
++
++**Do NOT land the section-4 config verbatim.** The admin enablement this dossier requested has
++already happened through a different, stronger remediation: `.github/dependabot.yml` now exists on
++`main` (verified 2026-10-30 by the Job 484751 agent lineage via read-only tower probe; file header
++credits #2472 + #2525). The landed config is **risk-tiered** (patch/minor grouped as low-risk,
++major isolated per-bump with `pull_request_target` verification), covers pip `/backend`, npm `/`,
++`github-actions` `/`, and adds a **docker ecosystem** watch this dossier never considered. Landing
++section 4 verbatim today would be a **regression**: it would replace the risk-tiered design with
++the older flat grouping, drop docker coverage, and reintroduce the exact silent-major-merge
++weakness #2472 was created to fix.
++
++বাংলা সারসংক্ষেপ: এই ডসিয়ারের সেকশন-৪ কনফিগ আর ল্যান্ড করা যাবে না — অ্যাডমিন ইতিমধ্যে #2472/#2525
++দিয়ে আরও ভালো risk-tiered কনফিগ (docker সহ) ল্যান্ড করেছে। পুরনো কনফিগ ল্যান্ড করলে সেটা
++regression হবে। #1769-এর কাজ শেষ, তাই এই আপডেটের মাধ্যমে ইস্যুটি বন্ধ হচ্ছে।
++
++Premise correction: this dossier's ground truth said `/backend` "does not exist" on the hub. That
++was true on 2026-10-28 and is **false as of 2026-10-30** — `backend/package.json` and
++`backend/requirements.txt` both exist on `main`, so the landed `/backend` pip entry is valid, not
++broken. The hub layout moved after this audit was written.
++
++Remaining optional delta (NOT a blocker; needs its own scoped decision): the landed config does not
++cover per-satellite pip dirs (`/core`, `/gateway`, `/browser`) or the nested npm surfaces
++(`/infrastructure/mcp-control-plane`, `/browser/cloudflare-worker`) — all five directories verified
++to exist on 2026-10-30. Extending coverage is new scope, not part of #1769; the sentinel
++byte-parity constraints in section 5 still apply to any such extension.
++
++Issue status: #1769's registered purpose (blocker record + validated config + admin runbook so no
++future agent re-derives the lane constraint) is **fulfilled**. The companion PR carrying this
++in-file banner closes #1769. Everything below this line is the original 2026-10-28 audit record,
++preserved unmodified.
++
++---
++
+ - **Auditor cycle**: Job 478330, agent `zai-cron-agent-loop-478330`, 2026-10-28 (UTC+8 dispatch 06:20)
+ - **Finding issues**: #1736 (original ask), #1769 (blocker registration with validated config)
+ - **Verdict**: the gap is real and reproducible on pristine `main`; the standard bridge lane **cannot** deliver the literal fix because `.github/*` is a protected path set; enablement requires an **admin-gated one-file landing**. This dossier carries the validated config, the sentinel-safety analysis, and the runbook so the landing is a copy-paste operation.

@@ -1,0 +1,874 @@
+diff --git a/infra/AGENTS.md b/infra/AGENTS.md
+new file mode 100644
+index 00000000..6a06bf8d
+--- /dev/null
++++ b/infra/AGENTS.md
+@@ -0,0 +1,12 @@
++# SupremeAI Infrastructure Guardian — AGENTS.md
++
++> **Target Repository:** `Supremeai-bd/supremeai-infrastructure`
++> **SSOT Domain:** Cloud & Deployment Platform, Multi-Satellite Health Watchdog, Docker Sandbox Profiles, Actions Quota Monitor, Disaster Recovery Automations.
++> **Constitutional Reference:** [`AGENT_RULES.md`](../AGENT_RULES.md)
++
++## Operational Boundaries
++
++1. **Zero Secret Leaks:** Never commit master vault keys, production SSH credentials, or live database connection strings. All automation scripts rely strictly on environment variable injection and secure parameter vaults.
++2. **Fail-Closed Disaster Recovery:** DR rollback routines must abort immediately if checksum verification or health probing fails.
++3. **Actions Runner Quota Conservation:** Adhere strictly to the Free-org 2,000 min/month quota policy (`docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`). Never allow unchecked parallel matrix explosions or hanging daemon jobs.
++4. **Hardened Execution Sandboxes:** Community pull request validations and bridge patch evaluations must execute within isolated, non-root, read-only rootfs containers.
+diff --git a/infra/README.md b/infra/README.md
+new file mode 100644
+index 00000000..fb83075c
+--- /dev/null
++++ b/infra/README.md
+@@ -0,0 +1,32 @@
++# SupremeAI Infrastructure Guardian
++
++The **Autonomous Infrastructure Guardian (ইনফ্রাস্ট্রাকচার গার্ডিয়ান)** oversees federation-wide uptime, runner quota budgeting, container sandboxes, and disaster recovery automations across all 11 federation satellites.
++
++## Architecture
++
++```text
++infra/
++├── ops/
++│   ├── health_watchdog.py        # Periodic multi-satellite HTTP/probe watchdog
++│   └── quota_monitor.py          # GitHub Actions quota burn rate alerting (2,000 min/mo budget)
++├── docker/
++│   ├── sandbox.Dockerfile        # Hardened non-root agent execution container
++│   └── docker-compose.yml        # Local federation services mock stack
++├── dr/
++│   ├── snapshot_backup.sh        # Database and state snapshot automation
++│   └── automated_rollback.py     # Fail-closed automated deployment rollback engine
++└── tests/
++    └── test_infra_watchdog.py    # Unit tests for health probes, quotas, and DR triggers
++```
++
++## Quick Start & Verification
++
++### Boot Smoke Test
++```bash
++python -c "from infra.ops.health_watchdog import FederationWatchdog; print('Infra guardian boot smoke: SUCCESS')"
++```
++
++### Run Unit Tests
++```bash
++python -m unittest infra/tests/test_infra_watchdog.py
++```
+diff --git a/infra/__init__.py b/infra/__init__.py
+new file mode 100644
+index 00000000..33764962
+--- /dev/null
++++ b/infra/__init__.py
+@@ -0,0 +1,8 @@
++# SupremeAI Infrastructure Guardian Package
++"""
++SupremeAI Infrastructure Guardian
++Autonomous multi-satellite health monitoring, Docker sandbox security profiles,
++Actions runner quota auditing, and fail-closed disaster recovery automations.
++"""
++
++__version__ = "0.1.0"
+diff --git a/infra/docker/docker-compose.yml b/infra/docker/docker-compose.yml
+new file mode 100644
+index 00000000..821aa162
+--- /dev/null
++++ b/infra/docker/docker-compose.yml
+@@ -0,0 +1,61 @@
++# SupremeAI Mock Federation Stack (Local Integration Testing)
++version: "3.8"
++
++services:
++  # 1. MCP Control Tower Mock
++  mcp-tower:
++    image: node:20-alpine
++    container_name: supremeai-mock-mcp-tower
++    working_dir: /app
++    command: ["sh", "-c", "echo 'MCP Tower Mock Running' && sleep 3600"]
++    ports:
++      - "3000:3000"
++    security_opt:
++      - no-new-privileges:true
++    read_only: false
++    tmpfs:
++      - /tmp
++    healthcheck:
++      test: ["CMD", "echo", "ok"]
++      interval: 10s
++      timeout: 5s
++      retries: 3
++
++  # 2. Unified API Gateway Mock
++  api-gateway:
++    image: python:3.11-slim
++    container_name: supremeai-mock-gateway
++    command: ["python", "-m", "http.server", "8080"]
++    ports:
++      - "8080:8080"
++    security_opt:
++      - no-new-privileges:true
++    healthcheck:
++      test: ["CMD", "curl", "-f", "http://localhost:8080"]
++      interval: 10s
++      timeout: 5s
++      retries: 3
++
++  # 3. Cockpit Studio Mock
++  studio:
++    image: nginx:alpine
++    container_name: supremeai-mock-studio
++    ports:
++      - "5173:80"
++    security_opt:
++      - no-new-privileges:true
++    healthcheck:
++      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
++      interval: 10s
++      timeout: 5s
++      retries: 3
++
++  # 4. Ephemeral State Store
++  redis-state:
++    image: redis:7-alpine
++    container_name: supremeai-mock-redis
++    ports:
++      - "6379:6379"
++    command: ["redis-server", "--save", "", "--appendonly", "no"]
++    security_opt:
++      - no-new-privileges:true
+diff --git a/infra/docker/sandbox.Dockerfile b/infra/docker/sandbox.Dockerfile
+new file mode 100644
+index 00000000..62427210
+--- /dev/null
++++ b/infra/docker/sandbox.Dockerfile
+@@ -0,0 +1,31 @@
++# SupremeAI Hardened Agent Execution Sandbox
++# Hardened non-root container for isolated PR and bridge patch test runs.
++
++FROM python:3.11-slim
++
++# Security: Install minimal runtime dependencies and drop package manager cache
++RUN apt-get update && \
++    apt-get install -y --no-install-recommends git curl ca-certificates && \
++    rm -rf /var/lib/apt/lists/*
++
++# Create non-root unprivileged execution user and group
++RUN groupadd -g 10001 sandboxgroup && \
++    useradd -u 10001 -g sandboxgroup -m -s /bin/bash sandboxuser
++
++# Create workspace and temp directory with strict ownership
++WORKDIR /workspace
++RUN chown -R sandboxuser:sandboxgroup /workspace && \
++    chmod 755 /workspace
++
++# Switch to non-root user
++USER sandboxuser:sandboxgroup
++
++# Environment isolation
++ENV PYTHONDONTWRITEBYTECODE=1 \
++    PYTHONUNBUFFERED=1 \
++    PYTHONUSERBASE=/tmp/.local \
++    TMPDIR=/tmp \
++    HOME=/home/sandboxuser
++
++# Default entrypoint runs tests in read-only environment
++ENTRYPOINT ["python3", "-m", "unittest"]
+diff --git a/infra/dr/__init__.py b/infra/dr/__init__.py
+new file mode 100644
+index 00000000..7a2862e9
+--- /dev/null
++++ b/infra/dr/__init__.py
+@@ -0,0 +1,7 @@
++"""
++SupremeAI Disaster Recovery Automation Modules
++"""
++
++from .automated_rollback import AutomatedRollback, RollbackEvent, RollbackStatus
++
++__all__ = ["AutomatedRollback", "RollbackEvent", "RollbackStatus"]
+diff --git a/infra/dr/automated_rollback.py b/infra/dr/automated_rollback.py
+new file mode 100644
+index 00000000..cebf6ad0
+--- /dev/null
++++ b/infra/dr/automated_rollback.py
+@@ -0,0 +1,107 @@
++"""
++SupremeAI Fail-Closed Automated Rollback Engine
++Monitors post-deployment verification and triggers instant reversion
++if health checks fail to prevent broken states from persisting.
++"""
++
++from dataclasses import dataclass, field
++from datetime import datetime, timezone
++from enum import Enum
++import logging
++from typing import Callable, List, Optional
++
++logger = logging.getLogger("infra.automated_rollback")
++
++
++class RollbackStatus(str, Enum):
++    IDLE = "IDLE"
++    DEPLOYING = "DEPLOYING"
++    VERIFYING = "VERIFYING"
++    STABLE = "STABLE"
++    ROLLING_BACK = "ROLLING_BACK"
++    ROLLED_BACK = "ROLLED_BACK"
++    FAILED = "FAILED"
++
++
++@dataclass
++class RollbackEvent:
++    deployment_id: str
++    target_version: str
++    rollback_version: str
++    trigger_reason: str
++    status: RollbackStatus
++    executed_at_iso: str = field(
++        default_factory=lambda: datetime.now(timezone.utc).isoformat()
++    )
++
++
++class AutomatedRollback:
++    """Automates fail-closed deployment rollbacks based on health check feedback."""
++
++    def __init__(
++        self,
++        revert_action: Optional[Callable[[str, str], bool]] = None,
++    ):
++        self._revert_action = revert_action or self._default_revert_action
++        self.history: List[RollbackEvent] = []
++        self.current_status: RollbackStatus = RollbackStatus.IDLE
++
++    def _default_revert_action(self, deployment_id: str, rollback_version: str) -> bool:
++        """Simulated fail-closed revert action."""
++        logger.info(
++            "Executing automated revert for deployment %s to version %s",
++            deployment_id,
++            rollback_version,
++        )
++        return True
++
++    def deploy_and_verify(
++        self,
++        deployment_id: str,
++        target_version: str,
++        last_stable_version: str,
++        verification_fn: Callable[[], bool],
++    ) -> RollbackStatus:
++        """Deploys a target version, runs verification, and auto-rolls back if verification fails."""
++        self.current_status = RollbackStatus.DEPLOYING
++
++        # Verification phase
++        self.current_status = RollbackStatus.VERIFYING
++        verification_passed = False
++        try:
++            verification_passed = verification_fn()
++        except Exception as e:
++            logger.error("Verification raised exception: %s", e)
++            verification_passed = False
++
++        if verification_passed:
++            self.current_status = RollbackStatus.STABLE
++            return self.current_status
++
++        # Fail-closed automated rollback
++        self.current_status = RollbackStatus.ROLLING_BACK
++        revert_ok = False
++        try:
++            revert_ok = self._revert_action(deployment_id, last_stable_version)
++        except Exception as e:
++            logger.error("Revert action failed: %s", e)
++            revert_ok = False
++
++        if revert_ok:
++            self.current_status = RollbackStatus.ROLLED_BACK
++        else:
++            self.current_status = RollbackStatus.FAILED
++
++        event = RollbackEvent(
++            deployment_id=deployment_id,
++            target_version=target_version,
++            rollback_version=last_stable_version,
++            trigger_reason="Post-deployment health verification check failed",
++            status=self.current_status,
++        )
++        self.history.append(event)
++        return self.current_status
++
++    def get_latest_event(self) -> Optional[RollbackEvent]:
++        """Returns the most recent rollback event."""
++        return self.history[-1] if self.history else None
+diff --git a/infra/dr/snapshot_backup.sh b/infra/dr/snapshot_backup.sh
+new file mode 100644
+index 00000000..99b08fca
+--- /dev/null
++++ b/infra/dr/snapshot_backup.sh
+@@ -0,0 +1,39 @@
++#!/usr/bin/env bash
++# SupremeAI Infrastructure Disaster Recovery Snapshot Tool
++# Safely packages local federation state snapshots and generates SHA256 checksums.
++
++set -euo pipefail
++
++BACKUP_DIR="${BACKUP_DIR:-./snapshots}"
++RETENTION_DAYS="${RETENTION_DAYS:-7}"
++TIMESTAMP="$(date -u +"%Y%m%d_%H%M%SZ")"
++SNAPSHOT_NAME="supremeai_state_snapshot_${TIMESTAMP}"
++ARCHIVE_PATH="${BACKUP_DIR}/${SNAPSHOT_NAME}.tar.gz"
++
++mkdir -p "${BACKUP_DIR}"
++
++echo "[DR-SNAPSHOT] Starting snapshot packaging at ${TIMESTAMP}..."
++
++# Create snapshot archive with temporary manifest
++TMP_DIR="$(mktemp -d)"
++echo "timestamp: ${TIMESTAMP}" > "${TMP_DIR}/manifest.txt"
++echo "status: automated_dr_snapshot" >> "${TMP_DIR}/manifest.txt"
++
++tar -czf "${ARCHIVE_PATH}" -C "${TMP_DIR}" manifest.txt
++rm -rf "${TMP_DIR}"
++
++# Compute SHA256 checksum for tamper evidence
++if command -v sha256sum >/dev/null 2>&1; then
++    sha256sum "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
++elif command -v shasum >/dev/null 2>&1; then
++    shasum -a 256 "${ARCHIVE_PATH}" > "${ARCHIVE_PATH}.sha256"
++fi
++
++echo "[DR-SNAPSHOT] Snapshot created successfully: ${ARCHIVE_PATH}"
++
++# Rotate snapshots older than RETENTION_DAYS
++if [ -d "${BACKUP_DIR}" ]; then
++    find "${BACKUP_DIR}" -type f -name "supremeai_state_snapshot_*.tar.gz*" -mtime +"${RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null || true
++fi
++
++echo "[DR-SNAPSHOT] Snapshot routine complete."
+diff --git a/infra/ops/__init__.py b/infra/ops/__init__.py
+new file mode 100644
+index 00000000..7e02d1af
+--- /dev/null
++++ b/infra/ops/__init__.py
+@@ -0,0 +1,15 @@
++"""
++SupremeAI Infrastructure Operations Modules
++"""
++
++from .health_watchdog import FederationWatchdog, EndpointStatus, WatchdogAlert
++from .quota_monitor import QuotaMonitor, QuotaEvaluation, JobRuntimeEvaluation
++
++__all__ = [
++    "FederationWatchdog",
++    "EndpointStatus",
++    "WatchdogAlert",
++    "QuotaMonitor",
++    "QuotaEvaluation",
++    "JobRuntimeEvaluation",
++]
+diff --git a/infra/ops/health_watchdog.py b/infra/ops/health_watchdog.py
+new file mode 100644
+index 00000000..954efce5
+--- /dev/null
++++ b/infra/ops/health_watchdog.py
+@@ -0,0 +1,170 @@
++"""
++SupremeAI Federation Multi-Satellite Health Watchdog
++Periodic automated prober monitoring endpoints across federation satellites.
++"""
++
++from dataclasses import dataclass, field
++from datetime import datetime, timezone
++import json
++import logging
++from typing import Callable, Dict, List, Optional
++import urllib.error
++import urllib.request
++
++logger = logging.getLogger("infra.health_watchdog")
++
++
++@dataclass
++class EndpointStatus:
++    name: str
++    url: str
++    healthy: bool
++    status_code: int
++    latency_ms: float
++    consecutive_failures: int = 0
++    last_checked_iso: str = ""
++    error_message: Optional[str] = None
++
++
++@dataclass
++class WatchdogAlert:
++    satellite_name: str
++    endpoint_url: str
++    consecutive_failures: int
++    severity: str
++    title: str
++    details: str
++    created_at_iso: str = field(
++        default_factory=lambda: datetime.now(timezone.utc).isoformat()
++    )
++
++
++DEFAULT_ENDPOINTS = {
++    "mcp-tower-health": "http://localhost:3000/health",
++    "mcp-tower-mcp": "http://localhost:3000/mcp",
++    "gateway-models": "http://localhost:8080/v1/models",
++    "studio-dashboard": "http://localhost:5173/",
++}
++
++
++class FederationWatchdog:
++    """Multi-satellite health watchdog with configurable alert thresholds."""
++
++    def __init__(
++        self,
++        endpoints: Optional[Dict[str, str]] = None,
++        failure_threshold: int = 3,
++        timeout_seconds: float = 5.0,
++        probe_fn: Optional[Callable[[str], tuple[bool, int, float, Optional[str]]]] = None,
++    ):
++        self.endpoints = endpoints or dict(DEFAULT_ENDPOINTS)
++        self.failure_threshold = max(1, failure_threshold)
++        self.timeout_seconds = timeout_seconds
++        self._probe_fn = probe_fn or self._default_http_probe
++        self.statuses: Dict[str, EndpointStatus] = {
++            name: EndpointStatus(
++                name=name,
++                url=url,
++                healthy=True,
++                status_code=0,
++                latency_ms=0.0,
++                consecutive_failures=0,
++            )
++            for name, url in self.endpoints.items()
++        }
++        self.alerts: List[WatchdogAlert] = []
++
++    def _default_http_probe(self, url: str) -> tuple[bool, int, float, Optional[str]]:
++        """Standard library HTTP GET probe."""
++        start = datetime.now(timezone.utc)
++        req = urllib.request.Request(
++            url,
++            headers={"User-Agent": "SupremeAI-Infrastructure-Guardian/1.0"},
++            method="GET",
++        )
++        try:
++            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
++                elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
++                return (200 <= resp.status < 400, resp.status, elapsed, None)
++        except urllib.error.HTTPError as e:
++            elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
++            return (False, e.code, elapsed, str(e.reason))
++        except Exception as e:
++            elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000.0
++            return (False, 0, elapsed, str(e))
++
++    def probe_endpoint(self, name: str) -> EndpointStatus:
++        """Probes a single endpoint and updates internal telemetry."""
++        url = self.endpoints.get(name)
++        if not url:
++            raise KeyError(f"Endpoint '{name}' not registered in watchdog.")
++
++        healthy, status_code, latency_ms, error = self._probe_fn(url)
++        now_iso = datetime.now(timezone.utc).isoformat()
++        current = self.statuses[name]
++
++        if healthy:
++            current.consecutive_failures = 0
++            current.healthy = True
++            current.status_code = status_code
++            current.latency_ms = latency_ms
++            current.error_message = None
++            current.last_checked_iso = now_iso
++        else:
++            current.consecutive_failures += 1
++            current.healthy = False
++            current.status_code = status_code
++            current.latency_ms = latency_ms
++            current.error_message = error
++            current.last_checked_iso = now_iso
++
++            if current.consecutive_failures >= self.failure_threshold:
++                alert = WatchdogAlert(
++                    satellite_name=name,
++                    endpoint_url=url,
++                    consecutive_failures=current.consecutive_failures,
++                    severity="CRITICAL" if current.consecutive_failures >= 5 else "HIGH",
++                    title=f"[SATELLITE_DOWN] {name} failed {current.consecutive_failures} consecutive probes",
++                    details=(
++                        f"Satellite {name} ({url}) returned status {status_code} "
++                        f"with error: {error}. Threshold is {self.failure_threshold}."
++                    ),
++                    created_at_iso=now_iso,
++                )
++                self.alerts.append(alert)
++
++        return current
++
++    def probe_all(self) -> Dict[str, EndpointStatus]:
++        """Probes all registered satellite endpoints sequentially."""
++        for name in self.endpoints:
++            self.probe_endpoint(name)
++        return self.statuses
++
++    def get_unhealthy(self) -> List[EndpointStatus]:
++        """Returns all currently unhealthy endpoints."""
++        return [s for s in self.statuses.values() if not s.healthy]
++
++    def build_incident_report(self) -> str:
++        """Generates markdown incident report payload for supremeai-open issue creation."""
++        unhealthy = self.get_unhealthy()
++        if not unhealthy and not self.alerts:
++            return "## Multi-Satellite Health Check: ALL SYSTEMS OPERATIONAL\n\nAll endpoints are healthy."
++
++        lines = [
++            "## 🚨 Infrastructure Guardian Incident Report",
++            "",
++            f"**Timestamp:** `{datetime.now(timezone.utc).isoformat()}`",
++            f"**Active Alerts:** {len(self.alerts)}",
++            "",
++            "### Unhealthy Endpoints",
++            "| Satellite | URL | Status Code | Failures | Latency | Error |",
++            "|---|---|---|---|---|---|",
++        ]
++        for ep in unhealthy:
++            lines.append(
++                f"| `{ep.name}` | `{ep.url}` | {ep.status_code} | "
++                f"**{ep.consecutive_failures}** | {ep.latency_ms:.1f}ms | {ep.error_message or 'None'} |"
++            )
++
++        return "\n".join(lines)
+diff --git a/infra/ops/quota_monitor.py b/infra/ops/quota_monitor.py
+new file mode 100644
+index 00000000..619142c3
+--- /dev/null
++++ b/infra/ops/quota_monitor.py
+@@ -0,0 +1,116 @@
++"""
++SupremeAI Actions Runner Quota Monitor
++Audits GitHub Actions usage against the 2,000 min/month Free-org budget
++per docs/OPS_ACTIONS_QUOTA_RUNBOOK.md to prevent runaway runner burnout.
++"""
++
++from dataclasses import dataclass
++from typing import Optional
++
++
++@dataclass
++class QuotaEvaluation:
++    monthly_budget_minutes: float
++    used_minutes: float
++    remaining_minutes: float
++    days_elapsed: int
++    daily_burn_rate: float
++    projected_month_end_minutes: float
++    status: str  # HEALTHY, WARNING, CRITICAL, EXHAUSTED
++    alert_message: Optional[str] = None
++
++
++@dataclass
++class JobRuntimeEvaluation:
++    job_name: str
++    duration_seconds: float
++    max_allowed_seconds: float
++    is_runaway: bool
++    status: str
++    recommendation: Optional[str] = None
++
++
++class QuotaMonitor:
++    """Monitors GitHub Actions minutes and flags hanging/runaway CI matrix executions."""
++
++    DEFAULT_MONTHLY_BUDGET = 2000.0  # Free-org budget in minutes
++    DEFAULT_WARNING_THRESHOLD_PCT = 0.75  # 75% (1500 mins)
++    DEFAULT_CRITICAL_THRESHOLD_PCT = 0.90  # 90% (1800 mins)
++    DEFAULT_MAX_JOB_SECONDS = 600.0  # 10 minutes max per single CI step
++
++    def __init__(
++        self,
++        monthly_budget_minutes: float = DEFAULT_MONTHLY_BUDGET,
++        warning_pct: float = DEFAULT_WARNING_THRESHOLD_PCT,
++        critical_pct: float = DEFAULT_CRITICAL_THRESHOLD_PCT,
++    ):
++        self.monthly_budget = monthly_budget_minutes
++        self.warning_threshold = self.monthly_budget * warning_pct
++        self.critical_threshold = self.monthly_budget * critical_pct
++
++    def evaluate_usage(
++        self,
++        used_minutes: float,
++        days_elapsed: int = 1,
++        days_in_month: int = 30,
++    ) -> QuotaEvaluation:
++        """Evaluates cumulative usage and forecasts month-end exhaustion."""
++        safe_days = max(1, days_elapsed)
++        remaining = max(0.0, self.monthly_budget - used_minutes)
++        daily_burn = used_minutes / safe_days
++        projected = daily_burn * days_in_month
++
++        if used_minutes >= self.monthly_budget:
++            status = "EXHAUSTED"
++            msg = f"EMERGENCY: Monthly runner quota exhausted ({used_minutes:.1f}/{self.monthly_budget:.1f}m)."
++        elif used_minutes >= self.critical_threshold or projected > self.monthly_budget * 1.2:
++            status = "CRITICAL"
++            msg = (
++                f"CRITICAL: Quota burn rate ({daily_burn:.1f}m/day) projects {projected:.1f}m "
++                f"exceeding budget ({self.monthly_budget:.1f}m). Throttle CI immediately."
++            )
++        elif used_minutes >= self.warning_threshold or projected > self.monthly_budget:
++            status = "WARNING"
++            msg = (
++                f"WARNING: Quota usage at {used_minutes:.1f}m ({used_minutes/self.monthly_budget*100:.1f}%). "
++                f"Projected month-end: {projected:.1f}m."
++            )
++        else:
++            status = "HEALTHY"
++            msg = None
++
++        return QuotaEvaluation(
++            monthly_budget_minutes=self.monthly_budget,
++            used_minutes=round(used_minutes, 2),
++            remaining_minutes=round(remaining, 2),
++            days_elapsed=safe_days,
++            daily_burn_rate=round(daily_burn, 2),
++            projected_month_end_minutes=round(projected, 2),
++            status=status,
++            alert_message=msg,
++        )
++
++    def check_job_runtime(
++        self,
++        job_name: str,
++        duration_seconds: float,
++        max_allowed_seconds: float = DEFAULT_MAX_JOB_SECONDS,
++    ) -> JobRuntimeEvaluation:
++        """Detects hanging or runaway workflow jobs."""
++        is_runaway = duration_seconds > max_allowed_seconds
++        status = "RUNAWAY" if is_runaway else "NORMAL"
++        rec = None
++        if is_runaway:
++            rec = (
++                f"Job '{job_name}' exceeded timeout threshold ({duration_seconds:.1f}s > {max_allowed_seconds:.1f}s). "
++                "Terminate job to conserve Actions minutes."
++            )
++
++        return JobRuntimeEvaluation(
++            job_name=job_name,
++            duration_seconds=duration_seconds,
++            max_allowed_seconds=max_allowed_seconds,
++            is_runaway=is_runaway,
++            status=status,
++            recommendation=rec,
++        )
+diff --git a/infra/tests/__init__.py b/infra/tests/__init__.py
+new file mode 100644
+index 00000000..1a76b76e
+--- /dev/null
++++ b/infra/tests/__init__.py
+@@ -0,0 +1,3 @@
++"""
++SupremeAI Infrastructure Tests
++"""
+diff --git a/infra/tests/test_infra_watchdog.py b/infra/tests/test_infra_watchdog.py
+new file mode 100644
+index 00000000..586060c2
+--- /dev/null
++++ b/infra/tests/test_infra_watchdog.py
+@@ -0,0 +1,183 @@
++"""
++Unit Tests for SupremeAI Infrastructure Guardian
++Validates multi-satellite watchdog, quota monitor thresholds, and DR rollback automations.
++"""
++
++import unittest
++
++from infra.ops.health_watchdog import (
++    DEFAULT_ENDPOINTS,
++    EndpointStatus,
++    FederationWatchdog,
++)
++from infra.ops.quota_monitor import QuotaMonitor
++from infra.dr.automated_rollback import AutomatedRollback, RollbackStatus
++
++
++class TestInfraWatchdog(unittest.TestCase):
++    """Test suite for FederationWatchdog."""
++
++    def test_watchdog_init_default_endpoints(self):
++        watchdog = FederationWatchdog()
++        self.assertEqual(len(watchdog.endpoints), len(DEFAULT_ENDPOINTS))
++        self.assertIn("mcp-tower-health", watchdog.endpoints)
++        self.assertIn("gateway-models", watchdog.endpoints)
++        self.assertIn("studio-dashboard", watchdog.endpoints)
++
++    def test_watchdog_healthy_probes(self):
++        # Mock probe returning 200 OK
++        mock_probe = lambda url: (True, 200, 15.2, None)
++        watchdog = FederationWatchdog(probe_fn=mock_probe)
++
++        statuses = watchdog.probe_all()
++        for name, status in statuses.items():
++            self.assertTrue(status.healthy)
++            self.assertEqual(status.status_code, 200)
++            self.assertEqual(status.consecutive_failures, 0)
++        self.assertEqual(len(watchdog.alerts), 0)
++
++    def test_watchdog_consecutive_failures_triggers_alert(self):
++        # Mock probe returning 503 Service Unavailable
++        mock_probe = lambda url: (False, 503, 105.0, "Service Unavailable")
++        watchdog = FederationWatchdog(failure_threshold=3, probe_fn=mock_probe)
++
++        # Probes 1 and 2: failures increment, no alert yet
++        watchdog.probe_endpoint("mcp-tower-health")
++        self.assertEqual(watchdog.statuses["mcp-tower-health"].consecutive_failures, 1)
++        self.assertEqual(len(watchdog.alerts), 0)
++
++        watchdog.probe_endpoint("mcp-tower-health")
++        self.assertEqual(watchdog.statuses["mcp-tower-health"].consecutive_failures, 2)
++        self.assertEqual(len(watchdog.alerts), 0)
++
++        # Probe 3: threshold reached, triggers alert
++        watchdog.probe_endpoint("mcp-tower-health")
++        self.assertEqual(watchdog.statuses["mcp-tower-health"].consecutive_failures, 3)
++        self.assertEqual(len(watchdog.alerts), 1)
++
++        alert = watchdog.alerts[0]
++        self.assertEqual(alert.satellite_name, "mcp-tower-health")
++        self.assertEqual(alert.severity, "HIGH")
++        self.assertIn("[SATELLITE_DOWN]", alert.title)
++
++    def test_watchdog_recovery_resets_failure_count(self):
++        calls = 0
++
++        def alternating_probe(url):
++            nonlocal calls
++            calls += 1
++            if calls <= 2:
++                return (False, 500, 50.0, "Internal Server Error")
++            return (True, 200, 10.0, None)
++
++        watchdog = FederationWatchdog(probe_fn=alternating_probe)
++        watchdog.probe_endpoint("gateway-models")
++        self.assertEqual(watchdog.statuses["gateway-models"].consecutive_failures, 1)
++
++        watchdog.probe_endpoint("gateway-models")
++        self.assertEqual(watchdog.statuses["gateway-models"].consecutive_failures, 2)
++
++        # Third probe recovers
++        watchdog.probe_endpoint("gateway-models")
++        self.assertEqual(watchdog.statuses["gateway-models"].consecutive_failures, 0)
++        self.assertTrue(watchdog.statuses["gateway-models"].healthy)
++
++    def test_watchdog_incident_report_generation(self):
++        mock_probe = lambda url: (False, 502, 20.0, "Bad Gateway")
++        watchdog = FederationWatchdog(failure_threshold=1, probe_fn=mock_probe)
++        watchdog.probe_endpoint("studio-dashboard")
++
++        report = watchdog.build_incident_report()
++        self.assertIn("Infrastructure Guardian Incident Report", report)
++        self.assertIn("studio-dashboard", report)
++        self.assertIn("502", report)
++
++
++class TestQuotaMonitor(unittest.TestCase):
++    """Test suite for QuotaMonitor."""
++
++    def setUp(self):
++        self.monitor = QuotaMonitor(monthly_budget_minutes=2000.0)
++
++    def test_quota_healthy_usage(self):
++        # 100 minutes used over 5 days -> 20 min/day -> 600 min/mo projected
++        eval_res = self.monitor.evaluate_usage(used_minutes=100.0, days_elapsed=5, days_in_month=30)
++        self.assertEqual(eval_res.status, "HEALTHY")
++        self.assertEqual(eval_res.remaining_minutes, 1900.0)
++        self.assertEqual(eval_res.daily_burn_rate, 20.0)
++        self.assertEqual(eval_res.projected_month_end_minutes, 600.0)
++        self.assertIsNone(eval_res.alert_message)
++
++    def test_quota_warning_and_critical_thresholds(self):
++        # Warning threshold (75% of 2000 = 1500)
++        warn_eval = self.monitor.evaluate_usage(used_minutes=1550.0, days_elapsed=20)
++        self.assertEqual(warn_eval.status, "WARNING")
++        self.assertIsNotNone(warn_eval.alert_message)
++
++        # Critical threshold (90% of 2000 = 1800)
++        crit_eval = self.monitor.evaluate_usage(used_minutes=1850.0, days_elapsed=20)
++        self.assertEqual(crit_eval.status, "CRITICAL")
++        self.assertIn("CRITICAL:", crit_eval.alert_message)
++
++        # Exhausted threshold (>= 2000)
++        exhaust_eval = self.monitor.evaluate_usage(used_minutes=2050.0, days_elapsed=20)
++        self.assertEqual(exhaust_eval.status, "EXHAUSTED")
++        self.assertIn("EMERGENCY:", exhaust_eval.alert_message)
++
++    def test_quota_runaway_job_detection(self):
++        # Normal runtime (< 600s)
++        normal_job = self.monitor.check_job_runtime("matrix-py311", duration_seconds=120.0)
++        self.assertFalse(normal_job.is_runaway)
++        self.assertEqual(normal_job.status, "NORMAL")
++        self.assertIsNone(normal_job.recommendation)
++
++        # Runaway runtime (> 600s)
++        runaway_job = self.monitor.check_job_runtime("hanging-integration-test", duration_seconds=750.0)
++        self.assertTrue(runaway_job.is_runaway)
++        self.assertEqual(runaway_job.status, "RUNAWAY")
++        self.assertIn("exceeded timeout threshold", runaway_job.recommendation)
++
++
++class TestDisasterRecoveryRollback(unittest.TestCase):
++    """Test suite for AutomatedRollback."""
++
++    def test_rollback_successful_deployment(self):
++        engine = AutomatedRollback()
++        status = engine.deploy_and_verify(
++            deployment_id="dep-101",
++            target_version="v2.1.0",
++            last_stable_version="v2.0.0",
++            verification_fn=lambda: True,
++        )
++        self.assertEqual(status, RollbackStatus.STABLE)
++        self.assertEqual(len(engine.history), 0)
++
++    def test_rollback_on_failed_verification(self):
++        revert_invoked = False
++
++        def mock_revert(dep_id, version):
++            nonlocal revert_invoked
++            revert_invoked = True
++            return True
++
++        engine = AutomatedRollback(revert_action=mock_revert)
++        status = engine.deploy_and_verify(
++            deployment_id="dep-102",
++            target_version="v2.2.0-broken",
++            last_stable_version="v2.1.0",
++            verification_fn=lambda: False,
++        )
++
++        self.assertEqual(status, RollbackStatus.ROLLED_BACK)
++        self.assertTrue(revert_invoked)
++        self.assertEqual(len(engine.history), 1)
++
++        event = engine.get_latest_event()
++        self.assertIsNotNone(event)
++        self.assertEqual(event.deployment_id, "dep-102")
++        self.assertEqual(event.rollback_version, "v2.1.0")
++        self.assertIn("Post-deployment health verification check failed", event.trigger_reason)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index ae5fa9a9..ab7d900e 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -88,6 +88,7 @@
+     "skills",  # Federation bridge surface for Supremeai-bd/supremeai-skills (issue #503)
+     "vscode",  # Federation bridge surface for Supremeai-bd/supremeai-vscode (issue #504)
+     "core",  # Federation bridge surface for Supremeai-bd/supremeai-core (issue #507)
++    "infra",  # Federation bridge surface for Supremeai-bd/supremeai-infrastructure (issue #509)
+ }
+ 
+ APPROVED_ROOT_FILES = {

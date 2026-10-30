@@ -1,0 +1,71 @@
+diff --git a/docs/bridge/bridge-20261027-fix-1335-frontend-observability-r2.md b/docs/bridge/bridge-20261027-fix-1335-frontend-observability-r2.md
+new file mode 100644
+index 00000000..b944dad3
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-fix-1335-frontend-observability-r2.md
+@@ -0,0 +1,3 @@
++# 🌉 Bridge Work Order — [P1] Fix: honest incident text + deploy-pipeline vs service health separation (fix for #1335)
++
++Implements the alarm-hygiene core of parent issue #1335 / bridge-20261027-frontend-observability. Patches: infrastructure/mcp-control-plane/src/health/incident.ts and engine.ts. Incidents can never read Error-colon-None again; a failed LAST deploy with a still-live service keeps the service honestly healthy with structured pipeline evidence instead of flipping overallStatus to degraded fleet-wide.
+diff --git a/infrastructure/mcp-control-plane/src/health/engine.ts b/infrastructure/mcp-control-plane/src/health/engine.ts
+index cfa9abed..4670fb2a 100644
+--- a/infrastructure/mcp-control-plane/src/health/engine.ts
++++ b/infrastructure/mcp-control-plane/src/health/engine.ts
+@@ -102,7 +102,30 @@ export class HealthEngine {
+             : deployStatus === "deploy_failed" || deployStatus === "deactivated" || deployStatus === "crashed"
+               ? "down"
+               : undefined;
+-        if (deployDerived) return { ...data, status: deployDerived };
++        if (deployDerived) {
++          // bridge-20261027-frontend-observability (#1335): a failed LAST deploy
++          // is pipeline news, not necessarily service news. When the service
++          // object reports the deployment as live, keep the service honestly
++          // healthy but carry the pipeline failure as structured evidence —
++          // flipping overallStatus to degraded for every consumer on every
++          // rebuild hiccup was the false-alarm culture this order removes.
++          const serviceState = String(
++            data?.service?.suspendedIndicator ?? data?.service?.status ?? data?.status ?? "",
++          ).toLowerCase();
++          const serviceLive = !["suspended", "deactivated", "crashed", "deploy_failed"].includes(serviceState);
++          if (serviceLive && deployDerived === "degraded") {
++            return {
++              ...data,
++              status: "healthy",
++              error: `last deploy ${deployStatus} — service still serving on the previous release (pipeline attention needed)`,
++            };
++          }
++          return {
++            ...data,
++            status: deployDerived,
++            error: `last deploy ${deployStatus}${serviceLive ? " — service serving on the previous release" : " and service not live"}`,
++          };
++        }
+         return data;
+       },
+       "github": async () => {
+diff --git a/infrastructure/mcp-control-plane/src/health/incident.ts b/infrastructure/mcp-control-plane/src/health/incident.ts
+index a6729413..f0c6743f 100644
+--- a/infrastructure/mcp-control-plane/src/health/incident.ts
++++ b/infrastructure/mcp-control-plane/src/health/incident.ts
+@@ -41,7 +41,9 @@ export class IncidentEngine {
+         provider,
+         timestamp,
+         type,
+-        message: `Provider ${provider} transitioned to ${newStatus}. Error: ${errorDetails || "None"}`,
++        message: errorDetails
++          ? `Provider ${provider} transitioned to ${newStatus}. Error: ${errorDetails}`
++          : `Provider ${provider} transitioned to ${newStatus}. No error captured — inspect snapshot evidence for the transition reason.`,
+         impactedServices: impacted
+       };
+     }
+@@ -65,7 +67,9 @@ export class IncidentEngine {
+         provider,
+         timestamp,
+         type: "OUTAGE",
+-        message: `Provider ${provider} escalated from degraded to ${newStatus}. Error: ${errorDetails || "None"}`,
++        message: errorDetails
++          ? `Provider ${provider} escalated from degraded to ${newStatus}. Error: ${errorDetails}`
++          : `Provider ${provider} escalated from degraded to ${newStatus}. No error captured — inspect snapshot evidence.`,
+         impactedServices: impacted
+       };
+     }

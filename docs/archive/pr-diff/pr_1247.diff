@@ -1,0 +1,27 @@
+diff --git a/studio/public/_headers b/studio/public/_headers
+index eeeeaf8e..c6e8ea88 100644
+--- a/studio/public/_headers
++++ b/studio/public/_headers
+@@ -16,6 +16,9 @@
+ /admin
+   Cache-Control: no-cache, no-store, must-revalidate
+ 
++/admin/*
++  Cache-Control: no-cache, no-store, must-revalidate
++
+ /jarvis
+   Cache-Control: no-cache, no-store, must-revalidate
+ 
+diff --git a/studio/public/_redirects b/studio/public/_redirects
+index e4c9c16e..db855190 100644
+--- a/studio/public/_redirects
++++ b/studio/public/_redirects
+@@ -4,5 +4,8 @@
+ /healthz    https://supremeai-api-ulw0.onrender.com/healthz        200
+ 
+ # Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
++# Use 200! force rewrite so /admin never serves stale cached redirect files
++/admin      /index.html                                            200!
++/admin/*    /index.html                                            200!
+ /*          /index.html                                            200
+ 

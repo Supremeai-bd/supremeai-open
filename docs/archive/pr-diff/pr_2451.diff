@@ -1,0 +1,92 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index a0dcd9a8..d3f4c2e6 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -37,7 +37,12 @@
+ 
+ Verdict per open bridge:queued WO (any-slug match wins):
+   MERGED_ON_MAIN   slug found in main history — WO should close; flagged as
+-                   bookkeeping lag when it ages past the threshold.
++                   bookkeeping lag when it ages past the threshold. Rows whose
++                   `updatedAt == createdAt` additionally carry the never-touched
++                   close-on-merge flap fingerprint (#2401/#2430 class: the
++                   closure worker never even touched the row — the reconciler's
++                   exact worklist), while touched rows stay untagged and rows
++                   missing timestamps stay honestly untagged (unknown).
+   OPEN_PR          slug found in an open PR title — in flight, healthy.
+   IN_GATES         no match anywhere, WO younger than the threshold — normal
+                    CI-Guardian latency, not a signal.
+@@ -468,7 +473,16 @@ def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
+ 
+     merged = [s for s in slugs if any(s in subj for subj in main_subjects)]
+     if merged:
+-        return {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
++        v = {**base, "verdict": "MERGED_ON_MAIN", "evidence": f"slug {merged[0]} in main history"}
++        ca, ua = wo.get("createdAt") or "", wo.get("updatedAt") or ""
++        if ca and ua and ca == ua:
++            # never-touched close-on-merge flap fingerprint (#2401/#2430):
++            # the closure worker never touched the row post-creation — the
++            # reconciler's exact worklist. Touched rows and rows with missing
++            # timestamps stay untagged (touched-lag vs honest unknown).
++            v["never_touched"] = True
++            v["evidence"] += " — never-touched since creation (close-on-merge flap fingerprint, #2401/#2430)"
++        return v
+ 
+     inflight = [s for s in slugs if any(s in t for t in open_pr_titles)]
+     if inflight:
+@@ -753,6 +767,32 @@ def self_test() -> list[tuple[str, bool, str]]:
+     cases.append(("open-repo target keeps LANDING_AT_RISK",
+                   v["verdict"] == "LANDING_AT_RISK", json.dumps(v)[:160]))
+ 
++    # 13b. never-touched flap fingerprint (#2401/#2430): MERGED_ON_MAIN rows
++    # whose updatedAt == createdAt carry the close-on-merge flap signature;
++    # touched rows and rows missing timestamps stay untagged (honest unknown);
++    # the tag propagates to FALSE_REJECTION rows (same classify path).
++    merged_hist = [f"feat: landed (bridge-20261028-alpha-lane) (#1905)"]
++    v = classify({"number": 31, "title": f"x {slug_a}", "createdAt": old, "updatedAt": old},
++                 merged_hist, [], now)
++    cases.append(("never-touched merged row carries flap fingerprint",
++                  v["verdict"] == "MERGED_ON_MAIN" and v.get("never_touched") is True
++                  and "flap fingerprint" in v["evidence"], json.dumps(v)[:200]))
++    v = classify({"number": 32, "title": f"x {slug_a}", "createdAt": old, "updatedAt": fresh},
++                 merged_hist, [], now)
++    cases.append(("touched merged row carries no fingerprint",
++                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v,
++                  json.dumps(v)[:160]))
++    v = classify({"number": 33, "title": f"x {slug_a}", "createdAt": old},
++                 merged_hist, [], now)
++    cases.append(("missing updatedAt -> no fingerprint (honest unknown)",
++                  v["verdict"] == "MERGED_ON_MAIN" and "never_touched" not in v, ""))
++    vs = run_verdicts([{"number": 34, "title": f"rej {slug_a}", "createdAt": old,
++                        "updatedAt": old, "labels": ["bridge:rejected"]}],
++                      merged_hist, [], now)
++    cases.append(("never-touched propagates to FALSE_REJECTION rows",
++                  len(vs) == 1 and vs[0]["verdict"] == "FALSE_REJECTION"
++                  and vs[0].get("never_touched") is True, json.dumps(vs)[:200]))
++
+     # 14. refine_satellites: at-risk + satellite body -> downgraded; at-risk +
+     # open/absent body -> kept; fetch failure -> kept (fail-closed).
+     def _fetch_sat(number):
+@@ -1100,8 +1140,9 @@ def main(argv: list[str] | None = None) -> int:
+         flag = "!!" if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION") else "  "
+         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
+         tv_s = f" tower_verdict={v['tower_verdict']}" if "tower_verdict" in v else ""
++        nt_s = " never-touched" if v.get("never_touched") else ""
+         print(f"{flag} #{v['number']} [{v['verdict']}] age={age_s} "
+-              f"slug={v['slug']}{tv_s} — {v['evidence'][:100]}")
++              f"slug={v['slug']}{tv_s}{nt_s} — {v['evidence'][:100]}")
+     counts: dict[str, int] = {}
+     for v in verdicts:
+         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
+@@ -1113,6 +1154,11 @@ def main(argv: list[str] | None = None) -> int:
+         print(f"TOWER VERDICT PLANE: {len(unstamped)}/{merged_total} merged WOs carry NO Tower "
+               f"verdict stamp" + (f" ({unreadable} unreadable)" if unreadable else "") +
+               " — bookkeeping blackout, report-only.")
++    untouched = [v for v in verdicts if v.get("never_touched")]
++    if untouched:
++        print(f"NEVER-TOUCHED SIGNATURE: {len(untouched)} landed WOs untouched since creation — "
++              "close-on-merge flap fingerprint (#2401/#2430 class), the reconciler's "
++              "exact worklist, report-only.")
+     risky = [v for v in verdicts
+              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
+              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]

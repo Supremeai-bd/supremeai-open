@@ -1,0 +1,96 @@
+diff --git a/infrastructure/mcp-control-plane/src/adapters/github/index.ts b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+index 1cd07ef9..70aab769 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/github/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/github/index.ts
+@@ -162,3 +162,36 @@ export async function listPullRequests(accountId: string, state: string = "open"
+   }));
+ }
+ 
++export async function createIssue(
++  accountIdOrRepo: string,
++  title: string,
++  body: string,
++  labels?: string[]
++): Promise<{ number: number; htmlUrl: string; title: string }> {
++  const { apiKey: token, baseUrl } = getAccountConfig(accountIdOrRepo);
++  const res = await httpRequest<{ number?: number; html_url?: string; message?: string }>(`${baseUrl}/issues`, {
++    method: "POST",
++    headers: {
++      ...githubHeaders(token),
++      "Content-Type": "application/json",
++    },
++    body: {
++      title,
++      body,
++      ...(labels && labels.length > 0 ? { labels } : {}),
++    },
++    timeoutMs: 15_000,
++  });
++
++  if (!res.ok || !res.data?.number) {
++    const errorMsg = res.data?.message || `Failed to create issue (HTTP ${res.status})`;
++    throw new Error(`GitHub create issue error: ${errorMsg}`);
++  }
++
++  return {
++    number: res.data.number,
++    htmlUrl: res.data.html_url || "",
++    title,
++  };
++}
++
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 958b00ca..aa2d0e23 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -1,6 +1,6 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+-import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode } from "../adapters/github/index.js";
++import { getWorkflowRuns, getFailedLogs, listSecrets, readFile, listPullRequests, searchCode, createIssue } from "../adapters/github/index.js";
+ import { RequestContextStore, roleRank, type UserRole } from "../policy/auth.context.js";
+ import { scopeAllows } from "../policy/client-registry.js";
+ import { buildAccountRegistry } from "../registry/account.registry.js";
+@@ -310,5 +310,42 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+       }
+     }
+   );
++
++  server.tool(
++    "github.create_issue",
++    "Create a new issue in a SupremeAI repository (e.g. supremeai-open). Zero-credential self-serve for autonomous auditor/scout agents.",
++    {
++      title: z.string().min(5).max(250).describe("Issue title"),
++      body: z.string().min(10).describe("Issue description / markdown body"),
++      repo: z.string().optional().describe("Repository name (default: supremeai-open)"),
++      labels: z.array(z.string()).optional().describe("Labels to apply (e.g. ['audit:finding', 'P1-major', 'status:unclaimed'])"),
++    },
++    async ({ title, body, repo, labels }) => {
++      const targetRepo = repo || "supremeai-open";
++      try {
++        const result = await createIssue(targetRepo, title, body, labels);
++        return {
++          content: [
++            {
++              type: "text",
++              text: JSON.stringify(
++                {
++                  success: true,
++                  number: result.number,
++                  url: result.htmlUrl,
++                  title: result.title,
++                  repo: targetRepo,
++                },
++                null,
++                2
++              ),
++            },
++          ],
++        };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
+ }
+ 

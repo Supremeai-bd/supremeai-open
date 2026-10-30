@@ -1,0 +1,18 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 187c317c..2f189ea6 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -137,10 +137,13 @@ parity contract:
+    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
+    | `--auto-pr` | shared | accepted for pipeline parity (#89); honest stderr note; the minimal loop opens no PR itself |
+    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
++   | `--offline` | shared (mirror port pending) | honest offline mode: board query honestly skipped (dispatch path + rules gate via `_offline_requested`), cadence roles still evaluated; env equivalents `SUPREMEAI_OFFLINE` / `AGENT_LOOP_OFFLINE` / `CI_OFFLINE` |
+    | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` runs a single dispatch cycle per invocation (scheduler/orchestrator is the outer loop) |
+    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+ 
++   `--offline` landed in the public copy first (§4b port rule); until the mirror port lands, the private copy may reject the flag — that is the port rule working as designed, not drift.
++
+ 3. **Envelope parity** — the same issue on both copies must yield a
+    `task_envelope` whose contract sections are byte-identical modulo
+    `problem_statement.state` timestamps.

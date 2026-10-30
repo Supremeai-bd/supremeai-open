@@ -1,0 +1,291 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index b2afb87d..f57bfdda 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -1657,6 +1657,43 @@ def pre_work_rebase_guard() -> tuple[bool, int, str]:
+ # চালায় না। সৎ pre-push/pre-work rebase গার্ড (#161, #514) অক্ষত রাখা হলো —
+ # এরা সত্যিকারের কাজ করে; ভবিষ্যতে বাস্তব কনজিউমার এলে সরাসরি wire করা যাবে।
+ 
++# বাংলা: বোর্ডের নিজস্ব টাইটেল-কনভেনশন — "verb(scope):" প্রিফিক্স রো-এর প্রকৃত
++# লেন নির্দেশ করে। লাইভ প্রমাণ 2026-10-30: #1690 "audit(api): …" (12:15Z) ও
++# #2360 "audit(federation): …" (12:16Z) দুটোই role=coder + task_type=IMPLEMENT
++# এনভেলপে ডিসপ্যাচ হয়েছিল, অথচ রো-দুটির নিজের বড়িই ঘোষণা করে auditor/report-only
++# লেন। ফলাফল: প্রমাণ-রিসিপ্ট রো বাস্তবায়ন-টাস্ক হিসেবে ডিসপ্যাচ হয়ে এজেন্ট-সাইকেল
++# নষ্ট হয় — ঠিক সেই অপচয়-শ্রেণি যেটা stale-incident/stale-claim গার্ডরা ঠেকাতে
++# চায় (root-cause fix: এক বার শ্রেণিবিন্যাস ঠিক, প্রতি-রো প্যাচ নয়)। লেবেল-সংকেত
++# (status:runway, gate:pre-landing) আগে চলে — টাইটেল-প্রিফিক্স শুধু অবশিষ্ট ক্ষেত্রে
++# ম্যাপ করে, তাই fix(ci)+status:runway আজও ci-fixer পায়। অ্যানকমন প্রিফিক্স
++# (fix/feat/chore …) অ-ম্যাপড → পুরোনো লজিক অপরিবর্তিত।
++# ইতিহাস: r1 চেষ্টা PR #3246-এ পৌঁছেছিল কিন্তু branch ফাইলে ভুল কনটেন্ট
++# (full_file-এ diff-টেক্সট) + পরবর্তী main কমিটে conflict — merge-অযোগ্য। এই r2
++# সংস্করণ বর্তমান main (418cdee) ট্রি-তে সরাসরি প্রয়োগকৃত।
++EVIDENCE_LANE_TITLE_ROLES: dict[str, str] = {
++    "audit": "task-auditor",
++    "report": "task-auditor",
++    "triage": "task-auditor",
++    "verify": "task-auditor",
++    "census": "task-auditor",
++    "ops": "task-auditor",
++    "dispatch": "task-auditor",
++    "guard": "platform-guardian",
++    "sentry": "platform-guardian",
++    "scout": "ecosystem-scout",
++}
++
++# বাংলা: envelope-এর task_type এখন role-থেকে সৎভাবে নেওয়া হয় — প্রমাণ-লেন রো
++# আর "IMPLEMENT" ভুখণ্ড পায় না (SPEC §2 task_type রেজিস্ট্রি: AUDIT/SCOUT/OPS/FIX)।
++ROLE_TASK_TYPES: dict[str, str] = {
++    "task-auditor": "AUDIT",
++    "auditor": "AUDIT",
++    "ecosystem-scout": "SCOUT",
++    "platform-guardian": "OPS",
++    "ci-fixer": "FIX",
++}
++
++
+ def classify_task_role(
+     title: str = "", labels: Iterable[str] = (), body: str = ""
+ ) -> str:
+@@ -1665,6 +1702,16 @@ def classify_task_role(
+         return "ci-fixer"
+     if "gate:pre-landing" in present:
+         return "task-auditor"
++    # বাংলা: টাইটেল-প্রিফিক্স ম্যাপ — বোর্ডের "verb(scope):" কনভেনশন রো-এর লেন
++    # ঘোষণা করে; প্রথম টোকেন case-insensitive ম্যাচ (EVIDENCE_LANE_TITLE_ROLES)।
++    # কঠোর আকৃতি: টোকেনের পরে (ঐচ্ছিক স্পেস সহ) `(` বা `:` থাকতে হবে — কীওয়ার্ড
++    # বাক্য নয়। #489 চুক্তি: "audit readiness report"-জাতীয় কীওয়ার্ড-টাইটেল আর
++    # role আবিষ্কার করতে পারে না — সেরা coder ডিফল্টেই যায়।
++    head = str(title or "").lstrip().lower()
++    token_match = re.match(r"([a-z][a-z-]*)\s*[:(]", head)
++    mapped = EVIDENCE_LANE_TITLE_ROLES.get(token_match.group(1)) if token_match else None
++    if mapped is not None:
++        return mapped
+     if "status:claimed" in present:
+         return "coder"
+     return "coder"
+@@ -1733,6 +1780,12 @@ def build_task_envelope(
+             log("!", f"[Envelope] unknown --role '{role_override}'; falling back to classified role '{classified}'")
+             role = classified
+ 
++    # বাংলা: task_type এখন final role থেকে সৎ derivation (role_override-সহ) —
++    # প্রমাণ-লেন রো (audit/report/triage/verify/guard/scout টাইটেল) আর IMPLEMENT
++    # ভুখণ্ড পায় না (লাইভ #1690/#2360 মিস-ডিসপ্যাচ, 2026-10-30)। অজানা role →
++    # আগের আচরণ (IMPLEMENT)।
++    task_type = ROLE_TASK_TYPES.get(role, "IMPLEMENT")
++
+     role_description = ROLE_RULES.get(
+         role,
+         ROLE_RULES["solver"] if role in ("coder", "solver") else "Execute role objectives strictly.",
+@@ -1762,7 +1815,7 @@ def build_task_envelope(
+         "output_format": "task-envelope-v1",
+         "task_id": f"task-{issue_number}" if issue_number else "task-adhoc",
+         "issue": issue_number,
+-        "task_type": "IMPLEMENT",
++        "task_type": task_type,
+         "group": resolved_group,
+         "priority": _detect_priority(labels),
+         "objective": title or ("Ad-hoc task — objective supplied by the calling agent." if not issue_number else ""),
+@@ -2251,11 +2304,17 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             # claim-first mandate অপরিবর্তিত (#1530-র zero-dispatch-change শৃঙ্খলা)।
+             picked_issue = next((i for i in raw if str(i.get("number")) == picked), None)
+             picked_labels = []
+-            if isinstance(picked_issue, dict) and isinstance(picked_issue.get("labels"), list):
+-                picked_labels = [
+-                    str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
+-                ]
+-            classified = classify_task_role(labels=picked_labels)
++            picked_title = ""
++            if isinstance(picked_issue, dict):
++                # বাংলা: টাইটেলও প্রেরণ — classify_task_role-এর নতুন টাইটেল-প্রিফিক্স
++                # ম্যাপ (audit(/report(/guard(/scout(…) dispatch-পথেও কাজ করে; আগে
++                # labels-only কলে প্রমাণ-রিসিপ্ট রো coder-শ্রেণি হত।
++                picked_title = str(picked_issue.get("title", "") or "")
++                if isinstance(picked_issue.get("labels"), list):
++                    picked_labels = [
++                        str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
++                    ]
++            classified = classify_task_role(title=picked_title, labels=picked_labels)
+             dispatch_role = args.role or "solver"
+             if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
+                 log("!", f"unknown --role '{args.role}'; dispatching as solver")
+diff --git a/tests/test_envelope_role_classification.py b/tests/test_envelope_role_classification.py
+new file mode 100644
+index 00000000..c39df40e
+--- /dev/null
++++ b/tests/test_envelope_role_classification.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Offline contract tests for evidence-lane role classification (SPEC §2).
++
++Root-cause fix receipt for the live mis-dispatch 2026-10-30T11:19Z: issue #2529
++("audit(federation): P0 #2511 RCA verified …", labels: []) was dispatched with
++role=coder + task_type=IMPLEMENT although the row's own body declares
++"Audit (auditor envelope, evidence-only, zero fixes attempted)". The board's
++own title convention "verb(scope):" states the lane; the classifier now maps
++the first title token deterministically, while label signals (status:runway,
++gate:pre-landing) keep precedence. Envelope task_type derives honestly from
++the final role instead of the hardcoded "IMPLEMENT" plaque.
++
++Coverage:
++  1. classify_task_role title-prefix mapping (audit/report/triage/verify/
++     census/ops/dispatch → task-auditor; guard/sentry → platform-guardian;
++     scout → ecosystem-scout), case-insensitive, with label precedence.
++  2. Unmapped prefixes (fix/feat/chore…) keep the legacy behavior byte-for-byte.
++  3. build_task_envelope derives task_type from the final role (including
++     role_override), not the hardcoded IMPLEMENT.
++  4. The dispatch path passes the picked title to classify_task_role
++     (labels-only call would regress #2529-class rows to coder).
++"""
++
++from __future__ import annotations
++
++import sys
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal
++
++LOOP_SOURCE = (_ROOT / "scripts" / "agents" / "continuous_agent_loop.py").read_text(encoding="utf-8")
++
++
++class TestEvidenceLaneTitleClassification(unittest.TestCase):
++    def test_audit_prefix_maps_to_task_auditor(self):
++        # The live #2529 case verbatim (first 60 chars).
++        self.assertEqual(
++            cal.classify_task_role(
++                title="audit(federation): P0 #2511 RCA verified from ci.yml source (schedule-only",
++                labels=[],
++            ),
++            "task-auditor",
++        )
++
++    def test_report_prefix_case_insensitive(self):
++        # Board rows use both "report(...)" and "Report (falsified-first): ...".
++        self.assertEqual(
++            cal.classify_task_role(title="Report (falsified-first): #2609 Finding 1 not reproduced", labels=[]),
++            "task-auditor",
++        )
++        self.assertEqual(
++            cal.classify_task_role(title="report(guard): #2557 post-closure verification", labels=["audit:finding"]),
++            "task-auditor",
++        )
++
++    def test_keyword_phrases_never_invent_a_role(self):
++        # #489 contract (Tier3 zero-regression): keyword-only titles route to
++        # the preserved coder default — only the strict "verb(scope)[()]"
++        # / "verb:" shape may classify.
++        for title in ("audit readiness report", "report the drift", "scouting mission", "verification pass"):
++            with self.subTest(title=title):
++                self.assertEqual(cal.classify_task_role(title=title, labels=[]), "coder")
++
++    def test_triage_verify_census_ops_dispatch_map_to_task_auditor(self):
++        for title in (
++            "triage(ci): #3192/merge red is an AUTO-LANDING merge-conflict exit",
++            "verify(platform): R62/#2395 third independent per_page probe",
++            "census(wq): full-board drain census r2",
++            "ops(bridge): drain dynamics r2",
++            "dispatch(labels): #1668 has EMPTY GitHub labels since filing",
++        ):
++            with self.subTest(title=title):
++                self.assertEqual(cal.classify_task_role(title=title, labels=[]), "task-auditor")
++
++    def test_guard_sentry_map_to_platform_guardian(self):
++        self.assertEqual(
++            cal.classify_task_role(title="guard(platform): sentry pass 08:45Z — 7/8 alive", labels=[]),
++            "platform-guardian",
++        )
++        self.assertEqual(cal.classify_task_role(title="sentry: provider reprobe", labels=[]), "platform-guardian")
++
++    def test_scout_maps_to_ecosystem_scout(self):
++        self.assertEqual(
++            cal.classify_task_role(
++                title="scout(R79): closure verdicts lack a live-state gate", labels=["status:unclaimed", "radar"]
++            ),
++            "ecosystem-scout",
++        )
++
++    def test_label_precedence_runway_and_gate_beat_title_prefix(self):
++        # A triage/verify-titled row carrying status:runway is a CI lane task.
++        self.assertEqual(
++            cal.classify_task_role(title="triage(ci): runway red", labels=["status:runway"]),
++            "ci-fixer",
++        )
++        self.assertEqual(
++            cal.classify_task_role(title="audit(pre-landing): gate row", labels=["gate:pre-landing"]),
++            "task-auditor",
++        )
++
++    def test_unmapped_prefixes_keep_legacy_behavior(self):
++        # fix/feat/chore and arbitrary titles: label logic unchanged.
++        self.assertEqual(cal.classify_task_role(title="fix: something real", labels=[]), "coder")
++        self.assertEqual(cal.classify_task_role(title="feat(bridge): new lane", labels=["status:claimed"]), "coder")
++        self.assertEqual(cal.classify_task_role(title="chore: tidy", labels=[]), "coder")
++        self.assertEqual(cal.classify_task_role(title="", labels=["status:claimed"]), "coder")
++        self.assertEqual(cal.classify_task_role(title="", labels=[]), "coder")
++
++    def test_bridge_work_order_emoji_title_unmapped(self):
++        self.assertEqual(
++            cal.classify_task_role(title="🌉 Bridge Work Order — Identity registration", labels=[]),
++            "coder",
++        )
++
++
++class TestEnvelopeTaskTypeDerivation(unittest.TestCase):
++    def test_audit_row_gets_auditor_role_and_audit_type(self):
++        issue = {
++            "number": 2529,
++            "title": "audit(federation): P0 #2511 RCA verified from ci.yml source",
++            "state": "open",
++            "body": "Audit (auditor envelope, evidence-only, zero fixes attempted)",
++            "labels": [],
++        }
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        self.assertEqual(env["role"], "task-auditor")
++        self.assertEqual(env["task_type"], "AUDIT")
++
++    def test_coder_row_keeps_implement(self):
++        issue = {"number": 7, "title": "fix: something real", "state": "open", "labels": []}
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        self.assertEqual(env["role"], "coder")
++        self.assertEqual(env["task_type"], "IMPLEMENT")
++
++    def test_scout_row_gets_scout_type(self):
++        issue = {"number": 2925, "title": "scout(R79): closure verdicts lack a live-state gate", "state": "open"}
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        self.assertEqual(env["role"], "ecosystem-scout")
++        self.assertEqual(env["task_type"], "SCOUT")
++
++    def test_guard_row_gets_ops_type(self):
++        issue = {"number": 3111, "title": "guard(platform): sentry pass 08:45Z", "state": "open"}
++        env = cal.build_task_envelope(issue)["task_envelope"]
++        self.assertEqual(env["role"], "platform-guardian")
++        self.assertEqual(env["task_type"], "OPS")
++
++    def test_role_override_recomputes_task_type(self):
++        issue = {"number": 9, "title": "fix: something real", "state": "open", "labels": []}
++        env = cal.build_task_envelope(issue, role_override="ci-fixer")["task_envelope"]
++        self.assertEqual(env["role"], "ci-fixer")
++        self.assertEqual(env["task_type"], "FIX")
++
++    def test_task_type_stays_in_valid_registry(self):
++        # Every role the classifier can emit must map into VALID_TASK_TYPES.
++        for role in ("coder", "solver", "ci-fixer", "auditor", "task-auditor", "ecosystem-scout", "platform-guardian"):
++            self.assertIn(cal.ROLE_TASK_TYPES.get(role, "IMPLEMENT"), cal.VALID_TASK_TYPES)
++
++
++class TestDispatchPathPassesTitle(unittest.TestCase):
++    def test_dispatch_call_site_passes_picked_title(self):
++        # The mandate path must classify with title+labels — a labels-only
++        # call regresses audit(/report(/… rows to coder (#2529 live class).
++        self.assertIn(
++            "classify_task_role(title=picked_title, labels=picked_labels)",
++            LOOP_SOURCE,
++            "dispatch path must pass the picked title into classify_task_role",
++        )
++
++
++if __name__ == "__main__":
++    unittest.main()

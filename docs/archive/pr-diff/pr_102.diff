@@ -1,0 +1,29 @@
+diff --git a/docs/CONSUMERS.md b/docs/CONSUMERS.md
+index 37a2718f..3a5987bb 100644
+--- a/docs/CONSUMERS.md
++++ b/docs/CONSUMERS.md
+@@ -42,13 +42,13 @@ secret   : vault-ফিড env — কখনো কোড/git/log-এ নয়
+ ## ৪. Python client (zero-dependency)
+ 
+ ```python
+-import sys; sys.path.insert(0, "scripts/clients")
++import sys; sys.path.insert(0, "examples")
+ from gateway_client import chat
+ out = chat([{"role": "user", "content": "ping"}])   # env: SUPREMEAI_API_KEY
+ print(out["choices"][0]["message"]["content"])
+ ```
+ 
+-CLI one-shot: `python3 scripts/clients/gateway_client.py --prompt "ping"`
++CLI one-shot: `python3 examples/gateway_client.py --prompt "ping"`
+ 
+ ## ৫. §15 — Agent-consumers
+ 
+@@ -65,7 +65,7 @@ CLI one-shot: `python3 scripts/clients/gateway_client.py --prompt "ping"`
+   env:
+     SUPREMEAI_API_KEY: ${{ secrets.SUPREMEAI_API_KEY }}
+   run: |
+-    python3 scripts/clients/gateway_client.py \
++    python3 examples/gateway_client.py \
+       --prompt "Summarize this diff for humans:" || echo "advisory failed — non-blocking"
+ ```
+ 

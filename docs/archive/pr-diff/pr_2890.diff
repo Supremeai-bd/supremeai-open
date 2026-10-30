@@ -1,0 +1,40 @@
+diff --git a/scripts/ci/check_migration_safety.py b/scripts/ci/check_migration_safety.py
+index d1348fd3..d5f49888 100644
+--- a/scripts/ci/check_migration_safety.py
++++ b/scripts/ci/check_migration_safety.py
+@@ -11,14 +11,24 @@ def check_migration_safety():
+     a 'IGNORE_SAFETY_WARNING' comment, it fails the CI step.
+     This ensures zero-downtime deployments.
+     """
+-    alembic_dir = os.path.join("backend", "alembic_migrations", "versions")
+-
+-    if not os.path.isdir(alembic_dir):
+-        print(f"❌ Canonical Alembic directory not found at {alembic_dir}")
++    # Canonical layout: core/ since the #2564 shim migration lineage moved
++    # backend/ -> core/; the pre-shim backend/ path is probed as a fallback
++    # for parity with older checkouts. Absence of BOTH is a loud failure,
++    # never a silent pass — a safety gate must scan something real.
++    for candidate in ("core", "backend"):
++        alembic_dir = os.path.join(candidate, "alembic_migrations", "versions")
++        if os.path.isdir(alembic_dir):
++            break
++    else:
++        print("❌ No Alembic migrations directory found (probed: core/, backend/)")
+         print("Migration safety checks cannot pass without scanning the canonical migration path.")
+         return 1
+ 
+     migration_files = glob.glob(os.path.join(alembic_dir, "*.py"))
++    print(f"Scanning {len(migration_files)} migration file(s) in {alembic_dir}")
++    if not migration_files:
++        print("❌ Migration directory is empty — a vacuous scan cannot satisfy the safety gate.")
++        return 1
+ 
+     destructive_patterns = [
+         re.compile(r"op\.drop_column"),
+@@ -66,5 +76,6 @@ def check_migration_safety():
+     print("✅ All migrations pass the zero-downtime safety check.")
+     return 0
+ 
++
+ if __name__ == "__main__":
+     sys.exit(check_migration_safety())

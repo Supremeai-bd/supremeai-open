@@ -1,0 +1,42 @@
+diff --git a/vscode/desktop/src-tauri/Cargo.toml b/vscode/desktop/src-tauri/Cargo.toml
+index 47199081..3074794c 100644
+--- a/vscode/desktop/src-tauri/Cargo.toml
++++ b/vscode/desktop/src-tauri/Cargo.toml
+@@ -6,6 +6,7 @@ build = "build.rs"
+ 
+ [dependencies]
+ tauri = { version = "2", features = [] }
++tauri-plugin-updater = "2"
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ 
+diff --git a/vscode/desktop/src-tauri/src/main.rs b/vscode/desktop/src-tauri/src/main.rs
+index 3c8f25fa..d90f87b2 100644
+--- a/vscode/desktop/src-tauri/src/main.rs
++++ b/vscode/desktop/src-tauri/src/main.rs
+@@ -22,6 +22,7 @@ fn secure_remove(key: String) -> Result<(), String> {
+ 
+ fn main() {
+     tauri::Builder::default()
++        .plugin(tauri_plugin_updater::Builder::new().build())
+         .invoke_handler(tauri::generate_handler![secure_get, secure_set, secure_remove])
+         .run(tauri::generate_context!())
+         .expect("error while running tauri application");
+diff --git a/vscode/desktop/src-tauri/tauri.conf.json b/vscode/desktop/src-tauri/tauri.conf.json
+index ba05bb00..44bc4d6e 100644
+--- a/vscode/desktop/src-tauri/tauri.conf.json
++++ b/vscode/desktop/src-tauri/tauri.conf.json
+@@ -24,5 +24,13 @@
+     "active": false,
+     "targets": "all",
+     "icon": []
++  },
++  "plugins": {
++    "updater": {
++      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NThCQjZERTVCMDRCM0EKUldRNlM3RGxiYnRZeEdwdHlBdFBWWGhhU0s4V212NkZDV2NrVjI4YVpNbG5PZW1IZzFMSEhrL28K",
++      "endpoints": [
++        "https://github.com/Supremeai-bd/supremeai-open/releases/latest/download/desktop-latest.json"
++      ]
++    }
+   }
+ }

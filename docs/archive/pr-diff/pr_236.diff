@@ -1,0 +1,70 @@
+diff --git a/scripts/ci/stale_claim_releaser.py b/scripts/ci/stale_claim_releaser.py
+index 177c07fc..be5268a4 100644
+--- a/scripts/ci/stale_claim_releaser.py
++++ b/scripts/ci/stale_claim_releaser.py
+@@ -93,7 +93,7 @@ def extract_claim_timestamp(issue: Dict[str, Any]) -> Optional[datetime.datetime
+         return latest_claim_dt
+ 
+     labels = [str(l.get("name", "")).lower() for l in issue.get("labels", []) if isinstance(l, dict)]
+-    if any(l in CLAIMED_LABELS for l in labels) or (CLAIMABLE_LABEL not in labels):
++    if any(l in CLAIMED_LABELS for l in labels):
+         up_str = issue.get("updatedAt")
+         if up_str:
+             try:
+@@ -303,11 +303,33 @@ def run_self_test() -> int:
+         "comments": [{"body": "🎯 Claiming issue", "createdAt": "2026-10-15T11:10:00Z"}]
+     }
+ 
++    # Issue 6: claimed LABEL but NO claim comment, 120m old -> STAGE 1 STALE.
++    # Regression (#222 fallout): extract_claim_timestamp() crashed with
++    # NameError: CLAIMABLE_LABEL on exactly this input, killing the whole
++    # releaser (and with it the agent-loop cron step) on any such issue.
++    iss6 = {
++        "number": 6,
++        "title": "task 6",
++        "labels": [{"name": "status:claimed"}],
++        "comments": [],
++        "updatedAt": "2026-10-15T10:00:00Z"
++    }
++
++    # Issue 7: plain unclaimed issue (no claim markers, no comments) — must
++    # NOT be treated as claimed under the implicit claimable lifecycle.
++    iss7 = {
++        "number": 7,
++        "title": "task 7",
++        "labels": [{"name": "P2-medium"}],
++        "comments": [],
++        "updatedAt": "2026-10-15T10:00:00Z"
++    }
++
+     branches = ["feat/issue-3-contract", "fix/issue-4-repair", "fix/issue-5-patch"]
+     open_prs = {5}
+ 
+     stale = evaluate_graduated_claims(
+-        [iss1, iss2, iss3, iss4, iss5],
++        [iss1, iss2, iss3, iss4, iss5, iss6, iss7],
+         open_prs,
+         branches,
+         claim_to_branch_min=10.0,
+@@ -315,9 +337,11 @@ def run_self_test() -> int:
+         now=base_time
+     )
+ 
+-    assert len(stale) == 2, f"Expected 2 stale issues, got {len(stale)}"
++    assert len(stale) == 3, f"Expected 3 stale issues, got {len(stale)}"
+     assert stale[0]["number"] == 2 and stale[0]["stage"] == 1, f"Expected #2 Stage 1, got {stale[0]}"
+     assert stale[1]["number"] == 4 and stale[1]["stage"] == 2, f"Expected #4 Stage 2, got {stale[1]}"
++    assert stale[2]["number"] == 6 and stale[2]["stage"] == 1, f"Expected #6 Stage 1 (label-only claim), got {stale[2]}"
++    assert all(s["number"] != 7 for s in stale), "Unlabeled issue must not be treated as claimed"
+     print("✅ 2-Stage graduated lease self-test passed cleanly!")
+     return 0
+ 
+@@ -377,7 +401,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
+             print(f"    🔄 Releasing claim for #{s['number']}...")
+             ok = release_issue_claim(args.repo, s["number"], s["stage"], s["reason"], s["elapsed_minutes"])
+             if ok:
+-                print(f"    ✅ Issue #{s['number']} successfully released to {CLAIMABLE_LABEL}.")
++                print(f"    ✅ Issue #{s['number']} successfully released back to the open pool.")
+             else:
+                 print(f"    ❌ Failed to release #{s['number']}.", file=sys.stderr)
+ 

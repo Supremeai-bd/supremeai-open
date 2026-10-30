@@ -1,0 +1,150 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 9671289f..e0296bea 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -11,7 +11,10 @@
+ Reconciliation model (three planes, one join key):
+   - board plane   : open WOs labeled `bridge:queued` (Tower bridge_work_queue,
+                     zero-credential) — each title carries the lane slug
+-                    `(bridge-YYYYMMDD-<slug>)`.
++                    `(bridge-YYYYMMDD-<slug>)`. Open WOs labeled
++                    `bridge:rejected` are ALSO read, but solely to detect
++                    FALSE_REJECTION (below) — a rejection is presumed
++                    legitimate unless main history proves otherwise.
+   - history plane : landed commit subjects on origin/main (squash-merge
+                     convention embeds the same slug and the PR number).
+   - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
+@@ -34,13 +37,31 @@
+                    satellite landing remains outside this guard's observation.
+   NO_SLUG          title carries no bridge slug — outside this guard's model
+                    (reported informationally, never strict-flagged).
++  FALSE_REJECTION  WO is labeled `bridge:rejected` yet its slug IS found in
++                   main history — the rejection is provably wrong. Live case
++                   #1972 (2026-10-28): rejected "branch not found" at
++                   05:50:43Z AFTER the deliverable had landed at 05:00:16Z
++                   (3273abe); the post-merge branch cleanup raced the verdict
++                   evaluator, which checks branch existence but never merge
++                   state. Demands relabel/audit; strict-flagged.
++                   Rejected WOs with NO landing stay unreported (a rejection
++                   is usually correct — e.g. guard failures, v2-routing),
++                   keeping the strict surface minimal. Honest scope limit:
++                   the board plane IS the queue payload, and Tower currently
++                   omits some rejected WOs from it entirely (live: #1972 was
++                   absent from bridge_work_queue) — those are invisible here
++                   until Tower either keeps rejected WOs in the queue or the
++                   guard gains a feedback-plane reader; the classification
++                   logic is proven hermetically and on the real #1972 data
++                   fed directly (integration run, 2026-10-28).
+ 
+ Modes:
+   --self-test   hermetic verdict-matrix proof (fixture WOs/history/flight;
+                 miss=0, false-positive=0). No network. (roster mode)
+-  --strict      exit 1 when any LANDING_AT_RISK (or MERGED_ON_MAIN lagging past
+-                the threshold) exists; report-only default exits 0 with the
+-                table so a transient Tower condition never reds a gate.
++  --strict      exit 1 when any FALSE_REJECTION, LANDING_AT_RISK, or
++                MERGED_ON_MAIN lagging past the threshold exists; report-only
++                default exits 0 with the table so a transient Tower condition
++                never reds a gate.
+ Exit codes: 0 = report OK, 1 = strict findings, 2 = board/history unreachable
+             (honest skip — never reported as pass).
+ 
+@@ -214,15 +235,28 @@ def classify(wo: dict, main_subjects: list[str], open_pr_titles: list[str],
+ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
+                  open_pr_titles: list[str], now_epoch: float,
+                  at_risk_hours: float = DEFAULT_AT_RISK_HOURS) -> list[dict]:
+-    """Classify every open bridge:queued WO; skip anything else (labels SSOT)."""
++    """Classify every open bridge:queued WO (labels SSOT), plus bridge:rejected
++    WOs solely to surface FALSE_REJECTION (rejected-but-landed, the #1972
++    class). Rejected WOs with no landing stay out of the report: a rejection
++    is presumed legitimate unless main history contradicts it, so widening the
++    strict surface costs zero new false positives."""
+     out = []
+     for wo in work_orders:
+         labels = wo.get("labels") or []
+         if isinstance(labels, str):
+             labels = [labels]
+-        if "bridge:queued" not in labels:
+-            continue
+-        out.append(classify(wo, main_subjects, open_pr_titles, now_epoch, at_risk_hours))
++        if "bridge:queued" in labels:
++            out.append(classify(wo, main_subjects, open_pr_titles, now_epoch, at_risk_hours))
++        elif "bridge:rejected" in labels:
++            v = classify(wo, main_subjects, open_pr_titles, now_epoch, at_risk_hours)
++            if v["verdict"] == "MERGED_ON_MAIN":
++                out.append({**v, "verdict": "FALSE_REJECTION",
++                            "evidence": f"labeled bridge:rejected yet {v['evidence']} — "
++                                        f"rejection contradicted by main history "
++                                        f"(#1972 class: post-merge branch cleanup raced "
++                                        f"the verdict evaluator)"})
++            # rejected + IN_GATES/OPEN_PR/LANDING_AT_RISK/NO_SLUG: out of scope —
++            # no provable contradiction, silence is the honest default.
+     return out
+ 
+ 
+@@ -416,6 +450,35 @@ def _fetch_boom(number):
+     cases.append(("refine is fail-closed on fetch failure (risk kept)",
+                   vs[0]["verdict"] == "LANDING_AT_RISK", json.dumps(vs[0])[:160]))
+ 
++    # 15. FALSE_REJECTION (the live #1972 class): a WO labeled bridge:rejected
++    # whose slug IS in main history — the rejection is provably wrong.
++    vs = run_verdicts(
++        [{"number": 22, "title": f"recert {slug_a}", "createdAt": old,
++          "labels": ["bridge:rejected"]}],
++        [f"feat: landed (bridge-20261028-alpha-lane) (#1907)"], [], now)
++    ok = (len(vs) == 1 and vs[0]["verdict"] == "FALSE_REJECTION"
++          and "1972" in vs[0]["evidence"])
++    cases.append(("rejected-but-landed -> FALSE_REJECTION (#1972 class)", ok, json.dumps(vs)[:220]))
++
++    # 16. rejected WITHOUT landing stays unreported (rejection presumed
++    # legitimate — zero new false positives on the strict surface).
++    vs = run_verdicts(
++        [{"number": 23, "title": f"truly rejected {slug_a}", "createdAt": old,
++          "labels": ["bridge:rejected"]}],
++        [], [], now)
++    cases.append(("rejected without landing stays unreported", vs == [], json.dumps(vs)[:120]))
++
++    # 17. mixed queued/rejected board: both classified, no interference.
++    vs = run_verdicts(
++        [{"number": 24, "title": f"queued landed {slug_a}", "createdAt": old,
++          "labels": ["bridge:queued"]},
++         {"number": 25, "title": f"rejected landed {slug_a}", "createdAt": old,
++          "labels": ["bridge:rejected"]}],
++        [f"feat: landed (bridge-20261028-alpha-lane) (#1908)"], [], now)
++    by_num = {v["number"]: v["verdict"] for v in vs}
++    cases.append(("mixed queued/rejected board classifies exactly",
++                  by_num == {24: "MERGED_ON_MAIN", 25: "FALSE_REJECTION"}, json.dumps(by_num)[:200]))
++
+     return cases
+ 
+ 
+@@ -452,10 +515,10 @@ def main(argv: list[str] | None = None) -> int:
+     if not verdicts:
+         print("REPORT: no open bridge:queued WOs to reconcile (queue clean).")
+         return 0
+-    order = {"LANDING_AT_RISK": 0, "MERGED_ON_MAIN": 1, "OPEN_PR": 2, "IN_GATES": 3,
+-             "SATELLITE_TARGET": 4, "NO_SLUG": 5}
++    order = {"FALSE_REJECTION": 0, "LANDING_AT_RISK": 1, "MERGED_ON_MAIN": 2,
++             "OPEN_PR": 3, "IN_GATES": 4, "SATELLITE_TARGET": 5, "NO_SLUG": 6}
+     for v in sorted(verdicts, key=lambda v: (order.get(v["verdict"], 9), v["number"] or 0)):
+-        flag = "!!" if v["verdict"] == "LANDING_AT_RISK" else "  "
++        flag = "!!" if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION") else "  "
+         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
+         print(f"{flag} #{v['number']} [{v['verdict']}] age={age_s} "
+               f"slug={v['slug']} — {v['evidence'][:100]}")
+@@ -464,13 +527,13 @@ def main(argv: list[str] | None = None) -> int:
+         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
+     print("VERDICT: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+     risky = [v for v in verdicts
+-             if v["verdict"] == "LANDING_AT_RISK"
++             if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
+              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]
+     if not risky:
+         return 0
+     if args.strict:
+         print(f"STRICT: {len(risky)} work order(s) need reconciliation — file/claim the triage lane "
+-              "(tracker class: #1964 eviction; recipe: #1940 rebase+regen).")
++              "(tracker class: #1964 eviction / #1972 false rejection; recipe: #1940 rebase+regen).")
+         return 1
+     print("REPORT-ONLY findings (exit 0) — rerun with --strict for a fail-closed verdict.")
+     return 0

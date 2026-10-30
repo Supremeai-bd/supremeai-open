@@ -1,0 +1,83 @@
+diff --git a/browser/server.py b/browser/server.py
+index 161044b0..67d10238 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -58,6 +58,48 @@ def __init__(self) -> None:
+         self._infisical_cookies: Dict[str, str] = {}
+         self._infisical_expiry: float = 0
+         self._infisical_ttl: float = 3600.0
++        self._proxy_list: List[str] = []
++        self._proxy_idx: int = 0
++        self._proxy_expiry: float = 0
++
++    async def get_proxy(self) -> Optional[str]:
++        direct_proxy = os.getenv("HTTPS_PROXY") or os.getenv("HTTP_PROXY") or os.getenv("ROTATING_PROXY_URL")
++        if direct_proxy:
++            return direct_proxy
++
++        webshare_key = os.getenv("WEBSHARE_API_KEY")
++        if not webshare_key:
++            return None
++
++        now = time.time()
++        if not self._proxy_list or now > self._proxy_expiry:
++            try:
++                async with httpx.AsyncClient(timeout=10.0) as pc:
++                    res = await pc.get(
++                        "https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=25",
++                        headers={"Authorization": f"Token {webshare_key}"},
++                    )
++                    if res.status_code == 200:
++                        data = res.json()
++                        results = data.get("results", [])
++                        proxies = []
++                        for p in results:
++                            u, pw, ip, port = p.get("username"), p.get("password"), p.get("proxy_address"), p.get("port")
++                            if u and pw and ip and port:
++                                proxies.append(f"http://{u}:{pw}@{ip}:{port}")
++                        if proxies:
++                            self._proxy_list = proxies
++                            self._proxy_expiry = now + 3600.0
++                            logger.info(f"Loaded {len(proxies)} Webshare rotating proxies")
++            except Exception as e:
++                logger.warning(f"Failed to fetch Webshare proxy list: {e}")
++
++        if not self._proxy_list:
++            return None
++
++        proxy = self._proxy_list[self._proxy_idx % len(self._proxy_list)]
++        self._proxy_idx += 1
++        return proxy
+ 
+     def get_cookies(self) -> Dict[str, str]:
+         # Prefer Infisical cached cookies if fresh (TTL 1h)
+@@ -298,7 +340,12 @@ async def ask(self, prompt: str) -> str:
+         if not cookies:
+             raise HTTPException(status_code=503, detail="No Gemini cookies configured")
+ 
+-        async with httpx.AsyncClient(timeout=45.0) as client:
++        proxy = await self.get_proxy()
++        client_kwargs = {"timeout": 45.0}
++        if proxy:
++            client_kwargs["proxy"] = proxy
++
++        async with httpx.AsyncClient(**client_kwargs) as client:
+             try:
+                 snl, bl = await self._ensure_tokens(client)
+             except PermissionError as exc:
+@@ -468,7 +515,14 @@ async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
+             "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
+             "object": "chat.completion",
+             "created": int(time.time()),
+-            "model": req.model or "gemini-web-relay",
++            "model": "gemini-web",
++            "supremeai_engine": "ge",
++            "supremeai": {
++                "channel": "w",
++                "engine": "ge",
++                "tier": "Turbo",
++                "label": "SupremeAI w.ge Turbo",
++            },
+             "choices": [
+                 {
+                     "index": 0,

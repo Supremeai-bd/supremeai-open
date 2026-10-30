@@ -1,0 +1,47 @@
+diff --git a/docs/bridge/bridge-20261027-audit-broken-tracker.md b/docs/bridge/bridge-20261027-audit-broken-tracker.md
+new file mode 100644
+index 00000000..3ccdc0c7
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-audit-broken-tracker.md
+@@ -0,0 +1,41 @@
++# 🌉 Bridge Work Order — [P1] Audit tracker: broken-in-production features consolidated — 10 findings, each with owning issue/PR, status and the single unblock action (bridge-20261027-audit-broken-tracker)
++
++## Problem
++The Bangla feature audit (2026-10-27) consolidated every production-breaking finding into one priority table. Each finding already owns an issue and (where applicable) a fix order or PR — 31 orders from this engagement alone. What does NOT exist is a single tracking point that answers, per broken feature: who owns it, what state it is in, and what is the one action that unblocks it.
++
++The cost of that absence is not theoretical: the guardian verdict-executor gap (#1331) was exactly this failure class — correct verdicts produced, nothing enacted, PRs rotted in the open. PR #334 (knowledge loop r2) is gate-green and waiting on an admin merge right now, with its predecessor #332 guardian-rejected (-13.5) but still open. Findings rot when their status lives only in session reports that the repo's own pipeline cannot see.
++
++This order is a **tracker, not a re-file**: it references existing issues; it files no duplicate fixes.
++
++## The consolidated table (source: audit Table 4, live-verified 2026-10-27)
++
++| # | Priority | Broken feature | Evidence (latest) | Owning order(s) | Status | Single unblock action |
++|---|----------|----------------|-------------------|------------------|--------|-----------------------|
++| 1 | P0 | Tower self-capability regression | 12/12 MCP resources fail resources/read (-32603); AST graph not_indexed | #1329; fixes: #1451/PR #1452 (arg-order), #1456/PR #1457 (AST-sync cron) | both PRs in gates | Merge PR #1452 and #1457 |
++| 2 | P0 | PyErrorFix nightly job failing | First scheduled run failed; upload-sarif 404s (code scanning disabled) | #1445 → fix #1446/PR #1447 (guard template) | PR in gates | Merge PR #1447 + operator enables Code scanning Default setup |
++| 3 | P1 | Desktop/VS Code streaming-less client | Root client: plain POST, 10s timeout, zero streaming symbols | #1333, #1442 → fix #1454/PR #1455 (603-line verified client) | PR in gates | Merge PR #1455 |
++| 4 | P1 | Knowledge loop dead | docs_search returns nothing for project docs; feedback_loop at 1 seed row | #1337 → r2 #1440/PR #334 | PR gate-green | Admin merges PR #334 |
++| 5 | P1 | Admin decisions pending | #334 unmerged despite green gates; #332 guardian-rejected (score -13.5) yet open | (operator decisions) | waiting on operator | Merge #334, close #332 |
++| 6 | P2 | Studio bundle split incomplete | Initial JS ~1.2MB; size guard landed, actual split not done | #1339 | guard-only so far | Root-level code split (needs existing-file edit lane) |
++| 7 | P2 | Guardian verdict-executor not installed | CLOSE_PR verdicts unenacted; PRs stay open | #1331 → template shipped via #1384 | template exists | Operator installs template into workflows |
++| 8 | P2 | 18 stale CI orders polluting queue | PR #1426 closed, mains green; orders still carry fake P0s | #1458/PR #1459 | PR in gates | Merge PR #1459 |
++| 9 | P2 | Secret-hygiene follow-ups | 2 new tenant admin tokens not stored in Infisical; WAF body-block hazard open | #1386 | open | Operator stores tokens; bridge-side filter tuning |
++| 10 | P3 | Frontend observability absent | devtools_audit always in fallback mode; no console/network telemetry | #1335 | order filed | Bind scraper-node Playwright into audit path |
++
++## Purpose and rules of this tracker
++1. One row, one owner, one unblock action — no prose. A row that cannot state its unblock action is itself a finding.
++2. This tracker never re-files a fix for a row; it updates status by comment and closes when rows 1–5 (all P0/P1) clear their unblock actions.
++3. When a row's owning PR merges, comment the merge run/PR number and strike the row.
++
++## Acceptance Criteria
++- [ ] Every row links to its owning issue(s) and states exactly one unblock action (verified above)
++- [ ] No new fix orders are filed from this tracker (reference-only discipline stated and honored)
++- [ ] Tracker is updated or closed once rows 1–5 clear their unblock actions
++- [ ] Repo operators can read the single table and know today's 2-minute decisions (merge #334, close #332)
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** consolidation prevents gate-rot; the platform's own history in this audit (#1331 verdicts never enacted, #334 green-but-waiting) proves that findings without a live status surface decay silently. The bridge pipeline reads this repo, so the tracker becomes machine-visible state, not another local report.
++**Alternatives rejected:** (a) re-filing each broken feature as fresh orders — would duplicate 31 open orders and poison the dedupe discipline this pipeline depends on; (b) keeping the table only in the offline Bangla report — invisible to the repo's own autonomous builders, which is precisely the rot condition; (c) closing old issues and reopening consolidated ones — destroys evidence chains and in-flight PR references.
++
++## Labels
++`bridge:queued` `P1-high` `area:control-tower` `type:tracker`

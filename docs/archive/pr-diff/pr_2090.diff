@@ -1,0 +1,616 @@
+diff --git a/scripts/agents/agent_solution_memory.py b/scripts/agents/agent_solution_memory.py
+index 75a33d37..bba8c6a0 100644
+--- a/scripts/agents/agent_solution_memory.py
++++ b/scripts/agents/agent_solution_memory.py
+@@ -95,7 +95,7 @@ def _tower_post(session_id: str | None, payload: dict[str, Any]) -> tuple[str, s
+         headers=headers, method="POST",
+     )
+     try:
+-        with urllib.request.urlopen(req, timeout=TOWER_TIMEOUT_SECS) as resp:
++        with urllib.request.urlopen(req, timeout=TOWER_TIMEOUT_SECS) as resp:  # nosec B310 — tower MCP endpoint, env-overridable with pinned https default; audited #2081
+             return (resp.read().decode("utf-8", errors="replace"),
+                     resp.headers.get("mcp-session-id") or session_id or "")
+     except urllib.error.HTTPError as err:  # honest failure class (4xx/5xx)
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index e753912e..a2585cf6 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -897,7 +897,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                         "--json", "number,title,labels,state,body",
+                     ]
+                     try:
+-                        hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
++                        hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")  # nosec B603 — list-argv repo-pinned verifier command, same class as the 3 baseline-absorbed sites (#2081 audit)
+                         if hp.returncode == 0 and hp.stdout.strip():
+                             target_issue = json.loads(hp.stdout)
+                         else:
+diff --git a/scripts/ci/boundary_contract_sentinel.py b/scripts/ci/boundary_contract_sentinel.py
+index 9f002388..fe243f99 100644
+--- a/scripts/ci/boundary_contract_sentinel.py
++++ b/scripts/ci/boundary_contract_sentinel.py
+@@ -111,7 +111,7 @@ def _get(base_url: str, path: str, method: str = "GET", headers: dict | None = N
+     for k, v in (headers or {}).items():
+         req.add_header(k, v)
+     try:
+-        with urllib.request.urlopen(req, timeout=timeout) as resp:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — read-only probe against repo-local base_url; audited #2081
+             body = resp.read().decode("utf-8", "replace")
+             return resp.status, {k.lower(): v for k, v in resp.headers.items()}, body
+     except urllib.error.HTTPError as e:
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index d73c1361..a3b75680 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -83,7 +83,8 @@
+ import argparse
+ import json
+ import re
+-import subprocess
++import shutil
++import subprocess  # nosec B404 — live-mode IO wrappers shell out to git via list-argv only (#2081 audit)
+ import sys
+ import time
+ import urllib.error
+@@ -134,7 +135,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
+         req = urllib.request.Request(TOWER, data=json.dumps(payload).encode(),
+                                      headers=headers, method="POST")
+         try:
+-            with urllib.request.urlopen(req, timeout=45) as resp:
++            with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310 — tower URL is a pinned https module constant; audited #2081
+                 sid = resp.headers.get("Mcp-Session-Id")
+                 body = resp.read().decode("utf-8", errors="replace")
+                 ctype = resp.headers.get("Content-Type") or ""
+@@ -149,7 +150,7 @@ def _rpc(method, params=None, session_id=None, notify=False, attempts=4):
+             if line.startswith("data:"):
+                 try:
+                     return json.loads(line[5:].strip()), sid
+-                except Exception:  # noqa: BLE001
++                except Exception:  # noqa: BLE001  # nosec B112 — SSE lines are individually skippable by design; continue IS the contract (#2081 audit)
+                     continue
+     if not body.strip():
+         return {"accepted": True}, sid
+@@ -277,8 +278,9 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
+ # ── IO wrappers (live mode) ──────────────────────────────────────────────────
+ 
+ def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
+-    out = subprocess.run(
+-        ["git", "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
++    git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
++    out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
++        [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
+         capture_output=True, text=True, timeout=60,
+     )
+     if out.returncode != 0:
+diff --git a/scripts/ci/contract_codegen_guard.py b/scripts/ci/contract_codegen_guard.py
+index ba6cdbd5..938dd121 100644
+--- a/scripts/ci/contract_codegen_guard.py
++++ b/scripts/ci/contract_codegen_guard.py
+@@ -64,7 +64,7 @@
+ import os
+ import re
+ import shutil
+-import subprocess
++import subprocess  # nosec B404 — the guard's contract/regeneration checks ARE subprocess invocations; list-argv only (#2081 audit)
+ import sys
+ import tempfile
+ from pathlib import Path
+@@ -133,7 +133,7 @@ def discover_tool(explicit_tool: str | None = None) -> tuple[str | None, str | N
+     if not Path(tool).exists():
+         return None, f"{TAG} SKIP: CONTRACT_CODEGEN_TOOL points to a nonexistent path: {tool}"
+     try:
+-        proc = subprocess.run(
++        proc = subprocess.run(  # nosec B603 — list-argv, no shell, tool path validated via Path(tool).exists() above (#2081 audit)
+             [tool, "--version"], capture_output=True, text=True, timeout=60,
+         )
+     except (OSError, subprocess.TimeoutExpired) as exc:
+@@ -160,7 +160,7 @@ def discover_tool(explicit_tool: str | None = None) -> tuple[str | None, str | N
+ def generate(tool: str, contract: Path, out: Path) -> None:
+     """Regenerate the artifact from the contract with the pinned invocation."""
+     cmd = [tool, "--input", str(contract), *GEN_BASE_ARGS, "--output", str(out)]
+-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(contract.parent.parent))
++    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, cwd=str(contract.parent.parent))  # nosec B603 — list-argv, no shell, tool path validated (#2081 audit)
+     if proc.returncode != 0:
+         raise RuntimeError(
+             f"generator exited {proc.returncode} (contract may be ungeneratable — "
+@@ -226,8 +226,9 @@ def changed_files(base: str | None, head: str | None, files: list[str]) -> list[
+         return files
+     if base:
+         rev = f"{base}..{head}" if head else f"{base}...HEAD"
+-        proc = subprocess.run(
+-            ["git", "diff", "--name-only", rev], capture_output=True, text=True, cwd=str(REPO_ROOT),
++        git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
++        proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
++            [git_bin, "diff", "--name-only", rev], capture_output=True, text=True, cwd=str(REPO_ROOT),
+         )
+         return proc.stdout.split()
+     return []
+diff --git a/scripts/ci/fleet_contract_probe.py b/scripts/ci/fleet_contract_probe.py
+index 335c7bdd..d1b3a440 100644
+--- a/scripts/ci/fleet_contract_probe.py
++++ b/scripts/ci/fleet_contract_probe.py
+@@ -139,7 +139,7 @@ def _http_get(url: str, timeout: float) -> tuple[int | None, str, str | None]:
+     """Zero-credential GET. Returns (status_code, body, error)."""
+     req = urllib.request.Request(url, method="GET", headers={"User-Agent": "supremeai-fleet-contract-probe/1.0"})
+     try:
+-        with urllib.request.urlopen(req, timeout=timeout) as resp:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 — zero-credential fleet probe; endpoint from repo config; audited #2081
+             return resp.status, resp.read().decode("utf-8", errors="replace"), None
+     except urllib.error.HTTPError as e:
+         try:
+diff --git a/scripts/ci/npm_dep_cve_guard.py b/scripts/ci/npm_dep_cve_guard.py
+index 5cce5e6a..e88b8b4a 100644
+--- a/scripts/ci/npm_dep_cve_guard.py
++++ b/scripts/ci/npm_dep_cve_guard.py
+@@ -82,7 +82,7 @@
+ import argparse
+ import contextlib
+ import json
+-import subprocess
++import subprocess  # nosec B404 — the guard shells out to git for the changed-lockfile surface; list-argv only (#2081 audit)
+ import sys
+ import time
+ import urllib.request
+@@ -193,7 +193,7 @@ def query_osv_batch(
+                     headers={"Content-Type": "application/json"},
+                     method="POST",
+                 )
+-                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:
++                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:  # nosec B310 — OSV https endpoint is a pinned module constant, zero-credential read (#2081 audit)
+                     response = json.loads(resp.read().decode("utf-8"))
+                 last_error = None
+                 break
+@@ -263,7 +263,7 @@ def git_head(repo_root: Path) -> str:
+ 
+ 
+ def subprocess_run(cmd: list[str], cwd: Path) -> str:
+-    proc = subprocess.run(
++    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git invocation (#2081 audit)
+         cmd, cwd=cwd, capture_output=True, text=True, timeout=30, check=False
+     )
+     return proc.stdout
+diff --git a/scripts/ci/pii_redaction_gap_probe.py b/scripts/ci/pii_redaction_gap_probe.py
+index 9d1c215f..a05a7466 100644
+--- a/scripts/ci/pii_redaction_gap_probe.py
++++ b/scripts/ci/pii_redaction_gap_probe.py
+@@ -78,7 +78,7 @@
+     },
+     {
+         "lane": "evidence dict with proper secret keys (control: current redact works)",
+-        "dict": {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3},
++        "dict": {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3},  # nosec B105 — deliberately-fake fixture values for the redaction probe, never real credentials (#2081 audit)
+         "expect_pii": [],
+     },
+     {
+@@ -181,10 +181,13 @@ def presidio_report() -> dict[str, Any]:
+ def self_test() -> bool:
+     print("[self-test] PII gap pilot fixture assertions...")
+     # 1. Current redact() MUST redact proper secret keys (control lane stays green).
+-    node = {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3}
+-    assert redact(node)["api_key"] == "[REDACTED]"
+-    assert redact(node)["token"] == "[REDACTED]"
+-    assert redact(node)["count"] == 3
++    node = {"api_key": SK_FIXTURE, "token": "tok_9x8y7z", "count": 3}  # nosec B105 — deliberately-fake fixture values for the redaction probe, never real credentials (#2081 audit)
++    if not (redact(node)["api_key"] == "[REDACTED]"):
++        raise AssertionError()
++    if not (redact(node)["token"] == "[REDACTED]"):
++        raise AssertionError()
++    if not (redact(node)["count"] == 3):
++        raise AssertionError()
+     print("  PASS | control lane: dict-key regex redacts proper secret keys")
+ 
+     # 2. The gap MUST be real on pristine main: free-text PII (person, email,
+@@ -193,11 +196,11 @@ def self_test() -> bool:
+     #    (If this assert fails, the gap is closed — a GOOD failure; update #1784.)
+     rep = gap_report()
+     text_lane = next(l for l in rep["per_lane"] if "web-research" in l["lane"])
+-    assert text_lane["survived"] == text_lane["planted"] == 5, (
+-        "free-text PII now redacted — gap closed, update #1784"
+-    )
++    if not (text_lane["survived"] == text_lane["planted"] == 5):
++        raise AssertionError("free-text PII now redacted — gap closed, update #1784")
+     dom_lane = next(l for l in rep["per_lane"] if "browser DOM" in l["lane"])
+-    assert dom_lane["survived"] == 2, "DOM free-text PII now redacted — update #1784"
++    if not (dom_lane["survived"] == 2):
++        raise AssertionError("DOM free-text PII now redacted — update #1784")
+     print(f"  PASS | free-text gap is real: {text_lane['survived'] + dom_lane['survived']}/7 entity PII survived redact()")
+ 
+     # 3. Value-side secret: measured via runtime-computed token (hook-immune).
+@@ -205,14 +208,14 @@ def self_test() -> bool:
+     #    innocent key ('note') MUST survive. (If this fails, value-side
+     #    redaction landed — update #1784.)
+     token_lane = next(l for l in rep["per_lane"] if "value-side" in l["lane"])
+-    assert token_lane["survived"] == 1, (
+-        "value-side secret now redacted by the contract — gap closed, update #1784"
+-    )
++    if not (token_lane["survived"] == 1):
++        raise AssertionError("value-side secret now redacted by the contract — gap closed, update #1784")
+     print("  PASS | value-side gap is real: ghp_ token under key 'note' survived (runtime-built, hook-immune)")
+ 
+     # 3. Benign lane must have zero planted PII by construction.
+     benign = next(l for l in rep["per_lane"] if "benign" in l["lane"])
+-    assert benign["planted"] == 0
++    if not (benign["planted"] == 0):
++        raise AssertionError()
+     print("  PASS | benign control lane well-formed")
+     print("[self-test] PII gap pilot PASSED (4 cases)!")
+     return True
+diff --git a/scripts/ci/py_dep_cve_guard.py b/scripts/ci/py_dep_cve_guard.py
+index cfcbc2f8..f1c1801d 100644
+--- a/scripts/ci/py_dep_cve_guard.py
++++ b/scripts/ci/py_dep_cve_guard.py
+@@ -93,7 +93,7 @@
+ import os
+ import re
+ import shutil
+-import subprocess
++import subprocess  # nosec B404 — the guard runs pip-audit and git via list-argv only (#2081 audit)
+ import sys
+ import tempfile
+ from pathlib import Path
+@@ -199,7 +199,7 @@ def audit_manifest(manifest: Path) -> dict[str, list[str]]:
+     stdout; anything else raises RuntimeError with the stderr tail — the
+     honest-skip decision lives in evaluate().
+     """
+-    proc = subprocess.run(
++    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned PIP_AUDIT_BIN invocation (#2081 audit)
+         [PIP_AUDIT_BIN, "--progress-spinner", "off", "-r", str(manifest),
+          "--format", "json"],
+         capture_output=True, text=True, timeout=PIP_AUDIT_TIMEOUT, check=False,
+@@ -634,9 +634,10 @@ def self_test() -> bool:
+         "fixes": [],
+     }
+     found = g.parse_pip_audit_json(doc)
+-    assert found == {
++    if not (found == {
+         "pytest@8.4.2": ["CVE-2025-71176", "GHSA-6w46-j5rx-g56g", "PYSEC-2026-1845"]
+-    }, found
++    }):
++        raise AssertionError(found)
+     print("  PASS | parser: alias union folded, duplicate advisories deduped")
+     try:
+         g.parse_pip_audit_json({"dependencies": [{"name": "x"}]})
+@@ -647,13 +648,17 @@ def self_test() -> bool:
+     # 2. Ratchet compare: equal/new-pair/new-id/shrunk/disappeared.
+     baseline = {"m:a@1.0.0": ["PYSEC-1"], "m:b@2.0.0": ["PYSEC-2", "PYSEC-3"]}
+     drift, improvements = g.compare(dict(baseline), baseline)
+-    assert not drift and not improvements
++    if not (not drift and not improvements):
++        raise AssertionError()
+     drift, _ = g.compare({"m:c@3.0.0": ["PYSEC-9"]}, baseline)
+-    assert drift and drift[0]["kind"] == "new-pair"
++    if not (drift and drift[0]["kind"] == "new-pair"):
++        raise AssertionError()
+     drift, _ = g.compare({"m:a@1.0.0": ["PYSEC-1", "PYSEC-new"]}, baseline)
+-    assert drift and drift[0]["kind"] == "new-id" and drift[0]["ids"] == ["PYSEC-new"]
++    if not (drift and drift[0]["kind"] == "new-id" and drift[0]["ids"] == ["PYSEC-new"]):
++        raise AssertionError()
+     _, improvements = g.compare({"m:a@1.0.0": ["PYSEC-1"]}, baseline)
+-    assert improvements and improvements[0]["pair"] == "m:b@2.0.0"
++    if not (improvements and improvements[0]["pair"] == "m:b@2.0.0"):
++        raise AssertionError()
+     print("  PASS | ratchet: equal/new-pair/new-id/shrunk/disappeared semantics")
+     # 3. Decision tree on a sandbox repo: drift exit 1, honest skip when
+     #    pip-audit is missing or failing, unreadable manifest fail-closed.
+@@ -701,16 +706,19 @@ def self_test() -> bool:
+                 "fastapi@0.162.0": ["PYSEC-fresh"],
+             }
+             code, drift, _imp, _notes = g.evaluate(root)
+-            assert code == EXIT_DRIFT and drift[0]["pair"] == (
++            if not (code == EXIT_DRIFT and drift[0]["pair"] == (
+                 "gateway/requirements.txt:fastapi@0.162.0"
+-            ), (code, drift)
++            )):
++                raise AssertionError((code, drift))
+             print("  PASS | decision tree: new advisory pair fail-closes")
+             g.audit_manifest = lambda p: (
+                 {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
+             )
+             code, drift, imp, _ = g.evaluate(root)
+-            assert code == EXIT_PASS and drift == [] and imp, (code, imp)
+-            assert imp[0]["resolved_ids"] == ["PYSEC-gone"]
++            if not (code == EXIT_PASS and drift == [] and imp):
++                raise AssertionError((code, imp))
++            if not (imp[0]["resolved_ids"] == ["PYSEC-gone"]):
++                raise AssertionError()
+             print("  PASS | shrink path: resolved id routes to baseline-shrink hint")
+ 
+             def _boom(p):
+@@ -718,16 +726,20 @@ def _boom(p):
+ 
+             g.audit_manifest = _boom
+             code, drift, _imp, notes = g.evaluate(root)
+-            assert code == EXIT_PASS and not drift
+-            assert any("pip-audit unreachable" in n for n in notes), notes
++            if not (code == EXIT_PASS and not drift):
++                raise AssertionError()
++            if not (any("pip-audit unreachable" in n for n in notes)):
++                raise AssertionError(notes)
+             print("  PASS | pip-audit failure -> skip with evidence, never a fake PASS")
+ 
+             real_which = g.shutil.which
+             g.shutil.which = lambda name: None
+             try:
+                 code, drift, _imp, notes = g.evaluate(root)
+-                assert code == EXIT_PASS
+-                assert any("pip-audit not installed" in n for n in notes), notes
++                if not (code == EXIT_PASS):
++                    raise AssertionError()
++                if not (any("pip-audit not installed" in n for n in notes)):
++                    raise AssertionError(notes)
+             finally:
+                 g.shutil.which = real_which
+             print("  PASS | pip-audit missing -> skip with evidence")
+@@ -737,13 +749,15 @@ def _boom(p):
+             (root / "gateway" / "requirements.txt").chmod(0)
+             try:
+                 code, drift, _imp, _ = g.evaluate(root)
+-                assert code == EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"
++                if not (code == EXIT_DRIFT and drift[0]["kind"] == "unreadable-manifest"):
++                    raise AssertionError()
+             finally:
+                 (root / "gateway" / "requirements.txt").chmod(0o644)
+             print("  PASS | unreadable manifest -> fail-closed")
+             (root / BASELINE_PATH).write_text("{not json", encoding="utf-8")
+             code, drift, _imp, _ = g.evaluate(root)
+-            assert code == EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]
++            if not (code == EXIT_DRIFT and drift[0]["ids"] == ["BASELINE"]):
++                raise AssertionError()
+             print("  PASS | malformed baseline -> fail-closed")
+             g.audit_manifest = lambda p: (
+                 {"pytest@8.4.2": ["PYSEC-old"]} if "services" in str(p) else {}
+@@ -758,25 +772,35 @@ def _boom(p):
+                 encoding="utf-8",
+             )
+             code, drift, _imp, notes = g.evaluate(root, files=["README.md"])
+-            assert code == EXIT_PASS and any("nothing to check" in n for n in notes)
++            if not (code == EXIT_PASS and any("nothing to check" in n for n in notes)):
++                raise AssertionError()
+             code, drift, _imp, _ = g.evaluate(
+                 root, files=["gateway/services/x/requirements.txt"]
+             )
+-            assert code == EXIT_PASS and not drift
++            if not (code == EXIT_PASS and not drift):
++                raise AssertionError()
+             print("  PASS | --files mode: off-surface skip, on-surface full check")
+         finally:
+             g.shutil.which = real_which
+             g.audit_manifest = saved_audit
+     # 6. Spec classification: pinned / extras-pinned / unpinned / direct /
+     #    dynamic / local — the vocabulary the report uses (#2064).
+-    assert g._classify_spec("torch==2.4.1") == "pinned"
+-    assert g._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"
+-    assert g._classify_spec("wheel") == "unpinned"
+-    assert g._classify_spec("nats-py") == "unpinned"
+-    assert g._classify_spec("git+https://x/y.git") == "direct"
+-    assert g._classify_spec("https://x/y.whl") == "direct"
+-    assert g._classify_spec("${PIP_EXTRAS}") == "dynamic"
+-    assert g._classify_spec("./local") == "local"
++    if not (g._classify_spec("torch==2.4.1") == "pinned"):
++        raise AssertionError()
++    if not (g._classify_spec('"uvicorn[standard]==0.34.0"') == "pinned"):
++        raise AssertionError()
++    if not (g._classify_spec("wheel") == "unpinned"):
++        raise AssertionError()
++    if not (g._classify_spec("nats-py") == "unpinned"):
++        raise AssertionError()
++    if not (g._classify_spec("git+https://x/y.git") == "direct"):
++        raise AssertionError()
++    if not (g._classify_spec("https://x/y.whl") == "direct"):
++        raise AssertionError()
++    if not (g._classify_spec("${PIP_EXTRAS}") == "dynamic"):
++        raise AssertionError()
++    if not (g._classify_spec("./local") == "local"):
++        raise AssertionError()
+     print("  PASS | spec classification: pinned/unpinned/direct/dynamic/local")
+ 
+     # 7. Parser: gateway `||` fallback (gate-defeat shape + 5 unpinned),
+@@ -789,29 +813,40 @@ def _boom(p):
+         "RUN pip install --no-cache-dir -r requirements.txt || "
+         "pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml\n"
+     )
+-    assert len(gw) == 2, gw
+-    assert gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]
+-    assert gw[0]["gate_defeat_shape"] is True, "first branch sits on a || line"
+-    assert gw[1]["class"] == "inline-unpinned"
+-    assert [sp["spec"] for sp in gw[1]["specs"]] == [
+-        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]
+-    assert gw[1]["gate_defeat_shape"] is True
++    if not (len(gw) == 2):
++        raise AssertionError(gw)
++    if not (gw[0]["class"] == "manifest-backed" and gw[0]["manifest_refs"]):
++        raise AssertionError()
++    if not (gw[0]["gate_defeat_shape"] is True):
++        raise AssertionError("first branch sits on a || line")
++    if not (gw[1]["class"] == "inline-unpinned"):
++        raise AssertionError()
++    if not ([sp["spec"] for sp in gw[1]["specs"]] == [
++        "fastapi", "uvicorn", "httpx", "pydantic", "pyyaml"]):
++        raise AssertionError()
++    if not (gw[1]["gate_defeat_shape"] is True):
++        raise AssertionError()
+     swarm = g.parse_pip_install_sites(
+         "RUN pip install --upgrade pip && \\\n"
+         "    pip install --no-cache-dir nats-py pydantic litellm langchain\n"
+     )
+-    assert len(swarm) == 2, swarm
+-    assert all(s["class"] == "inline-unpinned" for s in swarm)
++    if not (len(swarm) == 2):
++        raise AssertionError(swarm)
++    if not (all(s["class"] == "inline-unpinned" for s in swarm)):
++        raise AssertionError()
+     ci = g.parse_pip_install_sites(
+         "RUN pip install --no-cache-dir setuptools==68.0.0 wheel\n"
+     )
+-    assert len(ci) == 1 and ci[0]["class"] == "inline-mixed", ci
+-    assert [sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]
++    if not (len(ci) == 1 and ci[0]["class"] == "inline-mixed"):
++        raise AssertionError(ci)
++    if not ([sp["class"] for sp in ci[0]["specs"]] == ["pinned", "unpinned"]):
++        raise AssertionError()
+     eco = g.parse_pip_install_sites(
+         'RUN pip install --no-cache-dir fastapi==0.115.6 '
+         '"uvicorn[standard]==0.34.0"\n'
+     )
+-    assert len(eco) == 1 and eco[0]["class"] == "inline-pinned", eco
++    if not (len(eco) == 1 and eco[0]["class"] == "inline-pinned"):
++        raise AssertionError(eco)
+     print("  PASS | parser: gate-defeat || fallback, continuations, mixed pin, "
+           "quoted extras pin, comment skip")
+ 
+@@ -836,20 +871,28 @@ def _boom(p):
+         (root / "node_modules" / "x" / "Dockerfile").write_text(
+             "RUN pip install nodejunk\n", encoding="utf-8")
+         doc = g.scan_inline_pip_installs(root)
+-        assert doc["dockerfiles_scanned"] == 2, doc["dockerfiles_scanned"]
+-        assert doc["summary"]["pip_install_sites"] == 4, doc["summary"]
+-        assert doc["summary"]["manifest_backed_sites"] == 1
+-        assert doc["summary"]["inline_unpinned_sites"] == 3
+-        assert doc["summary"]["gate_defeat_sites"] == 2  # both gateway occurrences on the || line
++        if not (doc["dockerfiles_scanned"] == 2):
++            raise AssertionError(doc["dockerfiles_scanned"])
++        if not (doc["summary"]["pip_install_sites"] == 4):
++            raise AssertionError(doc["summary"])
++        if not (doc["summary"]["manifest_backed_sites"] == 1):
++            raise AssertionError()
++        if not (doc["summary"]["inline_unpinned_sites"] == 3):
++            raise AssertionError()
++        if not (doc["summary"]["gate_defeat_sites"] == 2):
++            raise AssertionError()
+         blind = {(s["file"], s["line"]) for s in doc["sites"]
+                  if s["class"] == "inline-unpinned"}
+-        assert blind == {("gateway/Dockerfile", 1),
+-                         ("core/docker/swarm-worker.Dockerfile", 1)}, blind
++        if not (blind == {("gateway/Dockerfile", 1),
++                         ("core/docker/swarm-worker.Dockerfile", 1)}):
++            raise AssertionError(blind)
+         (root / "gateway" / "Dockerfile").chmod(0)
+         try:
+             doc2 = g.scan_inline_pip_installs(root)
+-            assert doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"
+-            assert doc2["dockerfiles_scanned"] == 2
++            if not (doc2["anomalies"] and doc2["anomalies"][0]["kind"] == "unreadable"):
++                raise AssertionError()
++            if not (doc2["dockerfiles_scanned"] == 2):
++                raise AssertionError()
+         finally:
+             (root / "gateway" / "Dockerfile").chmod(0o644)
+     print("  PASS | report-only scan: SKIP_DIRS pruned, blindspots surfaced, "
+@@ -858,23 +901,21 @@ def _boom(p):
+     # 9. Live wiring: roster + pre-push carry the guard (when run inside the repo).
+     roster = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
+     if roster.is_file():
+-        assert "scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8"), (
+-            "guard missing from run_all_guards roster"
+-        )
++        if not ("scripts/ci/py_dep_cve_guard.py" in roster.read_text(encoding="utf-8")):
++            raise AssertionError("guard missing from run_all_guards roster")
+     hook = REPO_ROOT / ".githooks" / "pre-push"
+     if hook.is_file():
+-        assert "py_dep_cve_guard.py" in hook.read_text(encoding="utf-8"), (
+-            "guard missing from pre-push hook"
+-        )
++        if not ("py_dep_cve_guard.py" in hook.read_text(encoding="utf-8")):
++            raise AssertionError("guard missing from pre-push hook")
+     print("  PASS | roster + pre-push wiring present (when run inside the repo)")
+     # 5. Baseline provenance sanity (when run inside the repo).
+     bl_path = REPO_ROOT / BASELINE_PATH
+     if bl_path.is_file():
+         meta = json.loads(bl_path.read_text(encoding="utf-8")).get("meta", {})
+-        assert "pip-audit" in str(meta.get("tool", "")), (
+-            "baseline must record the pip-audit SSOT"
+-        )
+-        assert meta.get("doctrine", "").startswith("shrink-only")
++        if not ("pip-audit" in str(meta.get("tool", ""))):
++            raise AssertionError("baseline must record the pip-audit SSOT")
++        if not (meta.get("doctrine", "").startswith("shrink-only")):
++            raise AssertionError()
+     print("[self-test] Python dependency CVE guard self-tests PASSED (9 test cases)!")
+     return True
+ 
+diff --git a/scripts/ci/satellite_parity_gate.py b/scripts/ci/satellite_parity_gate.py
+index 7a77c8a2..9048f4bd 100644
+--- a/scripts/ci/satellite_parity_gate.py
++++ b/scripts/ci/satellite_parity_gate.py
+@@ -94,7 +94,7 @@ def fetch_blob(repo: str, path: str, token: str, ref: str = "main") -> bytes | N
+         },
+     )
+     try:
+-        with urllib.request.urlopen(req, timeout=30) as resp:
++        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310 — read-only federation probe; endpoint from repo manifest, audited #2081
+             data = json.loads(resp.read().decode("utf-8"))
+     except urllib.error.HTTPError as e:
+         if e.code == 404:
+@@ -314,20 +314,29 @@ def exit_code_for(report: dict) -> int:
+ def self_test() -> bool:
+     """Offline contract checks (no network)."""
+     p1 = {"open": "a", "satellite": "r", "path": "b"}
+-    assert classify_pair(p1, b"x", b"x", None)[0] == "clean"
++    if not (classify_pair(p1, b"x", b"x", None)[0] == "clean"):
++        raise AssertionError()
+     v, d = classify_pair(p1, b"x" * 10, b"y", None)
+-    assert v == "drift" and "byte-size delta" in d["hunks"]
+-    assert classify_pair(p1, None, None, "boom")[0] == "error"
+-    assert classify_pair(p1, b"x", None, None)[0] == "drift"
+-    assert exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 1}}) == EXIT_CLEAN
+-    assert exit_code_for({"summary": {"errors": 0, "drift": 2, "total": 3}}) == EXIT_DRIFT
+-    assert exit_code_for({"summary": {"errors": 1, "drift": 0, "total": 3}}) == EXIT_INFRA
++    if not (v == "drift" and "byte-size delta" in d["hunks"]):
++        raise AssertionError()
++    if not (classify_pair(p1, None, None, "boom")[0] == "error"):
++        raise AssertionError()
++    if not (classify_pair(p1, b"x", None, None)[0] == "drift"):
++        raise AssertionError()
++    if not (exit_code_for({"summary": {"errors": 0, "drift": 0, "total": 1}}) == EXIT_CLEAN):
++        raise AssertionError()
++    if not (exit_code_for({"summary": {"errors": 0, "drift": 2, "total": 3}}) == EXIT_DRIFT):
++        raise AssertionError()
++    if not (exit_code_for({"summary": {"errors": 1, "drift": 0, "total": 3}}) == EXIT_INFRA):
++        raise AssertionError()
+     rep = {"checkedAt": "T", "ref": "main", "summary": {"drift": 1, "errors": 0, "total": 2},
+            "drift": [{"pair": p1, "detail": "content divergence", "hunks": "- byte-size delta: x"}],
+            "errors": []}
+     body = build_issue_body(rep)
+-    assert "Report-only" in body and "byte-size delta" in body and "#1792" in body
+-    assert resolve_token.__doc__
++    if not ("Report-only" in body and "byte-size delta" in body and "#1792" in body):
++        raise AssertionError()
++    if not (resolve_token.__doc__):
++        raise AssertionError()
+     return True
+ 
+ 
+diff --git a/scripts/knowledge/augment_curriculum_data.py b/scripts/knowledge/augment_curriculum_data.py
+index a5443994..c0c9c64f 100644
+--- a/scripts/knowledge/augment_curriculum_data.py
++++ b/scripts/knowledge/augment_curriculum_data.py
+@@ -42,7 +42,7 @@ def augment_example(base: dict[str, Any], rng: random.Random) -> dict[str, Any]:
+ 
+ 
+ def build_dataset(curriculum: dict[str, Any], per_skill: int, seed: int) -> list[dict[str, Any]]:
+-    rng = random.Random(seed)
++    rng = random.Random(seed)  # nosec B311 — seeded determinism is a data-gen feature (reproducible curriculum builds), not crypto (#2081 audit)
+     rows: list[dict[str, Any]] = []
+     for base in iter_examples(curriculum):
+         rows.append(to_sharegpt(base))
+@@ -72,7 +72,7 @@ def main() -> None:
+         curriculum = json.load(fh)
+ 
+     rows = build_dataset(curriculum, args.per_skill, args.seed)
+-    rng = random.Random(args.seed)
++    rng = random.Random(args.seed)  # nosec B311 — seeded determinism is a data-gen feature (reproducible curriculum builds), not crypto (#2081 audit)
+     rng.shuffle(rows)
+     split = int(len(rows) * (1 - args.val_ratio))
+     train_rows, val_rows = rows[:split], rows[split:]
+diff --git a/scripts/knowledge/convert_curriculum_to_jsonl.py b/scripts/knowledge/convert_curriculum_to_jsonl.py
+index 1288fe10..351e3a57 100644
+--- a/scripts/knowledge/convert_curriculum_to_jsonl.py
++++ b/scripts/knowledge/convert_curriculum_to_jsonl.py
+@@ -109,7 +109,7 @@ def main() -> None:
+ 
+     curriculum = load_curriculum(input_path)
+     rows = convert(curriculum, args.format)
+-    random.Random(args.seed).shuffle(rows)
++    random.Random(args.seed).shuffle(rows)  # nosec B311 — seeded determinism is a data-gen feature (reproducible splits), not crypto (#2081 audit)
+ 
+     split = int(len(rows) * (1 - args.val_ratio))
+     train_rows = rows[:split]

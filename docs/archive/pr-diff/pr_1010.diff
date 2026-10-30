@@ -1,0 +1,227 @@
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index 8111267c..50c94cb5 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -152,7 +152,7 @@ export const OperatorCockpit: React.FC = () => {
+ const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+   <PublicLayout>
+     <PublicHeader />
+-    <div className="pt-24 px-4 pb-12 max-w-4xl mx-auto">{children}</div>
++    <div className="pt-16 sm:pt-20 px-4 pb-12 max-w-4xl mx-auto">{children}</div>
+   </PublicLayout>
+ );
+ 
+diff --git a/studio/src/components/customer/UserDashboard.tsx b/studio/src/components/customer/UserDashboard.tsx
+index 86af5ef2..39809693 100644
+--- a/studio/src/components/customer/UserDashboard.tsx
++++ b/studio/src/components/customer/UserDashboard.tsx
+@@ -53,17 +53,23 @@ export const UserDashboard: React.FC = () => {
+   const fetchWorkspaceState = async () => {
+     setLoadingWorkspace(true);
+     try {
+-      const data = await connectionsApi.getMyWorkspace();
++      const [data, prefs] = await Promise.all([
++        connectionsApi.getMyWorkspace(),
++        apiClient.get<{ preferences?: { hidden_tool_cards?: string[] } }>('/api/v1/user/preferences').catch(() => null),
++      ]);
++      const hiddenCards = new Set(prefs?.preferences?.hidden_tool_cards || []);
+       if (data && Array.isArray(data.capabilities) && data.capabilities.length > 0) {
+-        const mapped: UserCapability[] = data.capabilities.map((c) => ({
+-          id: c.capabilityId,
+-          label: c.name,
+-          description: c.purpose,
+-          status: c.status,
+-          // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
+-          // "Use" action falls through to the unified chat surface.
+-          href: undefined,
+-        }));
++        const mapped: UserCapability[] = data.capabilities
++          .filter((c) => !hiddenCards.has(c.capabilityId))
++          .map((c) => ({
++            id: c.capabilityId,
++            label: c.name,
++            description: c.purpose,
++            status: c.status,
++            // FIX(nav-truth 2026-10-24): /agents route does not exist (404) — the
++            // "Use" action falls through to the unified chat surface.
++            href: undefined,
++          }));
+         setServerCapabilities(mapped);
+         const reasons: Record<string, string> = {};
+         for (const c of data.capabilities) {
+@@ -248,6 +254,10 @@ export const UserDashboard: React.FC = () => {
+                     toggleModule(item.id as typeof enabledModules[number]);
+                   }
+                   setServerCapabilities((prev) => prev.filter((c) => c.id !== item.id));
++                  // Persist removal to backend SQLite preferences
++                  apiClient.delete(`/api/v1/user/preferences/tool-card/${encodeURIComponent(item.id)}`).catch((err) => {
++                    console.warn('Failed to persist tool-card removal:', err);
++                  });
+                 }}
+               />
+             ))}
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 1278904b..ba837483 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -32,7 +32,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
+   // Issue #1460: protected capability chips used to navigate straight to
+   // /login (or /register), destroying the guest's in-progress chat. They now
+   // raise an in-page auth prompt instead — no navigation, state intact.
+-  return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-24 sm:px-8" aria-label="SupremeAI capabilities">
++  return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-16 sm:pt-20 sm:px-8" aria-label="SupremeAI capabilities">
+     <Link to="/chat" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
+     {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-purple-500/40 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
+   </nav>;
+diff --git a/studio/src/pages/admin/AdminShell.tsx b/studio/src/pages/admin/AdminShell.tsx
+index fe171a70..0330bd52 100644
+--- a/studio/src/pages/admin/AdminShell.tsx
++++ b/studio/src/pages/admin/AdminShell.tsx
+@@ -84,6 +84,64 @@ export function AdminShell() {
+     }
+   }, [adminAuthenticated, adminRole]);
+ 
++  // LiveLogs Real-Time Stream Hookup (SSE via /admin-api/logs/stream)
++  useEffect(() => {
++    if (!adminAuthenticated) return;
++    const abortController = new AbortController();
++    const connectLiveLogs = async () => {
++      try {
++        const res = await apiClient.stream('/admin-api/logs/stream', {
++          signal: abortController.signal,
++        });
++        if (!res.ok || !res.body) {
++          // Fallback to initial log backlog polling
++          try {
++            const data = await apiClient.get<{ logs?: Array<{ message?: string } | string> }>('/admin-api/logs?limit=50');
++            if (data?.logs && Array.isArray(data.logs)) {
++              const formatted = data.logs.map((l) => (typeof l === 'string' ? l : l.message || JSON.stringify(l)));
++              setLiveLogs(formatted);
++            }
++          } catch {
++            // Silently degrade
++          }
++          return;
++        }
++        const reader = res.body.getReader();
++        const decoder = new TextDecoder();
++        let pending = "";
++        while (true) {
++          const { done, value } = await reader.read();
++          pending += decoder.decode(value ?? new Uint8Array(), { stream: !done });
++          const lines = pending.split(/\r?\n/);
++          pending = lines.pop() ?? "";
++          for (const line of lines) {
++            if (line.startsWith("data:")) {
++              const payload = line.slice(5).trim();
++              if (payload && payload !== "[DONE]") {
++                try {
++                  const parsed = JSON.parse(payload);
++                  const entry = typeof parsed === "string" ? parsed : (parsed.message || JSON.stringify(parsed));
++                  setLiveLogs((prev) => [...prev.slice(-499), entry]);
++                } catch {
++                  setLiveLogs((prev) => [...prev.slice(-499), payload]);
++                }
++              }
++            }
++          }
++          if (done) break;
++        }
++      } catch (err) {
++        if (!(err instanceof DOMException && err.name === "AbortError")) {
++          if (import.meta.env.DEV) console.warn("[admin-shell] LiveLogs stream error:", err);
++        }
++      }
++    };
++    connectLiveLogs();
++    return () => {
++      abortController.abort();
++    };
++  }, [adminAuthenticated]);
++
+   const handleAdminOtpVerify = () => {
+     handleAdminLogin();
+   };
+@@ -163,15 +221,17 @@ export function AdminShell() {
+     setLoading(true);
+     abortRef.current = new AbortController();
+     try {
+-      // Same real chat endpoint the user-facing chat uses.
+-      // Issue #2522: raw fetch -> apiClient.stream — auth/timeout/queue + abort passthrough।
+-      const res = await apiClient.stream('/api/chat/stream', {
++      // Unified chat completions endpoint matching UnifiedChatPanel contract.
++      const res = await apiClient.stream('/v1/chat/completions', {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({
+-          message: prompt,
+-          project_id: "admin_sandbox",
+-          idempotency_key: crypto.randomUUID(),
++          model: "auto",
++          messages: [
++            ...adminMessages.map((m) => ({ role: m.role, content: m.content })),
++            { role: "user", content: prompt },
++          ],
++          stream: true,
+         }),
+         signal: abortRef.current.signal,
+       });
+@@ -184,10 +244,22 @@ export function AdminShell() {
+         if (!payload || payload === "[DONE]") return;
+         let token = payload;
+         try {
+-          const parsed = JSON.parse(payload) as { token?: string; delta?: string; content?: string; response?: string };
+-          token = parsed.token ?? parsed.delta ?? parsed.content ?? parsed.response ?? "";
++          const parsed = JSON.parse(payload) as {
++            choices?: Array<{ delta?: { content?: string } }>;
++            token?: string;
++            delta?: string | { content?: string };
++            content?: string;
++            response?: string;
++          };
++          const deltaContent = typeof parsed.delta === 'object' ? parsed.delta?.content : parsed.delta;
++          token =
++            parsed.choices?.[0]?.delta?.content ??
++            deltaContent ??
++            parsed.token ??
++            parsed.content ??
++            parsed.response ??
++            "";
+         } catch (err) {
+-          // Plain-text SSE payloads are valid fallbacks — still log why parsing skipped.
+           console.warn('[admin-shell] SSE payload JSON parse failed, using raw text:', err);
+         }
+         assistantContent += token;
+diff --git a/studio/src/pages/auth/LoginPage.tsx b/studio/src/pages/auth/LoginPage.tsx
+index c73b1d78..061bbd6a 100644
+--- a/studio/src/pages/auth/LoginPage.tsx
++++ b/studio/src/pages/auth/LoginPage.tsx
+@@ -41,13 +41,17 @@ export const LoginPage: React.FC = () => {
+     setIsLoading(true);
+     // LIVE-002/003 FIX: Add 30s timeout so login doesn't hang forever.
+     const LOGIN_TIMEOUT = 30000;
++    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+     try {
+       const loginPromise = login(email, password);
+       await Promise.race([
+         loginPromise,
+-        new Promise<never>((_, reject) =>
+-          setTimeout(() => reject(new Error('Connection timeout. Server may be starting up — please retry in 30s.')), LOGIN_TIMEOUT)
+-        ),
++        new Promise<never>((_, reject) => {
++          timeoutId = setTimeout(
++            () => reject(new Error('Connection timeout. Server may be starting up — please retry in 30s.')),
++            LOGIN_TIMEOUT
++          );
++        }),
+       ]);
+       navigate('/workspace');
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+@@ -86,6 +90,7 @@ export const LoginPage: React.FC = () => {
+       setError(userMessage);
+       setErrorKey((k) => k + 1);
+     } finally {
++      if (timeoutId) clearTimeout(timeoutId);
+       setIsLoading(false);
+     }
+   };

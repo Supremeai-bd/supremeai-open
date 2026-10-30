@@ -1,0 +1,50 @@
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index feabc262..c53c6fcd 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -14,28 +14,35 @@ You do not need credentials or access to private repositories. You can inspect p
+ 
+ ---
+ 
+-## 2. Federation Repository Directory
++### 2.1 Active Monitored Federation Repositories (Live Probes & Targets)
+ 
+-The SupremeAI platform consists of specialized repositories under the **`Supremeai-bd`** organization:
++These 8 repositories constitute the active monitored surfaces of the federation monitored by the MCP Control Tower:
+ 
+ | Repository | Visibility & License | Scope & Responsibility | What Can Be Changed From Here |
+ |---|---|---|---|
+ | **`supremeai-open`** *(Current)* | **Public · MIT** | **Public Boundary & Ambassador.** Holds public contracts, client SDKs, examples, and agent instructions. | Direct PRs / Issues on this repository. |
+ | **`supremeai-studio`** | **Public · MIT** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. Live UI: [https://supremeai-studio.vercel.app](https://supremeai-studio.vercel.app) | UI components, design tokens, and user experience fixes. |
+-| **`supremeai-sdk`** | **Private · Proprietary** | **Stable External Contracts.** API/event/task schemas, protos, and client libraries (`pip`/`npm`) for external integrators. | Contract PRs and schema proposals on the SDK repository. |
+ | **`supremeai-vscode`** | **Public · MIT** | **Developer Experience.** Official VS Code Extension for agent interaction and autonomous workflows. | Extension client contracts, tools, and editor hooks. |
+-| **`supremeai-skills`** | **Private · Proprietary** | **Skills & Tools Marketplace.** Dynamic capability registry, installers, and reusable tools for agents. | Tool specs, skill manifests, and agent plugins. |
+-| **`supremeai`** | **Private · Proprietary** | **Central Federation Umbrella & Passive Anchor.** The all-in-one synthesis combining all 12, 15, or 100+ individual repositories into one unified panoramic platform view (Zero active CI/cron workloads; pure passive master mirror). | Master sync via Bridge. |
+ | **`supremeai-core`** | **Private · Proprietary** | **Proprietary Intelligence Core.** Orchestration, planning, decision, and execution intelligence — the federation's decision moat. | Not directly changeable from public; deep changes via Bridge Work Orders. |
+ | **`supremeai-api`** | **Private · Proprietary** | **Unified Provider Gateway.** Multi-LLM provider routing, API-key authentication, and fallback chains (Contracts public in open). | Gateway contracts, OpenAPI specs, and client scripts. |
+-| **`supremeai-command`** | **Private · Proprietary** | **Omnichannel Admin Remote Control.** Telegram, Dashboard, and Webhook task dispatcher, remote triggers. | Dispatch schemas, webhook contracts via Bridge. |
+-| **`supremeai-agents`** | **Private · Proprietary** | **Autonomous Agent Runtime.** Stateless agent lifecycle, task execution runner, and multi-role workers. | Worker contracts, lifecycle hooks, and role definitions. |
+ | **`supremeai-browser`** | **Private · Proprietary** | **Headless & Stealth Runtime.** Anti-detect automation sandbox for web agents. | Browser sandbox APIs, scraping contracts. |
+-| **`supremeai-infrastructure`** | **Private · Proprietary** | **Cloud Operations & CI/CD.** Terraform, Cloudflare Workers, and Render configs. | Read-only from public; managed internally. |
+-| **`supremeai-mcp-control-plane`** | **Private · Proprietary** | **Governed Tool Registry.** Policy enforcement, credential brokering, and the autonomy kill-switch powering the live Tower. | Not directly changeable from public; internal management only. |
++| **`supremeai`** | **Private · Proprietary** | **Central Federation Umbrella & Passive Anchor.** The all-in-one synthesis combining all active satellites into one unified platform view. | Master sync via Bridge. |
+ | **`supremeai-archive`** | **Private · Proprietary** | **Institutional Memory.** Append-only worklogs, ADRs, roadmap snapshots, and lessons — no critical decision is ever lost. | Read-only from public; append via internal automation. |
+ 
+-### 2.1 Licensing & Intellectual Property Policy (SSOT)
++### 2.2 Consolidated Subsystems & Internal Tooling Domains
++
++Per Federation Charter (§329 consolidation), several historical standalone repositories were consolidated into product satellites and monorepo mirror trees:
++
++| Domain / Former Repo | Consolidation Target | Mirror Surface in `supremeai-open` | Status |
++|---|---|---|---|
++| **`supremeai-command`** | Consolidated into `supremeai-api` / Admin Shell | `command/**` | Consolidated domain |
++| **`supremeai-skills`** | Consolidated into `supremeai-studio` / Studio Marketplace | `skills/**` | Consolidated domain |
++| **`supremeai-agents`** | Consolidated into `supremeai-core` / Agent Loops | `agents/**`, `runner/**` | Consolidated domain |
++| **`supremeai-sdk`** | Consolidated into `studio/packages/shared-services` | `sdk/**`, `api-schemas/**` | Consolidated contracts |
++| **`supremeai-infrastructure`** | Consolidated into Core Monorepo Infrastructure | `infrastructure/**`, `infra/**` | Internal ops |
++| **`supremeai-mcp-control-plane`** | MCP Control Tower & Policy Plane | `infrastructure/mcp-control-plane/**` | Governed control plane |
++
++### 2.3 Licensing & Intellectual Property Policy (SSOT)
+ 
+ The federation operates under a strict **Open-Core Embassy Model**:
+ - **Permissive Open-Source (MIT License):** Applied strictly to boundary layers, developer tooling, SDK packages, and UI surfaces (`supremeai-open`, `supremeai-studio`, `supremeai-vscode`). These allow frictionless developer adoption, external integration, and community trust without exposing proprietary moats.

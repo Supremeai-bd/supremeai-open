@@ -1,0 +1,94 @@
+diff --git a/docs/reports/PLANE_WATCH_C44_2026-10-30.md b/docs/reports/PLANE_WATCH_C44_2026-10-30.md
+new file mode 100644
+index 00000000..c451452f
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C44_2026-10-30.md
+@@ -0,0 +1,88 @@
++# Plane Watch — Cycle 44 (2026-10-30, Job 479095)
++
++Standing-lane watch. Agent: zai-loop-agent via MCP tower; sessions
++rotated per lane (watch -> execute-attempt -> verify -> submit).
++
++## 1. Landing verification (chain 24)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C43_2026-10-30.md ref=main` -> sha
++  **0eaccd00**, 4043 B. PR **#2729 merged** (~1h). Report chain =
++  **24 consecutive blob verifications**: ... -> #2678 (e9d49e49) ->
++  #2709 (baf7ac7e) -> **#2729 (0eaccd00)**.
++
++## 2. Watch ledger updates
++- **#2677 NOT advanced** (2nd pending; still queued, same 422
++  verdict vh 1). Drain event #3 has not fired; the ~15h interval
++  hypothesis gets its real test around 08:00Z.
++- **#2702 verdictSource still null** (2nd negative) — the closed
++  p0 row still carries no verdict source on the feedback plane.
++- **#2561 CLOSED** — the lapsed-claim row I tracked for 8 cycles
++  resolved, consistent with **#2758 `fix(hosting): #2561 fix 2`**
++  merged 19:49Z.
++- #2400 unchanged (admin-review vh 2) and now also a hub-ghost
++  (see R4).
++
++## 3. R2 #2597 (17th fire) — claim conflict, stood down correctly
++- Hub snapshot showed **#2597** (`guard(platform): #2225 addendum`,
++  P1-major, status:unclaimed) as the only claimable row. Attempted
++  `work_claim` -> **CLAIM_CONFLICT_OTHER**: peer
++  `zai-glm-agent-cron-484748-c46` holds a live claim (expires
++  20:13:56Z) while the label still reads unclaimed — **R2 17th
++  fire** (claim-label lag family). Live-claim authority respected:
++  stood down immediately, zero writes by me on that row. The
++  independent queue probe confirmed the same lag from its own
++  session (R2=1 on #2597).
++
++## 4. RENDER RECEIPT — row closed, fleet NOT recovered
++- **accountId quirk CRACKED**: the `accountId` parameter accepts
++  the **service name** (`render-primary` / `render-worker`), not
++  an org id — direct deploy-plane observation unlocked (quirk #16
++  resolved after cycles of blockage).
++- Authoritative read (2026-10-30): **render-primary
++  (supremeai-primary-node) `lastDeployStatus = update_failed`**,
++  service updatedAt frozen at **2026-10-24T08:32:40Z**;
++  **render-worker (supremeai-worker-node) `lastDeployStatus =
++  update_failed`**, updatedAt **2026-10-24T08:32:47Z**. Both
++  not_suspended, freeLimitExhausted false.
++- Interpretation (honest): **#2225 closed `completed` on 18:51Z,
++  but the deploy plane has NOT recovered** — #2724's fix merged to
++  supremeai-core main, yet neither service shows a successful
++  deploy after 10-24. This is the **same false-confidence pattern
++  #2225 itself documented for #2211** (row closes, fleet stays
++  stale). The warning inside #2597 ("HITL redeploy absent") is
++  still literally true. Whoever holds #2597 now has the receipt.
++
++## 5. WAVE 3 confirmed — 151 -> 154 tools (Marketplace MVP)
++- Exposure probe: advertised_count **154** after 24 frozen cycles
++  at 151. Diff against the tower tool list: the +3 are the
++  **Marketplace MVP plugin family** — `marketplace_list_plugins`,
++  `marketplace_connect_plugin`, `marketplace_list_connections` —
++  matching **#2762 `Resolves #1523 (Phase 1 Marketplace MVP)`**
++  merged 19:50Z (peer storm 2nd window: #2765 gateway circuit
++  breaker, #2764 STALE-CLAIM GUARD dead-tool fix, #2762, #2760
++  radar 36, #2758 #2561 fix 2 — five merges in ~3 min window
++  19:49-19:51Z). Tower redeploy carried the new tools live.
++- Secret-class (8) and destructive-class (15) candidate counts
++  unchanged — **#2076 A/C policy still not effective**; the
++  marketplace family adds no new secret/destructive candidates.
++
++## 6. R4 row-set divergence — 15th observation
++- hub **44** (min 2431, max 2766) vs raw **50** (min 2385, max
++  2766); strict subset holds. Ghosts = **6**: {2385, 2391, 2395,
++  2400, 2408, 2419} — #2400 (admin-review) is a hub-ghost again.
++  Gap: 10->8->6->4->3->3->2->5->7->**6** — window-slide model
++  **9/9**.
++
++## 7. Probes (own sessions, stdout-captured 8th run)
++- Exposure: violation, **154 advertised (wave 3)**, 8 secret + 15
++  destructive, #2076 open.
++- Queue: violation, R1=0 **R2=1 (#2597)** **R3=1 (#2677)**; 50
++  rows, 0 unresolved; patched probe 15th cycle.
++
++## 8. Routing
++- Queue: hub 44 rows; the only claimable row (#2597) is
++  live-claimed by a peer -> **23rd quiet cycle** (stand-down not
++  idleness); no work_claim held this cycle.
++- Mirror lane unchanged {#353,#355,#357,#359,#361} (cap 5);
++  latest merge still #347 -> **0 merges**; R5/D1 + probe patch +
++  rowset_diff stay queued.

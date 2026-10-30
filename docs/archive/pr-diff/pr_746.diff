@@ -1,0 +1,160 @@
+diff --git a/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+new file mode 100644
+index 00000000..98f5d92b
+--- /dev/null
++++ b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+@@ -0,0 +1,154 @@
++# SupremeAI Federation Transit Routing, Multi-Target Slicing & Governance SSOT
++
++> **Canonical Specification & Audit Baseline**  
++> **Host Repository:** [`Supremeai-bd/supremeai-open`](file:///f:/supremeai-open)  
++> **Work Order Reference:** Federation Dispatch, Multi-Domain Slicing & Board Audit  
++> **Related SSOTs:** [`docs/FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md) · [`docs/FEDERATION_TAXONOMY_AND_LICENSING.md`](file:///f:/supremeai-open/docs/FEDERATION_TAXONOMY_AND_LICENSING.md) · [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml)
++
++---
++
++## 1. Executive Summary & Purpose
++
++The SupremeAI federation consists of **14 interconnected repositories** operating as a single unified autonomous ecosystem. To maintain absolute architectural boundaries, security moats, and pristine task tracking, work ingestion and code transit follow strict, machine-enforced governance:
++
++1. **Single Public Ingress:** All tasks, community PRs, and AI agent work enter exclusively through **`Supremeai-bd/supremeai-open`**.
++2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
++3. **Passive Umbrella Monorepo:** The central monorepo (**`Supremeai-bd/supremeai`**) receives the entire panoramic commit, while satellites receive only their scoped slices.
++4. **Zero-Issue / Zero-PR Satellite Mandate:** All 12 satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
++5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
++
++---
++
++## 2. Multi-Target Slice Branch Transit Architecture
++
++When an autonomous agent or human contributor merges a PR touching multiple federation directories into `supremeai-open:main`, the automated transit engine in [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml#L591-L632) executes isolated slice routing:
++
++```mermaid
++flowchart TD
++    PR["Merged PR in supremeai-open:main<br>(Touches multiple domain folders)"] --> ROUTE["landing.yml: route(file) & group by target"]
++    
++    ROUTE --> UMBRELLA["Supremeai-bd/supremeai<br>(Grand Umbrella Monorepo)"]
++    UMBRELLA -->|Receives Full File List| PANORAMA["Panoramic Commit Synced"]
++    
++    ROUTE --> MULTI{"len(targets) > 1?"}
++    
++    MULTI -->|Yes| SLICE["Generate Isolated Slice Branch<br>bridge/{task_id}-{slug}"]
++    SLICE --> CHECKOUT["git checkout -B slice_branch BASE_SHA<br>git checkout PR_SHA -- scoped_files"]
++    CHECKOUT --> COMMIT["git commit -m 'bridge(...): slice for slug'"]
++    COMMIT --> PUSH["git push -f origin slice_branch"]
++    PUSH --> WO["Open Bridge Work Order<br>Target: Satellite Repo<br>Patch: bridge/{task_id}-{slug}"]
++    
++    MULTI -->|No| SINGLE["Use Direct PR Branch<br>WO Target: Satellite Repo"]
++```
++
++### 2.1 The Slice Branch Invariant
++* **Bridge v2 Single-Target Routing Rule:** A target satellite's CI and downstream consumers must only see diffs relevant to their domain. When multiple targets are touched in a single PR, sharing the broad PR branch would cause satellite diffs (`git diff origin/main...origin/<branch>`) to contain foreign files.
++* **Slice Generation:** For each touched satellite (excluding the master umbrella), `landing.yml` spins up a dedicated branch named `bridge/{task_id}-{slug}` based on `BASE_SHA` and checks out only `tfiles` from `PR_SHA`.
++* **Zero Cross-Talk:** Each satellite receives an atomic, self-contained work order pointing directly to its custom slice branch.
++
++---
++
++## 3. Comprehensive 14-Repository Topology & Governance Matrix
++
++The federation is divided into **3 functional tiers**:
++
++| # | Repository | Tier | Visibility | Open Issues | Open PRs | Assigned Authority & Role |
++|---|---|---|---|---|---|---|
++| 1 | **`supremeai-open`** | Tier 1 (Embassy) | **Public** | **11** | **0** | **Autonomous Agents & Public Swarm:** Sole public ingress, task board SSOT, work claiming plane, and mirror transit directory. |
++| 2 | `supremeai-studio` | Tier 1 (Satellite) | **Public** | **0** | **0** | **Agent Transit:** React/Vite live web dashboard. Public UI boundary. |
++| 3 | `supremeai-sdk` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Client SDKs, type definitions, and contract boundary schemas. |
++| 4 | `supremeai-vscode` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** VS Code extension for autonomous agent IDE interaction. |
++| 5 | `supremeai-skills` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Dynamic capability marketplace and tools registry. |
++| 6 | `supremeai-browser` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Headless stealth automation sandbox and web engine. |
++| 7 | `supremeai-agents` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Stateless runtime harnesses, execution loops, and worker pools. |
++| 8 | `supremeai-core` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Proprietary decision intelligence, planning models, and reasoning moat. |
++| 9 | `supremeai-command` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit / Superadmin:** Omnichannel remote control (Telegram bot), emergency stop (`/stop`), and webhook triggers. |
++| 10 | `supremeai-infrastructure` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit:** Render, Cloudflare Workers, and Terraform deployments. |
++| 11 | `supremeai-mcp-control-plane` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit / Admin:** Governed MCP Control Tower, RBAC policy enforcement, and kill-switch. |
++| 12 | `supremeai-archive` | Tier 2 (Memory) | **Private** | **Disabled** | **0** | **Institutional Memory:** Append-only archive of ADRs, roadmaps, and historical records. Issues explicitly disabled. |
++| 13 | `supremeai-api` | Tier 1 (Satellite) | **Private** | **0** | **0** | **Agent Transit / Admin Vault:** Unified provider gateway and API key vault. Protected by **Ghost Cloaking**. |
++| 14 | **`supremeai`** | Tier 3 (Umbrella) | **Private** | **30** | **0** | **Admin & Superadmin Umbrella:** Master panoramic synchronization anchor. Strictly air-gapped from agent roles. |
++
++---
++
++## 4. Admin & Superadmin Sovereign Surfaces
++
++Out of the 14 repositories, two anchor the system, while specific satellites enforce strict role boundaries:
++
++### 4.1 Master Monorepo (`Supremeai-bd/supremeai`)
++* **Role Gate:** When non-admin clients (e.g. agents) query the Control Tower for `supremeai`, access is denied:
++  ```text
++  Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; 
++  non-admin roles are limited to satellite repos (current role: 'agent').
++  ```
++* **Zero Active Workloads:** Does not run CI runners or cron loops. It serves as a passive mirror that aggregates all satellite commits into one panoramic repository.
++* **Internal Governance:** Retains internal admin decisions (30 active governance records).
++
++### 4.2 Key Vault Gateway (`Supremeai-bd/supremeai-api`)
++* **Ghost Cloaking Moat:** To prevent exposure of LLM API keys and vault secrets, unauthenticated or non-admin callers receive `Repository not found: 'supremeai-api'`.
++* Non-admin agents access the gateway through abstract schema contracts in `supremeai-open/api/`, never reading raw vault configuration.
++
++### 4.3 Sovereign Command Dispatcher (`Supremeai-bd/supremeai-command`)
++* **RBAC Invariant:** Governed strictly by `TELEGRAM_SUPERADMIN_CHAT_ID`. Only the verified Superadmin numeric chat ID can invoke privileged commands (`/stop`, `/pause`, `/voice`, etc.).
++
++---
++
++## 5. Satellite Board Guard: Unauthenticated Blind Spot & Solution
++
++### 5.1 Root Cause of the Blind Spot
++The central board guard [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) was built following the **zero-credential** principle to allow external contributors and bots to verify compliance without secrets.
++
++However:
++1. **GitHub Security Cloaking:** GitHub REST API returns `HTTP 404` when an unauthenticated caller requests any private repository.
++2. **Resulting Blind Spot:** Because only `supremeai-studio` is currently public among the 12 satellites, an unauthenticated run yields:
++   ```text
++   totals: 1 clean / 0 violations / 11 unreachable of 12
++   ```
++3. `UNREACHABLE` is treated as a loud warning rather than a failure, but leaves 11 private satellites unverified in unauthenticated environments.
++
++### 5.2 Resolution: Authenticated Verification
++Providing a valid token (`GH_TOKEN` or `GITHUB_TOKEN`) with organization read permissions eliminates the blind spot.
++
++#### Local Operator Verification:
++```powershell
++$env:GH_TOKEN = (gh auth token)
++python scripts/ci/satellite_board_guard.py --report
++```
++
++#### Live Verified Output:
++```text
++Zero-Issue Satellite Mandate audit — org Supremeai-bd (doctrine #626, docs/FEDERATION_CHARTER.md)
++  studio             CLEAN       open_issues=0 open_prs=0
++  api                CLEAN       open_issues=0 open_prs=0
++  vscode             CLEAN       open_issues=0 open_prs=0
++  browser            CLEAN       open_issues=0 open_prs=0
++  core               CLEAN       open_issues=0 open_prs=0
++  command            CLEAN       open_issues=0 open_prs=0
++  skills             CLEAN       open_issues=0 open_prs=0
++  agents             CLEAN       open_issues=0 open_prs=0
++  sdk                CLEAN       open_issues=0 open_prs=0
++  archive            CLEAN       open_issues=0 open_prs=0
++  infrastructure     CLEAN       open_issues=0 open_prs=0
++  mcp-control-plane  CLEAN       open_issues=0 open_prs=0
++  totals: 12 clean / 0 violations / 0 unreachable of 12
++```
++
++### 5.3 CI Nightly / Automated Pipeline Integration
++To ensure the scheduled watchdog runs with full visibility without leaking credentials:
++```yaml
++- name: Satellite Zero-Issue Mandate Audit
++  env:
++    GH_TOKEN: ${{ secrets.SAT_SYNC_PAT }}
++  run: |
++    python3 scripts/ci/satellite_board_guard.py --check
++```
++
++---
++
++## 6. Summary Checklist for AI Agents & Maintainers
++
++- [x] **No Direct Satellite Writes:** Never push directly or open issues/PRs on the 12 satellites.
++- [x] **Single Door Policy:** Open all PRs and track all tasks in `supremeai-open`.
++- [x] **Multi-Domain Changes:** When modifying multiple domain directories, verify that `landing.yml` generates proper slice branches (`bridge/{task_id}-{slug}`).
++- [x] **Sovereignty Boundary:** Do not attempt direct interaction with `supremeai` (monorepo) or `supremeai-api` vault; route exclusively via the public contracts.
++- [x] **100% Board Cleanliness:** Maintain the 12/12 CLEAN status across all satellites at all times.

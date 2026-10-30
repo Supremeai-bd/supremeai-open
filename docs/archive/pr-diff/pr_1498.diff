@@ -1,0 +1,360 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index ea8527e1..f951071d 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -7,7 +7,7 @@
+       |
+       v
+     Board has claimable issues?
+-      YES -> claim top -> VERIFY -> PR
++      YES -> claim top -> (specialist implements via task envelope) -> VERIFY -> PR
+       NO  -> ACTION PLAN has items?
+                YES -> create_issue (dedup: skip if title fingerprint exists) -> claim -> VERIFY -> PR
+                NO  -> system is green -> exit
+@@ -112,6 +112,130 @@ def build_task_contract(task_id: str, task_type: str = "IMPLEMENT", **_kwargs: A
+     }
+ 
+ 
++# ---------------------------------------------------------------------------
++# Group taxonomy — VALID_GROUPS registry (AGENT_LOOP_SPEC.md §3, fail-closed)
++# ---------------------------------------------------------------------------
++
++VALID_GROUPS: frozenset[str] = frozenset({
++    "agent-orchestration", "mcp-tower", "core-engine", "schemas-contracts", "infra-ops",
++})
++
++_VALID_ROLES: frozenset[str] = frozenset({
++    "coder", "planner", "auditor", "ci-fixer", "reviewer", "integrator", "admin",
++})
++
++_ROLE_BY_GROUP: dict[str, str] = {
++    "agent-orchestration": "coder",
++    "mcp-tower": "integrator",
++    "core-engine": "coder",
++    "schemas-contracts": "planner",
++    "infra-ops": "ci-fixer",
++}
++
++
++def resolve_group(explicit: str | None = None, issue: dict[str, Any] | None = None) -> str:
++    """Deterministic group resolution (spec §3): CLI flag > issue scan > default.
++    Fail-closed: an unknown group raises ValueError — invalid work never reaches CI."""
++    if explicit:
++        g = explicit.strip()
++        if g not in VALID_GROUPS:
++            raise ValueError(
++                f"invalid group: {explicit!r} (must be one of {sorted(VALID_GROUPS)})"
++            )
++        return g
++    if issue:
++        hay = " ".join(
++            [str(issue.get("title", ""))]
++            + [str(l.get("name", "")) for l in issue.get("labels", []) if isinstance(l, dict)]
++            + [str(issue.get("body", ""))[:2000]]
++        ).lower()
++        for g in sorted(VALID_GROUPS):
++            if g in hay:
++                return g
++    return "agent-orchestration"
++
++
++def build_task_envelope(
++    issue: dict[str, Any],
++    group: str | None = None,
++    role: str | None = None,
++) -> dict[str, Any]:
++    """Build the canonical task-envelope-v1 payload (AGENT_LOOP_SPEC.md §2).
++    One unified JSON for external specialist agents (Z.ai, Claude, Antigravity, ...)."""
++    g = resolve_group(group, issue)
++    r = role or _ROLE_BY_GROUP.get(g, "coder")
++    if r not in _VALID_ROLES:
++        raise ValueError(f"invalid role: {role!r} (must be one of {sorted(_VALID_ROLES)})")
++    num = int(issue.get("number", 0))
++    title = str(issue.get("title", ""))
++    labels = [str(l.get("name", "")) for l in issue.get("labels", []) if isinstance(l, dict)]
++    prio = "P2"
++    for p in ("p0", "p1", "p2", "p3"):
++        if any(n == p or n.startswith(p + "-") for n in labels):
++            prio = p.upper()
++            break
++    task_id = f"task-{num}" if num else "task-adhoc"
++    return {
++        "task_envelope": {
++            "envelope_version": 1,
++            "output_format": "task-envelope-v1",
++            "task_id": task_id,
++            "issue": str(num),
++            "task_type": "IMPLEMENT",
++            "group": g,
++            "priority": prio,
++            "objective": title,
++            "problem_statement": {
++                "id": num,
++                "title": title,
++                "body": str(issue.get("body", "")),
++                "labels": labels,
++                "state": str(issue.get("state", "open")),
++            },
++            "role": r,
++            "role_policy": "contributor",
++            "role_description": f"Specialist executing {task_id} strictly inside the declared scope.",
++            "scope": {
++                "touching_files": [],
++                "forbidden_paths": [".env*", "secrets/**", "credentials/**", "vault/**"],
++            },
++            "acceptance": [],
++            "verification": ["python scripts/agents/continuous_agent_loop.py --verify-only"],
++            "required_evidence": ["reflection", "boot_smoke", "tests"],
++            "stop_conditions": [
++                "scope boundary violation",
++                "verified non-reproducible on live main (U3)",
++            ],
++            "admin_gate": {"required": False, "status": "NOT_REQUIRED"},
++            "specialist_prompt": (
++                f"You are the {r} specialist for {task_id} (group: {g}, priority: {prio}). "
++                f"Objective: {title}. Work strictly inside scope, follow AGENT_RULES.md "
++                "U1-U14 + P0-P9, and submit via bridge_submit_patch or a linked PR."
++            ),
++            "submission": {
++                "pathway": "bridge_submit_patch | pull_request",
++                "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
++                "base_branch": "main",
++                "pr_title_prefix": "fix(open):",
++                "issue_reference_required": True,
++                "branch_convention": (
++                    "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
++                    "hotfix|release|agent)/<slug> — enforced by pipeline.yml"
++                ),
++                "pr_body_template": (
++                    "### Summary\nCloses #{issue} — {title}\n\n"
++                    "### Linked Issue / Claim\nCloses #{issue}\n\n"
++                    "### Key Changes\n- <change>\n\n"
++                    "## Reflection Evidence (why + alternatives_rejected)\n"
++                    "- **why:** <rationale>\n"
++                    "- **alternatives_rejected:**\n  - <alternative>: rejected — <reason>\n\n"
++                    "### Rollback Path\n- [x] `git revert`-safe"
++                ),
++            },
++        }
++    }
++
++
+ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+     """Fetch the highest priority claimable open issue from GitHub (CI contract parity)."""
+     exclude_set = {str(e) for e in exclude} if exclude else set()
+@@ -535,17 +659,67 @@ def verify(files: list[Path]) -> tuple[bool, list[str]]:
+             pass
+     evidence.append({"tier": 4, "name": "sizing_binary_guard", "passed": t4_pass})
+ 
+-    # Tier 5: Contract parity checks
+-    evidence.append({"tier": 5, "name": "contract_parity", "passed": True})
+-
+-    # Tier 6: Group registry guard
+-    evidence.append({"tier": 6, "name": "group_registry_guard", "passed": True})
++    # Tier 5: Contract parity — CONTRACT_VERSION marker must stay canonical (spec §4b)
++    t5_pass = CONTRACT_VERSION == "agent-loop-contract/1"
++    if not t5_pass:
++        errors.append("T5 contract_parity: CONTRACT_VERSION drift from agent-loop-contract/1")
++    evidence.append({"tier": 5, "name": "contract_parity", "passed": t5_pass})
+ 
+-    # Tier 7: Envelope determinism
+-    evidence.append({"tier": 7, "name": "envelope_determinism", "passed": True})
+-
+-    # Tier 8: Machine path isolation
+-    evidence.append({"tier": 8, "name": "machine_path_isolation", "passed": True})
++    # Tier 6: Group registry guard — task contracts/envelopes in changed JSON files
++    # must reference a registered VALID_GROUPS member (fail-closed, spec §3).
++    t6_pass = True
++    for f in files:
++        if f.suffix != ".json":
++            continue
++        try:
++            data = json.loads(f.read_text(encoding="utf-8"))
++        except Exception:
++            continue  # broken JSON is already reported by Tier 2
++        if not isinstance(data, dict):
++            continue
++        for key in ("task_contract", "task_envelope"):
++            node = data.get(key)
++            if isinstance(node, dict) and "group" in node and node.get("group") not in VALID_GROUPS:
++                t6_pass = False
++                errors.append(
++                    f"T6 group_registry: invalid group {node.get('group')!r} in {f.name}"
++                )
++    evidence.append({"tier": 6, "name": "group_registry_guard", "passed": t6_pass})
++
++    # Tier 7: Envelope determinism — building the same envelope twice must be
++    # byte-identical in canonical form (spec §4b parity precondition).
++    t7_pass = True
++    try:
++        probe = {"number": 0, "title": "determinism-probe", "body": "", "labels": [], "state": "open"}
++        a = json.dumps(build_task_envelope(probe), sort_keys=True)
++        b = json.dumps(build_task_envelope(probe), sort_keys=True)
++        t7_pass = bool(a) and a == b
++    except Exception as exc:
++        t7_pass = False
++        errors.append(f"T7 envelope_determinism: {exc}")
++    evidence.append({"tier": 7, "name": "envelope_determinism", "passed": t7_pass})
++
++    # Tier 8: Machine path isolation — config surfaces (yml/yaml/json) must not
++    # hardcode machine-specific absolute paths (breaks runner portability).
++    # /home/runner/ is the canonical GitHub Actions runner location, not a
++    # developer-machine path, so it is exempt.
++    t8_pass = True
++    machine_markers = ("/home/", "/Users/", "C:\\")
++    for f in files:
++        if f.suffix not in {".yml", ".yaml", ".json"}:
++            continue
++        try:
++            text = f.read_text(encoding="utf-8", errors="replace")
++        except OSError:
++            continue
++        text = text.replace("/home/runner/", "")
++        for marker in machine_markers:
++            if marker in text:
++                t8_pass = False
++                errors.append(
++                    f"T8 machine_path_isolation: machine-specific path {marker!r} in {f.name}"
++                )
++    evidence.append({"tier": 8, "name": "machine_path_isolation", "passed": t8_pass})
+ 
+     return len(errors) == 0, errors
+ 
+@@ -558,6 +732,26 @@ def claim(issue_num: int, dry_run: bool) -> bool:
+     log("📌", f"[Claim] #{issue_num}")
+     if dry_run:
+         return True
++    # Pre-claim freshness re-check (U5 board-freshness): shrink the pick→claim
++    # TOCTOU window so two agents never hold the same issue (U4: one issue =
++    # at most one PR). gh issue edit --add-label is idempotent and would
++    # silently "succeed" on an already-claimed issue without this re-check.
++    rc, out, _ = run([
++        "gh", "issue", "view", str(issue_num), "--repo", UPSTREAM_REPO,
++        "--json", "labels",
++    ])
++    if rc == 0 and out.strip():
++        try:
++            names = {
++                str(l.get("name", "")).lower()
++                for l in json.loads(out).get("labels", [])
++                if isinstance(l, dict)
++            }
++            if "status:claimed" in names or "status:in-progress" in names:
++                log("⚠️", f"[Claim] #{issue_num} already claimed by another agent — aborting.")
++                return False
++        except Exception:
++            pass  # best-effort guard; claim proceeds if labels are unreadable
+     rc, _, err = run([
+         "gh", "issue", "edit", str(issue_num),
+         "--repo", UPSTREAM_REPO, "--add-label", "status:claimed",
+@@ -699,6 +893,22 @@ def run_cycle(
+ 
+     log("✅", f"[Verify] {len(files)} file(s) clean.")
+ 
++    # ── EMPTY-BRANCH GUARD (no implementation → no empty PR) ──────────────
++    # The loop is a dispatcher: implementation is done by specialist agents
++    # consuming the task envelope (AGENT_LOOP_SPEC.md §2/§6). A branch with
++    # zero changes cannot open a PR (GitHub rejects empty diffs) — the old
++    # path burned the fail budget every cycle. Emit the envelope handoff and
++    # release the claim honestly instead.
++    if not files:
++        try:
++            payload = build_task_envelope(issue)
++            print(json.dumps(payload, indent=2))
++            log("🤝", "[Handoff] No implementation on branch — task envelope emitted for specialist agent.")
++        except Exception as exc:
++            log("⚠️", f"[Handoff] envelope emission failed: {exc}")
++        release(issue_num, "no implementation attached — envelope emitted for specialist handoff (no empty PR)")
++        return "idle"
++
+     # ── REBASE ────────────────────────────────────────────────────────────
+     if not args.dry_run:
+         run(["git", "fetch", "origin", "main"])
+@@ -745,6 +955,9 @@ def main() -> int:
+ 
+   python scripts/agents/continuous_agent_loop.py --loop --max-tasks 5
+       Same, but stop after 5 completed tasks.
++
++  python scripts/agents/continuous_agent_loop.py --issue 63 --task-envelope
++      Emit the canonical task-envelope-v1 JSON for issue 63.
+ """,
+     )
+     parser.add_argument("--issue", type=str, help="Target a specific issue number")
+@@ -759,8 +972,77 @@ def main() -> int:
+                         help="Run master_health_check --full, print ACTION PLAN, exit")
+     parser.add_argument("--dry-run", action="store_true",
+                         help="Simulate full cycle, write nothing")
++    parser.add_argument("--task-envelope", action="store_true",
++                        help="Emit the canonical task-envelope-v1 JSON for --issue (AGENT_LOOP_SPEC.md §2)")
++    parser.add_argument("--group", type=str, default=None,
++                        help="Canonical group override (fail-closed against VALID_GROUPS)")
++    parser.add_argument("--role", type=str, default=None,
++                        help="Specialist role override for the task envelope")
++    parser.add_argument("--allow-adhoc", action="store_true",
++                        help="Allow task-envelope emission without a specific issue")
++    parser.add_argument("--pick-next", action="store_true",
++                        help="Print the next claimable issue number, then exit")
++    parser.add_argument("--emit-prompt", action="store_true",
++                        help="Deprecated shim — emits the same task envelope")
++    parser.add_argument("--emit-contract", action="store_true",
++                        help="Deprecated shim — emits the same task envelope")
+     args = parser.parse_args()
+ 
++    # ── group fail-closed validation (spec §3/§4) ──────────────────────────
++    if args.group:
++        try:
++            resolve_group(args.group)
++        except ValueError as exc:
++            log("❌", str(exc))
++            return 2
++
++    # ── task-envelope emission (canonical surface, spec §2/§4/§6) ─────────
++    if args.task_envelope or args.emit_prompt or args.emit_contract:
++        if args.emit_prompt or args.emit_contract:
++            print(
++                "[deprecated] --emit-prompt/--emit-contract are shims for --task-envelope",
++                file=sys.stderr,
++            )
++        token = _get_gh_token()
++        if args.issue:
++            target = next(
++                (i for i in fetch_open_issues(token=token)
++                 if str(i.get("number")) == str(args.issue)),
++                None,
++            )
++            if target is None:
++                log("❌", f"[Envelope] Issue #{args.issue} not found in open board.")
++                return 1
++            try:
++                payload = build_task_envelope(target, group=args.group, role=args.role)
++            except ValueError as exc:
++                log("❌", f"[Envelope] {exc}")
++                return 2
++            print(json.dumps(payload, indent=2))
++            return 0
++        if args.allow_adhoc:
++            try:
++                payload = build_task_envelope(
++                    {"number": 0, "title": "adhoc-task", "body": "", "labels": [], "state": "open"},
++                    group=args.group, role=args.role,
++                )
++            except ValueError as exc:
++                log("❌", f"[Envelope] {exc}")
++                return 2
++            print(json.dumps(payload, indent=2))
++            return 0
++        log("❌", "[Envelope] --issue required (or --allow-adhoc).")
++        return 2
++
++    # ── pick-next (CI contract parity: pick_next_issue) ────────────────────
++    if args.pick_next:
++        nxt = pick_next_issue()
++        if nxt:
++            print(nxt)
++            return 0
++        log("💤", "[Pick] No claimable issue on the board.")
++        return 1
++
+     # ── verify-only (offline, no preflight needed) ────────────────────────
+     if args.verify_only:
+         files = get_changed_files()

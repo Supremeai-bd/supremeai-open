@@ -1,0 +1,134 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-XI.md b/docs/SCOUT_RADAR_2026-10-28-XI.md
+new file mode 100644
+index 00000000..36e7a165
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-XI.md
+@@ -0,0 +1,128 @@
++# SCOUT_RADAR_2026-10-28-XI
++
++- **Task ID:** `bridge-20261028-scout-radar-xi` (cron agent loop, Job 478621, trigger 2026-10-28 06:47 +08:00)
++- **Role:** `ecosystem-scout` — evidence-based ecosystem research only; no production changes; no synthetic benchmarks
++- **Session:** MCP Control Tower zero-credential handshake OK (server `supremeai-control-tower` v1.0.0, protocol 2024-11-05, 140 tools; session `3b613345-6a96-48f3-8d57-e558074190f7`)
++- **Cycle shape:** single lane R36 — anti-spam discipline (radar VIII precedent: probe deep, file few)
++
++> **Non-duplication register (R1–R36, full):**
++> R1–R12 (radar I, #1611) models/MCP-spec/eval studies · R13–R16 (radar II, #1652) x402/OTel-GenAI/A2A/Firecracker ·
++> R17–R20 (radar III, #1682) Agent-Skills/chrome-devtools-mcp/sigstore/Web-Bot-Auth · R21–R22 (radar IV, #1688)
++> provider lanes/MCP Registry · R23–R25 (radar VI, #1713) agents.md/Python-CI/Spec Kit · R26–R27 (radar VII,
++> #1726→#1723/#1724) Snyk Agent Scan + radar index SSOT · R28–R30 (radar VIII, #1741/#1742) Redis quota
++> economics (#1732) / OWASP LLM Top 10 mapping (#1733) / OWASP ACS vocabulary (#1739) · R31–R33 (radar IX,
++> #1753) memory tiering (#1747) / search supply (#1751) / garak eval-probe tier (#1748) · R34–R35 (radar X)
++> license-SSOT drift gate (#1773) / zizmor workflow hardening (#1776) · **R36 (this radar) free-text PII
++> redaction — Presidio pilot → #1784.** Lane notes: radar V's four lanes were renumbered R29–R32 by the #1724
++> index SSOT (see #1746); the lane *content* is distinct from radar VIII/IX numbering either way.
++
++---
++
++## R36 · Free-text PII redaction gap — Microsoft Presidio as the report-only PII layer → `adapt_cleanroom` → Issue #1784
++
++### The gap (repo evidence, main @ c663369)
++
++`core/contracts/redaction.py` is 647 bytes: a regex over dict **key names**
++(`token|secret|password|api[_-]?key|authorization|private[_-]?key|credential`) that masks the value when a key
++matches. No free-text entity detection, no value-side secret detection, no entity model. Code search on main
++shows it guarding exactly the surfaces where third-party text and internal evidence mix:
++`core/contracts/render_preflight_store.py`, `core/services/render_preflight_service.py` (+ gateway mirror),
++`core/contracts/control_plane.py`, `core/github/scripts/surface_advanced_audit_summary.py`,
++`core/security/intelligence/guardian_ai.py`, `core/runner/agent_runner.py`.
++
++The federation ingests untrusted external text (deep-research/search lanes — supply chain documented in
++#1751/#1755; browser/scrape service) and persists evidence into Redis tiers (#1698 chain) and the 21 `memory_*`
++semantic tools (#1747). PII in those flows reaches LLM prompts, evidence JSON, and durable stores unredacted.
++Under the canonical taxonomy adopted this cycle, that is **OWASP LLM Top 10 2025 → LLM06 Sensitive Information
++Disclosure** — the guard chain mapped in #1733 (R29) currently has no PII control to point at. This lane is the
++concrete LLM06 control; it is the *next row over* from R29, not a re-file of it.
++
++### Candidate verification — live probes, all 2026-10-28
++
++| Property | Value | Source |
++|---|---|---|
++| Version | `presidio-analyzer` **2.2.366** / `presidio-anonymizer` **2.2.366** | PyPI JSON API, published **2026-10-27** |
++| Python compat | `>=3.11, <3.15` | PyPI metadata — fits CI matrix `[3.11, 3.12]` (#1709) |
++| License | **MIT** ("Copyright (c) Presidio Contributors") | `microsoft/presidio` LICENSE fetched raw |
++| Maturity | **12k stars, 209 contributors** | shields.io repo badges, 2026-10-28 |
++| Maintenance | last commit **2026-10-28 (today)**; release **2026-10-27 (yesterday)** | shields.io last-commit + PyPI |
++| Scope | detect/redact/mask/anonymize PII across text, images, structured data; NLP + pattern recognizers, pluggable pipeline | repo description via tower `github_repo_info` |
++| Cost | $0 license; self-hosted; **offline after model download — no PII egress** | license + architecture |
++| Lock-in | none: MIT, standard Python, recognizer registry is config | vendor docs |
++| Resource | NLP engine required (default spaCy; sm-tier ≈ tens of MB, lg-tier ≈ hundreds of MB — spaCy model catalog, approximate) | spaCy docs |
++
++### Alternatives rejected (probed 2026-10-28 unless noted)
++
++| Alternative | Class | Why rejected |
++|---|---|---|
++| AWS Comprehend Detect PII | commercial SaaS | **$0.0001/unit** (1 unit = 100 chars), **3-unit min/request**; 50K units/mo free tier **12 months only** (aws.amazon.com/comprehend/pricing/) → recurring spend + PII egress + lock-in |
++| Google Sensitive Data Protection (ex-DLP) | commercial SaaS | **$3.00/GB** content-method inspection after 1 GB/mo free; cancelled ops still billed (cloud.google.com/sensitive-data-protection/pricing) → same egress/lock-in class |
++| Private AI / Nightfall | proprietary SaaS | same data-egress + lock-in class, closed source; classified by license model, not probed deeper |
++| Custom spaCy-only NER | self-built | re-implements recognizer registry + anonymizer operators Presidio ships; Presidio's default NLP engine *is* spaCy — component, not replacement |
++| gitleaks / trufflehog | secret scanners | different problem class: credentials in code/history, not PII entities in runtime text |
++
++### Migration cost & trade-offs (labeled estimates — nothing executed)
++
++- **Effort: LOW / additive.** Wrap the PII tier behind the existing `core/contracts/redaction.py` entry point;
++  all six call sites keep their import. Key-regex stays as the secret-key tier; Presidio becomes the free-text
++  tier. Pilot = **report-only** (log entity types + counts, no behavior change), enforcement only after a
++  precision review on real federation text.
++- **Trade-offs:** new dependency + model download; CPU inference latency per document; recognizer precision on
++  Bengali/English mixed text is **unknown until a real evaluation runs — no benchmark has been run, none is
++  claimed.**
++- **Security:** self-hosted/offline → no PII egress to third parties (the exact weakness of every rejected
++  SaaS alternative).
++
++### Verdict: `adapt_cleanroom`
++
++Additive docs-first pilot on `core/contracts/redaction.py` (+ its docs), report-only mode, zero infra change,
++then an evidence-gated decision on enforcement. If adopted, register the Presidio tier in the #1733 guard-chain
++LLM06 row.
++
++---
++
++## Probed, not filed
++
++- **Cloud DLP family pricing (AWS/Google):** probed and used inside R36's alternatives table. No separate lane —
++  filing "evaluate AWS PII" tickets would contradict the R36 rejection rationale.
++- **Private AI / Nightfall:** classified by license model only; honest that no deep probe was run. Rejected for
++  egress/lock-in class regardless of price.
++
++## Collision ledger
++
++- Cycle start: session re-handshaken fresh; queue pulled (47 open WOs) — radar VIII (R28–R30, #1741) landed
++  earlier this cycle-hour; **radar IX (#1753, R31–R33) and radar X (#1773/#1776, R34–R35) were claimed by
++  concurrent runs at 22:30–22:38Z**; Task ID therefore named **radar-xi**, R-number **R36** (R-shift per the
++  #1682/#1688/#1706/#1742 precedent).
++- Pre-filing re-check at **22:55:27Z**: top of queue #1781; **zero radar-XI/R36 claims** → filed R36 as
++  **issue #1784** at 22:55:42Z, first attempt, no duplicates.
++- Concurrent filers disclosed: #1781 (SW caching WO, 22:55:27Z), #1783 (studio FCP verify, 22:55:38Z) — both
++  unrelated lanes, zero overlap with R36.
++
++## Honest-claims appendix
++
++- No benchmark was executed this cycle; no performance figure is claimed. Presidio resource numbers are
++  approximate vendor-published model sizes, labeled as such.
++- Every external fact carries a dated 2026-10-28 primary-source probe: PyPI JSON API (presidio-analyzer /
++  presidio-anonymizer), raw.githubusercontent LICENSE fetch, shields.io repo badges, tower `github_repo_info`
++  description, aws.amazon.com/comprehend/pricing/, cloud.google.com/sensitive-data-protection/pricing.
++- Internal facts are repo/code-search observations pinned to main @ c663369 and cited issue numbers.
++- No production system was modified; only public-repo issue filing + this bridge submission.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**why:** SupremeAI's secret redaction SSOT (`core/contracts/redaction.py`, 647 bytes) matches only dict key
++names, so PII in free text — the federation's dominant content type (scraped web text, browser DOM, tenant
++payloads, memory documents) — reaches LLM prompts and durable stores unredacted, exactly the OWASP LLM06 row
++the #1733 mapping (R29) has no control for. Presidio (MIT, 2.2.366, release 2026-10-27, 12k stars, last commit
++today, Python >=3.11) is the mature open-source, self-hosted fix: additive behind the existing entry point,
++zero infra, no egress. The org's own hardening plan already lists Presidio as the PII candidate — this lane
++supplies the verification that plan requires, with zero R-register overlap across R1–R35.
++
++**alternatives_rejected:** AWS Comprehend Detect PII ($0.0001/unit, 3-unit min, 12-month free tier — recurring
++cost + PII egress + lock-in, probed 2026-10-28); Google Sensitive Data Protection ($3.00/GB after 1 GB/mo free
++— same class, probed 2026-10-28); Private AI / Nightfall (proprietary SaaS, same egress/lock-in class, closed
++source); custom spaCy-only NER (re-implements what Presidio ships; spaCy is Presidio's default engine, a
++component not a replacement); gitleaks/trufflehog (secret scanning, wrong problem class). Doing nothing was
++also considered and rejected: the gap sits on the security-evidence surfaces (guardian_ai, agent_runner,
++control_plane) the federation is actively hardening this cycle.

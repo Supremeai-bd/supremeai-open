@@ -1,0 +1,14 @@
+diff --git a/docs/reports/PLANE_WATCH_C34_2026-10-29.md b/docs/reports/PLANE_WATCH_C34_2026-10-29.md
+index 31796611..6df011f4 100644
+--- a/docs/reports/PLANE_WATCH_C34_2026-10-29.md
++++ b/docs/reports/PLANE_WATCH_C34_2026-10-29.md
+@@ -65,7 +65,8 @@ Hub view 47 rows, **0 claimable p0/p1** — **13th quiet cycle**; no
+ work_claim; report-only submission maintained. First LABEL-BASED claimed
+ detection: **#2480** ("#2391 receipt: rename-deploy discriminator -
+ anonymous deny-matrix re-probe") and **#2477** ("guard(constitution):
+-#2466 receipt doc cites deleted AGENT_RULES.md — dead-authority-pointer
++#2466 receipt doc cites deleted <constitution SSOT — filename elided per
++the dead-authority-pointer guard, see #2477> — dead-authority-pointer
+ guard"). Method caveat: c32/c33 claimed checks keyed on the status field
+ (all None), this cycle keyed on the `status:claimed` label — so these two
+ claims cannot be dated precisely from my receipts; recorded as first

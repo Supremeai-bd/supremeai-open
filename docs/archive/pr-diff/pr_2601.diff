@@ -1,0 +1,260 @@
+diff --git a/core/security/api_key_limiter.py b/core/security/api_key_limiter.py
+index f354f76c..2c5312b9 100644
+--- a/core/security/api_key_limiter.py
++++ b/core/security/api_key_limiter.py
+@@ -12,7 +12,7 @@
+ from fastapi.responses import JSONResponse
+ from starlette.middleware.base import BaseHTTPMiddleware
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ API_KEY_LIMIT_PREFIX = "apikey:rate:"
+ DEFAULT_MAX_REQUESTS_PER_MINUTE = 60
+diff --git a/core/security/api_key_middleware.py b/core/security/api_key_middleware.py
+index 5e9fd034..c14d445a 100644
+--- a/core/security/api_key_middleware.py
++++ b/core/security/api_key_middleware.py
+@@ -14,7 +14,7 @@
+ 
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.resilience.circuit_breaker import CircuitBreaker
+ from core.security import API_KEY_PREFIX, hash_api_key, mask_api_key
+ from database.pgbouncer_pool import get_db_pool
+diff --git a/core/security/audit_logger.py b/core/security/audit_logger.py
+index 8f8ee8e4..a1d9dd49 100644
+--- a/core/security/audit_logger.py
++++ b/core/security/audit_logger.py
+@@ -9,7 +9,7 @@
+ from typing import Any
+ 
+ from core.cache.redis_manager import redis_manager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ AUDIT_PREFIX = "audit:event:"
+ AUDIT_LIST_PREFIX = "audit:recent:"
+diff --git a/core/security/authentication/rbac.py b/core/security/authentication/rbac.py
+index 3b7c9f2b..08c805f2 100644
+--- a/core/security/authentication/rbac.py
++++ b/core/security/authentication/rbac.py
+@@ -12,7 +12,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ # বাংলা মন্তব্য: UP042 ফিক্স — Role এর জন্য StrEnum ব্যবহার করা হয়েছে
+diff --git a/core/security/autonoguard_middleware.py b/core/security/autonoguard_middleware.py
+index 44800b90..35af0b87 100644
+--- a/core/security/autonoguard_middleware.py
++++ b/core/security/autonoguard_middleware.py
+@@ -21,7 +21,7 @@
+ from starlette.types import ASGIApp
+ 
+ from core.autonoguard_engine import OperationContext, autonoguard_engine
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AutonoGuardMiddleware(BaseHTTPMiddleware):
+diff --git a/core/security/codegen_gate.py b/core/security/codegen_gate.py
+index 1c53fed1..953a1cfd 100644
+--- a/core/security/codegen_gate.py
++++ b/core/security/codegen_gate.py
+@@ -25,7 +25,7 @@
+ 
+ import os
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Explicit opt-in env var. Default (unset/empty/any non-truthy value) = OFF.
+ ALLOW_INPROCESS_CODEGEN_ENV = "SUPREMEAI_ALLOW_INPROCESS_CODEGEN"
+diff --git a/core/security/cryptographic_ledger.py b/core/security/cryptographic_ledger.py
+index ec5c2dff..1ff802f5 100644
+--- a/core/security/cryptographic_ledger.py
++++ b/core/security/cryptographic_ledger.py
+@@ -5,7 +5,7 @@
+ 
+ from fastapi import BackgroundTasks
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class CryptographicLedger:
+diff --git a/core/security/enhanced_ast_scanner.py b/core/security/enhanced_ast_scanner.py
+index 84057620..7a15b27e 100644
+--- a/core/security/enhanced_ast_scanner.py
++++ b/core/security/enhanced_ast_scanner.py
+@@ -14,7 +14,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/security/governance_policy.py b/core/security/governance_policy.py
+index 767d64ad..fd7e1cfc 100644
+--- a/core/security/governance_policy.py
++++ b/core/security/governance_policy.py
+@@ -6,7 +6,7 @@
+ import os
+ import re
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ # ── Explicit Allowlist for Evolution Target Namespaces ──────────────────────
+diff --git a/core/security/intelligence/behavioral_analyzer.py b/core/security/intelligence/behavioral_analyzer.py
+index f2ef8344..4350dae2 100644
+--- a/core/security/intelligence/behavioral_analyzer.py
++++ b/core/security/intelligence/behavioral_analyzer.py
+@@ -12,7 +12,7 @@
+ from datetime import datetime, timedelta
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/security/origin_validator.py b/core/security/origin_validator.py
+index 03fcd43d..59373cef 100644
+--- a/core/security/origin_validator.py
++++ b/core/security/origin_validator.py
+@@ -9,7 +9,7 @@
+ 
+ from core.config import settings
+ from core.config_parsers import parse_origin_list
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from middleware.cors_policy import (
+     ADMIN_ORIGIN_DENYLIST,
+     USER_ORIGIN_DENYLIST,
+diff --git a/core/security/protection/honeypot.py b/core/security/protection/honeypot.py
+index e7087342..1434c6bb 100644
+--- a/core/security/protection/honeypot.py
++++ b/core/security/protection/honeypot.py
+@@ -10,7 +10,7 @@
+ from fastapi.responses import JSONResponse
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent
+ 
+ 
+diff --git a/core/security/protection/prompt_firewall.py b/core/security/protection/prompt_firewall.py
+index d2e0a49c..16698caa 100644
+--- a/core/security/protection/prompt_firewall.py
++++ b/core/security/protection/prompt_firewall.py
+@@ -18,7 +18,7 @@
+ 
+ from core.config import settings
+ from core.llm.llm_gateway import GatewayManager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ CONSTITUTIONAL_PRINCIPLES: list[str] = [
+     "Avoid generating harmful or dangerous content",
+diff --git a/core/security/protection/ssrf_protection.py b/core/security/protection/ssrf_protection.py
+index 0dbab847..37c1f4e8 100644
+--- a/core/security/protection/ssrf_protection.py
++++ b/core/security/protection/ssrf_protection.py
+@@ -35,7 +35,7 @@
+ from dataclasses import dataclass
+ from urllib.parse import urlparse
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ──────────────────────────────────────────────────────────────────
+ # Cloud metadata IPs that should never be accessible
+diff --git a/core/security/rate_limiter.py b/core/security/rate_limiter.py
+index 7c1e1eca..21940edc 100644
+--- a/core/security/rate_limiter.py
++++ b/core/security/rate_limiter.py
+@@ -14,7 +14,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class RateLimitExceededError(Exception):
+diff --git a/core/security/resource_guard.py b/core/security/resource_guard.py
+index 94e78520..a96f049d 100644
+--- a/core/security/resource_guard.py
++++ b/core/security/resource_guard.py
+@@ -1,7 +1,7 @@
+ import os
+ from pathlib import Path
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ResourceGuard:
+diff --git a/core/security/security_pipeline.py b/core/security/security_pipeline.py
+index 532f04d3..0ef09e11 100644
+--- a/core/security/security_pipeline.py
++++ b/core/security/security_pipeline.py
+@@ -15,7 +15,7 @@
+ from fastapi import FastAPI, Request, Response
+ from starlette.middleware.base import BaseHTTPMiddleware
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SupremeSecurityHeadersMiddleware(BaseHTTPMiddleware):
+diff --git a/core/security/tool_gateway.py b/core/security/tool_gateway.py
+index ac47aa97..1d8cd497 100644
+--- a/core/security/tool_gateway.py
++++ b/core/security/tool_gateway.py
+@@ -40,7 +40,7 @@
+ from typing import Any
+ 
+ from core.contracts.security_policy import SEVERITY_LEVELS
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Issue #684 (H-04): severity ranking now comes from the single canonical
+ # ladder in core.contracts.security_policy (ascending: higher == more severe).
+diff --git a/core/security/workload_admission.py b/core/security/workload_admission.py
+index 8b6869fa..223b2e01 100644
+--- a/core/security/workload_admission.py
++++ b/core/security/workload_admission.py
+@@ -22,7 +22,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AdmissionVerdict(StrEnum):
+diff --git a/core/security/ws_auth.py b/core/security/ws_auth.py
+index e6b3f209..d7d9bfc7 100644
+--- a/core/security/ws_auth.py
++++ b/core/security/ws_auth.py
+@@ -17,7 +17,7 @@
+ from fastapi import WebSocket, status
+ from fastapi.websockets import WebSocketDisconnect
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import verify_token
+ 
+ 

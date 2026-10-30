@@ -1,0 +1,34 @@
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 07731c5c..958adb5a 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -128,6 +128,20 @@ def build_issue_labels(repo: str) -> List[str]:
+     ]
+ 
+ 
++def get_default_token() -> str:
++    for var in ("OPEN_SYNC_PAT", "GH_TOKEN", "GITHUB_TOKEN"):
++        val = os.environ.get(var)
++        if val and val.strip():
++            return val.strip()
++    try:
++        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True)
++        if res.returncode == 0 and res.stdout.strip():
++            return res.stdout.strip()
++    except Exception:
++        pass
++    return ""
++
++
+ def gh_api(
+     endpoint: str,
+     token: Optional[str] = None,
+@@ -135,7 +149,7 @@ def gh_api(
+     data: Optional[Dict[str, Any]] = None,
+ ) -> Tuple[int, Any]:
+     """Execute authenticated GitHub REST API request."""
+-    tok = token or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or os.environ.get("OPEN_SYNC_PAT")
++    tok = token or get_default_token()
+     url = endpoint if endpoint.startswith("http") else f"https://api.github.com/{endpoint.lstrip('/')}"
+     headers = {
+         "Accept": "application/vnd.github+json",

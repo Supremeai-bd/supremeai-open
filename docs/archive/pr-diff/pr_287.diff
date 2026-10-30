@@ -1,0 +1,15 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index ecfb56db..cead9adf 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -434,10 +434,7 @@ jobs:
+               "task_id": os.environ["TASK_ID"],
+               "bridge_branch": os.environ["BRANCH_NAME"],
+               "merge_sha": os.environ["PR_SHA"],
+-              "head_sha": os.environ.get("PR_HEAD_SHA", ""),
+               "base_sha": os.environ["BASE_SHA"],
+-              "file_count": len(files),
+-              "files_truncated": len(files) > 100,
+               "files": files[:100],
+           }
+           print(json.dumps({"event_type": "bridge_order_queued", "client_payload": payload}))

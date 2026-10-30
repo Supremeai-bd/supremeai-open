@@ -1,0 +1,234 @@
+diff --git a/docs/AUDIT_2026-10-28-toml-bom.md b/docs/AUDIT_2026-10-28-toml-bom.md
+new file mode 100644
+index 00000000..12475002
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28-toml-bom.md
+@@ -0,0 +1,143 @@
++# Audit 2026-10-28 — TOML BOM Wedge (F-T1) & TOML-Validity Gate Gap (G-T3)
++
++**Cycle:** zai-cron-agent-loop Job 478318, 04:10 dispatch, auditor cadence role.
++**Base:** live `origin/main` @ `647928b` (rebased 0 behind at work-start and pre-submit).
++**Scope:** dead code, compliance drift, CI-gate proposal — per the auditor mandate.
++**Method:** full 3-tier sweep of live main, then targeted byte-level hygiene probes on
++config surfaces the existing guards do not cover.
++
++---
++
++## 1. Executive summary
++
++| ID | Finding | Severity | Disposition |
++|----|---------|----------|-------------|
++| F-T1 | Root `ruff.toml` carries a UTF-8 BOM (`EF BB BF`); stdlib `tomllib` — the repo's TOML parser of record — hard-fails on it (`TOMLDecodeError: Invalid statement (at line 1, column 1)`). | Medium (latent wedge, invisible to ruff) | **Fixed in this change set** (3-byte strip) |
++| G-T3 | No tier anywhere in the verify chain validates TOML: loop `--verify-only` has no TOML tier (8 tiers cover JSON/YAML only), `contract_parity_guard.py` byte-hygiene covers mirrored contract files only, ruff silently strips a leading BOM so it cannot catch its own config's corruption. | Gate gap | **Closed in this change set** — `tests/test_toml_validity.py` |
++| U-T1 | Upstream health confirmed: after #1590 landed, the CRLF phantom-dirty wedge is dead in the wild (fresh status clean, `tenant.tools.ts` is `i/lf w/lf`); 16 new commits re-verified: `--verify-only` 8/8 PASS, full pytest 875→877 passed / 3 skipped (incl. new #1598 dead-import ratchet 3/3 and #1600 instruction-builder fossil 12/12), boundary clean, repo-wide `git grep -Il CR` empty. | Info | No action |
++
++F-T1 is the same defect class as the CRLF wedge fixed in `docs/AUDIT_2026-10-28.md`
++(#1590): an environment-hygiene wedge that poisons agent tooling, produced no test
++failure, and was invisible to every CI gate at landing time.
++
++---
++
++## 2. F-T1 — evidence (reproduced on live main `647928b`)
++
++```text
++$ od -An -tx1 -N3 ruff.toml
++ ef bb bf                                  ← UTF-8 BOM, 3 bytes
++
++$ python3 -c "import tomllib; tomllib.load(open('ruff.toml','rb'))"
++TOMLDecodeError: Invalid statement (at line 1, column 1)   ← HARD FAIL
++
++$ repo-wide tomllib sweep (10 tracked *.toml)
++9 parsed clean — ruff.toml is the ONLY corrupt file
++
++$ ruff check --config ruff.toml --select E9,F63,F7,F82 …
++All checks passed!                         ← ruff 0.17.3 strips BOM silently (blind spot)
++```
++
++**Provenance:** `git log --follow -- ruff.toml` — the BOM entered with bridge landing
++`9c7d30c` (#1465, 2026-10-27 lineage); it is not part of the file's original #2469-era
++content.
++
++**Impact chain:**
++
++1. Any stdlib-based consumer of the lint config fails today. The repo's own ops
++   tooling standardizes on `tomllib` (`scripts/ops/advanced_analysis/*.py`); an agent
++   extending that tooling to read `ruff.toml` (the natural next step for lint-drift
++   audits, e.g. extending the #1598 dead-import work) hits a hard, cryptic failure.
++2. Editor/LSP consumers built on strict parsers (e.g. taplo family) flag line 1 as
++   invalid — human contributors see phantom red squiggles on a "working" config.
++3. The failure is silent for the tool that owns the file: ruff strips the BOM before
++   parsing, so CI's Step-1 ruff run (`deploy_preflight_guard.py` → `ruff check
++   --select=E9,F63,F7,F82 gateway core`) stays green. A config that is valid for one
++   consumer and invalid for the reference parser is a parser-tolerance split-brain —
++   exactly the drift class the byte-hygiene guards exist to prevent.
++
++## 3. Fix applied (smallest safe superior replacement)
++
++Strip the 3 BOM bytes from `ruff.toml`. Content is otherwise byte-identical.
++
++- **Post-fix proof:** `tomllib` parses it; `ruff check --select=E9,F63,F7,F82
++  gateway core` unchanged ("All checks passed!"); `git diff` shows exactly one line
++  changed (the BOM is invisible in text form — `-﻿[lint.per-file-ignores]` →
++  `+[lint.per-file-ignores]`).
++- **Boundary:** `ruff.toml` is an `APPROVED_ROOT_FILE` per
++  `scripts/ci/boundary_sanitization_guard.py:108`; not a protected path; zero
++  satellite code touched.
++
++## 4. G-T3 — the gate gap and its closure
++
++Nothing in the repo validates TOML today:
++
++| Tier | TOML coverage |
++|------|---------------|
++| `continuous_agent_loop.py --verify-only` (8 tiers) | JSON validity, YAML validity — no TOML tier |
++| `contract_parity_guard.py --check` | strict-LF + AST on mirrored contract files only |
++| `deploy_preflight_guard.py --step1-syntax` | `ruff check` (BOM-tolerant) + py_compile |
++| `binary_guard` | rejects binaries; a BOM is text — passes |
++
++**Closure:** `tests/test_toml_validity.py` (stdlib-only, offline):
++
++1. `test_repo_tracks_at_least_one_toml` — pins the gate's own wiring (and keeps
++   `ruff.toml` under F-T1 regression watch).
++2. `test_every_tracked_toml_parses_with_stdlib_tomllib` — enumerates
++   `git ls-files '*.toml'` (auto-covers future TOMLs; no allowlist to shrink),
++   asserts no UTF-8 BOM with an **actionable** message (tomllib's own BOM error
++   names neither cause nor cure — that is how F-T1 survived landing), then parses
++   each file with `tomllib`.
++
++Enforcement tier: the `tests/` registry is the repo's de-facto gate surface for the
++agent 3-tier verify ("`--verify-only` + tests" is mandated by the contribution
++pipeline), the same tier where #1598 (`test_dead_import_drift.py`) and #1600
++(`test_instruction_builder.py`) landed their gates. `.github/` is a protected path
++and is not touched.
++
++## 5. Verification (3-tier, post-rebase on `647928b`, 0 behind)
++
++```text
++[T1 Reflection]   this document, §6 (why + alternatives_rejected)
++[T2 Smoke]        continuous_agent_loop.py --verify-only → 8/8 PASS, single
++                  CONTRACT_VERSION=agent-loop-contract/1 marker
++[T3 Tests]        full pytest tests/ → 877 passed, 3 skipped (875 baseline + 2 new)
++                  spot: test_toml_validity 2/2 · test_dead_import_drift 3/3 ·
++                  test_instruction_builder 12/12 · test_ci_guards green
++[Patch proof]     od: BOM present before, absent after; tomllib FAIL→PASS;
++                  negative control: re-adding BOM to a scratch copy is rejected by
++                  tomllib (the gate would flag it)
++[Rebase]          origin/main advanced 0b018ba→647928b mid-audit; rebased, gates re-run green
++```
++
++## 6. Reflection Evidence
++
++**Why:** a tracked config file that the reference stdlib parser cannot read is a
++latent wedge for every agent and a live phantom-error for strict editors; it landed
++because no tier parses TOML. Fixing the byte without adding the tier would invite the
++next BOM; adding the tier without fixing the byte would fail the new gate on landing.
++Both ship together, 3 bytes + 1 offline test file + this report.
++
++**alternatives_rejected:**
++
++1. *Keep BOM, wrap all consumers in BOM-stripping* — spreads the workaround into
++   every future reader; violates Superior Replacement (appease the legacy byte).
++2. *Add a TOML tier to the loop's 8-tier verify chain* — touches the dispatch-critical
++   loop surface; the tests/ gate achieves enforcement without that blast radius
++   (precedent: #1598, #1600).
++3. *Convert the repo to pyproject.toml lint config* — large migration, zero added
++   correctness over the 3-byte fix.
++4. *Extend `contract_parity_guard.py` byte-hygiene to all TOMLs* — mixes concerns in
++   a guard scoped to mirrored contract surfaces; also duplicates what the test tier
++   now does with better failure messages.
++5. *File the finding docs-only (G1/G2 style)* — rejected because this fix needs no
++   protected path: both the byte and the gate live inside approved boundaries, so a
++   docs-only submission would under-deliver what is safely deliverable today.
++   (G1/G2 from the #1590 audit remain pending adoption and stay documented there.)
++
++## 7. Rollback
++
++Single commit, 3 files. `git revert` restores the BOM'd `ruff.toml`, removes the
++gate test and this report; ruff behavior is identical before/after (BOM-tolerant),
++so rollback carries zero functional impact — only the stdlib-parseability and the
++gate are lost.
+diff --git a/ruff.toml b/ruff.toml
+index 53482e26..b8ccdfda 100644
+--- a/ruff.toml
++++ b/ruff.toml
+@@ -1,4 +1,4 @@
+-﻿[lint.per-file-ignores]
++[lint.per-file-ignores]
+ "browser/**" = ["BLE001", "S110", "S102", "TRY004", "DTZ001", "DTZ006", "F401", "F841", "PIE810", "PYI034", "RUF012", "SIM117", "UP031", "F811", "UP035", "UP006", "UP045"]
+ "scripts/**" = ["BLE001", "S110", "S102", "TRY004", "DTZ001", "F811", "UP035", "UP006", "UP045"]
+ "examples/**" = ["BLE001", "S110", "TRY004", "UP031", "UP035", "UP006", "UP045"]
+diff --git a/tests/test_toml_validity.py b/tests/test_toml_validity.py
+new file mode 100644
+index 00000000..a16fe7c5
+--- /dev/null
++++ b/tests/test_toml_validity.py
+@@ -0,0 +1,69 @@
++"""TOML validity gate (audit finding F-T1 / gate G-T3, 2026-10-28).
++
++Every tracked ``*.toml`` file must parse with the Python stdlib reference
++parser ``tomllib``. This tier did not exist anywhere in the 8-tier verify
++chain, the contract-parity byte-hygiene guard (mirrored contract files
++only), or ruff itself (ruff silently strips a leading UTF-8 BOM) — which is
++exactly how ``ruff.toml`` landed with a BOM (blob from #1465 lineage) and
++stayed unparseable by stdlib tooling while every ruff-based check stayed
++green. The gate closes that parser-tolerance split-brain: a config file is
++only "valid" when the stdlib parser of record accepts it.
++
++Design notes:
++- stdlib-only, offline, no fixture files: walks ``git ls-files '*.toml'``
++  so the gate automatically covers future TOML files.
++- BOM gets an explicit, actionable assertion (tomllib's own error for a
++  BOM — "Invalid statement (at line 1, column 1)" — names neither the
++  cause nor the cure, which is how this defect survived landing).
++- Shrink-only spirit of the ratchet family: any new tracked TOML is
++  automatically covered; a file can only leave the gate by leaving the
++  tree (or being renamed), never by allowlisting.
++"""
++
++from __future__ import annotations
++
++import subprocess
++import tomllib
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++BOM = b"\xef\xbb\xbf"
++
++
++def _tracked_toml_files() -> list[Path]:
++    out = subprocess.run(
++        ["git", "ls-files", "*.toml"],
++        cwd=REPO_ROOT,
++        capture_output=True,
++        text=True,
++        check=True,
++    ).stdout
++    return sorted(REPO_ROOT / line for line in out.splitlines() if line.strip())
++
++
++def test_repo_tracks_at_least_one_toml() -> None:
++    files = _tracked_toml_files()
++    assert files, "git ls-files '*.toml' returned nothing — gate broken?"
++    assert any(p.name == "ruff.toml" for p in files), (
++        "root ruff.toml missing from git ls-files — F-T1 regression watch lost its target"
++    )
++
++
++def test_every_tracked_toml_parses_with_stdlib_tomllib() -> None:
++    failures: list[str] = []
++    for path in _tracked_toml_files():
++        raw = path.read_bytes()
++        if raw.startswith(BOM):
++            failures.append(
++                f"{path.relative_to(REPO_ROOT)}: UTF-8 BOM present — strip the "
++                "leading 3 bytes (EF BB BF); stdlib tomllib (and several other "
++                "TOML consumers) reject BOM'd TOML outright"
++            )
++            continue
++        try:
++            tomllib.loads(raw.decode("utf-8"))
++        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
++            failures.append(
++                f"{path.relative_to(REPO_ROOT)}: tomllib cannot parse ({exc})"
++            )
++    assert not failures, "TOML validity gate failures:\n" + "\n".join(failures)

@@ -1,0 +1,40 @@
+diff --git a/docs/reports/REVIEW_WORKFLOW_2557_ADDENDUM_2026-10-30.md b/docs/reports/REVIEW_WORKFLOW_2557_ADDENDUM_2026-10-30.md
+new file mode 100644
+index 00000000..d462e16a
+--- /dev/null
++++ b/docs/reports/REVIEW_WORKFLOW_2557_ADDENDUM_2026-10-30.md
+@@ -0,0 +1,34 @@
++# Evidence addendum for #2557 — outage persists ~17h (2026-10-30 live re-probe)
++
++Report-only, reference-only (#2901/#2360 template; no Closes; closure = admin). By
++zai-glm-agent-c34 (Job 478342). This is the STALE-INCIDENT-GUARD-mandated live
++re-verification: the original finding (federation auditor, Job 478431, cycle 32)
++was ~17h old; filed because the outage PERSISTS rather than being skipped.
++
++## Fresh receipt (2026-10-30T00:44Z, fresh handshake session)
++
++`agent_review_workflow_status` (zero-arg availability probe, the row's own method)
++→ `Error: SUPREMEAI_BACKEND_URL is not configured` — **byte-identical** to the
++original finding. ~17h after first observation (~08:00Z Oct 29), ~13.5h after the
++row's own re-confirm (11:22Z), spanning multiple deploy windows: systematic, not
++intermittent.
++
++- `execute` deliberately NOT called: the original finding notes execute registers
++  workflow requests while the runtime is unconfigured — no phantom requests added.
++- Tower otherwise healthy in the same session: handshake, bridge_read_feedback,
++  work_claim (GRANT_TAKEOVER 00:44:14Z, ttl 30m) all normal — core read/write
++  plane unaffected, matching the original scoping. Claim held purely to serialize
++  this addendum; release follows submission.
++
++## Remedy (admin lane)
++
++`SUPREMEAI_BACKEND_URL` env on the tower deploy (supremeai-mcp-tower.onrender.com)
++— service-config plane, zero in-repo action surface (agent envelope boundary).
++Until configured, the Agent Review Workflow tool family stays blocked for every
++consumer and keeps recording phantom requests on any execute call.
++
++## Provenance
++
++#2901/#2360 template → this. Tier2 --verify-only 8/8 @ `7f2e77c`; Tier3 1673P/
++11S/12sub/0F @ `ef42f8a` (upstream delta since verified docs-only: 6 report files,
++zero code); dual-rebase 0 behind at submit (in-script assert).

@@ -1,0 +1,123 @@
+diff --git a/.github/workflows/auto-bridge-dispatcher.yml b/.github/workflows/auto-bridge-dispatcher.yml
+index 1b19354d..42aaae55 100644
+--- a/.github/workflows/auto-bridge-dispatcher.yml
++++ b/.github/workflows/auto-bridge-dispatcher.yml
+@@ -47,9 +47,9 @@
+ #   so by the time this workflow runs the head ref is gone and the head
+ #   commit object is no longer fetched — `git branch <name> <head_sha>`
+ #   failed with "not a valid branch point" on 100% of eligible merges
+-#   (zero sync branches / zero auto work orders ever produced). The merge
+-#   commit IS present in the pull_request:closed checkout (this workflow
+-#   already diffs against it) and its two parents are reachable through it.
++#   (zero sync branches / zero auto work orders ever produced). Both trigger
++#   paths check out main AFTER landing, so the merge commit is an ancestor
++#   of HEAD and its two parents are reachable through it.
+ #
+ # Work Order field list: keep the section names/order aligned with the
+ # canonical human template in .github/workflows/bridge-work-order.yml
+@@ -181,10 +181,35 @@ jobs:
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+           BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+         run: |
+-          DATE_STR=$(date +%Y%m%d)
++          # Deterministic identity: the task id date is the MERGE COMMIT date,
++          # not the run date — re-dispatching the same PR on a later UTC day
++          # reproduces the identical task id, patch branch, and work order.
++          # One PR = at most one bridge branch + one WO issue, forever.
++          DATE_STR=$(git show -s --format=%cd --date=format:%Y%m%d "${PR_SHA}" 2>/dev/null || true)
++          if [ -z "$DATE_STR" ]; then
++            DATE_STR=$(date +%Y%m%d)
++          fi
+           TASK_ID="bridge-${DATE_STR}-pr${PR_NUM}-sync"
+           BRANCH_NAME="bridge/${TASK_ID}"
+ 
++          # Date-independent re-dispatch detection: a work order filed for
++          # THIS PR on any earlier UTC day (older date-stamped task id) is
++          # still the same sync — adopt its task id/branch instead of
++          # creating a twin. PR number match is suffix-anchored ("pr<N>-sync")
++          # so PR #12 can never collide with PR #128.
++          EXISTING_WS=$(gh issue list --repo "${{ github.repository }}" --state open --label "bridge:queued" --limit 50 \
++            --json number,title \
++            -q ".[] | select(.title | contains(\"pr${PR_NUM}-sync\")) | \"\(.number) \(.title)\"" | head -n 1)
++          EXISTING_WO_NUM=""
++          if [ -n "$EXISTING_WS" ]; then
++            EXISTING_WO_NUM=${EXISTING_WS%% *}
++            REUSED_TASK=$(printf '%s\n' "${EXISTING_WS#* }" | sed -n 's/.*(\(bridge-[0-9]\{8\}-[a-z0-9-]*pr'"${PR_NUM}"'-sync\)).*/\1/p' | head -n 1)
++            if [ -n "$REUSED_TASK" ]; then
++              TASK_ID="$REUSED_TASK"
++              BRANCH_NAME="bridge/${TASK_ID}"
++            fi
++          fi
++
+           # Expose identity to the dispatch step (patch-stream payload)
+           echo "task_id=${TASK_ID}" >> "$GITHUB_OUTPUT"
+           echo "branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
+@@ -204,27 +229,20 @@ jobs:
+           # #113: branch from the MERGE COMMIT — the head ref is deleted by
+           # the Merge Gate's --delete-branch, and any git operation anchored
+           # on PR_HEAD_SHA fatal-exits with "not a valid branch point".
+-          # Idempotent: TASK_ID is deterministic per (PR, UTC date) and the
+-          # merge SHA is immutable, so a re-dispatch re-points the same ref
+-          # to the same object instead of crashing with "already exists".
++          # Idempotent: TASK_ID is anchored to the PR's merge commit date, so
++          # a re-dispatch re-points the same ref to the same immutable object
++          # instead of crashing with "already exists".
+           git branch -f "${BRANCH_NAME}" "${PR_SHA}"
+           git push origin "${BRANCH_NAME}"
++
+           # Prepare Work Order body. Field order mirrors the canonical human
+           # template (.github/workflows/bridge-work-order.yml) — see header
+           # note. The heredoc lines below sit at the SAME indentation as the
+           # surrounding script: the YAML block scalar strips that common
+           # prefix, so the shell sees a top-level heredoc (content and EOF
+           # terminator flush-left) — no indentation-repair pass needed (#113).
+-          # Idempotent work-order filing: a re-dispatched PR (manual backfill,
+-          # merge-gate retry) must not file a second bridge:queued issue —
+-          # duplicate WOs cause label churn and repeated intake processing.
+-          # One deterministic task id -> at most one WO issue.
+-          EXISTING_WO=$(gh issue list --repo "${{ github.repository }}" --state open --label "bridge:queued" --limit 50 \
+-            --json number,title \
+-            -q ".[] | select(.title | contains(\"${TASK_ID}\")) | .number" | head -n 1)
+-
+-          if [ -n "$EXISTING_WO" ]; then
+-            echo "Work order for ${TASK_ID} already filed (#${EXISTING_WO}) — skipping duplicate creation, continuing to dispatch."
++          if [ -n "$EXISTING_WO_NUM" ]; then
++            echo "Work order for PR #${PR_NUM} already filed (#${EXISTING_WO_NUM}, task ${TASK_ID}) — skipping duplicate creation, continuing to dispatch."
+           else
+             cat <<EOF > /tmp/bridge_wo.md
+           ### Task ID
+diff --git a/.github/workflows/merge-gate.yml b/.github/workflows/merge-gate.yml
+index 79affc9c..adcb261c 100644
+--- a/.github/workflows/merge-gate.yml
++++ b/.github/workflows/merge-gate.yml
+@@ -145,7 +145,12 @@ jobs:
+           # a silently dropped trigger means zero patch branch and zero
+           # work order (exactly the failure mode that froze the bridge).
+           echo "🌉 PR #${PR_NUM} landed — triggering auto-bridge-dispatcher (Zero-Admin Policy)..."
+-          BEFORE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
++          # Run ids are monotonically increasing per repo — compare ids, not
++          # timestamps (runner clock vs GitHub API clock skew would make a
++          # ts comparison false-negative on every dispatch).
++          BEFORE_ID=$(gh api \
++            "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?per_page=1" \
++            -q '.workflow_runs[0].id // 0' 2>/dev/null || echo 0)
+ 
+           if ! gh workflow run auto-bridge-dispatcher.yml \
+             --repo "${{ github.repository }}" \
+@@ -157,11 +162,12 @@ jobs:
+           CONFIRMED="false"
+           for attempt in $(seq 1 12); do
+             sleep 5
+-            RUN_COUNT=$(gh api \
+-              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=10" \
+-              -q "[.workflow_runs[] | select(.created_at > \"$BEFORE_TS\")] | length" 2>/dev/null || echo 0)
+-            if [ "${RUN_COUNT:-0}" -gt 0 ] 2>/dev/null; then
++            NEW_ID=$(gh api \
++              "repos/${{ github.repository }}/actions/workflows/auto-bridge-dispatcher.yml/runs?event=workflow_dispatch&per_page=5" \
++              -q "[.workflow_runs[] | select(.id > ${BEFORE_ID})] | .[0].id // empty" 2>/dev/null || true)
++            if [ -n "$NEW_ID" ]; then
+               CONFIRMED="true"
++              echo "auto-bridge-dispatcher run ${NEW_ID} created."
+               break
+             fi
+             echo "Waiting for dispatcher run to appear (attempt ${attempt}/12)..."

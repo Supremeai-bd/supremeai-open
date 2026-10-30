@@ -1,0 +1,131 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index f258843b..2d7e054f 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -137,6 +137,17 @@ export interface BridgePrBodyOptions {
+   reflectionWhy?: string;
+   alternativesRejected?: string;
+   rollbackPath?: string;
++  /**
++   * #2485: opt-in escape hatch for the receipt-closure class. Docs-only
++   * (spec-only) submissions emit `Refs #N` so a spec-first lane keeps its work
++   * order open until code lands - but for CI-failure closure receipts the
++   * receipt IS the resolution, so the WO would stay open forever
++   * (evidence: #2405 stayed open after #2427 landed; #2368 after #2466).
++   * When true, a docs-only submission emits `Closes #N` for both the original
++   * issue and the round's work-order issue. Absent/false preserves the
++   * spec-only keep-open contract exactly.
++   */
++  closesOriginalIssue?: boolean;
+ }
+ 
+ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+@@ -152,8 +163,12 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+   );
+ 
+   // Auto-close original issue if provided (e.g. #1519, #1520)
++  // #2485: isSpecOnly normally downgrades Closes->Refs ("open until code
++  // implementation"), but closesOriginalIssue opts a docs-only receipt out of
++  // that keep-open contract (receipt-closure class: #2405/#2427, #2368/#2466).
++  const keepSpecOpen = isSpecOnly && !opts.closesOriginalIssue;
+   if (opts.originalIssueNumber) {
+-    if (isSpecOnly) {
++    if (keepSpecOpen) {
+       linkedIssues.push(`Refs #${opts.originalIssueNumber}`);
+     } else {
+       linkedIssues.push(`Closes #${opts.originalIssueNumber}`, `Refs #${opts.originalIssueNumber}`);
+@@ -162,7 +177,7 @@ export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
+ 
+   // Also close/ref the bridge work order issue
+   if (opts.issueNumber && opts.issueNumber !== opts.originalIssueNumber) {
+-    if (isSpecOnly) {
++    if (keepSpecOpen) {
+       linkedIssues.push(`Refs #${opts.issueNumber}`, `<!-- spec-only: keeps #${opts.issueNumber} open until code implementation -->`);
+     } else {
+       linkedIssues.push(`Closes #${opts.issueNumber}`, `Refs #${opts.issueNumber}`);
+@@ -1078,6 +1093,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     agentIdentity,
+     reflectionWhy,
+     alternativesRejected,
++    closesOriginalIssue,
+   }: {
+     taskId: string;
+     summary: string;
+@@ -1089,6 +1105,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     agentIdentity?: string;
+     reflectionWhy?: string;
+     alternativesRejected?: string;
++    closesOriginalIssue?: boolean;
+   }) => {
+     // If not explicitly passed, detect original issue reference from summary e.g. "fix #1519" or "(#1519)"
+     const detectedIssueNum = originalIssueNumber ?? (() => {
+@@ -1506,6 +1523,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           reflectionWhy,
+           alternativesRejected,
+           rollbackPath,
++          closesOriginalIssue,
+         });
+ 
+         let prNumber: number | undefined;
+@@ -1604,6 +1622,7 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+     alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
++    closesOriginalIssue: z.boolean().optional().describe("#2485: opt-in for receipt-closure submissions. Docs-only (spec-only) payloads normally emit Refs #N so the work order stays open until code lands - but when this docs-only patch IS the resolution (e.g. a CI-failure closure receipt whose root cause is already remediated on main), set true to emit Closes #N on merge. Absent/false preserves the spec-only keep-open contract. Evidence: #2405 stayed open after #2427 landed; #2368 after #2466."),
+   };
+ 
+   server.tool(
+diff --git a/infrastructure/mcp-control-plane/test_bridge_freshness.ts b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+index b70f59ff..ac98bee6 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_freshness.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+@@ -203,6 +203,49 @@ const LIVE_TEMPLATE = [
+   assert.match(specOnlyBody, /Refs #888/);
+   assert.ok(!specOnlyBody.includes("Closes #888"), "spec-only PR must NEVER auto-close issue");
+ 
++  // ── #2485: opt-in closesOriginalIssue escape hatch for the receipt-closure class ──
++  // Docs-only + flag true -> Closes for BOTH the original issue and the round's WO,
++  // with no keep-open comment; absent/false preserve the Refs-only contract.
++  const receiptClosureBody = buildBridgePrBody({
++    taskId: "bridge-20261029-receipt",
++    summary: "Closure receipt for a self-healed CI failure",
++    issueNumber: 2465,
++    originalIssueNumber: 2368,
++    scopePaths: ["docs/bridge/bridge-receipt.md"],
++    testsEvidence: "receipt evidence",
++    reflectionWhy: "phantom red pollutes drainage",
++    alternativesRejected: "comment-only closure",
++    closesOriginalIssue: true,
++  });
++  assert.match(receiptClosureBody, /Closes #2368/);
++  assert.match(receiptClosureBody, /Closes #2465/);
++  assert.ok(!receiptClosureBody.includes("keeps #2465 open"), "flagged receipt must NOT carry the keep-open comment");
++
++  const explicitFalseBody = buildBridgePrBody({
++    taskId: "bridge-20261027-spec",
++    summary: "Add spec order",
++    issueNumber: 888,
++    scopePaths: ["docs/bridge/bridge-spec.md"],
++    testsEvidence: "doc valid",
++    reflectionWhy: "Spec needed first",
++    alternativesRejected: "no spec",
++    closesOriginalIssue: false,
++  });
++  assert.match(explicitFalseBody, /Refs #888/);
++  assert.ok(!explicitFalseBody.includes("Closes #888"), "explicit false must equal absent (spec-only keep-open preserved)");
++
++  const flaggedNonDocsBody = buildBridgePrBody({
++    taskId: "bridge-20261017-freshness",
++    summary: "Enforce constitution freshness",
++    issueNumber: 567,
++    scopePaths: ["core/freshness.py"],
++    testsEvidence: "evidence",
++    reflectionWhy: "why",
++    alternativesRejected: "alt",
++    closesOriginalIssue: true,
++  });
++  assert.match(flaggedNonDocsBody, /Closes #567/, "non-docs path unchanged by the flag");
++
+   const noIssue = buildBridgePrBody({
+     taskId: "bridge-20261017-freshness",
+     summary: "Enforce constitution freshness",

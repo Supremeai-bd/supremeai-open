@@ -1,0 +1,682 @@
+diff --git a/studio/src/components/customer/BrowserPreview.tsx b/studio/src/components/customer/BrowserPreview.tsx
+index 087a7b76..7f6c51d7 100644
+--- a/studio/src/components/customer/BrowserPreview.tsx
++++ b/studio/src/components/customer/BrowserPreview.tsx
+@@ -9,17 +9,10 @@
+  * iframe remains only for same-origin generated content (the `html` prop)
+  * and as an explicit opt-in fallback, because the proxy path needs a
+  * reachable backend session.
+- *
+- * OWNER UPGRADE (2026-10-25, Banglish request): the auto browser now behaves
+- * like an actual browser plus extra perks — back/forward/reload session
+- * history (backend automation actions), live page title + URL chrome,
+- * full-page screenshot download, and one-click copy of extracted page text.
+- * The manual-work controls (agent pause toggle + "Manual control active"
+- * HITL banner) were REMOVED per the same owner decision.
+  */
+ 
+ import React, { useCallback, useEffect, useRef, useState } from 'react';
+-import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, ArrowLeft, ArrowRight, Download, Copy, Check, ImageOff } from 'lucide-react';
++import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, Pause, Play, ImageOff } from 'lucide-react';
+ import { browserService } from '../../services/browserService';
+ 
+ type DevicePreset = 'desktop' | 'tablet' | 'mobile';
+@@ -65,6 +58,13 @@ interface BrowserPreviewProps {
+   html?: string;
+   showDeviceToolbar?: boolean;
+   onUrlChange?: (url: string) => void;
++  // MOBILE DUAL-PATH (owner request 2026-10-25): fires after the automation
++  // session actually navigates — AIStudio uses it to mirror the same page on
++  // the Mobile Simulator screen (render-ticket proxy), so agent/user browser
++  // work is visible on both surfaces at once.
++  onNavigated?: (url: string) => void;
++  agentPaused?: boolean;
++  onAgentPauseToggle?: () => void;
+ }
+ 
+ const isExternalHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+@@ -74,6 +74,9 @@ export function BrowserPreview({
+   html,
+   showDeviceToolbar = true,
+   onUrlChange,
++  onNavigated,
++  agentPaused = false,
++  onAgentPauseToggle,
+ }: BrowserPreviewProps) {
+   const [currentUrl, setCurrentUrl] = useState(url);
+   const [reloadKey, setReloadKey] = useState(0);
+@@ -90,12 +93,12 @@ export function BrowserPreview({
+   const sessionRef = useRef<string | null>(null);
+   // dedupe guard for the auto-proxy effect below
+   const lastAutoNavRef = useRef<string | null>(null);
+-  // OWNER UPGRADE (2026-10-25): real-browser chrome — live title + history
+-  // depth tracking for honest back/forward enablement, download/copy perks.
+-  const [pageTitle, setPageTitle] = useState<string | null>(null);
+-  const [histDepth, setHistDepth] = useState(0);
+-  const [backDepth, setBackDepth] = useState(0);
+-  const [copied, setCopied] = useState(false);
++  // MOBILE DUAL-PATH: keep the latest onNavigated callback in a ref so
++  // navigateAndRender's dependency list (and identity) stays stable.
++  const onNavigatedRef = useRef(onNavigated);
++  useEffect(() => {
++    onNavigatedRef.current = onNavigated;
++  }, [onNavigated]);
+ 
+   // react-compiler lint: refs must not be written during render.
+   useEffect(() => {
+@@ -123,12 +126,10 @@ export function BrowserPreview({
+       });
+       if (action === 'content') {
+         setPageContent(result.content ?? 'No readable page content was returned.');
+-        if (result.title) setPageTitle(result.title);
+       } else if (result.screenshot) {
+         // ERR-A03: the captured image is actually shown now (it used to be
+         // discarded with a success toast).
+         setLiveScreenshot(result.screenshot);
+-        if (result.title) setPageTitle(result.title);
+         setAutomationStatus('Full-page screenshot captured and displayed.');
+       } else {
+         setAutomationError('The backend did not return a screenshot image.');
+@@ -140,43 +141,6 @@ export function BrowserPreview({
+     }
+   };
+ 
+-  // OWNER UPGRADE (2026-10-25): real-browser history navigation + reload.
+-  // The backend drives the live Playwright page (page.go_back/go_forward/
+-  // reload), then we refresh the screenshot and chrome from its response.
+-  const runNavAction = async (nav: 'back' | 'forward' | 'reload') => {
+-    if (!sessionId || isLoading) return;
+-    setIsLoading(true);
+-    setAutomationError(null);
+-    try {
+-      const result = await browserService.execute(sessionId, { action: nav });
+-      if (result.title) setPageTitle(result.title);
+-      if (nav === 'back') setBackDepth(depth => depth + 1);
+-      if (nav === 'forward') setBackDepth(depth => Math.max(0, depth - 1));
+-      const shot = await captureLiveScreenshot(sessionId);
+-      if (shot) {
+-        setLiveScreenshot(shot);
+-        setAutomationStatus(nav === 'reload' ? 'Page reloaded.' : nav === 'back' ? 'Went back.' : 'Went forward.');
+-      } else {
+-        setAutomationError(`Session ${nav} succeeded but returned no screenshot.`);
+-      }
+-    } catch (error) {
+-      setAutomationError(error instanceof Error ? error.message : `Browser ${nav} failed`);
+-    } finally {
+-      setIsLoading(false);
+-    }
+-  };
+-
+-  const copyPageText = async () => {
+-    if (!pageContent) return;
+-    try {
+-      await navigator.clipboard.writeText(pageContent);
+-      setCopied(true);
+-      window.setTimeout(() => setCopied(false), 2000);
+-    } catch {
+-      setAutomationError('Clipboard access was blocked by the browser.');
+-    }
+-  };
+-
+   const closeBrowserSession = async () => {
+     if (!sessionId) return;
+     setIsLoading(true);
+@@ -185,9 +149,6 @@ export function BrowserPreview({
+       setSessionId(null);
+       setPageContent(null);
+       setLiveScreenshot(null);
+-      setPageTitle(null);
+-      setHistDepth(0);
+-      setBackDepth(0);
+       setAutomationStatus('Browser session closed.');
+     } catch (error) {
+       setAutomationError(error instanceof Error ? error.message : 'Could not close browser session');
+@@ -224,10 +185,9 @@ export function BrowserPreview({
+       try {
+         const session = sessionId ? { session_id: sessionId } : await browserService.createSession();
+         setSessionId(session.session_id);
+-        const navResult = await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
+-        setHistDepth(depth => depth + 1);
+-        setBackDepth(0);
+-        if (navResult.title) setPageTitle(navResult.title);
++        await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
++        // Notify the parent (mobile mirror) as soon as navigation really happened.
++        onNavigatedRef.current?.(targetUrl);
+         const shot = await captureLiveScreenshot(session.session_id);
+         if (shot) {
+           setLiveScreenshot(shot);
+@@ -393,40 +353,7 @@ export function BrowserPreview({
+             <RefreshCw size={12} />
+           </button>
+         </form>
+-        {(pageTitle || liveScreenshot) && (
+-          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
+-            {pageTitle && <span className="max-w-[60%] truncate font-medium text-slate-300" title={pageTitle}>{pageTitle}</span>}
+-            {pageTitle && currentUrl && <span className="truncate font-mono">{currentUrl}</span>}
+-          </div>
+-        )}
+         <div className="mt-2 flex flex-wrap items-center gap-2">
+-          <button
+-            type="button"
+-            onClick={() => void runNavAction('back')}
+-            disabled={!sessionId || isLoading || histDepth - backDepth <= 0}
+-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+-            title="Back"
+-          >
+-            <span className="inline-flex items-center gap-1"><ArrowLeft size={11} /> Back</span>
+-          </button>
+-          <button
+-            type="button"
+-            onClick={() => void runNavAction('forward')}
+-            disabled={!sessionId || isLoading || backDepth <= 0}
+-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+-            title="Forward"
+-          >
+-            <span className="inline-flex items-center gap-1">Forward <ArrowRight size={11} /></span>
+-          </button>
+-          <button
+-            type="button"
+-            onClick={() => void runNavAction('reload')}
+-            disabled={!sessionId || isLoading}
+-            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+-            title="Reload page"
+-          >
+-            Reload
+-          </button>
+           <button
+             type="button"
+             onClick={() => void runBrowserAction('content')}
+@@ -451,26 +378,8 @@ export function BrowserPreview({
+           >
+             Close session
+           </button>
+-          {liveScreenshot && (
+-            <a
+-              href={`data:image/png;base64,${liveScreenshot}`}
+-              download={`supremeai-screenshot-${Date.now()}.png`}
+-              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
+-              title="Download the captured screenshot as a PNG file"
+-            >
+-              <span className="inline-flex items-center gap-1"><Download size={11} /> Download PNG</span>
+-            </a>
+-          )}
+-          {pageContent && (
+-            <button
+-              type="button"
+-              onClick={() => void copyPageText()}
+-              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
+-              title="Copy the extracted page text to the clipboard"
+-            >
+-              <span className="inline-flex items-center gap-1">{copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}</span>
+-            </button>
+-          )}
++          {onAgentPauseToggle && <button type="button" onClick={onAgentPauseToggle} className="flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-200 transition-colors hover:bg-amber-500/10" aria-pressed={agentPaused}>{agentPaused ? <Play size={11} /> : <Pause size={11} />} {agentPaused ? 'Resume automation' : 'Pause for manual input'}</button>}
++          {agentPaused && <span role="status" className="text-[11px] text-amber-200">Manual control active. You can type secrets directly in the browser.</span>}
+           {automationStatus && <span role="status" className="text-[11px] text-emerald-300">{automationStatus}</span>}
+         </div>
+         {pageContent && (
+diff --git a/studio/src/components/customer/MobileSimulator.tsx b/studio/src/components/customer/MobileSimulator.tsx
+index 47a8bb9a..8e066b6d 100644
+--- a/studio/src/components/customer/MobileSimulator.tsx
++++ b/studio/src/components/customer/MobileSimulator.tsx
+@@ -41,6 +41,10 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+   const [selectedDevice, setSelectedDevice] = useState(DEVICES[0]);
+   const [orientation, setOrientation] = useState<Orientation>('portrait');
+   const [ticket, setTicket] = useState<string | null>(null);
++  // MOBILE DUAL-PATH (owner request 2026-10-25): the simulator is now a live
++  // mirror of Browser Preview — Sync re-fetches the render ticket and re-mounts
++  // the iframe so the phone shows the latest page the agent/user navigated to.
++  const [reloadKey, setReloadKey] = useState(0);
+ 
+   const needsProxy = /^https?:\/\//i.test(url.trim()) && !html;
+ 
+@@ -57,7 +61,7 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+     return () => {
+       cancelled = true;
+     };
+-  }, [needsProxy, url]);
++  }, [needsProxy, url, reloadKey]);
+ 
+   const currentWidth = orientation === 'portrait' ? selectedDevice.width : selectedDevice.height;
+   const currentHeight = orientation === 'portrait' ? selectedDevice.height : selectedDevice.width;
+@@ -68,6 +72,18 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+         <h2 className="text-lg font-bold font-['Space_Grotesk'] tracking-widest text-[#00f3ff] uppercase">
+           📱 Mobile Simulator
+         </h2>
++        {url && (
++          <div className="flex min-w-0 items-center gap-2" data-testid="mobile-simulator-url">
++            <span className="max-w-[16rem] truncate font-mono text-[10px] text-slate-500" title={url}>{url}</span>
++            <button
++              onClick={() => setReloadKey(k => k + 1)}
++              className="flex shrink-0 items-center gap-1 rounded-lg border border-slate-800 px-2 py-1 font-mono text-[10px] text-slate-400 transition-colors hover:border-[#00f3ff]/40 hover:text-white"
++              title="Re-render the mirrored page on the phone"
++            >
++              <RefreshCw size={12} /> Sync
++            </button>
++          </div>
++        )}
+       </div>
+ 
+       <div className="flex gap-2 mb-6">
+@@ -105,9 +121,10 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+             <div className="w-full h-full rounded-[2rem] overflow-hidden bg-white relative">
+               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1/3 h-6 bg-slate-900 rounded-b-xl z-10" />
+               {html ? (
+-                <iframe srcDoc={html} title={selectedDevice.name} className="w-full h-full" sandbox="allow-scripts allow-forms" />
++                <iframe key={reloadKey} srcDoc={html} title={selectedDevice.name} className="w-full h-full" sandbox="allow-scripts allow-forms" />
+               ) : ticket ? (
+                 <iframe
++                  key={reloadKey}
+                   src={`${getApiBaseUrl()}/api/browser/render?url=${encodeURIComponent(url)}&ticket=${ticket}`}
+                   title={selectedDevice.name}
+                   className="w-full h-full"
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+index 74ba7473..7d3080c1 100644
+--- a/studio/src/pages/user/AIStudio.tsx
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -1,8 +1,9 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { UnifiedChatPanel, listStoredConversations, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
+-import { Bot, Code, MessageSquarePlus, Smartphone } from 'lucide-react';
++import { Bot, Code, Globe, MessageSquarePlus, Pencil, Smartphone, Zap } from 'lucide-react';
+ import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
++import { MobileSimulator } from '../../components/customer/MobileSimulator';
+ import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
+ 
+ // Honest preview contract: the preview tabs only make sense AFTER the AI has
+@@ -11,34 +12,240 @@ import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/
+ // owner-reported white screens. hasPreview guards the iframe render.
+ const CODE_PLACEHOLDER = '<!-- Code generated by SupremeAI will appear here -->';
+ 
+-// OWNER DECISION (2026-10-25, Banglish request): Manual work mode is REMOVED
+-// from both preview tabs (Browser Preview + Mobile Simulator). Preview is now
+-// AUTO-ONLY: the SupremeAI agent builds and drives everything — generated HTML
+-// preview plus the upgraded server-side browser (real back/forward/reload,
+-// page titles, full-page screenshots, text extraction). The removed manual
+-// HTML-editor workbench and the agent pause toggle lived here and in
+-// BrowserPreview; nothing imports them anymore.
++// OWNER DECISION (2026-10-24, Banglish request): Browser/Mobile preview আর
++// conversation-এর ওপর "blocked" নয় — ইউজার নিজে Auto/Manual বেছে নিতে পারবে।
++// Auto মোড = agent (SupremeAI) ইউজারের কাজ করে দেয় (generated HTML preview)।
++// Manual মোড = ইউজার নিজে নিজের কাজ করে (built-in HTML editor + live preview,
++// conversation ছাড়াও স্বাধীনভাবে কাজ করা যায়)। দুটো স্টেটই localStorage-এ টিকে থাকে।
++const PREVIEW_MODE_STORE = 'supremeai_preview_mode_v1';
++const MANUAL_CODE_STORE = 'supremeai_manual_preview_v1';
++// MOBILE DUAL-PATH (owner request 2026-10-25): which preview surface (Browser
++// or Mobile) the user last chose — chat-এ Preview চাপলে agent-built কাজ এই
++// সারফেসেই খোলে, সবসময় Browser ট্যাবে force-jump করে না।
++const PREVIEW_SURFACE_STORE = 'supremeai_preview_surface_v1';
+ 
+-const PreviewEmptyState: React.FC<{ device: 'browser' | 'mobile'; onBack: () => void }> = ({ device, onBack }) => (
++const MANUAL_STARTER = `<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="UTF-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++  <title>My page</title>
++  <style>
++    body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #ffffff; color: #0f172a; }
++  </style>
++</head>
++<body>
++  <h1>Hello from Manual mode ✍️</h1>
++  <p>Edit this HTML — the preview updates live.</p>
++</body>
++</html>`;
++
++const PreviewModeToggle: React.FC<{ mode: 'auto' | 'manual'; onChange: (m: 'auto' | 'manual') => void }> = ({ mode, onChange }) => (
++  <div className="flex w-fit shrink-0 items-center gap-1 rounded-full border border-[var(--sa-border)] bg-[var(--sa-surface)]/80 p-1" data-testid="preview-mode-toggle">
++    <button
++      type="button"
++      onClick={() => onChange('auto')}
++      aria-pressed={mode === 'auto'}
++      title="Auto — the SupremeAI agent builds for you from the conversation"
++      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${mode === 'auto' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++    >
++      <Zap size={12} /> Auto — agent works
++    </button>
++    <button
++      type="button"
++      onClick={() => onChange('manual')}
++      aria-pressed={mode === 'manual'}
++      title="Manual — you write your own HTML and preview it live"
++      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${mode === 'manual' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++    >
++      <Pencil size={12} /> Manual — you work
++    </button>
++  </div>
++);
++
++const ManualWorkbench: React.FC<{ device: 'browser' | 'mobile'; code: string; onChange: (v: string) => void }> = ({ device, code, onChange }) => (
++  <div className="flex h-full min-h-0 w-full flex-col gap-3 lg:flex-row">
++    <div className="flex min-h-[10rem] flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900">
++      <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/10 px-4">
++        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Your HTML — Manual mode</span>
++        <button
++          type="button"
++          onClick={() => onChange(MANUAL_STARTER)}
++          className="rounded-md border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[10px] font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
++        >
++          Load starter
++        </button>
++      </div>
++      <textarea
++        value={code}
++        onChange={(e) => onChange(e.target.value)}
++        spellCheck={false}
++        data-testid="manual-html-editor"
++        placeholder="Write your own HTML/CSS/JS here — the preview on the right updates live."
++        className="min-h-0 flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-5 text-slate-200 outline-none"
++      />
++    </div>
++    <div className="min-h-0 flex-1">
++      {device === 'browser'
++        ? <BrowserPreview html={code.trim() ? code : MANUAL_STARTER} />
++        : <MobilePreviewPanel html={code.trim() ? code : MANUAL_STARTER} title="SupremeAI manual preview" />}
++    </div>
++  </div>
++);
++
++const BrowserPreview: React.FC<{ html: string }> = ({ html }) => (
++  <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
++    <div className="flex h-10 items-center justify-between border-b border-white/10 bg-slate-950/60 px-4">
++      <div className="flex items-center gap-1.5">
++        <span className="size-2.5 rounded-full bg-red-500/80" />
++        <span className="size-2.5 rounded-full bg-yellow-500/80" />
++        <span className="size-2.5 rounded-full bg-emerald-500/80" />
++      </div>
++      <div className="flex-1 max-w-sm mx-4">
++        <div className="rounded-md border border-white/10 bg-slate-900/80 px-3 py-1 text-center font-mono text-[11px] text-slate-400">
++          supremeai://preview/generated-html
++        </div>
++      </div>
++      <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">Generated preview</span>
++    </div>
++    <iframe
++      title="SupremeAI Browser Preview"
++      srcDoc={html}
++      sandbox="allow-scripts allow-modals"
++      className="h-full w-full flex-1 border-0 bg-white"
++    />
++  </div>
++);
++
++// MOBILE DUAL-PATH (owner request 2026-10-25, Banglish): mobile simulator আর
++// "back to conversation"-এ force করবে না। এখন ২ ভাবে চলে — (১) USER PATH:
++// ইউজার নিজে এই স্ক্রিনে manual HTML লিখতে পারে বা সরাসরি URL খুলতে পারে,
++// conversation-এ ফেরা ঐচ্ছিক; (২) AGENT PATH: chat-এ Preview চাপলে agent-built
++// অ্যাপ ইউজারের শেষ পছন্দের সারফেসে (browser বা mobile) খোলে, আর Browser
++// Preview-তে agent/ইউজার যে পেজে যায় তা render-ticket proxy দিয়ে এই ফোনে
++// mirror হয়।
++interface MobileAutoPanelProps {
++  hasPreview: boolean;
++  code: string;
++  mirrorUrl: string;
++  source: 'agent' | 'mirror';
++  onSourceChange: (s: 'agent' | 'mirror') => void;
++  onManual: () => void;
++  onBack: () => void;
++  onOpenUrl: (url: string) => void;
++  urlDraft: string;
++  onUrlDraftChange: (v: string) => void;
++}
++
++const MobileAutoPanel: React.FC<MobileAutoPanelProps> = ({
++  hasPreview, code, mirrorUrl, source, onSourceChange, onManual, onBack, onOpenUrl, urlDraft, onUrlDraftChange,
++}) => {
++  const showAgent = hasPreview && (source === 'agent' || !mirrorUrl);
++  const showMirror = Boolean(mirrorUrl) && (source === 'mirror' || !hasPreview);
++  const showChips = hasPreview && Boolean(mirrorUrl);
++  return (
++    <div className="flex h-full min-h-0 w-full flex-col gap-3">
++      {showChips && (
++        <div className="flex w-fit shrink-0 items-center gap-1 rounded-full border border-[var(--sa-border)] bg-[var(--sa-surface)]/80 p-1" data-testid="mobile-source-toggle">
++          <button
++            type="button"
++            onClick={() => onSourceChange('agent')}
++            aria-pressed={source === 'agent'}
++            title="What the SupremeAI agent built from the conversation"
++            className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${source === 'agent' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++          >
++            🤖 Agent build
++          </button>
++          <button
++            type="button"
++            onClick={() => onSourceChange('mirror')}
++            aria-pressed={source === 'mirror'}
++            title="Live mirror of the page open in Browser Preview"
++            className={`rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${source === 'mirror' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
++          >
++            🌐 Browser mirror
++          </button>
++        </div>
++      )}
++      {showAgent ? (
++        <div className="min-h-0 flex-1">
++          <MobilePreviewPanel html={code} title="SupremeAI agent build — mobile" />
++        </div>
++      ) : showMirror ? (
++        <div className="min-h-0 flex-1">
++          <MobileSimulator url={mirrorUrl} />
++        </div>
++      ) : (
++        <MobileEmptyState onManual={onManual} onBack={onBack} onOpenUrl={onOpenUrl} urlDraft={urlDraft} onUrlDraftChange={onUrlDraftChange} />
++      )}
++    </div>
++  );
++};
++
++const MobileEmptyState: React.FC<{
++  onManual: () => void;
++  onBack: () => void;
++  onOpenUrl: (url: string) => void;
++  urlDraft: string;
++  onUrlDraftChange: (v: string) => void;
++}> = ({ onManual, onBack, onOpenUrl, urlDraft, onUrlDraftChange }) => (
+   <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-6">
+     <div className="flex max-w-md flex-col items-center gap-3 text-center">
+       <span className="flex size-12 items-center justify-center rounded-xl border border-white/10 bg-slate-900 text-slate-400">
+-        {device === 'browser' ? <Code size={20} /> : <Smartphone size={20} />}
++        <Smartphone size={20} />
+       </span>
+-      <h3 className="text-base font-semibold text-slate-200">Nothing to preview yet</h3>
++      <h3 className="text-base font-semibold text-slate-200">Your mobile simulator — drive it yourself</h3>
+       <p className="text-sm leading-6 text-slate-500">
+-        Ask SupremeAI to build something — for example &quot;Build a small landing page
+-        in HTML&quot; — then press <span className="font-medium text-slate-300">Preview</span> on
+-        the generated code block. It will render here, inside{' '}
+-        {device === 'browser' ? 'the browser frame' : 'the phone simulator'}.
++        Ask SupremeAI to build something in the conversation, press{' '}
++        <span className="font-medium text-slate-300">Preview</span>, and it opens right here on this
++        phone frame when Mobile is your chosen surface. No conversation needed either — start below.
+       </p>
+-      <button
+-        type="button"
+-        onClick={onBack}
+-        className="mt-1 rounded-lg border border-white/10 bg-slate-900/80 px-4 py-2 text-xs font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
++      <div className="flex flex-wrap items-center justify-center gap-2">
++        <button
++          type="button"
++          onClick={onManual}
++          data-testid="mobile-self-manual"
++          className="rounded-lg border border-purple-400/40 bg-purple-500/10 px-4 py-2 text-xs font-medium text-purple-200 transition hover:bg-purple-500/20"
++        >
++          ✍️ Write my own HTML
++        </button>
++        <button
++          type="button"
++          onClick={onBack}
++          className="rounded-lg border border-white/10 bg-slate-900/80 px-4 py-2 text-xs font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
++        >
++          ← Back to conversation
++        </button>
++      </div>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          const v = urlDraft.trim();
++          if (/^https?:\/\//i.test(v)) onOpenUrl(v);
++        }}
++        className="mt-1 flex w-full items-center gap-2"
++        data-testid="mobile-url-form"
+       >
+-        ← Back to conversation
+-      </button>
++        <div className="flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2">
++          <Globe size={13} className="shrink-0 text-slate-500" />
++          <input
++            type="text"
++            value={urlDraft}
++            onChange={(e) => onUrlDraftChange(e.target.value)}
++            placeholder="https://any-site.com — open it on the phone"
++            data-testid="mobile-url-input"
++            aria-label="URL to preview on the mobile simulator"
++            className="w-full bg-transparent font-mono text-[11px] text-slate-200 outline-none placeholder:text-slate-600"
++          />
++        </div>
++        <button
++          type="submit"
++          disabled={!/^https?:\/\//i.test(urlDraft.trim())}
++          className="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
++        >
++          Open
++        </button>
++      </form>
+     </div>
+   </div>
+ );
+@@ -60,6 +267,33 @@ export const AIStudio: React.FC = () => {
+   };
+   const [code, setCode] = useState(CODE_PLACEHOLDER);
+   const hasPreview = code.trim() !== '' && code !== CODE_PLACEHOLDER;
++  // AUTO/MANUAL PREVIEW MODE (owner request 2026-10-24): mode + manual code দুটোই
++  // localStorage-এ টিকে থাকে — রিফ্রেশে ইউজারের নিজের লেখা কাজ হারায় না।
++  const [previewMode, setPreviewMode] = useState<'auto' | 'manual'>(() =>
++    (localStorage.getItem(PREVIEW_MODE_STORE) === 'manual' ? 'manual' : 'auto'));
++  const [manualCode, setManualCode] = useState<string>(() =>
++    localStorage.getItem(MANUAL_CODE_STORE) ?? MANUAL_STARTER);
++  useEffect(() => { localStorage.setItem(PREVIEW_MODE_STORE, previewMode); }, [previewMode]);
++  useEffect(() => { localStorage.setItem(MANUAL_CODE_STORE, manualCode); }, [manualCode]);
++  // PHASE A (owner plan: AI ওয়েব অপারেটর, 2026-10-24): Agent pause/resume —
++  // ইউজার যেকোনো সময় agent-এর automated browsing pause করে নিজে হাতে
++  // নিয়ে নিতে পারবে (HITL)। BrowserPreview কম্পোনেন্টের প্রপ-কন্ট্র্যাক্ট
++  // (agentPaused / onAgentPauseToggle) রিইউজ করা হয়েছে — নতুন UI বানানো হয়নি।
++  const [agentPaused, setAgentPaused] = useState(false);
++  // MOBILE DUAL-PATH state (owner request 2026-10-25): mirrorUrl = Browser
++  // Preview-তে agent/ইউজার সর্বশেষ যে পেজে navigate করেছে (সেটাই মোবাইলে
++  // mirror হয়); lastSurface = ইউজারের শেষ পছন্দের preview সারফেস (chat-এর
++  // Preview action এখানেই খোলে); mobileSource = agent-build নাকি browser-mirror।
++  const [mirrorUrl, setMirrorUrl] = useState('');
++  const [mobileSource, setMobileSource] = useState<'agent' | 'mirror'>('agent');
++  const [mobileUrlDraft, setMobileUrlDraft] = useState('');
++  const [lastSurface, setLastSurface] = useState<'preview' | 'mobile'>(() =>
++    localStorage.getItem(PREVIEW_SURFACE_STORE) === 'mobile' ? 'mobile' : 'preview');
++  useEffect(() => { localStorage.setItem(PREVIEW_SURFACE_STORE, lastSurface); }, [lastSurface]);
++  const gotoSurface = (tab: 'preview' | 'mobile') => {
++    setLastSurface(tab);
++    setActiveTab(tab);
++  };
+   const [searchParams, setSearchParams] = useSearchParams();
+   const intentConsumedRef = useRef(false);
+ 
+@@ -105,14 +339,14 @@ export const AIStudio: React.FC = () => {
+           </button>
+           <button 
+             type="button"
+-            onClick={() => setActiveTab('preview')}
++            onClick={() => gotoSurface('preview')}
+             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'preview' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+           >
+             <Code size={14} /> Browser Preview
+           </button>
+           <button 
+             type="button"
+-            onClick={() => setActiveTab('mobile')}
++            onClick={() => gotoSurface('mobile')}
+             className={`flex items-center gap-2 rounded-[var(--sa-radius-sm)] border px-3 py-2 text-xs transition-colors ${activeTab === 'mobile' ? 'border-[var(--sa-primary)] bg-[var(--sa-primary-soft)] text-[var(--sa-primary)]' : 'border-transparent text-[var(--sa-ink-muted)] hover:border-[var(--sa-border)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+           >
+             <Smartphone size={14} /> Mobile Simulator
+@@ -178,7 +412,10 @@ export const AIStudio: React.FC = () => {
+               onInputChange={setInput}
+               onPreview={(html) => {
+                 setCode(html);
+-                setActiveTab('preview');
++                // MOBILE DUAL-PATH: agent-built preview opens on the surface the
++                // user last chose (Browser বা Mobile) — force-jump নেই।
++                setMobileSource('agent');
++                gotoSurface(lastSurface);
+               }}
+             />
+             </div>
+@@ -187,26 +424,57 @@ export const AIStudio: React.FC = () => {
+ 
+         {activeTab === 'preview' && (
+           <div className="absolute inset-0 flex flex-col gap-3 p-4">
+-            <div className="flex h-full min-h-0 w-full flex-col gap-2">
+-              {!hasPreview && (
+-                <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
+-                  Nothing generated yet — ask the agent to build something, or type any
+-                  https:// URL below to browse it through the upgraded server-side browser.
+-                </p>
+-              )}
+-              <div className="min-h-0 flex-1">
+-                <LiveBrowserPreview html={hasPreview ? code : undefined} showDeviceToolbar />
++            <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
++            {previewMode === 'manual' ? (
++              <ManualWorkbench device="browser" code={manualCode} onChange={setManualCode} />
++            ) : (
++              <div className="flex h-full min-h-0 w-full flex-col gap-2">
++                {!hasPreview && (
++                  <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
++                    Nothing generated yet — ask the agent to build something, or type any
++                    https:// URL below to browse it through the server-side browser.
++                  </p>
++                )}
++                <div className="min-h-0 flex-1">
++                  <LiveBrowserPreview
++                    html={hasPreview ? code : undefined}
++                    showDeviceToolbar
++                    agentPaused={agentPaused}
++                    onAgentPauseToggle={() => setAgentPaused((p) => !p)}
++                    onNavigated={(u) => {
++                      // MOBILE DUAL-PATH: Browser Preview-তে যা খোলা হলো (agent
++                      // বা ইউজার — যেই navigation-ই হোক) সেটাই মোবাইল স্ক্রিনে mirror হবে।
++                      setMirrorUrl(u);
++                      setMobileSource('mirror');
++                    }}
++                  />
++                </div>
+               </div>
+-            </div>
++            )}
+           </div>
+         )}
+ 
+         {activeTab === 'mobile' && (
+           <div className="absolute inset-0 flex flex-col gap-3 p-4">
+-            {hasPreview ? (
+-              <MobilePreviewPanel html={code} />
++            <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
++            {previewMode === 'manual' ? (
++              <ManualWorkbench device="mobile" code={manualCode} onChange={setManualCode} />
+             ) : (
+-              <PreviewEmptyState device="mobile" onBack={() => setActiveTab('chat')} />
++              <MobileAutoPanel
++                hasPreview={hasPreview}
++                code={code}
++                mirrorUrl={mirrorUrl}
++                source={mobileSource}
++                onSourceChange={setMobileSource}
++                onManual={() => setPreviewMode('manual')}
++                onBack={() => setActiveTab('chat')}
++                onOpenUrl={(u) => {
++                  setMirrorUrl(u);
++                  setMobileSource('mirror');
++                }}
++                urlDraft={mobileUrlDraft}
++                onUrlDraftChange={setMobileUrlDraft}
++              />
+             )}
+           </div>
+         )}

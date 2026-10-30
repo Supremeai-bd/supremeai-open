@@ -1,0 +1,53 @@
+diff --git a/core/agents/framework/langgraph_agent.py b/core/agents/framework/langgraph_agent.py
+index 93d1a645..ef603907 100644
+--- a/core/agents/framework/langgraph_agent.py
++++ b/core/agents/framework/langgraph_agent.py
+@@ -3,11 +3,9 @@
+ Canonical domain module: core.agents.framework.autonomous_task_orchestrator
+ """
+ 
+-# noqa: F401 - deliberate compat facade (docstring-declared backward-compatibility
+-# shim; zero in-repo consumers; kept for satellite import surface stability).
+-from core.agents.framework.autonomous_task_orchestrator import (  # noqa: F401
+-    AutonomousTaskOrchestrator,
+-    SupremeOrchestrator,
++from core.agents.framework.autonomous_task_orchestrator import (
++    AutonomousTaskOrchestrator,  # noqa: F401 — deliberate re-export (facade __all__)
++    SupremeOrchestrator,  # noqa: F401 — deliberate re-export (facade __all__)
+ )
+ 
+ __all__ = ["SupremeOrchestrator", "AutonomousTaskOrchestrator"]
+diff --git a/core/alembic_migrations/versions/124fcdff99bf_merge_op_truth_0001_and_d4052dec1a01_.py b/core/alembic_migrations/versions/124fcdff99bf_merge_op_truth_0001_and_d4052dec1a01_.py
+index 4fd9e4eb..e8bf8745 100644
+--- a/core/alembic_migrations/versions/124fcdff99bf_merge_op_truth_0001_and_d4052dec1a01_.py
++++ b/core/alembic_migrations/versions/124fcdff99bf_merge_op_truth_0001_and_d4052dec1a01_.py
+@@ -6,7 +6,8 @@
+ 
+ """
+ 
+-from typing import Sequence  # noqa: UP035 — alembic template style pinned by graph-unification file
++from typing import Sequence  # noqa: UP035, UP007 — alembic template style pinned by graph-unification file
++
+ 
+ # revision identifiers, used by Alembic.
+ revision: str = "124fcdff99bf"
+diff --git a/tests/test_dead_import_drift.py b/tests/test_dead_import_drift.py
+index 8b3d6c0e..392540be 100644
+--- a/tests/test_dead_import_drift.py
++++ b/tests/test_dead_import_drift.py
+@@ -71,15 +71,6 @@
+ # dead by AST Name-load + zero consumer imports incl. _archive delegates)
+ # and re-measured with this file's own _scan_live_scope -> 384 across a
+ # smaller file set. Shrink-only preserved: 384 < 388 < 446.
+-#
+-# Re-armed 2026-10-30 (2nd) at b884562: peer landings after the #2785 re-arm
+-# introduced 8 new dead bindings in 5 files (task_engine CorrelationContext;
+-# langgraph_agent AutonomousTaskOrchestrator+SupremeOrchestrator - docstring-
+-# declared compat shim, zero in-repo consumers, marked noqa: F401 per the
+-# facade pattern; 3 alembic versions Union/op/sa - empty-body merge revision
+-# template imports + unused typing imports). Remediation PR removed/annotated
+-# all 8 and re-measured via this file's own _scan_live_scope -> 378.
+-# Shrink-only preserved: 378 < 384 < 388 < 446.
+ BASELINE_UNUSED_IMPORTS = 378
+ 
+ # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).

@@ -1,0 +1,70 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 5fea0f10..fdfd5643 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -47,7 +47,7 @@ flowchart TD
+ |---|---|---|
+ | **1. MCP Control Tower (Primary)** | Claude, Cursor, Antigravity, Web bots | Zero-credential: tools provide context; proxy bot commits & opens PR. Endpoint: `https://supremeai-mcp-tower.onrender.com/mcp` |
+ | **2. Public Fork & PR** | External agents without credentials | Fork `supremeai-open`, push to fork, PR against `main`. Automated pipeline ports & verifies. |
+-| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Mint 1-hour lease token via `credential_manager.py` (Rule U4: zero master keys). |
++| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Maintainer-issued 1-hour lease tokens via the MCP Control Tower admin surface (no `credential_manager.py` exists in-repo); master keys never leave the vault (Rule U6). |
+ 
+ *U10 Rule: The loop is the permission. Never ask "should I proceed" when self-checkable preconditions pass.*
+ 
+@@ -70,7 +70,7 @@ flowchart TD
+ ### Agent Freedom vs Hard Boundaries
+ - **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
+ - **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
+-- **Hard Ordering:** **No Claim → No Branch** (`atomic_claim.sh` first) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
++- **Hard Ordering:** **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first; no `atomic_claim.sh` exists in-repo) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
+ 
+ ### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
+ - **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 8bd39114..8cdb7e35 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -46,7 +46,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
+ | **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
+ | **U4** | **Zero-Duplicate PRs** | Mandatory preflight `gh pr list`. Never open parallel/competing PRs for an issue with an active PR. One issue = at most one PR across the federation. |
+-| **U5** | **Freshness & Ownership** | Atomic claim before branch (`atomic_claim.sh`). **Board-freshness re-check (#4177):** re-poll board before declaring done. |
++| **U5** | **Freshness & Ownership** | Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. |
+ | **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
+ | **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
+ | **U8** | **Handoff & Decision Ledger** | Finish with JSON decision ledger (`why`, `alternatives_rejected`, `evidence`). Squash commit must carry `Closes #N`. Rerun loop immediately (no sleep). |
+diff --git a/docs/AGENT_PORTAL_SPEC.md b/docs/AGENT_PORTAL_SPEC.md
+index 1584010b..e9466835 100644
+--- a/docs/AGENT_PORTAL_SPEC.md
++++ b/docs/AGENT_PORTAL_SPEC.md
+@@ -54,7 +54,7 @@ Normative definitions live in [AGENTS.md §2.1](../AGENTS.md); this section maps
+ |---|---|---|---|
+ | **1. MCP Control Tower Bridge** | MCP-connected agents (Claude, Cursor, Antigravity, any MCP client) | `mcp.json` → Control Tower tools (`bridge_work_order`, `bridge_guide`, `github_read_file`, `bridge_submit_patch`) | Server-side GitHub App pushes `bridge/<task-id>` + files a Bridge Work Order; gate battery verifies and lands |
+ | **2. Public Window Fork & PR** | External web agents / human contributors (zero credentials) | Fork → branch → Pull Request on this repo | 7 PR guards → CI Guardian → Merge Gate squash |
+-| **3. Ephemeral JIT Lease** | Scripted workers with terminal access | 1-hour lease token via `credential_manager.py` | Branch push + PR via REST; same gate path |
++| **3. Ephemeral JIT Lease** | Scripted workers with terminal access | 1-hour lease token issued by the MCP Control Tower admin surface (no in-repo `credential_manager.py`) | Branch push + PR via REST; same gate path |
+ 
+ All three converge on the **same verification battery** — the pathway only changes how the branch appears, never what "done" means.
+ 
+diff --git a/docs/CONTRIBUTING_BN.md b/docs/CONTRIBUTING_BN.md
+index 62531e7f..3c2b86dd 100644
+--- a/docs/CONTRIBUTING_BN.md
++++ b/docs/CONTRIBUTING_BN.md
+@@ -42,7 +42,7 @@
+ 
+ ### পাথওয়ে ৩: এফেমেরাল জেআইটি লিজ (JIT Lease)
+ - **কাদের জন্য:** স্বয়ংক্রিয় স্ক্রিপ্ট বা সিএলআই রানার।
+-- **পদ্ধতি:** `scripts/agents/credential_manager.py` দিয়ে ১ ঘণ্টার অস্থায়ী টোকেন সংগ্রহ করে পুশ করা হয়।
++- **পদ্ধতি:** MCP Control Tower অ্যাডমিন সারফেস থেকে ইস্যুকৃত ১ ঘণ্টার অস্থায়ী লিজ টোকেন দিয়ে পুশ করা হয় (রিপোতে `credential_manager.py` নেই)।
+ 
+ ---
+ 
+@@ -54,7 +54,7 @@
+ - পাবলিক রিপোজিটরিতে কাজ সম্পন্ন হলে প্রাইভেট রিপোজিটরিতে ম্যানুয়ালি আরেকটি ডুপ্লিকেট PR খোলা যাবে না।
+ 
+ ### 🔹 ক্লেইম-বিফোর-PR নীতি (Atomic Claim Ordering)
+-- কোড পরিবর্তন বা PR খোলার আগেই ইস্যুতে ক্লেইম থাকতে হবে (`atomic_claim.sh` বা সেশন মার্কার)।
++- কোড পরিবর্তন বা PR খোলার আগেই ইস্যুতে ক্লেইম থাকতে হবে (`work_claim` টুল বা `<!-- atomic-claim -->` কমেন্ট মার্কার)।
+ - ক্লেইম ছাড়া PR তৈরি করলে সিআই-এর Claim Gate সেটি স্বয়ংক্রিয়ভাবে বন্ধ করে দেবে (#2644, #2892)।
+ 
+ ### 🔹 U8 — স্কোয়াশ কমিট ডকট্রিন (Closing-Keyword Placement)

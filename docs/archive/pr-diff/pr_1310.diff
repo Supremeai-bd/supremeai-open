@@ -1,0 +1,22 @@
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index 1da87f9d..feabc262 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -23,7 +23,7 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
+ | **`supremeai-open`** *(Current)* | **Public · MIT** | **Public Boundary & Ambassador.** Holds public contracts, client SDKs, examples, and agent instructions. | Direct PRs / Issues on this repository. |
+ | **`supremeai-studio`** | **Public · MIT** | **Web UI & Experience.** React/Vite dashboard, design tokens, and frontend shell components. Live UI: [https://supremeai-studio.vercel.app](https://supremeai-studio.vercel.app) | UI components, design tokens, and user experience fixes. |
+ | **`supremeai-sdk`** | **Private · Proprietary** | **Stable External Contracts.** API/event/task schemas, protos, and client libraries (`pip`/`npm`) for external integrators. | Contract PRs and schema proposals on the SDK repository. |
+-| **`supremeai-vscode`** | **Private · Proprietary** | **Developer Experience.** Official VS Code Extension for agent interaction and autonomous workflows. | Extension client contracts and editor hooks. |
++| **`supremeai-vscode`** | **Public · MIT** | **Developer Experience.** Official VS Code Extension for agent interaction and autonomous workflows. | Extension client contracts, tools, and editor hooks. |
+ | **`supremeai-skills`** | **Private · Proprietary** | **Skills & Tools Marketplace.** Dynamic capability registry, installers, and reusable tools for agents. | Tool specs, skill manifests, and agent plugins. |
+ | **`supremeai`** | **Private · Proprietary** | **Central Federation Umbrella & Passive Anchor.** The all-in-one synthesis combining all 12, 15, or 100+ individual repositories into one unified panoramic platform view (Zero active CI/cron workloads; pure passive master mirror). | Master sync via Bridge. |
+ | **`supremeai-core`** | **Private · Proprietary** | **Proprietary Intelligence Core.** Orchestration, planning, decision, and execution intelligence — the federation's decision moat. | Not directly changeable from public; deep changes via Bridge Work Orders. |
+@@ -38,7 +38,7 @@ The SupremeAI platform consists of specialized repositories under the **`Supreme
+ ### 2.1 Licensing & Intellectual Property Policy (SSOT)
+ 
+ The federation operates under a strict **Open-Core Embassy Model**:
+-- **Permissive Open-Source (MIT License):** Applied strictly to boundary layers, developer tooling, SDK packages, and UI surfaces (`supremeai-open`, `supremeai-studio`). These allow frictionless developer adoption, external integration, and community trust without exposing proprietary moats.
++- **Permissive Open-Source (MIT License):** Applied strictly to boundary layers, developer tooling, SDK packages, and UI surfaces (`supremeai-open`, `supremeai-studio`, `supremeai-vscode`). These allow frictionless developer adoption, external integration, and community trust without exposing proprietary moats.
+ - **Proprietary / All Rights Reserved:** Applied strictly to the private core, intelligence engines, provider gateway, runner engines, infrastructure ops, and governance backends (`supremeai`, `supremeai-core`, `supremeai-api`, `supremeai-infrastructure`, `supremeai-mcp-control-plane`, `supremeai-agents`, `supremeai-browser`, `supremeai-archive`). All private repositories carry the standard SupremeAI proprietary license notice prohibiting unauthorized reproduction or distribution.
+ 
+ ---

@@ -1,0 +1,23 @@
+diff --git a/README.md b/README.md
+index 387e5d38..cd6827d3 100644
+--- a/README.md
++++ b/README.md
+@@ -195,14 +195,12 @@ source-of-truth, that check fails closed.
+ 
+ | Role | Weapon Metaphor | Scoped Tools & Permissions | Forbidden Operations |
+ |---|---|---|---|
+-| **Coder** | Surgical Knife 🔪 | Code edit, Local test runner, Git branch, PR create | Claiming without atomic lock, breaking scope |
+-| **CI Fixer** | Emergency Defibrillator ⚡ | Direct commit on PR branch, CI log parser | Grabbing backlog when PR runway is blocked |
+-| **Task Auditor** | Policy Stamp 📋 | Boundary guards, Gitleaks scanner, PR approve/block | Direct source code modifications |
+-| **Ecosystem Scout** | Long-Range Telescope 🔭 | Web search, URL readers, Issue creation | Local code edits, uncritical hype |
+-| **Federation Auditor** | Ledger Microscope 🔬 | Multi-repo git reader (11 satellites), Issue create | Direct source code edits |
++| **Solver** *(Coder + CI Fixer)* | Surgical Knife & Defibrillator 🔪⚡ | Code edit, Local test runner, Git branch, CI fix & PR create | Claiming without atomic lock, breaking scope |
++| **Auditor** *(Federation + Task)* | Ledger Microscope & Stamp 🔬📋 | Multi-repo git reader (14 federation repos / 8 active anchors), PR compliance | Direct source code edits |
++| **Ecosystem Scout** | Long-Range Telescope 🔭 | Web search, URL readers, High-signal synthesis reports | Local code edits, uncritical hype/speculative tickets |
+ | **Human Eye** | Stylist Camera & Mirror 📸 | Browser subagent, Screenshot capture, Issue create | Direct code or CSS edits |
+ | **Rules Breaker** | Sledgehammer & Lockpick 🔨 | Adversarial fuzzers, `tests/adversarial/` commits | Production damage, writing self-patches |
+-| **3rd-Party Guardian** | Routing Circuit Breaker 🔌 | Provider prober, Dynamic Failover Toggle, Issue create | Corrupting permanent configuration files |
++| **Platform Guardian** | Routing Circuit Breaker 🔌 | Provider prober, Dynamic Failover Toggle, Issue create | Corrupting permanent configuration files |
+ 
+ ---
+ 

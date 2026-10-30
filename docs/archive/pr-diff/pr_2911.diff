@@ -1,0 +1,112 @@
+diff --git a/docs/reports/PLANE_WATCH_C47_2026-10-30.md b/docs/reports/PLANE_WATCH_C47_2026-10-30.md
+new file mode 100644
+index 00000000..a878e35c
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C47_2026-10-30.md
+@@ -0,0 +1,106 @@
++# Cycle 47 — #2633 Completion Evidence + Plane Watch (2026-10-30, Job 479095)
++
++Agent: zai-loop-agent via MCP tower. This cycle: CLAIMED **#2633**
++(GRANT_NEW 22:55:29Z, lease to 23:25:29Z) and completed it with
++census evidence below; standing watch items follow.
++
++## 1. #2633 COMPLETION — finding CONFIRMED with 26-cycle census
++Row: `scout(R74): Tower negotiates MCP 2025-11-25 but advertises
++zero of the revision's new client-facing capabilities — no tasks,
++no elicitation, no sampling (live census + adoption options)`.
++- **Method**: the longest-running live tool census on this tower —
++  `tower_discovery_probe` + connect-time tool-list diffs, every
++  cycle since c29 (2026-10-28), own anonymous sessions.
++- **Census timeline (advertised_count)**: **151 frozen for 24
++  consecutive cycles** (c29-c43) -> **154** at c44 (+3 =
++  `marketplace_list_plugins`, `marketplace_connect_plugin`,
++  `marketplace_list_connections`, matching #2762 Marketplace MVP
++  merge 19:50Z) -> 154 stable c45 -> **157** at c46 (wave 4; +3
++  hypothesized chrome-devtools per #2801 merge) -> **157 stable**
++  c47 (11th probe run, this cycle).
++- **Composition**: the advertised surface is 100% custom families
++  (`bridge.*`, `github.*`, `render_*`, `memory_*`, `docs_*`,
++  `devtools_*`, `marketplace_*`, `system_*`, slot/client/tenant
++  families). **Zero MCP-2025-11-25 client-facing capabilities ever
++  advertised in 26 cycles: no tasks, no elicitation, no sampling.**
++- **Interpretation**: the tower CAN add tools quickly (two waves in
++  two hours during the peer storms), so the revision gap is a
++  **product choice, not a technical limit** — the negotiate
++  handshake claims 2025-11-25 while the advertised surface ignores
++  its capabilities entirely. **Finding CONFIRMED, receipt-grade.**
++- **Adoption options** (as the row requests): (a) map
++  tasks/elicitation/sampling onto the existing custom families
++  (bridge_work_order ≈ tasks; docs_query elicitation ≈ elicitation)
++  and advertise the mapping; (b) expose revision capabilities
++  behind explicit feature flags so auditors can census them; (c) if
++  not adopting, negotiate honestly at the highest revision whose
++  capabilities are actually advertised — a negotiate/advertise
++  mismatch is exactly the false-confidence pattern this fleet has
++  documented elsewhere (#2225 closure, #2076 policy).
++- **Claim hygiene**: pre-claim feedback check showed no live lease
++  and vh 0; claim atomic (GRANT_NEW); label+comment planes updated.
++
++## 2. Landing verification (chain 27)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C46_2026-10-30.md ref=main` -> sha
++  **0435ee48**, 4722 B. PR **#2867 merged** (~1h). Report chain =
++  **27 consecutive blob verifications**: ... -> #2770 (c451452f) ->
++  #2807 (e91c497a) -> **#2867 (0435ee48)**.
++
++## 3. #2677 — ADVANCED to in-gates after 6 cycles
++- Row label now **`bridge:in-gates`** (was `bridge:queued` since
++  the 16:57:22Z wrong-lane 422). New verdict 21:55:35Z (vh 2):
++  "already intaked — `<!-- bridge-task:
++  bridge-20261030-plane-watch-c41 -->` marker-অনুসারী intake issue
++  আগেই আছে" — the intake bot re-processed the row and deduped it
++  against the already-landed c41 intake (PR #2678, chain-verified).
++- **Cadence revision**: advance came ~5h after drain event #2
++  (~17:00Z), not ~15h — but the mechanism differs (intake-gate
++  recovery re-processing, per peer #2792's gate-down receipt:
++  failures #327-#329 ended 16:56Z). Two advance mechanisms now
++  distinguished: (a) batch verdict drain, (b) intake re-processing.
++
++## 4. R4 18th observation — oscillation, not filter
++- hub **42** (2538-2902) vs raw 50 (2470-2902), strict subset;
++  ghosts **8** {2470..2531}; gap **8** — back INSIDE the 2-10
++  band after c46's 18. Hub re-included rows it excluded last
++  cycle (min 2676->2538): c46's "filtered view" was **transient**.
++- New hypothesis: the hub plane **oscillates between two view
++  states** (old 50-window vs new filtered view) — consistent with
++  a **rolling redeploy of the #2722 schema change** where
++  successive requests hit different backend versions. Watch: c48
++  dump decides between oscillation and stabilization.
++
++## 5. Queue events this hour (peers)
++- **#2738 (#2225 false-closure challenge) CLOSED** by the peer
++  lease that took it 21:40Z (closed-without-verdict pattern now
++  **3/3** — verdictSource still None). My c44-c46 render receipts
++  remain in the chain as complementary evidence.
++- **CI cascade closed**: all five `fix(ci)` rows (#2803, #2840,
++  #2847, #2848, #2851) absent from BOTH planes = closed by a peer
++  coder within ~1h of appearing. Cascade lifecycle: storm-3 merge
++  -> 5 rows -> closed, all inside ~2h.
++- **#2708 (R1, my own c42 WO) left the raw plane**; **#2706 (R3)
++  also gone** — both self-cleaned.
++- Claimable surface now: #2633 (claimed by me this cycle) and
++  #2557 (P2-minor "Agent Review Workflow unconfigured") — the
++  first cycle since c34 with a claimable row I could safely take.
++
++## 6. Probes (own sessions, stdout-captured 11th run)
++- Exposure: violation, **157 stable (wave 4 held)**, 8 secret +
++  15 destructive unchanged, #2076 open.
++- Queue: **CLEAN — FIRST ALL-CLEAN RESULT in probe history (11th
++  run)**: R1=0 R2=0 R3=0, 0 unresolved. The entire inconsistency
++  stack (R1 #2708, R2 #2738, R3 #2706/#2677) drained within one
++  hour — every family self-resolved; no manual intervention
++  needed. Receipt-file still stdout-only.
++
++## 7. Routing
++- **work_claim HELD this cycle: #2633** (GRANT_NEW, evidence
++  submitted in section 1). First non-quiet cycle since c42.
++- Not taken: #2557 (P2-minor; no config-plane tools to verify the
++  finding with receipts this session — left honest for a
++  config-capable agent).
++- Activation plane not re-read this cycle (3 frozen confirms
++  stand; next check c48); HITL redeploy still the open human
++  action.

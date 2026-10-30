@@ -1,0 +1,65 @@
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index bbc6190e..0298d621 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -1240,7 +1240,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+       const authenticated = session.authenticated;
+       const accessMode = accessModeFor(activeRole, authenticated);
+       const scopes = session.scopes.length > 0 ? session.scopes : defaultClientScopes(activeRole);
+-      const slotBinding = session.slotId ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
++      const slotBinding = session.slotId && session.slotVerified ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
+       const sseTransport = new SSEServerTransport("/messages", res);
+       sseSessions.set(sseTransport.sessionId, sseTransport);
+       if (effectiveClient) {
+@@ -1489,7 +1489,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+         const initAuthenticated = session.authenticated;
+         const initAccessMode = accessModeFor(initRole, initAuthenticated);
+         const initScopes = session.scopes.length > 0 ? session.scopes : defaultClientScopes(initRole);
+-        const slotBinding = session.slotId ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
++        const slotBinding = session.slotId && session.slotVerified ? { slotId: session.slotId, credentialId: session.credentialId } : undefined;
+ 
+         const httpTransport = new StreamableHTTPServerTransport({
+           sessionIdGenerator: () => randomUUID(),
+diff --git a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+index fcba9592..b29424ff 100644
+--- a/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
++++ b/infrastructure/mcp-control-plane/src/policy/slot-verification.ts
+@@ -231,7 +231,7 @@ export async function assertSlotAuthorization(
+   // checks. Network-backed registries enforce a freshness window; local
+   // (file/memory) stores are authoritative by construction.
+   let source: "local" | "store" = "local";
+-  if (isRegistryNetworkBacked()) {
++  if (isSlotId(slotId) && isRegistryNetworkBacked()) {
+     source = "store";
+     if (Date.now() - lastStoreVerificationAt() > slotStoreMaxStalenessMs()) {
+       const refresh = await refreshRegistryFromStore();
+diff --git a/infrastructure/mcp-control-plane/test_slot_verification.ts b/infrastructure/mcp-control-plane/test_slot_verification.ts
+index 1c054f22..a85795d7 100644
+--- a/infrastructure/mcp-control-plane/test_slot_verification.ts
++++ b/infrastructure/mcp-control-plane/test_slot_verification.ts
+@@ -256,6 +256,25 @@ await check("unreachable operational store -> fail-CLOSED denial (Invariant 5)",
+   }
+ });
+ 
++await check("unverified named guest (?client=...) is NOT subjected to fail-closed slot store check (#610)", async () => {
++  process.env.UPSTASH_REDIS_REST_URL = "http://127.0.0.1:1";
++  process.env.UPSTASH_REDIS_REST_TOKEN = "unreachable-for-test";
++  __setRegistryStoreForTests(new UpstashClientRegistryStore("supremeai:test:client-registry"));
++  try {
++    const session = await resolveSlotSession(fakeReq("/sse?client=unverified-guest"), { role: null, tenantId: "tenant_default" });
++    assert.equal(session.slotVerified, false, "uncredentialed caller must not be slotVerified");
++    assert.equal(session.role, "viewer", "uncredentialed caller falls back to viewer");
++    // Verify that assertSlotAuthorization on a non-slot identity does not fail-close with slot-store-unreachable
++    const namedId = session.client?.id ?? "named_unverified-guest";
++    const verdict = await assertSlotAuthorization(namedId);
++    assert.notEqual(verdict.reason, "slot-store-unreachable", "unverified named guest must not be blocked by slot-store-unreachable");
++  } finally {
++    delete process.env.UPSTASH_REDIS_REST_URL;
++    delete process.env.UPSTASH_REDIS_REST_TOKEN;
++    __setRegistryStoreForTests(new JsonFileClientRegistryStore(process.env.MCP_CLIENT_REGISTRY_FILE!));
++  }
++});
++
+ // ── Cross-tenant isolation ──────────────────────────────────────────────────
+ await check("cross-tenant slot operations are denied (tenant scope)", () => {
+   const tenantSlot = provisionSlot({ name: "tenant-a-slot", role: "agent", tenantId: "tenant_a" });

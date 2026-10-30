@@ -1,0 +1,728 @@
+diff --git a/docs/S12_NIGHTLY_TRAIN_SPEC.md b/docs/S12_NIGHTLY_TRAIN_SPEC.md
+new file mode 100644
+index 00000000..c08804a2
+--- /dev/null
++++ b/docs/S12_NIGHTLY_TRAIN_SPEC.md
+@@ -0,0 +1,98 @@
++# S12 — Hub-and-Spoke Nightly Consolidation Engine
++
++Implements **#492** — `plan(infra): [nightly-train]` Hub-and-Spoke
++consolidation with **MCP Tower Boundary Isolation**.
++
++## 1. Deliverables
++
++| File | Kind | Purpose |
++|---|---|---|
++| `scripts/tower/nightly_train_reference.py` | new | Deterministic reference: 11-satellite registry, MCP Tower boundary gate (monorepo unreachable), nightly cron contract (`0 0 * * *` UTC), heavy-suite daytime exclusivity, fail-closed head ingest, parity verification with isolated-commit P0 incidents, `nightly-YYYYMMDD` tag contract, Phase 1-4 order gate, telemetry heartbeat to the public embassy + Studio. |
++| `tests/test_s12_nightly_train.py` | new | 18 offline contract tests (dual-mode), incl. CLI exit-code smoke. |
++| This document | new | Spec + out-of-lane wiring appendices (tower tool manifest; private monorepo workflow). |
++
++## 2. Boundary Isolation (criteria 1 & 2)
++
++`assert_tower_target()` fails closed: `Supremeai-bd/supremeai` (any case,
++bare or org-qualified) raises `TowerBoundaryViolation` — the proprietary
++monorepo hosting `supremeai-core` and the credential vaults stays outside
++every MCP tool's operational scope. The 11 canonical satellites
++(`open`, `studio`, `browser`, `command`, `skills`, `vscode`, `agents`,
++`api`, `infra`, `sdk`, `core`) resolve normally; anything else is
++rejected. The `core` satellite is distinct from the monorepo and remains
++routable (documented distinction, tested).
++
++## 3. Nightly Train Lifecycle (criteria 3-5)
++
++Cron contract: exactly `0 0 * * *` in UTC (`validate_cron` — deviations,
++wrong tz, wildcarded hours all rejected).
++
++| Phase | Contract | Enforcement |
++|---|---|---|
++| 1 · INGRESS | read latest stable SHAs of all 11 satellites, merge into staging | `ingest_heads()` — all 11 present, unique, 40-hex, else `TrainError` |
++| 2 · HEAVY_VERIFY | full internal battery: integration, e2e gateway, migrations, fallback probes, cross-boundary contracts | `is_heavy_suite()` / `assert_suite_allowed()` — heavy suites raise in daytime lanes; the train lane passes |
++| 3 · LANDING | atomic squash-merge + `nightly-YYYYMMDD` tag + parity records | `ConsolidationRun.tag` (strict `YYYYMMDD`), `verify_parity()` — DRIFT/MISSING become isolated-commit `P0-critical` incidents |
++| 4 · TELEMETRY | heartbeat broadcast to `Supremeai-bd/supremeai-open` + Studio dashboard | `build_heartbeat()` — `parity: 100%` or `REGRESSION` with incident list; broadcast targets fixed |
++
++`assert_train_order()` — the four phases run in order, no skips.
++
++## 4. Appendix A — tower tool manifest (out-of-lane repo, spec hunk)
++
++`Supremeai-bd/supremeai` (private) tool registry applies the equivalent
++of:
++
++```typescript
++// mcp-control-plane tool surface hardening (issue #492 criteria 1-2)
++const TOWER_ROUTABLE_REPOS = [
++  "Supremeai-bd/supremeai-open", "Supremeai-bd/supremeai-studio",
++  "Supremeai-bd/supremeai-browser", "Supremeai-bd/supremeai-command",
++  "Supremeai-bd/supremeai-skills", "Supremeai-bd/supremeai-vscode",
++  "Supremeai-bd/supremeai-agents", "Supremeai-bd/supremeai-api",
++  "Supremeai-bd/supremeai-infra", "Supremeai-bd/supremeai-sdk",
++  "Supremeai-bd/supremeai-core",
++]; // NOTE: "Supremeai-bd/supremeai" (monolith) deliberately ABSENT.
++export function routeTarget(repo: string): string {
++  if (repo.toLowerCase() === "supremeai-bd/supremeai")
++    throw new Error("TOWER_BOUNDARY_VIOLATION: monorepo is outside MCP scope (#492)");
++  if (!TOWER_ROUTABLE_REPOS.includes(repo))
++    throw new Error(`TOWER_BOUNDARY_VIOLATION: ${repo} is not a canonical satellite`);
++  return repo;
++}
++```
++
++## 5. Appendix B — private monorepo workflow skeleton (out-of-lane repo)
++
++`Supremeai-bd/supremeai` `.github/workflows/nightly_train.yml` skeleton
++(criteria 3-4; protected path — maintainer applies):
++
++```yaml
++on:
++  schedule:
++    - cron: "0 0 * * *"   # 00:00 UTC nightly — exactly the contract
++jobs:
++  nightly-train:
++    runs-on: [self-hosted, heavy]
++    steps:
++      - name: Phase 1 — ingest 11 satellite heads
++        run: python3 scripts/train/ingest_heads.py --manifest staging.json
++      - name: Phase 2 — heavy verification (exclusive to this train)
++        run: python3 scripts/train/run_heavy_battery.py --lane nightly_train
++      - name: Phase 3 — atomic landing + tag
++        run: python3 scripts/train/land_and_tag.py   # nightly-YYYYMMDD
++      - name: Phase 4 — telemetry heartbeat
++        run: python3 scripts/train/broadcast_heartbeat.py
++```
++
++Daytime satellite workflows are expected to keep suites light
++(`assert_suite_allowed(suite, lane)` guards the contract server-side).
++
++## 6. Test evidence
++
++18 offline tests green in dual mode (`python3 -m unittest
++test_s12_nightly_train -v` / `pytest -q`), `--self-test` green. Coverage:
++boundary (monorepo blocked case-insensitively, `core` satellite allowed,
++unknown repos blocked), cron exactness, heavy-suite lane gating, ingest
++fail-closed matrix (missing/duplicate/unknown/malformed SHA), parity
++happy/drift/missing with P0 incident isolation, tag strictness, phase
++order, heartbeat clean/regression payloads, CLI exit codes (ALLOW 0 /
++BLOCK 2).
+diff --git a/scripts/tower/nightly_train_reference.py b/scripts/tower/nightly_train_reference.py
+new file mode 100644
+index 00000000..fe9fd803
+--- /dev/null
++++ b/scripts/tower/nightly_train_reference.py
+@@ -0,0 +1,402 @@
++#!/usr/bin/env python3
++"""S12 — Hub-and-Spoke Nightly Consolidation Engine (issue #492).
++
++Reference implementation of the **Nightly Consolidation Train** with
++**MCP Tower Boundary Isolation**:
++
++    DAYTIME — fast distributed work in the 11 lightweight satellites;
++    the proprietary monorepo (`Supremeai-bd/supremeai`) is OUTSIDE the
++    MCP Tower's direct operational scope, protecting the `supremeai-core`
++    moat and credential vaults from any external agent surface.
++
++    NIGHTLY (cron `0 0 * * *`, 00:00 UTC) — one authoritative train:
++      Phase 1  Ingress & Satellite Pull (SHAs of the 11 satellites)
++      Phase 2  Full-spectrum heavy verification (exclusive to the train)
++      Phase 3  Atomic landing + `nightly-YYYYMMDD` tag + parity records
++      Phase 4  Telemetry heartbeat to the public embassy & Studio console
++
++Deterministic, fail-closed contract:
++
++  * `assert_tower_target()` — any MCP tool targeting `Supremeai-bd/supremeai`
++    directly raises `TowerBoundaryViolation` (criterion 1 & 2);
++  * `validate_cron()` — the train trigger must be exactly `0 0 * * *` UTC
++    (criterion 3);
++  * `is_heavy_suite()` / `assert_suite_allowed()` — heavy integration and
++    database suites are rejected in daytime lanes and run exclusively in
++    the train (criterion 4);
++  * `ConsolidationRun` — SHA ingest, staging plan, parity verdict per
++    satellite (100% parity or isolated-commit P0 incident structure),
++    `nightly-YYYYMMDD` tag synthesis (criterion 5 and Phase 3);
++  * network I/O stays in the tower/private-repo adapters — this module is
++    offline and deterministic.
++
++Pure stdlib. Run: python3 scripts/tower/nightly_train_reference.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import datetime as _dt
++import re
++from dataclasses import dataclass, field
++from types import MappingProxyType
++from typing import Final, Mapping
++
++# ---------------------------------------------------------------------------
++# Registry & boundary (criterion 1 & 2)
++# ---------------------------------------------------------------------------
++
++#: The 11 canonical satellites (issue #492, verbatim list).
++CANONICAL_SATELLITES: Final = (
++    "open", "studio", "browser", "command", "skills", "vscode",
++    "agents", "api", "infra", "sdk", "core",
++)
++
++PROPRIETARY_MONOREPO: Final = "Supremeai-bd/supremeai"
++PUBLIC_EMBASSY: Final = "Supremeai-bd/supremeai-open"
++STUDIO_SATELLITE: Final = "Supremeai-bd/supremeai-studio"
++
++SATELLITE_FULL_NAMES: Final[Mapping[str, str]] = MappingProxyType({
++    sat: f"Supremeai-bd/supremeai-{sat}" for sat in CANONICAL_SATELLITES
++})
++
++
++class TowerBoundaryViolation(ValueError):
++    """Raised when an MCP tool targets the proprietary monorepo directly."""
++
++
++def is_monorepo(target: str) -> bool:
++    normalized = target.strip().lower()
++    return normalized in (
++        PROPRIETARY_MONOREPO.lower(), "supremeai", "supremeai-bd/supremeai",
++    )
++
++
++def assert_tower_target(target: str) -> str:
++    """MCP Tower routing gate: satellites only, monorepo never."""
++    if is_monorepo(target):
++        raise TowerBoundaryViolation(
++            f"{PROPRIETARY_MONOREPO} is outside MCP Tower's direct "
++            "operational scope (issue #492) — route agent work to the 11 "
++            f"canonical satellites {CANONICAL_SATELLITES}"
++        )
++    short = target.rstrip("/").rsplit("/", 1)[-1].lower()
++    if short.startswith("supremeai-"):
++        short = short[len("supremeai-"):]
++    if short not in CANONICAL_SATELLITES:
++        raise TowerBoundaryViolation(
++            f"{target!r} is not a canonical satellite "
++            f"({CANONICAL_SATELLITES})"
++        )
++    return SATELLITE_FULL_NAMES[short] if short in CANONICAL_SATELLITES \
++        else str(target)
++
++
++# ---------------------------------------------------------------------------
++# Schedule & heavy-suite gating (criterion 3 & 4)
++# ---------------------------------------------------------------------------
++
++NIGHTLY_CRON_UTC: Final = "0 0 * * *"
++CRON_FIELDS: Final = 5
++
++
++class ScheduleError(ValueError):
++    """Raised when the train trigger deviates from the nightly contract."""
++
++
++def validate_cron(expr: str, tz: str = "UTC") -> None:
++    """The consolidation train fires at exactly 00:00 UTC nightly."""
++    fields = expr.split()
++    if len(fields) != CRON_FIELDS or tuple(fields) != ("0", "0", "*", "*", "*"):
++        raise ScheduleError(
++            f"nightly train cron must be exactly {NIGHTLY_CRON_UTC!r} "
++            f"(00:00 UTC), got {expr!r}")
++    if tz.upper() != "UTC":
++        raise ScheduleError(f"nightly train timezone must be UTC, got {tz!r}")
++
++
++HEAVY_SUITE_MARKERS: Final = (
++    "integration", "e2e", "end-to-end", "migration", "db_migrate",
++    "fallback_probe", "cross_boundary", "full_battery", "multi_model",
++)
++
++
++def is_heavy_suite(suite_name: str) -> bool:
++    """Heavy verification runs EXCLUSIVELY in the nightly train."""
++    lowered = suite_name.lower()
++    return any(marker in lowered for marker in HEAVY_SUITE_MARKERS)
++
++
++def assert_suite_allowed(suite_name: str, lane: str) -> None:
++    """Daytime lanes may not run heavy suites; the train may."""
++    if lane == "nightly_train":
++        return
++    if is_heavy_suite(suite_name):
++        raise ScheduleError(
++            f"heavy suite {suite_name!r} is exclusive to the nightly train "
++            f"(issue #492 criterion 4) — daytime lane {lane!r} rejected"
++        )
++
++
++# ---------------------------------------------------------------------------
++# Consolidation run (Phase 1-4)
++# ---------------------------------------------------------------------------
++
++PHASE_1_INGRESS: Final = "PHASE_1_INGRESS"
++PHASE_2_HEAVY_VERIFY: Final = "PHASE_2_HEAVY_VERIFY"
++PHASE_3_LANDING: Final = "PHASE_3_LANDING"
++PHASE_4_TELEMETRY: Final = "PHASE_4_TELEMETRY"
++PHASES: Final = (PHASE_1_INGRESS, PHASE_2_HEAVY_VERIFY, PHASE_3_LANDING,
++                 PHASE_4_TELEMETRY)
++
++PARITY_VERDICTS: Final = ("PARITY", "DRIFT", "MISSING")
++
++
++class TrainError(ValueError):
++    """Raised when a consolidation run violates its contract."""
++
++
++@dataclass(frozen=True)
++class SatelliteHead:
++    satellite: str          # canonical short name
++    sha: str                # latest stable head commit SHA
++
++
++@dataclass(frozen=True)
++class ParityRecord:
++    satellite: str
++    verdict: str            # PARITY | DRIFT | MISSING
++    expected_sha: str
++    observed_sha: str
++    isolated_commit: str = ""   # Phase 4: commit isolated for regression
++    p0_incident: bool = False
++
++
++@dataclass(frozen=True)
++class ConsolidationRun:
++    run_date: str                        # YYYYMMDD (UTC)
++    satellite_heads: tuple[SatelliteHead, ...] = field(default_factory=tuple)
++    parity_records: tuple[ParityRecord, ...] = field(default_factory=tuple)
++    heavy_suites: tuple[str, ...] = field(default_factory=tuple)
++    landed: bool = False
++    release_tag: str = ""
++
++    @property
++    def tag(self) -> str:
++        """Phase 3: daily release tag contract — nightly-YYYYMMDD."""
++        if not re.fullmatch(r"\d{8}", self.run_date):
++            raise TrainError(f"run_date must be YYYYMMDD, got {self.run_date!r}")
++        return f"nightly-{self.run_date}"
++
++
++def ingest_heads(heads: tuple[SatelliteHead, ...]) -> tuple[SatelliteHead, ...]:
++    """Phase 1: fail-closed ingest — all 11 satellites, 40-hex SHAs, unique."""
++    seen: set[str] = set()
++    for head in heads:
++        if head.satellite not in CANONICAL_SATELLITES:
++            raise TrainError(f"unknown satellite {head.satellite!r}")
++        if not re.fullmatch(r"[0-9a-f]{40}", head.sha):
++            raise TrainError(f"satellite {head.satellite!r} sha malformed: "
++                             f"{head.sha!r}")
++        if head.satellite in seen:
++            raise TrainError(f"duplicate head for {head.satellite!r}")
++        seen.add(head.satellite)
++    missing = set(CANONICAL_SATELLITES) - seen
++    if missing:
++        raise TrainError(f"Phase 1 incomplete — missing satellite heads: "
++                         f"{sorted(missing)}")
++    return heads
++
++
++def verify_parity(run: ConsolidationRun,
++                  expected: Mapping[str, str]) -> tuple[ParityRecord, ...]:
++    """Phase 2/3 support: per-satellite parity against the staging manifest."""
++    records: list[ParityRecord] = []
++    for head in run.satellite_heads:
++        exp = expected.get(head.satellite)
++        if exp is None:
++            records.append(ParityRecord(head.satellite, "MISSING",
++                                        expected_sha="", observed_sha=head.sha))
++        elif exp == head.sha:
++            records.append(ParityRecord(head.satellite, "PARITY",
++                                        expected_sha=exp, observed_sha=head.sha))
++        else:
++            records.append(ParityRecord(head.satellite, "DRIFT",
++                                        expected_sha=exp, observed_sha=head.sha,
++                                        isolated_commit=head.sha,
++                                        p0_incident=True))
++    missing = [sat for sat in CANONICAL_SATELLITES
++               if sat not in {r.satellite for r in records}]
++    for sat in missing:
++        records.append(ParityRecord(sat, "MISSING", expected_sha="",
++                                    observed_sha="", p0_incident=True))
++    return tuple(records)
++
++
++def full_parity(records: tuple[ParityRecord, ...]) -> bool:
++    """100% parity gate — any DRIFT/MISSING blocks the broadcast."""
++    return bool(records) and all(r.verdict == "PARITY" for r in records)
++
++
++def build_heartbeat(run_date: str,
++                    records: tuple[ParityRecord, ...]) -> dict:
++    """Phase 4: telemetry heartbeat for Studio dashboard + public board."""
++    if not re.fullmatch(r"\d{8}", run_date):
++        raise TrainError(f"run_date must be YYYYMMDD, got {run_date!r}")
++    if not records:
++        raise TrainError("heartbeat requires parity records")
++    return {
++        "type": "nightly_train_heartbeat",
++        "run_date": run_date,
++        "tag": f"nightly-{run_date}",
++        "parity": "100%" if full_parity(records) else "REGRESSION",
++        "satellites": {
++            r.satellite: {"verdict": r.verdict, "sha": r.observed_sha}
++            for r in records
++        },
++        "incidents": [
++            {"satellite": r.satellite, "isolated_commit": r.isolated_commit,
++             "severity": "P0-critical"}
++            for r in records if r.p0_incident
++        ],
++        "broadcast_targets": (PUBLIC_EMBASSY, STUDIO_SATELLITE),
++    }
++
++
++def assert_train_order(phases: tuple[str, ...]) -> None:
++    """The train runs Phase 1→2→3→4, in order, no skips."""
++    if phases != PHASES:
++        raise TrainError(f"train phases must run in order {PHASES}, got {phases}")
++
++
++def self_test() -> bool:
++    # Boundary: monorepo is unreachable, satellites resolve.
++    for bad in (PROPRIETARY_MONOREPO, "supremeai", "Supremeai-bd/supremeai"):
++        try:
++            assert_tower_target(bad)
++            raise SystemExit(f"tower boundary failed open: {bad}")
++        except TowerBoundaryViolation:
++            pass
++    assert assert_tower_target("Supremeai-bd/supremeai-studio") == STUDIO_SATELLITE
++    assert assert_tower_target(PUBLIC_EMBASSY) == PUBLIC_EMBASSY
++    for sat in CANONICAL_SATELLITES:
++        assert assert_tower_target(f"Supremeai-bd/supremeai-{sat}")
++    try:
++        assert_tower_target("Supremeai-bd/unknown-repo")
++        raise SystemExit("satellite allowlist failed open")
++    except TowerBoundaryViolation:
++        pass
++
++    # Cron contract.
++    validate_cron(NIGHTLY_CRON_UTC)
++    for bad_expr, bad_tz in (("0 1 * * *", "UTC"), ("0 0 * * *", "EST"),
++                             ("30 0 * * *", "UTC"), ("0 0 1 * *", "UTC"),
++                             ("0 0 * * * *", "UTC")):
++        try:
++            validate_cron(bad_expr, bad_tz)
++            raise SystemExit(f"cron gate failed open: {bad_expr}/{bad_tz}")
++        except ScheduleError:
++            pass
++
++    # Heavy-suite exclusivity.
++    for suite in ("integration_smoke", "e2e_gateway", "db_migrate_0042",
++                  "multi_model_fallback_probe", "cross_boundary_contracts"):
++        assert is_heavy_suite(suite), suite
++        try:
++            assert_suite_allowed(suite, "daytime_satellite")
++            raise SystemExit(f"heavy-suite gate failed open: {suite}")
++        except ScheduleError:
++            pass
++        assert_suite_allowed(suite, "nightly_train")  # allowed at night
++    assert not is_heavy_suite("unit_ledger")
++    assert_suite_allowed("unit_ledger", "daytime_satellite")
++
++    # Ingest: all 11, fail-closed.
++    sha = "a" * 40
++    heads = tuple(SatelliteHead(s, sha.replace("a", format(i, "x") * 40 if False else "b" * 40))
++                  for i, s in enumerate(CANONICAL_SATELLITES))
++    heads = tuple(SatelliteHead(s, "b" * 40) for s in CANONICAL_SATELLITES)
++    assert len(ingest_heads(heads)) == 11
++    for broken in (
++        heads[:10],                                                   # missing one
++        heads + (SatelliteHead("open", "b" * 40),),                   # duplicate
++        heads + (SatelliteHead("unknown-sat", "b" * 40),),            # not canonical
++        heads[:-1] + (SatelliteHead("sdk", "tooshort"),),             # malformed sha
++    ):
++        try:
++            ingest_heads(broken)  # type: ignore[arg-type]
++            raise SystemExit(f"ingest gate failed open: {broken!r}")
++        except TrainError:
++            pass
++
++    # Parity: 100% vs drift with P0 incident.
++    run = ConsolidationRun(run_date="20261018", satellite_heads=heads)
++    assert run.tag == "nightly-20261018"
++    expected = {s: "b" * 40 for s in CANONICAL_SATELLITES}
++    records = verify_parity(run, expected)
++    assert full_parity(records)
++    drifted_heads = tuple(
++        SatelliteHead("api", "c" * 40) if s == "api" else h
++        for s, h in ((h.satellite, h) for h in heads))
++    run2 = ConsolidationRun(run_date="20261018", satellite_heads=drifted_heads)
++    records2 = verify_parity(run2, expected)
++    assert not full_parity(records2)
++    api_record = next(r for r in records2 if r.satellite == "api")
++    assert api_record.verdict == "DRIFT" and api_record.p0_incident
++    assert api_record.isolated_commit == "c" * 40
++
++    # Heartbeat: regression path lists incidents + broadcast targets.
++    heartbeat = build_heartbeat("20261018", records2)
++    assert heartbeat["parity"] == "REGRESSION"
++    assert heartbeat["incidents"][0]["severity"] == "P0-critical"
++    assert heartbeat["broadcast_targets"] == (PUBLIC_EMBASSY, STUDIO_SATELLITE)
++    clean = build_heartbeat("20261018", records)
++    assert clean["parity"] == "100%"
++    for broken in (lambda: build_heartbeat("202610", records),
++                   lambda: build_heartbeat("2026-10-18", records),
++                   lambda: build_heartbeat("20261018", ())):
++        try:
++            broken()
++            raise SystemExit("heartbeat gate failed open")
++        except TrainError:
++            pass
++
++    # Tag contract + phase order.
++    try:
++        ConsolidationRun(run_date="18-10-2026").tag
++        raise SystemExit("tag gate failed open")
++    except TrainError:
++        pass
++    assert_train_order(PHASES)
++    for bad_order in (PHASES[::-1], PHASES[1:], PHASES[:3]):
++        try:
++            assert_train_order(bad_order)  # type: ignore[arg-type]
++            raise SystemExit(f"phase-order gate failed open: {bad_order}")
++        except TrainError:
++            pass
++
++    return True
++
++
++def _cli() -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--check-target", metavar="REPO",
++                        help="simulate an MCP Tower routing decision")
++    args = parser.parse_args()
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: nightly_train_reference")
++        return 0
++    if args.check_target:
++        try:
++            print(f"ALLOW -> {assert_tower_target(args.check_target)}")
++            return 0
++        except TowerBoundaryViolation as exc:
++            print(f"BLOCK -> {exc}")
++            return 2
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/tests/test_s12_nightly_train.py b/tests/test_s12_nightly_train.py
+new file mode 100644
+index 00000000..531f1351
+--- /dev/null
++++ b/tests/test_s12_nightly_train.py
+@@ -0,0 +1,210 @@
++#!/usr/bin/env python3
++"""Offline contract tests for the S12 Nightly Consolidation Train
++(issue #492).
++
++Covers: MCP Tower boundary isolation (monorepo unreachable, 11-satellite
++allowlist), the nightly cron contract (`0 0 * * *` UTC), heavy-suite
++daytime exclusivity, fail-closed satellite-head ingest (all 11, unique,
++40-hex), parity verification with P0 incident isolation, the
++`nightly-YYYYMMDD` tag contract, the Phase 1-4 order gate and the
++telemetry heartbeat broadcast (public embassy + Studio).
++
++Pure stdlib. Run: python3 -m unittest test_s12_nightly_train -v
++"""
++import subprocess
++import sys
++import unittest
++from pathlib import Path
++
++TOWER = Path(__file__).resolve().parent.parent / "scripts" / "tower"
++sys.path.insert(0, str(TOWER))
++
++import nightly_train_reference as nt  # noqa: E402
++
++
++def heads(sha: str = "b" * 40) -> tuple:
++    return tuple(nt.SatelliteHead(s, sha) for s in nt.CANONICAL_SATELLITES)
++
++
++class TowerBoundaryIsolation(unittest.TestCase):
++    def test_01_monorepo_unreachable(self):
++        for bad in (nt.PROPRIETARY_MONOREPO, "supremeai",
++                    "Supremeai-bd/supremeai", " supremeai "):
++            with self.assertRaises(nt.TowerBoundaryViolation, msg=bad):
++                nt.assert_tower_target(bad)
++
++    def test_02_eleven_satellites_resolve(self):
++        self.assertEqual(len(nt.CANONICAL_SATELLITES), 11)
++        self.assertEqual(
++            nt.CANONICAL_SATELLITES,
++            ("open", "studio", "browser", "command", "skills", "vscode",
++             "agents", "api", "infra", "sdk", "core"))
++        for sat in nt.CANONICAL_SATELLITES:
++            self.assertEqual(
++                nt.assert_tower_target(f"Supremeai-bd/supremeai-{sat}"),
++                f"Supremeai-bd/supremeai-{sat}")
++
++    def test_03_unknown_repo_rejected(self):
++        with self.assertRaises(nt.TowerBoundaryViolation):
++            nt.assert_tower_target("Supremeai-bd/unknown-repo")
++        with self.assertRaises(nt.TowerBoundaryViolation):
++            nt.assert_tower_target("some-org/random")
++
++    def test_04_moat_and_vault_outside_tower(self):
++        # The boundary rationale: core moat + vaults isolated from agents.
++        self.assertTrue(nt.is_monorepo("Supremeai-BD/SupremeAI"))  # case-insensitive
++        self.assertFalse(nt.is_monorepo("Supremeai-bd/supremeai-core"))
++        # NOTE: the `core` SATELLITE is a satellite; only the bare monorepo
++        # is isolated — documented distinction, both resolve via allowlist.
++        nt.assert_tower_target("Supremeai-bd/supremeai-core")
++
++
++class ScheduleContract(unittest.TestCase):
++    def test_05_nightly_cron_exact(self):
++        self.assertEqual(nt.NIGHTLY_CRON_UTC, "0 0 * * *")
++        nt.validate_cron(nt.NIGHTLY_CRON_UTC)
++
++    def test_06_cron_deviations_rejected(self):
++        for expr, tz in (("0 1 * * *", "UTC"), ("30 0 * * *", "UTC"),
++                         ("0 0 1 * *", "UTC"), ("0 0 * * *", "EST"),
++                         ("*/5 * * * *", "UTC")):
++            with self.assertRaises(nt.ScheduleError, msg=(expr, tz)):
++                nt.validate_cron(expr, tz)
++
++    def test_07_heavy_suites_night_only(self):
++        for suite in ("integration_smoke", "e2e_gateway_routing",
++                      "db_migrate_0007", "multi_model_fallback_probe",
++                      "cross_boundary_contract_check", "full_battery"):
++            self.assertTrue(nt.is_heavy_suite(suite), suite)
++            with self.assertRaises(nt.ScheduleError):
++                nt.assert_suite_allowed(suite, "daytime_satellite")
++            nt.assert_suite_allowed(suite, "nightly_train")
++
++    def test_08_light_suites_anytime(self):
++        self.assertFalse(nt.is_heavy_suite("unit_ledger"))
++        self.assertFalse(nt.is_heavy_suite("lint"))
++        nt.assert_suite_allowed("unit_ledger", "daytime_satellite")
++        nt.assert_suite_allowed("lint", "nightly_train")
++
++
++class ConsolidationRun(unittest.TestCase):
++    def test_09_ingest_all_eleven_fail_closed(self):
++        self.assertEqual(len(nt.ingest_heads(heads())), 11)
++        with self.assertRaises(nt.TrainError):
++            nt.ingest_heads(heads()[:10])          # missing satellite
++        with self.assertRaises(nt.TrainError):
++            nt.ingest_heads(heads() + heads()[:1])  # duplicate
++        with self.assertRaises(nt.TrainError):
++            nt.ingest_heads(heads() + (nt.SatelliteHead("unknown", "b" * 40),))
++        with self.assertRaises(nt.TrainError):
++            nt.ingest_heads((nt.SatelliteHead("api", "zzz"),) + heads()[1:])
++        with self.assertRaises(nt.TrainError):
++            nt.ingest_heads((nt.SatelliteHead("api", "b" * 39),) + heads()[1:])
++
++    def test_10_tag_contract(self):
++        run = nt.ConsolidationRun(run_date="20261018", satellite_heads=heads())
++        self.assertEqual(run.tag, "nightly-20261018")
++        with self.assertRaises(nt.TrainError):
++            nt.ConsolidationRun(run_date="2026-10-18").tag
++        with self.assertRaises(nt.TrainError):
++            nt.ConsolidationRun(run_date="202610").tag
++
++    def test_11_parity_happy_and_drift(self):
++        expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
++        run = nt.ConsolidationRun(run_date="20261018", satellite_heads=heads())
++        records = nt.verify_parity(run, expected)
++        self.assertTrue(nt.full_parity(records))
++        self.assertEqual(len(records), 11)
++
++        drifted = tuple(
++            nt.SatelliteHead("sdk", "c" * 40) if s == "sdk" else h
++            for s, h in ((h.satellite, h) for h in heads()))
++        run2 = nt.ConsolidationRun(run_date="20261018",
++                                   satellite_heads=drifted)
++        records2 = nt.verify_parity(run2, expected)
++        self.assertFalse(nt.full_parity(records2))
++        sdk = next(r for r in records2 if r.satellite == "sdk")
++        self.assertEqual(sdk.verdict, "DRIFT")
++        self.assertTrue(sdk.p0_incident)
++        self.assertEqual(sdk.isolated_commit, "c" * 40)
++        self.assertEqual(sdk.expected_sha, "b" * 40)
++
++    def test_12_missing_satellite_flagged(self):
++        expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
++        partial = nt.ConsolidationRun(
++            run_date="20261018",
++            satellite_heads=heads()[:10])  # 'vscode' missing (index 5)
++        records = nt.verify_parity(partial, expected)
++        missing = [r for r in records if r.verdict == "MISSING"]
++        self.assertEqual(len(missing), 1)
++        self.assertFalse(missing[0].satellite in
++                         {h.satellite for h in heads()[:10]})
++        self.assertTrue(missing[0].p0_incident)
++
++    def test_13_phase_order_gate(self):
++        nt.assert_train_order(nt.PHASES)
++        self.assertEqual(
++            nt.PHASES,
++            ("PHASE_1_INGRESS", "PHASE_2_HEAVY_VERIFY", "PHASE_3_LANDING",
++             "PHASE_4_TELEMETRY"))
++        for bad in (nt.PHASES[::-1], nt.PHASES[1:], nt.PHASES[:3]):
++            with self.assertRaises(nt.TrainError):
++                nt.assert_train_order(bad)
++
++
++class TelemetryHeartbeat(unittest.TestCase):
++    def test_14_clean_broadcast(self):
++        expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
++        run = nt.ConsolidationRun(run_date="20261018", satellite_heads=heads())
++        hb = nt.build_heartbeat("20261018", nt.verify_parity(run, expected))
++        self.assertEqual(hb["parity"], "100%")
++        self.assertEqual(hb["tag"], "nightly-20261018")
++        self.assertEqual(hb["broadcast_targets"],
++                         (nt.PUBLIC_EMBASSY, nt.STUDIO_SATELLITE))
++        self.assertEqual(hb["incidents"], [])
++        self.assertEqual(len(hb["satellites"]), 11)
++
++    def test_15_regression_broadcast(self):
++        expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
++        drifted = tuple(
++            nt.SatelliteHead("api", "c" * 40) if s == "api" else h
++            for s, h in ((h.satellite, h) for h in heads()))
++        run = nt.ConsolidationRun(run_date="20261018",
++                                  satellite_heads=drifted)
++        hb = nt.build_heartbeat("20261018", nt.verify_parity(run, expected))
++        self.assertEqual(hb["parity"], "REGRESSION")
++        self.assertEqual(hb["incidents"], [{
++            "satellite": "api", "isolated_commit": "c" * 40,
++            "severity": "P0-critical"}])
++
++    def test_16_heartbeat_fail_closed(self):
++        expected = {s: "b" * 40 for s in nt.CANONICAL_SATELLITES}
++        run = nt.ConsolidationRun(run_date="20261018", satellite_heads=heads())
++        records = nt.verify_parity(run, expected)
++        with self.assertRaises(nt.TrainError):
++            nt.build_heartbeat("202610", records)
++        with self.assertRaises(nt.TrainError):
++            nt.build_heartbeat("20261018", ())
++
++
++class CliSmoke(unittest.TestCase):
++    def test_17_boundary_cli_exit_codes(self):
++        allowed = subprocess.run(
++            [sys.executable, str(TOWER / "nightly_train_reference.py"),
++             "--check-target", "Supremeai-bd/supremeai-api"],
++            capture_output=True, text=True, timeout=60)
++        self.assertEqual(allowed.returncode, 0)
++        self.assertIn("ALLOW", allowed.stdout)
++        blocked = subprocess.run(
++            [sys.executable, str(TOWER / "nightly_train_reference.py"),
++             "--check-target", "Supremeai-bd/supremeai"],
++            capture_output=True, text=True, timeout=60)
++        self.assertEqual(blocked.returncode, 2)
++        self.assertIn("BLOCK", blocked.stdout)
++
++    def test_18_self_test_entrypoint_green(self):
++        self.assertTrue(nt.self_test())
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

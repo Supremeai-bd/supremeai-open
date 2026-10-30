@@ -1,0 +1,4062 @@
+diff --git a/gateway/services/billing/billing_plans.py b/gateway/services/billing/billing_plans.py
+index 4f6c3394..4ea8eced 100644
+--- a/gateway/services/billing/billing_plans.py
++++ b/gateway/services/billing/billing_plans.py
+@@ -1,133 +1,2 @@
+-"""This module centralizes the definition of data models and static configuration for billing and subscription plans within the SupremeAI backend. It provides a standardized structure for initiating checkout requests and a comprehensive list of available subscription tiers, ensuring consistency across payment processing, user management, and feature access services.
+-
+-Key Components:
+-- `CheckoutRequest`: A Pydantic model defining the required parameters for initiating a user checkout process for a specific billing plan.
+-- `SUBSCRIPTION_PLANS`: A constant dict keyed by plan name, each containing details like price, cost (Decimal), currency, interval, and included features.
+-
+-Dependencies:
+-- `pydantic`: Used for defining `CheckoutRequest` to ensure robust data validation and serialization.
+-
+-#1828 (single pricing source of truth): tier prices are LOADED from
+-`backend/config/pricing_tiers.json` (same file the quota enforcer reads), so
+-Stripe checkout catalog and quota allowances can never disagree again. Only
+-Stripe price IDs remain hardcoded here. Override the file path with the
+-`PRICING_TIERS_PATH` env var (mirrors scripts/billing/quota_enforcer.py).
+-"""
+-
+-import json
+-import os
+-from dataclasses import dataclass
+-from decimal import Decimal
+-from pathlib import Path
+-
+-from pydantic import BaseModel
+-
+-from core.logging_config import logger
+-
+-
+-def _load_tier_prices() -> dict[str, Decimal]:
+-    """Load tier → monthly USD price from pricing_tiers.json (#1828).
+-
+-    Missing/unreadable file → {} (callers fall back to the config defaults
+-    below so behavior stays deterministic). Never raises at import time.
+-    """
+-    default_path = Path(__file__).resolve().parents[2] / "config" / "pricing_tiers.json"
+-    path = Path(os.getenv("PRICING_TIERS_PATH") or default_path)
+-    try:
+-        data = json.loads(path.read_text(encoding="utf-8"))
+-        tiers = data.get("tiers", {})
+-        return {
+-            str(tier): Decimal(str(cfg.get("monthly_credits_usd", 0)))
+-            for tier, cfg in tiers.items()
+-            if isinstance(cfg, dict)
+-        }
+-    except (OSError, ValueError, AttributeError) as exc:
+-        logger.warning(f"pricing_tiers.json unreadable ({exc}) — billing plans use fallback prices")
+-        return {}
+-
+-
+-# Fallbacks mirror backend/config/pricing_tiers.json defaults — used ONLY when
+-# the config file is missing/unreadable, so a broken deploy still bills predictably.
+-_FALLBACK_TIER_PRICES: dict[str, Decimal] = {
+-    "free": Decimal("0.00"),
+-    "pro": Decimal("10.00"),
+-    "enterprise": Decimal("100.00"),
+-}
+-
+-
+-def _tier_price(tier: str) -> Decimal:
+-    return _load_tier_prices_cache().get(tier, _FALLBACK_TIER_PRICES[tier])
+-
+-
+-def _load_tier_prices_cache() -> dict[str, Decimal]:
+-    global _TIER_PRICES
+-    if _TIER_PRICES is None:
+-        _TIER_PRICES = _load_tier_prices()
+-    return _TIER_PRICES
+-
+-
+-_TIER_PRICES: dict[str, Decimal] | None = None
+-
+-
+-class CheckoutRequest(BaseModel):
+-    price_id: str
+-    success_url: str
+-    cancel_url: str
+-    user_id: str | None = None
+-
+-
+-# বাংলা মন্তব্য: SubscriptionPlan dataclass — cost (Decimal) সহ সব tier-এর তথ্য।
+-# SUBSCRIPTION_PLANS dict কারণ tests `SUBSCRIPTION_PLANS["free"]` এভাবে access করে।
+-@dataclass
+-class SubscriptionPlan:
+-    id: str
+-    name: str
+-    price: float
+-    cost: Decimal
+-    currency: str
+-    interval: str
+-    features: list
+-
+-
+-SUBSCRIPTION_PLANS: dict[str, SubscriptionPlan] = {
+-    "free": SubscriptionPlan(
+-        id="price_free",
+-        name="Free Plan",
+-        price=float(_tier_price("free")),
+-        cost=_tier_price("free"),
+-        currency="usd",
+-        interval="month",
+-        features=["100 AI Credits", "Basic Models", "Community Support"],
+-    ),
+-    "pro": SubscriptionPlan(
+-        id="price_pro_monthly",
+-        name="Pro Plan",
+-        price=float(_tier_price("pro")),
+-        cost=_tier_price("pro"),
+-        currency="usd",
+-        interval="month",
+-        features=["1000 AI Credits", "Advanced Models", "Priority Support"],
+-    ),
+-    "enterprise": SubscriptionPlan(
+-        id="price_enterprise_monthly",
+-        name="Enterprise Plan",
+-        price=float(_tier_price("enterprise")),
+-        cost=_tier_price("enterprise"),
+-        currency="usd",
+-        interval="month",
+-        features=["Unlimited AI Credits", "Dedicated Account Manager", "Custom SLAs", "API Access"],
+-    ),
+-}
+-
+-# বাংলা মন্তব্য: backward compatibility-র জন্য list format preserve করা হলো
+-SUBSCRIPTION_PLANS_LIST = [
+-    {
+-        "id": p.id,
+-        "name": p.name,
+-        "price": p.price,
+-        "currency": p.currency,
+-        "interval": p.interval,
+-        "features": p.features,
+-    }
+-    for p in SUBSCRIPTION_PLANS.values()
+-]
++"""Canonical re-export from core.services.billing.billing_plans (SSOT #751)."""
++from core.services.billing.billing_plans import *  # noqa: F401, F403
+diff --git a/gateway/services/dynamic_ai/learning_engine.py b/gateway/services/dynamic_ai/learning_engine.py
+index 2bf9d489..e3b64261 100644
+--- a/gateway/services/dynamic_ai/learning_engine.py
++++ b/gateway/services/dynamic_ai/learning_engine.py
+@@ -1,110 +1,2 @@
+-"""Dynamic-AI interaction-learning component (canonical, post-#2259 D1).
+-
+-বাংলা: UnifiedLearningEngine (core/unified_learning.py, PATCH-05 layer) retired —
+-এই মডিউল এখন সরাসরি canonical দোকানগুলো ব্যবহার করে:
+-  * interaction telemetry → ``core.learning.store.LearningStore`` (durable,
+-    privacy-safe, buffered PostgREST pipeline)
+-  * provider ranking → registry order (unchanged; a real learned ranking
+-    model is future work — see #2259 D2 collective experience layer)
+-
+-Orchestrator contract (guards regression 0f4482b6, see
+-tests/services/dynamic_ai/test_learning_engine_shim.py — DO NOT break):
+-  * ``LearningEngine(storage_path=...)`` must accept + ignore constructor args
+-  * ``load_learning_data()``  — async, no-op, never raises
+-  * ``detect_task_type(str)`` — pure keyword classifier, returns TaskType-value strings
+-  * ``get_best_providers_for_task(...)`` — async, list[tuple[str, float]]
+-  * ``record_interaction(...)`` — sync, fire-and-forget, NEVER raises
+-"""
+-
+-from __future__ import annotations
+-
+-from core.learning import get_learning_store
+-from core.logging_config import logger
+-
+-# বাংলা মন্তব্য (ROOT-CAUSE FIX 2): কীওয়ার্ড-ভিত্তিক হালকা task detector।
+-# এখানে `.orchestrator` মডিউলের `TaskType`-কে import করা যাবে না (circular
+-# import: orchestrator.py -> .learning_engine -> orchestrator.py)। তাই এখানে
+-# শুধু ম্যাচিং স্ট্রিং ভ্যালু রিটার্ন করা হয় (orchestrator.TaskType একটি
+-# StrEnum, তাই এই প্লেইন স্ট্রিং-গুলোর সাথে `==`/dict-lookup স্বাভাবিকভাবেই
+-# কাজ করবে)।
+-_TASK_KEYWORDS: dict[str, tuple[str, ...]] = {
+-    "code_generation": ("code", "function", "python", "javascript", "script", "implement"),
+-    "code_review": ("review", "refactor", "bug", "debug", "fix"),
+-    "reasoning": ("why", "explain", "analyze", "reason", "prove", "calculate"),
+-    "creative_writing": ("story", "poem", "write a", "creative", "essay"),
+-    "summarization": ("summarize", "summary", "tl;dr", "shorten"),
+-}
+-
+-
+-class LearningEngine:
+-    def __init__(self, *_args, **_kwargs):
+-        # বাংলা মন্তব্য: caller (orchestrator.py) এখনো পুরনো
+-        # `LearningEngine(storage_path=...)` সিগনেচার দিয়ে কল করে — backward
+-        # compatibility রাখতে *args/**kwargs নিয়ে ignore করা হলো।
+-        pass
+-
+-    # ------------------------------------------------------------------
+-    # বাংলা মন্তব্য (ROOT-CAUSE FIX 2): নিচের মেথডগুলো `orchestrator.py`-এর
+-    # `DynamicAIOrchestrator` কল করে (`load_learning_data`,
+-    # `detect_task_type`, `get_best_providers_for_task`,
+-    # `record_interaction`)। যেহেতু `LLMRouter.route()` (প্রোডাকশনের মূল
+-    # non-streaming এন্ট্রি পয়েন্ট) সরাসরি `get_ai_orchestrator().generate()`
+-    # কল করে, এই মেথডগুলোর signature/behavior ভাঙা যাবে না।
+-    # ------------------------------------------------------------------
+-
+-    async def load_learning_data(self) -> None:
+-        """No-op: the canonical LearningStore owns its own lifecycle
+-        (started by app lifespan via core.startup.agents)."""
+-        return None
+-
+-    def detect_task_type(self, prompt: str) -> str:
+-        """Lightweight keyword-based task classifier (see _TASK_KEYWORDS)."""
+-        lowered = (prompt or "").lower()
+-        for task_type, keywords in _TASK_KEYWORDS.items():
+-            if any(keyword in lowered for keyword in keywords):
+-                return task_type
+-        return "general"
+-
+-    async def get_best_providers_for_task(
+-        self, prompt: str, available_providers: list, context: dict | None = None
+-    ) -> list[tuple[str, float]]:
+-        """Rank available providers for this task.
+-
+-        No historical-performance model is wired up yet, so this falls back
+-        to registry order with a flat confidence score — callers only need
+-        a `(provider_id, confidence_score)` list and iterate in order, so
+-        this is a safe, non-crashing default rather than true learned
+-        ranking. (Unchanged from the pre-retirement behavior.)
+-        """
+-        return [
+-            (getattr(p, "provider_id", p), 1.0) if not isinstance(p, str) else (p, 1.0)
+-            for p in available_providers
+-        ]
+-
+-    def record_interaction(
+-        self,
+-        provider_id: str,
+-        task_type: str,
+-        success: bool,
+-        latency_ms: float = 0.0,
+-        estimated_cost: float = 0.0,
+-    ) -> None:
+-        """Fire-and-forget interaction telemetry via the canonical LearningStore.
+-
+-        বাংলা (#2259 D1): আগে এটি in-memory UnifiedLearningEngine-এ যেত;
+-        এখন সরাসরি durable LearningStore-এ যায় (privacy-safe, buffered
+-        PostgREST write)। ``record_event`` শুধু enqueue করে — কখনো network
+-        touch বা raise করে না, তাই synchronous call-site-ও নিরাপদ।
+-        """
+-        try:
+-            get_learning_store().record_llm_event(
+-                provider=str(provider_id),
+-                model=None,
+-                task_type=str(task_type),
+-                success=bool(success),
+-                latency_ms=int(latency_ms) if latency_ms else None,
+-                estimated_cost=float(estimated_cost) if estimated_cost else None,
+-                metadata={"source": "dynamic_ai.interaction"},
+-            )
+-        except Exception as e:  # pragma: no cover — record_event never raises by design
+-            logger.warning(f"record_interaction telemetry enqueue failed (silenced): {e}")
++"""Canonical re-export from core.services.dynamic_ai.learning_engine (SSOT #751)."""
++from core.services.dynamic_ai.learning_engine import *  # noqa: F401, F403
+diff --git a/gateway/services/dynamic_ai/local_fallback.py b/gateway/services/dynamic_ai/local_fallback.py
+index e4bdebcb..517fe165 100644
+--- a/gateway/services/dynamic_ai/local_fallback.py
++++ b/gateway/services/dynamic_ai/local_fallback.py
+@@ -1,320 +1,2 @@
+-# backend/services/dynamic_ai/local_fallback.py
+-"""
+-Local Fallback using Ollama
+-Ensures system ALWAYS works even with ZERO external APIs
+-Runs locally, no API keys needed, 100% uptime
+-"""
+-
+-import asyncio
+-import subprocess
+-from dataclasses import dataclass
+-from enum import Enum
+-
+-import httpx
+-
+-from core.logging_config import logger
+-
+-
+-class OllamaModelStatus(Enum):
+-    AVAILABLE = "available"
+-    NOT_INSTALLED = "not_installed"
+-    DOWNLOADING = "downloading"
+-    OLLAMA_NOT_RUNNING = "ollama_not_running"
+-
+-
+-@dataclass
+-class OllamaModel:
+-    model_id: str
+-    name: str
+-    size_gb: float
+-    specialty: str
+-    parameters: str  # e.g., "7B", "70B"
+-
+-    # Recommended uses
+-    recommended_for: list[str]
+-    not_recommended_for: list[str]
+-
+-
+-# Pre-configured models for SupremeAI
+-RECOMMENDED_OLLAMA_MODELS = [
+-    OllamaModel(
+-        model_id="llama3.1:8b",
+-        name="Llama 3.1 8B",
+-        size_gb=4.7,
+-        specialty="General purpose chat & reasoning",
+-        parameters="8B",
+-        recommended_for=["chat", "reasoning", "analysis", "general"],
+-        not_recommended_for=["complex coding", "math proofs"],
+-    ),
+-    OllamaModel(
+-        model_id="llama3.1:70b",
+-        name="Llama 3.1 70B",
+-        size_gb=40,
+-        specialty="Complex reasoning & coding",
+-        parameters="70B",
+-        recommended_for=["coding", "reasoning", "analysis", "complex tasks"],
+-        not_recommended_for=[],  # Good for everything (but needs more RAM)
+-    ),
+-    OllamaModel(
+-        model_id="codellama:13b",
+-        name="Code Llama 13B",
+-        size_gb=7.5,
+-        specialty="Code generation & explanation",
+-        parameters="13B",
+-        recommended_for=["code_generation", "code_review", "debugging"],
+-        not_recommended_for=["chat", "creative writing"],
+-    ),
+-    OllamaModel(
+-        model_id="mistral:7b",
+-        name="Mistral 7B",
+-        size_gb=4.2,
+-        specialty="Balanced performance",
+-        parameters="7B",
+-        recommended_for=["general", "chat", "quick tasks"],
+-        not_recommended_for=["complex reasoning"],
+-    ),
+-    OllamaModel(
+-        model_id="nomic-embed-text",
+-        name="Nomic Embed Text",
+-        size_gb=0.27,
+-        specialty="Text embeddings",
+-        parameters="small",
+-        recommended_for=["embedding", "semantic search"],
+-        not_recommended_for=["generation"],
+-    ),
+-]
+-
+-
+-class OllamaFallback:
+-    """
+-    Ollama-based local fallback
+-    Ensures AI functionality even without ANY external APIs
+-    """
+-
+-    def __init__(
+-        self,
+-        ollama_base_url: str = "http://localhost:11434",  # is_local()
+-        auto_install_models: bool = True,
+-        preferred_model: str = "llama3.1:8b",
+-    ):
+-        self.base_url = ollama_base_url
+-        self.auto_install = auto_install_models
+-        self.preferred_model = preferred_model
+-        self._available_models: list[str] = []
+-        self._is_running = False
+-        self._client: httpx.AsyncClient | None = None
+-
+-    async def initialize(self):
+-        """Initialize Ollama fallback system"""
+-        # Block initialization in cloud environments to prevent RAM exhaustion and crashes
+-        from core.config import settings
+-
+-        if getattr(settings, "env", getattr(settings, "ENV", "local")).lower() != "local":
+-            logger.debug("☁️ Cloud environment detected. Disabling Ollama local fallback.")
+-            self._is_running = False
+-            self.available_models = []
+-            return
+-
+-        logger.debug("🏠 Initializing Local Fallback (Ollama)...")
+-
+-        # Check if Ollama is running
+-        self._is_running = await self._check_ollama_running()
+-
+-        if not self._is_running:
+-            logger.debug("Ollama not running. Attempting to start...")
+-            started = await self._start_ollama()
+-            if not started:
+-                logger.debug("Could not start Ollama. Local fallback unavailable.")
+-                return False
+-
+-        # Create HTTP client
+-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=120.0)
+-
+-        # Check available models
+-        await self._refresh_available_models()
+-
+-        # Install recommended models if needed
+-        if self.auto_install:
+-            await self._ensure_models_installed([self.preferred_model])
+-
+-        logger.debug(f"Local Fallback Ready! Available models: {self._available_models}")
+-        return True
+-
+-    async def _check_ollama_running(self) -> bool:
+-        """Check if Ollama server is running"""
+-        try:
+-            async with httpx.AsyncClient(timeout=5.0) as client:
+-                response = await client.get(f"{self.base_url}/api/tags")
+-                return response.status_code == 200
+-        except Exception:
+-            return False
+-
+-    async def _start_ollama(self) -> bool:
+-        """Attempt to start Ollama server"""
+-        try:
+-            # Try starting ollama serve (works on Linux/Mac)
+-            subprocess.Popen(["ollama", "serve"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+-
+-            # Wait for it to start
+-            await asyncio.sleep(3)
+-
+-            return await self._check_ollama_running()
+-        except FileNotFoundError:
+-            logger.debug("Ollama not installed. Visit https://ollama.ai to install.")
+-            return False
+-        except Exception as e:
+-            logger.debug(f"Failed to start Ollama: {e}")
+-            return False
+-
+-    async def _refresh_available_models(self):
+-        """List installed models"""
+-        try:
+-            response = await self._client.get("/api/tags")
+-            if response.status_code == 200:
+-                data = response.json()
+-                self._available_models = [m["model"] for m in data.get("models", [])]
+-        except Exception as e:
+-            logger.debug(f"Failed to list Ollama models: {e}")
+-
+-    async def _ensure_models_installed(self, model_ids: list[str]):
+-        """Ensure specified models are installed"""
+-        for model_id in model_ids:
+-            if model_id not in self._available_models:
+-                logger.debug(f"📦 Installing Ollama model: {model_id}")
+-                try:
+-                    # Pull model (this can take a while for large models)
+-                    response = await self._client.post(
+-                        "/api/pull", json={"name": model_id, "stream": False}
+-                    )
+-
+-                    if response.status_code == 200:
+-                        self._available_models.append(model_id)
+-                        logger.debug(f"Model {model_id} installed")
+-                    else:
+-                        logger.debug(f"Failed to install {model_id}")
+-
+-                except Exception as e:
+-                    logger.debug(f"Error installing {model_id}: {e}")
+-
+-    async def is_available(self) -> bool:
+-        """Check if local fallback is ready"""
+-        return self._is_running and len(self._available_models) > 0
+-
+-    async def generate(
+-        self, prompt: str, model: str | None = None, system_prompt: str | None = None, **kwargs
+-    ) -> dict:
+-        """
+-        Generate text using local Ollama model
+-        This NEVER fails due to external issues!
+-        """
+-        if not self._client:
+-            return {
+-                "success": False,
+-                "error": "Ollama client not initialized",
+-                "fallback_used": True,
+-            }
+-
+-        # Select model
+-        selected_model = model or self.preferred_model
+-
+-        # If preferred model not available, pick another
+-        if selected_model not in self._available_models:
+-            if self._available_models:
+-                selected_model = self._available_models[0]
+-            else:
+-                return {
+-                    "success": False,
+-                    "error": "No Ollama models available",
+-                    "fallback_used": True,
+-                }
+-
+-        # Build request payload
+-        payload = {
+-            "model": selected_model,
+-            "prompt": prompt,
+-            "stream": False,
+-            "options": {
+-                "temperature": kwargs.get("temperature", 0.7),
+-                "top_p": kwargs.get("top_p", 0.9),
+-                "num_predict": kwargs.get("max_tokens", 2048),
+-            },
+-        }
+-
+-        if system_prompt:
+-            payload["system"] = system_prompt
+-
+-        try:
+-            start_time = asyncio.get_event_loop().time()
+-
+-            response = await self._client.post("/api/generate", json=payload)
+-            latency_ms = (asyncio.get_event_loop().time() - start_time) * 1000
+-
+-            if response.status_code == 200:
+-                data = response.json()
+-
+-                return {
+-                    "success": True,
+-                    "text": data.get("response", ""),
+-                    "model": selected_model,
+-                    "latency_ms": latency_ms,
+-                    "done_reason": data.get("done_reason"),
+-                    "fallback_used": True,
+-                    "provider": "ollama-local",
+-                }
+-            else:
+-                return {
+-                    "success": False,
+-                    "error": f"Ollama API error: {response.status_code}",
+-                    "fallback_used": True,
+-                }
+-
+-        except Exception as e:
+-            return {
+-                "success": False,
+-                "error": f"Ollama generation error: {str(e)}",
+-                "fallback_used": True,
+-            }
+-
+-    async def embed(self, text: str, model: str = "nomic-embed-text") -> list:
+-        """Generate embeddings locally"""
+-        if not self._client:
+-            raise RuntimeError("Ollama client not initialized")
+-
+-        # Ensure embedding model is available
+-        if model not in self._available_models:
+-            await self._ensure_models_installed([model])
+-
+-        response = await self._client.post("/api/embeddings", json={"model": model, "prompt": text})
+-
+-        if response.status_code == 200:
+-            data = response.json()
+-            return data.get("embedding", [])
+-        else:
+-            raise Exception(f"Embedding failed: {response.text}")
+-
+-    def get_best_model_for_task(self, task_type: str) -> str | None:
+-        """Recommend best local model for a given task type"""
+-        for model in RECOMMENDED_OLLAMA_MODELS:
+-            if task_type in model.recommended_for and model.model_id in self._available_models:
+-                return model.model_id
+-
+-        # Fallback to any available model
+-        return self._available_models[0] if self._available_models else None
+-
+-    def get_status(self) -> dict:
+-        """Get status of local fallback system"""
+-        return {
+-            "is_running": self._is_running,
+-            "available_models": self._available_models,
+-            "preferred_model": self.preferred_model,
+-            "can_generate": len([m for m in self._available_models if "embed" not in m]) > 0,
+-            "can_embed": any("embed" in m for m in self._available_models),
+-            "recommended_models": [
+-                {
+-                    "id": m.model_id,
+-                    "name": m.name,
+-                    "installed": m.model_id in self._available_models,
+-                }
+-                for m in RECOMMENDED_OLLAMA_MODELS
+-            ],
+-        }
++"""Canonical re-export from core.services.dynamic_ai.local_fallback (SSOT #751)."""
++from core.services.dynamic_ai.local_fallback import *  # noqa: F401, F403
+diff --git a/gateway/services/dynamic_ai/orchestrator.py b/gateway/services/dynamic_ai/orchestrator.py
+index fb10c413..183b6747 100644
+--- a/gateway/services/dynamic_ai/orchestrator.py
++++ b/gateway/services/dynamic_ai/orchestrator.py
+@@ -1,603 +1,2 @@
+-# backend/services/dynamic_ai/orchestrator.py
+-"""
+-SupremeAI Dynamic AI Orchestrator
+-Main entry point - ties together all components for resilient AI access
+-NEVER crashes due to external API issues!
+-"""
+-
+-import asyncio
+-import time
+-from dataclasses import dataclass
+-from enum import StrEnum
+-from typing import Any
+-
+-from core.logging_config import logger
+-
+-try:
+-    from .circuit_breaker import CircuitBreakerManager
+-except ImportError:
+-    # Fallback to the canonical resilience circuit breaker (issue #2250)
+-    from core.resilience.circuit_breaker import RedisCircuitBreaker as CircuitBreakerManager
+-
+-
+-class TaskType(StrEnum):
+-    """Task classification used to pick the best provider/model.
+-
+-    Defined at module scope (not just as an ImportError fallback) because
+-    it is referenced throughout this module (e.g. DynamicAIOrchestrator's
+-    method signatures and routing tables) regardless of whether
+-    `.learning_engine` imports successfully. Previously this was only
+-    defined inside the `except ImportError` branch, so the normal/success
+-    import path raised `NameError: name 'TaskType' is not defined` as soon
+-    as the class body referencing it was evaluated.
+-    """
+-
+-    CHAT = "chat"
+-    GENERAL = "general"
+-    CODE_GENERATION = "code_generation"
+-    CODE_REVIEW = "code_review"
+-    REASONING = "reasoning"
+-    CREATIVE_WRITING = "creative_writing"
+-    SUMMARIZATION = "summarization"
+-
+-
+-try:
+-    from .learning_engine import LearningEngine
+-except ImportError:
+-    # Define a stub if the module is missing
+-
+-    class LearningEngine:
+-        def __init__(self, *args, **kwargs):
+-            pass
+-
+-        async def process(self, *args, **kwargs):
+-            raise NotImplementedError("Dynamic AI learning engine not available")
+-
+-
+-try:
+-    from .local_fallback import OllamaFallback
+-except ImportError:
+-    OllamaFallback = None  # Will be checked before use
+-
+-try:
+-    from .provider_registry import ProviderConfig, ProviderRegistry
+-except ImportError:
+-
+-    class ProviderConfig:
+-        def __init__(self, **kwargs):
+-            for k, v in kwargs.items():
+-                setattr(self, k, v)
+-
+-    class ProviderRegistry:
+-        def __init__(self):
+-            self._providers = {}
+-
+-        def register(self, name, config):
+-            self._providers[name] = config
+-
+-        def get(self, name):
+-            return self._providers.get(name)
+-
+-
+-@dataclass
+-class GenerationResult:
+-    """Result from AI generation attempt"""
+-
+-    success: bool
+-    text: str | None = None
+-    provider_used: str | None = None
+-    model_used: str | None = None
+-    latency_ms: float = 0.0
+-    cost_usd: float = 0.0
+-    was_fallback: bool = False
+-    error: str | None = None
+-    metadata: dict[str, Any] = None
+-
+-
+-class DynamicAIOrchestrator:
+-    """
+-    Main orchestrator for dynamic AI provider management
+-    Provides a single interface that NEVER fails
+-    """
+-
+-    def __init__(
+-        self,
+-        learning_data_path: str = "/data/ai_learning_data.json",
+-        ollama_enabled: bool = True,
+-        auto_validate_keys: bool = True,
+-    ):
+-        # Core components
+-        self.registry = ProviderRegistry()
+-        self.circuit_breaker = CircuitBreakerManager()
+-        self.learning_engine = LearningEngine(storage_path=learning_data_path)
+-        self.local_fallback = OllamaFallback() if ollama_enabled else None
+-
+-        # Configuration
+-        self.auto_validate_keys = auto_validate_keys
+-        self._initialized = False
+-        self._health_check_interval = 300.0  # 5 minutes
+-
+-        # Statistics
+-        self.stats = {
+-            "total_requests": 0,
+-            "successful_requests": 0,
+-            "fallback_used_count": 0,
+-            "external_success_count": 0,
+-            "external_failure_count": 0,
+-        }
+-
+-    async def initialize(self):
+-        """Initialize all components"""
+-        logger.debug("Initializing SupremeAI Dynamic AI System...")
+-
+-        # 1. Initialize provider registry
+-        await self.registry.initialize()
+-
+-        # 2. Load historical learning data
+-        await self.learning_engine.load_learning_data()
+-
+-        # 3. Initialize local fallback (Ollama)
+-        if self.local_fallback:
+-            await self.local_fallback.initialize()
+-
+-        # 4. Validate all API keys (optional, can skip for faster startup)
+-        if self.auto_validate_keys:
+-            logger.debug("🔑 Validating API keys...")
+-            await self.registry.refresh_status()
+-
+-        # 5. Start background health checks
+-        asyncio.create_task(self._background_health_check_loop())
+-
+-        self._initialized = True
+-        logger.debug("SupremeAI Dynamic AI System Ready!")
+-        logger.debug(
+-            f"   External providers: {len(self.registry.get_available_providers())} available"
+-        )
+-        local_fallback_status = (
+-            "Ready"
+-            if self.local_fallback and await self.local_fallback.is_available()
+-            else "Unavailable"
+-        )
+-        logger.debug(f"   Local fallback: {local_fallback_status}")
+-
+-    async def generate(
+-        self,
+-        prompt: str,
+-        task_type: str | None = None,
+-        system_prompt: str | None = None,
+-        prefer_free_tier: bool = True,
+-        max_retries: int = 3,
+-        **kwargs,
+-    ) -> GenerationResult:
+-        """
+-        Generate text using the best available provider
+-        THIS METHOD NEVER CRASHES - always returns a valid result
+-        """
+-        self.stats["total_requests"] += 1
+-        start_time = time.time()
+-
+-        if not self._initialized:
+-            await self.initialize()
+-
+-        # Detect task type if not provided
+-        detected_task = (
+-            TaskType(task_type) if task_type else self.learning_engine.detect_task_type(prompt)
+-        )
+-
+-        # Get ranked list of best providers for this task
+-        available_providers = self.registry.get_available_providers(
+-            require_free_tier=prefer_free_tier
+-        )
+-
+-        ranked_providers = await self.learning_engine.get_best_providers_for_task(
+-            prompt=prompt,
+-            available_providers=available_providers,
+-            context={"purpose": "generation"},
+-        )
+-
+-        # Try each provider in order
+-        last_error = None
+-
+-        for provider_id, confidence_score in ranked_providers[:max_retries]:
+-            # Check circuit breaker
+-            if not await self.circuit_breaker.is_available(provider_id):
+-                logger.debug(f"Circuit open for {provider_id}, skipping")
+-                continue
+-
+-            # Get provider config
+-            provider_config = self.registry.get_provider(provider_id)
+-            if not provider_config:
+-                continue
+-
+-            # Attempt generation
+-            try:
+-                result = await self._call_provider(
+-                    provider_config=provider_config,
+-                    prompt=prompt,
+-                    system_prompt=system_prompt,
+-                    detected_task=detected_task,
+-                    **kwargs,
+-                )
+-
+-                if result.success:
+-                    # Record success
+-                    latency_ms = (time.time() - start_time) * 1000
+-
+-                    self.registry.record_success(provider_id, latency_ms)
+-                    await self.circuit_breaker.record_success(provider_id)
+-                    self.learning_engine.record_interaction(
+-                        provider_id=provider_id,
+-                        task_type=detected_task,
+-                        success=True,
+-                        latency_ms=latency_ms,
+-                        estimated_cost=result.cost_usd,
+-                    )
+-
+-                    self.stats["successful_requests"] += 1
+-                    self.stats["external_success_count"] += 1
+-
+-                    result.latency_ms = latency_ms
+-                    result.was_fallback = False
+-
+-                    logger.info(f"Generated via {provider_id} ({latency_ms:.0f}ms)")
+-                    return result
+-
+-                else:
+-                    # Provider returned error
+-                    last_error = result.error
+-                    self.registry.record_failure(provider_id, result.error or "Unknown error")
+-                    await self.circuit_breaker.record_failure(provider_id)
+-                    self.learning_engine.record_interaction(
+-                        provider_id=provider_id,
+-                        task_type=detected_task,
+-                        success=False,
+-                        latency_ms=(time.time() - start_time) * 1000,
+-                    )
+-                    self.stats["external_failure_count"] += 1
+-
+-            except Exception as e:
+-                last_error = str(e)
+-                logger.warning(f"Provider {provider_id} threw exception: {e}")
+-
+-                self.registry.record_failure(provider_id, str(e))
+-                await self.circuit_breaker.record_failure(provider_id)
+-                self.learning_engine.record_interaction(
+-                    provider_id=provider_id,
+-                    task_type=detected_task,
+-                    success=False,
+-                    latency_ms=(time.time() - start_time) * 1000,
+-                )
+-                self.stats["external_failure_count"] += 1
+-
+-        # ALL EXTERNAL PROVIDERS FAILED → Use Local Fallback
+-        logger.warning("All external providers failed, using local fallback")
+-
+-        if self.local_fallback and await self.local_fallback.is_available():
+-            try:
+-                # Select best local model for task
+-                local_model = self.local_fallback.get_best_model_for_task(detected_task.value)
+-
+-                local_result = await self.local_fallback.generate(
+-                    prompt=prompt,
+-                    model=local_model,
+-                    system_prompt=system_prompt
+-                    or "You are SupremeAI assistant. Respond helpfully.",
+-                    **kwargs,
+-                )
+-
+-                if local_result.get("success"):
+-                    self.stats["fallback_used_count"] += 1
+-                    self.stats["successful_requests"] += 1
+-
+-                    return GenerationResult(
+-                        success=True,
+-                        text=local_result["text"],
+-                        provider_used="ollama-local",
+-                        model_used=local_result.get("model"),
+-                        latency_ms=local_result.get("latency_ms", 0),
+-                        was_fallback=True,
+-                        metadata={"source": "local_fallback"},
+-                    )
+-                else:
+-                    last_error = local_result.get("error", "Local fallback also failed")
+-
+-            except Exception as e:
+-                last_error = f"Local fallback error: {e}"
+-
+-        # EVERYTHING FAILED - Return graceful error (still doesn't crash!)
+-        logger.error(f"All AI providers failed. Last error: {last_error}")
+-
+-        return GenerationResult(
+-            success=False,
+-            error=f"All providers failed. Last error: {last_error}",
+-            was_fallback=False,
+-            metadata={
+-                "attempted_providers": [p[0] for p in ranked_providers[:max_retries]],
+-                "local_fallback_available": self.local_fallback
+-                and await self.local_fallback.is_available(),
+-            },
+-        )
+-
+-    async def _call_provider(
+-        self,
+-        provider_config: ProviderConfig,
+-        prompt: str,
+-        system_prompt: str | None,
+-        detected_task: TaskType,
+-        **kwargs,
+-    ) -> GenerationResult:
+-        """
+-        Call a specific provider
+-        Implement provider-specific calling logic here
+-        """
+-
+-        # Select best model for this provider based on task
+-        model = self._select_best_model_for_task(provider_config, detected_task)
+-
+-        # Provider-specific implementation
+-        if provider_config.provider_id == "gemini":
+-            return await self._call_gemini(provider_config, model, prompt, system_prompt, **kwargs)
+-
+-        elif provider_config.provider_id in [
+-            "openai",
+-            "deepseek",
+-            "moonshot",
+-            "together",
+-            "nvidia",
+-            "groq",
+-        ]:
+-            return await self._call_openai_compatible(
+-                provider_config, model, prompt, system_prompt, **kwargs
+-            )
+-
+-        elif provider_config.provider_id == "huggingface":
+-            return await self._call_huggingface(provider_config, model, prompt, **kwargs)
+-
+-        elif provider_config.provider_id == "openrouter":
+-            return await self._call_openrouter(
+-                provider_config, model, prompt, system_prompt, **kwargs
+-            )
+-
+-        else:
+-            # Default to OpenAI-compatible
+-            return await self._call_openai_compatible(
+-                provider_config, model, prompt, system_prompt, **kwargs
+-            )
+-
+-    def _select_best_model_for_task(self, provider: ProviderConfig, task: TaskType) -> str:
+-        """Select best model from provider for given task type"""
+-        if not provider.models:
+-            return "default"
+-
+-        # Find model that matches task requirements
+-        task_specialty_map = {
+-            TaskType.CODE_GENERATION: ["coding", "code"],
+-            TaskType.CODE_REVIEW: ["coding", "code", "review"],
+-            TaskType.REASONING: ["reasoning", "reason"],
+-            TaskType.CREATIVE_WRITING: ["creative", "write"],
+-            TaskType.CHAT: [],
+-            TaskType.GENERAL: [],
+-        }
+-
+-        specialties = task_specialty_map.get(task, [])
+-
+-        # First try to find specialized model
+-        for model in provider.models:
+-            if any(spec in model.get("specialty", "").lower() for spec in specialties):
+-                return model["id"]
+-
+-        # Then try economy tier for simple tasks
+-        if task in [TaskType.CHAT, TaskType.GENERAL, TaskType.SUMMARIZATION]:
+-            for model in provider.models:
+-                if model.get("tier") == "economy":
+-                    return model["id"]
+-
+-        # Default to first model
+-        return provider.models[0]["id"]
+-
+-    async def _call_gemini(
+-        self, provider: ProviderConfig, model: str, prompt: str, system_prompt: str | None, **kwargs
+-    ) -> GenerationResult:
+-        """Call Google Gemini API"""
+-        import httpx
+-
+-        url = f"{provider.base_url}/{model}:generateContent"
+-
+-        contents = []
+-        if system_prompt:
+-            contents.append(
+-                {"role": "user", "parts": [{"text": f"System: {system_prompt}\n\nUser: {prompt}"}]}
+-            )
+-        else:
+-            contents.append({"role": "user", "parts": [{"text": prompt}]})
+-
+-        payload = {
+-            "contents": contents,
+-            "generationConfig": {
+-                "temperature": kwargs.get("temperature", 0.7),
+-                "topP": kwargs.get("top_p", 0.95),
+-                "maxOutputTokens": kwargs.get("max_tokens", 2048),
+-            },
+-        }
+-
+-        async with httpx.AsyncClient(timeout=60.0) as client:
+-            response = await client.post(
+-                url,
+-                params={"key": provider.api_key},
+-                json=payload,
+-                headers={"Content-Type": "application/json"},
+-            )
+-
+-            if response.status_code == 200:
+-                data = response.json()
+-                text = data["candidates"][0]["content"]["parts"][0]["text"]
+-                return GenerationResult(success=True, text=text, model_used=model)
+-            else:
+-                error_msg = f"Gemini API error {response.status_code}: {response.text[:200]}"
+-                return GenerationResult(success=False, error=error_msg)
+-
+-    async def _call_openai_compatible(
+-        self, provider: ProviderConfig, model: str, prompt: str, system_prompt: str | None, **kwargs
+-    ) -> GenerationResult:
+-        """Call OpenAI-compatible API (works for OpenAI, DeepSeek, Moonshot, Together, Groq, NVIDIA)"""
+-        import httpx
+-
+-        url = f"{provider.base_url}/chat/completions"
+-
+-        messages = []
+-        if system_prompt:
+-            messages.append({"role": "system", "content": system_prompt})
+-        messages.append({"role": "user", "content": prompt})
+-
+-        payload = {
+-            "model": model,
+-            "messages": messages,
+-            "temperature": kwargs.get("temperature", 0.7),
+-            "max_tokens": kwargs.get("max_tokens", 2048),
+-        }
+-
+-        async with httpx.AsyncClient(timeout=60.0) as client:
+-            response = await client.post(
+-                url,
+-                json=payload,
+-                headers={
+-                    "Authorization": f"Bearer {provider.api_key}",
+-                    "Content-Type": "application/json",
+-                },
+-            )
+-
+-            if response.status_code == 200:
+-                data = response.json()
+-                text = data["choices"][0]["message"]["content"]
+-
+-                # Estimate cost (rough)
+-                usage = data.get("usage", {})
+-                prompt_tokens = usage.get("prompt_tokens", 0)
+-                completion_tokens = usage.get("completion_tokens", 0)
+-                estimated_cost = (
+-                    prompt_tokens * 0.000001 + completion_tokens * 0.000002
+-                )  # Rough estimate
+-
+-                return GenerationResult(
+-                    success=True, text=text, model_used=model, cost_usd=estimated_cost
+-                )
+-            else:
+-                error_msg = f"{provider.provider_id} API error {response.status_code}: {response.text[:200]}"
+-                return GenerationResult(success=False, error=error_msg)
+-
+-    async def _call_huggingface(
+-        self, provider: ProviderConfig, model: str, prompt: str, **kwargs
+-    ) -> GenerationResult:
+-        """Call HuggingFace Serverless Inference API"""
+-        import httpx
+-
+-        url = f"{provider.base_url}/{model}"
+-
+-        payload = {
+-            "inputs": prompt,
+-            "parameters": {
+-                "temperature": kwargs.get("temperature", 0.7),
+-                "max_new_tokens": kwargs.get("max_tokens", 1024),
+-                "return_full_text": False,
+-            },
+-        }
+-
+-        async with httpx.AsyncClient(timeout=120.0) as client:
+-            response = await client.post(
+-                url,
+-                json=payload,
+-                headers={
+-                    "Authorization": f"Bearer {provider.api_key}",
+-                    "Content-Type": "application/json",
+-                },
+-            )
+-
+-            if response.status_code == 200:
+-                data = response.json()
+-                if isinstance(data, list):
+-                    text = data[0].get("generated_text", "")
+-                elif isinstance(data, dict):
+-                    text = data.get("generated_text", data.get("text", ""))
+-                else:
+-                    text = str(data)
+-
+-                return GenerationResult(success=True, text=text, model_used=model)
+-
+-            elif response.status_code == 503:
+-                # FIX (P1, review 2026-09-12): the "retry once" was actually UNBOUNDED
+-                # recursion — every 503 from a cold HF Space spawned another recursion
+-                # level with a new httpx client (request hung forever; max_retries was
+-                # never applied). Bound it to a single retry, then fail honestly.
+-                if kwargs.get("_hf_retry_done"):
+-                    return GenerationResult(
+-                        success=False,
+-                        error=f"HF model {model} still loading after retry (503)",
+-                    )
+-                await asyncio.sleep(10)
+-                kwargs = dict(kwargs)
+-                kwargs["_hf_retry_done"] = True
+-                return await self._call_huggingface(provider, model, prompt, **kwargs)
+-            else:
+-                error_msg = f"HF API error {response.status_code}: {response.text[:200]}"
+-                return GenerationResult(success=False, error=error_msg)
+-
+-    async def _call_openrouter(
+-        self, provider: ProviderConfig, model: str, prompt: str, system_prompt: str | None, **kwargs
+-    ) -> GenerationResult:
+-        """Call OpenRouter API (similar to OpenAI-compatible but with special handling)"""
+-        # OpenRouter is mostly OpenAI-compatible
+-        return await self._call_openai_compatible(provider, model, prompt, system_prompt, **kwargs)
+-
+-    async def _background_health_check_loop(self):
+-        """Background loop for continuous health monitoring"""
+-        while True:
+-            try:
+-                await asyncio.sleep(self._health_check_interval)
+-                await self.registry.refresh_status()
+-
+-                # Log summary
+-                summary = self.registry.get_status_summary()
+-                active = summary.get("active", 0)
+-                total = summary.get("total_providers", 0)
+-
+-                logger.info(f"🏥 Health check: {active}/{total} providers active")
+-
+-            except Exception as e:
+-                logger.error(f"Health check error: {e}")
+-
+-    async def get_system_status(self) -> dict:
+-        """Get complete system status"""
+-        return {
+-            "initialized": self._initialized,
+-            "registry": self.registry.get_status_summary(),
+-            "circuit_breakers": self.circuit_breaker.get_all_circuit_states(),
+-            "local_fallback": self.local_fallback.get_status() if self.local_fallback else None,
+-            "statistics": self.stats.copy(),
+-        }
+-
+-
+-# ============================================================================
+-# SINGLETON INSTANCE (use throughout application)
+-# ============================================================================
+-
+-_orchestrator: DynamicAIOrchestrator | None = None
+-
+-
+-async def get_ai_orchestrator() -> DynamicAIOrchestrator:
+-    """Get or create the singleton orchestrator instance"""
+-    global _orchestrator
+-
+-    if _orchestrator is None:
+-        _orchestrator = DynamicAIOrchestrator()
+-        await _orchestrator.initialize()
+-
+-    return _orchestrator
+-
+-
+-async def generate_text(prompt: str, **kwargs) -> GenerationResult:
+-    """
+-    Convenience function for generating text
+-    Usage: result = await generate_text("Hello, world!")
+-    """
+-    orchestrator = await get_ai_orchestrator()
+-    return await orchestrator.generate(prompt, **kwargs)
++"""Canonical re-export from core.services.dynamic_ai.orchestrator (SSOT #751)."""
++from core.services.dynamic_ai.orchestrator import *  # noqa: F401, F403
+diff --git a/gateway/services/dynamic_ai/provider_registry.py b/gateway/services/dynamic_ai/provider_registry.py
+index b2a459d2..163c97e2 100644
+--- a/gateway/services/dynamic_ai/provider_registry.py
++++ b/gateway/services/dynamic_ai/provider_registry.py
+@@ -1,653 +1,2 @@
+-# backend/services/dynamic_ai/provider_registry.py
+-"""
+-SupremeAI Dynamic Provider Registry
+-No hardcoding - all providers discovered and managed at runtime
+-"""
+-
+-import os
+-import time
+-from dataclasses import dataclass, field
+-from enum import Enum
+-
+-from core.logging_config import logger
+-
+-
+-class ProviderStatus(Enum):
+-    """Health status of a provider"""
+-
+-    ACTIVE = "active"  # 🟢 Healthy, fully operational
+-    DEGRADED = "degraded"  # 🟡 Working but slow/limited
+-    DISABLED_TEMPORARY = "disabled_temporary"  # 🔴 Failed, auto-retry soon
+-    DISABLED_PERMANENT = "disabled_permanent"  # ⛔ Invalid key, won't retry
+-    NOT_CONFIGURED = "not_configured"  # ⚪ Not set up
+-    UNKNOWN = "unknown"  # ❓ Haven't checked yet
+-
+-
+-@dataclass
+-class ProviderConfig:
+-    """Configuration for an AI provider (loaded from env/config)"""
+-
+-    provider_id: str  # e.g., "gemini", "openai"
+-    display_name: str  # e.g., "Google Gemini"
+-    api_key_env_var: str  # Environment variable name for API key
+-    base_url: str | None = None  # Custom base URL (for proxies)
+-    models: list[dict] = field(default_factory=list)  # Available models
+-
+-    # Rate limits (will be updated dynamically)
+-    rpm_limit: int = 0  # Requests per minute limit
+-    rpd_limit: int = 0  # Requests per day limit
+-
+-    # Current usage tracking
+-    requests_today: int = 0
+-    requests_this_minute: int = 0
+-    minute_window_start: float = 0.0
+-
+-    # Health metrics
+-    status: ProviderStatus = ProviderStatus.UNKNOWN
+-    last_successful_request: float | None = None
+-    last_error: str | None = None
+-    last_error_time: float | None = None
+-    consecutive_failures: int = 0
+-    success_count: int = 0
+-    failure_count: int = 0
+-    avg_latency_ms: float = 0.0
+-
+-    # Configuration flags
+-    is_free_tier: bool = True
+-    priority: int = 100  # Lower = higher preference
+-    enabled: bool = True  # Can be manually disabled
+-
+-    def reset_daily_counters(self):
+-        """Reset daily counters (call at midnight UTC)"""
+-        self.requests_today = 0
+-
+-    def reset_minute_counter(self):
+-        """Reset per-minute counter"""
+-        now = time.time()
+-        if now - self.minute_window_start >= 60:
+-            self.requests_this_minute = 0
+-            self.minute_window_start = now
+-
+-    @property
+-    def api_key(self) -> str | None:
+-        """Get API key from environment (never logs the key!)"""
+-        key = os.getenv(self.api_key_env_var)
+-
+-        # Check if key looks valid (not empty, not placeholder)
+-        if not key or key.strip() in ["", "none", "null", "your-key-here", "change-me"]:
+-            return None
+-
+-        # Mask for logging (show only first 8 chars)
+-        return key
+-
+-    @property
+-    def is_available(self) -> bool:
+-        """Check if provider is available for requests"""
+-        return (
+-            self.enabled
+-            and self.status in [ProviderStatus.ACTIVE, ProviderStatus.DEGRADED]
+-            and self.api_key is not None
+-        )
+-
+-    @property
+-    def success_rate(self) -> float:
+-        """Calculate success rate percentage"""
+-        total = self.success_count + self.failure_count
+-        if total == 0:
+-            return 100.0  # Assume good until proven otherwise
+-        return (self.success_count / total) * 100
+-
+-
+-class ProviderRegistry:
+-    """
+-    Dynamic registry of all AI providers
+-    Providers are registered at startup and can be added/removed at runtime
+-    """
+-
+-    def __init__(self):
+-        self._providers: dict[str, ProviderConfig] = {}
+-        self._initialization_complete = False
+-        self._last_refresh: float = 0.0
+-        self._refresh_interval: float = 300.0  # Refresh every 5 minutes
+-
+-    async def initialize(self):
+-        """
+-        Initialize registry with known providers
+-        This is where we define provider templates (NOT hardcoded keys!)
+-        """
+-        logger.debug("🔄 Initializing Dynamic Provider Registry...")
+-
+-        # Define provider templates (keys come from environment!)
+-        provider_templates = [
+-            # === FREE TIER PRIMARY ===
+-            {
+-                "provider_id": "gemini",
+-                "display_name": "Google Gemini (Free)",
+-                "api_key_env_var": "GEMINI_API_KEY",
+-                "base_url": "https://generativelanguage.googleapis.com/v1beta",
+-                "models": [
+-                    {"id": "gemini-2.5-flash", "name": "Gemini 2.5 Flash", "tier": "economy"},
+-                    {"id": "gemini-1.5-flash", "name": "Gemini 1.5 Flash", "tier": "economy"},
+-                    {"id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro", "tier": "standard"},
+-                ],
+-                "rpm_limit": 15,
+-                "rpd_limit": 1500,
+-                "is_free_tier": True,
+-                "priority": 10,  # Highest priority (free!)
+-            },
+-            {
+-                "provider_id": "groq",
+-                "display_name": "Groq (Fast Inference)",
+-                "api_key_env_var": "GROQ_API_KEY",
+-                "base_url": "https://api.groq.com/openai/v1",
+-                "models": [
+-                    {"id": "llama-3.3-70b-versatile", "name": "Llama 3.3 70B", "tier": "standard"},
+-                    {"id": "mixtral-8x7b-32768", "name": "Mixtral 8x7B", "tier": "economy"},
+-                ],
+-                "rpm_limit": 30,
+-                "rpd_limit": 14400,
+-                "is_free_tier": True,
+-                "priority": 20,
+-            },
+-            {
+-                "provider_id": "bynara",
+-                "display_name": "Bynara Router (Free Tier)",
+-                "api_key_env_var": "BYNARA_API_KEY",
+-                "base_url": "https://router.bynara.id/v1",
+-                "models": [
+-                    {
+-                        "id": "agnes-2.5-flash",
+-                        "name": "Agnes 2.5 Flash",
+-                        "tier": "economy",
+-                        "specialty": "coding",
+-                    },
+-                    {
+-                        "id": "laguna-s-2.1",
+-                        "name": "Laguna S 2.1",
+-                        "tier": "standard",
+-                        "specialty": "reasoning",
+-                    },
+-                    {
+-                        "id": "stepfun-3.7-flash",
+-                        "name": "StepFun 3.7 Flash",
+-                        "tier": "economy",
+-                        "specialty": "general",
+-                    },
+-                    {
+-                        "id": "nemotron-3.5-lightning-free",
+-                        "name": "Nemotron 3.5 Free",
+-                        "tier": "economy",
+-                        "specialty": "quick",
+-                    },
+-                ],
+-                "rpm_limit": 60,
+-                "rpd_limit": 10000,
+-                "is_free_tier": True,
+-                "priority": 12,
+-            },
+-            {
+-                "provider_id": "bai",
+-                "display_name": "b.ai Router",
+-                "api_key_env_var": "BAI_API_KEY",
+-                "base_url": "https://api.b.ai/v1",
+-                "models": [
+-                    {
+-                        "id": "qwen3.8-flash",
+-                        "name": "Qwen 3.8 Flash",
+-                        "tier": "economy",
+-                        "specialty": "coding",
+-                    },
+-                    {
+-                        "id": "mimo-v2.5",
+-                        "name": "MiMo v2.5",
+-                        "tier": "economy",
+-                        "specialty": "general",
+-                    },
+-                    {"id": "hy3", "name": "HY3 Backup", "tier": "economy", "specialty": "backup"},
+-                ],
+-                "rpm_limit": 60,
+-                "rpd_limit": 10000,
+-                "is_free_tier": True,
+-                "priority": 15,
+-            },
+-            {
+-                "provider_id": "huggingface",
+-                "display_name": "HuggingFace Serverless",
+-                "api_key_env_var": "HF_API_KEY",
+-                "base_url": "https://api-inference.huggingface.co/models",
+-                "models": [
+-                    # SupremeAI Swarm Models
+-                    {
+-                        "id": "njelit1/supreme-coder-3b",
+-                        "name": "Supreme Coder",
+-                        "tier": "economy",
+-                        "specialty": "coding",
+-                    },
+-                    {
+-                        "id": "njelitltd/supreme-reasoner-3b",
+-                        "name": "Supreme Reasoner",
+-                        "tier": "economy",
+-                        "specialty": "reasoning",
+-                    },
+-                    {
+-                        "id": "ziaulhaq1/supreme-general-3b",
+-                        "name": "Supreme General",
+-                        "tier": "economy",
+-                        "specialty": "general",
+-                    },
+-                    {
+-                        "id": "njelitltd2/supreme-creative-3b",
+-                        "name": "Supreme Creative",
+-                        "tier": "economy",
+-                        "specialty": "creative",
+-                    },
+-                    {
+-                        "id": "njelitltd3/supreme-master-3b",
+-                        "name": "Supreme Master",
+-                        "tier": "standard",
+-                        "specialty": "complex",
+-                    },
+-                    {
+-                        "id": "njelltd5/supreme-vision-3b",
+-                        "name": "Supreme Vision",
+-                        "tier": "standard",
+-                        "specialty": "vision",
+-                    },
+-                    {
+-                        "id": "njelltd4/supreme-draft-0.5b",
+-                        "name": "Supreme Draft",
+-                        "tier": "economy",
+-                        "specialty": "quick",
+-                    },
+-                ],
+-                "rpm_limit": 60,  # Approximate for serverless
+-                "is_free_tier": True,
+-                "priority": 25,
+-            },
+-            # === PAID / FREEMIUM BACKUPS ===
+-            {
+-                "provider_id": "openai",
+-                "display_name": "OpenAI GPT",
+-                "api_key_env_var": "OPENAI_API_KEY",
+-                "base_url": "https://api.openai.com/v1",
+-                "models": [
+-                    {"id": "gpt-4o-mini", "name": "GPT-4o Mini", "tier": "economy"},
+-                    {"id": "gpt-4o", "name": "GPT-4o", "tier": "premium"},
+-                    {"id": "gpt-4-turbo", "name": "GPT-4 Turbo", "tier": "premium"},
+-                    {
+-                        "id": "text-embedding-3-small",
+-                        "name": "Embedding v3 Small",
+-                        "tier": "economy",
+-                        "type": "embedding",
+-                    },
+-                ],
+-                "rpm_limit": 500,
+-                "rpd_limit": 10000,
+-                "is_free_tier": False,
+-                "priority": 50,
+-            },
+-            {
+-                "provider_id": "deepseek",
+-                "display_name": "DeepSeek (Cost-Efficient)",
+-                "api_key_env_var": "DEEPSEEK_API_KEY",
+-                "base_url": "https://api.deepseek.com/v1",
+-                "models": [
+-                    {"id": "deepseek-chat", "name": "DeepSeek Chat", "tier": "economy"},
+-                    {
+-                        "id": "deepseek-coder",
+-                        "name": "DeepSeek Coder",
+-                        "tier": "economy",
+-                        "specialty": "coding",
+-                    },
+-                ],
+-                "rpm_limit": 60,
+-                "priority": 35,
+-            },
+-            {
+-                "provider_id": "moonshot",
+-                "display_name": "Moonshot (Kimi)",
+-                "api_key_env_var": "MOONSHOT_API_KEY",
+-                "base_url": "https://api.moonshot.cn/v1",
+-                "models": [
+-                    {"id": "moonshot-v1-8k", "name": "Kimi 8K", "tier": "standard"},
+-                    {"id": "moonshot-v1-32k", "name": "Kimi 32K", "tier": "standard"},
+-                    {"id": "moonshot-v1-128k", "name": "Kimi 128K", "tier": "premium"},
+-                ],
+-                "rpm_limit": 60,
+-                "priority": 40,
+-            },
+-            {
+-                "provider_id": "together",
+-                "display_name": "Together AI",
+-                "api_key_env_var": "TOGETHER_API_KEY",
+-                "base_url": "https://api.together.xyz/v1",
+-                "models": [
+-                    {
+-                        "id": "meta-llama/Llama-3-70b-chat-hf",
+-                        "name": "Llama 3 70B",
+-                        "tier": "standard",
+-                    },
+-                ],
+-                "rpm_limit": 60,
+-                "priority": 45,
+-            },
+-            {
+-                "provider_id": "nvidia",
+-                "display_name": "NVIDIA NIM",
+-                "api_key_env_var": "NVIDIA_API_KEY",
+-                "base_url": "https://integrate.api.nvidia.com/v1",
+-                "models": [
+-                    {
+-                        "id": "meta/llama3-70b-instruct",
+-                        "name": "Llama3 70B NIM",
+-                        "tier": "standard",
+-                    },
+-                ],
+-                "rpm_limit": 60,
+-                "priority": 55,
+-            },
+-            {
+-                "provider_id": "openrouter",
+-                "display_name": "OpenRouter (Aggregator)",
+-                "api_key_env_var": "OPENROUTER_API_KEY",
+-                "base_url": "https://openrouter.ai/api/v1",
+-                "models": [
+-                    # OpenRouter provides access to many models
+-                    {
+-                        "id": "google/gemini-2.5-flash",
+-                        "name": "Gemini Flash (via OR)",
+-                        "tier": "economy",
+-                        "is_free": True,
+-                    },
+-                    {
+-                        "id": "meta-llama/llama-3.1-8b-instruct:free",
+-                        "name": "Llama 8B (via OR)",
+-                        "tier": "economy",
+-                        "is_free": True,
+-                    },
+-                ],
+-                "rpm_limit": 60,
+-                "priority": 30,
+-            },
+-        ]
+-
+-        # Register all providers
+-        for template in provider_templates:
+-            config = ProviderConfig(
+-                provider_id=template["provider_id"],
+-                display_name=template["display_name"],
+-                api_key_env_var=template["api_key_env_var"],
+-                base_url=template.get("base_url"),
+-                models=template.get("models", []),
+-                rpm_limit=template.get("rpm_limit", 0),
+-                rpd_limit=template.get("rpd_limit", 0),
+-                is_free_tier=template.get("is_free_tier", True),
+-                priority=template.get("priority", 100),
+-            )
+-
+-            self._providers[config.provider_id] = config
+-
+-        self._initialization_complete = True
+-        logger.debug(f"Registry initialized with {len(self._providers)} provider templates")
+-
+-    async def refresh_status(self):
+-        """Refresh status of all providers (check keys, update availability)"""
+-        if time.time() - self._last_refresh < self._refresh_interval:
+-            return  # Too soon to refresh
+-
+-        self._last_refresh = time.time()
+-
+-        for provider_id, config in self._providers.items():
+-            await self._check_provider_availability(config)
+-
+-    async def _check_provider_availability(self, config: ProviderConfig):
+-        """Check if a provider's API key is valid and working
+-
+-        Issue #438: auth rejections (401/403) from the key-validation endpoint are
+-        DEFINITIVE proof the key is invalid — they now disable the provider
+-        PERMANENTLY (with an actionable error message) instead of cycling through
+-        DISABLED_TEMPORARY every refresh interval, which re-probed the dead key
+-        every 5 minutes and logged 401s forever. refresh_status() already skips
+-        DISABLED_PERMANENT providers, so the probe storm stops after the first
+-        definitive rejection. Network errors and other HTTP codes keep the old
+-        transient-friendly behavior.
+-        """
+-
+-        # Skip if permanently disabled
+-        if config.status == ProviderStatus.DISABLED_PERMANENT:
+-            return
+-
+-        # Check if API key exists
+-        if not config.api_key:
+-            config.status = ProviderStatus.NOT_CONFIGURED
+-            config.last_error = f"No API key found in {config.api_key_env_var}"
+-            return
+-
+-        # Quick validation call (lightweight endpoint)
+-        try:
+-            # Different validation methods per provider.
+-            # Contract (issue #438): _validate_api_key returns the provider's HTTP
+-            # status code, or None when there is no provider-specific probe
+-            # (unknown provider — assume valid if a key exists).
+-            status_code = await self._validate_api_key(config)
+-
+-            if status_code is None or status_code == 200:
+-                # Determine status based on recent performance
+-                if config.success_rate >= 80:
+-                    config.status = ProviderStatus.ACTIVE
+-                elif config.success_rate >= 50:
+-                    config.status = ProviderStatus.DEGRADED
+-                else:
+-                    config.status = ProviderStatus.DEGRADED  # Give it a chance to recover
+-            elif status_code in (401, 403):
+-                # Definitive auth rejection — the key is invalid. Stop probing it.
+-                config.status = ProviderStatus.DISABLED_PERMANENT
+-                config.last_error = (
+-                    f"API key rejected ({status_code}) — rotate {config.api_key_env_var} "
+-                    "in the vault/env and restart to re-enable this provider"
+-                )
+-                config.last_error_time = time.time()
+-                logger.error(
+-                    "⛔ Provider %s DISABLED PERMANENTLY: API key rejected with HTTP %s. "
+-                    "Fix: rotate %s. (No further probes until restart.)",
+-                    config.provider_id,
+-                    status_code,
+-                    config.api_key_env_var,
+-                )
+-            else:
+-                config.status = ProviderStatus.DISABLED_TEMPORARY
+-                config.last_error = f"API key validation failed (HTTP {status_code})"
+-                config.last_error_time = time.time()
+-
+-        except Exception as e:
+-            config.last_error = str(e)
+-            config.last_error_time = time.time()
+-            # Don't change status on network errors (might be transient)
+-
+-    async def _validate_api_key(self, config: ProviderConfig) -> int | None:
+-        """
+-        Validate API key without making expensive calls.
+-
+-        Returns the provider's HTTP status code for the lightweight probe
+-        endpoint, or None when no provider-specific probe exists (unknown
+-        provider — treated as valid when a key is present).
+-
+-        বাংলা: হালকা এন্ডপয়েন্ট দিয়ে কী ভ্যালিডেশন — HTTP স্ট্যাটাস কোড রিটার্ন করে
+-        যাতে ৪০১/৪০৩ (কী অবৈধ) ও অন্যান্য ত্রুটি আলাদা করা যায় (issue #438)।
+-        """
+-        from utils.http_client import create_async_client
+-
+-        # Provider-specific validation logic
+-        if config.provider_id == "gemini":
+-            # Gemini: Try to list models (lightweight call)
+-            async with create_async_client(timeout=10.0) as client:
+-                resp = await client.get(
+-                    f"{config.base_url}/models?key={config.api_key}",
+-                    headers={"Content-Type": "application/json"},
+-                )
+-                return resp.status_code
+-
+-        elif config.provider_id in ["openai", "deepseek", "moonshot", "together", "nvidia", "groq"]:
+-            # OpenAI-compatible: Try models list
+-            async with create_async_client(timeout=10.0) as client:
+-                resp = await client.get(
+-                    f"{config.base_url}/models",
+-                    headers={
+-                        "Authorization": f"Bearer {config.api_key}",
+-                        "Content-Type": "application/json",
+-                    },
+-                )
+-                return resp.status_code
+-
+-        elif config.provider_id == "huggingface":
+-            # HF: Simple authenticated request
+-            async with create_async_client(timeout=10.0) as client:
+-                resp = await client.get(
+-                    f"{config.base_url}", headers={"Authorization": f"Bearer {config.api_key}"}
+-                )
+-                return resp.status_code
+-
+-        elif config.provider_id == "openrouter":
+-            # OpenRouter: Check credits/key validity
+-            async with create_async_client(timeout=10.0) as client:
+-                resp = await client.get(
+-                    "https://openrouter.ai/api/v1/auth/key",
+-                    headers={"Authorization": f"Bearer {config.api_key}"},
+-                )
+-                return resp.status_code
+-
+-        # Unknown provider - assume valid if key exists
+-        return None
+-
+-    def get_provider(self, provider_id: str) -> ProviderConfig | None:
+-        """Get provider by ID"""
+-        return self._providers.get(provider_id)
+-
+-    def get_available_providers(self, require_free_tier: bool = False) -> list[ProviderConfig]:
+-        """
+-        Get list of currently available providers
+-        Sorted by priority (best first)
+-        """
+-        available = []
+-
+-        for config in self._providers.values():
+-            if config.is_available:
+-                if require_free_tier and not config.is_free_tier:
+-                    continue
+-                available.append(config)
+-
+-        # Sort by priority (lower = better), then by success rate
+-        available.sort(key=lambda p: (p.priority, -p.success_rate))
+-
+-        return available
+-
+-    def get_all_providers(self) -> dict[str, ProviderConfig]:
+-        """Get all providers (including unavailable ones)"""
+-        return self._providers.copy()
+-
+-    def record_success(self, provider_id: str, latency_ms: float):
+-        """Record a successful request"""
+-        config = self._providers.get(provider_id)
+-        if config:
+-            config.success_count += 1
+-            config.consecutive_failures = 0
+-            config.last_successful_request = time.time()
+-            config.requests_today += 1
+-            config.reset_minute_counter()
+-            config.requests_this_minute += 1
+-
+-            # Update rolling average latency
+-            if config.avg_latency_ms == 0:
+-                config.avg_latency_ms = latency_ms
+-            else:
+-                config.avg_latency_ms = 0.9 * config.avg_latency_ms + 0.1 * latency_ms
+-
+-    def record_failure(self, provider_id: str, error: str):
+-        """Record a failed request"""
+-        config = self._providers.get(provider_id)
+-        if config:
+-            config.failure_count += 1
+-            config.consecutive_failures += 1
+-            config.last_error = error
+-            config.last_error_time = time.time()
+-
+-            # Issue #438: a request-time 401/403 is definitive auth evidence —
+-            # disable permanently immediately instead of burning through the
+-            # 3→temporary / 10→permanent ladder (each intermediate step kept
+-            # re-probing the dead key every refresh interval).
+-            error_lower = str(error).lower()
+-            if "api error 401" in error_lower or "api error 403" in error_lower:
+-                config.status = ProviderStatus.DISABLED_PERMANENT
+-                logger.error(
+-                    "⛔ Provider %s DISABLED PERMANENTLY after auth error (401/403) at "
+-                    "request time. Fix: rotate its API key, then restart or call "
+-                    "enable_provider(). Error: %s",
+-                    provider_id,
+-                    str(error)[:160],
+-                )
+-                return
+-
+-            # Auto-degrade after consecutive failures
+-            if config.consecutive_failures >= 3:
+-                if config.consecutive_failures >= 10:
+-                    # Too many failures - might be invalid key
+-                    config.status = ProviderStatus.DISABLED_PERMANENT
+-                    logger.debug(f"⛔ Provider {provider_id} disabled permanently (invalid key?)")
+-                else:
+-                    config.status = ProviderStatus.DISABLED_TEMPORARY
+-                    logger.debug(
+-                        f"🔴 Provider {provider_id} temporarily disabled ({config.consecutive_failures} failures)"
+-                    )
+-
+-    def enable_provider(self, provider_id: str):
+-        """Manually re-enable a provider"""
+-        config = self._providers.get(provider_id)
+-        if config:
+-            config.enabled = True
+-            config.consecutive_failures = 0
+-            config.status = ProviderStatus.UNKNOWN  # Will be re-checked on next refresh
+-            logger.debug(f"Provider {provider_id} re-enabled")
+-
+-    def disable_provider(self, provider_id: str, permanent: bool = False):
+-        """Manually disable a provider"""
+-        config = self._providers.get(provider_id)
+-        if config:
+-            config.enabled = False
+-            config.status = (
+-                ProviderStatus.DISABLED_PERMANENT
+-                if permanent
+-                else ProviderStatus.DISABLED_TEMPORARY
+-            )
+-            logger.debug(
+-                f"🚫 Provider {provider_id} disabled ({'permanent' if permanent else 'temporary'})"
+-            )
+-
+-    def get_status_summary(self) -> dict:
+-        """Get summary of all provider statuses"""
+-        summary = {
+-            "total_providers": len(self._providers),
+-            "active": 0,
+-            "degraded": 0,
+-            "disabled_temporary": 0,
+-            "disabled_permanent": 0,
+-            "not_configured": 0,
+-            "providers": {},
+-        }
+-
+-        for provider_id, config in self._providers.items():
+-            status = config.status.value
+-            if status in summary:
+-                summary[status] += 1
+-
+-            summary["providers"][provider_id] = {
+-                "display_name": config.display_name,
+-                "status": status,
+-                "has_api_key": config.api_key is not None,
+-                "success_rate": round(config.success_rate, 1),
+-                "avg_latency_ms": round(config.avg_latency_ms, 1),
+-                "requests_today": config.requests_today,
+-                "is_free_tier": config.is_free_tier,
+-                "priority": config.priority,
+-            }
+-
+-        return summary
++"""Canonical re-export from core.services.dynamic_ai.provider_registry (SSOT #751)."""
++from core.services.dynamic_ai.provider_registry import *  # noqa: F401, F403
+diff --git a/gateway/services/email/email_service.py b/gateway/services/email/email_service.py
+index 1791104f..ff30bd52 100644
+--- a/gateway/services/email/email_service.py
++++ b/gateway/services/email/email_service.py
+@@ -1,226 +1,2 @@
+-"""This module provides a robust and asynchronous email service for the SupremeAI project, centralizing the functionality for sending various transactional emails such as welcome messages, password reset links, and billing notifications. It integrates with an external email API (e.g., Resend) for delivery, leverages application settings for configuration, and reports errors via the internal event bus, ensuring reliable communication with users within the highly scalable AI ecosystem.
+-
+-Key Components:
+-- `EmailService`: Manages the configuration and dispatch of different types of emails through an external API, handling API key retrieval, settings, and error reporting.
+-- `email_service`: A module-level instance of `EmailService` for convenient, singleton access throughout the application.
+-- `_get_settings()`: Lazily loads application settings from `core.config`, providing a simple fallback for environments where settings might not be available (e.g., certain test setups).
+-- `api_key`: Property to retrieve the Resend API key from environment variables, essential for authenticating with the email service.
+-- `from_email`: Property to retrieve the sender's email address from environment variables, with a default fallback.
+-- `_send_email()`: An internal asynchronous method responsible for making the actual HTTP POST request to the configured email API, handling success/failure logging and error event emission.
+-- `send_welcome_email()`: Sends a personalized welcome email to new users, including a link to the SupremeAI studio.
+-- `send_password_reset()`: Dispatches a password reset email containing a unique, time-limited reset link.
+-- `send_billing_notification()`: Sends a notification regarding upcoming invoices, usage details, and suggestions for cost optimization.
+-
+-Dependencies:
+-- `os`: For accessing environment variables (e.g., `RESEND_API_KEY`, `RESEND_FROM_EMAIL`).
+-- `httpx`: For making asynchronous HTTP requests to the external email API.
+-- `loguru`: For structured logging of email sending operations, warnings, and errors.
+-- `core.messaging.event_bus`: For emitting `ErrorEvent`s when email sending encounters API or network failures.
+-- `core.config`: For accessing application-wide settings such as the Resend API URL and the SupremeAI frontend URL."""
+-
+-import os
+-from typing import Any
+-
+-import httpx
+-
+-from core.config import settings
+-from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
+-from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+-from utils.http_client import create_async_client
+-
+-
+-class EmailService:
+-    """বাংলা মন্তব্য: ইমেইল সার্ভিস যা Pydantic Settings থেকে URL এবং API Key রিড করে।"""
+-
+-    def __init__(self):
+-        self._settings = None
+-
+-    def _get_settings(self):
+-        if self._settings is not None:
+-            return self._settings
+-        return settings
+-
+-    @property
+-    def api_key(self) -> str:
+-        """বাংলা মন্তব্য: Resend API key from env var."""
+-        return os.getenv("RESEND_API_KEY", "")
+-
+-    @property
+-    def from_email(self) -> str:
+-        """বাংলা মন্তব্য: From email address."""
+-        env_val = os.getenv("RESEND_FROM_EMAIL")
+-        if env_val:
+-            return env_val
+-        from core.config import settings
+-
+-        return settings.resend_from_email
+-
+-    @with_error_bus("_send_email")
+-    async def _send_email(
+-        self, to_email: str = "", subject: str = "", html_body: str = "", **kwargs
+-    ) -> bool:
+-        to_email = to_email or kwargs.get("to", "") or kwargs.get("to_email", "")
+-        html_body = html_body or kwargs.get("body", "") or kwargs.get("html_body", "")
+-        s = self._get_settings()
+-        api_key = self.api_key or "mock-key-for-testing"
+-        from_email = self.from_email
+-        api_url = getattr(s, "resend_api_url", "https://api.resend.com/emails")
+-
+-        if not api_key:
+-            logger.warning(f"[Mock Email] To: {to_email} | Subject: {subject}")
+-            logger.debug(f"Body: {html_body[:100]}...")
+-            return False
+-
+-        try:
+-            async with create_async_client(timeout=15.0) as client:
+-                response = await client.post(
+-                    api_url,
+-                    headers={
+-                        "Authorization": f"Bearer {api_key}",
+-                        "Content-Type": "application/json",
+-                    },
+-                    json={
+-                        "from": from_email,
+-                        "to": [to_email],
+-                        "subject": subject,
+-                        "html": html_body,
+-                    },
+-                )
+-                if getattr(response, "is_success", False) or getattr(
+-                    response, "status_code", 0
+-                ) in (200, 201):
+-                    logger.info(f"Email sent successfully to {to_email}")
+-                    return True
+-                else:
+-                    err_msg = str(getattr(response, "text", "API Error"))[:200]
+-                    logger.error(f"Failed to send email to {to_email}: {err_msg}")
+-                    error_event_bus.emit(
+-                        ErrorEvent(
+-                            module="email_service",
+-                            error_type="RESEND_API_ERROR",
+-                            message=err_msg,
+-                            severity="ERROR",
+-                            structured_context=ErrorContext(module="auto_fixed"),
+-                            context={
+-                                "status_code": getattr(response, "status_code", 500),
+-                                "to_email": to_email,
+-                            },
+-                        )
+-                    )
+-                    return False
+-        except Exception as e:
+-            logger.error(f"Exception while sending email: {e}")
+-            error_event_bus.emit(
+-                ErrorEvent(
+-                    module="email_service",
+-                    error_type="HTTP_REQUEST_FAILED",
+-                    message=str(e)[:200],
+-                    severity="ERROR",
+-                    structured_context=ErrorContext(module="auto_fixed"),
+-                    context={"to_email": to_email},
+-                )
+-            )
+-            return False
+-
+-    async def send_welcome_email(
+-        self, user_email: str = "", user_name: str = "Developer", **kwargs
+-    ) -> Any:
+-        to_email = user_email or kwargs.get("to_email", "")
+-        user_name = user_name or kwargs.get("user_name", "Developer")
+-        subject = "Welcome to SupremeAI 2.0 🚀"
+-        frontend_url = getattr(self._get_settings(), "frontend_url", "https://supremeai.dev")
+-        html = f"""
+-        <html>
+-            <body style="font-family: Arial, sans-serif; color: #333;">
+-                <h2>Welcome, {user_name}!</h2>
+-                <p>We're thrilled to have you onboard SupremeAI 2.0.</p>
+-                <p>You can now orchestrate multiple cloud providers, run local agents, and build faster than ever.</p>
+-                <a href="{frontend_url}/studio" style="padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 5px;">Go to Studio</a>
+-            </body>
+-        </html>
+-        """
+-        return await self._send_email(to_email, subject, html)
+-
+-    async def send_password_reset(
+-        self, user_email: str = "", reset_link: str = "", **kwargs
+-    ) -> Any:
+-        to_email = user_email or kwargs.get("to_email", "")
+-        reset_link = reset_link or kwargs.get("reset_link", "")
+-        subject = "Reset Your SupremeAI Password"
+-        html = f"""
+-        <html>
+-            <body style="font-family: Arial, sans-serif; color: #333;">
+-                <h2>Password Reset Request</h2>
+-                <p>Click the link below to reset your password. This link expires in 1 hour.</p>
+-                <a href="{reset_link}">{reset_link}</a>
+-            </body>
+-        </html>
+-        """
+-        return await self._send_email(to_email, subject, html)
+-
+-    async def send_billing_notification(
+-        self, user_email: str = "", amount: float = 0.0, usage: str = "", **kwargs
+-    ) -> Any:
+-        to_email = user_email or kwargs.get("to_email", "")
+-        amount = amount or kwargs.get("invoice_amount", 0.0)
+-        usage = usage or kwargs.get("due_date", "")
+-        subject = "SupremeAI - Upcoming Invoice Notification"
+-        html = f"""
+-        <html>
+-            <body style="font-family: Arial, sans-serif; color: #333;">
+-                <h2>Billing Update</h2>
+-                <p>Your upcoming invoice for this month is <strong>${amount:.2f}</strong>.</p>
+-                <p>Top usage category: {usage}</p>
+-                <p>To keep zero-cost operations, consider connecting your own API keys in the Studio.</p>
+-            </body>
+-        </html>
+-        """
+-        return await self._send_email(to_email, subject, html)
+-
+-    async def draft(self, intent: str, context: dict[str, Any] | None = None) -> dict[str, str]:
+-        """ADVANCED: Generate smart AI-drafted email content using ModelRouter."""
+-        context = context or {}
+-        prompt = (
+-            f"You are SupremeAI's automated communication agent.\n"
+-            f"Draft a professional, concise email for intent: '{intent}'.\n"
+-            f"Context: {context}\n"
+-            f"Return ONLY a JSON with keys: 'subject' and 'html_body'."
+-        )
+-        try:
+-            from brain.model_router import ModelRouter
+-
+-            router = ModelRouter()
+-            res = router.route_and_generate(prompt=prompt, task_type="general", max_cost=0.01)
+-            raw = res.get("text", "{}").strip()
+-            if raw.startswith("```"):
+-                lines = raw.splitlines()
+-                raw = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+-            import json
+-
+-            data = json.loads(raw)
+-            return {
+-                "subject": data.get("subject", f"SupremeAI Notification: {intent}"),
+-                "html_body": data.get("html_body", f"<p>{intent}</p>"),
+-            }
+-        except Exception as e:
+-            logger.warning(f"[EmailService] AI drafting fallback: {e}")
+-            return {
+-                "subject": f"SupremeAI: {intent.capitalize()}",
+-                "html_body": f"<p>Hello,<br/>This is an automated notification regarding {intent}.</p>",
+-            }
+-
+-    async def optimal_send_hour(self, user_email: str) -> int:
+-        """ADVANCED: Compute the optimal send hour for user engagement (default 10 AM)."""
+-        try:
+-            from core.cache.semantic_cache import semantic_cache
+-
+-            cached = await semantic_cache.get(f"email_optimal_hour::{user_email}")
+-            if cached and isinstance(cached, int | str):
+-                return int(cached)
+-        except Exception as e:
+-            logger.debug(f"[EmailService] Optimal send hour cache error: {e}")
+-        return 10
+-
+-
+-email_service = EmailService()
++"""Canonical re-export from core.services.email.email_service (SSOT #751)."""
++from core.services.email.email_service import *  # noqa: F401, F403
+diff --git a/gateway/services/hitl/dispatch.py b/gateway/services/hitl/dispatch.py
+index a12f43c2..f2840015 100644
+--- a/gateway/services/hitl/dispatch.py
++++ b/gateway/services/hitl/dispatch.py
+@@ -1,119 +1,2 @@
+-"""Approval executors — M17 P-B "নির্বাহক-জন্ম" (dispatch-table).
+-
+-বাংলা (M17 P-B): আজ ``HITLEngine.approve()`` কেবল status-flip করে —
+-অনুমোদিত কাজ **কখনো execute হয় না** (frontend যে `/api/v1/hitl/approve`
+-পৃষ্ঠে approve করে, সেই Firestore স্টোরের রেকর্ড "approved" হয়ে জমে থাকে;
+-executor-সহ pending-task পৃষ্ঠ (`approval_manager`) রুট-shadow-এর পিছনে
+-থেকে যায় এবং তার স্টোরে শূন্য producer)। এই মডিউল approve-পরবর্তী
+-কার্যকরী-অর্ধ নিয়ে আসে: **data-file dispatch-table** — target_resource →
+-executor; অজানা target হলে fail-closed loud (নীরব no-op নিষিদ্ধ)।
+-
+-প্যাটার্ন-পুনঃব্যবহার (Constitution #3): skill executor-টি `approval_manager`
+-রুটের প্রমাণিত SKILL_GENERATION ব্লকের সেমান্টিক যমজ — AICodeValidator
+-validate_before_use + realpath path-traversal guard + bounded skills-dir
+-write। দুই পৃষ্ঠ একই নিরাপত্তা-চুক্তিতে চলে; ৭→১ স্টোর-একত্রীকরণ M17 P-D।
+-"""
+-
+-from __future__ import annotations
+-
+-import os
+-from collections.abc import Callable
+-from typing import Any
+-
+-from core.code_validator import AICodeValidator
+-from core.logging_config import logger
+-
+-# Executor চুক্তি: payload → execution-result dict। যেকোনো ব্যর্থতা
+-# exception দিয়ে loud — কখনো {"status": "failed"} ফেরত দিয়ে ভান নয়।
+-ApprovalExecutor = Callable[[dict[str, Any]], dict[str, Any]]
+-
+-
+-class ApprovalDispatchError(RuntimeError):
+-    """অজানা/অনুপস্থিত executor-এ fail-closed সংকেত (M17 P-B)।"""
+-
+-
+-def _skills_dir() -> str:
+-    """Canonical skills directory (backend/skills) — approval_manager-অনুরূপ।"""
+-    backend_dir = os.path.dirname(
+-        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+-    )
+-    return os.path.join(backend_dir, "skills")
+-
+-
+-def _extract_skill_payload(payload: dict[str, Any]) -> tuple[str, str]:
+-    """payload থেকে (skill_name, code) বের করা — দুই স্টোরের key-চুক্তি একসাথে।
+-
+-    বাংলা: HITLEngine producer (auto_skill_creator) ``code`` লেখে;
+-    pending-task পৃষ্ঠ ``generated_code`` — দুটোই গ্রহণযোগ্য, অনুপস্থিতে
+-    loud ValueError (নীরব খালি-লেখা নিষিদ্ধ)।
+-    """
+-    skill_name = payload.get("skill_name")
+-    code = payload.get("code", payload.get("generated_code"))
+-    if not skill_name or not code:
+-        raise ValueError(
+-            "approved payload missing skill_name or code — refusing silent no-op (M17 P-B)"
+-        )
+-    if not str(skill_name).replace("_", "").replace("-", "").isalnum():
+-        raise ValueError(f"Invalid skill name format: {skill_name!r}")
+-    return str(skill_name), str(code)
+-
+-
+-def execute_approved_skill(payload: dict[str, Any]) -> dict[str, Any]:
+-    """``skills/{name}`` অনুমোদনের executor — validate → guard → write।
+-
+-    বাংলা: approval_manager-এর SKILL_GENERATION ব্লকের সেমান্টিক যমজ।
+-    AICodeValidator ব্যর্থ বা path-traversal ধরা পড়লে loud exception —
+-    ফাইল কখনো আংশিক/নীরবভাবে লেখা হয় না।
+-    """
+-    skill_name, code = _extract_skill_payload(payload)
+-
+-    validation = AICodeValidator().validate_before_use(code)
+-    if not validation.get("can_use", False):
+-        raise ValueError(f"Code validation failed: {validation.get('checks', {})}")
+-
+-    skills_dir = _skills_dir()
+-    os.makedirs(skills_dir, exist_ok=True)
+-    path = os.path.join(skills_dir, f"{skill_name}.py")
+-    real_path = os.path.realpath(path)
+-    if not real_path.startswith(os.path.realpath(skills_dir)):
+-        raise PermissionError("Path traversal attempt blocked (M17 P-B executor)")
+-
+-    with open(path, "w", encoding="utf-8") as f:
+-        f.write(code)
+-    logger.info(f"✅ [M17 P-B] Approved skill '{skill_name}' deployed to {path}")
+-    return {"status": "executed", "target": f"skills/{skill_name}", "path": path}
+-
+-
+-# ── data-file dispatch-table: prefix → executor ─────────────────────
+-# নতুন producer যোগ করতে এখানে এন্ট্রি + নিজস্ব executor — নীরব
+-# no-op-এর রাস্তা নেই (অজানা target = fail-closed loud)।
+-APPROVAL_EXECUTORS: dict[str, ApprovalExecutor] = {
+-    "skills/": execute_approved_skill,
+-}
+-
+-
+-def resolve_executor(target_resource: str) -> tuple[str, ApprovalExecutor]:
+-    """target_resource-এর executor resolve — অজানা হলে fail-closed loud।
+-
+-    বাংলা: longest-prefix ম্যাচ; মিল না পেলে ApprovalDispatchError —
+-    approve() স্টোরে status-flip-এর **আগেই** ব্যর্থ হয়, ফলে "approved
+-    কিন্তু কিছুই হয়নি" ফাঁদ কাঠামোগতভাবে অসম্ভব।
+-    """
+-    if target_resource:
+-        for prefix, executor in APPROVAL_EXECUTORS.items():
+-            if target_resource.startswith(prefix):
+-                return prefix, executor
+-    raise ApprovalDispatchError(
+-        f"No approval executor registered for target_resource={target_resource!r} "
+-        "(fail-closed, M17 P-B) — register it in APPROVAL_EXECUTORS or the "
+-        "producer must not suspend without an executor."
+-    )
+-
+-
+-def execute_approved(target_resource: str, payload: dict[str, Any]) -> dict[str, Any]:
+-    """Resolve + execute — engine.approve()-র একক প্রবেশদ্বার।"""
+-    prefix, executor = resolve_executor(target_resource)
+-    logger.info(
+-        f"[M17 P-B] Dispatching approved action target={target_resource!r} via '{prefix}' executor"
+-    )
+-    return executor(payload or {})
++"""Canonical re-export from core.services.hitl.dispatch (SSOT #751)."""
++from core.services.hitl.dispatch import *  # noqa: F401, F403
+diff --git a/gateway/services/hitl/engine.py b/gateway/services/hitl/engine.py
+index 410c2c34..945fc5c1 100644
+--- a/gateway/services/hitl/engine.py
++++ b/gateway/services/hitl/engine.py
+@@ -1,536 +1,2 @@
+-from datetime import UTC, datetime, timedelta
+-from typing import Any, Optional
+-
+-from core.logging_config import logger
+-from database.tenant_db import TenantAwareFirestore
+-
+-from .dispatch import ApprovalDispatchError, execute_approved, resolve_executor
+-from .hitl_ledger import HITLAuditLedger
+-
+-#: M17 P-D: HITLEngine suspension-এর canonical idempotency-key উপসর্গ।
+-_CANONICAL_KEY_PREFIX = "hitl:"
+-
+-# ── #481 canonical approval contract (docs/security/HITL_APPROVAL_CONTRACT.md) ──
+-#: Statuses of a HITLEngine approval record (Firestore ``pending_approvals``).
+-STATUS_PENDING = "pending_approval"
+-STATUS_APPROVED = "approved"
+-STATUS_REJECTED = "rejected"
+-STATUS_EXPIRED = "expired"
+-
+-#: Default decision window (mirrors ``models.pending_tasks.DEFAULT_APPROVAL_TTL_SECONDS``
+-#: — one contract, both stores).
+-DEFAULT_APPROVAL_TTL_SECONDS = 24 * 60 * 60
+-
+-
+-class HITLStateError(ValueError):
+-    """A decision transition violates the approval state machine (#481).
+-
+-    Subclasses ``ValueError`` so pre-contract callers/tests matching
+-    ``ValueError`` keep working unchanged.
+-    """
+-
+-
+-class ApprovalExpiredError(HITLStateError):
+-    """A decision was attempted after the approval TTL elapsed (#481)."""
+-
+-
+-class ApprovalNotAuthorizedError(HITLStateError):
+-    """The decision actor failed the authorization gate (#481)."""
+-
+-
+-def _utc_now_iso() -> str:
+-    return datetime.now(UTC).isoformat()
+-
+-
+-def _is_expired(expires_at: Any) -> bool:
+-    """TTL check (#481) — parse when possible, lexicographic UTC-ISO fallback.
+-
+-    Records without ``expires_at`` (pre-contract rows) never expire.
+-    """
+-    if not expires_at:
+-        return False
+-    try:
+-        return datetime.fromisoformat(str(expires_at)) <= datetime.now(UTC)
+-    except ValueError:
+-        return str(expires_at) <= _utc_now_iso()
+-
+-
+-def _require_actor(admin_user_id: str, record_id: str) -> None:
+-    """Explicit authorization gate (#481 §3.1): the approver identity must be present.
+-
+-    Route-level RBAC stays the primary gate; this is the engine-side backstop so
+-    a programmatic caller cannot decide with an anonymous actor.
+-    """
+-    if not str(admin_user_id or "").strip():
+-        raise ApprovalNotAuthorizedError(
+-            f"Approval {record_id} requires an explicit, authenticated approver identity (#481)"
+-        )
+-
+-
+-def _require_tenant_scope(record: dict[str, Any], tenant_id: str | None, record_id: str) -> None:
+-    """Tenant-scoping gate (#481 §3.5): record and caller tenants must match."""
+-    record_tenant = record.get("tenant_id")
+-    if record_tenant and tenant_id is not None and str(record_tenant) != str(tenant_id):
+-        raise ApprovalNotAuthorizedError(
+-            f"Approval {record_id} is scoped to tenant {record_tenant!r}; "
+-            f"caller supplied tenant {tenant_id!r} (#481 tenant scoping)"
+-        )
+-
+-
+-class HITLEngine:
+-    """
+-    Human-In-The-Loop Engine.
+-    Handles the suspension, approval, and rejection of skills/workflows that require human oversight.
+-
+-    #481 canonical contract (docs/security/HITL_APPROVAL_CONTRACT.md):
+-    ``pending_approval → approved | rejected | expired``; terminal states absorb
+-    every further transition (replay-proof); approve dispatches its executor
+-    exactly once; records carry a 24h decision deadline and an optional tenant
+-    scope; every transition is stamped and ledgered (append-only hash chain).
+-    """
+-
+-    def __init__(self, db: TenantAwareFirestore):
+-        # বাংলা (M17 P-C, fail-closed): আগে db-শূন্য/বিকৃত স্টোরে নীরবভাবে
+-        # নির্মিত হতো এবং প্রথম অপারেশনে AttributeError → নীরব []/ব্যর্থতা।
+-        # এখন স্টোর-চুক্তি স্পষ্ট: ব্যবহারযোগ্য `.client` ছাড়া HITLEngine গড়াই
+-        # নিষিদ্ধ — অনুপস্থিত স্টোর নির্মাণেই লাউড-ব্যর্থ হয়, ভান নেই।
+-        if db is None or getattr(db, "client", None) is None:
+-            raise RuntimeError(
+-                "HITLEngine requires a durable store exposing a usable `.client` "
+-                "— refusing to construct without one (fail-closed, M17 P-C)"
+-            )
+-        self.db = db
+-        self.collection_name = "pending_approvals"
+-        self.ledger = HITLAuditLedger(db=self.db)
+-
+-    def suspend_for_approval(
+-        self,
+-        target_resource: str,
+-        payload: dict[str, Any],
+-        *,
+-        ttl_seconds: int | None = None,
+-        tenant_id: str | None = None,
+-    ) -> str:
+-        """
+-        Suspend an action for human approval.
+-        Returns the ID of the pending approval record.
+-
+-        #481: the record carries its decision deadline (``expires_at``, default
+-        24h) and — when the producer knows it — the owning ``tenant_id``; both
+-        are enforced by :meth:`approve` / :meth:`reject`.
+-        """
+-        # Create a pending approval record
+-        record_id = target_resource
+-        now = datetime.now(UTC).isoformat()
+-        ttl = ttl_seconds if ttl_seconds is not None else DEFAULT_APPROVAL_TTL_SECONDS
+-
+-        pending_record = {
+-            "id": record_id,
+-            "target_resource": target_resource,
+-            "payload": payload,
+-            "status": STATUS_PENDING,
+-            "created_at": now,
+-            "updated_at": now,
+-            "expires_at": (datetime.now(UTC) + timedelta(seconds=ttl)).isoformat(),
+-            "tenant_id": tenant_id,
+-        }
+-
+-        try:
+-            self.db.client.collection(self.collection_name).document(record_id).set(pending_record)
+-            logger.info(f"?? [HITLEngine] Suspended '{target_resource}' for human approval.")
+-        except Exception as e:
+-            logger.error(f"?[HITLEngine] Failed to suspend '{target_resource}': {e}")
+-            raise RuntimeError(f"Failed to suspend action for HITL: {e}")
+-
+-        # M17 P-D (seven→one): canonical pending_tasks-এ write-through mirror —
+-        # দ্বৈত-লেখা পর্ব (Firestore = HITLEngine-authority, pending_tasks =
+-        # একক read-পৃষ্ঠ)। best-effort + লাউড: mirror-ব্যর্থতা suspension
+-        # ব্লক করে না, কিন্তু নীরবেও গিলে না।
+-        self._mirror_to_canonical_create(record_id, payload)
+-
+-        # Log to ledger
+-        self.ledger.record_entry_sync(
+-            agent_id="system",
+-            action="suspend_for_approval",
+-            payload={"target_resource": target_resource, "record_id": record_id},
+-        )
+-
+-        return record_id
+-
+-    def get_pending_approvals(self) -> list[dict[str, Any]]:
+-        """
+-        Retrieve all pending approvals.
+-
+-        বাংলা (M17 P-C): আগে স্টোর-ত্রুটিতে নীরবে [] ফেরত দিত — admin কিউ
+-        ফাঁকা দেখিয়ে ভান করত যে কিছুই অনুমোদনের অপেক্ষায় নেই। এখন ত্রুটি
+-        লাউড RuntimeError — রুট স্তরে 500 হয়ে স্পষ্ট হবে, কখনো ভান নয়।
+-        """
+-        try:
+-            ref = self.db.client.collection(self.collection_name)
+-            query = ref.where("status", "==", "pending_approval")
+-            docs = list(query.stream())
+-            records = [doc.to_dict() for doc in docs]
+-            # #481: expired approvals are no longer decisionable — filtered
+-            # read-side (same semantics as ``pending_tasks.list_pending``) so
+-            # the admin queue never offers a decision the contract will refuse.
+-            return [r for r in records if not _is_expired(r.get("expires_at"))]
+-        except Exception as e:
+-            logger.error(f"[HITLEngine] Failed to fetch pending approvals: {e}")
+-            raise RuntimeError(f"HITL queue is UNAVAILABLE (store read failed): {e}") from e
+-
+-    def get_pending_approval(self, record_id: str) -> dict[str, Any] | None:
+-        """
+-        Retrieve a specific pending approval by ID.
+-        """
+-        try:
+-            doc = self.db.client.collection(self.collection_name).document(record_id).get()
+-            if doc.exists:
+-                return doc.to_dict()
+-            return None
+-        except Exception as e:
+-            logger.error(f"?[HITLEngine] Failed to fetch pending approval {record_id}: {e}")
+-            return None
+-
+-    def approve(
+-        self, admin_user_id: str, record_id: str, *, tenant_id: str | None = None
+-    ) -> dict[str, Any]:
+-        """
+-        Approve a pending action and EXECUTE it (M17 P-B dispatch).
+-
+-        #481 canonical contract (docs/security/HITL_APPROVAL_CONTRACT.md):
+-        ১. explicit authorization — empty actor → ``ApprovalNotAuthorizedError``;
+-        ২. status-flip-এর **আগেই** executor resolve — অজানা target হলে
+-           loud fail-closed, রেকর্ড pending-ই থাকে ("approved অথচ
+-           কিছুই হয়নি" ফাঁদ অসম্ভব);
+-        ৩. guarded terminal transition (state/expiry/tenant) — CAS via a store
+-           transaction when available, so two concurrent approves cannot both
+-           dispatch: the loser raises ``HITLStateError`` and never executes;
+-        ৪. duplicate/replayed approve → ``HITLStateError``, NO re-execution;
+-           TTL elapsed → record flips to ``expired`` + ``ApprovalExpiredError``;
+-        ৫. রানটাইম-ব্যর্থতা হলে execution_error রেকর্ডে + ledger
+-           'approval_execution_failed' + loud re-raise (নীরব ভান নেই)।
+-        """
+-        doc_ref = self.db.client.collection(self.collection_name).document(record_id)
+-        doc = doc_ref.get()
+-
+-        if not doc.exists:
+-            raise ValueError(f"Pending approval record {record_id} not found.")
+-
+-        record = doc.to_dict()
+-
+-        target = record.get("target_resource") or ""
+-        try:
+-            resolve_executor(target)
+-        except ApprovalDispatchError as exc:
+-            logger.error(f"[M17 P-B] approve({record_id}) fail-closed: {exc} — রেকর্ড pending-ই থাকল")
+-            raise
+-
+-        self._transition_to_terminal(
+-            doc_ref,
+-            record,
+-            record_id,
+-            admin_user_id,
+-            tenant_id,
+-            target_status=STATUS_APPROVED,
+-            extra_fields={"approved_by": admin_user_id},
+-            ledger_action="skill_approved",
+-            ledger_payload={
+-                "target_resource": record.get("target_resource"),
+-                "record_id": record_id,
+-            },
+-        )
+-
+-        logger.info(f"[HITLEngine] Admin {admin_user_id} approved '{record_id}'.")
+-
+-        # ── M17 P-B: approve-পরবর্তী কার্যকরী-অর্ধ (dispatch executor) ──
+-        try:
+-            result = execute_approved(target, record.get("payload") or {})
+-        except Exception as exc:
+-            exec_failed_at = datetime.now(UTC).isoformat()
+-            doc_ref.update(
+-                {
+-                    "execution_status": "failed",
+-                    "execution_error": str(exc),
+-                    "executed_at": exec_failed_at,
+-                }
+-            )
+-            self.ledger.record_entry_sync(
+-                agent_id=admin_user_id,
+-                action="approval_execution_failed",
+-                payload={
+-                    "target_resource": record.get("target_resource"),
+-                    "record_id": record_id,
+-                    "error": str(exc),
+-                },
+-            )
+-            logger.error(
+-                f"[M17 P-B] Approved record '{record_id}' FAILED to execute — "
+-                f"target={target!r}: {exc} (loud, execution_status=failed)"
+-            )
+-            raise
+-
+-        doc_ref.update(
+-            {
+-                "execution_status": "executed",
+-                "execution_result": result,
+-                "executed_at": datetime.now(UTC).isoformat(),
+-            }
+-        )
+-        self.ledger.record_entry_sync(
+-            agent_id=admin_user_id,
+-            action="approval_executed",
+-            payload={
+-                "target_resource": record.get("target_resource"),
+-                "record_id": record_id,
+-                "result": result,
+-            },
+-        )
+-        record["execution_status"] = "executed"
+-        record["execution_result"] = result
+-        return record
+-
+-    def reject(
+-        self, admin_user_id: str, record_id: str, reason: str = "", *, tenant_id: str | None = None
+-    ) -> dict[str, Any]:
+-        """
+-        Reject a pending action.
+-
+-        #481: same authorization/expiry/tenant/state gates as :meth:`approve`
+-        (without the dispatch half) — a terminal or expired record can no
+-        longer be rejected either.
+-        """
+-        doc_ref = self.db.client.collection(self.collection_name).document(record_id)
+-        doc = doc_ref.get()
+-
+-        if not doc.exists:
+-            raise ValueError(f"Pending approval record {record_id} not found.")
+-
+-        record = doc.to_dict()
+-
+-        self._transition_to_terminal(
+-            doc_ref,
+-            record,
+-            record_id,
+-            admin_user_id,
+-            tenant_id,
+-            target_status=STATUS_REJECTED,
+-            extra_fields={"rejected_by": admin_user_id, "rejection_reason": reason},
+-            ledger_action="skill_rejected",
+-            ledger_payload={
+-                "target_resource": record.get("target_resource"),
+-                "record_id": record_id,
+-                "reason": reason,
+-            },
+-            reason=reason,
+-        )
+-
+-        logger.warning(
+-            f"[HITLEngine] Admin {admin_user_id} rejected '{record_id}'. Reason: {reason}"
+-        )
+-        return record
+-
+-    # ── #481: guarded terminal transition ─────────────────────────────────
+-
+-    def _assert_decisionable(
+-        self, record: dict[str, Any], record_id: str, admin_user_id: str, tenant_id: str | None
+-    ) -> None:
+-        """Raise unless the record may still transition (#481 §2.1).
+-
+-        Order matters: explicit actor → pending state → tenant scope → expiry.
+-        """
+-        _require_actor(admin_user_id, record_id)
+-        if record.get("status") != STATUS_PENDING:
+-            raise HITLStateError(f"Record {record_id} is not in pending state.")
+-        _require_tenant_scope(record, tenant_id, record_id)
+-        if _is_expired(record.get("expires_at")):
+-            raise ApprovalExpiredError(
+-                f"Approval {record_id} expired at {record.get('expires_at')} — "
+-                "expired approvals can no longer be decided (#481 replay guard)"
+-            )
+-
+-    def _transition_to_terminal(
+-        self,
+-        doc_ref: Any,
+-        record: dict[str, Any],
+-        record_id: str,
+-        admin_user_id: str,
+-        tenant_id: str | None,
+-        *,
+-        target_status: str,
+-        extra_fields: dict[str, Any],
+-        ledger_action: str,
+-        ledger_payload: dict[str, Any],
+-        reason: str | None = None,
+-    ) -> None:
+-        """Guard + commit a terminal status-flip (#481).
+-
+-        Transactional (CAS) when the store exposes ``client.transaction()`` —
+-        the guard re-runs against the transactional snapshot, so two concurrent
+-        decisions cannot both flip: the loser aborts loudly and its executor
+-        never runs. Stores without transaction support keep the read-guarded
+-        flip (sequential determinism; the canonical ``pending_tasks`` store
+-        mirrored under ``hitl:<record_id>`` always provides true CAS).
+-        """
+-        txn_factory = getattr(self.db.client, "transaction", None)
+-        try:
+-            if callable(txn_factory):
+-                self._cas_transition(
+-                    txn_factory,
+-                    doc_ref,
+-                    record_id,
+-                    admin_user_id,
+-                    tenant_id,
+-                    target_status,
+-                    extra_fields,
+-                )
+-            else:
+-                self._assert_decisionable(record, record_id, admin_user_id, tenant_id)
+-                doc_ref.update(
+-                    {**extra_fields, "status": target_status, "updated_at": _utc_now_iso()}
+-                )
+-        except ApprovalExpiredError:
+-            # Single expiry path for BOTH store kinds: land the deterministic
+-            # `expired` terminal state + ledger + canonical mirror, then raise.
+-            self._mark_expired(doc_ref, record_id, admin_user_id, record.get("expires_at"))
+-            raise
+-
+-        self._mirror_to_canonical_resolve(record_id, target_status, admin_user_id, reason=reason)
+-
+-        # Log to ledger
+-        self.ledger.record_entry_sync(
+-            agent_id=admin_user_id,
+-            action=ledger_action,
+-            payload=ledger_payload,
+-        )
+-
+-        # The returned snapshot must reflect the committed transition (not the
+-        # pre-flip read) — deterministic response contract (#481).
+-        record.update({**extra_fields, "status": target_status, "updated_at": _utc_now_iso()})
+-
+-    def _cas_transition(
+-        self,
+-        txn_factory: Any,
+-        doc_ref: Any,
+-        record_id: str,
+-        admin_user_id: str,
+-        tenant_id: str | None,
+-        target_status: str,
+-        extra_fields: dict[str, Any],
+-    ) -> None:
+-        """Atomic CAS flip inside a store transaction (Firestore protocol) (#481).
+-
+-        Raises (without committing anything) when the transactional snapshot
+-        fails any guard — including expiry, which the caller lands via
+-        :meth:`_mark_expired` on a single code path shared with non-CAS stores.
+-        """
+-        txn = txn_factory()
+-        snapshot = txn.get(doc_ref)
+-        if not snapshot.exists:
+-            raise ValueError(f"Pending approval record {record_id} not found.")
+-        live = snapshot.to_dict() or {}
+-        self._assert_decisionable(live, record_id, admin_user_id, tenant_id)
+-        txn.update(doc_ref, {**extra_fields, "status": target_status, "updated_at": _utc_now_iso()})
+-        try:
+-            txn.commit()
+-        except Exception as exc:
+-            raise HITLStateError(
+-                f"Approval {record_id} transition aborted — a concurrent decision won the "
+-                f"CAS race (#481); re-fetch the record before retrying: {exc}"
+-            ) from exc
+-
+-    def _mark_expired(
+-        self, doc_ref: Any, record_id: str, admin_user_id: str, expires_at: Any
+-    ) -> None:
+-        """Land the deterministic ``expired`` terminal state (#481 §2.1).
+-
+-        Queue-exiting and replay-proof: later decisions hit the terminal guard.
+-        """
+-        now = _utc_now_iso()
+-        actor = str(admin_user_id or "system")
+-        doc_ref.update(
+-            {"status": STATUS_EXPIRED, "expired_at": now, "expired_by": actor, "updated_at": now}
+-        )
+-        self.ledger.record_entry_sync(
+-            agent_id=actor,
+-            action="approval_expired",
+-            payload={"record_id": record_id, "expires_at": str(expires_at) if expires_at else None},
+-        )
+-        self._mirror_to_canonical_resolve(
+-            record_id, "expired", actor, reason=f"expired at {expires_at}"
+-        )
+-
+-    # ── M17 P-D (seven→one): canonical pending_tasks write-through ─────────
+-    # বাংলা: সাত প্রতিযোগী স্টোর → এক ক্যানোনিকাল read-পৃষ্ঠের প্রথম সেতু।
+-    # দ্বৈত-লেখা পর্বে Firestore-ই HITLEngine-authority; mirror best-effort —
+-    # ব্যর্থতায় লাউড warning, কখনো নীরব ভান নয়।
+-
+-    def _mirror_to_canonical_create(self, record_id: str, payload: dict[str, Any]) -> None:
+-        key = f"{_CANONICAL_KEY_PREFIX}{record_id}"
+-        try:
+-            from models.pending_tasks import TaskType, create_pending_task, get_task_by_idempotency
+-
+-            existing = get_task_by_idempotency(key)
+-            if existing is not None:
+-                # বাংলা: পুনরাবৃত্তি নিরীহ — একই hitl-record-এর mirror আগেই আছে।
+-                logger.debug(f"[M17 P-D] canonical mirror already present for {record_id}")
+-                return
+-            create_pending_task(
+-                task_type=TaskType.HITL_SUSPENSION,
+-                payload={**(payload or {}), "hitl_record_id": record_id},
+-                created_by="hitl-engine",
+-                risk_level="high",
+-                idempotency_key=key,
+-            )
+-            logger.info(f"[M17 P-D] suspension '{record_id}' mirrored to canonical pending_tasks")
+-        except Exception as exc:
+-            logger.warning(
+-                f"[M17 P-D] canonical mirror (create) skipped for '{record_id}': {exc!r} — "
+-                "Firestore record remains authoritative"
+-            )
+-
+-    def _mirror_to_canonical_resolve(
+-        self,
+-        record_id: str,
+-        verdict: str,
+-        admin_user_id: str,
+-        reason: str | None = None,
+-    ) -> None:
+-        key = f"{_CANONICAL_KEY_PREFIX}{record_id}"
+-        try:
+-            from models.pending_tasks import TaskStatus, get_task_by_idempotency, update_task_status
+-
+-            task = get_task_by_idempotency(key)
+-            if task is None:
+-                # বাংলা: suspension-টি mirror-হারা (পুরনো রেকর্ড) — resolve করার
+-                # কিছু নেই; সেটি নীরব-ভান নয়, পরিচিত দ্বৈত-লেখা-পূর্ববর্তী অবস্থা।
+-                logger.debug(f"[M17 P-D] no canonical mirror to resolve for {record_id}")
+-                return
+-            # #481: verdict → canonical status mapping — expiry is an
+-            # authoritative system cancellation of the mirrored task.
+-            status = {
+-                "approved": TaskStatus.APPROVED,
+-                "rejected": TaskStatus.REJECTED,
+-                "expired": TaskStatus.CANCELLED,
+-            }.get(verdict)
+-            if status is None:
+-                logger.debug(f"[M17 P-D] unmapped mirror verdict {verdict!r} for {record_id}")
+-                return
+-            updated = update_task_status(
+-                task.task_id,
+-                status,
+-                resolved_by=admin_user_id,
+-                reason=reason,
+-            )
+-            if updated is None:
+-                logger.warning(f"[M17 P-D] canonical mirror task for '{record_id}' vanished — loud")
+-            else:
+-                logger.info(
+-                    f"[M17 P-D] canonical mirror for '{record_id}' → {verdict} (by {admin_user_id})"
+-                )
+-        except Exception as exc:
+-            # বাংলা: CAS/TTL ব্যতিক্রমসহ সব mirror-ব্যর্থতা লাউড — Firestore রেকর্ড
+-            # authority থাকায় নির্বাহ-পথ অপ্রভাবিত।
+-            logger.warning(
+-                f"[M17 P-D] canonical mirror (resolve) skipped for '{record_id}': {exc!r} — "
+-                "Firestore record remains authoritative"
+-            )
++"""Canonical re-export from core.services.hitl.engine (SSOT #751)."""
++from core.services.hitl.engine import *  # noqa: F401, F403
+diff --git a/gateway/services/hitl/hitl_ledger.py b/gateway/services/hitl/hitl_ledger.py
+index 0ae44128..501e4993 100644
+--- a/gateway/services/hitl/hitl_ledger.py
++++ b/gateway/services/hitl/hitl_ledger.py
+@@ -1,113 +1,2 @@
+-from __future__ import annotations
+-
+-import time
+-from typing import Any
+-
+-from core.logging_config import logger
+-from core.security.cryptographic_ledger import CryptographicLedger
+-from database.tenant_db import TenantAwareFirestore
+-
+-
+-class HITLAuditLedger(CryptographicLedger):
+-    """
+-    Persistent Cryptographic Ledger for HITL approvals (Audit 7.5).
+-    Extends CryptographicLedger to persist append-only hash chains in Supabase / Firestore
+-    instead of ephemeral Redis with 30-day expiration.
+-    """
+-
+-    def __init__(self, db: TenantAwareFirestore | None = None):
+-        super().__init__()
+-        self.db = db
+-        self.collection_name = "hitl_audit_ledger"
+-        self._initialize_from_db()
+-
+-    def _initialize_from_db(self):
+-        """
+-        Load the last hash from the database to continue the chain.
+-        Tries Supabase first, then Firestore fallback.
+-        """
+-        # 1. Supabase Postgres check
+-        try:
+-            from database.supabase_client import db
+-
+-            client = getattr(db, "service_client", None) or getattr(db, "client", None)
+-            if client:
+-                res = (
+-                    client.table(self.collection_name)
+-                    .select("*")
+-                    .order("index", desc=True)
+-                    .limit(1)
+-                    .execute()
+-                )
+-                if res and getattr(res, "data", None):
+-                    latest_block = res.data[0]
+-                    self.last_hash = latest_block.get("hash", self.genesis_hash)
+-                    self._current_index = latest_block.get("index", 0)
+-                    return
+-        except Exception as e:
+-            logger.debug(f"[HITLAuditLedger] Supabase init check: {e}")
+-
+-        # 2. Firestore fallback
+-        if self.db and hasattr(self.db, "client") and self.db.client:
+-            try:
+-                ref = self.db.client.collection(self.collection_name)
+-                query = ref.order_by("index", direction="DESCENDING").limit(1)
+-                docs = list(query.stream())
+-                if docs:
+-                    latest_block = docs[0].to_dict()
+-                    self.last_hash = latest_block.get("hash", self.genesis_hash)
+-                    self._current_index = latest_block.get("index", 0)
+-                    return
+-            except Exception as e:
+-                logger.debug(f"[HITLAuditLedger] Firestore init check: {e}")
+-
+-        self._current_index = 0
+-        self.last_hash = self.genesis_hash
+-
+-    def record_entry_sync(
+-        self, agent_id: str, action: str, payload: dict[str, Any]
+-    ) -> dict[str, Any]:
+-        """
+-        Override to persist the block to Supabase/Firestore after computing hash chain.
+-        """
+-        timestamp = time.time()
+-        current_hash = self._compute_hash(self.last_hash, timestamp, agent_id, payload)
+-
+-        self._current_index += 1
+-        block = {
+-            "index": self._current_index,
+-            "previous_hash": self.last_hash,
+-            "timestamp": timestamp,
+-            "agent_id": agent_id,
+-            "action": action,
+-            "payload": payload,
+-            "hash": current_hash,
+-        }
+-
+-        self.last_hash = current_hash
+-
+-        # 1. Save to Supabase append-only table
+-        try:
+-            from database.supabase_client import db
+-
+-            client = getattr(db, "service_client", None) or getattr(db, "client", None)
+-            if client:
+-                client.table(self.collection_name).insert(block).execute()
+-                logger.info(
+-                    f"[HITLAuditLedger] Saved entry #{block['index']} to Supabase ledger. Hash: {current_hash[:12]}..."
+-                )
+-        except Exception as e:
+-            logger.debug(f"[HITLAuditLedger] Supabase save omitted or failed: {e}")
+-
+-        # 2. Save to Firestore (as backup/fallback)
+-        if self.db and hasattr(self.db, "client") and self.db.client:
+-            try:
+-                doc_ref = self.db.client.collection(self.collection_name).document(current_hash)
+-                doc_ref.set(block)
+-                logger.info(
+-                    f"[HITLAuditLedger] Saved entry #{block['index']} to Firestore. Hash: {current_hash[:12]}..."
+-                )
+-            except Exception as e:
+-                logger.debug(f"[HITLAuditLedger] Failed to save entry to Firestore: {e}")
+-
+-        return block
++"""Canonical re-export from core.services.hitl.hitl_ledger (SSOT #751)."""
++from core.services.hitl.hitl_ledger import *  # noqa: F401, F403
+diff --git a/gateway/services/hitl/resume_token.py b/gateway/services/hitl/resume_token.py
+index 882cda2a..63381f0e 100644
+--- a/gateway/services/hitl/resume_token.py
++++ b/gateway/services/hitl/resume_token.py
+@@ -1,179 +1,2 @@
+-"""services/hitl/resume_token.py — M17 P-A: one-bridge-many-doors (issue #1278).
+-
+-বাংলা মতবাদ (MODULE_17): "one-bridge-many-doors" — HITL approval-এর সেতু এক,
+-দরজা অনেক। ড্যাশবোর্ড সেশন ছাড়াও approver একটি **resume-URL token** দিয়ে
+-(টেলিগ্রাম/ইমেইল/মোবাইল — যে-কোনো দরজা) approve/reject করতে পারেন।
+-
+-নিরাপত্তা-চুক্তি:
+-- টোকেন = HMAC-SHA256(json payload, jwt_secret) — জাল হয় না; raw টোকেন কখনো
+-  রেকর্ডে থাকে না (শুধু sha256 হ্যাশ);
+-- টোকেন **একবারই** খরচ হয় — consume-এর পরে `used_at` স্থায়ী হয়;
+-- আসল double-approve নিরাপত্তা engine-এর বিদ্যমান CAS transition-এ — রেস-এ
+-  দুটো consume গেলেও approve() একবারই জেতে (লুজার → 409);
+-- TTL মেয়াদোত্তীর্ণ টোকেন 410; ভুয়া/অজানা টোকেন 403; রেকর্ডে সর্বোচ্চ
+-  MAX_TOKENS_PER_RECORD টাকেন (পুরোনো আগে-ব্যবহৃতগুলো প্রত্যাহারযোগ্য)।
+-"""
+-
+-from __future__ import annotations
+-
+-import base64
+-import hashlib
+-import hmac
+-import json
+-import os
+-import secrets
+-from datetime import UTC, datetime, timedelta
+-from typing import Any
+-
+-from core.logging_config import logger
+-
+-MAX_TOKENS_PER_RECORD = 10
+-DEFAULT_RESUME_TTL_SECONDS = 24 * 3600
+-
+-
+-class ResumeTokenError(ValueError):
+-    """Raised for invalid/forged tokens (maps to 403)."""
+-
+-
+-class ResumeTokenExpiredError(ResumeTokenError):
+-    """Raised when the token TTL has elapsed (maps to 410)."""
+-
+-
+-class ResumeTokenAlreadyUsedError(ResumeTokenError):
+-    """Raised on replay of a consumed token (maps to 409)."""
+-
+-
+-def _secret() -> bytes:
+-    """HMAC key — jwt_secret (fail-closed; engine-এর বাকি চুক্তির সাথে এক সত্যের উৎস)।"""
+-    from core.config import settings
+-
+-    secret = str(getattr(settings, "jwt_secret", "") or "")
+-    if not secret:
+-        # test/CI fallback — প্রোডাকশনে jwt_secret অবশ্যই থাকে (settings validator)
+-        if (
+-            os.environ.get("ENV") in {"test", "testing", "ci"}
+-            or "pytest" in __import__("sys").modules
+-        ):
+-            secret = "test_only_resume_token_secret"
+-        else:
+-            raise RuntimeError("jwt_secret is required to sign HITL resume tokens (fail-closed).")
+-    return secret.encode("utf-8")
+-
+-
+-def _sign(payload_b64: str) -> str:
+-    return hmac.new(_secret(), payload_b64.encode("utf-8"), hashlib.sha256).hexdigest()
+-
+-
+-def _token_hash(token: str) -> str:
+-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+-
+-
+-def issue_resume_token(
+-    engine: Any,
+-    record_id: str,
+-    actor_id: str,
+-    *,
+-    ttl_seconds: int | None = None,
+-) -> str:
+-    """Mint a one-time resume token bound to (record_id, actor_id) and record its hash.
+-
+-    Returns the RAW token (only place it ever exists) — the caller builds the
+-    resume URL and delivers it out-of-band.
+-    """
+-    if not actor_id:
+-        raise ResumeTokenError("actor_id is required to issue a resume token.")
+-
+-    expires_at = datetime.now(UTC) + timedelta(
+-        seconds=ttl_seconds if ttl_seconds is not None else DEFAULT_RESUME_TTL_SECONDS
+-    )
+-    payload = {
+-        "rid": record_id,
+-        "act": actor_id,
+-        "exp": expires_at.isoformat(),
+-        "nonce": secrets.token_urlsafe(16),
+-    }
+-    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True).encode()).decode()
+-    token = f"{payload_b64}.{_sign(payload_b64)}"
+-
+-    doc_ref = engine.db.client.collection(engine.collection_name).document(record_id)
+-    doc = doc_ref.get()
+-    if not doc.exists:
+-        raise ValueError(f"Pending approval record {record_id} not found.")
+-
+-    existing = doc.to_dict().get("resume_tokens") or []
+-    existing = existing[-(MAX_TOKENS_PER_RECORD - 1) :]
+-    existing.append(
+-        {
+-            "token_hash": _token_hash(token),
+-            "actor_id": actor_id,
+-            "expires_at": expires_at.isoformat(),
+-            "used_at": None,
+-        }
+-    )
+-    doc_ref.update({"resume_tokens": existing})
+-    logger.info(f"[M17 P-A] resume token issued for '{record_id}' (actor={actor_id}).")
+-    return token
+-
+-
+-def _verify_signature(token: str) -> dict[str, Any]:
+-    try:
+-        payload_b64, sig = token.rsplit(".", 1)
+-    except ValueError as exc:
+-        raise ResumeTokenError("Malformed resume token.") from exc
+-    if not hmac.compare_digest(_sign(payload_b64), sig):
+-        raise ResumeTokenError("Invalid resume token signature.")
+-    try:
+-        return json.loads(base64.urlsafe_b64decode(payload_b64.encode()).decode())
+-    except Exception as exc:  # noqa: BLE001 — any decode failure = forged/malformed
+-        raise ResumeTokenError("Malformed resume token payload.") from exc
+-
+-
+-def consume_resume_token(engine: Any, record_id: str, token: str) -> str:
+-    """Validate + burn a resume token; returns the bound actor_id.
+-
+-    Raises: ResumeTokenAlreadyUsedError (replay), ResumeTokenExpiredError
+-    (TTL), ResumeTokenError (forged/malformed), ValueError (unknown record).
+-    """
+-    payload = _verify_signature(token)
+-    if payload.get("rid") != record_id:
+-        raise ResumeTokenError("Token is not bound to this record.")
+-
+-    doc_ref = engine.db.client.collection(engine.collection_name).document(record_id)
+-    doc = doc_ref.get()
+-    if not doc.exists:
+-        raise ValueError(f"Pending approval record {record_id} not found.")
+-
+-    entries = doc.to_dict().get("resume_tokens") or []
+-    target_hash = _token_hash(token)
+-    entry = next((e for e in entries if e.get("token_hash") == target_hash), None)
+-    if entry is None:
+-        raise ResumeTokenError("Resume token not recognized for this record.")
+-    if entry.get("used_at"):
+-        raise ResumeTokenAlreadyUsedError("Resume token has already been used.")
+-
+-    exp = entry.get("expires_at")
+-    if exp:
+-        try:
+-            expiry = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+-        except ValueError as exc:
+-            raise ResumeTokenError("Corrupt token expiry.") from exc
+-        if expiry < datetime.now(UTC):
+-            raise ResumeTokenExpiredError("Resume token has expired.")
+-
+-    # Burn (one-time). The REAL double-approve safety is engine approve()'s CAS —
+-    # a consume-race can only produce one winning decision; the loser 409s.
+-    doc_ref.update(
+-        {
+-            "resume_tokens": [
+-                {**e, "used_at": datetime.now(UTC).isoformat()} if e is entry else e
+-                for e in entries
+-            ]
+-        }
+-    )
+-    return str(payload.get("act") or "")
+-
+-
+-def build_resume_url(base_url: str, record_id: str, token: str) -> str:
+-    """Build the out-of-band resume URL (the 'door' for any channel)."""
+-    base = base_url.rstrip("/")
+-    return f"{base}/api/v1/hitl/{record_id}/resume?token={token}"
++"""Canonical re-export from core.services.hitl.resume_token (SSOT #751)."""
++from core.services.hitl.resume_token import *  # noqa: F401, F403
+diff --git a/gateway/services/ide_trio/cline_checker.py b/gateway/services/ide_trio/cline_checker.py
+index 84340939..d79ed731 100644
+--- a/gateway/services/ide_trio/cline_checker.py
++++ b/gateway/services/ide_trio/cline_checker.py
+@@ -1,128 +1,2 @@
+-"""
+-IDE Trio Stage 3: Cline (Claude Dev) Checker
+-Final validation and quality gate
+-"""
+-
+-
+-class ClineChecker:
+-    """
+-    Stage 3 Checker - Final validation before production
+-    Can work with Cline extension or standalone CLI
+-    """
+-
+-    CHECK_CATEGORIES = [
+-        "syntax_validity",
+-        "type_safety",
+-        "import_resolution",
+-        "test_coverage",
+-        "documentation_complete",
+-        "agents_md_compliance",
+-    ]
+-
+-    async def validate_code(
+-        self, code: str, file_path: str, reviews_from_stage_2: list = None
+-    ) -> dict:
+-        """
+-        Final validation checkpoint
+-        Returns pass/fail with details
+-        """
+-        results = {
+-            "passed": True,
+-            "file_path": file_path,
+-            "checks": {},
+-            "blocking_issues": [],
+-            "warnings": [],
+-        }
+-
+-        # Run each check category
+-        for category in self.CHECK_CATEGORIES:
+-            check_result = await self._run_check(category, code, file_path)
+-            results["checks"][category] = check_result
+-
+-            if not check_result["passed"]:
+-                if check_result.get("severity") == "blocking":
+-                    results["passed"] = False
+-                    results["blocking_issues"].append(check_result)
+-                else:
+-                    results["warnings"].append(check_result)
+-
+-        # Incorporate Stage 2 reviews
+-        if reviews_from_stage_2:
+-            critical_reviews = [r for r in reviews_from_stage_2 if r.severity.value == "critical"]
+-            if critical_reviews:
+-                results["passed"] = False
+-                results["blocking_issues"].extend(
+-                    [{"source": "stage_2_review", "review": r} for r in critical_reviews]
+-                )
+-
+-        return results
+-
+-    async def _run_check(self, category: str, code: str, file_path: str) -> dict:
+-        """Run individual check category"""
+-
+-        if category == "syntax_validity":
+-            return await self._check_syntax(code, file_path)
+-        elif category == "agents_md_compliance":
+-            return await self._check_agents_md_compliance(code)
+-
+-        return {"passed": True, "message": f"{category} check passed"}
+-
+-    async def _check_syntax(self, code: str, file_path: str) -> dict:
+-        """Validate syntax based on file type"""
+-        import ast
+-
+-        if file_path.endswith(".py"):
+-            try:
+-                ast.parse(code)
+-                return {"passed": True, "message": "Python syntax valid"}
+-            except SyntaxError as e:
+-                return {
+-                    "passed": False,
+-                    "severity": "blocking",
+-                    "message": f"Syntax error: {e}",
+-                    "line": e.lineno,
+-                }
+-
+-        return {"passed": True, "message": "Syntax check skipped (unsupported language)"}
+-
+-    async def _check_agents_md_compliance(self, code: str) -> dict:
+-        """Verify AGENTS.md core principles are followed"""
+-
+-        issues = []
+-
+-        # Check for Eternal Brain integration
+-        if "memory" not in code.lower() and "pgvector" not in code.lower():
+-            if "agent" in code.lower() or "learn" in code.lower():
+-                issues.append(
+-                    {
+-                        "principle": "Eternal Brain",
+-                        "message": "Consider integrating with Eternal Brain memory system",
+-                    }
+-                )
+-
+-        # Check for error handling
+-        if "try:" not in code and "def " in code:
+-            issues.append(
+-                {
+-                    "principle": "Zero Console Errors",
+-                    "message": "Add proper error handling (try/except)",
+-                }
+-            )
+-
+-        # Check for Bengali support hints
+-        if any(word in code.lower() for word in ["message", "text", "response", "content"]):
+-            if "bengali" not in code.lower() and "bangla" not in code.lower():
+-                issues.append(
+-                    {
+-                        "principle": "Bengali-first Language",
+-                        "message": "Consider adding Bengali language support",
+-                    }
+-                )
+-
+-        return {
+-            "passed": len(issues) == 0,
+-            "severity": "warning" if issues else None,
+-            "message": "AGENTS.md compliance check"
+-            + (" passed" if not issues else f" ({len(issues)} suggestions)"),
+-            "suggestions": issues if issues else None,
+-        }
++"""Canonical re-export from core.services.ide_trio.cline_checker (SSOT #751)."""
++from core.services.ide_trio.cline_checker import *  # noqa: F401, F403
+diff --git a/gateway/services/ide_trio/gemini_writer.py b/gateway/services/ide_trio/gemini_writer.py
+index aa2f8b7a..ab541471 100644
+--- a/gateway/services/ide_trio/gemini_writer.py
++++ b/gateway/services/ide_trio/gemini_writer.py
+@@ -1,100 +1,2 @@
+-"""
+-IDE Trio Stage 1: Gemini Flash Writer
+-Uses FREE Gemini Flash for code generation
+-"""
+-
+-import asyncio
+-import time
+-
+-import httpx
+-
+-from core.config import settings
+-
+-
+-class GeminiWriter:
+-    """
+-    Gemini Flash integration for IDE Trio Pipeline
+-
+-    Free Tier Limits:
+-    - 15 requests per minute
+-    - 1,500 requests per day
+-    - FREE for development use
+-    """
+-
+-    GEMINI_FLASH_MODEL = getattr(settings, "model_vision", "models/gemini-2.5-flash")
+-    GEMINI_1_5_FLASH = "models/gemini-1.5-flash"  # Backup
+-
+-    def __init__(self, api_key: str):
+-        self.api_key = api_key
+-        self.client = httpx.AsyncClient(
+-            base_url="https://generativelanguage.googleapis.com/v1beta",
+-            headers={"x-goog-api-key": api_key},
+-            timeout=60.0,
+-        )
+-
+-        # Rate limiting tracker
+-        self._requests_today: int = 0
+-        self._last_request_time: float = 0
+-        self._min_interval: float = 4.0  # 60s / 15 RPM = 4s between requests
+-
+-    async def generate_code(
+-        self, prompt: str, context: str = "", language: str = "python"
+-    ) -> str | None:
+-        """Generate code using Gemini Flash (FREE)"""
+-
+-        # Respect rate limits
+-        await self._rate_limit_wait()
+-
+-        # Construct prompt with best practices
+-        full_prompt = f"""You are Stage 1 of the IDE Trio Pipeline (WRITER).
+-Your job is to WRITE clean, production-ready code based on requirements.
+-
+-Language: {language}
+-Context: {context}
+-
+-Requirements:
+-{prompt}
+-
+-Output ONLY the code implementation. No explanations, no markdown fences."""
+-
+-        payload = {
+-            "contents": [{"parts": [{"text": full_prompt}]}],
+-            "generationConfig": {
+-                "temperature": 0.7,
+-                "topK": 40,
+-                "topP": 0.95,
+-                "maxOutputTokens": 8192,
+-            },
+-        }
+-
+-        try:
+-            response = await self.client.post(
+-                f"/{self.GEMINI_FLASH_MODEL}:generateContent", json=payload
+-            )
+-
+-            response.raise_for_status()
+-            data = response.json()
+-
+-            # Track usage
+-            self._requests_today += 1
+-
+-            # Extract generated text
+-            text = data["candidates"][0]["content"]["parts"][0]["text"]
+-
+-            return text.strip()
+-
+-        except httpx.HTTPStatusError as e:
+-            if e.response.status_code == 429:
+-                # Rate limited - wait and retry once
+-                await asyncio.sleep(10)
+-                return await self.generate_code(prompt, context, language)
+-            raise
+-        finally:
+-            self._last_request_time = time.time()
+-
+-    async def _rate_limit_wait(self):
+-        """Ensure we don't exceed 15 RPM"""
+-        elapsed = time.time() - self._last_request_time
+-
+-        if elapsed < self._min_interval:
+-            await asyncio.sleep(self._min_interval - elapsed)
++"""Canonical re-export from core.services.ide_trio.gemini_writer (SSOT #751)."""
++from core.services.ide_trio.gemini_writer import *  # noqa: F401, F403
+diff --git a/gateway/services/ide_trio/kilo_reviewer.py b/gateway/services/ide_trio/kilo_reviewer.py
+index 1593ff04..780534d8 100644
+--- a/gateway/services/ide_trio/kilo_reviewer.py
++++ b/gateway/services/ide_trio/kilo_reviewer.py
+@@ -1,168 +1,2 @@
+-"""
+-IDE Trio Stage 2: Kilo Code Reviewer + GuardianAgent
+-Reviews generated code for security, performance, and best practices
+-"""
+-
+-from dataclasses import dataclass
+-from enum import Enum
+-
+-
+-class ReviewSeverity(Enum):
+-    INFO = "info"
+-    WARNING = "warning"
+-    ERROR = "error"
+-    CRITICAL = "critical"
+-
+-
+-@dataclass
+-class ReviewResult:
+-    file_path: str
+-    line_number: int
+-    severity: ReviewSeverity
+-    rule_id: str
+-    message: str
+-    suggestion: str
+-
+-
+-class KiloReviewer:
+-    """
+-    Stage 2 Reviewer - Works with Kilo Code extension
+-    Uses backend GuardianAgent for deep analysis
+-    """
+-
+-    # Custom rules for SupremeAI project
+-    REVIEW_RULES = {
+-        # Security Rules
+-        "SEC001": "Check for SQL injection vulnerabilities",
+-        "SEC002": "Validate user inputs before processing",
+-        "SEC003": "No hardcoded secrets or credentials",
+-        "SEC004": "Use parameterized queries only",
+-        # Performance Rules
+-        "PERF001": "Avoid N+1 query patterns",
+-        "PERF002": "Implement proper indexing strategy",
+-        "PERF003": "Use connection pooling",
+-        "PERF004": "Cache expensive operations",
+-        # Code Quality Rules
+-        "QUAL001": "Follow PEP8/TypeScript standards",
+-        "QUAL002": "Write meaningful docstrings",
+-        "QUAL003": "Keep functions under 50 lines",
+-        "QUAL004": "Handle errors gracefully",
+-        # AGENTS.md Compliance
+-        "AGENTS001": "Zero Half-Baked Code principle",
+-        "AGENTS002": "Eternal Brain memory integration",
+-        "AGENTS003": "Self-Healing pattern compliance",
+-        "AGENTS004": "Bengali-first language support",
+-    }
+-
+-    async def review_code(
+-        self, generated_code: str, file_path: str, context: dict = None
+-    ) -> list[ReviewResult]:
+-        """
+-        Review code through multiple analysis stages
+-        """
+-        results = []
+-
+-        # 1. Static Analysis (Fast, local)
+-        static_issues = await self._static_analysis(generated_code, file_path)
+-        results.extend(static_issues)
+-
+-        # 2. Security Scan (Medium speed)
+-        security_issues = await self._security_scan(generated_code, file_path)
+-        results.extend(security_issues)
+-
+-        # 3. GuardianAgent Deep Review (Slower, thorough)
+-        if context and context.get("enable_guardian"):
+-            guardian_issues = await self._guardian_agent_review(generated_code, file_path, context)
+-            results.extend(guardian_issues)
+-
+-        return results
+-
+-    async def _static_analysis(self, code: str, file_path: str) -> list[ReviewResult]:
+-        """Quick static analysis (local, fast)"""
+-        issues = []
+-        lines = code.split("\n")
+-
+-        for i, line in enumerate(lines, 1):
+-            # Check for common issues
+-            if "password" in line.lower() and "=" in line:
+-                issues.append(
+-                    ReviewResult(
+-                        file_path=file_path,
+-                        line_number=i,
+-                        severity=ReviewSeverity.CRITICAL,
+-                        rule_id="SEC003",
+-                        message="Potential hardcoded password detected",
+-                        suggestion="Move to environment variable or secret vault",
+-                    )
+-                )
+-
+-            if "SELECT * FROM" in line.upper() and "WHERE" not in line.upper():
+-                issues.append(
+-                    ReviewResult(
+-                        file_path=file_path,
+-                        line_number=i,
+-                        severity=ReviewSeverity.WARNING,
+-                        rule_id="PERF002",
+-                        message="SELECT * without WHERE clause may fetch unnecessary rows",
+-                        suggestion="Specify required columns and add WHERE conditions",
+-                    )
+-                )
+-
+-            # Check for TODO/FIXME comments
+-            if "TODO" in line or "FIXME" in line or "HACK" in line:
+-                issues.append(
+-                    ReviewResult(
+-                        file_path=file_path,
+-                        line_number=i,
+-                        severity=ReviewSeverity.INFO,
+-                        rule_id="QUAL002",
+-                        message="Incomplete task marker found",
+-                        suggestion="Resolve before merging to main",
+-                    )
+-                )
+-
+-        return issues
+-
+-    async def _security_scan(self, code: str, file_path: str) -> list[ReviewResult]:
+-        """Security vulnerability scanning"""
+-        import re
+-
+-        issues = []
+-
+-        # Dangerous function patterns
+-        dangerous_patterns = {
+-            r"eval\(": ("SEC001", "Use of eval() is dangerous", "Use safer alternatives"),
+-            r"exec\(": ("SEC001", "Use of exec() is dangerous", "Avoid dynamic code execution"),
+-            r"subprocess\.call.*shell=True": (
+-                "SEC002",
+-                "Shell injection risk",
+-                "Use list arguments",
+-            ),
+-            r"os\.system": ("SEC002", "Command injection risk", "Use subprocess module"),
+-            r"pickle\.loads": ("SEC003", "Insecure deserialization", "Use JSON or safe format"),
+-        }
+-
+-        for pattern, (rule_id, msg, suggestion) in dangerous_patterns.items():
+-            if re.search(pattern, code):
+-                issues.append(
+-                    ReviewResult(
+-                        file_path=file_path,
+-                        line_number=0,  # Could map to exact line with further logic
+-                        severity=ReviewSeverity.ERROR,
+-                        rule_id=rule_id,
+-                        message=msg,
+-                        suggestion=suggestion,
+-                    )
+-                )
+-
+-        return issues
+-
+-    async def _guardian_agent_review(
+-        self, code: str, file_path: str, context: dict
+-    ) -> list[ReviewResult]:
+-        """
+-        Deep review using GuardianAgent (AI-powered)
+-        This calls LLM for thorough analysis
+-        """
+-        # This would integrate with existing GuardianAgent
+-        return []
++"""Canonical re-export from core.services.ide_trio.kilo_reviewer (SSOT #751)."""
++from core.services.ide_trio.kilo_reviewer import *  # noqa: F401, F403
+diff --git a/gateway/services/storage/cloud_storage.py b/gateway/services/storage/cloud_storage.py
+index fd2bfae9..030c5ff0 100644
+--- a/gateway/services/storage/cloud_storage.py
++++ b/gateway/services/storage/cloud_storage.py
+@@ -1,80 +1,2 @@
+-"""This module provides a robust, asynchronous cloud object storage manager for the SupremeAI project, primarily leveraging Supabase Storage. It enables direct uploading of assets to a designated cloud bucket, bypassing local file system operations, which is essential for maintaining data persistence and integrity in serverless or distributed environments. It ensures that all AI-generated or processed assets are securely and reliably stored in the cloud.
+-
+-Key Components:
+-- `CloudStorageManager`: Manages asynchronous interactions with the configured cloud object storage (e.g., Supabase), handling file uploads and public URL generation.
+-- `cloud_storage`: A global singleton instance of `CloudStorageManager` for convenient access throughout the application.
+-
+-Dependencies:
+-- `httpx`: For performing asynchronous HTTP requests to the cloud storage API.
+-- `fastapi`: For raising standardized HTTP exceptions and status codes in case of storage failures.
+-- `core.config`: To retrieve application-wide settings, including cloud storage credentials.
+-- `core.logging_config`: For structured logging of storage operations, successes, and errors."""
+-
+-# বাংলা কমেন্ট: সুপ্রিম-এআই এর ক্লাউড অবজেক্ট স্টোরেজ ম্যানেজার।
+-# সার্ভারলেস এনভায়রনমেন্টে ডেটা লস রুখতে এটি লোকাল ফাইল রাইটের বদলে সরাসরি ক্লাউড বাকেটে ফাইল আপলোড ও রিড করে।
+-
+-import httpx
+-from fastapi import HTTPException, status
+-
+-from core.config import settings
+-from core.logging_config import logger
+-from utils.http_client import DEFAULT_TIMEOUT, create_async_client
+-
+-
+-class CloudStorageManager:
+-    def __init__(self):
+-        # বাংলা কমেন্ট: Supabase বা ক্লাউড স্টোরেজের ক্রেডেনশিয়াল লোড করা হচ্ছে।
+-        self.supabase_url = getattr(settings, "supabase_url", None)
+-        self.supabase_key = getattr(settings, "supabase_key", None)
+-        self.bucket_name = "supremeai-assets"
+-
+-    async def upload_file_async(
+-        self,
+-        file_path_in_bucket: str,
+-        file_bytes: bytes,
+-        content_type: str = "application/json",
+-    ) -> str:
+-        """
+-        লোকাল এফএস বাইপাস করে সরাসরি ক্লাউড স্টোরেজে অবজেক্ট পুশ করে এবং পাবলিক ইউআরএল রিটার্ন করে।
+-        """
+-        if not self.supabase_url or not self.supabase_key:
+-            logger.critical("🔥 Storage Failure: Cloud Storage credentials missing!")
+-            raise HTTPException(
+-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+-                detail="Cloud storage infrastructure is unconfigured.",
+-            )
+-
+-        # সুপাবেস স্টোরেজ এপিআই এন্ডপয়েন্ট ইউআরএল বিল্ড
+-        url = f"{self.supabase_url}/storage/v1/object/{self.bucket_name}/{file_path_in_bucket}"
+-        headers = {
+-            "Authorization": f"Bearer {self.supabase_key}",
+-            "API-Key": self.supabase_key,
+-            "Content-Type": content_type,
+-        }
+-
+-        try:
+-            # বাংলা কমেন্ট: শেয়ার্ড ক্লায়েন্ট পুল ব্যবহার করে রিকোয়েস্ট পাঠানো হচ্ছে।
+-            async with create_async_client(timeout=10.0) as client:
+-                response = await client.post(url, content=file_bytes, headers=headers)
+-
+-            if response.status_code != 200:
+-                logger.error(f"❌ Cloud Upload Rejected: {response.text}")
+-                raise HTTPException(
+-                    status_code=status.HTTP_400_BAD_REQUEST,
+-                    detail="Cloud storage engine rejected the asset package.",
+-                )
+-
+-            public_url = f"{self.supabase_url}/storage/v1/object/public/{self.bucket_name}/{file_path_in_bucket}"
+-            logger.success(f"✅ Asset securely synced to cloud storage -> {public_url}")
+-            return public_url
+-
+-        except httpx.HTTPError as http_err:
+-            logger.critical(f"🔥 Network Failure during cloud file streaming: {http_err!s}")
+-            raise HTTPException(
+-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+-                detail="Storage cluster network timeout.",
+-            ) from http_err
+-
+-
+-# গ্লোবাল সিঙ্গেলটন ইনস্ট্যান্স জেনারেশন
+-cloud_storage = CloudStorageManager()
++"""Canonical re-export from core.services.storage.cloud_storage (SSOT #751)."""
++from core.services.storage.cloud_storage import *  # noqa: F401, F403
+diff --git a/gateway/services/storage/gcp_firestore.py b/gateway/services/storage/gcp_firestore.py
+index c8dd6acd..6d6e2afd 100644
+--- a/gateway/services/storage/gcp_firestore.py
++++ b/gateway/services/storage/gcp_firestore.py
+@@ -1,427 +1,2 @@
+-"""This module provides a resilient and scalable verification queue mechanism, designed to manage asynchronous tasks within the SupremeAI project. It primarily utilizes Google Cloud Firestore for high-performance and distributed queuing, with an automatic fallback to a local SQLite database for development, testing, or environments where Firestore is inaccessible. The module offers a unified interface for enqueuing tasks, retrieving pending items, marking tasks as verified, deleting entries, and querying queue statistics, ensuring robust task management across different operational contexts.
+-
+-Key Components:
+-- `GCPFirestoreVerificationQueue`: A class that implements the verification queue, abstracting away the underlying storage mechanism (GCP Firestore or SQLite) and providing methods for task management.
+-- `get_firestore_client()`: A deprecated function that returns a Firestore client, now delegating to a shared utility for consistency.
+-
+-Dependencies:
+-- `json`: For serializing and deserializing task payloads and metadata.
+-- `os`: For accessing environment variables and managing file paths for the SQLite database.
+-- `sqlite3`: The standard library module for the local SQLite database fallback.
+-- `uuid`: For generating unique identifiers for queue items when using the SQLite backend.
+-- `datetime`: For handling timestamps related to task creation, updates, and verification.
+-- `typing`: For type hinting throughout the module.
+-- `loguru`: For flexible and structured logging of operational status and warnings.
+-- `google.cloud.firestore`: The official Google Cloud client library for interacting with Firestore.
+-- `utils.environment`: An internal utility for determining the application's execution environment.
+-- `utils.firestore_helpers`: An internal utility providing shared logic for obtaining Firestore client instances."""
+-
+-import json
+-import os
+-import sqlite3
+-import uuid
+-from datetime import UTC, datetime
+-from typing import Any
+-
+-from core.degraded_mode import InMemoryRing, sqlite_fallback_allowed
+-from core.logging_config import logger
+-
+-try:
+-    from google.cloud import firestore  # type: ignore[import-untyped]
+-
+-    FIRESTORE_AVAILABLE = True
+-except Exception:
+-    FIRESTORE_AVAILABLE = False
+-
+-
+-class GCPFirestoreVerificationQueue:
+-    """Firestore-backed verification queue with SQLite local fallback."""
+-
+-    def __init__(
+-        self,
+-        collection_name: str | None = None,
+-        project_id: str | None = None,
+-        db_path: str | None = None,
+-        credentials: Any = None,
+-    ):
+-        self.collection_name = collection_name or os.getenv(
+-            "GCP_FIRESTORE_COLLECTION", "verification_queue"
+-        )
+-        self.project_id = (
+-            project_id or os.getenv("GCP_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+-        )
+-        self.client = None
+-        self._memory_conn: sqlite3.Connection | None = None
+-        # P0 (Task 9-c2): bounded in-process degraded queue (set when the local
+-        # SQLite fallback is refused in production). NEVER durable.
+-        self._memory_rows: InMemoryRing | None = None
+-        self.mode = "local_sqlite"
+-        self.db_path = db_path or os.getenv("GCP_FIRESTORE_SQLITE_PATH")
+-
+-        from utils.environment import is_test_environment
+-
+-        is_test = is_test_environment()
+-        if FIRESTORE_AVAILABLE and self.project_id and not is_test:
+-            try:
+-                if credentials:
+-                    self.client = firestore.Client(project=self.project_id, credentials=credentials)
+-                else:
+-                    self.client = firestore.Client(project=self.project_id)
+-                self.mode = "gcp_firestore"
+-            except Exception as e:
+-                logger.warning(f"Failed to initialize Firestore: {e}. Falling back to SQLite.")
+-
+-        if self.client is None:
+-            # P0 (Task 9-c2): production refusal is centralised in core.degraded_mode
+-            # and NON-CRASHING — the queue degrades to a bounded in-process buffer.
+-            if not sqlite_fallback_allowed("firestore_verification_queue"):
+-                self.mode = "in_memory_degraded"
+-                self.db_path = None
+-                self._memory_rows = InMemoryRing()
+-                logger.warning(
+-                    "[P0] GCPFirestoreVerificationQueue degraded to a bounded IN-PROCESS "
+-                    "queue — queued verifications are LOST on restart. The degradation "
+-                    "flag no longer permits SQLite fallback — provision GCP Firestore."
+-                )
+-                return
+-            if not self.db_path:
+-                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+-                self.db_path = os.path.join(base_dir, "data", "gcp_firestore_queue.db")
+-            if self.db_path != ":memory:":
+-                os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+-            self._init_db()
+-
+-    def _init_db(self) -> None:
+-        if self.db_path == ":memory:":
+-            self._memory_conn = sqlite3.connect(self.db_path, check_same_thread=False)
+-            conn = self._memory_conn
+-        else:
+-            conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+-
+-        assert conn is not None
+-
+-        try:
+-            conn.execute("""
+-                CREATE TABLE IF NOT EXISTS verification_queue (
+-                    queue_id TEXT PRIMARY KEY,
+-                    task_id TEXT NOT NULL,
+-                    payload TEXT NOT NULL,
+-                    priority INTEGER NOT NULL DEFAULT 50,
+-                    metadata TEXT NOT NULL DEFAULT '{}',
+-                    status TEXT NOT NULL DEFAULT 'pending',
+-                    created_at TEXT NOT NULL,
+-                    updated_at TEXT NOT NULL,
+-                    verified_at TEXT
+-                )
+-                """)
+-            conn.execute(
+-                "CREATE INDEX IF NOT EXISTS idx_verification_status ON verification_queue(status, priority)"
+-            )
+-            conn.commit()
+-        finally:
+-            if self.db_path != ":memory:":
+-                conn.close()
+-
+-    def _get_connection(self):
+-        if self.db_path == ":memory:":
+-            return self._memory_conn
+-        return sqlite3.connect(self.db_path, check_same_thread=False)
+-
+-    def enqueue(
+-        self,
+-        task_id: str,
+-        payload: dict[str, Any],
+-        priority: int = 50,
+-        metadata: dict[str, Any] | None = None,
+-    ) -> dict[str, Any]:
+-        now = self._now()
+-        document = {
+-            "task_id": task_id,
+-            "payload": payload,
+-            "priority": int(priority),
+-            "metadata": metadata or {},
+-            "status": "pending",
+-            "created_at": now,
+-            "updated_at": now,
+-        }
+-
+-        if self.client is not None:
+-            _, ref = self.client.collection(str(self.collection_name)).add(document)
+-            return {
+-                "success": True,
+-                "provider": "gcp_firestore",
+-                "queue_id": ref.id,
+-                "task_id": task_id,
+-                "status": "pending",
+-            }
+-
+-        queue_id = uuid.uuid4().hex
+-        if self._memory_rows is not None:
+-            # P0: bounded in-process degraded mode — buffer the full record.
+-            self._memory_rows.append(
+-                {
+-                    "queue_id": queue_id,
+-                    "task_id": task_id,
+-                    "payload": payload,
+-                    "priority": int(priority),
+-                    "metadata": dict(metadata or {}),
+-                    "status": "pending",
+-                    "created_at": now,
+-                    "updated_at": now,
+-                    "verified_at": None,
+-                }
+-            )
+-            return {
+-                "success": True,
+-                "provider": self.mode,
+-                "queue_id": queue_id,
+-                "task_id": task_id,
+-                "status": "pending",
+-                "degraded": True,
+-            }
+-
+-        with self._get_connection() as conn:
+-            conn.execute(
+-                """
+-                INSERT INTO verification_queue
+-                (queue_id, task_id, payload, priority, metadata, status, created_at, updated_at)
+-                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+-                """,
+-                (
+-                    queue_id,
+-                    task_id,
+-                    json.dumps(payload, default=str),
+-                    int(priority),
+-                    json.dumps(metadata or {}, default=str),
+-                    now,
+-                    now,
+-                ),
+-            )
+-            conn.commit()
+-        return {
+-            "success": True,
+-            "provider": "local_sqlite",
+-            "queue_id": queue_id,
+-            "task_id": task_id,
+-            "status": "pending",
+-        }
+-
+-    def get_pending(self, limit: int = 10) -> list[dict[str, Any]]:
+-        if self.client is not None:
+-            rows = (
+-                self.client.collection(str(self.collection_name))
+-                .where("status", "==", "pending")
+-                .order_by("priority", direction=firestore.Query.DESCENDING)
+-                .limit(limit)
+-                .stream()
+-            )
+-            return [self._firestore_doc_to_dict(row) for row in rows]
+-
+-        if self._memory_rows is not None:
+-            # P0: pending items from the bounded in-process buffer (priority desc).
+-            rows = [r for r in self._memory_rows.snapshot() if r.get("status") == "pending"]
+-            rows.sort(key=lambda r: (-int(r.get("priority", 50)), r.get("created_at", "")))
+-            return [dict(r) for r in rows[:limit]]
+-
+-        with self._get_connection() as conn:
+-            conn.row_factory = sqlite3.Row
+-            rows = conn.execute(
+-                """
+-                SELECT queue_id, task_id, payload, priority, metadata, status, created_at, updated_at, verified_at
+-                FROM verification_queue
+-                WHERE status = 'pending'
+-                ORDER BY priority DESC, created_at ASC
+-                LIMIT ?
+-                """,
+-                (limit,),
+-            ).fetchall()
+-        return [self._row_to_dict(row) for row in rows]
+-
+-    def peek(self, limit: int = 10) -> list[dict[str, Any]]:
+-        return self.get_pending(limit=limit)
+-
+-    def mark_verified(self, task_id: str) -> dict[str, Any]:
+-        now = self._now()
+-        if self.client is not None:
+-            query = (
+-                self.client.collection(str(self.collection_name))
+-                .where("task_id", "==", task_id)
+-                .where("status", "==", "pending")
+-                .limit(1)
+-            )
+-            updated = 0
+-            for doc in query.stream():
+-                doc.reference.update({"status": "verified", "updated_at": now, "verified_at": now})
+-                updated += 1
+-            return {
+-                "success": True,
+-                "provider": "gcp_firestore",
+-                "task_id": task_id,
+-                "verified": updated,
+-            }
+-
+-        if self._memory_rows is not None:
+-            # P0: rewrite matching in-process records as verified.
+-            rows = self._memory_rows.snapshot()
+-            updated = 0
+-            for row in rows:
+-                if row.get("task_id") == task_id and row.get("status") == "pending":
+-                    row["status"] = "verified"
+-                    row["updated_at"] = now
+-                    row["verified_at"] = now
+-                    updated += 1
+-            if updated:
+-                self._memory_rows.remove_matching(lambda _r: True)
+-                for row in rows:
+-                    self._memory_rows.append(row)
+-            return {
+-                "success": True,
+-                "provider": self.mode,
+-                "task_id": task_id,
+-                "verified": updated,
+-            }
+-
+-        with self._get_connection() as conn:
+-            cursor = conn.execute(
+-                """
+-                UPDATE verification_queue
+-                SET status = 'verified', updated_at = ?, verified_at = ?
+-                WHERE task_id = ? AND status = 'pending'
+-                """,
+-                (now, now, task_id),
+-            )
+-            conn.commit()
+-        return {
+-            "success": True,
+-            "provider": "local_sqlite",
+-            "task_id": task_id,
+-            "verified": cursor.rowcount,
+-        }
+-
+-    def delete(self, queue_id: str) -> dict[str, Any]:
+-        if self.client is not None:
+-            doc = self.client.collection(str(self.collection_name)).document(queue_id)
+-            doc.delete()
+-            return {
+-                "success": True,
+-                "provider": "gcp_firestore",
+-                "queue_id": queue_id,
+-                "deleted": True,
+-            }
+-
+-        if self._memory_rows is not None:
+-            removed = self._memory_rows.remove_matching(lambda r: r.get("queue_id") == queue_id)
+-            return {
+-                "success": True,
+-                "provider": self.mode,
+-                "queue_id": queue_id,
+-                "deleted": removed > 0,
+-            }
+-
+-        with self._get_connection() as conn:
+-            cursor = conn.execute("DELETE FROM verification_queue WHERE queue_id = ?", (queue_id,))
+-            conn.commit()
+-        return {
+-            "success": True,
+-            "provider": "local_sqlite",
+-            "queue_id": queue_id,
+-            "deleted": cursor.rowcount > 0,
+-        }
+-
+-    def stats(self) -> dict[str, Any]:
+-        if self.client is not None:
+-            pending = len(
+-                list(
+-                    self.client.collection(str(self.collection_name))
+-                    .where("status", "==", "pending")
+-                    .stream()
+-                )
+-            )
+-            verified = len(
+-                list(
+-                    self.client.collection(str(self.collection_name))
+-                    .where("status", "==", "verified")
+-                    .stream()
+-                )
+-            )
+-            return {
+-                "provider": "gcp_firestore",
+-                "collection": self.collection_name,
+-                "pending": pending,
+-                "verified": verified,
+-                "total": pending + verified,
+-            }
+-
+-        if self._memory_rows is not None:
+-            snapshot = self._memory_rows.snapshot()
+-            pending = sum(1 for r in snapshot if r.get("status") == "pending")
+-            verified = sum(1 for r in snapshot if r.get("status") == "verified")
+-            return {
+-                "provider": self.mode,
+-                "collection": self.collection_name,
+-                "pending": pending,
+-                "verified": verified,
+-                "total": len(snapshot),
+-                "degraded": True,
+-            }
+-
+-        with self._get_connection() as conn:
+-            pending = conn.execute(
+-                "SELECT COUNT(*) FROM verification_queue WHERE status = 'pending'"
+-            ).fetchone()[0]
+-            verified = conn.execute(
+-                "SELECT COUNT(*) FROM verification_queue WHERE status = 'verified'"
+-            ).fetchone()[0]
+-            total = conn.execute("SELECT COUNT(*) FROM verification_queue").fetchone()[0]
+-        return {
+-            "provider": "local_sqlite",
+-            "db_path": self.db_path,
+-            "pending": pending,
+-            "verified": verified,
+-            "total": total,
+-        }
+-
+-    def close(self) -> None:
+-        if self.client is not None:
+-            self.client = None
+-        self._memory_rows = None
+-        if self._memory_conn is not None:
+-            self._memory_conn.close()
+-
+-    @property
+-    def provider(self) -> str:
+-        return "gcp_firestore" if self.client else self.mode
+-
+-    def _firestore_doc_to_dict(self, doc: Any) -> dict[str, Any]:
+-        data = doc.to_dict()
+-        data["queue_id"] = doc.id
+-        return data
+-
+-    def _row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
+-        return {
+-            "queue_id": row["queue_id"],
+-            "task_id": row["task_id"],
+-            "payload": json.loads(row["payload"]),
+-            "priority": row["priority"],
+-            "metadata": json.loads(row["metadata"]),
+-            "status": row["status"],
+-            "created_at": row["created_at"],
+-            "updated_at": row["updated_at"],
+-            "verified_at": row["verified_at"],
+-        }
+-
+-    @staticmethod
+-    def _now() -> str:
+-        return datetime.now(UTC).isoformat()
+-
+-
+-def get_firestore_client(project_id: str | None = None):
+-    """Firestore ক্লায়েন্ট রিটার্ন করে।
+-
+-    নোট: এই ফাংশনটি পুরানো কোডের সাথে সামঞ্জস্যতার জন্য রাখা হয়েছে।
+-    নতুন কোডের জন্য utils.firestore_helpers.get_firestore_db() ব্যবহার করুন।
+-    """
+-    # রিফ্যাক্টর: শেয়ার্ড ইউটিলিটিতে ডেলিগেট করা হচ্ছে
+-    from utils.firestore_helpers import get_firestore_db as _get_db
+-
+-    return _get_db(project_id)
++"""Canonical re-export from core.services.storage.gcp_firestore (SSOT #751)."""
++from core.services.storage.gcp_firestore import *  # noqa: F401, F403
+diff --git a/gateway/ws/command_center.py b/gateway/ws/command_center.py
+index 7f250ccf..f7851706 100644
+--- a/gateway/ws/command_center.py
++++ b/gateway/ws/command_center.py
+@@ -1,8 +1,2 @@
+-from fastapi import APIRouter
+-
+-router = APIRouter(prefix="/ws/command-center", tags=["Command Center WS"])
+-
+-
+-@router.get("/health")
+-async def ws_health():
+-    return {"status": "ok"}
++"""Canonical re-export from core.ws.command_center (SSOT #751)."""
++from core.ws.command_center import *  # noqa: F401, F403
+diff --git a/scripts/ci/core_gateway_parity_guard.py b/scripts/ci/core_gateway_parity_guard.py
+index 4a58e564..d5e548ac 100644
+--- a/scripts/ci/core_gateway_parity_guard.py
++++ b/scripts/ci/core_gateway_parity_guard.py
+@@ -35,11 +35,12 @@
+ COMMON_DOMAINS = [
+     ("core/services", "gateway/services"),
+     ("core/middleware", "gateway/middleware"),
++    ("core/ws", "gateway/ws"),
+ ]
+ 
+ 
+ def check_parity(repo_root: Path = REPO_ROOT) -> tuple[int, list[str]]:
+-    """Check byte-parity across common services and middleware files."""
++    """Check byte-parity across common services, middleware, and ws files."""
+     violations: list[str] = []
+     scanned = 0
+ 
+@@ -50,19 +51,21 @@ def check_parity(repo_root: Path = REPO_ROOT) -> tuple[int, list[str]]:
+         if not core_dir.exists() or not gw_dir.exists():
+             continue
+ 
+-        core_files = {p.name for p in core_dir.glob("*.py") if p.is_file() and p.name != "__init__.py"}
+-        gw_files = {p.name for p in gw_dir.glob("*.py") if p.is_file() and p.name != "__init__.py"}
++        core_files = {p.relative_to(core_dir) for p in core_dir.rglob("*.py") if p.is_file() and p.name != "__init__.py"}
++        gw_files = {p.relative_to(gw_dir) for p in gw_dir.rglob("*.py") if p.is_file() and p.name != "__init__.py"}
+ 
+         shared_files = sorted(core_files.intersection(gw_files))
+ 
+-        for filename in shared_files:
+-            c_path = core_dir / filename
+-            g_path = gw_dir / filename
++        for rel_path in shared_files:
++            c_path = core_dir / rel_path
++            g_path = gw_dir / rel_path
+             scanned += 1
+             if not filecmp.cmp(c_path, g_path, shallow=False):
+                 g_content = g_path.read_text(encoding="utf-8", errors="replace").strip()
+-                module_name = filename[:-3]
+-                canonical_reexport = f"from core.{core_dir.name}.{module_name} import *  # noqa: F401, F403"
++                module_parts = list(rel_path.parts)
++                module_parts[-1] = module_parts[-1][:-3]
++                module_dotted = ".".join(module_parts)
++                canonical_reexport = f"from core.{core_dir.name}.{module_dotted} import *  # noqa: F401, F403"
+                 if canonical_reexport not in g_content:
+                     violations.append(
+                         f"Divergence detected: '{c_path.relative_to(repo_root)}' != '{g_path.relative_to(repo_root)}'"

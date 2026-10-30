@@ -1,0 +1,417 @@
+diff --git a/core/core/decision_engine.py b/core/core/decision_engine.py
+index 9fd496a7..759ec82c 100644
+--- a/core/core/decision_engine.py
++++ b/core/core/decision_engine.py
+@@ -4,18 +4,101 @@
+ বাংলা: SupremeAI ২.০-এর জন্য স্মার্ট ডিসিশন এঞ্জিন — রিস্ক অ্যাসেসমেন্টের উপর ভিত্তি করে স্বায়ত্তশাসিত枸成。
+ """
+ 
++from __future__ import annotations
++
+ import os
++from dataclasses import dataclass
++from enum import Enum
+ from typing import Any
+ 
+ from core.logging_config import logger
+ 
+ 
++class AgentRole(str, Enum):
++    CODER = "CODER"  # Standard implementation agent
++    SCOUT = "SCOUT"  # Reconnaissance and discovery
++    AUDITOR = "AUDITOR"  # Security, sanitization and invariant checker
++    BREAKER = "BREAKER"  # Adversarial unit & edge-case stress tester
++
++
++@dataclass(frozen=True)
++class TaskClassification:
++    recommended_role: AgentRole
++    risk_tier: str  # L1 (Low), L2 (Medium), L3 (High / Core)
++    requires_approval: bool
++    rationale: str
++
++
+ class DecisionEngine:
+     """Intelligent decision engine for routing and approving autonomous operations.
+ 
+     বাংলা: স্বায়ত্তশাসিত অপারেশনগুলো রাউট এবং অ্যাপ্রুভ করার জন্য বুদ্ধিমান ডিসিশন ইঞ্জিন।
+     """
+ 
++    CRITICAL_CORE_PATTERNS = {
++        "core/",
++        "security/",
++        "auth/",
++        "vault/",
++        ".github/workflows/",
++    }
++
++    DOCS_PATTERNS = {"docs/", ".md", "README", "AGENTS"}
++
++    TEST_PATTERNS = {"test", "tests/", "_test.py", ".test.ts"}
++
++    @classmethod
++    def classify_task(cls, title: str, scope_paths: list[str]) -> TaskClassification:
++        """Arbitrate agent role assignment and safety tier based on declared scope paths."""
++        normalized_paths = [p.lower() for p in scope_paths]
++
++        # 1. Check if touches critical paths
++        is_critical = any(
++            any(pattern in p for pattern in cls.CRITICAL_CORE_PATTERNS)
++            for p in normalized_paths
++        )
++        if is_critical or "p0" in title.lower():
++            return TaskClassification(
++                recommended_role=AgentRole.AUDITOR,
++                risk_tier="L3",
++                requires_approval=True,
++                rationale="Touches critical security/orchestration paths; mandates AUDITOR role.",
++            )
++
++        # 2. Check if docs or recon only
++        is_docs_only = normalized_paths and all(
++            any(p.endswith(ext) or pat in p for pat in cls.DOCS_PATTERNS for ext in [".md", ".txt"])
++            for p in normalized_paths
++        )
++        if is_docs_only:
++            return TaskClassification(
++                recommended_role=AgentRole.SCOUT,
++                risk_tier="L1",
++                requires_approval=False,
++                rationale="Documentation or recon diff only; SCOUT role assigned.",
++            )
++
++        # 3. Check if test-focused
++        is_test_focused = normalized_paths and all(
++            any(pat in p for pat in cls.TEST_PATTERNS)
++            for p in normalized_paths
++        )
++        if is_test_focused:
++            return TaskClassification(
++                recommended_role=AgentRole.BREAKER,
++                risk_tier="L2",
++                requires_approval=False,
++                rationale="Verification & test-focused scope; BREAKER role assigned.",
++            )
++
++        # Default standard coder
++        return TaskClassification(
++            recommended_role=AgentRole.CODER,
++            risk_tier="L2",
++            requires_approval=False,
++            rationale="Standard domain feature or bugfix; CODER role assigned.",
++        )
++
+     def __init__(self) -> None:
+         """Initialize the decision engine with configuration from environment.
+ 
+diff --git a/core/core/logging_config.py b/core/core/logging_config.py
+index d05ab885..c79dcdde 100644
+--- a/core/core/logging_config.py
++++ b/core/core/logging_config.py
+@@ -8,6 +8,13 @@
+ _warned = False
+ 
+ 
++def _get_target_module():
++    try:
++        return importlib.import_module(_DEPRECATED_TARGET)
++    except ModuleNotFoundError:
++        return importlib.import_module("core.monitoring.logging_config")
++
++
+ def __getattr__(name):
+     global _warned
+     if not _warned:
+@@ -17,9 +24,9 @@ def __getattr__(name):
+             stacklevel=2,
+         )
+         _warned = True
+-    mod = importlib.import_module(_DEPRECATED_TARGET)
++    mod = _get_target_module()
+     return getattr(mod, name)
+ 
+ 
+ def __dir__():
+-    return list(importlib.import_module(_DEPRECATED_TARGET).__dict__.keys())
++    return list(_get_target_module().__dict__.keys())
+diff --git a/core/decision_engine.py b/core/decision_engine.py
+index 9fd496a7..759ec82c 100644
+--- a/core/decision_engine.py
++++ b/core/decision_engine.py
+@@ -4,18 +4,101 @@
+ বাংলা: SupremeAI ২.০-এর জন্য স্মার্ট ডিসিশন এঞ্জিন — রিস্ক অ্যাসেসমেন্টের উপর ভিত্তি করে স্বায়ত্তশাসিত枸成。
+ """
+ 
++from __future__ import annotations
++
+ import os
++from dataclasses import dataclass
++from enum import Enum
+ from typing import Any
+ 
+ from core.logging_config import logger
+ 
+ 
++class AgentRole(str, Enum):
++    CODER = "CODER"  # Standard implementation agent
++    SCOUT = "SCOUT"  # Reconnaissance and discovery
++    AUDITOR = "AUDITOR"  # Security, sanitization and invariant checker
++    BREAKER = "BREAKER"  # Adversarial unit & edge-case stress tester
++
++
++@dataclass(frozen=True)
++class TaskClassification:
++    recommended_role: AgentRole
++    risk_tier: str  # L1 (Low), L2 (Medium), L3 (High / Core)
++    requires_approval: bool
++    rationale: str
++
++
+ class DecisionEngine:
+     """Intelligent decision engine for routing and approving autonomous operations.
+ 
+     বাংলা: স্বায়ত্তশাসিত অপারেশনগুলো রাউট এবং অ্যাপ্রুভ করার জন্য বুদ্ধিমান ডিসিশন ইঞ্জিন।
+     """
+ 
++    CRITICAL_CORE_PATTERNS = {
++        "core/",
++        "security/",
++        "auth/",
++        "vault/",
++        ".github/workflows/",
++    }
++
++    DOCS_PATTERNS = {"docs/", ".md", "README", "AGENTS"}
++
++    TEST_PATTERNS = {"test", "tests/", "_test.py", ".test.ts"}
++
++    @classmethod
++    def classify_task(cls, title: str, scope_paths: list[str]) -> TaskClassification:
++        """Arbitrate agent role assignment and safety tier based on declared scope paths."""
++        normalized_paths = [p.lower() for p in scope_paths]
++
++        # 1. Check if touches critical paths
++        is_critical = any(
++            any(pattern in p for pattern in cls.CRITICAL_CORE_PATTERNS)
++            for p in normalized_paths
++        )
++        if is_critical or "p0" in title.lower():
++            return TaskClassification(
++                recommended_role=AgentRole.AUDITOR,
++                risk_tier="L3",
++                requires_approval=True,
++                rationale="Touches critical security/orchestration paths; mandates AUDITOR role.",
++            )
++
++        # 2. Check if docs or recon only
++        is_docs_only = normalized_paths and all(
++            any(p.endswith(ext) or pat in p for pat in cls.DOCS_PATTERNS for ext in [".md", ".txt"])
++            for p in normalized_paths
++        )
++        if is_docs_only:
++            return TaskClassification(
++                recommended_role=AgentRole.SCOUT,
++                risk_tier="L1",
++                requires_approval=False,
++                rationale="Documentation or recon diff only; SCOUT role assigned.",
++            )
++
++        # 3. Check if test-focused
++        is_test_focused = normalized_paths and all(
++            any(pat in p for pat in cls.TEST_PATTERNS)
++            for p in normalized_paths
++        )
++        if is_test_focused:
++            return TaskClassification(
++                recommended_role=AgentRole.BREAKER,
++                risk_tier="L2",
++                requires_approval=False,
++                rationale="Verification & test-focused scope; BREAKER role assigned.",
++            )
++
++        # Default standard coder
++        return TaskClassification(
++            recommended_role=AgentRole.CODER,
++            risk_tier="L2",
++            requires_approval=False,
++            rationale="Standard domain feature or bugfix; CODER role assigned.",
++        )
++
+     def __init__(self) -> None:
+         """Initialize the decision engine with configuration from environment.
+ 
+diff --git a/core/monitoring/logging_config.py b/core/monitoring/logging_config.py
+index 6121bad1..c73f121a 100644
+--- a/core/monitoring/logging_config.py
++++ b/core/monitoring/logging_config.py
+@@ -20,7 +20,54 @@
+ import uuid
+ from datetime import datetime
+ 
+-from loguru import logger
++try:
++    from loguru import logger
++    _HAS_LOGURU = True
++except ImportError:
++    _HAS_LOGURU = False
++
++    class _FallbackLogger:
++        """Lightweight fallback logger compatible with loguru's interface."""
++
++        def __init__(self, name: str = "supremeai"):
++            self._logger = logging.getLogger(name)
++
++        def debug(self, msg, *args, **kwargs):
++            self._logger.debug(msg, *args, **kwargs)
++
++        def info(self, msg, *args, **kwargs):
++            self._logger.info(msg, *args, **kwargs)
++
++        def warning(self, msg, *args, **kwargs):
++            self._logger.warning(msg, *args, **kwargs)
++
++        def error(self, msg, *args, **kwargs):
++            self._logger.error(msg, *args, **kwargs)
++
++        def exception(self, msg, *args, **kwargs):
++            self._logger.exception(msg, *args, **kwargs)
++
++        def critical(self, msg, *args, **kwargs):
++            self._logger.critical(msg, *args, **kwargs)
++
++        def bind(self, **kwargs):
++            return self
++
++        def opt(self, *args, **kwargs):
++            return self
++
++        def remove(self, *args, **kwargs):
++            pass
++
++        def add(self, *args, **kwargs):
++            pass
++
++        def level(self, name, *args, **kwargs):
++            class _Level:
++                name = str(name)
++            return _Level()
++
++    logger = _FallbackLogger()
+ 
+ try:
+     from starlette_context import context
+@@ -61,59 +108,65 @@ def setup_logging(self):
+             debug = os.getenv("DEBUG", "").lower() in ("1", "true", "yes")
+             env_name = os.getenv("ENV", "development")
+ 
+-        # Remove default handlers to avoid duplication
+-        logger.remove()
+-
+         # Determine log level based on environment
+         log_level = "DEBUG" if debug else "INFO"
+ 
+-        # AUD-2.9 (P1): loguru's ``diagnose=True`` renders variable values
+-        # inside tracebacks. In production/staging that leaks secrets, tokens
+-        # and cross-tenant data into logs, so variable disclosure is enabled
+-        # only outside production.
+-        # Add InterceptHandler to catch standard logging
+-        class InterceptHandler(logging.Handler):
+-            def emit(self, record):
++        if _HAS_LOGURU:
++            # Remove default handlers to avoid duplication
++            logger.remove()
++
++            # AUD-2.9 (P1): loguru's ``diagnose=True`` renders variable values
++            # inside tracebacks. In production/staging that leaks secrets, tokens
++            # and cross-tenant data into logs, so variable disclosure is enabled
++            # only outside production.
++            # Add InterceptHandler to catch standard logging
++            class InterceptHandler(logging.Handler):
++                def emit(self, record):
++                    try:
++                        level = logger.level(record.levelname).name
++                    except ValueError:
++                        level = record.levelno
++
++                    frame, depth = logging.currentframe(), 2
++                    while frame and frame.f_code.co_filename == logging.__file__:
++                        frame = frame.f_back
++                        depth += 1
++
++                    logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
++
++            logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
++
++            is_prod_like = env_name in ("production", "staging")
++            logger.add(
++                sys.stdout,
++                format=self._json_format,
++                level=log_level,
++                backtrace=not is_prod_like,
++                diagnose=not is_prod_like,
++            )
++
++            # Add file handler if needed (with rotation)
++            if env_name in ["production", "staging"]:
+                 try:
+-                    level = logger.level(record.levelname).name
+-                except ValueError:
+-                    level = record.levelno
+-
+-                frame, depth = logging.currentframe(), 2
+-                while frame and frame.f_code.co_filename == logging.__file__:
+-                    frame = frame.f_back
+-                    depth += 1
+-
+-                logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+-
+-        logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+-
+-        is_prod_like = env_name in ("production", "staging")
+-        logger.add(
+-            sys.stdout,
+-            format=self._json_format,
+-            level=log_level,
+-            backtrace=not is_prod_like,
+-            diagnose=not is_prod_like,
+-        )
+-
+-        # Add file handler if needed (with rotation)
+-        if env_name in ["production", "staging"]:
+-            try:
+-                # Use /tmp/logs for ephemeral environments like Render
+-                log_dir = os.environ.get("LOG_DIR", "/tmp/logs")
+-                os.makedirs(log_dir, exist_ok=True)
+-                logger.add(
+-                    f"{log_dir}/app_{{time}}.log",
+-                    rotation="100 MB",
+-                    retention="10 days",
+-                    compression="zip",
+-                    serialize=True,
+-                    level="INFO",
+-                )
+-            except Exception as e:
+-                # Fallback to stdout only if file logging fails (e.g., permission denied)
+-                logger.warning(f"Could not initialize file logging: {e}")
++                    # Use /tmp/logs for ephemeral environments like Render
++                    log_dir = os.environ.get("LOG_DIR", "/tmp/logs")
++                    os.makedirs(log_dir, exist_ok=True)
++                    logger.add(
++                        f"{log_dir}/app_{{time}}.log",
++                        rotation="100 MB",
++                        retention="10 days",
++                        compression="zip",
++                        serialize=True,
++                        level="INFO",
++                    )
++                except Exception as e:
++                    # Fallback to stdout only if file logging fails (e.g., permission denied)
++                    logger.warning(f"Could not initialize file logging: {e}")
++        else:
++            logging.basicConfig(
++                level=logging.DEBUG if debug else logging.INFO,
++                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
++            )
+ 
+     def _json_format(self, record: dict) -> str:
+         """Custom JSON formatter with correlation ID."""

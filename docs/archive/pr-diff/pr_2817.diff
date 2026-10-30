@@ -1,0 +1,360 @@
+diff --git a/core/__init__.py b/core/__init__.py
+index cd33ae13..253fb047 100644
+--- a/core/__init__.py
++++ b/core/__init__.py
+@@ -33,7 +33,7 @@
+ from typing import Any
+ 
+ try:
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ except ImportError:
+     try:
+         from logging_config import logger
+diff --git a/core/_monitoring_legacy.py b/core/_monitoring_legacy.py
+index f125be74..504a950a 100644
+--- a/core/_monitoring_legacy.py
++++ b/core/_monitoring_legacy.py
+@@ -27,7 +27,7 @@
+ from functools import wraps
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Logging is now unified via Loguru InterceptHandler in core.logging_config
+ 
+diff --git a/core/admin_god.py b/core/admin_god.py
+index 70521c0b..06943c42 100644
+--- a/core/admin_god.py
++++ b/core/admin_god.py
+@@ -36,7 +36,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import bcrypt
+diff --git a/core/agent_factory.py b/core/agent_factory.py
+index bcb01846..ee678fd4 100644
+--- a/core/agent_factory.py
++++ b/core/agent_factory.py
+@@ -3,7 +3,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from core.llm.llm_gateway import llm_gateway
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from models.dynamic_agent import DynamicAgent
+ 
+ 
+diff --git a/core/agent_heartbeat.py b/core/agent_heartbeat.py
+index 7caa00d8..5b8cb719 100644
+--- a/core/agent_heartbeat.py
++++ b/core/agent_heartbeat.py
+@@ -41,7 +41,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ SLOT = "agent-10"
+ AGENT_ID = "SupremeAI"
+diff --git a/core/agent_mailbox.py b/core/agent_mailbox.py
+index 26bcd2cf..21427fc2 100644
+--- a/core/agent_mailbox.py
++++ b/core/agent_mailbox.py
+@@ -44,7 +44,7 @@
+ 
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ # ডিফল্ট TTL — ২৪ ঘণ্টা (roadmap issue #927 spec)।
+diff --git a/core/agent_registry.py b/core/agent_registry.py
+index 84821cea..74df9d9e 100644
+--- a/core/agent_registry.py
++++ b/core/agent_registry.py
+@@ -29,7 +29,7 @@
+ import yaml  # type: ignore  # house pattern (cf. agents/syncguard)
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ DEFAULT_REGISTRY_PATH = Path(__file__).resolve().parent.parent / "config" / "agent_roles.yaml"
+ 
+diff --git a/core/agent_supervisor.py b/core/agent_supervisor.py
+index 26a65212..07e1a161 100644
+--- a/core/agent_supervisor.py
++++ b/core/agent_supervisor.py
+@@ -24,7 +24,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.mcp_client import control_tower
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+diff --git a/core/analyze_coverage.py b/core/analyze_coverage.py
+index 81320fce..2d33625b 100644
+--- a/core/analyze_coverage.py
++++ b/core/analyze_coverage.py
+@@ -4,7 +4,7 @@
+ 
+ import json
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ with open("coverage.json") as f:
+     data = json.load(f)
+diff --git a/core/app_builder.py b/core/app_builder.py
+index a35b7153..bb69e8a0 100644
+--- a/core/app_builder.py
++++ b/core/app_builder.py
+@@ -23,7 +23,7 @@
+ from fastapi.middleware.gzip import GZipMiddleware
+ 
+ from core.config import settings
+-from core.logging_config import logger, setup_logging
++from core.monitoring.logging_config import logger, setup_logging
+ 
+ # বাংলা মন্তব্ব্য: মিডলওয়্যার ইম্পোর্ট লেজি-লোডেড — create_app()-এর ভিতরে ইম্পোর্ট হবে
+ # এর ফলে কোল্ড স্টার্ট ২০% দ্রুত হবে এবং modularity বাড়বে।
+diff --git a/core/ast_security_scanner.py b/core/ast_security_scanner.py
+index 9a0529f2..062578fb 100644
+--- a/core/ast_security_scanner.py
++++ b/core/ast_security_scanner.py
+@@ -3,7 +3,7 @@
+ 
+ import ast
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SecuritySandboxError(Exception):
+diff --git a/core/autonoguard_engine.py b/core/autonoguard_engine.py
+index 22fa9447..15ddbc49 100644
+--- a/core/autonoguard_engine.py
++++ b/core/autonoguard_engine.py
+@@ -25,7 +25,7 @@
+ from core.errors.error_remediation import error_remediator
+ from core.failure_fingerprint import make_fingerprint
+ from core.immune_system import ImmuneSystemScanner
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ # Standardize on core.resilience CircuitBreaker
+diff --git a/core/browser_session_manager.py b/core/browser_session_manager.py
+index 258cbf48..db335651 100644
+--- a/core/browser_session_manager.py
++++ b/core/browser_session_manager.py
+@@ -13,7 +13,7 @@
+ from typing import Any
+ 
+ from core.effective_policy import get_effective_policy
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.playwright_manager import get_global_browser
+ 
+ 
+diff --git a/core/browser_session_vault.py b/core/browser_session_vault.py
+index c0300be1..e13638e5 100644
+--- a/core/browser_session_vault.py
++++ b/core/browser_session_vault.py
+@@ -32,7 +32,7 @@
+ 
+ from cryptography.fernet import Fernet, InvalidToken
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # সেশন-বৈধতা heuristic (#943): শেষ লগইন ৭ দিনের বেশি পুরোনো হলে অবৈধ।
+ DEFAULT_SESSION_TTL_SECONDS = 7 * 24 * 3600
+diff --git a/core/code_indexer.py b/core/code_indexer.py
+index 22a74c9e..ae1f8291 100644
+--- a/core/code_indexer.py
++++ b/core/code_indexer.py
+@@ -21,7 +21,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ _SKIP_DIRS = {
+     ".git",
+diff --git a/core/competitive_kit.py b/core/competitive_kit.py
+index 2670202f..5c880e1d 100644
+--- a/core/competitive_kit.py
++++ b/core/competitive_kit.py
+@@ -27,7 +27,7 @@
+ from typing import Any
+ 
+ from core.llm.llm_gateway.errors import GatewayUnavailableError
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import httpx as requests
+@@ -888,7 +888,7 @@ async def verify_citation(
+             return citation
+ 
+         except Exception as e:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.warning(f"Error: {e}")
+             return VerifiedCitation(
+diff --git a/core/config.py b/core/config.py
+index a5684899..6f4d4868 100644
+--- a/core/config.py
++++ b/core/config.py
+@@ -58,7 +58,7 @@
+ )
+ from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .config_fields import SettingsFieldsMixin
+ from .config_secrets import SettingsSecretsMixin
+diff --git a/core/config_cache.py b/core/config_cache.py
+index 6e51177b..d5778553 100644
+--- a/core/config_cache.py
++++ b/core/config_cache.py
+@@ -25,7 +25,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ডিফল্ট কনফিগ — DB না থাকলেও অ্যাপ চালু থাকবে
+ DEFAULT_CONFIGS: dict[str, Any] = {
+diff --git a/core/config_proxy.py b/core/config_proxy.py
+index 3060ecda..bc82ac1f 100644
+--- a/core/config_proxy.py
++++ b/core/config_proxy.py
+@@ -23,7 +23,7 @@
+ from datetime import UTC, datetime, timedelta
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ 
+diff --git a/core/config_secrets.py b/core/config_secrets.py
+index 7381026f..cdab78b8 100644
+--- a/core/config_secrets.py
++++ b/core/config_secrets.py
+@@ -10,7 +10,7 @@
+ from pydantic import PrivateAttr, SecretStr, model_serializer
+ 
+ from core.config_parsers import parse_origin_list
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Issue #542 (BE-10): single shared floor for the JWT secret minimum length.
+ from core.secret_policy import JWT_SECRET_MIN_LENGTH, resolve_jwt_secret_env
+diff --git a/core/config_validation.py b/core/config_validation.py
+index 04bf1925..59452f51 100644
+--- a/core/config_validation.py
++++ b/core/config_validation.py
+@@ -16,7 +16,7 @@
+ )
+ 
+ from core.config_parsers import parse_origin_list
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.secret_policy import JWT_SECRET_DEPRECATED_ENV, JWT_SECRET_ENV
+ 
+ # Public platform apex domains that must NEVER appear as bare entries in
+diff --git a/core/config_validator.py b/core/config_validator.py
+index 191bda20..8bc909e2 100644
+--- a/core/config_validator.py
++++ b/core/config_validator.py
+@@ -35,7 +35,7 @@
+ # Issue #542 (BE-10): unify the JWT secret floor with the other validators.
+ # Issue #1260 (Wave 3.4): CONFIG_SCHEMA derives from the canonical CONFIG_SPECS.
+ from core.config_classification import get_config_spec
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.secret_policy import (
+     JWT_SECRET_ENV,
+     JWT_SECRET_MIN_LENGTH,
+diff --git a/core/container_auditor.py b/core/container_auditor.py
+index 309f8d05..59148717 100644
+--- a/core/container_auditor.py
++++ b/core/container_auditor.py
+@@ -19,7 +19,7 @@
+ import json
+ import subprocess
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ 
+diff --git a/core/cost_guard.py b/core/cost_guard.py
+index 73242d3e..b5f36d60 100644
+--- a/core/cost_guard.py
++++ b/core/cost_guard.py
+@@ -18,7 +18,7 @@
+ 
+ from fastapi import HTTPException
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .messaging.event_bus import (
+     ErrorContext,  # Fixed import path - using relative import
+diff --git a/core/db.py b/core/db.py
+index 9b12cf72..62d673a5 100644
+--- a/core/db.py
++++ b/core/db.py
+@@ -20,7 +20,7 @@
+ from sqlalchemy.orm import DeclarativeBase
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ---------------------------------------------------------------------------
+ # Configuration
+diff --git a/core/decision_engine.py b/core/decision_engine.py
+index 759ec82c..73f28aa3 100644
+--- a/core/decision_engine.py
++++ b/core/decision_engine.py
+@@ -11,7 +11,7 @@
+ from enum import Enum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AgentRole(str, Enum):
+diff --git a/core/degraded_mode.py b/core/degraded_mode.py
+index 8f295871..bbc4b215 100644
+--- a/core/degraded_mode.py
++++ b/core/degraded_mode.py
+@@ -38,7 +38,7 @@
+ from collections.abc import Callable
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ __all__ = [
+     "DEFAULT_IN_MEMORY_MAXLEN",

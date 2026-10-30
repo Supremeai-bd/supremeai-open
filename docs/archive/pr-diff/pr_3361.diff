@@ -1,0 +1,277 @@
+diff --git a/scripts/ci/hollow_read_guard.py b/scripts/ci/hollow_read_guard.py
+index 9107a89a..95d65303 100644
+--- a/scripts/ci/hollow_read_guard.py
++++ b/scripts/ci/hollow_read_guard.py
+@@ -24,6 +24,14 @@
+                                now a standing boundary assertion, and tower_call
+                                raises TowerHollowReadError instead of silently
+                                returning a {"raw": ...} fallback.
++  6. assert_incidents_consistent ΓÇö intra-payload plane agreement (#3111 class):
++                               a health sweep whose snapshots/overallStatus say
++                               degraded-or-worse while its own incidents array
++                               stays [] is silently suppressing incidents.
++                               Observed live for 8+ consecutive sentry passes
++                               (#3049, #3077, #3111: incidents=[] while THREE
++                               rows were degraded/down). The two planes inside
++                               ONE payload must not contradict each other.
+ 
+ Scope honesty: this is the repo-reachable standing guard. It cannot fix the
+ tower-side planes themselves (owner lane); it makes their hollow answers loud
+@@ -55,7 +63,8 @@
+ 
+ GUARD = "hollow_read_guard"
+ LINEAGE = ("#2673 silent-empty class, Unified remedy 1/2/3(+5); #2704 fail-loud "
+-           "shape; #3031 parseability addendum (66B SSE mid-body cut class)")
++           "shape; #3031 parseability addendum (66B SSE mid-body cut class); "
++           "#3111 incidents-plane suppression class (assertion 6)")
+ 
+ EXIT_CLEAN = 0
+ EXIT_HOLLOW = 1
+@@ -171,6 +180,91 @@ def __init__(self, tool: str, body: str):
+             f"({self.body_length}B, excerpt={self.excerpt!r}) ΓÇö #3031 66B class")
+ 
+ 
++# Statuses that do NOT imply an incident. Everything else that is a non-empty
++# string status (degraded, down, unhealthy, error, failed, update_failed,
++# timeout, unreachable, ...) counts as a non-OK row. Unknown/excluded are
++# neutral: an unprobed or intentionally excluded face is not, by itself,
++# evidence of a suppressed incident (keeps the guard false-positive-safe).
++_INCIDENT_OK_STATUSES = frozenset({
++    "ok", "healthy", "operational", "up", "alive", "passing", "green",
++    "nominal", "unknown", "skipped", "excluded", "disabled", "not_configured",
++})
++
++
++def _incident_non_ok_rows(snapshots) -> dict:
++    """Extract non-OK rows from either snapshots shape (dict or list)."""
++    non_ok: dict = {}
++    if isinstance(snapshots, dict):
++        pairs = list(snapshots.items())
++    elif isinstance(snapshots, list):
++        pairs = [(f"row-{i}", row) for i, row in enumerate(snapshots)]
++    else:
++        return non_ok
++    for name, row in pairs:
++        if not isinstance(row, dict):
++            continue
++        status = row.get("status")
++        if not isinstance(status, str):
++            continue
++        s = status.strip().lower()
++        if s and s not in _INCIDENT_OK_STATUSES:
++            non_ok[str(name)] = status
++    return non_ok
++
++
++def assert_incidents_consistent(plane: str, sweep) -> dict:
++    """Assertion 6 (#3111 class): incident/data plane agreement in ONE payload.
++
++    A health sweep that reports overallStatus=degraded-or-worse, or >=1
++    non-OK snapshot row, while its own incidents array is empty is silently
++    suppressing incidents ΓÇö the exact defect-shaped datum platform-guardian
++    sentries reported live for 8+ consecutive passes (#3049 -> #3077 ->
++    #3111: incidents=[] while THREE rows degraded/down, hollow-signature
++    checklist explicitly NOT tripped because per-row statuses were fully
++    populated). Emptiness assertions cannot see this class: every individual
++    plane is populated; the LIE is the contradiction between two populated
++    planes inside the same payload. Fail-loud at the consumption boundary.
++
++    Verdicts: HOLLOW (contradiction), UNREADABLE (shape unknown ΓÇö never a
++    silent pass), CLEAN (planes agree or no non-OK datum exists)."""
++    if not isinstance(sweep, dict):
++        return {
++            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
++            "detail": "sweep payload is not a dict ΓÇö shape unknown",
++        }
++    incidents = sweep.get("incidents")
++    if not isinstance(incidents, list):
++        return {
++            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
++            "detail": "incidents field missing or not a list ΓÇö shape unknown",
++        }
++    snapshots = sweep.get("snapshots")
++    if not isinstance(snapshots, (dict, list)):
++        return {
++            "assertion": "incidents_consistent", "plane": plane, "verdict": "UNREADABLE",
++            "detail": "snapshots neither dict nor list ΓÇö shape unknown",
++        }
++    non_ok = _incident_non_ok_rows(snapshots)
++    overall = str(sweep.get("overallStatus", "") or "").strip().lower()
++    overall_bad = bool(overall) and overall not in _INCIDENT_OK_STATUSES
++    if (non_ok or overall_bad) and not incidents:
++        rows_note = ", ".join(f"{k}={v}" for k, v in sorted(non_ok.items())[:5]) or "(rows ok)"
++        overall_note = f"overallStatus={overall}" if overall_bad else "overallStatus ok"
++        return {
++            "assertion": "incidents_consistent", "plane": plane, "verdict": "HOLLOW",
++            "nonOkRows": non_ok, "overallStatus": sweep.get("overallStatus"),
++            "incidentsCount": 0,
++            "detail": (f"{plane}=[] while the same payload reports degraded-or-worse "
++                       f"({overall_note}; non-OK rows: {rows_note}) ΓÇö incident plane "
++                       f"contradicts data plane, #3111 suppression class"),
++        }
++    return {
++        "assertion": "incidents_consistent", "plane": plane, "verdict": "CLEAN",
++        "incidentsCount": len(incidents), "nonOkRowCount": len(non_ok),
++        "overallStatus": sweep.get("overallStatus"),
++    }
++
++
+ def assert_parsable(plane: str, raw_body: str, context: str = "") -> dict:
+     """#3031 addendum: parseability alongside emptiness at the boundary.
+ 
+@@ -293,7 +387,8 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
+                          "detail": str(exc)[:200]})
+ 
+     # Roster plane: health-style sweep ΓÇö live stamp must not decorate an empty
+-    # check table (#2665).
++    # check table (#2665), and the incident plane must agree with the data
++    # plane inside the same payload (#3111).
+     try:
+         sweep = fetch("health_full_sweep", {})
+         snaps = sweep.get("snapshots") if isinstance(sweep, dict) else None
+@@ -302,6 +397,7 @@ def run_live_probe(fetch, owner: str = "Supremeai-bd", repo: str = "supremeai-op
+             {"rows": sorted(snaps.keys()) if isinstance(snaps, dict) else None},
+             semantic_floor=1,
+         ))
++        findings.append(assert_incidents_consistent("health_full_sweep.incidents", sweep))
+     except TowerHollowReadError as exc:
+         findings.append({"assertion": "parsable", "plane": "health_full_sweep",
+                          "verdict": "HOLLOW", "detail": str(exc)[:200]})
+diff --git a/tests/test_hollow_read_guard.py b/tests/test_hollow_read_guard.py
+index 63b939ba..0b096442 100644
+--- a/tests/test_hollow_read_guard.py
++++ b/tests/test_hollow_read_guard.py
+@@ -120,7 +120,11 @@ def __call__(self, tool, arguments):
+             return {"workOrders": [{"n": i} for i in range(109)],
+                     "windowTruncated": False, "totalOpen": 109}
+         if tool == "health_full_sweep":
+-            return {"snapshots": {"redis": {"status": "healthy"}, "render": {"status": "degraded"}}}
++            # Honest #2665 shape: populated rows; #3111 shape honesty: the
++            # degraded row is acknowledged by a non-empty incidents array.
++            return {"snapshots": {"redis": {"status": "healthy"}, "render": {"status": "degraded"}},
++                    "incidents": [{"kind": "degraded", "target": "render"}],
++                    "overallStatus": "degraded"}
+         raise AssertionError(f"unexpected tool {tool}")
+ 
+ 
+@@ -274,5 +278,120 @@ def boom(tool, arguments):
+         self.assertTrue(all(f["assertion"] == "parsable" for f in ev["findings"]))
+ 
+ 
++class TestIncidentsConsistent3111(unittest.TestCase):
++    """Assertion 6 (#3111 class): incidents plane must agree with data plane
++    INSIDE one sweep payload ΓÇö 8+ live passes of incidents=[] while rows were
++    degraded/down (#3049, #3077, #3111)."""
++
++    def test_degraded_rows_with_empty_incidents_is_hollow(self):
++        sweep = {
++            "overallStatus": "degraded",
++            "incidents": [],
++            "snapshots": {
++                "telegram-primary": {"status": "down"},
++                "render-primary": {"status": "update_failed"},
++                "render-worker": {"status": "update_failed"},
++                "core-api": {"status": "healthy"},
++            },
++        }
++        r = hrg.assert_incidents_consistent("health_full_sweep.incidents", sweep)
++        self.assertEqual(r["verdict"], "HOLLOW")
++        self.assertIn("#3111", r["detail"])
++        self.assertIn("contradicts data plane", r["detail"])
++        self.assertEqual(r["nonOkRows"]["telegram-primary"], "down")
++        self.assertEqual(r["incidentsCount"], 0)
++
++    def test_overall_degraded_alone_is_hollow(self):
++        sweep = {"overallStatus": "degraded", "incidents": [],
++                 "snapshots": {"x": {"status": "healthy"}}}
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "HOLLOW")
++
++    def test_non_ok_rows_with_incident_present_is_clean(self):
++        sweep = {"overallStatus": "degraded", "incidents": [{"id": "inc-1"}],
++                 "snapshots": {"render": {"status": "degraded"}}}
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "CLEAN")
++
++    def test_all_healthy_with_empty_incidents_is_clean(self):
++        sweep = {"overallStatus": "healthy", "incidents": [],
++                 "snapshots": {"redis": {"status": "healthy"}}}
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "CLEAN")
++
++    def test_neutral_statuses_do_not_false_positive(self):
++        sweep = {
++            "overallStatus": "healthy",
++            "incidents": [],
++            "snapshots": {
++                "v0": {"status": "Excluded"},
++                "probe-pending": {"status": "unknown"},
++                "legacy": {"status": "disabled"},
++            },
++        }
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "CLEAN")
++
++    def test_list_snapshots_shape_supported(self):
++        sweep = {"overallStatus": "degraded", "incidents": [],
++                 "snapshots": [{"provider": "render", "status": "degraded"}]}
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "HOLLOW")
++        self.assertEqual(r["nonOkRows"], {"row-0": "degraded"})
++
++    def test_missing_incidents_field_is_unreadable_never_silent(self):
++        sweep = {"overallStatus": "degraded", "snapshots": {"render": {"status": "degraded"}}}
++        r = hrg.assert_incidents_consistent("sweep", sweep)
++        self.assertEqual(r["verdict"], "UNREADABLE")
++
++    def test_snapshots_missing_is_unreadable(self):
++        r = hrg.assert_incidents_consistent("sweep", {"overallStatus": "healthy", "incidents": []})
++        self.assertEqual(r["verdict"], "UNREADABLE")
++
++    def test_non_dict_sweep_is_unreadable(self):
++        r = hrg.assert_incidents_consistent("sweep", ["nope"])
++        self.assertEqual(r["verdict"], "UNREADABLE")
++
++
++class TestProbeIncidentsWiring3111(unittest.TestCase):
++    """Assertion 6 wired into run_live_probe's health_full_sweep plane."""
++
++    def test_degraded_sweep_with_silent_incidents_fires(self):
++        honest = _FakeRosterFetch([{"number": 1}])
++
++        def fetch(tool, arguments):
++            if tool == "health_full_sweep":
++                return {
++                    "overallStatus": "degraded",
++                    "incidents": [],
++                    "snapshots": {
++                        "telegram-primary": {"status": "down"},
++                        "render-worker": {"status": "update_failed"},
++                    },
++                }
++            return honest(tool, arguments)
++
++        ev = hrg.run_live_probe(fetch)
++        self.assertEqual(ev["verdict"], "HOLLOW_DETECTED")
++        f = [x for x in ev["findings"] if x.get("assertion") == "incidents_consistent"]
++        self.assertTrue(f and f[0]["plane"] == "health_full_sweep.incidents")
++        self.assertEqual(f[0]["verdict"], "HOLLOW")
++
++    def test_honest_sweep_incident_agreement_is_clean(self):
++        honest = _FakeRosterFetch([{"number": 1}, {"number": 2}])
++
++        def fetch(tool, arguments):
++            if tool == "health_full_sweep":
++                return {"overallStatus": "healthy", "incidents": [],
++                        "snapshots": {"redis": {"status": "healthy"},
++                                      "render": {"status": "healthy"}}}
++            return honest(tool, arguments)
++
++        ev = hrg.run_live_probe(fetch)
++        self.assertEqual(ev["verdict"], "CLEAN")
++        f = [x for x in ev["findings"] if x.get("assertion") == "incidents_consistent"]
++        self.assertTrue(f and f[0]["verdict"] == "CLEAN")
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)

@@ -1,0 +1,112 @@
+diff --git a/ECOSYSTEM_MAP.md b/ECOSYSTEM_MAP.md
+index 98048408..da37c2dd 100644
+--- a/ECOSYSTEM_MAP.md
++++ b/ECOSYSTEM_MAP.md
+@@ -78,6 +78,60 @@ Every bridge patch is inspected by fail-closed automated scanners:
+ 
+ ## 6. Automation Topology & the Zero-Duplicate Rule (#155)
+ 
++### 6.1 Federation topology (visual)
++
++Solid edges = work/landing flows · dotted edges = tool/observability flows.
++
++```mermaid
++flowchart TB
++    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
++
++    subgraph OPEN["supremeai-open · Public Window"]
++        direction TB
++        TASKS["Issues = task contracts"] --> GUARDS["7 PR guards<br/>(naming · issue-ref · anti-duplicate ·<br/>boundary · parity · hook · stale-base)<br/>+ CI Guardian evaluation"]
++        GUARDS --> GATE["landing.yml Merge Gate<br/>(squash · Closes #N propagation ·<br/>file-set parity · freshness)"]
++        GATE --> ROUTER["Command Router<br/>(post-merge: close issue ·<br/>delete head branch)"]
++    end
++
++    subgraph TOWERBOX["mcp-control-plane · Control Tower"]
++        direction TB
++        TOOLS["Tool plane: bridge_work_queue ·<br/>bridge_work_order · bridge_submit_patch ·<br/>system_summary · system_health"]
++        WATCHER["Federated CI watcher<br/>(workflow_run failure → cross-repo issue)"]
++        EVENTS["Event gateway · incident dispatch"]
++    end
++
++    subgraph PRIVATECORE["supremeai · Private Monorepo Cores"]
++        direction TB
++        API["supremeai-api · Gateway<br/>(OpenAI-compatible surface)"]
++        CORE["supremeai-core · decision moat"]
++        STUDIO["supremeai-studio · Studio UI"]
++    end
++
++    AGENT --> TASKS
++    AGENT <-.->|"zero-credential MCP"| TOOLS
++    TOOLS -.->|work orders| TASKS
++    GATE ==>|"auto-bridge:<br/>webhook / direct dispatch<br/>(#155, #280)"| PRIVATECORE
++    WATCHER -.->|CI failure reports| OPEN
++    GATE -.->|landed-patch reference| EVENTS
++
++    classDef publicbox fill:none,stroke-width:2px;
++    classDef towerbox fill:none,stroke-dasharray:6 3;
++    classDef privatebox fill:none,stroke-dasharray:4 3;
++    class OPEN publicbox;
++    class TOWERBOX towerbox;
++    class PRIVATECORE privatebox;
++```
++
++| Layer | Subsystem | Role |
++|---|---|---|
++| Boundary | `supremeai-open` | public SSOT: contracts, guards, gate, bridge dispatch |
++| Tool plane | `supremeai-mcp-control-plane` | governed tool registry, credential brokering, kill-switch |
++| Edge | `supremeai-api` | unified multi-LLM provider gateway |
++| Experience | `supremeai-studio` | React/Vite dashboard and frontend shell |
++| Core | `supremeai-core` | orchestration, planning, decision, execution intelligence |
++
++### 6.2 Automation topology
++
+ This repo runs the **minimum safest workflow set** on the free public runtime:
+ 
+ | Workflow | Jobs |
+diff --git a/README.md b/README.md
+index a2908aa2..8413b854 100644
+--- a/README.md
++++ b/README.md
+@@ -5,6 +5,42 @@
+ This repository is the **public boundary** of the SupremeAI federation (roadmap §4.3 / Phase 8 foundation).
+ It contains only artifacts that are useful *outside* SupremeAI's private intelligence:
+ 
++## Federation at a glance
++
++```mermaid
++flowchart LR
++    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
++
++    subgraph OPEN["supremeai-open · Public Window (this repo)"]
++        direction TB
++        TASKS["Task contracts (issues)"] --> GUARDS["7 PR guards<br/>+ CI Guardian"]
++        GUARDS --> GATE["Merge Gate<br/>(squash authority)"]
++    end
++
++    subgraph PRIVATE["Private federation cores"]
++        direction TB
++        TOWER["mcp-control-plane<br/>Control Tower · tool plane"]
++        API["supremeai-api<br/>Gateway"]
++        CORE["supremeai-core<br/>decision moat"]
++        STUDIO["supremeai-studio<br/>Studio UI"]
++    end
++
++    AGENT --> TASKS
++    AGENT <-.->|"MCP tools · zero credentials"| TOWER
++    GATE ==>|"auto-bridge<br/>(webhook / direct dispatch)"| PRIVATE
++
++    classDef boundary fill:none,stroke-width:2px;
++    classDef core fill:none,stroke-dasharray:4 3;
++    class OPEN boundary;
++    class PRIVATE core;
++```
++
++> Consuming the platform (not contributing)? Start at
++> [`docs/CONSUMERS.md`](./docs/CONSUMERS.md) and the
++> [`api-schemas/gateway.openapi.yaml`](./api-schemas/gateway.openapi.yaml)
++> Gateway surface. Contributing? [`AGENTS.md`](./AGENTS.md) and
++> [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) are the entry points.
++
+ | Path | What it is |
+ |---|---|
+ | `api-schemas/gateway.openapi.yaml` | **The stable SupremeAI API Gateway surface** (OpenAI-compatible `/v1/chat/completions`) — byte-mirror of `supremeai-api/contracts/openapi.yaml` |

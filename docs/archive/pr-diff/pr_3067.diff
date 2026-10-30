@@ -1,0 +1,926 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 09630fd4..28d20945 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -76,9 +76,9 @@
+     "test:github-pagination": "tsx test_github_pagination.ts",
+     "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
+     "test:license-gate": "tsx test_license_gate.ts",
+-    "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+     "test:r66-target-echo": "tsx test_r66_target_echo.ts",
+-    "test:annotations-floor": "tsx test_annotations_floor.ts"
++    "test:annotations-floor": "tsx test_annotations_floor.ts",
++    "test:render-build-window": "tsx test_render_build_window.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/adapters/render/index.ts b/infrastructure/mcp-control-plane/src/adapters/render/index.ts
+index 3fac2e4a..427b4ffb 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/render/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/render/index.ts
+@@ -1,6 +1,15 @@
+ import { buildAccountRegistry } from "../../registry/account.registry.js";
+ import { httpRequest, bearerAuth } from "../../lib/http.js";
+ import { maskSecretValue, redactSecretsInText } from "../../lib/masking.js";
++import {
++  BUILD_WINDOW_MAX_PAGES,
++  BUILD_WINDOW_PAGE_SIZE,
++  monthStartUtc,
++  nextCursor,
++  sumMonthBuildSeconds,
++  unwrapDeploy,
++  windowSaturated,
++} from "../../lib/render_build_window.js";
+ 
+ const BASE_URL = "https://api.render.com/v1";
+ 
+@@ -259,34 +268,32 @@ export async function getServiceHealth(accountId: string, serviceId: string): Pr
+   const FREE_BUILD_MINUTES_LIMIT = 500; // Render Free Tier limit per account: 500 build minutes/month
+ 
+   try {
+-    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=20`, {
+-      headers: bearerAuth(apiKey),
+-    });
+-    const deploys = deploysRes.data;
+-    if (Array.isArray(deploys) && deploys.length > 0) {
+-      deployStatus = deploys[0]?.deploy?.status ?? "unknown";
+-
+-      const now = new Date();
+-      const currentYear = now.getUTCFullYear();
+-      const currentMonth = now.getUTCMonth();
+-
+-      let totalSeconds = 0;
+-      for (const item of deploys) {
+-        const dep = item.deploy ?? item;
+-        const createdAt = dep.createdAt;
+-        const finishedAt = dep.finishedAt;
+-        if (!createdAt || !finishedAt) continue;
+-        const started = new Date(createdAt);
+-        const finished = new Date(finishedAt);
+-        if (started.getUTCFullYear() === currentYear && started.getUTCMonth() === currentMonth) {
+-          const duration = (finished.getTime() - started.getTime()) / 1000;
+-          if (duration > 0) {
+-            totalSeconds += duration;
+-          }
+-        }
++    // #2811 window class: cursor-paginate until the month window is saturated
++    // instead of reading a fixed 20-deploy first page. A truncated window
++    // under-counts month-to-date burn during retry-fail months and moves the
++    // counter DOWN as old builds scroll out — freeLimitRemaining (derived from
++    // the same variable) then rises by exactly that amount, the "ledger
++    // correction" exact-mirror signature #2811 documented.
++    const monthStart = monthStartUtc(new Date());
++    let totalSeconds = 0;
++    let after: string | undefined;
++    for (let page = 0; page < BUILD_WINDOW_MAX_PAGES; page++) {
++      const cursor = after ? `&after=${encodeURIComponent(after)}` : "";
++      const deploysRes = await httpRequest(
++        `${BASE_URL}/services/${serviceId}/deploys?limit=${BUILD_WINDOW_PAGE_SIZE}${cursor}`,
++        { headers: bearerAuth(apiKey) },
++      );
++      const items = Array.isArray(deploysRes.data) ? deploysRes.data : [];
++      if (page === 0 && items.length > 0) {
++        deployStatus = unwrapDeploy(items[0]).status ?? "unknown";
+       }
+-      monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
++      const summed = sumMonthBuildSeconds(items, monthStart);
++      totalSeconds += summed.totalSeconds;
++      if (windowSaturated(items, monthStart)) break;
++      after = nextCursor(items);
++      if (!after) break;
+     }
++    monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
+   } catch (err) {
+     // Ignore error for deploys
+   }
+diff --git a/infrastructure/mcp-control-plane/src/lib/render_build_window.ts b/infrastructure/mcp-control-plane/src/lib/render_build_window.ts
+new file mode 100644
+index 00000000..8520eda1
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/render_build_window.ts
+@@ -0,0 +1,108 @@
++/**
++ * Month-window build-minute accounting for the Render adapter (#2811 window class).
++ *
++ * Witness #2811 (platform-guardian cycle-47): the tower's render_service_health
++ * ledger readings moved DOWNWARD hour-over-hour during the retry-fail deploy
++ * loop, once with an exact dual-account mirror (ΔbuildMin == −ΔfreeLimit on
++ * both accounts in the same hour). Usage cannot decrease — every drop was the
++ * adapter's own fixed 20-deploy window sliding: as new deploys pushed older,
++ * longer builds out of the fetch window, the computed month-to-date total
++ * dropped and freeLimitRemaining (= 500 − monthlyBuildMinutes, the same
++ * variable) rose by exactly that amount. A truncated window under-counts
++ * month-to-date burn during retry-fail months and can present a false safe
++ * posture to every consumer of these numbers.
++ *
++ * The fix: cursor-paginate the deploys list until the month window is
++ * saturated (a parsed deploy predating month start, or a short page), so the
++ * reported figure is a true month-to-date sum — monotone with respect to
++ * actual burn, and self-consistent with its derived free-limit remainder.
++ *
++ * Pure and offline: no fetches here, only summation + stop-rule math, so the
++ * battery in test_render_build_window.ts can pin it deterministically.
++ */
++
++/** Render caps a deploys page at 100 entries. */
++export const BUILD_WINDOW_PAGE_SIZE = 100;
++
++/** Page cap: 12 × 100 = 1200 deploys, far beyond any observed month. */
++export const BUILD_WINDOW_MAX_PAGES = 12;
++
++/** Both Render envelopes: a bare deploy object or { deploy: {...} }. */
++export interface RawDeployItem {
++  deploy?: Partial<DeployRecord>;
++  id?: string;
++  createdAt?: string;
++  finishedAt?: string;
++  status?: string;
++}
++
++export interface DeployRecord {
++  id?: string;
++  createdAt?: string;
++  finishedAt?: string;
++  status?: string;
++}
++
++export function unwrapDeploy(item: unknown): DeployRecord {
++  if (!item || typeof item !== "object") return {};
++  const raw = item as RawDeployItem;
++  const dep = raw.deploy;
++  return dep && typeof dep === "object" ? (dep as DeployRecord) : (raw as DeployRecord);
++}
++
++/** UTC calendar-month start containing `now`. */
++export function monthStartUtc(now: Date): Date {
++  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
++}
++
++export interface MonthWindowSum {
++  /** Total build seconds of deploys started within the month window. */
++  totalSeconds: number;
++  /** Deploy records counted (started in-month, positive duration). */
++  count: number;
++  /** A parsed deploy predates monthStart — the page stream is saturated. */
++  sawPreMonth: boolean;
++}
++
++/**
++ * Sum deploys started within [monthStart, ·) from one page of the newest-first
++ * deploys list. Records with missing/unparseable timestamps are skipped (they
++ * carry no decision-grade burn); non-positive durations add zero seconds.
++ * `sawPreMonth` is the pagination stop rule: with Render listing newest-first,
++ * reaching a pre-month start certifies the stream has covered the window.
++ */
++export function sumMonthBuildSeconds(items: unknown[], monthStart: Date): MonthWindowSum {
++  let totalSeconds = 0;
++  let count = 0;
++  let sawPreMonth = false;
++  for (const item of items) {
++    const dep = unwrapDeploy(item);
++    if (!dep.createdAt || !dep.finishedAt) continue;
++    const started = new Date(dep.createdAt);
++    const finished = new Date(dep.finishedAt);
++    if (Number.isNaN(started.getTime()) || Number.isNaN(finished.getTime())) continue;
++    if (started < monthStart) {
++      sawPreMonth = true;
++      continue;
++    }
++    const duration = (finished.getTime() - started.getTime()) / 1000;
++    if (duration > 0) {
++      totalSeconds += duration;
++      count += 1;
++    }
++  }
++  return { totalSeconds, count, sawPreMonth };
++}
++
++/** True when pagination can stop: short page or the window is saturated. */
++export function windowSaturated(pageItems: unknown[], monthStart: Date): boolean {
++  if (pageItems.length < BUILD_WINDOW_PAGE_SIZE) return true;
++  return sumMonthBuildSeconds(pageItems, monthStart).sawPreMonth;
++}
++
++/** Cursor for the next older page: the last item's deploy id. */
++export function nextCursor(pageItems: unknown[]): string | undefined {
++  const last = pageItems.length > 0 ? pageItems[pageItems.length - 1] : undefined;
++  const dep = unwrapDeploy(last);
++  return dep.id;
++}
+diff --git a/infrastructure/mcp-control-plane/test_render_build_window.ts b/infrastructure/mcp-control-plane/test_render_build_window.ts
+new file mode 100644
+index 00000000..d9773fb6
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_render_build_window.ts
+@@ -0,0 +1,122 @@
++/**
++ * #2811 window class — Render month-window build-minute accounting battery
++ * (pure, offline). House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Witness #2811 (platform-guardian cycle-47): render_service_health ledger
++ * readings moved DOWNWARD during the retry-fail deploy loop, once with an
++ * exact dual-account mirror (ΔbuildMin == −ΔfreeLimit on both accounts).
++ * Usage cannot decrease — the drops were the adapter's own truncated deploy
++ * window sliding: old long builds scrolled out of the fixed first page, the
++ * computed month-to-date total fell, and freeLimitRemaining (500 − the same
++ * variable) rose by exactly that amount. The discriminator pinned here: a
++ * 120-deploy month must sum to 120 minutes, not to whatever fits the old
++ * window; a pre-month deploy both excludes itself and flags saturation (the
++ * cursor stop rule).
++ */
++import {
++  BUILD_WINDOW_MAX_PAGES,
++  BUILD_WINDOW_PAGE_SIZE,
++  monthStartUtc,
++  nextCursor,
++  sumMonthBuildSeconds,
++  unwrapDeploy,
++  windowSaturated,
++} from "./src/lib/render_build_window.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n── ${title} ──`);
++}
++
++const MONTH_START = new Date(Date.UTC(2026, 9, 1)); // 2026-10-01T00:00:00Z
++
++function dep(id: string, createdIso: string, durationSeconds: number): { deploy: Record<string, string> } {
++  const created = new Date(createdIso);
++  return {
++    deploy: {
++      id,
++      createdAt: created.toISOString(),
++      finishedAt: new Date(created.getTime() + durationSeconds * 1000).toISOString(),
++    },
++  };
++}
++
++function main(): void {
++  section("P1 constants: Render page envelope");
++  check("page size = 100 (Render cap)", BUILD_WINDOW_PAGE_SIZE === 100);
++  check("max pages = 12 (1200-deploy coverage)", BUILD_WINDOW_MAX_PAGES === 12);
++
++  section("P2 monthStartUtc calendar boundary");
++  const ms = monthStartUtc(new Date(Date.UTC(2026, 9, 15, 12, 30)));
++  check("mid-October -> 2026-10-01T00:00:00.000Z", ms.getTime() === Date.UTC(2026, 9, 1), ms.toISOString());
++  const msYearEdge = monthStartUtc(new Date(Date.UTC(2027, 0, 2)));
++  check("January -> Jan 1 (year rollover)", msYearEdge.getTime() === Date.UTC(2027, 0, 1), msYearEdge.toISOString());
++
++  section("P3 the #2811 discriminator: a 120-deploy month sums fully");
++  const deploys120: unknown[] = [];
++  for (let i = 0; i < 120; i++) {
++    deploys120.push(dep(`d${i}`, "2026-10-15T00:00:00Z", 60));
++  }
++  const s120 = sumMonthBuildSeconds(deploys120, MONTH_START);
++  check("120 × 1 min = 120.0 min (old fixed window counted 50)", Math.round((s120.totalSeconds / 60) * 10) / 10 === 120, String(s120.totalSeconds));
++  check("count = 120", s120.count === 120, String(s120.count));
++  check("no pre-month -> not saturated", s120.sawPreMonth === false);
++
++  section("P4 pre-month exclusion + saturation flag (stop rule)");
++  const mixed = [dep("old", "2026-09-20T10:00:00Z", 600), ...deploys120];
++  const sm = sumMonthBuildSeconds(mixed, MONTH_START);
++  check("pre-month build excluded from the sum", sm.count === 120 && Math.round(sm.totalSeconds / 60) === 120);
++  check("sawPreMonth flagged", sm.sawPreMonth === true);
++  check("windowSaturated honors the flag", windowSaturated(mixed, MONTH_START) === true);
++
++  section("P5 calendar boundary: exactly-at-start counts, 1s earlier does not");
++  const sb = sumMonthBuildSeconds(
++    [dep("at", "2026-10-01T00:00:00Z", 60), dep("before", "2026-09-30T23:59:59Z", 60)],
++    MONTH_START,
++  );
++  check("exactly-at-month-start deploy counts", sb.count === 1 && Math.round(sb.totalSeconds / 60) === 1);
++  check("1s-earlier deploy flags saturation", sb.sawPreMonth === true);
++
++  section("P6 junk tolerance: no crash, no fabricated burn");
++  const sj = sumMonthBuildSeconds(
++    [
++      { deploy: { id: "j1", createdAt: "not-a-date", finishedAt: "junk" } },
++      { deploy: { id: "j2" } },
++      "garbage-item",
++      null,
++      dep("zero", "2026-10-02T00:00:00Z", 0),
++      dep("neg", "2026-10-03T00:00:00Z", -5),
++      dep("ok", "2026-10-04T00:00:00Z", 30),
++    ],
++    MONTH_START,
++  );
++  check("only the valid 30s deploy counts", sj.count === 1 && Math.round(sj.totalSeconds) === 30, JSON.stringify(sj));
++  check("no saturation signal from junk", sj.sawPreMonth === false);
++
++  section("P7 stop rules");
++  const fullPage: unknown[] = [];
++  for (let i = 0; i < BUILD_WINDOW_PAGE_SIZE; i++) fullPage.push(dep(`p${i}`, "2026-10-10T00:00:00Z", 1));
++  check("full in-month page -> keep paging", windowSaturated(fullPage, MONTH_START) === false);
++  check("short page -> saturated", windowSaturated(fullPage.slice(0, 99), MONTH_START) === true);
++  check("nextCursor reads the last deploy id", nextCursor(fullPage) === "p99");
++  check("nextCursor tolerates empty page", nextCursor([]) === undefined);
++
++  section("P8 envelope tolerance: bare deploy objects unwrap");
++  const bare = [{ id: "b1", createdAt: "2026-10-05T00:00:00Z", finishedAt: "2026-10-05T00:02:00Z" }];
++  check("bare object sums like the wrapped form", sumMonthBuildSeconds(bare, MONTH_START).totalSeconds === 120);
++  check("unwrapDeploy unwraps the {deploy:{...}} envelope", unwrapDeploy(dep("w", "2026-10-05T00:00:00Z", 1)).id === "w");
++  check("unwrapDeploy tolerates junk", typeof unwrapDeploy(null) === "object" && unwrapDeploy("junk") !== undefined);
++
++  console.log(failures === 0 ? "\nrender_build_window battery: PASS" : `\nrender_build_window battery: ${failures} FAILURE(S)`);
++  process.exit(failures === 0 ? 0 : 1);
++}
++
++main();
+diff --git a/scripts/ci/render_build_budget_guard.py b/scripts/ci/render_build_budget_guard.py
+index f5191d28..1a02e4da 100644
+--- a/scripts/ci/render_build_budget_guard.py
++++ b/scripts/ci/render_build_budget_guard.py
+@@ -18,7 +18,10 @@
+ from datetime import datetime, timezone
+ from pathlib import Path
+ 
+-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
++# render_client lives at scripts/ops/lib/render_client.py — the historical
++# scripts/lib/ path vanished in the ops/ relocation and crashed this guard at
++# import in every context (the #2811 hardening ride-along).
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "ops" / "lib"))
+ from render_client import RenderClient  # noqa: E402
+ 
+ if hasattr(sys.stdout, "reconfigure"):
+@@ -26,6 +29,52 @@
+ 
+ BUILD_MINUTE_THRESHOLD = 450.0  # Max safe minutes out of 500 monthly free tier
+ 
++# Render caps a deploys page at 100; 12 pages covers a 1200-deploy month,
++# far beyond any observed retry-fail volume (#2811 window class).
++DEPLOY_WINDOW_PAGE_SIZE = 100
++DEPLOY_WINDOW_MAX_PAGES = 12
++
++
++def _unwrap_deploy(item):
++    """Render lists deploys as {"deploy": {...}} — tolerate both envelopes."""
++    if not isinstance(item, dict):
++        return {}
++    dep = item.get("deploy")
++    return dep if isinstance(dep, dict) else item
++
++
++def sum_month_build_seconds(deploys, month_start):
++    """Pure: sum durations of deploys started within [month_start, *).
++
++    Returns (total_seconds, deploy_count, saw_pre_month). ``saw_pre_month``
++    flags that the newest-first stream has reached back past the month start
++    (the pagination stop rule; see the #2811 window class).
++    """
++    total_seconds = 0.0
++    deploy_count = 0
++    saw_pre_month = False
++    for item in deploys:
++        dep = _unwrap_deploy(item)
++        created_at_str = dep.get("createdAt")
++        finished_at_str = dep.get("finishedAt")
++        if not created_at_str or not finished_at_str:
++            continue
++        try:
++            created_at = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
++            finished_at = datetime.fromisoformat(str(finished_at_str).replace("Z", "+00:00"))
++        except (ValueError, TypeError):
++            continue
++        if created_at < month_start:
++            saw_pre_month = True
++            continue
++        if created_at.year == month_start.year and created_at.month == month_start.month:
++            duration = (finished_at - created_at).total_seconds()
++            if duration > 0:
++                total_seconds += duration
++                deploy_count += 1
++    return total_seconds, deploy_count, saw_pre_month
++
++
+ SERVICES = [
+     {
+         "role": "Core",
+@@ -63,38 +112,33 @@
+ 
+ 
+ def calculate_monthly_build_minutes(api_key: str, service_id: str) -> float:
+-    """Calculate total build minutes used in the current calendar month."""
++    """Calculate total build minutes used in the current calendar month.
++
++    Cursor-paginates until the month window is saturated instead of reading a
++    fixed first page (#2811 window class): a truncated window under-counts
++    month-to-date burn during retry-fail loops and can present a false safe
++    posture to the autoDeploy toggle below.
++    """
+     now = datetime.now(timezone.utc)
+-    current_year = now.year
+-    current_month = now.month
++    month_start = datetime(now.year, now.month, 1, tzinfo=timezone.utc)
+ 
++    deploys = []
+     try:
+-        deploys = RenderClient(api_key=api_key).list_deploys(service_id, limit=50)
++        client = RenderClient(api_key=api_key)
++        for page in client.paginate(
++            f"/services/{service_id}/deploys",
++            page_size=DEPLOY_WINDOW_PAGE_SIZE,
++            max_pages=DEPLOY_WINDOW_MAX_PAGES,
++        ):
++            deploys.extend(page)
++            _, _, saw_pre_month = sum_month_build_seconds(page, month_start)
++            if saw_pre_month or len(page) < DEPLOY_WINDOW_PAGE_SIZE:
++                break
+     except Exception as e:
+         print(f"  ⚠️ Warning: Unable to fetch deploys for service {service_id}: {e}")
+         return 0.0
+ 
+-    total_seconds = 0.0
+-    for item in deploys:
+-        dep = item.get("deploy", {})
+-        created_at_str = dep.get("createdAt")
+-        finished_at_str = dep.get("finishedAt")
+-
+-        if not created_at_str or not finished_at_str:
+-            continue
+-
+-        try:
+-            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+-            finished_at = datetime.fromisoformat(finished_at_str.replace("Z", "+00:00"))
+-
+-            # Only count deploys that started in the current calendar month
+-            if created_at.year == current_year and created_at.month == current_month:
+-                duration = (finished_at - created_at).total_seconds()
+-                if duration > 0:
+-                    total_seconds += duration
+-        except Exception:
+-            continue
+-
++    total_seconds, _count, _sat = sum_month_build_seconds(deploys, month_start)
+     return total_seconds / 60.0
+ 
+ 
+diff --git a/scripts/ci/render_build_quota_guard.py b/scripts/ci/render_build_quota_guard.py
+index f209cfda..56a2ebf8 100644
+--- a/scripts/ci/render_build_quota_guard.py
++++ b/scripts/ci/render_build_quota_guard.py
+@@ -22,6 +22,7 @@
+ import os
+ import sys
+ import urllib.error
++import urllib.parse
+ import urllib.request
+ from datetime import datetime, timezone
+ from pathlib import Path
+@@ -30,6 +31,11 @@
+ SAFE_BUILD_THRESHOLD_MINUTES = 450.0
+ RENDER_MONTHLY_LIMIT_MINUTES = 500.0
+ 
++# Render caps a deploys page at 100; 12 pages covers a 1200-deploy month,
++# far beyond any observed retry-fail volume (#2811 window class).
++DEPLOY_WINDOW_PAGE_SIZE = 100
++DEPLOY_WINDOW_MAX_PAGES = 12
++
+ SERVICE_ACCOUNT_MAP: dict[str, str] = {
+     "supremeai-primary-node": "RENDER_API_KEY_1",
+     "supremeai-worker-node": "RENDER_API_KEY_2",
+@@ -75,12 +81,54 @@ def fetch_account_services(api_key: str) -> list[dict[str, Any]]:
+         return [item.get("service", {}) for item in data]
+ 
+ 
+-def fetch_service_deploys(
+-    service_id: str, api_key: str, limit: int = 50
++def _unwrap_deploy(item: Any) -> dict[str, Any]:
++    """Render lists deploys as {"deploy": {...}} — tolerate both envelopes."""
++    if not isinstance(item, dict):
++        return {}
++    dep = item.get("deploy")
++    return dep if isinstance(dep, dict) else item
++
++
++def sum_month_build_seconds(
++    deploys: list[Any], month_start: datetime
++) -> tuple[float, int, bool]:
++    """Pure: sum durations of deploys started within [month_start, *).
++
++    Returns (total_seconds, deploy_count, saw_pre_month). ``saw_pre_month``
++    reports that a parsed deploy predates the month boundary — with Render's
++    newest-first listing this certifies the stream has reached back past the
++    month start (the pagination stop rule; see the #2811 window class).
++    """
++    total_seconds = 0.0
++    deploy_count = 0
++    saw_pre_month = False
++    for item in deploys:
++        dep = _unwrap_deploy(item)
++        c_str = dep.get("createdAt")
++        f_str = dep.get("finishedAt")
++        if not c_str or not f_str:
++            continue
++        try:
++            c_dt = datetime.fromisoformat(str(c_str).replace("Z", "+00:00"))
++            f_dt = datetime.fromisoformat(str(f_str).replace("Z", "+00:00"))
++        except (ValueError, TypeError):
++            continue
++        if c_dt < month_start:
++            saw_pre_month = True
++            continue
++        duration = max(0.0, (f_dt - c_dt).total_seconds())
++        total_seconds += duration
++        deploy_count += 1
++    return total_seconds, deploy_count, saw_pre_month
++
++
++def _fetch_deploys_page(
++    service_id: str, api_key: str, query: dict[str, Any]
+ ) -> list[dict[str, Any]]:
+-    """Fetch recent deploys for a given service."""
++    """Fetch a single page of deploys with an explicit query (limit/after)."""
++    qs = urllib.parse.urlencode(query)
+     req = urllib.request.Request(
+-        f"https://api.render.com/v1/services/{service_id}/deploys?limit={limit}",
++        f"https://api.render.com/v1/services/{service_id}/deploys?{qs}",
+         headers={
+             "Authorization": f"Bearer {api_key}",
+             "Accept": "application/json",
+@@ -89,7 +137,39 @@ def fetch_service_deploys(
+     )
+     with urllib.request.urlopen(req, timeout=12) as resp:
+         data = json.loads(resp.read().decode())
+-        return [d.get("deploy", {}) for d in data]
++        return list(data) if isinstance(data, list) else []
++
++
++def fetch_month_deploys(
++    service_id: str,
++    api_key: str,
++    month_start: datetime,
++    page_size: int = DEPLOY_WINDOW_PAGE_SIZE,
++    max_pages: int = DEPLOY_WINDOW_MAX_PAGES,
++) -> list[dict[str, Any]]:
++    """Cursor-paginate deploys newest-first until the month window is saturated.
++
++    Replaces the fixed limit=50 window whose slide produced the #2811 class: a
++    truncated window under-counts month-to-date burn and moves the reported
++    counter DOWN as old builds scroll out (the ledger 'correction' signature),
++    so a retry-fail month can read as a false safe posture.
++    """
++    collected: list[dict[str, Any]] = []
++    after: str | None = None
++    for _ in range(max_pages):
++        query: dict[str, Any] = {"limit": page_size}
++        if after:
++            query["after"] = after
++        items = _fetch_deploys_page(service_id, api_key, query)
++        collected.extend(items)
++        _, _, saw_pre_month = sum_month_build_seconds(items, month_start)
++        if saw_pre_month or len(items) < page_size:
++            break
++        last = _unwrap_deploy(items[-1]) if items else {}
++        after = last.get("id")
++        if not after:
++            break
++    return collected
+ 
+ 
+ def calculate_monthly_build_minutes(
+@@ -101,25 +181,8 @@ def calculate_monthly_build_minutes(
+     if month_start is None:
+         month_start = get_current_month_start()
+ 
+-    deploys = fetch_service_deploys(service_id, api_key, limit=50)
+-    total_seconds = 0.0
+-    deploy_count = 0
+-
+-    for dep in deploys:
+-        c_str = dep.get("createdAt")
+-        f_str = dep.get("finishedAt")
+-        if not c_str or not f_str:
+-            continue
+-        try:
+-            c_dt = datetime.fromisoformat(c_str.replace("Z", "+00:00"))
+-            f_dt = datetime.fromisoformat(f_str.replace("Z", "+00:00"))
+-            if c_dt >= month_start:
+-                duration = max(0.0, (f_dt - c_dt).total_seconds())
+-                total_seconds += duration
+-                deploy_count += 1
+-        except (ValueError, TypeError, KeyError):
+-            continue
+-
++    deploys = fetch_month_deploys(service_id, api_key, month_start)
++    total_seconds, deploy_count, _ = sum_month_build_seconds(deploys, month_start)
+     return round(total_seconds / 60.0, 2), deploy_count
+ 
+ 
+@@ -196,6 +259,64 @@ def run_self_test() -> int:
+     assert res_exact["mode"] == "GITHUB_ACTIONS_BUILD_AND_PUSH"
+     assert res_exact["allow_render_native_build"] is False
+ 
++    # ── #2811 window class: a month-window sum must not truncate ──
++    month_start = datetime(2026, 10, 1, tzinfo=timezone.utc)
++
++    def _dep(created: str, dur_seconds: float) -> dict[str, Any]:
++        from datetime import timedelta
++
++        c = datetime.fromisoformat(created.replace("Z", "+00:00"))
++        return {
++            "deploy": {
++                "id": f"dep-{created}",
++                "createdAt": created,
++                "finishedAt": (c + timedelta(seconds=dur_seconds)).isoformat().replace(
++                    "+00:00", "Z"
++                ),
++            }
++        }
++
++    # 120 one-minute month-to-date deploys: the old fixed limit=50 window
++    # counted only the newest 50 (50.0 min); the saturated window counts all.
++    deploys_120 = [_dep(f"2026-10-15T00:{i // 60:02d}:{i % 60:02d}:00Z", 60.0) for i in range(120)]
++    total, count, sat = sum_month_build_seconds(deploys_120, month_start)
++    assert round(total / 60.0, 2) == 120.0, f"expected 120.0, got {total / 60.0}"
++    assert count == 120
++    assert sat is False
++
++    # Pre-month deploys are excluded and flag saturation (the stop rule).
++    deploys_mixed = [_dep("2026-09-20T10:00:00Z", 600.0)] + deploys_120
++    total_m, count_m, sat_m = sum_month_build_seconds(deploys_mixed, month_start)
++    assert count_m == 120 and round(total_m / 60.0, 2) == 120.0
++    assert sat_m is True
++
++    # Calendar boundary: a deploy started exactly at month_start counts;
++    # one second earlier does not.
++    total_b, count_b, sat_b = sum_month_build_seconds(
++        [
++            _dep("2026-10-01T00:00:00Z", 60.0),
++            _dep("2026-09-30T23:59:59Z", 60.0),
++        ],
++        month_start,
++    )
++    assert count_b == 1 and round(total_b / 60.0, 2) == 1.0 and sat_b is True
++
++    # Junk / missing timestamps never crash or count; degenerate durations
++    # (0s, negative clock-skew) add 0 seconds but remain deploy records —
++    # the original counter semantics, preserved.
++    total_j, count_j, sat_j = sum_month_build_seconds(
++        [
++            {"deploy": {"id": "x1", "createdAt": "not-a-date", "finishedAt": "junk"}},
++            {"deploy": {"id": "x2"}},
++            "garbage-item",
++            _dep("2026-10-02T00:00:00Z", 0.0),
++            _dep("2026-10-03T00:00:00Z", -5.0),
++            _dep("2026-10-04T00:00:00Z", 30.0),
++        ],
++        month_start,
++    )
++    assert count_j == 3 and round(total_j, 2) == 30.0 and sat_j is False
++
+     print("render_build_quota_guard self-test: PASS (deterministic exit 0)")
+     return 0
+ 
+diff --git a/tests/test_render_build_minute_window.py b/tests/test_render_build_minute_window.py
+new file mode 100644
+index 00000000..bbc55877
+--- /dev/null
++++ b/tests/test_render_build_minute_window.py
+@@ -0,0 +1,238 @@
++#!/usr/bin/env python3
++"""#2811 window class — Render month-window build-minute accounting battery.
++
++Witness #2811 (platform-guardian cycle-47): render build-minute counters moved
++DOWNWARD during the retry-fail deploy loop, once with an exact dual-account
++mirror (ΔbuildMin == −ΔfreeLimit on both accounts in the same hour). Usage
++cannot decrease — every drop was a truncated deploys window sliding: as new
++deploys pushed older, longer builds out of a fixed first page, the computed
++month-to-date total fell and the derived free-limit remainder rose by exactly
++that amount. A truncated window under-counts month-to-date burn during
++retry-fail months and can present a false safe posture to the autoDeploy
++toggles these guards control.
++
++Pinned here, offline and deterministic:
++- a 120-deploy month sums to 120 minutes, not to whatever fits the old
++  fixed window (quota guard limit=50, tower adapter limit=20);
++- pre-month deploys exclude themselves and flag saturation (the cursor stop
++  rule shared by the guards and the tower adapter's render_build_window.ts);
++- both guards cursor-paginate (limit=100 + after=<id>) until the month window
++  is saturated, with the page cap as the last-resort bound;
++- render_build_budget_guard imports again at all (its scripts/lib path died in
++  the ops/ relocation and crashed the module in every context).
++"""
++
++import importlib.util
++import sys
++import unittest
++from datetime import datetime, timedelta, timezone
++from pathlib import Path
++from unittest import mock
++
++HERE = Path(__file__).resolve().parent
++REPO_ROOT = HERE.parent
++QUOTA_PATH = REPO_ROOT / "scripts" / "ci" / "render_build_quota_guard.py"
++BUDGET_PATH = REPO_ROOT / "scripts" / "ci" / "render_build_budget_guard.py"
++
++MONTH_START = datetime(2026, 10, 1, tzinfo=timezone.utc)
++
++
++def _load(path, name):
++    spec = importlib.util.spec_from_file_location(name, path)
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def _dep(created_iso, duration_seconds, dep_id="d"):
++    """Build a Render-shaped {deploy: {...}} record."""
++    created = datetime.fromisoformat(created_iso.replace("Z", "+00:00"))
++    finished = created + timedelta(seconds=duration_seconds)
++    return {
++        "deploy": {
++            "id": f"{dep_id}-{created_iso}",
++            "createdAt": created.isoformat().replace("+00:00", "Z"),
++            "finishedAt": finished.isoformat().replace("+00:00", "Z"),
++        }
++    }
++
++
++def _n_month_deploys(n, duration_seconds=60.0):
++    """n distinct one-minute builds on 2026-10-15, minute-spaced."""
++    out = []
++    for i in range(n):
++        hh = i // 3600
++        mm = (i // 60) % 60
++        ss = i % 60
++        out.append(_dep(f"2026-10-15T{hh:02d}:{mm:02d}:{ss:02d}Z", duration_seconds, f"d{i}"))
++    return out
++
++
++quota = _load(QUOTA_PATH, "render_build_quota_guard")
++budget = _load(BUDGET_PATH, "render_build_budget_guard")
++
++
++class SumMonthBuildSecondsQuota(unittest.TestCase):
++    """The pure month-window sum (quota guard variant)."""
++
++    def test_120_deploy_month_sums_fully(self):
++        total, count, sat = quota.sum_month_build_seconds(_n_month_deploys(120), MONTH_START)
++        self.assertAlmostEqual(round(total / 60.0, 2), 120.0)
++        self.assertEqual(count, 120)
++        self.assertFalse(sat)
++
++    def test_pre_month_excluded_and_flags_saturation(self):
++        items = [_dep("2026-09-20T10:00:00Z", 600.0)] + _n_month_deploys(120)
++        total, count, sat = quota.sum_month_build_seconds(items, MONTH_START)
++        self.assertEqual(count, 120)
++        self.assertAlmostEqual(round(total / 60.0, 2), 120.0)
++        self.assertTrue(sat)
++
++    def test_calendar_boundary(self):
++        total, count, sat = quota.sum_month_build_seconds(
++            [_dep("2026-10-01T00:00:00Z", 60.0), _dep("2026-09-30T23:59:59Z", 60.0)],
++            MONTH_START,
++        )
++        self.assertEqual(count, 1)
++        self.assertAlmostEqual(round(total / 60.0, 2), 1.0)
++        self.assertTrue(sat)
++
++    def test_junk_never_crashes_or_counts(self):
++        total, count, sat = quota.sum_month_build_seconds(
++            [
++                {"deploy": {"id": "j1", "createdAt": "not-a-date", "finishedAt": "junk"}},
++                {"deploy": {"id": "j2"}},
++                "garbage-item",
++                None,
++                _dep("2026-10-04T00:00:00Z", 30.0),
++            ],
++            MONTH_START,
++        )
++        self.assertEqual(count, 1)
++        self.assertAlmostEqual(round(total, 2), 30.0)
++        self.assertFalse(sat)
++
++
++class FetchMonthDeploysQuota(unittest.TestCase):
++    """Cursor pagination until the month window is saturated."""
++
++    def test_pages_until_pre_month_seen(self):
++        page1 = _n_month_deploys(100)
++        page2 = _n_month_deploys(100, duration_seconds=90.0)
++        page3 = [_dep("2026-09-28T00:00:00Z", 300.0)] + _n_month_deploys(2, duration_seconds=45.0)
++        pages = [page1, page2, page3]
++        seen_queries = []
++
++        def fake_page(service_id, api_key, query):
++            seen_queries.append(dict(query))
++            return pages[len(seen_queries) - 1]
++
++        with mock.patch.object(quota, "_fetch_deploys_page", side_effect=fake_page):
++            collected = quota.fetch_month_deploys("srv-x", "key", MONTH_START)
++
++        self.assertEqual(len(seen_queries), 3)
++        self.assertEqual(seen_queries[0].get("limit"), 100)
++        self.assertNotIn("after", seen_queries[0])
++        self.assertIn("after", seen_queries[1], "page 2 must carry the cursor")
++        self.assertEqual(len(collected), 100 + 100 + 3)
++
++    def test_short_page_stops_without_cursor(self):
++        pages = [_n_month_deploys(7)]
++        seen = []
++
++        def fake_page(service_id, api_key, query):
++            seen.append(dict(query))
++            return pages[len(seen) - 1]
++
++        with mock.patch.object(quota, "_fetch_deploys_page", side_effect=fake_page):
++            collected = quota.fetch_month_deploys("srv-x", "key", MONTH_START)
++        self.assertEqual(len(seen), 1)
++        self.assertEqual(len(collected), 7)
++
++    def test_page_cap_bounds_runaway_months(self):
++        seen = []
++
++        def fake_page(service_id, api_key, query):
++            seen.append(dict(query))
++            return _n_month_deploys(100)  # always full, never pre-month
++
++        with mock.patch.object(quota, "_fetch_deploys_page", side_effect=fake_page):
++            collected = quota.fetch_month_deploys("srv-x", "key", MONTH_START)
++        self.assertEqual(len(seen), quota.DEPLOY_WINDOW_MAX_PAGES)
++        self.assertEqual(len(collected), 100 * quota.DEPLOY_WINDOW_MAX_PAGES)
++
++    def test_calculate_uses_the_saturated_window(self):
++        page1 = _n_month_deploys(100)  # full page, all in-month
++        page2 = [_dep("2026-09-28T00:00:00Z", 300.0)] + _n_month_deploys(20)  # pre-month -> stop
++        pages = [page1, page2]
++        seen = []
++
++        def fake_page(service_id, api_key, query):
++            seen.append(dict(query))
++            return pages[len(seen) - 1]
++
++        with mock.patch.object(quota, "_fetch_deploys_page", side_effect=fake_page):
++            minutes, deploys = quota.calculate_monthly_build_minutes("srv-x", "key", month_start=MONTH_START)
++        # 100 + 20 one-minute builds = 120.0 min — the old fixed limit=50
++        # window would have counted only the newest 50.
++        self.assertEqual(minutes, 120.0)
++        self.assertEqual(deploys, 120)
++        self.assertEqual(len(seen), 2)
++
++
++class BudgetGuardWindow(unittest.TestCase):
++    """Same window class in the autoDeploy-acting guard — plus the import fix."""
++
++    def test_module_imports_again(self):
++        """Regression: scripts/lib/ vanished in the ops/ relocation; the guard
++        crashed at import in every context. Loading it above in module scope is
++        itself the assertion — reaching this test proves the import path works."""
++        self.assertTrue(hasattr(budget, "calculate_monthly_build_minutes"))
++        self.assertTrue(hasattr(budget, "sum_month_build_seconds"))
++
++    def test_sum_month_build_seconds_matches_quota_semantics(self):
++        total, count, sat = budget.sum_month_build_seconds(_n_month_deploys(120), MONTH_START)
++        self.assertAlmostEqual(round(total / 60.0, 2), 120.0)
++        self.assertEqual(count, 120)
++        self.assertFalse(sat)
++
++    def test_calculate_paginates_until_saturated(self):
++        page1 = _n_month_deploys(100)
++        page2 = [_dep("2026-09-28T00:00:00Z", 300.0)] + _n_month_deploys(30, duration_seconds=45.0)
++        pages = [page1, page2]
++        calls = {"n": 0}
++
++        class FakeClient:
++            def __init__(self, api_key=None):
++                pass
++
++            def paginate(self, path, page_size=100, max_pages=10):
++                calls["n"] += 1
++                calls["path"] = path
++                calls["page_size"] = page_size
++                for page in pages:
++                    yield page
++
++        with mock.patch.object(budget, "RenderClient", FakeClient):
++            minutes = budget.calculate_monthly_build_minutes("key", "srv-x")
++        self.assertEqual(calls["page_size"], 100)
++        self.assertIn("/deploys", calls["path"])
++        # page1: 100 min; page2: 30 valid × 45 s = 22.5 min (pre-month excluded)
++        self.assertAlmostEqual(minutes, 122.5, places=2)
++        self.assertEqual(calls["n"], 1)
++
++    def test_calculate_returns_zero_on_client_error(self):
++        class BoomClient:
++            def __init__(self, api_key=None):
++                pass
++
++            def paginate(self, path, page_size=100, max_pages=10):
++                raise RuntimeError("render unreachable")
++
++        with mock.patch.object(budget, "RenderClient", BoomClient):
++            self.assertEqual(budget.calculate_monthly_build_minutes("key", "srv-x"), 0.0)
++
++
++if __name__ == "__main__":
++    unittest.main()

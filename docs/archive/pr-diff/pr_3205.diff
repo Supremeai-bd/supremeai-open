@@ -1,0 +1,720 @@
+diff --git a/scripts/ci/bridge_intake_gate_watchdog.py b/scripts/ci/bridge_intake_gate_watchdog.py
+new file mode 100644
+index 00000000..b25ea26c
+--- /dev/null
++++ b/scripts/ci/bridge_intake_gate_watchdog.py
+@@ -0,0 +1,448 @@
++#!/usr/bin/env python3
++"""bridge_intake_gate_watchdog.py — Bridge Intake gate streak watchdog (#2792 guard 5).
++
++The gap (docs/reports/INTAKE_RCA_2792_2026-10-30.md, guard 5, quoted from the
++#2792 finding): "Optional guard once RCA lands: fail-loud alerting on 2+
++consecutive intake failures (the sentry window relied on manual observation
++this time — 3 runs passed before a scout note existed)." The RCA's guards 1-4
++landed via scripts/bridge/bridge_intake.py (docs/reports/
++BRIDGE_INTAKE_POISON_GUARD_2026-10-30.md); guard 5 stayed open because the
++wiring note assumed .github/ — but DETECTION needs no workflow write: this
++watchdog reads the runs plane zero-credential through the Tower and exits
++non-zero, so any cadence/sentry/human invocation sees the red without a
++scout having to re-derive the streak by hand.
++
++Model (one join key: the workflow name needle):
++
++  - runs plane : Tower `github.workflow_runs` on the private repo
++                 (Supremeai-bd/supremeai), raw full-body MCP read — the
++                 runs payload is a single large SSE data line that
++                 iter_lines-based clients split at chunk boundaries
++                 (the same transport discipline as
++                 scripts/ci/bridge_landing_watchdog.py `_rpc`).
++  - streak     : newest-first completed runs; every `failure` increments,
++                 a `success` stops the scan, and INCONCLUSIVE runs
++                 (cancelled/timed_out/anything not success|failure, plus
++                 non-completed status) neither count nor reset — the
++                 doctrine mirror of the #3050 stale-incident probe
++                 ("cancelled must not read as red"), inverted for streaks:
++                 a cancelled run between failures is not a recovery, so
++                 the scan continues past it. The streak is the RCA alert
++                 contract: 2+ consecutive failures = persistent outage,
++                 1 = transient (warn, exit 0).
++  - starvation : hours since the newest run of ANY conclusion (RCA §1:
++                 "GitHub-side schedule drops; the hourly-cron assumption
++                 in any latency SLO is false" — 3-8h gaps observed for
++                 days). Informational by default; `--strict-stale-hours`
++                 opts the invocation into failing loud on it, so the
++                 strict surface stays minimal by default.
++  - verdicts   : ALERT_STREAK (exit 1) · SINGLE_FAILURE (warn, exit 0) ·
++                 HEALTHY · plus the STALE_RUN / IN_FLIGHT /
++                 INCONCLUSIVE_PRESENT info rows.
++
++Modes:
++  --self-test  hermetic fixture matrix (streak math, inconclusive
++               handling, threshold boundary, name filtering, honest
++               window-exhaustion, unparseable timestamps). No network.
++  --report-only  never exit 1 (census/sentry passes that want the table).
++Exit codes: 0 = healthy / report-only · 1 = fail-loud finding ·
++            2 = runs plane unreachable or workflow absent from the window
++            (honest skip — never reported as pass, #1760 doctrine).
++
++Zero credentials, read-only. No mutation. Stdlib only.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++import time
++import urllib.error
++import urllib.request
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++TOWER = "https://supremeai-mcp-tower.onrender.com/mcp"
++# The intake gate lives in the PRIVATE repo (agents never touch it — the
++# watchdog only READS its runs plane through the zero-credential Tower).
++INTAKE_REPO = "Supremeai-bd/supremeai"
++# Case-insensitive substring: the workflow's display name carries a unicode
++# suffix ("Bridge Intake (public work orders → private gates)"); the needle
++# must survive cosmetic renames of that suffix.
++WORKFLOW_NEEDLE = "bridge intake"
++DEFAULT_PER_PAGE = 30
++# RCA guard-5 contract: "fail-loud alerting on 2+ consecutive intake failures".
++DEFAULT_STREAK_THRESHOLD = 2
++# RCA §1 starvation datum: hourly cron, but 3-8h gaps observed for days.
++# Informational default; strict only via --strict-stale-hours.
++DEFAULT_STALE_HOURS = 8.0
++
++VERDICT_ALERT = "ALERT_STREAK"
++VERDICT_SINGLE = "SINGLE_FAILURE"
++VERDICT_HEALTHY = "HEALTHY"
++
++_id = [100]
++
++
++def _rpc(method, params=None, session_id=None, notify=False, attempts=3):
++    """Minimal zero-credential MCP client (bridge_landing_watchdog `_rpc` shape).
++
++    Full-body `resp.read()` keeps large single-line SSE payloads intact —
++    the runs surface answers ~100KB+ for per_page>=12 and line-iterating
++    clients split it mid-line (documented live 2026-10-30 in
++    continuous_agent_loop._tower_board_rows). Backoff is 3/6/9s (worst case
++    ~18s) — a cadence-invoked detector must not hang a runner lane.
++    """
++    payload = {"jsonrpc": "2.0", "method": method}
++    if params is not None:
++        payload["params"] = params
++    if not notify:
++        _id[0] += 1
++        payload["id"] = _id[0]
++    headers = {
++        "Content-Type": "application/json",
++        "Accept": "application/json, text/event-stream",
++        # Streamable HTTP (spec rev >= 2025-06-18): every post-initialize
++        # request must carry the negotiated version (#2568, radar R70);
++        # mirrors PROTOCOL_VERSION_STREAMABLE in mcp_tower_client.py.
++        "MCP-Protocol-Version": "2025-11-25",
++    }
++    if session_id:
++        headers["Mcp-Session-Id"] = session_id
++    last = None
++    for attempt in range(attempts):
++        req = urllib.request.Request(TOWER, data=json.dumps(payload).encode(),
++                                     headers=headers, method="POST")
++        try:
++            with urllib.request.urlopen(req, timeout=45) as resp:  # nosec B310 — pinned https module constant (house audit #2081 class)
++                sid = resp.headers.get("Mcp-Session-Id")
++                body = resp.read().decode("utf-8", errors="replace")
++                ctype = resp.headers.get("Content-Type") or ""
++                break
++        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
++            last = e
++            time.sleep(3 * (attempt + 1))
++    else:
++        raise last  # noqa: TRY201 — caller maps to the honest-skip exit
++    if "text/event-stream" in ctype:
++        for line in body.splitlines():
++            if line.startswith("data:"):
++                try:
++                    return json.loads(line[5:].strip()), sid
++                except Exception:  # noqa: BLE001  # nosec B112 — SSE lines individually skippable by design (#2081 audit class)
++                    continue
++    if not body.strip():
++        return {"accepted": True}, sid
++    return json.loads(body), sid
++
++
++def _text_of(res) -> str:
++    content = res.get("result", {}).get("content", []) if isinstance(res, dict) else []
++    return "\n".join(c.get("text", "") for c in content if isinstance(c, dict))
++
++
++def _tower_text(name: str, arguments: dict) -> str:
++    _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
++                                 "clientInfo": {"name": "bridge-intake-gate-watchdog", "version": "1.0"}})
++    _rpc("notifications/initialized", {}, session_id=sid, notify=True)
++    res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
++    return _text_of(res)
++
++
++def parse_runs(text: str) -> list[dict]:
++    """Extract the workflow_runs list from a tool text answer (tolerant)."""
++    try:
++        payload = json.loads(text)
++    except (json.JSONDecodeError, TypeError):
++        return []
++    runs = payload.get("workflow_runs") if isinstance(payload, dict) else None
++    if not isinstance(runs, list):
++        return []
++    return [r for r in runs if isinstance(r, dict)]
++
++
++def filter_intake_runs(runs: list[dict], needle: str = WORKFLOW_NEEDLE) -> list[dict]:
++    """Keep only the intake-gate workflow's rows, newest-first (as served).
++
++    Match is case-insensitive substring on the run's workflow `name` — the
++    display name's unicode suffix may be renamed without a contract break.
++    """
++    n = needle.strip().lower()
++    out = []
++    for r in runs:
++        name = str(r.get("name") or "")
++        if n in name.lower():
++            out.append(r)
++    return out
++
++
++def age_hours(iso_ts: str | None, now_epoch: float) -> float | None:
++    """Hours between an ISO-8601 Z timestamp and now; None when unparseable."""
++    if not isinstance(iso_ts, str) or not iso_ts:
++        return None
++    try:
++        import datetime as _dt
++
++        ts = _dt.datetime.fromisoformat(iso_ts.replace("Z", "+00:00"))
++        return max(0.0, (now_epoch - ts.timestamp()) / 3600.0)
++    except Exception:  # noqa: BLE001 — honest-unknown on any shape drift
++        return None
++
++
++def summarize_streak(runs: list[dict]) -> dict:
++    """Streak/health summary from newest-first intake runs (pure core).
++
++    - streak: consecutive newest COMPLETED runs with conclusion == "failure";
++      a "success" stops the scan; inconclusive rows (any other conclusion,
++      or status not completed) neither count nor reset — cancelled between
++      failures is not a recovery (#3050 doctrine inverted for streaks).
++    - in_flight: a newest non-completed run is reported, never counted.
++    """
++    summary: dict = {
++        "streak": 0,
++        "first_failure": None,
++        "last_success": None,
++        "last_run": None,
++        "in_flight": None,
++        "inconclusive_skipped": 0,
++        "scanned": 0,
++    }
++    streak_closed = False
++    for r in runs:
++        summary["scanned"] += 1
++        status = str(r.get("status") or "").lower()
++        conclusion = str(r.get("conclusion") or "").lower()
++        if status != "completed":
++            if summary["in_flight"] is None:
++                summary["in_flight"] = r
++            continue  # in-flight/pending/queued: never counts, never resets
++        if summary["last_run"] is None:
++            summary["last_run"] = r
++        if conclusion not in ("success", "failure"):
++            summary["inconclusive_skipped"] += 1
++            continue  # cancelled/timed_out/etc: inconclusive, scan continues
++        if conclusion == "success":
++            if summary["last_success"] is None:
++                summary["last_success"] = r
++            streak_closed = True
++            break  # newest success reached — streak is final
++        # conclusion == "failure"
++        if not streak_closed:
++            summary["streak"] += 1
++            if summary["first_failure"] is None:
++                summary["first_failure"] = r
++    return summary
++
++
++def verdict_for(summary: dict, threshold: int, stale_hours: float | None,
++                now_epoch: float, strict_stale: bool = False) -> tuple[str, int]:
++    """Pure decision core: (verdict token, exit code) from a streak summary.
++
++    RCA guard-5 contract: streak >= threshold (default 2) fails loud (1);
++    a single failure is a transient warn (0); healthy is 0. The starvation
++    datum is informational unless the caller opts in via strict_stale with
++    a stale_hours bound.
++    """
++    if summary["streak"] >= threshold:
++        return VERDICT_ALERT, 1
++    if summary["streak"] == 1:
++        return VERDICT_SINGLE, 0
++    age = None
++    if summary["last_run"] is not None:
++        age = age_hours(summary["last_run"].get("created_at"), now_epoch)
++    if strict_stale and stale_hours is not None and age is not None and age > stale_hours:
++        return "STALE_RUN", 1
++    return VERDICT_HEALTHY, 0
++
++
++def fetch_intake_summary(fetch_text=_tower_text, per_page: int = DEFAULT_PER_PAGE) -> tuple[dict, list[dict], list[dict]]:
++    """Live runs fetch + intake filter + streak summary.
++
++    Returns (summary, intake_rows, all_rows). Raises on transport failure —
++    main() maps that to the honest-skip exit 2.
++    """
++    text = fetch_text("github.workflow_runs", {"repo": INTAKE_REPO, "per_page": per_page})
++    all_runs = parse_runs(text)
++    intake = filter_intake_runs(all_runs)
++    if not intake:
++        raise LookupError(
++            f"no '{WORKFLOW_NEEDLE}' runs in the {len(all_runs)}-row window "
++            f"(per_page={per_page}) — renamed workflow or deep schedule starvation; "
++            "widen --per-page before trusting any green")
++    return summarize_streak(intake), intake, all_runs
++
++
++def self_test() -> list[tuple[str, bool, str]]:
++    """Hermetic fixture matrix — no network (house roster mode)."""
++    cases: list[tuple[str, bool, str]] = []
++
++    def _run(num, status="completed", conclusion="success", created="2026-10-30T08:43:11Z", name="Bridge Intake (public work orders → private gates)"):
++        return {"id": num, "run_number": num, "name": name, "status": status,
++                "conclusion": conclusion, "created_at": created}
++
++    # streak math: 3 failures newest-first → 3 (the live #327-#329 shape)
++    runs = [_run(329, conclusion="failure", created="2026-10-29T16:56:58Z"),
++            _run(328, conclusion="failure", created="2026-10-29T10:05:10Z"),
++            _run(327, conclusion="failure", created="2026-10-29T02:28:51Z"),
++            _run(326, conclusion="success", created="2026-10-28T23:15:46Z")]
++    s = summarize_streak(runs)
++    cases.append(("three failures newest-first -> streak 3, first_failure=#329",
++                  s["streak"] == 3 and s["first_failure"]["run_number"] == 329,
++                  str(s["streak"])))
++    v, code = verdict_for(s, DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, 0.0)
++    cases.append(("streak 3 >= threshold 2 -> ALERT exit 1",
++                  v == VERDICT_ALERT and code == 1, f"{v}/{code}"))
++
++    # healthy: newest success stops the scan immediately
++    runs = [_run(332, conclusion="success", created="2026-10-30T08:43:11Z"),
++            _run(331, conclusion="success"),
++            _run(329, conclusion="failure")]
++    s = summarize_streak(runs)
++    cases.append(("newest success -> streak 0, last_success=#332, scan stopped",
++                  s["streak"] == 0 and s["last_success"]["run_number"] == 332
++                  and s["scanned"] == 1, str(s)))
++    v, code = verdict_for(s, DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, 0.0)
++    cases.append(("streak 0 -> HEALTHY exit 0", v == VERDICT_HEALTHY and code == 0, f"{v}/{code}"))
++
++    # single failure: transient warn, exit 0 (the threshold boundary)
++    runs = [_run(340, conclusion="failure"), _run(339, conclusion="success")]
++    s = summarize_streak(runs)
++    v, code = verdict_for(s, DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, 0.0)
++    cases.append(("streak 1 < threshold 2 -> SINGLE_FAILURE exit 0",
++                  v == VERDICT_SINGLE and code == 0, f"{v}/{code}"))
++
++    # in-flight top run: reported, never counted, streak reads below it
++    runs = [_run(341, status="in_progress", conclusion=None),
++            _run(340, conclusion="failure"),
++            _run(339, conclusion="failure"),
++            _run(338, conclusion="success")]
++    s = summarize_streak(runs)
++    cases.append(("in-flight top -> streak 2 from below, in_flight=#341",
++                  s["streak"] == 2 and s["in_flight"]["run_number"] == 341
++                  and s["first_failure"]["run_number"] == 340, str(s["streak"])))
++
++    # inconclusive between failures: cancelled neither counts nor resets
++    runs = [_run(342, conclusion="failure"),
++            _run(341, conclusion="cancelled"),
++            _run(340, conclusion="failure"),
++            _run(339, conclusion="success")]
++    s = summarize_streak(runs)
++    cases.append(("cancelled between failures -> streak 2, inconclusive_skipped=1",
++                  s["streak"] == 2 and s["inconclusive_skipped"] == 1, str(s)))
++
++    # threshold override: threshold=1 makes a single failure loud
++    runs = [_run(340, conclusion="failure"), _run(339, conclusion="success")]
++    s = summarize_streak(runs)
++    v, code = verdict_for(s, 1, DEFAULT_STALE_HOURS, 0.0)
++    cases.append(("threshold 1 -> single failure ALERTs", code == 1, f"{v}/{code}"))
++
++    # strict-stale opt-in: old last_run + strict flag -> STALE_RUN exit 1
++    runs = [_run(332, conclusion="success", created="2026-10-28T08:43:11Z")]
++    s = summarize_streak(runs)
++    now = 1793457600.0  # ~2026-10-31T04:00Z: >8h past the run
++    v, code = verdict_for(s, DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, now, strict_stale=True)
++    cases.append(("strict-stale on 44h-old last run -> STALE_RUN exit 1",
++                  v == "STALE_RUN" and code == 1, f"{v}/{code}"))
++    v, code = verdict_for(s, DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, now, strict_stale=False)
++    cases.append(("default (no strict-stale) keeps starvation informational",
++                  v == VERDICT_HEALTHY and code == 0, f"{v}/{code}"))
++
++    # filtering: needle survives the unicode display suffix; other workflows drop
++    runs = [_run(1, name="Bridge Intake (public work orders → private gates)"),
++            _run(2, name="🔧 Nightly Ops & Maintenance"),
++            _run(3, name="bridge intake (renamed suffix)")]
++    intake = filter_intake_runs(runs)
++    cases.append(("needle matches case-insensitively, foreign workflows drop",
++                  [r["run_number"] for r in intake] == [1, 3], str([r["run_number"] for r in intake])))
++
++    # payload parsing: tolerant of wrappers and junk
++    cases.append(("parse_runs tolerates junk", parse_runs("not json") == [], ""))
++    cases.append(("parse_runs reads workflow_runs shape",
++                  parse_runs('{"workflow_runs": [{"name": "Bridge Intake"}]}') ==
++                  [{"name": "Bridge Intake"}], ""))
++    cases.append(("parse_runs drops non-dict rows",
++                  parse_runs('{"workflow_runs": [1, {"name": "x"}]}') == [{"name": "x"}], ""))
++
++    # age math: unparseable/missing timestamps are honest-unknown
++    cases.append(("age_hours None on junk", age_hours("junk", 0.0) is None, ""))
++    cases.append(("age_hours None on missing", age_hours(None, 0.0) is None, ""))
++    ok_age = age_hours("2026-10-30T08:43:11Z", 1793436191.0)  # base epoch + 86400s = exactly +24h
++    cases.append(("age_hours computes positive hours", ok_age is not None and 23.9 < ok_age < 24.1, str(ok_age)))
++
++    # verdict_for on empty summary (no runs at all) stays healthy — the
++    # window-exhaustion guard is fetch_intake_summary's LookupError, not here.
++    v, code = verdict_for(summarize_streak([]), DEFAULT_STREAK_THRESHOLD, DEFAULT_STALE_HOURS, 0.0)
++    cases.append(("empty summary -> HEALTHY exit 0 (window guard lives in fetch)",
++                  v == VERDICT_HEALTHY and code == 0, f"{v}/{code}"))
++    return cases
++
++
++def main(argv: list[str] | None = None) -> int:
++    p = argparse.ArgumentParser(description="Bridge Intake gate streak watchdog (#2792 guard 5)")
++    p.add_argument("--self-test", action="store_true",
++                   help="hermetic fixture matrix (roster mode, no network)")
++    p.add_argument("--per-page", type=int, default=DEFAULT_PER_PAGE,
++                   help=f"runs window size (default {DEFAULT_PER_PAGE})")
++    p.add_argument("--threshold", type=int, default=DEFAULT_STREAK_THRESHOLD,
++                   help=f"consecutive failures that fail loud (default {DEFAULT_STREAK_THRESHOLD})")
++    p.add_argument("--stale-hours", type=float, default=DEFAULT_STALE_HOURS,
++                   help=f"informational starvation bound in hours (default {DEFAULT_STALE_HOURS:g}h)")
++    p.add_argument("--strict-stale-hours", action="store_true",
++                   help="opt-in: hours-since-last-run past --stale-hours also exits 1")
++    p.add_argument("--report-only", action="store_true",
++                   help="never exit 1 (census/sentry table mode)")
++    args = p.parse_args(argv)
++
++    if args.self_test:
++        cases = self_test()
++        failed = [c for c in cases if not c[1]]
++        for name, ok, ev in cases:
++            print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {ev}" if not ok else ""))
++        print(f"\n==== {len(cases) - len(failed)}/{len(cases)} self-test cases PASS ====")
++        return 1 if failed else 0
++
++    try:
++        summary, intake, _all = fetch_intake_summary(per_page=args.per_page)
++    except Exception as e:  # noqa: BLE001 — unreachable planes are a skip, never a pass
++        print(f"SKIP: intake runs plane unreachable ({e.__class__.__name__}: {e})")
++        return 2
++
++    now = time.mktime(time.gmtime())
++    verdict, code = verdict_for(summary, args.threshold, args.stale_hours, now,
++                                strict_stale=args.strict_stale_hours)
++    print(f"RUNS PLANE: {len(intake)} '{WORKFLOW_NEEDLE}' rows in the per_page={args.per_page} window")
++    for r in intake[:10]:
++        status = str(r.get("status") or "?")
++        concl = str(r.get("conclusion") or "-")
++        print(f"  #{r.get('run_number')} {status}/{concl} {r.get('created_at')}")
++    if summary["in_flight"] is not None:
++        print(f"IN FLIGHT: run #{summary['in_flight'].get('run_number')} "
++              f"({summary['in_flight'].get('status')}) — not counted")
++    if summary["inconclusive_skipped"]:
++        print(f"INCONCLUSIVE: {summary['inconclusive_skipped']} row(s) skipped "
++              "(cancelled/timed-out — neither red nor recovery, #3050 doctrine)")
++    last_age = age_hours(summary["last_run"].get("created_at"), now) if summary["last_run"] else None
++    age_s = "?" if last_age is None else f"{last_age:.1f}h"
++    print(f"LAST RUN: {age_s} ago (starvation INFO bound {args.stale_hours:g}h"
++          + (", strict" if args.strict_stale_hours else ", report-only") + ")")
++    if summary["streak"] == 0:
++        print(f"VERDICT: {verdict} — intake gate green "
++              f"(last success: {summary['last_success'].get('created_at') if summary['last_success'] else 'none in window'})")
++    else:
++        print(f"VERDICT: {verdict} — {summary['streak']} consecutive failure(s) "
++              f"(newest #{summary['first_failure'].get('run_number') if summary['first_failure'] else '?'}); "
++              f"threshold {args.threshold}")
++    if verdict == VERDICT_ALERT:
++        print("ALERT: persistent intake-gate outage — public work orders are not "
++              "reaching the private gates. RCA: docs/reports/INTAKE_RCA_2792_2026-10-30.md "
++              "(guards 1-4 landed in scripts/bridge/bridge_intake.py); triage lane: "
++              "file/claim a scout(platform) row with the run ids above.")
++    if args.report_only and code == 1:
++        print("REPORT-ONLY: suppressing exit 1 by flag.")
++        return 0
++    return code
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index d40259cb..29e926ee 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -26,6 +26,7 @@
+     ["python", "scripts/ci/boundary_contract_sentinel.py", "--self-test"],
+     ["python", "scripts/ci/fleet_contract_probe.py", "--self-test"],
+     ["python", "scripts/ci/bridge_landing_watchdog.py", "--self-test"],
++    ["python", "scripts/ci/bridge_intake_gate_watchdog.py", "--self-test"],
+     ["python", "scripts/ci/license_ssot_guard.py", "--check"],
+     ["python", "scripts/ci/contract_codegen_guard.py", "--check"],
+     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 5cca7e08..766d0f4e 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-30 10:22:52 UTC · **528 scripts** (493 py · 30 sh · 5 js/mjs · 0 other) across 8 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-30 10:45:39 UTC · **529 scripts** (494 py · 30 sh · 5 js/mjs · 0 other) across 8 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (198 scripts)
++## scripts/ci/  (199 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -103,6 +103,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/bandit_sast_guard.py` | bandit_sast_guard.py — Python source static-security ratchet gate (#1809). |
+ | `ci/boundary_contract_sentinel.py` | boundary_contract_sentinel.py — live-edge boundary contract sentinel (D3 of #1819/#1835/#1874). |
+ | `ci/boundary_sanitization_guard.py` | boundary_sanitization_guard.py — Public/Private Boundary & Proprietary Logic |
++| `ci/bridge_intake_gate_watchdog.py` | bridge_intake_gate_watchdog.py — Bridge Intake gate streak watchdog (#2792 guard 5). |
+ | `ci/bridge_landing_watchdog.py` | bridge_landing_watchdog.py — bridge work-order landing watchdog (#1964 gap). |
+ | `ci/bridge_opener_hardening_reference.py` | Bridge Opener Hardening reference — S08 "Mistake Immunity" (task #485). |
+ | `ci/build_manual_task_report.py` | Build a non-secret report for human-controlled release tasks. |
+diff --git a/tests/test_bridge_intake_gate_watchdog.py b/tests/test_bridge_intake_gate_watchdog.py
+new file mode 100644
+index 00000000..9c21915e
+--- /dev/null
++++ b/tests/test_bridge_intake_gate_watchdog.py
+@@ -0,0 +1,218 @@
++#!/usr/bin/env python3
++"""Offline tests for the Bridge Intake gate streak watchdog (#2792 guard 5).
++
++The RCA (docs/reports/INTAKE_RCA_2792_2026-10-30.md) proved the detection
++gap — the #327-#329 intake failure streak ran for >14h before any scout
++note existed because "the sentry window relied on manual observation".
++Guard 5 ("fail-loud alerting on 2+ consecutive intake failures") is the
++mechanical detector these tests pin:
++
++  - the streak model (failure/success/inconclusive/in-flight semantics —
++    cancelled between failures is NOT a recovery, the #3050 doctrine
++    inverted for streaks);
++  - the verdict decision core (2+ = exit 1, single = warn exit 0, the
++    threshold boundary; strict-stale opt-in; report-only suppression);
++  - the workflow-name needle (unicode display suffix must not break it);
++  - tolerant payload parsing and honest-unknown age math;
++  - the roster wiring (run_all_guards.py) and the honest-skip exit code.
++
++Zero network. Dual-mode (pytest + stdlib runner), mirroring
++test_bridge_landing_watchdog.py.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import subprocess
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++WATCHDOG = REPO_ROOT / "scripts" / "ci" / "bridge_intake_gate_watchdog.py"
++ROSTER = REPO_ROOT / "scripts" / "ci" / "run_all_guards.py"
++
++PASS = 0
++FAIL = 1
++
++
++def _load_watchdog_module():
++    spec = importlib.util.spec_from_file_location("bridge_intake_gate_watchdog", WATCHDOG)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def _run(num, status="completed", conclusion="success",
++         created="2026-10-30T08:43:11Z",
++         name="Bridge Intake (public work orders → private gates)"):
++    return {"id": num, "run_number": num, "name": name, "status": status,
++            "conclusion": conclusion, "created_at": created}
++
++
++def test_roster_wiring():
++    src = ROSTER.read_text(encoding="utf-8")
++    assert ('["python", "scripts/ci/bridge_intake_gate_watchdog.py", "--self-test"]' in src), \
++        "watchdog missing from run_all_guards.py GUARDS roster"
++
++
++def test_contract_pins():
++    mod = _load_watchdog_module()
++    # RCA guard-5 contract text: 2+ consecutive failures fail loud.
++    assert mod.DEFAULT_STREAK_THRESHOLD == 2
++    # The private repo is read-only observed through the Tower; agents never
++    # write there (AGENTS.md invariant 2) — pin the constant so a drift to
++    # the open repo (whose runs would be a different plane) fails loudly.
++    assert mod.INTAKE_REPO == "Supremeai-bd/supremeai"
++    # Zero-credential Tower surface, not api.github.com (anonymous 60/h cap
++    # is a documented field trap, CONTRIBUTING §11).
++    assert mod.TOWER.startswith("https://supremeai-mcp-tower.onrender.com")
++    # The needle must be lowercase-comparable and survive display-suffix
++    # renames ("Bridge Intake (public work orders → private gates)").
++    assert mod.WORKFLOW_NEEDLE == "bridge intake"
++    # Verdict tokens are the model's SSOT for every consumer.
++    src = WATCHDOG.read_text(encoding="utf-8")
++    for token in ("ALERT_STREAK", "SINGLE_FAILURE", "HEALTHY"):
++        assert token in src, f"verdict token missing: {token}"
++
++
++def test_streak_matrix():
++    mod = _load_watchdog_module()
++    # The live #327-#329 shape: 3 failures newest-first, then a success.
++    runs = [_run(329, conclusion="failure"), _run(328, conclusion="failure"),
++            _run(327, conclusion="failure"), _run(326, conclusion="success")]
++    s = mod.summarize_streak(runs)
++    assert s["streak"] == 3
++    assert s["first_failure"]["run_number"] == 329
++    assert s["last_success"]["run_number"] == 326
++
++    # Newest success stops the scan (efficiency + semantics).
++    runs = [_run(332, conclusion="success"), _run(331, conclusion="success"),
++            _run(329, conclusion="failure")]
++    s = mod.summarize_streak(runs)
++    assert s["streak"] == 0 and s["last_success"]["run_number"] == 332
++    assert s["scanned"] == 1, "scan must stop at the newest success"
++
++    # In-flight top run: reported, never counted, streak reads below it.
++    runs = [_run(341, status="in_progress", conclusion=None),
++            _run(340, conclusion="failure"), _run(339, conclusion="failure"),
++            _run(338, conclusion="success")]
++    s = mod.summarize_streak(runs)
++    assert s["streak"] == 2 and s["in_flight"]["run_number"] == 341
++
++    # Cancelled between failures: inconclusive — neither red nor recovery.
++    runs = [_run(342, conclusion="failure"), _run(341, conclusion="cancelled"),
++            _run(340, conclusion="failure"), _run(339, conclusion="success")]
++    s = mod.summarize_streak(runs)
++    assert s["streak"] == 2 and s["inconclusive_skipped"] == 1
++
++    # timed_out joins cancelled in the inconclusive class.
++    runs = [_run(342, conclusion="failure"), _run(341, conclusion="timed_out"),
++            _run(340, conclusion="failure"), _run(339, conclusion="success")]
++    s = mod.summarize_streak(runs)
++    assert s["streak"] == 2 and s["inconclusive_skipped"] == 1
++
++    # Empty board edge: honest zeros, never a crash.
++    s = mod.summarize_streak([])
++    assert s["streak"] == 0 and s["last_run"] is None and s["in_flight"] is None
++
++
++def test_verdict_core():
++    mod = _load_watchdog_module()
++    # Threshold boundary: 2+ loud, exactly-1 warn.
++    s2 = mod.summarize_streak([_run(2, conclusion="failure"),
++                               _run(1, conclusion="failure")])
++    v, code = mod.verdict_for(s2, 2, mod.DEFAULT_STALE_HOURS, 0.0)
++    assert v == "ALERT_STREAK" and code == 1
++    s1 = mod.summarize_streak([_run(2, conclusion="failure"),
++                               _run(1, conclusion="success")])
++    v, code = mod.verdict_for(s1, 2, mod.DEFAULT_STALE_HOURS, 0.0)
++    assert v == "SINGLE_FAILURE" and code == 0
++    s0 = mod.summarize_streak([_run(2, conclusion="success")])
++    v, code = mod.verdict_for(s0, 2, mod.DEFAULT_STALE_HOURS, 0.0)
++    assert v == "HEALTHY" and code == 0
++    # Threshold override (opt-in stricter sentry lane).
++    v, code = mod.verdict_for(s1, 1, mod.DEFAULT_STALE_HOURS, 0.0)
++    assert code == 1
++    # Strict-stale opt-in: starvation goes loud only when asked.
++    runs = [_run(1, conclusion="success", created="2026-10-28T08:43:11Z")]
++    s = mod.summarize_streak(runs)
++    now = 1793436191.0  # ~2026-10-31T08:43Z — >48h past the run
++    v, code = mod.verdict_for(s, 2, mod.DEFAULT_STALE_HOURS, now, strict_stale=True)
++    assert v == "STALE_RUN" and code == 1
++    v, code = mod.verdict_for(s, 2, mod.DEFAULT_STALE_HOURS, now, strict_stale=False)
++    assert v == "HEALTHY" and code == 0
++    # Unparseable last-run age must not fake a strict-stale red (honest-unknown).
++    runs = [_run(1, conclusion="success", created="garbage")]
++    s = mod.summarize_streak(runs)
++    v, code = mod.verdict_for(s, 2, mod.DEFAULT_STALE_HOURS, now, strict_stale=True)
++    assert v == "HEALTHY" and code == 0
++
++
++def test_needle_and_parsing():
++    mod = _load_watchdog_module()
++    # Display-suffix unicode must not break the join; foreign workflows drop.
++    runs = [_run(1), _run(2, name="🔧 Nightly Ops & Maintenance"),
++            _run(3, name="bridge intake (renamed suffix)")]
++    assert [r["run_number"] for r in mod.filter_intake_runs(runs)] == [1, 3]
++    # Tolerant parsing: junk text, wrapper shapes, non-dict rows.
++    assert mod.parse_runs("not json") == []
++    assert mod.parse_runs('{"workflow_runs": [1, {"name": "x"}]}') == [{"name": "x"}]
++    # Honest-unknown age math.
++    assert mod.age_hours("junk", 0.0) is None
++    assert mod.age_hours(None, 0.0) is None
++    h = mod.age_hours("2026-10-30T08:43:11Z", 1793436191.0)
++    assert h is not None and 23.9 < h < 24.1
++    # Window-exhaustion honesty: no intake rows -> LookupError (exit 2 lane),
++    # never a fake green.
++    try:
++        mod.fetch_intake_summary(fetch_text=lambda n, a: '{"workflow_runs": []}',
++                                 per_page=5)
++        raised = False
++    except LookupError:
++        raised = True
++    assert raised, "empty intake window must raise the honest-skip error, not pass"
++
++
++def test_honest_skip_exit():
++    # Transport failure -> exit 2 (honest skip), never 0 (#1760 doctrine).
++    script = str(WATCHDOG)
++    proc = subprocess.run(
++        [sys.executable, script, "--per-page", "3"],
++        env={"PATH": "/usr/bin:/bin", "HOME": "/nonexistent",
++             "LC_ALL": "C.UTF-8", "PYTHONHASHSEED": "0"},
++        capture_output=True, text=True, timeout=180,
++    )
++    # In this offline sandbox the Tower may be unreachable (exit 2) or the
++    # live window may answer (0/1) — the forbidden outcome is ONLY a silent
++    # pass that claims a verdict without a runs plane (exit 2 prints SKIP).
++    combined = (proc.stdout + proc.stderr).lower()
++    if proc.returncode == 2:
++        assert "skip" in combined, "exit 2 must print an honest SKIP line"
++    else:
++        assert proc.returncode in (0, 1), \
++            f"unexpected exit code {proc.returncode}: {combined[:200]}"
++
++
++def test_self_test_roster_mode():
++    proc = subprocess.run(
++        [sys.executable, str(WATCHDOG), "--self-test"],
++        capture_output=True, text=True, timeout=120,
++    )
++    assert proc.returncode == 0, proc.stdout + proc.stderr
++    assert "self-test cases PASS" in proc.stdout
++
++
++if __name__ == "__main__":
++    failures = 0
++    for name, fn in sorted(globals().items()):
++        if name.startswith("test_") and callable(fn):
++            print(f"[ RUN ] {name}")
++            try:
++                fn()
++                print(f"[  OK ] {name}")
++            except AssertionError as e:
++                failures += 1
++                print(f"[ FAIL] {name}: {e}")
++    total = sum(1 for n in globals() if n.startswith("test_") and callable(globals()[n]))
++    print(f"\n==== {total - failures}/{total} PASS ====")
++    sys.exit(FAIL if failures else PASS)

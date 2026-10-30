@@ -1,0 +1,50 @@
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index e1180bc9..52df60fd 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -320,7 +320,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
+ 
+ export const ADMIN_ONLY_GITHUB_REPOS = new Set([
+   "supremeai",
+-  "supremeai-core",
++  "supremeai-archive",
+   "github-org-supremeai-bd",
+ ]);
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index e5d8e31a..e6026520 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -224,14 +224,14 @@ export const BRIDGE_QUEUE_LABEL = "bridge:queued";
+  * সব pure helpers exported — অফলাইন ব্যাটারিতে যাচাই হয়।
+  */
+ 
+-/** Known satellite anchors → private satellite repos (single-target rule). */
++/** Known satellite anchors → private satellite repos (single-target rule per Golden 8 topology). */
+ const SATELLITE_REPO_MAP: ReadonlyArray<{ anchor: string; repo: string }> = [
+-  { anchor: "infrastructure/mcp-control-plane/", repo: "Supremeai-bd/supremeai-mcp-control-plane" },
++  { anchor: "infrastructure/mcp-control-plane/", repo: "Supremeai-bd/supremeai-api" },
++  { anchor: "gateway/", repo: "Supremeai-bd/supremeai-api" },
++  { anchor: "studio/", repo: "Supremeai-bd/supremeai-studio" },
+   { anchor: "browser/", repo: "Supremeai-bd/supremeai-browser" },
+   { anchor: "vscode/", repo: "Supremeai-bd/supremeai-vscode" },
+-  { anchor: "skills/", repo: "Supremeai-bd/supremeai-skills" },
+   { anchor: "core/", repo: "Supremeai-bd/supremeai-core" },
+-  { anchor: "command/", repo: "Supremeai-bd/supremeai-command" },
+ ];
+ 
+ /** The monorepo trunk — the conservative default when no single anchor covers all paths. */
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index 470b836a..f746cca3 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -189,7 +189,8 @@ const agentAccs = getAccountsForRole("agent");
+ assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
+ assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
+ assert.ok(agentAccs.some((a) => a.id.includes("supremeai-api")), "agent MUST see supremeai-api");
+-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-core")), "agent must NOT see supremeai-core");
++assert.ok(agentAccs.some((a) => a.id.includes("supremeai-core")), "agent MUST see supremeai-core");
++assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-archive")), "agent must NOT see supremeai-archive");
+ assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
+ 
+ const viewerAccs = getAccountsForRole("viewer");

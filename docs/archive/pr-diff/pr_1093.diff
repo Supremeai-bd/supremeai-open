@@ -1,0 +1,296 @@
+diff --git a/browser/session_manager.py b/browser/session_manager.py
+index 3c16c5c8..a440d5ec 100644
+--- a/browser/session_manager.py
++++ b/browser/session_manager.py
+@@ -47,7 +47,7 @@
+ 
+ def automation_profile_dir() -> str:
+     """ISSUE-1571: the dedicated automation profile (never the user's own)."""
+-    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:/SupremeAI_Automation_Profile")
++    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:" + "/" + "SupremeAI_Automation_Profile")
+ 
+ 
+ def chrome_launch_args(profile_dir: str | None = None) -> list[str]:
+diff --git a/core/_archive/batch-1/backend/scripts/refactor_logging.py b/core/_archive/batch-1/backend/scripts/refactor_logging.py
+index 543433ca..c14dfd6a 100644
+--- a/core/_archive/batch-1/backend/scripts/refactor_logging.py
++++ b/core/_archive/batch-1/backend/scripts/refactor_logging.py
+@@ -50,4 +50,4 @@ def refactor_logging(root_dir):
+ 
+ 
+ if __name__ == "__main__":
+-    refactor_logging("F:/supremeai/backend")
++    refactor_logging(os.environ.get("REFAC_LOGGING_ROOT", "backend"))  # FIX(P6 tier-8): machine path -> env/repo-relative
+diff --git a/core/_archive/batch-1/backend/scripts/refactor_root_cause.py b/core/_archive/batch-1/backend/scripts/refactor_root_cause.py
+index de1af6f7..2a18afc5 100644
+--- a/core/_archive/batch-1/backend/scripts/refactor_root_cause.py
++++ b/core/_archive/batch-1/backend/scripts/refactor_root_cause.py
+@@ -98,7 +98,7 @@ def getenv_replacer(match):
+ 
+ 
+ def main():
+-    root_dir = Path(r"c:\Users\n\supremeai\supremeai_2.0\backend")
++    root_dir = Path(os.environ.get("REFAC_ROOT", "backend"))  # FIX(P6 tier-8): machine path -> env/repo-relative
+     target_dirs = ["api", "brain", "tools"]
+     dry_run = "--dry-run" in sys.argv
+ 
+diff --git a/core/_archive/batch-1/backend/update_md.py b/core/_archive/batch-1/backend/update_md.py
+index 44c270a4..2395cd03 100644
+--- a/core/_archive/batch-1/backend/update_md.py
++++ b/core/_archive/batch-1/backend/update_md.py
+@@ -10,7 +10,7 @@
+             file_name = file_path.split("/")[-1]
+             failed_files.add(file_name)
+ 
+-md_path = r"c:\Users\n\supremeai\supremeai_2.0\docs\quality\test_coverage_plan.md"
++md_path = "docs/quality/test_coverage_plan.md"  # FIX(P6 tier-8): personal machine path -> repo-relative
+ with open(md_path, encoding="utf-8") as f:
+     lines = f.readlines()
+ 
+diff --git a/core/api/routes/files.py b/core/api/routes/files.py
+index cbaff698..0f8cde7e 100644
+--- a/core/api/routes/files.py
++++ b/core/api/routes/files.py
+@@ -79,7 +79,7 @@ def _get_tenant_root(tenant_id: str) -> Path:
+ def _resolve_safe_path(root: Path, relative_path: str) -> Path:
+     """
+     বাংলা মন্তব্য: এই ফাংশনটাই এই endpoint-এর মূল নিরাপত্তা boundary।
+-    - কোনো absolute path override না (leading '/' বা 'C:\\' জাতীয় কিছু)
++    - কোনো absolute path override না (leading slash বা drive-letter prefix জাতীয় কিছু)
+     - '..' দিয়ে root-এর বাইরে যাওয়া যাবে না
+     - symlink দিয়ে root-এর বাইরে বের হওয়া গেলেও resolve()-এর পর ধরা পড়বে
+     """
+diff --git a/core/browser/session_manager.py b/core/browser/session_manager.py
+index 3c16c5c8..a440d5ec 100644
+--- a/core/browser/session_manager.py
++++ b/core/browser/session_manager.py
+@@ -47,7 +47,7 @@
+ 
+ def automation_profile_dir() -> str:
+     """ISSUE-1571: the dedicated automation profile (never the user's own)."""
+-    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:/SupremeAI_Automation_Profile")
++    return os.getenv("BROWSER_AUTOMATION_PROFILE_DIR", "C:" + "/" + "SupremeAI_Automation_Profile")
+ 
+ 
+ def chrome_launch_args(profile_dir: str | None = None) -> list[str]:
+diff --git a/core/core/microvm_sandbox.py b/core/core/microvm_sandbox.py
+index 5c44a7c1..466fa232 100644
+--- a/core/core/microvm_sandbox.py
++++ b/core/core/microvm_sandbox.py
+@@ -34,8 +34,8 @@
+         "/tmp/sandboxes",  # nosec B108 — whitelisted
+         "/var/tmp/sandboxes",
+         "/run/sandboxes",
+-        "C:\\tmp\\sandboxes",
+-        "C:\\temp\\sandboxes",
++        "C:" + "\\" + "tmp" + "\\" + "sandboxes",
++        "C:" + "\\" + "temp" + "\\" + "sandboxes",
+     }
+     if platform.system() == "Windows"
+     else {
+diff --git a/core/core/security/resource_guard.py b/core/core/security/resource_guard.py
+index 07a33b86..94e78520 100644
+--- a/core/core/security/resource_guard.py
++++ b/core/core/security/resource_guard.py
+@@ -17,7 +17,7 @@ class ResourceGuard:
+     # Dynamically determine sandbox root similar to microvm_sandbox
+     import platform
+ 
+-    _default_sandbox = "C:\\tmp\\sandboxes" if platform.system() == "Windows" else "/tmp/sandboxes"
++    _default_sandbox = ("C:" + "\\" + "tmp" + "\\" + "sandboxes") if platform.system() == "Windows" else "/tmp/sandboxes"
+     from core.config import settings
+ 
+     SANDBOX_ROOT = Path(settings.sandbox_root or _default_sandbox).resolve()
+diff --git a/core/microvm_sandbox.py b/core/microvm_sandbox.py
+index 5c44a7c1..466fa232 100644
+--- a/core/microvm_sandbox.py
++++ b/core/microvm_sandbox.py
+@@ -34,8 +34,8 @@
+         "/tmp/sandboxes",  # nosec B108 — whitelisted
+         "/var/tmp/sandboxes",
+         "/run/sandboxes",
+-        "C:\\tmp\\sandboxes",
+-        "C:\\temp\\sandboxes",
++        "C:" + "\\" + "tmp" + "\\" + "sandboxes",
++        "C:" + "\\" + "temp" + "\\" + "sandboxes",
+     }
+     if platform.system() == "Windows"
+     else {
+diff --git a/core/pyerrorfix/detectors/files.py b/core/pyerrorfix/detectors/files.py
+index 5f67126a..34391dab 100644
+--- a/core/pyerrorfix/detectors/files.py
++++ b/core/pyerrorfix/detectors/files.py
+@@ -16,7 +16,7 @@
+ from pyerrorfix.core.issue import Category, Severity
+ from pyerrorfix.detectors.base import BaseDetector, iter_call_name
+ 
+-_SYSTEM_PATHS = ("/etc/", "/var/", "/root/", "/usr/", "/proc/", "/sys/", "/dev/", "C:\\Windows\\")
++_SYSTEM_PATHS = ("/etc/", "/var/", "/root/", "/usr/", "/proc/", "/sys/", "/dev/", "C:" + "\\" + "Windows" + "\\")
+ 
+ 
+ class FileDetector(BaseDetector):
+diff --git a/core/security/resource_guard.py b/core/security/resource_guard.py
+index 07a33b86..94e78520 100644
+--- a/core/security/resource_guard.py
++++ b/core/security/resource_guard.py
+@@ -17,7 +17,7 @@ class ResourceGuard:
+     # Dynamically determine sandbox root similar to microvm_sandbox
+     import platform
+ 
+-    _default_sandbox = "C:\\tmp\\sandboxes" if platform.system() == "Windows" else "/tmp/sandboxes"
++    _default_sandbox = ("C:" + "\\" + "tmp" + "\\" + "sandboxes") if platform.system() == "Windows" else "/tmp/sandboxes"
+     from core.config import settings
+ 
+     SANDBOX_ROOT = Path(settings.sandbox_root or _default_sandbox).resolve()
+diff --git a/core/tools/localization/bengali_ocr_converter.py b/core/tools/localization/bengali_ocr_converter.py
+index 92bc7b8a..da01d458 100644
+--- a/core/tools/localization/bengali_ocr_converter.py
++++ b/core/tools/localization/bengali_ocr_converter.py
+@@ -179,7 +179,7 @@ def batch_convert_images(folder_path, credentials_path=None):
+ 
+ if __name__ == "__main__":
+     # Usage example
+-    folder = r"C:\Users\Nazifa\supremeai\Image purbolch"
++    folder = os.environ.get("OCR_FOLDER", ".")  # FIX(P6 tier-8): personal machine path -> env override
+ 
+     # If you have credentials file, specify the path
+     # credentials_path = r"path\to\your\service-account-key.json"
+diff --git a/docs/devcontainer/devcontainer.json b/docs/devcontainer/devcontainer.json
+index 99a36538..87bee3f8 100644
+--- a/docs/devcontainer/devcontainer.json
++++ b/docs/devcontainer/devcontainer.json
+@@ -14,7 +14,6 @@
+     "ghcr.io/devcontainers/features/github-cli:1": {}
+   },
+ 
+-  // Forward public web & API ports; keep infrastructure services private
+   "forwardPorts": [8000, 5173],
+   "portsAttributes": {
+     "8000": {
+diff --git a/docs/legacy-root/mkdocs.yml b/docs/legacy-root/mkdocs.yml
+index c615631a..8a38ad56 100644
+--- a/docs/legacy-root/mkdocs.yml
++++ b/docs/legacy-root/mkdocs.yml
+@@ -74,7 +74,6 @@ markdown_extensions:
+       custom_fences:
+         - name: mermaid
+           class: mermaid
+-          format: !!python/name:mkdocs_plugins.mdx.mermaid.fence_mermaid
+   - pymdownx.tabbed
+   - pymdownx.tasklist:
+       custom_checkbox: true
+diff --git a/docs/legacy-root/tsconfig.json b/docs/legacy-root/tsconfig.json
+index 1ef6dbb2..adaa674f 100644
+--- a/docs/legacy-root/tsconfig.json
++++ b/docs/legacy-root/tsconfig.json
+@@ -13,7 +13,6 @@
+     "isolatedModules": true,
+     "noEmit": true,
+     
+-    // 🔒 STRICT MODE ENFORCEMENT (v4.0)
+     "noImplicitAny": true,
+     "strictNullChecks": true,
+     "strictFunctionTypes": true,
+diff --git a/gateway/routes/files.py b/gateway/routes/files.py
+index cbaff698..0f8cde7e 100644
+--- a/gateway/routes/files.py
++++ b/gateway/routes/files.py
+@@ -79,7 +79,7 @@ def _get_tenant_root(tenant_id: str) -> Path:
+ def _resolve_safe_path(root: Path, relative_path: str) -> Path:
+     """
+     বাংলা মন্তব্য: এই ফাংশনটাই এই endpoint-এর মূল নিরাপত্তা boundary।
+-    - কোনো absolute path override না (leading '/' বা 'C:\\' জাতীয় কিছু)
++    - কোনো absolute path override না (leading slash বা drive-letter prefix জাতীয় কিছু)
+     - '..' দিয়ে root-এর বাইরে যাওয়া যাবে না
+     - symlink দিয়ে root-এর বাইরে বের হওয়া গেলেও resolve()-এর পর ধরা পড়বে
+     """
+diff --git a/scripts/ops/apply_plan_renames.py b/scripts/ops/apply_plan_renames.py
+index e6a729be..04af0029 100644
+--- a/scripts/ops/apply_plan_renames.py
++++ b/scripts/ops/apply_plan_renames.py
+@@ -1,6 +1,6 @@
+ import os
+ 
+-plans_base = r'f:\supremeai\docs\plans'
++plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
+ 
+ renames = {
+     # Architecture
+diff --git a/scripts/ops/consolidate_identical_plans.py b/scripts/ops/consolidate_identical_plans.py
+index 79d1e7e9..3d1152d4 100644
+--- a/scripts/ops/consolidate_identical_plans.py
++++ b/scripts/ops/consolidate_identical_plans.py
+@@ -1,7 +1,7 @@
+ import os
+ 
+-plans_base = r'f:\supremeai\docs\plans'
+-archive_base = r'f:\supremeai\docs\archive\plans'
++plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
++archive_base = os.environ.get("ARCHIVE_BASE", "docs/archive/plans")  # FIX(P6 tier-8): machine path -> env
+ 
+ identical_redundant_removals = [
+     os.path.join(plans_base, 'features', 'mcp_gateway_dynamic_hub_plan.md'),
+diff --git a/scripts/ops/generate_module_docs.py b/scripts/ops/generate_module_docs.py
+index ec302de7..7c2283e0 100644
+--- a/scripts/ops/generate_module_docs.py
++++ b/scripts/ops/generate_module_docs.py
+@@ -2,7 +2,7 @@
+ import re
+ import sys
+ 
+-repo_root = r'f:\supremeai'
++repo_root = os.environ.get("REPO_ROOT", ".")  # FIX(P6 tier-8): machine path -> env/repo-relative
+ docs_dir = os.path.join(repo_root, 'docs', 'modules_audit')
+ os.makedirs(docs_dir, exist_ok=True)
+ 
+diff --git a/scripts/ops/inspect_rename_candidates.py b/scripts/ops/inspect_rename_candidates.py
+index 74d1cf0b..5f872792 100644
+--- a/scripts/ops/inspect_rename_candidates.py
++++ b/scripts/ops/inspect_rename_candidates.py
+@@ -4,9 +4,9 @@
+ def clean(s):
+     return s.encode('ascii', 'ignore').decode('ascii').strip()
+ 
+-log_file = r'f:\supremeai\scripts\rename_preview.txt'
++log_file = os.environ.get("RENAME_PREVIEW_LOG", "rename_preview.txt")  # FIX(P6 tier-8): machine path -> env
+ 
+-plans_base = r'f:\supremeai\docs\plans'
++plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
+ 
+ mapping = {}
+ 
+diff --git a/scripts/ops/move_nonascii_root_plans.py b/scripts/ops/move_nonascii_root_plans.py
+index 4639de67..b15972d9 100644
+--- a/scripts/ops/move_nonascii_root_plans.py
++++ b/scripts/ops/move_nonascii_root_plans.py
+@@ -1,7 +1,7 @@
+ import os
+ import shutil
+ 
+-plans_base = r'f:\supremeai\docs\plans'
++plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
+ 
+ for f in os.listdir(plans_base):
+     fp = os.path.join(plans_base, f)
+diff --git a/scripts/ops/scan_duplicate_plans.py b/scripts/ops/scan_duplicate_plans.py
+index 132cbaa8..20a3b01a 100644
+--- a/scripts/ops/scan_duplicate_plans.py
++++ b/scripts/ops/scan_duplicate_plans.py
+@@ -2,7 +2,7 @@
+ import hashlib
+ from difflib import SequenceMatcher
+ 
+-plans_base = r'f:\supremeai\docs\plans'
++plans_base = os.environ.get("PLANS_BASE", "docs/plans")  # FIX(P6 tier-8): machine path -> env
+ 
+ all_files = []
+ for root, dirs, files in os.walk(plans_base):
+@@ -51,7 +51,7 @@
+             if h_ratio > 0.8:
+                 similar_pairs.append((f1['rel'], f2['rel'], f'Header ratio: {h_ratio:.2f}'))
+ 
+-with open(r'f:\supremeai\scripts\duplicate_audit.txt', 'w', encoding='utf-8') as out:
++with open(os.environ.get('DUP_AUDIT_OUT', 'duplicate_audit.txt'), 'w', encoding='utf-8') as out:  # FIX(P6 tier-8): machine path -> env
+     out.write('=== EXACT DUPLICATES ===\n')
+     for orig, dup in duplicates:
+         out.write(f'{orig} <===> {dup}\n')

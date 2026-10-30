@@ -1,0 +1,12 @@
+diff --git a/docs/CONSUMERS.md b/docs/CONSUMERS.md
+index aaa57229..37a2718f 100644
+--- a/docs/CONSUMERS.md
++++ b/docs/CONSUMERS.md
+@@ -1,5 +1,7 @@
+ # Consumers — SupremeAI Gateway-তে সংযোগের চুক্তি (P3)
+ 
++> **English Summary:** This document outlines the connection contract for the SupremeAI Gateway. It details the API endpoint, authentication header (`X-SupremeAI-Key`), key lifecycle management via the monolith vault, error handling semantics, and guidelines for Agent and GitHub-automation consumers.
++
+ > **বাংলা:** agent (§15) ও GitHub-automation (§16) কীভাবে গেটওয়ে খাওয়াবে — একটিমাত্র
+ > চুক্তি, একটিমাত্র header। Provider কে সামলালো তা আপনার জানার দরকার নেই (§২২)।
+ 

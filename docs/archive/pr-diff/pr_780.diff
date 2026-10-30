@@ -1,0 +1,158 @@
+diff --git a/vscode/.github/workflows/release-extension.yml b/vscode/.github/workflows/release-extension.yml
+new file mode 100644
+index 00000000..ff833a29
+--- /dev/null
++++ b/vscode/.github/workflows/release-extension.yml
+@@ -0,0 +1,76 @@
++name: Build & Release VS Code Extension
++
++on:
++  push:
++    branches:
++      - main
++    paths:
++      - 'src/**'
++      - 'media/**'
++      - 'package.json'
++      - 'tsconfig.json'
++      - '.vscodeignore'
++  workflow_dispatch:
++    inputs:
++      create_release:
++        description: 'Publish GitHub Release with .vsix binary'
++        required: false
++        type: boolean
++        default: true
++
++permissions:
++  contents: write
++  packages: write
++
++jobs:
++  package:
++    name: "📦 Package & Publish VSIX"
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js (LTS)
++        uses: actions/setup-node@v4
++        with:
++          node-version: "20"
++          cache: "npm"
++
++      - name: Install dependencies
++        run: npm ci
++
++      - name: Compile Extension
++        run: npm run compile
++
++      - name: Run Extension Tests
++        run: npm test
++
++      - name: Package VSIX Extension
++        run: npx --yes @vscode/vsce package --no-git-tag-version --out supremeai-vscode.vsix
++
++      - name: Upload VSIX Artifact
++        uses: actions/upload-artifact@v4
++        with:
++          name: supremeai-vscode-vsix
++          path: supremeai-vscode.vsix
++          if-no-files-found: error
++
++      - name: Determine Version
++        id: version
++        run: |
++          VER=$(node -p "require('./package.json').version")
++          echo "version=v$VER" >> "$GITHUB_OUTPUT"
++
++      - name: Create or Update GitHub Release
++        if: github.ref == 'refs/heads/main' || github.event.inputs.create_release == 'true'
++        uses: softprops/action-gh-release@v2
++        with:
++          files: supremeai-vscode.vsix
++          tag_name: ${{ steps.version.outputs.version }}
++          name: "SupremeAI IDE Bridge ${{ steps.version.outputs.version }}"
++          draft: false
++          prerelease: false
++          generate_release_notes: true
++        env:
++          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+diff --git a/vscode/.vscodeignore b/vscode/.vscodeignore
+index cb4583c2..79a65c7a 100644
+--- a/vscode/.vscodeignore
++++ b/vscode/.vscodeignore
+@@ -1,8 +1,9 @@
++.vscode/**
++.vscode-test/**
+ src/**
+-node_modules/**
+-out/**
+-*.map
+ .gitignore
+ tsconfig.json
+ package-lock.json
+-EOF
+\ No newline at end of file
++*.map
++*.vsix
++!out/**
+\ No newline at end of file
+diff --git a/vscode/LICENSE b/vscode/LICENSE
+new file mode 100644
+index 00000000..1437a2b4
+--- /dev/null
++++ b/vscode/LICENSE
+@@ -0,0 +1,21 @@
++MIT License
++
++Copyright (c) 2026 SaifulHaque Niloy
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
+diff --git a/vscode/package.json b/vscode/package.json
+index f80e5291..45d7cf2b 100644
+--- a/vscode/package.json
++++ b/vscode/package.json
+@@ -4,6 +4,11 @@
+   "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
+   "version": "0.1.0",
+   "publisher": "supremeai",
++  "license": "Apache-2.0",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/Supremeai-bd/supremeai-vscode.git"
++  },
+   "engines": {
+     "vscode": "^1.80.0"
+   },
+@@ -115,9 +120,11 @@
+     }
+   },
+   "scripts": {
++    "vscode:prepublish": "npm run compile",
+     "compile": "tsc -p ./",
+     "watch": "tsc -watch -p ./",
+-    "test": "tsx src/test/extension.test.ts"
++    "test": "tsx src/test/extension.test.ts",
++    "package": "vsce package --no-git-tag-version"
+   },
+   "devDependencies": {
+     "@types/node": "^20.11.0",

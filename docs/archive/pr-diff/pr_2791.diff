@@ -1,0 +1,279 @@
+diff --git a/scripts/ci/mcp_tower_conformance_probe.py b/scripts/ci/mcp_tower_conformance_probe.py
+new file mode 100644
+index 00000000..6c788a35
+--- /dev/null
++++ b/scripts/ci/mcp_tower_conformance_probe.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""
++MCP Tower Protocol Ceiling & Capability Conformance Probe (#2103).
++
++Implements Option B of Issue #2103:
++- Inspects MCP Tower protocol negotiation ceiling across spec revisions (2025-06-18, 2025-11-25, 2026-07-28).
++- Snapshots capability matrix (tools, resources, prompts, tasks, elicitation, sampling).
++- Provides self-test, local offline validation, and live network probe modes.
++- Report-only, passive JSON-RPC 2.0 handshake, zero credentials required.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++import urllib.error
++import urllib.request
++from typing import Any, Dict
++
++DEFAULT_TOWER_URL = "https://supremeai-mcp-tower.onrender.com/mcp"
++TESTED_SPEC_VERSIONS = ["2025-06-18", "2025-11-25", "2026-07-28"]
++USER_AGENT = "SupremeAI-MCP-Conformance-Probe/1.0.0"
++
++
++def build_initialize_payload(protocol_version: str) -> Dict[str, Any]:
++    """Build standard MCP JSON-RPC 2.0 initialize request."""
++    return {
++        "jsonrpc": "2.0",
++        "id": f"probe-{protocol_version}",
++        "method": "initialize",
++        "params": {
++            "protocolVersion": protocol_version,
++            "capabilities": {
++                "roots": {"listChanged": True},
++                "sampling": {}
++            },
++            "clientInfo": {
++                "name": "supremeai-conformance-probe",
++                "version": "1.0.0"
++            }
++        }
++    }
++
++
++def analyze_capabilities(capabilities: Dict[str, Any]) -> Dict[str, Any]:
++    """Analyze server capability map and identify support/gaps."""
++    return {
++        "tools": "tools" in capabilities,
++        "resources": "resources" in capabilities,
++        "prompts": "prompts" in capabilities,
++        "tasks": "tasks" in capabilities,
++        "elicitation": "elicitation" in capabilities,
++        "sampling": "sampling" in capabilities,
++        "logging": "logging" in capabilities,
++        "completions": "completions" in capabilities,
++    }
++
++
++def probe_version(url: str, version: str, timeout: int = 15) -> Dict[str, Any]:
++    """Send initialize handshake offering specific protocolVersion."""
++    req_body = json.dumps(build_initialize_payload(version)).encode("utf-8")
++    req = urllib.request.Request(
++        url,
++        data=req_body,
++        headers={
++            "User-Agent": USER_AGENT,
++            "Content-Type": "application/json",
++            "Accept": "application/json, text/event-stream",
++        },
++        method="POST"
++    )
++
++    try:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:
++            raw_body = resp.read().decode("utf-8")
++            
++            # Streamable HTTP MCP transport returns text/event-stream containing SSE message
++            json_text = raw_body
++            if "data:" in raw_body:
++                for line in raw_body.splitlines():
++                    if line.startswith("data:"):
++                        json_text = line[len("data:"):].strip()
++                        break
++            
++            data = json.loads(json_text)
++            result = data.get("result", {})
++            echoed_version = result.get("protocolVersion")
++            server_info = result.get("serverInfo", {})
++            capabilities = result.get("capabilities", {})
++            analysis = analyze_capabilities(capabilities)
++            session_id = resp.headers.get("Mcp-Session-Id")
++
++            return {
++                "offeredVersion": version,
++                "echoedVersion": echoed_version,
++                "status": resp.status,
++                "ok": True,
++                "serverInfo": server_info,
++                "capabilities": capabilities,
++                "capabilityAnalysis": analysis,
++                "sessionId": session_id,
++            }
++    except urllib.error.HTTPError as e:
++        body = e.read().decode("utf-8") if e.fp else ""
++        return {
++            "offeredVersion": version,
++            "status": e.code,
++            "ok": False,
++            "error": body
++        }
++    except Exception as ex:
++        return {
++            "offeredVersion": version,
++            "status": 0,
++            "ok": False,
++            "error": str(ex)
++        }
++
++
++def run_full_probe(url: str = DEFAULT_TOWER_URL) -> Dict[str, Any]:
++    """Execute complete protocol ceiling and capability matrix probe."""
++    results = {}
++    for ver in TESTED_SPEC_VERSIONS:
++        res = probe_version(url, ver)
++        results[ver] = res
++
++    # Derive ceiling
++    ceiling = None
++    if results.get("2026-07-28", {}).get("ok"):
++        echoed = results["2026-07-28"].get("echoedVersion")
++        ceiling = echoed
++
++    capabilities_snapshot = results.get("2025-11-25", {}).get("capabilityAnalysis") or {}
++
++    return {
++        "url": url,
++        "negotiatedCeiling": ceiling,
++        "probeResults": results,
++        "capabilitiesSnapshot": capabilities_snapshot,
++    }
++
++
++def run_self_test() -> int:
++    """Run self-tests verifying payload builder and offline analysis logic."""
++    print("[mcp-tower-conformance-probe] Running self-test...")
++
++    # 1. Payload structure test
++    payload = build_initialize_payload("2026-07-28")
++    assert payload["jsonrpc"] == "2.0"
++    assert payload["method"] == "initialize"
++    assert payload["params"]["protocolVersion"] == "2026-07-28"
++
++    # 2. Capability analysis test
++    caps = {
++        "tools": {"listChanged": True},
++        "resources": {"listChanged": True},
++        "prompts": {"listChanged": True}
++    }
++    analysis = analyze_capabilities(caps)
++    assert analysis["tools"] is True
++    assert analysis["resources"] is True
++    assert analysis["prompts"] is True
++    assert analysis["tasks"] is False
++    assert analysis["elicitation"] is False
++    assert analysis["sampling"] is False
++
++    print("  PASS initialize payload construction (2/2)")
++    print("  PASS capability matrix gap analyzer (2/2)")
++    print("[mcp-tower-conformance-probe] self-test: ALL PASS")
++    return 0
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="MCP Tower Protocol Ceiling & Capability Conformance Probe")
++    parser.add_argument("--self-test", action="store_true", help="Run local self-tests")
++    parser.add_argument("--url", default=DEFAULT_TOWER_URL, help="Target MCP endpoint URL")
++    parser.add_argument("--probe", action="store_true", help="Execute live protocol ceiling and capability probe")
++    args = parser.parse_args()
++
++    if args.self_test:
++        return run_self_test()
++
++    if args.probe:
++        print(f"Probing MCP endpoint at {args.url}...")
++        report = run_full_probe(args.url)
++        print(json.dumps(report, indent=2))
++        return 0
++
++    parser.print_help()
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index fb6a7b96..60c7759e 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-29 20:33:40 UTC · **522 scripts** (487 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-29 20:39:00 UTC · **523 scripts** (488 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (195 scripts)
++## scripts/ci/  (196 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -203,6 +203,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/mcp_conformance_selftest.py` | MCP conformance self-test (#1329) — bridge-20261027-tower-self-capability. |
+ | `ci/mcp_registry_catalog.py` | mcp_registry_catalog.py — read-only MCP Registry catalog fetcher, report-only (issue #2161, R52 option A). |
+ | `ci/mcp_registry_publisher.py` | Official MCP Registry Publisher & Preflight Validator (#2358). |
++| `ci/mcp_tower_conformance_probe.py` | MCP Tower Protocol Ceiling & Capability Conformance Probe (#2103). |
+ | `ci/merge_gate.py` | Merge Gate (Sequential Landing Controller) — Pipeline 2 of the 3-Pipeline Law. |
+ | `ci/merge_policy.py` | Deterministic policy loading, failure classification, and decision logging. |
+ | `ci/merge_train_rollup.py` | Batch PR Consolidation Engine (Merge Train & Rollup Consolidator). |
+diff --git a/tests/test_mcp_tower_conformance_probe.py b/tests/test_mcp_tower_conformance_probe.py
+new file mode 100644
+index 00000000..8fb20cbb
+--- /dev/null
++++ b/tests/test_mcp_tower_conformance_probe.py
+@@ -0,0 +1,42 @@
++import pytest
++from scripts.ci.mcp_tower_conformance_probe import (
++    build_initialize_payload,
++    analyze_capabilities,
++    run_self_test
++)
++
++def test_mcp_tower_conformance_probe_self_test():
++    assert run_self_test() == 0
++
++def test_initialize_payload_contract():
++    p1 = build_initialize_payload("2025-06-18")
++    assert p1["jsonrpc"] == "2.0"
++    assert p1["id"] == "probe-2025-06-18"
++    assert p1["params"]["protocolVersion"] == "2025-06-18"
++    assert p1["params"]["clientInfo"]["name"] == "supremeai-conformance-probe"
++
++def test_capability_analysis_matrix():
++    raw_caps = {
++        "tools": {"listChanged": True},
++        "resources": {"listChanged": True},
++        "prompts": {"listChanged": True}
++    }
++    analysis = analyze_capabilities(raw_caps)
++    assert analysis["tools"] is True
++    assert analysis["resources"] is True
++    assert analysis["prompts"] is True
++    assert analysis["tasks"] is False
++    assert analysis["elicitation"] is False
++    assert analysis["sampling"] is False
++    assert analysis["logging"] is False
++    assert analysis["completions"] is False
++
++    expanded = {
++        "tools": {},
++        "tasks": {"listChanged": True},
++        "elicitation": {}
++    }
++    analysis2 = analyze_capabilities(expanded)
++    assert analysis2["tasks"] is True
++    assert analysis2["elicitation"] is True
++    assert analysis2["resources"] is False

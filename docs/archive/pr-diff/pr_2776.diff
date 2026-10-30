@@ -1,0 +1,62 @@
+diff --git a/gateway/dynamic_llm_router.py b/gateway/dynamic_llm_router.py
+index 279c8294..a0d5f865 100644
+--- a/gateway/dynamic_llm_router.py
++++ b/gateway/dynamic_llm_router.py
+@@ -91,6 +91,24 @@ class LLMAccount:
+         "baseline_latency_ms": 1400.0,
+         "env_pattern": re.compile(r"^MISTRAL_API_KEY(?:_.*)?$"),
+     },
++    "deepinfra": {
++        "tier": 2,
++        "default_model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
++        "baseline_latency_ms": 1100.0,
++        "env_pattern": re.compile(r"^DEEPINFRA_API_KEY(?:_.*)?$"),
++    },
++    "together": {
++        "tier": 2,
++        "default_model": "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
++        "baseline_latency_ms": 1200.0,
++        "env_pattern": re.compile(r"^TOGETHER_API_KEY(?:_.*)?$"),
++    },
++    "xai": {
++        "tier": 2,
++        "default_model": "grok-beta",
++        "baseline_latency_ms": 1450.0,
++        "env_pattern": re.compile(r"^XAI_API_KEY(?:_.*)?$"),
++    },
+     "openai": {
+         "tier": 3,
+         "default_model": "gpt-4o-mini",
+diff --git a/gateway/provider_chain.py b/gateway/provider_chain.py
+index 978e3e25..cc659afc 100644
+--- a/gateway/provider_chain.py
++++ b/gateway/provider_chain.py
+@@ -127,6 +127,9 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+         "mistral": ("https://api.mistral.ai/v1", ["MISTRAL_API_KEY"]),
+         "anthropic": ("https://api.anthropic.com/v1", ["ANTHROPIC_API_KEY"]),
+         "deepseek": ("https://api.deepseek.com/v1", ["DEEPSEEK_API_KEY"]),
++        "deepinfra": ("https://api.deepinfra.com/v1/openai", ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"]),
++        "together": ("https://api.together.xyz/v1", ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"]),
++        "xai": ("https://api.x.ai/v1", ["XAI_API_KEY", "XAI_API_KEYS"]),
+     }
+     if (not api_base or not api_key) and provider in _FALLBACKS:
+         fb_base, fb_keys = _FALLBACKS[provider]
+@@ -149,6 +152,9 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
+         "mistral": ["MISTRAL_API_KEY"],
+         "anthropic": ["ANTHROPIC_API_KEY"],
+         "deepseek": ["DEEPSEEK_API_KEY"],
++        "deepinfra": ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"],
++        "together": ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"],
++        "xai": ["XAI_API_KEY", "XAI_API_KEYS"],
+     }
+     keys: list[str] = []
+     if api_key:
+@@ -317,7 +323,7 @@ async def execute_chain(
+             except Exception:
+                 pass
+             break
+-        raise ProviderChainExhausted(
++    raise ProviderChainExhausted(
+         "all providers in the chain failed — 502 upstream (zero silent fallback)",
+         ledger=ledger.entries,
+     )

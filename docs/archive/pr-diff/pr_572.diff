@@ -1,0 +1,126 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 9e7f25f6..f130fbd7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -66,6 +66,10 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+   const match = /\/repos\/([^/]+)\/([^/?#]+)/.exec(accountRepoUrl);
+   const fullName = match ? `${match[1]}/${match[2].replace(/\.git$/, "")}` : accountId;
+   const shortName = fullName.split("/").pop() ?? fullName;
++  // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin রোলের জন্য উন্মুক্ত।
++  if (shortName === "supremeai" && roleRank(store.role) < 4) {
++    return `Forbidden: core monorepo 'supremeai' is strictly restricted to admin and supremeadmin roles; non-admin roles are limited to satellite repos (current role: '${store.role}').`;
++  }
+   if (access === "satellite-readonly" && (shortName === "supremeai" || !isSatelliteRepo(shortName))) {
+     return `Forbidden: restricted_viewer is limited to satellite repos; '${shortName}' is outside the allowlist (core repo is blocked).`;
+   }
+diff --git a/infrastructure/mcp-control-plane/test_client_registry.ts b/infrastructure/mcp-control-plane/test_client_registry.ts
+index 69bcfc91..a4bee961 100644
+--- a/infrastructure/mcp-control-plane/test_client_registry.ts
++++ b/infrastructure/mcp-control-plane/test_client_registry.ts
+@@ -122,13 +122,13 @@ deny = RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes },
+   assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
+ assert.ok(deny && deny.includes("satellite"), "core repo must be blocked for restricted_viewer");
+ 
+-// 6b. repo_viewer: all repos readable; missing scope fails closed.
++// 6b. repo_viewer: satellite repos readable with scope; core repo blocked (admin-only).
++deny = RequestContextStore.run({ role: "repo_viewer", scopes: defaultClientScopes("repo_viewer") }, () =>
++  assertRepoReadAccess("github.read_file", "gh-sat", satUrl));
++assert.equal(deny, null, `repo_viewer must read satellite repo: ${deny}`);
+ deny = RequestContextStore.run({ role: "repo_viewer", scopes: defaultClientScopes("repo_viewer") }, () =>
+   assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
+-assert.equal(deny, null, `repo_viewer must read core repo: ${deny}`);
+-deny = RequestContextStore.run({ role: "repo_viewer", scopes: ["health:read"] }, () =>
+-  assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
+-assert.ok(deny && deny.includes("repo-read scope"), "missing repo-read scope must fail closed");
++assert.ok(deny && deny.includes("strictly restricted to admin and supremeadmin"), "core repo must be blocked for repo_viewer");
+ 
+ // 6c. viewer: no repo access at all; no context: default-deny.
+ deny = RequestContextStore.run({ role: "viewer", scopes: defaultClientScopes("viewer") }, () =>
+@@ -137,9 +137,20 @@ assert.ok(deny && deny.includes("no repository read access"));
+ deny = assertRepoReadAccess("github.read_file", "gh-sat", satUrl);
+ assert.ok(deny && deny.includes("authenticated request context"));
+ 
+-// 6d. agent: unchanged legacy read path (no scope re-derivation needed).
++// 6d. agent: satellite read-write; core repo blocked (admin-only).
++deny = RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () =>
++  assertRepoReadAccess("github.read_file", "gh-sat", satUrl));
++assert.equal(deny, null, `agent must read satellite repo: ${deny}`);
+ deny = RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () =>
+   assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
+-assert.equal(deny, null, `agent must keep legacy read: ${deny}`);
++assert.ok(deny && deny.includes("strictly restricted to admin and supremeadmin"), "core repo must be blocked for agent");
++
++// 6e. admin & supremeadmin: full access to core monorepo.
++deny = RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () =>
++  assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
++assert.equal(deny, null, `admin must read core repo: ${deny}`);
++deny = RequestContextStore.run({ role: "supremeadmin", scopes: ["tools:execute"] }, () =>
++  assertRepoReadAccess("github.read_file", "gh-core", coreUrl));
++assert.equal(deny, null, `supremeadmin must read core repo: ${deny}`);
+ 
+ console.log("client registry contract tests passed");
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index 2d1781fe..3a44629c 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -88,10 +88,13 @@ const coreUrl = "https://api.github.com/repos/Supremeai-bd/supremeai";
+ const skillsUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-skills";
+ const cmdUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-command";
+ 
+-// 5a. Agent authority (Rank >= 3) — can access any repo (core or satellite)
++// 5a. Agent authority (Rank = 3) — can access satellite repos, blocked from core monorepo
+ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+-  assert.equal(denyCore, null, "Agent must be permitted to read core repo");
++  assert.ok(
++    denyCore && denyCore.includes("strictly restricted to admin and supremeadmin"),
++    "Agent must be blocked from core repo"
++  );
+ 
+   const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+   assert.equal(denySkills, null, "Agent must be permitted to read satellite repo supremeai-skills");
+@@ -100,6 +103,23 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+   assert.equal(denyCmd, null, "Agent must be permitted to read satellite repo supremeai-command");
+ });
+ 
++// 5a.1 Admin & Supremeadmin authority (Rank >= 4) — can access core repo and all satellites
++RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.equal(denyCore, null, "Admin must be permitted to read core repo");
++
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.equal(denySkills, null, "Admin must be permitted to read satellite repo");
++});
++
++RequestContextStore.run({ role: "supremeadmin", scopes: ["tools:execute"] }, () => {
++  const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
++  assert.equal(denyCore, null, "Supremeadmin must be permitted to read core repo");
++
++  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
++  assert.equal(denySkills, null, "Supremeadmin must be permitted to read satellite repo");
++});
++
+ // 5b. Restricted viewer authority — satellite allowed, core blocked
+ const rvScopes = defaultClientScopes("restricted_viewer");
+ RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () => {
+@@ -110,14 +130,17 @@ RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () => {
+   assert.equal(denyCmd, null, "restricted_viewer must be permitted to read satellite repo");
+ 
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+-  assert.ok(denyCore && denyCore.includes("satellite repos"), "restricted_viewer must be blocked from core repo");
++  assert.ok(denyCore && (denyCore.includes("restricted to admin") || denyCore.includes("satellite repos")), "restricted_viewer must be blocked from core repo");
+ });
+ 
+-// 5c. Repo viewer (Auditor) authority — all repos readable with scope
++// 5c. Repo viewer (Auditor) authority — satellite repos readable with scope; core monorepo blocked
+ const audScopes = defaultClientScopes("repo_viewer");
+ RequestContextStore.run({ role: "repo_viewer", scopes: audScopes }, () => {
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+-  assert.equal(denyCore, null, "repo_viewer must read core repo");
++  assert.ok(
++    denyCore && denyCore.includes("strictly restricted to admin and supremeadmin"),
++    "repo_viewer must be blocked from core repo"
++  );
+ 
+   const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+   assert.equal(denySkills, null, "repo_viewer must read satellite repo");

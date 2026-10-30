@@ -1,0 +1,20 @@
+diff --git a/core/pyproject.toml b/core/pyproject.toml
+index 89f010bc..3098b977 100644
+--- a/core/pyproject.toml
++++ b/core/pyproject.toml
+@@ -221,7 +221,7 @@ minversion = "6.0"
+ testpaths = ["tests"]
+ # বাংলা মন্তব্য: লোকাল রানে coverage threshold-এর কারণে টেস্ট "পাস" সত্ত্বেও ফেইল করার ঝুঁকি
+ # এড়াতে --cov-fail-under সরানো হলো; CI নিজেই threshold এনফোর্স করে (supreme-core-ci.yml)।
+-addopts = "-ra -v --tb=short --strict-markers --strict-config --cov=core --cov-report=term-missing --cov-report=html --cov-report=xml"
++addopts = "-ra -v --tb=short --strict-markers --strict-config"
+ python_files = ["test_*.py", "*_test.py"]
+ python_classes = ["Test*"]
+ python_functions = ["test_*"]
+diff --git a/core/requirements.txt b/core/requirements.txt
+index 13bfc421..774b2901 100644
+--- a/core/requirements.txt
++++ b/core/requirements.txt
+@@ -1 +1,2 @@
+ pytest-timeout>=2.3.0
++requests>=2.28.0

@@ -1,0 +1,149 @@
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index bdb12e7f..a14ae695 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -157,7 +157,7 @@ export const OperatorCockpit: React.FC = () => {
+ const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+   <PublicLayout>
+     <PublicHeader />
+-    <div className="pt-16 sm:pt-20 px-4 pb-12 max-w-4xl mx-auto">{children}</div>
++    <div className="pt-16 sm:pt-20 px-4 pb-12 max-w-feed mx-auto">{children}</div>
+   </PublicLayout>
+ );
+ 
+diff --git a/studio/src/components/dashboard/AutomationQueuePage.tsx b/studio/src/components/dashboard/AutomationQueuePage.tsx
+index 5dc109d9..6cabcd4a 100644
+--- a/studio/src/components/dashboard/AutomationQueuePage.tsx
++++ b/studio/src/components/dashboard/AutomationQueuePage.tsx
+@@ -102,7 +102,7 @@ export function AutomationQueuePage() {
+   };
+ 
+   return (
+-    <div className="max-w-4xl mx-auto px-6 py-8">
++    <div className="max-w-feed mx-auto px-6 py-8">
+       <h1 className="text-2xl font-semibold text-white flex items-center gap-3 mb-2">
+         <ListChecks size={24} className="text-blue-500" />
+         Automation Workflow Queue
+diff --git a/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx b/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
+index 0b3a41e2..e50013ed 100644
+--- a/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
++++ b/studio/src/components/dashboard/HumanInTheLoopProtocol.tsx
+@@ -108,7 +108,7 @@ const HumanInTheLoopProtocol: React.FC<HumanInTheLoopProtocolProps> = ({ onAppro
+ 
+   return (
+     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-modal p-4">
+-      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
++      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-feed max-h-[90vh] overflow-y-auto">
+         <div className="p-6">
+           <div className="flex justify-between items-center mb-4">
+             <h2 className="text-2xl font-bold text-cyan-400">Human-in-the-Loop Protocol</h2>
+diff --git a/studio/src/components/dashboard/SiteActionsPage.tsx b/studio/src/components/dashboard/SiteActionsPage.tsx
+index 8191371a..3afce357 100644
+--- a/studio/src/components/dashboard/SiteActionsPage.tsx
++++ b/studio/src/components/dashboard/SiteActionsPage.tsx
+@@ -376,7 +376,7 @@ export function SiteActionsPage() {
+       {/* Selector Test Modal */}
+       {testModal.show && (
+         <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
+-           <div className="bg-[#1e1e1e] border border-gray-800 rounded-2xl w-full max-w-4xl shadow-2xl flex flex-col overflow-hidden">
++           <div className="bg-[#1e1e1e] border border-gray-800 rounded-2xl w-full max-w-feed shadow-2xl flex flex-col overflow-hidden">
+               <div className="px-6 py-4 border-b border-gray-800 flex justify-between items-center bg-[#252526]">
+                  <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                    <Target className="text-purple-400" />
+diff --git a/studio/src/components/plugins/MCPConnector.tsx b/studio/src/components/plugins/MCPConnector.tsx
+index 61233bb3..24eb6edc 100644
+--- a/studio/src/components/plugins/MCPConnector.tsx
++++ b/studio/src/components/plugins/MCPConnector.tsx
+@@ -80,7 +80,7 @@ export const MCPConnector: React.FC = () => {
+   };
+ 
+   return (
+-    <section className="font-bengali mx-auto mt-8 flex max-w-4xl flex-col gap-5">
++    <section className="font-bengali mx-auto mt-8 flex max-w-feed flex-col gap-5">
+       <div className="flex flex-col gap-2">
+         <div className="flex items-center gap-2 text-[var(--supremeai-color-brand-primary)]"><Link2 size={16} /><span className="text-xs font-semibold uppercase tracking-[0.18em]">MCP Viewer</span></div>
+         <h2 className="text-2xl font-semibold tracking-tight text-balance">সার্ভারের data দেখুন</h2>
+diff --git a/studio/src/index.css b/studio/src/index.css
+index c1764034..e5968270 100644
+--- a/studio/src/index.css
++++ b/studio/src/index.css
+@@ -3,15 +3,21 @@
+ 
+ @theme {
+   /* XS-1 container-width tokens (verified 2026-10-25 frontend report, section 6.3):
+-     4-bucket page-container scale - form (form/read pages), feed (feed/chat pages),
+-     dash (dashboard pages), full-bleed (= w-full, no token needed). Identity aliases
+-     of the migrated families (2xl/3xl/6xl); 4xl/5xl/7xl/[1500px]/[1600px] stay
+-     un-migrated pending their Table-6 resize sign-offs - do NOT add new free-form
+-     container widths, pick one of these buckets. Tailwind v4 --container-* namespace
+-     emits max-w-form / max-w-feed / max-w-dash utilities. */
++     4-bucket page-container scale - form (form/read pages), feed (feed/chat pages,
++     the 3xl/4xl family), dash (dashboard pages, the 5xl/6xl/7xl family), full-bleed
++     (= w-full, no token needed). Phase 2 completed the Table-6 sign-off: the 4xl
++     family joined feed, the 5xl/7xl families joined dash, and the two admin-shell
++     arbitrary widths ([1500px]/[1600px]) unify into the named admin token below.
++     Do NOT add new free-form container widths, pick one of these buckets.
++     Tailwind v4 --container-* namespace emits max-w-form / max-w-feed /
++     max-w-dash / max-w-admin utilities. */
+   --container-form: 42rem;
+   --container-feed: 48rem;
+   --container-dash: 72rem;
++  /* Admin-shell exception (report 6.1: separate role shell; Table 6 admin row):
++     the admin console keeps its report-prescribed 1600px width as a NAMED token,
++     not a free-form value - deliberately outside the 4-bucket user scale. */
++  --container-admin: 100rem;
+   /* P2 item (verified 2026-10-25 frontend report, section 6.4): z-index 3-bucket
+      policy. Base content stays numeric 0..10 (decorative background layers may
+      use negative numeric values to sit under content); shell layer
+diff --git a/studio/src/pages/AcademyHubPage.tsx b/studio/src/pages/AcademyHubPage.tsx
+index 64f18c27..095bc57c 100644
+--- a/studio/src/pages/AcademyHubPage.tsx
++++ b/studio/src/pages/AcademyHubPage.tsx
+@@ -220,7 +220,7 @@ export default function AcademyHubPage() {
+     a.lessons.filter((l) => progress.completedLessons.includes(l.id)).length;
+ 
+   return (
+-    <div className="mx-auto max-w-4xl px-4 py-10">
++    <div className="mx-auto max-w-feed px-4 py-10">
+       <header className="mb-8">
+         <h1 className="text-3xl font-semibold tracking-tight text-white">SupremeAI Academies</h1>
+         <p className="mt-2 text-sm text-white/60">
+diff --git a/studio/src/pages/OurStoryPage.tsx b/studio/src/pages/OurStoryPage.tsx
+index 18fd45d3..3a56e6e4 100644
+--- a/studio/src/pages/OurStoryPage.tsx
++++ b/studio/src/pages/OurStoryPage.tsx
+@@ -9,7 +9,7 @@ export const OurStoryPage: React.FC = () => {
+     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-purple-500/30">
+       <LandingHeader />
+ 
+-      <main className="mx-auto max-w-4xl px-6 py-20">
++      <main className="mx-auto max-w-feed px-6 py-20">
+         <div className="text-center mb-16">
+           <span className="text-xs font-mono uppercase tracking-widest text-emerald-400">Origins & Evolution</span>
+           <h1 className="mt-3 text-4xl font-extrabold sm:text-5xl text-white">Our Story</h1>
+diff --git a/studio/src/pages/ProfilePage.tsx b/studio/src/pages/ProfilePage.tsx
+index 66270698..867669b8 100644
+--- a/studio/src/pages/ProfilePage.tsx
++++ b/studio/src/pages/ProfilePage.tsx
+@@ -81,7 +81,7 @@ export const ProfilePage: React.FC = () => {
+     // বাংলা (single-frontend migration): page-level NavRail shell সরিয়ে একক shared
+     // shell-এ আনা হলো (roadmap Rule 8: no duplicate global shells)।
+     <WorkspaceLayout>
+-      <main className="p-8 max-w-4xl mx-auto w-full">
++      <main className="p-8 max-w-feed mx-auto w-full">
+         <header className="mb-8">
+           <div className="flex items-center gap-3">
+             <div className="p-2 rounded-xl bg-cyan-500/20 text-cyan-400">
+diff --git a/studio/src/pages/admin/JarvisAdminConsolePage.tsx b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+index 49e4b59e..febb11a1 100644
+--- a/studio/src/pages/admin/JarvisAdminConsolePage.tsx
++++ b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+@@ -247,7 +247,7 @@ export function JarvisAdminConsolePage() {
+       </header>
+ 
+       {/* Main Center Stage */}
+-      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-4xl mx-auto w-full gap-6">
++      <main className="relative z-10 flex-1 flex flex-col items-center justify-between p-6 max-w-feed mx-auto w-full gap-6">
+         {/* Arc-Reactor Section */}
+         <div className="flex flex-col items-center gap-3 mt-4">
+           <ArcReactorOrb state={orbState} size={150} onClick={toggleListening} />

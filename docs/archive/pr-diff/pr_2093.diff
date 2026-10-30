@@ -1,0 +1,412 @@
+diff --git a/scripts/ci/npm_dep_cve_baseline.json b/scripts/ci/npm_dep_cve_baseline.json
+index 2223b779..52a3faf5 100644
+--- a/scripts/ci/npm_dep_cve_baseline.json
++++ b/scripts/ci/npm_dep_cve_baseline.json
+@@ -1,21 +1,24 @@
+ {
+   "meta": {
+-    "issue": 2059,
++    "issue": 2075,
+     "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
+     "lockfiles": [
+       "infrastructure/mcp-control-plane/package-lock.json",
+-      ".agents/skills/devtools-audit/package-lock.json"
++      ".agents/skills/devtools-audit/package-lock.json",
++      "browser/cloudflare-worker/package-lock.json",
++      "vscode/package-lock.json",
++      "vscode/extension/package-lock.json"
+     ],
+     "ecosystem": "npm",
+     "dev_entries_skipped": true,
+-    "head": "bab42ec 2026-10-28",
++    "head": "09a007c 2026-10-28",
+     "dated": "2026-10-28",
+     "totals": {
+-      "pairs_scanned": 122,
+-      "skipped_dev": 52,
+-      "skipped_non_registry": 2,
+-      "vulnerable_pairs": 8,
+-      "vuln_ids": 19
++      "pairs_scanned": 219,
++      "skipped_dev": 279,
++      "skipped_non_registry": 11,
++      "vulnerable_pairs": 12,
++      "vuln_ids": 28
+     },
+     "per_lock": {
+       "infrastructure/mcp-control-plane/package-lock.json": {
+@@ -25,11 +28,40 @@
+       ".agents/skills/devtools-audit/package-lock.json": {
+         "pairs_scanned": 21,
+         "vulnerable_pairs": 0
++      },
++      "browser/cloudflare-worker/package-lock.json": {
++        "pairs_scanned": 87,
++        "vulnerable_pairs": 4
++      },
++      "vscode/package-lock.json": {
++        "pairs_scanned": 10,
++        "vulnerable_pairs": 0
++      },
++      "vscode/extension/package-lock.json": {
++        "pairs_scanned": 0,
++        "vulnerable_pairs": 0
+       }
+     },
+-    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them \u2014 a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one."
++    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them — a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow ON A FIXED SURFACE. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one. R46 widening (#2075): the browser/cloudflare-worker + vscode + vscode/extension lockfiles joined the roster the same day; their 9 advisory ids on 4 pairs are seeded floor from an independent same-day live querybatch at head 09a007c (reproducing the scout's numbers exactly) — surface growth, not floor growth: every pre-existing R45 entry is byte-identical."
+   },
+   "findings": {
++    "browser/cloudflare-worker/package-lock.json:basic-ftp@5.3.1": [
++      "GHSA-c475-qrg2-pj4r"
++    ],
++    "browser/cloudflare-worker/package-lock.json:extract-zip@2.0.1": [
++      "GHSA-7pqw-9j4j-h8q3",
++      "GHSA-jmr9-qjv8-65gv"
++    ],
++    "browser/cloudflare-worker/package-lock.json:tar-fs@3.0.4": [
++      "GHSA-8cj5-5rvv-wf4v",
++      "GHSA-pq67-2wwv-3xjx",
++      "GHSA-vj76-c3g6-qr5v"
++    ],
++    "browser/cloudflare-worker/package-lock.json:ws@8.13.0": [
++      "GHSA-3h5v-q93c-6h6q",
++      "GHSA-58qx-3vcg-4xpx",
++      "GHSA-96hv-2xvq-fx4p"
++    ],
+     "infrastructure/mcp-control-plane/package-lock.json:@modelcontextprotocol/sdk@1.30.0": [
+       "GHSA-22jm-h49p-29qw",
+       "GHSA-46jr-4wx8-v453",
+diff --git a/scripts/ci/npm_dep_cve_guard.py b/scripts/ci/npm_dep_cve_guard.py
+index e88b8b4a..5ea9c316 100644
+--- a/scripts/ci/npm_dep_cve_guard.py
++++ b/scripts/ci/npm_dep_cve_guard.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+-"""npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059, lane R45).
++"""npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059 R45, widened #2075 R46).
+ 
+-Mission (issue #2059, scout radar lane R45):
++Mission (issue #2059, scout radar lane R45; widened by issue #2075, lane R46):
+     The dependency-CVE doctrine (#1950 coverage map, extended by #1969/#1975
+     and #2042) had one blind spot left: the control plane itself. The Tower
+     (supremeai-mcp-tower, `infrastructure/mcp-control-plane/render.yaml`) is
+@@ -18,6 +18,20 @@
+     #1913) keeps each plane's floor independently shrinkable — the baseline
+     may never grow, per plane.
+ 
++R46 widening (#2075, same-day landing):
++    R45 scoped itself to the Tower control plane, which left three tracked
++    npm lockfiles machine-invisible: browser/cloudflare-worker (the real
++    wrangler-deployed edge worker — its only direct dep @cloudflare/puppeteer
++    ^0.0.15 drags the whole puppeteer-core transitive tree onto the deploy
++    surface), vscode, and vscode/extension (editor planes; the extension
++    lock is an all-dev tree — an honest zero). The `.agents/skills`
++    precedent already established the doctrine's surface as "every tracked
++    production lockfile", not "every Render buildCommand input", so the
++    three joins are the same ratchet, not a new doctrine. The widened
++    floor is seeded from a LIVE 2026-10-28 querybatch at head 09a007c
++    (4 vulnerable pairs / 9 advisory ids, all in the worker lock) — surface
++    growth, never floor growth: every pre-existing R45 entry is untouched.
++
+ Behavior contract (the #1913/#1796 shrink-only ratchet, externalized to a
+ versioned baseline because the npm plane carries a REAL floor: the live
+ 2026-10-28 OSV querybatch run puts 19 advisory ids on 8 production pairs in
+@@ -58,13 +72,16 @@
+     6. `--baseline` regenerates the versioned baseline at the CURRENT head
+        (admin floor reset; review the diff). `--json` emits a machine
+        report. `--files f1 ...` (pre-push mode) runs the full check only
+-       when the changed set intersects the guard's surface (the two
++       when the changed set intersects the guard's surface (the five
+        package-lock paths + the Tower render.yaml, because buildCommand
+-       supply-chain claims live there); otherwise honest skip.
++       supply-chain claims live there, + the worker wrangler.toml, because
++       the edge-worker deploy claims live there); otherwise honest skip.
+ 
+ Never-do (issue #1913/#1969/#2059 doctrine): no auto pin bumps; no lockfile
+-edits; the baseline may never grow; no scanning .github/**; no secret values
+-involved (advisory ids and package coordinates only).
++edits; the baseline may never grow ON A FIXED SURFACE (a surface widening
++seeds its own findings in the same change, as R46 did); no scanning
++.github/**; no secret values involved (advisory ids and package coordinates
++only).
+ 
+ Usage:
+     python scripts/ci/npm_dep_cve_guard.py --check            # roster mode
+@@ -82,7 +99,7 @@
+ import argparse
+ import contextlib
+ import json
+-import subprocess  # nosec B404 — the guard shells out to git for the changed-lockfile surface; list-argv only (#2081 audit)
++import subprocess
+ import sys
+ import time
+ import urllib.request
+@@ -99,12 +116,22 @@
+ LOCK_PATHS = (
+     Path("infrastructure/mcp-control-plane/package-lock.json"),
+     Path(".agents/skills/devtools-audit/package-lock.json"),
++    # R46 widening (#2075): the remaining tracked npm lockfiles. The worker
++    # lock is the headline (wrangler-deployed edge worker, 87 production
++    # pairs, dev-zero); the two vscode locks are editor planes (10 and 0
++    # production pairs — the extension lock is an all-dev honest zero).
++    Path("browser/cloudflare-worker/package-lock.json"),
++    Path("vscode/package-lock.json"),
++    Path("vscode/extension/package-lock.json"),
+ )
+ # render.yaml carries the buildCommand that consumes both locks; its
+ # supply-chain claims (#707 uv pin comment vs command) are part of this
+-# guard's surface so pushes that touch them run the ratchet.
++# guard's surface so pushes that touch them run the ratchet. wrangler.toml
++# is the worker's deploy blueprint (#2075 deploy-surface identity) — same
++# reasoning, same ratchet.
+ SURFACE_PATHS = tuple(str(p) for p in LOCK_PATHS) + (
+     "infrastructure/mcp-control-plane/render.yaml",
++    "browser/cloudflare-worker/wrangler.toml",
+ )
+ 
+ EXIT_PASS = 0
+@@ -193,7 +220,7 @@ def query_osv_batch(
+                     headers={"Content-Type": "application/json"},
+                     method="POST",
+                 )
+-                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:  # nosec B310 — OSV https endpoint is a pinned module constant, zero-credential read (#2081 audit)
++                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:
+                     response = json.loads(resp.read().decode("utf-8"))
+                 last_error = None
+                 break
+@@ -263,7 +290,7 @@ def git_head(repo_root: Path) -> str:
+ 
+ 
+ def subprocess_run(cmd: list[str], cwd: Path) -> str:
+-    proc = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git invocation (#2081 audit)
++    proc = subprocess.run(
+         cmd, cwd=cwd, capture_output=True, text=True, timeout=30, check=False
+     )
+     return proc.stdout
+@@ -290,7 +317,7 @@ def build_baseline_report(repo_root: Path) -> dict:
+     total_ids = sum(len(ids) for ids in findings.values())
+     return {
+         "meta": {
+-            "issue": 2059,
++            "issue": 2075,
+             "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
+             "lockfiles": [p.as_posix() for p in LOCK_PATHS],
+             "ecosystem": ECOSYSTEM,
+@@ -400,7 +427,8 @@ def evaluate(repo_root: Path, files: list[str] | None = None) -> tuple[int, list
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+-    parser = argparse.ArgumentParser(description="npm dependency CVE ratchet gate (#2059)")
++    parser = argparse.ArgumentParser(
++        description="npm dependency CVE ratchet gate (#2059 R45, widened #2075 R46)")
+     mode = parser.add_mutually_exclusive_group(required=True)
+     mode.add_argument("--check", action="store_true", help="full roster check")
+     mode.add_argument("--files", nargs="*", help="pre-push changed-set mode")
+@@ -503,6 +531,8 @@ def check(name: str, cond: bool) -> None:
+         root = Path(td)
+         (root / "infrastructure/mcp-control-plane").mkdir(parents=True)
+         (root / ".agents/skills/devtools-audit").mkdir(parents=True)
++        (root / "browser/cloudflare-worker").mkdir(parents=True)
++        (root / "vscode/extension").mkdir(parents=True)
+         (root / "scripts/ci").mkdir(parents=True)
+         (root / "infrastructure/mcp-control-plane/package-lock.json").write_text(
+             json.dumps({"lockfileVersion": 3, "packages": {
+@@ -510,6 +540,17 @@ def check(name: str, cond: bool) -> None:
+         (root / ".agents/skills/devtools-audit/package-lock.json").write_text(
+             json.dumps({"lockfileVersion": 3, "packages": {
+                 "node_modules/zod": {"version": "4.6.4"}}}))
++        # R46 widened roster: the temp repo must carry ALL tracked locks,
++        # else evaluate() fail-closes on a missing tracked lockfile.
++        (root / "browser/cloudflare-worker/package-lock.json").write_text(
++            json.dumps({"lockfileVersion": 3, "packages": {
++                "node_modules/tar-fs": {"version": "3.0.4"}}}))
++        (root / "vscode/package-lock.json").write_text(
++            json.dumps({"lockfileVersion": 3, "packages": {
++                "node_modules/devthing": {"version": "1.0.0", "dev": True}}}))
++        (root / "vscode/extension/package-lock.json").write_text(
++            json.dumps({"lockfileVersion": 3, "packages": {
++                "node_modules/devonly": {"version": "2.0.0", "dev": True}}}))
+ 
+         baseline = {"findings": {
+             "infrastructure/mcp-control-plane/package-lock.json:express@4.21.2": ["GHSA-known"],
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index f73ed0a0..ef94ff7b 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 08:49:01 UTC · **516 scripts** (481 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 10:12:43 UTC · **516 scripts** (481 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -208,7 +208,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/mirror_parent_linker.py` | Mirror-claim issue → parent has-pr linker (#2894). |
+ | `ci/mission_passk.py` | Mission-suite pass^k harness — the first honest reliability scoreboard in CI. |
+ | `ci/mutation_lease.py` | Mutation Lease — controlled remote mutation guard (#4200 §6/§7, #4207 distributed). |
+-| `ci/npm_dep_cve_guard.py` | npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059, lane R45). |
++| `ci/npm_dep_cve_guard.py` | npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059 R45, widened #2075 R46). |
+ | `ci/openapi_breaking_guard.py` | openapi_breaking_guard.py — machine revision-diff gate for the stable external contract (#1711). |
+ | `ci/pii_redaction_gap_probe.py` | PII redaction gap pilot — live benchmark for #1784 (R36, report-only). |
+ | `ci/pipeline_failure_register.py` | Pipeline Failure Register v2 (#2928 → #2935) — ডায়নামিক ট্র্যাকিং + এক-গ্রুপ-প্রতি-ব্যর্থতা-ইস্যু। |
+diff --git a/tests/test_npm_dep_cve_guard.py b/tests/test_npm_dep_cve_guard.py
+index 4d7c91db..1ac631af 100644
+--- a/tests/test_npm_dep_cve_guard.py
++++ b/tests/test_npm_dep_cve_guard.py
+@@ -1,8 +1,9 @@
+ #!/usr/bin/env python3
+-"""tests/test_npm_dep_cve_guard.py — fail-closed behavioral suite for #2059.
++"""tests/test_npm_dep_cve_guard.py — fail-closed behavioral suite for #2059 (widened #2075).
+ 
+ Verifies the npm dependency CVE ratchet gate delivered for #2059 (lane R45,
+-the control-plane supply-chain surface):
++the control-plane supply-chain surface) and widened by #2075 (lane R46:
++browser/cloudflare-worker + vscode + vscode/extension lockfiles):
+ 
+   - package-lock parser: v2/v3 `packages["node_modules/<name>"]` entries
+     resolve to (name, version); nested `node_modules/a/node_modules/b`
+@@ -17,11 +18,15 @@
+     lockfile fail-closes (surface change); an unreachable OSV API skips
+     with evidence and NEVER fabricates a PASS (the #1760 honest-
+     degradation pattern); --files mode with an off-surface changed set is
+-    an honest skip; render.yaml IS in the surface (buildCommand claims
+-    live there);
++    an honest skip; render.yaml and the worker wrangler.toml ARE in the
++    surface (deploy/blueprint claims live there);
+   - live baseline pin: on the real repo the dated floor passes --check
+     (the landing state, network permitting — skipped with evidence when
+     api.osv.dev is unreachable), and its meta provenance is intact;
++  - R46 widening: the widened surface constants are exact; a worker-lock
++    floor seeded in the baseline is honored (pass) and a new id on a
++    worker pair is drift with the lock-scoped key; an all-dev lock is an
++    honest zero (zero production pairs, no query, no drift);
+   - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
+     and the LIVE .githooks/pre-push hook (never duplicated here).
+ 
+@@ -67,15 +72,30 @@ def write_lock(root: Path, rel: str, packages: dict) -> None:
+ 
+ TOWER_LOCK = "infrastructure/mcp-control-plane/package-lock.json"
+ AUDIT_LOCK = ".agents/skills/devtools-audit/package-lock.json"
++WORKER_LOCK = "browser/cloudflare-worker/package-lock.json"
++VSCODE_LOCK = "vscode/package-lock.json"
++VSCODE_EXT_LOCK = "vscode/extension/package-lock.json"
+ 
+ 
+ def make_temp_repo(tmp: Path, baseline_pairs: dict | None = None) -> Path:
+     write_lock(tmp, TOWER_LOCK, {"node_modules/express": {"version": "4.21.2"}})
+     write_lock(tmp, AUDIT_LOCK, {"node_modules/zod": {"version": "4.6.4"}})
++    # R46 widened roster: all five tracked locks must exist, else
++    # evaluate() fail-closes on a missing tracked lockfile.
++    write_lock(tmp, WORKER_LOCK, {"node_modules/tar-fs": {"version": "3.0.4"}})
++    write_lock(tmp, VSCODE_LOCK, {
++        "node_modules/devthing": {"version": "1.0.0", "dev": True}})
++    write_lock(tmp, VSCODE_EXT_LOCK, {
++        "node_modules/devonly": {"version": "2.0.0", "dev": True}})
+     (tmp / "infrastructure/mcp-control-plane/render.yaml").parent.mkdir(
+         parents=True, exist_ok=True
+     )
+     (tmp / "infrastructure/mcp-control-plane/render.yaml").write_text("services: []\n")
++    (tmp / "browser/cloudflare-worker/wrangler.toml").parent.mkdir(
++        parents=True, exist_ok=True
++    )
++    (tmp / "browser/cloudflare-worker/wrangler.toml").write_text(
++        'name = "temp-worker"\n')
+     (tmp / "scripts/ci").mkdir(parents=True, exist_ok=True)
+     if baseline_pairs is not None:
+         (tmp / BASELINE).write_text(json.dumps({
+@@ -262,6 +282,11 @@ def test_decision_tree_hermetic() -> None:
+                 root, files=["infrastructure/mcp-control-plane/render.yaml"])
+             assert code == guard.EXIT_PASS and drift == []
+ 
++            # wrangler.toml (R46) is on the surface too
++            code, drift, imp, notes = guard.evaluate(
++                root, files=["browser/cloudflare-worker/wrangler.toml"])
++            assert code == guard.EXIT_PASS and drift == []
++
+ 
+ def test_main_files_off_surface_exit_zero() -> None:
+     proc = subprocess.run(
+@@ -299,16 +324,79 @@ def test_live_baseline_check() -> None:
+     assert proc.returncode == guard.EXIT_PASS, proc.stdout + proc.stderr
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text())
+     meta = baseline.get("meta", {})
+-    assert meta.get("issue") == 2059
++    assert meta.get("issue") == 2075
+     assert meta.get("dated") == "2026-10-28"
+     assert meta.get("ecosystem") == "npm"
+     assert meta.get("dev_entries_skipped") is True
+     assert "shrink-only" in meta.get("doctrine", "")
++    assert len(meta.get("lockfiles", [])) == 5  # R46 widened roster
+     findings = baseline.get("findings", {})
+     for key in findings:
+         assert ":" in key and "@" in key  # lock-scoped pair keys
+ 
+ 
++# ---------------------------------------------------------------------------
++# R46 widening (#2075): surface constants + worker floor + honest-zero lock
++# ---------------------------------------------------------------------------
++
++def test_widened_surface_constants() -> None:
++    paths = [str(p) for p in guard.LOCK_PATHS]
++    assert paths == [
++        "infrastructure/mcp-control-plane/package-lock.json",
++        ".agents/skills/devtools-audit/package-lock.json",
++        "browser/cloudflare-worker/package-lock.json",
++        "vscode/package-lock.json",
++        "vscode/extension/package-lock.json",
++    ]
++    assert "browser/cloudflare-worker/wrangler.toml" in guard.SURFACE_PATHS
++    assert "infrastructure/mcp-control-plane/render.yaml" in guard.SURFACE_PATHS
++
++
++def _worker_floor(pairs):
++    return {p: ["GHSA-w1", "GHSA-w2"] for p in pairs if p == ("tar-fs", "3.0.4")}
++
++
++def _worker_new_id(pairs):
++    return {
++        p: (["GHSA-w1", "GHSA-w2", "GHSA-w9"] if p == ("tar-fs", "3.0.4") else [])
++        for p in pairs
++        if p == ("tar-fs", "3.0.4")
++    }
++
++
++def test_worker_lock_floor_honored_then_drifts() -> None:
++    with tempfile.TemporaryDirectory() as td:
++        root = make_temp_repo(Path(td), {
++            f"{WORKER_LOCK}:tar-fs@3.0.4": ["GHSA-w1", "GHSA-w2"],
++        })
++        with _OsvPatch(guard, _worker_floor):
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_PASS and drift == []
++        with _OsvPatch(guard, _worker_new_id):
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_DRIFT
++            assert drift[0]["kind"] == "new-id"
++            assert drift[0]["pair"] == f"{WORKER_LOCK}:tar-fs@3.0.4"
++            assert drift[0]["ids"] == ["GHSA-w9"]
++
++
++def test_all_dev_lock_is_honest_zero() -> None:
++    # The vscode/extension lock parses to ZERO production pairs (all-dev
++    # tree): no query is needed, no baseline entry is owed, and the lock
++    # still participates in the roster (a missing file would fail-close).
++    # The tower lock's known pair is floored so the only signal under test
++    # is the all-dev lock's honest zero.
++    with tempfile.TemporaryDirectory() as td:
++        root = make_temp_repo(Path(td), {
++            f"{TOWER_LOCK}:express@4.21.2": ["GHSA-known"],
++        })
++        pairs, skipped = guard.load_lock_pairs(root / VSCODE_EXT_LOCK)
++        assert pairs == [] and skipped["dev"] == 1
++        with _OsvPatch(guard, _known_floor):
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_PASS and drift == []
++
++
+ def test_wiring_ssot() -> None:
+     roster = (REPO_ROOT / "scripts/ci/run_all_guards.py").read_text()
+     assert "scripts/ci/npm_dep_cve_guard.py" in roster, \

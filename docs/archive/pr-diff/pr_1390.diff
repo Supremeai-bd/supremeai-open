@@ -1,0 +1,146 @@
+diff --git a/README.md b/README.md
+index 866a5532..387e5d38 100644
+--- a/README.md
++++ b/README.md
+@@ -60,9 +60,9 @@ flowchart TD
+ 
+ #### Core Set Equations:
+ - **Public Boundary Partition:** $\mathbf{Open} = T_{\text{transit}} \cup U_{\text{open}} \quad \text{where } T_{\text{transit}} \cap U_{\text{open}} = \emptyset$
+-  - **$U_{\text{open}}$ (261 files):** Public front door, CI guards, 14 Anchor Hub configs, and constitution. **Never dispatched to satellites.**
+-  - **$T_{\text{transit}}$ (374 files):** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
+-- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}} = \mathbf{1384 \text{ executable files}}$
++  - **$U_{\text{open}}$:** Public front door, CI guards, Federation Anchor Hub configs, and constitution. **Never dispatched to satellites.**
++  - **$T_{\text{transit}}$:** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
++- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}}$
+ - **The Blocked State Law:** Any file in `supremeai-open` not in $U_{\text{open}}$ represents an in-flight or blocked transit payload.
+ 
+ ---
+@@ -85,12 +85,12 @@ flowchart TD
+     
+     VERIFY2 -- "Verified Completed" --> PRUNE["🧹 Zero-Residue Auto-Prune (#416):<br>1. Delete ephemeral transit patch files<br>2. Delete bridge/* transit sync branches"]
+     
+-    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at exactly U_open (261 files)"]
++    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at clean U_open boundary"]
+ ```
+ 
+ ---
+ 
+-### 3. Federation CI Watchdog & 14 Anchor Hubs Architecture
++### 3. Federation CI Watchdog & Federation Anchor Hubs Architecture
+ 
+ ```mermaid
+ flowchart TD
+diff --git a/docs/CI_PIPELINES_AUDIT_REPORT.md b/docs/CI_PIPELINES_AUDIT_REPORT.md
+index 157a9a6e..564d23e7 100644
+--- a/docs/CI_PIPELINES_AUDIT_REPORT.md
++++ b/docs/CI_PIPELINES_AUDIT_REPORT.md
+@@ -32,9 +32,9 @@ Across the 14 repositories in `Supremeai-bd`:
+ 
+ ---
+ 
+-## 1.1. CI Failure Tracking in supremeai-open Issues (The 14-Anchor SSOT)
++## 1.1. CI Failure Tracking in supremeai-open Issues (Federation Anchor Hub SSOT)
+ 
+-Under the **Single Central Task Board & 14 Anchor Hubs doctrine** (`FEDERATION_CHARTER.md` & `AGENTS.md` §5), `Supremeai-bd/supremeai-open` maintains strictly **14 persistent anchor hub issues** (#749 to #762) to prevent loose issue pollution and maintain a zero-issue mandate across satellites.
++Under the **Single Central Task Board & Federation Anchor Hubs doctrine** (`FEDERATION_CHARTER.md` & `AGENTS.md` §5), `Supremeai-bd/supremeai-open` maintains persistent parent anchor hub issues to prevent loose issue pollution and maintain a zero-issue mandate across satellites.
+ 
+ CI pipeline failures across the federation are recorded directly into **Anchor Hub #761: `[Federation Hub] 🚨 CI Pipeline Failures & Incident Desk`** as structured task contract comments (idempotent via `<!-- MIRROR_RUN: {repo}/actions/runs/{run_id} -->`).
+ 
+diff --git a/docs/SUPREMEAI_PROVIDER_AGNOSTIC_CHAT_ARCHITECTURE.md b/docs/SUPREMEAI_PROVIDER_AGNOSTIC_CHAT_ARCHITECTURE.md
+index e0371209..691a122a 100644
+--- a/docs/SUPREMEAI_PROVIDER_AGNOSTIC_CHAT_ARCHITECTURE.md
++++ b/docs/SUPREMEAI_PROVIDER_AGNOSTIC_CHAT_ARCHITECTURE.md
+@@ -99,14 +99,14 @@ flowchart TD
+ 
+ ```text
+ [SUPREMEAI VERIFIED ECOSYSTEM KNOWLEDGE]
+-- Federation Architecture: 12 Product Satellites + 1 Control Plane (MCP Tower).
++- Federation Architecture: Active Product Satellites + 1 Control Plane (MCP Tower).
+ - Active Satellites:
+   * studio: Frontend web dashboard & workspace (supremeai-studio)
+   * gateway/api: Unified provider gateway & auth shield (supremeai-api)
+   * core: Brain, decision engine & consensus (supremeai-core)
+   * vscode: Developer IDE extension (supremeai-vscode)
+   * browser: Headless automation sandbox & scraper (supremeai-browser)
+-- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, 14 Anchor Hubs.
++- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, Federation Anchor Hubs SSOT.
+ - Never invent repositories or services outside this official charter.
+ ```
+ 
+diff --git a/gateway/service/context_compiler.py b/gateway/service/context_compiler.py
+index af4c33c9..318cf803 100644
+--- a/gateway/service/context_compiler.py
++++ b/gateway/service/context_compiler.py
+@@ -23,14 +23,14 @@
+ """
+ 
+ PLATFORM_GROUNDING_SHEET = """[SUPREMEAI VERIFIED ECOSYSTEM KNOWLEDGE]
+-- Federation Architecture: 12 Product Satellites + 1 Control Plane (MCP Tower).
++- Federation Architecture: Active Product Satellites + 1 Control Plane (MCP Tower).
+ - Active Satellites:
+   * studio: Frontend web dashboard & workspace (supremeai-studio)
+   * gateway/api: Unified provider gateway & auth shield (supremeai-api)
+   * core: Brain, decision engine & consensus (supremeai-core)
+   * vscode: Developer IDE extension (supremeai-vscode)
+   * browser: Headless automation sandbox & scraper (supremeai-browser)
+-- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, 14 Anchor Hubs.
++- Operating Doctrine: Zero-Admin (Admin work <= 0.01%), Satellite-First, Single-Domain PRs, Federation Anchor Hubs SSOT.
+ - Never invent repositories or services outside this official charter.
+ """
+ 
+diff --git a/scripts/agents/claim_ttl_expirer.py b/scripts/agents/claim_ttl_expirer.py
+index bfe75418..f4eea4f8 100644
+--- a/scripts/agents/claim_ttl_expirer.py
++++ b/scripts/agents/claim_ttl_expirer.py
+@@ -24,7 +24,11 @@
+     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+ 
+ UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
+-ANCHOR_HUBS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
++try:
++    from scripts.ci.federation_anchors import ANCHOR_HUBS as _AH
++    ANCHOR_HUBS = set(_AH.values())
++except Exception:
++    ANCHOR_HUBS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
+ DEFAULT_TTL_HOURS = 3
+ 
+ 
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 9ecebf45..ab162613 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -874,8 +874,12 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+                     break
+             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+ 
+-        # Exclude permanent 14 Anchor Hub issue numbers (749..762) from picking
+-        ANCHOR_HUB_NUMBERS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
++        # Exclude permanent Federation Anchor Hub issue numbers from picking
++        try:
++            from scripts.ci.federation_anchors import ANCHOR_HUBS as _AH
++            ANCHOR_HUB_NUMBERS = set(_AH.values())
++        except Exception:
++            ANCHOR_HUB_NUMBERS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
+ 
+         candidates = [
+             i for i in issues
+diff --git a/tests/test_federation_anchors.py b/tests/test_federation_anchors.py
+index c2752a0f..90d8c7c0 100644
+--- a/tests/test_federation_anchors.py
++++ b/tests/test_federation_anchors.py
+@@ -14,10 +14,12 @@
+ 
+ class TestFederationAnchors(unittest.TestCase):
+     def test_anchor_counts(self):
+-        """Must have exactly 14 persistent anchor hubs."""
+-        self.assertEqual(len(ANCHOR_HUBS), 14)
++        """Must have valid registry with active and retired subsets."""
++        from scripts.ci.federation_anchors import ACTIVE_ANCHOR_HUBS, RETIRED_ANCHOR_HUBS
++        self.assertTrue(set(ACTIVE_ANCHOR_HUBS.keys()).issubset(set(ANCHOR_HUBS.keys())))
++        self.assertTrue(set(RETIRED_ANCHOR_HUBS.keys()).issubset(set(ANCHOR_HUBS.keys())))
+         unique_numbers = set(ANCHOR_HUBS.values())
+-        self.assertEqual(len(unique_numbers), 14)
++        self.assertEqual(len(unique_numbers), len(ANCHOR_HUBS))
+ 
+     def test_sequential_anchor_range(self):
+         """Anchor issue numbers must span 749 through 762."""

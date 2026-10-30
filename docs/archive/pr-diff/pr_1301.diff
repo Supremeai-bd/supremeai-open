@@ -1,0 +1,20 @@
+diff --git a/scripts/ci/kaggle_learning_bridge.py b/scripts/ci/kaggle_learning_bridge.py
+index 75133b0b..50799de9 100644
+--- a/scripts/ci/kaggle_learning_bridge.py
++++ b/scripts/ci/kaggle_learning_bridge.py
+@@ -387,6 +387,15 @@ def main() -> int:
+     if args.self_test:
+         return run_self_test()
+ 
++    # Standalone --dry-run (no --ingest-file): distill the built-in sample
++    # without any database writes. Before this branch, --dry-run alone fell
++    # through every handler to print_help() + exit 1, which failed the
++    # nightly ops workflow's "pool detected" step (exit 1 under set -e) even
++    # though the flag's documented contract is a successful write-less
++    # distillation run.
++    if args.dry_run and not args.ingest_file:
++        return run_self_test()
++
+     engine = KaggleLearningEngine()
+ 
+     if args.ingest_file:

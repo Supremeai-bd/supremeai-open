@@ -1,0 +1,20 @@
+diff --git a/docs/bridge/bridge-20261029-ci2368-closure-addendum.md b/docs/bridge/bridge-20261029-ci2368-closure-addendum.md
+new file mode 100644
+index 00000000..fb222a01
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-ci2368-closure-addendum.md
+@@ -0,0 +1,14 @@
++# CI Closure Addendum — #2368 (2367/merge ghost red) — closes the stranded work order
++
++- **Purpose:** closure instrument for WO #2368, filed per the acceptance criteria of #2485 ("stranded pair #2405 + #2368 still need closure after this lands ... any future receipt-class submission using the flag"). Uses the `closesOriginalIssue` opt-in landed by PR #2490 (`6fcefe0`).
++- **Why this addendum exists:** the original closure receipt `docs/bridge/bridge-20261029-ci2368-closure-receipt.md` (PR #2466, landed `7aab0c2` 2026-10-29T05:36:22Z) carried `Refs #2368` — not `Closes #2368` — because `buildBridgePrBody`'s spec-only heuristic downgrades every docs-only payload's linkage (mechanism gap #2485). The tower's work-order plane confirmed #2368 stayed `open` (`updatedAt` frozen at the 05:31:59Z claim time, pre-landing), keeping a phantom red in the P0-drainage scans (Invariant 5).
++
++## Closure evidence (recap, unchanged from the #2466 receipt)
++
++- Failed run #40791963566 executed on ref `2367/merge` — a PR-gate lane, never a main-branch run; the failing check was the `👥 Anti-Duplicate PR Guard` making a **designed** fail-closed trip: PR #2367 was a duplicate lane racing PR #2365 for WO #2355, and U4 correctly refused it (`Competing PR detected!`).
++- The underlying work landed via the winning lane: PR #2365 (`cb1958d`) — `probe_live_status_453.py` now defaults to `https://supremeai-api-ulw0.onrender.com` with zero ghost-host occurrences on main.
++- Main verified green post-incident (run 40822896540, sha `85f743be`); current main `0c3126a` remains green. The recurring race phenomenon itself stays with the watch lane (a-series receipts, latest a24 `91a29e7`).
++
++## Closure event
++
++This addendum is submitted with `closesOriginalIssue: true` and `originalIssueNumber: 2368`, so the bridge PR body emits `Closes #2368` and GitHub auto-closes the work order on merge — completing the arc: detect (#2368) → triage receipt (#2466) → mechanism fix (#2485, PR #2490) → instrumented closure (this addendum).

@@ -1,0 +1,49 @@
+diff --git a/docs/bridge/bridge-20261030-identity-glm31.md b/docs/bridge/bridge-20261030-identity-glm31.md
+index 6698fa19..8bd2d520 100644
+--- a/docs/bridge/bridge-20261030-identity-glm31.md
++++ b/docs/bridge/bridge-20261030-identity-glm31.md
+@@ -1,7 +1,7 @@
+ # Run Worklog ΓÇö GLM Agent 31 (Job ID 486848)
+ 
+-> Compact receipt, r2: cycle 1 condensed to durable outcomes; cycle 2 added.
+-> Size discipline: single file, only durable facts (condensed per operator instruction).
++> Compact receipt, r3: cycles 1-2 condensed to durable outcomes; cycle 3 added.
++> Size discipline: single file, only durable facts (operator instruction).
+ 
+ ## Identity
+ 
+@@ -10,24 +10,21 @@
+ | Agent | GLM Agent 31 |
+ | Job ID | 486848 |
+ | MCP surface | zero-credential tower handshake (`supremeai-control-tower` v1.0.0) |
+-| Heartbeat slot | `z.ai-31`, online 11:32:37Z |
+ | Claim identity | `GLM-Agent-31` (atomic-claim plane) |
+ 
+-## Cycle 1 (11:31ZΓÇô12:0xZ) ΓÇö condensed outcomes
++## Landed (cycles 1-2, condensed)
+ 
+-1. Dispatch **#2547** (solver); atomic claim GRANT_NEW; r+1 census (~25h): 12/14 cohort open, stale verdicts pre-date the #2265 fix.
+-2. Root cause of stranded solver WOs: `cmd_sync` blind to the solver lane (scanned only 7 private satellites, accepted only `bridge-land/` heads). Fix: two-lane recognition (`OPEN_REPO` scan + `TASK_ID_RE`-bound `strip_lane_prefix`); 71 tests passed, 0 failed.
+-3. **Landed: PR #3244** (`16c90f0`). Worklog receipt landed: PR #3250. Side receipt: r+2 verification of #2587 drain-dynamics (PR #3252, `0e2f70a`).
++1. **#2547 solver-lane root cause** (`cmd_sync` blind to solver lane): PR #3244 landed (`16c90f0`); 71 tests passed. Receipts: #3250, #3252.
++2. **Wired-but-absent class prevention** (#3316; wiring #3268 merged while carrying PR #3257 waited in gate ΓåÆ suite exit 1): `scripts/ci/wiring_integrity_guard.py` (AST roster check, self-test 5/5) wired FIRST in the roster; **PR #3320 landed** (`7347ca5`). Worklog r2: PR #3324 landed (`58b05d9`).
+ 
+-## Cycle 2 (12:4xZΓÇô13:0xZ) ΓÇö wired-but-absent root cause
++## Cycle 3 (13:3xZΓÇô13:5xZ) ΓÇö ecosystem-scout (single-runner lock)
+ 
+-1. Dispatch **#2567** ΓåÆ atomic claim rejected: `CLAIM_CONFLICT_OTHER` (contributor-agent, lease to 13:05Z) ΓåÆ moved to next candidate per STALE-CLAIM GUARD, no retry. Residual need already served: gate census r+4 landed in-hour (#3304).
+-2. Next dispatch **#2811** ΓåÆ skipped without claim: fresh r1 evidence refresh landed 12:32Z (WO #3305 / PR #3306) ΓÇö near-duplicate avoided (anti-stampede).
+-3. During #2567 premise re-verification, fresh defect found on main: `run_all_guards.py` wires `verdict_plane_age_guard.py --self-test` (wiring **#3268 merged**) while the script is absent (carrying **PR #3257 still in gate**) ΓåÆ suite entry exits 1 on every run with an obscure errno-2. Live-proven at `5086c24`.
+-4. Root-cause fix (class "wiring outruns implementation"): discovery issue **#3316**; new stdlib-only `scripts/ci/wiring_integrity_guard.py` (AST-parses the roster, `--check` names every wired-but-absent path with the action, `--self-test` 5/5 on a synthetic tree); wired FIRST in the roster (house double-entry convention); `scripts/ops/_INDEX.md` regenerated (532 scripts, 6 hand sections preserved). `generate_script_index.py --check` OK.
+-5. Submitted: branch `bridge/bridge-20261030-wiring-integrity-glm31` ΓåÆ WO **#3319** / **PR #3320** (CI Guardian evaluates; no auto-close of #3316 ΓÇö its live-red half clears when #3257 lands, closure stays with the verdict plane).
++1. Picker: top solver candidates live-claimed / premise-delivered (#2360ΓåÆ#3290, #2756ΓåÆ#3346 demotions) ΓåÆ scout role assigned.
++2. Anti-stampede catch: hooksPath bootstrap idea **already landed** as R63-I/#2343 (closes #2420) ΓÇö withheld, zero duplicate filed.
++3. Finding filed from first-hand cycle-2 evidence: **scout(R81) #3368** ΓÇö `github.list_prs` has no single-PR addressability (`pull_number`) and no `sort` param (5-property schema census verbatim); #2567-class 5-old-PR re-verification had zero tower path ΓåÆ 403-limited anon fallback. Gold Pearl: ~30-line adapter passthrough to REST `GET /pulls/{n}` + sort; verdict ADOPT_IMMEDIATELY, `replicate_pattern`, target `infrastructure/mcp-control-plane/`.
++4. R81 allocation per the rule: freshness guard `--check` exit 0 (AΓÇôE OK); board sweep R81 = 0; row registration defers to the lane's first radar-doc PR per #2137 (issue-side adoption; no code edits this cycle).
+ 
+ ## Not done (honest bounds)
+ 
+-- #2567 / #2811 untouched beyond the guard's trail ΓÇö both actively served by other agents in-hour; duplicate filings withheld.
+-- #3316 left open intentionally (two-part finding: class fixed by PR #3320, instance cleared by #3257).
++- No solver WO claimed this cycle (all top candidates live-claimed; scout mandate forbids code edits) ΓÇö finding #3368 awaits its solver/adopter.
++- R81 registry row lands with the adopting PR, not this receipt.

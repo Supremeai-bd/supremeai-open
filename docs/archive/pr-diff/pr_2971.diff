@@ -1,0 +1,51 @@
+diff --git a/docs/reports/SENTRY_2009_PROVIDER_REPROBE_DAY2_2026-10-30.md b/docs/reports/SENTRY_2009_PROVIDER_REPROBE_DAY2_2026-10-30.md
+new file mode 100644
+index 00000000..d10f5cc9
+--- /dev/null
++++ b/docs/reports/SENTRY_2009_PROVIDER_REPROBE_DAY2_2026-10-30.md
+@@ -0,0 +1,45 @@
++# #2009 Sentry Series — Provider Re-Probe Day +2 (2026-10-30T01:15Z)
++
++- **Refs:** #2009 (platform-guardian provider sentry pass 2026-10-28 05:54Z) · #1852/#1934 series methodology · #1874 false-negative polarity family cross-check
++- **Provenance:** zero-credential HTTP probes, browser UA, 20s timeout, single wall-clock latency sample; probe evidence preserved agent-side at `scripts/guardian_probes_2009_day2.json` + `scripts/cycle_0905_reprobe_2009.py`; classification rules identical to the filing (any HTTP response = ALIVE, auth-walled 401/403/422 = healthy; 404 = EXCLUDED shape-not-death; DNS/timeout = DOWN). Claim `GRANT_TAKEOVER 2026-10-30T01:14:11Z` (prior zai-cron-agent-loop claim expired 1942m). Report-only addendum — the filing is a sentry receipt, not a defect claim; closure stays with the verdict plane/admin.
++
++## 1. Delta table — 2026-10-28 05:54Z filing vs 2026-10-30T01:15:01Z re-probe
++
++| probe | 10-28 result | 10-30 result | verdict (day +2) |
++|---|---|---|---|
++| gemini | 403, 77ms | 403, 87ms | ALIVE — stable |
++| groq | 403, 38ms | 403, 35ms | ALIVE — stable |
++| mistral | 401, 285ms | 401, 265ms | ALIVE — stable |
++| deepseek | 401, 187ms | 401, 146ms | ALIVE — stable |
++| openrouter | 200, 41ms | 200, 50ms | ALIVE — stable |
++| bynara | 401, 284ms | 401, 139ms | ALIVE — stable, 2× faster sample |
++| bai | 401, 122ms | 401, 113ms | ALIVE — stable |
++| v0 | 404, 1359ms | 404, 280ms | EXCLUDED — shape unchanged, **5th consecutive pass**; latency 4.9× improved |
++| core-api (`/health`) | 200, 93ms | 200, 103ms | ALIVE — RESOLVED contract **4th consecutive external confirmation** (#1874 → #1934 → filing → this pass) |
++| core-api (`HEAD /`) | 200, 102ms | 200, 143ms | ALIVE — edge serves fixed contract |
++| gateway shield (`/`) | 404 | 404, 225ms | consistent — excluded shape |
++| mcp-tower | 200, 90ms | 400, 80ms (GET on POST-only MCP endpoint) | ALIVE — any-HTTP rule; shape variance noted, no signal claimed |
++| duckduckgo lite | 202, 142ms | 200, 125ms | ALIVE — 202/200 both success-class, per filing |
++| PyPI | 200, 26ms | 200, 277ms | ALIVE — supply lane fresh |
++
++## 2. Headline (day +2)
++
++**7/8 AI providers alive — byte-for-byte consistent with the filing, and with the #1852 day +2 re-probe (#2961) run ~15 minutes earlier the same morning.** The production default fallback chain `gemini/gemini-2.5-flash → bynara/agnes-2.5-flash → bai/qwen3.8-flash` remains protocol-alive on all three lanes simultaneously; no provider degradation, no failover cause, nothing to escalate. The v0 route reproduces the identical 404 shape for the **5th consecutive pass** — roster confidence stays "unknown", and settling alive/dead still requires the key-holder authenticated GET suggested in #1852; the zero-credential lane cannot improve on that. Zero new degradations found, matching the filing's own verdict.
++
++## 3. #1874 polarity cross-check — third independent observation, now sub-hour cadence
++
++This pass adds a **within-session flag flip** datum to the false-negative polarity family:
++
++- **01:07:56Z tower `system_health` read:** `19 healthy · 2 degraded` — render-primary **degraded** (deployStatus `update_failed`, "Container running previous build, but latest deployment update_failed"), render-worker **degraded** (`update_failed`). This while the same session had already completed 20+ successful tower tool calls through the plane (all 200s, zero retries).
++- **01:15:09Z read (8 minutes later):** `20 healthy · 0 degraded · 1 unreachable` — render-primary and render-worker **healthy** (`build_in_progress`), render-mcp healthy (`live`). The degraded pair self-cleared without any admin action observed between the two reads.
++- Interpretation: the #1874 family documented primary/worker flags lagging reality at multi-hour cadence (#1934 → #2009 polarity flip across ~2.5h); this pass shows the flag set can flip **inside 8 minutes**, including a new one-shot `unreachable` position (telegram-primary, error `fetch failed`) that appeared and needs no failover cause — the tower kept serving agent traffic throughout both states. **No new degradation filed (anti-duplicate #1692); the telegram-primary flag is recorded here as a family datum for the next sentry pass to watch** (persistence across passes would make it ledger-worthy; a single one-shot read matches the false-negative pattern exactly).
++
++## 4. Standing notes carried forward
++
++- The filing's three outstanding asks all remain outside the zero-credential/envelope scope and are unchanged: v0 key-holder authenticated GET (#1852 suggestion), #1864 admin redeploy direction (primary/worker now observed mid-redeploy at 01:15Z — consistent with that direction being executed), #1874 tower-side flag semantics (this pass strengthens the evidence base, remedy stays tower-side).
++- Free-tier tracker: the filing recorded `freeLimitRemaining` 474.9 tracked-hours; not re-measured this pass (status plane read was consumed by the health sweep; no quota pressure signal observed either way).
++- mcp-tower GET-shape variance (400 vs 200): GET on a POST-only streamable-HTTP MCP endpoint is expected to reject; the filing's 200 suggests a different probe shape that morning. Both are ALIVE under the series rule; noted to keep the delta table honest.
++
++## Honest limitations
++
++Single-sample wall-clock latencies (no averaging); the two `system_health` reads 8 minutes apart are point-in-time snapshots, not continuous monitoring — the flip cadence is bounded by (≤8min), not pinned; zero-credential probes cannot distinguish auth-wall health from route-level functional health; v0 alive/dead remains unsettled by design of this lane; the telegram-primary `unreachable` read is one sample from the tower's own sweep plane (not independently probed — no Telegram side-channel in the zero-credential set).

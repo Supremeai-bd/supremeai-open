@@ -1,0 +1,345 @@
+diff --git a/studio/src/App.routes.test.tsx b/studio/src/App.routes.test.tsx
+new file mode 100644
+index 00000000..2d3e83c4
+--- /dev/null
++++ b/studio/src/App.routes.test.tsx
+@@ -0,0 +1,138 @@
++import React from 'react';
++import { render, screen, waitFor } from '@testing-library/react';
++import { MemoryRouter } from 'react-router-dom';
++import { describe, expect, it, vi } from 'vitest';
++import { App } from './App';
++
++vi.mock('./hooks/useServerStream', () => ({
++  useServerStream: () => ({ streamStatus: 'connected' }),
++}));
++
++vi.mock('./components/core/AuthGuards', () => ({
++  ProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++  GuestRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++  useAuthStatus: () => ({ isChecking: false, isAuthenticated: false }),
++  AuthLoadingSpinner: () => <div>Loading</div>,
++}));
++
++vi.mock('./services/apiClient', () => ({
++  getRawToken: () => null,
++  AUTH_CHANGED_EVENT: 'AUTH_CHANGED_EVENT',
++  apiClient: {
++    get: vi.fn().mockResolvedValue({ items: [], keys: [], total: 0 }),
++    post: vi.fn().mockResolvedValue({}),
++    put: vi.fn().mockResolvedValue({}),
++    delete: vi.fn().mockResolvedValue({}),
++  },
++}));
++
++vi.mock('./services/chatService', () => ({
++  getAethelResponse: vi.fn().mockResolvedValue(''),
++}));
++
++vi.mock('./contexts/useTheme', () => ({
++  useTheme: () => ({ theme: 'light', toggleTheme: vi.fn() }),
++}));
++
++vi.mock('./utils/api', () => ({
++  getApiBaseUrl: () => 'http://localhost:8000',
++  getBackendUrl: () => 'http://localhost:8000',
++  getWebSocketBaseUrl: () => 'ws://localhost:8000',
++  isAdminContextPath: () => false,
++}));
++
++vi.mock('./components/layout/CommandBar', () => ({ CommandBar: () => null }));
++vi.mock('./components/core/GlobalConfigInitializer', () => ({
++  GlobalConfigInitializer: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++}));
++vi.mock('./providers/ThemeSyncProvider', () => ({
++  ThemeSyncProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++}));
++vi.mock('./i18n/I18nProvider', () => ({
++  TranslationProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++}));
++vi.mock('./components/admin/DashboardErrorBoundary', () => ({
++  default: ({ children }: { children: React.ReactNode }) => <>{children}</>,
++}));
++vi.mock('./components/layout/WorkspaceLayout', () => ({
++  WorkspaceLayout: ({ children }: { children: React.ReactNode }) => <main>{children}</main>,
++}));
++vi.mock('./pages/PublicPages', () => ({
++  default: () => <div>Guest chat</div>,
++  GuestChat: () => <div>Guest chat</div>,
++  PublicLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
++  PublicHeader: () => null,
++  ModelsPage: () => <div>Models page</div>,
++  PublicInfoPage: ({ kind }: { kind: string }) => <div>{kind} page</div>,
++  PricingPage: () => <div>Pricing page</div>,
++  // Issue #1521/#1523/#1524 follow-up: /features /docs route to their own page
++  // components — distinct mocks keep the smoke tests honest.
++  FeaturesPage: () => <div>/features page</div>,
++  DocsPage: () => <div>/docs page</div>,
++}));
++// Refs #876 (router restoration): the Cosmic public funnel is now a distinct
++// page at / — mocked here so the route smoke suite stays hermetic.
++vi.mock('./pages/LandingPage', () => ({
++  LandingPage: () => <div>Landing page</div>,
++}));
++vi.mock('./pages/OurStoryPage', () => ({
++  OurStoryPage: () => <div>Our story page</div>,
++}));
++vi.mock('./pages/ErrorPage', () => ({ default: ({ code }: { code: number }) => <div> Error {code}</div> }));
++vi.mock('./pages/auth/LoginPage', () => ({ LoginPage: () => <div>Login page</div> }));
++vi.mock('./pages/auth/RegisterPage', () => ({ RegisterPage: () => <div>Register page</div> }));
++vi.mock('./pages/user/UserDashboard', () => ({ UserDashboard: () => <div>Dashboard</div> }));
++vi.mock('./components/customer/UserDashboard', () => ({ UserDashboard: () => <div>Dashboard</div> }));
++vi.mock('./routes/workspaceFeatureRoutes', () => ({ workspaceFeatureRoutes: [] }));
++vi.mock('./auth/identity', () => ({ resolveLandingPath: () => '/login' }));
++
++function renderRoute(path: string) {
++  return render(
++    <MemoryRouter initialEntries={[path]}>
++      <App />
++    </MemoryRouter>,
++  );
++}
++
++describe('application route smoke tests', () => {
++  it.each([
++    // Refs #876: '/' is the Cosmic landing page; guest chat lives at '/chat'.
++    ['/', 'Landing page'],
++    ['/chat', 'Guest chat'],
++    ['/features', '/features page'],
++    ['/models', 'Models page'],
++    ['/pricing', 'Pricing page'],
++    ['/docs', '/docs page'],
++    ['/about', 'Our story page'],
++    ['/contact', '/contact page'],
++    ['/login', 'Login page'],
++    ['/register', 'Register page'],
++  ])('renders the public route %s', async (path, expectedText) => {
++    renderRoute(path);
++    await waitFor(() => expect(screen.getByText(expectedText)).toBeInTheDocument());
++  });
++
++  it('renders the not-found page for an unknown route', async () => {
++    renderRoute('/does-not-exist');
++    await waitFor(() => expect(screen.getByText(/Error 404/)).toBeInTheDocument());
++  });
++
++  // বাংলা মন্তব্য: Task-12 ghost activation — KnowledgePage আগে কোনো route-এ
++  // mounted ছিল না; এখন /knowledge route প্রকৃত backend search/seed endpoint-এর
++  // সাথে wire করা হয়েছে। এই smoke test প্রমাণ করে route-টি সত্যিই reachable।
++  it('renders the knowledge route with real backend wiring (Task-12)', async () => {
++    renderRoute('/knowledge');
++    await waitFor(() =>
++      expect(screen.getByRole('heading', { name: 'Knowledge' })).toBeInTheDocument(),
++    );
++    expect(screen.getByTestId('seed-knowledge-btn')).toBeInTheDocument();
++    expect(screen.getByTestId('knowledge-search-input')).toBeInTheDocument();
++  });
++
++  // Refs #876 regression guard: the router must NEVER regress to a marketing-only
++  // subset again — with mocked guards, /workspace must render WorkspaceLayout.
++  it('keeps the authenticated workspace route mounted (P0 #876)', async () => {
++    const { container } = renderRoute('/workspace');
++    await waitFor(() => expect(container.querySelector('main')).toBeInTheDocument());
++  });
++});
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index f64d93f6..046cadee 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -1,22 +1,54 @@
+ /**
+  * SupremeAI Studio — Production Application Router & Public Landing Page
++ *
++ * RESTORATION (Refs #876, 2026-10-23): the Cosmic landing work had replaced this
++ * router with a marketing-only subset — /login, /register and the entire
++ * authenticated app became unreachable (silent `*` -> `/` bounce broke every
++ * auth button on production). The full route contract is restored below per
++ * App.routes.test.tsx; the Cosmic public funnel (/, /about, /chat) is KEPT and
++ * now EXTENDS the application instead of replacing it.
+  */
+-import React from "react";
+-import { Routes, Route, Navigate } from "react-router-dom";
++import React, { lazy, Suspense } from "react";
++import { Routes, Route } from "react-router-dom";
+ import "./styles/tokens.css";
+ import { GlobalConfigInitializer } from "./components/core/GlobalConfigInitializer";
++import { GuestRoute, ProtectedRoute } from "./components/core/AuthGuards";
++import { RoleGuard } from "./components/core/guards/RoleGuard";
++import { AdminHostEntry } from "./router/AdminHostEntry";
++import { ThemeSyncProvider } from "./providers/ThemeSyncProvider";
++import { TranslationProvider } from "./i18n/I18nProvider";
++import { WorkspaceLayout } from "./components/layout/WorkspaceLayout";
++import { CommandBar } from "./components/layout/CommandBar";
++import { workspaceFeatureRoutes } from "./routes/workspaceFeatureRoutes";
++import { useServerStream } from "./hooks/useServerStream";
++import { setupGlobalFetchInterceptor } from "./utils/apiInterceptor";
+ import { SatelliteMatrix } from "./components/SatelliteMatrix";
+ import { ConsensusWidget } from "./components/ConsensusWidget";
+ import { EmergencyConsole } from "./components/EmergencyConsole";
+ import { RunwayVisualizer } from "./components/RunwayVisualizer";
+ import { SwarmDefenseGauge } from "./components/SwarmDefenseGauge";
+-import { useServerStream } from "./hooks/useServerStream";
+-import { setupGlobalFetchInterceptor } from "./utils/apiInterceptor";
+ import type { SatelliteHealth, RunwayEntry, SwarmDefenseState } from "./types/federation";
+ 
+ import { LandingPage } from "./pages/LandingPage";
+ import { OurStoryPage } from "./pages/OurStoryPage";
+-import { GuestChat, PublicLayout, PublicHeader } from "./pages/PublicPages";
++import { GuestChat, PublicLayout, PublicHeader, ModelsPage, FeaturesPage, PricingPage, DocsPage, PublicInfoPage } from "./pages/PublicPages";
++import { LoginPage } from "./pages/auth/LoginPage";
++import { RegisterPage } from "./pages/auth/RegisterPage";
++import ErrorPage from "./pages/ErrorPage";
++import { KnowledgePage } from "./components/dashboard/KnowledgePage";
++
++// বাংলা মন্তব্য: ভারী authenticated pages lazy-load করা হলো — public bundle হালকা
++// থাকবে এবং route-smoke test-গুলো এই মডিউলগুলোর module-level side-effect থেকে
++// মুক্ত থাকবে। Named/default উভয় export shape সাপোর্ট করা হয়েছে।
++const UserDashboard = lazy(() =>
++  import("./components/customer/UserDashboard").then((m) => ({ default: m.UserDashboard ?? m.default })),
++);
++const AdminShell = lazy(() =>
++  import("./pages/admin/AdminShell").then((m) => ({ default: m.AdminShell ?? m.default })),
++);
++const AIStudio = lazy(() =>
++  import("./pages/user/AIStudio").then((m) => ({ default: m.AIStudio ?? m.default })),
++);
+ 
+ setupGlobalFetchInterceptor();
+ 
+@@ -29,7 +61,7 @@ const EMPTY_DEFENSE: SwarmDefenseState = {
+ 
+ export const OperatorCockpit: React.FC = () => {
+   const { streamStatus } = useServerStream();
+-  const [armed, setArmed] = React.useState(false);
++  const [armed] = React.useState(false);
+   const [satellites] = React.useState<SatelliteHealth[]>([]);
+   const [runway] = React.useState<RunwayEntry[]>([]);
+   const [defense] = React.useState<SwarmDefenseState>(EMPTY_DEFENSE);
+@@ -85,27 +117,96 @@ export const LiveChatPage: React.FC = () => (
+   </PublicLayout>
+ );
+ 
++const RouteFallback: React.FC = () => (
++  <div className="flex items-center justify-center min-h-screen bg-[var(--sa-bg-dark,#030712)] text-slate-400">
++    <div className="animate-pulse">Loading…</div>
++  </div>
++);
++
+ export const App: React.FC = () => {
+   return (
+     <GlobalConfigInitializer>
+-      <Routes>
+-        {/* Public Visitor Funnel */}
+-        <Route path="/" element={<LandingPage />} />
+-        <Route path="/about" element={<OurStoryPage />} />
+-        <Route path="/chat" element={<LiveChatPage />} />
+-        <Route path="/workspace/live" element={<LiveChatPage />} />
+-        <Route path="/live" element={<LiveChatPage />} />
+-        <Route path="/models" element={<LiveChatPage />} />
+-        <Route path="/pricing" element={<LiveChatPage />} />
+-
+-        {/* Operator / Internal Telemetry Cockpit */}
+-        <Route path="/cockpit" element={<OperatorCockpit />} />
+-        <Route path="/admin" element={<OperatorCockpit />} />
+-        <Route path="/telemetry" element={<OperatorCockpit />} />
+-
+-        {/* Fallback */}
+-        <Route path="*" element={<Navigate to="/" replace />} />
+-      </Routes>
++      <ThemeSyncProvider>
++        <TranslationProvider>
++          <AdminHostEntry>
++            {/* বাংলা: global CommandBar — App.tsx-এ একবারই মাউন্ট (PANEL_OPEN_EVENT contract) */}
++            <CommandBar />
++            <Routes>
++              {/* ═══ Public Visitor Funnel (Cosmic — Refs #859) ═══ */}
++              <Route path="/" element={<LandingPage />} />
++              <Route path="/about" element={<OurStoryPage />} />
++              <Route path="/chat" element={<LiveChatPage />} />
++              <Route path="/live" element={<LiveChatPage />} />
++
++              {/* ═══ Public feature/info pages (no auth wall) ═══ */}
++              <Route path="/features" element={<FeaturesPage />} />
++              <Route path="/models" element={<ModelsPage />} />
++              <Route path="/pricing" element={<PricingPage />} />
++              <Route path="/docs" element={<DocsPage />} />
++              <Route path="/contact" element={<PublicInfoPage kind="contact" />} />
++
++              {/* ═══ Knowledge (Task-12 — real backend wiring) ═══ */}
++              <Route path="/knowledge" element={<KnowledgePage />} />
++
++              {/* ═══ Auth (Refs #876 — these were MISSING and broke every auth button) ═══ */}
++              <Route path="/login" element={<GuestRoute><LoginPage /></GuestRoute>} />
++              <Route path="/register" element={<GuestRoute><RegisterPage /></GuestRoute>} />
++
++              {/* ═══ Authenticated workspace ═══ */}
++              <Route
++                path="/workspace"
++                element={
++                  <ProtectedRoute>
++                    <WorkspaceLayout>
++                      <Suspense fallback={<RouteFallback />}>
++                        <UserDashboard />
++                      </Suspense>
++                    </WorkspaceLayout>
++                  </ProtectedRoute>
++                }
++              />
++              <Route
++                path="/workspace/live"
++                element={
++                  <ProtectedRoute>
++                    <WorkspaceLayout>
++                      <Suspense fallback={<RouteFallback />}>
++                        <AIStudio />
++                      </Suspense>
++                    </WorkspaceLayout>
++                  </ProtectedRoute>
++                }
++              />
++
++              {/* ═══ Admin console (AdminShell — NOT OperatorCockpit; Refs #876) ═══ */}
++              <Route
++                path="/admin/*"
++                element={
++                  <ProtectedRoute>
++                    <RoleGuard requiredRole="admin">
++                      <Suspense fallback={<RouteFallback />}>
++                        <AdminShell />
++                      </Suspense>
++                    </RoleGuard>
++                  </ProtectedRoute>
++                }
++              />
++
++              {/* ═══ Operator / internal telemetry (cockpit stays internal-only) ═══ */}
++              <Route path="/cockpit" element={<OperatorCockpit />} />
++              <Route path="/telemetry" element={<OperatorCockpit />} />
++
++              {/* ═══ Tier-S feature routes — BEFORE the catch-all (per workspaceFeatureRoutes guide) ═══ */}
++              {workspaceFeatureRoutes.map((r, i) => (
++                <Route key={i} path={r.path!} element={r.element} />
++              ))}
++
++              {/* ═══ Honest catch-all 404 (silent '/' bounce hides routing bugs — #876) ═══ */}
++              <Route path="*" element={<ErrorPage code={404} />} />
++            </Routes>
++          </AdminHostEntry>
++        </TranslationProvider>
++      </ThemeSyncProvider>
+     </GlobalConfigInitializer>
+   );
+ };
+diff --git a/studio/src/pages/LandingPage.tsx b/studio/src/pages/LandingPage.tsx
+index c16e3ca2..dd7d4f9f 100644
+--- a/studio/src/pages/LandingPage.tsx
++++ b/studio/src/pages/LandingPage.tsx
+@@ -30,7 +30,7 @@ export const LandingHeader: React.FC = () => {
+         </button>
+         <button
+           type="button"
+-          onClick={() => navigate('/signup')}
++          onClick={() => navigate('/register')}
+           className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-1.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity"
+         >
+           Get Started

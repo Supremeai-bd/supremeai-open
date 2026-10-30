@@ -1,0 +1,15 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index c119e472..bfd68ab1 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -669,8 +669,8 @@ for line in $updates; do
+     # lesson). Warnings are inventory, never failures. Mapping contract for
+     # the registry plane (skills/schema.py SkillMetadata) lives in
+     # docs/AGENT_SKILLS_CONFORMANCE.md. Engages ONLY when the push touches
+-    # .agents/skills/; runs in CI for every push via the run_all_guards
+-    # roster. Wired additively after section 16 — no existing section is
++    # .agents/skills/; also wired into the every-push CI guard roster for
++    # roster-mode coverage. Wired additively after section 16 — no existing section is
+     # renumbered (the #2044 section-trail rule).
+     if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/skill_conformance_guard.py ]; then
+         if ZERO_TEST "$remote_sha"; then

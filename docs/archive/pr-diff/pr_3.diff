@@ -1,0 +1,17 @@
+diff --git a/examples/gateway_client.py b/examples/gateway_client.py
+index 194d02f8..fc575b0c 100644
+--- a/examples/gateway_client.py
++++ b/examples/gateway_client.py
+@@ -97,6 +97,12 @@ def chat(
+         except urllib.error.URLError as exc:
+             # বাংলা: নেটওয়ার্ক-স্তরের ব্যর্থতা = অপ্রাপ্যতা, retry-যোগ্য
+             last = GatewayUnavailable(f"network: {exc.reason}", 503)
++        except (json.JSONDecodeError, OSError) as exc:
++            # READ-PHASE FIX (2026-10-09): পড়া-পর্বের ব্যর্থতা — read/decode timeout
++            # (socket.timeout/TimeoutError), ConnectionResetError, truncated body
++            # (→ JSONDecodeError) — এরা URLError নয়, আগে uncaught escape করত এবং
++            # retry-চুক্তি (শুধু 502/503) পেত না। চুক্তি অনুযায়ী এরাও 503-family।
++            last = GatewayUnavailable(f"read: {exc}", 503)
+         if attempt < retries:
+             time.sleep(RETRY_BACKOFF_S * (attempt + 1))
+     raise last if last else GatewayError("unreachable", None)

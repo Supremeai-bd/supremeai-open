@@ -1,0 +1,403 @@
+diff --git a/scripts/ci/radar_index_freshness_guard.py b/scripts/ci/radar_index_freshness_guard.py
+index 87557aa5..392fc7e6 100644
+--- a/scripts/ci/radar_index_freshness_guard.py
++++ b/scripts/ci/radar_index_freshness_guard.py
+@@ -28,10 +28,17 @@
+     - ratcheted   — A/B সব ব্যর্থতা + docs/** ghost citation: fail-closed;
+                     baseline (shrink-only) কখনো বাড়ে না।
+     - report_only — vendored .agents/skills/** citation (কখনো agent-fix নয়)।
+-    Invariant D (issue-body citation scan) GitHub API চায় — online হলে
+-    report-only, কখনো মিথ্যা PASS তৈরি করে না; offline এ এটি honest-skip
+-    (#1760 doctrine)। Landing-order rebase (pass-9-এর D) প্রক্রিয়া-নিয়ম —
+-    static check নয়, docstring-এ নথিভুক্ত।
++    D  commit-subject — সাম্প্রতিক squash-merge subject-এ এমন R-citation
++       যার registry row নেই (#2187 offline port; জন্মে floor ফাঁকা —
++       first-run-clean, shrink-only)।
++
++Invariant D-এর পুরনো রূপ (issue-body citation scan, "GitHub API চায়") ইতিহাসে
++গেছে — #2127-এর state-plane আর squash subject-এ WO শিরোনাম থাকায় offline
++git-subject স্ক্যানই যথেষ্ট (#2187); online variant ভবিষ্যৎে report-only
++agent-plane-এ যেতে পারে, guard binary-তে কখনো নয় (Never-do: কোনো network)।
++git অনুপস্থিত হলে D honest-skip (#1760) — কখনো মিথ্যা PASS তৈরি করে না।
++Landing-order rebase (pass-9-এর D) প্রক্রিয়া-নিয়ম — static check নয়,
++docstring-এ নথিভুক্ত।
+ 
+ Modes:
+     --check        roster mode: full sweep vs baseline (default)
+@@ -56,6 +63,7 @@
+ import json
+ import os
+ import re
++import shutil
+ import subprocess
+ import sys
+ import tempfile
+@@ -84,9 +92,19 @@
+ # Pointer-context phrase (stripped before token scans so the pointer's own
+ # advertisement and the drift-log "moves next free to R<n>" advances never
+ # self-trip the scans — a counter statement is never a lane citation).
++# #2187 Finding 3: the gap widens `\s` -> `[-\s]` — the HYPHENATED form
++# "next-free R53" (the real shape of landed subjects #2172/#2178) used to
++# escape the stripper and would have flagged the pointer advance itself as a
++# ghost citation of R53 — a false positive authored by the registration
++# contract's own tickets. Gap/bold-tolerance stay byte-identical.
+ POINTER_PHRASE_RE = re.compile(
+-    r"next\s+free[^R\n]{0,14}?\*{0,2}R\d{1,3}\*{0,2}(?:\s*\([^)]*\))?"
++    r"next[-\s]free[^R\n]{0,14}?\*{0,2}R\d{1,3}\*{0,2}(?:\s*\([^)]*\))?"
+ )
++# Commit-plane scan depth for invariant D (#2187): ~a day of bridge landings
++# at the current squash rate; evidence/key truncation mirrors
++# _git_head_provenance's 96-char subject slice.
++SUBJECT_WINDOW = 60
++SUBJECT_SLICE = 96
+ # Registry rows: "| R37 | ..." or "| R23-**V** | ..." (column 1 of §1 table).
+ REGISTRY_ROW_RE = re.compile(r"^\|\s*R([1-9]\d{0,2})(?:-\*{0,2}(V|VI|c)\*{0,2})?\s*\|", re.MULTILINE)
+ # Any uppercase R-citation, optional -V/-VI/-c suffix ("R23-VI", "R26-c").
+@@ -233,8 +251,72 @@ def invariant_c(
+     return findings, report_only
+ 
+ 
++def scan_subjects(subjects: list[str], bases: set[int]) -> list[dict]:
++    """Pure core of invariant D (#2187) — commit-plane ghost detection.
++
++    বাংলা: প্রতিটি squash-merge subject থেকে pointer-প্রসঙ্গ বাদ দিয়ে
++    (strip_pointer_phrases) R-token স্ক্যান — registry-তে নেই এমন base =
++    commit-subject-ghost। বিশুদ্ধ ফাংশন রাখা হয়েছে যাতে hermetic self-test
++    subprocess ছাড়াই হুবহু প্রোডাকশন-লজিক চালাতে পারে; invariant_d শুধু
++    git-সংগ্রহের মোড়ক।
++    """
++    findings: list[dict] = []
++    seen: set[str] = set()
++    for raw in subjects:
++        subject = " ".join(raw.split())[:SUBJECT_SLICE]
++        if not subject or subject in seen:
++            continue
++        seen.add(subject)
++        for m in R_TOKEN_RE.finditer(strip_pointer_phrases(subject)):
++            base = int(m.group(1))
++            if base in bases:
++                continue
++            findings.append({
++                "kind": "commit-subject-ghost",
++                "subject": subject,
++                "token": m.group(0),
++                "base": base,
++            })
++    return findings
++
++
++def invariant_d(root: Path, bases: set[int]) -> tuple[list[dict], bool]:
++    """Offline invariant D — commit-subject ghost scan over the landing window (#2187).
++
++    বাংলা: ৫টি collision (R37/R39/R45/R51/R52) সবাই commit-plane-এ ঘটেছিল —
++    মুহূর্তে একমাত্র প্রমাণ ছিল issue body আর squash subject, কোনো .md নয়,
++    তাই A/B/C সবাই অন্ধ ছিল। #2091-এর D-প্রেমিস ("GitHub API চায়") সময়ের
++    সাথে পুরোনো হয়েছে: squash subject-এ WO শিরোনাম থাকেই, আর git guard-এর
++    কাছে আগেই আছে (_git_head_provenance subprocess ব্যবহার করে)। তাই
++    offline subprocess-ই যথেষ্ট — guard-এর Never-do (কোনো network) অক্ষত।
++
++    চুক্তি (three-state, #1760 doctrine):
++    - git অনুপস্থিত/ব্যর্থ → honest-skip: ( ফাঁকা, ran=False ) — কখনো মিথ্যা
++      PASS তৈরি করে না, পরের রান আবার চেষ্টা করবে;
++    - ran=True → scan_subjects-এর ফল; জন্মে floor ফাঁকা (first-run-clean) —
++      shrink-only ratchet শুধু ভবিষ্যৎ unregistered landing-এ ফায়ার করবে।
++    """
++    try:
++        proc = subprocess.run(
++            ["git", "log", f"-n{SUBJECT_WINDOW}", "--format=%s"],
++            cwd=str(root), capture_output=True, text=True, timeout=10,
++        )
++    except (OSError, subprocess.SubprocessError):
++        _evidence("SKIP invariant D: git unavailable (hermetic offline) — honest-skip, no fabricated PASS")
++        return [], False
++    if proc.returncode != 0:
++        first = (proc.stderr.strip().splitlines() or ["unknown"])[0][:80]
++        _evidence(f"SKIP invariant D: git log failed ({first}) — honest-skip, no fabricated PASS")
++        return [], False
++    return scan_subjects(proc.stdout.splitlines(), bases), True
++
++
+ def key_of(f: dict) -> tuple:
+     kind = f.get("kind", "citation-ghost")
++    if kind == "commit-subject-ghost":
++        # Landed squash subjects are immutable — (kind, base, subject) is a
++        # stable ratchet key; each landing is its own floor entry.
++        return (kind, f.get("base"), f.get("subject", ""))
+     if kind in ("anchor-ghost", "duplicate-row"):
+         return (kind, f["token"])
+     if kind in ("pointer-taken", "pointer-cited-in-index", "pointer-missing"):
+@@ -287,7 +369,13 @@ def compare(baseline: dict, findings: list[dict]) -> tuple[list[dict], list[dict
+ def render(
+     a: list[dict], b: list[dict], cits: list[dict], report_only: list[dict],
+     drift: list[dict], improvements: list[dict], pointer: int | None,
++    d: list[dict] | None = None, d_ran: bool = False,
+ ) -> None:
++    if d is None:
++        d = []
++    for f in d:
++        _evidence(f"D-FAIL commit-subject-ghost: recent subject '{f['subject']}' cites "
++                  f"{f['token']} — no registry row for R{f['base']} (#2187 commit-plane)")
+     for it in improvements:
+         _evidence(f"SHRUNK {it['kind']} key={it['key']} {it['allowed']}->{it['now']} "
+                   "(shrink the baseline entry in this same change)")
+@@ -324,8 +412,13 @@ def render(
+         _evidence(f"FAIL {len(a) + len(b) + len(unpinned)} invariant finding(s), {len(drift)} ratchet drift — the floor may never grow")
+     elif a or b or unpinned:
+         _evidence("FAIL radar-index freshness invariants violated (see A-FAIL/B-FAIL/C-FAIL lines)")
++    elif d:
++        _evidence(f"PINNED {len(d)} commit-subject ghost(s) in the landing window — "
++                  "pre-existing debt, shrink-only (#2187); register the row to shrink")
++    elif d_ran:
++        _evidence("OK invariant D: recent commit subjects carry no unregistered R-token (commit-plane clean, #2187)")
+     else:
+-        _evidence("OK invariants A/B/C hold; registry, pointer and docs citations agree")
++        _evidence("OK invariants A/B/C hold; registry, pointer and docs citations agree (D honest-skipped: no git)")
+ 
+ 
+ def sweep(
+@@ -340,9 +433,13 @@ def sweep(
+     a = invariant_a(text, tokens)
+     b = invariant_b(text, root, tokens, bases, pointer)
+     cits, report_only = invariant_c(root, bases, pointer, only_files)
++    # #2187: invariant D rides the same sweep — global commit-plane scan,
++    # not scoped to --files (pre-push content limits stay A/B/C-scoped).
++    ghosts, d_ran = invariant_d(root, bases)
+     rows_range = (min(bases), max(bases)) if bases else None
+     return {"pointer": pointer, "a": a, "b": b, "cits": cits,
+-            "report_only": report_only, "rows": rows_range}
++            "report_only": report_only, "rows": rows_range,
++            "d": ghosts, "d_ran": d_ran}
+ 
+ 
+ def self_test() -> bool:
+@@ -351,6 +448,18 @@ def self_test() -> bool:
+     F2/F3/F4 replay the three logged same-day collisions (passes 3/4/6):
+     each synthetic index advertises a next-free number that its own registry
+     has already consumed; the guard must FAIL naming that exact R-number.
++
++    #2187 additions:
++    F13 (#2187 Finding 3): the widened stripper must clean the hyphenated
++    pointer form "next-free R53" carried by real landed subjects (#2172/
++    #2178) — pre-widening, the registration contract's own tickets would
++    have self-tripped as ghost citations of R53.
++    F14: end-to-end invariant_d over a real (local, throwaway) git history —
++    an unregistered landing subject is named; the hyphenated pointer subject
++    stays clean; git-less sandboxes honest-skip.
++    F15: the real-subject corpus (#2145/#2165/#2178/#2184 shapes) resolves
++    against the full registry — the shrink-only floor stays empty at birth.
++    F16: pure-core ghost detection names token and base.
+     """
+     ok = True
+ 
+@@ -481,6 +590,59 @@ def index(pointer: int, rows: list[int], anchors: str = "", extra_body: str = ""
+     r = sweep(root)
+     check("F12-vendored-report-only", not r["cits"] and len(r["report_only"]) == 1)
+ 
++    # ---- #2187: invariant D — the commit-plane scans ----------------------
++    # F13: hyphenated pointer form in real landed subjects must NOT ghost.
++    ghosts = scan_subjects(["guard(docs): register R52 row + next-free R53 (#2172)"], {52})
++    check("F13-hyphen-pointer-subject-clean", ghosts == [])
++    ghosts = scan_subjects(["pass 11 — moves next free to **R53** (verified free repo-wide)"], set())
++    check("F13b-bold-advance-still-clean", ghosts == [])
++    ghosts = scan_subjects(["radar R53 filed from the advertised slot"], set())
++    check("F13c-nonpointer-R53-still-ghosts", any(f["base"] == 53 for f in ghosts))
++
++    # F14: end-to-end invariant_d on a throwaway local git history.
++    if shutil.which("git"):
++        root = tree({INDEX_REL: index(53, [1, 52])})
++
++        def git(*a: str) -> None:
++            subprocess.run(["git", *a], cwd=str(root), capture_output=True, text=True, check=False)
++
++        git("init", "-q")
++        git("config", "user.email", "hermetic@example")
++        git("config", "user.name", "hermetic")
++        (root / "seed.txt").write_text("one\n", encoding="utf-8")
++        git("add", "-A")
++        git("commit", "-qm", "guard(docs): register R52 row + next-free R53 (#2172)")
++        (root / "seed.txt").write_text("two\n", encoding="utf-8")
++        git("add", "-A")
++        git("commit", "-qm", "feat: unregistered R97 lane landing")
++        ghosts, ran = invariant_d(root, {1, 52})
++        check("F14a-commit-plane-ran", ran)
++        check("F14b-ghost-named-with-token-base",
++              any(f["base"] == 97 and f["token"] == "R97" and "unregistered R97 lane landing" in f["subject"]
++                  for f in ghosts))
++        check("F14c-hyphen-pointer-subject-clean", not any(f["base"] == 53 for f in ghosts))
++    else:
++        print("PASS F14a-commit-plane-ran (SKIPPED: git unavailable)")
++        print("PASS F14b-ghost-named-with-token-base (SKIPPED: git unavailable)")
++        print("PASS F14c-hyphen-pointer-subject-clean (SKIPPED: git unavailable)")
++
++    # F15: real-subject corpus resolves against the full registry —
++    # first-run-clean property, no baseline seeding needed.
++    corpus = [
++        "guard(docs): R51 registration per #2137 (#2145)",
++        "feat(docs): scout(R52 option A) — register the lane (#2165)",
++        "guard(docs): register R52 row + next-free R53 (#2172)",
++        "fix(ci): #2180 - baseline provenance were frozen literals (#2184)",
++        "a10: receipt eleven (run 5077) - standing trip-wire repeat fire",
++    ]
++    check("F15-real-corpus-resolves-floor-born-empty",
++          scan_subjects(corpus, set(range(1, 53))) == [])
++
++    # F16: pure-core ghost detection names token and base exactly once.
++    ghosts = scan_subjects(["feat: unregistered R97 lane landing"], {1})
++    check("F16-commit-subject-ghost-found",
++          len(ghosts) == 1 and ghosts[0]["base"] == 97 and ghosts[0]["token"] == "R97")
++
+     print(f"{'SELF-TEST OK: radar_index_freshness_guard' if ok else 'SELF-TEST FAILED: radar_index_freshness_guard'}")
+     return ok
+ 
+@@ -521,7 +683,9 @@ def build_baseline(root: Path) -> dict:
+         "generatedAt": datetime.now(timezone.utc).date().isoformat(),
+         "headAtGeneration": _git_head_provenance(root),
+         "probe": "scripts/ci/radar_index_freshness_guard.py",
+-        "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. "
++        "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes "
++                "(#2187: D lands first-run-clean — its floor is born empty); "
++                "key = [kind, file, base] / [kind, base, subject]. "
+                 "A/B invariant violations are NEVER floorable — they are structural and always fail.",
+         "floor": [{"key": list(k), "allowed": v} for k, v in sorted(counts.items(), key=lambda kv: repr(kv[0]))],
+         "pointerAtGeneration": r["pointer"],
+@@ -532,7 +696,7 @@ def build_baseline(root: Path) -> dict:
+ 
+ 
+ def main() -> int:
+-    parser = argparse.ArgumentParser(description="R48 radar-index freshness gate (#2091)")
++    parser = argparse.ArgumentParser(description="R48 radar-index freshness gate (#2091, +#2187 commit-plane D)")
+     parser.add_argument("--check", action="store_true", help="roster mode: full sweep (default)")
+     parser.add_argument("--files", nargs="*", help="pre-push mode: restrict content scans to these files")
+     parser.add_argument("--baseline", action="store_true", help="print freshly swept baseline JSON")
+@@ -573,18 +737,23 @@ def main() -> int:
+         return 1
+ 
+     baseline = load_baseline(root)
+-    drift, improvements = compare(baseline, r["cits"])
++    # #2187: invariant D joins the SAME shrink-only ratchet — commit-subject
++    # keys are never in the born-empty floor, so any ghost is fresh drift,
++    # and a registered row (base now in the registry) makes it vanish.
++    drift, improvements = compare(baseline, r["cits"] + r["d"])
+ 
+     if args.json:
+         print(json.dumps({
+             "guard": GUARD_TAG, "pointer": r["pointer"],
+             "a": r["a"], "b": r["b"], "citationGhosts": r["cits"],
++            "commitSubjectGhosts": r["d"], "commitPlaneScanned": r["d_ran"],
+             "reportOnly": r["report_only"], "drift": drift,
+             "improvements": improvements,
+             "verdict": "fail" if (r["a"] or r["b"] or drift) else "pass",
+         }, indent=2, ensure_ascii=False))
+     else:
+-        render(r["a"], r["b"], r["cits"], r["report_only"], drift, improvements, r["pointer"])
++        render(r["a"], r["b"], r["cits"], r["report_only"], drift, improvements, r["pointer"],
++               d=r["d"], d_ran=r["d_ran"])
+     return 1 if (r["a"] or r["b"] or drift) else 0
+ 
+ 
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index 149e93bf..ae012219 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -37,6 +37,7 @@
+ 
+ import json
+ import re
++import shutil
+ import subprocess
+ import sys
+ import tempfile
+@@ -268,6 +269,93 @@ def test_git_provenance_fallback_hermetic() -> None:
+     assert guard._git_head_provenance(tmp) == "unknown (git unavailable at generation)"
+ 
+ 
++
++# --------------------------------------------------------------------------- #
++# #2187 — invariant D: commit-plane ghost scan (offline, first-run-clean)      #
++# --------------------------------------------------------------------------- #
++
++def test_hyphenated_pointer_form_is_stripped() -> None:
++    # Finding 3: "next-free R53" (real landed subjects #2172/#2178) used to
++    # escape the stripper; the widened `next[-\s]free` gap cleans it, while a
++    # non-pointer R53 mention still ghosts.
++    assert guard.scan_subjects(
++        ["guard(docs): register R52 row + next-free R53 (#2172)"], {52}) == []
++    assert guard.scan_subjects(
++        ["pass 11 — moves next free to **R53** (verified free repo-wide)"], set()) == []
++    ghosts = guard.scan_subjects(["radar R53 filed from the advertised slot"], set())
++    assert any(f["base"] == 53 and f["kind"] == "commit-subject-ghost" for f in ghosts)
++
++
++def test_real_subject_corpus_resolves_floor_born_empty() -> None:
++    corpus = [
++        "guard(docs): R51 registration per #2137 (#2145)",
++        "feat(docs): scout(R52 option A) — register the lane (#2165)",
++        "guard(docs): register R52 row + next-free R53 (#2172)",
++        "fix(ci): #2180 - baseline provenance were frozen literals (#2184)",
++        "a10: receipt eleven (run 5077) - standing trip-wire repeat fire",
++    ]
++    assert guard.scan_subjects(corpus, set(range(1, 53))) == []
++
++
++def test_commit_subject_ghost_named() -> None:
++    ghosts = guard.scan_subjects(["feat: unregistered R97 lane landing"], {1})
++    assert len(ghosts) == 1
++    assert ghosts[0]["base"] == 97 and ghosts[0]["token"] == "R97"
++    assert guard.key_of(ghosts[0]) == ("commit-subject-ghost", 97,
++                                       "feat: unregistered R97 lane landing")
++
++
++def test_invariant_d_end_to_end_on_throwaway_git_history() -> None:
++    if not shutil.which("git"):
++        return  # honest-skip mirrors the guard's own git-less doctrine
++    root = make_tree({guard.INDEX_REL: index_doc(53, [1, 52])})
++
++    def git(*a: str) -> None:
++        subprocess.run(["git", *a], cwd=str(root), capture_output=True, text=True, check=False)
++
++    git("init", "-q")
++    git("config", "user.email", "hermetic@example")
++    git("config", "user.name", "hermetic")
++    (root / "seed.txt").write_text("one\n", encoding="utf-8")
++    git("add", "-A")
++    git("commit", "-qm", "guard(docs): register R52 row + next-free R53 (#2172)")
++    (root / "seed.txt").write_text("two\n", encoding="utf-8")
++    git("add", "-A")
++    git("commit", "-qm", "feat: unregistered R97 lane landing")
++    ghosts, ran = guard.invariant_d(root, {1, 52})
++    assert ran
++    assert any(f["base"] == 97 for f in ghosts)
++    assert not any(f["base"] == 53 for f in ghosts)  # hyphenated pointer stays clean
++
++
++def test_invariant_d_honest_skip_without_git() -> None:
++    tmp = Path(tempfile.mkdtemp(prefix="rifg-nogit-"))
++    ghosts, ran = guard.invariant_d(tmp, {1})
++    # In a git-less dir the subprocess fails -> honest-skip, never a fake PASS.
++    if ran:  # sandbox has git but the dir is not a repo — skip is still honest
++        assert ghosts == [] or all(f["base"] not in {1} for f in ghosts)
++    else:
++        assert ghosts == []
++
++
++def test_invariant_d_joins_ratchet_as_fresh_drift() -> None:
++    ghosts = [guard_scan := {"kind": "commit-subject-ghost", "subject": "feat: R97 lane",
++                             "token": "R97", "base": 97}]
++    baseline = {"schema": "radar-index-freshness-baseline/1", "floor": []}
++    drift, _ = guard.compare(baseline, ghosts)
++    assert len(drift) == 1 and drift[0]["kind"] == "new"
++    # Registering the row makes the base resolve — the finding vanishes and
++    # the floor entry (never written) stays unborn: first-run-clean holds.
++    assert guard.scan_subjects(["feat: R97 lane"], {97}) == []
++
++
++def test_sweep_carries_commit_plane_fields() -> None:
++    root = make_tree({guard.INDEX_REL: index_doc(4, [1])})
++    r = guard.sweep(root)
++    assert "d" in r and "d_ran" in r
++    assert isinstance(r["d"], list)
++
++
+ # --------------------------------------------------------------------------- #
+ # stdlib plain runner                                                          #
+ # --------------------------------------------------------------------------- #

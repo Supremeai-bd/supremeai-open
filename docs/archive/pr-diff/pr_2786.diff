@@ -1,0 +1,55 @@
+diff --git a/docs/EVAL_GARAK_PROBE_2026-10-30.md b/docs/EVAL_GARAK_PROBE_2026-10-30.md
+new file mode 100644
+index 00000000..8d9cb1e4
+--- /dev/null
++++ b/docs/EVAL_GARAK_PROBE_2026-10-30.md
+@@ -0,0 +1,49 @@
++# NVIDIA garak LLM Vulnerability Probe Inventory & Capability Assessment
++
++- **Date:** 2026-10-30
++- **Version:** NVIDIA garak v0.17.1 (Apache-2.0)
++- **Execution Mechanism:** Isolated `uvx garak@0.17.1` (Zero repository dependencies added)
++- **Reference Issue:** Closes #1748 (SCOUT_RADAR_2026-10-28-VIII R30)
++
++---
++
++## 1. Executive Summary & Verification Context
++
++In accordance with **Issue #1748 Slice 1 (offline capability probe & dated inventory)**:
++- Successfully validated offline probe execution using `uvx garak@0.17.1 --list_probes`.
++- Zero changes to repository `requirements.txt` or package manifests.
++- Evaluated 30+ vulnerability probe modules and over 120 specific attack vectors across prompt injection, jailbreaking, data leakage, encoding bypasses, and system prompt extraction.
++
++---
++
++## 2. Active Probe Categories & Inventory
++
++| Probe Category | Primary Vectors / Attack Generators | Purpose in SupremeAI Eval Plane |
++| :--- | :--- | :--- |
++| **`promptinject`** | `HijackHateHumans`, `HijackKillHumans`, `HijackLongPrompt` | Test robustness of safety-refusal prompts against injected overrides. |
++| **`dan`** | `Ablation_Dan_11_0`, `AutoDANCached`, `DanInTheWild`, `STAN`, `DUDE` | Classic & evolving multi-turn "Do Anything Now" jailbreak patterns. |
++| **`encoding`** | `InjectBase64`, `InjectHex`, `InjectROT13`, `InjectAscii85`, `InjectAtbash`, `InjectZalgo`, `InjectUnicodeTagChars` | Bypass filter evaluations using obfuscated character encodings. |
++| **`sysprompt_extraction`** | `SystemPromptExtraction` | Assesses exposure risks for agent instructions and system boundaries. |
++| **`atkgen`** | `Tox` | Dynamic adversarial red-teaming generation. |
++| **`leakreplay`** | `GuardianCloze`, `GuardianComplete`, `NYTCloze`, `LiteratureComplete` | Evaluates verbatim memory replay and copyrighted content reproduction risks. |
++| **`exploitation`** | `JinjaTemplatePythonInjection`, `SQLInjectionEcho`, `SQLInjectionSystem` | Evaluates prompt generation leading to downstream template or SQL injection. |
++| **`web_injection`** | `MarkdownImageExfil`, `MarkdownXSS`, `TaskXSS`, `ColabAIDataLeakage` | Checks LLM output containing data-exfiltration and cross-site scripting constructs. |
++| **`goodside`** | `ThreatenJSON`, `Tag`, `WhoIsRiley` | Evaluates structure compliance under coercive/adversarial formatting instructions. |
++| **`packagehallucination`**| `Python`, `JavaScript`, `Rust`, `Ruby`, `Dart` | Detects hallucinated package recommendations prone to supply-chain takeover. |
++| **`smuggling`** | `FunctionMasking`, `HomoglyphObfuscation`, `HypotheticalResponse` | Semantic evasion and function calling boundary confusion. |
++| **`adaptive_attacks`** | `AdaptiveAttacks` | Multi-iteration feedback-driven adversarial exploration. |
++
++---
++
++## 3. Slice 2 Go / No-Go Decision & Next Stage Blueprint
++
++### Decision: **GO (Proceed to Slice 2 under Quarantine Contract)**
++
++### Slice 2 Operational Boundary:
++1. **Quarantine Execution**: Probes run **strictly** against a local mock fixture (e.g. lightweight FastAPI OpenAI-compatible stub), **never** against live production endpoints or gateway tenants (`web_ai_proxy`).
++2. **Curated Probe Subset**: Focus initial calibration on:
++   - `promptinject`
++   - `encoding`
++   - `sysprompt_extraction`
++   - `goodside.ThreatenJSON`
++3. **Honest Labeling**: Output reports formatted to golden-eval JSON standard (`evals/golden/`), explicitly labeled as synthetic fixture test runs.

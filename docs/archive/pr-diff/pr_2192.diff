@@ -1,0 +1,268 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index 666603b3..8339f899 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -71,7 +71,18 @@
+                    (the merged-row half closed with the feedback-plane
+                    reader); the classification logic is proven hermetically
+                    and on the real #1972/#2158 data fed directly
+-                   (integration runs, 2026-10-28).
++                   (integration runs, 2026-10-28). The queued half of the
++                   omission class is covered too (#2190): the queue-
++                   integrity plane enumerates open `bridge:queued` rows
++                   from the same label plane and diffs BOTH directions
++                   against the listing Tower serves (missing-from-listing,
++                   phantom-in-listing) — disclosure-only, since queued rows
++                   can be mid-transition and joining them could resurrect
++                   work another plane owns. Live motivation (2026-10-28,
++                   #2173): a landed-and-merged WO stayed `bridge:queued`
++                   yet absent from an untruncated 16-18-row listing while
++                   bridge_work_order confirmed it — the integrity line is
++                   the only place such a row surfaces.
+ 
+ Modes:
+   --self-test   hermetic verdict-matrix proof (fixture WOs/history/flight;
+@@ -219,6 +230,7 @@ def _fetch_work_orders(fetch_text=_tower_text) -> tuple:
+ # ── rejected plane: GitHub-side enumeration of rows the queue omits (#2158) ──
+ 
+ REJECTED_LABEL = "bridge:rejected"
++QUEUED_LABEL = "bridge:queued"
+ 
+ 
+ def _load_reference_module():
+@@ -244,22 +256,21 @@ def _github_get_json(url: str, timeout: int = 20):
+         return json.loads(resp.read().decode("utf-8"))
+ 
+ 
+-def _fetch_rejected_rows(fetch_json=_github_get_json,
+-                         max_pages: int | None = None) -> list[dict]:
+-    """Enumerate open `bridge:rejected` issues straight from GitHub.
++def _fetch_label_rows(label: str, fetch_json=_github_get_json,
++                      max_pages: int | None = None) -> list[dict]:
++    """Enumerate open issues carrying `label` straight from GitHub.
+ 
+-    The queue omits rejected WOs (#1972 was absent from bridge_work_queue;
+-    live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
+     The S05 r2 contract (build_queue_query SSOT) forbids single-page
+     fetches — pages until a short page or the MAX_PAGES cap, number-dedupe
+-    merged. Rows come back in normalize_queue shape, ready for
+-    run_verdicts' existing rejected-row branch (zero new verdict classes).
++    merged. Rows come back in normalize_queue shape. Shared core for the
++    rejected plane (bridge:rejected) and the queue-integrity cross-check
++    (bridge:queued, #2190).
+     """
+     pages = max(1, max_pages if max_pages is not None else _REF.QUEUE_MAX_PAGES)
+     rows: list[dict] = []
+     seen: set = set()
+     for page in range(1, pages + 1):
+-        q = _REF.build_queue_query(REJECTED_LABEL, page=page)
++        q = _REF.build_queue_query(label, page=page)
+         payload = fetch_json(q["url"])
+         if not isinstance(payload, list):
+             raise TypeError(
+@@ -275,6 +286,18 @@ def _fetch_rejected_rows(fetch_json=_github_get_json,
+     return rows
+ 
+ 
++def _fetch_rejected_rows(fetch_json=_github_get_json,
++                         max_pages: int | None = None) -> list[dict]:
++    """Enumerate open `bridge:rejected` issues straight from GitHub.
++
++    The queue omits rejected WOs (#1972 was absent from bridge_work_queue;
++    live #2158: landed #2020/#2056 stamped rejected and queue-invisible).
++    Rows are ready for run_verdicts' existing rejected-row branch (zero new
++    verdict classes)."""
++    return _fetch_label_rows(REJECTED_LABEL, fetch_json=fetch_json,
++                             max_pages=max_pages)
++
++
+ def _load_rejected_plane(fetch_rows=_fetch_rejected_rows) -> tuple:
+     """Per-plane fail-open: an unreachable GitHub plane degrades THIS plane
+     only (honest note), never the queue plane, never a fake empty truth.
+@@ -301,6 +324,43 @@ def _join_rejected_plane(work_orders: list[dict], rejected_rows: list[dict]) ->
+     return work_orders + merged, len(merged)
+ 
+ 
++def _check_queue_integrity(listing_numbers: set, label_numbers: set) -> tuple:
++    """Both directions of label-plane vs listing divergence (#2190).
++
++    missing = open `bridge:queued` on GitHub yet absent from the tower
++    listing — queued work the board cannot see (live: #2173 landed on main
++    while listed nowhere). phantom = listed by the tower yet absent from
++    the GitHub label plane — the listing source diverged. Disclosure-only
++    by design: unlike rejected rows (terminal, queue-omitted BY DESIGN), a
++    queued row can be mid-transition (claim-label lag is structural per
++    the #2182 plane watch), so these rows do NOT join the verdict payload
++    — the line discloses exact numbers; bridge_work_order resolves each.
++    """
++    missing = sorted(label_numbers - listing_numbers)
++    phantom = sorted(listing_numbers - label_numbers)
++    return missing, phantom
++
++
++def _load_queue_integrity(listing_numbers: set,
++                          fetch_rows=_fetch_label_rows) -> tuple:
++    """Fail-open like the rejected plane: an unreachable GitHub label plane
++    degrades this disclosure only, never the queue plane, with the same
++    cause-level 403 note (per-IP unauthenticated budget, shared egress)."""
++    try:
++        rows = fetch_rows(QUEUED_LABEL)
++    except urllib.error.HTTPError as err:
++        if err.code == 403:
++            return None, ("unreachable (HTTP 403 — unauthenticated GitHub API "
++                          "rate limit for this egress IP (shared egress may "
++                          "exhaust it continuously); budget resets hourly)")
++        return None, f"unreachable (HTTP {err.code})"
++    except Exception as err:  # noqa: BLE001 — one plane down is a disclosed skip
++        return None, f"unreachable ({err.__class__.__name__})"
++    missing, phantom = _check_queue_integrity(
++        set(listing_numbers), {r.get("number") for r in rows})
++    return (len(rows), missing, phantom), "ok"
++
++
+ # ── pure verdict core (hermetically testable) ────────────────────────────────
+ 
+ def extract_slugs(title: str) -> list[str]:
+@@ -813,6 +873,47 @@ def _fb(n, latest):
+     cases.append(("enrich stamped object surfaces its token",
+                   vs[0]["tower_unstamped"] is False
+                   and vs[0]["tower_verdict"] == "MERGED_ON_MAIN", str(vs[0])))
++    # queue-integrity plane (#2190): label-plane vs listing divergence
++    missing, phantom = _check_queue_integrity({5}, {5, 9, 11})
++    cases.append(("integrity missing direction",
++                  missing == [9, 11] and phantom == [],
++                  f"m={missing} p={phantom}"))
++    missing, phantom = _check_queue_integrity({5, 7}, {5})
++    cases.append(("integrity phantom direction",
++                  missing == [] and phantom == [7],
++                  f"m={missing} p={phantom}"))
++    qpage = [{"number": 9, "title": "queued", "state": "open",
++              "labels": ["bridge:queued"]}]
++
++    def _fake_queued(url):
++        assert "labels=bridge%3Aqueued" in url, url
++        return qpage  # short page -> single-page enumeration
++
++    qrows = _fetch_label_rows(QUEUED_LABEL, fetch_json=_fake_queued)
++    cases.append(("label core parameterizes the queued label",
++                  len(qrows) == 1 and qrows[0]["number"] == 9,
++                  f"n={len(qrows)}"))
++    (q_n, q_missing, q_phantom), q_note = _load_queue_integrity(
++        {5, 9}, fetch_rows=lambda label: qpage)
++    cases.append(("integrity ok-path diffs both directions",
++                  q_note == "ok" and q_n == 1 and q_missing == []
++                  and q_phantom == [5], f"m={q_missing} p={q_phantom}"))
++
++    def _q_ratelimited(label):
++        raise urllib.error.HTTPError("https://api.github.com/x", 403,
++                                     "rate limit exceeded", None, None)
++
++    qi, q_note = _load_queue_integrity({5}, fetch_rows=_q_ratelimited)
++    cases.append(("integrity 403 discloses cause, unchecked never empty",
++                  qi is None and "rate limit" in q_note
++                  and "resets hourly" in q_note, f"note={q_note}"))
++
++    def _q_down(label):
++        raise ConnectionError("nope")
++
++    qi, q_note = _load_queue_integrity({5}, fetch_rows=_q_down)
++    cases.append(("integrity per-plane fail-open",
++                  qi is None and "unreachable" in q_note, f"note={q_note}"))
+     return cases
+ 
+ 
+@@ -844,10 +945,33 @@ def main(argv: list[str] | None = None) -> int:
+ 
+     rung_s = "default" if queue_rung is None else str(queue_rung)
+     print(f"QUEUE PLANE: {len(wos)} rows (limit rung {rung_s})")
++    listing_numbers = {w.get("number") for w in wos}
+     rejected_rows, rejected_note = _load_rejected_plane()
+     wos, rejected_joined = _join_rejected_plane(wos, rejected_rows)
+     print(f"REJECTED PLANE: {len(rejected_rows)} open '{REJECTED_LABEL}' rows "
+           f"enumerated ({rejected_joined} queue-omitted joined; {rejected_note})")
++    integrity, integrity_note = _load_queue_integrity(listing_numbers)
++    if integrity is None:
++        print(f"QUEUE INTEGRITY: unchecked ({integrity_note})")
++    else:
++        label_n, missing, phantom = integrity
++        shape = (f"{label_n} '{QUEUED_LABEL}' label rows vs "
++                 f"{len(listing_numbers)} listing rows")
++        if not missing and not phantom:
++            print(f"QUEUE INTEGRITY: {shape} — consistent")
++        else:
++            bits = []
++            if missing:
++                head = ", ".join(f"#{n}" for n in missing[:10])
++                if len(missing) > 10:
++                    head += f" (+{len(missing) - 10} more)"
++                bits.append(f"{len(missing)} missing from listing: {head}")
++            if phantom:
++                head = ", ".join(f"#{n}" for n in phantom[:10])
++                if len(phantom) > 10:
++                    head += f" (+{len(phantom) - 10} more)"
++                bits.append(f"{len(phantom)} phantoms: {head}")
++            print(f"QUEUE INTEGRITY: {shape} — " + "; ".join(bits))
+     now = time.mktime(time.gmtime())
+     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
+     verdicts = refine_satellites(verdicts)
+diff --git a/tests/test_bridge_landing_watchdog.py b/tests/test_bridge_landing_watchdog.py
+index ef6ce80b..58ddae09 100644
+--- a/tests/test_bridge_landing_watchdog.py
++++ b/tests/test_bridge_landing_watchdog.py
+@@ -466,6 +466,56 @@ def server_error():
+     assert rows == [] and "HTTP 500" in note
+ 
+ 
++def test_queue_integrity_both_directions():
++    """missing = queued-on-GitHub absent from listing (#2173 class);
++    phantom = listed but absent from the label plane."""
++    mod = _load_watchdog_module()
++    missing, phantom = mod._check_queue_integrity({5}, {5, 9, 11})
++    assert missing == [9, 11] and phantom == []
++    missing, phantom = mod._check_queue_integrity({5, 7}, {5})
++    assert missing == [] and phantom == [7]
++
++
++def test_fetch_label_rows_parameterizes_label():
++    """The shared core must carry the requested label into the query URL."""
++    page = [{"number": 9, "title": "queued", "state": "open",
++             "labels": ["bridge:queued"]}]
++
++    def fake(url):
++        assert "labels=bridge%3Aqueued" in url, url
++        return page
++
++    mod = _load_watchdog_module()
++    rows = mod._fetch_label_rows(mod.QUEUED_LABEL, fetch_json=fake)
++    assert len(rows) == 1 and rows[0]["number"] == 9
++
++
++def test_load_queue_integrity_ok_and_fail_open():
++    """OK path diffs both directions; 403 is by-cause; other failures
++    degrade this disclosure only (per-plane fail-open)."""
++    import urllib.error
++
++    mod = _load_watchdog_module()
++    page = [{"number": 9, "title": "queued", "state": "open",
++             "labels": ["bridge:queued"]}]
++    (n, missing, phantom), note = mod._load_queue_integrity(
++        {5, 9}, fetch_rows=lambda label: page)
++    assert note == "ok" and n == 1 and missing == [] and phantom == [5]
++
++    def ratelimited(label):
++        raise urllib.error.HTTPError("https://api.github.com/x", 403,
++                                     "rate limit exceeded", None, None)
++
++    res, note = mod._load_queue_integrity({5}, fetch_rows=ratelimited)
++    assert res is None and "rate limit" in note and "resets hourly" in note
++
++    def down(label):
++        raise ConnectionError("nope")
++
++    res, note = mod._load_queue_integrity({5}, fetch_rows=down)
++    assert res is None and "unreachable" in note
++
++
+ if __name__ == "__main__":
+     failures = 0
+     for name, fn in sorted(globals().items()):

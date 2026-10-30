@@ -1,0 +1,138 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 50d311a5..94cf877d 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -227,6 +227,47 @@ def sync_workflows(src_wf_dir: Path, target_wf_dir: Path) -> None:
+                 print(f"⚠️ Could not delete stale workflow file {t_file.name}: {e}")
+ 
+ 
++def prune_domain_self_shadows(satellite_root: Path, domain_name: str, mirror_root: Path) -> list[str]:
++    """(#1676 root cause) Fail-closed guard against domain self-shadow duplicates.
++
++    A satellite that receives a domain mirror must never carry a top-level
++    directory named after the domain itself (e.g. supremeai-studio:/studio/):
++    the satellite root IS the domain, so a nested same-name directory can only
++    be a stale sync artifact, and tooling resolving the nested path reads
++    different content than the canonical root file (split-brain). The generic
++    sync uses prune=False for the domain root tree (satellites legitimately own
++    mirror-extraneous files such as Dockerfile/nginx.conf), so nothing else
++    ever removes these orphans once created — this guard closes that gap for
++    every satellite, permanently.
++
++    1. Start-gate (fail-closed): if the mirror in supremeai-open itself contains
++       a top-level `<domain_name>/` directory, raise — the contamination must be
++       fixed in the open mirror before any sync can proceed.
++    2. Satellite cleanup: remove `satellite_root/<domain_name>/` entirely and
++       return the removed paths, so every future sync run heals the satellite
++       instead of silently preserving stale duplicates.
++    """
++    removed: list[str] = []
++    mirror_shadow = mirror_root / domain_name
++    if mirror_shadow.is_dir():
++        raise RuntimeError(
++            f"#1676 self-shadow guard: mirror '{mirror_root.name}/{domain_name}/' contains "
++            f"a top-level copy of its own domain name — remove the nested directory from "
++            f"the supremeai-open mirror before syncing {domain_name}."
++        )
++    shadow_root = satellite_root / domain_name
++    if shadow_root.exists():
++        for path in sorted(shadow_root.rglob("*")):
++            if path.is_file():
++                removed.append(str(path.relative_to(satellite_root)))
++        shutil.rmtree(shadow_root, ignore_errors=True)
++        print(
++            f"🧹 [#1676] Removed stale self-shadow domain copy '{domain_name}/' from "
++            f"satellite ({len(removed)} files) — satellite root is the canonical surface."
++        )
++    return removed
++
++
+ def sync_satellite(
+     target_repo: str,
+     source_dir: str,
+@@ -364,6 +405,15 @@ def sync_satellite(
+             if dom_wf_src.exists():
+                 sync_workflows(dom_wf_src, tmp_repo / ".github" / "workflows")
+ 
++        # (#1676 root cause) Domain self-shadow guard — fail-closed on mirror
++        # contamination, heal stale nested same-name copies on every satellite.
++        shadow_removed = prune_domain_self_shadows(tmp_repo, source_dir, src_path)
++        if shadow_removed:
++            print(
++                f"🧹 [#1676] Pruned self-shadow copies from {target_repo}: "
++                + ", ".join(shadow_removed)
++            )
++
+         # Copy contract mirror pairs specific to this satellite
+         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
+             if sat_repo == target_repo:
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index 2bbba7b5..eaf5f440 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -48,6 +48,65 @@ def test_detect_changed_targets_empty(self, mock_run):
+     def test_deploy_targets_omits_skip_ci(self):
+         self.assertIn("Supremeai-bd/supremeai-studio", sync_mod.DEPLOY_TARGETS)
+ 
++    # --- (#1676 root cause) domain self-shadow guard -------------------
++
++    def test_self_shadow_cleanup_removes_nested_domain_copy(self):
++        import tempfile
++
++        with tempfile.TemporaryDirectory() as tmp:
++            satellite = sync_mod.Path(tmp) / "sat"
++            mirror = sync_mod.Path(tmp) / "mirror"
++            (satellite / "studio" / "src" / "utils").mkdir(parents=True)
++            (satellite / "studio" / "package.json").write_text("{}")
++            (satellite / "studio" / "src" / "utils" / "api.ts").write_text("x")
++            (satellite / "src" / "utils").mkdir(parents=True)
++            (satellite / "src" / "utils" / "api.ts").write_text("root")
++            (satellite / "infrastructure" / "proxy").mkdir(parents=True)
++            (satellite / "infrastructure" / "proxy" / "wrangler.toml").write_text("k")
++            mirror.mkdir()
++            removed = sync_mod.prune_domain_self_shadows(satellite, "studio", mirror)
++            self.assertIn("studio/package.json", removed)
++            self.assertIn("studio/src/utils/api.ts", removed)
++            self.assertFalse((satellite / "studio").exists())
++            # canonical root files and legitimate satellite-only dirs survive
++            self.assertTrue((satellite / "src" / "utils" / "api.ts").exists())
++            self.assertTrue((satellite / "infrastructure" / "proxy" / "wrangler.toml").exists())
++
++    def test_self_shadow_noop_when_absent(self):
++        import tempfile
++
++        with tempfile.TemporaryDirectory() as tmp:
++            satellite = sync_mod.Path(tmp) / "sat"
++            mirror = sync_mod.Path(tmp) / "mirror"
++            satellite.mkdir()
++            mirror.mkdir()
++            self.assertEqual(
++                sync_mod.prune_domain_self_shadows(satellite, "studio", mirror), []
++            )
++
++    def test_self_shadow_start_gate_fails_closed_on_mirror_contamination(self):
++        import tempfile
++
++        with tempfile.TemporaryDirectory() as tmp:
++            satellite = sync_mod.Path(tmp) / "sat"
++            mirror = sync_mod.Path(tmp) / "mirror"
++            satellite.mkdir()
++            (mirror / "studio").mkdir(parents=True)
++            with self.assertRaises(RuntimeError):
++                sync_mod.prune_domain_self_shadows(satellite, "studio", mirror)
++
++    def test_self_shadow_guard_covers_all_domain_map_entries(self):
++        # The mirror itself never carries a same-name nested dir (verified
++        # live 2026-10-30: studio/core/gateway/browser/vscode all 0), so the
++        # fail-closed start-gate must be safe for every satellite.
++        for source_dir in sync_mod.DOMAIN_MAP.values():
++            self.assertEqual(
++                sync_mod.prune_domain_self_shadows(
++                    sync_mod.Path("/nonexistent-sat"), source_dir, sync_mod.Path("/nonexistent-mirror")
++                ),
++                [],
++            )
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

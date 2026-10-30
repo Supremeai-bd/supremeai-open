@@ -1,0 +1,102 @@
+diff --git a/gateway/config.py b/gateway/config.py
+index a24091fd..a4135b3f 100644
+--- a/gateway/config.py
++++ b/gateway/config.py
+@@ -4,9 +4,10 @@
+ - One SUPREMEAI_API_KEY consumer credential (X-SupremeAI-Key header);
+   provider credentials never leave the server side (OpenAPI §security).
+ - Routing policy is config-driven (``routing_policy.json``), validated
+-  fail-closed at startup: closed provider enum (the 7-provider SSOT from
+-  api-schemas/task-router.schema.json / provider-registry.schema.json),
+-  non-empty ordered chains, positive rate-limit numbers. Unknown providers,
++  fail-closed at startup: closed provider enum (gateway-plane superset of
++  the agent router's task-router.schema.json enum — its 7 schema providers
++  plus the gateway-only ``web`` and ``perplexity`` drivers), non-empty
++  ordered chains, positive rate-limit numbers. Unknown providers,
+   empty chains, or negative limits REJECT the config — the gateway refuses
+   to boot on drift (fail-closed doctrine, mirrors #330's config gate).
+ 
+@@ -38,8 +39,15 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-# Provider SSOT — closed enum byte-matched to api-schemas/task-router.schema.json
+-# (providerId pattern SSOT'd in provider-registry.schema.json).
++# Gateway-plane provider enum (fail-closed). SUPERSET of the agent router's
++# task-router.schema.json enum (the 7 schema providers also mirrored in
++# scripts/agents/dynamic_router.py): "web" and "perplexity" are gateway-only
++# providers with live drivers under gateway/service/providers/ (web_session.py,
++# adapters.py PROVIDER_CONFIGS/PROVIDER_MODEL_CASCADES) and hops in the shipped
++# routing_policy.json. When the runtime grows a driver, extend THIS enum in the
++# same change — a validator copy that lags the runtime makes load_config()
++# refuse the repo's own policy (drift class F-J: perplexity hop crashed the
++# gateway boot, caught by tests/test_gateway_foundation.py, fixed 2026-10-28).
+ ALLOWED_PROVIDERS: frozenset[str] = frozenset(
+     {
+         "openai",
+@@ -50,6 +58,7 @@
+         "mistral",
+         "deepseek",
+         "web",
++        "perplexity",
+     }
+ )
+ 
+diff --git a/gateway/tests/test_streaming_gateway.py b/gateway/tests/test_streaming_gateway.py
+index 3c5456b8..f0de061a 100644
+--- a/gateway/tests/test_streaming_gateway.py
++++ b/gateway/tests/test_streaming_gateway.py
+@@ -690,6 +690,11 @@ def drift(mutate):
+ 
+ 
+ def test_config_provider_enum_matches_task_router_ssot():
++    # Gateway-plane enum = task-router.schema.json's 7 schema providers
++    # PLUS the gateway-only providers with live drivers + policy hops:
++    # "web" (web_session.py) and "perplexity" (adapters.py, sonar cascade).
++    # A copy that lags the runtime makes load_config() reject the shipped
++    # routing_policy.json (drift class F-J, 2026-10-28) — extend, don't lag.
+     assert ALLOWED_PROVIDERS == frozenset(
+         {
+             "openai",
+@@ -700,6 +705,7 @@ def test_config_provider_enum_matches_task_router_ssot():
+             "mistral",
+             "deepseek",
+             "web",
++            "perplexity",
+         }
+     )
+ 
+diff --git a/tests/test_gateway_foundation.py b/tests/test_gateway_foundation.py
+index 8affeaa7..1bd41864 100644
+--- a/tests/test_gateway_foundation.py
++++ b/tests/test_gateway_foundation.py
+@@ -1,7 +1,8 @@
+ """tests/test_gateway_foundation.py — 3-tier verification (tier 3, unit).
+ 
+ Tests the SupremeAI Unified Gateway router foundation (issue #511):
+-- Config parsing, SSOT provider validation (7 allowed providers) & drift rejection.
++- Config parsing, gateway-plane provider enum validation (schema 7 + gateway-only
++  web & perplexity drivers) & drift rejection.
+ - Sliding window rate limiting: remaining tokens, reset epoch, retry-after.
+ - Provider failover chain: deterministic sequential attempt, fallback on 429/503,
+   and failover exhaustion with honest transition ledger.
+@@ -38,6 +39,11 @@
+ 
+ class TestGatewayConfig(unittest.TestCase):
+     def test_allowed_providers_ssot(self):
++        # Gateway-plane enum = task-router.schema.json's 7 schema providers
++        # PLUS the gateway-only providers with live drivers + policy hops:
++        # "web" (web_session.py) and "perplexity" (adapters.py, sonar cascade).
++        # A copy that lags the runtime makes load_config() reject the shipped
++        # routing_policy.json (drift class F-J, 2026-10-28) — extend, don't lag.
+         expected = {
+             "openai",
+             "anthropic",
+@@ -47,6 +53,7 @@ def test_allowed_providers_ssot(self):
+             "mistral",
+             "deepseek",
+             "web",
++            "perplexity",
+         }
+         self.assertEqual(ALLOWED_PROVIDERS, frozenset(expected))
+ 

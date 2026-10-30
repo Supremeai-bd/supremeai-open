@@ -1,0 +1,183 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index b0e6c3bb..706ecf13 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -268,30 +268,99 @@ def resolve_group(explicit: str | None, task: dict[str, Any] | None = None) -> s
+     return DEFAULT_GROUP
+ 
+ 
+-def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
+-    """Build the Single Deterministic Task Envelope (#63).
+-
+-    One canonical JSON payload that replaces the four legacy output formats:
+-      1. multi-step console logs   -> problem_statement + objective fields
+-      2. --emit-prompt markdown    -> specialist_prompt field
+-      3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
+-      4. .pr_template_draft.md     -> submission.pr_body_template field
++def build_pr_body(
++    task: dict[str, Any],
++    contract: dict[str, Any] | None = None,
++    evidence: list[dict[str, Any]] | None = None,
++) -> str:
++    """Single construction site for the PR submission record (#114).
++
++    One builder, two renderings of the SAME skeleton (same sections, same
++    order):
++      - ``build_pr_body(task, contract)`` — the envelope's ``submission.pr_body_template``
++        (four static section headers; no contract snippet, no evidence block).
++      - ``build_pr_body(task, contract, evidence)`` — the exact body
++        ``--auto-pr`` submits via ``gh pr create --body`` (adds the Task
++        Contract YAML snippet and the Dynamic Test Evidence block between
++        Type of Change and Rollback Path).
++
++    Closing-keyword doctrine (U8, #219, #220): the Merge Gate overrides the
++    squash commit subject, so ``Closes #N`` must ride in the PR body (and in
++    the branch commit message) to survive into the final squash commit
++    message — ``Refs #N`` alone can never auto-close the linked issue.
+     """
+-    tc = contract["task_contract"]
++    tc = (contract or {}).get("task_contract", {})
+     issue_ref = tc.get("issue") or task.get("id")
+-    pr_body_template = f"""## Summary
++    # Emit `Closes #N` only for a real board issue — "adhoc" tasks carry no
++    # closing intent (no board issue exists to close).
++    closing_line = (
++        f"Closes #{issue_ref}\n"
++        if issue_ref and str(issue_ref).strip() and str(issue_ref).lower() != "adhoc"
++        else ""
++    )
++
++    contract_yaml_snippet = ""
++    if contract and evidence is not None:
++        contract_yaml_snippet = f"""
++### Task Contract Snapshot (reproducibility & governance)
++```yaml
++task_contract:
++  task_id: {tc.get('task_id')}
++  task_type: {tc.get('task_type')}
++  group: {tc.get('group')}
++  priority: {tc.get('priority')}
++  role: {tc.get('role_policy')}
++  scope:
++    touching_files: {json.dumps(tc.get('scope', {}).get('touching_files', []))}
++    forbidden_paths: {json.dumps(tc.get('scope', {}).get('forbidden_paths', []))}
++  admin_gate:
++    required: {str(tc.get('admin_gate', {}).get('required', False)).lower()}
++    status: {tc.get('admin_gate', {}).get('status', 'NOT_REQUIRED')}
++  role_policy: {tc.get('role_policy')}
++```
++"""
++
++    evidence_block = ""
++    if evidence is not None:
++        evidence_lines = []
++        for ev in (evidence or []):
++            status_icon = "✅" if ev.get("passed") else "❌"
++            extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
++            verdict = "PASS" if ev.get("passed") else "FAIL"
++            if not ev.get("passed") and ev.get("reason"):
++                extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
++            evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
++        evidence_content = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
++        evidence_block = f"""
++## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
++{evidence_content}
++"""
++
++    return f"""## Summary
+ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
+ 
+ ## Linked Issue / Claim
+-Closes #{issue_ref}
+-Refs #{issue_ref}
++{closing_line}Refs #{issue_ref}
+ 
+ ## Type of Change
+ - [x] `feat` / `fix` / `docs` — Open contributor change
+-
++{contract_yaml_snippet}{evidence_block}
+ ## Rollback Path
+ - [x] `git revert`-safe (no private state dependencies)
+ """
++
++
++def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any]) -> dict[str, Any]:
++    """Build the Single Deterministic Task Envelope (#63).
++
++    One canonical JSON payload that replaces the four legacy output formats:
++      1. multi-step console logs   -> problem_statement + objective fields
++      2. --emit-prompt markdown    -> specialist_prompt field
++      3. --emit-contract raw JSON  -> embedded contract fields (group/scope/admin_gate)
++      4. .pr_template_draft.md     -> submission.pr_body_template field
++    """
++    tc = contract["task_contract"]
++    pr_body_template = build_pr_body(task, contract=contract)
+     return {
+         "task_envelope": {
+             "envelope_version": ENVELOPE_VERSION,
+@@ -761,61 +830,10 @@ def step_7_record(
+ ) -> bool:
+     """Step 7: Prepare PR body with dynamic test evidence and submit PR."""
+     log("📝", "[Step 7/8: Record] Generating Universal PR Template...")
+-    issue_num = task.get("id", "adhoc")
+-    
+-    contract_yaml_snippet = ""
+-    if contract and "task_contract" in contract:
+-        tc = contract["task_contract"]
+-        contract_yaml_snippet = f"""
+-## Task Contract (§7 AGENT_RULES.md)
+-```yaml
+-task_contract:
+-  version: {tc.get('version', 1)}
+-  task_id: "{tc.get('task_id')}"
+-  issue: "{tc.get('issue')}"
+-  task_type: {tc.get('task_type')}
+-  group: {tc.get('group')}
+-  priority: {tc.get('priority')}
+-  objective: "{tc.get('objective')}"
+-  scope:
+-    touching_files: {json.dumps(tc.get('scope', {}).get('touching_files', []))}
+-    forbidden_paths: {json.dumps(tc.get('scope', {}).get('forbidden_paths', []))}
+-  admin_gate:
+-    required: {str(tc.get('admin_gate', {}).get('required', False)).lower()}
+-    status: {tc.get('admin_gate', {}).get('status', 'NOT_REQUIRED')}
+-  role_policy: {tc.get('role_policy')}
+-```
+-"""
+-
+-    evidence_lines = []
+-    for ev in (evidence or []):
+-        status_icon = "✅" if ev.get("passed") else "❌"
+-        extra = f" ({ev.get('count')} files verified)" if "count" in ev else ""
+-        # #89: verdict text MUST derive from the recorded result — a skipped or
+-        # failed tier renders FAIL with its reason, never a hardcoded PASS
+-        # (AGENT_RULES.md §13 fake-pass-status ban).
+-        verdict = "PASS" if ev.get("passed") else "FAIL"
+-        if not ev.get("passed") and ev.get("reason"):
+-            extra = f"{extra} (skipped: {ev['reason']})" if ev.get("skipped") else f"{extra} ({ev['reason']})"
+-        evidence_lines.append(f"- {status_icon} **{ev.get('name')}:** {verdict}{extra}")
+-    evidence_block = "\n".join(evidence_lines) if evidence_lines else "- ✅ All verification tiers passed."
+-
+-    pr_body = f"""## Summary
+-Autonomous contribution for issue #{issue_num}: {task.get('title')}.
+-
+-## Linked Issue / Claim
+-Closes #{issue_num}
+-Refs #{issue_num}
+-
+-## Type of Change
+-- [x] `feat` / `fix` / `docs` — Open contributor change
+-{contract_yaml_snippet}
+-## Dynamic Test Evidence (verification tiers — SSOT: docs/AGENT_LOOP_SPEC.md §4)
+-{evidence_block}
+-
+-## Rollback Path
+-- [x] `git revert`-safe (no private state dependencies)
+-"""
++    # #114: single construction site — build_pr_body() renders the exact
++    # skeleton the envelope's submission.pr_body_template carries, plus the
++    # contract YAML snippet and the dynamic evidence block for --auto-pr.
++    pr_body = build_pr_body(task, contract=contract, evidence=evidence)
+ 
+     # #63: no intermediate filesystem draft — the PR body goes inline to gh,
+     # and agents consuming the Task Envelope get the same template via

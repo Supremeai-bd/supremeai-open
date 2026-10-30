@@ -1,0 +1,103 @@
+diff --git a/docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md b/docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md
+new file mode 100644
+index 00000000..79e08034
+--- /dev/null
++++ b/docs/reports/CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md
+@@ -0,0 +1,97 @@
++# CI 4617 — U4 Anti-Duplicate Guard / Auto-Landing Disconnect
++
++- **Lane**: `bridge-20261028-u4-dupguard-race` (solver on self-filed finding #1990, P3-low)
++- **Discovered**: 2026-10-28 cycle 13:20+08 (Job 478330), while sweeping board truth after a loop "clean" verdict
++- **Verdict**: PR-lane failure with **zero live damage** but a **structural enforceability gap** in the U4 (no-duplicate-PR) invariant: the Anti-Duplicate PR Guard failed on PR #1979's pipeline run and the very same run's Autonomous Auto-Landing job executed the squash-merge anyway, because `duplicate-pr-guard` is absent from the landing job's `needs` list.
++- **Disposition**: report-only single additive doc (this file). The guard, the landing job, and any workflow change live in `.github/workflows/pipeline.yml` — protected path, admin-gated per the #1769/#1822 precedent (re-affirmed by WO #1912 recert lane #1973). Nothing in this lane touches protected paths.
++
++---
++
++## 1. Verdict summary
++
++| Question | Answer |
++|---|---|
++| What failed | Job `👥 Anti-Duplicate PR Guard` (`duplicate-pr-guard`) in PR #1979's pipeline run #4617 (id 40636808713, event `pull_request`, head sha `59364cf`) |
++| Failure line | `::error::Competing PR detected! Another open PR already targets #1916.` / `Conflicting PR: PR #1917 (branch: bridge-20261028-browser-webbotauth-probe)` at `2026-10-28T05:14:27.386Z` |
++| Root cause (mechanical) | Two legitimate PRs carried `Closes #1916` in their bodies at the same moment (see §5); the guard's match rule flags any other **open** PR whose title/body contains `closes|fixes|resolves #N` for an issue this PR targets |
++| Root cause (structural) | `duplicate-pr-guard` is **not in `auto-landing`'s `needs`** — a guard failure cannot block the squash-merge (§4). The failing run landed the PR itself |
++| Was the flagged competitor real? | **No collision of deliverables.** #1917 (satellite-lane vehicle, RFC 9421 web-bot-auth probe) and #1979 (watchdog FP fix) are different works sharing one WO number; both lanes completed green (§5, §6) |
++| Repo damage | None. #1979 landed as 9e6bbc9; post-merge main run 4618 (push, 9e6bbc9) = success; #1916's actual fixer landed and the live reclassification (`SATELLITE_TARGET`, risk=0) is on main |
++| Fix ownership | Admin-gated (workflow source). Agent-actionable part = this receipt + the hardening proposals in §7 |
++
++## 2. Receipt timeline (UTC, 2026-10-28)
++
++| Time | Event | Source |
++|---|---|---|
++| ≤ 04:11:34 | Last visible activity on PR #1917's page (created 02:43:34Z). Page later reads **merged**, yet no commit from #1917 exists in ANY open-repo branch under any merge strategy (all `refs/heads/*` fetched; greps for `(#1917)`, `webbotauth`, bare `1917`, and a `--merges` sweep return only *other* PRs citing the lane) | PR page + local git over all remote heads |
++| 05:14:14 | Run 4614 (push, `bfd0cd6`, main) success | Tower `github_workflow_runs` |
++| 05:14:16 | Run 4615 (push, `2406203` — PR #1979's earlier head) **cancelled** | same |
++| 05:14:19 | Run 4616 (push, `59364cf` — final head) starts. Event `push` ⇒ guard job skipped (`if:` gate), auto-landing skipped (event gate). Completes **success** | same + pipeline.yml source |
++| 05:14:22 | Run 4617 (event `pull_request`, same sha `59364cf`) starts | Tower |
++| 05:14:27.386 | 4617's `duplicate-pr-guard` FAILS: competitor PR #1917 flagged against target `#1916` | Tower `github_get_failed_logs` (repo+runId explicit) |
++| ~05:15:1x–2x | 4617's `auto-landing` job fires (its 7 `needs` all green; guard not among them) and executes the squash-merge | pipeline.yml source + merge outcome |
++| 05:15:26 | Run 4618 (push, `9e6bbc9`, main) starts — post-merge main pipeline; success by 05:15:55 | Tower |
++| ~05:24 | Parallel lane b4f7bb2 (PR #1982) lands a stale-closeout triage closing #1897 + #1933 — unrelated scope, no overlap with this finding | main history |
++
++Why no auto-mirror exists for this failure: the failure-ingress dispatch ("Trigger Federation CI Watchdog on Failure") is a step inside the `auto-landing` job gated `if: failure()` — the landing job **succeeded** in run 4617 (it merged), so the run-level failure (the guard) produced no dispatch, no issue, no WO. This report is the only receipt.
++
++## 3. Guard anatomy (pipeline.yml, `duplicate-pr-guard`, L305–367)
++
++The job is gated `if: github.event_name == 'pull_request'` (L307). Its detection logic, verbatim semantics:
++
++1. **Escape hatch**: `guard-exempt` label skips the job.
++2. **Own targets**: `TARGET_ISSUES` = explicit `Closes|Fixes|Resolves #N` matches in the PR's own title/body; `BRANCH_ISSUES` = `issue-N` tokens in the branch name; fallback to any `#N` reference if both are empty.
++3. **Competitor scan**: `gh pr list --state open --json number,title,body,headRefName` — a **live snapshot** of every other open PR at execution time.
++4. **Match rule** per target issue `#N`: competitor's title/body contains `closes|fixes|resolves #N` (whole-token, the #120 fix) **OR** competitor's branch name contains digit token `N` with non-digit boundaries. First match wins; `exit 1`.
++
++Two properties matter for this finding: the match surface includes **plain closing references in other PRs' bodies** (semantic-free — it cannot distinguish a true fixer from a lane-bookkeeping closer), and the whole check is a **point-in-time snapshot** (the verdict is only as fresh as the listing).
++
++## 4. Auto-landing anatomy — the disconnect (pipeline.yml, `auto-landing`, L794–806)
++
++```yaml
++auto-landing:
++  name: "🛬 Autonomous Auto-Landing"
++  needs: [branch-naming-guard, claim-guard, boundary_sanitization_guard,
++          test-matrix, secrets-scan, mcp-tower, studio-verification]
++  if: |
++    always() &&
++    github.event_name == 'pull_request' &&
++    github.event.pull_request.draft == false &&
++    !contains(needs.*.result, 'failure') &&
++    !contains(needs.*.result, 'cancelled')
++  concurrency:
++    group: landing-merge-open
++    cancel-in-progress: false
++```
++
++- **`duplicate-pr-guard` is not in `needs`.** The landing gate evaluates exactly seven jobs; a `failure` result from the duplicate guard never appears in `needs.*.result`, so `!contains(..., 'failure')` stays true and the merge proceeds. In run 4617 the landing job did not merely "tolerate" the guard failure — it executed the squash-merge inside the same failing run.
++- **Event-surface asymmetry (secondary hole)**: the landing job itself only runs on `pull_request` events, but the pipeline also triggers on `push` events for bridge branches (L105 gate). A push-event run of the same sha is guard-free **and** lander-free — harmless by itself, but it means every PR lane normally produces two parallel verdict planes for one commit: a guard-bearing PR-event run and a guard-free push-event run (see the concurrency analysis below). Any consumer of "green per sha" that does not distinguish the planes inherits the asymmetry.
++- **Concurrency groups guarantee the parallel planes** (L64–66): `group: ci-open-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}` with `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`. A push run groups by `github.ref`, a PR run groups by PR number — **disjoint groups**, so a branch push and its PR event never cancel each other and the same head sha runs twice, concurrently, by construction. That is the race window builder; run pair 4616/4617 (3 s apart) is it live.
++- **Contrast with the claim gate**: `claim-guard` IS in `needs` — the atomic-claim invariant (U5-family) gates the merge, the anti-duplicate invariant (U4) does not. The asymmetry looks like an oversight rather than a design choice, which is exactly why it is worth a receipt.
++
++## 5. The collision anatomy: one WO, two legitimate closers
++
++- **WO #1916** was the bridge mirror of the landing-watchdog's live false positive: the watchdog classified the `browser-webbotauth` satellite lane's WO as `LANDING_AT_RISK` even though the lane lands in `Supremeai-bd/supremeai-browser`, outside the open-repo history/PR planes. PR #1979's deliverable (a new `SATELLITE_TARGET` verdict with on-demand Target Repo fetch, fail-closed) is the **fixer** of #1916; its body's Linked Work Order section carries `Closes #1916` (bridge `originalIssueNumber` wiring), and its landing reclassified the live WO (`risk=0`, `LANDING_AT_RISK=0`).
++- **PR #1917** is the satellite lane's open-repo **vehicle** (zero-new-dep Ed25519 web-bot-auth probe for radar R20/#1675). Its body — bridge-generated in the same convention — carries `Closes #1675 Refs #1675 Closes #1916 Refs #1916`: the lane collects the Closes of every WO associated with it, including #1916, whose subject was *this very lane's* watchdog false positive. From the guard's point of view, #1917's body is a `closes #1916` match.
++- At 05:14:27Z the guard's snapshot listed #1917 as open and matched it against #1979's target `#1916` → `exit 1`. Neither PR was a duplicate of the other; the collision is a **shared-WO bookkeeping artifact** of the Closes-wiring convention. As more WOs accumulate multi-lane associations (watchdog mirrors, recert lanes, closeout sweeps — e.g. PR #1982's Closes of two issues in one doc), this false-duplicate class will recur.
++- Outcome was benign: both lanes completed green, #1979 landed and its landing is exactly what closed out #1916's live risk. The damage model is therefore **noise + enforceability hole**, not corruption: a *real* duplicate would sail through the identical path (§4), and honest lanes get red runs (and spurious "duplicate" stickers in their CI history) when a lane-mate shares a WO.
++
++## 6. Honest open point: the #1917 open-sighting vs merged ground truth
++
++Proven: at 05:14:27Z the guard's `gh pr list --state open` returned #1917; the page now reads **State--merged**; no #1917 commit exists in any open-repo branch under any merge strategy; the page's last visible relative-time is 04:11:34Z. Unresolved: whether the sighting was (a) a stale open-listing under fleet pressure (hundreds of PR events per hour keep the pulls listing hot), or (b) a state transition of a tower-bookkeeping-managed vehicle PR inside the 05:14→05:2x window — vehicle PRs for satellite lanes "land outside the open-repo history/PR planes" (the #1916 `SATELLITE_TARGET` reclassification says exactly this), so their open/merged state may be maintained by the tower's bookkeeping rather than by a git merge in this repo. Both candidates are consistent with every receipt; the guard's `::error` output records only number/title/branch of the competitor — **no `state`, no `updated_at`** — which is precisely why the forensics dead-end here. §7 proposes the metadata fix. No verdict in this report depends on resolving (a) vs (b): even under (b) (sighting momentarily true), the §4 disconnect means the guard's failure still could not and did not block the merge.
++
++## 7. Proposed admin-side hardening (NOT agent-actionable; protected path)
++
++Ordered by leverage:
++
++1. **Wire the guard into the landing gate**: add `duplicate-pr-guard` to `auto-landing`'s `needs`. One line; makes U4 enforcement real (a guard failure then trips `!contains(needs.*.result, 'failure')` and blocks the merge). This is the single change that closes the disconnect observed in run 4617.
++2. **Forensic metadata in the guard error**: include the competitor's `state` and `updated_at` (already present in the `gh pr list --json` payload) in the `::error` lines, so the next sighting-vs-ground-truth divergence is self-documenting.
++3. **De-collide shared-WO closers**: either require the competitor to match the WO's own lane slug token (the `bridge-YYYYMMDD-slug` join key the landing watchdog already standardizes) instead of body closing refs, or skip competitors whose matching `Closes` sits in a bridge Linked Work Order block of a satellite-vehicle PR. Goal: a fixer PR should never be flagged by its own lane's vehicle.
++4. **(Optional) unify the verdict planes**: run the guard on push events too, or make push-event bridge runs reuse the PR run's results. Lower priority — after (1), the guard-free push plane cannot reach the merge path, so it degrades to harmless redundancy.
++
++## 8. Verification contract and reflection
++
++- **3-tier contract honored on this lane's own deliverable**: (1) docs-only, zero source/CI files touched — nothing to compile, and the repo's own guards confirm main is green post-landing (run 4618 success); (2) `--verify-only` 8/8 PASS executed pre-submit at the rebased tip; (3) full `pytest tests/` on the rebased worktree: **0 failed** (counts in the PR body's evidence block). Dual-rebase on `origin/main` performed at work-start and pre-push; main moved twice during the cycle (9e6bbc9 → b4f7bb2/#1982 by a parallel lane → dbda680) and the branch carries 0 behind at submit.
++- **Evidence trail**: Tower pulls all explicit-repo (`Supremeai-bd/supremeai-open`) — `github_workflow_runs` for the 4614–4618 window (note: the tool's parameter is `limit`, default 5, and large windows truncate at 512 KB — probe downward, not upward), `github_get_failed_logs` with `runId` as a **string** for run 40636808713; guard/landing/concurrency mechanics read from `.github/workflows/pipeline.yml` at the rebased tip (read-only — protected path); PR #1917's body section and state scraped from its public page; absence of #1917 commits proven over ALL fetched remote heads, not just `main`.
++- **Self-correction trail (kept honest)**: the finding issue #1990 was filed with the initial hypothesis that the lander "consumed the guard-free green run"; reading the landing job's source refined this — the lander fired **from the failing run itself** because the guard is not in its `needs` (§4). The issue body also lost its inline-code fragments (backtick command-substitution during the zero-credential issue creation one-liner); the substance survived and this doc is the canonical, verbatim-receipt record for the lane. Both refinements are disclosed here rather than silently patched.
++- **Reflection**: the 12:20-cycle lesson said board truth beats loop verdicts; this cycle extends it — **run-pair diffs beat single-run reads**. A "green main + green PR lane" board can still hide a constitutional gate that failed and was overridden in the same minute. The guard did its job and was structurally ignored; that combination is invisible to every existing watchdog plane (federation ingress keyed on landing-job failure; landing watchdog keyed on WO/PR/main squash reconciliation — all three saw a healthy landing). Fleet-level takeaway for lane owners: when your PR's CI history shows a red `Anti-Duplicate PR Guard` alongside a landing, do not assume a duplicate was prevented — check whether your lane shared a WO number with a lane-mate (§5), and cite this report's §7 in any follow-up.

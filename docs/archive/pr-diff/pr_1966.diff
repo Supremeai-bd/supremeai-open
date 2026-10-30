@@ -1,0 +1,33 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index 0f54a615..d349633c 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -181,17 +181,23 @@ Honest limitations, documented rather than hidden:
+ not free-running. After a successful board query and before the due-role loop,
+ `has_open_p0_blocker` scans the raw board items: any open item whose lowercased
+ labels include `p0`, `p0-*`, or `p0 ` holds every routine cadence role (warning
+-log + early return). Held roles never reach `mark_role_run`, so they do not
++log + early return) — except items labeled `blocked-by-upstream`, which the gate
++skips: such P0s sit in `pick_next_issue`'s `EXCLUDED_LABELS`, so no agent in this
++lane can ever claim them, and counting them as blockers would starve cadence
++forever (eternally-open, unclaimable P0). `status:claimed` P0s still block —
++another runner is actively on them, the invariant's intended behavior. Held
++roles never reach `mark_role_run`, so they do not
+ consume their cadence window — once the board drains, the due role dispatches
+ immediately. The gate is board-availability-gated (skipped when the query
+ failed — fail-open to the pre-Rule-5 cadence path) and sits below the
+ issue-solver path, which runs earlier in the cycle. `COMMON_RULES` injects the
+ invariant text into every dispatched mandate; the invariant's
+ idempotency/anti-stampede half is enforced by the §5 Anti-Duplicate PR Guard
+-and Claim Gate Guard. Honest caveat: stale `P0-critical` labels on
+-already-resolved incidents keep the gate closed indefinitely (live:
+-#1788/#1772 held while main CI was green — #1804/#1840 document the hygiene
+-closure); label hygiene is an admin action outside the agent surface.
++and Claim Gate Guard. The stale-label freeze the gate is exposed to is not
++hypothetical: `P0-critical` labels on already-resolved incidents (#1788/#1772)
++held cadence while main CI was green (#1804/#1840) until admin hygiene closed
++both issues (2026-10-28); label hygiene stays an admin action outside the agent
++surface.
+ 
+ ## 5. Open Guards — shift-left on free public runtime
+ 

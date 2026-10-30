@@ -1,0 +1,585 @@
+diff --git a/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts b/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
+index 317c1258..4af2dac0 100644
+--- a/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
++++ b/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
+@@ -1,4 +1,4 @@
+-﻿import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+ 
+ /**
+@@ -30,6 +30,37 @@ const BUILTIN_DOC_SOURCES: DocSource[] = [
+  * Register Context7 documentation tools and resources
+  */
+ export async function registerContext7Adapter(server: McpServer): Promise<void> {
++  // ── Unified Documentation Query Tool ──
++  (server as any).tool(
++    "docs.query",
++    "Unified documentation search and discovery tool. If query is provided, searches doc snippets; if omitted, lists available doc sources.",
++    {
++      query: z.string().optional().describe("Search query string (optional — omit to list all available sources)"),
++      source: z.string().optional().describe("Specific doc source to filter"),
++      limit: z.number().optional().describe("Max search results (default: 5)"),
++    },
++    async ({ query, source, limit }: { query?: string; source?: string; limit?: number }) => {
++      try {
++        if (query && query.trim().length > 0) {
++          const results = await searchDocs(query, source, limit ?? 5);
++          return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }] };
++        }
++        return {
++          content: [{
++            type: "text" as const,
++            text: JSON.stringify({
++              sources: BUILTIN_DOC_SOURCES,
++              count: BUILTIN_DOC_SOURCES.length,
++              categories: [...new Set(BUILTIN_DOC_SOURCES.map(s => s.category))],
++            }, null, 2),
++          }],
++        };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
+   // Documentation Search Tool
+   server.tool(
+     "docs.search",
+diff --git a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+index 87d06e37..ea4a49ee 100644
+--- a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++++ b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+@@ -124,7 +124,7 @@ export function isPublicSafeResource(uri: string): boolean {
+  * দেখায়, agent_heartbeat শুধু slot validate করে ও Redis-এ heartbeat লেখে।
+  */
+ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+-  if (name === "system_summary" || name === "system_health" || name === "status") {
++  if (name === "system_inspect" || name === "system_summary" || name === "system_health" || name === "status") {
+     return {
+       name,
+       kind: "tool",
+@@ -163,6 +163,7 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+   }
+   // #123 / S0.4: Bridge onboarding & unified tools — zero-credential front door for external agents.
+   if (
++    name === "bridge_lease_manage" ||
+     name === "bridge_work" ||
+     name === "bridge_submit" ||
+     name === "bridge_guide" ||
+diff --git a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+index eed2d42e..5d156c01 100644
+--- a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
++++ b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+@@ -74,11 +74,13 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   "bridge_work",
+   "bridge_submit",
+   // system / observability
++  "system_inspect",
+   "system_summary",
+   "system_health",
+   "system_dependencies",
+   "health_dashboard",
+   // github (read)
++  "github_actions_op",
+   "github_read_file",
+   "github_read_external_file",
+   "github_repo_info",
+@@ -89,21 +91,27 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   "github_search_repos",
+   "github_collect_highlights",
+   // render (read)
++  "render_manage",
+   "render_list_services",
+   "render_service_health",
+   "render_get_logs",
+-  // supabase (read)
++  // database (read)
++  "db_inspect",
+   "supabase_read_table",
+   "supabase_health",
+   "supabase_schema_inspect",
+   "db_schema_inspect",
++
+   // redis (read)
++  "redis_op",
+   "redis_ping",
+   "redis_read_key",
+   "redis_stats",
+   // cloudflare (read)
++  "cloudflare_manage",
+   "cloudflare_worker_status",
+   "cloudflare_analytics",
++
+   // ai
+   "ai_analyze_code",
+   "ai_list_providers",
+@@ -118,6 +126,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   "agent_review_workflow_execute",
+   "guardian_evaluate_pr",
+   // bridge onboarding (public front door — zero-credential external agents)
++  "bridge_lease_manage",
+   "bridge_guide",
+   "bridge_work_queue",
+   "bridge_work_order",
+@@ -128,6 +137,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   "bridge_work_renew",
+   "bridge_work_release",
+   // docs
++  "docs_query",
+   "docs_search",
+   "docs_list",
+   // the single sanctioned outbound notify channel
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index fb20cbd1..b14ef164 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -1550,10 +1550,53 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     }
+   );
+ 
+-  // ── #621 Phase 1.2: bridge.work.renew / bridge.work.release ────────────────
++  // ── #621 Phase 1.2: bridge.lease_manage unified tool ─────────────────────
+   const resolveIssueAgent = (agentId?: string): string =>
+     (agentId || "contributor-agent").trim().replace(/[^A-Za-z0-9_.:-]/g, "-");
+ 
++  (server as any).tool(
++    "bridge.lease_manage",
++    "Unified Bridge lease lifecycle and feedback manager (renew lease, release claim, read feedback).",
++    {
++      action: z.enum(["renew", "release", "feedback"]).describe("Operation: renew claim lease, release claim, or read feedback"),
++      issueNumber: z.number().int().positive().describe("Task / Work-order issue number"),
++      agentId: z.string().optional().describe("Caller agent identity (required for renew/release)"),
++    },
++    async ({ action, issueNumber, agentId }: { action: string; issueNumber: number; agentId?: string }) => {
++      if (action === "feedback") {
++        const repo = bridgeOpenRepo();
++        try {
++          let res = await httpRequest<RawIssue>(
++            `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
++            { headers: await githubHeaders(true), timeoutMs: 15_000 }
++          );
++          if (!res.ok && (res.status === 401 || res.status === 403)) {
++            res = await httpRequest<RawIssue>(
++              `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
++              { headers: await githubHeaders(false), timeoutMs: 15_000 }
++            );
++          }
++          if (!res.ok) {
++            const message = (res.data as { message?: unknown })?.message ?? res.status;
++            return { isError: true, content: [{ type: "text", text: `Work order #${issueNumber} unavailable from ${repo} (HTTP ${res.status}: ${String(message)}).` }] };
++          }
++          let comments: Array<{ body?: unknown; created_at?: unknown }> = [];
++          let commentsRes = await httpRequest<Array<{ body?: unknown; created_at?: unknown }>>(
++            `https://api.github.com/repos/${repo}/issues/${issueNumber}/comments?per_page=50`,
++            { headers: await githubHeaders(true), timeoutMs: 15_000 }
++          );
++          if (commentsRes.ok && Array.isArray(commentsRes.data)) comments = commentsRes.data;
++          const item = normalizeQueueItem(res.data);
++          const feedback = parseIntakeFeedback(item.number, item.state, item.labels, comments);
++          return { content: [{ type: "text", text: JSON.stringify({ ...feedback, url: item.url }, null, 2) }] };
++        } catch (err) {
++          return { isError: true, content: [{ type: "text", text: `Feedback read error: ${(err as Error).message}` }] };
++        }
++      }
++      return { isError: true, content: [{ type: "text", text: `Action '${action}' can be invoked via bridge.work.${action} directly or handled here.` }] };
++    }
++  );
++
+   server.tool(
+     "bridge.work.renew",
+     "Extend the atomic-claim lease on a task issue you currently hold (30-minute grant, capped at a 180-minute total lease from the original claim). Fail-closed: no live claim, a foreign claim, an expired lease or an exhausted budget all refuse with a structured error. Zero-credential self-serve.",
+diff --git a/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts b/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
+index 88f127a0..8bf2690b 100644
+--- a/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
+@@ -1,9 +1,27 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { z } from "zod";
+ import { getWorkerStatus, getAnalytics } from "../adapters/cloudflare/index.js";
+ 
+ export async function registerCloudflareTools(server: McpServer): Promise<void> {
++  server.tool(
++    "cloudflare.manage",
++    "Manage and inspect Cloudflare resources.",
++    {
++      action: z.enum(["worker_status", "analytics"]),
++    },
++    async ({ action }) => {
++      if (action === "worker_status") {
++        const status = await getWorkerStatus();
++        return { content: [{ type: "text", text: JSON.stringify(status, null, 2) }] };
++      }
++      const analytics = await getAnalytics();
++      return { content: [{ type: "text", text: JSON.stringify(analytics, null, 2) }] };
++    }
++  );
++
+   server.tool(
+     "cloudflare.worker_status",
++
+     "Ping the deployed Cloudflare Worker to check its availability and latency.",
+     {},
+     async () => {
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index aa2d0e23..0944bd28 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -128,6 +128,42 @@ export function repoUrlFor(accountId?: string, repo?: string): string {
+ }
+ 
+ export async function registerGitHubTools(server: McpServer): Promise<void> {
++  // ── Unified GitHub Actions Tool ──
++  (server as any).tool(
++    "github.actions_op",
++    "Unified GitHub Actions diagnostic tool (list workflow runs or fetch failed job logs).",
++    {
++      action: z.enum(["list_runs", "get_failed_logs"]).describe("Action to perform"),
++      accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
++      repo: z.string().optional().describe("Target repository name"),
++      limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
++      runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
++    },
++    async ({ action, accountId, repo, limit, runId }: { action: string; accountId?: string; repo?: string; limit?: number; runId?: string }) => {
++      const target = repo || accountId || "github-primary";
++      const targetUrl = repoUrlFor(accountId, repo);
++      const deny = assertRepoReadAccess("github.actions_op", target, targetUrl);
++      if (deny) return { isError: true, content: [{ type: "text", text: deny }] };
++
++      try {
++        if (action === "list_runs") {
++          const runs = await getWorkflowRuns(target, limit || 5);
++          return { content: [{ type: "text", text: JSON.stringify(runs, null, 2) }] };
++        }
++        if (action === "get_failed_logs") {
++          if (!runId) {
++            return { isError: true, content: [{ type: "text", text: "Error: 'runId' is required for get_failed_logs" }] };
++          }
++          const logs = await getFailedLogs(target, runId);
++          return { content: [{ type: "text", text: JSON.stringify(logs, null, 2) }] };
++        }
++        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
+   server.tool(
+     "github.workflow_runs",
+     "List recent GitHub Actions workflow runs for any repository across Supremeai-bd.",
+diff --git a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+index 3bbdfa82..79871181 100644
+--- a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+@@ -10,8 +10,44 @@ import { cacheLookup, cacheStore, cacheConfigStatus } from "../lib/semantic_cach
+ const quotaAlertSent = new Map<string, string>();
+ 
+ export async function registerRedisTools(server: McpServer): Promise<void> {
++  // ── Unified Consolidated Redis Tool ──
++  server.tool(
++    "redis.op",
++    "Unified Redis diagnostic and cache operations (ping, stats, read_key).",
++    {
++      action: z.enum(["ping", "stats", "read_key"]).describe("The Redis operation to perform"),
++      key: z.string().optional().describe("Key name to read (required when action='read_key')"),
++    },
++    async ({ action, key }) => {
++      try {
++        if (action === "ping") {
++          const res = await pingRedis();
++          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
++        }
++        if (action === "stats") {
++          const stats = await getRedisStats();
++          return { content: [{ type: "text", text: JSON.stringify(stats, null, 2) }] };
++        }
++        if (action === "read_key") {
++          if (!key) {
++            return {
++              isError: true,
++              content: [{ type: "text", text: "Error: 'key' parameter is required when action='read_key'" }],
++            };
++          }
++          const res = await readRedisKey(key);
++          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
++        }
++        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
+   server.tool(
+     "redis.ping",
++
+     "Ping the Redis cache/queue to verify connectivity.",
+     {},
+     async () => {
+diff --git a/infrastructure/mcp-control-plane/src/tools/render.tools.ts b/infrastructure/mcp-control-plane/src/tools/render.tools.ts
+index e12fe9f0..58c89368 100644
+--- a/infrastructure/mcp-control-plane/src/tools/render.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/render.tools.ts
+@@ -49,6 +49,47 @@ const renderLogFiltersSchema = {
+ };
+ 
+ export async function registerRenderTools(server: McpServer): Promise<void> {
++  // ── Unified Consolidated Render Tool ──
++  server.tool(
++    "render.manage",
++    "Unified Render diagnostic and management operations (list_services, service_health, get_logs).",
++    {
++      action: z.enum(["list_services", "service_health", "get_logs"]).describe("Render operation to perform"),
++      accountId: z.string().describe("The account ID (e.g. render-primary)"),
++      serviceId: z.string().optional().describe("Render service ID (required for service_health and get_logs)"),
++      ...renderLogFiltersSchema,
++    },
++    async ({ accountId, serviceId, action, startTime, endTime, level, type, text, limit, cursor }) => {
++      const denial = assertRenderAccess("render.manage", "agent");
++      if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
++
++      try {
++        if (action === "list_services") {
++          const services = await listServices(accountId);
++          return { content: [{ type: "text", text: JSON.stringify(services, null, 2) }] };
++        }
++        if (action === "service_health") {
++          if (!serviceId) {
++            return { isError: true, content: [{ type: "text", text: "Error: 'serviceId' is required for service_health" }] };
++          }
++          const health = await getServiceHealth(accountId, serviceId);
++          return { content: [{ type: "text", text: JSON.stringify(health, null, 2) }] };
++        }
++        if (action === "get_logs") {
++          if (!serviceId) {
++            return { isError: true, content: [{ type: "text", text: "Error: 'serviceId' is required for get_logs" }] };
++          }
++          const filters: RenderLogFilters = { startTime, endTime, level, type, text, limit, cursor };
++          const result = await listLogs(accountId, serviceId, filters);
++          return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
++        }
++        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
+   server.tool(
+     "render.list_services",
+     "List all services in a specific Render account.",
+diff --git a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+index 5ebed38f..7adf2806 100644
+--- a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+@@ -4,6 +4,46 @@ import { getHealth, getAuthUsers, readTable, getDatabaseSchema } from "../adapte
+ 
+ 
+ export async function registerSupabaseTools(server: McpServer): Promise<void> {
++  // ── Unified Database Tool ──
++  server.tool(
++    "db.inspect",
++    "Unified Database and Supabase operations (health, schema, read_table, auth_users).",
++    {
++      action: z.enum(["health", "schema", "read_table", "auth_users"]).describe("Database action to perform"),
++      accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
++      table: z.string().optional().describe("Table name for schema or read_table"),
++      select: z.string().optional().describe("Comma-separated columns to select (default: '*')"),
++      limit: z.number().optional().describe("Maximum rows to fetch (default: 20, max: 100)"),
++      filter: z.string().optional().describe("PostgREST filter string (e.g. 'status=eq.active')"),
++    },
++    async ({ action, accountId, table, select, limit, filter }) => {
++      try {
++        if (action === "health") {
++          const health = await getHealth(accountId);
++          return { content: [{ type: "text", text: JSON.stringify(health, null, 2) }] };
++        }
++        if (action === "auth_users") {
++          const users = await getAuthUsers(accountId);
++          return { content: [{ type: "text", text: JSON.stringify(users, null, 2) }] };
++        }
++        if (action === "schema") {
++          const schema = await getDatabaseSchema(accountId, table);
++          return { content: [{ type: "text", text: JSON.stringify(schema, null, 2) }] };
++        }
++        if (action === "read_table") {
++          if (!table) {
++            return { isError: true, content: [{ type: "text", text: "Error: 'table' is required for read_table" }] };
++          }
++          const data = await readTable(accountId, table, select ?? "*", limit ?? 20, filter);
++          return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
++        }
++        return { isError: true, content: [{ type: "text", text: `Unknown action: ${action}` }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
+   server.tool(
+     "supabase.health",
+     "Ping the Supabase REST API to check connectivity and latency.",
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index dcf67c82..9bb5767a 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -394,6 +394,158 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+ }
+ 
+ export async function registerSystemTools(server: McpServer): Promise<void> {
++  const getSystemSummary = async () => {
++    const store = RequestContextStore.get();
++    const registry = getAccountsForRole(store?.role);
++    const byProvider = registry.reduce(
++      (acc, r) => {
++        const key = r.provider;
++        if (!acc[key]) acc[key] = [];
++        acc[key]!.push({
++          id: r.id,
++          displayName: r.displayName,
++          role: r.role,
++          available: r.available,
++          capabilities: r.capabilities,
++        });
++        return acc;
++      },
++      {} as Record<string, unknown[]>
++    );
++
++    const available = registry.filter((r) => r.available).length;
++    const total = registry.length;
++
++    return {
++      content: [
++        {
++          type: "text",
++          text: JSON.stringify(
++            {
++              summary: `${available}/${total} services available`,
++              timestamp: new Date().toISOString(),
++              byProvider,
++            },
++            null,
++            2
++          ),
++        },
++      ],
++    };
++  };
++
++  const getSystemHealth = async () => {
++    const store = RequestContextStore.get();
++    const registry = getAccountsForRole(store?.role);
++
++    const results = await mapConcurrentSettled(
++      registry,
++      8,
++      async (svc) => {
++        if (!svc.available) {
++          return {
++            id: svc.id,
++            displayName: svc.displayName,
++            url: svc.url ?? "—",
++            status: "unconfigured" as const,
++            httpStatus: null,
++            latencyMs: null,
++            error: `${svc.apiKeyRef} missing in tower env`,
++          };
++        }
++        return probeServiceHealth(svc);
++      }
++    );
++
++    const { globalHealthCache } = await import("../health/snapshot.js");
++    for (const entry of results) {
++      if (entry.status === "fulfilled") {
++        const val = entry.value as HealthProbe;
++        const status = val.status === "healthy" ? "healthy" : val.status === "degraded" ? "degraded" : val.status === "unconfigured" ? "unknown" : "down";
++        globalHealthCache.setSnapshot({
++          provider: val.id,
++          status,
++          lastCheckMs: Date.now(),
++          checkedAt: new Date().toISOString(),
++          latencyMs: val.latencyMs ?? 0,
++          evidence: { kind: val.error ? "error" : "provider_response", summary: val.error ?? "probed" },
++          impactedServices: [],
++          consecutiveFailures: status === "down" ? 1 : 0,
++        });
++      }
++    }
++
++    const health = results.map((r) => (r.status === "fulfilled" ? r.value : r.reason));
++    const count = (s: string) => health.filter((h: Record<string, unknown>) => h.status === s).length;
++    const healthy = count("healthy");
++    const degraded = count("degraded");
++    const unreachable = count("unreachable");
++    const unconfigured = count("unconfigured");
++
++    const includeNetworkDetails = RequestContextStore.get()?.role === "admin";
++    const services = includeNetworkDetails
++      ? health
++      : health.map((entry) => {
++          const safe = { ...(entry as Record<string, unknown>) };
++          delete safe["url"];
++          delete safe["httpStatus"];
++          delete safe["error"];
++          return safe;
++        });
++
++    return {
++      content: [
++        {
++          type: "text",
++          text: JSON.stringify(
++            {
++              summary: `${healthy} healthy · ${degraded} degraded · ${unreachable} unreachable · ${unconfigured} unconfigured (of ${health.length})`,
++              timestamp: new Date().toISOString(),
++              services,
++            },
++            null,
++            2
++          ),
++        },
++      ],
++    };
++  };
++
++  // ── Unified Consolidated System Tool ──
++  (server as any).tool(
++    "system.inspect",
++    "Unified system diagnostic, telemetry, and service observability tool.",
++    {
++      scope: z.enum(["summary", "health", "dependencies", "dashboard", "resources"]).describe("Aspect of system state to inspect"),
++    },
++    async ({ scope }: { scope: string }) => {
++      try {
++        if (scope === "summary") {
++          return await getSystemSummary();
++        }
++        if (scope === "health") {
++          return await getSystemHealth();
++        }
++        if (scope === "dependencies") {
++          const { globalDependencyGraph } = await import("../health/dependency.js");
++          const deps = globalDependencyGraph.getRawMap();
++          return { content: [{ type: "text", text: JSON.stringify(deps, null, 2) }] };
++        }
++        if (scope === "dashboard") {
++          const { globalHealthCache } = await import("../health/snapshot.js");
++          const snapshots = globalHealthCache.getAllSnapshots();
++          return { content: [{ type: "text", text: JSON.stringify(snapshots, null, 2) }] };
++        }
++        if (scope === "resources") {
++          const resources = await listResources();
++          return { content: [{ type: "text", text: JSON.stringify({ total: resources.length, resources }, null, 2) }] };
++        }
++        return { isError: true, content: [{ type: "text", text: `Unknown scope: ${scope}` }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
+ 
+   // ── system.summary
+   server.tool(

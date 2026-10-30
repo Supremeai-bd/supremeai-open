@@ -1,0 +1,376 @@
+diff --git a/core/database/migrations/20261028_orchestrator_brain_schema.sql b/core/database/migrations/20261028_orchestrator_brain_schema.sql
+new file mode 100644
+index 00000000..75ac8718
+--- /dev/null
++++ b/core/database/migrations/20261028_orchestrator_brain_schema.sql
+@@ -0,0 +1,72 @@
++-- ============================================================================
++-- SupremeAI Orchestrator Brain & Model Registry Schema
++-- Compatible with PostgreSQL 15+ and Supabase Postgres
++-- ============================================================================
++
++-- 1. Connected AI Models Registry
++CREATE TABLE IF NOT EXISTS orchestrator_models (
++    model_id VARCHAR(64) PRIMARY KEY,
++    model_name VARCHAR(128) NOT NULL,
++    provider VARCHAR(64) NOT NULL, -- e.g. openai, anthropic, google, local_gguf
++    api_endpoint TEXT NOT NULL,
++    vault_secret_ref VARCHAR(128) NOT NULL, -- Secure vault key reference (never plaintext)
++    connection_status VARCHAR(32) DEFAULT 'active', -- active, inactive, rate_limited, error
++    supports_text BOOLEAN DEFAULT TRUE,
++    supports_image BOOLEAN DEFAULT FALSE,
++    supports_code BOOLEAN DEFAULT TRUE,
++    max_context_length INTEGER DEFAULT 8192,
++    avg_cost_per_1k_tokens NUMERIC(10, 6) DEFAULT 0.000000,
++    created_at TIMESTAMPTZ DEFAULT NOW(),
++    updated_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++-- 2. Category Performance Profiles (One-to-Many with Models)
++CREATE TABLE IF NOT EXISTS orchestrator_category_performance (
++    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
++    model_id VARCHAR(64) REFERENCES orchestrator_models(model_id) ON DELETE CASCADE,
++    category VARCHAR(64) NOT NULL, -- code_generation, creative_writing, data_analysis, translation, etc.
++    avg_quality NUMERIC(5, 2) DEFAULT 75.00, -- 0 to 100
++    avg_latency_ms INTEGER DEFAULT 800,
++    success_rate NUMERIC(5, 2) DEFAULT 100.00,
++    total_tasks INTEGER DEFAULT 0,
++    last_updated TIMESTAMPTZ DEFAULT NOW(),
++    CONSTRAINT uq_model_category UNIQUE (model_id, category)
++);
++
++CREATE INDEX IF NOT EXISTS idx_cat_perf_lookup 
++ON orchestrator_category_performance (category, avg_quality DESC);
++
++-- 3. Routing Engine Configuration (Weights and Exploration Policies)
++CREATE TABLE IF NOT EXISTS orchestrator_routing_config (
++    config_key VARCHAR(64) PRIMARY KEY,
++    weight_quality NUMERIC(4, 3) DEFAULT 0.500,
++    weight_latency NUMERIC(4, 3) DEFAULT 0.200,
++    weight_cost NUMERIC(4, 3) DEFAULT 0.200,
++    exploration_rate NUMERIC(4, 3) DEFAULT 0.100, -- 10% epsilon exploration
++    min_tasks_before_trust INTEGER DEFAULT 10,
++    decay_factor NUMERIC(4, 3) DEFAULT 0.950, -- recency decay
++    fallback_chain JSONB DEFAULT '["local_tiny_brain", "qwen2.5_coder", "gemini_flash"]'::jsonb,
++    updated_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++-- 4. Task Request & Execution Logs (Tracking & Continuous Learning Loop)
++CREATE TABLE IF NOT EXISTS orchestrator_task_logs (
++    request_id VARCHAR(64) PRIMARY KEY,
++    user_input_raw TEXT NOT NULL,
++    normalized_intent TEXT,
++    detected_category VARCHAR(64) NOT NULL,
++    confidence_score NUMERIC(5, 2) DEFAULT 90.00,
++    selected_model VARCHAR(64) REFERENCES orchestrator_models(model_id),
++    routing_reason TEXT,
++    response_time_ms INTEGER,
++    validation_passed BOOLEAN DEFAULT TRUE,
++    issues_detected JSONB DEFAULT '[]'::jsonb,
++    explicit_user_feedback VARCHAR(32) DEFAULT 'none', -- positive, negative, neutral, none
++    follow_up_correction BOOLEAN DEFAULT FALSE,
++    satisfaction_inferred NUMERIC(5, 2) DEFAULT 80.00,
++    cost_incurred NUMERIC(10, 6) DEFAULT 0.000000,
++    created_at TIMESTAMPTZ DEFAULT NOW()
++);
++
++CREATE INDEX IF NOT EXISTS idx_task_logs_cat_time 
++ON orchestrator_task_logs (detected_category, created_at DESC);
+diff --git a/core/intelligence/adaptive_model_router.py b/core/intelligence/adaptive_model_router.py
+new file mode 100644
+index 00000000..1fe0b076
+--- /dev/null
++++ b/core/intelligence/adaptive_model_router.py
+@@ -0,0 +1,154 @@
++"""SupremeAI Autonomous Intelligent Model Router & Adaptive Decision Engine.
++
++বাংলা: স্বয়ংক্রিয় মডেল রাউটার ও অ্যাডাপ্টিভ ডিসিশন ইঞ্জিন।
++ইনকামিং ইউজারের রিকোয়েস্টের ক্যাটাগরি, কোয়ালিটি হিস্ট্রি, লেটেন্সি,
++খরচ এবং এপসিলন এক্সপ্লোরেশন নীতি মেনে সর্বোত্তম মডেল নির্ধারণ করে।
++"""
++
++from __future__ import annotations
++
++import logging
++import random
++import time
++from dataclasses import dataclass, field
++from typing import Any, Dict, List, Optional
++
++logger = logging.getLogger(__name__)
++
++
++@dataclass
++class ModelProfile:
++    model_id: str
++    model_name: str
++    category_scores: Dict[str, float] = field(default_factory=dict)  # category -> quality 0-100
++    avg_latency_ms: Dict[str, int] = field(default_factory=dict)     # category -> latency ms
++    avg_cost_per_1k: float = 0.002
++    total_tasks: int = 0
++    active: bool = True
++
++
++@dataclass
++class RoutingDecision:
++    selected_model: str
++    routing_reason: str
++    exploration: bool
++    confidence_score: float
++    fallback_chain: List[str]
++
++
++class AdaptiveModelRouter:
++    """Multi-Armed Bandit / Epsilon-Greedy Adaptive Model Router."""
++
++    def __init__(
++        self,
++        weight_quality: float = 0.5,
++        weight_latency: float = 0.2,
++        weight_cost: float = 0.2,
++        exploration_rate: float = 0.1,  # 10% exploration
++        decay_factor: float = 0.95,
++        fallback_chain: Optional[List[str]] = None,
++    ):
++        self.w_quality = weight_quality
++        self.w_latency = weight_latency
++        self.w_cost = weight_cost
++        self.epsilon = exploration_rate
++        self.decay = decay_factor
++        self.fallback_chain = fallback_chain or ["qwen2.5_coder", "gemini_flash", "local_tiny_brain"]
++        self.models: Dict[str, ModelProfile] = {}
++
++    def register_model(self, profile: ModelProfile) -> None:
++        """Register or update model profile in memory registry."""
++        self.models[profile.model_id] = profile
++
++    def calculate_score(self, model: ModelProfile, category: str) -> float:
++        """Calculate composite fitness score for a model on a specific category."""
++        quality = model.category_scores.get(category, 70.0)  # default prior: 70
++        latency = model.avg_latency_ms.get(category, 800)
++        cost = model.avg_cost_per_1k
++
++        # Normalize metrics (0 to 1 scale)
++        norm_quality = min(max(quality / 100.0, 0.0), 1.0)
++        norm_speed = 1.0 - min(latency / 3000.0, 1.0)  # faster latency gives higher score
++        norm_cost = 1.0 - min(cost / 0.02, 1.0)        # lower cost gives higher score
++
++        total_score = (
++            (norm_quality * self.w_quality)
++            + (norm_speed * self.w_latency)
++            + (norm_cost * self.w_cost)
++        )
++        return total_score
++
++    def route_task(self, category: str, confidence_score: float = 90.0) -> RoutingDecision:
++        """Select optimal model for the incoming task category."""
++        active_candidates = [m for m in self.models.values() if m.active]
++        if not active_candidates:
++            # Fallback to default
++            return RoutingDecision(
++                selected_model=self.fallback_chain[0] if self.fallback_chain else "default",
++                routing_reason="No registered models active; default fallback triggered.",
++                exploration=False,
++                confidence_score=confidence_score,
++                fallback_chain=self.fallback_chain,
++            )
++
++        # Epsilon-Greedy: explore underused or alternative models 10% of the time
++        if random.random() < self.epsilon and len(active_candidates) > 1:
++            chosen = random.choice(active_candidates)
++            return RoutingDecision(
++                selected_model=chosen.model_id,
++                routing_reason=f"Exploration phase (epsilon={self.epsilon}): testing model variety.",
++                exploration=True,
++                confidence_score=confidence_score,
++                fallback_chain=[m.model_id for m in active_candidates if m.model_id != chosen.model_id],
++            )
++
++        # Exploitation phase: pick the model with highest composite score
++        scored_models = []
++        for m in active_candidates:
++            score = self.calculate_score(m, category)
++            scored_models.append((score, m))
++
++        scored_models.sort(key=lambda x: x[0], reverse=True)
++        best_score, best_model = scored_models[0]
++
++        reason = (
++            f"Highest composite score ({best_score:.3f}) for category '{category}' "
++            f"(historical quality={best_model.category_scores.get(category, 70.0):.1f}%)."
++        )
++
++        subsequent_fallbacks = [m.model_id for _, m in scored_models[1:]] + self.fallback_chain
++
++        return RoutingDecision(
++            selected_model=best_model.model_id,
++            routing_reason=reason,
++            exploration=False,
++            confidence_score=confidence_score,
++            fallback_chain=subsequent_fallbacks,
++        )
++
++    def update_feedback(
++        self,
++        model_id: str,
++        category: str,
++        measured_quality: float,
++        measured_latency_ms: int,
++    ) -> None:
++        """Update model profile with feedback loop (Exponential Moving Average / Recency Decay)."""
++        if model_id not in self.models:
++            return
++
++        model = self.models[model_id]
++        current_q = model.category_scores.get(category, 70.0)
++        current_lat = model.avg_latency_ms.get(category, 800)
++
++        # Recency-weighted update
++        updated_q = (current_q * self.decay) + (measured_quality * (1.0 - self.decay))
++        updated_lat = int((current_lat * self.decay) + (measured_latency_ms * (1.0 - self.decay)))
++
++        model.category_scores[category] = round(updated_q, 2)
++        model.avg_latency_ms[category] = updated_lat
++        model.total_tasks += 1
++
++        logger.info(
++            f"Updated model {model_id} on category '{category}': quality={updated_q:.2f}, latency={updated_lat}ms"
++        )
+diff --git a/core/main.py b/core/main.py
+index 81c86741..bae5f3f8 100644
+--- a/core/main.py
++++ b/core/main.py
+@@ -30,6 +30,10 @@
+ # ----------------------------------------------------------
+ 
+ 
++SUPREME_COMMIT_SHA = os.getenv("SUPREME_COMMIT_SHA", "unknown")
++SUPREME_BUILD_TIME = os.getenv("SUPREME_BUILD_TIME", "unknown")
++SUPREME_VERSION = os.getenv("SUPREME_VERSION", "unknown")
++
+ import uvicorn
+ 
+ from core.logging_config import logger
+diff --git a/core/worker_service.py b/core/worker_service.py
+index 3db660b5..0a7b1eae 100644
+--- a/core/worker_service.py
++++ b/core/worker_service.py
+@@ -48,10 +48,21 @@
+ 
+ PORT = int(os.getenv("PORT", "8080"))
+ ROLE = os.getenv("SUPREMEAI_SERVICE_ROLE", "worker")
++SUPREME_COMMIT_SHA = os.getenv("SUPREME_COMMIT_SHA", "unknown")
++SUPREME_BUILD_TIME = os.getenv("SUPREME_BUILD_TIME", "unknown")
++SUPREME_VERSION = "worker"
+ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+ 
+ app = FastAPI(title="SupremeAI Worker", docs_url=None, redoc_url=None, openapi_url=None)
+ _state: dict[str, Any] = {"celery_proc": None, "degraded": False, "detail": ""}
++
++@app.middleware("http")
++async def supreme_build_metadata(request: Request, call_next):
++    response = await call_next(request)
++    response.headers["X-Supreme-Commit-Sha"] = os.getenv("SUPREME_COMMIT_SHA", "unknown")
++    response.headers["X-Supreme-Build-Time"] = os.getenv("SUPREME_BUILD_TIME", "unknown")
++    response.headers["X-Supreme-Version"] = "worker"
++    return response
+ _idempotency_lock = asyncio.Lock()
+ _idempotency_records: dict[str, tuple[str, str]] = {}
+ MAX_IDEMPOTENCY_RECORDS = 10_000
+diff --git a/gateway/main.py b/gateway/main.py
+index f52b740f..cf1b2774 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -57,6 +57,9 @@
+     )
+ 
+ GATEWAY_VERSION = "1.0.0"
++SUPREME_COMMIT_SHA = __import__("os").getenv("SUPREME_COMMIT_SHA", "unknown")
++SUPREME_BUILD_TIME = __import__("os").getenv("SUPREME_BUILD_TIME", "unknown")
++SUPREME_VERSION = GATEWAY_VERSION
+ 
+ try:
+     from .sanitization import *  # noqa: F401,F403
+@@ -436,6 +439,18 @@ async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+         ],
+     )
+ 
++    @app.middleware("http")
++    async def supreme_build_metadata(request: Request, call_next):
++        response = await call_next(request)
++        response.headers["X-Supreme-Commit-Sha"] = __import__("os").getenv(
++            "SUPREME_COMMIT_SHA", "unknown"
++        )
++        response.headers["X-Supreme-Build-Time"] = __import__("os").getenv(
++            "SUPREME_BUILD_TIME", "unknown"
++        )
++        response.headers["X-Supreme-Version"] = GATEWAY_VERSION
++        return response
++
+     # ---- Native Admin Auth Endpoints (Zero-Firebase) ----
+     try:
+         from .admin_auth import router as admin_auth_router
+diff --git a/studio/nginx.conf b/studio/nginx.conf
+index 0d3b4c8d..37c48cc3 100644
+--- a/studio/nginx.conf
++++ b/studio/nginx.conf
+@@ -11,10 +11,13 @@ server {
+     # cannot express frame-ancestors, so clickjacking protection lives here.
+     # X-Frame-Options is intentionally omitted for /embed paths if those are ever
+     # added; today everything is served with SAMEORIGIN.
+-    add_header X-Frame-Options "SAMEORIGIN" always;
+-    add_header X-Content-Type-Options "nosniff" always;
+-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
++add_header X-Frame-Options "SAMEORIGIN" always;
++add_header X-Content-Type-Options "nosniff" always;
++add_header Referrer-Policy "strict-origin-when-cross-origin" always;
++add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
++add_header X-Supreme-Commit-Sha "unknown" always;
++add_header X-Supreme-Build-Time "unknown" always;
++add_header X-Supreme-Version "studio" always;
+ 
+     # FE-05 (Issue #522): the in-page meta CSP was removed from index.html —
+     # the enforcing policy now ships as a response header (mirrors the
+diff --git a/tests/test_brain_curriculum.py b/tests/test_brain_curriculum.py
+new file mode 100644
+index 00000000..177bf9e1
+--- /dev/null
++++ b/tests/test_brain_curriculum.py
+@@ -0,0 +1,36 @@
++"""tests/test_brain_curriculum.py — verification for curriculum conversion."""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++
++
++def test_converter_produces_valid_jsonl():
++    subprocess.run(
++        [sys.executable, "scripts/brain/convert_curriculum_to_jsonl.py", "--input", "knowledge/sonet.json", "--output-dir", str(REPO_ROOT / "data" / "brain_test")],
++        cwd=REPO_ROOT,
++        check=True,
++    )
++    train = REPO_ROOT / "data" / "brain_test" / "train.jsonl"
++    assert train.exists()
++    rows = [json.loads(line) for line in train.read_text(encoding="utf-8").splitlines() if line.strip()]
++    assert rows
++    for row in rows:
++        assert "messages" in row
++        assert len(row["messages"]) == 3
++        assert row["messages"][0]["role"] == "system"
++
++
++def test_augmented_dataset_size():
++    subprocess.run(
++        [sys.executable, "scripts/brain/augment_curriculum_data.py", "--input", "knowledge/sonet.json", "--output-dir", str(REPO_ROOT / "data" / "brain_aug_test"), "--per-skill", "5"],
++        cwd=REPO_ROOT,
++        check=True,
++    )
++    all_rows = (REPO_ROOT / "data" / "brain_aug_test" / "all.jsonl").read_text(encoding="utf-8").splitlines()
++    assert len(all_rows) >= 19  # at least original count

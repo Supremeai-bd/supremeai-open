@@ -1,0 +1,345 @@
+diff --git a/studio/public/_redirects b/studio/public/_redirects
+index b204cf3c..e4c9c16e 100644
+--- a/studio/public/_redirects
++++ b/studio/public/_redirects
+@@ -1,5 +1,8 @@
+ # Cloudflare Pages proxy: route API requests directly to the Render backend via Cloudflare Edge
+-/api/*    https://supremeai-api-ulw0.onrender.com/api/:splat    200
++/api/*      https://supremeai-api-ulw0.onrender.com/api/:splat    200
++/health     https://supremeai-api-ulw0.onrender.com/healthz        200
++/healthz    https://supremeai-api-ulw0.onrender.com/healthz        200
+ 
+ # Cloudflare Pages SPA rewrite: fallback all non-file routes to index.html
+-/*        /index.html                                            200
++/*          /index.html                                            200
++
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index 94513f7c..4785a62d 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -225,11 +225,20 @@ export const App: React.FC = () => {
+                 }
+               />
+ 
+-              {/* Supreme OS — JARVIS Admin Console */}
+-              <Route path="/admin" element={<JarvisAdminConsolePage />} />
++              {/* Supreme OS — JARVIS Dedicated Voice HUD Cockpit */}
+               <Route path="/jarvis" element={<JarvisAdminConsolePage />} />
+ 
+-              {/* Admin — AdminShell for nested sub-routes */}
++              {/* Admin Console & Shell — Full 32-Module Enterprise Cockpit */}
++              <Route
++                path="/admin"
++                element={
++                  <RoleGuard requiredRole="admin">
++                    <ErrorBoundary>
++                      <AdminShell />
++                    </ErrorBoundary>
++                  </RoleGuard>
++                }
++              />
+               <Route
+                 path="/admin/*"
+                 element={
+diff --git a/studio/src/lib/jarvisIntent.ts b/studio/src/lib/jarvisIntent.ts
+index 00d6c1e3..cd25fe46 100644
+--- a/studio/src/lib/jarvisIntent.ts
++++ b/studio/src/lib/jarvisIntent.ts
+@@ -9,6 +9,7 @@ export type IntentType =
+   | 'config'
+   | 'search'
+   | 'help'
++  | 'notify'
+   | 'unknown';
+ 
+ const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
+@@ -20,7 +21,8 @@ const INTENT_PATTERNS: Record<IntentType, RegExp[]> = {
+   alerts: [/(alert|incident|warning|error|সতর্ক)/i],
+   config: [/(config|setting|rules|configuration)/i],
+   search: [/(search|find|lookup|খুঁজ)/i],
+-  help: [/(help|sahajyo|what can|কি করতে পারি)/i],
++  help: [/(help|sahajyo|what can|কি করতে পারি|commands?)/i],
++  notify: [/(notify|send|message|telegram|discord|পাঠাও)/i],
+   unknown: [],
+ };
+ 
+diff --git a/studio/src/main.tsx b/studio/src/main.tsx
+index 8bbbc15e..4b98cf8c 100644
+--- a/studio/src/main.tsx
++++ b/studio/src/main.tsx
+@@ -81,7 +81,7 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
+   window.addEventListener('load', () => {
+     navigator.serviceWorker.register('/sw.js').then((reg) => {
+       // বাংলা মন্তব্য: no-console রুল শুধু warn/error অনুমোদন করে, তাই log-এর বদলে warn ব্যবহার করা হলো।
+-      console.warn('[PWA] Service Worker registered:', reg.scope);
++      console.warn('[PWA] Service Worker registered:', reg?.scope ?? 'unknown');
+     }).catch((err) => {
+       console.warn('[PWA] Service Worker registration failed:', err);
+     });
+diff --git a/studio/src/pages/admin/JarvisAdminConsolePage.tsx b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+index 4959e134..49e4b59e 100644
+--- a/studio/src/pages/admin/JarvisAdminConsolePage.tsx
++++ b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+@@ -4,6 +4,7 @@ import { ArcReactorOrb, orbLabel, type OrbState } from '../../components/admin/j
+ import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarvis/JarvisAdminGate';
+ import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
+ import { useAdminVoice } from '../../components/admin/jarvis/useAdminVoice';
++import { controlPlane } from '../../services/controlPlane';
+ import { detectDestructiveReason } from '../../components/admin/jarvis/jarvisPersona';
+ 
+ interface Message {
+@@ -91,17 +92,33 @@ export function JarvisAdminConsolePage() {
+ 
+       // Generate response
+       voiceControlsRef.current.setOrbState('thinking');
+-      setTimeout(() => {
++      const generate = async () => {
+         let reply = '';
+         const lower = text.toLowerCase();
+-        if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
+-          reply = 'All satellites and control tower services are reporting green. Latency is sub-50 milliseconds. Systems ready.';
+-        } else if (lower.includes('deploy') || lower.includes('release')) {
+-          reply = 'Deploy pipeline acknowledged. Preflight invariants verified. Ready to dispatch on confirmation.';
+-        } else if (lower.includes('kemon') || lower.includes('how are you') || lower.includes('hello')) {
+-          reply = 'Ami shob somoy prostut, Sir. JARVIS neural matrix running at 100% efficiency.';
+-        } else {
+-          reply = `Acknowledged: "${text}". Command registered in the operations journal, Sir.`;
++        try {
++          if (lower.includes('status') || lower.includes('health') || lower.includes('obostha')) {
++            const h = await controlPlane.health();
++            const unhealthy = h.services.filter((s) => s.status !== 'healthy');
++            reply = `Control plane ${h.overall_status}. ${h.services.length} services probed; ${unhealthy.length} unhealthy. ${unhealthy.length ? 'Unhealthy: ' + unhealthy.map((s) => s.display_name).join(', ') + '.' : 'All services nominal.'} Standing by, Sir.`;
++          } else if (lower.includes('alert') || lower.includes('incident') || lower.includes('warning')) {
++            const h = await controlPlane.health();
++            const bad = h.services.filter((s) => s.status !== 'healthy');
++            reply = bad.length
++              ? `${bad.length} service(s) need attention: ${bad.map((s) => `${s.display_name} (${s.status})`).join(', ')}.`
++              : 'No active incidents. All systems green, Sir.';
++          } else if (lower.includes('deploy') || lower.includes('release')) {
++            reply = 'Deploy pipeline acknowledged. Preflight invariants verified. Ready to dispatch on confirmation.';
++          } else if (lower.includes('help') || lower.includes('what can') || lower.includes('sahajyo')) {
++            reply = 'I can report system status and health, list alerts, open logs, deploy on confirmation, and answer questions. Destructive commands require 2FA. Say "status", "alerts", "deploy", or "help".';
++          } else if (lower.includes('search') || lower.includes('find') || lower.includes('lookup')) {
++            reply = 'Search is routed through the tower. Open the search panel or say a specific query, Sir.';
++          } else if (lower.includes('kemon') || lower.includes('how are you') || lower.includes('hello')) {
++            reply = 'Ami shob somoy prostut, Sir. JARVIS neural matrix running at 100% efficiency.';
++          } else {
++            reply = `Acknowledged: "${text}". Command registered in the operations journal, Sir.`;
++          }
++        } catch {
++          reply = reply || `Acknowledged: "${text}". (Control plane unreachable; showing cached acknowledgement.)`;
+         }
+ 
+         const assistantMsg: Message = {
+@@ -112,7 +129,8 @@ export function JarvisAdminConsolePage() {
+         };
+         setMessages((prev) => [...prev, assistantMsg]);
+         voiceControlsRef.current.speak(reply);
+-      }, 500);
++      };
++      setTimeout(() => { void generate(); }, 500);
+     },
+     [graceUntil]
+   );
+@@ -212,6 +230,13 @@ export function JarvisAdminConsolePage() {
+             <span>LOCK</span>
+           </button>
+ 
++          <a
++            href="/admin"
++            className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-3 py-1 text-[11px] text-cyan-300 transition hover:bg-cyan-900/50 hover:text-white"
++          >
++            ← ADMIN CONSOLE
++          </a>
++
+           <a
+             href="/workspace"
+             className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-3 py-1 text-[11px] text-cyan-300 transition hover:bg-cyan-900/50 hover:text-white"
+diff --git a/studio/src/router/AdminHostEntry.test.tsx b/studio/src/router/AdminHostEntry.test.tsx
+index 6e54f5db..265f126f 100644
+--- a/studio/src/router/AdminHostEntry.test.tsx
++++ b/studio/src/router/AdminHostEntry.test.tsx
+@@ -22,6 +22,15 @@ afterEach(() => {
+   });
+ });
+ 
++import { vi } from "vitest";
++
++vi.mock("../utils/portalHosts", () => ({
++  isAdminHost: (hostname?: string) => {
++    const host = hostname ?? (typeof window === "undefined" ? "" : window.location.hostname);
++    return host === "admin.example.com";
++  },
++}));
++
+ // Mirrors the real App.tsx wiring: AdminHostEntry wraps the route graph; on the
+ // admin host every stray route must LAND on /admin (not merely "not render").
+ function renderAt(initialPath: string, hostname: string) {
+@@ -53,7 +62,7 @@ function renderAt(initialPath: string, hostname: string) {
+ 
+ describe("AdminHostEntry (#1468 admin portal host routing)", () => {
+   it("is a transparent pass-through on the user portal host", () => {
+-    renderAt("/features", "supremeai-a.web.app");
++    renderAt("/features", "supremeai-studio.pages.dev");
+     expect(screen.getByTestId("child")).toBeInTheDocument();
+     expect(screen.queryByTestId("admin-landing")).not.toBeInTheDocument();
+   });
+@@ -64,19 +73,19 @@ describe("AdminHostEntry (#1468 admin portal host routing)", () => {
+   });
+ 
+   it("lands the admin-host root on /admin", () => {
+-    renderAt("/", "supremeai-admin.web.app");
++    renderAt("/", "admin.example.com");
+     expect(screen.getByTestId("admin-landing")).toBeInTheDocument();
+     expect(screen.queryByTestId("child")).not.toBeInTheDocument();
+   });
+ 
+   it("lands stray user routes on the admin host on /admin", () => {
+-    renderAt("/features", "supremeai-admin.web.app");
++    renderAt("/features", "admin.example.com");
+     expect(screen.getByTestId("admin-landing")).toBeInTheDocument();
+     expect(screen.queryByTestId("child")).not.toBeInTheDocument();
+   });
+ 
+   it("lets /login through on the admin host (guard chain needs it)", () => {
+-    renderAt("/login", "supremeai-admin.web.app");
++    renderAt("/login", "admin.example.com");
+     expect(screen.getByTestId("login-landing")).toBeInTheDocument();
+   });
+ });
+diff --git a/studio/src/router/AdminHostEntry.tsx b/studio/src/router/AdminHostEntry.tsx
+index bf73e8d6..1477eb1e 100644
+--- a/studio/src/router/AdminHostEntry.tsx
++++ b/studio/src/router/AdminHostEntry.tsx
+@@ -2,10 +2,9 @@ import type { ReactNode } from "react";
+ import { Navigate } from "react-router-dom";
+ import { isAdminHost } from "../utils/portalHosts";
+ 
+-// Issue #1468 (CRITICAL): on the admin portal host (supremeai-admin.web.app)
++// On any designated admin portal host (configured via VITE_ADMIN_HOSTS)
+ // every non-admin route — including "/" — must land in the admin console
+-// instead of the user-facing app (GuestChatPage was rendering at the admin
+-// root, so "there was no admin-specific UI accessible at the admin URL").
++// instead of the user-facing app.
+ //
+ // /login stays reachable because the /admin guard chain (ProtectedRoute →
+ // RoleGuard) redirects unauthenticated visitors there, and the admin login
+@@ -14,8 +13,7 @@ import { isAdminHost } from "../utils/portalHosts";
+ // to /admin by the same check.
+ //
+ // On any other host this component is a transparent pass-through, so the user
+-// portal behavior is byte-for-byte unchanged (vitest route-smoke suite keeps
+-// proving that — jsdom hostname is localhost ⇒ non-admin path).
++// portal behavior is byte-for-byte unchanged.
+ export function AdminHostEntry({ children }: { children: ReactNode }) {
+   if (!isAdminHost()) {
+     return <>{children}</>;
+diff --git a/studio/src/services/heartbeat.test.ts b/studio/src/services/heartbeat.test.ts
+index ac609862..4e4c0540 100644
+--- a/studio/src/services/heartbeat.test.ts
++++ b/studio/src/services/heartbeat.test.ts
+@@ -31,7 +31,7 @@ describe('heartbeat', () => {
+ 
+     await vi.advanceTimersByTimeAsync(10_000);
+     expect(mockGet).toHaveBeenCalledWith(
+-      '/api/v1/live',
++      '/health',
+       expect.objectContaining({ headers: expect.any(Object) })
+     );
+   });
+diff --git a/studio/src/services/heartbeat.ts b/studio/src/services/heartbeat.ts
+index ec4fa339..3bdcd0b5 100644
+--- a/studio/src/services/heartbeat.ts
++++ b/studio/src/services/heartbeat.ts
+@@ -24,13 +24,14 @@ export const pingServers = () => {
+   const targets = [getApiBaseUrl()];
+   targets.forEach(async (url) => {
+     try {
+-      // বাংলা: /api/v1/live প্রোব — raw fetch → apiClient (timeout + queue + cold-start retry)।
+-      // non-ok হলে ApiError — status সহ warn, আগের ok/non-ok বিভাজন অটুট।
+-      await apiClient.get('/api/v1/live', { headers: { 'Cache-Control': 'no-cache' } });
+-      console.warn(`[Heartbeat] ✅ Live: ${url}/api/v1/live`);
++      // বাংলা: /health প্রোব — public endpoint (auth লাগে না), তাই unauthenticated
++      // ভিজিটরদের জন্যও 401 কনসোল এরর আসে না। Render free-tier cold start সামলাতে
++      // health check DB/Redis-ও টাচ করে — anti-sleep উদ্দেশ্যে এটাই উপযুক্ত।
++      await apiClient.get('/health', { headers: { 'Cache-Control': 'no-cache' } });
++      console.warn(`[Heartbeat] ✅ Live: ${url}/health`);
+     } catch (e) {
+       const status = e && typeof e === 'object' && 'status' in e ? ` (HTTP ${(e as { status?: number }).status})` : '';
+-      console.warn(`[Heartbeat] ❌ Could not reach: ${url}/api/v1/live${status}`);
++      console.warn(`[Heartbeat] ❌ Could not reach: ${url}/health${status}`);
+     }
+   });
+ };
+diff --git a/studio/src/services/skillsService.ts b/studio/src/services/skillsService.ts
+index 65b4634e..f0f51259 100644
+--- a/studio/src/services/skillsService.ts
++++ b/studio/src/services/skillsService.ts
+@@ -55,8 +55,10 @@ export const fetchSkillCatalog = async (): Promise<CatalogResponse> => {
+ export const checkLiveness = async (): Promise<boolean> => {
+   // Issue #2522: raw fetch → apiClient.get — timeout, retry, queue সব ক্লায়েন্ট থেকে আসে।
+   // non-ok হলে ApiError throw হয় → catch এ false, আগের ok-check সেমান্টিকস অটুট।
++  // Use the public /health endpoint (no auth) so unauthenticated visitors
++  // never trigger a 401 "Failed to load resource" console error.
+   try {
+-    await apiClient.get('/api/v1/live', { headers: { 'Cache-Control': 'no-cache' } });
++    await apiClient.get('/health', { headers: { 'Cache-Control': 'no-cache' } });
+     return true;
+   } catch {
+     return false;
+diff --git a/studio/src/utils/apiInterceptor.ts b/studio/src/utils/apiInterceptor.ts
+index 87465b2e..80e62f7f 100644
+--- a/studio/src/utils/apiInterceptor.ts
++++ b/studio/src/utils/apiInterceptor.ts
+@@ -85,7 +85,7 @@ export function setupGlobalFetchInterceptor() {
+         const isBackgroundRequest = (
+           isPublicHealthProbe ||
+           rawUrl.includes('/api/config') ||
+-          rawUrl.includes('/api/health') ||
++          rawUrl.includes('/health') ||
+           rawUrl.includes('/connections') ||
+           rawUrl.includes('/conversations') ||
+           rawUrl.includes('/workspace') ||
+diff --git a/studio/src/utils/portalHosts.test.ts b/studio/src/utils/portalHosts.test.ts
+index 32fcd732..64e171a5 100644
+--- a/studio/src/utils/portalHosts.test.ts
++++ b/studio/src/utils/portalHosts.test.ts
+@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
+ import { ADMIN_HOSTS, isAdminHost } from "./portalHosts";
+ 
+ describe("portalHosts (#1468)", () => {
+-  it("recognizes the built-in admin hosting target", () => {
+-    expect(ADMIN_HOSTS).toContain("supremeai-admin.web.app");
+-    expect(isAdminHost("supremeai-admin.web.app")).toBe(true);
++  it("has no hardcoded legacy web.app admin hosts (Zero-Firebase)", () => {
++    expect(ADMIN_HOSTS).not.toContain("supremeai-admin.web.app");
++    expect(isAdminHost("supremeai-admin.web.app")).toBe(false);
+   });
+ 
+-  it("treats the user portal and localhost as non-admin", () => {
+-    expect(isAdminHost("supremeai-a.web.app")).toBe(false);
++  it("treats the public portal and localhost as non-admin", () => {
++    expect(isAdminHost("supremeai-studio.pages.dev")).toBe(false);
+     expect(isAdminHost("localhost")).toBe(false);
+     expect(isAdminHost("supremeai-studio.vercel.app")).toBe(false);
+   });
+diff --git a/studio/src/utils/portalHosts.ts b/studio/src/utils/portalHosts.ts
+index 44051010..cb4f2ac6 100644
+--- a/studio/src/utils/portalHosts.ts
++++ b/studio/src/utils/portalHosts.ts
+@@ -1,14 +1,9 @@
+-// Issue #1468 (CRITICAL): the admin Firebase Hosting target
+-// (supremeai-admin.web.app) serves the SAME SPA build as the user portal —
+-// visiting the admin URL used to render the user-facing chat app (Chat /
+-// Models / Features / Pricing nav) instead of the admin console.
+-//
+ // Portal identity is derived from the hostname so the single build stays
+ // deploy-agnostic: no separate admin bundle to drift, no hosting-config-only
+ // rewrite that bypasses SPA client routing. VITE_ADMIN_HOSTS (comma-separated)
+ // lets operators add custom admin domains without a code change.
+ 
+-const BUILT_IN_ADMIN_HOSTS: readonly string[] = ["supremeai-admin.web.app"];
++const BUILT_IN_ADMIN_HOSTS: readonly string[] = [];
+ 
+ function extraAdminHosts(): string[] {
+   try {

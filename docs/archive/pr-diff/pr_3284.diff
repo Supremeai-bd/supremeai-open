@@ -1,0 +1,209 @@
+diff --git a/docs/ci-templates/README-satellite-ci-sentinel.md b/docs/ci-templates/README-satellite-ci-sentinel.md
+new file mode 100644
+index 00000000..69657538
+--- /dev/null
++++ b/docs/ci-templates/README-satellite-ci-sentinel.md
+@@ -0,0 +1,60 @@
++# Satellite CI Sentinel Surface — install note (Refs #2360, tool #2131)
++
++`.github/` is a protected path on the bridge lane, so this workflow ships as a
++template.
++
++## Install (admin, one command)
++
++```bash
++git mv docs/ci-templates/satellite-ci-sentinel.yml .github/workflows/satellite-ci-sentinel.yml
++```
++
++No edits needed. Optional repo secrets: `TELEGRAM_ALERTS_BOT_TOKEN`,
++`TELEGRAM_ALERTS_CHAT_ID` (notification degrades gracefully when absent).
++
++## Why (the gap it closes)
++
++#2360's follow-through finding: satellite CI damage stays invisible until a
++manual audit looks. Measured progression across audit cycles — core push-CI
++dark 31h → 54h → 68h (corrupted push trigger `branches: ain]`, #2125 lineage)
++while vscode main-CI silence grew 104h → 127h → 140h+. The sentinel tool
++(`scripts/ci/satellite_ci_sentinel.py`, self-test 19/19, exit codes 0/1/2
++fail-closed) is report-only with no scheduled surface (#2360 option C), so
++"only the auditor notices". This template gives the sentinel its surface —
++this is #2360's guard suggestion 3, prepared in the agent envelope; wiring and
++scheduling remain admin decisions (#2082 routed-not-wiring precedent).
++
++## What it does
++
++Every 4 hours (and on manual dispatch):
++
++1. Runs the zero-credential sentinel sweep (report-only, one anonymous Tower
++   handshake, read-only `github.workflow_runs` across the 6 satellite mains).
++2. Exit 1 (a verified main is RED) or any other non-zero (fail-close) →
++   files ONE deduplicated alarm issue (label `ci:sentinel`); later red sweeps
++   append a fresh timestamped receipt as comments instead of stampeding new
++   issues.
++3. Exit 0 (all green) → posts a single green corroboration comment on the open
++   alarm issue if none exists yet; repeated greens stay silent.
++4. Optional Telegram notification on red/fail-close (non-fatal).
++
++## Design laws honored
++
++- **Carrier-green**: the workflow job itself never fails — a monitoring plane
++  must not structurally bleed red (the #2111/#2125 PyErrorFix lesson). The
++  alarm surface is the issue lane; the red state is still shown via `::warning::`
++  annotations in the run summary.
++- **No auto-close**: a green sweep never closes the alarm issue — closure
++  authority stays with the verdict plane/admin (#2211/#2225/#2738
++  false-closure family).
++- **Anti-stampede (U5)**: label + title-prefix dedup, single green comment.
++- **Routed-not-wiring (#2082)**: admin owns scheduling; this template only
++  makes the landing a one-command act.
++
++## Provenance
++
++Dispatched by the continuous agent loop against #2360 (solver). Sibling
++evidence receipt for the same row: #3272 (GLM Agent 11, 12:12–12:15Z live
++probes — core RED, dark-push mechanism confirmed live, api/browser crossed the
++48h window). Prior lineage: #2111 (red evidence) → #2125 (RCA) → #2131
++(sentinel tool) → #2360 (asymmetric-remediation audit) → this template.
+diff --git a/docs/ci-templates/satellite-ci-sentinel.yml b/docs/ci-templates/satellite-ci-sentinel.yml
+new file mode 100644
+index 00000000..6b65d1f7
+--- /dev/null
++++ b/docs/ci-templates/satellite-ci-sentinel.yml
+@@ -0,0 +1,137 @@
++name: Satellite CI Sentinel Surface
++
++# bridge-20261030-2360-sentinel-surface-r1 (Refs #2360; tool by #2131)
++# WHY (the follow-through gap #2360 names): satellite CI damage stays invisible
++# until a manual audit looks — supremeai-core push-CI was dark 31h -> 54h -> 68h
++# (corrupted push trigger, #2125 lineage) and vscode main-CI silence grew
++# 104h -> 127h -> 140h+ across consecutive audit cycles, with zero automated
++# surface filing the finding. The sentinel tool exists (`scripts/ci/satellite_ci_sentinel.py`,
++# self-test 19/19) but is report-only with no scheduled surface (#2360 option C).
++# This template closes that gap: it runs the sentinel on a cadence and files a
++# DEDUPLICATED alarm issue on red/fail-close, plus a green corroboration comment
++# on an existing alarm issue. Scheduling/wiring decision stays admin (#2082
++# routed-not-wiring precedent) — .github/ is a protected path on the bridge lane,
++# so this ships as a template (exact #1331 verdict-executor pattern).
++#
++# CARRIER-GREEN DESIGN (#2111/#2125 lesson): a monitoring plane must not itself
++# structurally bleed red — a schedule job that fails every night with no surface
++# is the exact PyErrorFix failure class this federation already suffered. The
++# sweep step ALWAYS exits 0; the alarm surface is the issue lane (label
++# `ci:sentinel`) + optional Telegram. The satellite RED state is still loudly
++# annotated via ::warning:: so the run summary shows it.
++
++on:
++  schedule:
++    - cron: "30 */4 * * *" # every 4 hours at :30 (offset from the verdict-executor :00 lane)
++  workflow_dispatch:
++
++permissions:
++  contents: read
++  issues: write
++
++concurrency:
++  group: satellite-ci-sentinel-surface
++  cancel-in-progress: false
++
++jobs:
++  sentinel-sweep:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - name: Check out sentinel tool
++        uses: actions/checkout@v5
++
++      - name: Run satellite CI sentinel (report-only sweep)
++        id: sweep
++        run: |
++          python3 scripts/ci/satellite_ci_sentinel.py --json | tee sentinel-report.json
++          code=${PIPESTATUS[0]}
++          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
++          if [ "$code" != "0" ]; then
++            echo "::warning::satellite_ci_sentinel exit=$code (1=satellite main RED, other=fail-close) — alarm issue lane handles surfacing"
++          fi
++          exit 0 # carrier stays green by design; see header
++
++      - name: Surface RED / fail-close as a deduplicated alarm issue
++        if: steps.sweep.outputs.exit_code != '0'
++        uses: actions/github-script@v7
++        with:
++          script: |
++            const fs = require('fs');
++            const code = '${{ steps.sweep.outputs.exit_code }}';
++            const report = fs.readFileSync('sentinel-report.json', 'utf8').trim();
++            const owner = context.repo.owner, repo = context.repo.repo;
++            const LABEL = 'ci:sentinel';
++            const MARKER = '<!-- satellite-ci-sentinel-surface -->';
++            const title = code === '1'
++              ? '[ci-sentinel] satellite main-CI red — auto-filed by sentinel surface'
++              : '[ci-sentinel] satellite CI unverifiable (fail-close) — auto-filed by sentinel surface';
++            try {
++              await github.rest.issues.getLabel({ owner, repo, name: LABEL });
++            } catch (err) {
++              if (err.status === 404) {
++                await github.rest.issues.createLabel({ owner, repo, name: LABEL, color: 'd93f0b', description: 'Auto-filed by the satellite CI sentinel surface' });
++              } else { throw err; }
++            }
++            const body = [
++              MARKER,
++              `**Sentinel exit code:** \`${code}\` (${code === '1' ? 'at least one verified satellite main is RED' : 'fail-close — tower unreachable or all rows unknown'})`,
++              `**Fresh receipt:** ${new Date().toISOString()}`,
++              '',
++              '```json',
++              report.slice(0, 60000),
++              '```',
++              '',
++              '_Report-only automation (`docs/ci-templates/satellite-ci-sentinel.yml`, tool `scripts/ci/satellite_ci_sentinel.py` #2131). This issue does NOT auto-close on a later green sweep — closure decisions stay with the verdict plane/admin (#2211/#2225/#2738 false-closure family); a green sweep posts a corroboration comment instead. Remediation of satellite yml/CI remains admin-lane (#2360 option A)._',
++            ].join('\n');
++            const { data: openSentinel } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: LABEL, per_page: 100 });
++            const existing = openSentinel.find(i => i.title.startsWith('[ci-sentinel]'));
++            if (existing) {
++              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
++              core.notice(`Appended fresh receipt to existing alarm issue #${existing.number} (anti-stampede dedup)`);
++            } else {
++              const { data: created } = await github.rest.issues.create({ owner, repo, title, body, labels: [LABEL] });
++              core.notice(`Filed new alarm issue #${created.number}`);
++            }
++
++      - name: Post single green corroboration on an open alarm issue
++        if: steps.sweep.outputs.exit_code == '0'
++        uses: actions/github-script@v7
++        with:
++          script: |
++            const fs = require('fs');
++            const owner = context.repo.owner, repo = context.repo.repo;
++            const GREEN_MARKER = '<!-- satellite-ci-sentinel-green -->';
++            const report = fs.readFileSync('sentinel-report.json', 'utf8').trim();
++            const { data: openSentinel } = await github.rest.issues.listForRepo({ owner, repo, state: 'open', labels: 'ci:sentinel', per_page: 100 });
++            const existing = openSentinel.find(i => i.title.startsWith('[ci-sentinel]'));
++            if (!existing) { core.notice('All green and no open alarm issue — nothing to do'); return; }
++            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: existing.number, per_page: 100 });
++            if (comments.some(c => c.body && c.body.includes(GREEN_MARKER))) {
++              core.notice(`Issue #${existing.number} already holds a green corroboration — no spam`);
++              return;
++            }
++            const body = [
++              GREEN_MARKER,
++              `**Green corroboration:** ${new Date().toISOString()} — latest sentinel sweep exit 0 (all verified mains green; stale rows, if any, disclosed inside the report).`,
++              '',
++              '```json',
++              report.slice(0, 30000),
++              '```',
++              '',
++              '_Single-shot corroboration: repeated green sweeps do not comment again. Close/no-close remains the verdict plane/admin decision._',
++            ].join('\n');
++            await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
++            core.notice(`Posted green corroboration to #${existing.number}`);
++
++      - name: Notify Telegram lane on red / fail-close
++        if: steps.sweep.outputs.exit_code != '0'
++        run: |
++          if [ -n "${{ secrets.TELEGRAM_ALERTS_BOT_TOKEN }}" ] && [ -n "${{ secrets.TELEGRAM_ALERTS_CHAT_ID }}" ]; then
++            curl -sf -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_ALERTS_BOT_TOKEN }}/sendMessage" \
++              -d chat_id="${{ secrets.TELEGRAM_ALERTS_CHAT_ID }}" \
++              -d text="🛰 satellite CI sentinel exit=${{ steps.sweep.outputs.exit_code }} at $(date -u +%FT%TZ) — alarm issue filed/updated in supremeai-open." > /dev/null || \
++              echo "::warning::Telegram notification failed (non-fatal)"
++          else
++            echo "::notice::Telegram secrets not configured — skipping notification"
++          fi

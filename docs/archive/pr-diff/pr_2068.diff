@@ -1,0 +1,1113 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index 8b278e07..78cf8bdf 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -527,6 +527,53 @@ for line in $updates; do
+         fi
+     fi
+ 
++    # 14b. NPM-DEP CVE GUARD (#2059).
++    # npm dependency vulnerability ratchet over the two Tower buildCommand
++    # lockfiles (infrastructure/mcp-control-plane/package-lock.json via
++    # `npm install`, .agents/skills/devtools-audit/package-lock.json via
++    # `npm ci --prefix`), the control plane every agent loop and bridge
++    # handshake runs through. Letter-suffixed section number: the numeric
++    # sections are load-bearing cross-references in landed commit messages
++    # (e.g. #2044 cites section 15) — renumbering would break that trail.
++    # Engages ONLY when the push touches the npm dependency surface (the
++    # two package-lock paths or the Tower render.yaml, whose buildCommand
++    # supply-chain claims live here). Shrink-only baseline
++    # (scripts/ci/npm_dep_cve_baseline.json, seeded from the LIVE
++    # 2026-10-28 OSV audit — 8 production pairs / 19 advisory ids incl.
++    # @modelcontextprotocol/sdk 1.30.0): a NEW advisory pair or a NEW
++    # advisory id fail-closes the push; resolved ids route to
++    # baseline-shrink hints. Dev-only lock entries are outside the deploy
++    # surface (skipped). Skips-with-evidence when the OSV API
++    # (api.osv.dev, zero-credential SSOT) is unreachable (honest
++    # degradation, #1760 pattern). Self-contained under `set -u`.
++    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/npm_dep_cve_guard.py ]; then
++        if ZERO_TEST "$remote_sha"; then
++            npmdep_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
++        else
++            npmdep_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
++        fi
++        npmdep_surface=$(printf '%s\n' "$npmdep_changed" | grep -E '^(infrastructure/mcp-control-plane/(package-lock\.json|render\.yaml)|\.agents/skills/devtools-audit/package-lock\.json)$' || true)
++        if [ -n "$npmdep_surface" ]; then
++            hook_py=""
++            if python3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="python3"
++            elif python -c "import sys" >/dev/null 2>&1; then
++                hook_py="python"
++            elif py -3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="py -3"
++            fi
++            if [ -n "$hook_py" ]; then
++                if ! $hook_py scripts/ci/npm_dep_cve_guard.py --files $npmdep_surface; then
++                    reject "NPM-DEP CVE GUARD (#2059) FAILED" \
++                        "The push introduces NEW npm dependency advisories on the Tower control plane." \
++                        "Resolve it (pin bumps are maintainer decisions on the owning lockfile) or re-floor the baseline deliberately — the baseline may never grow." \
++                        "See the [npm-dep-cve-guard] evidence lines above; OSV-unreachable runs skip with evidence." \
++                        "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        fi
++    fi
++
+     # 15. DOCS LINK INTEGRITY GUARD (#1938).
+     # Markdown internal-link integrity ratchet over every tracked .md surface.
+     # Engages ONLY when the push touches .md files; sweeps the surviving
+diff --git a/scripts/ci/npm_dep_cve_baseline.json b/scripts/ci/npm_dep_cve_baseline.json
+new file mode 100644
+index 00000000..2223b779
+--- /dev/null
++++ b/scripts/ci/npm_dep_cve_baseline.json
+@@ -0,0 +1,69 @@
++{
++  "meta": {
++    "issue": 2059,
++    "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
++    "lockfiles": [
++      "infrastructure/mcp-control-plane/package-lock.json",
++      ".agents/skills/devtools-audit/package-lock.json"
++    ],
++    "ecosystem": "npm",
++    "dev_entries_skipped": true,
++    "head": "bab42ec 2026-10-28",
++    "dated": "2026-10-28",
++    "totals": {
++      "pairs_scanned": 122,
++      "skipped_dev": 52,
++      "skipped_non_registry": 2,
++      "vulnerable_pairs": 8,
++      "vuln_ids": 19
++    },
++    "per_lock": {
++      "infrastructure/mcp-control-plane/package-lock.json": {
++        "pairs_scanned": 101,
++        "vulnerable_pairs": 8
++      },
++      ".agents/skills/devtools-audit/package-lock.json": {
++        "pairs_scanned": 21,
++        "vulnerable_pairs": 0
++      }
++    },
++    "doctrine": "shrink-only ratchet: entries and ids may only be REMOVED (in the same change that resolves them \u2014 a maintainer pin bump or an upstream fix absorbed by a floor reset). A new pair or a new advisory id is drift; the baseline may never grow. Seeded floor is the LIVE 2026-10-28 audit result (the #2033 lesson), not an assumed-empty one."
++  },
++  "findings": {
++    "infrastructure/mcp-control-plane/package-lock.json:@modelcontextprotocol/sdk@1.30.0": [
++      "GHSA-22jm-h49p-29qw",
++      "GHSA-46jr-4wx8-v453",
++      "GHSA-6prh-2h8m-c8cw",
++      "GHSA-6qxp-vccf-f47h",
++      "GHSA-f897-62hf-6gxq",
++      "GHSA-rvq5-wwqv-78pq"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:body-parser@2.3.0": [
++      "GHSA-27r3-jxmh-p828"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:fast-uri@3.1.7": [
++      "GHSA-333x-w4r6-6crp",
++      "GHSA-hrr3-gc8f-f4qj",
++      "GHSA-w74x-v6f9-j3xg",
++      "GHSA-wjr9-j795-jxcr",
++      "GHSA-xhq7-xmqj-769h"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:hono@4.13.7": [
++      "GHSA-5r4p-p66f-jhc7"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:ip-address@10.7.0": [
++      "GHSA-h3mg-xc3c-68pw",
++      "GHSA-j6r3-76f7-8jcv",
++      "GHSA-rxp7-6hxx-x8q5"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:proxy-addr@2.0.7": [
++      "GHSA-jqcg-44mw-7w3h"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:qs@6.16.0": [
++      "GHSA-6pq8-jhm2-2vcw"
++    ],
++    "infrastructure/mcp-control-plane/package-lock.json:zod@4.6.4": [
++      "GHSA-mrhx-c7xc-m3w5"
++    ]
++  }
++}
+diff --git a/scripts/ci/npm_dep_cve_guard.py b/scripts/ci/npm_dep_cve_guard.py
+new file mode 100644
+index 00000000..5cce5e6a
+--- /dev/null
++++ b/scripts/ci/npm_dep_cve_guard.py
+@@ -0,0 +1,585 @@
++#!/usr/bin/env python3
++"""npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059, lane R45).
++
++Mission (issue #2059, scout radar lane R45):
++    The dependency-CVE doctrine (#1950 coverage map, extended by #1969/#1975
++    and #2042) had one blind spot left: the control plane itself. The Tower
++    (supremeai-mcp-tower, `infrastructure/mcp-control-plane/render.yaml`) is
++    the service every agent loop, bridge work order, and zero-credential
++    handshake runs through, and its buildCommand installs from TWO npm
++    lockfiles (`npm install` over the control-plane lock + `npm ci --prefix
++    ../../.agents/skills/devtools-audit`) — while the landed js gate
++    (#1913) parses only studio/pnpm-lock.yaml. This guard closes that gap
++    with the same shrink-only ratchet fed by the same advisory SSOT
++    (api.osv.dev — the database behind GHSA/npm advisories that Trivy itself
++    normalizes to), as a SIBLING of #1913: separate parser (npm package-
++    lock.json v2/v3), separate baseline, identical ratchet semantics and
++    exit contract. The sibling split (house style: #1975 is a sibling of
++    #1913) keeps each plane's floor independently shrinkable — the baseline
++    may never grow, per plane.
++
++Behavior contract (the #1913/#1796 shrink-only ratchet, externalized to a
++versioned baseline because the npm plane carries a REAL floor: the live
++2026-10-28 OSV querybatch run puts 19 advisory ids on 8 production pairs in
++the control-plane lock — @modelcontextprotocol/sdk 1.30.0 carries 6 of them,
++including GHSA-22jm-h49p-29qw on the protocol SDK the federation runs on):
++
++    1. Parses each tracked package-lock.json (lockfileVersion >= 2) into
++       the unique set of PRODUCTION (name, version) pairs it pins:
++       `packages["node_modules/<name>"]` entries, nested
++       `node_modules/a/node_modules/b` keys reduced to their real package
++       name, `dev: true` entries skipped (dev-only trees are outside the
++       deploy surface this guard owns — the #2059 finding scope), and
++       non-registry entries (link:/workspace/no-version) skipped.
++    2. Queries api.osv.dev/v1/querybatch once per chunk (zero-credential,
++       free public API) and aggregates vulnerable pairs to
++       "<lockfile-path>:name@version" -> sorted [advisory id] — keys are
++       lock-scoped so two locks can share one baseline without collision.
++    3. Compares against scripts/ci/npm_dep_cve_baseline.json:
++         - a pair absent from the baseline, or an advisory id inside a
++           baselined pair that the baseline does not list, is DRIFT;
++         - ids at or below the baseline are compliant (fewer ids is an
++           improvement — shrink the baseline entry in the same change; the
++           file may only ever shrink).
++    4. Routing (issue #2059 adoption path): NEW advisory ids fail-close
++       (exit 1). The fix for a new advisory is a MAINTAINER bump decision
++       on the owning lockfile (or a deliberate floor reset via --baseline;
++       the baseline diff in review IS the audit trail) — in particular the
++       8 seeded @modelcontextprotocol/sdk / fast-uri / ip-address /
++       body-parser / hono / proxy-addr / qs / zod entries are maintainer
++       bump lanes, NEVER agent edits. This guard reports findings; it
++       NEVER edits a lockfile or bumps pins.
++    5. Honest degradation (#1760 pattern): when the OSV API is unreachable
++       after retries the guard skips with evidence (exit 0, note emitted) —
++       it never fabricates a PASS. A lockfile that exists but cannot be
++       READ is a surface change and fail-closes (the #1913
++       unreadable-lockfile analog); a MISSING tracked lockfile is likewise
++       a surface change and fail-closes.
++    6. `--baseline` regenerates the versioned baseline at the CURRENT head
++       (admin floor reset; review the diff). `--json` emits a machine
++       report. `--files f1 ...` (pre-push mode) runs the full check only
++       when the changed set intersects the guard's surface (the two
++       package-lock paths + the Tower render.yaml, because buildCommand
++       supply-chain claims live there); otherwise honest skip.
++
++Never-do (issue #1913/#1969/#2059 doctrine): no auto pin bumps; no lockfile
++edits; the baseline may never grow; no scanning .github/**; no secret values
++involved (advisory ids and package coordinates only).
++
++Usage:
++    python scripts/ci/npm_dep_cve_guard.py --check            # roster mode
++    python scripts/ci/npm_dep_cve_guard.py --files a b        # pre-push mode
++    python scripts/ci/npm_dep_cve_guard.py --baseline         # regenerate floor
++    python scripts/ci/npm_dep_cve_guard.py --json             # machine report
++    python scripts/ci/npm_dep_cve_guard.py --self-test        # hermetic
++
++Exit codes: 0 = pass / known-floor / honest skip · 1 = new drift ·
++2 = usage error.
++"""
++
++from __future__ import annotations
++
++import argparse
++import contextlib
++import json
++import subprocess
++import sys
++import time
++import urllib.request
++from pathlib import Path
++
++if hasattr(sys.stdout, "reconfigure"):
++    with contextlib.suppress(Exception):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++GUARD_TAG = "[npm-dep-cve-guard]"
++BASELINE_PATH = Path("scripts/ci/npm_dep_cve_baseline.json")
++LOCK_PATHS = (
++    Path("infrastructure/mcp-control-plane/package-lock.json"),
++    Path(".agents/skills/devtools-audit/package-lock.json"),
++)
++# render.yaml carries the buildCommand that consumes both locks; its
++# supply-chain claims (#707 uv pin comment vs command) are part of this
++# guard's surface so pushes that touch them run the ratchet.
++SURFACE_PATHS = tuple(str(p) for p in LOCK_PATHS) + (
++    "infrastructure/mcp-control-plane/render.yaml",
++)
++
++EXIT_PASS = 0
++EXIT_DRIFT = 1
++EXIT_USAGE = 2
++
++OSV_QUERYBATCH = "https://api.osv.dev/v1/querybatch"
++OSV_CHUNK = 250
++OSV_TIMEOUT = 120
++OSV_RETRIES = 3
++ECOSYSTEM = "npm"
++
++
++def _evidence(msg: str) -> None:
++    print(f"{GUARD_TAG} {msg}")
++
++
++def load_lock_pairs(lock_path: Path) -> tuple[list[tuple[str, str]], dict]:
++    """Parse an npm package-lock.json (v2/v3) into its PRODUCTION pin set.
++
++    Reads the `packages` mapping; `node_modules/<name>` keys contribute
++    (name, version) unless the entry is `dev: true` (dev-only tree,
++    outside the deploy surface), has no semver version (link/workspace
++    entries), or is the root "" entry. Nested keys
++    ("node_modules/a/node_modules/b") reduce to the innermost package
++    name — npm semantics: the nested entry is what that subtree resolves.
++    Returns (sorted pairs, skip counters) and raises ValueError/IOError
++    for structural unreadability (fail-close decision lives in evaluate).
++    """
++    doc = json.loads(lock_path.read_text(encoding="utf-8"))
++    if not isinstance(doc, dict):
++        raise ValueError("lockfile malformed: top level must be an object")
++    if int(doc.get("lockfileVersion") or 0) < 2:
++        raise ValueError(
++            f"lockfile unsupported: lockfileVersion {doc.get('lockfileVersion')!r} < 2"
++        )
++    packages = doc.get("packages")
++    if not isinstance(packages, dict):
++        raise ValueError("lockfile malformed: 'packages' must be an object")
++    pairs: set[tuple[str, str]] = set()
++    skipped: dict = {"dev": 0, "non_registry": 0}
++    for key, entry in packages.items():
++        if not key:
++            skipped["non_registry"] += 1  # root entry, not a dependency
++            continue
++        if not key.startswith("node_modules/"):
++            skipped["non_registry"] += 1
++            continue
++        name = key[len("node_modules/"):].split("/node_modules/")[-1]
++        if not isinstance(entry, dict):
++            raise ValueError(f"lockfile malformed: entry {key!r} is not an object")
++        if entry.get("dev") is True:
++            skipped["dev"] += 1
++            continue
++        version = entry.get("version")
++        if not isinstance(version, str) or not version or not version[0].isdigit():
++            skipped["non_registry"] += 1  # link:/workspace:/no version
++            continue
++        pairs.add((name, version))
++    return sorted(pairs), skipped
++
++
++def query_osv_batch(
++    pairs: list[tuple[str, str]], endpoint: str = OSV_QUERYBATCH
++) -> dict[tuple[str, str], list[str]]:
++    """One querybatch POST per OSV_CHUNK pairs; returns pair -> advisory ids.
++
++    Raises RuntimeError after OSV_RETRIES failed attempts on any chunk —
++    the honest-skip decision lives in evaluate().
++    """
++    queries = [
++        {"package": {"name": name, "ecosystem": ECOSYSTEM}, "version": version}
++        for name, version in pairs
++    ]
++    found: dict[tuple[str, str], list[str]] = {}
++    for start in range(0, len(queries), OSV_CHUNK):
++        batch = queries[start:start + OSV_CHUNK]
++        body = json.dumps({"queries": batch}).encode("utf-8")
++        response: dict = {}
++        last_error: Exception | None = None
++        for attempt in range(OSV_RETRIES):
++            try:
++                req = urllib.request.Request(
++                    endpoint,
++                    data=body,
++                    headers={"Content-Type": "application/json"},
++                    method="POST",
++                )
++                with urllib.request.urlopen(req, timeout=OSV_TIMEOUT) as resp:
++                    response = json.loads(resp.read().decode("utf-8"))
++                last_error = None
++                break
++            except Exception as exc:  # retried below, evidence kept
++                last_error = exc
++                if attempt < OSV_RETRIES - 1:
++                    time.sleep(2 * (attempt + 1))
++        if last_error is not None:
++            raise RuntimeError(
++                f"OSV querybatch unreachable after {OSV_RETRIES} attempt(s): {last_error}"
++            )
++        results = response.get("results")
++        if not isinstance(results, list) or len(results) != len(batch):
++            raise ValueError(
++                f"OSV querybatch response malformed: expected {len(batch)} results"
++            )
++        for query, result in zip(batch, results):
++            vulns = (result or {}).get("vulns") or []
++            if not vulns:
++                continue
++            key = (query["package"]["name"], query["version"])
++            ids = sorted({str(v.get("id")) for v in vulns if v.get("id")})
++            if ids:
++                found[key] = ids
++        if start + OSV_CHUNK < len(queries):
++            time.sleep(1.0)
++    return found
++
++
++def compare(
++    current: dict[str, list[str]], baseline: dict[str, list[str]]
++) -> tuple[list[dict], list[dict]]:
++    """Ratchet compare keyed '<lock>:name@version' -> sorted advisory ids.
++
++    drift: new pair, or an id inside a known pair that the baseline omits.
++    improvements: baselined ids/pairs that disappeared (shrink-the-floor
++    hints — the baseline entry may be removed in the same change).
++    """
++    drift: list[dict] = []
++    improvements: list[dict] = []
++    for pair in sorted(current):
++        cur = list(current[pair])
++        base = baseline.get(pair, [])
++        new_ids = [i for i in cur if i not in base]
++        if not base:
++            drift.append({"pair": pair, "ids": new_ids, "kind": "new-pair"})
++        elif new_ids:
++            drift.append({"pair": pair, "ids": new_ids, "kind": "new-id"})
++    for pair in sorted(baseline):
++        gone = [i for i in baseline[pair] if i not in current.get(pair, [])]
++        if gone or pair not in current:
++            remaining = current.get(pair, [])
++            improvements.append(
++                {"pair": pair, "resolved_ids": gone, "remaining": remaining}
++            )
++    return drift, improvements
++
++
++def git_head(repo_root: Path) -> str:
++    try:
++        out = subprocess_run(
++            ["git", "log", "-1", "--format=%h %ad", "--date=short"], cwd=repo_root
++        )
++        return out.strip() or "unknown"
++    except Exception as exc:  # provenance is best-effort, recorded as evidence
++        return f"unknown (git probe failed: {exc.__class__.__name__})"
++
++
++def subprocess_run(cmd: list[str], cwd: Path) -> str:
++    proc = subprocess.run(
++        cmd, cwd=cwd, capture_output=True, text=True, timeout=30, check=False
++    )
++    return proc.stdout
++
++
++def build_baseline_report(repo_root: Path) -> dict:
++    """Live lockfiles + OSV probe -> the versioned baseline document."""
++    findings: dict[str, list[str]] = {}
++    totals = {"pairs_scanned": 0, "skipped_dev": 0, "skipped_non_registry": 0}
++    per_lock: dict[str, dict] = {}
++    for rel in LOCK_PATHS:
++        lock = repo_root / rel
++        pairs, skipped = load_lock_pairs(lock)
++        found = query_osv_batch(pairs)
++        for (n, v), ids in found.items():
++            findings[f"{rel.as_posix()}:{n}@{v}"] = ids
++        per_lock[rel.as_posix()] = {
++            "pairs_scanned": len(pairs),
++            "vulnerable_pairs": len(found),
++        }
++        totals["pairs_scanned"] += len(pairs)
++        totals["skipped_dev"] += skipped["dev"]
++        totals["skipped_non_registry"] += skipped["non_registry"]
++    total_ids = sum(len(ids) for ids in findings.values())
++    return {
++        "meta": {
++            "issue": 2059,
++            "tool": "osv-querybatch (api.osv.dev/v1/querybatch, zero-credential)",
++            "lockfiles": [p.as_posix() for p in LOCK_PATHS],
++            "ecosystem": ECOSYSTEM,
++            "dev_entries_skipped": True,
++            "head": git_head(repo_root),
++            "dated": "2026-10-28",
++            "totals": {
++                **totals,
++                "vulnerable_pairs": len(findings),
++                "vuln_ids": total_ids,
++            },
++            "per_lock": per_lock,
++            "doctrine": (
++                "shrink-only ratchet: entries and ids may only be REMOVED (in the "
++                "same change that resolves them — a maintainer pin bump or an "
++                "upstream fix absorbed by a floor reset). A new pair or a new "
++                "advisory id is drift; the baseline may never grow. Seeded floor "
++                "is the LIVE 2026-10-28 audit result (the #2033 lesson), not an "
++                "assumed-empty one."
++            ),
++        },
++        "findings": dict(sorted(findings.items())),
++    }
++
++
++def load_baseline(repo_root: Path) -> tuple[dict[str, list[str]], dict]:
++    """Load the versioned baseline. Unreadable baseline is fail-closed drift."""
++    path = repo_root / BASELINE_PATH
++    if not path.is_file():
++        raise FileNotFoundError(
++            f"baseline missing: {BASELINE_PATH} (run --baseline to create)"
++        )
++    data = json.loads(path.read_text(encoding="utf-8"))
++    findings = data.get("findings")
++    if not isinstance(findings, dict):
++        raise ValueError("baseline malformed: 'findings' must be an object")
++    clean: dict[str, list[str]] = {}
++    for pair, ids in findings.items():
++        if not isinstance(pair, str) or not isinstance(ids, list):
++            raise ValueError("baseline malformed: findings must be pair -> id list")
++        clean[pair] = [str(i) for i in ids]
++    return clean, data.get("meta", {})
++
++
++def evaluate(repo_root: Path, files: list[str] | None = None) -> tuple[int, list[dict], list[dict], list[str]]:
++    """Single decision tree. Returns (exit, drift, improvements, notes)."""
++    notes: list[str] = []
++    if files is not None:
++        touched = [f for f in files if f in SURFACE_PATHS]
++        if not touched:
++            notes.append(
++                "changed set does not touch the npm dependency surface "
++                f"({', '.join(SURFACE_PATHS)}) — nothing to check"
++            )
++            return EXIT_PASS, [], [], notes
++
++    # Parse phase: a missing or unreadable tracked lockfile is a surface
++    # change and fail-closes (the #1913 unreadable-lockfile analog).
++    lock_findings: dict[str, list[str]] = {}
++    scanned = 0
++    try:
++        for rel in LOCK_PATHS:
++            lock = repo_root / rel
++            if not lock.is_file():
++                raise FileNotFoundError(f"tracked lockfile missing: {rel}")
++            pairs, skipped = load_lock_pairs(lock)
++            scanned += len(pairs)
++            found = query_osv_batch(pairs)
++            for (n, v), ids in found.items():
++                lock_findings[f"{rel.as_posix()}:{n}@{v}"] = ids
++    except FileNotFoundError as exc:
++        _evidence(f"DRIFT (fail-close): {exc}")
++        return EXIT_DRIFT, [{"pair": "*", "ids": [], "kind": "surface-change"}], [], notes
++    except (ValueError, OSError, json.JSONDecodeError) as exc:
++        _evidence(f"DRIFT (fail-close): lockfile unreadable: {exc}")
++        return EXIT_DRIFT, [{"pair": "*", "ids": [], "kind": "surface-change"}], [], notes
++    except RuntimeError as exc:  # OSV unreachable — honest skip, never fake PASS
++        _evidence(f"HONEST SKIP: {exc}")
++        notes.append("osv-unreachable: skip with evidence, no PASS fabricated")
++        return EXIT_PASS, [], [], notes
++
++    try:
++        baseline, meta = load_baseline(repo_root)
++    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
++        _evidence(f"DRIFT (fail-close): baseline unusable: {exc}")
++        return EXIT_DRIFT, [{"pair": "*", "ids": [], "kind": "baseline-unusable"}], [], notes
++
++    drift, improvements = compare(lock_findings, baseline)
++    notes.append(f"surface: {len(LOCK_PATHS)} tracked npm lockfile(s), {scanned} production pair(s) scanned")
++    notes.append(f"baseline: {len(baseline)} pair(s) at floor, meta.dated={meta.get('dated', 'unknown')}")
++    if drift:
++        _evidence(f"DRIFT: {len(drift)} new finding(s) on the npm dependency plane")
++        for d in drift:
++            _evidence(f"  {d['kind']}: {d['pair']} -> {d['ids']}")
++        _evidence(
++            "routing: pin bumps are MAINTAINER decisions on the owning lockfile; "
++            "deliberate re-floor is an admin --baseline reset reviewed as a diff"
++        )
++        return EXIT_DRIFT, drift, improvements, notes
++    if improvements:
++        _evidence(
++            f"ratchet hint: {len(improvements)} baseline entr(ies) resolved on the live tree — "
++            "shrink the baseline in the same change"
++        )
++    _evidence("ratchet clean: no new advisory ids on the npm dependency plane")
++    return EXIT_PASS, [], improvements, notes
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description="npm dependency CVE ratchet gate (#2059)")
++    mode = parser.add_mutually_exclusive_group(required=True)
++    mode.add_argument("--check", action="store_true", help="full roster check")
++    mode.add_argument("--files", nargs="*", help="pre-push changed-set mode")
++    mode.add_argument("--baseline", action="store_true", help="regenerate the floor (admin)")
++    mode.add_argument("--json", action="store_true", help="machine report")
++    mode.add_argument("--self-test", action="store_true", help="hermetic self-test")
++    args = parser.parse_args(argv)
++
++    if args.self_test:
++        return run_self_test()
++
++    if args.baseline:
++        report = build_baseline_report(REPO_ROOT)
++        path = REPO_ROOT / BASELINE_PATH
++        path.write_text(json.dumps(report, indent=2, sort_keys=False) + "\n", encoding="utf-8")
++        _evidence(f"baseline written: {BASELINE_PATH} (review the diff — the floor may only shrink)")
++        return EXIT_PASS
++
++    if args.json:
++        report = build_baseline_report(REPO_ROOT)
++        print(json.dumps(report, indent=2, sort_keys=False))
++        return EXIT_PASS
++
++    files = args.files if args.files is not None else None
++    if args.files is not None and not args.files:
++        # `--files` with an empty changed set: nothing on the surface to check
++        _evidence("changed set empty — nothing to check")
++        return EXIT_PASS
++
++    exit_code, drift, improvements, notes = evaluate(REPO_ROOT, files)
++    for n in notes:
++        _evidence(f"note | {n}")
++    return exit_code
++
++
++def run_self_test() -> int:
++    """Hermetic self-test: parser, ratchet, decision tree — zero network."""
++    failures: list[str] = []
++
++    def check(name: str, cond: bool) -> None:
++        if cond:
++            _evidence(f"self-test OK: {name}")
++        else:
++            failures.append(name)
++            _evidence(f"self-test FAIL: {name}")
++
++    import tempfile
++
++    # 1. parser: plain + scoped names, nested node_modules, dev skip, links
++    with tempfile.TemporaryDirectory() as td:
++        lock = Path(td) / "package-lock.json"
++        lock.write_text(json.dumps({
++            "lockfileVersion": 3,
++            "packages": {
++                "": {"name": "root", "version": "1.0.0"},
++                "node_modules/express": {"version": "4.21.2"},
++                "node_modules/@modelcontextprotocol/sdk": {"version": "1.30.0"},
++                "node_modules/a/node_modules/left-pad": {"version": "1.3.0"},
++                "node_modules/devdep": {"version": "9.9.9", "dev": True},
++                "node_modules/linked": {"resolved": "packages/linked", "link": True},
++                "node_modules/qs": {"version": "6.16.0", "dev": False},
++            },
++        }))
++        pairs, skipped = load_lock_pairs(lock)
++        got = sorted(pairs)
++        check("parser exact set", got == sorted([
++            ("@modelcontextprotocol/sdk", "1.30.0"),
++            ("left-pad", "1.3.0"),
++            ("express", "4.21.2"),
++            ("qs", "6.16.0"),
++        ]))
++        check("parser dev skipped", skipped["dev"] == 1)
++        check("parser non-registry skipped", skipped["non_registry"] == 2)
++
++    # 2. parser: v1 lockfiles are out of contract (no packages map)
++    with tempfile.TemporaryDirectory() as td:
++        lock = Path(td) / "package-lock.json"
++        lock.write_text(json.dumps({"lockfileVersion": 1, "dependencies": {}}))
++        try:
++            load_lock_pairs(lock)
++            check("v1 rejected", False)
++        except ValueError:
++            check("v1 rejected", True)
++
++    # 3. ratchet semantics
++    check("equal floor passes", compare(
++        {"l:n@1": ["GHSA-a"]}, {"l:n@1": ["GHSA-a"]}) == ([], []))
++    drift, _ = compare({"l:n@1": ["GHSA-a", "GHSA-b"]}, {"l:n@1": ["GHSA-a"]})
++    check("new id inside known pair is drift",
++          drift == [{"pair": "l:n@1", "ids": ["GHSA-b"], "kind": "new-id"}])
++    drift, _ = compare({"l:new@2": ["GHSA-c"]}, {"l:n@1": ["GHSA-a"]})
++    check("new pair is drift",
++          drift == [{"pair": "l:new@2", "ids": ["GHSA-c"], "kind": "new-pair"}])
++    _, improvements = compare({}, {"l:n@1": ["GHSA-a"]})
++    check("vanished pair is improvement",
++          improvements == [{"pair": "l:n@1", "resolved_ids": ["GHSA-a"], "remaining": []}])
++
++    # 4. decision tree (hermetic: monkeypatched OSV, temp repo)
++    with tempfile.TemporaryDirectory() as td:
++        root = Path(td)
++        (root / "infrastructure/mcp-control-plane").mkdir(parents=True)
++        (root / ".agents/skills/devtools-audit").mkdir(parents=True)
++        (root / "scripts/ci").mkdir(parents=True)
++        (root / "infrastructure/mcp-control-plane/package-lock.json").write_text(
++            json.dumps({"lockfileVersion": 3, "packages": {
++                "node_modules/express": {"version": "4.21.2"}}}))
++        (root / ".agents/skills/devtools-audit/package-lock.json").write_text(
++            json.dumps({"lockfileVersion": 3, "packages": {
++                "node_modules/zod": {"version": "4.6.4"}}}))
++
++        baseline = {"findings": {
++            "infrastructure/mcp-control-plane/package-lock.json:express@4.21.2": ["GHSA-known"],
++        }, "meta": {"dated": "2026-10-28"}}
++        (root / BASELINE_PATH).write_text(json.dumps(baseline))
++
++        def fake_osv(pairs, endpoint=OSV_QUERYBATCH):
++            # Mimic the real query_osv_batch contract: only pairs WITH ids
++            # appear in the result (empty responses are absent, not []).
++            return {p: ["GHSA-known"] for p in pairs if p == ("express", "4.21.2")}
++
++        # The script runs as __main__; patch THIS module's global (importing
++        # npm_dep_cve_guard would create a second module instance and the
++        # monkeypatch would never be seen by evaluate()).
++        orig_query = globals()["query_osv_batch"]
++
++        def _use(fn):
++            globals()["query_osv_batch"] = fn
++
++        try:
++            _use(fake_osv)
++            code, drift, imp, notes = evaluate(root, files=None)
++            check("known floor passes (exit 0)", code == EXIT_PASS and not drift)
++            # new advisory id appears on a known pair -> drift exit 1
++            _use(lambda pairs, endpoint=OSV_QUERYBATCH: {
++                p: (["GHSA-known", "GHSA-NEW"] if p == ("express", "4.21.2") else [])
++                for p in pairs if p == ("express", "4.21.2")})
++            code, drift, imp, notes = evaluate(root, files=None)
++            check("new id fail-closes (exit 1)", code == EXIT_DRIFT
++                  and drift and drift[0]["kind"] == "new-id")
++            # OSV unreachable -> honest skip exit 0, never fake PASS
++            def boom(pairs, endpoint=OSV_QUERYBATCH):
++                raise RuntimeError("OSV querybatch unreachable after 3 attempt(s)")
++            _use(boom)
++            code, drift, imp, notes = evaluate(root, files=None)
++            check("osv unreachable honest-skip (exit 0, no drift)",
++                  code == EXIT_PASS and not drift
++                  and any("osv-unreachable" in n for n in notes))
++            # unreadable baseline -> fail-close
++            _use(fake_osv)
++            (root / BASELINE_PATH).write_text("{not json")
++            code, drift, imp, notes = evaluate(root, files=None)
++            check("malformed baseline fail-closes", code == EXIT_DRIFT
++                  and drift and drift[0]["kind"] == "baseline-unusable")
++            (root / BASELINE_PATH).write_text(json.dumps(baseline))
++            # tracked lockfile deleted -> surface change fail-close
++            (root / ".agents/skills/devtools-audit/package-lock.json").unlink()
++            code, drift, imp, notes = evaluate(root, files=None)
++            check("missing tracked lock fail-closes", code == EXIT_DRIFT
++                  and drift and drift[0]["kind"] == "surface-change")
++            (root / ".agents/skills/devtools-audit/package-lock.json").write_text(
++                json.dumps({"lockfileVersion": 3, "packages": {
++                    "node_modules/zod": {"version": "4.6.4"}}}))
++            # --files off-surface -> honest skip
++            code, drift, imp, notes = evaluate(root, files=["README.md"])
++            check("off-surface --files honest skip", code == EXIT_PASS
++                  and any("does not touch" in n for n in notes))
++            # --files on-surface (render.yaml counts) -> full check runs
++            code, drift, imp, notes = evaluate(
++                root, files=["infrastructure/mcp-control-plane/render.yaml"])
++            check("render.yaml in surface runs check", code == EXIT_PASS and not drift)
++        finally:
++            globals()["query_osv_batch"] = orig_query
++
++    if failures:
++        _evidence(f"SELF-TEST FAILED: {failures}")
++        return EXIT_DRIFT
++    _evidence("SELF-TEST OK: npm_dep_cve_guard")
++    return EXIT_PASS
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index fad5f71a..aae4d7f3 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -31,6 +31,8 @@
+     ["python", "scripts/ci/bandit_sast_guard.py", "--check"],
+     ["python", "scripts/ci/js_dep_cve_guard.py", "--check"],
+     ["python", "scripts/ci/py_dep_cve_guard.py", "--check"],
++    ["python", "scripts/ci/npm_dep_cve_guard.py", "--self-test"],
++    ["python", "scripts/ci/npm_dep_cve_guard.py", "--check"],
+     ["python", "scripts/ci/docs_link_integrity_guard.py", "--self-test"],
+     ["python", "scripts/ci/docs_link_integrity_guard.py"],
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 76eb567f..f73ed0a0 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 06:33:55 UTC · **515 scripts** (480 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 08:49:01 UTC · **516 scripts** (481 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (188 scripts)
++## scripts/ci/  (189 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -208,6 +208,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/mirror_parent_linker.py` | Mirror-claim issue → parent has-pr linker (#2894). |
+ | `ci/mission_passk.py` | Mission-suite pass^k harness — the first honest reliability scoreboard in CI. |
+ | `ci/mutation_lease.py` | Mutation Lease — controlled remote mutation guard (#4200 §6/§7, #4207 distributed). |
++| `ci/npm_dep_cve_guard.py` | npm_dep_cve_guard.py — npm dependency CVE ratchet gate (#2059, lane R45). |
+ | `ci/openapi_breaking_guard.py` | openapi_breaking_guard.py — machine revision-diff gate for the stable external contract (#1711). |
+ | `ci/pii_redaction_gap_probe.py` | PII redaction gap pilot — live benchmark for #1784 (R36, report-only). |
+ | `ci/pipeline_failure_register.py` | Pipeline Failure Register v2 (#2928 → #2935) — ডায়নামিক ট্র্যাকিং + এক-গ্রুপ-প্রতি-ব্যর্থতা-ইস্যু। |
+diff --git a/tests/test_npm_dep_cve_guard.py b/tests/test_npm_dep_cve_guard.py
+new file mode 100644
+index 00000000..4d7c91db
+--- /dev/null
++++ b/tests/test_npm_dep_cve_guard.py
+@@ -0,0 +1,340 @@
++#!/usr/bin/env python3
++"""tests/test_npm_dep_cve_guard.py — fail-closed behavioral suite for #2059.
++
++Verifies the npm dependency CVE ratchet gate delivered for #2059 (lane R45,
++the control-plane supply-chain surface):
++
++  - package-lock parser: v2/v3 `packages["node_modules/<name>"]` entries
++    resolve to (name, version); nested `node_modules/a/node_modules/b`
++    keys reduce to the innermost package name; `dev: true` entries are
++    skipped (dev-only trees are outside the deploy surface); link /
++    no-version entries are skipped; lockfileVersion < 2 is rejected;
++  - ratchet semantics: equal floors pass, a new pair and a new advisory id
++    inside a known pair are drift, resolved ids and vanished pairs are
++    improvements (shrink the baseline entry in the same change);
++  - routing decision tree: NEW advisory ids fail-close (exit 1); a missing
++    or malformed baseline fail-closes; a missing/unreadable tracked
++    lockfile fail-closes (surface change); an unreachable OSV API skips
++    with evidence and NEVER fabricates a PASS (the #1760 honest-
++    degradation pattern); --files mode with an off-surface changed set is
++    an honest skip; render.yaml IS in the surface (buildCommand claims
++    live there);
++  - live baseline pin: on the real repo the dated floor passes --check
++    (the landing state, network permitting — skipped with evidence when
++    api.osv.dev is unreachable), and its meta provenance is intact;
++  - wiring SSOT: the guard is present in the LIVE run_all_guards.py roster
++    and the LIVE .githooks/pre-push hook (never duplicated here).
++
++Design (zero-dependency doctrine, dual mode — pytest + stdlib runners):
++
++  - pytest:  pytest tests/test_npm_dep_cve_guard.py
++  - stdlib:  python3 tests/test_npm_dep_cve_guard.py   (plain runner)
++
++Network-dependent paths are hermetic: the module-level query_osv_batch is
++replaced with fixture findings through globals() (the script runs as
++__main__; importing it a second time would patch a different module
++instance — that pitfall is itself pinned by the suite), so every
++structural test is offline and deterministic. The single live --check
++probe degrades to a skip when the OSV API is absent.
++"""
++
++from __future__ import annotations
++
++import json
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++GUARD = REPO_ROOT / "scripts" / "ci" / "npm_dep_cve_guard.py"
++BASELINE = "scripts/ci/npm_dep_cve_baseline.json"
++TAG = "[npm-dep-cve-guard]"
++
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++import npm_dep_cve_guard as guard  # the importable copy (same source file)
++
++
++# ---------------------------------------------------------------------------
++# fixtures
++# ---------------------------------------------------------------------------
++
++def write_lock(root: Path, rel: str, packages: dict) -> None:
++    path = root / rel
++    path.parent.mkdir(parents=True, exist_ok=True)
++    path.write_text(json.dumps({"lockfileVersion": 3, "packages": packages}))
++
++
++TOWER_LOCK = "infrastructure/mcp-control-plane/package-lock.json"
++AUDIT_LOCK = ".agents/skills/devtools-audit/package-lock.json"
++
++
++def make_temp_repo(tmp: Path, baseline_pairs: dict | None = None) -> Path:
++    write_lock(tmp, TOWER_LOCK, {"node_modules/express": {"version": "4.21.2"}})
++    write_lock(tmp, AUDIT_LOCK, {"node_modules/zod": {"version": "4.6.4"}})
++    (tmp / "infrastructure/mcp-control-plane/render.yaml").parent.mkdir(
++        parents=True, exist_ok=True
++    )
++    (tmp / "infrastructure/mcp-control-plane/render.yaml").write_text("services: []\n")
++    (tmp / "scripts/ci").mkdir(parents=True, exist_ok=True)
++    if baseline_pairs is not None:
++        (tmp / BASELINE).write_text(json.dumps({
++            "meta": {"dated": "2026-10-28"},
++            "findings": baseline_pairs,
++        }))
++    return tmp
++
++
++# ---------------------------------------------------------------------------
++# parser contract
++# ---------------------------------------------------------------------------
++
++def test_parser_extracts_production_pins() -> None:
++    with tempfile.TemporaryDirectory() as td:
++        lock = Path(td) / "package-lock.json"
++        lock.write_text(json.dumps({
++            "lockfileVersion": 3,
++            "packages": {
++                "": {"name": "root", "version": "1.0.0"},
++                "node_modules/express": {"version": "4.21.2"},
++                "node_modules/@modelcontextprotocol/sdk": {"version": "1.30.0"},
++                "node_modules/a/node_modules/left-pad": {"version": "1.3.0"},
++                "node_modules/devdep": {"version": "9.9.9", "dev": True},
++                "node_modules/linked": {"resolved": "packages/linked", "link": True},
++                "node_modules/qs": {"version": "6.16.0", "dev": False},
++            },
++        }))
++        pairs, skipped = guard.load_lock_pairs(lock)
++        assert sorted(pairs) == sorted([
++            ("express", "4.21.2"),
++            ("@modelcontextprotocol/sdk", "1.30.0"),
++            ("left-pad", "1.3.0"),
++            ("qs", "6.16.0"),
++        ])
++        assert skipped == {"dev": 1, "non_registry": 2}
++
++
++def test_parser_rejects_v1_and_malformed() -> None:
++    with tempfile.TemporaryDirectory() as td:
++        lock = Path(td) / "package-lock.json"
++        lock.write_text(json.dumps({"lockfileVersion": 1, "dependencies": {}}))
++        try:
++            guard.load_lock_pairs(lock)
++            raise AssertionError("v1 lockfile must be rejected")
++        except ValueError:
++            pass
++        lock.write_text("[]")
++        try:
++            guard.load_lock_pairs(lock)
++            raise AssertionError("non-object lockfile must be rejected")
++        except ValueError:
++            pass
++
++
++def test_parser_missing_file_raises() -> None:
++    with tempfile.TemporaryDirectory() as td:
++        try:
++            guard.load_lock_pairs(Path(td) / "absent.json")
++            raise AssertionError("missing lockfile must raise")
++        except (OSError, ValueError):
++            pass
++
++
++# ---------------------------------------------------------------------------
++# ratchet semantics
++# ---------------------------------------------------------------------------
++
++def test_ratchet_equal_floor_passes() -> None:
++    drift, imp = guard.compare(
++        {"l:express@4.21.2": ["GHSA-a"]}, {"l:express@4.21.2": ["GHSA-a"]}
++    )
++    assert drift == [] and imp == []
++
++
++def test_ratchet_new_pair_is_drift() -> None:
++    drift, _ = guard.compare(
++        {"l:new@2": ["GHSA-c"]}, {"l:express@4.21.2": ["GHSA-a"]}
++    )
++    assert drift == [{"pair": "l:new@2", "ids": ["GHSA-c"], "kind": "new-pair"}]
++
++
++def test_ratchet_new_id_inside_known_pair_is_drift() -> None:
++    drift, _ = guard.compare(
++        {"l:express@4.21.2": ["GHSA-a", "GHSA-b"]}, {"l:express@4.21.2": ["GHSA-a"]}
++    )
++    assert drift == [{"pair": "l:express@4.21.2", "ids": ["GHSA-b"], "kind": "new-id"}]
++
++
++def test_ratchet_resolved_ids_are_improvements() -> None:
++    _, imp = guard.compare({}, {"l:express@4.21.2": ["GHSA-a"]})
++    assert imp == [{"pair": "l:express@4.21.2", "resolved_ids": ["GHSA-a"],
++                    "remaining": []}]
++
++
++# ---------------------------------------------------------------------------
++# routing decision tree (hermetic — globals() patch, __main__ pitfall pinned)
++# ---------------------------------------------------------------------------
++
++class _OsvPatch:
++    """Patch the RUNNING module's query_osv_batch via globals().
++
++    The guard script executes as __main__; `import npm_dep_cve_guard`
++    yields a SECOND module instance whose functions the __main__ copy
++    never calls. Patching globals() on the imported copy works for the
++    pytest path (tests import it fresh and call guard.evaluate), while
++    the stdlib path below re-executes the file as __main__ and patches
++    its own globals the same way. Both paths use this helper on their
++    respective module object.
++    """
++
++    def __init__(self, module, fn) -> None:
++        self._module = module
++        self._fn = fn
++        self._orig = None
++
++    def __enter__(self):
++        self._orig = self._module.query_osv_batch
++        self._module.query_osv_batch = self._fn
++        return self
++
++    def __exit__(self, *exc) -> None:
++        self._module.query_osv_batch = self._orig
++
++
++def _known_floor(pairs):
++    return {p: ["GHSA-known"] for p in pairs if p == ("express", "4.21.2")}
++
++
++def _new_id_floor(pairs):
++    return {
++        p: (["GHSA-known", "GHSA-NEW"] if p == ("express", "4.21.2") else [])
++        for p in pairs
++        if p == ("express", "4.21.2")
++    }
++
++
++def _unreachable(pairs):
++    raise RuntimeError("OSV querybatch unreachable after 3 attempt(s)")
++
++
++def test_decision_tree_hermetic() -> None:
++    with tempfile.TemporaryDirectory() as td:
++        root = make_temp_repo(Path(td), {
++            f"{TOWER_LOCK}:express@4.21.2": ["GHSA-known"],
++        })
++        with _OsvPatch(guard, _known_floor):
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_PASS and drift == []
++
++            with _OsvPatch(guard, _new_id_floor):
++                code, drift, imp, notes = guard.evaluate(root, files=None)
++                assert code == guard.EXIT_DRIFT
++                assert drift and drift[0]["kind"] == "new-id"
++
++            with _OsvPatch(guard, _unreachable):
++                code, drift, imp, notes = guard.evaluate(root, files=None)
++                assert code == guard.EXIT_PASS and drift == []
++                assert any("osv-unreachable" in n for n in notes)
++
++            (root / BASELINE).write_text("{not json")
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_DRIFT and drift[0]["kind"] == "baseline-unusable"
++
++            (root / BASELINE).unlink()
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_DRIFT and drift[0]["kind"] == "baseline-unusable"
++
++            make_temp_repo(root, {
++                f"{TOWER_LOCK}:express@4.21.2": ["GHSA-known"],
++            })
++            (root / AUDIT_LOCK).unlink()
++            code, drift, imp, notes = guard.evaluate(root, files=None)
++            assert code == guard.EXIT_DRIFT and drift[0]["kind"] == "surface-change"
++
++            make_temp_repo(root, {
++                f"{TOWER_LOCK}:express@4.21.2": ["GHSA-known"],
++            })
++            code, drift, imp, notes = guard.evaluate(root, files=["README.md"])
++            assert code == guard.EXIT_PASS
++            assert any("does not touch" in n for n in notes)
++
++            code, drift, imp, notes = guard.evaluate(
++                root, files=["infrastructure/mcp-control-plane/render.yaml"])
++            assert code == guard.EXIT_PASS and drift == []
++
++
++def test_main_files_off_surface_exit_zero() -> None:
++    proc = subprocess.run(
++        [sys.executable, str(GUARD), "--files", "README.md"],
++        capture_output=True, text=True, timeout=60, check=False,
++    )
++    assert proc.returncode == guard.EXIT_PASS, proc.stdout + proc.stderr
++    assert "nothing to check" in proc.stdout
++
++
++def test_main_self_test() -> None:
++    proc = subprocess.run(
++        [sys.executable, str(GUARD), "--self-test"],
++        capture_output=True, text=True, timeout=60, check=False,
++    )
++    assert proc.returncode == guard.EXIT_PASS, proc.stdout + proc.stderr
++    assert "SELF-TEST OK" in proc.stdout
++
++
++# ---------------------------------------------------------------------------
++# live baseline pin (network-permitting; honest skip offline)
++# ---------------------------------------------------------------------------
++
++def test_live_baseline_check() -> None:
++    if not (REPO_ROOT / BASELINE).is_file():
++        print(f"{TAG} skip: baseline not present in this checkout")
++        return
++    proc = subprocess.run(
++        [sys.executable, str(GUARD), "--check"],
++        capture_output=True, text=True, timeout=300, check=False,
++    )
++    if "HONEST SKIP" in proc.stdout or "osv-unreachable" in proc.stdout:
++        print(f"{TAG} skip-with-evidence: OSV API unreachable")
++        return
++    assert proc.returncode == guard.EXIT_PASS, proc.stdout + proc.stderr
++    baseline = json.loads((REPO_ROOT / BASELINE).read_text())
++    meta = baseline.get("meta", {})
++    assert meta.get("issue") == 2059
++    assert meta.get("dated") == "2026-10-28"
++    assert meta.get("ecosystem") == "npm"
++    assert meta.get("dev_entries_skipped") is True
++    assert "shrink-only" in meta.get("doctrine", "")
++    findings = baseline.get("findings", {})
++    for key in findings:
++        assert ":" in key and "@" in key  # lock-scoped pair keys
++
++
++def test_wiring_ssot() -> None:
++    roster = (REPO_ROOT / "scripts/ci/run_all_guards.py").read_text()
++    assert "scripts/ci/npm_dep_cve_guard.py" in roster, \
++        "guard must be wired into the run_all_guards roster"
++    prepush = (REPO_ROOT / ".githooks/pre-push").read_text()
++    assert "npm_dep_cve_guard.py" in prepush, \
++        "guard must be wired into the pre-push hook"
++    assert BASELINE in prepush or "npm_dep_cve_baseline" in prepush
++
++
++# ---------------------------------------------------------------------------
++# stdlib plain runner (dual-mode parity with the #1913 suite)
++# ---------------------------------------------------------------------------
++
++if __name__ == "__main__":
++    fns = [(k, v) for k, v in sorted(globals().items())
++           if k.startswith("test_") and callable(v)]
++    failed: list[str] = []
++    for name, fn in fns:
++        try:
++            fn()
++            print(f"{TAG} PASS: {name}")
++        except Exception as exc:  # noqa: BLE001 - plain runner reports and continues
++            failed.append(name)
++            print(f"{TAG} FAIL: {name}: {exc}")
++    if failed:
++        print(f"{TAG} {len(failed)} FAILED: {failed}")
++        sys.exit(1)
++    print(f"{TAG} ALL {len(fns)} TESTS PASS")

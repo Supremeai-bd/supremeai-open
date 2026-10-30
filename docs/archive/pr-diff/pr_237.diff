@@ -1,0 +1,584 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 9c97f8e7..894c9bed 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -31,8 +31,9 @@
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
+     "test:bridge-intake": "tsx test_bridge_intake.ts",
++    "test:command-router": "tsx test_command_router.ts",
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:account-chain": "tsx scripts/test-runner.ts test_account_chain_callers.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+diff --git a/infrastructure/mcp-control-plane/src/events/command_router.ts b/infrastructure/mcp-control-plane/src/events/command_router.ts
+new file mode 100644
+index 00000000..38845716
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/events/command_router.ts
+@@ -0,0 +1,309 @@
++/**
++ * Command Router (#211 slice 1) — ChatOps commands + post-merge lifecycle
++ * cleanup over the existing `/webhooks/github` → EventGateway flow.
++ *
++ * বাংলা নোট: এই slice টা #211-এর ৫টা কাজের মধ্যে সবচেয়ে ছোট নিরাপদ অংশ —
++ * slash-command parsing (item 1-এর registry skeleton) আর post-merge
++ * auto-close issue + auto-delete head branch (item 5, সম্পূর্ণ কার্যকর)।
++ * Pre-flight check (item 2), polling diet (item 3, pipeline.yml) এবং
++ * multi-channel dispatch (item 4) পরের slice-এ আসবে।
++ *
++ * Design doctrine (mirrors bridge_intake.ts):
++ *  - Subscribes to the ALREADY-deployed webhook route via the shared
++ *    EventGateway — no new HTTP surface, no new secrets, no protected paths.
++ *  - Least privilege: uses the server-side GITHUB_TOKEN only, never exposed
++ *    to the caller; tokenless boot degrades fail-honest (skip + log, never
++ *    throw — the cron reconciliation poll remains the safety net).
++ *  - Idempotent: 404/422 on close/delete means "already done" and counts as
++ *    reconciled, so replayed webhook deliveries are safe.
++ *  - Fail-safe guards: never deletes the base branch (main/master), never
++ *    closes more than MAX_LIFECYCLE_ISSUES_PER_EVENT issues per event.
++ */
++
++import { NormalizedEvent } from "./normalizer.js";
++import { globalEventGateway } from "./gateway.js";
++import { env } from "../lib/env.js";
++
++// ─────────────────────────────────────────────────────────────────────────────
++// ChatOps slash commands (#211 item 1 — parse + registry skeleton)
++// ─────────────────────────────────────────────────────────────────────────────
++
++export interface SlashCommand {
++  name: string;
++  args: string[];
++}
++
++export type CommandHandler = (cmd: SlashCommand, event: NormalizedEvent) => void | Promise<void>;
++
++const commandRegistry = new Map<string, CommandHandler>();
++
++/** Canonical ChatOps command names (#211 item 1). Extend via registerCommand. */
++export const CANONICAL_COMMANDS = ["claim", "verify", "cancel", "role"] as const;
++
++/**
++ * Registers (or replaces) a handler for a slash command. Handlers are wired
++ * at composition time (src/index.ts) — the router itself stays side-effect
++ * free so unmatched commands can never mutate anything.
++ */
++export function registerCommand(name: string, handler: CommandHandler): void {
++  const normalized = name.trim().toLowerCase().replace(/^\//, "");
++  if (!normalized) throw new Error("registerCommand: command name required");
++  commandRegistry.set(normalized, handler);
++}
++
++export function getRegisteredCommands(): string[] {
++  return [...commandRegistry.keys()].sort();
++}
++
++/**
++ * Parses a comment body into a slash command. Returns null for non-commands
++ * (the overwhelming majority of comments) so the hot path stays cheap.
++ * `/role coder` → { name: "role", args: ["coder"] }
++ */
++export function parseSlashCommand(text: string | undefined | null): SlashCommand | null {
++  if (!text) return null;
++  const m = /^\s*\/([A-Za-z][A-Za-z0-9_-]*)(?:\s+(.*))?\s*$/.exec(text);
++  if (!m) return null;
++  const name = m[1].toLowerCase();
++  const args = (m[2] ?? "").split(/\s+/).filter(Boolean);
++  return { name, args };
++}
++
++// ─────────────────────────────────────────────────────────────────────────────
++// Post-merge lifecycle cleanup (#211 item 5 — auto-close issue + auto-delete
++// head branch)
++// ─────────────────────────────────────────────────────────────────────────────
++
++/** Closing-keyword scan over the PR body (GitHub auto-close grammar). */
++export const CLOSE_KEYWORD_RE =
++  /\b(?:close[sd]?|fix(?:es)?|resolve[sd]?)\s+(?:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+))?#(\d+)\b/gi;
++
++/** Branch-name linkage: contributor/issue-N, bridge-*-issue-N, task-N. */
++export const BRANCH_ISSUE_RE = /(?:^|\/)(?:contributor\/issue-|bridge-[a-z0-9-]*-issue-|task-)(\d+)(?:$|[^0-9])/;
++
++/** Never close more than this many issues from a single PR (runaway guard). */
++export const MAX_LIFECYCLE_ISSUES_PER_EVENT = 10;
++
++/** Base branches are never deleted, no matter what the head ref says. */
++const PROTECTED_BRANCHES = new Set(["main", "master"]);
++
++export interface LifecycleResult {
++  issuesClosed: number[];
++  issuesAlreadyClosed: number[];
++  branchDeleted: string | null;
++  branchAlreadyGone: boolean;
++  skipped: string[];
++}
++
++export interface PullRequestLike {
++  merged?: boolean;
++  merged_at?: string | null;
++  body?: string | null;
++  head?: { ref?: string; repo?: { full_name?: string } | null };
++  base?: { ref?: string; repo?: { full_name?: string } | null };
++  number?: number;
++}
++
++/**
++ * Extracts issue numbers a merged PR claims: body closing keywords (same-repo
++ * `#N` and cross-repo `owner/repo#N` — cross-repo entries carry their own
++ * target and are closed there) plus branch-name linkage. Deduplicated,
++ * capped at MAX_LIFECYCLE_ISSUES_PER_EVENT.
++ */
++export function extractLinkedIssues(
++  pr: PullRequestLike,
++): Array<{ repo: string | null; number: number }> {
++  const out: Array<{ repo: string | null; number: number }> = [];
++  const seen = new Set<string>();
++  const push = (repo: string | null, num: number) => {
++    const key = `${repo || ""}#${num}`;
++    if (seen.has(key) || !Number.isFinite(num) || num <= 0) return;
++    seen.add(key);
++    out.push({ repo, number: num });
++  };
++
++  const body = pr.body || "";
++  for (const m of body.matchAll(CLOSE_KEYWORD_RE)) {
++    push(m[1] && m[2] ? `${m[1]}/${m[2]}` : null, parseInt(m[3], 10));
++  }
++  const branchRef = pr.head?.ref || "";
++  const bm = BRANCH_ISSUE_RE.exec(branchRef);
++  if (bm) push(null, parseInt(bm[1], 10));
++
++  return out.slice(0, MAX_LIFECYCLE_ISSUES_PER_EVENT);
++}
++
++interface FetchImpl {
++  (url: string, init?: Record<string, unknown>): Promise<{ status: number; ok: boolean }>;
++}
++
++/**
++ * Runs the post-merge cleanup for a `pull_request.closed && merged` payload:
++ *  1. PATCH each linked issue → state:closed (idempotent on already-closed).
++ *  2. DELETE the PR head branch unless it is a protected base branch
++ *     (GitHub usually already deleted it — 404 counts as reconciled).
++ *
++ * Fail-honest: missing GITHUB_TOKEN → every action is recorded in `skipped`
++ * and nothing throws (the pipeline reconciliation poll stays the safety net).
++ * `fetchImpl` is injectable for offline tests.
++ */
++export async function runLifecycleCleanup(
++  payload: Record<string, any>,
++  opts: { fetchImpl?: FetchImpl; token?: string; log?: (msg: string) => void } = {},
++): Promise<LifecycleResult> {
++  const result: LifecycleResult = {
++    issuesClosed: [],
++    issuesAlreadyClosed: [],
++    branchDeleted: null,
++    branchAlreadyGone: false,
++    skipped: [],
++  };
++  const log = opts.log ?? ((msg: string) => console.log(`[COMMAND ROUTER] ${msg}`));
++
++  const pr: PullRequestLike | undefined = payload?.pull_request;
++  if (!pr || pr.merged !== true) {
++    result.skipped.push("not a merged pull_request.closed payload");
++    return result;
++  }
++
++  const webhookRepo = payload?.repository?.full_name;
++  if (!webhookRepo) {
++    result.skipped.push("repository.full_name missing from payload");
++    return result;
++  }
++
++  const token = opts.token ?? env.github.token;
++  const doFetch: FetchImpl = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchImpl);
++  if (!token) {
++    result.skipped.push(
++      "GITHUB_TOKEN absent — lifecycle cleanup degraded to notify-only (fail-honest)",
++    );
++    log("GITHUB_TOKEN absent — skipping issue close + branch delete (reconciliation poll remains the safety net)");
++    return result;
++  }
++  if (typeof doFetch !== "function") {
++    result.skipped.push("no fetch implementation available");
++    return result;
++  }
++
++  const authHeaders = {
++    Authorization: `Bearer ${token}`,
++    Accept: "application/vnd.github+json",
++    "X-GitHub-Api-Version": "2022-11-28",
++    "Content-Type": "application/json",
++    "User-Agent": "supremeai-mcp-tower-command-router",
++  };
++
++  // 1. Auto-close linked issues (idempotent).
++  const linked = extractLinkedIssues(pr);
++  for (const { repo, number } of linked) {
++    const targetRepo = repo || webhookRepo;
++    try {
++      const res = await doFetch(`https://api.github.com/repos/${targetRepo}/issues/${number}`, {
++        method: "PATCH",
++        headers: authHeaders,
++        body: JSON.stringify({ state: "closed", state_reason: "completed" }),
++      });
++      if (res.status === 200 || res.ok) {
++        result.issuesClosed.push(number);
++        log(`closed issue ${targetRepo}#${number} (merged PR cleanup)`);
++      } else if (res.status === 404 || res.status === 422) {
++        // 404: issue gone · 422: already closed / shard race — reconciled.
++        result.issuesAlreadyClosed.push(number);
++        log(`issue ${targetRepo}#${number} already closed or absent (HTTP ${res.status}) — reconciled`);
++      } else {
++        result.skipped.push(`close ${targetRepo}#${number}: HTTP ${res.status}`);
++        log(`unexpected HTTP ${res.status} closing ${targetRepo}#${number} — left for reconciliation poll`);
++      }
++    } catch (err) {
++      result.skipped.push(`close ${targetRepo}#${number}: ${(err as Error).message}`);
++    }
++  }
++
++  // 2. Auto-delete the head branch (never a protected base branch).
++  const headRef = pr.head?.ref || "";
++  const headRepo = pr.head?.repo?.full_name || webhookRepo;
++  if (!headRef || PROTECTED_BRANCHES.has(headRef) || headRef === pr.base?.ref) {
++    log(`head branch '${headRef || "(none)"}' is protected or missing — delete skipped`);
++  } else {
++    try {
++      const res = await doFetch(
++        `https://api.github.com/repos/${headRepo}/git/refs/heads/${encodeURIComponent(headRef)}`,
++        { method: "DELETE", headers: authHeaders },
++      );
++      if (res.status === 204 || res.ok) {
++        result.branchDeleted = headRef;
++        log(`deleted merged head branch ${headRepo}:${headRef}`);
++      } else if (res.status === 404 || res.status === 422 || res.status === 409) {
++        // 404: already deleted (delete_branch_on_merge / fork branch) — fine.
++        result.branchAlreadyGone = true;
++        log(`head branch ${headRepo}:${headRef} already gone (HTTP ${res.status}) — reconciled`);
++      } else {
++        result.skipped.push(`delete ${headRepo}:${headRef}: HTTP ${res.status}`);
++        log(`unexpected HTTP ${res.status} deleting ${headRepo}:${headRef} — left for reconciliation poll`);
++      }
++    } catch (err) {
++      result.skipped.push(`delete ${headRepo}:${headRef}: ${(err as Error).message}`);
++    }
++  }
++
++  return result;
++}
++
++// ─────────────────────────────────────────────────────────────────────────────
++// Router registration — one EventGateway subscription, idempotent.
++// ─────────────────────────────────────────────────────────────────────────────
++
++let registered = false;
++
++interface GatewayLike {
++  subscribe(listener: (event: NormalizedEvent) => void | Promise<void>): void;
++}
++
++/**
++ * Arms the router on the shared EventGateway:
++ *  - `pull_request` closed+merged → post-merge lifecycle cleanup (#211 item 5)
++ *  - `issue_comment` / `pull_request_review_comment` → slash-command parse +
++ *    registry dispatch (no default handlers ⇒ unmatched commands are logged,
++ *    never executed — side-effect free by construction)
++ *  - everything else → ignored (single router, zero duplicate dispatch)
++ */
++export function registerCommandRouter(gateway: GatewayLike = globalEventGateway): void {
++  if (registered) return;
++  registered = true;
++
++  gateway.subscribe(async (event: NormalizedEvent) => {
++    if (event.source !== "github") return;
++    const payload = event.payload as Record<string, any> | undefined;
++    if (!payload) return;
++
++    if (event.type === "pull_request") {
++      if (payload.action === "closed" && payload.pull_request?.merged === true) {
++        try {
++          const result = await runLifecycleCleanup(payload);
++          if (result.skipped.length) {
++            console.warn(`[COMMAND ROUTER] lifecycle cleanup incomplete: ${result.skipped.join("; ")}`);
++          }
++        } catch (err) {
++          // Gateway already catches listener rejections; this is belt & braces.
++          console.error(`[COMMAND ROUTER] lifecycle cleanup error: ${(err as Error).message}`);
++        }
++      }
++      return;
++    }
++
++    if (event.type === "issue_comment" || event.type === "pull_request_review_comment") {
++      const comment = payload.comment?.body as string | undefined;
++      const cmd = parseSlashCommand(comment);
++      if (!cmd) return;
++      const handler = commandRegistry.get(cmd.name);
++      if (!handler) {
++        console.log(`[COMMAND ROUTER] unmatched command /${cmd.name} (${getRegisteredCommands().join(", ") || "none registered"}) — no-op`);
++        return;
++      }
++      await handler(cmd, event);
++    }
++  });
++
++  console.log("[COMMAND ROUTER] armed — post-merge cleanup + ChatOps command parsing active");
++}
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index b0cccb4d..bbc6190e 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -33,6 +33,7 @@ import { verifyApprovalLink } from "./policy/approvals/signing.js";
+ import { hasWebhookSignature } from "./lib/webhook_signature.js";
+ import { registerBridgeIntake } from "./events/bridge_intake.js";
+ import { registerFederatedCiWatcher } from "./events/federated_ci_watcher.js";
++import { registerCommandRouter } from "./events/command_router.js";
+ import { validateRuntimeKnobs } from "./lib/env.js";
+ import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
+ import { MemorySubAdapter } from "./adapters/memory/index.js";
+@@ -1871,6 +1872,12 @@ async function main(): Promise<void> {
+     // server accepts webhook traffic.
+     await registerFederatedCiWatcher();
+ 
++    // #211 slice 1: post-merge lifecycle cleanup (auto-close issue +
++    // auto-delete head branch) + ChatOps slash-command parsing. Idempotent,
++    // fail-honest (tokenless boot degrades to notify-only), armed BEFORE the
++    // server accepts webhook traffic — same doctrine as registerBridgeIntake.
++    registerCommandRouter();
++
+     const server = await createMcpServer(memoryAdapter);
+ 
+     if (mode === "stdio") {
+diff --git a/infrastructure/mcp-control-plane/test_command_router.ts b/infrastructure/mcp-control-plane/test_command_router.ts
+new file mode 100644
+index 00000000..a2d61eb8
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_command_router.ts
+@@ -0,0 +1,214 @@
++/**
++ * Offline-safe tests for the Command Router (#211 slice 1).
++ *
++ * বাংলা নোট: কোনো network বা env দরকার নেই — fetch inject করা হয়, তাই এটা
++ * clean-env safe (#98 শ্রেণির test-wiring নিয়ম মেনে test:unit-এ যুক্ত)।
++ *
++ * Covers:
++ *  - parseSlashCommand: canonical commands, args, non-commands, junk
++ *  - extractLinkedIssues: body keywords (#N + owner/repo#N), branch-name
++ *    linkage (contributor/issue-N, bridge-*-issue-N, task-N), dedup + cap
++ *  - runLifecycleCleanup: closes issues (200), reconciles already-closed
++ *    (404/422), deletes head branch (204), reconciles already-gone (404),
++ *    PROTECTED branch guard, tokenless fail-honest degradation, non-merged
++ *    payload no-op, runaway cap
++ */
++
++import {
++  parseSlashCommand,
++  registerCommand,
++  getRegisteredCommands,
++  extractLinkedIssues,
++  runLifecycleCleanup,
++  registerCommandRouter,
++  MAX_LIFECYCLE_ISSUES_PER_EVENT,
++  SlashCommand,
++} from "./src/events/command_router.js";
++
++let pass = 0;
++let fail = 0;
++function check(name: string, cond: boolean, detail = ""): void {
++  if (cond) {
++    pass++;
++    console.log(`✅ ${name}${detail ? ` — ${detail}` : ""}`);
++  } else {
++    fail++;
++    console.log(`❌ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++
++// ── 1. parseSlashCommand ────────────────────────────────────────────────────
++const c1 = parseSlashCommand("/claim");
++check("parse /claim", !!c1 && c1.name === "claim" && c1.args.length === 0);
++const c2 = parseSlashCommand("  /role coder  ");
++check("parse /role coder with args+whitespace", !!c2 && c2.name === "role" && c2.args.join(",") === "coder");
++const c3 = parseSlashCommand("this is just a normal comment");
++check("non-command returns null", c3 === null);
++const c4 = parseSlashCommand("");
++check("empty body returns null", c4 === null);
++const c5 = parseSlashCommand("/VERIFY");
++check("command names case-normalized", !!c5 && c5.name === "verify");
++
++// ── 2. extractLinkedIssues ──────────────────────────────────────────────────
++const pr1 = {
++  merged: true,
++  body: "fixes #12, Closes #34 and resolves OtherOrg/other-repo#56\nalso closes #12 again",
++  head: { ref: "contributor/issue-78", repo: { full_name: "Supremeai-bd/supremeai-open" } },
++};
++const linked1 = extractLinkedIssues(pr1);
++const nums1 = linked1.map((l) => `${l.repo || ""}#${l.number}`).sort();
++check(
++  "extract: keywords + cross-repo + branch linkage, deduped",
++  JSON.stringify(nums1) === JSON.stringify(["#12", "#34", "#78", "OtherOrg/other-repo#56"].sort()),
++  nums1.join(", "),
++);
++const linked2 = extractLinkedIssues({
++  merged: true,
++  body: "no keywords here, refs only: Refs #99",
++  head: { ref: "bridge-20261016-issue-77-pr-body", repo: null },
++});
++check("extract: Refs-only ignored, bridge-*-issue-N linked", linked2.length === 1 && linked2[0].number === 77);
++const linked3 = extractLinkedIssues({
++  merged: true,
++  body: Array.from({ length: 30 }, (_, i) => `Closes #${i + 1}`).join(", "),
++  head: { ref: "task-31", repo: null },
++});
++check("extract: capped at MAX_LIFECYCLE_ISSUES_PER_EVENT", linked3.length === MAX_LIFECYCLE_ISSUES_PER_EVENT);
++
++// ── 3. runLifecycleCleanup (injectable fetch, offline) ─────────────────────
++function fakeFetch(responses: Map<string, { status: number }>, calls: string[]) {
++  return (async (url: string, init?: Record<string, unknown>) => {
++    calls.push(`${init?.method ?? "GET"} ${url}`);
++    const key = `${init?.method ?? "GET"} ${url}`;
++    return responses.get(key) ?? { status: 404, ok: false };
++  }) as never;
++}
++
++const callsA: string[] = [];
++const resA = await runLifecycleCleanup(
++  {
++    repository: { full_name: "Supremeai-bd/supremeai-open" },
++    pull_request: {
++      merged: true,
++      number: 300,
++      body: "Closes #321",
++      head: { ref: "contributor/issue-321", repo: { full_name: "Supremeai-bd/supremeai-open" } },
++      base: { ref: "main" },
++    },
++  },
++  {
++    token: "test-token-offline",
++    log: () => {},
++    fetchImpl: fakeFetch(
++      new Map([
++        ["PATCH https://api.github.com/repos/Supremeai-bd/supremeai-open/issues/321", { status: 200 }],
++        ["DELETE https://api.github.com/repos/Supremeai-bd/supremeai-open/git/refs/heads/contributor%2Fissue-321", { status: 204 }],
++      ]),
++      callsA,
++    ),
++  },
++);
++check(
++  "cleanup: closes issue + deletes head branch",
++  resA.issuesClosed.join(",") === "321" && resA.branchDeleted === "contributor/issue-321" && resA.skipped.length === 0,
++  JSON.stringify(resA),
++);
++check("cleanup: PATCH then DELETE issued", callsA.length === 2 && callsA[0].startsWith("PATCH") && callsA[1].startsWith("DELETE"));
++
++const resB = await runLifecycleCleanup(
++  {
++    repository: { full_name: "Supremeai-bd/supremeai-open" },
++    pull_request: {
++      merged: true,
++      body: "Closes #400",
++      head: { ref: "feat/thing", repo: { full_name: "Supremeai-bd/supremeai-open" } },
++      base: { ref: "main" },
++    },
++  },
++  {
++    token: "test-token-offline",
++    log: () => {},
++    fetchImpl: fakeFetch(new Map(), []), // everything 404 → already reconciled
++  },
++);
++check(
++  "cleanup: 404 → already-closed / already-gone reconciled idempotently",
++  resB.issuesAlreadyClosed.join(",") === "400" && resB.branchAlreadyGone && resB.issuesClosed.length === 0,
++  JSON.stringify(resB),
++);
++
++const resC = await runLifecycleCleanup(
++  {
++    repository: { full_name: "Supremeai-bd/supremeai-open" },
++    pull_request: {
++      merged: true,
++      body: "Closes #500",
++      head: { ref: "main", repo: { full_name: "Supremeai-bd/supremeai-open" } },
++      base: { ref: "main" },
++    },
++  },
++  { token: "t", log: () => {}, fetchImpl: fakeFetch(new Map([["PATCH https://api.github.com/repos/Supremeai-bd/supremeai-open/issues/500", { status: 200 }]]), []) },
++);
++check(
++  "cleanup: head branch main is PROTECTED from deletion",
++  resC.branchDeleted === null && !resC.branchAlreadyGone && resC.issuesClosed.join(",") === "500",
++  JSON.stringify(resC),
++);
++
++const resD = await runLifecycleCleanup(
++  {
++    repository: { full_name: "Supremeai-bd/supremeai-open" },
++    pull_request: { merged: true, body: "Closes #600", head: { ref: "feat/x" } },
++  },
++  { token: "", log: () => {}, fetchImpl: fakeFetch(new Map(), []) },
++);
++check(
++  "cleanup: tokenless boot degrades fail-honest (no throw, skipped recorded)",
++  resD.skipped.length === 1 && resD.skipped[0].includes("GITHUB_TOKEN absent") && resD.issuesClosed.length === 0,
++);
++
++const resE = await runLifecycleCleanup(
++  { repository: { full_name: "r" }, pull_request: { merged: false, body: "Closes #1" } },
++  { token: "t", log: () => {}, fetchImpl: fakeFetch(new Map(), []) },
++);
++check("cleanup: non-merged payload is a no-op", resE.skipped[0].includes("not a merged"));
++
++// ── 4. router registration + command dispatch (stub gateway) ───────────────
++const seen: string[] = [];
++const stubGateway = {
++  subscribe(listener: (event: any) => void | Promise<void>): void {
++    (stubGateway as any).listener = listener;
++  },
++};
++registerCommandRouter(stubGateway as never);
++check("router subscribes exactly once", typeof (stubGateway as any).listener === "function");
++
++registerCommand("claim", (cmd: SlashCommand) => {
++  seen.push(`claim:${cmd.name}`);
++});
++const dispatchedEvent = {
++  source: "github",
++  type: "issue_comment",
++  severity: "INFO" as const,
++  message: "comment",
++  payload: { action: "created", comment: { body: "/claim" } },
++  timestamp: new Date().toISOString(),
++};
++await ((stubGateway as any).listener)(dispatchedEvent);
++check("router dispatches /claim to registered handler", seen.join(",") === "claim:claim");
++
++await ((stubGateway as any).listener)({
++  ...dispatchedEvent,
++  payload: { action: "created", comment: { body: "/not-a-thing" } },
++});
++check("router logs unmatched command without throwing", seen.join(",") === "claim:claim");
++
++await ((stubGateway as any).listener)({
++  ...dispatchedEvent,
++  type: "push",
++  payload: { ref: "refs/heads/main" },
++});
++check("router ignores non-comment events for command dispatch", seen.join(",") === "claim:claim");
++
++console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
++process.exit(fail ? 1 : 0);

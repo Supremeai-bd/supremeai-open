@@ -1,0 +1,85 @@
+diff --git a/scripts/ci/check_studio_size_budget.py b/scripts/ci/check_studio_size_budget.py
+new file mode 100644
+index 00000000..be3566a2
+--- /dev/null
++++ b/scripts/ci/check_studio_size_budget.py
+@@ -0,0 +1,79 @@
++#!/usr/bin/env python3
++"""Studio bundle size-budget gate (#1339) — bridge-20261027-studio-bundle-split.
++
++Fails the build when the studio's initial JS exceeds the budget. Run after
++`vite build` in the studio directory:
++
++  python scripts/ci/check_studio_size_budget.py --dist studio/dist
++
++Budget (initial/uncompressed, per work order #1339):
++  total initial JS <= 500 KB
++  vendor-charts    must NOT appear in the initial graph (lazy-only)
++
++Exit codes: 0 = within budget, 1 = over budget / charts upfront, 2 = no dist.
++"""
++from __future__ import annotations
++
++import argparse
++import gzip
++import json
++import os
++import sys
++
++TOTAL_BUDGET_BYTES = 500 * 1024
++CHARTS_MARKERS = ("vendor-charts", "recharts")
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser()
++    ap.add_argument("--dist", default="studio/dist")
++    ap.add_argument("--budget-kb", type=int, default=500)
++    args = ap.parse_args()
++
++    dist = args.dist
++    assets = os.path.join(dist, "assets")
++    if not os.path.isdir(assets):
++        print(f"no assets dir at {assets} — run vite build first")
++        return 2
++
++    budget = args.budget_kb * 1024
++    initial = []
++    for fname in sorted(os.listdir(assets)):
++        if not fname.endswith(".js"):
++            continue
++        path = os.path.join(assets, fname)
++        size = os.path.getsize(path)
++        if fname.startswith("index-") or fname.startswith("vendor-"):
++            # entry + vendor chunks load upfront in this build layout;
++            # route chunks (React.lazy) are named by their module.
++            initial.append((fname, size))
++
++    total = sum(size for _, size in initial)
++    print("=== STUDIO SIZE BUDGET (#1339) ===")
++    for fname, size in initial:
++        with open(os.path.join(assets, fname), "rb") as fh:
++            gz = len(gzip.compress(fh.read()))
++        marker = " <-- CHARTS IN INITIAL GRAPH" if any(m in fname for m in CHARTS_MARKERS) else ""
++        print(f"{fname:44} {size / 1024:8.1f} KB  (gzip {gz / 1024:6.1f} KB){marker}")
++    print(f"{'TOTAL initial JS':44} {total / 1024:8.1f} KB  (budget {budget / 1024:.0f} KB)")
++
++    violations = []
++    if total > budget:
++        violations.append(f"initial JS {total / 1024:.0f} KB exceeds budget {budget / 1024:.0f} KB")
++    charts_upfront = [f for f, _ in initial if any(m in f for m in CHARTS_MARKERS)]
++    if charts_upfront:
++        violations.append(f"charts vendor chunk in initial graph: {charts_upfront}")
++
++    report = {"total_initial_bytes": total, "budget_bytes": budget, "violations": violations}
++    with open("size_budget_report.json", "w") as fh:
++        json.dump(report, fh, indent=2)
++    if violations:
++        for v in violations:
++            print(f"VIOLATION: {v}")
++        return 1
++    print("PASS: within budget, charts lazy-only")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())

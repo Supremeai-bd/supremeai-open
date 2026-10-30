@@ -1,0 +1,46 @@
+diff --git a/core/marketplace_registry_sync.py b/core/marketplace_registry_sync.py
+index d22a3429..1c361571 100644
+--- a/core/marketplace_registry_sync.py
++++ b/core/marketplace_registry_sync.py
+@@ -14,12 +14,9 @@
+ import hashlib
+ import json
+ import os
+-import re
+-import sys
+ import tempfile
+ import urllib.error
+ import urllib.request
+-from dataclasses import dataclass, asdict
+ from datetime import datetime, timezone
+ from typing import Any, Callable, Dict, List, Optional, Tuple
+ 
+diff --git a/tests/test_dead_import_drift.py b/tests/test_dead_import_drift.py
+index 7925442d..603de345 100644
+--- a/tests/test_dead_import_drift.py
++++ b/tests/test_dead_import_drift.py
+@@ -71,7 +71,11 @@
+ # dead by AST Name-load + zero consumer imports incl. _archive delegates)
+ # and re-measured with this file's own _scan_live_scope -> 384 across a
+ # smaller file set. Shrink-only preserved: 384 < 388 < 446.
+-BASELINE_UNUSED_IMPORTS = 365
++# Re-armed 2026-10-30 r5 heal (post-#3016/#3017 window): slice-r1 landings added 5 dead
++# bindings (core/marketplace_registry_sync.py: re/sys/dataclass/asdict;
++# tests/test_hollow_read_guard.py: json). All 5 removed (AST + word-boundary verified
++# dead, zero string-annotation uses); re-measured with this scanner -> 363.
++BASELINE_UNUSED_IMPORTS = 363
+ 
+ # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
+ # Each binding below was verified dead by AST Name-load analysis + word-boundary
+diff --git a/tests/test_hollow_read_guard.py b/tests/test_hollow_read_guard.py
+index b4859a75..9e7a9521 100644
+--- a/tests/test_hollow_read_guard.py
++++ b/tests/test_hollow_read_guard.py
+@@ -9,7 +9,6 @@
+ 
+ import io
+ import contextlib
+-import json
+ import sys
+ import unittest
+ from pathlib import Path

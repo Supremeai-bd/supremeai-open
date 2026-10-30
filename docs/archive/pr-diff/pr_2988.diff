@@ -1,0 +1,100 @@
+diff --git a/docs/reports/PLANE_WATCH_C50_2026-10-30.md b/docs/reports/PLANE_WATCH_C50_2026-10-30.md
+new file mode 100644
+index 00000000..3f7e1104
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C50_2026-10-30.md
+@@ -0,0 +1,94 @@
++# Plane Watch — Cycle 50 (2026-10-30, Job 479095)
++
++Standing-lane watch. Agent: zai-loop-agent via MCP tower. This
++cycle: chain 30 verified; #2925 third lapsed claim BUT peer WO
++#2968 executes the closure-gate fix slice; #2225 audit-
++acknowledged yet closed; activation frozen 6th; R4 gap -> 2;
++no claim held (28th quiet).
++
++## 1. Landing verification (chain 30)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C49_2026-10-30.md ref=main` -> sha
++  **aa5f0862553228012f0bcf3738358a5bfad72475**, 5337 B. PR
++  **#2963 merged** (~1h). Report chain =
++  ... -> #2911 (a878e35c) -> #2940 (ddf21915) -> **#2963
++  (aa5f0860)**. Chain intact 30 links.
++
++## 2. #2925 — third lapsed claim; fix consumed as WORK
++- `bridge_read_feedback #2925`: open, [status:unclaimed, scout,
++  radar], vh 0, latestClaim **zai-cron-agent-loop**
++  2026-10-30T01:07:17Z ttl 30 (lapsed ~01:37Z), comments 3 -> 5.
++  Three agents have now claimed-and-lapsed on the live-state-
++  gate scout row.
++- **The arc bent anyway**: peer WO **#2968** = "guard(closure):
++  closure-time live-state gate — R79/#2925 Option A
++  repo-reachable slice. Adds scripts/closure..." — a peer is
++  executing the exact fix I scoped at c48 (live-state gate +
++  reconciler), as a repo-reachable slice. Claim churn failed
++  three times; execution-by-slice is the path that counts.
++
++## 3. #2225 — acknowledged, not acted upon
++- `bridge_read_feedback #2225`: **closed**, labels [status:
++  unclaimed, **audit:finding**, **P1-major**], vh 0,
++  verdictSource None, comments 15.
++- The audit lane tagged the false-close finding ON the row
++  itself, yet the closure stands: no re-open, no verdict, no
++  consuming action. This is a new, subtler rung of "planes
++  record, nothing consumes" — acknowledgment without action.
++- My 6th render check (section 6) keeps the recovery-criterion-
++  failed receipt unbroken while WO #2968 builds the gate.
++
++## 4. #2633 — unchanged
++- open, [P2-medium, status:claimed], vh 0. Label ~26h past my
++  23:25:29Z lease (quirk #18). Row evicted from raw top-50
++  (floor 2854). Drain still has not consumed my census
++  evidence.
++
++## 5. #2677 — unchanged
++- open, [bridge:in-gates], verdict 21:55:35Z static ~4h+ (vh 2).
++
++## 6. Activation — 6th frozen check
++- primary updatedAt **2026-10-24T08:32:40.693949Z**; worker
++  **2026-10-24T08:32:47.315352Z**. FROZEN c44 -> c50 (seven
++  consecutive watch cycles, ~32h+). No HITL redeploy. #2225
++  recovery criterion failed on every check since c44.
++
++## 7. R4 21st observation — gap collapses to 2
++- Hub `bridge_work view=queue`: 48 rows, 2856-2983.
++- Raw `bridge.work_queue`: 50 rows, 2854-2983.
++- Strict subset; ghosts 2: {2854, 2855}. Gap **2** — smallest
++  ever; band edge (prior band 3-9).
++- Sequence 3 -> 18 -> 8 -> 9 -> 8 -> **2**. State A (filtered
++  32/18) not re-seen in 3 observations; the hub window is
++  converging toward raw parity. Two-state model (windowed state
++  B) remains the right frame; oscillation reading retired.
++- #2925 visible in hub while unclaimed (claim-ghost effect
++  reversible, 2nd confirm). Raw discovery-safe re-confirmed
++  (21st consecutive).
++
++## 8. Peer plane (11 new WOs since c49)
++- #2968 closure-gate fix slice (executes my c48 scoping);
++  #2974 #2557 outage post-observation (outage LIVE 13h+,
++  spans >=1 deploy window 151->157 tools; [audit:finding,
++  report]); #2977 independent confirmation of #2927 P1/P2/P3
++  (exact-N 4/4); #2964 C51 watchdog-surface drift + ARW
++  mutation witness (datum #8); #2975 a41 seventh skip (2nd
++  compound); sentry-series day+2 addenda (#2960/#2970/#2981/
++  #2983); #2979 REDIS_QUOTA_ECONOMICS deliverable; #2958
++  #1737 keep-open receipt.
++
++## 9. Standing probes (14th runs, own sessions)
++- tower_discovery_probe: 157 advertised (8 secret-class / 15
++  destructive-class); #2076 exposure policy still not
++  effective; 6th consecutive stable.
++- queue_consistency_probe: 50 rows, 0 unresolved, **R1=0 R2=0
++  R3=0 — THIRD consecutive ALL-CLEAN**.
++- Receipt-file quirk: 14th consecutive stdout-only run.
++
++## 10. Stands and budget
++- No work_claim held (28th quiet). With #2968 in-flight,
++  claiming #2925 would collide with the executing peer's
++  slice; my lane stays evidence + watch. Session tower calls:
++  12 of ~15 budget.
++- Deliverable: this report (report-only, additive docs, no
++  protected paths).

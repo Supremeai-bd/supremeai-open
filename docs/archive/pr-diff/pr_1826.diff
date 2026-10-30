@@ -1,0 +1,49 @@
+diff --git a/docs/AUDIT_2026-10-28-stale-p0-1788.md b/docs/AUDIT_2026-10-28-stale-p0-1788.md
+new file mode 100644
+index 00000000..23c660dc
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28-stale-p0-1788.md
+@@ -0,0 +1,43 @@
++# AUDIT 2026-10-28 — Stale P0 #1788: PR-lane CI failure misclassified as production blocker
++
++**Provenance:** Claimed and verified by the autonomous contributor cadence cycle (Job 478318, dispatch 2026-10-28 07:44 +08:00; role `rules-breaker`; atomic claim GRANT_NEW at 2026-10-27T23:49:45Z). This document is the evidence artifact for retiring work order #1788 via the bridge (`originalIssueNumber=1788`, so the PR merge closes the root issue).
++
++## 1. Incident facts (as filed)
++
++| Field | Value |
++|---|---|
++| Work order | #1788 — "CI — Open Unified Pipeline failed on 1787/merge (Run #40598766845)" |
++| Filed | 2026-10-27T22:58:55Z (automated CI-failure mirror) |
++| Labels at verification | `P0-critical`, `status:unclaimed`, `handoff:coder`, `area:ci`, `repo:open`, `status:runway` |
++| Failing run | 40598766845, workflow `pipeline.yml` ("CI — Open Unified Pipeline") |
++| Branch | `bridge/bridge-20261028-lease-ssot-wiring` (merge-queue surface `1787/merge`) — **PR lane, not main** |
++| PR | #1787 (author `paykaribazaronline`, opened 2026-10-27) |
++| Failure signature | Both matrix legs ("Python 3.11 / 3.12 Matrix Smoke & Contract Validation") exit code 1; run duration ~38 s |
++
++## 2. Verification chain (evidence per claim, gathered 2026-10-28 07:44–08:00 +08:00)
++
++1. **The failure never touched `main`.** The run's head branch is a PR merge surface (`1787/merge` → `bridge/bridge-20261028-lease-ssot-wiring`). `git log --all --grep="#1787"` on `origin/main` returns zero commits — PR #1787 never merged.
++2. **Main-lane CI is demonstrably green after the incident.** Eighteen (18) commits merged to `main` after 2026-10-27T22:58:55Z (b4792b8..dfb9604), each gated by the same pipeline. A production CI blocker on `main` cannot coexist with 18 subsequent successful merges.
++3. **The misclassification class is already constitutionally fixed on main.** Commit `4e2a025` (PR #1801, "lane-honest CI incident classification"): PR-lane failures (`N/merge`, feature branches) now file **P2-medium** with an honest lane note; only `main`-lane failures keep `P0-critical`. Its stated purpose: "Fixes #1764 class: U4 guard rejection mislabeled production outage." #1788 predates that fix and is exactly this class.
++4. **The superseded-work residue.** The PR's subject (`lease-ssot-wiring`) has no merge on main; adjacent landed lease work exists (#1716 lease-store-pruning, `6c85e9a`) but #1787's own branch is dead. Re-fixing its content is not a `main` remediation and not this WO's actionable residue.
++5. **Tower-side cross-check.** `github_get_failed_logs(runId=40598766845)` on the federation tool surface reports "No failed jobs found for this run" (tool scopes the private mirror; the public page still shows the dead-branch failure — both observations are consistent with a non-merged PR lane).
++
++## 3. Disposition requested
++
++Close #1788 as a **misclassified PR-lane incident** (per the `#1801` lane-honest rule). If the maintainer prefers relabeling over closure: `P2-medium` + a lane note ("PR #1787 merge-queue failure; branch abandoned; main unaffected") — closure via this PR's merge is the requested default.
++
++## 4. Reflection Evidence (why + alternatives_rejected)
++
++- **Why this artifact:** A false `P0-critical` on the open board binds every autonomous agent through the P0 Drainage & Anti-Stampede Invariant (AGENTS.md invariant 5, landed #1734): all lower-priority work must defer to it. Retiring a stale P0 with evidence is therefore itself the P0 action for this cycle — it unblocks the board's honest ordering.
++- **alternatives_rejected:**
++  1. *Re-run or re-fix PR #1787's content* — the branch is another work product, its content unknown (page-level evidence only; API rate-limited), and main moved on with a systemic fix (#1801) instead. Re-doing a dead PR is speculative work past the actual blocker.
++  2. *Comment on #1788 directly* — the zero-credential tower exposes no issue-comment/relabel tool; the bridge's `originalIssueNumber` close-on-merge is the pipeline-native mechanism.
++  3. *File a separate "stale P0" issue* — creates a second ticket for one incident (duplicate stampede); this artifact rides the existing WO.
++  4. *Silently ignore* — leaves a false blocker pinned on the board for every future cycle.
++- **Honest limits:** Public REST API was rate-limited from this runner, so run evidence is page-level (WebFetch of the public run URL) + git history + tower tooling, not raw job logs. No code paths were changed; `main` was not modified by this audit.
++
++## 5. Verification (3-tier, this submission)
++
++- T1 Reflection: single new docs file; `git diff --stat` = 1 file, docs-only; no source, no CI, no protected paths.
++- T2 Smoke: `continuous_agent_loop.py --verify-only` 8/8 PASS on the submission base (dfb9604).
++- T3 Tests: no test surface touched; docs-only change, pytest suite unaffected (baseline 877 passed / 3 skipped at cycle start).

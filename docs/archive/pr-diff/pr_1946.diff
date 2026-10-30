@@ -1,0 +1,94 @@
+diff --git a/docs/reports/platform-guardian-20261028-pages-drift.md b/docs/reports/platform-guardian-20261028-pages-drift.md
+new file mode 100644
+index 00000000..d3a9cde7
+--- /dev/null
++++ b/docs/reports/platform-guardian-20261028-pages-drift.md
+@@ -0,0 +1,88 @@
++# Platform Guardian monitor pass — studio edge deploy skew + live sentinel verification (2026-10-28 11:45+08 cycle)
++
++Role: `platform-guardian` (single-runner lock, cadence-assigned, Job 477792, trace `1a941cc7…1145`).
++Mandate: round-the-clock oversight of third-party platforms and services attached to the project.
++Method: zero-side-effect read-only probes only — no register/auth mutations, no load, no fuzzing.
++Every claim below carries the exact live observation and timestamp; nothing is inferred from repo state alone.
++
++## Panel A — live boundary sentinel: 12/12 PASS (independent post-merge verification of #1942)
++
++`scripts/ci/boundary_contract_sentinel.py` run in report-only mode against the production gateway
++(`https://supremeai-api-ulw0.onrender.com`, README SSOT base URL) at ~03:47-03:49Z:
++
++| # | Probe | Live result |
++|---|-------|-------------|
++| 1-8 | root 4-field / HEAD / CORS preflight / 3× redacted liveness / security headers (200+404) / 2× operator 401 | all PASS, `leaked: []`, `missing: []` |
++| 11 | `GET /openapi.json` unauth | **404**, `path_count: null` — inventory not served (the #1904 fix holding live) |
++| 12 | `GET /readyz` | **200 exactly `{status, chat_ready, timestamp}`** — zero operator fields, zero stealth/infisical markers |
++
++Verdict line: `VERDICT: 12/12 boundary probes pass`. This is the first independent third-party live
++re-verification since #1942 merged (precedent: #1874 verified #1819 the same way). Two new probes
++(#1942's entire delta) hold on the live edge; no drift between CI fixture expectations and production.
++
++Warm-path latency sample on `/readyz`: 3× 200 in 0.164s / 0.171s / 0.223s — no cold-start penalty
++observed during the pass window (small-sample, single-region HKG vantage, disclosed).
++
++## Panel B — deploy skew monitor: Pages is still the stale edge (F-C from #1830, re-probed fresh)
++
++QA III (#1830) filed F-C HIGH: fix #1782 (SW v5 + `swAssetManifestPlugin`) is live on the Vercel
++mirror only; the primary GitHub Pages deployment never picked it up. Re-probed 03:47-03:51Z today:
++
++| Surface | `supremeai-studio.pages.dev` (primary) | `supremeai-studio.vercel.app` (mirror) |
++|---|---|---|
++| `sw.js` CACHE_NAME | **`supremeai-pwa-cache-v4`** — pre-#1761 code: lowercase-hex-only hash regex (matched 0/11 Vite base64url assets), `PRECACHE_URLS = []` | **`supremeai-pwa-cache-v5`** with the #1761 root-cause comment and widened `[A-Za-z0-9_-]` pattern |
++| `sw-assets.json` | **`text/html` 6364 B — SPA-fallback illusion** (file absent; 200 is index.html) | `application/json` 1852 B, `generatedAt 2026-10-28T03:16:00.639Z`, real hashed-asset manifest |
++| `index.html` entry asset | `assets/index-CAV1C5sl.js` | `assets/index-DWg5blwL.js` — **different build, Pages one behind** |
++| Deploy freshness | no `last-modified` header (Cloudflare Pages), etag `ff37984a…` unchanged across the pass | `last-modified: Wed, 28 Oct 2026 03:50:01 GMT`, `age: 41` — **redeployed seconds before the probe**, still SW v5 |
++
++Both edges re-probed twice inside the window (before and after the Vercel redeploy blip) — the skew
++is stable, not a propagation race. Consequence unchanged from F-C and now quantifiable at the asset
++level: the Pages cohort runs a SW whose runtime cache-as-you-fetch branch can never fire (v4 regex
++vs Vite hashes), whose install-time precache list is empty, and whose manifest endpoint is an HTML
++illusion — offline asset resilience is zero on the primary edge while the mirror has it. The fix
++remains an operator action: redeploy/re-sync the Pages project from the studio source that already
++builds v5. No repo change can close this from inside a PR; that is why it keeps falling through the
++fixer lane, which only sees repo diffs.
++
++**Ask (operator, unchanged since #1830): one Pages redeploy.** Until then every studio user routed
++to pages.dev is on the pre-#1761, pre-#1782 service worker generation.
++
++## Panel C — third-party dependency reachability (monitor snapshot, 03:48-03:51Z)
++
++| Dependency | Consumer | Probe | Result |
++|---|---|---|---|
++| api.osv.dev `/v1/querybatch` | R41 JS-dep CVE gate (#1932, landed main) | POST dompurify/npm query | **200 in 0.485s**, vulns array returned — gate's upstream healthy |
++| Render gateway | studio SPA + all API clients | sentinel probes above | 12/12 PASS, warm 0.16-0.22s |
++| MCP Tower (`supremeai-mcp-tower.onrender.com/mcp`) | this agent loop | fresh session `862361e8` + tool calls (`bridge_read_feedback`, `bridge_work_queue`, `github_list_prs`) | session handshake OK, reads return well-formed JSON — functionally healthy (no dedicated health tool exists; tool-call success is the observable) |
++| GitHub (open repo) | bridge pipeline | `github_list_prs` | 200, 5 open PRs (#1787, #1917, #1932, #1931-lane, #1895-lane set) |
++
++Work-queue snapshot: 20 open WOs. Cross-checked surface ownership for dedup below.
++
++## Dedup check
++
++- **WO #1934** (`guard(platform): provider sentry pass 03:21Z — 7/8 providers alive`): same role
++  family, **different surface** — it monitors the Tower's external provider cascade; this report
++  monitors the studio's deploy edges + a live sentinel re-verification. Zero overlapping findings;
++  complementary, both cited so the next guardian sees the two-lane split.
++- **#1874** (`#1819 drift RESOLVED live 01:11Z, 10/10`): gateway lane, since superseded by #1942's
++  12-probe table — Panel A is its continuation, not a duplicate.
++- **#1830 F-C**: origin finding (human-eye QA III). This pass adds the asset-level quantification
++  (`index-CAV1C5sl` vs `index-DWg5blwL`), the v4-code inspection (`PRECACHE_URLS = []`, hex-only
++  regex), and a fresh timestamped still-open confirmation — new evidence, same fix ask.
++- No open WO tracks the Pages staleness; this is the first issue-side carrier for the redeploy ask.
++
++## Not done here (scope discipline)
++
++- No register/auth endpoint probing: that surface is owned by #1830 (roundtrip 401) + #1854
++  (RB-1..RB-4); re-probing would duplicate evidence and create new throwaway accounts. The fixer
++  lane carries both reports as one coherent rework item.
++- No CI red triage (#1933/#1938/#1918): #1940 already RCA'd #1933 as auto-lander race; the rest are
++  fixer/ci-lane property.
++- No repo code change: this is a monitoring report; the only actionable (Pages redeploy) is an
++  operator-side action that no patch can perform.
++
++## Never-do register
++
++Zero side-effect probes only (GET/HEAD/OPTIONS + one OSV querybatch POST with a public package
++name); no account creation, no auth mutation, no load generation, no credential handling. All
++observations reproducible with the commands quoted inline.

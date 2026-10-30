@@ -1,0 +1,73 @@
+diff --git a/.githooks/pre-commit b/.githooks/pre-commit
+index 8debc917..7be9cb6d 100644
+--- a/.githooks/pre-commit
++++ b/.githooks/pre-commit
+@@ -209,4 +209,15 @@ for file in $staged_files; do
+     fi
+ done
+ 
++# 8. Lockfile parity check for studio/package.json
++if echo "$staged_files" | grep -q 'studio/package\.json'; then
++    if ! echo "$staged_files" | grep -q 'studio/pnpm-lock\.yaml'; then
++        reject "studio/package.json modified without staged studio/pnpm-lock.yaml" \
++            "Dependencies in studio/package.json were updated but pnpm-lock.yaml was not." \
++            "CI runs pnpm with --frozen-lockfile and will fail if the lockfile is outdated." \
++            "Run 'cd studio && pnpm install --lockfile-only' and stage studio/pnpm-lock.yaml before committing." \
++            "Deliberate admin bypass: git commit --no-verify."
++    fi
++fi
++
+ exit 0
+\ No newline at end of file
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index e5b0116f..3bdc42e9 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -280,7 +280,7 @@ for line in $updates; do
+         done
+     fi
+ 
+-    # 8. MCP Tower & Studio TypeScript Typecheck
++    # 8. MCP Tower & Studio TypeScript Typecheck + Lockfile check
+     if command -v npm >/dev/null 2>&1; then
+         if [ -d "infrastructure/mcp-control-plane" ]; then
+             if ! npm --prefix infrastructure/mcp-control-plane run typecheck >/dev/null 2>&1; then
+@@ -291,6 +291,21 @@ for line in $updates; do
+             fi
+         fi
+     fi
++    if [ -f "studio/package.json" ] && [ -f "studio/pnpm-lock.yaml" ]; then
++        if ZERO_TEST "$remote_sha"; then
++            pkg_diff=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" -- studio/ 2>/dev/null || git diff --name-only "origin/main...$local_sha" -- studio/ 2>/dev/null || true)
++        else
++            pkg_diff=$(git diff --name-only "$remote_sha..$local_sha" -- studio/ 2>/dev/null || true)
++        fi
++        if echo "$pkg_diff" | grep -q 'studio/package\.json'; then
++            if ! echo "$pkg_diff" | grep -q 'studio/pnpm-lock\.yaml'; then
++                reject "STUDIO LOCKFILE OUTDATED: studio/package.json modified without studio/pnpm-lock.yaml" \
++                    "CI runs pnpm install with --frozen-lockfile and will fail (ERR_PNPM_OUTDATED_LOCKFILE)." \
++                    "Run 'cd studio && pnpm install --lockfile-only' and commit studio/pnpm-lock.yaml before pushing." \
++                    "Deliberate admin bypass: git push --no-verify."
++            fi
++        fi
++    fi
+ 
+     # 9. OPENAPI BREAKING-CHANGE GUARD (#1711).
+     # Machine revision-diff of the stable external contract
+diff --git a/.gitleaks.toml b/.gitleaks.toml
+index 447ee752..7493d58f 100644
+--- a/.gitleaks.toml
++++ b/.gitleaks.toml
+@@ -89,9 +89,9 @@ paths = ['''^\.gitleaksignore$''']
+ [[rules]]
+ id = "supremeai-cloudflare-api-token"
+ description = "Cloudflare API token (40-char base62, keyed by name)"
+-# NOTE: Go/RE2 has no lookahead — use word-boundary semantics (same approach
+-# as the upstream Cloudflare rule) to prevent over-extended matches.
+-regex = '''(?i)\b[A-Za-z0-9_-]{40}\b'''
++# NOTE: Go/RE2 has no lookahead. Require token assignment or auth header context to
++# prevent false positives on arbitrary 40-char strings (e.g. git commit SHAs, markdown filenames).
++regex = '''(?i)(?:cloudflare|x-auth-bearer|api_token|CLOUDFLARE_API_TOKEN)[\s=:_'"-]{1,15}[A-Za-z0-9_-]{40}'''
+ keywords = ["cloudflare", "x-auth-bearer", "api_token", "CLOUDFLARE_API"]
+ [rules.allowlist]
+ paths = ['''^\.gitleaksignore$''', '''^docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY\.md$''']

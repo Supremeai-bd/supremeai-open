@@ -1,0 +1,31 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 9ccefd3d..d9ab33fd 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -218,11 +218,11 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+ 
+ ROLE_RULES: dict[str, str] = {
+     "solver": "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, and submit PR.",
+-    "ecosystem-scout": "Scan federation for concrete expansion opportunities. Zero speculative hype tickets or ungrounded RFCs; only tangible, actionable findings with live proof may be filed as sub-issues under Anchor Hubs (no code edits).",
+-    "auditor": "Audit codebase for dead code, compliance drifts, and propose automated CI gates.",
+-    "human-eye": "Inspect user-facing public funnel speed (FCP < 1.0s) and responsive UI performance.",
+-    "rules-breaker": "Probe security boundaries, enforce zero-leak invariant, and report vulnerabilities.",
+-    "platform-guardian": "Verify all connected service dependencies and alert if any service is degraded or quota-blocked.",
++    "auditor": "6 repo codebase-এ যা যা সমস্যা আছে তা পুঙ্খানুপুঙ্খ অডিট ও সমাধান বের করা।",
++    "ecosystem-scout": "সারা বিশ্বের যেকোনো জায়গা থেকে SupremeAI-এর জন্য সবচেয়ে লাভজনক ও উপকারী হবে এমন জিনিস ও ইনোভেশন খুঁজে আনা।",
++    "human-eye": "আমাদের কাস্টমার যেন সর্বোত্তম ও শ্রেষ্ঠ এক্সপেরিয়েন্স পায় তার জন্য প্রয়োজনীয় সমস্ত UI/UX ও পারফরম্যান্স নিশ্চিত করা।",
++    "rules-breaker": "আমাদের সম্পূর্ণ সিস্টেমের সিকিউরিটি, টেকনিক্যাল ডেট এবং লজিক্যাল গ্যাপের সমস্ত দুর্বলতা খুঁজে বের করে রিপোর্ট করা।",
++    "platform-guardian": "প্রজেক্টের সাথে যুক্ত অন্যান্য সমস্ত থার্ড-পার্টি প্ল্যাটফর্ম ও সার্ভিসের সার্বক্ষণিক তদারকি ও নজরদারি নিশ্চিত করা।",
+ }
+ 
+ COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
+@@ -945,9 +945,6 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         save_last_run_store(state)
+         mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
+         print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
+-        print(f"ACTION: Time expired for {role}. Act as {role} now.")
+-        if role == "ecosystem-scout":
+-            print("SCOUT MANDATE: High-signal only. Deliver concrete synthesis with live proof. Speculative tickets without immediate implementation paths are strictly forbidden.")
+         print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+         return 0
+ 

@@ -1,0 +1,106 @@
+diff --git a/docs/SKILLS_AGENT_SCAN_BASELINE_2026-10-28.md b/docs/SKILLS_AGENT_SCAN_BASELINE_2026-10-28.md
+new file mode 100644
+index 00000000..e953a3b5
+--- /dev/null
++++ b/docs/SKILLS_AGENT_SCAN_BASELINE_2026-10-28.md
+@@ -0,0 +1,100 @@
++# Skills Agent-Scan Baseline — 2026-10-28 (radar R26 → #1723, step 1)
++
++> **Lane:** radar VII R26 (`SCOUT_RADAR_2026-10-28-VII.md`) → issue #1723, adoption-path step 1 — the
++> explorer probe, no code edit. Tool: **Snyk Agent Scan** (ex-`mcp-scan`, Invariant Labs, Apache-2.0,
++> 3,177★ at radar time), pinned **`snyk-agent-scan@0.6.9`** (PyPI latest at probe time). Scope: the two
++> in-repo skill ingestion surfaces — the 9 curated `.agents/skills/` folders and `skills/dynamic/` —
++> per the issue's own routing. The tower's MCP tool surface (step 3) is recorded, not wired.
++
++## 1. Method (reproducible, zero-credential)
++
++| # | Command (run at repo root) | Exit | Result |
++|---|----------------------------|------|--------|
++| M1 | `uvx snyk-agent-scan@0.6.9 inspect .agents/skills skills/dynamic` | 0 | full inventory, credential-free |
++| M2 | `uvx snyk-agent-scan@0.6.9 .agents/skills skills/dynamic --verbose` | 1 | local pass + inventory; deep verification refused |
++| M3 | `uvx snyk-agent-scan@0.6.9 .agents/skills skills/dynamic` / `… --json` | 1 | header + token notice only |
++
++**Version trap (documented for reproducibility):** `uvx mcp-scan@0.4.3` — the version line radar VII
++recommended pinning — installs 56 packages but **delegates to the renamed package's current 0.6.9**
++(its own stdout warns: *"The 'mcp-scan' package has been renamed to 'snyk-agent-scan'"* and its result
++blob reports `"cli_version":"0.6.9"`). The shim silently unpins the probe. Anyone reproducing this
++baseline must pin `snyk-agent-scan@0.6.9` directly; `mcp-scan@*` is a moving pointer, not a version.
++
++**Credential reality:** since the Snyk rename, the scanner's threat-verification layer (prompt-injection /
++cross-injection verdicts) is gated behind `SNYK_TOKEN`. Without a token the tool still walks and
++inventories every skill (M1, exit 0) and the verbose run (M2) emits the full per-surface result blob with
++`"error":null` on all 8 surface records — but the M2 blob contains **zero** verdict/anomaly schema fields
++(0 hits for `anomalies`/`verdict`/`malicious`/`suspicious`/`is_safe`/`threat` as result keys; the only
++`verdict` occurrence is inside an echoed skill's own code sample). This baseline therefore records an
++**inventory-clean** result, and explicitly NOT a verdict-clean one — see §5.
++
++## 2. Inventory (M1, exit 0)
++
++`Scanning .agents/skills found 8 skills` · `Scanning skills/dynamic: no mcp servers or skills found` ·
++`0 MCP servers` anywhere in repo scope.
++
++| Skill | Composition (scanner-classified) | Notes |
++|-------|----------------------------------|-------|
++| developing-genkit-js | instruction SKILL.md + 19 `references/*.md` instruction files | largest instruction surface |
++| devtools-audit | instruction SKILL.md + 2 instruction refs + assets (`package.json`, `package-lock.json`) + **`scripts/audit.mjs` (script)** + **`scripts/build_report.py` (script)** | the only skill carrying executable code |
++| fastapi-pro | instruction SKILL.md | content mentions "SQL injection prevention" etc. — skill *content*, not scanner findings (M2 keyword audit: all keyword hits are echoed content) |
++| browser-automation | instruction SKILL.md | |
++| github-actions-debugger | instruction SKILL.md | |
++| concise-planning | instruction SKILL.md | |
++| environment-health | instruction SKILL.md | |
++| mcp-tool-developer | instruction SKILL.md | |
++| *(developing-genkit-python)* | **not inventoried — see F1** | folder exists, no SKILL.md |
++| *(skills/dynamic)* | 0 skills — .py modules (`csv_exporter.py`, `text_summarizer.py`, `web_scraper.py`, + `installer.py`/`marketplace.py`/`registry.py`/`schema.py`) | not SKILL.md format; scanner-invisible by design — see F3 |
++
++## 3. Findings
++
++**F1 — Structural: a curated skill folder with no SKILL.md.** `.agents/skills/` holds 9 folders but only
++8 are valid skills; `.agents/skills/developing-genkit-python/` contains only `references/` (4 tracked
++`.md` files: agents-http, dev-workflow, evals, fastapi) and no `SKILL.md`, so the scanner (and any
++SKILL.md-convention consumer) cannot see it as a skill. This is exactly the class of defect radar III's
++R17 structural validator (#1672) exists to catch — a concrete, one-grep reproducible instance to add to
++its test set: `ls .agents/skills/*/SKILL.md` covers 8 of 9 folders.
++
++**F2 — SAST coverage gap for the only skill that carries executable code.** `devtools-audit` ships
++`scripts/build_report.py` (Python) and `scripts/audit.mjs` (JS). The landed bandit SAST ratchet
++(#1809, `scripts/ci/bandit_sast_guard.py`) scans `SCAN_TARGETS = ("core", "scripts", "gateway",
++"browser", "skills", "examples", "infrastructure", "evals")` — top-level directories; **`.agents/` is not
++a scan target**, and its baseline contains no `.agents/skills/` paths (only `skills/installer.py` and
++`core/skills/installer.py`). Net: the repo's only executable-Python-bearing skill is outside the SAST
++ratchet. Fix is a one-line SCAN_TARGETS extension (`.agents`) or an explicit documented exclusion —
++recorded here as a follow-up for the bandit lane, not edited in this docs-only probe.
++
++**F3 — Surface separation is already correct (no overlap).** `skills/dynamic/` is a Python module
++surface, invisible to SKILL.md-format scanning — but its files sit under top-level `skills/`, which IS a
++bandit scan target (baseline carries `skills/installer.py` pairs). Lane separation: SKILL.md content →
++this lane's scanner; Python code → bandit ratchet; both fail-closed in their own contracts. The issue's
++step-2 conditional ("if the baseline is clean: add content-scan step to #1672") therefore starts from a
++verified-clean *separation*, with the verdict-layer caveat in F4.
++
++**F4 — Verdict layer is token-gated (documented follow-up).** Deep prompt-injection / cross-injection
++verification requires `SNYK_TOKEN` (M2/M3 exit 1 with the token notice; the credential-free pass emits
++inventory only). A token-holding maintainer can complete the verification half with the same commands
++(M2) plus `SNYK_TOKEN` set; nothing else changes. Until then, "no findings" in §2 means *no findings were
++emitted by the credential-free layer*, not *no threats exist* — the inventory is evidence, not a
++security verdict (the issue's own honest limitation: a scanner catches known threat patterns, never
++replaces the R17 validator or human review).
++
++## 4. Step-3 recording (tower surface, out-of-lane)
++
++The control tower's MCP tool surface is the second scan target named by R26; the control plane is
++out-of-lane per the issue's routing, so this is recorded, not wired: the tower advertised **140 tools**
++at this cycle's handshake (server `supremeai-control-tower` v1.0.0, protocol 2024-11-05; 142 entries in
++`tools/list` including schema-only additions vs 135 at radar-VII filing time) — a live-drift data point
++for the tower team, who own the remote surface's scanning decision.
++
++## 5. Honest limitations
++
++The scanner is pinned but its output format is explicitly experimental (the issue's own limitation:
++"parse nothing fragile, treat output as advisory evidence") — this baseline quotes inventory counts and
++exit codes only, never parsed verdict fields, because the credential-free run emits none. The `--json`
++flag produced empty stdout in all pinned runs (tool bug or token-gate ordering); evidence was captured
++from `--verbose` human output instead. M2's 6,280-line blob is mostly echoed skill content; it was
++keyword-audited for verdict schema fields rather than trusted as findings. Scope: in-repo surfaces only;
++no runtime, no CI, no code edits; single additive doc. Raw probe outputs are retained in the working
++session (`scripts/skills_inspect_v069.txt`, `scripts/skills_scan_verbose_v069.txt`) and are reproducible
++from §1's commands at the pinned version.

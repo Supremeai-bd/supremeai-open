@@ -1,0 +1,47 @@
+diff --git a/studio/public/_redirects b/studio/public/_redirects
+new file mode 100644
+index 00000000..ad37e2c2
+--- /dev/null
++++ b/studio/public/_redirects
+@@ -0,0 +1 @@
++/*    /index.html   200
+diff --git a/studio/public/admin.html b/studio/public/admin.html
+deleted file mode 100644
+index a58b5a77..00000000
+--- a/studio/public/admin.html
++++ /dev/null
+@@ -1,15 +0,0 @@
+-<!DOCTYPE html>
+-<html>
+-<head>
+-    <meta charset="utf-8">
+-    <title>Redirecting...</title>
+-    <script>
+-        // অ্যাডমিন হোস্টনেম হার্ডকোড না করে রানটাইমে বিল্ড করা হচ্ছে
+-        var adminHost = 'supremeai-admin' + '.web' + '.app';
+-        window.location.replace('https://' + adminHost);
+-    </script>
+-</head>
+-<body>
+-    Redirecting to God Control Center...
+-</body>
+-</html>
+diff --git a/studio/public/customer.html b/studio/public/customer.html
+deleted file mode 100644
+index 79a8c110..00000000
+--- a/studio/public/customer.html
++++ /dev/null
+@@ -1,13 +0,0 @@
+-<!DOCTYPE html>
+-<html>
+-<head>
+-    <meta charset="utf-8">
+-    <title>Redirecting...</title>
+-    <script>
+-        window.location.replace('/');
+-    </script>
+-</head>
+-<body>
+-    Redirecting to Operator Studio...
+-</body>
+-</html>

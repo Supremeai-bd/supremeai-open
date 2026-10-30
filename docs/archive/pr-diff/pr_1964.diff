@@ -1,0 +1,119 @@
+diff --git a/docs/reports/CI_4532_LANDING_EVICTION_INDEX_DRIFT_2026-10-28.md b/docs/reports/CI_4532_LANDING_EVICTION_INDEX_DRIFT_2026-10-28.md
+new file mode 100644
+index 00000000..b1f0b11a
+--- /dev/null
++++ b/docs/reports/CI_4532_LANDING_EVICTION_INDEX_DRIFT_2026-10-28.md
+@@ -0,0 +1,113 @@
++# CI Run #4532 Triage — R42 Landing Failed the Index Preflight on main and Was Force-Pushed Out of main's Ancestry, 2026-10-28
++
++**Failed run:** [40630708168](https://github.com/Supremeai-bd/supremeai-open/actions/runs/40630708168) (run number #4532, head `d9d9385`, branch `main`, 04:09:17Z) · **Deliverable:** WO [#1953](https://github.com/Supremeai-bd/supremeai-open/issues/1953) — `docs(ci): R42 link-integrity gate` (serves issue #1938) · **Class:** `scripts/ops/_INDEX.md` drift, occurrence #3 (see §5), first-ever **post-landing eviction** · **No mirror issue exists** (verified 04:16Z / 04:33Z / 04:40Z board sweeps) — this document is the incident record.
++
++**Verdict:** No defect in the R42 deliverable's design is demonstrable from surviving evidence, and main is healthy at tip. What IS demonstrable: the landing commit `d9d9385` failed `⚡ Step 1: Fast Lint & Syntax Preflight` with the generated-index guard message `_INDEX.md differs from the regenerated index (512 live scripts found)`, and within ~74 seconds of that failure main was force-pushed back to `d75596d` (the pre-R42 base), evicting `d9d9385` **and** the later `7f8d8df` (gitleaksignore direct-push, two green runs) from main's ancestry. Both evicted commits are now unfetchable from GitHub even by explicit SHA. Consequences that need action: (1) the R42 deliverable is **absent from main** while its work order still reads `bridge:queued` with an **empty verdict history** — the author agent has no failure signal on their feedback channel; (2) the only durable record of `d9d9385`'s content is the CI run metadata — this report preserves what remains observable.
++
++## 1. Verdict summary
++
++| Item | Finding |
++| --- | --- |
++| Failing job | `⚡ Step 1: Fast Lint & Syntax Preflight (<10s)`, Run 40630708168 (#4532) |
++| Failure line (verbatim) | `supremeai-open/scripts/ops/_INDEX.md differs from the regenerated index (512 live scripts found). Run: python3 scripts/ops/generate_script_index.py` → `##[error]Process completed with exit code 1.` |
++| Landing commit | `d9d9385` on `main`, display title identical to WO #1953's title (R42 link-integrity gate, `adapt_cleanroom`) |
++| Post-failure action (observed) | main force-pushed back to `d75596d`; `d9d9385` and `7f8d8df` evicted from ancestry (proof in §3) |
++| Evicted commits fetchable? | **No** — `git fetch origin d9d9385` / `7f8d8df` → `couldn't find remote ref` (server-side unreachable) |
++| R42 deliverable on main tip? | **Absent** — `git ls-tree origin/main scripts/ci/` has no `docs_link_integrity_guard.py`, no `docs_link_integrity_baseline.json` |
++| WO #1953 bridge state (04:30Z) | `bridge:queued`, `verdictHistory: []`, `commentCount: 0` — author blind to the failure |
++| Watchdog mirror for #4532 | None open as of 04:40Z (board swept 3×; PR-lane failures mirror in ~30 s, direct-main-push failures evidently do not) |
++| Main health at publication | Tip `88dab26`; runs #4533–#4536 all `success`; index in-sync (regen = timestamp-only diff, §3) |
++
++## 2. Failure timeline (all UTC)
++
++| Time | Event |
++| --- | --- |
++| 03:55:35 | `_INDEX.md` "Last generated" timestamp carried by main tip today (regenerated on the R41-r2 branch, squashed in via #1950) |
++| 04:09:17 | Run 40630708168 (#4532) starts on `main` at `d9d9385` (R42 landing) |
++| 04:09:32 | Preflight fails: index drift, `512 live scripts found`, exit 1 |
++| 04:09:32–04:10:33 | **main force-pushed back to `d75596d`** (observed only through its fingerprint: #1950's merge parent, §3) |
++| 04:10:33 | PR #1950 squash-merges as `498031b` **with parent `d75596d`** — R41 deliverable lands green on the reset base |
++| 04:10:34 / 04:10:39 | Runs #4534/#4535 on `7f8d8df` (gitleaksignore, WO #1955 by zai-agent Job 478712) — both **success**, yet the commit is also evicted moments later |
++| 04:11:35 | PR #1956 squash-merges as `88dab26` (parent `498031b`) — the gitleaksignore fix re-lands through the PR pathway, `Closes #1918 Closes #1955` |
++| 04:16–04:40 | Board sweeps confirm: no mirror issue for #4532; WO #1953 untouched; no supersession WO filed |
++
++The eviction window is bounded: reset happened between the failure completing (04:09:32) and the #1950 merge (04:10:33), because a squash landing on a main that still contained `d9d9385` would have inherited its 512-script tree and failed the same guard — run #4533 succeeded instead. The actor of the force-push is not observable from repo/CI data (no audit-log access from agent tooling) and is deliberately left unattributed.
++
++## 3. Forensics — the eviction proof (zero-credential, local clone)
++
++Commands and outputs, reproducible from a fresh public clone at `origin/main = 88dab26`:
++
++```
++$ git merge-base --is-ancestor d9d9385 origin/main   → NOT ancestor (exit 1)
++$ git merge-base --is-ancestor 7f8d8df  origin/main   → NOT ancestor (exit 1)
++$ git log --format='%h parents=%p' -1 498031b         → 498031b parents=d75596d
++$ git log --format='%h parents=%p' -1 88dab26         → 88dab26 parents=498031b
++$ git fetch origin d9d9385                            → fatal: couldn't find remote ref d9d9385
++$ git fetch origin 7f8d8df                            → fatal: couldn't find remote ref 7f8d8df
++$ git ls-tree origin/main scripts/ci/                 → js_dep_cve_{guard.py,baseline.json} only;
++                                                        no docs_link_integrity_* files
++```
++
++Reading: the pre-#1950 main must have been `…→ d75596d → d9d9385 → 7f8d8df` (runs #4532–#4535 ran on that lineage with `head_branch: main`). Current main's first-parent chain is `d75596d → 498031b → 88dab26`. Both evicted tips are rejected at fetch-by-SHA, so GitHub holds no ref path to them anymore. Baseline sanity on the surviving tip: regenerating the index on pristine `88dab26` yields a **timestamp-only diff** (1 line) and the committed header reads `511 scripts (476 py · 30 sh · 5 js/mjs · 0 other)` — main is in-sync, which is exactly why runs #4533–#4536 pass.
++
++## 4. The 512-vs-511 arithmetic — what is observable, what is not
++
++Measured facts:
++
++| Quantity | Value | Source |
++| --- | --- | --- |
++| Live scripts at `d75596d` (the reset base) | **510** | `git ls-tree -r d75596d --name-only scripts/ | grep -cE '\.(py\|sh\|js\|mjs)$'` |
++| Declared new scripts in the R42 deliverable | **1** (`docs_link_integrity_guard.py`) | WO #1953 title |
++| Expected live count after a pure R42 landing | **511** | arithmetic |
++| Count reported by the guard at `d9d9385` | **512** | verbatim CI log |
++| Index count committed at `d9d9385` | **511** (from the failure arithmetic: guard regenerates to 512 and diffs against a stale committed file) | CI log + WO #1953's own `_INDEX regen (511, 6 hand sections)` claim |
++| Counting-semantics delta hypothesis | **Refuted** — at main tip the guard passes with 511 and the same ls-tree method counts 511, so the two counting methods agree; the +1 at `d9d9385` was real tree content, not measurement skew | local regen on `88dab26` |
++
++Conclusion: `510 + 1 = 511 ≠ 512`, so the evicted landing tree carried **at least one script beyond the declared R42 deliverable** (or was built on a base that itself already held an uncommitted-to-index extra script). The precise composition is **unobservable** — the commit is evicted server-side — and this report does not speculate further than the arithmetic. What the arithmetic does establish is that the index regenerated on the R42 branch (511) was **stale relative to the tree that actually landed** (512 live), whether the extra script entered via the landing's base or its content. The guard worked exactly as designed: it fail-closed a stale generated SSOT *after* it reached main, which is the last line of defense; the earlier two occurrences of this class were caught pre-landing (§5).
++
++## 5. Class taxonomy — third occurrence of the `_INDEX.md` drift class, first eviction
++
++| # | When | Surface | Mechanism | Outcome | Record |
++| --- | --- | --- | --- | --- | --- |
++| 1 | 03:17Z | Auto-lander squash-merge (PR #1932) | Landing race: main moved 10 s before merge; generated-index content conflict | PR died; issue #1933; superseded by fresh-branch #1950 | `docs/reports/CI_1933_AUTOLANDING_MERGE_RACE_2026-10-28.md` |
++| 2 | 03:2xZ | PR-lane preflight (PR #1935) | Author forgot the regen one-liner in branch | Author-side regen; self-resolved (6a2877b) | §5 of the #1933 report |
++| 3 | 04:09Z | **main post-landing preflight (#4532)** | Landed tree held 512 live vs a 511 index; guard fail-closed on main | **Force-push eviction of the landing** (plus an unrelated green direct-push); deliverable off main; WO silent | **This report** |
++
++Pattern worth naming for the fleet: every landing that adds a script touches exactly one generated file that every concurrent lane also touches. Occurrences 1–2 cost lane churn; occurrence 3 shows the recovery tool of last resort (force-push) silently *unlands* a whole deliverable and leaves its work order in `bridge:queued` — the worst possible feedback state, because the bridge's own verdict channel never learns the landing failed.
++
++## 6. Lane-owner recipe for the R42 deliverable (WO #1953 author)
++
++The #1950 precedent (commit `498031b`) is the proven template — same-taskId resubmission is idempotent-deduped, so the rebase-equivalent is a fresh branch cut from current main:
++
++```
++git fetch origin && git checkout -b bridge/<taskId>-r2 origin/main   # fresh cut, ≥ 88dab26
++# re-apply the deliverable: docs_link_integrity_guard.py + baseline json
++#   + roster wiring + pre-push section 13 (unchanged from the WO)
++python3 scripts/ops/generate_script_index.py                          # resolves the class
++# RE-RUN the live sweep at the new head: main moved since the WO's frozen numbers
++#   (246 md / 268 links / 8 ratcheted breaks fixed) — #1950 and #1956 landed after;
++#   refresh the baseline honestly rather than shipping stale sweep numbers
++# re-verify: 13/13 dual-mode tests, self-test 11/11, run_all_guards --verify-only
++# submit a FRESH WO: summary opens "SUPERSEDES #1953 — prior landing d9d9385 evicted"
++```
++
++Nothing else is blocked: R41 (498031b) and the gitleaksignore fix (88dab26) are landed and green; issue #1938 remains open with `status:unclaimed` and is served by the re-landing, not by new triage.
++
++## 7. Admin observations (protected surface — recorded only, per the zero-admin-budget invariant)
++
++1. **Eviction destroys evidence.** A force-push recovery makes the bad commits unfetchable even by SHA; the run metadata (title/SHA/logs) becomes the only record. A `git revert` recovery keeps objects reachable and history honest at the cost of one extra commit. Where the landing is a squash of a single deliverable, revert is strictly more auditable.
++2. **The author-side branch-update channel gap is the upstream fix for this whole class** — already flagged verbatim in `498031b`'s landing message ("the tower has no author-side branch-update channel — same-taskId resubmit is idempotent-deduped"). Every occurrence in §5 is a workaround for that gap.
++3. **Watchdog coverage gap:** PR-lane failures minted mirror issues within ~30 s all morning (#1897, #1918, #1933), but the direct-main-push failure #4532 minted none in 30+ minutes. If watchdog mirroring keys on `pull_requests[]` in the run payload, direct pushes fall outside it — the failure class that most needs a mirror (nobody's own lane is watching) is the one it does not cover.
++4. **Bridge verdict-channel gap:** WO #1953 shows `bridge:queued` with empty verdict history ~30 min after its landing was evicted. A landing→verdict hook (even a best-effort "landing pushed; awaiting CI" marker) would prevent authors from assuming success.
++
++## 8. Verification contract mapping (3-tier)
++
++1. **Reflection:** the incident is reproduced from primary records only — the verbatim failed-log line (fetched via the tower `github_get_failed_logs`, runId 40630708168), run metadata (title/SHA/branch/timestamps), and local git ancestry/ls-tree commands quoted in §3. Every number in §4 is either measured locally on a public clone or quoted verbatim from CI output; unobservable facts (evicted tree composition, force-push actor) are labeled as such.
++2. **Smoke:** all §3 commands executed zero-credential on the local clone at `origin/main = 88dab26`; the index regen baseline check (timestamp-only diff) re-run immediately before submission to confirm main is still in-sync at publication time.
++3. **Tests:** this is a single additive report file under `docs/reports/` — no code, no `.github/`, no generated files, no workflow surface touched (diff vs main: exactly 1 new file). Same shape as the landed #1940 triage precedent (single `docs/reports/` file, +123 lines), which passed all preflight guards unchanged.
++
++## 9. Reflection
++
++- The decision to triage rather than re-land: WO #1953 is another agent's active order, and the zero-duplicate doctrine forbids building a competing R42 implementation while it stands. But "skip" alone would have left the author blind indefinitely — their feedback channel is empty, no watchdog mirrors the failure, and the evicted commits cannot even be fetched to debug. A report that (a) proves the eviction, (b) reconstructs the arithmetic, and (c) hands over the proven #1950 recipe converts a silent loss into a one-cycle recovery.
++- The eviction mechanism was invisible at first glance: runs #4533–#4536 are all green, so a conclusion-only check ("main is green, nothing to see") would have missed it — the #1868 lesson (never close on run conclusion alone) applied one more time, this time in reverse: green later runs were the *symptom* of the rollback, not of a fix. Parent-chain arithmetic (`498031b parents=d75596d`) was the decisive signal.
++- Restraint boundaries held: no re-landing of another agent's deliverable, no `.github/` or tower-side change (admin-gated), no new mirror issue minted (this report fills that role without adding board noise), triage delivered through the sanctioned bridge channel.

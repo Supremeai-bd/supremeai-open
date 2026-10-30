@@ -1,0 +1,1921 @@
+diff --git a/core/api/routes/admin_routes.py b/core/api/routes/admin_routes.py
+index 6bc294a8..f725bdf0 100644
+--- a/core/api/routes/admin_routes.py
++++ b/core/api/routes/admin_routes.py
+@@ -147,7 +147,6 @@ async def _issue_admin_jwt(uid: str) -> str:
+ 
+ service_container = services
+ from core.config import settings
+-from core.firebase_auth import get_firebase_auth
+ from models.admin import (
+     AdminFirebaseLoginRequest,
+     AdminFirebaseTotpSetupRequest,
+@@ -167,7 +166,7 @@ def get_current_admin(payload: dict = Depends(get_current_user_token)) -> dict:
+     return payload
+ 
+ 
+-auth = get_firebase_auth()
++auth = None  # Firebase Auth removed (Zero-Firebase Native Auth)
+ 
+ 
+ # ERR-S01 FIX (2026-09-15): single shared, ALLOW-LIST gate for every `mock-`
+diff --git a/core/firebase_auth.py b/core/firebase_auth.py
+deleted file mode 100644
+index 3eb340b2..00000000
+--- a/core/firebase_auth.py
++++ /dev/null
+@@ -1,18 +0,0 @@
+-"""Legacy Firebase Auth Stub (Zero-Firebase Architecture).
+-
+-Firebase Admin SDK has been deprecated and replaced by SupremeAI Native Auth (Supabase + JWT).
+-This stub returns None safely without throwing errors or requiring firebase-admin imports.
+-"""
+-
+-from __future__ import annotations
+-
+-from core.logging_config import logger
+-
+-auth = None
+-
+-
+-def get_firebase_auth():
+-    """Deprecated: Returns None as Firebase is decommissioned in favor of Native Auth."""
+-    global auth
+-    return None
+-
+diff --git a/core/messaging/events.py b/core/messaging/events.py
+index 4c9fadec..e7e0a630 100644
+--- a/core/messaging/events.py
++++ b/core/messaging/events.py
+@@ -1,8 +1,9 @@
+-"""Backward compatibility shim for core.messaging.events.
++"""Canonical domain module for events.
+ 
+-Canonical domain module: core.firebase_auth
++Firebase Auth has been removed (Zero-Firebase Native Auth); `auth` is None.
+ """
+ 
+-from core.firebase_auth import auth, get_firebase_auth  # noqa: F401
++auth = None
++get_firebase_auth = lambda: None
+ 
+ __all__ = ["auth", "get_firebase_auth"]
+diff --git a/docs/STUDIO_FRONTEND_MASTER_PLAN.md b/docs/STUDIO_FRONTEND_MASTER_PLAN.md
+new file mode 100644
+index 00000000..11d708ff
+--- /dev/null
++++ b/docs/STUDIO_FRONTEND_MASTER_PLAN.md
+@@ -0,0 +1,196 @@
++# SupremeAI Studio: The Flawless Definitive Master Plan & Architectural Blueprint
++**Version:** 4.0.0-GOLD-CANONICAL  
++**Date:** October 28, 2026  
++**Audience:** SupremeAI Engineering, Chief Architects, Autonomous Web Agents, and Product Leadership  
++**Status:** Canonical & Non-Negotiable Master Plan (Supersedes all previous drafts)
++
++---
++
++## 🌟 The Vision: A Dream Workstation for Any Human or Autonomous Agent
++
++SupremeAI Studio is not an ordinary chat wrapper or generic API dashboard. It is an **adaptive, hyper-personalized, 3D holographic software engineering operating system**. It seamlessly serves three distinct audiences without a single functional or visual gap:
++
++1. **The Guest / Explorer:** Zero-friction entry. No forced login. Instant interactive generation in a live multi-device sandbox (Desktop, Tablet, Mobile) with full DevTools inspectability and immediate "Aha!" realization.
++2. **The Registered User / Builder:** A dream engineering workstation tailored to their exact intent. Freedom to configure personal AI personas (gender, voice timbre, temperament), custom BYOK vault, 3D holographic video call presence, and full split-screen visual preview with click-to-edit DOM inspection.
++3. **The Enterprise Admin / Governor:** Single-pane-of-glass swarm command center. Live autonomous agent lease radar, 512MB RAM sentinel with one-click cache purge, Supabase connection gauge, and instant emergency L0–L3 autonomy circuit-breakers.
++
++---
++
++## 1. Evolution & Incremental Milestone Analysis
++
++| Package Iteration | Timestamp | Size | Key Breakthroughs | Status & Disposition |
++| :--- | :--- | :--- | :--- | :--- |
++| **Iteration 1** | Early | 10 KB | Corrupt Google AI Studio Auth redirect | **Discarded** |
++| **Iteration 2** | Pre-Oct 28 | 293 KB | Vite + React 19 + Express, MCP Handshake | Base layout established |
++| **Iteration 3** | Oct 28 09:47 | 392 KB | `JarvisHudOrb.tsx`, `ModelArena.tsx` | Orb kept; **ModelArena discarded** |
++| **Iteration 4** | Oct 28 10:02 | 466 KB | `DevicePreviewFrame`, `LiveSandboxRenderer`, `MiniDevToolsBar` | Multi-device sandboxing established |
++| **Iteration 5** | Oct 28 10:18 | 553 KB | `VisualElementInspector`, `TimeTravelBar`, `PublishModal`, `CodeDiffViewer` | Lovable/v0-grade inspect & diff |
++| **Iteration 6 (LATEST)** | Oct 28 10:42 | 598 KB | `JarvisHoloCall.tsx`, `WorkspaceSettingsModal.tsx`, `IntentDiscoveryBanner.tsx` | **Gold Standard Foundation**. Added full-screen 3D Holo Video Call, Intent Discovery, & BYOK Settings. |
++
++---
++
++## 2. World AI Benchmark Synthesis & Gap Elimination
++
++```
++┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
++│                                 THE FLAWLESS WORKSTATION MATRIX                                  │
++├─────────────────────────────────────────────────┬────────────────────────────────────────────────┤
++│ WORLD BEST PATTERNS (Lovable, v0, Bolt, Cursor) │ SUPREMEAI STUDIO MASTER IMPLEMENTATION         │
++├─────────────────────────────────────────────────┼────────────────────────────────────────────────┤
++│ • Instant Live Preview                          │ Multi-Device Sandboxed Frame (Desktop/Tab/Mob) │
++│ • Click-to-Edit Visual Inspector                │ VisualElementInspector with micro-prompts      │
++│ • Code Version Rewind & Snapshots               │ TimeTravelBar (Undo/Redo/History scrubber)     │
++│ • High-performance Syntax Code Diffs            │ CodeDiffViewer (Split/Unified side-by-side)    │
++│ • Dynamic Runtime Package Injection             │ PackageInjectorModal (live npm modules)        │
++├─────────────────────────────────────────────────┼────────────────────────────────────────────────┤
++│ USER FREEDOM & EMOTIONAL CONNECTION (NEW)       │ SUPREMEAI REVOLUTIONARY IMPLEMENTATION         │
++├─────────────────────────────────────────────────┼────────────────────────────────────────────────┤
++│ • 3D Holographic "Video Call" with Avatar       │ JarvisHoloCall (Full-Screen WebGL Cyber Bot)   │
++│ • Avatar Persona Customization                  │ Gender (M/F/Cyber), Voice Timbre, Pitch, Accent│
++│ • Zero-Friction Guest Sandboxing                │ GuestDashboard (3 instant runnable apps, 0-auth)│
++│ • Adaptive Intent & Role Discovery              │ IntentDiscoveryBanner (Dev / Designer / Founder)│
++│ • Bring Your Own Keys (BYOK)                    │ Client-side encrypted vault for Gemini, Claude │
++│ • Autonomous Swarm Oversight (Admin)            │ AdminDashboard with L0-L3 Autonomy Kill-Switch │
++└─────────────────────────────────────────────────┴────────────────────────────────────────────────┘
++```
++
++---
++
++## 3. The 6-Pillar Architecture (Zero Gaps for Guest, User, or Admin)
++
++### Pillar 1: Zero-Friction Guest Experience & Public Playground
++- **Zero Login Friction:** Visitors land directly into a functioning interactive playground. No login wall, no credit card, no email capture.
++- **Instant Starter Templates:** 3 ready-to-run blueprints:
++  1. *SaaS AI Landing Page with Glassmorphic Navbar & Pricing*
++  2. *Real-time Crypto/Stock Analytics Dashboard with Interactive SVG Charts*
++  3. *Kanban Project Task Board with Drag & Drop Simulation*
++- **Live Sandboxed Execution (`LiveSandboxRenderer.tsx`):**
++  - Instant code generation inside a sandboxed `<iframe>` with bidirectional `postMessage` event relay.
++  - Multi-device frame preview (`DevicePreviewFrame.tsx`): 1-click toggle between Desktop (100%), Tablet (768px), and Mobile (375px).
++  - Runtime DevTools bar (`MiniDevToolsBar.tsx`): Live console logs, runtime errors, and responsive score indicator.
++- **Natural Transition Gate:** Only when the user wants to *Deploy to Cloudflare/Render*, *Fork Project*, or *Persist Keys* does a non-intrusive modal say: *"Save your work to your personal workspace with one click."*
++
++---
++
++### Pillar 2: Adaptive Intent Discovery & Dynamic Role Tuning (`IntentDiscoveryBanner.tsx`)
++- **First-Visit Discovery:** An elegant, dismissible banner that adapts the entire studio interface to the user's explicit role:
++  - 🛠️ **Full-Stack Engineer:** Maximizes Monaco code editor, raw terminal, Git diff viewer, MCP server federations, and database schema inspector.
++  - 🎨 **Designer & Creative Builder:** Maximizes the visual element inspector, responsive frame, Tailwind CSS controls, and typography contrast tools.
++  - 📊 **Founder & Product Manager:** Maximizes natural language chat, instant full-app synthesis, one-click cloud publish, and deep research summaries.
++- **Continuous Memory:** The selected persona is remembered across sessions and can be re-tuned at any time from Settings.
++
++---
++
++### Pillar 3: 3D Holographic AI Video Call & Custom Person Avatar (`JarvisHoloCall.tsx`)
++- **The Ultimate Vision: From "Lifeless" to "Truly Living" (জীবন্ত অনুভূতি):**
++  - সাধারণ কোল্ড বা রোবোটিক স্ট্যাটিক মডেল নয়; ইউজারের প্রতিটি মুহূর্তের সাথে মিল রেখে স্ক্রিনজুড়ে থাকবে বাস্তবসম্মত লাইফলাইক অনুভূতি।
++  - **Custom Favorite-Person 3D Hologram (পছন্দের মানুষের হলোগ্রাম):**
++    - ইউজার চাইলে নিজের পছন্দের মানুষ (মা, বাবা, পার্টনার, মেন্টর বা প্রিয় ব্যক্তিত্ব)-এর ছবি আপলোড করতে পারবে।
++    - ক্লায়েন্ট-সাইড নিউরাল ডেপথ ও ভলিউমেট্রিক ফেসিয়াল মেশ সিন্থেসিসের মাধ্যমে ছবিটিকে একটি ৩ডি হলোগ্রাফিক ভিডিও কল অ্যাভাটার-এ রূপান্তর করা হবে।
++    - ব্যাকগ্রাউন্ডে সাই-ফাই অ্যাথেরিয়াল সায়ান বা উষ্ণ সোনার হলোগ্রাফিক আভা থাকবে।
++- **Lifelike Facial Animation & Micro-Dynamics (চোখ ও ঠোঁটের স্বাভাবিক প্রাণবন্ত মুভমেন্ট):**
++  - **Realistic Lip-Sync Visemes (স্বাভাবিক ঠোঁটের নড়াচড়া):** AI কথা বলার সময় অডিওর ফোনেটিক সাউন্ড (A, E, I, O, U, Consonants) অনুযায়ী রিয়েল-টাইম মরফ টার্গেটে ঠোঁটের ওঠানামা ও চোয়ালের মাইক্রো-মুভমেন্ট সিঙ্ক হবে।
++  - **Natural Eye Blinking & Saccades (চোখের জীবন্ত স্পন্দন):**
++    - মানুষের চোখের মতোই প্রতি ২-৪ সেকেন্ডে স্বাভাবিক অনিয়মিত ব্লিঙ্কিং (Randomized micro-blinks)।
++    - **Saccadic Eye Movement:** মানুষ কথা বলার সময় একদৃষ্টে তাকিয়ে না থেকে যেমন স্বাভাবিকভাবে চোখের মণি হালকা নড়াচড়া করে।
++    - **Interactive Gaze Tracking:** ইউজার স্ক্রিনের যে ফাইলে বা বাটনে মাউস কার্সার নেবে, অ্যাভাটার খুব সূক্ষ্মভাবে সেদিকে চোখের দৃষ্টি ফেরাবে।
++  - **Emotional Micro-Expressions (মুহূর্তের সাথে সূক্ষ্ম অভিব্যক্তি):**
++    - কোড সফল হলে হালকা উষ্ণ মুচকি হাসি (Subtle warm smile & nod)।
++    - গভীর কোনো আর্কিটেকচার নিয়ে ভাবার সময় হালকা ভ্রু কুঁচকানো (Thoughtful concentration)।
++    - ইউজার কথা বললে মনোযোগ দিয়ে মাথা সামান্য একপাশে হেলিয়ে শোনা (Attentive listening tilt)।
++- **Custom Voice & Persona Freedom:**
++  - পছন্দের মানুষের ভয়েস ক্লোনিং অথবা প্রি-সেট ওয়ার্ম/মাদারলি/সুইট/প্রফেশনাল ভয়েস প্রোফাইল নির্বাচন।
++  - অ্যাভাটার স্টাইল টগল: *Custom Uploaded Person* | *Cybernetic Android* | *Futuristic Sci-Fi Persona* | *Minimal Particle Orb*।
++  - ভাষা: রিয়েল-টাইম বাংলা (বাংলা语音 ও সাবটাইটেল) এবং ইংরেজি।
++
++---
++
++### Pillar 4: The World-Class Studio Cockpit (`SplitStudioView.tsx`)
++- **Left Pane (45% Width) — The Intelligence Command:**
++  - Chat & Agent Stream (`JarvisStudio.tsx`).
++  - Code Diff Inspector (`CodeDiffViewer.tsx`): Side-by-side and inline syntax diffs before applying changes.
++  - Live Package Injector (`PackageInjectorModal.tsx`): Injects NPM dependencies (Lucide icons, Lodash, Chart.js, Tailwind plugins) on the fly.
++- **Right Pane (55% Width) — The Live Reality:**
++  - Responsive Viewport Switcher (Desktop / Tablet / Mobile).
++  - Visual Element Inspector (`VisualElementInspector.tsx`): Hover over any rendered HTML tag to see its bounding box, styles, and trigger an instant micro-prompt.
++  - Time Travel History Bar (`TimeTravelBar.tsx`): Immutable snapshots of every iteration with 1-click Undo / Redo / Revert.
++  - 1-Click Multi-Cloud Deployer (`PublishModal.tsx`): Deploy to Cloudflare Edge Workers, Vercel, or Render directly.
++
++---
++
++### Pillar 5: Personalization, BYOK & Workspace Settings (`WorkspaceSettingsModal.tsx`)
++- **Encrypted BYOK Vault:**
++  - Personal API key vault for Google Gemini 2.5 Pro, Anthropic Claude 3.7 Sonnet, OpenAI GPT-4o, and Groq. Keys stored client-side in encrypted localStorage.
++- **Custom System Prompt Persona:**
++  - Define custom default guidelines (e.g., *"Always write strict TypeScript, use Tailwind CSS, include unit tests"*).
++- **Module Control Center:**
++  - Granular toggles for: Deep Research Agent, Scheduled Cron Tasks, MCP Federation, Runtime DevTools, and Human-Eye QA Audits.
++
++---
++
++### Pillar 6: Mission Control Admin & Swarm Cockpit (`AdminDashboard.tsx`)
++- **Autonomous Swarm Radar:**
++  - Live tracking of active agent leases across Solver, Architect, Reviewer, and Scout archetypes.
++- **Live Infrastructure Sentinels:**
++  - Render 512MB RAM monitor with automated cache clearing and one-click fresh deploy (`action_render_deploy`).
++  - Supabase database connection pool gauge and query latency monitor (`supabase_health`).
++  - Redis cache stats & Upstash flush controller (`action_redis_flush`).
++  - Cloudflare Edge purge controller (`action_cloudflare_purge`).
++- **Autonomy Governance & Kill-Switch:**
++  - Autonomy Level dial: **L0** (Manual Lockdown), **L1** (Assisted), **L2** (Autonomous Execution), **L3** (Continuous Swarm Federation).
++  - Emergency Swarm Kill-Switch with single-click pause.
++
++---
++
++## 4. File Structure & Component Migration Map
++
++All components from `C:\Users\N\AppData\Local\Temp\zip_oct28_1042` are systematically integrated into `f:\supremeai-open\studio\src\`:
++
++```
++f:\supremeai-open\studio\src\
++├── components\
++│   ├── preview\
++│   │   ├── DevicePreviewFrame.tsx        <- Multi-device frame (Desktop/Tablet/Mobile)
++│   │   ├── LiveSandboxRenderer.tsx       <- Sandboxed iframe runtime
++│   │   └── MiniDevToolsBar.tsx           <- Console logs & responsive health
++│   ├── inspector\
++│   │   └── VisualElementInspector.tsx    <- Lovable-style click-to-edit inspector
++│   ├── timetravel\
++│   │   └── TimeTravelBar.tsx             <- Version snapshot timeline scrubber
++│   ├── diff\
++│   │   └── CodeDiffViewer.tsx            <- Side-by-side & unified code diffs
++│   ├── deploy\
++│   │   └── PublishModal.tsx              <- 1-click Cloudflare/Render deployment
++│   ├── packages\
++│   │   └── PackageInjectorModal.tsx      <- Live runtime package injector
++│   ├── jarvis\
++│   │   ├── JarvisHoloCall.tsx            <- Full-Screen 3D Holo Video Call Avatar
++│   │   └── JarvisHudOrb.tsx              <- Compact 2D HUD animated orb
++│   ├── studio\
++│   │   ├── SplitStudioView.tsx           <- The unified split-screen canvas
++│   │   └── IntentDiscoveryBanner.tsx     <- Adaptive role & intent discovery
++│   ├── settings\
++│   │   └── WorkspaceSettingsModal.tsx    <- BYOK vault, custom persona & avatar freedom
++│   ├── guest\
++│   │   └── GuestDashboard.tsx            <- Zero-friction guest trial playground
++│   └── admin\
++│       └── AdminDashboard.tsx            <- Swarm telemetry, RAM sentinel & kill-switch
++└── pages\
++    └── user\
++        └── AIStudio.tsx                  <- Unified Studio entrypoint
++```
++
++*(Note: `ModelArena.tsx` is completely eliminated per architectural mandate).*
++
++---
++
++## 5. Execution & Verification Checklist
++
++- [x] **Phase 1: Architecture & Plan Finalization** — Formulate the 6-pillar canonical Master Plan with full 3D Holo Call and Avatar Freedom specs.
++- [ ] **Phase 2: Component Deployment into Studio** — Copy all 14 modular components from `zip_oct28_1042` into `f:\supremeai-open\studio\src\components\`.
++- [ ] **Phase 3: Avatar Personalization Engine** — Wire Avatar Freedom options (Gender, Timbre, Accent, Persona) into `WorkspaceSettingsModal.tsx` and connect to `JarvisHoloCall.tsx`.
++- [ ] **Phase 4: Split-View & Guest Flow Wiring** — Connect `SplitStudioView` and `GuestDashboard` into `AIStudio.tsx` and public routes.
++- [ ] **Phase 5: 3-Tier Verification Gate** —
++  - Tier 1: Invariant & reflection check against `AGENTS.md` (no root-shadowing, clean commit).
++  - Tier 2: TypeScript typecheck compilation (`npm run build` / `tsc --noEmit`).
++  - Tier 3: Route & visual regression verification (`npm run test:routes`).
+diff --git a/studio/eslint.config.js b/studio/eslint.config.js
+index b14c16ae..b240321f 100644
+--- a/studio/eslint.config.js
++++ b/studio/eslint.config.js
+@@ -61,8 +61,7 @@ export default tseslint.config({ ignores: ['dist', 'dist-admin', 'dist-user', 's
+   // Issue #2522: justified bare-fetch allowlist — এই ফাইলগুলোতে raw fetch সচেতনভাবে রাখা হয়েছে:
+   //  - apiClient.ts: ক্লায়েন্ট নিজেই প্রিমিটিভ লেয়ার
+   //  - utils/api.ts: fetchWithRetry foundation (apiClient এই মডিউল import করে — circular এড়াতে)
+-  //  - firebase.ts: Firebase Hosting-এর নিজস্ব init endpoint (backend API নয়)
+-  //  - mcpViewer.ts: ইউজার-কনফিগার করা external MCP সার্ভার URL
++//  - storageApi.ts: Cloudflare R2 pre-signed PUT (external storage, backend বাইপাস)
+   //  - storageApi.ts: Cloudflare R2 pre-signed PUT (external storage, backend বাইপাস)
+   //  - GlobalErrorBoundary/RouteBoundary: keepalive unload-beacon (queue-তে গেলে unload-এ হারায়)
+   files: [
+@@ -71,7 +70,6 @@ export default tseslint.config({ ignores: ['dist', 'dist-admin', 'dist-user', 's
+     '**/services/TelemetryTracker.ts',
+     '**/services/CrossAiObserverService.ts',
+     '**/packages/shared-services/**',
+-    '**/firebase.ts',
+     '**/services/mcpViewer.ts',
+     '**/services/storageApi.ts',
+     '**/components/GlobalErrorBoundary.tsx',
+diff --git a/studio/package.json b/studio/package.json
+index 3349183b..03c31e58 100644
+--- a/studio/package.json
++++ b/studio/package.json
+@@ -45,7 +45,6 @@
+     "dexie": "^4.0.10",
+     "dexie-react-hooks": "^4.4.0",
+     "dompurify": "^3.4.16",
+-    "firebase": "^12.18.0",
+     "framer-motion": "^12.43.0",
+     "lucide-react": "^1.34.0",
+     "monaco-editor": "0.55.1",
+@@ -84,7 +83,6 @@
+   },
+   "pnpm": {
+     "onlyBuiltDependencies": [
+-      "@firebase/util",
+       "esbuild",
+       "protobufjs"
+     ]
+diff --git a/studio/pnpm-lock.yaml b/studio/pnpm-lock.yaml
+index ceee8752..2c87634b 100644
+--- a/studio/pnpm-lock.yaml
++++ b/studio/pnpm-lock.yaml
+@@ -86,9 +86,6 @@ importers:
+       dompurify:
+         specifier: ^3.4.16
+         version: 3.4.17
+-      firebase:
+-        specifier: ^12.18.0
+-        version: 12.19.0
+       framer-motion:
+         specifier: ^12.43.0
+         version: 12.43.0(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+@@ -800,243 +797,6 @@ packages:
+     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
+     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+ 
+-  '@firebase/ai@2.16.0':
+-    resolution: {integrity: sha512-WRVxl58B61Orwf7st7949ZIW2L4huV80Gpaum1z8v2eH+m2xaxWtC8mOjQyVAOirr6O/yf89cBjlPvoyBpBfTg==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-types': 0.x
+-
+-  '@firebase/analytics-compat@0.2.31':
+-    resolution: {integrity: sha512-msTlG9REujk5rjtOHNLngiuPmvaWGQte8ugL4/F6ZCMb+92Ue7SgjSEpNxINkM8ZtTrbGS83j5SZkt0r+M1Tjw==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/analytics-types@0.8.5':
+-    resolution: {integrity: sha512-kdnooE7Bis2jEnsqcerRwn/UQpH5D3uvHpku7OdUM9TJN3omlu6iYtbyAQ6XkAJRgJtO0aNf9OOkW8J6D59oCA==}
+-
+-  '@firebase/analytics@0.10.25':
+-    resolution: {integrity: sha512-oDagV3PHeNXBdxemksZCdj+GmUT19eCnTOcLdQePIIovFXlm3zWy3Gjeaokt9Nqx24kc4ljK8lU0XGcGmmKZ1A==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/app-check-compat@0.4.7':
+-    resolution: {integrity: sha512-fBb/xSMyIKv1nDmccfzz3IAGBzx/cQOxmZai66rJzifb1hMMkztf824Xx7LhpTUe7HNUbXwY90IvJ66fi8q6yg==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/app-check-interop-types@0.3.5':
+-    resolution: {integrity: sha512-qId34pVZ2CXTmtu4ofW5leiI93DvnOvIcr/5GT7MZPw5WXAi6nZoU+g9cNRgl7K90UJSbK0cXxten4meYMPyZg==}
+-
+-  '@firebase/app-check-types@0.5.5':
+-    resolution: {integrity: sha512-+DF4gzFrlwGFyky38o4T/YN/r51l70yCtJ2HTkwmRj8FCMwPjm4hLH4fQbj6BUvzkiFqliBkitFsRpf1/YZkWA==}
+-
+-  '@firebase/app-check@0.13.1':
+-    resolution: {integrity: sha512-l8y3dmnhodXks/APAwx4tWqRl3tk8b9874KF1FJyKg1DIU+kMD0l52iz7S9/MW+eK8k6cjJg0G0iJ5KQAsQpow==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/app-compat@0.5.18':
+-    resolution: {integrity: sha512-77H57WuGEsgrv59HdtuhHG+eQdP8di6myz7O93yW6yTZlR/tLSmsCxCq5vHp6AWWDwSV0EVtKUvizXQiQZVBWA==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/app-types@0.9.6':
+-    resolution: {integrity: sha512-yPLahy7Esfu2w/yme3msVK4xTkDXQqq6szfQn8yVOQpCKiT5GVFjqNpLbuz6NkX0WuTwUidkmPewW3r4xkvpeg==}
+-
+-  '@firebase/app@0.16.2':
+-    resolution: {integrity: sha512-fyCLPahl3r0Zb7Wzm+JLWcOOH3SaDgAyJzJ8EWIDiv51aNiv+2Pjbpa6myEuP7iXxjmJqrcbVm0GUF7h229T1Q==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/auth-compat@0.6.11':
+-    resolution: {integrity: sha512-L+xp3DTJQrBV08Vt0UhcL/ofUOSjXom7JOJfbT6oas4o7gCrQnTYFKs8wfiuKLmHoo8BxMr5LdgjAs7o6aAsqQ==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/auth-interop-types@0.2.6':
+-    resolution: {integrity: sha512-FgwZqDrBqgK0BHI70QTv1v/5wmuDF9f8fsJFvKSxoRlK2PPfSQtZAk2jhXu4pe9BZzFi/e4UYusU/bEQHdf6Qg==}
+-
+-  '@firebase/auth-types@0.13.2':
+-    resolution: {integrity: sha512-OU+miuoSxIWYN7GT291d2ylVJBL3k/OePo7/JDSoQtkFQoEiGBc4AHuMjj/seqFIsHrqnjrAfRCk4pfufoJolQ==}
+-    peerDependencies:
+-      '@firebase/app-types': 0.x
+-      '@firebase/util': 1.x
+-
+-  '@firebase/auth@1.13.6':
+-    resolution: {integrity: sha512-MKRLvF72HJ/irNn2fJR0Gv5FOZNtqv1IBeJHRwK8l8pZ/wi9vuUw8ecyCMvQDDNxfS6uW0MWACL5KC4Y8Pp+fA==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@react-native-async-storage/async-storage': ^2.2.0 || ^3.0.0
+-    peerDependenciesMeta:
+-      '@react-native-async-storage/async-storage':
+-        optional: true
+-
+-  '@firebase/component@0.7.5':
+-    resolution: {integrity: sha512-vuFDcL91Q+2ZuBJkyOh86T4q0B4ffNTDjc/A38tybO56odQABxRTFLTIowCWqAKeIcgo37GowWMVgFF73gD8Qw==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/data-connect@0.7.4':
+-    resolution: {integrity: sha512-su1aGWlzhxb+xtggCUSsufJn1FDa06SBDK71y+fpQ+g2zMhMExik6FUv/odkKzOF/xfWVjabCbWBcjJY3MceDA==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/database-compat@2.1.7':
+-    resolution: {integrity: sha512-lBq9sJm8MnJINKJnkAKSOj2MbC66xGoSVCcGkPtstl+lkoKEBtD46qHLbuDgW/WbLPoKVm17RIN8BxHj+Z2F2w==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-    peerDependenciesMeta:
+-      '@firebase/app':
+-        optional: true
+-      '@firebase/app-compat':
+-        optional: true
+-
+-  '@firebase/database-types@1.0.22':
+-    resolution: {integrity: sha512-YAZNXsjY9EQQ+pKw/3ax8n5FgolHC7Qew7EY5RceYdl0R2ZP+kCv1O0DkKlcceue8uQCOreHCNN7PWVFpY1Nug==}
+-
+-  '@firebase/database@1.1.5':
+-    resolution: {integrity: sha512-/JGpvszLoNXNgzilRXocigGfFF4hbcPA9wN1i1kjJx6oKkXgkHteZYl3lQs1lJX3ETDf6bv7zI15lPMVUp4sAQ==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/firestore-compat@0.4.14':
+-    resolution: {integrity: sha512-HJ2HBNgNPrRsWIJ4E+Kc0u0h1U7HlF7If8AtYjie9HZXlMUmwYSJaXBj9VFm6gkSj5dlKZNcOQ0Ou25CVVG6rA==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/firestore-types@3.0.5':
+-    resolution: {integrity: sha512-dbdMAQkMd5dwWc48eupz/Y6/E9ruat3+gY5lhVKscvvT/HnDBEEMzJW38zdKhgdnglZHGk2vUsJMOHAphMHGMA==}
+-    peerDependencies:
+-      '@firebase/app-types': 0.x
+-      '@firebase/util': 1.x
+-
+-  '@firebase/firestore@4.17.2':
+-    resolution: {integrity: sha512-SiyQEK1dYPOjItFVA+kZGdvOoRAtMebDBvUaSxJPNZMkKcRwYYK2kzWo5UXTZZj523uMxJnkr+KKVySEMme3kQ==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/functions-compat@0.5.0':
+-    resolution: {integrity: sha512-T3BDIToESZUHt7438wyKYMkRjKg3m1xAIux5fVpNvTRQlDOFLukWniQWBDhJ2znpU9kxMTR6+e31TVo8P15PZw==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/functions-types@0.6.5':
+-    resolution: {integrity: sha512-Zc0pURjthHXzSj54ZivCkzKDSV1r/wIpnmHdhq82q2yFFPVoncG/ZJjnVMiANvQfeww/QnElhzODpfwUucVwdA==}
+-
+-  '@firebase/functions@0.14.0':
+-    resolution: {integrity: sha512-DhuYFr0eMhp+s/PNEk6SiMsYkc00+XVOUeKbrl8MOzQNZI3SKQpqoDR1d+keNDAutwmHRWTUAdXBoVPD+xxVUw==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/installations-compat@0.2.24':
+-    resolution: {integrity: sha512-8M5nlcWwYt881x83COP2odq5vgf+NgwJh+RMd4LRSv8JI1pxwDfgrDJOERrjTgfC9J5Z0vnQX4b1pdN914e0Zw==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/installations-types@0.5.5':
+-    resolution: {integrity: sha512-e9UYcju3puDl1vdrcKIi5dExzHLameOT/Tc61Q48PYwxtsM1NzZh/ikGbdBQTsbRgg0EMZqdPr0/m5ODUBobrg==}
+-    peerDependencies:
+-      '@firebase/app-types': 0.x
+-
+-  '@firebase/installations@0.6.24':
+-    resolution: {integrity: sha512-Ui52ey8wHoWqkBbXRKJEKYWylI0JZogZmoLS+o8Anh1bxWtK27ZYjLla1UJAAdC5DCKLJ2qAp0VpJOjg8VOX1g==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/logger@0.5.2':
+-    resolution: {integrity: sha512-J2VO4NFTc0xQFrxV1B/lm5balicm9cwuX2acR9Yn41fN8KgUeQFo+VJV222IqW2FPSXKDu9uo5WdQFWf9TPbYg==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/messaging-compat@0.2.30':
+-    resolution: {integrity: sha512-m1DPT2ET5x0qYqXLoHwKMAyf1mgZZOhuoE6H6/H4OPsp8zSxMIDEFPaW7MaffPJsCA5J7kHzo+BHVNXK4ZoV+w==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/messaging-interop-types@0.2.6':
+-    resolution: {integrity: sha512-MVzvkKe2V4H2dHu5oOxRfeKQcfTwWmCgnzsC4V1q3ixun5iiL8riCZ2qI35rDhCL4glPGiu0jHxDbpVNuTKfow==}
+-
+-  '@firebase/messaging@0.13.3':
+-    resolution: {integrity: sha512-nRXPAp+z0kA3KziJtRY9kktHECvRwaaONzHvislFgllhCwJMscW7icWNQA5IjyP8Uc2+GS/4px8Uz6rx6ftTag==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/performance-compat@0.2.27':
+-    resolution: {integrity: sha512-O/ozTf/EbChN94Pk7bd1eUC0PAC36726AwsaiJyC0bZzSBWfLGSWASGPH5pebUWXQPJtGxIJYRkkbX5l0Qa+Hw==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/performance-types@0.2.5':
+-    resolution: {integrity: sha512-PRzOgB+/M+6AKlEkY8a9xy5Ff5SfZPIh4iShXhn2WAcL/euSbK7bdLqWysHduunNJhGFsXa22Ag3ixqL6rQtYg==}
+-
+-  '@firebase/performance@0.7.14':
+-    resolution: {integrity: sha512-9PH1XEZVHErxGdbXluvGz4Uyjw4W955H8v7Mv9rHIybRrg5F2Ac2tvf5+mSf5EtnxWNmxrD2WLnvMFaZP4sMrQ==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/remote-config-compat@0.2.29':
+-    resolution: {integrity: sha512-mY7JtTISK6F4g4T0x3kVepr5cp0NXL7f5yjIUXXGaTrg4qUlFBWRbENaHaqZ78dwmNcLm24h/yPsOVRlDXEXhA==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/remote-config-types@0.5.2':
+-    resolution: {integrity: sha512-i8k1omVfoAnaT1ZPv2FFjxMZrATYsO/GnFgHEj5+7fAJLzi8wLnGGv1WK06oEAD6ltrWXSO1HzeNyajn/NjMWw==}
+-
+-  '@firebase/remote-config@0.9.2':
+-    resolution: {integrity: sha512-Rii93DkXjM+RE/ytHdYa7EIiQLJbdBr+W8EEiqd/vbLCOC+1FdkDuRiumJBp6t3yewHGbdqbpjB3fk3z0cZ+8g==}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/storage-compat@0.4.5':
+-    resolution: {integrity: sha512-vO0tFPxXbKDKdlTu8tYT08S9t9ezUTJYEdLCULpWxWq2aq6zojwN1QmAB+1a50AI/g47GlWUJn1XPncm/PDZsw==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-      '@firebase/app-compat': 0.x
+-
+-  '@firebase/storage-types@0.8.5':
+-    resolution: {integrity: sha512-GEDs5P+rNUfNcS+wxIdOLAHficife2YXtvTJnyi3ssrX11AAtBg+nDUdbYh8vuBzWehVQZPmztGUUnud4L+4yg==}
+-    peerDependencies:
+-      '@firebase/app-types': 0.x
+-      '@firebase/util': 1.x
+-
+-  '@firebase/storage@0.14.5':
+-    resolution: {integrity: sha512-r2tozN/BlEewLi70tJNUQPzWwbex9GM7NgXZsamHKQrjKEfcR0i4jGgHBKAKA4hbwiPE9eNMb3hcxWnDpeJZwg==}
+-    engines: {node: '>=20.0.0'}
+-    peerDependencies:
+-      '@firebase/app': 0.x
+-
+-  '@firebase/util@1.15.3':
+-    resolution: {integrity: sha512-c/z/gaIlaaLZEuGbE6sLUuJ61tskg1JghvhcNQzW948ASBinbVBBRnZTC4b4yt4LaEtJQkYlyzqLHcutFwEIvA==}
+-    engines: {node: '>=20.0.0'}
+-
+-  '@firebase/webchannel-wrapper@1.0.7':
+-    resolution: {integrity: sha512-phBFwieDLvkZGYN9CE9ZFNEIoBVksprzsnCzQejCmCHtgwCXReeuRpoEGN9C4EbhONztv8NRV1tau6Rb9pONwQ==}
+-
+-  '@grpc/grpc-js@1.9.16':
+-    resolution: {integrity: sha512-wE4Ut/olIzfKqp631XrG+wbF0v1vWFN4YL9FyXC2LJiG33DsV7PLzURjrCvY/6je2ntdRkeLpPDluzSRGaVltQ==}
+-    engines: {node: ^8.13.0 || >=10.10.0}
+-
+-  '@grpc/proto-loader@0.7.15':
+-    resolution: {integrity: sha512-tMXdRCfYVixjuFK+Hk0Q1s38gV9zDiDJfWL3h1rv4Qc39oILCu1TRTDt7+fGUI8K4G1Fj125Hx/ru3azECWTyQ==}
+-    engines: {node: '>=6'}
+-    hasBin: true
+-
+   '@humanfs/core@0.19.2':
+     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
+     engines: {node: '>=18.18.0'}
+@@ -1338,33 +1098,6 @@ packages:
+     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
+     engines: {node: '>=14'}
+ 
+-  '@protobufjs/aspromise@1.1.2':
+-    resolution: {integrity: sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ==}
+-
+-  '@protobufjs/base64@1.1.2':
+-    resolution: {integrity: sha512-AZkcAA5vnN/v4PDqKyMR5lx7hZttPDgClv83E//FMNhR2TMcLUhfRUBHCmSl0oi9zMgDDqRUJkSxO3wm85+XLg==}
+-
+-  '@protobufjs/codegen@2.0.5':
+-    resolution: {integrity: sha512-zgXFLzW3Ap33e6d0Wlj4MGIm6Ce8O89n/apUaGNB/jx+hw+ruWEp7EwGUshdLKVRCxZW12fp9r40E1mQrf/34g==}
+-
+-  '@protobufjs/eventemitter@1.1.1':
+-    resolution: {integrity: sha512-vW1GmwMZNnL+gMRaovlh9yZX74kc+TTU3FObkkurpMaRtBfLP3ldjS9KQWlwZgraRE0+dheEEoAxdzcJQ8eXZg==}
+-
+-  '@protobufjs/fetch@1.1.1':
+-    resolution: {integrity: sha512-GpptLrs57adMSuHi3VNj0mAF8dwh36LMaYF6XyJ6JMWlVsc+t42tm1HSEDmOs3A8fC9yyeisgLhsTVQokOZ0zw==}
+-
+-  '@protobufjs/float@1.0.2':
+-    resolution: {integrity: sha512-Ddb+kVXlXst9d+R9PfTIxh1EdNkgoRe5tOX6t01f1lYWOvJnSPDBlG241QLzcyPdoNTsblLUdujGSE4RzrTZGQ==}
+-
+-  '@protobufjs/path@1.1.2':
+-    resolution: {integrity: sha512-6JOcJ5Tm08dOHAbdR3GrvP+yUUfkjG5ePsHYczMFLq3ZmMkAD98cDgcT2iA1lJ9NVwFd4tH/iSSoe44YWkltEA==}
+-
+-  '@protobufjs/pool@1.1.0':
+-    resolution: {integrity: sha512-0kELaGSIDBKvcgS4zkjz1PeddatrjYcmMWOlAuAPwAeccUrPHdUqo/J6LiymHHEiJT5NrF1UVwxY14f+fy4WQw==}
+-
+-  '@protobufjs/utf8@1.1.2':
+-    resolution: {integrity: sha512-b1UQwcEZ4yCnMCD8DAL1VlbvBJE9/IX4FTIp7BG1xYpf29SLazLSrqUkj4w7Y5y7cCVP6E5tcqqcI0xemPkHug==}
+-
+   '@reduxjs/toolkit@2.13.0':
+     resolution: {integrity: sha512-f6jwVRfwW30+tnllz4YcsHHpPYYOE7abcHkyUCovD+P7DyhdAI5prz2Fh/8TLhakjpN+7aIEion1s5L/tvlYlA==}
+     peerDependencies:
+@@ -2046,10 +1779,6 @@ packages:
+   cliui@6.0.0:
+     resolution: {integrity: sha512-t6wbgtoCXvAzst7QgXxJYqPt0usEfbgQdftEPbLL/cvv6HPE5VgvqCuAIDR0NgU52ds6rFwqrgakNLrHEjCbrQ==}
+ 
+-  cliui@8.0.1:
+-    resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
+-    engines: {node: '>=12'}
+-
+   cliui@9.0.1:
+     resolution: {integrity: sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w==}
+     engines: {node: '>=20'}
+@@ -2424,10 +2153,6 @@ packages:
+   fastq@1.20.3:
+     resolution: {integrity: sha512-XKv5nnLs6nLF71NgiKJLIZFLkPyIEuOselLG7ujZnGrRfQK8HpvY+WqKhAJUAdLomwVHErVS4LfxFlPq0/FTAw==}
+ 
+-  faye-websocket@0.11.4:
+-    resolution: {integrity: sha512-CzbClwlXAuiRQAlUyfqPgvPoNKTckTPGfwZV4ZdAhVcP2lh9KUxJg2b5GkE7XbjKQ3YJnQ9z6D9ntLAlB+tP8g==}
+-    engines: {node: '>=0.8.0'}
+-
+   fd-package-json@2.0.0:
+     resolution: {integrity: sha512-jKmm9YtsNXN789RS/0mSzOC1NUq9mkVd65vbSSVsKdjGvYXBuE4oWe2QOEoFeRmJg+lPuZxpmrfFclNhoRMneQ==}
+ 
+@@ -2456,9 +2181,6 @@ packages:
+     resolution: {integrity: sha512-78/PXT1wlLLDgTzDs7sjq9hzz0vXD+zn+7wypEe4fXQxCmdmqfGsEPQxmiCSQI3ajFV91bVSsvNtrJRiW6nGng==}
+     engines: {node: '>=10'}
+ 
+-  firebase@12.19.0:
+-    resolution: {integrity: sha512-kwXCLcI0ly2lkwygkbuRx6SsX3DSO96355YrWh9SWZ5ncsxK/y5cirn3sY6nZVSiBVE++2nL6Hchzu1EB8uohQ==}
+-
+   fix-dts-default-cjs-exports@1.0.1:
+     resolution: {integrity: sha512-pVIECanWFC61Hzl2+oOCtoJ3F17kglZC/6N94eRWycFgBH35hHx0Li604ZIzhseh97mf2p0cv7vVrOZGoqhlEg==}
+ 
+@@ -2614,9 +2336,6 @@ packages:
+   html-escaper@2.0.2:
+     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
+ 
+-  http-parser-js@0.5.10:
+-    resolution: {integrity: sha512-Pysuw9XpUq5dVc/2SMHpuTY01RFl8fttgcyunjL7eEMhGM3cI4eOmiCycJDVCo/7O7ClfQD3SaI6ftDzqOXYMA==}
+-
+   http-proxy-agent@7.0.2:
+     resolution: {integrity: sha512-T1gkAiYYDWYx3V5Bmyu7HcfcvL7mUrTWiM6yOfa3PIphViJ/gFPbvidQ+veqSOHci/PxBcDabeUNCzpOODJZig==}
+     engines: {node: '>= 14'}
+@@ -2637,9 +2356,6 @@ packages:
+     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
+     engines: {node: '>=0.10.0'}
+ 
+-  idb@7.1.1:
+-    resolution: {integrity: sha512-gchesWBzyvGHRO9W8tzUWFDycow5gwjvFKfyV9FF32Y7F50yZMp7mP+T2mJIWFx49zicqyC4uefHM17o6xKIVQ==}
+-
+   ieee754@1.2.1:
+     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
+ 
+@@ -2898,15 +2614,9 @@ packages:
+     resolution: {integrity: sha512-iPZK6eYjbxRu3uB4/WZ3EsEIMJFMqAoopl3R+zuq0UjcAm/MO6KCweDgPfP3elTztoKP3KtnVHxTn2NHBSDVUw==}
+     engines: {node: '>=10'}
+ 
+-  lodash.camelcase@4.3.0:
+-    resolution: {integrity: sha512-TwuEnCnxbc3rAvhf/LbG7tJUDzhqXyFnv3dtzLOPgCG/hODL7WFnsbwktkD7yUV0RrreP/l1PALq/YSg6VvjlA==}
+-
+   lodash.merge@4.6.2:
+     resolution: {integrity: sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==}
+ 
+-  long@5.3.2:
+-    resolution: {integrity: sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA==}
+-
+   loupe@3.2.1:
+     resolution: {integrity: sha512-CdzqowRJCeLU72bHvWqwRBBlLcMEtIvGrlvef74kMnV2AolS9Y8xUv1I0U/MNAWMhBlKIoyuEgoJ0t/bbwHbLQ==}
+ 
+@@ -3185,10 +2895,6 @@ packages:
+     resolution: {integrity: sha512-cdGef/drWFoydD1JsMzuFf8100nZl+GT+yacc2bEced5f9Rjk4z+WtFUTBu9PhOi9j/jfmBPu0mMEY4wIdAF8A==}
+     engines: {node: '>= 0.6.0'}
+ 
+-  protobufjs@7.6.6:
+-    resolution: {integrity: sha512-dYDWdjSl5RNb7SgPxGQcRU+GtvP7s2fpkrY0r432PcOIaZ0/rBcxEZnQN67iJhFuQiVw754JDoPruPCNdGsbjg==}
+-    engines: {node: '>=12.0.0'}
+-
+   proxy-from-env@2.1.0:
+     resolution: {integrity: sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA==}
+     engines: {node: '>=10'}
+@@ -3218,10 +2924,6 @@ packages:
+   queue-microtask@1.2.3:
+     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
+ 
+-  re2js@2.9.0:
+-    resolution: {integrity: sha512-rZpqkd4ETP3GrQ5mDLzADr14OleeKdb/40lG84WE8absRfsVLJpWt2ifjtYYeoPqeouIkcxhTlurxIXfR5kR5Q==}
+-    engines: {node: '>=20.0.0'}
+-
+   react-dom@19.3.1:
+     resolution: {integrity: sha512-Y0bARz53lhEC1NMCASs0/j+faB/zqt3R8hpvg1e8+61ZVJ4UL0UdC4cBbXfZMcIuhrfgeILTLe+ZeBCavQPtKQ==}
+     peerDependencies:
+@@ -3764,21 +3466,10 @@ packages:
+     resolution: {integrity: sha512-3hu+tD8YzSLGuFYtPRb48vdhKMi0KQV5sn+uWr8+7dMEq/2G/dtLrdDinkLjqq5TIbIBjYJ4Ax/n3YiaW7QM8A==}
+     engines: {node: 20 || >=22}
+ 
+-  web-vitals@4.2.4:
+-    resolution: {integrity: sha512-r4DIlprAGwJ7YM11VZp4R884m0Vmgr6EAKe3P+kO0PPj3Unqyvv59rczf6UiGcb9Z8QxZVcqKNwv/g0WNdWwsw==}
+-
+   webidl-conversions@7.0.0:
+     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
+     engines: {node: '>=12'}
+ 
+-  websocket-driver@0.7.5:
+-    resolution: {integrity: sha512-ZL2+3c7kMBdIRCMz6l8jQMHyGVxj+UL+xVk74Ombiciboca8rHa15L86B19E5oh1pL9Ii/uj54gtsIrZGMo6zA==}
+-    engines: {node: '>=0.8.0'}
+-
+-  websocket-extensions@0.1.4:
+-    resolution: {integrity: sha512-OqedPIGOfsDlo31UNwYbCFMSaO9m9G/0faIHj5/dZFDMFqPTcx6UwqyOy3COEaEOg/9VsGIpdqn62W5KhoKSpg==}
+-    engines: {node: '>=0.8.0'}
+-
+   whatwg-encoding@3.1.1:
+     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
+     engines: {node: '>=18'}
+@@ -3871,10 +3562,6 @@ packages:
+     resolution: {integrity: sha512-o50j0JeToy/4K6OZcaQmW6lyXXKhq7csREXcDwk2omFPJEwUNOVtJKvmDr9EI1fAJZUyZcRF7kxGBWmRXudrCQ==}
+     engines: {node: '>=6'}
+ 
+-  yargs-parser@21.1.1:
+-    resolution: {integrity: sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw==}
+-    engines: {node: '>=12'}
+-
+   yargs-parser@22.0.0:
+     resolution: {integrity: sha512-rwu/ClNdSMpkSrUb+d6BRsSkLUq1fmfsY6TOpYzTwvwkg1/NRG85KBy3kq++A8LKQwX6lsu+aWad+2khvuXrqw==}
+     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
+@@ -3883,10 +3570,6 @@ packages:
+     resolution: {integrity: sha512-aePbxDmcYW++PaqBsJ+HYUFwCdv4LVvdnhBy78E57PIor8/OVvhMrADFFEDh8DHDFRv/O9i3lPhsENjO7QX0+A==}
+     engines: {node: '>=8'}
+ 
+-  yargs@17.7.3:
+-    resolution: {integrity: sha512-GZtjxm/J/4TSxuL3FNYjCmLktBTnIw/rVmKSIyKeYAZpmJB2ig9VauCC5xsa82GNKVKDAqpOn3KVzNt0zmrU0g==}
+-    engines: {node: '>=12'}
+-
+   yargs@18.0.0:
+     resolution: {integrity: sha512-4UEqdc2RYGHZc7Doyqkrqiln3p9X2DZVxaGbwhn2pi7MrRagKaOcIKe8L3OxYcbhXLgLFUS3zAYuQjKBQgmuNg==}
+     engines: {node: ^20.19.0 || ^22.12.0 || >=23}
+@@ -4362,336 +4045,6 @@ snapshots:
+       '@eslint/core': 0.17.0
+       levn: 0.4.1
+ 
+-  '@firebase/ai@2.16.0(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-check-interop-types': 0.3.5
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/analytics-compat@0.2.31(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/analytics': 0.10.25(@firebase/app@0.16.2)
+-      '@firebase/analytics-types': 0.8.5
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/analytics-types@0.8.5': {}
+-
+-  '@firebase/analytics@0.10.25(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/app-check-compat@0.4.7(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-check': 0.13.1(@firebase/app@0.16.2)
+-      '@firebase/app-check-types': 0.5.5
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/app-check-interop-types@0.3.5': {}
+-
+-  '@firebase/app-check-types@0.5.5': {}
+-
+-  '@firebase/app-check@0.13.1(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/app-compat@0.5.18':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/app-types@0.9.6':
+-    dependencies:
+-      '@firebase/logger': 0.5.2
+-
+-  '@firebase/app@0.16.2':
+-    dependencies:
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      idb: 7.1.1
+-      tslib: 2.8.1
+-
+-  '@firebase/auth-compat@0.6.11(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/auth': 1.13.6(@firebase/app@0.16.2)
+-      '@firebase/auth-types': 0.13.2(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)
+-      '@firebase/component': 0.7.5
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-    transitivePeerDependencies:
+-      - '@firebase/app-types'
+-      - '@react-native-async-storage/async-storage'
+-
+-  '@firebase/auth-interop-types@0.2.6': {}
+-
+-  '@firebase/auth-types@0.13.2(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)':
+-    dependencies:
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/util': 1.15.3
+-
+-  '@firebase/auth@1.13.6(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/component@0.7.5':
+-    dependencies:
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/data-connect@0.7.4(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/auth-interop-types': 0.2.6
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/database-compat@2.1.7(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/component': 0.7.5
+-      '@firebase/database': 1.1.5
+-      '@firebase/database-types': 1.0.22
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-    optionalDependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-
+-  '@firebase/database-types@1.0.22':
+-    dependencies:
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/util': 1.15.3
+-
+-  '@firebase/database@1.1.5':
+-    dependencies:
+-      '@firebase/app-check-interop-types': 0.3.5
+-      '@firebase/auth-interop-types': 0.2.6
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      faye-websocket: 0.11.4
+-      tslib: 2.8.1
+-
+-  '@firebase/firestore-compat@0.4.14(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/firestore': 4.17.2(@firebase/app@0.16.2)
+-      '@firebase/firestore-types': 3.0.5(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-    transitivePeerDependencies:
+-      - '@firebase/app-types'
+-
+-  '@firebase/firestore-types@3.0.5(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)':
+-    dependencies:
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/util': 1.15.3
+-
+-  '@firebase/firestore@4.17.2(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      '@firebase/webchannel-wrapper': 1.0.7
+-      '@grpc/grpc-js': 1.9.16
+-      '@grpc/proto-loader': 0.7.15
+-      re2js: 2.9.0
+-      tslib: 2.8.1
+-
+-  '@firebase/functions-compat@0.5.0(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/functions': 0.14.0(@firebase/app@0.16.2)
+-      '@firebase/functions-types': 0.6.5
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/functions-types@0.6.5': {}
+-
+-  '@firebase/functions@0.14.0(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-check-interop-types': 0.3.5
+-      '@firebase/auth-interop-types': 0.2.6
+-      '@firebase/component': 0.7.5
+-      '@firebase/messaging-interop-types': 0.2.6
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/installations-compat@0.2.24(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/installations-types': 0.5.5(@firebase/app-types@0.9.6)
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-    transitivePeerDependencies:
+-      - '@firebase/app-types'
+-
+-  '@firebase/installations-types@0.5.5(@firebase/app-types@0.9.6)':
+-    dependencies:
+-      '@firebase/app-types': 0.9.6
+-
+-  '@firebase/installations@0.6.24(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/util': 1.15.3
+-      idb: 7.1.1
+-      tslib: 2.8.1
+-
+-  '@firebase/logger@0.5.2':
+-    dependencies:
+-      tslib: 2.8.1
+-
+-  '@firebase/messaging-compat@0.2.30(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/messaging': 0.13.3(@firebase/app@0.16.2)
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/messaging-interop-types@0.2.6': {}
+-
+-  '@firebase/messaging@0.13.3(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/messaging-interop-types': 0.2.6
+-      '@firebase/util': 1.15.3
+-      idb: 7.1.1
+-      tslib: 2.8.1
+-
+-  '@firebase/performance-compat@0.2.27(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/performance': 0.7.14(@firebase/app@0.16.2)
+-      '@firebase/performance-types': 0.2.5
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/performance-types@0.2.5': {}
+-
+-  '@firebase/performance@0.7.14(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-      web-vitals: 4.2.4
+-
+-  '@firebase/remote-config-compat@0.2.29(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/logger': 0.5.2
+-      '@firebase/remote-config': 0.9.2(@firebase/app@0.16.2)
+-      '@firebase/remote-config-types': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/remote-config-types@0.5.2': {}
+-
+-  '@firebase/remote-config@0.9.2(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/logger': 0.5.2
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/storage-compat@0.4.5(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/component': 0.7.5
+-      '@firebase/storage': 0.14.5(@firebase/app@0.16.2)
+-      '@firebase/storage-types': 0.8.5(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-    transitivePeerDependencies:
+-      - '@firebase/app-types'
+-
+-  '@firebase/storage-types@0.8.5(@firebase/app-types@0.9.6)(@firebase/util@1.15.3)':
+-    dependencies:
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/util': 1.15.3
+-
+-  '@firebase/storage@0.14.5(@firebase/app@0.16.2)':
+-    dependencies:
+-      '@firebase/app': 0.16.2
+-      '@firebase/component': 0.7.5
+-      '@firebase/util': 1.15.3
+-      tslib: 2.8.1
+-
+-  '@firebase/util@1.15.3':
+-    dependencies:
+-      tslib: 2.8.1
+-
+-  '@firebase/webchannel-wrapper@1.0.7': {}
+-
+-  '@grpc/grpc-js@1.9.16':
+-    dependencies:
+-      '@grpc/proto-loader': 0.7.15
+-      '@types/node': 24.19.2
+-
+-  '@grpc/proto-loader@0.7.15':
+-    dependencies:
+-      lodash.camelcase: 4.3.0
+-      long: 5.3.2
+-      protobufjs: 7.6.6
+-      yargs: 17.7.3
+-
+   '@humanfs/core@0.19.2':
+     dependencies:
+       '@humanfs/types': 0.15.0
+@@ -4965,26 +4318,6 @@ snapshots:
+   '@pkgjs/parseargs@0.11.0':
+     optional: true
+ 
+-  '@protobufjs/aspromise@1.1.2': {}
+-
+-  '@protobufjs/base64@1.1.2': {}
+-
+-  '@protobufjs/codegen@2.0.5': {}
+-
+-  '@protobufjs/eventemitter@1.1.1': {}
+-
+-  '@protobufjs/fetch@1.1.1':
+-    dependencies:
+-      '@protobufjs/aspromise': 1.1.2
+-
+-  '@protobufjs/float@1.0.2': {}
+-
+-  '@protobufjs/path@1.1.2': {}
+-
+-  '@protobufjs/pool@1.1.0': {}
+-
+-  '@protobufjs/utf8@1.1.2': {}
+-
+   '@reduxjs/toolkit@2.13.0(react-redux@9.3.0(@types/react@19.3.0)(react@19.3.1)(redux@5.0.1))(react@19.3.1)':
+     dependencies:
+       '@standard-schema/spec': 1.1.0
+@@ -5670,12 +5003,6 @@ snapshots:
+       strip-ansi: 6.0.1
+       wrap-ansi: 6.2.0
+ 
+-  cliui@8.0.1:
+-    dependencies:
+-      string-width: 4.2.3
+-      strip-ansi: 6.0.1
+-      wrap-ansi: 7.0.0
+-
+   cliui@9.0.1:
+     dependencies:
+       string-width: 7.2.0
+@@ -6082,10 +5409,6 @@ snapshots:
+     dependencies:
+       reusify: 1.1.0
+ 
+-  faye-websocket@0.11.4:
+-    dependencies:
+-      websocket-driver: 0.7.5
+-
+   fd-package-json@2.0.0:
+     dependencies:
+       walk-up-path: 4.0.0
+@@ -6112,39 +5435,6 @@ snapshots:
+       locate-path: 6.0.0
+       path-exists: 4.0.0
+ 
+-  firebase@12.19.0:
+-    dependencies:
+-      '@firebase/ai': 2.16.0(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
+-      '@firebase/analytics': 0.10.25(@firebase/app@0.16.2)
+-      '@firebase/analytics-compat': 0.2.31(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/app': 0.16.2
+-      '@firebase/app-check': 0.13.1(@firebase/app@0.16.2)
+-      '@firebase/app-check-compat': 0.4.7(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/app-compat': 0.5.18
+-      '@firebase/app-types': 0.9.6
+-      '@firebase/auth': 1.13.6(@firebase/app@0.16.2)
+-      '@firebase/auth-compat': 0.6.11(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
+-      '@firebase/data-connect': 0.7.4(@firebase/app@0.16.2)
+-      '@firebase/database': 1.1.5
+-      '@firebase/database-compat': 2.1.7(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/firestore': 4.17.2(@firebase/app@0.16.2)
+-      '@firebase/firestore-compat': 0.4.14(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
+-      '@firebase/functions': 0.14.0(@firebase/app@0.16.2)
+-      '@firebase/functions-compat': 0.5.0(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/installations': 0.6.24(@firebase/app@0.16.2)
+-      '@firebase/installations-compat': 0.2.24(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
+-      '@firebase/messaging': 0.13.3(@firebase/app@0.16.2)
+-      '@firebase/messaging-compat': 0.2.30(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/performance': 0.7.14(@firebase/app@0.16.2)
+-      '@firebase/performance-compat': 0.2.27(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/remote-config': 0.9.2(@firebase/app@0.16.2)
+-      '@firebase/remote-config-compat': 0.2.29(@firebase/app-compat@0.5.18)(@firebase/app@0.16.2)
+-      '@firebase/storage': 0.14.5(@firebase/app@0.16.2)
+-      '@firebase/storage-compat': 0.4.5(@firebase/app-compat@0.5.18)(@firebase/app-types@0.9.6)(@firebase/app@0.16.2)
+-      '@firebase/util': 1.15.3
+-    transitivePeerDependencies:
+-      - '@react-native-async-storage/async-storage'
+-
+   fix-dts-default-cjs-exports@1.0.1:
+     dependencies:
+       magic-string: 0.30.21
+@@ -6286,8 +5576,6 @@ snapshots:
+ 
+   html-escaper@2.0.2: {}
+ 
+-  http-parser-js@0.5.10: {}
+-
+   http-proxy-agent@7.0.2:
+     dependencies:
+       agent-base: 7.1.4
+@@ -6315,8 +5603,6 @@ snapshots:
+     dependencies:
+       safer-buffer: 2.1.2
+ 
+-  idb@7.1.1: {}
+-
+   ieee754@1.2.1: {}
+ 
+   ignore@5.3.2: {}
+@@ -6556,12 +5842,8 @@ snapshots:
+     dependencies:
+       p-locate: 5.0.0
+ 
+-  lodash.camelcase@4.3.0: {}
+-
+   lodash.merge@4.6.2: {}
+ 
+-  long@5.3.2: {}
+-
+   loupe@3.2.1: {}
+ 
+   lru-cache@10.4.3: {}
+@@ -6835,20 +6117,6 @@ snapshots:
+ 
+   process@0.11.10: {}
+ 
+-  protobufjs@7.6.6:
+-    dependencies:
+-      '@protobufjs/aspromise': 1.1.2
+-      '@protobufjs/base64': 1.1.2
+-      '@protobufjs/codegen': 2.0.5
+-      '@protobufjs/eventemitter': 1.1.1
+-      '@protobufjs/fetch': 1.1.1
+-      '@protobufjs/float': 1.0.2
+-      '@protobufjs/path': 1.1.2
+-      '@protobufjs/pool': 1.1.0
+-      '@protobufjs/utf8': 1.1.2
+-      '@types/node': 24.19.2
+-      long: 5.3.2
+-
+   proxy-from-env@2.1.0: {}
+ 
+   psl@1.15.0:
+@@ -6874,8 +6142,6 @@ snapshots:
+ 
+   queue-microtask@1.2.3: {}
+ 
+-  re2js@2.9.0: {}
+-
+   react-dom@19.3.1(react@19.3.1):
+     dependencies:
+       react: 19.3.1
+@@ -7451,18 +6717,8 @@ snapshots:
+ 
+   walk-up-path@4.0.0: {}
+ 
+-  web-vitals@4.2.4: {}
+-
+   webidl-conversions@7.0.0: {}
+ 
+-  websocket-driver@0.7.5:
+-    dependencies:
+-      http-parser-js: 0.5.10
+-      safe-buffer: 5.2.1
+-      websocket-extensions: 0.1.4
+-
+-  websocket-extensions@0.1.4: {}
+-
+   whatwg-encoding@3.1.1:
+     dependencies:
+       iconv-lite: 0.6.3
+@@ -7542,8 +6798,6 @@ snapshots:
+       camelcase: 5.3.1
+       decamelize: 1.2.0
+ 
+-  yargs-parser@21.1.1: {}
+-
+   yargs-parser@22.0.0: {}
+ 
+   yargs@15.4.1:
+@@ -7560,16 +6814,6 @@ snapshots:
+       y18n: 4.0.3
+       yargs-parser: 18.1.3
+ 
+-  yargs@17.7.3:
+-    dependencies:
+-      cliui: 8.0.1
+-      escalade: 3.2.0
+-      get-caller-file: 2.0.5
+-      require-directory: 2.1.1
+-      string-width: 4.2.3
+-      y18n: 5.0.8
+-      yargs-parser: 21.1.1
+-
+   yargs@18.0.0:
+     dependencies:
+       cliui: 9.0.1
+diff --git a/studio/src/components/jarvis/JarvisLivingHologram.tsx b/studio/src/components/jarvis/JarvisLivingHologram.tsx
+new file mode 100644
+index 00000000..3cbdf1c4
+--- /dev/null
++++ b/studio/src/components/jarvis/JarvisLivingHologram.tsx
+@@ -0,0 +1,576 @@
++import React, { useRef, useEffect, useState, useCallback } from 'react';
++import { 
++  Mic, MicOff, Volume2, VolumeX, Maximize2, Minimize2, X, Sparkles, 
++  Terminal, ShieldCheck, Activity, Cpu, Zap, Radio, PhoneOff, 
++  Play, RefreshCw, Send, CheckCircle2, AlertTriangle, ArrowUpRight,
++  Smile, UserCheck, Heart
++} from 'lucide-react';
++
++export type HoloState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'executing' | 'celebrating';
++
++interface JarvisLivingHologramProps {
++  isOpen: boolean;
++  onClose: () => void;
++  language?: 'bn' | 'en';
++  personaName?: string;
++  onSendMessage?: (msg: string) => void;
++  onJumpToPreview?: () => void;
++}
++
++/**
++ * JarvisLivingHologram:
++ * Image-free pure mathematical 3D cybernetic mesh hologram with:
++ * - Natural saccadic eye micro-movement & gaze tracking
++ * - Randomized biological blinking (2-4s)
++ * - Phonetic speech-reactive lip-sync visemes (mouth opening, curvature)
++ * - Head nod & tilt physics with Spring dynamics
++ * - Volumetric depth-grid, holographic scanlines & starlight aura
++ */
++export const JarvisLivingHologram: React.FC<JarvisLivingHologramProps> = ({
++  isOpen,
++  onClose,
++  language = 'bn',
++  personaName = 'Jarvis Cyber Core',
++  onSendMessage,
++  onJumpToPreview,
++}) => {
++  const canvasRef = useRef<HTMLCanvasElement>(null);
++  const [holoState, setHoloState] = useState<HoloState>('idle');
++  const [isMicActive, setIsMicActive] = useState<boolean>(false);
++  const [isMuted, setIsMuted] = useState<boolean>(false);
++  const [subtitles, setSubtitles] = useState<string>(
++    language === 'bn' 
++      ? 'অনলাইন এবং সম্পূর্ণ জীবন্ত, স্যার। আপনার চিন্তাভাবনা আমাকে বলুন, আমরা একসাথে গড়ে তুলব।'
++      : 'Online and fully conscious, sir. Speak your thoughts and we shall build together.'
++  );
++  const [inputMsg, setInputMsg] = useState<string>('');
++  const [speechVolume, setSpeechVolume] = useState<number>(0);
++
++  // Mouse & Gaze Tracking
++  const mouse = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
++  const headRotation = useRef({ x: 0, y: 0, targetX: 0, targetY: 0 });
++  const eyeGaze = useRef({ x: 0, y: 0, targetX: 0, targetY: 0, saccadeTimer: 0 });
++  
++  // Biological Blinking
++  const blink = useRef({ value: 1, timer: 0, nextBlink: 140, isBlinking: false });
++
++  // Lip-Sync Visemes (Mouth Openness & Curve)
++  const lipSync = useRef({ open: 0, width: 1, targetOpen: 0 });
++
++  // Floating particles
++  const particles = useRef<Array<{ x: number; y: number; z: number; speed: number; alpha: number }>>([]);
++
++  // Setup initial particles
++  useEffect(() => {
++    const pArr = [];
++    for (let i = 0; i < 90; i++) {
++      pArr.push({
++        x: (Math.random() - 0.5) * 800,
++        y: (Math.random() - 0.5) * 600,
++        z: Math.random() * 400,
++        speed: 0.3 + Math.random() * 0.7,
++        alpha: 0.2 + Math.random() * 0.7,
++      });
++    }
++    particles.current = pArr;
++  }, []);
++
++  // Track Mouse Movement for Head Tilt and Gaze
++  useEffect(() => {
++    const handleMouseMove = (e: MouseEvent) => {
++      const width = window.innerWidth;
++      const height = window.innerHeight;
++      mouse.current.targetX = (e.clientX - width / 2) / (width / 2); // -1 to 1
++      mouse.current.targetY = (e.clientY - height / 2) / (height / 2); // -1 to 1
++    };
++    window.addEventListener('mousemove', handleMouseMove);
++    return () => window.removeEventListener('mousemove', handleMouseMove);
++  }, []);
++
++  // Interactive Voice / Simulated Speech Visemes
++  useEffect(() => {
++    let interval: NodeJS.Timeout;
++    if (holoState === 'speaking') {
++      interval = setInterval(() => {
++        // Natural speech phoneme oscillations
++        const energy = 0.3 + Math.random() * 0.7;
++        lipSync.current.targetOpen = energy;
++        setSpeechVolume(Math.floor(energy * 100));
++      }, 90);
++    } else {
++      lipSync.current.targetOpen = 0;
++      setSpeechVolume(0);
++    }
++    return () => clearInterval(interval);
++  }, [holoState]);
++
++  // Main 3D Canvas Rendering Loop
++  useEffect(() => {
++    if (!isOpen) return;
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++    const ctx = canvas.getContext('2d');
++    if (!ctx) return;
++
++    let animId: number;
++    let time = 0;
++
++    const render = () => {
++      time += 0.02;
++
++      // Ensure crisp high-DPI canvas
++      if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
++        canvas.width = canvas.clientWidth;
++        canvas.height = canvas.clientHeight;
++      }
++
++      const w = canvas.width;
++      const h = canvas.height;
++      const cx = w / 2;
++      const cy = h / 2 - 20;
++
++      ctx.clearRect(0, 0, w, h);
++
++      // ─── 1. Deep Space Obsidian Hologram Gradient ───
++      const bgGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, Math.max(w, h) * 0.7);
++      bgGrad.addColorStop(0, '#060d1f');
++      bgGrad.addColorStop(0.5, '#020612');
++      bgGrad.addColorStop(1, '#000207');
++      ctx.fillStyle = bgGrad;
++      ctx.fillRect(0, 0, w, h);
++
++      // ─── 2. State Color Themes ───
++      let primaryColor = '0, 229, 255'; // Cyan Hologram (Idle/Normal)
++      let accentColor = '99, 102, 241';  // Indigo
++      if (holoState === 'listening') {
++        primaryColor = '255, 75, 110';   // Coral / Pinkish Red pulse
++        accentColor = '244, 63, 94';
++      } else if (holoState === 'thinking') {
++        primaryColor = '251, 191, 36';   // Amber gold synapse
++        accentColor = '217, 119, 6';
++      } else if (holoState === 'speaking') {
++        primaryColor = '16, 185, 129';   // Emerald / Living energy
++        accentColor = '52, 211, 153';
++      } else if (holoState === 'celebrating') {
++        primaryColor = '168, 85, 247';   // Purple triumphant glow
++        accentColor = '236, 72, 153';
++      }
++
++      // ─── 3. Animated Floating Starlight & Neural Dust ───
++      particles.current.forEach((p) => {
++        p.y -= p.speed;
++        if (p.y < -300) p.y = 300;
++        const pScale = 300 / (300 + p.z);
++        const px = cx + p.x * pScale;
++        const py = cy + p.y * pScale;
++        ctx.fillStyle = `rgba(${primaryColor}, ${p.alpha * 0.6})`;
++        ctx.beginPath();
++        ctx.arc(px, py, 1.2 * pScale, 0, Math.PI * 2);
++        ctx.fill();
++      });
++
++      // ─── 4. Head Tilt & Saccadic Eye Physics ───
++      // Spring lerp head towards mouse cursor
++      headRotation.current.x += (mouse.current.targetX * 0.25 - headRotation.current.x) * 0.05;
++      headRotation.current.y += (mouse.current.targetY * 0.18 - headRotation.current.y) * 0.05;
++
++      // Biological Saccade (quick tiny eye movements)
++      eyeGaze.current.saccadeTimer++;
++      if (eyeGaze.current.saccadeTimer > 80 + Math.random() * 120) {
++        eyeGaze.current.saccadeTimer = 0;
++        eyeGaze.current.targetX = (Math.random() - 0.5) * 6;
++        eyeGaze.current.targetY = (Math.random() - 0.5) * 4;
++      }
++      eyeGaze.current.x += (eyeGaze.current.targetX - eyeGaze.current.x) * 0.1;
++      eyeGaze.current.y += (eyeGaze.current.targetY - eyeGaze.current.y) * 0.1;
++
++      // Natural Eye Blink Timer
++      blink.current.timer++;
++      if (blink.current.timer > blink.current.nextBlink) {
++        blink.current.isBlinking = true;
++        blink.current.value -= 0.25;
++        if (blink.current.value <= 0.05) {
++          blink.current.value = 0.05;
++          blink.current.timer = 0;
++          blink.current.nextBlink = 100 + Math.floor(Math.random() * 160); // 2-4s random blink
++          blink.current.isBlinking = false;
++        }
++      } else if (blink.current.value < 1) {
++        blink.current.value += 0.25;
++        if (blink.current.value > 1) blink.current.value = 1;
++      }
++
++      // Smooth Lip-sync Mouth Open
++      lipSync.current.open += (lipSync.current.targetOpen - lipSync.current.open) * 0.25;
++
++      // Center offset from head tilt
++      const hx = cx + headRotation.current.x * 60;
++      const hy = cy + headRotation.current.y * 40;
++
++      // ─── 5. Gyroscopic Hologram Rings (Neural Halo) ───
++      ctx.save();
++      ctx.translate(hx, hy);
++      for (let r = 0; r < 3; r++) {
++        const ringAngle = time * (r % 2 === 0 ? 0.8 : -0.6) + r * 1.5;
++        const radius = 170 + r * 18;
++        ctx.beginPath();
++        ctx.ellipse(0, 0, radius, radius * 0.35, ringAngle, 0, Math.PI * 2);
++        ctx.strokeStyle = `rgba(${primaryColor}, ${0.15 + r * 0.08})`;
++        ctx.lineWidth = 1.2;
++        ctx.stroke();
++
++        // Little data nodes on the rings
++        const dotX = Math.cos(ringAngle * 2) * radius;
++        const dotY = Math.sin(ringAngle * 2) * radius * 0.35;
++        ctx.fillStyle = `rgba(${primaryColor}, 0.9)`;
++        ctx.beginPath();
++        ctx.arc(dotX, dotY, 2.5, 0, Math.PI * 2);
++        ctx.fill();
++      }
++      ctx.restore();
++
++      // ─── 6. Mathematical 3D Facial Mesh (Clean Wireframe Silhouette) ───
++      const headWidth = 90;
++      const headHeight = 120;
++
++      // Head Outer Holographic Glow
++      const headGlow = ctx.createRadialGradient(hx, hy - 10, 10, hx, hy, 130);
++      headGlow.addColorStop(0, `rgba(${primaryColor}, 0.2)`);
++      headGlow.addColorStop(0.6, `rgba(${accentColor}, 0.08)`);
++      headGlow.addColorStop(1, 'rgba(0,0,0,0)');
++      ctx.fillStyle = headGlow;
++      ctx.beginPath();
++      ctx.ellipse(hx, hy, headWidth * 1.3, headHeight * 1.2, headRotation.current.x * 0.1, 0, Math.PI * 2);
++      ctx.fill();
++
++      // Draw Volumetric Contour Lines (Head Geometry)
++      ctx.lineWidth = 1.2;
++      for (let lat = -4; lat <= 4; lat++) {
++        const latRatio = lat / 5;
++        const latY = hy + latRatio * headHeight;
++        const latRadius = Math.sqrt(Math.max(0, 1 - latRatio * latRatio)) * headWidth;
++
++        ctx.strokeStyle = `rgba(${primaryColor}, ${0.2 + (1 - Math.abs(latRatio)) * 0.3})`;
++        ctx.beginPath();
++        ctx.ellipse(
++          hx + headRotation.current.x * 15 * (1 - Math.abs(latRatio)),
++          latY,
++          latRadius,
++          latRadius * 0.3,
++          headRotation.current.x * 0.15,
++          0,
++          Math.PI * 2
++        );
++        ctx.stroke();
++      }
++
++      // Vertical Cranium Meridians
++      for (let lon = -3; lon <= 3; lon++) {
++        const lonRatio = lon / 4;
++        const lonX = hx + lonRatio * headWidth + headRotation.current.x * 25;
++        ctx.strokeStyle = `rgba(${primaryColor}, 0.18)`;
++        ctx.beginPath();
++        ctx.ellipse(
++          lonX,
++          hy,
++          Math.abs(lonRatio) * 15 + 4,
++          headHeight,
++          0,
++          Math.PI * 0.2,
++          Math.PI * 0.8
++        );
++        ctx.stroke();
++      }
++
++      // ─── 7. LIVING EYES (Micro-Blink + Natural Gaze Tracking) ───
++      const eyeSpacing = 32;
++      const eyeY = hy - 10 + headRotation.current.y * 12;
++
++      [-1, 1].forEach((side) => {
++        const eyeX = hx + side * eyeSpacing + headRotation.current.x * 18;
++        const blinkH = Math.max(1, 12 * blink.current.value);
++
++        // Eye Socket Ethereal Glow
++        const eyeGlow = ctx.createRadialGradient(eyeX, eyeY, 1, eyeX, eyeY, 20);
++        eyeGlow.addColorStop(0, `rgba(${primaryColor}, 0.8)`);
++        eyeGlow.addColorStop(0.5, `rgba(${accentColor}, 0.3)`);
++        eyeGlow.addColorStop(1, 'rgba(0,0,0,0)');
++        ctx.fillStyle = eyeGlow;
++        ctx.beginPath();
++        ctx.ellipse(eyeX, eyeY, 16, blinkH + 4, 0, 0, Math.PI * 2);
++        ctx.fill();
++
++        // Eye Outline
++        ctx.strokeStyle = `rgba(${primaryColor}, 0.9)`;
++        ctx.lineWidth = 1.8;
++        ctx.beginPath();
++        ctx.ellipse(eyeX, eyeY, 14, blinkH, 0, 0, Math.PI * 2);
++        ctx.stroke();
++
++        // Pupil / Iris with Gaze Tracking
++        if (blink.current.value > 0.2) {
++          const pupilX = eyeX + eyeGaze.current.x + mouse.current.targetX * 3;
++          const pupilY = eyeY + eyeGaze.current.y + mouse.current.targetY * 2;
++
++          ctx.fillStyle = '#ffffff';
++          ctx.beginPath();
++          ctx.arc(pupilX, pupilY, 3.5, 0, Math.PI * 2);
++          ctx.fill();
++
++          // Outer Iris ring
++          ctx.strokeStyle = `rgba(${primaryColor}, 0.95)`;
++          ctx.lineWidth = 1.2;
++          ctx.beginPath();
++          ctx.arc(pupilX, pupilY, 6.5, 0, Math.PI * 2);
++          ctx.stroke();
++        }
++      });
++
++      // ─── 8. LIVING LIPS & MOUTH (Phonetic Viseme Movements) ───
++      const mouthY = hy + 48 + headRotation.current.y * 15;
++      const mouthX = hx + headRotation.current.x * 12;
++      const mouthOpenH = Math.max(1.5, lipSync.current.open * 16);
++      const mouthWidth = 24 + lipSync.current.open * 8;
++
++      // Mouth Aperture
++      ctx.strokeStyle = `rgba(${primaryColor}, 0.95)`;
++      ctx.lineWidth = 2;
++      ctx.beginPath();
++      // Upper lip
++      ctx.moveTo(mouthX - mouthWidth, mouthY);
++      ctx.quadraticCurveTo(mouthX, mouthY - mouthOpenH * 0.4 - 2, mouthX + mouthWidth, mouthY);
++      // Lower lip
++      ctx.quadraticCurveTo(mouthX, mouthY + mouthOpenH + 2, mouthX - mouthWidth, mouthY);
++      ctx.stroke();
++
++      // Voice Acoustic Glow inside mouth when speaking
++      if (lipSync.current.open > 0.1) {
++        ctx.fillStyle = `rgba(${primaryColor}, ${lipSync.current.open * 0.5})`;
++        ctx.fill();
++      }
++
++      // ─── 9. ARC REACTOR CYBER CORE (Chest Heartbeat) ───
++      const chestY = hy + 155;
++      const chestGrad = ctx.createRadialGradient(hx, chestY, 2, hx, chestY, 40);
++      chestGrad.addColorStop(0, `rgba(${primaryColor}, 0.95)`);
++      chestGrad.addColorStop(0.4, `rgba(${accentColor}, 0.4)`);
++      chestGrad.addColorStop(1, 'rgba(0,0,0,0)');
++      ctx.fillStyle = chestGrad;
++      ctx.beginPath();
++      ctx.arc(hx, chestY, 45, 0, Math.PI * 2);
++      ctx.fill();
++
++      // Chest Geometric Ticks
++      ctx.strokeStyle = `rgba(${primaryColor}, 0.7)`;
++      ctx.lineWidth = 1.5;
++      ctx.beginPath();
++      ctx.arc(hx, chestY, 28, 0, Math.PI * 2);
++      ctx.stroke();
++
++      // Horizontal Scanline Sweep (Pure Cyber Sci-Fi Texture)
++      const scanY = (time * 120) % h;
++      ctx.fillStyle = `rgba(${primaryColor}, 0.04)`;
++      ctx.fillRect(0, scanY, w, 3);
++
++      animId = requestAnimationFrame(render);
++    };
++
++    render();
++    return () => cancelAnimationFrame(animId);
++  }, [isOpen, holoState]);
++
++  if (!isOpen) return null;
++
++  const handleSimulateTalk = (text: string, state: HoloState = 'speaking') => {
++    setHoloState(state);
++    setSubtitles(text);
++    setTimeout(() => {
++      setHoloState('idle');
++    }, 4500);
++  };
++
++  const handleSendPrompt = (e: React.FormEvent) => {
++    e.preventDefault();
++    if (!inputMsg.trim()) return;
++    const msg = inputMsg;
++    setInputMsg('');
++    setSubtitles(`"${msg}"`);
++    setHoloState('thinking');
++    if (onSendMessage) onSendMessage(msg);
++
++    // Simulate intelligent response after thinking
++    setTimeout(() => {
++      handleSimulateTalk(
++        language === 'bn'
++          ? `অবশ্যই, স্যার! আমি আর্কিটেকচার বিশ্লেষণ করে আপনার সিস্টেমের জন্য সর্বোচ্চ কোড তৈরি করছি।`
++          : `Affirmative, sir! Analyzing project requirements and deploying optimal code solution.`
++      );
++    }, 1800);
++  };
++
++  return (
++    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-xl animate-fadeIn overflow-hidden select-none font-sans">
++      {/* ─── Top Control Bar ─── */}
++      <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08] bg-slate-900/40 z-20">
++        <div className="flex items-center gap-3">
++          <div className="relative flex items-center justify-center w-8 h-8 rounded-xl bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
++            <Sparkles className="w-4 h-4 animate-pulse" />
++          </div>
++          <div>
++            <div className="flex items-center gap-2">
++              <h2 className="text-sm font-bold text-white tracking-wide">{personaName}</h2>
++              <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-800">
++                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
++                LIVING 3D HOLO
++              </span>
++            </div>
++            <p className="text-[11px] text-slate-400">
++              {holoState === 'idle' && (language === 'bn' ? 'মনোযোগ দিয়ে আপনার কথা শুনছি' : 'Attentive & Conscious')}
++              {holoState === 'listening' && (language === 'bn' ? 'ভয়েস শুনছি...' : 'Awaiting your voice...')}
++              {holoState === 'thinking' && (language === 'bn' ? 'গভীর বিশ্লেষণ চলছে...' : 'Synthesizing neural logic...')}
++              {holoState === 'speaking' && (language === 'bn' ? 'কথা বলছি...' : 'Articulating response...')}
++            </p>
++          </div>
++        </div>
++
++        {/* Action Controls */}
++        <div className="flex items-center gap-2">
++          {onJumpToPreview && (
++            <button
++              onClick={onJumpToPreview}
++              className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-700/80 rounded-xl border border-white/10 transition-all flex items-center gap-1.5 shadow-sm"
++            >
++              <span>{language === 'bn' ? 'স্প্লিট প্রিভিউতে যান' : 'Split Workspace'}</span>
++              <ArrowUpRight className="w-3.5 h-3.5 text-cyan-400" />
++            </button>
++          )}
++
++          <button
++            onClick={onClose}
++            className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
++            title="End Video Call"
++          >
++            <PhoneOff className="w-4 h-4 text-red-400" />
++          </button>
++        </div>
++      </div>
++
++      {/* ─── Main Living 3D Hologram Stage ─── */}
++      <div className="relative flex-1 w-full h-full flex items-center justify-center overflow-hidden">
++        {/* Living Canvas */}
++        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full cursor-crosshair" />
++
++        {/* Emotional State Indicator Pills */}
++        <div className="absolute top-6 left-6 z-10 flex flex-wrap gap-2">
++          <button
++            onClick={() => handleSimulateTalk('আমি সম্পূর্ণ প্রস্তুত, স্যার। বলুন কোন ফিচারটি তৈরি করব?', 'speaking')}
++            className="px-2.5 py-1 text-[11px] font-mono rounded-lg bg-cyan-950/60 border border-cyan-800/60 text-cyan-300 hover:bg-cyan-900/60 transition"
++          >
++            🗣️ Talk
++          </button>
++          <button
++            onClick={() => {
++              setHoloState('thinking');
++              setSubtitles(language === 'bn' ? 'সিস্টেম আর্কিটেকচার অপটিমাইজ করছি...' : 'Optimizing system neural graph...');
++            }}
++            className="px-2.5 py-1 text-[11px] font-mono rounded-lg bg-amber-950/60 border border-amber-800/60 text-amber-300 hover:bg-amber-900/60 transition"
++          >
++            🧠 Think
++          </button>
++          <button
++            onClick={() => {
++              setHoloState('celebrating');
++              setSubtitles(language === 'bn' ? 'দারুণ! সবগুলো টেস্ট ১০০% সফলভাবে সম্পন্ন হয়েছে!' : 'Brilliant! All tests and benchmarks passed with zero anomalies!');
++            }}
++            className="px-2.5 py-1 text-[11px] font-mono rounded-lg bg-purple-950/60 border border-purple-800/60 text-purple-300 hover:bg-purple-900/60 transition"
++          >
++            🎉 Celebrate
++          </button>
++        </div>
++
++        {/* Live Audio Visualizer Bar */}
++        {holoState === 'speaking' && (
++          <div className="absolute bottom-28 z-10 flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-900/80 border border-cyan-500/40 backdrop-blur-md">
++            <Volume2 className="w-4 h-4 text-cyan-400 animate-pulse" />
++            <div className="flex items-center gap-1 h-3">
++              {[40, 80, 60, 100, 70, 90, 50, 85].map((val, i) => (
++                <div
++                  key={i}
++                  className="w-1 bg-cyan-400 rounded-full transition-all duration-75"
++                  style={{
++                    height: `${Math.max(3, (val * speechVolume) / 100)}px`,
++                  }}
++                />
++              ))}
++            </div>
++          </div>
++        )}
++
++        {/* ─── Dynamic Subtitles / Speech Bubble ─── */}
++        <div className="absolute bottom-16 inset-x-4 max-w-2xl mx-auto z-10 text-center animate-slideUp">
++          <div className="inline-block px-6 py-3 rounded-2xl bg-slate-900/80 border border-white/10 backdrop-blur-xl shadow-2xl text-slate-100 text-sm font-medium leading-relaxed">
++            {subtitles}
++          </div>
++        </div>
++      </div>
++
++      {/* ─── Bottom Interactive Communication Dock ─── */}
++      <div className="p-4 sm:p-5 border-t border-white/[0.08] bg-slate-900/50 backdrop-blur-xl z-20">
++        <div className="max-w-2xl mx-auto flex items-center gap-3">
++          {/* Mic Toggle Button */}
++          <button
++            onClick={() => {
++              const nextState = !isMicActive;
++              setIsMicActive(nextState);
++              if (nextState) {
++                setHoloState('listening');
++                setSubtitles(language === 'bn' ? 'আমি শুনছি, বলুন স্যার...' : 'Listening attentively, please speak...');
++              } else {
++                setHoloState('idle');
++              }
++            }}
++            className={`p-3 rounded-2xl transition-all shadow-lg flex items-center justify-center ${
++              isMicActive
++                ? 'bg-rose-600 text-white shadow-rose-600/40 scale-105 animate-pulse'
++                : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
++            }`}
++            title="Toggle Live Voice Call"
++          >
++            {isMicActive ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
++          </button>
++
++          {/* Quick Chat Input */}
++          <form onSubmit={handleSendPrompt} className="flex-1 flex items-center gap-2">
++            <input
++              type="text"
++              value={inputMsg}
++              onChange={(e) => setInputMsg(e.target.value)}
++              placeholder={
++                language === 'bn'
++                  ? 'কথা বলুন অথবা সরাসরি কমান্ড লিখুন (যেমন: এই পেজে একটি ডার্ক থিম যোগ করো)...'
++                  : 'Speak or type any directive (e.g. Add a glassmorphism navbar to this preview)...'
++              }
++              className="flex-1 px-4 py-2.5 rounded-2xl bg-slate-950/80 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-cyan-500 transition-colors"
++            />
++            <button
++              type="submit"
++              disabled={!inputMsg.trim()}
++              className="p-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
++            >
++              <Send className="w-4 h-4" />
++            </button>
++          </form>
++
++          {/* End Call Button */}
++          <button
++            onClick={onClose}
++            className="px-4 py-2.5 rounded-2xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 transition-all text-xs font-semibold flex items-center gap-2"
++          >
++            <PhoneOff className="w-4 h-4" />
++            <span className="hidden sm:inline">{language === 'bn' ? 'কল সমাপ্ত' : 'End Call'}</span>
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++};
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+index 7add8411..7d9f6908 100644
+--- a/studio/src/pages/user/AIStudio.tsx
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -1,7 +1,8 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { UnifiedChatPanel, listStoredConversations, type DockAction, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
+-import { Bot, Code, Globe, MessageSquarePlus, Smartphone } from 'lucide-react';
++import { Bot, Code, Globe, MessageSquarePlus, Smartphone, Sparkles } from 'lucide-react';
++import { JarvisLivingHologram } from '../../components/jarvis/JarvisLivingHologram';
+ import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
+ import { MobileSimulator } from '../../components/customer/MobileSimulator';
+ import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
+@@ -202,6 +203,8 @@ export const AIStudio: React.FC = () => {
+     document.querySelector<HTMLInputElement>('[data-testid="chat-input"]')?.focus();
+   }, [searchParams, setSearchParams]);
+ 
++  const [isHoloOpen, setIsHoloOpen] = useState(false);
++
+   return (
+     <div className="relative flex h-full w-full flex-col overflow-hidden bg-[var(--sa-canvas)] text-[var(--sa-ink)]">
+       <div className="pointer-events-none absolute inset-x-0 top-0 h-48 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.12),transparent_64%)]" aria-hidden="true" />
+@@ -229,6 +232,17 @@ export const AIStudio: React.FC = () => {
+           >
+             <Smartphone size={14} /> Mobile Simulator
+           </button>
++
++          {/* 3D Sci-Fi Hologram Video Call Button */}
++          <button
++            type="button"
++            onClick={() => setIsHoloOpen(true)}
++            className="flex items-center gap-2 rounded-full border border-cyan-500/40 bg-gradient-to-r from-cyan-950/70 to-indigo-950/70 px-3.5 py-1.5 text-xs font-semibold text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.25)] transition hover:border-cyan-400 hover:shadow-[0_0_20px_rgba(6,182,212,0.45)]"
++          >
++            <Sparkles size={13} className="text-cyan-400 animate-pulse" />
++            <span>3D Living Holo-Call</span>
++            <span className="size-1.5 rounded-full bg-cyan-400 animate-ping" />
++          </button>
+         </div>
+         
+         <div className="hidden items-center gap-4 text-[10px] uppercase tracking-widest text-[var(--sa-ink-muted)] sm:flex">
+@@ -353,6 +367,18 @@ export const AIStudio: React.FC = () => {
+           </div>
+         )}
+       </div>
++
++      {/* 3D Holographic Living Video Call Modal */}
++      <JarvisLivingHologram
++        isOpen={isHoloOpen}
++        onClose={() => setIsHoloOpen(false)}
++        language="bn"
++        personaName="Jarvis Living Holo-Core"
++        onJumpToPreview={() => {
++          setIsHoloOpen(false);
++          setActiveTab('preview');
++        }}
++      />
+     </div>
+   );
+ };
+diff --git a/studio/src/utils/api.ts b/studio/src/utils/api.ts
+index 5d547615..f47f327c 100644
+--- a/studio/src/utils/api.ts
++++ b/studio/src/utils/api.ts
+@@ -120,7 +120,7 @@ export function normalizeBackendUrl(value: unknown): string {
+ // এক বিল্ডে User + Admin দুই context-ই থাকে, তাই backend নির্বাচন এখন RUNTIME সিদ্ধান্ত:
+ //  - '/admin-api' path অথবা /admin/* route context → admin backend (থাকলে)
+ //  - বাকি সব → user backend
+-// Firebase hosting external rewrite proxy সাপোর্ট করে না, তাই Firebase-এ সরাসরি backend URL ব্যবহার হয় (CORS allow)।
++// External rewrite proxy সাপোর্ট করে না, তাই সরাসরি backend URL ব্যবহার হয় (CORS allow)।
+ // Vercel-এ relative path ('') রাখা হয় কারণ Vercel external rewrite proxy সাপোর্ট করে।
+ 
+ /** User-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */

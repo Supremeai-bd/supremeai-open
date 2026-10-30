@@ -1,0 +1,185 @@
+diff --git a/studio/src/config/navigationRegistry.ts b/studio/src/config/navigationRegistry.ts
+index 7d67e20f..db29520b 100644
+--- a/studio/src/config/navigationRegistry.ts
++++ b/studio/src/config/navigationRegistry.ts
+@@ -112,12 +112,16 @@ export const NAVIGATION_REGISTRY: NavGroup[] = [
+       { id: 'nav-activity', label: 'Activity', icon: Activity, kind: 'route', path: '/activity', contexts: ['user'], status: 'implemented', priority: 50 },
+       // Parity-audit fixes: Tier-S প্যানেলগুলো রাউটেড ছিল কিন্তু nav rail-এ ছিল না —
+       // ইউজার শুধু সরাসরি URL দিয়ে পৌঁছাতে পারত। এখন implemented status-এ exposed।
+-      // FIX(nav-truth 2026-10-24): no route for /research in App.tsx or
+-      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+-      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'planned', priority: 60 },
+-      // FIX(nav-truth 2026-10-24): no route for /scheduled-tasks in App.tsx or
+-      // workspaceFeatureRoutes — 'planned' (hidden) until a real route lands.
+-      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'planned', priority: 70 },
++      // FIX(nav-truth 2026-10-28 #1521): the promised route landed — /research
++      // is now registered in workspaceFeatureRoutes (DeepResearchPanel inside
++      // WorkspaceLayout, ProtectedRoute). Status flipped to 'implemented' per
++      // this registry's own dead-link contract ('planned' only until a real
++      // route lands); routeParity.test enforces the pairing from here on.
++      { id: 'nav-research', label: 'Deep Research', icon: Search, kind: 'route', path: '/research', contexts: ['user'], status: 'implemented', priority: 60 },
++      // FIX(nav-truth 2026-10-28 #1521): same landing as /research above —
++      // /scheduled-tasks registered (ScheduledTasksPanel inside WorkspaceLayout,
++      // ProtectedRoute); 'planned' → 'implemented'.
++      { id: 'nav-scheduled-tasks', label: 'Scheduled Tasks', icon: Clock, kind: 'route', path: '/scheduled-tasks', contexts: ['user'], status: 'implemented', priority: 70 },
+       // বাংলা মন্তব্য: Task-12 ghost activation — KnowledgePage আগে dead ছিল; এখন
+       // /knowledge route + backend POST /api/knowledge/search|seed দুটিই real, তাই
+       // implemented স্ট্যাটাসে registry-তে exposed করা হলো (dead-link prevention মেনে)।
+diff --git a/studio/src/routes/workspaceFeatureRoutes.test.tsx b/studio/src/routes/workspaceFeatureRoutes.test.tsx
+new file mode 100644
+index 00000000..9be2e94a
+--- /dev/null
++++ b/studio/src/routes/workspaceFeatureRoutes.test.tsx
+@@ -0,0 +1,100 @@
++import React from 'react';
++import { render, screen, waitFor } from '@testing-library/react';
++import { MemoryRouter, Route, Routes } from 'react-router-dom';
++import { describe, expect, it, vi } from 'vitest';
++import { workspaceFeatureRoutes } from './workspaceFeatureRoutes';
++import { AuthStatus, useAuthStore } from '../store/authStore';
++
++// #1521 Phase 0 last-mile (2026-10-28): /research and /scheduled-tasks route
++// accessibility contract, exercised against the REAL route table.
++// App.routes.test.tsx mocks this module to [] (its own public-funnel smoke
++// scope), so the two backend-ready engines have no accessibility proof there —
++// this file is that proof: guests are redirected to /login by the real
++// ProtectedRoute, authenticated users reach the real panels.
++
++vi.mock('../components/layout/WorkspaceLayout', () => ({
++  WorkspaceLayout: ({ children }: { children: React.ReactNode }) => (
++    <main>{children}</main>
++  ),
++}));
++
++// authStore imports updateTokenCache from this module; the panels fetch
++// history/task lists on mount. Default: every network read fails — panels must
++// degrade to their error state (never crash the route).
++vi.mock('../services/apiClient', () => ({
++  apiClient: {
++    get: vi.fn().mockRejectedValue(new Error('offline test')),
++    post: vi.fn().mockResolvedValue({}),
++    put: vi.fn().mockResolvedValue({}),
++    delete: vi.fn().mockResolvedValue({}),
++  },
++  updateTokenCache: vi.fn(),
++}));
++
++vi.mock('../utils/api', () => ({
++  getApiBaseUrl: () => 'http://localhost:8000',
++}));
++
++vi.mock('../services/tokenStorage', () => ({
++  getAdminToken: vi.fn(() => null),
++  getUserToken: vi.fn(() => null),
++  setUserToken: vi.fn(),
++  clearUserToken: vi.fn(),
++}));
++
++// Panels call globalShowToastRef.current(...) unguarded in their error paths —
++// the mock stays callable so a failed history fetch cannot nuke the route.
++vi.mock('../contexts/ToastContext', () => ({
++  globalShowToastRef: { current: vi.fn() },
++}));
++
++function renderRoutesAt(path: string) {
++  return render(
++    <MemoryRouter initialEntries={[path]}>
++      <Routes>
++        <Route path="/login" element={<div>Login page</div>} />
++        {workspaceFeatureRoutes.map((r, i) => (
++          <Route key={i} path={r.path!} element={r.element} />
++        ))}
++      </Routes>
++    </MemoryRouter>,
++  );
++}
++
++describe('Phase 0 engine routes (#1521): guest vs authenticated accessibility', () => {
++  it.each([
++    ['/research', 'research'],
++    ['/scheduled-tasks', 'scheduled tasks'],
++  ])(
++    'guest visiting %s is redirected to /login (ProtectedRoute honesty)',
++    async (path) => {
++      useAuthStore.setState({ status: AuthStatus.UNINITIALIZED });
++      renderRoutesAt(path);
++      // initialize() finds no token (and the mocked /auth/me cookie probe
++      // fails) → LOGGED_OUT → <Navigate to="/login" replace />.
++      await waitFor(() =>
++        expect(screen.getByText('Login page')).toBeInTheDocument(),
++      );
++    },
++  );
++
++  it.each([
++    ['/research', 'Deep Research'],
++    ['/scheduled-tasks', 'Scheduled Tasks'],
++  ])(
++    'authenticated user reaches the real %s panel',
++    async (path, heading) => {
++      useAuthStore.setState({
++        status: AuthStatus.LOGGED_IN,
++        role: 'user',
++        permissions: [],
++      });
++      renderRoutesAt(path);
++      await waitFor(() =>
++        expect(
++          screen.getByRole('heading', { name: heading }),
++        ).toBeInTheDocument(),
++      );
++    },
++  );
++});
+diff --git a/studio/src/routes/workspaceFeatureRoutes.tsx b/studio/src/routes/workspaceFeatureRoutes.tsx
+index cf2acc59..c27c8ed6 100644
+--- a/studio/src/routes/workspaceFeatureRoutes.tsx
++++ b/studio/src/routes/workspaceFeatureRoutes.tsx
+@@ -25,6 +25,18 @@ const ProfilePage = lazy(() => import('../pages/ProfilePage'));
+ const WorkspaceSettingsPage = lazy(
+   () => import('../pages/user/WorkspaceSettingsPage'),
+ );
++// FIX(#1521 Phase 0 last-mile 2026-10-28): DeepResearchPanel/ScheduledTasksPanel
++// were backend-wired (api/routers.py: deep_research, scheduled_tasks) and nav-
++// advertised (/research, /scheduled-tasks) but never registered here — every
++// nav/dashboard link 404'd into the guest landing. Neither panel self-wraps
++// WorkspaceLayout (same adapter situation as WorkspaceSettingsPage), so both
++// are wrapped below.
++const DeepResearchPanel = lazy(
++  () => import('../components/research/DeepResearchPanel'),
++);
++const ScheduledTasksPanel = lazy(
++  () => import('../components/schedule/ScheduledTasksPanel'),
++);
+ 
+ // ─── Route definitions ───────────────────────────────────────────────────
+ 
+@@ -105,6 +117,28 @@ export const workspaceFeatureRoutes: RouteObject[] = [
+       </WorkspaceLayout>,
+     ),
+   },
++  // FIX(#1521 Phase 0 last-mile 2026-10-28): backend-ready engines finally
++  // reachable in the UI — guest visitors are redirected to /login by
++  // ProtectedRoute (roadmap security matrix: authenticated user context),
++  // matching navigationRegistry's user-context entries for these paths.
++  {
++    path: '/research',
++    element: protectedPage(
++      'research',
++      <WorkspaceLayout>
++        <DeepResearchPanel />
++      </WorkspaceLayout>,
++    ),
++  },
++  {
++    path: '/scheduled-tasks',
++    element: protectedPage(
++      'scheduled tasks',
++      <WorkspaceLayout>
++        <ScheduledTasksPanel />
++      </WorkspaceLayout>,
++    ),
++  },
+ ];
+ 
+ /** @deprecated Use workspaceFeatureRoutes instead. */

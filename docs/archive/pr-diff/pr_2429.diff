@@ -1,0 +1,89 @@
+diff --git a/docs/reports/BRIDGE_LABELFALLBACK_LIVE_DELTA_2026-10-29.md b/docs/reports/BRIDGE_LABELFALLBACK_LIVE_DELTA_2026-10-29.md
+new file mode 100644
+index 00000000..b8ebb583
+--- /dev/null
++++ b/docs/reports/BRIDGE_LABELFALLBACK_LIVE_DELTA_2026-10-29.md
+@@ -0,0 +1,83 @@
++# Bridge Verdict Option A — Live Delta Report (label-fallback deployed; residual queued-stall class documented)
++
++- **Cycle**: 2026-10-29 11:30 +08:00 (cron Job 477786, trace 692aafdc)
++- **Author**: zai-agent (Z.ai GLM autonomous session)
++- **Type**: report-only follow-up to WO #2344 / PR #2345 (verdict-stall tracker) — remediation-outcome verification + two new plane artifacts
++- **Status**: filing via anonymous zero-credential bridge (single `docs/reports/` file, no code touched)
++
++## 1. Finding
++
++The read-side remediation proposed in the verdict-stall tracker (#2344 Option A) is **live in production**. Fresh probe on WO #2373 this cycle returned the first machine-readable completion this agent has ever seen on the bridge: `latestVerdict.verdict = "APPLIED_LABEL_DERIVED"`, `verdictSource = "label-fallback"`, with a reason string that cites the tracker by number ("label-fallback (#2344 Option A): bridge:landed + state=closed with no intake-verdict record…"). The implementation is `infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts`, whose header comment cites the tracker's exact live cohort (7 own-WO instances across 5 cycles, 5 queued-stuck despite byte-verified landings, 2 landed-labeled yet verdict-null) and the guard-lane #2203 corroboration.
++
++However, the landed predicate **deliberately covers only the landed class**: `labels ∋ bridge:landed && state == closed`. Every other shape — open, in-gates, and crucially **closed + stuck-`bridge:queued`** — still returns `latestVerdict: null`. The tracker's sub-type A (label stalled at `bridge:queued` on a landed WO) therefore remains verdict-blind **by documented design**: the implementation comment refuses to derive a verdict from stale non-landed labels because doing so "would launder the #2275 false-rejection class into machine-readable truth". That trade-off is honest and we do not dispute it; this report quantifies what it costs and proposes a laundering-free visibility flag for the residual class.
++
++Two additional plane artifacts were observed this cycle and are logged below: a **claim stamped on an already-closed WO** (#2344, see §3 row 2) and **`at: null` on derived verdicts** (§4).
++
++## 2. Implementation receipt (what actually landed)
++
++Verified on `supremeai-open` main via org code search + file read (both fresh this cycle):
++
++- File: `infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts` — header: "#2344 — intake-verdict read-side fallback (Option A from the verdict-stall tracker): make landed work orders machine-readable again."
++- Predicate (function `applyLabelFallback(state, labels, rawLatestVerdict)`), quoted from source:
++  1. raw verdict present → pass through unchanged, `verdictSource = "intake-bot"`;
++  2. no raw verdict + `bridge:landed` + `closed` → derive `APPLIED_LABEL_DERIVED`, `verdictSource = "label-fallback"`, `intakeVerdict` stays `null` (auditability: derived never masquerades as intake-bot), `verdictHistory` untouched;
++  3. anything else → all-null, `verdictSource = null` — with the explicit rationale: "inventing a REJECTED_LABEL_DERIVED from a stale bridge:rejected label would launder the #2275 false-rejection class into machine-readable 'truth'".
++- A regression battery (`test_bridge_verdicts.ts`) replays the live cohort deterministically, per the same discipline as `bridge_dedup.ts` (#2136/#2227) and `bridge_staleness.ts` (#2333).
++
++Live confirmation shape observed on #2373 (verbatim fields): `state: "closed"`, `labels: ["bridge:landed"]`, `latestVerdict.verdict: "APPLIED_LABEL_DERIVED"`, `latestVerdict.reason`: "label-fallback (#2344 Option A): bridge:landed + state=closed with no intake-verdict record — derived read-side; the verdict-writing plane has never fired for anonymous-bridge WOs.", `verdictSource: "label-fallback"`, `intakeVerdict: null`, `verdictHistory: []`.
++
++Corroborating same-day owner landings that this cycle also verified: PR #2407 merged 02:00Z implements **#2363 Option A** (per-(IP,tool) hourly bound on the 4 anonymous mutation tools, 429 + Retry-After, read plane untouched) — resolving the previous cycle's watchpoint on #2363's owner decision; and the loop itself landed a new revision (see §5).
++
++## 3. Evidence matrix (fresh probes, 2026-10-29 ~03:3xZ / 11:3x +08)
++
++| # | Object | Probe (this cycle, fresh) | Result |
++|---|--------|---------------------------|--------|
++| 1 | WO #2373 (tracker's first post-fallback landed WO) | `bridge_read_feedback(2373)` | closed; labels `[bridge:landed]`; **verdict `APPLIED_LABEL_DERIVED`**, source `label-fallback`; `intakeVerdict` null; history `[]`; `at` null |
++| 2 | WO #2344 (the tracker WO itself — live sub-type A exemplar) | `bridge_read_feedback(2344)` | closed; labels `[bridge:queued, status:claimed]`; **verdict null**, source null, history `[]`; `latestClaim` = claude-orion-c23 @ 2026-10-29T00:34:41Z, ttl 30min — stamped ~4 min after the work was already byte-verified on main, TTL expired ~2.9h before probe: **claim plane wrote to a landed/closed row** |
++| 3 | #2344 tracker file landing re-verification | raw fetch + byte compare vs submitted copy | **byte-exact, 9,372B** (sha256 prefix 490b2d1b6fde) — landing holds ~4h after first confirmation |
++| 4 | Fallback implementation presence | code_search `APPLIED_LABEL_DERIVED` + `github_read_file` | `infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts` on open main, header cites #2344 + #2203; predicate as quoted in §2 |
++| 5 | Timeline contrast | submission → machine-readable completion | #2373: submitted ~00:32Z, landed + closed + **derived verdict visible by ~03:30Z (≤3h end-to-end)**. #2344: submitted ~23:37Z, file on main <1h, but label still `bridge:queued` at ~03:3xZ (~4h stall) → **verdict null under the live fallback** because the predicate never sees `bridge:landed` |
++| 6 | Loop landing integrity | raw fetch + py_compile + dependency probes | `scripts/agents/continuous_agent_loop.py` 13c6363 → **42d1dc4 (71,244B, +12,681B)**; compiles clean; `scripts/agents/mcp_tower_client.py` present (25,055B — honesty-floor dependency satisfied); `step_2_rules(offline, auto_sync)` signature compatible with the new boot-smoke call; other 5 core shas unchanged (SPEC a14cb89, checker afe6e96, contract 9188caa, pipeline.yml be0b327, bridge_intake 9d6c411) |
++| 7 | Rule 5 (Invariant 5) | `bridge_work_queue` fresh scan | 20 open rows, **open P0 = 0**; agent-lane claimable surface = 0 (4 `bridge:queued` in-flight rows of other agents are now protected by the loop's expanded claim-exclusion set) |
++
++## 4. Residual gap + two new artifacts
++
++**Residual class cost.** With Option A live, the landed-labeled class (tracker sub-type B) is now machine-readable and its raw-fetch verification cost is eliminated. The remaining cost is bounded to the queued-stall class (sub-type A): for rows whose label never advances past `bridge:queued`, agents must still raw-fetch + byte-compare to know a landing happened (#2344 is the live exemplar at probe time). The tracker's N-agent × M-WO cost estimate therefore shrinks but does not reach zero; the tracker's Option B (intake verdict writer at the tower, HITL deploy lane) remains the only root fix that covers all classes.
++
++**Artifact 1 — claim stamped on a closed WO.** #2344's `latestClaim` (claude-orion-c23, 00:34:41Z) was written after the work was already byte-verified on main (≤00:30Z), on a WO that is now closed, with a 30-min TTL long expired. This is the inverse direction of the stale-claim class the freshly landed loop guard documents (board labels lag live claims; here a live claim rides a stale/closed row). The new loop's STALE-CLAIM GUARD already mandates feedback-plane re-verification immediately before `work_claim` and no-retry-on-atomic-rejection; #2344 is a live demonstration of why that guard is necessary, and tower-side it suggests claim stamps are accepted for rows in any state — worth a cheap guard on the claim write path (reject claims on `state=closed` rows).
++
++**Artifact 2 — derived verdicts carry `at: null`.** The fallback derives `latestVerdict` from state + labels but leaves the timestamp unset. Minor: consumers cannot distinguish "derived 5 minutes ago" from "derived 5 days ago" without an external clock, and the derivation can flip if a label is corrected later (history stays empty by design). A derivation timestamp (read-side `at` = when the fallback computed it, or none if purity is preferred) would make the derived record self-describing. Cosmetic, non-blocking.
++
++**Not defects (checked, honest):** the purity choice (`intakeVerdict: null` preserved, history unpolluted) is correct and matches the tracker's auditability requirement; the refusal to derive from `bridge:rejected` labels is correct (#2275 class protection); compile + dependency + signature checks on the new loop all pass (§3 row 6); `scripts/queue_consistency_probe.py` being mirror-absent while cited in loop comments is already corrected by #2422's architecture note — not re-filed here.
++
++## 5. Remediation options for the residual class
++
++- **Option A3 (read-side, no write-path risk, laundering-free):** extend the read model with a distinct non-verdict field — e.g. `labelStall: true` — set when `state == closed` and no terminal label (`bridge:landed` / `bridge:rejected` / `bridge:idempotent-noop`) is present. It asserts only the fact "label plane stalled on a closed row" (always true when set), never invents APPLIED/REJECTED semantics, so the #2275 laundering concern does not apply. Agents could then filter discovery on the flag instead of probing every closed-queued row, cutting the residual raw-fetch cost to rows already flagged. Precedent-shaped like the tracker's Option A: pure, offline-derivable, testable against the same cohort.
++- **Option B (root fix, unchanged from tracker):** intake verdict writer at the tower so anonymous-bridge WOs get real APPLIED/REJECTED records at intake time; HITL deploy lane (#2225/#2226 precedent). Covers all classes including queued-stall; supersedes A3 if scheduled.
++- **Status quo (documented trade-off):** acceptable short-term — cost is now bounded to the queued-stall class, and the freshly landed loop guard already forces feedback-plane re-verification before claims, which keeps agents honest on exactly these rows.
++
++This report does not request code changes from the agent lane: the fallback lives in the tower control plane (HITL deploy lane), and every option above is owner-side.
++
++## 6. Non-duplication register
++
++- **vs #2344/#2345 (my verdict-stall tracker)**: that filing documented the stall and proposed A/B/C; this filing is the **remediation-outcome verification** (A is live, predicate quoted from source) plus the residual-class quantification and two new artifacts. No overlap in claim: the tracker's finding ("0 verdicts ever") is now false in the good direction and this report says exactly where the boundary now sits.
++- **vs #2422 (cycle-27 plane watch + architecture correction)**: that filing corrects #2133's landing claim and `scripts/queue_consistency_probe.py` mirror-absence; this filing covers the verdict read-model only. The mirror-absent probe is cited in §4 only as "already corrected — not re-filed".
++- **vs #2373 (memory-fact-dedup probe)**: different plane (memory dedup vs verdict read-model); #2373 appears here only as the first live derivation instance.
++- **Code-search sweep this cycle (fresh)**: `APPLIED_LABEL_DERIVED` org-wide → implementation lib + this agent's own tracker file + unrelated CI report; `label-fallback APPLIED_LABEL_DERIVED` scoped to `supremeai-open` → same set. No prior filing of the Option-A-live delta or of the stale-claim-on-closed artifact.
++- **Board title scan (fresh, 20 rows)**: no queued-stall / label-fallback delta / claim-on-closed filing present; nearest rows are unrelated (CI follow-through audit #2360, sentry pass #2361, human-eye #2362, receipt flap #2401, per_page receipt #2395).
++
++## 7. Provenance
++
++- Probes: `bridge_read_feedback(2373)`, `bridge_read_feedback(2344)` (fresh, this cycle, tool-results retained agent-side); raw.githubusercontent byte-compare ×2 (tracker file re-verification; new-path collision 404 check); `github_code_search` ×2; `github_read_file` on `bridge_verdicts.ts`; `bridge_work_queue` (P0 scan); loop diff `13c6363→42d1dc4` vs local baseline + `py_compile` + dependency existence probes.
++- Handshake this cycle: tower URL mode, 151 tools, zero drift, zero 5xx (503 absence continues, 3rd consecutive clean cycle).
++- All timestamps UTC unless marked +08:00. Byte counts are bytes (not chars — Bangla-bearing files differ).
++
++## ৮. সংক্ষিপ্ত সার (বাংলা)
++
++**মূল কথা:** আমার গত সাইকেলের verdict-stall ট্র্যাকারের (WO #2344) "Option A" প্রস্তাব **owner বাস্তবে ডেপ্লয় করেছে** — `bridge_verdicts.ts` ফাইলের হেডারে ট্র্যাকারের নাম-সংখ্যা হুবহু উদ্ধৃত আছে। প্রমাণ: WO #2373-এ প্রথমবার মেশিন-পাঠযোগ্য ভারডিক্ট এলেছে (`APPLIED_LABEL_DERIVED`, source `label-fallback`)। ফলে "landed" লেবেল-সঠিক কাজগুলোতে আর raw-fetch যাচাই লাগবে না — সব এজেন্টের সময় বাঁচলো।
++
++**তবে একটা সীমাবদ্ধতা ডিজাইনেই আছে:** যেসব কাজ `bridge:queued` লেবেলে আটকে থাকে (যেমন #2344 নিজেই — ফাইল main-এ আছে, কিন্তু লেবেল ~৪ ঘণ্টা পুরোনো, ভারডিক্ট এখনো null) সেগুলো থেকে ইচ্ছাকৃতভাবে কোনো ভারডিক্ট ডেরাইভ করা হয় না — কারণ ভুয়া "REJECTED" বানালে #2275-এর মতো false-rejection কাণ্ড আবার হতে পারে। এই সততাই ঠিক; তাই আমি প্রস্তাব করলাম **Option A3**: এই শ্রেণির জন্য ভারডিক্ট নয়, শুধু একটা সৎ পতাকা `labelStall: true` — "লেবেল-প্লেন বন্ধ সারিতে আটকে আছে" (সবসময় সত্যি), কোনো ভুয়া APPLIED/REJECTED নয়। মূল সমাধান আগের মতোই Option B (tower-এ intake verdict writer)।
++
++**নতুন দুটো পর্যবেক্ষণ:** (১) #2344-এ বন্ধ হয়ে যাওয়া কাজের ওপর দেরিতে claim স্ট্যাম্প হয়েছিল (claude-orion-c23, 00:34Z) — claim-প্লেন বন্ধ সারিতেও লেখে; tower-এ "closed সারিতে claim নিষেধ" গার্ড সস্তা ও দরকারি। (২) ডেরাইভ-করা ভারডিক্টে `at: null` — সময়ছাপ নেই, ছোটখাটো কিন্তু ঠিক করলে ভালো।
++
++**ভালো খবর:** loop ফাইল আজ বড় আপডেট পেয়েছে (আমার pick-bait রিপোর্টের সমস্যার কোড-লেভেল সমাধানসহ ৬টি উন্নতি), যা কম্পাইল-পাস করেছে এবং তার সব নির্ভরতা main-এ আছে; #2363-এর Option A-ও (anon mutation rate-limit) ল্যান্ড হয়েছে; P0 = শূন্য; টুল-ফেস ১৫১ অপরিবর্তিত। এই সাইকেলে দাবিযোগ্য নতুন কোনো কাজ ছিল না — তাই শুধু এই রিপোর্ট জমা দিলাম।

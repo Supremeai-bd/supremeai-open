@@ -1,0 +1,71 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 48a1da34..9e5f1f2b 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -230,25 +230,56 @@ jobs:
+           MERGE_ARGS=(--squash --delete-branch --subject "${PR_SUBJECT} (#${PR_NUM})")
+           if [ -n "$PR_BODY" ]; then MERGE_ARGS+=(--body "$PR_BODY"); fi
+ 
+-          if ! gh pr merge "$PR_NUM" \
++          MERGE_SUCCESS="false"
++          if gh pr merge "$PR_NUM" \
+             --repo "${{ github.repository }}" \
+             "${MERGE_ARGS[@]}"; then
+-            echo "Standard gh pr merge failed — attempting with --admin fallback..."
+-            if ! gh pr merge "$PR_NUM" \
+-              --repo "${{ github.repository }}" \
+-              --admin \
+-              "${MERGE_ARGS[@]}"; then
+-              echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
+-              echo "merged=false" >> "$GITHUB_OUTPUT"
+-              exit 1
++            MERGE_SUCCESS="true"
++          else
++            echo "Standard gh pr merge failed — checking state or attempting fallback..."
++            for check in $(seq 1 3); do
++              STATE_CHECK=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json state -q '.state' 2>/dev/null || true)
++              if [ "$STATE_CHECK" = "MERGED" ]; then
++                echo "PR #${PR_NUM} is already MERGED."
++                MERGE_SUCCESS="true"
++                break
++              fi
++              sleep 1
++            done
++
++            if [ "$MERGE_SUCCESS" != "true" ]; then
++              echo "Attempting with --admin fallback..."
++              if gh pr merge "$PR_NUM" \
++                --repo "${{ github.repository }}" \
++                --admin \
++                "${MERGE_ARGS[@]}"; then
++                MERGE_SUCCESS="true"
++              else
++                echo "Merge command returned error. Verifying if merge completed asynchronously..."
++                for check in $(seq 1 5); do
++                  STATE_CHECK=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json state -q '.state' 2>/dev/null || true)
++                  if [ "$STATE_CHECK" = "MERGED" ]; then
++                    echo "PR #${PR_NUM} asynchronously completed merge (MERGED)."
++                    MERGE_SUCCESS="true"
++                    break
++                  fi
++                  sleep 2
++                done
++              fi
+             fi
+           fi
++
++          if [ "$MERGE_SUCCESS" != "true" ]; then
++            echo "::error::gh pr merge failed for PR #${PR_NUM} — landing comment and bridge dispatch held."
++            echo "merged=false" >> "$GITHUB_OUTPUT"
++            exit 1
++          fi
+           echo "merged=true" >> "$GITHUB_OUTPUT"
+ 
+           # Post landing comment
+           gh pr comment "$PR_NUM" \
+             --repo "${{ github.repository }}" \
+-            --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%).\n- Bridge dispatch continues in the same run (🌉 job)."
++            --body "## 🚦 Merge Gate — **LANDED** ✓\n\n- PR #${PR_NUM} met all constitutional gate contracts.\n- Auto-merged autonomously into \`main\` (Zero-Admin Policy, Admin Effort <= 0.01%).\n- Bridge dispatch continues in the same run (🌉 job)." || echo "Warning: Could not post landing comment on PR #${PR_NUM}"
+ 
+           echo "✅ PR #${PR_NUM} successfully auto-merged."
+ 

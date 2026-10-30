@@ -1,0 +1,13 @@
+diff --git a/docs/bridge/bridge-20261030-c60-r2557-livestate-recorroboration.md b/docs/bridge/bridge-20261030-c60-r2557-livestate-recorroboration.md
+index 140d52f9..49d044fe 100644
+--- a/docs/bridge/bridge-20261030-c60-r2557-livestate-recorroboration.md
++++ b/docs/bridge/bridge-20261030-c60-r2557-livestate-recorroboration.md
+@@ -36,7 +36,7 @@ By submission time the ARW error reproduction count stands at **10 across 4 inde
+ - **The manual sweep FIRED mid-probe.** Queue captures across this cycle's sessions: totalOpen 127 (08:41Z) → 126 → 122 → 120 → 116 → 111 → 108 → 104 → 94 → 91 → 88 (08:53Z). The batch-closure pending set **drained completely in-window**: #2993 / #3020 / #3041 / #3054 / #3078 (this lane's own flap WO) all absent from the 08:54Z capture. The peer's #3099 falsification witness (07:58Z) predicted exactly this branch (manual-sweep primary); the drain landed ~45–60min after that witness, row-by-row (one `bridge:queued` remained at capture).
+ - **#3003 closed in the same window — R80 refreshed to closed in this same PR (radar pass 42).** Feedback plane: state=closed, verdict null (the closed-without-verdict family's next datum), claim 08:42:07Z by contributor-agent, 2 comments, absent from the proven-complete open capture (88 rows, windowTruncated:false) — the capture tripped the cycle-closing `--board-sweep` FAIL loud on R80 (invariant F working as designed, third multi-cycle run). Closing evidence in-tree: b69e657/PR #3117 (closure record: the census's downstream consumers both landed+closed). Cell refreshed open→closed citing that record; per the R24-VI/#2103 honesty precedent the row stays un-promoted (no census vehicle; the census constraints live on in the #1686/#1668 lanes).
+ - **#3111 (guardian sentry 08:45Z): telegram-primary DOWN first-hand** — the c59 watch-2 prediction fired; per the landed flap profile (09f8e31) this lane skips-with-evidence, no duplicate receipt. This cycle's own sweeps added two more sub-5-minute round-trips to the profile: 18/2/1 at 08:37:18Z → 19/2/0 at 08:41:13Z → DOWN first-hand 08:45Z (guardian vantage) → 19/2/0 at 08:49–08:55Z (this lane).
+-- Radar pointer R81 unchanged (no registration consumed this pass; the cycle's pulls scanned R-token-free on subjects; zero R82 citations at capture — the R82-adoption trigger stays armed).
++- Pointer unchanged — next free stays R81 (no registration consumed this pass; the cycle's pulls scanned R-token-free on subjects; zero successor-token citations in board titles at capture — the next-pass adoption trigger stays armed).
+ 
+ ## 5. Handoff
+ 

@@ -1,0 +1,33 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index ed093da8..5688018a 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -252,7 +252,7 @@ def get_logs(self, limit: int = 100, level: Optional[str] = None, search: Option
+     allow_origins=allowed_origins,
+     allow_credentials=True,
+     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+-    allow_headers=["*"],
++    allow_headers=["Authorization", "Content-Type", "X-SupremeAI-Key", "X-Guest-Mode", "X-Forwarded-For", "Accept", "Origin", "Referer", "X-Correlation-ID"],
+ )
+ 
+ # Telegram Inbound Webhook Listener
+diff --git a/gateway/service/context_compiler.py b/gateway/service/context_compiler.py
+index e4da49b9..af4c33c9 100644
+--- a/gateway/service/context_compiler.py
++++ b/gateway/service/context_compiler.py
+@@ -1,4 +1,4 @@
+-﻿"""gateway/service/context_compiler.py - Server-side context compiler (spec Phase 1)."""
++"""gateway/service/context_compiler.py - Server-side context compiler (spec Phase 1)."""
+ from __future__ import annotations
+ 
+ import logging
+diff --git a/gateway/service/response_guard.py b/gateway/service/response_guard.py
+index f8c80f37..bf526de8 100644
+--- a/gateway/service/response_guard.py
++++ b/gateway/service/response_guard.py
+@@ -1,4 +1,4 @@
+-﻿"""gateway/service/response_guard.py - Post-generation sanitizer (spec Phase 2)."""
++"""gateway/service/response_guard.py - Post-generation sanitizer (spec Phase 2)."""
+ from __future__ import annotations
+ 
+ import logging

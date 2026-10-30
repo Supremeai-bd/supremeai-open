@@ -1,0 +1,755 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index d85670f9..c119e472 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -659,6 +659,47 @@ for line in $updates; do
+         fi
+     fi
+ 
++    # 17. AGENT SKILLS CONFORMANCE GUARD (#1672).
++    # Mechanical backstop for the file plane of the Agent Skills open standard
++    # (.agents/skills/*/SKILL.md): name==directory, required frontmatter,
++    # description 1-1024, and the discovery entry's existence (E1 — a skill
++    # folder without SKILL.md is invisible to every client; the seed instance
++    # developing-genkit-python is pinned shrink-only in
++    # scripts/ci/skill_conformance_baseline.json, the #2081 floors-are-real
++    # lesson). Warnings are inventory, never failures. Mapping contract for
++    # the registry plane (skills/schema.py SkillMetadata) lives in
++    # docs/AGENT_SKILLS_CONFORMANCE.md. Engages ONLY when the push touches
++    # .agents/skills/; runs in CI for every push via the run_all_guards
++    # roster. Wired additively after section 16 — no existing section is
++    # renumbered (the #2044 section-trail rule).
++    if ! ZERO_TEST "$local_sha" && [ -f scripts/ci/skill_conformance_guard.py ]; then
++        if ZERO_TEST "$remote_sha"; then
++            skills_changed=$(git diff --name-only "refs/remotes/$remote_name/main...$local_sha" 2>/dev/null || git diff --name-only "origin/main...$local_sha" 2>/dev/null || true)
++        else
++            skills_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
++        fi
++        skills_surface=$(printf '%s\n' "$skills_changed" | grep -E '^\.agents/skills/' || true)
++        if [ -n "$skills_surface" ]; then
++            hook_py=""
++            if python3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="python3"
++            elif python -c "import sys" >/dev/null 2>&1; then
++                hook_py="python"
++            elif py -3 -c "import sys" >/dev/null 2>&1; then
++                hook_py="py -3"
++            fi
++            if [ -n "$hook_py" ]; then
++                if ! $hook_py scripts/ci/skill_conformance_guard.py; then
++                    reject "SKILL CONFORMANCE GUARD (#1672) FAILED" \
++                        "The push breaks the Agent Skills file-plane contract (.agents/skills/*/SKILL.md)." \
++                        "Fix the structural error named in the [skill-conformance-guard] evidence lines above — a skill folder without a discoverable SKILL.md, name/directory drift, or an over-cap description." \
++                        "Pre-existing floors are pinned shrink-only in scripts/ci/skill_conformance_baseline.json; the baseline may never grow by hand." \
++                        "Deliberate admin bypass: git push --no-verify."
++                fi
++            fi
++        fi
++    fi
++
+     IFS="$nl"
+ done
+ IFS="$OIFS"
+diff --git a/docs/AGENT_SKILLS_CONFORMANCE.md b/docs/AGENT_SKILLS_CONFORMANCE.md
+new file mode 100644
+index 00000000..71580d69
+--- /dev/null
++++ b/docs/AGENT_SKILLS_CONFORMANCE.md
+@@ -0,0 +1,76 @@
++# Agent Skills Metadata Conformance (issue #1672)
++
++Three skill-metadata conventions coexist in this federation. This document is
++the mapping contract that stops them drifting, plus the usage contract for the
++guard that enforces the file plane's structure. It accompanies
++`scripts/ci/skill_conformance_guard.py` (landed by issue #1672, scout radar
++R17 / `SCOUT_RADAR_2026-10-28-III`).
++
++## The three planes
++
++1. **File plane (standard)** — `.agents/skills/<dir>/SKILL.md` with YAML
++   frontmatter. Governed by the [Agent Skills open standard](https://agentskills.io/specification)
++   — originally developed by Anthropic, released as an open standard
++   (Apache-2.0 code, CC-BY-4.0 docs). A skill is a folder whose `SKILL.md`
++   carries frontmatter with minimum `name` + `description`; progressive
++   disclosure happens in three stages (discovery sees name+description only,
++   activation loads the full SKILL.md on match, execution loads bundled
++   scripts/references on demand).
++2. **Registry plane (dynamic skills)** — `skills/schema.py`, the pydantic
++   `SkillMetadata` model (name / version / description / author / tags) that
++   powers dynamic-skill discovery and versioning.
++3. **The standard itself** — the external specification, previously unused as
++   a validation target.
++
++## Field mapping: SKILL.md frontmatter <-> SkillMetadata
++
++| Concept | SKILL.md (standard, file plane) | SkillMetadata (registry plane) | Drift notes |
++|---|---|---|---|
++| Identity | `name` — required, must equal the directory name (guard E4) | `name` — required, slugified (registry convention uses e.g. `data_cleaner`) | Same concept, different surface conventions; equality is enforced only inside the file plane |
++| Purpose | `description` — required, 1–1024 chars (guard E5/E6) | `description` — required, "concise", **no length cap in the pydantic model** | The 1024 cap is enforced at the file plane only; the registry plane trusts its inputs |
++| Version | *(none in the standard — spec evolution is not per-skill)* | `version` — defaults `"1.0.0"`, strict SemVer `model_validator` | developing-genkit-js smuggles a version through a nested `metadata:` map (guard W3 flags this convention-2 leakage) |
++| Authorship | *(no first-class field)*; in-repo skills carry extension fields `author`, `source`, `source_repo`, `source_type` | `author` — defaults `"supremeai_agent_id"` | No sync exists in either direction; the guard inventories extension fields (W1) instead of pretending a schema exists |
++| Discovery tags | *(none in the standard)* | `tags: list[str]` for semantic/tokenized discovery | Some in-repo skills carry top-level `tags`/`tools` extension fields (W1 inventory) |
++| License | `license` — optional standard extension, recommended for attribution | *(no field)* | **No in-repo skill carries one** (guard W2 across all folders at seed time) |
++
++The mapping is deliberately **asymmetric-enforcing**: the file plane gets hard
++structural checks (errors E1–E6, ratcheted), while registry-plane semantics
++stay advisory (warnings W1–W3, report-only). Nothing here changes runtime
++behavior — skills load exactly as before; the guard only makes
++discovery-breaking structure loud at push/CI time.
++
++## Discovery semantics the guard protects
++
++`.agents/skills/<dir>/SKILL.md` is the discovery entry. A folder without
++`SKILL.md` advertises a skill no client can discover — the guard's E1. The
++seed instance is `developing-genkit-python/` (ships `references/` only; its
++entry file is absent), pinned in the dated baseline
++`scripts/ci/skill_conformance_baseline.json` rather than silently ignored
++(floors are real, never assumed empty — the #2081 lesson). The floor is
++**shrink-only**: entries may be removed when fixed, never added by hand; new
++or grown structural errors fail closed.
++
++## Validator usage
++
++```text
++python scripts/ci/skill_conformance_guard.py             # scan + ratchet
++python scripts/ci/skill_conformance_guard.py --check     # alias, explicit
++python scripts/ci/skill_conformance_guard.py --root DIR  # custom skills root
++python scripts/ci/skill_conformance_guard.py --baseline  # regenerate the dated seed
++python scripts/ci/skill_conformance_guard.py --self-test # hermetic battery
++```
++
++Exit codes: `0` = clean or fully covered by the shrink-only baseline; `1` =
++new/grown structural violations (or self-test failure). Warnings never affect
++the exit code.
++
++## Honest limitations
++
++A structural validator cannot verify instruction quality, detect prompt
++injection in skill bodies, or validate bundled scripts — content scanning is a
++separate lane (the R17 field report says exactly this). The parser is a
++minimal stdlib frontmatter reader covering the shapes this repo actually
++ships (plain scalars, quoted scalars, plain-scalar continuation folding,
++nested maps, block scalars, comments); it deliberately does not implement
++full YAML, and it refuses to guess: an unparseable frontmatter is an error,
++not a silent pass.
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index 7117b85e..fdaf7543 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -42,6 +42,8 @@
+     ["python", "scripts/agents/check_loop_contract_parity.py"],
+     ["python", "scripts/ci/test_parity_guard.py"],
+     ["python", "scripts/ops/generate_script_index.py", "--check"],
++    ["python", "scripts/ci/skill_conformance_guard.py", "--self-test"],
++    ["python", "scripts/ci/skill_conformance_guard.py", "--check"],
+ ]
+ 
+ 
+diff --git a/scripts/ci/skill_conformance_baseline.json b/scripts/ci/skill_conformance_baseline.json
+new file mode 100644
+index 00000000..ab08f0f2
+--- /dev/null
++++ b/scripts/ci/skill_conformance_baseline.json
+@@ -0,0 +1,11 @@
++{
++  "schema_version": 1,
++  "seeded_at": "2026-10-29",
++  "seed_commit": "961e2be (issue #1672 adoption landing)",
++  "note": "Shrink-only floor: entries may be removed when fixed, never added by hand. Regenerate only via `--baseline` at a state you are willing to pin.",
++  "errors": {
++    "developing-genkit-python": [
++      "E1"
++    ]
++  }
++}
+diff --git a/scripts/ci/skill_conformance_guard.py b/scripts/ci/skill_conformance_guard.py
+new file mode 100644
+index 00000000..c2cb47f3
+--- /dev/null
++++ b/scripts/ci/skill_conformance_guard.py
+@@ -0,0 +1,393 @@
++#!/usr/bin/env python3
++"""skill_conformance_guard.py — Agent Skills (SKILL.md) structural conformance gate (#1672).
++
++Mission (issue #1672, scout radar R17 / SCOUT_RADAR_2026-10-28-III, verdict ADOPT_IMMEDIATELY):
++    The federation carried three coexisting skill-metadata conventions with zero
++    cross-validation: (1) `.agents/skills/*/SKILL.md` YAML frontmatter per the
++    Agent Skills open standard (https://agentskills.io/specification — originally
++    developed by Anthropic, released as an open standard, Apache-2.0 code +
++    CC-BY-4.0 docs), (2) the pydantic `SkillMetadata` model powering the dynamic
++    registry (`skills/schema.py`), and (3) the standard itself, unused. This
++    guard closes the structural-drift half of that gap for convention 1 with a
++    stdlib-only, zero-dependency, fully offline validator. It does NOT touch
++    runtime behavior: skills load exactly as before; the guard only makes
++    discovery-breaking structure loud at push/CI time.
++
++What it checks (per skill folder under `.agents/skills/`):
++    E1  SKILL.md missing            — the folder advertises a skill the standard
++                                      cannot discover (seed instance:
++                                      developing-genkit-python ships references/
++                                      only; its entry file is absent, so the
++                                      skill is invisible to any client).
++    E2  frontmatter delimiters      — file must open with `---` on line 1 and
++                                      close with a second `---` before body text.
++    E3  `name` missing              — minimum frontmatter per the standard.
++    E4  name != directory           — the field-report pattern: name/directory
++                                      drift is the most common silent failure
++                                      because it breaks discovery without
++                                      breaking load.
++    E5  `description` missing/empty — minimum frontmatter per the standard.
++    E6  description length > 1024   — the standard's cap; unbounded
++                                      descriptions were unchecked before.
++Warnings (informational, report-only, never fail the run):
++    W1  extra top-level fields      — inventory of extension fields beyond
++                                      {name, description, license} (risk,
++                                      source, date_added, category, metadata,
++                                      author, source_repo, source_type ...).
++    W2  no `license` field          — no in-repo skill carries one (the R17
++                                      field report's observation).
++    W3  nested `metadata:` map      — convention-2 (registry) leakage into the
++                                      file plane (e.g. developing-genkit-js).
++
++Ratchet (house style: #1809 bandit, #1969/#1975/#2059 dep-CVE siblings):
++    Errors are pinned shrink-only via scripts/ci/skill_conformance_baseline.json.
++    A dated seed records the floors that are real at seed time (never assumed
++    empty — the #2081 lesson). NEW folders with errors, or GROWN error codes on
++    a pinned folder, fail closed. Resolved pins print a shrink note and stay
++    green (shrinking the floor is an owner decision via `--baseline`; the
++    baseline may never grow except through that explicit regeneration).
++    Warnings are never floorable — they are inventory, not debt.
++
++The other half of the ticket — the `SkillMetadata` <-> SKILL.md mapping that
++stops the two planes drifting — lives in docs/AGENT_SKILLS_CONFORMANCE.md,
++next to the validator usage contract.
++
++Usage:
++    python scripts/ci/skill_conformance_guard.py            # scan + ratchet
++    python scripts/ci/skill_conformance_guard.py --check    # alias, explicit
++    python scripts/ci/skill_conformance_guard.py --root DIR # scan a custom root
++    python scripts/ci/skill_conformance_guard.py --baseline # regenerate the seed
++    python scripts/ci/skill_conformance_guard.py --self-test
++
++Exit codes: 0 = clean or fully covered by the shrink-only baseline;
++            1 = new/grown structural violations (or self-test failure).
++"""
++from __future__ import annotations
++
++import json
++import os
++import re
++import sys
++import tempfile
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++DEFAULT_ROOT = REPO_ROOT / ".agents" / "skills"
++DEFAULT_BASELINE = Path(__file__).resolve().parent / "skill_conformance_baseline.json"
++
++DESC_MAX = 1024  # standard cap (issue #1672 adoption path: description 1-1024 chars)
++KNOWN_FIELDS = {"name", "description", "license"}
++ERROR_CODES = ("E1", "E2", "E3", "E4", "E5", "E6")
++
++_TAGGED_SCALAR = re.compile(r"^(?:[|>][+-]?\d*\s*(?:#.*)?)$")
++
++
++def parse_frontmatter(lines: list[str]) -> tuple[dict[str, str], list[str], str | None]:
++    """Minimal stdlib frontmatter parser for the shapes this repo actually ships.
++
++    Returns (top_level_scalars, extra_inventory_notes, error) where error is a
++    short E2-class message or None. Handles: `---` delimiters, top-level
++    `key: value` plain scalars, single/double-quoted scalars, plain-scalar
++    continuation lines (folded with single spaces), nested maps (children
++    skipped, presence reported), block scalars (| and >), and full-line
++    comments. It deliberately does NOT implement full YAML — the guard only
++    needs the two required scalars plus an honest inventory of everything else,
++    and a parser that silently guessed would violate the repo's evidence rules.
++    """
++    scalars: dict[str, str] = {}
++    notes: list[str] = []
++    if not lines or lines[0].strip() != "---":
++        return scalars, notes, "E2: missing opening '---' delimiter on line 1"
++    close = None
++    for i in range(1, len(lines)):
++        if lines[i].strip() == "---":
++            close = i
++            break
++    if close is None:
++        return scalars, notes, "E2: missing closing '---' delimiter"
++    block_tag: str | None = None
++    block_indent: int | None = None
++    last_key: str | None = None
++    for raw in lines[1:close]:
++        stripped = raw.strip()
++        if not stripped:
++            continue
++        indent = len(raw) - len(raw.lstrip(" "))
++        if stripped.startswith("#"):
++            continue  # full-line comment
++        if block_tag is not None:
++            if indent > (block_indent or 0):
++                continue  # block-scalar body line: folded below
++            block_tag = None
++            block_indent = None
++        m = re.match(r"^([A-Za-z_][A-Za-z0-9_-]*):(?:\s(.*))?$", stripped)
++        if m and indent == 0:
++            key, val = m.group(1), (m.group(2) or "").strip()
++            if val == "":
++                # either a nested map follows or a block scalar; both recorded
++                last_key = key
++                scalars.setdefault(key, "")
++                continue
++            if _TAGGED_SCALAR.match(val):
++                block_tag = key
++                block_indent = indent
++                scalars.setdefault(key, "")
++                last_key = key
++                continue
++            scalars[key] = _unquote(val)
++            last_key = key
++            continue
++        if indent > 0:
++            if last_key is not None and scalars.get(last_key) == "":
++                if re.match(r"^[A-Za-z_][A-Za-z0-9_-]*:", stripped):
++                    note = f"nested map under '{last_key}'"
++                    if note not in notes:
++                        notes.append(note)
++                    continue
++            if re.match(r"^[A-Za-z_][A-Za-z0-9_-]*:", stripped):
++                continue  # nested child key: out of scope for top-level checks
++            if last_key is not None:
++                # plain-scalar continuation of the previous top-level value
++                scalars[last_key] = (scalars[last_key] + " " + _unquote(stripped)).strip()
++    return scalars, notes, None
++
++
++def _unquote(val: str) -> str:
++    if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
++        return val[1:-1]
++    # strip trailing comment on unquoted plain scalars (space before #)
++    m = re.match(r"^(.*?)\s+#.*$", val)
++    return m.group(1).strip() if m and re.match(r"^[^'\"[]", val) else val
++
++
++def check_skill_file(folder: Path) -> tuple[list[str], list[str]]:
++    """Structurally validate one SKILL.md. Returns (errors, warnings)."""
++    errors: list[str] = []
++    warnings: list[str] = []
++    f = folder / "SKILL.md"
++    try:
++        text = f.read_text(encoding="utf-8")
++    except OSError as exc:
++        return [f"E2: SKILL.md unreadable ({exc.__class__.__name__})"], warnings
++    lines = text.splitlines()
++    scalars, notes, parse_err = parse_frontmatter(lines)
++    if parse_err:
++        return [parse_err], warnings
++    name = scalars.get("name")
++    desc = scalars.get("description")
++    if not name:
++        errors.append("E3: required frontmatter field 'name' missing or empty")
++    elif name != folder.name:
++        errors.append(f"E4: frontmatter name {name!r} != directory name {folder.name!r} "
++                      f"(breaks discovery without breaking load)")
++    if not desc or not desc.strip():
++        errors.append("E5: required frontmatter field 'description' missing or empty")
++    elif len(desc) > DESC_MAX:
++        errors.append(f"E6: description length {len(desc)} > standard cap {DESC_MAX}")
++    extra = sorted(k for k in scalars if k not in KNOWN_FIELDS and scalars.get(k) != "")
++    if extra:
++        warnings.append(f"W1: extra top-level fields (informational): {', '.join(extra)}")
++    if "license" not in scalars:
++        warnings.append("W2: no 'license' field (recommended attribution metadata)")
++    if any(n.startswith("nested map") for n in notes):
++        warnings.append("W3: nested 'metadata:' map present (registry-plane leakage)")
++    return errors, warnings
++
++
++def scan(root: Path) -> tuple[list[tuple[str, list[str]]], list[tuple[str, list[str]]], list[str]]:
++    """Scan every subdirectory of root. Returns (per-folder errors, warnings, skips)."""
++    err_rows: list[tuple[str, list[str]]] = []
++    warn_rows: list[tuple[str, list[str]]] = []
++    skips: list[str] = []
++    if not root.is_dir():
++        return err_rows, warn_rows, [f"surface absent: {root} (nothing to guard — honest skip)"]
++    folders = sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("."))
++    if not folders:
++        skips.append(f"no skill folders under {root} (honest zero)")
++    for folder in folders:
++        if not (folder / "SKILL.md").exists():
++            err_rows.append((folder.name, ["E1: SKILL.md missing — skill is undiscoverable"]))
++            continue
++        errs, warns = check_skill_file(folder)
++        if errs:
++            err_rows.append((folder.name, errs))
++        if warns:
++            warn_rows.append((folder.name, warns))
++    return err_rows, warn_rows, skips
++
++
++def load_baseline(path: Path) -> dict:
++    if not path.exists():
++        return {}
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++    except (OSError, ValueError) as exc:
++        print(f"[skill-conformance-guard] baseline unreadable ({exc.__class__.__name__}) — "
++              "failing closed; fix or regenerate with --baseline", file=sys.stderr)
++        raise SystemExit(1)
++    return data.get("errors", {}) if isinstance(data, dict) else {}
++
++
++def ratchet(err_rows: list[tuple[str, list[str]]], baseline: dict) -> tuple[list[str], list[str]]:
++    """Compare live errors against the shrink-only floor. Returns (violations, shrink_notes)."""
++    violations: list[str] = []
++    shrink_notes: list[str] = []
++    live = {name: [e.split(":")[0] for e in errs] for name, errs in err_rows}
++    for name, codes in live.items():
++        pinned = baseline.get(name)
++        if pinned is None:
++            violations.append(f"{name}: NEW error class not in baseline -> "
++                              + "; ".join(live_err_text(err_rows, name)))
++            continue
++        grown = [c for c in codes if c not in pinned]
++        if grown:
++            violations.append(f"{name}: GROWN error codes {grown} beyond pinned {pinned}")
++    for name, pinned in baseline.items():
++        live_codes = live.get(name, [])
++        resolved = [c for c in pinned if c not in live_codes]
++        if resolved and not live_codes:
++            shrink_notes.append(f"{name}: pinned {pinned} fully resolved — shrink the floor via --baseline")
++        elif resolved:
++            shrink_notes.append(f"{name}: codes {resolved} resolved (pin {pinned} -> {live_codes})")
++    return violations, shrink_notes
++
++
++def live_err_text(err_rows: list[tuple[str, list[str]]], name: str) -> list[str]:
++    for n, errs in err_rows:
++        if n == name:
++            return errs
++    return []
++
++
++def write_baseline(root: Path, path: Path) -> None:
++    err_rows, _, _ = scan(root)
++    seed = {
++        "schema_version": 1,
++        "seeded_at": "2026-10-29",
++        "seed_commit": "961e2be (issue #1672 adoption landing)",
++        "note": "Shrink-only floor: entries may be removed when fixed, never added by hand. "
++                "Regenerate only via `--baseline` at a state you are willing to pin.",
++        "errors": {name: sorted({e.split(":")[0] for e in errs}) for name, errs in err_rows},
++    }
++    path.write_text(json.dumps(seed, indent=2) + "\n", encoding="utf-8")
++    print(f"[skill-conformance-guard] baseline written: {path} "
++          f"({len(seed['errors'])} pinned folder(s))")
++
++
++def self_test() -> int:
++    """Hermetic battery — every check class exercised on tempdirs."""
++    failures = 0
++
++    def expect(cond: bool, label: str) -> None:
++        nonlocal failures
++        print(f"{'PASS' if cond else 'FAIL'} {label}")
++        if not cond:
++            failures += 1
++
++    with tempfile.TemporaryDirectory() as td:
++        root = Path(td)
++
++        def mk(name: str, frontmatter: str) -> Path:
++            d = root / name
++            d.mkdir(parents=True)
++            (d / "SKILL.md").write_text(frontmatter, encoding="utf-8")
++            return d
++
++        clean = mk("clean-skill", "---\nname: clean-skill\ndescription: ok\n---\nbody\n")
++        errs, _ = check_skill_file(clean)
++        expect(errs == [], "clean skill passes with zero errors")
++
++        errs, _ = check_skill_file(mk("other-name", "---\nname: clean-skill\ndescription: x\n---\n"))
++        expect(errs and errs[0].startswith("E4"), "E4 name-directory drift fires")
++
++        errs, _ = check_skill_file(mk("no-name", "---\ndescription: x\n---\n"))
++        expect(errs and errs[0].startswith("E3"), "E3 missing name fires")
++
++        errs, _ = check_skill_file(mk("no-desc", "---\nname: no-desc\n---\n"))
++        expect(errs and errs[0].startswith("E5"), "E5 missing description fires")
++
++        errs, _ = check_skill_file(mk("long-desc", "---\nname: long-desc\n"
++                                      "description: " + "x" * (DESC_MAX + 1) + "\n---\n"))
++        expect(errs and errs[0].startswith("E6"), "E6 over-cap description fires")
++
++        errs, _ = check_skill_file(mk("no-delims", "name: no-delims\ndescription: x\n"))
++        expect(errs and errs[0].startswith("E2"), "E2 missing delimiters fires")
++
++        folded = ("---\nname: folded\ndescription: first line\n"
++                  "  continued here\n  and here\n---\n")
++        errs, _ = check_skill_file(mk("folded", folded))
++        expect(errs == [], "plain-scalar continuation folds parse clean")
++
++        quoted = "---\nname: quoted\ndescription: \"double quoted\"\n---\n"
++        errs, _ = check_skill_file(mk("quoted", quoted))
++        expect(errs == [], "double-quoted scalar parses clean")
++
++        nested = ("---\nname: nested\ndescription: d\nmetadata:\n  version: \"1.0.0\"\n"
++                  "  category: AiAndMachineLearning\n---\n")
++        errs, warns = check_skill_file(mk("nested", nested))
++        expect(errs == [] and any(w.startswith("W3") for w in warns),
++               "nested metadata warns W3 without erroring")
++
++        (root / "empty-folder").mkdir()
++        err_rows, warn_rows, _ = scan(root)
++        names = {n for n, _ in err_rows}
++        expect("empty-folder" in names, "E1 missing SKILL.md fires at scan level")
++
++        baseline = {"empty-folder": ["E1"], "other-name": ["E4"]}
++        # isolated scenario: empty-folder still fires E1; other-name was fixed
++        scenario = [("empty-folder", ["E1: SKILL.md missing — skill is undiscoverable"]),
++                    ("other-name", ["E4: frontmatter name 'clean-skill' != directory name 'other-name'"])]
++        fixed = [r for r in scenario if r[0] != "other-name"]
++        violations, shrinks = ratchet(fixed, baseline)
++        expect(not violations and any("other-name" in s for s in shrinks),
++               "ratchet: resolved pin shrinks with note, never violates")
++
++        grown_errs = err_rows + [("empty-folder", [])]
++        violations, _ = ratchet(err_rows, {"clean-skill": ["E1"]})
++        expect(any("NEW error" in v for v in violations),
++               "ratchet: new unpinned folder fails closed")
++
++    print(f"self-test: {'OK' if failures == 0 else f'{failures} FAILURE(S)'}")
++    return 0 if failures == 0 else 1
++
++
++def main(argv: list[str]) -> int:
++    if "--self-test" in argv:
++        return self_test()
++    root = Path(argv[argv.index("--root") + 1]) if "--root" in argv else DEFAULT_ROOT
++    baseline_path = DEFAULT_BASELINE
++    if "--baseline" in argv:
++        write_baseline(root if "--root" in argv else DEFAULT_ROOT, baseline_path)
++        return 0
++    err_rows, warn_rows, skips = scan(root)
++    for s in skips:
++        print(f"[skill-conformance-guard] {s}")
++    if not skips or not all("surface absent" in s or "honest zero" in s for s in skips):
++        baseline = load_baseline(baseline_path)
++        violations, shrink_notes = ratchet(err_rows, baseline)
++        for name, errs in err_rows:
++            for e in errs:
++                code = e.split(":")[0]
++                state = "PINNED (baseline)" if code in baseline.get(name, []) else "LIVE"
++                print(f"[skill-conformance-guard] ERROR {state} {name}: {e}")
++        for name, warns in warn_rows:
++            for w in warns:
++                print(f"[skill-conformance-guard] warn {name}: {w}")
++        for n in shrink_notes:
++            print(f"[skill-conformance-guard] shrink note: {n}")
++        if violations:
++            for v in violations:
++                print(f"[skill-conformance-guard] RATCHET VIOLATION: {v}")
++            print("skill-conformance-guard: FAIL — new/grown structural violations; "
++                  "fix the skill files (or, only for genuinely pre-existing floors, "
++                  "regenerate the dated baseline via --baseline at a state you pin).")
++            return 1
++    scanned = len([p for p in (root.iterdir() if root.is_dir() else []) if p.is_dir()])
++    print(f"skill-conformance-guard: OK — {scanned} skill folder(s) checked, "
++          f"{sum(len(w) for _, w in warn_rows)} warning(s) (report-only), "
++          f"errors within shrink-only floor")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main(sys.argv[1:]))
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index 9377f0fd..f0428b22 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 13:50:12 UTC · **520 scripts** (485 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-28 21:51:47 UTC · **521 scripts** (486 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -86,7 +86,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `bridge/bridge_intake.py` | bridge_intake.py — public→private work bridge (v1). |
+ | `bridge/prune_merged_branches.sh` | prune_merged_branches.sh — post-merge head-branch housekeeping for Supremeai-bd/supremeai-open |
+ 
+-## scripts/ci/  (193 scripts)
++## scripts/ci/  (194 scripts)
+ 
+ | File | Purpose |
+ |---|---|
+@@ -251,6 +251,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/security_gate.py` | Aggregate machine-readable CI security findings with fail-closed semantics. |
+ | `ci/security_headers_checker.py` | Audit tool to enforce HTTP Security Headers (Trap #61). |
+ | `ci/self_healing_reporter.py` | Rules 16 + 26 (AUTONOMOUS_TRANSIT_PIPELINE.md): self-healing board reporter. |
++| `ci/skill_conformance_guard.py` | skill_conformance_guard.py — Agent Skills (SKILL.md) structural conformance gate (#1672). |
+ | `ci/smart_priority_merger.py` | Smart Priority-Wise Sequential PR Merger (স্মার্ট প্রায়োরিটি-ভিত্তিক একক-মার্জার) |
+ | `ci/sprawl_guard.py` | Script Sprawl Guard (Loop 1 of Continuous Governance). |
+ | `ci/staggered_rolling_train.py` | Federation Transit — Staggered Rolling Train Scheduler (issue #514, Tier 4). |
+diff --git a/tests/test_skill_conformance_guard.py b/tests/test_skill_conformance_guard.py
+new file mode 100644
+index 00000000..ce0f4c40
+--- /dev/null
++++ b/tests/test_skill_conformance_guard.py
+@@ -0,0 +1,156 @@
++#!/usr/bin/env python3
++"""Tests for skill_conformance_guard.py (issue #1672).
++
++Dual-mode: runs under pytest AND as a plain stdlib unittest-style script
++(python tests/test_skill_conformance_guard.py). Every test is hermetic —
++skill trees are built in tempfile dirs, never the live `.agents/skills/`.
++
++The globals()-patch pattern pins the __main__ pitfall from the #2059 lesson:
++helpers are reached via the module object so both invocation modes exercise
++the same code paths.
++"""
++from __future__ import annotations
++
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
++
++import skill_conformance_guard as G  # noqa: E402
++
++
++def make_skill(root: Path, name: str, frontmatter: str, body: str = "instructions\n") -> Path:
++    d = root / name
++    d.mkdir(parents=True)
++    (d / "SKILL.md").write_text(frontmatter + body, encoding="utf-8")
++    return d
++
++
++class ParseTests(unittest.TestCase):
++    def test_plain_scalars(self):
++        s, notes, err = G.parse_frontmatter(["---", "name: a", "description: b", "---", "body"])
++        self.assertIsNone(err)
++        self.assertEqual(s, {"name": "a", "description": "b"})
++        self.assertEqual(notes, [])
++
++    def test_quoted_scalars(self):
++        s, _, err = G.parse_frontmatter(
++            ["---", 'name: "q"', "description: 'single'", "---"])
++        self.assertIsNone(err)
++        self.assertEqual(s["name"], "q")
++        self.assertEqual(s["description"], "single")
++
++    def test_continuation_folding(self):
++        s, _, err = G.parse_frontmatter(
++            ["---", "name: folded", "description: first", "  second", "  third", "---"])
++        self.assertIsNone(err)
++        self.assertEqual(s["description"], "first second third")
++
++    def test_nested_map_reported_and_skipped(self):
++        s, notes, err = G.parse_frontmatter(
++            ["---", "name: n", "description: d", "metadata:", "  version: \"1.0.0\"", "---"])
++        self.assertIsNone(err)
++        self.assertEqual(s["name"], "n")
++        self.assertTrue(any("nested map under 'metadata'" in x for x in notes))
++
++    def test_missing_delimiters(self):
++        _, _, err = G.parse_frontmatter(["name: x"])
++        self.assertIsNotNone(err)
++        self.assertTrue(err.startswith("E2"))
++        _, _, err2 = G.parse_frontmatter(["---", "name: x"])
++        self.assertIsNotNone(err2)
++
++
++class CheckTests(unittest.TestCase):
++    def test_clean_skill_zero_errors(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "clean", "---\nname: clean\ndescription: ok\n---\n")
++            errs, warns = G.check_skill_file(d)
++            self.assertEqual(errs, [])
++
++    def test_e4_name_directory_drift(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "real", "---\nname: phantom\ndescription: x\n---\n")
++            errs, _ = G.check_skill_file(d)
++            self.assertTrue(errs[0].startswith("E4"))
++
++    def test_e3_missing_name(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "s", "---\ndescription: x\n---\n")
++            errs, _ = G.check_skill_file(d)
++            self.assertTrue(errs[0].startswith("E3"))
++
++    def test_e5_missing_description(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "s", "---\nname: s\n---\n")
++            errs, _ = G.check_skill_file(d)
++            self.assertTrue(errs[0].startswith("E5"))
++
++    def test_e6_over_cap(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "s", "---\nname: s\ndescription: " + "x" * 1025 + "\n---\n")
++            errs, _ = G.check_skill_file(d)
++            self.assertTrue(errs[0].startswith("E6"))
++
++    def test_w1_w2_w3_inventory(self):
++        with tempfile.TemporaryDirectory() as td:
++            d = make_skill(Path(td), "s",
++                           "---\nname: s\ndescription: d\nrisk: safe\n"
++                           "metadata:\n  version: \"1.0.0\"\n---\n")
++            errs, warns = G.check_skill_file(d)
++            self.assertEqual(errs, [])
++            self.assertTrue(any(w.startswith("W1") and "risk" in w for w in warns))
++            self.assertTrue(any(w.startswith("W2") for w in warns))
++            self.assertTrue(any(w.startswith("W3") for w in warns))
++
++
++class ScanAndRatchetTests(unittest.TestCase):
++    def test_e1_missing_skill_md(self):
++        with tempfile.TemporaryDirectory() as td:
++            (Path(td) / "ghost").mkdir()
++            err_rows, warn_rows, skips = G.scan(Path(td))
++            self.assertEqual([n for n, _ in err_rows], ["ghost"])
++            self.assertTrue(err_rows[0][1][0].startswith("E1"))
++
++    def test_absent_surface_honest_skip(self):
++        with tempfile.TemporaryDirectory() as td:
++            err_rows, _, skips = G.scan(Path(td) / "nope")
++            self.assertEqual(err_rows, [])
++            self.assertTrue(any("surface absent" in s for s in skips))
++
++    def test_ratchet_new_violation_fails_closed(self):
++        violations, _ = G.ratchet([("new", ["E4: drift"])], {})
++        self.assertTrue(any("NEW error" in v for v in violations))
++
++    def test_ratchet_grown_codes_fail(self):
++        violations, _ = G.ratchet([("p", ["E4: x", "E6: y"])], {"p": ["E4"]})
++        self.assertTrue(any("GROWN" in v for v in violations))
++
++    def test_ratchet_resolved_pin_shrinks(self):
++        violations, notes = G.ratchet([], {"old": ["E1"]})
++        self.assertEqual(violations, [])
++        self.assertTrue(any("old" in n for n in notes))
++
++    def test_ratchet_subset_passes(self):
++        violations, _ = G.ratchet([("p", ["E1: missing"])], {"p": ["E1"]})
++        self.assertEqual(violations, [])
++
++
++class LiveSurfaceTests(unittest.TestCase):
++    """The live repo surface must stay within the seeded floor (the #2081 lesson)."""
++
++    def test_live_scan_within_baseline(self):
++        baseline = G.load_baseline(G.DEFAULT_BASELINE)
++        err_rows, _, skips = G.scan(G.DEFAULT_ROOT)
++        violations, _ = G.ratchet(err_rows, baseline)
++        self.assertEqual(violations, [], f"live surface grew new structural errors: {violations}")
++
++    def test_self_test_battery(self):
++        self.assertEqual(G.self_test(), 0)
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

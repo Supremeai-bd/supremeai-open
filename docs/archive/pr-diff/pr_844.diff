@@ -1,0 +1,100 @@
+diff --git a/scripts/ci/federation_anchors.py b/scripts/ci/federation_anchors.py
+index 6caa5985..43948fdc 100644
+--- a/scripts/ci/federation_anchors.py
++++ b/scripts/ci/federation_anchors.py
+@@ -51,6 +51,28 @@
+     "Supremeai-bd/supremeai-open": 762,
+ }
+ 
++# Active 8 Primary Anchor Hubs per Golden 8-Satellite Topology (FEDERATION_ORGANIZATION_PLAN.md §2.1)
++ACTIVE_ANCHOR_HUBS: dict[str, int] = {
++    "Supremeai-bd/supremeai-studio": 749,
++    "Supremeai-bd/supremeai-api": 750,
++    "Supremeai-bd/supremeai-core": 751,
++    "Supremeai-bd/supremeai-vscode": 754,
++    "Supremeai-bd/supremeai-browser": 756,
++    "Supremeai-bd/supremeai-archive": 760,
++    "Supremeai-bd/supremeai": 761,
++    "Supremeai-bd/supremeai-open": 762,
++}
++
++# Consolidated / Retired Anchor Hubs (Merged into supremeai-api & supremeai-vscode)
++RETIRED_ANCHOR_HUBS: dict[str, int] = {
++    "Supremeai-bd/supremeai-command": 752,
++    "Supremeai-bd/supremeai-skills": 753,
++    "Supremeai-bd/supremeai-agents": 755,
++    "Supremeai-bd/supremeai-sdk": 757,
++    "Supremeai-bd/supremeai-infrastructure": 758,
++    "Supremeai-bd/supremeai-mcp-control-plane": 759,
++}
++
+ # Specialized Hubs
+ BRIDGE_ORDER_ANCHOR: int = 760  # [Federation Hub] Bridge Transit, Orders & Rejections
+ CI_FAILURE_ANCHOR: int = 761  # [Federation Hub] CI Pipeline Failures & Incident Desk
+@@ -356,14 +378,15 @@ def self_test() -> int:
+ 
+ 
+ def verify_live(token: str | None = None) -> int:
+-    """Verify against live GitHub API that all 14 Anchor Hubs exist and are open."""
++    """Verify against live GitHub API that active Anchor Hubs are open and retired anchors are closed."""
+     tok = token or get_default_token()
+     print(
+-        "🔍 [verify-live] Verifying all 14 Anchor Hubs on Supremeai-bd/supremeai-open..."
++        "🔍 [verify-live] Verifying active and retired Anchor Hubs on Supremeai-bd/supremeai-open..."
+     )
+     errors = 0
+ 
+-    for repo_name, issue_num in sorted(ANCHOR_HUBS.items(), key=lambda x: x[1]):
++    print("--- Active 8 Primary Anchor Hubs ---")
++    for repo_name, issue_num in sorted(ACTIVE_ANCHOR_HUBS.items(), key=lambda x: x[1]):
+         url = f"https://api.github.com/repos/{OPEN_REPO}/issues/{issue_num}"
+         headers = {
+             "Accept": "application/vnd.github+json",
+@@ -380,17 +403,44 @@ def verify_live(token: str | None = None) -> int:
+                 title = data.get("title")
+                 if state != "open":
+                     print(
+-                        f"❌ Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)"
++                        f"❌ Active Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)"
++                    )
++                    errors += 1
++                else:
++                    print(f"✅ Active Anchor #{issue_num}: {title} [state: {state}]")
++        except Exception as exc:
++            print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}")
++            errors += 1
++
++    print("--- Retired / Consolidated Anchor Hubs ---")
++    for repo_name, issue_num in sorted(RETIRED_ANCHOR_HUBS.items(), key=lambda x: x[1]):
++        url = f"https://api.github.com/repos/{OPEN_REPO}/issues/{issue_num}"
++        headers = {
++            "Accept": "application/vnd.github+json",
++            "User-Agent": "SupremeAI-Federation-Anchors/1.0",
++        }
++        if tok:
++            headers["Authorization"] = f"Bearer {tok}"
++
++        req = urllib.request.Request(url, headers=headers)
++        try:
++            with urllib.request.urlopen(req, timeout=10) as resp:
++                data = json.loads(resp.read().decode("utf-8"))
++                state = data.get("state")
++                title = data.get("title")
++                if state != "closed":
++                    print(
++                        f"❌ Retired Anchor #{issue_num} ({repo_name}) is {state}! (Must be CLOSED)"
+                     )
+                     errors += 1
+                 else:
+-                    print(f"✅ Anchor #{issue_num}: {title} [state: {state}]")
++                    print(f"✅ Retired Anchor #{issue_num}: {title} [state: {state} (consolidated)]")
+         except Exception as exc:
+             print(f"❌ Failed to query Anchor #{issue_num} ({repo_name}): {exc}")
+             errors += 1
+ 
+     if errors == 0:
+-        print("🎉 All 14 Anchor Hubs are LIVE, OPEN, and reachable!")
++        print("🎉 All Active Anchor Hubs are OPEN and all Retired Hubs are CLOSED as consolidated!")
+         return 0
+     return 1
+ 

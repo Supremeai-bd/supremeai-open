@@ -1,0 +1,122 @@
+diff --git a/docs/reports/mcp-rbac-pass5-second-redeploy-20261030.md b/docs/reports/mcp-rbac-pass5-second-redeploy-20261030.md
+new file mode 100644
+index 00000000..b5e379c0
+--- /dev/null
++++ b/docs/reports/mcp-rbac-pass5-second-redeploy-20261030.md
+@@ -0,0 +1,116 @@
++# MCP RBAC pass-5 receipt: byte-identical drift across the second witnessed redeploy; new devtools family is an anonymous-callable fetch surface
++
++- **Cycle**: 05:05+08 2026-10-30, autonomous contributor dispatch (cron Job 478316, `zai-cron-agent-478316`)
++- **Lane**: verification receipt #2391 — **pass 5**, second consecutive discriminator fire
++- **Type**: report-only, delta to the landed pass-4 receipt (PR #2781 → 1a41ea3). Bounded, zero-credential, zero-capture. Loop remains open (outcome not clean).
++
++## 1. Trigger: second consecutive fire, and this build postdates the pass-4 receipt
++
++The discriminator fired again within the hour: `tools/list` read **157** at 21:06Z (+3:
++`devtools_performance_trace`, `devtools_console_errors`, `devtools_network_failures` —
++the #2801 chrome-devtools adoption going live; zero removals). The redeploy itself was
++independently witnessed: peer cycle-47's restart detector (#2809) caught a cold boot at
++~20:58Z, and #2801 merged at 20:58:09Z — the tools appeared within minutes of landing.
++The decisive property of this build: **it postdates the landed pass-4 receipt**
++(1a41ea3 merged 20:18Z, ~40 minutes before the redeploy) and the tombstone mechanism
++(#2802, 20:52Z). Whatever the pipeline consumed to ship devtools tools, it had the
++pass-4 receipt's ask available at build time and did not act on it.
++
++## 2. Method
++
++Identical register to pass 4: seven read-shaped, anonymous, schema-valid calls with
++bogus identifiers (`zz2391pass5probe` family), `keysOnly: true` where supported, output
++shape-classified at capture (bytes, top-level keys, list lengths, boolean markers only —
++no names, values, rows, or PII persisted). The four devtools tools were **not executed**:
++they drive a headless Chrome against caller-supplied URLs, which is not a read-shaped
++call; they are classified at schema level only (§5), the same treatment the
++destructive-family audit used (#2380/#2384).
++
++## 3. Matrix: the drift did not move a byte
++
++| tool | pass 4 (20:12Z, build #1) | pass 5 (21:07Z, build #2) | verdict |
++|---|---|---|---|
++| github_list_secrets | -32602 not found | -32602 not found (no tombstone redirect — see §6) | still absent |
++| supabase_read_table | EXECUTED, PGRST marker, 159B | EXECUTED, PGRST marker, **159B — byte-identical** | drift persists |
++| redis_read_key | EXECUTED, topology shape, 130B | EXECUTED, topology shape, **130B — byte-identical** | drift persists |
++| memory_read_graph | EXECUTED, 17,567B, entities 26 / relations 35 | EXECUTED, 13,671B, **entities 21 / relations 30** | drift persists AND surface is live-churning (see §4) |
++| tenant_list | EXECUTED, count 0 | EXECUTED, count 0 | same |
++| render_get_env_vars (positive control) | EXECUTED, not-found, 65B | EXECUTED, not-found, **65B — byte-identical** | still regressed |
++| marketplace_list_connections | EXECUTED, 0 rows, 37B | EXECUTED, 0 rows, 37B | stable |
++
++Byte-identical responses across two independent builds are the fingerprint of an
++unchanged policy plane: not a partially-applied rule, not a caching artifact — the
++RBAC gate simply is not in the deployed artifact.
++
++## 4. New finding: the anonymous memory disclosure is a live feed, not a dump
++
++`memory_read_graph` returned 26 entities / 35 relations at 20:12Z and 21 entities /
++30 relations at 21:07Z. The graph is being mutated continuously (agents and tower
++sweeps write to it), which means the anonymous disclosure surface is a **real-time
++window into agent/tower operational state**, not a stale snapshot. Whatever lands in
++that graph — task coordinates, agent identities, incident notes — is readable by any
++anonymous caller as it happens. The pass-4 receipt flagged the graph as an unexamined
++disclosure surface (§7 ask 4); pass 5 upgrades it from "unexamined" to "actively
++churning and cheap to enumerate" (two calls, one hour apart, were enough to watch it
++move). Operator classification of its contents is now overdue.
++
++## 5. New-surface classification: the devtools family is an anonymous-callable fetch surface
++
++Four devtools tools are now advertised (devtools_audit plus the three new scanners).
++Schema-level facts, zero execution:
++
++- All four accept a caller-supplied `url` ("must be reachable from this host") plus a
++  `waitMs` observation window. Three carry `readOnlyHint: true` + `idempotentHint: true`
++  + `openWorldHint: true`; `devtools_audit` carries `readOnlyHint: false`.
++- The hint annotations describe *side-effect* safety, not *access* safety: a
++  read-only hint does not stop an anonymous caller from pointing the tower's headless
++  Chrome at any URL the host can reach — including loopback, link-local, and
++  cloud-metadata endpoints that only the tower host can see. "Must be reachable from
++  this host" is, in the SSRF sense, an invitation rather than a restriction.
++- This is the same drift class as the flagged five (a call that should die at RBAC
++  instead reaches the handler), with an additional capability dimension: it is the first
++  advertised tool whose execution makes the tower initiate arbitrary network fetches.
++  At schema level this is the strongest SSRF-shaped surface advertised to date.
++
++Recommendations (echoing and extending pass-4 ask 3): add the whole devtools family to
++the deny-matrix probe set at advertisement time; place a URL allowlist / SSRF guard at
++the adapter boundary before or alongside any RBAC reconciliation; treat
++"readOnlyHint" as orthogonal to "publicSafeCapabilities" in the policy SSOT so the
++mirror and the runtime gate classify on the same axis.
++
++## 6. Tombstone micro-question
++
++#2802 landed a registry tombstone / zero-deprecation-window redirect mechanism six
++minutes before the redeploy, but `github_list_secrets` — the one removed tool — still
++returns a plain `-32602: Tool not found`, not a tombstone response. Either tombstones
++apply only to renamed (not removed) tools, or the mechanism is not in this build
++either. Not resolvable from the anonymous plane; recorded as an open micro-question so
++the next pass does not re-derive it.
++
++## 7. The pipeline-linkage question is now answered — the ask escalates
++
++Pass 4 asked the maintainer to "verify the pipeline linkage" between the deployed
++artifact and the in-repo SSOT. Pass 5 answers it by construction: the pipeline
++demonstrably consumes the open repo (devtools feature code went from merged to live in
++minutes) while the RBAC policy plane in the same repo has now been absent from three
++consecutive build states across two witnessed redeploys. This is not staleness — it is
++**exclusion**: feature propagation and policy binding are wired to different planes,
++and only one of them reaches the artifact. The ADMIN RECIPE's "rebuild + redeploy"
++therefore cannot close the loop by itself; the recipe needs one amended step — confirm
++the policy file is part of the build artifact (bound at build or boot) rather than
++expected to diffuse from the mirror. Until then every future redeploy will repeat
++pass 4/5's result, and each new tool family (marketplace, now devtools) widens the
++anonymous surface faster than the matrix grows.
++
++## 8. Dedup check and completeness
++
++- #1843 origin (closed); #2391 the tracking lane (this is pass 5; passes 3–5 form the
++  ordered before/after chain); #2076/#2082 advertisement-plane, cannot see execution;
++  #2363 mutation-volume plane; #2380/#2384 destructive-family schema audit (the
++  methodological template for §5); #2781 the landed pass-4 receipt this pass deltas
++  against. No prior pass-5 receipt.
++- Completeness limitations: one execution witness per tool per build (not a stability
++  study); the memory graph was counted, never read (contents still unclassified);
++  devtools tools analyzed at schema level only — no URL was ever supplied, so the SSRF
++  concern is structural, not witnessed; the tombstone micro-question (§6) is unresolved
++  by design of the anonymous plane. Probe bounds: 7 read-shaped calls + 1 tools/list.

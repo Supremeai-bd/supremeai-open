@@ -1,0 +1,26 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 9a7c599f..6de3bc21 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -27,7 +27,7 @@ Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispat
+ | 4. Claim | Atomic claim (session marker; no claim, no work) | Session branch / `scripts/ci/atomic_claim.sh` |
+ | 5. Work | Smallest safe change inside declared scope | Standard Task Contract (`continuous_agent_loop.build_task_contract()`) |
+ | 6. Verify | 3-tier: reflection → boot smoke → tests | `continuous_agent_loop.py --verify-only` |
+-| 7. Record | PR with full template + Test Evidence (+ meaningful decision note) | `continuous_agent_loop.py --auto-pr` / REST PR create |
++| 7. Record | PR with full template + Test Evidence (+ meaningful decision note; `Closes #N` must also ride in the **commit message** — squash auto-close doctrine, AGENT_RULES U8) | `continuous_agent_loop.py --auto-pr` / REST PR create |
+ | 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
+ 
+ Hard boundaries during the loop: gates outrank agent preference (§1.4) · no competing/duplicate PRs for issues with an active open PR (AGENT_RULES.md U4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index bb76cf34..b2abce88 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -57,6 +57,8 @@ After clean exit (locks released, heartbeat stopped), the agent loop must **reru
+ 
+ **Critical ordering reminder:** `atomic_claim.sh` → code changes → `gh pr create`. A PR opened before the claim comment exists will be auto-closed by the Claim Gate (#2644, #2892).
+ 
++**Closing-keyword placement (squash doctrine, #165):** `Closes #N` fires on landing only from the **squash commit message** — the landed commit's message MUST carry it (the PR body keeps the claim + keyword as belt-and-suspenders). A body-only keyword leaves the issue open after merge and violates the Zero-Admin close-on-landing expectation.
++
+ ## U9 — Similar-Problem Sweep / Pattern-Aware Resolution
+ When any defect, antipattern, stale reference, or policy gap is found, the agent MUST NOT treat it as isolated by default. First classify: isolated one-off, or member of a defect/problem class? Perform a targeted sweep for sibling occurrences — same pattern, same file family, same reference-set, same CI/checker surface. If siblings share the same root cause AND the same scope, address them within the same task (or an explicitly linked task series) before closing the original. If they fall outside scope or risk, file linked follow-up issue(s) instead of silently expanding. Report format: `similar found: N | fixed in-task: M | filed follow-up: K`.
+ 

@@ -1,0 +1,77 @@
+diff --git a/vscode/extension/package-lock.json b/vscode/extension/package-lock.json
+index 33bb4bc3..d073a6e4 100644
+--- a/vscode/extension/package-lock.json
++++ b/vscode/extension/package-lock.json
+@@ -7,6 +7,7 @@
+     "": {
+       "name": "supremeai-vscode",
+       "version": "0.1.0",
++      "license": "Apache-2.0",
+       "devDependencies": {
+         "@types/node": "^20.11.0",
+         "@types/vscode": "^1.80.0",
+diff --git a/vscode/extension/package.json b/vscode/extension/package.json
+index 45d7cf2b..699993f8 100644
+--- a/vscode/extension/package.json
++++ b/vscode/extension/package.json
+@@ -108,8 +108,8 @@
+         },
+         "supremeai.apiKey": {
+           "type": "string",
+-          "default": "supremeai-key-test-0000000001",
+-          "description": "X-SupremeAI-Key for gateway authentication"
++          "default": "",
++          "description": "X-SupremeAI-Key for gateway authentication (or SUPREMEAI_API_KEY environment variable)"
+         },
+         "supremeai.model": {
+           "type": "string",
+diff --git a/vscode/extension/src/chat_view.ts b/vscode/extension/src/chat_view.ts
+index a6a6cad4..a704426e 100644
+--- a/vscode/extension/src/chat_view.ts
++++ b/vscode/extension/src/chat_view.ts
+@@ -60,7 +60,7 @@ export class SupremeAIChatViewProvider implements vscode.WebviewViewProvider {
+   private async callGateway(userText: string, model: string): Promise<string> {
+     const config = vscode.workspace.getConfiguration("supremeai");
+     const gatewayUrl = config.get<string>("gatewayUrl", "http://127.0.0.1:8080");
+-    const apiKey = config.get<string>("apiKey", "supremeai-key-test-0000000001");
++    const apiKey = config.get<string>("apiKey", "") || process.env.SUPREMEAI_API_KEY || "";
+ 
+     const messages = [...this.messages.filter((m) => m.role === "user" || m.role === "assistant")];
+     // ensure last user message present
+diff --git a/vscode/extension/src/commands/inline_chat.ts b/vscode/extension/src/commands/inline_chat.ts
+index e14ea946..58ec5b78 100644
+--- a/vscode/extension/src/commands/inline_chat.ts
++++ b/vscode/extension/src/commands/inline_chat.ts
+@@ -21,7 +21,7 @@ export async function inlineChatCommand(): Promise<void> {
+   const prompt = buildPrompt(question, ctx);
+   const config = vscode.workspace.getConfiguration("supremeai");
+   const gatewayUrl = config.get<string>("gatewayUrl", "http://127.0.0.1:8080");
+-  const apiKey = config.get<string>("apiKey", "supremeai-key-test-0000000001");
++  const apiKey = config.get<string>("apiKey", "") || process.env.SUPREMEAI_API_KEY || "";
+   const model = tierToModel(config.get<string>("model", "auto"));
+ 
+   const channel = vscode.window.createOutputChannel("SupremeAI");
+diff --git a/vscode/extension/tsconfig.json b/vscode/extension/tsconfig.json
+index bb9d2fbf..44cb71d7 100644
+--- a/vscode/extension/tsconfig.json
++++ b/vscode/extension/tsconfig.json
+@@ -2,7 +2,8 @@
+   "compilerOptions": {
+     "module": "commonjs",
+     "target": "ES2022",
+-    "lib": ["ES2022"],
++    "lib": ["ES2022", "DOM"],
++    "types": ["node", "vscode"],
+     "sourceMap": true,
+     "rootDir": "src",
+     "outDir": "out",
+@@ -11,8 +12,7 @@
+     "noFallthroughCasesInSwitch": true,
+     "noUnusedLocals": true,
+     "noUnusedParameters": true,
+-    "skipLibCheck": true,
+-    "moduleResolution": "node"
++    "skipLibCheck": true
+   },
+   "include": ["src/**/*"],
+   "exclude": ["node_modules", ".vscode-test"]

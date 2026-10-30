@@ -1,0 +1,183 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-IX.md b/docs/SCOUT_RADAR_2026-10-28-IX.md
+new file mode 100644
+index 00000000..d0fa1c6f
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-IX.md
+@@ -0,0 +1,177 @@
++# 🧭 SCOUT RADAR IX — 2026-10-28 (Memory, Search-Supply & Runtime-Trust Sweep — R31–R33)
++
++> **Role:** Ecosystem Scout · **Job:** 478346 · **Cycle:** single-dispatch (cron 05:55 +08) · **Doctrine:** high-signal
++> only (per #1658). Every external signal below was **live-probed on 2026-10-28** before filing; every internal
++> claim carries a named file/line anchor on `main b4792b8`. Issues carry dated evidence, a smallest-safe-slice
++> proposal mapped to files already on `main`, acceptance criteria, and a never-do register.
++> **Non-duplication:** R1–R12 (#1611) model families/MCP spec/eval studies; R13–R16 (#1652) payments/OTel/A2A/
++> Firecracker; R17–R20 (#1682) skills standard/devtools-mcp/sigstore/Web Bot Auth; R21–R22 (#1688) provider
++> supply/MCP Registry; R23–R25 (#1707/#1714) A2A exit-quarantine/CI matrix/Spec Kit; R26–R27 (#1727) agent-skill
++> content scanning/radar index; **R28–R30 (#1742, landed mid-cycle while this sweep was in flight) Redis quota
++> economics/OWASP LLM Top-10 guard mapping/OWASP ACS vocabulary.** This radar scans the three planes none of
++> them touched: the agent memory plane, the web-search supply plane, and the runtime behavioral-probe trust
++> lane. Zero content overlap with #1742 (their R-lanes are quota/OWASP-compliance; ours are memory/search/
++> probing). **Task ID renamed `radar-ix` after #1742 claimed `radar-viii` mid-cycle** — the collision pattern
++> R27 predicted, this time caught mechanically by a rebase filename conflict, zero content loss.
++> Next free R-number after this document: **R34** (per the #1724 index rule; the index file itself is that
++> WO's deliverable — this document self-registers R31–R33 to keep the temporary ledger honest).
++
++---
++
++## 0. Provenance correction register (authoritative R-number mapping)
++
++Issues **#1747, #1751, #1748** were filed via the zero-credential `github_create_issue` tool minutes before
++the #1742 collision surfaced at rebase; their bodies cite the then-planned "radar VIII (R28–R30)" ledger,
++which landed with different lanes under #1742. The tower exposes no issue-edit/comment plane, so this
++document is the **SSOT for the mapping** — the first comment any claimer posts on these issues should cite it.
++
++| Issue | Body says | **Authoritative R-number** | Lane |
++|---|---|---|---|
++| [#1747](https://github.com/Supremeai-bd/supremeai-open/issues/1747) | R28 | **R31** | memory tiering asymmetry |
++| [#1751](https://github.com/Supremeai-bd/supremeai-open/issues/1751) | R29 | **R32** | search supply consolidation + fail-closed fallback |
++| [#1748](https://github.com/Supremeai-bd/supremeai-open/issues/1748) | R30 | **R33** | runtime behavioral-probe trust lane (garak) |
++
++No issues were closed or duplicated to effect this renumbering (duplicate-WO noise is itself an audited
++anti-pattern per #1692); the correction lives here, one-grep verifiable.
++
++---
++
++## 1. Radar Summary Table
++
++| # | Signal | Live proof (2026-10-28) | One-line | Verdict |
++|---|--------|-------------------------|----------|---------|
++| R31 | Memory tiering asymmetry: tower advertises 21 `memory_*` tools (semantic/RAG/episodic/graph) but repo-side consumers run regex keyword-split + flat KV rows | `tools/list` → 21 memory tools incl. `memory_search_semantic`, `memory_get_similar_tasks`; `agent_solution_memory.py:60-66` = `re.split` + substring; `memory_store.py:102-124` = flat `user_memories` KV, no consolidation | Wire the landed tower semantic tier into the repo-side search path (zero new deps, graceful degradation, tier-labeled output) | `adapt_cleanroom` → **#1747** |
++| R32 | Search supply: deep-research lane hand-scrapes `duckduckgo.com/html` while `core/search.py` ddgs client exists as SSOT; no key-gated fallback anywhere | Live: DDG html → **HTTP 202** anti-bot interstitial (scout UA), connection reset (browser UA); Brave → 422 token validation (live); Tavily → 401 key check (live); Exa → 404 (excluded); SearXNG public JSON disabled/429 | Consolidate both mirror files onto `core.search.web_search`, add env-keyed fail-closed Brave/Tavily fallback, mirror-atomic | `adapt_cleanroom` → **#1751** |
++| R33 | Runtime behavioral-probe trust lane: golden eval's adversarial coverage is a static 35-case snapshot; garak contributes 100+ generated probes (incl. adaptive `atkgen`) via the exact OpenAI-compatible contract the eval runner already speaks | `NVIDIA/garak` 9.7k★ Apache-2.0, PyPI `garak 0.17.1` py≥3.11 (CI matrix 3.11/3.12 compatible), 21 probe categories, `--target_type openai`; anchors `evals/golden/run_eval.py` (#1575) + `web_ai_proxy.py` | `quarantine_eval`: uvx-isolated probe inventory first, fixture-target report-only second, gate wiring last (admin-owned) | `quarantine_eval` → **#1748** |
++
++---
++
++## 2. Full-Spectrum Evaluations
++
++### R31 · The memory plane's tiering asymmetry — `adapt_cleanroom`
++
++**Evidence trail (one-grep verifiable, main b4792b8):**
++
++| Surface | Anchor | What exists today | What is missing |
++|---|---|---|---|
++| Tower | live `tools/list` 2026-10-28 | 21 `memory_*` tools: `memory_search_semantic`, `memory_ingest_document_rag`, `memory_get_similar_tasks`, `memory_build_context`, `memory_search_learned_facts`, knowledge-graph CRUD | — (rich tier already landed) |
++| Agent CLI | `scripts/agents/agent_solution_memory.py:60-66` | `search_local_lessons`: `re.split(r"[\s,:;\-_]+", query)`, terms `len>2`, substring over `LESSONS_LEARNED.md` | semantic/similar-task recall; cannot reach the tower tier from its own search path |
++| Gateway | `gateway/service/memory_store.py:102-124` | `user_memories(id, user_id, memory_key, memory_value, confidence, source_conv_id, updated_at)` | entity resolution, consolidation/decay, supersede semantics for reused keys, provenance chain |
++
++**External pattern references (live-probed 2026-10-28, pattern extraction ONLY):**
++
++| Project | Probe result | Relevance |
++|---|---|---|
++| `mem0ai/mem0` | 67.8k★, Apache-2.0; PyPI `mem0ai 2.2.1` (`requires_python >=3.10`) | extraction → consolidation → retrieval pipeline for agent memory |
++| `getzep/graphiti` | 32.3k★, Apache-2.0, py≥3.10 | temporal context graphs: validity windows, provenance episodes, ontology — the shape `user_memories` grows into when facts change |
++
++- **Pros:** the expensive tier (semantic + RAG + episodic) is ALREADY landed at the tower — wiring beats rebuilding; zero new dependencies (tower tools are reachable through the existing zero-credential MCP session pattern); the Search-Before-Solving workflow (`agent_solution_memory.py` step 1) gets materially smarter without any schema change; graceful-degradation contract keeps the offline path honest.
++- **Cons:** adds a runtime dependency on tower availability for the richer tier (mitigated by the local-first, fallback-only design); tier labels add output surface that tests must pin.
++- **Risks:** silently treating tower results as ground truth (mitigated: every hit labeled with its tier); drift if tower tools rename (mitigated: fail-closed fallback keeps local tier authoritative).
++- **এটা করা যাবে না:** no mem0/graphiti vendoring (Gold Pearl doctrine: 20–100-line native slices only); no vector DB or embedding-service dependency in slice 1 (tower owns the semantic tier — duplicating it repo-side is anti-SSOT); no weakening of the gateway 3-tier store contract.
++- **Adoption path → Issue [#1747](https://github.com/Supremeai-bd/supremeai-open/issues/1747)**
++  (Parent Anchor Hub #751 — Core Decision Intelligence & Brain): tier-labeled fallback in
++  `search_database_memory()`, additive provenance stamps on `record`, optional consolidated read view.
++
++### R32 · Search supply: one SSOT exists, a second brittle path scrapes around it — `adapt_cleanroom`
++
++**Live probe table (all 2026-10-28, scout UA, unauthenticated):**
++
++| Probe | Result | Meaning |
++|---|---|---|
++| `GET duckduckgo.com/html/?q=…` | **HTTP 202**, 14 KB HTML interstitial (anti-bot anomaly class), zero parseable results | the exact endpoint `deep_research.py` scrapes already serves challenge pages to non-browser clients |
++| same URL, browser UA | **connection reset** | fingerprint blocking — scrape viability is luck, not contract |
++| `GET lite.duckduckgo.com/lite/?q=…` | HTTP 200 HTML | works today; same fragility class, no SLA |
++| `GET api.search.brave.com/res/v1/web/search?q=…` | **HTTP 422** validating `x-subscription-token` | live, key-gated, protocol-speaking |
++| `POST api.tavily.com/search {}` | **HTTP 401** `missing or invalid API key` | live, key-gated, protocol-speaking |
++| `POST api.exa.ai/search {}` | HTTP 404 | inconclusive — **EXCLUDED** (zero-hype) |
++| `GET searx.be/search?format=json` / `searx.tiekoetter.com` | 200-but-HTML (JSON disabled) / **429** | public SearXNG unusable programmatically — self-host lane only, not smallest slice |
++
++**Internal drift proof:** `gateway/routes/deep_research.py:220` (byte-identical mirror
++`core/api/routes/deep_research.py:220`, parity-verified per the #1720 sentinel) builds the DDG html URL and
++feeds `CrawlerService.execute_crawl` — while `core/search.py:20-55` already implements the resilient path
++(`core/pyproject.toml:24` pins `ddgs = "^9.16.0"`, ddgs-first import, exception-safe `web_search()`).
++`rg -i "tavily|brave|serpapi|exa" gateway/` → zero presence. Two search implementations, one implicit SSOT.
++
++- **Pros:** consolidation is a swap, not a build — the SSOT client is landed and pinned; the mirror pair is
++  sentinel-guarded so atomicity is mechanically enforced; env-keyed fallback mirrors the provider_registry's
++  own doctrine ("keys come from environment!", fail-closed); key-less runs keep the zero-cost contract
++  (`core/pyproject.toml` documents শূন্য-খরচ / no-API-key).
++- **Cons:** Brave/Tavily are paid-after-free-tier — must stay strictly optional and never default-on; one
++  more env surface to document.
++- **Risks:** ddgs itself is scrape-derived and can degrade (that is exactly why the fallback lane is keyed
++  providers, and why the degradation must stay honest-warn, never crash); mirror drift if the two files are
++  edited separately (mitigated: single-commit mirror-atomic requirement + sentinel).
++- **এটা করা যাবে না:** no search-provider SDK dependency (plain JSON calls); no hard failure when keys are
++  absent; no single-sided mirror edits (parity guard fails it — by design); no retry/proxy-rotation arms race
++  against an anti-bot wall — Superior Replacement replaces the approach, it does not fight the wall.
++- **Adoption path → Issue [#1751](https://github.com/Supremeai-bd/supremeai-open/issues/1751)**
++  (Parent Anchor Hub #750 — Unified Provider Gateway): consolidate both mirror files onto
++  `core.search.web_search`, map to the existing `{title, url, snippet, source:"scout"}` shape, optional
++  `SUPREME_SEARCH_BRAVE_KEY` / `SUPREME_SEARCH_TAVILY_KEY` fail-closed templates.
++
++### R33 · Runtime behavioral-probe trust lane — `quarantine_eval`
++
++**Complementary lane map (who scans what):**
++
++| Lane | Stage | Covers | Status |
++|---|---|---|---|
++| R17 (#1672) | skills metadata | structure conformance of the 3 frontmatter conventions | open WO |
++| R26 (#1723) | skills + MCP content | STATIC content scan at ingest (Snyk Agent Scan) | open WO |
++| R29 of radar VIII / #1733 | compliance mapping | OWASP LLM Top-10 ↔ existing guard chain (paper mapping) | open WO |
++| **R33 (this)** | LLM endpoint behavior | RUNTIME generated adversarial probes (garak: 21 categories incl. `promptinject`, `leakreplay`, `encoding`, `xss`, adaptive `atkgen`) | this filing |
++
++**Evidence (live 2026-10-28):** `NVIDIA/garak` 9.7k★, Apache-2.0, active; PyPI `garak 0.17.1`
++(`requires_python >=3.11` — compatible with the repo CI matrix 3.11/3.12 per #1709); `--target_type openai`
++speaks the exact contract `evals/golden/run_eval.py` already speaks (`--provider http`, `SUPREME_EVAL_ENDPOINT`
++POST `{prompt}` → `{response}`, landed #1575). Golden suite categories today: `bengali_coding` 25,
++`tool_calling` 25, `safety_refusal` 20, `grounded_qa` 15, `adversarial_edge` 15 — the adversarial plane is a
++static 35-case snapshot; garak's probes are generated and adaptive.
++
++- **Pros:** closes the trust lane radar III deferred and R26 explicitly scoped out; no new repo dependency
++  (uvx-isolated); the eval runner's HTTP contract is already garak-compatible; generated probes catch what
++  hand-pinned goldens structurally cannot.
++- **Cons:** red-team tooling is dangerous when mis-aimed — hence fixture-target-only, report-only stages;
++  probe output is noisy and must never gate before calibration.
++- **Risks:** dependency drift in garak's own probes (pin the version in the inventory artifact); accidental
++  production targeting (hard never-do below); gate-wiring temptation before data (mirror #1362's threshold
++  philosophy — a noisy gate gets muted, then ignored, which is worse than report-only).
++- **এটা করা যাবে না:** no garak in requirements (uvx-isolated only); never target the live gateway or
++  production tenants with red-team probes (Policy Before Power — fixture endpoints only); no blocking gate
++  without calibration data; no merging garak JSON into golden `suite.json` (generated probes vs pinned
++  goldens are different planes — compare at report level only).
++- **Adoption path → Issue [#1748](https://github.com/Supremeai-bd/supremeai-open/issues/1748)**
++  (Parent Anchor Hub #751 — decision-quality assurance): slice 1 = dated uvx probe inventory doc
++  (`docs/EVAL_GARAK_PROBE_2026-10-28.md`); slice 2 = fixture-target report JSON; slice 3 = admin-owned
++  non-blocking CI report, gate only after calibration.
++
++---
++
++## 3. Considered and held back (zero-hype discipline)
++
++- **Realtime voice frameworks (Pipecat / LiveKit Agents)** — the voice plane is real and bn-BD-first
++  (`gateway/services/voice_service.py`: Groq Whisper STT + edge-tts/ElevenLabs; `websocket_voice.py` with
++  connection caps), but it is request/response + WS streaming with no observed failure of that model. A
++  full-duplex framework adoption without an observed failure is the same shape as radar VII's Temporal
++  hold-back. `MONITOR`.
++- **Agent orchestration frameworks (LangGraph 1.0 / Microsoft Agent Framework)** — the loop's single-dispatch
++  cron topology + `AGENT_LOOP_SPEC` SSOT + 30-min lease machinery just landed and works; re-platforming the
++  orchestration layer would be speculation without an observed coordination failure. Held back.
++- **Letta (MemGPT lineage)** — covered conceptually by R31's probe set (memory tiering); a separate filing
++  would duplicate #1747's lane. Referenced only.
++- **Exa as a search-supply lane** — live probe returned 404 on the assumed path; inconclusive evidence is no
++  evidence. Excluded from R32 rather than filed on hope.
++- **Self-hosted SearXNG** — public instances disable the JSON API (200-but-HTML) or rate-limit hard (429);
++  a self-hosted deployment is a new ops burden with no observed demand signal today. Held back inside R32's
++  never-do scope.
++
++## 4. Method note
++
++Live probes this cycle (2026-10-28, from the scout runner): GitHub web metadata via page fetch (GitHub REST
++API rate-limited 403 from this runner — honest limitation, star counts cross-checked against PyPI/package
++activity), PyPI JSON API (`mem0ai 2.2.1`, `garak 0.17.1`, `ddgs 9.16.1`, `duckduckgo_search 8.1.1`), and
++unauthenticated endpoint liveness probes (radar-IV pattern: protocol-speaking 401/403/422 = live; 404 =
++excluded). Internal evidence is one-grep/one-open reproducible on `main b4792b8`. Issues filed before this
++document: **#1747 (R31), #1751 (R32), #1748 (R33)** — all `status:unclaimed`, parent anchor hubs #751/#750/#751;
++R-number mapping correction in §0 (the #1742 filename collision surfaced post-filing). Docs-only change: one
++new file, no source code, no CI paths, no protected paths.

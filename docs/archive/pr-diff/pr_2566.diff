@@ -1,0 +1,26 @@
+diff --git a/core/monitoring/logging_config.py b/core/monitoring/logging_config.py
+index c73f121a..650be30b 100644
+--- a/core/monitoring/logging_config.py
++++ b/core/monitoring/logging_config.py
+@@ -18,7 +18,7 @@
+ import os
+ import sys
+ import uuid
+-from datetime import datetime
++from datetime import datetime, timezone
+ 
+ try:
+     from loguru import logger
+@@ -193,7 +193,11 @@ def _json_format(self, record: dict) -> str:
+ 
+         # Create structured log entry
+         log_entry = {
+-            "timestamp": datetime.utcnow().isoformat(),
++            # audit #2564: datetime.utcnow() is deprecated (removal slated
++            # post-3.12). now(timezone.utc).replace(tzinfo=None) keeps the
++            # naive-UTC ISO shape byte-identical for log consumers while
++            # dropping the DeprecationWarning.
++            "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+             "level": record["level"].name,
+             "message": record["message"],
+             "module": record["name"],

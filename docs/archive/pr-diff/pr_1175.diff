@@ -1,0 +1,179 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index c4118281..a1735e54 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -348,6 +348,7 @@ def build_task_contract(
+ }
+ 
+ EXCLUDED_LABELS = {
++    "admin-only",  # admin-lane work (secrets/.github/SARIF) — never agent-claimable
+     "status:claimed",
+     "status:in-progress",
+     "state:seq-hold",
+@@ -693,6 +694,126 @@ def handle_violation(issue: dict, violations: list[dict], dry_run: bool) -> int:
+ # --------------------------------------------------------------------------
+ # Ingress & Atomic Claim & Submission Gate
+ # --------------------------------------------------------------------------
++
++def _fetch_board_via_tower() -> list[dict[str, Any]]:
++    """Third board source: MCP tower ``bridge_work_queue`` (false-IDLE fix).
++
++    On unauthenticated runners gh is absent and the api.github.com fallback
++    hits 403 rate limits, so ``pick_next_issue`` returned None while P0
++    orders existed. The tower board is always reachable and needs no gh
++    auth. Returns issues shaped like the gh/API payload:
++    ``[{"number": int, "title": str, "labels": [{"name": str}, ...]}]``.
++    Env override: ``SUPREMEAI_MCP_TOWER_URL``. Returns [] on any failure so
++    the caller keeps its original fail-quiet contract.
++    """
++    tower_url = os.environ.get(
++        "SUPREMEAI_MCP_TOWER_URL",
++        "https://supremeai-mcp-tower.onrender.com/mcp",
++    )
++
++    def _rpc(
++        payload: dict[str, Any], session: str | None, timeout: int = 30
++    ) -> tuple[str | None, str]:
++        headers = {
++            "Content-Type": "application/json",
++            "Accept": "application/json, text/event-stream",
++        }
++        if session:
++            headers["mcp-session-id"] = session
++        req = urllib.request.Request(
++            tower_url,
++            data=json.dumps(payload).encode("utf-8"),
++            headers=headers,
++            method="POST",
++        )
++        with urllib.request.urlopen(req, timeout=timeout) as resp:
++            return resp.headers.get("mcp-session-id"), resp.read().decode(
++                "utf-8", errors="replace"
++            )
++
++    def _parse(raw: str) -> dict[str, Any] | None:
++        text = (raw or "").strip()
++        if not text:
++            return None
++        if text.startswith("data:") or "\ndata:" in text:
++            for line in text.split("\n"):
++                if line.startswith("data:"):
++                    try:
++                        return json.loads(line[5:].strip())
++                    except Exception:
++                        return None
++        try:
++            return json.loads(text)
++        except Exception:
++            return None
++
++    try:
++        session, _ = _rpc(
++            {
++                "jsonrpc": "2.0",
++                "id": 1,
++                "method": "initialize",
++                "params": {
++                    "protocolVersion": "2024-11-05",
++                    "capabilities": {},
++                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1"},
++                },
++            },
++            None,
++        )
++        if not session:
++            return []
++        with contextlib.suppress(Exception):
++            _rpc({"jsonrpc": "2.0", "method": "notifications/initialized"}, session)
++        _, raw = _rpc(
++            {
++                "jsonrpc": "2.0",
++                "id": 2,
++                "method": "tools/call",
++                "params": {"name": "bridge_work_queue", "arguments": {}},
++            },
++            session,
++            timeout=45,
++        )
++        data = _parse(raw)
++        if not isinstance(data, dict):
++            return []
++        inner = data.get("result") if isinstance(data.get("result"), dict) else data
++        blocks = inner.get("content") if isinstance(inner, dict) else None
++        board_text = ""
++        for block in blocks or []:
++            if isinstance(block, dict) and block.get("type") == "text":
++                board_text = str(block.get("text", ""))
++                break
++        board = json.loads(board_text) if board_text else {}
++        orders = board.get("workOrders") if isinstance(board, dict) else None
++        issues: list[dict[str, Any]] = []
++        for order in orders or []:
++            if not isinstance(order, dict) or order.get("state") != "open":
++                continue
++            labels = order.get("labels") or []
++            issues.append(
++                {
++                    "number": int(order.get("number", 0)),
++                    "title": str(order.get("title", "")),
++                    "labels": [
++                        {"name": str(label).lower()}
++                        for label in labels
++                        if str(label).strip()
++                    ],
++                }
++            )
++        if issues:
++            log(
++                "✅",
++                f"[Board Fetch] tower bridge_work_queue fallback: {len(issues)} open orders.",
++            )
++        return issues
++    except Exception as tower_err:  # noqa: BLE001 — fail-quiet by contract
++        log("⚠️", f"[Board Fetch] tower fallback failed: {tower_err}")
++        return []
++
++
+ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+     """Fetch the highest priority claimable open issue from GitHub (#88, #122)."""
+     code, out, err = run_cmd([
+@@ -724,7 +845,11 @@ def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+                     ]
+         except Exception as http_err:
+             log("⚠️", f"[Board Fetch] gh unavailable and HTTP fallback error: {http_err}")
+-            return None
++            tower_issues = _fetch_board_via_tower()
++            if tower_issues:
++                issues = tower_issues
++            else:
++                return None
+ 
+     try:
+         def label_names(item: dict[str, Any]) -> list[str]:
+@@ -752,6 +877,26 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+         if exclude:
+             excluded_set = {str(e) for e in exclude}
+             candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
++        # Traffic-officer lane rule: ci-fixer is a single-agent narrow road.
++        # If ANY open area:ci order is actively claimed, the CI lane is busy —
++        # suppress further CI candidates this round so remaining agents route
++        # to other lanes instead of piling onto parallel CI fixes (CI repair
++        # is serial by nature: same pipelines, green-run gating, shared root
++        # causes). When the active claim closes, the lane reopens naturally.
++        if any(
++            "area:ci" in set(label_names(i)) and "status:claimed" in set(label_names(i))
++            for i in issues
++        ):
++            before_count = len(candidates)
++            candidates = [
++                i for i in candidates if "area:ci" not in set(label_names(i))
++            ]
++            if len(candidates) != before_count:
++                log(
++                    "🚦",
++                    "[Lane] ci-fixer lane busy (active area:ci claim) — "
++                    f"suppressed {before_count - len(candidates)} CI candidate(s) this round.",
++                )
+         sorted_issues = sorted(candidates, key=priority_key)
+         if sorted_issues:
+             return str(sorted_issues[0].get("number"))

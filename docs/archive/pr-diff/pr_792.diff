@@ -1,0 +1,9 @@
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 36613b23..b5ba5e5f 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -174,3 +174,4 @@ export const PricingPage = GuestChat;
+ export const FeaturesPage = GuestChat;
+ export const DocsPage = GuestChat;
+ export const AboutPage = GuestChat;
++export default GuestChat;

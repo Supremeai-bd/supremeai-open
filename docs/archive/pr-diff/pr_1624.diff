@@ -1,0 +1,22 @@
+diff --git a/.gitignore b/.gitignore
+index 2c68cc3d..f071b9cf 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -42,3 +42,7 @@ core/.secrets/
+ 
+ # Runtime health-report outputs
+ reports/
++
++# Agent continuous loop runtime state
++scripts/agents/agent_cadence_state.json
++scripts/agents/dispatched_issues_state.json
+diff --git a/scripts/agents/agent_cadence_state.json b/scripts/agents/agent_cadence_state.json
+deleted file mode 100644
+index e733538c..00000000
+--- a/scripts/agents/agent_cadence_state.json
++++ /dev/null
+@@ -1,3 +0,0 @@
+-{
+-  "ecosystem-scout": 1793109651.5707824
+-}
+\ No newline at end of file

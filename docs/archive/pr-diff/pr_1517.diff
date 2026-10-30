@@ -1,0 +1,535 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 273620ef..e63efd76 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -1,163 +1,36 @@
+ # SupremeAI — AGENTS.md
+ 
+-> **Agent Universal Constitution**  
+-> **Freedom:** Agent controls **HOW** to solve an assigned task inside its contract.  
+-> **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING and major architectural decisions**.  
+-> **Canonical Rules:** [`AGENT_RULES.md`](./AGENT_RULES.md) · **Admin Work Budget:** ≤ 0.01% (Zero-Admin)
+-
+-> [!NOTE]
+-> **Orientation for New AI Agents (Directory Mapping & Single Door):**  
+-> This repo (`supremeai-open`) contains mirror folders (`core/`, `command/`, `studio/`, `infrastructure/`, etc.). These are **NOT legacy duplicates**; they are the public transit surfaces for the federation satellites (consolidated into 5 active product satellites: `studio`, `api`, `core`, `browser`, `vscode`, plus `archive`).  
+-> - **Never push directly to satellites:** Satellites enforce a strict 0 Issues / 0 PRs policy ([`FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)).  
+-> - **Code right here:** Make your edits inside this repository in the respective domain directory. Once your PR merges into `supremeai-open:main`, `landing.yml` automatically dispatches the commit to the target satellite repo.  
+-> - **Satellite Dispatch Invariants:**  
+->   - **Domain Routing:** Code must touch the mirror folder (`studio/*` → `supremeai-studio`, `vscode/*` → `supremeai-vscode`, `api/*` / `gateway/*` → `supremeai-api`, etc.). Files in `docs/*` route *only* to monorepo `supremeai`. Work orders (`docs/work-orders/*`) are specs, not satellite code!  
+->   - **Branch Prefix Rule:** PR branches must use standard naming (`feat/*`, `fix/*`, etc.). Branches prefixed with `bridge/*` trigger loop-prevention in `landing.yml` and intentionally skip satellite dispatch.
++> **The Universal Agent Constitution (Single Door SSOT)**  
++> **Freedom:** Agent controls **HOW** to solve any task inside its contract.  
++> **Control:** Admin/System controls **WHERE, WHAT, ACCESS, LIMITS, STOPPING**.  
++> **Zero-Admin Target:** Work budget ≤ 0.01% · **The loop is the permission (U10).**
+ 
+ ---
+ 
+-## 1. Visual Task Architecture (Federation Flow at a Glance)
+-
+-```mermaid
+-flowchart TD
+-    subgraph INGRESS ["1. Ingress Pathways (§2)"]
+-        P1["Pathway 1: MCP Control Tower<br>(Zero-Credential Bridge)"] --> OPEN["Supremeai-bd/supremeai-open<br>(Public SSOT & Task Hub)"]
+-        P2["Pathway 2: Public Fork & PR<br>(External Web AI / Contributors)"] --> OPEN
+-        P3["Pathway 3: Ephemeral JIT Lease<br>(Automated CLI Runners)"] --> OPEN
+-    end
+-
+-    subgraph LOOP ["2. Agent Lifecycle — SCAN → FIX → VERIFY (§3)"]
+-        OPEN --> S1["1. Preflight: Load Rules & Sync origin/main"]
+-        S1 --> S2["2. SCAN: master_health_check --full → ACTION PLAN"]
+-        S2 --> S3["3. PICK top issue (or CREATE from ACTION PLAN, dedup)"]
+-        S3 --> S4["4. Atomic Claim + Branch (no claim → no branch)"]
+-        S4 --> S5["5. 3-Tier Verify (py_compile · json · sizing)"]
+-        S5 --> S6["6. Pre-Push Rebase & PR — repeat until GREEN"]
+-    end
+-
+-    subgraph TRANSIT ["3. Ephemeral Transit & Landing (§4)"]
+-        S6 --> GATE{"Merge Gate<br>(Fail-Closed)"}
+-        GATE -- Green --> MERGE["Landing to main"]
+-        MERGE --> DISPATCH["Dispatch to Target Repository<br>(Monorepo / Target Satellite)"]
+-        DISPATCH --> PRUNE["Auto-Prune Transit Patch<br>(Zero-Residue #416)"]
+-    end
+-
+-    classDef hub fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
+-    classDef gate fill:#d93f0b,stroke:#fff,stroke-width:2px,color:#fff;
+-    class OPEN hub;
+-    class GATE gate;
+-```
+-
+----
+-
+-## 2. Work Submission Pathways (Zero-Admin ≤ 0.01%)
+-
+-| Pathway | Who & When | Mechanism |
+-|---|---|---|
+-| **1. MCP Control Tower (Primary)** | Claude, Cursor, Antigravity, Web bots | Zero-credential: tools provide context; proxy bot commits & opens PR. Endpoint: `https://supremeai-mcp-tower.onrender.com/mcp` |
+-| **2. Public Fork & PR** | External agents without credentials | Fork `supremeai-open`, push to fork, PR against `main`. Automated pipeline ports & verifies. |
+-| **3. Ephemeral JIT Lease** | CLI scripts / local automated runners | Maintainer-issued 1-hour lease tokens via the MCP Control Tower admin surface (no `credential_manager.py` exists in-repo); master keys never leave the vault (Rule U6). |
+-
+-*U10 Rule: The loop is the permission. Never ask "should I proceed" when self-checkable preconditions pass.*
+-
+-### MCP Tower tool-usage invariants (avoid argument/format errors)
+-- Tool names use **underscores** (`github_read_file`, `github_repo_tree`, `github_list_prs`, `github_workflow_runs`), never dots.
+-- Repo references accept **both** bare names (`supremeai-open`) and `owner/repo` (`Supremeai-bd/supremeai-open`) — both verified 2026-10-22 across `github_read_file`, `github_list_prs`, `github_workflow_runs`, `github_repo_tree` and `github_code_search`. If a tool answers "Invalid repo reference", retry with the `owner/repo` form.
+-- Code read/write tools are **role-gated + cloaked**: the core monorepo `supremeai` answers "Forbidden … (current role: 'agent')" to non-admin callers — only admin/supremeadmin may read it (verified 2026-10-22). Satellite repos including `supremeai-api` currently serve **reads** to `agent`-role callers; treat that as observed behavior, not a contract — handle "Forbidden"/"Repository not found" gracefully and never assume a cloak is absent.
+-- Code search is available via **`github_code_search`** (alias: `github_search_code`) across a specific repo (e.g. `repo: "supremeai-studio"`) or org-wide across `Supremeai-bd`.
+-- Test execution is not available via the tower (requires a separate runner) — by design.
+-- Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`; `content` required for `full_file` mode, default). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number). `bridge_work_queue` accepts optional `limit`/`label`.
+-
+-### 2.1 Zero-Fail PR Submission Protocol & Format Blueprint (এজেন্ট PR-এর অলঙ্ঘনীয় ফরম্যাট)
+-
+-> **⚠️ কেন বেশিরভাগ এজেন্ট PR ফেইল করে (The 6 Fatal Traps):**  
+-> ১. **Missing Reflection Evidence (Knowledge Sharing Guard #392):** PR বডিতে অবিকল `## Reflection Evidence (why + alternatives_rejected)` হেডার না থাকা বা `- **why:**` ও `- **alternatives_rejected:**`-তে ফাঁকা/প্লেসহোল্ডার টেক্সট রাখা।  
+-> ২. **Missing Claim / Issue Link (Claim Gate Guard #392):** কোনো ইস্যু ক্লেইম না করে অন্ধভাবে PR খোলা।  
+-> ৩. **Stale Base (Stale-Base Guard #161):** কাজ শুরুর সময় বা পুশের ঠিক আগে `origin/main` থেকে রিবেস না করা।  
+-> ৪. **Invalid Branch Name (Branch Naming Guard):** ভুল প্রিফিক্স ব্যবহার করা (স্যাটেলাইট কোডে ভুলেও `bridge/*` প্রিফিক্স দেওয়া যাবে না, দিলে `landing.yml` স্যাটেলাইটে ডিসপ্যাচ স্কিপ করবে)।  
+-> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** স্যাটেলাইট কোড রুট ডিরেক্টরিতে পুশ করা (যেমন: `supremeai-api` এর কোড সরাসরি রুটে `service/*`-এ রাখা যা অবশ্যই `gateway/service/*`-এ হতে হবে, কিংবা শেয়ার্ড সার্ভিস রুটে `packages/*`-এ রাখা যা অবশ্যই `studio/packages/*`-এ হতে হবে)। রুট `src/*`, `service/*`, `packages/*`-এ কোড পুশ করা কঠোরভাবে নিষিদ্ধ।
+-> ৬. **Blind Coder Syndrome:** বিদ্যমান কোড, ইমপোর্ট বা টাইপস না পড়ে মনগড়া কোড লিখে টাইপচেক/বিল্ড নষ্ট করা (P3 Non-Regression লঙ্ঘন)।
++## 🚪 The Single Door: Soul & Engine of SupremeAI Agents
+ 
+-#### 📋 The Canonical PR Body Blueprint (Copy-Paste Ready)
+-যেকোনো এজেন্ট PR খোলার সময় `gh pr create` বা টুলের মাধ্যমে নিচের ফরম্যাটটি অক্ষরে অক্ষরে মেনে চলতে হবে:
++All agents live, enter, and execute through exactly two unified pillars:
+ 
+-```markdown
+-### Summary
+-Brief 1-2 sentence description of what this PR changes and the exact problem it solves.
+-
+-### Linked Issue / Claim
+-Closes #<ISSUE_NUMBER>
+-<!-- atomic-claim: issue #<ISSUE_NUMBER> -->
+-
+-### Key Changes
+-- **\`<domain>/path/to/file.ext\`**: Detailed bullet point of the architectural or functional change.
+-
+-## Reflection Evidence (why + alternatives_rejected)
+-- **why:** Concrete technical rationale explaining WHY this specific approach was selected over others. (Must be real, non-empty, and free of angle-bracket placeholders).
+-- **alternatives_rejected:**
+-  - *<Alternative Approach 1>:* Rejected because <precise technical drawback or failure mode>.
+-  - *<Alternative Approach 2>:* Rejected because <complexity / regression / security issue>.
+-
+-### Dynamic Verification Evidence
+-- [x] Local Guard / Smoke Test Output: \`python scripts/ci/boundary_sanitization_guard.py --files <paths>\` -> PASS
+-- [x] Unit/Contract Tests passed with output proof: <test name and result summary>
+-- [x] Pre-Push Rebase: 0 commits behind origin/main
+-
+-### Rollback Path
+-- [x] \`git revert\`-safe (no cross-satellite private state dependency)
+-```
++1. **The Life & Senses — MCP Control Tower:**  
++   Zero-credential proxy hub providing context, tools, and actions (`https://supremeai-mcp-tower.onrender.com/mcp`).
++2. **The Soul & Engine — Continuous Autonomous Loop:**  
++   Run `python scripts/agents/continuous_agent_loop.py --loop`. The loop self-executes:  
++   `SCAN (master_health_check --full) → CLAIM (Golden 8 Anchor Hubs) → FIX → VERIFY → PR`.
+ 
+ ---
+ 
+-## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
+-
+-যেকোনো কোড বা অ্যাকশনের পূর্বে প্রতিটি রোলের ৩-সেকেন্ড প্রি-ফ্লাইট চেক:
+-- **All Agents (Dual-Rebase Mandate):** কাজ শুরুর আগে `origin/main` থেকে রিবেস করে ব্রাঞ্চ খোলা হয়েছে তো? এবং পুশ করার ঠিক আগে রিবেস ও ৩-টিয়ার ভেরিফিকেশন ছাড়া পুশ করা সম্পূর্ণ নিষিদ্ধ।
+-- **All Agents (Path-Anchoring & Mirror Invariant):** ফাইল পাথ কি সঠিক ডোমেইন মিররে (`studio/*`, `gateway/*`, `core/*` ইত্যাদি) এঙ্কর করা? স্যাটেলাইট কোড ভুলেও রিপোজিটরির রুট-লেভেলে (`src/*`) প্যাচ করা হচ্ছে না তো? সাবমিট বা পুশের পূর্বে লোকাল চেক বাধ্যতামূলক: `python scripts/ci/boundary_sanitization_guard.py --files <paths>` (পাস করলেই কেবল সাবমিট বৈধ)।
+-- **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
+-- **Coder:** ইস্যু কি লাইভ `main`-এ সক্রিয়? ইস্যুতে সাজেস্ট করার চেয়ে সহজ ১-লাইনের সেরা কোনো বিকল্প আছে কি?
+-- **Auditor:** নিয়মলঙ্ঘন কি বর্তমান `main`-এ প্রমাণযোগ্য? এটি চিরতরে বন্ধে স্বয়ংক্রিয় সিআই গেট কী দেওয়া হচ্ছে?
+-- **CI Fixer:** রুট-কজ ঠিক হচ্ছে নাকি স্কিপ হ্যাক? লিনাক্স/উইন্ডোজ/ম্যাকে পোর্টেবল এবং < 5s ফাস্ট-পাথ সুরক্ষিত তো? কোনো ইস্যু লিংক ছাড়া ফাঁকা PR খুলে ক্লেইম-গেটে আটকে পড়া সম্পূর্ণ নিষিদ্ধ; স্যাটেলাইট বা সিআই হটফিক্সে কেবল ২টি স্বীকৃত পথ: (ক) সংশ্লিষ্ট ক্লোজড ইস্যু বা #761 সাব-ইস্যু Reopen/Claim করে `<!-- atomic-claim -->` সহ PR লিংক করা, অথবা (খ) জরুরি হটফিক্সে PR-এ `guard-exempt` লেবেল দিয়ে Claim Gate বাইপাস করা।
+-- **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
+-- **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
+-- **All Agents (Non-Regression Mandate):** আমার কাজ কি বিদ্যমান কোনো ভালো কাজ, পারফরম্যান্স বা আর্কিটেকচার নষ্ট করছে? বিদ্যমান কোড অন্ধভাবে না মুছে কি এর ওপর সুরক্ষিতভাবে এক্সটেন্ড করা হয়েছে? (রুল P3)
+-- **Satellite-First (বাস্তব সুবিধা):** এই কাজ কি কোনো সক্রিয় স্যাটেলাইটে (studio, gateway, browser, vscode, core) পৌঁছাবে? শুধু ইন্টার্নাল টুলিং বা মনোরিপো-অনলি ফাইলে একা একা কাজ করা কঠোরভাবে নিষিদ্ধ।
+-- **Frontend / Studio (স্পিড ডকট্রিন):** পাবলিক ল্যান্ডিং পেজ (`/`) কি কোনো অথ-ব্লকার ছাড়াই < 1.0s লোড হচ্ছে? ভারী পেজগুলো (AIStudio, AdminShell, UserDashboard) কি `React.lazy()` দিয়ে কোড-স্প্লিট করা আছে? (রুল P9)
+-
+----
+-
+-## 4. Universal Boundaries & Core Philosophy
+-
+-### Agent Freedom vs Hard Boundaries
+-- **Agent decides:** Implementation inside declared scope, testing, smallest safe approach, evidence-backed optimizations.
+-- **Agent may NOT decide alone:** Major architecture changes, permission/boundary alterations, destructive ops, wide scope expansion (requires `ADMIN_DECISION` issue).
+-- **Hard Ordering:** **Start-of-Work Sync** (fetch/rebase `origin/main` before branch) · **No Claim → No Branch** (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane first) · **Pre-Push Rebase Guard** (0 behind `origin/main`) · **No Branch → No Push** (pre-push gate) · **Board Freshness Re-check (#4177)** before declaring done.
+-
+-### Core Philosophy (The Law of Minimal Elegance — সব এজেন্টের মূলমন্ত্র)
+-- **Zero Over-Engineering:** কোনো ওভার-ইঞ্জিনিয়ারিং নয় — যেকোনো সমাধানকে কতটুকু সহজ অথচ চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই প্রতিটি এজেন্টের প্রথম এবং প্রধান লক্ষ্য।
+-- **Token & Context Efficiency:** ৭২৮ লাইনের কথা যদি মারমেইড গ্রাফ ও পাঞ্চি চেকলিস্টে ৮৮ লাইনে (৭০-৮০% রিডাকশন) প্রকাশ করা যায় যার কার্যকারিতা ১% কমবে না বরং টোকেন ও ক্ল্যারিটি বাঁচাবে—সেটাই হলো সুপ্রিমএআই স্ট্যান্ডার্ড।
+-- **Simple + effective > clever + complex.**
+-- **Existing work before new work.** (80% reuse rule; ১৭ লাইনে ৫টি রিপোর সমন্বয় প্রমাণ করেছে মিনিমালিজমের শক্তি)
+-- **Single-domain PRs.** One PR touches one federation target domain (e.g. `studio/*` OR `gateway/*`), never both in the same change — keeps patches small, testable, and avoids partial-landing drift across satellites. Cross-domain work is split into separate PRs.
+-- **Extend, Never Regress (পূর্ববর্তী শ্রেষ্ঠত্ব অক্ষত রাখা):** নতুন ফিচার বা ফিক্স যোগ করতে গিয়ে পেছনের কোনো অর্জিত পারফরম্যান্স, নিরাপত্তা, বা ইউজার এক্সপেরিয়েন্স নষ্ট করা সম্পূর্ণ নিষিদ্ধ। পূর্বের চেয়ে প্রমাণযোগ্যভাবে উৎকৃষ্ট (strictly superior) না হলে কোনো প্রতিষ্ঠিত কোড বা আর্কিটেকচারে হাত দেওয়া যাবে না।
+-- **Satellite-First Delivery Mandate.** All autonomous agent work must target active product satellites (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`). Code touching exclusively internal tooling or monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) is strictly banned from autonomous PR creation without explicit admin authorization.
+-- **Issue validity before implementation.** (Never fix a ghost issue)
+-- **Evidence before action.** (Claims without proof are rejected)
+-- **System guards enforce boundaries; agents do not police themselves.**
+-
+----
++## 📜 The Guardrails (Must Follow vs Must Avoid)
+ 
+-## 5. Navigation Circle & Machine Enforcement
++Everything required to govern execution is codified in [`AGENT_RULES.md`](./AGENT_RULES.md) (Single Source of Operational Policy & Self-Interrogation):
+ 
+-```text
+-Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain → Verify Evidence → Landing
+-```
++- **MUST FOLLOW:**
++  - **U4 / SSOT:** Work strictly under the 8 Anchor Hubs (#749–#762) as Sub-Issues.
++  - **U5:** Dual-Rebase (rebase `origin/main` at work-start AND pre-push). Atomic claim before branch.
++  - **U13:** Domain Mirror Invariant (`studio/*` → Studio, `gateway/*` → API, `core/*` → Core).
++  - **U15 / P3:** Law of Superior Replacement & Value Triad. Discard broken legacy code/tests rather than hacking new code to appease past mistakes.
++- **MUST AVOID:**
++  - **NO Direct Push:** Never push directly to satellites or protected branches without PR gate.
++  - **NO Root Shadowing:** Never put satellite code in repo root (`src/*`, `service/*`, `packages/*`).
++  - **NO Ghost Fixes or Symptom Swallowing:** Never mask errors or fix issues not reproduced on live `main`.
+ 
+-- **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
+-- **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
+-- **Federation Anchor Hub SSOT:** `python scripts/ci/federation_anchors.py --self-test` — strictly 8 active persistent root hubs (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive, #761 Monorepo CI, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode); all tasks/failures are Sub-Issues.
+-- **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — prevents root-level shadowing and unapproved surface leaks (#107, #508).
+-- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py --full` — one-sweep: infrastructure + 9 CI guards + 6 satellite GitHub CI checks; emits machine-readable ACTION PLAN for agents (Zero-Maintenance doctrine).
+-- **Agent Loop SSOT:** `python scripts/agents/continuous_agent_loop.py --loop` — SCAN→FIX→VERIFY; self-feeds from ACTION PLAN when board is empty; stops only when system is fully green. `--scan-only` to preview without writes.
+-- **Frontend Performance SSOT:** `python scripts/ci/frontend_performance_guard.py --self-test` — code-splitting & zero-blocking landing doctrine (FCP < 1.0s).
+-- **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
++**Beyond these guardrails, you have absolute freedom on HOW to solve your task. Never ask for permission.**
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 192d0a93..c48af094 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -1,145 +1,64 @@
+-# SupremeAI — AGENT_RULES.md
++# SupremeAI — AGENT_RULES.md (Single Source of Truth)
+ 
+-> **Single Source of Agent Operational Policy**  
+-> **Universal Foundation:** All agents follow the continuous loop and Universal Rules (U1–U10).  
+-> **Role Specialization:** Branching into role-specific policies, work areas, and constraints.  
+-> **Operator Handbook:** [`docs/ZERO_ADMIN_GUIDE.md`](./docs/ZERO_ADMIN_GUIDE.md) · **Admin Work Budget:** ≤ 0.01%
++> **Zero-Admin Target:** Work budget ≤ 0.01% · **Continuous Loop:** `python scripts/agents/continuous_agent_loop.py --loop`  
++> **Rule Contract:** The loop grants permission (U10). Strict adherence to 4 Invariant Pillars below.
+ 
+ ---
+ 
+-## 1. Visual Operational Architecture (Continuous Loop → Role Specialization)
++## 1. The 4 Universal Invariant Pillars
+ 
+-```mermaid
+-flowchart TD
+-    subgraph COMMON ["1. Universal Continuous Loop (All Agents — U1 to U10)"]
+-        U_LOOP["Continuous Loop Engine<br>(No Permission Asking · U10)"]
+-        U_RULES["Core Invariants:<br>U1 Scope · U2 Truth & Evidence · U3 Live Validity<br>U4 Zero-Duplicate PRs · U5 Freshness (#4177) · U6 Hard Gates<br>U7 3-Tier Verification · U8 Clean Ledger · U9 Sweep"]
+-        U_LOOP --- U_RULES
+-    end
+-
+-    COMMON --> ROLES{"Agent Role Selection<br>(Assigned Task Contract)"}
+-
+-    subgraph BRANCHES ["2. Role-Specific Policies & Work Areas (§3)"]
+-        ROLES --> R_PLANNER["📐 Planner / Architect<br><b>Work Area:</b> Roadmaps, Schemas, Contracts<br><b>Rule:</b> 80% Reuse · No Premature Scaling"]
+-        ROLES --> R_CODER["💻 Coder / Contributor<br><b>Work Area:</b> Target Repo Code & Tests<br><b>Rule:</b> Live Validity · Optimal Alternative · Scope Boundary"]
+-        ROLES --> R_AUDITOR["🔍 Auditor / Sentinel<br><b>Work Area:</b> Rule Enforcement & Drift Audits<br><b>Rule:</b> Live Proof · Automated Prevention Gate"]
+-        ROLES --> R_CIFIX["🛠️ CI Fixer<br><b>Work Area:</b> Workflows & CI Scripts<br><b>Rule:</b> Root Cause vs Hack · Cross-Platform · Fast Path"]
+-        ROLES --> R_HUMAN["👁️ Human Eye (Admin)<br><b>Work Area:</b> Admin Decisions & Direction<br><b>Rule:</b> ≤ 0.01% Budget · Permanent System Learning"]
+-        ROLES --> R_THIRD["🌐 3rd Party / MCP Platform<br><b>Work Area:</b> MCP Tools & Gateway APIs<br><b>Rule:</b> Zero-Credential · Cold-Start Resilience"]
+-    end
+-
+-    classDef common fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
+-    classDef roles fill:#d93f0b,stroke:#fff,stroke-width:2px,color:#fff;
+-    class U_LOOP,U_RULES common;
+-    class ROLES roles;
+-```
+-
+----
+-
+-## 2. Universal Agent Contract (Common Rules U1 – U10)
+-
+-Every agent, regardless of role, model, or provider, strictly adheres to these 10 universal rules:
+-
+-| Rule | Name | Core Mandate & Machine Contract |
++| Pillar | Invariants & Rules | Hard Machine Contract |
+ |---|---|---|
+-| **U1** | **Scope** | Work strictly inside assigned issue touching files. Zero unrelated refactoring or scope creep. |
+-| **U2** | **Truth & Evidence** | No claims without proof. `UNKNOWN` / `NOT_VERIFIED` is never `PASS`. Evidence precedes action. |
+-| **U3** | **Live Validity** | An issue is not valid just because it exists. Verify it is reproducible on live `main` before coding. |
+-| **U4** | **Zero-Duplicate PRs & Federation Anchor Hub SSOT** | Mandatory preflight `gh pr list`. The public board (`supremeai-open`) maintains strictly **8 active persistent parent Anchor Hubs** (#749 Studio, #750 API, #751 Core, #754 VSCode, #756 Browser, #760 Bridge/Archive Desk, #761 CI Incident Hub, #762 Open Embassy; 6 transit hubs consolidated into API/VSCode). All tasks, pipeline failures, and bridge sync orders attach strictly as **Sub-Issues** inside their respective Anchor Hub. Zero loose root issues permitted. One issue = at most one PR across the federation. |
+-| **U5** | **Freshness & Dual-Rebase Mandate** | Rebase onto latest `origin/main` at work start (pre-branch) AND before push (pre-push). Atomic claim before branch (zero-credential `work_claim` tool or `<!-- atomic-claim -->` comment plane). **Board-freshness re-check (#4177):** re-poll board before declaring done. Never work or push with a stale base. |
+-| **U6** | **Safety & Permissions** | Hard gates outrank agent preference. Master keys never leave vault; no direct push to protected branches. |
+-| **U7** | **3-Tier Verification** | Task is complete only when Reflection → Boot Smoke → Tests pass with verifiable output. |
+-| **U8** | **Handoff & Decision Ledger** | Finish with JSON decision ledger (`why`, `alternatives_rejected`, `evidence`). Squash commit must carry `Closes #N`. Rerun loop immediately (no sleep). |
+-| **U9** | **Pattern Sweep** | When fixing a defect, sweep for sibling occurrences in the file family. Address or file linked follow-up. |
+-| **U10** | **Loop-Granted Authority** | The loop is the permission. Never ask "should I start / shall I proceed". Status reports state facts, never permission questions. |
+-| **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
+-| **U12** | **Satellite-First & Tangible Product Value** | All autonomous agent tasks MUST deliver tangible user value to active product satellites (`studio/*`, `gateway/*` / `api/*`, `browser/*`, `vscode/*`, `core/*`). Autonomous PRs touching exclusively internal transit or tooling surfaces (`infrastructure/mcp-control-plane/*`, `scripts/ci/*`) that only land in the private monorepo are strictly banned without explicit human authorization. End the cycle of zero-value internal busywork. |
+-| **U13** | **Domain Mirror Path Anchoring** | Code targeting product satellites must strictly touch its approved mirror folder (`studio/*` → `supremeai-studio`, `gateway/*` / `api/*` → `supremeai-api`, `vscode/*`, `browser/*`, `core/*`). Never submit root-level shadow paths (e.g. `src/*`). Must pass `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before patch submission or PR creation. |
+-| **U14** | **Zero-Fail PR Submission Contract** | PRs opened by agents must comply strictly with the canonical machine format (`AGENTS.md` §2.1). (1) Exact header `## Reflection Evidence (why + alternatives_rejected)` with real, non-placeholder `- **why:**` and `- **alternatives_rejected:**` entries (`Knowledge Sharing Guard #392`). (2) Pre-claimed issue link via `Closes #N`, `Fixes #N`, or `<!-- atomic-claim: issue #N -->` (`Claim Gate Guard #392`). (3) Single-domain diff. (4) Rebased 0 behind `origin/main`. Creating malformed, unlinked, or unreflective PRs is a direct constitutional violation. |
++| **1. Ground & Space (Scope & Domain)** | **U1 Scope · U11 Mirror Parity · U12 Satellite-First · U13 Domain Mirror** | Work strictly inside assigned issue. Zero root-level shadowing (`src/*`, `service/*`, `packages/*` are banned). Satellite code lives strictly in `studio/*`, `gateway/*`, `core/*`, `browser/*`, `vscode/*`. Must pass `boundary_sanitization_guard.py`. Contract surfaces (`api-schemas/`, `examples/gateway_client.py`) require byte-level parity. |
++| **2. Board SSOT & Freshness** | **U2 Truth & Evidence · U3 Live Validity · U4 8 Anchor Hubs · U5 Dual-Rebase** | Rebase `origin/main` at work-start AND pre-push (0 behind). Strictly 8 root Anchor Hubs (#749–#762); all work attaches as Sub-Issues. No claim (`work_claim` tool or `<!-- atomic-claim -->`) → No branch. Re-check board freshness (#4177) before declaring done. Verify issues on live `main` before modifying files. |
++| **3. Chief Architect Judgment** | **U15 First-Principles · P0 Minimal Elegance · P1 Simple · P2 Complexity Earning · P3 Superior Replacement** | **Value Triad:** Must tangibly benefit Machine (autonomy), Admin (≤0.01%), or User. **Open Grid:** Modular flat metaphor; zero rigid walls. **Superior Replacement:** Discard broken legacy code/tests rather than hacking new code to appease past errors. **80% Reuse:** 1-line truth over over-engineering. |
++| **4. Zero-Fail Landing** | **U6 Hard Gates · U7 Verification · U8 Decision Ledger · U9 Sweep · U14 PR Contract · P9 Performance** | 3-Tier Verify (Reflection → Smoke → Tests). Public funnel FCP < 1.0s (no auth blockers on `/`; heavy modules code-split via `React.lazy`). Ban symptom swallowing/ghost fixes (P6). PRs must strictly follow the canonical blueprint below. |
+ 
+ ---
+ 
+-## 3. Role Policy Contracts (Work Areas & Specific Rules)
+-
+-### 3.1 📐 Planner / Architect Agent
+-- **Work Area:** Roadmaps, API contracts (`api-schemas/`), governance policies, task domain slicing (#522).
+-- **Core Policy:**
+-  1. **80% Reuse Rule (P1/P3):** Inspect existing federation code first. Reusing existing abstractions outranks inventing new modules.
+-  2. **Complexity Justification (P2):** Complexity must earn its existence. Reject premature scaling and speculative micro-services.
+-  3. **Output Contract:** `Observation → Evidence → Relevance → Smallest useful improvement → Recommendation`.
++## 2. Role Specialization Contracts
++- **📐 Planner / Architect:** Roadmaps, API contracts (`api-schemas/`), governance. 80% reuse, ban speculative micro-services and premature scaling (P1/P2).
++- **💻 Coder / Contributor:** Target repo implementations & tests (≤30 files, ≤200 KB). Solve root cause (P6), eliminate defect classes, verify schema via `supabase.schema_inspect`.
++- **🛠️ CI Fixer:** Pipelines (`.github/workflows/`) & CI scripts (`scripts/ci/`). Ban `--skip-tests` or `|| true`. Windows/Linux/macOS cross-platform invariant. Link to #761 sub-issues or use `guard-exempt` (Rule #392).
++- **🔍 Auditor / Sentinel:** Live proof over stale cache. Propose automated CI gates to prevent recurrence permanently. Single ticket updates over duplicate spam.
++- **👁️ Human Eye (Admin):** Zero-Admin Target (≤0.01% work budget). Intervene only for hard vault/security boundaries; codify permanent rules.
++- **🌐 3rd Party / MCP Platform:** Zero-credential tools via MCP Control Tower (`supremeai-control-tower`). Cold-start resilience for sleeping backend instances.
+ 
+-### 3.2 💻 Coder / Contributor Agent
+-- **Work Area:** Target repository implementations, unit tests, bug fixes, feature slices (≤ 30 files, ≤ 200 KB).
+-- **Core Policy:**
+-  1. **Live Preflight & Dual-Rebase:** Synchronize with latest `origin/main` (rebase before branch). Reproduce issue on current `main` before modifying files. Rebase and re-verify before push. Never fix ghost issues.
+-  2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
+-  3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
+-  4. **Domain Mirror Invariant (No Root Poisoning):**
+-     Code destined for satellites must NEVER be placed at the root level (`service/*`, `packages/*`, `src/*`, etc.).
+-     - `supremeai-api` targets MUST live inside `gateway/` (e.g. `gateway/service/...`, never root `service/`).
+-     - `supremeai-studio` packages MUST live inside `studio/packages/` (e.g. `studio/packages/shared-services/...`, never root `packages/`).
+-     - `supremeai-browser` targets MUST live inside `browser/`.
+-     - `supremeai-vscode` targets MUST live inside `vscode/`.
+-     - `supremeai-core` targets MUST live inside `core/`.
+-     Any PR violating this will immediately fail `Boundary Sanitization Guard (#107)`.
+-  5. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
+-  6. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
++---
+ 
+-### 3.3 🔍 Auditor / Rules-Breaker Agent
+-- **Work Area:** Governance compliance, boundary audits, secret scan triage, dead code & workflow consolidation.
+-- **Core Policy:**
+-  1. **Live Proof over Stale Cache:** Finding must be reproducible on current `main`, not an artifact of stale cache.
+-  2. **Automated Recurrence Prevention:** Every reported violation MUST propose an automated CI check or gate preventing recurrence.
+-  3. **Deduplication Check:** Search `gh issue list` across all 14 repos; update existing ticket instead of duplicate spam.
++## 3. Canonical PR Blueprint (U14 SSOT)
++Every PR opened by agents must strictly follow this exact body structure:
++```markdown
++### Summary
++Brief 1-2 sentence description of what this PR changes and the exact problem it solves.
+ 
+-### 3.4 🛠️ CI Fixer Agent
+-- **Work Area:** `.github/workflows/`, CI scripts (`scripts/ci/`), runner matrices, dependency version pinning.
+-- **Core Policy:**
+-  1. **Root Cause over Workaround:** Ban hacking `--skip-tests`, `--ignore-scripts`, or `|| true` to force green.
+-  2. **Cross-Platform Invariant:** Test scripts must run deterministically on Linux, Windows, and macOS without unportable CLI dependencies.
+-  3. **Fast-Path Quota Protection:** Preserve < 5s fast paths for docs/metadata; protect the 2,000 min/mo free runner quota.
+-  4. **Claim-Gate Invariant for Hotfixes & Satellite Repairs (Rule #392):**
+-     Never open an unlinked PR without an active claim — it will immediately fail `Claim Gate Guard (#392)`. All CI repairs and satellite hotfixes MUST follow one of two machine-approved pathways:
+-     - **Path A (Reopen & Claim Related Issue / #761 Sub-Issue):** Reopen the related closed regression issue (or claim a child task under #761 CI Anchor Hub) with `status:claimed` or an `<!-- atomic-claim -->` comment, and reference `Fixes #<num>` in the PR body/title.
+-     - **Path B (Admin Emergency Escape Hatch — `guard-exempt`):** For urgent broken-satellite / blocking pipeline hotfixes, apply the `guard-exempt` label to the PR (explicitly supported in `pipeline.yml` line 188: `'guard-exempt' label present — guard skipped`).
+-     Opening a blind, unlinked PR and abandoning it upon claim-gate rejection is strictly prohibited.
++### Linked Issue / Claim
++Closes #<ISSUE_NUMBER>
++<!-- atomic-claim: issue #<ISSUE_NUMBER> -->
+ 
+-### 3.5 👁️ Human Eye (Admin & Supervisory Oversight)
+-- **Work Area:** Architectural decisions (`ADMIN_DECISION`), strategic vision, security vault authorizations.
+-- **Core Policy:**
+-  1. **Zero-Admin Target (≤ 0.01%):** Intervene only for hard security/vault boundaries. Prefer clarifying prompts so agents solve it autonomously.
+-  2. **Permanent System Learning:** Never apply a one-time manual fix without adding a rule/template teaching the system permanently.
++### Key Changes
++- `<domain>/path/to/file.ext`: Concrete architectural or functional change.
+ 
+-### 3.6 🌐 3rd Party Platforms & Bridge Integrators
+-- **Work Area:** MCP Control Tower (`supremeai-control-tower`), Gateway APIs, external web bots (Claude, ChatGPT).
+-- **Core Policy:**
+-  1. **Zero-Credential Boundary (§2.1):** External bots interact strictly via tokenless MCP tools or public PRs. Master secrets isolated.
+-  2. **Cold-Start Resilience:** Implement retries and circuit breakers for sleeping backend instances (e.g. Render spin-down).
+-  3. **Stable Gateway Schema:** Strict conformance to `api-schemas/gateway.openapi.yaml`.
++## Reflection Evidence (why + alternatives_rejected)
++- **why:** Technical rationale explaining why this approach was selected.
++- **alternatives_rejected:**
++  - *Alternative Approach 1:* Rejected because <technical drawback>.
++  - *Alternative Approach 2:* Rejected because <complexity/regression issue>.
+ 
+----
++### Dynamic Verification Evidence
++- [x] Local Guard / Smoke Test Output: `python scripts/ci/boundary_sanitization_guard.py --files <paths>` -> PASS
++- [x] Unit/Contract Tests passed with output proof: <test name and result summary>
++- [x] Pre-Push Rebase: 0 commits behind origin/main
+ 
+-## 4. Non-Negotiable Engineering Policies (P0 – P7)
+-
+-- **P0 (Law of Minimal Elegance — Zero Over-Engineering):** সব এজেন্টের মূলমন্ত্র: কোনো ওভার-ইঞ্জিনিয়ারিং নয়। যেকোনো সমাধানকে কতটুকু সহজ, দৃষ্টিনন্দন ও চূড়ান্ত শক্তিশালী (Simple yet Powerful) করা যায়, সেটাই একমাত্র লক্ষ্য। ৭০-৮০% সাইজ কমিয়ে ১০০% কার্যকারিতা বজায় রাখা এবং কোটি কোটি টোকেন বাঁচানোই সুপ্রিমএআই-এর আর্কিটেকচারাল মাপকাঠি।
+-- **P1 (Simple + Effective):** Prefer smallest solution that reliably solves the problem.
+-- **P2 (Complexity Must Earn Existence):** Ban speculative abstractions, parallel helpers, and decorative modularity.
+-- **P3 (Universal Non-Regression & Preservation Law — আগের ভালো কাজ ধ্বংস করা নিষিদ্ধ):** নতুন কাজ করতে গিয়ে বিদ্যমান কোনো কার্যকরী আর্কিটেকচার, পারফরম্যান্স বেঞ্চমার্ক, রাউটিং/এন্ডপয়েন্ট, বা নিরাপত্তা কোনো অবস্থাতেই বিনষ্ট বা অবনমিত (regress) করা যাবে না। কোড পরিবর্তন করার আগে তার পূর্ববর্তী উদ্দেশ্য (intent) ১০০% উপলব্ধি করতে হবে। কোনো ফাইল বা মডিউল অন্ধভাবে সম্পূর্ণ মুছে/রিপ্লেস করা নিষিদ্ধ—সর্বদা বিদ্যমান ভিত্তির ওপর 'Extend' করতে হবে। প্রতিষ্ঠিত কোনো কোড পরিবর্তন করতে হলে প্রমাণ দিতে হবে যে নতুন রূপটি পূর্বের চেয়ে প্রমাণযোগ্যভাবে অধিকতর উৎকৃষ্ট (strictly superior in speed, stability, or simplicity) এবং বিদ্যমান সব কার্যকারিতা অটুট রেখেছে। ফ্রন্টএন্ড, ব্যাকএন্ড, এপিআই, সিআই—পুরো সিস্টেমের প্রতিটি ফাইলের জন্য এই নিয়ম সমান ও অলঙ্ঘনীয়।
+-- **P4 (Workflow Consolidation):** Maintain consolidated pipelines; do not split workflows for theoretical purity.
+-- **P5 (Incremental Improvement):** Target is unlimited; first step is atomic and minimal.
+-- **P6 (Root Cause over Symptom):** Eliminate the entire defect class via machine-enforced guards.
+-- **P7 (Domain Anti-Thrashing #522):** Frame tasks as cohesive domain slices (≤ 30 files, ≤ 200 KB) for ONE primary repo.
+-- **P8 (Satellite-First Delivery Mandate):** Code changes must dispatch to a live product satellite (`studio`, `api`, `browser`, `vscode`, `core`). Tasks touching solely monorepo-only transit surfaces (`infrastructure/*`, `scripts/*`) must not be autonomously undertaken without explicit administrative direction.
+-- **P9 (Frontend Performance & Zero-Blocking Landing Doctrine):** Public funnel (`/`, `/about`, `/chat`, `/pricing`, `/docs`) must achieve First Contentful Paint (FCP) < 1.0s. Never wrap public root `/` in `GuestRoute` or any auth-checking blocker (public visitors must see the landing page immediately without an "Authenticating..." spinner). Heavy workspace engines (Monaco/Sandpack in `AIStudio`), admin shells (`AdminShell`), and customer dashboards (`UserDashboard`) must ALWAYS be code-split via `React.lazy()` with `<Suspense>`. Monolithic/eager imports of heavy pages in `App.tsx` are strictly prohibited (enforced via `scripts/ci/frontend_performance_guard.py`).
++### Rollback Path
++- [x] `git revert`-safe (no cross-satellite private state dependency)
++```
+ 
+ ---
+ 
+-## 5. Machine Enforcement
+-
+-- **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
+-- **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
+-- **Federation Anchor Hub SSOT Guard:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 8 active primary root anchor hubs
+-- **Boundary & Surface Path SSOT:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — approved mirror surfaces & proprietary isolation (#107, #508)
+-- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py --full` — one-sweep: infrastructure + 9 CI guards + 6 satellite GitHub CI checks; emits ACTION PLAN. `--ci-sweep` for CI-only. `--json` for machine consumption.
+-- **Agent Loop SSOT:** `python scripts/agents/continuous_agent_loop.py --loop` — SCAN→FIX→VERIFY until green. When board is empty, dynamically creates issues from ACTION PLAN (zero-duplicate via title fingerprint). `--scan-only` to preview; `--dry-run` to simulate.
+-- **Frontend Performance Guard:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)
++## 4. Machine Enforcement
++- **Master Health & Preflight SSOT:** `python scripts/ops/master_health_check.py --full`
++- **Federation Anchors:** `python scripts/ci/federation_anchors.py --self-test` (and `--verify-live`) — strictly 8 persistent root hubs (#749–#762)
++- **Boundary Sanitization:** `python scripts/ci/boundary_sanitization_guard.py --self-test` (and `--files <paths>`) — approved mirror surfaces & proprietary isolation (#107, #508)
++- **Frontend Performance:** `python scripts/ci/frontend_performance_guard.py --self-test` (and `--check studio/src/App.tsx`)
++- **Agent Loop SSOT:** `python scripts/agents/continuous_agent_loop.py --loop` — autonomous continuous execution
+diff --git a/infrastructure/mcp-control-plane/src/adapters/supabase/index.ts b/infrastructure/mcp-control-plane/src/adapters/supabase/index.ts
+index 9f97d73e..fe82efe0 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/supabase/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/supabase/index.ts
+@@ -52,6 +52,33 @@ export async function getAuthUsers(accountId: string): Promise<unknown> {
+   }
+ }
+ 
++export async function getDatabaseSchema(accountId: string, table?: string): Promise<unknown> {
++  const { url, apiKey } = getSupabaseConfig(accountId);
++  const res = await httpRequest(`${url}/rest/v1/`, {
++    headers: supabaseHeaders(apiKey),
++  });
++  if (!res.ok) {
++    throw new Error(`Failed to fetch schema: ${JSON.stringify(res.data)}`);
++  }
++  const spec = (res.data ?? {}) as any;
++  const definitions = spec.definitions ?? spec.components?.schemas ?? {};
++  const tableNames = Object.keys(definitions).filter((k) => !k.startsWith("_"));
++  if (!table) {
++    return { tables: tableNames };
++  }
++  const def = definitions[table];
++  if (!def) {
++    throw new Error(`Table not found in schema: ${table}`);
++  }
++  const props = def.properties ?? {};
++  const columns = Object.keys(props).map((name) => ({
++    name,
++    type: props[name]?.type ?? "unknown",
++    format: props[name]?.format,
++    nullable: !(Array.isArray(def.required) && def.required.includes(name)),
++  }));
++  return { table, columns };
++}
+ export async function readTable(
+   accountId: string,
+   table: string,
+diff --git a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+index a4348962..87d06e37 100644
+--- a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++++ b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+@@ -56,6 +56,9 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
+   { name: "bridge_read_feedback", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_renew", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_release", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
++  // Safe database schema discovery (anti-blindness)
++  { name: "supabase.schema_inspect", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
++  { name: "db.schema_inspect", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+ ];
+ 
+ export function canAccessCapability(context: McpAccessContext, capability: McpCapabilityMetadata): boolean {
+@@ -146,6 +149,18 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+       approvalRequired: false,
+     };
+   }
++  // Safe database schema discovery (anti-blindness)
++  if (name === "supabase_schema_inspect" || name === "db_schema_inspect") {
++    return {
++      name,
++      kind: "tool",
++      access: "safe",
++      requiredScope: undefined,
++      riskLevel: "R0",
++      dataClassification: "public",
++      approvalRequired: false,
++    };
++  }
+   // #123 / S0.4: Bridge onboarding & unified tools — zero-credential front door for external agents.
+   if (
+     name === "bridge_work" ||
+@@ -217,6 +232,18 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+       approvalRequired: false,
+     };
+   }
++  // supabase schema inspect (read-only, public-safe)
++  if (name === "supabase_schema_inspect" || name === "db_schema_inspect") {
++    return {
++      name,
++      kind: "tool",
++      access: "safe",
++      requiredScope: undefined,
++      riskLevel: "R0",
++      dataClassification: "public",
++      approvalRequired: false,
++    };
++  }
+   return {
+     name,
+     kind: "tool",
+diff --git a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+index 15ea0f58..eed2d42e 100644
+--- a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
++++ b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+@@ -95,6 +95,8 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   // supabase (read)
+   "supabase_read_table",
+   "supabase_health",
++  "supabase_schema_inspect",
++  "db_schema_inspect",
+   // redis (read)
+   "redis_ping",
+   "redis_read_key",
+diff --git a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+index 44586552..5ebed38f 100644
+--- a/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
+@@ -1,6 +1,6 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
+-import { getHealth, getAuthUsers, readTable } from "../adapters/supabase/index.js";
++import { getHealth, getAuthUsers, readTable, getDatabaseSchema } from "../adapters/supabase/index.js";
+ 
+ 
+ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+@@ -70,5 +70,31 @@ export async function registerSupabaseTools(server: McpServer): Promise<void> {
+       }
+     }
+   );
+-}
++  // supabase.schema_inspect (safe/public) - read-only schema discovery
++  const registerSchemaInspect = (toolName: string) => {
++    server.tool(
++      toolName,
++      "Inspect Supabase database schema (tables and columns) read-only.",
++      {
++        accountId: z.string().describe("The account ID (e.g. supabase-primary)"),
++        table: z.string().optional().describe("Optional table name; omit to list all tables"),
++      },
++      async ({ accountId, table }) => {
++        try {
++          const data = await getDatabaseSchema(accountId, table);
++          return {
++            content: [{ type: "text", text: JSON.stringify(data, null, 2) }],
++          };
++        } catch (err) {
++          return {
++            isError: true,
++            content: [{ type: "text", text: `Error: ${(err as Error).message}` }],
++          };
++        }
++      }
++    );
++  };
+ 
++  registerSchemaInspect("supabase.schema_inspect");
++  registerSchemaInspect("db.schema_inspect");
++}
+\ No newline at end of file

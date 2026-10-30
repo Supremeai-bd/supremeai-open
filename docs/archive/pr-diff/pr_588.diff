@@ -1,0 +1,563 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 7ce4b249..63a66da6 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:bridge-patch-modes && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:bridge-freshness",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -35,7 +35,7 @@
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:bridge-patch-modes && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:bridge-patch-modes && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && npm run --silent test:bridge-freshness && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+     "test:task-engine": "tsx scripts/test-runner.ts test_task_engine.ts",
+@@ -48,6 +48,7 @@
+     "test:infisical": "tsx scripts/test-runner.ts test_infisical.ts",
+     "test:remediation": "tsx scripts/test-runner.ts test_remediation.ts",
+     "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
++    "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
+   },
+   "keywords": [
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 309fdbe7..ab0dc12d 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -1,10 +1,179 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
++import * as fs from "node:fs";
++import * as path from "node:path";
+ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+ 
++export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
++export const REQUIRED_REFLECTION_FIELDS = ["why", "alternatives_rejected"] as const;
++export const STALE_TEMPLATE_ERROR_PREFIX = "STALE_TEMPLATE_ERROR";
++
++export function extractRequiredReflectionFields(templateContent: string): string[] {
++  if (!templateContent.includes("## Reflection Evidence")) {
++    return [];
++  }
++  const fields: string[] = [];
++  if (/-\s+\*\*why:\*\*/.test(templateContent)) {
++    fields.push("why");
++  }
++  if (/-\s+\*\*alternatives_rejected:\*\*/.test(templateContent)) {
++    fields.push("alternatives_rejected");
++  }
++  return fields;
++}
++
++export function readPullRequestTemplate(reader?: (path: string) => string | null): {
++  source: "live" | "fallback";
++  templatePath: string | null;
++  requiredFields: readonly string[];
++  ruleP7Sizing: { maxFiles: number; maxDiffBytes: number };
++} {
++  const defaultPath = "../../.github/PULL_REQUEST_TEMPLATE.md";
++  let content: string | null = null;
++  if (reader) {
++    content = reader(defaultPath);
++  } else {
++    try {
++      const resolved = path.resolve(process.cwd(), defaultPath);
++      if (fs.existsSync(resolved)) {
++        content = fs.readFileSync(resolved, "utf-8");
++      }
++    } catch {
++      content = null;
++    }
++  }
++
++  const ruleP7Sizing = { maxFiles: 30, maxDiffBytes: 200 * 1024 };
++
++  if (content !== null) {
++    const extracted = extractRequiredReflectionFields(content);
++    return {
++      source: "live",
++      templatePath: defaultPath,
++      requiredFields: extracted.length > 0 ? extracted : ["why", "alternatives_rejected"],
++      ruleP7Sizing,
++    };
++  }
++
++  return {
++    source: "fallback",
++    templatePath: null,
++    requiredFields: ["why", "alternatives_rejected"],
++    ruleP7Sizing,
++  };
++}
++
++export function validateReflectionEvidence(body: string): string[] {
++  const missing: string[] = [];
++  const h2Regex = /^## Reflection Evidence/m;
++  if (!h2Regex.test(body)) {
++    return ["why", "alternatives_rejected"];
++  }
++
++  // Check why
++  const whyMatch = body.match(/^[ \t]*-[ \t]+\*\*why:\*\*[ \t]*(.*)$/m);
++  if (!whyMatch || !whyMatch[1] || whyMatch[1].trim() === "" || /^<.*>$/.test(whyMatch[1].trim())) {
++    missing.push("why");
++  }
++
++  // Check alternatives_rejected
++  const altIndex = body.search(h2Regex);
++  const altSection = body.slice(altIndex);
++  const altHeaderMatch = altSection.match(/^[ \t]*-[ \t]+\*\*alternatives_rejected:\*\*[ \t]*(.*)$/m);
++
++  let hasValidAlt = false;
++  if (altHeaderMatch && altHeaderMatch[1] && altHeaderMatch[1].trim() !== "" && !/^<.*>$/.test(altHeaderMatch[1].trim())) {
++    hasValidAlt = true;
++  } else if (altHeaderMatch) {
++    const afterAlt = altSection.slice(altSection.indexOf(altHeaderMatch[0]) + altHeaderMatch[0].length);
++    const lines = afterAlt.split("\n");
++    for (const line of lines) {
++      if (/^[ \t]*##/.test(line)) break;
++      if (/^[ \t]*-[ \t]+\*\*/.test(line)) break;
++      const bulletMatch = line.match(/^[ \t]+-[ \t]+(.+)$/);
++      if (bulletMatch && bulletMatch[1].trim() !== "" && !/^<.*>$/.test(bulletMatch[1].trim())) {
++        hasValidAlt = true;
++        break;
++      }
++    }
++  }
++
++  if (!hasValidAlt) {
++    missing.push("alternatives_rejected");
++  }
++
++  return missing;
++}
++
++export function reflectionFixSnippet(): string {
++  return [
++    REFLECTION_EVIDENCE_SECTION,
++    "- **why:** <rationale explaining why this change was made>",
++    "- **alternatives_rejected:**",
++    "  - <alternative 1 and why it was rejected>",
++  ].join("\n");
++}
++
++export interface BridgePrBodyOptions {
++  taskId: string;
++  summary: string;
++  issueNumber?: number;
++  scopePaths: string[];
++  testsEvidence: string;
++  reflectionWhy?: string;
++  alternativesRejected?: string;
++  rollbackPath?: string;
++}
++
++export function buildBridgePrBody(opts: BridgePrBodyOptions): string {
++  const lines: string[] = [
++    "## Summary",
++    `Autonomous bridge contribution for ${opts.taskId}: ${opts.summary}`,
++    "",
++  ];
++
++  if (opts.issueNumber) {
++    lines.push(
++      "## Linked Work Order",
++      `Closes #${opts.issueNumber}`,
++      `Refs #${opts.issueNumber}`,
++      ""
++    );
++  }
++
++  lines.push(
++    REFLECTION_EVIDENCE_SECTION,
++    `- **why:** ${opts.reflectionWhy || ""}`,
++    "- **alternatives_rejected:**"
++  );
++
++  const rawAlts = (opts.alternativesRejected || "").trim();
++  if (rawAlts) {
++    const altLines = rawAlts.split("\n").map((l) => l.trim()).filter(Boolean);
++    for (const altLine of altLines) {
++      const clean = altLine.replace(/^-\s*/, "");
++      lines.push(`  - ${clean}`);
++    }
++  }
++
++  lines.push(
++    "",
++    "## Scope Paths",
++    ...opts.scopePaths.map((p) => `- \`${p}\``),
++    "",
++    "## Test Evidence (3-tier contract)",
++    opts.testsEvidence,
++    "",
++    "## Rollback Path",
++    opts.rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)"
++  );
++
++  return lines.join("\n");
++}
++
+ /**
+  * Bridge onboarding tools — the zero-credential front door for external agents.
+  *
+@@ -116,6 +285,13 @@ export function bridgeGuide() {
+       externalAgentsNeverWriteToMain: true,
+       landingAuthority: "constitutional gates only — the bridge never merges",
+     },
++    constitutionFreshness: {
++      prTemplateSource: readPullRequestTemplate().source,
++      mandatoryReflectionFields: [...REQUIRED_REFLECTION_FIELDS],
++      requiredReflectionSection: REFLECTION_EVIDENCE_SECTION,
++      ruleP7DomainSizing: "Cohesive task sizing ceiling: 30 files / 200 KB diff (AGENT_RULES.md P7)",
++      preValidation: "Submissions missing reflection evidence fail pre-push with STALE_TEMPLATE_ERROR",
++    },
+     escalation: {
+       elevatedAccess:
+         "This anonymous surface is read-only by design. For task-queue claim/heartbeat/complete " +
+@@ -335,9 +511,28 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
+       rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
+       agentIdentity: z.string().optional().describe("Agent name / session attribution"),
++      reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
++      alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
+     },
+-    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity }) => {
+-      // 0. Dual-mode ingress validation (#539) — fail-closed before any network.
++    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity, reflectionWhy, alternativesRejected }) => {
++      // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
++      const candidateBody = [
++        REFLECTION_EVIDENCE_SECTION,
++        `- **why:** ${reflectionWhy || ""}`,
++        `- **alternatives_rejected:** ${alternativesRejected || ""}`,
++      ].join("\n");
++      const missingReflection = validateReflectionEvidence(candidateBody);
++      if (missingReflection.length > 0) {
++        return {
++          isError: true,
++          content: [{
++            type: "text",
++            text: `${STALE_TEMPLATE_ERROR_PREFIX}: PR reflection evidence incomplete. Missing: ${missingReflection.join(", ")}. Re-read bridge.guide and provide reflectionWhy (- **why:**) and alternativesRejected (alternatives_rejected) to satisfy AGENTS.md §2.\n\n${reflectionFixSnippet()}`,
++          }],
++        };
++      }
++
++      // 0.5. Dual-mode ingress validation (#539) — fail-closed before any network.
+       for (const file of files) {
+         const ingressMode = file.mode ?? "full_file";
+         if (ingressMode === "unified_diff") {
+@@ -554,23 +749,16 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         }
+ 
+         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
+-        const prBody = [
+-          "## Summary",
+-          `Autonomous bridge contribution for ${taskId}: ${summary}`,
+-          "",
+-          "## Linked Work Order",
+-          `Closes #${issueRes.data?.number}`,
+-          `Refs #${issueRes.data?.number}`,
+-          "",
+-          "## Scope Paths",
+-          scopePaths.map((p) => `- \`${p}\``).join("\n"),
+-          "",
+-          "## Test Evidence (3-tier contract)",
++        const prBody = buildBridgePrBody({
++          taskId,
++          summary,
++          issueNumber: issueRes.data?.number,
++          scopePaths,
+           testsEvidence,
+-          "",
+-          "## Rollback Path",
+-          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
+-        ].join("\n");
++          reflectionWhy,
++          alternativesRejected,
++          rollbackPath,
++        });
+ 
+         let prNumber: number | undefined;
+         let prUrl: string | undefined;
+diff --git a/infrastructure/mcp-control-plane/test_bridge_freshness.ts b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+new file mode 100644
+index 00000000..f37e585c
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_freshness.ts
+@@ -0,0 +1,265 @@
++import assert from "node:assert/strict";
++import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
++import { Client } from "@modelcontextprotocol/sdk/client/index.js";
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import {
++  buildBridgePrBody,
++  bridgeGuide,
++  extractRequiredReflectionFields,
++  readPullRequestTemplate,
++  reflectionFixSnippet,
++  REFLECTION_EVIDENCE_SECTION,
++  registerBridgeTools,
++  REQUIRED_REFLECTION_FIELDS,
++  STALE_TEMPLATE_ERROR_PREFIX,
++  validateReflectionEvidence,
++} from "./src/tools/bridge.tools.js";
++
++/**
++ * Constitution Freshness Invariant tests (#567) — the tower slice.
++ *
++ * বাংলা মন্তব্য: যাচাই হয় —
++ *   ১. bridge.guide লাইভ PR টেমপ্লেট ডাইজেস্ট বহন করে (source live|fallback,
++ *      mandatory reflection fields, Rule P7 sizing) — কখনো সাইলেন্ট নয়।
++ *   ২. readPullRequestTemplate: লাইভ টেমপ্লেট পড়া + fallback digest (সবসময়
++ *      fail-closed ফিল্ড সেট সহ)।
++ *   ৩. validateReflectionEvidence: knowledge-sharing-guard-এর bash সেমান্টিক্স
++ *      মিরর করে (same-line অথবা nested bullet; '<...>' placeholder ব্যর্থ)।
++ *   ৪. buildBridgePrBody: SSOT বডি বিল্ডার সবসময় Reflection Evidence বহন করে।
++ *   ৫. e2e: bridge.submit_patch পুশের আগেই STALE_TEMPLATE_ERROR দেয় (কোনো
++ *      নেটওয়ার্ক কল বা টোকেন ছাড়াই — গেট টোকেন রেজোলিউশনের আগে ফায়ার করে)।
++ */
++
++const LIVE_TEMPLATE = [
++  "## Summary",
++  "",
++  "## Reflection Evidence (why + alternatives_rejected)",
++  "- **why:** <replace: rationale>",
++  "- **alternatives_rejected:**",
++  "  - <replace: alternative>",
++  "",
++  "## Rollback Path",
++].join("\n");
++
++// ─── ১. bridge.guide carries the freshness digest ────────────────────────────
++{
++  const guide = bridgeGuide() as Record<string, any>;
++  const freshness = guide.constitutionFreshness;
++  assert.ok(freshness, "bridge.guide must carry a constitutionFreshness block (#567)");
++  assert.ok(
++    freshness.prTemplateSource === "live" || freshness.prTemplateSource === "fallback",
++    "prTemplateSource must be live|fallback — never silent",
++  );
++  assert.deepEqual(
++    freshness.mandatoryReflectionFields,
++    ["why", "alternatives_rejected"],
++    "mandatory reflection fields must be the SSOT pair",
++  );
++  assert.equal(
++    freshness.requiredReflectionSection,
++    REFLECTION_EVIDENCE_SECTION,
++  );
++  assert.match(freshness.ruleP7DomainSizing, /30 files/);
++  assert.match(freshness.ruleP7DomainSizing, /200 KB/);
++  assert.match(freshness.preValidation, /STALE_TEMPLATE_ERROR/);
++  // The legacy contract block must remain untouched (no regression), and the
++  // P7 sizing string stays consistent with it.
++  const caps = guide.contract.diffCaps as { maxFiles: number; maxBytes: number };
++  assert.equal(caps.maxFiles, 30, "bridge diff caps unchanged (30 files)");
++  assert.equal(caps.maxBytes, 200 * 1024, "bridge diff caps unchanged (200 KB)");
++}
++
++// ─── ২. readPullRequestTemplate: live read + fail-closed fallback ───────────
++{
++  const live = readPullRequestTemplate((path) =>
++    path === "../../.github/PULL_REQUEST_TEMPLATE.md" ? LIVE_TEMPLATE : null,
++  );
++  assert.equal(live.source, "live");
++  assert.equal(live.templatePath, "../../.github/PULL_REQUEST_TEMPLATE.md");
++  assert.deepEqual([...live.requiredFields], ["why", "alternatives_rejected"]);
++
++  const scanned = readPullRequestTemplate(() => "## Reflection Evidence\n- **why:** x\n");
++  assert.equal(scanned.source, "live");
++  assert.deepEqual([...scanned.requiredFields], ["why"], "scan only finds declared fields");
++
++  const noSection = readPullRequestTemplate(() => "# just a readme\n");
++  assert.equal(noSection.source, "live");
++  assert.deepEqual(
++    [...noSection.requiredFields],
++    ["why", "alternatives_rejected"],
++    "live template without the section falls back to the SSOT field set",
++  );
++
++  const fallback = readPullRequestTemplate(() => null);
++  assert.equal(fallback.source, "fallback");
++  assert.equal(fallback.templatePath, null);
++  assert.deepEqual([...fallback.requiredFields], ["why", "alternatives_rejected"]);
++  assert.equal(fallback.ruleP7Sizing.maxFiles, 30, "P7 ceiling: 30 files");
++  assert.equal(fallback.ruleP7Sizing.maxDiffBytes, 200 * 1024, "P7 ceiling: 200 KB");
++}
++
++// ─── ৩. extractRequiredReflectionFields ─────────────────────────────────────
++{
++  assert.deepEqual(extractRequiredReflectionFields("no template here"), []);
++  assert.deepEqual(extractRequiredReflectionFields(LIVE_TEMPLATE), [
++    "why",
++    "alternatives_rejected",
++  ]);
++}
++
++// ─── ৪. validateReflectionEvidence mirrors the CI guard ─────────────────────
++{
++  // No section at all -> everything missing.
++  assert.deepEqual(validateReflectionEvidence("## Summary\nhello"), [
++    "why",
++    "alternatives_rejected",
++  ]);
++
++  // Raw template placeholders -> both missing (guard rejects unfilled fields).
++  assert.deepEqual(validateReflectionEvidence(LIVE_TEMPLATE), [
++    "why",
++    "alternatives_rejected",
++  ]);
++
++  // Filled why + real nested alternatives -> nothing missing.
++  const filled = [
++    REFLECTION_EVIDENCE_SECTION,
++    "- **why:** The loop executed against a stale constitution and failed CI.",
++    "- **alternatives_rejected:**",
++    "  - Hard-coding the field list in the tool: rejected because it drifts.",
++    "  - Post-merge lint warning: rejected because it wastes a submission.",
++  ].join("\n");
++  assert.deepEqual(validateReflectionEvidence(filled), []);
++
++  // why filled, alternatives still placeholder -> only alts missing.
++  const halfFilled = [
++    REFLECTION_EVIDENCE_SECTION,
++    "- **why:** Real rationale here.",
++    "- **alternatives_rejected:**",
++    "  - <replace: alternative>",
++  ].join("\n");
++  assert.deepEqual(validateReflectionEvidence(halfFilled), ["alternatives_rejected"]);
++
++  // Inline (same-line) alternatives also pass — like the CI guard.
++  const inlineAlts = [
++    REFLECTION_EVIDENCE_SECTION,
++    "- **why:** Real rationale.",
++    "- **alternatives_rejected:** polling-only design, rejected because SSE halves latency",
++  ].join("\n");
++  assert.deepEqual(validateReflectionEvidence(inlineAlts), []);
++
++  // Section must be H2 — an H3 section does not satisfy the template.
++  const h3 = filled.replace(REFLECTION_EVIDENCE_SECTION, "### Reflection Evidence");
++  assert.deepEqual(validateReflectionEvidence(h3), ["why", "alternatives_rejected"]);
++
++  // Empty why with no nested bullet -> missing.
++  const emptyWhy = [
++    REFLECTION_EVIDENCE_SECTION,
++    "- **why:**",
++    "- **alternatives_rejected:** real alternative, rejected because X",
++  ].join("\n");
++  assert.deepEqual(validateReflectionEvidence(emptyWhy), ["why"]);
++}
++
++// ─── ৫. reflectionFixSnippet is copy-pasteable and passes its own gate ──────
++{
++  const snippet = reflectionFixSnippet();
++  assert.match(snippet, /## Reflection Evidence/);
++  assert.match(snippet, /- \*\*why:\*\*/);
++  assert.match(snippet, /- \*\*alternatives_rejected:\*\*/);
++}
++
++// ─── ৬. buildBridgePrBody — SSOT body always carries the evidence ───────────
++{
++  const body = buildBridgePrBody({
++    taskId: "bridge-20261017-freshness",
++    summary: "Enforce constitution freshness",
++    issueNumber: 567,
++    scopePaths: ["docs/CONSTITUTION_FRESHNESS_INVARIANT.md"],
++    testsEvidence: "25/25 unittest green",
++    reflectionWhy: "Stale-context submissions waste full cycles on mechanical CI rejections.",
++    alternativesRejected: "post-merge lint warning\nmanual operator review",
++    rollbackPath: "git revert-safe",
++  });
++  assert.match(body, /## Summary/);
++  assert.match(body, /## Linked Work Order/);
++  assert.match(body, /Closes #567/);
++  assert.match(body, /## Reflection Evidence \(why \+ alternatives_rejected\)/);
++  assert.match(body, /- \*\*why:\*\* Stale-context submissions/);
++  assert.match(body, /  - post-merge lint warning/);
++  assert.match(body, /  - manual operator review/);
++  assert.match(body, /## Test Evidence \(3-tier contract\)/);
++  assert.deepEqual(validateReflectionEvidence(body), []);
++
++  const noIssue = buildBridgePrBody({
++    taskId: "bridge-20261017-freshness",
++    summary: "Enforce constitution freshness",
++    scopePaths: ["a.ts"],
++    testsEvidence: "evidence",
++    reflectionWhy: "why",
++    alternativesRejected: "alt, rejected because z",
++  });
++  assert.ok(!noIssue.includes("Linked Work Order"), "no issue -> no linked section");
++}
++
++// ─── ৭. e2e: submit_patch fail-closes PRE-PUSH (no token, no network) ───────
++{
++  const server = new McpServer({ name: "freshness-test", version: "1.0.0" });
++  await registerBridgeTools(server);
++  const client = new Client({ name: "freshness-client", version: "1.0.0" });
++  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
++  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
++
++  const baseArgs = {
++    taskId: "bridge-20261017-freshness",
++    summary: "Enforce constitution freshness across the loop and tower",
++    scopePaths: ["docs/CONSTITUTION_FRESHNESS_INVARIANT.md"],
++    testsEvidence: "reflection: done; boot smoke: verify-only exit 0; tests: 25/25 unittest",
++    files: [
++      {
++        path: "docs/CONSTITUTION_FRESHNESS_INVARIANT.md",
++        content: "# Constitution Freshness Invariant\n\nDoc content for the gate.\n",
++      },
++    ],
++  };
++
++  // Stale submission (no reflection params) -> STALE_TEMPLATE_ERROR, pre-token.
++  // NOTE: raw McpServer (no index.ts wrapper) keeps the dotted registration
++  // name; the production tower exposes it as bridge_submit_patch.
++  const stale = await client.callTool({ name: "bridge.submit_patch", arguments: { ...baseArgs } });
++  assert.equal((stale as any).isError, true, "stale body must be rejected");
++  const staleText = (stale as any).content[0].text as string;
++  assert.ok(
++    staleText.startsWith(STALE_TEMPLATE_ERROR_PREFIX),
++    `error must be the #567 contract error, got: ${staleText.slice(0, 120)}`,
++  );
++  assert.match(staleText, /- \*\*why:\*\*/);
++  assert.match(staleText, /alternatives_rejected/);
++  assert.match(staleText, /Re-read bridge\.guide/);
++  // The gate fires BEFORE token resolution / network — the rejection text
++  // must not leak token or HTTP internals.
++  assert.ok(!staleText.includes("Bearer"), "no token material in the error");
++
++  // Fresh submission passes the gate: it proceeds past 2.5 into token
++  // resolution. In this tokenless test environment the very next step is the
++  // token error — the KEY assertion is that the error is NOT the stale one.
++  const fresh = await client.callTool({
++    name: "bridge.submit_patch",
++    arguments: {
++      ...baseArgs,
++      reflectionWhy: "Fail-closed pre-push beats post-merge CI rejection waste.",
++      alternativesRejected:
++        "Post-merge lint warning: rejected because it wastes a full submission cycle.",
++    },
++  });
++  const freshText = (fresh as any).content[0].text as string;
++  assert.ok(
++    !freshText.startsWith(STALE_TEMPLATE_ERROR_PREFIX),
++    "fresh body must pass the #567 gate",
++  );
++
++  await client.close();
++  await server.close();
++}
++
++console.log("✅ test_bridge_freshness: all #567 tower-slice assertions passed");

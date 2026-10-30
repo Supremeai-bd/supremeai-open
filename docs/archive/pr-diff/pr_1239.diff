@@ -1,0 +1,59 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index c7cc48e5..39e59701 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -822,12 +822,14 @@ jobs:
+       - name: Execute Deterministic Direct Synchronization
+         env:
+           BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.SAT_SYNC_PAT || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++          COMMIT_MSG: ${{ github.event.head_commit.message || 'synchronize federation transit surface' }}
+         run: |
+           set -euo pipefail
+           echo "🚀 Executing deterministic direct synchronization for all changed targets..."
++          CLEAN_MSG=$(echo "$COMMIT_MSG" | head -n 1)
+           python3 scripts/ci/federation_satellite_sync.py \
+             --detect-changed \
+-            --commit-msg "${{ github.event.head_commit.message || 'synchronize federation transit surface' }}" \
++            --commit-msg "${CLEAN_MSG:-synchronize federation transit surface}" \
+             --prune-patches
+ 
+       - name: Auto-Prune Ephemeral Transit Patches (#416)
+@@ -858,8 +860,9 @@ jobs:
+           QDRANT_URL: ${{ secrets.QDRANT_URL }}
+           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
++          COMMIT_MSG: ${{ github.event.head_commit.message }}
+         run: |
+-          PR_NUM=$(echo "${{ github.event.head_commit.message }}" | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
++          PR_NUM=$(echo "$COMMIT_MSG" | grep -oE '#[0-9]+' | head -1 | tr -d '#' || true)
+           if [ -n "$PR_NUM" ]; then
+             echo "Extracting structured knowledge for PR #${PR_NUM}..."
+             python3 scripts/ci/ingest_pr_knowledge.py --pr-num "$PR_NUM" || echo "::warning::Knowledge ingestion encountered a non-fatal issue."
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 3568e0e6..4d799d66 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -798,17 +798,20 @@ def main() -> int:
+     )
+ 
+     success = True
++    raw_msg = args.commit_msg or os.environ.get("COMMIT_MSG") or "synchronize federation transit surface"
++    safe_commit_msg = raw_msg.splitlines()[0].strip() if raw_msg else "synchronize federation transit surface"
++
+     for target in targets_to_sync:
+         if target == ARCHIVE_REPO:
+-            ok = sync_archive(repo_root, token, args.commit_msg)
++            ok = sync_archive(repo_root, token, safe_commit_msg)
+         else:
+             src_dir = DOMAIN_MAP[target]
+-            ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
++            ok = sync_satellite(target, src_dir, repo_root, token, safe_commit_msg)
+         if not ok:
+             success = False
+ 
+     if sync_umbrella:
+-        ok = sync_monorepo(repo_root, token, args.commit_msg)
++        ok = sync_monorepo(repo_root, token, safe_commit_msg)
+         if not ok:
+             success = False
+ 

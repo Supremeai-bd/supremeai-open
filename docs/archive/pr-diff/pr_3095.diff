@@ -1,0 +1,73 @@
+diff --git a/docs/ops/SENTRY2009_CLOSURE_2026-10-30.md b/docs/ops/SENTRY2009_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..adfa92ec
+--- /dev/null
++++ b/docs/ops/SENTRY2009_CLOSURE_2026-10-30.md
+@@ -0,0 +1,67 @@
++# Sentry Pass #2009 — Closure Record: superseded by the active series (docs-only)
++
++**Task ID:** bridge-20261030-sentry2009-closure · **Closes #2009** · **Probed:** 2026-10-30T07:41–07:42Z
++**Claim:** GRANT_TAKEOVER on #2009 at 07:42:19Z (prior claim `…Job-477792` @ 01:48:47Z TTL 30m
++lapsed ~6h without closure; row kept dispatching as top unclaimed candidate).
++
++## 1. What the row is
++
++WO #2009 (P3-low, repo:api, status:unclaimed) is a **platform-guardian provider sentry pass**
++filed 2026-10-28T05:54Z — the third pass in the #1852 → #1934 → #2009 monitoring series:
++7/8 AI providers ALIVE (v0 EXCLUDED by shape, 4th consecutive pass), production fallback
++chain `gemini → bynara → bai` protocol-alive on all 3 lanes, core-api RESOLVED contract on
++its 3rd consecutive confirmation, tower sweep polarity family documented (#1874).
++
++## 2. Series convention: pass rows close after supersession (live-checked 07:41Z)
++
++| Row | Pass | State @ 07:41Z |
++|---|---|---|
++| #1934 | 10-28 03:21Z pass | **closed `completed`** |
++| #2226 | telegram-channel receipt | **closed `completed`** |
++| #1852 | 10-28 earlier pass | open, `status:claimed` (peer holds it — untouched, anti-stampede) |
++| **#2009** | 10-28 05:54Z pass | **open — the only unclosed superseded pass; closure lapsed** |
++
++## 3. Supersession evidence (probe-dated)
++
++The series is active and current; both later passes carry the SAME headline verdict, so
++#2009's snapshot adds no unique signal anymore:
++
++- **#3049** (filed 04:40:27Z): "sentry pass 04:45Z — 7/8 alive (v0 EXCLUDED 354ms); core-api
++  RESOLVED >28h; sweep 31/33"
++- **#3077** (filed 06:40:06Z): "sentry pass 06:45Z — 7/8 alive (v0 EXCLUDED 502ms); core-api
++  RESOLVED >30h; sweep 31/33"
++
++Tower aliveness re-verified this session: the closure probes rode the same tower session
++(handshake + bridge/work-order + feedback reads, all 200s, 07:41:15Z session start).
++
++## 4. Why close it
++
++- The row's own monitoring cycle completed: every finding it raised is either stable-confirmed
++  (7/8 alive ×3 passes, core-api RESOLVED ×5 confirmations) or explicitly NOT re-filed per the
++  anti-duplicate rule #1692 (render-mcp degraded-flag = documented #1874 polarity family).
++- Its claim TTL-lapsed ~6h with zero output, yet the row kept dispatching as the loop's top
++  unclaimed candidate (this cycle included) — a 2-day-old monitoring snapshot consuming one
++  full guard pass per agent cycle.
++- Closing completes the series convention (#1934, #2226 both closed `completed`). The series
++  itself continues in #3049/#3077 and successors — closing this row archives one superseded
++  snapshot, nothing more.
++
++## 5. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #2009 হলো ২ দিন আগের (২৮ তারিখ) একটা নিয়মিত নজরদারি রিপোর্ট — যেখানে বলা
++হয়েছিল ৮টা AI সেবার মধ্যে ৭টা জীবিত, সব ঠিক আছে।
++
++**সমস্যা কী:** এই ধরনের রিপোর্টের নিয়ম হলো — পরের রিপোর্ট এসে গেলে পুরনোটা বন্ধ করে দেওয়া
++(প্রমাণ: একই সিরিজের #1934 আর #2226 দুটোই বন্ধ)। কিন্তু এটা খোলাই রয়ে গেছে — একজন agent claim
++করেছিল, ৩০ মিনিটের সময় শেষ, প্রায় ৬ ঘণ্টা পেরিয়ে গেছে, কিছুই করেনি। ফলে লুপ প্রতি ঘণ্টায়
++এই ২ দিনের পুরনো রিপোর্ট সবার কাজ হিসেবে দিচ্ছিল, আর প্রত্যেকে এসে দেখে যাচ্ছিল।
++
++**নতুন প্রমাণ:** সিরিজটা এখনো চলছে — #3049 (04:45Z) আর #3077 (06:45Z) দুটোতেই একই ফলাফল:
++"৭/৮ জীবিত"। অর্থাৎ পুরনো রিপোর্টের কোনো তথ্যই এখন আলাদা মূল্য রাখে না।
++
++**এই ডকুমেন্ট merge হলে** `Closes #2009` দিয়ে টিকিটটা বন্ধ হবে, লুপ আর ওটা কাউকে দেবে না,
++আর নজরদারি সিরিজ তার নতুন রিপোর্টে চলতেই থাকবে।
++
++---
++*Docs-only: single file under docs/ops/, zero satellite code, protected paths untouched.
++Evidence discipline: every figure carries its probe timestamp.*

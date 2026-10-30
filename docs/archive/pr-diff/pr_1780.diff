@@ -1,0 +1,348 @@
+diff --git a/core/Dockerfile b/core/Dockerfile
+index 1953e2d0..049a1a24 100644
+--- a/core/Dockerfile
++++ b/core/Dockerfile
+@@ -9,11 +9,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
+ ENV PIP_ROOT_USER_ACTION=ignore
+ RUN pip install --no-cache-dir poetry==2.4.1
+ 
+-# Copy dependencies
+-COPY pyproject.toml poetry.lock ./
++# Copy dependencies (poetry.lock* allows build to succeed whether lockfile is committed or generated)
++COPY pyproject.toml poetry.lock* ./
+ 
+ # Install dependencies in project virtualenv
+ RUN poetry config virtualenvs.in-project true \
++    && (test -f poetry.lock || poetry lock --no-update) \
+     && poetry install --no-interaction --no-ansi --only main --no-root
+ 
+ # Stage 2: Runtime
+diff --git a/core/services/scraper/Dockerfile b/core/services/scraper/Dockerfile
+index eb993745..9884b8fd 100644
+--- a/core/services/scraper/Dockerfile
++++ b/core/services/scraper/Dockerfile
+@@ -8,11 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
+ ENV PIP_ROOT_USER_ACTION=ignore
+ RUN pip install --no-cache-dir poetry==2.4.1
+ 
+-# Copy dependencies
+-COPY pyproject.toml poetry.lock ./
++# Copy dependencies (poetry.lock* allows build to succeed whether lockfile is committed or generated)
++COPY pyproject.toml poetry.lock* ./
+ 
+ # Install dependencies in project virtualenv including browser group
+ RUN poetry config virtualenvs.in-project true \
++    && (test -f poetry.lock || poetry lock --no-update) \
+     && poetry install --no-interaction --no-ansi --only main,browser --no-root
+ 
+ # Stage 2: Runtime — browser-ready image (Playwright + Chromium)
+diff --git a/docs/RENDER_512MB_MICRO_AI_ARCHITECTURE.md b/docs/RENDER_512MB_MICRO_AI_ARCHITECTURE.md
+new file mode 100644
+index 00000000..176b9cc6
+--- /dev/null
++++ b/docs/RENDER_512MB_MICRO_AI_ARCHITECTURE.md
+@@ -0,0 +1,165 @@
++# SupremeAI Architecture: Ultra-Lightweight Autonomous AI on Render (512 MB Tier)
++
++> **Document Version:** 1.0.0  
++> **Target Environment:** Render Cloud (Free Instance: 512 MB RAM, 0.1 CPU Core)  
++> **Core Framework:** `llama.cpp` (Pure C/C++ In-Memory Engine)  
++> **Status:** Approved Architectural Blueprint  
++
++---
++
++## 1. Executive Summary & Objective
++
++SupremeAI relies on multi-agent execution cycles that frequently trigger external AI endpoints (OpenAI, Gemini, OpenRouter, Groq). When external quotas exhaust or upstream networks throttle (HTTP 429/503), the entire autonomous loop faces starvation.
++
++This blueprint specifies the deployment of a **self-hosted, zero-cost, private AI brain** running directly within Render's free **512 MB RAM limit**. By discarding heavy Python runtimes (PyTorch/Transformers) and leveraging compiled native C++ (`llama.cpp`), SupremeAI gains a permanent, un-cancellable **Tier-0 Fallback Intelligence Engine**.
++
++---
++
++## 2. Memory Mathematical Budget (512 MB Hard Cap)
++
++Under conventional Python execution, PyTorch alone consumes 1.2 GB+ of RAM at cold start, resulting in instant `Out Of Memory (OOM)` termination on Render. 
++
++The C++ native runtime divides memory consumption into strictly bounded buckets:
++
++```
++┌─────────────────────────────────────────────────────────────┐
++│ Render Free Tier: 512 MB RAM                                │
++├──────────────────────────┬─────────────────┬────────────────┤
++│ Model Weights (Q4_K_M)   │ KV Cache (1024) │ Binary & Stack │
++│ ~280 MB - 310 MB         │ ~45 MB - 55 MB  │ ~20 MB         │
++└──────────────────────────┴─────────────────┴────────────────┘
++ Total Peak Working Set: ~365 MB  ◄──  Headroom Safety Margin: ~147 MB (28.7%)
++```
++
++### Safety Equation
++$$\text{Peak RAM} = \text{Binary Overhead} (20\text{MB}) + \text{Model Tensor Buffer} (\sim 290\text{MB}) + \left(\frac{2 \times n_{\text{layers}} \times n_{\text{embd}} \times \text{ctx}}{1024^2}\right) \le 380\text{MB}$$
++
++Because $380\text{MB} < 512\text{MB}$, the process is mathematically immune to Render OOM kills.
++
++---
++
++## 3. Candidate Model Selection
++
++| Model Name | Parameters | Quantization | File Size | Recommended Task |
++| :--- | :--- | :--- | :--- | :--- |
++| **Qwen2.5-0.5B-Instruct** | 490 Million | `Q4_K_M` | **298 MB** | **Primary (Recommended):** Strong reasoning, strict JSON output adherence, coding syntax validation. |
++| **SmolLM-360M-Instruct** | 360 Million | `Q4_K_M` | **215 MB** | **Secondary (Ultra-Safe):** Leaves 250MB+ headroom for concurrent HTTP workers. |
++| **TinyLlama-1.1B** | 1.1 Billion | `Q2_K` | **385 MB** | **Experimental:** Operates near margin threshold (~450 MB peak). |
++
++---
++
++## 4. Container & Service Specifications
++
++### A. Dockerfile (`infrastructure/render-micro-ai/Dockerfile`)
++
++```dockerfile
++# ── Stage 1: Build native llama.cpp server ──
++FROM alpine:3.20 AS builder
++
++RUN apk add --no-cache \
++    git \
++    build-base \
++    cmake \
++    linux-headers
++
++WORKDIR /build
++RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp.git . && \
++    cmake -B build -DLLAMA_BUILD_SERVER=ON -DLLAMA_CURL=OFF && \
++    cmake --build build --config Release -j$(nproc) --target llama-server
++
++# ── Stage 2: Ultra-lightweight runtime image ──
++FROM alpine:3.20
++
++RUN apk add --no-cache libstdc++ libgcc curl ca-certificates
++
++WORKDIR /app
++
++# Copy compiled binary from builder
++COPY --from=builder /build/build/bin/llama-server /usr/local/bin/llama-server
++
++# Download Qwen2.5-0.5B-Instruct GGUF model during build or startup
++ARG MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
++RUN curl -L -o /app/model.gguf "${MODEL_URL}"
++
++EXPOSE 8080
++
++# Bounded memory configuration:
++# -c 1024 : Context window capped at 1024 tokens (prevents KV cache bloat)
++# -b 128  : Batch size small for minimal peak compute RAM
++# -t 2    : Utilize 2 vCPU threads
++ENTRYPOINT ["llama-server", \
++    "-m", "/app/model.gguf", \
++    "--host", "0.0.0.0", \
++    "--port", "8080", \
++    "-c", "1024", \
++    "-b", "128", \
++    "-t", "2", \
++    "--parallel", "1", \
++    "--cont-batching"]
++```
++
++---
++
++## 5. SupremeAI Integration Blueprint
++
++```mermaid
++flowchart TD
++    A["Agent Loop / Solver Task"] --> B{"Gateway Provider Dispatch"}
++    B -->|"Primary Lane"| C["Commercial APIs (OpenAI/Gemini/OpenRouter)"]
++    C -->|"Success (200)"| D["Execution Continues"]
++    C -->|"Quota Block (429) / Outage (503)"| E["Gateway Auto-Fallback Gate"]
++    E -->|"Route to Tier-0"| F["Render Micro AI (Qwen2.5-0.5B)"]
++    F -->|"Zero-Cost Local Inference"| D
++```
++
++### Gateway Failover Configuration (`gateway/routes/ai_router.py`)
++
++```python
++FALLBACK_ENDPOINTS = [
++    {"name": "commercial-primary", "url": "https://openrouter.ai/api/v1"},
++    {
++        "name": "render-micro-ai",
++        "url": "https://supremeai-micro-brain.onrender.com/v1",
++        "model": "qwen2.5-0.5b",
++        "is_local_tier": True,
++        "trigger_on": [429, 502, 503, 504],
++    }
++]
++```
++
++---
++
++## 6. Functional Capabilities of the 512 MB Model (The Central Brain)
++
++### ক) Meta-Model Router (কোন প্রশ্নের জন্য কোন AI প্রোভাইডার সেরা তা নির্ধারণ)
++বড় বড় বাণিজ্যিক মডেলগুলো সব কাজে সমান পারদর্শী বা সস্তা নয়। আমাদের সেন্ট্রাল ব্রেন প্রতিটি ইনপুট প্রশ্ন অ্যানালাইসিস করে সর্বোত্তম এআই প্রোভাইডার সিলেক্ট করে রিকোয়েস্ট পাঠাবে:
++- **গভীর কোডিং ও জটিল লজিক** ➔ `Claude 3.5 Sonnet` / `GPT-4o`
++- **বড় ডকুমেন্ট সামারি ও বড় কনটেক্সট** ➔ `Gemini 1.5 Pro` (২ মিলিয়ন টোকেন উইন্ডো)
++- **অতি দ্রুত চ্যাট ও সাধারণ প্রশ্ন** ➔ `Groq Llama-3.3 70B` (মিলি-সেকেন্ড স্পিড, জিরো কস্ট)
++- **বাংলা ও স্থানীয় সাংস্কৃতিক কনটেক্সট** ➔ ফাইন-টিউনড লোকাল লেয়ার
++- **সহজ ক্লাসিফিকেশন বা টাস্ক ট্রিয়েজ** ➔ সেন্ট্রাল ব্রেন নিজেই সাব-সেকেন্ডে উত্তর দেবে (বাইরে কাউকে পাঠানোর প্রয়োজন নেই, $০ খরচ)।
++
++### খ) Autonomous Tool & Webhook Orchestrator
++- মানুষের প্রশ্ন বা এজেন্টের টাস্ক পড়ে সরাসরি ব্যাকএন্ডের উপযুক্ত এপিআই বা ওয়েব-হুক ট্রিগার করার ডিসিশন নেওয়া।
++- কোনো অপ্রয়োজনীয় চ্যাট না করে সরাসরি মেশিন-টু-মেশিন একশন নেওয়া।
++
++### গ) Autonomous Issue Triage & P0 Drainage
++- গিটহাবের ইস্যু ও পিআর ডেসক্রিপশন পড়ে স্বয়ংক্রিয়ভাবে `P0-critical`, `P1-high`, ডোমেন মিরর লেবেল অ্যাসাইন করা।
++- ব্যাকলগে কোনো P0 ব্লকার থাকলে অন্য সব কিছু থামিয়ে দিয়ে P0 সলভার রানার ট্রিগার করা।
++
++### ঘ) Commit Message & Reflection Synthesizer
++- পিআর ডেসক্রিপশনে সাংবিধানিক রিফ্লেকশন এভিডেন্স (`why` এবং `alternatives_rejected`) স্বয়ংক্রিয়ভাবে জেনারেট করা।
++
++---
++
++## 7. Rollout & Maintenance Strategy
++
++- **Zero-Cold-Start Keep-Alive (Cloudflare Worker Cron Integration)**:
++  - আমাদের বিদ্যমান Cloudflare Worker Cron ট্রিগার থেকে প্রতি ১০-১২ মিনিটে `GET /health` এন্ডপয়েন্টে লাইটওয়েট হেড-পিং পাঠানো হয় (যেভাবে বর্তমানে Render-এর অন্যান্য ব্যাকএন্ড সার্ভিসেস সার্বক্ষণিক সক্রিয় রাখা হয়)।
++  - এর ফলে কোনো কোল্ড স্টার্ট (Cold Start) থাকবে না; সার্ভিসটি ২৪/৭ **Warm State**-এ রেডি থাকবে এবং রিকোয়েস্ট আসার সাথে সাথে সাব-সেকেন্ডে রেসপন্স দিতে পারবে।
++- **Shared CPU Concurrency Guard**:
++  - Render Free Tier-এর শেয়ার্ড সিপিইউ ওভারলোড রোধে সার্ভার ফ্ল্যাগ `--parallel 1` ব্যবহার করা হয়েছে, যাতে কিউতে থাকা রিকোয়েস্টগুলো ক্র্যাশ বা থ্রটলিং ছাড়া একক সুশৃঙ্খল পাইপলাইনে প্রসেস হয়।
++- **Fail-Closed Repository Boundary**:
++  - পুরো মাইক্রো-এআই সেটআপটি কঠোরভাবে `infrastructure/render-micro-ai/` বাউন্ডারির মধ্যে আবদ্ধ, যা রেপোজিটরির রুট ডোমেনকে সম্পূর্ণ ক্লিন রাখে।
++- **Permanent Immunity**:
++  - এক্সটার্নাল কোনো এপিআই প্রভাইডারের পেমেন্ট ফেইলুর, কোটা ব্লকেজ বা গ্লোবাল নেটওয়ার্ক ব্ল্যাকআউটের সময়ও সুপ্রিমএআই প্ল্যাটফর্মের ইন্টারনাল ডিসপ্যাচ ও ফলব্যাক ইনফারেন্স ১০০% সচল ও স্বাবলম্বী থাকবে।
+diff --git a/gateway/Dockerfile b/gateway/Dockerfile
+new file mode 100644
+index 00000000..1c6b68ab
+--- /dev/null
++++ b/gateway/Dockerfile
+@@ -0,0 +1,20 @@
++# বাংলা: পাতলা গেটওয়ে ইমেজ — কোনো secret ইমেজ-স্তরে নয়, সব runtime-env
++FROM python:3.11-slim
++WORKDIR /app
++
++# Robust copy: copy requirements.txt whether at root or service/ directory
++COPY requirements*.txt service/requirements*.txt /app/service/
++RUN pip install --no-cache-dir -r service/requirements.txt || pip install --no-cache-dir -r service/requirements*.txt || pip install --no-cache-dir fastapi uvicorn httpx pydantic pyyaml
++
++COPY contracts/ contracts/
++COPY config/ config/
++COPY service/ service/
++
++# বাংলা: P2 — boot-এ vault-pull (infisical_bootstrap) তারপর exec; identity = Render env-এ
++COPY runtime/infisical_bootstrap.py runtime/infisical_bootstrap.py
++
++EXPOSE 8787
++
++# বাংলা: ENTRYPOINT=bootstrap, CMD=service — Render-এর PORT মানানসই (fallback 8787)
++ENTRYPOINT ["python", "runtime/infisical_bootstrap.py"]
++CMD ["sh", "-c", "uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787}"]
+diff --git a/gateway/services/scraper/Dockerfile b/gateway/services/scraper/Dockerfile
+index eb993745..9884b8fd 100644
+--- a/gateway/services/scraper/Dockerfile
++++ b/gateway/services/scraper/Dockerfile
+@@ -8,11 +8,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
+ ENV PIP_ROOT_USER_ACTION=ignore
+ RUN pip install --no-cache-dir poetry==2.4.1
+ 
+-# Copy dependencies
+-COPY pyproject.toml poetry.lock ./
++# Copy dependencies (poetry.lock* allows build to succeed whether lockfile is committed or generated)
++COPY pyproject.toml poetry.lock* ./
+ 
+ # Install dependencies in project virtualenv including browser group
+ RUN poetry config virtualenvs.in-project true \
++    && (test -f poetry.lock || poetry lock --no-update) \
+     && poetry install --no-interaction --no-ansi --only main,browser --no-root
+ 
+ # Stage 2: Runtime — browser-ready image (Playwright + Chromium)
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index e21b4967..8bc0e076 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -7,6 +7,7 @@ import { env } from "../lib/env.js";
+ import { RequestContextStore } from "../policy/auth.context.js";
+ import { activeAccountChain, getActiveRedisAccount, markAccountQuotaExhausted, responseIndicatesQuotaExhaustion } from "../lib/redis_chain.js";
+ import { pingRedis } from "../adapters/redis/index.js";
++import { getServiceHealth } from "../adapters/render/index.js";
+ 
+ /**
+  * System-level MCP tools: summary, health, dependencies, and resource discovery.
+@@ -29,6 +30,7 @@ interface HealthProbe {
+   status: HealthStatus;
+   httpStatus: number | null;
+   latencyMs: number | null;
++  deployStatus?: string;
+   error?: string;
+ }
+ 
+@@ -281,9 +283,22 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+     }
+   }
+ 
++  // ── Render services: cross-check deployment status with live container health ──
++  let renderDeployStatus: string | undefined;
++  if (svc.provider === "render" && svc.serviceId) {
++    try {
++      const renderHealth = (await getServiceHealth(svc.id, svc.serviceId)) as { lastDeployStatus?: string };
++      if (renderHealth && renderHealth.lastDeployStatus) {
++        renderDeployStatus = renderHealth.lastDeployStatus;
++      }
++    } catch {
++      // Fallback to container probe if Render API key is unconfigured or throttled
++    }
++  }
++
+   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
+   if (!svc.url) {
+-    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, error: `no probeable URL for provider '${svc.provider}'` };
++    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: `no probeable URL for provider '${svc.provider}'` };
+   }
+   const candidates = [
+     ...(svc.healthPath ? [svc.healthPath] : []),
+@@ -294,7 +309,20 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+   for (const url of candidates) {
+     const out = await probeHttp(url);
+     if (out !== "unreachable" && out !== "degraded") {
+-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
++      // If container answers 200 OK but latest deployment failed, flag as degraded!
++      // This prevents false-green silent build failures.
++      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
++        return {
++          ...base,
++          url,
++          status: "degraded",
++          httpStatus: out.status,
++          latencyMs: out.latencyMs,
++          deployStatus: renderDeployStatus,
++          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
++        };
++      }
++      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
+     }
+   }
+ 
+@@ -302,13 +330,24 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+   for (const url of candidates) {
+     const out = await probeHttp(url);
+     if (out === "degraded") {
+-      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "health endpoint responded non-2xx" };
++      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "health endpoint responded non-2xx" };
+     }
+     if (out !== "unreachable") {
+-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs };
++      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
++        return {
++          ...base,
++          url,
++          status: "degraded",
++          httpStatus: out.status,
++          latencyMs: out.latencyMs,
++          deployStatus: renderDeployStatus,
++          error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
++        };
++      }
++      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
+     }
+   }
+-  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, error: "no health endpoint answered" };
++  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "no health endpoint answered" };
+ }
+ 
+ export async function registerSystemTools(server: McpServer): Promise<void> {

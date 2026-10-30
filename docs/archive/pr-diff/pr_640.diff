@@ -1,0 +1,724 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 989d9fd1..5fea0f10 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -91,4 +91,5 @@ Entry (AGENTS.md) → Rules (AGENT_RULES.md) → Task/Issue → Group/Domain →
+ ```
+ 
+ - **Canonical Check:** `python scripts/ci/issue_template_guard.py --self-test`
++- **Board SSOT:** [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md) (#626) — one public task board; satellites hold 0 open issues/PRs. Audit: `python3 scripts/ci/satellite_board_guard.py --check`
+ - **Next:** Read [`AGENT_RULES.md`](./AGENT_RULES.md) for detailed role policies and gate definitions.
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index a400cf3a..8bd39114 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -118,3 +118,4 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ 
+ - **Task Validation:** `python scripts/ci/issue_template_guard.py --self-test`
+ - **Constitution Circle:** `AGENTS.md` (Constitutional Entrypoint) ⇄ `AGENT_RULES.md` (Operational Policies)
++- **Board SSOT Guard:** `python3 scripts/ci/satellite_board_guard.py --check` — 0/0 satellite mandate audit (#626; charter: `docs/FEDERATION_CHARTER.md`)
+diff --git a/docs/FEDERATION_CHARTER.md b/docs/FEDERATION_CHARTER.md
+new file mode 100644
+index 00000000..b3d3bdb5
+--- /dev/null
++++ b/docs/FEDERATION_CHARTER.md
+@@ -0,0 +1,129 @@
++# SupremeAI Federation Charter — Single Public Task Board & Zero-Issue Satellite Mandate
++
++**Work Order:** Supremeai-bd/supremeai-open#626 (P1-high, governance)
++**Agent:** zai-autonomous-contributor (Z.ai Code, zero-credential bridge lane)
++**Constitution anchors:** AGENTS.md §5 + AGENT_RULES.md §5 (machine-enforcement pointers) — the condensed constitution (Law of Minimal Elegance) delegates the full doctrine to this charter
++**Enforced by:** `scripts/ci/satellite_board_guard.py` (Milestone 3 building block) · central nightly job per #612 (operator wiring)
++
++---
++
++## 1. Purpose
++
++Fourteen repositories ship one product. This charter makes the task-routing
++topology mechanical instead of tribal: every piece of work enters the
++federation through exactly one public door, satellites stay permanently
++clean of tracker state, and the whole federation's board health is
++answerable with one command.
++
++It formalizes and enforces the **Universal Single Task Board SSOT &
++Zero-Issue Satellite Doctrine** proposed in #626. The constitution's
++condensed form (Law of Minimal Elegance — 88-line AGENTS.md standard)
++delegates the full doctrine text to this governed charter; the
++constitution files carry only the minimal machine-enforcement anchors.
++
++## 2. The Canonical Rules
++
++### Rule 1 — One Public Board (একক সেন্ট্রাল ডাকবাক্স)
++
++`Supremeai-bd/supremeai-open` is the **sole public task board and front
++desk** of the federation. All tasks, bridge work orders, CI failure alerts,
++feature proposals, and community contributions across all 14 repositories
++are submitted and tracked exclusively here. There is no second door.
++
++### Rule 2 — Zero-Issue / Zero-PR Satellite Mandate (১২টি স্যাটেলাইটে ০/০)
++
++The 12 satellite repositories:
++
++| # | Satellite | Role |
++|---|-----------|------|
++| 1 | `studio` | Web UI dashboard |
++| 2 | `api` | Unified provider gateway |
++| 3 | `vscode` | IDE extension |
++| 4 | `browser` | Stealth automation sandbox |
++| 5 | `core` | Decision intelligence (private plane) |
++| 6 | `command` | Telegram admin control |
++| 7 | `skills` | Skills marketplace |
++| 8 | `agents` | Stateless agent lifecycle |
++| 9 | `sdk` | Client SDK packages |
++| 10 | `archive` | Append-only memory |
++| 11 | `infrastructure` | Render and Terraform ops |
++| 12 | `mcp-control-plane` | MCP tower on Render |
++
++must maintain **zero open issues and zero open PRs — permanently**. Direct
++manual issue creation or PR opening on a satellite is deprecated; all
++incoming work enters through `supremeai-open` and is ingested autonomously
++via `landing.yml` or the bridge transit pipeline. A satellite tracker state
++other than 0/0 is a **VIOLATION**, not a style preference.
++
++### Rule 3 — Private Monorepo Boundary
++
++The private monorepo (`Supremeai-bd/supremeai`) retains only internal
++proprietary backlogs and decision registers. All public or cross-federation
++work routes through `supremeai-open`. The private monorepo is out of this
++charter's audit scope by design (private plane, §2.3.1 of AGENTS.md).
++
++## 3. Enforcement
++
++### 3.1 The Guard (automated, this charter's teeth)
++
++`scripts/ci/satellite_board_guard.py` audits all 12 satellites against the
++0/0 mandate using the same zero-credential plane external bridge agents
++operate on:
++
++| Verdict | Meaning | Gate effect |
++|---------|---------|-------------|
++| `CLEAN` | 0 open issues, 0 open PRs | pass |
++| `VIOLATION` | ≥1 open issue or PR (details listed) | **fail** |
++| `UNREACHABLE` | private plane, absent repo, network fault, rate limit | skip with loud warning — never silent |
++
++Exit codes (fail-loud, CI-friendly, mirrors `docs/federation_parity_check.py`):
++`0` every reachable satellite CLEAN · `1` any VIOLATION · `2` all
++UNREACHABLE (nothing verified) · `3` usage error.
++
++Offline proof: `python3 scripts/ci/satellite_board_guard.py --self-test`
++(5/5 checks, zero network).
++
++### 3.2 Wiring (operator lane)
++
++The central nightly job architecture is specified by #612. The operator
++wires the guard into that job in `--check` mode (CI workflow files are a
++protected path for automatic agent writes per the boundary guard). The
++script is deterministic and side-effect free — safe for scheduled runs and
++for local operator execution with identical semantics.
++
++### 3.3 Remediation path (what happens on VIOLATION)
++
++1. The violation is mirrored to the central board as a task issue (the
++   federation CI watchdog pattern, #595).
++2. A maintainer closes the stray satellite issue/PR with a link back to the
++   central SSOT thread (admin lane — satellites accept admin writes only).
++3. The next guard run returns `CLEAN` for that satellite.
++
++Historical remediations (Milestone 1 of #626, admin lane): stray epics on
++`supremeai-agents#1` (handled in bridge order #409), `supremeai-skills#1`
++(seed implemented via #614 / #573), `supremeai-infrastructure#4` (subsumed
++by federation integration issues #606–#608).
++
++## 4. Why This Matters (the failure class this prevents)
++
++Work tracked off-SSOT is work the autonomous agent loop cannot see: it
++orphaned bridge orders (#504/#507/#509/#511/#546 class), produced
++duplicated in-flight claims, and left CI failures unowned until they
++escalated to P0. A 0/0 satellite plane makes the central board's queue the
++complete truth — the Lazy Team Leader dispatcher (`scripts/agents/
++continuous_agent_loop.py --pick-next`) can then route every task with full
++information, and no contributor ever wonders where the "real" tracker is.
++
++## 5. Amendment Policy
++
++This charter is a governed document:
++
++- The satellite registry in §2 Rule 2, `SATELLITES` in the guard script,
++  and the constitution anchors (AGENTS.md §5, AGENT_RULES.md §5) MUST move
++  together in the same change (constitution and its enforcement move as one
++  commit — the #567 freshness principle applied to federation topology).
++- Changes land via governance PRs on `supremeai-open` with Reflection
++  Evidence, never by direct edit.
++- The audit matrix in the nightly job output is the runtime evidence that
++  this charter is being honored; a red matrix with no mirrored central
++  issue is itself a doctrine violation.
+diff --git a/scripts/ci/satellite_board_guard.py b/scripts/ci/satellite_board_guard.py
+new file mode 100644
+index 00000000..2df1df21
+--- /dev/null
++++ b/scripts/ci/satellite_board_guard.py
+@@ -0,0 +1,333 @@
++#!/usr/bin/env python3
++"""
++satellite_board_guard.py — Zero-Issue Satellite Mandate Guard (#626)
++
++Milestone 3 of the Single Central Task Board SSOT doctrine (#626): the
++doctrine's home is docs/FEDERATION_CHARTER.md, with machine-enforcement
++anchors in AGENTS.md §5 and AGENT_RULES.md §5. This guard audits the
++12 federation satellite repositories for the mandated zero-open-issues /
++zero-open-PRs clean state, so any stray issue or PR created on a satellite
++is flagged at the central board instead of orphaning work off-SSOT.
++
++Doctrine (single paragraph form):
++  1. supremeai-open is the SOLE public task board and front desk; satellites
++     carry 0 open issues and 0 open PRs — permanently.
++  2. Work enters satellites only through landing.yml / the bridge transit
++     pipeline, never through satellite trackers.
++  3. The private monorepo (Supremeai-bd/supremeai) keeps its internal
++     backlog; it is out of this guard's scope.
++
++Verdicts (fail-honest, never fail-open):
++  CLEAN        0 open issues and 0 open PRs on the satellite
++  VIOLATION    at least one open issue or open PR (details listed)
++  UNREACHABLE  private plane, absent repo, network fault, or API rate
++               limit — reported loudly, never silently ignored
++               (same skip-with-warning contract as
++               docs/federation_parity_check.py)
++
++Exit codes (CI-friendly, mirrors docs/federation_parity_check.py):
++  0  every reachable satellite is CLEAN (UNREACHABLE allowed, warned)
++  1  at least one VIOLATION
++  2  every satellite UNREACHABLE (nothing could be verified)
++  3  local usage error
++
++Credential policy: zero-credential by default (unauthenticated REST — the
++same plane external bridge agents operate on). GH_TOKEN or GITHUB_TOKEN in
++the environment raises the rate-limit ceiling when available; the guard
++never requires a token and never reads or prints secret material.
++
++Nightly wiring (Milestone 3, coordination note): the central nightly job
++architecture is specified by issue #612 — the operator wires this script
++into that job (CI workflow files are a protected path for automatic agent
++writes). This script is the deterministic, side-effect-free building block
++that job calls in check mode.
++
++Usage:
++  python3 scripts/ci/satellite_board_guard.py --check     # gate mode (exit codes)
++  python3 scripts/ci/satellite_board_guard.py --report    # human matrix
++  python3 scripts/ci/satellite_board_guard.py --json      # machine output
++  python3 scripts/ci/satellite_board_guard.py --self-test # offline fixtures
++
++Stdlib only. --self-test performs zero network I/O.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++import urllib.error
++import urllib.request
++from dataclasses import dataclass, field
++from typing import Callable, Optional
++
++OPEN_REPO = "Supremeai-bd/supremeai-open"
++
++# ---------------------------------------------------------------------------
++# Satellite registry — verbatim from the #626 doctrine (12 satellites).
++# Extend or remove via a governance PR only; this list is a governed contract
++# and MUST stay aligned with docs/FEDERATION_CHARTER.md and AGENTS.md §2.3.7.
++# ---------------------------------------------------------------------------
++SATELLITES: tuple[str, ...] = (
++    "studio",
++    "api",
++    "vscode",
++    "browser",
++    "core",
++    "command",
++    "skills",
++    "agents",
++    "sdk",
++    "archive",
++    "infrastructure",
++    "mcp-control-plane",
++)
++
++DEFAULT_ORG = "Supremeai-bd"
++
++VERDICT_CLEAN = "CLEAN"
++VERDICT_VIOLATION = "VIOLATION"
++VERDICT_UNREACHABLE = "UNREACHABLE"
++
++
++class UnreachableError(RuntimeError):
++    """Satellite state cannot be inspected (private plane, absent repo, network)."""
++
++
++class RateLimitError(RuntimeError):
++    """GitHub API rate limit exhausted for the current credential plane."""
++
++
++@dataclass
++class SatelliteReport:
++    repo: str
++    verdict: str
++    open_issues: int = 0
++    open_prs: int = 0
++    violating: list[str] = field(default_factory=list)
++    reason: str = ""
++
++    def summary(self) -> str:
++        if self.verdict == VERDICT_UNREACHABLE:
++            return f"{self.repo:<18} UNREACHABLE  — {self.reason}"
++        return (
++            f"{self.repo:<18} {self.verdict:<11} "
++            f"open_issues={self.open_issues} open_prs={self.open_prs}"
++        )
++
++
++def _http_get_json(url: str, token: Optional[str] = None, timeout: int = 30) -> list:
++    headers = {
++        "User-Agent": "supremeai-satellite-board-guard",
++        "Accept": "application/vnd.github+json",
++    }
++    if token:
++        headers["Authorization"] = f"Bearer {token}"
++    req = urllib.request.Request(url, headers=headers)
++    try:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:
++            return json.loads(resp.read().decode("utf-8", errors="replace"))
++    except urllib.error.HTTPError as exc:
++        if exc.code == 404:
++            raise UnreachableError(f"HTTP 404 — repository absent or private plane") from exc
++        if exc.code == 403:
++            raise RateLimitError(
++                "HTTP 403 — API rate limit likely exhausted on the current credential plane"
++            ) from exc
++        raise UnreachableError(f"HTTP {exc.code}") from exc
++    except urllib.error.URLError as exc:
++        raise UnreachableError(f"network fault: {exc.reason}") from exc
++
++
++def _issues_url(org: str, repo: str) -> str:
++    """Combined open-issues+PRs listing endpoint for one satellite."""
++    return f"https://api.github.com/repos/{org}/{repo}/issues?state=open&per_page=100"
++
++
++def default_fetch_open_items(org: str, repo: str, token: Optional[str] = None) -> list[dict]:
++    """Fetch the combined open issues+PRs list for one satellite.
++
++    Uses the GitHub REST combined listing (one request per satellite, see
++    _issues_url). The `pull_request` key distinguishes PRs from issues,
++    exactly like the classification the upstream tracker itself uses.
++    """
++    return _http_get_json(_issues_url(org, repo), token=token)
++
++
++def classify_items(items: list) -> tuple[int, int, list[str]]:
++    """Split a combined open-items payload into (issues, prs, detail strings)."""
++    issues = 0
++    prs = 0
++    details: list[str] = []
++    for it in items:
++        if not isinstance(it, dict):
++            continue
++        number = it.get("number", "?")
++        title = str(it.get("title", ""))[:70]
++        kind = "pr" if "pull_request" in it else "issue"
++        if kind == "pr":
++            prs += 1
++        else:
++            issues += 1
++        details.append(f"{kind} #{number}: {title}")
++    return issues, prs, details
++
++
++def audit_satellite(
++    repo: str,
++    org: str = DEFAULT_ORG,
++    token: Optional[str] = None,
++    fetch: Optional[Callable[..., list]] = None,
++) -> SatelliteReport:
++    """Audit one satellite for the zero-issue / zero-PR mandate."""
++    fetch = fetch or default_fetch_open_items
++    try:
++        items = fetch(org, repo, token)
++    except RateLimitError as exc:
++        return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
++    except UnreachableError as exc:
++        return SatelliteReport(repo, VERDICT_UNREACHABLE, reason=str(exc))
++    issues, prs, details = classify_items(items if isinstance(items, list) else [])
++    if issues == 0 and prs == 0:
++        return SatelliteReport(repo, VERDICT_CLEAN)
++    return SatelliteReport(repo, VERDICT_VIOLATION, issues, prs, details)
++
++
++def audit_all(
++    org: str = DEFAULT_ORG,
++    token: Optional[str] = None,
++    fetch: Optional[Callable[..., list]] = None,
++    satellites: tuple[str, ...] = SATELLITES,
++) -> list[SatelliteReport]:
++    return [audit_satellite(repo, org=org, token=token, fetch=fetch) for repo in satellites]
++
++
++def decide_exit_code(reports: list[SatelliteReport]) -> int:
++    """Map the audit matrix onto the documented exit codes."""
++    if any(r.verdict == VERDICT_VIOLATION for r in reports):
++        return 1
++    if reports and all(r.verdict == VERDICT_UNREACHABLE for r in reports):
++        return 2
++    return 0
++
++
++def build_json(reports: list[SatelliteReport], org: str) -> dict:
++    return {
++        "org": org,
++        "doctrine": "zero-issue-satellite-mandate",
++        "issue": 626,
++        "satellites": [
++            {
++                "repo": r.repo,
++                "verdict": r.verdict,
++                "open_issues": r.open_issues,
++                "open_prs": r.open_prs,
++                "violating": r.violating,
++                "reason": r.reason,
++            }
++            for r in reports
++        ],
++        "clean": sum(1 for r in reports if r.verdict == VERDICT_CLEAN),
++        "violations": sum(1 for r in reports if r.verdict == VERDICT_VIOLATION),
++        "unreachable": sum(1 for r in reports if r.verdict == VERDICT_UNREACHABLE),
++    }
++
++
++def _env_token() -> Optional[str]:
++    import os
++
++    for name in ("GH_TOKEN", "GITHUB_TOKEN"):
++        val = os.environ.get(name)
++        if val:
++            return val
++    return None
++
++
++# ---------------------------------------------------------------------------
++# Offline self-test — mocked fetchers, zero network (parity-checker precedent)
++# ---------------------------------------------------------------------------
++def self_test() -> bool:
++    checks: list[tuple[str, bool]] = []
++
++    def check(name: str, ok: bool) -> None:
++        checks.append((name, ok))
++        print(f"  {'PASS' if ok else 'FAIL'}  {name}")
++
++    # 1. clean satellite
++    r = audit_satellite("studio", fetch=lambda o, r_, t: [])
++    check("clean satellite -> CLEAN with zero counts", r.verdict == VERDICT_CLEAN and r.open_issues == 0 and r.open_prs == 0)
++
++    # 2. violation with mixed items
++    mixed = [
++        {"number": 1, "title": "stray issue one"},
++        {"number": 3, "title": "stray issue two"},
++        {"number": 2, "title": "stray pr", "pull_request": {"url": "x"}},
++    ]
++    r = audit_satellite("api", fetch=lambda o, r_, t: mixed)
++    check(
++        "mixed stray items -> VIOLATION 2 issues / 1 pr",
++        r.verdict == VERDICT_VIOLATION and r.open_issues == 2 and r.open_prs == 1 and len(r.violating) == 3,
++    )
++
++    # 3. unreachable paths
++    def boom_404(o, r_, t):
++        raise UnreachableError("HTTP 404")
++
++    def boom_rate(o, r_, t):
++        raise RateLimitError("HTTP 403")
++
++    r = audit_satellite("sdk", fetch=boom_404)
++    check("private/absent repo -> UNREACHABLE", r.verdict == VERDICT_UNREACHABLE)
++    r = audit_satellite("sdk", fetch=boom_rate)
++    check("rate limit -> UNREACHABLE (never silent)", r.verdict == VERDICT_UNREACHABLE)
++
++    # 4. exit-code mapping
++    clean = [SatelliteReport(x, VERDICT_CLEAN) for x in ("a", "b")]
++    viol = [SatelliteReport("a", VERDICT_CLEAN), SatelliteReport("b", VERDICT_VIOLATION)]
++    dead = [SatelliteReport(x, VERDICT_UNREACHABLE) for x in ("a", "b")]
++    check(
++        "exit codes 0 / 1 / 2 mapping",
++        decide_exit_code(clean) == 0 and decide_exit_code(viol) == 1 and decide_exit_code(dead) == 2,
++    )
++
++    ok = all(passed for _, passed in checks)
++    print(f"self-test: {sum(1 for _, p in checks if p)}/{len(checks)} checks {'PASS' if ok else 'FAIL'}")
++    return ok
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Zero-Issue Satellite Mandate Guard (#626)")
++    mode = parser.add_mutually_exclusive_group(required=True)
++    mode.add_argument("--check", action="store_true", help="gate mode: audit + documented exit codes")
++    mode.add_argument("--report", action="store_true", help="human-readable audit matrix")
++    mode.add_argument("--json", dest="as_json", action="store_true", help="machine-readable JSON output")
++    mode.add_argument("--self-test", action="store_true", help="offline self-test, zero network")
++    parser.add_argument("--org", default=DEFAULT_ORG, help=f"GitHub organization (default: {DEFAULT_ORG})")
++    args = parser.parse_args()
++
++    if args.self_test:
++        return 0 if self_test() else 1
++
++    token = _env_token()
++    reports = audit_all(org=args.org, token=token)
++
++    if args.as_json:
++        print(json.dumps(build_json(reports, args.org), indent=2))
++    else:
++        print(f"Zero-Issue Satellite Mandate audit — org {args.org} (doctrine #626, docs/FEDERATION_CHARTER.md)")
++        for r in reports:
++            print(f"  {r.summary()}")
++            for v in r.violating:
++                print(f"      {v}")
++        clean = sum(1 for r in reports if r.verdict == VERDICT_CLEAN)
++        viol = sum(1 for r in reports if r.verdict == VERDICT_VIOLATION)
++        unreach = sum(1 for r in reports if r.verdict == VERDICT_UNREACHABLE)
++        print(f"  totals: {clean} clean / {viol} violations / {unreach} unreachable of {len(reports)}")
++        if unreach:
++            print("  note: UNREACHABLE entries are skipped with warning (private plane / rate limit), never silent.")
++
++    return decide_exit_code(reports)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_satellite_board_guard.py b/tests/test_satellite_board_guard.py
+new file mode 100644
+index 00000000..8e2461cb
+--- /dev/null
++++ b/tests/test_satellite_board_guard.py
+@@ -0,0 +1,225 @@
++#!/usr/bin/env python3
++"""Offline test battery for scripts/ci/satellite_board_guard.py (#626).
++
++Hermetic by construction: every test injects a fake fetcher (or hits the
++module's own zero-network --self-test fixtures). No real GitHub call is ever
++made from this battery; no credentials are read (the token path is exercised
++only as an inert argument).
++
++Covers the three-tier contract:
++  Tier 1 (reflection): the audited registry matches the #626 doctrine SSOT.
++  Tier 2 (smoke): verdict logic, classification, exit-code mapping, output
++          shapes behave per the module contract.
++  Tier 3 (tests): this battery itself — 100% offline, sub-second.
++"""
++
++from __future__ import annotations
++
++import io
++import json
++import sys
++import unittest
++from contextlib import redirect_stdout
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(_ROOT / "scripts" / "ci"))
++
++import satellite_board_guard as sbg  # noqa: E402
++
++
++def fake_fetch(items):
++    def _fetch(org, repo, token=None):
++        return items
++
++    return _fetch
++
++
++def fetch_404(org, repo, token=None):
++    raise sbg.UnreachableError("HTTP 404 — repository absent or private plane")
++
++
++def fetch_rate_limited(org, repo, token=None):
++    raise sbg.RateLimitError("HTTP 403 — rate limit exhausted")
++
++
++class RegistryDoctrineTest(unittest.TestCase):
++    """Tier 1 — the audited registry IS the #626 doctrine, pinned."""
++
++    EXPECTED = {
++        "studio", "api", "vscode", "browser", "core", "command",
++        "skills", "agents", "sdk", "archive", "infrastructure", "mcp-control-plane",
++    }
++
++    def test_01_registry_matches_issue_626_doctrine(self):
++        self.assertEqual(set(sbg.SATELLITES), self.EXPECTED)
++
++    def test_02_registry_has_exactly_twelve_satellites(self):
++        self.assertEqual(len(sbg.SATELLITES), 12)
++
++    def test_03_private_monorepo_is_out_of_scope(self):
++        self.assertNotIn("supremeai", sbg.SATELLITES)
++        self.assertNotIn("supremeai-open", sbg.SATELLITES)
++
++
++class VerdictLogicTest(unittest.TestCase):
++    """Tier 2 — verdict determination per satellite."""
++
++    def test_04_clean_satellite_zero_open_items(self):
++        r = sbg.audit_satellite("studio", fetch=fake_fetch([]))
++        self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
++        self.assertEqual((r.open_issues, r.open_prs), (0, 0))
++        self.assertEqual(r.violating, [])
++
++    def test_05_violation_counts_issues_and_prs_separately(self):
++        items = [
++            {"number": 1, "title": "stray issue one"},
++            {"number": 2, "title": "stray issue two"},
++            {"number": 10, "title": "stray pr", "pull_request": {"url": "x"}},
++        ]
++        r = sbg.audit_satellite("api", fetch=fake_fetch(items))
++        self.assertEqual(r.verdict, sbg.VERDICT_VIOLATION)
++        self.assertEqual(r.open_issues, 2)
++        self.assertEqual(r.open_prs, 1)
++        self.assertEqual(len(r.violating), 3)
++
++    def test_06_pr_classification_requires_pull_request_key(self):
++        issues, prs, _ = sbg.classify_items(
++            [{"number": 7, "title": "plain issue"}]
++        )
++        self.assertEqual((issues, prs), (1, 0))
++        issues, prs, _ = sbg.classify_items(
++            [{"number": 8, "title": "pr", "pull_request": {"url": "y"}}]
++        )
++        self.assertEqual((issues, prs), (0, 1))
++
++    def test_07_violation_details_carry_number_and_title(self):
++        r = sbg.audit_satellite(
++            "sdk", fetch=fake_fetch([{"number": 42, "title": "orphaned epic"}])
++        )
++        self.assertTrue(any("#42" in d and "orphaned epic" in d for d in r.violating))
++
++    def test_08_malformed_items_are_ignored_not_fatal(self):
++        r = sbg.audit_satellite("core", fetch=fake_fetch(["garbage", None, 17]))
++        self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
++
++    def test_09_non_list_payload_treated_as_empty(self):
++        r = sbg.audit_satellite("core", fetch=fake_fetch(None))
++        self.assertEqual(r.verdict, sbg.VERDICT_CLEAN)
++
++
++class UnreachablePathsTest(unittest.TestCase):
++    """Tier 2 — fail-honest skip-with-warning contract."""
++
++    def test_10_private_or_absent_repo_is_unreachable(self):
++        r = sbg.audit_satellite("sdk", fetch=fetch_404)
++        self.assertEqual(r.verdict, sbg.VERDICT_UNREACHABLE)
++        self.assertIn("404", r.reason)
++
++    def test_11_rate_limit_is_unreachable_never_violation(self):
++        r = sbg.audit_satellite("archive", fetch=fetch_rate_limited)
++        self.assertEqual(r.verdict, sbg.VERDICT_UNREACHABLE)
++        self.assertIn("403", r.reason)
++
++
++class ExitCodeAndOutputTest(unittest.TestCase):
++    """Tier 2 — CI-facing contract (exit codes, JSON, report)."""
++
++    def test_12_exit_code_all_clean_is_zero(self):
++        reports = sbg.audit_all(fetch=fake_fetch([]))
++        self.assertEqual(sbg.decide_exit_code(reports), 0)
++
++    def test_13_exit_code_any_violation_is_one(self):
++        def mixed(org, repo, token=None):
++            return [] if repo == "studio" else [
++                {"number": 1, "title": "stray", "pull_request": {"url": "x"}}
++            ]
++
++        reports = sbg.audit_all(fetch=mixed)
++        self.assertEqual(sbg.decide_exit_code(reports), 1)
++
++    def test_14_exit_code_all_unreachable_is_two(self):
++        reports = sbg.audit_all(fetch=fetch_404)
++        self.assertEqual(sbg.decide_exit_code(reports), 2)
++        self.assertEqual(len(reports), 12)
++
++    def test_15_json_output_shape_and_totals(self):
++        reports = sbg.audit_all(fetch=fake_fetch([]))
++        payload = sbg.build_json(reports, "Supremeai-bd")
++        self.assertEqual(payload["org"], "Supremeai-bd")
++        self.assertEqual(payload["issue"], 626)
++        self.assertEqual(payload["doctrine"], "zero-issue-satellite-mandate")
++        self.assertEqual(payload["clean"], 12)
++        self.assertEqual(payload["violations"], 0)
++        self.assertEqual(payload["unreachable"], 0)
++        self.assertEqual(len(payload["satellites"]), 12)
++
++    def test_16_json_serializable(self):
++        reports = sbg.audit_all(fetch=fetch_rate_limited)
++        payload = sbg.build_json(reports, "Supremeai-bd")
++        roundtrip = json.loads(json.dumps(payload))
++        self.assertEqual(roundtrip["unreachable"], 12)
++
++    def test_17_report_mode_prints_matrix_and_totals(self):
++        buf = io.StringIO()
++        with redirect_stdout(buf):
++            reports = sbg.audit_all(fetch=fake_fetch([]))
++            for r in reports:
++                print(r.summary())
++        out = buf.getvalue()
++        self.assertIn("studio", out)
++        self.assertIn("CLEAN", out)
++        self.assertIn("mcp-control-plane", out)
++
++    def test_18_summary_line_format(self):
++        r = sbg.SatelliteReport("api", sbg.VERDICT_CLEAN)
++        self.assertIn("api", r.summary())
++        self.assertIn("CLEAN", r.summary())
++
++
++class BuiltinSelfTestAndPolicyTest(unittest.TestCase):
++    """Tier 2/3 — built-in offline self-test + credential policy."""
++
++    def test_19_builtin_self_test_passes(self):
++        buf = io.StringIO()
++        with redirect_stdout(buf):
++            ok = sbg.self_test()
++        self.assertTrue(ok)
++        self.assertIn("self-test: 5/5 checks PASS", buf.getvalue())
++
++    def test_20_default_fetch_uses_unauthenticated_plane_when_no_token(self):
++        # The default fetcher accepts token=None; the endpoint it hits is the
++        # unauthenticated REST combined listing (verified structurally — no
++        # network performed, no secret material involved).
++        url = sbg._issues_url("Supremeai-bd", "studio")
++        self.assertTrue(url.startswith("https://api.github.com/repos/"))
++        self.assertIn("/issues?state=open", url)
++        self.assertNotIn("token", url)
++        # signature tolerates the inert token argument
++        import inspect
++
++        params = list(inspect.signature(sbg.default_fetch_open_items).parameters)
++        self.assertEqual(params, ["org", "repo", "token"])
++
++    def test_21_env_token_lookup_prefers_gh_then_github(self):
++        import os
++
++        original = {k: os.environ.get(k) for k in ("GH_TOKEN", "GITHUB_TOKEN")}
++        try:
++            for k in original:
++                os.environ.pop(k, None)
++            self.assertIsNone(sbg._env_token())
++            os.environ["GITHUB_TOKEN"] = "b-token"
++            self.assertEqual(sbg._env_token(), "b-token")
++            os.environ["GH_TOKEN"] = "a-token"
++            self.assertEqual(sbg._env_token(), "a-token")
++        finally:
++            for k, v in original.items():
++                if v is None:
++                    os.environ.pop(k, None)
++                else:
++                    os.environ[k] = v
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

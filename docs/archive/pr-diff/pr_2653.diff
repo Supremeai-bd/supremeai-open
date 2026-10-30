@@ -1,0 +1,390 @@
+diff --git a/core/api/routes/__init__.py b/core/api/routes/__init__.py
+index 37351704..17569ee1 100644
+--- a/core/api/routes/__init__.py
++++ b/core/api/routes/__init__.py
+@@ -5,7 +5,7 @@
+ import importlib
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ _safe_imports: dict[str, Any] = {}
+ 
+diff --git a/core/api/routes/admin_dashboard/__init__.py b/core/api/routes/admin_dashboard/__init__.py
+index a1c11f0e..da0279f0 100644
+--- a/core/api/routes/admin_dashboard/__init__.py
++++ b/core/api/routes/admin_dashboard/__init__.py
+@@ -47,7 +47,7 @@
+ from api.routes.admin_auth import admin_rate_limit, require_admin_token
+ from core.config import settings  # noqa: F401  (module-attr parity with pre-split module)
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ from models.ci_report import CIReportPayload, create_ci_report  # noqa: F401  (module-attr parity)
+ from tools.billing.cost_auditor import CostAuditor
+diff --git a/core/api/routes/admin_dashboard/endpoints_approvals_mcp.py b/core/api/routes/admin_dashboard/endpoints_approvals_mcp.py
+index 0597ae18..a47ce600 100644
+--- a/core/api/routes/admin_dashboard/endpoints_approvals_mcp.py
++++ b/core/api/routes/admin_dashboard/endpoints_approvals_mcp.py
+@@ -13,7 +13,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from api.routes.admin_dashboard._models import ApprovalActionPayload
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @router.get("/approvals/mcp")
+diff --git a/core/api/routes/admin_dashboard/endpoints_backups.py b/core/api/routes/admin_dashboard/endpoints_backups.py
+index 5371354c..6515ab90 100644
+--- a/core/api/routes/admin_dashboard/endpoints_backups.py
++++ b/core/api/routes/admin_dashboard/endpoints_backups.py
+@@ -9,7 +9,7 @@
+ from fastapi import HTTPException
+ 
+ from api.routes.admin_dashboard import router
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_ci.py b/core/api/routes/admin_dashboard/endpoints_ci.py
+index 9ecfac62..2a46a32d 100644
+--- a/core/api/routes/admin_dashboard/endpoints_ci.py
++++ b/core/api/routes/admin_dashboard/endpoints_ci.py
+@@ -3,7 +3,7 @@
+ from fastapi import HTTPException, Request
+ 
+ from api.routes.admin_dashboard import router
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from models.ci_report import CIReportPayload, create_ci_report
+ 
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_command.py b/core/api/routes/admin_dashboard/endpoints_command.py
+index 903deac2..c39b72e3 100644
+--- a/core/api/routes/admin_dashboard/endpoints_command.py
++++ b/core/api/routes/admin_dashboard/endpoints_command.py
+@@ -14,7 +14,7 @@
+     ApprovalDecisionPayload,
+     DeployGateToggle,
+ )
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ with contextlib.suppress(ImportError):
+diff --git a/core/api/routes/admin_dashboard/endpoints_config.py b/core/api/routes/admin_dashboard/endpoints_config.py
+index 7d5b7ff9..853db553 100644
+--- a/core/api/routes/admin_dashboard/endpoints_config.py
++++ b/core/api/routes/admin_dashboard/endpoints_config.py
+@@ -11,7 +11,7 @@
+ from api.routes.admin_dashboard import router
+ from api.routes.admin_dashboard.endpoints_crud import _load_json_data, _save_json_data
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def get_env_etag(redis_key: str = "config:env_etag") -> str:
+diff --git a/core/api/routes/admin_dashboard/endpoints_crud.py b/core/api/routes/admin_dashboard/endpoints_crud.py
+index b6f6543d..ef828a6d 100644
+--- a/core/api/routes/admin_dashboard/endpoints_crud.py
++++ b/core/api/routes/admin_dashboard/endpoints_crud.py
+@@ -11,7 +11,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Additional Admin CRUD Endpoints (Phase 1) ────────────────────────────────
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_events.py b/core/api/routes/admin_dashboard/endpoints_events.py
+index e1168c6d..98ee6685 100644
+--- a/core/api/routes/admin_dashboard/endpoints_events.py
++++ b/core/api/routes/admin_dashboard/endpoints_events.py
+@@ -6,7 +6,7 @@
+ from fastapi import HTTPException, Query
+ 
+ from api.routes.admin_dashboard import router
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @router.get("/events")
+diff --git a/core/api/routes/admin_dashboard/endpoints_flags.py b/core/api/routes/admin_dashboard/endpoints_flags.py
+index 4ef551c5..32d86073 100644
+--- a/core/api/routes/admin_dashboard/endpoints_flags.py
++++ b/core/api/routes/admin_dashboard/endpoints_flags.py
+@@ -15,7 +15,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from core.feature_flags import RUNTIME_FLAG_NAMES, feature_flags
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_gate.py b/core/api/routes/admin_dashboard/endpoints_gate.py
+index 8b8c3da1..2970c16f 100644
+--- a/core/api/routes/admin_dashboard/endpoints_gate.py
++++ b/core/api/routes/admin_dashboard/endpoints_gate.py
+@@ -7,7 +7,7 @@
+ from api.routes.admin_dashboard import router
+ from api.routes.admin_dashboard._models import GateOverridePayload
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ with contextlib.suppress(ImportError):
+diff --git a/core/api/routes/admin_dashboard/endpoints_metrics.py b/core/api/routes/admin_dashboard/endpoints_metrics.py
+index bdbffeb8..160d20f6 100644
+--- a/core/api/routes/admin_dashboard/endpoints_metrics.py
++++ b/core/api/routes/admin_dashboard/endpoints_metrics.py
+@@ -2,7 +2,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.monitoring import get_metrics_collector
+ from core.observability.metrics_registry import get_window_metrics, metrics_engine
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_router_cfg.py b/core/api/routes/admin_dashboard/endpoints_router_cfg.py
+index 34cef9e5..90c88e93 100644
+--- a/core/api/routes/admin_dashboard/endpoints_router_cfg.py
++++ b/core/api/routes/admin_dashboard/endpoints_router_cfg.py
+@@ -3,7 +3,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from api.routes.admin_dashboard._models import RouterOverrideRequest
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @router.get("/model-router")
+diff --git a/core/api/routes/admin_dashboard/endpoints_secrets_health.py b/core/api/routes/admin_dashboard/endpoints_secrets_health.py
+index 3abed9ae..a768b9c5 100644
+--- a/core/api/routes/admin_dashboard/endpoints_secrets_health.py
++++ b/core/api/routes/admin_dashboard/endpoints_secrets_health.py
+@@ -21,7 +21,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Same known-weak set the security-scan endpoint enforces (single source of
+ # truth duplicated structurally on purpose: both surfaces must stay in sync
+diff --git a/core/api/routes/admin_dashboard/endpoints_security.py b/core/api/routes/admin_dashboard/endpoints_security.py
+index 5774904b..781f74c5 100644
+--- a/core/api/routes/admin_dashboard/endpoints_security.py
++++ b/core/api/routes/admin_dashboard/endpoints_security.py
+@@ -5,7 +5,7 @@
+ 
+ from api.routes.admin_dashboard import router
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_security_memory.py b/core/api/routes/admin_dashboard/endpoints_security_memory.py
+index b1e915df..f2779150 100644
+--- a/core/api/routes/admin_dashboard/endpoints_security_memory.py
++++ b/core/api/routes/admin_dashboard/endpoints_security_memory.py
+@@ -13,7 +13,7 @@
+ """
+ 
+ from api.routes.admin_dashboard import router
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.background_tasks import safe_create_task, security_memory_snapshot, snapshot_tasks
+ 
+ 
+diff --git a/core/api/routes/admin_dashboard/endpoints_users.py b/core/api/routes/admin_dashboard/endpoints_users.py
+index 8728960a..d654351b 100644
+--- a/core/api/routes/admin_dashboard/endpoints_users.py
++++ b/core/api/routes/admin_dashboard/endpoints_users.py
+@@ -6,7 +6,7 @@
+ 
+ from api.routes.admin_dashboard import load_users, router, save_users
+ from api.routes.admin_dashboard._models import UserUpdate
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @router.get("/users")
+diff --git a/core/api/routes/admin_dashboard/endpoints_ws.py b/core/api/routes/admin_dashboard/endpoints_ws.py
+index 5e562a63..daba1b58 100644
+--- a/core/api/routes/admin_dashboard/endpoints_ws.py
++++ b/core/api/routes/admin_dashboard/endpoints_ws.py
+@@ -8,7 +8,7 @@
+ from api.routes.admin_dashboard import router
+ from api.routes.admin_dashboard.endpoints_health import get_health_map
+ from api.routes.admin_dashboard.endpoints_metrics import get_metrics, get_providers
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ 
+diff --git a/core/api/routes/admin_llm.py b/core/api/routes/admin_llm.py
+index 90a55dfa..3fee9b60 100644
+--- a/core/api/routes/admin_llm.py
++++ b/core/api/routes/admin_llm.py
+@@ -24,7 +24,7 @@
+ 
+ from api.dependencies import get_current_admin
+ from api.routes.admin import god_layer  # shared God-layer instance (single SQLite handle)
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/admin/llm", tags=["Admin LLM Gateway"])
+ 
+diff --git a/core/api/routes/agent.py b/core/api/routes/agent.py
+index 6a8aae7d..65adaf34 100644
+--- a/core/api/routes/agent.py
++++ b/core/api/routes/agent.py
+@@ -32,7 +32,7 @@
+ 
+ from api.dependencies import verify_autonomous_agent_token
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ router = APIRouter(prefix="/api/v1/agents", tags=["Autonomous Agents"])
+diff --git a/core/api/routes/agent_action.py b/core/api/routes/agent_action.py
+index 22adf149..8a2ad5f4 100644
+--- a/core/api/routes/agent_action.py
++++ b/core/api/routes/agent_action.py
+@@ -6,7 +6,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from api.dependencies import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.security_vault import decrypt_token
+ from core.security.tool_gateway import ToolPolicyViolation, tool_policy_gateway
+ from core.zero_cost_architecture.swarm_orchestrator_integration import ZeroCostSwarmOrchestrator
+diff --git a/core/api/routes/agent_breeding.py b/core/api/routes/agent_breeding.py
+index f26a3fb8..15e19fb4 100644
+--- a/core/api/routes/agent_breeding.py
++++ b/core/api/routes/agent_breeding.py
+@@ -29,7 +29,7 @@
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.self_evolution.agent_breeder import AgentBreeder, BreederConfig
+ from core.self_evolution.performance_oracle import OracleConfig, PerformanceOracle
+ from database.session import get_db_session
+diff --git a/core/api/routes/agent_tasks.py b/core/api/routes/agent_tasks.py
+index cab14fde..2e2b3597 100644
+--- a/core/api/routes/agent_tasks.py
++++ b/core/api/routes/agent_tasks.py
+@@ -8,7 +8,7 @@
+ from brain.agent_departments import AgentDepartment
+ from brain.model_router import ModelRouter
+ from core.generation_monitor import GenerationMonitor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.zero_cost_architecture.swarm_orchestrator_integration import ZeroCostSwarmOrchestrator
+ 
+ agent_router = APIRouter(
+diff --git a/core/api/routes/agent_workspace.py b/core/api/routes/agent_workspace.py
+index 62ea4d45..cb9af39f 100644
+--- a/core/api/routes/agent_workspace.py
++++ b/core/api/routes/agent_workspace.py
+@@ -5,7 +5,7 @@
+ 
+ from api.dependencies import get_current_user_token
+ from core.knowledge_base import get_from_memory, save_to_memory
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.ws_auth import authenticate_websocket
+ 
+ # 🛡️ SECURITY FIX: এই router-এর কোনো HTTP endpoint-এই আগে কোনো authentication
+diff --git a/core/api/routes/agents.py b/core/api/routes/agents.py
+index ef34ae0c..0f2f0e81 100644
+--- a/core/api/routes/agents.py
++++ b/core/api/routes/agents.py
+@@ -9,7 +9,7 @@
+ from pydantic import BaseModel
+ 
+ from agents.research_assistant import ResearchAssistant, ResearchSourceError
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.authentication.rbac import get_current_user_token
+ 
+ # ERR-H07 CONTRACT: this router is the USER-facing read surface (catalog,
+diff --git a/core/api/routes/ai_assignment.py b/core/api/routes/ai_assignment.py
+index 222b6bd3..b7f30e45 100644
+--- a/core/api/routes/ai_assignment.py
++++ b/core/api/routes/ai_assignment.py
+@@ -21,7 +21,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/api/admin/ai", tags=["AI Surface Assignment"])
+ 
+diff --git a/core/api/routes/analytics.py b/core/api/routes/analytics.py
+index 31518196..c937c70c 100644
+--- a/core/api/routes/analytics.py
++++ b/core/api/routes/analytics.py
+@@ -10,7 +10,7 @@
+ from pydantic import BaseModel
+ 
+ from api.dependencies import get_current_admin
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.analytics.churn_prophet import ChurnProphet
+ from tools.analytics.insight_mage import InsightMage
+ 
+diff --git a/core/api/routes/api_keys.py b/core/api/routes/api_keys.py
+index bdfb7099..26963b20 100644
+--- a/core/api/routes/api_keys.py
++++ b/core/api/routes/api_keys.py
+@@ -10,7 +10,7 @@
+ from pydantic import BaseModel, Field, field_validator
+ 
+ from api.dependencies import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security import generate_api_key, hash_api_key, mask_api_key, verify_api_key
+ from middleware.rate_limiter import AsyncRateLimiter
+ from models.api_key import create_api_key as db_create_api_key
+diff --git a/core/api/routes/approval_manager.py b/core/api/routes/approval_manager.py
+index 66679bc3..bcd3629a 100644
+--- a/core/api/routes/approval_manager.py
++++ b/core/api/routes/approval_manager.py
+@@ -21,7 +21,7 @@
+ 
+ from api.dependencies import get_project_admin
+ from core.code_validator import AICodeValidator
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.ws_auth import authenticate_websocket
+ from models.pending_tasks import (
+     ApprovalStateError,
+diff --git a/core/api/routes/artifacts.py b/core/api/routes/artifacts.py
+index d0829945..e27f76c5 100644
+--- a/core/api/routes/artifacts.py
++++ b/core/api/routes/artifacts.py
+@@ -14,7 +14,7 @@
+ from pydantic import BaseModel, Field, field_validator
+ 
+ from api.deps import get_current_user_token
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import SupabaseDB
+ 
+ router = APIRouter(

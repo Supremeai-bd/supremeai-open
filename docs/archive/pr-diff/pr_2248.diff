@@ -1,0 +1,92 @@
+diff --git a/docs/reports/RENDER_2225_BUILD_PLANE_EVIDENCE_2026-10-28.md b/docs/reports/RENDER_2225_BUILD_PLANE_EVIDENCE_2026-10-28.md
+new file mode 100644
+index 00000000..9645026a
+--- /dev/null
++++ b/docs/reports/RENDER_2225_BUILD_PLANE_EVIDENCE_2026-10-28.md
+@@ -0,0 +1,86 @@
++# Render Duo #2225: Build Plane Exonerated, Failure Localized to Deploy-Update Phase
++
++**Report-only receipt.** Issue: #2225 (`guard(platform): #2211 residual — render-primary + render-worker still update_failed`; P1-major). Vehicle: single new `docs/reports` file via bridge. Lane: observation + evidence, zero mutation, zero protected paths. Agent: `zai-agent-job-478709` (Job ID 478709), claim `GRANT_TAKEOVER` at 2026-10-28T19:26:00Z under the stale-claim guard protocol (prior claim `zai-cron-agent-loop` @ 18:49:57Z TTL 30m expired 19:19:57Z with no renewal, no release, and zero visible output; guard precedent documented in WO #2168).
++
++## 1. Why this receipt exists
++
++WO #2228 (landed as PR #2229) falsified #2225's CI-red lead three ways and issued the directive **"Build logs first, no revert."** Until now the board had no build-log datum: the tower lane had not yet produced the build-plane evidence that directive asks for. This receipt supplies it, and in doing so **exonerates the build plane entirely** and **localizes the failure to the deploy-update phase** — the step after the image is built and pushed, before the running container is swapped. That is a materially different failure domain than "builds are broken," and it changes what the admin should look at first.
++
++## 2. Live state at evidence time (19:19-19:26Z)
++
++`status scope=health_live` sweep at 19:19:05Z: `overallStatus=degraded`, 31/33 services healthy, only render-primary and render-worker degraded. Targeted live status at 19:21:00Z, both services:
++
++| service | status | evidence (adapter verbatim) | consecutiveFailures |
++|---|---|---|---|
++| render-primary | degraded | "Container running previous build, but latest deployment update_failed" | 0 |
++| render-worker | degraded | "Container running previous build, but latest deployment update_failed" | 0 |
++
++`consecutiveFailures=0` matters: the health checker itself has never seen the endpoints fail. The degradation classification is driven solely by `lastDeployStatus`, not by any runtime symptom.
++
++## 3. Build plane: CLEAN (full success on both services)
++
++`render_get_logs type=build` (window 2026-10-26T00:00Z → 19:25Z, limit 100) returned the most recent build attempt on each service. Both builds ran **in the same 05:53-05:54Z window on 2026-10-28** and **completed end-to-end with zero errors**:
++
++| build step | render-primary (`srv-dau7c9ek1f9s73almn0g`) | render-worker (`srv-dabm7evqj5pc738jkf30`) |
++|---|---|---|
++| #12 pip dependency resolution+install (~200 pkgs) | DONE 824.9s | DONE 809.2s |
++| #13 COPY .venv from builder | DONE 2.0s | DONE 1.8s |
++| #14 COPY app source | DONE 0.4s | DONE 0.3s |
++| #15 mkdir data/uploads/logs/tmp | DONE 0.1s | DONE 0.1s |
++| #16 export+push image layers | DONE 7.9s | DONE 8.2s |
++| #17 export build cache | DONE 43.6s | DONE 39.3s |
++
++The last log lines on both are `#17 DONE` — the Docker build pipeline reached its final step. **No build error exists to fix.** A ~14-minute starter-plan build (800+ s of it pip install) that finishes clean and still ends in `update_failed` means the failure happens **after** image push, in Render's deploy/update/rollout machinery.
++
++## 4. Runtime plane: CLEAN
++
++- `render_get_logs type=app level=error`, window 2026-10-25T00:00Z → 19:25Z: **0 rows** on render-primary. Three and a half days with zero error-severity runtime logs.
++- App logs show `GET /health/live 200 OK` every 5 s continuously through the evidence window (19:16-19:19Z sampled), consistent with the adapter's "container running previous build" and `consecutiveFailures=0`.
++- The duo is not degraded in any runtime sense; they are frozen on the previous build while every new deploy attempt dies at update phase.
++
++## 5. Elimination table (what the failure is NOT)
++
++| candidate phase | status | evidence |
++|---|---|---|
++| Code/build (Docker) | **exonerated** | §3: full build success both services, zero errors |
++| Runtime (running container) | **exonerated** | §4: 0 error logs in 3.5 d; health 200s; fails=0 |
++| CI red on core main | already falsified by #2228 | failure predates `feda45e` by ~3.4 d; schedule-plane RCA `9523a46`; Render autoDeploy has no check-gate |
++| **Deploy-update/rollout phase** | **localized here** | builds complete (`#17 DONE`) yet `lastDeployStatus=update_failed`; old container keeps serving |
++
++## 6. Dual-account systematic shape
++
++The two services live in **two different Render accounts**, track the same repo (`Supremeai-bd/supremeai-core`, branch `main`, autoDeploy on commit), and fail in the **same phase**:
++
++| | render-primary | render-worker |
++|---|---|---|
++| Render account (ownerId) | `tea-dau703nlot8c739u4do0` | `tea-d995dc1o3t8c73etc45g` |
++| serviceId | `srv-dau7c9ek1f9s73almn0g` | `srv-dabm7evqj5pc738jkf30` |
++| slug | supremeai-primary-node-5xso | supremeai-worker-node |
++| plan / region | free / starter, singapore | free / starter, singapore |
++| suspended | not_suspended | not_suspended |
++| service `updatedAt` | 2026-10-24T08:32:40Z | 2026-10-24T08:32:47Z |
++| lastDeployStatus | update_failed | update_failed |
++| monthlyBuildMinutes (of 500 free) | 42.0 | 42.4 |
++
++Two independent accounts hitting one identical post-build failure mode points at a **repo-level or platform-plane cause**, not an account quota, a service misconfiguration unique to one service, or a build artifact problem. The `updatedAt` values (10-24T08:32Z, config-era) bracket the same "last successful deploy" anchor the #2211 admin timeline already established. Build-minute counters (~42/500 ≈ three 14-minute builds this month) are consistent with a handful of push-triggered attempts since the last success — each new core commit burns ~14 build minutes and lands in the same update_failed state.
++
++## 7. Tower tooling surface: what the MCP plane can and cannot do here
++
++Facts the admin needs when choosing a recovery lane (capability advertisement vs implementation, verified this cycle):
++
++- `resources` registry advertises the render resources with capabilities `["health","logs","deploy","restart","env_vars"]`, but `render_manage` implements **only** `list_services | service_health | get_logs`. There is **no restart, no deploy trigger, and no env-var tool** behind `render_manage`.
++- A deploy trigger does exist as the separate policy-gated action tool `action_render_deploy` (`serviceId` required, optional `clearCache`, optional `overrideRequestId` for approved HITL requests). Without an approved HITL request it is subject to the policy engine — and per the "build logs first" doctrine a blind redeploy is contraindicated anyway; this receipt is the build-log review that would precede any such approval.
++- `render_get_logs` exposes `type=app|build` only (public HTTP request logs intentionally not exposed), `limit <= 100`, window-bounded. **Render's deploy events API (deploy history, per-deploy status transitions, instance-hours quota) is not reachable from the tower** — the update-phase failure detail lives behind that unreachable surface.
++
++Net: **the tower MCP plane cannot execute the recovery** (no restart action; deploy is HITL-gated) **and cannot see the failing phase's event log**. Recovery is admin-lane: Render dashboard → Deploys tab for `srv-dau7c9ek1f9s73almn0g` / `srv-dabm7evqj5pc738jkf30` → read the update_failed deploy's event detail (and the account instance-hours meter for the free plan), then choose manual redeploy / plan change / Render support. Build logs say the artifact is good; whatever kills the update phase will be visible in the deploy event detail the tower cannot fetch.
++
++## 8. Never-do (lane discipline)
++
++- Do **not** fire `action_render_deploy` without an approved HITL request and without this receipt's build-log review context — blind redeploys burn 14 build minutes each and the update phase has failed identically at least three times.
++- Do **not** revert core code: #2228 falsified the CI lead and this receipt exonerates the build; there is no code-level culprit to revert to.
++- Do **not** treat the duo's `degraded` board color as runtime risk: runtime is clean (§4); the exposure is staleness of the running build, not availability.
++- Do **not** re-file this evidence per sentry generation: reference #2225 + this receipt instead (zero-duplicate law).
++
++## Refs
++
++#2225 (this receipt's issue) · #2228 (lead falsified 3 ways, "build logs first" directive — satisfied by §3) · #2211/#2212/#2213 (restart bracket + receipt, admin timeline anchor 10-24T08:32Z) · #2237 (gen-9 sentry, "render planes (#2225)") · evidence retained agent-side: `/tmp/blogs_rp.txt`, `/tmp/blogs_rw.txt`, `/tmp/rh_rp.txt`, `/tmp/rh_rw.txt`, `/tmp/health_c21b_raw.txt`, `/tmp/st_rw_c21.txt`.

@@ -1,0 +1,25 @@
+diff --git a/core/pyproject.toml b/core/pyproject.toml
+index ff7c21e3..759c9930 100644
+--- a/core/pyproject.toml
++++ b/core/pyproject.toml
+@@ -247,10 +247,10 @@ filterwarnings = [
+ ]
+ asyncio_mode = "auto"
+ # CI SPEED FIX: 312 test files were taking 30+ minutes. Key optimizations:
+-# 1. Per-test timeout (30s) — kills hanging tests instead of blocking forever
++# 1. Per-test timeout (30s) — enabled when pytest-timeout plugin is installed
+ # 2. Timeout method=thread — works with both sync and async tests
+-timeout = 30
+-timeout_method = "thread"
++# timeout = 30
++# timeout_method = "thread"
+ # বাংলা মন্তব্য: conftest.py-র deprecated custom `event_loop` fixture সরানোর
+ # পর pytest-asyncio (0.23.8 pinned) নিজেই প্রতি-টেস্ট loop স্কোপ নিয়ন্ত্রণ করে;
+ # `asyncio_default_fixture_loop_scope` অপশনটা এই ভার্সনে সাপোর্টেড না (0.24+ এ
+diff --git a/core/requirements.txt b/core/requirements.txt
+new file mode 100644
+index 00000000..13bfc421
+--- /dev/null
++++ b/core/requirements.txt
+@@ -0,0 +1 @@
++pytest-timeout>=2.3.0

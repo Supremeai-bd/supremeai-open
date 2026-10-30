@@ -1,0 +1,56 @@
+diff --git a/command/event_pipeline.py b/command/event_pipeline.py
+index 0cfb738c..95240a71 100644
+--- a/command/event_pipeline.py
++++ b/command/event_pipeline.py
+@@ -124,7 +124,16 @@ def _run(self, task: DurableTask, event: Event) -> None:
+             task.state = "running"
+             try:
+                 ok = bool(self._handler(event, task))
+-            except (RuntimeError, ValueError, TypeError, OSError, TimeoutError, ConnectionError, AttributeError, KeyError) as exc:
++            except (
++                RuntimeError,
++                ValueError,
++                TypeError,
++                OSError,
++                TimeoutError,
++                ConnectionError,
++                AttributeError,
++                KeyError,
++            ) as exc:
+                 ok = False
+                 task.last_error = str(exc)
+             if ok:
+diff --git a/command/telegram_bot.py b/command/telegram_bot.py
+index 7d89a5f3..6a71759a 100644
+--- a/command/telegram_bot.py
++++ b/command/telegram_bot.py
+@@ -129,7 +129,13 @@ def _synthesize(text: str) -> VoiceOutcome:
+             return VoiceOutcome(error=f"service unavailable: {exc}")
+         except VoiceSynthesisError as exc:
+             return VoiceOutcome(error=f"{exc}")
+-        except (RuntimeError, OSError, TimeoutError, ConnectionError, ValueError) as exc:
++        except (
++            RuntimeError,
++            OSError,
++            TimeoutError,
++            ConnectionError,
++            ValueError,
++        ) as exc:
+             return VoiceOutcome(error=f"unexpected voice failure: {exc}")
+         return VoiceOutcome(
+             audio=result.audio,
+diff --git a/command/webhook_ingress.py b/command/webhook_ingress.py
+index 8151c346..daf0daaa 100644
+--- a/command/webhook_ingress.py
++++ b/command/webhook_ingress.py
+@@ -136,7 +136,9 @@ def log_message(self, fmt: str, *args: object) -> None:  # silence access log
+     return ThreadingHTTPServer((bind_host, bind_port), Handler)
+ 
+ 
+-def serve(ingress: WebhookIngress, port: int, host: str | None = None) -> None:  # pragma: no cover - runtime
++def serve(
++    ingress: WebhookIngress, port: int, host: str | None = None
++) -> None:  # pragma: no cover - runtime
+     """Blocking runtime entrypoint (used by the command runtime, not tests)."""
+     bind_host = host or os.environ.get("WEBHOOK_BIND_HOST", "127.0.0.1")
+     server = make_http_server(ingress, bind_port=port, bind_host=bind_host)

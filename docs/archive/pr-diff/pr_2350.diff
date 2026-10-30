@@ -1,0 +1,55 @@
+diff --git a/docs/reports/auditor-20261029-verdict-restoration-status.md b/docs/reports/auditor-20261029-verdict-restoration-status.md
+new file mode 100644
+index 00000000..50293cd9
+--- /dev/null
++++ b/docs/reports/auditor-20261029-verdict-restoration-status.md
+@@ -0,0 +1,49 @@
++# Auditor Restoration Checkpoint: pattern-2 false rejections persist through three landed fixes — 18-hour window, zero tower-side restoration
++
++- **Date:** 2026-10-29 (07:45 +08:00 cycle, Job 477792, trace c078b70b)
++- **Author:** zai-agent (Z.ai GLM, continuous loop auditor dispatch via MCP tower)
++- **Mode:** report-only, additive single file, zero code, zero protected paths
++- **Canonical predecessor:** `auditor-20261028-verdict-state-artifacts.md` (merged `c665d29`, PR #2127) — this file adds a status checkpoint; nothing in the merged report is rewritten
++- **Companion lanes:** R58 FALSE_REJECTION cohort tracker (#2275, open — tower-owner adjudication pending); BRIDGE_VERDICT_STALL_TRACKER_2026-10-29 (#2345/#2344, landed `1858aee`)
++
++## 1. Purpose
++
++The merged pass-10 report documented the verdict-state artifact family (3 patterns, 10 instances, merge-sha verified) and predicted that pattern-2 (post-merge false `bridge:rejected` with a verdictHistory entry reading "patch branch not found") would replicate on every fresh merge until a retroactive sweep ran. Between the report's landing (19:45 +08 cycle) and this checkpoint, the fix lane landed three relevant repairs: the landing-truth probe's lane-2 blindness fix (#2285, `961e2be`, "un-sticks 15 stranded WOs"), the R58 rejected-plane reconciliation sweep (#2293, `d676466`, 52 rows deep), and the rejected-plane fetch limit ladder (#2347, `36c5445`). This checkpoint answers one question with fresh probes: **did any of the three reach the pattern-2 instances?**
++
++## 2. Fresh probe matrix (2026-10-29 07:48 +08, bridge_read_feedback, session 135ba04a)
++
++| WO | Pattern-2 instance | state | labels | verdictHistory | stateReason | unchanged since |
++|----|--------------------|-------|--------|----------------|-------------|-----------------|
++| #2126 | #2 (the report's own WO) | open | `bridge:rejected` | 1 | None | 06:45 probe, 00:45 probe |
++| #2020 | #3 | open | `bridge:rejected` | 1 | None | 06:45 probe, 00:45 probe |
++| #2056 | #4 | open | `bridge:rejected` | 1 | None | 06:45 probe, 00:45 probe |
++
++All three carry the same 13:0xZ false stamps documented in pass-10 §instance table. Landing truth is unchanged and canonical: #2126's material landed via PR #2127 (`c665d29`), #2020's and #2056's via their mapped PRs — every landing sha re-verified in pass-10 and re-confirmed on `git log origin/main` at HEAD `36c5445` this cycle. The probes were repeated at 06:45 and 07:48 across two cycles and two Tower sessions (`f9d7dd48`, `135ba04a`) — the state is stable, not transient.
++
++## 3. Why the three fixes did not reach them
++
++- **#2285 (probe lane-2 blindness)** fixed the probe's ability to *find* branch heads for stranded WOs (OPEN_REPO first, `bridge/<taskId>` head, cap-tolerant layer-2 scan). It is a detection repair; it does not itself re-stamp. Its "un-sticks 15 stranded WOs" framing names the queued-label cohort (pattern-1 class), not the rejected-label cohort.
++- **#2293 (R58 sweep)** executed #2275's claim and produced the deterministic 52-row rejected-plane worklist — an enumeration advance (the sweep found the plane 52 rows deep where the strict plane saw 20), but the sweep's landing is report/tracker material; the re-stamp action itself remains routed to the tower-owner plane (R58 option A), which is HITL-gated.
++- **#2347 (limit ladder)** closed the fetch-limit gap #2293 surfaced (`_fetch_rejected_rows_tower` sent no limit). Again enumeration-plane; no verdict writes.
++- Net: the detection and enumeration planes are now fully green, and the *action* plane — the tower-owner adjudication sweep that re-stamps `bridge:rejected` → terminal-correct — is the sole remaining step, unchanged since R58 was filed (~21:0xZ 10-28). The pattern-2 instances are the extreme end of the wait: **~18 hours from false stamp to still-unrestored, through three landed fixes and two clean sweeps.**
++
++Note on cohort membership: R58's cohort list includes #2056 and #2126 (slugs `core-ci2053-autofix-rca`, `aud-verdict-state`). #2020 predates the cohort's 400-commit derivation window and is therefore NOT in R58's worklist — it needs its own adjudication row (pass-10 documents it as instance #3 with merge evidence). Any tower-owner sweep driven solely by R58's list would miss it; this receipt makes the gap explicit.
++
++## 4. Adjacent-class observation: the family gained an agent-side member this cycle
++
++PR #2322 (this agent's R61 radar registration, landed `ebe630c`) submitted a full_file overwrite from a stale base and evicted the freshly-landed R62 row; #2330 (`9d0e6a7`) restored it verbatim. Mechanistically distinct from patterns 1-3 (agent-side stale write, not tower-side verdict pipeline) but the same observable — a state-plane lie — and it strengthens pass-10's thesis that landing-truth integrity needs both planes fixed: the tower side (verdict pipeline, patterns 1-3) and the agent side (stale full_file writes). The forward prevention is already landed (#2340, `2be05f4`: opt-in per-file baseSha, Tower re-reads main, STALE_BASE_ERROR on drift); this report's author adopted the practice going forward and notes that new-file submissions carry no clobber risk, making the baseSha opt-in relevant primarily to edits of existing files.
++
++## 5. Dedup register
++
++- **pass-10 (`c665d29`)**: canonical family report — unchanged, not rewritten; this file adds the post-fix status row.
++- **R58 / #2275**: the 18-WO cohort + adjudication routing — this checkpoint supplies fresh evidence FOR that lane (its row stays open until tower-owner disposition); no new cohort is proposed.
++- **#2345 tracker (`1858aee`)**: the never-writes plane (verdict-null cohort, labels queued/landed) — complementary, zero overlap with pattern-2's false-verdict rows; cited as the second independent confirmation that the verdict plane needs owner-side repair.
++- **#2330 / #2340**: the clobber repair and stale-write prevention — referenced in §4 as adjacent-class context only; no new lane.
++
++## 6. Ask (unchanged, now with 18h evidence)
++
++One action remains: the tower-owner adjudication sweep (R58 option A) — one pass over the 52-row rejected plane, re-stamping terminal-correct rows where the bridge-slug's material is in main history, with #2020 added to the worklist explicitly (outside R58's derivation window). Every detection and enumeration prerequisite is landed and green; the window between false stamp and restoration is now the family's longest measured artifact lifetime, and pattern 2 continues to replicate on every fresh merge in the meantime.
++
++## 7. Evidence provenance
++
++Probes: `bridge_read_feedback {number}` × 3 at 2026-10-29 23:48Z (07:48 +08), Tower session `135ba04a` (fresh handshake this cycle), matching the 06:45 cycle's probes on session `f9d7dd48`. Landing truth: `git log origin/main` at HEAD `36c5445` (15 commits behind-to-current window reviewed; all pass-10 merge shas present). Loop: `--verify-only` 8/8 PASS at `36c5445` before the audit work. Fix-lane timeline: commit subjects `44d91a9`, `7de61a1`, `961e2be`, `d676466`, `36c5445`, `9d0e6a7`, `2be05f4` read from main history this cycle.

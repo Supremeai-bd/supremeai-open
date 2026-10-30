@@ -1,0 +1,282 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 8d6991e9..6ed548b1 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-verdicts",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -64,7 +64,8 @@
+     "test:queue-fidelity": "tsx test_queue_fidelity.ts",
+     "test:bridge-dedup": "tsx test_bridge_dedup.ts",
+     "test:bridge-titles": "tsx test_bridge_titles.ts",
+-    "test:bridge-staleness": "tsx test_bridge_staleness.ts"
++    "test:bridge-staleness": "tsx test_bridge_staleness.ts",
++    "test:bridge-verdicts": "tsx test_bridge_verdicts.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts b/infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts
+new file mode 100644
+index 00000000..22d0c7bc
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/bridge_verdicts.ts
+@@ -0,0 +1,94 @@
++/**
++ * #2344 — intake-verdict read-side fallback (Option A from the verdict-stall
++ * tracker): make landed work orders machine-readable again.
++ *
++ * Pure, offline helpers (no network, no env) so the regression battery
++ * (test_bridge_verdicts.ts) can replay the live cohort deterministically —
++ * same discipline as bridge_dedup.ts (#2136/#2227) and bridge_staleness.ts
++ * (#2333).
++ *
++ * Failure being fixed (live cohort, 2026-10-28 ~23:3xZ, #2344 evidence):
++ * the intake-verdict plane NEVER writes for anonymous-bridge work orders —
++ * 7 of the filer's own WOs across 5 cycles all show latestVerdict=null +
++ * verdictHistory=[] in fresh bridge_read_feedback probes, 5 of them with
++ * stale bridge:queued labels despite byte-verified landings, 2 correctly
++ * landed-labeled yet still verdict-null. Guard lane #2203 independently
++ * logged the same plane. The intake service (src/events/bridge_intake.ts)
++ * only processes signed webhook events; anonymous zero-credential WOs never
++ * pass through a verdict-writing gate, so the feedbackTool contract string
++ * ("machine-readable intake verdicts (APPLIED/REJECTED + reason)") promises
++ * data the plane never produces for exactly the WOs the bridge creates.
++ *
++ * Option A contract (read-side, no write-path risk):
++ * - An intake-bot verdict exists (raw parse non-null) -> pass through
++ *   unchanged, verdictSource = "intake-bot" (nothing changes for WOs the
++ *   plane DOES serve).
++ * - No intake verdict + labels contain `bridge:landed` + state `closed`
++ *   -> derive APPLIED_LABEL_DERIVED as latestVerdict, verdictSource =
++ *   "label-fallback"; the raw absence is preserved as intakeVerdict: null
++ *   (auditability: the derived verdict never masquerades as an intake-bot
++ *   one).
++ * - Anything else (open WOs, in-gates, plain queued) -> unchanged nulls,
++ *   verdictSource = null.
++ * verdictHistory stays pure intake-bot history — the fallback never pollutes
++ * the historical record it derives from.
++ */
++
++export interface IntakeVerdictLike {
++  verdict: string;
++  task: string | null;
++  reason: string | null;
++  repo: string | null;
++  pr: string | null;
++  at: string | null;
++}
++
++export type VerdictSource = "intake-bot" | "label-fallback" | null;
++
++export interface LabelFallbackResult {
++  latestVerdict: IntakeVerdictLike | null;
++  intakeVerdict: IntakeVerdictLike | null;
++  verdictSource: VerdictSource;
++}
++
++export const LABEL_DERIVED_VERDICT = "APPLIED_LABEL_DERIVED";
++export const LABEL_DERIVED_REASON =
++  "label-fallback (#2344 Option A): bridge:landed + state=closed with no intake-verdict record — derived read-side; the verdict-writing plane has never fired for anonymous-bridge WOs.";
++
++/**
++ * Derive the read-side fallback verdict for one work order.
++ * Pure: state + labels + already-parsed raw verdict in, verdict shape out.
++ */
++export function applyLabelFallback(
++  state: string,
++  labels: readonly string[],
++  rawLatestVerdict: IntakeVerdictLike | null
++): LabelFallbackResult {
++  // The plane served this WO: pass through untouched, source attributed.
++  if (rawLatestVerdict) {
++    return { latestVerdict: rawLatestVerdict, intakeVerdict: rawLatestVerdict, verdictSource: "intake-bot" };
++  }
++  // Landed + closed with no verdict record: the #2344 cohort shape. Derive
++  // from what the read side already sees — labels and state are the same
++  // bytes a human uses to conclude "landed".
++  const landed = labels.some((l) => l === "bridge:landed");
++  if (landed && state === "closed") {
++    return {
++      latestVerdict: {
++        verdict: LABEL_DERIVED_VERDICT,
++        task: null,
++        reason: LABEL_DERIVED_REASON,
++        repo: null,
++        pr: null,
++        at: null,
++      },
++      intakeVerdict: null,
++      verdictSource: "label-fallback",
++    };
++  }
++  // Open / in-gates / queued / rejected-without-record: no derivation — the
++  // tracker's spec deliberately covers only the landed class; inventing a
++  // REJECTED_LABEL_DERIVED from a stale bridge:rejected label would launder
++  // the #2275 false-rejection class into machine-readable "truth".
++  return { latestVerdict: null, intakeVerdict: null, verdictSource: null };
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 118a5a62..59576e94 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -8,6 +8,7 @@ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
+ import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+ import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
++import { applyLabelFallback, type VerdictSource } from "../lib/bridge_verdicts.js";
+ import { issueTitleFor, prTitleFor, prFailureFromHttp, PrFailure } from "../lib/bridge_titles.js"; // #2195
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+@@ -441,6 +442,14 @@ export interface IssueFeedback {
+   state: string;
+   labels: string[];
+   latestVerdict: IntakeVerdict | null;
++  // #2344 Option A: the RAW intake-plane verdict (null for the anonymous-bridge
++  // cohort where the verdict writer never fired) — auditability alongside the
++  // possibly label-derived latestVerdict above.
++  intakeVerdict: IntakeVerdict | null;
++  // #2344 Option A: provenance of latestVerdict — "intake-bot" (plane wrote a
++  // record), "label-fallback" (derived from bridge:landed + closed), or null
++  // (no verdict representable).
++  verdictSource: VerdictSource;
+   verdictHistory: IntakeVerdict[];
+   latestClaim: { agent: string; at: string; ttlMinutes: number } | null;
+   commentCount: number;
+@@ -485,11 +494,21 @@ export function parseIntakeFeedback(
+     });
+   }
+   const markers = parseClaimMarkers(comments);
++  // #2344 Option A: the intake-verdict plane has NEVER written for
++  // anonymous-bridge WOs (7-WO live cohort, all latestVerdict=null despite
++  // byte-verified landings). Derive the landed-class verdict read-side so
++  // bridge_read_feedback stops promising data it never returns; the raw null
++  // is preserved as intakeVerdict and the derivation is attributed via
++  // verdictSource. verdictHistory stays pure intake-bot history.
++  const rawLatest = history.length > 0 ? history[history.length - 1]! : null;
++  const fallback = applyLabelFallback(state, labels, rawLatest);
+   return {
+     issueNumber,
+     state,
+     labels: [...labels],
+-    latestVerdict: history.length > 0 ? history[history.length - 1]! : null,
++    latestVerdict: fallback.latestVerdict,
++    intakeVerdict: fallback.intakeVerdict,
++    verdictSource: fallback.verdictSource,
+     verdictHistory: history,
+     latestClaim: markers.latest
+       ? { agent: markers.latest.agent, at: markers.latest.ts.toISOString(), ttlMinutes: markers.latest.ttlMinutes }
+diff --git a/infrastructure/mcp-control-plane/test_bridge_verdicts.ts b/infrastructure/mcp-control-plane/test_bridge_verdicts.ts
+new file mode 100644
+index 00000000..d0c3d9ff
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_verdicts.ts
+@@ -0,0 +1,103 @@
++/**
++ * #2344 — intake-verdict read-side fallback regression battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Replays the live cohort (2026-10-28 ~23:3xZ): 7 anonymous-bridge WOs across
++ * 5 cycles all showed latestVerdict=null + verdictHistory=[] in fresh
++ * bridge_read_feedback probes — 5 with stale bridge:queued labels despite
++ * byte-verified landings, 2 correctly landed-labeled yet still verdict-null.
++ * The feedbackTool contract promises "machine-readable intake verdicts
++ * (APPLIED/REJECTED + reason)" the plane never produces for exactly the WOs
++ * the bridge creates. Option A: derive the landed-class verdict read-side
++ * (bridge:landed + closed -> APPLIED_LABEL_DERIVED, verdictSource=
++ * "label-fallback", raw null preserved as intakeVerdict).
++ */
++import {
++  applyLabelFallback,
++  LABEL_DERIVED_VERDICT,
++  LABEL_DERIVED_REASON,
++  type IntakeVerdictLike,
++} from "./src/lib/bridge_verdicts.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++// A real intake-bot verdict shape (what the plane writes when it DOES fire).
++const BOT_VERDICT: IntakeVerdictLike = {
++  verdict: "APPLIED",
++  task: "bridge-20261028-dedup-exact-key-r1",
++  reason: "landed via PR #2149",
++  repo: "Supremeai-bd/supremeai-open",
++  pr: "#2149",
++  at: "2026-10-28T19:04:11Z",
++};
++
++// ─── 1. Pass-through: plane-served WOs unchanged ────────────────────────────
++section("1. Raw verdict present -> pass through, source intake-bot");
++const served = applyLabelFallback("closed", ["bridge:landed"], BOT_VERDICT);
++check("latestVerdict is the bot verdict verbatim", served.latestVerdict === BOT_VERDICT);
++check("intakeVerdict mirrors the bot verdict", served.intakeVerdict === BOT_VERDICT);
++check("verdictSource = intake-bot", served.verdictSource === "intake-bot");
++const servedOpen = applyLabelFallback("open", ["bridge:queued"], BOT_VERDICT);
++check("bot verdict passes through even on open WOs", servedOpen.verdictSource === "intake-bot" && servedOpen.latestVerdict === BOT_VERDICT);
++
++// ─── 2. The live cohort: landed + closed + verdict-null ─────────────────────
++section("2. Landed + closed + no record -> APPLIED_LABEL_DERIVED (the #2344 cohort)");
++const cohort = applyLabelFallback("closed", ["bridge:landed"], null);
++check("latestVerdict derived", cohort.latestVerdict !== null && cohort.latestVerdict.verdict === LABEL_DERIVED_VERDICT);
++check("derived verdict carries the #2344 reason", cohort.latestVerdict?.reason === LABEL_DERIVED_REASON);
++check("raw absence preserved: intakeVerdict = null", cohort.intakeVerdict === null);
++check("verdictSource = label-fallback", cohort.verdictSource === "label-fallback");
++check("derived fields are null (task/repo/pr/at — nothing invented)", cohort.latestVerdict?.task === null && cohort.latestVerdict?.repo === null && cohort.latestVerdict?.pr === null && cohort.latestVerdict?.at === null);
++
++// ─── 3. Landed but still open (label lag) -> no derivation ──────────────────
++section("3. bridge:landed but state open -> no derivation (stale-label honesty)");
++const landedOpen = applyLabelFallback("open", ["bridge:landed"], null);
++check("open state blocks derivation", landedOpen.verdictSource === null);
++check("latestVerdict stays null", landedOpen.latestVerdict === null);
++check("intakeVerdict stays null", landedOpen.intakeVerdict === null);
++
++// ─── 4. Closed but queued-labeled (the 5-WO sub-class) ──────────────────────
++section("4. Closed + bridge:queued (stale label) -> no derivation from wrong label");
++const queuedClosed = applyLabelFallback("closed", ["bridge:queued"], null);
++check("queued label never derives APPLIED", queuedClosed.verdictSource === null && queuedClosed.latestVerdict === null);
++
++// ─── 5. bridge:rejected without record stays null (false-rejection hygiene) ─
++section("5. bridge:rejected + closed + no record -> null (no #2275-class laundering)");
++const rejected = applyLabelFallback("closed", ["bridge:rejected"], null);
++check("rejected class NOT derived", rejected.verdictSource === null && rejected.latestVerdict === null);
++check("rejected class intakeVerdict stays null", rejected.intakeVerdict === null);
++
++// ─── 6. Empty/odd label planes ──────────────────────────────────────────────
++section("6. Tolerant label inputs");
++const noLabels = applyLabelFallback("closed", [], null);
++check("empty labels -> no derivation", noLabels.verdictSource === null);
++const mixed = applyLabelFallback("closed", ["platform-guardian", "bridge:landed", "sentry"], null);
++check("landed among other labels derives", mixed.verdictSource === "label-fallback" && mixed.latestVerdict?.verdict === LABEL_DERIVED_VERDICT);
++const similar = applyLabelFallback("closed", ["bridge:landed-v2"], null);
++check("label match is exact (no prefix bleed)", similar.verdictSource === null);
++
++// ─── 7. Contract shape (machine-readability guarantee) ──────────────────────
++section("7. Response contract shape");
++check("derived verdict always carries a reason string", LABEL_DERIVED_REASON.length > 20);
++check("APPLIED_LABEL_DERIVED is APPLIED-prefixed (contract string compatible)", LABEL_DERIVED_VERDICT.startsWith("APPLIED"));
++check("all three sources are discriminable", new Set([served.verdictSource, cohort.verdictSource, landedOpen.verdictSource]).size === 3);
++
++// ─── Verdict ────────────────────────────────────────────────────────────────
++console.log("\n=============================================");
++if (failures === 0) {
++  console.log("ALL BRIDGE VERDICT TESTS PASSED (#2344)");
++} else {
++  console.error(`${failures} TEST(S) FAILED (#2344)`);
++}
++process.exit(failures === 0 ? 0 : 1);

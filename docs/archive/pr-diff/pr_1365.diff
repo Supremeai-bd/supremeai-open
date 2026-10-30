@@ -1,0 +1,98 @@
+diff --git a/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py b/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
+index bf7a228c..e44470ce 100644
+--- a/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
++++ b/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
+@@ -13,6 +13,7 @@
+ 
+ import json
+ import os
++import re as _re
+ import sys
+ import time
+ import urllib.error
+@@ -28,6 +29,33 @@
+ _LEARNED_FACTS: List[Dict[str, Any]] = []
+ _EPISODES: List[Dict[str, Any]] = []
+ 
++# bridge-20261027-memory-graph-empty (#1341): TTL + recency policy for the
++# in-memory episode store. Configurable via MEMORY_EPISODE_TTL_MS (<=0 disables).
++_EPISODE_TTL_MS = int(os.environ.get("MEMORY_EPISODE_TTL_MS", "0") or 0)
++
++
++def _episode_ts_ms(episode: Dict[str, Any]) -> float:
++    _ts = str(episode.get("created_at", ""))
++    try:
++        from datetime import datetime
++
++        return datetime.fromisoformat(_ts.replace("Z", "+00:00")).timestamp() * 1000.0
++    except Exception:
++        return 0.0
++
++
++def _prune_expired(now_ms: Optional[float] = None) -> int:
++    """Drop episodes past TTL (fail-loud knob: MEMORY_EPISODE_TTL_MS)."""
++    if _EPISODE_TTL_MS <= 0:
++        return 0
++    import time as _time
++
++    cutoff = (now_ms if now_ms is not None else _time.time() * 1000.0) - _EPISODE_TTL_MS
++    before = len(_EPISODES)
++    _EPISODES[:] = [e for e in _EPISODES if _episode_ts_ms(e) >= cutoff]
++    return before - len(_EPISODES)
++
++
+ 
+ def _get_env(key: str, default: str = "") -> str:
+     return os.environ.get(key, default).strip()
+@@ -471,7 +499,42 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+             "created_at": now,
+         }
+         _EPISODES.append(episode)
+-        return {"task_id": tid, "status": "recorded"}
++
++        # ── bridge-20261027-memory-graph-empty (#1341): write-through ──
++        # Episodes previously never fed the knowledge graph, so graph_nodes
++        # stayed 0 forever and cross-session recall (read_graph/search_nodes)
++        # had nothing to read. Every recorded task now lands as a namespaced
++        # task entity plus up to 5 topic entities linked via "mentions" edges.
++        _ns = str(args.get("tenant_id") or "tenant_default")
++        _sess = str(args.get("session_id") or "default")
++        _task_name = f"{_ns}:{_sess}:task:{tid}"
++        _GRAPH_NODES[_task_name] = {
++            "name": _task_name,
++            "entityType": "task",
++            "observations": [
++                str(episode.get("description", ""))[:300],
++                f"result: {str(episode.get('result', ''))[:300]}",
++                f"at: {now}",
++            ],
++        }
++        _topic_pool = _re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", f"{episode.get('description', '')} {episode.get('result', '')}")
++        _topics: List[str] = []
++        for _raw in _topic_pool:
++            _t = f"{_ns}:topic:{_raw.lower()}"
++            if _t not in _topics:
++                _topics.append(_t)
++            if len(_topics) >= 5:
++                break
++        for _t in _topics:
++            if _t not in _GRAPH_NODES:
++                _GRAPH_NODES[_t] = {
++                    "name": _t,
++                    "entityType": "topic",
++                    "observations": [f"mentioned by task {tid} at {now}"],
++                }
++            _GRAPH_EDGES.append({"from": _task_name, "to": _t, "relationType": "mentions"})
++
++        return {"task_id": tid, "status": "recorded", "graph_nodes_written": 1 + len(_topics)}
+ 
+     elif name == "get_similar_tasks":
+         q = str(args.get("query", "")).lower()
+@@ -493,6 +556,7 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+ 
+     elif name == "get_session_stats":
+         sid = args.get("session_id", "default")
++        _prune_expired(now)
+         return {"session_id": sid, "active_episodes": len(_EPISODES), "graph_nodes": len(_GRAPH_NODES)}
+ 
+     elif name == "clear_session":

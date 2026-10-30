@@ -1,0 +1,39 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 4cd524b3..e980103a 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -193,7 +193,7 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+ 
+ ROLE_RULES: dict[str, str] = {
+     "solver": "Unlimited concurrent solvers allowed. Mandatory rule: Label 'status:claimed' on the issue before branching. Solve root cause, verify boundary, submit PR.",
+-    "ecosystem-scout": "Scan federation for new expansion opportunities and file sub-issues under 8 Anchor Hubs (no code edits).",
++    "ecosystem-scout": "Scan federation for new expansion opportunities and file sub-issues under 8 Anchor Hubs (no code edits). Issue creation rules: format title as 'type(scope): description', attach priority ('P0-critical'/'P1-high'), status ('status:unclaimed'), and repo label ('repo:<domain>').",
+     "auditor": "Audit codebase for dead code, compliance drifts, and propose automated CI gates.",
+     "human-eye": "Inspect user-facing public funnel speed (FCP < 1.0s) and responsive UI performance.",
+     "rules-breaker": "Probe security boundaries, enforce zero-leak invariant, and report vulnerabilities.",
+@@ -468,6 +468,7 @@ def build_task_envelope(
+             f"ROLE: {role}",
+             f"MANDATE: {role_description}",
+             "CLAIM RULE: Atomic-claim the issue FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch.",
++            "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
+             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
+             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
+         ]
+@@ -843,7 +844,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
+             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
+             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
+-            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause and submit.")
++            print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Atomic-claim it FIRST ('status:claimed' via work_claim tool or <!-- atomic-claim --> comment) — no claim, no branch. Then solve root cause, submit PR with 'Closes #{picked}' in PR description to close it on merge.")
+             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
+             return 0
+@@ -879,6 +880,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+         mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
+         print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
+         print(f"ACTION: Time expired for {role}. Act as {role} now.")
++        if role == "ecosystem-scout":
++            print("ISSUE CREATION STANDARD: Format title as 'type(scope): description', attach priority ('P0-critical'/'P1-high'), status ('status:unclaimed'), and repo label ('repo:<domain>').")
+         print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+         return 0
+ 

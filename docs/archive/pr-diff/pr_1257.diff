@@ -1,0 +1,70 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 39e59701..d01feb03 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -947,8 +947,8 @@ jobs:
+           set -euo pipefail
+           BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 200 --json number,title,labels)
+           # Mirror the pick_next_issue() EXCLUDED_LABELS set exactly (case-insensitive,
+-          # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror.
+-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
++          # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror, anchor-hub.
++          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private","anchor-hub"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+           echo "claimable-board snapshot: $CLAIMABLE"
+           if [ "$CLAIMABLE" = "[]" ]; then
+             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index a1735e54..ff897e33 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -349,6 +349,7 @@ def build_task_contract(
+ 
+ EXCLUDED_LABELS = {
+     "admin-only",  # admin-lane work (secrets/.github/SARIF) — never agent-claimable
++    "anchor-hub",  # permanent 14 anchor parent hubs — never agent-claimable
+     "status:claimed",
+     "status:in-progress",
+     "state:seq-hold",
+@@ -873,7 +874,15 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+                     break
+             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+ 
+-        candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
++        # Exclude permanent 14 Anchor Hub issue numbers (749..762) from picking
++        ANCHOR_HUB_NUMBERS = {749, 750, 751, 752, 753, 754, 755, 756, 757, 758, 759, 760, 761, 762}
++
++        candidates = [
++            i for i in issues
++            if isinstance(i, dict)
++            and is_claimable(i)
++            and int(i.get("number", 0)) not in ANCHOR_HUB_NUMBERS
++        ]
+         if exclude:
+             excluded_set = {str(e) for e in exclude}
+             candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+@@ -991,12 +1000,25 @@ def record(issue: dict, lane: str, evidence: list[dict], auto_pr: bool, dry_run:
+     if dry_run:
+         log("DRY-RUN", f"would rebase, push {branch}, {'open PR' if auto_pr else 'leave push to driver'}.")
+         return True
++
++    # If there are tracked modifications or staged changes, commit them to the agent branch
++    run_cmd(["git", "config", "user.name", "supremeai-bot"])
++    run_cmd(["git", "config", "user.email", "bot@supremeai.org"])
++    code, st_out, _ = run_cmd(["git", "status", "--porcelain"])
++    stashed = False
++    if code == 0 and st_out.strip():
++        # Check if there are unstaged changes
++        run_cmd(["git", "add", "-A"])
++        run_cmd(["git", "commit", "-m", f"fix({lane}): auto-resolve #{issue.get('number', 0)} roadside verification"])
++
+     run_cmd(["git", "fetch", "origin", "main"])
+     code, _, err = run_cmd(["git", "rebase", "origin/main"])
+     if code != 0:
++        run_cmd(["git", "rebase", "--abort"])
+         log("FAIL", f"pre-push rebase failed: {err.strip()[:200]}")
+         return False
+     if auto_pr:
++        run_cmd(["git", "push", "-u", "origin", branch])
+         code, _, err = run_cmd([
+             "gh", "pr", "create", "--repo", UPSTREAM_REPO,
+             "--head", branch, "--title", f"[{lane}] {issue.get('title', '')}",

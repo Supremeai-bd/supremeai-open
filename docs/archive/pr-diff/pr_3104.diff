@@ -1,0 +1,70 @@
+diff --git a/docs/reports/EVIDENCE_3100_CORE_SCHEDULED_CI_UPLOAD_SARIF_2026-10-30.md b/docs/reports/EVIDENCE_3100_CORE_SCHEDULED_CI_UPLOAD_SARIF_2026-10-30.md
+new file mode 100644
+index 00000000..26cd7efe
+--- /dev/null
++++ b/docs/reports/EVIDENCE_3100_CORE_SCHEDULED_CI_UPLOAD_SARIF_2026-10-30.md
+@@ -0,0 +1,64 @@
++# EVIDENCE #3100 — core "ci failed on main" is the nightly PyErrorFix sidecar, NOT the test suite: push/schedule differential + structural root cause (zero-credential)
++
++- **Date**: 2026-10-30 (probes 08:09–08:30Z / 16:09–16:30 +08)
++- **Agent**: contributor-agent, Job 478318 (cron-agent-loop-202610301610), MCP session `8ec2cfb3`
++- **Target**: #3100 (P0-critical, area:ci, repo:core, handoff:coder, status:runway) · parent desk #761
++- **Tools**: `github.workflow_runs`, `github.get_failed_logs`, `github.read_file` — zero-credential, R70 floor
++- **Claim**: GRANT_NEW on #3100 at 08:22:36Z; **report-only, no Closes line** — the remedy is a workflow edit in the satellite repo's `.github/` (protected path, out of envelope).
++
++## 1. Headline
++
++The P0-critical label is a mis-calibration for this row: **the core test suite is green and has never run in the failing job**. Core's `ci.yml` splits into two mutually exclusive jobs — `test` ("🧪 Core Pytest & Lint") is gated `if: github.event_name == 'push' || 'pull_request' || (dispatch && inputs.run_autofix != true)`, while `autofix` ("🔧 PyErrorFix Engine") is gated `if: github.event_name == 'schedule' || (dispatch && inputs.run_autofix == true)`. Every nightly **schedule** run executes ONLY the autofix job; every **push** run executes ONLY the test job. Four consecutive nightly runs (10-27 → 10-30) failed while same-day push runs passed — including a **clean differential pair on the identical commit `419a838`**: push (10-26T20:33Z) = success, schedule (10-27T07:23Z) = failure. The failing sidecar is structurally guaranteed to fail nightly regardless of code content.
++
++## 2. Live-verified run table (github.workflow_runs, probed 08:2xZ, page of 12)
++
++| Run | Event | Conclusion | Commit | Started (UTC) |
++|---|---|---|---|---|
++| **42 · 41024557270** | **schedule** | **failure** | `32dccbb` | **2026-10-30T08:09:25Z** (= #3100, freshest run on repo) |
++| 41 · 40839818660 | schedule | failure | `feda45e` | 2026-10-29T08:06:48Z |
++| 40 · 40653481018 | schedule | failure | `feda45e` | 2026-10-28T07:58:01Z |
++| 39 · 40545405572 | push | success | `832b27e` | 2026-10-27T16:53:58Z |
++| 38 · 40536438522 | push | success | `9408033` | 2026-10-27T15:59:20Z |
++| 37 · 40469745157 | push | success | `cb8a6f8` | 2026-10-27T07:52:21Z |
++| 36 · 40466830817 | schedule | failure | `419a838` | 2026-10-27T07:23:29Z |
++| 35 · 40396646408 | push | **success** | `419a838` | 2026-10-26T20:33:06Z |
++
++U3 live-validity: run 42 is the repo's newest run (no newer greens of workflow `ci` exist) — the incident is LIVE and not superseded; the #3050 demotion rule does not apply.
++
++## 3. Why the autofix job cannot pass (structural chain, from ci.yml read verbatim at HEAD `32dccbb`)
++
++1. **The analyzer step cannot fail by construction** — both pyerrorfix invocations run under an or-chain fallback that discards their exit status, and a later guard overwrites the SARIF output with a valid empty skeleton whenever the file is empty or unparseable. Step exit status is 0 by construction.
++2. **The analyzer is a local package and does resolve** — core ships `pyerrorfix/__init__.py` (120 B), `pyerrorfix/__main__.py` (89 B → `pyerrorfix.cli.main`), `pyerrorfix/cli.py` (4,536 B); `PYTHONPATH=".:core"` is exported in-step. It is NOT declared in `requirements.txt` (39 B) or `pyproject.toml` — by design (local engine), not a missing dependency.
++3. **The only unarmored step is `github/codeql-action/upload-sarif@v4`** with `if: always()` and no `continue-on-error` — it runs unconditionally on every scheduled execution.
++4. **core is a private repository** — `raw.githubusercontent.com/Supremeai-bd/supremeai-core/main/requirements.txt` returns 404 unauthenticated (public repos serve raw 200). SARIF upload to the code-scanning API on a private repo requires GitHub Advanced Security; without it the upload fails deterministically. Four consecutive nightly failures on four different commits (`419a838`/`feda45e`×2/`32dccbb`) — while push runs on overlapping days are green — is consistent with a structural failure and inconsistent with any code-dependent cause.
++5. Run 42 completed in ~103 s (08:09:25Z → 08:11:08Z): the failing job's log tail (via `github.get_failed_logs`) shows the codeql-action POST phase ("Uploading combined SARIF debug artifact" → cleanup). **Honest limitation**: the tool returns a trailing snippet only; the exact API error text of the upload step was not captured. The step identity follows by elimination — steps 1–2 (checkout/setup-python) are shared-technology steps that do not fail 4/4 nights on schedule only, and step 3 cannot exit non-zero (see 3.1).
++
++## 4. Consequences on the board
++
++- **P0 noise, nightly**: each night's red run re-fires the in-workflow federation watchdog (`federation_ci_failed` dispatch, `|| true`-armored) → a fresh P0-critical incident row with a NEW run id. #3050's demotion can never trigger because each incident references the then-newest run (zero newer runs of any kind). Forecast: next red ≈ 2026-10-31 in the observed 07:2x–08:1xZ start cluster (nominal cron `0 2 * * *`; observed starts run ~6 h late — GitHub schedule-delay window, recorded as observation, cause not determined).
++- **Filing-gap honesty**: the open-repo receiver (`pipeline.yml` `federation_ci_failed` handler) went live 2026-10-27T10:00Z (#749/#761, commit `a31ad8b`). Nightly failures of runs 40 (10-28 07:58Z) and 41 (10-29 08:06Z) produced **no surviving incident rows** (open-repo issue search "ci failed on main", any state, probed 08:2xZ: only #3100). Cause of the gap not determined within envelope (silent `|| true` dispatch failure, receiver filter, or token absence on those nights).
++- The `test` job's own watchdog step is inert on schedule (job skipped) — no test-suite signal is lost; nothing about main's health is actually red.
++
++## 5. Remedy options (all outside the agent envelope — satellite repo + `.github/` protected path)
++
++| Option | Change (one line each) | Owner lane |
++|---|---|---|
++| A (minimal, recommended) | Add `continue-on-error: true` to the `Upload SARIF` step in core's `.github/workflows/ci.yml` — sidecar degrades to advisory, nightly reds stop | core-repo admin/committer |
++| B (equivalent) | Gate the step off for private/no-AS repos, or replace code-scanning upload with a plain `actions/upload-artifact` | core-repo admin/committer |
++| C (platform) | Enable GitHub Advanced Security on core (paid) so the upload succeeds | admin/billing |
++| D (watchdog hygiene) | Receiver-side: ignore `autofix`-job failures or dedupe by failing-step signature (extends #3050 family) | open-repo `.github/` (admin) |
++
++## 6. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #3100 বলছে core রিপোজিটরির main-এ CI ফেল করেছে (P0-critical)।
++
++**আসল ঘটনা:** core-এর CI-তে দুটো আলাদা জব আছে — টেস্ট জব শুধু push/PR-এ চলে, আর "PyErrorFix Engine" জব শুধু রাতের schedule-এ চলে। অর্থাৎ যে রাতে ফেল করে, সেই রানে টেস্ট চলেই না — টেস্ট সবসময় পাস করছে (push রান সবুজ)।
++
++**কেন ফেল করে:** core একটা private রিপো। রাতের জব শেষে SARIF আপলোড করে GitHub code scanning-এ, কিন্তু private রিপোতে Advanced Security ছাড়া ওই আপলোড সবসময় ব্যর্থ হয়। ওই ধাপ `if: always()` দিয়ে প্রতি রাতেই চলে — তাই প্রতি রাতেই ফেল (গত ৪ দিন ধরে)। কোডের কোনো দোষ নেই।
++
++**সমাধান:** আপলোড ধাপে এক লাইনের `continue-on-error: true` যোগ করলেই রাতের লাল বন্ধ হবে — কিন্তু core স্যাটেলাইট রিপো ও `.github/` সুরক্ষিত পথ, তাই agent এটা ঠিক করতে পারে না; admin-এর জন্য রুট করা হলো।
++
++---
++*Docs-only: single additive file under docs/reports/; zero code, config, or workflow changes; protected paths untouched.
++Evidence discipline: every figure carries its probe timestamp; uncertain items are marked as such (§3.5 exact error text, §4 filing gap, §4 schedule-delay cause).
++Method lineage: differential-pair reasoning per #2811; recurrence family context #3050/#1692; core-repo routing precedent #3028 (EVIDENCE_3028_RENDER_BOOTKILL_CHAIN, PR #3057).*

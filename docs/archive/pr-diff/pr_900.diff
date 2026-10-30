@@ -1,0 +1,78 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 5a174f39..2927eb73 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -411,7 +411,7 @@ jobs:
+               repo:browser) TARGET_REPOS+=("Supremeai-bd/supremeai-browser") ;;
+               repo:sdk) TARGET_REPOS+=("Supremeai-bd/supremeai-sdk") ;;
+               repo:infra) TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure") ;;
+-              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane") ;;
++              repo:mcp) TARGET_REPOS+=("Supremeai-bd/supremeai-api") ;;
+               repo:archive) TARGET_REPOS+=("Supremeai-bd/supremeai-archive") ;;
+               repo:monorepo) TARGET_REPOS+=("Supremeai-bd/supremeai") ;;
+             esac
+@@ -420,10 +420,10 @@ jobs:
+           # 2. Resolve target repository from files touched (Domain Routing)
+           for f in $FILES; do
+             case "$f" in
+-              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*)
++              studio/*|examples/dashboard-preview/*|api-schemas/dashboard.*|infrastructure/cloudflare-studio-proxy/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-studio")
+                 ;;
+-              api/*|gateway/*|api-schemas/gateway.*)
++              api/*|gateway/*|api-schemas/gateway.*|infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               core/*|api-schemas/task-router.*)
+@@ -445,9 +445,6 @@ jobs:
+               browser/*|sandbox/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
+                 ;;
+-              infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
+-                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
+-                ;;
+               sdk/*|examples/sdk-*|deployments/*|infra/*|api-schemas/telemetry-log.*|api-schemas/websocket-events.*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai")
+                 ;;
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index cfa790bd..77da7edf 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -164,6 +164,16 @@ def sync_satellite(
+                 print(
+                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
+                 )
++        elif target_repo == "Supremeai-bd/supremeai-studio":
++            # Copy domain files into the satellite root
++            copy_tree_contents(src_path, tmp_repo)
++            # Sync cloudflare-studio-proxy into satellite infrastructure directory
++            cf_src = repo_root / "infrastructure" / "cloudflare-studio-proxy"
++            if cf_src.exists():
++                copy_tree_contents(cf_src, tmp_repo / "infrastructure" / "cloudflare-studio-proxy")
++                print(
++                    f"📋 Synced Cloudflare edge proxy & keep-warm cron 'infrastructure/cloudflare-studio-proxy' in {target_repo}"
++                )
+         else:
+             # Copy domain files into the satellite root
+             copy_tree_contents(src_path, tmp_repo)
+@@ -398,7 +408,11 @@ def detect_changed_targets(
+         umbrella = False
+ 
+         for f in files:
+-            if f.startswith("studio/") or f.startswith("examples/dashboard-preview/"):
++            if (
++                f.startswith("studio/")
++                or f.startswith("examples/dashboard-preview/")
++                or f.startswith("infrastructure/cloudflare-studio-proxy/")
++            ):
+                 targets.add("Supremeai-bd/supremeai-studio")
+             elif f.startswith("core/") or f.startswith("api-schemas/task-router."):
+                 targets.add("Supremeai-bd/supremeai-core")
+@@ -408,6 +422,7 @@ def detect_changed_targets(
+                 or f.startswith("command/")
+                 or f.startswith("skills/")
+                 or f.startswith("agents/")
++                or f.startswith("infrastructure/mcp-control-plane/")
+             ):
+                 targets.add("Supremeai-bd/supremeai-api")
+             elif f.startswith("browser/") or f.startswith("sandbox/"):

@@ -1,0 +1,20 @@
+diff --git a/docs/bridge/bridge-20261029-ci2405-closure-addendum.md b/docs/bridge/bridge-20261029-ci2405-closure-addendum.md
+new file mode 100644
+index 00000000..eb371498
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-ci2405-closure-addendum.md
+@@ -0,0 +1,14 @@
++# CI Closure Addendum — #2405 (2404/merge ghost red) — closes the stranded work order
++
++- **Purpose:** closure instrument for WO #2405, filed per the acceptance criteria of #2485 ("stranded pair #2405 + #2368 still need closure after this lands ... any future receipt-class submission using the flag"). This is the **first operational use** of the `closesOriginalIssue` opt-in landed by PR #2490 (`6fcefe0`).
++- **Why this addendum exists:** the original closure receipt `docs/bridge/bridge-20261029-ci2405-closure-receipt.md` (PR #2427, landed `2edec67` 2026-10-29T03:42:42Z) carried `Refs #2405` — not `Closes #2405` — because `buildBridgePrBody`'s spec-only heuristic downgrades every docs-only payload's linkage (mechanism gap #2485). Direct anonymous-API ground truth confirmed #2405 stayed `open` with `closed_at: null` after the receipt landed, polluting P0-drainage scans with a phantom red (Invariant 5) and feeding the verdict-stall class (#2345/#2350).
++
++## Closure evidence (recap, unchanged from the #2427 receipt)
++
++- Failed run #40803525030 executed on ref `2404/merge` — a PR-gate lane, never a main-branch run; root cause was PR #2404's unwired orphan test (`test_mcp_mutation_rate_limit.ts`), class #1896/#1897.
++- Self-healed on main by PR #2407 (`e9501f2`, merged 02:00:13Z), which registered and chained `test:mcp-mutation-rate-limit`; PR #2404 (superseded r1) was subsequently closed by its author.
++- Main verified green post-incident (run 5550 / id 40810072721, sha `39d43c6`); current main `0c3126a` remains green with the wiring guard reporting all test files wired.
++
++## Closure event
++
++This addendum is submitted with `closesOriginalIssue: true` and `originalIssueNumber: 2405`, so the bridge PR body emits `Closes #2405` and GitHub auto-closes the work order on merge — completing the receipt-closure lane end-to-end: detect (#2405) → triage receipt (#2427) → mechanism fix (#2485, PR #2490) → instrumented closure (this addendum).

@@ -1,0 +1,76 @@
+diff --git a/.github/workflows/open-guards.yml b/.github/workflows/open-guards.yml
+index 4c9cc64e..aa697839 100644
+--- a/.github/workflows/open-guards.yml
++++ b/.github/workflows/open-guards.yml
+@@ -66,3 +66,36 @@ jobs:
+           echo "The Task Envelope's submission.issue_reference_required=true documents this contract (#63)."
+           echo "(Admin escape hatch: add the 'guard-exempt' label.)"
+           exit 1
++
++  duplicate-pr-guard:
++    name: "👥 Anti-Duplicate PR Guard"
++    runs-on: ubuntu-latest
++    timeout-minutes: 3
++    steps:
++      - name: Verify no competing open PR exists for the same issue
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ github.event.pull_request.number }}
++          PR_TITLE: ${{ github.event.pull_request.title }}
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++        run: |
++          if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
++            echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
++          fi
++          ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
++          if [ -z "$ISSUES" ]; then
++            exit 0
++          fi
++          # Check other open PRs for the same issue reference
++          OTHER_PRS=$(gh pr list --repo "${{ github.repository }}" --state open --json number,title,body -q ".[] | select(.number != ${PR_NUM}) | \"PR #\" + (.number|tostring) + \": \" + .title + \" \" + .body" || true)
++          for iss in $ISSUES; do
++            MATCH=$(echo "$OTHER_PRS" | grep -F "$iss" || true)
++            if [ -n "$MATCH" ]; then
++              echo "::error::Competing PR detected! Another open PR already targets $iss."
++              echo "Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden."
++              echo "Conflicting PR details: $MATCH"
++              exit 1
++            fi
++          done
++          echo "✅ No competing duplicate PRs detected for: $ISSUES"
+diff --git a/AGENTS.md b/AGENTS.md
+index f5d6aa2a..c07c3c3c 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -30,7 +30,7 @@ Every agent runs the same 8-step cycle (Roadmap v2.0 Phase 1, #4143). The dispat
+ | 7. Record | PR with full template + Test Evidence (+ meaningful decision note) | `continuous_agent_loop.py --auto-pr` / REST PR create |
+ | 8. Return | Report outcome **with fresh-board re-check** (#4177), release claim, loop back | `continuous_agent_loop.py` + `gh pr list` re-poll |
+ 
+-Hard boundaries during the loop: gates outrank agent preference (§1.4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
++Hard boundaries during the loop: gates outrank agent preference (§1.4) · no competing/duplicate PRs for issues with an active open PR (AGENT_RULES.md U4) · scoped credentials only (`credential_manager` — master vault keys never reach children) · single-vs-multi execution follows Rule B (`role_registry.plan_task_execution()` — advisory).
+ 
+ ## 1. First Rule: Authority
+ 
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index de690154..6b18a3b3 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -23,9 +23,16 @@ Do not claim success, failure, security, health or verification without evidence
+ ## U3 — Validity Before Action
+ An issue is not automatically valid because it exists. Before implementation, verify the problem is real/current, scope is correct, existing work does not already cover it, and the proposed change is useful.
+ 
+-## U4 — Existing Work First
++## U4 — Existing Work First & Anti-Duplicate PR Doctrine
+ Before claiming or creating work, inspect the relevant group, active issues, open PRs, dependencies and recent solutions. Prefer updating/linking existing work over duplicate work.
+ 
++**Strict Anti-Duplicate PR Mandate (একই ইস্যুর দ্বৈত পিআর কঠোরভাবে নিষিদ্ধ):**
++1. **Mandatory Preflight PR Check:** Before claiming an issue or writing any code, an agent MUST query active open pull requests (`gh pr list`). If an open PR already targets the issue (e.g., references `#N` in title, body, or branch), the agent **MUST NOT** claim the issue or start writing parallel code.
++2. **Competing PRs Prohibited:** Opening a competing, parallel, or redundant PR for an issue that already has an active PR is **STRICTLY FORBIDDEN**. Parallel work wastes CI compute, creates merge conflicts, and fragments review.
++3. **Handling Existing Open PRs:**
++   - If the existing PR is active/green: Do NOT intervene. Let CI Guardian and auto-merge complete the landing.
++   - If the existing PR is failing checks or abandoned (stale > 2 hours): The agent may follow up on that branch or review it, but MUST NOT create a blind duplicate PR from scratch without explicitly closing or superseding the previous PR first.
++
+ ## U5 — Freshness & Ownership
+ Claim state before work. Verify current `main`/PR state before push. Do not work on `state:seq-hold` or work blocked by upstream. Never push stale work.
+ 

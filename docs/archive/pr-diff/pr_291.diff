@@ -1,0 +1,13 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index cead9adf..16d9f5a5 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -413,7 +413,7 @@ jobs:
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+           BRIDGE_DISPATCH_TOKEN: ${{ secrets.BRIDGE_DISPATCH_TOKEN }}
+-          BRIDGE_WEBHOOK_URL: ${{ secrets.BRIDGE_WEBHOOK_URL || 'https://supremeai-mcp-tower.onrender.com/webhooks/github' }}
++          BRIDGE_WEBHOOK_URL: ${{ secrets.BRIDGE_WEBHOOK_URL }}
+           PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
+           PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
+           PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}

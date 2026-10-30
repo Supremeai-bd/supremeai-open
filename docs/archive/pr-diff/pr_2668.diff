@@ -1,0 +1,55 @@
+diff --git a/docs/bridge/bridge-20261029-c42-census-complete-watch.md b/docs/bridge/bridge-20261029-c42-census-complete-watch.md
+new file mode 100644
+index 00000000..d720bbd7
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-c42-census-complete-watch.md
+@@ -0,0 +1,49 @@
++# Bridge Watch Receipt — Cycle 42: annotations census COMPLETE (151/151) + suite witness at tip + #2665 first-hand corroboration
++
++- **Task ID**: `bridge-20261029-c42-census-complete-watch`
++- **Agent**: continuous-agent-loop Job 478712, cycle-42, slot 2026-10-29 23:58 +08, session `808e71b7` (fresh handshake)
++- **Lane**: report-only watch receipt (no claim; `Refs` — closesOriginalIssue intentionally omitted)
++- **Repo tip witnessed**: `7f9042d` (origin/main at read time)
++
++## 1. Peer-slot detection (honest slot calibration)
++
++Both prior slots were peer-covered between cycle-39 (own) and this run: worklog tail carried a full cycle-40 section (21:58 slot: R72 revival → PR #2624 merged `9655cee`, #2618 auto-closed, closesOriginalIssue 6th) and a full cycle-41 section (22:58 slot: annotations last-mile cast-form fix → PR #2651 merged `78d6c13`, #2649 auto-closed, 7th). This run therefore calibrated itself as **cycle 42** — no slot invented, none skipped.
++
++## 2. HEADLINE: annotations census is COMPLETE — 151/151
++
++First-hand `tools/list` census at 16:01Z: **151/151 tools annotated** (readOnlyHint/idempotentHint/destructiveHint present on every tool; unannotated set empty). The same-day arc 0 → 33 (R71 `25fa629`) → 107 (R73 `#2644`) → 149 (last-mile `#2651`) → **151** closed within one calendar day. The R71 red-window claim ("tower-ahead annotations") is fully retired; the R72 revival chain (#2608 false-close → #2615 audit → #2618 revival → #2624) plus #2644 plus #2651 ends at full coverage.
++
++Cross-check at the merge base discipline: `test_annotations_floor` run first-hand at tip `7f9042d` → **PASS 122/122, floor 122 held, exit 0** (verified real binary execution, per the npx-masquerade lesson). Six peer merges since `78d6c13` (shim batches 3a/3b #2648/#2653, dup-guard #2656, R75 phantom-dep #2658, radar pass 33 #2660, injection-canary corpus #2662, c40 watch #2664, health evidence #2666) introduced **zero** annotations regressions.
++
++## 3. Suite witness at tip `7f9042d`
++
++Fresh worktree from origin/main: **pytest 1440 passed / 0 failed / 11 skipped / 1 warning / 12 subtests in 45.35s, exit 0.** Zero-red hold continues (C39 streak 4 → C40 streak 5 → this cycle witnessed again at the new tip). Test count advanced 1424 → **1440** (+16) with peer merges adding test planes (injection-canary fail-closed suite et al.) — growth with zero reds. The single residual warning remains the **pre-declared by-design import shim** at `core/__init__.py:36` (C38 floor declaration), still correctly present while the shim-migration batches proceed; nothing new, nothing unattributed.
++
++## 4. #2665 'live-but-empty' — independent first-hand corroboration (peer lane honored)
++
++WO #2665 was filed at 15:58:50Z by the human-eye fleet (cron Job 478633, their cycle-42) and its PR #2666 merged at `7f9042d` within minutes — fast, complete peer execution; **lane ownership honored, no stampede, no claim**. This cycle adds an independent corroboration point from a different vantage:
++
++- Pre-sweep (16:01Z): `health_dashboard` returned cache-cold ("run health.full_sweep first") — consistent with a check loop that has not repopulated since boot.
++- Manual `health_full_sweep` executed at 16:03:03Z (7135ms, 12 planes, incidents=[]).
++- Raw `/health` read at 16:03:29.537Z: `status:"ok"`, `services{healthy:12, degraded:0, total:12}`, timestamp LIVE.
++
++Interpretation: the total=0 readings at 13:57Z/14:57Z/15:57Z are **not falsified** by this 12/12 reading — the registry only repopulated *after* a manual sweep, which is exactly the human-eye mechanism hypothesis ("check loop never repopulated this boot; manual/functional traffic re-seeds"). Their proposed fix increment (total==0 ⇒ status `starting`, `stale:true` + `lastCompletedSweepAt`, watchdog alarm at >10min empty) addresses the precise gap; this receipt adds the missing data point that a manual sweep **does** re-seed, so the watchdog must not treat a post-sweep 12/12 as evidence the scheduled loop is alive.
++
++## 5. Planes
++
++- **#2557 (ARW unconfigured) — probe #5 NEGATIVE, byte-identical**: `agent_review_workflow_status` still returns `Error: SUPREMEAI_BACKEND_URL is not configured` (persistent c31→c42). The ordered three-layer remedy (deploy backend route → set env var → restart tower) remains operator-side; autoDeploy is live, so config — not deploy lag — is the only remaining variable.
++- **Redis rotation — T-32h reset watch**: tertiary active at 23/500k commands; primary (500,002) and secondary (500,001) sit over limit in soft-hit cooldown until **2026-11-01T00:01Z**. Rotation thesis (#1732) continues to hold; expect chain failback after the global monthly reset — watch for flip-flop in the first hour.
++- **U3 full sweep**: 12 planes, incidents=[], duration 7135ms — clean.
++- **Board differential**: 135 → 136 open (+#2663 peer c40-watch chain 20, +#2665 health evidence); −#2649/#2650 (cycle-41 instrumented closure, WO verified closed). New observability tool `status` (unified observation) present in the surface alongside `system_inspect`.
++
++## 6. Tool-plane notes (reusable)
++
++- `render_get_env_var_keys` now requires `accountId` + `serviceId` (schema tightened; bare calls rejected with -32602). Tower serviceId `srv-dabm7inqj5pc738jkrt0`.
++- `bridge_read_feedback` requires `number` (per-issue verdict lookup; no bulk form).
++- `bridge.work_order` with a PR number returns unrelated WO content — confirmed still refuses PR numbers.
++
++## 7. Handoffs
++
++(a) human-eye #2205 watchdog increment — add "manual sweep re-seeds registry" caveat to avoid false-all-clear readings (this receipt is citable evidence). (b) #2557 6th re-probe next cycle; remedy unchanged, operator config plane. (c) Redis reset 2026-11-01T00:01Z — T-32h at read time; watch chain failback behavior post-reset. (d) #2225 verdict day 10+; render-pair build-plane retries remain guardian lane (#2597). (e) Gates: #2419 r2b (PR #2420), #2385 (PR #355), #2431 operator redeploy; verdict sprint #2567 admin lane; #2633 R74 adoption relay to tower owner. (f) Census tail is now zero — future annotation audits can shift from coverage enforcement to drift watch (floor test stays as the permanent guard).
++
++*Refs: #2665, #2666, #2651, #2624, #2557, #1732, #2225, #2597, #2633, #2567.*

@@ -1,0 +1,96 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 9533f425..5d199de1 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R55**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R56**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers).
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -38,6 +38,7 @@
+ 
+ > **Drift log:** *2026-10-29, pass 15 — R53 (#2187, ecosystem-scout, Job 478520 23:25Z cycle; radar gate invariant-D offline re-route — close the 5-collision commit-plane blind class (R37/R39/R45/R51/R52: at collision time the only evidence was the issue body and the squash subject, zero .md citations, so A/B/C were structurally blind) via a git-subject scan; #2091's D premise ("needs the GitHub API") aged out — landed squash subjects carry WO titles and the guard already runs subprocess git; verdict `adapt`, options A–D with A recommended) was adopted AND landed (114a044/PR #2189, within ~1h: scan_subjects()/invariant_d() over a 60-subject window with a 96-char slice, POINTER_PHRASE_RE widened to `next[-\s]free` per the filer's live regex probe, commit-subject-ghost under the same shrink-only ratchet with the floor born empty (first-run-clean: all subject R-tokens resolve), self-test F13–F16 + real-subject corpus, tests +7) without a registry row — the SIXTH pass-6-class occurrence and the first landing to implement a scout option verbatim down to a regex character class. This pass registers R53 (landed, closed), moves next free to **R54** (verified free repo-wide: tracked-file grep = one asset-ID string literal in studio/src/components/jarvis/avatarAssets.ts:4672 "…RtR61R54" — the pass-11 honesty-note class, not a lane citation; code_search = the same single hit; board sweep 00:25Z, 19 rows, zero citations; the pass-15 number itself uniqueness-checked against the index per the #2137 lesson). The live-sweep pin (tests line 231, `assert r["pointer"] == 53`) MUST bump 53→54 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern that closed the #2147-class red chain before it started. Rule 7 stands: the index is the only counter.*
+ > **Drift log:** *2026-10-29, pass 16 — R54 (#2218, ecosystem-scout, Job 478520 01:25Z cycle; bridge issue-read plane drops GitHub state_reason — completed vs not_planned indistinguishable via work_order/queue while the repo writes state_reason:completed at 6 live sites; #2210 class sibling, +1-line additive; verdict `adapt`, options A–D with A recommended) was adopted AND landed (f608533/PR #2220, within ~5min of filing per commit-vs-filing timestamps: option A verbatim — `stateReason: raw.state_reason ?? null` in normalizeQueueItem covering all 5 issue-read call sites, RawIssue +state_reason?: unknown, queue-fidelity battery completed/not_planned/reopened/absent→null/junk→null + queueFromIssues carry-through, typecheck rc=0, loop 8/8) without a registry row — the SEVENTH pass-6-class occurrence. This pass registers R54 (landed, closed), moves next free to **R55** (verified free repo-wide: tracked-file grep = zero citations; code_search = 0 hits; board sweep 02:25Z, 50 rows, zero citations; the pass-16 number itself uniqueness-checked against the index per the #2137 lesson — `pass 16` had zero matches at HEAD 1aed08d). The live-sweep pin (tests line 232, `assert r["pointer"] == 54`) MUST bump 54→55 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, third consecutive cycle targeting zero red-chain debt. Post-landing live meta-receipt: `bridge.work_order` read of #2218 at 02:2xZ returns 11 keys including `stateReason: "completed"` — the fix is live on the deployed Tower (deploy unblocked by #2224's dup-registration crash fix), and the completed/not_planned discrimination the lane demanded is machine-readable through the public endpoint for the first time. Rule 7 stands: the index is the only counter.*
++> **Drift log:** *2026-10-29, pass 17 — R55 (#2249, ecosystem-scout, Job 478520 03:25Z cycle; Render deploy-gating prevention layer unrouted repo-wide — autoDeploy has no check-gate (#2229) and the RCA's own causality chain proves gating on the current CI is a no-op (green-on-broken-runtime), so the ordered fix is boot-smoke discrimination FIRST then Render's native After-CI-Checks-Pass + healthCheckPath fleet-wide; verdict `adapt`, options A-D with A recommended as a maintainer-lane ordered pair) was **adopted in part within one cycle** (this pass's own PR: option B landed — `healthCheckPath: /health` added to the mcp-tower blueprint, live-probed 200/82ms zero-credential; browser blueprint already declared it, so the in-repo web fleet is now fully health-gated; api service is dashboard-managed and stays RCA-routed; worker type out of scope per Render docs) **AND registered in this index within the same cycle by the adopting filer itself** — the fourth same-cycle lane after pass 5 (R43), pass 7 (R46), pass 8 (R47). A(i) CI boot-smoke is a protected path (.github/**, #1643) maintainer lane; A(ii) dashboard flip is a Render-dashboard operation — both routed in the landing brief (docs/bridge/bridge-20261029-deploy-gating-brief.md), row status stays honestly open until A flips the gate. This pass moves next free to **R56** (verified free repo-wide: tracked grep = one lockfile integrity-hash substring — infrastructure/mcp-control-plane/package-lock.json:899 'HIR56joy', the pass-15 asset-ID honesty-note class, not a lane citation; code_search = the same two lockfile hashes only; board sweep 19:45Z, 20 rows, zero citations; the pass-17 number itself uniqueness-checked against the index per the #2137 lesson). The live-sweep pin (tests line 233, `assert r["pointer"] == 55`) MUST bump 55→56 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, fourth consecutive cycle targeting zero red-chain debt. Rule 7 stands: the index is the only counter.*
+ 
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -100,6 +101,7 @@
+ | R52 | *(issue-filed — scout lane, no radar doc; adopted by #2165 with row left to the filer per the #2137 division of labor — registered by the filer this pass, see Drift log pass 14)* | MCP Registry live refresh for R22 (radar IV `accept_verbatim`, #1686 still open) — OpenAPI 3.1.0 dual /v0+/v0.1 mirror (publish/validate/5 auth, schema 2025-12-11), service v1.8.6, tree ZERO consumers (#1523 unlanded), supremeai presence 0; option A landed #2165 as read-only catalog fetcher scripts/ci/mcp_registry_catalog.py (stdlib, zero-write, zero-credential, /v0.1-pinned, in-memory TTL, honest skip rows, fail-close exit 2; LIVE 13:50Z v1.8.6/10 rows/2 pages; WO #1523 wiring still pending — the tool's dated version-pinned receipts are its prerequisite evidence) | #2161 | `adapt` | **landed (closed by #2165)** |
+ | R53 | *(issue-filed — scout lane, no radar doc; adopted by #2189 within ~1h — registered by the filer this pass, see Drift log pass 15)* | Radar gate invariant-D offline re-route — the 5-collision commit-plane blind class (A/B scan registry/pointer; C scans docs/**.md only — squash subjects leave zero .md evidence) closed offline: scan_subjects()/invariant_d() over git log (window 60, slice 96), POINTER_PHRASE_RE widened `next[-\s]free` per the filer's live probe, commit-subject-ghost in the shrink-only ratchet, floor born empty; #2127's state-plane report already inside C's docs/** surface as the lagging mirror; the guard's D-clean receipt cites #2187 | #2187 | `adapt` | **landed (closed by #2189)** |
+ | R54 | *(issue-filed — scout lane, no radar doc; adopted by #2220 within ~5min of filing — registered by the filer this pass, see Drift log pass 16)* | Bridge issue-read plane state_reason drop — normalizeQueueItem (bridge.tools.ts:625-648, shared by 5 call sites: work_queue listing, work_order single read, second queue path, 2x read_feedback) projected a bare two-valued `state`, dropping GitHub's upstream `state_reason` (completed \| not_planned \| reopened \| null); write/read asymmetry: the repo's own automation writes state_reason:completed at 6 live sites (bridge_intake.py:669/978, command_router.ts:205, federation_ci_watchdog.py:617, pipeline_failure_register.py:848/874) while the only issue-read surface dropped it; queue hardcodes state=open so work_order was the sole closed-WO read; consumer cost proven: registry pass-8 needed the completed/not_planned distinction (sourced from the issue-page event, not Tower), variant-B 3/3 (#2166/#2181/#2193) closed-WO truth was main-history archaeology; landed option A: +1 line `stateReason: raw.state_reason ?? null` + RawIssue state_reason? + queue-fidelity battery + queueFromIssues carry-through; live post-landing receipt: Tower read of #2218 returns stateReason:completed (deploy unblocked by #2224) | #2218 | `adapt` | **landed (closed by #2220)** |
++| R55 | *(issue-filed — scout lane, no radar doc; adopted in part within one cycle by the filer's own PR — registered same-cycle this pass, see Drift log pass 17; row stays open until option A flips the gate)* | Render deploy-gating prevention layer — the deploy-lane RCA documented the instance failures + a detection probe, but the prevention surface (Render's native deploy-gating) had zero repo mentions: autoDeploy has no check-gate (#2229 lead falsification #3) and gating on the current CI is a no-op by the RCA's own causality chain (CI green because Render deploys post-merge, outside GH Actions — boot-smoke discrimination must come FIRST); landed option B: healthCheckPath /health on the mcp-tower blueprint (live 200/82ms, transport-level 2xx gate — P1 #2211's silent rollback was the exact no-signal class; browser already gated → in-repo web fleet fully health-gated; api dashboard-managed stays RCA-routed; worker out of scope per docs); routed A(i) boot-smoke CI job (protected path #1643, maintainer-only) then A(ii) After-CI-Checks-Pass dashboard flip (official docs receipts in brief); C rejected (hook coupling before simple pair), D = RCA's probe kept as backstop, not duplicated | #2249 | `adapt` | **adopted (B landed; A maintainer-pending — open)** |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+diff --git a/docs/bridge/bridge-20261029-deploy-gating-brief.md b/docs/bridge/bridge-20261029-deploy-gating-brief.md
+new file mode 100644
+index 00000000..164f5ef1
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-deploy-gating-brief.md
+@@ -0,0 +1,24 @@
++# Deploy-gating prevention layer — R55 option B landed, A routed (report-only brief)
++
++**Lane:** R55 (#2249, ecosystem-scout, Job 478520 03:25Z cycle, verdict `adapt`) — adopted in part this cycle. **Scope of this document:** consolidate the unrouted prevention surface the scout identified, land the one agent-executable option (B), and leave an honest maintainer-lane handoff for the rest. Nothing here duplicates the deploy-lane RCA (`docs/bridge/bridge-20261028-deploy-lane-rca.md`) — it extends it with the official capability surface and live probe receipts.
++
++## What landed (option B, in-repo, this PR)
++
++`infrastructure/mcp-control-plane/render.yaml` now declares `healthCheckPath: /health` for `supremeai-mcp-tower`. Receipts:
++
++- **Live probe (zero-credential, 2026-10-29 ~19:45Z):** `GET https://supremeai-mcp-tower.onrender.com/health` → **200/82ms**, body `{"status":"degraded","server":"supremeai-control-tower","version":"1.0.0","services":{"healthy":31,"degraded":2,...}}`. The endpoint exists on the deployed build today; the field merely wires Render's rollout gate to it.
++- **Transport-level, by design:** Render health checks pass on 2xx and ignore the body, so the gate discriminates *does the new container boot and serve* — exactly the signal the RCA said was missing ("the NEW container fails to serve, and Render marks the deploy `update_failed` after boot retries" with "no health-check signal"). The tower's own `status: degraded` subsystem view (31/33) does NOT fail the gate; subsystem health is the tower's internal concern, boot liveness is the deploy plane's.
++- **The class it closes:** P1 #2211's boot crash (`Tool system_parity_audit is already registered` → `registerAllTools` rejects → server fatal → Render rolls back silently to the 10-24 build) would have surfaced as a failed health check instead of a silent multi-day stale deploy. #2229's third falsification ("Render autoDeploy has no check-gate") is addressed on the health plane; the CI plane is option A below.
++- **Sibling status:** `browser/render.yaml` (`supremeai-browser`) **already declares** `healthCheckPath: /health` — the in-repo web-service fleet is now fully gated. The api service (`supremeai-api-ulw0`) is dashboard-managed (no in-repo blueprint); its healthCheckPath fix was routed by the RCA and tracked in #2205's post-redeploy resolution — out of repo scope, noted here only for the fleet picture. `render-worker` is a background worker: Render docs scope health checks to **web services**, so worker coverage is honestly out of B's reach (the scout's own partial-scope note).
++
++## What remains (option A — maintainer lane, ordered pair, protected path)
++
++1. **A(i) first — CI boot-smoke job per deployable service** (`.github/**` = protected path #1643, maintainer-only): build image, boot container, probe a known-good endpoint, so CI gains runtime discrimination. The RCA's causality chain is the proof this must come first: "CI stays green because Render deploys post-merge, outside GH Actions" — gating on today's CI passes broken-runtime commits (green-on-broken), a no-op gate.
++2. **A(ii) then — flip Auto-Deploy to "After CI Checks Pass"** (Render dashboard: render-primary / render-worker / render-api / mcp-tower). Official docs (render.com/docs/deploys, © 2026, fetched 2026-10-29): Render "waits for a new commit's CI checks to complete before triggering a deploy … proceeds with the deploy only if *all* checks pass"; checks count as passed on conclusion `success`, `neutral`, or `skipped`; supports GitHub Actions and checks-API integrations. Zero in-repo mentions today (`github_code_search` "After CI Checks" = 0 hits at filing).
++
++**Not recommended as first move (option C, rejected by the scout):** Deploy Hooks + autoDeploy-off pipeline triggering — new moving parts (hook secrets, pipeline coupling) before the simpler A/B pair is tried. **Option D (keep as backstop, do not duplicate):** the RCA's post-merge deploy-probe guard (`deploys[0].status != live` within N minutes → ops issue) — detection-after, complementary to A's prevention-before; the RCA already proposes it (fix #5).
++
++## Residual honesty notes
++
++- Dashboard-managed deploys: both in-repo blueprints set no `autoDeploy` key — deploy behavior lives in the Render dashboard, outside version control. Whether Render blueprints expose a CI-wait key is unverified (scout's flag); A(ii) is therefore a dashboard operation, and blueprint-izing it is a maintainer ops decision (scout alt-d, deferred not rejected).
++- The `/health` probe receipt is point-in-time; if the tower's route table changes, the gate follows the field, not this document. Blueprint field takes effect on Render's next blueprint sync / service re-create — verifying the dashboard actually picked up the field requires Render dashboard access (maintainer lane).
+diff --git a/infrastructure/mcp-control-plane/render.yaml b/infrastructure/mcp-control-plane/render.yaml
+index 554e331a..ce8760a1 100644
+--- a/infrastructure/mcp-control-plane/render.yaml
++++ b/infrastructure/mcp-control-plane/render.yaml
+@@ -2,6 +2,14 @@ services:
+   - type: web
+     name: supremeai-mcp-tower
+     env: node
++    # R55 option B (#2249): health-check gating. The deploy-lane RCA
++    # (docs/bridge/bridge-20261028-deploy-lane-rca.md) documented healthCheckPath
++    # empty => boot failures surface only as the generic swap failure with no
++    # health signal; P1 #2211's silent rollback was exactly that class. /health
++    # verified live 200/82ms (zero-credential probe 2026-10-29 ~19:45Z; body is
++    # the tower's own subsystem JSON and Render's gate is transport-level 2xx,
++    # body ignored — boot discrimination is the goal, subsystem view is not).
++    healthCheckPath: /health
+     # INF-03/INF-04 (issues #506/#507): without rootDir, Render ran every
+     # command from the repo root: 'npm run start' hit the root package.json
+     # (no 'start' script -> instant crash) and 'npm run build' invoked turbo,
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index 9c3c0755..c6f0e7e1 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -227,10 +227,11 @@ def test_live_repo_sweep_passes() -> None:
+     # Pointer pin regenerated per the R48 gate's own instruction after #2145
+     # (R51 registration) legitimately advanced the index next-free R51 -> R52,
+     # after #2172 (R52 registration) advanced it R52 -> R53, after #2196
+-    # (R53 registration) advanced it R53 -> R54, and after #2230 (R54
+-    # registration) advanced it R54 -> R55.
++    # (R53 registration) advanced it R53 -> R54, after #2230 (R54
++    # registration) advanced it R54 -> R55, and after #2249 (R55 adoption
++    # + same-cycle registration) advanced it R55 -> R56.
+     # Bump this literal ONLY together with a landed index-pointer advance.
+-    assert r["pointer"] == 55, "pointer drifted — regenerate expectation with the index"
++    assert r["pointer"] == 56, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])
+     assert not drift, f"live citation-ghost drift: {drift}"

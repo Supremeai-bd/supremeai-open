@@ -1,0 +1,70 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 61d0456c..97e6149d 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -68,6 +68,45 @@ flowchart TD
+ - Test execution is not available via the tower (requires a separate runner) — by design.
+ - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`; `content` required for `full_file` mode, default). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number). `bridge_work_queue` accepts optional `limit`/`label`.
+ 
++### 2.1 Zero-Fail PR Submission Protocol & Format Blueprint (এজেন্ট PR-এর অলঙ্ঘনীয় ফরম্যাট)
++
++> **⚠️ কেন বেশিরভাগ এজেন্ট PR ফেইল করে (The 6 Fatal Traps):**  
++> ১. **Missing Reflection Evidence (Knowledge Sharing Guard #392):** PR বডিতে অবিকল `## Reflection Evidence (why + alternatives_rejected)` হেডার না থাকা বা `- **why:**` ও `- **alternatives_rejected:**`-তে ফাঁকা/প্লেসহোল্ডার টেক্সট রাখা।  
++> ২. **Missing Claim / Issue Link (Claim Gate Guard #392):** কোনো ইস্যু ক্লেইম না করে অন্ধভাবে PR খোলা।  
++> ৩. **Stale Base (Stale-Base Guard #161):** কাজ শুরুর সময় বা পুশের ঠিক আগে `origin/main` থেকে রিবেস না করা।  
++> ৪. **Invalid Branch Name (Branch Naming Guard):** ভুল প্রিফিক্স ব্যবহার করা (স্যাটেলাইট কোডে ভুলেও `bridge/*` প্রিফিক্স দেওয়া যাবে না, দিলে `landing.yml` স্যাটেলাইটে ডিসপ্যাচ স্কিপ করবে)।  
++> ৫. **Cross-Domain বা Root Shadowing (Boundary Sanitization Guard #107):** রুট `src/*`-এ কোড পুশ করা বা একই PR-এ একাধিক স্যাটেলাইট ডোমেন স্পর্শ করা।  
++> ৬. **Blind Coder Syndrome:** বিদ্যমান কোড, ইমপোর্ট বা টাইপস না পড়ে মনগড়া কোড লিখে টাইপচেক/বিল্ড নষ্ট করা (P3 Non-Regression লঙ্ঘন)।
++
++#### 📋 The Canonical PR Body Blueprint (Copy-Paste Ready)
++যেকোনো এজেন্ট PR খোলার সময় `gh pr create` বা টুলের মাধ্যমে নিচের ফরম্যাটটি অক্ষরে অক্ষরে মেনে চলতে হবে:
++
++```markdown
++### Summary
++Brief 1-2 sentence description of what this PR changes and the exact problem it solves.
++
++### Linked Issue / Claim
++Closes #<ISSUE_NUMBER>
++<!-- atomic-claim: issue #<ISSUE_NUMBER> -->
++
++### Key Changes
++- **\`<domain>/path/to/file.ext\`**: Detailed bullet point of the architectural or functional change.
++
++## Reflection Evidence (why + alternatives_rejected)
++- **why:** Concrete technical rationale explaining WHY this specific approach was selected over others. (Must be real, non-empty, and free of angle-bracket placeholders).
++- **alternatives_rejected:**
++  - *<Alternative Approach 1>:* Rejected because <precise technical drawback or failure mode>.
++  - *<Alternative Approach 2>:* Rejected because <complexity / regression / security issue>.
++
++### Dynamic Verification Evidence
++- [x] Local Guard / Smoke Test Output: \`python scripts/ci/boundary_sanitization_guard.py --files <paths>\` -> PASS
++- [x] Unit/Contract Tests passed with output proof: <test name and result summary>
++- [x] Pre-Push Rebase: 0 commits behind origin/main
++
++### Rollback Path
++- [x] \`git revert\`-safe (no cross-satellite private state dependency)
++```
++
+ ---
+ 
+ ## 3. Role Preflight Invariants (৩-সেকেন্ড আত্ম-জিজ্ঞাসা)
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index f87a5797..5bd3543e 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -55,6 +55,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+ | **U11** | **Contract Mirror Invariant & Zero-Drift** | Mirrored contract surfaces (`examples/gateway_client.py` ↔ `supremeai-api:scripts/clients/`, `api-schemas/gateway.openapi.yaml` ↔ `supremeai-api:contracts/`) are strict byte-level replicas. Arbitrary local formatter overrides or CRLF alterations are strictly forbidden. Must pass `python scripts/ci/contract_parity_guard.py --check` before push. |
+ | **U12** | **Satellite-First & Tangible Product Value** | All autonomous agent tasks MUST deliver tangible user value to active product satellites (`studio/*`, `gateway/*` / `api/*`, `browser/*`, `vscode/*`, `core/*`). Autonomous PRs touching exclusively internal transit or tooling surfaces (`infrastructure/mcp-control-plane/*`, `scripts/ci/*`) that only land in the private monorepo are strictly banned without explicit human authorization. End the cycle of zero-value internal busywork. |
+ | **U13** | **Domain Mirror Path Anchoring** | Code targeting product satellites must strictly touch its approved mirror folder (`studio/*` → `supremeai-studio`, `gateway/*` / `api/*` → `supremeai-api`, `vscode/*`, `browser/*`, `core/*`). Never submit root-level shadow paths (e.g. `src/*`). Must pass `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before patch submission or PR creation. |
++| **U14** | **Zero-Fail PR Submission Contract** | PRs opened by agents must comply strictly with the canonical machine format (`AGENTS.md` §2.1). (1) Exact header `## Reflection Evidence (why + alternatives_rejected)` with real, non-placeholder `- **why:**` and `- **alternatives_rejected:**` entries (`Knowledge Sharing Guard #392`). (2) Pre-claimed issue link via `Closes #N`, `Fixes #N`, or `<!-- atomic-claim: issue #N -->` (`Claim Gate Guard #392`). (3) Single-domain diff. (4) Rebased 0 behind `origin/main`. Creating malformed, unlinked, or unreflective PRs is a direct constitutional violation. |
+ 
+ ---
+ 
+@@ -74,6 +75,7 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+   2. **Solution Optimality:** Evaluate if the issue suggestion is truly the simplest/cleanest way, or if a better 1-line solution exists.
+   3. **Defect-Class Elimination (P6):** Ban superficial symptom patches (no error masking/swallowing). Solve root cause.
+   4. **Issue Authority:** Authorized to file issues *only* for verified task-blockers or U9 sibling sweeps with evidence.
++  5. **Canonical PR Blueprint Execution:** Every PR must be created strictly following `AGENTS.md` §2.1 format. Never open unlinked PRs or PRs with unfilled placeholders. Run `python scripts/ci/boundary_sanitization_guard.py --files <paths>` before opening PR.
+ 
+ ### 3.3 🔍 Auditor / Rules-Breaker Agent
+ - **Work Area:** Governance compliance, boundary audits, secret scan triage, dead code & workflow consolidation.

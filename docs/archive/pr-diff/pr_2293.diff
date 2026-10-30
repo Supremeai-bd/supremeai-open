@@ -1,0 +1,116 @@
+diff --git a/docs/reports/R58_FALSE_REJECTION_RECONCILIATION_2026-10-29.md b/docs/reports/R58_FALSE_REJECTION_RECONCILIATION_2026-10-29.md
+new file mode 100644
+index 00000000..848b276c
+--- /dev/null
++++ b/docs/reports/R58_FALSE_REJECTION_RECONCILIATION_2026-10-29.md
+@@ -0,0 +1,110 @@
++# R58 Execution — Landed-vs-Rejected Reconciliation Sweep (2026-10-29)
++
++> Executes the R58 scout filing [#2275](https://github.com/Supremeai-bd/supremeai-open/issues/2275) (option-A preparation). Report-only: zero production writes, zero code edits. Contributor cycle 27 (Job 478338, dispatch 05:35+08), zero-credential Tower vantage + local full-history git. Claim: atomic `work_claim` 21:37:49Z (dual-plane label+comment).
++
++## TL;DR
++
++The rejected plane is **52 rows deep**, not the 20 the watchdog's strict plane sees. Exact paren-wrapped slug matching against **full** `main` history classifies **47 of 52 as FALSE_REJECTION** (their own landing commit is in main) and **5 as LEGIT_REJECTION** (slug absent). The strict-18 worklist filed in #2275 is **confirmed 18/18** — every member has exactly one landing commit — and the sweep extends the adjudication worklist by **29 rows** the watchdog cannot currently see. Option A (tower-owner re-stamp) now has a ready-to-stamp, evidence-attached 47-row worklist; no member requires recipe-#1940 re-landing on the evidence gathered here.
++
++## Method (and why it is stronger than the strict plane)
++
++1. **Plane enumeration**: `bridge_work_queue {label: "bridge:rejected", limit: 100}` → 52 rows (server `count=52`; the plane is fully covered). The watchdog's strict plane sees **20** because `_fetch_rejected_rows_tower` (`scripts/ci/bridge_landing_watchdog.py:313`) sends **no `limit`** and the tower applies its default page — an under-enumeration finding of this sweep (fix candidate: one line, next cycle, my own file).
++2. **Slug extraction**: `\((bridge-\d{8}-[a-z0-9-]+)\)` from each row title — 52/52 rows carry a taskId slug.
++3. **Landing check**: `git log origin/main -F --grep="(<slug>)" -i` — **paren-wrapped fixed-string** matching kills prefix contamination (e.g. `bridge-20261028-u4-dupguard-race` is a strict prefix of its `-a2..-a7` siblings; fuzzy matching would mis-credit #1995 with its siblings' landings — in fact #1995 has its **own** landing `5b05769`/PR #1996, confirmed by exact match).
++4. **Window**: full history, not the watchdog's 400-commit window — older rows get the same evidential standard as the storm cohort.
++5. Ops trap worth recording: `git log -F "(pat)"` (bare pattern argument) is parsed as a **pathspec** and silently matches nothing; the `--grep=<pat>` single-arg form is mandatory. This cost one rerun and is noted so the next sweep author does not repeat it.
++
++## Strict-18 adjudication (the #2275 worklist — confirmed in full)
++
++All 18 rows: stamped `bridge:rejected` (terminal) yet each has exactly one landing commit in `main` whose subject carries the WO's own taskId. Ages at sweep time 8.9–14.0h and growing. Verdict for every row: **re-stamp to landed (option A)**.
++
++| WO | taskId slug | landing commit | landed (UTC) | PR |
++|---|---|---|---|---|
++| #2144 | `bridge-20261028-r51-registration-pass13` | `7f6f6fd` | 10-28T18:46 | #2145 |
++| #2140 | `bridge-20261028-u4-dupguard-race-a7` | `4f1555f` | 10-28T18:37 | #2141 |
++| #2126 | `bridge-20261028-aud-verdict-state` | `c665d29` | 10-28T17:50 | #2127 |
++| #2124 | `bridge-20261028-audit2111-rca-final` | `9523a46` | 10-28T17:43 | #2125 |
++| #2120 | `bridge-20261028-r49-option-b-inspector-smoke` | `0da6ec4` | 10-28T17:32 | #2121 |
++| #2107 | `bridge-20261028-scout-radar-xiv` | `bb8a943` | 10-28T17:01 | #2108 |
++| #2104 | `bridge-20261028-r49-tower-mcp-ceiling` | `cce3f6f` | 10-28T16:53 | #2105 |
++| #2098 | `bridge-20261028-r47-r48-adjudicate` | `9eaef10` | 10-28T16:24 | #2099 |
++| #2094 | `bridge-20261028-r47-index-pass8-2091-r2` | `9a44555` | 10-28T16:14 | #2095 |
++| #2087 | `bridge-20261028-r47-pass8-reg` | `f0e2bec` | 10-28T16:10 | #2088 |
++| #2079 | `bridge-20261028-r46-row-freshness-reg` | `ccb6bb1` | 10-28T15:50 | #2080 |
++| #2073 | `bridge-20261028-radar-index-drift-pass6` | `09a007c` | 10-28T15:29 | #2074 |
++| #2071 | `bridge-20261028-intake-residue-drain` | `de6248b` | 10-28T15:06 | #2072 |
++| #2065 | `bridge-20261028-r43-row-freshness-reg` | `3da31cd` | 10-28T14:44 | #2066 |
++| #2062 | `bridge-20261028-u4-dupguard-race-a6` | `469ddb8` | 10-28T14:39 | #2063 |
++| #2060 | `bridge-20261028-radar-index-drift-pass4` | `bab42ec` | 10-28T14:31 | #2061 |
++| #2056 | `bridge-20261028-core-ci2053-autofix-rca` | `074fb6d` | 10-28T14:17 | #2057 |
++| #2045 | `bridge-20261028-u4-dupguard-race-a5` | `0fc6952` | 10-28T13:39 | #2046 |
++
++## Extended cohort — 29 additional false rejections (new findings)
++
++Same standard, same verdict (re-stamp to landed), spanning #1830–#2040 (created 10-27T23:59Z → 10-28T07:29Z). None of these were visible to the strict plane (beyond its 20-row page, several also fall outside its 400-commit window).
++
++| WO | taskId slug | landing commit | landed (UTC) | PR |
++|---|---|---|---|---|
++| #2040 | `bridge-20261028-eye1783-1797-stale-closeout` | `464ab48` | 10-28T13:30 | #2041 |
++| #2025 | `bridge-20261028-verdict-false-rejections` | `fc3c1a0` | 10-28T12:35 | #2026 |
++| #2023 | `bridge-20261028-u4-dupguard-race-a4` | `adbc688` | 10-28T12:33 | #2024 |
++| #2020 | `bridge-20261028-d4-probe-first-live-pass` | `64ab152` | 10-28T12:13 | #2021 |
++| #2014 | `bridge-20261028-u4-dupguard-race-a3` | `4ff7d42` | 10-28T12:00 | #2015 |
++| #2005 | `bridge-20261028-u4-dupguard-race-a2` | `7bf854d` | 10-28T11:52 | #2006 |
++| #1997 | `bridge-20261028-radar-index-drift-pass3` | `e5cb2d6` | 10-28T11:43 | #1998 |
++| #1995 | `bridge-20261028-u4-dupguard-race` | `5b05769` | 10-28T11:43 | #1996 |
++| #1992 | `bridge-20261028-intake-verdict-stall-v2` | `c0cf6b7` | 10-28T11:38 | #1993 |
++| #1986 | `bridge-20261028-intake-verdict-stall` | `232179f` | 10-28T11:34 | #1987 |
++| #1981 | `bridge-20261028-ci1897-1933-stale-closeout` | `b4f7bb2` | 10-28T11:24 | #1982 |
++| #1970 | `bridge-20261028-owasp-llm-top10-mapping` | `711c661` | 10-28T10:54 | #1971 |
++| #1965 | `bridge-20261028-p0-gate-spec-sync` | `0b19b36` | 10-28T10:35 | #1966 |
++| #1963 | `bridge-20261028-ci4532-landing-eviction-triage` | `b5c20a5` | 10-28T10:34 | #1964 |
++| #1945 | `bridge-20261028-pages-deploy-drift` | `4cd122d` | 10-28T09:56 | #1946 |
++| #1943 | `bridge-20261028-radar-index-drift-pass2` | `dc307ab` | 10-28T09:43 | #1944 |
++| #1939 | `bridge-20261028-ci1933-autoland-race` | `5e602b0` | 10-28T09:40 | #1940 |
++| #1924 | `bridge-20261028-ci1918-secrets-scan-triage` | `13bed8b` | 10-28T09:05 | #1925 |
++| #1922 | `bridge-20261028-skills-agent-scan-baseline` | `b06a90b` | 10-28T08:50 | #1923 |
++| #1914 | `bridge-20261028-run12-wo1617-studio-parity-rescue` | `602a435` | 10-28T08:40 | #1915 |
++| #1905 | `bridge-20261028-ci-wiring-rca-1896` | `61cb977` | 10-28T08:08 | #1906 |
++| #1899 | `bridge-20261028-scout-radar-index-r2` | `6106b63` | 10-28T07:56 | #1900 |
++| #1891 | `bridge-20261028-run11-wo1811-secrets-scan-triage` | `bae4a50` | 10-28T07:44 | #1892 |
++| #1868 | `bridge-20261028-u3-reverify-1804` | `052fe67` | 10-28T07:12 | #1869 |
++| #1864 | `bridge-20261028-deploy-lane-rca` | `239c7ef` | 10-28T07:08 | #1865 |
++| #1853 | `bridge-20261028-rules-breaker-auth` | `df67830` | 10-28T06:56 | #1854 |
++| #1844 | `bridge-20261028-tower-exposure-audit` | `2d96151` | 10-28T06:28 | #1845 |
++| #1835 | `bridge-20261028-gateway-drift-reverify` | `1d74744` | 10-28T06:10 | #1836 |
++| #1830 | `bridge-20261028-human-eye-studio-qa-iii` | `b76f92c` | 10-28T06:00 | #1831 |
++
++## Legitimate rejections — 5 rows (rejection stands)
++
++Slug absent from full `main` history: the WO-as-submitted never landed. Two sub-classes: never-landed (#2118, #2085, #1931) and material-rescued-under-another-taskId (#1953, #1895 — adoption noted, WO verdict remains correct).
++
++| WO | taskId slug | created (UTC) | note |
++|---|---|---|---|
++| #2118 | `bridge-20261028-radar-index-freshness-r1` | 2026-10-28T11:25Z | r1 of the radar-index freshness automation; superseded in-flight by the scout R58 filing itself (#2275) - material live as the filing, not as this WO's slug |
++| #2085 | `bridge-20261028-r46-npm-dep-gate-surface-widening` | 2026-10-28T10:08Z | R46 gate surface widening; #2079's landed pass registers the R46 row; widening itself not landed under this slug - re-land candidate only if the owner wants the widening |
++| #1953 | `bridge-20261028-r42-docs-link-integrity-guard` | 2026-10-28T04:09Z | R42 gate as submitted failed main preflight (see #1963 triage); the gate re-landed under a different taskId (R42 r3, see #2045 receipt) - rejection correct for this WO-as-submitted |
++| #1931 | `bridge-20261028-js-dep-cve-gate` | 2026-10-28T03:16Z | JS-dep CVE gate as submitted; superseded by the auto-lander-race re-land path (see #1939 triage; 498031b references it by number, not slug) |
++| #1895 | `bridge-20261028-tower-truncation-json-prune` | 2026-10-28T01:47Z | truncation prune as submitted; material rescued under PR #1896's own taskId (r2 rescue, d9a36fe) - rejection correct for this WO-as-submitted |
++
++## Reconciliation arithmetic
++
++- Plane: 52 = 47 false + 5 legit. False rate **90.4%** of the open rejected plane.
++- Strict plane's view: 20 rows / 18 flagged — **correct on every row it sees** (18/18 confirmed here), but it under-enumerates the plane by 32 rows and its 400-commit window would miss older landings even if the page were raised.
++- Combined with the #2100 stamping blackout (this run: MERGED_ON_MAIN=12, all without a Tower verdict stamp), the two verdict planes now misdescribe **59** of the bridge's terminal/in-flight rows: 47 rejected-but-landed + 12 merged-but-unstamped.
++
++## Routing (per #2275's options)
++
++- **Option A (recommended, unchanged)**: tower-owner re-stamp sweep over the 47-row worklist above; verdict history is append-recorded (#2220), rollback = revert individual re-stamps. This report supplies per-row landing evidence so each re-stamp is a lookup, not a research task.
++- **Watchdog fetch-limit fix** (new, one line): pass an explicit high `limit` in `_fetch_rejected_rows_tower`'s `bridge_work_queue` args so the strict plane sees all 52 rows; keep the 400-commit window or widen it deliberately (full-history matching needs the landing slug only — cheap locally).
++- **Not routed here**: mass re-land (#1940) — zero of the 47 need it on this evidence; the 5 legit rows stay rejected.
++
++## Reflection evidence
++
++- **why**: the strict plane files the FALSE_REJECTION worklist on every run and will keep filing it until reconciled — an un-owned, permanently-red audit line; landed work recorded as rejected is the mirror of the #2100 merged-but-unstamped blackout, and together they misdescribe the board to every consumer. #2275 flagged this as the next-cycle candidate; the claim was free and the sweep was executed within one cycle of filing.
++- **alternatives_rejected**: (a) closing #2275 with this report — rejected: reconciliation completes only when the tower-owner re-stamps; the tracker stays open while the strict line stays red. (b) fixing the watchdog fetch limit inside this same patch — rejected: the claim's declared lane is adjudication/report-only; a code change would expand scope mid-TTL and mix lanes in one PR; routed as a one-line next-cycle candidate instead. (c) prefix-fuzzy matching for speed — rejected after #1995/#1986 proved prefix-collision-prone; exact paren-wrapped matching is the same cost locally.
++- **idempotency**: no prior sweep PR/WO exists for this taskId (`bridge-20261029-r58-sweep-execution` is new); #2275 carried exactly one claim (this cycle's, 21:37:49Z) and one prior comment (the atomic-claim record) at sweep start.
++
++## Live-state postscript (recorded per honesty discipline)
++
++While this sweep was in flight under the held claim, **PR #2290 (`bridge-20261029-r58-cohort-registration`, merged ~21:48Z) registered the R58 radar row and closed #2275 via `Closes`** — a registration-only change (`docs/SCOUT_RADAR_INDEX.md` +5-1, pointer-pin test 58→60), zero file overlap with this report. The tracker therefore closed **while the strict plane's red line persists**: all 47 rows documented here remain stamped `bridge:rejected` on the live board, and the FALSE_REJECTION verdict line will keep firing every run. This report is filed regardless because the evidence it carries is what makes the owner's option-A pass possible; the tracker's state does not change the landing facts. Related ecosystem motion: #2286 (R59) independently flagged the work_queue window truncation signal (board 86 open, `limit:50` hides the oldest 35-row tail) — the same under-enumeration class this sweep found on the rejected plane (52 real vs 20 seen), reinforcing the watchdog fetch-limit fix candidate. Re-verified post-closure: no duplicate sweep WO/PR exists; this taskId is unique.

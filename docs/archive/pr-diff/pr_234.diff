@@ -1,0 +1,93 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 43bcfae8..b0e6c3bb 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -383,7 +383,7 @@ def emit_task_envelope(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
+-def pick_next_issue() -> str | None:
++def pick_next_issue(exclude: set[str] | list[str] | None = None) -> str | None:
+     """Fetch the highest priority claimable open issue from GitHub.
+ 
+     Selection policy (#88):
+@@ -395,6 +395,8 @@ def pick_next_issue() -> str | None:
+       - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
+         titles can no longer outrank a real priority label; age (lowest issue
+         number) breaks ties per AGENT_RULES.md §5.
++      - exclude: issue numbers already dispatched in this session. Prevents
++        session-local re-picks while GitHub search API index updates.
+     """
+     code, out, _ = run_cmd([
+         "gh", "issue", "list",
+@@ -441,6 +443,9 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+             return (tier, int(item.get("number", 0)))  # number ASC = oldest first
+ 
+         candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
++        if exclude:
++            excluded_set = {str(e) for e in exclude}
++            candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
+         sorted_issues = sorted(candidates, key=priority_key)
+         if sorted_issues:
+             return str(sorted_issues[0].get("number"))
+@@ -889,19 +894,20 @@ def print_cron_entry(minutes: int) -> None:
+     print(f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1")
+ 
+ 
+-def _run_one_scheduled_tick(args: argparse.Namespace) -> int:
++def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[str] | None = None) -> tuple[int, str | None]:
+     """One scheduled dispatch — reuses upstream's own single-cycle paths."""
+     if args.verify_only:
+         passed, _ = step_6_verify()
+-        return 0 if passed else 1
++        return (0 if passed else 1), None
+     issue_id = args.issue
+     if args.pick_next:
+-        issue_id = pick_next_issue()
++        issue_id = pick_next_issue(exclude=exclude)
+         if not issue_id:
+             log("❌", "No eligible open issues found on board this tick!")
+-            return 1
++            return 1, None
+         log("🎯", f"Auto-selected highest priority Issue #{issue_id}")
+-    return run_cycle(args, issue_id)
++    rc = run_cycle(args, issue_id)
++    return rc, issue_id
+ 
+ 
+ def run_scheduled_cycles(args: argparse.Namespace) -> int:
+@@ -925,6 +931,7 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
+     failures = 0
+     cycle_no = 0
+     next_start = time.monotonic()
++    dispatched: set[str] = set()
+     try:
+         while total == 0 or cycle_no < total:
+             if cycle_no > 0:
+@@ -937,7 +944,9 @@ def run_scheduled_cycles(args: argparse.Namespace) -> int:
+             next_start = time.monotonic() + interval
+             label = f"{cycle_no}/{total}" if total else str(cycle_no)
+             log("🚀", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
+-            rc = _run_one_scheduled_tick(args)
++            rc, dispatched_id = _run_one_scheduled_tick(args, exclude=dispatched)
++            if dispatched_id:
++                dispatched.add(str(dispatched_id))
+             if rc != 0:
+                 failures += 1
+                 log("⚠️", f"[Scheduled Mode] cycle {label} exited {rc} — one failed tick is not a stalled clock; schedule continues.")
+@@ -1083,12 +1092,14 @@ def main() -> int:
+     if args.loop:
+         log("🔄", f"[Continuous Loop Mode] Starting task runner (max tasks: {args.max_tasks})...")
+         processed = 0
++        dispatched: set[str] = set()
+         while processed < args.max_tasks:
+-            next_issue = pick_next_issue()
++            next_issue = pick_next_issue(exclude=dispatched)
+             if not next_issue:
+                 log("🏁", "No more eligible open issues in queue. Loop finished.")
+                 break
+             log("🚀", f"Dispatching Task #{next_issue} ({processed + 1}/{args.max_tasks})...")
++            dispatched.add(str(next_issue))
+             rc = run_cycle(args, next_issue)
+             if rc != 0:
+                 log("⚠️", f"Task #{next_issue} halted with code {rc}. Stopping continuous loop.")

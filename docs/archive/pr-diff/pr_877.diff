@@ -1,0 +1,58 @@
+diff --git a/docs/work-orders/bridge-20261023-frontend-router-restore.md b/docs/work-orders/bridge-20261023-frontend-router-restore.md
+new file mode 100644
+index 00000000..6a4224ea
+--- /dev/null
++++ b/docs/work-orders/bridge-20261023-frontend-router-restore.md
+@@ -0,0 +1,52 @@
++# Bridge Work Order — bridge-20261023-frontend-router-restore
++## P0 CRITICAL: Restore the full application router in supremeai-studio App.tsx (broken auth buttons, missing app routes)
++
++**Target subsystem:** supremeai-studio — `src/App.tsx` (mirror: `studio/src/App.tsx` in supremeai-open)
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-23
++**Severity:** P0 — user-facing feature breakage on production (https://supremeai-studio.pages.dev/)
++
++## Defect (verified live + in code, 2026-10-23)
++
++The Cosmic landing implementation replaced `src/App.tsx` with a marketing-only router. Consequences on production:
++
++1. **Every auth entry is dead**: LandingPage "Sign In" (`navigate('/login')`) and "Get Started" (`navigate('/signup')`), PublicPages AuthPromptModal "Sign in" (`/login`) and "Create account" (`/register`) links, and all capability chips (href `/login`) resolve to the `*` fallback `<Navigate to="/" replace />` — the user is silently bounced back to the landing page. Login and account creation are IMPOSSIBLE right now.
++2. **The authenticated application is unreachable**: no route mounts UserDashboard, workspace feature routes (`src/routes/workspaceFeatureRoutes`), AIStudio, or WorkspaceLayout. Logged-in users have nothing to log in TO.
++3. **`/admin` renders OperatorCockpit instead of the real AdminShell** (AdminHostEntry/AdminShell), and providers required by the app (`ThemeSyncProvider`, `TranslationProvider`/I18nProvider, CommandBar) are no longer mounted.
++4. `/models`, `/pricing` currently render LiveChatPage — PublicPages exports real ModelsPage/PricingPage/FeaturesPage/DocsPage components (per App.routes.test.tsx mocks) that are no longer routed. `/features`, `/docs` fall back to `/`.
++5. `App.routes.test.tsx` mocks the FULL router contract (LoginPage, RegisterPage, ProtectedRoute/GuestRoute, WorkspaceLayout, CommandBar, ErrorPage, workspaceFeatureRoutes, providers) — the current App.tsx cannot satisfy those tests; the landing work bypassed the test contract.
++
++## Fix (restore, not rebuild)
++
++Restore App.tsx to mount the full application per the contract already encoded in `App.routes.test.tsx`:
++
++1. **Providers**: `GlobalConfigInitializer` → `ThemeSyncProvider` → `TranslationProvider` (I18n) → router.
++2. **Public funnel (keep the new Cosmic pages)**: `/` → LandingPage, `/about` → OurStoryPage (or PublicPages AboutPage — whichever is the canonical implementation), `/chat` → LiveChatPage (GuestChat), `/models`/`/features`/`/pricing`/`/docs` → their real PublicPages components (NOT LiveChatPage).
++3. **Auth routes**: `/login` → GuestRoute(LoginPage), `/register` → GuestRoute(RegisterPage) from `src/pages/auth/*`. LandingPage "Get Started" must point at `/register` (today it navigates `/signup` — a route that never existed; align to `/register`).
++4. **Authenticated app**: ProtectedRoute + WorkspaceLayout mount for UserDashboard (`src/pages/user/UserDashboard` or components/customer per existing contract) and `workspaceFeatureRoutes`.
++5. **Admin**: `/admin` (and its subpaths) → the real AdminHostEntry/AdminShell — OperatorCockpit stays ONLY at `/cockpit` (and optionally `/telemetry`).
++6. **CommandBar** mounted once at app level (existing PANEL_OPEN_EVENT contract).
++7. **Fallback**: keep `*` → honest ErrorPage (404) instead of silent `/` redirect — silent bounce hides routing bugs (this defect proves it).
++
++## Acceptance criteria
++
++- [ ] Live site: "Sign In" opens login page; "Get Started"/"Create account" opens register page; no public button silently bounces to `/`.
++- [ ] `/login` and `/register` render LoginPage/RegisterPage; `/admin` renders AdminShell; UserDashboard reachable after (mock) auth.
++- [ ] `App.routes.test.tsx` passes as-is (it already encodes the contract).
++- [ ] New regression test: route table snapshot asserting /login, /register, /dashboard-family, /admin, /models, /features, /pricing, /docs all render distinct non-fallback components.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** Authentication is the single most critical funnel of the product; today it is 100% broken in production because a landing-page PR replaced the router instead of extending it. The full contract still exists in tests and page components — restoration is mechanical, low-risk, and test-verifiable.
++
++**Alternatives rejected:**
++- *Add only /login and /register to the slim router* — rejected: the authenticated app, admin shell, providers, and feature pages would remain unrouted; a marketing router pretending to be the app is the root cause, not the missing two lines.
++- *Rewrite a new router from scratch* — rejected: App.routes.test.tsx + existing components already define the contract; restoration honors "existing work before new work" (80% rule).
++- *Keep `*` → `/` fallback* — rejected: the silent bounce is exactly what let this regression ship unnoticed; an honest 404 makes route loss visible.
++- *Point Get Started at a new `/signup` route* — rejected: `/register` + RegisterPage already exist (test contract); a second auth route would fork the funnel.
++
++## Verification evidence
++
++- Live production page opened via Tower session 2026-10-23 (https://supremeai-studio.pages.dev/ renders new Cosmic landing).
++- Code verified via MCP Tower: current `src/App.tsx` (marketing-only routes, `*`→`/` fallback, no /login,/register, /admin→OperatorCockpit, /models→LiveChatPage); `src/pages/PublicPages.tsx` (AuthPromptModal → /login,/register; capability chips → /login); `src/App.routes.test.tsx` (full router contract mocks: LoginPage, RegisterPage, UserDashboard, workspaceFeatureRoutes, ProtectedRoute/GuestRoute, WorkspaceLayout, CommandBar, ErrorPage, ThemeSyncProvider, TranslationProvider).
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest output including App.routes.test.tsx.

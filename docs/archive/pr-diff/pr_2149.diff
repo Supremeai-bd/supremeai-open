@@ -1,0 +1,241 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 41c65e9f..e6b6dbd0 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "supremeai-mcp-control-plane",
+   "version": "1.0.0",
+-  "description": "SupremeAI Unified MCP Control Tower — connects all services into a single AI-accessible interface",
++  "description": "SupremeAI Unified MCP Control Tower \u2014 connects all services into a single AI-accessible interface",
+   "type": "module",
+   "main": "dist/index.js",
+   "scripts": {
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -61,9 +61,14 @@
+     "test:truncation-live-replay": "tsx scripts/test-runner.ts test_truncation_live_replay.ts",
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+     "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts",
+-    "test:queue-fidelity": "tsx test_queue_fidelity.ts"
++    "test:queue-fidelity": "tsx test_queue_fidelity.ts",
++    "test:bridge-dedup": "tsx test_bridge_dedup.ts"
+   },
+-  "keywords": ["mcp", "supremeai", "control-tower"],
++  "keywords": [
++    "mcp",
++    "supremeai",
++    "control-tower"
++  ],
+   "license": "MIT",
+   "dependencies": {
+     "@modelcontextprotocol/sdk": "^1.30.0",
+diff --git a/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts b/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts
+new file mode 100644
+index 00000000..f2615fac
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/bridge_dedup.ts
+@@ -0,0 +1,55 @@
++/**
++ * #2136 — bridge.submit_patch ingress idempotency: exact-taskId duplicate authority.
++ *
++ * Pure, offline helpers (no network, no env) so the regression battery
++ * (test_bridge_dedup.ts) can replay the live false positive deterministically.
++ *
++ * Failure being fixed (live evidence 2026-10-28, #2136 probes P1–P3): the Step-0
++ * idempotency check searched `is:issue is:open <taskId> in:title` with the taskId
++ * unquoted. GitHub issue search ANDs hyphen-split tokens, so a NOVEL taskId whose
++ * slug shares vocabulary with an unrelated open work order resolved to that WO and
++ * returned `bridge:idempotent-noop` — silently blocking the legitimate rescue
++ * round. Probe P2: novel `bridge-20261028-radar-index-freshness-r2` resolved to WO
++ * #2094, whose title contains bridge/20261028/radar/index/freshness/r2 as separate
++ * tokens (P3, with a non-overlapping slug, created normally — evidence-separated).
++ *
++ * A quoted-phrase query alone is still not sufficient: open issues that merely
++ * QUOTE a taskId in prose surface as hits too (the #2136 report itself quotes the
++ * probe taskIds; probe B reproduced this live — total=1 -> #2136). Precision
++ * therefore requires verifying the hit in an AUTHORITATIVE position that only a
++ * work order for exactly this taskId can have. Both positions are emitted
++ * verbatim by the Step-D work-order writer in bridge.tools.ts:
++ *   - title tail:  `(${taskId})`          — `🌉 Bridge Work Order — <summary> (${taskId})`
++ *   - body field:  `### Task ID\n<taskId>` — first line after the heading, exact match
++ */
++
++/**
++ * True when `title`/`body` identify a bridge work order FOR exactly `taskId`.
++ *
++ * - Title: the parenthesized tail `(${taskId})` is format-anchored (the Step-D
++ *   writer appends it; GitHub 422s over-long titles instead of truncating, so a
++ *   successfully created WO always carries the full tail).
++ * - Body: the `### Task ID` field value must EQUAL the taskId — prose quotations
++ *   of a taskId elsewhere in the body do not count.
++ */
++export function isWorkOrderForTaskId(
++  title: string,
++  body: string | undefined | null,
++  taskId: string
++): boolean {
++  if (typeof title === "string" && title.includes(`(${taskId})`)) return true;
++  const b = typeof body === "string" ? body : "";
++  const m = /###\s*Task\s*ID[^\S\n]*\n+([^\n]*)/.exec(b);
++  return !!m && m[1].trim() === taskId;
++}
++
++/**
++ * Step-0 idempotency search query: quoted-phrase (exact token sequence, immune
++ * to the hyphen-split token-AND behavior), full-text over title+body (the body
++ * `### Task ID` field is the authoritative key even if a future title format
++ * changes), scoped to open issues. Callers must still verify hits with
++ * isWorkOrderForTaskId — phrase search narrows, the authority check decides.
++ */
++export function taskIdSearchQuery(repo: string, taskId: string): string {
++  return `repo:${repo}+is:issue+is:open+%22${encodeURIComponent(taskId)}%22`;
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 48bf87d5..aeb830ce 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -6,6 +6,7 @@ import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
++import { isWorkOrderForTaskId, taskIdSearchQuery } from "../lib/bridge_dedup.js";
+ import { RequestContextStore } from "../policy/auth.context.js";
+ 
+ export const REFLECTION_EVIDENCE_SECTION = "## Reflection Evidence (why + alternatives_rejected)";
+@@ -1079,14 +1080,23 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+ 
+       try {
+         // Step 0: Ingress Idempotency Check (Zero-Duplicate Invariant, #155, #1692)
+-        // If an open work order or branch already exists for this taskId, return idempotent success
++        // If an open work order already exists for this taskId, return idempotent success
+         // without generating duplicate issues or competing PRs across asynchronous agents.
+-        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string }> }>(
+-          `https://api.github.com/search/issues?q=repo:${repo}+is:issue+is:open+${encodeURIComponent(taskId)}+in:title`,
++        // #2136: GitHub issue search ANDs hyphen-split tokens, so an unquoted taskId
++        // matched unrelated open WOs whose titles share vocabulary (live false positive:
++        // novel `bridge-20261028-radar-index-freshness-r2` resolved to WO #2094), and
++        // even quoted-phrase search surfaces issues that merely QUOTE a taskId in prose.
++        // The query is therefore a quoted phrase over title+body, and every hit must
++        // still verify as a work order FOR exactly this taskId (title tail `(taskId)`
++        // or body `### Task ID` field equality) before the idempotent-noop fires.
++        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string; body?: string }> }>(
++          `https://api.github.com/search/issues?q=${taskIdSearchQuery(repo, taskId)}`,
+           { headers, timeoutMs: 10_000 }
+         );
+-        if (searchRes.ok && searchRes.data?.items && searchRes.data.items.length > 0) {
+-          const existing = searchRes.data.items[0];
++        const existing = searchRes.ok
++          ? (searchRes.data?.items ?? []).find((it) => isWorkOrderForTaskId(it.title ?? "", it.body, taskId))
++          : undefined;
++        if (existing) {
+           return {
+             content: [{
+               type: "text",
+diff --git a/infrastructure/mcp-control-plane/test_bridge_dedup.ts b/infrastructure/mcp-control-plane/test_bridge_dedup.ts
+new file mode 100644
+index 00000000..0a55f52f
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_dedup.ts
+@@ -0,0 +1,94 @@
++/**
++ * #2136 — bridge.submit_patch ingress idempotency regression battery (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Replays the live false positive (2026-10-28, probes P1–P3): the Step-0 search
++ * ANDed hyphen-split tokens, so the NOVEL taskId `bridge-20261028-radar-index-freshness-r2`
++ * resolved to unrelated open WO #2094 (whose title contains bridge / 20261028 /
++ * radar / index / freshness / r2 as separate tokens) and returned
++ * bridge:idempotent-noop — silently blocking a legitimate rescue round.
++ * The fix: quoted-phrase full-text query + authoritative-position verification
++ * (title tail `(${taskId})` or body `### Task ID` field equality).
++ */
++import { isWorkOrderForTaskId, taskIdSearchQuery } from "./src/lib/bridge_dedup.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++// Real WO #2094 shapes (the false-positive magnet from the live probes).
++const WO_2094_TITLE =
++  "🌉 Bridge Work Order — docs(scout): Same-cycle registration per the freshness contract (pass 5/7's closing of the adoption-without-registration failure mode). R47 filed issue-side THIS cycle as #2091 (ecosystem-scout, Job 478318): the radar-index freshness gate itself — three same-day collision-imminent allocation occurrences (passes 3/4/6) falsify self-policing; check spec = the index's own §5 #1644-mirror (invariants A registry-completeness, B pointer-truth, C citation-existence), replayable negative fixtures from each logged collision, wiring options A pre-push agent-plane / B admin fast-lint per #1769/#1822. Index edits: next-free pointer R47->R48 (verified free repo-wide), drift-log pass 8, R47 row (open). Docs-only, scout boundary respected (no code edits). Refs #2091 #1644 #2074. (bridge-20261028-r47-index-pass8-2091-r2)";
++const WO_2094_BODY = [
++  "### Task ID",
++  "bridge-20261028-r47-index-pass8-2091-r2",
++  "",
++  "### Patch Branch",
++  "bridge/bridge-20261028-r47-index-pass8-2091-r2",
++  "",
++  "### Target Repo",
++  "Supremeai-bd/supremeai-open",
++  "",
++  "### Summary (what + why)",
++  "docs(scout): radar-index freshness gate registration lane.",
++].join("\n");
++
++// Real WO #2118 shape (P1: same-taskId resubmit must stay idempotent-noop).
++const WO_2118_TITLE =
++  "🌉 Bridge Work Order — feat(bridge): guard(ci): R48 radar-index freshness gate — the #2091 spec, #1644 script-index-gate mirror. (bridge-20261028-radar-index-freshness-r1)";
++const NOVEL_R2 = "bridge-20261028-radar-index-freshness-r2";
++const R1 = "bridge-20261028-radar-index-freshness-r1";
++const R47 = "bridge-20261028-r47-index-pass8-2091-r2";
++
++// ─── 1. Live false positive replay (P2) ─────────────────────────────────────
++section("1. Novel taskId must NOT resolve to vocabulary-overlapping WO #2094");
++check("P2 replay: novel r2 taskId rejected against #2094 title+body", !isWorkOrderForTaskId(WO_2094_TITLE, WO_2094_BODY, NOVEL_R2));
++check("P2 replay: rejected on title alone (token-overlap trap)", !isWorkOrderForTaskId(WO_2094_TITLE, undefined, NOVEL_R2));
++check("true owner accepted: #2094 matches its own taskId", isWorkOrderForTaskId(WO_2094_TITLE, WO_2094_BODY, R47));
++check("P1 replay: r1 resubmit still idempotent against #2118", isWorkOrderForTaskId(WO_2118_TITLE, undefined, R1));
++
++// ─── 2. Authoritative positions ─────────────────────────────────────────────
++section("2. Authoritative positions (title tail / body Task ID field)");
++check("title tail `(taskId)` accepted", isWorkOrderForTaskId(`🌉 Bridge Work Order — some summary (${NOVEL_R2})`, undefined, NOVEL_R2));
++check("body Task ID field accepted (title-truncation edge)", isWorkOrderForTaskId("🌉 Bridge Work Order — long summary", "### Task ID\n" + NOVEL_R2 + "\n\n### Patch Branch\nbridge/x", NOVEL_R2));
++check("prose quotation in body rejected (probe B: the #2136 report quotes the taskId)", !isWorkOrderForTaskId("guard(tower): dedup false-positive", "evidence table cites `bridge-20261028-radar-index-freshness-r2` as the probe taskId", NOVEL_R2));
++check("Task ID field with different value rejected", !isWorkOrderForTaskId("🌉 Bridge Work Order — x", "### Task ID\nbridge-20261028-other-task\n", NOVEL_R2));
++check("missing Task ID heading rejected", !isWorkOrderForTaskId("🌉 Bridge Work Order — x", "some body without the heading", NOVEL_R2));
++
++// ─── 3. Boundary collisions (H2 suffix class) ───────────────────────────────
++section("3. Boundary collisions (round-suffix class)");
++check("title tail is exact: `(…-r2)` does not match a `(…-r22)` WO", !isWorkOrderForTaskId("🌉 Bridge Work Order — y (bridge-20261028-x-r22)", undefined, "bridge-20261028-x-r2"));
++check("body field is exact: -r22 field rejected for -r2 query", !isWorkOrderForTaskId(undefined as unknown as string, "### Task ID\nbridge-20261028-x-r22\n", "bridge-20261028-x-r2"));
++check("prefix taskId does not match longer field value", !isWorkOrderForTaskId("", "### Task ID\nbridge-20261028-x-r2-extra\n", "bridge-20261028-x-r2"));
++
++// ─── 4. Tolerant inputs ─────────────────────────────────────────────────────
++section("4. Tolerant inputs");
++check("undefined body tolerated", !isWorkOrderForTaskId("no tail here", undefined, NOVEL_R2));
++check("null body tolerated", !isWorkOrderForTaskId("no tail here", null, NOVEL_R2));
++check("field value whitespace tolerated", isWorkOrderForTaskId("t", "### Task ID\n  " + NOVEL_R2 + "  \n", NOVEL_R2));
++
++// ─── 5. Query shape ─────────────────────────────────────────────────────────
++section("5. Step-0 query shape (quoted phrase, full-text, open issues)");
++const q = taskIdSearchQuery("Supremeai-bd/supremeai-open", NOVEL_R2);
++check("query scopes the open repo", q.startsWith("repo:Supremeai-bd/supremeai-open+is:issue+is:open+"), q);
++check("taskId is phrase-quoted", q.includes(`%22${encodeURIComponent(NOVEL_R2)}%22`), q);
++check("no in:title (body Task ID field is authoritative)", !q.includes("in:title"), q);
++check("hyphen-split token-AND form is gone", !q.includes("+bridge-20261028"), q);
++
++// ─── Verdict ────────────────────────────────────────────────────────────────
++console.log("\n=============================================");
++if (failures === 0) {
++  console.log("ALL BRIDGE DEDUP TESTS PASSED (#2136)");
++} else {
++  console.error(`${failures} TEST(S) FAILED (#2136)`);
++}
++process.exit(failures === 0 ? 0 : 1);

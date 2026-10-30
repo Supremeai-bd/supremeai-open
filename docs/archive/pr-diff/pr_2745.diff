@@ -1,0 +1,388 @@
+diff --git a/core/tools/mcp/mcp_ide_trio.py b/core/tools/mcp/mcp_ide_trio.py
+index 18a87288..e0afc333 100644
+--- a/core/tools/mcp/mcp_ide_trio.py
++++ b/core/tools/mcp/mcp_ide_trio.py
+@@ -18,7 +18,7 @@
+ from mcp.server.fastmcp import FastMCP
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ mcp = FastMCP("ide_trio_mcp")
+ 
+diff --git a/core/tools/mcp/mcp_neon.py b/core/tools/mcp/mcp_neon.py
+index a4b422e9..6c20d627 100644
+--- a/core/tools/mcp/mcp_neon.py
++++ b/core/tools/mcp/mcp_neon.py
+@@ -15,7 +15,7 @@
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.environment import is_admin_authorized
+ 
+ mcp = FastMCP("neon_mcp")
+diff --git a/core/tools/mcp/mcp_server.py b/core/tools/mcp/mcp_server.py
+index d0493617..c65fbb1f 100644
+--- a/core/tools/mcp/mcp_server.py
++++ b/core/tools/mcp/mcp_server.py
+@@ -7,7 +7,7 @@
+ from mcp.server import Server
+ 
+ from core.kernel.audit_chain import args_fingerprint, get_audit_chain_store
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.mcp_audit import audit_tool_call
+ from core.mcp_policy import evaluate_tool
+ from mcp import types
+diff --git a/core/tools/mcp/mcp_supabase.py b/core/tools/mcp/mcp_supabase.py
+index 3d0050b8..c3421bef 100644
+--- a/core/tools/mcp/mcp_supabase.py
++++ b/core/tools/mcp/mcp_supabase.py
+@@ -17,7 +17,7 @@
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.environment import is_admin_authorized
+ 
+ mcp = FastMCP("supabase_mcp")
+diff --git a/core/tools/mcp/mcp_workspace.py b/core/tools/mcp/mcp_workspace.py
+index daf01b77..db417dde 100644
+--- a/core/tools/mcp/mcp_workspace.py
++++ b/core/tools/mcp/mcp_workspace.py
+@@ -18,7 +18,7 @@
+ from pydantic import BaseModel, ConfigDict, Field
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.environment import is_admin_authorized
+ 
+ mcp = FastMCP("workspace_mcp")
+diff --git a/core/tools/media/image_generator.py b/core/tools/media/image_generator.py
+index 2c35e805..34fd9ff2 100644
+--- a/core/tools/media/image_generator.py
++++ b/core/tools/media/image_generator.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class HFImageGenerator:
+diff --git a/core/tools/media/multilingual_tts.py b/core/tools/media/multilingual_tts.py
+index 29a45cd7..da0c1f4c 100644
+--- a/core/tools/media/multilingual_tts.py
++++ b/core/tools/media/multilingual_tts.py
+@@ -9,7 +9,7 @@
+ from pydantic import BaseModel
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ router = APIRouter(prefix="/tts", tags=["multilingual-tts"])
+ 
+diff --git a/core/tools/media/music_generator.py b/core/tools/media/music_generator.py
+index 9dcfc58d..a9d7129a 100644
+--- a/core/tools/media/music_generator.py
++++ b/core/tools/media/music_generator.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class MusicGenerator:
+diff --git a/core/tools/media/presentation_generator.py b/core/tools/media/presentation_generator.py
+index 56e3e7e3..c1a29ccc 100644
+--- a/core/tools/media/presentation_generator.py
++++ b/core/tools/media/presentation_generator.py
+@@ -1,6 +1,6 @@
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class PresentationGenerator:
+diff --git a/core/tools/media/threed_model_generator.py b/core/tools/media/threed_model_generator.py
+index aedefa62..097c6dc4 100644
+--- a/core/tools/media/threed_model_generator.py
++++ b/core/tools/media/threed_model_generator.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class Model3DGenerator:
+diff --git a/core/tools/media/video_generator.py b/core/tools/media/video_generator.py
+index 593e31d7..a49ae930 100644
+--- a/core/tools/media/video_generator.py
++++ b/core/tools/media/video_generator.py
+@@ -5,7 +5,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class VideoGenerator:
+diff --git a/core/tools/media/voice.py b/core/tools/media/voice.py
+index e30393fb..f5047d90 100644
+--- a/core/tools/media/voice.py
++++ b/core/tools/media/voice.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class VoiceInterface:
+diff --git a/core/tools/meta_architect.py b/core/tools/meta_architect.py
+index d9440067..8eaab33a 100644
+--- a/core/tools/meta_architect.py
++++ b/core/tools/meta_architect.py
+@@ -1,7 +1,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class MetaArchitect:
+diff --git a/core/tools/offline_mode.py b/core/tools/offline_mode.py
+index ce5b97af..d8bddf0a 100644
+--- a/core/tools/offline_mode.py
++++ b/core/tools/offline_mode.py
+@@ -4,7 +4,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ 
+ 
+diff --git a/core/tools/plan_sorter.py b/core/tools/plan_sorter.py
+index 34affe01..29e6869a 100644
+--- a/core/tools/plan_sorter.py
++++ b/core/tools/plan_sorter.py
+@@ -1,7 +1,7 @@
+ import os
+ import shutil
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class PlanSorter:
+diff --git a/core/tools/preference_memory.py b/core/tools/preference_memory.py
+index 5123f8a0..dff5171f 100644
+--- a/core/tools/preference_memory.py
++++ b/core/tools/preference_memory.py
+@@ -2,7 +2,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class PreferenceMemory:
+diff --git a/core/tools/repo_discovery_agent.py b/core/tools/repo_discovery_agent.py
+index b41fb306..5ede1242 100644
+--- a/core/tools/repo_discovery_agent.py
++++ b/core/tools/repo_discovery_agent.py
+@@ -1,6 +1,6 @@
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class RepoDiscoveryAgent:
+diff --git a/core/tools/resource_catalog.py b/core/tools/resource_catalog.py
+index 99141329..7402d4f2 100644
+--- a/core/tools/resource_catalog.py
++++ b/core/tools/resource_catalog.py
+@@ -5,7 +5,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ResourceCatalog:
+diff --git a/core/tools/security_tools/multi_account_rotator.py b/core/tools/security_tools/multi_account_rotator.py
+index 27160510..61a2eae5 100644
+--- a/core/tools/security_tools/multi_account_rotator.py
++++ b/core/tools/security_tools/multi_account_rotator.py
+@@ -18,7 +18,7 @@
+ 
+ from core.config import settings
+ from core.config_cache import config_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.time_utils import utc_now
+ 
+ # Security: Allowed providers whitelist (Issue #776 / MA-11: synchronized with vault providers)
+diff --git a/core/tools/security_tools/proxy_manager.py b/core/tools/security_tools/proxy_manager.py
+index de679ea6..87e0216a 100644
+--- a/core/tools/security_tools/proxy_manager.py
++++ b/core/tools/security_tools/proxy_manager.py
+@@ -2,7 +2,7 @@
+ import os
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ProxyManager:
+diff --git a/core/tools/security_tools/vpn_switcher.py b/core/tools/security_tools/vpn_switcher.py
+index 2cb85925..b91730fb 100644
+--- a/core/tools/security_tools/vpn_switcher.py
++++ b/core/tools/security_tools/vpn_switcher.py
+@@ -4,7 +4,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import httpx
+diff --git a/core/tools/security_tools/vulnerability_predictor.py b/core/tools/security_tools/vulnerability_predictor.py
+index f1bb40fc..ad82d4e9 100644
+--- a/core/tools/security_tools/vulnerability_predictor.py
++++ b/core/tools/security_tools/vulnerability_predictor.py
+@@ -4,7 +4,7 @@
+ import re
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from tools.code.pr_reviewer import PRReviewer
+diff --git a/core/tools/self_planner.py b/core/tools/self_planner.py
+index f12319f7..88e5d576 100644
+--- a/core/tools/self_planner.py
++++ b/core/tools/self_planner.py
+@@ -52,7 +52,7 @@ def is_directed_acyclic_graph(graph):
+ from fastapi import APIRouter, HTTPException
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from brain.model_router import ModelRouter
+diff --git a/core/tools/social/email_agent.py b/core/tools/social/email_agent.py
+index 65d1c4f3..b804d56e 100644
+--- a/core/tools/social/email_agent.py
++++ b/core/tools/social/email_agent.py
+@@ -5,7 +5,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.secure_credential_store import SecureCredentialStore
+ 
+ 
+diff --git a/core/tools/social/marketplace_agent.py b/core/tools/social/marketplace_agent.py
+index 39d770ad..c64dfd76 100644
+--- a/core/tools/social/marketplace_agent.py
++++ b/core/tools/social/marketplace_agent.py
+@@ -8,7 +8,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class MarketplaceAgent:
+diff --git a/core/tools/social/teldrive_storage.py b/core/tools/social/teldrive_storage.py
+index 58dde7d3..95007e0b 100644
+--- a/core/tools/social/teldrive_storage.py
++++ b/core/tools/social/teldrive_storage.py
+@@ -16,7 +16,7 @@
+ from cryptography.fernet import Fernet
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.social.telegram_bot import TelegramBotHandler
+ 
+ 
+diff --git a/core/tools/social/telegram_bot/__init__.py b/core/tools/social/telegram_bot/__init__.py
+index 78b805aa..81a9134b 100644
+--- a/core/tools/social/telegram_bot/__init__.py
++++ b/core/tools/social/telegram_bot/__init__.py
+@@ -52,7 +52,7 @@
+ from fastapi import APIRouter, Request, Response  # noqa: F401
+ 
+ from core.config import settings  # noqa: F401
+-from core.logging_config import logger  # noqa: F401
++from core.monitoring.logging_config import logger  # noqa: F401
+ 
+ from .handler import TelegramBotHandler
+ from .router import create_telegram_router, router
+diff --git a/core/tools/social/telegram_bot/admin_handlers.py b/core/tools/social/telegram_bot/admin_handlers.py
+index 732cc55e..c7de1c14 100644
+--- a/core/tools/social/telegram_bot/admin_handlers.py
++++ b/core/tools/social/telegram_bot/admin_handlers.py
+@@ -8,7 +8,7 @@
+ from __future__ import annotations
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AdminHandlersMixin:
+diff --git a/core/tools/social/telegram_bot/ai_assignment_handler.py b/core/tools/social/telegram_bot/ai_assignment_handler.py
+index 138b52f2..f23e32a7 100644
+--- a/core/tools/social/telegram_bot/ai_assignment_handler.py
++++ b/core/tools/social/telegram_bot/ai_assignment_handler.py
+@@ -10,7 +10,7 @@
+ 
+ import os
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AIAssignmentHandlerMixin:
+diff --git a/core/tools/social/telegram_bot/ai_engine.py b/core/tools/social/telegram_bot/ai_engine.py
+index 460e1a80..4c896a43 100644
+--- a/core/tools/social/telegram_bot/ai_engine.py
++++ b/core/tools/social/telegram_bot/ai_engine.py
+@@ -9,7 +9,7 @@
+ 
+ import asyncio
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class AIEngineMixin:

@@ -1,0 +1,185 @@
+diff --git a/gateway/tests/test_model_cascades.py b/gateway/tests/test_model_cascades.py
+index 52d03b49..1caafe2a 100644
+--- a/gateway/tests/test_model_cascades.py
++++ b/gateway/tests/test_model_cascades.py
+@@ -4,6 +4,7 @@
+ import pytest
+ import asyncio
+ from unittest.mock import AsyncMock, patch, MagicMock
++import gateway.service.providers.adapters as _adapters
+ from gateway.service.providers.adapters import (
+     forward_chat_completion,
+     PROVIDER_MODEL_CASCADES,
+@@ -12,6 +13,22 @@
+ from gateway.service.pool import FederationSquad, ProviderKeyPool, KeySlot
+ 
+ 
++@pytest.fixture(autouse=True)
++def _reset_pooled_stealth_client():
++    """Drop the shared production client pool at each test boundary.
++
++    forward_chat_completion() acquires the SHARED pool via _get_stealth_client();
++    the class-level patch('httpx.AsyncClient.post') mocks only .post, so the
++    constructor still builds a REAL client and _get_stealth_client caches it
++    (is_closed present). Every later test file's forwarder fake was then bypassed
++    by that cached real client — the 2026-10-28 G6e/G7/G8 suite reds in
++    test_stealth_dns_guards. No real connections are made here (post is mocked),
++    so dropping the reference without aclose leaks nothing."""
++    _adapters._STEALTH_CLIENT = None
++    yield
++    _adapters._STEALTH_CLIENT = None
++
++
+ def test_provider_cascades_defined():
+     """Verify all major providers have non-empty prioritized model cascades."""
+     assert "groq" in PROVIDER_MODEL_CASCADES
+diff --git a/gateway/tests/test_reply_path_guards.py b/gateway/tests/test_reply_path_guards.py
+index f328e68f..a88c1a30 100644
+--- a/gateway/tests/test_reply_path_guards.py
++++ b/gateway/tests/test_reply_path_guards.py
+@@ -84,10 +84,40 @@ def check(name: str, cond: bool, detail: str = ""):
+ _TEST_ENV_KEYS = ("STEALTH_WEBHOOK_URL", "GUEST_RATE_LIMIT_PER_MIN", "SUPREMEAI_API_KEY", "ENVIRONMENT")
+ 
+ 
++if "pytest" in sys.modules:
++    import pytest
++
++    @pytest.fixture(autouse=True)
++    def _restore_app_env():
++        """Test-boundary hygiene for this file's by-design env mutation + app reload.
++
++        reload_app() documents 'env is intentionally left set after reload —
++        main() cleans up', but under pytest main() never runs: the final reload
++        (test_readiness_probe's STEALTH_WEBHOOK_URL="") leaked both the env var
++        and the re-captured app-module global into every later test file — the
++        2026-10-28 full-suite reds in test_stealth_dns_guards (G10/G11: /readyz
++        branches on the falsy global and never consults the monkeypatched DNS
++        snapshot). Restore the controlled keys and the import-captured global at
++        each test boundary; per-request reads (SUPREMEAI_API_KEY) need no global
++        restore. Plain-script mode keeps main()'s final cleanup."""
++        saved_env = {k: os.environ.get(k) for k in _TEST_ENV_KEYS}
++        saved_global = getattr(app_module, "STEALTH_WEBHOOK_URL", None)
++        yield
++        for k, v in saved_env.items():
++            if v is None:
++                os.environ.pop(k, None)
++            else:
++                os.environ[k] = v
++        if saved_global is not None:
++            app_module.STEALTH_WEBHOOK_URL = saved_global
++
++
+ def reload_app(**env):
+     """Reload service.app with a controlled env. NOTE: env is intentionally left
+     set after reload — _verify_client_auth re-reads SUPREMEAI_API_KEY per request,
+-    so restoring immediately would break keyed-auth cases. main() cleans up."""
++    so restoring immediately would break keyed-auth cases. The autouse
++    _restore_app_env fixture restores it at each pytest test boundary (main()
++    cleans up in plain-script mode)."""
+     os.environ.update(env)
+     importlib.reload(app_module)
+     if hasattr(app_module, "_guest_hits"):
+diff --git a/gateway/tests/test_stealth_dns_guards.py b/gateway/tests/test_stealth_dns_guards.py
+index a49a4e58..ac6ffb24 100644
+--- a/gateway/tests/test_stealth_dns_guards.py
++++ b/gateway/tests/test_stealth_dns_guards.py
+@@ -144,6 +144,13 @@ async def post(self, url: str, **k: Any) -> Any:
+ def test_forwarder() -> None:
+     print("G6..G8 forward_stealth_webhook")
+     real_client = httpx.AsyncClient
++    # Defense-in-depth: a REAL client cached in ad._STEALTH_CLIENT by an earlier
++    # test file's forward call (2026-10-28: model_cascades' class-level post
++    # patch caches a real client) makes _get_stealth_client() return BEFORE
++    # consulting the patched httpx.AsyncClient — drop the pool so the fake
++    # factory below is authoritative. Fakes lack is_closed, so nothing is cached
++    # by this test itself.
++    ad._STEALTH_CLIENT = None
+     try:
+         factory = _FakeClientFactory("dns")
+         ad.httpx.AsyncClient = factory  # type: ignore[assignment]
+@@ -198,6 +205,12 @@ def test_endpoints() -> None:
+ 
+     client = TestClient(appmod.app)
+     real = appmod._stealth_dns_snapshot
++    # Pin the import-captured global: /readyz branches on `if STEALTH_WEBHOOK_URL`
++    # BEFORE consulting _stealth_dns_snapshot, so a leaked empty global from an
++    # earlier test file (2026-10-28: reply-path reload left "") silently bypassed
++    # every monkeypatched snapshot below — G10b/G10c/G11a/G11b suite reds.
++    real_url = appmod.STEALTH_WEBHOOK_URL
++    appmod.STEALTH_WEBHOOK_URL = "https://dead-host.invalid/v1/chat/completions"
+ 
+     async def _bad(force: bool = False) -> Dict[str, Any]:
+         return {"ok": False, "checked_at": 1.0, "detail": "host dead… invalid does not resolve ([Errno -2] Name or service not known) — fix Infisical STEALTH_WEBHOOK_URL"}
+@@ -221,6 +234,7 @@ async def _good(force: bool = False) -> Dict[str, Any]:
+         check("G11a readyz 200 ready when DNS ok", r2.status_code == 200 and r2.json().get("status") == "ready", str(r2.status_code))
+         check("G11b readyz carries stealth_dns ok", r2.json().get("stealth_dns", {}).get("ok") is True)
+     finally:
++        appmod.STEALTH_WEBHOOK_URL = real_url
+         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
+ 
+ 
+@@ -249,40 +263,53 @@ async def _unset(force: bool = False) -> Dict[str, Any]:
+             appmod.STEALTH_WEBHOOK_URL = real_url
+             appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
+     finally:
+-        if real_env is not None:
++        if real_env is None:
++            os.environ.pop("STEALTH_WEBHOOK_URL", None)
++        else:
+             os.environ["STEALTH_WEBHOOK_URL"] = real_env
+ 
+ 
+ # ── pytest wrappers ─────────────────────────────────────────────────────────
++def _assert_from(mark: int) -> None:
++    """Assert only this wrapper's own guard slice.
++
++    The historical _assert_all() asserted the WHOLE accumulated RESULTS, so one
++    real check failure failed every wrapper after it (2026-10-28: 4 real G10/G11
++    failures surfaced as 5 pytest failures, masking the root cause). Each block
++    is still asserted exactly once — by its own wrapper."""
++    failed = [r for r in RESULTS[mark:] if not r[1]]
++    assert not failed, f"failed guards: {[f[0] for f in failed]}"
++
++
+ def test_normalize_stealth_url() -> None:  # pragma: no cover
++    mark = len(RESULTS)
+     test_normalize()
+-    _assert_all()
++    _assert_from(mark)
+ 
+ 
+ def test_mask_host_fn() -> None:  # pragma: no cover
++    mark = len(RESULTS)
+     test_mask_host()
+-    _assert_all()
++    _assert_from(mark)
+ 
+ 
+ def test_forwarder_paths() -> None:  # pragma: no cover
++    mark = len(RESULTS)
+     test_forwarder()
+-    _assert_all()
++    _assert_from(mark)
+ 
+ 
+ def test_apex_critical() -> None:  # pragma: no cover
++    mark = len(RESULTS)
+     test_apex_warning()
+-    _assert_all()
++    _assert_from(mark)
+ 
+ 
+ def test_probe_endpoints() -> None:  # pragma: no cover
++    mark = len(RESULTS)
+     test_endpoints()
+     test_unconfigured()
+-    _assert_all()
+-
+-
+-def _assert_all() -> None:
+-    failed = [r for r in RESULTS if not r[1]]
+-    assert not failed, f"failed guards: {[f[0] for f in failed]}"
++    _assert_from(mark)
+ 
+ 
+ if __name__ == "__main__":

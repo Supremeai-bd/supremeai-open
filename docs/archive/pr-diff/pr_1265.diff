@@ -1,0 +1,40 @@
+diff --git a/core/admin_god.py b/core/admin_god.py
+index e2c3129d..70521c0b 100644
+--- a/core/admin_god.py
++++ b/core/admin_god.py
+@@ -44,6 +44,13 @@
+     logger.warning(f"bcrypt module unavailable: {e}")
+     bcrypt = None
+ 
++# F-18 hardening: bcrypt যদি missing থাকে তবে সেটি এখন instance-init-এও স্পষ্ট
++# হবে — verify_admin পর্যন্ত অপেক্ষা নয়। প্রমাণ: fail-closed আচরণ অক্ষত
++# (verify_admin bcrypt ছাড়া False), কিন্তু deployment-এ দুর্বল ইমেজ
++# (bcrypt ছাড়া) এখন লঞ্চের সময়ই লাউড-লি ধরা পড়ে — লগ + AUDIT এন্ট্রি সহ।
++def _bcrypt_available() -> bool:
++    return bcrypt is not None
++
+ 
+ from .security.authentication.rbac import PermissionDeniedError, RoleBasedAccessControl, UserContext
+ from .universal_rules import UniversalRulesEngine
+@@ -149,6 +156,21 @@ def __init__(self, rules_engine: UniversalRulesEngine = None):
+         self.rules_engine = rules_engine or UniversalRulesEngine()
+         self.rbac = RoleBasedAccessControl()
+         self.admin_password_hash = os.getenv("SUPREMEAI_ADMIN_PASSWORD_HASH", "")
++        # F-18 fail-loud: password hash কনফিগার করা আছে কিন্তু bcrypt নেই — এমন
++        # ইমেজ প্রোডাকশনে গেলে verify_admin প্রতিটি চেষ্টায় fail করবে (deploy অর্থহীন)।
++        # লঞ্চেই লাউড সংকেত দিই — লগ + WORM audit এন্ট্রি (behavior fail-closedই থাকে)।
++        if self.admin_password_hash and not _bcrypt_available():
++            GodModeAuditLog.record(
++                "startup",
++                "CONFIG_FAULT",
++                "admin_auth",
++                "SUPREMEAI_ADMIN_PASSWORD_HASH set but bcrypt missing — deploy image incomplete",
++            )
++            logger.error(
++                "[admin_god] SUPREMEAI_ADMIN_PASSWORD_HASH কনফিগার করা আছে কিন্তু "
++                "bcrypt মডিউল অনুপস্থিত — এই ডিপ্লয়ে অ্যাডমিন ভেরিফিকেশন সবসময় ব্যর্থ হবে। "
++                "requirements-এ bcrypt যোগ করুন (F-18 hardening)."
++            )
+ 
+     @with_error_bus("verify_admin")
+     def verify_admin(self, password_raw: str) -> bool:

@@ -1,0 +1,91 @@
+diff --git a/docs/reports/render_residual_2225-20261030.md b/docs/reports/render_residual_2225-20261030.md
+new file mode 100644
+index 00000000..9e5e97b1
+--- /dev/null
++++ b/docs/reports/render_residual_2225-20261030.md
+@@ -0,0 +1,85 @@
++# Evidence Addendum — #2225 render-primary/render-worker residual (2026-10-30)
++
++Report-only, reference-only, zero code claims. Remedy lane: admin (Render redeploys,
++supremeai-core CI triage, Render dashboard build logs). Submitted by the autonomous
++contributor agent (cron job 478318, cycle 51). Probe plane: MCP Control Tower
++zero-credential read tools (`system_health`, `github.workflow_runs`). Atomic claim
++held on #2225 at 2026-10-29T23:14:58Z (GRANT_RENEW) purely to serialize this
++addendum; release follows submission.
++
++## Fresh probe — 2026-10-29T23:14Z (tower `system_health`)
++
++| Service | srv id | deployStatus | error |
++|---|---|---|---|
++| render-primary (Core API) | srv-dau7c9ek1f9s73almn0g | **update_failed** | "Container running previous build, but latest deployment update_failed" |
++| render-worker (Async Tasks) | srv-dabm7evqj5pc738jkf30 | **update_failed** | "Container running previous build, but latest deployment update_failed" |
++
++- Residual age: ~29h after the cycle-21 finding (2026-10-28T18:08Z) and ~5h after
++  the previous addendum probe (#2901, 22:41-22:43Z). The status string is
++  byte-identical to the original finding — no recovery, no state change.
++- Other Render services in the same snapshot report `deployStatus: live` — the
++  residual is service-scoped, not fleet-wide. #2211's "completed" closure therefore
++  still covers exactly 1 of its 3 named services.
++
++## New discriminator — supremeai-core main advanced past the referenced red commit
++
++The #2225 finding named CI run 40653481018 (failure, head feda45e4,
++2026-10-28T07:58Z) as the prime root-cause candidate via autoDeploy correlation.
++#2901 (22:41Z) found main frozen at feda45e4d across 24h of samples. This probe
++finds main has since unfrozen and advanced through at least five distinct heads on
++2026-10-29 (main-branch run `head_sha` observations, schedule plane):
++
++| observed at (run created_at) | main head |
++|---|---|
++| 09:13:32Z | 6e85767b |
++| 10:05:10Z | e23088a8 |
++| 16:56:58Z | 7b081ef0 |
++| 21:25:23Z | 27dd3b83 |
++| 21:50:06Z | f659b653 |
++
++Yet both services still report `update_failed` at 23:14Z. Implication
++(hypothesis-weakening, not conclusion): if autoDeploy were healthy, any of these
++heads should have produced a live deploy; a residual that survives five-plus fresh
++heads is no longer well explained by one bad commit (feda45e4). The failure is
++persistent across fresh main heads, which strengthens the case that the next
++diagnostic must be Render-side build logs per service (admin-only), not further
++core-CI archaeology. Equally possible: autoDeploy triggers are not firing at all
++(deploys never attempted) — the two hypotheses are indistinguishable from the
++zero-credential plane, which is precisely why the admin lane owns the next step.
++
++Tool-window caveat: `github.workflow_runs` (perPage=30) returned a 5-row window on
++this probe; the heads above are exactly what the visible window shows.
++`github.actions_op` was also observed to ignore its workflow filter
++(workflow=ci.yml returned unfiltered Bridge Intake rows) — filter-side gap noted
++for the tower backlog, not blocking this addendum.
++
++## Why an addendum and not a fix
++
++- Re-triggering deploys, reverting core main, and reading Render build logs are all
++  admin/HITL: operator policy forbids deploy/config mutation without approval, and
++  supremeai-core is a satellite repo outside the agent envelope (Universal
++  Invariant 2 boundary; #2901 reached the same wall).
++- The issue is 29h old with 13 comments and its own recovery plan already requires
++  admin. Fresh timestamped evidence keeps the row's decision surface current for
++  the verdict plane, per the dispatch carve-out ("submit evidence via the bridge
++  and do NOT auto-close — a Closes line on an un-remedied issue is a false
++  closure").
++
++## Alternatives rejected
++
++- Claim-and-fix: rejected — the remedy is admin-only (Render deploys + satellite
++  CI) with zero in-repo action surface; the claim held here only serializes this
++  addendum and is released immediately after submission.
++- A `Closes #2225` line: rejected — the residual is verified live at 23:14Z; an
++  auto-close would be a false closure (#2211/#2225 family precedent).
++- A fresh standalone issue: rejected — duplicates an actively tracked row
++  (#2225 updatedAt 22:39Z); an addendum keeps the evidence co-located with the
++  finding it extends.
++- Deeper CI-plane re-probing: rejected — the tower workflow filter is broken
++  (observed above), and the deploy-plane discriminator already supersedes CI
++  correlation as the decision surface.
++
++## Rollback
++
++- [x] git revert-safe — single additive `docs/reports/` file; zero code, config,
++  or migration side effects.

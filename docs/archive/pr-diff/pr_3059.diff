@@ -1,0 +1,52 @@
+diff --git a/core/errors/error_bus.py b/core/errors/error_bus.py
+index 57290c2e..e42762f8 100644
+--- a/core/errors/error_bus.py
++++ b/core/errors/error_bus.py
+@@ -13,6 +13,7 @@
+ from typing import Any
+ 
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
++from core.monitoring.logging_config import logger
+ 
+ 
+ def with_error_bus(component_name: str = "GenericComponent") -> Callable:
+@@ -34,7 +35,19 @@ async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                         severity="ERROR",
+                         structured_context=context,
+                     )
+-                    error_event_bus.emit(event)
++                    # Anti-suppression guard: the reporting path must never replace
++                    # the original exception. Live proof 2026-10-30 (#3028/#2225 chain):
++                    # a raise from emit() inside this handler replaces the original
++                    # error and kills the caller — on Render it turned a recoverable
++                    # settings failure into a boot crash loop (update_failed).
++                    try:
++                        error_event_bus.emit(event)
++                    except Exception as bus_exc:  # noqa: BLE001 — preserve original error
++                        logger.warning(
++                            f"[error_bus] emit failed for {component_name} "
++                            f"({type(bus_exc).__name__}: {bus_exc}); "
++                            f"original {type(exc).__name__} is re-raised unchanged"
++                        )
+                     raise
+ 
+             return async_wrapper
+@@ -54,7 +67,17 @@ def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                         severity="ERROR",
+                         structured_context=context,
+                     )
+-                    error_event_bus.emit(event)
++                    # Anti-suppression guard (same contract as the async wrapper):
++                    # emit() failures degrade to a structured warning; the original
++                    # exception is always the one that propagates.
++                    try:
++                        error_event_bus.emit(event)
++                    except Exception as bus_exc:  # noqa: BLE001 — preserve original error
++                        logger.warning(
++                            f"[error_bus] emit failed for {component_name} "
++                            f"({type(bus_exc).__name__}: {bus_exc}); "
++                            f"original {type(exc).__name__} is re-raised unchanged"
++                        )
+                     raise
+ 
+             return sync_wrapper

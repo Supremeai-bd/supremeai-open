@@ -1,0 +1,821 @@
+diff --git a/gateway/routing_policy.json b/gateway/routing_policy.json
+index 351f404d..e32fb837 100644
+--- a/gateway/routing_policy.json
++++ b/gateway/routing_policy.json
+@@ -18,6 +18,10 @@
+         "provider": "gemini",
+         "model": "gemini-2.5-flash"
+       },
++      {
++        "provider": "perplexity",
++        "model": "sonar"
++      },
+       {
+         "provider": "openrouter",
+         "model": "nvidia/nemotron-3.5-lightning:free"
+diff --git a/gateway/service/pool.py b/gateway/service/pool.py
+index 48bf2331..0d5fab01 100644
+--- a/gateway/service/pool.py
++++ b/gateway/service/pool.py
+@@ -135,24 +135,26 @@ def report_injury(self, slot: KeySlot, status_code: int):
+ class FederationSquad:
+     """The master team orchestrator managing all provider pools."""
+ 
+-    # Zero-cost free fallback priority
++    # Prioritized provider order: Groq, Gemini, and Perplexity lead for lowest response times
+     DEFAULT_PROVIDER_ORDER = [
+         "groq",
+         "gemini",
++        "perplexity",
+         "openrouter",
+-        "v0",
+-        "mistral",
+         "openai",
++        "mistral",
++        "v0",
+         "huggingface",
+     ]
+ 
+     PREFIX_MAP: Dict[str, List[str]] = {
+         "groq": ["GROQ_API_KEY"],
+         "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY", "JULES_API_KEY"],
++        "perplexity": ["PERPLEXITY_API_KEY", "PPLX_API_KEY"],
+         "openrouter": ["OPENROUTER_API_KEY"],
+-        "v0": ["V0_API_KEY"],
+-        "mistral": ["MISTRAL_API_KEY"],
+         "openai": ["OPENAI_API_KEY"],
++        "mistral": ["MISTRAL_API_KEY"],
++        "v0": ["V0_API_KEY"],
+         "huggingface": ["HF_API_KEY", "HUGGINGFACE_API_KEY"],
+     }
+ 
+diff --git a/gateway/service/providers/adapters.py b/gateway/service/providers/adapters.py
+index d6617976..bc92ed9e 100644
+--- a/gateway/service/providers/adapters.py
++++ b/gateway/service/providers/adapters.py
+@@ -74,6 +74,10 @@ def _mask_host(url: str) -> str:
+         "base_url": os.getenv("V0_BASE_URL", "https://api.v0.dev/v1"),
+         "default_model": os.getenv("V0_MODEL", "v0-web"),
+     },
++    "perplexity": {
++        "base_url": os.getenv("PERPLEXITY_BASE_URL", "https://api.perplexity.ai"),
++        "default_model": os.getenv("PERPLEXITY_MODEL", "sonar"),
++    },
+     "ghost_gemini": {
+         "base_url": os.getenv("GHOST_TOWER_URL", "http://127.0.0.1:8788"),
+         "default_model": "gemini-web",
+@@ -104,6 +108,11 @@ def _mask_host(url: str) -> str:
+         "gemini-1.5-pro-latest",
+         "gemini-2.0-flash",
+     ],
++    "perplexity": [
++        "sonar",
++        "sonar-pro",
++        "sonar-reasoning",
++    ],
+     "openrouter": [
+         "nvidia/nemotron-3.5-lightning:free",
+         "cohere/north-mini-code:free",
+diff --git a/gateway/service/telegram_webhook.py b/gateway/service/telegram_webhook.py
+index d604bf38..5692f773 100644
+--- a/gateway/service/telegram_webhook.py
++++ b/gateway/service/telegram_webhook.py
+@@ -41,12 +41,38 @@
+ """
+ 
+ 
++_http_client: Optional[httpx.AsyncClient] = None
++
++
++def get_telegram_client() -> httpx.AsyncClient:
++    """Returns a shared, pooled AsyncClient with connection reuse for low-latency delivery."""
++    global _http_client
++    if _http_client is None or _http_client.is_closed:
++        _http_client = httpx.AsyncClient(
++            timeout=httpx.Timeout(20.0, connect=4.0),
++            limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
++        )
++    return _http_client
++
++
++async def send_chat_action(chat_id: int | str, action: str = "typing") -> None:
++    """Delivers instant typing status indicator to Telegram so users see immediate responsiveness."""
++    if not TELEGRAM_BOT_TOKEN:
++        return
++    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
++    try:
++        client = get_telegram_client()
++        await client.post(url, json={"chat_id": chat_id, "action": action})
++    except Exception as exc:  # noqa: BLE001
++        logger.debug(f"Failed to send typing chat action: {exc}")
++
++
+ async def send_telegram_message(
+     chat_id: int | str,
+     text: str,
+     reply_to_message_id: Optional[int] = None
+ ) -> bool:
+-    """Delivers formatted message chunks to Telegram, with markdown and plain text fallback."""
++    """Delivers formatted message chunks to Telegram via shared keep-alive pool."""
+     if not TELEGRAM_BOT_TOKEN:
+         logger.warning("TELEGRAM_BOT_TOKEN not configured; cannot deliver message.")
+         return False
+@@ -55,40 +81,40 @@ async def send_telegram_message(
+     # Auto-chunking for Telegram's 4096 character limit (safe margin at 3800)
+     chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)] if len(text) > 3800 else [text]
+ 
+-    async with httpx.AsyncClient(timeout=15.0) as client:
+-        success = True
+-        for chunk in chunks:
+-            payload = {
+-                "chat_id": chat_id,
+-                "text": chunk,
+-                "parse_mode": "Markdown",
+-            }
+-            if reply_to_message_id:
+-                payload["reply_to_message_id"] = reply_to_message_id
++    client = get_telegram_client()
++    success = True
++    for chunk in chunks:
++        payload = {
++            "chat_id": chat_id,
++            "text": chunk,
++            "parse_mode": "Markdown",
++        }
++        if reply_to_message_id:
++            payload["reply_to_message_id"] = reply_to_message_id
+ 
+-            try:
+-                res = await client.post(url, json=payload)
+-                if res.status_code != 200:
+-                    # Markdown parsing failed on special chars; retry plain text
+-                    payload.pop("parse_mode", None)
+-                    res2 = await client.post(url, json=payload)
+-                    if res2.status_code != 200:
+-                        logger.error(f"Failed to deliver Telegram chunk: {res2.text}")
+-                        success = False
+-            except Exception as exc:  # noqa: BLE001
+-                logger.error(f"Telegram network delivery error: {exc}")
+-                success = False
++        try:
++            res = await client.post(url, json=payload)
++            if res.status_code != 200:
++                # Markdown parsing failed on special chars; retry plain text
++                payload.pop("parse_mode", None)
++                res2 = await client.post(url, json=payload)
++                if res2.status_code != 200:
++                    logger.error(f"Failed to deliver Telegram chunk: {res2.text}")
++                    success = False
++        except Exception as exc:  # noqa: BLE001
++            logger.error(f"Telegram network delivery error: {exc}")
++            success = False
+ 
+-        return success
++    return success
+ 
+ 
+ async def query_strategy_ai(prompt: str) -> str:
+     """
+-    1. Priority-1: Queries $0 Stealth Engine (Ghost Tower / Web AI / Cloudflare Worker).
+-    2. Priority-2: Falls back to Gemini 2.5 API Key.
+-    3. Priority-3: Falls over to the 35-key Dynamic Squad pool.
++    1. Priority-1 (Chat Mandate): Queries $0 Stealth Webhook Relay.
++    2. Priority-2 (Ultra-fast API Keys): Direct Gemini -> Groq -> Perplexity.
++    3. Priority-3: Federation Squad pool failover.
+     """
+-    # 0. Priority-1: Check $0 Stealth Engine with OpenAI chat messages structure
++    # 0. Priority-1 (Chat Mandate): Stealth Webhook Relay
+     stealth_url = os.getenv("STEALTH_WEBHOOK_URL", os.getenv("UPSTREAM_WEBHOOK_URL", "")).strip()
+     if stealth_url and forward_stealth_webhook:
+         try:
+@@ -113,13 +139,16 @@ async def query_strategy_ai(prompt: str) -> str:
+                 if "reply" in resp and str(resp["reply"]).strip():
+                     return str(resp["reply"]).strip()
+         except Exception as exc:  # noqa: BLE001
+-            logger.warning(f"Stealth Priority-1 bypassed ({exc}), falling back to Gemini API...")
++            logger.warning(f"Stealth Priority-1 bypassed ({exc}), falling back to API keys...")
+ 
+-    # 1. Priority-2: Gemini native endpoint with healthy slot key
++    # 1. Priority-2 (Top-Speed API Keys): Gemini -> Groq -> Perplexity
++    client = get_telegram_client()
++
++    # A) Gemini API Key
+     gemini_pool = squad.pools.get("gemini") if squad else None
+     healthy_gemini_slots = gemini_pool.healthy_slots if gemini_pool else []
+     gemini_key = healthy_gemini_slots[0].key if healthy_gemini_slots else (
+-        os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_1")
++        os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY_1") or os.getenv("GOOGLE_API_KEY")
+     )
+ 
+     if gemini_key:
+@@ -131,20 +160,62 @@ async def query_strategy_ai(prompt: str) -> str:
+             "generationConfig": {"temperature": 0.4},
+         }
+         try:
+-            async with httpx.AsyncClient(timeout=30.0) as client:
+-                res = await client.post(url, json=payload)
+-                if res.status_code == 200:
+-                    data = res.json()
+-                    candidates = data.get("candidates", [])
+-                    if candidates and "content" in candidates[0]:
+-                        parts = candidates[0]["content"].get("parts", [])
+-                        if parts and "text" in parts[0]:
+-                            return parts[0]["text"]
+-                logger.warning(f"Direct Gemini call returned {res.status_code}, falling back to squad...")
++            res = await client.post(url, json=payload)
++            if res.status_code == 200:
++                data = res.json()
++                candidates = data.get("candidates", [])
++                if candidates and "content" in candidates[0]:
++                    parts = candidates[0]["content"].get("parts", [])
++                    if parts and "text" in parts[0]:
++                        return parts[0]["text"]
++            logger.warning(f"Direct Gemini call returned {res.status_code}, falling back to Groq...")
+         except Exception as exc:  # noqa: BLE001
+-            logger.warning(f"Direct Gemini attempt failed ({exc}), falling back to squad...")
++            logger.warning(f"Direct Gemini attempt failed ({exc}), falling back to Groq...")
++
++    # B) Groq API Key (Ultra-low latency, ~200ms)
++    groq_pool = squad.pools.get("groq") if squad else None
++    healthy_groq_slots = groq_pool.healthy_slots if groq_pool else []
++    groq_key = healthy_groq_slots[0].key if healthy_groq_slots else os.getenv("GROQ_API_KEY")
+ 
+-    # 2. Dynamic Squad Failover (Groq, OpenRouter, Mistral, OpenAI)
++    if groq_key and forward_chat_completion:
++        chat_payload = {
++            "model": "llama-3.3-70b-versatile",
++            "messages": [
++                {"role": "system", "content": SYSTEM_PROMPT},
++                {"role": "user", "content": prompt},
++            ],
++            "temperature": 0.4,
++        }
++        try:
++            status_code, resp_data = await forward_chat_completion("groq", groq_key, chat_payload, timeout=12.0)
++            if 200 <= status_code < 300 and isinstance(resp_data, dict):
++                choices = resp_data.get("choices", [])
++                if choices and isinstance(choices[0], dict) and "message" in choices[0]:
++                    return choices[0]["message"].get("content", "")
++        except Exception as exc:  # noqa: BLE001
++            logger.warning(f"Direct Groq attempt failed ({exc}), falling back to Perplexity...")
++
++    # C) Perplexity API Key
++    pplx_key = os.getenv("PERPLEXITY_API_KEY") or os.getenv("PPLX_API_KEY")
++    if pplx_key and forward_chat_completion:
++        chat_payload = {
++            "model": "sonar",
++            "messages": [
++                {"role": "system", "content": SYSTEM_PROMPT},
++                {"role": "user", "content": prompt},
++            ],
++            "temperature": 0.4,
++        }
++        try:
++            status_code, resp_data = await forward_chat_completion("perplexity", pplx_key, chat_payload, timeout=15.0)
++            if 200 <= status_code < 300 and isinstance(resp_data, dict):
++                choices = resp_data.get("choices", [])
++                if choices and isinstance(choices[0], dict) and "message" in choices[0]:
++                    return choices[0]["message"].get("content", "")
++        except Exception as exc:  # noqa: BLE001
++            logger.warning(f"Direct Perplexity attempt failed ({exc}), falling back to squad...")
++
++    # 2. Dynamic Squad Failover (OpenRouter, Mistral, OpenAI, etc.)
+     if squad and forward_chat_completion:
+         candidates = squad.get_candidate_slots(preferred_provider=None)
+         chat_payload = {
+@@ -158,7 +229,7 @@ async def query_strategy_ai(prompt: str) -> str:
+ 
+         for provider, slot in candidates:
+             try:
+-                status_code, response_data = await forward_chat_completion(provider, slot.key, chat_payload, timeout=20.0)
++                status_code, response_data = await forward_chat_completion(provider, slot.key, chat_payload, timeout=15.0)
+                 if 200 <= status_code < 300 and isinstance(response_data, dict):
+                     choices = response_data.get("choices", [])
+                     if choices and isinstance(choices[0], dict) and "message" in choices[0]:
+@@ -170,7 +241,7 @@ async def query_strategy_ai(prompt: str) -> str:
+ 
+ 
+ async def _process_and_reply(chat_id: int | str, text: str, msg_id: Optional[int] = None):
+-    """Background task to generate and reply without blocking Telegram webhook ACK."""
++    """Background task to generate and reply with instant typing status indicator."""
+     # 1. Clean prompt
+     clean_prompt = text
+     for tag in TRIGGER_TAGS:
+@@ -188,6 +259,9 @@ async def _process_and_reply(chat_id: int | str, text: str, msg_id: Optional[int
+         await send_telegram_message(chat_id, help_msg, reply_to_message_id=msg_id)
+         return
+ 
++    # Send immediate typing action so Telegram shows "typing..." without lag
++    await send_chat_action(chat_id, "typing")
++
+     logger.info(f"Processing Telegram strategy query for chat {chat_id}: {clean_prompt[:60]}...")
+     ai_reply = await query_strategy_ai(clean_prompt)
+ 
+diff --git a/gateway/tests/test_model_cascades.py b/gateway/tests/test_model_cascades.py
+index 627f833a..52d03b49 100644
+--- a/gateway/tests/test_model_cascades.py
++++ b/gateway/tests/test_model_cascades.py
+@@ -17,6 +17,8 @@ def test_provider_cascades_defined():
+     assert "groq" in PROVIDER_MODEL_CASCADES
+     assert "gemini" in PROVIDER_MODEL_CASCADES
+     assert "openrouter" in PROVIDER_MODEL_CASCADES
++    assert "perplexity" in PROVIDER_MODEL_CASCADES
++    assert "sonar" in PROVIDER_MODEL_CASCADES["perplexity"]
+ 
+     # Verify Groq contains live verified models
+     assert "qwen/qwen3.8-27b" in PROVIDER_MODEL_CASCADES["groq"]
+diff --git a/studio/package.json b/studio/package.json
+new file mode 100644
+index 00000000..9d2d330f
+--- /dev/null
++++ b/studio/package.json
+@@ -0,0 +1,94 @@
++{
++  "name": "supremeai-studio",
++  "description": "SupremeAI Studio - Multi-cloud AI orchestration platform web interface",
++  "author": "SupremeAI Team",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/Supremeai-bd/supremeai-studio.git"
++  },
++  "private": true,
++  "version": "2.0.0",
++  "type": "module",
++  "scripts": {
++    "dev": "vite",
++    "build": "vite build",
++    "build:report": "vite build --mode production --reporter=json",
++    "lint": "eslint .",
++    "typecheck": "tsc -p tsconfig.app.json --noEmit",
++    "preview": "vite preview",
++    "test": "vitest run"
++  },
++  "dependencies": {
++    "@dnd-kit/core": "^6.3.1",
++    "@dnd-kit/sortable": "^10.0.0",
++    "@dnd-kit/utilities": "^3.2.2",
++    "@microsoft/fetch-event-source": "^2.0.1",
++    "@monaco-editor/react": "^4.7.0",
++    "@supremeai/core-infrastructure": "workspace:*",
++    "@supremeai/design-tokens": "workspace:^",
++    "@supremeai/shared-services": "workspace:^",
++    "@supremeai/shared-types": "workspace:^",
++    "@supremeai/ui-components": "workspace:*",
++    "@tailwindcss/vite": "^4.3.3",
++    "@tanstack/react-query": "^5.103.1",
++    "@tanstack/react-virtual": "^3.14.10",
++    "@types/node": "^24.13.3",
++    "@types/react": "^19.2.18",
++    "@types/react-dom": "^19.2.5",
++    "@upstash/redis": "^1.38.3",
++    "@vitejs/plugin-react": "^4.7.0",
++    "@webcontainer/api": "^1.6.4",
++    "@xterm/addon-fit": "^0.11.0",
++    "@xyflow/react": "12.11.2",
++    "clsx": "^2.1.1",
++    "cross-env": "^10.1.0",
++    "dexie": "^4.0.10",
++    "dexie-react-hooks": "^4.4.0",
++    "dompurify": "^3.4.16",
++    "framer-motion": "^12.43.0",
++    "lucide-react": "^1.34.0",
++    "monaco-editor": "0.55.1",
++    "p-queue": "^9.3.3",
++    "qrcode": "^1.5.4",
++    "react": "^19.2.8",
++    "react-dom": "^19.2.8",
++    "react-resizable-panels": "^4.12.3",
++    "react-router-dom": "^7.18.4",
++    "recharts": "^3.10.1",
++    "tailwind-merge": "^3.6.0",
++    "tailwindcss": "^4.3.3",
++    "typescript": "^5.9.3",
++    "vite": "^7.3.6",
++    "vite-tsconfig-paths": "^6.1.1",
++    "xterm": "^5.3.0",
++    "zustand": "^5.0.15"
++  },
++  "devDependencies": {
++    "@eslint/js": "^9.39.5",
++    "@testing-library/jest-dom": "^6.9.1",
++    "@testing-library/react": "^16.3.2",
++    "@testing-library/user-event": "^14.6.8",
++    "@types/qrcode": "^1.5.6",
++    "@vitest/coverage-v8": "^3.2.7",
++    "concurrently": "^10.0.5",
++    "eslint": "^9.39.5",
++    "eslint-plugin-react-hooks": "^7.1.1",
++    "eslint-plugin-react-refresh": "^0.5.4",
++    "eslint-visitor-keys": "^5.0.1",
++    "globals": "^17.11.0",
++    "jsdom": "^24.1.3",
++    "knip": "^5.88.1",
++    "typescript-eslint": "^8.68.0",
++    "vitest": "^3.2.7"
++  },
++  "pnpm": {
++    "onlyBuiltDependencies": [
++      "esbuild",
++      "protobufjs"
++    ]
++  },
++  "packageManager": "pnpm@9.15.4",
++  "engines": {
++    "node": ">=22"
++  }
++}
+\ No newline at end of file
+diff --git a/studio/src/pages/LandingPage.tsx b/studio/src/pages/LandingPage.tsx
+index 29c46dba..4f541456 100644
+--- a/studio/src/pages/LandingPage.tsx
++++ b/studio/src/pages/LandingPage.tsx
+@@ -189,7 +189,7 @@ export const LandingPage: React.FC = () => {
+             </div>
+             <div className="rounded-xl bg-slate-800/50 border border-white/10 p-3 text-emerald-300">
+               <span className="text-xs text-emerald-400 font-bold block mb-1">SupremeAI Mesh</span>
+-              ⚡ 12 Satellites nominal. Consensus achieved across Gemini, Groq, and Mistral in 38ms.
++              ⚡ Active Satellites nominal. Consensus achieved across Gemini, Groq, and Mistral in 38ms.
+             </div>
+           </div>
+         </div>
+@@ -210,7 +210,7 @@ export const LandingPage: React.FC = () => {
+               </div>
+               <h3 className="text-lg font-bold text-white">Understands Your Entire Federation</h3>
+               <p className="mt-2 text-sm text-slate-400 leading-relaxed">
+-                Single-door public ingress with automated slice dispatch across 12 satellite repositories.
++                Single-door public ingress with automated slice dispatch across the product satellites.
+               </p>
+             </div>
+ 
+diff --git a/studio/tsconfig.app.json b/studio/tsconfig.app.json
+new file mode 100644
+index 00000000..a66a634f
+--- /dev/null
++++ b/studio/tsconfig.app.json
+@@ -0,0 +1,44 @@
++{
++  "compilerOptions": {
++    "baseUrl": ".",
++    "paths": {
++      "@/*": [
++        "./src/*"
++      ]
++    },
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
++    "target": "es2023",
++    "lib": [
++      "ES2023",
++      "DOM"
++    ],
++    "module": "esnext",
++    "types": [
++      "vite/client"
++    ],
++    "skipLibCheck": true,
++    "moduleResolution": "bundler",
++    "allowImportingTsExtensions": true,
++    "verbatimModuleSyntax": true,
++    "moduleDetection": "force",
++    "strict": true,
++    "strictNullChecks": true,
++    "noEmit": true,
++    "jsx": "react-jsx",
++    "noUnusedLocals": false,
++    "noUnusedParameters": false,
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true
++  },
++  "include": [
++    "src"
++  ],
++  "exclude": [
++    "src/**/*.test.ts",
++    "src/**/*.test.tsx",
++    "src/**/*.spec.ts",
++    "src/**/*.spec.tsx",
++    "src/**/*.stories.ts",
++    "src/**/*.stories.tsx"
++  ]
++}
+diff --git a/studio/tsconfig.json b/studio/tsconfig.json
+new file mode 100644
+index 00000000..4aef87bc
+--- /dev/null
++++ b/studio/tsconfig.json
+@@ -0,0 +1,10 @@
++{
++  "compilerOptions": {
++    "jsx": "react-jsx"
++  },
++  "files": [],
++  "references": [
++    { "path": "./tsconfig.app.json" },
++    { "path": "./tsconfig.node.json" }
++  ]
++}
+diff --git a/studio/tsconfig.node.json b/studio/tsconfig.node.json
+new file mode 100644
+index 00000000..65abca8a
+--- /dev/null
++++ b/studio/tsconfig.node.json
+@@ -0,0 +1,26 @@
++{
++  "compilerOptions": {
++    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
++    "target": "es2023",
++    "lib": [
++      "ES2023"
++    ],
++    "module": "esnext",
++    "types": [
++      "node"
++    ],
++    "skipLibCheck": true,
++    "moduleResolution": "bundler",
++    "allowImportingTsExtensions": true,
++    "verbatimModuleSyntax": true,
++    "moduleDetection": "force",
++    "noEmit": true,
++    "noUnusedLocals": true,
++    "noUnusedParameters": true,
++    "erasableSyntaxOnly": true,
++    "noFallthroughCasesInSwitch": true
++  },
++  "include": [
++    "vite.config.ts"
++  ]
++}
+diff --git a/studio/vite.config.ts b/studio/vite.config.ts
+new file mode 100644
+index 00000000..7bb5a3e8
+--- /dev/null
++++ b/studio/vite.config.ts
+@@ -0,0 +1,219 @@
++import { defineConfig, loadEnv } from 'vite'
++import fs from 'fs'
++import path from 'path'
++
++// Load env files from the directory Vite is actually running in. Using the
++// parent directory here caused Vercel builds to miss project-level VITE_* vars,
++// silently selecting the fallback backend and making the deployed app slow or
++// unreachable when that service was cold or unavailable.
++const projectRoot = process.cwd()
++Object.assign(process.env, loadEnv(process.env.NODE_ENV || 'development', projectRoot, ''))
++import react from '@vitejs/plugin-react'
++import tailwindcss from '@tailwindcss/vite'
++
++// বাংলা (unified backend URL architecture):
++// এখন User ও Admin উভয় ইন্টারফেস একই ইউনিফাইড ব্যাকএন্ড এপিআই ক্লাস্টারে কানেক্ট হয়।
++// অগ্রাধিকার ক্রম: VITE_API_URL -> VITE_BACKEND_URL -> VITE_USER_BACKEND -> RENDER_SERVICE_URL
++const normalizeBackendUrl = (value: unknown) => {
++  if (typeof value !== 'string') return ''
++  const normalized = value.trim().replace(/^VITE_[A-Z0-9_]+=\s*/i, '').replace(/\/$/, '')
++  try {
++    const parsed = new URL(normalized)
++    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString().replace(/\/$/, '') : ''
++  } catch {
++    return ''
++  }
++}
++
++const UNIFIED_BACKEND =
++  normalizeBackendUrl(process.env.VITE_API_URL) ||
++  normalizeBackendUrl(process.env.VITE_BACKEND_URL) ||
++  normalizeBackendUrl(process.env.VITE_USER_BACKEND) ||
++  normalizeBackendUrl(process.env.RENDER_SERVICE_URL) ||
++  'https://supremeai-primary-node.onrender.com'
++const USER_BACKEND = UNIFIED_BACKEND
++const ADMIN_BACKEND = normalizeBackendUrl(process.env.VITE_ADMIN_BACKEND) || UNIFIED_BACKEND
++
++// A frontend viewer build must still be publishable without a backend env var
++// ONLY when the bundle is pinned to relative API paths (Docker sets
++// VITE_USE_RELATIVE_PATH=true). Public MCP URLs are supplied by the user at
++// runtime; admin/API features can report their missing connection when used
++// instead of blocking the whole build.
++// FIX(FE-07): a bare console.warn let Vercel ship a production bundle with
++// USER_BACKEND_URL='' — every apiClient call then hit the vercel.json
++// /(.*) catch-all rewrite, got index.html instead of JSON and the app
++// white-screened, and the CI verifier only ran after deploy. Fail the build
++// instead when neither a backend URL nor the relative-path escape hatch is set.
++if (
++  process.env.NODE_ENV === 'production' &&
++  !UNIFIED_BACKEND &&
++  process.env.VITE_USE_RELATIVE_PATH !== 'true'
++) {
++  throw new Error(
++    '[build-contract] Production build has no backend URL (set VITE_API_URL / ' +
++      'VITE_BACKEND_URL / VITE_USER_BACKEND in the deploy environment) and ' +
++      'VITE_USE_RELATIVE_PATH is not "true". A bundle baked without either ' +
++      'would ship degraded viewer mode and white-screen on every API call.',
++  )
++}
++if (process.env.NODE_ENV === 'production' && !UNIFIED_BACKEND) {
++  console.warn('No backend URL configured; building public viewer mode (relative /api paths).')
++}
++
++// P0 build-contract (production sign-off): a LOOPBACK backend baked into a
++// production bundle is always the Docker-default leak (VITE_API_URL unset in
++// the Dockerfile), never intentional. Fail the build loudly; operators can
++// opt out for a local throwaway build with VITE_ALLOW_LOOPBACK_BACKEND=true.
++// CI additionally verifies the baked bundle via scripts/ci/verify_frontend_build_contract.py.
++const LOOPBACK_HOSTS = [`local${'host'}`, `127${'.0.0.1'}`, `0${'.0.0.0'}`, `${':'}${':'}1`, `[${':'}${':'}1]`]
++const isLoopbackUrl = (value: string) => {
++  if (!value) return false
++  try {
++    const host = new URL(value).hostname.toLowerCase()
++    return LOOPBACK_HOSTS.includes(host)
++  } catch {
++    return false
++  }
++}
++if (
++  process.env.NODE_ENV === 'production' &&
++  (isLoopbackUrl(UNIFIED_BACKEND) || isLoopbackUrl(ADMIN_BACKEND)) &&
++  process.env.VITE_ALLOW_LOOPBACK_BACKEND !== 'true'
++) {
++  throw new Error(
++    '[build-contract] Production build would bake a loopback backend URL into the bundle ' +
++      `(user=${UNIFIED_BACKEND || '(empty)'}, admin=${ADMIN_BACKEND || '(empty)'}). ` +
++      'Set VITE_API_URL/VITE_USER_BACKEND/VITE_ADMIN_BACKEND to the real backend, ' +
++      'or pass VITE_ALLOW_LOOPBACK_BACKEND=true only for a local throwaway build.',
++  )
++}
++
++// 🔬 Evolution v3.0: Dump build config for debugging
++const buildInfoPlugin = () => {
++  return {
++    name: 'build-info-plugin',
++    writeBundle(options: { dir?: string }) {
++      if (process.env.NODE_ENV === 'production') {
++        const buildInfo = {
++          timestamp: new Date().toISOString(),
++          buildType: 'unified', // single frontend build (no portal split)
++          userBackendUrl: USER_BACKEND,
++          adminBackendUrl: ADMIN_BACKEND || USER_BACKEND,
++          coopHeader: process.env.COOP_HEADER,
++          coepHeader: process.env.COEP_HEADER,
++        }
++        const outDir = options.dir || 'dist'
++        fs.writeFileSync(path.join(outDir, 'build-info.json'), JSON.stringify(buildInfo, null, 2))
++        console.warn(`📋 Build info written to ${outDir}/build-info.json`)
++      }
++    }
++  }
++}
++
++const devProxy: Record<string, { target: string; changeOrigin: boolean }> = {}
++if (USER_BACKEND) {
++  devProxy['/api'] = { target: USER_BACKEND, changeOrigin: true }
++  devProxy['/auth'] = { target: USER_BACKEND, changeOrigin: true }
++}
++if (ADMIN_BACKEND || USER_BACKEND) {
++  devProxy['/admin-api'] = { target: ADMIN_BACKEND || USER_BACKEND, changeOrigin: true }
++}
++
++// https://vite.dev/config/
++export default defineConfig({
++  base: process.env.ELECTRON === 'true' ? './' : '/', // Use './' for Electron, '/' for Web to fix client-side routing and MIME issues
++  define: {
++    // বাংলা মন্তব্য: লগইন পেজে বিল্ড টাইম দেখানোর জন্য, যাতে প্রোডাকশনে ঠিকমতো ডিপ্লয় হয়েছে কি না বোঝা যায়
++    __APP_BUILD_TIME__: JSON.stringify(new Date().toISOString()),
++  },
++  plugins: [
++    react({ jsxRuntime: 'automatic' }),
++    tailwindcss({
++      config: './tailwind.config.js',
++    }),
++    buildInfoPlugin()
++  ],
++  esbuild: {
++    jsx: 'automatic',
++    // #2736: আগে drop:['console'] প্রোডাকশনে সব console.* মুছে দিত —
++    // console.error-ও (SSE failure path useServerStream.ts:62,92 prod-এ
++    // অদৃশ্য ছিল)। এখন শুধু debugger drop + চ্যাটি-লেভেল (log/info/debug)
++    // pure-marked — warn/error বেঁচে থাকে (নীতি: prod-এ ব্যর্থতা দৃশ্যমান)।
++    drop: process.env.NODE_ENV === 'production' ? ['debugger'] : [],
++    pure: process.env.NODE_ENV === 'production' ? ['console.log', 'console.info', 'console.debug'] : [],
++  },
++  resolve: {
++    dedupe: ['react', 'react-dom', '@tanstack/react-query']
++  },
++  server: {
++    // 🔧 DYNAMIC SECURITY HEADERS from environment
++    headers: {
++      ...(process.env.COOP_HEADER ? { 'Cross-Origin-Opener-Policy': process.env.COOP_HEADER } : {}),
++      ...(process.env.COEP_HEADER ? { 'Cross-Origin-Embedder-Policy': process.env.COEP_HEADER } : {}),
++    },
++    // বাংলা মন্তব্য: dev proxy — user API → user backend, admin API → admin backend (fallback user)
++    proxy: devProxy
++  },
++  preview: {
++    // ERR-A04 FIX: `vite preview` serves the production build locally — give
++    // it the same cross-origin-isolation headers as the dev server and nginx
++    // so the WebContainer sandbox can be validated before shipping.
++    headers: {
++      ...(process.env.COOP_HEADER ? { 'Cross-Origin-Opener-Policy': process.env.COOP_HEADER } : {}),
++      ...(process.env.COEP_HEADER ? { 'Cross-Origin-Embedder-Policy': process.env.COEP_HEADER } : {}),
++    },
++    proxy: devProxy
++  },
++  build: {
++    // বাংলা: single production artifact — User + Admin দুই context একই bundle-এ
++    outDir: 'dist',
++    emptyOutDir: true,
++    rollupOptions: {
++      output: {
++        // FIX (honesty, Task 14-b): নিচের vendor map টি আগে output-এর সরাসরি key হিসেবে
++        // বসানো ছিল — manualChunks কী ছাড়া = rollup চুপচাপ ignore করত (silent no-op),
++        // ফলে কোনো vendor chunk তৈরিই হতো না (862KB monolithic main)।
++        // আরও প্রমাণিত (probe build): object form (manualChunks: {...})-ও react ধরতে
++        // পারে না — Vite-এর commonjs plugin react/react-dom/scheduler এর module id-তে
++        // ?commonjs-* query suffix জোড়ে, ফলে vendor-react খালি (1 byte) থেকে যায় আর
++        // react main chunk-এই থেকে যায় (sourcemap দিয়ে যাচাইকৃত)। তাই object নয়,
++        // precise path-segment function form — bucket বিভাজন নিচের map-এর অর্থই বহন করে।
++        manualChunks(id: string) {
++          // FIX (final-test ci-fixes): react + react-dom অবশ্যই একটাই chunk-এ থাকতে হবে
++          // এবং সেই chunk অন্য কোনো vendor chunk-কে import করবে না। আগে react জোরপূর্বক
++          // vendor-ui-তে (framer-motion/lucide/recharts) আর react-dom অনাকাঙ্ক্ষিতভাবে
++          // vendor-flow-তে (@xyflow/react graph-এ) গিয়ে পড়ছিল → vendor-ui ⇄ vendor-flow
++          // circular import → react-এর CJS factory (requireReact) vendor-ui-এর module body
++          // চলার আগেই vendor-flow থেকে call হয়ে "Cannot set properties of undefined
++          // (setting 'Activity')" boot crash দিচ্ছিল → পুরো অ্যাপ "Loading SupremeAI..."
++          // splash-এ আটকে যেত (E2E "home loads KPI tiles" failure-এর আসল কারণ)।
++          // react/react-dom/scheduler একসাথে + zero outgoing vendor imports = অন্তত
++          // react চক্রমুক্ত ও সবসময় প্রথমে initialize হয়।
++          // (segment-exact regex: node_modules/react/ মেলে কিন্তু lucide-react/
++          // @monaco-editor/react/ @xyflow/react/ মেলে না — ভুল bucket-এ react যেতে পারে না)
++          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) return 'vendor-react'
++          // ROOT-CAUSE FIX (#2734): recharts (~100KB gz) was bucket-welded with
++          // framer-motion + lucide-react into 'vendor-ui'. Since framer-motion is
++          // eagerly imported by DashboardLayout/CommandBar (boot path), Rollup
++          // loaded the entire vendor-ui chunk (including recharts) on every page
++          // — even the guest `/` funnel which never charts. Now: recharts gets
++          // its own 'vendor-charts' chunk, loaded only by lazy admin chunks.
++          if (/[\\/]node_modules[\\/]recharts[\\/]/.test(id)) return 'vendor-charts'
++          if (/[\\/]node_modules[\\/](@xterm|xterm)[\\/]/.test(id)) return 'vendor-terminal'
++          if (/[\\/]node_modules[\\/](@monaco-editor|monaco-editor)[\\/]/.test(id)) return 'vendor-editor'
++          if (/[\\/]node_modules[\\/](framer-motion|lucide-react)[\\/]/.test(id)) return 'vendor-ui'
++          if (/[\\/]node_modules[\\/]@xyflow[\\/]/.test(id)) return 'vendor-flow'
++          if (/[\\/]node_modules[\\/]@tanstack[\\/]react-query[\\/]/.test(id)) return 'vendor-query'
++          return undefined
++        },
++      },
++    },
++    chunkSizeWarningLimit: 600,
++    // FIX(FE-03): 'hidden' only strips the //# sourceMappingURL comment — the
++    // .map files were still emitted and uploaded by Vercel, leaking original
++    // TS/TSX source to anyone fetching /assets/*.js.map. Disable sourcemaps
++    // for production builds entirely; defense-in-depth via .vercelignore.
++    sourcemap: false,
++  },
++  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
++})
+diff --git a/studio/vitest.config.ts b/studio/vitest.config.ts
+new file mode 100644
+index 00000000..5d24bcd4
+--- /dev/null
++++ b/studio/vitest.config.ts
+@@ -0,0 +1,43 @@
++import { defineConfig } from 'vitest/config';
++import path from 'path';
++
++export default defineConfig({
++  resolve: {
++    // বাংলা মন্তব্য: মনোরিপোর অন্যান্য প্রোজেক্টের React 18-এর সাথে সংঘর্ষ এড়াতে এবং টেস্টে React 19 নিশ্চিত করতে লোকাল পাথ সেট করা হলো
++    alias: {
++      'react': path.resolve(__dirname, './node_modules/react'),
++      'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
++    },
++    dedupe: ['react', 'react-dom'],
++  },
++  test: {
++    globals: true,
++    environment: 'jsdom',
++    setupFiles: ['./src/test/setup.ts'],
++    include: ['src/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
++    coverage: {
++      provider: 'v8',
++      reporter: ['text', 'json', 'html', 'lcov'],
++      // বাংলা মন্তব্য: আগে শুধু components/customer ও hooks মাপা হতো। এখন store/services/
++      // providers/core যোগ করা হলো (integration-সংবেদনশীল লেয়ার)। pages ইউআই স্ন্যাপশট
++      // চার্নের জন্য বাদ রাখা হয়েছে।
++      include: [
++        'src/components/**/*.{ts,tsx}',
++        'src/commandcenter/**/*.{ts,tsx}',
++        'src/hooks/**/*.{ts,tsx}',
++        'src/store/**/*.{ts,tsx}',
++        'src/services/**/*.{ts,tsx}',
++        'src/providers/**/*.{ts,tsx}',
++        'src/core/**/*.{ts,tsx}',
++        'src/i18n/**/*.{ts,tsx}',
++      ],
++      exclude: ['**/*.d.ts', '**/test/**', '**/*.test.*', '**/*.spec.*', 'src/pages/**'],
++      thresholds: {
++        lines: 10,
++        functions: 10,
++        branches: 10,
++        statements: 10
++      }
++    },
++  },
++});

@@ -1,0 +1,1483 @@
+diff --git a/studio/src/components/diff/CodeDiffViewer.tsx b/studio/src/components/diff/CodeDiffViewer.tsx
+new file mode 100644
+index 00000000..58918090
+--- /dev/null
++++ b/studio/src/components/diff/CodeDiffViewer.tsx
+@@ -0,0 +1,143 @@
++import React, { useState } from 'react';
++import { GitCompare, Check, Copy, ArrowLeft, ArrowRight, Layers } from 'lucide-react';
++
++interface CodeDiffViewerProps {
++  fileName: string;
++  originalCode: string;
++  modifiedCode: string;
++  language: 'bn' | 'en';
++}
++
++export const CodeDiffViewer: React.FC<CodeDiffViewerProps> = ({
++  fileName,
++  originalCode,
++  modifiedCode,
++  language,
++}) => {
++  const [diffMode, setDiffMode] = useState<'split' | 'unified'>('split');
++  const [copied, setCopied] = useState(false);
++
++  const origLines = originalCode.split('\n');
++  const modLines = modifiedCode.split('\n');
++
++  const handleCopyMod = () => {
++    navigator.clipboard.writeText(modifiedCode);
++    setCopied(true);
++    setTimeout(() => setCopied(false), 2000);
++  };
++
++  return (
++    <div className="flex flex-col h-full bg-slate-950 border border-slate-800 rounded-xl overflow-hidden font-mono text-xs">
++      {/* Diff Header */}
++      <div className="h-10 bg-slate-900 px-4 flex items-center justify-between border-b border-slate-800 shrink-0">
++        <div className="flex items-center gap-2 text-slate-300">
++          <GitCompare className="w-3.5 h-3.5 text-indigo-400" />
++          <span className="font-bold text-white">{fileName}</span>
++          <span className="text-[10px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800">
++            +18 lines
++          </span>
++          <span className="text-[10px] text-rose-400 bg-rose-950/80 px-1.5 py-0.2 rounded border border-rose-800">
++            -2 lines
++          </span>
++        </div>
++
++        <div className="flex items-center gap-2">
++          <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded border border-slate-800 text-[11px]">
++            <button
++              onClick={() => setDiffMode('split')}
++              className={`px-2 py-0.5 rounded transition-colors ${
++                diffMode === 'split' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
++              }`}
++            >
++              Split
++            </button>
++            <button
++              onClick={() => setDiffMode('unified')}
++              className={`px-2 py-0.5 rounded transition-colors ${
++                diffMode === 'unified' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
++              }`}
++            >
++              Unified
++            </button>
++          </div>
++
++          <button
++            onClick={handleCopyMod}
++            className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors"
++            title="Copy Modified Code"
++          >
++            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
++          </button>
++        </div>
++      </div>
++
++      {/* Diff Content Body */}
++      <div className="flex-1 overflow-auto p-2">
++        {diffMode === 'split' ? (
++          <div className="grid grid-cols-2 gap-2 h-full">
++            {/* Left: Original */}
++            <div className="bg-slate-900/60 rounded-lg p-2 border border-slate-800/80 overflow-auto">
++              <span className="text-[10px] text-slate-500 font-bold block mb-1">BEFORE (Original)</span>
++              <div className="space-y-0.5">
++                {origLines.map((line, idx) => {
++                  const isModified = idx > 15 && idx < 19;
++                  return (
++                    <div
++                      key={idx}
++                      className={`flex items-start gap-3 px-1 py-0.2 rounded ${
++                        isModified ? 'bg-rose-950/40 text-rose-300' : 'text-slate-400'
++                      }`}
++                    >
++                      <span className="w-6 text-slate-600 select-none text-right">{idx + 1}</span>
++                      <span className="whitespace-pre">{line || ' '}</span>
++                    </div>
++                  );
++                })}
++              </div>
++            </div>
++
++            {/* Right: Modified */}
++            <div className="bg-slate-900/60 rounded-lg p-2 border border-slate-800/80 overflow-auto">
++              <span className="text-[10px] text-emerald-400 font-bold block mb-1">AFTER (JARVIS Modified)</span>
++              <div className="space-y-0.5">
++                {modLines.map((line, idx) => {
++                  const isAdded = idx > 15 && idx < 22;
++                  return (
++                    <div
++                      key={idx}
++                      className={`flex items-start gap-3 px-1 py-0.2 rounded ${
++                        isAdded ? 'bg-emerald-950/50 text-emerald-200 font-semibold' : 'text-slate-300'
++                      }`}
++                    >
++                      <span className="w-6 text-slate-600 select-none text-right">{idx + 1}</span>
++                      <span className="whitespace-pre">{line || ' '}</span>
++                    </div>
++                  );
++                })}
++              </div>
++            </div>
++          </div>
++        ) : (
++          /* Unified Diff View */
++          <div className="space-y-0.5">
++            {modLines.map((line, idx) => {
++              const isAdded = idx > 15 && idx < 22;
++              return (
++                <div
++                  key={idx}
++                  className={`flex items-start gap-3 px-2 py-0.5 rounded ${
++                    isAdded ? 'bg-emerald-950/40 text-emerald-200' : 'text-slate-300'
++                  }`}
++                >
++                  <span className="w-8 text-slate-600 select-none">{idx + 1}</span>
++                  <span className="w-3 text-emerald-400 select-none">{isAdded ? '+' : ' '}</span>
++                  <span className="whitespace-pre">{line || ' '}</span>
++                </div>
++              );
++            })}
++          </div>
++        )}
++      </div>
++    </div>
++  );
++};
+diff --git a/studio/src/components/inspector/VisualElementInspector.tsx b/studio/src/components/inspector/VisualElementInspector.tsx
+new file mode 100644
+index 00000000..e77e7704
+--- /dev/null
++++ b/studio/src/components/inspector/VisualElementInspector.tsx
+@@ -0,0 +1,117 @@
++import React, { useState } from 'react';
++import { Sparkles, Send, X, Check, MousePointerClick, Zap, CornerDownLeft } from 'lucide-react';
++import type { SelectedElementInfo } from '../../types/worldclass';
++
++interface VisualElementInspectorProps {
++  isOpen: boolean;
++  onClose: () => void;
++  selectedElement: SelectedElementInfo | null;
++  onApplyMicroPrompt: (prompt: string, element: SelectedElementInfo) => void;
++  language: 'bn' | 'en';
++}
++
++export const VisualElementInspector: React.FC<VisualElementInspectorProps> = ({
++  isOpen,
++  onClose,
++  selectedElement,
++  onApplyMicroPrompt,
++  language,
++}) => {
++  const [microPrompt, setMicroPrompt] = useState('');
++  const [isApplying, setIsApplying] = useState(false);
++
++  if (!isOpen || !selectedElement) return null;
++
++  const quickChips = [
++    { labelBn: 'গোল্ডেন গ্র্যাডিয়েন্ট', labelEn: 'Golden Gradient', prompt: 'Make this button a luxury golden gradient with deep shadow.' },
++    { labelBn: '3D গ্লাস বর্ডার', labelEn: '3D Glass Border', prompt: 'Apply 3D frosted glassmorphism with 1px translucent border and backdrop blur.' },
++    { labelBn: 'প্যাডিং দ্বিগুণ করো', labelEn: 'Increase Padding', prompt: 'Increase horizontal and vertical padding by 2x for premium breathing room.' },
++    { labelBn: 'পালসিং গ্লো অ্যানিমেশন', labelEn: 'Pulsing Glow', prompt: 'Add a subtle rhythmic emerald breathing glow animation.' },
++  ];
++
++  const handleSubmit = () => {
++    if (!microPrompt.trim() || isApplying) return;
++    setIsApplying(true);
++    onApplyMicroPrompt(microPrompt, selectedElement);
++    setTimeout(() => {
++      setIsApplying(false);
++      setMicroPrompt('');
++      onClose();
++    }, 600);
++  };
++
++  return (
++    <div className="absolute top-16 right-6 z-50 w-80 bg-slate-900/95 backdrop-blur-xl border border-indigo-500/50 rounded-2xl shadow-2xl shadow-indigo-950/60 p-4 text-xs font-sans animate-fadeIn">
++      {/* Top Header of Floating Popover */}
++      <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-800">
++        <div className="flex items-center gap-1.5 font-mono text-[11px] text-indigo-400">
++          <MousePointerClick className="w-3.5 h-3.5" />
++          <span className="font-bold">{selectedElement.tagName.toLowerCase()}</span>
++          <span className="text-slate-500 truncate max-w-[120px]">{selectedElement.selector}</span>
++        </div>
++        <button
++          onClick={onClose}
++          className="text-slate-400 hover:text-white p-1 rounded hover:bg-slate-800 transition-colors"
++        >
++          <X className="w-3.5 h-3.5" />
++        </button>
++      </div>
++
++      {/* Target Element Snippet */}
++      <div className="p-2 bg-slate-950 rounded-lg border border-slate-800 text-[11px] font-mono text-slate-300 mb-3 truncate">
++        {selectedElement.textContent ? `"${selectedElement.textContent.slice(0, 40)}..."` : selectedElement.className}
++      </div>
++
++      {/* Quick Modifier Chips */}
++      <div className="space-y-1 mb-3">
++        <span className="text-[10px] text-slate-400 font-medium block">
++          {language === 'bn' ? 'কুইক অ্যাকশন প্রম্পট:' : 'Quick Actions:'}
++        </span>
++        <div className="flex flex-wrap gap-1">
++          {quickChips.map((chip, idx) => (
++            <button
++              key={idx}
++              onClick={() => {
++                setMicroPrompt(chip.prompt);
++              }}
++              className="px-2 py-0.5 text-[10px] bg-slate-950 hover:bg-indigo-950/80 text-slate-300 hover:text-indigo-200 border border-slate-800 hover:border-indigo-700/60 rounded transition-colors text-left"
++            >
++              {language === 'bn' ? chip.labelBn : chip.labelEn}
++            </button>
++          ))}
++        </div>
++      </div>
++
++      {/* Micro-Prompt Input */}
++      <div className="space-y-2">
++        <div className="relative">
++          <textarea
++            rows={2}
++            value={microPrompt}
++            onChange={(e) => setMicroPrompt(e.target.value)}
++            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSubmit())}
++            placeholder={
++              language === 'bn'
++                ? 'এই উপাদানে কী বদলাবেন? (যেমন: "বাটনটা গোল্ডেন করো")...'
++                : 'How should JARVIS modify this element?...'
++            }
++            className="w-full bg-slate-950 border border-slate-800 focus:border-indigo-500 rounded-xl p-2.5 text-xs text-slate-200 outline-none leading-relaxed placeholder-slate-500"
++          />
++        </div>
++
++        <button
++          onClick={handleSubmit}
++          disabled={!microPrompt.trim() || isApplying}
++          className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] text-white font-semibold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-md shadow-indigo-600/30 disabled:opacity-50"
++        >
++          {isApplying ? (
++            <Sparkles className="w-3.5 h-3.5 animate-spin" />
++          ) : (
++            <Send className="w-3.5 h-3.5" />
++          )}
++          <span>{isApplying ? 'Surgically Editing...' : (language === 'bn' ? 'সরাসরি এডিট করুন' : 'Surgically Apply')}</span>
++        </button>
++      </div>
++    </div>
++  );
++};
+diff --git a/studio/src/components/preview/DevicePreviewFrame.tsx b/studio/src/components/preview/DevicePreviewFrame.tsx
+new file mode 100644
+index 00000000..4a517416
+--- /dev/null
++++ b/studio/src/components/preview/DevicePreviewFrame.tsx
+@@ -0,0 +1,489 @@
++import React, { useState } from 'react';
++import { LiveSandboxRenderer } from './LiveSandboxRenderer';
++import { MiniDevToolsBar } from './MiniDevToolsBar';
++import { VisualElementInspector } from '../inspector/VisualElementInspector';
++import { CodeDiffViewer } from '../diff/CodeDiffViewer';
++import { TimeTravelBar } from '../timetravel/TimeTravelBar';
++import type { SelectedElementInfo, VersionSnapshot, ProjectFile } from '../../types/worldclass';
++import { INITIAL_PROJECT_FILES, VERSION_SNAPSHOTS } from '../../data/projectFiles';
++import { PREVIEW_TEMPLATES, type PreviewTemplate } from '../../data/previewTemplates';
++import { jarvisAudio } from '../../utils/audioFx';
++import { 
++  Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, Code2, 
++  Eye, Check, Copy, Sparkles, Layers, MousePointerClick, 
++  GitCompare, FolderTree, Package, Rocket, FileCode, CheckCircle2 
++} from 'lucide-react';
++
++interface DevicePreviewFrameProps {
++  htmlCode: string;
++  onRefreshCode?: () => void;
++  onFixWithHumanEye: () => void;
++  isFixing: boolean;
++  language: 'bn' | 'en';
++  onApplyMicroPrompt?: (prompt: string, element: SelectedElementInfo) => void;
++  onOpenDeployModal?: () => void;
++  onOpenPackageModal?: () => void;
++  snapshots?: VersionSnapshot[];
++  currentVersionIndex?: number;
++  onSelectSnapshot?: (index: number) => void;
++  selectedTemplateId?: string;
++  onSelectTemplate?: (templateId: string) => void;
++}
++
++export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
++  htmlCode,
++  onRefreshCode,
++  onFixWithHumanEye,
++  isFixing,
++  language,
++  onApplyMicroPrompt,
++  onOpenDeployModal,
++  onOpenPackageModal,
++  snapshots = VERSION_SNAPSHOTS,
++  currentVersionIndex = VERSION_SNAPSHOTS.length - 1,
++  onSelectSnapshot,
++  selectedTemplateId = 'food-delivery',
++  onSelectTemplate,
++}) => {
++  const [deviceMode, setDeviceMode] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
++  const [viewTab, setViewTab] = useState<'preview' | 'diff' | 'files' | 'code'>('preview');
++  const [errors, setErrors] = useState<string[]>([]);
++  const [copied, setCopied] = useState(false);
++  const [refreshKey, setRefreshKey] = useState(0);
++
++  // Click-to-edit Inspector state
++  const [isInspectorActive, setIsInspectorActive] = useState(false);
++  const [selectedElement, setSelectedElement] = useState<SelectedElementInfo | null>(null);
++
++  // Multi-File Project State
++  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>(INITIAL_PROJECT_FILES);
++  const [selectedFilePath, setSelectedFilePath] = useState<string>('src/App.tsx');
++
++  const activeProjectFile = projectFiles.find((f) => f.path === selectedFilePath) || projectFiles[0];
++
++  const handleErrorDetected = (err: string) => {
++    setErrors((prev) => [...prev, err]);
++  };
++
++  const handleClearErrors = () => {
++    setErrors([]);
++  };
++
++  const handleRefresh = () => {
++    setRefreshKey((k) => k + 1);
++    if (onRefreshCode) onRefreshCode();
++  };
++
++  const handleCopyCode = () => {
++    navigator.clipboard.writeText(htmlCode);
++    setCopied(true);
++    setTimeout(() => setCopied(false), 2000);
++  };
++
++  const toggleInspector = () => {
++    const nextState = !isInspectorActive;
++    setIsInspectorActive(nextState);
++    if (nextState) {
++      jarvisAudio.playScan();
++      setViewTab('preview');
++    } else {
++      setSelectedElement(null);
++    }
++  };
++
++  const handleElementSelected = (elInfo: SelectedElementInfo) => {
++    setSelectedElement(elInfo);
++    jarvisAudio.playActivate();
++  };
++
++  const handleApplyMicroPromptInternal = (prompt: string, el: SelectedElementInfo) => {
++    jarvisAudio.playSuccess();
++    if (onApplyMicroPrompt) {
++      onApplyMicroPrompt(prompt, el);
++    }
++    setSelectedElement(null);
++    setIsInspectorActive(false);
++    setRefreshKey((k) => k + 1);
++  };
++
++  return (
++    <div className="flex flex-col h-full bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl relative">
++      {/* =========================================================================
++          Top Controls Toolbar: Mode Selectors, Inspector Toggle, Cloud Deploy
++          ========================================================================= */}
++      <div className="h-12 bg-slate-900/90 border-b border-slate-800 px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0">
++        {/* Left: Device Switcher (Desktop, Tablet, Mobile) + Inspector Toggle */}
++        <div className="flex items-center gap-1 sm:gap-2">
++          {/* 3-State Viewport Switcher */}
++          <div className="flex items-center gap-0.5 p-0.5 bg-slate-950 border border-slate-800 rounded-lg">
++            <button
++              onClick={() => setDeviceMode('desktop')}
++              className={`px-2 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 ${
++                deviceMode === 'desktop'
++                  ? 'bg-indigo-600 text-white shadow-sm'
++                  : 'text-slate-400 hover:text-white'
++              }`}
++              title="Desktop 100% Fluid View"
++            >
++              <Monitor className="w-3.5 h-3.5" />
++              <span className="hidden sm:inline">100%</span>
++            </button>
++
++            <button
++              onClick={() => setDeviceMode('tablet')}
++              className={`px-2 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 ${
++                deviceMode === 'tablet'
++                  ? 'bg-indigo-600 text-white shadow-sm'
++                  : 'text-slate-400 hover:text-white'
++              }`}
++              title="Tablet 768px View"
++            >
++              <Tablet className="w-3.5 h-3.5" />
++              <span className="hidden sm:inline">768px</span>
++            </button>
++
++            <button
++              onClick={() => setDeviceMode('mobile')}
++              className={`px-2 py-1 text-xs font-semibold rounded-md transition-colors flex items-center gap-1 ${
++                deviceMode === 'mobile'
++                  ? 'bg-indigo-600 text-white shadow-sm'
++                  : 'text-slate-400 hover:text-white'
++              }`}
++              title="Mobile 375px/390px View"
++            >
++              <Smartphone className="w-3.5 h-3.5" />
++              <span className="hidden sm:inline">390px</span>
++            </button>
++          </div>
++
++          {/* Click-to-Edit Visual DOM Inspector Toggle */}
++          <button
++            onClick={toggleInspector}
++            className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
++              isInspectorActive
++                ? 'bg-indigo-600 text-white border-indigo-400 shadow-md shadow-indigo-600/30 animate-pulse'
++                : 'bg-slate-950 text-slate-300 hover:text-white hover:bg-slate-800 border-slate-800'
++            }`}
++            title="Click to edit any visual element directly on the screen (Lovable/v0 style)"
++          >
++            <MousePointerClick className="w-3.5 h-3.5 text-indigo-300" />
++            <span className="hidden md:inline">
++              {language === 'bn'
++                ? (isInspectorActive ? 'ইনস্পেক্ট সক্রিয় ✕' : '🎯 এলিমেন্ট এডিট')
++                : (isInspectorActive ? 'Inspecting ✕' : '🎯 Click to Edit')}
++            </span>
++          </button>
++        </div>
++
++        {/* Center: View Tab Switcher (Preview, Diff, Files, Code) */}
++        <div className="flex items-center gap-1 p-0.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-medium">
++          <button
++            onClick={() => setViewTab('preview')}
++            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${
++              viewTab === 'preview' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-white'
++            }`}
++          >
++            <Eye className="w-3 h-3" />
++            <span className="hidden lg:inline">{language === 'bn' ? 'লাইভ প্রিভিউ' : 'Preview'}</span>
++          </button>
++
++          <button
++            onClick={() => setViewTab('diff')}
++            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${
++              viewTab === 'diff' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-white'
++            }`}
++          >
++            <GitCompare className="w-3 h-3" />
++            <span className="hidden lg:inline">{language === 'bn' ? 'ডিফ ভিউ' : 'Diff'}</span>
++          </button>
++
++          <button
++            onClick={() => setViewTab('files')}
++            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${
++              viewTab === 'files' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-white'
++            }`}
++          >
++            <FolderTree className="w-3 h-3" />
++            <span className="hidden lg:inline">{language === 'bn' ? 'ফাইল ট্রি' : 'Files'}</span>
++          </button>
++
++          <button
++            onClick={() => setViewTab('code')}
++            className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${
++              viewTab === 'code' ? 'bg-indigo-600 text-white font-semibold' : 'text-slate-400 hover:text-white'
++            }`}
++          >
++            <Code2 className="w-3 h-3" />
++            <span className="hidden lg:inline">{language === 'bn' ? 'সোর্স' : 'Source'}</span>
++          </button>
++        </div>
++
++        {/* Right: NPM Packages & Deploy Live Button */}
++        <div className="flex items-center gap-1.5 sm:gap-2">
++          {onOpenPackageModal && (
++            <button
++              onClick={onOpenPackageModal}
++              className="p-1.5 sm:px-2.5 sm:py-1 text-xs text-slate-300 hover:text-white bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors flex items-center gap-1 font-mono"
++              title="Inject npm / CDN packages"
++            >
++              <Package className="w-3.5 h-3.5 text-indigo-400" />
++              <span className="hidden xl:inline">{language === 'bn' ? 'প্যাকেজ' : 'Packages'}</span>
++            </button>
++          )}
++
++          {onOpenDeployModal && (
++            <button
++              onClick={onOpenDeployModal}
++              className="px-2.5 py-1 text-xs font-bold text-slate-950 bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 rounded-lg transition-all flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 whitespace-nowrap active:scale-95"
++              title="1-Click Multi-Cloud Deploy (Cloudflare Edge / Vercel / Render)"
++            >
++              <Rocket className="w-3.5 h-3.5" />
++              <span>{language === 'bn' ? 'পাবলিশ' : 'Publish'}</span>
++            </button>
++          )}
++
++          <button
++            onClick={handleRefresh}
++            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors border border-slate-800"
++            title="Reload Preview Sandbox"
++          >
++            <RotateCcw className="w-3.5 h-3.5" />
++          </button>
++        </div>
++      </div>
++
++      {/* =========================================================================
++          Embedded Time-Travel Version Scrubber Bar & Quick Template Switcher
++          ========================================================================= */}
++      <div className="p-2 bg-slate-950 border-b border-slate-800/80 flex flex-col gap-2">
++        <TimeTravelBar
++          snapshots={snapshots}
++          currentVersionIndex={currentVersionIndex}
++          onSelectSnapshot={(idx) => {
++            if (onSelectSnapshot) onSelectSnapshot(idx);
++          }}
++          language={language}
++        />
++
++        {/* Ready-to-Run Interactive Templates Strip (Tier 1 Mandate) */}
++        {onSelectTemplate && (
++          <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] font-mono pb-0.5">
++            <span className="text-slate-500 text-[10px] shrink-0 font-bold">TEMPLATES:</span>
++            {PREVIEW_TEMPLATES.map((tmpl) => {
++              const isSelected = selectedTemplateId === tmpl.id;
++              return (
++                <button
++                  key={tmpl.id}
++                  onClick={() => onSelectTemplate(tmpl.id)}
++                  className={`px-2.5 py-0.5 rounded-lg border transition-all whitespace-nowrap shrink-0 flex items-center gap-1 ${
++                    isSelected
++                      ? 'bg-indigo-950 border-indigo-500 text-indigo-300 font-bold shadow-sm'
++                      : 'bg-slate-900/80 border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
++                  }`}
++                >
++                  <span>{tmpl.nameEn}</span>
++                  {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>}
++                </button>
++              );
++            })}
++          </div>
++        )}
++      </div>
++
++      {/* =========================================================================
++          Main Interactive Canvas Area
++          ========================================================================= */}
++      <div className="flex-1 overflow-auto bg-slate-950/70 p-3 sm:p-4 flex items-center justify-center relative">
++        {/* Floating Click-to-Edit Inspector Micro-Prompt Popover */}
++        <VisualElementInspector
++          isOpen={isInspectorActive && selectedElement !== null}
++          onClose={() => setSelectedElement(null)}
++          selectedElement={selectedElement}
++          onApplyMicroPrompt={handleApplyMicroPromptInternal}
++          language={language}
++        />
++
++        {/* 1. LIVE SANDBOX PREVIEW */}
++        {viewTab === 'preview' && (
++          deviceMode === 'desktop' ? (
++            /* Desktop Viewport (100% Fluid Container with browser header bar) */
++            <div className="w-full h-full bg-slate-950 rounded-xl overflow-hidden border border-slate-800 flex flex-col shadow-2xl relative">
++              <div className="h-8 bg-slate-900 border-b border-slate-800 px-3 flex items-center gap-2 text-xs font-mono text-slate-500 shrink-0 select-none">
++                <div className="flex items-center gap-1.5">
++                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
++                  <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
++                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
++                </div>
++                <div className="flex-1 max-w-sm mx-auto bg-slate-950 px-3 py-0.5 rounded text-[11px] text-slate-400 text-center truncate border border-slate-800/80">
++                  https://app.supremeai.local/preview
++                </div>
++                {isInspectorActive && (
++                  <span className="text-[10px] text-indigo-400 font-bold bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800">
++                    CLICK-TO-EDIT ACTIVE
++                  </span>
++                )}
++              </div>
++
++              {/* Sandboxed Renderer */}
++              <div className="flex-1 w-full h-full">
++                <LiveSandboxRenderer
++                  key={refreshKey}
++                  htmlCode={htmlCode}
++                  onErrorDetected={handleErrorDetected}
++                  onClearErrors={handleClearErrors}
++                  isMobile={false}
++                  inspectorActive={isInspectorActive}
++                  onElementSelected={handleElementSelected}
++                />
++              </div>
++            </div>
++          ) : deviceMode === 'tablet' ? (
++            /* Tablet Viewport (768px Width Container with iPad-style frame) */
++            <div className="my-auto relative flex flex-col items-center">
++              <div className="w-[768px] h-[780px] max-h-[85vh] bg-slate-900 rounded-[36px] p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-950/40 relative flex flex-col overflow-hidden">
++                {/* Tablet Top Camera Notch */}
++                <div className="h-6 flex items-center justify-center shrink-0">
++                  <div className="w-3 h-3 rounded-full bg-black border border-slate-700/60" />
++                </div>
++
++                {/* Tablet Screen Surface */}
++                <div className="flex-1 w-full rounded-[24px] overflow-hidden bg-slate-950 border border-slate-800/80">
++                  <LiveSandboxRenderer
++                    key={refreshKey}
++                    htmlCode={htmlCode}
++                    onErrorDetected={handleErrorDetected}
++                    onClearErrors={handleClearErrors}
++                    isMobile={false}
++                    inspectorActive={isInspectorActive}
++                    onElementSelected={handleElementSelected}
++                  />
++                </div>
++
++                {/* Tablet Bottom Bezel */}
++                <div className="h-4 shrink-0" />
++              </div>
++            </div>
++          ) : (
++            /* Mobile Viewport (iPhone 16 Pro Frame 390px x 844px) */
++            <div className="my-auto relative flex flex-col items-center">
++              <div className="w-[390px] h-[780px] bg-slate-900 rounded-[50px] p-3 border-4 border-slate-800 shadow-2xl shadow-indigo-950/30 relative flex flex-col overflow-hidden">
++                {/* Dynamic Island / Speaker Notch */}
++                <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-6 bg-black rounded-full z-30 flex items-center justify-between px-3">
++                  <span className="w-2.5 h-2.5 rounded-full bg-indigo-950 border border-indigo-700/60" />
++                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
++                </div>
++
++                {/* Status Bar */}
++                <div className="h-9 px-6 pt-1 flex items-center justify-between text-[11px] font-mono text-slate-300 select-none shrink-0 z-20">
++                  <span className="font-bold">9:41</span>
++                  <div className="flex items-center gap-1.5 text-[10px]">
++                    <span>5G</span>
++                    <span className="font-bold">100%</span>
++                  </div>
++                </div>
++
++                {/* Mobile Screen Surface */}
++                <div className="flex-1 w-full rounded-[38px] overflow-hidden bg-slate-950 border border-slate-800/80">
++                  <LiveSandboxRenderer
++                    key={refreshKey}
++                    htmlCode={htmlCode}
++                    onErrorDetected={handleErrorDetected}
++                    onClearErrors={handleClearErrors}
++                    isMobile={true}
++                    inspectorActive={isInspectorActive}
++                    onElementSelected={handleElementSelected}
++                  />
++                </div>
++
++                {/* iPhone Home Bar Indicator */}
++                <div className="h-5 flex items-center justify-center shrink-0">
++                  <div className="w-32 h-1 bg-slate-600/80 rounded-full" />
++                </div>
++              </div>
++            </div>
++          )
++        )}
++
++        {/* 2. GIT-STYLE CODE DIFF VIEWER */}
++        {viewTab === 'diff' && (
++          <div className="w-full h-full">
++            <CodeDiffViewer
++              fileName="src/components/Hero.tsx"
++              originalCode={activeProjectFile.content.replace('bg-gradient-to-r from-emerald-500 to-teal-500', 'bg-emerald-600')}
++              modifiedCode={activeProjectFile.content}
++              language={language}
++            />
++          </div>
++        )}
++
++        {/* 3. MULTI-FILE PROJECT EXPLORER */}
++        {viewTab === 'files' && (
++          <div className="w-full h-full bg-slate-900/90 rounded-xl border border-slate-800 flex overflow-hidden">
++            {/* Left File Tree Sidebar */}
++            <div className="w-56 bg-slate-950 border-r border-slate-800 p-3 space-y-2 shrink-0">
++              <span className="text-[11px] font-bold text-slate-400 font-mono block">WORKSPACE FILES</span>
++              <div className="space-y-1">
++                {projectFiles.map((file) => (
++                  <button
++                    key={file.path}
++                    onClick={() => setSelectedFilePath(file.path)}
++                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono transition-colors flex items-center gap-2 ${
++                      selectedFilePath === file.path
++                        ? 'bg-indigo-600 text-white font-semibold'
++                        : 'text-slate-400 hover:text-white hover:bg-slate-900'
++                    }`}
++                  >
++                    <FileCode className="w-3.5 h-3.5 shrink-0" />
++                    <span className="truncate">{file.name}</span>
++                  </button>
++                ))}
++              </div>
++            </div>
++
++            {/* Right File Code Viewer */}
++            <div className="flex-1 flex flex-col overflow-hidden bg-slate-900">
++              <div className="h-9 px-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-xs font-mono text-slate-400">
++                <span className="font-semibold text-white">{activeProjectFile.path}</span>
++                <span>{activeProjectFile.language}</span>
++              </div>
++              <pre className="flex-1 p-4 font-mono text-xs text-slate-200 overflow-auto leading-relaxed">
++                {activeProjectFile.content}
++              </pre>
++            </div>
++          </div>
++        )}
++
++        {/* 4. RAW GENERATED HTML SOURCE VIEWER */}
++        {viewTab === 'code' && (
++          <div className="w-full h-full bg-slate-900 rounded-xl border border-slate-800 p-4 flex flex-col justify-between">
++            <div className="flex justify-between items-center pb-2 border-b border-slate-800 text-xs font-mono">
++              <span className="text-slate-400">Generated Frontend Template (HTML / Tailwind)</span>
++              <button
++                onClick={handleCopyCode}
++                className="text-slate-300 hover:text-white flex items-center gap-1 transition-colors"
++              >
++                {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
++                <span>{copied ? 'Copied' : 'Copy HTML'}</span>
++              </button>
++            </div>
++            <pre className="flex-1 p-3 font-mono text-xs text-slate-300 overflow-auto leading-relaxed">
++              {htmlCode}
++            </pre>
++          </div>
++        )}
++      </div>
++
++      {/* =========================================================================
++          Bottom DevTools Telemetry Bar
++          ========================================================================= */}
++      <MiniDevToolsBar
++        errorCount={errors.length}
++        performanceScore={errors.length > 0 ? 82 : 98}
++        isMobile={deviceMode === 'mobile'}
++        onFixWithHumanEye={onFixWithHumanEye}
++        isFixing={isFixing}
++        language={language}
++      />
++    </div>
++  );
++};
+diff --git a/studio/src/components/preview/LiveSandboxRenderer.tsx b/studio/src/components/preview/LiveSandboxRenderer.tsx
+new file mode 100644
+index 00000000..f9bd426d
+--- /dev/null
++++ b/studio/src/components/preview/LiveSandboxRenderer.tsx
+@@ -0,0 +1,157 @@
++import React, { useEffect, useRef } from 'react';
++import type { SelectedElementInfo } from '../../types/worldclass';
++
++interface LiveSandboxRendererProps {
++  htmlCode: string;
++  onErrorDetected: (error: string) => void;
++  onClearErrors: () => void;
++  isMobile: boolean;
++  inspectorActive?: boolean;
++  onElementSelected?: (element: SelectedElementInfo) => void;
++}
++
++export const LiveSandboxRenderer: React.FC<LiveSandboxRendererProps> = ({
++  htmlCode,
++  onErrorDetected,
++  onClearErrors,
++  isMobile,
++  inspectorActive = false,
++  onElementSelected,
++}) => {
++  const iframeRef = useRef<HTMLIFrameElement>(null);
++
++  // Generate wrapper with Tailwind CSS CDN, error catcher, inspector bridge, and fonts
++  const fullHtml = `
++<!DOCTYPE html>
++<html lang="en">
++<head>
++  <meta charset="UTF-8" />
++  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++  <script src="https://cdn.tailwindcss.com"></script>
++  <link rel="preconnect" href="https://fonts.googleapis.com">
++  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
++  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
++  <style>
++    body {
++      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
++      margin: 0;
++      padding: 0;
++      box-sizing: border-box;
++      -webkit-font-smoothing: antialiased;
++    }
++    .jarvis-inspect-hover {
++      outline: 2px dashed #6366f1 !important;
++      outline-offset: 3px !important;
++      cursor: crosshair !important;
++      position: relative;
++    }
++  </style>
++  <script>
++    // Error interception for DevTools bar
++    window.onerror = function(message, source, lineno, colno, error) {
++      window.parent.postMessage({ type: 'PREVIEW_ERROR', message: message }, '*');
++      return false;
++    };
++    window.addEventListener('unhandledrejection', function(event) {
++      window.parent.postMessage({ type: 'PREVIEW_ERROR', message: event.reason ? event.reason.message : 'Promise rejection' }, '*');
++    });
++
++    // Visual Inspector Listener
++    (function() {
++      const active = ${inspectorActive ? 'true' : 'false'};
++      if (!active) return;
++
++      let hoveredEl = null;
++
++      function getCssPath(el) {
++        if (!el || el === document.body) return 'body';
++        if (el.id) return '#' + el.id;
++        let path = [];
++        let curr = el;
++        while (curr && curr !== document.body && curr.nodeType === 1) {
++          let node = curr.nodeName.toLowerCase();
++          if (curr.className && typeof curr.className === 'string') {
++            const firstClass = curr.className.trim().split(/\\s+/)[0];
++            if (firstClass && !firstClass.includes(':') && !firstClass.includes('[')) {
++              node += '.' + firstClass;
++            }
++          }
++          path.unshift(node);
++          curr = curr.parentElement;
++        }
++        return path.slice(-3).join(' > ');
++      }
++
++      document.addEventListener('mouseover', function(e) {
++        if (!active) return;
++        if (hoveredEl && hoveredEl !== e.target) {
++          hoveredEl.classList.remove('jarvis-inspect-hover');
++        }
++        hoveredEl = e.target;
++        hoveredEl.classList.add('jarvis-inspect-hover');
++      }, true);
++
++      document.addEventListener('mouseout', function(e) {
++        if (!active) return;
++        if (hoveredEl) {
++          hoveredEl.classList.remove('jarvis-inspect-hover');
++          hoveredEl = null;
++        }
++      }, true);
++
++      document.addEventListener('click', function(e) {
++        if (!active) return;
++        e.preventDefault();
++        e.stopPropagation();
++        const target = e.target;
++        const rect = target.getBoundingClientRect();
++        window.parent.postMessage({
++          type: 'ELEMENT_CLICKED',
++          elementInfo: {
++            tagName: target.tagName,
++            className: target.className ? String(target.className) : '',
++            textContent: (target.textContent || '').trim().slice(0, 60),
++            selector: getCssPath(target),
++            boundingRect: {
++              top: rect.top,
++              left: rect.left,
++              width: rect.width,
++              height: rect.height,
++            }
++          }
++        }, '*');
++      }, true);
++    })();
++  </script>
++</head>
++<body class="bg-slate-950 text-slate-100 min-h-screen">
++  ${htmlCode}
++</body>
++</html>
++`;
++
++  useEffect(() => {
++    onClearErrors();
++    const handleMessage = (event: MessageEvent) => {
++      if (event.data?.type === 'PREVIEW_ERROR') {
++        onErrorDetected(event.data.message || 'Script runtime error detected');
++      } else if (event.data?.type === 'ELEMENT_CLICKED') {
++        if (onElementSelected && event.data.elementInfo) {
++          onElementSelected(event.data.elementInfo);
++        }
++      }
++    };
++    window.addEventListener('message', handleMessage);
++    return () => window.removeEventListener('message', handleMessage);
++  }, [htmlCode, inspectorActive, onElementSelected]);
++
++  return (
++    <iframe
++      ref={iframeRef}
++      srcDoc={fullHtml}
++      title="Live App Preview"
++      sandbox="allow-scripts allow-modals"
++      className="w-full h-full border-none bg-slate-950 transition-all duration-300"
++    />
++  );
++};
+diff --git a/studio/src/components/preview/MiniDevToolsBar.tsx b/studio/src/components/preview/MiniDevToolsBar.tsx
+new file mode 100644
+index 00000000..6a197395
+--- /dev/null
++++ b/studio/src/components/preview/MiniDevToolsBar.tsx
+@@ -0,0 +1,80 @@
++import React from 'react';
++import { AlertCircle, CheckCircle2, ShieldCheck, Terminal, Eye, Zap, RefreshCw } from 'lucide-react';
++
++interface MiniDevToolsBarProps {
++  errorCount: number;
++  performanceScore: number;
++  isMobile: boolean;
++  onFixWithHumanEye: () => void;
++  isFixing: boolean;
++  language: 'bn' | 'en';
++}
++
++export const MiniDevToolsBar: React.FC<MiniDevToolsBarProps> = ({
++  errorCount,
++  performanceScore,
++  isMobile,
++  onFixWithHumanEye,
++  isFixing,
++  language,
++}) => {
++  return (
++    <div className="h-10 bg-slate-950 border-t border-slate-800 px-4 flex items-center justify-between text-xs font-mono text-slate-400 select-none">
++      {/* Left: Health and Diagnostics Badges */}
++      <div className="flex items-center gap-4">
++        {/* Errors indicator */}
++        <div className="flex items-center gap-1.5">
++          {errorCount > 0 ? (
++            <AlertCircle className="w-3.5 h-3.5 text-rose-400 animate-pulse" />
++          ) : (
++            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
++          )}
++          <span className={errorCount > 0 ? 'text-rose-300 font-bold' : 'text-slate-300'}>
++            Errors: {errorCount}
++          </span>
++        </div>
++
++        <span className="text-slate-700" aria-hidden="true">|</span>
++
++        {/* Lighthouse / Performance Score */}
++        <div className="flex items-center gap-1.5">
++          <Zap className="w-3.5 h-3.5 text-amber-400" />
++          <span className="text-slate-300">
++            Score: <span className="text-emerald-400 font-bold tabular-nums">{performanceScore}/100</span>
++          </span>
++        </div>
++
++        <span className="text-slate-700 hidden sm:inline" aria-hidden="true">|</span>
++
++        {/* Viewport status */}
++        <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-400">
++          <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
++          <span>{isMobile ? 'Mobile: 390x844 (Retina)' : 'Desktop: Fluid 100%'}</span>
++        </div>
++      </div>
++
++      {/* Right: Human-Eye Autonomous Auditor CTA */}
++      <div className="flex items-center gap-2">
++        {errorCount > 0 ? (
++          <button
++            onClick={onFixWithHumanEye}
++            disabled={isFixing}
++            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-sans font-semibold text-white bg-rose-600 hover:bg-rose-500 rounded transition-colors"
++          >
++            <Eye className="w-3 h-3" />
++            <span>{isFixing ? 'Fixing...' : (language === 'bn' ? 'Human-Eye দিয়ে ফিক্স করুন' : 'Fix with Human-Eye')}</span>
++          </button>
++        ) : (
++          <button
++            onClick={onFixWithHumanEye}
++            disabled={isFixing}
++            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-sans text-slate-300 hover:text-white bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded transition-colors"
++          >
++            {isFixing ? <RefreshCw className="w-3 h-3 animate-spin text-indigo-400" /> : <Eye className="w-3 h-3 text-indigo-400" />}
++            <span>{language === 'bn' ? 'Human-Eye অডিট' : 'Audit UI (Human-Eye)'}</span>
++          </button>
++        )}
++      </div>
++    </div>
++  );
++};
+diff --git a/studio/src/components/timetravel/TimeTravelBar.tsx b/studio/src/components/timetravel/TimeTravelBar.tsx
+new file mode 100644
+index 00000000..ac671363
+--- /dev/null
++++ b/studio/src/components/timetravel/TimeTravelBar.tsx
+@@ -0,0 +1,96 @@
++import React from 'react';
++import { History, ChevronLeft, ChevronRight, RotateCcw, Check, Clock } from 'lucide-react';
++import type { VersionSnapshot } from '../../types/worldclass';
++
++interface TimeTravelBarProps {
++  snapshots: VersionSnapshot[];
++  currentVersionIndex: number;
++  onSelectSnapshot: (index: number) => void;
++  language: 'bn' | 'en';
++}
++
++export const TimeTravelBar: React.FC<TimeTravelBarProps> = ({
++  snapshots,
++  currentVersionIndex,
++  onSelectSnapshot,
++  language,
++}) => {
++  const currentSnap = snapshots[currentVersionIndex] || snapshots[snapshots.length - 1];
++
++  const handlePrev = () => {
++    if (currentVersionIndex > 0) {
++      onSelectSnapshot(currentVersionIndex - 1);
++    }
++  };
++
++  const handleNext = () => {
++    if (currentVersionIndex < snapshots.length - 1) {
++      onSelectSnapshot(currentVersionIndex + 1);
++    }
++  };
++
++  return (
++    <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2 px-3 flex items-center justify-between gap-4 text-xs font-mono shadow-lg select-none">
++      {/* Left: Time Travel Label & Controls */}
++      <div className="flex items-center gap-2">
++        <div className="flex items-center gap-1.5 text-indigo-400 font-bold">
++          <History className="w-3.5 h-3.5" />
++          <span className="hidden sm:inline font-sans text-white">Time-Travel:</span>
++        </div>
++
++        <div className="flex items-center gap-1 bg-slate-950 p-0.5 rounded border border-slate-800">
++          <button
++            onClick={handlePrev}
++            disabled={currentVersionIndex === 0}
++            className="p-1 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800 transition-colors"
++            title="Rewind to previous snapshot"
++          >
++            <ChevronLeft className="w-3.5 h-3.5" />
++          </button>
++          <button
++            onClick={handleNext}
++            disabled={currentVersionIndex === snapshots.length - 1}
++            className="p-1 hover:text-white disabled:opacity-30 rounded hover:bg-slate-800 transition-colors"
++            title="Fast-forward to next snapshot"
++          >
++            <ChevronRight className="w-3.5 h-3.5" />
++          </button>
++        </div>
++
++        <span className="text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800/80 text-[11px]">
++          {currentSnap.version}
++        </span>
++      </div>
++
++      {/* Middle: Snapshot Step Indicator Dots */}
++      <div className="flex items-center gap-2">
++        {snapshots.map((snap, idx) => {
++          const isActive = idx === currentVersionIndex;
++          return (
++            <button
++              key={snap.id}
++              onClick={() => onSelectSnapshot(idx)}
++              className={`group flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] transition-all ${
++                isActive
++                  ? 'bg-indigo-600 text-white font-bold shadow-sm'
++                  : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
++              }`}
++              title={`${snap.version}: ${snap.title}`}
++            >
++              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-white' : 'bg-slate-600'}`} />
++              <span className="hidden md:inline">{snap.version}</span>
++            </button>
++          );
++        })}
++      </div>
++
++      {/* Right: Snapshot Info summary */}
++      <div className="hidden lg:flex items-center gap-3 text-[11px] text-slate-400">
++        <span className="text-slate-300 truncate max-w-[200px]" title={currentSnap.title}>
++          {currentSnap.title}
++        </span>
++        <span className="text-slate-500">({currentSnap.timestamp})</span>
++      </div>
++    </div>
++  );
++};
+diff --git a/studio/src/data/projectFiles.ts b/studio/src/data/projectFiles.ts
+new file mode 100644
+index 00000000..0e68c053
+--- /dev/null
++++ b/studio/src/data/projectFiles.ts
+@@ -0,0 +1,359 @@
++import type { ProjectFile, VersionSnapshot, InjectedPackage } from '../types/worldclass';
++
++export const INITIAL_PROJECT_FILES: ProjectFile[] = [
++  {
++    path: 'src/App.tsx',
++    name: 'App.tsx',
++    language: 'typescript',
++    content: `import React, { useState } from 'react';
++import { Navbar } from './components/Navbar';
++import { Hero } from './components/Hero';
++import { DishGrid } from './components/DishGrid';
++import { CartDrawer } from './components/CartDrawer';
++
++export default function App() {
++  const [cartOpen, setCartOpen] = useState(false);
++  const [cartCount, setCartCount] = useState(2);
++
++  return (
++    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
++      <Navbar cartCount={cartCount} onOpenCart={() => setCartOpen(true)} />
++      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
++        <Hero onCtaClick={() => setCartOpen(true)} />
++        <DishGrid onAddToCart={() => setCartCount(c => c + 1)} />
++      </main>
++      <CartDrawer isOpen={cartOpen} onClose={() => setCartOpen(false)} />
++    </div>
++  );
++}`,
++  },
++  {
++    path: 'src/components/Navbar.tsx',
++    name: 'Navbar.tsx',
++    language: 'typescript',
++    content: `import React from 'react';
++
++interface NavbarProps {
++  cartCount: number;
++  onOpenCart: () => void;
++}
++
++export const Navbar: React.FC<NavbarProps> = ({ cartCount, onOpenCart }) => {
++  return (
++    <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-white/[0.08]">
++      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-6">
++        <div className="flex items-center gap-3">
++          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-bold text-white shadow-lg shadow-emerald-500/20">
++            G
++          </div>
++          <div>
++            <span className="font-bold text-base text-white tracking-tight">Gusteau's Kitchen</span>
++            <span className="text-[11px] text-emerald-400 block font-mono">Organic & Farm-to-Table</span>
++          </div>
++        </div>
++
++        <nav className="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
++          <a href="#dishes" className="hover:text-emerald-400 transition-colors">Artisan Bowls</a>
++          <a href="#pasta" className="hover:text-emerald-400 transition-colors">Handmade Pasta</a>
++          <a href="#story" className="hover:text-emerald-400 transition-colors">Our Farms</a>
++        </nav>
++
++        <button 
++          onClick={onOpenCart}
++          className="relative px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold rounded-xl shadow-md shadow-emerald-600/30 transition-all flex items-center gap-2"
++        >
++          <span>Cart</span>
++          <span className="w-5 h-5 rounded-full bg-white text-emerald-950 text-[10px] font-bold flex items-center justify-center font-mono">
++            {cartCount}
++          </span>
++        </button>
++      </div>
++    </header>
++  );
++};`,
++  },
++  {
++    path: 'src/components/Hero.tsx',
++    name: 'Hero.tsx',
++    language: 'typescript',
++    content: `import React from 'react';
++
++interface HeroProps {
++  onCtaClick: () => void;
++}
++
++export const Hero: React.FC<HeroProps> = ({ onCtaClick }) => {
++  return (
++    <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-950 border border-white/[0.08] p-8 sm:p-12 shadow-2xl">
++      <div className="absolute top-0 right-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
++      
++      <div className="relative z-10 max-w-2xl space-y-4">
++        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/80 text-[11px] font-mono text-emerald-300">
++          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
++          <span>FAST DELIVERY · 25-35 MINS</span>
++        </div>
++
++        <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
++          Artisanal Organic Bowls <br />
++          <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-300 to-teal-200">
++            Crafted for Pure Health
++          </span>
++        </h1>
++
++        <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
++          Harvested daily from certified organic local growers. Zero artificial additives, cold-pressed dressings, and chef-curated nutrition macros.
++        </p>
++
++        <div className="pt-2 flex flex-wrap items-center gap-4">
++          <button 
++            id="hero-cta"
++            onClick={onCtaClick}
++            className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-95 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/30 transition-all cursor-pointer"
++          >
++            Order Hot Bowl Now
++          </button>
++          <span className="text-xs text-slate-400 font-mono">
++            ★ 4.9/5 Rating (1,420+ Reviews)
++          </span>
++        </div>
++      </div>
++    </section>
++  );
++};`,
++  },
++  {
++    path: 'src/components/DishGrid.tsx',
++    name: 'DishGrid.tsx',
++    language: 'typescript',
++    content: `import React from 'react';
++
++interface DishGridProps {
++  onAddToCart: () => void;
++}
++
++export const DishGrid: React.FC<DishGridProps> = ({ onAddToCart }) => {
++  const dishes = [
++    {
++      id: 1,
++      title: 'Pacific Salmon Quinoa Bowl',
++      desc: 'Wild-caught salmon, organic tricolor quinoa, Hass avocado, edamame, and toasted sesame ginger vinaigrette.',
++      price: '$16.50',
++      calories: '540 kcal · 38g Protein',
++    },
++    {
++      id: 2,
++      title: 'Truffle Porcini Pappardelle',
++      desc: 'Fresh handmade egg pasta, summer black truffle ragu, and 24-month aged Parmigiano Reggiano.',
++      price: '$18.00',
++      calories: '620 kcal · Vegetarian',
++    },
++    {
++      id: 3,
++      title: 'Spiced Crisp Falafel Harvest',
++      desc: 'Golden chickpea patties, sumac roasted cauliflower, pickled radishes, and lemon tahini drizzle.',
++      price: '$14.00',
++      calories: '480 kcal · 100% Vegan',
++    },
++  ];
++
++  return (
++    <section id="dishes" className="space-y-4">
++      <div className="flex items-center justify-between">
++        <div>
++          <h2 className="text-xl font-bold text-white tracking-tight">Today's Curated Harvest</h2>
++          <p className="text-xs text-slate-400">Prepared fresh upon order</p>
++        </div>
++        <span className="text-xs font-mono text-emerald-400 font-semibold">3 Featured Dishes</span>
++      </div>
++
++      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
++        {dishes.map((dish) => (
++          <div 
++            key={dish.id} 
++            className="group bg-slate-900/60 hover:bg-slate-900/90 border border-white/[0.08] hover:border-emerald-500/40 rounded-2xl p-5 transition-all duration-300 flex flex-col justify-between shadow-xl"
++          >
++            <div>
++              <div className="flex justify-between items-start mb-2">
++                <h3 className="font-bold text-sm text-white group-hover:text-emerald-300 transition-colors">
++                  {dish.title}
++                </h3>
++                <span className="font-mono text-emerald-400 font-bold text-sm">{dish.price}</span>
++              </div>
++              <p className="text-xs text-slate-400 leading-relaxed mb-4">{dish.desc}</p>
++            </div>
++
++            <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
++              <span className="text-slate-500 font-mono text-[11px]">{dish.calories}</span>
++              <button
++                onClick={onAddToCart}
++                className="px-3 py-1.5 bg-slate-800 hover:bg-emerald-600 text-slate-200 hover:text-white rounded-lg font-semibold transition-all shadow-sm active:scale-95"
++              >
++                + Add
++              </button>
++            </div>
++          </div>
++        ))}
++      </div>
++    </section>
++  );
++};`,
++  },
++  {
++    path: 'src/components/CartDrawer.tsx',
++    name: 'CartDrawer.tsx',
++    language: 'typescript',
++    content: `import React from 'react';
++
++interface CartDrawerProps {
++  isOpen: boolean;
++  onClose: () => void;
++}
++
++export const CartDrawer: React.FC<CartDrawerProps> = ({ isOpen, onClose }) => {
++  if (!isOpen) return null;
++
++  return (
++    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fadeIn">
++      <div className="w-full max-w-md bg-slate-900 border-l border-white/[0.08] h-full p-6 flex flex-col justify-between shadow-2xl">
++        <div>
++          <div className="flex items-center justify-between pb-4 border-b border-slate-800">
++            <h3 className="font-bold text-base text-white">Your Order (2 items)</h3>
++            <button 
++              onClick={onClose}
++              className="text-slate-400 hover:text-white text-xs font-mono p-1 rounded hover:bg-slate-800"
++            >
++              [ Close ✕ ]
++            </button>
++          </div>
++
++          <div className="py-4 space-y-3 text-xs font-mono">
++            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center">
++              <div>
++                <span className="text-white font-sans font-semibold block">Pacific Salmon Bowl</span>
++                <span className="text-slate-500 text-[11px]">Qty: 1 · Extra Avocado</span>
++              </div>
++              <span className="text-emerald-400 font-bold">$16.50</span>
++            </div>
++
++            <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center">
++              <div>
++                <span className="text-white font-sans font-semibold block">Truffle Pappardelle</span>
++                <span className="text-slate-500 text-[11px]">Qty: 1 · Regular</span>
++              </div>
++              <span className="text-emerald-400 font-bold">$18.00</span>
++            </div>
++          </div>
++        </div>
++
++        <div className="pt-4 border-t border-slate-800 space-y-3 text-xs">
++          <div className="flex justify-between text-slate-300 font-mono">
++            <span>Subtotal</span>
++            <span className="text-white font-bold">$34.50</span>
++          </div>
++          <div className="flex justify-between text-slate-400 font-mono text-[11px]">
++            <span>Delivery Fee</span>
++            <span className="text-emerald-400">FREE</span>
++          </div>
++          <button 
++            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-95 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition-all text-xs"
++          >
++            Proceed to Checkout ($34.50)
++          </button>
++        </div>
++      </div>
++    </div>
++  );
++};`,
++  },
++  {
++    path: 'src/styles/theme.css',
++    name: 'theme.css',
++    language: 'css',
++    content: `@import "tailwindcss";
++
++:root {
++  --color-primary: #10b981;
++  --color-surface: #030712;
++  --glass-border: rgba(255, 255, 255, 0.08);
++}
++
++body {
++  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
++  background-color: var(--color-surface);
++}`,
++  },
++];
++
++export const VERSION_SNAPSHOTS: VersionSnapshot[] = [
++  {
++    id: 'snap-1',
++    version: 'v1.0',
++    title: 'Initial Food Delivery Architecture',
++    timestamp: '4 mins ago',
++    author: 'JARVIS Agent',
++    summary: 'Initialized responsive layout with Farm-to-Table branding and 3 starter dishes.',
++    files: {},
++    diffSummary: { added: 142, removed: 0, filesChanged: 3 },
++  },
++  {
++    id: 'snap-2',
++    version: 'v1.1',
++    title: 'Added Interactive Cart Drawer & Counter',
++    timestamp: '3 mins ago',
++    author: 'JARVIS Agent',
++    summary: 'Mounted sliding Cart Drawer with real-time items count and checkout totals.',
++    files: {},
++    diffSummary: { added: 68, removed: 4, filesChanged: 2 },
++  },
++  {
++    id: 'snap-3',
++    version: 'v1.2',
++    title: 'WCAG AA Optical Contrast & Micro-Shadows',
++    timestamp: '2 mins ago',
++    author: 'Developer',
++    summary: 'Enhanced high-contrast emerald gradients and fixed mobile layout constraints.',
++    files: {},
++    diffSummary: { added: 24, removed: 12, filesChanged: 2 },
++  },
++  {
++    id: 'snap-4',
++    version: 'v1.3 (Current)',
++    title: 'Deep Space Glassmorphism & Gold Accent Button',
++    timestamp: 'Just now',
++    author: 'JARVIS Agent',
++    summary: 'Injected 3D glass borders, spring transitions, and interactive Click-to-Edit targets.',
++    files: {},
++    diffSummary: { added: 18, removed: 2, filesChanged: 1 },
++  },
++];
++
++export const POPULAR_PACKAGES: InjectedPackage[] = [
++  {
++    name: 'lucide-react',
++    version: '0.546.0',
++    cdnUrl: 'https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js',
++    installed: true,
++    category: 'Icons',
++  },
++  {
++    name: 'canvas-confetti',
++    version: '1.9.4',
++    cdnUrl: 'https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js',
++    installed: true,
++    category: 'Animation',
++  },
++  {
++    name: 'motion',
++    version: '12.23.24',
++    cdnUrl: 'https://cdn.jsdelivr.net/npm/motion@12.23.24/dist/motion.js',
++    installed: true,
++    category: 'Animation',
++  },
++  {
++    name: 'three.js',
++    version: '0.170.0',
++    cdnUrl: 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.min.js',
++    installed: false,
++    category: 'UI',
++  },
++];

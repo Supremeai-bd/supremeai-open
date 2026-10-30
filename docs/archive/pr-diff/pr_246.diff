@@ -1,0 +1,67 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index e5fc5e94..ef4277a2 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -151,7 +151,15 @@ jobs:
+           if [[ "$PR_LABELS" == *"guard-exempt"* ]]; then
+             echo "✅ 'guard-exempt' label present — guard skipped."; exit 0
+           fi
+-          ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
++          # Target issues from (1) explicit closing statements (Closes/Fixes/Resolves #N),
++          # or (2) branch issue tokens `issue-N` or `issueN`.
++          TARGET_ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '#[0-9]+' || true)
++          BRANCH_ISSUES=$(echo "${{ github.head_ref }}" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
++          ISSUES=$(printf "%s\n%s" "$TARGET_ISSUES" "$BRANCH_ISSUES" | grep -E '^#[0-9]+' | sort -u || true)
++          if [ -z "$ISSUES" ]; then
++            # Fallback to general issue references if no explicit target
++            ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
++          fi
+           if [ -z "$ISSUES" ]; then
+             exit 0
+           fi
+@@ -174,7 +182,8 @@ jobs:
+             MATCH=""
+             while IFS=$'\t' read -r other_num other_title other_body other_branch; do
+               [ -z "${other_num}" ] && continue
+-              if printf '%s %s' "${other_title}" "${other_body}" | grep -qE "#${iss_num}([^0-9]|$)" \
++              # Check if other PR specifically targets or claims this issue
++              if printf '%s %s' "${other_title}" "${other_body}" | grep -qiE "(closes|fixes|resolves) #${iss_num}([^0-9]|$)" \
+                  || printf '%s' "${other_branch}" | grep -qE "(^|[^0-9])${iss_num}([^0-9]|$)"; then
+                 MATCH="PR #${other_num} (branch: ${other_branch})"
+                 break
+@@ -279,8 +288,7 @@ jobs:
+       always() &&
+       ((github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        (needs.boundary_sanitization_guard.result == 'success' &&
+-        needs.loop_contract_parity_guard.result == 'success' &&
+-        needs.boundary_sanitization_guard.outputs.docs_only != 'true'))
++        needs.loop_contract_parity_guard.result == 'success'))
+     runs-on: ubuntu-latest
+     strategy:
+       fail-fast: false
+@@ -448,15 +456,20 @@ jobs:
+       # is actionable when evidence confirms it… No-actionable-finding must be
+       # recorded explicitly without creating issue storms." An empty upstream
+       # board is a recorded no-op, NOT a red run and NOT a silent skip.
+-      # #88: has_work reflects CLAIMABLE work only (status:unclaimed, whole
+-      # board) so the cron no-ops when every open issue is already claimed.
++      # #88 + #222: has_work reflects CLAIMABLE work only under the implicit
++      # claimable lifecycle — every open issue minus the pick_next_issue()
++      # exclusion set — so the cron no-ops when every open issue is claimed,
++      # held, blocked or a private mirror. Gating on the legacy
++      # status:unclaimed label starves the dispatcher once labels desync
++      # (nothing applies that label since #222).
+       - name: Board pre-check (explicit no-op on empty or fully-claimed board)
+         id: board
+         run: |
+           set -euo pipefail
+-          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --label "status:unclaimed" --limit 200 --json number,title,labels)
+-          # Mirror issues (#122) are born non-claimable — exclude the marker.
+-          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select([.labels[].name] | index("mirror:private") | not)]')
++          BOARD=$(gh issue list --repo Supremeai-bd/supremeai-open --state open --limit 200 --json number,title,labels)
++          # Mirror the pick_next_issue() EXCLUDED_LABELS set exactly (case-insensitive,
++          # like the loop's .lower()): claimed, in-progress, seq-hold, blocked, private mirror.
++          CLAIMABLE=$(echo "$BOARD" | jq '[.[] | select((["status:claimed","status:in-progress","state:seq-hold","blocked-by-upstream","mirror:private"]) as $ex | ([.labels[].name] | map(ascii_downcase)) as $names | ($ex | any(. as $x | $names | index($x))) | not)]')
+           echo "claimable-board snapshot: $CLAIMABLE"
+           if [ "$CLAIMABLE" = "[]" ]; then
+             echo "NO-ACTIONABLE-FINDING: upstream open-issue board is empty — explicit no-op recorded per AGENT_RULES.md §10."

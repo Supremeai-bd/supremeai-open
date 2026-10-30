@@ -1,0 +1,536 @@
+diff --git a/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts b/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
+index 4af2dac0..8344ed17 100644
+--- a/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
++++ b/infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
+@@ -39,6 +39,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void>
+       source: z.string().optional().describe("Specific doc source to filter"),
+       limit: z.number().optional().describe("Max search results (default: 5)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ query, source, limit }: { query?: string; source?: string; limit?: number }) => {
+       try {
+         if (query && query.trim().length > 0) {
+@@ -70,6 +71,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void>
+       source: z.string().optional().describe("Specific doc source to search"),
+       limit: z.number().optional().describe("Max results to return"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ query, source, limit }) => {
+       const results = await searchDocs(query, source, limit ?? 5);
+       return {
+@@ -86,6 +88,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void>
+       url: z.string().describe("Full URL of the documentation page"),
+       topic: z.string().optional().describe("Topic to fetch"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ url, topic }) => {
+       const content = await fetchDocPage(url, topic);
+       return {
+@@ -99,6 +102,7 @@ export async function registerContext7Adapter(server: McpServer): Promise<void>
+     "docs.list",
+     "List all available documentation sources",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       return {
+         content: [{
+diff --git a/infrastructure/mcp-control-plane/src/tools/agent.tools.ts b/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
+index 077897ff..271815f7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/agent.tools.ts
+@@ -45,6 +45,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
+         .optional()
+         .describe("Human-readable tool label, e.g. 'Cline' (defaults to slot id)"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+     async ({ slot, agentId }) => {
+       try {
+         const context = RequestContextStore.get();
+@@ -89,6 +90,7 @@ export async function registerAgentTools(server: McpServer): Promise<void> {
+     "agent_status",
+     "List live agent-slot heartbeats with derived real-time state: online (≤90s), stale (>90s, key alive), expired (no runtime signal, visible for 24h archive grace). Expired slots beyond the grace are reaped from the registry and returned once under `archived` (#1641).",
+     {},
++    { readOnlyHint: false, destructiveHint: false },
+     async () => {
+       try {
+         const context = RequestContextStore.get();
+diff --git a/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts b/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
+index 8bf2690b..82070135 100644
+--- a/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
+@@ -9,6 +9,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void>
+     {
+       action: z.enum(["worker_status", "analytics"]),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ action }) => {
+       if (action === "worker_status") {
+         const status = await getWorkerStatus();
+@@ -24,6 +25,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void>
+ 
+     "Ping the deployed Cloudflare Worker to check its availability and latency.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const status = await getWorkerStatus();
+@@ -43,6 +45,7 @@ export async function registerCloudflareTools(server: McpServer): Promise<void>
+     "cloudflare.analytics",
+     "Get basic analytics/details from the Cloudflare account.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const analytics = await getAnalytics();
+diff --git a/infrastructure/mcp-control-plane/src/tools/federation.tools.ts b/infrastructure/mcp-control-plane/src/tools/federation.tools.ts
+index abd65eae..f0001f55 100644
+--- a/infrastructure/mcp-control-plane/src/tools/federation.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/federation.tools.ts
+@@ -16,7 +16,8 @@ function scopeFor(tenantId?: string, adminToken?: string): { tenantId?: string;
+ export async function registerFederationTools(server: McpServer): Promise<void> {
+   server.tool("client.register_mcp_server", "Register a tenant-scoped remote MCP server for discovery and governed tool relay.", {
+     name: z.string().min(2).max(128), protocol: z.enum(["stdio", "streamable-http", "sse"]), endpoint: z.string().url().optional(), command: z.string().min(1).optional(), args: z.array(z.string()).max(32).optional(), headers: z.record(z.string(), z.string()).optional(), tenantId: z.string().optional(), adminToken: z.string().optional(), scopes: z.array(z.string()).max(32).optional(), trustLevel: z.enum(["verified", "tenant", "untrusted"]).optional(),
+-  }, async (args) => {
++  }, { readOnlyHint: false, destructiveHint: false },
++    async (args) => {
+     const scope = scopeFor(args.tenantId, args.adminToken);
+     if (scope.error) return { isError: true, content: [{ type: "text", text: scope.error }] };
+     try {
+@@ -25,7 +26,8 @@ export async function registerFederationTools(server: McpServer): Promise<void>
+     } catch (error) { return { isError: true, content: [{ type: "text", text: `Registration failed: ${(error as Error).message}` }] }; }
+   });
+ 
+-  server.tool("client.list_mcp_servers", "List registered remote MCP servers in the current tenant scope, including pinned tool-descriptor drift (#1712).", { tenantId: z.string().optional(), adminToken: z.string().optional() }, async (args) => {
++  server.tool("client.list_mcp_servers", "List registered remote MCP servers in the current tenant scope, including pinned tool-descriptor drift (#1712).", { tenantId: z.string().optional(), adminToken: z.string().optional() }, { readOnlyHint: true, idempotentHint: true },
++    async (args) => {
+     const scope = scopeFor(args.tenantId, args.adminToken);
+     if (scope.error) return { isError: true, content: [{ type: "text", text: scope.error }] };
+     const servers = listRemoteServers(scope.tenantId);
+@@ -33,7 +35,8 @@ export async function registerFederationTools(server: McpServer): Promise<void>
+     return { content: [{ type: "text", text: JSON.stringify({ servers, tools: listAggregatedTools(scope.tenantId), descriptorPins }, null, 2) }] };
+   });
+ 
+-  server.tool("client.discover_mcp_server", "Discover and cache the tools exposed by an approved remote MCP server. Pins SHA-256 tool-descriptor hashes; changed/added/removed descriptors become pending and block remote.call until reapprove:true (audited).", { serverId: z.string(), reapprove: z.boolean().optional().describe("Explicitly adopt pending descriptor changes as the new approved baseline (admin action, audit-logged)"), tenantId: z.string().optional(), adminToken: z.string().optional() }, async (args) => {
++  server.tool("client.discover_mcp_server", "Discover and cache the tools exposed by an approved remote MCP server. Pins SHA-256 tool-descriptor hashes; changed/added/removed descriptors become pending and block remote.call until reapprove:true (audited).", { serverId: z.string(), reapprove: z.boolean().optional().describe("Explicitly adopt pending descriptor changes as the new approved baseline (admin action, audit-logged)"), tenantId: z.string().optional(), adminToken: z.string().optional() }, { readOnlyHint: false, destructiveHint: false },
++    async (args) => {
+     const scope = scopeFor(args.tenantId, args.adminToken);
+     if (scope.error) return { isError: true, content: [{ type: "text", text: scope.error }] };
+     const remote = getRemoteServer(args.serverId, scope.tenantId);
+@@ -51,7 +54,8 @@ export async function registerFederationTools(server: McpServer): Promise<void>
+     catch (error) { return { isError: true, content: [{ type: "text", text: `Discovery failed: ${(error as Error).message}` }] }; }
+   });
+ 
+-  server.tool("remote.call", "Call a discovered remote MCP tool through the governed federation gateway. Fail-closed: the live tool surface is re-verified against approved SHA-256 descriptor pins (default TTL 5 min); any mutation blocks execution with tool_descriptor_mutated until explicit re-approval.", { tool: z.string().min(3).describe("Qualified name: <serverId>.<toolName>"), arguments: z.record(z.string(), z.unknown()).default({}), tenantId: z.string().optional(), adminToken: z.string().optional() }, async (args) => {
++  server.tool("remote.call", "Call a discovered remote MCP tool through the governed federation gateway. Fail-closed: the live tool surface is re-verified against approved SHA-256 descriptor pins (default TTL 5 min); any mutation blocks execution with tool_descriptor_mutated until explicit re-approval.", { tool: z.string().min(3).describe("Qualified name: <serverId>.<toolName>"), arguments: z.record(z.string(), z.unknown()).default({}), tenantId: z.string().optional(), adminToken: z.string().optional() }, { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
++    async (args) => {
+     const scope = scopeFor(args.tenantId, args.adminToken);
+     if (scope.error) return { isError: true, content: [{ type: "text", text: scope.error }] };
+     try { const result = await callAggregatedTool(args.tool, args.arguments, scope.tenantId); return { content: [{ type: "text", text: JSON.stringify(result) }] }; }
+diff --git a/infrastructure/mcp-control-plane/src/tools/guardian.tools.ts b/infrastructure/mcp-control-plane/src/tools/guardian.tools.ts
+index eddd0a97..15328322 100644
+--- a/infrastructure/mcp-control-plane/src/tools/guardian.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/guardian.tools.ts
+@@ -145,6 +145,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
+       prNumber: z.number().int().positive().describe("Pull request number"),
+       scopePrefixes: scopeSchema,
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, prNumber, scopePrefixes }) => {
+       try {
+         const denied = accessError("viewer");
+@@ -185,6 +186,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
+       limit: z.number().int().min(1).max(50).optional().describe("Max open PRs to evaluate (default: 20)"),
+       scopePrefixes: scopeSchema,
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, limit, scopePrefixes }) => {
+       try {
+         const denied = accessError("viewer");
+@@ -247,6 +249,7 @@ export async function registerGuardianTools(server: McpServer): Promise<void> {
+         .describe("Allow merging a Tier-2 (canary-gated) PR. Tier-3 PRs always require human approval."),
+       scopePrefixes: scopeSchema,
+     },
++    { readOnlyHint: false, destructiveHint: true },
+     async ({ accountId, prNumber, decision, mergeMethod, allowCanary, scopePrefixes }) => {
+       try {
+         const denied = accessError("agent");
+diff --git a/infrastructure/mcp-control-plane/src/tools/infisical.tools.ts b/infrastructure/mcp-control-plane/src/tools/infisical.tools.ts
+index de20e9aa..5f7cbb57 100644
+--- a/infrastructure/mcp-control-plane/src/tools/infisical.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/infisical.tools.ts
+@@ -6,6 +6,7 @@ export async function registerInfisicalTools(server: McpServer): Promise<void> {
+     "infisical.audit_secrets",
+     "Audit Infisical vault inventory via the v3 RAW path (metadata/keys only, no values); the standard-API status is reported separately in `standardPath` (vendor defect #434).",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const secrets = await auditSecrets();
+@@ -25,6 +26,7 @@ export async function registerInfisicalTools(server: McpServer): Promise<void> {
+     "infisical.sync_status",
+     "Get the status of Infisical secret integrations/syncs.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const syncs = await getSyncStatus();
+diff --git a/infrastructure/mcp-control-plane/src/tools/intelligence.tools.ts b/infrastructure/mcp-control-plane/src/tools/intelligence.tools.ts
+index 2d43e5f2..09054a52 100644
+--- a/infrastructure/mcp-control-plane/src/tools/intelligence.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/intelligence.tools.ts
+@@ -63,6 +63,7 @@ export async function registerIntelligenceTools(server: McpServer): Promise<void
+       query: z.string().describe("Symbol, function name, class, endpoint route, or file to search, e.g. 'studio_auth_login' or 'GuestChat'"),
+       limit: z.number().int().min(1).max(50).optional().describe("Maximum matched nodes to return (default: 15)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ query, limit }) => {
+       try {
+         const graphPath = findGraphJson();
+@@ -148,6 +149,7 @@ export async function registerIntelligenceTools(server: McpServer): Promise<void
+       url: z.string().url().describe("Target URL to audit, e.g. 'https://example.com'"),
+       device: z.enum(["desktop", "mobile"]).optional().describe("Device viewport profile (default: desktop)"),
+     },
++    { readOnlyHint: false, destructiveHint: false },
+     async ({ url, device }) => {
+       try {
+         let auditFallbackReason: string | undefined;
+diff --git a/infrastructure/mcp-control-plane/src/tools/orchestrator.tools.ts b/infrastructure/mcp-control-plane/src/tools/orchestrator.tools.ts
+index e31d4152..24149c03 100644
+--- a/infrastructure/mcp-control-plane/src/tools/orchestrator.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/orchestrator.tools.ts
+@@ -40,6 +40,7 @@ export async function registerOrchestratorTools(server: McpServer): Promise<void
+         .optional()
+         .describe("handoff:<role> label signal — overrides the default event→role map"),
+     },
++    { readOnlyHint: false, destructiveHint: false },
+     async ({ issueRef, event, action, handoffLabel }) => {
+       const context = RequestContextStore.get();
+       if (!context?.authenticated) {
+diff --git a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+index 79871181..0fb7d345 100644
+--- a/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/redis.tools.ts
+@@ -18,6 +18,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+       action: z.enum(["ping", "stats", "read_key"]).describe("The Redis operation to perform"),
+       key: z.string().optional().describe("Key name to read (required when action='read_key')"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ action, key }) => {
+       try {
+         if (action === "ping") {
+@@ -50,6 +51,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+ 
+     "Ping the Redis cache/queue to verify connectivity.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const res = await pingRedis();
+@@ -69,6 +71,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     "redis.stats",
+     "Get basic statistics from Redis via the INFO command.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const stats = await getRedisStats();
+@@ -90,6 +93,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     {
+       key: z.string().describe("The Redis key to read"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ key }) => {
+       try {
+         const res = await readRedisKey(key);
+@@ -109,6 +113,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     "redis.rotation_status",
+     "Inspect the Upstash Redis auto-rotation chain status, active primary, and quota cooldowns (#26).",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         const { quotaChainStatus, getActiveRedisAccount, nextQuotaResetEpochMs } = await import("../lib/redis_chain.js");
+@@ -153,6 +158,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+       thresholdPct: z.number().min(1).max(100).optional().describe("Warning threshold percent (default 80, env REDIS_QUOTA_ALERT_PCT)"),
+       chatId: z.string().optional().describe("Optional Telegram chat id override"),
+     },
++    { readOnlyHint: false, destructiveHint: false },
+     async ({ thresholdPct, chatId }) => {
+       try {
+         const warnPct = thresholdPct ?? quotaWarnPct();
+@@ -237,6 +243,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     {
+       question: z.string().min(1).describe("The user question to look up"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+     async ({ question }) => {
+       try {
+         const result = await cacheLookup(question);
+@@ -257,6 +264,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+       question: z.string().min(1).describe("The user question"),
+       answer: z.string().min(1).describe("The grounded answer to cache"),
+     },
++    { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+     async ({ question, answer }) => {
+       try {
+         const result = await cacheStore(question, answer);
+@@ -274,6 +282,7 @@ export async function registerRedisTools(server: McpServer): Promise<void> {
+     "cache.status",
+     "Report the semantic cache configuration honestly: embedder tier (gemini vs trigram-lexical-fallback), collection, hit threshold, caps.",
+     {},
++    { readOnlyHint: true, idempotentHint: true },
+     async () => {
+       try {
+         return { content: [{ type: "text", text: JSON.stringify(cacheConfigStatus(), null, 2) }] };
+diff --git a/infrastructure/mcp-control-plane/src/tools/render.tools.ts b/infrastructure/mcp-control-plane/src/tools/render.tools.ts
+index 58c89368..5f057341 100644
+--- a/infrastructure/mcp-control-plane/src/tools/render.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/render.tools.ts
+@@ -59,6 +59,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+       serviceId: z.string().optional().describe("Render service ID (required for service_health and get_logs)"),
+       ...renderLogFiltersSchema,
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, serviceId, action, startTime, endTime, level, type, text, limit, cursor }) => {
+       const denial = assertRenderAccess("render.manage", "agent");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+@@ -96,6 +97,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+     {
+       accountId: z.string().describe("The account ID (e.g. render-primary)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId }) => {
+       const denial = assertRenderAccess("render.list_services", "agent");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+@@ -120,6 +122,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+       accountId: z.string().describe("The account ID (e.g. render-primary)"),
+       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, serviceId }) => {
+       const denial = assertRenderAccess("render.service_health", "agent");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+@@ -145,6 +148,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+       ...renderLogFiltersSchema,
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, serviceId, startTime, endTime, level, type, text, limit, cursor }) => {
+       const denial = assertRenderAccess("render.get_logs", "agent");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+@@ -171,6 +175,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+       keysOnly: z.boolean().optional().describe("When true, return only the set of KEY names (no values)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, serviceId, keysOnly }) => {
+       const denial = assertRenderAccess("render.get_env_vars", "admin");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+@@ -195,6 +200,7 @@ export async function registerRenderTools(server: McpServer): Promise<void> {
+       accountId: z.string().describe("The account ID (e.g. render-primary)"),
+       serviceId: z.string().describe("The Render service ID (e.g. srv-abc12345)"),
+     },
++    { readOnlyHint: true, idempotentHint: true },
+     async ({ accountId, serviceId }) => {
+       const denial = assertRenderAccess("render.get_env_var_keys", "admin");
+       if (denial) return { isError: true, content: [{ type: "text", text: denial }] };
+diff --git a/infrastructure/mcp-control-plane/src/tools/source.tools.ts b/infrastructure/mcp-control-plane/src/tools/source.tools.ts
+index 2576e438..93378637 100644
+--- a/infrastructure/mcp-control-plane/src/tools/source.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/source.tools.ts
+@@ -24,6 +24,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+       sort: z.enum(["stars", "forks", "updated"]).optional().describe("Sort order (default: stars)"),
+       limit: z.number().int().min(1).max(50).optional().describe("Max results (default: 10)"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ query, sort, limit }) => {
+       try {
+         const result = await searchRepos(query, sort ?? "stars", limit ?? 10);
+@@ -38,6 +39,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+     "github.repo_info",
+     "Get metadata about any public repo: stars, forks, license verdict (MIT/Apache=accept, GPL=reject), default branch.",
+     { repo: z.string().describe("Repo as owner/repo, e.g. 'vercel/next.js'") },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ repo }) => {
+       try {
+         const ref = parseRepoRef(repo);
+@@ -56,6 +58,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+       repo: z.string().describe("Repo as owner/repo, e.g. 'shadcn/ui'"),
+       maxFiles: z.number().int().min(1).max(50).optional().describe("Max selected files (default: 30)"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ repo, maxFiles }) => {
+       try {
+         const ref = parseRepoRef(repo);
+@@ -74,6 +77,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+       repo: z.string().describe("Repo as owner/repo, e.g. 'vercel/next.js'"),
+       path: z.string().describe("File path inside the repo, e.g. 'packages/next/src/server/index.ts'"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ repo, path }) => {
+       try {
+         const ref = parseRepoRef(repo);
+@@ -92,6 +96,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+       repo: z.string().describe("Repo as owner/repo, e.g. 'sindresorhus/awesome'"),
+       maxFiles: z.number().int().min(1).max(20).optional().describe("Max files (default: 10)"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ repo, maxFiles }) => {
+       try {
+         const ref = parseRepoRef(repo);
+@@ -111,6 +116,7 @@ export async function registerSourceTools(server: McpServer): Promise<void> {
+       onlyMainContent: z.boolean().optional().describe("Strip nav/ads (default: true)"),
+       maxTokens: z.number().int().min(100).max(20000).optional().describe("Output cap in tokens (default: 8000)"),
+     },
++    { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+     async ({ url, onlyMainContent, maxTokens }) => {
+       try {
+         const result = await scrapeUrl(url, {
+diff --git a/infrastructure/mcp-control-plane/test_annotations_floor.ts b/infrastructure/mcp-control-plane/test_annotations_floor.ts
+index e69de29b..a1510a62 100644
+--- a/infrastructure/mcp-control-plane/test_annotations_floor.ts
++++ b/infrastructure/mcp-control-plane/test_annotations_floor.ts
+@@ -0,0 +1,143 @@
++/**
++ * Annotations structural floor — the deploy-independent guard for the MCP
++ * ToolAnnotations contract (radar lanes R71 #2586 -> R72 #2608/#2618 -> R73 #2627).
++ *
++ * What it asserts, over every STATIC tool registration in src/tools/*.ts and
++ * src/dynamic/*.ts (string-literal-named `server.tool(...)` / `(server as any).tool(...)`
++ * / `server.registerTool(...)` blocks, comments stripped):
++ *   1. FULL COVERAGE — every static registration block carries an annotations object
++ *      (`readOnlyHint` present). Unannotated names are listed in the failure output.
++ *   2. SHRINK GUARD — the static-block count never drops below MIN_STATIC_BLOCKS.
++ *      Bump it in the same PR when a tool is added (#2178 same-PR bump convention);
++ *      the count only ratchets, it never silently shrinks.
++ *
++ * Dynamic surfaces are intentionally out of scope and excluded by construction:
++ * loop/identifier-name registrations (e.g. memory.tools.ts's helper branches,
++ * src/dynamic/tool.registry.ts's data-driven `server.tool(tool.name, ...)`) have no
++ * static name literal to census; the live-plane census (tools/list) covers them.
++ * The two units (repo-side blocks vs live tools) are reported separately, never mixed
++ * (two-census caveat, R73 scout receipt).
++ *
++ * History note (disclosed in the R73 landing): this file was committed EMPTY by the
++ * R72 wave (origin/main blob e69de29b..., 0 bytes) — its npm wiring
++ * (`test:annotations-floor`) passed trivially on an empty module. This implementation
++ * replaces the hollow file; the 79/121 metric it inherited existed only in the PR
++ * description, never in-tree.
++ *
++ * Run: tsx test_annotations_floor.ts  (wired as `test:annotations-floor` in test:unit)
++ */
++import { readFileSync, readdirSync, existsSync } from "node:fs";
++import { join, dirname } from "node:path";
++import { fileURLToPath } from "node:url";
++
++const ROOT = dirname(fileURLToPath(import.meta.url));
++const SCAN_DIRS = ["src/tools", "src/dynamic"];
++/** Shrink guard: 122 static blocks at the R73 landing (c40, 2026-10-29). Bump same-PR. */
++const MIN_STATIC_BLOCKS = 122;
++
++function stripComments(src: string): string {
++  let out = "";
++  let i = 0;
++  const n = src.length;
++  while (i < n) {
++    const c = src[i];
++    if (c === '"' || c === "'" || c === "`") {
++      const q = c;
++      out += c;
++      i++;
++      while (i < n) {
++        if (src[i] === "\\") {
++          out += src.slice(i, i + 2);
++          i += 2;
++          continue;
++        }
++        out += src[i];
++        if (src[i] === q) {
++          i++;
++          break;
++        }
++        i++;
++      }
++      continue;
++    }
++    if (c === "/" && src[i + 1] === "/") {
++      const j = src.indexOf("\n", i);
++      i = j === -1 ? n : j;
++      continue;
++    }
++    if (c === "/" && src[i + 1] === "*") {
++      const j = src.indexOf("*/", i);
++      i = j === -1 ? n : j + 2;
++      continue;
++    }
++    out += c;
++    i++;
++  }
++  return out;
++}
++
++const REGEX_START =
++  /(?:server|\(server as any\))\.(?:tool|registerTool)\(\s*\n?\s*(?=["'])/g;
++
++interface Block {
++  file: string;
++  name: string;
++  annotated: boolean;
++}
++
++const blocks: Block[] = [];
++
++for (const dir of SCAN_DIRS) {
++  const abs = join(ROOT, dir);
++  if (!existsSync(abs)) continue;
++  for (const fn of readdirSync(abs).sort()) {
++    if (!fn.endsWith(".ts")) continue;
++    const rel = `${dir}/${fn}`;
++    const src = stripComments(readFileSync(join(abs, fn), "utf-8"));
++    const starts: Array<{ idx: number; m: RegExpExecArray }> = [];
++    REGEX_START.lastIndex = 0;
++    let m: RegExpExecArray | null;
++    while ((m = REGEX_START.exec(src)) !== null) {
++      starts.push({ idx: m.index, m });
++    }
++    for (let k = 0; k < starts.length; k++) {
++      const { idx, m: mm } = starts[k];
++      const end = k + 1 < starts.length ? starts[k + 1].idx : Math.min(idx + 4000, src.length);
++      const window = src.slice(idx, end);
++      const nameMatch = /["']([^"']+)["']/.exec(window);
++      blocks.push({
++        file: rel,
++        name: nameMatch ? nameMatch[1] : "<unnamed>",
++        annotated: window.includes("readOnlyHint"),
++      });
++      void mm;
++    }
++  }
++}
++
++const unannotated = blocks.filter((b) => !b.annotated);
++
++console.log(`[annotations-floor] static blocks scanned: ${blocks.length}`);
++console.log(`[annotations-floor] annotated: ${blocks.length - unannotated.length}`);
++console.log(`[annotations-floor] unannotated: ${unannotated.length}`);
++
++let failed = false;
++if (unannotated.length > 0) {
++  failed = true;
++  console.error("[annotations-floor] FAIL — unannotated static registrations:");
++  for (const b of unannotated) {
++    console.error(`  - ${b.file} :: ${b.name}`);
++  }
++}
++if (blocks.length < MIN_STATIC_BLOCKS) {
++  failed = true;
++  console.error(
++    `[annotations-floor] FAIL — static block count ${blocks.length} < floor ${MIN_STATIC_BLOCKS} (shrink guard; bump MIN_STATIC_BLOCKS in the same PR that adds tools)`
++  );
++}
++if (failed) {
++  process.exit(1);
++}
++console.log(
++  `[annotations-floor] PASS — full coverage ${blocks.length}/${blocks.length}, floor ${MIN_STATIC_BLOCKS} held`
++);

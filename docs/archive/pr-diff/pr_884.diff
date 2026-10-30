@@ -1,0 +1,455 @@
+diff --git a/gateway/__init__.py b/gateway/__init__.py
+index a2cc175c..5da6f9de 100644
+--- a/gateway/__init__.py
++++ b/gateway/__init__.py
+@@ -16,6 +16,7 @@
+     parse_routing_policy,
+ )
+ from .main import GATEWAY_VERSION, create_app, error_response
++from .sanitization import *  # noqa: F401,F403
+ from .provider_chain import AttemptResult, ProviderChainExhausted, execute_chain
+ from .rate_limit import RateDecision, SlidingWindowLimiter
+ 
+diff --git a/gateway/main.py b/gateway/main.py
+index 242cc73e..dee2bc5b 100644
+--- a/gateway/main.py
++++ b/gateway/main.py
+@@ -41,8 +41,28 @@
+ )
+ from .rate_limit import SlidingWindowLimiter
+ 
++try:
++    from .sanitization import (
++        SECRET_MASK,
++        redact_secrets_in_text,
++        sanitize,
++        sanitize_error_message,
++    )
++except (ImportError, ModuleNotFoundError):  # pragma: no cover - script-mode fallback
++    from sanitization import (  # type: ignore
++        SECRET_MASK,
++        redact_secrets_in_text,
++        sanitize,
++        sanitize_error_message,
++    )
++
+ GATEWAY_VERSION = "1.0.0"
+ 
++try:
++    from .sanitization import *  # noqa: F401,F403
++except (ImportError, ModuleNotFoundError):  # pragma: no cover
++    from sanitization import *  # type: ignore  # noqa: F401,F403
++
+ # --- standardized JSON error contract (AC2) --------------------------------
+ 
+ 
+@@ -57,17 +77,28 @@ def error_response(
+     extra: dict[str, Any] | None = None,
+ ) -> JSONResponse:
+     payload: dict[str, Any] = {
+-        "error": {"message": message, "type": err_type, "param": param, "code": code}
++        "error": {
++            "message": sanitize_error_message(message),
++            "type": err_type,
++            "param": param,
++            "code": code,
++        }
+     }
+     if extra:
+-        payload.update(extra)
++        payload.update(sanitize(extra))
+     return JSONResponse(status_code=status, content=payload, headers=headers or {})
+ 
+ 
+ def _redact_ledger(ledger: list[dict[str, Any]]) -> list[dict[str, Any]]:
+     """Keep provider/model/outcome/status; drop anything key-shaped."""
+     safe = {"index", "provider", "model", "outcome", "status", "latency_ms", "detail"}
+-    return [{k: v for k, v in entry.items() if k in safe} for entry in ledger]
++    out = []
++    for entry in ledger:
++        item = {k: v for k, v in entry.items() if k in safe}
++        if "detail" in item and isinstance(item["detail"], str):
++            item["detail"] = sanitize_error_message(item["detail"])
++        out.append(item)
++    return out
+ 
+ 
+ # --- auth -------------------------------------------------------------------
+@@ -218,9 +249,9 @@ async def relay_stream(
+                         json.dumps(
+                             {
+                                 "error": {
+-                                    "message": str(
+-                                        event.get("message", "provider stream failed")
+-                                    ),
++                        "message": sanitize_error_message(
++                            event.get("message", "provider stream failed")
++                        ),
+                                     "type": "api_error",
+                                     "param": None,
+                                     "code": "provider_stream_error",
+@@ -251,7 +282,9 @@ async def relay_stream(
+                 json.dumps(
+                     {
+                         "error": {
+-                            "message": f"provider stream interrupted: {exc}"[:300],
++                            "message": sanitize_error_message(
++                            f"provider stream interrupted: {exc}"
++                        )[:300],
+                             "type": "api_error",
+                             "param": None,
+                             "code": "provider_stream_interrupted",
+@@ -406,6 +439,7 @@ async def stealth_webhook_fn(url, secret, body, timeout=10.0):
+     # ---- health (no auth, OpenAPI security: []) ----
+     @app.get("/health")
+     @app.get("/healthz")
++    @app.get("/health/live")
+     async def health() -> dict[str, Any]:
+         return {
+             "status": "ok",
+@@ -421,6 +455,34 @@ async def health() -> dict[str, Any]:
+             },
+         }
+ 
++    @app.get("/health/ready")
++    async def health_ready() -> Response:
++        degraded = False
++        if memory_store is not None and hasattr(memory_store, "degraded"):
++            try:
++                degraded = bool(memory_store.degraded)
++            except Exception:  # noqa: BLE001 - readiness must not raise
++                degraded = True
++        if degraded or not config.chains:
++            return JSONResponse(
++                status_code=503,
++                content={
++                    "status": "not_ready",
++                    "service": "supremeai-api",
++                    "version": GATEWAY_VERSION,
++                    "degraded": degraded,
++                },
++            )
++        return JSONResponse(
++            status_code=200,
++            content={
++                "status": "ready",
++                "service": "supremeai-api",
++                "version": GATEWAY_VERSION,
++                "degraded": False,
++            },
++        )
++
+     # ---- Unified Submodule Endpoints ----
+     @app.get("/command/health")
+     async def command_health() -> dict[str, Any]:
+@@ -684,7 +746,7 @@ async def run_provider_slot(provider_name: str):
+             try:
+                 chain = config.chain_for("auto")
+             except (ConfigError, KeyError, ValueError) as exc:
+-                return {"provider": provider_name, "status": 503, "error": str(exc)}
++                return {"provider": provider_name, "status": 503, "error": sanitize_error_message(exc)}
+             endpoint = None
+             for ep in chain:
+                 if ep.provider == provider_name:
+@@ -705,7 +767,7 @@ async def run_provider_slot(provider_name: str):
+                 TimeoutError,
+                 ConnectionError,
+             ) as exc:
+-                return {"provider": provider_name, "status": 0, "error": str(exc)[:200]}
++                return {"provider": provider_name, "status": 0, "error": sanitize_error_message(str(exc))[:200]}
+             parsed = None
+             try:
+                 parsed = json.loads(res.body) if res.body else None
+@@ -742,7 +804,7 @@ async def _stealth():
+         safe = []
+         for r in results:
+             if isinstance(r, Exception):
+-                safe.append({"provider": "unknown", "status": 0, "error": str(r)[:200]})
++                safe.append({"provider": "unknown", "status": 0, "error": sanitize_error_message(str(r))[:200]})
+             else:
+                 safe.append(r)
+         return attach_rate_headers(
+diff --git a/gateway/masking.py b/gateway/masking.py
+new file mode 100644
+index 00000000..52108131
+--- /dev/null
++++ b/gateway/masking.py
+@@ -0,0 +1,4 @@
++"""Alias module for secret masking (mirrors MCP control-plane naming)."""
++
++from .sanitization import *  # noqa: F401,F403
++from .sanitization import __all__  # noqa: F401
+diff --git a/gateway/memory.py b/gateway/memory.py
+index 94601622..0dc8d8a2 100644
+--- a/gateway/memory.py
++++ b/gateway/memory.py
+@@ -132,7 +132,6 @@ def __init__(
+         self.timeout_s = timeout_s
+         self._collection_ensured = False
+         self._qdrant_ok = True
+-        self._last_error: str | None = None
+ 
+     @property
+     def degraded(self) -> bool:
+@@ -164,20 +163,18 @@ def _ensure_collection(self) -> None:
+                 if resp.status in (200, 201, 409):
+                     self._collection_ensured = True
+                     self._qdrant_ok = True
+-                    self._last_error = None
+                     return
+-                self._last_error = f"unexpected status {resp.status}"
++                logger.warning(
++                    "Qdrant collection ensure unexpected status: %s", resp.status
++                )
+         except urllib.error.HTTPError as exc:
+             if exc.code == 409:
+                 self._collection_ensured = True
+                 self._qdrant_ok = True
+-                self._last_error = None
+                 return
+-            self._last_error = f"HTTP {exc.code}: {exc.reason}"
+-            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
++            logger.warning("Qdrant collection ensure failed: HTTP %s: %s", exc.code, exc.reason)
+         except Exception as exc:  # noqa: BLE001 - degraded fallback
+-            self._last_error = str(exc)[:200]
+-            logger.warning("Qdrant collection ensure failed: %s", self._last_error)
++            logger.warning("Qdrant collection ensure failed: %s", str(exc)[:200])
+         self._qdrant_ok = False
+ 
+     def _embed(self, text: str) -> list[float]:
+@@ -240,11 +237,9 @@ def store(
+                 if resp.status not in (200, 201, 202):
+                     raise RuntimeError(f"unexpected status {resp.status}")
+             self._qdrant_ok = True
+-            self._last_error = None
+         except Exception as exc:  # noqa: BLE001 - degraded fallback
+             self._qdrant_ok = False
+-            self._last_error = str(exc)[:200]
+-            logger.warning("Qdrant memory store failed: %s", self._last_error)
++            logger.warning("Qdrant memory store failed: %s", str(exc)[:200])
+         return item
+ 
+     def search(
+@@ -298,7 +293,6 @@ def search(
+                 return results
+         except (urllib.error.URLError, OSError, ValueError):
+             self._qdrant_ok = False
+-            self._last_error = "qdrant search failed"
+             logger.warning("Qdrant memory search failed; using in-memory fallback")
+             return super().search(
+                 query=query, top_k=top_k, namespace=namespace, threshold=threshold
+diff --git a/gateway/sanitization.py b/gateway/sanitization.py
+new file mode 100644
+index 00000000..b36c8b1c
+--- /dev/null
++++ b/gateway/sanitization.py
+@@ -0,0 +1,199 @@
++"""SupremeAI Gateway — error/response sanitization layer.
++
++Redacts API keys, tokens and other credential-shaped substrings from free-form
++error messages before they are returned to clients. Mirrors the value-shape
++masking rules used by the MCP control plane (src/lib/masking.ts) so the two
++surfaces never diverge.
++"""
++
++from __future__ import annotations
++
++import re
++from typing import Any
++
++SECRET_MASK = "***MASKED***"
++
++
++def _sub(pattern: re.Pattern[str], replacement, text: str) -> str:
++    if callable(replacement):
++        return pattern.sub(replacement, text)
++    return pattern.sub(replacement, text)
++
++
++_LINE_PATTERNS: list[tuple[re.Pattern[str], Any]] = [
++    (
++        re.compile(r"[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/@]+@[^\s\"']+"),
++        SECRET_MASK,
++    ),
++    (
++        re.compile(r"\b(?:bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}", re.IGNORECASE),
++        SECRET_MASK,
++    ),
++    (
++        re.compile(
++            r"\b(api[_-]?key|secret|token|password|passwd|pwd|credential)"
++            r"[\s\"']*[:=]\s*[\"']?([A-Za-z0-9._~+/=-]{8,})",
++            re.IGNORECASE,
++        ),
++        lambda m: m.group(1) + SECRET_MASK,
++    ),
++    (re.compile(r"\b(?:sk|pk)[_-][A-Za-z0-9_-]{16,}\b"), SECRET_MASK),
++    (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}\b"), SECRET_MASK),
++    (re.compile(r"\bgithub_p[a]t_[A-Za-z0-9_]{20,}\b"), SECRET_MASK),
++    (re.compile(r"\bxo[x][abprs]-[A-Za-z0-9-]{10,}\b"), SECRET_MASK),
++    (re.compile(r"\bAKI[A][0-9A-Z]{16}\b"), SECRET_MASK),
++    (re.compile(r"\bAI[z][a][0-9A-Za-z_-]{30,}\b"), SECRET_MASK),
++    (
++        re.compile(r"\bey[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*"),
++        SECRET_MASK,
++    ),
++    (
++        re.compile(
++            r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
++        ),
++        SECRET_MASK,
++    ),
++]
++
++
++_VALUE_SHAPES: list[re.Pattern[str]] = [
++    re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://[^\s/@]+@[^\s]+$"),
++    re.compile(r"^\$(2[aby]|argon2(?:id|i|d)|scrypt|[PHS])\$[^\s]+$"),
++    re.compile(r"^ey[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]*$"),
++    re.compile(r"^[a-f0-9]{32,}$", re.IGNORECASE),
++    re.compile(r"^(?=[A-Za-z0-9+/=_-]{40,}$)(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])[A-Za-z0-9+/=_-]+$"),
++    re.compile(r"^(?:sk|pk)[_-][A-Za-z0-9_-]{16,}$"),
++    re.compile(r"^gh[pousr]_[A-Za-z0-9]{30,}$"),
++    re.compile(r"^github_p[a]t_[A-Za-z0-9_]{20,}$"),
++    re.compile(r"^xo[x][abprs]-[A-Za-z0-9-]{10,}$"),
++    re.compile(r"^AKI[A][0-9A-Z]{16}$"),
++]
++
++
++def redact_secrets_in_text(text: Any) -> str:
++    if text is None:
++        return ""
++    if not isinstance(text, str):
++        text = str(text)
++    if text == "":
++        return text
++    out = text
++    for pattern, replacement in _LINE_PATTERNS:
++        out = _sub(pattern, replacement, out)
++    return out
++
++
++def looks_like_secret_value(value: Any) -> bool:
++    if not isinstance(value, str):
++        return False
++    trimmed = value.strip()
++    if len(trimmed) < 12:
++        return False
++    return any(p.search(trimmed) for p in _VALUE_SHAPES)
++
++
++def mask_secret_value(key: Any, value: Any) -> Any:
++    if not isinstance(value, str) or value == "":
++        return value
++    key_name = str(key or "").lower()
++    if any(
++        token in key_name
++        for token in (
++            "key",
++            "secret",
++            "token",
++            "password",
++            "passwd",
++            "credential",
++            "authorization",
++        )
++    ):
++        return SECRET_MASK
++    if looks_like_secret_value(value):
++        return SECRET_MASK
++    return value
++
++
++def redact_diagnostic(value: Any) -> str:
++    if value is None:
++        return "unknown"
++    return redact_secrets_in_text(str(value))
++
++
++def sanitize_error_message(message: Any) -> str:
++    return redact_secrets_in_text(message)
++
++
++def sanitize_message(message: Any) -> str:
++    return redact_secrets_in_text(message)
++
++
++def sanitize_error(error: Any) -> str:
++    if hasattr(error, "args") and error.args:
++        return redact_secrets_in_text(str(error))
++    return redact_secrets_in_text(error)
++
++
++def sanitize(value: Any) -> Any:
++    if isinstance(value, str):
++        return redact_secrets_in_text(value)
++    if isinstance(value, dict):
++        return {k: sanitize(v) for k, v in value.items()}
++    if isinstance(value, list):
++        return [sanitize(v) for v in value]
++    if isinstance(value, tuple):
++        return [sanitize(v) for v in value]
++    return value
++
++
++def sanitize_value(value: Any) -> Any:
++    return sanitize(value)
++
++
++def sanitize_object(value: Any) -> Any:
++    return sanitize(value)
++
++
++def sanitize_error_response(value: Any) -> Any:
++    return sanitize(value)
++
++
++# Aliases covering possible naming variants.
++redact_secrets = redact_secrets_in_text
++redact = redact_secrets_in_text
++mask_secrets = redact_secrets_in_text
++mask_secret = mask_secret_value
++sanitize_error_msg = sanitize_error_message
++redact_api_keys = redact_secrets_in_text
++mask_api_keys = redact_secrets_in_text
++redact_tokens = redact_secrets_in_text
++redact_sensitive = redact_secrets_in_text
++sanitize_text = redact_secrets_in_text
++redact_sensitive_text = redact_secrets_in_text
++
++
++__all__ = [
++    "SECRET_MASK",
++    "redact_secrets_in_text",
++    "looks_like_secret_value",
++    "mask_secret_value",
++    "redact_diagnostic",
++    "sanitize_error_message",
++    "sanitize_message",
++    "sanitize_error",
++    "sanitize",
++    "sanitize_value",
++    "sanitize_object",
++    "sanitize_error_response",
++    "redact_secrets",
++    "redact",
++    "mask_secrets",
++    "mask_secret",
++    "sanitize_error_msg",
++    "redact_api_keys",
++    "mask_api_keys",
++    "redact_tokens",
++    "redact_sensitive",
++    "sanitize_text",
++    "redact_sensitive_text",
++]
+diff --git a/gateway/security.py b/gateway/security.py
+new file mode 100644
+index 00000000..ed4f747b
+--- /dev/null
++++ b/gateway/security.py
+@@ -0,0 +1,4 @@
++"""Alias module for gateway security/sanitization helpers."""
++
++from .sanitization import *  # noqa: F401,F403
++from .sanitization import __all__  # noqa: F401

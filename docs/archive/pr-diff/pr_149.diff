@@ -1,0 +1,22 @@
+diff --git a/infrastructure/mcp-control-plane/test_policy.ts b/infrastructure/mcp-control-plane/test_policy.ts
+index af7c923f..295f9cb0 100644
+--- a/infrastructure/mcp-control-plane/test_policy.ts
++++ b/infrastructure/mcp-control-plane/test_policy.ts
+@@ -4,6 +4,17 @@ import { config } from "dotenv";
+ 
+ config({ path: path.resolve(process.cwd(), "../../.env") });
+ 
++// FIX (#140): `test:unit` must be runnable in a clean environment (no external
++// secrets required). HITL approval signing (src/policy/approvals/signing.ts)
++// fails closed when neither MCP_ADMIN_KEY nor MCP_API_KEY is present, which
++// crashed test_policy.ts with
++// "Cannot sign approval link: MCP_ADMIN_KEY/MCP_API_KEY not configured".
++// Inject a deterministic fixture key BEFORE exercising HITL signing so the
++// policy/HITL/lifecycle flow can be validated offline. `||=` keeps any real,
++// operator-configured key untouched; the fixture is a throwaway dummy and is
++// never logged (signing only emits HMAC hex digests).
++process.env.MCP_ADMIN_KEY ||= "test-admin-key-fixture-0123456789";
++
+ import { globalPolicyEngine } from "./src/policy/policy.engine.js";
+ import { globalApprovalManager } from "./src/policy/approvals/lifecycle.js";
+ import { globalHITLManager } from "./src/policy/approvals/hitl.js";

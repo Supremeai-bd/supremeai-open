@@ -1,0 +1,64 @@
+diff --git a/docs/SCOUT_RADAR_2026-10-28-VII.md b/docs/SCOUT_RADAR_2026-10-28-VII.md
+new file mode 100644
+index 00000000..1551e350
+--- /dev/null
++++ b/docs/SCOUT_RADAR_2026-10-28-VII.md
+@@ -0,0 +1,58 @@
++# SCOUT RADAR — 2026-10-28, Sweep VII (R26–R27)
++
++Complementary sweep. Landed so far: radar I (R1–R12), radar II (R13–R16), radar III
++(R17–R20, PR #1682), radar IV (R21–R22, #1688), radar V (R23–R24, A2A v1.0 /
++aggregator supply), radar VI (R23–R25 — numbering collision with V, see R27).
++Both proposals below carry live proof or one-grep-internal proof, name the
++federation surface they land on, and have a first concrete step. Role: this
++cycle's cadence assignment was `ecosystem-scout` (high-signal doctrine #1658).
++
++## Covered lanes
++
++| # | Lane | Source | Status / date | Why it matters to the federation | Verdict |
++|---|------|--------|---------------|-----------------------------------|---------|
++| R26 | Agent-component security scanning (skills + MCP surfaces) | `invariantlabs-ai/mcp-scan` — 3,177★, Apache-2.0, now "Snyk Agent Scan"; v0.4 added **agent-skill scanning** + a technical report on agent-skill-ecosystem threats | Live, actively maintained; CLI output experimental (pin a version) | The federation's skill plane has 3 ingestion surfaces and **zero** content scanning; radar III R17 (#1672) scopes structure only and explicitly defers content scanning to "a separate lane" — this is that lane | `ADAPT_CLEANROOM` → **#1723** |
++| R27 | Radar index — R-number SSOT for the scout artifact chain | Internal, one-grep verifiable: radar V and radar VI both define R23/R24 (and VI adds R25) for **different** lanes | Collision is landed history on main | The maintainer already recorded one filename collision in #1688 ("renamed radar-iv after #1682 claimed radar-iii mid-cycle"); the R-number space has no registry, so cross-references like "R23" are now ambiguous and the next scout cannot pick a safe number without reading every radar | `ACCEPT_VERBATIM` → **#1724** |
++
++## Why these two, in one paragraph each
++
++**R26 — the content-scanning lane radar III promised.** External skill content
++flows into agent context through three federation surfaces: the 9 curated
++`.agents/skills/` folders, the dynamic registry (`skills/dynamic/`), and the
++marketplace path (`skills/marketplace.py`). Snyk Agent Scan (ex-mcp-scan,
++Invariant Labs) is the ecosystem's convergence point for exactly this threat
++model — prompt-injection and vulnerability scanning across agents, MCP servers
++and skills, with a dedicated skill-ecosystem threat report since v0.4. The probe
++is zero-install (`uvx`), so the first step is an offline baseline scan filed as
++evidence, and only then a decision about wiring a pattern-based no-LLM content
++stage into the future R17 validator. Filed as **#1723** (`repo:skills`).
++
++**R27 — fix the scout chain's own numbering before it bites again.** Radar V
++says R23 = A2A v1.0 un-quarantine; radar VI says R23 = agents.md standard. Both
++are landed on main. Anyone citing "R23" in an issue or PR body must now guess
++which lane they mean, and the collision pattern will compound as radars
++accelerate. The fix is one additive file (`docs/SCOUT_RADAR_INDEX.md`) seeding
++R1–R25 from the six landed radars, disambiguating the V/VI overlap by radar
++suffix, plus one rule line: take the next free number from the index, update it
++in the same PR. No renumbering of landed history. Filed as **#1724**
++(`repo:monorepo`).
++
++## Considered and held back (zero-hype discipline)
++
++- **Durable-execution engines (Temporal/DBOS) for the loop lease machinery** —
++  real products, but the 30-min lease store just received its pruning fix
++  (6c85e9a) and works for the current single-cron topology; proposing a
++  re-architecture now would be speculation without an observed failure. `MONITOR`.
++- **LLM provider "local/vLLM self-hosting" lane** — radar IV (R21) and radar V
++  (R24 aggregator) already cover routing supply; a self-hosted lane adds an ops
++  burden without evidence of demand from the current provider set. Held back
++  rather than filed.
++
++## Method note
++
++Live fetch this cycle through the scout's read-only reader:
++`invariantlabs-ai/mcp-scan` README (3,177★, Apache-2.0, `tier: accept`, skill
++scanning since v0.4). The R27 evidence is the landed radar files themselves —
++reproducible with `grep -h "^| R2[345]" docs/SCOUT_RADAR_2026-10-28-V{,I}.md`.
++Issues filed before this document: #1723, #1724. Docs-only change: one new
++file, no source code, no CI paths, no protected paths.

@@ -1,0 +1,90 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/unified_diff.ts b/infrastructure/mcp-control-plane/src/lib/unified_diff.ts
+index 53c55546..b986afd6 100644
+--- a/infrastructure/mcp-control-plane/src/lib/unified_diff.ts
++++ b/infrastructure/mcp-control-plane/src/lib/unified_diff.ts
+@@ -168,7 +168,7 @@ function hunkNewSide(hunk: DiffHunk): string[] {
+   for (const raw of hunk.raw) {
+     if (raw.startsWith("\\")) continue;
+     if (raw.startsWith("-")) continue;
+-    out.push(raw.startsWith(" ") ? raw.slice(1) : raw.slice(1));
++    out.push(raw.slice(1));
+   }
+   return out;
+ }
+@@ -176,20 +176,27 @@ function hunkNewSide(hunk: DiffHunk): string[] {
+ /**
+  * Scan a hunk's raw body for the "\ No newline" markers.
+  * Returns { old: boolean; new: boolean }.
++ *
++ * git semantics (defect-class fix): a "\" marker applies ONLY to the
++ * hunk-body line it immediately follows — "-" or " " → the OLD side,
++ * "+" → the NEW side. A side "lacks the trailing newline" iff its FINAL
++ * body line is directly followed by the marker. The previous heuristic
++ * (any marker ⇒ both sides) mis-attributed one-sided markers and either
++ * silently dropped the trailing newline (diff ADDS a newline at EOF) or
++ * false-rejected a valid diff (diff REMOVES a newline at EOF).
+  */
+ function scanNoNewline(hunk: DiffHunk): { old: boolean; new: boolean } {
+-  // git places "\\ No newline" as the final hunk-body line when the affected
+-  // EOF line lacks the newline. A single marker covers BOTH sides whenever
+-  // the hunk carries old-side lines ending at that same EOF point.
+-  let newFlag = false;
++  let lastOldIdx = -1;
++  let lastNewIdx = -1;
+   for (let k = 0; k < hunk.raw.length; k += 1) {
+-    if (hunk.raw[k].startsWith("\\")) {
+-      newFlag = true;
+-      break;
+-    }
++    const l = hunk.raw[k];
++    if (l.startsWith("\\")) continue;
++    if (l.startsWith("+")) lastNewIdx = k;
++    else lastOldIdx = k; // "-" or " "
+   }
+-  const hasOldSide = hunk.raw.some((l) => l.startsWith("-") || l.startsWith(" "));
+-  return { old: newFlag && hasOldSide, new: newFlag };
++  const followsMarker = (idx: number) =>
++    idx >= 0 && idx + 1 < hunk.raw.length && hunk.raw[idx + 1].startsWith("\\");
++  return { old: followsMarker(lastOldIdx), new: followsMarker(lastNewIdx) };
+ }
+ 
+ /**
+@@ -220,6 +227,11 @@ export function applyUnifiedDiff(base: string, diff: string): AppliedDiff {
+   // Pre-scan markers.
+   const markers = parsed.hunks.map(scanNoNewline);
+ 
++  // Whether the LAST hunk's new side reaches EOF (i.e. it rewrites the
++  // final line of the result). Only then does its new-side marker decide
++  // the trailing newline; otherwise the base's EOF state is preserved.
++  let lastHunkEndsAtEof = false;
++
+   for (let h = 0; h < parsed.hunks.length; h += 1) {
+     const hunk = parsed.hunks[h];
+     const marker = markers[h];
+@@ -278,15 +290,21 @@ export function applyUnifiedDiff(base: string, diff: string): AppliedDiff {
+     offset += newSide.length - oldSide.length;
+     offsets.push(matched - (hunk.oldStart - 1));
+     cursor = matched + newSide.length;
++    if (h === parsed.hunks.length - 1) {
++      lastHunkEndsAtEof = matched + newSide.length === lines.length;
++    }
+   }
+ 
+   // Trailing-newline resolution for the result.
+-  // Only the LAST hunk can legitimately carry a new-side EOF marker (hunks
+-  // are ordered and non-overlapping, so anything after an old-side EOF hunk
+-  // would be unmatchable). git emits the marker iff the new final line
+-  // lacks the trailing newline.
++  //  - Last hunk rewrites the final line: git emits the new-side "\ No
++  //    newline" marker iff the new final line lacks the trailing newline,
++  //    so append "\n" iff that marker is absent.
++  //  - Last hunk does NOT reach EOF: everything after it is unchanged, so
++  //    the result must preserve the BASE's trailing-newline state instead
++  //    of unconditionally appending "\n".
+   const lastMarker = markers[markers.length - 1];
+-  const result = lastMarker.new ? lines.join("\n") : lines.join("\n") + "\n";
++  const result = lines.join("\n") +
++    (lastHunkEndsAtEof ? (lastMarker.new ? "" : "\n") : (baseHasTrailingNewline ? "\n" : ""));
+   return { result, hunksApplied: parsed.hunks.length, offsets };
+ }
+ 

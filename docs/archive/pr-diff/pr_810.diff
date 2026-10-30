@@ -1,0 +1,2560 @@
+diff --git a/browser/ghost_tower/3_check_cookies_status.bat b/browser/ghost_tower/3_check_cookies_status.bat
+new file mode 100644
+index 00000000..7af292bb
+--- /dev/null
++++ b/browser/ghost_tower/3_check_cookies_status.bat
+@@ -0,0 +1,11 @@
++@echo off
++title SupremeAI: AI Fleet Cookies & Health Check
++echo ======================================================================
++echo   SupremeAI: Local Cookies & Live Session Verifier
++echo ======================================================================
++echo.
++cd /d "%~dp0"
++python check_cookies_status.py
++echo.
++echo Check completed. Press any key to close this window.
++pause >nul
+diff --git a/browser/ghost_tower/SUPREMEAI_BROWSER_INTEGRATION.md b/browser/ghost_tower/SUPREMEAI_BROWSER_INTEGRATION.md
+index 0749570f..9610a7a8 100644
+--- a/browser/ghost_tower/SUPREMEAI_BROWSER_INTEGRATION.md
++++ b/browser/ghost_tower/SUPREMEAI_BROWSER_INTEGRATION.md
+@@ -119,10 +119,10 @@ flowchart TD
+ 
+ 1. **Automation Controlled ফ্ল্যাগ রিমুভাল:**
+    ```python
+-   args=[
++   args = [
+        "--disable-blink-features=AutomationControlled",
+        "--no-default-browser-check",
+-       "--no-first-run"
++       "--no-first-run",
+    ]
+    ```
+ 2. **আল্ট্রা-ফাস্ট ন্যাচারাল ইনপুট ডিসপ্যাচ (Clipboard / DOM Event Dispatch):**
+@@ -143,7 +143,9 @@ flowchart TD
+ 1. **`service/app.py` (লাইন ১৮৩-২০০):**
+    - কোডে ইতিমধ্যে একটি `Priority-1: Stealth Webhook ($0 Free Tier / Web AI)` রাউটার হুক রয়েছে:
+      ```python
+-     if STEALTH_WEBHOOK_URL and (preferred_provider is None or preferred_provider == "stealth"):
++     if STEALTH_WEBHOOK_URL and (
++         preferred_provider is None or preferred_provider == "stealth"
++     ):
+          w_status, w_response = await forward_stealth_webhook(
+              STEALTH_WEBHOOK_URL,
+              STEALTH_WEBHOOK_SECRET,
+@@ -192,7 +194,7 @@ flowchart TD
+   async def multi_model_consensus(request: Request):
+       """Queries Ghost Gemini Web ($0), Groq, and Gemini API in parallel and returns consensus."""
+       body = await request.json()
+-      
++
+       async def run_slot(provider: str):
+           candidates = squad.get_candidate_slots(provider)
+           if not candidates:
+@@ -202,7 +204,12 @@ flowchart TD
+           return {"provider": provider, "slot": slot.name, "status": st, "data": resp}
+ 
+       tasks = [
+-          forward_stealth_webhook(STEALTH_WEBHOOK_URL, STEALTH_WEBHOOK_SECRET, body, timeout=STEALTH_WEBHOOK_TIMEOUT),
++          forward_stealth_webhook(
++              STEALTH_WEBHOOK_URL,
++              STEALTH_WEBHOOK_SECRET,
++              body,
++              timeout=STEALTH_WEBHOOK_TIMEOUT,
++          ),
+           run_slot("groq"),
+           run_slot("gemini"),
+       ]
+@@ -210,7 +217,7 @@ flowchart TD
+       return {
+           "status": "success",
+           "consensus_count": len([r for r in results if not isinstance(r, Exception)]),
+-          "responses": results
++          "responses": results,
+       }
+   ```
+ 
+@@ -291,11 +298,15 @@ flowchart TD
+ 3. **গুগল ডাটাসেন্টার আইপি ব্লকিং বাইপাস (Residential Proxy Routing):**
+    - Render-এর ডাটাসেন্টার আইপি যেন গুগল ব্লক না করে, সেজন্য স্ক্র্যাপার কনটেইনারের ক্রোমিয়াম কমান্ডে একটি রেসিডেনশিয়াল প্রক্সি রাউটিং ফ্ল্যাগ যুক্ত থাকবে:
+      ```python
+-     proxy_config = {
+-         "server": os.getenv("RESIDENTIAL_PROXY_URL"), # e.g. http://pr.oxylabs.io:7777
+-         "username": os.getenv("PROXY_USER"),
+-         "password": os.getenv("PROXY_PASS")
+-     } if os.getenv("RESIDENTIAL_PROXY_URL") else None
++     proxy_config = (
++         {
++             "server": os.getenv("RESIDENTIAL_PROXY_URL"),  # e.g. http://pr.oxylabs.io:7777
++             "username": os.getenv("PROXY_USER"),
++             "password": os.getenv("PROXY_PASS"),
++         }
++         if os.getenv("RESIDENTIAL_PROXY_URL")
++         else None
++     )
+      ```
+ 
+ ##### সমাধান ২ (Secondary): Cloudflare Tunnel (লোকাল পিসি ব্যাকআপের জন্য)
+@@ -322,19 +333,23 @@ import tarfile
+ import httpx
+ 
+ SESSION_DIR = os.path.expanduser("~/.supremeai_browser_profiles")
+-STORAGE_ENDPOINT = os.getenv("STORAGE_BUCKET_URL") # Supabase Storage / S3
++STORAGE_ENDPOINT = os.getenv("STORAGE_BUCKET_URL")  # Supabase Storage / S3
++
+ 
+ async def backup_profile_snapshot(account_id: str):
+     """Compresses and uploads entire browser user_data_dir to persistent cloud storage."""
+     tar_path = f"/tmp/{account_id}_profile.tar.gz"
+     with tarfile.open(tar_path, "w:gz") as tar:
+         tar.add(os.path.join(SESSION_DIR, account_id), arcname=account_id)
+-    
++
+     # Upload encrypted archive to private bucket
+     with open(tar_path, "rb") as f:
+-        await httpx.AsyncClient().post(f"{STORAGE_ENDPOINT}/snapshots/{account_id}", content=f.read())
++        await httpx.AsyncClient().post(
++            f"{STORAGE_ENDPOINT}/snapshots/{account_id}", content=f.read()
++        )
+     os.remove(tar_path)
+ 
++
+ async def restore_profile_snapshot(account_id: str):
+     """Restores the persistent session on new container boot in < 2 seconds."""
+     target_path = os.path.join(SESSION_DIR, account_id)
+@@ -368,9 +383,10 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
+     Completely bypasses character-by-character typing lag while retaining human bot scores.
+     """
+     await page.wait_for_selector(input_selector, timeout=8000)
+-    
++
+     # 1. Fast DOM text injection + synthetic input dispatch
+-    await page.evaluate("""({ selector, text }) => {
++    await page.evaluate(
++        """({ selector, text }) => {
+         const el = document.querySelector(selector);
+         el.focus();
+         if (el.isContentEditable) {
+@@ -380,8 +396,10 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
+         }
+         el.dispatchEvent(new Event('input', { bubbles: true }));
+         el.dispatchEvent(new Event('change', { bubbles: true }));
+-    }""", {"selector": input_selector, "text": prompt})
+-    
++    }""",
++        {"selector": input_selector, "text": prompt},
++    )
++
+     # 2. Natural Micro-jitter (< 50ms) before clicking Send
+     await asyncio.sleep(0.05)
+ ```
+@@ -402,8 +420,12 @@ async def fast_input_dispatch(page: Page, input_selector: str, prompt: str):
+ ```python
+ class WebSessionPoolRouter:
+     """Manages a fleet of isolated browser contexts for true concurrent multi-account routing."""
++
+     def __init__(self, contexts: list[BrowserContext]):
+-        self.workers = [{"id": i, "ctx": ctx, "busy": False, "lock": asyncio.Lock()} for i, ctx in enumerate(contexts)]
++        self.workers = [
++            {"id": i, "ctx": ctx, "busy": False, "lock": asyncio.Lock()}
++            for i, ctx in enumerate(contexts)
++        ]
+         self._queue = asyncio.Queue()
+ 
+     async def execute_chat(self, prompt: str) -> str:
+@@ -412,7 +434,7 @@ class WebSessionPoolRouter:
+             if not w["busy"]:
+                 idle_worker = w
+                 break
+-        
++
+         if not idle_worker:
+             idle_worker = await self._queue.get()
+ 
+@@ -442,17 +464,31 @@ class WebSessionPoolRouter:
+ async def multi_model_consensus(request: Request):
+     """Parallel consensus across $0 Web Relay, Groq, and Gemini API."""
+     body = await request.json()
+-    
++
+     async def run_provider_slot(provider: str):
+         candidates = squad.get_candidate_slots(provider)
+         if not candidates:
+-            return {"provider": provider, "status": 503, "error": f"No healthy keys for {provider}"}
++            return {
++                "provider": provider,
++                "status": 503,
++                "error": f"No healthy keys for {provider}",
++            }
+         p, slot = candidates[0]
+         status, resp = await forward_chat_completion(p, slot.key, body)
+-        return {"provider": provider, "slot": slot.name, "status": status, "response": resp}
++        return {
++            "provider": provider,
++            "slot": slot.name,
++            "status": status,
++            "response": resp,
++        }
+ 
+     tasks = [
+-        forward_stealth_webhook(STEALTH_WEBHOOK_URL, STEALTH_WEBHOOK_SECRET, body, timeout=STEALTH_WEBHOOK_TIMEOUT),
++        forward_stealth_webhook(
++            STEALTH_WEBHOOK_URL,
++            STEALTH_WEBHOOK_SECRET,
++            body,
++            timeout=STEALTH_WEBHOOK_TIMEOUT,
++        ),
+         run_provider_slot("groq"),
+         run_provider_slot("gemini"),
+     ]
+@@ -461,7 +497,7 @@ async def multi_model_consensus(request: Request):
+         "status": "success",
+         "timestamp": int(time.time()),
+         "consensus_count": len([r for r in results if not isinstance(r, Exception)]),
+-        "responses": results
++        "responses": results,
+     }
+ ```
+ 
+diff --git a/browser/ghost_tower/auto_login.py b/browser/ghost_tower/auto_login.py
+index 86a1b0cc..ba317624 100644
+--- a/browser/ghost_tower/auto_login.py
++++ b/browser/ghost_tower/auto_login.py
+@@ -4,13 +4,14 @@
+ Automates the Google sign-in flow using credentials from CredentialVault.
+ Supports automated 2FA verification via pyotp (Authenticator App).
+ """
++
+ from __future__ import annotations
+ 
+ import asyncio
+ import logging
+ import os
+ import sys
+-from typing import Any, Dict, Optional
++from typing import Any
+ 
+ if sys.platform == "win32":
+     try:
+@@ -24,11 +25,13 @@
+ except ImportError:
+     pyotp = None
+ 
+-from playwright.async_api import BrowserContext, Page
+ from credential_vault import CredentialVault
++from playwright.async_api import Page
+ 
+ logger = logging.getLogger("ghost_tower.auto_login")
+-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
++logging.basicConfig(
++    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
++)
+ 
+ 
+ async def handle_google_flow(
+@@ -54,14 +57,18 @@ async def handle_google_flow(
+             return True
+ 
+         # A. Check for "Choose an account" list (Only if not already on password screen)
+-        password_input = await page.query_selector('input[type="password"], input[name="Passwd"]')
++        password_input = await page.query_selector(
++            'input[type="password"], input[name="Passwd"]'
++        )
+         if not password_input:
+             account_chooser = await page.query_selector(
+                 f'div[data-identifier*="{email}"][role="link"], li[data-identifier*="{email}"], '
+                 f'div[data-email*="{email}"][role="link"]'
+             )
+             if account_chooser and await account_chooser.is_visible():
+-                logger.info(f"[SSO] Account selector detected. Selecting stored account ({email})...")
++                logger.info(
++                    f"[SSO] Account selector detected. Selecting stored account ({email})..."
++                )
+                 await account_chooser.click()
+                 await asyncio.sleep(2)
+ 
+@@ -75,7 +82,9 @@ async def handle_google_flow(
+                 await email_elem.click()
+                 await email_elem.fill(email)
+                 await asyncio.sleep(0.5)
+-                next_btn = await page.query_selector('#identifierNext, button:has-text("Next")')
++                next_btn = await page.query_selector(
++                    '#identifierNext, button:has-text("Next")'
++                )
+                 if next_btn and await next_btn.is_visible():
+                     await next_btn.click()
+                 else:
+@@ -90,7 +99,9 @@ async def handle_google_flow(
+             await password_elem.click()
+             await password_elem.fill(password)
+             await asyncio.sleep(0.5)
+-            next_btn = await page.query_selector('#passwordNext, button:has-text("Next")')
++            next_btn = await page.query_selector(
++                '#passwordNext, button:has-text("Next")'
++            )
+             if next_btn and await next_btn.is_visible():
+                 await next_btn.click()
+             else:
+@@ -102,7 +113,9 @@ async def handle_google_flow(
+         totp_elem = await page.query_selector(totp_selector)
+         if totp_elem and await totp_elem.is_visible():
+             if totp_secret and pyotp:
+-                logger.info("[SSO] Generating and injecting 2FA TOTP code from secret...")
++                logger.info(
++                    "[SSO] Generating and injecting 2FA TOTP code from secret..."
++                )
+                 current_otp = pyotp.TOTP(totp_secret).now()
+                 await totp_elem.fill(current_otp)
+                 await page.keyboard.press("Enter")
+@@ -118,11 +131,21 @@ async def handle_google_flow(
+         except Exception:
+             pass
+ 
+-        if any(phrase in page_text for phrase in ["Check your phone", "Tap Yes", "Google sent a notification", "2-Step Verification"]):
+-            print("\n" + "="*60)
+-            print("[ACTION REQUIRED] Google sent a security verification to your phone!")
++        if any(
++            phrase in page_text
++            for phrase in [
++                "Check your phone",
++                "Tap Yes",
++                "Google sent a notification",
++                "2-Step Verification",
++            ]
++        ):
++            print("\n" + "=" * 60)
++            print(
++                "[ACTION REQUIRED] Google sent a security verification to your phone!"
++            )
+             print("Please tap 'Yes' (or the matching number) on your phone now!")
+-            print("="*60 + "\n")
++            print("=" * 60 + "\n")
+             logger.info("[PHONE 2FA] Waiting for user approval on phone...")
+             await asyncio.sleep(4)
+ 
+@@ -147,7 +170,7 @@ async def handle_google_flow(
+ async def auto_login_gemini(
+     page: Page,
+     account_label: str = "gemini_default",
+-    account_data: Optional[Dict[str, Any]] = None,
++    account_data: dict[str, Any] | None = None,
+     timeout_seconds: int = 90,
+ ) -> bool:
+     """
+@@ -165,7 +188,9 @@ async def auto_login_gemini(
+             credentials = vault.get_account(first_label)
+ 
+     if not credentials:
+-        logger.warning("No credentials found in vault. Please save an account using credential_vault.py first.")
++        logger.warning(
++            "No credentials found in vault. Please save an account using credential_vault.py first."
++        )
+         return False
+ 
+     email = credentials["email"]
+@@ -180,7 +205,9 @@ async def auto_login_gemini(
+         await asyncio.sleep(2)
+ 
+     # 2. Check if already logged in
+-    sign_in_candidate = await page.query_selector('a[href*="accounts.google.com"], button:has-text("Sign in")')
++    sign_in_candidate = await page.query_selector(
++        'a[href*="accounts.google.com"], button:has-text("Sign in")'
++    )
+     if not sign_in_candidate and "accounts.google.com" not in page.url:
+         logger.info("Already logged in to Gemini!")
+         return True
+@@ -189,12 +216,18 @@ async def auto_login_gemini(
+     logger.info("Navigating directly to Google Sign-in for Gemini...")
+     await page.goto(
+         "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app",
+-        wait_until="networkidle"
++        wait_until="networkidle",
+     )
+     await asyncio.sleep(2)
+ 
+     # 4. Handle Google Sign-in / Account Chooser workflow
+-    await handle_google_flow(page, email=email, password=password, totp_secret=totp_secret, timeout_seconds=timeout_seconds)
++    await handle_google_flow(
++        page,
++        email=email,
++        password=password,
++        totp_secret=totp_secret,
++        timeout_seconds=timeout_seconds,
++    )
+ 
+     # 5. Wait for redirect back to gemini.google.com/app
+     start_time = asyncio.get_event_loop().time()
+@@ -202,7 +235,9 @@ async def auto_login_gemini(
+         if "gemini.google.com" in page.url and "accounts.google.com" not in page.url:
+             sign_in_check = await page.query_selector('a[href*="accounts.google.com"]')
+             if not sign_in_check:
+-                logger.info("[SUCCESS] Autonomous Google login successfully completed and verified!")
++                logger.info(
++                    "[SUCCESS] Autonomous Google login successfully completed and verified!"
++                )
+                 return True
+         await asyncio.sleep(1)
+ 
+@@ -255,14 +290,18 @@ async def auto_login_via_google_sso(
+         popup_page = await new_page_info.value
+         await popup_page.wait_for_load_state("domcontentloaded")
+         logger.info(f"OAuth popup opened: {popup_page.url}")
+-        success = await handle_google_flow(popup_page, email=email, password=password, totp_secret=totp_secret)
++        success = await handle_google_flow(
++            popup_page, email=email, password=password, totp_secret=totp_secret
++        )
+         await asyncio.sleep(2)
+         return success
+     except Exception:
+         # Redirect in same window
+         await asyncio.sleep(2)
+         if "accounts.google.com" in page.url:
+-            return await handle_google_flow(page, email=email, password=password, totp_secret=totp_secret)
++            return await handle_google_flow(
++                page, email=email, password=password, totp_secret=totp_secret
++            )
+ 
+     return True
+ 
+@@ -270,6 +309,7 @@ async def auto_login_via_google_sso(
+ async def run_standalone_login(account_label: str = "gemini_default"):
+     """Standalone runner to open browser and test auto-login."""
+     from playwright.async_api import async_playwright
++
+     user_data_dir = os.path.expanduser(r"~\.gemini_isolated_session")
+ 
+     print("=================================================================")
+@@ -291,9 +331,13 @@ async def run_standalone_login(account_label: str = "gemini_default"):
+         page = context.pages[0] if context.pages else await context.new_page()
+         success = await auto_login_gemini(page, account_label=account_label)
+         if success:
+-            print("\n[SUCCESS]: Account is permanently authenticated in isolated persistent profile!")
++            print(
++                "\n[SUCCESS]: Account is permanently authenticated in isolated persistent profile!"
++            )
+         else:
+-            print("\n[NOTICE]: Login could not complete automatically. You can finish it manually in the opened window.")
++            print(
++                "\n[NOTICE]: Login could not complete automatically. You can finish it manually in the opened window."
++            )
+ 
+         await asyncio.sleep(5)
+         await context.close()
+diff --git a/browser/ghost_tower/check_cookies_status.py b/browser/ghost_tower/check_cookies_status.py
+new file mode 100644
+index 00000000..ca3a144b
+--- /dev/null
++++ b/browser/ghost_tower/check_cookies_status.py
+@@ -0,0 +1,107 @@
++import json
++import os
++import sys
++import time
++from datetime import datetime
++from pathlib import Path
++
++# Import local credential vault and gemini engine
++sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
++from credential_vault import CredentialVault
++
++
++def check_vault_cookies():
++    vault_path = Path.home() / ".supremeai_vault" / "ai_fleet_cookies.enc.json"
++    print("======================================================================")
++    print("   SupremeAI: AI Fleet Cookies & Session Health Check")
++    print("======================================================================")
++
++    if not vault_path.exists():
++        print(f"[!] Warning: Vault file not found at: {vault_path}")
++        print("    Run '2_login_to_multi_ai.bat' to generate fresh session cookies.")
++        return False
++
++    try:
++        vault = CredentialVault()
++        encrypted_data = vault_path.read_text(encoding="utf-8")
++        decrypted_json = vault.decrypt(encrypted_data)
++        cookies = json.loads(decrypted_json)
++    except Exception as e:
++        print(f"[!] Failed to decrypt vault cookies: {e}")
++        return False
++
++    print(f"\n[+] Total Cookies in Vault: {len(cookies)}")
++    now = time.time()
++
++    domains = {}
++    for c in cookies:
++        dom = c.get("domain", "unknown")
++        domains.setdefault(dom, []).append(c)
++
++    print("\n--- Domain Summary ---")
++    for dom, clist in sorted(domains.items(), key=lambda x: -len(x[1])):
++        expired_count = sum(
++            1 for c in clist if c.get("expires", -1) != -1 and c.get("expires") < now
++        )
++        valid_count = len(clist) - expired_count
++        status = "[OK]" if valid_count > 0 else "[EXPIRED]"
++        print(
++            f" {status} {dom:<28} | Valid: {valid_count:<3} | Expired: {expired_count}"
++        )
++
++    print("\n--- Critical Session Expiration ---")
++    critical_names = [
++        "__Secure-1PSID",
++        "__Secure-3PSID",
++        "SID",
++        "__Secure-next-auth.session-token",
++    ]
++    for c in cookies:
++        name = c.get("name")
++        if name in critical_names:
++            dom = c.get("domain")
++            exp = c.get("expires", -1)
++            if exp == -1:
++                status_str = "Session (Active indefinitely)"
++            elif exp < now:
++                status_str = (
++                    f"EXPIRED on {datetime.fromtimestamp(exp).strftime('%Y-%m-%d')}"
++                )
++            else:
++                status_str = (
++                    f"VALID until {datetime.fromtimestamp(exp).strftime('%Y-%m-%d')}"
++                )
++            print(f" * [{dom}] {name:<28} : {status_str}")
++
++    return True
++
++
++async def check_live_gemini():
++    print("\n======================================================================")
++    print("   Running Live Query Verification on gemini.google.com ($0)...")
++    print("======================================================================")
++    try:
++        from gemini_web_engine import GeminiWebEngine
++
++        engine = GeminiWebEngine(headless=True)
++        await engine.initialize()
++        resp = await engine.ask(
++            "Say 'Cookies are active' in 3 words.", timeout_seconds=25
++        )
++        await engine.close()
++        print(f"\n[SUCCESS] Live Gemini Response: {resp.strip()}")
++        print("\n>>> ALL COOKIES ARE HEALTHY, VALID & OPERATIONAL! <<<")
++    except Exception as e:
++        print(f"\n[!] Live test notice: {e}")
++        print(
++            ">>> If needed, run 1_login_to_gemini.bat or 2_login_to_multi_ai.bat to refresh. <<<"
++        )
++
++
++if __name__ == "__main__":
++    ok = check_vault_cookies()
++    if ok:
++        import asyncio
++
++        asyncio.run(check_live_gemini())
++    print("======================================================================\n")
+diff --git a/browser/ghost_tower/check_status.py b/browser/ghost_tower/check_status.py
+index 8b234ed4..7bec2605 100644
+--- a/browser/ghost_tower/check_status.py
++++ b/browser/ghost_tower/check_status.py
+@@ -1,9 +1,11 @@
+ import asyncio
+ import os
++
+ from playwright.async_api import async_playwright
+ 
+ USER_DATA_DIR = os.path.expanduser(r"~\.gemini_chrome_session")
+ 
++
+ async def check():
+     print(f"Checking session directory: {USER_DATA_DIR}")
+     async with async_playwright() as p:
+@@ -11,7 +13,7 @@ async def check():
+             user_data_dir=USER_DATA_DIR,
+             channel="chrome",
+             headless=True,
+-            args=["--no-first-run", "--no-default-browser-check"]
++            args=["--no-first-run", "--no-default-browser-check"],
+         )
+         page = context.pages[0] if context.pages else await context.new_page()
+         await page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
+@@ -19,10 +21,16 @@ async def check():
+ 
+         url = page.url
+         title = await page.title()
+-        
+-        sign_in = await page.query_selector('a[href*="accounts.google.com"], button:has-text("Sign in")')
+-        input_elem = await page.query_selector('div.ql-editor, div[contenteditable="true"], textarea, rich-textarea')
+-        avatar = await page.query_selector('a[aria-label*="Google Account"], img[alt*="Google Account"], button[aria-label*="Google Account"]')
++
++        sign_in = await page.query_selector(
++            'a[href*="accounts.google.com"], button:has-text("Sign in")'
++        )
++        input_elem = await page.query_selector(
++            'div.ql-editor, div[contenteditable="true"], textarea, rich-textarea'
++        )
++        avatar = await page.query_selector(
++            'a[aria-label*="Google Account"], img[alt*="Google Account"], button[aria-label*="Google Account"]'
++        )
+ 
+         print(f"CURRENT URL: {url}")
+         print(f"PAGE TITLE: {title}")
+@@ -30,12 +38,17 @@ async def check():
+         print(f"CHAT INPUT DETECTED: {input_elem is not None}")
+         print(f"ACCOUNT AVATAR DETECTED: {avatar is not None}")
+ 
+-        if "gemini.google.com" in url and "accounts.google.com" not in url and sign_in is None:
++        if (
++            "gemini.google.com" in url
++            and "accounts.google.com" not in url
++            and sign_in is None
++        ):
+             print("==> RESULT: LOGIN IS ACTIVE & VERIFIED!")
+         else:
+             print("==> RESULT: NOT LOGGED IN YET.")
+ 
+         await context.close()
+ 
++
+ if __name__ == "__main__":
+     asyncio.run(check())
+diff --git a/browser/ghost_tower/credential_vault.py b/browser/ghost_tower/credential_vault.py
+index 000fc60d..f2e9a3d7 100644
+--- a/browser/ghost_tower/credential_vault.py
++++ b/browser/ghost_tower/credential_vault.py
+@@ -4,13 +4,15 @@
+ Enables zero-plaintext storage of AI account credentials (Email, Password, 2FA TOTP).
+ Used for fully automated, hands-free login recovery.
+ """
++
+ from __future__ import annotations
+ 
+ import json
+ import os
+ import sys
+ from pathlib import Path
+-from typing import Any, Dict, Optional
++from typing import Any
++
+ from cryptography.fernet import Fernet
+ 
+ if sys.platform == "win32":
+@@ -39,12 +41,14 @@ def get_or_create_master_key() -> bytes:
+     new_key = Fernet.generate_key()
+     KEY_FILE.write_bytes(new_key)
+     print(f"[KEY] [VAULT] New Master Key generated and secured at: {KEY_FILE}")
+-    print(f"[INFO] You can also set this in your environment: CREDENTIAL_MASTER_KEY={new_key.decode()}")
++    print(
++        f"[INFO] You can also set this in your environment: CREDENTIAL_MASTER_KEY={new_key.decode()}"
++    )
+     return new_key
+ 
+ 
+ class CredentialVault:
+-    def __init__(self, master_key: Optional[bytes] = None):
++    def __init__(self, master_key: bytes | None = None):
+         self.master_key = master_key or get_or_create_master_key()
+         self.cipher = Fernet(self.master_key)
+ 
+@@ -66,7 +70,7 @@ def save_account(
+         password: str,
+         totp_secret: str = "",
+         recovery_email: str = "",
+-    ) -> Dict[str, Any]:
++    ) -> dict[str, Any]:
+         """Encrypts and stores account credentials securely."""
+         data = self._read_raw_store()
+ 
+@@ -84,10 +88,12 @@ def save_account(
+ 
+         data[account_label] = account_entry
+         self._write_raw_store(data)
+-        print(f"[OK] [VAULT] Account '{account_label}' ({email}) successfully encrypted and saved!")
++        print(
++            f"[OK] [VAULT] Account '{account_label}' ({email}) successfully encrypted and saved!"
++        )
+         return account_entry
+ 
+-    def get_account(self, account_label: str) -> Optional[Dict[str, Any]]:
++    def get_account(self, account_label: str) -> dict[str, Any] | None:
+         """Returns decrypted credentials in-memory for automated login."""
+         data = self._read_raw_store()
+         account = data.get(account_label)
+@@ -95,7 +101,14 @@ def get_account(self, account_label: str) -> Optional[Dict[str, Any]]:
+             # Check Infisical-injected environment variables as fallback
+             env_email = os.getenv("GEMINI_WEB_EMAIL", "").strip()
+             env_password = os.getenv("GEMINI_WEB_PASSWORD", "").strip()
+-            if env_email and env_password and ("gemini" in account_label.lower() or "google" in account_label.lower()):
++            if (
++                env_email
++                and env_password
++                and (
++                    "gemini" in account_label.lower()
++                    or "google" in account_label.lower()
++                )
++            ):
+                 return {
+                     "provider": "gemini",
+                     "account_label": account_label,
+@@ -133,7 +146,7 @@ def delete_account(self, account_label: str) -> bool:
+         print(f"[WARN] [VAULT] Account '{account_label}' not found.")
+         return False
+ 
+-    def _read_raw_store(self) -> Dict[str, Any]:
++    def _read_raw_store(self) -> dict[str, Any]:
+         VAULT_DIR.mkdir(parents=True, exist_ok=True)
+         if not VAULT_FILE.exists():
+             return {}
+@@ -143,7 +156,7 @@ def _read_raw_store(self) -> Dict[str, Any]:
+         except Exception:
+             return {}
+ 
+-    def _write_raw_store(self, data: Dict[str, Any]):
++    def _write_raw_store(self, data: dict[str, Any]):
+         VAULT_DIR.mkdir(parents=True, exist_ok=True)
+         with open(VAULT_FILE, "w", encoding="utf-8") as f:
+             json.dump(data, f, indent=2)
+@@ -155,13 +168,23 @@ def _write_raw_store(self, data: Dict[str, Any]):
+ 
+     parser = argparse.ArgumentParser(description="SupremeAI Sovereign Credential Vault")
+     parser.add_argument("--list", action="store_true", help="List stored accounts")
+-    parser.add_argument("--add", action="store_true", help="Add or update an account non-interactively")
+-    parser.add_argument("--delete", type=str, metavar="LABEL", help="Delete an account by label")
+-    parser.add_argument("--provider", type=str, default="gemini", help="Provider (default: gemini)")
+-    parser.add_argument("--label", type=str, default="", help="Account label (e.g. gemini_primary)")
++    parser.add_argument(
++        "--add", action="store_true", help="Add or update an account non-interactively"
++    )
++    parser.add_argument(
++        "--delete", type=str, metavar="LABEL", help="Delete an account by label"
++    )
++    parser.add_argument(
++        "--provider", type=str, default="gemini", help="Provider (default: gemini)"
++    )
++    parser.add_argument(
++        "--label", type=str, default="", help="Account label (e.g. gemini_primary)"
++    )
+     parser.add_argument("--email", type=str, default="", help="Account email")
+     parser.add_argument("--password", type=str, default="", help="Account password")
+-    parser.add_argument("--totp", type=str, default="", help="Authenticator 2FA Secret Key")
++    parser.add_argument(
++        "--totp", type=str, default="", help="Authenticator 2FA Secret Key"
++    )
+     parser.add_argument("--recovery", type=str, default="", help="Recovery email")
+ 
+     args = parser.parse_args()
+@@ -199,19 +222,26 @@ def _write_raw_store(self, data: Dict[str, Any]):
+ 
+     # Interactive mode fallback
+     print("\nPlease enter account details to encrypt and save:")
+-    provider = input("Provider [gemini/chatgpt/claude] (default: gemini): ").strip() or "gemini"
+-    label = input("Account Label (e.g. gemini_primary): ").strip() or f"{provider}_default"
++    provider = (
++        input("Provider [gemini/chatgpt/claude] (default: gemini): ").strip()
++        or "gemini"
++    )
++    label = (
++        input("Account Label (e.g. gemini_primary): ").strip() or f"{provider}_default"
++    )
+     email = input("Account Email: ").strip()
+     if not email:
+         print("[ERROR] Email cannot be empty.")
+         sys.exit(1)
+-    
++
+     password = getpass.getpass("Account Password (hidden): ").strip()
+     if not password:
+         print("[ERROR] Password cannot be empty.")
+         sys.exit(1)
+-        
+-    totp = input("Authenticator 2FA Secret Key (Optional, press Enter if none): ").strip()
++
++    totp = input(
++        "Authenticator 2FA Secret Key (Optional, press Enter if none): "
++    ).strip()
+     recovery = input("Recovery Email (Optional, press Enter if none): ").strip()
+ 
+     vault.save_account(
+diff --git a/browser/ghost_tower/gemini_web_engine.py b/browser/ghost_tower/gemini_web_engine.py
+index 39f1bb49..ba675398 100644
+--- a/browser/ghost_tower/gemini_web_engine.py
++++ b/browser/ghost_tower/gemini_web_engine.py
+@@ -5,14 +5,15 @@
+ with your open Google Chrome browser. Controls the browser, types the prompt into
+ gemini.google.com, waits for the response, and extracts the answer with ZERO API cost.
+ """
++
+ from __future__ import annotations
+ 
+ import asyncio
+ import logging
+ import os
+ import sys
+-from typing import Optional
+-from playwright.async_api import async_playwright, BrowserContext, Page
++
++from playwright.async_api import BrowserContext, Page, async_playwright
+ 
+ if sys.platform == "win32":
+     try:
+@@ -30,8 +31,8 @@ def __init__(self, headless: bool = False, user_data_dir: str = USER_DATA_DIR):
+         self.headless = headless
+         self.user_data_dir = user_data_dir
+         self.playwright = None
+-        self.context: Optional[BrowserContext] = None
+-        self.page: Optional[Page] = None
++        self.context: BrowserContext | None = None
++        self.page: Page | None = None
+         self._lock = asyncio.Lock()
+         self._is_ready = False
+ 
+@@ -40,11 +41,13 @@ async def initialize(self):
+         if self._is_ready and self.page and not self.page.is_closed():
+             return
+ 
+-        logger.info(f"Initializing Gemini Web Engine with profile: {self.user_data_dir}")
++        logger.info(
++            f"Initializing Gemini Web Engine with profile: {self.user_data_dir}"
++        )
+         self.playwright = await async_playwright().start()
+-        
++
+         os.makedirs(self.user_data_dir, exist_ok=True)
+-        
++
+         self.context = await self.playwright.chromium.launch_persistent_context(
+             user_data_dir=self.user_data_dir,
+             channel="msedge",
+@@ -57,11 +60,17 @@ async def initialize(self):
+             viewport={"width": 1280, "height": 800},
+         )
+ 
+-        self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+-        
++        self.page = (
++            self.context.pages[0]
++            if self.context.pages
++            else await self.context.new_page()
++        )
++
+         logger.info("Navigating to https://gemini.google.com/app ...")
+-        await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
+-        
++        await self.page.goto(
++            "https://gemini.google.com/app", wait_until="domcontentloaded"
++        )
++
+         await asyncio.sleep(3)
+         self._is_ready = True
+         logger.info("Gemini Web Engine initialized successfully!")
+@@ -75,7 +84,9 @@ async def check_login_status(self) -> dict:
+         title = await self.page.title()
+ 
+         # Check for visible Sign in buttons
+-        sign_in_btns = await self.page.locator('button:has-text("Sign in"), a:has-text("Sign in")').all()
++        sign_in_btns = await self.page.locator(
++            'button:has-text("Sign in"), a:has-text("Sign in")'
++        ).all()
+         has_visible_signin = False
+         for btn in sign_in_btns:
+             try:
+@@ -85,10 +96,22 @@ async def check_login_status(self) -> dict:
+             except Exception:
+                 pass
+ 
+-        has_chat_input = await self.page.query_selector('rich-textarea, div[contenteditable="true"], textarea') is not None
+-        has_avatar = await self.page.query_selector('a[aria-label*="Google Account"], img[alt*="Google Account"]') is not None
++        has_chat_input = (
++            await self.page.query_selector(
++                'rich-textarea, div[contenteditable="true"], textarea'
++            )
++            is not None
++        )
++        has_avatar = (
++            await self.page.query_selector(
++                'a[aria-label*="Google Account"], img[alt*="Google Account"]'
++            )
++            is not None
++        )
+ 
+-        is_logged_in = (has_avatar or (has_chat_input and not has_visible_signin)) and "accounts.google.com" not in current_url
++        is_logged_in = (
++            has_avatar or (has_chat_input and not has_visible_signin)
++        ) and "accounts.google.com" not in current_url
+ 
+         return {
+             "is_logged_in": is_logged_in,
+@@ -105,15 +128,20 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+ 
+             if "gemini.google.com" not in self.page.url:
+                 logger.info("Navigating back to https://gemini.google.com/app")
+-                await self.page.goto("https://gemini.google.com/app", wait_until="domcontentloaded")
++                await self.page.goto(
++                    "https://gemini.google.com/app", wait_until="domcontentloaded"
++                )
+                 await asyncio.sleep(2)
+ 
+             login_info = await self.check_login_status()
+             if not login_info["is_logged_in"]:
+                 # Attempt autonomous login from vault if credentials exist
+-                logger.info("Session not logged in. Attempting autonomous login from vault...")
++                logger.info(
++                    "Session not logged in. Attempting autonomous login from vault..."
++                )
+                 try:
+                     from auto_login import auto_login_gemini
++
+                     auto_success = await auto_login_gemini(self.page)
+                 except Exception as login_err:
+                     logger.warning(f"Auto-login attempt encountered: {login_err}")
+@@ -127,11 +155,13 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+ 
+             logger.info(f"Submitting prompt to gemini.google.com: {prompt[:60]}...")
+ 
+-            input_selector = 'div.ql-editor, div[contenteditable="true"], textarea, rich-textarea p'
++            input_selector = (
++                'div.ql-editor, div[contenteditable="true"], textarea, rich-textarea p'
++            )
+             try:
+                 await self.page.wait_for_selector(input_selector, timeout=10000)
+             except Exception:
+-                await self.page.click('rich-textarea, .input-area', timeout=5000)
++                await self.page.click("rich-textarea, .input-area", timeout=5000)
+ 
+             input_elem = await self.page.query_selector(input_selector)
+             if not input_elem:
+@@ -139,7 +169,7 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+ 
+             await input_elem.click()
+             await asyncio.sleep(0.1)
+-            
++
+             # Fast synthetic fill (<100ms) with typing fallback
+             try:
+                 await input_elem.fill(prompt)
+@@ -147,10 +177,14 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+                 await self.page.keyboard.type(prompt, delay=5)
+             await asyncio.sleep(0.2)
+ 
+-            prev_responses = await self.page.query_selector_all('model-response, .model-response-text, message-content')
++            prev_responses = await self.page.query_selector_all(
++                "model-response, .model-response-text, message-content"
++            )
+             prev_count = len(prev_responses)
+ 
+-            send_btn = await self.page.query_selector('button[aria-label*="Send"], button.send-button, .send-button-container button')
++            send_btn = await self.page.query_selector(
++                'button[aria-label*="Send"], button.send-button, .send-button-container button'
++            )
+             if send_btn and await send_btn.is_enabled():
+                 await send_btn.click()
+             else:
+@@ -160,16 +194,20 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+ 
+             start_time = asyncio.get_event_loop().time()
+             new_response_elem = None
+-            
++
+             while asyncio.get_event_loop().time() - start_time < timeout_seconds:
+-                current_responses = await self.page.query_selector_all('model-response, .model-response-text, message-content')
++                current_responses = await self.page.query_selector_all(
++                    "model-response, .model-response-text, message-content"
++                )
+                 if len(current_responses) > prev_count:
+                     new_response_elem = current_responses[-1]
+                     break
+                 await asyncio.sleep(0.5)
+ 
+             if not new_response_elem:
+-                current_responses = await self.page.query_selector_all('model-response, .model-response-text, message-content')
++                current_responses = await self.page.query_selector_all(
++                    "model-response, .model-response-text, message-content"
++                )
+                 if current_responses:
+                     new_response_elem = current_responses[-1]
+                 else:
+@@ -177,16 +215,18 @@ async def ask(self, prompt: str, timeout_seconds: int = 60) -> str:
+ 
+             logger.info("Streaming started. Waiting for completion...")
+             await asyncio.sleep(2)
+-            
++
+             last_text = ""
+             stable_count = 0
+-            
++
+             while asyncio.get_event_loop().time() - start_time < timeout_seconds:
+                 text = await new_response_elem.inner_text()
+                 text = text.strip()
+-                
+-                stop_btn = await self.page.query_selector('button[aria-label*="Stop"], button:has-text("Stop response")')
+-                
++
++                stop_btn = await self.page.query_selector(
++                    'button[aria-label*="Stop"], button:has-text("Stop response")'
++                )
++
+                 if text and text == last_text:
+                     stable_count += 1
+                     if stable_count >= 4 and not stop_btn:
+diff --git a/browser/ghost_tower/ghost_bridge_server.py b/browser/ghost_tower/ghost_bridge_server.py
+index 8475ebab..a7b921d0 100644
+--- a/browser/ghost_tower/ghost_bridge_server.py
++++ b/browser/ghost_tower/ghost_bridge_server.py
+@@ -5,17 +5,18 @@
+ Enables real-time website chat responses directly from gemini.google.com with ZERO API keys & ZERO API costs.
+ Includes a built-in modern Web Chat interface at http://localhost:8788/
+ """
++
+ from __future__ import annotations
+ 
++import logging
+ import os
+ import sys
+ import time
+-import logging
+-from typing import Any, Dict, Optional
+-from fastapi import FastAPI, Request, Response, HTTPException
+-from fastapi.middleware.cors import CORSMiddleware
+-from fastapi.responses import HTMLResponse, JSONResponse
++
+ import uvicorn
++from fastapi import FastAPI, HTTPException, Request
++from fastapi.middleware.cors import CORSMiddleware
++from fastapi.responses import HTMLResponse
+ 
+ # Setup paths
+ current_dir = os.path.dirname(os.path.abspath(__file__))
+@@ -23,7 +24,9 @@
+ 
+ from gemini_web_engine import GeminiWebEngine
+ 
+-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
++logging.basicConfig(
++    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
++)
+ logger = logging.getLogger("ghost_tower.bridge")
+ 
+ app = FastAPI(title="SupremeAI Ghost Tower Live Gemini Web Scraper", version="2.0.0")
+@@ -45,6 +48,7 @@ async def on_startup():
+     logger.info("Initializing Live Gemini Web Scraper Engine on startup...")
+     # Initialize in background so server boots immediately
+     import asyncio
++
+     asyncio.create_task(engine.initialize())
+ 
+ 
+@@ -56,7 +60,11 @@ async def on_shutdown():
+ 
+ @app.get("/health")
+ async def health():
+-    status = await engine.check_login_status() if engine._is_ready else {"status": "initializing"}
++    status = (
++        await engine.check_login_status()
++        if engine._is_ready
++        else {"status": "initializing"}
++    )
+     return {
+         "service": "SupremeAI Ghost Tower Live Gemini Web Scraper",
+         "engine": "gemini.google.com ($0 Web Scraping)",
+@@ -351,5 +359,7 @@ async def web_chat_page():
+ 
+ if __name__ == "__main__":
+     port = int(os.getenv("GHOST_PORT", "8788"))
+-    logger.info(f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}...")
++    logger.info(
++        f"Starting SupremeAI Ghost Tower Live Gemini Web Server on port {port}..."
++    )
+     uvicorn.run(app, host="0.0.0.0", port=port)
+diff --git a/browser/ghost_tower/launch_manual_login.py b/browser/ghost_tower/launch_manual_login.py
+index 6421bc0a..a6ddbee6 100644
+--- a/browser/ghost_tower/launch_manual_login.py
++++ b/browser/ghost_tower/launch_manual_login.py
+@@ -4,20 +4,24 @@
+ Launches Microsoft Edge directly connected to the sovereign profile
+ `~/.gemini_isolated_session` without any automation timeouts or locks.
+ """
++
+ import os
+ import subprocess
+ import sys
+ 
++
+ def main():
+     profile_dir = os.path.expanduser(r"~\.gemini_isolated_session")
+     os.makedirs(profile_dir, exist_ok=True)
+ 
+     edge_candidates = [
+-        os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
++        os.path.expandvars(
++            r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
++        ),
+         os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"),
+         os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
+     ]
+-    
++
+     edge_bin = None
+     for path in edge_candidates:
+         if os.path.exists(path):
+@@ -28,7 +32,11 @@ def main():
+         print("[ERROR] Microsoft Edge executable not found.")
+         sys.exit(1)
+ 
+-    login_url = sys.argv[1] if len(sys.argv) > 1 else "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
++    login_url = (
++        sys.argv[1]
++        if len(sys.argv) > 1
++        else "https://accounts.google.com/ServiceLogin?continue=https://gemini.google.com/app"
++    )
+ 
+     print("=================================================================")
+     print("   SupremeAI: One-Time Manual Google Login")
+@@ -41,13 +49,16 @@ def main():
+     print("Your session will be saved permanently for all future AI requests!")
+     print("=================================================================\n")
+ 
+-    subprocess.Popen([
+-        edge_bin,
+-        f"--user-data-dir={profile_dir}",
+-        "--no-first-run",
+-        "--no-default-browser-check",
+-        login_url
+-    ])
++    subprocess.Popen(
++        [
++            edge_bin,
++            f"--user-data-dir={profile_dir}",
++            "--no-first-run",
++            "--no-default-browser-check",
++            login_url,
++        ]
++    )
++
+ 
+ if __name__ == "__main__":
+     main()
+diff --git a/browser/ghost_tower/login_helper.py b/browser/ghost_tower/login_helper.py
+index f22db946..326e4c1b 100644
+--- a/browser/ghost_tower/login_helper.py
++++ b/browser/ghost_tower/login_helper.py
+@@ -4,20 +4,23 @@
+ Uses Microsoft Edge (Chromium engine) to completely prevent ProcessSingleton
+ lock conflicts with your running Google Chrome browser.
+ """
++
+ import asyncio
+ import os
++
+ from playwright.async_api import async_playwright
+ 
+ USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")
+ 
++
+ async def main():
+     print("=================================================================")
+     print("   SupremeAI: Google Gemini Account Login Setup")
+     print("=================================================================")
+-    print(f"\nOpening Chromium browser (Zero conflict with your main Chrome)...")
+-    
++    print("\nOpening Chromium browser (Zero conflict with your main Chrome)...")
++
+     os.makedirs(USER_DATA_DIR, exist_ok=True)
+-    
++
+     async with async_playwright() as p:
+         context = await p.chromium.launch_persistent_context(
+             user_data_dir=USER_DATA_DIR,
+@@ -26,36 +29,51 @@ async def main():
+             args=[
+                 "--no-first-run",
+                 "--no-default-browser-check",
+-                "--disable-blink-features=AutomationControlled"
++                "--disable-blink-features=AutomationControlled",
+             ],
+-            viewport={"width": 1280, "height": 800}
++            viewport={"width": 1280, "height": 800},
+         )
+         page = context.pages[0] if context.pages else await context.new_page()
+         print("Navigating to https://gemini.google.com/app ...")
+         await page.goto("https://gemini.google.com/app")
+-        
+-        print("\n--> BROWSER OPENED! Please sign in with your Google Account on the window.")
+-        print("--> The script is watching and will automatically detect when you sign in!\n")
+-        
++
++        print(
++            "\n--> BROWSER OPENED! Please sign in with your Google Account on the window."
++        )
++        print(
++            "--> The script is watching and will automatically detect when you sign in!\n"
++        )
++
+         while True:
+             await asyncio.sleep(2)
+             if page.is_closed():
+                 print("Browser window was closed.")
+                 break
+-                
++
+             url = page.url
+             try:
+-                sign_in = await page.query_selector('a[href*="accounts.google.com"], button:has-text("Sign in")')
+-                if "accounts.google.com" not in url and sign_in is None and "gemini.google.com" in url:
+-                    print("=================================================================")
++                sign_in = await page.query_selector(
++                    'a[href*="accounts.google.com"], button:has-text("Sign in")'
++                )
++                if (
++                    "accounts.google.com" not in url
++                    and sign_in is None
++                    and "gemini.google.com" in url
++                ):
++                    print(
++                        "================================================================="
++                    )
+                     print("   SUCCESS! Google Login successfully detected and saved!")
+-                    print("=================================================================")
++                    print(
++                        "================================================================="
++                    )
+                     await asyncio.sleep(3)
+                     break
+             except Exception:
+                 pass
+-                
++
+         await context.close()
+ 
++
+ if __name__ == "__main__":
+     asyncio.run(main())
+diff --git a/browser/ghost_tower/multi_ai_sso_runner.py b/browser/ghost_tower/multi_ai_sso_runner.py
+index 1f963931..9ae767de 100644
+--- a/browser/ghost_tower/multi_ai_sso_runner.py
++++ b/browser/ghost_tower/multi_ai_sso_runner.py
+@@ -13,14 +13,13 @@
+ import logging
+ import os
+ import sys
+-from typing import Dict, Any, List
+ 
+-from playwright.async_api import async_playwright, Page, BrowserContext
++from playwright.async_api import BrowserContext, Page, async_playwright
+ 
+ # Import local credential vault and google flow
+ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+-from credential_vault import CredentialVault
+ from auto_login import handle_google_flow
++from credential_vault import CredentialVault
+ 
+ logging.basicConfig(
+     level=logging.INFO,
+@@ -31,7 +30,9 @@
+ USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")
+ 
+ 
+-async def click_google_sso_button(page: Page, email: str, password: str, timeout: int = 30) -> bool:
++async def click_google_sso_button(
++    page: Page, email: str, password: str, timeout: int = 30
++) -> bool:
+     """Detects and clicks any 'Continue with Google' button, handling popups or redirects."""
+     google_btn_selectors = [
+         'button:has-text("Continue with Google")',
+@@ -53,7 +54,9 @@ async def click_google_sso_button(page: Page, email: str, password: str, timeout
+             break
+ 
+     if not btn:
+-        logger.warning("Could not find a visible 'Continue with Google' button on the current page.")
++        logger.warning(
++            "Could not find a visible 'Continue with Google' button on the current page."
++        )
+         return False
+ 
+     # Handle popup vs direct redirect
+@@ -63,7 +66,9 @@ async def click_google_sso_button(page: Page, email: str, password: str, timeout
+         popup = await new_page_info.value
+         await popup.wait_for_load_state("domcontentloaded")
+         logger.info(f"OAuth popup detected: {popup.url}")
+-        success = await handle_google_flow(popup, email=email, password=password, timeout_seconds=timeout)
++        success = await handle_google_flow(
++            popup, email=email, password=password, timeout_seconds=timeout
++        )
+         try:
+             await popup.wait_for_event("close", timeout=10000)
+         except Exception:
+@@ -74,7 +79,9 @@ async def click_google_sso_button(page: Page, email: str, password: str, timeout
+         await asyncio.sleep(2)
+         if "accounts.google.com" in page.url:
+             logger.info("Redirected to Google in same tab. Handling authentication...")
+-            return await handle_google_flow(page, email=email, password=password, timeout_seconds=timeout)
++            return await handle_google_flow(
++                page, email=email, password=password, timeout_seconds=timeout
++            )
+ 
+     return True
+ 
+@@ -84,13 +91,17 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
+     logger.info("--- Starting ChatGPT Google SSO ---")
+     page = await context.new_page()
+     try:
+-        await page.goto("https://chatgpt.com", wait_until="domcontentloaded", timeout=45000)
++        await page.goto(
++            "https://chatgpt.com", wait_until="domcontentloaded", timeout=45000
++        )
+         await asyncio.sleep(5)
+ 
+         # Check if already authenticated
+         for _ in range(5):
+             try:
+-                chat_input = await page.query_selector('#prompt-textarea, textarea, div[contenteditable="true"]')
++                chat_input = await page.query_selector(
++                    '#prompt-textarea, textarea, div[contenteditable="true"]'
++                )
+                 if chat_input and await chat_input.is_visible():
+                     logger.info("✅ ChatGPT is already authenticated!")
+                     return True
+@@ -100,7 +111,9 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
+ 
+         # Click Log in button if present
+         try:
+-            login_btn = await page.query_selector('button[data-testid="login-button"], button:has-text("Log in"), a:has-text("Log in")')
++            login_btn = await page.query_selector(
++                'button[data-testid="login-button"], button:has-text("Log in"), a:has-text("Log in")'
++            )
+             if login_btn and await login_btn.is_visible():
+                 logger.info("Clicking ChatGPT 'Log in' button...")
+                 await login_btn.click()
+@@ -111,14 +124,20 @@ async def login_chatgpt(context: BrowserContext, email: str, password: str) -> b
+         # Click Continue with Google
+         await click_google_sso_button(page, email, password)
+ 
+-        logger.info("Waiting for ChatGPT to complete login. If visible, feel free to click 'Continue with Google'...")
++        logger.info(
++            "Waiting for ChatGPT to complete login. If visible, feel free to click 'Continue with Google'..."
++        )
+         for _ in range(25):
+             await asyncio.sleep(1)
+             try:
+                 if "chatgpt.com" in page.url and "auth" not in page.url:
+-                    inp = await page.query_selector('#prompt-textarea, textarea, div[contenteditable="true"]')
++                    inp = await page.query_selector(
++                        '#prompt-textarea, textarea, div[contenteditable="true"]'
++                    )
+                     if inp:
+-                        logger.info("✅ ChatGPT Google SSO login verified successfully!")
++                        logger.info(
++                            "✅ ChatGPT Google SSO login verified successfully!"
++                        )
+                         return True
+             except Exception:
+                 pass
+@@ -138,13 +157,17 @@ async def login_grok(context: BrowserContext, email: str, password: str) -> bool
+     logger.info("--- Starting Grok Google SSO ---")
+     page = await context.new_page()
+     try:
+-        await page.goto("https://grok.com", wait_until="domcontentloaded", timeout=45000)
++        await page.goto(
++            "https://grok.com", wait_until="domcontentloaded", timeout=45000
++        )
+         await asyncio.sleep(5)
+ 
+         # Check if already logged in
+         for _ in range(5):
+             try:
+-                textarea = await page.query_selector('textarea, div[contenteditable="true"]')
++                textarea = await page.query_selector(
++                    'textarea, div[contenteditable="true"]'
++                )
+                 if textarea and await textarea.is_visible():
+                     logger.info("✅ Grok is already authenticated!")
+                     return True
+@@ -154,7 +177,9 @@ async def login_grok(context: BrowserContext, email: str, password: str) -> bool
+ 
+         # Look for Sign in button
+         try:
+-            signin_btn = await page.query_selector('button:has-text("Sign In"), a:has-text("Sign in"), button:has-text("Log in")')
++            signin_btn = await page.query_selector(
++                'button:has-text("Sign In"), a:has-text("Sign in"), button:has-text("Log in")'
++            )
+             if signin_btn and await signin_btn.is_visible():
+                 await signin_btn.click()
+                 await asyncio.sleep(2)
+@@ -178,13 +203,17 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
+     logger.info("--- Starting Mistral Le Chat Google SSO ---")
+     page = await context.new_page()
+     try:
+-        await page.goto("https://chat.mistral.ai", wait_until="domcontentloaded", timeout=45000)
++        await page.goto(
++            "https://chat.mistral.ai", wait_until="domcontentloaded", timeout=45000
++        )
+         await asyncio.sleep(5)
+ 
+         # Check if already in chat (resilient to navigation)
+         for _ in range(5):
+             try:
+-                chat_box = await page.query_selector('textarea, div[contenteditable="true"]')
++                chat_box = await page.query_selector(
++                    'textarea, div[contenteditable="true"]'
++                )
+                 if chat_box and await chat_box.is_visible():
+                     logger.info("✅ Mistral Le Chat is already authenticated!")
+                     return True
+@@ -195,12 +224,18 @@ async def login_mistral(context: BrowserContext, email: str, password: str) -> b
+         # Click Continue with Google
+         await click_google_sso_button(page, email, password)
+ 
+-        logger.info("Waiting for Mistral Le Chat. If you see 'Continue with Google', feel free to click it...")
++        logger.info(
++            "Waiting for Mistral Le Chat. If you see 'Continue with Google', feel free to click it..."
++        )
+         for _ in range(25):
+             await asyncio.sleep(1)
+             try:
+-                if "chat.mistral.ai" in page.url and ("auth" not in page.url and "login" not in page.url):
+-                    chat_box = await page.query_selector('textarea, div[contenteditable="true"]')
++                if "chat.mistral.ai" in page.url and (
++                    "auth" not in page.url and "login" not in page.url
++                ):
++                    chat_box = await page.query_selector(
++                        'textarea, div[contenteditable="true"]'
++                    )
+                     if chat_box:
+                         logger.info("✅ Mistral Le Chat authentication confirmed!")
+                         return True
+@@ -222,13 +257,17 @@ async def login_perplexity(context: BrowserContext, email: str, password: str) -
+     logger.info("--- Starting Perplexity Google SSO ---")
+     page = await context.new_page()
+     try:
+-        await page.goto("https://www.perplexity.ai", wait_until="domcontentloaded", timeout=45000)
++        await page.goto(
++            "https://www.perplexity.ai", wait_until="domcontentloaded", timeout=45000
++        )
+         await asyncio.sleep(5)
+ 
+         # Check if already logged in (avatar or profile button present)
+         for _ in range(5):
+             try:
+-                profile_btn = await page.query_selector('button[aria-label="User Profile"], a[href="/settings/profile"]')
++                profile_btn = await page.query_selector(
++                    'button[aria-label="User Profile"], a[href="/settings/profile"]'
++                )
+                 if profile_btn:
+                     logger.info("✅ Perplexity is already authenticated!")
+                     return True
+@@ -238,7 +277,9 @@ async def login_perplexity(context: BrowserContext, email: str, password: str) -
+ 
+         # Click Sign In button
+         try:
+-            signin_btn = await page.query_selector('button:has-text("Sign In"), button:has-text("Log In")')
++            signin_btn = await page.query_selector(
++                'button:has-text("Sign In"), button:has-text("Log In")'
++            )
+             if signin_btn and await signin_btn.is_visible():
+                 await signin_btn.click()
+                 await asyncio.sleep(2)
+@@ -257,7 +298,6 @@ async def login_perplexity(context: BrowserContext, email: str, password: str) -
+         await page.close()
+ 
+ 
+-
+ async def run_multi_sso(target: str = "all", headless: bool = False):
+     vault = CredentialVault()
+     account = vault.get_account("gemini_default")
+@@ -267,7 +307,9 @@ async def run_multi_sso(target: str = "all", headless: bool = False):
+             account = vault.get_account(accounts[0]["account_label"])
+ 
+     if not account:
+-        logger.error("No account credentials found in vault! Please run auto_login.py first.")
++        logger.error(
++            "No account credentials found in vault! Please run auto_login.py first."
++        )
+         return
+ 
+     email = account["email"]
+@@ -309,8 +351,11 @@ async def run_multi_sso(target: str = "all", headless: bool = False):
+ 
+         if target in ("gemini",):
+             from auto_login import auto_login_gemini
++
+             page = context.pages[0] if context.pages else await context.new_page()
+-            results["Gemini"] = await auto_login_gemini(page, account_label="gemini_default")
++            results["Gemini"] = await auto_login_gemini(
++                page, account_label="gemini_default"
++            )
+ 
+         print("\n=================================================================")
+         print("   Authentication Fleet Summary:")
+@@ -332,4 +377,3 @@ async def run_multi_sso(target: str = "all", headless: bool = False):
+         elif arg in ("chatgpt", "mistral", "perplexity", "grok", "gemini", "all"):
+             selected_target = arg
+     asyncio.run(run_multi_sso(target=selected_target, headless=is_headless))
+-
+diff --git a/browser/ghost_tower/stealth_browser_engine/__init__.py b/browser/ghost_tower/stealth_browser_engine/__init__.py
+index f86ee9f7..9a1ba0dc 100644
+--- a/browser/ghost_tower/stealth_browser_engine/__init__.py
++++ b/browser/ghost_tower/stealth_browser_engine/__init__.py
+@@ -11,6 +11,7 @@
+ 
+ Core is stdlib-only; playwright/lxml are OPTIONAL execution-tier extras.
+ """
++
+ from .config import BrowserProfile, get_profile, profile_names
+ from .content_pruner import ContentPruner, PrunedContent, link_density
+ from .cookie_bridge import (
+@@ -18,7 +19,7 @@
+     CookieRecord,
+     WalledGardenViolation,
+ )
+-from .infinite_scanner import FeedExpander, ScrollPlan, ScrollStep, SCROLL_AND_EXPAND_JS
++from .infinite_scanner import SCROLL_AND_EXPAND_JS, FeedExpander, ScrollPlan, ScrollStep
+ from .semantic_extractor import (
+     SemanticNode,
+     SemanticTree,
+@@ -35,29 +36,29 @@
+ __version__ = "0.1.0"
+ 
+ __all__ = [
++    "SCROLL_AND_EXPAND_JS",
+     "BrowserProfile",
+-    "get_profile",
+-    "profile_names",
++    "BrowserSessionManager",
+     "ContentPruner",
+-    "PrunedContent",
+-    "link_density",
+     "CookieBridge",
+     "CookieRecord",
+-    "WalledGardenViolation",
+     "FeedExpander",
++    "PrunedContent",
++    "RuntimeCapabilityError",
+     "ScrollPlan",
+     "ScrollStep",
+-    "SCROLL_AND_EXPAND_JS",
+     "SemanticNode",
+     "SemanticTree",
+-    "estimate_tokens",
+-    "extract_semantic_tree",
+-    "BrowserSessionManager",
+-    "RuntimeCapabilityError",
+-    "playwright_available",
+     "StealthProfile",
++    "WalledGardenViolation",
++    "__version__",
+     "bezier_path",
++    "estimate_tokens",
++    "extract_semantic_tree",
+     "generate",
++    "get_profile",
++    "link_density",
++    "playwright_available",
++    "profile_names",
+     "webgl_pairs",
+-    "__version__",
+ ]
+diff --git a/browser/ghost_tower/stealth_browser_engine/config.py b/browser/ghost_tower/stealth_browser_engine/config.py
+index 7bffffd2..4a340adf 100644
+--- a/browser/ghost_tower/stealth_browser_engine/config.py
++++ b/browser/ghost_tower/stealth_browser_engine/config.py
+@@ -6,14 +6,14 @@
+     randomized vendor strings; see stealth_profile for coherent noise).
+   - Nothing here performs I/O, so importing this module is always safe.
+ """
++
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field, replace
+-from typing import Dict, Tuple
+ 
+ __all__ = [
+-    "BrowserProfile",
+     "PRESETS",
++    "BrowserProfile",
+     "get_profile",
+     "profile_names",
+ ]
+@@ -25,16 +25,16 @@ class BrowserProfile:
+ 
+     name: str
+     user_agent: str
+-    viewport: Tuple[int, int] = (1920, 1080)
++    viewport: tuple[int, int] = (1920, 1080)
+     locale: str = "en-US"
+     timezone_id: str = "UTC"
+     device_scale_factor: float = 1.0
+     is_mobile: bool = False
+     has_touch: bool = False
+     stealth_level: int = 2  # 0=off, 1=basic, 2=hardened, 3=max
+-    extra_headers: Dict[str, str] = field(default_factory=dict)
++    extra_headers: dict[str, str] = field(default_factory=dict)
+ 
+-    def with_overrides(self, **overrides) -> "BrowserProfile":
++    def with_overrides(self, **overrides) -> BrowserProfile:
+         """Return a modified copy; unknown fields raise TypeError (fail-closed)."""
+         return replace(self, **overrides)
+ 
+@@ -104,7 +104,7 @@ def validate(self) -> None:
+     ),
+ ]
+ 
+-PRESETS: Dict[str, BrowserProfile] = {p.name: p for p in _PRESET_LIST}
++PRESETS: dict[str, BrowserProfile] = {p.name: p for p in _PRESET_LIST}
+ 
+ 
+ def get_profile(name: str) -> BrowserProfile:
+@@ -116,6 +116,6 @@ def get_profile(name: str) -> BrowserProfile:
+         raise KeyError(f"unknown profile {name!r}; known profiles: {known}") from None
+ 
+ 
+-def profile_names() -> Tuple[str, ...]:
++def profile_names() -> tuple[str, ...]:
+     """Sorted preset names (stable for tests and docs)."""
+     return tuple(sorted(PRESETS))
+diff --git a/browser/ghost_tower/stealth_browser_engine/content_pruner.py b/browser/ghost_tower/stealth_browser_engine/content_pruner.py
+index d0ce9791..4e5fa4a2 100644
+--- a/browser/ghost_tower/stealth_browser_engine/content_pruner.py
++++ b/browser/ghost_tower/stealth_browser_engine/content_pruner.py
+@@ -14,19 +14,36 @@
+   4. Markdown emission: headings, paragraphs, lists, code fences, and
+      reference-style numbered citations for retained links.
+ """
++
+ from __future__ import annotations
+ 
+ import re
+ from dataclasses import dataclass, field
+ from html.parser import HTMLParser
+-from typing import Dict, List, Optional, Tuple
+ 
+ __all__ = ["ContentPruner", "PrunedContent", "link_density"]
+ 
+ _DROP_TAGS = {
+-    "script", "style", "noscript", "template", "svg", "iframe", "form",
+-    "nav", "footer", "aside", "header", "button", "select", "option",
+-    "input", "label", "video", "audio", "object", "embed",
++    "script",
++    "style",
++    "noscript",
++    "template",
++    "svg",
++    "iframe",
++    "form",
++    "nav",
++    "footer",
++    "aside",
++    "header",
++    "button",
++    "select",
++    "option",
++    "input",
++    "label",
++    "video",
++    "audio",
++    "object",
++    "embed",
+ }
+ _NOISE_CLASS_RE = re.compile(
+     r"(advert|ads?[-_ ]?container|banner|breadcrumb|comment|cookie|promo|"
+@@ -52,7 +69,7 @@ def link_density(text: str, link_chars: int) -> float:
+ @dataclass
+ class PrunedContent:
+     markdown: str
+-    citations: List[Tuple[int, str]] = field(default_factory=list)
++    citations: list[tuple[int, str]] = field(default_factory=list)
+     blocks_kept: int = 0
+     blocks_dropped: int = 0
+     chars_before: int = 0
+@@ -73,12 +90,12 @@ def citation_block(self) -> str:
+ class _Block:
+     """One candidate content block harvested during the parse."""
+ 
+-    def __init__(self, tag: str, attrs: Dict[str, str], depth: int) -> None:
++    def __init__(self, tag: str, attrs: dict[str, str], depth: int) -> None:
+         self.tag = tag
+         self.attrs = attrs
+         self.depth = depth
+-        self.text_chunks: List[str] = []
+-        self.links: List[Tuple[str, str]] = []  # (text, href)
++        self.text_chunks: list[str] = []
++        self.links: list[tuple[str, str]] = []  # (text, href)
+         self.link_chars = 0
+ 
+     def text(self) -> str:
+@@ -94,17 +111,30 @@ def is_noisy(self) -> bool:
+ class _Harvester(HTMLParser):
+     """Collect candidate blocks: paragraphs, headings, list items, pre."""
+ 
+-    _BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "pre", "blockquote", "td", "figcaption"}
++    _BLOCK_TAGS = {
++        "p",
++        "h1",
++        "h2",
++        "h3",
++        "h4",
++        "h5",
++        "h6",
++        "li",
++        "pre",
++        "blockquote",
++        "td",
++        "figcaption",
++    }
+ 
+     def __init__(self) -> None:
+         super().__init__(convert_charrefs=True)
+-        self.blocks: List[_Block] = []
+-        self.open_blocks: List[_Block] = []
+-        self.skip_depth: Optional[int] = None
++        self.blocks: list[_Block] = []
++        self.open_blocks: list[_Block] = []
++        self.skip_depth: int | None = None
+         self.skip_tag: str = ""
+         self.depth = 0
+-        self.anchor_href: Optional[str] = None
+-        self.anchor_buf: List[str] = []
++        self.anchor_href: str | None = None
++        self.anchor_buf: list[str] = []
+         self.title = ""
+ 
+     # -- helpers -----------------------------------------------------------
+@@ -116,7 +146,9 @@ def handle_starttag(self, tag, attrs):
+         attrd = dict(attrs)
+         if self._in_skip():
+             return
+-        if tag in _DROP_TAGS or (tag == "div" and _Block(tag, attrd, self.depth).is_noisy()):
++        if tag in _DROP_TAGS or (
++            tag == "div" and _Block(tag, attrd, self.depth).is_noisy()
++        ):
+             self.skip_depth = self.depth
+             self.skip_tag = tag
+             return
+@@ -171,7 +203,9 @@ def _heading_level(tag: str) -> int:
+ class ContentPruner:
+     """Heuristic boilerplate pruner producing citation-linked Markdown."""
+ 
+-    def __init__(self, link_density_threshold: float = 0.6, min_block_chars: int = 24) -> None:
++    def __init__(
++        self, link_density_threshold: float = 0.6, min_block_chars: int = 24
++    ) -> None:
+         if not 0.0 < link_density_threshold <= 1.0:
+             raise ValueError("link_density_threshold must be within (0, 1]")
+         if min_block_chars < 0:
+@@ -191,8 +225,8 @@ def prune(self, html: str) -> PrunedContent:
+             citations=[],
+             chars_before=len(html),
+         )
+-        md_lines: List[str] = []
+-        seen_urls: Dict[str, int] = {}
++        md_lines: list[str] = []
++        seen_urls: dict[str, int] = {}
+ 
+         for blk in harvester.blocks:
+             text = blk.text()
+@@ -222,14 +256,16 @@ def prune(self, html: str) -> PrunedContent:
+             # Inline citation links for paragraphs.
+             decorated = text
+             if blk.links:
+-                link_map: Dict[str, int] = {}
++                link_map: dict[str, int] = {}
+                 for link_text, href in blk.links:
+                     if href not in seen_urls:
+                         seen_urls[href] = len(seen_urls) + 1
+                         result.citations.append((seen_urls[href], href))
+                     if link_text and link_text in text:
+                         link_map[link_text] = seen_urls[href]
+-                for link_text, num in sorted(link_map.items(), key=lambda kv: -len(kv[0])):
++                for link_text, num in sorted(
++                    link_map.items(), key=lambda kv: -len(kv[0])
++                ):
+                     decorated = decorated.replace(link_text, f"{link_text} [{num}]", 1)
+             md_lines.append(decorated)
+ 
+diff --git a/browser/ghost_tower/stealth_browser_engine/cookie_bridge.py b/browser/ghost_tower/stealth_browser_engine/cookie_bridge.py
+index 439e8aec..755e198f 100644
+--- a/browser/ghost_tower/stealth_browser_engine/cookie_bridge.py
++++ b/browser/ghost_tower/stealth_browser_engine/cookie_bridge.py
+@@ -11,10 +11,11 @@
+   - Cookie values never appear in logs or reprs (redacted).
+   - Netscape cookies.txt round-trips byte-stably for exported domains.
+ """
++
+ from __future__ import annotations
+ 
++from collections.abc import Iterable
+ from dataclasses import dataclass
+-from typing import Dict, Iterable, List, Optional, Tuple
+ 
+ __all__ = ["CookieBridge", "CookieRecord", "WalledGardenViolation"]
+ 
+@@ -37,7 +38,7 @@ class CookieRecord:
+     http_only: bool = True
+     expires: int = 0  # 0 = session cookie
+ 
+-    def redacted(self) -> Dict[str, object]:
++    def redacted(self) -> dict[str, object]:
+         """Safe view: value length only, never the value itself."""
+         return {
+             "name": self.name,
+@@ -54,9 +55,11 @@ class CookieBridge:
+     """Allowlist-scoped cookie store with JSON/Netscape import-export."""
+ 
+     def __init__(self, allowlist: Iterable[str]) -> None:
+-        domains = {self._normalize(d) for d in (allowlist or ()) if d and str(d).strip()}
++        domains = {
++            self._normalize(d) for d in (allowlist or ()) if d and str(d).strip()
++        }
+         self._allowlist = frozenset(domains)
+-        self._cookies: Dict[str, Dict[str, CookieRecord]] = {}
++        self._cookies: dict[str, dict[str, CookieRecord]] = {}
+ 
+     # -- allowlist -----------------------------------------------------------
+     @staticmethod
+@@ -67,7 +70,7 @@ def _normalize(domain: str) -> str:
+         return d
+ 
+     @property
+-    def allowlist(self) -> Tuple[str, ...]:
++    def allowlist(self) -> tuple[str, ...]:
+         return tuple(sorted(self._allowlist))
+ 
+     def domain_allowed(self, domain: str) -> bool:
+@@ -88,7 +91,7 @@ def _guard(self, domain: str) -> str:
+         return d
+ 
+     # -- import ---------------------------------------------------------------
+-    def import_json(self, cookies: List[dict], domain: str) -> int:
++    def import_json(self, cookies: list[dict], domain: str) -> int:
+         """Import cookie dicts (browser-export shape) for one allowlisted domain."""
+         d = self._guard(domain)
+         if not isinstance(cookies, list):
+@@ -122,24 +125,28 @@ def import_json(self, cookies: List[dict], domain: str) -> int:
+     def import_netscape(self, text: str, domain: str) -> int:
+         """Parse Netscape cookies.txt lines scoped to one allowlisted domain."""
+         d = self._guard(domain)
+-        cookies: List[dict] = []
++        cookies: list[dict] = []
+         for line in (text or "").splitlines():
+             line = line.strip()
+             if not line or line.startswith("#"):
+                 continue
+             parts = line.split("\t")
+             if len(parts) != 7:
+-                raise ValueError(f"malformed netscape line ({len(parts)} fields): <redacted>")
++                raise ValueError(
++                    f"malformed netscape line ({len(parts)} fields): <redacted>"
++                )
+             c_domain, _flag, c_path, _secure_flag, expires, name, value = parts
+-            cookies.append({
+-                "domain": c_domain,
+-                "path": c_path,
+-                "secure": c_domain.startswith("."),
+-                "expires": int(expires) if expires.isdigit() else 0,
+-                "name": name,
+-                "value": value,
+-                "httpOnly": False,
+-            })
++            cookies.append(
++                {
++                    "domain": c_domain,
++                    "path": c_path,
++                    "secure": c_domain.startswith("."),
++                    "expires": int(expires) if expires.isdigit() else 0,
++                    "name": name,
++                    "value": value,
++                    "httpOnly": False,
++                }
++            )
+         return self.import_json(cookies, d)
+ 
+     # -- export -----------------------------------------------------------------
+@@ -152,21 +159,28 @@ def export_netscape(self, domain: str) -> str:
+             c = bucket[key]
+             domain_field = "." + c.domain if c.secure else c.domain
+             lines.append(
+-                "\t".join([
+-                    domain_field, "TRUE", c.path, "TRUE" if c.secure else "FALSE",
+-                    str(c.expires), c.name, c.value,
+-                ])
++                "\t".join(
++                    [
++                        domain_field,
++                        "TRUE",
++                        c.path,
++                        "TRUE" if c.secure else "FALSE",
++                        str(c.expires),
++                        c.name,
++                        c.value,
++                    ]
++                )
+             )
+         return "\n".join(lines) + "\n"
+ 
+     # -- introspection ------------------------------------------------------------
+-    def count(self, domain: Optional[str] = None) -> int:
++    def count(self, domain: str | None = None) -> int:
+         if domain is None:
+             return sum(len(v) for v in self._cookies.values())
+         d = self._normalize(domain)
+         return len(self._cookies.get(d, {}))
+ 
+-    def summary(self) -> Dict[str, object]:
++    def summary(self) -> dict[str, object]:
+         """Redacted operational summary (safe to log)."""
+         return {
+             "allowlist": list(self.allowlist),
+diff --git a/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py b/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
+index 4991c084..133cb5aa 100644
+--- a/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
++++ b/browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
+@@ -8,16 +8,17 @@
+   - `FeedExpander` models multi-round growth with a pluggable observer,
+     so CI can simulate feeds without launching any browser.
+ """
++
+ from __future__ import annotations
+ 
++from collections.abc import Callable
+ from dataclasses import dataclass
+-from typing import Callable, List, Optional, Tuple
+ 
+ __all__ = [
++    "SCROLL_AND_EXPAND_JS",
++    "FeedExpander",
+     "ScrollPlan",
+     "ScrollStep",
+-    "FeedExpander",
+-    "SCROLL_AND_EXPAND_JS",
+ ]
+ 
+ SCROLL_AND_EXPAND_JS = """
+@@ -76,10 +77,10 @@ def __init__(
+         self.stall_limit = stall_limit
+         self.max_rounds = max_rounds
+ 
+-    def build(self) -> List[ScrollStep]:
++    def build(self) -> list[ScrollStep]:
+         """Round-by-round plan; stops at stall_limit stagnant rounds."""
+         step = max(1, int(self.viewport_height * self.step_ratio))
+-        plan: List[ScrollStep] = []
++        plan: list[ScrollStep] = []
+         stagnant = 0
+         y = 0
+         last_height = self.page_height
+@@ -116,7 +117,7 @@ def __init__(
+         self.rounds_executed = 0
+         self.stalled_rounds = 0
+ 
+-    def run_round(self) -> Tuple[int, bool]:
++    def run_round(self) -> tuple[int, bool]:
+         """Execute one expansion round; returns (height, grew)."""
+         before = self._height
+         self._grow(self.rounds_executed)
+diff --git a/browser/ghost_tower/stealth_browser_engine/semantic_extractor.py b/browser/ghost_tower/stealth_browser_engine/semantic_extractor.py
+index 66e8ed18..ebdd415f 100644
+--- a/browser/ghost_tower/stealth_browser_engine/semantic_extractor.py
++++ b/browser/ghost_tower/stealth_browser_engine/semantic_extractor.py
+@@ -4,27 +4,64 @@
+ issue #502: parse HTML into a semantic tree, DISCARD pure layout wrappers,
+ and expose a token-budgeted outline. No network, no third-party deps.
+ """
++
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field
+ from html import escape
+ from html.parser import HTMLParser
+-from typing import List, Optional
+ 
+ __all__ = [
+     "SemanticNode",
+     "SemanticTree",
+-    "extract_semantic_tree",
+     "estimate_tokens",
++    "extract_semantic_tree",
+ ]
+ 
+ _SEMANTIC_TAGS = {
+-    "article", "section", "main", "header", "footer", "nav", "aside",
+-    "h1", "h2", "h3", "h4", "h5", "h6",
+-    "p", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td",
+-    "blockquote", "pre", "code", "figure", "figcaption",
+-    "a", "img", "button", "form", "label", "input", "select", "option",
+-    "summary", "details", "time", "address", "dl", "dt", "dd",
++    "article",
++    "section",
++    "main",
++    "header",
++    "footer",
++    "nav",
++    "aside",
++    "h1",
++    "h2",
++    "h3",
++    "h4",
++    "h5",
++    "h6",
++    "p",
++    "ul",
++    "ol",
++    "li",
++    "table",
++    "thead",
++    "tbody",
++    "tr",
++    "th",
++    "td",
++    "blockquote",
++    "pre",
++    "code",
++    "figure",
++    "figcaption",
++    "a",
++    "img",
++    "button",
++    "form",
++    "label",
++    "input",
++    "select",
++    "option",
++    "summary",
++    "details",
++    "time",
++    "address",
++    "dl",
++    "dt",
++    "dd",
+ }
+ _SKIP_TAGS = {"script", "style", "noscript", "template", "svg", "iframe"}
+ # Layout wrappers: kept only when they carry identifying attributes or
+@@ -36,8 +73,8 @@
+ class SemanticNode:
+     tag: str
+     attrs: dict
+-    text_chunks: List[str] = field(default_factory=list)
+-    children: List["SemanticNode"] = field(default_factory=list)
++    text_chunks: list[str] = field(default_factory=list)
++    children: list[SemanticNode] = field(default_factory=list)
+ 
+     def text(self) -> str:
+         parts = [c for c in self.text_chunks if c.strip()]
+@@ -55,7 +92,7 @@ class _TreeBuilder(HTMLParser):
+     def __init__(self) -> None:
+         super().__init__(convert_charrefs=True)
+         self.root = SemanticNode(tag="#root", attrs={})
+-        self.stack: List[SemanticNode] = [self.root]
++        self.stack: list[SemanticNode] = [self.root]
+ 
+     # -- helpers -----------------------------------------------------------
+     def _skip_active(self) -> bool:
+@@ -105,13 +142,13 @@ def _is_semantic(node: SemanticNode) -> bool:
+     return node.tag in _SEMANTIC_TAGS or node.has_identity()
+ 
+ 
+-def _flatten(node: SemanticNode) -> List[SemanticNode]:
++def _flatten(node: SemanticNode) -> list[SemanticNode]:
+     """Drop pure layout wrappers: recurse into them, keep semantic nodes.
+ 
+     A wrapper is dropped when it is a layout tag WITHOUT identity and either
+     has exactly one child or no children of its own (pure grouping box).
+     """
+-    kept: List[SemanticNode] = []
++    kept: list[SemanticNode] = []
+     for child in node.children:
+         if child.tag in _LAYOUT_TAGS and not child.has_identity():
+             kept.extend(_flatten(child))
+@@ -120,7 +157,7 @@ def _flatten(node: SemanticNode) -> List[SemanticNode]:
+     return kept
+ 
+ 
+-def _prune(node: SemanticNode) -> Optional[SemanticNode]:
++def _prune(node: SemanticNode) -> SemanticNode | None:
+     node.children = _flatten(node)
+     pruned_children = []
+     for child in node.children:
+@@ -141,7 +178,7 @@ class SemanticTree:
+ 
+     def outline(self, max_depth: int = 12) -> str:
+         """Indented outline; one line per semantic node (token-cheap)."""
+-        lines: List[str] = []
++        lines: list[str] = []
+ 
+         def walk(node: SemanticNode, depth: int) -> None:
+             if depth > max_depth:
+@@ -149,11 +186,18 @@ def walk(node: SemanticNode, depth: int) -> None:
+             text = node.text()
+             attrs = ""
+             if node.has_identity():
+-                ident = node.attrs.get("id") or node.attrs.get("class") or node.attrs.get("role") or ""
++                ident = (
++                    node.attrs.get("id")
++                    or node.attrs.get("class")
++                    or node.attrs.get("role")
++                    or ""
++                )
+                 attrs = f" #{str(ident).split()[0]}" if ident else ""
+             snippet = (text[:80] + "…") if len(text) > 80 else text
+             if node.tag != "#root":
+-                lines.append(f"{'  ' * (depth - 1)}<{node.tag}>{attrs} {snippet}".rstrip())
++                lines.append(
++                    f"{'  ' * (depth - 1)}<{node.tag}>{attrs} {snippet}".rstrip()
++                )
+             for child in node.children:
+                 walk(child, depth + 1)
+ 
+diff --git a/browser/ghost_tower/stealth_browser_engine/session_manager.py b/browser/ghost_tower/stealth_browser_engine/session_manager.py
+index d26d0590..0741aa4a 100644
+--- a/browser/ghost_tower/stealth_browser_engine/session_manager.py
++++ b/browser/ghost_tower/stealth_browser_engine/session_manager.py
+@@ -10,9 +10,8 @@
+ 
+ No method here performs I/O at import time; `close()` is idempotent.
+ """
+-from __future__ import annotations
+ 
+-from typing import Optional
++from __future__ import annotations
+ 
+ from .config import BrowserProfile, get_profile
+ 
+@@ -30,7 +29,7 @@ class RuntimeCapabilityError(RuntimeError):
+ def playwright_available() -> bool:
+     """Capability probe (import-time side-effect free)."""
+     try:
+-        import playwright  # noqa: F401
++        import playwright
+     except ImportError:
+         return False
+     return True
+@@ -41,8 +40,8 @@ class BrowserSessionManager:
+ 
+     def __init__(
+         self,
+-        profile: Optional[BrowserProfile] = None,
+-        cdp_endpoint: Optional[str] = None,
++        profile: BrowserProfile | None = None,
++        cdp_endpoint: str | None = None,
+         headless: bool = True,
+     ) -> None:
+         if profile is None:
+@@ -50,7 +49,7 @@ def __init__(
+         profile.validate()
+         self.profile = profile
+         self.headless = bool(headless)
+-        self._cdp_endpoint: Optional[str] = None
++        self._cdp_endpoint: str | None = None
+         self._session_started = False
+         self._closed = False
+         if cdp_endpoint is not None:
+@@ -62,7 +61,7 @@ def mode(self) -> str:
+         return "cdp" if self._cdp_endpoint else "playwright"
+ 
+     @property
+-    def cdp_endpoint(self) -> Optional[str]:
++    def cdp_endpoint(self) -> str | None:
+         return self._cdp_endpoint
+ 
+     @property
+@@ -75,14 +74,18 @@ def attach_cdp(self, endpoint: str) -> None:
+         if not endpoint or not isinstance(endpoint, str):
+             raise ValueError("cdp endpoint must be a non-empty string")
+         lowered = endpoint.lower()
+-        if not (lowered.startswith("ws://") or lowered.startswith("wss://")
+-                or lowered.startswith("http://") or lowered.startswith("https://")):
++        if not (
++            lowered.startswith("ws://")
++            or lowered.startswith("wss://")
++            or lowered.startswith("http://")
++            or lowered.startswith("https://")
++        ):
+             raise ValueError(
+                 "cdp endpoint must use ws://, wss://, http:// or https:// scheme"
+             )
+         self._cdp_endpoint = endpoint
+ 
+-    def start(self) -> "BrowserSessionManager":
++    def start(self) -> BrowserSessionManager:
+         """Begin the session; fail-closed with a precise capability error."""
+         if self._closed:
+             raise RuntimeError("session already closed; create a new manager")
+@@ -110,7 +113,7 @@ def close(self) -> None:
+         self._session_started = False
+ 
+     # -- context manager ----------------------------------------------------
+-    def __enter__(self) -> "BrowserSessionManager":
++    def __enter__(self) -> BrowserSessionManager:
+         return self.start()
+ 
+     def __exit__(self, exc_type, exc, tb) -> None:
+diff --git a/browser/ghost_tower/stealth_browser_engine/stealth_profile.py b/browser/ghost_tower/stealth_browser_engine/stealth_profile.py
+index c7b32b43..5f2cada3 100644
+--- a/browser/ghost_tower/stealth_browser_engine/stealth_profile.py
++++ b/browser/ghost_tower/stealth_browser_engine/stealth_profile.py
+@@ -11,12 +11,12 @@
+ 
+ Nothing in this module launches a browser or touches the network.
+ """
++
+ from __future__ import annotations
+ 
+ import hashlib
+ import math
+ from dataclasses import dataclass
+-from typing import Dict, List, Tuple
+ 
+ __all__ = [
+     "StealthProfile",
+@@ -27,15 +27,27 @@
+ # Standard ANGLE-on-D3D class pairs (vendor, renderer). Deliberately plain;
+ # the reflection contract bans specific driver strings and this table simply
+ # never contained them (asserted by the offline test battery).
+-_WEBGL_PAIRS: Tuple[Tuple[str, str], ...] = (
+-    ("Google Inc. (NVIDIA)", "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+-    ("Google Inc. (Intel)", "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+-    ("Google Inc. (AMD)", "ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+-    ("Google Inc. (Qualcomm)", "ANGLE (Qualcomm, Adreno (TM) 740 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
++_WEBGL_PAIRS: tuple[tuple[str, str], ...] = (
++    (
++        "Google Inc. (NVIDIA)",
++        "ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)",
++    ),
++    (
++        "Google Inc. (Intel)",
++        "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)",
++    ),
++    (
++        "Google Inc. (AMD)",
++        "ANGLE (AMD, AMD Radeon(TM) Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)",
++    ),
++    (
++        "Google Inc. (Qualcomm)",
++        "ANGLE (Qualcomm, Adreno (TM) 740 Direct3D11 vs_5_0 ps_5_0, D3D11)",
++    ),
+ )
+ 
+ 
+-def webgl_pairs() -> Tuple[Tuple[str, str], ...]:
++def webgl_pairs() -> tuple[tuple[str, str], ...]:
+     """Read-only view of the normalized vendor/renderer table."""
+     return _WEBGL_PAIRS
+ 
+@@ -59,7 +71,7 @@ class StealthProfile:
+     screen_height: int
+     color_depth: int = 24
+ 
+-    def to_dict(self) -> Dict[str, object]:
++    def to_dict(self) -> dict[str, object]:
+         """Plain-dict view suitable for JS injection at the runtime tier."""
+         return {
+             "canvasNoiseSeed": self.canvas_noise_seed,
+@@ -72,7 +84,7 @@ def to_dict(self) -> Dict[str, object]:
+             "colorDepth": self.color_depth,
+         }
+ 
+-    def canvas_noise(self, width: int = 16, height: int = 16) -> List[List[int]]:
++    def canvas_noise(self, width: int = 16, height: int = 16) -> list[list[int]]:
+         """Deterministic per-pixel noise in 0..255 (coherent across calls).
+ 
+         Same (seed, width, height) always yields the same matrix; the matrix
+@@ -81,13 +93,11 @@ def canvas_noise(self, width: int = 16, height: int = 16) -> List[List[int]]:
+         if width <= 0 or height <= 0:
+             raise ValueError("canvas dimensions must be positive")
+         base = self.canvas_noise_seed & 0xFFFFFFFF
+-        matrix: List[List[int]] = []
++        matrix: list[list[int]] = []
+         for y in range(height):
+-            row: List[int] = []
++            row: list[int] = []
+             for x in range(width):
+-                mixed = hashlib.sha256(
+-                    f"{base}:{x}:{y}".encode("utf-8")
+-                ).digest()
++                mixed = hashlib.sha256(f"{base}:{x}:{y}".encode()).digest()
+                 gradient = (x * 7 + y * 13) % 256
+                 row.append((mixed[0] + gradient) % 256)
+             matrix.append(row)
+@@ -95,12 +105,12 @@ def canvas_noise(self, width: int = 16, height: int = 16) -> List[List[int]]:
+ 
+ 
+ def bezier_path(
+-    start: Tuple[float, float],
+-    end: Tuple[float, float],
++    start: tuple[float, float],
++    end: tuple[float, float],
+     steps: int = 48,
+     jitter: float = 1.5,
+     seed: str = "input",
+-) -> List[Tuple[float, float]]:
++) -> list[tuple[float, float]]:
+     """Natural pointer gesture: cubic Bezier with deterministic jitter.
+ 
+     Returns `steps` points from `start` (inclusive) toward `end` (exclusive of
+@@ -120,7 +130,7 @@ def bezier_path(
+         x0 + (x1 - x0) * 0.75 + ((digest[2] % 40) - 20),
+         y0 + (y1 - y0) * 0.85 + ((digest[3] % 40) - 20),
+     )
+-    points: List[Tuple[float, float]] = []
++    points: list[tuple[float, float]] = []
+     for i in range(steps):
+         t = i / (steps - 1)
+         u = 1.0 - t
+@@ -144,7 +154,7 @@ def bezier_path(
+     return points
+ 
+ 
+-def _pick_pair(digest: bytes) -> Tuple[str, str]:
++def _pick_pair(digest: bytes) -> tuple[str, str]:
+     return _WEBGL_PAIRS[digest[5] % len(_WEBGL_PAIRS)]
+ 
+ 
+diff --git a/browser/ghost_tower/sync_cookies_to_infisical.py b/browser/ghost_tower/sync_cookies_to_infisical.py
+index 7263cd1a..aac00ad5 100644
+--- a/browser/ghost_tower/sync_cookies_to_infisical.py
++++ b/browser/ghost_tower/sync_cookies_to_infisical.py
+@@ -11,19 +11,20 @@
+ 
+ import asyncio
+ import base64
++import gzip
+ import json
+ import logging
+ import os
+-import sys
+-import urllib.request
+ import urllib.parse
+-import gzip
++import urllib.request
+ from pathlib import Path
+-from playwright.async_api import async_playwright
+ 
+-from credential_vault import CredentialVault, get_or_create_master_key
++from credential_vault import CredentialVault
++from playwright.async_api import async_playwright
+ 
+-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
++logging.basicConfig(
++    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
++)
+ logger = logging.getLogger("infisical_sync")
+ 
+ INFISICAL_API = "https://app.infisical.com"
+@@ -43,7 +44,7 @@ def infisical_login() -> str:
+     req = urllib.request.Request(
+         url,
+         data=json.dumps(payload).encode("utf-8"),
+-        headers={"Content-Type": "application/json"}
++        headers={"Content-Type": "application/json"},
+     )
+     with urllib.request.urlopen(req, timeout=15) as resp:
+         data = json.loads(resp.read().decode("utf-8"))
+@@ -60,17 +61,22 @@ def set_infisical_secret(token: str, key: str, value: str):
+         "secretPath": "/",
+         "secretComment": "Sovereign AI Fleet Auth Cookies SSOT",
+     }
+-    
++
+     # Try POST first (create), fallback to PATCH (update) if already exists
+     req = urllib.request.Request(
+         url,
+         data=json.dumps(payload).encode("utf-8"),
+-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+-        method="POST"
++        headers={
++            "Authorization": f"Bearer {token}",
++            "Content-Type": "application/json",
++        },
++        method="POST",
+     )
+     try:
+         with urllib.request.urlopen(req, timeout=15) as resp:
+-            logger.info(f"✅ Infisical secret '{key}' created successfully (HTTP {resp.status}).")
++            logger.info(
++                f"✅ Infisical secret '{key}' created successfully (HTTP {resp.status})."
++            )
+             return
+     except urllib.error.HTTPError as e:
+         if e.code in (400, 404, 409):
+@@ -78,23 +84,27 @@ def set_infisical_secret(token: str, key: str, value: str):
+             patch_req = urllib.request.Request(
+                 url,
+                 data=json.dumps(payload).encode("utf-8"),
+-                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+-                method="PATCH"
++                headers={
++                    "Authorization": f"Bearer {token}",
++                    "Content-Type": "application/json",
++                },
++                method="PATCH",
+             )
+             try:
+                 with urllib.request.urlopen(patch_req, timeout=15) as presp:
+-                    logger.info(f"✅ Infisical secret '{key}' updated successfully (HTTP {presp.status}).")
++                    logger.info(
++                        f"✅ Infisical secret '{key}' updated successfully (HTTP {presp.status})."
++                    )
+                     return
+             except Exception as pe:
+                 logger.error(f"Failed to patch secret '{key}': {pe}")
+                 raise
+         else:
+-            err_body = e.read().decode('utf-8', errors='ignore')
++            err_body = e.read().decode("utf-8", errors="ignore")
+             logger.error(f"Infisical HTTPError {e.code}: {err_body}")
+             raise
+ 
+ 
+-
+ async def export_and_sync():
+     print("=================================================================")
+     print("   SupremeAI: AI Fleet Cookies Exporter & Infisical Cloud Sync")
+@@ -107,7 +117,7 @@ async def export_and_sync():
+             user_data_dir=USER_DATA_DIR,
+             channel="msedge",
+             headless=True,
+-            args=["--no-first-run", "--disable-blink-features=AutomationControlled"]
++            args=["--no-first-run", "--disable-blink-features=AutomationControlled"],
+         )
+         cookies = await ctx.cookies()
+         await ctx.close()
+@@ -116,9 +126,21 @@ async def export_and_sync():
+     logger.info(f"Successfully extracted {total} active cookies across all domains.")
+ 
+     # Filter to AI-relevant domains for optimal size and security
+-    ai_keywords = ["google", "chatgpt", "openai", "perplexity", "grok", "x.ai", "mistral"]
+-    ai_cookies = [c for c in cookies if any(k in c.get("domain", "").lower() for k in ai_keywords)]
+-    logger.info(f"Found {len(ai_cookies)} AI Fleet session cookies (Gemini, ChatGPT, Grok, Perplexity, Mistral).")
++    ai_keywords = [
++        "google",
++        "chatgpt",
++        "openai",
++        "perplexity",
++        "grok",
++        "x.ai",
++        "mistral",
++    ]
++    ai_cookies = [
++        c for c in cookies if any(k in c.get("domain", "").lower() for k in ai_keywords)
++    ]
++    logger.info(
++        f"Found {len(ai_cookies)} AI Fleet session cookies (Gemini, ChatGPT, Grok, Perplexity, Mistral)."
++    )
+ 
+     raw_json = json.dumps(ai_cookies, indent=2)
+ 
+@@ -134,7 +156,9 @@ async def export_and_sync():
+     # Compress with gzip + base64 for token-efficient storage in Infisical
+     compressed = gzip.compress(raw_json.encode("utf-8"))
+     b64_compressed = base64.b64encode(compressed).decode("utf-8")
+-    logger.info(f"Compressed cookie payload: {len(raw_json)} bytes -> {len(b64_compressed)} chars (Base64+gzip).")
++    logger.info(
++        f"Compressed cookie payload: {len(raw_json)} bytes -> {len(b64_compressed)} chars (Base64+gzip)."
++    )
+ 
+     # 3. Authenticate with Infisical
+     logger.info("Authenticating with Infisical Cloud Production Vault...")
+@@ -144,7 +168,7 @@ async def export_and_sync():
+     # 4. Upload to Infisical
+     # A. Compressed Base64 format (ready for immediate headless injection in cloud runners)
+     set_infisical_secret(token, "AI_FLEET_COOKIES_GZIP_B64", b64_compressed)
+-    
++
+     # B. AES-256 Encrypted format
+     set_infisical_secret(token, "AI_FLEET_COOKIES_ENC", enc_payload)
+ 
+diff --git a/browser/runtime/cookie_bridge.py b/browser/runtime/cookie_bridge.py
+index f07b54dc..755e198f 100644
+--- a/browser/runtime/cookie_bridge.py
++++ b/browser/runtime/cookie_bridge.py
+@@ -95,12 +95,12 @@ def import_json(self, cookies: list[dict], domain: str) -> int:
+         """Import cookie dicts (browser-export shape) for one allowlisted domain."""
+         d = self._guard(domain)
+         if not isinstance(cookies, list):
+-            raise ValueError("cookies must be a list of dicts")  # noqa: TRY004
++            raise ValueError("cookies must be a list of dicts")
+         bucket = self._cookies.setdefault(d, {})
+         accepted = 0
+         for raw in cookies:
+             if not isinstance(raw, dict):
+-                raise ValueError("each cookie must be a dict")  # noqa: TRY004
++                raise ValueError("each cookie must be a dict")
+             name = str(raw.get("name", "")).strip()
+             value = str(raw.get("value", ""))
+             if not name:
+diff --git a/browser/runtime/session_manager.py b/browser/runtime/session_manager.py
+index 888111f4..a24ed5e7 100644
+--- a/browser/runtime/session_manager.py
++++ b/browser/runtime/session_manager.py
+@@ -31,7 +31,7 @@ class RuntimeCapabilityError(RuntimeError):
+ def playwright_available() -> bool:
+     """Capability probe (import-time side-effect free)."""
+     try:
+-        import playwright  # noqa: F401
++        import playwright
+     except ImportError:
+         return False
+     return True
+diff --git a/browser/server.py b/browser/server.py
+index 04c1cc31..81b8290a 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -4,6 +4,7 @@
+ Suitable for Render Free Tier. Falls back gracefully (502) so the gateway
+ can fail over to API-key providers.
+ """
++
+ from __future__ import annotations
+ 
+ import json
+@@ -40,7 +41,11 @@ def _cookies() -> dict[str, str]:
+     for key in ("SUPREMEAI_GEMINI_1PSID", "SUPREMEAI_GEMINI_3PSID"):
+         val = os.environ.get(key, "")
+         if val:
+-            name = key.replace("SUPREMEAI_GEMINI_", "").replace("1PSID", "__Secure-1PSID").replace("3PSID", "__Secure-3PSID")
++            name = (
++                key.replace("SUPREMEAI_GEMINI_", "")
++                .replace("1PSID", "__Secure-1PSID")
++                .replace("3PSID", "__Secure-3PSID")
++            )
+             c[name] = val
+     return c
+ 
+@@ -66,13 +71,21 @@ async def chat_completions(req: ChatRequest) -> JSONResponse:
+         "Referer": "https://gemini.google.com/",
+     }
+     try:
+-        async with httpx.AsyncClient(cookies=cookies, timeout=60.0, follow_redirects=True) as client:
+-            resp = await client.post(GEMINI_URL, headers=headers, data={"f.req": json.dumps([None, [[[prompt]]]])})
++        async with httpx.AsyncClient(
++            cookies=cookies, timeout=60.0, follow_redirects=True
++        ) as client:
++            resp = await client.post(
++                GEMINI_URL,
++                headers=headers,
++                data={"f.req": json.dumps([None, [[[prompt]]]])},
++            )
+     except httpx.HTTPError as exc:
+         raise HTTPException(status_code=502, detail=str(exc))
+ 
+     if resp.status_code >= 400:
+-        raise HTTPException(status_code=502, detail=f"gemini returned {resp.status_code}")
++        raise HTTPException(
++            status_code=502, detail=f"gemini returned {resp.status_code}"
++        )
+ 
+     text = resp.text
+     if not text or "accounts.google.com" in text:
+@@ -84,6 +97,12 @@ async def chat_completions(req: ChatRequest) -> JSONResponse:
+             "object": "chat.completion",
+             "created": 0,
+             "model": "gemini-web-relay",
+-            "choices": [{"index": 0, "message": {"role": "assistant", "content": text[:2000]}, "finish_reason": "stop"}],
++            "choices": [
++                {
++                    "index": 0,
++                    "message": {"role": "assistant", "content": text[:2000]},
++                    "finish_reason": "stop",
++                }
++            ],
+         }
+     )

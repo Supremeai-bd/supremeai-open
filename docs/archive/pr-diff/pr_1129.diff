@@ -1,0 +1,171 @@
+diff --git a/README.md b/README.md
+index 50696e75..f9568c98 100644
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,7 @@
+ # SupremeAI Open Foundation
+ 
+-> **Open the implementation that teaches people how to use SupremeAI; keep private the implementation that reveals why SupremeAI performs better.**
++> **Open the implementation that teaches people how to use SupremeAI; keep private the implementation that reveals why SupremeAI performs better.**  
++> 🇧🇩 **বাংলা সংস্করণ:** [`docs/README.bn.md`](./docs/README.bn.md)
+ 
+ This repository is the **public boundary** of the SupremeAI federation (roadmap §4.3 / Phase 8 foundation).
+ It contains only artifacts that are useful *outside* SupremeAI's private intelligence:
+diff --git a/docs/README.bn.md b/docs/README.bn.md
+new file mode 100644
+index 00000000..c029ec6e
+--- /dev/null
++++ b/docs/README.bn.md
+@@ -0,0 +1,79 @@
++# SupremeAI — বাংলা README (Way 16: Bangla-First Docs)
++
++> ইংরেজি README-র সহোদর — বাংলাভাষী ডেভেলপারদের জন্য। ইংরেজি সংস্করণ:
++> [README.md](./README.md) · পরিকল্পনা: [INFINITY_TECHSTACK_FOLLOW_PLAN.md](./docs/INFINITY_TECHSTACK_FOLLOW_PLAN.md)
++
++**SupremeAI** হলো একটি autonomous AI agent platform — federation মডেলে চলে:
++একটি private core, একটি public open mirror, এবং ১২টি satellite repo।
++gateway + studio + core + vscode + browser + mcp-control-plane — সব একসাথে।
++
++## এক নজরে স্থাপত্য
++
++```
++┌────────────────────────────────────────────────────────────┐
++│  studio/          → Vercel web UI (React 19, admin cockpit) │
++│  gateway/         → FastAPI provider gateway (SSE, keys)    │
++│  core/            → decision moat: DAG planner, skills,     │
++│                     self-evolution, governance              │
++│  infrastructure/  → MCP control plane (tower, 117 tools)    │
++│  vscode/          → VS Code extension + mobile companion    │
++│  browser/         → stealth web agents                      │
++└────────────────────────────────────────────────────────────┘
++```
++
++- **Gateway**: প্রোভাইডার-অ্যাগনস্টিক চ্যাট, keygen API keys, fail-closed admin auth,
++  sliding-window rate limit, stream sanitizer (anti-sycophancy), prompt-injection defense।
++- **MCP Control Plane**: ১১৭+ টুল, zero-credential bridge — external agent নিজের
++  GitHub token ছাড়াই কাজ জমা দিতে পারে; constitutional gates-ই landing-এর একমাত্র
++  কর্তৃত্ব ("the bridge never merges")।
++- **Core**: DAG planner, skill registry + dispatcher, SWE benchmark gate,
++  EU AI Act compliance module — সব deterministic, test-cover।
++
++## দ্রুত শুরু (Quick Start)
++
++```bash
++# Gateway
++cd gateway && pip install -r requirements.txt
++uvicorn main:app --reload          # ডিফল্ট :8000
++
++# Studio
++cd studio && pnpm install && pnpm dev   # ডিফল্ট :3000
++
++# Boundary guard (প্রতি PR-এ)
++python scripts/ci/boundary_sanitization_guard.py --files <আপনার ফাইল>
++```
++
++## নীতিমালা (AGENTS.md সারসংক্ষেপ)
++
++1. **Zero Over-Engineering** — সহজ যা যথেষ্ট, তার বেশি কিছু নয়।
++2. **Extend, Never Regress (P3)** — নতুন ফিচার পুরনো response shape ভাঙবে না।
++3. **Satellite-First** — কোড সবসময় নিজ নিজ স্যাটেলাইট পাথে (gateway/, studio/, core/);
++   root-level shadow নিষিদ্ধ।
++4. **Evidence-First (U2)** — self-report বিশ্বাস নয়; git diff + SHA-256 + test exit 0।
++5. **এক সাইকেল = এক অ্যাটমিক স্লাইস (P7)** — ছোট, যাচাইযোগ্য, রোলব্যাকযোগ্য।
++
++## বাংলা কমেন্ট কনভেনশন
++
++কোর মডিউলে `বাংলা:` প্রিফিক্সে ডকুমেন্ট কমেন্ট স্বাগত (উদাহরণ: `gateway/rate_limit.py`,
++`core/governance/eu_ai_act.py`)। নিয়ম:
++
++- কমেন্ট **কেন** ব্যাখ্যা করে, **কী** নয় — কোড নিজেই "কী" বলে।
++- বাংলা কমেন্ট ও ইংরেজি কোড পাশাপাশি থাকে; কোডের আইডেন্টিফায়ার সবসময় ইংরেজি।
++- সিকিউরিটি-সংবেদনশীল স্ট্রিং কখনো কমেন্টে নয় (secret-scan fail-closed)।
++
++## একাডেমি ও ফ্রি টুলস (studio)
++
++- `/academies` — ইন্টারেক্টিভ কোর্স (MCP Control Plane Academy প্রথম ব্যাচ);
++  প্রোগ্রেস লোকালস্টোরেজে, কোনো অ্যাকাউন্ট লাগে না।
++- `/tools` — ফ্রি ডেভ টুলস (JSONForge, SchemaForge, CostForge) — সম্পূর্ণ ব্রাউজার-নেটিভ।
++
++## লাইসেন্স ও অবদান
++
++MIT — বিস্তারিত [LICENSE](./LICENSE)। অবদানের আগে AGENTS.md ও
++AGENT_RULES.md পড়ুন; সব PR bridge pipeline দিয়ে যায়, constitutional gates ছাড়া
++কিছুই main-এ যায় না।
++
++---
++
++*এই README Way 16 (Bangla-First) patch-এর অংশ — Infinity প্ল্যানের differentiator
++হিসেবে English-only competitor-দের বিপরীতে SupremeAI-র বাংলা-প্রথম পরিচয়।*
+diff --git a/docs/plans/infrastructure/infinity_security_stack_migration_playbook.md b/docs/plans/infrastructure/infinity_security_stack_migration_playbook.md
+new file mode 100644
+index 00000000..9406acaf
+--- /dev/null
++++ b/docs/plans/infrastructure/infinity_security_stack_migration_playbook.md
+@@ -0,0 +1,67 @@
++# Infinity Security Stack — Evaluation & Migration Playbook (Way 6)
++
++> SupremeAI × Infinity Tech Stack follow plan, Way 6 deliverable.
++> Status: **evaluation playbook** (no runtime code changes in this document).
++> Author: continuous agent loop, 2026-10-24 · Basis: `infinitytechstack.uk` security stack
++> (Infinity ID / Observe / Data / Stream — single Rust binary, zero per-seat tax) vs
++> SupremeAI's current Qdrant/Redis/Upstash/OpenAI-dependency posture.
++
++---
++
++## 1. Component-by-component assessment
++
++| Infinity module | What it replaces here | Current SupremeAI counterpart | Verdict |
++|---|---|---|---|
++| **Infinity ID** (OIDC + MFA, self-hosted) | Clerk/Auth0/Supabase auth seats | `gateway/service/admin_auth.py` (native admin JWT) + keygen API keys + OTP router | **Evaluate later (Phase 3).** Native auth already fail-closed (Rating-audit fixes #1085/#1083); migrating identity providers is high-blast-radius and must wait for the native surface to stabilize. Revisit when MFA enrollment + OIDC federation land in the roadmap. |
++| **Observe** (logs/traces/metrics, single binary) | SaaS observability tax | `core/observability/` + `core/monitoring/` + gateway middleware; correlation ids standardized by **Way 28 patch** (`gateway/middleware/correlation_id.py` + optional OTel facade) | **Adopt pattern, not product (Phase 2).** OTel SDK is already wire-compatible; keep the facade vendor-neutral so an Observe-style collector can replace SaaS exporters without code churn. |
++| **Data** (HNSW vector store) | Qdrant cluster cost | `gateway/service/memory_store.py` + `core/unified_memory.py` (Qdrant client, cosine 0.72 gate from Way 2) | **Benchmark before migrating (Phase 3).** Qdrant works and is already load-shaped; an embedded HNSW (single binary) only pays off if satellite count × QPS outgrows the free-tier cluster. Action: run a 1M-vector recall/latency benchmark (documented §3) before any decision. |
++| **Stream** (BM25 + streaming search) | Upstash/Redis search usage | `core/tools/knowledge/local_search_rag.py` + Redis managers | **Low priority.** BM25 is embedded in several existing paths; duplication risk > benefit until the knowledge corpus scales past what SQLite/Redis hold comfortably. |
++
++## 2. Migration decision gates (do NOT skip)
++
++1. **Cost gate** — current monthly infra spend (Qdrant cloud + Upstash + auth seats) vs
++   single-VPS cost for an Infinity-style stack. Migration must project ≥ 40% savings
++   over 6 months to proceed (otherwise complexity is bought, not paid for).
++2. **Recall gate** — HNSW candidate must hit ≥ 0.98 recall@10 on the knowledge corpus
++   sample (same queries, same ground truth as the Qdrant baseline run).
++3. **Latency gate** — p95 < 25 ms for top-10 search at satellite-peak concurrency
++   (measure on the SAME box class as production: Render free-tier equivalent).
++4. **Identity gate** — Infinity ID candidate must support: admin JWT parity (sub/uid/
++   email/role claims, verified fail-closed), OTP/MFA enrollment, and keygen API-key
++   coexistence during a 2-phase cutover.
++5. **Rollback gate** — every migration step needs a documented revert (P3):
++   dual-write period → verify → flip reads → drop old path. No in-place rewrites.
++
++## 3. Benchmark procedure (Data module, when scheduled)
++
++```bash
++# 1. Export a 1M-vector sample from Qdrant (ids + vectors + metadata) to parquet.
++# 2. Build the candidate index (Infinity Data module / hnswlib) with identical distance metric.
++# 3. Replay 10k recorded queries; record recall@10, p50/p95/p99 latency, RSS.
++# 4. Compare against the same replay on Qdrant. Persist both JSON reports under
++#    docs/plans/infrastructure/benchmarks/<date>-vector-benchmark.json
++```
++
++Pass/fail per §2 gates 2–3; attach both reports to the migration PR.
++
++## 4. Phased adoption sketch (if all gates pass)
++
++- **Phase A** — Observe-pattern: correlation-id middleware (Way 28 patch, already provided) + OTel facade; point exporters at self-hosted collector.
++- **Phase B** — Stream/Data: dual-write shadow index; verify recall/latency gates for 2 weeks; flip reads behind `VECTOR_BACKEND` env (Qdrant | embedded-hnsw), keep Qdrant warm for rollback.
++- **Phase C** — Identity: OIDC federation in front of existing admin auth (no user-visible change), MFA enrollment, then keygen-key parity mode; 2-phase cutover with instant rollback.
++
++## 5. Explicitly out of scope / rejected
++
++- Replacing Redis with the Infinity Stream module for rate limiting — Way 14 patch
++  (`gateway/service/redis_rate_limit.py`) already solves distribution with an
++  optional, fail-open design; adding a second datastore for the same job violates
++  zero-over-engineering.
++- Forking Infinity's Rust binaries into the satellite fleet — the plan's own risk
++  note (§7.1) stands: pattern-first, Rust sidecar only if a measured bottleneck exists.
++- Any change that breaks the bridge's protected-path or secret-scan guarantees.
++
++---
++
++*Compliance note: this playbook is an engineering aid, not a legal document.
++License attribution for referenced Infinity components (MIT/Apache-2.0) is
++required in any derivative use — patterns adopted, never copy-pasted.*

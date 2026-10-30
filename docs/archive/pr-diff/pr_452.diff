@@ -1,0 +1,26 @@
+diff --git a/AUTONOMOUS_TRANSIT_PIPELINE.md b/AUTONOMOUS_TRANSIT_PIPELINE.md
+index c356caac..e522b6f4 100644
+--- a/AUTONOMOUS_TRANSIT_PIPELINE.md
++++ b/AUTONOMOUS_TRANSIT_PIPELINE.md
+@@ -15,3 +15,8 @@
+ 15. Continuous Reset: Upon task or audit completion, loop resets immediately to re-poll board with zero sleep.
+ 16. Self-Healing Board: All pipeline failures, merge conflicts, warnings, and audit findings across all repositories auto-create issues on supremeai-open.
+ 17. Deployment Strategy: On target repo merge, agent triggers manual deploy if immediate; otherwise scheduled auto-deploy runs 4x/day on diffs. Monorepo only receives merge sync.
++18. Unified Gateway Shield: `supremeai-api` is the single external proxy; all underlying providers (Gemini, Groq, OpenRouter, etc.) are strictly shielded behind it.
++19. Vault-Only Provider Keys: Provider credentials remain server-side in the vault; all direct third-party provider key references across federation projects are removed.
++20. Internal Failover & Rotation: Dynamic failover chains, token rotation, model degradation, and quota management execute transparently behind `supremeai-api`.
++21. One Key SSOT: All downstream apps, agents, studio, and internal modules authenticate exclusively using `SUPREMEAI_API_KEY` (OpenAI-compatible schema).
++22. User Quota & Key Issuance: End-user API keys, tenant rate limiting, monetization tiers, and consumption billing are provisioned and governed solely through `supremeai-api`.
+diff --git a/docs/AUTONOMOUS_TRANSIT_PIPELINE.md b/docs/AUTONOMOUS_TRANSIT_PIPELINE.md
+index c356caac..e522b6f4 100644
+--- a/docs/AUTONOMOUS_TRANSIT_PIPELINE.md
++++ b/docs/AUTONOMOUS_TRANSIT_PIPELINE.md
+@@ -15,3 +15,8 @@
+ 15. Continuous Reset: Upon task or audit completion, loop resets immediately to re-poll board with zero sleep.
+ 16. Self-Healing Board: All pipeline failures, merge conflicts, warnings, and audit findings across all repositories auto-create issues on supremeai-open.
+ 17. Deployment Strategy: On target repo merge, agent triggers manual deploy if immediate; otherwise scheduled auto-deploy runs 4x/day on diffs. Monorepo only receives merge sync.
++18. Unified Gateway Shield: `supremeai-api` is the single external proxy; all underlying providers (Gemini, Groq, OpenRouter, etc.) are strictly shielded behind it.
++19. Vault-Only Provider Keys: Provider credentials remain server-side in the vault; all direct third-party provider key references across federation projects are removed.
++20. Internal Failover & Rotation: Dynamic failover chains, token rotation, model degradation, and quota management execute transparently behind `supremeai-api`.
++21. One Key SSOT: All downstream apps, agents, studio, and internal modules authenticate exclusively using `SUPREMEAI_API_KEY` (OpenAI-compatible schema).
++22. User Quota & Key Issuance: End-user API keys, tenant rate limiting, monetization tiers, and consumption billing are provisioned and governed solely through `supremeai-api`.

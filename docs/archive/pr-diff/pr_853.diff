@@ -1,0 +1,152 @@
+diff --git a/vscode/desktop/src-tauri/tauri.conf.json b/vscode/desktop/src-tauri/tauri.conf.json
+index 44bc4d6e..23029509 100644
+--- a/vscode/desktop/src-tauri/tauri.conf.json
++++ b/vscode/desktop/src-tauri/tauri.conf.json
+@@ -18,10 +18,12 @@
+         "resizable": true
+       }
+     ],
+-    "security": { "csp": null }
++    "security": {
++      "csp": "default-src 'self'; connect-src 'self' https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
++    }
+   },
+   "bundle": {
+-    "active": false,
++    "active": true,
+     "targets": "all",
+     "icon": []
+   },
+@@ -33,4 +35,4 @@
+       ]
+     }
+   }
+-}
++}
+\ No newline at end of file
+diff --git a/vscode/desktop/tsconfig.json b/vscode/desktop/tsconfig.json
+index cac681eb..17701b86 100644
+--- a/vscode/desktop/tsconfig.json
++++ b/vscode/desktop/tsconfig.json
+@@ -8,7 +8,8 @@
+     "skipLibCheck": true,
+     "jsx": "react-jsx",
+     "rootDir": "src",
+-    "noEmit": true
++    "outDir": "dist",
++    "noEmit": false
+   },
+   "include": ["src"]
+ }
+diff --git a/vscode/extension/src/mcp_bridge.ts b/vscode/extension/src/mcp_bridge.ts
+index d4150079..00e95a76 100644
+--- a/vscode/extension/src/mcp_bridge.ts
++++ b/vscode/extension/src/mcp_bridge.ts
+@@ -177,7 +177,7 @@ export class McpBridge {
+       }
+ 
+       const data = (await res.json().catch(() => ({}))) as {
+-        result?: { content?: Array<{ text?: string }> };
++        result?: { content?: Array<{ text?: string }>; isError?: boolean };
+         error?: { message?: string };
+       };
+ 
+@@ -185,11 +185,45 @@ export class McpBridge {
+         return { success: false, error: data.error.message || "MCP Dispatch Error" };
+       }
+ 
++      if (!data.result) {
++        return { success: false, error: "MCP response missing result" };
++      }
++
+       const responseText = data?.result?.content?.[0]?.text || "";
++      if (data.result.isError) {
++        return { success: false, error: responseText || "MCP tool reported an error" };
++      }
++
++      let taskId: string | undefined;
++      let issueNumber: number | undefined;
++      if (responseText) {
++        try {
++          const parsed = JSON.parse(responseText) as Record<string, unknown>;
++          taskId =
++            (parsed.taskId as string) ||
++            (parsed.task_id as string) ||
++            (parsed.id as string) ||
++            undefined;
++          const rawIssue =
++            parsed.issueNumber ?? parsed.issue_number ?? parsed.issue;
++          if (typeof rawIssue === "number") issueNumber = rawIssue;
++          else if (typeof rawIssue === "string" && /^\d+$/.test(rawIssue)) {
++            issueNumber = Number(rawIssue);
++          }
++        } catch {
++          // Non-JSON tool text is still a successful dispatch; keep it as the id.
++          taskId = responseText;
++        }
++      }
++
++      if (!responseText && !taskId) {
++        return { success: false, error: "MCP dispatch returned no result content" };
++      }
++
+       return {
+         success: true,
+-        taskId: `task-${Date.now().toString(36)}`,
+-        error: responseText ? undefined : undefined,
++        taskId,
++        issueNumber,
+       };
+     } catch (err) {
+       return {
+@@ -226,7 +260,22 @@ export class McpBridge {
+       });
+       clearTimeout(timer);
+ 
+-      return res.ok;
++      if (!res.ok) {
++        return false;
++      }
++
++      const data = (await res.json().catch(() => ({}))) as {
++        result?: { isError?: boolean; content?: Array<{ text?: string }> };
++        error?: { message?: string };
++      };
++
++      if (data.error) {
++        return false;
++      }
++      if (!data.result || data.result.isError) {
++        return false;
++      }
++      return true;
+     } catch {
+       return false;
+     }
+diff --git a/vscode/mobile/tsconfig.json b/vscode/mobile/tsconfig.json
+index cac681eb..17701b86 100644
+--- a/vscode/mobile/tsconfig.json
++++ b/vscode/mobile/tsconfig.json
+@@ -8,7 +8,8 @@
+     "skipLibCheck": true,
+     "jsx": "react-jsx",
+     "rootDir": "src",
+-    "noEmit": true
++    "outDir": "dist",
++    "noEmit": false
+   },
+   "include": ["src"]
+ }
+diff --git a/vscode/package.json b/vscode/package.json
+index b73c69a6..f8e6fb14 100644
+--- a/vscode/package.json
++++ b/vscode/package.json
+@@ -12,7 +12,7 @@
+     "build:extension": "npm run compile --workspace=extension",
+     "build:desktop": "npm run build --workspace=desktop",
+     "build:mobile": "npm run build --workspace=mobile",
+-    "build:all": "npm run build:extension",
++    "build:all": "npm run build:extension && npm run build:desktop && npm run build:mobile",
+     "test": "npm run test --workspace=extension"
+   },
+   "devDependencies": {

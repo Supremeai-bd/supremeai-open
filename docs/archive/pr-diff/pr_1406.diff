@@ -1,0 +1,159 @@
+diff --git a/.pre-commit-config.yaml b/.pre-commit-config.yaml
+index dabfeda7..102211e4 100644
+--- a/.pre-commit-config.yaml
++++ b/.pre-commit-config.yaml
+@@ -1,19 +1,10 @@
++# WO #1361 — block commits that log plaintext secrets (OTP/tokens/passwords)
+ repos:
+-  - repo: https://github.com/astral-sh/ruff-pre-commit
+-    rev: v0.6.9
+-    hooks:
+-      - id: ruff
+-        args: [--fix]
+-      - id: ruff-format
+-  - repo: https://github.com/gitleaks/gitleaks
+-    rev: v8.18.4
+-    hooks:
+-      - id: gitleaks
+   - repo: local
+     hooks:
+-      - id: pytest-smoke
+-        name: pytest smoke
+-        entry: python -m pytest tests/test_ci_guards.py -q
++      - id: no-secret-logs
++        name: scan for secret values interpolated in log/print calls
++        entry: python3 scripts/ci/scan_secret_logs.py
+         language: system
+         pass_filenames: false
+-        stages: [pre-commit]
++        files: '\.py$'
+diff --git a/browser/ghost_tower/auto_login.py b/browser/ghost_tower/auto_login.py
+index ba317624..1b8f7d3a 100644
+--- a/browser/ghost_tower/auto_login.py
++++ b/browser/ghost_tower/auto_login.py
+@@ -119,7 +119,7 @@ async def handle_google_flow(
+                 current_otp = pyotp.TOTP(totp_secret).now()
+                 await totp_elem.fill(current_otp)
+                 await page.keyboard.press("Enter")
+-                logger.info(f"[SSO] Submitted 2FA code: {current_otp}")
++                logger.info("[SSO] Submitted 2FA code: [REDACTED_OTP]")
+                 await asyncio.sleep(3)
+             else:
+                 logger.info("[NOTICE]: 2FA challenge detected.")
+diff --git a/browser/ghost_tower/ghost_bridge_server.py b/browser/ghost_tower/ghost_bridge_server.py
+index c8d44f14..91e9ca3e 100644
+--- a/browser/ghost_tower/ghost_bridge_server.py
++++ b/browser/ghost_tower/ghost_bridge_server.py
+@@ -310,10 +310,21 @@ async def web_chat_page():
+     const messages = document.getElementById('messagesArea');
+     const statusText = document.getElementById('statusIndicator');
+ 
+-    function appendMessage(text, isUser = false) {
++    // XSS guard (WO #1361): escape all dynamic content before innerHTML.
++    // Static developer-authored markup must opt in explicitly via allowHtml.
++    function escapeHtml(s) {
++      return String(s)
++        .replace(/&/g, '&amp;')
++        .replace(/</g, '&lt;')
++        .replace(/>/g, '&gt;')
++        .replace(/"/g, '&quot;')
++        .replace(/'/g, '&#39;');
++    }
++
++    function appendMessage(text, isUser = false, allowHtml = false) {
+       const msg = document.createElement('div');
+       msg.className = 'msg ' + (isUser ? 'msg-user' : 'msg-bot');
+-      msg.innerHTML = text.replace(/\\n/g, '<br>');
++      msg.innerHTML = allowHtml ? text : escapeHtml(text).replace(/\\n/g, '<br>');
+       messages.appendChild(msg);
+       messages.scrollTop = messages.scrollHeight;
+       return msg;
+@@ -330,7 +341,7 @@ async def web_chat_page():
+       btn.disabled = true;
+       statusText.innerText = "⏳ Gemini ব্রাউজারে টাইপ হচ্ছে ও উত্তর জেনারেট হচ্ছে...";
+ 
+-      const botBubble = appendMessage("<i>Gemini ভাবছে...</i>", false);
++      const botBubble = appendMessage("<i>Gemini ভাবছে...</i>", false, true);
+ 
+       try {
+         const res = await fetch('/api/chat', {
+@@ -339,10 +350,10 @@ async def web_chat_page():
+           body: JSON.stringify({ message: text })
+         });
+         const data = await res.json();
+-        botBubble.innerHTML = (data.reply || "No reply").replace(/\\n/g, '<br>');
++        botBubble.innerHTML = escapeHtml(data.reply || "No reply").replace(/\\n/g, '<br>');
+         statusText.innerText = "✅ সম্পন্ন (Source: " + (data.source || 'gemini.google.com') + " | " + data.cost + ")";
+       } catch (err) {
+-        botBubble.innerHTML = "⚠️ ত্রুটি: " + err.message;
++        botBubble.innerHTML = "⚠️ ত্রুটি: " + escapeHtml(err.message);
+         statusText.innerText = "❌ কানেকশন এরর";
+       } finally {
+         input.disabled = false;
+diff --git a/scripts/ci/scan_secret_logs.py b/scripts/ci/scan_secret_logs.py
+new file mode 100644
+index 00000000..0d07c693
+--- /dev/null
++++ b/scripts/ci/scan_secret_logs.py
+@@ -0,0 +1,61 @@
++#!/usr/bin/env python3
++"""Pre-commit secret-pattern scanner for the browser runtime (WO #1361).
++
++Flags log/print calls that interpolate secret-bearing variables
++(OTP / TOTP codes, tokens, passwords, API keys, credentials) via
++f-string interpolation. Exit 1 blocks the commit.
++
++Escapes: lines carrying an explicit [REDACTED_*] marker are ignored,
++so the canonical redaction pattern introduced in auto_login.py passes.
++Limitation (documented): pattern-based; covers f-string interpolation,
++not .format()/% formatting or variable re-aliasing.
++"""
++import re
++import sys
++from pathlib import Path
++
++SECRET_VAR = (
++    r"(current_otp|otp_code|totp_secret|totp_code|password|passwd|pwd"
++    r"|api_key|apikey|access_token|refresh_token|auth_token|secret|credential)"
++)
++LOG_INTERP = re.compile(
++    r"(?:logger|logging|console|print)\w*(?:\.\w+)*\s*\("
++    r"[^)]*\{\s*" + SECRET_VAR + r"\w*\s*\}",
++    re.IGNORECASE,
++)
++SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".mypy_cache"}
++REDACTED = re.compile(r"\[REDACTED", re.IGNORECASE)
++
++
++def scan_repo(root: Path):
++    hits = []
++    for p in root.rglob("*.py"):
++        if any(part in SKIP_DIRS for part in p.parts):
++            continue
++        try:
++            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
++        except OSError:
++            continue
++        for i, line in enumerate(lines, 1):
++            if REDACTED.search(line):
++                continue
++            m = LOG_INTERP.search(line)
++            if m:
++                hits.append(f"{p.relative_to(root)}:{i}: {line.strip()[:120]}")
++    return hits
++
++
++def main():
++    root = Path(sys.argv[1]) if len(sys.argv) > 1 else Path.cwd()
++    hits = scan_repo(root)
++    if hits:
++        print("SECRET-LOG SCAN FAILED — plaintext secret interpolation in log calls:")
++        for h in hits:
++            print("  " + h)
++        return 1
++    print("secret-log scan: clean")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())

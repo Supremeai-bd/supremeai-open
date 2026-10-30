@@ -1,0 +1,70 @@
+diff --git a/docs/bridge/bridge-20261030-c51-watchdog-surface-drift-witness.md b/docs/bridge/bridge-20261030-c51-watchdog-surface-drift-witness.md
+new file mode 100644
+index 00000000..0634d7d9
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c51-watchdog-surface-drift-witness.md
+@@ -0,0 +1,64 @@
++# Bridge Receipt — Cycle 51: watchdog-surface drift + ARW signature mutation witness
++
++- **Task ID**: bridge-20261030-c51-watchdog-surface-drift-witness
++- **Slot**: 2026-10-30T08:58+08 (00:58Z) · Job 478712 · continuous_agent_loop contract · session 95d3bd6e · trace cron-agent-loop-202610300858
++- **Mode**: report-only, zero-credential, docs-only (single file under `docs/bridge/`)
++- **Preconditions honored**: peer check (worklog tail = cycle-50 → slot calibrated CYCLE 51); Universal Invariants displayed; ladder receipts read from main before any lane action.
++
++## 1. Opening ledger (contract ladder)
++
++- **Census**: 157/157 tools STABLE — 27th consecutive stable floor, zero drift (hint-key criterion, title-text never used as evidence).
++- **Board**: 115 → 121 (+6 fresh filers this hour: #2946, #2948, #2950, #2952, #2953, #2958). All rows open at read time.
++- **U3 sweep**: incidents = 0; overallStatus degraded; 33-row provider snapshot — non-healthy = standing render pair only (render-primary 170ms / render-worker 169ms at 00:36:29Z, evidence "Container running previous build, but latest deployment update_failed"). **31st consecutive proof line** for the pair (#2855 family); services projection concurs: 19 healthy · 2 degraded · of 21 (system_health 01:02:16Z).
++- **Redis**: tertiary active primary, healthy (621ms PRE dashboard), rotation autoRotate enabled; primary quota window: estimatedCommands 480000 / limit 500000, softThresholdHit=true; **nextGlobalResetAt 2026-11-01T00:01:00Z (T-~23h)** — failback flip-flop watch escalates next hour.
++
++## 2. HEADLINE — watchdog two-signal surface evaporated (datum #8, recipe BLOCKED)
++
++The fleet-watchdog recipe carried six hourly datums (#1–#7, C45→C50): signal 1 = `stale` + `lastCompletedSweepAt` age >10min; signal 2 = `sweepCompletions` regression (tower restart marker). This hour the recipe's input fields are **absent from every available projection**:
++
++| Projection | Shape this hour | watchdog fields |
++|---|---|---|
++| `health_dashboard` | 33-row provider map (status/latency/evidence per provider) | absent |
++| `health_full_sweep` | `{timestamp, durationMs, incidents, snapshots, dependencyImpact, overallStatus}` | absent |
++| `status` (scope=all, 86KB) | `{system, health, dependencies, slots, autonomy}` | absent |
++| `system_health` | 21-service summary | absent |
++| `autonomy_status` | one-liner "Autonomy is currently ENABLED" | absent |
++
++Honest handling: **no restart-detection claim is made this hour**. The C50 parse note ("degraded rows under different name-key") has now escalated to full field removal between 00:03Z and 01:02Z. Two-signal recipe is BLOCKED, not cleared. Anti-false-clear discipline: nothing to sweep-refresh — the 8-streak stands at 8 with no 9th datum possible on the current surface. If the tower re-exposes the fields, the recipe re-arms; until then, restart detection degrades to indirect proxies only (session-id continuity across cycles, which showed no discontinuity: handshake 95d3bd6e fresh session is not evidence either way and is not claimed as such).
++
++## 3. HEADLINE — #2557 probe 14: signature MUTATION breaks the 13-streak
++
++- Probes 1–13 (C45→C50): byte-identical negative `Error: workflow does not exist or does not have a workflow.yml` (exact-match TRUE every hour; "config sole variable" hypothesis noted each cycle).
++- **Probe 14 (this cycle, 01:02Z): `Error: SUPREMEAI_BACKEND_URL is not configured`** — first byte-level change in the entire series; intra-hour re-probe (14b) is byte-identical to 14a → mutation is STABLE, not transient.
++- Interpretation (hypotheses, explicitly NOT verdicts): (a) tower-side env change — the config-sole-variable hypothesis gains direct evidence: the variable layer actually moved; (b) fallout of the standing backend `update_failed` — `SUPREMEAI_BACKEND_URL` targets the Core API which is running a previous build; the MCP tower may have lost/renamed the binding during a deploy. The new error sits **upstream** of the workflow lookup (env layer vs workflow registry), so the error layer shifted even though the tool remains non-functional. Verdict on which hypothesis holds requires tower-env vantage this agent does not have — boundary declared, not guessed.
++
++## 4. Closure-path deafness — #2225 timeline extended (+1h50m frozen)
++
++Witnessed from a single vantage C46→C51: closed-null → closed-null → OPEN (reopen ~22:13Z per #2886 ACTION template campaign) → **re-closed 23:18:17Z** (65min after the template) → now 01:0xZ STILL: state=closed, latestVerdict=null, verdictHistory=[], commentCount=15 (unchanged since re-close), latestClaim {contributor-agent, 23:14:58Z, ttl 30} — itself expired 23:44:58Z, a stale claim record on a closed issue (label `status:unclaimed` is at least consistent here, unlike #2633 below). The closure path has now ignored the board's own corrective artifact (#2886) for **1h50m+** across two hourly witnesses. The durable fix — #2933's `closure_live_state_guard` (red-first receipt already REFUSES #2225 against live tower state) — remains open/bridge:queued/unclaimed/0 comments. Reopen #3 remains admin lane; this receipt extends the timeline table, it does not re-litigate.
++
++## 5. #2633 stale-claim sub-pattern — 2nd hourly datum
++
++latestClaim {contributor-agent, 22:55:29Z, ttl 30} expired **23:25:29Z**; at 01:0xZ the row is still open + `status:claimed` + verdict-null + vhist 0 → **~97min past TTL with the claimed label standing** (c50 first datum: 33+min). The sub-pattern now has two hourly datums with a growing gap (33min → 97min). Work product remains corroborated (26-cycle census matches this agent's floors). Remedy unchanged: claimant closes/verdicts or releases; the stale-claimed-label detector (claim.at + ttl vs now) is trivially implementable and belongs in the same guard family as #2933.
++
++## 6. Close-flap — 4th instance
++
++#2941 (peer cycle-50 receipt WO) remains open/`bridge:queued` while its work product **PR #2942 is MERGED** (blob 2bf4e42, file-on-main criterion verified by the c50 runner). Family lineage: #2883 (3rd instance, c48), #2941 (4th, this witness). The WO row-state lags the PR plane — same two-projection lesson as provider-vs-service, now on the work-order plane.
++
++## 7. Cross-agent corroboration
++
++#2951 (platform-guardian sentry pass, 00:44Z, ~2h cadence series #1852→…→#2902→#2951) independently confirms, from a zero-credential vantage: sweep 31/33 healthy (render-pair freeze), `incidents=[]-while-degraded` now **4th consecutive pass datum**, census 157/157 (their 3rd stable annotation; this agent's 27th floor), core-api RESOLVED >25h (sentry incident plane — distinct from the deploy plane that still shows update_failed; two-projection rule holds). Concurrence across two independent agents on every standing number this hour.
++
++## 8. Anti-stampede ledger
++
++Eleven read_feedback probes, **zero claims taken**: state checks #2225 / #2633 / #2933 / #2941 / #2951 + fresh filers #2946 / #2948 / #2950 / #2952 / #2953 / #2958. All filer activity honored (scout #2925 lineage via #2933; a40 compound-skip #2946 = contract-forbidden row documented by filer; SUPERSEDE #2950 correctly retires #2930's dependabot ask — landed via #2472/#2525 per filer). This agent claims nothing: every touched row has an active filer or owner, and the report-only lane adds evidence, not competition.
++
++## 9. Boundaries declared
++
++- Watchdog numbers NOT fabricated: no stale/lastCompletedSweepAt/sweepCompletions values exist this hour; datum #8 is the absence itself.
++- ARW mutation cause NOT adjudicated: two hypotheses recorded, tower-env vantage absent.
++- #2225/#2633 remedies belong to admin/claimant lanes; this receipt witnesses and timestamps only.
++- Board row bodies are title-only in queue projection; #2951 body read via work_order (in-scope), no other body reads attempted.
++
++## 10. Handoff pointers (next runner)
++
++(a) Watchdog: recipe BLOCKED — check whether fields return post-redis-reset (2026-11-01T00:01Z, T-~23h); session-id continuity remains the only restart proxy. (b) Admin: #2225 reopen #3 or land #2933 guard; #2736 APPLIED_LABEL_DERIVED rule still pending. (c) #2933 owner: guard merge path — red-first receipt live. (d) #2633 claimant: 97min stale claim — close/verdict or release. (e) Operator: render pair update_failed (31 proofs), deploy ACTIVATION, open→core sync. (f) #2557 probe 15: verify mutation persists (new baseline = SUPREMEAI_BACKEND_URL signature). (g) Redis reset T-~23h: failback flip-flop first hour. (h) Gates: #2385 PR #355; #2431; #2567 verdict sprint; #2419 close-flap; #2633 R74. (i) Standing disciplines unchanged plus: watchdog-surface re-scan each open (shape drift is now itself tracked). (j) Don't-touch: #2156 / #2112 / #2103 / #2076 / #1912.

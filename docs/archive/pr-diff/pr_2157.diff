@@ -1,0 +1,151 @@
+diff --git a/docs/workorders/bridge-20261028-ci1776-zizmor-runbook.md b/docs/workorders/bridge-20261028-ci1776-zizmor-runbook.md
+new file mode 100644
+index 00000000..e69a5721
+--- /dev/null
++++ b/docs/workorders/bridge-20261028-ci1776-zizmor-runbook.md
+@@ -0,0 +1,145 @@
++# CI Admin Runbook — zizmor 60-finding workflow hardening plan (WO #1776)
++
++Task ID: bridge-20261028-ci1776-zizmor-runbook-r1
++Refs: #1776 (P1-high, radar R35 / SCOUT_RADAR_2026-10-28-XI), #1736, #1712, #1643
++Lane: **report-only, admin-owned patch.** Agents never edit `.github/**` (#1643 doctrine; #1769 live-proves bridge rejection). This document carries the corrected evidence, the resolved pin table, and the exact edit plan so the admin patch is mechanical.
++Scan baseline honesty: original scan receipt dated 2026-10-28 at HEAD 3daacf1 (zizmor 1.31.1). This runbook re-validates at current HEAD and corrects one undercount (Section 2).
++
++---
++
++## 1. Re-validation receipt (2026-10-28, HEAD 9530edb)
++
++Reproduced with zizmor 1.31.1 (same version as the scout scan), offline mode, command equivalent to the original receipt:
++
++```
++zizmor --no-online-audits --format json .github
++```
++
++Result: **60 findings, exact per-class parity** with the scout receipt:
++
++| audit | count | severity |
++|---|---|---|
++| unpinned-uses | 27 | High/High |
++| artipacked | 15 | Medium/Low |
++| template-injection | 13 | High/High |
++| excessive-permissions | 3 | High/High |
++| self-repository | 2 | Low/High |
++
++Drift check: `.github/` has **zero commits** between 3daacf1 and 9530edb, so every line reference below is valid at current main without re-mapping.
++
++## 2. Corrected `uses:` inventory (supersedes the scout corroboration)
++
++The scout's rg corroboration reported 23 tag-pinned refs across 3 action repos. The true inventory is **27 refs across 5 repos** — 27 matches zizmor's unpinned-uses count exactly. Additions the corroboration missed: `pnpm/action-setup@v4` (1), `actions/upload-artifact@v6` (1), and `actions/setup-node@v5` is 3 (not 1).
++
++| action ref | instances | resolved commit SHA | verification |
++|---|---|---|---|
++| actions/checkout@v5 | 15 | fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 | ls-remote refs/tags/v5, 2026-10-28, peeled == tag |
++| actions/setup-python@v6 | 7 | ece7cb06caefa5fff74198d8649806c4678c61a1 | ls-remote refs/tags/v6, 2026-10-28 |
++| actions/setup-node@v5 | 3 | a0853c24544627f65ddf259abe73b1d18a591444 | ls-remote refs/tags/v5, 2026-10-28 |
++| pnpm/action-setup@v4 | 1 | f40ffcd9367d9f12939873eb1018b921a783ffaa | ls-remote refs/tags/v4, 2026-10-28 |
++| actions/upload-artifact@v6 | 1 | b7c566a772e6b6bfb58ed0dc250532a479d7789f | ls-remote refs/tags/v6, 2026-10-28 |
++
++Local composite refs (not third-party, not in scope for pinning): `./.github/actions/setup-node-tower` (1), `./.github/actions/gitleaks-scan` (1) — see Section 7 for the self-repository review note.
++
++## 3. Plan A — SHA-pin all 27 third-party refs (mechanical, ~27 edits)
++
++Rewrite each `uses:` as a full-length commit SHA plus a version comment so humans can audit future bumps (never-do: SHA-pin without version comment):
++
++```
++uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
++uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
++uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
++uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
++uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
++```
++
++Fastest safe application: a repo-wide textual substitution per pair (tag form to SHA form), then `git grep -c "uses: .*@[0-9a-f]\{40\}" .github` must report 27. Once dependabot's `github-actions` ecosystem lands (#1736), SHA bumps become automatic PRs; until then re-run the ls-remote check monthly or on tag-retarget alerts.
++
++## 4. Plan B — de-injection of the 13 template-injection findings
++
++All sites are `run:` blocks interpolating `github.*` context directly into shell. Two patterns cover every finding.
++
++### 4.1 duplicate-pr-guard, pipeline.yml L311-L367 (head_ref into grep pipeline)
++
++The env block (L312-L317) already does the right thing for PR_TITLE/PR_BODY/PR_LABELS. The one true injection is L325: `github.head_ref` is interpolated inside double quotes directly on the shell command line. Attacker-controlled branch name executes in a privileged context on every external PR.
++
++Edit 1 — extend the step's existing env block:
++
++```
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PR_NUM: ${{ github.event.pull_request.number }}
++          PR_TITLE: ${{ github.event.pull_request.title }}
++          PR_BODY: ${{ github.event.pull_request.body }}
++          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
++          HEAD_REF: ${{ github.head_ref }}
++```
++
++Edit 2 — inside the run block, replace the double-quoted template interpolation of `github.head_ref` with the env variable (same grep pipeline, attacker data now arrives as data, never as code):
++
++```
++          BRANCH_ISSUES=$(echo "$HEAD_REF" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
++```
++
++### 4.2 Watchdog curl sites (6 steps, first interpolation rows at L610, L642, L679, L731, L844, L926)
++
++Each builds a JSON payload for repository dispatch with `${{ github.ref_name }}`, `${{ github.repository }}`, `${{ github.workflow }}`, `${{ github.run_id }}`, `${{ github.sha }}` spliced into the curl argument string (canonical live specimen: secrets-scan "Trigger Federation CI Watcher on Failure" step). On pull_request events `github.ref_name` is the attacker-named head branch; JSON metacharacters in it break out of the payload.
++
++Fix pattern per site — move the values into the step's env, build the JSON with jq from argv (never string-concatenated), and hand curl a file:
++
++```
++        env:
++          WF_REPO: ${{ github.repository }}
++          WF_NAME: ${{ github.workflow }}
++          WF_RUN_ID: ${{ github.run_id }}
++          WF_REF: ${{ github.ref_name }}
++          WF_SHA: ${{ github.sha }}
++          DISPATCH_TOKEN: ${{ secrets.OPEN_SYNC_PAT || secrets.MERGE_PAT || secrets.OPEN_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
++        run: |
++          jq -n --arg repo "$WF_REPO" --arg name "$WF_NAME" \
++                --argjson run "$WF_RUN_ID" --arg ref "$WF_REF" --arg sha "$WF_SHA" \
++                '{event_type: "federation_ci_failed",
++                  client_payload: {repo: $repo, workflow_name: $name, run_id: $run,
++                                   branch: $ref, commit_sha: $sha,
++                                   html_url: ("https://github.com/" + $repo + "/actions/runs/" + ($run | tostring))}}' \
++             > /tmp/payload.json
++          curl -s -X POST -H "Accept: application/vnd.github+json" \
++               -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
++               https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
++               --data-binary @/tmp/payload.json || true
++```
++
++Notes for the applying admin: keep each site's existing event_type and payload keys identical (downstream watchers parse them); `--argjson run` assumes run_id is numeric (it is); keep the trailing `|| true` failure-tolerance semantics unchanged.
++
++## 5. Plan C — permissions: 3 findings are the top-level write block
++
++zizmor flags the three write scopes of the top-level `permissions:` block at L68-L72 (contents: write, pull-requests: write, issues: write), inherited by all 21 jobs. Fix: set the top-level block to empty and grant per job, least privilege:
++
++- Read-only default: top-level `permissions: {}` then `permissions: {contents: read}` (or `contents: read` plus what the job needs) on every job.
++- Jobs that genuinely need `contents: write` (auto-landing, satellite-dispatch-and-sync push paths, any autofix commit step) declare it explicitly at job level.
++- Jobs posting comments/labels (the guards) declare `issues: write` and/or `pull-requests: write` at job level.
++- The duplicate-pr-guard only reads: `pull-requests: read` + `issues: read` suffice; note its env already uses GH_TOKEN for search API reads.
++
++This is the only plan item with per-job judgment; expect ~21 small edits. Suggested order: apply Plans A/B first (pure text), then permissions, re-running the gate after each batch.
++
++## 6. Plan D — artipacked: 15 findings (checkout without persist-credentials: false)
++
++All 15 `actions/checkout@v5` steps currently persist the GITHUB_TOKEN into the workspace `.git`. Audit one-liner for the applying admin: list checkout steps whose job has no push/commit step downstream; add `with: persist-credentials: false` to those. Steps whose job later pushes to the repo (auto-landing, satellite-dispatch-and-sync, any autofix) must keep credentials or switch to a explicit token-bearing remote URL — flag those in review rather than blind-applying. Expect 10-13 of the 15 to be safely de-credentialed.
++
++## 7. Plan E — self-repository: 2 findings, review note (no mechanical fix)
++
++Both findings are the second step of `secrets-scan` and `mcp-tower` referencing first-party local composites (`uses: ./.github/actions/gitleaks-scan`, `uses: ./.github/actions/setup-node-tower`). zizmor's point: on pull_request events the composite content comes from the PR head, i.e. PR-author-controlled code running with repo secrets in reach. The repo already treats these composites as first-party review surfaces; the documented mitigations are (a) the existing competing-PR guard, (b) requiring maintainer approval for workflows changed — which GitHub enforces for first-time contributors — and (c) keeping secrets out of jobs that run on untrusted head refs. Verdict: accept-with-justification is reasonable; document it in the workflow comment when applying Plans A-D. No edit required by this runbook.
++
++## 8. Verification recipe (after applying)
++
++1. Re-run the scan offline (same command as Section 1). Expected delta: unpinned-uses 27 to 0; template-injection 13 to 0; excessive-permissions 3 to 0; artipacked 15 to the count of push-needing checkouts retained; self-repository 2 unchanged (accepted, Section 7).
++2. Push-plane sanity: the pipeline's own push CI must stay green on a non-protected branch (per #2125, push-CI darkness let a red land before — do not trust schedule-plane only).
++3. Optional gate: add zizmor as a report-only CI step (action or pip CLI) with a shrink-only findings baseline, mirroring the repo's existing guard pattern (bandit/dep-CVE style) so posture can only improve.
++
++## 9. never-do (lane discipline)
++
++- Agents never edit `.github/**` (#1643); this whole plan is admin-owned.
++- Every SHA-pin carries a version comment (auditability of future bumps).
++- No secret values echoed during triage; token env refs stay as-is.
++- No auto-remediation bot; apply Plans A/B, then C, then D in separate commits so any regression is bisectable.
++- Report-only until admin flips the gate.

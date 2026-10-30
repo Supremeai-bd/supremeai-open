@@ -1,0 +1,112 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index e79a926c..686a43ad 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -399,18 +399,15 @@ jobs:
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-core")
+                 ;;
+               command/*|handlers/telegram*)
+-                TARGET_REPOS+=("Supremeai-bd/supremeai-command")
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               skills/*|examples/langchain-*|examples/vercel-*)
+-                TARGET_REPOS+=("Supremeai-bd/supremeai-skills")
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               vscode/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-vscode")
+                 ;;
+               agents/*|runner/*)
+-                TARGET_REPOS+=("Supremeai-bd/supremeai-agents")
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               browser/*|sandbox/*)
+@@ -420,7 +417,6 @@ jobs:
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-sdk")
+                 ;;
+               infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
+-                TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               deployments/*|infra/*)
+@@ -579,22 +575,18 @@ jobs:
+               if f.startswith("core/") or f.startswith("api-schemas/task-router."):
+                   out.add("Supremeai-bd/supremeai-core")
+               if f.startswith("command/") or f.startswith("handlers/telegram"):
+-                  out.add("Supremeai-bd/supremeai-command")
+                   out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("skills/") or f.startswith("examples/langchain-") or f.startswith("examples/vercel-"):
+-                  out.add("Supremeai-bd/supremeai-skills")
+                   out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("vscode/"):
+                   out.add("Supremeai-bd/supremeai-vscode")
+               if f.startswith("agents/") or f.startswith("runner/"):
+-                  out.add("Supremeai-bd/supremeai-agents")
+                   out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("browser/") or f.startswith("sandbox/"):
+                   out.add("Supremeai-bd/supremeai-browser")
+               if f.startswith("sdk/") or f.startswith("examples/sdk-") or f.startswith("api-schemas/telemetry-log.") or f.startswith("api-schemas/websocket-events."):
+                   out.add("Supremeai-bd/supremeai-sdk")
+               if f.startswith("infrastructure/mcp-control-plane/") or f.startswith("api-schemas/heartbeat."):
+-                  out.add("Supremeai-bd/supremeai-mcp-control-plane")
+                   out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("deployments/") or f.startswith("infra/"):
+                   out.add("Supremeai-bd/supremeai-infrastructure")
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index c01da1dd..874c5a5b 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -36,14 +36,10 @@
+ DOMAIN_MAP: dict[str, str] = {
+     "Supremeai-bd/supremeai-studio": "studio",
+     "Supremeai-bd/supremeai-core": "core",
+-    "Supremeai-bd/supremeai-command": "command",
+     "Supremeai-bd/supremeai-api": "gateway",
+-    "Supremeai-bd/supremeai-agents": "agents",
+-    "Supremeai-bd/supremeai-skills": "skills",
+     "Supremeai-bd/supremeai-browser": "browser",
+     "Supremeai-bd/supremeai-vscode": "vscode",
+     "Supremeai-bd/supremeai-infrastructure": "infra",
+-    "Supremeai-bd/supremeai-mcp-control-plane": "infrastructure/mcp-control-plane",
+     "Supremeai-bd/supremeai-sdk": "sdk",
+ }
+ 
+@@ -340,8 +336,8 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
+ 
+ def self_test() -> bool:
+     """Self-test verifying contract and mappings."""
+-    assert len(DOMAIN_MAP) == 11, (
+-        f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
++    assert len(DOMAIN_MAP) == 7, (
++        f"Expected 7 active satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
+     )
+     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
+     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
+@@ -367,7 +363,7 @@ def main() -> int:
+         help="Specific target repositories to sync (default: all mapped)",
+     )
+     parser.add_argument(
+-        "--all", action="store_true", help="Sync all 11 satellites and central monorepo"
++        "--all", action="store_true", help="Sync all active satellites and central monorepo"
+     )
+     parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
+     parser.add_argument(
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+index 710b5ad4..24ce65c7 100644
+--- a/tests/test_federation_satellite_sync.py
++++ b/tests/test_federation_satellite_sync.py
+@@ -12,14 +12,10 @@ def test_domain_map_coverage(self):
+         expected_slugs = {
+             "Supremeai-bd/supremeai-studio",
+             "Supremeai-bd/supremeai-core",
+-            "Supremeai-bd/supremeai-command",
+             "Supremeai-bd/supremeai-api",
+-            "Supremeai-bd/supremeai-agents",
+-            "Supremeai-bd/supremeai-skills",
+             "Supremeai-bd/supremeai-browser",
+             "Supremeai-bd/supremeai-vscode",
+             "Supremeai-bd/supremeai-infrastructure",
+-            "Supremeai-bd/supremeai-mcp-control-plane",
+             "Supremeai-bd/supremeai-sdk",
+         }
+         self.assertEqual(set(sync_mod.DOMAIN_MAP.keys()), expected_slugs)

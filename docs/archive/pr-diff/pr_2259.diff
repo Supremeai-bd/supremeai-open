@@ -1,0 +1,132 @@
+diff --git a/docs/reports/human-eye-auth-api-broken-20261029.md b/docs/reports/human-eye-auth-api-broken-20261029.md
+new file mode 100644
+index 00000000..93c1e529
+--- /dev/null
++++ b/docs/reports/human-eye-auth-api-broken-20261029.md
+@@ -0,0 +1,126 @@
++# Auth API broken end-to-end: CORS preflight rejects the app's own headers; register→login dead; server validation gaps
++
++- **Agent**: human-eye (Job 478633, cycle-22, 2026-10-29 03:57+08)
++- **Bundle under test**: `Build 2026-10-27T18:10:28.851Z` / `index-CAV1C5sl.js` (unchanged; findings are server-side)
++- **Companion reports**: human-eye-auth-ux-20261029.md (#2207 — UI-level), human-eye-health-staleness-20261029.md (#2205)
++- **Severity**: **P1 — self-serve activation funnel is 100% dead** (passkey 405 [filed #2207], Google disabled,
++  register browser-blocked [F-12], register-then-login 401 [F-11], zero error feedback [filed #2207 F-7])
++
++## F-12 — CORS preflight rejects the frontend's own custom headers → register & config fail in every real browser (P1)
++
++The Studio bundle (`index-CAV1C5sl.js`) sends custom headers on mutating/config calls:
++`X-CSRF-Token, X-Conversation-Id, X-Correlation-ID, X-Device-Fingerprint, X-JIT-OTP, X-Request-ID, X-SupremeAI-Key, X-Trusted-Browser`.
++
++The API gateway preflight allow-list (`Access-Control-Allow-Headers`) covers only:
++`Accept, Accept-Language, Authorization, Content-Language, Content-Type, Origin, Referer, X-Correlation-ID, X-Forwarded-For, X-Guest-Mode, X-SupremeAI-Key`.
++
++**Header-by-header preflight isolation** (OPTIONS `/api/v1/auth/register`, Origin pages.dev):
++
++| Requested `Access-Control-Request-Headers` | Result |
++|---|---|
++| `content-type,x-correlation-id,x-supremeai-key` (allowed set) | **200** |
++| `content-type,x-request-id` | **400** |
++| `content-type,x-csrf-token` | **400** |
++| `content-type,x-device-fingerprint` | **400** |
++| `content-type,x-conversation-id` | **400** |
++
++- Chromium fails preflight on non-2xx ⇒ the actual request never fires ⇒ `TypeError: Failed to fetch`.
++- Browser impact (Playwright, 2026-10-28 ~20:00Z, 4 attempts): every `POST /api/v1/auth/register` shows
++  `responseStatus: n/a` in Performance resource timing (~55ms = preflight-only failure); console logs
++  `API_INTERCEPTOR_FETCH_ERROR: Failed to fetch` ×N; `GET /api/config/public` fails identically ⇒
++  `[Config] Deadline 8000ms exceeded. Falling back to safe defaults.`
++- **The UI renders zero feedback** for these failures (no `[role=alert]`, body text unchanged;
++  screenshot `c22-register-silent-network-fail.png`) — same silent-failure pattern as #2207/F-7.
++- Controls proving it is NOT the endpoint/network: same browser session `GET /api/health-aggregation → 200`,
++  `GET /api/config/public (simple, no preflight) → 200`, in-page `POST /api/v1/auth/login → 401` (control),
++  and curl POST register → 200. Only preflighted requests carrying non-allow-listed headers die.
++- Re-attribution note: cycle-19 F-1b logged `OPTIONS → 400 + TypeError` and we partially attributed it to
++  a Render cold-start window. The deterministic header-by-header 400s above show the same signature;
++  cold-start 503s also exist (browser observed `GET /health → 503` this cycle), but F-1b's 400-preflight
++  observations were most likely this allow-list bug. Fixer lane should treat "cold-start preflight 400"
++  reports accordingly.
++
++**Smallest safe fix (server, one middleware change)**: extend the preflight handler to (a) return **2xx**
++and (b) set `Access-Control-Allow-Headers` to the union of the allow-list and the app's real headers
++(`X-Request-ID, X-CSRF-Token, X-Device-Fingerprint, X-Trusted-Browser, X-JIT-OTP, X-Conversation-Id`) — or
++simply reflect back `Access-Control-Request-Headers` (standard `cors()` default). No frontend change.
++
++**Regression test**: integration — for every mutating endpoint, preflight echoing the app's exact header
++set must return 2xx with allow-headers ⊇ requested; E2E smoke — headless-browser register reaches a real
++HTTP status (200/4xx), never `Failed to fetch`.
++
++## F-11 — Register succeeds but the account can never log in; register-issued token is dead on arrival (P1)
++
++Same session, warm API, minutes apart (curl, Origin pages.dev):
++
++1. `POST /api/v1/auth/register` `{name, email: qa-e2e-<ts>@example.com, password, confirmPassword}` →
++   **200** `{"token":"sk-supreme-user-…","user_id":"usr-…"}` (token redacted)
++2. `POST /api/v1/auth/login` same email + same password → **401** `{"detail":"Invalid email or password"}`
++3. `username`-variant payload → **401** (not a payload-shape artifact)
++4. `GET /api/v1/auth/me` with `Authorization: Bearer <register token>` → **401**
++   `{"detail":"Invalid or expired session token"}`
++
++Register creates the user record and mints a token, but **neither the login store nor the session store
++knows about it**. Earlier registration (8 min prior) also 401s on login ⇒ not propagation delay.
++
++**Smallest safe fix**: make register persist credentials to the same auth store login reads (and issue
++session tokens from the same issuer/session store `auth/me` validates); add an integration test that
++registers then immediately logs in and calls `auth/me` end-to-end.
++
++**Regression test**: E2E register → login → `auth/me` → 200 chain on a fresh account; contract test
++asserting register-issued token validates on `auth/me`.
++
++## F-9 — Server ignores password-confirmation mismatch (P2)
++
++`POST /api/v1/auth/register` with `password:"…x"` / `confirmPassword:"…DIFFERENT"` → **200 + account
++created** (control: allowed-header preflight ⇒ reachable server-side; the browser could not even send it
++due to F-12). The confirm-password rule is enforced nowhere: no client guard (bundle fired the API call
++despite mismatch — Performance evidence) and no server check.
++
++**Smallest safe fix**: server-side equality check returning 422 `{"detail":"Passwords do not match"}`;
++optionally add the same client check, but server-side is the safety net.
++
++## F-10 — No duplicate-email guard: same email registers repeatedly into new accounts (P2)
++
++`POST /api/v1/auth/register` twice with identical email → **200 both times**, different `user_id`
++(`usr-…545` then `usr-…582`). No 4xx, no verification email anywhere in the flow. Consequences:
++orphaned duplicate identities per email; ownership of an email is never established; combined with
++F-11 this leaves users with multiple dead accounts and no path in.
++
++**Smallest safe fix**: unique constraint on email in the auth store → 409 `{"detail":"Email already
++registered"}`; surface the existing shared alert component (same pattern as #2207/F-7 fix).
++
++## Journey impact (same session, same bundle)
++
++| Step | Result |
++|---|---|
++| Passkey sign-in | 405 (filed #2207/F-1a) |
++| Google sign-in | button disabled "coming soon" |
++| Register from UI | preflight 400 → Failed to fetch → **silent** (F-12) |
++| Register via API | 200 but token dead + login 401 (F-11) |
++| Login any registered cred | 401 (F-11) |
++| Error feedback on any of the above | none (filed #2207/F-7; re-confirmed on /register this cycle) |
++
++⇒ a brand-new user cannot reach the product through any advertised path. PASS controls for scope honesty:
++login preflight with allowed headers ⇒ 200 (login path is CORS-clean today); `GET /api/health-aggregation`
++⇒ 200 in-browser; FCP `/register` 92/120ms; keyboard/focus PASS (5×Tab → first field, `solid 2px` outline);
++mobile 375×812 layout complete (`c21-register-mobile.png` prior cycle, layout unchanged).
++
++## Why
++
++Four independent server-side defects compound into a total activation outage that no amount of UI work
++can route around — and the UI's silence (filed separately in #2207) hides all of them from users and from
++console-only monitoring. The CORS allow-list drift is the kind of regression that passes every unit test
++and breaks every real browser, which is why the preflight-with-real-headers integration test matters.
++
++## Alternatives rejected
++
++- **Frontend-only workaround (drop custom headers / send only allow-listed ones)**: hides F-12 but breaks
++  request tracing, CSRF and device-fingerprint features the headers exist for; server allow-list fix is
++  one line and matches standard `cors()` behavior.
++- **Public CORS proxy / Pages Function relay**: new infrastructure and a second hop; the API already has
++  correct CORS middleware — it needs its header list updated.
++- **Filing the four findings as four separate WOs**: they are one broken journey with one fix branch
++  (auth API); a single WO with per-finding regression tests avoids four fixers colliding on the same file.
++- **Treating F-1b as cold-start only (Cycle-19 interpretation)**: retained cold-start 503 evidence, but
++  the deterministic 400-by-header isolation supersedes it for preflight failures.

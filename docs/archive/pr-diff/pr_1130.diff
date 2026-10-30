@@ -1,0 +1,273 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 9dce5a20..256b41d9 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:intelligence && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -35,7 +35,8 @@
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar",
++    "test:semantic-router": "tsx scripts/test-runner.ts test/test_semantic_router.ts",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+     "test:task-engine": "tsx scripts/test-runner.ts test_task_engine.ts",
+diff --git a/infrastructure/mcp-control-plane/src/registry/semantic_router.ts b/infrastructure/mcp-control-plane/src/registry/semantic_router.ts
+new file mode 100644
+index 00000000..1680ee1a
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/registry/semantic_router.ts
+@@ -0,0 +1,170 @@
++/**
++ * infrastructure/mcp-control-plane/src/registry/semantic_router.ts
++ *
++ * Semantic tool router (Infinity plan Way 3 — MCPlex pattern).
++ *
++ * বাংলা: MCP টুল স্কিমার উপর TF-IDF সেমান্টিক রাউটার — query-র সাথে
++ * প্রাসঙ্গিক টুল বাছাই + অপ্রাসঙ্গিক টুল স্কিমা prune করে টোকেন বাঁচায়
++ * (Infinity-রেফারেন্স: 70-90% token save)। কোনো এক্সটার্নাল ডিপ নেই।
++ *
++ * Design:
++ * - Corpus = tool descriptors (name + description + tags). Index built once,
++ *   refreshed explicitly (cheap; registry churn is rare).
++ * - `route(query, topK)` returns ranked ToolRouteMatch[] with a 0..1 score.
++ * - `pruneForQuery(query, toolSchemas, keepThreshold)` filters the *schema
++ *   payload* handed to a model so only plausibly-relevant tools are sent.
++ * - Deterministic (pure functions), constant-time token compare stays the
++ *   caller's responsibility (security.py / compare_digest — unchanged).
++ *
++ * No external dependency: runs in Node 18+ and Cloudflare Workers alike.
++ */
++
++export interface ToolDescriptor {
++  /** Stable tool id, e.g. 'github.list_prs' */
++  name: string;
++  /** Human description (already sanitized upstream — no secrets expected). */
++  description?: string;
++  /** Optional tags/capabilities that strengthen matching. */
++  tags?: string[];
++  /** Optional logical group used for audit logging. */
++  group?: string;
++}
++
++export interface ToolRouteMatch {
++  name: string;
++  score: number; // 0..1 cosine over TF-IDF vectors
++  matchedTerms: string[];
++  group?: string;
++}
++
++interface TokenizedTool {
++  name: string;
++  group?: string;
++  tokens: Map<string, number>; // term -> raw tf
++  norm: number; // vector norm under final idf weights
++}
++
++const WORD_RE = /[a-z0-9_]{2,}/g;
++
++const STOP = new Set([
++  'the', 'a', 'an', 'and', 'or', 'to', 'of', 'in', 'on', 'for', 'with', 'this',
++  'that', 'it', 'is', 'are', 'be', 'as', 'at', 'by', 'from', 'list', 'get',
++  'set', 'all', 'any', 'new', 'use', 'using', 'tool',
++]);
++
++function tokenize(text: string): string[] {
++  return (text.toLowerCase().match(WORD_RE) ?? []).filter((t) => !STOP.has(t));
++}
++
++export class SemanticToolRouter {
++  private tools: TokenizedTool[] = [];
++  private idf = new Map<string, number>();
++
++  constructor(tools: ToolDescriptor[] = []) {
++    this.reindex(tools);
++  }
++
++  /** (Re)build the inverted index. Call after registry churn. */
++  reindex(tools: ToolDescriptor[]): void {
++    const tokenized: TokenizedTool[] = tools.map((t) => {
++      const tokens = new Map<string, number>();
++      const bump = (w: string) => tokens.set(w, (tokens.get(w) ?? 0) + 1);
++      // Tool name split on separators so 'github.list_prs' matches 'prs' too.
++      for (const w of tokenize(t.name.replace(/[._\-/]/g, ' '))) bump(w);
++      if (t.description) for (const w of tokenize(t.description)) bump(w);
++      for (const tag of t.tags ?? []) for (const w of tokenize(tag)) bump(w);
++      return { name: t.name, group: t.group, tokens, norm: 0 };
++    });
++
++    const df = new Map<string, number>();
++    for (const t of tokenized) for (const w of t.tokens.keys()) df.set(w, (df.get(w) ?? 0) + 1);
++
++    const n = Math.max(tokenized.length, 1);
++    const idf = new Map<string, number>();
++    for (const [w, c] of df) idf.set(w, Math.log((1 + n) / (1 + c)) + 1);
++
++    // Precompute per-tool vector norms under the final idf weights.
++    for (const t of tokenized) {
++      let sq = 0;
++      for (const [w, tf] of t.tokens) {
++        sq += Math.pow((1 + Math.log(tf)) * (idf.get(w) ?? 1), 2);
++      }
++      t.norm = Math.sqrt(sq);
++    }
++
++    this.tools = tokenized;
++    this.idf = idf;
++  }
++
++  get size(): number {
++    return this.tools.length;
++  }
++
++  /** Rank tools for a natural-language query. */
++  route(query: string, topK = 5): ToolRouteMatch[] {
++    const qTokens = tokenize(query);
++    if (!qTokens.length || !this.tools.length) return [];
++
++    const qTf = new Map<string, number>();
++    for (const w of qTokens) qTf.set(w, (qTf.get(w) ?? 0) + 1);
++
++    let qSq = 0;
++    const qWeights = new Map<string, number>();
++    for (const [w, tf] of qTf) {
++      const weight = (1 + Math.log(tf)) * (this.idf.get(w) ?? 1);
++      qWeights.set(w, weight);
++      qSq += weight * weight;
++    }
++    const qNorm = Math.sqrt(qSq);
++    if (qNorm === 0) return [];
++
++    const scored: ToolRouteMatch[] = [];
++    for (const tool of this.tools) {
++      if (tool.norm === 0) continue;
++      let dot = 0;
++      const matched: string[] = [];
++      for (const [w, qw] of qWeights) {
++        const tf = tool.tokens.get(w);
++        if (tf === undefined) continue;
++        const tw = (1 + Math.log(tf)) * (this.idf.get(w) ?? 1);
++        dot += qw * tw;
++        matched.push(w);
++      }
++      if (dot <= 0) continue;
++      const cosine = dot / (qNorm * tool.norm);
++      scored.push({
++        name: tool.name,
++        score: Math.max(0, Math.min(1, cosine)),
++        matchedTerms: matched,
++        group: tool.group,
++      });
++    }
++
++    scored.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
++    return scored.slice(0, Math.max(1, topK));
++  }
++
++  /**
++   * Prune full tool schemas down to those relevant to the query.
++   * Returns the subset plus an audit hint (what was dropped and why).
++   * `threshold` default 0.05 keeps anything with a non-trivial cosine.
++   */
++  pruneForQuery<S extends { name: string }>(
++    query: string,
++    schemas: S[],
++    threshold = 0.05,
++  ): { kept: S[]; dropped: string[]; matches: ToolRouteMatch[] } {
++    const matches = this.route(query, this.tools.length || 1);
++    const keep = new Map(matches.map((m) => [m.name, m.score] as const));
++    const kept: S[] = [];
++    const dropped: string[] = [];
++    for (const schema of schemas) {
++      const score = keep.get(schema.name) ?? 0;
++      if (score >= threshold) kept.push(schema);
++      else dropped.push(schema.name);
++    }
++    return { kept, dropped, matches };
++  }
++}
++
++export default SemanticToolRouter;
+diff --git a/infrastructure/mcp-control-plane/test/test_semantic_router.ts b/infrastructure/mcp-control-plane/test/test_semantic_router.ts
+new file mode 100644
+index 00000000..87a803e5
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test/test_semantic_router.ts
+@@ -0,0 +1,68 @@
++/**
++ * test_semantic_router.ts — Way 3 evidence (deterministic TF-IDF routing + pruning).
++ * Run: npx tsx test_semantic_router.ts   (or wire into the existing test_*.ts pattern)
++ */
++
++import { SemanticToolRouter, type ToolDescriptor } from '../src/registry/semantic_router';
++
++let failures = 0;
++function check(label: string, cond: boolean, detail = ''): void {
++  if (cond) {
++    console.log(`PASS ${label}`);
++  } else {
++    failures += 1;
++    console.error(`FAIL ${label} ${detail}`);
++  }
++}
++
++const TOOLS: ToolDescriptor[] = [
++  { name: 'github.list_prs', description: 'List open pull requests in a repository', tags: ['github', 'pr'], group: 'github' },
++  { name: 'github.get_failed_logs', description: 'Fetch failed CI run logs', tags: ['ci', 'logs'], group: 'github' },
++  { name: 'bridge.work_queue', description: 'List open bridge work-order issues', tags: ['bridge', 'queue'], group: 'bridge' },
++  { name: 'redis.read_key', description: 'Read a key value from Redis', tags: ['redis', 'kv'], group: 'redis' },
++  { name: 'system_health', description: 'Fleet health snapshot for all services', tags: ['health', 'ops'], group: 'ops' },
++];
++
++const router = new SemanticToolRouter(TOOLS);
++check('index size', router.size === TOOLS.length);
++
++const ciHits = router.route('why did the ci run fail, show me the logs', 3);
++check(
++  'ci query ranks failed-logs top-1',
++  ciHits[0]?.name === 'github.get_failed_logs',
++  JSON.stringify(ciHits),
++);
++
++const prHits = router.route('list open pull requests', 2);
++check('pr query ranks list_prs top-1', prHits[0]?.name === 'github.list_prs');
++
++const healthHits = router.route('is the fleet healthy right now', 2);
++check('health query in top-2', healthHits.slice(0, 2).some((h) => h.name === 'system_health'));
++
++const empty = router.route('');
++check('empty query -> no matches', empty.length === 0);
++
++const gibberish = router.route('zzzz qqqq xvxy');
++check('gibberish -> no matches', gibberish.length === 0);
++
++// Determinism
++const a = router.route('ci logs', 3).map((m) => [m.name, m.score]);
++const b = router.route('ci logs', 3).map((m) => [m.name, m.score]);
++check('deterministic ranking', JSON.stringify(a) === JSON.stringify(b));
++
++// Pruning
++const schemas = TOOLS.map((t) => ({ name: t.name, schema: { description: t.description } }));
++const { kept, dropped } = router.pruneForQuery('ci run failed logs', schemas, 0.05);
++check('prune keeps relevant', kept.some((k) => k.name === 'github.get_failed_logs'));
++check('prune drops irrelevant', dropped.includes('redis.read_key'), JSON.stringify({ kept: kept.map((k) => k.name), dropped }));
++check('token reduction measured', dropped.length >= 2, `dropped=${dropped.length}`);
++
++const rebased = new SemanticToolRouter([]);
++rebased.reindex(TOOLS);
++check('reindex after churn', rebased.size === TOOLS.length);
++
++if (failures > 0) {
++  console.error(`\n${failures} check(s) FAILED`);
++  process.exit(1);
++}
++console.log('\nALL CHECKS PASSED');

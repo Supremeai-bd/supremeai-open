@@ -1,0 +1,238 @@
+diff --git a/core/security/__init__.py b/core/security/__init__.py
+index 13acd703..58a30052 100644
+--- a/core/security/__init__.py
++++ b/core/security/__init__.py
+@@ -32,7 +32,7 @@
+     jwt = None
+ from fastapi import HTTPException, status
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Fixed import path - using relative import instead of absolute
+ from .enhanced_ast_scanner import SecurityIssue, SecurityScanner
+diff --git a/core/security/audit/compliance_bot.py b/core/security/audit/compliance_bot.py
+index 1540a86b..1d0811ec 100644
+--- a/core/security/audit/compliance_bot.py
++++ b/core/security/audit/compliance_bot.py
+@@ -28,7 +28,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: উইন্ডোজ টার্মিনালে ইউনিকোড/ইমোজি আউটপুট সাপোর্ট করার জন্য এনকোডিং কনফিগার করা হলো।
+ if sys.platform == "win32":
+diff --git a/core/security/audit/security_auditor.py b/core/security/audit/security_auditor.py
+index cd7d9d9a..35004972 100644
+--- a/core/security/audit/security_auditor.py
++++ b/core/security/audit/security_auditor.py
+@@ -23,7 +23,7 @@
+ from enum import Enum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class Severity(Enum):
+@@ -431,7 +431,7 @@ def _version_in_range(self, version: str, range_spec: str) -> bool:
+                 return current >= min_ver
+ 
+         except Exception as exc:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.warning(
+                 f"[SecurityAuditor] Version parsing failed for range '{range_spec}': {exc}"
+@@ -472,7 +472,7 @@ def _detect_unused_dependencies(self) -> list[str]:
+                                         base_module = imp.split(".")[0].lower()
+                                         imported_modules.add(base_module)
+                         except Exception as exc:
+-                            from core.logging_config import logger
++                            from core.monitoring.logging_config import logger
+ 
+                             logger.debug(
+                                 f"[SecurityAuditor] Could not scan imports in {filepath}: {exc}"
+@@ -674,54 +674,54 @@ def run_security_audit(project_root: str | None = None) -> dict[str, Any]:
+ 
+ def print_security_report(report: dict[str, Any]) -> None:
+     """Pretty-print security report to console"""
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info("\n" + "=" * 70)
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info("🔒 SUPREMEAI SECURITY AUDIT REPORT")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info("=" * 70)
+ 
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"\n📊 Overall Score: {report['score']}/100 (Grade: {report['grade']})")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   Timestamp: {report['timestamp']}")
+ 
+     summary = report["summary"]
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info("\n📋 Summary:")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   Total Vulnerabilities: {summary['total_vulnerabilities']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   🚨 Critical: {summary['critical']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   ⚠️  High: {summary['high']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   📋 Medium: {summary['medium']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   ℹ️  Low: {summary['low']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   Dependencies Scanned: {summary['dependencies_scanned']}")
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info(f"   Unused Dependencies: {summary['unused_dependencies']}")
+ 
+     if report["vulnerabilities"]:
+-        from core.logging_config import logger
++        from core.monitoring.logging_config import logger
+ 
+         logger.info("\n🐛 Vulnerabilities Found:")
+-        from core.logging_config import logger
++        from core.monitoring.logging_config import logger
+ 
+         logger.info("-" * 70)
+ 
+@@ -734,29 +734,29 @@ def print_security_report(report: dict[str, Any]) -> None:
+                 "INFO": "💡",
+             }.get(vuln["severity"], "❓")
+ 
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"\n{severity_icon} [{vuln['severity']}] {vuln['title']}")
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"   Location: {vuln['location']}")
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"   Issue: {vuln['description']}")
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"   Fix: {vuln['remediation']}")
+ 
+     if report["recommendations"]:
+-        from core.logging_config import logger
++        from core.monitoring.logging_config import logger
+ 
+         logger.info("\n💡 Recommendations:")
+         for rec in report["recommendations"]:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.info(f"   • {rec}")
+ 
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.info("\n" + "=" * 70 + "\n")
+ 
+diff --git a/core/security/authentication/auth_middleware.py b/core/security/authentication/auth_middleware.py
+index a8554c28..253d29fa 100644
+--- a/core/security/authentication/auth_middleware.py
++++ b/core/security/authentication/auth_middleware.py
+@@ -15,7 +15,7 @@
+ from jwt import PyJWTError as JWTError
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from utils.environment import is_test_environment
+ 
+ ASGIScope = dict[str, Any]
+diff --git a/core/security/injections/sql_prevention.py b/core/security/injections/sql_prevention.py
+index 5c9ecc27..48801044 100644
+--- a/core/security/injections/sql_prevention.py
++++ b/core/security/injections/sql_prevention.py
+@@ -25,7 +25,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ──────────────────────────────────────────────────────────────────
+ 
+diff --git a/core/security/intelligence/guardian_ai.py b/core/security/intelligence/guardian_ai.py
+index 50a6f367..5e82ca6b 100644
+--- a/core/security/intelligence/guardian_ai.py
++++ b/core/security/intelligence/guardian_ai.py
+@@ -27,7 +27,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: উইন্ডোজ টার্মিনালে ইউনিকোড/ইমোজি আউটপুট সাপোর্ট করার জন্য এনকোডিং কনফিগার করা হলো।
+ if sys.platform == "win32":
+diff --git a/core/security/scanning/secret_scanner.py b/core/security/scanning/secret_scanner.py
+index af8b4197..360bafe3 100644
+--- a/core/security/scanning/secret_scanner.py
++++ b/core/security/scanning/secret_scanner.py
+@@ -29,7 +29,7 @@
+ from typing import Any
+ 
+ from core.contracts.security_policy import SEVERITY_LEVELS
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: উইন্ডোজ টার্মিনালে ইউনিকোড/ইমোজি আউটপুট সাপোর্ট করার জন্য এনকোডিং কনফিগার করা হলো।
+ if sys.platform == "win32":
+diff --git a/core/security/secret_vault.py b/core/security/secret_vault.py
+index 3892872d..097c0f6f 100644
+--- a/core/security/secret_vault.py
++++ b/core/security/secret_vault.py
+@@ -14,7 +14,7 @@
+ from typing import TYPE_CHECKING
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Fixed import path - using relative import
+ from ..messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+@@ -32,7 +32,7 @@
+         UniversalAuthMethod,
+     )
+ except ImportError as e:
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     logger.warning(f"Failed to import infisical_client: {e}")
+     InfisicalClient = None  # type: ignore[assignment]

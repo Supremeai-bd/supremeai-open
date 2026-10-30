@@ -1,0 +1,1289 @@
+diff --git a/api-schemas/federated-ci-failure.schema.json b/api-schemas/federated-ci-failure.schema.json
+new file mode 100644
+index 00000000..af436307
+--- /dev/null
++++ b/api-schemas/federated-ci-failure.schema.json
+@@ -0,0 +1,132 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "federated-ci-failure/v1",
++  "title": "Federated CI Failure Report",
++  "description": "Emission contract for the federated CI failure auto-issue reporter (#199, src/events/federated_ci_watcher.ts in infrastructure/mcp-control-plane). A report is derived deterministically from a GitHub workflow_run.completed webhook event with conclusion == \"failure\" originating from a federation repository, and is normalized into a standard agent-task issue on the control-plane board (cross-repo task normalizer, #199 part 2). The report is the single source of truth for the issue title format, the label set, and the body contract; the machine surface (watcher) and this schema must evolve together.",
++  "type": "object",
++  "required": [
++    "schema",
++    "repo",
++    "workflowName",
++    "runId",
++    "runAttempt",
++    "runUrl",
++    "headBranch",
++    "headSha",
++    "conclusion",
++    "failedJobs",
++    "eventKey",
++    "reportedAt"
++  ],
++  "additionalProperties": false,
++  "properties": {
++    "schema": {
++      "const": "federated-ci-failure/v1",
++      "description": "Report envelope version. Bump on any breaking field change."
++    },
++    "repo": {
++      "type": "string",
++      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
++      "description": "Full name of the repository whose workflow run failed (payload.repository.full_name)."
++    },
++    "workflowName": {
++      "type": "string",
++      "minLength": 1,
++      "description": "Human workflow name (payload.workflow_run.name)."
++    },
++    "workflowPath": {
++      "type": "string",
++      "minLength": 1,
++      "description": "Workflow definition path inside the failing repo (payload.workflow_run.path), when GitHub provides one."
++    },
++    "runId": {
++      "type": "integer",
++      "minimum": 1,
++      "description": "GitHub Actions run id (payload.workflow_run.id)."
++    },
++    "runAttempt": {
++      "type": "integer",
++      "minimum": 1,
++      "description": "Run attempt number (payload.workflow_run.run_attempt). Part of the dedupe key: a re-run of the same run id with a new attempt is a NEW failure signal."
++    },
++    "runUrl": {
++      "type": "string",
++      "pattern": "^https://",
++      "description": "Run page URL (payload.workflow_run.html_url)."
++    },
++    "headBranch": {
++      "type": "string",
++      "minLength": 1,
++      "description": "Branch the run was triggered on (payload.workflow_run.head_branch)."
++    },
++    "headSha": {
++      "type": "string",
++      "pattern": "^[0-9a-f]{40}$",
++      "description": "Full 40-hex head SHA the run was triggered on (payload.workflow_run.head_sha). Immutable failure anchor."
++    },
++    "conclusion": {
++      "const": "failure",
++      "description": "Strict v1 policy: only conclusion == \"failure\" is reported. startup_failure/timed_out/cancelled are out of scope until a contract bump."
++    },
++    "failedJobs": {
++      "type": "array",
++      "description": "Best-effort enrichment from GET /repos/{repo}/actions/runs/{runId}/jobs?filter=latest. Empty array means enrichment was unavailable — the report itself must still be emitted (emission before enrichment, #199).",
++      "items": {
++        "type": "object",
++        "required": ["name", "steps"],
++        "additionalProperties": false,
++        "properties": {
++          "name": {
++            "type": "string",
++            "minLength": 1,
++            "description": "Failed job name."
++          },
++          "steps": {
++            "type": "array",
++            "description": "Failed step names within the job (empty when the job failed before any step reported).",
++            "items": { "type": "string", "minLength": 1 }
++          },
++          "url": {
++            "type": "string",
++            "pattern": "^https://",
++            "description": "Job page URL."
++          }
++        }
++      }
++    },
++    "eventKey": {
++      "type": "string",
++      "pattern": "^ci-failure:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+:.+:[0-9]+:[0-9]+$",
++      "description": "Dedupe key ci-failure:<repo>:<workflowName>:<runId>:<runAttempt> — the idempotency anchor of the reporter (24h default TTL)."
++    },
++    "reportedAt": {
++      "type": "string",
++      "description": "ISO-8601 UTC instant at which the watcher accepted the event."
++    }
++  },
++  "$defs": {
++    "derivedIssue": {
++      "title": "Derived board issue (cross-repo task normalizer output)",
++      "type": "object",
++      "required": ["title", "labels"],
++      "additionalProperties": false,
++      "properties": {
++        "title": {
++          "type": "string",
++          "pattern": "^fix\\(ci\\): workflow failure in [A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+ \\(.+ #[0-9]+\\)$",
++          "description": "Exact format: fix(ci): workflow failure in <repo-name> (<workflow-name> #<run_id>) — per issue #199."
++        },
++        "labels": {
++          "type": "array",
++          "minItems": 3,
++          "description": "P1-high + handoff:coder + area:ci are always present (implicit claimable lifecycle per #222 — no status:unclaimed). repo:<slug> is best-effort and may be dropped by the 422 fallback.",
++          "prefixItems": [
++            { "const": "P1-high" },
++            { "const": "handoff:coder" },
++            { "const": "area:ci" }
++          ]
++        }
++      }
++    }
++  }
++}
+diff --git a/docs/FEDERATED_CI_WATCHER.md b/docs/FEDERATED_CI_WATCHER.md
+new file mode 100644
+index 00000000..a79d3f4a
+--- /dev/null
++++ b/docs/FEDERATED_CI_WATCHER.md
+@@ -0,0 +1,146 @@
++---
++id: federated-ci-watcher
++title: "Federated CI Failure Watcher — Auto-Issue Reporter & Cross-Repo Task Normalizer (#199)"
++document_role: reference
++status: active
++canonical: true
++owner: coder
++last_verified: 2026-10-16
++related_docs:
++  - AGENTS.md
++  - docs/AGENT_LOOP_SPEC.md
++  - api-schemas/federated-ci-failure.schema.json
++---
++
++# Federated CI Failure Watcher (#199)
++
++Automated ecosystem self-healing: the moment any federation repository's GitHub
++Actions run fails, an **actionable, standardized issue** opens on the control
++plane (`Supremeai-bd/supremeai-open`) so autonomous agents can claim and patch
++the breakage in seconds instead of waiting for a human sweep.
++
++Implemented as `src/events/federated_ci_watcher.ts` in
++`infrastructure/mcp-control-plane` — a **gateway listener on the existing
++normalizer→EventGateway pipeline**. No second event bus, no new webhook
++endpoint (same doctrine as the #69 bridge intake).
++
++## How it listens
++
++```
++GitHub webhook (workflow_run.completed) ──► POST /webhooks/github
++  └─ signature check → EventNormalizer.normalizeGitHubEvent
++       └─ globalEventGateway.dispatch(NormalizedEvent)
++            └─ FederatedCiWatcherService.handle(event)      ← this module
++                 ├─ decide()       pure relevance policy
++                 ├─ dedupe ×2      deliveryId + eventKey (TTL)
++                 ├─ rate cap       rolling issues/hour ceiling
++                 └─ queue → jobs enrichment → create issue on reportRepo
++```
++
++The generic `/webhooks/github` route already forwards **every** event type
++through the normalizer, so no routing change is needed. Deployment requirement:
++the repository/org webhook must **subscribe to `workflow_run` events** (same
++place the `issues`/`pull_request` subscriptions for bridge intake are set).
++
++## Relevance policy (fail-closed)
++
++An event produces a report only when ALL hold:
++
++1. `source === "github"` and `type === "workflow_run"`;
++2. `payload.action === "completed"`;
++3. `payload.workflow_run.conclusion === "failure"` — **strict**: v1 ignores
++   `startup_failure`/`timed_out`/`cancelled` (contract bump required to extend);
++4. the repository passes the federation scope check:
++   - if `FEDERATED_CI_WATCHER_REPOS` is set → explicit allowlist (case-insensitive);
++   - otherwise the **same-org default**: any repo owned by the same owner as
++     `FEDERATED_CI_WATCHER_REPORT_REPO` (the fleet is org-scoped; a hardcoded
++     14-repo list would drift);
++5. `workflow_run.id` is present (the dedupe/anchor key requires it).
++
++Everything else is dropped with a machine-readable reason
++(`[CI_WATCHER] skip (<reason>)`).
++
++## Anti-spam Poka-yoke (a bug here could spam the board)
++
++Three independent gates, in order:
++
++| Gate | Key | Default |
++|---|---|---|
++| Delivery idempotency | `X-GitHub-Delivery` header | TTL 24 h |
++| Event-key dedupe | `ci-failure:<repo>:<workflow>:<runId>:<runAttempt>` | TTL 24 h |
++| Global rate cap | rolling 1-hour emission window | 6 issues/hour |
++
++Notes: a re-run of the same run id under a **new attempt** is a new failure
++signal and re-reports. A rate-capped report is dropped **loudly** (logged) and
++its event key is still marked seen — the failure remains visible on the run
++page and the next failing run re-triggers; this prevents queued-retry storms.
++
++## Emission contract (the cross-repo task normalizer)
++
++The report shape is schema `federated-ci-failure/v1`
++(`api-schemas/federated-ci-failure.schema.json`, Draft 2020-12 — metaschema-
++validated in CI by the `validate_schemas.py` glob over `api-schemas/`).
++
++Derived board issue:
++
++- **Title:** `fix(ci): workflow failure in <repo-name> (<workflow-name> #<run_id>)`
++- **Labels:** `P1-high`, `handoff:coder`, `area:ci` + best-effort `repo:<slug>`.
++  Per the implicit claimable lifecycle (#222) no `status:unclaimed` is emitted.
++  If the board does not have the `repo:<slug>` label yet, the Issues API 422s;
++  the watcher retries without the repo label and notes the drop inside the
++  body (triage can relabel, e.g. `repo:supremeai-open` → `repo:open`).
++- **Body:** the standardized agent-task contract — Primary Group (failing
++  repo), Sub-Group/Area `ci`, Priority `P1-high`, Topological Layer 2, Task
++  Group `agent-orchestration`, mission (run URL, head branch/SHA, failing
++  jobs/steps), Touching Files (workflow path first suspect), and the 3-Tier
++  Verification Contract.
++
++**Emission before enrichment:** failed-job details come from
++`GET /repos/{repo}/actions/runs/{runId}/jobs?filter=latest` best-effort; a
++jobs-API blip degrades the body (explicit "details unavailable" note) and never
++loses the report.
++
++## Retry semantics
++
++In-memory bounded retry (default 3 attempts, exponential backoff 5 s → 15 min
++cap) with a dead-letter state surfaced in `getStatus()`. There is **no durable
++outbox** (unlike #69 bridge intake): the reporter is advisory, GitHub
++redelivery and the next failing run provide natural reconciliation. Missing
++server-side `GITHUB_TOKEN` fails closed at the service level and dead-letters
++visibly — no silent success is possible.
++
++## Configuration (env, fail-closed defaults)
++
++| Variable | Default | Meaning |
++|---|---|---|
++| `FEDERATED_CI_WATCHER_ENABLED` | `false` | Master switch — must be `true` to arm |
++| `FEDERATED_CI_WATCHER_REPORT_REPO` | `Supremeai-bd/supremeai-open` | Board that receives failure issues |
++| `FEDERATED_CI_WATCHER_REPOS` | _(empty)_ | Comma-separated explicit allowlist; empty → same-org policy |
++| `FEDERATED_CI_WATCHER_MAX_PER_HOUR` | `6` | Global rolling issues-per-hour cap |
++| `FEDERATED_CI_WATCHER_DEDUPE_TTL_MS` | `86400000` | Event-key/delivery dedupe TTL |
++| `FEDERATED_CI_WATCHER_MAX_ATTEMPTS` | `3` | Retry ceiling before dead-letter |
++| `GITHUB_TOKEN` / `GITHUB_API_TOKEN` | — | Server-side token with issue-create scope on the report repo |
++
++Arming checklist: set `FEDERATED_CI_WATCHER_ENABLED=true`, ensure the webhook
++subscription includes `workflow_run`, ensure the token can open issues on the
++report repo. When disabled, boot logs one actionable line
++(`[CI_WATCHER] disabled (…)`).
++
++## Scope and wiring
++
++- Registered in `src/index.ts` next to `registerBridgeIntake()` (armed before
++  the server accepts webhook traffic; idempotent).
++- Config block in `src/lib/env.ts` (`env.federatedCiWatcher`).
++- Offline test suite: `test_federated_ci_watcher.ts`, wired as
++  `test:federated-ci-watcher` and appended to `test:unit` and the
++  credentials-free `test:tower-ci` CI chain (wiring-guard doctrine #116: a
++  test file that no script references is silent rot).
++
++## Verification (3-tier, per issue #199)
++
++1. `python scripts/ci/boundary_sanitization_guard.py --check` — 0 violations
++2. `npm --prefix infrastructure/mcp-control-plane run typecheck` — clean
++3. `python scripts/agents/continuous_agent_loop.py --verify-only` — 8-tier pass
++
++Plus the module suite: `npm run test:federated-ci-watcher` (40 checks,
++offline/deterministic — fake clock, injected backends, stubbed `fetch`).
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index abd544d0..9c97f8e7 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard && npm run test:federated-ci-watcher",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -31,7 +31,8 @@
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
+     "test:bridge-intake": "tsx test_bridge_intake.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard",
++    "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:account-chain": "tsx scripts/test-runner.ts test_account_chain_callers.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+diff --git a/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts b/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
+new file mode 100644
+index 00000000..c0d73deb
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
+@@ -0,0 +1,537 @@
++/**
++ * #199 — Federated CI failure auto-issue reporter + cross-repo task normalizer.
++ *
++ * Connects the already-deployed `/webhooks/github` route (signed, normalized,
++ * dispatched through the existing EventGateway) to an autonomous reporter that
++ * opens an actionable failure issue on the control-plane board the moment any
++ * federation repository's GitHub Actions run fails — so agents can claim and
++ * patch the breakage in seconds instead of waiting for a human sweep.
++ *
++ * The emitted issue body IS the cross-repo task normalizer (#199 part 2): any
++ * CI failure raised anywhere in the federation is normalized into the standard
++ * agent-task contract (Primary Group / Sub-Group / Priority / Task Group /
++ * 3-Tier Verification Contract) on `Supremeai-bd/supremeai-open`.
++ *
++ * Design constraints (issue #199, mirroring the #69 bridge-intake doctrine):
++ *  - NO second event bus / NO duplicate webhook endpoint: this module is a
++ *    gateway listener on the existing normalizer→gateway pipeline.
++ *  - Fail-closed: disabled by default (FEDERATED_CI_WATCHER_ENABLED=true to
++ *    arm); anything that is not `workflow_run.completed` with
++ *    `conclusion === "failure"` from an allow-listed repository is dropped
++ *    with a machine-readable reason.
++ *  - Anti-spam Poka-yoke (a bug here could spam the board): three independent
++ *    gates — (1) `X-GitHub-Delivery` idempotency, (2) event-key dedupe
++ *    (repo:workflow:run:attempt) with a long TTL, (3) a global rolling
++ *    issues-per-hour cap. Over-cap reports are dropped loudly, not silently.
++ *  - Emission before enrichment: failed-job details are fetched best-effort;
++ *    a jobs-API blip degrades the report body, it never loses the report.
++ *  - Least privilege: server-side GITHUB_TOKEN only, never exposed to webhook
++ *    callers; nothing from the payload is logged (no secrets, no log URLs
++ *    beyond what GitHub already exposes publicly on the run page).
++ *  - Label resilience: `repo:<slug>` may not exist on the board yet — a 422
++ *    from the Issues API falls back to the three always-present labels and
++ *    notes the dropped label inside the issue body (board triage can relabel,
++ *    e.g. `repo:supremeai-open` → `repo:open`).
++ *  - Retry semantics: in-memory bounded retry with exponential backoff and a
++ *    dead-letter state (no durable outbox — the reporter is advisory; GitHub
++ *    redelivery and the next failing run provide natural reconciliation).
++ */
++
++import type { NormalizedEvent } from "./normalizer.js";
++import { globalEventGateway } from "./gateway.js";
++
++// ── Emission contract (mirrors api-schemas/federated-ci-failure.schema.json) ──
++
++export const REPORT_SCHEMA_ID = "federated-ci-failure/v1";
++
++/** Conclusion the reporter acts on. Strict: startup_failure/timed_out/etc. are out of scope for v1. */
++export const WATCHED_CONCLUSION = "failure";
++
++export interface FailedJobSummary {
++  name: string;
++  steps: string[];
++  url?: string;
++}
++
++export interface CiFailureReport {
++  schema: typeof REPORT_SCHEMA_ID;
++  /** Full name of the repository whose run failed, e.g. `Org/repo`. */
++  repo: string;
++  workflowName: string;
++  /** Workflow file path inside the failing repo, when GitHub provides one. */
++  workflowPath?: string;
++  runId: number;
++  runAttempt: number;
++  runUrl: string;
++  headBranch: string;
++  headSha: string;
++  conclusion: typeof WATCHED_CONCLUSION;
++  /** Best-effort enrichment from the runs/{id}/jobs API; empty when unavailable. */
++  failedJobs: FailedJobSummary[];
++  /** Dedupe key: ci-failure:<repo>:<workflow>:<runId>:<runAttempt>. */
++  eventKey: string;
++  reportedAt: string;
++}
++
++/** Labels required by the #199 task contract. */
++export const BASE_LABELS = ["P1-high", "handoff:coder", "area:ci"] as const;
++
++export interface DerivedIssue {
++  title: string;
++  body: string;
++  labels: string[];
++}
++
++// ── Configuration ─────────────────────────────────────────────────────────────
++
++export interface FederatedCiWatcherConfig {
++  /** Master switch — fail-closed. Armed only via FEDERATED_CI_WATCHER_ENABLED=true. */
++  enabled: boolean;
++  /** Board where failure issues are opened. */
++  reportRepo: string;
++  /**
++   * Explicit federation allowlist (full names, case-insensitive). When empty,
++   * the default same-org policy applies: any repo owned by the same owner as
++   * `reportRepo` counts as federation (the fleet is org-scoped; a hardcoded
++   * 14-repo list would drift).
++   */
++  repos: string[];
++  /** Global rolling cap: max failure issues opened per hour across all repos. */
++  maxIssuesPerHour: number;
++  /** Event-key dedupe TTL. */
++  dedupeTtlMs: number;
++  /** Retry ceiling per report before dead-letter. */
++  maxAttempts: number;
++  /** Server-side GitHub token (repo scope on reportRepo). Never logged. */
++  token?: string;
++}
++
++// ── Internal queue types ──────────────────────────────────────────────────────
++
++interface PendingReport {
++  report: CiFailureReport;
++  status: "pending" | "done" | "dead";
++  attempts: number;
++  nextAttemptAt: number;
++  lastError?: string;
++}
++
++export interface WatcherDecision {
++  accept: boolean;
++  reason: string;
++  eventKey?: string;
++}
++
++export interface IssueCreateRequest {
++  repo: string;
++  title: string;
++  body: string;
++  labels: string[];
++}
++
++export type IssueCreateFn = (
++  req: IssueCreateRequest,
++  token?: string,
++) => Promise<{ ok: boolean; status: number; issueUrl?: string; body?: any }>;
++
++export type JobsFetchFn = (
++  repo: string,
++  runId: number,
++  token?: string,
++) => Promise<{ ok: boolean; status: number; failedJobs: FailedJobSummary[] }>;
++
++export interface FederatedCiWatcherDeps {
++  now?: () => number;
++  createIssue?: IssueCreateFn;
++  fetchJobs?: JobsFetchFn;
++  schedule?: (fn: () => void, ms: number) => unknown;
++  log?: (line: string) => void;
++}
++
++const BACKOFF_BASE_MS = 5_000;
++const BACKOFF_CAP_MS = 15 * 60 * 1000;
++const HOURLY_WINDOW_MS = 60 * 60 * 1000;
++const MAX_TRACKED_KEYS = 2048;
++
++// ── Service ───────────────────────────────────────────────────────────────────
++
++export class FederatedCiWatcherService {
++  private readonly config: FederatedCiWatcherConfig;
++  private readonly deps: Required<Pick<FederatedCiWatcherDeps, "now">> & FederatedCiWatcherDeps;
++  private readonly queue: PendingReport[] = [];
++  private readonly seenDeliveries = new Map<string, number>();
++  private readonly seenEventKeys = new Map<string, number>();
++  private readonly emissionTimes: number[] = [];
++  private processing = false;
++
++  constructor(config: FederatedCiWatcherConfig, deps: FederatedCiWatcherDeps = {}) {
++    this.config = config;
++    this.deps = {
++      now: deps.now ?? (() => Date.now()),
++      createIssue: deps.createIssue,
++      fetchJobs: deps.fetchJobs,
++      schedule: deps.schedule,
++      log: deps.log,
++    };
++  }
++
++  // ── Relevance policy ────────────────────────────────────────────────────────
++
++  /** Pure decision: does this normalized event deserve a failure issue? */
++  public decide(event: NormalizedEvent): WatcherDecision {
++    if (event.source !== "github") {
++      return { accept: false, reason: `non-github source: ${event.source}` };
++    }
++    if (event.type !== "workflow_run") {
++      return { accept: false, reason: `unsupported event: ${event.type}` };
++    }
++    const payload: any = event.payload ?? {};
++    if (String(payload?.action ?? "") !== "completed") {
++      return { accept: false, reason: `unsupported action: workflow_run.${payload?.action}` };
++    }
++    const run = payload?.workflow_run ?? {};
++    if (String(run?.conclusion ?? "") !== WATCHED_CONCLUSION) {
++      return { accept: false, reason: `conclusion not watched: ${run?.conclusion}` };
++    }
++    const repoFullName = String(payload?.repository?.full_name ?? "");
++    if (!repoFullName) {
++      return { accept: false, reason: "missing repository identity" };
++    }
++    if (!this.isFederatedRepo(repoFullName)) {
++      return { accept: false, reason: `repo not in federation scope: ${repoFullName}` };
++    }
++    const runId = Number(run?.id ?? 0);
++    if (!Number.isFinite(runId) || runId <= 0) {
++      return { accept: false, reason: "missing workflow run id" };
++    }
++    const eventKey = `ci-failure:${repoFullName}:${String(run?.name ?? "unknown")}:${runId}:${Number(run?.run_attempt ?? 1)}`;
++    return { accept: true, reason: `workflow_run.failure`, eventKey };
++  }
++
++  /** Allowlist policy: explicit list wins; otherwise same-org-as-reportRepo. */
++  public isFederatedRepo(repoFullName: string): boolean {
++    const lower = repoFullName.toLowerCase();
++    if (this.config.repos.length > 0) {
++      return this.config.repos.map((r) => r.toLowerCase()).includes(lower);
++    }
++    const owner = this.config.reportRepo.split("/")[0]?.toLowerCase() ?? "";
++    return owner.length > 0 && lower.startsWith(`${owner}/`);
++  }
++
++  // ── Gateway listener (synchronous, O(1) — never blocks the webhook ack) ────
++
++  public handle(event: NormalizedEvent): void {
++    if (!this.config.enabled) return; // fail-closed: silently inert unless armed
++    const decision = this.decide(event);
++    if (!decision.accept) {
++      this.log(`[CI_WATCHER] skip (${decision.reason})`);
++      return;
++    }
++    const deliveryId = event.deliveryId;
++    if (deliveryId && this.fresh(this.seenDeliveries, deliveryId)) {
++      this.log(`[CI_WATCHER] dedupe: delivery ${deliveryId} already processed`);
++      return;
++    }
++    const eventKey = decision.eventKey ?? "unknown";
++    if (this.fresh(this.seenEventKeys, eventKey)) {
++      this.log(`[CI_WATCHER] dedupe: event ${eventKey} already reported in TTL window`);
++      return;
++    }
++    if (this.overRateCap()) {
++      this.log(
++        `[CI_WATCHER] RATE-CAP: ${eventKey} dropped — ${this.config.maxIssuesPerHour} issues/hour cap reached (failure remains visible on the run page; next failing run re-triggers)`,
++      );
++      return;
++    }
++    const payload: any = event.payload ?? {};
++    const run = payload?.workflow_run ?? {};
++    const report: CiFailureReport = {
++      schema: REPORT_SCHEMA_ID,
++      repo: String(payload.repository.full_name),
++      workflowName: String(run.name ?? "unknown"),
++      workflowPath: run.path ? String(run.path) : undefined,
++      runId: Number(run.id),
++      runAttempt: Number(run.run_attempt ?? 1),
++      runUrl: String(run.html_url ?? `https://github.com/${payload.repository.full_name}/actions/runs/${run.id}`),
++      headBranch: String(run.head_branch ?? "unknown"),
++      headSha: String(run.head_sha ?? "unknown"),
++      conclusion: WATCHED_CONCLUSION,
++      failedJobs: [],
++      eventKey,
++      reportedAt: new Date(this.deps.now()).toISOString(),
++    };
++    this.queue.push({ report, status: "pending", attempts: 0, nextAttemptAt: this.deps.now() });
++    this.log(`[CI_WATCHER] accepted ${eventKey} → report queue`);
++    this.scheduleProcess();
++  }
++
++  // ── Report pipeline (jobs enrichment → issue creation, bounded retry) ──────
++
++  private async processQueue(): Promise<void> {
++    if (this.processing) return;
++    this.processing = true;
++    try {
++      for (;;) {
++        const now = this.deps.now();
++        const due = this.queue.find((e) => e.status === "pending" && e.nextAttemptAt <= now);
++        if (!due) break;
++        await this.attemptReport(due);
++      }
++    } finally {
++      this.processing = false;
++      const stillDue = this.queue.some((e) => e.status === "pending" && e.nextAttemptAt <= this.deps.now());
++      if (stillDue) this.scheduleProcess();
++    }
++  }
++
++  /** Public tick: drains due reports now (external reconciliation + tests). */
++  public async tick(): Promise<void> {
++    await this.processQueue();
++  }
++
++  private async attemptReport(entry: PendingReport): Promise<void> {
++    const createIssue = this.deps.createIssue ?? defaultCreateIssue;
++    const fetchJobs = this.deps.fetchJobs ?? defaultFetchJobs;
++    try {
++      // Fail-closed credential gate (service level — defense in depth beyond
++      // the default backends): without a server-side token the report can
++      // never be delivered, so fail the attempt and dead-letter visibly.
++      if (!this.config.token) throw new Error("no server-side GitHub token configured (fail-closed)");
++      // Emission before enrichment: a jobs blip degrades the body, never loses the report.
++      const jobs = await fetchJobs(entry.report.repo, entry.report.runId, this.config.token);
++      if (jobs.ok) entry.report.failedJobs = jobs.failedJobs;
++
++      const issue = deriveFailureIssue(entry.report);
++      const res = await createIssue(
++        { repo: this.config.reportRepo, title: issue.title, body: issue.body, labels: issue.labels },
++        this.config.token,
++      );
++      if (!res.ok) throw new Error(`GitHub issues API → HTTP ${res.status}`);
++      entry.status = "done";
++      this.emissionTimes.push(this.deps.now());
++      this.log(`[CI_WATCHER] reported ${entry.report.eventKey} → ${res.issueUrl ?? this.config.reportRepo}`);
++    } catch (err: any) {
++      entry.attempts += 1;
++      entry.lastError = String(err?.message ?? err);
++      if (entry.attempts >= this.config.maxAttempts) {
++        entry.status = "dead";
++        this.log(`[CI_WATCHER] DEAD-LETTER ${entry.report.eventKey} after ${entry.attempts} attempts: ${entry.lastError}`);
++      } else {
++        const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (entry.attempts - 1), BACKOFF_CAP_MS);
++        entry.nextAttemptAt = this.deps.now() + backoff;
++        this.log(
++          `[CI_WATCHER] report failed for ${entry.report.eventKey} (attempt ${entry.attempts}/${this.config.maxAttempts}) → retry in ${backoff}ms: ${entry.lastError}`,
++        );
++        this.scheduleProcess(backoff);
++      }
++    }
++  }
++
++  private scheduleProcess(delayMs = 0): void {
++    const schedule = this.deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
++    const timer = schedule(() => {
++      void this.processQueue();
++    }, delayMs);
++    if (timer && typeof (timer as any).unref === "function") (timer as any).unref();
++  }
++
++  // ── Anti-spam gates ─────────────────────────────────────────────────────────
++
++  private overRateCap(): boolean {
++    const now = this.deps.now();
++    while (this.emissionTimes.length > 0 && now - this.emissionTimes[0] > HOURLY_WINDOW_MS) {
++      this.emissionTimes.shift();
++    }
++    return this.emissionTimes.length >= this.config.maxIssuesPerHour;
++  }
++
++  private fresh(map: Map<string, number>, key: string): boolean {
++    const now = this.deps.now();
++    for (const [k, ts] of map) if (now - ts > this.config.dedupeTtlMs) map.delete(k);
++    while (map.size >= MAX_TRACKED_KEYS) map.delete(map.keys().next().value as string);
++    if (map.has(key)) return true;
++    map.set(key, now);
++    return false;
++  }
++
++  // ── Observability ───────────────────────────────────────────────────────────
++
++  public getStatus(): Record<string, unknown> {
++    return {
++      enabled: this.config.enabled,
++      reportRepo: this.config.reportRepo,
++      federationScope: this.config.repos.length > 0 ? this.config.repos : [`same-org:${this.config.reportRepo.split("/")[0] ?? ""}`],
++      maxIssuesPerHour: this.config.maxIssuesPerHour,
++      reportedLastHour: this.emissionTimes.length,
++      pending: this.queue.filter((e) => e.status === "pending").length,
++      done: this.queue.filter((e) => e.status === "done").length,
++      dead: this.queue.filter((e) => e.status === "dead").length,
++    };
++  }
++
++  private log(line: string): void {
++    const fn = this.deps.log ?? ((l: string) => console.error(l));
++    fn(line);
++  }
++}
++
++// ── Cross-repo task normalizer: report → standard agent-task issue ───────────
++
++/**
++ * Derives the board issue from a failure report. This function is the #199
++ * "cross-repo task normalizer": every federation CI failure lands on the
++ * control-plane board in the standardized agent-task contract shape.
++ */
++export function deriveFailureIssue(report: CiFailureReport): DerivedIssue {
++  const title = `fix(ci): workflow failure in ${report.repo} (${report.workflowName} #${report.runId})`;
++  const slug = report.repo.split("/")[1] ?? report.repo;
++
++  const jobLines =
++    report.failedJobs.length > 0
++      ? report.failedJobs
++          .map(
++            (j) =>
++              `- **${j.name}**${j.url ? ` — [job log](${j.url})` : ""}${j.steps.length ? `\n  - failed step(s): ${j.steps.map((s) => `\`${s}\``).join(", ")}` : ""}`,
++          )
++          .join("\n")
++      : "_Job-level details unavailable (jobs API enrichment skipped/failed — see the run URL above)._";
++
++  const workflowFile = report.workflowPath ? `\`${report.workflowPath}\` (workflow definition — first suspect for syntax/environment breakage)` : "_workflow path not provided by the event_";
++
++  const body = `### 🤖 SupremeAI Agent Task Contract (auto-generated by the federated CI watcher — verify before acting)
++
++**Primary Group (Target Repository):**
++${report.repo}
++
++**Sub-Group / Functional Domain (Area):**
++ci (Workflows, gates, lint, testing matrix)
++
++**Priority Tier:**
++P1-high (CI breakage blocks the federation loop)
++
++**Topological Layer:**
++Layer 2 (Tools / Workers / Sidecars)
++
++**Task Group (VALID_GROUPS registry):**
++agent-orchestration
++
++### Mission & Problem Statement
++GitHub Actions workflow **${report.workflowName}** failed (${report.conclusion}) in \`${report.repo}\`.
++
++- **Run:** [#${report.runId} (attempt ${report.runAttempt})](${report.runUrl})
++- **Head branch:** \`${report.headBranch}\` · **Head SHA:** \`${report.headSha}\`
++- **Event key:** \`${report.eventKey}\`
++
++**Failing jobs / steps:**
++${jobLines}
++
++### Touching Files
++- ${workflowFile}
++- Whatever the failing steps reference (derive from the job log linked above).
++
++### 3-Tier Verification Contract
++1. Reflection Check: \`python scripts/ci/boundary_sanitization_guard.py --check\`
++2. Boot Smoke: \`npm --prefix infrastructure/mcp-control-plane run typecheck\`
++3. Test Suite: \`python scripts/agents/continuous_agent_loop.py --verify-only\`
++
++<!-- reporter: federated-ci-watcher schema=${report.schema} eventKey=${report.eventKey} -->`;
++
++  return { title, body, labels: [...BASE_LABELS, `repo:${slug}`] };
++}
++
++// ── Default GitHub backends (server-side token only) ──────────────────────────
++
++/** POST /repos/{repo}/issues — with one 422 fallback that drops the repo:<slug> label. */
++export const defaultCreateIssue: IssueCreateFn = async (req, token) => {
++  if (!token) return { ok: false, status: 0 }; // fail-closed: no creds → caller retries → dead-letters visibly
++  const attempt = async (labels: string[]) =>
++    fetch(`https://api.github.com/repos/${req.repo}/issues`, {
++      method: "POST",
++      headers: {
++        Authorization: `Bearer ${token}`,
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        "User-Agent": "SupremeAI-MCP-Control-Tower",
++      },
++      body: JSON.stringify({ title: req.title, body: req.body, labels }),
++    });
++
++  let res = await attempt(req.labels);
++  if (res.status === 422 && req.labels.length > 1) {
++    // A label (most likely repo:<slug>) does not exist on the board — retry
++    // with the always-present core labels and note the drop in the body.
++    const note = `\n\n> ℹ️ Reporter note: the \`repo:<slug>\` label does not exist on this board yet — triage may want to add/relabel it (e.g. \`repo:open\` for \`Supremeai-bd/supremeai-open\`).`;
++    res = await attempt([...req.labels.filter((l) => !l.startsWith("repo:"))]);
++    return { ok: res.status === 201, status: res.status, issueUrl: undefined, body: { labelDropped: true, note } };
++  }
++  let issueUrl: string | undefined;
++  try {
++    issueUrl = res.ok ? ((await res.json() as any)?.html_url ?? undefined) : undefined;
++  } catch {
++    issueUrl = undefined;
++  }
++  return { ok: res.status === 201, status: res.status, issueUrl };
++};
++
++/** GET /repos/{repo}/actions/runs/{runId}/jobs — best-effort failed-job enrichment. */
++export const defaultFetchJobs: JobsFetchFn = async (repo, runId, token) => {
++  if (!token) return { ok: false, status: 0, failedJobs: [] };
++  try {
++    const res = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${runId}/jobs?filter=latest&per_page=100`, {
++      method: "GET",
++      headers: {
++        Authorization: `Bearer ${token}`,
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        "User-Agent": "SupremeAI-MCP-Control-Tower",
++      },
++    });
++    if (res.status !== 200) return { ok: false, status: res.status, failedJobs: [] };
++    const data: any = await res.json();
++    const failedJobs: FailedJobSummary[] = (data?.jobs ?? [])
++      .filter((j: any) => j?.conclusion === "failure")
++      .map((j: any) => ({
++        name: String(j.name ?? "unknown"),
++        steps: (j.steps ?? [])
++          .filter((s: any) => s?.conclusion === "failure")
++          .map((s: any) => String(s.name ?? "unknown")),
++        url: j.html_url ? String(j.html_url) : undefined,
++      }));
++    return { ok: true, status: 200, failedJobs };
++  } catch {
++    return { ok: false, status: 0, failedJobs: [] };
++  }
++};
++
++// ── Boot wiring (idempotent) ──────────────────────────────────────────────────
++
++let registered = false;
++
++/**
++ * Registers the watcher as an EventGateway listener (single call per process).
++ * Reads its configuration from env; logs one actionable line when disabled so
++ * operators can see why CI failures are not being reported.
++ */
++export async function registerFederatedCiWatcher(): Promise<void> {
++  if (registered) return;
++  registered = true;
++  const { env } = await import("../lib/env.js");
++  const cfg = env.federatedCiWatcher;
++  if (!cfg.enabled) {
++    console.error("[CI_WATCHER] disabled (set FEDERATED_CI_WATCHER_ENABLED=true and ensure the repo webhook subscribes to workflow_run events to arm federated CI failure reporting)");
++    return;
++  }
++  const service = new FederatedCiWatcherService({
++    enabled: cfg.enabled,
++    reportRepo: cfg.reportRepo,
++    repos: cfg.repos,
++    maxIssuesPerHour: cfg.maxIssuesPerHour,
++    dedupeTtlMs: cfg.dedupeTtlMs,
++    maxAttempts: cfg.maxAttempts,
++    token: cfg.token,
++  });
++  globalEventGateway.subscribe((event) => service.handle(event));
++  console.error(
++    `[CI_WATCHER] armed → failures from ${cfg.repos.length > 0 ? cfg.repos.join(", ") : `same-org:${cfg.reportRepo.split("/")[0] ?? ""}`} reported to ${cfg.reportRepo} (cap ${cfg.maxIssuesPerHour}/hour)`,
++  );
++}
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index 5d6b4d2f..b0cccb4d 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -32,6 +32,7 @@ import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibil
+ import { verifyApprovalLink } from "./policy/approvals/signing.js";
+ import { hasWebhookSignature } from "./lib/webhook_signature.js";
+ import { registerBridgeIntake } from "./events/bridge_intake.js";
++import { registerFederatedCiWatcher } from "./events/federated_ci_watcher.js";
+ import { validateRuntimeKnobs } from "./lib/env.js";
+ import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
+ import { MemorySubAdapter } from "./adapters/memory/index.js";
+@@ -1864,6 +1865,12 @@ async function main(): Promise<void> {
+     // accepts webhook traffic.
+     registerBridgeIntake();
+ 
++    // #199: federated CI failure reporter — workflow_run.completed(failure)
++    // → actionable issue on the control-plane board. Idempotent, fail-closed
++    // (no-op unless FEDERATED_CI_WATCHER_ENABLED=true). Also armed BEFORE the
++    // server accepts webhook traffic.
++    await registerFederatedCiWatcher();
++
+     const server = await createMcpServer(memoryAdapter);
+ 
+     if (mode === "stdio") {
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index 73ed122d..2cb339df 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -206,6 +206,22 @@ export const env = {
+     get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
+   },
+ 
++  // Arms the #199 federated CI failure reporter (workflow_run.completed →
++  // failure issue on the control-plane board). Fail-closed: disabled unless
++  // explicitly enabled. See docs/FEDERATED_CI_WATCHER.md for activation steps.
++  federatedCiWatcher: {
++    get enabled(): boolean { return process.env.FEDERATED_CI_WATCHER_ENABLED === "true"; },
++    get reportRepo(): string { return optional("FEDERATED_CI_WATCHER_REPORT_REPO", "Supremeai-bd/supremeai-open"); },
++    /** Comma-separated explicit allowlist; empty → same-org-as-reportRepo policy. */
++    get repos(): string[] {
++      return optional("FEDERATED_CI_WATCHER_REPOS", "").split(",").map((s) => s.trim()).filter((s) => s.length > 0);
++    },
++    get maxIssuesPerHour(): number { return parseInt(optional("FEDERATED_CI_WATCHER_MAX_PER_HOUR", "6"), 10) || 6; },
++    get dedupeTtlMs(): number { return parseInt(optional("FEDERATED_CI_WATCHER_DEDUPE_TTL_MS", "86400000"), 10) || 86400000; },
++    get maxAttempts(): number { return parseInt(optional("FEDERATED_CI_WATCHER_MAX_ATTEMPTS", "3"), 10) || 3; },
++    get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
++  },
++
+   // ── Cloudflare (5-account federation pool)
+   cloudflare: {
+     get apiToken(): string | undefined { return process.env.CLOUDFLARE_API_TOKEN; },
+diff --git a/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts b/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts
+new file mode 100644
+index 00000000..70e9cfeb
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_federated_ci_watcher.ts
+@@ -0,0 +1,375 @@
++/**
++ * #199 — Federated CI failure watcher test suite (offline, deterministic).
++ *
++ * House style (see test_bridge_intake.ts): tsx script, hard asserts, exit
++ * code = verdict. Covers: relevance policy, allowlist scope, dedupe gates,
++ * hourly rate cap, emission contract (title/labels/body = the cross-repo
++ * task normalizer), defaultCreateIssue 422 repo-label fallback (stubbed
++ * fetch), defaultFetchJobs enrichment extraction, retry/backoff,
++ * dead-letter, token fail-closed, disabled master switch, and normalizer
++ * integration.
++ */
++import { globalEventNormalizer } from "./src/events/normalizer.js";
++import {
++  FederatedCiWatcherService,
++  defaultCreateIssue,
++  defaultFetchJobs,
++  deriveFailureIssue,
++  type CiFailureReport,
++  type FederatedCiWatcherConfig,
++  type IssueCreateFn,
++  type JobsFetchFn,
++} from "./src/events/federated_ci_watcher.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++// Deterministic clock: manual advance, no real timers anywhere.
++function makeClock(start = 1_700_000_000_000) {
++  let now = start;
++  return {
++    now: () => now,
++    advance: (ms: number) => {
++      now += ms;
++    },
++  };
++}
++const NO_SCHEDULE = (fn: () => void) => {
++  void fn;
++  return undefined;
++}; // never auto-run; tests drive tick()
++
++function baseConfig(overrides: Partial<FederatedCiWatcherConfig> = {}): FederatedCiWatcherConfig {
++  return {
++    enabled: true,
++    reportRepo: "Supremeai-bd/supremeai-open",
++    repos: [],
++    maxIssuesPerHour: 6,
++    dedupeTtlMs: 24 * 60 * 60 * 1000,
++    maxAttempts: 3,
++    token: "test-token",
++    ...overrides,
++  };
++}
++
++/** Canonical workflow_run.completed(failure) webhook payload. */
++function failurePayload(overrides: Record<string, any> = {}): Record<string, any> {
++  const { workflow_run: runOverrides, ...topOverrides } = overrides;
++  return {
++    action: "completed",
++    repository: { full_name: "Supremeai-bd/supremeai-api" },
++    sender: { login: "some-actor" },
++    workflow_run: {
++      id: 4242,
++      name: "CI",
++      path: ".github/workflows/ci.yml",
++      run_attempt: 1,
++      conclusion: "failure",
++      event: "push",
++      head_branch: "main",
++      head_sha: "a".repeat(40),
++      html_url: "https://github.com/Supremeai-bd/supremeai-api/actions/runs/4242",
++      ...(runOverrides ?? {}),
++    },
++    ...topOverrides,
++  };
++}
++
++function normalizedGithub(payload: Record<string, any>, deliveryId = "d-1") {
++  return globalEventNormalizer.normalizeGitHubEvent("workflow_run", payload, deliveryId);
++}
++
++const okIssueCreate: IssueCreateFn = async () => ({ ok: true, status: 201, issueUrl: "https://github.com/Supremeai-bd/supremeai-open/issues/999" });
++const noJobs: JobsFetchFn = async () => ({ ok: true, status: 200, failedJobs: [] });
++
++// ── 1. Relevance policy ───────────────────────────────────────────────────────
++section("Relevance policy (decide)");
++{
++  const svc = new FederatedCiWatcherService(baseConfig(), { now: makeClock().now, schedule: NO_SCHEDULE });
++
++  const d1 = svc.decide(normalizedGithub(failurePayload()));
++  check("accepts workflow_run.completed(failure)", d1.accept && d1.eventKey === "ci-failure:Supremeai-bd/supremeai-api:CI:4242:1", JSON.stringify(d1));
++
++  const d2 = svc.decide(globalEventNormalizer.normalizeGitHubEvent("push", failurePayload()));
++  check("rejects non-workflow_run event", !d2.accept && d2.reason.includes("unsupported event"));
++
++  const d3 = svc.decide(normalizedGithub({ ...failurePayload(), action: "requested" }));
++  check("rejects non-completed action", !d3.accept && d3.reason.includes("unsupported action"));
++
++  const d4 = svc.decide(normalizedGithub(failurePayload({ workflow_run: { id: 1, name: "CI", conclusion: "success", run_attempt: 1 } })));
++  check("rejects conclusion=success", !d4.accept && d4.reason.includes("conclusion not watched"));
++
++  const d5 = svc.decide(normalizedGithub({ ...failurePayload(), repository: undefined }));
++  check("rejects missing repository identity", !d5.accept && d5.reason.includes("missing repository"));
++
++  const d6 = svc.decide(normalizedGithub(failurePayload({ repository: { full_name: "Other-org/some-repo" } })));
++  check("default same-org policy rejects foreign org", !d6.accept && d6.reason.includes("not in federation scope"));
++
++  const d7 = svc.decide(normalizedGithub(failurePayload({ workflow_run: { id: 0, name: "CI", conclusion: "failure" } })));
++  check("rejects missing run id", !d7.accept && d7.reason.includes("run id"));
++
++  const d8 = svc.decide({ source: "cloudflare", type: "ping_failed", severity: "CRITICAL", message: "x", payload: {}, timestamp: "t" });
++  check("rejects non-github source", !d8.accept && d8.reason.includes("non-github"));
++}
++
++// ── 2. Explicit allowlist ─────────────────────────────────────────────────────
++section("Explicit allowlist scope");
++{
++  const svc = new FederatedCiWatcherService(baseConfig({ repos: ["Supremeai-bd/supremeai-api"] }), { now: makeClock().now, schedule: NO_SCHEDULE });
++  check("explicit allowlist accepts listed repo (case-insensitive)", svc.isFederatedRepo("supremeai-bd/SUPREMEAI-API"));
++  check("explicit allowlist rejects same-org unlisted repo", !svc.isFederatedRepo("Supremeai-bd/supremeai-open"));
++}
++
++// ── 3. Dedupe gates ───────────────────────────────────────────────────────────
++section("Dedupe (deliveryId + eventKey with TTL)");
++{
++  const clock = makeClock();
++  const created: any[] = [];
++  const svc = new FederatedCiWatcherService(baseConfig(), {
++    now: clock.now,
++    schedule: NO_SCHEDULE,
++    createIssue: async (req) => {
++      created.push(req);
++      return { ok: true, status: 201 };
++    },
++    fetchJobs: noJobs,
++  });
++
++  svc.handle(normalizedGithub(failurePayload(), "delivery-A"));
++  svc.handle(normalizedGithub(failurePayload(), "delivery-B")); // same eventKey, different delivery → collapsed
++  await svc.tick();
++  check("eventKey dedupe collapses redeliveries", created.length === 1, `created=${created.length}`);
++
++  clock.advance(25 * 60 * 60 * 1000); // past TTL → the same refailure may report again
++  svc.handle(normalizedGithub(failurePayload(), "delivery-C"));
++  await svc.tick();
++  check("post-TTL refailure re-reports", created.length === 2, `created=${created.length}`);
++}
++
++// ── 4. Hourly rate cap (fresh service: no prior emissions) ────────────────────
++section("Hourly rate cap (rolling window)");
++{
++  const clock = makeClock();
++  const created: any[] = [];
++  const svc = new FederatedCiWatcherService(baseConfig(), {
++    now: clock.now,
++    schedule: NO_SCHEDULE,
++    createIssue: async (req) => {
++      created.push(req);
++      return { ok: true, status: 201 };
++    },
++    fetchJobs: noJobs,
++  });
++  // 6 distinct failures within one rolling hour → all emitted.
++  for (let i = 0; i < 6; i++) {
++    clock.advance(60_000);
++    const p = failurePayload({
++      workflow_run: { id: 5000 + i, name: "CI", conclusion: "failure", run_attempt: 1, head_branch: "main", head_sha: "b".repeat(40), html_url: `https://github.com/x/actions/runs/${5000 + i}` },
++    });
++    svc.handle(normalizedGithub(p, `delivery-cap-${i}`));
++  }
++  await svc.tick();
++  check("cap allows exactly maxIssuesPerHour within the window", created.length === 6, `created=${created.length}`);
++
++  // 7th failure still inside the window → dropped loudly.
++  clock.advance(60_000);
++  svc.handle(normalizedGithub(failurePayload({ workflow_run: { id: 9999, name: "CI", conclusion: "failure", run_attempt: 1 } }), "delivery-over-cap"));
++  await svc.tick();
++  check("over-cap report dropped (not emitted)", created.length === 6, `created=${created.length}`);
++
++  // Window slides past the hour → cap resets.
++  clock.advance(61 * 60_000);
++  svc.handle(normalizedGithub(failurePayload({ workflow_run: { id: 10_000, name: "CI", conclusion: "failure", run_attempt: 1 } }), "delivery-post-window"));
++  await svc.tick();
++  check("cap resets after the rolling window slides", created.length === 7, `created=${created.length}`);
++}
++
++// ── 5. Emission contract ──────────────────────────────────────────────────────
++section("Emission contract (title, labels, body = cross-repo task normalizer)");
++{
++  const clock = makeClock();
++  let captured: any;
++  const svc = new FederatedCiWatcherService(baseConfig(), {
++    now: clock.now,
++    schedule: NO_SCHEDULE,
++    createIssue: async (req) => {
++      captured = req;
++      return { ok: true, status: 201 };
++    },
++    fetchJobs: async () => ({
++      ok: true,
++      status: 200,
++      failedJobs: [{ name: "build", steps: ["npm run typecheck"], url: "https://github.com/x/job/1" }],
++    }),
++  });
++  svc.handle(normalizedGithub(failurePayload(), "d-emission"));
++  await svc.tick();
++
++  check("issue opened", !!captured);
++  check("repo = reportRepo", captured.repo === "Supremeai-bd/supremeai-open");
++  check("title exact format per #199", captured.title === "fix(ci): workflow failure in Supremeai-bd/supremeai-api (CI #4242)", captured.title);
++  check("labels carry core set + repo:<slug>", JSON.stringify(captured.labels) === JSON.stringify(["P1-high", "handoff:coder", "area:ci", "repo:supremeai-api"]), JSON.stringify(captured.labels));
++  check("body contains run URL", captured.body.includes("https://github.com/Supremeai-bd/supremeai-api/actions/runs/4242"));
++  check("body contains head SHA anchor", captured.body.includes("a".repeat(40)));
++  check("body contains failed job + step", captured.body.includes("**build**") && captured.body.includes("`npm run typecheck`"));
++  check("body is the standardized task contract", captured.body.includes("Primary Group") && captured.body.includes("3-Tier Verification Contract"));
++  check("body carries verification commands", captured.body.includes("boundary_sanitization_guard.py --check") && captured.body.includes("--verify-only"));
++
++  // Degraded enrichment path: jobs fetch fails → report still emitted with a note.
++  let emitted = false;
++  const svcDegrade = new FederatedCiWatcherService(baseConfig(), {
++    now: clock.now,
++    schedule: NO_SCHEDULE,
++    createIssue: async (req) => {
++      emitted = req.body.includes("Job-level details unavailable");
++      return { ok: true, status: 201 };
++    },
++    fetchJobs: async () => ({ ok: false, status: 503, failedJobs: [] }),
++  });
++  svcDegrade.handle(normalizedGithub(failurePayload(), "d-degrade"));
++  await svcDegrade.tick();
++  check("emission survives jobs-API failure (degraded body note)", emitted);
++}
++
++// ── 6. defaultCreateIssue — 422 repo-label fallback (stubbed fetch) ───────────
++section("defaultCreateIssue: 422 fallback + token fail-closed (stubbed fetch)");
++{
++  const calls: any[] = [];
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = (async (_url: any, init: any) => {
++    const parsed = JSON.parse(init.body);
++    calls.push(parsed);
++    if (parsed.labels.includes("repo:supremeai-api")) {
++      return new Response("Label does not exist", { status: 422 });
++    }
++    return new Response(JSON.stringify({ html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/1" }), { status: 201, headers: { "content-type": "application/json" } });
++  }) as any;
++  try {
++    const res = await defaultCreateIssue(
++      { repo: "Supremeai-bd/supremeai-open", title: "t", body: "b", labels: ["P1-high", "handoff:coder", "area:ci", "repo:supremeai-api"] },
++      "tok",
++    );
++    check("two HTTP calls (422 then fallback)", calls.length === 2, `calls=${calls.length}`);
++    check("second call dropped the repo:<slug> label", Array.isArray(calls[1]?.labels) && !calls[1].labels.some((l: string) => l.startsWith("repo:")));
++    check("fallback result ok", res.ok && res.status === 201);
++
++    const noToken = await defaultCreateIssue({ repo: "r/x", title: "t", body: "b", labels: ["a"] }, undefined);
++    check("missing token → fail-closed (status 0, not ok)", !noToken.ok && noToken.status === 0);
++  } finally {
++    globalThis.fetch = origFetch;
++  }
++}
++
++// ── 7. defaultFetchJobs — enrichment extraction (stubbed fetch) ────────────────
++section("defaultFetchJobs: failed-job/step extraction (stubbed fetch)");
++{
++  const origFetch = globalThis.fetch;
++  globalThis.fetch = (async () =>
++    new Response(
++      JSON.stringify({
++        jobs: [
++          { name: "build", conclusion: "failure", html_url: "https://github.com/x/job/1", steps: [{ name: "checkout", conclusion: "success" }, { name: "typecheck", conclusion: "failure" }] },
++          { name: "lint", conclusion: "success", html_url: "https://github.com/x/job/2", steps: [] },
++          { name: "deploy", conclusion: null, html_url: "https://github.com/x/job/3", steps: [] },
++        ],
++      }),
++      { status: 200, headers: { "content-type": "application/json" } },
++    )) as any;
++  try {
++    const res = await defaultFetchJobs("Supremeai-bd/supremeai-api", 4242, "tok");
++    check("only failure jobs extracted", res.ok && res.failedJobs.length === 1 && res.failedJobs[0].name === "build", JSON.stringify(res.failedJobs));
++    check("failed step extracted", res.failedJobs[0].steps.length === 1 && res.failedJobs[0].steps[0] === "typecheck");
++  } finally {
++    globalThis.fetch = origFetch;
++  }
++}
++
++// ── 8. Retry / backoff / dead-letter ──────────────────────────────────────────
++section("Retry, backoff, dead-letter");
++{
++  const clock = makeClock();
++  let calls = 0;
++  const svc = new FederatedCiWatcherService(baseConfig({ maxAttempts: 2 }), {
++    now: clock.now,
++    schedule: NO_SCHEDULE,
++    createIssue: async () => {
++      calls += 1;
++      return { ok: false, status: 500 };
++    },
++    fetchJobs: noJobs,
++  });
++  svc.handle(normalizedGithub(failurePayload(), "d-retry"));
++  await svc.tick();
++  check("attempt 1 made", calls === 1);
++  clock.advance(6_000); // past 5s backoff
++  await svc.tick();
++  check("attempt 2 after backoff", calls === 2);
++  clock.advance(60_000);
++  await svc.tick();
++  check("dead-letter stops retries", calls === 2 && svc.getStatus().dead === 1, JSON.stringify(svc.getStatus()));
++}
++
++// ── 9. Token fail-closed (service level) + disabled switch ────────────────────
++section("Token fail-closed (service level) + disabled master switch");
++{
++  const svcNoToken = new FederatedCiWatcherService(baseConfig({ token: undefined, maxAttempts: 1 }), {
++    now: makeClock().now,
++    schedule: NO_SCHEDULE,
++    createIssue: async () => ({ ok: true, status: 201 }),
++    fetchJobs: noJobs,
++  });
++  svcNoToken.handle(normalizedGithub(failurePayload(), "d-notoken"));
++  await svcNoToken.tick();
++  check("missing token → fail-closed dead-letter (no silent success)", svcNoToken.getStatus().dead === 1, JSON.stringify(svcNoToken.getStatus()));
++
++  const svcDisabled = new FederatedCiWatcherService(baseConfig({ enabled: false }), {
++    now: makeClock().now,
++    schedule: NO_SCHEDULE,
++    createIssue: okIssueCreate,
++    fetchJobs: noJobs,
++  });
++  svcDisabled.handle(normalizedGithub(failurePayload(), "d-disabled"));
++  await svcDisabled.tick();
++  check("disabled watcher is fully inert", svcDisabled.getStatus().pending === 0 && svcDisabled.getStatus().done === 0 && svcDisabled.getStatus().dead === 0);
++}
++
++// ── 10. Normalizer integration + derivation contract ──────────────────────────
++section("Normalizer integration + derivation contract");
++{
++  const report: CiFailureReport = {
++    schema: "federated-ci-failure/v1",
++    repo: "Supremeai-bd/supremeai-api",
++    workflowName: "Release",
++    workflowPath: ".github/workflows/release.yml",
++    runId: 77,
++    runAttempt: 3,
++    runUrl: "https://github.com/Supremeai-bd/supremeai-api/actions/runs/77",
++    headBranch: "release/v2",
++    headSha: "c".repeat(40),
++    conclusion: "failure",
++    failedJobs: [],
++    eventKey: "ci-failure:Supremeai-bd/supremeai-api:Release:77:3",
++    reportedAt: "2026-10-16T00:00:00.000Z",
++  };
++  const issue = deriveFailureIssue(report);
++  check("deriveFailureIssue title matches #199 format", issue.title === "fix(ci): workflow failure in Supremeai-bd/supremeai-api (Release #77)", issue.title);
++  check("schema envelope id carried", report.schema === "federated-ci-failure/v1");
++  check("eventKey composite includes attempt", report.eventKey.endsWith(":77:3"));
++
++  // End-to-end through the real normalizer (as the webhook route feeds it).
++  const normalized = globalEventNormalizer.normalizeGitHubEvent("workflow_run", failurePayload(), "d-e2e");
++  check("normalized event rides source=github type=workflow_run", normalized.source === "github" && normalized.type === "workflow_run" && normalized.deliveryId === "d-e2e");
++}
++
++console.log(`\n${failures === 0 ? "✅ ALL CHECKS PASSED" : `❌ ${failures} CHECK(S) FAILED`}`);
++process.exit(failures === 0 ? 0 : 1);

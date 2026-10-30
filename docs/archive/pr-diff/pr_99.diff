@@ -1,0 +1,82 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7003b210..f7370a1e 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -43,6 +43,36 @@ jobs:
+           except ValueError:
+               pass"
+ 
++  tower-verify:
++    name: Tower TS Verification (typecheck + contract-safe tests)
++    runs-on: ubuntu-latest
++    defaults:
++      run:
++        working-directory: infrastructure/mcp-control-plane
++    steps:
++      - name: Checkout code
++        uses: actions/checkout@v4
++
++      - name: Set up Node 24
++        uses: actions/setup-node@v4
++        with:
++          node-version: "24"
++          cache: npm
++          cache-dependency-path: infrastructure/mcp-control-plane/package-lock.json
++
++      - name: Install dependencies
++        run: npm ci
++
++      # #86: the live Tower deployment source previously shipped with ZERO
++      # TypeScript verification — this gate closes that gap. Runs the
++      # credentials-free test set (test:tower-ci); service/credential-dependent
++      # suites are tracked in the follow-up issue linked from PR #86.
++      - name: Typecheck (tsc --noEmit)
++        run: npm run typecheck
++
++      - name: Contract-safe Tower test suite
++        run: npm run test:tower-ci
++
+   secret-scan:
+     name: Secret Scanning
+     runs-on: ubuntu-latest
+diff --git a/infrastructure/mcp-control-plane/Dockerfile b/infrastructure/mcp-control-plane/Dockerfile
+index 7b5c0414..cac78c15 100644
+--- a/infrastructure/mcp-control-plane/Dockerfile
++++ b/infrastructure/mcp-control-plane/Dockerfile
+@@ -1,5 +1,7 @@
+ # SupremeAI MCP Control Tower — multi-stage Docker build
+-# Build context: infrastructure/mcp-control-plane/ (per docker-compose.yml and CI).
++# Build context: infrastructure/mcp-control-plane/ (this folder — the public repo
++# has no root docker-compose.yml; build with:
++#   docker build -f infrastructure/mcp-control-plane/Dockerfile infrastructure/mcp-control-plane)
+ # Runtime: node dist/index.js — Streamable-HTTP MCP server.
+ # Port: MCP_PORT (default 3771). Health: GET /health -> 200 JSON (see src/index.ts).
+ # All runtime imports (src/lib/**, src/tools/**, src/policy/**, src/events/**,
+@@ -15,9 +17,10 @@
+ # SUPREMEAI_BACKEND_DIR points the adapter at that path.
+ 
+ # ── Stage 1: builder (Node/TypeScript) ────────────────────────────────────────
+-# INF-16 fix (issue #562): both stages must run the SAME Node major as CI and
+-# the monorepo engines — .github/workflows/ci-mcp-build.yml sets NODE_VERSION: '24'
+-# and root package.json engines.node is ">=24.0.0". Testing the build on Node 24
++# INF-16 fix (issue #562): both stages must run the SAME Node major as the
++# verification gate — this repo's ci.yml `tower-verify` job pins Node 24.
++# (The original monorepo-referenced note pointed at paths that do not exist in
++# this repository — corrected with #86.) Testing the build on Node 24
+ # while shipping node:20-alpine meant Node 22+/24-only APIs (node:sqlite,
+ # webcrypto additions, RegExp.escape) passed CI but broke at runtime.
+ FROM node:24-alpine AS builder
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index c77f4686..20a723fb 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -29,7 +29,8 @@
+     "test:bridge-onboarding": "tsx test_bridge_onboarding.ts",
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
+-    "test:bridge-intake": "tsx test_bridge_intake.ts"
++    "test:bridge-intake": "tsx test_bridge_intake.ts",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake"
+   },
+   "keywords": [
+     "mcp",

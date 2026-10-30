@@ -1,0 +1,633 @@
+diff --git a/api-schemas/fixtures/permissions.fixture.json b/api-schemas/fixtures/permissions.fixture.json
+new file mode 100644
+index 00000000..be6d9533
+--- /dev/null
++++ b/api-schemas/fixtures/permissions.fixture.json
+@@ -0,0 +1,170 @@
++{
++  "schema_version": "1.0",
++  "policy_id": "federation-rbac-default",
++  "role_tiers": [
++    {
++      "tier": 1,
++      "name": "viewer",
++      "description": "Read-only observer of public and delegated surfaces; cannot execute tools or mutate state.",
++      "maps_to_operational_roles": ["viewer", "restricted_viewer", "repo_viewer"],
++      "requires_mfa": false
++    },
++    {
++      "tier": 2,
++      "name": "agent",
++      "description": "Registered autonomous worker executing assigned tasks through least-privilege specialist sub-roles.",
++      "maps_to_operational_roles": ["agent"],
++      "requires_mfa": false
++    },
++    {
++      "tier": 3,
++      "name": "admin",
++      "description": "Operational administrator managing clients, tenants and approvals; no secret rotation or policy override.",
++      "maps_to_operational_roles": ["admin"],
++      "requires_mfa": false
++    },
++    {
++      "tier": 4,
++      "name": "super_admin",
++      "description": "Omni-role root administrator (deploys, secret rotation, policy overrides) — every sensitive action sits behind the zero-trust MFA barrier.",
++      "maps_to_operational_roles": ["supremeadmin"],
++      "requires_mfa": true
++    }
++  ],
++  "agent_sub_roles": [
++    {
++      "sub_role": "coder",
++      "description": "Implementation specialist (features, bug fixes, refactoring)",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute"]
++    },
++    {
++      "sub_role": "auditor",
++      "description": "Review & validation specialist (code audit, security review)",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
++    },
++    {
++      "sub_role": "ci-fixer",
++      "description": "Pipeline & test repair specialist (GitHub Actions, build smoke)",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute", "repo-read"]
++    },
++    {
++      "sub_role": "security-breaker",
++      "description": "Security boundary & fail-closed validation specialist",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
++    },
++    {
++      "sub_role": "browser-qa",
++      "description": "End-to-end integration & UI flow specialist",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "mcp-tools-execute"]
++    },
++    {
++      "sub_role": "planner",
++      "description": "Architecture, contracts, and ADR specification specialist",
++      "allowed_permission_scope_ids": ["mcp-tools-read", "repo-read"]
++    },
++    {
++      "sub_role": "watcher",
++      "description": "Telemetry, heartbeat health, and ecosystem drift specialist",
++      "allowed_permission_scope_ids": ["mcp-tools-read"]
++    }
++  ],
++  "permission_scopes": [
++    {
++      "scope_id": "mcp-tools-read",
++      "resource": "mcp-tools",
++      "actions": ["read"],
++      "min_role_tier": 1,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "mcp-tools-execute",
++      "resource": "mcp-tools",
++      "actions": ["execute"],
++      "min_role_tier": 2,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "repo-read",
++      "resource": "repos/*",
++      "actions": ["read"],
++      "min_role_tier": 2,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "tower-clients-manage",
++      "resource": "clients/*",
++      "actions": ["read", "write"],
++      "min_role_tier": 3,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "action-approval",
++      "resource": "approvals/*",
++      "actions": ["approve"],
++      "min_role_tier": 3,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "deploy-rollout",
++      "resource": "deployments/*",
++      "actions": ["deploy"],
++      "min_role_tier": 3,
++      "requires_mfa": false
++    },
++    {
++      "scope_id": "secret-rotation",
++      "resource": "secrets/*",
++      "actions": ["rotate_secrets"],
++      "min_role_tier": 4,
++      "requires_mfa": true
++    },
++    {
++      "scope_id": "policy-override",
++      "resource": "policy/*",
++      "actions": ["override"],
++      "min_role_tier": 4,
++      "requires_mfa": true
++    }
++  ],
++  "mfa_challenge": {
++    "algorithm": "TOTP-SHA1",
++    "step_seconds": 30,
++    "digits": 6,
++    "drift_windows": 1,
++    "challenge_ttl_seconds": 120,
++    "max_attempts": 3,
++    "required_for_role_tiers": [4],
++    "fail_closed": true
++  },
++  "human_memorable_key": {
++    "format": "diceware-slug-v1",
++    "word_count": 4,
++    "separator": "-",
++    "checksum_digits": 2,
++    "min_entropy_bits": 50,
++    "storage": "salted_hash_only",
++    "pairing": "The memorable key alone never authenticates: every Super Admin authentication must pair the key with a verified live TOTP challenge issued within challenge_ttl_seconds."
++  },
++  "defaults": {
++    "unknown_action": "deny",
++    "unverified_mfa": "deny"
++  },
++  "audit_log": {
++    "transport": "append_only",
++    "retention_days": 365,
++    "emit_on": ["allow", "deny"],
++    "example_entry": {
++      "event_id": "9f1c2a34-77b2-4e8f-9a01-5c6d8e9f0a12",
++      "timestamp": "2026-02-14T09:30:00Z",
++      "actor": {
++        "client_id": "supreme-root",
++        "role_tier": 4
++      },
++      "action": "rotate_secrets",
++      "resource": "secrets/mcp-admin-key",
++      "decision": "allow",
++      "mfa_challenge_id": "mfa-ch-7f3a91b2c4",
++      "trace_id": "trace-1a142cdf2d6f0619"
++    }
++  }
++}
+diff --git a/api-schemas/permissions.schema.json b/api-schemas/permissions.schema.json
+new file mode 100644
+index 00000000..42579aa7
+--- /dev/null
++++ b/api-schemas/permissions.schema.json
+@@ -0,0 +1,451 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://supremeai.ai/schemas/permissions.schema.json",
++  "title": "SupremeAI Federation RBAC, Zero-Trust MFA and Memorable Key Contracts",
++  "description": "Layer-1 permission contracts for the SupremeAI Federation. Models the 4-tier RBAC hierarchy (Viewer, Agent, Admin, Super Admin), least-privilege agent boundaries via AgentSubRole, the zero-trust Super Admin MFA barrier (live TOTP challenge), the human-memorable root credential format paired with that challenge, standardized append-only permission audit logging, and fail-closed defaults on unknown actions or unverified MFA. Reconciliation note: the MCP Tower ships a 6-tier OPERATIONAL ladder (viewer, restricted_viewer, repo_viewer, agent, admin, supremeadmin — SSOT infrastructure/mcp-control-plane/src/policy/auth.context.ts from #110); each contract tier below declares maps_to_operational_roles so this Layer-1 contract and the runtime ladder cannot drift. See issue #28.",
++  "type": "object",
++  "additionalProperties": false,
++  "required": [
++    "schema_version",
++    "policy_id",
++    "role_tiers",
++    "agent_sub_roles",
++    "permission_scopes",
++    "mfa_challenge",
++    "human_memorable_key",
++    "defaults",
++    "audit_log"
++  ],
++  "properties": {
++    "schema_version": {
++      "type": "string",
++      "pattern": "^\\d+\\.\\d+$",
++      "description": "Semantic version of this policy document (e.g. \"1.0\")."
++    },
++    "policy_id": {
++      "type": "string",
++      "pattern": "^[a-z][a-z0-9-]{2,63}$",
++      "description": "Stable identifier of the federation permission policy instance (e.g. \"federation-rbac-default\")."
++    },
++    "role_tiers": {
++      "type": "array",
++      "minItems": 4,
++      "maxItems": 4,
++      "uniqueItems": true,
++      "description": "Exactly the 4 contract tiers, each present exactly once: the allOf-of-contains clauses below pin tiers 1..4 (monotonic privilege, higher tier strictly superset).",
++      "items": {
++        "$ref": "#/$defs/RoleTier"
++      },
++      "allOf": [
++        {
++          "description": "Tier 1 (viewer) must be present.",
++          "contains": {
++            "type": "object",
++            "required": ["tier"],
++            "properties": { "tier": { "const": 1 } }
++          }
++        },
++        {
++          "description": "Tier 2 (agent) must be present.",
++          "contains": {
++            "type": "object",
++            "required": ["tier"],
++            "properties": { "tier": { "const": 2 } }
++          }
++        },
++        {
++          "description": "Tier 3 (admin) must be present.",
++          "contains": {
++            "type": "object",
++            "required": ["tier"],
++            "properties": { "tier": { "const": 3 } }
++          }
++        },
++        {
++          "description": "Tier 4 (super_admin) must be present.",
++          "contains": {
++            "type": "object",
++            "required": ["tier"],
++            "properties": { "tier": { "const": 4 } }
++          }
++        }
++      ]
++    },
++    "agent_sub_roles": {
++      "type": "array",
++      "minItems": 1,
++      "uniqueItems": true,
++      "description": "Least-privilege sub-roles inside the Agent tier; each sub-role can only reference permission scopes granted to tier 2 or below.",
++      "items": {
++        "$ref": "#/$defs/AgentSubRole"
++      }
++    },
++    "permission_scopes": {
++      "type": "array",
++      "minItems": 1,
++      "uniqueItems": true,
++      "description": "The resource x action permission matrix; every scope declares its minimum role tier and whether the zero-trust MFA barrier applies.",
++      "items": {
++        "$ref": "#/$defs/PermissionScope"
++      }
++    },
++    "mfa_challenge": {
++      "$ref": "#/$defs/MfaChallengeContract"
++    },
++    "human_memorable_key": {
++      "$ref": "#/$defs/HumanMemorableKeySpec"
++    },
++    "defaults": {
++      "$ref": "#/$defs/FailClosedDefaults"
++    },
++    "audit_log": {
++      "$ref": "#/$defs/PermissionAuditLogSpec"
++    }
++  },
++  "$defs": {
++    "RoleTier": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "One rung of the 4-tier RBAC contract hierarchy.",
++      "required": ["tier", "name", "description", "maps_to_operational_roles", "requires_mfa"],
++      "properties": {
++        "tier": {
++          "type": "integer",
++          "minimum": 1,
++          "maximum": 4,
++          "description": "Privilege rank; higher tier implies strictly more access (monotonic)."
++        },
++        "name": {
++          "enum": ["viewer", "agent", "admin", "super_admin"],
++          "description": "Canonical contract-tier name; name and ordinal are pinned together by the policy renderer."
++        },
++        "description": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Mandate of this tier in one sentence."
++        },
++        "maps_to_operational_roles": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "items": {
++            "enum": ["viewer", "restricted_viewer", "repo_viewer", "agent", "admin", "supremeadmin"]
++          },
++          "description": "Roles of the Tower's 6-tier operational ladder (auth.context.ts #110) folded into this contract tier — the drift guard between Layer 1 and runtime."
++        },
++        "requires_mfa": {
++          "type": "boolean",
++          "description": "True only for tiers whose sensitive actions sit behind the zero-trust TOTP barrier (Super Admin)."
++        }
++      },
++      "allOf": [
++        {
++          "description": "Zero-trust pin: the super_admin tier always requires MFA — an issuer claiming otherwise is structurally invalid.",
++          "if": {
++            "type": "object",
++            "required": ["name"],
++            "properties": { "name": { "const": "super_admin" } }
++          },
++          "then": {
++            "type": "object",
++            "required": ["requires_mfa"],
++            "properties": { "requires_mfa": { "const": true } }
++          }
++        }
++      ]
++    },
++    "AgentSubRole": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Least-privilege specialist sub-role within the Agent tier; mirrors the 7-role dispatch registry.",
++      "required": ["sub_role", "description", "allowed_permission_scope_ids"],
++      "properties": {
++        "sub_role": {
++          "enum": ["coder", "auditor", "ci-fixer", "security-breaker", "browser-qa", "planner", "watcher"],
++          "description": "Specialist roles from the dispatch registry (scripts/agents/continuous_agent_loop.py)."
++        },
++        "description": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Mandate of the specialist, verbatim from the registry where applicable."
++        },
++        "allowed_permission_scope_ids": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "items": {
++            "type": "string",
++            "pattern": "^[a-z][a-z0-9-]{2,63}$"
++          },
++          "description": "scope_id values from permission_scopes this sub-role may exercise; unknown ids are rejected by the fail-closed default."
++        }
++      }
++    },
++    "PermissionScope": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "One resource x actions permission grant with its minimum tier and MFA requirement.",
++      "required": ["scope_id", "resource", "actions", "min_role_tier", "requires_mfa"],
++      "properties": {
++        "scope_id": {
++          "type": "string",
++          "pattern": "^[a-z][a-z0-9-]{2,63}$",
++          "description": "Stable kebab-case identifier referenced by AgentSubRole.allowed_permission_scope_ids."
++        },
++        "resource": {
++          "type": "string",
++          "pattern": "^[a-z][a-z0-9-]{1,63}(/\\*|/[a-z0-9-]+)?$",
++          "description": "Protected resource path family (e.g. \"mcp-tools\", \"tenants/*\", \"secrets/*\")."
++        },
++        "actions": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "items": {
++            "enum": ["read", "execute", "write", "approve", "deploy", "rotate_secrets", "override"]
++          },
++          "description": "Actions granted on the resource; any action outside this vocabulary is denied by the fail-closed default."
++        },
++        "min_role_tier": {
++          "type": "integer",
++          "minimum": 1,
++          "maximum": 4,
++          "description": "Lowest contract tier allowed to exercise this scope."
++        },
++        "requires_mfa": {
++          "type": "boolean",
++          "description": "When true, a verified live MFA challenge must accompany the call, regardless of tier."
++        }
++      }
++    },
++    "MfaChallengeContract": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Zero-trust Super Admin MFA barrier: a live TOTP challenge that must be paired with the human-memorable root key.",
++      "required": [
++        "algorithm",
++        "step_seconds",
++        "digits",
++        "drift_windows",
++        "challenge_ttl_seconds",
++        "max_attempts",
++        "required_for_role_tiers",
++        "fail_closed"
++      ],
++      "properties": {
++        "algorithm": {
++          "const": "TOTP-SHA1",
++          "description": "RFC 6238 TOTP over HMAC-SHA1 (authenticator-app compatible)."
++        },
++        "step_seconds": {
++          "type": "integer",
++          "const": 30,
++          "description": "TOTP time step in seconds."
++        },
++        "digits": {
++          "type": "integer",
++          "const": 6,
++          "description": "OTP length as emitted by standard authenticator apps."
++        },
++        "drift_windows": {
++          "type": "integer",
++          "minimum": 0,
++          "maximum": 2,
++          "description": "Allowed verification window (± steps) for clock drift; keep tight for zero trust."
++        },
++        "challenge_ttl_seconds": {
++          "type": "integer",
++          "minimum": 30,
++          "maximum": 600,
++          "description": "Lifetime of one issued challenge; expiry forces a fresh challenge (no replay)."
++        },
++        "max_attempts": {
++          "type": "integer",
++          "minimum": 1,
++          "maximum": 5,
++          "description": "Verification attempts per challenge before it is burned and the decision is denied."
++        },
++        "required_for_role_tiers": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "items": {
++            "type": "integer",
++            "minimum": 1,
++            "maximum": 4
++          },
++          "description": "Contract tiers whose sensitive operations require a verified challenge (at minimum the Super Admin tier 4)."
++        },
++        "fail_closed": {
++          "const": true,
++          "description": "Immutable: an expired, exhausted, or unverified challenge always resolves to deny."
++        }
++      }
++    },
++    "HumanMemorableKeySpec": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Human-memorable root credential format for the Super Admin, paired with the live TOTP challenge at every use.",
++      "required": [
++        "format",
++        "word_count",
++        "separator",
++        "checksum_digits",
++        "min_entropy_bits",
++        "storage",
++        "pairing"
++      ],
++      "properties": {
++        "format": {
++          "const": "diceware-slug-v1",
++          "description": "Lowercase dictionary words joined by a separator plus a checksum suffix, e.g. copper-lantern-orchid-47."
++        },
++        "word_count": {
++          "type": "integer",
++          "minimum": 3,
++          "maximum": 5,
++          "description": "Dictionary words in the slug; 4 words at ~12.9 bits/word exceeds 50 bits."
++        },
++        "separator": {
++          "type": "string",
++          "const": "-",
++          "description": "Single-character word separator (hyphen keeps the slug typable and memorable)."
++        },
++        "checksum_digits": {
++          "type": "integer",
++          "const": 2,
++          "description": "Trailing modulo-100 checksum digits for typo rejection before any network verification."
++        },
++        "min_entropy_bits": {
++          "type": "integer",
++          "minimum": 48,
++          "description": "Lower bound the rendered slug must meet; the issuer rejects weaker draws."
++        },
++        "storage": {
++          "enum": ["salted_hash_only"],
++          "description": "The federation stores only salted hashes; plaintext never persists server-side."
++        },
++        "pairing": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Usage rule: the memorable key alone never authenticates — every use must pair with a verified live TOTP challenge (zero trust)."
++        }
++      }
++    },
++    "FailClosedDefaults": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Constitutional fail-closed defaults: anything not explicitly granted does not exist.",
++      "required": ["unknown_action", "unverified_mfa"],
++      "properties": {
++        "unknown_action": {
++          "const": "deny",
++          "description": "Actions outside the permission_scopes vocabulary are denied, never improvised."
++        },
++        "unverified_mfa": {
++          "const": "deny",
++          "description": "MFA-gated calls without a verified live challenge are denied, never downgraded."
++        }
++      }
++    },
++    "PermissionAuditLogSpec": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "Standardized append-only audit trail specification for every permission decision.",
++      "required": ["transport", "retention_days", "emit_on", "example_entry"],
++      "properties": {
++        "transport": {
++          "const": "append_only",
++          "description": "Entries are append-only; mutation or deletion of audit entries is itself a security incident."
++        },
++        "retention_days": {
++          "type": "integer",
++          "minimum": 90,
++          "description": "Minimum retention window for permission decisions."
++        },
++        "emit_on": {
++          "type": "array",
++          "minItems": 1,
++          "uniqueItems": true,
++          "items": {
++            "enum": ["allow", "deny"]
++          },
++          "description": "Decision outcomes that must be logged; deny entries are mandatory under fail-closed defaults."
++        },
++        "example_entry": {
++          "$ref": "#/$defs/PermissionAuditLog"
++        }
++      }
++    },
++    "PermissionAuditLog": {
++      "type": "object",
++      "additionalProperties": false,
++      "description": "One immutable audit record of a permission decision.",
++      "required": ["event_id", "timestamp", "actor", "action", "resource", "decision"],
++      "properties": {
++        "event_id": {
++          "type": "string",
++          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
++          "description": "UUID v4-shaped unique event identifier."
++        },
++        "timestamp": {
++          "type": "string",
++          "format": "date-time",
++          "description": "RFC 3339 UTC instant of the decision."
++        },
++        "actor": {
++          "type": "object",
++          "additionalProperties": false,
++          "description": "Who attempted the action.",
++          "required": ["client_id", "role_tier"],
++          "properties": {
++            "client_id": {
++              "type": "string",
++              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{1,63}$",
++              "description": "Registered client identity (never anonymous: unauthenticated callers are logged as client 'anonymous')."
++            },
++            "role_tier": {
++              "type": "integer",
++              "minimum": 1,
++              "maximum": 4,
++              "description": "Contract tier resolved for the actor at decision time."
++            },
++            "sub_role": {
++              "type": "string",
++              "pattern": "^[a-z][a-z0-9-]{1,63}$",
++              "description": "Agent sub-role when the actor operates under one."
++            }
++          }
++        },
++        "action": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Action attempted; unknown actions are still logged (with fail_closed_unknown_action deny reason)."
++        },
++        "resource": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Resource the action targeted."
++        },
++        "decision": {
++          "enum": ["allow", "deny"],
++          "description": "Outcome of the permission evaluation."
++        },
++        "deny_reason": {
++          "enum": ["fail_closed_unknown_action", "mfa_unverified", "insufficient_tier", "out_of_scope"],
++          "description": "Machine-readable reason when decision is deny; mandatory alongside fail-closed defaults."
++        },
++        "mfa_challenge_id": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{4,63}$",
++          "description": "Identifier of the MFA challenge bound to this decision, when one was issued."
++        },
++        "trace_id": {
++          "type": "string",
++          "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{4,63}$",
++          "description": "Correlation id linking the decision to the originating request trace."
++        }
++      }
++    }
++  }
++}

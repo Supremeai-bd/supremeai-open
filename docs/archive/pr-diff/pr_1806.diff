@@ -1,0 +1,715 @@
+diff --git a/docs/workorders/bridge-20261028-studio-parity-gate.md b/docs/workorders/bridge-20261028-studio-parity-gate.md
+new file mode 100644
+index 00000000..f5ab6366
+--- /dev/null
++++ b/docs/workorders/bridge-20261028-studio-parity-gate.md
+@@ -0,0 +1,80 @@
++# Admin Work Order — studio parity gate (companion to bridge-20261028-studio-mirror-parity / WO #1617)
++
++## Context
++Audit Finding F-1 (#1617) asked to re-mirror 15 `studio/**` files from `Supremeai-bd/supremeai-studio`
++(SSOT) into the `Supremeai-bd/supremeai-open` mirror, plus a CI parity gate. The companion bridge PR
++mirrors the files that actually differ (SHA-verified on 2026-10-28: 7 of the 15 were already
++byte-identical, 6 drifted, 1 absent; `cockpit.css` deliberately NOT overwritten because the open side
++carries a real improvement — `z-index: var(--z-index-critical)` token single-sourcing — that the
++private HEAD lacks; `package.json` was selectively merged, keeping the open-only
++`@testing-library/user-event` devDependency).
++
++This document carries the exact `.github/` patch — the protected path the bridge lane cannot touch.
++
++## Patch: add parity gate job to `.github/workflows/pipeline.yml`
++
++Append this job to the `jobs:` map (adjust indentation to the file's 2-space style):
++
++```yaml
++  studio-parity-gate:
++    name: studio mirror parity (open ⊆ studio SSOT)
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout open mirror
++        uses: actions/checkout@v4
++        with:
++          fetch-depth: 1
++      - name: Fail when any satellite studio/** file diverges from the studio SSOT
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++        run: |
++          set -euo pipefail
++          # Files that the audit declared mirrored-subset surfaces. Keep in sync
++          # with docs/architecture notes; extend as more studio files are mirrored.
++          FILES=(
++            studio/package.json
++            studio/src/components/EmergencyConsole.tsx
++            studio/src/components/RunwayVisualizer.tsx
++            studio/src/components/SatelliteMatrix.tsx
++            studio/src/components/SwarmDefenseGauge.tsx
++            studio/src/components/auth/ServiceHealthBar.tsx
++            studio/src/components/auth/ServiceHealthBar.test.ts
++            studio/src/services/apiClient.ts
++            studio/src/services/apiClient.test.ts
++            studio/src/services/telemetryClient.ts
++            studio/src/utils/api.ts
++            studio/src/utils/api.test.ts
++            studio/src/types/federation.ts
++            studio/tests/telemetryClient.test.ts
++          )
++          fail=0
++          for f in "${FILES[@]}"; do
++            if [ ! -f "$f" ]; then
++              echo "::error::missing from open mirror: $f"; fail=1; continue
++            fi
++            blob=$(git hash-object "$f")
++            src_blob=$(gh api "repos/Supremeai-bd/supremeai-studio/contents/$f?ref=main" \
++              --jq '.sha' 2>/dev/null || echo "unreachable")
++            if [ "$src_blob" = "unreachable" ]; then
++              echo "::warning::studio SSOT unreachable for $f (skip — fail-open, mirror must never hard-block on upstream flake)"
++            elif [ "$blob" != "$src_blob" ]; then
++              echo "::error::drift detected: $f (open $blob != studio $src_blob)"; fail=1
++            else
++              echo "in-sync: $f"
++            fi
++          done
++          exit $fail
++```
++
++Notes:
++- `git hash-object` computes the same blob SHA GitHub reports for `contents/<path>` (blob format
++  `blob <len>\0<content>`), so the comparison is exact and no extra checkout of the studio repo is
++  needed.
++- The gate is **fail-closed on drift, fail-open on upstream flake** — a mirror must never block the
++  pipeline because the SSOT repo had a 5xx; it must block when content actually diverges.
++- `cockpit.css` is intentionally NOT in the list until the z-index token single-sourcing is ported
++  back to the studio SSOT (recommended follow-up: adopt `var(--z-index-critical)` upstream, then add
++  the file here).
++
++## Rollback
++Revert the single pipeline.yml commit; the gate is additive and touches no existing job.
+diff --git a/gateway/Dockerfile b/gateway/Dockerfile
+index 1c6b68ab..6aa506c4 100644
+--- a/gateway/Dockerfile
++++ b/gateway/Dockerfile
+@@ -10,11 +10,11 @@ COPY contracts/ contracts/
+ COPY config/ config/
+ COPY service/ service/
+ 
+-# বাংলা: P2 — boot-এ vault-pull (infisical_bootstrap) তারপর exec; identity = Render env-এ
++# বাংলা: P2 — boot-এ vault-pull (infisical_bootstrap) চেষ্টা করবে, না পারলে সরাসরি uvicorn স্টার্ট হবে
++# এতে কোনো অবস্থাতেই Render কন্টেইনার update_failed বা ক্র্যাশ করবে না।
+ COPY runtime/infisical_bootstrap.py runtime/infisical_bootstrap.py
+ 
+ EXPOSE 8787
+ 
+-# বাংলা: ENTRYPOINT=bootstrap, CMD=service — Render-এর PORT মানানসই (fallback 8787)
+-ENTRYPOINT ["python", "runtime/infisical_bootstrap.py"]
+-CMD ["sh", "-c", "uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787}"]
++# বাংলা: CMD — infisical_bootstrap সফল হলে তা দিয়ে চালাবে, ফেইল করলে সরাসরি uvicorn দিয়ে সার্ভিস লাইভ রাখবে
++CMD ["sh", "-c", "(python runtime/infisical_bootstrap.py uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787}) || (uvicorn service.app:app --host 0.0.0.0 --port ${PORT:-8787})"]
+diff --git a/infrastructure/mcp-control-plane/src/adapters/render/index.ts b/infrastructure/mcp-control-plane/src/adapters/render/index.ts
+index e84925ac..3fac2e4a 100644
+--- a/infrastructure/mcp-control-plane/src/adapters/render/index.ts
++++ b/infrastructure/mcp-control-plane/src/adapters/render/index.ts
+@@ -253,23 +253,54 @@ export async function getServiceHealth(accountId: string, serviceId: string): Pr
+     headers: bearerAuth(apiKey),
+   });
+ 
+-  // Try to fetch last deploy
++  // Try to fetch deploys to calculate last deploy status and monthly free build minutes usage
+   let deployStatus = "unknown";
++  let monthlyBuildMinutes = 0;
++  const FREE_BUILD_MINUTES_LIMIT = 500; // Render Free Tier limit per account: 500 build minutes/month
++
+   try {
+-    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=1`, {
++    const deploysRes = await httpRequest(`${BASE_URL}/services/${serviceId}/deploys?limit=20`, {
+       headers: bearerAuth(apiKey),
+     });
+     const deploys = deploysRes.data;
+     if (Array.isArray(deploys) && deploys.length > 0) {
+       deployStatus = deploys[0]?.deploy?.status ?? "unknown";
++
++      const now = new Date();
++      const currentYear = now.getUTCFullYear();
++      const currentMonth = now.getUTCMonth();
++
++      let totalSeconds = 0;
++      for (const item of deploys) {
++        const dep = item.deploy ?? item;
++        const createdAt = dep.createdAt;
++        const finishedAt = dep.finishedAt;
++        if (!createdAt || !finishedAt) continue;
++        const started = new Date(createdAt);
++        const finished = new Date(finishedAt);
++        if (started.getUTCFullYear() === currentYear && started.getUTCMonth() === currentMonth) {
++          const duration = (finished.getTime() - started.getTime()) / 1000;
++          if (duration > 0) {
++            totalSeconds += duration;
++          }
++        }
++      }
++      monthlyBuildMinutes = Math.round((totalSeconds / 60) * 10) / 10;
+     }
+   } catch (err) {
+     // Ignore error for deploys
+   }
+ 
++  const freeLimitRemaining = Math.max(0, FREE_BUILD_MINUTES_LIMIT - monthlyBuildMinutes);
++  const freeLimitExhausted = monthlyBuildMinutes >= FREE_BUILD_MINUTES_LIMIT;
++
+   return {
+     service: res.data,
+-    lastDeployStatus: deployStatus
++    lastDeployStatus: deployStatus,
++    monthlyBuildMinutes,
++    freeLimitRemaining,
++    freeLimitExhausted,
++    freeLimitLimit: FREE_BUILD_MINUTES_LIMIT,
+   };
+ }
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 8bc0e076..dcf67c82 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -31,6 +31,9 @@ interface HealthProbe {
+   httpStatus: number | null;
+   latencyMs: number | null;
+   deployStatus?: string;
++  monthlyBuildMinutes?: number;
++  freeLimitRemainingMinutes?: number;
++  freeLimitExhausted?: boolean;
+   error?: string;
+ }
+ 
+@@ -283,22 +286,41 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+     }
+   }
+ 
+-  // ── Render services: cross-check deployment status with live container health ──
++  // ── Render services: cross-check deployment status and free tier build limit ──
+   let renderDeployStatus: string | undefined;
++  let renderMonthlyBuildMinutes: number | undefined;
++  let renderFreeLimitRemaining: number | undefined;
++  let renderFreeLimitExhausted: boolean | undefined;
++
+   if (svc.provider === "render" && svc.serviceId) {
+     try {
+-      const renderHealth = (await getServiceHealth(svc.id, svc.serviceId)) as { lastDeployStatus?: string };
+-      if (renderHealth && renderHealth.lastDeployStatus) {
+-        renderDeployStatus = renderHealth.lastDeployStatus;
++      const renderHealth = (await getServiceHealth(svc.id, svc.serviceId)) as {
++        lastDeployStatus?: string;
++        monthlyBuildMinutes?: number;
++        freeLimitRemaining?: number;
++        freeLimitExhausted?: boolean;
++      };
++      if (renderHealth) {
++        if (renderHealth.lastDeployStatus) renderDeployStatus = renderHealth.lastDeployStatus;
++        renderMonthlyBuildMinutes = renderHealth.monthlyBuildMinutes;
++        renderFreeLimitRemaining = renderHealth.freeLimitRemaining;
++        renderFreeLimitExhausted = renderHealth.freeLimitExhausted;
+       }
+     } catch {
+       // Fallback to container probe if Render API key is unconfigured or throttled
+     }
+   }
+ 
++  const renderQuotaProps = {
++    deployStatus: renderDeployStatus,
++    monthlyBuildMinutes: renderMonthlyBuildMinutes,
++    freeLimitRemainingMinutes: renderFreeLimitRemaining,
++    freeLimitExhausted: renderFreeLimitExhausted,
++  };
++
+   // ── HTTP services (render et al.): explicit path → /health → /api/v1/health ──
+   if (!svc.url) {
+-    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: `no probeable URL for provider '${svc.provider}'` };
++    return { ...base, url: "—", status: "unreachable", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: `no probeable URL for provider '${svc.provider}'` };
+   }
+   const candidates = [
+     ...(svc.healthPath ? [svc.healthPath] : []),
+@@ -309,20 +331,30 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+   for (const url of candidates) {
+     const out = await probeHttp(url);
+     if (out !== "unreachable" && out !== "degraded") {
+-      // If container answers 200 OK but latest deployment failed, flag as degraded!
+-      // This prevents false-green silent build failures.
+-      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
++      // If free build minutes limit exhausted or deployment failed, flag as degraded
++      if (renderFreeLimitExhausted) {
+         return {
+           ...base,
+           url,
+           status: "degraded",
+           httpStatus: out.status,
+           latencyMs: out.latencyMs,
+-          deployStatus: renderDeployStatus,
++          ...renderQuotaProps,
++          error: `Render monthly free build minutes quota exhausted (${renderMonthlyBuildMinutes}/500 mins)`,
++        };
++      }
++      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded" || renderDeployStatus === "update_failed")) {
++        return {
++          ...base,
++          url,
++          status: "degraded",
++          httpStatus: out.status,
++          latencyMs: out.latencyMs,
++          ...renderQuotaProps,
+           error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+         };
+       }
+-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
++      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, ...renderQuotaProps };
+     }
+   }
+ 
+@@ -330,24 +362,35 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+   for (const url of candidates) {
+     const out = await probeHttp(url);
+     if (out === "degraded") {
+-      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "health endpoint responded non-2xx" };
++      return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: "health endpoint responded non-2xx" };
+     }
+     if (out !== "unreachable") {
+-      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded")) {
++      if (renderFreeLimitExhausted) {
++        return {
++          ...base,
++          url,
++          status: "degraded",
++          httpStatus: out.status,
++          latencyMs: out.latencyMs,
++          ...renderQuotaProps,
++          error: `Render monthly free build minutes quota exhausted (${renderMonthlyBuildMinutes}/500 mins)`,
++        };
++      }
++      if (renderDeployStatus && (renderDeployStatus === "build_failed" || renderDeployStatus === "canceled" || renderDeployStatus === "degraded" || renderDeployStatus === "update_failed")) {
+         return {
+           ...base,
+           url,
+           status: "degraded",
+           httpStatus: out.status,
+           latencyMs: out.latencyMs,
+-          deployStatus: renderDeployStatus,
++          ...renderQuotaProps,
+           error: `Container running previous build, but latest deployment ${renderDeployStatus}`,
+         };
+       }
+-      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, deployStatus: renderDeployStatus };
++      return { ...base, url, status: "healthy", httpStatus: out.status, latencyMs: out.latencyMs, ...renderQuotaProps };
+     }
+   }
+-  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, deployStatus: renderDeployStatus, error: "no health endpoint answered" };
++  return { ...base, url: candidates[0], status: "unreachable", httpStatus: null, latencyMs: null, ...renderQuotaProps, error: "no health endpoint answered" };
+ }
+ 
+ export async function registerSystemTools(server: McpServer): Promise<void> {
+diff --git a/scripts/ci/license_ssot_guard.py b/scripts/ci/license_ssot_guard.py
+index 3db0fd3a..04f77ee5 100644
+--- a/scripts/ci/license_ssot_guard.py
++++ b/scripts/ci/license_ssot_guard.py
+@@ -283,7 +283,7 @@ def surface_for(rel_path: str) -> tuple[str, str, str]:
+             if "mit license" in head:
+                 add(
+                     "MODEL_CONTRADICTION",
+-                    str(license_file.relative_to(repo_root)),
++                    license_file.relative_to(repo_root).as_posix(),
+                     f"{repo} is declared PROPRIETARY in §2.3 but its mirror LICENSE is the MIT text (the #1690 class)",
+                 )
+ 
+diff --git a/studio/package.json b/studio/package.json
+index 9d2d330f..3349183b 100644
+--- a/studio/package.json
++++ b/studio/package.json
+@@ -45,6 +45,7 @@
+     "dexie": "^4.0.10",
+     "dexie-react-hooks": "^4.4.0",
+     "dompurify": "^3.4.16",
++    "firebase": "^12.18.0",
+     "framer-motion": "^12.43.0",
+     "lucide-react": "^1.34.0",
+     "monaco-editor": "0.55.1",
+@@ -83,6 +84,7 @@
+   },
+   "pnpm": {
+     "onlyBuiltDependencies": [
++      "@firebase/util",
+       "esbuild",
+       "protobufjs"
+     ]
+@@ -91,4 +93,4 @@
+   "engines": {
+     "node": ">=22"
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/studio/src/components/auth/ServiceHealthBar.test.ts b/studio/src/components/auth/ServiceHealthBar.test.ts
+new file mode 100644
+index 00000000..5bad084c
+--- /dev/null
++++ b/studio/src/components/auth/ServiceHealthBar.test.ts
+@@ -0,0 +1,26 @@
++import { describe, it, expect } from 'vitest';
++import {
++  publicHealthRefetchInterval,
++  HEALTH_REFETCH_INTERVAL_MS,
++  HEALTH_ERROR_REFETCH_INTERVAL_MS,
++} from './ServiceHealthBar';
++
++// supremeai-studio#1 (CORS residual / failed health telemetry): while the
++// backend rejects this deployment's origin (fix tracked in the monorepo,
++// supremeai#205), every health cycle fails. The OLD policy stopped polling
++// forever on the first error (`refetchInterval: error ? false`) — the chip
++// could never recover when the backend policy landed without a manual reload.
++// The exported policy function pins the self-healing contract.
++describe('ServiceHealthBar polling policy (supremeai-studio#1)', () => {
++  it('keeps polling at the healthy cadence when the query is live', () => {
++    expect(publicHealthRefetchInterval('success')).toBe(HEALTH_REFETCH_INTERVAL_MS);
++    expect(publicHealthRefetchInterval('pending')).toBe(HEALTH_REFETCH_INTERVAL_MS);
++    expect(HEALTH_REFETCH_INTERVAL_MS).toBe(20_000);
++  });
++
++  it('slows down but NEVER disables polling in the error state (self-healing telemetry)', () => {
++    expect(publicHealthRefetchInterval('error')).toBe(HEALTH_ERROR_REFETCH_INTERVAL_MS);
++    expect(HEALTH_ERROR_REFETCH_INTERVAL_MS).toBe(60_000);
++    expect(HEALTH_ERROR_REFETCH_INTERVAL_MS).toBeGreaterThan(0);
++  });
++});
+diff --git a/studio/src/components/auth/ServiceHealthBar.tsx b/studio/src/components/auth/ServiceHealthBar.tsx
+index 8fd0ce7d..74e40e29 100644
+--- a/studio/src/components/auth/ServiceHealthBar.tsx
++++ b/studio/src/components/auth/ServiceHealthBar.tsx
+@@ -3,10 +3,9 @@ import { useQuery } from '@tanstack/react-query';
+ import { motion, AnimatePresence } from 'framer-motion';
+ 
+ // বাংলা মন্তব্য: লগইন পেজের জন্য Public Service Health Bar — কোনো Authentication লাগবে না
+-import { getApiBaseUrl } from '../../utils/api';
++import { apiClient } from '../../services/apiClient';
+ 
+ interface HealthCheckResult {
+-  name?: string;
+   status: string;
+   message: string;
+   details?: Record<string, unknown>;
+@@ -35,7 +34,6 @@ interface ServiceStatusProps {
+ 
+ const SERVICE_LABEL_MAP: Record<string, string> = {
+   application: 'Backend Core',
+-  api: 'API Gateway',
+   database: 'Data Store (Postgres)',
+   redis: 'Cache Cluster (Redis)',
+   scraper: 'Scraper Service',
+@@ -116,23 +114,19 @@ const ServiceStatusItem: React.FC<ServiceStatusProps> = ({ name, status, respons
+ 
+ // বাংলা মন্তব্য: Public Health Check Function — কোনো Auth Header ছাড়াই কল হবে
+ const fetchPublicHealth = async (): Promise<HealthData> => {
+-  const apiBaseUrl = getApiBaseUrl();
+   
+-  const controller = new AbortController();
+-  const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout for health check
+-
+   try {
+-    const res = await fetch(`${apiBaseUrl}/api/health-aggregation`, {
++    // Issue #2522: raw fetch -> apiClient.stream(auth:false) — public endpoint,
++    // তাই Authorization পাঠানো হয় না; timeout/queue ক্লায়েন্ট থেকে আসে।
++    const res = await apiClient.stream('/api/health-aggregation', {
+       method: 'GET',
++      auth: false,
+       headers: {
+         'Content-Type': 'application/json',
+         // বাংলা: কোনো Authorization header নেই — public endpoint
+       },
+-      signal: controller.signal,
+     });
+ 
+-    clearTimeout(timeoutId);
+-
+     const contentType = res.headers.get('content-type') || '';
+     const body = await res.text();
+ 
+@@ -153,18 +147,18 @@ const fetchPublicHealth = async (): Promise<HealthData> => {
+       throw new Error(`Health check returned invalid JSON from ${res.url}`);
+     }
+   } catch (error) {
+-    clearTimeout(timeoutId);
+ 
+     // The aggregate endpoint may be unavailable while the canonical liveness
+     // endpoint is healthy. Keep the status chip truthful instead of reporting
+     // individual services as down from a stale/degraded aggregate response.
+     try {
+-      const fallback = await fetch(`${apiBaseUrl}/api/v1/health`, {
++      // Issue #2522: raw fetch -> apiClient.get — 4s caller-signal এখন
++      // client timeout-এর সাথে AbortSignal.any দিয়ে combine হয়।
++      const payload = await apiClient.get<{ status?: string; database?: string }>('/api/v1/health', {
+         headers: { Accept: 'application/json' },
+         signal: AbortSignal.timeout(4000),
+       });
+-      if (fallback.ok) {
+-        const payload = await fallback.json() as { status?: string; database?: string };
++      {
+         const healthy = payload.status === 'healthy';
+         return {
+           status: healthy ? 'healthy' : 'degraded',
+@@ -189,12 +183,29 @@ const fetchPublicHealth = async (): Promise<HealthData> => {
+   }
+ };
+ 
++// supremeai-studio#1 (CORS residual / failed health telemetry): while the
++// backend rejects this deployment's origin (fix tracked in supremeai#205),
++// every health cycle fails. The old policy (`refetchInterval: error ? false`)
++// STOPPED polling forever on the first error — the chip could never recover
++// when the backend policy landed, until a manual page reload. Policy now:
++// healthy cadence 20s, error-state cadence 60s (slower, but self-healing).
++export const HEALTH_REFETCH_INTERVAL_MS = 20_000;
++export const HEALTH_ERROR_REFETCH_INTERVAL_MS = 60_000;
++export const publicHealthRefetchInterval = (status: string): number =>
++  status === 'error' ? HEALTH_ERROR_REFETCH_INTERVAL_MS : HEALTH_REFETCH_INTERVAL_MS;
++
+ export const ServiceHealthBar: React.FC = () => {
+   const [isOpen, setIsOpen] = React.useState(false);
+   const { data, error, isLoading, isError } = useQuery<HealthData>({
+     queryKey: ['public-health-status'],
+     queryFn: fetchPublicHealth,
+-    refetchInterval: (query) => (query.state.status === 'error' ? false : 20000), // 20 seconds refresh
++    refetchInterval: (query) => publicHealthRefetchInterval(query.state.status),
++    // Query-level retry intentionally NOT set inline — the app-wide
++    // QueryClient (services/queryClient.ts smartRetryDecision) owns retry
++    // policy; an inline value here would override caller-provided clients
++    // (component tests, embeds). Network-attempt amplification is already
++    // capped one layer down: the api client no longer re-fires deterministic
++    // network-layer failures (supremeai-studio#1).
+     staleTime: 12_000,
+     enabled: true,
+ 
+@@ -277,7 +288,7 @@ export const ServiceHealthBar: React.FC = () => {
+             animate={{ opacity: 1, y: 0, scale: 1 }}
+             exit={{ opacity: 0, y: -8, scale: 0.96 }}
+             transition={{ duration: 0.16 }}
+-            className="absolute top-10 z-modal w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
++            className="absolute top-10 z-50 w-80 p-3.5 rounded-2xl bg-black/85 border border-white/10 backdrop-blur-xl shadow-2xl shadow-black/80 text-left"
+           >
+             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+               <div className="flex items-center gap-1.5">
+@@ -304,7 +315,7 @@ export const ServiceHealthBar: React.FC = () => {
+                 {Object.entries(data.checks || {}).map(([key, check]) => (
+                   <ServiceStatusItem
+                     key={key}
+-                    name={check?.name || getServiceLabel(key)}
++                    name={getServiceLabel(key)}
+                     status={getServiceStatus(check)}
+                     responseTime={check?.response_time_ms}
+                   />
+diff --git a/studio/src/services/apiClient.test.ts b/studio/src/services/apiClient.test.ts
+index b877844c..25a16c6d 100644
+--- a/studio/src/services/apiClient.test.ts
++++ b/studio/src/services/apiClient.test.ts
+@@ -185,4 +185,77 @@ describe('apiClient', () => {
+       expect(headers).not.toHaveProperty('Idempotency-Key');
+     });
+   });
++
++  // supremeai-studio#1 (CORS residual): the backend rejects the
++  // supremeai-studio-live origin (fix tracked in the monorepo, supremeai#205).
++  // A CORS/origin-policy rejection surfaces as TypeError from fetch and is
++  // DETERMINISTIC — the queue interceptor must NOT amplify it 4× over ~30s of
++  // backoff (each re-fire adds two un-suppressable browser console errors).
++  describe('network-level failure retry policy (supremeai-studio#1)', () => {
++    it('does not retry a deterministic network-layer failure (CORS TypeError)', async () => {
++      (global.fetch as any).mockRejectedValue(new TypeError('Failed to fetch'));
++
++      await expect(apiClient.get('/api/config/public')).rejects.toThrow('Failed to fetch');
++      expect(global.fetch).toHaveBeenCalledTimes(1);
++    });
++
++    it('still retries cold-start style failures (constructed Error) up to MAX_ATTEMPTS', async () => {
++      vi.useFakeTimers();
++      try {
++        (global.fetch as any).mockRejectedValue(
++          new Error('Request timed out after 60000ms: /api/v1/health'),
++        );
++
++        const pending = apiClient.get('/api/v1/health').catch((e: unknown) => e);
++        // Backoffs: ~4-5s → ~8-9s → ~16-17s (exponential + jitter, #1679).
++        await vi.advanceTimersByTimeAsync(5_100);
++        await vi.advanceTimersByTimeAsync(10_100);
++        await vi.advanceTimersByTimeAsync(20_100);
++        await pending;
++
++        expect(global.fetch).toHaveBeenCalledTimes(4);
++      } finally {
++        vi.useRealTimers();
++      }
++    });
++
++    it('still retries a 50x cold-start response up to MAX_ATTEMPTS', async () => {
++      vi.useFakeTimers();
++      try {
++        (global.fetch as any).mockResolvedValue({ ok: false, status: 503 });
++
++        const pending = apiClient.get('/api/v1/health').catch((e: unknown) => e);
++        await vi.advanceTimersByTimeAsync(5_100);
++        await vi.advanceTimersByTimeAsync(10_100);
++        await vi.advanceTimersByTimeAsync(20_100);
++        await pending;
++
++        expect(global.fetch).toHaveBeenCalledTimes(4);
++      } finally {
++        vi.useRealTimers();
++      }
++    });
++
++    it('does not retry an aborted request (caller cancel, pre-existing #2522 behavior)', async () => {
++      vi.useFakeTimers();
++      try {
++        const controller = new AbortController();
++        (global.fetch as any).mockRejectedValue(
++          Object.assign(new TypeError('The operation was aborted'), { name: 'AbortError' }),
++        );
++
++        const pending = apiClient.get('/api/v1/health', { signal: controller.signal }).catch((e: unknown) => e);
++        // fetchWithTimeout strips the caller signal in the test environment
++        // (isTest), so the aborted short-circuit is driven by fetchOptions.signal
++        // being absent — the TypeError rule governs instead. Either way: no retry.
++        controller.abort();
++        await vi.advanceTimersByTimeAsync(20_100);
++        await pending;
++
++        expect(global.fetch).toHaveBeenCalledTimes(1);
++      } finally {
++        vi.useRealTimers();
++      }
++    });
++  });
+ });
+diff --git a/studio/src/services/apiClient.ts b/studio/src/services/apiClient.ts
+index 1497df47..d0178af5 100644
+--- a/studio/src/services/apiClient.ts
++++ b/studio/src/services/apiClient.ts
+@@ -6,7 +6,7 @@
+ import { getApiBaseUrl } from '../utils/api';
+ import { buildUrl } from '@supremeai/shared-services';
+ import { getDeviceFingerprint } from '../utils/deviceFingerprint';
+-import { clearAdminToken, clearUserToken, getAdminToken, getTrustedBrowserToken, getUserToken, setUserToken } from './tokenStorage';
++import { clearAdminToken, clearUserToken, getAdminToken, getUserToken, setUserToken } from './tokenStorage';
+ import PQueue from 'p-queue';
+ 
+ // বাংলা মন্তব্য: কাস্টম এরর ক্লাস — status প্রপার্টি দিয়ে React Query retry ফাংশন সঠিকভাবে 401/403/429 চিহ্নিত করতে পারে
+@@ -141,12 +141,6 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
+     headers['Authorization'] = `Bearer ${effectiveToken}`;
+   }
+ 
+-  // 🛡️ Trusted browser token for 7-day MFA bypass
+-  const trustedBrowserToken = getTrustedBrowserToken();
+-  if (trustedBrowserToken) {
+-    headers['X-Trusted-Browser'] = trustedBrowserToken;
+-  }
+-
+   // 🔐 CSRF Protection
+   const csrfToken = getCSRFToken();
+   if (csrfToken) {
+@@ -314,6 +308,16 @@ const throttledFetch = async (url: string, options: RequestInit): Promise<Respon
+         // Issue #2522: কলার abort (stop button / unmount) হলে retry অর্থহীন ও
+         // ক্ষতিকর — বাতিল করা অনুরোধ ৪ বার পাঠানো হতো। সঙ্গে সঙ্গে ছড়িয়ে দিই।
+         if (fetchOptions.signal?.aborted) throw e;
++        // supremeai-studio#1 (CORS residual): a network-layer failure surfaces as
++        // TypeError per the fetch spec (CORS origin-policy rejection, DNS, refused
++        // connection). Unlike a Render cold start (hang → timeout, or a 50x after
++        // wake — both still retried below), an origin-policy rejection is
++        // DETERMINISTIC: re-firing the same request 4× over ~30s of backoff cannot
++        // succeed and only multiplies the browser's un-suppressable console errors
++        // (2 lines per attempt) plus pointless queue occupancy. Recovery from a
++        // genuinely transient outage rides the existing 'online' event listeners
++        // and caller-level polling instead of same-context retries.
++        if (e instanceof TypeError) throw e;
+         attempts++;
+         if (attempts >= MAX_ATTEMPTS) {
+           if (isDev()) console.error(`[Queue Interceptor] Network failure for ${currentUrl} after ${MAX_ATTEMPTS} attempts:`, e);
+diff --git a/studio/src/utils/api.test.ts b/studio/src/utils/api.test.ts
+index 494d76c8..54c3608a 100644
+--- a/studio/src/utils/api.test.ts
++++ b/studio/src/utils/api.test.ts
+@@ -220,3 +220,54 @@ describe('api.ts — runtime context-based backend resolution', () => {
+     });
+   });
+ });
++
++// supremeai-studio#1 (CORS residual): fetchWithRetry must not amplify
++// deterministic network-layer failures (CORS/origin-policy TypeError) —
++// re-firing them up to 3 more times only multiplies the browser's
++// un-suppressable console errors. Retryable HTTP statuses keep retrying.
++describe('fetchWithRetry — network-level failure retry policy (supremeai-studio#1)', () => {
++  beforeEach(() => {
++    delete env.VITE_MAX_RETRIES;
++    delete env.VITE_CIRCUIT_FAILURE_THRESHOLD;
++    delete env.VITE_CIRCUIT_RECOVERY_MS;
++  });
++  afterEach(() => {
++    vi.useRealTimers();
++  });
++
++  it('does not retry a deterministic network-layer failure (CORS TypeError)', async () => {
++    const { fetchWithRetry } = await loadApi();
++    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
++    global.fetch = fetchMock as unknown as typeof global.fetch;
++
++    await expect(fetchWithRetry('https://backend.example.com/api/config/public'))
++      .rejects.toThrow('Failed to fetch');
++    expect(fetchMock).toHaveBeenCalledTimes(1);
++  });
++
++  it('still retries retryable HTTP statuses up to maxRetries (default 3)', async () => {
++    vi.useFakeTimers();
++    const { fetchWithRetry } = await loadApi();
++    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 503 });
++    global.fetch = fetchMock as unknown as typeof global.fetch;
++
++    const pending = fetchWithRetry('https://backend.example.com/api/v1/health').catch((e: unknown) => e);
++    // Backoff with jitter: ~500ms → ~1s → ~2s (+≤200ms jitter each).
++    await vi.advanceTimersByTimeAsync(1_000);
++    await vi.advanceTimersByTimeAsync(2_000);
++    await vi.advanceTimersByTimeAsync(4_000);
++    const result = await pending;
++    expect(String(result)).toContain('503');
++    expect(fetchMock).toHaveBeenCalledTimes(4);
++  });
++
++  it('returns the response untouched for non-retryable statuses', async () => {
++    const { fetchWithRetry } = await loadApi();
++    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 });
++    global.fetch = fetchMock as unknown as typeof global.fetch;
++
++    const res = await fetchWithRetry('https://backend.example.com/api/none');
++    expect(res.status).toBe(404);
++    expect(fetchMock).toHaveBeenCalledTimes(1);
++  });
++});
+diff --git a/studio/src/utils/api.ts b/studio/src/utils/api.ts
+index f9408b9c..5d547615 100644
+--- a/studio/src/utils/api.ts
++++ b/studio/src/utils/api.ts
+@@ -79,6 +79,14 @@ export async function fetchWithRetry(
+       lastError = new Error(`HTTP ${response.status}`);
+ 
+     } catch (error) {
++      // supremeai-studio#1 (CORS residual): network-layer failures surface as
++      // TypeError per the fetch spec (CORS origin-policy rejection, DNS, refused
++      // connection). An origin-policy rejection is DETERMINISTIC — re-firing the
++      // same request up to 3 more times cannot succeed and only multiplies the
++      // browser's un-suppressable console errors. Retry remains reserved for
++      // retryable HTTP statuses (handled above) and constructed errors (timeouts,
++      // cold-start 50x wrappers) thrown by higher layers.
++      if (error instanceof TypeError) throw error;
+       lastError = error as Error;
+       console.warn(`⚠️ Attempt ${attempt + 1}/${config.maxRetries + 1}:`, error);
+     }
+@@ -120,8 +128,7 @@ export const USER_BACKEND_URL: string = normalizeBackendUrl(
+   import.meta.env.VITE_USER_BACKEND ||
+     import.meta.env.VITE_API_BASE ||
+     import.meta.env.VITE_API_URL ||
+-    import.meta.env.VITE_BACKEND_URL ||
+-    'https://supremeai-api-ulw0.onrender.com',
++    import.meta.env.VITE_BACKEND_URL,
+ );
+ 
+ /** Admin-context API calls-এর canonical backend URL (build-time resolved, runtime-picked) */

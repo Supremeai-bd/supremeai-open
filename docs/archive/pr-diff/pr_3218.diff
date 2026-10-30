@@ -1,0 +1,78 @@
+diff --git a/docs/ops/SOLVER2281_CLOSURE_2026-10-30.md b/docs/ops/SOLVER2281_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..079b5f67
+--- /dev/null
++++ b/docs/ops/SOLVER2281_CLOSURE_2026-10-30.md
+@@ -0,0 +1,72 @@
++# Solver Receipt #2281 (c26) — Closure Record: warning consumed, parent #2276 closed (docs-only)
++
++**Task ID:** bridge-20261030-solver2281-closure · **Closes #2281** · **Probed:** 2026-10-30T11:19–11:21Z
++**Claim:** GRANT_NEW on #2281 at 11:19:22Z (feedback-plane pre-verify: open, `latestClaim: null`,
++2 comments, unclaimed since filing 2026-10-28T21:13Z — ~38h of hourly re-serve drain).
++
++## 1. What the row is
++
++Issue #2281 is the **solver receipt c26** (zero-credential-mcp-agent-478318, 2026-10-28
++~21:2xZ, report-only, zero code): a live warning to future solvers that the **#2276 fix lane
++is structurally undeliverable through the Single Door bridge**. The c26 agent implemented the
++full one-expression fix (VAULT_DIR tilde raw-string in `browser/ghost_tower/credential_vault.py`),
++passed 110/110 local tests on a dual-rebase-clean tree, and had `bridge_submit_patch` reject
++the payload: *"Path browser/ghost_tower/credential_vault.py is protected (\*credential\*).
++Bridge lane does not accept automatic writes to protected paths."* The receipt's operative
++instruction: **"do NOT re-claim #2276 for bridge delivery — the \*credential\* protected
++pattern rejects identically"**; landing requires the admin/priv-repo lane (the #1912
++lint-imports class); the fix recipe lives in #2276; a green local implementation existed on
++`bridge-20261029-vault-tilde-posix-r1` (never pushed — direct push stays forbidden,
++invariant 4).
++
++## 2. Live ground truth this cycle (probes 11:19–11:21Z)
++
++- **Parent #2276 is CLOSED** (tower feedback plane: `state: closed`, 1 comment) — the
++  warning's dispatch target no longer exists on the board. Closed rows are not served by the
++  pick, so the "do NOT re-claim #2276" instruction has no remaining audience in the dispatch
++  plane: its live value is **consumed**.
++- **The defect is still live on main** (verified this cycle, quoted verbatim):
++  `browser/ghost_tower/credential_vault.py` line 25 reads
++  `VAULT_DIR = Path(os.path.expanduser(r"~\.supremeai_vault"))` — the tilde **raw-string**
++  that `expanduser` cannot resolve on POSIX (the `~` is followed by `\`, never a `/`), so the
++  vault silently roots at a literal `~\.supremeai_vault` relative directory. **The admin/priv-repo
++  lane still owns this landing** (recipe fully specified in #2276); nothing in this record
++  closes, supersedes or replaces that work item.
++- The protected-pattern gate that produced the rejection is the bridge's documented
++  `protectedPathsToAdminReview` contract (`*credential*`) — unchanged this cycle; the warning
++  remains true as a statement of mechanism, and it is preserved verbatim below and in #2276.
++
++## 3. Why close it
++
++- **Report-only row, nothing pending**: the receipt asked for nothing except that solvers not
++  burn a cycle on #2276; its only dispatch-plane consumer (#2276 handling) is settled by the
++  parent's closure.
++- **Dispatch drain**: open/unclaimed since 10-28 (~38h), re-served every hourly pick as the
++  age-first top row — the exact treadmill the closure-record series (twelve merged 10-30:
++  #3095…#3127, #3147, and CI-incident closures #3051/#3160) exists to stop.
++- **Knowledge survives closure**: the recipe (in #2276), the rejection text, and the
++  live-defect pointer (§2, re-verified 11:21Z) are preserved in this record; GitHub issues
++  remain searchable after close. Closing retires the row, not the information.
++- **Not a duplicate**: no closure PR exists for #2281 (open-PR scan this cycle; the row has 0
++  closure records among its 2 comments — both are the filing-era claim-hygiene trails).
++
++## 4. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #2281 ছিল একজন solver-এর রসিদ (c26) — সে #2276-এর ফিক্স (vault-এর tilde
++raw-string বাগ) পুরো বানিয়ে ফেলেছিল, টেস্ট ১১০/১১০ পাস, কিন্তু bridge জমা দেওয়ার সময়
++`*credential*` প্রোটেক্টেড-প্যাটার্ন গেট ফেরত দিয়ে দিল। রসিদের কাজ ছিল ভবিষ্যতের solver-দের
++সতর্ক করা: "#2276 bridge দিয়ে আর নেও যাবে না — admin লেন লাগবে"।
++
++**এখন অবস্থা কী (১১:১৯–১১:২১Z নিজে যাচাই করলাম):** parent #2276 **বন্ধ** — অর্থাৎ বোর্ডে
++আর কেউ #2276 claim করতে পারবে না, সতর্কবার্তার পাঠকই আর নেই। তবে সততার সাথে নথিভুক্ত:
++মূল বাগটি main-এ **এখনও জীবিত** (লাইন ২৫-এ `r"~\.supremeai_vault"` — POSIX-এ expanduser
++এটি সমাধান করতে পারে না); landing এখনও admin-এর হাতে, রেসিপি #2276-এ অক্ষত।
++
++**যা করলাম:** প্রমাণসহ closure record — রো বইপোকা শেষ, তথ্য বেঁচে থাকবে (GitHub issue বন্ধ
++হলেও খোঁজা যায়)। ৩৮ ঘণ্টা ধরে প্রতি ঘণ্টার ডিসপ্যাচ বাজেট খাচ্ছিল; আজকের ধারাবাহিক
++closure-record সিরিজের (১২টি merge) মতোই এটাও bookkeeping, remedy দাবি নয়।
++
++---
++*Docs-only: single file under docs/ops/, zero code, zero protected paths touched. Evidence
++discipline: every figure carries its probe timestamp; the live defect is quoted verbatim with
++its file/line, so the admin lane inherits a current pointer, not a stale one.*

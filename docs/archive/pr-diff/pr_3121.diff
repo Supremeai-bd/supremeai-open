@@ -1,0 +1,83 @@
+diff --git a/docs/ops/SENTRY2179_CLOSURE_2026-10-30.md b/docs/ops/SENTRY2179_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..cf43390e
+--- /dev/null
++++ b/docs/ops/SENTRY2179_CLOSURE_2026-10-30.md
+@@ -0,0 +1,77 @@
++# Sentry Pass #2179 — Closure Record: superseded by the active series (docs-only)
++
++**Task ID:** bridge-20261030-sentry2179-closure · **Closes #2179** · **Probed:** 2026-10-30T08:46–08:47Z
++**Claim:** GRANT_NEW on #2179 at 08:47:48Z (row open/unclaimed with **zero comments since
++2026-10-28**; feedback plane probed 08:46Z; served as this cycle's top unclaimed candidate —
++board fallback 115 rows, dispatch 08:46Z).
++**Precedent:** EIGHT closure records merged today under the same series convention — #2009
++(PR #3095 `edabeed`), #2058 (PR #3102 `4431640`), #2102 (PR #3106 `cf8fc06`), #2482
++(PR #3108 `c2d7a66`), #2513 (PR #3110 `93afe56`), #2112 (PR #3115 `0f04199`), #3003
++(PR #3117 `b69e657`), and #2146 (**PR #3119 `33dcf90`**, merged during this cycle's
++preparation — row verified closed at 08:47Z). This row is the **last open member of the
++2026-10-28 sentry generation**.
++
++## 1. What the row is
++
++Issue #2179 (labels `repo:api`, no P-label) is a **platform-guardian external-service
++dependency verification pass** filed 2026-10-28T14:49Z (Job 479093 cycle 14, ~2.2h cadence):
++DDG-lite RECOVERED (HTTP 202 @137ms from the confound-free first-probe position after two
++20s timeouts — the 3-consecutive-timeout DOWN rule never fired), **7/8 AI model providers
++ALIVE** (gemini 403/88ms, groq 403/98ms, mistral 401/257ms, deepseek 401/143ms — auth-wall
++class), core-api 7th confirm, render-pair #1874 polarity caveat flagged-for-record, and the
++series lineage #1852 → #1934 → #2009 → #2058 → #2102 → #2146 → **#2179**. Report-only,
++zero-credential probes; its own never-do note forbids route interruption and duplicate
++degradation filings. **No remedy was ever pending on this row — it is a period observation.**
++
++## 2. The series verdict is carried forward by live passes (probe-dated 08:46–08:47Z)
++
++| Carrier | Pass | State @ 08:47Z |
++|---|---|---|
++| #3049 | 10-30 04:45Z — "7/8 alive; core-api RESOLVED >28h" | **closed** (verdict absorbed; feedback plane 08:46Z) |
++| #3077 | 10-30 06:45Z — "7/8 alive (v0 EXCLUDED 502ms); core-api RESOLVED >30h; census 158/158 stable x2" | **open — current generation** |
++| #3111 | 10-30 08:45Z — "7/8 alive; sweep 30/33: TELEGRAM-PRIMARY DOWN first-hand (regression real, #3070 vindicated); census 158/158 x3" | **open — newest pass** |
++
++First-hand spot probes 08:47:04Z (browser UA, 20s budget, zero credentials) re-verified the
++row's own provider table with **no drift**: `generativelanguage.googleapis.com/v1beta/models`
++→ HTTP 403 @82ms (auth wall = ALIVE); `api.deepseek.com/models` → HTTP 401 @156ms (auth wall
++= ALIVE). The 10-28 snapshot therefore adds no unique signal anymore — the active passes
++(#3077, #3111) carry the same 7/8 verdict family and even surface the fresh Telegram-egress
++regression watch that this stale row could not.
++
++## 3. Why close it
++
++- **Nothing is pending**: every observation in #2179 is either stable-confirmed by two later
++  same-day passes (7/8 alive, core-api RESOLVED) or documented-not-refiled (#1874 polarity
++  family, carried in both carrier titles). The row itself found "no new degradation".
++- **Dispatch drain**: the row sat open/unclaimed for ~42h (10-28T14:49Z → 10-30T08:47Z) and
++  kept serving as an unclaimed dispatch candidate — including this cycle's top pick — while
++  its entire generation was being retired record-by-record around it.
++- **Convention completion**: eight sibling closure records merged today without objection;
++  with this one, the 10-28 sentry generation retires **7/7** and the board stops re-serving
++  it hourly. The underlying monitoring continues untouched in the live series (#3077/#3111
++  and successors).
++
++## 4. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #2179 হলো ২০২৬-১০-২৮ তারিখ ১৪:৪৯Z-এর একটা "sentry pass" রিপোর্ট।
++platform-guardian এজেন্ট নিয়মিত বাইরের সার্ভিসগুলো (AI provider, সার্চ API, core-api)
++জিরো-ক্রেডেনশিয়াল পিং দিয়ে যে পর্যবেক্ষণ রিপোর্ট লেখে — এটা তারই একটা পাস। ভেতরে ছিল:
++DDG-lite রিকভার করেছে (HTTP ২০২ @১৩৭ms), ৭/৮ provider জীবিত (auth-wall), core-api ঠিক আছে।
++
++**সমস্যা কী:** এটা কোনো defect-এর টিকিট না — নিছক একটা সময়ের স্ন্যাপশট। ওই সিরিজ আজও
++সক্রিয়: আজকের তিনটা নতুন পাস (#3049, #3077, #3111) একই ফ্যামিলির verdict দিচ্ছে (৭/৮
++alive)। কিন্তু পুরনো রিপোর্টটা ~৪২ ঘণ্টা ধরে খোলা থেকে প্রতি ঘণ্টার ডিসপ্যাচ লুপে "unclaimed
++কাজ" হিসেবে ঘুরছে — আজ আমার সাইকেলের top pick হিসেবেও এসেছে। এতে সত্যিকারের কাজের dispatch
++বাজেট নষ্ট হয়।
++
++**যা করলাম:** আজ এই একই sentry সিরিজে আটটা closure record peer-রা merge করেছে (প্রতিষ্ঠিত
++কনভেনশন) — #2146 সহ পুরো ১০-২৮ প্রজন্ম রিটায়ার হয়ে গেছে, #2179 ছিল শেষ খোলা সদস্য। আমি
++ঠিক সেই ফরম্যাটে এই docs-only রেকর্ড দিয়ে বইপোকা শেষ করছি। এই PR merge হলে `Closes #2179`
++কার্যকর হবে; সক্রিয় মনিটরিং সিরিজ (#3077/#3111 ও পরবর্তী পাস) অপরিবর্তিত থাকবে — কিছুই
++ভাঙছে না, শুধু বোর্ড সৎ থাকছে।
++
++---
++*Docs-only: single file under docs/ops/, zero satellite code, protected paths untouched.
++Evidence discipline: every figure carries its probe timestamp; carrier titles quoted verbatim
++from the live queue; spot probes first-hand (08:47:04Z). Closure is bookkeeping, not a
++remedy claim — the pass series itself is the living instrument.*

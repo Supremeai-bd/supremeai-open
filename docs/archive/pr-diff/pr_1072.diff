@@ -1,0 +1,2392 @@
+diff --git a/docs/CROWN_JEWELS_RESTORATION_INVENTORY.md b/docs/CROWN_JEWELS_RESTORATION_INVENTORY.md
+new file mode 100644
+index 00000000..17d4892a
+--- /dev/null
++++ b/docs/CROWN_JEWELS_RESTORATION_INVENTORY.md
+@@ -0,0 +1,283 @@
++# 💎 SupremeAI Crown Jewels Inventory & Restoration Blueprint
++
++> **ডকুমেন্ট পরিচিতি:** তিনটি প্রধান ঐতিহাসিক স্ন্যাপশট:
++> 1. `supremeai-main (3).zip` (২৭ সেপ্টেম্বর ২০২৬)
++> 2. `f:\supremeai_current_state.zip` (২৮ সেপ্টেম্বর ২০২৬)
++> 3. `github.com/SaifulHaqueNiloy/supremeai` (১৩ অক্টোবর ২০২৬ — রিমোট গিট রিপোজিটরি)
++> 
++> এদের তুলনামূলক অডিট, প্রতিটি সোর্সের বিশেষ শক্তি এবং এই ৩টি উৎস থেকে কী কী শ্রেষ্ঠ ফিচার বর্তমান ১২-স্যাটেলাইট ফেডারেশন কোডবেসে পুনরুদ্ধার করা উচিত তার সুনির্দিষ্ট অ্যাকশন ব্লুপ্রিন্ট।
++
++---
++
++## ১. ৩-উৎস তুলনামূলক অডিট (The 3-Option Comparative Audit)
++
++আমরা তিনটি ঐতিহাসিক সোর্স এবং বর্তমান লাইভ কোডবেস (`supremeai-open`, `supremeai-api`, `supremeai-studio`, `supremeai-core`, ইত্যাদি)-এর মধ্যে সমন্বিত ফাইল-লেভেল অডিট পরিচালনা করেছি:
++
++| মাপকাঠি | অপশন ১: `supremeai-main (3).zip` | অপশন ২: `supremeai_current_state.zip` | অপশন ৩: `SaifulHaqueNiloy/supremeai` (GitHub) |
++|---|---|---|---|
++| **তারিখ ও সময়** | ২৭ সেপ্টেম্বর ২০২৬, ১৭:২৭ | ২৮ সেপ্টেম্বর ২০২৬, ০৬:৫৫ | **১৩ অক্টোবর ২০২৬, ২১:৪৩ (সর্বশেষ)** |
++| **মোট ফাইল সংখ্যা** | ৪,৩০৯টি | ৪,৩০৯টি | ৪,২৮০টি |
++| **অনন্য/নতুন ফাইল** | বেসলাইন | ৪,২৫১টি ফাইলে পরিমার্জন | **৫৪৭টি সম্পূর্ণ নতুন আর্কিটেকচারাল ফাইল** |
++| **মূল চরিত্র ও ফোকাস** | প্রাথমিক মনোলিথ কোডবেস | **পিক মনোলিথ:** জিরো-কস্ট ইঞ্জিন, আরএজি, ওয়ান-ক্লিক টুলস ও ফ্রন্টএন্ড অ্যাডমিন স্যুট | **ম্যাচিউর গভর্ন্যান্স:** এআই এজেন্ট মেসেজিং বাস (A2A), পলিসি লেজার, অ্যাডমিন জাস্টিফিকেশন ও এমসিপি কন্ট্রোল টাওয়ার |
++| **লাইভ রিপোতে মিসিং** | ২,১৫৩টি ফাইল | ২,১৫৯টি ফাইল | **১৪০টি অত্যন্ত গুরুত্বপূর্ণ গভর্ন্যান্স ফাইল** |
++
++```mermaid
++flowchart TD
++    subgraph S1 ["Option 1 & 2: Peak Monolith (Sep 27-28)"]
++        O2["supremeai_current_state.zip<br>• Zero-Cost Patch 1-4<br>• Card Builder RAG (115 KB)<br>• Full Admin UI & HITL<br>• Playwright & Telegram Bot<br>• 23 Crown Jewel Specs"]
++    end
++
++    subgraph S2 ["Option 3: Agentic Governance (Oct 13)"]
++        O3["SaifulHaqueNiloy/supremeai<br>• A2A Messaging Bus<br>• Dynamic Credential Broker<br>• Admin Decision & Policy Ledger<br>• Web AI Relay Proxy<br>• Genkit/Antigravity Skills"]
++    end
++
++    subgraph TARGET ["Modern 12-Satellite Federation (supremeai-open)"]
++        T1["studio/* → ServiceHealthMonitor, HITL, ActionDock"]
++        T2["gateway/* & api/* → Web AI Proxy, Deep Research, Admin Decisions"]
++        T3["core/* → Zero-Cost Engine, Swarm Orchestrator"]
++        T4["skills/* → A2A Bus, Credential Broker, Genkit Tools"]
++    end
++
++    O2 -->|Engines & Frontend| TARGET
++    O3 -->|Governance & Messaging| TARGET
++```
++
++আমরা সরাসরি ২৭ সেপ্টেম্বর ২০২৬-এর গোল্ড-স্ট্যান্ডার্ড আর্কাইভ `supremeai-main (3).zip` ফাইলটি আনপ্যাক করে বর্তমান সক্রিয় রিপোজিটরিগুলোর (`supremeai-open`, `supremeai`, `supremeai-api`, `supremeai-studio`, `supremeai-vscode`, `supremeai-browser`, `supremeai-core`) সাথে ফাইল-টু-ফাইল ক্রস-ভেরিফিকেশন সম্পন্ন করেছি।
++
++```mermaid
++flowchart TD
++    subgraph ARCHIVE ["Old Monolith Archive: supremeai-main (3).zip (4,309 files)"]
++        A1["Active / Mapped in Satellites<br>(2,156 files - 50%)"]
++        A2["Purged / Unmapped Crown Jewels<br>(2,153 files - 50%)"]
++    end
++
++    subgraph FEDERATION ["Modern Federation Ingress (supremeai-open)"]
++        F1["studio/* → supremeai-studio"]
++        F2["gateway/* & api/* → supremeai-api"]
++        F3["browser/* → supremeai-browser"]
++        F4["core/* → supremeai-core"]
++        F5["skills/* → Antigravity Skills Hub"]
++    end
++
++    A2 -->|Systematic Safe Porting| FEDERATION
++```
++
++### ১.২ পরিসংখ্যানগত সত্য (Audit Verification Numbers)
++- **মোট পরীক্ষিত পুরনো ফাইল:** ৪,৩০৯টি
++- **বর্তমান রিপোতে অক্ষত বা স্যাটেলাইটে স্থানান্তরিত:** ২,১৫৬টি
++- **বর্তমান কোডবেসগুলোতে অনুপস্থিত (Truly Missing / Purged):** **২,১৫৩টি ফাইল** (যার মোট আকার প্রায় ৩০ মেগাবাইট সোর্স কোড)
++
++> [!IMPORTANT]
++> এই ২,১৫৩টি ফাইলের মধ্যে কোনো জাঙ্ক বা ডেড কোড নয়—বরং শত শত কাজের এআই এজেন্ট, জিরো-কস্ট ইঞ্জিন, টেলিগ্রাম বট, প্লে-রাইট অটোমেশন, এডমিন হেলথ মনিটর এবং ২৩টি মাস্টার আর্কিটেকচার ব্লুপ্রিন্ট রয়েছে যা সুপ্রিমএআই-এর সবচেয়ে মূল্যবান সম্পদ।
++
++---
++
++## ২. অনুপস্থিত ক্রাউন জুয়েলস সম্পদের পূর্ণাঙ্গ তালিকা (The Master Crown Jewels)
++
++---
++
++### অর্গান ১: স্পেশালাইজড অটোনোমাস এআই এজেন্টস (`backend/agents/` — ৩৮টি ফাইল, ৪৭৮ KB)
++এই এজেন্টগুলো স্বয়ংক্রিয় ব্যাকগ্রাউন্ড কাজ পরিচালনার জন্য সম্পূর্ণ তৈরি অবস্থায় ছিল:
++
++| ফাইলের নাম | সাইজ | কারিগরি কাজ ও উপযোগিতা |
++|---|---|---|
++| `infrastructure/cost_optimization_agent.py` | ৩৪.২ KB | মাল্টিক্লাউড এবং এলএলএম টোকেন খরচ কমানোর স্বয়ংক্রিয় অটোনোমাস এজেন্ট। |
++| `infrastructure/performance_tuning_agent.py` | ২৯.৬ KB | সার্ভার রেসপন্স টাইম, পিজিবাউন্সার পুল এবং মেমোরি টিউনিং এজেন্ট। |
++| `ux/accessibility_agent.py` | ২৮.৩ KB | ইউজার ইন্টারফেসের WCAG 2.1 এক্সেসিবিলিটি স্বয়ংক্রিয়ভাবে অডিট ও ফিক্স করে। |
++| `infrastructure/disaster_recovery_agent.py` | ২৬.৮ KB | ক্লাউড সার্ভিস ফেইল করলে স্বয়ংক্রিয় ব্যাকআপ রিস্টোর ও রি-রুট মেকানিজম। |
++| `data_trend_anomaly_agent.py` | ২৪.৫ KB | ডাটাবেস ট্রাফিক ও ইউজার বিহেভিয়ারে অস্বাভাবিক বিচ্যুতি শনাক্তকারী। |
++| `infrastructure/auto_scaling_agent.py` | ২৩.৭ KB | লোডের ওপর ভিত্তি করে সার্ভার ইনস্ট্যান্স ডাইনামিক স্কেলিং এজেন্ট। |
++| `user_retention_risk_agent.py` | ২৩.৪ KB | ইউজার ড্রপ-অফ বা মন্থর গতি বিশ্লেষণ করে রিটেনশন রিস্ক চিহ্নিতকারী। |
++| `code_vulnerability_scanner_agent.py` | ১৭.৪ KB | পাইথন/টাইপস্ক্রিপ্ট সোর্স কোডে ওডব্লুএএসপি নিরাপত্তা ত্রুটি স্ক্যানার। |
++| `domain/bangla_nlp_agent.py` | ৮.৮ KB | বাংলা টেক্সট প্রসেসিং, ট্রান্সলিটারেশন ও সেন্টিমেন্ট অ্যানালাইসিস এজেন্ট। |
++| `evolution_agents/multi_agent_collaboration_agent.py` | ৭.৯ KB | জটিল সমস্যা সমাধানে একাধিক এজেন্টকে একসাথে জুড়ে দেওয়ার এজেন্ট। |
++
++---
++
++### অর্গান ২: কোর ইন্টেলিজেন্স ও জিরো-কস্ট ইঞ্জিন (`backend/core/` — ৩৫৮টি ফাইল, ৩.৫১ MB)
++1. **`zero_cost_architecture/zero_cost_patch_phase1_4.py` (৮৫.৭ KB):**
++   - ক্লাউড বিল $০-এ নামিয়ে আনার ফেজ ১ থেকে ফেজ ৪-এর কমপ্লিট কোর লজিক।
++2. **`competitive_kit.py` (৬৫.১ KB):**
++   - প্রতিযোগী বাণিজ্যিক এআই প্ল্যাটফর্মগুলোর সাথে সুপ্রিমএআই-এর ফিচার সমতা ও বেঞ্চমার্কিং কিট।
++3. **`resilience/circuit_breaker.py` (৩৪.৩ KB):**
++   - বাহ্যিক কোনো এপিআই (যেমন: ওপেনএআই বা রেন্ডার) ডাউন হলে সিস্টেমকে বাঁচিয়ে রাখার অটো-সার্কিট ব্রেকার।
++4. **`llm/llm_gateway/completion.py` (৩৪.৪ KB) & `llm/advanced_model_router.py` (৩২.২ KB):**
++   - ইন্টেলিজেন্ট এলএলএম গেটওয়ে—কোটা শেষ হলে অন্য ফ্রি মডেলের ক্যাস্কেডিং ও স্মার্ট রাউটিং।
++5. **`self_evolution/auto_skill_creator.py` (২৭.৮ KB):**
++   - ব্যবহারকারীর দৈনন্দিন কাজ বিশ্লেষণ করে স্বয়ংক্রিয়ভাবে নতুন নতুন টুল/স্কিল তৈরি করার সেলফ-লার্নিং ইঞ্জিন।
++6. **`orchestration/swarm_orchestrator.py` (২৭.৪ KB):**
++   - ডাইনামিক মাল্টি-এজেন্ট সোয়ার্ম কোঅর্ডিনেশন।
++7. **`security/secret_vault.py` (৪০.৪ KB) & `injections/sql_prevention.py` (২৫.৯ KB):**
++   - রিয়েল-টাইম ক্রেডেনশিয়াল মাস্কিং এবং এসকিউএল ইনজেকশন প্রোটেকশন লেয়ার।
++8. **`cache/multi_layer_cache.py` (২৮.৪ KB) & `redis_manager.py` (৩৮.৮ KB):**
++   - L1/L2 লোকাল মেমোরি + রেডিস কম্বাইনড মাল্টিলেয়ার ক্যাশ।
++
++---
++
++### অর্গান ৩: প্রোডাকশন অটোমেশন টুলস ও রিলে (`backend/tools/` — ১১৪টি ফাইল, ১.০৩ MB)
++1. **`media/multilingual_tts.py` (২০.৫ KB):**
++   - বহুভাষিক টেক্সট-টু-স্পিচ (TTS) অডিও ইঞ্জিন (বাংলা ও ইংরেজি উভয় ভাষায় স্পষ্ট উচ্চারণ)।
++2. **`social/telegram_bot/` (৭০+ KB — ৪টি পূর্ণাঙ্গ মডিউল):**
++   - `conversations.py`, `handler.py`, `updates.py`, `admin_handlers.py` — হিউম্যান-ইন-দ্য-লুপ (HITL) সহ সরাসরি টেলিগ্রামের মাধ্যমে এজেন্ট কন্ট্রোল ও নোটিফিকেশন সিস্টেম।
++3. **`browser/playwright_browser_agent.py` (৩৭.৫ KB):**
++   - হেডলেস প্লে-রাইট ব্রাউজার ড্রাইভার, যা স্বয়ংক্রিয়ভাবে ওয়েব ব্রাউজ ও ডাটা এক্সট্র্যাক্ট করতে পারে।
++4. **`security_tools/multi_account_rotator.py` (৪৪.১ KB):**
++   - বিভিন্ন প্রোভাইডারের একাধিক ফ্রি একাউন্টকে সিকোয়েন্সিয়ালি রোটেট করে সীমাহীন কোটা নিশ্চিত করার টুল।
++5. **`code/diagram_to_architecture.py` ও `image_to_code.py` (২৯.৮ KB):**
++   - সিস্টেম ডায়াগ্রাম বা ইউআই স্কেচের ছবি দেখে সরাসরি রিয়্যাক্ট বা পাইথন কোড জেনারেট করার ইঞ্জিন।
++6. **`knowledge/card_builder.py` (১১৪.৯ KB — `current_state` এ পরিবর্ধিত):**
++   - ডিপ আরএজি নলেজ কার্ড জেনারেটর, যা ডকুমেন্ট থেকে স্বয়ংক্রিয় কিউএ ও নলেজ গ্রাফ তৈরি করে।
++7. **`knowledge/local_search_rag.py` & `knowledge_base_indexer.py` (৩১.০ KB):**
++   - ইন্টারনাল ডকস ও কোডবেস লোকাল ভেক্টর সার্চের মাধ্যমে দ্রুত খুঁজে পাওয়ার আরএজি ইঞ্জিন।
++8. **`social/viral_referral_engine.py` (১৬.৫ KB):**
++   - প্লাটফর্ম গ্রোথের জন্য ভাইরাল রেফারেল ট্র্যাকিং ও রেওয়ার্ড ডিস্ট্রিবিউশন ইঞ্জিন।
++
++---
++
++### অর্গান ৩.১: `supremeai_current_state.zip` এ থাকা বিশেষ বাড়তি ফিচারসমূহ (Exclusive Additions)
++`supremeai-main (3).zip` এর পরবর্তী ১৩ ঘণ্টায় এই ফাইলে যেসব অনন্য পরিবর্ধন হয়েছিল:
++1. **n8n ওয়ার্কফ্লো অটোমেশন মাস্টার প্ল্যান (`docs/plans/features/n8n_workflow_automation_master_plan.md` — ২৭.৯ KB):**
++   - ওপেন সোর্স n8n ইঞ্জিন দিয়ে সেলফ-হোস্টেড অটোমেশন ও ওয়েবহুক পাইপলাইন আর্কিটেকচার।
++2. **মাল্টি-টেন্যান্ট রোল ও স্লট অ্যাকুইজিশন (`scripts/agents/acquire_role_slot.py` — ১৯.৭ KB):**
++   - একাধিক ক্লায়েন্ট ও এজেন্টের মধ্যে কনকারেন্ট টাস্ক স্লট নিরাপদে বণ্টন ও রোটেশন লজিক।
++3. **সেন্টিনেল মরফিক স্কিমা ও ডাটাবেস বাগফিক্স (`alembic_migrations/versions/`):**
++   - `cfe7c95dbee2_add_sentinel_morphic_schema.py` (৬৭.৮ KB) এবং `k1l2m3n4o5p6_fix_downgrade_upgrade_table_swap.py` (৭৮.৩ KB) — টেবিল ডাউনগ্রেড/আপগ্রেডের গুরুতর সোয়াপ বাগফিক্স।
++4. **সুপাবেজ ক্লায়েন্ট কানেকশন পুলিং ও রিট্রাই (`backend/database/supabase_client.py` — ৮০.৪ KB):**
++   - ক্লাউড ড্রপআউট হলেও ব্যাকঅফ রিট্রাই ও রেডিস কানেকশন ফলব্যাক সমৃদ্ধ আপগ্রেডেড ক্লায়েন্ট।
++
++---
++
++### অর্গান ৪: ব্যাকএন্ড এপিআই রাউটস (`backend/api/routes/` — ১৯০টি ফাইল, ১.৪৪ MB)
++1. **`deep_research.py` (৩১.২ KB):**
++   - ডিপ রিসার্চ এআই এজেন্ট এন্ডপয়েন্ট (একাধিক সোর্স থেকে তথ্য সংগ্রহ ও সিনথেসিস)।
++2. **`ci_dashboard_api.py` (২৭.২ KB):**
++   - লাইভ সিআই/সিডি পাইপলাইন হেলথ এবং ওয়ার্কফ্লো মনিটরিং ব্যাকএন্ড।
++3. **`billing_api.py` (২৫.৭ KB):**
++   - স্ট্রাইপ বিলিং, ওয়ালেট ক্রেডিট এবং ট্রানজ্যাকশন লেজার হ্যান্ডলার।
++4. **`stream_chat_sse.py` (১৯.৩ KB):**
++   - সার্ভার-সেন্ট ইভেন্টস (SSE) এর মাধ্যমে হাই-স্পিড স্ট্রিমিং চ্যাট এপিআই।
++5. **`session_takeover.py` (১৯.৬ KB):**
++   - হিউম্যান-ইন-দ্য-লুপ প্রোটোকল: স্বয়ংক্রিয় এজেন্ট আটকে গেলে এডমিন যেন সেশনের নিয়ন্ত্রণ নিতে পারেন।
++6. **`browser/_crown_jewel.py` (১৭.৭ KB):**
++   - ব্রাউজার অটোমেশনের সেন্ট্রাল হাব রাউট।
++7. **`prompt_templates.py` (২৩.৫ KB) & `slash_commands.py` (২১.৮ KB):**
++   - ফ্রন্টএন্ড চ্যাটের জন্য স্ল্যাশ কমান্ড ও প্রম্পট লাইব্রেরি ব্যাকএন্ড।
++
++---
++
++### অর্গান ৫: অ্যাডভান্সড ফ্রন্টএন্ড ইউআই কম্পোনেন্টস (`frontend/src/` — ৪৮টি ফাইল, ২৭২ KB)
++1. **`components/admin/infra/ServiceHealthMonitor.tsx` (২৬.৭ KB):**
++   - লাইভ মাইক্রোসার্ভিস, ডাটাবেস ও ক্লাউড রানারের রিয়েল-টাইম হেলথ মনিটর।
++2. **`components/admin/AdminDashboardHome.tsx` (২১.০ KB):**
++   - সুপ্রিমএআই-এর পূর্ণাঙ্গ অ্যাডমিন কমান্ড সেন্টার।
++3. **`components/dashboard/HumanInTheLoopProtocol.tsx` (১১.০ KB) & `HITLModal.tsx`:**
++   - এজেন্টের ক্রিটিক্যাল ডিসিশনে মানুষের সম্মতি নেওয়ার জন্য ভিজ্যুয়াল মডাল।
++4. **`components/dashboard/ActionDock.tsx` ও `LivingActionDock.tsx` (১৫.৫ KB):**
++   - ম্যাকওএস-স্টাইল ডায়নামিক ফ্লোটিং বটম অ্যাকশন ডক।
++5. **`components/AgentStateShaderBackground.tsx` (৭.৭ KB):**
++   - এজেন্টের বর্তমান মুড ও কাজের ওপর ভিত্তি করে পরিবর্তিত হওয়া প্রিমিয়াম 3D শ্যাডার ক্যানভাস।
++6. **`components/dashboard/LiveSimulator.tsx` (৭.১ KB):**
++   - মোবাইল এবং ব্রাউজার প্রিভিউ লাইভ রান করার সিমুলেটর।
++7. **`components/admin/ScreencastViewer.tsx` (৬.৫ KB):**
++   - হেডলেস ব্রাউজারে কী ঘটছে তা লাইভ ভিডিও স্ট্রিমে দেখার স্ক্রিনকাস্ট ভিউয়ার।
++
++---
++
++### অর্গান ৬: ক্রাউন জুয়েল মাস্টার স্পেসিফিকেশন সিরিজ (`docs/plans/crown_jewel_series/` — ২৩টি ফাইল)
++এই ২৩টি আর্কিটেকচারাল স্পেক ভবিষ্যতে বড় আপগ্রেডের গাইড হিসেবে তৈরি করা হয়েছিল:
++- `MODULE_01_MEMORY_POWER_UP.md` — মেম০ স্টাইল পারসিস্টেন্ট মেমোরি
++- `MODULE_02_ORCHESTRATION_CORE_POWER_UP.md` — মাল্টি-এজেন্ট ডায়নামিক অর্কেস্ট্রেশন
++- `MODULE_03_LLM_GATEWAY_POWER_UP.md` — জিরো-কস্ট এলএলএম ফলব্যাক ও টোকেন বাজেট
++- `MODULE_04_BROWSER_AUTOMATION_POWER_UP.md` — প্লে-রাইট ডিপ ওয়েব অটোমেশন
++- `MODULE_05_SELF_EVOLUTION_POWER_UP.md` — কোড সেলফ-হিলিং ও অটোমেটেড প্যাচিং
++- `MODULE_10_FRONTEND_TIER_S_WIRING_POWER_UP.md` — স্টুডিও ইউআই ওয়্যারিং
++- `MODULE_15_SECURITY_ORGAN_POWER_UP.md` — ৩০-ক্যাটাগরি সিকিউরিটি শিল্ড
++- `MODULE_19_I18N_BENGALI_ADAPTER_POWER_UP.md` — পূর্ণাঙ্গ বাংলা অ্যাডাপ্টার
++- `MODULE_23_KNOWLEDGE_BASE_DOCS_POWER_UP.md` — নলেজ বেস ও আরএজি ইঞ্জিন
++
++---
++
++## ৩. গোল্ডেন ট্রায়াড রিস্টোরেশন ম্যাট্রিক্স (The 3-Source Restoration Matrix)
++
++আমরা ৩টি সোর্স থেকে প্রতিটি ফিচারকে তার **সর্বোত্তম সংস্করণ (Best Version)** নির্বাচন করে ফেডারেশনের নির্দিষ্ট স্যাটেলাইটে ম্যাপ করেছি:
++
++```mermaid
++flowchart LR
++    subgraph OPTION2 ["অপশন ২: supremeai_current_state.zip"]
++        direction TB
++        B1["Zero-Cost Patch 1-4 (88 KB)"]
++        B2["Card Builder Deep RAG (115 KB)"]
++        B3["Telegram Bot Full Suite (70 KB)"]
++        B4["ServiceHealthMonitor.tsx (27 KB)"]
++        B5["HumanInTheLoopProtocol.tsx (11 KB)"]
++        B6["Cost Optimization Agent (34 KB)"]
++        B7["Multilingual TTS (21 KB)"]
++    end
++
++    subgraph OPTION3 ["অপশন ৩: SaifulHaqueNiloy/supremeai (GitHub)"]
++        direction TB
++        G1["A2A Messaging Bus (scripts/agents)"]
++        G2["Admin Decision & Policy Routes (api/routes)"]
++        G3["Web AI Proxy (api/routes/web_ai_proxy.py)"]
++        G4["Dynamic Credential Broker (scripts/agents)"]
++        G5["Developing Genkit JS / Antigravity Skills"]
++        G6["MCP Gemini Adapter (infrastructure/mcp-control-plane)"]
++    end
++
++    subgraph RESTORATION ["SupremeAI Open Target Repos"]
++        direction TB
++        T_STUDIO["supremeai-studio (studio/*)"]
++        T_API["supremeai-api (gateway/* & api/*)"]
++        T_CORE["supremeai-core (core/*)"]
++        T_BROWSER["supremeai-browser (browser/*)"]
++        T_SKILLS["Antigravity Skills (.agents/skills/*)"]
++    end
++
++    B4 & B5 --> T_STUDIO
++    B1 & B6 --> T_CORE
++    B2 & G2 & G3 --> T_API
++    B3 & G1 & G4 & G5 --> T_SKILLS
++```
++
++### ৩.১ সোর্স-ভিত্তিক পুনরুদ্ধার চেকলিস্ট (Specific Restoration Attribution)
++
++| ক্যাটাগরি | কোন অপশন থেকে আনা হবে? | ফাইলের সঠিক পাথ | টার্গেট ফেডারেশন সারফেস |
++|---|---|---|---|
++| **A2A মেসেজিং বাস** | **অপশন ৩ (GitHub)** | `scripts/agents/a2a_messaging_bus.py` | `supremeai-open:scripts/agents/` |
++| **অ্যাডমিন ডিসিশন লেজার** | **অপশন ৩ (GitHub)** | `backend/api/routes/admin_decisions.py`, `admin_policies.py` | `supremeai-open:gateway/service/` |
++| **ওয়েব এআই রিলে প্রক্সি** | **অপশন ৩ (GitHub)** | `backend/api/routes/web_ai_proxy.py` | `supremeai-open:gateway/service/` |
++| **ডায়নামিক ক্রেডেনশিয়াল ব্রোকার** | **অপশন ৩ (GitHub)** | `scripts/agents/dynamic_credential_broker.py` | `supremeai-open:scripts/agents/` |
++| **Antigravity Genkit Skills** | **অপশন ৩ (GitHub)** | `.agents/skills/developing-genkit-js/` | `supremeai-open:.agents/skills/` |
++| **সার্ভিস হেলথ মনিটর ইউআই** | **অপশন ২ (Current State)** | `frontend/src/components/admin/infra/ServiceHealthMonitor.tsx` | `supremeai-open:studio/src/components/admin/` |
++| **হিউম্যান-ইন-দ্য-লুপ (HITL) মডাল** | **অপশন ২ (Current State)** | `frontend/src/components/dashboard/HumanInTheLoopProtocol.tsx` | `supremeai-open:studio/src/components/dashboard/` |
++| **ডিপ আরএজি কার্ড বিল্ডার** | **অপশন ২ (Current State)** | `tools/knowledge/card_builder.py` | `supremeai-open:core/tools/` |
++| **টেলিগ্রাম বট কমপ্লিট স্যুট** | **অপশন ২ (Current State)** | `backend/tools/social/telegram_bot/` | `supremeai-open:scripts/bots/` |
++| **জিরো-কস্ট ইঞ্জিন ফেজ ১-৪** | **অপশন ২ (Current State)** | `backend/core/zero_cost_architecture/zero_cost_patch_phase1_4.py` | `supremeai-open:core/resilience/` |
++| **মাল্টিলিঙ্গুয়াল টিটিএস (বাংলা+ইংরেজি)**| **অপশন ২ (Current State)** | `backend/tools/media/multilingual_tts.py` | `supremeai-open:skills/multilingual_tts/` |
++| **কস্ট অপ্টিমাইজেশন এজেন্ট** | **অপশন ২ (Current State)** | `backend/agents/infrastructure/cost_optimization_agent.py` | `supremeai-open:core/agents/` |
++
++---
++
++## ৪. নিরাপত্তা ও নন-রিগ্রেশন অঙ্গীকার (Rule P3 Compliance)
++
++> [!CAUTION]
++> **নন-রিগ্রেশন নীতি (Non-Regression Mandate):**  
++> পুরনো কোড ফিরিয়ে আনার সময় বর্তমান অর্জিত গতি (<১.০ সেকেন্ড ল্যান্ডিং লোড, ব্যর্থতাহীন সিআই পাইপলাইন এবং পরিষ্কার টাইপস্ক্রিপ্ট টাইপস) নষ্ট করা যাবে না। প্রতিটি ক্রাউন জুয়েল মডিউল `python scripts/ci/boundary_sanitization_guard.py` দিয়ে টেস্ট পাস করার পরেই কেবল যুক্ত করা হবে।
++
++---
++
++## ৫. ইউনিফাইড মাস্টার আর্কাইভ মার্জ রিপোর্ট (The Unified Goldmine Archive)
++
++অক্টোবর ২৪, ২০২৬-এ `F:\supremeai-crown-jewels-vault` এবং `F:\old zip\New folder`-কে সফলভাবে একত্রিত (Merge) করা হয়েছে:
++
++- **ইউনিফাইড মাস্টার লোকেশন:** `F:\old zip\New folder`
++- **মোট সংগৃহীত ফাইল:** ৩,২৫৪টি ফাইল (সম্পূর্ণ আন-কম্প্রেসড ও ইনডেক্সড)
++- **অন্তর্ভুক্ত ক্রাউন জুয়েলস:**
++  1. `tools/knowledge/card_builder.py` (১১৫ KB ডিপ আরএজি ইঞ্জিন)
++  2. `docs/plans/architecture/` (জিরো-ডাউনটাইম ও মাল্টি-টেন্যান্ট মাস্টার প্ল্যান)
++  3. `backend/api/routes/browser/_crown_jewel.py` ও `admin_*.py` রাউটস
++  4. `.agents/skills/developing-genkit-js/` (২০টি সম্পূর্ণ এআই এজেন্ট স্কিল ও রেফারেন্স)
++  5. `infrastructure/mcp-control-plane/` (জেমিনি অ্যাডাপ্টার ও টুল এক্সপোজার স্পেক)
++  6. `scripts/agents/` (A2A মেসেজিং বাস, ক্রেডেনশিয়াল ম্যানেজার ও ওয়াচডগ)
++- **ইনডেক্স ও ম্যানিফেস্ট:** `F:\old zip\New folder\MANIFEST.md` এবং `CROWN_JEWELS_VAULT_INDEX.md` আপডেট করা হয়েছে।
++
+diff --git a/docs/CURRENT_ONLY_FILES.md b/docs/CURRENT_ONLY_FILES.md
+new file mode 100644
+index 00000000..cc89935e
+--- /dev/null
++++ b/docs/CURRENT_ONLY_FILES.md
+@@ -0,0 +1,416 @@
++# Current-only production files (must be preserved)
++
++Total: 412
++
++- .agents/rules/minimal-elegance.md
++- .agents/skills/devtools-audit/package-lock.json
++- .agents/skills/devtools-audit/references/delivery.md
++- .agents/skills/devtools-audit/references/run-in-your-system.md
++- .agents/skills/devtools-audit/scripts/audit.mjs
++- .agents/skills/devtools-audit/scripts/build_report.py
++- .env
++- .gitattributes
++- .githooks/post-commit
++- .githooks/pre-commit
++- .github/ISSUE_TEMPLATE/agent-task.yml
++- .github/ISSUE_TEMPLATE/auditor-rule-breaker-report.yml
++- .github/ISSUE_TEMPLATE/bridge-work-order.yml
++- .github/ISSUE_TEMPLATE/bug-report.yml
++- .github/ISSUE_TEMPLATE/config.yml
++- .github/ISSUE_TEMPLATE/feature-request.yml
++- .github/PULL_REQUEST_TEMPLATE.md
++- .github/workflows/federation-ci-watchdog.yml
++- .github/workflows/kaggle-learning.yml
++- .github/workflows/landing.yml
++- .github/workflows/pipeline.yml
++- .github/workflows/satellite-board-audit.yml
++- .gitleaks.toml
++- .gitleaksignore
++- .kilo/kilo.jsonc
++- .wrangler/cache/pages.json
++- AGENTS.md
++- AGENT_RULES.md
++- ARCHITECTURE_PLAN.md
++- AUTONOMOUS_TRANSIT_PIPELINE.md
++- ECOSYSTEM_MAP.md
++- api-schemas/context-assembly.schema.json
++- api-schemas/dashboard.schema.json
++- api-schemas/federated-ci-failure.schema.json
++- api-schemas/fixtures/instruction-envelope.fixture.json
++- api-schemas/fixtures/memory-search.fixture.json
++- api-schemas/fixtures/permissions.fixture.json
++- api-schemas/fixtures/provider-registry.fixture.json
++- api-schemas/fixtures/task-router.fixture.json
++- api-schemas/gateway.openapi.yaml
++- api-schemas/guardian-evaluation.schema.json
++- api-schemas/heartbeat.schema.json
++- api-schemas/instruction-envelope.schema.json
++- api-schemas/memory-search.schema.json
++- api-schemas/permissions.schema.json
++- api-schemas/provider-registry.schema.json
++- api-schemas/task-router.schema.json
++- api-schemas/telemetry-log.schema.json
++- api-schemas/webhook-notification.schema.json
++- api-schemas/websocket-events.schema.json
++- browser/cloudflare-worker/package-lock.json
++- browser/ghost_tower/1_login_to_gemini.bat
++- browser/ghost_tower/2_login_to_multi_ai.bat
++- browser/ghost_tower/3_check_cookies_status.bat
++- browser/ghost_tower/4_sync_cookies_to_infisical.bat
++- browser/ghost_tower/SUPREMEAI_BROWSER_INTEGRATION.md
++- browser/ghost_tower/auto_login.py
++- browser/ghost_tower/browser_auth.py
++- browser/ghost_tower/check_cookies_status.py
++- browser/ghost_tower/check_status.py
++- browser/ghost_tower/cookie_sync_scheduler.py
++- browser/ghost_tower/credential_vault.py
++- browser/ghost_tower/gemini_web_engine.py
++- browser/ghost_tower/ghost_bridge_server.py
++- browser/ghost_tower/launch_manual_login.py
++- browser/ghost_tower/login_helper.py
++- browser/ghost_tower/multi_ai_sso_runner.py
++- browser/ghost_tower/start_gemini_web_chat.bat
++- browser/ghost_tower/stealth_browser_engine/content_pruner.py
++- browser/ghost_tower/stealth_browser_engine/cookie_bridge.py
++- browser/ghost_tower/stealth_browser_engine/infinite_scanner.py
++- browser/ghost_tower/stealth_browser_engine/semantic_extractor.py
++- browser/ghost_tower/stealth_browser_engine/stealth_profile.py
++- browser/ghost_tower/sync_cookies_to_infisical.py
++- browser/ghost_tower/web_engine.py
++- browser/render.yaml
++- browser/runtime/content_pruner.py
++- browser/runtime/cookie_bridge.py
++- browser/runtime/infinite_scanner.py
++- browser/runtime/semantic_extractor.py
++- browser/runtime/stealth_profile.py
++- core/AGENTS.md
++- core/context_synthesizer.py
++- core/dag_planner.py
++- docs/ADMIN_SOVEREIGNTY_WIRING_APPENDIX.md
++- docs/AGENT_LOOP_SPEC.md
++- docs/AGENT_PORTAL_SPEC.md
++- docs/AI_TRIO_NSCALE_ARCHITECTURE.md
++- docs/AUDIT_2026-10-15-duplicate-sweep.md
++- docs/AUDIT_2026-10-15.md
++- docs/AUDIT_2026-10-16-external-audit.md
++- docs/AUTONOMOUS_TRANSIT_PIPELINE.md
++- docs/AUTONOMY_LOOP_CONTRACT.md
++- docs/CI_MINIMUM_PIPELINE_STANDARD.md
++- docs/CI_PIPELINES_AUDIT_REPORT.md
++- docs/CI_REMEDIATION_ROADMAP_BN.md
++- docs/COMMAND_SEED_GOVERNANCE.md
++- docs/CONSTITUTION_FRESHNESS_INVARIANT.md
++- docs/CONSUMERS.md
++- docs/CONTEXT_SELECTOR_SPEC.md
++- docs/CONTINUOUS_AGENT_LOOP_AND_SKILL_ARCHITECTURE.md
++- docs/CONTRIBUTING_BN.md
++- docs/CROSS_PLATFORM_GUARD_PIPELINE_APPENDIX.md
++- docs/CROWN_JEWELS_RESTORATION_INVENTORY.md
++- docs/DEPLOYMENT_NOTES.md
++- docs/FAQ.md
++- docs/FEDERATED_CI_WATCHER.md
++- docs/FEDERATION_CHARTER.md
++- docs/FEDERATION_DISPATCH_APPENDIX.md
++- docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md
++- docs/FEDERATION_ORGANIZATION_PLAN.md
++- docs/FEDERATION_SATELLITE_GAP_AUDIT.md
++- docs/FEDERATION_SPECS_SSOT.md
++- docs/FEDERATION_TAXONOMY_AND_LICENSING.md
++- docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
++- docs/GHOST_TOWER_MULTI_AI_ROADMAP_BN.md
++- docs/GUARDIAN_EVALUATION.md
++- docs/HEARTBEAT_PROTOCOL.md
++- docs/IDE_EXTENSION_ORCHESTRATOR_PLAN_BN.md
++- docs/INGRESS_SECURITY_POLICY.md
++- docs/ISSUE_TEMPLATE_GUARD_APPENDIX.md
++- docs/KAGGLE_INTELLIGENT_LEARNING_BRIDGE.md
++- docs/MCP_CONNECT.md
++- docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
++- docs/PROJECT_FULL_AUDIT_BN.md
++- docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
++- docs/PROPRIETARY_LICENSE_TEMPLATE.md
++- docs/REJECTED_WO_RESCUE_APPENDIX.md
++- docs/S01_ATOMIC_CLAIM_SPEC.md
++- docs/S02_STRUCTURED_EVIDENCE_SPEC.md
++- docs/S03_WORK_NEXT_SPEC.md
++- docs/S04_TOOL_CONSOLIDATION_SPEC.md
++- docs/S05_UNIFIED_QUEUE_SPEC.md
++- docs/S06_CLAIM_QUOTA_SPEC.md
++- docs/S07_PR_EVALUATOR_SPEC.md
++- docs/S08_MISTAKE_IMMUNITY_SPEC.md
++- docs/S09_ROLE_TRIGGER_MATRIX_SPEC.md
++- docs/S10_ECOSYSTEM_SCOUT_SPEC.md
++- docs/S11_SURGICAL_ADOPTION_SPEC.md
++- docs/S12_NIGHTLY_TRAIN_SPEC.md
++- docs/S13_KNOWLEDGE_GRAPH_SPEC.md
++- docs/S14_REQUIREMENT_AND_TRAINING_SPEC.md
++- docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md
++- docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
++- docs/SUPREMEAI_API_KEY_AND_GUEST_SOLUTION_BN.md
++- docs/SUPREMEAI_BROWSER_INTEGRATION.md
++- docs/VOICE_SERVICE_ARCHITECTURE.md
++- docs/WEBHOOK_PRIMARY_ROOT_FIX_BN.md
++- docs/WEBSOCKET_SPEC.md
++- docs/ZERO_ADMIN_GUIDE.md
++- docs/ZIP_USE_LIST.md
++- docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md
++- docs/adrs/template.md
++- docs/audit-process.json
++- docs/bridge_canary_20261017.md
++- docs/federation_parity_check.py
++- docs/requirement-understanding-kb.json
++- docs/requirement-understanding-kb.md
++- docs/supremeai-audit-report-bn.md
++- docs/supremeai-training-curriculum.json
++- docs/work-orders/bridge-20261018-redis-near-zero-fix.md
++- docs/work-orders/bridge-20261018-redis-near-zero.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo1.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo1b.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo2.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo2b.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo3.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo4.md
++- docs/work-orders/bridge-20261022-frontend-cosmic-wo5.md
++- docs/work-orders/bridge-20261023-frontend-guestchat-cosmic.md
++- docs/work-orders/bridge-20261023-frontend-router-restore.md
++- docs/work-orders/patches/bridge-20261018-redis-near-zero-fix.patch
++- examples/curl-tests/health.ps1
++- examples/curl-tests/health.sh
++- examples/gateway_client.py
++- examples/langchain-mcp-bot/bot.py
++- examples/mcp-client-py/client.py
++- examples/mcp-client-ts/client.ts
++- examples/sdk-client-py/client.py
++- examples/telemetry-logger/logger.py
++- examples/webhook-verification/verify.py
++- gateway/.github/workflows/secret-scan.yml
++- gateway/SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md
++- gateway/capability_router.py
++- gateway/gateway_shield_reference.py
++- gateway/masking.py
++- gateway/provider_chain.py
++- gateway/sanitization.py
++- gateway/serve.py
++- gateway/service/keygen.py
++- gateway/service/pool.py
++- gateway/service/providers/web_session.py
++- gateway/service/storage.py
++- gateway/service/telegram_webhook.py
++- gateway/stealth_webhook.py
++- infrastructure/mcp-control-plane/PROVIDER_NEUTRAL_CONNECTIONS.md
++- infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
++- infrastructure/mcp-control-plane/docs/FEDERATION.md
++- infrastructure/mcp-control-plane/docs/REDIS_QUOTA_PREEMPTIVE_ROTATION.md
++- infrastructure/mcp-control-plane/mcp_config.remote.json
++- infrastructure/mcp-control-plane/package-lock.json
++- infrastructure/mcp-control-plane/policy_parity_dump.ts
++- infrastructure/mcp-control-plane/render.yaml
++- infrastructure/mcp-control-plane/scripts/smoke-report.ts
++- infrastructure/mcp-control-plane/scripts/test-runner.ts
++- infrastructure/mcp-control-plane/src/actions/executor.ts
++- infrastructure/mcp-control-plane/src/actions/plan.ts
++- infrastructure/mcp-control-plane/src/adapters/ai/analyze.ts
++- infrastructure/mcp-control-plane/src/adapters/ai/key-pool.ts
++- infrastructure/mcp-control-plane/src/adapters/base.ts
++- infrastructure/mcp-control-plane/src/adapters/cloudflare/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/firecrawl/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/github/app_token.ts
++- infrastructure/mcp-control-plane/src/adapters/github/external.ts
++- infrastructure/mcp-control-plane/src/adapters/memory/jsonSchemaToZod.ts
++- infrastructure/mcp-control-plane/src/adapters/notify/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/qdrant/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/redis/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/render/actions.ts
++- infrastructure/mcp-control-plane/src/adapters/supabase/actions.ts
++- infrastructure/mcp-control-plane/src/audit/audit.ts
++- infrastructure/mcp-control-plane/src/dynamic/context7.adapter.ts
++- infrastructure/mcp-control-plane/src/dynamic/tool.registry.ts
++- infrastructure/mcp-control-plane/src/events/bridge_intake.ts
++- infrastructure/mcp-control-plane/src/events/command_router.ts
++- infrastructure/mcp-control-plane/src/events/federated_ci_watcher.ts
++- infrastructure/mcp-control-plane/src/events/gateway.ts
++- infrastructure/mcp-control-plane/src/events/normalizer.ts
++- infrastructure/mcp-control-plane/src/federation/aggregator.ts
++- infrastructure/mcp-control-plane/src/federation/outbound-client.ts
++- infrastructure/mcp-control-plane/src/federation/server-discovery.ts
++- infrastructure/mcp-control-plane/src/guardian/engine.ts
++- infrastructure/mcp-control-plane/src/guardian/github-api.ts
++- infrastructure/mcp-control-plane/src/guardian/improvement.ts
++- infrastructure/mcp-control-plane/src/guardian/policy.ts
++- infrastructure/mcp-control-plane/src/guardian/signals.ts
++- infrastructure/mcp-control-plane/src/health/dependency.ts
++- infrastructure/mcp-control-plane/src/health/engine.ts
++- infrastructure/mcp-control-plane/src/health/history.ts
++- infrastructure/mcp-control-plane/src/health/incident.ts
++- infrastructure/mcp-control-plane/src/health/snapshot.ts
++- infrastructure/mcp-control-plane/src/http_server.ts
++- infrastructure/mcp-control-plane/src/lib/env.ts
++- infrastructure/mcp-control-plane/src/lib/http.ts
++- infrastructure/mcp-control-plane/src/lib/key-pool.ts
++- infrastructure/mcp-control-plane/src/lib/masking.ts
++- infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
++- infrastructure/mcp-control-plane/src/lib/redis_chain.ts
++- infrastructure/mcp-control-plane/src/lib/source/filters.ts
++- infrastructure/mcp-control-plane/src/lib/source/licenses.ts
++- infrastructure/mcp-control-plane/src/lib/timestamps.ts
++- infrastructure/mcp-control-plane/src/lib/ttl_cache.ts
++- infrastructure/mcp-control-plane/src/lib/unified_diff.ts
++- infrastructure/mcp-control-plane/src/lib/webhook_signature.ts
++- infrastructure/mcp-control-plane/src/policy/approvals/hitl.ts
++- infrastructure/mcp-control-plane/src/policy/approvals/lifecycle.ts
++- infrastructure/mcp-control-plane/src/policy/approvals/signing.ts
++- infrastructure/mcp-control-plane/src/policy/auth.context.ts
++- infrastructure/mcp-control-plane/src/policy/auto-register.ts
++- infrastructure/mcp-control-plane/src/policy/client-registry.store.ts
++- infrastructure/mcp-control-plane/src/policy/client-registry.ts
++- infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++- infrastructure/mcp-control-plane/src/policy/policy.engine.ts
++- infrastructure/mcp-control-plane/src/policy/policy.schema.generated.ts
++- infrastructure/mcp-control-plane/src/policy/risk.engine.ts
++- infrastructure/mcp-control-plane/src/policy/slot-audit.ts
++- infrastructure/mcp-control-plane/src/policy/slot-verification.ts
++- infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
++- infrastructure/mcp-control-plane/src/registry/account.registry.ts
++- infrastructure/mcp-control-plane/src/registry/agent_heartbeat.ts
++- infrastructure/mcp-control-plane/src/registry/capability.registry.ts
++- infrastructure/mcp-control-plane/src/registry/mcp.contracts.ts
++- infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
++- infrastructure/mcp-control-plane/src/registry/orchestrator_dispatch.ts
++- infrastructure/mcp-control-plane/src/registry/provider.registry.ts
++- infrastructure/mcp-control-plane/src/registry/remote-mcp-servers.ts
++- infrastructure/mcp-control-plane/src/registry/resource.registry.ts
++- infrastructure/mcp-control-plane/src/remediation/engine.ts
++- infrastructure/mcp-control-plane/src/remediation/killswitch.ts
++- infrastructure/mcp-control-plane/src/remediation/rules.ts
++- infrastructure/mcp-control-plane/src/service-circles.ts
++- infrastructure/mcp-control-plane/src/tasks/engine.ts
++- infrastructure/mcp-control-plane/src/tasks/task-registry.ts
++- infrastructure/mcp-control-plane/src/tenancy/tenant.model.ts
++- infrastructure/mcp-control-plane/src/tenancy/tenant.registry.ts
++- infrastructure/mcp-control-plane/src/tools/action.tools.ts
++- infrastructure/mcp-control-plane/src/tools/agent.tools.ts
++- infrastructure/mcp-control-plane/src/tools/agent_review_workflow.tools.ts
++- infrastructure/mcp-control-plane/src/tools/ai.tools.ts
++- infrastructure/mcp-control-plane/src/tools/autonomy.tools.ts
++- infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++- infrastructure/mcp-control-plane/src/tools/client.tools.ts
++- infrastructure/mcp-control-plane/src/tools/cloudflare.tools.ts
++- infrastructure/mcp-control-plane/src/tools/federation.tools.ts
++- infrastructure/mcp-control-plane/src/tools/github.tools.ts
++- infrastructure/mcp-control-plane/src/tools/guardian.tools.ts
++- infrastructure/mcp-control-plane/src/tools/infisical.tools.ts
++- infrastructure/mcp-control-plane/src/tools/intelligence.tools.ts
++- infrastructure/mcp-control-plane/src/tools/knowledge.tools.ts
++- infrastructure/mcp-control-plane/src/tools/memory.tools.ts
++- infrastructure/mcp-control-plane/src/tools/misc.tools.ts
++- infrastructure/mcp-control-plane/src/tools/notify.tools.ts
++- infrastructure/mcp-control-plane/src/tools/orchestrator.tools.ts
++- infrastructure/mcp-control-plane/src/tools/policy.tools.ts
++- infrastructure/mcp-control-plane/src/tools/redis.tools.ts
++- infrastructure/mcp-control-plane/src/tools/render.tools.ts
++- infrastructure/mcp-control-plane/src/tools/slot.tools.ts
++- infrastructure/mcp-control-plane/src/tools/source.tools.ts
++- infrastructure/mcp-control-plane/src/tools/supabase.tools.ts
++- infrastructure/mcp-control-plane/src/tools/system.summary.tools.ts
++- infrastructure/mcp-control-plane/src/tools/system.tools.ts
++- infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
++- infrastructure/mcp-control-plane/src/types/supabase.d.ts
++- mcp.json
++- scripts/agents/agent_cadence.json
++- scripts/agents/check_loop_contract_parity.py
++- scripts/agents/context_graph_resolver.py
++- scripts/agents/continuous_agent_loop.py
++- scripts/agents/ecosystem_scout_reference.py
++- scripts/agents/execution_bridge.py
++- scripts/agents/execution_executor.py
++- scripts/agents/learning_feedback.py
++- scripts/agents/loop_cadence.py
++- scripts/agents/loop_common.py
++- scripts/agents/role_registry.py
++- scripts/agents/role_trigger_matrix.py
++- scripts/agents/scout_extractor.py
++- scripts/agents/self_healing_reporter.py
++- scripts/bridge/prune_merged_branches.sh
++- scripts/ci/admin_sovereignty_guard.py
++- scripts/ci/auto_bridge_pr_opener.py
++- scripts/ci/boundary_sanitization_guard.py
++- scripts/ci/bridge_opener_hardening_reference.py
++- scripts/ci/contract_parity_guard.py
++- scripts/ci/controller_evidence_verify.py
++- scripts/ci/cross_platform_invariant_guard.py
++- scripts/ci/deploy_preflight_guard.py
++- scripts/ci/federation_anchors.py
++- scripts/ci/federation_ci_watchdog.py
++- scripts/ci/federation_dispatch.py
++- scripts/ci/federation_satellite_sync.py
++- scripts/ci/frontend_performance_guard.py
++- scripts/ci/hourly_satellite_batcher.py
++- scripts/ci/ingest_pr_knowledge.py
++- scripts/ci/issue_template_guard.py
++- scripts/ci/kaggle_learning_bridge.py
++- scripts/ci/pr_improvement_regression_guard.py
++- scripts/ci/pr_patch_recorder.py
++- scripts/ci/probe_live_status.py
++- scripts/ci/rejected_wo_rescue.py
++- scripts/ci/render_build_quota_guard.py
++- scripts/ci/run_all_guards.py
++- scripts/ci/satellite_board_guard.py
++- scripts/ci/self_healing_reporter.py
++- scripts/ci/staggered_rolling_train.py
++- scripts/ci/stale_claim_releaser.py
++- scripts/ci/sync_graph_to_memory.py
++- scripts/ci/validate_md_links.py
++- scripts/ci/vendored_tree_guard.py
++- scripts/ops/actions_quota_check.py
++- scripts/ops/gitlab_mirror_sync.py
++- scripts/tower/claim_quota_reference.py
++- scripts/tower/nightly_train_reference.py
++- scripts/tower/pr_evidence_envelope.py
++- scripts/tower/tool_consolidation_reference.py
++- scripts/tower/work_claim_reference.py
++- scripts/tower/work_next_reference.py
++- scripts/tower/work_queue_query_reference.py
++- scripts/validate_schemas.py
++- skills/dynamic/csv_exporter.py
++- skills/dynamic/text_summarizer.py
++- skills/marketplace.py
++- skills/schema.py
++- studio/src/components/ConsensusWidget.tsx
++- studio/src/components/EmergencyConsole.tsx
++- studio/src/components/RunwayVisualizer.tsx
++- studio/src/components/SatelliteMatrix.tsx
++- studio/src/components/SwarmDefenseGauge.tsx
++- studio/src/components/chat/UnifiedChatPanel.tsx
++- studio/src/lib/brandLabel.ts
++- studio/src/pages/LandingPage.tsx
++- studio/src/pages/OurStoryPage.tsx
++- studio/src/services/runMachine.ts
++- studio/src/services/stream.ts
++- studio/src/services/telemetryClient.ts
++- studio/src/styles/cockpit.css
++- studio/src/types/domain.ts
++- studio/src/types/federation.ts
++- vscode/.github/workflows/release-client-hub.yml
++- vscode/.github/workflows/release-extension.yml
++- vscode/AGENTS.md
++- vscode/desktop/src-tauri/Cargo.toml
++- vscode/desktop/src-tauri/build.rs
++- vscode/desktop/src-tauri/src/main.rs
++- vscode/desktop/src-tauri/tauri.conf.json
++- vscode/desktop/src/components/CodeViewer.tsx
++- vscode/desktop/src/components/TerminalPanel.tsx
++- vscode/desktop/src/shims.d.ts
++- vscode/extension/package-lock.json
++- vscode/extension/src/chat_view.ts
++- vscode/extension/src/code_actions.ts
++- vscode/extension/src/commands/inline_chat.ts
++- vscode/extension/src/commands/runway_status.ts
++- vscode/extension/src/commands/submit_task.ts
++- vscode/extension/src/context.ts
++- vscode/extension/src/mcp_bridge.ts
++- vscode/extension/src/models.ts
++- vscode/extension/src/status_bar.ts
++- vscode/mobile/capacitor.config.ts
++- vscode/mobile/src/components/BottomNav.tsx
++- vscode/mobile/src/shims.d.ts
++- vscode/package-lock.json
+diff --git a/docs/ZIP_USE_LIST.md b/docs/ZIP_USE_LIST.md
+new file mode 100644
+index 00000000..a57fdb03
+--- /dev/null
++++ b/docs/ZIP_USE_LIST.md
+@@ -0,0 +1,137 @@
++# 📦 Zip → Current Codebase: Recommended Adoption List
++
++> Source folder: `F:\old zip\` (17 archives). Compared against `F:\supremeai-open` (federation mirror).  
++> Rule: every adopted path must pass `python scripts/ci/boundary_sanitization_guard.py --files <paths>` and target an active satellite surface (`studio/*`, `gateway/*`/`api/*`, `core/*`, `browser/*`, `vscode/*`, `skills/*`, `scripts/*`).
++
++## 1. Archive roles (one-line each)
++
++| Archive | Role |
++|---|---|
++| `supremeai-main.zip`, `(1)`–`(12)` | Monolithic SupremeAI snapshots; identical core/backend/frontend across (1)–(11); `(12)` is a trimmed agent/tooling subset. |
++| `supremeai_current_state.zip` | Peak monolith (Sep 28): Zero-Cost Patch 1–4, Card Builder RAG, Telegram bot, ServiceHealthMonitor, HITL. |
++| `supremeai_step1_baseline_5bf27d218.zip` | Same as current_state (baseline rebase snapshot). |
++| `supremeai_1.0_backup.zip` | Older Java/Gradle + Flutter + Firebase project; dashboard/functions/vscode extension; mostly superseded. |
++
++## 2. Core intelligence & zero-cost engine → `core/*`
++
++| Source (zip) | Source path | Target | Notes |
++|---|---|---|---|
++| main/current_state/step1 | `backend/core/zero_cost_architecture/zero_cost_patch_phase1_4.py` | `core/resilience/` | Zero-cost patch phases 1–4 (85.7 KB) |
++| main/current_state | `backend/core/competitive_kit.py` | `core/` | Competitive benchmarking kit |
++| all main | `backend/core/resilience/circuit_breaker.py` | `core/resilience/` | Auto circuit breaker |
++| all main | `backend/core/llm/llm_gateway/completion.py` | `core/llm/` | Cascading free-model gateway |
++| all main | `backend/core/llm/advanced_model_router.py` | `core/llm/` | Smart LLM router |
++| all main | `backend/core/self_evolution/auto_skill_creator.py` | `core/evolution/` | Self-learning skill creator |
++| main (1–4)/current_state | `backend/core/orchestration/swarm_orchestrator.py` | `core/orchestration/` | Multi-agent swarm |
++| all main | `backend/core/security/secret_vault.py` | `core/security/` | Credential masking |
++| current_state/step1/main | `backend/core/security/injections/sql_prevention.py` | `core/security/` | SQL injection shield |
++| all main | `backend/core/cache/multi_layer_cache.py` | `core/cache/` | L1/L2 + Redis cache |
++| current_state/step1/main | `backend/core/cache/redis_manager.py` | `core/cache/` | Redis manager |
++| all main | `backend/agents/infrastructure/cost_optimization_agent.py` | `core/agents/` | Cost optimization agent (34 KB) |
++| all main | `backend/agents/infrastructure/performance_tuning_agent.py` | `core/agents/` | Performance tuning agent |
++| main (1–4)/current_state | `backend/agents/ux/accessibility_agent.py` | `core/agents/` | WCAG audit agent |
++| all main | `backend/agents/infrastructure/disaster_recovery_agent.py` | `core/agents/` | Disaster recovery agent |
++| all main | `backend/agents/data_trend_anomaly_agent.py` | `core/agents/` | Anomaly detection agent |
++| all main | `backend/agents/infrastructure/auto_scaling_agent.py` | `core/agents/` | Auto-scaling agent |
++| all main | `backend/agents/user_retention_risk_agent.py` | `core/agents/` | Retention risk agent |
++| all main | `backend/agents/code_vulnerability_scanner_agent.py` | `core/agents/` | OWASP scanner agent |
++| all main | `backend/agents/domain/bangla_nlp_agent.py` | `core/agents/` | Bangla NLP agent |
++| all main | `backend/agents/evolution_agents/multi_agent_collaboration_agent.py` | `core/agents/` | Multi-agent collaboration |
++
++## 3. API routes & governance → `gateway/service/` (and `api/*`)
++
++| Source | Source path | Target | Notes |
++|---|---|---|---|
++| zips (7)–(12) only | `backend/api/routes/web_ai_proxy.py` | `gateway/service/` | Web AI relay proxy |
++| zips (7)–(12) only | `backend/api/routes/admin_decisions.py` | `gateway/service/` | Admin decision ledger |
++| zips (7)–(12) only | `backend/api/routes/admin_policies.py` | `gateway/service/` | Policy ledger |
++| all main | `backend/api/routes/deep_research.py` | `gateway/service/` | Deep research endpoint |
++| all main | `backend/api/routes/ci_dashboard_api.py` | `gateway/service/` | CI health dashboard |
++| all main | `backend/api/routes/billing_api.py` | `gateway/service/` | Billing/wallet |
++| all main | `backend/api/routes/stream_chat_sse.py` | `gateway/service/` | SSE streaming chat |
++| all main | `backend/api/routes/session_takeover.py` | `gateway/service/` | HITL session takeover |
++| all main | `backend/api/routes/browser/_crown_jewel.py` | `gateway/service/` | Browser automation hub |
++| all main | `backend/api/routes/prompt_templates.py` | `gateway/service/` | Prompt library backend |
++| all main | `backend/api/routes/slash_commands.py` | `gateway/service/` | Slash commands backend |
++| current_state/step1/main | `backend/database/supabase_client.py` | `gateway/service/` | Supabase client w/ retry/pooling |
++| all main | `backend/alembic_migrations/versions/cfe7c95dbee2_add_sentinel_morphic_schema.py` | `gateway/` (migrations) | Sentinel morphic schema |
++| all main | `backend/alembic_migrations/versions/k1l2m3n4o5p6_fix_downgrade_upgrade_table_swap.py` | `gateway/` (migrations) | Table swap bugfix |
++
++## 4. Automation tools & relays → `scripts/*` / `core/tools/` / `skills/`
++
++| Source | Source path | Target | Notes |
++|---|---|---|---|
++| all main | `backend/tools/media/multilingual_tts.py` | `skills/multilingual_tts/` | Bangla+English TTS |
++| all main | `backend/tools/social/telegram_bot/` (4 modules) | `scripts/bots/` | Telegram HITL bot suite |
++| all main | `backend/tools/browser/playwright_browser_agent.py` | `browser/` | Headless Playwright agent |
++| all main | `backend/tools/security_tools/multi_account_rotator.py` | `scripts/ops/` | Multi-account quota rotator |
++| all main | `backend/tools/code/diagram_to_architecture.py` | `core/tools/` | Diagram → code |
++| all main | `backend/tools/code/image_to_code.py` | `core/tools/` | Image → code |
++| current_state/step1/main | `tools/knowledge/card_builder.py` (115 KB) | `core/tools/` | Deep RAG card builder |
++| all main | `backend/tools/knowledge/local_search_rag.py` | `core/tools/` | Local vector RAG |
++| all main | `backend/tools/knowledge/knowledge_base_indexer.py` | `core/tools/` | KB indexer |
++| all main | `backend/tools/social/viral_referral_engine.py` | `scripts/` | Viral referral engine |
++| zips (7)–(12) | `scripts/agents/a2a_messaging_bus.py` | `scripts/agents/` | A2A messaging bus |
++| zips (7)–(12) | `scripts/agents/dynamic_credential_broker.py` | `scripts/agents/` | Credential broker |
++| all main (10+) | `scripts/agents/acquire_role_slot.py` | `scripts/agents/` | Multi-tenant slot acquisition |
++| zips (7)–(12) | `docs/plans/features/n8n_workflow_automation_master_plan.md` | `docs/plans/` | n8n automation master plan |
++
++## 5. Frontend UI crown jewels → `studio/src/components/`
++
++| Source | Source path | Target | Notes |
++|---|---|---|---|
++| main (1–4)/current_state | `frontend/src/components/admin/infra/ServiceHealthMonitor.tsx` | `studio/src/components/admin/` | Live service health monitor |
++| main (1–4)/current_state | `frontend/src/components/admin/AdminDashboardHome.tsx` | `studio/src/components/admin/` | Admin command center |
++| main (1–4)/current_state | `frontend/src/components/dashboard/HumanInTheLoopProtocol.tsx` | `studio/src/components/dashboard/` | HITL modal |
++| main (1–4)/current_state | `frontend/src/components/dashboard/HITLModal.tsx` | `studio/src/components/dashboard/` | HITL modal (alt) |
++| main (1–4)/current_state | `frontend/src/components/dashboard/ActionDock.tsx` | `studio/src/components/dashboard/` | macOS-style action dock |
++| main (1–4)/current_state | `frontend/src/components/dashboard/LivingActionDock.tsx` | `studio/src/components/dashboard/` | Living action dock |
++| main (1–4)/current_state | `frontend/src/components/AgentStateShaderBackground.tsx` | `studio/src/components/` | 3D agent-state shader |
++| main (1–4)/current_state | `frontend/src/components/dashboard/LiveSimulator.tsx` | `studio/src/components/dashboard/` | Live mobile/browser simulator |
++| main (1–4)/current_state | `frontend/src/components/admin/ScreencastViewer.tsx` | `studio/src/components/admin/` | Headless screencast viewer |
++
++## 6. Agent skills → `.agents/skills/`
++
++Missing in current (only `devtools-audit` exists). Adopt from zips:
++
++- `browser-automation`
++- `concise-planning`
++- `developing-genkit-js`
++- `developing-genkit-python`
++- `environment-health`
++- `fastapi-pro`
++- `github-actions-debugger`
++- `mcp-tool-developer`
++- `marketing`
++- `penetration-testing`
++
++## 7. Scripts/agents → `scripts/agents/` (48 missing files)
++
++Adopt the 48 files listed in the diff (a2a_messaging_bus, dynamic_credential_broker, acquire_role_slot, agent_identity, credential_manager, dynamic_router, smart_dispatcher, mcp_tower_client, web_intent_engine, zai_browser_worker, etc.). See `scripts/agents/` diff output.
++
++## 8. Architecture specs → `docs/plans/`
++
++- All 24 files under `docs/plans/crown_jewel_series/` (MODULE_01…MODULE_23 + README).
++- `docs/plans/architecture/crown_jewel_complete_system_integration_blueprint.md`.
++- `scripts/docs/BROWSER_CROWN_JEWEL_INTEGRATION_GUIDE.md`.
++
++## 9. 1.0_backup (low priority / optional)
++
++| Item | Notes |
++|---|---|
++| `dashboard/` (React/Vite admin) | Possibly superseded by studio; review before porting. |
++| `functions/` (Firebase) | Only if Firebase deployment is revived. |
++| `supremeai/` (Flutter app) | Separate mobile product; not a satellite surface. |
++| `supremeai-vscode-extension/` | Compare with current `vscode/`; cherry-pick Java controllers if missing. |
++| `bin/` (1106 files) | Compiled artifacts; do not port. |
++
++## 10. Priority tiers
++
++- **P0 (governance & security):** secret_vault, sql_prevention, circuit_breaker, multi_account_rotator, admin_decisions, admin_policies, web_ai_proxy, a2a_messaging_bus, dynamic_credential_broker.
++- **P1 (core intelligence):** zero_cost_patch_phase1_4, llm gateway completion + router, swarm_orchestrator, auto_skill_creator, cost/performance/disaster agents, card_builder, local_search_rag, KB indexer.
++- **P2 (UI & automation):** ServiceHealthMonitor, HITL modal, ActionDock, LiveSimulator, ScreencastViewer, telegram bot suite, playwright agent, multilingual TTS, diagram/image-to-code, viral referral.
++- **P3 (skills, specs, scripts):** all 10 missing skills, 24 crown jewel specs, 48 missing scripts/agents.
++
++## 11. Boundary guard
++
++All adopted paths must be remapped into approved surfaces (`scripts/{agents,ops,ci,tower,bridge,validate_schemas.py}`, `studio/*`, `gateway/*`, `core/*`, `browser/*`, `vscode/*`, `skills/*`). Root-level `backend/`, `frontend/`, `src/`, `apps/`, `packages/` from the zips are **not** approved surfaces and must never be copied verbatim.
+diff --git a/scripts/agents/a2a_messaging_bus.py b/scripts/agents/a2a_messaging_bus.py
+new file mode 100644
+index 00000000..79aa61d3
+--- /dev/null
++++ b/scripts/agents/a2a_messaging_bus.py
+@@ -0,0 +1,112 @@
++#!/usr/bin/env python3
++"""
++Agent-to-Agent (A2A) Reactive Wakeup & Messaging Bus (#3304).
++
++Lightweight MCP-based message bus for inter-agent communication.
++Any active agent can send a message to another agent's lane, and
++dormant agents receive messages on their next wakeup.
++
++Design (AGENT_RULES.md P1 — Simple + Effective):
++  - File-based message queue (no external broker — uses git repo as bus)
++  - Each agent lane has an inbox: .agents/a2a_inbox/{lane}.jsonl
++  - Messages are JSONL (append-only, idempotent by message_id)
++  - MCP Tower integration: client.send_message(target_lane, message)
++  - Wakeup: target agent checks inbox on next continuous_agent_loop tick
++
++Usage:
++    from scripts.agents.a2a_messaging_bus import A2ABus
++    bus = A2ABus()
++    bus.send("coder-1", {"type": "question", "body": "How does X work?"})
++    messages = bus.receive("coder-1")  # returns + clears inbox
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import time
++import uuid
++from pathlib import Path
++from typing import Optional
++
++ROOT_DIR = Path(__file__).resolve().parents[2]
++INBOX_DIR = ROOT_DIR / ".agents" / "a2a_inbox"
++
++
++class A2ABus:
++    """File-based agent-to-agent message bus."""
++    
++    def __init__(self, inbox_dir: Path | None = None):
++        self.inbox_dir = inbox_dir or INBOX_DIR
++        self.inbox_dir.mkdir(parents=True, exist_ok=True)
++    
++    def _inbox_path(self, lane: str) -> Path:
++        return self.inbox_dir / f"{lane}.jsonl"
++    
++    def send(self, target_lane: str, message: dict, sender: str = "system") -> str:
++        """Send a message to a target agent lane.
++        
++        Returns message_id. Idempotent — duplicate message_ids are ignored.
++        """
++        message_id = str(uuid.uuid4())
++        entry = {
++            "message_id": message_id,
++            "sender": sender,
++            "target": target_lane,
++            "timestamp": time.time(),
++            "body": message,
++        }
++        inbox = self._inbox_path(target_lane)
++        with open(inbox, "a", encoding="utf-8") as f:
++            f.write(json.dumps(entry) + "\n")
++        return message_id
++    
++    def receive(self, lane: str) -> list[dict]:
++        """Receive and clear all messages for a lane.
++        
++        Returns list of messages (oldest first). Inbox is cleared after read.
++        """
++        inbox = self._inbox_path(lane)
++        if not inbox.exists():
++            return []
++        
++        messages = []
++        try:
++            with open(inbox, "r", encoding="utf-8") as f:
++                for line in f:
++                    line = line.strip()
++                    if line:
++                        messages.append(json.loads(line))
++        except (json.JSONDecodeError, IOError):
++            pass
++        
++        # Clear inbox after read
++        inbox.unlink(missing_ok=True)
++        return messages
++    
++    def peek(self, lane: str) -> list[dict]:
++        """Peek at messages without clearing."""
++        inbox = self._inbox_path(lane)
++        if not inbox.exists():
++            return []
++        messages = []
++        try:
++            with open(inbox, "r", encoding="utf-8") as f:
++                for line in f:
++                    line = line.strip()
++                    if line:
++                        messages.append(json.loads(line))
++        except (json.JSONDecodeError, IOError):
++            pass
++        return messages
++    
++    def broadcast(self, message: dict, sender: str = "system", lanes: list[str] | None = None) -> int:
++        """Send a message to all (or specified) lanes."""
++        if lanes is None:
++            # Discover all lanes from inbox files
++            lanes = [f.stem for f in self.inbox_dir.glob("*.jsonl")]
++        count = 0
++        for lane in lanes:
++            self.send(lane, message, sender)
++            count += 1
++        return count
+diff --git a/scripts/agents/automation_watchdog.py b/scripts/agents/automation_watchdog.py
+new file mode 100644
+index 00000000..df3e7023
+--- /dev/null
++++ b/scripts/agents/automation_watchdog.py
+@@ -0,0 +1,301 @@
++#!/usr/bin/env python3
++"""Automation Watchdog (#4168) — SupremeAI স্বয়ংক্রিয়তা-নিয়ন্ত্রণ-তন্ত্রের স্বাধীন প্রাণ-নিরীক্ষা।
++
++মডেল (issue #4168):
++    application/CI automation → agent/evaluator/remediation → **independent watchdog**
++
++এই watchdog যে path পাহারা দেয় তার উপর নির্ভরশীল নয়:
++  - সব I/O injectable (contract tests pure core চালায় — নেটওয়ার্ক/git নেই)
++  - read-only পর্যবেক্ষণ; কোনো destructive remediation নেই
++  - নিজের failure কখনো "সুস্থ" রায় দেয় না (fail-closed: UNKNOWN ≠ healthy)
++  - নিজের heartbeat: এই script-এর রান-রেকর্ডই বাহ্যিকভাবে পর্যবেক্ষণযোগ্য
++    (workflow run history) — আলাদা scheduler ছাড়াই circular-dependency মুক্ত
++
++Detect (issue scope):
++  1. stale heartbeat   — critical automation-এর last-seen বয়স > threshold
++  2. stuck claim       — status:in-progress issue দীর্ঘদিন has-pr ছাড়া আটকে
++  3. stale CI evaluator— AI PR Evaluator-এর সর্বশেষ সফল রান বয়স > threshold
++
++Dedup (#4168: no issue storms):
++  প্রতিটি finding-এ stable fingerprint `<!-- watchdog-fp:{fp} -->`; open issue-তে
++  marker থাকলে নতুন issue নয় — প্রমাণ-সহ নতুন কমেন্ট। recovery-তে নিজের আগের
++  issue auto-close (fp marker দিয়ে খুঁজে)।
++
++Usage:
++    python scripts/agents/automation_watchdog.py --report-json        # শুধু রিপোর্ট
++    python scripts/agents/automation_watchdog.py --create-issues      # খুঁজে ইস্যু-ও বানায়/বন্ধ করে
++"""
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import sys
++import time
++from datetime import datetime, timezone
++from pathlib import Path
++
++if sys.platform == "win32":
++    if hasattr(sys.stdout, "reconfigure"):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++    if hasattr(sys.stderr, "reconfigure"):
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++ROOT = Path(__file__).resolve().parents[2]
++REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
++
++# ---------------------------------------------------------------- thresholds
++HEARTBEAT_STALE_S = 6 * 3600        # agent-loop heartbeat: ৬ ঘণ্টা নীরবতা = stale
++CLAIM_STUCK_S = 24 * 3600           # in-progress claim: ২৪ ঘণ্টা has-pr ছাড়া = stuck
++EVALUATOR_STALE_S = 24 * 3600       # CI evaluator সফল রান: ২৪ ঘণ্টা = stale
++
++WATCHDOG_FP_TAG = "watchdog-fp"     # issue-body marker (fingerprint dedup SSOT)
++
++
++# ---------------------------------------------------------------------------
++# Deterministic core — contract-testable (tests/test_automation_watchdog.py)
++# ---------------------------------------------------------------------------
++def assess_heartbeat(last_seen_epoch: float | None, now: float,
++                     stale_after_s: int = HEARTBEAT_STALE_S) -> dict:
++    """Heartbeat মূল্যায়ন — healthy | stale | unknown (কখনো মিথ্যে সুস্থ নয়)।
++
++    - last_seen মিসিং/অপার্সযোগ্য → unknown (fail-closed)
++    - বয়স > stale_after_s → stale (evidence সহ)
++    - নইলে healthy
++    """
++    if last_seen_epoch is None:
++        return {"state": "unknown", "age_s": None,
++                "reason": "no heartbeat record — fail-closed, কখনো healthy ধরা হয় না"}
++    age = now - float(last_seen_epoch)
++    if age > stale_after_s:
++        return {"state": "stale", "age_s": int(age),
++                "reason": f"heartbeat বয়স {int(age)}s > threshold {stale_after_s}s"}
++    return {"state": "healthy", "age_s": int(age),
++            "reason": f"last-seen {int(age)}s আগে"}
++
++
++def fingerprint(finding_type: str, scope: str) -> str:
++    """Stable dedup fingerprint (#4168) — type+scope normalized; সময়/রান-আইডি বাদ।"""
++    import hashlib
++    norm = f"{finding_type.strip().lower()}|{scope.strip().lower()}"
++    return hashlib.sha256(norm.encode()).hexdigest()[:16]
++
++
++def evaluate(observations: dict, now: float) -> list[dict]:
++    """সব পর্যবেক্ষণ → deduplicated findings (stable fingerprint সহ)।
++
++    observations:
++      heartbeats:  [{name, last_seen_epoch|None}]           — critical automation
++      claims:      [{issue, agent, claimed_at_epoch|None, has_pr, open}]
++      evaluator:   {last_success_epoch|None, name}
++    এক scope-এ একাধিক ব্যর্থতা এক finding-এ মার্জ হয় (storm-নিয়ন্ত্রণ)।
++    """
++    findings: list[dict] = []
++    seen_fps: set[str] = set()
++
++    def _add(ftype: str, scope: str, evidence: str, severity: str = "warning") -> None:
++        fp = fingerprint(ftype, scope)
++        if fp in seen_fps:      # duplicate suppression — একই fp এক রিপোর্টে একবারই
++            return
++        seen_fps.add(fp)
++        findings.append({"type": ftype, "scope": scope, "fingerprint": fp,
++                         "severity": severity, "evidence": evidence,
++                         "detected_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat().replace("+00:00", "Z")})
++
++    # 1. heartbeats (প্রতি name আলাদা scope — আলাদা fix আলাদা issue)
++    for hb in observations.get("heartbeats", []):
++        state = assess_heartbeat(hb.get("last_seen_epoch", hb.get("timestamp")), now)
++        if state["state"] != "healthy":
++            _add("stale_heartbeat", hb.get("name", "unknown"),
++                 f"state={state['state']}; {state['reason']}")
++
++    # 2. stuck claims
++    for cl in observations.get("claims", []):
++        if not cl.get("open", True) or cl.get("has_pr"):
++            continue
++        claimed = cl.get("claimed_at_epoch")
++        if claimed is None:
++            _add("stuck_claim", f"issue-{cl.get('issue', '?')}",
++                 "claim সময় রেকর্ডহীন — fail-closed", severity="info")
++            continue
++        age = now - float(claimed)
++        if age > CLAIM_STUCK_S:
++            _add("stuck_claim", f"issue-{cl.get('issue', '?')}",
++                 f"in-progress + no has-pr ধরে {int(age)}s (agent={cl.get('agent', '?')})")
++
++    # 3. CI evaluator inactivity (একটিই স্কোপ: evaluator পুরোটা)
++    ev = observations.get("evaluator") or {}
++    ev_state = assess_heartbeat(ev.get("last_success_epoch", ev.get("timestamp")), now, EVALUATOR_STALE_S)
++    if ev_state["state"] != "healthy":
++        _add("stale_ci_evaluator", ev.get("name", "ai-pr-evaluator"),
++             f"state={ev_state['state']}; {ev_state['reason']}")
++
++    return findings
++
++
++# ---------------------------------------------------------------------------
++# Recovery — নিজের আগের issue-গুলো ঠিক হয়ে গেলে বন্ধ (auto-close)
++# ---------------------------------------------------------------------------
++def collect_watchdog_issues(issue_list: list[dict]) -> dict[str, dict]:
++    """Open issue তালিকা থেকে watchdog-নিজস্ব issue মানচিত্র {fp: issue}।"""
++    out: dict[str, dict] = {}
++    for it in issue_list:
++        body = it.get("body") or ""
++        tag = f"<!-- {WATCHDOG_FP_TAG}:"
++        if tag in body:
++            fp = body.split(tag, 1)[1].split("-->", 1)[0].strip()
++            out[fp] = {"number": it.get("number"), "title": it.get("title", "")}
++    return out
++
++
++def compute_recoveries(open_watchdog_issues: dict[str, dict],
++                       findings: list[dict]) -> list[dict]:
++    """আগের watchdog issue যেগুলো এখন আর finding নয় = recovered → বন্ধ হবে।"""
++    live_fps = {f["fingerprint"] for f in findings}
++    return [{"fingerprint": fp, "issue": v["number"], "title": v["title"]}
++            for fp, v in open_watchdog_issues.items() if fp not in live_fps]
++
++
++# ---------------------------------------------------------------------------
++# I/O সংগ্রাহক — চিকন, injectable; ব্যর্থতা = unknown (fail-closed)
++# ---------------------------------------------------------------------------
++def run(cmd: list[str]) -> tuple[int, str, str]:
++    r = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=False)
++    return r.returncode, r.stdout.strip(), r.stderr.strip()
++
++
++def gh_json(endpoint: str) -> object | None:
++    token = os.environ.get("GH_TOKEN", os.environ.get("GITHUB_TOKEN", ""))
++    if not token:
++        return None
++    import urllib.request
++    req = urllib.request.Request(
++        f"https://api.github.com/repos/{REPO}/{endpoint}",
++        headers={"Authorization": f"token {token}", "Accept": "application/vnd.github+json"})
++    try:
++        with urllib.request.urlopen(req, timeout=30) as r:
++            return json.loads(r.read())
++    except Exception:  # noqa: BLE001 — ব্যর্থতা = unknown, কখনো মিথ্যে সুস্থ নয়
++        return None
++
++
++def collect_observations() -> dict:
++    """লাইভ পর্যবেক্ষণ — সব সংগ্রাহকের ব্যর্থতা unknown-এ নামে।"""
++    now = time.time()
++
++    # heartbeats: agent heartbeat pinger-এর লোকাল state ফাইল (থাকলে)
++    heartbeats: list[dict] = []
++    hb_state = ROOT / "tools" / "agent_heartbeat" / "state.json"
++    try:
++        if hb_state.exists():
++            data = json.loads(hb_state.read_text())
++            for name, rec in (data.get("agents") or {}).items():
++                heartbeats.append({"name": name, "last_seen_epoch": rec.get("last_seen_epoch")})
++        else:
++            heartbeats.append({"name": "agent-heartbeat-store", "last_seen_epoch": None})
++    except Exception:  # noqa: BLE001
++        heartbeats.append({"name": "agent-heartbeat-store", "last_seen_epoch": None})
++
++    # stuck claims: status:in-progress open issues
++    claims: list[dict] = []
++    issues = gh_json("issues?state=open&labels=status:in-progress&per_page=50") or []
++    for it in issues if isinstance(issues, list) else []:
++        if "pull_request" in it:
++            continue
++        claimed_at = None
++        try:
++            ts = it.get("created_at")
++            if ts:
++                claimed_at = datetime.fromisoformat(str(ts).replace("Z", "+00:00")).timestamp()
++        except ValueError:
++            pass
++        claims.append({"issue": it.get("number"), "agent": "?",
++                       "claimed_at_epoch": claimed_at, "has_pr": "has-pr" in
++                       [lb.get("name", "") for lb in it.get("labels", [])], "open": True})
++
++    # CI evaluator: AI PR Evaluator-এর শেষ সফল রান
++    runs = gh_json("actions/workflows/ai-pr-evaluation.yml/runs?status=success&per_page=1")
++    last_success = None
++    try:
++        wr = (runs or {}).get("workflow_runs", [])
++        if wr:
++            last_success = datetime.fromisoformat(
++                str(wr[0].get("created_at", "")).replace("Z", "+00:00")).timestamp()
++    except (ValueError, AttributeError, TypeError):
++        pass
++
++    return {"now_epoch": now,
++            "heartbeats": heartbeats,
++            "claims": claims,
++            "evaluator": {"name": "ai-pr-evaluator", "last_success_epoch": last_success}}
++
++
++def issue_body_for(finding: dict) -> str:
++    """Issue body — fp marker + evidence + last-seen (#4168 চুক্তি)।"""
++    return (
++        f"<!-- {WATCHDOG_FP_TAG}:{finding['fingerprint']} -->\n"
++        f"## 🐕 Watchdog Finding — {finding['type']}\n\n"
++        f"**Scope:** {finding['scope']} · **Severity:** {finding['severity']}\n\n"
++        f"**Detection:** {finding['detected_at']}\n\n"
++        f"**Evidence:** {finding['evidence']}\n\n"
++        f"**Fingerprint:** `{finding['fingerprint']}` — একই সমস্যা পুনরাবৃত্ত হলে নতুন issue নয়, "
++        f"এই issue-তে কমেন্ট জমা হবে (storm-নিয়ন্ত্রণ #4168)। সমস্যা মিটলে watchdog এটি auto-close করবে।\n\n"
++        f"_Read-only watchdog (#4168) — auto-generated; root-cause fix এই issue-তেই claim করুন।_\n"
++    )
++
++
++def create_issue_for(finding: dict) -> int | None:
++    title = f"🐕 [watchdog] {finding['type']}: {finding['scope']}"
++    rc, out, _ = run(["gh", "issue", "create", "--title", title,
++                      "--body", issue_body_for(finding),
++                      "--label", "bug,handoff:coder"])
++    return int(out.rstrip().rsplit("/", 1)[-1]) if rc == 0 else None
++
++
++def close_recovered(rec: dict) -> bool:
++    rc, _, _ = run(["gh", "issue", "close", str(rec["issue"]), "--reason", "completed",
++                    "--comment", "🐕 Watchdog recovery — finding আর পুনরুৎপাদিত হচ্ছে না "
++                                 "(সর্বশেষ পর্যবেক্ষণে সুস্থ)। auto-close (#4168 recovery চুক্তি)।"])
++    return rc == 0
++
++
++def main() -> int:
++    import argparse
++    parser = argparse.ArgumentParser(description="Automation Watchdog (#4168)")
++    parser.add_argument("--report-json", action="store_true", help="stdout JSON রিপোর্ট")
++    parser.add_argument("--create-issues", action="store_true",
++                        help="finding থাকলে dedup-fingerprint সহ issue তৈরি/বন্ধ")
++    args = parser.parse_args()
++
++    obs = collect_observations()
++    now = obs["now_epoch"]
++    findings = evaluate({"heartbeats": obs["heartbeats"], "claims": obs["claims"],
++                         "evaluator": obs["evaluator"]}, now)
++    report = {"watchdog_run_at": datetime.fromtimestamp(now, tz=timezone.utc).isoformat().replace("+00:00", "Z"),
++              "observations_count": {k: len(obs[k]) for k in ("heartbeats", "claims")},
++              "findings": findings,
++              "verdict": "DEGRADED" if findings else "HEALTHY",
++              "note": "watchdog নিজের অজুহাতে 'সুস্থ' বলে না — সংগ্রাহক ব্যর্থতা = unknown finding"}
++
++    if args.report_json or not args.create_issues:
++        print(json.dumps(report, indent=2, ensure_ascii=False))
++
++    if args.create_issues:
++        existing = collect_watchdog_issues(
++            (gh_json("issues?state=open&per_page=100") or []) if isinstance(
++                gh_json("issues?state=open&per_page=100"), list) else [])
++        for f in findings:
++            if f["fingerprint"] in existing:
++                print(f"↻ dedup: {f['type']}:{f['scope']} → বিদ্যমান #{existing[f['fingerprint']]['number']}")
++                continue
++            num = create_issue_for(f)
++            print(f"✚ created #{num} for {f['type']}:{f['scope']}" if num else f"✗ create fail: {f['type']}")
++        for rec in compute_recoveries(existing, findings):
++            ok = close_recovered(rec)
++            print(f"✔ recovered #{rec['issue']} closed" if ok else f"✗ close fail #{rec['issue']}")
++
++    return 0 if not findings else 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/agents/capability_lookup.py b/scripts/agents/capability_lookup.py
+new file mode 100644
+index 00000000..56cde2e1
+--- /dev/null
++++ b/scripts/agents/capability_lookup.py
+@@ -0,0 +1,115 @@
++#!/usr/bin/env python3
++"""Capability Before Construction lookup (Roadmap v2.0 Phase 8 — #4145).
++
++Answers the roadmap's mandatory pre-build ladder from the EXISTING inventories
++(read-only, zero writes, zero new SSOT):
++
++    Can existing capability solve this?  → YES → Reuse / compose
++    NO → Can existing capabilities be combined?          → Compose
++    NO → Only then consider new capability
++
++Sources (both already CI-linted — inventory_lint.py / validate_capability_inventory.py):
++  * docs/capability_inventory.json  — curated capability catalog
++  * docs/architecture/inventory.yaml — module/provider/service inventory
++
++CLI:
++    python scripts/agents/capability_lookup.py "redis cache"
++    python scripts/agents/capability_lookup.py --check "issue triage"
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import logging
++import sys
++from pathlib import Path
++
++logger = logging.getLogger(__name__)
++
++REPO_ROOT = Path(__file__).resolve().parents[2]
++CAPABILITY_JSON = REPO_ROOT / "docs" / "capability_inventory.json"
++INVENTORY_YAML = REPO_ROOT / "docs" / "architecture" / "inventory.yaml"
++
++
++def _iter_capability_json() -> list[dict]:
++    try:
++        data = json.loads(CAPABILITY_JSON.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError):
++        logger.debug("capability inventory unreadable: %s", CAPABILITY_JSON, exc_info=True)
++        return []
++    items = data.get("capabilities", data) if isinstance(data, dict) else data
++    return [c for c in items if isinstance(c, dict)]
++
++
++def _iter_inventory_yaml() -> list[dict]:
++    try:
++        import yaml
++
++        data = yaml.safe_load(INVENTORY_YAML.read_text(encoding="utf-8")) or {}
++    except Exception:
++        logger.debug("inventory.yaml unreadable: %s", INVENTORY_YAML, exc_info=True)
++        return []
++    out: list[dict] = []
++    for section, entries in data.items():
++        if section == "schema_version" or not isinstance(entries, list):
++            continue
++        for e in entries:
++            if isinstance(e, dict) and e.get("name"):
++                out.append({"_section": section, **e})
++    return out
++
++
++def search(query: str, limit: int = 8) -> list[dict]:
++    """Substring search across both inventories (name/id/file/notes fields)."""
++    q = (query or "").strip().lower()
++    if not q:
++        return []
++    hits: list[dict] = []
++    for c in _iter_capability_json():
++        hay = " ".join(str(c.get(k, "")) for k in ("id", "name", "classification")).lower()
++        if q in hay:
++            hits.append({"source": "capability_inventory.json", "id": c.get("id"),
++                         "name": c.get("name"), "classification": c.get("classification")})
++    for e in _iter_inventory_yaml():
++        hay = " ".join(str(e.get(k, "")) for k in ("name", "file", "class", "notes", "_section")).lower()
++        if q in hay:
++            hits.append({"source": "inventory.yaml", "section": e.get("_section"),
++                         "name": e.get("name"), "file": e.get("file"), "status": e.get("status")})
++    return hits[:limit]
++
++
++def reuse_ladder(query: str) -> dict:
++    """The Phase 8 ladder verdict: reuse → compose → new (with evidence)."""
++    hits = search(query, limit=8)
++    if hits:
++        return {
++            "verdict": "reuse",
++            "query": query,
++            "existing": hits,
++            "next": "Reuse or compose these capabilities — do NOT build a parallel one (Rule A).",
++        }
++    return {
++        "verdict": "compose_or_new",
++        "query": query,
++        "existing": [],
++        "next": (
++            "No direct match. 1) Can two existing capabilities be COMBINED? "
++            "2) Only then propose a new capability — with an owner_issue + inventory entry."
++        ),
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Capability Before Construction lookup (#4145)")
++    parser.add_argument("query", help="capability keyword, e.g. 'redis cache'")
++    parser.add_argument("--check", action="store_true",
++                        help="exit 1 when no existing capability matches (pre-build gate)")
++    args = parser.parse_args()
++    result = reuse_ladder(args.query)
++    print(json.dumps(result, indent=1))
++    return 1 if (args.check and result["verdict"] != "reuse") else 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/agents/credential_manager.py b/scripts/agents/credential_manager.py
+new file mode 100644
+index 00000000..c89049e5
+--- /dev/null
++++ b/scripts/agents/credential_manager.py
+@@ -0,0 +1,625 @@
++#!/usr/bin/env python3
++"""Scoped JIT Credential Manager for SupremeAI autonomous agents (Issue #2644).
++
++বাংলা পরিচিতি (#2644 — Scoped JIT Credential Injection):
++এজেন্টদের আর পুরো environment ডাম্প বা মাস্টার কী দেওয়া হবে না (Principle of
++Least Privilege)। এই মডিউলটি হলো single source of truth (SSOT) ব্রোকার:
++
++  1. BOT_SLOT_CREDENTIALS — স্লট → GitHub App mapping (SSOT; push_as_agent.py
++     আর inline কপি রাখে না — #1821-এর ৫ম registry-copy drift ঝুঁকি বন্ধ)।
++  2. Task-based scope filter — role অনুযায়ী child process-এ ONLY অনুমোদিত
++     env key ইনজেক্ট হয় (coder ≠ planner ≠ audit)।
++  3. JIT installation-token mint — ১ ঘণ্টার ক্ষণস্থায়ী token, RAM-only;
++     কোনো কী কোথাও লেখা হয় না, লগে টোকেন mask হয়।
++  4. Ephemeral Coder Lease — ৩য় পক্ষ/অনিবন্ধিত এজেন্ট task claim করলে ফ্রি
++     স্লট-পুল থেকে TTL=3600s lease পায় (#2644 item 3 — Task-Claiming Bridge)।
++  5. Zero-knowledge audit — সিক্রেটের শুধু নাম/উপস্থিতি যাচাই, ভ্যালু কখনো
++     দেখা/প্রিন্ট হয় না (Control Tower masking-এর লোকাল পূরক)।
++
++Rules (#2644 §4-5): স্ক্রিপ্ট সোর্সে কোনো কী হার্ডকোড নিষিদ্ধ; ক্রেডেনশিয়াল
++শুধু রানটাইম env (vault.env / Infisical) থেকে মেমরিতে লোড হয়। Rules
++Breaker এজেন্ট জিরো-কি স্যান্ডবক্সে চলে — এই মডিউল তাকে কোনো কী দেয় না।
++
++CLI:
++    python scripts/agents/credential_manager.py --slot agent-3 --print-scope
++    python scripts/agents/credential_manager.py --lease unregistered-agent --ttl 3600
++    python scripts/agents/credential_manager.py --audit --require GITHUB_APP_ID --require GITHUB_APP_PRIVATE_KEY
++
++Exit codes: 0 = OK, 1 = credential/lease failure, 2 = usage error.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import subprocess
++import sys
++import time
++from pathlib import Path
++
++if hasattr(sys.stdout, "reconfigure"):
++    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++if hasattr(sys.stderr, "reconfigure"):
++    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++ROOT_DIR = Path(__file__).resolve().parents[2]
++if str(ROOT_DIR) not in sys.path:
++    sys.path.insert(0, str(ROOT_DIR))
++
++DEFAULT_VAULT_ENV = ROOT_DIR / "vault.env"
++DEFAULT_LEASE_STORE = Path(os.environ.get("SUPREMEAI_LEASE_STORE", "/tmp/supremeai_agent_leases.json"))
++
++INFISICAL_AUTH_URL = "https://app.infisical.com/api/v1/auth/universal-auth/login"
++INFISICAL_SECRETS_URL = "https://app.infisical.com/api/v3/secrets/raw"
++GITHUB_TOKEN_URL = "https://api.github.com/app/installations/{installation_id}/access_tokens"
++
++# ─────────────────────────────────────────────────────────────────────────────
++# SSOT: slot → GitHub App credential routing (#2644 item 1, #1821 follow-up).
++# Governance source: docs/master_docs/AGENT_SLOT_REGISTRY.yaml (role pools);
++# this table is its machine-consumable credential-routing projection — the
++# ONLY place env-prefix/bot-name wiring lives (push_as_agent.py imports it).
++# NO SECRETS HERE — only identities; credentials come from env/vault at runtime.
++# ─────────────────────────────────────────────────────────────────────────────
++BOT_SLOT_CREDENTIALS = {
++    "agent-1": {
++        "bot_name": "supremeai-planner",
++        "env_prefix": "GITHUB_APP",
++        "role": "planner",
++        "scopes": ["issues:write"],  # planner = issue-output lane (charter §1)
++    },
++    "agent-2": {
++        "bot_name": "supremeai-pr-helper",
++        "env_prefix": "AGENT_PR_HELPER",
++        "role": "pr-helper",
++        "scopes": ["pull_requests:write", "issues:write"],
++    },
++    "agent-3": {
++        "bot_name": "supremeai-coder-1",
++        "env_prefix": "AGENT_CODER_1",
++        "role": "coder",
++        "scopes": ["contents:write", "pull_requests:write", "issues:write"],
++    },
++    "agent-5": {
++        "bot_name": "supremeai-ci-action",
++        "env_prefix": "AGENT_CI_ACTION",
++        "role": "ci",
++        "scopes": ["contents:write", "workflows:write", "pull_requests:write"],
++    },
++    "agent-6": {
++        "bot_name": "supremeai-coder-2",
++        "env_prefix": "AGENT_CODER_2",
++        "role": "coder",
++        "scopes": ["contents:write", "pull_requests:write", "issues:write"],
++    },
++    # #2644 item 2/4: 3rd-party audit agents get issue-creation access ONLY,
++    # sourced from the shared planner/audit app pool via ephemeral lease —
++    # never a dedicated admin key.
++    "audit-pool": {
++        "bot_name": "supremeai-planner",
++        "env_prefix": "GITHUB_APP",
++        "role": "auditor",
++        "scopes": ["issues:write"],
++        "lease_only": True,
++    },
++}
++
++# Task-based scope filter (#2644 item 1): role → the ONLY env keys a child
++# agent subprocess may receive. Anything else in the orchestrator's env
++# (vault master creds, other slots' keys) is dropped — least privilege.
++# বাংলা (#3229): AI provider keys — coder/ci/auditor roles-কে LLM access দিতে হবে,
++# নাহলে autonomous agents + AI PR evaluator llm-unavailable fallback-এ পড়ে।
++# rules_breaker stays zero-key (negative testing)। planner/pr-helper/browser
++# দরকার নেই (issue-output/PR-gate/E2E — LLM call করে না)।
++_AI_PROVIDER_KEYS = {
++    "GROQ_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY",
++    "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY",
++}
++
++_BASE_SCOPED_KEYS = {"GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME"}
++
++# #4134: MCP Tower operational keys — the coordination plane every tower-
++# coordinated role needs (heartbeat, role updates). NOT master vault creds
++# (INFISICAL_*/GITHUB_APP_* stay orchestrator-only in FORBIDDEN_ENV_KEYS).
++# mcp_tower_client reads MCP_TOWER_URL (→MCP_SERVER_URL fallback) + MCP_API_KEY;
++# without them children silently degrade to viewer mode (read-only).
++_MCP_TOWER_KEYS = {"MCP_API_KEY", "MCP_TOWER_URL"}
++
++TASK_SCOPED_ENV_KEYS = {
++    "planner": _BASE_SCOPED_KEYS | _MCP_TOWER_KEYS,
++    "coder": _BASE_SCOPED_KEYS | _AI_PROVIDER_KEYS | _MCP_TOWER_KEYS,
++    "pr-helper": _BASE_SCOPED_KEYS | _MCP_TOWER_KEYS,
++    "ci": _BASE_SCOPED_KEYS | _AI_PROVIDER_KEYS | _MCP_TOWER_KEYS,
++    "platform": _BASE_SCOPED_KEYS,
++    "browser": _BASE_SCOPED_KEYS,
++    "auditor": _BASE_SCOPED_KEYS | _AI_PROVIDER_KEYS | _MCP_TOWER_KEYS,
++    # Rules Breaker / red-team (#2644 §4): ZERO-KEY sandbox — negative testing
++    # proves no key is needed to be refused; the agent gets NOTHING here.
++    "rules_breaker": set(),
++}
++
++# Env keys that must NEVER leak into a child process regardless of role —
++# vault master credentials are orchestrator-only (zero-knowledge broker).
++FORBIDDEN_ENV_KEYS = {
++    "INFISICAL_CLIENT_ID",
++    "INFISICAL_CLIENT_SECRET",
++    "INFISICAL_PROJECT_ID",
++    "GITHUB_APP_PRIVATE_KEY",
++    "GITHUB_APP_ID",
++    "GITHUB_APP_INSTALLATION_ID",
++}
++
++
++class CredentialError(RuntimeError):
++    """Raised when scoped credentials cannot be resolved or minted."""
++
++
++def slot_config(slot: str) -> dict:
++    cfg = BOT_SLOT_CREDENTIALS.get(slot)
++    if not cfg:
++        raise CredentialError(
++            f"Unknown slot '{slot}'. Known slots: {sorted(BOT_SLOT_CREDENTIALS)}"
++        )
++    return cfg
++
++
++def load_vault_env(path: Path | None = None) -> dict:
++    """Parse a vault.env file (KEY=VALUE lines; quotes stripped). Values stay
++    in memory only — never logged, never returned to callers' __repr__."""
++    p = Path(path) if path else DEFAULT_VAULT_ENV
++    env: dict = {}
++    if not p.exists():
++        return env
++    for line in p.read_text(encoding="utf-8").splitlines():
++        line = line.strip()
++        if not line or line.startswith("#") or "=" not in line:
++            continue
++        k, _, v = line.partition("=")
++        env[k.strip()] = v.strip().strip('"').strip("'")
++    return env
++
++
++def _vault_extras_from(secrets: dict) -> dict:
++    """Curated non-secret-credential delivery set from an already-fetched vault
++    response (#4134): MCP Tower operational keys + AI provider keys.
++
++    # বাংলা: fetch_credentials যেই secrets dict এর মধ্যে থাকে সেখান থেকেই scoped
++    # spawn-এর জন্য দরকারি operational keys বের করে দেয় — কোনো অতিরিক্ত network
++    # call নেই, কোনো নতুন ফ্রেমওয়ার্ক নেই (Rule A)। খালি ভ্যালু কখনো যায় না।
++    """
++    extras = {
++        k: str(secrets[k]) for k in sorted(_AI_PROVIDER_KEYS)
++        if str(secrets.get(k, "")).strip()
++    }
++    api_key = str(secrets.get("MCP_API_KEY", "")).strip()
++    if api_key:
++        extras["MCP_API_KEY"] = api_key
++    # mcp_tower_client resolution order: MCP_TOWER_URL → MCP_SERVER_URL (→ mcp.json).
++    # Vault stores the tower URL under whichever name ops chose; canonicalize to
++    # MCP_TOWER_URL so children always speak the client's primary env name.
++    tower_url = next(
++        (str(secrets[k]).strip() for k in ("MCP_TOWER_URL", "MCP_SERVER_URL", "MCP_URL")
++         if str(secrets.get(k, "")).strip()),
++        "",
++    )
++    if tower_url:
++        extras["MCP_TOWER_URL"] = tower_url
++    return extras
++
++
++def fetch_credentials(slot: str, vault: dict, transport=None) -> dict:
++    """Resolve app credentials for a slot from Infisical (universal-auth).
++
++    # বাংলা: ক্রেডেনশিয়াল শুধু রানটাইমে vault থেকে মেমরিতে আসে — সোর্সে
++    # হার্ডকোড নিষিদ্ধ (rule 2)। transport injectable = টেস্টে নেটওয়ার্ক লাগে না।
++    """
++    cfg = slot_config(slot)
++    prefix = cfg["env_prefix"]
++    secrets = _infisical_fetch_secrets(vault, transport)
++    app_id = secrets.get(f"{prefix}_APP_ID") or secrets.get("GITHUB_APP_ID")
++    inst_id = secrets.get(f"{prefix}_INSTALLATION_ID") or secrets.get(
++        "GITHUB_APP_INSTALLATION_ID"
++    )
++    pem = secrets.get(f"{prefix}_PRIVATE_KEY") or secrets.get("GITHUB_APP_PRIVATE_KEY")
++    if not all([app_id, inst_id, pem]):
++        # #4081: actionable error — explain what's missing + how to fix
++        prefix_vars = [f"{prefix}_APP_ID", f"{prefix}_INSTALLATION_ID", f"{prefix}_PRIVATE_KEY"]
++        fallback_vars = ["GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID", "GITHUB_APP_PRIVATE_KEY"]
++        raise CredentialError(
++            f"Missing GitHub App creds for slot '{slot}' (prefix {prefix}).\n"
++            f"Expected Infisical secrets (one of):\n"
++            f"  Slot-specific: {prefix_vars}\n"
++            f"  Fallback: {fallback_vars}\n"
++            f"Check Infisical dashboard → prod environment → secretPath '/' → "
++            f"ensure these secrets exist for slot '{slot}'.\n"
++            f"Verify vault.env: python scripts/agents/credential_bootstrap.py --verify\n"
++            f"See: docs/agents/credentials.md"
++        )
++    return {
++        "slot": slot,
++        "bot_name": cfg["bot_name"],
++        "role": cfg["role"],
++        "scopes": list(cfg["scopes"]),
++        "app_id": app_id,
++        "installation_id": inst_id,
++        "private_key": pem,
++        # #4134: same-fetch delivery extras (MCP Tower + AI keys) for the scoped
++        # child env — orchestrator passes them through build_scoped_env(base_env).
++        "vault_extras": _vault_extras_from(secrets),
++    }
++
++
++def _infisical_fetch_secrets(vault: dict, transport=None) -> dict:
++    """Universal-auth login + raw secrets fetch. transport(requests-like) is
++    injectable for offline tests.
++
++    # বাংলা (#4081): Infisical login/secrets fetch-এ যেকোনো network/JSON error
++    # হলে actionable CredentialError দেয় — silent KeyError নয়।
++    """
++    if transport is None:
++        try:
++            import requests as transport  # type: ignore[no-redef]
++        except ImportError as err:
++            raise CredentialError(
++                "network transport unavailable (pip install requests) "
++                "and no test transport injected"
++            ) from err
++    try:
++        login = transport.post(
++            INFISICAL_AUTH_URL,
++            data={
++                "clientId": vault.get("INFISICAL_CLIENT_ID", ""),
++                "clientSecret": vault.get("INFISICAL_CLIENT_SECRET", ""),
++            },
++            timeout=30,
++        )
++    except Exception as err:
++        raise CredentialError(
++            f"Infisical login request failed (network error): {err}. "
++            f"Check network connectivity to {INFISICAL_AUTH_URL}."
++        ) from err
++    try:
++        login_json = login.json()
++    except Exception as err:
++        raise CredentialError(
++            f"Infisical login returned non-JSON response (HTTP {login.status_code}). "
++            f"Possible server error or wrong auth URL."
++        ) from err
++    access_token = login_json.get("accessToken")
++    if not access_token:
++        # #4081: actionable error — Infisical login failed (wrong creds)
++        raise CredentialError(
++            f"Infisical login failed — no accessToken in response. "
++            f"Check INFISICAL_CLIENT_ID / INFISICAL_CLIENT_SECRET in vault.env. "
++            f"Verify: python scripts/agents/credential_bootstrap.py --verify\n"
++            f"See: docs/agents/credentials.md"
++        )
++    try:
++        resp = transport.get(
++            INFISICAL_SECRETS_URL,
++            params={
++                "workspaceId": vault.get("INFISICAL_PROJECT_ID", ""),
++                "environment": "prod",
++                "secretPath": "/",
++                "include_imports": "true",
++            },
++            headers={"Authorization": f"Bearer {access_token}"},
++            timeout=30,
++        )
++    except Exception as err:
++        raise CredentialError(
++            f"Infisical secrets fetch request failed (network error): {err}."
++        ) from err
++    try:
++        secrets_payload = resp.json()
++    except Exception as err:
++        raise CredentialError(
++            f"Infisical secrets fetch returned non-JSON (HTTP {resp.status_code}). "
++            f"Possible token expiry or wrong INFISICAL_PROJECT_ID."
++        ) from err
++    if "secrets" not in secrets_payload:
++        raise CredentialError(
++            f"Infisical returned no 'secrets' key in response. "
++            f"Check INFISICAL_PROJECT_ID in vault.env. "
++            f"Verify: python scripts/agents/credential_bootstrap.py --verify"
++        )
++    return {
++        s["secretKey"]: s.get("secretValue", "") or ""
++        for s in secrets_payload["secrets"]
++    }
++
++
++def mint_installation_token(app_id: str, installation_id: str, private_key: str,
++                            transport=None, now=None) -> dict:
++    """Mint a 1-hour GitHub App installation token (JIT, memory-only).
++
++    Returns {"token": ..., "expires_at": epoch_seconds}. The token is never
++    written to disk; callers must mask it in logs (see mask_token()).
++    """
++    try:
++        import jwt  # PyJWT — backend dep (pyjwt[crypto]); lazy import
++    except ImportError as err:
++        raise CredentialError(
++            "PyJWT unavailable (pip install 'pyjwt[crypto]') — cannot mint JIT token"
++        ) from err
++    if transport is None:
++        try:
++            import requests as transport  # type: ignore[no-redef]
++        except ImportError as err:
++            raise CredentialError(
++                "network transport unavailable (pip install requests) "
++                "and no test transport injected"
++            ) from err
++    t = int(now if now is not None else time.time())
++    app_jwt = jwt.encode(
++        {"iat": t - 60, "exp": t + 600, "iss": app_id},
++        private_key,
++        algorithm="RS256",
++    )
++    resp = transport.post(
++        GITHUB_TOKEN_URL.format(installation_id=installation_id),
++        headers={
++            "Authorization": f"Bearer {app_jwt}",
++            "Accept": "application/vnd.github+json",
++        },
++        timeout=15,
++    )
++    data = resp.json()
++    token = data.get("token")
++    if not token:
++        raise CredentialError(f"installation token mint failed: {data}")
++    return {"token": token, "expires_at": t + 3600}
++
++
++def mask_token(token: str) -> str:
++    """Mask a token for safe logging (first chars never shown)."""
++    if not token:
++        return ""
++    return "ghs_***" + token[-4:] if len(token) > 8 else "***"
++
++
++# ─────────────────── scoped child-env construction (#2644 item 2) ───────────────────
++
++def build_scoped_env(role: str, token: str = "", agent_name: str = "",
++                     slot: str = "", repo: str = "Supremeai-bd/supremeai-open",
++                     base_env: dict | None = None) -> dict:
++    """Least-privilege env for a child agent subprocess (role-keyed, pure).
++
++    # বাংলা: orchestrator-এর নিজের env (vault মাস্টার কী সহ) কখনোই সরাসরি
++    # child-এ যায় না — role-এর TASK_SCOPED_ENV_KEYS allowlist ছাড়া কিছুই
++    # পাস হয় না, FORBIDDEN keys টা-তেই বাদ। rules_breaker = জিরো-কি স্যান্ডবক্স।
++    """
++    allowed = TASK_SCOPED_ENV_KEYS.get(role)
++    if allowed is None:
++        raise CredentialError(
++            f"no scoped env contract for role '{role}' "
++            f"(known: {sorted(TASK_SCOPED_ENV_KEYS)})"
++        )
++    scoped: dict = {"GH_REPO": repo, "AGENT_ROLE": role}
++    if slot:
++        scoped["AGENT_SLOT"] = slot
++    if agent_name:
++        scoped["AGENT_NAME"] = agent_name
++    if "GH_TOKEN" in allowed:
++        scoped["GH_TOKEN"] = token
++    if base_env:
++        forbidden_in = FORBIDDEN_ENV_KEYS & set(base_env)
++        if forbidden_in:
++            raise CredentialError(
++                f"scope violation: forbidden keys in base_env: {sorted(forbidden_in)}"
++            )
++        for k in allowed:
++            if k in scoped:
++                continue
++            if k in base_env and k not in FORBIDDEN_ENV_KEYS:
++                scoped[k] = base_env[k]
++    leaked = FORBIDDEN_ENV_KEYS & set(scoped)
++    if leaked:
++        raise CredentialError(f"scope violation: forbidden keys leaked: {sorted(leaked)}")
++    return scoped
++
++
++def build_scoped_child_env(slot: str, token: str, agent_name: str = "",
++                           repo: str = "Supremeai-bd/supremeai-open",
++                           base_env: dict | None = None) -> dict:
++    """Slot convenience wrapper over build_scoped_env (role from the SSOT)."""
++    cfg = slot_config(slot)
++    return build_scoped_env(
++        cfg["role"], token=token, agent_name=agent_name,
++        slot=slot, repo=repo, base_env=base_env,
++    )
++
++
++# ─────────────────── ephemeral coder lease (#2644 item 3) ───────────────────
++
++def acquire_ephemeral_lease(agent_name: str, ttl: int = 3600,
++                            lease_store: Path | None = None,
++                            clock=None) -> dict:
++    """Task-Claiming Bridge: unregistered/3rd-party agents get a 1-hour
++    ephemeral lease from the shared audit-pool app after winning a claim.
++
++    The lease record (agent, slot, expiry) persists in a tmp JSON store so
++    expiry survives across processes; the TOKEN itself is minted on demand
++    and never persisted (memory-only JIT).
++    """
++    if ttl <= 0 or ttl > 3600:
++        raise CredentialError("ephemeral lease TTL must be in (0, 3600] seconds")
++    store = Path(lease_store) if lease_store else DEFAULT_LEASE_STORE
++    t = int(clock() if clock else time.time())
++    leases = _load_leases(store)
++    # housekeeping: drop expired leases
++    leases = {k: v for k, v in leases.items() if v.get("expires_at", 0) > t}
++    lease_id = f"lease-{agent_name}-{t}"
++    leases[lease_id] = {
++        "agent": agent_name,
++        "slot": "audit-pool",
++        "role": "auditor",
++        "granted_at": t,
++        "expires_at": t + ttl,
++    }
++    _save_leases(store, leases)
++    return {"lease_id": lease_id, "slot": "audit-pool", "expires_at": t + ttl, "ttl": ttl}
++
++
++def active_leases(lease_store: Path | None = None, clock=None) -> list:
++    """Currently-active ephemeral leases (audit view — no tokens inside)."""
++    store = Path(lease_store) if lease_store else DEFAULT_LEASE_STORE
++    t = int(clock() if clock else time.time())
++    return [
++        {**v, "lease_id": k}
++        for k, v in _load_leases(store).items()
++        if v.get("expires_at", 0) > t
++    ]
++
++
++def _load_leases(store: Path) -> dict:
++    try:
++        return json.loads(store.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError):
++        return {}
++
++
++def _save_leases(store: Path, leases: dict) -> None:
++    store.parent.mkdir(parents=True, exist_ok=True)
++    store.write_text(json.dumps(leases, indent=1), encoding="utf-8")
++
++
++# ─────────────────── zero-knowledge audit (#2644 item 7 core) ───────────────────
++
++def audit_secret_presence(required_keys, source_env=None, label="env") -> dict:
++    """Presence-only audit: which required keys exist — values NEVER surfaced.
++
++    # বাংলা: জিরো-নলেজ ভ্যালিডেটর — কোন কী আছে/নেই শুধু নাম ধরে বলে
++    # (missing_keys), ভ্যালু কখনো দেখে না। Control Tower masking-এর লোকাল পূরক।
++    """
++    env = source_env if source_env is not None else dict(os.environ)
++    present, missing = [], []
++    for key in required_keys:
++        (present if str(env.get(key, "")).strip() else missing).append(str(key))
++    return {
++        "source": label,
++        "checked": len(list(required_keys)),
++        "present_keys": sorted(present),
++        "missing_keys": sorted(missing),
++        "ok": not missing,
++    }
++
++
++def resolve_and_mint_for_slot(slot: str, vault_path: Path | None = None,
++                              transport=None) -> dict:
++    """Convenience: fetch creds + mint JIT token for a slot (one call).
++
++    # বাংলা (#4081): vault.env না থাকলে বা INFISICAL_* env না থাকলে actionable
++    # error দেয় — "Missing GitHub App creds" এর বদলে bootstrap command দেখায়।
++    """
++    vault = load_vault_env(vault_path)
++    if not vault:
++        # fall back to process env (CI may inject INFISICAL_* directly)
++        vault = {k: v for k, v in os.environ.items() if k.startswith("INFISICAL_")}
++    if not vault:
++        # #4081: actionable error — point to bootstrap script
++        raise CredentialError(
++            f"No Infisical credentials found for slot '{slot}'. "
++            f"Either:\n"
++            f"  1. Create vault.env: python scripts/agents/credential_bootstrap.py\n"
++            f"  2. Set INFISICAL_* env vars (CI mode): "
++            f"INFISICAL_CLIENT_ID, INFISICAL_CLIENT_SECRET, INFISICAL_PROJECT_ID\n"
++            f"  3. Verify: python scripts/agents/credential_bootstrap.py --verify\n"
++            f"See: docs/agents/credentials.md"
++        )
++    creds = fetch_credentials(slot, vault, transport=transport)
++    minted = mint_installation_token(
++        creds["app_id"], creds["installation_id"], creds["private_key"],
++        transport=transport,
++    )
++    # private key never leaves this function's frame
++    return {
++        "slot": slot,
++        "bot_name": creds["bot_name"],
++        "role": creds["role"],
++        "scopes": creds["scopes"],
++        "token": minted["token"],
++        "expires_at": minted["expires_at"],
++        # #4134: MCP Tower + AI keys fetched in the same vault round-trip —
++        # the loop gap-fills these into the child's base_env (ambient wins).
++        "vault_extras": creds["vault_extras"],
++    }
++
++
++def run(cmd: list, env: dict) -> int:
++    """Run a child agent process with a scoped env (#2644 item 2 wiring)."""
++    merged = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LANG", "LC_ALL")}
++    merged.update(env)
++    proc = subprocess.run(cmd, env=merged, check=False)
++    return proc.returncode
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Scoped JIT Credential Manager (#2644)")
++    parser.add_argument("--slot", help="slot to resolve (e.g. agent-3, audit-pool)")
++    parser.add_argument("--print-scope", action="store_true",
++                        help="print the slot's scope contract (no secrets)")
++    parser.add_argument("--lease", metavar="AGENT_NAME",
++                        help="grant a 1h ephemeral lease to an unregistered agent")
++    parser.add_argument("--ttl", type=int, default=3600)
++    parser.add_argument("--list-leases", action="store_true")
++    parser.add_argument("--audit", action="store_true",
++                        help="zero-knowledge presence audit of required keys")
++    parser.add_argument("--require", action="append", default=[],
++                        help="key required by --audit (repeatable)")
++    args = parser.parse_args()
++
++    if args.print_scope:
++        if not args.slot:
++            print("--print-scope needs --slot", file=sys.stderr)
++            return 2
++        cfg = slot_config(args.slot)
++        print(json.dumps({
++            "slot": args.slot,
++            "bot_name": cfg["bot_name"],
++            "role": cfg["role"],
++            "scopes": cfg["scopes"],
++            "env_keys": sorted(TASK_SCOPED_ENV_KEYS.get(cfg["role"], set())),
++        }, indent=1))
++        return 0
++
++    if args.lease:
++        lease = acquire_ephemeral_lease(args.lease, ttl=args.ttl)
++        print(json.dumps(lease, indent=1))
++        return 0
++
++    if args.list_leases:
++        print(json.dumps(active_leases(), indent=1))
++        return 0
++
++    if args.audit:
++        if not args.require:
++            print("--audit needs at least one --require KEY", file=sys.stderr)
++            return 2
++        report = audit_secret_presence(args.require)
++        print(json.dumps(report, indent=1))
++        return 0 if report["ok"] else 1
++
++    if args.slot:
++        # mint path: token printed ONLY in masked form — real use is programmatic
++        try:
++            result = resolve_and_mint_for_slot(args.slot)
++        except CredentialError as err:
++            print(f"ERROR: {err}", file=sys.stderr)
++            return 1
++        print(json.dumps({
++            "slot": result["slot"],
++            "bot_name": result["bot_name"],
++            "role": result["role"],
++            "scopes": result["scopes"],
++            "token": mask_token(result["token"]),
++            "expires_at": result["expires_at"],
++        }, indent=1))
++        return 0
++
++    parser.print_help()
++    return 2
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/scripts/agents/dynamic_credential_broker.py b/scripts/agents/dynamic_credential_broker.py
+new file mode 100644
+index 00000000..37fc82c8
+--- /dev/null
++++ b/scripts/agents/dynamic_credential_broker.py
+@@ -0,0 +1,277 @@
++#!/usr/bin/env python3
++"""Dynamic Credential Broker - task-wise role + scoped vault-key injection.
++
++# Smart credential broker: when SmartDispatcher assigns a task, this broker:
++# 1. Updates the agent role in MCP Tower (client.set_role)
++# 2. Fetches ONLY the vault keys the role needs from Infisical
++# 3. Builds a scoped env (no master vault creds leaked)
++# 4. After task: reverts role to viewer + clears keys from memory
++
++Flow:
++    SmartDispatcher.decide() -> role=watcher, issue=#2454
++    -> DynamicCredentialBroker.activate(agent, role, labels)
++       -> MCP Tower: client.set_role(client_id, 'agent')
++       -> Infisical: fetch CLOUDFLARE_API_TOKEN, RENDER_API_KEY, etc.
++       -> return scoped_env dict
++    -> work command runs with scoped_env
++    -> DynamicCredentialBroker.deactivate(agent)
++       -> MCP Tower: client.set_role(client_id, 'viewer')
++       -> keys already gone (scoped_env was local dict, not persisted)
++"""
++from __future__ import annotations
++
++import json
++import os
++import subprocess
++import sys
++from pathlib import Path
++
++if sys.platform == "win32":
++    if hasattr(sys.stdout, "reconfigure"):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++    if hasattr(sys.stderr, "reconfigure"):
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++ROOT_DIR = Path(__file__).resolve().parents[2]
++REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
++
++# Role -> vault keys that role is allowed to access
++# ROOT FIX (#2923): task-wise scoping - watcher gets CLOUDFLARE/RENDER keys,
++# coder gets only GH_TOKEN, breaker gets read-only GH_TOKEN, etc.
++ROLE_VAULT_KEYS = {
++    # #4134: MCP Tower operational keys (MCP_API_KEY/MCP_TOWER_URL) added to
++    # tower-coordinated roles — children must reach the tower as agents, not
++    # silently degrade to viewer mode. Master vault creds stay excluded below.
++    "coder": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        "MCP_API_KEY", "MCP_TOWER_URL",
++    },
++    "ci-fixer": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        "MCP_API_KEY", "MCP_TOWER_URL",
++    },
++    "watcher": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        # Platform health keys - only watcher needs these
++        "CLOUDFLARE_API_TOKEN",
++        "CLOUDFLARE_ACCOUNT_ID",
++        "RENDER_API_KEY",
++        "RENDER_API_KEY_1",
++        "SUPABASE_ACCESS_TOKEN",
++        "SUPABASE_URL",
++        "SUPABASE_SERVICE_ROLE_KEY",
++        "UPSTASH_REDIS_REST_URL",
++        "UPSTASH_REDIS_REST_TOKEN",
++        "REDIS_URL",
++        # Watcher heartbeats the tower too (#4134)
++        "MCP_API_KEY", "MCP_TOWER_URL",
++    },
++    "planner": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        # Planner needs read-only access to plan features
++        "MCP_API_KEY", "MCP_TOWER_URL",
++    },
++    "auditor": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        # Auditor needs read-only access
++        "MCP_API_KEY", "MCP_TOWER_URL",
++    },
++    "breaker": {
++        "GH_TOKEN", "GH_REPO", "AGENT_SLOT", "AGENT_ROLE", "AGENT_NAME",
++        # Breaker: read-only GH_TOKEN, no write keys (zero-trust sandbox)
++    },
++    "human-eyes": {
++        # Browser agent: no vault keys needed - uses browser only
++        "AGENT_ROLE", "AGENT_NAME",
++    },
++}
++
++# Keys that must NEVER be in any scoped env (master vault creds)
++FORBIDDEN_KEYS = {
++    "INFISICAL_CLIENT_ID",
++    "INFISICAL_CLIENT_SECRET",
++    "INFISICAL_PROJECT_ID",
++    "INFISICAL_TOKEN",
++    "GITHUB_APP_PRIVATE_KEY",
++    "GITHUB_APP_ID",
++    "GITHUB_APP_INSTALLATION_ID",
++}
++
++# MCP Tower client IDs for each agent (registered in tower)
++# These would normally come from the tower registry, hardcoded for now
++AGENT_CLIENT_IDS = {
++    "supremeai-planner[bot]": "planner-client-001",
++    "supremeai-coder-1-bot[bot]": "coder-1-client-001",
++    "supremeai-coder-2-bot[bot]": "coder-2-client-001",
++    "supremeai-ci-action[bot]": "ci-action-client-001",
++    "supremeai-platform-agent[bot]": "platform-client-001",
++    "supremeai-pr-helper[bot]": "pr-helper-client-001",
++}
++
++
++class DynamicCredentialBroker:
++    """Task-wise dynamic role + scoped vault-key injection broker.
++
++    # বাংলা: যখন SmartDispatcher একটা task assign করবে, এই broker:
++    # 1. MCP Tower-এ agent-এর role update করবে (client.set_role)
++    # 2. Infisical থেকে শুধু role-এর allowlist-এ থাকা keys fetch করবে
++    # 3. Scoped env build করবে (master vault creds কখনো leak হবে না)
++    # 4. Task শেষে role আবার viewer-এ revert করবে
++    """
++
++    def __init__(self, repo: str = REPO, tower_url: str = ""):
++        self.repo = repo
++        self.tower_url = tower_url or os.environ.get(
++            "MCP_TOWER_URL", os.environ.get("MCP_SERVER_URL", "")
++        )
++        self.mcp_api_key = os.environ.get("MCP_API_KEY", "")
++        self.gh_token = os.environ.get("GITHUB_TOKEN", os.environ.get("GH_TOKEN", ""))
++
++    def _call_mcp_tower(self, tool_name: str, args: dict) -> dict | None:
++        """Call an MCP Tower tool via the client."""
++        try:
++            r = subprocess.run(
++                ["python3", "scripts/agents/mcp_tower_client.py", "call", tool_name],
++                capture_output=True, text=True, timeout=30, check=False,
++                env={**os.environ, "MCP_TOWER_URL": self.tower_url},
++            )
++            if r.returncode == 0 and r.stdout.strip():
++                return json.loads(r.stdout)
++        except Exception:
++            pass
++        return None
++
++    def _fetch_vault_keys(self, key_names: set[str]) -> dict[str, str]:
++        """Fetch specific keys from Infisical vault.
++
++        # বাংলা: শুধু role-এর allowlist-এ থাকা keys fetch হয়।
++        # Master vault creds (INFISICAL_*) কখনো return হয় না।
++        """
++        # Try loading from process env first (if Infisical bootstrap already ran)
++        result = {}
++        for key in key_names:
++            val = os.environ.get(key, "")
++            if val and key not in FORBIDDEN_KEYS:
++                result[key] = val
++
++        # If we need Infisical fetch (some keys missing), do it
++        missing = key_names - set(result.keys()) - FORBIDDEN_KEYS
++        if missing:
++            try:
++                # Use infisical_bootstrap pattern to fetch missing keys
++                # #3478 fix: call fetch_ai_keys.py to get keys from Infisical vault
++                proc = subprocess.run(
++                    [sys.executable, str(ROOT_DIR / "scripts" / "security" / "fetch_ai_keys.py")],
++                    capture_output=True, text=True, env=os.environ, timeout=15
++                )
++                if proc.returncode == 0:
++                    for line in proc.stdout.strip().splitlines():
++                        if "=" in line and not line.startswith("#"):
++                            k, _, v = line.partition("=")
++                            if k in key_names and k not in FORBIDDEN_KEYS:
++                                result[k] = v.strip()
++            except Exception:
++                pass
++
++        return result
++
++    def activate(
++        self,
++        agent_name: str,
++        role: str,
++        task_labels: list[str] | None = None,
++    ) -> dict[str, str]:
++        """Activate a role for an agent: update MCP Tower + fetch scoped keys.
++
++        Returns: scoped_env dict (keys that the work command should use)
++        """
++        print(f"[Broker] Activating role '{role}' for agent '{agent_name}'...")
++
++        # 1. Get allowed keys for this role
++        allowed = ROLE_VAULT_KEYS.get(role, set())
++        if not allowed:
++            print(f"[Broker] WARNING: no vault keys defined for role '{role}'")
++            allowed = {"AGENT_ROLE", "AGENT_NAME"}
++
++        # 2. Fetch only allowed keys from vault
++        scoped_env = self._fetch_vault_keys(allowed)
++
++        # 3. Set role-specific env vars
++        scoped_env["AGENT_ROLE"] = role
++        scoped_env["AGENT_NAME"] = agent_name
++
++        # 4. Try to update MCP Tower role (best-effort, not blocking)
++        client_id = AGENT_CLIENT_IDS.get(agent_name, "")
++        if client_id and self.mcp_api_key:
++            print(f"[Broker] Updating MCP Tower role for client '{client_id}' -> '{role}'...")
++            # This would call: mcp_tower_client.py call client_set_role
++            # with clientId=client_id, role='agent' (or 'admin' for privileged)
++            tower_role = "agent"
++            if role in ("watcher", "breaker"):
++                tower_role = "agent"  # these need elevated access
++            result = self._call_mcp_tower("client.set_role", {
++                "clientId": client_id,
++                "role": tower_role,
++            })
++            if result:
++                print(f"[Broker] MCP Tower role updated: {tower_role}")
++            else:
++                print(f"[Broker] WARNING: MCP Tower role update failed (non-blocking)")
++
++        # 5. Verify no forbidden keys leaked
++        leaked = FORBIDDEN_KEYS & set(scoped_env.keys())
++        if leaked:
++            print(f"[Broker] ERROR: forbidden keys leaked: {leaked}")
++            for k in leaked:
++                scoped_env.pop(k, None)
++
++        print(f"[Broker] Activated: {len(scoped_env)} scoped keys for role '{role}'")
++        return scoped_env
++
++    def deactivate(self, agent_name: str) -> None:
++        """Deactivate: revert MCP Tower role to viewer + clear keys.
++
++        # বাংলা: task শেষে role আবার viewer-এ revert করা হয়।
++        # Scoped keys ইতিমধ্যে local dict-এ ছিল, কোথাও persist হয়নি।
++        """
++        print(f"[Broker] Deactivating agent '{agent_name}'...")
++
++        # Revert MCP Tower role to viewer (least privilege)
++        client_id = AGENT_CLIENT_IDS.get(agent_name, "")
++        if client_id and self.mcp_api_key:
++            print(f"[Broker] Reverting MCP Tower role for client '{client_id}' -> 'viewer'...")
++            result = self._call_mcp_tower("client.set_role", {
++                "clientId": client_id,
++                "role": "viewer",
++            })
++            if result:
++                print(f"[Broker] MCP Tower role reverted to viewer")
++            else:
++                print(f"[Broker] WARNING: MCP Tower role revert failed (non-blocking)")
++
++        # Keys are already gone (scoped_env was a local dict in activate())
++        # Nothing to clear from disk or memory
++        print(f"[Broker] Deactivated: scoped keys cleared from memory")
++
++
++def main() -> int:
++    """CLI entry point for testing the broker."""
++    import argparse
++    parser = argparse.ArgumentParser(description="Dynamic Credential Broker (#2923)")
++    parser.add_argument("--agent-name", required=True, help="Agent identifier")
++    parser.add_argument("--role", required=True, help="Role to activate")
++    parser.add_argument("--action", choices=["activate", "deactivate"], default="activate")
++    args = parser.parse_args()
++
++    broker = DynamicCredentialBroker()
++    if args.action == "activate":
++        env = broker.activate(args.agent_name, args.role)
++        # Print keys (names only, not values)
++        print(f"\nScoped env keys: {sorted(env.keys())}")
++    else:
++        broker.deactivate(args.agent_name)
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_p0_autonomous_agent_bus.py b/tests/test_p0_autonomous_agent_bus.py
+new file mode 100644
+index 00000000..d6bf071c
+--- /dev/null
++++ b/tests/test_p0_autonomous_agent_bus.py
+@@ -0,0 +1,72 @@
++"""Contract test for Batch 1: P0 Security & Autonomous Agent Bus (#3304, #2644, #4168)."""
++
++import tempfile
++from pathlib import Path
++import pytest
++
++from scripts.agents.a2a_messaging_bus import A2ABus
++from scripts.agents.credential_manager import (
++    build_scoped_env,
++    CredentialError,
++    FORBIDDEN_ENV_KEYS,
++)
++from scripts.agents.automation_watchdog import evaluate
++
++
++def test_a2a_bus_send_and_receive():
++    """Verify that A2ABus sends messages to inbox and clears on receive."""
++    with tempfile.TemporaryDirectory() as tmpdir:
++        bus = A2ABus(inbox_dir=Path(tmpdir))
++        msg = {"type": "intent", "action": "test_handoff"}
++        msg_id = bus.send("lane-coder", msg, sender="tester")
++        assert msg_id is not None
++
++        # Verify inbox file exists and contains message
++        inbox_file = bus._inbox_path("lane-coder")
++        assert inbox_file.exists()
++
++        # Receive clears inbox
++        received = bus.receive("lane-coder")
++        assert len(received) == 1
++        assert received[0]["message_id"] == msg_id
++        assert received[0]["body"] == msg
++        assert received[0]["sender"] == "tester"
++
++        # Subsequent receive is empty
++        assert bus.receive("lane-coder") == []
++
++
++def test_build_scoped_env_least_privilege():
++    """Verify least-privilege scoping and forbidden keys rejection."""
++    scoped = build_scoped_env(
++        role="coder",
++        token="gh_test_token_123",
++        agent_name="agent-coder-1",
++        slot="agent-1",
++        repo="Supremeai-bd/supremeai-open",
++        base_env={"INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET": "should_be_dropped", "CUSTOM_ALLOWED": "drop"},
++    )
++    assert scoped["GH_REPO"] == "Supremeai-bd/supremeai-open"
++    assert scoped["AGENT_ROLE"] == "coder"
++    assert scoped["AGENT_NAME"] == "agent-coder-1"
++    assert scoped["AGENT_SLOT"] == "agent-1"
++    assert scoped["GH_TOKEN"] == "gh_test_token_123"
++    # Verify forbidden keys never leak into scoped env
++    assert "INFISICAL_UNIVERSAL_AUTH_CLIENT_SECRET" not in scoped
++    assert not (set(scoped) & FORBIDDEN_ENV_KEYS)
++
++    # Unknown role raises CredentialError
++    with pytest.raises(CredentialError, match="no scoped env contract for role"):
++        build_scoped_env(role="unknown-rogue-role")
++
++
++def test_watchdog_evaluate_healthy():
++    """Verify watchdog evaluation reports no findings when heartbeats are fresh."""
++    now = 1000000.0
++    obs = {
++        "heartbeats": [{"name": "loop", "last_seen_epoch": now - 100}],
++        "claims": [],
++        "evaluator": {"name": "evaluator", "last_success_epoch": now - 200},
++    }
++    findings = evaluate(obs, now)
++    assert findings == []

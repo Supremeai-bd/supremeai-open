@@ -1,0 +1,146 @@
+diff --git a/docs/CONSTITUTION_FRESHNESS_INVARIANT.md b/docs/CONSTITUTION_FRESHNESS_INVARIANT.md
+new file mode 100644
+index 00000000..18eec88e
+--- /dev/null
++++ b/docs/CONSTITUTION_FRESHNESS_INVARIANT.md
+@@ -0,0 +1,140 @@
++# Constitution Freshness Invariant (#567)
++
++**Status:** Active invariant — enforced across 3 tiers (Agent Loop, MCP Tower, CI Pre-Flight)
++**Priority:** P1-high (governance / systemic reliability)
++**Owner:** governance task group
++**Sizing:** cohesive domain slice — 6 files, well under the P7 ceiling (≤ 30 files / ≤ 200 KB)
++
++---
++
++## 1. Problem Statement (the Stale Contract Invariant Violation)
++
++During autonomous federation cycles, multiple external agents (Z.ai, Claude, web agents)
++submitted high-quality, fully functioning code that was nonetheless rejected by fail-closed
++CI guards (Knowledge Sharing Guard, Claim Gate, Boundary Guard, Stale-Base Guard).
++
++Root cause chain:
++
++1. **Rule & Constitution Drift** — governance rules and CI invariants evolve on 'main'
++   (new checklist entries, mandatory '- **why:**' / '- **alternatives_rejected:**' PR
++   fields, directory approvals in 'boundary_sanitization_guard.py').
++2. **Execution Against Stale Caches** — agents execute against cached session contexts,
++   stale local checkouts, or outdated MCP prompt instructions; they never re-verify the
++   current HEAD content of 'AGENTS.md', 'AGENT_RULES.md',
++   '.github/PULL_REQUEST_TEMPLATE.md'.
++3. **Silent Failure & Waste** — the agent implements against old rules, opens a PR with an
++   outdated template, and fails fail-closed gates without knowing which new rule it missed.
++
++Class elimination (P6 doctrine): instead of patching each rejected PR symptom, the entire
++*stale-context* class is eliminated by making freshness a machine-enforced, fail-closed
++invariant at the three points where a stale constitution can enter the pipeline.
++
++---
++
++## 2. The 3-Tier Enforcement Architecture
++
++    ┌────────────────────────────────────────────────────────────────────────┐
++    │               CONSTITUTION & RULE FRESHNESS INVARIANT                  │
++    │                                                                        │
++    │   1. AGENT LOOP SELF-SYNC (scripts/agents/continuous_agent_loop.py)    │
++    │      ├── git fetch origin main --quiet                                 │
++    │      ├── Compare worktree blob SHA of the constitution vs origin/main  │
++    │      └── Auto-checkout fresh rules before any task executes (Step 2)   │
++    │                                                                        │
++    │   2. MCP CONTROL TOWER DYNAMIC GUIDE (infrastructure/mcp-control-plane)│
++    │      ├── bridge.guide reads the LIVE PULL_REQUEST_TEMPLATE.md (or      │
++    │      │  falls back to a built-in digest — never silently)              │
++    │      └── bridge.submit_patch fail-closes PRE-PUSH with                 │
++    │         STALE_TEMPLATE_ERROR before any branch/PR write                │
++    │                                                                        │
++    │   3. CI PRE-FLIGHT DIAGNOSTICS (.github/workflows/pipeline.yml)        │
++    │      └── Rejection logs output exact copy-pasteable fix snippets       │
++    └────────────────────────────────────────────────────────────────────────┘
++
++
++### Tier 1 — Agent Loop Self-Sync ('step_2_rules')
++
++- 'RULE_FRESHNESS_FILES = ("AGENTS.md", "AGENT_RULES.md", ".github/PULL_REQUEST_TEMPLATE.md")'.
++- Non-offline contract (fail-closed):
++  - 'git fetch origin main' failure, missing 'git', or unverifiable blobs → **False**;
++  - a constitution file missing from 'origin/main' (upstream deletion) → **False**
++    (deletions are never auto-synced);
++  - worktree divergence during **task cycles** ('auto_sync=True') →
++    'git checkout origin/main -- <diverged>' runs automatically; checkout failure →
++    **False**. Synced files land staged — the agent must commit them onto the session
++    branch or 'git pull --ff-only' before Step 3's clean-tree gate (no silent mutation);
++  - worktree divergence during **'--verify-only' boot smoke** ('auto_sync=False') →
++    REPORT-ONLY: drift is logged loudly, the tree is never mutated (a governance PR
++    intentionally carries constitution changes and CI must not revert the proposal
++    under test), and the result stays **True**.
++- Offline escape hatch: '--offline' flag or 'SUPREMEAI_OFFLINE=1' (truthy: '1/true/yes')
++  skips the network gate loudly — a deliberate, operator-owned stale-context risk for
++  sandboxed/offline testing.
++- Every pass prints the active rule version (origin/main constitution blob SHAs) and the
++  mandatory invariant checklist ('mandatory_invariant_checklist()' — the SSOT companion
++  that must gain an entry in the SAME change whenever a new fail-closed guard lands).
++
++### Tier 2 — MCP Tower Dynamic Guide + Pre-Push Validation ('bridge.tools.ts')
++
++- 'readPullRequestTemplate()' reads the LIVE '.github/PULL_REQUEST_TEMPLATE.md' via a
++  candidate ladder (repo root / control-plane cwd); when unreachable it falls back to the
++  built-in digest — the 'source: "live" | "fallback"' field makes the mode non-silent.
++- 'bridge.guide' exposes a 'constitutionFreshness' block: template source + path, the
++  required '## Reflection Evidence (why + alternatives_rejected)' section, the mandatory
++  field pair, Rule P7 domain sizing ('≤ 30 files / ≤ 200 KB', #522) and the pre-validation
++  contract.
++- 'bridge.submit_patch' composes the PR body through the SSOT builder
++  'buildBridgePrBody()' **before any GitHub write** and validates it with
++  'validateReflectionEvidence()' (mirrors the CI guard's bash semantics: same-line content
++  or nested bullets; '<...>' placeholders fail). Missing fields → immediate, actionable:
++  'STALE_TEMPLATE_ERROR: Missing required '- **why:**' or '- **alternatives_rejected:**'
++  in ## Reflection Evidence. Re-read bridge.guide and resubmit. Fix snippet: …'
++  The rejection fires **before** token resolution and network I/O — no branch, no issue,
++  no PR is ever created from a stale body.
++- New optional submission fields: 'reflectionWhy', 'alternativesRejected' (omitting them
++  fail-closes with the snippet above).
++
++### Tier 3 — Structured CI Diagnostic Hints ('pipeline.yml')
++
++'claim-guard' (3 failure sites) and 'knowledge-sharing-guard' (3 failure sites) now print
++copy-pasteable fix snippets — the exact 'gh issue edit/comment' claim syntax and the
++paste-ready '## Reflection Evidence' markdown — so an agent with an outdated template can
++repair its submission on the first retry without reverse-engineering the guard.
++
++---
++
++## 3. Verification Contract (3-Tier)
++
++1. **Reflection check:** 'step_2_rules()' fails closed when the git origin cannot be
++   verified in non-offline mode (tests 14–17), and report-only mode still fails closed on
++   infrastructure failure (test 22).
++2. **Boot smoke:** 'python3 scripts/agents/continuous_agent_loop.py --verify-only' proves
++   rule freshness (origin/main comparison + rule version + checklist) and exits 0;
++   '--verify-only --offline' proves the explicit escape hatch.
++3. **Unit tests:**
++   - 'python3 -m unittest tests.test_constitution_freshness' — 25 offline tests
++     (scripted 'run_cmd' doubles, hermetic 'REPO_ROOT'; no network, no repo mutation);
++   - 'npm run test:bridge-freshness' (in 'infrastructure/mcp-control-plane') — tower-slice
++     assertions including the e2e pre-push 'STALE_TEMPLATE_ERROR' path.
++
++## 4. Acceptance Criteria Mapping
++
++- [x] 'continuous_agent_loop.py' automatically checks and syncs governing rules from
++      'origin/main' (Tier 1, task-cycle mode).
++- [x] 'bridge.guide' provides up-to-date PR template and mandatory reflection
++      requirements (Tier 2, live-read digest with non-silent fallback).
++- [x] 'bridge.submit_patch' rejects stale PR bodies pre-push with clear diagnostic
++      instructions (Tier 2, 'STALE_TEMPLATE_ERROR' before any write).
++- [x] Offline unit test suite passes 100% (no network, no repo mutation).
++
++## 5. Delivery Notes (operator)
++
++- 'scripts/agents/continuous_agent_loop.py', 'infrastructure/mcp-control-plane/src/tools/bridge.tools.ts',
++  'docs/CONSTITUTION_FRESHNESS_INVARIANT.md', 'tests/test_constitution_freshness.py' and
++  'infrastructure/mcp-control-plane/test_bridge_freshness.ts' are bridge-lane deliverable.
++- '.github/workflows/pipeline.yml' is inside the bridge's protected-path wall
++  ('BRIDGE_CONTRACT.protectedPaths' includes '.github/') — the Tier-3 hints therefore
++  travel the **operator lane** (direct commit), not the automatic bridge lane.
++- '#67' parity: the '--verify-only' final stdout line ('CONTRACT_VERSION=agent-loop-contract/1')
++  format is unchanged; both public and private copies receive the same file so behavior
++  parity holds without a version bump.

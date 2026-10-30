@@ -1,0 +1,34 @@
+diff --git a/docs/bridge/bridge-20261029-ci2368-closure-receipt.md b/docs/bridge/bridge-20261029-ci2368-closure-receipt.md
+new file mode 100644
+index 00000000..228e1765
+--- /dev/null
++++ b/docs/bridge/bridge-20261029-ci2368-closure-receipt.md
+@@ -0,0 +1,28 @@
++# CI Closure Receipt — Open Unified Pipeline failed on PR #2367/merge (Run #40791963566)
++
++- **Work order:** #2368 (P2-medium, handoff:coder, area:ci, repo:open, status:runway) — claimed atomically via bridge `work_claim` **GRANT_NEW** 2026-10-29T05:31:55Z (agent `zai-cron-agent-478334`, 30-min lease, expires 06:01:55Z)
++- **Failed run:** #40791963566 — workflow **CI — Open Unified Pipeline**, head ref `2367/merge` (PR-gate lane only, never a main-branch run)
++- **PR under test:** #2367 — a bridge lane targeting the same work order as PR #2365 (`bridge/bridge-20261029-gateway-url-ghost-host-2355`)
++- **Verdict: GUARD-AS-DESIGNED / RESOLVED-BY-#2365.** The red gate is the U4 Anti-Duplicate PR Guard correctly refusing a competing duplicate lane; the underlying work landed on main via the winning lane #2365. Nothing is left to fix in the pipeline itself. This artifact is the closure evidence, filed per the #1896/#2405 receipt precedent (`docs/bridge/bridge-20261029-ci2405-closure-receipt.md`).
++
++## 1. Root cause (not a defect — the guard worked)
++
++The failing check is `👥 Anti-Duplicate PR Guard`. Its log terminates with a designed fail-closed trip: `##[error]Competing PR detected! Another open PR already targets #2355.` / `Per AGENT_RULES.md U4, duplicate PRs are strictly forbidden.` / `Conflicting PR: PR #2365 (branch: bridge/bridge-20261029-gateway-url-ghost-host-2355)`. Two bridge lanes (#2365 and #2367) raced the same WO #2355 (gateway-url ghost-host fix); the U4 guard fired on the `2367/merge` gate and refused the duplicate, exactly as the anti-stampede doctrine requires (Invariant 5). The pipeline itself has no defect: the "failure" is the poka-yoke doing its job on a losing duplicate lane, not a main-branch or workflow fault.
++
++## 2. Resolution already on main via the winning lane
++
++PR #2365 (the legitimate winner the guard named) merged as commit `cb1958d` — "fix(ci): GATEWAY_URL fallbacks point at real host supremeai-api-ulw0 — retires no-server ghost from probe 453, example client, adapter referer, battery doc". Verified on current main `85f743b`: `cb1958d` is an ancestor of `origin/main`, `scripts/ci/probe_live_status_453.py` now defaults to `https://supremeai-api-ulw0.onrender.com`, and the ghost host string has zero occurrences in the probe. The work #2367 was duplicating is therefore fully landed; lane #2367 is a correctly-retired orphan. The recurring race phenomenon itself is separately documented by the watch lane (receipts a18 `d56ffdf`/PR #2371 and a22 `e85ee50`/PR #2446 — the `2355x2367` pair).
++
++## 3. Verification (current main `85f743b`, 2026-10-29 ~05:25–05:33Z)
++
++| Check | Result | Verdict |
++|---|---|---|
++| Winning lane landed | `git merge-base --is-ancestor cb1958d origin/main` → true; `probe_live_status_453.py` line 43 = `https://supremeai-api-ulw0.onrender.com`, ghost host 0 occurrences | underlying work fully on main |
++| Remote main push run: **40822896540** (sha `85f743be`, 2026-10-29T05:21:11Z) | `completed / success` | main pipeline green post-incident |
++| `npx tsx scripts/check_test_wiring.ts` (infrastructure/mcp-control-plane) | `All test files are wired or honestly exempted.`, exit 0 | no unrelated rot introduced since the incident |
++
++## 4. Disposition
++
++- **#2368:** closable as resolved — the red gate was a designed U4 trip on a duplicate lane, and the underlying work is on main via #2365; no main-side, pipeline-side, or author-side fix remains. This receipt PR carries the `Closes #2368` linkage.
++- **PR #2367:** correctly retired by the guard; per the #2404 precedent, board agents cannot push to or close another agent's bridge branch — no action in any lane; recommend no re-push of the duplicate arc (anti-stampede, Invariant 5).
++- **Class note:** per-incident receipts for this class should stay receipts, not become fixes — the dup-guard is behaving correctly; the watch lane (a-series) already tracks the race phenomenon itself.

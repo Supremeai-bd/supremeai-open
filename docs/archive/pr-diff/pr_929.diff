@@ -1,0 +1,389 @@
+diff --git a/browser/Dockerfile b/browser/Dockerfile
+index 2bd070d5..4752a19b 100644
+--- a/browser/Dockerfile
++++ b/browser/Dockerfile
+@@ -6,11 +6,11 @@ WORKDIR /app
+ COPY pyproject.toml ./
+ RUN pip install --no-cache-dir fastapi "uvicorn[standard]" httpx pydantic
+ 
+-COPY server.py ./
++COPY server.py main.py ./
+ 
+ ENV PYTHONUNBUFFERED=1
+-ENV PORT=8000
++ENV PORT=8080
+ 
+-EXPOSE 8000
++EXPOSE 8080
+ 
+-CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]
++CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+diff --git a/browser/main.py b/browser/main.py
+index 9323c848..65ce3ec3 100644
+--- a/browser/main.py
++++ b/browser/main.py
+@@ -1,169 +1,97 @@
+-"""SupremeAI standalone scraper microservice.
++"""SupremeAI Standalone Scraper & Gemini Cookie Relay Entrypoint.
+ 
+-Self-contained FastAPI app. Deployed as its own Docker image / Render service so
+-Chromium + Playwright never live in the main backend API image.
+-
+-Endpoints:
+-  GET  /health  — liveness + capability probe
+-  POST /scrape  — lightweight HTTP scraping (httpx + BeautifulSoup)
+-  POST /browse  — full browser automation (Playwright/Chromium)
+-  POST /recipe  — scripted multi-step browser actions
++Provides the FastAPI application entrypoint for Render (uvicorn main:app)
++and local deployments. Seamlessly integrates the lightweight Gemini Cookie
++Relay engine (server.py) with optional scraping routes.
+ """
+ 
+ from __future__ import annotations
+ 
++import logging
+ import os
++import sys
+ 
+-try:
+-    from browser_agent import BrowserAgent, BrowseRequest
+-    from security import is_safe_url
+-    from web_scraper import WebScraper
+-except ImportError:
+-    from services.scraper.browser_agent import BrowserAgent, BrowseRequest
+-    from services.scraper.security import is_safe_url
+-    from services.scraper.web_scraper import WebScraper
+-from fastapi import APIRouter, FastAPI, HTTPException
+-from pydantic import BaseModel
+-
+-MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
+-TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
+-
+-app = FastAPI(title="SupremeAI Scraper", docs_url="/docs", redoc_url="/redoc")
+-router = APIRouter(tags=["scraper"])
+-
+-_scraper = WebScraper()
+-_agent = BrowserAgent(headless=True)
++logger = logging.getLogger("supremeai.scraper")
+ 
++# Ensure local directory is in path
++_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
++if _CURRENT_DIR not in sys.path:
++    sys.path.insert(0, _CURRENT_DIR)
+ 
+-class ScrapeRequest(BaseModel):
+-    url: str
+-    extraction_prompt: str | None = None
+-
++# Import primary application from server.py (Cookie Relay Engine)
++try:
++    from server import app, relay_engine, ChatRequest
++except ImportError:
++    from browser.server import app, relay_engine, ChatRequest  # type: ignore
+ 
+-@router.get("/health")
+-async def health_check():
++# Register optional browser scraper routes if dependencies are available
++try:
+     try:
+-        import playwright.async_api as _pw
+-
+-        playwright_ok = callable(getattr(_pw, "async_playwright", None))
++        from browser_agent import BrowserAgent, BrowseRequest
++        from security import is_safe_url
++        from web_scraper import WebScraper
+     except ImportError:
+-        playwright_ok = False
+-
+-    return {
+-        "status": "healthy",
+-        "service": "supremeai-scraper",
+-        "max_concurrency": MAX_CONCURRENCY,
+-        "timeout_seconds": TIMEOUT_SECONDS,
+-        "playwright_available": playwright_ok,
+-    }
+-
+-
+-@router.post("/scrape")
+-async def scrape(request: ScrapeRequest):
+-    if not request.url:
+-        raise HTTPException(status_code=400, detail="URL is required")
+-    if not is_safe_url(request.url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
++        from services.scraper.browser_agent import BrowserAgent, BrowseRequest
++        from services.scraper.security import is_safe_url
++        from services.scraper.web_scraper import WebScraper
++
++    from fastapi import HTTPException
++    from pydantic import BaseModel
++
++    MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
++    TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
++
++    _scraper = WebScraper()
++    _agent = BrowserAgent(headless=True)
++
++    class ScrapeRequest(BaseModel):
++        url: str
++        extraction_prompt: str | None = None
++
++    class RecipeRequest(BaseModel):
++        steps: list = []
++        initial_url: str | None = None
++
++    @app.post("/scrape", tags=["scraper"])
++    async def scrape(request: ScrapeRequest):
++        if not request.url:
++            raise HTTPException(status_code=400, detail="URL is required")
++        if not is_safe_url(request.url):
++            raise HTTPException(
++                status_code=400, detail="SSRF check failed: Unauthorized internal access"
++            )
++        import asyncio
++        return await asyncio.to_thread(_scraper.fetch_page, request.url)
++
++    @app.post("/browse", tags=["scraper"])
++    async def browse(request: BrowseRequest):
++        if not request.url:
++            raise HTTPException(status_code=400, detail="URL is required")
++        if not is_safe_url(request.url):
++            raise HTTPException(
++                status_code=400, detail="SSRF check failed: Unauthorized internal access"
++            )
++        return await _agent.navigate_and_interact(
++            url=request.url,
++            action=request.action or "fetch",
++            selector=request.selector,
++            text=request.text,
++            wait_for=request.wait_for,
+         )
+-    # FIX (P1, review 2026-09-12): fetch_page is a SYNC httpx call (up to 15s
+-    # timeout). Calling it directly froze the single event loop — one slow target
+-    # stalled /browse, /recipe and /health for the whole service. Offload to a
+-    # worker thread so concurrent scrapes stay responsive.
+-    import asyncio as _asyncio
+-
+-    result = await _asyncio.to_thread(_scraper.fetch_page, request.url)
+-    return result
+-
+-
+-@router.post("/browse")
+-async def browse(request: BrowseRequest):
+-    if not request.url:
+-        raise HTTPException(status_code=400, detail="URL is required")
+-    if not is_safe_url(request.url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
+-        )
+-    result = await _agent.navigate_and_interact(
+-        url=request.url,
+-        action=request.action or "fetch",
+-        selector=request.selector,
+-        text=request.text,
+-        wait_for=request.wait_for,
+-    )
+-    return result
+-
+ 
+-class RecipeRequest(BaseModel):
+-    steps: list = []
+-    initial_url: str | None = None
+-
+-
+-@router.post("/recipe")
+-async def recipe(request: RecipeRequest):
+-    if request.initial_url and not is_safe_url(request.initial_url):
+-        raise HTTPException(
+-            status_code=400, detail="SSRF check failed: Unauthorized internal access"
+-        )
+-    result = await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
+-    return result
++    @app.post("/recipe", tags=["scraper"])
++    async def recipe(request: RecipeRequest):
++        if request.initial_url and not is_safe_url(request.initial_url):
++            raise HTTPException(
++                status_code=400, detail="SSRF check failed: Unauthorized internal access"
++            )
++        return await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
+ 
++    logger.info("Scraper browser routes registered successfully")
+ 
+-app.include_router(router)
+-
+-# ── Integrated Priority-1 Gemini Cookie Relay Surface ────────────────────────
+-try:
+-    import json
+-    import time
+-    from fastapi import Request
+-    from fastapi.responses import JSONResponse
+-    from server import ChatRequest, relay_engine
+-
+-    @app.post("/v1/chat/completions")
+-    async def chat_completions(req: ChatRequest) -> JSONResponse:
+-        prompt = "\n".join(m.content for m in req.messages if m.role == "user")
+-        if not prompt.strip():
+-            raise HTTPException(status_code=400, detail="Missing user message in payload")
+-
+-        reply = await relay_engine.ask(prompt.strip())
+-        return JSONResponse(
+-            {
+-                "id": "chatcmpl-cookie-relay-" + os.urandom(6).hex(),
+-                "object": "chat.completion",
+-                "created": int(time.time()),
+-                "model": req.model or "gemini-web-relay",
+-                "choices": [
+-                    {
+-                        "index": 0,
+-                        "message": {
+-                            "role": "assistant",
+-                            "content": reply,
+-                        },
+-                        "finish_reason": "stop",
+-                    }
+-                ],
+-                "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+-            }
+-        )
+-
+-    @app.post("/api/chat")
+-    async def api_chat(request: Request):
+-        try:
+-            body = await request.json()
+-        except Exception:
+-            raise HTTPException(status_code=400, detail="Invalid JSON payload")
+-
+-        prompt = body.get("message") or body.get("prompt") or ""
+-        if not prompt.strip():
+-            raise HTTPException(status_code=400, detail="Empty prompt or message")
+-
+-        reply = await relay_engine.ask(prompt.strip())
+-        return {
+-            "reply": reply,
+-            "source": "gemini.google.com (Cookie Relay)",
+-            "cost": "$0.00",
+-        }
+-except Exception as _relay_err:
+-    import logging
+-    logging.getLogger("scraper.main").warning(f"Could not initialize cookie relay surface: {_relay_err}")
++except Exception as _scraper_err:
++    logger.info(
++        f"Scraper engine dependencies unavailable ({_scraper_err}); "
++        "operating in lightweight Gemini Cookie Relay mode."
++    )
+ 
+diff --git a/browser/server.py b/browser/server.py
+index 9b52e5e8..67840e70 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -384,8 +384,22 @@ async def health() -> Dict[str, Any]:
+     }
+ 
+ 
++def _verify_stealth_secret(request: Request) -> None:
++    expected = os.getenv("STEALTH_WEBHOOK_SECRET", "").strip()
++    if not expected:
++        return
++    incoming = (
++        request.headers.get("X-Stealth-Secret")
++        or request.headers.get("X-Webhook-Secret")
++        or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
++    )
++    if incoming != expected:
++        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing stealth secret")
++
++
+ @app.post("/api/chat")
+ async def api_chat(request: Request) -> Dict[str, Any]:
++    _verify_stealth_secret(request)
+     try:
+         body = await request.json()
+     except Exception:
+@@ -404,7 +418,8 @@ async def api_chat(request: Request) -> Dict[str, Any]:
+ 
+ 
+ @app.post("/v1/chat/completions")
+-async def chat_completions(req: ChatRequest) -> JSONResponse:
++async def chat_completions(req: ChatRequest, request: Request) -> JSONResponse:
++    _verify_stealth_secret(request)
+     prompt = "\n".join(m.content for m in req.messages if m.role == "user")
+     if not prompt.strip():
+         raise HTTPException(status_code=400, detail="Missing user message in payload")
+diff --git a/browser/tests/test_relay_entrypoint.py b/browser/tests/test_relay_entrypoint.py
+new file mode 100644
+index 00000000..5f8923b4
+--- /dev/null
++++ b/browser/tests/test_relay_entrypoint.py
+@@ -0,0 +1,72 @@
++"""Tests for the SupremeAI Browser lightweight Gemini cookie relay entrypoint."""
++
++import os
++import sys
++import unittest.mock as mock
++from fastapi.testclient import TestClient
++
++# Ensure parent directory is in path
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++import main
++
++
++def test_main_app_structure() -> None:
++    """Verify main.py loads the FastAPI app with expected routes."""
++    routes = [r.path for r in main.app.routes]
++    assert "/health" in routes
++    assert "/api/chat" in routes
++    assert "/v1/chat/completions" in routes
++
++
++def test_health_check() -> None:
++    """Verify GET /health returns 200 OK and healthy status."""
++    client = TestClient(main.app)
++    resp = client.get("/health")
++    assert resp.status_code == 200
++    data = resp.json()
++    assert data["status"] == "healthy"
++    assert "supremeai-browser" in data["service"]
++
++
++def test_stealth_secret_auth_guard() -> None:
++    """Verify STEALTH_WEBHOOK_SECRET guard behaviour."""
++    client = TestClient(main.app)
++
++    # 1. Without secret configured, missing header should not trigger 401
++    with mock.patch.dict(os.environ, {"STEALTH_WEBHOOK_SECRET": ""}, clear=False):
++        # Mock relay_engine.ask to avoid live network call
++        with mock.patch.object(main.relay_engine, "ask", return_value="mock reply"):
++            resp = client.post("/api/chat", json={"message": "hello"})
++            assert resp.status_code == 200
++            assert resp.json()["reply"] == "mock reply"
++
++    # 2. With secret configured, missing/invalid header triggers 401
++    with mock.patch.dict(os.environ, {"STEALTH_WEBHOOK_SECRET": "guard-token-xyz"}, clear=False):
++        resp_unauth = client.post("/api/chat", json={"message": "hello"})
++        assert resp_unauth.status_code == 401
++        assert "Unauthorized" in resp_unauth.json()["detail"]
++
++        resp_wrong = client.post(
++            "/api/chat", json={"message": "hello"}, headers={"X-Stealth-Secret": "wrong-token"}
++        )
++        assert resp_wrong.status_code == 401
++
++        with mock.patch.object(main.relay_engine, "ask", return_value="authenticated reply"):
++            # Valid X-Stealth-Secret
++            resp_x_secret = client.post(
++                "/api/chat",
++                json={"message": "hello"},
++                headers={"X-Stealth-Secret": "guard-token-xyz"},
++            )
++            assert resp_x_secret.status_code == 200
++            assert resp_x_secret.json()["reply"] == "authenticated reply"
++
++            # Valid Bearer Authorization
++            resp_bearer = client.post(
++                "/v1/chat/completions",
++                json={"messages": [{"role": "user", "content": "hello"}]},
++                headers={"Authorization": "Bearer guard-token-xyz"},
++            )
++            assert resp_bearer.status_code == 200
++            data = resp_bearer.json()
++            assert data["choices"][0]["message"]["content"] == "authenticated reply"

@@ -1,0 +1,115 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 5a41a6a7..969aea7f 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -421,53 +421,69 @@ async def chat_completions(
+             relay_detail = str(w_response)[:500]
+         logger.warning(
+             f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. "
+-            f"Cascading to Tier-1/Tier-2 Squad..."
++            f"API key fallback disabled per user mandate."
+         )
+-
+-    # ── Tier-1 / Tier-2 Dynamic Key-Plane Squad with Model Cascades ───────────
+-    candidates = squad.get_candidate_slots(preferred_provider) if squad else []
+-    if not candidates:
+-        if use_priority_1:
+-            raise HTTPException(
+-                status_code=502,
+-                detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}."
+-            )
+         raise HTTPException(
+-            status_code=503,
+-            detail="No healthy AI provider keys available at this moment. All keys cooling down."
++            status_code=502,
++            detail=f"Stealth Webhook relay returned non-chat or error status ({w_status}): {relay_detail}. API fallback disabled."
+         )
+ 
+-    last_error = None
+-    for provider, slot in candidates:
+-        status, response_data = await forward_chat_completion(provider, slot.key, body)
+-
+-        if 200 <= status < 300:
+-            headers = {
+-                "X-SupremeAI-Provider": provider,
+-                "X-SupremeAI-Slot": slot.name,
+-                "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
+-            }
+-            if use_priority_1:
+-                headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
+-            if isinstance(response_data, dict):
+-                return JSONResponse(status_code=status, content=response_data, headers=headers)
+-            return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
+-
+-        pool = squad.pools.get(provider)
+-        if pool:
+-            pool.report_injury(slot, status)
+-
+-        last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
+-        logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
+-
+-    return JSONResponse(
+-        status_code=502,
+-        content={
+-            "error": "All healthy provider attempts failed during cross-provider failover.",
+-            "last_error": last_error,
+-        }
++    raise HTTPException(
++        status_code=503,
++        detail="Stealth Webhook relay is currently unconfigured or offline. API key replies disabled per user mandate."
+     )
+ 
++    # ── [USER MANDATE & ARCHITECTURAL DIRECTIVE - 2026-10-24] ─────────────────────
++    # NOTICE TO ALL AI AGENTS & DEVELOPERS:
++    # API key fallback execution is intentionally DISABLED for now because webhook
++    # configuration & stealth session testing is actively ongoing.
++    # DO NOT re-enable API key replies or squad fallback in /v1/chat/completions until
++    # webhook configuration testing is officially marked complete by the maintainer.
++    # The dynamic squad implementation, multi-key pool, and model cascades remain
++    # fully preserved in service/pool.py and service/providers/adapters.py ready for
++    # future activation once webhook testing is concluded.
++    # ─────────────────────────────────────────────────────────────────────────────
++    # if not squad:
++    #     raise HTTPException(status_code=503, detail="Dynamic squad uninitialized")
++    #
++    # candidates = squad.get_candidate_slots(preferred_provider) if squad else []
++    # if not candidates:
++    #     raise HTTPException(
++    #         status_code=503,
++    #         detail="No healthy AI provider keys available at this moment. All keys cooling down."
++    #     )
++    #
++    # last_error = None
++    # for provider, slot in candidates:
++    #     status, response_data = await forward_chat_completion(provider, slot.key, body)
++    #
++    #     if 200 <= status < 300:
++    #         headers = {
++    #             "X-SupremeAI-Provider": provider,
++    #             "X-SupremeAI-Slot": slot.name,
++    #             "X-SupremeAI-Priority": "2-squad-fallback" if use_priority_1 else "direct-squad",
++    #         }
++    #         if use_priority_1:
++    #             headers["X-SupremeAI-Fallback"] = "p1-stealth-failover"
++    #         if isinstance(response_data, dict):
++    #             return JSONResponse(status_code=status, content=response_data, headers=headers)
++    #         return Response(content=str(response_data), status_code=status, headers=headers, media_type="text/plain")
++    #
++    #     pool = squad.pools.get(provider)
++    #     if pool:
++    #         pool.report_injury(slot, status)
++    #
++    #     last_error = {"provider": provider, "slot": slot.name, "status": status, "error": response_data}
++    #     logger.warning(f"Candidate {slot.name} failed ({status}), failing over to next player...")
++    #
++    # return JSONResponse(
++    #     status_code=502,
++    #     content={
++    #         "error": "All healthy provider attempts failed during cross-provider failover.",
++    #         "last_error": last_error,
++    #     }
++    # )
++
+ 
+ @app.post("/v1/ui/generate")
+ async def generate_ui_component(

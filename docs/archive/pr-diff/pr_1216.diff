@@ -1,0 +1,283 @@
+diff --git a/studio/src/lib/jarvis/handlers/help.ts b/studio/src/lib/jarvis/handlers/help.ts
+new file mode 100644
+index 00000000..71e4202a
+--- /dev/null
++++ b/studio/src/lib/jarvis/handlers/help.ts
+@@ -0,0 +1,31 @@
++// JARVIS /help — static registry listing (free, zero dependencies).
++// Auto-includes every registered intent, so future handlers (notify,
++// runbooks, ...) appear here without touching this file.
++
++import type { IntentContext, IntentResult } from '../registry';
++import { jarvisRegistry } from '../registry';
++
++function renderHelp(): IntentResult {
++  const lines: string[] = [];
++  lines.push('Jarvis local commands — these run on your device, instantly and free (no AI quota used):');
++  lines.push('');
++  for (const intent of jarvisRegistry) {
++    lines.push(`  ${intent.usage} — ${intent.description}`);
++  }
++  lines.push('');
++  lines.push('Everything else goes to the AI model as usual. Tip: /help always lists the latest commands.');
++  return { text: lines.join('\n'), via: 'jarvis:help' };
++}
++
++export const helpIntent = {
++  name: 'help',
++  usage: '/help',
++  description: 'List all Jarvis local commands',
++  permission: 'read' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim().toLowerCase().replace(/\s+/g, ' ');
++    if (msg === '/help' || msg === 'help' || msg === 'commands' || msg === 'command' || msg === 'jarvis' || msg === 'what can you do' || msg === 'what can you do?') return true;
++    return null;
++  },
++  handle: (_ctx: IntentContext): IntentResult => renderHelp(),
++};
+diff --git a/studio/src/lib/jarvis/handlers/status.ts b/studio/src/lib/jarvis/handlers/status.ts
+new file mode 100644
+index 00000000..d98ced84
+--- /dev/null
++++ b/studio/src/lib/jarvis/handlers/status.ts
+@@ -0,0 +1,69 @@
++// JARVIS /status — instant local device + session status (no network).
++// Reports what Jarvis can actually see: connectivity, storage pressure,
++// local memory/todo counts and which relay targets are configured.
++
++import type { IntentContext, IntentResult } from '../registry';
++import { listMemory } from './memory';
++import { listTodos } from './todos';
++
++function bytesLabel(n: number): string {
++  if (n < 1024) return `${n} B`;
++  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
++  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
++}
++
++function storagePressure(): { used: number; label: string } {
++  let used = 0;
++  if (typeof localStorage !== 'undefined') {
++    try {
++      for (let i = 0; i < localStorage.length; i += 1) {
++        const k = localStorage.key(i);
++        if (!k) continue;
++        used += k.length + (localStorage.getItem(k)?.length ?? 0);
++      }
++    } catch {
++      /* private mode */
++    }
++  }
++  // 5 MB is the classic localStorage budget; report characters as bytes (UTF-16 worst case is 2x, close enough for a status line).
++  return { used, label: `${bytesLabel(used * 2)} / ~5 MB` };
++}
++
++function relayTargets(): string {
++  const env = (import.meta as unknown as { env?: Record<string, string> }).env || {};
++  const webhook = env.VITE_STEALTH_WEBHOOK_URL || env.VITE_WEBHOOK_URL || '';
++  const api = env.VITE_SUPREMEAI_API_URL || 'https://supremeai-api-ulw0.onrender.com';
++  return webhook ? `webhook + ${api}` : api;
++}
++
++export function renderStatus(_ctx?: IntentContext): IntentResult {
++  const memoryCount = listMemory().length;
++  const todos = listTodos();
++  const openTodos = todos.filter((t) => !t.done).length;
++  const storage = storagePressure();
++  const online = typeof navigator !== 'undefined' ? navigator.onLine : true;
++  const now = new Date();
++  const lines = [
++    `Jarvis status — ${now.toLocaleString()}`,
++    `  Network: ${online ? 'online' : 'OFFLINE (commands still work, AI relay needs a connection)'}`,
++    `  AI relay: ${relayTargets()}`,
++    `  Local memory: ${memoryCount} fact${memoryCount === 1 ? '' : 's'} stored (/recall to view)`,
++    `  Todos: ${openTodos} open / ${todos.length} total (/todo list)`,
++    `  Local storage: ${storage.label} used`,
++    '  All Jarvis commands run locally — zero AI quota used.',
++  ];
++  return { text: lines.join('\n'), via: 'jarvis:status' };
++}
++
++export const statusIntent = {
++  name: 'status',
++  usage: '/status',
++  description: 'Show local device, storage, memory and relay status',
++  permission: 'read' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim().toLowerCase().replace(/\s+/g, ' ').replace(/[?.!]+$/, '');
++    if (msg === '/status' || msg === 'status' || msg === 'system status' || msg === 'health check' || msg === 'jarvis status') return true;
++    return null;
++  },
++  handle: (ctx: IntentContext): IntentResult => renderStatus(ctx),
++};
+diff --git a/studio/src/lib/jarvis/index.ts b/studio/src/lib/jarvis/index.ts
+new file mode 100644
+index 00000000..b3da1033
+--- /dev/null
++++ b/studio/src/lib/jarvis/index.ts
+@@ -0,0 +1,36 @@
++// JARVIS assembly — registration order matters (first match wins).
++// help -> status -> memory (remember/recall/forget) -> todos (todo/remind)
++// -> search last (its bare-/search and github: alias must not shadow).
++//
++// Importing this module registers every intent exactly once. UnifiedChatPanel
++// imports tryHandleIntent from here; future surfaces (admin voice cockpit,
++// Telegram bridge) can reuse the same registry.
++
++import { registerIntent } from './registry';
++import { helpIntent } from './handlers/help';
++import { statusIntent } from './handlers/status';
++import { forgetIntent, recallIntent, rememberIntent } from './handlers/memory';
++import { remindIntent, todoIntent } from './handlers/todos';
++import { searchIntent } from './handlers/search';
++
++let registered = false;
++
++/** Idempotent — safe to import from multiple entry points. */
++export function ensureJarvisIntents(): void {
++  if (registered) return;
++  registered = true;
++  registerIntent(helpIntent);
++  registerIntent(statusIntent);
++  registerIntent(rememberIntent);
++  registerIntent(recallIntent);
++  registerIntent(forgetIntent);
++  registerIntent(todoIntent);
++  registerIntent(remindIntent);
++  registerIntent(searchIntent);
++}
++
++ensureJarvisIntents();
++
++export { jarvisRegistry, matchIntent, tryHandleIntent } from './registry';
++export { listMemory, rememberFact, recallMemory, forgetMemory, clearMemory } from './handlers/memory';
++export { listTodos, addTodo, completeTodo, clearDoneTodos, checkDueTodos, parseInDuration } from './handlers/todos';
+diff --git a/studio/src/lib/jarvis/registry.ts b/studio/src/lib/jarvis/registry.ts
+new file mode 100644
+index 00000000..d71c09f8
+--- /dev/null
++++ b/studio/src/lib/jarvis/registry.ts
+@@ -0,0 +1,123 @@
++// ============================================================
++// SUPREMEAI JARVIS — Shared Intent Registry & Router (Phase A)
++// Zero-cost local command layer for the unified chat.
++// Owner request 2026-10-25: "Search + Help + Notify intents add korum
++// (free APIs)" + memory recall + todos — all resolving LOCALLY so chat
++// commands never burn relay/LLM quota.
++//
++// Design notes:
++// - Handlers live in ./handlers/* and self-register via registerIntent.
++// - index.ts owns registration order (help first, search last) so
++//   matchers never shadow each other.
++// - matchers are ANCHORED (^...) and conservative: a normal question
++//   like "help me write an essay" must fall through to the LLM.
++// - The admin voice cockpit (components/admin/jarvis) keeps its own
++//   persona; this registry is the shared hands layer both can use.
++// ============================================================
++
++export type IntentPermission = 'read' | 'write';
++
++export interface IntentContext {
++  /** Everything after the command token (trimmed). May be ''. */
++  arg: string;
++  /** The full original message, trimmed. */
++  raw: string;
++  now: Date;
++}
++
++export interface IntentResult {
++  text: string;
++  /** Shown as the bubble's via badge, e.g. 'jarvis:help'. */
++  via: string;
++}
++
++export interface JarvisIntent {
++  /** Registry id, e.g. 'help'. */
++  name: string;
++  /** Short usage string shown by /help, e.g. '/remember <fact>'. */
++  usage: string;
++  /** One-line description shown by /help. */
++  description: string;
++  /** 'write' intents mutate local state (memory/todos); 'read' ones do not. */
++  permission: IntentPermission;
++  /**
++   * Return null to pass, true for "matched, no argument",
++   * or a string for "matched, argument = ...".
++   */
++  match: (raw: string) => string | boolean | null;
++  handle: (ctx: IntentContext) => IntentResult | Promise<IntentResult>;
++}
++
++/** Live registry — populated at app start by index.ts. */
++export const jarvisRegistry: JarvisIntent[] = [];
++
++export function registerIntent(intent: JarvisIntent): void {
++  const existing = jarvisRegistry.findIndex((i) => i.name === intent.name);
++  if (existing >= 0) jarvisRegistry[existing] = intent;
++  else jarvisRegistry.push(intent);
++}
++
++export interface IntentMatch {
++  intent: JarvisIntent;
++  arg: string;
++}
++
++/** First registered match wins. Null when no intent claims the message. */
++export function matchIntent(raw: string): IntentMatch | null {
++  const msg = raw.trim();
++  if (!msg) return null;
++  for (const intent of jarvisRegistry) {
++    let hit: string | boolean | null = null;
++    try {
++      hit = intent.match(msg);
++    } catch {
++      hit = null;
++    }
++    if (hit === null || hit === false) continue;
++    return { intent, arg: typeof hit === 'string' ? hit.trim() : '' };
++  }
++  return null;
++}
++
++/**
++ * Router used by UnifiedChatPanel: resolves a local intent or returns
++ * null so the caller proceeds with the normal relay/LLM path. Handler
++ * failures are swallowed into a jarvis:error result (chat must never
++ * break because a local command misfired).
++ */
++export async function tryHandleIntent(raw: string): Promise<IntentResult | null> {
++  const match = matchIntent(raw);
++  if (!match) return null;
++  try {
++    return await match.intent.handle({ arg: match.arg, raw: raw.trim(), now: new Date() });
++  } catch (e) {
++    return {
++      text: `Jarvis command "/${match.intent.name}" failed: ${e instanceof Error ? e.message : String(e)}. The message was not sent to the model.`,
++      via: 'jarvis:error',
++    };
++  }
++}
++
++// ------------------------------------------------------------
++// localStorage helpers (guarded — SSR/jsdom/non-browser safe)
++// ------------------------------------------------------------
++
++export function jarvisReadJson<T>(key: string, fallback: T): T {
++  if (typeof localStorage === 'undefined') return fallback;
++  try {
++    const stored = localStorage.getItem(key);
++    if (!stored) return fallback;
++    return JSON.parse(stored) as T;
++  } catch {
++    return fallback;
++  }
++}
++
++export function jarvisWriteJson(key: string, value: unknown): void {
++  if (typeof localStorage === 'undefined') return;
++  try {
++    localStorage.setItem(key, JSON.stringify(value));
++  } catch {
++    /* quota/private-mode: memory commands degrade gracefully */
++  }
++}

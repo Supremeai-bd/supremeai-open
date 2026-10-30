@@ -1,0 +1,364 @@
+diff --git a/core/otp_router.py b/core/otp_router.py
+index 46b5e5bf..9299d971 100644
+--- a/core/otp_router.py
++++ b/core/otp_router.py
+@@ -19,7 +19,7 @@
+ 
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ CHANNEL_DISCORD = "discord"
+ CHANNEL_EMAIL = "email"
+diff --git a/core/output_validator.py b/core/output_validator.py
+index f137d463..9195364d 100644
+--- a/core/output_validator.py
++++ b/core/output_validator.py
+@@ -2,7 +2,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class MultiAICodeGenerator:
+diff --git a/core/performance_enhancer.py b/core/performance_enhancer.py
+index cb43ab03..5c9fdfd5 100644
+--- a/core/performance_enhancer.py
++++ b/core/performance_enhancer.py
+@@ -16,7 +16,7 @@
+ from brain.model_registry import ModelRegistry
+ from core.config import settings
+ from core.health.self_healer import RemediationPipeline, SelfHealerService
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.resilience.circuit_breaker import CircuitBreaker
+ 
+ 
+diff --git a/core/playwright_manager.py b/core/playwright_manager.py
+index 36f85a8f..9556cdcc 100644
+--- a/core/playwright_manager.py
++++ b/core/playwright_manager.py
+@@ -4,7 +4,7 @@
+ from contextlib import asynccontextmanager
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from playwright.async_api import Browser, Playwright, async_playwright
+diff --git a/core/presence_registry.py b/core/presence_registry.py
+index 1d615b52..9fb81374 100644
+--- a/core/presence_registry.py
++++ b/core/presence_registry.py
+@@ -31,7 +31,7 @@
+ 
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ # ডিফল্ট stale threshold — ১০ মিনিট (issue spec অনুযায়ী)।
+diff --git a/core/rate_limit.py b/core/rate_limit.py
+index cb3b27f9..93c62b8c 100644
+--- a/core/rate_limit.py
++++ b/core/rate_limit.py
+@@ -18,7 +18,7 @@
+ from fastapi.security import HTTPBearer
+ from starlette.middleware.base import BaseHTTPMiddleware
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from services.config_service import ConfigService
+ 
+ # Configure logging
+diff --git a/core/rate_limit_quota.py b/core/rate_limit_quota.py
+index f112821c..8ad421ea 100644
+--- a/core/rate_limit_quota.py
++++ b/core/rate_limit_quota.py
+@@ -11,7 +11,7 @@
+ 
+ import redis.asyncio as aioredis
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class DailyQuotaLimiter:
+diff --git a/core/reliability_controller.py b/core/reliability_controller.py
+index 24d72a80..ef052136 100644
+--- a/core/reliability_controller.py
++++ b/core/reliability_controller.py
+@@ -7,7 +7,7 @@
+ 
+ from core.errors.error_bus import with_error_bus
+ from core.failure_fingerprint import make_fingerprint
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ from core.request_context import get_correlation_id
+ 
+diff --git a/core/repo_manager.py b/core/repo_manager.py
+index a1b4147d..19090e1a 100644
+--- a/core/repo_manager.py
++++ b/core/repo_manager.py
+@@ -15,7 +15,7 @@
+ from pathlib import Path
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.target_registry import TargetEntity, target_registry
+ 
+ 
+diff --git a/core/retry_handler.py b/core/retry_handler.py
+index e924faef..243207da 100644
+--- a/core/retry_handler.py
++++ b/core/retry_handler.py
+@@ -7,7 +7,7 @@
+ from collections.abc import Callable
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def retry_handler(
+diff --git a/core/scheduled_task_sweep.py b/core/scheduled_task_sweep.py
+index 9d8ce2cd..0ab7a2d2 100644
+--- a/core/scheduled_task_sweep.py
++++ b/core/scheduled_task_sweep.py
+@@ -27,7 +27,7 @@
+ from datetime import UTC, datetime, timedelta
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ DEFAULT_SWEEP_INTERVAL_SECONDS = 60
+ DEFAULT_STALE_CLAIM_SECONDS = 900
+diff --git a/core/schema_exporter.py b/core/schema_exporter.py
+index f7fea851..d2933961 100644
+--- a/core/schema_exporter.py
++++ b/core/schema_exporter.py
+@@ -2,7 +2,7 @@
+ import os
+ import sys
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def export_openapi_schema(output_path: str = "packages/shared-types/openapi.json") -> str:
+diff --git a/core/schema_validator.py b/core/schema_validator.py
+index 72ef09e1..f8f552b0 100644
+--- a/core/schema_validator.py
++++ b/core/schema_validator.py
+@@ -4,7 +4,7 @@
+ 
+ from pydantic import BaseModel, ValidationError
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ T = TypeVar("T", bound=BaseModel)
+ 
+diff --git a/core/search.py b/core/search.py
+index 30d38efe..3980ed7b 100644
+--- a/core/search.py
++++ b/core/search.py
+@@ -16,7 +16,7 @@
+ import os
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def _ddgs_client():
+diff --git a/core/self_benchmark.py b/core/self_benchmark.py
+index 4f8db983..d5c7b660 100644
+--- a/core/self_benchmark.py
++++ b/core/self_benchmark.py
+@@ -24,7 +24,7 @@
+ from enum import Enum, StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import psutil
+diff --git a/core/sentinel_agent.py b/core/sentinel_agent.py
+index c39fbc0b..2d6b2f52 100644
+--- a/core/sentinel_agent.py
++++ b/core/sentinel_agent.py
+@@ -27,7 +27,7 @@
+ from sqlalchemy import select
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.session import AsyncSessionLocal
+ from models.sentinel import ApiEndpoint, SystemDependency, SystemIncident
+ 
+diff --git a/core/shutdown.py b/core/shutdown.py
+index 2ee00631..9144d915 100644
+--- a/core/shutdown.py
++++ b/core/shutdown.py
+@@ -7,7 +7,7 @@
+ service_container = services
+ from core.agent_supervisor import agent_supervisor
+ from core.cache.redis_manager import redis_manager
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ from core.persistence import pooled_pg
+ from core.persistence.write_behind import flush_all as flush_write_behind_batchers
+diff --git a/core/skill_manager.py b/core/skill_manager.py
+index de00fd4f..e5fdc595 100644
+--- a/core/skill_manager.py
++++ b/core/skill_manager.py
+@@ -25,7 +25,7 @@
+ import threading
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.security.codegen_gate import (
+     denied_reason,
+     inprocess_codegen_enabled,
+diff --git a/core/startup_validator.py b/core/startup_validator.py
+index b3351f3e..66c06150 100644
+--- a/core/startup_validator.py
++++ b/core/startup_validator.py
+@@ -5,7 +5,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class StartupValidator:
+diff --git a/core/swarm_pubsub.py b/core/swarm_pubsub.py
+index 60287341..1f9b7f84 100644
+--- a/core/swarm_pubsub.py
++++ b/core/swarm_pubsub.py
+@@ -21,7 +21,7 @@
+ # বাংলা মন্তব্য: aioredis মডিউল লেভেলে ইমপোর্ট করা হয়েছে যাতে টেস্টের সময় সঠিক মক ট্র্যাকিং বজায় থাকে।
+ import redis.asyncio as aioredis  # type: ignore[import-untyped]
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext, ErrorEvent, error_event_bus
+ 
+ # বাংলা মন্তব্য: module-level redis.from_url("redis://<your-redis-url>") সম্পূর্ণ নিষিদ্ধ।
+diff --git a/core/target_registry.py b/core/target_registry.py
+index 42a89368..8188ed36 100644
+--- a/core/target_registry.py
++++ b/core/target_registry.py
+@@ -16,7 +16,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class PermissionScope(StrEnum):
+diff --git a/core/task_router.py b/core/task_router.py
+index 971cbd9f..51643a95 100644
+--- a/core/task_router.py
++++ b/core/task_router.py
+@@ -38,7 +38,7 @@
+ 
+ from pydantic import BaseModel, Field
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ # ডিফল্ট lease window — ১০ মিনিট (master plan §৪.3 অনুযায়ী)।
+diff --git a/core/tool_loop.py b/core/tool_loop.py
+index 24468af9..0fe2923d 100644
+--- a/core/tool_loop.py
++++ b/core/tool_loop.py
+@@ -23,7 +23,7 @@
+ from collections.abc import Callable
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.mcp_policy import evaluate_tool
+ 
+ #: প্রতি-টুল প্রাথমিক প্যারামিটার-নাম — deterministic fallback
+diff --git a/core/type_sync_bus.py b/core/type_sync_bus.py
+index 626ad43d..0da442ad 100644
+--- a/core/type_sync_bus.py
++++ b/core/type_sync_bus.py
+@@ -25,7 +25,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ─────────────────────────────────────────────────────────────────
+ SCRIPTS_DIR = Path(__file__).resolve().parent.parent.parent / "scripts"
+diff --git a/core/unified_memory.py b/core/unified_memory.py
+index c9ee70a4..0a2f8f34 100644
+--- a/core/unified_memory.py
++++ b/core/unified_memory.py
+@@ -19,7 +19,7 @@
+ import re
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from memory.sliding_window import SlidingWindowMemory
+ 
+ # Import the underlying services
+diff --git a/core/universal_rules.py b/core/universal_rules.py
+index d2b1ab2f..4dee3a95 100644
+--- a/core/universal_rules.py
++++ b/core/universal_rules.py
+@@ -8,7 +8,7 @@
+ import tempfile
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class UniversalRulesEngine:
+diff --git a/core/user_profiler.py b/core/user_profiler.py
+index 36e738bb..cb526211 100644
+--- a/core/user_profiler.py
++++ b/core/user_profiler.py
+@@ -3,7 +3,7 @@
+ from enum import StrEnum
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class UserMode(StrEnum):
+diff --git a/core/web_ai_session_bridge.py b/core/web_ai_session_bridge.py
+index a0307d78..7c604dad 100644
+--- a/core/web_ai_session_bridge.py
++++ b/core/web_ai_session_bridge.py
+@@ -39,7 +39,7 @@
+ from typing import Any
+ 
+ from core.browser_session_vault import BrowserSessionVault, SessionVaultError
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ডিপেন্ডেন্সি প্রাপ্যতা যাচাই (Optional dependencies)
+ CURL_CFFI_AVAILABLE = importlib.util.find_spec("curl_cffi") is not None

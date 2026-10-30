@@ -1,0 +1,86 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 006f3886..5647890d 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -281,7 +281,24 @@ jobs:
+                 exit 1
+                 ;;
+             esac
+-            echo "Processing dispatch for PR #${PR_NUM}..."
++          fi
++
++          # Channel resolution:
++          #   pull_request (USER-token merge) -> the event payload is complete.
++          #   workflow_dispatch / workflow_run (auto-merge and the dispatch-only
++          #     reconciliation channel) -> resolve via the API: workflow_run
++          #     carries NO pull_request payload, so the event-value path left
++          #     PR_SHA empty and hard-failed "merge commit unavailable" on the
++          #     first live reconciliation run (PR #184). Both API-path channels
++          #     also re-check state != MERGED and bridge/ loop prevention.
++          if [ "$EVENT_NAME" = "pull_request" ]; then
++            echo "Processing merged PR #${PR_NUM} (pull_request channel)..."
++            PR_TITLE="$EVENT_PR_TITLE"
++            PR_SHA="$EVENT_PR_SHA"
++            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
++            BASE_SHA="$EVENT_PR_BASE_SHA"
++          else
++            echo "Processing landed PR #${PR_NUM} (API resolution)..."
+             PR_JSON=$(gh pr view "$PR_NUM" --repo "${{ github.repository }}" --json title,mergeCommit,baseRefOid,headRefOid,headRefName,state)
+             STATE=$(echo "$PR_JSON" | jq -r '.state')
+             if [ "$STATE" != "MERGED" ]; then
+@@ -302,12 +319,6 @@ jobs:
+               # recorded base head — diff pair stays valid).
+               BASE_SHA=$(gh api "repos/${{ github.repository }}/pulls/${PR_NUM}" -q '.base.sha')
+             fi
+-          else
+-            echo "Processing merged PR #${PR_NUM}..."
+-            PR_TITLE="$EVENT_PR_TITLE"
+-            PR_SHA="$EVENT_PR_SHA"
+-            PR_HEAD_SHA="$EVENT_PR_HEAD_SHA"
+-            BASE_SHA="$EVENT_PR_BASE_SHA"
+           fi
+ 
+           if [ -z "$PR_SHA" ] || [ "$PR_SHA" = "null" ]; then
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+index 6d0377b6..433eb900 100644
+--- a/scripts/agents/check_loop_contract_parity.py
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -10,7 +10,7 @@
+      SSOT row in ``docs/AGENT_LOOP_SPEC.md`` §4 ("tiers 1–N"), with no gaps.
+   2. No hardcoded "<N>-tier checks passed" / "All <N>-tier checks" literal in
+      the loop code — the count must be derived from the evidence list.
+-  3. SPEC §5 must name every job that ``open-guards.yml`` actually runs.
++  3. SPEC §5 must name every guard job that ``pipeline.yml`` actually runs.
+   4. CONTRIBUTING.md must carry no flag-table copy (SSOT is SPEC §4).
+   5. The SSOT pointers must exist (SPEC §4b → §4; CONTRIBUTING → this guard).
+ 
+@@ -32,8 +32,9 @@
+ SPEC = ROOT / "docs" / "AGENT_LOOP_SPEC.md"
+ CONTRIB = ROOT / "docs" / "CONTRIBUTING.md"
+ GUARDS_WF = ROOT / ".github" / "workflows" / "pipeline.yml"
+-if not GUARDS_WF.is_file():
+-    GUARDS_WF = ROOT / ".github" / "workflows" / "open-guards.yml"
++# The open-guards.yml fallback was removed with the #155 workflow diet: a
++# missing guard workflow is now a fail-closed guard-environment error, not a
++# silent fallback to a deleted file.
+ 
+ 
+ def main() -> int:
+@@ -76,7 +77,7 @@ def main() -> int:
+             "derive the count from the evidence list instead"
+         )
+ 
+-    # 3. SPEC §5 guard list vs open-guards.yml job set (name-level parity).
++    # 3. SPEC §5 guard list vs pipeline.yml guard job set (name-level parity).
+     def norm(name: str) -> str:
+         name = re.sub(r"\(#[0-9]+\)", "", name)
+         name = re.sub(r"[^A-Za-z ]+", " ", name)
+@@ -91,7 +92,7 @@ def norm(name: str) -> str:
+     sec5 = norm(spec.split("## 5.")[1].split("## 6.")[0])
+     for job in sorted(job_names):
+         if job and job not in sec5:
+-            failures.append(f"SPEC §5 does not document open-guards job: '{job}'")
++            failures.append(f"SPEC §5 does not document pipeline guard job: '{job}'")
+ 
+     # 4. No flag-table copy in CONTRIBUTING (SSOT is SPEC §4).
+     if re.search(r"^\|\s*`--", contrib, flags=re.M):

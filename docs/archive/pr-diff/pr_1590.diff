@@ -1,0 +1,532 @@
+diff --git a/docs/AUDIT_2026-10-28.md b/docs/AUDIT_2026-10-28.md
+new file mode 100644
+index 00000000..08fb5765
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28.md
+@@ -0,0 +1,190 @@
++# SupremeAI Audit — 2026-10-28 (Clone-Hygiene Wedge & Stale Work-Order Board)
++
++- **Auditor role assigned by:** `continuous_agent_loop.py` cadence dispatch (auditor, 24h timer)
++- **Auditor identity:** zai-cron-agent-loop Job 478318 (zero-credential MCP Tower agent, session `contrib-agent-478318`)
++- **Scope:** fresh-clone hygiene across all tracked text files; validity of `bridge:queued`
++  work orders against live main (U3 stale-incident guard); dead-code/wiring check of
++  `scripts/agents/*` self-check tooling; CI-gate proposals
++- **Repo state audited:** `supremeai-open` main `3c8cefa` at audit start; re-based
++  twice during the cycle as main advanced (`3c8cefa` → `0b018ba`, 0 behind at each
++  work phase — dual-rebase honored; the second landing, #1585, resolved F3 below
++  mid-audit, which this report reflects)
++- **Tower handshake:** MCP Control Tower `initialize` → `tools/list` (135 tools) →
++  `status(scope=all)` = 21/21 services available; memory sidecar ready (0 prior episodes)
++
++---
++
++## 1. Executive summary
++
++Two systemic frictions reproduce on pristine main. **F1** is a repository-hygiene wedge:
++exactly one tracked file is committed with CRLF line endings while `.gitattributes`
++mandates `* text=auto eol=lf` / `*.ts text eol=lf`. Every fresh clone of main therefore
++shows a permanent 164/164-line phantom diff on that file, and — because `git rebase`
++refuses to run with unstaged changes — the loop's own pre-work and pre-push rebase
++guards (`pre_work_rebase_guard`, `pre_push_rebase_guard`, Invariant #1) fail closed for
++**every agent on every machine** unless they know the `update-index --assume-unchanged`
++workaround. This auditor hit the wedge on a clean clone and reproduced all symptoms.
++**F2** is board-state drift: of the 15 open work orders visible through the Tower's
++`bridge_work_queue`, three (`#1530`, `#1552`, `#1565`) describe defects that no longer
++reproduce on live main — later landed PRs (#1539/#1541 lineage, #1578, #1580, #1582,
++#1583) already fixed them. Under U3 ("resolved incidents are skipped with evidence,
++never re-solved") these are stale orders; a solver acting on them today would waste the
++work budget or, worse, attempt to "fix" code that is already correct.
++
++Both items carry the smallest safe remediation: F1 is fixed in this patch by a
++single-file LF renormalization (zero content change), F2 is discharged by the evidence
++tables in §3 so maintainers can label and close the three orders. CI-gate proposals in
++§5 would have caught both classes before they reached the board.
++
++## 2. Findings
++
++### F1 (P0, FIXED in this patch) — CRLF blob wedges Dual-Rebase for every agent
++
++- **Evidence:**
++  - `git ls-files --eol infrastructure/mcp-control-plane/src/tools/tenant.tools.ts`
++    → `i/-text w/-text attr/text eol=lf`: the committed blob contains 164 CRLF pairs
++    plus 1 trailing lone CR (165 CR bytes total) and no final newline, while
++    `.gitattributes` line 2 (`* text=auto eol=lf`) and line 10 (`*.ts text eol=lf`)
++    declare the path text/LF. `git hash-object` proves the phantom: hashing the
++    worktree file **with** the clean filter yields the LF-normalized blob (≠ HEAD
++    blob `7f576d9e`), so git considers the checkout permanently dirty.
++  - `git status` on a fresh clone reports the file modified with a 164-insertion /
++    164-deletion diff that is pure EOL churn (`git diff --ignore-cr-at-eol --stat`
++    is empty — zero content delta).
++  - The phantom regenerates faster than `git -c rebase.autoStash=true rebase` can
++    suppress it (stash → rebase still refuses → stash pop conflicts). Only
++    `git update-index --assume-unchanged <path>` unblocks the rebase.
++  - Repo-wide CR scan `git grep -Il $'\r' -- .` returns exactly this one file — it is
++    the sole offender and the sole poison source.
++- **Impact:** Invariant #1 (Dual-Rebase at work-start AND pre-push, "0 behind") is
++  unexecutable as written on any clone of main. The loop's fail-closed rebase guards
++  turn a hygiene defect into a dispatch outage for the whole agent fleet.
++- **Remediation (this patch):** commit the LF-normalized blob of the single file
++  (164 CRLF → LF, trailing lone CR → final newline; blob replaces 165 CR bytes with
++  LF endings). Zero content change: byte-identical after CR-stripping and
++  trailing-newline normalization; TypeScript output is unaffected. After the patch
++  lands, fresh clones are clean, both rebase guards execute as designed, and the
++  proposed G1 gate (`git grep -Il $'\r'` = empty) passes repo-wide.
++
++### F2 (P1, EVIDENCE FILED) — 3 of 15 open work orders are stale (U3)
++
++- **Evidence:** §3 cross-check table; every in-slice defect claim of `#1530`, `#1552`
++  and `#1565` was re-verified against live main `3c8cefa` by reproduction attempts and
++  source inspection, and by the repo's own suites.
++- **Impact:** 20% of the claimable board is stale-queued. Per U3, agents must skip
++  these with evidence; the table below is that evidence. Leaving them queued keeps
++  burning agent cycles and invites revert-shaped "fixes" of already-landed truth
++  (e.g. re-adding the deleted `AGENT_RULES.md` precondition that #1526/#1530 removed).
++- **Remediation (proposed):** maintainers label the three orders
++  (`state:stale-evidence` or close with reference to this audit); §5-G2 automates the
++  sweep so the board self-cleans.
++
++### F3 (P2, RESOLVED mid-audit by upstream #1585 — no action in this slice)
++
++`tests/test_ci_guards.py` failed 5/12 on `3c8cefa` (`test_ks_guard_exact_error_string_and_parsers`,
++`test_claim_guard_behavior_matrix`, `test_ks_guard_behavior_matrix`,
++`test_combined_claim_and_reflection_pass_together`, `test_unfilled_template_body_fails_ks_guard`),
++matching the out-of-slice note already recorded in WO #1552 ("test_ci_guards.py 5
++pre-existing fails on pristine main (#392 verbatim drift)"). During this audit's
++pre-push rebase, #1585 landed the oracle sync and the suite went **12/12 PASS on
++`0b018ba`** (re-verified). No action taken here; the incident is cited as live
++corroboration that the G2 stale-sweep gate (§5) is needed — the failure stayed
++queued on the board after the fix landed, exactly the F2 pattern.
++
++### F4 (clean bill) — loop contract, suites, and self-check tooling are healthy
++
++- `--verify-only`: 8/8 tiers PASS, exit 0, single `CONTRACT_VERSION` emission on stdout.
++- `tests/test_agent_cadence.py` 11/11 PASS; `tests/test_constitution_freshness.py`
++  26/26 PASS on pristine main.
++- Dead-code wiring check: `check_loop_contract_parity.py` (6 tracked references incl.
++  `pipeline.yml:446`), `check_slot_registry_drift.py` (3), `claim_ttl_expirer.py` (2),
++  `automation_watchdog.py` (1), `acquire_role_slot.py` (2) — all referenced by tracked
++  CI/config/docs; no orphaned self-check tool found in the audited set.
++
++## 3. U3 stale-incident cross-check (work orders vs live main `3c8cefa`)
++
++| WO claim (queued order) | Reproduction result on live main | Verdict |
++|---|---|---|
++| #1530-c1: `RULE_FRESHNESS_FILES` still requires deleted `AGENT_RULES.md` | Tuple is `("AGENTS.md", ".github/PULL_REQUEST_TEMPLATE.md")` with explicit deleted-file rationale comment | STALE — fixed |
++| #1530-c2: `run_verify()` hardcodes `passed: True` on all 8 tiers | 0 hardcoded `"passed": True`; 8 literal tier dicts, all backed by real `_run()` checks | STALE — fixed |
++| #1530-c3: bare `subprocess.run` for `gh` crashes loop without CLI | Guarded path with honest `gh CLI not found on PATH` degrade; cadence roles still run (this dispatch itself ran without `gh`) | STALE — fixed |
++| #1552-c1: `--verify-only` fail-open (exit 0 on failed tier) | `main()` returns 1 when any tier fails (verified in source + live exit semantics) | STALE — fixed |
++| #1552-c2: duplicate `CONTRACT_VERSION` print returned | Exactly 1 stdout emission per `--verify-only` run (measured) | STALE — fixed |
++| #1552-c3: cadence suite RED (1 failed/66) on public main | `test_agent_cadence.py` 11/11 PASS on `3c8cefa` and on `0b018ba` | STALE — fixed |
++| #1552-c4 (out-of-slice note): test_ci_guards 5 fails on pristine main | Reproduced on `3c8cefa` (5 failed/7 passed), then **fixed mid-audit** by #1585 — 12/12 PASS on `0b018ba` | RESOLVED mid-audit |
++| #1565-c1: SPEC not synced (9-name VALID_GROUPS table, `--offline`/`--auto-pr` rows) | SPEC contains all 9 group names + `--offline` + `--auto-pr` rows; loop VALID_GROUPS = {browser, core, docs, federation, gateway, infra, marketplace, studio, vscode} | STALE — synced |
++
++Corroborating timeline: the three orders were queued 2026-10-27 15:08–17:32Z; the
++fixes landed afterwards as #1578 (rerun-truth), #1580 (SPEC `--offline` row),
++#1582 (contributing quickstart truth), #1583 (Closes-#N standard) and #1585
++(ci-guard oracle sync, which also discharged the #1552 out-of-slice ci_guards
++note) on top of the #1539/#1541 lineage.
++
++## 4. Remediation in this patch
++
++1. `infrastructure/mcp-control-plane/src/tools/tenant.tools.ts` — LF renormalization
++   of the single CRLF-committed blob (F1). Content-identical modulo EOL.
++2. `docs/AUDIT_2026-10-28.md` — this report (findings, U3 evidence, gate proposals).
++
++Nothing else is touched: no dispatch behavior, no cadence config, no test expectations,
++no `.github/` files (protected path per WO #1554 precedent — gate proposals are
++delivered as reviewable patches in §5, not self-landed).
++
++## 5. CI gate proposals (patches for maintainer application)
++
++### G1 — `.gitattributes` conformance guard (prevents the entire F1 class)
++
++Fail CI when any tracked text file still carries CR bytes. One step in the existing
++`fast-lint-syntax-preflight` job (add after checkout):
++
++```yaml
++      - name: gitattributes EOL conformance guard (no CR bytes in tracked text)
++        run: |
++          if git grep -Il $'\r' -- . | grep -v '^\.gitattributes$'; then
++            echo "::error::CRLF-committed files detected (violates .gitattributes eol=lf);"
++            echo "::error::run: git add --renormalize . && git commit -m 'chore(hygiene): renormalize EOL'"
++            exit 1
++          fi
++```
++
++Cheap (single grep), dependency-free, and it converts the silent per-clone wedge into
++a loud merge-time failure. Note `--renormalize` only helps when the attributes file is
++already in force, so the guard belongs in the same job that already enforces lint
++parity.
++
++### G2 — stale-work-order evidence sweep (automates U3 for `bridge:queued`)
++
++Scheduled cadence role (fits the existing auditor slot, 24h): for each
++`bridge:queued` order, re-run its defect claims against a fresh `origin/main`
++(reproduction scripts or claim-specific probes like §3); when no claim reproduces,
++post the evidence table as an issue comment and apply `state:stale-evidence`
++(new label, added to the loop's `EXCLUDED_LABELS` in the same PR). Effect: the board
++only ever advertises incidents that are true on live main, and the loop's
++`pick_next_issue()` stops surfacing dead orders automatically once the label exists.
++
++## 6. Reflection Evidence
++
++- **why:** the CRLF wedge (F1) was hit and reproduced by this agent on a pristine
++  clone during its assigned cadence cycle — the rebase invariant that the whole
++  federation depends on fail-closes on main today; a one-file renormalization is the
++  smallest superior replacement (delete the poison blob rather than teaching every
++  agent a workaround). The stale-order evidence (F2) is filed because U3 explicitly
++  requires evidence-backed skipping, and 3/15 of the board being stale is a
++  measurable tax on every future dispatch cycle.
++- **alternatives_rejected:**
++  1. *Fix by adding `.gitattributes` exception (`*.ts -text`)* — rejected: it would
++     bless the CRLF blob and contradict the repo's own byte-parity goal stated in
++     `.gitattributes` line 1.
++  2. *Document the `assume-unchanged` workaround in CONTRIBUTING instead of fixing
++     the blob* — rejected: docs don't stop `git rebase` from refusing; every fresh
++     clone (including CI runners using `persist-credentials`-style checkouts) keeps
++     hitting the wedge.
++  3. *Renormalize the whole repo in one commit* — rejected: `git grep -Il $'\r'`
++     shows exactly one offending file; a repo-wide commit would inflate the slice
++     beyond need (cohesive-sizing invariant) and touch files with no defect.
++  4. *Self-land G1/G2 into `pipeline.yml` / loop labels* — rejected: `.github/` is a
++     protected path (WO #1554 precedent); gates are proposed as exact patches for
++     maintainer application instead.
++  5. *Close the three stale WOs directly via Tower tools* — rejected: labeling/closing
++     other parties' work orders is an admin action; this audit files the evidence and
++     leaves the board decision to maintainers.
+diff --git a/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts b/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
+index 7f576d9e..c637448d 100644
+--- a/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/tenant.tools.ts
+@@ -1,165 +1,165 @@
+-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+-import { z } from "zod";
+-import {
+-  canManageTenants,
+-  createTenant,
+-  listTenants,
+-  updateTenant,
+-  suspendTenant,
+-  activateTenant,
+-  rotateTenantAdminToken,
+-} from "../tenancy/tenant.registry.js";
+-
+-/**
+- * Tenant Management Tools.
+- *
+- * Multi-tenant MCP Server: каждый admin/customer имеет собственный
+- * изолированный MCP setup. Эти инструменты вызываются ТОЛЬКО
+- * глобальным админом SupremeAI (MCP_ADMIN_KEY / admin role).
+- */
+-export async function registerTenantTools(server: McpServer): Promise<void> {
+-  server.tool(
+-    "tenant.create",
+-    "Create a new isolated tenant (admin/customer). Each tenant gets its own admin token and can connect its own AI clients. Global-admin only.",
+-    {
+-      name: z.string().min(2).describe("Tenant name, e.g. 'Saiful's Startup'"),
+-      ownerEmail: z.string().email().describe("Owner email — unique per tenant"),
+-      type: z.enum(["admin", "customer"]).describe("'admin' for internal teams, 'customer' for external users"),
+-      plan: z.enum(["admin", "free", "pro", "enterprise"]).optional().describe("Billing plan (default: free)"),
+-      description: z.string().optional().describe("Optional tenant description"),
+-      maxClients: z.number().int().min(1).max(1000).optional().describe("Client limit override"),
+-      maxToolsPerMinute: z.number().int().min(1).max(10000).optional().describe("Rate limit override"),
+-    },
+-    async (args) => {
+-      try {
+-        const result = createTenant({
+-          name: args.name,
+-          ownerEmail: args.ownerEmail,
+-          type: args.type,
+-          plan: args.plan,
+-          description: args.description,
+-          limits: {
+-            ...(args.maxClients ? { maxClients: args.maxClients } : {}),
+-            ...(args.maxToolsPerMinute ? { maxToolsPerMinute: args.maxToolsPerMinute } : {}),
+-          },
+-        });
+-        return {
+-          content: [{
+-            type: "text",
+-            text: JSON.stringify({
+-              message: "Tenant created successfully",
+-              tenant: result.tenant,
+-              adminToken: result.adminToken,
+-              note: "Share the adminToken securely with the tenant owner ONCE. It is NOT stored in plaintext.",
+-            }, null, 2),
+-          }],
+-        };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "tenant.list",
+-    "List all tenants (admin & customer) with their status, plan, and limits. Global-admin only.",
+-    {},
+-    async () => {
+-      try {
+-        // #698: tenant.list was the only tenant tool without the admin gate.
+-        if (!canManageTenants()) {
+-          return { isError: true, content: [{ type: "text", text: "Forbidden: only the global SupremeAI admin can list tenants" }] };
+-        }
+-        const tenants = listTenants();
+-        return { content: [{ type: "text", text: JSON.stringify({ count: tenants.length, tenants }, null, 2) }] };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "tenant.update",
+-    "Update a tenant's name, description, plan, status, limits, or settings. Global-admin only.",
+-    {
+-      tenantId: z.string().describe("Tenant ID"),
+-      name: z.string().optional().describe("New name"),
+-      description: z.string().optional().describe("New description"),
+-      status: z.enum(["active", "suspended"]).optional().describe("New status"),
+-      plan: z.enum(["admin", "free", "pro", "enterprise"]).optional().describe("New plan"),
+-      maxClients: z.number().int().min(1).optional().describe("Client limit override"),
+-      maxToolsPerMinute: z.number().int().min(1).optional().describe("Rate limit override"),
+-    },
+-    async (args) => {
+-      try {
+-        const tenant = updateTenant(args.tenantId, {
+-          name: args.name,
+-          description: args.description,
+-          status: args.status,
+-          plan: args.plan,
+-          limits: {
+-            ...(args.maxClients ? { maxClients: args.maxClients } : {}),
+-            ...(args.maxToolsPerMinute ? { maxToolsPerMinute: args.maxToolsPerMinute } : {}),
+-          },
+-        });
+-        return { content: [{ type: "text", text: JSON.stringify(tenant, null, 2) }] };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "tenant.suspend",
+-    "Suspend a tenant — all its AI clients immediately lose access. Global-admin only.",
+-    { tenantId: z.string().describe("Tenant ID to suspend") },
+-    async ({ tenantId }) => {
+-      try {
+-        const tenant = suspendTenant(tenantId);
+-        if (!tenant) return { isError: true, content: [{ type: "text", text: `Tenant not found: ${tenantId}` }] };
+-        return { content: [{ type: "text", text: JSON.stringify({ message: "Tenant suspended", tenant }, null, 2) }] };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "tenant.activate",
+-    "Re-activate a suspended tenant. Global-admin only.",
+-    { tenantId: z.string().describe("Tenant ID to activate") },
+-    async ({ tenantId }) => {
+-      try {
+-        const tenant = activateTenant(tenantId);
+-        if (!tenant) return { isError: true, content: [{ type: "text", text: `Tenant not found: ${tenantId}` }] };
+-        return { content: [{ type: "text", text: JSON.stringify({ message: "Tenant activated", tenant }, null, 2) }] };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-
+-  server.tool(
+-    "tenant.rotate_admin_token",
+-    "Rotate a tenant's admin token (old token stops working immediately). Global-admin only.",
+-    { tenantId: z.string().describe("Tenant ID") },
+-    async ({ tenantId }) => {
+-      try {
+-        const result = rotateTenantAdminToken(tenantId);
+-        return {
+-          content: [{
+-            type: "text",
+-            text: JSON.stringify({
+-              message: "Tenant admin token rotated",
+-              tenant: result.tenant,
+-              newAdminToken: result.adminToken,
+-              note: "Share the new token securely; the old token is now invalid.",
+-            }, null, 2),
+-          }],
+-        };
+-      } catch (err) {
+-        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
+-      }
+-    }
+-  );
+-}
+\ No newline at end of file
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { z } from "zod";
++import {
++  canManageTenants,
++  createTenant,
++  listTenants,
++  updateTenant,
++  suspendTenant,
++  activateTenant,
++  rotateTenantAdminToken,
++} from "../tenancy/tenant.registry.js";
++
++/**
++ * Tenant Management Tools.
++ *
++ * Multi-tenant MCP Server: каждый admin/customer имеет собственный
++ * изолированный MCP setup. Эти инструменты вызываются ТОЛЬКО
++ * глобальным админом SupremeAI (MCP_ADMIN_KEY / admin role).
++ */
++export async function registerTenantTools(server: McpServer): Promise<void> {
++  server.tool(
++    "tenant.create",
++    "Create a new isolated tenant (admin/customer). Each tenant gets its own admin token and can connect its own AI clients. Global-admin only.",
++    {
++      name: z.string().min(2).describe("Tenant name, e.g. 'Saiful's Startup'"),
++      ownerEmail: z.string().email().describe("Owner email — unique per tenant"),
++      type: z.enum(["admin", "customer"]).describe("'admin' for internal teams, 'customer' for external users"),
++      plan: z.enum(["admin", "free", "pro", "enterprise"]).optional().describe("Billing plan (default: free)"),
++      description: z.string().optional().describe("Optional tenant description"),
++      maxClients: z.number().int().min(1).max(1000).optional().describe("Client limit override"),
++      maxToolsPerMinute: z.number().int().min(1).max(10000).optional().describe("Rate limit override"),
++    },
++    async (args) => {
++      try {
++        const result = createTenant({
++          name: args.name,
++          ownerEmail: args.ownerEmail,
++          type: args.type,
++          plan: args.plan,
++          description: args.description,
++          limits: {
++            ...(args.maxClients ? { maxClients: args.maxClients } : {}),
++            ...(args.maxToolsPerMinute ? { maxToolsPerMinute: args.maxToolsPerMinute } : {}),
++          },
++        });
++        return {
++          content: [{
++            type: "text",
++            text: JSON.stringify({
++              message: "Tenant created successfully",
++              tenant: result.tenant,
++              adminToken: result.adminToken,
++              note: "Share the adminToken securely with the tenant owner ONCE. It is NOT stored in plaintext.",
++            }, null, 2),
++          }],
++        };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  server.tool(
++    "tenant.list",
++    "List all tenants (admin & customer) with their status, plan, and limits. Global-admin only.",
++    {},
++    async () => {
++      try {
++        // #698: tenant.list was the only tenant tool without the admin gate.
++        if (!canManageTenants()) {
++          return { isError: true, content: [{ type: "text", text: "Forbidden: only the global SupremeAI admin can list tenants" }] };
++        }
++        const tenants = listTenants();
++        return { content: [{ type: "text", text: JSON.stringify({ count: tenants.length, tenants }, null, 2) }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  server.tool(
++    "tenant.update",
++    "Update a tenant's name, description, plan, status, limits, or settings. Global-admin only.",
++    {
++      tenantId: z.string().describe("Tenant ID"),
++      name: z.string().optional().describe("New name"),
++      description: z.string().optional().describe("New description"),
++      status: z.enum(["active", "suspended"]).optional().describe("New status"),
++      plan: z.enum(["admin", "free", "pro", "enterprise"]).optional().describe("New plan"),
++      maxClients: z.number().int().min(1).optional().describe("Client limit override"),
++      maxToolsPerMinute: z.number().int().min(1).optional().describe("Rate limit override"),
++    },
++    async (args) => {
++      try {
++        const tenant = updateTenant(args.tenantId, {
++          name: args.name,
++          description: args.description,
++          status: args.status,
++          plan: args.plan,
++          limits: {
++            ...(args.maxClients ? { maxClients: args.maxClients } : {}),
++            ...(args.maxToolsPerMinute ? { maxToolsPerMinute: args.maxToolsPerMinute } : {}),
++          },
++        });
++        return { content: [{ type: "text", text: JSON.stringify(tenant, null, 2) }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  server.tool(
++    "tenant.suspend",
++    "Suspend a tenant — all its AI clients immediately lose access. Global-admin only.",
++    { tenantId: z.string().describe("Tenant ID to suspend") },
++    async ({ tenantId }) => {
++      try {
++        const tenant = suspendTenant(tenantId);
++        if (!tenant) return { isError: true, content: [{ type: "text", text: `Tenant not found: ${tenantId}` }] };
++        return { content: [{ type: "text", text: JSON.stringify({ message: "Tenant suspended", tenant }, null, 2) }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  server.tool(
++    "tenant.activate",
++    "Re-activate a suspended tenant. Global-admin only.",
++    { tenantId: z.string().describe("Tenant ID to activate") },
++    async ({ tenantId }) => {
++      try {
++        const tenant = activateTenant(tenantId);
++        if (!tenant) return { isError: true, content: [{ type: "text", text: `Tenant not found: ${tenantId}` }] };
++        return { content: [{ type: "text", text: JSON.stringify({ message: "Tenant activated", tenant }, null, 2) }] };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  server.tool(
++    "tenant.rotate_admin_token",
++    "Rotate a tenant's admin token (old token stops working immediately). Global-admin only.",
++    { tenantId: z.string().describe("Tenant ID") },
++    async ({ tenantId }) => {
++      try {
++        const result = rotateTenantAdminToken(tenantId);
++        return {
++          content: [{
++            type: "text",
++            text: JSON.stringify({
++              message: "Tenant admin token rotated",
++              tenant: result.tenant,
++              newAdminToken: result.adminToken,
++              note: "Share the new token securely; the old token is now invalid.",
++            }, null, 2),
++          }],
++        };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Error: ${(err as Error).message}` }] };
++      }
++    }
++  );
++}

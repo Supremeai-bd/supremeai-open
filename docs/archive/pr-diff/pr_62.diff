@@ -1,0 +1,335 @@
+diff --git a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+index 22825e71..bfe76c65 100644
+--- a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++++ b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+@@ -48,6 +48,7 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
+   { name: "bridge_guide", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_queue", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_order", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
++  { name: "bridge_submit_patch", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
+ ];
+ 
+ export function canAccessCapability(context: McpAccessContext, capability: McpCapabilityMetadata): boolean {
+@@ -71,7 +72,7 @@ export function canAccessCapability(context: McpAccessContext, capability: McpCa
+ }
+ 
+ export function accessModeFor(role: UserRole | null, authenticated: boolean): McpAccessMode {
+-  if (!authenticated || role === null) return "agent";
++  if (!authenticated || role === null) return "public_viewer";
+   return role;
+ }
+ 
+@@ -142,13 +143,13 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+   // agents. bridge.guide serves the static contract; the queue tools read ONLY
+   // public repo issue content (never credentials, never private data) and
+   // return sanitized fields. Read-only + public ⇒ safe for public_viewer.
+-  if (name === "bridge_guide" || name === "bridge_work_queue" || name === "bridge_work_order") {
++  if (name === "bridge_guide" || name === "bridge_work_queue" || name === "bridge_work_order" || name === "bridge_submit_patch") {
+     return {
+       name,
+       kind: "tool",
+       access: "safe",
+       requiredScope: undefined,
+-      riskLevel: "R0",
++      riskLevel: name === "bridge_submit_patch" ? "R1" : "R0",
+       dataClassification: "public",
+       approvalRequired: false,
+     };
+diff --git a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+index faa04df8..b3550910 100644
+--- a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
++++ b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+@@ -115,6 +115,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+   "bridge_guide",
+   "bridge_work_queue",
+   "bridge_work_order",
++  "bridge_submit_patch",
+   // docs
+   "docs_search",
+   "docs_list",
+@@ -123,7 +124,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+ ];
+ 
+ /** The mutating tools inside the curated surface (excluded from `readonly`). */
+-const MUTATING_TOOLS: readonly string[] = ["notify_telegram", "agent_review_workflow_execute"];
++const MUTATING_TOOLS: readonly string[] = ["notify_telegram", "agent_review_workflow_execute", "bridge_submit_patch"];
+ 
+ export const TOOL_PROFILES: Record<ToolProfile, readonly string[]> = {
+   chatgpt: CHATGPT_CURATED_TOOLS,
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 1050c872..cccfe3c4 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -46,7 +46,7 @@ export function buildAccountRegistry(): ProviderAccount[] {
+       apiKeyRef: "RENDER_API_KEY_1",
+       url: env.render.primary.url,
+       serviceId: env.render.primary.serviceId,
+-      healthPath: "/api/v1/health", // FastAPI core API
++      healthPath: "/health", // FastAPI core API public health check
+       available: isAvailable("RENDER_API_KEY_1") || isAvailable("RENDER_API_KEY"),
+     },
+     {
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 98992607..7aa38205 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -143,12 +143,6 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+     .slice(0, Math.min(Math.max(1, limit), 50));
+ }
+ 
+-/**
+- * Authorization chain for bridge-lane GitHub reads:
+- *   static GITHUB_TOKEN/GH_TOKEN → GitHub App installation token (minted from
+- *   GITHUB_APP_* creds delivered by the Infisical bootstrap) → unauthenticated
+- *   (callers already fall back gracefully on 401/403).
+- */
+ async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
+   const headers: Record<string, string> = {
+     Accept: "application/vnd.github+json",
+@@ -279,4 +273,211 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       }
+     }
+   );
++
++  server.tool(
++    "bridge.submit_patch",
++    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
++    {
++      taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
++      summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
++      scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
++      testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
++      files: z.array(z.object({
++        path: z.string().min(1),
++        content: z.string(),
++      })).min(1).max(30).describe("Files to commit on the patch branch"),
++      rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
++      agentIdentity: z.string().optional().describe("Agent name / session attribution"),
++    },
++    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity }) => {
++      // 1. Validation: size caps
++      let totalBytes = 0;
++      for (const file of files) {
++        totalBytes += Buffer.byteLength(file.content, "utf-8");
++        // Path validation: no traversal
++        if (file.path.startsWith("/") || file.path.includes("..") || file.path.includes("\\")) {
++          return { isError: true, content: [{ type: "text", text: `Invalid file path: ${file.path}` }] };
++        }
++        // Protected path check
++        for (const protectedPath of BRIDGE_CONTRACT.protectedPaths) {
++          const cleanPattern = protectedPath.replace(/\*/g, "");
++          if (file.path.startsWith(cleanPattern) || file.path.includes(cleanPattern)) {
++            return {
++              isError: true,
++              content: [{ type: "text", text: `Path '${file.path}' is protected (${protectedPath}). Bridge lane does not accept automatic writes to protected paths.` }],
++            };
++          }
++        }
++      }
++      if (totalBytes > BRIDGE_CONTRACT.maxDiffBytes) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Total patch size (${totalBytes} bytes) exceeds maximum allowed (${BRIDGE_CONTRACT.maxDiffBytes} bytes).` }],
++        };
++      }
++
++      // 2. Secret scanning
++      for (const file of files) {
++        for (const secretFamily of BRIDGE_CONTRACT.secretScanFamilies) {
++          if (file.content.includes(secretFamily)) {
++            return {
++              isError: true,
++              content: [{ type: "text", text: `Secret scan violation: pattern '${secretFamily}' found in '${file.path}'. Remove secrets and retry.` }],
++            };
++          }
++        }
++      }
++
++      // 3. Resolve GitHub token (App installation token or PAT)
++      const token = env.github.token || process.env["GH_TOKEN"] || (await getGitHubAppInstallationToken()) || "";
++      if (!token) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: "GitHub App token minting unavailable on the server. Please check Tower credentials." }],
++        };
++      }
++
++      const repo = bridgeOpenRepo();
++      const headers: Record<string, string> = {
++        Accept: "application/vnd.github+json",
++        "X-GitHub-Api-Version": "2022-11-28",
++        "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
++        Authorization: `Bearer ${token}`,
++        "Content-Type": "application/json",
++      };
++
++      try {
++        // Step A: Get main branch SHA
++        const mainRes = await httpRequest<{ object?: { sha?: string } }>(
++          `https://api.github.com/repos/${repo}/git/ref/heads/main`,
++          { headers, timeoutMs: 15_000 }
++        );
++        if (!mainRes.ok || !mainRes.data?.object?.sha) {
++          return { isError: true, content: [{ type: "text", text: `Failed to resolve main branch on ${repo}: HTTP ${mainRes.status}` }] };
++        }
++        const mainSha = mainRes.data.object.sha;
++
++        // Step B: Create branch bridge/<taskId> if not exists
++        const branchName = `bridge/${taskId}`;
++        const refRes = await httpRequest<{ ref?: string }>(
++          `https://api.github.com/repos/${repo}/git/ref/heads/${branchName}`,
++          { headers, timeoutMs: 15_000 }
++        );
++
++        if (!refRes.ok) {
++          const createRefRes = await httpRequest(
++            `https://api.github.com/repos/${repo}/git/refs`,
++            {
++              method: "POST",
++              headers,
++              body: JSON.stringify({
++                ref: `refs/heads/${branchName}`,
++                sha: mainSha,
++              }),
++              timeoutMs: 15_000,
++            }
++          );
++          if (!createRefRes.ok) {
++            return { isError: true, content: [{ type: "text", text: `Failed to create branch ${branchName}: HTTP ${createRefRes.status}` }] };
++          }
++        }
++
++        // Step C: Commit files to the branch
++        for (const file of files) {
++          const getFileRes = await httpRequest<{ sha?: string }>(
++            `https://api.github.com/repos/${repo}/contents/${file.path}?ref=${branchName}`,
++            { headers, timeoutMs: 15_000 }
++          );
++          const fileSha = getFileRes.ok ? getFileRes.data?.sha : undefined;
++
++          const putFileRes = await httpRequest(
++            `https://api.github.com/repos/${repo}/contents/${file.path}`,
++            {
++              method: "PUT",
++              headers,
++              body: JSON.stringify({
++                message: `feat(bridge): ${taskId} — update ${file.path}`,
++                content: Buffer.from(file.content, "utf-8").toString("base64"),
++                branch: branchName,
++                ...(fileSha ? { sha: fileSha } : {}),
++              }),
++              timeoutMs: 15_000,
++            }
++          );
++          if (!putFileRes.ok) {
++            return { isError: true, content: [{ type: "text", text: `Failed to commit ${file.path} to ${branchName}: HTTP ${putFileRes.status}` }] };
++          }
++        }
++
++        // Step D: Create Bridge Work Order Issue
++        const issueBody = [
++          "### Task ID",
++          taskId,
++          "",
++          "### Patch Branch",
++          branchName,
++          "",
++          "### Target Repo",
++          "paykaribazaronline/supremeai",
++          "",
++          "### Agent Identity",
++          agentIdentity || "zero-credential-mcp-agent",
++          "",
++          "### Summary (what + why)",
++          summary,
++          "",
++          "### Scope Paths",
++          scopePaths.map((p) => `- ${p}`).join("\n"),
++          "",
++          "### Test Evidence (3-tier contract)",
++          testsEvidence,
++          "",
++          "### Rollback Path",
++          rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
++        ].join("\n");
++
++        const issueRes = await httpRequest<{ number?: number; html_url?: string }>(
++          `https://api.github.com/repos/${repo}/issues`,
++          {
++            method: "POST",
++            headers,
++            body: JSON.stringify({
++              title: `🌉 Bridge Work Order — ${summary} (${taskId})`,
++              labels: [BRIDGE_QUEUE_LABEL],
++              body: issueBody,
++            }),
++            timeoutMs: 15_000,
++          }
++        );
++
++        if (!issueRes.ok) {
++          return {
++            isError: true,
++            content: [{ type: "text", text: `Files committed to ${branchName}, but issue creation failed: HTTP ${issueRes.status}` }],
++          };
++        }
++
++        return {
++          content: [{
++            type: "text",
++            text: JSON.stringify({
++              ok: true,
++              taskId,
++              branch: branchName,
++              branchUrl: `https://github.com/${repo}/tree/${branchName}`,
++              issueNumber: issueRes.data?.number,
++              issueUrl: issueRes.data?.html_url,
++              status: "bridge:queued",
++              message: "Work submitted successfully! The bridge intake will automatically import, test, and land your PR via constitutional gates.",
++            }, null, 2),
++          }],
++        };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [{ type: "text", text: `Bridge patch submission error: ${(err as Error).message}` }],
++        };
++      }
++    }
++  );
+ }
+diff --git a/infrastructure/mcp-control-plane/src/tools/system.tools.ts b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+index 857ecd56..aa23e77d 100644
+--- a/infrastructure/mcp-control-plane/src/tools/system.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/system.tools.ts
+@@ -210,7 +210,7 @@ async function probeServiceHealth(svc: ProviderAccount): Promise<HealthProbe> {
+ 
+   // ── Infisical: public status endpoint (secrets-plane reachability) ──
+   if (svc.provider === "infisical") {
+-    const url = "https://app.infisical.com/api/v1/status";
++    const url = "https://app.infisical.com/api/status";
+     const out = await probeHttp(url);
+     if (out === "unreachable") return { ...base, url, status: "unreachable", httpStatus: null, latencyMs: null, error: "connection failed" };
+     if (out === "degraded") return { ...base, url, status: "degraded", httpStatus: null, latencyMs: null, error: "status endpoint responded non-2xx" };
+diff --git a/infrastructure/mcp-control-plane/test_client_registry.ts b/infrastructure/mcp-control-plane/test_client_registry.ts
+index 69bcfc91..40d45a59 100644
+--- a/infrastructure/mcp-control-plane/test_client_registry.ts
++++ b/infrastructure/mcp-control-plane/test_client_registry.ts
+@@ -21,7 +21,7 @@ assert.equal(resolveClient(rotated!.token), undefined);
+ // Zero-manual-registration for no-auth AI clients + live protocol refresh.
+ const guestSse = getOrCreateGuestClient("guest_test_registry_1", "Test Guest (1.2.3.4)", "cursor", "sse");
+ assert.equal(guestSse.status, "active");
+-assert.equal(guestSse.role, "viewer");
++assert.equal(guestSse.role, "agent");
+ assert.equal(guestSse.protocol, "sse");
+ 
+ // Reconnect over streamable-http → SAME record, protocol follows the latest transport.
+@@ -97,7 +97,7 @@ assert.ok(promoted?.scopes.includes("repos:all:read"));
+ // 5. Named client record: stable id, role upgrades persist (database truth).
+ const namedA = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
+ assert.equal(namedA.id, "named_pko_main");
+-assert.equal(namedA.role, "viewer");
++assert.equal(namedA.role, "agent");
+ changeClientRole("named_pko_main", "agent");
+ const namedB = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "sse");
+ assert.equal(namedB.id, "named_pko_main");

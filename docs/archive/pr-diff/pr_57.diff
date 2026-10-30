@@ -1,0 +1,209 @@
+diff --git a/README.md b/README.md
+index 74dba4ff..8ac0dc72 100644
+--- a/README.md
++++ b/README.md
+@@ -56,3 +56,13 @@ Agents work **in public**; code lands **private** after the full constitutional
+ 
+ This repo's `main` stays byte-clean: the bridge never writes to it — only the federation
+ mirror CI maintains the public artifacts above.
++
++---
++
++## Contributing
++
++New here? Start with **[`docs/CONTRIBUTING.md`](./docs/CONTRIBUTING.md)** — the
++zero-credential contributor guide covering both human (fork + PR) and autonomous-agent
++(8-step loop, MCP Tower lane) workflows, the 3-tier verification contract, scope caps,
++and a field-tested troubleshooting table. The governance contracts live in
++[`AGENTS.md`](./AGENTS.md) and [`AGENT_RULES.md`](./AGENT_RULES.md).
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+new file mode 100644
+index 00000000..dd19fe26
+--- /dev/null
++++ b/docs/CONTRIBUTING.md
+@@ -0,0 +1,185 @@
++# Contributing to SupremeAI Open
++
++Welcome, contributor — human or autonomous agent. This repository is the **public
++foundation** of the SupremeAI Federation: agents work **in public** and approved
++work lands in the private codebase through the fail-closed bridge pipeline.
++
++The best part: **you need zero credentials to start.** Every path below can be
++walked end-to-end with nothing but a clone and Python 3.
++
++---
++
++## 1. Read the two contracts first
++
++| File | Why |
++|------|-----|
++| [`AGENTS.md`](../AGENTS.md) | The three-pathway access model (MCP Tower / fork+PR / JIT lease) and the current board of open work |
++| [`AGENT_RULES.md`](../AGENT_RULES.md) | U-rules (evidence-first, reproduce-first, sibling sweeps) and P-rules (root-cause fixes, defect-class prevention) that govern every change |
++
++Every reviewer — and every automated gate — assumes you have read them. The
++short version:
++
++- **Evidence over claims.** Never say "it works" without captured output.
++- **Reproduce before you fix.** A bug you cannot reproduce, you cannot prove fixed.
++- **Smallest safe change.** Fix the root cause at its single boundary, not the symptoms.
++- **Sweep the siblings.** If a defect class exists in one file, check the whole repo for it.
++
++## 2. Repository map
++
++```
++scripts/agents/continuous_agent_loop.py   # 8-step autonomous agent loop (Python, stdlib-only)
++infrastructure/mcp-control-plane/         # Source of the MCP Control Tower (TypeScript)
++docs/                                     # Documentation (this file lives here)
++.github/ISSUE_TEMPLATE/                   # Task envelope + Bridge Work Order templates
++AGENTS.md, AGENT_RULES.md                 # Governance contracts (see §1)
++README.md                                 # What this repo is and is not
++```
++
++## 3. Quickstart — human contributors (fork + PR)
++
++1. **Fork** `Supremeai-bd/supremeai-open` and clone your fork.
++2. **Pick an issue** from the [open board](https://github.com/Supremeai-bd/supremeai-open/issues)
++   (look for `good first issue`).
++3. **Branch** with a descriptive name:
++   ```bash
++   git checkout -b fix/<short-slug> main
++   ```
++4. **Reproduce the defect** (or capture the gap) *before* writing any fix.
++5. **Implement the smallest safe change** strictly inside the files the issue declares.
++6. **Verify** (see §6 — the 3-tier contract) and capture the output.
++7. **Open a PR** against `Supremeai-bd/supremeai-open:main` with:
++   - the evidence (commands + exit codes),
++   - the exact scope (`touching-files` list),
++   - a rollback note (one-line "how to revert").
++8. Internal automation ingests the PR and runs the constitutional gate battery.
++   A maintainer merges — **nobody writes to `main` directly.**
++
++## 4. Quickstart — autonomous agents (the 8-step loop)
++
++The repository ships a self-contained agent loop (`scripts/agents/continuous_agent_loop.py`,
++Python 3 + PyYAML — the only dependency: `pip install pyyaml`):
++
++```bash
++# Dry-run the full 3-tier verification only (safe, no side effects):
++python3 scripts/agents/continuous_agent_loop.py --verify-only
++
++# Claim a specific issue and emit the task contract:
++python3 scripts/agents/continuous_agent_loop.py --issue 34 --emit-contract
++
++# Auto-pick the highest-priority open issue and process up to N tasks:
++python3 scripts/agents/continuous_agent_loop.py --pick-next --max-tasks 1
++
++# Continuous mode:
++python3 scripts/agents/continuous_agent_loop.py --loop --max-tasks 5
++```
++
++Useful flags:
++
++| Flag | Meaning |
++|------|---------|
++| `--verify-only` | Run 3-tier verification and exit (use this first, always) |
++| `--issue N` | Claim and resolve a specific issue number |
++| `--pick-next` | Auto-select the highest-priority open issue |
++| `--loop --max-tasks N` | Sequentially process up to N tasks |
++| `--role NAME` | Force a specialist role (planner, coder, reviewer, …) |
++| `--emit-prompt` | Print the specialist prompt instead of executing |
++| `--auto-pr` | Submit the PR via the `gh` CLI when tests pass |
++| `--touching-files a,b` | Declare the exact scope (required by the task envelope) |
++| `--task-type`, `--priority` | Task envelope metadata (defaults: `IMPLEMENT`, `P2`) |
++
++**Graceful degradation:** the loop does not require the `gh` CLI. If it is not
++installed, every step that would call it degrades to a clear message
++(`executable not found: gh`) with the manual URL to open instead — the loop
++still completes and exits 0. The same applies to other missing optional tooling.
++
++## 5. The MCP Tower lane (fully zero-credential)
++
++Autonomous agents can also work entirely through the **MCP Control Tower** —
++no GitHub account, no fork, no token:
++
++1. **Connect** to the streamable-HTTP endpoint with a persistent named client:
++   ```
++   https://supremeai-mcp-tower.onrender.com/mcp?client=<your-unique-name>
++   ```
++   The `?client=` parameter gives you a stable identity across sessions
++   (auto-registered guest → authenticated agent scope).
++2. **Discover work:** call `bridge_work_queue` (public, needs no credentials).
++3. **Read the contract:** call `bridge_guide` for the live lifecycle, diff caps,
++   secret-scan families, and protected paths.
++4. **Heartbeat** your lane: `agent_heartbeat` with slot `agent-<N>` — ping within
++   90 seconds to stay "online" (TTL 300 s). Slot lanes map onto roles internally
++   (planner / coder / reviewer / …).
++5. **Submit:** call `orchestrator_dispatch` with the work-order reference;
++   the orchestrator assigns your submission to an online specialist slot and the
++   fail-closed bridge pipeline lands it after the full gate battery.
++
++> Health check first: `system_summary` and `system_health` are open to everyone.
++
++## 6. The 3-tier verification contract
++
++Every change — one line or one subsystem — passes all three tiers:
++
++1. **Reflection diff** — re-read your own diff before running anything. Does it
++   do only what the issue declares?
++2. **Syntax gate** — the artifact must compile/parse
++   (`python3 -m py_compile <file>` / `node --check` / `tsc --noEmit`, as applicable).
++3. **Behavior test** — run the affected path for real and capture the output
++   (for the agent loop: `--verify-only` must exit 0; for UI/API code: the actual
++   request/response).
++
++Paste the captured evidence into your PR or work order. No evidence, no review.
++
++## 7. Scope, caps, and protected paths
++
++The bridge intake is **fail-closed** — it rejects rather than sanitizes:
++
++- **Diff caps:** ≤ 200 KB total, ≤ 30 files per submission.
++- **Declared scope only:** your `touching-files` list must cover every changed
++  file, and nothing outside it.
++- **Protected paths** (route to admin review — avoid unless the issue demands them):
++  `.github/`, `docs/ledger/`, `docs/master_docs/`, `prisma/`, anything matching
++  credential/key/pem/env-file patterns.
++- **Secrets:** never commit them. The intake scans value-shaped credential
++  patterns across the families listed in `bridge_guide`. (Tip from experience:
++  do not quote literal credential prefixes even in documentation — the scanner
++  cannot tell documentation from leakage and will flag the file.)
++- **External agents never write to `main`.** Landing authority belongs to the
++  constitutional gates only.
++
++## 8. Branch, commit, and naming conventions
++
++- Task branches: `bridge/<task-id>` where task id = `bridge-YYYYMMDD-<slug>`
++  (e.g. `bridge-20261015-contributing-guide`).
++- Human fork branches: `fix/<slug>` or `feat/<slug>`.
++- Commits: conventional style — `fix(scope): …`, `feat(scope): …`, `docs(scope): …`.
++- One logical change per branch. The smallest safe change wins.
++
++## 9. Submission paths (pick by role)
++
++| Path | Who | How |
++|------|-----|-----|
++| **A. Fork + PR** | Anyone with a GitHub account | §3 above (Pathway 2 in `AGENTS.md`) |
++| **B. MCP Tower work order** | Autonomous agents, zero credentials | §5 above (Pathway 1) |
++| **C. Bridge branch** | Collaborator proxy bots / org agents only | Push `bridge/<task-id>` + Bridge Work Order issue (see `README.md` §Bridge) |
++
++Work orders use the [Bridge Work Order template](../.github/ISSUE_TEMPLATE/bridge-work-order.yml);
++task envelopes use the [Agent Task template](../.github/ISSUE_TEMPLATE/agent-task.yml).
++
++## 10. Troubleshooting (field-tested)
++
++| Symptom | Cause | Fix |
++|---------|-------|-----|
++| `API rate limit exceeded` from GitHub API | Anonymous egress IP exhausted (60 req/h) | Wait for the reset window, or read the public board/issues via normal HTML pages, or retry through the Tower (it may hold its own token pool) |
++| MCP tools return `Forbidden: tool 'x' requires agent role or higher` | Default-deny RBAC | Your client is anonymous — use a named `?client=` identity; role-gated tools open up after registration |
++| MCP session expired / HTTP 404 on tool call | Tower session TTL | Re-run the `initialize` handshake and continue |
++| Heartbeat slot rejected | Slot must match `agent-<N>` (or other registered prefixes) | Use `agent-1`, `agent-2`, … — the validator is stricter than the docs |
++| `bridge_work_queue` 403 with rate-limit text | Tower egress IP throttled by GitHub | Transient — retry shortly; the queue itself needs no credentials |
++| Loop crashes on missing tooling | Should not happen since the graceful-degradation fix | Update to latest `main`; if it still crashes, that is a bug — file it with the traceback |
++
++## 11. Question, don't guess
++
++If the issue is ambiguous, say so in your PR/work order and state the assumption
++you coded against. Reviewers would rather correct a stated assumption than
++discover an unstated one.
++
++— The SupremeAI Federation maintainers

@@ -1,0 +1,46 @@
+diff --git a/docs/bridge/bridge-20261030-c58-batchfalsified-manualsweep-primary-witness.md b/docs/bridge/bridge-20261030-c58-batchfalsified-manualsweep-primary-witness.md
+new file mode 100644
+index 00000000..53d6e2f6
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c58-batchfalsified-manualsweep-primary-witness.md
+@@ -0,0 +1,40 @@
++# Bridge Witness — Cycle 58 (Job 478712): batch-closure FALSIFIED -> manual-sweep PRIMARY; #2557 premature closure corroborated
++
++Slot: 2026-10-30T15:58+08 / 07:58Z. Session d820b7d0. Report-only, docs-only, single file. Peer check: worklog tail = cycle-57 (own lane, session d9e05f30, PR #3083 merged 3e0df63e) -> this slot = CYCLE 58. Evaporation wave 21 purged c55-c57 archives; six-piece rebuilt from worklog SSOT.
++
++## 1. HEADLINE — 08:0xZ falsification point EXECUTED: delayed-batch model FALSIFIED
++
++The pre-committed falsifiable pair (C53 prediction, C55 receipt, C56/C57 intermediates, C57 first-order) was adjudicated on schedule at 07:58-08:05Z via bridge_read_feedback (underscore tool, per-number, flat dict):
++
++- Pending set **#2993 / #3020 / #3041 / #3054 / #3056 / #3068 / #3082** (7 members, +1 since C57 = #3082 own C57 WO): ALL `state=open`, labels exactly `['bridge:queued']`, verdict null, verdictHistory empty, commentCount 0, commentsFetchStatus 200.
++- #2993 age **5.9h** (created ~02:07Z); zero closures in the set since the 02:5xZ batch (~9.7h window). Latest cohort closes remain #3070 (06:5xZ) and #2557 (~07:4xZ) — both OUTSIDE the receipt set.
++
++ADJUDICATION: **delayed-batch model FALSIFIED** -> **manual-sweep hypothesis PRIMARY**. The batch-closure mechanism either does not exist at the predicted period or requires a trigger that has not fired for 9.7h across a 7-row set spanning two loop instances (478712/479095) and guardian lanes. Consequences recorded: (a) batch-watch RETIRED unless a new batch closure is observed; (b) remaining closure channel is a manual/operator sweep, which per the #3028 recursion is outside the autonomous plane -> the set's resolution is now HITL-gated (tower-owner lane, #2974 runbook family).
++
++## 2. #2557 closure PREMATURE — independent cross-lane corroboration
++
++Guard WO #3093 (Job 484748, 07:40Z) verified: #2557 (ARW outage tracker) claimed 07:10:54Z TTL 30m, closed ~07:10-07:46Z, while the live probe at 07:46-47Z still returns `Error: SUPREMEAI_BACKEND_URL is not configured` — the outage the row documents was LIVE at closure. This lane adds an INDEPENDENT datum: own `agent_review_workflow_status` probe 21 at 08:0xZ returns the byte-identical signature (8h+ continuous, probes 14a-21, no 3rd transition). Two lanes, ~20min apart, same result: closure contradicts ground truth. False-close family now demonstrably extends beyond the #2225-adjacent closure series (#2736 -> #3019 -> #3028 -> #3070) to TRACKER rows: closing a monitoring row does not clear the monitored condition.
++
++Peer #3087 (evidence addendum, 07:12Z) pins the root cause at env-name level: render-mcp exposes 42 env keys, `SUPREMEAI_BACKEND_URL` ABSENT (substring-BACKEND matches NONE; backend-shaped keys present: SUPREMEAI_GATEWAY_URL et al.) -> **remedy = add the env key, not code**. This env-proves the env-var step of the standing remedy (#2974 ordered runbook: backend route deploy -> env var -> tower redeploy). Taxonomy: this is the first PREMATURE-CLOSURE-of-tracker datum with both claim-window analysis (#2557 claim 07:10:54Z -> closed <=07:46Z, inside TTL) and post-closure live contradiction on record.
++
++## 3. Pending set 7th member + family clocks (arithmetic by code)
++
++- Pending set now 7 members (above); each receipt is report-only docs-only, merge-verified file-on-main (C55 e452a87f, C56 f55571d2, C57 3e0df63e) — the set is merge-clean and verdict-starved simultaneously: consumption is the bottleneck, not production.
++- #2633: claim 2026-10-29T22:55:29Z ttl 30m, still open+status:claimed, comments 2 -> **9th stale datum 547min** (series 33->97->155->275->335->365->430->485->547). Detector spec (claim.at+ttl vs now) rides the #2968 gate family.
++- #2968: open, `bridge:in-gates`, intake verdict 02:00:16Z (intake-bot, core PR #368) -> **in-gates 6.0h**. Gate lane static 6th hour; durable-fix chain (witness receipts -> spec #2925 -> #2933 -> #2968 -> core PR #368 + REFUSED receipt) unchanged; landing + controller consumption remain tower-owner lane.
++- #2225 frozen closed-null (labels status:unclaimed+audit:finding+P1-major, comments 15, verdict null); #3028 asks un-acted (CI triage feda45e4 / revert 832b27e6 -> admin redeploy / suspend autonomous closure); #3019/#3070 stable closed.
++
++## 4. Redis rotation — active-label prediction holds 3rd hour
++
++`redis_rotation_status`: activePrimary **tertiary** (sole-active since ~05:1xZ), nextGlobalResetAt 2026-11-01T00:01Z -> reset T-**39.9h**. Quaternary/quinary NOT activated -> C56 falsifiable (early quaternary activation = falsified) continues to HOLD. Per C57 decision, counter readings are RETIRED from evidence (non-monotonic artifacts: 480k pin, 448->229 retreat); active-label is the only falsifiable surface.
++
++## 5. Planes & watchdog (dual re-scan executed)
++
++- Render pair **38th consecutive proof**: render-primary + render-worker both `degraded`, evidence verbatim "Container running previous build, but latest deployment update_failed", latency 109/187ms, consecutiveFailures 0, impactedServices [] (zero-incident window 10th). Corroborates #3056 boot-kill root cause (old build serves probes; new deploys boot-crash).
++- health_full_sweep: snapshots dict-by-provider, **33 providers**; health_dashboard: SAME dict shape, **33 rows** — C58 opening initially parsed dashboard as 0 rows (list-shape assumption); fail-loud re-inspection showed dict-by-provider = PARSER-SHAPE DRIFT, not plane drift; corrected and recorded. Re-convergence 4th hour.
++- status scope=all 86,343B (in-family); sweep-field probes ('sweep'/'fullSweep'/'sweepVersion'/'full-sweep') ALL ABSENT in status -> **watchdog BLOCKED 8th hour**, anti-fake-clear streak frozen 8; re-arm = sweep fields post-reset.
++- system_health 21 services; autonomy ENABLED; census 158/158 zero-drift **4th confirm** (*Hint keys 158/109/36/11); board 125 rows ALL open (+4 since C57, max #3096), 30 queued-labeled.
++
++## 6. Handoff
++
++(a) Manual-sweep-primary era: batch-watch retired; pending-set resolution = operator/HITL sweep (channel-exhaustion stands); do NOT re-predict batch periods without a new observed batch. (b) #2557: premature-closure contradiction on record; re-open ask = HITL lane; ARW probe 22 next (workflow.yml signature = 3rd transition). (c) #3056 core error_bus.py guard PR landing watch = first REAL recovery since 10-24 (render flips green within one deploy cycle). (d) #2968/PR #368 landing (~6h). (e) Redis: active-label only; reset T-39.9h; quaternary early = falsified. (f) Watchdog dual re-scan every opening. (g) Family: #2633 R74 (~547min); gates #2385 PR #355 / #2431 / #2567 / #2419. (h) Standing: payload-completeness 9-key pre-call, summary<=1000 self-assert, memory distinct ids snake_case description, census *Hint keys, worklog=SSOT, queue-claim-blind, fail-loud parsing, arithmetic-by-code. (i) Don't-touch #2156/#2112/#2103/#2076/#1912.

@@ -1,0 +1,646 @@
+diff --git a/studio/src/components/customer/MobileSimulator.tsx b/studio/src/components/customer/MobileSimulator.tsx
+index 8e066b6d..dee12ef9 100644
+--- a/studio/src/components/customer/MobileSimulator.tsx
++++ b/studio/src/components/customer/MobileSimulator.tsx
+@@ -3,6 +3,7 @@ import { Card, Badge } from '../ui';
+ import { Smartphone, Tablet, RefreshCw } from 'lucide-react';
+ import { getApiBaseUrl } from '../../utils/api';
+ import { getAuthHeaders } from '../../services/apiClient';
++import { HomeShell } from '../mobile/HomeShell';
+ 
+ // Issue #1669 (CRITICAL): JWT কখনো iframe URL-এ যায় না। প্রতিটি external
+ // render-এর আগে header-auth দিয়ে POST /api/browser/render-ticket কল হয়;
+@@ -47,6 +48,12 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+   const [reloadKey, setReloadKey] = useState(0);
+ 
+   const needsProxy = /^https?:\/\//i.test(url.trim()) && !html;
++  // HOME LAUNCHER (owner request 2026-10-27, iOS-home-template): URL/HTML কিছু
++  // না থাকলে ফোন আর dead-end ফাঁকা স্ক্রিন দেখায় না — এখন একটি পূর্ণ
++  // iOS-ঘরানার Home Launcher (icons, swipe pages, widgets, notification/
++  // control center, wiggle reorder, app-launch zoom) স্ক্রিনে থাকে। Mirror ও
++  // agent-build path আগের মতোই অক্ষত।
++  const showLauncher = !html && !needsProxy;
+ 
+   useEffect(() => {
+     if (!needsProxy) {
+@@ -130,9 +137,15 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+                   className="w-full h-full"
+                   sandbox="allow-scripts allow-forms"
+                 />
++              ) : showLauncher ? (
++                // বাংলা: ফাঁকা অবস্থায় এখন আসল হোম-স্ক্রিন — নিচের হোম-বার ট্যাপ/
++                // উপরে-টানলে অ্যাপ বন্ধ, উপরে টানলে Notification Center।
++                <div className="absolute inset-0 z-0" data-testid="mobile-home-launcher">
++                  <HomeShell />
++                </div>
+               ) : (
+                 <div className="w-full h-full flex items-center justify-center text-[11px] text-slate-500 font-mono">
+-                  {needsProxy ? 'Preparing secure render session…' : 'Enter a URL to preview'}
++                  Preparing secure render session…
+                 </div>
+               )}
+             </div>
+@@ -141,7 +154,7 @@ export function MobileSimulator({ html, url = '' }: MobileSimulatorProps) {
+         <div className="mt-4 flex items-center justify-between">
+           <Badge variant="info">{selectedDevice.name}</Badge>
+           <span className="text-[10px] text-slate-400 font-mono">
+-            {currentWidth} x {currentHeight} • {orientation}
++            {showLauncher ? 'Home Launcher · demo OS' : `${currentWidth} x ${currentHeight} • ${orientation}`}
+           </span>
+         </div>
+       </Card>
+diff --git a/studio/src/components/mobile/HomeShell.test.tsx b/studio/src/components/mobile/HomeShell.test.tsx
+new file mode 100644
+index 00000000..54a19d96
+--- /dev/null
++++ b/studio/src/components/mobile/HomeShell.test.tsx
+@@ -0,0 +1,113 @@
++/**
++ * HomeShell render টেস্ট — launcher-এর মূল ইন্টারঅ্যাকশন যাচাই (jsdom)।
++ * বাংলা: jsdom-এ ResizeObserver/matchMedia নেই — এই টেস্ট ফাইল নিজেই স্টাব
++ * দেয় (প্রজেক্ট setup.ts স্পর্শ করে না)। যাচাই করা হয়: mount, dock/dots/
++ * widget, status-bar pull → Notification Center, bottom strip → Control
++ * Center toggle, long-press → wiggle, icon tap → app window।
++ */
++
++import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
++import { act, render, screen, fireEvent, cleanup } from '@testing-library/react';
++import { HomeShell } from './HomeShell';
++import { useLauncher } from './launcherStore';
++
++beforeAll(() => {
++  // বাংলা: jsdom-এ নেই এমন API-গুলোর স্টাব — HomeShell (ResizeObserver,
++  // clientWidth/Height) ও framer-motion (matchMedia) যেগুলোতে নির্ভর করে।
++  class ROStub implements ResizeObserver {
++    observe = () => {};
++    unobserve = () => {};
++    disconnect = () => {};
++  }
++  vi.stubGlobal('ResizeObserver', ROStub);
++  vi.stubGlobal('matchMedia', (query: string) => ({
++    matches: false,
++    media: query,
++    onchange: null,
++    addListener: () => {},
++    removeListener: () => {},
++    addEventListener: () => {},
++    removeEventListener: () => {},
++    dispatchEvent: () => false,
++  }));
++  // jsdom-এ কোনো layout ইঞ্জিন নেই — clientWidth/Height 0 ফেরত দেয়, তাতে
++  // AppWindow (size.w > 0 গার্ড) কখনো মাউন্ট হয় না। ফোন-স্ক্রিনের মাপ দিই।
++  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 390 });
++  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 780 });
++});
++
++afterEach(() => {
++  cleanup();
++  useLauncher.setState({ openApp: null, panel: 'none', wiggle: false, page: 0, musicPlaying: false });
++});
++
++describe('HomeShell (iOS home launcher)', () => {
++  it('mounts with status bar, dock icons, page dots and widgets', () => {
++    render(<HomeShell />);
++    expect(screen.getByTestId('home-launcher')).toBeInTheDocument();
++    expect(screen.getByTestId('home-statusbar')).toBeInTheDocument();
++    expect(screen.getByTestId('widget-weather')).toBeInTheDocument();
++    expect(screen.getByTestId('widget-clock')).toBeInTheDocument();
++    // Dock: photos, music, notes, settings — লেবেল দিয়েই খোঁজা যায়
++    expect(screen.getByText('Photos')).toBeInTheDocument();
++    expect(screen.getByText('Music')).toBeInTheDocument();
++    expect(screen.getByText('Notes')).toBeInTheDocument();
++    expect(screen.getByText('Settings')).toBeInTheDocument();
++    // Page dots (২ পেজ)
++    expect(screen.getByRole('button', { name: 'Page 1' })).toBeInTheDocument();
++    expect(screen.getByRole('button', { name: 'Page 2' })).toBeInTheDocument();
++  });
++
++  it('tapping an icon opens the app window (zoom-launch mount)', () => {
++    render(<HomeShell />);
++    fireEvent.pointerDown(screen.getByText('Weather'));
++    fireEvent.pointerUp(screen.getByText('Weather'));
++    expect(useLauncher.getState().openApp).toBe('weather');
++    expect(screen.getByTestId('app-window-weather')).toBeInTheDocument();
++    // Home বোতামে অ্যাপ বন্ধ
++    fireEvent.click(screen.getByRole('button', { name: 'Close app and return home' }));
++    expect(useLauncher.getState().openApp).toBeNull();
++  });
++
++  it('pull-down on status bar opens Notification Center with Clear', () => {
++    render(<HomeShell />);
++    const bar = screen.getByTestId('home-statusbar');
++    fireEvent.pointerDown(bar, { clientY: 10 });
++    fireEvent.pointerUp(bar, { clientY: 60 }); // নিচে টানা
++    expect(screen.getByTestId('notification-center')).toBeInTheDocument();
++    fireEvent.click(screen.getByRole('button', { name: /clear/i }));
++    expect(screen.getByText('No new notifications')).toBeInTheDocument();
++  });
++
++  it('bottom strip opens Control Center and toggles Wi-Fi', () => {
++    render(<HomeShell />);
++    const strip = screen.getByTestId('home-indicator-strip');
++    fireEvent.pointerDown(strip, { clientY: 700 });
++    fireEvent.pointerUp(strip, { clientY: 640 }); // উপরে টানা
++    expect(screen.getByTestId('control-center')).toBeInTheDocument();
++    const wifi = screen.getByTestId('cc-wi-fi');
++    const before = wifi.getAttribute('aria-pressed');
++    fireEvent.click(wifi);
++    expect(wifi.getAttribute('aria-pressed')).toBe(String(before !== 'true'));
++  });
++
++  it('long-press enters wiggle mode and Done exits', () => {
++    vi.useFakeTimers();
++    try {
++      render(<HomeShell />);
++      const icon = screen.getByText('Calendar');
++      fireEvent.pointerDown(icon, { clientY: 300 });
++      // বাংলা: টাইমার advance-এর ভেতরে act() — React re-render sync ফ্লাশ হয়,
++      // নইলে DOM পুরনো অবস্থাতেই থেকে যায় (fake timer সিডিউলিং থামিয়ে রাখে)।
++      act(() => {
++        vi.advanceTimersByTime(500); // LONG_PRESS_MS = 450
++      });
++      expect(useLauncher.getState().wiggle).toBe(true);
++      expect(screen.getByTestId('wiggle-done')).toBeInTheDocument();
++      fireEvent.click(screen.getByTestId('wiggle-done'));
++      expect(useLauncher.getState().wiggle).toBe(false);
++    } finally {
++      vi.useRealTimers();
++    }
++  });
++});
+diff --git a/studio/src/components/mobile/HomeShell.tsx b/studio/src/components/mobile/HomeShell.tsx
+new file mode 100644
+index 00000000..50ffc0aa
+--- /dev/null
++++ b/studio/src/components/mobile/HomeShell.tsx
+@@ -0,0 +1,251 @@
++/**
++ * HomeShell — SupremeAI Home Launcher-এর মূল শেল (iOS-home-template)।
++ *
++ * বাংলা: ফোন-স্ক্রিনের ভেতরে চলা সম্পূর্ণ হোম-স্ক্রিন অভিজ্ঞতা —
++ * - blurred wallpaper + page swipe-এ parallax (wallpaper 0.35× গতিতে সরে);
++ * - বাঁয়ে/ডানে swipe → page snap (spring) + page dots;
++ * - status bar-এর ঘড়ি লাইভ, উপরে pull-down → Notification Center (frosted);
++ * - নিচে pull-up/tap → Control Center; অ্যাপ খোলা থাকলে সেটিই "home" বোতাম;
++ * - আইকন ট্যাপ → আইকনের জায়গা থেকে zoom করে অ্যাপ খোলে (AppWindow);
++ * - long-press → wiggle mode (rearrange), "Done" চাপলে শেষ;
++ * - brightness overlay + flashlight glow Control Center-এর state থেকে।
++ */
++
++import { useEffect, useLayoutEffect, useRef, useState } from 'react';
++import {
++  animate, AnimatePresence, motion, useMotionValue, useTransform,
++} from 'framer-motion';
++import { BatteryFull, Signal, Wifi } from 'lucide-react';
++import { THEMES, useLauncher } from './launcherStore';
++import { APP_REGISTRY } from './registry';
++import { AppIcon } from './AppIcon';
++import { AppWindow } from './AppWindow';
++import { NotificationCenter } from './NotificationCenter';
++import { ControlCenter } from './ControlCenter';
++import { ClockWidget, MusicWidget, SystemWidget, WeatherWidget } from './Widgets';
++import { MusicEngine } from './apps/MusicApp';
++
++function StatusBar({ onPullDown }: { onPullDown: (dy: number) => void }) {
++  const [clock, setClock] = useState(() =>
++    new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }));
++  useEffect(() => {
++    const t = window.setInterval(
++      () => setClock(new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })),
++      30_000);
++    return () => window.clearInterval(t);
++  }, []);
++  const startY = useRef<number | null>(null);
++  return (
++    <div
++      className="absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between px-6 text-white"
++      data-testid="home-statusbar"
++      onPointerDown={(e) => { startY.current = e.clientY; }}
++      onPointerUp={(e) => {
++        if (startY.current === null) return;
++        onPullDown(e.clientY - startY.current);
++        startY.current = null;
++      }}
++      onPointerCancel={() => { startY.current = null; }}
++    >
++      <span className="text-xs font-semibold tracking-wide">{clock}</span>
++      <span className="flex items-center gap-1.5">
++        <Signal size={13} />
++        <Wifi size={13} />
++        <BatteryFull size={16} />
++      </span>
++    </div>
++  );
++}
++
++export function HomeShell() {
++  const theme = useLauncher((s) => s.theme);
++  const layout = useLauncher((s) => s.layout);
++  const page = useLauncher((s) => s.page);
++  const setPage = useLauncher((s) => s.setPage);
++  const wiggle = useLauncher((s) => s.wiggle);
++  const setWiggle = useLauncher((s) => s.setWiggle);
++  const openApp = useLauncher((s) => s.openApp);
++  const launchRect = useLauncher((s) => s.launchRect);
++  const closeApp = useLauncher((s) => s.closeApp);
++  const panel = useLauncher((s) => s.panel);
++  const setPanel = useLauncher((s) => s.setPanel);
++  const brightness = useLauncher((s) => s.brightness);
++  const flashlight = useLauncher((s) => s.flashlight);
++
++  const rootRef = useRef<HTMLDivElement>(null);
++  const [size, setSize] = useState({ w: 0, h: 0 });
++  useLayoutEffect(() => {
++    const measure = () => {
++      const el = rootRef.current;
++      if (el) setSize({ w: el.clientWidth, h: el.clientHeight });
++    };
++    measure();
++    const ro = new ResizeObserver(measure);
++    if (rootRef.current) ro.observe(rootRef.current);
++    return () => ro.disconnect();
++  }, []);
++
++  const pageCount = layout.pages.length || 1;
++  // বাংলা: page বদলালে spring দিয়ে snap; drag চলাকালীন এই motionValue-ই
++  // wallpaper-এর parallax চালায় (0.35× — পেছনে ধীরে সরে, iOS-এর মতো)।
++  const x = useMotionValue(0);
++  const wallpaperX = useTransform(x, (v) => v * 0.35);
++  useEffect(() => {
++    if (!size.w) return;
++    const controls = animate(x, -page * size.w, { type: 'spring', stiffness: 320, damping: 34 });
++    return () => controls.stop();
++  }, [page, size.w, x]);
++
++  const onPagesDragEnd = (_: unknown, info: { offset: { x: number }; velocity: { x: number } }) => {
++    const t = size.w * 0.28;
++    if (info.offset.x < -t || info.velocity.x < -500) setPage(Math.min(pageCount - 1, page + 1));
++    else if (info.offset.x > t || info.velocity.x > 500) setPage(Math.max(0, page - 1));
++  };
++
++  const bottomStartY = useRef<number | null>(null);
++  const onBottomGesture = (dy: number) => {
++    // বাংলা: dy = startY - endY → ধনাত্মক মানে উপরে-টানা, ০-এর কাছে মানে ট্যাপ।
++    if (openApp) {
++      // অ্যাপ খোলা থাকলে এই স্ট্রিপই "home" — ট্যাপ বা উপরে-টানলে বন্ধ;
++      // নিচের দিকে টানলে বন্ধ হয় না (অনিচ্ছাকৃত ক্লিক এড়াতে)।
++      if (dy > 24 || Math.abs(dy) < 6) closeApp();
++      return;
++    }
++    if (dy > -6) setPanel('control');
++  };
++
++  const renderIcon = (id: (typeof APP_REGISTRY)[keyof typeof APP_REGISTRY]['id']) => {
++    const def = APP_REGISTRY[id];
++    return (
++      <AppIcon key={id} appId={def.id} label={def.name} gradient={def.gradient}>
++        <def.icon size={30} className="text-white drop-shadow" />
++      </AppIcon>
++    );
++  };
++
++  return (
++    <div
++      ref={rootRef}
++      data-phone-screen
++      className="relative size-full select-none overflow-hidden bg-black font-sans text-white"
++      data-testid="home-launcher"
++    >
++      {/* Blurred wallpaper — parallax সহ (x = 0.35 × pages x) */}
++      <motion.div
++        aria-hidden="true"
++        className="pointer-events-none absolute inset-y-0 left-[-20%] w-[140%]"
++        style={{ x: wallpaperX, background: THEMES[theme].wallpaper, filter: 'blur(2px) saturate(1.15)' }}
++      />
++      <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-black/10 backdrop-blur-[1px]" />
++
++      {/* Brightness + flashlight overlay */}
++      <div
++        aria-hidden="true"
++        className="pointer-events-none absolute inset-0 z-[45] bg-black transition-opacity duration-300"
++        style={{ opacity: (100 - brightness) / 160 }}
++      />
++      {flashlight && <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[45] bg-white/[0.07]" />}
++
++      <StatusBar onPullDown={(dy) => { if (dy > 28 || Math.abs(dy) < 6) setPanel('notifications'); }} />
++
++      {/* Pages — swipe/snap + drag */}
++      <div className="absolute inset-0 overflow-hidden">
++        <motion.div
++          className="flex h-full"
++          style={{ x }}
++          drag="x"
++          dragDirectionLock
++          dragMomentum={false}
++          dragElastic={0.06}
++          dragConstraints={{ left: -(pageCount - 1) * size.w, right: 0 }}
++          onDragEnd={onPagesDragEnd}
++          data-testid="home-pages"
++        >
++          {layout.pages.map((apps, pi) => (
++            <div key={pi} className="flex h-full w-full shrink-0 flex-col gap-4 px-5 pb-28 pt-14">
++              {pi === 0 && (
++                <div className="grid shrink-0 grid-cols-2 items-stretch gap-3">
++                  <WeatherWidget />
++                  <ClockWidget />
++                </div>
++              )}
++              {pi === 1 && (
++                <div className="flex shrink-0 flex-col gap-3">
++                  <MusicWidget />
++                  <SystemWidget />
++                </div>
++              )}
++              <div className="flex flex-wrap items-start justify-around gap-y-4">
++                {apps.map(renderIcon)}
++              </div>
++            </div>
++          ))}
++        </motion.div>
++      </div>
++
++      {/* Wiggle mode "Done" chip */}
++      <AnimatePresence>
++        {wiggle && (
++          <motion.button
++            type="button"
++            onClick={() => setWiggle(false)}
++            initial={{ opacity: 0, y: -8 }}
++            animate={{ opacity: 1, y: 0 }}
++            exit={{ opacity: 0, y: -8 }}
++            className="absolute left-1/2 top-12 z-40 -translate-x-1/2 rounded-full bg-white/90 px-4 py-1.5 text-xs font-bold text-slate-900 shadow-lg transition active:scale-95"
++            data-testid="wiggle-done"
++          >
++            Done
++          </motion.button>
++        )}
++      </AnimatePresence>
++
++      {/* Page dots + dock */}
++      <div className="absolute inset-x-0 bottom-[7.2rem] z-20 flex justify-center gap-1.5">
++        {layout.pages.map((_, i) => (
++          <button
++            key={i}
++            type="button"
++            aria-label={`Page ${i + 1}`}
++            onClick={() => setPage(i)}
++            className={`size-1.5 rounded-full transition ${i === page ? 'bg-white' : 'bg-white/35'}`}
++          />
++        ))}
++      </div>
++      <div className="absolute inset-x-4 bottom-12 z-20 flex items-center justify-around rounded-[1.6rem] bg-white/10 px-2 py-3 ring-1 ring-white/15 backdrop-blur-xl">
++        {layout.dock.map(renderIcon)}
++      </div>
++
++      {/* Home indicator + bottom gesture strip — অ্যাপ খোলা থাকলে এটিই "home" */}
++      <div
++        className="absolute inset-x-0 bottom-0 z-40 flex h-8 items-end justify-center pb-1.5"
++        onPointerDown={(e) => { bottomStartY.current = e.clientY; }}
++        onPointerUp={(e) => {
++          if (bottomStartY.current === null) return;
++          onBottomGesture(bottomStartY.current - e.clientY);
++          bottomStartY.current = null;
++        }}
++        onPointerCancel={() => { bottomStartY.current = null; }}
++        data-testid="home-indicator-strip"
++      >
++        <span className="h-1 w-24 rounded-full bg-white/80" />
++      </div>
++
++      {/* App window — আইকনের rect থেকে fullscreen zoom */}
++      <AnimatePresence>
++        {openApp && launchRect && size.w > 0 && (
++          <AppWindow key={openApp} appId={openApp} rect={launchRect} full={{ w: size.w, h: size.h }} />
++        )}
++      </AnimatePresence>
++
++      {/* Panels */}
++      <AnimatePresence>
++        {panel === 'notifications' && <NotificationCenter key="nc" />}
++        {panel === 'control' && <ControlCenter key="cc" />}
++      </AnimatePresence>
++
++      {/* Music engine — সবসময় mounted: home-এ ফিরে গেলেও গান বাজে */}
++      <MusicEngine />
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/launcherStore.test.ts b/studio/src/components/mobile/launcherStore.test.ts
+new file mode 100644
+index 00000000..eb42e15e
+--- /dev/null
++++ b/studio/src/components/mobile/launcherStore.test.ts
+@@ -0,0 +1,99 @@
++/**
++ * launcherStore টেস্ট — reorder/notes/theme লজিক (jsdom)।
++ * বাংলা: swapInLayout pure ফাংশন + persist-চিহ্নিত actions-এর আচরণ যাচাই;
++ * UI অবস্থা (wiggle/panel) persist হয় না — partialize-এর সাথে সামঞ্জস্য।
++ */
++
++import { describe, it, expect, beforeEach } from 'vitest';
++import {
++  DEFAULT_LAYOUT, THEMES, swapInLayout, useLauncher,
++} from './launcherStore';
++import type { LauncherLayout } from './launcherStore';
++
++const clone = (l: LauncherLayout): LauncherLayout => ({ dock: [...l.dock], pages: l.pages.map((p) => [...p]) });
++
++describe('swapInLayout (wiggle reorder core)', () => {
++  it('swaps two icons on the same page', () => {
++    const layout = clone(DEFAULT_LAYOUT); // pages[0] = [weather, calendar]
++    const next = swapInLayout(layout, 'weather', 'calendar');
++    expect(next.pages[0]).toEqual(['calendar', 'weather']);
++  });
++
++  it('swaps an icon between page and dock', () => {
++    const layout = clone(DEFAULT_LAYOUT); // dock[0] = photos
++    const next = swapInLayout(layout, 'weather', 'photos');
++    expect(next.dock).toContain('weather');
++    expect(next.pages[0]).toContain('photos');
++    expect(next.pages[0][0]).toBe('photos');
++  });
++
++  it('is a no-op for the same app or unknown app', () => {
++    const layout = clone(DEFAULT_LAYOUT);
++    expect(swapInLayout(layout, 'weather', 'weather')).toBe(layout);
++    expect(swapInLayout(layout, 'weather', 'nope' as never)).toBe(layout);
++  });
++
++  it('does not mutate the input layout', () => {
++    const layout = clone(DEFAULT_LAYOUT);
++    const before = clone(layout);
++    swapInLayout(layout, 'photos', 'calendar');
++    expect(layout).toEqual(before);
++  });
++});
++
++describe('useLauncher store', () => {
++  beforeEach(() => {
++    window.localStorage.clear();
++    useLauncher.setState({ layout: clone(DEFAULT_LAYOUT), notes: [], wiggle: false, panel: 'none', openApp: null });
++  });
++
++  it('swapApps action mirrors swapInLayout', () => {
++    useLauncher.getState().swapApps('weather', 'calendar');
++    expect(useLauncher.getState().layout.pages[0]).toEqual(['calendar', 'weather']);
++  });
++
++  it('addNote/updateNote/deleteNote keep the list consistent', () => {
++    const s = useLauncher.getState();
++    s.addNote('Test note', 'body');
++    const added = useLauncher.getState().notes[0];
++    expect(added.title).toBe('Test note');
++    useLauncher.getState().updateNote(added.id, 'Renamed', 'new body');
++    expect(useLauncher.getState().notes[0].title).toBe('Renamed');
++    useLauncher.getState().deleteNote(added.id);
++    expect(useLauncher.getState().notes).toHaveLength(0);
++  });
++
++  it('cycleTheme walks all four themes in order', () => {
++    useLauncher.setState({ theme: 'aurora' });
++    useLauncher.getState().cycleTheme();
++    expect(useLauncher.getState().theme).toBe('emerald');
++    useLauncher.getState().cycleTheme();
++    useLauncher.getState().cycleTheme();
++    expect(useLauncher.getState().theme).toBe('mono');
++  });
++
++  it('toggleControl flips boolean toggles only', () => {
++    const before = useLauncher.getState().wifi;
++    useLauncher.getState().toggleControl('wifi');
++    expect(useLauncher.getState().wifi).toBe(!before);
++  });
++
++  it('openAppWith closes panels and wiggle; closeApp resets rect', () => {
++    useLauncher.setState({ wiggle: true, panel: 'control' });
++    useLauncher.getState().openAppWith('weather', { x: 1, y: 2, width: 50, height: 50 });
++    expect(useLauncher.getState().openApp).toBe('weather');
++    expect(useLauncher.getState().wiggle).toBe(false);
++    expect(useLauncher.getState().panel).toBe('none');
++    useLauncher.getState().closeApp();
++    expect(useLauncher.getState().openApp).toBeNull();
++    expect(useLauncher.getState().launchRect).toBeNull();
++  });
++
++  it('defines all four themes with wallpaper + accent', () => {
++    expect(Object.keys(THEMES)).toEqual(['aurora', 'emerald', 'sunset', 'mono']);
++    for (const t of Object.values(THEMES)) {
++      expect(t.wallpaper).toContain('gradient');
++      expect(t.accent).toMatch(/^text-/);
++    }
++  });
++});
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+index d71665a4..7add8411 100644
+--- a/studio/src/pages/user/AIStudio.tsx
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -80,7 +80,12 @@ const MobileAutoPanel: React.FC<MobileAutoPanelProps> = ({
+           <MobileSimulator url={mirrorUrl} />
+         </div>
+       ) : (
+-        <MobileEmptyState onBack={onBack} onOpenUrl={onOpenUrl} urlDraft={urlDraft} onUrlDraftChange={onUrlDraftChange} />
++        <div className="flex min-h-0 flex-1 flex-col gap-2">
++          <div className="min-h-0 flex-1">
++            <MobileSimulator />
++          </div>
++          <MobileEmptyState onBack={onBack} onOpenUrl={onOpenUrl} urlDraft={urlDraft} onUrlDraftChange={onUrlDraftChange} />
++        </div>
+       )}
+     </div>
+   );
+@@ -92,56 +97,47 @@ const MobileEmptyState: React.FC<{
+   urlDraft: string;
+   onUrlDraftChange: (v: string) => void;
+ }> = ({ onBack, onOpenUrl, urlDraft, onUrlDraftChange }) => (
+-  <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-6">
+-    <div className="flex max-w-md flex-col items-center gap-3 text-center">
+-      <span className="flex size-12 items-center justify-center rounded-xl border border-white/10 bg-slate-900 text-slate-400">
+-        <Smartphone size={20} />
+-      </span>
+-      <h3 className="text-base font-semibold text-slate-200">Your mobile simulator — drive it yourself</h3>
+-      <p className="text-sm leading-6 text-slate-500">
+-        Ask SupremeAI to build something in the conversation, press{' '}
+-        <span className="font-medium text-slate-300">Preview</span>, and it opens right here on this
+-        phone frame when Mobile is your chosen surface. No conversation needed either — start below.
+-      </p>
+-      <div className="flex flex-wrap items-center justify-center gap-2">
+-        <button
+-          type="button"
+-          onClick={onBack}
+-          className="rounded-lg border border-white/10 bg-slate-900/80 px-4 py-2 text-xs font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
+-        >
+-          ← Back to conversation
+-        </button>
++  // HOME LAUNCHER (owner request 2026-10-27): খালি অবস্থা আর dead-end dashed
++  // box নয় — ফোনটি এখন সরাসরি iOS-ঘরানার Home Launcher দেখায় (MobileSimulator
++  // নিজেই হ্যান্ডেল করে)। এই কম্পোনেন্টটি শুধু চিকন কন্ট্রোল বার — Back + URL form
++  // (data-testids অক্ষত: mobile-url-form, mobile-url-input)।
++  <div className="flex w-full shrink-0 items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/60 p-2.5" data-testid="mobile-empty-controls">
++    <button
++      type="button"
++      onClick={onBack}
++      className="shrink-0 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
++    >
++      ← Back
++    </button>
++    <form
++      onSubmit={(e) => {
++        e.preventDefault();
++        const v = urlDraft.trim();
++        if (/^https?:\/\//i.test(v)) onOpenUrl(v);
++      }}
++      className="flex min-w-0 flex-1 items-center gap-2"
++      data-testid="mobile-url-form"
++    >
++      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2">
++        <Globe size={13} className="shrink-0 text-slate-500" />
++        <input
++          type="text"
++          value={urlDraft}
++          onChange={(e) => onUrlDraftChange(e.target.value)}
++          placeholder="https://any-site.com — mirror it on the phone"
++          data-testid="mobile-url-input"
++          aria-label="URL to preview on the mobile simulator"
++          className="w-full min-w-0 bg-transparent font-mono text-[11px] text-slate-200 outline-none placeholder:text-slate-600"
++        />
+       </div>
+-      <form
+-        onSubmit={(e) => {
+-          e.preventDefault();
+-          const v = urlDraft.trim();
+-          if (/^https?:\/\//i.test(v)) onOpenUrl(v);
+-        }}
+-        className="mt-1 flex w-full items-center gap-2"
+-        data-testid="mobile-url-form"
++      <button
++        type="submit"
++        disabled={!/^https?:\/\//i.test(urlDraft.trim())}
++        className="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+       >
+-        <div className="flex flex-1 items-center gap-2 rounded-lg border border-white/10 bg-slate-900/80 px-3 py-2">
+-          <Globe size={13} className="shrink-0 text-slate-500" />
+-          <input
+-            type="text"
+-            value={urlDraft}
+-            onChange={(e) => onUrlDraftChange(e.target.value)}
+-            placeholder="https://any-site.com — open it on the phone"
+-            data-testid="mobile-url-input"
+-            aria-label="URL to preview on the mobile simulator"
+-            className="w-full bg-transparent font-mono text-[11px] text-slate-200 outline-none placeholder:text-slate-600"
+-          />
+-        </div>
+-        <button
+-          type="submit"
+-          disabled={!/^https?:\/\//i.test(urlDraft.trim())}
+-          className="shrink-0 rounded-lg border border-cyan-400/40 bg-cyan-500/10 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+-        >
+-          Open
+-        </button>
+-      </form>
+-    </div>
++        Open
++      </button>
++    </form>
+   </div>
+ );
+ 

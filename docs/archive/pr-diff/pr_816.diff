@@ -1,0 +1,55 @@
+diff --git a/browser/ghost_tower/4_sync_cookies_to_infisical.bat b/browser/ghost_tower/4_sync_cookies_to_infisical.bat
+new file mode 100644
+index 00000000..f03d672f
+--- /dev/null
++++ b/browser/ghost_tower/4_sync_cookies_to_infisical.bat
+@@ -0,0 +1,15 @@
++@echo off
++title SupremeAI: Sync AI Fleet Cookies to Infisical Cloud Vault
++echo ======================================================================
++echo   SupremeAI: AI Fleet Cookies Exporter and Infisical Cloud Sync ($0)
++echo ======================================================================
++echo.
++cd /d "%~dp0"
++python sync_cookies_to_infisical.py
++echo.
++echo ======================================================================
++echo Sync completed! Local PC can now be closed.
++echo All cloud services (Render / Cloudflare) will run 24/7 with these sessions.
++echo ======================================================================
++echo.
++pause
+diff --git a/browser/ghost_tower/sync_cookies_to_infisical.py b/browser/ghost_tower/sync_cookies_to_infisical.py
+index aac00ad5..815f5519 100644
+--- a/browser/ghost_tower/sync_cookies_to_infisical.py
++++ b/browser/ghost_tower/sync_cookies_to_infisical.py
+@@ -19,6 +19,18 @@
+ import urllib.request
+ from pathlib import Path
+ 
++try:
++    from dotenv import load_dotenv
++
++    load_dotenv()
++    for parent in Path(__file__).resolve().parents:
++        env_file = parent / ".env"
++        if env_file.is_file():
++            load_dotenv(env_file)
++            break
++except ImportError:
++    pass
++
+ from credential_vault import CredentialVault
+ from playwright.async_api import async_playwright
+ 
+@@ -30,7 +42,9 @@
+ INFISICAL_API = "https://app.infisical.com"
+ CLIENT_ID = os.environ.get("INFISICAL_CLIENT_ID", "")
+ CLIENT_SECRET = os.environ.get("INFISICAL_CLIENT_SECRET", "")
+-WORKSPACE_ID = os.environ.get("INFISICAL_WORKSPACE_ID", "")
++WORKSPACE_ID = os.environ.get("INFISICAL_WORKSPACE_ID") or os.environ.get(
++    "INFISICAL_PROJECT_ID", ""
++)
+ ENVIRONMENT = "prod"
+ 
+ USER_DATA_DIR = os.path.expanduser(r"~\.gemini_isolated_session")

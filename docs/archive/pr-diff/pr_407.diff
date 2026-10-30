@@ -1,0 +1,1024 @@
+diff --git a/patches/bridge-20261016-kaggle-meta-cognition.patch b/patches/bridge-20261016-kaggle-meta-cognition.patch
+new file mode 100644
+index 00000000..ca0df3a9
+--- /dev/null
++++ b/patches/bridge-20261016-kaggle-meta-cognition.patch
+@@ -0,0 +1,1018 @@
++diff --git a/CHECKPOINT.md b/CHECKPOINT.md
++index d89b716ba..8d0cec982 100644
++--- a/CHECKPOINT.md
+++++ b/CHECKPOINT.md
++@@ -2,7 +2,7 @@
++ > Auto-updated by AI agents after each major session. Next agent must read this first.
++ 
++ ## Last Session
++-- **Date:** 2026-10-16 08:40 UTC
+++- **Date:** 2026-10-16 17:07 UTC
++ - **Agent:** Auto-updated (checkpoint_update.py)
++ - **Summary:** Auto-updated via pre-commit hook
++ 
++@@ -10,12 +10,16 @@
++   - (see git log for details)
++ 
++ ## Files Changed
++-  - `tests/test_bridge_intake.py`
+++  - `backend/tools/learning/meta_cognition_dataset.py`
++   - `CHECKPOINT.md`
++-  - `.github/workflows/bridge-intake.yml`
+++  - `backend/adaptive_engine/intent_parser.py`
++   - `docs/archive/lessons_2026-10.md`
++-  - `infrastructure/mcp-control-plane/src/tools/github.tools.ts`
++-  - `scripts/bridge/bridge_intake.py`
+++  - `tests/test_kaggle_warm_orchestrator.py`
+++  - `backend/tools/learning/model_trainer.py`
+++  - `backend/middleware/cors_policy.py`
+++  - `backend/core/kaggle_orchestrator.py`
+++  - `tests/test_meta_cognitive_intent.py`
+++  - `infrastructure/mcp-control-plane/src/lib/env.ts`
++ 
++ ## Pending (Carry Forward)
++ - Skip budget trending: 26 active skip-marker sites / 24 files (machine-enforced in docs/SKIPPED_TESTS.md — was 103/53 at the 2026-09-14 audit; <30 target reached 2026-09-25, keep it there)
++diff --git a/backend/adaptive_engine/intent_parser.py b/backend/adaptive_engine/intent_parser.py
++index f122cf697..8206c0843 100644
++--- a/backend/adaptive_engine/intent_parser.py
+++++ b/backend/adaptive_engine/intent_parser.py
++@@ -6,6 +6,31 @@ from brain.model_router import ModelRouter
++ from core.logging_config import logger
++ 
++ 
+++@dataclass
+++class MetaCognitiveAssessment:
+++    """Three-tier meta-cognitive reasoning for human intent, boundary, and delegation."""
+++
+++    # 1. Human Intent Understanding
+++    core_intent: str = "general_task"
+++    underlying_goal: str = ""
+++    is_ambiguous: bool = False
+++    clarification_question: str | None = None
+++
+++    # 2. Capability Self-Awareness (Boundary Recognition)
+++    can_solve_locally: bool = True
+++    confidence_score: float = 1.0
+++    boundary_limitations: list[str] = field(default_factory=list)
+++    is_destructive_or_sensitive: bool = False
+++
+++    # 3. Intelligent Delegation & Specialist Selection
+++    delegation_target: str = (
+++        "self"  # self | reasoning_model | kaggle_gpu | browser_subagent | human_admin
+++    )
+++    why_delegated: str = "Can be resolved directly within local context"
+++    specialist_task_contract: dict[str, Any] = field(default_factory=dict)
+++    synthesis_guidance: str = ""
+++
+++
++ @dataclass
++ class AppSpecification:
++     app_type: str = "general"
++@@ -86,6 +111,183 @@ Return ONLY a JSON object (no markdown blocks, no text around it) with the follo
++                 clarification_question="Can you describe your project in more detail?",
++             )
++ 
+++    def parse_meta_cognition(
+++        self, task: str, history: list[dict[str, str]] | None = None
+++    ) -> MetaCognitiveAssessment:
+++        """
+++        Evaluates a task across 3 meta-cognitive dimensions:
+++        1. Human Intent: What does the user really want? Is it ambiguous?
+++        2. Capability Boundary: Can I solve it directly or does it exceed local boundaries?
+++        3. Intelligent Delegation: If external help is needed, who to delegate to and with what exact contract?
+++        """
+++        task_lower = task.lower()
+++
+++        # Heuristic fast-path classification for high confidence & safety boundaries
+++        is_destructive = any(
+++            w in task_lower
+++            for w in (
+++                "drop database",
+++                "delete production",
+++                "purge all secrets",
+++                "rm -rf /",
+++                "bypass auth",
+++                "disable security",
+++            )
+++        )
+++        if is_destructive:
+++            return MetaCognitiveAssessment(
+++                core_intent="destructive_or_security_operation",
+++                underlying_goal="Execute a potentially irreversible operation",
+++                is_ambiguous=False,
+++                clarification_question="This operation is destructive/sensitive. Do you explicitly authorize this change?",
+++                can_solve_locally=False,
+++                confidence_score=1.0,
+++                boundary_limitations=[
+++                    "Destructive operations require explicit human admin approval (AGENTS.md §1)"
+++                ],
+++                is_destructive_or_sensitive=True,
+++                delegation_target="human_admin",
+++                why_delegated="Destructive action prohibited without explicit human authorization",
+++                specialist_task_contract={
+++                    "action": "confirm_destructive_operation",
+++                    "risk_level": "CRITICAL",
+++                },
+++                synthesis_guidance="Do not execute until the human provides explicit confirmation.",
+++            )
+++
+++        context_str = ""
+++        if history:
+++            for msg in history:
+++                role = msg.get("role", "user")
+++                content = msg.get("content", "")
+++                context_str += f"{role.capitalize()}: {content}\n"
+++
+++        prompt = f"""You are a Meta-Cognitive Intent & Delegation Router for an Autonomous Agent.
+++Evaluate the user's request across 3 critical pillars:
+++1. Intent Understanding: What is the human's real goal? Is the request ambiguous?
+++2. Capability Boundary: Can the agent solve this locally, or does it require external specialist compute/reasoning/tools?
+++3. Intelligent Delegation: Who is the right specialist to solve it, and how to delegate?
+++
+++Specialist Options:
+++- "self": Standard local coding, refactoring, bugfix, file inspection.
+++- "reasoning_model": Deep algorithmic proofs, complex math, multi-step formal reasoning.
+++- "kaggle_gpu": Heavy model fine-tuning (LoRA), GPU training, huge dataset ETL/profiling.
+++- "browser_subagent": Visual inspection of rendered web pages, DOM interactions, live browser testing.
+++- "human_admin": Irreversible actions, master credentials, policy changes.
+++
+++History/Context:
+++{context_str}
+++
+++User Request: "{task}"
+++
+++Return ONLY a JSON object with this exact structure:
+++{{
+++  "core_intent": "brief summary of what the user wants",
+++  "underlying_goal": "the higher-level purpose behind the request",
+++  "is_ambiguous": true/false,
+++  "clarification_question": "question to ask user if ambiguous, else null",
+++  "can_solve_locally": true/false,
+++  "confidence_score": 0.0 to 1.0,
+++  "boundary_limitations": ["list of reasons why local agent cannot solve alone"],
+++  "is_destructive_or_sensitive": true/false,
+++  "delegation_target": "self" | "reasoning_model" | "kaggle_gpu" | "browser_subagent" | "human_admin",
+++  "why_delegated": "explanation of why this specialist was chosen",
+++  "specialist_task_contract": {{"task_description": "...", "expected_output": "..."}},
+++  "synthesis_guidance": "how to verify and integrate the specialist's result"
+++}}
+++"""
+++        try:
+++            response = self.model_router.route_and_generate(
+++                prompt, task_type="general", max_cost=0.01
+++            )
+++            text = response.get("text", "{}").strip()
+++            if text.startswith("```"):
+++                lines = text.splitlines()
+++                if lines[0].startswith("```"):
+++                    lines = lines[1:]
+++                if lines and lines[-1].startswith("```"):
+++                    lines = lines[:-1]
+++                text = "\n".join(lines).strip()
+++
+++            data = json.loads(text)
+++            return MetaCognitiveAssessment(
+++                core_intent=data.get("core_intent", "general_task"),
+++                underlying_goal=data.get("underlying_goal", ""),
+++                is_ambiguous=bool(data.get("is_ambiguous", False)),
+++                clarification_question=data.get("clarification_question"),
+++                can_solve_locally=bool(data.get("can_solve_locally", True)),
+++                confidence_score=float(data.get("confidence_score", 0.9)),
+++                boundary_limitations=data.get("boundary_limitations", []),
+++                is_destructive_or_sensitive=bool(data.get("is_destructive_or_sensitive", False)),
+++                delegation_target=data.get("delegation_target", "self"),
+++                why_delegated=data.get("why_delegated", "Local resolution"),
+++                specialist_task_contract=data.get("specialist_task_contract", {}),
+++                synthesis_guidance=data.get("synthesis_guidance", ""),
+++            )
+++        except Exception as e:
+++            logger.warning(
+++                f"Meta-cognitive intent parsing via LLM failed ({e}); using heuristic rule router."
+++            )
+++            # Deterministic heuristic fallback
+++            if any(
+++                w in task_lower
+++                for w in ("train", "finetune", "fine-tune", "lora", "gpu", "heavy compute")
+++            ):
+++                return MetaCognitiveAssessment(
+++                    core_intent="heavy_compute_training",
+++                    underlying_goal="Execute model training or heavy compute task",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    boundary_limitations=[
+++                        "Local 512MB container lacks GPU / PyTorch execution runtime"
+++                    ],
+++                    delegation_target="kaggle_gpu",
+++                    why_delegated="Task requires GPU resources available on Kaggle cluster",
+++                    specialist_task_contract={"task_type": "model_fine_tuning", "task": task},
+++                    synthesis_guidance="Poll job status until completed and load adapter checkpoint.",
+++                )
+++            if any(
+++                w in task_lower
+++                for w in ("prove", "mathematical proof", "deep reasoning", "formal logic")
+++            ):
+++                return MetaCognitiveAssessment(
+++                    core_intent="complex_reasoning",
+++                    underlying_goal="Solve complex logic or mathematical problem",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    boundary_limitations=["Requires multi-step deep reasoning chain"],
+++                    delegation_target="reasoning_model",
+++                    why_delegated="Task benefits from specialized reasoning model (DeepSeek-R1)",
+++                    specialist_task_contract={"task": task, "prompt": task},
+++                    synthesis_guidance="Verify logical steps before accepting conclusion.",
+++                )
+++            if any(w in task_lower for w in ("screenshot", "browser", "dom", "click", "ui test")):
+++                return MetaCognitiveAssessment(
+++                    core_intent="browser_interaction",
+++                    underlying_goal="Interact with or inspect a live webpage in browser",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    boundary_limitations=["Headless browser engine required"],
+++                    delegation_target="browser_subagent",
+++                    why_delegated="Requires browser viewport and DOM interaction tools",
+++                    specialist_task_contract={"task": task},
+++                    synthesis_guidance="Capture final screenshot and verify DOM state.",
+++                )
+++
+++            return MetaCognitiveAssessment(
+++                core_intent="direct_local_task",
+++                underlying_goal=task,
+++                is_ambiguous=len(task.strip()) < 10,
+++                clarification_question="Could you provide more context on the expected outcome?"
+++                if len(task.strip()) < 10
+++                else None,
+++                can_solve_locally=True,
+++                delegation_target="self",
+++                why_delegated="Standard local coding task within agent contract",
+++                specialist_task_contract={"task": task},
+++                synthesis_guidance="Verify with unit tests and linter before reporting outcome.",
+++            )
+++
++     def extract_goal(self, prompt: str) -> dict[str, Any]:
++         return {"goal": "general", "confidence": 0.5}
++ 
++diff --git a/backend/core/kaggle_orchestrator.py b/backend/core/kaggle_orchestrator.py
++index 7da1df16b..04d9b45eb 100644
++--- a/backend/core/kaggle_orchestrator.py
+++++ b/backend/core/kaggle_orchestrator.py
++@@ -314,9 +314,12 @@ class KaggleOrchestrator:
++             # Initialize with accounts from settings
++             accounts = []
++             keys = settings.kaggle_api_keys
+++            default_username = os.getenv("KAGGLE_USERNAME", "paykaribazar")
++             for i, key in enumerate(keys):
++                 # Simple extraction: normally Kaggle tokens are username:key
++-                username = f"supremeai_worker_{i + 1}"
+++                username = (
+++                    default_username if key.startswith("KGAT_") else f"supremeai_worker_{i + 1}"
+++                )
++                 api_key = key
++                 if ":" in key:
++                     username, api_key = key.split(":", 1)
++@@ -554,22 +557,28 @@ class KaggleOrchestrator:
++             return False
++ 
++         try:
+++            # Kaggle API fields for /api/v1/kernels/push (issue #439 / #440 fix):
+++            # 1. 'slug' MUST be '{owner}/{kernel-slug}' (not numeric or plain string 'id')
+++            # 2. 'text' carries code (not 'code')
+++            # 3. 'newTitle' carries human-readable title (not 'title')
+++            # 4. 'enableGpu', 'enableInternet', 'isPrivate', 'kernelType' are camelCase
+++            kernel_slug = f"{account.username}/supremeai-{job.job_id.lower().replace('_', '-')}"
++             kernel_payload = {
++-                "id": f"supremeai-{job.job_id}",
++-                "title": f"SupremeAI: {job.task_type.value} [{job.job_id}]",
++-                "code": self._generate_kernel_code(
+++                "slug": kernel_slug,
+++                "newTitle": f"SupremeAI: {job.task_type.value} [{job.job_id}]",
+++                "text": self._generate_kernel_code(
++                     job, await self.get_callback_token(job.job_id) or ""
++                 ),
++-                "dataset_sources": [],
++-                "kernel_sources": [],
++-                "kernel_type": "script",
++-                "is_private": True,
+++                "datasetSources": [],
+++                "kernelSources": [],
+++                "kernelType": "script",
+++                "isPrivate": True,
++                 # GPU only for training tasks — ETL/inference run fine on CPU
++                 # and GPU quota is the scarce resource across the 6 accounts.
++-                "enable_gpu": job.task_type
+++                "enableGpu": job.task_type
++                 in (KaggleTaskType.MODEL_FINE_TUNING, KaggleTaskType.TRAINING_RUN),
++-                "enable_internet": True,
++-                "category_ids": [],
+++                "enableInternet": True,
+++                "categoryIds": [],
++                 "language": "python",
++             }
++ 
++@@ -586,6 +595,21 @@ class KaggleOrchestrator:
++             )
++ 
++             if response.status_code in (200, 201):
+++                try:
+++                    data = response.json()
+++                except Exception:
+++                    data = {}
+++
+++                if data.get("hasError"):
+++                    err_msg = (
+++                        data.get("error")
+++                        or data.get("errorNullable")
+++                        or "Unknown Kaggle push rejection"
+++                    )
+++                    logger.error(f"❌ Failed to dispatch job: Kaggle rejected kernel: {err_msg}")
+++                    await self._record_dispatch_failure(job)
+++                    return False
+++
++                 job_key = self.JOB_STATUS_KEY.format(job_id=job.job_id)
++                 await self.redis_client.hset(
++                     job_key, mapping={"status": "running", "assigned_account": account.account_id}
++diff --git a/backend/middleware/cors_policy.py b/backend/middleware/cors_policy.py
++index 73c70d10b..aaae83fd1 100644
++--- a/backend/middleware/cors_policy.py
+++++ b/backend/middleware/cors_policy.py
++@@ -75,6 +75,7 @@ def _load_origins(env_var: str, default: tuple[str, ...]) -> tuple[str, ...]:
++ DEFAULT_USER_ALLOWED_ORIGINS: tuple[str, ...] = (
++     "https://supremeai-a.web.app",  # Firebase Hosting user portal (production)
++     "https://supremeai-studio.vercel.app",  # Vercel studio
+++    "https://supremeai-studio-live.vercel.app",  # Vercel studio live
++ )
++ 
++ # Issue #1484 (CRITICAL): same story for the admin console —
++diff --git a/backend/tools/learning/meta_cognition_dataset.py b/backend/tools/learning/meta_cognition_dataset.py
++new file mode 100644
++index 000000000..46d15f010
++--- /dev/null
+++++ b/backend/tools/learning/meta_cognition_dataset.py
++@@ -0,0 +1,221 @@
+++"""
+++Meta-Cognition Fine-Tuning Dataset Generator for Kaggle LoRA Training.
+++======================================================================
+++Prepares training pairs for:
+++1. Human Intent Understanding (decoding true objective & generating clarification questions)
+++2. Capability Boundary Recognition (knowing what can be done locally vs what exceeds limits)
+++3. Intelligent Delegation (choosing the right specialist: Reasoning LLM, Kaggle GPU, Browser, Human Admin)
+++"""
+++
+++from __future__ import annotations
+++
+++import json
+++import os
+++from typing import Any
+++
+++from adaptive_engine.intent_parser import MetaCognitiveAssessment
+++from core.logging_config import logger
+++
+++
+++class MetaCognitionDatasetBuilder:
+++    """Builds and exports instruction-tuning datasets for Kaggle LoRA training."""
+++
+++    def __init__(self, output_dir: str = "data/meta_cognition"):
+++        self.output_dir = output_dir
+++        self.examples: list[dict[str, Any]] = []
+++        os.makedirs(self.output_dir, exist_ok=True)
+++
+++    def add_example(
+++        self,
+++        task: str,
+++        assessment: MetaCognitiveAssessment,
+++        context: list[dict[str, str]] | None = None,
+++    ) -> None:
+++        """Adds a single meta-cognitive reasoning example."""
+++        context_str = ""
+++        if context:
+++            for msg in context:
+++                role = msg.get("role", "user")
+++                content = msg.get("content", "")
+++                context_str += f"{role.capitalize()}: {content}\n"
+++
+++        instruction = (
+++            "Analyze the user request across 3 meta-cognitive pillars:\n"
+++            "1. Intent Understanding (core objective and clarification need)\n"
+++            "2. Capability Boundary (can agent solve directly, boundary limitations)\n"
+++            "3. Intelligent Delegation (specialist target, task contract, and synthesis)\n\n"
+++            f"History Context:\n{context_str}"
+++            if context_str
+++            else "Analyze the user request across 3 meta-cognitive pillars:\n"
+++            "1. Intent Understanding (core objective and clarification need)\n"
+++            "2. Capability Boundary (can agent solve directly, boundary limitations)\n"
+++            "3. Intelligent Delegation (specialist target, task contract, and synthesis)"
+++        )
+++
+++        output_dict = {
+++            "core_intent": assessment.core_intent,
+++            "underlying_goal": assessment.underlying_goal,
+++            "is_ambiguous": assessment.is_ambiguous,
+++            "clarification_question": assessment.clarification_question,
+++            "can_solve_locally": assessment.can_solve_locally,
+++            "confidence_score": assessment.confidence_score,
+++            "boundary_limitations": assessment.boundary_limitations,
+++            "is_destructive_or_sensitive": assessment.is_destructive_or_sensitive,
+++            "delegation_target": assessment.delegation_target,
+++            "why_delegated": assessment.why_delegated,
+++            "specialist_task_contract": assessment.specialist_task_contract,
+++            "synthesis_guidance": assessment.synthesis_guidance,
+++        }
+++
+++        self.examples.append(
+++            {
+++                "instruction": instruction,
+++                "input": task,
+++                "output": json.dumps(output_dict, indent=2),
+++                "text": f"<s>[INST] {instruction}\n\nUser Request: {task} [/INST]\n{json.dumps(output_dict, indent=2)}</s>",
+++            }
+++        )
+++
+++    def export_jsonl(self, filename: str = "meta_cognition_training.jsonl") -> str:
+++        """Exports the dataset to a JSONL file ready for HuggingFace / Kaggle training."""
+++        filepath = os.path.join(self.output_dir, filename)
+++        with open(filepath, "w", encoding="utf-8") as f:
+++            for ex in self.examples:
+++                f.write(json.dumps(ex, ensure_ascii=False) + "\n")
+++        logger.info(
+++            f"✅ Exported {len(self.examples)} meta-cognitive training examples to {filepath}"
+++        )
+++        return filepath
+++
+++    def generate_seed_dataset(self) -> str:
+++        """Generates bootstrap training data covering all 5 specialist delegation targets and ambiguity patterns."""
+++        seed_cases = [
+++            # 1. Ambiguous Human Request -> Clarification Question
+++            (
+++                "fix it",
+++                MetaCognitiveAssessment(
+++                    core_intent="unspecified_fix",
+++                    underlying_goal="Resolve an unspecified issue",
+++                    is_ambiguous=True,
+++                    clarification_question="Which component or error should be fixed? Could you provide the error trace or target file?",
+++                    can_solve_locally=False,
+++                    confidence_score=0.3,
+++                    boundary_limitations=["Context missing target error or file"],
+++                    delegation_target="self",
+++                    why_delegated="Cannot proceed safely without user clarification",
+++                    specialist_task_contract={"action": "ask_clarification"},
+++                    synthesis_guidance="Wait for user specification before modifying code.",
+++                ),
+++            ),
+++            # 2. Heavy ML / LoRA fine-tuning -> Kaggle GPU Cluster
+++            (
+++                "Fine-tune Qwen 2.5 Coder on 5,000 code refactoring traces with LoRA rank 16",
+++                MetaCognitiveAssessment(
+++                    core_intent="heavy_model_fine_tuning",
+++                    underlying_goal="Produce a LoRA adapter specialized in code refactoring",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    confidence_score=0.95,
+++                    boundary_limitations=[
+++                        "Local 512MB RAM container cannot execute PyTorch GPU training"
+++                    ],
+++                    delegation_target="kaggle_gpu",
+++                    why_delegated="Kaggle provides 16GB VRAM T4 GPUs and 180 hrs/week free allocation",
+++                    specialist_task_contract={
+++                        "task_type": "model_fine_tuning",
+++                        "base_model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+++                        "hyperparameters": {"lora_rank": 16, "epochs": 3, "batch_size": 2},
+++                    },
+++                    synthesis_guidance="Poll /api/v1/kaggle/jobs/{job_id} until completed and register the LoRA adapter.",
+++                ),
+++            ),
+++            # 3. Complex Algorithmic Proof -> Reasoning Model (DeepSeek-R1)
+++            (
+++                "Prove the asymptotic time complexity of our concurrent distributed lock with Poisson arrival rates",
+++                MetaCognitiveAssessment(
+++                    core_intent="formal_complexity_proof",
+++                    underlying_goal="Verify mathematical correctness and latency bounds of distributed lock",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    confidence_score=0.9,
+++                    boundary_limitations=[
+++                        "Requires formal mathematical multi-step chain-of-thought proof"
+++                    ],
+++                    delegation_target="reasoning_model",
+++                    why_delegated="Specialized reasoning model (DeepSeek-R1) excels at formal mathematical derivations",
+++                    specialist_task_contract={
+++                        "prompt": "Derive step-by-step Poisson arrival queue bounds for distributed locking algorithm",
+++                        "mode": "chain_of_thought",
+++                    },
+++                    synthesis_guidance="Verify each theorem step and translate results into docstring invariants.",
+++                ),
+++            ),
+++            # 4. Live UI / Rendered DOM Inspection -> Browser Subagent
+++            (
+++                "Check why the login button on https://supremeai-studio-live.vercel.app is unresponsive and inspect console logs",
+++                MetaCognitiveAssessment(
+++                    core_intent="visual_and_console_debugging",
+++                    underlying_goal="Diagnose client-side UI failure on deployed web frontend",
+++                    is_ambiguous=False,
+++                    can_solve_locally=False,
+++                    confidence_score=0.95,
+++                    boundary_limitations=[
+++                        "Requires headless browser execution, viewport rendering, and DOM interaction"
+++                    ],
+++                    delegation_target="browser_subagent",
+++                    why_delegated="Browser subagent has Playwright execution capabilities and console log capture",
+++                    specialist_task_contract={
+++                        "url": "https://supremeai-studio-live.vercel.app",
+++                        "actions": ["click #login-btn", "read console.error", "capture screenshot"],
+++                    },
+++                    synthesis_guidance="Extract CORS or JavaScript runtime errors from the browser report and apply code fix.",
+++                ),
+++            ),
+++            # 5. Destructive / Security Sensitive Action -> Human Admin
+++            (
+++                "Delete all production backups in Supabase and purge master encryption keys",
+++                MetaCognitiveAssessment(
+++                    core_intent="destructive_production_purge",
+++                    underlying_goal="Irreversibly delete critical database backups and keys",
+++                    is_ambiguous=False,
+++                    clarification_question="This is a catastrophic and irreversible operation. Do you explicitly authorize deleting all production backups?",
+++                    can_solve_locally=False,
+++                    confidence_score=1.0,
+++                    boundary_limitations=[
+++                        "Strict constitutional violation without Admin explicit confirmation (AGENTS.md §1)"
+++                    ],
+++                    is_destructive_or_sensitive=True,
+++                    delegation_target="human_admin",
+++                    why_delegated="Destructive actions require mandatory Human-in-the-Loop decision gate",
+++                    specialist_task_contract={
+++                        "action": "await_admin_authorization",
+++                        "risk_level": "DISASTER",
+++                    },
+++                    synthesis_guidance="Abort execution immediately unless human explicitly confirms with signed token.",
+++                ),
+++            ),
+++            # 6. Self Local Execution -> Local Coder
+++            (
+++                "Add type hint and docstring to the sanitize_path function in utils/path_helper.py",
+++                MetaCognitiveAssessment(
+++                    core_intent="code_hygiene_refactor",
+++                    underlying_goal="Improve type safety and code readability",
+++                    is_ambiguous=False,
+++                    can_solve_locally=True,
+++                    confidence_score=1.0,
+++                    boundary_limitations=[],
+++                    delegation_target="self",
+++                    why_delegated="Simple, safe local code change well within local execution capabilities",
+++                    specialist_task_contract={
+++                        "target_file": "utils/path_helper.py",
+++                        "function": "sanitize_path",
+++                    },
+++                    synthesis_guidance="Run ruff check and pytest to verify change before committing.",
+++                ),
+++            ),
+++        ]
+++
+++        for task, assessment in seed_cases:
+++            self.add_example(task, assessment)
+++
+++        return self.export_jsonl()
++diff --git a/backend/tools/learning/model_trainer.py b/backend/tools/learning/model_trainer.py
++index 436615545..7a652fbb2 100644
++--- a/backend/tools/learning/model_trainer.py
+++++ b/backend/tools/learning/model_trainer.py
++@@ -11,7 +11,7 @@ from core.logging_config import logger
++ class ModelTrainer:
++     def __init__(self, provider: str = "auto"):
++         self.provider = "auto"
++-        if provider in ("runpod", "modal", "docker"):
+++        if provider in ("runpod", "modal", "docker", "kaggle"):
++             self.provider = provider
++         elif getattr(settings, "runpod_api_key", None):
++             self.provider = "runpod"
++@@ -19,6 +19,8 @@ class ModelTrainer:
++             settings, "modal_token_secret", None
++         ):
++             self.provider = "modal"
+++        elif getattr(settings, "kaggle_api_keys", None):
+++            self.provider = "kaggle"
++         else:
++             self.provider = "local"
++         logger.info(f"Initialized ModelTrainer with provider {self.provider}")
++@@ -91,6 +93,58 @@ class ModelTrainer:
++                 if resp.status_code not in (200, 201):
++                     raise RuntimeError(f"Modal execution failed: {resp.text}")
++                 logger.info(f"Modal training job queued: {job_id}")
+++        elif self.provider == "kaggle":
+++            from core.kaggle_orchestrator import KaggleOrchestrator, KaggleTaskType
+++
+++            orchestrator = KaggleOrchestrator.get_instance()
+++            payload: dict[str, Any] = {
+++                "base_model": base_model,
+++                "hyperparameters": {
+++                    "learning_rate": 2e-4,
+++                    "epochs": 3,
+++                    "batch_size": 2,
+++                },
+++            }
+++            if dataset_path.startswith(("http://", "https://", "kaggle://")):
+++                payload["dataset_url"] = dataset_path
+++            else:
+++                try:
+++                    from database.supabase_client import get_supabase_client
+++
+++                    client = get_supabase_client()
+++                    bucket_name = "datasets"
+++                    filename = os.path.basename(dataset_path)
+++                    remote_path = f"training/{job_id}/{filename}"
+++                    with open(dataset_path, "rb") as f:
+++                        client.storage.from_(bucket_name).upload(remote_path, f)
+++                    payload["dataset_url"] = client.storage.from_(bucket_name).get_public_url(
+++                        remote_path
+++                    )
+++                except Exception as exc:
+++                    logger.warning(
+++                        f"Could not upload dataset to storage: {exc}. Using path directly."
+++                    )
+++                    payload["dataset_url"] = dataset_path
+++
+++            speculative_res = await orchestrator.submit_job_speculative(
+++                task_type=KaggleTaskType.MODEL_FINE_TUNING,
+++                payload=payload,
+++                priority=8,
+++                estimated_hours=2.0,
+++            )
+++            job_id = speculative_res.get("job_id", job_id)
+++            logger.info(f"Kaggle training job queued: {job_id}")
+++            return {
+++                "status": "success",
+++                "job_id": job_id,
+++                "base_model": base_model,
+++                "provider": "kaggle",
+++                "dataset": dataset_path,
+++                "worker_state": speculative_res.get("worker_state", "cold_booting"),
+++                "speculative_thinking": speculative_res.get("speculative_thinking", False),
+++                "thinking_trace": speculative_res.get("thinking_trace", []),
+++                "message": "Training initiated on Kaggle GPU cluster.",
+++            }
++         else:
++             # Issue #440 fix: "local" previously logged a "simulation" line and
++             # returned success — nothing ran.  Honest not_implemented now.
++@@ -160,6 +214,37 @@ class ModelTrainer:
++                     "message": "Could not verify job status",
++                 }
++ 
+++        if self.provider == "kaggle":
+++            import json
+++
+++            from core.kaggle_orchestrator import KaggleOrchestrator
+++
+++            orch = KaggleOrchestrator.get_instance()
+++            if orch.redis_client:
+++                job_key = orch.JOB_STATUS_KEY.format(job_id=job_id)
+++                job_data = await orch.redis_client.hgetall(job_key)
+++                if job_data:
+++                    status = job_data.get("status", "unknown").lower()
+++                    result_data = {}
+++                    if "result" in job_data:
+++                        try:
+++                            result_data = json.loads(job_data["result"])
+++                        except Exception:
+++                            result_data = {}
+++                    return {
+++                        "status": "completed" if status == "success" else status,
+++                        "job_id": job_id,
+++                        "loss": result_data.get("loss"),
+++                        "checkpoint_path": result_data.get("checkpoint_path"),
+++                        "epochs_trained": result_data.get("epochs_trained"),
+++                        "error": job_data.get("error") or None,
+++                    }
+++            return {
+++                "status": "unknown",
+++                "job_id": job_id,
+++                "message": "Kaggle job status unavailable or Redis disconnected",
+++            }
+++
++         if self.provider == "local":
++             # বাংলা মন্তব্য: local training কখনো বাস্তবে চালানো হয়নি (simulation-only) —
++             # তাই "completed"/loss fabricate করা হচ্ছে না।
++diff --git a/docs/archive/lessons_2026-10.md b/docs/archive/lessons_2026-10.md
++index a64b4cd56..5909ece5e 100644
++--- a/docs/archive/lessons_2026-10.md
+++++ b/docs/archive/lessons_2026-10.md
++@@ -104,5 +104,13 @@
++ 
++ 
++ 
+++---
+++
+++
+++
+++---
+++
+++
+++
++ ---
++ 
++diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
++index dd24f1cc3..327923a0f 100644
++--- a/infrastructure/mcp-control-plane/src/lib/env.ts
+++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
++@@ -261,6 +261,8 @@ export const env = {
++     get tokens(): string[] {
++       const explicit = multiKey("KAGGLE_API_TOKENS");
++       if (explicit.length > 0) return explicit;
+++      const explicitKeys = multiKey("KAGGLE_API_KEYS");
+++      if (explicitKeys.length > 0) return explicitKeys;
++       const collected: string[] = [];
++       for (let i = 1; i <= 6; i++) {
++         const val = optional(`KAGGLE_API_TOKEN_${i}`);
++diff --git a/tests/test_kaggle_warm_orchestrator.py b/tests/test_kaggle_warm_orchestrator.py
++index 47ad813b0..a590da4f6 100644
++--- a/tests/test_kaggle_warm_orchestrator.py
+++++ b/tests/test_kaggle_warm_orchestrator.py
++@@ -18,12 +18,21 @@ from fastapi import FastAPI
++ from fastapi.testclient import TestClient
++ 
++ from backend.api.routes.kaggle import router
++-from backend.core.kaggle_orchestrator import (
++-    KaggleAccount,
++-    KaggleJob,
++-    KaggleOrchestrator,
++-    KaggleTaskType,
++-)
+++
+++try:
+++    from core.kaggle_orchestrator import (
+++        KaggleAccount,
+++        KaggleJob,
+++        KaggleOrchestrator,
+++        KaggleTaskType,
+++    )
+++except ImportError:
+++    from backend.core.kaggle_orchestrator import (
+++        KaggleAccount,
+++        KaggleJob,
+++        KaggleOrchestrator,
+++        KaggleTaskType,
+++    )
++ 
++ 
++ @pytest.fixture
++@@ -91,8 +100,12 @@ def mock_redis():
++ @pytest.fixture
++ def orchestrator(mock_redis):
++     accounts = [
++-        KaggleAccount(account_id="worker_1", username="supremeai_1", api_key="KGAT_validtoken123"),
++-        KaggleAccount(account_id="worker_2", username="supremeai_2", api_key="legacy_key_456"),
+++        KaggleAccount(
+++            account_id="worker_1", username="supremeai_1", api_key="KGAT_validtoken123"
+++        ),
+++        KaggleAccount(
+++            account_id="worker_2", username="supremeai_2", api_key="legacy_key_456"
+++        ),
++     ]
++     orch = KaggleOrchestrator(redis_url="mock://redis", accounts=accounts)
++     orch.redis_client = mock_redis
++@@ -176,9 +189,17 @@ async def test_kgat_bearer_auth_dispatch(orchestrator):
++         payload={"dataset_url": "https://example.com/data.csv"},
++     )
++ 
++-    with patch.object(orchestrator.http_client, "post", new_callable=AsyncMock) as mock_post:
+++    with patch.object(
+++        orchestrator.http_client, "post", new_callable=AsyncMock
+++    ) as mock_post:
++         mock_response = MagicMock()
++         mock_response.status_code = 200
+++        mock_response.json = MagicMock(
+++            return_value={
+++                "hasError": False,
+++                "url": "https://www.kaggle.com/code/paykaribazar/supremeai-test-kgat-job",
+++            }
+++        )
++         mock_post.return_value = mock_response
++ 
++         ok = await orchestrator.dispatch_job_to_kaggle(job, account_kgat)
++@@ -189,13 +210,50 @@ async def test_kgat_bearer_auth_dispatch(orchestrator):
++         assert called_headers.get("Authorization") == f"Bearer {account_kgat.api_key}"
++         assert "Kaggle-Username" not in called_headers
++ 
+++        # Verify Kaggle API payload structure (issue #439 / #440 fix)
+++        called_json = mock_post.call_args.kwargs.get("json", {})
+++        assert "slug" in called_json
+++        assert called_json["slug"].startswith(account_kgat.username)
+++        assert "newTitle" in called_json
+++        assert "text" in called_json
+++        assert called_json["kernelType"] == "script"
+++        assert called_json["isPrivate"] is True
+++        assert "enableGpu" in called_json
+++        assert called_json["enableInternet"] is True
+++
+++
+++@pytest.mark.asyncio
+++async def test_kaggle_dispatch_rejection(orchestrator):
+++    account_kgat = orchestrator.accounts["worker_1"]
+++    job = KaggleJob(
+++        job_id="test_rejection_job",
+++        task_type=KaggleTaskType.DATA_PROCESSING,
+++        payload={"dataset_url": "https://example.com/data.csv"},
+++    )
+++
+++    with patch.object(
+++        orchestrator.http_client, "post", new_callable=AsyncMock
+++    ) as mock_post:
+++        mock_response = MagicMock()
+++        mock_response.status_code = 200
+++        mock_response.json = MagicMock(
+++            return_value={"hasError": True, "error": "Invalid slug format"}
+++        )
+++        mock_post.return_value = mock_response
+++
+++        ok = await orchestrator.dispatch_job_to_kaggle(job, account_kgat)
+++        assert ok is False
+++
++ 
++ def test_routes_endpoints(orchestrator):
++     app = FastAPI()
++     app.include_router(router)
++     client = TestClient(app)
++ 
++-    with patch("backend.api.routes.kaggle.KaggleOrchestrator.get_instance", return_value=orchestrator):
+++    with patch(
+++        "backend.api.routes.kaggle.KaggleOrchestrator.get_instance",
+++        return_value=orchestrator,
+++    ):
++         # 1. Heartbeat endpoint
++         hb_resp = client.post(
++             "/api/v1/kaggle/heartbeat",
++@@ -224,3 +282,38 @@ def test_routes_endpoints(orchestrator):
++         sub_data = sub_resp.json()
++         assert "job_id" in sub_data
++         assert sub_data["worker_state"] == "warm"
+++
+++
+++@pytest.mark.asyncio
+++async def test_model_trainer_kaggle_integration(orchestrator, tmp_path):
+++    from backend.tools.learning.model_trainer import ModelTrainer
+++
+++    dummy_dataset = tmp_path / "train.jsonl"
+++    dummy_dataset.write_text('{"text": "example prompt and completion"}\n')
+++
+++    with (
+++        patch("backend.tools.learning.model_trainer.settings") as mock_settings,
+++        patch(
+++            "core.kaggle_orchestrator.KaggleOrchestrator.get_instance",
+++            return_value=orchestrator,
+++            create=True,
+++        ),
+++        patch.object(KaggleOrchestrator, "get_instance", return_value=orchestrator),
+++    ):
+++        mock_settings.runpod_api_key = None
+++        mock_settings.modal_token_id = None
+++        mock_settings.kaggle_api_keys = ["KGAT_validtoken123"]
+++
+++        trainer = ModelTrainer(provider="auto")
+++        assert trainer.provider == "kaggle"
+++
+++        res = await trainer.trigger_lora_finetune(str(dummy_dataset), base_model="gpt2")
+++        assert res["status"] == "success"
+++        assert res["provider"] == "kaggle"
+++        assert "job_id" in res
+++        assert "worker_state" in res
+++
+++        # Check job status tracking
+++        status_res = await trainer.get_job_status(res["job_id"])
+++        assert "status" in status_res
+++        assert status_res["job_id"] == res["job_id"]
++diff --git a/tests/test_meta_cognitive_intent.py b/tests/test_meta_cognitive_intent.py
++new file mode 100644
++index 000000000..4664a2985
++--- /dev/null
+++++ b/tests/test_meta_cognitive_intent.py
++@@ -0,0 +1,133 @@
+++"""
+++Unit tests for Meta-Cognitive Intent Understanding, Capability Boundary & Delegation.
+++====================================================================================
+++Verifies:
+++1. Intent Parsing: Ambiguity detection & clarification question generation.
+++2. Capability Boundary: Local execution limits vs specialist needs.
+++3. Intelligent Delegation: Correct specialist routing (kaggle_gpu, reasoning_model, browser_subagent, human_admin, self).
+++4. MetaCognitionDatasetBuilder: Dataset compilation and JSONL export for Kaggle LoRA training.
+++"""
+++
+++from __future__ import annotations
+++
+++import json
+++import os
+++from unittest.mock import MagicMock
+++
+++import pytest
+++
+++from backend.adaptive_engine.intent_parser import IntentParser
+++from backend.tools.learning.meta_cognition_dataset import MetaCognitionDatasetBuilder
+++
+++
+++@pytest.fixture
+++def mock_router():
+++    router = MagicMock()
+++    return router
+++
+++
+++def test_meta_cognition_destructive_gate_blocks_locally(mock_router):
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition(
+++        "Drop database and delete production backups immediately"
+++    )
+++
+++    assert res.can_solve_locally is False
+++    assert res.is_destructive_or_sensitive is True
+++    assert res.delegation_target == "human_admin"
+++    assert (
+++        "confirm" in (res.clarification_question or "").lower()
+++        or "authorize" in (res.clarification_question or "").lower()
+++    )
+++    # LLM should not even be called for hard destructive keywords
+++    mock_router.route_and_generate.assert_not_called()
+++
+++
+++def test_meta_cognition_heuristic_kaggle_delegation(mock_router):
+++    mock_router.route_and_generate.side_effect = RuntimeError("LLM offline")
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition(
+++        "Fine-tune Llama 3 8B with LoRA on code refactoring dataset"
+++    )
+++
+++    assert res.can_solve_locally is False
+++    assert res.delegation_target == "kaggle_gpu"
+++    assert "GPU" in res.why_delegated or "Kaggle" in res.why_delegated
+++
+++
+++def test_meta_cognition_heuristic_reasoning_delegation(mock_router):
+++    mock_router.route_and_generate.side_effect = RuntimeError("LLM offline")
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition("Provide a mathematical proof of time complexity")
+++
+++    assert res.can_solve_locally is False
+++    assert res.delegation_target == "reasoning_model"
+++
+++
+++def test_meta_cognition_heuristic_browser_delegation(mock_router):
+++    mock_router.route_and_generate.side_effect = RuntimeError("LLM offline")
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition(
+++        "Open browser and click the login button to inspect console logs"
+++    )
+++
+++    assert res.can_solve_locally is False
+++    assert res.delegation_target == "browser_subagent"
+++
+++
+++def test_meta_cognition_local_execution(mock_router):
+++    mock_router.route_and_generate.side_effect = RuntimeError("LLM offline")
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition(
+++        "Add a type hint to parse_tokens function in parser.py"
+++    )
+++
+++    assert res.can_solve_locally is True
+++    assert res.delegation_target == "self"
+++    assert res.is_ambiguous is False
+++
+++
+++def test_meta_cognition_llm_structured_parsing(mock_router):
+++    llm_payload = {
+++        "core_intent": "user_authentication",
+++        "underlying_goal": "Allow users to log in securely with JWT",
+++        "is_ambiguous": False,
+++        "clarification_question": None,
+++        "can_solve_locally": True,
+++        "confidence_score": 0.95,
+++        "boundary_limitations": [],
+++        "is_destructive_or_sensitive": False,
+++        "delegation_target": "self",
+++        "why_delegated": "Local FastAPI route implementation",
+++        "specialist_task_contract": {"endpoint": "/api/v1/login"},
+++        "synthesis_guidance": "Run test_auth.py to verify JWT generation",
+++    }
+++    mock_router.route_and_generate.return_value = {"text": json.dumps(llm_payload)}
+++
+++    parser = IntentParser(model_router=mock_router)
+++    res = parser.parse_meta_cognition("Implement user login endpoint with JWT")
+++
+++    assert res.core_intent == "user_authentication"
+++    assert res.can_solve_locally is True
+++    assert res.delegation_target == "self"
+++    assert res.confidence_score == 0.95
+++
+++
+++def test_dataset_builder_generation_and_export(tmp_path):
+++    builder = MetaCognitionDatasetBuilder(output_dir=str(tmp_path))
+++    jsonl_path = builder.generate_seed_dataset()
+++
+++    assert os.path.exists(jsonl_path)
+++    with open(jsonl_path, encoding="utf-8") as f:
+++        lines = [json.loads(line) for line in f if line.strip()]
+++
+++    assert len(lines) >= 6
+++    # Check that instruction, input, and output exist in each training example
+++    for item in lines:
+++        assert "instruction" in item
+++        assert "input" in item
+++        assert "output" in item
+++        parsed_out = json.loads(item["output"])
+++        assert "core_intent" in parsed_out
+++        assert "can_solve_locally" in parsed_out
+++        assert "delegation_target" in parsed_out

@@ -1,0 +1,57 @@
+diff --git a/docs/bridge/orders/bridge-20261027-redis-quota-ledger.md b/docs/bridge/orders/bridge-20261027-redis-quota-ledger.md
+new file mode 100644
+index 00000000..5f723e68
+--- /dev/null
++++ b/docs/bridge/orders/bridge-20261027-redis-quota-ledger.md
+@@ -0,0 +1,51 @@
++# [P0] Redis primary quota exhausted — tertiary failover is live; durable quota ledger + alerts required
++
++## Task ID
++`bridge-20261027-redis-quota-ledger`
++
++## Target repository
++`Supremeai-bd/supremeai` (runtime platform concern; tracked on the public `supremeai-open` task board per federation policy).
++
++## Severity
++**P0 — active operational incident.** The primary Upstash Redis instance exceeded its monthly command quota and is in cooldown until 2026-11-01; the secondary is also in cooldown; the tertiary instance is carrying live traffic. There is no evidence of alerting, durable quota accounting, or capacity headroom validation.
++
++## Verified evidence (pulled live via MCP tower, 2026-10-26 16:46 UTC)
++- `redis_rotation_status` →
++  ```json
++  {"autoRotateEnabled": true, "activePrimary": "tertiary",
++   "nextGlobalResetAt": "2026-11-01T00:01:00.000Z",
++   "chain": [
++     {"label": "primary",    "cooldownUntil": "2026-11-01T00:01:00Z", "usage": {"estimatedCommands": 500002, "limit": 500000, "softThreshold": 480000, "softThresholdHit": true}},
++     {"label": "secondary",  "cooldownUntil": "2026-11-01T00:01:00Z", "usage": {"estimatedCommands": 2,     "limit": 500000}},
++     {"label": "tertiary",   "isActivePrimary": true,                 "usage": {"estimatedCommands": 6134,  "limit": 500000}},
++     {"label": "quaternary", "usage": {"estimatedCommands": 1505, "limit": 500000}},
++     {"label": "quinary",    "usage": {"estimatedCommands": 1505, "limit": 500000}},
++     {"label": "tcp-fallback", "usage": {"estimatedCommands": 0}}
++   ]}
++  ```
++- Matches the audit's finding verbatim: primary `500002/500000`, tertiary active, cooldown `2026-11-01T00:01:00Z`.
++
++## Why this blocks production
++- Single-chain-of-rotation fragility: if tertiary burn accelerates (it is now the sole live primary), the platform cascades to quaternary/quinary and then to tcp-fallback with degraded behavior.
++- The audit further notes quota/cooldown state is process-local / best-effort — multi-instance deployments can each think they have headroom and overrun together.
++- ~11 days remain until global reset (2026-11-01); tertiary usage at pull time was 6,134 commands — trajectory unknown because no alerting/history exists.
++
++## Remediation plan
++1. **Alerts**: wire notifications (Telegram ops channel) at 80% / 90% / 96% of `limit` and on any `cooldownUntil` transition for every chain member. Validate against a synthetic threshold crossing.
++2. **Durable shared quota ledger**: persist per-instance counters (and cooldown decisions) in a durable store keyed by instance label so all instances share one truth (the audit's "shared quota ledger" item).
++3. **Command budget review**: identify the top command consumers (cache writes per request, per-token telemetry writes, watchdog polls) and add pipeline batching / sampling to cut burn before reset.
++4. **Capacity validation**: confirm tertiary (and fallbacks) have headroom to carry the full primary load for 11 days; document the failover test result.
++5. **Reset-day plan**: on 2026-11-01 verify rotation returns to primary cleanly (no split-brain double-active).
++
++## Acceptance criteria
++- [ ] Threshold alerts fire in a controlled test
++- [ ] Quota ledger survives an instance restart and is read by all instances
++- [ ] Documented command-burn baseline + reduction actions
++- [ ] Post-reset rotation verified back to primary
++
++## Related orders
++- Audit "SupremeAI সমন্বিত Executive Diagnosis" (2026-10-26), P0 item 7 (Redis quota exhaustion).
++
++## Verification commands for the implementer
++- `redis_rotation_status {}`
++- `redis_stats {}` / `redis_ping {}`

@@ -1,0 +1,75 @@
+diff --git a/docs/ops/WO2112_CLOSURE_2026-10-30.md b/docs/ops/WO2112_CLOSURE_2026-10-30.md
+new file mode 100644
+index 00000000..4c25c112
+--- /dev/null
++++ b/docs/ops/WO2112_CLOSURE_2026-10-30.md
+@@ -0,0 +1,69 @@
++# Bridge Work Order #2112 — Closure Record: misfiled recovery WO; remedy landed via superseding r2 PR #2114 (docs-only)
++
++**Task ID:** bridge-20261030-wo2112-closure · **Closes #2112** · **Probed:** 2026-10-30T08:10–08:42Z
++**Claim:** GRANT_NEW on #2112 at 08:41:39Z (row open/unclaimed with zero comments since
++2026-10-28; served as this cycle's top unclaimed candidate).
++
++## 1. What the row is
++
++WO #2112 is the **recovery Bridge Work Order** for the `py_dep_cve_guard` poetry runtime-plane
++fix (#2101, branch `bridge-20261028-py-poetry-plane` r1). Its own body records the failure it
++was created to recover from: the r1 submission landed **4/4 files** but the internal Step-D
++PR-filing call failed **HTTP 422 (title exceeded GitHub's 1000-char limit, ~1020 chars)**, and
++"Manual work order needed for Step-D template (no branch/file writes required)".
++
++**The misfiling:** the recovery WO was filed **without the `bridge:queued` label**, so the
++intake pipeline could never see it (the superseding commit's words: "recovery WO filed without
++the bridge:queued label so intake cannot see it"). Result: a zombie tracker row — open,
++unclaimed, zero comments — dispatching as an unclaimed candidate for two days while the actual
++work had already landed.
++
++## 2. The remedy landed via the superseding r2 PR (live-verified on origin/main)
++
++- **PR #2114** (commit `aa9de7b`, branch `bridge-20261028-py-poetry-plane-r2`) is **merged on
++  origin/main** (verified via `git branch -r --contains aa9de7b` → `origin/main`, fetch at
++  08:4xZ). Its commit message states verbatim: "SUPERSEDES #2112 (r1: files landed 4/4 then
++  Step-D 422'd on a ~1020-char title; recovery WO filed without the bridge:queued label so
++  intake cannot see it; resubmit impossible — r1 branch at final state) … **Closes #2101;
++  #2112 close as misfiled.**"
++- **#2101 is closed** (feedback plane, probed 08:4xZ) — the r2 PR's own Closes line executed.
++- Landed state verified in the working tree at main: `scripts/ci/py_dep_cve_guard.py` carries
++  the `[tool.poetry.dependencies]` main-group widening (doc-line 26, surface list line 128,
++  pip-specifier synthesis line 269, skip-with-notes label lines 571/577);
++  `scripts/ci/py_dep_cve_baseline.json` rebuilt (commit record: 15 manifests / 6 pairs /
++  119 ids — pillow x78, pydantic-ai x15 NEW, filelock x6, otel x2, pytest x3);
++  `tests/test_py_dep_cve_guard.py` and `.githooks/pre-push` present (pre-push engages on
++  pyproject.toml).
++
++## 3. Why close it
++
++- The row's residual action ("Manual work order needed for Step-D") is **obsolete**: the r2
++  resubmission went through the bridge successfully and landed — no Step-D template filing is
++  pending for this fix.
++- The superseding merged commit itself mandates the closure verdict ("#2112 close as
++  misfiled"); the verdict plane has therefore already spoken via the merged record — this
++  document archives it and drains the stale dispatch.
++- The row has consumed guard passes per dispatch cycle for two days (this cycle included) for
++  work whose every file is already on main.
++
++## 4. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী:** #2112 হলো একটা "recovery" ট্র্যাকিং টিকিট — poetry dependency-guard ফিক্সের
++প্রথম চেষ্টা (r1) ফাইল ল্যান্ড করার পর PR তৈরির ধাপে ব্যর্থ হয়েছিল (টাইটেল ১০০০ অক্ষর ছাড়িয়ে
++গেছে বলে HTTP 422), তাই এটা খোলা হয়েছিল।
++
++**সমস্যা কী:** টিকিটটা ভুল দমে ফাইল হয়েছিল — `bridge:queued` লেবেল ছাড়া, ফলে intake পাইপলাইন
++কখনোই এটা দেখেনি। মূল কাজ ততদিনে r2 (PR #2114) দিয়ে সম্পূর্ণ ল্যান্ড হয়ে গেছে — ৪/৪ ফাইল main-এ
++আছে, #2101 বন্ধ হয়ে গেছে, আর r2-এর কমিট নিজেই বলছে "#2112 close as misfiled"। কিন্তু এই টিকিট
++দুই দিন ধরে খোলা, প্রতি ঘণ্টা লুপ এটা কাজ হিসেবে দিচ্ছিল।
++
++**প্রমাণ:** `aa9de7b` কমিট origin/main-এ আছে (আজ ০৮:৪xZ fetch করে যাচাই), গার্ড সোর্সে
++`[tool.poetry.dependencies]` widening আছে, baseline rebuild হয়েছে (৬ জোড়া / ১১৯ id)।
++
++**এই ডকুমেন্ট merge হলে** `Closes #2112` দিয়ে ভুল-ফাইলড ট্র্যাকারটা বন্ধ হবে — আসল কাজ আগেই
++main-এ, কোনো ধাপ বাকি নেই।
++
++---
++*Docs-only: single file under docs/ops/, zero satellite code, protected paths untouched.
++Evidence discipline: every figure carries its probe timestamp; baseline figures cite the merged
++commit record (my local probe read a sibling key and is not cited as a contradicting datum).*

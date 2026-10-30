@@ -1,0 +1,107 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index df64ec65..bf1f17d7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -660,11 +660,17 @@ export function isAnchorHubOrGovernance(raw: RawIssue): boolean {
+   return labels.some((l) => l.toLowerCase() === "area:governance");
+ }
+ 
++/** Bridge-state labels mark settled work: excluded from the default board. */
++export function isBridgeStateLabel(label: string): boolean {
++  const l = label.toLowerCase();
++  return l === "bridge:rejected" || l === "bridge:landed";
++}
++
+ export function isRejectedOrLanded(raw: RawIssue): boolean {
+   const labels = Array.isArray(raw.labels)
+     ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
+     : [];
+-  return labels.some((l) => l.toLowerCase() === "bridge:rejected" || l.toLowerCase() === "bridge:landed");
++  return labels.some((l) => isBridgeStateLabel(l));
+ }
+ 
+ /** Open issues only (defense in depth: the API query filters, we verify). */
+@@ -715,14 +721,20 @@ export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
+ }
+ 
+ /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
+-export function queueFromIssues(rawIssues: unknown, limit = 20) {
++export function queueFromIssues(rawIssues: unknown, limit = 20,
++                                opts: { keepBridgeStateRows?: boolean } = {}) {
+   const items = Array.isArray(rawIssues) ? rawIssues : [];
+   return items
+     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
+     .filter(isIssueNotPullRequest)
+     .filter(isOpenIssue)
+     .filter((item) => !isAnchorHubOrGovernance(item))
+-    .filter((item) => !isRejectedOrLanded(item))
++    // A label-filtered query that ASKS for a bridge-state label must not
++    // have that same label filtered out: the universal filter serves the
++    // default claimable board, not targeted reconciliation queries (#2163
++    // arc: label=bridge:rejected returned 0 rows for 2 confirmed open rows,
++    // live-proven across the redeploy boundary).
++    .filter((item) => opts.keepBridgeStateRows || !isRejectedOrLanded(item))
+     .map(normalizeQueueItem)
+     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
+     .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
+@@ -799,7 +811,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           if (rows.length < QUEUE_PAGE_SIZE) break;
+           page += 1;
+         }
+-        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20);
++        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20,
++          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
+         // Expose all active open issues so agents discover claimable federation work
+         const anonymous = RequestContextStore.get()?.authenticated !== true;
+         const workOrders = queued;
+@@ -946,7 +959,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+         if (!res.ok) {
+           return { isError: true, content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}).` }] };
+         }
+-        const queued = queueFromIssues(res.data, limit ?? 20);
++        const queued = queueFromIssues(res.data, limit ?? 20,
++          { keepBridgeStateRows: appliedLabel !== null && isBridgeStateLabel(appliedLabel) });
+         return {
+           content: [{
+             type: "text",
+diff --git a/infrastructure/mcp-control-plane/test_queue_fidelity.ts b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+index 51ffc06b..301af55a 100644
+--- a/infrastructure/mcp-control-plane/test_queue_fidelity.ts
++++ b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+@@ -29,6 +29,9 @@ import {
+  *   R6: state_reason passthrough (#2218) — closed-as-completed vs
+  *       closed-as-not_planned machine-readable Tower-only; absent or
+  *       non-string upstream values normalize to null.
++ *   R7: label-filtered bridge-state queries are not self-defeating
++ *       (#2163 arc) — asking for bridge:rejected/bridge:landed returns
++ *       those rows; the default board keeps filtering them.
+  */
+ 
+ const REPO = "Supremeai-bd/supremeai-open";
+@@ -158,4 +161,26 @@ function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown
+   console.log("  ✓ R6 stateReason passthrough (#2218): completed/not_planned/reopened/null/junk");
+ }
+ 
++// ─── R7: label-filtered bridge-state queries (#2163 arc) ────────────────────
++{
++  const rejRow = issue(2020, { labels: ["bridge:rejected"] });
++  const landedRow = issue(2021, { labels: [{ name: "bridge:landed" }] });
++  const plain = issue(2022);
++
++  const board = queueFromIssues([rejRow, landedRow, plain], 10);
++  assert.ok(
++    !board.some((w) => w.number === 2020 || w.number === 2021),
++    "default board keeps filtering bridge-state rows (unchanged contract)",
++  );
++
++  const targeted = queueFromIssues([rejRow, landedRow, plain], 10, { keepBridgeStateRows: true });
++  assert.deepEqual(
++    targeted.map((w) => w.number),
++    [2022, 2021, 2020],
++    "targeted bridge-state query returns exactly the asked-for rows",
++  );
++
++  console.log("  ✓ R7 label-filtered bridge-state queries survive (#2163 arc)");
++}
++
+ console.log("Queue-fidelity contract tests passed (#2115/#2123)");

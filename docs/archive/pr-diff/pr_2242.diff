@@ -1,0 +1,89 @@
+diff --git a/docs/reports/bridge-20261029-health-staleness-guard.md b/docs/reports/bridge-20261029-health-staleness-guard.md
+new file mode 100644
+index 00000000..9ade3c2b
+--- /dev/null
++++ b/docs/reports/bridge-20261029-health-staleness-guard.md
+@@ -0,0 +1,83 @@
++# guard(api): public /health 4-day frozen snapshot — receipt + post-redeploy resolution + freshness guard proposal
++
++- **Task ID**: bridge-20261029-health-staleness-guard
++- **Filed by**: human-eye | cron Job 478633 | cycle-19 2026-10-29T00:57+08 | mcp session 3406e8cb
++- **Solved by**: zai-glm-agent (cron Job 478712, cycle 20, mcp session ab676e4b, claim GRANT_NEW 2026-10-28T18:05:39Z)
++- **Scope**: report-only, single doc; zero runtime paths touched
++- **Refs**: #2205 (this WO), #2211 (render deploy-failure family, P1), #2212 (restart evidence), #1934/#1852 (sentry series), #2076/#2082 (standing zero-credential probes)
++
++## 1. Finding (filer's evidence, 2026-10-28)
++
++The public HTTP `/health` route on both the MCP tower (`supremeai-mcp-tower.onrender.com/health`) and the core API served a **frozen snapshot** while the MCP `health_full_sweep` engine remained fully live. Fifteen hourly WebFetch reads from 09:57 to 23:57 (+08) returned a tower `/health` timestamp of exactly `2026-10-24T11:41:20.752Z` and an api `/health` timestamp of exactly `2026-10-24T11:40:55.206300+00:00`, ms-identical on every read. Earlier morning reads showed a *different* frozen value (`21:57:38.375Z`) persisting across two cycles — a refresh-never-happens pattern, not a one-off stale window.
++
++In the same window, the same-session MCP `health_full_sweep` returned live results (`checkedAt 2026-10-28T16:58:51Z`, 2890 ms, `incidents: []`), proving the sweep engine and its Redis plane were healthy while the HTTP route never republished. The two planes had diverged: consumers scraping the public HTTP health endpoint were reading a 4-day-old verdict of system state, while the actual checker plane was current.
++
++Operational impact: any watchdog, dashboard, or external monitor keyed on the HTTP `/health` body (rather than on MCP sweep output) was blind for up to four days. This is the monitoring-equivalent of the verdict-blackout family (#2100): the data plane works, the advertisement plane freezes.
++
++## 2. Live resolution receipt (solver, 2026-10-28 ~18:06Z)
++
++During claim processing, the render-mcp redeploy that also unlocked the queue-r2 plane (ladder rung `limit=200` accepted at ~18:05Z, after ~17h of `-32602 expected <=50`; see #2211/#2212 for the deploy-failure family and restart bracket) also **resolved the frozen route**:
++
++| Read | Endpoint | Timestamp served | Delta |
++|------|----------|------------------|-------|
++| 1 | tower `/health` | `2026-10-28T18:06:25.444Z` | live |
++| 2 | tower `/health` | `2026-10-28T18:06:49.090Z` | +23.6 s |
++| 3 | tower `/health` | `2026-10-28T18:06:52.175Z` | +3.1 s |
++| 4 | tower `/health` | `2026-10-28T18:06:55.347Z` | +3.2 s |
++
++Reads 2–4 were taken ~3 s apart and the timestamp **advances per request** — the defect signature (ms-identical reads across hours) is gone. MCP `health_full_sweep` at `18:06:28Z` (2530 ms, `incidents: []`) agrees with the HTTP plane again.
++
++Interpretation: the frozen snapshot was a build-time/boot-time artifact of the *previous* container build (consistent with #2212's restart evidence: session store and health cache died together 17:10–17:16Z). The new build republishes `/health` per request (or on a live cache TTL), which closes the freshness gap at the root.
++
++## 3. Guard proposal — freshness gate (fake-clock, unit + integration)
++
++The resolution is deploy-luck, not an invariant. The failure mode "HTTP route serves a snapshot while the sweep engine is live" had no detector: sentry passes (#1934 series) probe providers, and the plane watches (#2204 series) probe the bridge queue, but nothing compares HTTP `/health` freshness against MCP sweep freshness. Proposed guards, to be wired in a follow-up code WO (this WO is doc-only by scope):
++
++### 3.1 Unit tier — staleness guard function (fake clock)
++
++```python
++# scripts/ci/health_freshness_guard.py (proposal — NOT wired in this doc-only change)
++from datetime import datetime, timedelta, timezone
++
++MAX_STALENESS = timedelta(minutes=10)   # /health must never lag now by more than this
++
++def parse_ts(value: str) -> datetime:
++    """Parse ISO-8601 timestamps served by /health; fail-closed on junk."""
++    ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
++    if ts.tzinfo is None:
++        raise ValueError("naive timestamp: fail-closed")
++    return ts
++
++def staleness_seconds(health_body: dict, now: datetime) -> float:
++    """Positive = seconds stale. Raises on missing/naive timestamp (fail-closed)."""
++    return (now - parse_ts(health_body["timestamp"])).total_seconds()
++
++def is_fresh(health_body: dict, now: datetime) -> bool:
++    return staleness_seconds(health_body, now) <= MAX_STALENESS.total_seconds()
++```
++
++Fake-clock unit cases (no network, deterministic):
++
++1. `now == ts` → fresh (0 s staleness).
++2. `now == ts + 9 min` → fresh (inside budget).
++3. `now == ts + 11 min` → STALE (exit 1).
++4. frozen snapshot: two bodies with byte-identical timestamps read at different fake `now`s → second read STALE; also flags the frozen pattern itself (identical-ts detector).
++5. missing `timestamp` key, naive timestamp, junk string → raise/fail-closed (never silently fresh).
++6. clock-skew guard: `ts > now + 5 min` (future timestamp) → fail-closed, catches clock lies both directions.
++
++### 3.2 Integration tier — dual-plane cross-check + loop watchdog
++
++- **Cross-check probe** (zero-credential, stdlib-only, per the #2076/#2082 probe discipline): fetch HTTP `/health`, fetch MCP `health_full_sweep` in the same session, assert `(sweep.checkedAt - http.timestamp)` stays within budget. Receipt from this cycle: pre-redeploy the gap was **4 days** (frozen route vs live sweep); post-redeploy it is **~3 s**. The gap metric is the detector.
++- **Frozen-read detector**: persist the previous `/health` timestamp; if the new read is byte-identical to the previous one, count a strike. Two consecutive identical reads at different wall-clock times = refresh-never-happens = fail-close. (This catches the exact filer signature: 15 ms-identical hourly reads.)
++- **Loop watchdog wiring**: the continuous loop's U3 step (render deployStatus vs HTTP aliveness) already walks both planes; add the freshness cross-check as a fourth signal so a frozen route is reported as `health-frozen` in cycle receipts, distinct from `deploy-failed` and `http-dead`.
++- **Wiring note**: pre-push/CI wiring follows the roster pattern used by `radar_index_freshness_guard` and `docs_link_integrity_guard` (roster entry + pre-push section, zero `.github/**` edits per #1643). The guard itself must be stdlib-only and offline per the #1760 honest-skip convention: tower unreachable → honest-skip, not failure.
++
++## 4. Test evidence (3-tier, honest scope)
++
++- **Reflection**: doc-only change (single report file, `docs/reports/`); the runtime guard in §3 is a *proposal* explicitly marked not-wired. No import graph, no runtime path, no CI config touched — per the WO rollback path "report-only doc, no runtime paths touched".
++- **Boot smoke**: n/a (doc-only; nothing boots).
++- **Tests**: (a) file exists at the exact scope path of WO #2205; (b) zero code files in the patch (scope-paths parity, one file); (c) solver-side live receipts embedded in §2 (four advancing timestamps + one full-sweep agreement) replace synthetic fixtures for the resolution claim; the filer's 15-read frozen table is cited in §1. The fake-clock unit cases in §3.1 are written to the fleet's guard-test convention (deterministic, no network) so the follow-up WO can lift them verbatim.
++
++## 5. Rollback
++
++`git revert` of the single doc commit; no runtime or config surface involved.

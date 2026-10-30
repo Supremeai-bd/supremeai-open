@@ -1,0 +1,286 @@
+diff --git a/docs/reports/BRIDGE_INTAKE_POISON_GUARD_2026-10-30.md b/docs/reports/BRIDGE_INTAKE_POISON_GUARD_2026-10-30.md
+new file mode 100644
+index 00000000..057c4969
+--- /dev/null
++++ b/docs/reports/BRIDGE_INTAKE_POISON_GUARD_2026-10-30.md
+@@ -0,0 +1,57 @@
++# Bridge Intake Poison-Order Resilience Guards (2026-10-30)
++
++**Part of #2792** — implements RCA guards 1, 2, amp-3 and 4 from
++`docs/reports/INTAKE_RCA_2792_2026-10-30.md`, all inside
++`scripts/bridge/bridge_intake.py`. The issue stays open: the RCA calls the
++runtime copy "private-only", so operator confirmation that the private
++runtime picks up this canonical public source (or an admin-side pull) remains
++the closure step, plus the optional alerting guard (.github/, admin-owned).
++
++## Live state at claim time (U3 verified)
++
++`github.workflow_runs` on the private repo: the Bridge Intake gate **recovered
++— run 40961066544 at 2026-10-29T21:50:06Z = success**, after the #327-#329
++failure streak (02:28Z / 10:05Z / 16:56Z). The outage self-cleared, but the
++RCA-named mechanism (zero-diff order → commit-less branch → POST /pulls 422 →
++intake exit-2 → sync/reporting dead) is structural: the next stale order
++re-arms it. This patch removes the mechanism.
++
++## Guards implemented (all fail-honest, per-order)
++
++1. **Zero-diff reject (root cause)** — after `fetch_patch`, before caps:
++   `if not files or not diff.strip(): reject("zero-diff patch branch — content
++   already merged elsewhere or empty branch; nothing effective to land
++   (#2792)")`. The poison order now leaves the queue with an honest terminal
++   label instead of arming the 422 chain.
++2. **Effective-landing belt** — `_has_effective_landing(has_staged,
++   already_applied)` checked after `git add`/staging, BEFORE branch push and
++   POST /pulls. Fresh no-op (False/False) → clean reject; E4-resume with the
++   commit already on the land branch (False/True) still proceeds to
++   push+PR exactly as before.
++3. **`gh_ok` errors[] detail (amp-3)** — 422 responses now carry GitHub's
++   `errors[]` sub-cause ("No commits between main and …") into the BridgeError
++   message, so the verdict plane shows *why*, not just "Validation Failed".
++4. **Sync always runs (amp-2)** — `main()` no longer skips `cmd_sync` when
++   intake returns non-zero; both rc values print separately and the process
++   returns the max. One bad order can no longer kill landed/rejected
++   reporting for a whole streak (the #327-#329 amplifier).
++
++## Evidence
++
++- `tests/test_bridge_intake_poison_guard.py` — 10 offline tests: 3 wiring pins
++  (guard-1 after size cap and before guard-2; guard-2 before POST /pulls;
++  no skip-sync in `main()`), 4 truth-table cases for
++  `_has_effective_landing` (incl. the E4-resume path), 3 `gh_ok` unit tests
++  (errors[] appended, absent-errors unchanged, 201 passthrough).
++- Battery on this tree: poison-guard + split-brain suites 23/23;
++  `-k "intake or bridge or landing"` 82 passed, 3 skipped, 0 new failures;
++  `continuous_agent_loop.py --verify-only` 8/8 PASS.
++
++## Follow-ups (documented, not implemented here)
++
++- Operator: confirm the private runtime picks up this canonical public source
++  (or pull manually); then #2792 can close on admin review.
++- Optional fail-loud alerting on 2+ consecutive intake failures —
++  `.github/workflows` is admin-owned.
++- `landing_truth_probe` extension to the zero-diff path (truth-restore
++  LANDED instead of reject) — polish, needs its own probe-design pass.
+diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+index 6d659007..33e2d942 100644
+--- a/scripts/bridge/bridge_intake.py
++++ b/scripts/bridge/bridge_intake.py
+@@ -159,7 +159,13 @@ def gh(method: str, path: str, token: str, payload: dict | None = None) -> tuple
+ def gh_ok(method: str, path: str, token: str, payload: dict | None = None) -> dict:
+     status, body = gh(method, path, token, payload)
+     if status >= 300:
+-        raise BridgeError(f"github {method} {path} → HTTP {status}: {str(body.get('message', body))[:200]}")
++        # #2792 RCA amp-3: `errors[]` ফেলে দিলে GitHub-এর সাব-কারণ (যেমন "No commits
++        # between main and ...") verdict plane-এ পৌঁছায় না — 422 সব একই দেখায়।
++        detail = str(body.get("message", body))[:200]
++        errs = body.get("errors")
++        if errs:
++            detail += " | errors: " + str(errs)[:200]
++        raise BridgeError(f"github {method} {path} → HTTP {status}: {detail}")
+     return body
+ 
+ 
+@@ -335,6 +341,18 @@ def split_brain_duplicates(
+     return dupes
+ 
+ 
++def _has_effective_landing(has_staged: bool, already_applied: bool) -> bool:
++    """#2792 RCA guard-2: POST /pulls-এর আগে কার্যকর commit আছে কি?
++
++    বাংলা: zero-diff অর্ডার (content অন্য কোথাও merge হয়ে গেছে) apply no-op →
++    has_staged=False → commit-হীন branch → POST /pulls → GitHub 422 "No commits
++    between" → পুরো রান exit-2 → sync/reporting মরে যায় (প্রমাণিত streak #327-#329)।
++    E4-resume-এ already_applied=True মানে commit branch-এই আছে, শুধু push বাকি —
++    সেই পাথ চলবে; বাকি সব নিষ্প্রাণ ল্যান্ডিং clean reject হবে (crash নয়)।
++    """
++    return bool(has_staged or already_applied)
++
++
+ def sanitize_public_comment(text: str, token: str) -> str:
+     """Defense-in-depth: token string + যেকোনো secret-pattern REDACT করা।"""
+     if token:
+@@ -791,6 +809,15 @@ def reject(reason: str, label: str = LABEL_REJECTED) -> None:
+     if len(diff.encode("utf-8", "replace")) > MAX_PATCH_BYTES:
+         reject(f"patch too large ({len(diff)} bytes > {MAX_PATCH_BYTES})")
+         return
++    # #2792 RCA guard-1: zero-diff patch branch = content already merged elsewhere
++    # (or empty branch). Clean reject HERE — no commit-less branch, no POST /pulls
++    # 422, no exit-2, the order leaves the queue with an honest terminal label.
++    if not files or not diff.strip():
++        reject(
++            "zero-diff patch branch — content already merged elsewhere or empty "
++            "branch; nothing effective to land (#2792)"
++        )
++        return
+     if len(files) > MAX_FILES:
+         reject(f"too many files ({len(files)} > {MAX_FILES})")
+         return
+@@ -885,6 +912,15 @@ def reject(reason: str, label: str = LABEL_REJECTED) -> None:
+     run(["git", "add", "-A"], cwd=private_dir)
+     # already-applied retry-এ staged পরিবর্তন নেই → খালি commit নয়, বিদ্যমান HEAD।
+     has_staged = run(["git", "diff", "--cached", "--quiet"], cwd=private_dir, check=False).returncode == 1
++    # #2792 RCA guard-2 (belt behind guard-1): no effective commit → clean reject
++    # BEFORE POST /pulls — the proven 422-poison that exit-2'd whole intake runs.
++    if not _has_effective_landing(has_staged, already_applied):
++        reject(
++            "no effective commit to land — patch applies as a no-op on "
++            + (f"{target_repo}@{land_branch} (retry)" if resumed else f"{target_repo}@{PRIVATE_MAIN}")
++            + "; content already merged elsewhere (#2792)"
++        )
++        return
+     if has_staged:
+         run(
+             [
+@@ -1152,12 +1188,17 @@ def main() -> int:
+         print(f"unknown mode: {mode}", file=sys.stderr)
+         return 2
+     try:
+-        rc = 0
++        # #2792 RCA guard-4: intake rc≠0 হলেও sync চলবে — একটা খারাপ অর্ডার
++        # landed/rejected রিপোর্টিং বন্ধ করতে পারে না (streak #327-#329-এ
++        # reporting সম্পূর্ণ মরেছিল)। দুটো exit code আলাদাভাবে জানানো হয়।
++        rcs: list[int] = []
+         if mode in ("intake", "both"):
+-            rc = cmd_intake(token)
+-        if rc == 0 and mode in ("sync", "both"):
+-            rc = cmd_sync(token)
+-        return rc
++            rcs.append(cmd_intake(token))
++            print(f"== intake rc={rcs[-1]} ==")
++        if mode in ("sync", "both"):
++            rcs.append(cmd_sync(token))
++            print(f"== sync rc={rcs[-1]} ==")
++        return max(rcs) if rcs else 0
+     except BridgeError as exc:
+         print(f"BRIDGE FAIL-HONEST: {exc}", file=sys.stderr)
+         return 1
+diff --git a/tests/test_bridge_intake_poison_guard.py b/tests/test_bridge_intake_poison_guard.py
+new file mode 100644
+index 00000000..d038b1d2
+--- /dev/null
++++ b/tests/test_bridge_intake_poison_guard.py
+@@ -0,0 +1,124 @@
++"""Offline tests for the #2792 intake poison-order resilience guards.
++
++বাংলা: zero-diff অর্ডার (content অন্যত্র merge) apply no-op → commit-হীন branch →
++POST /pulls 422 → intake exit-2 → sync/reporting মৃত (streak #327-#329)। Guard-১
++zero-diff clean reject; guard-২ effective-landing belt; amp-৩ gh_ok errors[]
++detail; guard-৪ intake rc≠0 হলেও sync চলবে। সব offline (source pins + unit)।
++"""
++
++from __future__ import annotations
++
++import pytest
++
++from scripts.bridge.bridge_intake import (
++    BridgeError,
++    _has_effective_landing,
++    gh_ok,
++)
++
++from pathlib import Path  # noqa: E402
++
++INTAKE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "bridge" / "bridge_intake.py"
++
++
++# ---------------------------------------------------------------------------
++# Wiring pins — RCA guards sit at the exact choke points.
++# ---------------------------------------------------------------------------
++
++
++def test_guard1_zero_diff_reject_wired_after_caps_zone() -> None:
++    src = INTAKE_PATH.read_text(encoding="utf-8")
++    assert "zero-diff patch branch — content already merged elsewhere or empty" in src
++    g1 = src.index('reject(\n            "zero-diff patch branch')
++    caps = src.index('if len(diff.encode("utf-8", "replace")) > MAX_PATCH_BYTES:')
++    g2 = src.index("if not _has_effective_landing(")
++    assert caps < g1, "guard-1 must sit after the size cap check"
++    assert g1 < g2, "guard-1 (cheap zero-diff) must precede guard-2 (post-apply belt)"
++
++
++def test_guard2_wired_before_pr_creation() -> None:
++    src = INTAKE_PATH.read_text(encoding="utf-8")
++    g2 = src.index("if not _has_effective_landing(")
++    pr = src.index('gh_ok(\n        "POST", f"/repos/{target_repo}/pulls"')
++    assert g2 < pr, "guard-2 must reject BEFORE POST /pulls (the proven 422 point)"
++
++
++def test_guard4_sync_runs_regardless_of_intake_rc() -> None:
++    src = INTAKE_PATH.read_text(encoding="utf-8")
++    m = src.index("def main() -> int:")
++    body = src[m:]
++    assert 'rcs.append(cmd_intake(token))' in body
++    assert 'rcs.append(cmd_sync(token))' in body
++    assert "if rc == 0 and mode" not in body, "old skip-sync-on-intake-failure must be gone"
++
++
++# ---------------------------------------------------------------------------
++# _has_effective_landing truth table (guard-2 semantics)
++# ---------------------------------------------------------------------------
++
++
++def test_fresh_noop_landing_is_ineffective() -> None:
++    assert _has_effective_landing(False, False) is False
++
++
++def test_staged_changes_are_effective() -> None:
++    assert _has_effective_landing(True, False) is True
++
++
++def test_already_applied_retry_is_effective() -> None:
++    # E4 resume: commit already on the land branch, only push remains — must proceed.
++    assert _has_effective_landing(False, True) is True
++
++
++def test_both_effective() -> None:
++    assert _has_effective_landing(True, True) is True
++
++
++# ---------------------------------------------------------------------------
++# gh_ok errors[] detail (RCA amp-3)
++# ---------------------------------------------------------------------------
++
++
++def test_gh_ok_appends_errors_detail(monkeypatch: pytest.MonkeyPatch) -> None:
++    import scripts.bridge.bridge_intake as bi
++
++    def fake_gh(method, path, token, payload=None):
++        return (
++            422,
++            {
++                "message": "Validation Failed",
++                "errors": [{"message": "No commits between main and bridge-land/x"}],
++            },
++        )
++
++    monkeypatch.setattr(bi, "gh", fake_gh)
++    with pytest.raises(BridgeError) as excinfo:
++        gh_ok("POST", "/repos/x/pulls", "tok")
++    msg = str(excinfo.value)
++    assert "HTTP 422" in msg
++    assert "No commits between main and bridge-land/x" in msg, (
++        "GitHub errors[] sub-cause must reach the verdict plane"
++    )
++
++
++def test_gh_ok_without_errors_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
++    import scripts.bridge.bridge_intake as bi
++
++    def fake_gh(method, path, token, payload=None):
++        return (500, {"message": "boom"})
++
++    monkeypatch.setattr(bi, "gh", fake_gh)
++    with pytest.raises(BridgeError) as excinfo:
++        gh_ok("GET", "/repos/x", "tok")
++    assert "| errors:" not in str(excinfo.value)
++    assert "boom" in str(excinfo.value)
++
++
++def test_gh_ok_success_passthrough(monkeypatch: pytest.MonkeyPatch) -> None:
++    import scripts.bridge.bridge_intake as bi
++
++    def fake_gh(method, path, token, payload=None):
++        return (201, {"number": 7})
++
++    monkeypatch.setattr(bi, "gh", fake_gh)
++    assert gh_ok("POST", "/repos/x/pulls", "tok") == {"number": 7}

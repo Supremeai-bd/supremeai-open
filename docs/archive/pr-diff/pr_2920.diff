@@ -1,0 +1,54 @@
+diff --git a/docs/reports/mcp-r74-census-followup-157tools-20261030.md b/docs/reports/mcp-r74-census-followup-157tools-20261030.md
+new file mode 100644
+index 00000000..fd74924d
+--- /dev/null
++++ b/docs/reports/mcp-r74-census-followup-157tools-20261030.md
+@@ -0,0 +1,48 @@
++# #2633 R74 Delta-Census — Tower MCP 2025-11-25 Adoption State at 157 Tools
++
++**Lane:** #2633 (P2-medium, R74 protocol-revision census follow-up) · **Dispatch:** 07:05+08 2026-10-30, cron Job 478316 · **Vantage:** zai-cron-agent-478316 · **Register:** zero-side-effect, zero-credential, shape-classified capture (counts/booleans/keys only; no values, no rows, no PII)
++
++## 1. Verdict summary
++
++The filer's R74 census (#2633, 2026-10-29 22:45+08) inventoried the tower at **151 tools** and found the negotiated protocol floor (`2025-11-25`, raised by R68/#2533) serves **zero** of that revision's capabilities. This delta-census re-runs the filer's exact method after two tool-family waves (marketplace +3 at the 04:05 fire, devtools +3 at the 05:05 fire) and one bridge structuredContent landing (#2454 r3). Result: **G-1 (tasks), G-2 (elicitation), G-4 (presentation tier) all UNCHANGED** — the tower still advertises `tools/resources/prompts {listChanged}` and nothing else at `2025-11-25`. **One gap is CLOSED: the hint-blind class (#2627) is eliminated** — annotations-present went from 107/151 (44 hint-blind) to **157/157**. The annotation vocabulary also expanded: first `openWorldHint` sightings. The filer's recommended-first Option A (advertise `tasks` for the bridge evaluation path) and Option B (elicitation for the destructive family) both remain open, and this census supplies the exact 18-tool roster Option B would cover.
++
++## 2. Method and register
++
++Three read-shaped probes against the production tower, replicating the filer's protocol: (1) one raw `initialize` on a **fresh session** with explicit `protocolVersion: "2025-11-25"` and a census-tagged clientInfo (`r74-census-478316`); (2) one full `tools/list` read; (3) a schema-only param scan of the `destructiveHint` family (inputSchema property-name inspection — no tool executed, no state touched). All capture is shape-classified: counts, booleans, key names. Snapshot saved out-of-repo as `cycle_0705_tools_full.json` (28th–29th consecutive `tools/list` observations in this agent's lineage; count 157 stable vs the 06:05 cycle = **no pass-6 discriminator fire** for #2391).
++
++## 3. Initialize receipt (fresh session, explicit 2025-11-25 request)
++
++- `protocolVersion` echoed: **`2025-11-25`** (full negotiation acceptance, string-only — same as filer).
++- `serverInfo`: `supremeai-control-tower 1.0.0` (unchanged).
++- `capabilities`: `tools {listChanged: true}`, `resources {listChanged: true}`, `prompts {listChanged: true}` — **and nothing else**. No `tasks`, no `elicitation`, no `sampling`, no `logging`, no `completions`. The filer's G-1/G-2/G-3 finding is reproduced byte-for-byte at +6 tools and ~8h later.
++
++## 4. Delta matrix — filer @151 vs this census @157
++
++| Plane | Filer @151 (22:45+08) | This census @157 (23:07Z Oct 30) | Delta |
++|---|---|---|---|
++| tools/list count | 151 | 157 | +6 (marketplace ×3, devtools ×3) |
++| annotations-present | 107/151 | **157/157** | **+50 — hint-blind class ELIMINATED (#2627: 44 → 0)** |
++| readOnlyHint (strict `is True`) | 107 | 95 | −12 (reclassification, not removal — see §5) |
++| idempotentHint | 68 | 98 | +30 (read family now idempotence-flagged) |
++| destructiveHint | 24 | 18 | −6 (family shrunk; roster in §6) |
++| outputSchema | 11/151 | 11/157 | 0 (same 11 names incl. `bridge.work_queue/work_order`, post-#2454) |
++| `title` / `icons` / `_meta` | 0/151 | 0/157 | G-4 unchanged |
++| confirm-shaped params in destructive family | 0 (per #2380 RB-1..RB-4) | **0/18** | G-2 unchanged |
++
++Method note: filer numbers are quoted verbatim from the issue body; my counts use strict `annotations.<hint> is True` checking, so the readOnly/idempotent/destructive deltas conflate possible method difference with genuine reclassification — but the annotations-present and outputSchema planes are method-robust, and the 157/157 hint-blind-zero is unambiguous either way.
++
++## 5. New-family hygiene and vocabulary expansion
++
++All 6 post-census tools carry full annotations — the new-tool pipeline is no longer shipping hint-blind (the #2627 class stays at zero at the source): `marketplace_list_plugins` and `marketplace_list_connections` are `readOnly+idempotent` (clean, matches pass-4 classification); `marketplace_connect_plugin` is `readOnly: False` write-shaped, non-destructive. The devtools scanners (`devtools_performance_trace`, `devtools_console_errors`, `devtools_network_failures`) are `readOnly+idempotent` **plus `openWorldHint: true`** — the first `openWorldHint` sightings in any census of this lineage; the annotation vocabulary has expanded beyond the filer's three-hint frame. `devtools_audit` is `readOnly: False, destructiveHint: False` — write-shaped, not destructive, which independently corroborates the pass-5 receipt's SSRF-shaped classification (a tool that fetches arbitrary caller URLs is a write of the tower's network vantage, not a destroyer of state).
++
++## 6. Destructive family roster (18) — Option B's exact coverage target
++
++`action_redis_flush` (only knob: `overrideRequestId` policy bypass), `action_cloudflare_purge` (same), `autonomy_kill_switch` (zero params), `tenant_suspend`, `tenant_rotate_admin_token`, `client_revoke`, `client_rotate_token`, `slot_suspend`, `slot_rotate_credential`, `slot_revoke`, `remote_call`, `guardian_act`, `misc_kaggle_push_kernel`, and the **memory delete sub-family: `memory_delete_entities`, `memory_delete_observations`, `memory_delete_relations`, `memory_clear_session`, `memory_wipe_memory`** — every one schema-scanned: **zero `confirm`/`dry_run`/`approval`/`elicitation`-shaped parameters anywhere in the family**. The memory wipe/delete group is the starkest #2380 residue: default-destroy operations on the shared memory plane with no standards-based confirm, in a tower whose own memory graph is live-churning (pass-5 live-feed finding). The family shrank 24 → 18 since the filer's census (reclassification wave), but the confirm-gap did not close by reclassification alone — every remaining member is still naked.
++
++## 7. Micro-question carried forward + maintainer asks
++
++`github.list_secrets` still advertises an `outputSchema` while the tool itself answers plain `-32602` on every call (tombstone #2802 unapplied — the pass-4/pass-5 micro-question persists at the third build state; a dead schema for a dead tool is a small but exact measure of the advertise-vs-serve drift this lane is about). Asks, updated with this census's numbers: (1) **Option A (tasks capability)** remains recommended-first and owner-routed (R49 controller lane) — the a-series strand receipts stay the cost evidence; (2) **Option B (elicitation)** now has a closed-form target: the 18-tool roster in §6, memory delete sub-family first (highest blast radius per schema byte); (3) the annotation lane's milestone (hint-blind 44 → 0, `openWorldHint` adopted) merits a closure check on **#2627** — this census is its receipt; (4) `github.list_secrets` schema tombstone — remove or pin per the pass-4 disposition ask.
++
++## 8. Dedup and completeness
++
++Serves #2633 directly (delta-census the filer's snapshot invited by aging 151→157). Cross-references without duplicating: #2533/R68 (floor bump), #2627 (hint-blind class — closure evidence herein), #2380 RB-1..RB-4 (destructive confirm family), #2454 (structuredContent r3 — outputSchema plane unchanged at 11), pass-4 (#2781/1a41ea3) and pass-5 (#2813/8bc805b) RBAC receipts (marketplace/devtools classifications reused), #2815 (claim TTL — the inherited lease on this row was re-verified NOOP_SELF before work started). No tool was executed, no state mutated, no capability beyond read-shaped enumeration exercised. Numbers are reproducible from any anonymous session in under a minute.

@@ -1,0 +1,115 @@
+diff --git a/docs/bridge/bridge-20261030-ci1709-matrix-honesty-runbook.md b/docs/bridge/bridge-20261030-ci1709-matrix-honesty-runbook.md
+new file mode 100644
+index 00000000..4630c9d1
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-ci1709-matrix-honesty-runbook.md
+@@ -0,0 +1,109 @@
++# Admin-runbook: pipeline.yml Python-matrix comment honesty (issue #1709)
++
++**Task ID:** `bridge-20261030-ci1709-matrix-honesty-r1` · **Original issue:** #1709 (P2-medium,
++`ci(admin)`, status:unclaimed at claim time) · **Verified against main tip:** `8fead11`
++(2026-10-30 00:40+08 cycle start; re-verified pre-submit) · **Deliverable class:** admin-runbook
++for a `.github/**` protected path — the bridge never auto-applies workflow edits
++(#1643/#1769 doctrine; #1912 + #2169 are the live same-repo precedents).
++
++## 1. Context — the drift, first-hand at main tip
++
++`.github/workflows/pipeline.yml` line 533 comment claims the Python matrix covers
++**(3.10–3.13)** and line 534 adds *"because all four versions are proven here first"* — but the
++only matrix in the file (line 548, job `test-matrix`) runs **`["3.11", "3.12"]`**. Every other
++`python-version:` pin in the file is a fixed `"3.11"` (lines 91/118/142/510/874/964); a whole-file
++scan finds **zero non-comment mentions of 3.10 or 3.13**. The comment is the single stale surface:
++it promises four proven versions and delivers two, so any reader sizing compatibility off the
++comment (the comment's stated purpose — "all four versions are proven here first") is misled.
++Issue #1709 prescribes the remedy direction explicitly: **fix the comment to match the matrix**
++— do not extend the matrix to match the comment (3.10 went EOL 2026-10-01; 3.13 is
++security-only). The signal was filed by radar R24 (PR #1714, docs-only) and the issue has sat
++unclaimed since 2026-10-27 with no PR and no admin response; this runbook packages the
++paste-ready diff so activation is a single admin commit, per the #1912/#2169 pattern.
++
++## 2. Validated patch (ready for admin landing on `.github/workflows/pipeline.yml`, −2/+2 comment lines)
++
++```diff
++--- a/.github/workflows/pipeline.yml
+++++ b/.github/workflows/pipeline.yml
++@@ -530,8 +530,8 @@           python3 scripts/ci/frontend_performance_guard.py --check studio/src/App.tsx
++ 
++   # ---------------------------------------------------------------------------
++-  # 🧪 Python matrix (3.10–3.13) — the ONLY matrix; private CI pins 3.11 after
++-  # the shift-left diet because all four versions are proven here first.
+++  # 🧪 Python matrix (3.11–3.12) — the ONLY matrix; private CI pins 3.11 after
+++  # the shift-left diet; 3.10 EOL 2026-10-01, 3.13 security-only (#1709, 2026-10-27).
++   # ---------------------------------------------------------------------------
++   test-matrix:
++     name: Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation
++```
++
++The replacement text preserves the two-line shape of the block it edits (no line-count drift),
++keeps the file's en-dash/emoji style, and embeds the **dated rationale** the issue's acceptance
++criteria demand (EOL date, security-only status, issue ref + decision date) directly in the
++comment — the rationale travels with the code instead of living only in a tracker row.
++
++## 3. Verification evidence (reproduced this cycle — no ghost fixes)
++
++- **V1 — drift is live at tip:** byte-exact read of lines 532–536 at `8fead11`; the stale block is
++  exactly the two quoted lines; `test-matrix:` follows immediately (line 536).
++- **V2 — matrix truth:** `python-version: ["3.11", "3.12"]` is the only matrix literal
++  (line 548); `rg`-level scan shows 3.10/3.13 appear **only** inside the stale comment.
++- **V3 — YAML structural identity:** applied the −2/+2 edit to a copy and compared
++  `yaml.safe_load` parses before/after — **object-identical** (pickle-hash
++  `5ba0da5c385816ec` on both sides; 21 jobs unchanged). Methodology note: `json.dumps(sort_keys=True)`
++  is unusable on this file's parse because PyYAML reads the bare `on:` key as boolean `True`,
++  producing mixed bool/str dict keys — object equality + pickle hashing was used instead. The
++  #1912 quoting footgun (unquoted `#` inside a scalar) **cannot** fire here: the edit is confined
++  to comment lines and never introduces `#` into a scalar.
++- **V4 — acceptance criterion 2 already met:** the interpreter version is exposed in CI logs
++  today via the job name `Python ${{ matrix.python-version }} Matrix Smoke & Contract Validation`
++  (line 537) and the `Set up Python ${{ matrix.python-version }}` step (line 553); no added step
++  is needed, keeping the diff comment-only.
++
++## 4. Alternatives rejected
++
++1. **Extend the matrix to `["3.10", "3.11", "3.12", "3.13"]`** — rejected: the issue prescribes
++   the opposite direction; 3.10 has been EOL since 2026-10-01 (adding it now would prove a dead
++   version and burn runner minutes), and 3.13 is security-only, so "proven here first" would
++   over-claim again — the same honesty defect with four versions instead of two.
++2. **Rewrite the comment without dated rationale** (e.g. just "(3.11–3.12)") — rejected: the
++   issue's acceptance criteria require the matrix decision documented with dated rationale; the
++   chosen text satisfies it in-place and prevents this exact drift class from re-occurring
++   silently (the next editor sees *why* the matrix is two versions).
++3. **Third re-validation receipt for the #1912 runbook instead** — rejected: #2169 already
++   re-validated that diff and the board's dupguard history (#2625/#2655/#2674 a30–a33 wire chain)
++   shows receipt-pairs citing the same parent WO mint spurious wires; #1709 needed first mover,
++   not a fourth receipt.
++4. **Leave for admin discovery** — rejected: three days unclaimed (2026-10-27 → 2026-10-30) with
++   the drift verifiable in one read; the runbook converts the triage into a one-commit handoff.
++
++## 5. Landing order & effect
++
++1. Admin lands the −2/+2 diff (single commit; revert-safe — subtract the two comment lines).
++2. **Zero CI behavior change is structural**: comments are inert to `yaml.safe_load` (V3 proves
++   parse-identity), no step/job/trigger changes, so the landing is green by construction — there
++   is no "day-one red" possibility at all, unlike functional CI edits.
++3. Effect: the CI surface stops over-claiming proven Python versions; compatibility readers get
++   the true supported set plus the dated reason the set is what it is.
++
++## 6. Close semantics (explicit)
++
++Merging the runbook PR closes #1709. Because the packaged diff is comment-only, closure carries
++no behavioral debt: if an admin applies the diff, the repo matches the closed issue immediately;
++if the diff is somehow deferred, the only residue is a stale comment whose correction is fully
++specified above — no mirror plane, watchdog, or nightly re-minting is involved in this lane.
++
++## 7. Provenance & claim-plane disclosure
++
++- **Claim:** `work_claim` GRANT_NEW 2026-10-29T16:57:53Z, 30-min lease, single writer; issue face
++  fetched pre-claim showed **zero prior claims, zero comments, zero PRs** against #1709 (the
++  #1714/#1900 radar docs reference the signal but deliver no fix surface).
++- **Lane history this cycle:** #2593 was claimed first (GRANT_NEW 16:48:55Z), found already
++  satisfied by merged PR #2594 (report file landed verbatim at `9a1361d`), and **released cleanly**
++  (label removed, `status:unclaimed` restored) before this claim — no lease stacking, no
++  duplicate delivery minted.
++- **Anti-stampede:** open-PR face swept via Tower `github.list_prs` (`per_page` snake_case,
++  per #2614) — zero open PRs at sweep time; queue face swept at `limit: 200` (140 rows, 0
++  P0-critical — Invariant 5 clean); #1709's diff surface (2 comment lines in one workflow file)
++  has no overlap with any landed or open bridge payload this chain.

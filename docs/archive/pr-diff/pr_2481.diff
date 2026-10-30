@@ -1,0 +1,91 @@
+diff --git a/docs/reports/ISSUE_2391_RENAME_DEPLOY_REPROBE_2026-10-29.md b/docs/reports/ISSUE_2391_RENAME_DEPLOY_REPROBE_2026-10-29.md
+new file mode 100644
+index 00000000..fb144549
+--- /dev/null
++++ b/docs/reports/ISSUE_2391_RENAME_DEPLOY_REPROBE_2026-10-29.md
+@@ -0,0 +1,85 @@
++# Issue #2391 Verification Receipt — Rename-Deploy Discriminator (2026-10-29)
++
++**Issue:** #2391 (auditor: #1843 deployment drift persists — 3 flagged tools still
++execute zero-cred; control render_get_env_vars regressed RBAC).
++**Receipt cycle:** 2026-10-29 14:05+08 (Job 478316), agent zai-cron-agent-478316
++(claim re-established GRANT_TAKEOVER 06:08:32Z after lease expiry).
++**Method:** zero-bearer anonymous deny-matrix re-probe — schema-valid args only,
++data-minimizing, bounded to 4 probes; secret names/values never captured,
++printed, or persisted.
++**Trigger:** the tower tool-surface rename (`bridge_work_queue` →
++`bridge.work_queue`, `github_list_secrets` → `github.list_secrets`; 11 dotted
++names, count frozen at 151, live at tip b4bcc73) required a tower redeploy.
++Per the #2407 standing discipline, every policy-plane-touching deploy is a
++free discriminator for #2391.
++
++## Verdict map: #2391 baseline vs post-rename re-probe (06:12Z)
++
++| Probe (current name) | #2391 baseline (~00:40Z) | Re-probe 06:12Z | Delta |
++|---|---|---|---|
++| `github.list_secrets` (ex `github_list_secrets`) | EXECUTED_OK — inventory returned | EXECUTED_OK — inventory returned (218 chars; names not captured) | none |
++| `supabase_read_table` | EXECUTED_ERR PGRST205 — PostgREST reached | EXECUTED_ERR PGRST205 — `public.zz1843denymatrixprobe` not in schema cache | none |
++| `redis_read_key` | EXECUTED_OK — topology disclosure | EXECUTED_OK — topology (`mode=upstash-rest`, `account=tertiary`, `activePrimary=tertiary`) | none |
++| `render_get_env_vars` (reference control) | EXECUTED_ERR — Render API reached | EXECUTED_ERR — Render API reached (`not found: service: srv-auditprobe1843`) | none |
++
++**Conclusion: DRIFT PERSISTS. The verdict map is outcome-equivalent across a
++SECOND independent deployment event. The #1843 closure remains
++without-deployment-reconciliation.**
++
++## Two-deploy falsification of "next deploy will reconcile"
++
++| Deploy event | Independent evidence the deploy happened | Verdict map after |
++|---|---|---|
++| Rate-limit deploy (recorded in #2407) | #2407 receipt | unchanged |
++| Tool-surface rename deploy (this receipt) | `tools/list`: 11 dotted names, 151 total; `bridge.work_order` live while `bridge_work_order` returns -32602 | unchanged |
++
++Two consecutive tower deployments both left the anonymous execution surface
++intact. The waiting-for-reconciliation hypothesis now lacks a mechanism: the
++RBAC policy plane is evidently not derived from the public repo source (where
++the #1843 guard family landed), or the ADMIN RECIPE (rebuild + redeploy +
++anonymous deny-matrix re-test, documented in the
++`scripts/ci/mcp_access_policy_guard.py` docstring) has not been executed on
++the tower deployment. Each further deploy that leaves the map unchanged
++lowers the probability that passive redeployment reconciles the exposure.
++
++## Surface deltas observed this cycle (for completeness)
++
++- Rename is a namespace migration moving across families, not a one-off:
++  dotted `bridge.work_order` / `bridge.work_queue` plus 9 dotted `github.*`
++  names, mixed with underscored siblings; advertised count pinned at 151.
++- R66 target-echo (#2447, landed #2472) makes every `github_*` tool echo its
++  resolved target. The `github.list_secrets` probe response (218 chars) showed
++  no text-level resolved-target echo (echo may ride structuredContent). The
++  R66 default-repo drift (supremeai-open → Supremeai-bd/supremeai) does not
++  change the exposure class: the tool executes anonymously against whichever
++  target it resolves.
++- `redis_read_key` topology disclosure now carries `account` /
++  `activePrimary` fields (`tertiary`) — same disclosure class as the #2391
++  baseline, richer attribution.
++
++## Data-minimization register (unchanged from #2391)
++
++- Schema-valid args only: a zod rejection is not an RBAC rejection.
++- Bogus table/key/serviceId identifiers; `keysOnly: true` on the reference
++  control.
++- `github.list_secrets`: shape classification only — inventory names are
++  never captured, printed, or persisted (count/size only).
++- Read-only probes; no mutations; the never-do register from #2391 stays in
++  force.
++
++## Smallest next step (unchanged)
++
++Execute the ADMIN RECIPE on the tower deployment: rebuild from source,
++redeploy, re-run this anonymous deny-matrix (expected post-fix: Forbidden on
++the three flagged tools; reference control behavior per the guard docstring),
++then close #2391 with the redeploy receipt. Until then #2391 remains live
++and this receipt stands as re-probe pass 3 of the standing discriminator
++(#2391 filing, #2407 rate-limit deploy, this rename deploy).
++
++## Dedup check
++
++No prior artifact covers the rename-deploy × #1843 intersection: #2469
++verifies R65 structuredContent conformance; #2452 verifies R66 target drift;
++#2476 (plane watch c30) records the rename blast radius and the queue
++row-set quirk. None re-test the #2391 verdict map. This receipt is the
++first, filed inside the #2391 lane by its claim holder.

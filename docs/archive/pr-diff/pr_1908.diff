@@ -1,0 +1,258 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 81eb0ada..30de4327 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -39,12 +39,14 @@
+         assert_no_operator_fields,
+         build_liveness_payload,
+         build_public_root_payload,
++        build_readiness_payload,
+     )
+ except ImportError:  # pragma: no cover - package-relative fallback
+     from gateway.service.status_publication import (
+         assert_no_operator_fields,
+         build_liveness_payload,
+         build_public_root_payload,
++        build_readiness_payload,
+     )
+ 
+ try:
+@@ -679,42 +681,45 @@ async def readiness_check():
+     is configured AND its host resolves. Monitors should target /readyz — /health
+     alone cannot detect a relay outage because API fallback is disabled by mandate
+     (single reply path). A configured-but-unresolvable host (the Oct-23 failure:
+-    [Errno -2] on every chat call while /health reported healthy) now fails this
+-    probe loudly with the masked host + fix hint instead of reporting ready."""
++    [Errno -2] on every chat call while /health reported healthy) fails this probe
++    loudly with a 503.
++
++    Redacted (#1902, closing the #1729 class): the loud-failure design used to
++    ship the stealth posture block (stealth_dns detail with the masked relay
++    host + stealth_priority1_configured) to unauthenticated callers. The
++    capability semantics are preserved — HTTP 200/503 + chat_ready branching,
++    unchanged for monitors — while the posture detail moved behind the operator
++    gate: GET /internal/status with a key carries the full stealth_dns block.
++    Body built by build_readiness_payload (operator-field guard, structural).
++    """
+     timestamp = datetime.now(timezone.utc).isoformat()
+     if STEALTH_WEBHOOK_URL:
+         stealth_dns = await _stealth_dns_snapshot()
+         if stealth_dns.get("ok") is False:
+             return JSONResponse(
+                 status_code=503,
+-                content={
+-                    "status": "degraded",
+-                    "chat_ready": False,
+-                    "stealth_priority1_configured": True,
+-                    "stealth_dns": stealth_dns,
+-                    "reason": (
+-                        f"STEALTH_WEBHOOK_URL host does not resolve ({stealth_dns.get('detail')}). "
+-                        "Chat cannot reply (webhook-only mandate): fix the Infisical value to a live "
+-                        "OpenAI-compatible /v1/chat/completions relay."
++                content=build_readiness_payload(
++                    "degraded",
++                    False,
++                    timestamp,
++                    reason=(
++                        "chat reply path host does not resolve — "
++                        "operator detail behind the key-gated /internal/status"
+                     ),
+-                    "timestamp": timestamp,
+-                },
++                ),
+             )
+-        return {
+-            "status": "ready",
+-            "chat_ready": True,
+-            "stealth_priority1_configured": True,
+-            "stealth_dns": stealth_dns,
+-            "timestamp": timestamp,
+-        }
++        return build_readiness_payload("ready", True, timestamp)
+     return JSONResponse(
+         status_code=503,
+-        content={
+-            "status": "degraded",
+-            "chat_ready": False,
+-            "reason": "STEALTH_WEBHOOK_URL not configured — no chat reply path (API fallback disabled per mandate)",
+-            "timestamp": timestamp,
+-        },
++        content=build_readiness_payload(
++            "degraded",
++            False,
++            timestamp,
++            reason=(
++                "chat reply path not configured — no chat reply path "
++                "(API fallback disabled per mandate)"
++            ),
++        ),
+     )
+ 
+ 
+diff --git a/gateway/service/status_publication.py b/gateway/service/status_publication.py
+index dd049fe9..e3ed0c53 100644
+--- a/gateway/service/status_publication.py
++++ b/gateway/service/status_publication.py
+@@ -10,6 +10,12 @@
+     (docs/CONSUMERS.md) branches on HTTP status, not body fields, and the
+     SEQ453 watchdog + federation CI consume status/chat_ready semantics,
+     which are preserved
++  - readiness/capability probe (GET /readyz): HTTP-200/503 capability signal
++    only — status + chat_ready + timestamp (plus a generic reason on 503).
++    #1902: the Oct-23 loud-failure design shipped the stealth posture block
++    (stealth_dns detail + stealth_priority1_configured) unauthenticated;
++    the 503-on-unresolvable semantics are preserved via status code, the
++    posture detail moved behind the operator gate (/internal/status)
+   - operator fleet detail (GET /internal/status, GET /webhook/scout/status):
+     full inventory behind the strict key gate (_require_operator_key in
+     service/app.py — no guest pass-through, fail-closed)
+@@ -71,6 +77,30 @@ def build_liveness_payload(
+     }
+ 
+ 
++def build_readiness_payload(
++    status: str,
++    chat_ready: bool,
++    timestamp: str,
++    reason: str | None = None,
++) -> dict:
++    """Capability-probe body (#1902): capability signal without infra posture.
++
++    200-ready carries exactly (status, chat_ready, timestamp); 503-degraded
++    adds one generic `reason` (no env-var names, no host resolution detail —
++    operators read the stealth_dns block behind /internal/status). Guarded by
++    assert_no_operator_fields so a future posture field cannot silently
++    re-appear here (same structural guarantee as the root/liveness tiers).
++    """
++    payload: dict = {
++        "status": status,
++        "chat_ready": bool(chat_ready),
++        "timestamp": timestamp,
++    }
++    if reason:
++        payload["reason"] = reason
++    return assert_no_operator_fields(payload)
++
++
+ def assert_no_operator_fields(payload: dict) -> dict:
+     """Guard: raise if any operator-only field leaks into a public payload.
+ 
+diff --git a/gateway/tests/test_stealth_dns_guards.py b/gateway/tests/test_stealth_dns_guards.py
+index ac6ffb24..5439e54f 100644
+--- a/gateway/tests/test_stealth_dns_guards.py
++++ b/gateway/tests/test_stealth_dns_guards.py
+@@ -18,9 +18,11 @@
+   G7  forward_stealth_webhook refused connection -> reason=refused (class split)
+   G8  reply-wrapping path still works and emits exactly one \"id\" key (P3 pin)
+   G9  workers.dev APEX config raises a one-shot CRITICAL log
+-  G10 /readyz -> 503 with fix hint when configured host does not resolve
+-  G11 /readyz -> 200 ready when DNS ok; /readyz -> 503 when unconfigured
+-  G12 /health stays 200 (liveness) and exposes stealth_dns block
++  G10 /readyz -> 503 when configured host does not resolve, with a GENERIC reason
++      (redaction contract #1902: no env-var name, no Infisical, no host detail)
++  G11 /readyz -> 200 ready when DNS ok; /readyz -> 503 when unconfigured;
++      body is the redacted readiness contract (status/chat_ready/timestamp)
++  G12 /health stays 200 (liveness) and REDACTED (#1729): stealth_dns absent
+ Run layouts: satellite (service.*) — mirrors gateway/service.* byte-for-byte.
+ """
+ from __future__ import annotations
+@@ -223,16 +225,28 @@ async def _good(force: bool = False) -> Dict[str, Any]:
+         r = client.get("/readyz")
+         check("G10a readyz 503 on unresolvable host", r.status_code == 503, str(r.status_code))
+         j = r.json()
+-        check("G10b reason names the env var + fix", "STEALTH_WEBHOOK_URL" in j.get("reason", "") and "Infisical" in j.get("reason", ""), j.get("reason", "")[:120])
+-        check("G10c stealth_dns detail surfaced", j.get("stealth_dns", {}).get("ok") is False)
++        # Redaction contract (#1902): the Oct-23 fix hint shipped the env-var name,
++        # the secret store and the masked host to unauthenticated callers; the
++        # capability semantics stay loud via the 503, the posture detail is
++        # operator-gated (/internal/status).
++        reason = j.get("reason", "")
++        check("G10b reason is generic (no env var / store / host detail)",
++              "STEALTH_WEBHOOK_URL" not in reason and "Infisical" not in reason
++              and "invalid" not in reason, reason[:120])
++        check("G10c readyz ships NO stealth posture unauth",
++              "stealth_dns" not in j and "stealth_priority1_configured" not in j,
++              str(sorted(j.keys())))
+         rh = client.get("/health")
+         check("G12a /health stays 200 (liveness)", rh.status_code == 200, str(rh.status_code))
+-        check("G12b /health exposes stealth_dns block", rh.json().get("stealth_dns", {}).get("ok") is False)
++        check("G12b /health REDACTED: stealth_dns absent (#1729)",
++              "stealth_dns" not in rh.json(), str(sorted(rh.json().keys())))
+ 
+         appmod._stealth_dns_snapshot = _good  # type: ignore[assignment]
+         r2 = client.get("/readyz")
+         check("G11a readyz 200 ready when DNS ok", r2.status_code == 200 and r2.json().get("status") == "ready", str(r2.status_code))
+-        check("G11b readyz carries stealth_dns ok", r2.json().get("stealth_dns", {}).get("ok") is True)
++        check("G11b readyz body is the redacted readiness contract",
++              set(r2.json().keys()) == {"status", "chat_ready", "timestamp"},
++              str(sorted(r2.json().keys())))
+     finally:
+         appmod.STEALTH_WEBHOOK_URL = real_url
+         appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
+diff --git a/tests/test_status_publication.py b/tests/test_status_publication.py
+index 29ad20b7..b3a9bb6e 100644
+--- a/tests/test_status_publication.py
++++ b/tests/test_status_publication.py
+@@ -76,6 +76,21 @@ def test_liveness_timestamp_is_passthrough(self):
+         p = sp.build_liveness_payload("healthy", "s", "v", True, "ts-123")
+         self.assertEqual(p["timestamp"], "ts-123")
+ 
++    def test_readiness_ready_is_exactly_three_fields(self):
++        p = sp.build_readiness_payload("ready", True, "ts-123")
++        self.assertEqual(tuple(sorted(p)), ("chat_ready", "status", "timestamp"))
++        self.assertTrue(p["chat_ready"])
++
++    def test_readiness_degraded_adds_generic_reason_only(self):
++        p = sp.build_readiness_payload("degraded", False, "ts-123", reason="generic")
++        self.assertEqual(tuple(sorted(p)), ("chat_ready", "reason", "status", "timestamp"))
++        self.assertEqual(p["reason"], "generic")
++
++    def test_readiness_rejects_operator_fields(self):
++        for field in ("stealth_dns", "stealth_priority1_configured"):
++            with self.assertRaises(ValueError):
++                sp.assert_no_operator_fields({"status": "ready", field: "x"})
++
+ 
+ class AppRegressionPins(unittest.TestCase):
+     """AST-level pins on app.py (no fastapi import needed)."""
+@@ -121,6 +136,40 @@ def test_health_check_is_redacted(self):
+             self.assertNotIn(field, body_src, f"operator field {field} in health_check")
+         self.assertIn("build_liveness_payload", body_src)
+ 
++    def _payload_keys(self, fn):
++        """String keys the handler can ship: dict-literal keys + call kwargs.
++
++        #1902 lesson: a substring scan over the handler body cannot distinguish
++        'mentions stealth state' (legitimate — /readyz must consult the DNS
++        snapshot for its 503 capability decision) from 'ships the field'.
++        Structural key extraction pins what the payload can contain.
++        """
++        keys = set()
++        for node in ast.walk(fn):
++            if isinstance(node, ast.Dict):
++                for k in node.keys:
++                    if isinstance(k, ast.Constant) and isinstance(k.value, str):
++                        keys.add(k.value)
++            elif isinstance(node, ast.keyword) and node.arg:
++                keys.add(node.arg)
++        return keys
++
++    def test_readiness_check_is_redacted(self):
++        # #1902: the capability probe was the last public surface shipping the
++        # stealth posture block. The handler still CONSULTS _stealth_dns_snapshot
++        # for its 503 capability decision (that is the probe's job); the pin is
++        # structural — no operator-only field may appear as a payload key.
++        fn = self.handlers.get("readiness_check")
++        self.assertIsNotNone(fn, "readiness_check handler missing")
++        body_src = ast.unparse(fn)
++        self.assertIn("build_readiness_payload", body_src)
++        leaked = self._payload_keys(fn) & set(sp.OPERATOR_ONLY_FIELDS)
++        self.assertEqual(leaked, set(), f"operator fields shipped by readiness_check: {leaked}")
++
++    def test_readyz_route_preserved(self):
++        routes = self._route_decorators(self.handlers["readiness_check"])
++        self.assertIn("/readyz", routes, f"readyz route lost, got {routes}")
++
+     def test_liveness_routes_preserved(self):
+         routes = self._route_decorators(self.handlers["health_check"])
+         for r in ("/health", "/healthz", "/api/health", "/api/v1/health", "/v1/health"):

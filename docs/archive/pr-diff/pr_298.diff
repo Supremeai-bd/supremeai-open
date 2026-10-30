@@ -1,0 +1,406 @@
+diff --git a/examples/curl-tests/README.md b/examples/curl-tests/README.md
+new file mode 100644
+index 00000000..995d0760
+--- /dev/null
++++ b/examples/curl-tests/README.md
+@@ -0,0 +1,76 @@
++# MCP Tower cURL / HTTP smoke tests (#49)
++
++Ready-to-run endpoint checks for the SupremeAI MCP Control Tower — no SDK, no
++credentials, no dependencies beyond `curl` (POSIX) or PowerShell 5.1+/7+
++(Windows). Useful as a first diagnostic before any deeper integration work.
++
++**Target:** `https://supremeai-mcp-tower.onrender.com` (override with
++`BASE_URL`; local dev: `http://localhost:8080` or whatever `npm run dev` binds).
++
++## Files
++
++| File | Runtime | Covers |
++|---|---|---|
++| `health.sh` | POSIX sh + curl (Linux, macOS, WSL) | health, SSE handshake, tools/list, tools/call |
++| `health.ps1` | PowerShell 5.1+/7+ (Windows) | same subcommands, same output contract |
++
++Both scripts expose the **same subcommands** and the same fail-closed contract
++(exit 0 = all requested checks passed, exit 1 = at least one failed — no
++silent skips, matching repo doctrine).
++
++## Quick start
++
++```sh
++# Linux / macOS / WSL
++sh health.sh                # health check (default)
++sh health.sh all            # full sweep: health + SSE + tools/list + 2 tool calls
++```
++
++```powershell
++# Windows PowerShell
++.\health.ps1                # health check (default)
++.\health.ps1 all            # full sweep
++```
++
++## Subcommands
++
++| Subcommand | What it proves |
++|---|---|
++| `health` | `GET /health` returns 200 with a status payload |
++| `sse` | `GET /sse` opens the SSE transport and emits `event:`/`data:` frames (bounded read, no infinite hang) |
++| `tools-list` | Streamable MCP handshake over `POST /mcp`: `initialize` → `notifications/initialized` → `tools/list` returns a tools frame |
++| `tool-call <name>` | `initialize` → `tools/call` for a public zero-arg tool: `system_summary`, `bridge_guide` |
++| `all` | everything above in one run |
++
++## Environment overrides
++
++| Variable | Default | Notes |
++|---|---|---|
++| `BASE_URL` | `https://supremeai-mcp-tower.onrender.com` | point at any tower deployment |
++| `MCP_PROTOCOL_VERSION` | `2025-03-26` | MCP protocol revision negotiated in `initialize` |
++| `CURL_TIMEOUT` | `20` | seconds per request (also bounds the SSE read) |
++
++## Notes & troubleshooting
++
++- The `POST /mcp` flow is the **Streamable MCP** transport: `initialize`
++  captures the `mcp-session-id` response header and reuses it for subsequent
++  calls. A stateless deployment simply omits the header and everything still
++  works.
++- `bridge_guide` is a static zero-network tool — it is listed even when the
++  tower is degraded, which makes it the best liveness probe for the MCP layer
++  specifically (vs `/health` for the HTTP layer).
++- Per-IP rate limiting applies on `/mcp` (#695) — the suite issues at most a
++  handful of requests per run and will not trip it under normal use.
++- HTTP 4xx/5xx bodies are printed verbatim on failure; the tower's error
++  semantics mirror the public Gateway contract (see
++  [`docs/CONSUMERS.md`](../docs/CONSUMERS.md)).
++- For deeper, SDK-based flows (work orders, patches, live tool manifests) use
++  the MCP connection itself — see [`AGENTS.md`](../../AGENTS.md) §2.1 and
++  [`docs/AGENT_PORTAL_SPEC.md`](../docs/AGENT_PORTAL_SPEC.md).
++
++## Related
++
++- [AGENTS.md](../../AGENTS.md) — submission pathways and agent loop
++- [docs/AGENT_PORTAL_SPEC.md](../docs/AGENT_PORTAL_SPEC.md) — portal architecture
++- [docs/ZERO_ADMIN_GUIDE.md](../docs/ZERO_ADMIN_GUIDE.md) — autonomous landing handbook
++- [docs/FAQ.md](../docs/FAQ.md) — troubleshooting validation errors
+diff --git a/examples/curl-tests/health.ps1 b/examples/curl-tests/health.ps1
+new file mode 100644
+index 00000000..0b49db45
+--- /dev/null
++++ b/examples/curl-tests/health.ps1
+@@ -0,0 +1,155 @@
++# ============================================================================
++# SupremeAI MCP Tower - HTTP endpoint smoke tests (PowerShell 5.1+/7+)
++# Issue #49 - Windows mirror of health.sh (same subcommands, same contract).
++#
++# Usage:
++#   .\health.ps1                 # health check (default)
++#   .\health.ps1 health
++#   .\health.ps1 sse
++#   .\health.ps1 tools-list
++#   .\health.ps1 tool-call system_summary
++#   .\health.ps1 tool-call bridge_guide
++#   .\health.ps1 all
++#
++# Environment overrides:
++#   $env:BASE_URL              default: https://supremeai-mcp-tower.onrender.com
++#   $env:MCP_PROTOCOL_VERSION  default: 2025-03-26
++#   $env:CURL_TIMEOUT          default: 20 (seconds per request)
++#
++# Exit codes: 0 = all requested checks passed; 1 = at least one failed
++# (fail-closed, matching repo doctrine).
++# ============================================================================
++param(
++    [Parameter(Position = 0)]
++    [ValidateSet('health', 'sse', 'tools-list', 'tool-call', 'all')]
++    [string]$Command = 'health',
++
++    [Parameter(Position = 1)]
++    [string]$ToolName = 'system_summary'
++)
++
++$ErrorActionPreference = 'Stop'
++
++$BaseUrl = if ($env:BASE_URL) { $env:BASE_URL.TrimEnd('/') } else { 'https://supremeai-mcp-tower.onrender.com' }
++$ProtocolVersion = if ($env:MCP_PROTOCOL_VERSION) { $env:MCP_PROTOCOL_VERSION } else { '2025-03-26' }
++$TimeoutSec = if ($env:CURL_TIMEOUT) { [int]$env:CURL_TIMEOUT } else { 20 }
++
++$script:Failures = 0
++$script:McpSession = $null
++$script:JsonRpcId = 100
++
++function Write-Pass([string]$Message) { Write-Output "PASS  $Message" }
++function Write-Fail([string]$Message) { Write-Output "FAIL  $Message"; $script:Failures++ }
++
++function Invoke-Health {
++    Write-Output "== GET $BaseUrl/health =="
++    try {
++        $resp = Invoke-WebRequest -Uri "$BaseUrl/health" -Method GET -TimeoutSec $TimeoutSec -UseBasicParsing
++        Write-Pass "health: HTTP $([int]$resp.StatusCode) - $($resp.Content)"
++    } catch {
++        $code = try { [int]$_.Exception.Response.StatusCode } catch { '?' }
++        Write-Fail "health: HTTP $code - $($_.Exception.Message)"
++    }
++}
++
++function Invoke-Sse {
++    Write-Output "== GET $BaseUrl/sse (bounded $TimeoutSec s read) =="
++    $frames = ''
++    try {
++        $task = [System.Net.Http.HttpClient]::new().GetStringAsync("$BaseUrl/sse")
++        if ($task.Wait([TimeSpan]::FromSeconds($TimeoutSec))) { $frames = $task.Result }
++        else { $frames = '' }
++    } catch {
++        if ($_.Exception.InnerException) { $frames = $_.Exception.InnerException.Message } else { $frames = $_.Exception.Message }
++    }
++    if ($frames -match 'event:' -and $frames -match 'data:') {
++        $endpoint = ($frames -split "`n" | Where-Object { $_ -like 'data:*' } | Select-Object -First 1) -replace '^data:\s*', ''
++        Write-Pass "sse: stream opened, endpoint frame: $endpoint"
++    } else {
++        Write-Fail "sse: no event/data frames within ${TimeoutSec}s ($frames)"
++    }
++}
++
++function Invoke-McpPost([string]$Body) {
++    $headers = @{ 'Accept' = 'application/json, text/event-stream' }
++    if ($script:McpSession) { $headers['mcp-session-id'] = $script:McpSession }
++    $resp = Invoke-WebRequest -Uri "$BaseUrl/mcp" -Method POST -Body $Body `
++        -ContentType 'application/json' -Headers $headers -TimeoutSec $TimeoutSec -UseBasicParsing
++    $sid = $resp.Headers['mcp-session-id']
++    if ($sid) { $script:McpSession = @($sid)[0] }
++    return $resp.Content
++}
++
++function Invoke-McpInit {
++    # Fresh session lifecycle - never re-initialize an existing session
++    # (the tower rejects a second initialize on the same Mcp-Session-Id).
++    $script:McpSession = $null
++    $script:JsonRpcId++
++    $body = "{`"jsonrpc`":`"2.0`",`"id`":$($script:JsonRpcId),`"method`":`"initialize`",`"params`":{`"protocolVersion`":`"$ProtocolVersion`",`"capabilities`":{},`"clientInfo`":{`"name`":`"supremeai-curl-tests`",`"version`":`"1.0`"}}}"
++    return Invoke-McpPost $body
++}
++
++function Invoke-McpInitialized {
++    Invoke-McpPost '{"jsonrpc":"2.0","method":"notifications/initialized"}' | Out-Null
++}
++
++function Invoke-ToolsList {
++    Write-Output "== POST $BaseUrl/mcp (initialize + tools/list) =="
++    try {
++        $initResp = Invoke-McpInit
++        Invoke-McpInitialized
++        $script:JsonRpcId++
++        $listResp = Invoke-McpPost "{`"jsonrpc`":`"2.0`",`"id`":$($script:JsonRpcId),`"method`":`"tools/list`"}"
++        if ($listResp -match '"tools"') {
++            $count = ([regex]::Matches($listResp, '"name"')).Count
++            Write-Pass "tools-list: tools frame present (~$count name fields)"
++        } else {
++            Write-Fail "tools-list: no tools frame - $listResp"
++        }
++    } catch {
++        Write-Fail "tools-list: $($_.Exception.Message)"
++    }
++}
++
++function Invoke-ToolCall([string]$Tool) {
++    Write-Output "== POST $BaseUrl/mcp (initialize + tools/call $Tool) =="
++    try {
++        Invoke-McpInit | Out-Null
++        Invoke-McpInitialized
++        $script:JsonRpcId++
++        $callResp = Invoke-McpPost "{`"jsonrpc`":`"2.0`",`"id`":$($script:JsonRpcId),`"method`":`"tools/call`",`"params`":{`"name`":`"$Tool`",`"arguments`":{}}}"
++        if ($callResp -match '"result"') {
++            Write-Pass "tool-call ${Tool}: result frame present"
++            if ($callResp.Length -gt 400) { Write-Output $callResp.Substring(0, 400) } else { Write-Output $callResp }
++        } elseif ($callResp -match '"error"') {
++            Write-Fail "tool-call ${Tool}: JSON-RPC error - $callResp"
++        } else {
++            Write-Fail "tool-call ${Tool}: unexpected response - $callResp"
++        }
++    } catch {
++        Write-Fail "tool-call ${Tool}: $($_.Exception.Message)"
++    }
++}
++
++switch ($Command) {
++    'health'      { Invoke-Health }
++    'sse'         { Invoke-Sse }
++    'tools-list'  { Invoke-ToolsList }
++    'tool-call'   { Invoke-ToolCall $ToolName }
++    'all' {
++        Invoke-Health
++        Invoke-Sse
++        Invoke-ToolsList
++        Invoke-ToolCall 'system_summary'
++        Invoke-ToolCall 'bridge_guide'
++    }
++}
++
++if ($script:Failures -gt 0) {
++    Write-Output ""
++    Write-Output "$($script:Failures) check(s) FAILED (fail-closed: no silent skips)."
++    exit 1
++}
++Write-Output ""
++Write-Output "All requested checks passed."
++exit 0
+diff --git a/examples/curl-tests/health.sh b/examples/curl-tests/health.sh
+new file mode 100755
+index 00000000..2bd1d328
+--- /dev/null
++++ b/examples/curl-tests/health.sh
+@@ -0,0 +1,157 @@
++#!/bin/sh
++# ============================================================================
++# SupremeAI MCP Tower — HTTP endpoint smoke tests (POSIX sh, curl only)
++# Issue #49 · works on Linux, macOS, any POSIX shell with curl.
++# Windows mirror: health.ps1 (same subcommands, same output contract).
++#
++# Usage:
++#   sh health.sh                 # health check (default)
++#   sh health.sh health          # explicit health check
++#   sh health.sh sse             # SSE handshake smoke (bounded read)
++#   sh health.sh tools-list      # MCP tools/list over /mcp
++#   sh health.sh tool-call system_summary
++#   sh health.sh tool-call bridge_guide
++#   sh health.sh all             # everything, non-interactive
++#
++# Environment overrides:
++#   BASE_URL              default: https://supremeai-mcp-tower.onrender.com
++#   MCP_PROTOCOL_VERSION  default: 2025-03-26
++#   CURL_TIMEOUT          default: 20 (seconds per request)
++#
++# Exit codes: 0 = all requested checks passed; 1 = at least one failed
++# (fail-closed, matching repo doctrine — a skipped check does not exist).
++# ============================================================================
++set -u
++
++BASE_URL="${BASE_URL:-https://supremeai-mcp-tower.onrender.com}"
++MCP_PROTOCOL_VERSION="${MCP_PROTOCOL_VERSION:-2025-03-26}"
++CURL_TIMEOUT="${CURL_TIMEOUT:-20}"
++BASE_URL="${BASE_URL%/}"
++
++failures=0
++STATE_DIR=$(mktemp -d)
++trap 'rm -rf "$STATE_DIR"' EXIT INT TERM
++unwrap() { # $1 = raw response; strips SSE framing (event:/data:) if present
++  if printf '%s' "$1" | grep -q '^data:'; then
++    printf '%s' "$1" | grep '^data:' | sed 's/^data:[[:space:]]*//' | tr -d '\r'
++  else
++    printf '%s' "$1"
++  fi
++}
++mcp_code() { cat "$STATE_DIR/code" 2>/dev/null || printf '?'; }
++mcp_sid() { cat "$STATE_DIR/sid" 2>/dev/null || true; }
++note() { printf '%s\n' "$*"; }
++pass() { printf 'PASS  %s\n' "$1"; }
++fail() { printf 'FAIL  %s\n' "$1"; failures=$((failures + 1)); }
++
++# --- health ----------------------------------------------------------------
++cmd_health() {
++  note "== GET $BASE_URL/health =="
++  body=$(curl -sS --max-time "$CURL_TIMEOUT" -w '\n%{http_code}' "$BASE_URL/health" 2>&1) || { fail "health: curl transport error"; return 0; }
++  code=$(printf '%s' "$body" | tail -n 1)
++  payload=$(printf '%s' "$body" | sed '$d')
++  if [ "$code" = "200" ]; then
++    pass "health: HTTP $code — $payload"
++  else
++    fail "health: HTTP $code — $payload"
++  fi
++}
++
++# --- SSE handshake (bounded, read-only) --------------------------------------
++cmd_sse() {
++  note "== GET $BASE_URL/sse (bounded ${CURL_TIMEOUT}s read) =="
++  frames=$(curl -sS -N --max-time "$CURL_TIMEOUT" -H 'Accept: text/event-stream' "$BASE_URL/sse" 2>&1)
++  # The transport's first frames name the endpoint event and the session.
++  if printf '%s' "$frames" | grep -q 'event:' && printf '%s' "$frames" | grep -q 'data:'; then
++    endpoint=$(printf '%s' "$frames" | grep '^data:' | head -n 1 | sed 's/^data:[[:space:]]*//')
++    pass "sse: stream opened, endpoint frame: $endpoint"
++  else
++    fail "sse: no event/data frames within ${CURL_TIMEOUT}s"
++  fi
++}
++
++# --- MCP JSON-RPC over /mcp ---------------------------------------------------
++# Streamable MCP: initialize (capture mcp-session-id), then authenticated calls.
++mcp_post() { # $1 = JSON body ; prints response body ; code/sid persisted to $STATE_DIR (subshell-safe)
++  cur_sid=$(mcp_sid)   # re-read state file FIRST: each $(...) subshell starts fresh
++  hdrs="$STATE_DIR/hdrs"
++  resp=$(curl -sS --max-time "$CURL_TIMEOUT" -D "$hdrs" \
++    -H 'Content-Type: application/json' \
++    -H 'Accept: application/json, text/event-stream' \
++    ${cur_sid:+-H "mcp-session-id: $cur_sid"} \
++    -X POST -d "$1" "$BASE_URL/mcp" 2>&1) || { printf '%s' "$resp"; return 1; }
++  awk '$1 ~ /^HTTP\/[0-9.]+$/ {code=$2} END{print code}' "$hdrs" > "$STATE_DIR/code"
++  # Keep the previous session id when a response carries none (e.g. the
++  # notifications/initialized 202 would otherwise clobber it).
++  awk 'tolower($1)=="mcp-session-id:" {sub(/\r$/,"",$2); print $2; found=1} END{exit !found}' "$hdrs" > "$STATE_DIR/sid.new" 2>/dev/null \
++    && mv "$STATE_DIR/sid.new" "$STATE_DIR/sid" || rm -f "$STATE_DIR/sid.new"
++  cur_sid=$(cat "$STATE_DIR/sid" 2>/dev/null || true)
++  printf '%s' "$resp"
++}
++
++mcp_init() {
++  jsonrpc_id=$((jsonrpc_id + 1))
++  : > "$STATE_DIR/sid"   # fresh session lifecycle — never re-initialize an existing session
++  cur_sid=$(mcp_sid)
++  mcp_post "{\"jsonrpc\":\"2.0\",\"id\":$jsonrpc_id,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"$MCP_PROTOCOL_VERSION\",\"capabilities\":{},\"clientInfo\":{\"name\":\"supremeai-curl-tests\",\"version\":\"1.0\"}}}"
++}
++
++cmd_tools_list() {
++  note "== POST $BASE_URL/mcp (initialize + tools/list) =="
++  init_resp=$(unwrap "$(mcp_init)") || { fail "tools-list: initialize transport error"; return 0; }
++  if [ "$(mcp_code)" != "200" ]; then fail "tools-list: initialize HTTP $(mcp_code) — $init_resp"; return 0; fi
++  # notifications/initialized (no response expected)
++  jsonrpc_id=$((jsonrpc_id + 1))
++  mcp_post '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null 2>&1 || true
++  jsonrpc_id=$((jsonrpc_id + 1))
++  list_resp=$(unwrap "$(mcp_post "{\"jsonrpc\":\"2.0\",\"id\":$jsonrpc_id,\"method\":\"tools/list\"}")") || { fail "tools-list: transport error"; return 0; }
++  if printf '%s' "$list_resp" | grep -q '"tools"'; then
++    count=$(printf '%s' "$list_resp" | grep -o '"name"' | wc -l | tr -d ' ')
++    pass "tools-list: HTTP 200, tools frame present (~$count name fields)"
++  else
++    fail "tools-list: no tools frame — $list_resp"
++  fi
++}
++
++cmd_tool_call() { # $1 = tool name (e.g. system_summary, bridge_guide)
++  tool="${1:-system_summary}"
++  note "== POST $BASE_URL/mcp (initialize + tools/call $tool) =="
++  init_resp=$(unwrap "$(mcp_init)") || { fail "tool-call: initialize transport error"; return 0; }
++  if [ "$(mcp_code)" != "200" ]; then fail "tool-call: initialize HTTP $(mcp_code) — $init_resp"; return 0; fi
++  jsonrpc_id=$((jsonrpc_id + 1))
++  mcp_post '{"jsonrpc":"2.0","method":"notifications/initialized"}' >/dev/null 2>&1 || true
++  jsonrpc_id=$((jsonrpc_id + 1))
++  call_resp=$(unwrap "$(mcp_post "{\"jsonrpc\":\"2.0\",\"id\":$jsonrpc_id,\"method\":\"tools/call\",\"params\":{\"name\":\"$tool\",\"arguments\":{}}}")") || { fail "tool-call $tool: transport error"; return 0; }
++  if printf '%s' "$call_resp" | grep -q '"result"'; then
++    pass "tool-call $tool: HTTP 200, result frame present"
++    printf '%s' "$call_resp" | head -c 400; printf '\n'
++  elif printf '%s' "$call_resp" | grep -q '"error"'; then
++    fail "tool-call $tool: JSON-RPC error — $call_resp"
++  else
++    fail "tool-call $tool: unexpected response — $call_resp"
++  fi
++}
++
++cmd_all() {
++  cmd_health
++  cmd_sse
++  cmd_tools_list
++  cmd_tool_call system_summary
++  cmd_tool_call bridge_guide
++}
++
++case "${1:-health}" in
++  health)      cmd_health ;;
++  sse)         cmd_sse ;;
++  tools-list)  cmd_tools_list ;;
++  tool-call)   shift; cmd_tool_call "${1:-system_summary}" ;;
++  all)         cmd_all ;;
++  *) printf 'unknown subcommand: %s\n' "$1" >&2; printf 'usage: sh health.sh [health|sse|tools-list|tool-call <name>|all]\n' >&2; exit 2 ;;
++esac
++
++if [ "$failures" -gt 0 ]; then
++  printf '\n%d check(s) FAILED (fail-closed: no silent skips).\n' "$failures" >&2
++  exit 1
++fi
++printf '\nAll requested checks passed.\n'
++exit 0

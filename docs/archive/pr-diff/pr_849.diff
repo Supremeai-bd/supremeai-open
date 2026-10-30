@@ -1,0 +1,51 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index e6026520..9af93c2a 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -628,6 +628,22 @@ export function isIssueNotPullRequest(raw: RawIssue): boolean {
+   return !raw.pull_request;
+ }
+ 
++export function isAnchorHubOrGovernance(raw: RawIssue): boolean {
++  const title = typeof raw.title === "string" ? raw.title : "";
++  if (/^\[(Anchor|Federation)\s+Hub\]/i.test(title)) return true;
++  const labels = Array.isArray(raw.labels)
++    ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
++    : [];
++  return labels.some((l) => l.toLowerCase() === "area:governance");
++}
++
++export function isRejectedOrLanded(raw: RawIssue): boolean {
++  const labels = Array.isArray(raw.labels)
++    ? raw.labels.map((l) => (typeof l === "string" ? l : (l as { name?: string })?.name || ""))
++    : [];
++  return labels.some((l) => l.toLowerCase() === "bridge:rejected" || l.toLowerCase() === "bridge:landed");
++}
++
+ /** Open issues only (defense in depth: the API query filters, we verify). */
+ function isOpenIssue(raw: RawIssue): boolean {
+   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
+@@ -640,6 +656,8 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+     .filter((item): item is RawIssue => Boolean(item) && typeof item === "object")
+     .filter(isIssueNotPullRequest)
+     .filter(isOpenIssue)
++    .filter((item) => !isAnchorHubOrGovernance(item))
++    .filter((item) => !isRejectedOrLanded(item))
+     .map(normalizeQueueItem)
+     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
+     .slice(0, Math.min(Math.max(1, limit), 50));
+diff --git a/infrastructure/mcp-control-plane/test_bridge_onboarding.ts b/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
+index 0a221876..37d32ed4 100644
+--- a/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
++++ b/infrastructure/mcp-control-plane/test_bridge_onboarding.ts
+@@ -81,6 +81,10 @@ const rawIssues = [
+   { number: 42, title: "test: client harness", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/42", created_at: "2026-10-12T11:00:00Z", labels: [{ name: "bridge:queued" }], comments: 0 },
+   { number: 43, title: "PR thread, not a work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/pull/43", created_at: "2026-10-12T12:00:00Z", labels: [], pull_request: { url: "x" } },
+   { number: 44, title: "closed again", state: "closed", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/44", labels: [] },
++  { number: 45, title: "[Anchor Hub] Supremeai-bd/supremeai-studio", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/45", labels: ["P1-high", "area:governance"] },
++  { number: 46, title: "[Federation Hub] CI Failures Desk", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/46", labels: ["P1-high"] },
++  { number: 47, title: "failed work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/47", labels: ["bridge:rejected"] },
++  { number: 48, title: "landed work order", state: "open", html_url: "https://github.com/Supremeai-bd/supremeai-open/issues/48", labels: ["bridge:landed"] },
+   null,
+ ];
+ 

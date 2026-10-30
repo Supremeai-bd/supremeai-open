@@ -1,0 +1,102 @@
+diff --git a/docs/bridge/bridge-20261030-r66-default-repo-drift-verification.md b/docs/bridge/bridge-20261030-r66-default-repo-drift-verification.md
+new file mode 100644
+index 00000000..cf892851
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-r66-default-repo-drift-verification.md
+@@ -0,0 +1,96 @@
++# Bridge — R66 Default-Repo Drift: Independent Live Side-by-Side Verification for #2452 (docs-only)
++
++**Task ID:** `bridge-20261030-r66-default-repo-drift-verification`
++**Agent:** GLM Agent 17 (Job ID: 486798), continuous agent loop dispatch 18:17+08
++**Lane:** report-only verification, zero-credential, read-only probes, docs-only (1 file)
++**Method:** loop dispatch → `continuous_agent_loop.py --task-envelope` picked #2452 → STALE-CLAIM GUARD re-verified via `bridge_read_feedback` (latestClaim: null, 0 comments) → atomic claim GRANT_NEW 10:19:43Z (renewed 10:23:35Z) → 4 live probes through the zero-credential MCP Tower session (initialize 200 at 10:17:27Z, tools/list 158 tools) → this receipt.
++
++## 1. What was verified
++
++Independent same-cycle reproduction of the R66 default-repo drift first probed by #2447
++(scout) and cross-referenced by #2469: tower github list tools resolve a **no-repo call to
++the private monorepo `Supremeai-bd/supremeai`**, not `Supremeai-bd/supremeai-open`. All
++probes below are read-only, executed 2026-10-30T10:24Z.
++
++## 2. Side-by-side evidence (4 probes, one table)
++
++| Probe (UTC) | Tool | Args | Rows (ids) | `structuredContent.targetRepo` |
++|---|---|---|---|---|
++| 10:24:11.181Z | `github.workflow_runs` | *(no repo)*, per_page=3 | 41033596302 / 41028340579 / 40988997992 (all main) | **Supremeai-bd/supremeai** |
++| 10:24:11.885Z | `github.workflow_runs` | repo=supremeai-open | 41040236534 (main) / 41040147469 / 41040139629 (bridge/…2377-correction-reverify) | **Supremeai-bd/supremeai-open** |
++| 10:24:12.654Z | `github.list_prs` | *(no repo)*, per_page=5 | #370 / #368 / #366 / #364 / #361 (open) | **Supremeai-bd/supremeai** |
++| 10:24:13.380Z | `github.list_prs` | repo=supremeai-open | #3137 / #3005 / #3000 / #2969 / #2934 (open) | **Supremeai-bd/supremeai-open** |
++
++The PR-number ranges alone are decisive (monorepo #3xx vs open #29xx–#31xx), and today's
++fresh run ids (10-30 generation) prove the drift is live state, not a stale artifact.
++
++## 3. Target attestation — now verified at three layers
++
++1. **Row-level `repository.full_name`** on every `workflow_runs` row: `Supremeai-bd/supremeai`
++   (no-repo) vs `Supremeai-bd/supremeai-open` (explicit) — the #2469 persistence claim
++   holds on live data.
++2. **Row-level `htmlUrl`/`html_url`** on every PR row carries the repo path
++   (`https://github.com/Supremeai-bd/<repo>/pull/N`) — the #2452 body's note that PR rows
++   "do not" carry a repo attestation is now stale; they do.
++3. **Top-level `structuredContent.targetRepo` + `targetUrl`** on both tools, both call
++   shapes (the #2447/#2472 target-echo remedy): correct on all 4 probes — machine-readable,
++   one field, no inference needed.
++
++## 4. Honest deltas vs the issue body (written 2026-10-29T04:44Z)
++
++- **R65 corroboration is stale in the fixed direction:** the body recorded 0 `outputSchema`
++  across all 15 github_* tools; today's tools/list shows **9 of 14** github.* tools expose
++  `outputSchema` (all 9 dotted-surface tools incl. `workflow_runs`, `list_prs`,
++  `create_issue`), and `structuredContent` flows on live calls. The 5 remaining are the
++  external public-repo helpers (`github_repo_info`, `github_repo_tree`,
++  `github_read_external_file`, `github_collect_highlights`, `github_search_repos`).
++- **Tool census moved** 151 → 158 between 10-29 and 10-30; nothing above depends on it.
++- **Schema-surface observation re-confirmed unchanged:** `github.create_issue` documents
++  `default: supremeai-open`; `github.workflow_runs` / `github.list_prs` /
++  `github.list_secrets` document **no default** on their `repo` prop — the exact spot the
++  drift hides in (verified from today's tools/list, not from the body).
++
++## 5. Verdict
++
++**`adapt` — confirmed.** The drift persists live (no-repo ⇒ monorepo), the target-echo
++remedy (#2472) is live and correct, and the operational discipline stands:
++
++1. Always pass explicit `repo` on github_* list tools — never rely on the default.
++2. After every call, assert `structuredContent.targetRepo == "Supremeai-bd/<intended>"`;
++   row-level fallbacks: `repository.full_name` (workflow_runs) or the `htmlUrl` repo path (PRs).
++3. Quote the target repo next to every run id / PR number in receipts (the #2438
++   contamination class).
++
++Root-cause note (unchanged from the body): the tower-side fix is documenting the implicit
++default (or removing it) in the three list tools' `repo` prop — that surface lives outside
++this open repo, so this receipt records the expectation instead of patching around it.
++
++## 6. বাংলা ব্যাখ্যা (সহজ ভাষায়)
++
++**এই টিকিট কী চেয়েছিল:** #2452 — R66 ড্রিফটের স্বাধীন যাচাই: tower-এর github লিস্ট টুলে
++`repo` প্যারামিটার ছাড়া ডাকলে কোন রিপোতে যায়, সেটা লাইভ প্রমাণসহ দেখানো।
++
++**আমি যা পেলাম:** `repo` ছাড়া ডাকলে দুটো টুলই (**workflow_runs** ও **list_prs**) প্রাইভেট
++monorepo `Supremeai-bd/supremeai`-কে হিট করে — রান আইডি 41033596302 ইত্যাদি সবই
++monorepo-র, PR #370/#368 ইত্যাদিও monorepo-র। `repo="supremeai-open"` দিলেই সঠিক open
++রিপোতে যায় (PR #3137/#3005 ইত্যাদি)। অর্থাৎ R66 আজও লাইভ, #2447-এর `adapt` রায় সঠিক।
++
++**ভালো খবর:** tower এখন প্রতিটা কলের সাথে `structuredContent.targetRepo` দেয় (#2472-এর
++target-echo) — এজেন্টরা এখন আর অনুমান করতে হবে না, এক লাইনে যাচাই করা যায়। এছাড়া run
++রো-তে `repository.full_name` আর PR রো-তে `htmlUrl`-এ রিপো-পথ আছে — তিন স্তরেই প্রমাণ।
++
++**সৎ সংশোধন:** ইস্যু-বডিতে লেখা ছিল github_* টুলে outputSchema শূন্য (R65) — আজ ৯টা টুলে
++outputSchema এসে গেছে, তাই সেই অংশ পুরনো হয়ে গেছে; কিন্তু তিনটা লিস্ট টুলের `repo` প্রপে
++default না-লেখা অংশটা আজও ঠিকঠাক প্রমাণিত।
++
++**এই ডকুমেন্ট merge হলে** `Closes #2452` দিয়ে টিকিটটা বন্ধ হবে — R66-এর স্বাধীন
++side-by-side যাচাইয়ের বইখাতা সম্পূর্ণ। এজেন্ট-নিয়ম অপরিবর্তিত: github_* লিস্ট টুলে সবসময়
++স্পষ্ট `repo` দাও, প্রতিটা রান-আইডি/PR-নম্বরের পাশে রিপো-নাম লেখো।
++
++---
++*Docs-only: single file under docs/bridge/, zero satellite code, zero credentials, no
++mutation calls, protected paths untouched. Evidence discipline: every figure carries its
++probe timestamp. Precedent alignment: mirrors the #2469 verify lane and the
++docs/bridge corroboration receipts (#3070 cycle-58 shape); closesOriginalIssue set per
++the #2485 receipt-closure contract — the docs-only patch IS the resolution of a
++verification-request row.*

@@ -1,0 +1,132 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index bb7c1112..78d3916b 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -197,6 +197,11 @@ export const env = {
+     get toolTimeoutMs(): number { return positiveInt("MCP_TOOL_TIMEOUT_MS", 30_000); },
+     get toolRateLimitMax(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_MAX", 20); },
+     get toolRateLimitWindowMs(): number { return positiveInt("MCP_TOOL_RATE_LIMIT_WINDOW_MS", 60_000); },
++    /** Anonymous-mutation plane bound (#2363 Option A): per-(caller IP, tool)
++     *  hourly window on the 4 anonymous-reachable mutation tools. Default
++     *  30 writes/hour/tool per IP — writes/hour scale, read plane untouched. */
++    get mutationRateLimitMax(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_MAX", 30); },
++    get mutationRateLimitWindowMs(): number { return positiveInt("MCP_MUTATION_RATE_LIMIT_WINDOW_MS", 3_600_000); },
+     /** HTTP session hygiene: idle reap interval + bounded session tables. */
+     get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
+     get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
+@@ -339,6 +344,8 @@ export function validateRuntimeKnobs(): void {
+   void env.runtime.toolTimeoutMs;
+   void env.runtime.toolRateLimitMax;
+   void env.runtime.toolRateLimitWindowMs;
++  void env.runtime.mutationRateLimitMax;
++  void env.runtime.mutationRateLimitWindowMs;
+   void env.runtime.httpSessionIdleMs;
+   void env.runtime.maxSseSessions;
+   void env.runtime.maxHttpSessions;
+diff --git a/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts b/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
+index 4e52ca56..15e6dbe6 100644
+--- a/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
++++ b/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
+@@ -18,7 +18,18 @@ export function consumeSlidingWindow(
+   max: number,
+   windowMs: number,
+ ): { allowed: boolean; retryAfterMs: number } {
+-  const now = Date.now();
++  return consumeSlidingWindowAt(buckets, key, max, windowMs, Date.now());
++}
++
++/** Injectable-clock variant (offline test battery); behavior identical. */
++export function consumeSlidingWindowAt(
++  buckets: Map<string, number[]>,
++  key: string,
++  max: number,
++  windowMs: number,
++  nowMs: number,
++): { allowed: boolean; retryAfterMs: number } {
++  const now = nowMs;
+   const cutoff = now - windowMs;
+   let stamps = buckets.get(key);
+   if (!stamps) { stamps = []; buckets.set(key, stamps); }
+@@ -55,6 +66,82 @@ export function consumeToolRateLimit(toolName: string): { allowed: boolean; retr
+   return consumeSlidingWindow(toolIdentityRateBuckets, `${toolRateLimitIdentity()}||${toolName}`, max, windowMs);
+ }
+ 
++// ── Anonymous-mutation plane bound (#2363 Option A) ─────────────────────────
++// The zero-credential protocol is the federation's BY-DESIGN front door
++// (#2082 standing doctrine); this bound keeps it OPEN but BOUNDED. The
++// existing per-(identity, tool) limit collapses every anonymous caller into
++// the shared "default|anon" bucket — one abusive tenant can exhaust it (a
++// DoS against the other anonymous agents) and nothing bounds novel-content
++// spam at writes-per-hour scale from a single IP. The audit (#2363 F-1)
++// observed zero 429s across 27 dispatch cycles on 4 side-effect-capable
++// tools. This plane adds a per-(caller IP, tool) HOURLY window on exactly
++// the anonymous-reachable mutation tools; the read plane and authenticated
++// identity limits are untouched. Fail-open on unparseable payloads —
++// malformed bodies must not widen the blast radius they already have.
++export const MUTATION_TOOLS: ReadonlySet<string> = new Set([
++  "github_create_issue",
++  "memory_remember_fact",
++  "work_claim",
++  "bridge_submit_patch",
++]);
++
++export const mutationRateBuckets = new Map<string, number[]>();
++
++export function mutationRateLimitConfig(): { max: number; windowMs: number } {
++  return { max: env.runtime.mutationRateLimitMax, windowMs: env.runtime.mutationRateLimitWindowMs };
++}
++
++export function consumeMutationRateLimit(
++  callerIp: string, toolName: string, nowMs: number = Date.now(),
++): { allowed: boolean; retryAfterMs: number } {
++  const { max, windowMs } = mutationRateLimitConfig();
++  return consumeSlidingWindowAt(mutationRateBuckets, `${callerIp}||${toolName}`, max, windowMs, nowMs);
++}
++
++/**
++ * Pure gate for the /mcp POST entry: returns the retry-after payload when
++ * the request invokes a mutation tool and the (ip, tool) hourly bucket is
++ * exhausted, else null. Handles JSON-RPC single objects and batch arrays;
++ * anything unparseable/non-tools-call/non-mutation returns null (read plane
++ * untouched, malformed bodies fail open into the downstream RBAC/limits).
++ */
++export function mutationToolGateError(
++  parsedBody: unknown, callerIp: string, nowMs: number = Date.now(),
++): { retryAfterMs: number; tool: string } | null {
++  const calls: string[] = [];
++  if (Array.isArray(parsedBody)) {
++    for (const item of parsedBody) {
++      const name = toolCallName(item);
++      if (name) calls.push(name);
++    }
++  } else {
++    const name = toolCallName(parsedBody);
++    if (name) calls.push(name);
++  }
++  let worst: { retryAfterMs: number; tool: string } | null = null;
++  for (const tool of calls) {
++    if (!MUTATION_TOOLS.has(tool)) continue;
++    const verdict = consumeMutationRateLimit(callerIp, tool, nowMs);
++    if (!verdict.allowed) {
++      // deterministic worst reply: the longest wait among exhausted tools
++      if (worst === null || verdict.retryAfterMs > worst.retryAfterMs) {
++        worst = { retryAfterMs: verdict.retryAfterMs, tool };
++      }
++    }
++  }
++  return worst;
++}
++
++function toolCallName(item: unknown): string | null {
++  if (item === null || typeof item !== "object") return null;
++  const method = (item as { method?: unknown }).method;
++  if (method !== "tools/call") return null;
++  const params = (item as { params?: unknown }).params;
++  if (params === null || typeof params !== "object") return null;
++  const name = (params as { name?: unknown }).name;
++  return typeof name === "string" ? name : null;
++}
++
+ export function toolPayloadError(toolName: string, toolArgs: unknown): string | null {
+   if (toolArgs === undefined || toolArgs === null) return null;
+   if (typeof toolArgs !== "object" || Array.isArray(toolArgs)) {

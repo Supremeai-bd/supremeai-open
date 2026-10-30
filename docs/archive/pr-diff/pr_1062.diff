@@ -1,0 +1,29 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index d8690ecb..d3de7464 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -78,7 +78,7 @@ flowchart TD
+ - **Planner:** বিদ্যমান কোডে ৮০% আছে কি? নতুন জটিলতা ছাড়া কি পুরনো কোড রিইউজ করা যায়? (রুল §6)
+ - **Coder:** ইস্যু কি লাইভ `main`-এ সক্রিয়? ইস্যুতে সাজেস্ট করার চেয়ে সহজ ১-লাইনের সেরা কোনো বিকল্প আছে কি?
+ - **Auditor:** নিয়মলঙ্ঘন কি বর্তমান `main`-এ প্রমাণযোগ্য? এটি চিরতরে বন্ধে স্বয়ংক্রিয় সিআই গেট কী দেওয়া হচ্ছে?
+-- **CI Fixer:** রুট-কজ ঠিক হচ্ছে নাকি স্কিপ হ্যাক? লিনাক্স/উইন্ডোজ/ম্যাকে পোর্টেবল এবং < 5s ফাস্ট-পাথ সুরক্ষিত তো?
++- **CI Fixer:** রুট-কজ ঠিক হচ্ছে নাকি স্কিপ হ্যাক? লিনাক্স/উইন্ডোজ/ম্যাকে পোর্টেবল এবং < 5s ফাস্ট-পাথ সুরক্ষিত তো? কোনো ইস্যু লিংক ছাড়া ফাঁকা PR খুলে ক্লেইম-গেটে আটকে পড়া সম্পূর্ণ নিষিদ্ধ; স্যাটেলাইট বা সিআই হটফিক্সে কেবল ২টি স্বীকৃত পথ: (ক) সংশ্লিষ্ট ক্লোজড ইস্যু বা #761 সাব-ইস্যু Reopen/Claim করে `<!-- atomic-claim -->` সহ PR লিংক করা, অথবা (খ) জরুরি হটফিক্সে PR-এ `guard-exempt` লেবেল দিয়ে Claim Gate বাইপাস করা।
+ - **Human Eye:** এডমিন শ্রম ≤ ০.০১% অক্ষত তো? ওয়ান-টাইম ফিক্স না করে সিস্টেমে স্থায়ী নিয়ম শেখানো হচ্ছে কি?
+ - **3rd Party Platforms:** মাস্টার-কি সম্পূর্ণ আইসোলেটেড তো? সার্ভার স্লিপ হলেও কোল্ড-স্টার্ট রিট্রাই আছে তো?
+ - **All Agents (Non-Regression Mandate):** আমার কাজ কি বিদ্যমান কোনো ভালো কাজ, পারফরম্যান্স বা আর্কিটেকচার নষ্ট করছে? বিদ্যমান কোড অন্ধভাবে না মুছে কি এর ওপর সুরক্ষিতভাবে এক্সটেন্ড করা হয়েছে? (রুল P3)
+diff --git a/AGENT_RULES.md b/AGENT_RULES.md
+index 71d50e56..f87a5797 100644
+--- a/AGENT_RULES.md
++++ b/AGENT_RULES.md
+@@ -88,6 +88,11 @@ Every agent, regardless of role, model, or provider, strictly adheres to these 1
+   1. **Root Cause over Workaround:** Ban hacking `--skip-tests`, `--ignore-scripts`, or `|| true` to force green.
+   2. **Cross-Platform Invariant:** Test scripts must run deterministically on Linux, Windows, and macOS without unportable CLI dependencies.
+   3. **Fast-Path Quota Protection:** Preserve < 5s fast paths for docs/metadata; protect the 2,000 min/mo free runner quota.
++  4. **Claim-Gate Invariant for Hotfixes & Satellite Repairs (Rule #392):**
++     Never open an unlinked PR without an active claim — it will immediately fail `Claim Gate Guard (#392)`. All CI repairs and satellite hotfixes MUST follow one of two machine-approved pathways:
++     - **Path A (Reopen & Claim Related Issue / #761 Sub-Issue):** Reopen the related closed regression issue (or claim a child task under #761 CI Anchor Hub) with `status:claimed` or an `<!-- atomic-claim -->` comment, and reference `Fixes #<num>` in the PR body/title.
++     - **Path B (Admin Emergency Escape Hatch — `guard-exempt`):** For urgent broken-satellite / blocking pipeline hotfixes, apply the `guard-exempt` label to the PR (explicitly supported in `pipeline.yml` line 188: `'guard-exempt' label present — guard skipped`).
++     Opening a blind, unlinked PR and abandoning it upon claim-gate rejection is strictly prohibited.
+ 
+ ### 3.5 👁️ Human Eye (Admin & Supervisory Oversight)
+ - **Work Area:** Architectural decisions (`ADMIN_DECISION`), strategic vision, security vault authorizations.

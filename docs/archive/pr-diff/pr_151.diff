@@ -1,0 +1,158 @@
+diff --git a/infrastructure/mcp-control-plane/src/guardian/engine.ts b/infrastructure/mcp-control-plane/src/guardian/engine.ts
+index f569b352..e24606a2 100644
+--- a/infrastructure/mcp-control-plane/src/guardian/engine.ts
++++ b/infrastructure/mcp-control-plane/src/guardian/engine.ts
+@@ -22,9 +22,16 @@ import {
+ import {
+   buildMetricsFromEvidence,
+   type CiSummary,
++  type EvidenceBundle,
+   type MetricBuildResult,
+   type SignalCounts,
+ } from "./signals.js";
++
++// #112: EvidenceBundle has a single definition (guardian/signals.ts — the
++// module that consumes it to build metrics). Re-exported here so existing
++// `import ... from "./engine.js"` call sites (e.g. test_guardian.ts) keep
++// working without a byte-identical duplicate drifting apart again.
++export type { EvidenceBundle };
+ import {
+   DEFAULT_IMPROVEMENT_POLICY,
+   buildRegressionReport,
+@@ -84,14 +91,6 @@ export interface GuardianEvaluation {
+   evaluatedAt: string;
+ }
+ 
+-export interface EvidenceBundle {
+-  pr: PullRequestEvidence;
+-  files: PullRequestFileEvidence[];
+-  candidateChecks: CheckRunEvidence[];
+-  baselineChecks: CheckRunEvidence[];
+-  scopePrefixes?: string[];
+-}
+-
+ function deltaFrom(files: PullRequestFileEvidence[], scopePrefixes: string[]): SourceDelta {
+   const filenames = files.map((f) => f.filename);
+   return {
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index b3457a81..5d6b4d2f 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -15,7 +15,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
+ import { z } from "zod";
+ import { env } from "./lib/env.js";
+ import { registerAllTools } from "./tools/index.js";
+-import { RequestContextStore } from "./policy/auth.context.js";
++import { RequestContextStore, type UserRole } from "./policy/auth.context.js";
+ import { getServiceDescriptors } from "./service-circles.js";
+ import { nowTimestamp, timestampDetails, withTimestamp } from "./lib/timestamps.js";
+ import { approveClient, changeClientProfile, changeClientProvider, changeClientRole, countClientsByTenant, defaultClientScopes, getClient, initClientRegistry, listClients, registerClient, resolveClient, revokeClient, rotateClient, roleAllows, scopeAllows, type ExternalClient } from "./policy/client-registry.js";
+@@ -495,18 +495,15 @@ function safeEqual(left: string, right: string): boolean {
+   return a.length === b.length && timingSafeEqual(a, b);
+ }
+ 
+-// #110: wire-role union mirrors the policy 6-tier ladder (+ null = anonymous).
+-// বাংলা মন্তব্য: লোকাল ইউনিয়নটি এখন পলিসি স্তরের ৬-টিয়ার ল্যাডারের প্রতিফলন।
+-export type UserRole =
+-  | "supremeadmin"
+-  | "admin"
+-  | "agent"
+-  | "repo_viewer"
+-  | "restricted_viewer"
+-  | "viewer"
+-  | null;
+-
+-function resolveRole(req: IncomingMessage): UserRole {
++// #112: UserRole has a single definition in policy/auth.context.ts (the #110
++// 6-tier ladder). The wire-level "anonymous" state is expressed at the USE
++// SITE as `UserRole | null`, not baked into the type — the old local
++// duplicate (`+ null`) had already drifted from the policy ladder.
++// বাংলা মন্তব্য: লোকাল ডুপ্লিকেট ইউনিয়ন মুছে SSOT re-export — null এখন শুধু
++// ব্যবহারস্থলে (anonymous caller) প্রকাশ করা হয়।
++export type { UserRole };
++
++function resolveRole(req: IncomingMessage): UserRole | null {
+   let token = "";
+   const authHeader = req.headers.authorization ?? "";
+   const prefix = "Bearer ";
+@@ -541,7 +538,7 @@ function resolveRole(req: IncomingMessage): UserRole {
+  * tenant admin token  → управляет своим tenant через заголовок x-tenant-id.
+  */
+ interface CallerContext {
+-  role: UserRole;
++  role: UserRole | null;
+   client?: ExternalClient;
+   tenantId: string;
+   isGlobalAdmin: boolean;
+diff --git a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+index 4f1d9b0c..6cdb20d5 100644
+--- a/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
++++ b/infrastructure/mcp-control-plane/src/registry/mcp_presence.ts
+@@ -26,6 +26,7 @@ import {
+   ageSecondsOf,
+   deriveState,
+   listHeartbeats,
++  type HeartbeatState,
+   type HeartbeatStatusEntry,
+ } from "./agent_heartbeat.js";
+ import { activeAccountChain, RedisQuotaExhaustedError, responseIndicatesQuotaExhaustion, runWithAccountChain, type RedisAccountConfig } from "../lib/redis_chain.js";
+@@ -44,10 +45,10 @@ export type PresenceRecord = {
+   updatedAt: string; // ISO-8601
+ };
+ 
+-export type HeartbeatState = "online" | "stale" | "expired";
+-
+ export type PresenceStatusEntry = PresenceRecord & {
+   ageSeconds: number;
++  // #112: single HeartbeatState definition lives in agent_heartbeat.ts
++  // (imported above) — the local re-declaration drifted toward silent SSOT rot.
+   state: HeartbeatState;
+ };
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tasks/engine.ts b/infrastructure/mcp-control-plane/src/tasks/engine.ts
+index 25f60f7e..f7762d64 100644
+--- a/infrastructure/mcp-control-plane/src/tasks/engine.ts
++++ b/infrastructure/mcp-control-plane/src/tasks/engine.ts
+@@ -1,12 +1,15 @@
+ import * as crypto from "node:crypto";
+ import { globalHealthEngine } from "../health/engine.js";
+ 
+-export type TaskState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
++// #112: renamed from the colliding `TaskState` — this union is the EXECUTION
++// state machine (task engine). The lease lifecycle union in task-registry.ts
++// is a different machine and now carries its own name (TaskLeaseState).
++export type TaskExecutionState = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+ 
+ export interface Task {
+   id: string;
+   name: string;
+-  state: TaskState;
++  state: TaskExecutionState;
+   createdAt: string;
+   updatedAt: string;
+   error?: string;
+diff --git a/infrastructure/mcp-control-plane/src/tasks/task-registry.ts b/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
+index 734a1a6c..db2f58f3 100644
+--- a/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
++++ b/infrastructure/mcp-control-plane/src/tasks/task-registry.ts
+@@ -66,7 +66,10 @@ const SYNC_MAX_PAGES = 3;
+ 
+ // ─── Types ─────────────────────────────────────────────────────────────────
+ 
+-export type TaskState = "UNCLAIMED" | "LEASED" | "COMPLETED";
++// #112: renamed from the colliding `TaskState` — this union is the LEASE
++// lifecycle (registry bookkeeping). The execution state machine in engine.ts
++// is a different machine and now carries its own name (TaskExecutionState).
++export type TaskLeaseState = "UNCLAIMED" | "LEASED" | "COMPLETED";
+ 
+ export type TaskKnowledge = {
+   why: string;
+@@ -79,7 +82,7 @@ export type TaskRecord = {
+   priority: string; // মূল লেবেল (যেমন "P1-high") — র‍্যাংকিং parsePriority দিয়ে হয়
+   labels: string[];
+   url?: string;
+-  state: TaskState;
++  state: TaskLeaseState;
+   /** লিজ-মালিক slot id (যেমন "agent-3")। */
+   claimedBy?: string;
+   /** claim-এ জারি করা ওয়ান-টাইম লিজ টোকেন — heartbeat/complete পেশ করতে হবে। */

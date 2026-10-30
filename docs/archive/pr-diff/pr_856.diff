@@ -1,0 +1,67 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo1.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo1.md
+new file mode 100644
+index 00000000..0a69a7e8
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo1.md
+@@ -0,0 +1,61 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo1
++## SupremeAI Studio Frontend "Cosmic" Modernization — Phase 1: Design Token Consolidation + Legacy Header Retirement
++
++**Target subsystem:** supremeai-studio (frontend, React+TS+Tailwind, design tokens via @supremeai/design-tokens)
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow per phase)
++
++## Context (audit findings, 2026-10-22)
++
++Two header implementations co-exist in supremeai-studio:
++
++1. `src/components/core/Header.tsx` — LEGACY: uses raw slate/blue Tailwind classes (`bg-white/70 dark:bg-slate-950/70`), gradient text, inlines Swarm radar + notifications, ~10KB, does not consume the `--sa-*` token system.
++2. `src/components/shell/GlobalHeader.tsx` — NEW: token-based (`border-border`, `bg-accent-primary`), context-driven (`user|admin`), honest server status (#972), mobile drawer (#1526), follows roadmap Rule 8 ("No duplicate global shells").
++
++This violates the single-frontend migration roadmap (Phase 3) and blocks the planned "SupremeAI Cosmic" UI modernization (landing page, dashboard glow-up, chat UX) because new work cannot rely on a single token-driven shell.
++
++## Scope of this work order (Phase 1)
++
++1. **Token additions (design-tokens package → tokens.css):**
++   - `--aurora-green`, `--aurora-purple`, `--nebula-gradient` (green→purple mesh preset) for hero/aurora sections.
++   - `--surface-glass` (translucent panel), `--glow-accent` (soft outer shadow) for card hover states.
++   - All additions are new tokens only — no existing token renamed or deleted (no-file-delete doctrine; re-themeable later).
++2. **Legacy Header retirement (flag-gated, no delete):**
++   - Add `ENABLE_LEGACY_HEADER` (default `false`) kill-switch env/VITE flag precedent.
++   - All remaining `core/Header.tsx` consumers migrate to `shell/GlobalHeader` (context prop already supports both).
++   - `core/Header.tsx` becomes a deprecation shim re-exporting GlobalHeader (file NOT deleted per doctrine).
++   - Move Swarm radar pill into GlobalHeader `actions` slot as a `<SwarmRadar />` extracted component.
++3. **ChatInterface route contract (pre-req cleanup for Phase 4):**
++   - Documented as a separate follow-up issue; NOT in this diff (keep smallest safe change).
++
++## Acceptance criteria
++
++- [ ] No component renders `core/Header` directly (grep-verified in CI note).
++- [ ] All new styles consume `--sa-*` tokens only; zero new raw slate/blue classes.
++- [ ] Existing UserDashboard/AdminShell tests pass unchanged.
++- [ ] `ENABLE_LEGACY_HEADER=true` restores old behavior (rollback path).
++- [ ] `npm test` + typecheck green; boot smoke on Vite dev server shows unified header on both / and /admin routes.
++
++## Full modernization roadmap (context for reviewers)
++
++- WO1 (this): token consolidation + header unification — foundation.
++- WO2: public landing page (animated aurora hero, live-typed chat demo, CTA pair, 3 feature cards + social proof section, /about "Our Story").
++- WO3: UserDashboard glow-up (aurora accents, hover micro-animations, skeleton loading, dynamic quick-action chips).
++- WO4: Chat UX (token-colored bubbles, typing dots, streaming caret, copy/regenerate, Bangla/English toggle).
++- WO5: Admin Command Center polish (real Availability KPI data replacing hardcoded placeholder, sparklines, incident pulse, Redis quota meter) + split-screen auth.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** The Cosmic modernization (WO2–WO5) multiplies over the shell and token system. Landing it on two competing headers would fork every subsequent PR into two styles and permanently entrench the legacy slate/blue look — exactly the debt the single-frontend migration was created to remove. Unifying first is the smallest change that unblocks all later phases.
++
++**Alternatives rejected:**
++- *Delete Header.tsx outright* — violates the no-file-delete doctrine; deprecation shim + kill-switch gives an instant rollback and matches SENTINEL/ORCHESTRATOR_TICK precedent.
++- *Restyle the legacy header in place* — would spend effort polishing a shell the roadmap already condemns (Rule 8), and keep two global shells alive.
++- *Start with the landing page (WO2) first* — rejected for sequencing risk: new public pages would copy whichever header style they saw first, spreading the inconsistency before the root cause is fixed.
++
++## Verification evidence
++
++- Doc-only work-order spec (no runtime code in this submission): verified content against live repo files read via MCP Tower on 2026-10-22 (`src/components/core/Header.tsx`, `src/components/shell/GlobalHeader.tsx`, `src/index.css`, `src/components/customer/UserDashboard.tsx`, `src/components/admin/Dashboard.tsx`, `src/pages/admin/AdminShell.tsx`, UserDashboard.test.tsx).
++- Reflection evidence included (mandatory fields: why, alternatives_rejected).
++- Boot smoke / tests: N/A for spec docs; implementation PRs will attach real vitest output per phase.

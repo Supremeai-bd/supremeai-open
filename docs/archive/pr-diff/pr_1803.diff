@@ -1,0 +1,713 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 5cfaa59f..3f2e0338 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -35,7 +35,7 @@
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:redis-p0",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:memory-graph-persistence && npm run --silent test:redis-p0",
+     "test:semantic-router": "tsx scripts/test-runner.ts test/test_semantic_router.ts",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+@@ -52,6 +52,7 @@
+     "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
+     "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
+     "test:redis-p0": "tsx test_redis_p0_hot_lru.ts",
++    "test:memory-graph-persistence": "tsx test_memory_graph_persistence.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
+     "test:unified-diff-eof": "tsx scripts/test-runner.ts test_unified_diff_eof.ts",
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+diff --git a/infrastructure/mcp-control-plane/sidecars/memory/graph_store.py b/infrastructure/mcp-control-plane/sidecars/memory/graph_store.py
+new file mode 100644
+index 00000000..30351076
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/sidecars/memory/graph_store.py
+@@ -0,0 +1,282 @@
++"""SQLite persistence for the Memory Sidecar knowledge graph (#1359).
++
++P0 context (AIQ-057/062/098, bridge-20261028-memory-graph-persistence):
++    The sidecar kept `_GRAPH_NODES`/`_GRAPH_EDGES` as plain process globals.
++    Unlike `documents`/`learned_facts` (which sync to Supabase), graph writes
++    never left the process, so every restart reset `graph_nodes` to 0 and
++    cross-session recall (`read_graph`/`search_nodes`) started from nothing.
++
++Design (matches sidecar house rules — stdlib-only, fail-open, env-knobbed):
++    - Storage: stdlib `sqlite3` — no new pip requirements, transactional,
++      crash-safe (WAL), single-file, inspectable.
++    - Default ON: db path resolution order
++        1. `MEMORY_GRAPH_DB_PATH` (operator-grade durability: point at a
++           mounted volume for survival across container re-creates)
++        2. `$SUPREMEAI_STATE_DIR/memory-graph.db` (if the state dir env is set)
++        3. `<system tempdir>/supremeai-memory-graph.db` (restart-durable by
++           default; deliberately NOT inside the repo checkout so tests and
++           guard runs never pollute the working tree).
++      Residual risk, documented honestly: system-temp storage survives
++      process restarts (the P0 acceptance) but NOT container re-creates;
++      the env knob in (1) is the escalation path for full durability.
++    - Fail-open: an unreadable/corrupt/unwritable db logs a warning to
++      stderr and degrades to the legacy in-memory behavior — memory stays
++      available even when storage is broken (sidecar philosophy:
++      "gracefully falls back to in-memory persistence when offline").
++    - Hydrate-once: `GraphStore.load()` reads the full graph at startup;
++      per-tool writes go straight through to SQLite. Zero read fan-out on
++      the hot path (get_session_stats/read_graph/search_nodes keep serving
++      from the hydrated dicts — no db query per tool call, no probe
++      commands added to the read path).
++
++Schema (v1):
++    entities(name TEXT PRIMARY KEY, entity_type TEXT, observations TEXT/*JSON*/, created_at TEXT)
++    relations(seq INTEGER PRIMARY KEY AUTOINCREMENT, src TEXT, dst TEXT, relation_type TEXT, created_at TEXT,
++              UNIQUE(src, dst, relation_type))
++
++Deletion semantics mirror the in-memory tools exactly:
++    - delete_entities: removes nodes + every edge touching them (cascade)
++    - delete_observations: removes matching observation strings
++    - delete_relations: removes exact (from, to, relationType) tuples
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import sqlite3
++import sys
++import tempfile
++from typing import Any, Dict, List, Optional, Tuple
++
++_SCHEMA_VERSION = 1
++
++_DDL = """
++CREATE TABLE IF NOT EXISTS entities (
++    name         TEXT PRIMARY KEY,
++    entity_type  TEXT NOT NULL,
++    observations TEXT NOT NULL DEFAULT '[]',
++    created_at   TEXT NOT NULL
++);
++CREATE TABLE IF NOT EXISTS relations (
++    seq           INTEGER PRIMARY KEY AUTOINCREMENT,
++    src           TEXT NOT NULL,
++    dst           TEXT NOT NULL,
++    relation_type TEXT NOT NULL,
++    created_at    TEXT NOT NULL,
++    UNIQUE(src, dst, relation_type)
++);
++CREATE TABLE IF NOT EXISTS meta (
++    key   TEXT PRIMARY KEY,
++    value TEXT NOT NULL
++);
++"""
++
++
++def resolve_db_path(env: Optional[Dict[str, str]] = None) -> str:
++    """Db-path resolution order: explicit env → state dir → system tempdir."""
++    env = dict(os.environ if env is None else env)
++    explicit = (env.get("MEMORY_GRAPH_DB_PATH") or "").strip()
++    if explicit:
++        return explicit
++    state_dir = (env.get("SUPREMEAI_STATE_DIR") or "").strip()
++    if state_dir:
++        return os.path.join(state_dir, "memory-graph.db")
++    return os.path.join(tempfile.gettempdir(), "supremeai-memory-graph.db")
++
++
++class GraphStore:
++    """Write-through SQLite mirror of the knowledge graph. Fail-open."""
++
++    def __init__(self, db_path: str, env: Optional[Dict[str, str]] = None) -> None:
++        self.db_path = db_path
++        self.available = False
++        self._conn: Optional[sqlite3.Connection] = None
++        try:
++            parent = os.path.dirname(db_path)
++            if parent:
++                os.makedirs(parent, exist_ok=True)
++            # isolation_level=None → explicit transactions; check_same_thread
++            # False because the STDIO loop is single-threaded and hydration
++            # happens on the same thread that later mutates.
++            self._conn = sqlite3.connect(db_path, isolation_level=None, check_same_thread=False)
++            self._conn.executescript(_DDL)
++            self._conn.execute(
++                "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
++                "ON CONFLICT(key) DO NOTHING",
++                (str(_SCHEMA_VERSION),),
++            )
++            self.available = True
++        except Exception as err:
++            sys.stderr.write(
++                f"[MemorySidecar] graph_store unavailable ({err}) — "
++                f"degrading to in-memory-only graph at path={db_path!r}\n"
++            )
++            self._conn = None
++            self.available = False
++
++    # ── hydration ────────────────────────────────────────────────────────
++    def load(self) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]]]:
++        """Full-graph hydration at startup (called exactly once)."""
++        if not self.available or self._conn is None:
++            return {}, []
++        nodes: Dict[str, Dict[str, Any]] = {}
++        edges: List[Dict[str, Any]] = []
++        try:
++            for name, etype, obs_json, created in self._conn.execute(
++                "SELECT name, entity_type, observations, created_at FROM entities"
++            ):
++                try:
++                    observations = json.loads(obs_json)
++                    if not isinstance(observations, list):
++                        observations = []
++                except Exception:
++                    observations = []
++                nodes[name] = {
++                    "name": name,
++                    "entityType": etype,
++                    "observations": observations,
++                    "created_at": created,
++                }
++            for src, dst, rtype, created in self._conn.execute(
++                "SELECT src, dst, relation_type, created_at FROM relations ORDER BY seq"
++            ):
++                edges.append(
++                    {"from": src, "to": dst, "relationType": rtype, "created_at": created}
++                )
++        except Exception as err:
++            sys.stderr.write(
++                f"[MemorySidecar] graph_store hydration failed ({err}) — "
++                "starting from empty graph, storage left untouched\n"
++            )
++            return {}, []
++        return nodes, edges
++
++    # ── entity writes ────────────────────────────────────────────────────
++    def upsert_entity(self, name: str, entity_type: str, observations: List[str], created_at: str) -> None:
++        if not self.available or self._conn is None:
++            return
++        try:
++            self._conn.execute(
++                "INSERT INTO entities(name, entity_type, observations, created_at) "
++                "VALUES(?, ?, ?, ?) "
++                "ON CONFLICT(name) DO UPDATE SET "
++                "entity_type=excluded.entity_type, observations=excluded.observations",
++                (name, entity_type, json.dumps(list(observations)), created_at),
++            )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.upsert_entity failed: {err}\n")
++
++    def update_observations(self, name: str, observations: List[str]) -> None:
++        if not self.available or self._conn is None:
++            return
++        try:
++            self._conn.execute(
++                "UPDATE entities SET observations=? WHERE name=?",
++                (json.dumps(list(observations)), name),
++            )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.update_observations failed: {err}\n")
++
++    # ── edge writes ──────────────────────────────────────────────────────
++    def insert_relation(self, src: str, dst: str, relation_type: str, created_at: str) -> None:
++        if not self.available or self._conn is None:
++            return
++        try:
++            self._conn.execute(
++                "INSERT INTO relations(src, dst, relation_type, created_at) "
++                "VALUES(?, ?, ?, ?) ON CONFLICT(src, dst, relation_type) DO NOTHING",
++                (src, dst, relation_type, created_at),
++            )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.insert_relation failed: {err}\n")
++
++    # ── deletions (mirror in-memory semantics exactly) ───────────────────
++    def delete_entities(self, names: List[str]) -> None:
++        if not self.available or self._conn is None or not names:
++            return
++        try:
++            cur = self._conn.cursor()
++            for n in names:
++                cur.execute("DELETE FROM entities WHERE name=?", (n,))
++                cur.execute("DELETE FROM relations WHERE src=? OR dst=?", (n, n))
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.delete_entities failed: {err}\n")
++
++    def delete_observations(self, name: str, keep: List[str]) -> None:
++        if not self.available or self._conn is None:
++            return
++        try:
++            self._conn.execute(
++                "UPDATE entities SET observations=? WHERE name=?",
++                (json.dumps(list(keep)), name),
++            )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.delete_observations failed: {err}\n")
++
++    def delete_relations(self, tuples: List[Tuple[str, str, str]]) -> None:
++        if not self.available or self._conn is None or not tuples:
++            return
++        try:
++            cur = self._conn.cursor()
++            for src, dst, rtype in tuples:
++                cur.execute(
++                    "DELETE FROM relations WHERE src=? AND dst=? AND relation_type=?",
++                    (src, dst, rtype),
++                )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.delete_relations failed: {err}\n")
++
++    # ── GDPR: full export + hard wipe ────────────────────────────────────
++    def export_all(self) -> Dict[str, List[Dict[str, Any]]]:
++        """Re-read straight from SQLite (independent of the hydrated cache)."""
++        if not self.available or self._conn is None:
++            return {"entities": [], "relations": []}
++        out: Dict[str, List[Dict[str, Any]]] = {"entities": [], "relations": []}
++        try:
++            for name, etype, obs_json, created in self._conn.execute(
++                "SELECT name, entity_type, observations, created_at FROM entities ORDER BY name"
++            ):
++                try:
++                    observations = json.loads(obs_json)
++                except Exception:
++                    observations = []
++                out["entities"].append(
++                    {
++                        "name": name,
++                        "entityType": etype,
++                        "observations": observations,
++                        "created_at": created,
++                    }
++                )
++            for src, dst, rtype, created in self._conn.execute(
++                "SELECT src, dst, relation_type, created_at FROM relations ORDER BY seq"
++            ):
++                out["relations"].append(
++                    {"from": src, "to": dst, "relationType": rtype, "created_at": created}
++                )
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.export_all failed: {err}\n")
++        return out
++
++    def wipe(self) -> bool:
++        """Hard-delete every graph row. Returns True when storage was touched."""
++        if not self.available or self._conn is None:
++            return False
++        try:
++            cur = self._conn.cursor()
++            cur.execute("DELETE FROM relations")
++            cur.execute("DELETE FROM entities")
++            return True
++        except Exception as err:
++            sys.stderr.write(f"[MemorySidecar] graph_store.wipe failed: {err}\n")
++            return False
++
++    def close(self) -> None:
++        if self._conn is not None:
++            try:
++                self._conn.close()
++            except Exception:
++                pass
++            self._conn = None
++            self.available = False
+diff --git a/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py b/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
+index e44470ce..20a2f77c 100644
+--- a/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
++++ b/infrastructure/mcp-control-plane/sidecars/memory/mcp_server.py
+@@ -33,6 +33,67 @@
+ # in-memory episode store. Configurable via MEMORY_EPISODE_TTL_MS (<=0 disables).
+ _EPISODE_TTL_MS = int(os.environ.get("MEMORY_EPISODE_TTL_MS", "0") or 0)
+ 
++# ── bridge-20261028-memory-graph-persistence (#1359) ──────────────────────
++# P0: graph entities/relations were process-global only — every restart reset
++# graph_nodes to 0 (AIQ-057/062/098). This wires a stdlib-SQLite write-through
++# store: hydrate once at boot, persist on every mutation, degrade to the
++# legacy in-memory graph if storage is unavailable (fail-open).
++from graph_store import GraphStore, resolve_db_path  # noqa: E402
++
++# Transient-entity TTL for the knowledge graph (task/topic nodes only; user
++# created durable entities are never expired). <=0 disables (default).
++_GRAPH_TTL_MS = int(os.environ.get("MEMORY_GRAPH_TTL_MS", "0") or 0)
++
++_STORE = GraphStore(resolve_db_path())
++try:
++    _loaded_nodes, _loaded_edges = _STORE.load()
++    if _loaded_nodes:
++        _GRAPH_NODES.update(_loaded_nodes)
++    if _loaded_edges:
++        _GRAPH_EDGES.extend(_loaded_edges)
++    if _loaded_nodes or _loaded_edges:
++        sys.stderr.write(
++            f"[MemorySidecar] graph hydrated from storage: "
++            f"{len(_loaded_nodes)} entities, {len(_loaded_edges)} relations "
++            f"({_STORE.db_path})\n"
++        )
++except Exception as _hydration_err:  # hydration must never kill the sidecar
++    sys.stderr.write(f"[MemorySidecar] graph hydration skipped: {_hydration_err}\n")
++
++
++def _node_ts_ms(node: Dict[str, Any]) -> float:
++    _ts = str(node.get("created_at", ""))
++    try:
++        from datetime import datetime
++
++        return datetime.fromisoformat(_ts.replace("Z", "+00:00")).timestamp() * 1000.0
++    except Exception:
++        return 0.0
++
++
++def _prune_expired_graph(now_ms: Optional[float] = None) -> int:
++    """Drop transient (task/topic) graph entities past MEMORY_GRAPH_TTL_MS.
++
++    Durable entities (any entityType other than task/topic) are never
++    auto-expired — only machine-generated working-set nodes age out.
++    Mirrors the delete path so the persistent store stays in sync.
++    """
++    if _GRAPH_TTL_MS <= 0:
++        return 0
++    cutoff = (now_ms if now_ms is not None else time.time() * 1000.0) - _GRAPH_TTL_MS
++    stale = [
++        n
++        for n, node in _GRAPH_NODES.items()
++        if node.get("entityType") in ("task", "topic") and _node_ts_ms(node) < cutoff
++    ]
++    if not stale:
++        return 0
++    for n in stale:
++        _GRAPH_NODES.pop(n, None)
++    _GRAPH_EDGES[:] = [e for e in _GRAPH_EDGES if e.get("from") not in stale and e.get("to") not in stale]
++    _STORE.delete_entities(stale)
++    return len(stale)
++
+ 
+ def _episode_ts_ms(episode: Dict[str, Any]) -> float:
+     _ts = str(episode.get("created_at", ""))
+@@ -374,6 +435,21 @@ def _qdrant_request(endpoint: str, method: str = "GET", data: Optional[Any] = No
+             "required": ["query"],
+         },
+     },
++    {
++        "name": "export_memory",
++        "description": "Export all stored memory for a user (knowledge-graph entities + relations, episodes, documents, learned facts) as JSON — GDPR data-portability surface (AIQ-062/098).",
++        "inputSchema": {"type": "object", "properties": {}},
++    },
++    {
++        "name": "wipe_memory",
++        "description": "GDPR-compliant hard wipe: deletes graph entities + relations (persistent store included) and, with scope=all, clears episodes, documents and learned facts (AIQ-098).",
++        "inputSchema": {
++            "type": "object",
++            "properties": {
++                "scope": {"type": "string", "enum": ["all", "graph"], "description": "graph = knowledge graph only; all (default) = every memory lane"},
++            },
++        },
++    },
+ ]
+ 
+ 
+@@ -394,6 +470,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+                     "created_at": now,
+                 }
+                 created.append(_GRAPH_NODES[ename])
++                # (#1359) write-through: durable entity row (upsert)
++                _STORE.upsert_entity(ename, _GRAPH_NODES[ename]["entityType"], _GRAPH_NODES[ename]["observations"], now)
+         return {"created": created, "count": len(created)}
+ 
+     elif name == "create_relations":
+@@ -408,6 +486,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+             if rel["from"] and rel["to"]:
+                 _GRAPH_EDGES.append(rel)
+                 created.append(rel)
++                # (#1359) write-through: durable relation row (UNIQUE-deduped)
++                _STORE.insert_relation(rel["from"], rel["to"], rel["relationType"], now)
+         return {"created": created, "count": len(created)}
+ 
+     elif name == "add_observations":
+@@ -418,6 +498,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+             if ename in _GRAPH_NODES:
+                 _GRAPH_NODES[ename].setdefault("observations", []).extend(contents)
+                 updated.append(_GRAPH_NODES[ename])
++                # (#1359) write-through: keep the stored observation list in sync
++                _STORE.update_observations(ename, _GRAPH_NODES[ename].get("observations", []))
+         return {"updated": updated, "count": len(updated)}
+ 
+     elif name == "delete_entities":
+@@ -425,6 +507,8 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+         for n in names:
+             _GRAPH_NODES.pop(n, None)
+         _GRAPH_EDGES = [e for e in _GRAPH_EDGES if e.get("from") not in names and e.get("to") not in names]
++        # (#1359) write-through: cascade removal in the persistent store too
++        _STORE.delete_entities(sorted(names))
+         return {"deleted": list(names)}
+ 
+     elif name == "delete_observations":
+@@ -433,11 +517,15 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+             obs = set(d.get("observations", []))
+             if ename in _GRAPH_NODES:
+                 _GRAPH_NODES[ename]["observations"] = [o for o in _GRAPH_NODES[ename].get("observations", []) if o not in obs]
++                # (#1359) write-through: persist the filtered observation list
++                _STORE.delete_observations(ename, _GRAPH_NODES[ename]["observations"])
+         return {"status": "ok"}
+ 
+     elif name == "delete_relations":
+         to_del = {(r.get("from"), r.get("to"), r.get("relationType")) for r in args.get("relations", [])}
+         _GRAPH_EDGES = [e for e in _GRAPH_EDGES if (e.get("from"), e.get("to"), e.get("relationType")) not in to_del]
++        # (#1359) write-through: exact-tuple removal in the persistent store
++        _STORE.delete_relations(sorted(to_del))
+         return {"status": "ok"}
+ 
+     elif name == "read_graph":
+@@ -516,7 +604,10 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+                 f"result: {str(episode.get('result', ''))[:300]}",
+                 f"at: {now}",
+             ],
++            "created_at": now,
+         }
++        # (#1359) write-through: task entities survive restarts too
++        _STORE.upsert_entity(_task_name, "task", _GRAPH_NODES[_task_name]["observations"], now)
+         _topic_pool = _re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", f"{episode.get('description', '')} {episode.get('result', '')}")
+         _topics: List[str] = []
+         for _raw in _topic_pool:
+@@ -531,8 +622,12 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+                     "name": _t,
+                     "entityType": "topic",
+                     "observations": [f"mentioned by task {tid} at {now}"],
++                    "created_at": now,
+                 }
+-            _GRAPH_EDGES.append({"from": _task_name, "to": _t, "relationType": "mentions"})
++                # (#1359) write-through: topic entities survive restarts too
++                _STORE.upsert_entity(_t, "topic", _GRAPH_NODES[_t]["observations"], now)
++            _GRAPH_EDGES.append({"from": _task_name, "to": _t, "relationType": "mentions", "created_at": now})
++            _STORE.insert_relation(_task_name, _t, "mentions", now)
+ 
+         return {"task_id": tid, "status": "recorded", "graph_nodes_written": 1 + len(_topics)}
+ 
+@@ -556,9 +651,48 @@ def handle_tool(name: str, args: Dict[str, Any]) -> Any:
+ 
+     elif name == "get_session_stats":
+         sid = args.get("session_id", "default")
+-        _prune_expired(now)
++        # Latent-bug fix (#1359): _prune_expired expects epoch-ms; the ISO
++        # string `now` only worked because TTL defaulted to 0 (early return).
++        # Any operator setting MEMORY_EPISODE_TTL_MS>0 hit a TypeError here.
++        _prune_expired()
++        _prune_expired_graph()
+         return {"session_id": sid, "active_episodes": len(_EPISODES), "graph_nodes": len(_GRAPH_NODES)}
+ 
++    elif name == "export_memory":
++        # (#1359, AIQ-062/098) GDPR data portability: one call returns every
++        # stored lane. Graph comes straight from the persistent store when
++        # available (independent of the hydrated cache) so the export is the
++        # honest durable state, not a process-local view.
++        _prune_expired()
++        _prune_expired_graph()
++        if _STORE.available:
++            graph = _STORE.export_all()
++        else:
++            graph = {"entities": list(_GRAPH_NODES.values()), "relations": list(_GRAPH_EDGES)}
++        return {
++            "exported_at": now,
++            "graph": graph,
++            "episodes": list(_EPISODES),
++            "documents": list(_DOCUMENTS),
++            "learned_facts": list(_LEARNED_FACTS),
++        }
++
++    elif name == "wipe_memory":
++        # (#1359, AIQ-098) GDPR hard wipe. Persistent store first (fail-open
++        # inside), then the in-process mirrors — so a wiped graph cannot
++        # resurrect via hydration on the next boot.
++        scope = str(args.get("scope", "all"))
++        _STORE.wipe()
++        _GRAPH_NODES.clear()
++        _GRAPH_EDGES.clear()
++        cleared = {"graph": True}
++        if scope != "graph":
++            _EPISODES.clear()
++            _DOCUMENTS.clear()
++            _LEARNED_FACTS.clear()
++            cleared.update(episodes=True, documents=True, learned_facts=True)
++        return {"status": "wiped", "scope": scope, "cleared": cleared}
++
+     elif name == "clear_session":
+         sid = args.get("session_id", "default")
+         _EPISODES.clear()
+diff --git a/infrastructure/mcp-control-plane/test_memory_graph_persistence.ts b/infrastructure/mcp-control-plane/test_memory_graph_persistence.ts
+new file mode 100644
+index 00000000..53e939cf
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_memory_graph_persistence.ts
+@@ -0,0 +1,168 @@
++/**
++ * #1359 — Memory knowledge-graph persistence across restarts (P0 acceptance).
++ *
++ * বাংলা মন্তব্য: P0 #1359 — মেমরি সাইডকারের নলেজ গ্রাফ আগে শুধু প্রসেস-গ্লোবাল
++ * ছিল; প্রতিটি রিস্টার্টে graph_nodes আবার ০ হয়ে যেত (AIQ-057/062/098)।
++ * এই টেস্ট P0-এর ৩-স্তর ভেরিফিকেশন কনট্র্যাক্টের Smoke স্তর সরাসরি পিন করে:
++ *   সেশন A: entity + relation + episode লেখা → প্রসেস বন্ধ
++ *   সেশন B: নতুন প্রসেস → সব ফিরে পাওয়া যায়, graph_nodes > 0
++ *   সেশন C: wipe_memory-র পরে নতুন বুট → গ্রাফ সত্যিই খালি (GDPR, পুনরুত্থান নেই)
++ * সাথে: TTL প্রুনিং (ট্রান্সিয়েন্ট task/topic নোড মারা যায়, durable থাকে),
++ * fail-open (ভাঙা স্টোর পাথেও সাইডকার বেঁচে থাকে), এবং লেগাসি in-memory আচরণ।
++ *
++ * Hermetic: সব ডেটা tmpdir-এ (MEMORY_GRAPH_DB_PATH) — রিপো ওয়ার্কিং ট্রি
++ * কখনো পলিউট হয় না। python3 না থাকলে সৎ SKIP (sidecar নিজেই Python-only,
++ * লুপের honest-gh স্কিপ-উইথ-এভিডেন্স প্যাটার্ন)।
++ */
++
++import assert from "node:assert/strict";
++import { spawn, spawnSync, type ChildProcess } from "node:child_process";
++import * as fs from "node:fs";
++import * as os from "node:os";
++import * as path from "node:path";
++
++const sidecarDir = path.resolve(process.cwd(), "sidecars", "memory");
++const serverScript = path.join(sidecarDir, "mcp_server.py");
++
++const pyCheck = spawnSync("python3", ["--version"], { encoding: "utf8" });
++if (pyCheck.error || pyCheck.status !== 0) {
++  console.log("SKIP: python3 not found — memory sidecar restart smoke needs the Python runtime");
++  process.exit(0);
++}
++assert.equal(fs.existsSync(serverScript), true, `sidecar entry missing: ${serverScript}`);
++
++type JsonRpcResponse = {
++  id: number;
++  result?: { content?: Array<{ type: string; text: string }>; isError?: boolean };
++  error?: { code: number; message: string };
++};
++
++function startServer(dbPath: string, extraEnv: Record<string, string> = {}): ChildProcess {
++  return spawn("python3", [serverScript], {
++    cwd: sidecarDir,
++    env: { ...process.env, MEMORY_GRAPH_DB_PATH: dbPath, ...extraEnv },
++    stdio: ["pipe", "pipe", "pipe"],
++  });
++}
++
++async function rpc(proc: ChildProcess, id: number, method: string, params: unknown = {}): Promise<JsonRpcResponse> {
++  const line = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
++  await new Promise<void>((resolve, reject) => {
++    if (!proc.stdin) return reject(new Error("stdin closed"));
++    proc.stdin.write(line, (err) => (err ? reject(err) : resolve()));
++  });
++  const raw = await new Promise<string>((resolve, reject) => {
++    const timer = setTimeout(() => reject(new Error(`timeout waiting for response id=${id} (${method})`)), 15000);
++    proc.stdout!.once("data", (chunk: Buffer) => {
++      clearTimeout(timer);
++      resolve(chunk.toString());
++    });
++  });
++  const res = JSON.parse(raw.trim()) as JsonRpcResponse;
++  assert.ok(!res.error, `rpc ${method} failed: ${JSON.stringify(res.error)}`);
++  return res;
++}
++
++function resultJson(res: JsonRpcResponse): any {
++  assert.ok(res.result, "missing result envelope");
++  assert.ok(!res.result!.isError, `tool reported isError: ${res.result!.content?.[0]?.text}`);
++  const text = res.result!.content?.[0]?.text ?? "";
++  return JSON.parse(text);
++}
++
++async function close(proc: ChildProcess): Promise<void> {
++  await new Promise<void>((resolve) => {
++    if (proc.stdin && proc.stdin.writable) proc.stdin.end();
++    proc.once("exit", () => resolve());
++    setTimeout(() => resolve(), 3000); // never hang the suite on a stuck child
++  });
++}
++
++const tmp = mkdtemp();
++function mkdtemp(): string {
++  return fs.mkdtempSync(path.join(os.tmpdir(), "1359-graph-"));
++}
++try {
++  // ── Session A: write entity + relation + episode, then die ──────────────
++  const db = path.join(tmp, "graph.db");
++  const a = startServer(db);
++  const created = resultJson(await rpc(a, 1, "tools/call", {
++    name: "create_entities",
++    arguments: { entities: [{ name: "user:alice", entityType: "person", observations: ["likes chai"] }] },
++  }));
++  assert.equal(created.count, 1, "entity creation count");
++  const related = resultJson(await rpc(a, 2, "tools/call", {
++    name: "create_relations",
++    arguments: { relations: [{ from: "user:alice", to: "user:bob", relationType: "knows" }] },
++  }));
++  assert.equal(related.count, 1, "relation creation count");
++  const task = resultJson(await rpc(a, 3, "tools/call", {
++    name: "record_task",
++    arguments: { task_id: "t-restart", tenant_id: "tenant_test", description: "deployed postgres_indexes", result: "ok" },
++  }));
++  assert.ok(task.graph_nodes_written >= 1, "record_task writes graph nodes");
++  await close(a);
++
++  // ── Session B: RESTART → everything must come back (P0 acceptance) ──────
++  const b = startServer(db);
++  const graphB = resultJson(await rpc(b, 1, "tools/call", { name: "read_graph", arguments: {} }));
++  const names = graphB.entities.map((e: any) => e.name);
++  assert.ok(names.includes("user:alice"), `entity survives restart, got: ${JSON.stringify(names)}`);
++  assert.ok(
++    graphB.relations.some((r: any) => r.from === "user:alice" && r.relationType === "knows" && r.to === "user:bob"),
++    "relation survives restart",
++  );
++  assert.ok(names.some((n: string) => n.endsWith(":task:t-restart")), "task entity survives restart");
++  const statsB = resultJson(await rpc(b, 2, "tools/call", { name: "get_session_stats", arguments: {} }));
++  assert.ok(statsB.graph_nodes > 0, `graph_nodes must be nonzero after restart (acceptance), got ${statsB.graph_nodes}`);
++  const exported = resultJson(await rpc(b, 3, "tools/call", { name: "export_memory", arguments: {} }));
++  assert.ok(exported.graph.entities.some((e: any) => e.name === "user:alice"), "export_memory returns durable entity");
++  assert.ok(Array.isArray(exported.episodes) && exported.episodes.length >= 0, "export carries episodes lane");
++  const wiped = resultJson(await rpc(b, 4, "tools/call", { name: "wipe_memory", arguments: {} }));
++  assert.equal(wiped.status, "wiped", "wipe acknowledges");
++  await close(b);
++
++  // ── Session C: post-wipe boot → graph must stay empty (no resurrection) ─
++  const c = startServer(db);
++  const graphC = resultJson(await rpc(c, 1, "tools/call", { name: "read_graph", arguments: {} }));
++  assert.equal(graphC.entities.length, 0, "wiped graph stays empty across restart");
++  assert.equal(graphC.relations.length, 0, "wiped relations stay empty across restart");
++  const statsC = resultJson(await rpc(c, 2, "tools/call", { name: "get_session_stats", arguments: {} }));
++  assert.equal(statsC.graph_nodes, 0, "post-wipe graph_nodes is 0");
++  await close(c);
++
++  // ── TTL: transient (task/topic) nodes age out, durable nodes survive ────
++  const ttlDb = path.join(tmp, "ttl.db");
++  const t = startServer(ttlDb, { MEMORY_GRAPH_TTL_MS: "400" });
++  resultJson(await rpc(t, 1, "tools/call", {
++    name: "create_entities",
++    arguments: { entities: [{ name: "durable:fact", entityType: "preference", observations: ["permanent"] }] },
++  }));
++  resultJson(await rpc(t, 2, "tools/call", {
++    name: "record_task",
++    arguments: { task_id: "t-ttl", tenant_id: "tenant_test", description: "discussed qdrant_scaling", result: "ok" },
++  }));
++  await new Promise((r) => setTimeout(r, 600)); // past the 400ms TTL
++  const ttlStats = resultJson(await rpc(t, 3, "tools/call", { name: "get_session_stats", arguments: {} }));
++  assert.equal(ttlStats.graph_nodes, 1, "only the durable node survives TTL");
++  const ttlGraph = resultJson(await rpc(t, 4, "tools/call", { name: "read_graph", arguments: {} }));
++  assert.deepEqual(ttlGraph.entities.map((e: any) => e.name), ["durable:fact"], "durable node survives TTL");
++  await close(t);
++
++  // ── Fail-open: broken store path must NOT kill the sidecar ──────────────
++  const brokenDb = path.join(tmp, "no-such-dir", "sub", "x.db");
++  fs.writeFileSync(path.join(tmp, "not-a-dir"), "occupied"); // force makedirs failure
++  const broken = startServer(path.join(tmp, "not-a-dir", "inner.db"));
++  const bGraph = resultJson(await rpc(broken, 1, "tools/call", {
++    name: "create_entities",
++    arguments: { entities: [{ name: "mem-only", entityType: "concept", observations: [] }] },
++  }));
++  assert.equal(bGraph.count, 1, "fail-open: entity still created in memory");
++  const bRead = resultJson(await rpc(broken, 2, "tools/call", { name: "read_graph", arguments: {} }));
++  assert.equal(bRead.entities.length, 1, "fail-open: in-memory graph serves reads");
++  await close(broken);
++
++  console.log("✅ test_memory_graph_persistence: #1359 restart + wipe + TTL + fail-open — all assertions passed");
++} finally {
++  fs.rmSync(tmp, { recursive: true, force: true });
++}

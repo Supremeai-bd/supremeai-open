@@ -1,0 +1,12 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 64f8c5dd..345ac5b0 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -205,6 +205,7 @@ def sync_satellite(
+             cwd=str(tmp_repo),
+             capture_output=True,
+             text=True,
++            check=False,
+         )
+         if res.returncode != 0:
+             if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:

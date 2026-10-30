@@ -1,0 +1,27 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 706f02b0..058fdc6d 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -24,7 +24,8 @@
+ #   for USER-token merges is preserved via pull_request:[closed].
+ #
+ # Trigger channels (one dispatcher, deterministic — never add a second one):
+-#   - workflow_run (CI — Open Unified Pipeline, success)  -> evaluate + land + dispatch
++#   - workflow_run (CI — Open Unified Pipeline, success on pull_request)
++#     -> evaluate + land + dispatch (skips on push to main to prevent runner churn)
+ #   - workflow_dispatch(pr_number)                        -> evaluate + land + dispatch
+ #     (also the reconciliation channel: an ALREADY-merged PR is dispatched
+ #      without re-merging — "bridge orders exist only for landed patches")
+@@ -81,7 +82,11 @@ permissions:
+ jobs:
+   auto_merge:
+     name: "🛬 Autonomous Auto-Landing"
+-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
++    if: |
++      github.event_name == 'workflow_dispatch' ||
++      (github.event_name == 'workflow_run' &&
++       github.event.workflow_run.conclusion == 'success' &&
++       github.event.workflow_run.event == 'pull_request')
+     runs-on: ubuntu-latest
+     timeout-minutes: 15
+     # AGENT_RULES.md §12: one merge lock. Serialize landings; never cancel a

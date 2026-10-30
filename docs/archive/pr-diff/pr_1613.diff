@@ -1,0 +1,135 @@
+diff --git a/gateway/tests/test_admin_auth.py b/gateway/tests/test_admin_auth.py
+index b6dd6935..5d6ce898 100644
+--- a/gateway/tests/test_admin_auth.py
++++ b/gateway/tests/test_admin_auth.py
+@@ -26,8 +26,10 @@
+     None,
+ )
+ if _GATEWAY_DIR is not None:
+-    if str(_GATEWAY_DIR) not in sys.path:
+-        sys.path.insert(0, str(_GATEWAY_DIR))
++    # Repo root ONLY (tests/conftest.py also does this). Never insert the
++    # gateway/ package dir itself: it forks gateway.service.* into duplicate
++    # module objects (split-brain singletons — drift class F-K, order-dependent
++    # suite failures). The laddered imports below fall back to gateway.* forms.
+     if str(_GATEWAY_DIR.parent) not in sys.path:
+         sys.path.insert(0, str(_GATEWAY_DIR.parent))
+ 
+diff --git a/gateway/tests/test_branding.py b/gateway/tests/test_branding.py
+index 1007db8c..58155cd5 100644
+--- a/gateway/tests/test_branding.py
++++ b/gateway/tests/test_branding.py
+@@ -3,8 +3,14 @@
+ import os
+ import sys
+ 
+-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+-branding = importlib.import_module("service.branding")
++# Repo root on sys.path, canonical module identity (drift class F-K: importing
++# the bare service.* form forks a second module object and splits singletons).
++sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
++try:
++    branding = importlib.import_module("gateway.service.branding")
++except ImportError:  # satellite layout: repo root IS the gateway package dir
++    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
++    branding = importlib.import_module("service.branding")
+ 
+ 
+ def test_webhook_gemini_is_turbo():
+diff --git a/gateway/tests/test_chat_architecture.py b/gateway/tests/test_chat_architecture.py
+index 70d1823e..d77a5887 100644
+--- a/gateway/tests/test_chat_architecture.py
++++ b/gateway/tests/test_chat_architecture.py
+@@ -35,7 +35,9 @@ def test_system_anchor_contains_constitution_and_anti_hallucination(self):
+         assert "NOT a generic model from Google, Meta, OpenAI" in anchor
+         assert "DO NOT GUESS or fabricate answers" in anchor
+         assert "Cold-Start Safety" in anchor
+-        assert "Federation Architecture: 12 Product Satellites" in anchor
++        # Landed grounding-sheet vocabulary (context_compiler.PLATFORM_GROUNDING_SHEET):
++        # satellite count is deliberately not hardcoded — "Active Product Satellites".
++        assert "Federation Architecture: Active Product Satellites + 1 Control Plane (MCP Tower)" in anchor
+         assert "Zero-Admin" in anchor
+ 
+     def test_sampling_knobs_logic_vs_chat(self):
+@@ -223,7 +225,9 @@ async def mock_forward_stealth_webhook(url, secret, body, timeout=15.0):
+         assert len(forwarded_messages) >= 2
+         assert forwarded_messages[0]["role"] == "system"
+         assert "You are SupremeAI" in forwarded_messages[0]["content"]
+-        assert "Platform Grounding Sheet" in forwarded_messages[0]["content"] or "12 Product Satellites" in forwarded_messages[0]["content"]
++        # The compiled anchor must carry the landed grounding sheet (its federation line),
++        # not the pre-landing "Platform Grounding Sheet"/"12 Product Satellites" vocabulary.
++        assert "Federation Architecture: Active Product Satellites" in forwarded_messages[0]["content"]
+ 
+         # 2. Verification of Response Guard:
+         # The response returned to the client must have identity bleed purged and markdown repaired
+diff --git a/gateway/tests/test_correlation_id.py b/gateway/tests/test_correlation_id.py
+index c41895a5..147f3e11 100644
+--- a/gateway/tests/test_correlation_id.py
++++ b/gateway/tests/test_correlation_id.py
+@@ -13,7 +13,10 @@
+     ),
+     Path(__file__).resolve().parent.parent,
+ )
+-for p in (str(_GATEWAY_DIR), str(_GATEWAY_DIR.parent)):
++for p in (str(_GATEWAY_DIR.parent),):
++    # Repo root ONLY. Never put the gateway/ package dir itself on sys.path:
++    # it forks gateway.service.* into duplicate module objects (split-brain
++    # singletons — drift class F-K, order-dependent suite failures).
+     if p not in sys.path:
+         sys.path.insert(0, p)
+ 
+diff --git a/gateway/tests/test_passkey_auth.py b/gateway/tests/test_passkey_auth.py
+index 6e3e62ae..dabf9613 100644
+--- a/gateway/tests/test_passkey_auth.py
++++ b/gateway/tests/test_passkey_auth.py
+@@ -4,6 +4,7 @@
+ import base64
+ import json
+ import unittest
++import uuid
+ from unittest.mock import patch
+ 
+ from cryptography.hazmat.primitives import hashes
+@@ -52,7 +53,14 @@ def test_passkey_login_options(self):
+         self.assertEqual(data["userVerification"], "required")
+ 
+     def test_passkey_device_storage_lifecycle(self):
+-        cred_id = "cred-mock-test-" + base64.urlsafe_b64encode(b"random-key").decode().rstrip("=")
++        # Hermetic credential id: the shared /tmp gateway_state.db outlives the pytest
++        # process, and save_user_passkey's upsert does not reset `revoked` — a constant
++        # id revoked by the previous run stayed revoked=1 and step 2's `revoked = 0`
++        # lookup returned None (cross-run pollution, class F-K). Unique id per run.
++        run_nonce = uuid.uuid4().hex[:12]
++        cred_id = "cred-mock-test-" + base64.urlsafe_b64encode(
++            f"random-key-{run_nonce}".encode()
++        ).decode().rstrip("=")
+         user_id = "usr-tester-99"
+ 
+         # 1. Save
+diff --git a/gateway/tests/test_stealth_dns_guards.py b/gateway/tests/test_stealth_dns_guards.py
+index 82cffc37..a49a4e58 100644
+--- a/gateway/tests/test_stealth_dns_guards.py
++++ b/gateway/tests/test_stealth_dns_guards.py
+@@ -46,10 +46,19 @@ def check(name: str, cond: bool, evidence: str = "") -> None:
+     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" — {evidence}" if evidence and not cond else ""))
+ 
+ 
+-# ── Import target modules (satellite layout) ────────────────────────────────
++# ── Import target modules (dual layout, canonical-first) ──────────────────────
++# Identity rule (drift class F-K, 2026-10-28): always bind the CANONICAL
++# gateway.service.* module when it exists. Bare service.* imports create a SECOND
++# module object (split-brain singletons: telemetry collector, adapters state) the
++# moment any file puts the gateway/ dir on sys.path — order-dependent suite reds.
++# Satellite repos (no gateway/ package) fall back to the bare layout.
+ os.environ["STEALTH_WEBHOOK_URL"] = "https://dead-host.invalid/v1/chat/completions"
+-from service.providers import adapters as ad  # noqa: E402
+-import service.app as appmod  # noqa: E402
++try:
++    from gateway.service.providers import adapters as ad  # noqa: E402
++    from gateway.service import app as appmod  # noqa: E402
++except ImportError:  # satellite layout: repo root IS the gateway package dir
++    from service.providers import adapters as ad  # noqa: E402
++    import service.app as appmod  # noqa: E402
+ 
+ 
+ # ── G1..G4 normalize_stealth_url ────────────────────────────────────────────

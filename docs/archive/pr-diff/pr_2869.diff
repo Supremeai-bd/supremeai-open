@@ -1,0 +1,310 @@
+diff --git a/docs/reports/BRIDGE_SPLITBRAIN_ROOT_DUP_GUARD_2026-10-30.md b/docs/reports/BRIDGE_SPLITBRAIN_ROOT_DUP_GUARD_2026-10-30.md
+new file mode 100644
+index 00000000..f96b0ca3
+--- /dev/null
++++ b/docs/reports/BRIDGE_SPLITBRAIN_ROOT_DUP_GUARD_2026-10-30.md
+@@ -0,0 +1,68 @@
++# Bridge Split-Brain Root-Duplicate Guard (2026-10-30)
++
++**Part of #1676** — implements the requested *bridge post-check that fails when a
++dispatched path creates a duplicate of an existing root file*. The satellite
++cleanup halves (delete the 15 stale nested `studio/` copies + any unintended
++`infrastructure/` residue in `Supremeai-bd/supremeai-studio`) are **not** done
++here; see "Remaining work" below.
++
++## Root cause (verified in `scripts/bridge/bridge_intake.py`)
++
++`route_files()` routes `studio/<rest>` to the `Supremeai-bd/supremeai-studio`
++satellite but keeps the namespace prefix (`canon = f`). Satellite mirrors carry
++the monorepo namespace dir *content* at their root, so a dispatched
++`studio/package.json` lands at `studio/package.json` **next to** the canonical
++root `package.json` — a stale nested duplicate. Fifteen such copies accumulated
++in the studio satellite (7 diverged → split-brain, per the #1676 audit). The
++same shape applies to every prefix-routed satellite target.
++
++## Guard semantics (fail-closed, evidence-based)
++
++New in `bridge_intake.py`:
++
++- `deletion_paths(diff)` — parses `deleted file mode` entries from the order
++  diff (b/-side path set).
++- `split_brain_duplicates(target_repo, target_dir, mapped)` — for **satellite**
++  targets only (monorepo `PRIVATE_REPO` exempt: `studio/` is a legitimate
++  workspace namespace there), flags every dispatched add/modify path
++  `<ns>/<rest>` whose root twin `<rest>` **actually exists as a file** in the
++  freshly cloned target main tree. Deletions are exempt: removing the stale
++  copy is exactly the desired cleanup.
++- Wiring: computed after `clone()` and before branch checkout / `git apply`;
++  any hit → `reject("split-brain guard (#1676): …")` with the offending paths
++  and the two sanctioned remedies (write the root path, or submit a deletion
++  order for the stale copy).
++
++The twin check strips exactly one namespace segment (`studio/x/y` ↔ `x/y`),
++matching the observed mirror layout (satellite root mirrors monorepo
++`studio/` content).
++
++## Evidence
++
++- `tests/test_bridge_splitbrain_guard.py` — 13 offline tests: 2 wiring pins,
++  monorepo exemption, root-twin flag, no-twin pass, deletion exemption,
++  root-level exemption, directory-twin non-file, mixed-order selection,
++  `deletion_paths` detect/ignore/multi/empty, live monorepo namespace sanity.
++- Full battery this branch: 13/13 new tests; `-k "intake or bridge"` 62 passed,
++  3 skipped, 0 new failures; `continuous_agent_loop.py --verify-only` 8/8 PASS;
++  `deploy_preflight_guard.py --self-test` PASS.
++
++## Remaining work on #1676 (satellite state, admin/follow-up lane)
++
++1. Delete the 15 stale nested `studio/` copies in `Supremeai-bd/supremeai-studio`.
++2. Remove unintended `infrastructure/` nested residue there (verify intent of
++   `infrastructure/cloudflare-studio-proxy` before removal).
++
++A bridge deletion order can do both now that the guard exempts deletions, but
++each deletion diff must byte-match the satellite preimage (fail-closed apply),
++so it needs its own verification pass — deliberately not rushed into this order.
++
++## Honest limitations
++
++- The guard checks the **target clone's main tree** at intake time; a root twin
++  created *after* intake but before merge is outside its view (same TOCTOU
++  class as every intake gate; the apply is still fail-closed on conflict).
++- Repos whose satellites do NOT mirror stripped content would false-positive;
++  all current `BRIDGE_TARGET_REPOS` follow the root-mirror layout, and the
++  check is evidence-based (twin must actually exist), so only true collisions
++  fire.
+diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+index 78f5dbb5..6d659007 100644
+--- a/scripts/bridge/bridge_intake.py
++++ b/scripts/bridge/bridge_intake.py
+@@ -285,6 +285,56 @@ def scan_secrets(diff_text: str) -> list[str]:
+     return [family for family, rx in SECRET_PATTERNS if rx.search(diff_text)]
+ 
+ 
++def deletion_paths(diff_text: str) -> set[str]:
++    """Diff থেকে সম্পূর্ণভাবে মোছা ফাইলের সেট (b/-side path)।
++
++    বাংলা: `diff --git a/X b/X` হেডারের পরে `deleted file mode` লাইন থাকলে X
++    মুছে যাচ্ছে — split-brain guard (#1676) কেবল add/modify-তে আটকাবে, স্টেল
++    কপির deletion-কে (cleanup lane) চলতে দেবে।
++    """
++    deleted: set[str] = set()
++    cur: str | None = None
++    for ln in (diff_text or "").splitlines():
++        m = re.match(r"^diff --git a/(.+?) b/(.+?)$", ln)
++        if m:
++            cur = m.group(2)
++            continue
++        if cur and ln.startswith("deleted file mode "):
++            deleted.add(cur)
++            cur = None
++    return deleted
++
++
++def split_brain_duplicates(
++    target_repo: str, target_dir: Path | str, mapped: list[tuple[str, bool]]
++) -> list[str]:
++    """#1676 split-brain guard: dispatch যে path-গুলো target-এর root ফাইলের
++    duplicate তৈরি করবে সেগুলোর তালিকা।
++
++    বাংলা: স্যাটেলাইট মিরর মনোরিপো namespace dir-এর *content* root-এ রাখে
++    (যেমন supremeai-studio-র root == মনোরিপোর studio/ content)। তাই
++    `<ns>/<rest>` dispatch করলে root-এর `<rest>`-এর পাশে একটি স্টেল nested
++    কপি জন্ম নেয় — #1676-র 15টি studio/ কপি এই রুটিং দোষেই জমেছিল। Monorepo
++    (PRIVATE_REPO) বাদ — সেখানে studio/ বৈধ workspace namespace। Deletion
++    (cleanup) বাদ — স্টেল কপি মোছার অর্ডারই তো কাঙ্ক্ষিত। Fail-closed: root
++    twin আসলেই থাকলে (clone থেকে প্রমাণিত) কেবল তখনই reject।
++    """
++    if target_repo == PRIVATE_REPO:
++        return []
++    base = Path(target_dir)
++    dupes: list[str] = []
++    for canon, is_deletion in mapped:
++        if is_deletion:
++            continue
++        parts = (canon or "").replace("\\", "/").lstrip("/").split("/")
++        if len(parts) < 2 or not parts[1]:
++            continue  # root-level path — namespace নেই, duplicate হওয়া অসম্ভব
++        twin = "/".join(parts[1:])
++        if (base / twin).is_file():
++            dupes.append(canon)
++    return dupes
++
++
+ def sanitize_public_comment(text: str, token: str) -> str:
+     """Defense-in-depth: token string + যেকোনো secret-pattern REDACT করা।"""
+     if token:
+@@ -778,11 +828,24 @@ def reject(reason: str, label: str = LABEL_REJECTED) -> None:
+     if target_repo is None:
+         reject("order spans multiple target repos — one order per target (bridge v2 routing rule)")
+         return
++    deleted = deletion_paths(diff)
++    mapped = [(path_map.get(f, f), f in deleted) for f in files]
+     diff_routed = rewrite_patch_paths(diff, path_map)
+     private_dir = str(work / f"priv-{num}")
+     clone(target_repo, token, Path(private_dir))
+     run(["git", "config", "user.name", "supremeai-bridge"], cwd=private_dir)
+     run(["git", "config", "user.email", "bridge@supremeai.local"], cwd=private_dir)
++    # #1676 split-brain guard — satellite root-mirror duplicate detection (fail-closed,
++    # root twin proven from the freshly cloned target main, deletions exempt).
++    dupes = split_brain_duplicates(target_repo, Path(private_dir), mapped)
++    if dupes:
++        shown = ", ".join(dupes[:8]) + (" …" if len(dupes) > 8 else "")
++        reject(
++            "split-brain guard (#1676): dispatched path(s) would duplicate existing root "
++            + f"file(s) in {target_repo}: {shown} — write the root path instead, or submit "
++            + "a deletion order for the stale copy and resubmit"
++        )
++        return
+     land_branch = f"bridge-land/{task_id}"
+     # E4: আগের রান push করেছে কিন্তু intake issue (dedup marker) তৈরি হওয়ার আগেই
+     # মৃত্যু/রদ হয়েছে (concurrency cancel, timeout, API ৫xx) — সেই orphan
+diff --git a/tests/test_bridge_splitbrain_guard.py b/tests/test_bridge_splitbrain_guard.py
+new file mode 100644
+index 00000000..b67a3f30
+--- /dev/null
++++ b/tests/test_bridge_splitbrain_guard.py
+@@ -0,0 +1,144 @@
++"""Offline tests for the #1676 split-brain root-duplicate guard.
++
++বাংলা: স্যাটেলাইট মিরর root-এ namespace-content রাখে; `<ns>/<rest>` dispatch
++root `<rest>`-এর স্টেল কপি বানায়। Guard কেবল প্রমাণিত root-twin হলে (clone থেকে)
++add/modify আটকায়; monorepo ও deletion বাদ। সব টেস্ট offline (tmp ফিক্সচার)।
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++import pytest
++
++from scripts.bridge.bridge_intake import (
++    PRIVATE_REPO,
++    deletion_paths,
++    split_brain_duplicates,
++)
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++INTAKE_PATH = REPO_ROOT / "scripts" / "bridge" / "bridge_intake.py"
++
++STUDIO = "Supremeai-bd/supremeai-studio"
++
++
++# ---------------------------------------------------------------------------
++# Wiring pins — the guard must sit between clone and git apply, fail-closed.
++# ---------------------------------------------------------------------------
++
++
++def test_wiring_guard_call_present_in_process_issue() -> None:
++    src = INTAKE_PATH.read_text(encoding="utf-8")
++    assert "dupes = split_brain_duplicates(target_repo, Path(private_dir), mapped)" in src
++    assert "split-brain guard (#1676)" in src
++    # ordering: guard call must precede the land_branch checkout (apply happens after)
++    guard_at = src.index("dupes = split_brain_duplicates(")
++    land_at = src.index('land_branch = f"bridge-land/')
++    assert guard_at < land_at, "guard must run before branch checkout/apply"
++
++
++def test_wiring_deletion_paths_computed_before_guard() -> None:
++    src = INTAKE_PATH.read_text(encoding="utf-8")
++    assert "deleted = deletion_paths(diff)" in src
++    assert "mapped = [(path_map.get(f, f), f in deleted) for f in files]" in src
++
++
++# ---------------------------------------------------------------------------
++# split_brain_duplicates — core semantics
++# ---------------------------------------------------------------------------
++
++
++def test_monorepo_target_is_exempt() -> None:
++    tmp = Path(".")  # not consulted for monorepo
++    assert split_brain_duplicates(PRIVATE_REPO, tmp, [("studio/package.json", False)]) == []
++
++
++def test_satellite_root_twin_exists_is_flagged(tmp_path: Path) -> None:
++    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
++    got = split_brain_duplicates(STUDIO, tmp_path, [("studio/package.json", False)])
++    assert got == ["studio/package.json"]
++
++
++def test_satellite_no_root_twin_passes(tmp_path: Path) -> None:
++    (tmp_path / "other.json").write_text("{}\n", encoding="utf-8")
++    assert split_brain_duplicates(STUDIO, tmp_path, [("studio/package.json", False)]) == []
++
++
++def test_deletion_is_exempt_even_with_root_twin(tmp_path: Path) -> None:
++    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
++    got = split_brain_duplicates(STUDIO, tmp_path, [("studio/package.json", True)])
++    assert got == []
++
++
++def test_root_level_path_is_exempt(tmp_path: Path) -> None:
++    (tmp_path / "package.json").write_text("{}\n", encoding="utf-8")
++    assert split_brain_duplicates(STUDIO, tmp_path, [("package.json", False)]) == []
++
++
++def test_twin_is_directory_not_file_not_flagged(tmp_path: Path) -> None:
++    (tmp_path / "src").mkdir()
++    assert split_brain_duplicates(STUDIO, tmp_path, [("studio/src/keep.ts", False)]) == []
++
++
++def test_multiple_mixed_orders_report_only_real_duplicates(tmp_path: Path) -> None:
++    svc = tmp_path / "src" / "services"
++    svc.mkdir(parents=True)
++    (svc / "apiClient.ts").write_text("export {}\n", encoding="utf-8")
++    mapped = [
++        ("studio/src/services/apiClient.ts", False),  # twin src/services/... exists -> flag
++        ("studio/src/utils/api.ts", False),           # no twin -> pass
++        ("studio/package.json", True),                # deletion -> exempt
++        ("README.md", False),                          # root-level -> exempt
++    ]
++    got = split_brain_duplicates(STUDIO, tmp_path, mapped)
++    assert got == ["studio/src/services/apiClient.ts"]
++
++
++# ---------------------------------------------------------------------------
++# deletion_paths — diff parser feeding the exemption
++# ---------------------------------------------------------------------------
++
++
++def test_deletion_paths_detects_deleted_file() -> None:
++    diff = (
++        "diff --git a/studio/package.json b/studio/package.json\n"
++        "deleted file mode 100644\n"
++        "--- a/studio/package.json\n"
++        "+++ /dev/null\n"
++    )
++    assert deletion_paths(diff) == {"studio/package.json"}
++
++
++def test_deletion_paths_ignores_modify_and_add() -> None:
++    diff = (
++        "diff --git a/studio/package.json b/studio/package.json\n"
++        "index 1111111..2222222 100644\n"
++        "--- a/studio/package.json\n"
++        "+++ b/studio/package.json\n"
++        "diff --git a/new.txt b/new.txt\n"
++        "new file mode 100644\n"
++    )
++    assert deletion_paths(diff) == set()
++
++
++def test_deletion_paths_empty_and_multi() -> None:
++    assert deletion_paths("") == set()
++    diff = (
++        "diff --git a/a/x b/a/x\ndeleted file mode 100644\n"
++        "diff --git a/b/y b/b/y\ndeleted file mode 100755\n"
++    )
++    assert deletion_paths(diff) == {"a/x", "b/y"}
++
++
++# ---------------------------------------------------------------------------
++# Live tree sanity: the guard must not classify the monorepo's own studio/
++# workspace as a duplicate target (guard is satellite-only by PRIVATE_REPO skip).
++# ---------------------------------------------------------------------------
++
++
++def test_live_monorepo_studio_namespace_is_legit_workspace() -> None:
++    assert (REPO_ROOT / "studio" / "package.json").is_file()
++    # monorepo keeps studio/ as a workspace namespace; guard exempts PRIVATE_REPO entirely
++    assert split_brain_duplicates(PRIVATE_REPO, REPO_ROOT, [("studio/package.json", False)]) == []

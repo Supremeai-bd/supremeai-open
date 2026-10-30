@@ -1,0 +1,1214 @@
+diff --git a/docs/CROSS_PLATFORM_GUARD_PIPELINE_APPENDIX.md b/docs/CROSS_PLATFORM_GUARD_PIPELINE_APPENDIX.md
+new file mode 100644
+index 00000000..4c8dbf0c
+--- /dev/null
++++ b/docs/CROSS_PLATFORM_GUARD_PIPELINE_APPENDIX.md
+@@ -0,0 +1,78 @@
++# S14 — Cross-Platform Invariant Guard: Pipeline Wiring Appendix (issue #515)
++
++Status: OPERATOR-APPLIED INTEGRATION (protected-path appendix; the agent
++lane never edits .github/ — CI_GUARDS r1 A-E precedent).
++
++This appendix ships the exact integration for
++`scripts/ci/cross_platform_invariant_guard.py` (landed as a new file) so
++the 6 cross-platform invariants become a mandatory pre-merge gate in the
++PR fast-metadata stage of `pipeline.yml`, alongside
++`boundary_sanitization_guard.py`.
++
++## 1. Why an appendix
++
++`.github/` is on the bridge protected-path list
++(`protectedPathsToAdminReview`). Attempts to hunk-edit it from the
++agent lane are rejected fail-closed. The guard module itself is a
++pure-new file and lands through the normal bridge; only this wiring
++needs the operator seat.
++
++## 2. pipeline.yml hunk (PR fast-metadata stage)
++
++Insert one step directly after the existing boundary-sanitization step
++(anchor on the `boundary_sanitization_guard.py` invocation):
++
++```yaml
++      - name: Cross-platform invariant guard (issue 515)
++        id: cross_platform_guard
++        shell: bash
++        run: |
++          CHANGED=$(git diff --name-only --diff-filter=ACM origin/main...HEAD \
++            -- '*.py' '*.sh' '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.md')
++          if [ -z "$CHANGED" ]; then
++            echo "CROSS-PLATFORM GUARD: no changed source files, clean"
++            exit 0
++          fi
++          python3 scripts/ci/cross_platform_invariant_guard.py --files $CHANGED
++```
++
++Behavior contract (already machine-enforced by the module):
++
++- Exit 0 = clean; Exit 2 = violation (CI must fail the PR — fail-closed);
++  Exit 3 = malformed input (fail-closed).
++- Unparseable Python is itself a PARSE-FAIL-CLOSED violation inside exit 2.
++- Scan completes in well under 2 seconds for a typical PR diff
++  (pure stdlib `ast`, no subprocess, no network).
++
++## 3. Optional pre-commit hook (developer seat)
++
++Drop-in for `.githooks/pre-commit` (repo already ships .githooks per
++the stale-base guard line):
++
++```bash
++# cross-platform invariant pre-flight (issue 515)
++CHANGED=$(git diff --cached --name-only --diff-filter=ACM \
++  -- '*.py' '*.sh' '*.ts' '*.tsx' '*.js' '*.mjs' '*.cjs' '*.md')
++if [ -n "$CHANGED" ]; then
++  python3 scripts/ci/cross_platform_invariant_guard.py --files $CHANGED || exit 1
++fi
++```
++
++## 4. Retrofitting existing scripts (acceptance criterion 3)
++
++The auto-fixer retrofits R1 (encoding='utf-8'), R2 (timeout=30) and R3
++(CRLF to LF) with per-file ast round-trip validation; R4/R5/R6 need
++semantic decisions and are reported, never auto-fixed:
++
++```bash
++python3 scripts/ci/cross_platform_invariant_guard.py --fix --files scripts/**/*.py
++```
++
++Run it once per directory batch, review the diff, and commit. The fixer
++is idempotent and skips anything that cannot re-parse.
++
++## 5. Rollback
++
++Remove the single pipeline step from section 2 (and the optional hook
++block from section 3). The guard module file itself is inert when not
++invoked and can be deleted independently.
+diff --git a/scripts/ci/cross_platform_invariant_guard.py b/scripts/ci/cross_platform_invariant_guard.py
+new file mode 100644
+index 00000000..662c799b
+--- /dev/null
++++ b/scripts/ci/cross_platform_invariant_guard.py
+@@ -0,0 +1,763 @@
++#!/usr/bin/env python3
++"""S14 — Cross-Platform Invariant Guard (issue #515).
++
++Machine-enforces the 6 Cross-Platform Silent Landmines as fail-closed
++pre-merge gates. Linux CI masks locale/encoding bugs because its system
++locale defaults to UTF-8; these guards make the whole class of defects
++impossible to land (Windows cp1252 crashes, hanging CI jobs, CRLF
++breakage, POSIX path parity, missing CLI dependencies, silent exceptions).
++
++Deterministic rules (AST where possible, bytes where required):
++
++  R1  MANDATORY UTF-8 ENCODING — the open family (open / io.open /
++      codecs.open) and pathlib text methods (.read_text / .write_text)
++      MUST pass an explicit encoding='utf-8' (utf-8 family accepted);
++      binary mode is exempt. Subprocess calls with text=True or
++      universal_newlines=True MUST pass encoding='utf-8'.
++  R2  MANDATORY SUBPROCESS TIMEOUT — subprocess.run/call/check_output/
++      check_call MUST pass timeout=<seconds> (timeout=None is a
++      violation). Popen chains must timeout their .communicate()/.wait().
++  R3  LF LINE-ENDING & CRLF PURGE — bytes-level scan: .py/.sh/.ts/.md
++      (+ .tsx/.js/.mjs/.cjs) files must not contain CRLF.
++  R4  PATHLIB & POSIX COMPATIBILITY — no hardcoded path-separator string
++      concatenation ('dir/' + name, backslash joins), no '/'.join, no
++      .split('/'), no mixed-separator literals. pathlib.Path or
++      os.path.join() required. URL-scheme operands are exempt.
++  R5  CLI PRESENCE & GRACEFUL 127 — subprocess calls naming an external
++      tool (gh, git, docker, ...) require a shutil.which('<tool>')
++      check in the same module OR a FileNotFoundError handler wrapping
++      the call.
++  R6  BARE EXCEPTION & SILENT SWALLOW — except handlers whose body is
++      only pass / Ellipsis are rejected; errors must be logged, returned,
++      or re-raised honestly.
++
++Exit codes: 0 = clean; 2 = violation (fail-closed — CI must reject);
++3 = malformed input (unparseable Python is itself reported as a
++fail-closed PARSE-FAIL-CLOSED violation inside exit 2).
++
++Auto-fixer (--fix, dev tool): retrofits R1 with encoding='utf-8', R2
++with timeout=<DEFAULT_TIMEOUT>, R3 by rewriting CRLF to LF. Every
++rewritten .py is re-validated with ast.parse before it is accepted;
++R4/R5/R6 need semantic decisions and are never auto-fixed.
++
++Known V1 limitations (documented, deterministic): dynamic (non-literal)
++mode/encoding arguments are treated as text-mode by R1; .open() called
++as an attribute on arbitrary receivers is out of scope (use read_text
++or module-level open); URL building without a visible scheme literal in
++the same expression is still flagged by R4.
++
++Pure stdlib. Run: python3 scripts/ci/cross_platform_invariant_guard.py --self-test
++"""
++from __future__ import annotations
++
++import argparse
++import ast
++import json
++import sys
++from dataclasses import dataclass
++from typing import Final, Iterable, Mapping, Sequence
++
++EXIT_CLEAN: Final = 0
++EXIT_VIOLATION: Final = 2
++EXIT_MALFORMED: Final = 3
++
++DEFAULT_TIMEOUT: Final = 30          # seconds; auto-fixer retrofit value
++UTF8_FAMILY: Final = frozenset({
++    "utf-8", "utf8", "utf_8", "u8", "utf", "utf-8//",
++})
++CRLF_SUFFIXES: Final = frozenset({
++    ".py", ".sh", ".ts", ".md", ".tsx", ".js", ".mjs", ".cjs",
++})
++SUBPROCESS_FUNCS: Final = frozenset({
++    "run", "call", "check_output", "check_call", "Popen",
++})
++TIMEOUT_REQUIRED_FUNCS: Final = frozenset({
++    "run", "call", "check_output", "check_call",
++})
++EXTERNAL_TOOLS: Final = frozenset({
++    "gh", "git", "docker", "curl", "jq", "node", "npm", "npx", "bun",
++    "pip", "python3", "python", "shellcheck", "gitleaks", "tar",
++    "rsync", "ssh", "gcloud", "aws", "kubectl", "make",
++})
++SEPARATOR_CHARS: Final = ("/", "\\")
++
++
++@dataclass(frozen=True)
++class Violation:
++    path: str
++    line: int
++    rule: str
++    message: str
++
++    def format(self) -> str:
++        return f"[FAIL] {self.path}:{self.line} - {self.rule}: {self.message}"
++
++
++@dataclass(frozen=True)
++class SourceRecord:
++    path: str
++    content: str
++
++
++def _is_utf8_literal(value: str) -> bool:
++    return value.strip().lower() in UTF8_FAMILY
++
++
++def _kwarg(node: ast.Call, name: str) -> ast.keyword | None:
++    for kw in node.keywords:
++        if kw.arg == name:
++            return kw
++    return None
++
++
++def _const_str(node: ast.expr) -> str | None:
++    if isinstance(node, ast.Constant) and isinstance(node.value, str):
++        return node.value
++    return None
++
++
++def _open_family(call: ast.Call) -> str | None:
++    """Return canonical name when the call is open/io.open/codecs.open."""
++    func = call.func
++    if isinstance(func, ast.Name) and func.id == "open":
++        return "open"
++    if (isinstance(func, ast.Attribute) and func.attr == "open"
++            and isinstance(func.value, ast.Name)
++            and func.value.id in ("io", "codecs")):
++        return f"{func.value.id}.open"
++    return None
++
++
++def _explicit_encoding(call: ast.Call) -> str | None:
++    """Extract an explicit encoding from kwargs or codecs positional slot 2."""
++    kw = _kwarg(call, "encoding")
++    if kw is not None:
++        return _const_str(kw.value)
++    if call.func and isinstance(call.func, ast.Attribute) \
++            and isinstance(call.func.value, ast.Name) \
++            and call.func.value.id == "codecs" and len(call.args) >= 3:
++        return _const_str(call.args[2])
++    return None
++
++
++def _mode_is_binary(call: ast.Call) -> bool:
++    mode_kw = _kwarg(call, "mode")
++    if mode_kw is not None:
++        val = _const_str(mode_kw.value)
++        return val is not None and "b" in val.lower()
++    if len(call.args) >= 2:
++        val = _const_str(call.args[1])
++        return val is not None and "b" in val.lower()
++    return False
++
++
++def _check_encoding_call(call: ast.Call, path: str, violations: list[Violation]) -> None:
++    """R1 for the open family and pathlib .read_text/.write_text."""
++    func = call.func
++    family = _open_family(call)
++    if family is not None:
++        if _mode_is_binary(call):
++            return
++        encoding = _explicit_encoding(call)
++        if encoding is None:
++            violations.append(Violation(
++                path, call.lineno, "R1-utf8-encoding",
++                f"{family}(...) missing explicit encoding='utf-8'; Windows "
++                "default cp1252 will crash on Unicode/emojis"))
++        elif not _is_utf8_literal(encoding):
++            violations.append(Violation(
++                path, call.lineno, "R1-utf8-encoding",
++                f"{family}(... encoding={encoding!r}) is not utf-8 family"))
++        return
++    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
++        encoding = _explicit_encoding(call)
++        if encoding is None:
++            violations.append(Violation(
++                path, call.lineno, "R1-utf8-encoding",
++                f".{func.attr}(...) missing explicit encoding='utf-8'; "
++                "locale-dependent decoding breaks Windows runners"))
++        elif not _is_utf8_literal(encoding):
++            violations.append(Violation(
++                path, call.lineno, "R1-utf8-encoding",
++                f".{func.attr}(... encoding={encoding!r}) is not utf-8 family"))
++
++
++def _subprocess_name(call: ast.Call) -> str | None:
++    func = call.func
++    if (isinstance(func, ast.Attribute) and func.attr in SUBPROCESS_FUNCS
++            and isinstance(func.value, ast.Name) and func.value.id == "subprocess"):
++        return func.attr
++    return None
++
++
++def _check_encoding_subprocess(call: ast.Call, path: str, violations: list[Violation]) -> None:
++    """R1 for subprocess calls with text=True / universal_newlines=True."""
++    name = _subprocess_name(call)
++    if name is None:
++        return
++    text_mode = False
++    for flag in ("text", "universal_newlines"):
++        kw = _kwarg(call, flag)
++        if kw is not None and isinstance(kw.value, ast.Constant) and kw.value.value is True:
++            text_mode = True
++    if not text_mode:
++        return
++    encoding = _explicit_encoding(call)
++    if encoding is None:
++        violations.append(Violation(
++            path, call.lineno, "R1-utf8-encoding",
++            f"subprocess.{name}(text=True) without encoding='utf-8'; child "
++            "output decodes with cp1252 on Windows"))
++    elif not _is_utf8_literal(encoding):
++        violations.append(Violation(
++            path, call.lineno, "R1-utf8-encoding",
++            f"subprocess.{name}(encoding={encoding!r}) is not utf-8 family"))
++
++
++def _check_timeout(call: ast.Call, path: str, violations: list[Violation]) -> None:
++    """R2: subprocess.run/call/check_output/check_call require timeout=<seconds>."""
++    name = _subprocess_name(call)
++    if name is None or name not in TIMEOUT_REQUIRED_FUNCS:
++        return
++    kw = _kwarg(call, "timeout")
++    if kw is None:
++        violations.append(Violation(
++            path, call.lineno, "R2-subprocess-timeout",
++            f"subprocess.{name}(...) missing explicit timeout=<seconds>; a "
++            "hanging job burns up to 360 Actions quota minutes"))
++    elif isinstance(kw.value, ast.Constant) and kw.value.value is None:
++        violations.append(Violation(
++            path, call.lineno, "R2-subprocess-timeout",
++            f"subprocess.{name}(timeout=None) is unbounded; pass a number"))
++
++
++def _popen_wait_chains(tree: ast.AST, path: str, violations: list[Violation]) -> None:
++    """R2 for Popen: var.communicate()/var.wait() without timeout where var
++    was assigned subprocess.Popen(...) in the same module."""
++    popen_vars: set[str] = set()
++    for node in ast.walk(tree):
++        if isinstance(node, (ast.Assign, ast.AnnAssign)):
++            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
++            value = node.value
++            if isinstance(value, ast.Call):
++                func = value.func
++                if (isinstance(func, ast.Attribute) and func.attr == "Popen"
++                        and isinstance(func.value, ast.Name)
++                        and func.value.id == "subprocess"):
++                    for target in targets:
++                        if isinstance(target, ast.Name):
++                            popen_vars.add(target.id)
++    for node in ast.walk(tree):
++        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
++            continue
++        if node.func.attr not in ("communicate", "wait"):
++            continue
++        if not isinstance(node.func.value, ast.Name) or node.func.value.id not in popen_vars:
++            continue
++        if _kwarg(node, "timeout") is None:
++            violations.append(Violation(
++                path, node.lineno, "R2-subprocess-timeout",
++                f"Popen .{node.func.attr}() without timeout=<seconds>"))
++
++
++def _url_exempt(texts: Iterable[str | None]) -> bool:
++    return any(t and "://" in t for t in texts)
++
++
++def _separator_concat(tree: ast.AST, path: str, violations: list[Violation]) -> None:
++    """R4: hardcoded path-separator concatenation and splits."""
++    for node in ast.walk(tree):
++        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
++            operands = [node.left, node.right]
++            texts = [_const_str(o) for o in operands]
++            if _url_exempt(texts):
++                continue
++            for text in texts:
++                if not text:
++                    continue
++                if text.endswith(SEPARATOR_CHARS) or text.startswith(SEPARATOR_CHARS):
++                    violations.append(Violation(
++                        path, node.lineno, "R4-posix-path",
++                        f"hardcoded path separator in string concatenation "
++                        f"({text!r}); use pathlib.Path or os.path.join()"))
++        elif isinstance(node, ast.JoinedStr):
++            parts = [_const_str(v) for v in node.values if isinstance(v, ast.Constant)]
++            if _url_exempt(parts):
++                continue
++            for text in parts:
++                if text and (text.endswith(SEPARATOR_CHARS) or text.startswith(SEPARATOR_CHARS)):
++                    violations.append(Violation(
++                        path, node.lineno, "R4-posix-path",
++                        f"f-string path separator ({text!r}); use pathlib.Path "
++                        "or os.path.join()"))
++        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
++            attr = node.func.attr
++            if (attr == "join" and isinstance(node.func.value, ast.Constant)
++                    and isinstance(node.func.value.value, str)):
++                sep = node.func.value.value
++                if sep in SEPARATOR_CHARS and not _url_exempt([sep]):
++                    violations.append(Violation(
++                        path, node.lineno, "R4-posix-path",
++                        f"{sep!r}.join(...) path building; use os.path.join() "
++                        "or pathlib"))
++            if attr in ("split", "rsplit") and node.args:
++                sep = _const_str(node.args[0])
++                if sep in SEPARATOR_CHARS:
++                    violations.append(Violation(
++                        path, node.lineno, "R4-posix-path",
++                        f".{attr}({sep!r}) path splitting; use pathlib parts "
++                        "or os.path.split"))
++        elif isinstance(node, ast.Call):
++            for arg in node.args:
++                value = _const_str(arg)
++                if value and "\\" in value and "/" in value:
++                    violations.append(Violation(
++                        path, node.lineno, "R4-posix-path",
++                        f"mixed-separator path literal {value!r}; normalize "
++                        "with pathlib.Path"))
++
++
++def _which_tool_names(tree: ast.AST) -> set[str]:
++    names: set[str] = set()
++    for node in ast.walk(tree):
++        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
++            continue
++        if node.func.attr != "which":
++            continue
++        base = node.func.value
++        if isinstance(base, ast.Name) and base.id != "shutil":
++            continue
++        if node.args:
++            tool = _const_str(node.args[0])
++            if tool:
++                names.add(tool)
++        for kw in node.keywords:
++            if kw.arg == "cmd":
++                tool = _const_str(kw.value)
++                if tool:
++                    names.add(tool)
++    return names
++
++
++def _first_tool_token(call: ast.Call) -> str | None:
++    def from_str(value: str) -> str | None:
++        token = value.split()
++        if token:
++            head = token[0].rpartition("/")[2] or token[0]
++            return head or None
++        return None
++
++    if not call.args:
++        return None
++    first = call.args[0]
++    value = _const_str(first)
++    if value is not None:
++        return from_str(value)
++    if isinstance(first, (ast.List, ast.Tuple)) and first.elts:
++        head = _const_str(first.elts[0])
++        if head is not None:
++            head = head.rpartition("/")[2] or head
++            return head or None
++    return None
++
++
++def _in_file_notfound_handler(tree: ast.AST, target: ast.Call) -> bool:
++    parents: dict[int, ast.AST] = {}
++    for parent in ast.walk(tree):
++        for child in ast.iter_child_nodes(parent):
++            parents[id(child)] = parent
++    node: ast.AST | None = target
++    while node is not None and id(node) in parents:
++        node = parents[id(node)]
++        if isinstance(node, ast.Try):
++            for handler in node.handlers:
++                types = ()
++                if isinstance(handler.type, ast.Name):
++                    types = (handler.type,)
++                elif isinstance(handler.type, ast.Tuple):
++                    types = tuple(elt for elt in handler.type.elts
++                                  if isinstance(elt, ast.Name))
++                if any(t.id == "FileNotFoundError" for t in types):
++                    return True
++    return False
++
++
++def _check_cli_presence(tree: ast.AST, path: str, violations: list[Violation]) -> None:
++    """R5: external tool subprocess calls need shutil.which or FileNotFoundError."""
++    which_names = _which_tool_names(tree)
++    for node in ast.walk(tree):
++        if not isinstance(node, ast.Call):
++            continue
++        name = _subprocess_name(node)
++        if name is None:
++            continue
++        tool = _first_tool_token(node)
++        if tool not in EXTERNAL_TOOLS:
++            continue
++        if tool in which_names:
++            continue
++        if _in_file_notfound_handler(tree, node):
++            continue
++        violations.append(Violation(
++            path, node.lineno, "R5-cli-presence",
++            f"subprocess.{name} calls external tool {tool!r} without a "
++            f"shutil.which({tool!r}) guard or FileNotFoundError handling; "
++            "containers raise FileNotFoundError (exit 127)"))
++
++
++def _check_swallow(tree: ast.AST, path: str, violations: list[Violation]) -> None:
++    """R6: except handlers that only pass/Ellipsis are silent swallows."""
++    for node in ast.walk(tree):
++        if not isinstance(node, ast.ExceptHandler):
++            continue
++        if not node.body:
++            violations.append(Violation(
++                path, node.lineno, "R6-anti-swallow",
++                "empty except handler swallows errors"))
++            continue
++        only_pass = all(
++            isinstance(stmt, ast.Pass)
++            or (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant)
++                and stmt.value.value is Ellipsis)
++            for stmt in node.body)
++        if only_pass:
++            label = "bare except:" if node.type is None else "except:"
++            violations.append(Violation(
++                path, node.lineno, "R6-anti-swallow",
++                f"{label} pass silently swallows errors; log, return, or "
++                "re-raise honestly"))
++
++
++def scan_source(path: str, content: str) -> tuple[list[Violation], int | None]:
++    """Scan one .py record with all AST rules.
++
++    Returns (violations, syntax_error_line); syntax_error_line is not None
++    when the file failed to parse (the caller reports PARSE-FAIL-CLOSED).
++    """
++    violations: list[Violation] = []
++    try:
++        tree = ast.parse(content, filename=path)
++    except SyntaxError as exc:
++        return [], exc.lineno if exc.lineno is not None else 0
++    _separator_concat(tree, path, violations)
++    _check_cli_presence(tree, path, violations)
++    _check_swallow(tree, path, violations)
++    _popen_wait_chains(tree, path, violations)
++    for node in ast.walk(tree):
++        if isinstance(node, ast.Call):
++            _check_encoding_call(node, path, violations)
++            _check_encoding_subprocess(node, path, violations)
++            _check_timeout(node, path, violations)
++    return violations, None
++
++
++def scan_record(record: SourceRecord) -> list[Violation]:
++    """Full scan of one source record (R1-R6). Non-.py files: R3 only."""
++    violations: list[Violation] = []
++    parts = record.path.rsplit(".", 1)
++    ext = ("." + parts[1].lower()) if len(parts) == 2 else ""
++    if ext == ".py":
++        found, bad_line = scan_source(record.path, record.content)
++        violations.extend(found)
++        if bad_line is not None:
++            violations.append(Violation(
++                record.path, bad_line, "PARSE-FAIL-CLOSED",
++                "Python file does not parse; guard cannot verify invariants"))
++    if ext in CRLF_SUFFIXES:
++        raw = record.content.encode("utf-8", errors="surrogateescape")
++        for lineno, line in enumerate(raw.split(b"\n"), start=1):
++            if line.endswith(b"\r"):
++                violations.append(Violation(
++                    record.path, lineno, "R3-crlf-purge",
++                    "CRLF line ending; causes /bin/bash^M bad-interpreter "
++                    "and command-not-found outages on Linux"))
++    return violations
++
++
++def scan_records(records: Sequence[SourceRecord]) -> list[Violation]:
++    violations: list[Violation] = []
++    for record in records:
++        violations.extend(scan_record(record))
++    return violations
++
++
++def _needs_encoding_kwarg(call: ast.Call) -> bool:
++    func = call.func
++    if _open_family(call) is not None:
++        return not _mode_is_binary(call)
++    if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
++        return True
++    return False
++
++
++def _insert_kwarg(source: str, call: ast.Call, kw_text: str) -> str | None:
++    lines = source.splitlines(keepends=True)
++    end_line = call.end_lineno - 1
++    if end_line < 0 or end_line >= len(lines):
++        return None
++    line = lines[end_line]
++    col = (call.end_col_offset or 1) - 1
++    if col < len(line) and line[col] == ")":
++        head, tail = line[:col], line[col:]
++        sep = "" if head.endswith("(") else ", "
++        lines[end_line] = head + sep + kw_text + tail
++        return "".join(lines)
++    return None
++
++
++def _fix_record(record: SourceRecord) -> tuple[str, list[str]]:
++    """Auto-retrofit R1/R2 on one .py record. Returns (fixed_source, notes).
++
++    Every rewrite is re-parsed before acceptance; a failed round-trip
++    discards the fix and leaves the file untouched (fail-closed fixer).
++    """
++    if not record.path.endswith(".py"):
++        return record.content, []
++    notes: list[str] = []
++    source = record.content
++    for _round in range(64):
++        try:
++            tree = ast.parse(source, filename=record.path)
++        except SyntaxError:
++            return (record.content, []) if not notes else (record.content, [])
++        changed = False
++        for node in ast.walk(tree):
++            if not isinstance(node, ast.Call):
++                continue
++            if _needs_encoding_kwarg(node) and _kwarg(node, "encoding") is None:
++                candidate = _insert_kwarg(source, node, "encoding='utf-8'")
++                if candidate is None:
++                    continue
++                try:
++                    ast.parse(candidate, filename=record.path)
++                except SyntaxError:
++                    continue
++                source, changed = candidate, True
++                notes.append(f"R1 line {node.lineno}: added encoding='utf-8'")
++                break
++            name = _subprocess_name(node)
++            if name in TIMEOUT_REQUIRED_FUNCS and _kwarg(node, "timeout") is None:
++                candidate = _insert_kwarg(source, node, f"timeout={DEFAULT_TIMEOUT}")
++                if candidate is None:
++                    continue
++                try:
++                    ast.parse(candidate, filename=record.path)
++                except SyntaxError:
++                    continue
++                source, changed = candidate, True
++                notes.append(f"R2 line {node.lineno}: added timeout={DEFAULT_TIMEOUT}")
++                break
++        if not changed:
++            break
++    return source, notes
++
++
++def fix_crlf(content: str) -> str:
++    return content.replace("\r\n", "\n").replace("\r", "\n")
++
++
++def autofix_records(
++    records: Sequence[SourceRecord],
++) -> tuple[list[SourceRecord], list[str]]:
++    fixed: list[SourceRecord] = []
++    notes: list[str] = []
++    for record in records:
++        content = record.content
++        if record.path.endswith(".py"):
++            content, file_notes = _fix_record(record)
++            notes.extend(f"{record.path}: {note}" for note in file_notes)
++        parts = record.path.rsplit(".", 1)
++        ext = ("." + parts[1].lower()) if len(parts) == 2 else ""
++        if ext in CRLF_SUFFIXES and "\r\n" in content:
++            content = fix_crlf(content)
++            notes.append(f"{record.path}: R3 rewrote CRLF to LF")
++        fixed.append(SourceRecord(record.path, content))
++    return fixed, notes
++
++
++def _parse_records(raw: str) -> list[SourceRecord]:
++    data = json.loads(raw)
++    if isinstance(data, Mapping):
++        data = data.get("files", [])
++    if not isinstance(data, list):
++        raise ValueError("expected a JSON list of {path, content}")
++    records = []
++    for item in data:
++        if not isinstance(item, Mapping) or "path" not in item or "content" not in item:
++            raise ValueError("record needs 'path' and 'content'")
++        records.append(SourceRecord(str(item["path"]), str(item["content"])))
++    return records
++
++
++def self_test() -> bool:
++    # Sample sources are assembled at runtime via chr()/repr() so this
++    # module stays clean under its own scan (no flaggable literals).
++    BS = chr(92)   # backslash
++    FS = chr(47)   # forward slash
++    CRLF = chr(13) + chr(10)
++
++    def run(src: str) -> list[Violation]:
++        found, bad = scan_source("sample.py", src)
++        assert bad is None, (src, bad)
++        return found
++
++    rules = {v.rule for v in [
++        *run("open('f.txt')"),
++        *run("open('f.txt', 'rb')"),
++        *run("open('f.txt', encoding='utf-8')"),
++        *run("open('f.txt', encoding='cp1252')"),
++        *run("open('f.txt', 'r', encoding='UTF-8')"),
++        *run("path.read_text()"),
++        *run("path.write_text(data, encoding='UTF-8')"),
++        *run("subprocess.run(cmd, text=True)"),
++        *run("subprocess.run(cmd, text=True, encoding='utf-8')"),
++        *run("subprocess.run(cmd, timeout=30)"),
++        *run("subprocess.run(cmd, timeout=None)"),
++        *run("subprocess.check_output(cmd)"),
++    ]}
++    assert rules == {"R1-utf8-encoding", "R2-subprocess-timeout"}, rules
++
++    # Binary mode and codecs positional encoding are exempt / honored.
++    assert run("open('f.bin', 'wb')\n") == []
++    assert run("import codecs\ncodecs.open('f.txt', 'r', 'utf-8')\n") == []
++    assert run("import io\nio.open('f.txt', encoding='utf8')\n") == []
++    assert any(v.rule == "R1-utf8-encoding"
++               for v in run("subprocess.run(cmd, universal_newlines=True)\n"))
++
++    # R2 Popen chain tracking.
++    popen_src = ("import subprocess\n"
++                 "p = subprocess.Popen(cmd)\n"
++                 "out = p.communicate()\n")
++    assert [v.rule for v in run(popen_src)] == ["R2-subprocess-timeout"]
++    ok_popen = ("import subprocess\n"
++                "p = subprocess.Popen(cmd)\n"
++                "out = p.communicate(timeout=10)\n")
++    assert run(ok_popen) == []
++
++    # R3: CRLF (byte-level).
++    crlf = SourceRecord("run.sh", "echo hi" + CRLF)
++    assert [v.rule for v in scan_record(crlf)] == ["R3-crlf-purge"]
++    assert scan_record(SourceRecord("run.sh", "echo hi\n")) == []
++    assert len(scan_record(SourceRecord("notes.md", "para" + CRLF))) == 1
++    assert scan_record(SourceRecord("notes.md", "para\n")) == []
++
++    # R4: separators (runtime-built samples).
++    concat = "p = 'dir' + " + repr(FS) + " + name\n"
++    assert any(v.rule == "R4-posix-path" for v in run(concat))
++    back = "p = 'dir' + " + repr(BS) + " + name\n"
++    assert any(v.rule == "R4-posix-path" for v in run(back))
++    join = "p = " + repr(FS) + ".join(parts)\n"
++    assert any(v.rule == "R4-posix-path" for v in run(join))
++    split = "parts = p.split(" + repr(FS) + ")\n"
++    assert any(v.rule == "R4-posix-path" for v in run(split))
++    mixed = "cmd(" + repr('C:' + BS + 'dir' + FS + 'file') + ")\n"
++    assert any(v.rule == "R4-posix-path" for v in run(mixed))
++    assert run("p = os.path.join('dir', name)\n") == []
++    assert run("p = pathlib.Path('dir') " + chr(47) + " 'x'\n") == []
++    bare_url = "u = base + " + repr(FS + "api") + "\n"
++    assert any(v.rule == "R4-posix-path" for v in run(bare_url))
++    url_lit = "u = 'https://x' + " + repr(FS + "api") + "\n"
++    assert not any(v.rule == "R4-posix-path" for v in run(url_lit))
++
++    # R5: CLI presence.
++    which = ("import shutil, subprocess\n"
++             "if shutil.which('git') is None:\n"
++             "    raise SystemExit(127)\n"
++             "subprocess.run(['git', 'status'], timeout=30)\n")
++    assert run(which) == []
++    no_which = ("import subprocess\n"
++                "subprocess.run(['git', 'status'], timeout=30)\n")
++    assert any(v.rule == "R5-cli-presence" for v in run(no_which))
++    caught = ("import subprocess\n"
++              "def go():\n"
++              "    try:\n"
++              "        subprocess.run(['gh', 'pr'], timeout=30)\n"
++              "    except FileNotFoundError:\n"
++              "        return 127\n")
++    assert run(caught) == []
++    unknown_tool = "subprocess.run(['make', 'all'], timeout=5)\n"
++    assert any(v.rule == "R5-cli-presence" for v in run(unknown_tool))
++
++    # R6: anti-swallow.
++    assert any(v.rule == "R6-anti-swallow"
++               for v in run("try:\n    a()\nexcept Exception:\n    pass\n"))
++    assert any(v.rule == "R6-anti-swallow"
++               for v in run("try:\n    a()\nexcept:\n    pass\n"))
++    assert run("try:\n    a()\nexcept Exception:\n    raise\n") == []
++    assert run("try:\n    a()\nexcept Exception:\n    log.error('x')\n") == []
++    assert run("try:\n    a()\nexcept FileNotFoundError:\n    code = 127\n") == []
++
++    # Parse failure is fail-closed.
++    _, bad = scan_source("broken.py", "def broken(:\n")
++    assert bad is not None
++    broken = [SourceRecord("broken.py", "def broken(:\n")]
++    assert any(v.rule == "PARSE-FAIL-CLOSED" for v in scan_records(broken))
++
++    # Fixer: R1 + R2 retrofit with round-trip validation.
++    dirty = ("with open('a.txt') as fh:\n"
++             "    data = fh.read()\n"
++             "subprocess.run(['git', 'status'])\n")
++    fixed, notes = autofix_records([SourceRecord("dirty.py", dirty)])
++    assert "encoding='utf-8'" in fixed[0].content, fixed
++    assert "timeout=30" in fixed[0].content, fixed
++    assert len(notes) == 2, notes
++    clean, _ = scan_source("dirty.py", fixed[0].content)
++    assert [v.rule for v in clean] == ["R5-cli-presence"], clean
++    binary = autofix_records([SourceRecord("b.py", "open('x', 'wb')\n")])[0]
++    assert binary[0].content == "open('x', 'wb')\n"
++    fixed2, notes2 = autofix_records([crlf])
++    assert fixed2[0].content == "echo hi\n"
++    assert notes2 == ["run.sh: R3 rewrote CRLF to LF"]
++    # Idempotence.
++    fixed3, _ = autofix_records(fixed)
++    assert fixed3[0].content == fixed[0].content
++    return True
++
++
++def _cli(argv: Sequence[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--self-test", action="store_true")
++    parser.add_argument("--files", nargs="*",
++                        help="paths to scan (read from disk with utf-8)")
++    parser.add_argument("--files-json",
++                        help="inline JSON list of {path, content}; omit to read stdin")
++    parser.add_argument("--fix", action="store_true",
++                        help="auto-retrofit R1/R2/R3 (in place with --files)")
++    args = parser.parse_args(argv)
++    if args.self_test:
++        self_test()
++        print("SELF-TEST OK: cross_platform_invariant_guard")
++        return EXIT_CLEAN
++    if args.files:
++        records = []
++        for rel in args.files:
++            with open(rel, "r", encoding="utf-8", errors="surrogateescape") as fh:
++                records.append(SourceRecord(rel, fh.read()))
++    else:
++        raw = args.files_json if args.files_json else sys.stdin.read()
++        try:
++            records = _parse_records(raw)
++        except (ValueError, json.JSONDecodeError) as exc:
++            print(f"MALFORMED INPUT (fail-closed): {exc}")
++            return EXIT_MALFORMED
++    if args.fix:
++        records, notes = autofix_records(records)
++        for note in notes:
++            print("FIXED", note)
++        if args.files:
++            for record in records:
++                with open(record.path, "w", encoding="utf-8",
++                          errors="surrogateescape", newline="") as fh:
++                    fh.write(record.content)
++    violations = scan_records(records)
++    for violation in violations:
++        print(violation.format())
++    if violations:
++        print("CROSS-PLATFORM GUARD: BLOCKED (fail-closed)")
++        return EXIT_VIOLATION
++    print("CROSS-PLATFORM GUARD: clean")
++    return EXIT_CLEAN
++
++
++if __name__ == "__main__":
++    raise SystemExit(_cli())
+diff --git a/tests/test_cross_platform_guard.py b/tests/test_cross_platform_guard.py
+new file mode 100644
+index 00000000..dcbbf4f9
+--- /dev/null
++++ b/tests/test_cross_platform_guard.py
+@@ -0,0 +1,355 @@
++#!/usr/bin/env python3
++"""S14 tests — Cross-Platform Invariant Guard (issue #515).
++
++Dual-mode: runs under stdlib unittest AND pytest.
++Constants and rules are imported from the reference module (SSOT) —
++never duplicated. Sample sources are assembled at runtime via chr()/
++repr() so this suite stays clean under the guard's own scan.
++"""
++from __future__ import annotations
++
++import json
++import os
++import subprocess  # noqa: F401  (imported to prove import-parity; never called)
++import sys
++import unittest
++from pathlib import Path
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "ci"))
++
++import cross_platform_invariant_guard as guard  # noqa: E402
++
++BS = chr(92)   # backslash
++FS = chr(47)   # forward slash
++CRLF = chr(13) + chr(10)
++
++
++def scan(src: str, path: str = "sample.py"):
++    violations, bad = guard.scan_source(path, src)
++    assert bad is None, (src, bad)
++    return violations
++
++
++def rules(src: str, path: str = "sample.py") -> set[str]:
++    return {v.rule for v in scan(src, path)}
++
++
++class TestR1Utf8Encoding(unittest.TestCase):
++    def test_open_without_encoding_flagged(self):
++        self.assertEqual(rules("open('f.txt')\n"), {"R1-utf8-encoding"})
++
++    def test_open_binary_mode_exempt(self):
++        self.assertEqual(rules("open('f.bin', 'wb')\n"), set())
++        self.assertEqual(rules("open('f.bin', mode='rb')\n"), set())
++
++    def test_open_utf8_family_accepted(self):
++        for enc in ("utf-8", "utf8", "utf_8", "UTF-8"):
++            src = "open('f.txt', encoding=" + repr(enc) + ")\n"
++            self.assertEqual(rules(src), set(), enc)
++
++    def test_open_non_utf8_flagged(self):
++        self.assertEqual(rules("open('f.txt', encoding='cp1252')\n"),
++                         {"R1-utf8-encoding"})
++
++    def test_io_and_codecs_open_covered(self):
++        self.assertEqual(
++            rules("import io\nio.open('f.txt')\n"), {"R1-utf8-encoding"})
++        self.assertEqual(
++            rules("import codecs\ncodecs.open('f.txt', 'r')\n"),
++            {"R1-utf8-encoding"})
++        self.assertEqual(
++            rules("import codecs\ncodecs.open('f.txt', 'r', 'utf-8')\n"), set())
++
++    def test_read_text_write_text_flagged_without_encoding(self):
++        self.assertEqual(rules("p.read_text()\n"), {"R1-utf8-encoding"})
++        self.assertEqual(rules("p.write_text(data)\n"), {"R1-utf8-encoding"})
++        self.assertEqual(
++            rules("p.write_text(data, encoding='utf-8')\n"), set())
++
++    def test_subprocess_text_mode_requires_encoding(self):
++        self.assertEqual(rules("subprocess.run(cmd, text=True)\n"),
++                         {"R1-utf8-encoding", "R2-subprocess-timeout"})
++        self.assertEqual(
++            rules("subprocess.run(cmd, universal_newlines=True)\n"),
++            {"R1-utf8-encoding", "R2-subprocess-timeout"})
++        self.assertEqual(
++            rules("subprocess.run(cmd, text=True, encoding='utf-8')\n"),
++            {"R2-subprocess-timeout"})
++        self.assertEqual(rules("subprocess.run(cmd)\n"),
++                         {"R2-subprocess-timeout"})
++
++    def test_dynamic_mode_is_treated_as_text(self):
++        self.assertEqual(rules("open(name, mode)\n"), {"R1-utf8-encoding"})
++
++
++class TestR2SubprocessTimeout(unittest.TestCase):
++    def test_run_without_timeout_flagged(self):
++        self.assertEqual(rules("subprocess.run(cmd)\n"),
++                         {"R2-subprocess-timeout"})
++
++    def test_timeout_none_flagged(self):
++        self.assertEqual(rules("subprocess.run(cmd, timeout=None)\n"),
++                         {"R2-subprocess-timeout"})
++
++    def test_all_timeout_required_funcs_covered(self):
++        for name in ("run", "call", "check_output", "check_call"):
++            src = "subprocess." + name + "(cmd)\n"
++            self.assertIn("R2-subprocess-timeout", rules(src), name)
++
++    def test_timeout_number_clean(self):
++        self.assertEqual(rules("subprocess.run(cmd, timeout=60)\n"), set())
++
++    def test_popen_communicate_chain_tracked(self):
++        src = ("import subprocess\n"
++               "p = subprocess.Popen(cmd)\n"
++               "out = p.communicate()\n")
++        self.assertEqual(rules(src), {"R2-subprocess-timeout"})
++        fixed = ("import subprocess\n"
++                 "p = subprocess.Popen(cmd)\n"
++                 "out = p.communicate(timeout=10)\n")
++        self.assertEqual(rules(fixed), set())
++
++    def test_popen_wait_chain_tracked(self):
++        src = ("import subprocess\n"
++               "p = subprocess.Popen(cmd)\n"
++               "code = p.wait()\n")
++        self.assertIn("R2-subprocess-timeout", rules(src))
++
++
++class TestR3CrlfPurge(unittest.TestCase):
++    def test_crlf_in_shell_script_flagged(self):
++        found = guard.scan_record(guard.SourceRecord("run.sh", "echo hi" + CRLF))
++        self.assertEqual([v.rule for v in found], ["R3-crlf-purge"])
++        self.assertEqual(found[0].line, 1)
++
++    def test_lf_clean(self):
++        self.assertEqual(
++            guard.scan_record(guard.SourceRecord("run.sh", "echo hi\n")), [])
++
++    def test_covered_suffixes(self):
++        for ext in (".py", ".sh", ".ts", ".md", ".tsx", ".js", ".mjs", ".cjs"):
++            found = guard.scan_record(guard.SourceRecord("f" + ext, "x" + CRLF))
++            self.assertEqual([v.rule for v in found], ["R3-crlf-purge"], ext)
++
++    def test_uncovered_suffix_ignored(self):
++        found = guard.scan_record(guard.SourceRecord("data.yaml", "x" + CRLF))
++        self.assertEqual(found, [])
++
++    def test_every_crlf_line_reported(self):
++        found = guard.scan_record(guard.SourceRecord("a.py", "x = 1" + CRLF + "y = 2" + CRLF))
++        self.assertEqual(len(found), 2)
++        self.assertEqual([v.line for v in found], [1, 2])
++
++
++class TestR4PosixPath(unittest.TestCase):
++    def test_forward_slash_concat_flagged(self):
++        src = "p = 'dir' + " + repr(FS) + " + name\n"
++        self.assertIn("R4-posix-path", rules(src))
++
++    def test_backslash_concat_flagged(self):
++        src = "p = 'dir' + " + repr(BS) + " + name\n"
++        self.assertIn("R4-posix-path", rules(src))
++
++    def test_os_path_join_clean(self):
++        self.assertEqual(rules("p = os.path.join('dir', name)\n"), set())
++
++    def test_pathlib_div_clean(self):
++        src = "p = pathlib.Path('dir') " + chr(47) + " 'x'\n"
++        self.assertEqual(rules(src), set())
++
++    def test_separator_join_flagged(self):
++        self.assertIn("R4-posix-path",
++                      rules("p = " + repr(FS) + ".join(parts)\n"))
++        self.assertIn("R4-posix-path",
++                      rules("p = " + repr(BS) + ".join(parts)\n"))
++
++    def test_split_separator_flagged(self):
++        self.assertIn("R4-posix-path",
++                      rules("parts = p.split(" + repr(FS) + ")\n"))
++
++    def test_mixed_separator_literal_flagged(self):
++        src = "cmd(" + repr('C:' + BS + 'dir' + FS + 'file') + ")\n"
++        self.assertIn("R4-posix-path", rules(src))
++
++    def test_url_scheme_literal_exempt(self):
++        src = "u = 'https://x' + " + repr(FS + "api") + "\n"
++        self.assertNotIn("R4-posix-path", rules(src))
++
++    def test_url_without_visible_scheme_flagged(self):
++        src = "u = base + " + repr(FS + "api") + "\n"
++        self.assertIn("R4-posix-path", rules(src))
++
++    def test_fstring_separator_flagged(self):
++        src = "p = f\"dir" + FS + "\" + name\n"
++        self.assertIn("R4-posix-path", rules(src))
++
++
++class TestR5CliPresence(unittest.TestCase):
++    def test_which_guard_clean(self):
++        src = ("import shutil, subprocess\n"
++               "if shutil.which('git') is None:\n"
++               "    raise SystemExit(127)\n"
++               "subprocess.run(['git', 'status'], timeout=30)\n")
++        self.assertEqual(rules(src), set())
++
++    def test_missing_which_flagged(self):
++        src = ("import subprocess\n"
++               "subprocess.run(['git', 'status'], timeout=30)\n")
++        self.assertIn("R5-cli-presence", rules(src))
++
++    def test_filenotfound_handler_clean(self):
++        src = ("import subprocess\n"
++               "def go():\n"
++               "    try:\n"
++               "        subprocess.run(['gh', 'pr'], timeout=30)\n"
++               "    except FileNotFoundError:\n"
++               "        return 127\n")
++        self.assertEqual(rules(src), set())
++
++    def test_shell_string_command_covered(self):
++        src = ("import subprocess\n"
++               "subprocess.run('docker ps', timeout=30)\n")
++        self.assertIn("R5-cli-presence", rules(src))
++
++    def test_path_prefixed_binary_resolved(self):
++        src = ("import subprocess\n"
++               "subprocess.run([" + repr('/usr/bin/git') + ", 'status'], timeout=30)\n")
++        self.assertIn("R5-cli-presence", rules(src))
++
++
++class TestR6AntiSwallow(unittest.TestCase):
++    def test_bare_except_pass_flagged(self):
++        src = "try:\n    a()\nexcept:\n    pass\n"
++        self.assertIn("R6-anti-swallow", rules(src))
++
++    def test_except_exception_pass_flagged(self):
++        src = "try:\n    a()\nexcept Exception:\n    pass\n"
++        self.assertIn("R6-anti-swallow", rules(src))
++
++    def test_ellipsis_body_flagged(self):
++        src = "try:\n    a()\nexcept Exception:\n    ...\n"
++        self.assertIn("R6-anti-swallow", rules(src))
++
++    def test_raise_clean(self):
++        src = "try:\n    a()\nexcept Exception:\n    raise\n"
++        self.assertEqual(rules(src), set())
++
++    def test_logging_clean(self):
++        src = "try:\n    a()\nexcept Exception:\n    log.error('x')\n"
++        self.assertEqual(rules(src), set())
++
++    def test_honest_assignment_clean(self):
++        src = "try:\n    a()\nexcept FileNotFoundError:\n    code = 127\n"
++        self.assertEqual(rules(src), set())
++
++
++class TestParseFailClosed(unittest.TestCase):
++    def test_syntax_error_is_violation(self):
++        violations, bad = guard.scan_source("broken.py", "def broken(:\n")
++        self.assertIsNotNone(bad)
++        records = [guard.SourceRecord("broken.py", "def broken(:\n")]
++        found = guard.scan_records(records)
++        self.assertIn("PARSE-FAIL-CLOSED", {v.rule for v in found})
++
++
++class TestScanRecords(unittest.TestCase):
++    def test_mixed_records(self):
++        records = [
++            guard.SourceRecord("a.py", "open('x')\n"),
++            guard.SourceRecord("b.sh", "echo hi" + CRLF),
++            guard.SourceRecord("c.md", "clean\n"),
++        ]
++        found = guard.scan_records(records)
++        by_rule = {v.rule for v in found}
++        self.assertEqual(by_rule, {"R1-utf8-encoding", "R3-crlf-purge"})
++        self.assertEqual(
++            [v.path for v in found if v.rule == "R1-utf8-encoding"], ["a.py"])
++
++    def test_empty_input_clean(self):
++        self.assertEqual(guard.scan_records([]), [])
++
++
++class TestAutofix(unittest.TestCase):
++    def test_fix_adds_encoding_and_timeout(self):
++        dirty = ("with open('a.txt') as fh:\n"
++                 "    data = fh.read()\n"
++                 "subprocess.run(['git', 'status'])\n")
++        fixed, notes = guard.autofix_records([guard.SourceRecord("d.py", dirty)])
++        self.assertIn("encoding='utf-8'", fixed[0].content)
++        self.assertIn("timeout=30", fixed[0].content)
++        self.assertEqual(len(notes), 2)
++        clean = scan(fixed[0].content, "d.py")
++        self.assertEqual([v.rule for v in clean], ["R5-cli-presence"])
++
++    def test_fix_never_touches_binary_mode(self):
++        fixed, notes = guard.autofix_records(
++            [guard.SourceRecord("b.py", "open('x', 'wb')\n")])
++        self.assertEqual(fixed[0].content, "open('x', 'wb')\n")
++        self.assertEqual(notes, [])
++
++    def test_fix_rewrites_crlf(self):
++        fixed, notes = guard.autofix_records(
++            [guard.SourceRecord("run.sh", "echo hi" + CRLF)])
++        self.assertEqual(fixed[0].content, "echo hi\n")
++        self.assertEqual(notes, ["run.sh: R3 rewrote CRLF to LF"])
++
++    def test_fix_is_idempotent(self):
++        dirty = "open('a.txt')\nsubprocess.run(cmd)\n"
++        once, _ = guard.autofix_records([guard.SourceRecord("i.py", dirty)])
++        twice, notes2 = guard.autofix_records(once)
++        self.assertEqual(once[0].content, twice[0].content)
++        self.assertEqual(notes2, [])
++
++    def test_fixer_rejects_invalid_roundtrip(self):
++        # A file that does not parse yields no fixes and no crash.
++        fixed, notes = guard.autofix_records(
++            [guard.SourceRecord("broken.py", "def broken(:\n")])
++        self.assertEqual(fixed[0].content, "def broken(:\n")
++        self.assertEqual(notes, [])
++
++
++class TestConstantsSSOT(unittest.TestCase):
++    def test_documented_exit_codes(self):
++        self.assertEqual(guard.EXIT_CLEAN, 0)
++        self.assertEqual(guard.EXIT_VIOLATION, 2)
++        self.assertEqual(guard.EXIT_MALFORMED, 3)
++
++    def test_default_timeout_is_bounded_number(self):
++        self.assertIsInstance(guard.DEFAULT_TIMEOUT, int)
++        self.assertGreater(guard.DEFAULT_TIMEOUT, 0)
++        self.assertLessEqual(guard.DEFAULT_TIMEOUT, 300)
++
++    def test_external_tools_include_federation_stack(self):
++        for tool in ("gh", "git", "docker", "curl"):
++            self.assertIn(tool, guard.EXTERNAL_TOOLS)
++
++
++class TestSelfTestAndCli(unittest.TestCase):
++    def test_module_self_test_passes(self):
++        self.assertTrue(guard.self_test())
++
++    def test_cli_clean_exit(self):
++        proc = subprocess_run_guard("--self-test")
++        self.assertEqual(proc.returncode, 0, proc.stdout)
++
++    def test_cli_flags_violations(self):
++        record = {"path": "x.py", "content": "open('f')\n"}
++        proc = subprocess_run_guard("--files-json", json.dumps([record]))
++        self.assertEqual(proc.returncode, guard.EXIT_VIOLATION)
++        self.assertIn("R1-utf8-encoding", proc.stdout)
++
++    def test_cli_malformed_json_fail_closed(self):
++        proc = subprocess_run_guard("--files-json", "{not json")
++        self.assertEqual(proc.returncode, guard.EXIT_MALFORMED)
++
++
++def subprocess_run_guard(*cli_args: str):
++    import subprocess as sp
++    module = Path(guard.__file__).resolve()
++    return sp.run(
++        [sys.executable, str(module), *cli_args],
++        capture_output=True, text=True, encoding="utf-8", timeout=60)
++
++
++if __name__ == "__main__":
++    unittest.main()

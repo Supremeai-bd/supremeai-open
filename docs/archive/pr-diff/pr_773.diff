@@ -1,0 +1,544 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 51d3c915..03253644 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -711,33 +711,19 @@ jobs:
+                 -d "${PAYLOAD}" || true)
+               echo "  ${TARGET} → HTTP ${HTTP:-n/a}"
+             done
+-          else
+-            echo "BRIDGE_DISPATCH_TOKEN not set; issue-based trigger is the durable path."
+           fi
+ 
+-      - name: Auto-Prune Ephemeral Transit Patches (#416)
++      - name: Direct Federation Satellite & Monorepo Synchronization
+         if: steps.check_scope.outputs.should_bridge == 'true'
+         env:
+-          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
+-          PR_SHA: ${{ steps.check_scope.outputs.pr_sha }}
+-          BASE_SHA: ${{ steps.check_scope.outputs.base_sha }}
+-          TASK_ID: ${{ steps.create_wo.outputs.task_id }}
++          BRIDGE_PUSH_TOKEN: ${{ secrets.BRIDGE_PUSH_TOKEN || secrets.SAT_SYNC_PAT || secrets.MERGE_PAT || secrets.GITHUB_TOKEN }}
++          TARGET_REPOS: ${{ steps.check_scope.outputs.target_repos }}
++          PR_TITLE: ${{ steps.check_scope.outputs.pr_title }}
++          PR_NUM: ${{ steps.check_scope.outputs.pr_num }}
+         run: |
+-          echo "Checking for landed ephemeral transit patches under patches/..."
+-          PATCH_FILES=$(git diff --name-only "${BASE_SHA}" "${PR_SHA}" | grep '^patches/' || true)
+-          if [ -n "$PATCH_FILES" ]; then
+-            echo "Found transit patch files to auto-prune:"
+-            echo "$PATCH_FILES"
+-            git config user.name "github-actions[bot]"
+-            git config user.email "github-actions[bot]@users.noreply.github.com"
+-            if [ -n "$BRIDGE_PUSH_TOKEN" ]; then
+-              git remote set-url origin "https://x-access-token:${BRIDGE_PUSH_TOKEN}@github.com/${{ github.repository }}.git"
+-            fi
+-            git rm -f $PATCH_FILES
+-            git commit -m "chore(bridge): auto-prune transit patch for ${TASK_ID} after satellite dispatch (Closes #416) [skip ci]"
+-            git push origin main
+-            echo "✅ Ephemeral transit patches successfully auto-pruned from supremeai-open."
+-          else
+-            echo "No files in patches/ touched by this landing. Zero pruning required."
+-          fi
++          echo "🚀 Executing deterministic direct synchronization for: ${TARGET_REPOS}"
++          python3 scripts/ci/federation_satellite_sync.py \
++            --targets ${TARGET_REPOS} \
++            --commit-msg "${PR_TITLE} (via PR #${PR_NUM})" \
++            --prune-patches
+ 
+diff --git a/patches/bridge-20261017-issue-389-disable-auto-issue-and-automerge.patch b/patches/bridge-20261017-issue-389-disable-auto-issue-and-automerge.patch
+deleted file mode 100644
+index 368bbe36..00000000
+--- a/patches/bridge-20261017-issue-389-disable-auto-issue-and-automerge.patch
++++ /dev/null
+@@ -1,98 +0,0 @@
+-diff --git a/.github/workflows/pr-pipeline.yml b/.github/workflows/pr-pipeline.yml
+-index a69f80c7c..80bd821e8 100644
+---- a/.github/workflows/pr-pipeline.yml
+-+++ b/.github/workflows/pr-pipeline.yml
+-@@ -502,9 +502,7 @@ jobs:
+-   land:
+-     name: "🛬 Sequential Landing Decision"
+-     needs: [context, contract]
+--    if: >-
+--      (github.event_name == 'workflow_dispatch' && inputs.execute == true) ||
+--      (needs.context.outputs.skip != 'true' && needs.contract.result == 'success')
+-+    if: github.event_name == 'workflow_dispatch' && inputs.execute == true
+-     runs-on: ubuntu-latest
+-     timeout-minutes: 12
+-     concurrency:
+-diff --git a/scripts/bridge/bridge_intake.py b/scripts/bridge/bridge_intake.py
+-index fbce2982f..df7574c2e 100644
+---- a/scripts/bridge/bridge_intake.py
+-+++ b/scripts/bridge/bridge_intake.py
+-@@ -667,31 +667,37 @@ def process_issue(issue: dict, token: str, work: Path, results: list[str]) -> No
+- 
+-     # Audit-trail issue + gated PR — routed target repo-তে
+-     ensure_label(target_repo, token, LABEL_PRIVATE_BRIDGE, "5319E7", "bridge-intake external work order")
+--    intake_body = build_intake_issue_body(wo, task_id, public_url, agent, files)
+--    intake = gh_ok(
+--        "POST", f"/repos/{target_repo}/issues", token,
+--        {"title": f"feat(bridge): {task_id}", "body": intake_body, "labels": [LABEL_PRIVATE_BRIDGE, "status:in-progress"]},
+--    )
+--    # Claim the intake issue for the landing bot so Claim Gate (#2644) and Scope Gate pass
+--    claim_files = "\n".join(f"  - `{f}`" for f in files) or "  - (none)"
+--    claim_comment = (
+--        "<!-- atomic-claim -->\n"
+--        "### 🔒 Atomic Claim\n\n"
+--        "- **Agent:** `supremeai-bot`\n"
+--        "- **Agent:** `paykaribazaronline`\n"
+--        f"- **Task:** `{task_id}`\n"
+--        f"- **Branch:** `{land_branch}`\n"
+--        "- **Status:** in-progress\n"
+--        f"- **Touching files:**\n{claim_files}\n"
+--    )
+--    gh_ok("POST", f"/repos/{target_repo}/issues/{intake['number']}/comments", token, {"body": claim_comment})
+-+    # Issue #389: Disable automated issue creation on PR merge to avoid cluttering boards
+-+    disable_issue_create = os.environ.get("BRIDGE_DISABLE_INTAKE_ISSUE", "true").lower() in ("true", "1", "yes")
+-+    intake_num = None
+-+    if not disable_issue_create:
+-+        intake_body = build_intake_issue_body(wo, task_id, public_url, agent, files)
+-+        intake = gh_ok(
+-+            "POST", f"/repos/{target_repo}/issues", token,
+-+            {"title": f"feat(bridge): {task_id}", "body": intake_body, "labels": [LABEL_PRIVATE_BRIDGE, "status:in-progress"]},
+-+        )
+-+        intake_num = intake["number"]
+-+        # Claim the intake issue for the landing bot so Claim Gate (#2644) and Scope Gate pass
+-+        claim_files = "\n".join(f"  - `{f}`" for f in files) or "  - (none)"
+-+        claim_comment = (
+-+            "<!-- atomic-claim -->\n"
+-+            "### 🔒 Atomic Claim\n\n"
+-+            "- **Agent:** `supremeai-bot`\n"
+-+            "- **Agent:** `paykaribazaronline`\n"
+-+            f"- **Task:** `{task_id}`\n"
+-+            f"- **Branch:** `{land_branch}`\n"
+-+            "- **Status:** in-progress\n"
+-+            f"- **Touching files:**\n{claim_files}\n"
+-+        )
+-+        gh_ok("POST", f"/repos/{target_repo}/issues/{intake_num}/comments", token, {"body": claim_comment})
+-+
+-     pr = gh_ok(
+-         "POST", f"/repos/{target_repo}/pulls", token,
+-         {
+-             "title": f"feat(bridge): {task_id} — external work order #{num}",
+-             "head": land_branch,
+-             "base": PRIVATE_MAIN,
+--            "body": build_pr_body(wo, task_id, intake["number"], public_url, agent, files),
+-+            "body": build_pr_body(wo, task_id, intake_num or num, public_url, agent, files),
+-         },
+-     )
+-     report = sanitize_public_comment(
+-diff --git a/scripts/pre_push_hook.py b/scripts/pre_push_hook.py
+-index 0d9d670cd..165e0d83d 100755
+---- a/scripts/pre_push_hook.py
+-+++ b/scripts/pre_push_hook.py
+-@@ -237,6 +237,17 @@ def main() -> int:
+-         # Deleting a branch should never be blocked by pre-push hooks
+-         return 0
+- 
+-+    if os.environ.get("ALLOW_DIRECT_PUSH") != "1":
+-+        print("\n" + "=" * 80)
+-+        print("❌ [FEDERATION HARD-BLOCK] DIRECT GIT PUSH TO THIS REPOSITORY IS FORBIDDEN")
+-+        print("=" * 80)
+-+        print("SupremeAI Federation Constitutional Doctrine (§2.3 / §8):")
+-+        print("Direct pushes to 'Supremeai-bd/supremeai' or satellite repos are blocked.")
+-+        print("ALL contributions, PRs, and patches MUST enter exclusively through:")
+-+        print("  👉 https://github.com/Supremeai-bd/supremeai-open")
+-+        print("=" * 80 + "\n")
+-+        return 1
+-+
+-     branch = get_current_branch()
+-     if not check_and_sync_remote(branch):
+-         return 1
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+new file mode 100644
+index 00000000..7bcf1c86
+--- /dev/null
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -0,0 +1,341 @@
++#!/usr/bin/env python3
++"""
++federation_satellite_sync.py — Direct Federation Satellite & Monorepo Synchronizer.
++
++Mission:
++  When a commit or PR lands on `supremeai-open:main`, this script directly,
++  deterministically, and immediately pushes the scoped domain files into the
++  respective target satellite repository's `main` branch (and the central monorepo).
++
++Guarantees:
++  - Zero-middleman: No waiting for asynchronous dispatch receivers or external bridge bots.
++  - Idempotent: If the target repo is already up to date, it clean-skips (no-op).
++  - Fail-closed: If token is missing or push fails, exits with non-zero code.
++  - Ephemeral patch auto-pruning: Any lingering patch files in patches/ are cleanly pruned.
++"""
++
++from __future__ import annotations
++
++import argparse
++import contextlib
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++if hasattr(sys.stdout, "reconfigure"):
++    with contextlib.suppress(Exception):
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++
++# Mapping of target repository to its source directory in supremeai-open
++# (slug -> relative source path in supremeai-open)
++DOMAIN_MAP: dict[str, str] = {
++    "Supremeai-bd/supremeai-studio": "studio",
++    "Supremeai-bd/supremeai-core": "core",
++    "Supremeai-bd/supremeai-command": "command",
++    "Supremeai-bd/supremeai-api": "gateway",
++    "Supremeai-bd/supremeai-agents": "agents",
++    "Supremeai-bd/supremeai-skills": "skills",
++    "Supremeai-bd/supremeai-browser": "browser",
++    "Supremeai-bd/supremeai-vscode": "vscode",
++    "Supremeai-bd/supremeai-infrastructure": "infra",
++    "Supremeai-bd/supremeai-mcp-control-plane": "infrastructure/mcp-control-plane",
++    "Supremeai-bd/supremeai-sdk": "sdk",
++}
++
++# Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
++MONOREPO_EXCLUDES = {
++    ".git",
++    ".pytest_cache",
++    "__pycache__",
++    "node_modules",
++    ".DS_Store",
++}
++
++
++def get_auth_token(token_arg: str | None = None) -> str:
++    """Resolve GitHub token with write access to target repositories."""
++    if token_arg and token_arg.strip():
++        return token_arg.strip()
++    for env_var in ("BRIDGE_PUSH_TOKEN", "SAT_SYNC_PAT", "GITHUB_TOKEN", "GH_TOKEN"):
++        val = os.environ.get(env_var, "").strip()
++        if val:
++            return val
++    # Fallback to local gh CLI if available
++    try:
++        out = subprocess.check_output(["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL).strip()
++        if out:
++            return out
++    except Exception:
++        pass
++    raise RuntimeError("No GitHub authentication token found (checked BRIDGE_PUSH_TOKEN, SAT_SYNC_PAT, GH_TOKEN).")
++
++
++def copy_tree_contents(src: Path, dst: Path) -> None:
++    """Recursively copy files from src to dst, skipping caches and git metadata."""
++    if not src.exists():
++        return
++    for root, dirs, files in os.walk(src):
++        # Exclude hidden git/cache dirs
++        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", ".pytest_cache", "node_modules")]
++        rel = Path(root).relative_to(src)
++        target_dir = dst / rel
++        target_dir.mkdir(parents=True, exist_ok=True)
++        for f in files:
++            if f.endswith((".pyc", ".pyo")):
++                continue
++            s_file = Path(root) / f
++            d_file = target_dir / f
++            shutil.copy2(s_file, d_file)
++
++
++def sync_satellite(
++    target_repo: str,
++    source_dir: str,
++    repo_root: Path,
++    token: str,
++    commit_msg: str,
++) -> bool:
++    """Clone target satellite, copy files, commit and push if diff exists."""
++    slug = target_repo.split("/")[-1]
++    src_path = repo_root / source_dir
++    if not src_path.exists():
++        print(f"⏩ [SKIP] Source directory '{source_dir}' does not exist for {target_repo}.")
++        return True
++
++    clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
++
++    with tempfile.TemporaryDirectory() as tmp_dir:
++        tmp_repo = Path(tmp_dir) / slug
++        print(f"📥 Cloning {target_repo}:main into temporary workspace...")
++        r = subprocess.run(
++            ["git", "clone", "--depth", "1", clone_url, str(tmp_repo)],
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if r.returncode != 0:
++            print(f"❌ Failed to clone {target_repo}: {r.stderr.strip()}")
++            return False
++
++        # Copy domain files into the satellite root
++        copy_tree_contents(src_path, tmp_repo)
++
++        # Check for diff
++        status = subprocess.check_output(
++            ["git", "status", "--porcelain"],
++            cwd=str(tmp_repo),
++            text=True,
++        ).strip()
++
++        if not status:
++            print(f"✅ [NO-OP] {target_repo} is already in perfect sync with '{source_dir}'.")
++            return True
++
++        print(f"📝 Diff detected in {target_repo}:\n{status}")
++
++        # Commit and push
++        subprocess.check_call(
++            ["git", "config", "user.name", "github-actions[bot]"],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(
++            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
++        msg = f"sync(open->{slug}): {commit_msg} [skip ci]"
++        subprocess.check_call(["git", "commit", "-m", msg], cwd=str(tmp_repo))
++
++        print(f"🚀 Pushing changes to {target_repo}:main...")
++        push_res = subprocess.run(
++            ["git", "push", "origin", "main"],
++            cwd=str(tmp_repo),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if push_res.returncode == 0:
++            print(f"🎉 [SUCCESS] Successfully synced and pushed to {target_repo}:main")
++            return True
++        else:
++            print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
++            return False
++
++
++def sync_monorepo(
++    repo_root: Path,
++    token: str,
++    commit_msg: str,
++) -> bool:
++    """Sync full umbrella monorepo Supremeai-bd/supremeai."""
++    target_repo = "Supremeai-bd/supremeai"
++    clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
++
++    with tempfile.TemporaryDirectory() as tmp_dir:
++        tmp_repo = Path(tmp_dir) / "supremeai"
++        print(f"📥 Cloning {target_repo}:main for umbrella sync...")
++        r = subprocess.run(
++            ["git", "clone", "--depth", "1", clone_url, str(tmp_repo)],
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if r.returncode != 0:
++            print(f"❌ Failed to clone {target_repo}: {r.stderr.strip()}")
++            return False
++
++        # Copy non-excluded root dirs and files
++        for item in repo_root.iterdir():
++            if item.name in MONOREPO_EXCLUDES or item.name.startswith(".git"):
++                continue
++            dst_item = tmp_repo / item.name
++            if item.is_dir():
++                copy_tree_contents(item, dst_item)
++            else:
++                shutil.copy2(item, dst_item)
++
++        status = subprocess.check_output(
++            ["git", "status", "--porcelain"],
++            cwd=str(tmp_repo),
++            text=True,
++        ).strip()
++
++        if not status:
++            print(f"✅ [NO-OP] {target_repo} is already in perfect sync.")
++            return True
++
++        print(f"📝 Diff detected in {target_repo}:\n{status}")
++
++        subprocess.check_call(
++            ["git", "config", "user.name", "github-actions[bot]"],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(
++            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
++        msg = f"sync(open->monorepo): {commit_msg} [skip ci]"
++        subprocess.check_call(["git", "commit", "-m", msg], cwd=str(tmp_repo))
++
++        print(f"🚀 Pushing umbrella changes to {target_repo}:main...")
++        push_res = subprocess.run(
++            ["git", "push", "origin", "main"],
++            cwd=str(tmp_repo),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if push_res.returncode == 0:
++            print(f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main")
++            return True
++        else:
++            print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
++            return False
++
++
++def prune_ephemeral_patches(repo_root: Path) -> None:
++    """Remove lingering .patch files from patches/ directory (Rule #416)."""
++    patches_dir = repo_root / "patches"
++    if not patches_dir.exists():
++        return
++    patch_files = list(patches_dir.glob("*.patch"))
++    if not patch_files:
++        return
++    print(f"🧹 Pruning {len(patch_files)} ephemeral patch file(s) from patches/...")
++    for pf in patch_files:
++        try:
++            pf.unlink()
++            print(f"  - Removed: {pf.name}")
++        except Exception as e:
++            print(f"  ⚠️ Could not remove {pf.name}: {e}")
++
++
++def self_test() -> bool:
++    """Self-test verifying contract and mappings."""
++    assert len(DOMAIN_MAP) == 11, f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
++    assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
++    assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
++    assert "Supremeai-bd/supremeai-api" in DOMAIN_MAP
++    return True
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Synchronize supremeai-open changes directly to satellites.")
++    parser.add_argument("--targets", nargs="*", help="Specific target repositories to sync (default: all mapped)")
++    parser.add_argument("--all", action="store_true", help="Sync all 11 satellites and central monorepo")
++    parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
++    parser.add_argument("--commit-msg", default="synchronize federation transit surface", help="Commit message")
++    parser.add_argument("--self-test", action="store_true", help="Run contract verification self-test")
++    parser.add_argument("--prune-patches", action="store_true", help="Auto-prune ephemeral patches in patches/")
++
++    args = parser.parse_args()
++
++    if args.self_test:
++        print("[self-test] Validating satellite sync contract...")
++        if self_test():
++            print("✅ [self-test] All satellite sync contract checks passed!")
++            return 0
++        return 1
++
++    repo_root = Path(__file__).resolve().parent.parent.parent
++
++    if args.prune_patches:
++        prune_ephemeral_patches(repo_root)
++
++    try:
++        token = get_auth_token(args.token)
++    except Exception as e:
++        print(f"❌ Authentication Error: {e}")
++        return 2
++
++    # Determine targets
++    targets_to_sync: list[str] = []
++    sync_umbrella = False
++
++    if args.all:
++        targets_to_sync = list(DOMAIN_MAP.keys())
++        sync_umbrella = True
++    elif args.targets:
++        for t in args.targets:
++            t = t.strip()
++            if t == "Supremeai-bd/supremeai":
++                sync_umbrella = True
++            elif t in DOMAIN_MAP:
++                targets_to_sync.append(t)
++            else:
++                print(f"⚠️ Unrecognized target repository '{t}'. Skipping.")
++    else:
++        # Default: sync all mapped satellites
++        targets_to_sync = list(DOMAIN_MAP.keys())
++        sync_umbrella = True
++
++    print(f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})")
++
++    success = True
++    for target in targets_to_sync:
++        src_dir = DOMAIN_MAP[target]
++        ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
++        if not ok:
++            success = False
++
++    if sync_umbrella:
++        ok = sync_monorepo(repo_root, token, args.commit_msg)
++        if not ok:
++            success = False
++
++    if not success:
++        print("❌ One or more repository sync operations failed.")
++        return 1
++
++    print("🎉 All federation target repositories synchronized successfully!")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_federation_satellite_sync.py b/tests/test_federation_satellite_sync.py
+new file mode 100644
+index 00000000..a805ce60
+--- /dev/null
++++ b/tests/test_federation_satellite_sync.py
+@@ -0,0 +1,39 @@
++import unittest
++from pathlib import Path
++from unittest.mock import MagicMock, patch
++
++from scripts.ci import federation_satellite_sync as sync_mod
++
++
++class TestFederationSatelliteSync(unittest.TestCase):
++    def test_self_test(self):
++        self.assertTrue(sync_mod.self_test())
++
++    def test_domain_map_coverage(self):
++        expected_slugs = {
++            "Supremeai-bd/supremeai-studio",
++            "Supremeai-bd/supremeai-core",
++            "Supremeai-bd/supremeai-command",
++            "Supremeai-bd/supremeai-api",
++            "Supremeai-bd/supremeai-agents",
++            "Supremeai-bd/supremeai-skills",
++            "Supremeai-bd/supremeai-browser",
++            "Supremeai-bd/supremeai-vscode",
++            "Supremeai-bd/supremeai-infrastructure",
++            "Supremeai-bd/supremeai-mcp-control-plane",
++            "Supremeai-bd/supremeai-sdk",
++        }
++        self.assertEqual(set(sync_mod.DOMAIN_MAP.keys()), expected_slugs)
++
++    def test_get_auth_token_explicit(self):
++        token = sync_mod.get_auth_token("test-token-123")
++        self.assertEqual(token, "test-token-123")
++
++    @patch.dict(sync_mod.os.environ, {"BRIDGE_PUSH_TOKEN": "token-from-env"})
++    def test_get_auth_token_env(self):
++        token = sync_mod.get_auth_token()
++        self.assertEqual(token, "token-from-env")
++
++
++if __name__ == "__main__":
++    unittest.main()

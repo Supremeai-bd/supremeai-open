@@ -1,0 +1,13 @@
+diff --git a/studio/src/App.tsx b/studio/src/App.tsx
+index 50c94cb5..3b5b0c01 100644
+--- a/studio/src/App.tsx
++++ b/studio/src/App.tsx
+@@ -129,7 +129,7 @@ export const OperatorCockpit: React.FC = () => {
+           </section>
+           <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+             <h2 className="mb-3 text-sm font-medium text-slate-300">Consensus</h2>
+-            <ConsensusWidget responses={[]} consensusCount={0} onRerun={() => {}} />
++            <ConsensusWidget responses={[]} consensusCount={0} />
+           </section>
+           <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4">
+             <h2 className="mb-3 text-sm font-medium text-slate-300">Defense</h2>

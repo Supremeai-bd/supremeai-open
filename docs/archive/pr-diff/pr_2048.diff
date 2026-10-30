@@ -1,0 +1,23 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index d4ce78e7..2b235c9f 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -867,7 +867,17 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                 # body ছাড়া এজেন্ট acceptance criteria না-জেনে অন্ধকারে কাজ করত
+                 # (SPEC §2 problem_statement.body স্কিমার অংশই)। hydrate ব্যর্থ হলে
+                 # সৎ board_note — নীরব খালি objective নয়।
+-                if target_issue is not None and target_issue.get("title") is None:
++                # বাংলা: hydrate-ট্রিগার শুধু title-অনুপস্থিতিতে সীমাবদ্ধ রাখলে
++                # ভবিষ্যতে board payload-এ title যোগ হলে (যেমন --json
++                # number,title,labels) body-হীন envelope নীরবে বেরিয়ে যেত —
++                # SPEC §2-এর body-গ্যারান্টি ট্রিগার-শেপ-কাপলিং ভেঙে পড়ত
++                # (U4 fallback false-positive-এর একই শেপ-কাপলিং ক্লাস)। তাই
++                # title বা body — যেকোনো একটা অনুপস্থিত হলেই hydrate: আজকের
++                # payload-এ (number,labels) আচরণ অপরিবর্তিত, ভবিষ্যতের যেকোনো
++                # board-query শেপে title+body নিশ্চিত।
++                if target_issue is not None and (
++                    target_issue.get("title") is None or target_issue.get("body") is None
++                ):
+                     h_cmd = [
+                         "gh", "issue", "view", str(picked),
+                         "--repo", UPSTREAM_REPO,

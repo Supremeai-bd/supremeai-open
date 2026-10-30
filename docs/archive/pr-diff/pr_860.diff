@@ -1,0 +1,68 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo2.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo2.md
+new file mode 100644
+index 00000000..39a17c2c
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo2.md
+@@ -0,0 +1,62 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo2
++## SupremeAI Studio Frontend "Cosmic" Modernization — Phase 2: Public Landing Page + Our Story
++
++**Target subsystem:** supremeai-studio (frontend) — new public routes `/` (marketing landing) and `/about`
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Depends on:** bridge-20261022-frontend-cosmic-wo1 (token consolidation, #855) and WO3 primitives (aurora/motion patterns, #857)
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow)
++
++## Context
++
++supremeai-studio has NO public marketing surface today: no `src/pages/Landing.tsx`, no hero, no explanation of why a visitor should sign up. Reference design (owner-approved mockups, 2026-10-22) shows a cosmic aesthetic — dark ink background, green/purple aurora, planet visual — with: hero + dual CTA, live chat demo, 3 feature cards, split-screen auth, and an "Our Story" page with a numbered Ask → Review → Ship flow. Owner directive: take the ideas, do NOT copy exactly, make it better.
++
++## Scope of this work order
++
++1. **Routes & shell:**
++   - `/` → new `LandingPage` (public, no auth guard); existing authenticated landing logic (`resolveLandingPath`) stays untouched for logged-in users.
++   - `/about` → new `OurStoryPage` (public).
++   - Both pages use a minimal `LandingHeader` (logo + About + Features + Log in + Sign up) — NOT the app GlobalHeader; guest users must not see admin/app chrome.
++2. **Hero section (better than reference):**
++   - Animated aurora background using WO1 tokens (CSS keyframe gradient drift; `prefers-reduced-motion` → static gradient). No static image dependency.
++   - Live-typed chat demo panel: a small scripted conversation typed out character-by-character (looping) instead of a fake screenshot — more credible and self-updating.
++   - Headline + two CTAs: "Try the chat" → `/workspace/live` guest chat (e2e guest-chat spec already exists), "Create free account" → `/signup`.
++3. **Feature section:**
++   - 3 cards (Understands your code / Connects your tools / Answers in seconds) mapped to real capabilities, not invented claims.
++4. **Social proof section (upgrade over reference — reference has none):**
++   - Honest stats block (e.g. services wired into the mesh, uptime posture) rendered from static copy approved by owner; NO fake testimonials or fabricated user counts.
++5. **Our Story page (`/about`):**
++   - Numbered 3-step flow (Ask → Review → Ship) + 4 capability cards (Code audits / GitHub search / Pull requests / Live chat) + short founder note (Bangla+English, owner to review copy).
++6. **Auth entry visual (split-screen):**
++   - Split-screen treatment on `/signup` and `/login`: left aurora visual + tagline, right form (existing auth logic UNTOUCHED — visual wrapper only; Google/Apple buttons only if backend supports them, otherwise email form only — no dead buttons).
++7. **Quality bar:**
++   - All styling via `--sa-*` tokens only; `VITE_COSMIC_LANDING` flag (default true) to disable the aurora/motion layer; Lighthouse-friendly: no heavy images, fonts unchanged, lazy-free pure CSS visuals.
++   - SEO meta (title/description/OG) for `/` and `/about`.
++
++## Out of scope
++
++- No changes to auth logic, backend routes, app dashboard, chat page (WO4), admin (WO5). No new npm dependencies. No copied assets from reference mockups.
++
++## Acceptance criteria
++
++- [ ] Guest visiting `/` sees landing (no auth wall); logged-in `resolveLandingPath` behavior unchanged.
++- [ ] Guest chat CTA path works against existing guest-chat e2e flow.
++- [ ] Zero new dependencies; zero raw slate/blue classes; zero fabricated social proof.
++- [ ] `prefers-reduced-motion` honored; lighthouse perf budget met (no new image payload > 50KB).
++- [ ] `npm test` + typecheck green; new page tests: render, CTA navigation, guest header shows no admin chrome.
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** Without a public landing surface, every visitor lands on a login wall with zero explanation of what SupremeAI is — the highest-friction possible first impression. The reference mockups give an owner-approved aesthetic; this work order translates it into token-driven, dependency-free components that prove the platform's identity before signup.
++
++**Alternatives rejected:**
++- *Copy the mockups pixel-for-pixel* — owner explicitly said "not exactly same... make much better"; also mockup assets (planet render) are heavy images incompatible with the perf budget.
++- *Put marketing copy inside the app shell* — guests must not see app chrome, and GlobalHeader's context model is user/admin only; a separate lightweight LandingHeader is cheaper than extending GlobalHeader's contract for anonymous users.
++- *Ship social proof with placeholder numbers now* — rejected: fabricated metrics would violate the platform's honesty conventions (honest-empty-state precedent); stats block ships only with owner-approved real figures.
++- *Wait for a designer* — reference direction already exists; token-driven CSS visuals let us iterate cheaply and stay reversible.
++
++## Verification evidence
++
++- Doc-only work-order spec; routing facts verified against live repo (no existing Landing page; guest-chat e2e spec exists; `resolveLandingPath` in src/auth/identity.ts; GlobalHeader context model) read via MCP Tower on 2026-10-22.
++- Reference design confirmed via owner-uploaded mockups analyzed 2026-10-22 (hero+CTA+3 cards, chat with quick-actions, split-screen auth, Our Story page).
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest + typecheck output.

@@ -1,0 +1,198 @@
+diff --git a/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md b/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
+index 687f2e18..012aeafd 100644
+--- a/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
++++ b/docs/OPS_ACTIONS_QUOTA_RUNBOOK.md
+@@ -120,3 +120,21 @@ Link the ticket back into issue #68 when filed.
+ - PR #64 (task envelope + open guards) · Issue #63 (taxonomy drift fix)
+ - Issue #155 (Federation Workflow Diet — public 5→2 workflows, private 18→4)
+ - `docs/AGENT_LOOP_SPEC.md §4b` (CONTRACT_VERSION parity contract)
++
++## 9. Satellite main CI red — first triage (added 2026-10-28, audit #2111)
++
++Row: **satellite repo main CI RED → check here first, before touching product code.**
++
++1. **Event plane.** Pull the run's `event` field. On `Supremeai-bd/supremeai-core`, schedule
++   runs execute ONLY the PyErrorFix autofix job (ci.yml job-split: `test` = push/PR only,
++   `autofix` = schedule-only). Same-sha push-green + schedule-red = disjoint job planes,
++   not a product regression (live proof: runs 35 success vs 36 failure on sha 419a838).
++2. **Trigger filter.** Read `.github/workflows/ci.yml` at HEAD. A corrupted `push.branches`
++   silently kills push-CI (observed 2026-10-28: literal `ain]` at bot commit feda45e →
++   product CI dark on core main until admin fixes it).
++3. **Watchdog plane.** Both core CI jobs dispatch `federation_ci_failed` to supremeai-open
++   on failure — check the open repo for the filed issue (e.g. #2053) before declaring a
++   detection blind spot; the residual gap is closed-lane invisibility, not absence of
++   detection.
++
++Full RCA: `docs/reports/AUDIT_2111_CORE_CI_SCHEDULE_POLARITY_2026-10-28.md`.
+diff --git a/docs/reports/AUDIT_2111_CORE_CI_SCHEDULE_POLARITY_2026-10-28.md b/docs/reports/AUDIT_2111_CORE_CI_SCHEDULE_POLARITY_2026-10-28.md
+new file mode 100644
+index 00000000..58b6ad52
+--- /dev/null
++++ b/docs/reports/AUDIT_2111_CORE_CI_SCHEDULE_POLARITY_2026-10-28.md
+@@ -0,0 +1,166 @@
++# AUDIT #2111 RCA — supremeai-core main CI reds are SCHEDULE-PLANE ONLY; push-CI silently dead at head
++
++**Provenance**: zai-agent-job-478709 (Z.ai / GLM autonomous agent), Job 478709, cron cycle 13,
++2026-10-28T11:19Z claim → this report. Claim gate: `work_claim #2111 → GRANT_NEW 11:19:45Z
++(TTL 30m)`. Trigger: #2111 (P2-medium, audit:finding, repo:core, status:unclaimed) — the
++federation auditor's cross-repo CI health sweep (Job 478346, filed ~11:05Z). All evidence
++zero-credential (tower `github_workflow_runs` / `github_get_failed_logs` / `github_read_file`);
++no clones of the private core repo, no keys, no log lines beyond the public snippet window.
++
++## 1. Fresh ground truth (re-swept 11:20Z, independent of the auditor's 11:02-11:04Z window)
++
++`github_workflow_runs {"repo": "supremeai-core", "limit": 15}` (12 runs parsed, total_count 48):
++
++| run | branch | sha | event | conclusion | created_at (Z) | note |
++|---|---|---|---|---|---|---|
++| 40 | main | feda45e | **schedule** | **failure** | 10-28 07:58:01 | the #2111 red; head = bot's own `ci` commit |
++| 39 | main | 832b27e | push | success | 10-27 16:53:58 | last green = sync(open→core) — matches #2111's "last green" |
++| 38 | main | 9408033 | push | success | 10-27 15:59:20 | sync lane green |
++| 37 | main | cb8a6f8 | push | success | 10-27 07:52:21 | "continue-on-error for SARIF upload" fix commit |
++| 36 | main | 419a838 | **schedule** | **failure** | 10-27 07:23:29 | the prior #2111 red — SAME SHA as run 35 |
++| 35 | main | 419a838 | push | success | 10-26 20:33:06 | **same sha, opposite verdict vs run 36** |
++
++Both #2111-cited failures are `event=schedule`, NOT push. The auditor's "2 failures in 2 days"
++is real, but the trigger plane was not stated in the issue; it is the decisive fact (§2-§3).
++
++## 2. Structural RCA — ci.yml job split (read at HEAD feda45e, `github_read_file`)
++
++The core CI defines exactly two jobs with **disjoint trigger `if` filters**:
++
++- `test` ("🧪 Core Pytest & Lint"):
++  `if: github.event_name == 'push' || 'pull_request' || (workflow_dispatch && inputs.run_autofix != true)`
++  → the product test suite **never executes on schedule runs**.
++- `autofix` ("🔧 PyErrorFix Engine"):
++  `if: github.event_name == 'schedule' || (workflow_dispatch && inputs.run_autofix == true)`
++  → the fixer engine runs **only on schedule or explicit manual dispatch**.
++
++Consequence: a scheduled nightly run contains **only** the PyErrorFix job. A red schedule run
++says **nothing** about product code health — the pytest/ruff/secret-scan plane did not run in it.
++The failure of the "PyErrorFix Engine" job is a failure of the autonomous-fixer ORCHESTRATION
++plane, not (so far provable) of product code. #2111's own honest-scope line ("NOT claimed:
++product-code breakage") is thereby structurally explained, not just unproven.
++
++## 3. Same-sha polarity — the decisive experiment GitHub already ran for us
++
++Run 35 (push, `419a838`) = **success**; run 36 (schedule, **same sha** `419a838`) = **failure**.
++Same tree, opposite verdicts, because the two runs executed **completely different job planes**
++(test-only vs autofix-only per §2). This falsifies any "bad commit 419a838" reading and any
++"product regression" reading in one stroke. The push-triggered product CI on core main has been
++**green on every push** in the parsed window (runs 35/37/38/39 all success).
++
++## 4. Failure-surface narrowing inside the autofix job (structural, no auth needed)
++
++Every pyerrorfix step is armored: the analyzer runs twice with shell-fallback semantics
++(its exit status is swallowed; SARIF output is redirected to a result file) and a
++post-step guard that **always rewrites a valid empty SARIF** if the output is missing/invalid.
++Therefore the analysis itself **cannot** hard-fail the job. Only three steps can:
++
++1. `actions/checkout@v5` with `fetch-depth: 0` (infra; rare);
++2. `actions/setup-python@v6` (infra; rare);
++3. `github/codeql-action/upload-sarif@v3` (`if: always()`) — **prime suspect**: on a private
++   repo, SARIF upload fails without GHAS/code-scanning entitlement ("Code scanning is not
++   enabled" class), an auth/entitlement failure independent of code content.
++
++Honest limit: the decisive error line is beyond the zero-credential log snippet window
++(independently re-confirmed this cycle — the snippet again covers setup/cleanup only, and shows
++the upload-sarif Node-20 deprecation warning, consistent with the job reaching that step).
++Maintainer's authenticated log view decides; the structural narrowing above tells them which
++~10 lines to read first. Note run 37's own title ("continue-on-error for SARIF upload") shows
++this exact plane has bitten core CI before and was patched once on the `test` job's path — the
++`autofix` job's upload step has no such tolerance.
++
++## 5. NEW latent defect found this RCA — `push.branches` filter corrupted at HEAD
++
++Current ci.yml at HEAD declares:
++
++```yaml
++on:
++  push:
++    branches: ain]
++```
++
++`ain]` is a literal YAML plain scalar — it matches **no branch** (clearly a corruption of
++`main`, the trailing `]` being an editing artifact). Inference chain that the bot's own commit
++introduced it: (a) push-triggered runs fired as late as run 39, 10-27T16:53:58Z, so the filter
++matched `main` at 832b27e; (b) the only commit landing on core main after 832b27e is the bot's
++`feda45e` (subject `ci`); (c) HEAD's filter is `ain]`; (d) zero push-triggered runs exist after
++run 39 in the full window while a schedule run did start on feda45e. **Net effect: product
++push-CI on core main has been silently dead since the bot's commit** — the nightly exercises
++only the fixer plane (§2), so core main's product code has had **no CI coverage at all** since
++10-27T16:53Z. This is strictly worse than the #2111 blind-spot finding: the runway is not
++merely unmonitored, its signal source is disconnected. (Caveat recorded honestly: (d) is
++window-bounded evidence, total_count=48; a maintainer commit-view of feda45e gives the
++one-keystroke confirmation.)
++
++## 6. Detection-plane audit — the watchdog path works; the residual gap is board visibility
++
++Both core jobs carry a `Trigger Federation CI Watchdog on Failure` step dispatching
++`federation_ci_failed` to `Supremeai-bd/supremeai-open` (`|| true`, PAT chain
++OPEN_SYNC_PAT/MERGE_PAT/OPEN_DISPATCH_TOKEN/GITHUB_TOKEN). It demonstrably fired for the 10-28
++failure: **P0 #2053's title names the very same run id 40653481018** (filed ~08:1xZ, claimed by
++contributor-agent 08:06:38Z, since CLOSED with its core-ci fix lane green). So the cross-repo
++detection lane #2111 calls a blind spot partially exists; the TRUE residual gap is that
++`bridge_work_queue` surfaces **open** items only — once #2053 closed, the recurring nightly
++failures (a second red the next night) raised no new board signal. #2111's sweep was the first
++re-detection ~3h later. Refinement, not contradiction, of the audit finding.
++
++## 7. Schedule-delay datum
++
++Cron is `0 2 * * *` (02:00Z, "Nightly PyErrorFix scan") but the schedule runs actually started
++07:23:29Z (10-27) and 07:58:01Z (10-28) — a ~5.4-6.0h GitHub scheduler queue delay both nights.
++Operational consequence: nightly-fixer output lands mid-morning UTC, and #2111's "the bot's own
++commit, pushed 07:58Z" reading is an artifact of that delay — the bot commit predates the run
++creation (a schedule run's head is simply the branch tip at delayed start time).
++
++## 8. Lanes disposition (per #2111 §4, "maintainer's call")
++
++- **A (triage/admin, protected-path)**: fix `push.branches` `ain]` → `main` (§5 — the urgent
++  one: restores product CI on core main); then decide the autofix plane's fate: gate behind
++  non-bot commits (#2111's own suggestion) and/or give the autofix job's SARIF upload the same
++  `continue-on-error` tolerance run 37 gave the test job (§4). All `.github/` edits stay
++  issue-side per the #1769/#1822/#1912 protected-path precedent — admin executes.
++- **B (detection)**: before building a new 6-repo sentinel, note the watchdog dispatch plane
++  already exists (§6); the actual gap is CLOSED-lane invisibility on the board. A scheduled
++  sentinel that re-opens/re-files on **repeat** satellite reds (same job, 2nd consecutive
++  night) is the missing piece — cheaper than a full new detector and consistent with the
++  #1814 drift-detector class. Left as a spec proposal; not built in this pass (scope).
++- **C (runbook row)**: delivered in this very bridge order — `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`
++  gains §9 "Satellite main CI red — first triage" carrying the three checks above.
++
++## 9. #2053 lineage — duplicate-part resolution
++
++#2111's cited run 40653481018 is the exact run of closed P0 #2053 ("fix(ci): [core] ci failed
++on main (Run #40653481018)", repo:core, claimed 08:06:38Z, closed with green core-ci lane —
++verified via `bridge_read_feedback` this cycle; its RCA WO #2056 remains open bridge:queued by
++design). #2111 was filed ~3h after #2053 closed; the auditor's no-duplicate check scanned the
++open-issue queue only, which structurally cannot see closed lanes (§6). Nothing in #2053's
++resolution is lost here: this report re-records the lineage on main. #2111 itself is **kept
++open**: lane A (yml fixes) and lane B (repeat-red sentinel) are genuinely unresolved admin
++decisions — no closure keywords ride in this order's summary.
++
++## এটা করা যাবে না (never-do — honored)
++
++- No `.github/` edits from an agent (protected-path law); yml fixes are admin's.
++- No speculation beyond evidence: upload-sarif is the structurally-narrowed PRIME SUSPECT,
++  not a claim; the decisive log line needs maintainer auth (stated twice).
++- No duplicate P0/fiffix lane: #2053 closed ownership respected; #2056 open lane untouched.
++- No closure of #2111: lanes A/B remain open decisions.
++
++## 3-tier mapping (loop contract)
++
++- **T1 Reflection**: this document — claim-gate arc (GRANT_NEW 11:19:45Z), issue body fetched
++  via public HTML (api.github.com rate-limit-proof plane), verdict planes of #2053/#2056 read
++  before any move.
++- **T2 Smoke**: fresh independent sweep at 11:20Z reproduces both #2111 reds with the
++  event=schedule datum the issue lacked; `github_read_file` returned HEAD ci.yml (sha
++  b69ba399…) byte-verbatim; `github_get_failed_logs` re-confirms the snippet-window limit.
++- **T3 Tests**: diff vs main `2acbe7e` = 1 new report file (this) + 1 appended runbook section
++  (§9, additive, no rewrites of existing sections); zero code, zero config, zero workflow
++  surface; docs-only vehicle per the tracked CI_1933/CI_4532/wo1912-recert/EYE_1783_1797
++  precedents.
++
++## Rollback
++
++Single revert of the landing commit removes both the report file and the appended §9 (the
++append is the file's final section; no existing text touched). No closure keywords in the
++commit message, so nothing to reopen. No code, no config, no generated files.

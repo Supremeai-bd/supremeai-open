@@ -1,0 +1,155 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 7d950abc..affaa7ae 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:claim-markers && npm run test:github-pagination && npm run test:marketplace-plugins && npm run test:license-gate && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:health-hollow-guard && npm run test:health-watchdog && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:annotations-floor && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0 && npm run test:bridge-dedup && npm run test:bridge-titles && npm run test:bridge-staleness && npm run test:bridge-test-wiring && npm run test:mcp-mutation-rate-limit && npm run test:bridge-verdicts && npm run test:claim-markers && npm run test:github-pagination && npm run test:schema-text-drift && npm run test:marketplace-plugins && npm run test:license-gate && npm run test:tool-tombstones && npm run test:devtools-adapter && npm run test:c29-dual-emission",
+     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
+     "test:tool-tombstones": "tsx test_tool_tombstones.ts",
+     "test:devtools-adapter": "tsx test_devtools_adapter.ts",
+@@ -75,6 +75,7 @@
+     "test:bridge-verdicts": "tsx test_bridge_verdicts.ts",
+     "test:claim-markers": "tsx test_claim_markers.ts",
+     "test:github-pagination": "tsx test_github_pagination.ts",
++    "test:schema-text-drift": "tsx test_schema_text_drift.ts",
+     "test:marketplace-plugins": "tsx test_marketplace_plugins.ts",
+     "test:license-gate": "tsx test_license_gate.ts",
+     "test:r66-target-echo": "tsx test_r66_target_echo.ts",
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index e7cd5bb7..6ca12fa7 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -181,7 +181,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name" + repoDefaultNote()),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
++          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock ΓÇö re-probe with per_page=100 before filing an outage"),
+         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+         runId: z.string().optional().describe("Run ID (required for get_failed_logs)"),
+       },
+@@ -221,7 +221,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+         accountId: z.string().optional().describe("The account ID (e.g. 'github-primary')"),
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
++          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock ΓÇö re-probe with per_page=100 before filing an outage"),
+         limit: z.number().optional().describe("Number of runs to fetch (default: 5)"),
+       },
+       outputSchema: targetEchoSchema,
+@@ -352,7 +352,7 @@ export async function registerGitHubTools(server: McpServer): Promise<void> {
+         repo: z.string().optional().describe("Target repository name (e.g. 'supremeai-open', 'supremeai-skills') or 'Supremeai-bd/<repo>'" + repoDefaultNote()),
+         state: z.enum(["open", "closed", "all"]).optional().describe("PR state (default: 'open')"),
+         per_page: z.number().int().min(1).max(100).optional().describe(
+-          "GitHub-REST page-size alias of limit (R62: per_page-only callers were silently dropped to the default 5-row window)"),
++          "GitHub-REST page-size, fully honored (#2614 live-verified): precedence per_page ?? limit ?? default 5, clamped to GitHub's 1..100 envelope. A 5-row response means params were dropped (e.g. camelCase perPage), not a page-lock ΓÇö re-probe with per_page=100 before filing an outage"),
+         limit: z.number().optional().describe("Max number of PRs (default: 5)"),
+       },
+       outputSchema: targetEchoSchema,
+diff --git a/infrastructure/mcp-control-plane/test_schema_text_drift.ts b/infrastructure/mcp-control-plane/test_schema_text_drift.ts
+new file mode 100644
+index 00000000..e87c1403
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_schema_text_drift.ts
+@@ -0,0 +1,97 @@
++/**
++ * #2614 ΓÇö Schema-text drift guard (pure, offline).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ *
++ * Root cause it prevents: the R62 per_page remedy (#2379) landed the
++ * resolvePerPage fix + regression battery, but the tool-schema DESCRIPTIONS
++ * kept the historical "per_page-only callers were silently dropped to the
++ * default 5-row window" note. Every AI caller reads that schema text: it
++ * claimed the alias was still ignored AFTER it was honored, so agents kept
++ * filing false "tower page-lock" outages ΓÇö the exact dispute #2614 had to
++ * falsify with a live probe (2026-10-30: per_page=2 returns 2 rows).
++ *
++ * The guard keeps the schema text welded to the code reality:
++ *  1. No tool-schema description may claim the alias is silently dropped.
++ *  2. Every per_page-exposing tool must route through resolvePerPage
++ *     (per_page ?? limit ?? fallback) ΓÇö a schema that promises honoring
++ *     without the call-site honoring it is the next drift instance.
++ *  3. The precedence source of truth in github_pagination.ts stays intact.
++ */
++import { readFileSync } from "node:fs";
++import { dirname, join } from "node:path";
++import { fileURLToPath } from "node:url";
++
++const here = dirname(fileURLToPath(import.meta.url));
++const toolsSrc = readFileSync(join(here, "src/tools/github.tools.ts"), "utf8");
++const paginationSrc = readFileSync(
++  join(here, "src/lib/github_pagination.ts"),
++  "utf8"
++);
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  Γ£ô ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  Γ£ù ${name}${detail ? ` ΓÇö ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\nΓöÇΓöÇ ${title} ΓöÇΓöÇ`);
++}
++
++function main(): void {
++  section("S1 stale-note ban: no schema description may claim silent drop");
++  const staleNote = "silently dropped to the default 5-row window";
++  check(
++    "github.tools.ts carries zero stale R62 drop-notes",
++    !toolsSrc.includes(staleNote),
++    `found ${toolsSrc.split(staleNote).length - 1} occurrence(s) ΓÇö the alias is honored since #2379; the text must describe reality (#2614)`
++  );
++
++  section("S2 honoring promise: per_page schema text states the alias works");
++  const honorNotes = toolsSrc.split("fully honored").length - 1;
++  const perPageProps = toolsSrc.split("per_page: z.number()").length - 1;
++  check(
++    `per_page schema property count == per_page: z.number() count (${perPageProps})`,
++    perPageProps > 0,
++  );
++  check(
++    `every per_page-exposing schema describes full honoring (${honorNotes} honor notes)`,
++    honorNotes >= perPageProps,
++    `${honorNotes} < ${perPageProps} ΓÇö a per_page property without an honoring description re-introduces the #2614 drift`,
++  );
++
++  section("S3 wiring: promise must meet the honoring call-site");
++  // "resolvePerPage(" matches call sites only ΓÇö the import line carries no
++  // call parens, so no import subtraction is needed (3 schemas -> 3 calls).
++  const resolveCalls = toolsSrc.split("resolvePerPage(").length - 1;
++  check(
++    "resolvePerPage call sites >= per_page-exposing schemas",
++    resolveCalls >= perPageProps,
++    `${resolveCalls} call-site(s) < ${perPageProps} schema(s) ΓÇö a tool that exposes per_page without routing through resolvePerPage silently discards it again`,
++  );
++
++  section("S4 precedence SSOT: github_pagination.ts keeps per_page ?? limit");
++  check(
++    "precedence expression `perPage ?? limit` intact",
++    paginationSrc.includes("const raw = perPage ?? limit;"),
++    "resolvePerPage precedence changed ΓÇö update the tool descriptions in the same commit or the schema text drifts again",
++  );
++  check(
++    "1..100 envelope clamp intact",
++    paginationSrc.includes("Math.min(Math.max(Math.trunc(n), 1), 100)"),
++    "clamp removed ΓÇö callers could get unbounded windows",
++  );
++
++  console.log("\n=============================================");
++  if (failures === 0) {
++    console.log("ALL SCHEMA-TEXT DRIFT GUARD TESTS PASSED (#2614)");
++  } else {
++    console.error(`${failures} TEST(S) FAILED (#2614)`);
++  }
++  process.exit(failures === 0 ? 0 : 1);
++}
++
++main();

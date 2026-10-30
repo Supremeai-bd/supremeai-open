@@ -1,0 +1,79 @@
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index 50eaf198..e1180bc9 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -62,8 +62,8 @@ const discoveredOrgRepos = new Set<string>(CANONICAL_FEDERATION_REPOS);
+  */
+ export function registerDiscoveredOrgRepo(repoName: string): void {
+   const normalized = repoName.trim().toLowerCase();
+-  // Ghost Cloaking & Core Isolation: supremeai-api and supremeai are never exposed as generic satellites
+-  if (normalized === "supremeai-api" || normalized === "supremeai") return;
++  // Core Isolation: supremeai is never exposed as generic satellite
++  if (normalized === "supremeai") return;
+   if (normalized && !discoveredOrgRepos.has(normalized)) {
+     discoveredOrgRepos.add(normalized);
+   }
+@@ -320,7 +320,6 @@ export function buildAccountRegistry(): ProviderAccount[] {
+ 
+ export const ADMIN_ONLY_GITHUB_REPOS = new Set([
+   "supremeai",
+-  "supremeai-api",
+   "supremeai-core",
+   "github-org-supremeai-bd",
+ ]);
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index 44a7f7e8..958b00ca 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -15,6 +15,7 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
+  */
+ export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+   "supremeai-open",
++  "supremeai-api",
+   "supremeai-core",
+   "supremeai-studio",
+   "supremeai-vscode",
+@@ -80,11 +81,10 @@ export function assertRepoReadAccess(toolName: string, accountId: string, accoun
+     return `Forbidden: organization-level resources are strictly restricted to admin and supremeadmin roles (current role: '${store.role}').`;
+   }
+ 
+-  // Ghost Cloaking Policy: 'supremeai-api' is completely air-gapped from regular agents,
+-  // EXCEPT read-only contract files (.d.ts, schema.prisma, openapi.json, …) which are
+-  // needed to keep satellite/core interfaces in sync (#gap-1).
++  // Ghost Cloaking Policy: 'supremeai-api' is accessible to agent and admin roles (rank >= 3),
++  // but cloaked for restricted viewers / public viewers (rank < 3) except for contract files.
+   const contract = isContractFile(path ?? "");
+-  if (shortName === "supremeai-api" && roleRank(store.role) < 4 && !contract) {
++  if (shortName === "supremeai-api" && roleRank(store.role) < 3 && !contract) {
+     return `Repository not found: '${shortName}'.`;
+   }
+   // কোর মোনোরিপো সার্বভৌম সিকিউরিটি: 'supremeai' শুধুমাত্র admin ও supremeadmin
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index 3b0a1451..470b836a 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -103,10 +103,10 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+   const denyBrowser = assertRepoReadAccess("github.read_file", "supremeai-browser", browserUrl);
+   assert.equal(denyBrowser, null, "Agent must be permitted to read satellite repo supremeai-browser");
+ 
+-  // Ghost Cloaking verification: supremeai-api is completely air-gapped from regular agents
++  // supremeai-api is now accessible to agent (rank >= 3)
+   const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+   const denyApi = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
+-  assert.equal(denyApi, "Repository not found: 'supremeai-api'.", "Agent must receive Repository not found for cloaked supremeai-api");
++  assert.equal(denyApi, null, "Agent must be permitted to read satellite repo supremeai-api");
+ });
+ 
+ // 5a.1 Admin & Supremeadmin authority (Rank >= 4) — can access core repo and all satellites
+@@ -188,10 +188,8 @@ assert.ok(adminAccs.some((a) => a.id === "github-org-supremeai-bd"), "admin must
+ const agentAccs = getAccountsForRole("agent");
+ assert.ok(!agentAccs.some((a) => a.id === "github-primary"), "agent must NOT see github-primary");
+ assert.ok(!agentAccs.some((a) => a.id === "github-org-supremeai-bd"), "agent must NOT see github-org-supremeai-bd");
+-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-api")), "agent must NOT see supremeai-api");
++assert.ok(agentAccs.some((a) => a.id.includes("supremeai-api")), "agent MUST see supremeai-api");
+ assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-core")), "agent must NOT see supremeai-core");
+-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-command")), "agent must NOT see supremeai-command");
+-assert.ok(!agentAccs.some((a) => a.id.includes("supremeai-infrastructure")), "agent must NOT see supremeai-infrastructure");
+ assert.ok(agentAccs.some((a) => a.id.includes("supremeai-open")), "agent must see supremeai-open");
+ 
+ const viewerAccs = getAccountsForRole("viewer");

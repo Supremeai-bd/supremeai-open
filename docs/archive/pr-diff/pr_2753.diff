@@ -1,0 +1,161 @@
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 6c51d9b3..1fc6889f 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -148,6 +148,13 @@ jobs:
+           set -euo pipefail
+           python scripts/ci/satellite_board_guard.py --check --via-tower
+ 
++      - name: Prune Stale Remote Branches
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/cleanup_stale_branches.py || true
++
+ 
+   # ---------------------------------------------------------------------------
+   # 🛡️ Zero-checkout fast guards (PR-only, ~5s each)
+@@ -993,6 +1000,16 @@ jobs:
+           set -euo pipefail
+           python scripts/ci/auto_bridge_pr_opener.py --auto-open
+ 
++      # Autonomous Stale Remote Branch Cleaner:
++      # Prunes orphan remote branches (closed/rejected PRs, merged PR remnants,
++      # and abandoned bridge branches) that have no active open PR.
++      - name: Prune Stale Remote Branches
++        env:
++          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/cleanup_stale_branches.py || true
++
+       # AGENTS.md §10 — "A job that runs but produces no expected result
+       # is actionable when evidence confirms it… No-actionable-finding must be
+       # recorded explicitly without creating issue storms." An empty upstream
+diff --git a/scripts/ci/cleanup_stale_branches.py b/scripts/ci/cleanup_stale_branches.py
+index f43d9955..64804812 100644
+--- a/scripts/ci/cleanup_stale_branches.py
++++ b/scripts/ci/cleanup_stale_branches.py
+@@ -1,12 +1,14 @@
+ #!/usr/bin/env python3
+-"""Prune stale agent branches from origin.
++"""Prune stale agent and orphan work branches from origin.
+ 
+-Branches created by agents that have no open PRs are pruned from origin,
+-ensuring that remote branch existence reflects ONLY active in-progress work.
++Branches created by agents, bridge runners, or completed PRs that have no open PRs
++are pruned from origin, ensuring that remote branch existence reflects ONLY active
++in-progress work and never clutters the remote repository.
+ """
+ 
+ from __future__ import annotations
+ 
++import argparse
+ import json
+ import logging
+ import subprocess
+@@ -15,7 +17,26 @@
+ from typing import Set
+ 
+ REPO_ROOT = Path(__file__).resolve().parents[2]
+-AGENT_PREFIXES = ("coder-", "ci-", "planner-", "pr-helper-", "platform-", "agent-", "super-")
++
++# Standard prefixes for transient agent, bridge, and development branches
++AGENT_PREFIXES = (
++    "bridge/",
++    "coder-",
++    "ci-",
++    "planner-",
++    "pr-helper-",
++    "platform-",
++    "agent-",
++    "super-",
++    "fix/",
++    "feat/",
++    "chore/",
++    "refactor/",
++    "docs/",
++    "test/",
++    "perf/",
++    "revert/",
++)
+ 
+ logging.basicConfig(level=logging.INFO, format="%(message)s")
+ logger = logging.getLogger("cleanup_stale_branches")
+@@ -24,7 +45,7 @@
+ def get_open_pr_head_branches() -> Set[str]:
+     try:
+         res = subprocess.run(
+-            ["gh", "pr", "list", "--state", "open", "--json", "headRefName"],
++            ["gh", "pr", "list", "--state", "open", "--limit", "300", "--json", "headRefName"],
+             cwd=str(REPO_ROOT),
+             capture_output=True,
+             text=True,
+@@ -51,29 +72,40 @@ def get_remote_branches() -> Set[str]:
+         b = line.strip()
+         if b.startswith("origin/"):
+             ref = b.replace("origin/", "")
+-            if ref not in ("HEAD", "main", "master"):
++            if ref not in ("HEAD", "main", "master") and not ref.startswith("HEAD ->"):
+                 branches.add(ref)
+     return branches
+ 
+ 
+ def main() -> int:
++    parser = argparse.ArgumentParser(description="Prune stale remote branches without open PRs.")
++    parser.add_argument("--dry-run", action="store_true", help="List stale branches without deleting.")
++    args = parser.parse_args()
++
+     open_heads = get_open_pr_head_branches()
+     logger.info("Protected open PR branches (%d): %s", len(open_heads), open_heads)
+ 
+     remote_branches = get_remote_branches()
+     to_delete = []
+ 
+-    for branch in remote_branches:
+-        if branch in open_heads:
++    for branch in sorted(remote_branches):
++        # Never touch main, master, or currently open PR branches
++        if branch in open_heads or branch in ("main", "master"):
+             continue
+         if any(branch.startswith(prefix) for prefix in AGENT_PREFIXES):
+             to_delete.append(branch)
+ 
+-    logger.info("Found %d stale agent branches to delete from origin.", len(to_delete))
++    logger.info("Found %d stale/orphan branches to delete from origin.", len(to_delete))
+     if not to_delete:
+         logger.info("No stale branches to clean.")
+         return 0
+ 
++    if args.dry_run:
++        logger.info("Dry-run mode: Would delete the following %d branches:", len(to_delete))
++        for b in to_delete:
++            logger.info("  - %s", b)
++        return 0
++
+     batch_size = 20
+     for i in range(0, len(to_delete), batch_size):
+         chunk = to_delete[i:i + batch_size]
+diff --git a/scripts/ops/_INDEX.md b/scripts/ops/_INDEX.md
+index f0428b22..6b830f7a 100644
+--- a/scripts/ops/_INDEX.md
++++ b/scripts/ops/_INDEX.md
+@@ -2,7 +2,7 @@
+ 
+ > **AUTO-GENERATED by `scripts/ops/generate_script_index.py` — DO NOT EDIT BY HAND.**
+ > Regenerate: `python3 scripts/ops/generate_script_index.py` · CI gate: `--check` (exit 1 when stale)
+-> Last generated: 2026-10-28 21:51:47 UTC · **521 scripts** (486 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
++> Last generated: 2026-10-29 19:28:55 UTC · **521 scripts** (486 py · 30 sh · 5 js/mjs · 0 other) across 7 groups · 0 empty files skipped · 57 missing docstrings.
+ > AI: পুরো ফোল্ডার স্ক্যান না করে এই index পড়ুন। Paths are relative to `scripts/`.
+ 
+ Hand-curated sections live inside `<!-- hand:Name -->` … `<!-- /hand:Name -->` blocks
+@@ -140,7 +140,7 @@ at the bottom — the generator preserves them verbatim on every regeneration.
+ | `ci/circle_architecture_gate.py` | circle_architecture_gate.py — cross-circle import boundary gate (M11 Phase-1 refactored). |
+ | `ci/claim_lease.py` | claim_lease.py — 2-Stage Graduated Claim Lease: hermetic drop-in core. |
+ | `ci/cleanup_group_branches.py` | Group Branch Cleanup Utility (#2573). |
+-| `ci/cleanup_stale_branches.py` | Prune stale agent branches from origin. |
++| `ci/cleanup_stale_branches.py` | Prune stale agent and orphan work branches from origin. |
+ | `ci/compose_touching_declaration.py` | (#2464) 'Touching files:' ডিক্লিয়ারেশন কম্পোজার — atomic_claim.sh-এর জন্য। |
+ | `ci/config_registry_evidence.py` | Generate an evidence report for runtime configuration registry migration. |
+ | `ci/constitution_pointer_guard.py` | constitution_pointer_guard.py — dead-authority-pointer guard (#1642). |

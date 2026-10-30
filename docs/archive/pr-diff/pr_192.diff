@@ -1,0 +1,448 @@
+diff --git a/api-schemas/fixtures/provider-registry.fixture.json b/api-schemas/fixtures/provider-registry.fixture.json
+new file mode 100644
+index 00000000..417b0b14
+--- /dev/null
++++ b/api-schemas/fixtures/provider-registry.fixture.json
+@@ -0,0 +1,241 @@
++{
++  "schema_version": "1.0",
++  "providers": [
++    {
++      "id": "openai",
++      "display_name": "OpenAI",
++      "status": "active",
++      "base_url": "https://api.openai.com",
++      "auth": { "scheme": "bearer", "env_var": "OPENAI_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": true,
++        "json_mode": true,
++        "max_context_tokens": 128000,
++        "rate_limits": { "requests_per_minute": 500, "tokens_per_minute": 300000, "concurrent_requests": 10 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "upstream_pattern": "rate limit", "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context length", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content policy", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 1,
++        "fallback_ids": ["anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "anthropic",
++      "display_name": "Anthropic",
++      "status": "active",
++      "base_url": "https://api.anthropic.com",
++      "auth": { "scheme": "api-key-header", "header_name": "x-api-key", "env_var": "ANTHROPIC_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": true,
++        "json_mode": true,
++        "max_context_tokens": 200000,
++        "rate_limits": { "requests_per_minute": 400, "tokens_per_minute": 400000, "concurrent_requests": 8 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "credit", "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 529, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 2,
++        "fallback_ids": ["gemini", "openai", "groq", "openrouter", "mistral", "deepseek"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "gemini",
++      "display_name": "Google Gemini",
++      "status": "active",
++      "base_url": "https://generativelanguage.googleapis.com",
++      "auth": { "scheme": "query-param", "env_var": "GEMINI_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": true,
++        "json_mode": true,
++        "max_context_tokens": 1000000,
++        "rate_limits": { "requests_per_minute": 300, "tokens_per_minute": 1000000, "concurrent_requests": 8 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "RESOURCE_EXHAUSTED", "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "token limit", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "SAFETY", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 3,
++        "fallback_ids": ["anthropic", "openai", "groq", "openrouter", "mistral", "deepseek"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "groq",
++      "display_name": "Groq",
++      "status": "active",
++      "base_url": "https://api.groq.com",
++      "auth": { "scheme": "bearer", "env_var": "GROQ_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": false,
++        "json_mode": true,
++        "max_context_tokens": 128000,
++        "rate_limits": { "requests_per_minute": 30, "tokens_per_minute": 6000, "concurrent_requests": 5 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 4,
++        "fallback_ids": ["openrouter", "mistral", "deepseek", "openai", "anthropic", "gemini"],
++        "retry_policy": { "max_retries": 3, "backoff_base_ms": 3000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "openrouter",
++      "display_name": "OpenRouter",
++      "status": "active",
++      "base_url": "https://openrouter.ai",
++      "auth": { "scheme": "bearer", "env_var": "OPENROUTER_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": true,
++        "json_mode": true,
++        "max_context_tokens": 128000,
++        "rate_limits": { "requests_per_minute": 200, "tokens_per_minute": 400000, "concurrent_requests": 10 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 402, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "moderation", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 5,
++        "fallback_ids": ["groq", "mistral", "deepseek", "openai", "anthropic", "gemini"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "mistral",
++      "display_name": "Mistral AI",
++      "status": "active",
++      "base_url": "https://api.mistral.ai",
++      "auth": { "scheme": "bearer", "env_var": "MISTRAL_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": false,
++        "json_mode": true,
++        "max_context_tokens": 128000,
++        "rate_limits": { "requests_per_minute": 240, "tokens_per_minute": 500000, "concurrent_requests": 6 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 429, "upstream_pattern": "quota", "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 502, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 6,
++        "fallback_ids": ["deepseek", "groq", "openrouter", "openai", "anthropic", "gemini"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    },
++    {
++      "id": "deepseek",
++      "display_name": "DeepSeek",
++      "status": "active",
++      "base_url": "https://api.deepseek.com",
++      "auth": { "scheme": "bearer", "env_var": "DEEPSEEK_API_KEY" },
++      "capabilities": {
++        "streaming": true,
++        "tool_calling": true,
++        "reasoning_tokens": true,
++        "json_mode": true,
++        "max_context_tokens": 64000,
++        "rate_limits": { "requests_per_minute": 60, "tokens_per_minute": 100000, "concurrent_requests": 5 }
++      },
++      "errors": {
++        "mappings": [
++          { "code": "rate_limited", "upstream_status": 429, "action": "backoff_then_retry" },
++          { "code": "quota_exhausted", "upstream_status": 402, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 401, "action": "failover" },
++          { "code": "auth_failure", "upstream_status": 403, "action": "failover" },
++          { "code": "timeout", "upstream_status": 408, "action": "retry" },
++          { "code": "provider_unavailable", "upstream_status": 500, "action": "failover" },
++          { "code": "provider_unavailable", "upstream_status": 503, "action": "failover" },
++          { "code": "context_overflow", "upstream_status": 400, "upstream_pattern": "context", "action": "abort" },
++          { "code": "content_filter", "upstream_status": 400, "upstream_pattern": "content", "action": "abort" }
++        ]
++      },
++      "failover": {
++        "priority": 7,
++        "fallback_ids": ["mistral", "groq", "openrouter", "openai", "anthropic", "gemini"],
++        "retry_policy": { "max_retries": 2, "backoff_base_ms": 2000, "backoff_multiplier": 2, "retry_on": ["rate_limited", "timeout"] }
++      }
++    }
++  ],
++  "failover_cascade": ["openai", "anthropic", "gemini", "groq", "openrouter", "mistral", "deepseek"]
++}
+diff --git a/api-schemas/provider-registry.schema.json b/api-schemas/provider-registry.schema.json
+new file mode 100644
+index 00000000..ab540375
+--- /dev/null
++++ b/api-schemas/provider-registry.schema.json
+@@ -0,0 +1,195 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "$id": "https://supremeai.dev/schemas/provider-registry.schema.json",
++  "title": "SupremeAI Provider Registry",
++  "description": "Single source of truth (SSOT) for LLM provider capability, error-classification and failover-cascade contracts. One place to declare what a provider can do, how its failures normalize, and who takes over when it degrades. BN: LLM প্রোভাইডারের সক্ষমতা, ত্রুটি-শ্রেণিবিন্যাস ও ফেইলওভার চেইনের একক সত্য-উৎস।",
++  "type": "object",
++  "required": ["schema_version", "providers"],
++  "additionalProperties": false,
++  "properties": {
++    "schema_version": {
++      "type": "string",
++      "pattern": "^\\d+\\.\\d+$",
++      "description": "Registry contract version (semver-ish MAJOR.MINOR). MAJOR bumps require consumer-adapter review; MINOR bumps are additive-only."
++    },
++    "providers": {
++      "type": "array",
++      "minItems": 1,
++      "uniqueItems": true,
++      "description": "All declared providers. The id-space is pattern-open (not a closed enum) so new providers up to and beyond the 12-provider target extend the registry with zero schema changes and zero breaking changes to existing consumer adapters.",
++      "items": { "$ref": "#/$defs/provider" }
++    },
++    "failover_cascade": {
++      "type": "array",
++      "items": { "$ref": "#/$defs/providerId" },
++      "minItems": 1,
++      "uniqueItems": true,
++      "description": "Global default failover order: first entry is the primary route, later entries are successive fallbacks. Per-provider overrides live on the provider's failover object."
++    }
++  },
++  "$defs": {
++    "providerId": {
++      "type": "string",
++      "pattern": "^[a-z][a-z0-9-]*$",
++      "description": "Stable lowercase provider id, e.g. openai, anthropic, gemini, mistral, deepseek, groq, openrouter."
++    },
++    "errorCode": {
++      "type": "string",
++      "enum": [
++        "rate_limited",
++        "auth_failure",
++        "provider_unavailable",
++        "context_overflow",
++        "content_filter",
++        "timeout",
++        "quota_exhausted",
++        "upstream_error"
++      ],
++      "description": "Standardized failure classes every upstream error MUST normalize into. Consumers branch on this code only — never on raw upstream payloads."
++    },
++    "errorAction": {
++      "type": "string",
++      "enum": ["retry", "backoff_then_retry", "failover", "abort"],
++      "description": "The single prescribed consumer action for the mapped error class."
++    },
++    "provider": {
++      "type": "object",
++      "required": ["id", "display_name", "status", "auth", "capabilities", "errors", "failover"],
++      "additionalProperties": false,
++      "properties": {
++        "id": { "$ref": "#/$defs/providerId" },
++        "display_name": {
++          "type": "string",
++          "minLength": 1,
++          "description": "Human-facing provider name."
++        },
++        "status": {
++          "type": "string",
++          "enum": ["active", "planned", "deprecated"],
++          "description": "Lifecycle status. planned = declared but not yet integrated; deprecated = still routable but excluded from new failover cascades."
++        },
++        "base_url": {
++          "type": "string",
++          "pattern": "^https://",
++          "description": "HTTPS-only API base URL. No paths, no query strings, no credentials."
++        },
++        "auth": {
++          "type": "object",
++          "required": ["scheme", "env_var"],
++          "additionalProperties": false,
++          "description": "Credential POINTER only. The registry never carries secret VALUES — credentials resolve at runtime from the named environment variable (boundary-guard doctrine: name, never value).",
++          "properties": {
++            "scheme": {
++              "type": "string",
++              "enum": ["bearer", "api-key-header", "query-param"]
++            },
++            "header_name": {
++              "type": "string",
++              "pattern": "^[A-Za-z][A-Za-z0-9-]*$",
++              "description": "Required when scheme is api-key-header (e.g. X-SupremeAI-Key style inbound or provider-specific outbound headers)."
++            },
++            "env_var": {
++              "type": "string",
++              "pattern": "^[A-Z][A-Z0-9_]*$",
++              "description": "Name of the environment variable holding the credential. Never the credential itself."
++            }
++          },
++          "if": { "properties": { "scheme": { "const": "api-key-header" } } },
++          "then": { "required": ["scheme", "env_var", "header_name"] }
++        },
++        "capabilities": {
++          "type": "object",
++          "required": ["streaming", "tool_calling", "reasoning_tokens", "json_mode", "max_context_tokens", "rate_limits"],
++          "additionalProperties": false,
++          "properties": {
++            "streaming": { "type": "boolean", "description": "SSE/token streaming supported." },
++            "tool_calling": { "type": "boolean", "description": "Native function/tool invocation supported." },
++            "reasoning_tokens": { "type": "boolean", "description": "Extended-thinking/reasoning token accounting surfaced in usage." },
++            "json_mode": { "type": "boolean", "description": "Structured JSON output mode supported." },
++            "max_context_tokens": {
++              "type": "integer",
++              "minimum": 0,
++              "description": "Maximum context window in tokens."
++            },
++            "rate_limits": { "$ref": "#/$defs/rateLimits" }
++          }
++        },
++        "errors": {
++          "type": "object",
++          "required": ["mappings"],
++          "additionalProperties": false,
++          "properties": {
++            "mappings": {
++              "type": "array",
++              "minItems": 1,
++              "description": "Upstream-condition → standard-class normalization table. First matching entry wins; consumers MUST NOT interpret unmapped upstream shapes.",
++              "items": {
++                "type": "object",
++                "required": ["code", "upstream_status", "action"],
++                "additionalProperties": false,
++                "properties": {
++                  "code": { "$ref": "#/$defs/errorCode" },
++                  "upstream_status": {
++                    "type": "integer",
++                    "minimum": 400,
++                    "maximum": 599,
++                    "description": "HTTP status this mapping applies to."
++                  },
++                  "upstream_pattern": {
++                    "type": "string",
++                    "description": "Optional substring/shape discriminator for statuses that encode multiple failure classes (e.g. 429 with quota vs rate body)."
++                  },
++                  "action": { "$ref": "#/$defs/errorAction" }
++                }
++              }
++            }
++          }
++        },
++        "failover": {
++          "type": "object",
++          "required": ["priority", "fallback_ids", "retry_policy"],
++          "additionalProperties": false,
++          "properties": {
++            "priority": {
++              "type": "integer",
++              "minimum": 1,
++              "description": "1 = highest routing preference. Cascade builders sort on this, then on id for determinism."
++            },
++            "fallback_ids": {
++              "type": "array",
++              "items": { "$ref": "#/$defs/providerId" },
++              "uniqueItems": true,
++              "description": "This provider's ordered takeover list. Must not contain the provider's own id; cycle-free across the registry by convention."
++            },
++            "retry_policy": {
++              "type": "object",
++              "required": ["max_retries", "backoff_base_ms", "backoff_multiplier", "retry_on"],
++              "additionalProperties": false,
++              "properties": {
++                "max_retries": { "type": "integer", "minimum": 0, "maximum": 10 },
++                "backoff_base_ms": { "type": "integer", "minimum": 0 },
++                "backoff_multiplier": { "type": "number", "minimum": 1 },
++                "retry_on": {
++                  "type": "array",
++                  "items": { "$ref": "#/$defs/errorCode" },
++                  "uniqueItems": true,
++                  "description": "Standard classes eligible for in-place retry. Everything else either fails over or aborts."
++                }
++              }
++            }
++          }
++        }
++      }
++    },
++    "rateLimits": {
++      "type": "object",
++      "required": ["requests_per_minute", "tokens_per_minute", "concurrent_requests"],
++      "additionalProperties": false,
++      "properties": {
++        "requests_per_minute": { "type": "integer", "minimum": 0 },
++        "tokens_per_minute": { "type": "integer", "minimum": 0 },
++        "concurrent_requests": { "type": "integer", "minimum": 0 }
++      }
++    }
++  }
++}

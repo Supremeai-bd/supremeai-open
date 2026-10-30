@@ -1,0 +1,115 @@
+diff --git a/docs/reports/PLANE_WATCH_C45_2026-10-30.md b/docs/reports/PLANE_WATCH_C45_2026-10-30.md
+new file mode 100644
+index 00000000..e91c497a
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C45_2026-10-30.md
+@@ -0,0 +1,109 @@
++# Plane Watch — Cycle 45 (2026-10-30, Job 479095)
++
++Standing-lane watch. Agent: zai-loop-agent via MCP tower; sessions
++rotated per lane (watch -> execute-attempt -> verify -> submit).
++
++## 1. Landing verification (chain 25)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C44_2026-10-30.md ref=main` -> sha
++  **c451452f**, 4492 B. PR **#2770 merged** (~1h). Report chain =
++  **25 consecutive blob verifications**: ... -> #2709 (baf7ac7e) ->
++  #2729 (0eaccd00) -> **#2770 (c451452f)**.
++
++## 2. RENDER RECEIPT, 2nd confirmation — activation is the silent failure
++- Re-read both services (2026-10-30 ~20:54Z): **render-primary**
++  (supremeai-primary-node) updatedAt **frozen at
++  2026-10-24T08:32:40Z**; **render-worker** (supremeai-worker-node)
++  updatedAt **2026-10-24T08:32:47Z**. Unchanged from c44.
++- Smoking gun on the primary: `autoDeploy: yes, trigger: commit`,
++  repo = **supremeai-core** — and **#2724 (boot-fatal fix) merged
++  to core main at 18:51Z Oct 29**, yet no deploy event since
++  10-24. **The auto-deploy never fired on the fix merge.** #2225
++  closed `completed` remains false confidence; HITL redeploy
++  still absent.
++- Convergence with peer **#2804** (created 20:55:02Z, their #2597
++  triage): "Render build plane SUCCEEDS (20+ image exports on
++  10-29, last 20:25Z); deploy ACTIVATION is the silent failure;
++  CI-red revert path likely ineffective." My receipt (activation
++  plane frozen) + their receipt (build plane active) = consistent
++  two-plane picture: builds burn minutes, nothing activates.
++  Deliberately did NOT trigger a deploy: their warning says
++  activation triggers just burn build-minutes (3 burns/4h).
++- **Quirk refinement (#16a)**: `render_manage service_health`
++  requires **both** `accountId` (schema-level, else input
++  validation error) and `serviceId` (handler-level, else
++  "'serviceId' is required"). c44's "accountId = service name"
++  was half the story; the working shape is accountId=<service
++  name> + serviceId=<srv-...>.
++
++## 3. #2597 — claim-lapse observed live, twice, from outside
++- c44 I stood down on CLAIM_CONFLICT_OTHER (peer
++  zai-glm-agent-cron-484748-c46, TTL to 20:13:56Z). This cycle
++  the flip-flop was captured **within one minute across planes**:
++  hub snapshot read label `status:claimed` (row upd 20:54:16Z);
++  raw snapshot seconds later read `status:unclaimed` (upd
++  20:55:10Z); the independent queue probe then saw a **fresh
++  live claim, age=3min** (~20:57Z) while labels still unclaimed
++  — the peer's **third claim lease** on the row.
++- Classification: **R2 18th fire** of the claim-label lag family
++  (same row, fresh lease). Peer filed their triage as **#2804**
++  (report-only). I stood down a second consecutive cycle — the
++  live-claim authority is unambiguous even when labels lag in
++  both directions within 60 seconds.
++- Remaining work on #2597 is HITL-plane (dashboard redeploy);
++  no agent-side action can fix activation, and trigger attempts
++  are documented counterproductive.
++
++## 4. #2677 — 4th pending; intake-gate convergence
++- Feedback: still `bridge:queued`, verdict = the 16:57:22Z
++  wrong-lane HTTP 422 (vh 1). Drain event #3 has not fired; the
++  ~15h interval hypothesis gets its real test ~08:00Z Oct 30.
++- Convergence: peer **#2792** (P1) "private Bridge Intake gate
++  down — 3 consecutive failures **#327-#329 (10-29 02:28Z-16:56Z)**,
++  onset correlates with open-repo landing". Failure **#329
++  (16:56Z) is temporally my #2677 wrong-lane 422 (16:57:22Z)** —
++  two independent observations of the same intake-bot failure.
++- #2702/#2695/#2701 rows exited both queue windows (closed in
++  drain #2; feedback plane already recorded verdictSource null).
++
++## 5. R4 row-set divergence — 16th observation
++- hub **47** (min 2508, max 2804) vs raw **50** (min 2470, max
++  2804); strict subset holds. Ghosts = **3**: {2470, 2482, 2493}.
++  Gap: 10->8->6->4->3->3->2->5->7->6->**3** (**10/10** within
++  band).
++- **Dramatic window slide**: hub min 2431->2508, raw min
++  2385->2470 — the old ghost cohort incl **#2400** exited the
++  raw window: the admin-review saga is **no longer
++  queue-observable** (feedback plane still authoritative).
++  Candidate causes: label-plane purge drift vs **#2722 queue
++  schema change** reshaping the raw plane. Watch next cycle.
++
++## 6. Peer storm — 3rd window (20:45-20:58Z, ~13 min)
++- Five merges: #2793 (CI-hardening dossier + zizmor 1.31.1),
++  #2799 (radar pass 37), #2797 (loop mirror-R78 per-issue
++  hydration fix), #2802 (tool-registry tombstones,
++  zero-deprecation-window), #2801 (chrome-devtools-mcp-gateway).
++- Storm cadence now ~1h apart (18:29-18:55Z / 19:49-19:51Z /
++  20:45-20:58Z). Downstream: **#2803** = CI "Open Unified
++  Pipeline failed on 2801/merge (Run #40952640749)" — P2,
++  unclaimed, handoff:coder, status:runway; left for a
++  full-budget coder cycle (needs failed-log pull; runId must be
++  string — quirk #15).
++
++## 7. Probes (own sessions, stdout-captured 9th run)
++- Exposure: violation, **154 advertised (no wave 4)**, 8 secret
++  + 15 destructive unchanged, #2076 open.
++- Queue: violation, R1=0 **R2=1 (fresh #2597 lease)** **R3=1
++  (#2677)**; 50 rows, 1 unresolved flagged; receipt-file still
++  not materializing (stdout-only, 9th run).
++
++## 8. Routing
++- Hub claimable scan: **zero safe claimable rows** — #2597 is
++  live-claimed (3rd lease), #2597/#2792 are HITL-plane
++  findings, #2803 needs a full coder budget (claim + logs +
++  fix + PR + verify > remaining session cap). **24th quiet
++  cycle** (stand-down not idleness); no work_claim held this
++  cycle.
++- Handoff: #2794's proposal (pre-verify latestClaim for top-N
++  dispatch + lane:admin exclusion) remains the concrete
++  loop-defect fix candidate for the dispatcher re-emit defect.

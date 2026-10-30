@@ -1,0 +1,156 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index a8916d28..abd544d0 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,16 +9,16 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:wiring-guard",
+-    "test:integration": "tsx test_resource_list.ts",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:quota-routing && npm run test:account-chain && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:wiring-guard",
++    "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+     "test:smoke:report": "tsx scripts/smoke-report.ts",
+     "test:service-circles": "tsx test_service_circles.ts",
+     "test:timestamps": "tsx test_timestamps.ts",
+     "test:client-registry": "tsx test_client_registry.ts",
+-    "test:slot-verification": "tsx test_slot_verification.ts",
+-    "test:auto-register": "tsx test_auto_register.ts",
++    "test:slot-verification": "tsx scripts/test-runner.ts test_slot_verification.ts MCP_API_KEY",
++    "test:auto-register": "tsx scripts/test-runner.ts test_auto_register.ts MCP_API_KEY",
+     "test:tool-visibility": "tsx test_tool_visibility.ts",
+     "test:access": "tsx test_mcp_access.ts",
+     "test:health-history": "tsx test_health_history.ts",
+@@ -31,13 +31,20 @@
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
+     "test:bridge-intake": "tsx test_bridge_intake.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:wiring-guard",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:wiring-guard",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+-    "test:task-engine": "tsx test_task_engine.ts",
+-    "test:federation": "tsx test/federation.test.ts",
+-    "test:memory-fallback": "tsx test_memory_fallback.ts",
+-    "test:memory-adapter": "tsx test_memory_adapter.ts",
+-    "test:wiring-guard": "tsx scripts/check_test_wiring.ts"
++    "test:account-chain": "tsx scripts/test-runner.ts test_account_chain_callers.ts",
++    "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
++    "test:task-engine": "tsx scripts/test-runner.ts test_task_engine.ts",
++    "test:federation": "tsx scripts/test-runner.ts test/federation.test.ts",
++    "test:memory-fallback": "tsx scripts/test-runner.ts test_memory_fallback.ts",
++    "test:memory-adapter": "tsx scripts/test-runner.ts test_memory_adapter.ts",
++    "test:memory-sidecar": "tsx scripts/test-runner.ts test_memory_sidecar.ts SUPREMEAI_SIDECAR_TESTS",
++    "test:actions": "tsx scripts/test-runner.ts test_actions.ts",
++    "test:github-adapter": "tsx scripts/test-runner.ts test_github.ts GITHUB_TOKEN",
++    "test:infisical": "tsx scripts/test-runner.ts test_infisical.ts",
++    "test:remediation": "tsx scripts/test-runner.ts test_remediation.ts",
++    "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/scripts/test-runner.ts b/infrastructure/mcp-control-plane/scripts/test-runner.ts
+new file mode 100644
+index 00000000..fc8aea05
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/scripts/test-runner.ts
+@@ -0,0 +1,98 @@
++/**
++ * #116 — Test wiring runner + guard (poka-yoke against silent test rot).
++ *
++ * Problem: nine Tower test files were referenced by NO npm script and NO CI
++ * job — they compiled but never executed anywhere, so the #2596 task-engine
++ * contract suite (lease locks, duplicate-claim rejection, heartbeat expiry)
++ * never ran in CI.
++ *
++ * Two modes:
++ *
++ * 1. Runner (default):
++ *      tsx scripts/test-runner.ts <test-file> [REQUIRED_ENV_VAR ...]
++ *    Runs the given test file via tsx. When any REQUIRED_ENV_VAR is absent
++ *    from the environment the suite is SKIPPED with exit 0 and a documented
++ *    reason (per #116: "wire with a documented env-skip" — never silently
++ *    dead). Any test file wired without required vars runs unconditionally.
++ *
++ * 2. Wiring guard:
++ *      tsx scripts/test-runner.ts --guard
++ *    Asserts every `test_*.ts` file at the package root and every `.ts` file
++ *    under `test/` is referenced by at least one npm script in package.json.
++ *    Exit 1 with a report when a test file is unwired, so new/renamed test
++ *    files cannot disappear from CI without a failure (#116 root cause).
++ *
++ * No external dependencies; Node/Bun compatible.
++ */
++
++import { spawnSync } from "node:child_process";
++import { readFileSync, readdirSync, existsSync } from "node:fs";
++import * as path from "node:path";
++import { fileURLToPath } from "node:url";
++
++const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
++
++function runTest(file: string, requiredEnv: string[]): number {
++  const missing = requiredEnv.filter((name) => {
++    const value = process.env[name];
++    return value === undefined || value === "";
++  });
++  if (missing.length > 0) {
++    console.log(
++      `⏭️  SKIP ${file}: missing required env [${missing.join(", ")}] ` +
++        `(documented env-skip per #116 — wire target for #98 offline-mode work)`
++    );
++    return 0;
++  }
++  console.log(`▶️  RUN ${file}${requiredEnv.length ? ` (env: ${requiredEnv.join(",")})` : ""}`);
++  const result = spawnSync("tsx", [file], { stdio: "inherit", cwd: PKG_ROOT, shell: true });
++  if (result.error) {
++    console.error(`❌ failed to spawn tsx for ${file}: ${String(result.error)}`);
++    return 1;
++  }
++  return result.status ?? 1;
++}
++
++function collectTestFiles(): string[] {
++  const files: string[] = [];
++  for (const entry of readdirSync(PKG_ROOT)) {
++    if (/^test_.*\.ts$/.test(entry)) files.push(entry);
++  }
++  const testDir = path.join(PKG_ROOT, "test");
++  if (existsSync(testDir)) {
++    for (const entry of readdirSync(testDir)) {
++      if (entry.endsWith(".ts")) files.push(path.join("test", entry));
++    }
++  }
++  return files.sort();
++}
++
++function guard(): number {
++  const pkg = JSON.parse(readFileSync(path.join(PKG_ROOT, "package.json"), "utf-8")) as {
++    scripts?: Record<string, string>;
++  };
++  const scriptBlob = Object.values(pkg.scripts ?? {}).join(" \n ");
++  const unwired = collectTestFiles().filter((file) => !scriptBlob.includes(path.basename(file)));
++  if (unwired.length > 0) {
++    console.error(`❌ wiring guard: ${unwired.length} test file(s) referenced by NO npm script:`);
++    for (const file of unwired) console.error(`   - ${file}`);
++    console.error(`Wire each via scripts/test-runner.ts (direct or env-gated) per #116.`);
++    return 1;
++  }
++  const total = collectTestFiles().length;
++  console.log(`✅ wiring guard: all ${total} test file(s) referenced by npm scripts (#116 poka-yoke)`);
++  return 0;
++}
++
++function main(): number {
++  const args = process.argv.slice(2);
++  if (args[0] === "--guard") return guard();
++  const file = args[0];
++  if (!file || !file.endsWith(".ts")) {
++    console.error("usage: tsx scripts/test-runner.ts <test-file.ts> [REQUIRED_ENV_VAR ...] | --guard");
++    return 2;
++  }
++  return runTest(file, args.slice(1));
++}
++
++process.exit(main());

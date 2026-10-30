@@ -1,0 +1,143 @@
+diff --git a/core/engine/cost_optimizer.py b/core/engine/cost_optimizer.py
+index 508f073c..8e1b6e4d 100644
+--- a/core/engine/cost_optimizer.py
++++ b/core/engine/cost_optimizer.py
+@@ -1,7 +1,7 @@
+ import re
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ComplexityAnalyzer:
+diff --git a/core/engine/debate_engine.py b/core/engine/debate_engine.py
+index 6b288dce..8461e65e 100644
+--- a/core/engine/debate_engine.py
++++ b/core/engine/debate_engine.py
+@@ -5,7 +5,7 @@
+ 
+ from pydantic import BaseModel
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: Judge-এর জন্য consensus থ্রেশহোল্ড — hardcode value নয়, একটি নামযুক্ত
+ # কনস্ট্যান্ট যাতে ভবিষ্যতে routing_policy.json/settings থেকে override করা সহজ হয়।
+diff --git a/core/engine/forge_compiler.py b/core/engine/forge_compiler.py
+index 4734850b..fb573cb7 100644
+--- a/core/engine/forge_compiler.py
++++ b/core/engine/forge_compiler.py
+@@ -1,7 +1,7 @@
+ from collections import defaultdict, deque
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ForgeCompiler:
+diff --git a/core/engine/memory_middleware.py b/core/engine/memory_middleware.py
+index 7d966f11..3dc18158 100644
+--- a/core/engine/memory_middleware.py
++++ b/core/engine/memory_middleware.py
+@@ -5,7 +5,7 @@
+ যেটা নিজেই free sentence-transformers দিয়ে embed করে।
+ """
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from engine.vector_db import vector_db
+ 
+ 
+diff --git a/core/engine/self_reflection.py b/core/engine/self_reflection.py
+index e551bac5..81833b4b 100644
+--- a/core/engine/self_reflection.py
++++ b/core/engine/self_reflection.py
+@@ -8,7 +8,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from memory.episodic_memory import EpisodicMemory
+ 
+ 
+diff --git a/core/engine/smart_router.py b/core/engine/smart_router.py
+index 42b41b18..5d9829d1 100644
+--- a/core/engine/smart_router.py
++++ b/core/engine/smart_router.py
+@@ -5,7 +5,7 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SmartModelRouter:
+diff --git a/core/engine/tool_forge.py b/core/engine/tool_forge.py
+index 5cec47fb..4f788590 100644
+--- a/core/engine/tool_forge.py
++++ b/core/engine/tool_forge.py
+@@ -5,7 +5,7 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ToolForge:
+diff --git a/core/engine/tree_of_thought.py b/core/engine/tree_of_thought.py
+index 00b7225c..8845c37b 100644
+--- a/core/engine/tree_of_thought.py
++++ b/core/engine/tree_of_thought.py
+@@ -7,7 +7,7 @@
+ from dataclasses import dataclass
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/engine/vector_db.py b/core/engine/vector_db.py
+index ffcf3987..7f9fa562 100644
+--- a/core/engine/vector_db.py
++++ b/core/engine/vector_db.py
+@@ -12,7 +12,7 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class VectorDatabaseClient:
+diff --git a/core/engine/worker_node.py b/core/engine/worker_node.py
+index f7a8efb5..6da9faa0 100644
+--- a/core/engine/worker_node.py
++++ b/core/engine/worker_node.py
+@@ -5,7 +5,7 @@
+ import uuid
+ from datetime import UTC, datetime
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.nats_messaging import NATSClient
+ 
+ 
+diff --git a/core/engine/worker_registry.py b/core/engine/worker_registry.py
+index 6124b007..f5e3e3be 100644
+--- a/core/engine/worker_registry.py
++++ b/core/engine/worker_registry.py
+@@ -1,7 +1,7 @@
+ import asyncio
+ from datetime import UTC, datetime
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.nats_messaging import nats_client
+ 
+ 

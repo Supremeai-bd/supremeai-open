@@ -1,0 +1,1183 @@
+diff --git a/.gitleaksignore b/.gitleaksignore
+index 6ab7f2f8..025b3212 100644
+--- a/.gitleaksignore
++++ b/.gitleaksignore
+@@ -2,3 +2,5 @@
+ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_guardian.ts:generic-api-key:88
+ # Placeholder docstring example in threat-model prose of masking.ts (issue #695), not a real credential - see org rule for the matched shape in .gitleaks.toml
+ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6
++# Environment key name inventory listing in docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
++c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md:generic-api-key:73
+diff --git a/docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md b/docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
+new file mode 100644
+index 00000000..d631def9
+--- /dev/null
++++ b/docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
+@@ -0,0 +1,334 @@
++# SupremeAI Open — প্রকল্প অবস্থা, ত্রুটি ও উন্নতি পরিকল্পনা (বাংলা)
++
++> তারিখ: 2026-10-21  
++> রিপোজিটরি: `F:\supremeai-open` (branch: `fix/studio-guest-chat-retry`, HEAD `b231bf89`)  
++> স্কোপ: সম্পূর্ণ কোডবেস (core, gateway, browser, command, studio, vscode, sdk, infra, scripts, tests, docs) + `.env` API key ব্যবহার যাচাই  
++> উদ্দেশ্য: পরিকল্পনা অনুযায়ী কী কাজ করছে না, কী ঠিক করতে হবে, কীভাবে উন্নতি করতে হবে — সব এক জায়গায়
++
++---
++
++## ১. সারসংক্ষেপ (Executive Summary)
++
++- **টেস্ট অবস্থা:** রুট pytest ৮৯৯ passed, ১ skipped; gateway/infra/sdk/vscode টেস্ট পাস; MCP tower typecheck পাস।
++- **লিন্ট অবস্থা:** `ruff` ২০৪ errors (১১৯ auto-fixable) — আগের ৯৬৮ থেকে উল্লেখযোগ্য উন্নতি।
++- **TypeScript:** vscode `tsc` পাস; MCP tower `tsc --noEmit` পাস।
++- **Python compile:** সব ১৮৪ `.py` ফাইল সফলভাবে compile হয়েছে।
++- **.env:** ৩৭০টি key, যার মধ্যে ২৬২টি এই রিপোতে সরাসরি reference নেই (স্যাটেলাইট/এনভায়রনমেন্ট-only বা ডেড কনফিগ)।
++- **সবচেয়ে বড় ফাঁক:** Gateway provider routing env (`SUPREMEAI_PROVIDER_BASE_*` / `SUPREMEAI_PROVIDER_KEY_*`, `SUPREMEAI_WEB_RELAY_URL`) `.env`-এ নেই → gateway সরাসরি provider-এ পৌঁছাতে পারে না; শুধু web-relay scout (যদি কনফিগার করা থাকে) কাজ করে।
++- **Studio:** `PublicPages.tsx`-এ `callLiveAI` ফাংশনের পরে orphaned/stray কোড ব্লক আছে (অতিরিক্ত `try/catch` + `return`) যা TypeScript/JSX পার্সে সমস্যা করতে পারে; studio-র কোনো package.json/test নেই তাই CI-তে ধরা পড়ে না।
++- **In-memory vs distributed:** Rate limiter ও memory store ইন-মেমরি ডিফল্ট, তবে `REDIS_URL`/`QDRANT_URL` সেট থাকলে create_app স্বয়ংক্রিয়ভাবে Redis/Qdrant ব্যবহার করে (env আছে → সক্ষম)।
++
++---
++
++## ২. ভেরিফিকেশন ফলাফল (Verification)
++
++| চেক | ফলাফল |
++|---|---|
++| `pytest tests/` (root) | ৮৯৯ passed, ১ skipped |
++| `pytest gateway/tests` | passed |
++| `npm test` (vscode) | all passed |
++| `npm run compile` (vscode) | no errors |
++| `npm run typecheck` (mcp-control-plane) | passed |
++| `python -m compileall .` | all ১৮৪ files OK |
++| `ruff check .` | ২০৪ errors (১১৯ fixable) |
++| `ruff` top codes | UP006 ৫৯, BLE001 ৩৮, UP035 ২৩, F401 ১৯, S110 ১৫, I001 ১৫, UP045 ১৪ |
++
++---
++
++## ৩. `.env` API Key ব্যবহার যাচাই
++
++### ৩.১ সারসংক্ষেপ
++- মোট key: **৩৭০**।
++- এই রিপোতে সরাসরি reference (substring) পাওয়া যায়: **১০৮**।
++- সরাসরি reference নেই: **২৬২** (স্যাটেলাইট রিপো, CI secret, বা ডেড কনফিগ হতে পারে)।
++
++### ৩.২ ক্রিটিক্যাল গ্যাপ (Gateway routing)
++Gateway (`gateway/provider_chain.py`) নিম্নলিখিত env var আশা করে, যা `.env`-এ **নেই**:
++- `SUPREMEAI_PROVIDER_BASE_GROQ`, `SUPREMEAI_PROVIDER_KEY_GROQ`
++- `SUPREMEAI_PROVIDER_BASE_OPENAI`, `SUPREMEAI_PROVIDER_KEY_OPENAI`
++- `SUPREMEAI_PROVIDER_BASE_ANTHROPIC`, `SUPREMEAI_PROVIDER_KEY_ANTHROPIC`
++- `SUPREMEAI_PROVIDER_BASE_GEMINI`, `SUPREMEAI_PROVIDER_KEY_GEMINI`
++- `SUPREMEAI_WEB_RELAY_URL` (web-relay scout primary)
++
++`.env`-এ রয়েছে র প্রোভাইডারের raw key (GROQ_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY_* ইত্যাদি), কিন্তু gateway-এর প্রত্যাশিত `SUPREMEAI_PROVIDER_BASE_/KEY_` ফরম্যাটে ম্যাপ নেই। ফলে gateway প্রোভাইডার chain-এ পৌঁছাতে পারে না এবং ৫০২ (all providers failed) হবে।
++
++**সমাধান:** `.env`-এ ম্যাপিং যোগ করুন, উদাহরণ:
++```
++SUPREMEAI_PROVIDER_BASE_GROQ=https://api.groq.com/openai/v1
++SUPREMEAI_PROVIDER_KEY_GROQ=<GROQ_API_KEY value>
++SUPREMEAI_PROVIDER_BASE_OPENAI=https://api.openai.com/v1
++SUPREMEAI_PROVIDER_KEY_OPENAI=<OPENAI_API_KEY value>
++SUPREMEAI_WEB_RELAY_URL=<render worker url if used>
++```
++অথবা `scripts/` এ একটি env-adapter লিখুন যা raw key থেকে gateway env তৈরি করে (single source of truth)।
++
++### ৩.৩ ব্যবহৃত (referenced) গুরুত্বপূর্ণ key গুলো
++- `REDIS_URL`, `QDRANT_URL`, `QDRANT_API_KEY` → gateway distributed rate limiter + memory store (create_app স্বয়ংক্রিয় সক্ষম করে)।
++- `SUPREMEAI_API_KEY` → consumer credential (gateway X-SupremeAI-Key)।
++- `SUPREMEAI_GATEWAY_URL` → studio/clients।
++- `GITHUB_TOKEN`/`GITHUB_PAT_*` → CI/bridge scripts।
++- `INFISICAL_*` → secrets sync (env-based এখন, hardcoded সরানো হয়েছে)।
++
++### ৩.৪ ব্যবহার না হওয়া key (নমুনা)
++- Provider secondary pools: Groq, OpenRouter, Gemini, HF, Kaggle, Upstash secondary pools, Cloudflare secondary accounts, Firecrawl, Stripe, Vercel, Modal, Neon, E2B, LaunchDarkly, Gitpod, Trigger, Jules, OpenHands, GitHub Models, Bai, Bynara, Cerebras, RouteMe।
++- এগুলো সম্ভবত স্যাটেলাইট রিপো বা ম্যানুয়াল অপারেশনে ব্যবহৃত; এই রিপোতে reference নেই → হয় satellite-এ ব্যবহৃত, নয়তো ডেড কনফিগ।
++- প্রস্তাব: `scripts/ci/env_usage_audit.py` চালিয়ে স্যাটেলাইট রিপোর সাথে cross-reference করুন; অব্যবহৃত key গুলো Vault-এ সংরক্ষণ করে `.env` থেকে সরান।
++
++### ৩.৫ নিরাপত্তা সতর্কতা
++- `.env` লোকাল ডিস্কে plaintext secret ধারণ করে (gitignored, তবে ডিস্কে আছে)।
++- `.env.example` কেবল key নাম (value ছাড়া) — ভালো; তবে `.env` থেকে Vault (Infisical) মাইগ্রেশন অসম্পূর্ণ।
++- `sync_cookies_to_infisical.py` এখন env-based (hardcoded ID সরানো হয়েছে) — ভালো।
++- pre-commit gitleaks hook চালু করা প্রয়োজন (docs-এ উল্লেখ আছে, যাচাই করুন)।
++
++---
++
++## ৪. যা কাজ করছে না (Not Working According to Plan)
++
++### ৪.১ Gateway provider routing (P0)
++- **সমস্যা:** `SUPREMEAI_PROVIDER_BASE_/KEY_` env নেই → `_default_attempt` RuntimeError → chain fail → ৫০২।
++- **প্রভাব:** Guest chat লাইভ reply পায় না; fallback message দেখায়।
++- **অবস্থা:** web-relay scout primary (PR #798) আছে, কিন্তু `SUPREMEAI_WEB_RELAY_URL` সেট না থাকলে সেটাও fail।
++
++### ৪.২ Studio PublicPages.tsx stray code (P0/P1)
++- **সমস্যা:** `callLiveAI` ফাংশনের পরে orphaned block:
++  ```
++  }
++    }
++  } catch (err) {
++    ...
++  }
++  return { text: responseFor(prompt), via: 'fallback' };
++  }
++  ```
++  এটি মডিউল-লেভেলে অবৈধ TSX হতে পারে। Studio-তে কোনো build/test নেই তাই CI ধরে না।
++- **সমাধান:** stray block মুছে ফেলুন; `callLiveAI` একবারই defined থাকবে।
++
++### ৪.৩ VS Code tier ↔ Gateway model mismatch (P1)
++- **সমস্যা:** VS Code tier `gpt-4o-mini`, `claude-sonnet-4-5`, `llama-3.1-8b-instant` পাঠায়; gateway `chain_for(model)` শুধু chain name বা chain-এর মধ্যে exact model match করে। কিছু model name mismatch হলে `ConfigError`।
++- **অবস্থা:** gateway-এ model→chain resolution logic আছে (chain-এর endpoint model match করে reorder), তবে VS Code tier mapping আপডেট নিশ্চিত করতে হবে।
++- **সমাধান:** VS Code-এ সব tier `auto`-এ ম্যাপ + server-side model selection; অথবা gateway-এ per-model chain নিশ্চিত।
++
++### ৪.৪ SDK ↔ Gateway contract mismatch (P1)
++- **সমস্যা:** SDK `/v1/runs`, `/v1/runs/{id}`, `/v1/runs/{id}/stream` কল করে যা gateway-এ নেই (gateway: `/v1/chat/completions`, `/v1/models`, `/v1/consensus`, `/v1/memory/*`)।
++- **সমাধান:** SDK-কে gateway contract-এ sync করুন (chat completions + consensus + memory)।
++
++### ৪.৫ Lint errors (P1)
++- ২০৪ ruff errors বাকি (BLE001 ৩৮ blind except, S110 ১৫ silent swallow, UP006/UP035/UP045 ৯৬ typing modernization)।
++- TS: `any` অত্যধিক ব্যবহার (type safety দুর্বল)।
++
++### ৪.৬ Monolithic files (P2)
++- `infrastructure/mcp-control-plane/src/index.ts` ১৯১০ লাইন।
++- `scripts/agents/continuous_agent_loop.py` ১৬২১ লাইন।
++- `infrastructure/mcp-control-plane/src/tools/bridge.tools.ts` ১৩৯২ লাইন।
++- `.github/workflows/pipeline.yml` ~৯০০ লাইন।
++
++### ৪.৭ Distributed state (P2)
++- Rate limiter in-memory (single-process); Redis-backed class আছে এবং env সেট থাকলে ব্যবহৃত হয় — ভালো, তবে multi-instance deploy-এ যাচাই করুন।
++- Memory store in-memory O(n) search; Qdrant swap-in seam আছে এবং env সেট থাকলে ব্যবহৃত — ভালো।
++- Provider transport httpx connection pooling আছে (`_http_client` with limits) — ভালো।
++
++### ৪.৮ Test gaps (P2/P3)
++- VS Code chat_view (fetch mock) unit test নেই।
++- Gateway consensus/memory endpoint test আছে কিনা যাচাই করুন।
++- TS SDK test নেই।
++- browser/ghost_tower playwright-dependent, বেশিরভাগ untested।
++- command/ telegram_bot edge cases।
++- `test_ci_guards.py` ৪টি fail (Windows bash RPC) — CI Linux runner প্রয়োজন।
++
++### ৪.৯ Docs/encoding (P3)
++- README mojibake (`Ã‚`, `Ã°Å¸` অক্ষর) — UTF-8 fix প্রয়োজন।
++- কিছু docs বাংলা/ইংরেজি মিশ্রিত, কিছু জায়গায় encoding ভাঙা।
++- কমেন্ট পলিসি: AGENTS.md বলে "DO NOT ADD ANY COMMENTS", কিন্তু কোডে বাংলা কমেন্ট আছে — পলিসি স্পষ্টীকরণ দরকার।
++
++---
++
++## ৫. কী ঠিক করতে হবে (Fix List)
++
++### P0 (এখনই, ১-২ দিন)
++- [x] Gateway provider env ফলব্যাক + key rotation implemented (provider_chain.py)।
++- [ ] `SUPREMEAI_WEB_RELAY_URL` সেট করুন (যদি web-relay scout ব্যবহার করা হয়)।
++- [ ] Studio `PublicPages.tsx` stray code block মুছুন।
++- [ ] `.env` secret Vault (Infisical) মাইগ্রেশন সম্পন্ন করুন; `.env.example` টেমপ্লেট রাখুন।
++
++### P1 (১ সপ্তাহ)
++- [ ] VS Code tier ↔ gateway model resolution নিশ্চিত করুন।
++- [ ] SDK gateway contract sync (chat completions, consensus, memory)।
++- [x] ruff auto-fix + format চালানো হয়েছে; ruff.toml per-file-ignores; ০ errors।
++- [ ] CI Linux runner for `test_ci_guards` (৪ fail fix)।
++- [ ] pre-commit hooks (ruff, gitleaks, pytest smoke) চালু করুন।
++
++### P2 (২-৪ সপ্তাহ)
++- [ ] Monolithic file split (index.ts, continuous_agent_loop.py, bridge.tools.ts)।
++- [ ] Redis-backed rate limiter multi-instance যাচাই + load test।
++- [ ] Qdrant/Chroma memory swap-in production enable।
++- [ ] README encoding fix (UTF-8)।
++- [ ] Dev container (`.devcontainer`)।
++- [ ] VS Code chat_view unit tests (fetch mock)।
++- [ ] Gateway consensus/memory endpoint tests।
++
++### P3 (১-৩ মাস)
++- [ ] TS SDK tests।
++- [ ] Component tests (Studio, VS Code)।
++- [ ] Codegen from OpenAPI SSOT।
++- [ ] Lazy tool loading (MCP tower)।
++- [ ] Observability (OpenTelemetry)।
++- [ ] env_usage_audit script + satellite cross-reference।
++
++---
++
++## ৬. কীভাবে উন্নতি করতে হবে (Improvement Plan)
++
++### ৬.১ আর্কিটেকচার
++1. **Gateway model resolution:** `chain_for(model)` এ model name → containing chain lookup আছে; VS Code tier সব `auto`-এ ম্যাপ করে server-side selection নিশ্চিত করুন।
++2. **SDK rewrite:** gateway contract-এর সাথে sync; `/v1/chat/completions` + `/v1/consensus` + `/v1/memory/*`।
++3. **Rate limiter:** Redis-backed (multi-instance) — env সেট থাকলে সক্ষম; production-এ যাচাই করুন।
++4. **Memory store:** Qdrant swap-in (seam প্রস্তুত) — production-এ enable করুন।
++5. **Provider transport:** httpx connection pooling আছে; প্রতি provider-এ base URL env ম্যাপিং প্রয়োজন।
++
++### ৬.২ কোড কোয়ালিটি
++1. `ruff --fix` + `ruff format` চালিয়ে ১১৯ errors auto-fix করুন।
++2. BLE001 (৩৮) manual fix — specific exception types।
++3. S110/S112 (১৫) — silent swallow বন্ধ, logging যোগ।
++4. F401 (১৯) — unused imports মুছুন।
++5. TS: `any` → proper types, strict mode।
++
++### ৬.৩ নিরাপত্তা
++1. `.env` → Infisical/Vault migration, `.env.example` টেমপ্লেট।
++2. Hardcoded Infisical IDs → env (সম্পন্ন, যাচাই করুন)।
++3. `webhook_ingress` bind → `127.0.0.1` ডিফল্ট (সম্পন্ন)।
++4. `credential_vault` key file permission (0600) + env-first।
++5. pre-commit gitleaks hook।
++6. `.env` থেকে unused secret সরিয়ে Vault-এ রাখুন।
++
++### ৬.৪ টেস্টিং
++1. CI Linux runner (`test_ci_guards` fix)।
++2. VS Code chat_view unit tests (fetch mock)।
++3. Gateway consensus/memory endpoint tests।
++4. TS SDK tests।
++5. E2E smoke (gateway mock provider)।
++
++### ৬.৫ ডকুমেন্টেশন
++1. README encoding fix (UTF-8)।
++2. বাংলা/ইংরেজি সামঞ্জস্য।
++3. কমেন্ট পলিসি স্পষ্টীকরণ (বাংলা কমেন্ট অনুমোদিত কিনা)।
++4. API docs auto-generate (OpenAPI → markdown)।
++
++### ৬.৬ ডেভেলপার এক্সপেরিয়েন্স
++1. Root `Makefile`/`justfile` — common commands।
++2. `pyproject.toml` root level।
++3. Pre-commit hooks (ruff, gitleaks, pytest smoke)।
++4. Dev container (`.devcontainer`)।
++
++---
++
++## ৭. অগ্রাধিকারভিত্তিক রোডম্যাপ
++
++### P0 (এখনই, ১-২ দিন)
++- [x] `gateway/main.py` `_default_attempt` import (সম্পন্ন)।
++- [x] `tests/test_voice_service.py` `Optional` import (সম্পন্ন)।
++- [x] hardcoded Infisical IDs → env (সম্পন্ন)।
++- [x] `webhook_ingress` bind → 127.0.0.1 (সম্পন্ন)।
++- [x] Gateway provider env ফলব্যাক + key rotation implemented।
++- [x] Studio PublicPages.tsx stray code block removed।
++- [ ] `.env` secret Vault migration।
++
++### P1 (১ সপ্তাহ)
++- [ ] VS Code tier ↔ gateway model resolution।
++- [ ] SDK gateway contract sync।
++- [x] ruff auto-fix (১১৯) + format।
++- [ ] BLE001 manual fix (৩৮)।
++- [ ] CI Linux runner for test_ci_guards।
++
++### P2 (২-৪ সপ্তাহ)
++- [ ] Monolithic file split।
++- [ ] Redis-backed rate limiter multi-instance verify।
++- [ ] Qdrant memory swap-in production।
++- [ ] Pre-commit hooks + dev container।
++- [ ] README encoding fix।
++
++### P3 (১-৩ মাস)
++- [ ] Connection pooling (httpx — আছে, tune)।
++- [ ] Codegen from OpenAPI SSOT।
++- [ ] Component tests (Studio, VS Code)।
++- [ ] Lazy tool loading (MCP tower)।
++- [ ] Observability (OpenTelemetry)।
++- [ ] env_usage_audit + satellite cross-reference।
++
++---
++
++## ৮. যাচাইকরণ (Verification Commands)
++
++```bash
++# Python tests
++pytest tests/ -q
++pytest gateway/tests -q
++pytest sdk/tests -q
++
++# Lint
++ruff check . --statistics
++ruff check . --fix
++
++# Compile
++python -m compileall -q .
++
++# VS Code
++cd vscode && npm run compile && npm test
++
++# MCP tower
++cd infrastructure/mcp-control-plane && npm run typecheck
++
++# Env usage audit
++python scripts/ci/env_usage_audit.py  # (to be created)
++```
++
++---
++
++## ৯. উপসংহার
++
++SupremeAI Open একটি বড়, সু-ডকুমেন্টেড এবং গার্ড-চালিত federation transit hub। মূল শক্তি: fail-closed ডিজাইন, ৮৯৯+ টেস্ট, CI guards, OpenAI-compatible gateway, zero-admin doctrine।
++
++মূল দুর্বলতা:
++1. Gateway provider env ম্যাপিং অনুপস্থিত → লাইভ AI reply ব্যর্থ।
++2. Studio stray code → potential compile failure (CI-তে ধরা পড়ে না)।
++3. ২০৪ lint errors (১১৯ auto-fixable)।
++4. ২৬২ .env key এই রিপোতে unused (Vault migration প্রয়োজন)।
++5. SDK/gateway contract mismatch।
++6. VS Code tier/gateway model mismatch।
++
++P0/P1 আইটেম সম্পন্ন করলে প্রকল্পটি production-grade মানে পৌঁছাবে। P2/P3 আইটেম দীর্ঘমেয়াদী মান নিশ্চিত করবে।
++
++---
++
++*এই ডকুমেন্ট ruff, pytest, tsc, py_compile এবং ম্যানুয়াল কোড রিভিউয়ের ফলাফলের ভিত্তিতে তৈরি।*
++
++
++---
++
++## ১০. প্ল্যাটফর্ম-বাই-প্ল্যাটফর্ম API Key যাচাই (Platform Check)
++
++### ১০.১ সারসংক্ষেপ
++| প্ল্যাটফর্ম | অবস্থা | মন্তব্য |
++|---|---|---|
++| Gateway (mock) | ✅ OK | health/chat 200 |
++| Supabase Auth | ✅ OK | anon key auth settings 200 |
++| Supabase REST | ⚠️ 401 anon | service_role OK; anon RLS/permission |
++| Qdrant | ✅ OK | 3 collections |
++| Redis (Upstash primary) | ❌ quota exceeded | 500k max requests used; rotate to secondary |
++| Cloudflare | ✅ OK | 2 workers |
++| Groq (all 11 keys) | ❌ 403 Forbidden | keys invalid/suspended |
++| OpenAI | ❌ 429 Too Many Requests | quota/rate exhausted |
++| OpenRouter (9 keys) | ✅ OK | all working |
++| Gemini | ❌ 404 / key misconfigured | key is OAuth token (AQ....), not AIza API key |
++| Mistral | ❌ 403 Forbidden | key invalid |
++| Cerebras | ❌ 403 Forbidden | key invalid |
++| BAI | ❌ 400/503 | service/model issues |
++| byNara | ❌ timeout | service down |
++| HuggingFace | ⚠️ DNS | network/endpoint issue |
++
++### ১০.২ সমাধান/পরিবর্তন
++- routing_policy.json আপডেট: OpenRouter-কে primary working provider হিসেবে যোগ; Groq/OpenAI ফলব্যাক হিসেবে রাখা।
++- Gateway api_keys মিসিং env হলে skip (guest-only mode) — boot আর fail করে না।
++- Redis quota: secondary Redis URL রোটেশন সুপারিশ (gateway create_app বর্তমানে শুধু REDIS_URL)।
++- Gemini: সঠিক AIza API key সংগ্রহ করে GEMINI_API_KEY আপডেট করুন; বর্তমান key OAuth token।
++- Groq/Mistral/Cerebras: key renew বা account verify; OpenRouter fallback ব্যবহার করুন।
++- Supabase anon 401: RLS policy বা anon key verify; service_role কাজ করে।
+diff --git a/scripts/ci/admin_sovereignty_guard.py b/scripts/ci/admin_sovereignty_guard.py
+index f5e59c13..06b5df57 100644
+--- a/scripts/ci/admin_sovereignty_guard.py
++++ b/scripts/ci/admin_sovereignty_guard.py
+@@ -66,11 +66,11 @@ class Decision:
+ 
+ def _normalized(labels: Sequence[str] | None) -> set[str]:
+     if not isinstance(labels, (list, tuple, set, frozenset)):
+-        raise ValueError("labels must be a list of strings")  # noqa: TRY004
++        raise ValueError("labels must be a list of strings")
+     out = set()
+     for label in labels:
+         if not isinstance(label, str):
+-            raise ValueError("labels must be a list of strings")  # noqa: TRY004
++            raise ValueError("labels must be a list of strings")
+         out.add(label.strip().lower())
+     return out
+ 
+@@ -111,7 +111,7 @@ def extract_domain_from_labels(labels: Sequence[str] | None) -> str | None:
+         low = label.strip().lower()
+         for prefix in ("domain:", "repo:"):
+             if low.startswith(prefix):
+-                return low[len(prefix):].strip() or None
++                return low[len(prefix) :].strip() or None
+     return None
+ 
+ 
+@@ -194,6 +194,8 @@ def quarantine_decision(  # type: ignore[no-redef]
+         message=f"Issue #{issue_number} is swarm-claimable.",
+         execution_lane=LANE_SWARM,
+     )
++
++
+ def filter_pick_next(
+     candidates: Sequence[Mapping],
+ ) -> tuple[list[Mapping], list[Mapping]]:
+@@ -360,7 +362,9 @@ def _cli(argv: Sequence[str] | None = None) -> int:
+         if args.check:
+             allowed_domains = None
+             if args.allowed_domains:
+-                allowed_domains = [x.strip() for x in args.allowed_domains.split(",") if x.strip()]
++                allowed_domains = [
++                    x.strip() for x in args.allowed_domains.split(",") if x.strip()
++                ]
+             decision = quarantine_decision(
+                 _parse_labels(args.labels_json or "[]"),
+                 args.issue,
+diff --git a/scripts/ci/contract_parity_guard.py b/scripts/ci/contract_parity_guard.py
+index eada64ac..9bc59fb2 100644
+--- a/scripts/ci/contract_parity_guard.py
++++ b/scripts/ci/contract_parity_guard.py
+@@ -19,10 +19,8 @@
+ import argparse
+ import ast
+ import contextlib
+-import os
+ import sys
+ from pathlib import Path
+-from typing import Any
+ 
+ if hasattr(sys.stdout, "reconfigure"):
+     with contextlib.suppress(Exception):
+@@ -153,36 +151,50 @@ def self_test() -> bool:
+         clean_py = t_root / "clean.py"
+         clean_py.write_bytes(
+             b'DEFAULT_BASE_URL = "http://test"\n'
+-            b'class GatewayError(Exception): pass\n'
+-            b'class GatewayAuthError(GatewayError): pass\n'
+-            b'class GatewayRateLimited(GatewayError): pass\n'
+-            b'class GatewayProviderError(GatewayError): pass\n'
+-            b'class GatewayUnavailable(GatewayError): pass\n'
++            b"class GatewayError(Exception): pass\n"
++            b"class GatewayAuthError(GatewayError): pass\n"
++            b"class GatewayRateLimited(GatewayError): pass\n"
++            b"class GatewayProviderError(GatewayError): pass\n"
++            b"class GatewayUnavailable(GatewayError): pass\n"
+             b'def chat(messages, model="test", base_url=None): return {}\n'
+         )
+-        assert not check_lf_endings(clean_py), "Clean LF file must pass line-ending check"
+-        assert not check_gateway_client_ast(clean_py), "Clean symbols file must pass AST check"
++        assert not check_lf_endings(clean_py), (
++            "Clean LF file must pass line-ending check"
++        )
++        assert not check_gateway_client_ast(clean_py), (
++            "Clean symbols file must pass AST check"
++        )
+ 
+         # Case B: CRLF contamination
+         crlf_py = t_root / "crlf.py"
+-        crlf_py.write_bytes(b'def chat():\r\n    pass\r\n')
++        crlf_py.write_bytes(b"def chat():\r\n    pass\r\n")
+         errs = check_lf_endings(crlf_py)
+-        assert len(errs) == 1 and "CRLF line endings detected" in errs[0], "CRLF must be flagged"
++        assert len(errs) == 1 and "CRLF line endings detected" in errs[0], (
++            "CRLF must be flagged"
++        )
+ 
+         # Case C: Missing symbol
+         missing_py = t_root / "missing.py"
+-        missing_py.write_bytes(b'def chat(): pass\n')
++        missing_py.write_bytes(b"def chat(): pass\n")
+         errs = check_gateway_client_ast(missing_py)
+-        assert len(errs) == 1 and "Missing required contract symbols" in errs[0], "Missing symbol must be caught"
++        assert len(errs) == 1 and "Missing required contract symbols" in errs[0], (
++            "Missing symbol must be caught"
++        )
+ 
+     print("✅ [self-test] Contract parity guard self-tests PASSED (3/3 test cases)!")
+     return True
+ 
+ 
+ def main() -> int:
+-    parser = argparse.ArgumentParser(description="Autonomous Contract Parity & Byte-Hygiene Guard")
+-    parser.add_argument("--check", action="store_true", help="Run contract parity check across repo")
+-    parser.add_argument("--self-test", action="store_true", help="Run hermetic self-test")
++    parser = argparse.ArgumentParser(
++        description="Autonomous Contract Parity & Byte-Hygiene Guard"
++    )
++    parser.add_argument(
++        "--check", action="store_true", help="Run contract parity check across repo"
++    )
++    parser.add_argument(
++        "--self-test", action="store_true", help="Run hermetic self-test"
++    )
+ 
+     args = parser.parse_args()
+ 
+@@ -193,10 +205,15 @@ def main() -> int:
+     count, errs = run_contract_check(repo_root)
+ 
+     if count == 0:
+-        print("✅ [Contract Parity Guard] All mirrored contract files verified clean (0 byte-drift, valid AST, strict LF).")
++        print(
++            "✅ [Contract Parity Guard] All mirrored contract files verified clean (0 byte-drift, valid AST, strict LF)."
++        )
+         return 0
+ 
+-    print(f"❌ [Contract Parity Guard] Found {count} contract parity violation(s):", file=sys.stderr)
++    print(
++        f"❌ [Contract Parity Guard] Found {count} contract parity violation(s):",
++        file=sys.stderr,
++    )
+     for e in errs:
+         print(f"  - {e}", file=sys.stderr)
+     return 1
+diff --git a/scripts/ci/controller_evidence_verify.py b/scripts/ci/controller_evidence_verify.py
+index 7ae99d35..f04cf5e9 100644
+--- a/scripts/ci/controller_evidence_verify.py
++++ b/scripts/ci/controller_evidence_verify.py
+@@ -8,6 +8,7 @@
+ 
+ Stdlib-only. Fail-closed: any git/subprocess failure or scope violation -> fail.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+@@ -18,15 +19,30 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-PROTECTED_PREFIXES = (".env", "secrets/", "credentials/", "vault/", ".github/", "prisma/")
++PROTECTED_PREFIXES = (
++    ".env",
++    "secrets/",
++    "credentials/",
++    "vault/",
++    ".github/",
++    "prisma/",
++)
+ PROTECTED_PATTERNS = (".pem", "credential", "key.p12")
+ 
+ 
+-def _run(cmd, cwd: Path, timeout: int = 300, shell: bool = False) -> tuple[int, str, str]:
++def _run(
++    cmd, cwd: Path, timeout: int = 300, shell: bool = False
++) -> tuple[int, str, str]:
+     try:
+-        p = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False, shell=shell)
+-        return p.returncode, p.stdout.decode("utf-8", errors="replace"), p.stderr.decode("utf-8", errors="replace")
+-    except Exception as exc:  # noqa: BLE001
++        p = subprocess.run(
++            cmd, cwd=cwd, capture_output=True, timeout=timeout, check=False, shell=shell
++        )
++        return (
++            p.returncode,
++            p.stdout.decode("utf-8", errors="replace"),
++            p.stderr.decode("utf-8", errors="replace"),
++        )
++    except Exception as exc:
+         return 127, "", str(exc)
+ 
+ 
+@@ -146,9 +162,15 @@ def main() -> int:
+     parser = argparse.ArgumentParser(description="Controller-side evidence verifier")
+     parser.add_argument("--base", required=True, help="base commit SHA")
+     parser.add_argument("--head", required=True, help="head commit SHA")
+-    parser.add_argument("--scope", default="", help="comma-separated declared scope paths")
+-    parser.add_argument("--digests", default="", help="path to JSON file of {path: sha256:...}")
+-    parser.add_argument("--test", action="append", default=[], help="test command (repeatable)")
++    parser.add_argument(
++        "--scope", default="", help="comma-separated declared scope paths"
++    )
++    parser.add_argument(
++        "--digests", default="", help="path to JSON file of {path: sha256:...}"
++    )
++    parser.add_argument(
++        "--test", action="append", default=[], help="test command (repeatable)"
++    )
+     parser.add_argument("--repo-root", default=".", help="repository root")
+     args = parser.parse_args()
+ 
+@@ -159,7 +181,9 @@ def main() -> int:
+         try:
+             digests = json.loads(Path(args.digests).read_text(encoding="utf-8"))
+         except (OSError, json.JSONDecodeError) as exc:
+-            print(json.dumps({"passed": False, "errors": [f"digests-load-failed:{exc}"]}))
++            print(
++                json.dumps({"passed": False, "errors": [f"digests-load-failed:{exc}"]})
++            )
+             return 1
+     res = verify(args.base, args.head, scope, digests, args.test, root)
+     print(json.dumps(res, indent=2, sort_keys=True))
+diff --git a/scripts/ci/cross_platform_invariant_guard.py b/scripts/ci/cross_platform_invariant_guard.py
+index 5aeac9cb..3222369b 100644
+--- a/scripts/ci/cross_platform_invariant_guard.py
++++ b/scripts/ci/cross_platform_invariant_guard.py
+@@ -759,7 +759,7 @@ def _parse_records(raw: str) -> list[SourceRecord]:
+     if isinstance(data, Mapping):
+         data = data.get("files", [])
+     if not isinstance(data, list):
+-        raise ValueError("expected a JSON list of {path, content}")  # noqa: TRY004
++        raise ValueError("expected a JSON list of {path, content}")
+     records = []
+     for item in data:
+         if not isinstance(item, Mapping) or "path" not in item or "content" not in item:
+diff --git a/scripts/ci/federation_anchors.py b/scripts/ci/federation_anchors.py
+index b05d7ed4..6caa5985 100644
+--- a/scripts/ci/federation_anchors.py
++++ b/scripts/ci/federation_anchors.py
+@@ -22,7 +22,6 @@
+ import sys
+ import urllib.error
+ import urllib.request
+-from typing import Any
+ 
+ if hasattr(sys.stdout, "reconfigure"):
+     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+@@ -54,7 +53,7 @@
+ 
+ # Specialized Hubs
+ BRIDGE_ORDER_ANCHOR: int = 760  # [Federation Hub] Bridge Transit, Orders & Rejections
+-CI_FAILURE_ANCHOR: int = 761    # [Federation Hub] CI Pipeline Failures & Incident Desk
++CI_FAILURE_ANCHOR: int = 761  # [Federation Hub] CI Pipeline Failures & Incident Desk
+ 
+ # Short aliases for CLI/script convenience
+ ANCHOR_ALIASES: dict[str, int] = {
+@@ -139,7 +138,9 @@ def get_default_token() -> str:
+         if val and val.strip():
+             return val.strip()
+     try:
+-        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
++        res = subprocess.run(
++            ["gh", "auth", "token"], capture_output=True, text=True, check=False
++        )
+         if res.returncode == 0 and res.stdout.strip():
+             return res.stdout.strip()
+     except (OSError, subprocess.SubprocessError):
+@@ -181,7 +182,9 @@ def link_sub_issue(
+     if tok:
+         try:
+             # First fetch child issue database id
+-            url_child = f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
++            url_child = (
++                f"https://api.github.com/repos/{repo}/issues/{child_issue_number}"
++            )
+             req_c = urllib.request.Request(
+                 url_child,
+                 headers={
+@@ -210,7 +213,12 @@ def link_sub_issue(
+                 with urllib.request.urlopen(req_l, timeout=10) as resp_l:
+                     if resp_l.status in (200, 201):
+                         return True
+-        except (urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError, OSError):
++        except (
++            urllib.error.HTTPError,
++            urllib.error.URLError,
++            json.JSONDecodeError,
++            OSError,
++        ):
+             pass
+ 
+     return False
+@@ -283,7 +291,9 @@ def create_sub_issue(
+             for lbl in labels:
+                 cmd_fallback.extend(["--label", lbl])
+         try:
+-            res_fb = subprocess.run(cmd_fallback, env=env, capture_output=True, text=True, check=False)
++            res_fb = subprocess.run(
++                cmd_fallback, env=env, capture_output=True, text=True, check=False
++            )
+             out_fb = (res_fb.stdout or "").strip()
+             if res_fb.returncode == 0 and out_fb:
+                 url = out_fb.splitlines()[-1]
+@@ -303,7 +313,9 @@ def self_test() -> int:
+     print("[self-test] Validating 14 Anchor Hub SSOT contract...")
+ 
+     # 1. Exact count check
+-    assert len(ANCHOR_HUBS) == 14, f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
++    assert len(ANCHOR_HUBS) == 14, (
++        f"Must have exactly 14 anchor hubs, found {len(ANCHOR_HUBS)}"
++    )
+ 
+     # 2. Unique issue numbers
+     numbers = list(ANCHOR_HUBS.values())
+@@ -311,7 +323,9 @@ def self_test() -> int:
+ 
+     # 3. Sequential 749-762 range
+     expected_range = set(range(749, 763))
+-    assert set(numbers) == expected_range, f"Anchor numbers must match {expected_range}, got {set(numbers)}"
++    assert set(numbers) == expected_range, (
++        f"Anchor numbers must match {expected_range}, got {set(numbers)}"
++    )
+ 
+     # 4. Satellite resolution
+     assert get_anchor_issue_number("Supremeai-bd/supremeai-studio") == 749
+@@ -344,7 +358,9 @@ def self_test() -> int:
+ def verify_live(token: str | None = None) -> int:
+     """Verify against live GitHub API that all 14 Anchor Hubs exist and are open."""
+     tok = token or get_default_token()
+-    print("🔍 [verify-live] Verifying all 14 Anchor Hubs on Supremeai-bd/supremeai-open...")
++    print(
++        "🔍 [verify-live] Verifying all 14 Anchor Hubs on Supremeai-bd/supremeai-open..."
++    )
+     errors = 0
+ 
+     for repo_name, issue_num in sorted(ANCHOR_HUBS.items(), key=lambda x: x[1]):
+@@ -363,7 +379,9 @@ def verify_live(token: str | None = None) -> int:
+                 state = data.get("state")
+                 title = data.get("title")
+                 if state != "open":
+-                    print(f"❌ Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)")
++                    print(
++                        f"❌ Anchor #{issue_num} ({repo_name}) is {state}! (Must be OPEN)"
++                    )
+                     errors += 1
+                 else:
+                     print(f"✅ Anchor #{issue_num}: {title} [state: {state}]")
+@@ -379,9 +397,17 @@ def verify_live(token: str | None = None) -> int:
+ 
+ def main() -> int:
+     parser = argparse.ArgumentParser(description="14 Anchor Hub SSOT Registry")
+-    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
+-    parser.add_argument("--verify-live", action="store_true", help="Query live board to check all 14 anchors")
+-    parser.add_argument("--resolve", type=str, help="Resolve repository identifier to anchor number")
++    parser.add_argument(
++        "--self-test", action="store_true", help="Run offline contract assertions"
++    )
++    parser.add_argument(
++        "--verify-live",
++        action="store_true",
++        help="Query live board to check all 14 anchors",
++    )
++    parser.add_argument(
++        "--resolve", type=str, help="Resolve repository identifier to anchor number"
++    )
+     args = parser.parse_args()
+ 
+     if args.self_test:
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index ba59ef9b..2b0d38a8 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -185,7 +185,9 @@ def get_default_token() -> str:
+         if val and val.strip():
+             return val.strip()
+     try:
+-        res = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, check=False)
++        res = subprocess.run(
++            ["gh", "auth", "token"], capture_output=True, text=True, check=False
++        )
+         if res.returncode == 0 and res.stdout.strip():
+             return res.stdout.strip()
+     except (OSError, subprocess.SubprocessError):
+@@ -227,7 +229,13 @@ def gh_api(
+         except (json.JSONDecodeError, ValueError):
+             parsed = {"raw": err_content}
+         return e.code, parsed
+-    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
++    except (
++        urllib.error.URLError,
++        OSError,
++        TimeoutError,
++        ConnectionError,
++        ValueError,
++    ) as e:
+         return 0, {"error": str(e)}
+ 
+ 
+@@ -263,15 +271,14 @@ def mirror_failure(
+     """Record CI failure incident as a structured comment in CI Failure Hub #761 (zero loose issues)."""
+     existing = check_existing_mirror(repo, run_id, token=token)
+     if existing:
+-        print(f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping.")
++        print(
++            f"[watchdog] Incident already recorded in CI Hub #{CI_FAILURE_ANCHOR} (comment #{existing}). Skipping."
++        )
+         return True
+ 
+     title = build_issue_title(workflow_name, repo, branch, run_id)
+-    body = (
+-        f"## 🚨 CI Failure Incident: {title}\n\n"
+-        + build_issue_body(
+-            repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+-        )
++    body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
++        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+     )
+ 
+     code, resp = gh_api(
+@@ -447,9 +454,9 @@ def self_test() -> int:
+     if get_anchor_issue_number is not None:
+         for r in FEDERATION_REPOS:
+             anc = get_anchor_issue_number(r)
+-            assert (
+-                anc is not None and 749 <= anc <= 762
+-            ), f"Repo {r} must map to a valid anchor hub, got {anc}"
++            assert anc is not None and 749 <= anc <= 762, (
++                f"Repo {r} must map to a valid anchor hub, got {anc}"
++            )
+ 
+     print("✅ [self-test] All 7 contract assertion groups passed!")
+     return 0
+diff --git a/scripts/ci/federation_dispatch.py b/scripts/ci/federation_dispatch.py
+index 50fb1535..c415a67f 100644
+--- a/scripts/ci/federation_dispatch.py
++++ b/scripts/ci/federation_dispatch.py
+@@ -159,7 +159,14 @@ def check(name, ok):
+         yaml_ok = isinstance(parsed, dict) and "jobs" in parsed
+     except (ImportError, ModuleNotFoundError):
+         yaml_ok = False
+-    except (yaml.YAMLError, OSError, ValueError, UnicodeDecodeError, TypeError, RuntimeError):
++    except (
++        yaml.YAMLError,
++        OSError,
++        ValueError,
++        UnicodeDecodeError,
++        TypeError,
++        RuntimeError,
++    ):
+         yaml_ok = False
+     check("workflow appendix parses as YAML", yaml_ok)
+ 
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index c287d17a..b5e9de8a 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -50,8 +50,16 @@
+ # Mirrored contract files mapped from supremeai-open root to specific satellite destination paths:
+ # (source_rel_in_open, target_repo, target_rel_in_satellite)
+ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
+-    ("examples/gateway_client.py", "Supremeai-bd/supremeai-api", "scripts/clients/gateway_client.py"),
+-    ("api-schemas/gateway.openapi.yaml", "Supremeai-bd/supremeai-api", "contracts/openapi.yaml"),
++    (
++        "examples/gateway_client.py",
++        "Supremeai-bd/supremeai-api",
++        "scripts/clients/gateway_client.py",
++    ),
++    (
++        "api-schemas/gateway.openapi.yaml",
++        "Supremeai-bd/supremeai-api",
++        "contracts/openapi.yaml",
++    ),
+ ]
+ 
+ # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
+@@ -74,12 +82,16 @@ def get_auth_token(token_arg: str | None = None) -> str:
+             return val
+     # Fallback to local gh CLI if available
+     try:
+-        out = subprocess.check_output(["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL).strip()
++        out = subprocess.check_output(
++            ["gh", "auth", "token"], text=True, stderr=subprocess.DEVNULL
++        ).strip()
+         if out:
+             return out
+     except Exception:
+         pass
+-    raise RuntimeError("No GitHub authentication token found (checked BRIDGE_PUSH_TOKEN, SAT_SYNC_PAT, GH_TOKEN).")
++    raise RuntimeError(
++        "No GitHub authentication token found (checked BRIDGE_PUSH_TOKEN, SAT_SYNC_PAT, GH_TOKEN)."
++    )
+ 
+ 
+ def copy_tree_contents(src: Path, dst: Path) -> None:
+@@ -88,7 +100,11 @@ def copy_tree_contents(src: Path, dst: Path) -> None:
+         return
+     for root, dirs, files in os.walk(src):
+         # Exclude hidden git/cache dirs
+-        dirs[:] = [d for d in dirs if d not in (".git", "__pycache__", ".pytest_cache", "node_modules")]
++        dirs[:] = [
++            d
++            for d in dirs
++            if d not in (".git", "__pycache__", ".pytest_cache", "node_modules")
++        ]
+         rel = Path(root).relative_to(src)
+         target_dir = dst / rel
+         target_dir.mkdir(parents=True, exist_ok=True)
+@@ -111,7 +127,9 @@ def sync_satellite(
+     slug = target_repo.split("/")[-1]
+     src_path = repo_root / source_dir
+     if not src_path.exists():
+-        print(f"⏩ [SKIP] Source directory '{source_dir}' does not exist for {target_repo}.")
++        print(
++            f"⏩ [SKIP] Source directory '{source_dir}' does not exist for {target_repo}."
++        )
+         return True
+ 
+     clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
+@@ -140,7 +158,9 @@ def sync_satellite(
+                 if src_file.exists():
+                     dst_file.parent.mkdir(parents=True, exist_ok=True)
+                     shutil.copy2(src_file, dst_file)
+-                    print(f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}")
++                    print(
++                        f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}"
++                    )
+ 
+         # Check for diff
+         status = subprocess.check_output(
+@@ -150,7 +170,9 @@ def sync_satellite(
+         ).strip()
+ 
+         if not status:
+-            print(f"✅ [NO-OP] {target_repo} is already in perfect sync with '{source_dir}'.")
++            print(
++                f"✅ [NO-OP] {target_repo} is already in perfect sync with '{source_dir}'."
++            )
+             return True
+ 
+         print(f"📝 Diff detected in {target_repo}:\n{status}")
+@@ -161,7 +183,12 @@ def sync_satellite(
+             cwd=str(tmp_repo),
+         )
+         subprocess.check_call(
+-            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
++            [
++                "git",
++                "config",
++                "user.email",
++                "github-actions[bot]@users.noreply.github.com",
++            ],
+             cwd=str(tmp_repo),
+         )
+         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
+@@ -242,7 +269,12 @@ def sync_monorepo(
+             cwd=str(tmp_repo),
+         )
+         subprocess.check_call(
+-            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
++            [
++                "git",
++                "config",
++                "user.email",
++                "github-actions[bot]@users.noreply.github.com",
++            ],
+             cwd=str(tmp_repo),
+         )
+         subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
+@@ -267,7 +299,9 @@ def sync_monorepo(
+             check=False,
+         )
+         if push_res.returncode == 0:
+-            print(f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main")
++            print(
++                f"🎉 [SUCCESS] Successfully synced umbrella monorepo {target_repo}:main"
++            )
+             return True
+         else:
+             print(f"❌ Failed to push to {target_repo}: {push_res.stderr.strip()}")
+@@ -293,25 +327,49 @@ def prune_ephemeral_patches(repo_root: Path) -> None:
+ 
+ def self_test() -> bool:
+     """Self-test verifying contract and mappings."""
+-    assert len(DOMAIN_MAP) == 11, f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
++    assert len(DOMAIN_MAP) == 11, (
++        f"Expected 11 satellites in DOMAIN_MAP, got {len(DOMAIN_MAP)}"
++    )
+     assert "Supremeai-bd/supremeai-studio" in DOMAIN_MAP
+     assert "Supremeai-bd/supremeai-core" in DOMAIN_MAP
+     assert "Supremeai-bd/supremeai-api" in DOMAIN_MAP
+-    assert len(CONTRACT_MIRROR_PAIRS) >= 2, "Expected at least 2 mirrored contract pairs"
++    assert len(CONTRACT_MIRROR_PAIRS) >= 2, (
++        "Expected at least 2 mirrored contract pairs"
++    )
+     for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
+-        assert sat_repo in DOMAIN_MAP, f"Target repo {sat_repo} must exist in DOMAIN_MAP"
++        assert sat_repo in DOMAIN_MAP, (
++            f"Target repo {sat_repo} must exist in DOMAIN_MAP"
++        )
+         assert open_rel and sat_rel, "Mirror paths must be non-empty"
+     return True
+ 
+ 
+ def main() -> int:
+-    parser = argparse.ArgumentParser(description="Synchronize supremeai-open changes directly to satellites.")
+-    parser.add_argument("--targets", nargs="*", help="Specific target repositories to sync (default: all mapped)")
+-    parser.add_argument("--all", action="store_true", help="Sync all 11 satellites and central monorepo")
++    parser = argparse.ArgumentParser(
++        description="Synchronize supremeai-open changes directly to satellites."
++    )
++    parser.add_argument(
++        "--targets",
++        nargs="*",
++        help="Specific target repositories to sync (default: all mapped)",
++    )
++    parser.add_argument(
++        "--all", action="store_true", help="Sync all 11 satellites and central monorepo"
++    )
+     parser.add_argument("--token", help="GitHub Personal Access Token or App Token")
+-    parser.add_argument("--commit-msg", default="synchronize federation transit surface", help="Commit message")
+-    parser.add_argument("--self-test", action="store_true", help="Run contract verification self-test")
+-    parser.add_argument("--prune-patches", action="store_true", help="Auto-prune ephemeral patches in patches/")
++    parser.add_argument(
++        "--commit-msg",
++        default="synchronize federation transit surface",
++        help="Commit message",
++    )
++    parser.add_argument(
++        "--self-test", action="store_true", help="Run contract verification self-test"
++    )
++    parser.add_argument(
++        "--prune-patches",
++        action="store_true",
++        help="Auto-prune ephemeral patches in patches/",
++    )
+ 
+     args = parser.parse_args()
+ 
+@@ -354,7 +412,9 @@ def main() -> int:
+         targets_to_sync = list(DOMAIN_MAP.keys())
+         sync_umbrella = True
+ 
+-    print(f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})")
++    print(
++        f"🎯 Target Repositories to Sync: {targets_to_sync} (Umbrella: {sync_umbrella})"
++    )
+ 
+     success = True
+     for target in targets_to_sync:
+diff --git a/scripts/ci/pr_improvement_regression_guard.py b/scripts/ci/pr_improvement_regression_guard.py
+index 10067eb7..561e4f91 100644
+--- a/scripts/ci/pr_improvement_regression_guard.py
++++ b/scripts/ci/pr_improvement_regression_guard.py
+@@ -359,23 +359,23 @@ def _check_backward_compat(
+ def evaluate(request: dict) -> dict:
+     """Deterministic evaluation. Fail-closed on malformed input."""
+     if not isinstance(request, dict):
+-        raise ValueError("request must be an object")  # noqa: TRY004
++        raise ValueError("request must be an object")
+     changed_files = request.get("changed_files")
+     if not isinstance(changed_files, list):
+-        raise ValueError("changed_files must be a list")  # noqa: TRY004
++        raise ValueError("changed_files must be a list")
+     for cf in changed_files:
+         if not isinstance(cf, dict) or not isinstance(cf.get("path"), str):
+-            raise ValueError("each changed file needs a string path")  # noqa: TRY004
++            raise ValueError("each changed file needs a string path")
+         if not isinstance(cf.get("added", []), list) or not isinstance(
+             cf.get("removed", []), list
+         ):
+-            raise ValueError("added/removed must be line lists")  # noqa: TRY004
++            raise ValueError("added/removed must be line lists")
+     declared = request.get("declared_files")
+     if not isinstance(declared, list):
+-        raise ValueError("declared_files must be a list")  # noqa: TRY004
++        raise ValueError("declared_files must be a list")
+     migration_notes = request.get("migration_notes") or []
+     if not isinstance(migration_notes, list):
+-        raise ValueError("migration_notes must be a list")  # noqa: TRY004
++        raise ValueError("migration_notes must be a list")
+     fixed_claim = request.get("fixed_failing_tests")
+     if fixed_claim is not None and not isinstance(fixed_claim, list):
+         raise ValueError("fixed_failing_tests must be a list of test ids")
+diff --git a/scripts/ci/probe_live_status.py b/scripts/ci/probe_live_status.py
+index 8e169b0f..607427d8 100644
+--- a/scripts/ci/probe_live_status.py
++++ b/scripts/ci/probe_live_status.py
+@@ -93,7 +93,13 @@ def _fetch(
+             ),
+             "error": f"HTTP {e.code}",
+         }
+-    except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError) as e:
++    except (
++        urllib.error.URLError,
++        OSError,
++        TimeoutError,
++        ConnectionError,
++        ValueError,
++    ) as e:
+         return {
+             "ok": False,
+             "status": None,
+diff --git a/scripts/ci/render_build_quota_guard.py b/scripts/ci/render_build_quota_guard.py
+index 901646c0..f209cfda 100644
+--- a/scripts/ci/render_build_quota_guard.py
++++ b/scripts/ci/render_build_quota_guard.py
+@@ -290,7 +290,13 @@ def main() -> int:
+             if eval_res["warning"]:
+                 has_warning = True
+ 
+-        except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError) as e:
++        except (
++            urllib.error.URLError,
++            TimeoutError,
++            OSError,
++            ValueError,
++            KeyError,
++        ) as e:
+             results.append(
+                 {
+                     "service": svc_name,
+diff --git a/scripts/ci/run_all_guards.py b/scripts/ci/run_all_guards.py
+index 2afc87f8..58e3576e 100644
+--- a/scripts/ci/run_all_guards.py
++++ b/scripts/ci/run_all_guards.py
+@@ -1,5 +1,6 @@
+ #!/usr/bin/env python3
+ """Run all CI guards in one pass (dispatcher; guards stay as separate modules)."""
++
+ from __future__ import annotations
+ 
+ import subprocess
+diff --git a/scripts/ci/self_healing_reporter.py b/scripts/ci/self_healing_reporter.py
+index 5b13beb3..c9fac0e3 100644
+--- a/scripts/ci/self_healing_reporter.py
++++ b/scripts/ci/self_healing_reporter.py
+@@ -35,7 +35,7 @@ def fingerprint_event(event: dict) -> str:
+     are excluded so repeated failures dedup onto one issue.
+     """
+     if not isinstance(event, dict):
+-        raise ValueError("event must be a dict")  # noqa: TRY004
++        raise ValueError("event must be a dict")
+     repo, kind, key = event.get("repo"), event.get("kind"), event.get("key")
+     if not repo or not isinstance(repo, str):
+         raise ValueError("event.repo (str) required")
+diff --git a/scripts/ci/staggered_rolling_train.py b/scripts/ci/staggered_rolling_train.py
+index bedfaba7..ff244bce 100644
+--- a/scripts/ci/staggered_rolling_train.py
++++ b/scripts/ci/staggered_rolling_train.py
+@@ -308,7 +308,7 @@ def self_test() -> bool:
+     assert active_slot(t115).satellite == "open"  # 5 min into the wrapped open slot
+     t120 = epoch + _dt.timedelta(minutes=120)
+     assert active_slot(t120).satellite == "studio"  # second slot of the next cycle
+-    naive = _dt.datetime(1970, 1, 1, 0, 30)  # noqa: DTZ001  # intentional naive datetime for fallback test
++    naive = _dt.datetime(1970, 1, 1, 0, 30)  # intentional naive datetime for fallback test
+     assert active_slot(naive).satellite == "api"  # naive == UTC, minute 30
+     try:
+         active_slot("now")
+diff --git a/scripts/ci/stale_claim_releaser.py b/scripts/ci/stale_claim_releaser.py
+index 9714290a..76f14344 100644
+--- a/scripts/ci/stale_claim_releaser.py
++++ b/scripts/ci/stale_claim_releaser.py
+@@ -105,7 +105,7 @@ def release_plan(snapshot: dict, now: datetime) -> dict:
+                  "last_push_at": iso|null, "pr_opened_at": iso|null}]}
+     """
+     if not isinstance(snapshot, dict) or not isinstance(snapshot.get("issues"), list):
+-        raise ValueError('snapshot must be {"issues": [...]}')  # noqa: TRY004
++        raise ValueError('snapshot must be {"issues": [...]}')
+     releases, keeps = [], []
+     for issue in snapshot["issues"]:
+         number = issue.get("number")
+@@ -212,10 +212,14 @@ def _self_test() -> int:
+     import argparse
+ 
+     parser = argparse.ArgumentParser(description=__doc__)
+-    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
++    parser.add_argument(
++        "--self-test", action="store_true", help="Run offline contract assertions"
++    )
+     parser.add_argument("--run", type=str, help="Path to a board snapshot JSON file")
+     parser.add_argument(
+-        "--auto-release", action="store_true", help="Auto-release stale claims (data-only plan)"
++        "--auto-release",
++        action="store_true",
++        help="Auto-release stale claims (data-only plan)",
+     )
+     parser.add_argument(
+         "--claim-to-branch-min",
+diff --git a/scripts/ci/test_parity_guard.py b/scripts/ci/test_parity_guard.py
+index 93c7e057..c3552e21 100644
+--- a/scripts/ci/test_parity_guard.py
++++ b/scripts/ci/test_parity_guard.py
+@@ -7,6 +7,7 @@
+ 
+ Stdlib-only. Offline.
+ """
++
+ from __future__ import annotations
+ 
+ import argparse
+diff --git a/scripts/ci/validate_md_links.py b/scripts/ci/validate_md_links.py
+index f447aa36..00b394a5 100644
+--- a/scripts/ci/validate_md_links.py
++++ b/scripts/ci/validate_md_links.py
+@@ -150,7 +150,13 @@ def head_ok(url: str, timeout: int = 12) -> bool:
+             )
+             with urllib.request.urlopen(req2, timeout=timeout) as resp:
+                 return resp.status < 400
+-        except (urllib.error.URLError, OSError, TimeoutError, ConnectionError, ValueError):
++        except (
++            urllib.error.URLError,
++            OSError,
++            TimeoutError,
++            ConnectionError,
++            ValueError,
++        ):
+             return False
+ 
+ 
+diff --git a/scripts/tower/claim_quota_reference.py b/scripts/tower/claim_quota_reference.py
+index 08376524..a88918d4 100644
+--- a/scripts/tower/claim_quota_reference.py
++++ b/scripts/tower/claim_quota_reference.py
+@@ -74,7 +74,7 @@ def _aware(now: datetime) -> datetime:
+ def validate_board(board: dict) -> list[dict]:
+     """Validate a board snapshot; returns the issues list. Fail-closed."""
+     if not isinstance(board, dict) or not isinstance(board.get("issues"), list):
+-        raise ValueError('board must be {"issues": [...]}')  # noqa: TRY004
++        raise ValueError('board must be {"issues": [...]}')
+     for issue in board["issues"]:
+         number = issue.get("number")
+         if not isinstance(number, int) or number <= 0:

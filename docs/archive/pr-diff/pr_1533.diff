@@ -1,0 +1,152 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 10bb5bf0..175cfe30 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -24,9 +24,12 @@
+ 
+ RULE_FRESHNESS_FILES = (
+     "AGENTS.md",
+-    "AGENT_RULES.md",
+     ".github/PULL_REQUEST_TEMPLATE.md",
+ )
++# বাংলা: AGENT_RULES.md আর নেই — PR #1526 নিজেই ফাইলটি মুছে দিয়েছে (Single Door
++# SSOT এখন AGENTS.md)। তালিকায় মুছে-যাওয়া ফাইল রাখলে step_2_rules()/run_cycle()
++# fresh main-এ সবসময় exit 1 দেয় (missing_local + rev-parse দুই জায়গাতেই fail) —
++# নিজের মুছে-ফেলা ফাইলকে পূর্বশর্ত করে রাখা লুপের আত্ম-পরাজয়।
+ 
+ OFFLINE_ENV_VARS = (
+     "SUPREMEAI_OFFLINE",
+@@ -434,16 +437,94 @@ def mark_role_run(
+     return store
+ 
+ def run_verify() -> list[dict[str, Any]]:
+-    evidence = [
+-        {"tier": 1, "name": "syntax_py_compile", "passed": True},
+-        {"tier": 2, "name": "json_validity", "passed": True},
+-        {"tier": 3, "name": "yaml_validity", "passed": True},
+-        {"tier": 4, "name": "binary_guard", "passed": True},
+-        {"tier": 5, "name": "contract_guard", "passed": True},
+-        {"tier": 6, "name": "group_registry_guard", "passed": True},
+-        {"tier": 7, "name": "envelope_determinism", "passed": True},
+-        {"tier": 8, "name": "machine_path_isolation", "passed": True},
++    """Honest 8-tier verification (U2 truth — no fabricated PASS).
++
++    বাংলা: প্রতিটি টিয়ার এখন সত্যিই চেক হয় (সস্তা, dependency-মুক্ত সেলফ-চেক);
++    ব্যর্থ বা exception হলে passed=False। আগের সংস্করণ ৮টি টিয়ারই শর্তহীনভাবে
++    PASS ছাপাত — যাচাই-ভয়াবহতা (false assurance) U2 লঙ্ঘন; পুরনো ১২৫০-লাইন
++    লুপে এই ত্রুটি PR #1498 ঠিক করেছিল, #1526 রিরাইটে আবার ফিরে এসেছিল।
++
++    চুক্তি: টিয়ার এমিশন অবশ্যই লিটারাল {"tier": N, ...} ডিক্ট হতে হবে —
++    Loop-Contract Parity Guard (#118) এই লিটারাল প্যাটার্ন grep করে docs/
++    AGENT_LOOP_SPEC.md §4-এর "tiers 1–8" SSOT-এর সাথে মেলায় (fail-closed)।
++    তাই ফাংশন-কল দিয়ে ভ্যারিয়েবল-জাত dict বানানো যাবে না; honesty ও
++    লিটারাল-এমিশন দুটোই একসাথে রাখতে হবে।
++    """
++
++    def _run(fn: Any) -> bool:
++        try:
++            return bool(fn())
++        except Exception:
++            return False
++
++    def _json_ok() -> bool:
++        # বাংলা: থাকা ফাইলগুলো অবশ্যই বৈধ JSON হতে হবে; অনুপস্থিত হলে বাধা নেই।
++        for p in (CADENCE_FILE, STATE_FILE):
++            if p.exists():
++                json.loads(p.read_text(encoding="utf-8"))
++        return True
++
++    def _yaml_ok() -> bool:
++        wf = REPO_ROOT / ".github" / "workflows"
++        if not wf.is_dir():
++            return False
++        files = [p for p in wf.iterdir() if p.suffix in (".yml", ".yaml")]
++        return bool(files) and all(p.stat().st_size > 0 for p in files)
++
++    def _binary_ok() -> bool:
++        agents_dir = REPO_ROOT / "scripts" / "agents"
++        for p in agents_dir.glob("*.py"):
++            blob = p.read_bytes()
++            if b"\x00" in blob or b"\x7fELF" in blob:
++                return False
++        return True
++
++    evidence: list[dict[str, Any]] = [
++        {
++            "tier": 1,
++            "name": "syntax_py_compile",
++            "passed": _run(
++                lambda: compile(
++                    Path(__file__).read_text(encoding="utf-8"),
++                    "continuous_agent_loop.py",
++                    "exec",
++                )
++                is not None,
++            ),
++        },
++        {"tier": 2, "name": "json_validity", "passed": _run(_json_ok)},
++        {"tier": 3, "name": "yaml_validity", "passed": _run(_yaml_ok)},
++        {"tier": 4, "name": "binary_guard", "passed": _run(_binary_ok)},
++        {
++            "tier": 5,
++            "name": "contract_guard",
++            "passed": _run(lambda: CONTRACT_VERSION == "agent-loop-contract/1"),
++        },
++        {
++            "tier": 6,
++            "name": "group_registry_guard",
++            "passed": _run(
++                lambda: isinstance(VALID_GROUPS, frozenset) and "core" in VALID_GROUPS
++            ),
++        },
++        {
++            "tier": 7,
++            "name": "envelope_determinism",
++            "passed": _run(
++                lambda: build_task_contract("verify-probe")
++                == build_task_contract("verify-probe")
++            ),
++        },
++        {
++            "tier": 8,
++            "name": "machine_path_isolation",
++            "passed": _run(
++                lambda: Path(__file__).resolve().parents[2] == REPO_ROOT
++                and (REPO_ROOT / "scripts" / "agents").is_dir()
++            ),
++        },
+     ]
++
+     for ev in evidence:
+         print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
+     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+@@ -470,15 +551,26 @@ def main() -> int:
+         return 0
+ 
+     cmd = ["gh", "issue", "list", "--json", "number,labels", "--state", "open", "--limit", "100"]
+-    p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
+-    raw = json.loads(p.stdout) if p.returncode == 0 and p.stdout.strip() else []
++    # বাংলা: main() এখানে run_cmd() বাইপাস করে সরাসরি subprocess.run() ডাকছিল —
++    # gh CLI অনুপস্থিত মেশিনে FileNotFoundError ছুঁড়ে পুরো লুপ crash করত
++    # (স্ট্যাকট্রেস সহ)। এখন সৎভাবে জানায় বোর্ড জিজ্ঞেস করা যায়নি, solver
++    # dispatch বাদ দিয়ে cadence পাথ চলতে থাকে — নীরব মিথ্যা "clean" নয়।
++    board_unavailable = False
++    try:
++        p = subprocess.run(cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
++        raw = json.loads(p.stdout) if p.returncode == 0 and p.stdout.strip() else []
++    except FileNotFoundError:
++        board_unavailable = True
++        raw = []
+     skip = {"status:claimed", "status:in-progress", "anchor-hub", "admin-only"}
+     unclaimed = [i for i in raw if not any(l.get("name") in skip for l in i.get("labels", []))]
+ 
+     print(COMMON_RULES)
+     print("=" * 52)
+ 
+-    if unclaimed:
++    if board_unavailable:
++        log("!", "gh CLI unavailable — cannot query the issue board; skipping solver dispatch. Cadence roles still evaluated.")
++    elif unclaimed:
+         print(f"ASSIGNED ROLE: solver (Unlimited concurrency allowed)\nROLE MANDATE: {ROLE_RULES['solver']}")
+         print("ACTION: Unclaimed issues found. Apply 'status:claimed' label, pick an issue, and solve it.")
+         return 0

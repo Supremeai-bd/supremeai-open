@@ -1,0 +1,728 @@
+diff --git a/studio/src/lib/jarvis/__tests__/jarvis.test.ts b/studio/src/lib/jarvis/__tests__/jarvis.test.ts
+new file mode 100644
+index 00000000..9a1a7286
+--- /dev/null
++++ b/studio/src/lib/jarvis/__tests__/jarvis.test.ts
+@@ -0,0 +1,198 @@
++// JARVIS intent registry — vitest suite (jsdom provides localStorage).
++// Covers: router matching + fall-through, help listing, memory roundtrip,
++// todos CRUD, remind parsing, search fetch-mock and the status renderer.
++
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { matchIntent, tryHandleIntent } from '../index';
++import { jarvisRegistry } from '../registry';
++import { clearMemory, listMemory, rememberFact } from '../handlers/memory';
++import { addTodo, completeTodo, listTodos, parseInDuration, checkDueTodos } from '../handlers/todos';
++
++beforeEach(() => {
++  localStorage.clear();
++  clearMemory();
++});
++
++describe('registry', () => {
++  it('registers the eight Phase-A intents', () => {
++    const names = jarvisRegistry.map((i) => i.name);
++    expect(names).toEqual(expect.arrayContaining(['help', 'status', 'remember', 'recall', 'forget', 'todo', 'remind', 'search']));
++    expect(names).toHaveLength(8);
++  });
++
++  it('leaves normal questions unmatched (fall through to LLM)', () => {
++    expect(matchIntent('help me write an essay about mars')).toBeNull();
++    expect(matchIntent('Remember the Titans is a great movie')).toBeNull();
++    expect(matchIntent('search engines explained')).toBeNull();
++    expect(matchIntent('remindfulness is not a word but contains remind me? no')).toBeNull();
++    expect(matchIntent('')).toBeNull();
++  });
++
++  it('matches help variants', () => {
++    expect(matchIntent('help')?.intent.name).toBe('help');
++    expect(matchIntent('/help')?.intent.name).toBe('help');
++    expect(matchIntent('What can you do?')?.intent.name).toBe('help');
++    expect(matchIntent('jarvis')?.intent.name).toBe('help');
++  });
++
++  it('matches remember with natural phrase and captures the fact', () => {
++    const m = matchIntent('remember that the deploy window is Sunday 2am');
++    expect(m?.intent.name).toBe('remember');
++    expect(m?.arg).toBe('the deploy window is Sunday 2am');
++  });
++});
++
++describe('help', () => {
++  it('lists every registered intent usage', async () => {
++    const res = await tryHandleIntent('/help');
++    expect(res?.via).toBe('jarvis:help');
++    for (const intent of jarvisRegistry) {
++      expect(res?.text).toContain(intent.usage);
++    }
++  });
++});
++
++describe('memory', () => {
++  it('remember -> recall -> forget roundtrip', async () => {
++    await tryHandleIntent('remember that the staging key rotates monthly');
++    expect(listMemory()).toHaveLength(1);
++    const recall = await tryHandleIntent('/recall staging');
++    expect(recall?.text).toContain('staging key rotates monthly');
++    const forgot = await tryHandleIntent('/forget staging');
++    expect(forgot?.text).toContain('Forgot 1 fact');
++    expect(listMemory()).toHaveLength(0);
++  });
++
++  it('deduplicates exact repeats', async () => {
++    rememberFact('alpha');
++    rememberFact('Alpha');
++    expect(listMemory()).toHaveLength(1);
++  });
++
++  it('/forget all wipes memory', async () => {
++    rememberFact('one');
++    rememberFact('two');
++    const res = await tryHandleIntent('/forget all');
++    expect(res?.text).toContain('2 facts removed');
++    expect(listMemory()).toHaveLength(0);
++  });
++
++  it('bare recall lists everything', async () => {
++    rememberFact('fact A');
++    rememberFact('fact B');
++    const res = await tryHandleIntent('what do you remember?');
++    expect(res?.via).toBe('jarvis:memory');
++    expect(res?.text).toContain('fact A');
++    expect(res?.text).toContain('fact B');
++  });
++});
++
++describe('todos', () => {
++  it('add, list, done roundtrip', async () => {
++    await tryHandleIntent('todo buy milk');
++    await tryHandleIntent('/todo ship the release');
++    expect(listTodos()).toHaveLength(2);
++    const list = await tryHandleIntent('/todo list');
++    expect(list?.text).toContain('buy milk');
++    const done = await tryHandleIntent('/todo done 1');
++    expect(done?.text).toContain('ship the release');
++    expect(listTodos().filter((t) => !t.done)).toHaveLength(1);
++  });
++
++  it('completeTodo works by id and clears done', async () => {
++    const item = addTodo('task x');
++    expect(completeTodo(item.id)?.text).toBe('task x');
++    expect(completeTodo(item.id)).toBeNull();
++    expect(addTodo('y')).toBeTruthy();
++    expect(completeTodo('1')?.text).toBe('y');
++  });
++
++  it('parseInDuration handles minutes/hours/days', () => {
++    const now = new Date('2026-10-25T10:00:00Z');
++    expect(parseInDuration('in 10 minutes', now)?.getTime()).toBe(now.getTime() + 600_000);
++    expect(parseInDuration('in 2 hrs', now)?.getTime()).toBe(now.getTime() + 7_200_000);
++    expect(parseInDuration('in 1 day', now)?.getTime()).toBe(now.getTime() + 86_400_000);
++    expect(parseInDuration('no time here', now)).toBeNull();
++  });
++
++  it('remind parses both shapes and stores due todo', async () => {
++    const r1 = await tryHandleIntent('/remind me to check the deploy in 10 minutes');
++    expect(r1?.via).toBe('jarvis:todos');
++    expect(listTodos()[0].dueAt).toBeTruthy();
++    const r2 = await tryHandleIntent('remind me in 5 minutes to stretch');
++    expect(r2?.via).toBe('jarvis:todos');
++    expect(listTodos()[0].text).toBe('stretch');
++  });
++
++  it('remind without a delay asks for one', async () => {
++    const before = listTodos().length;
++    const res = await tryHandleIntent('/remind me to call mom');
++    expect(res?.text).toContain('I need a delay');
++    expect(listTodos()).toHaveLength(before);
++  });
++
++  it('checkDueTodos fires and marks due reminders', () => {
++    vi.useFakeTimers();
++    try {
++      const past = new Date(Date.now() - 60_000);
++      addTodo('overdue', past);
++      const fired = checkDueTodos(new Date());
++      expect(fired).toHaveLength(1);
++      expect(fired[0].text).toBe('overdue');
++      expect(checkDueTodos(new Date())).toHaveLength(0); // not re-fired
++    } finally {
++      vi.useRealTimers();
++    }
++  });
++});
++
++describe('status', () => {
++  it('renders local status without network', async () => {
++    const res = await tryHandleIntent('/status');
++    expect(res?.via).toBe('jarvis:status');
++    expect(res?.text).toContain('Local memory');
++    expect(res?.text).toContain('Todos');
++  });
++});
++
++describe('search', () => {
++  it('shows usage when empty', async () => {
++    const res = await tryHandleIntent('/search');
++    expect(res?.text).toContain('/search issues');
++  });
++
++  it('hits GitHub issues API and formats results', async () => {
++    const fetchMock = vi.fn().mockResolvedValue(new Response(
++      JSON.stringify({ items: [{ number: 1198, title: 'restore toolbar', state: 'closed', html_url: 'https://github.com/x/pull/1198' }] }),
++      { status: 200 },
++    ));
++    vi.stubGlobal('fetch', fetchMock);
++    try {
++      const res = await tryHandleIntent('/search issues toolbar');
++      expect(res?.via).toBe('jarvis:search');
++      expect(res?.text).toContain('#1198');
++      expect(res?.text).toContain('restore toolbar');
++      const called = String(fetchMock.mock.calls[0][0]);
++      expect(called).toContain('api.github.com/search/issues');
++      expect(called).toContain('repo:Supremeai-bd/supremeai');
++    } finally {
++      vi.unstubAllGlobals();
++    }
++  });
++
++  it('code search without token degrades gracefully', async () => {
++    const res = await tryHandleIntent('/search code historyDepth');
++    expect(res?.text).toContain('token');
++    expect(res?.via).toBe('jarvis:search');
++  });
++
++  it('rate limit message on 403', async () => {
++    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 403 })));
++    try {
++      const res = await tryHandleIntent('github: anything');
++      expect(res?.text).toContain('rate limit');
++    } finally {
++      vi.unstubAllGlobals();
++    }
++  });
++});
+diff --git a/studio/src/lib/jarvis/handlers/memory.ts b/studio/src/lib/jarvis/handlers/memory.ts
+new file mode 100644
+index 00000000..f58640f4
+--- /dev/null
++++ b/studio/src/lib/jarvis/handlers/memory.ts
+@@ -0,0 +1,145 @@
++// JARVIS memory — /remember, /recall, /forget (localStorage, free).
++// Owner request 2026-10-25: "Memory recall via local storage".
++// Facts persist per-browser; the AI is never called, so remembering
++// costs nothing and works offline.
++
++import type { IntentContext, IntentResult } from '../registry';
++import { jarvisReadJson, jarvisWriteJson } from '../registry';
++
++const MEMORY_KEY = 'supremeai_jarvis_memory';
++const MAX_FACTS = 200;
++
++export interface MemoryEntry {
++  text: string;
++  at: string; // ISO timestamp
++}
++
++export function listMemory(): MemoryEntry[] {
++  return jarvisReadJson<MemoryEntry[]>(MEMORY_KEY, []);
++}
++
++export function rememberFact(text: string): MemoryEntry {
++  const entry: MemoryEntry = { text: text.trim(), at: new Date().toISOString() };
++  const all = listMemory();
++  // De-duplicate exact repeats (case-insensitive) — refresh timestamp instead.
++  const dupeIdx = all.findIndex((m) => m.text.toLowerCase() === entry.text.toLowerCase());
++  if (dupeIdx >= 0) all.splice(dupeIdx, 1);
++  all.unshift(entry);
++  if (all.length > MAX_FACTS) all.length = MAX_FACTS;
++  jarvisWriteJson(MEMORY_KEY, all);
++  return entry;
++}
++
++export function recallMemory(query: string): MemoryEntry[] {
++  const all = listMemory();
++  const q = query.trim().toLowerCase();
++  if (!q) return all;
++  return all.filter((m) => m.text.toLowerCase().includes(q));
++}
++
++export function forgetMemory(query: string): number {
++  const all = listMemory();
++  const q = query.trim().toLowerCase();
++  const kept = q ? all.filter((m) => !m.text.toLowerCase().includes(q)) : [];
++  const removed = all.length - kept.length;
++  if (removed > 0) jarvisWriteJson(MEMORY_KEY, kept);
++  return removed;
++}
++
++/** Full wipe (used by /forget all and tests). */
++export function clearMemory(): void {
++  jarvisWriteJson(MEMORY_KEY, []);
++}
++
++function fmt(entry: MemoryEntry, idx: number): string {
++  const when = new Date(entry.at).toLocaleString();
++  return `  ${idx + 1}. ${entry.text}  (saved ${when})`;
++}
++
++function handleRemember(ctx: IntentContext): IntentResult {
++  const fact = ctx.arg.replace(/^(?:that|this)\s+/i, '').trim();
++  if (!fact) {
++    return {
++      text: 'Usage: /remember <fact> — e.g. "/remember that the deploy window is Sunday 2am". I will store it on this device.',
++      via: 'jarvis:memory',
++    };
++  }
++  rememberFact(fact);
++  const total = listMemory().length;
++  return { text: `Stored. "${fact}" — ${total} fact${total === 1 ? '' : 's'} in local memory. Use /recall to list or /forget to remove.`, via: 'jarvis:memory' };
++}
++
++function handleRecall(ctx: IntentContext): IntentResult {
++  const found = recallMemory(ctx.arg);
++  if (found.length === 0) {
++    return ctx.arg
++      ? { text: `No saved facts match "${ctx.arg}". /recall with no query lists everything.`, via: 'jarvis:memory' }
++      : { text: 'Local memory is empty. Save facts with /remember <fact>.', via: 'jarvis:memory' };
++  }
++  const shown = found.slice(0, 15);
++  const lines = found.length > shown.length
++    ? [`Local memory — ${found.length} match${found.length === 1 ? '' : 'es'}, showing first 15:`]
++    : [`Local memory — ${found.length} fact${found.length === 1 ? '' : 's'}:`];
++  shown.forEach((entry, i) => lines.push(fmt(entry, i)));
++  return { text: lines.join('\n'), via: 'jarvis:memory' };
++}
++
++function handleForget(ctx: IntentContext): IntentResult {
++  if (!ctx.arg) {
++    return { text: 'Usage: /forget <text> — removes every saved fact containing that text. "/forget all" wipes memory.', via: 'jarvis:memory' };
++  }
++  if (ctx.arg.toLowerCase() === 'all') {
++    const total = listMemory().length;
++    clearMemory();
++    return { text: `Local memory wiped — ${total} fact${total === 1 ? '' : 's'} removed.`, via: 'jarvis:memory' };
++  }
++  const removed = forgetMemory(ctx.arg);
++  return removed > 0
++    ? { text: `Forgot ${removed} fact${removed === 1 ? '' : 's'} matching "${ctx.arg}".`, via: 'jarvis:memory' }
++    : { text: `Nothing matches "${ctx.arg}" — memory unchanged.`, via: 'jarvis:memory' };
++}
++
++export const rememberIntent = {
++  name: 'remember',
++  usage: '/remember <fact>',
++  description: 'Save a fact to local memory (free, offline)',
++  permission: 'write' as const,
++  match: (raw: string): string | boolean | null => {
++    if (raw.trim().toLowerCase().startsWith('/remember')) return raw.trim().slice('/remember'.length).trim();
++    // Natural phrases REQUIRE "remember that/this" — a bare "remember X"
++    // (e.g. "Remember the Titans is a great movie") must fall through to the LLM.
++    const m = raw.trim().match(/^remember\s+(?:that|this)\s+(.+)$/i);
++    return m ? m[1] : null;
++  },
++  handle: handleRemember,
++};
++
++export const recallIntent = {
++  name: 'recall',
++  usage: '/recall [query]',
++  description: 'List or search saved local memories',
++  permission: 'read' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim();
++    if (msg.toLowerCase().startsWith('/recall')) return msg.slice('/recall'.length).trim();
++    const lower = msg.toLowerCase().replace(/\s+/g, ' ').replace(/\?+$/, '').trim();
++    if (lower === 'what do you remember' || lower === 'what did i tell you' || lower === 'what do you know about me') return '';
++    const m = msg.match(/^recall(?:\s+that)?\s+(.+)$/i);
++    return m ? m[1] : null;
++  },
++  handle: handleRecall,
++};
++
++export const forgetIntent = {
++  name: 'forget',
++  usage: '/forget <text> | /forget all',
++  description: 'Remove matching facts from local memory',
++  permission: 'write' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim();
++    if (msg.toLowerCase().startsWith('/forget')) return msg.slice('/forget'.length).trim();
++    const m = msg.match(/^forget(?:\s+about)?\s+(.+)$/i);
++    return m ? m[1] : null;
++  },
++  handle: handleForget,
++};
+diff --git a/studio/src/lib/jarvis/handlers/search.ts b/studio/src/lib/jarvis/handlers/search.ts
+new file mode 100644
+index 00000000..ad727b91
+--- /dev/null
++++ b/studio/src/lib/jarvis/handlers/search.ts
+@@ -0,0 +1,158 @@
++// JARVIS /search — GitHub public API search (free, rate-limited, CORS OK).
++// Owner request 2026-10-25 #1 recommendation: "Search (code/docs/issues)
++// — GitHub public API (free, rate-limited)".
++//
++// Scopes:
++//   /search issues <q>   -> issues+PRs in Supremeai-bd/supremeai (unauth OK)
++//   /search repos <q>    -> public repositories (unauth OK)
++//   /search code <q>     -> code search (needs a token: VITE_GITHUB_TOKEN
++//                           or localStorage 'supremeai_github_token')
++//   /search <q>          -> defaults to issues
++//   github: <q>          -> alias for issues search
++//
++// Unauthenticated search limit is ~10 req/min — a friendly rate-limit
++// message is shown on 403/429. 8s timeout so the chat never hangs.
++
++import type { IntentContext, IntentResult } from '../registry';
++
++const REPO = 'Supremeai-bd/supremeai';
++const TIMEOUT_MS = 8000;
++
++interface SearchHit {
++  title?: string;
++  name?: string;
++  path?: string;
++  html_url: string;
++  description?: string | null;
++  state?: string;
++  number?: number;
++  repository?: { full_name?: string };
++}
++
++function githubToken(): string {
++  const env = (import.meta as unknown as { env?: Record<string, string> }).env || {};
++  if (env.VITE_GITHUB_TOKEN) return env.VITE_GITHUB_TOKEN;
++  if (typeof localStorage !== 'undefined') {
++    try { return localStorage.getItem('supremeai_github_token') || ''; } catch { return ''; }
++  }
++  return '';
++}
++
++async function ghFetch(url: string): Promise<{ status: number; items: SearchHit[] }> {
++  const controller = new AbortController();
++  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
++  try {
++    const token = githubToken();
++    const res = await fetch(url, {
++      headers: {
++        Accept: 'application/vnd.github+json',
++        ...(token ? { Authorization: `Bearer ${token}` } : {}),
++      },
++      signal: controller.signal,
++    });
++    if (!res.ok) return { status: res.status, items: [] };
++    const data = (await res.json()) as { items?: SearchHit[] };
++    return { status: res.status, items: data.items || [] };
++  } finally {
++    clearTimeout(timer);
++  }
++}
++
++function rateLimitText(): string {
++  return 'GitHub search rate limit reached (free tier: ~10 searches/min unauthenticated). Wait a minute and retry, or set a free GitHub token in VITE_GITHUB_TOKEN / localStorage "supremeai_github_token" for 30 req/min.';
++}
++
++async function searchIssues(q: string): Promise<IntentResult> {
++  if (!q) return { text: 'Usage: /search issues <query> — searches Supremeai-bd/supremeai issues and PRs.', via: 'jarvis:search' };
++  const url = `https://api.github.com/search/issues?q=${encodeURIComponent(q)}+repo:${REPO}&per_page=5&sort=updated`;
++  const { status, items } = await ghFetch(url);
++  if (status === 403 || status === 429) return { text: rateLimitText(), via: 'jarvis:search' };
++  if (status === 401) return { text: 'GitHub rejected the configured token (401). Clear localStorage "supremeai_github_token" or fix VITE_GITHUB_TOKEN.', via: 'jarvis:search' };
++  if (status !== 200) return { text: `GitHub search failed (HTTP ${status}).`, via: 'jarvis:search' };
++  if (items.length === 0) return { text: `No issues/PRs match "${q}" in ${REPO}.`, via: 'jarvis:search' };
++  const lines = [`Issues/PRs matching "${q}" (${items.length} shown):`];
++  for (const it of items) {
++    const kind = it.html_url.includes('/pull/') ? 'PR' : 'Issue';
++    const state = it.state || 'open';
++    lines.push(`  #${it.number} [${kind}/${state}] ${it.title}\n      ${it.html_url}`);
++  }
++  return { text: lines.join('\n'), via: 'jarvis:search' };
++}
++
++async function searchRepos(q: string): Promise<IntentResult> {
++  if (!q) return { text: 'Usage: /search repos <query> — searches public GitHub repositories.', via: 'jarvis:search' };
++  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&per_page=5`;
++  const { status, items } = await ghFetch(url);
++  if (status === 403 || status === 429) return { text: rateLimitText(), via: 'jarvis:search' };
++  if (status !== 200) return { text: `GitHub search failed (HTTP ${status}).`, via: 'jarvis:search' };
++  if (items.length === 0) return { text: `No public repos match "${q}".`, via: 'jarvis:search' };
++  const lines = [`Public repos matching "${q}":`];
++  for (const it of items) {
++    lines.push(`  ${it.repository?.full_name || it.html_url}${it.description ? ` — ${it.description}` : ''}\n      ${it.html_url}`);
++  }
++  return { text: lines.join('\n'), via: 'jarvis:search' };
++}
++
++async function searchCode(q: string): Promise<IntentResult> {
++  if (!q) return { text: 'Usage: /search code <query> — code search (token required, free GitHub PAT works).', via: 'jarvis:search' };
++  if (!githubToken()) {
++    return {
++      text: 'Code search needs a (free) GitHub token — GitHub requires auth for the code search API. Add VITE_GITHUB_TOKEN or run localStorage.setItem("supremeai_github_token", "ghp_...") once. Meanwhile /search issues and /search repos work without a token.',
++      via: 'jarvis:search',
++    };
++  }
++  const url = `https://api.github.com/search/code?q=${encodeURIComponent(q)}+repo:${REPO}&per_page=5`;
++  const { status, items } = await ghFetch(url);
++  if (status === 403 || status === 429) return { text: rateLimitText(), via: 'jarvis:search' };
++  if (status === 401) return { text: 'GitHub rejected the configured token (401). Replace localStorage "supremeai_github_token" with a fresh PAT.', via: 'jarvis:search' };
++  if (status !== 200) return { text: `GitHub code search failed (HTTP ${status}).`, via: 'jarvis:search' };
++  if (items.length === 0) return { text: `No code matches "${q}" in ${REPO}.`, via: 'jarvis:search' };
++  const lines = [`Code matching "${q}" (${items.length} shown):`];
++  for (const it of items) {
++    lines.push(`  ${it.path}\n      ${it.html_url}`);
++  }
++  return { text: lines.join('\n'), via: 'jarvis:search' };
++}
++
++function usage(): IntentResult {
++  return {
++    text: [
++      'Jarvis search (GitHub public API, free):',
++      '  /search issues <query>   — SupremeAI issues & PRs',
++      '  /search repos <query>    — public repositories',
++      '  /search code <query>     — SupremeAI code (needs free token)',
++      '  /search <query>          — same as issues',
++      '  github: <query>          — shortcut for issues',
++    ].join('\n'),
++    via: 'jarvis:search',
++  };
++}
++
++export const searchIntent = {
++  name: 'search',
++  usage: '/search [issues|repos|code] <query>',
++  description: 'Search GitHub issues, repos or code (free API)',
++  permission: 'read' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim();
++    if (msg.toLowerCase().startsWith('/search')) return msg.slice('/search'.length).trim();
++    const gh = msg.match(/^github[:\s]\s*(.+)$/i);
++    if (gh) return `issues ${gh[1]}`;
++    return null;
++  },
++  handle: async (ctx: IntentContext): Promise<IntentResult> => {
++    const arg = ctx.arg.trim();
++    if (!arg) return usage();
++    const scope = arg.match(/^(issues?|repos?|repositories|code|docs?)\s+(.+)$/i);
++    if (!scope) return searchIssues(arg);
++    const kind = scope[1].toLowerCase();
++    const q = scope[2].trim();
++    if (kind.startsWith('repo')) return searchRepos(q);
++    if (kind === 'code') return searchCode(q);
++    if (kind.startsWith('doc')) {
++      // Docs = code search scoped to markdown.
++      return searchCode(`${q} extension:md`);
++    }
++    return searchIssues(q);
++  },
++};
+diff --git a/studio/src/lib/jarvis/handlers/todos.ts b/studio/src/lib/jarvis/handlers/todos.ts
+new file mode 100644
+index 00000000..059b9cf8
+--- /dev/null
++++ b/studio/src/lib/jarvis/handlers/todos.ts
+@@ -0,0 +1,203 @@
++// JARVIS todos + reminders — /todo, /remind (localStorage + Notification).
++// Owner request 2026-10-25: "Todos/reminders via local storage" (free).
++// Reminders use setTimeout while the tab is open — the honest free-tier
++// limitation is stated in the reply. A due-check export is provided so a
++// later cycle can wire it into app boot for catch-up notifications.
++
++import type { IntentContext, IntentResult } from '../registry';
++import { jarvisReadJson, jarvisWriteJson } from '../registry';
++
++const TODO_KEY = 'supremeai_jarvis_todos';
++const MAX_TODOS = 100;
++
++export interface TodoItem {
++  id: string;
++  text: string;
++  createdAt: string;
++  /** ISO due time for reminders; undefined for plain todos. */
++  dueAt?: string;
++  reminded?: boolean;
++  done: boolean;
++}
++
++export function listTodos(): TodoItem[] {
++  return jarvisReadJson<TodoItem[]>(TODO_KEY, []);
++}
++
++function saveTodos(items: TodoItem[]): void {
++  jarvisWriteJson(TODO_KEY, items.slice(0, MAX_TODOS));
++}
++
++export function addTodo(text: string, dueAt?: Date): TodoItem {
++  const item: TodoItem = {
++    id: `todo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
++    text: text.trim(),
++    createdAt: new Date().toISOString(),
++    ...(dueAt ? { dueAt: dueAt.toISOString() } : {}),
++    done: false,
++  };
++  const all = listTodos();
++  all.unshift(item);
++  saveTodos(all);
++  return item;
++}
++
++export function completeTodo(idOrIndex: string): TodoItem | null {
++  const all = listTodos();
++  let target: TodoItem | undefined;
++  const asIndex = Number.parseInt(idOrIndex, 10);
++  if (Number.isFinite(asIndex) && String(asIndex) === idOrIndex.trim()) {
++    const open = all.filter((t) => !t.done);
++    target = open[asIndex - 1];
++  }
++  if (!target) target = all.find((t) => t.id === idOrIndex || t.text.toLowerCase() === idOrIndex.toLowerCase());
++  if (!target || target.done) return null;
++  target.done = true;
++  saveTodos(all);
++  return target;
++}
++
++export function clearDoneTodos(): number {
++  const all = listTodos();
++  const kept = all.filter((t) => !t.done);
++  const removed = all.length - kept.length;
++  if (removed > 0) saveTodos(kept);
++  return removed;
++}
++
++/** Fires due reminders; safe to call repeatedly (marks items reminded). */
++export function checkDueTodos(now: Date = new Date()): TodoItem[] {
++  const all = listTodos();
++  const fired: TodoItem[] = [];
++  let changed = false;
++  for (const t of all) {
++    if (t.done || t.reminded || !t.dueAt) continue;
++    if (new Date(t.dueAt).getTime() <= now.getTime()) {
++      t.reminded = true;
++      fired.push(t);
++      changed = true;
++      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
++        try { new Notification('Jarvis reminder', { body: t.text }); } catch { /* best effort */ }
++      }
++    }
++  }
++  if (changed) saveTodos(all);
++  return fired;
++}
++
++/** Parses "in 10 minutes|hours|days" returns a Date, or null. */
++export function parseInDuration(text: string, now: Date = new Date()): Date | null {
++  const m = text.match(/\bin\s+(\d+)\s*(minutes?|mins?|m|hours?|hrs?|h|days?|d)\b/i);
++  if (!m) return null;
++  const amount = Number.parseInt(m[1], 10);
++  const unit = m[2].toLowerCase();
++  const ms = unit.startsWith('m') ? 60_000
++    : unit.startsWith('h') ? 3_600_000
++      : 86_400_000;
++  return new Date(now.getTime() + amount * ms);
++}
++
++function humanDelay(dueAt: Date, now: Date): string {
++  const secs = Math.max(1, Math.round((dueAt.getTime() - now.getTime()) / 1000));
++  if (secs < 120) return `${secs}s`;
++  if (secs < 7200) return `${Math.round(secs / 60)}min`;
++  if (secs < 172800) return `${Math.round(secs / 3600)}h`;
++  return `${Math.round(secs / 86400)}d`;
++}
++
++function handleTodo(ctx: IntentContext): IntentResult {
++  const arg = ctx.arg.trim();
++  if (!arg || arg === 'list') {
++    const open = listTodos().filter((t) => !t.done);
++    if (open.length === 0) return { text: 'No open todos. Add one with: /todo <text> or "todo buy milk".', via: 'jarvis:todos' };
++    const lines = [`Open todos (${open.length}):`];
++    open.forEach((t, i) => {
++      const due = t.dueAt ? ` — due in ${humanDelay(new Date(t.dueAt), ctx.now)}` : '';
++      lines.push(`  ${i + 1}. ${t.text}${due}`);
++    });
++    lines.push('Complete with: /todo done <number>.');
++    return { text: lines.join('\n'), via: 'jarvis:todos' };
++  }
++  const doneMatch = arg.match(/^done\s+(?:#)?(\d+)$/i);
++  if (doneMatch) {
++    const item = completeTodo(doneMatch[1]);
++    return item
++      ? { text: `Done: "${item.text}". ${listTodos().filter((t) => !t.done).length} open left.`, via: 'jarvis:todos' }
++      : { text: `Couldn't find open todo #${doneMatch[1]}. Check /todo list.`, via: 'jarvis:todos' };
++  }
++  if (arg.toLowerCase() === 'clear') {
++    const removed = clearDoneTodos();
++    return { text: `Cleared ${removed} completed todo${removed === 1 ? '' : 's'}.`, via: 'jarvis:todos' };
++  }
++  const stripped = arg.replace(/^add\s+/i, '');
++  const item = addTodo(stripped);
++  return { text: `Todo added: "${item.text}". /todo list to see it.`, via: 'jarvis:todos' };
++}
++
++async function handleRemind(ctx: IntentContext): Promise<IntentResult> {
++  const arg = ctx.arg.trim();
++  if (!arg) {
++    return { text: 'Usage: /remind me to <task> in 10 minutes|hours|days', via: 'jarvis:todos' };
++  }
++  // Two accepted shapes: "me to X in 10m" and "in 10m to X".
++  let task = '';
++  let due: Date | null = null;
++  const a = arg.match(/^me\s+(?:to\s+)?(.+?)\s+in\s+(\d+)\s*(minutes?|mins?|hours?|hrs?|days?)\s*$/i);
++  const b = arg.match(/^in\s+(\d+)\s*(minutes?|mins?|hours?|hrs?|days?)\s+(?:to\s+)?(.+)$/i);
++  if (a) {
++    task = a[1].trim();
++    due = parseInDuration(`in ${a[2]} ${a[3]}`, ctx.now);
++  } else if (b) {
++    task = b[3].trim();
++    due = parseInDuration(`in ${b[1]} ${b[2]}`, ctx.now);
++  } else {
++    task = arg.replace(/^me\s+(?:to\s+)?/i, '').trim();
++  }
++  if (!due) {
++    return { text: `I need a delay for that: "/remind me to ${task} in 10 minutes". Supported units: minutes, hours, days.`, via: 'jarvis:todos' };
++  }
++  // Request notification permission lazily (browser only, never blocks).
++  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
++    try { void Notification.requestPermission(); } catch { /* best effort */ }
++  }
++  const item = addTodo(task, due);
++  checkDueTodos(ctx.now); // fire anything already due
++  if (typeof setTimeout === 'function') {
++    const delay = Math.max(0, due.getTime() - ctx.now.getTime());
++    setTimeout(() => { checkDueTodos(); }, delay + 250);
++  }
++  return {
++    text: `Reminder set: "${item.text}" in ${humanDelay(due, ctx.now)}. I will fire a browser notification (keep this tab open — free-tier honesty).`,
++    via: 'jarvis:todos',
++  };
++}
++
++export const todoIntent = {
++  name: 'todo',
++  usage: '/todo <text> | /todo list | /todo done <n> | /todo clear',
++  description: 'Local todo list (free, offline)',
++  permission: 'write' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim();
++    if (msg.toLowerCase().startsWith('/todo')) return msg.slice('/todo'.length).trim();
++    const m = msg.match(/^todos?\s+(?:add\s+)?(.+)$/i);
++    if (m) return m[1];
++    const m2 = msg.match(/^add\s+todos?\s+(.+)$/i);
++    return m2 ? m2[1] : null;
++  },
++  handle: handleTodo,
++};
++
++export const remindIntent = {
++  name: 'remind',
++  usage: '/remind me to <task> in <n> minutes|hours|days',
++  description: 'Set a local reminder (browser notification)',
++  permission: 'write' as const,
++  match: (raw: string): string | boolean | null => {
++    const msg = raw.trim();
++    if (msg.toLowerCase().startsWith('/remind')) return msg.slice('/remind'.length).trim();
++    const m = msg.match(/^remind\s+me\s+(.+)$/i);
++    return m ? m[1] : null;
++  },
++  handle: handleRemind,
++};

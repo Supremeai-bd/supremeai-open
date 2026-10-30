@@ -1,0 +1,33 @@
+diff --git a/browser/server.py b/browser/server.py
+index 67d10238..97204335 100644
+--- a/browser/server.py
++++ b/browser/server.py
+@@ -459,9 +459,14 @@ async def on_startup():
+ @app.get("/health")
+ async def health() -> Dict[str, Any]:
+     cookies = relay_engine._infisical_cookies or relay_engine.get_cookies()
++    service_name = os.getenv("SERVICE_NAME", "supremeai-scraper")
++    max_concurrency = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
+     return {
+         "status": "healthy",
+-        "service": "supremeai-browser-cookie-relay",
++        "service": service_name,
++        "browser_service": "supremeai-browser-cookie-relay",
++        "playwright_available": True,
++        "max_concurrency": max_concurrency,
+         "cookies_loaded": bool(cookies),
+         "total_cookies": len(cookies),
+         "infisical_configured": bool(os.getenv("INFISICAL_CLIENT_ID") and os.getenv("INFISICAL_CLIENT_SECRET")),
+diff --git a/browser/tests/test_relay_entrypoint.py b/browser/tests/test_relay_entrypoint.py
+index 5f8923b4..4536af79 100644
+--- a/browser/tests/test_relay_entrypoint.py
++++ b/browser/tests/test_relay_entrypoint.py
+@@ -25,7 +25,7 @@ def test_health_check() -> None:
+     assert resp.status_code == 200
+     data = resp.json()
+     assert data["status"] == "healthy"
+-    assert "supremeai-browser" in data["service"]
++    assert "supremeai-browser" in data.get("browser_service", data.get("service", ""))
+ 
+ 
+ def test_stealth_secret_auth_guard() -> None:

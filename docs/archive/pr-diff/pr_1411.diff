@@ -1,0 +1,60 @@
+diff --git a/core/optimization/optimized_redis_client.py b/core/optimization/optimized_redis_client.py
+index ac754a26..bbf7fdf9 100644
+--- a/core/optimization/optimized_redis_client.py
++++ b/core/optimization/optimized_redis_client.py
+@@ -48,6 +48,10 @@ def can_execute(self) -> bool:
+         return True
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++RedisCircuitBreaker = CircuitBreaker
++
++
+ class OptimizedRedisClient:
+     """
+     Optimized Redis client with connection pooling, circuit breaker,
+diff --git a/core/services/auto_healer.py b/core/services/auto_healer.py
+index 4fcbf1c4..0603d2f0 100644
+--- a/core/services/auto_healer.py
++++ b/core/services/auto_healer.py
+@@ -341,6 +341,10 @@ def status(self) -> dict[str, Any]:
+         }
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++AutoHealerCircuitBreaker = CircuitBreaker
++
++
+ class RetryPolicy:
+     """Configurable retry policy with exponential backoff"""
+ 
+diff --git a/core/workers/chaos_worker.py b/core/workers/chaos_worker.py
+index 20b4dcf3..a6945928 100644
+--- a/core/workers/chaos_worker.py
++++ b/core/workers/chaos_worker.py
+@@ -78,6 +78,10 @@ def record_failure(self) -> None:
+             self.cooldown_until = time.time() + self.cooldown_seconds
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++ChaosCircuitBreaker = CircuitBreaker
++
++
+ class NightlyChaosAuditor:
+     """Autonomous Self-Testing & Healing Auditor guarded by Circuit Breaker."""
+ 
+diff --git a/gateway/services/auto_healer.py b/gateway/services/auto_healer.py
+index 4fcbf1c4..0603d2f0 100644
+--- a/gateway/services/auto_healer.py
++++ b/gateway/services/auto_healer.py
+@@ -341,6 +341,10 @@ def status(self) -> dict[str, Any]:
+         }
+ 
+ 
++# Domain-scoped alias for canonical disambiguation (#751)
++AutoHealerCircuitBreaker = CircuitBreaker
++
++
+ class RetryPolicy:
+     """Configurable retry policy with exponential backoff"""
+ 

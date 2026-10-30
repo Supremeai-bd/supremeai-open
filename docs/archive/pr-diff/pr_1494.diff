@@ -1,0 +1,69 @@
+diff --git a/docs/bridge/bridge-20261027-jsdom-pointerevent-studio-ci.md b/docs/bridge/bridge-20261027-jsdom-pointerevent-studio-ci.md
+new file mode 100644
+index 00000000..5f5df5d4
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-jsdom-pointerevent-studio-ci.md
+@@ -0,0 +1,45 @@
++# 🌉 Bridge Work Order — [P0] Studio CI green: fix the 2 gesture-test failures (jsdom lacks PointerEvent → clientY undefined → dy NaN)
++
++Addresses `handoff:coder` CI-failure order on `Supremeai-bd/supremeai-studio` main
++(#1492 — Run 40485128169; siblings #1489 run 40481462890, #1488 run 40481410235 — one
++shared root cause). Failures started with the iOS Home Launcher part-2/3 sync
++(#1485, commit d6407bd): every run dies at the Test step (2 failed / 668 passed), so
++"Deploy to Cloudflare Pages" is skipped and production has been stale since 2026-10-27.
++
++## Root cause (reproduced locally, exact)
++`src/components/mobile/HomeShell.test.tsx` fires `fireEvent.pointerDown/Up` with
++`{ clientY: N }` for the status-bar pull-down and bottom-strip pull-up gestures.
++This jsdom version has **no `window.PointerEvent`** (verified: `typeof window.PointerEvent === 'undefined'`),
++so @testing-library falls back to a plain `Event` and **drops the `clientY` init**
++(React handler observes `e.clientY === undefined`). Gesture math then computes
++`dy = e.clientY - startY = NaN`, both guards (`dy > 28`, `Math.abs(dy) < 6`, `dy > -6`)
++evaluate false on NaN, `setPanel` never runs, panel stays `'none'`, and
++`getByTestId('notification-center')` / `getByTestId('control-center')` fail:
++- `HomeShell.test.tsx:77` — "pull-down on status bar opens Notification Center with Clear"
++- `HomeShell.test.tsx:87` — "bottom strip opens Control Center and toggles Wi-Fi"
++
++The production components are correct: in every real browser `PointerEvent` carries
++`clientY`. This is purely a test-environment gap — the same class of gap the test file
++already handles for `ResizeObserver`, `matchMedia`, and `clientWidth/Height` stubs
++(documented in its own header comment), which simply missed `PointerEvent`.
++
++## The fix (1 file, +7 lines, test-only, zero production change)
++- **studio/src/components/mobile/HomeShell.test.tsx**: extend the existing jsdom-stub
++  block with `class PointerEventStub extends MouseEvent {}` +
++  `vi.stubGlobal('PointerEvent', PointerEventStub)` and a Bangla comment explaining why.
++  With the shim, `fireEvent` constructs real MouseEvent-derived events and `clientY`
++  survives → gestures behave exactly as in a browser.
++
++## Verification (real, local, reproducible)
++- BEFORE (clean clone of 31e6330, pnpm 9.15.9, Node 24): `vitest run` → 2 failed | 668 passed;
++  debug probe printed `PANEL_AFTER_STATUSBAR_PULL= none`, `PANEL_AFTER_STRIP_PULL= none`.
++- Pointer probe: without shim `clientY=undefined`; with shim `down=10, up=60`.
++- AFTER: `pnpm run test` → **124 files, 670/670 passed**; `pnpm run typecheck` clean;
++  `pnpm run lint` → 0 errors (146 pre-existing warnings, unchanged); `pnpm run build` →
++  ✓ built in 7.5s; `eslint src/components/mobile/HomeShell.test.tsx` → clean.
++- U9 sibling sweep: grep of all `fireEvent.pointer*` usages — only `RunsPage.test.tsx`
++  (fires pointerDown with no clientY; handler reads only `transitionEnd`, unaffected).
++  No other sibling defects → no follow-up issue needed.
++
++## Labels
++`bridge:queued` `P0-critical` `area:ci` `repo:studio` `handoff:coder`
+diff --git a/studio/src/components/mobile/HomeShell.test.tsx b/studio/src/components/mobile/HomeShell.test.tsx
+index 54a19d96..c1388bac 100644
+--- a/studio/src/components/mobile/HomeShell.test.tsx
++++ b/studio/src/components/mobile/HomeShell.test.tsx
+@@ -30,6 +30,13 @@ beforeAll(() => {
+     removeEventListener: () => {},
+     dispatchEvent: () => false,
+   }));
++  // বাংলা: jsdom-এ PointerEvent ক্লাসও নেই — ফলে fireEvent.pointerDown/Up
++  // সাধারণ Event বানায় এবং init-এর clientY হারিয়ে যায় (e.clientY ===
++  // undefined)। জেসচার ম্যাথের dy NaN হয়ে যায়, তাই Notification/Control
++  // Center কখনো খোলে না। আসল ব্রাউজারে PointerEvent-এ clientY সবসময় থাকে,
++  // তাই MouseEvent এক্সটেন্ড করে স্টাব দিলেই ব্রাউজার-অভিন্ন আচরণ ফেরে।
++  class PointerEventStub extends MouseEvent {}
++  vi.stubGlobal('PointerEvent', PointerEventStub);
+   // jsdom-এ কোনো layout ইঞ্জিন নেই — clientWidth/Height 0 ফেরত দেয়, তাতে
+   // AppWindow (size.w > 0 গার্ড) কখনো মাউন্ট হয় না। ফোন-স্ক্রিনের মাপ দিই।
+   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 390 });

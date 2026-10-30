@@ -1,0 +1,87 @@
+diff --git a/command/dispatcher.py b/command/dispatcher.py
+index 66cd8a34..8eb816c1 100644
+--- a/command/dispatcher.py
++++ b/command/dispatcher.py
+@@ -145,6 +145,42 @@ def __init__(self, url: Optional[str], timeout_s: float = 5.0) -> None:
+         self.username = parsed.username
+         self.is_ssl = parsed.scheme == "rediss"
+ 
++    def _recv_reply(self, sock) -> str:
++        """Read one complete RESP reply and return its semantic string.
++
++        Fixes the truncated-read defect: a single recv() could return only a
++        bulk reply's length prefix (e.g. b'$5') or a coalesced fragment of the
++        previous command's reply, so GET returned garbage.
++        """
++        buf = b""
++        while CRLF not in buf:
++            chunk = sock.recv(4096)
++            if not chunk:
++                break
++            buf += chunk
++        if not buf:
++            return ""
++        line, _, rest = buf.partition(CRLF)
++        prefix = line[:1]
++        if prefix in (b"+", b"-", b":"):
++            return parse_resp_line(line)
++        if prefix == b"$":
++            try:
++                n = int(line[1:])
++            except ValueError:
++                return parse_resp_line(line)
++            if n < 0:
++                return ""  # RESP null bulk
++            payload = rest
++            while len(payload) < n + len(CRLF):
++                chunk = sock.recv(4096)
++                if not chunk:
++                    break
++                payload += chunk
++            return payload[:n].decode("utf-8", errors="replace")
++        # multi-bulk arrays are outside the SET/GET/DEL surface used here
++        return parse_resp_line(line)
++
+     def _command(self, *args: bytes) -> str:
+         raw_sock = socket.create_connection((self.host, self.port), timeout=self.timeout_s)
+         try:
+@@ -165,10 +201,10 @@ def _command(self, *args: bytes) -> str:
+                     if auth_resp.startswith(b"-"):
+                         raise DispatcherError("Redis AUTH failed: %s" % parse_resp_line(auth_resp.split(CRLF)[0]))
+                 sock.sendall(encode_resp(*args))
+-                data = sock.recv(4096)
++                data = self._recv_reply(sock)
+             if not data:
+                 raise DispatcherError("empty response from redis")
+-            return parse_resp_line(data.split(CRLF)[0])
++            return data
+         except Exception:
+             try:
+                 raw_sock.close()
+diff --git a/command/webhook_ingress.py b/command/webhook_ingress.py
+index c157d89a..3c11661a 100644
+--- a/command/webhook_ingress.py
++++ b/command/webhook_ingress.py
+@@ -70,7 +70,7 @@ def handle(self, method: str, path: str, body: bytes, signature: Optional[str])
+         return 202, result
+ 
+ 
+-def make_http_server(ingress: WebhookIngress) -> ThreadingHTTPServer:
++def make_http_server(ingress: WebhookIngress, bind_port: int = 0) -> ThreadingHTTPServer:
+     """Build (not start) a ThreadingHTTPServer around the ingress logic."""
+ 
+     class Handler(BaseHTTPRequestHandler):
+@@ -90,11 +90,10 @@ def do_POST(self) -> None:  # noqa: N802 - stdlib API
+         def log_message(self, fmt: str, *args: object) -> None:  # silence access log
+             return
+ 
+-    return ThreadingHTTPServer(("0.0.0.0", 0), Handler)
++    return ThreadingHTTPServer(("0.0.0.0", bind_port), Handler)
+ 
+ 
+ def serve(ingress: WebhookIngress, port: int) -> None:  # pragma: no cover - runtime
+     """Blocking runtime entrypoint (used by the command runtime, not tests)."""
+-    server = make_http_server(ingress)
+-    server.server_port = port
++    server = make_http_server(ingress, bind_port=port)
+     server.serve_forever()

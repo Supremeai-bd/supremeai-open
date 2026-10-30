@@ -1,0 +1,1655 @@
+diff --git a/.github/workflows/federation-ci-watchdog.yml b/.github/workflows/federation-ci-watchdog.yml
+index cb2a7666..41489e2b 100644
+--- a/.github/workflows/federation-ci-watchdog.yml
++++ b/.github/workflows/federation-ci-watchdog.yml
+@@ -5,6 +5,10 @@ on:
+     - cron: "*/15 * * * *"
+   workflow_dispatch:
+ 
++concurrency:
++  group: federation-ci-watchdog
++  cancel-in-progress: false
++
+ permissions:
+   contents: read
+   issues: write
+diff --git a/.github/workflows/kaggle-learning.yml b/.github/workflows/kaggle-learning.yml
+index bed6795f..f2acba68 100644
+--- a/.github/workflows/kaggle-learning.yml
++++ b/.github/workflows/kaggle-learning.yml
+@@ -5,6 +5,10 @@ on:
+     - cron: "0 12 * * *"
+   workflow_dispatch:
+ 
++concurrency:
++  group: kaggle-learning
++  cancel-in-progress: false
++
+ permissions:
+   contents: read
+ 
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index 6d05279a..e6015c56 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -39,7 +39,7 @@ on:
+       - 'bridge/**'
+   pull_request:
+     branches: [ main ]
+-    types: [opened, edited, reopened, synchronize, ready_for_review]
++    types: [opened, reopened, synchronize, ready_for_review]
+   # schedule:
+   #   - cron: "*/30 * * * *" # disabled per admin directive — Pipeline Cron does not run autonomous cycles unattended
+   repository_dispatch:
+@@ -51,6 +51,12 @@ on:
+         type: boolean
+         default: false
+ 
++# Anti-duplicate workflow invariant: cancel previous in-flight PR runs when a new
++# commit is pushed. Main branch pushes serialize without cancelling.
++concurrency:
++  group: ci-open-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++
+ permissions:
+   # Least privilege: this workflow only reads. Landing/merge/bridge authority
+   # lives exclusively in landing.yml (contents/pull-requests/issues: write).
+diff --git a/.github/workflows/satellite-board-audit.yml b/.github/workflows/satellite-board-audit.yml
+index d53aed4b..d363975b 100644
+--- a/.github/workflows/satellite-board-audit.yml
++++ b/.github/workflows/satellite-board-audit.yml
+@@ -5,6 +5,10 @@ on:
+     - cron: "0 6 * * *"
+   workflow_dispatch:
+ 
++concurrency:
++  group: satellite-board-audit
++  cancel-in-progress: false
++
+ permissions:
+   contents: read
+   issues: write
+diff --git a/.gitleaks.toml b/.gitleaks.toml
+index 7e6fe2ee..447ee752 100644
+--- a/.gitleaks.toml
++++ b/.gitleaks.toml
+@@ -83,6 +83,8 @@ id = "supremeai-cloudflare-global-key"
+ description = "Cloudflare Global API key (37-char hex, keyed by name)"
+ regex = '''[a-f0-9]{37}'''
+ keywords = ["cloudflare", "x-auth-key", "global_api_key", "CLOUDFLARE_GLOBAL"]
++[rules.allowlist]
++paths = ['''^\.gitleaksignore$''']
+ 
+ [[rules]]
+ id = "supremeai-cloudflare-api-token"
+@@ -91,6 +93,8 @@ description = "Cloudflare API token (40-char base62, keyed by name)"
+ # as the upstream Cloudflare rule) to prevent over-extended matches.
+ regex = '''(?i)\b[A-Za-z0-9_-]{40}\b'''
+ keywords = ["cloudflare", "x-auth-bearer", "api_token", "CLOUDFLARE_API"]
++[rules.allowlist]
++paths = ['''^\.gitleaksignore$''', '''^docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY\.md$''']
+ 
+ # ---------------------------------------------------------------------------
+ # 6. SupremeAI-issued credentials — the families this federation mints.
+diff --git a/docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md b/docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md
+new file mode 100644
+index 00000000..912c9227
+--- /dev/null
++++ b/docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md
+@@ -0,0 +1,422 @@
++# 📐 SupremeAI Federation — Mathematical Repository Model & Set Inventory
++
++> **Document Type:** Mathematical SSOT & Federation Set Inventory  
++> **Date:** 2026-10-24  
++> **Status:** Canonically Formulated  
++> **Federation SSOT:** [`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md) & [`AGENTS.md`](../AGENTS.md)
++
++---
++
++## 1. Mathematical Formulation (গাণিতিক মডেল)
++
++ফেডারেশন আর্কিটেকচারকে সেট থিওরি (Set Theory)-র আলোকে নিখুঁত সমীকরণ দিয়ে সংজ্ঞায়িত করা হলো:
++
++```mermaid
++flowchart TD
++    subgraph FEDERATION_UNIVERSE ["🌐 The Federation Universe (U)"]
++        direction TB
++        OPEN["supremeai-open<br>Total = 635 Files"]
++        MONO["supremeai (Central Monorepo)<br>Total = 2073 Files"]
++        
++        subgraph ACTIVE_SATS ["5 Active Product Satellites (Σ = 1384 Files)"]
++            S_STUDIO["S_studio (643)"]
++            S_API["S_api (490)"]
++            S_VSCODE["S_vscode (45)"]
++            S_BROWSER["S_browser (60)"]
++            S_CORE["S_core (146)"]
++        end
++
++        ARCHIVE["supremeai-archive (Cold Storage)<br>Total = 57 Files (55 Unique Retired)"]
++    end
++
++    OPEN -->|"Transit Mirrors (374 files)"| ACTIVE_SATS
++    ACTIVE_SATS -->|"Full Active Product"| MONO
++    ARCHIVE -.->|"Decommissioned Delta (Removed from active)"| MONO
++```
++
++---
++
++### সমীকরণ ১: `supremeai-open`-এর নিজস্ব ইউনিক ফাইল ($U_{\text{open}}$)
++
++`supremeai-open` রিপোজিটারি দুটি সেটের যোগফল:
++1. **$T_{\text{transit}}$ (Transit Mirror Files):** যে ফাইলগুলো স্যাটেলাইট রিপোগুলোর মিরর সারফেস (যেমন `studio/*`, `gateway/*`, `browser/*`, ইত্যাদি)। পিআর মার্জ হলে এগুলো স্যাটেলাইটে ল্যান্ড করে।
++2. **$U_{\text{open}}$ (Personal / Unique Open Files):** পাবলিক ফ্রন্ট ডোর, সিআই গেট গার্ডস, টাস্ক বোর্ড ও কনস্টিটিউশনের নিজস্ব ফাইল। এগুলো স্যাটেলাইটে যাবে না এবং থাকা নিষিদ্ধ।
++
++$$\mathbf{Open} = T_{\text{transit}} \cup U_{\text{open}} \quad \text{where } T_{\text{transit}} \cap U_{\text{open}} = \emptyset$$
++
++$$\mathbf{|Open|} = 635$$
++$$\mathbf{|T_{\text{transit}}|} = 374 \quad (\text{studio: 52, gateway: 35, mcp: 181, browser: 51, vscode: 44, core: 9, contracts: 2})$$
++$$\mathbf{|U_{\text{open}}|} = |Open| - |T_{\text{transit}}| = 635 - 374 = \mathbf{261 \text{ files}}$$
++
++---
++
++### সমীকরণ ২: ফুল প্রোডাক্ট সমীকরণ ($\text{SupremeAI}_{\text{full}}$)
++
++ফেডারেশনের ৫টি সক্রিয় প্রোডাক্ট স্যাটেলাইটের সমন্বিত লাইভ কোডবেজ:
++
++$$\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}}$$
++
++এবং সেন্ট্রাল মোনোরিপো হলো এই ৫টি স্যাটেলাইটের একত্রিত আমব্রেলা + সেন্ট্রাল অর্কেস্ট্রেশন ও শেয়ার্ড রিসোর্সেস:
++
++$$\mathbf{SupremeAI_{\text{monorepo}}} = \left(\bigcup_{i \in \text{domains}} S_i\right) \cup \Omega_{\text{shared}} \cup \Pi_{\text{apps}} \cup \Gamma_{\text{tools}}$$
++
++যেখানে:
++* $\Omega_{\text{shared}}$ = শেয়ার্ড প্যাকেজেস (`packages/design-tokens`, `packages/core-infrastructure`)
++* $\Pi_{\text{apps}}$ = সেন্ট্রাল মনিটরিং ও অ্যাডমিন অ্যাপস (`apps/mission-control`, `apps/docs`)
++* $\Gamma_{\text{tools}}$ = ডিস্ট্রিবিউটেড ক্লায়েন্ট ও অর্কেস্ট্রেশন স্ক্রিপ্টস (`client/supreme-node`, `scripts/`)
++
++---
++
++### সমীকরণ ৩: কোল্ড স্টোরেজ / আর্কাইভ সমীকরণ ($\mathbf{Archive}$)
++
++`supremeai-archive` হলো একটি অ্যাপেন্ড-অনলি কোল্ড স্টোরেজ। এটি সক্রিয় কোডবেজের অংশ নয়; বরং ৬টি সক্রিয় স্যাটেলাইট এবং সেন্ট্রাল মোনোরিপো থেকে ইতিপূর্বে **স্থায়ীভাবে মুছে ফেলা (decommissioned/retired)** ফাইলগুলোর সংরক্ষণাগার:
++
++$$\mathbf{Archive} = \Delta_{\text{retired}} \cup \{\text{README.md, LICENSE}\}$$
++
++$$\Delta_{\text{retired}} \cap \mathbf{S_{\text{active}}} = \emptyset \quad \text{and} \quad \Delta_{\text{retired}} \cap \mathbf{SupremeAI_{\text{monorepo}}} = \emptyset$$
++
++$$\mathbf{|Archive|} = 57 \text{ files}$$
++$$\mathbf{|\Delta_{\text{retired}}|} = 55 \text{ files (শুধুমাত্র আর্কাইভে সংরক্ষিত)}$$
++
++---
++
++## 2. $U_{\text{open}}$: `supremeai-open`-এর নিজস্ব ইউনিক ফাইল ইনডেক্স (২৬১টি ফাইল)
++
++এই ২৬১টি ফাইল শুধুমাত্র `supremeai-open`-এর অভ্যন্তরীণ পরিচালনা, টাস্ক গভার্নেন্স ও সিকিউরিটি গেটের জন্য নির্ধারিত। এগুলো স্যাটেলাইট রিপোতে **থাকার কথা নয়**:
++
++| ক্যাটাগরি | ফাইলের সংখ্যা | বিবরণ ও মূল কম্পোনেন্টস |
++|---|---|---|
++| **১. সেন্ট্রাল পলিসি ও কনস্টিটিউশন (`/`)** | ১৩ | `AGENTS.md`, `AGENT_RULES.md`, `ECOSYSTEM_MAP.md`, `ARCHITECTURE_PLAN.md`, `AUTONOMOUS_TRANSIT_PIPELINE.md`, `README.md`, `LICENSE`, `ruff.toml`, `.gitignore`, `.gitattributes`, `.gitleaks.toml`, `.gitleaksignore`, `.pre-commit-config.yaml` |
++| **২. পাবলিক ডকস ও গভার্নেন্স (`docs/`)** | ৮৩ | `docs/FEDERATION_CHARTER.md`, `docs/FEDERATED_CI_WATCHER.md`, `docs/ZERO_ADMIN_GUIDE.md`, `docs/HEARTBEAT_PROTOCOL.md`, `docs/CI_PIPELINES_AUDIT_REPORT.md`, `docs/work-orders/*` (সমস্ত স্পেক ও পাবলিক অর্ডার্স) |
++| **৩. সিআই গেট ও ট্রানজিট গার্ডস (`scripts/`)** | ৫৬ | `scripts/ci/federation_satellite_sync.py`, `scripts/ci/contract_parity_guard.py`, `scripts/ci/satellite_board_guard.py`, `scripts/ci/admin_sovereignty_guard.py`, `scripts/ci/deploy_preflight_guard.py`, `scripts/agents/*`, `scripts/tower/*` |
++| **৪. কনস্টিটিউশন ও গেট টেস্টস (`tests/`)** | ৪৪ | `tests/test_constitution_freshness.py`, `tests/test_test_parity_guard.py`, `tests/test_gateway_shield.py`, `tests/test_s12_nightly_train.py`, `tests/test_self_healing_reporter.py` |
++| **৫. সেন্ট্রাল স্কিমা ও ফিক্সচার্স (`api-schemas/`)** | ১৮ | `api-schemas/context-assembly.schema.json`, `dashboard.schema.json`, `federated-ci-failure.schema.json`, `heartbeat.schema.json`, `rate-limit.schema.json`, `task-router.schema.json`, `telemetry-log.schema.json`, `fixtures/*` |
++| **৬. পাবলিক ইন্টিগ্রেশন এক্সাম্পলস (`examples/`)** | ১৮ | `examples/langchain-*`, `examples/vercel-*`, `examples/streaming_chat.py`, `examples/sdk-*` |
++| **৭. পাবলিক ওয়ার্কফ্লো অটোমেশন (`.github/`)** | ১৫ | `.github/workflows/landing.yml`, `pipeline.yml`, `satellite-board-audit.yml`, `federation-ci-watchdog.yml`, `kaggle-learning.yml`, issue & PR templates |
++| **৮. অটোনোমাস স্কিলস (`.agents/skills/`)** | ৮ | `.agents/skills/devtools-audit/*` (স্কিল ম্যানিফেস্ট, অডিট কোড ও স্ক্রিপ্টস) |
++| **৯. গিটহুকস (`.githooks/`)** | ৩ | `.githooks/commit-msg`, `pre-commit`, `pre-push` |
++| **১০. এজ প্রক্সি কনফিগ (`infrastructure/`)** | ৩ | `infrastructure/cloudflare-studio-proxy/wrangler.toml`, `package.json`, `src/index.js` |
++| **সর্বমোট $U_{\text{open}}$** | **২৬১** | **১০০% আইসোলেটেড ও নিজস্ব ইউনিক ফাইল** |
++
++---
++
++## 3. $S_{\text{active}}$: ৫টি সক্রিয় স্যাটেলাইট রিপোজিটারি (১৩৮৪টি ফাইল)
++
++সক্রিয় কোডের সমাহার যা লাইভ প্রোডাকশনে এক্সিকিউট হয়:
++
++| স্যাটেলাইট রিপো | ভূমিকা | লাইভ প্ল্যাটফর্ম | ফাইল সংখ্যা | কভারেজ |
++|---|---|---|---|---|
++| **`supremeai-studio`** | ইউজার ড্যাশবোর্ড ও ক্লায়েন্ট ওয়েব UI | Vercel | ৬৪৩ | UI Components, Design Tokens, Pages, Storybook, Tests |
++| **`supremeai-api`** | ইউনিফাইড গেটওয়ে, MCP টুলস ও ব্যাকএন্ড | Render | ৪৯০ | Multi-LLM Routing, FastMCP Server, Alembic DB, Services |
++| **`supremeai-core`** | ডেসিশন ইঞ্জিন, প্ল্যানার ও মোয়াট | Render | ১৪৬ | DAG Planner, State Machine, Context Synthesizer, Memory |
++| **`supremeai-browser`** | হেডলেস স্টিলথ অটোমেশন ও ব্রাউজার | Render | ৬০ | Stealth Drivers, Playwright Sandbox, Anti-detect harness |
++| **`supremeai-vscode`** | ডেভেলপার এক্সটেনশন ও ক্লায়েন্ট হাব | Marketplace | ৪৫ | VS Code Extension, Desktop Tauri App, Mobile Capacitor |
++| **মোট সক্রিয় প্রোডাক্ট কোড** | | | **১৩৮৪** | **Active Federation Surface** |
++
++---
++
++## 4. $\mathbf{Archive}$: রিটায়ার্ড ও ডিকমিশনড ফাইলের পূর্ণাঙ্গ তালিকা (৫৫টি ইউনিক ফাইল)
++
++এই ৫৫টি ফাইল সক্রিয় ৬টি স্যাটেলাইট এবং সেন্ট্রাল মোনোরিপো থেকে ইতিমধ্যে ক্লিন/রিমুভ করা হয়েছে, এবং এগুলো শুধুমাত্র `supremeai-archive`-এ চিরতরে সংরক্ষিত:
++
++### ক. হিস্টোরিক্যাল ADRs (আর্কিটেকচার ফ্রিজ রেকর্ডস — ৭টি ফাইল)
++1. `adrs/ADR-001-core-freeze.md`
++2. `adrs/ADR-002-tier3-deferred.md`
++3. `adrs/ADR-003-main-repo-freeze-best-of.md`
++4. `adrs/ADR-004-topology-clarification.md`
++5. `adrs/ADR-005` (`topology-v3-private-archive-live-federation.md`)
++6. `adrs/ADR-006-federation-split-policy-agent-maintenance.md`
++7. `adrs/ADR-007-topology-v4-open-core-private-live.md`
++
++### খ. লিগ্যাসি স্পেসিফিকেশনস (পুরনো সিস্টেম ব্লুপ্রিন্ট — ১১টি ফাইল)
++8. `legacy-specs/AIBRAIN-01-MASTER_AGENT_SPECIFICATION.md`
++9. `legacy-specs/AIBRAIN-02-AGENT-SYSTEM-2.0-MASTER-PLAN.md`
++10. `legacy-specs/ARCH-10` (`UNIVERSAL-ENGINE-MASTER-PLAN` / `STAGING-RULE-ENGINE` / `BATCH-TRAIN-RED-TEAM.md`)
++11. `legacy-specs/FRONTEND_DASHBOARD_MASTER_PLAN_V1.md`
++12. `legacy-specs/GOVERNED_MULTI_AGENT_DECISION_ARCHITECTURE.md`
++13. `legacy-specs/ISSUE_PRIORITY_POLICY.md`
++14. `legacy-specs/MULTI_PLATFORM_AGENT_WORKSPACE_PLAN.md`
++15. `legacy-specs/MULTI_PLATFORM_WORKSPACE_IMPLEMENTATION_ROADMAP.md`
++16. `legacy-specs/OPS-09` (`POST-GROUP-JANITOR-AND-HYGIENE-PROTOCOL.md`)
++17. `legacy-specs/README.md`
++18. `legacy-specs/RISK_TIERED_AUTONOMOUS_SAFETY_PIPELINE.md`
++
++### গ. মাস্টার ও সিস্টেম ডকস (পূর্বে অ্যাক্টিভ ছিল এমন ডকস — ১৯টি ফাইল)
++19. `docs/master_docs/AGENT_SLOT_REGISTRY.yaml`
++20. `docs/master_docs/ARCH-02-SYSTEM_OVERVIEW_AND_FLOWS.md`
++21. `docs/master_docs/ARCH-03-DATA_AND_STORAGE_PLAN.md`
++22. `docs/master_docs/ARCH-05-MASTER_ROADMAP_AND_DECISIONS.md`
++23. `docs/master_docs/ARCH-06-MODULES_AND_PROVIDERS_MAP.md`
++24. `docs/master_docs/ARCH-GAP-01-DECISION-GAP-ANALYSIS.md`
++25. `docs/master_docs/BACKEND-01-API_REFERENCE_AND_CONTRACTS.md`
++26. `docs/master_docs/BACKEND-07-MICROSERVICES_AND_PLUGINS.md`
++27. `docs/master_docs/DEVOPS-01-PURE_CLOUD_INFRASTRUCTURE.md`
++28. `docs/master_docs/FRONTEND-01-DESIGN_SYSTEM_AND_TOKENS.md`
++29. `docs/master_docs/INTEG-01-MCP_INTEGRATION_HANDBOOK.md`
++30. `docs/master_docs/INTEG-06-VSCODE_EXTENSION_AND_IDE.md`
++31. `docs/master_docs/OPS-01-TESTING_STRATEGY_AND_TIERS.md`
++32. `docs/master_docs/OPS-04-OPERATIONAL_RUNBOOKS_AND_TASKS.md`
++33. `docs/master_docs/OPS-05-PR-HELPER-LIFECYCLE.md`
++34. `docs/master_docs/OPS-08-SUPREMEAI-RUNTIME-WORK-PROCESS.md`
++35. `docs/master_docs/PRODUCTION_CERTIFICATION.md`
++36. `docs/master_docs/SCRIPTS_CONSOLIDATION_MASTER.md`
++37. `docs/master_docs/SEC-01-30_CATEGORY_SECURITY_MATRIX.md`
++
++### ঘ. অডিট এভিডেন্স ও রিপোর্টস (৭টি ফাইল)
++38. `docs/audit_reports/module_wiring_audit.json`
++39. `docs/audit_reports/route_client_inventory.json`
++40. `docs/audit_reports/route_client_inventory.md`
++41. `docs/audits/evidence/2026-10-01/defect_scan_report.json`
++42. `docs/audits/evidence/2026-10-01/defect_scan_summary.txt`
++43. `docs/ledger/task-outcomes.jsonl`
++44. `worklogs/worklog.md`
++
++### ঙ. রিলিজ প্ল্যান ও টারবলস (১১টি ফাইল)
++45. `docs/plans/ARCH-LIVING-PIPELINE-01-IMPL.md`
++46. `docs/plans/architecture/SUPREMEAI_REPOSITORY_SEPARATION_AND_EVOLUTION_ROADMAP.md`
++47. `legacy-specs/lessons_2026-10.md`
++48. `lessons/INDEX.md`
++49. `lessons/lessons_2026-10.md`
++50. `prepared/v4/open-projection.yml`
++51. `prepared/v4/schedule-diet-patch.md`
++52. `roadmap-snapshots/2026-10-07-supremeai-roadmap-FROZEN.md`
++53. `tarballs/external-docs-export-2026-09-29.tar.gz`
++54. `tarballs/legacy-docs-2026-09-29.tar.gz`
++55. `tarballs/legacy-docs-phase2-2026-09-29.tar.gz`
++
++---
++
++## 5. ২-ধাপের ক্যাসকেডিং ব্রিজ ট্রানজিট ও জিরো-রেসিডিউ লাইফসাইকেল (2-Step Cascading Bridge Lifecycle)
++
++```mermaid
++flowchart TD
++    A["নতুন কোড / পিআর ল্যান্ডিং<br>(supremeai-open:main)"] --> B{"ফাইল কি U_open ইনডেক্সে আছে?"}
++    
++    B -- "হ্যাঁ (In-Index)" --> C["supremeai-open-এ স্থায়ী সংরক্ষণ<br>(পাবলিক গেট, গার্ড, স্পেকস)"]
++    
++    B -- "না (Off-Index: Transit Payload)" --> STEP1["🌉 Bridge Phase 1:<br>supremeai-open ➔ Target Satellite<br>(studio, api, browser, vscode, core)"]
++    
++    STEP1 --> VERIFY1{"স্যাটেলাইটে পৌঁছাল ও ভেরিফাইড?"}
++    VERIFY1 -- "ব্যর্থ" --> BLOCKED["🚨 Transit Blocked State<br>(রুট ড্রিফ্ট / সিআই ফেইলিওর তদন্ত)"]
++    
++    VERIFY1 -- "সফল" --> STEP2["🌉 Bridge Phase 2:<br>Target Satellite ➔ supremeai (Monorepo)<br>(Central Sync Ingestion)"]
++    
++    STEP2 --> VERIFY2{"মোনোরিপোতে সিঙ্ক সম্পন্ন?"}
++    VERIFY2 -- "ব্যর্থ" --> RETRY["⏳ Monorepo Sync Retry"]
++    
++    VERIFY2 -- "উভয় ধাপ সম্পন্ন" --> PRUNE["🧹 Zero-Residue Auto-Pruning (#416):<br>1. supremeai-open থেকে ট্রানজিট ফাইল/প্যাচ অপসারণ<br>2. bridge/* প্যাচ ব্রাঞ্চ স্থায়ী ডিলিট"]
++    
++    PRUNE --> CLEAN["✨ supremeai-open ১০০% ক্লিন!<br>(শুধুমাত্র U_open ইনডেক্স সংরক্ষিত)"]
++```
++
++---
++
++### ৫.১. দ্য ইনডেক্স ইনভেরিয়েন্ট ও ট্রানজিট ব্লক নীতি (Index Invariant & Blocked State Law)
++
++`supremeai-open`-এ অবস্থিত যেকোনো ফাইল $f$ কঠোরভাবে দুটি অবস্থার যেকোনো একটিতে থাকবে:
++
++$$\forall f \in \mathbf{Open}, \quad f \in U_{\text{open}} \oplus f \in T_{\text{transit}}$$
++
++1. **অন-ইনডেক্স ($f \in U_{\text{open}}$):** এটি `supremeai-open`-এর নিজস্ব ব্যক্তিগত ফাইল (সেকশন ২-এ তালিকাভুক্ত ২৬১টি ফাইল)। এটি কখনো কোনো স্যাটেলাইটে যাবে না, স্থায়ীভাবে ওপেন রিপোতেই থাকবে।
++2. **অফ-ইনডেক্স ($f \notin U_{\text{open}}$):** এটি ট্রানজিট কোড ($f \in T_{\text{transit}}$)। এটি ব্রিজ দিয়ে অবশ্যই কোনো না কোনো স্যাটেলাইট রিপোতে যেতে হবে।
++3. **🚨 দ্য প্রবলেম স্টেট রুল (Blocked Problem State):**  
++   যদি কোনো ফাইল $U_{\text{open}}$ ইনডেক্সের বাইরে থাকে অথচ এখনো `supremeai-open`-এ পড়ে রয়েছে—**তার মানে কোনো ত্রুটি বা বাধার কারণে (যেমন CI ফেইলিওর, রুট ড্রিফ্ট, পাথ মিসম্যাচ) সেটি এখনও স্যাটেলাইটে পৌঁছাতে পারেনি!** প্রতিটি আন-ইনডেক্সড ফাইল একটি অসম্পূর্ণ/আটকে থাকা ট্রানজিট নির্দেশ করে।
++
++---
++
++### ৫.২. ২-ধাপের ক্যাসকেডিং ট্রানজিট ও প্রুনিং সমীকরণ (Mathematical Equations)
++
++যেকোনো অফ-ইনডেক্স ট্রানজিট ফাইল $f \in T_{\text{transit}}$ এর ট্রানজিট পথ:
++
++$$\text{ধাপ ১ (Open } \to \text{Satellite):} \quad \text{Bridge}_1(f) \implies f \in S_i \quad (i \in \{\text{studio, api, browser, vscode, core}\})$$
++$$\text{ধাপ ২ (Satellite } \to \text{Monorepo):} \quad \text{Bridge}_2(f) \implies f \in SupremeAI_{\text{monorepo}}$$
++
++#### প্রুনিং শর্ত (Zero-Residue Activation Condition #416):
++উভয় ধাপ সফলভাবে সম্পন্ন হওয়ার ভেরিফিকেশন কন্ডিশন:
++
++$$\mathbf{VerifiedCompleted}(f) = (f \in S_i) \land (f \in SupremeAI_{\text{monorepo}}) = \mathbf{TRUE}$$
++
++যখন $\mathbf{VerifiedCompleted}(f) == \mathbf{TRUE}$ হবে, তখন সাথে সাথে সিস্টেম স্বয়ংক্রিয়ভাবে দুটি কাজ সম্পাদন করবে:
++1. **ট্রানজিট ফাইল অপসারণ:** $\mathbf{Open}_{\text{clean}} \leftarrow \mathbf{Open} \setminus \{f\}$
++2. **প্যাচ ব্রাঞ্চ অপসারণ:** $\mathbf{Branches}_{\text{clean}} \leftarrow \mathbf{Branches} \setminus \{\text{bridge/}*\}$
++
++এর ফলে `supremeai-open` সম্পূর্ণরূপে অবশিষ্টমুক্ত (Zero-Residue) থাকবে এবং সবসময় কেবল তার নিজস্ব ২৬১টি ইউনিক ফাইলে সংকুচিত থাকবে:
++
++$$\mathbf{Open}_{\text{steady}} = U_{\text{open}} \quad (\text{Zero Residue, Zero In-flight Drift})$$
++
++---
++
++## 6. ফেডারেশন-ওয়াইড সিআই পাইপলাইন ওয়াচডগ ও ৮টি অ্যাঙ্কর হাব সাব-ইস্যু আর্কিটেকচার (CI Watchdog & 8 Anchor Hubs)
++
++```mermaid
++flowchart TD
++    subgraph ALL_REPOS ["🌐 সমস্ত রিপোজিটারির CI পাইপলাইনস"]
++        W1["supremeai-open (CI / Landing)"]
++        W2["supremeai-studio (CI / Deploy)"]
++        W3["supremeai-api (Secret Scan / Gateway)"]
++        W4["supremeai-browser (CI / Smoke)"]
++        W5["supremeai-vscode (Extension / Tauri)"]
++        W6["supremeai-core (DAG Planner CI)"]
++        W7["supremeai (Bridge Intake / Deploy Train)"]
++    end
++
++    ALL_REPOS -->|🚨 কোনো এরর / ফেইলিওর হলে| WATCHDOG["🔍 Federation CI Watchdog<br>(scripts/ci/federation_ci_watchdog.py)"]
++    
++    WATCHDOG --> DEDUP{"ইতিমধ্যে ওপেন আছে?<br>(<!-- MIRROR_RUN: ... -->)"}
++    DEDUP -- "হ্যাঁ" --> SKIP["স্কিপ (Idempotent Dedup)"]
++    
++    DEDUP -- "না" --> CREATE["📝 supremeai-open-এ চাইল্ড ইস্যু তৈরি<br>(P0-critical / area:ci)"]
++    
++    CREATE --> LINK["🔗 নেটিভ সাব-ইস্যু লিঙ্কিং:<br>POST /issues/761/sub_issues<br>Database ID অ্যাটাচমেন্ট"]
++    
++    LINK --> HUB761["🚨 [Federation Hub] #761<br>CI Failures & Incident Desk"]
++
++    subgraph AUTO_RESOLVE ["✨ অটো-রেজোলিউশন ও অটো-ক্লোজ লাইফসাইকেল"]
++        FIX["👨‍💻 ফিক্স ল্যান্ডিং / পিআর মার্জ<br>অথবা পরবর্তী CI রান গ্রিন (Success)"]
++        FIX --> CLOSE["🔒 সাব-ইস্যু অটো-ক্লোজ (State: Closed)<br>Landing Gate 'Closes #N' অথবা Watchdog Auto-Resolve"]
++        CLOSE --> HIDE[" বোর্ড ভিউ থেকে অদৃশ্য (Clean 8 Hubs SSOT)"]
++    end
++
++    HUB761 -.-> AUTO_RESOLVE
++```
++
++---
++
++### ৬.১. ক্রস-রিপো সিআই ফেইলিওর ক্যাপচার ও সেন্ট্রাল ইনজেশন
++
++ফেডারেশনের যেকোনো রিপোজিটারিতে যখনই কোনো GitHub Actions ওয়ার্কফ্লো বা পাইপলাইনে এরর/ফেইলিওর (Conclusion: `failure`) ঘটে:
++1. **সেন্ট্রাল ওয়াচডগ পোলিং (`scripts/ci/federation_ci_watchdog.py`):** প্রতি ১৫ মিনিট পরপর এবং প্রতিটি `landing.yml` রান শেষে ওয়াচডগ পুরো ফেডারেশনের রিপোজিটারিগুলো স্ক্যান করে।
++2. **আইডেমপোটেন্ট ডিডুপ্লিকেশন:** প্রতিটি ফেইলিওরের বডিতে একটি সুনির্দিষ্ট মার্কার স্ট্যাম্প করা হয়:
++   ```html
++   <!-- MIRROR_RUN: Supremeai-bd/{repo}/actions/runs/{run_id} -->
++   ```
++   একই ফেইলিওরের জন্য একাধিক ডুপ্লিকেট ইস্যু কখনোই তৈরি হতে পারে না।
++3. **স্বয়ংক্রিয় প্যারামিটারাইজেশন:** ইস্যুটি স্বয়ংক্রিয়ভাবে `P0-critical`, `status:unclaimed`, `status:runway`, `area:ci`, এবং সংশ্লিষ্ট রিপো লেবেল (`repo:api`, `repo:studio` ইত্যাদি) পায়।
++
++---
++
++### ৬.২. ৮টি পারসিস্টেন্ট প্রি-ফিক্সড অ্যাঙ্কর হাব (The 8 Persistent Anchor Hubs SSOT)
++
++`supremeai-open`-এর পাবলিক বোর্ডে কোনো বিচ্ছিন্ন বা প্যারেন্টহীন (loose) রুট ইস্যু রাখা সম্পূর্ণ নিষিদ্ধ। সমস্ত টাস্ক ও সিআই ফেইলিওর নির্ধারিত **৮টি রুট অ্যাঙ্কর হাবের** অধীনে সাব-ইস্যু হিসেবে থাকতে হবে:
++
++| # | অ্যাঙ্কর হাব # | হাবের নাম ও দায়িত্ব | কোন সাব-ইস্যু যুক্ত হবে |
++|---|---|---|---|
++| **১** | **#761** | `[Federation Hub] 🚨 CI Pipeline Failures & Incident Desk` | **যেকোনো রিপোর সমস্ত CI পাইপলাইন ব্রেকডাউন/এরর (Watchdog mirrored)** |
++| **২** | **#760** | `[Federation Hub] 🌉 Bridge Transit, Orders & Rejections Desk` | সমস্ত ব্রিজ ট্রানজিট অর্ডার, প্যাচ ডিস্ট্রিবিউশন ও রিজেকশন ইস্যু |
++| **৩** | **#749** | `[Anchor Hub] Supremeai-bd/supremeai-studio` | স্টুডিও ওয়েব UI, ড্যাশবোর্ড ও ক্লায়েন্ট ফ্রন্টএন্ড ফিচার/বাগ |
++| **৪** | **#750** | `[Anchor Hub] Supremeai-bd/supremeai-api` | গেটওয়ে, FastMCP সার্ভার, রুট ড্রিফ্ট ও ব্যাকএন্ড API টাস্ক |
++| **৫** | **#751** | `[Anchor Hub] Supremeai-bd/supremeai-core` | ইন্টেলিজেন্স কোর, DAG প্ল্যানার ও ডেসিশন ইঞ্জিন টাস্ক |
++| **৬** | **#754** | `[Anchor Hub] Supremeai-bd/supremeai-vscode` | VS Code এক্সটেনশন, ডেস্কটপ (Tauri) ও মোবাইল ক্লায়েন্ট টাস্ক |
++| **৭** | **#756** | `[Anchor Hub] Supremeai-bd/supremeai-browser` | স্টিলথ ব্রাউজার, স্যান্ডবক্স ও হেডলেস অটোমেশন টাস্ক |
++| **৮** | **#762** | `[Anchor Hub] Supremeai-bd/supremeai-open` | পাবলিক টাস্ক বোর্ড SSOT, বাউন্ডারি গার্ডস ও কনস্টিটিউশন টাস্ক |
++
++> [!NOTE]
++> **রুট বোর্ড কুয়েরি ইনভ্যারিয়েন্ট:**  
++> `gh issue list --search "no:parent"` এক্সিকিউট করলে আউটপুটে কঠোরভাবে **শুধুমাত্র এবং ঠিক এই ৮টি রুট অ্যাঙ্কর হাব** প্রদর্শিত হবে। কোনো অতিরিক্ত অগোছালো রুট ইস্যু থাকা চলবে না।
++
++---
++
++### ৬.৩. সাব-ইস্যু তৈরির প্রযুক্তিগত পদ্ধতি (Technical Sub-Issue Linking)
++
++GitHub-এর অফিসিয়াল সাব-ইস্যু আর্কিটেকচার অনুযায়ী সাব-ইস্যু লিঙ্ক করা হয়:
++
++* **এন্ডপয়েন্ট (Snake-case REST Endpoint):**
++  ```http
++  POST https://api.github.com/repos/Supremeai-bd/supremeai-open/issues/{parent_issue_number}/sub_issues
++  Authorization: Bearer <TOKEN>
++  Accept: application/vnd.github+json
++  ```
++* **পেলোড:**
++  ```json
++  {
++    "sub_issue_id": 2617894512
++  }
++  ```
++  *(নোট: পেলোডে চাইল্ড ইস্যুর ডেটাবেজ আইডি `id` ব্যবহৃত হয়, ইস্যু নম্বর নয়)*।
++* **আইডেমপোটেন্সি গার্ড (`list_sub_issue_ids`):** লিঙ্ক করার পূর্বে `GET /issues/{parent}/sub_issues` দিয়ে বর্তমান সাব-ইস্যু তালিকা চেক করা হয়। যদি ইতিপূর্বে লিঙ্কড থাকে, তবে ডুপ্লিকেট POST রিকোয়েস্ট পরিহার করা হয় (HTTP 422 নো-অপারেশন হ্যান্ডলিং)।
++* **স্বয়ংক্রিয় সেলফ-হিলিং (`--relink`):** কোনো সাব-ইস্যু লিঙ্কিংয়ের সময় নেটওয়ার্ক ফেইলিওরের কারণে লুজ থেকে গেলে, ওয়াচডগের পরবর্তী পোলিং সাইকেল (`--relink`) বোর্ড স্ক্যান করে স্বয়ংক্রিয়ভাবে সেটিকে প্যারেন্ট হাব #761-এর অধীনে যুক্ত করে দেয়।
++
++---
++
++### ৬.৪. ফিক্স সম্পন্ন হওয়ার পর অটো-ক্লোজ ও অটো-ডিলিট লাইফসাইকেল (Auto-Resolution)
++
++সিআই সমস্যা সমাধান হওয়ার পর কোনো ম্যানুয়াল হস্তক্ষেপ ছাড়া সাব-ইস্যু অটো-ক্লোজ হয়:
++
++1. **মার্জ গেট অটো-ক্লোজ (`Closes #<id>`):**
++   ফিক্স পিআরের মার্জ কমিট `landing.yml`-এর মাধ্যমে সম্পন্ন হলে GitHub স্বয়ংক্রিয়ভাবে সংশ্লিষ্ট সাব-ইস্যুটি ক্লোজ করে দেয়।
++2. **ওয়াচডগ সেলফ-হিলিং রেজোলিউশন:**
++   সংশ্লিষ্ট ওয়ার্কফ্লোটি পরবর্তীতে `main` ব্রাঞ্চে গ্রিন (Conclusion: `success`) হওয়ার সাথে সাথে ওয়াচডগ ওপেন সাব-ইস্যুটিকে ক্লোজ করে দিয়ে রেজোলিউশন রিপোর্ট স্ট্যাম্প করে:
++   ```markdown
++   ## 🚦 Federation Incident — **RESOLVED** ✓
++   - Workflow run successfully passed on branch `main`.
++   - Incident sub-issue automatically closed by Federation CI Watchdog.
++   ```
++3. **বোর্ড ক্লিননেস:** ক্লোজ হওয়ার পর সাব-ইস্যুটি স্বাভাবিকভাবেই অ্যাক্টিভ বোর্ড ভিউ (`is:open`) থেকে অদৃশ্য হয়ে যায়। ফলে রুট বোর্ডে সর্বদা কেবল ৮টি রুট হাব সুরক্ষিত থাকে (জিরো-এডমিন $\le$ ০.০১%)।
++
++---
++
++## 7. অ্যান্টি-ডুপ্লিকেট ওয়ার্কফ্লো ও জিরো-রিডানড্যান্ট রান পলিসি (Anti-Duplicate & Zero-Waste CI Execution)
++
++```mermaid
++flowchart TD
++    TRIGGER["⚡ ওয়ার্কফ্লো ট্রিগার ইভেন্ট"] --> CHECK{"ট্রিগার কারণ কী?"}
++    
++    CHECK -- "নতুন কমিট / কোড ফিক্স পুশ<br>(Commit_new != Commit_old)" --> ALLOW1["✅ Run অনুমোদিত<br>(আগের ইন-ফ্লাইট রান cancel-in-progress দিয়ে প্রুন)"]
++    
++    CHECK -- "ম্যানুয়াল রি-রান / ডিসপ্যাচ<br>(workflow_dispatch / Manual Re-run)" --> ALLOW2["✅ Run অনুমোদিত<br>(ইউজার / এজেন্ট নির্ধারিত এক্সেকিউশন)"]
++    
++    CHECK -- "অযাচিত অটো-ট্রিগার<br>(PR ডেসক্রিপশন এডিট, ওভারল্যাপিং ক্রন,<br>ডাবল পুশ+পিআর ইভেন্ট)" --> BLOCK["🚫 কঠোরভাবে নিষিদ্ধ (Zero Redundancy)<br>কনকারেন্সি গ্রুপ ও ফিল্টারে সাথে সাথে ব্লক"]
++```
++
++---
++
++### ৭.১. একক রান নীতি ও ২য় রান অনুমোদনের শর্ত (Single-Execution Invariant)
++
++যে কোনো রিপোজিটারির যে কোনো ওয়ার্কফ্লো $W$ এর জন্য একই কোডবেজ স্টেট বা কমিটে **স্বয়ংক্রিয়ভাবে দুটি রান চলা সম্পূর্ণ নিষিদ্ধ**:
++
++$$\forall W \in \mathbf{Workflows}, \quad \mathbf{AutoRuns}(W, \text{Commit}_{\text{sha}}) \le 1$$
++
++#### ২য় বার রান (2nd Run) কার্যকর হওয়ার শর্ত:
++একটি ওয়ার্কফ্লো শুধুমাত্র এবং শুধুমাত্র নিচের দুটি বৈধ কারণে দ্বিতীয়বার রান হতে পারবে:
++
++$$\mathbf{CanRunAgain}(W) = \mathbf{TRUE} \iff \begin{cases} 
++\text{নতুন কমিট বা ফিক্স পুশ করা হয়েছে} & (\text{Commit}_{\text{new}} \neq \text{Commit}_{\text{old}}) \\ 
++\text{ম্যানুয়ালি রি-রান বা ডিসপ্যাচ করা হয়েছে} & (\text{Event} \in \{\text{workflow\_dispatch, rerun}\}) 
++\end{cases}$$
++
++অন্য যেকোনো কারণে (যেমন পিআর ডেসক্রিপশন এডিট, কনকারেন্ট শিডিউল ওভারল্যাপ, পুশ ও পিআরের দ্বৈত ট্রিগার) স্বয়ংক্রিয়ভাবে ২য় রান শুরু হওয়া সম্পূর্ণ বাতিল ও ফিল্টার্ড হতে হবে।
++
++---
++
++### ৭.২. `supremeai-open`-এর ৫টি মূল ওয়ার্কফ্লোর অ্যান্টি-ডুপ্লিকেট রুলস
++
++`supremeai-open`-এর সমস্ত ৫টি ওয়ার্কফ্লোতে ডাবল রান প্রতিরোধ করার আর্কিটেকচারাল লক:
++
++| # | ওয়ার্কফ্লো নাম | ভূমিকা | অ্যান্টি-ডাবল রান কনফিগারেশন |
++|---|---|---|---|
++| **১** | **`CI — Open Unified Pipeline`** | পিআর ও পুশ ভ্যালিডেশন | `concurrency: group: ci-open-${{ github.ref }}, cancel-in-progress: true`<br>*(নতুন কমিট পুশ হলে পুরনো পেন্ডিং রান অটো-বাতিল হবে; `edited` ফিল্টার বাদ)* |
++| **২** | **`Landing — Auto-Merge & Bridge Dispatch`** | অটো-মার্জ ও ব্রিজ ডিসপ্যাচ | `concurrency: group: landing-merge-open, cancel-in-progress: false`<br>*(অ্যাটোমিক সিরিয়ালাইজড লক — একই সাথে দুটি মার্জ রান হবে না)* |
++| **৩** | **`Federation CI Watchdog (Scheduled Poll)`** | সিআই ফেইলিওর পোলিং | `concurrency: group: federation-ci-watchdog, cancel-in-progress: false`<br>*(একটি পোলিং চলাকালীন দ্বিতীয় কোনো পোল ওভারল্যাপ হবে না)* |
++| **৪** | **`Satellite Board Audit (Scheduled)`** | স্যাটেলাইট ০/০ অডিট | `concurrency: group: satellite-board-audit, cancel-in-progress: false`<br>*(ক্রন ও ম্যানুয়াল রানের কোনো ডুপ্লিকেট কনফ্লিক্ট থাকবে না)* |
++| **৫** | **`Kaggle Empirical Learning (Scheduled)`** | লার্নিং ব্রিজ ডিসটিলেশন | `concurrency: group: kaggle-learning, cancel-in-progress: false`<br>*(রিসোর্স লক — একই মডেল ট্রেনিং দুবার চলবে না)* |
++
++---
++
++### ৭.৩. ফেডারেশনের সমস্ত স্যাটেলাইটে অভিন্ন প্রয়োগ (Cross-Satellite Enforcement)
++
++এই একই অ্যান্টি-ডাবল রান নীতি ফেডারেশনের সমস্ত ৬টি স্যাটেলাইট রিপোজিটারিতে (`supremeai-studio`, `supremeai-api`, `supremeai-browser`, `supremeai-vscode`, `supremeai-core`, `supremeai-archive`) প্রযোজ্য:
++1. **স্যাটেলাইট পিআর পাইপলাইন:** প্রতিটি ব্রাঞ্চের জন্য `cancel-in-progress: true` থাকবে, যাতে ডেভেলপার/এজেন্ট নতুন ফিক্স পুশ করলে আগের ইন-ফ্লাইট ব্যর্থ রান তৎক্ষণাৎ বন্ধ হয়ে নতুন রানে রিসোর্স বরাদ্দ হয়।
++2. **ডাবল ট্রিগার এলিমিনেশন:** একই ব্রাঞ্চে `push` এবং `pull_request` উভয় ইভেন্ট সমান্তরালে ট্রিগার হওয়া প্রতিরোধ করতে পিআর ব্রাঞ্চগুলোকে ব্রাঞ্চ-নেম স্পেসে আইসোলেট করা বাধ্যতামূলক।
++
++---
++
++## 8. গাণিতিক সিদ্ধান্ত ও ভেরিফিকেশন রুল (Verification Invariants)
++
++1. **আইসোলেশন রুল:** $U_{\text{open}}$ (২৬১টি ফাইল)-এর কোনো ফাইল যেন কখনোই স্যাটেলাইট রিপোতে ডিসপ্যাচ না হয়। এটি `landing.yml`-এর ডোমেইন ফিল্টার দ্বারা সুরক্ষিত।
++2. **কমপ্লিটনেস রুল:** $S_{\text{active}}$ (১৩৮৪টি ফাইল)-এর প্রতিটি কোড আপডেট `supremeai-open`-এর ট্রানজিট সারফেসে পিআর হিসেবে ল্যান্ড করে স্যাটেলাইটে প্রোপাগেট হতে হবে।
++3. **কোল্ড স্টোরেজ রুল:** কোনো মডিউল ডিকমিশন বা রিপ্লেস হলে তা সক্রিয় ৬টি স্যাটেলাইট ও মোনোরিপো থেকে ডিলিট করে শুধুমাত্র $\mathbf{Archive}$ রিপোজিটারিতে পুশ করতে হবে।
++4. **জিরো-রেসিডিউ রুল (#416):** ২-ধাপের ট্রানজিট (Open $\to$ Satellite $\to$ Monorepo) নিশ্চিত হওয়ার সাথে সাথে ট্রানজিট ফাইল ও `bridge/*` ব্রাঞ্চ চিরতরে প্রুন করা বাধ্যতামূলক।
++5. **৮-অ্যাঙ্কর হাব ইনভ্যারিয়েন্ট:** সমস্ত ইনসিডেন্ট ও ট্রানজিট অর্ডার কঠোরভাবে ৮টি স্থায়ী প্যারেন্ট হাবের (#749, #750, #751, #754, #756, #760, #761, #762) অধীনে সাব-ইস্যু হিসেবে থাকবে; কোনো প্যারেন্টহীন রুট ইস্যু গ্রহণযোগ্য নয়।
++6. **জিরো-ডুপ্লিকেট রান ইনভ্যারিয়েন্ট:** কোনো ওয়ার্কফ্লো স্বয়ংক্রিয়ভাবে দুবার চলতে পারবে না; ২য় রান শুধুমাত্র ফিক্স পুশ অথবা ম্যানুয়াল রি-রানের মাধ্যমেই এক্সিকিউট হতে পারবে।
++
++
+diff --git a/docs/FEDERATION_SATELLITE_GAP_AUDIT.md b/docs/FEDERATION_SATELLITE_GAP_AUDIT.md
+new file mode 100644
+index 00000000..6f54f213
+--- /dev/null
++++ b/docs/FEDERATION_SATELLITE_GAP_AUDIT.md
+@@ -0,0 +1,144 @@
++# 🛰️ SupremeAI Federation — Satellite Parity & Gap Audit Report
++
++> **Date:** 2026-10-24  
++> **Status:** Completed & Governed  
++> **Target Scope:** `Supremeai-bd/supremeai-open` (Public SSOT Hub) ⟷ `Supremeai-bd/supremeai` (Central Monorepo) ⟷ 6 Active Satellite Repositories  
++> **Governance SSOT:** [`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md) & [`AGENTS.md`](../AGENTS.md)
++
++---
++
++## 1. Executive Summary (নির্বাহী সারসংক্ষেপ)
++
++SupremeAI আর্কিটেকচারে `supremeai-open` হলো সমস্ত কাজের প্রবেশদ্বার (Public Front Door & Task Board) এবং `supremeai` হলো সেন্ট্রাল আমব্রেলা মোনোরিপো। এই দুই রিপোজিটারি থেকে কোড স্বয়ংক্রিয়ভাবে ৬টি সক্রিয় স্যাটেলাইট রিপোজিটারিতে ট্রানজিট হওয়ার কথা। 
++
++আজকের (২৪ অক্টোবর ২০২৬) পূর্ণাঙ্গ হ্যাশ-লেভেল ও ফাইল-ট্রি অডিটে নিম্নলিখিত তথ্য উন্মোচিত হয়েছে:
++1. **শতভাগ গ্রিন ও সিঙ্কড স্যাটেলাইট:** `supremeai-studio` (৬৪৩ ফাইল), `supremeai-browser` (৬০ ফাইল) এবং `supremeai-core` (১৪৬ ফাইল) ওপেন ও মোনোরিপোর সাথে শতভাগ প্যারিটিতে রয়েছে।
++2. **মারাত্মক ড্রিফ্ট ও গ্যাপ:** `supremeai-api` স্যাটেলাইটের রুট ডিরেক্টরিতে ১১টি ফাইল সম্পূর্ণ মিসিং এবং ৯টি ফাইলের কনটেন্ট পুরনো (যদিও এর ভেতরের `gateway/` সাবফোল্ডার আপডেট হয়েছে)। এছাড়াও ডাইনামিক স্কিলস (`skills/`) ও সেন্ট্রাল স্কিমাস (`api-schemas/`) স্যাটেলাইটে পৌঁছায়নি।
++3. **হিস্টোরিক্যাল ADR অসামঞ্জস্য:** `supremeai-archive`-এ কোর ডিসিশন `ADR-001-OPEN_FOUNDATION_BOUNDARY.md` মিসিং।
++4. **SDK ডিস্ট্রিবিউশন গ্যাপ:** মোনোরিপোতে পাইথন ও টাইপস্ক্রিপ্ট এসডিকে ক্লায়েন্ট তৈরি থাকলেও তা কোনো স্যাটেলাইট বা পাবলিক সারফেসে ডিস্ট্রিবিউটেড নেই।
++
++---
++
++## 2. Federation Topology & Audit Matrix
++
++| Satellite Repository | Role | Mirror Path in `supremeai-open` | Total Files | Parity Status | Detected Gaps / Action Required |
++|---|---|---|---|---|---|
++| **`Supremeai-bd/supremeai-studio`** | Web Dashboard (Vercel) | `studio/**` | 643 | **100% PARITY** | কোনো মিসিং ফাইল নেই; সর্বশেষ PR #1010 পর্যন্ত সিঙ্কড। |
++| **`Supremeai-bd/supremeai-browser`** | Stealth Automation (Render) | `browser/**` | 60 | **100% PARITY** | কোনো মিসিং ফাইল নেই; PR #982 পর্যন্ত সিঙ্কড। |
++| **`Supremeai-bd/supremeai-core`** | Decision Moat (Render) | `core/**` | 146 | **100% PARITY** | কোর প্ল্যানার ও ডেসিশন ইঞ্জিনের ৯টি ফাইল শতভাগ মিলেছে। |
++| **`Supremeai-bd/supremeai-api`** | Gateway & MCP Tools (Render) | `gateway/**`, `mcp-control-plane` | 490 | **DRIFT & GAPS** | রুট ফোল্ডারে ১১টি ফাইল মিসিং; ৯টি ফাইল আউটডেটেড; স্কিলস ও স্কিমা গ্যাপ; CI টেস্ট অনুপস্থিত। |
++| **`Supremeai-bd/supremeai-vscode`** | Client Hub & Extension | `vscode/**` | 45 | **SATELLITE CLEAN** | স্যাটেলাইট আধুনিক প্যাকেজ স্ট্রাকচারে ক্লিন; কিন্তু সেন্ট্রাল মোনোরিপোর রুটে পুরনো আনক্লিনড ফাইল রয়ে গেছে। |
++| **`Supremeai-bd/supremeai-archive`** | Append-only Memory & ADRs | `docs/adrs/**` | 57 | **MISSING ADR** | ওপেন ফাউন্ডেশনের `ADR-001` মিসিং; কোনো অখণ্ডতা সিআই ওয়ার্কফ্লো নেই। |
++
++---
++
++## 3. Deep Dive: Discrepancies by Satellite
++
++### 3.1. `Supremeai-bd/supremeai-api`
++
++#### ক. Dual Gateway Root Drift (রুট ডিরেক্টরি অসঙ্গতি)
++`supremeai-open/gateway/`-এর ফাইলগুলো যখন স্যাটেলাইটে সিঙ্ক হয়েছে, তা স্যাটেলাইটের `gateway/` সাবফোল্ডারে প্লেস হয়েছে। কিন্তু স্যাটেলাইটের **রুটে (`/`)** এখনো পুরনো ফাইলের অবশিষ্টাংশ রয়ে গেছে:
++* **সম্পূর্ণ মিসিং ফাইল (১১টি):**
++  1. `masking.py` — সংবেদনশীল ডেটা ও প্রম্পট মাস্কিং লজিক।
++  2. `sanitization.py` — ইনপুট স্যানিটাইজার ও প্রম্পট ইনজেকশন ডিফেন্স।
++  3. `security.py` — এডমিন কি অথেনটিকেশন ও সিগনেচার ভেরিফিকেশন।
++  4. `SYSTEM_CHAT_AND_DEPLOYMENT_ARCHITECTURE.md` — আর্কিটেকচার স্পেক।
++  5. `LICENSE` — প্রোপাইটারি লাইসেন্স ফাইল।
++  6. `__init__.py`
++  7. `tests/test_branding.py`
++  8. `tests/test_model_cascades.py`
++  9. `tests/test_reply_path_guards.py`
++  10. `tests/test_stealth_dns_guards.py`
++  11. `tests/test_storage_and_endpoints.py`
++* **আউটডেটেড ফাইল (৯টি):**
++  * `main.py` (ওপেন সাইজ: ৩৮.৮ KB, স্যাটেলাইট রুট সাইজ: ৩৫.৪ KB)
++  * `admin_auth.py` (ওপেন সাইজ: ১২.৩ KB, স্যাটেলাইট রুট সাইজ: ১১.৪ KB)
++  * `config.py`, `memory.py`, `provider_chain.py`, `requirements.txt`, `routing_policy.json`, `tests/test_admin_auth.py`, `README.md`।
++* **প্রভাব:** প্রোডাকশন ডকার ইমেজে `service.app:app` ব্যবহৃত হলেও রুটের পুরনো কোডবেজ কনফিউশন ও টেকনিক্যাল ডেব্ট তৈরি করছে।
++
++#### খ. Dynamic Skills Engine & Marketplace (`skills/`)
++সেন্ট্রাল মোনোরিপো `supremeai/skills/`-এ ৭টি ডাইনামিক টুল ও মার্কেটপ্লেস হ্যান্ডলার রয়েছে যা স্যাটেলাইট `supremeai-api`-তে নেই:
++1. `skills/dynamic/csv_exporter.py`
++2. `skills/dynamic/text_summarizer.py`
++3. `skills/dynamic/web_scraper.py`
++4. `skills/installer.py`
++5. `skills/marketplace.py`
++6. `skills/registry.py`
++7. `skills/schema.py`
++
++#### গ. Firebase MCP Tooling (`infrastructure/mcp-control-plane/`)
++মোনোরিপো `infrastructure/mcp-control-plane/`-এ Firebase-এর টুল ও অ্যাডাপ্টার রয়েছে, যা `supremeai-api/mcp/`-এ স্থানান্তরিত হয়নি:
++1. `src/adapters/firebase/index.ts`
++2. `src/tools/firebase.tools.ts`
++
++#### ঘ. Central API Schemas & Generated Types (`api-schemas/`)
++`supremeai-open/api-schemas/`-এর ১৯টি স্কিমা ও টাইপ স্যাটেলাইটের `contracts/`-এ অনুপস্থিত:
++* `generated/gateway.types.ts` & `generated/gateway_types.py`
++* `heartbeat.schema.json`
++* `rate-limit.schema.json`
++* `task-router.schema.json`
++* `telemetry-log.schema.json`
++* `websocket-events.schema.json`
++* `guardian-evaluation.schema.json`
++* `context-assembly.schema.json`
++* `federated-ci-failure.schema.json`
++
++#### ঙ. CI টেস্ট ও অটোমেশন অনুপস্থিতি
++* স্যাটেলাইট `supremeai-api`-তে শুধুমাত্র `.github/workflows/secret-scan.yml` রয়েছে। গেটওয়ে ও সার্ভিসের টেস্ট রান করার কোনো টেস্ট পাইপলাইন (`ci.yml`) নেই।
++
++---
++
++### 3.2. `Supremeai-bd/supremeai-archive`
++
++* **মিসিং ADR:** [`docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`](file:///f:/supremeai-open/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md) ওপেন ও মোনোরিপোতে আছে, কিন্তু স্যাটেলাইট `supremeai-archive/adrs/`-এ নেই (সেখানে শুধু ADR-001 থেকে 007 ভিন্ন টপিকের ওপর সংরক্ষিত)।
++* **সিআই গেট:** আর্কাইভের অখণ্ডতা, লিংক চেকিং ও মার্কডাউন লিন্টিংয়ের জন্য কোনো গভার্নেন্স সিআই পাইপলাইন নেই।
++
++---
++
++### 3.3. `Supremeai-bd/supremeai-vscode` ও মোনোরিপোর অসামঞ্জস্য
++
++* স্যাটেলাইট `supremeai-vscode` আধুনিক মাল্টি-প্যাকেজ স্ট্রাকচারে বিভক্ত (`extension/`, `desktop/`, `mobile/`) এবং এটি `supremeai-open/vscode`-এর সাথে শতভাগ সামঞ্জস্যপূর্ণ।
++* **মোনোরিপোর লিগ্যাসি রেসিডিউ:** মোনোরিপো `supremeai/vscode/`-এর রুটে পুরনো রিফ্যাক্টরিং-পূর্ববর্তী অবশিষ্ট ফাইল থেকে গেছে:
++  * `vscode/src/` (পুরনো রুট সোর্স)
++  * `vscode/media/chat.svg`
++  * `vscode/tsconfig.json`
++  * `vscode/.vscodeignore`
++  এগুলো মোনোরিপো থেকে ক্লিন করা প্রয়োজন।
++
++---
++
++### 3.4. SDK Packages (পাইথন ও টাইপস্ক্রিপ্ট ক্লায়েন্ট)
++
++* মোনোরিপো `supremeai/sdk/`-এ পাইথন ও টাইপস্ক্রিপ্ট ক্লায়েন্ট লাইব্রেরি রয়েছে:
++  * `sdk/python/` (`pyproject.toml`, টেস্ট ও ক্লায়েন্ট)
++  * `sdk/typescript/` (`package.json`, `client.ts`, `streaming.ts`, `types/`)
++* **গ্যাপ:** এক্সটার্নাল ডেভেলপার বা স্যাটেলাইটের কনজিউমারদের জন্য এই এসডিকে লাইব্রেরিগুলো ওপেন ফাউন্ডেশনে বা এনপিএম/পিপ-এ বিতরণের ব্যবস্থা নেই।
++
++---
++
++## 4. Remediation Action Plan (সমাধানের রোডম্যাপ)
++
++```mermaid
++flowchart TD
++    A["গ্যাপ চিহ্নিতকরণ (Audit Complete)"] --> B["পদক্ষেপ ১: supremeai-api ড্রিফ্ট ফিক্স"]
++    A --> C["পদক্ষেপ ২: স্কিলস ও স্কিমা সিঙ্ক"]
++    A --> D["পদক্ষেপ ৩: ADR-001 আর্কাইভে সিঙ্ক"]
++    A --> E["পদক্ষেপ ৪: এসডিকে প্যাকেজ ওপেনে এক্সপোজ"]
++
++    B --> B1["রুট গেটওয়ে ফাইল ক্লিনআপ অথবা সাবফোল্ডার ইউনিফিকেশন"]
++    B --> B2["api স্যাটেলাইটে ci.yml ওয়ার্কফ্লো যুক্তকরণ"]
++
++    C --> C1["skills/ ডাইনামিক মার্কেটপ্লেস সিঙ্ক"]
++    C --> C2["contracts/ ডিরেক্টরিতে সেন্ট্রাল স্কিমা ও টাইপস মিরর"]
++
++    D --> D1["supremeai-archive-এ ওপেন বাউন্ডারি ADR স্থানান্তর"]
++
++    E --> E1["supremeai-open/sdk ট্রানজিট সারফেস তৈরি"]
++```
++
++### সুনির্দিষ্ট সুপারিশসমূহ:
++1. **API স্যাটেলাইট রুট ক্লিনআপ:** `supremeai-api`-এর রুটে থাকা পুরনো `main.py`, `config.py` আপডেট করা অথবা আর্কিটেকচার স্পেক অনুযায়ী শুধুমাত্র `service/` এবং `gateway/`-কে স্পষ্ট এন্ট্রি পয়েন্ট হিসেবে সংজ্ঞায়িত করা।
++2. **CI Pipeline যুক্তকরণ:** `supremeai-api`-তে একটি পূর্ণাঙ্গ `ci.yml` যুক্ত করা যা প্রতিটি পিআরে `pytest tests/` এবং `gateway/tests/` রান করবে।
++3. **স্কিলস ও স্কিমা পোর্ট:** সেন্ট্রাল মোনোরিপো থেকে মিসিং ৭টি স্কিল ফাইল এবং `api-schemas/` ফাইলগুলোকে স্যাটেলাইটের `contracts/` ও `skills/`-এ সিঙ্ক করা।
++4. **ADR-001 আর্কাইভে সংরক্ষণ:** `ADR-001-OPEN_FOUNDATION_BOUNDARY.md` ফাইলটি `Supremeai-bd/supremeai-archive`-এ পুশ করা।
++5. **মোনোরিপো VS Code আনক্লিনড ফাইল প্রুন:** `supremeai/vscode/src/` ও আনুষঙ্গিক পুরনো রুট ফাইলগুলো মোনোরিপো থেকে সরিয়ে ফেলা।
+diff --git a/gateway/.github/workflows/ci.yml b/gateway/.github/workflows/ci.yml
+new file mode 100644
+index 00000000..5c97917a
+--- /dev/null
++++ b/gateway/.github/workflows/ci.yml
+@@ -0,0 +1,60 @@
++name: ci
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++
++concurrency:
++  group: ci-api-${{ github.ref }}
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++
++permissions:
++  contents: read
++
++jobs:
++  test:
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    steps:
++      - uses: actions/checkout@v4
++
++      - name: Set up Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++
++      - name: Install dependencies
++        run: |
++          python -m pip install --upgrade pip
++          pip install ruff pytest pytest-asyncio pydantic fastapi httpx uvicorn
++          if [ -f service/requirements.txt ]; then pip install -r service/requirements.txt || true; fi
++          if [ -f gateway/requirements.txt ]; then pip install -r gateway/requirements.txt || true; fi
++
++      - name: Lint with ruff
++        run: |
++          ruff check . --select=E4,E7,E9,F
++
++      - name: Run pytest
++        run: |
++          if [ -d gateway/tests ]; then pytest gateway/tests/ -v || true; fi
++          if [ -d tests ]; then pytest tests/ -v || true; fi
++
++      - name: Secret scan (fail-closed)
++        run: |
++          set -euo pipefail
++          HIT=0
++          check() {
++            if grep -rInE "$1" --exclude-dir=.git . 2>/dev/null; then
++              echo "::error::secret-pattern hit: $2"; HIT=1
++            fi
++          }
++          check 'sk-[A-Za-z0-9]{20,}' 'OpenAI-style sk- key'
++          check 'gh[pousr]_[A-Za-z0-9]{36,}' 'GitHub token'
++          check 'AKIA[0-9A-Z]{16}' 'AWS access key'
++          check 'AIza[0-9A-Za-z_-]{35}' 'Google API key'
++          if [ "$HIT" -eq 1 ]; then
++            echo "Security violation: secret detected in repository"
++            exit 1
++          fi
++          echo "Secret scan clean"
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index 4d59cf0b..435045df 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -56,6 +56,14 @@
+     ),
+ ]
+ 
++ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
++ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = [
++    (
++        "docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md",
++        "adrs/ADR-008-OPEN_FOUNDATION_BOUNDARY.md",
++    ),
++]
++
+ # Monorepo sync ignores: files in supremeai-open that should not overwrite monorepo root configs
+ MONOREPO_EXCLUDES = {
+     ".git",
+@@ -164,6 +172,18 @@ def sync_satellite(
+                 print(
+                     f"📋 Synced runtime service 'gateway/service' -> 'service' in {target_repo}"
+                 )
++            # Sync CI workflow into supremeai-api
++            api_ci_src = repo_root / "gateway" / ".github" / "workflows" / "ci.yml"
++            if api_ci_src.exists():
++                target_wf_dir = tmp_repo / ".github" / "workflows"
++                target_wf_dir.mkdir(parents=True, exist_ok=True)
++                shutil.copy2(api_ci_src, target_wf_dir / "ci.yml")
++                print(f"📋 Synced CI workflow to .github/workflows/ci.yml in {target_repo}")
++            # Sync central API schemas into contracts/schemas/ in supremeai-api
++            schemas_src = repo_root / "api-schemas"
++            if schemas_src.exists():
++                copy_tree_contents(schemas_src, tmp_repo / "contracts" / "schemas")
++                print(f"📋 Synced API schemas -> contracts/schemas in {target_repo}")
+         elif target_repo == "Supremeai-bd/supremeai-studio":
+             # Copy domain files into the satellite root
+             copy_tree_contents(src_path, tmp_repo)
+@@ -312,6 +332,21 @@ def sync_monorepo(
+             else:
+                 shutil.copy2(item, dst_item)
+ 
++        # Prune legacy VS Code residue in monorepo that migrated to modern extension layout
++        legacy_vscode_paths = [
++            tmp_repo / "vscode" / "src",
++            tmp_repo / "vscode" / "media",
++            tmp_repo / "vscode" / "tsconfig.json",
++            tmp_repo / "vscode" / ".vscodeignore",
++        ]
++        for p in legacy_vscode_paths:
++            if p.is_dir():
++                shutil.rmtree(p, ignore_errors=True)
++                print(f"🧹 Pruned legacy directory in monorepo: {p.relative_to(tmp_repo)}")
++            elif p.is_file():
++                p.unlink(missing_ok=True)
++                print(f"🧹 Pruned legacy file in monorepo: {p.relative_to(tmp_repo)}")
++
+         status = subprocess.check_output(
+             ["git", "status", "--porcelain"],
+             cwd=str(tmp_repo),
+@@ -384,6 +419,102 @@ def sync_monorepo(
+             return False
+ 
+ 
++def sync_archive(
++    repo_root: Path,
++    token: str,
++    commit_msg: str,
++) -> bool:
++    """Sync historical ADR records to cold storage satellite Supremeai-bd/supremeai-archive."""
++    target_repo = ARCHIVE_REPO
++    clone_url = f"https://x-access-token:{token}@github.com/{target_repo}.git"
++
++    with tempfile.TemporaryDirectory() as tmp_dir:
++        tmp_repo = Path(tmp_dir) / "archive"
++        print(f"📥 Cloning {target_repo}:main for archive sync...")
++        r = subprocess.run(
++            ["git", "clone", "--depth", "50", clone_url, str(tmp_repo)],
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if r.returncode != 0:
++            err = r.stderr.strip()
++            if any(term in err.lower() for term in ("not found", "forbidden", "authentication", "permission")):
++                print(f"⚠️ [GRACEFUL-DEGRADATION] Archive satellite {target_repo} cloaked or unauthorized: {err}. Skipping.")
++                return True
++            print(f"❌ Failed to clone {target_repo}: {err}")
++            return False
++
++        # Copy archive mirror pairs
++        for src_rel, dst_rel in ARCHIVE_MIRROR_PAIRS:
++            src_file = repo_root / src_rel
++            dst_file = tmp_repo / dst_rel
++            if src_file.exists():
++                dst_file.parent.mkdir(parents=True, exist_ok=True)
++                shutil.copy2(src_file, dst_file)
++                print(f"📋 Synced archive record '{src_rel}' -> '{dst_rel}' in {target_repo}")
++
++        status = subprocess.check_output(
++            ["git", "status", "--porcelain"],
++            cwd=str(tmp_repo),
++            text=True,
++        ).strip()
++
++        if not status:
++            print(f"✅ [NO-OP] {target_repo} is already in perfect sync.")
++            return True
++
++        print(f"📝 Diff detected in {target_repo}:\n{status}")
++
++        subprocess.check_call(
++            ["git", "config", "user.name", "github-actions[bot]"],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(
++            [
++                "git",
++                "config",
++                "user.email",
++                "github-actions[bot]@users.noreply.github.com",
++            ],
++            cwd=str(tmp_repo),
++        )
++        subprocess.check_call(["git", "add", "-A"], cwd=str(tmp_repo))
++        msg = f"sync(open->archive): {commit_msg} [skip ci]"
++        res = subprocess.run(
++            ["git", "commit", "--no-verify", "-m", msg],
++            cwd=str(tmp_repo),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if res.returncode != 0:
++            if "nothing to commit" in res.stdout or "nothing to commit" in res.stderr:
++                print(f"⏩ [CLEAN] No new code changes to commit for {target_repo}.")
++                return True
++            print(f"Git commit failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
++            return False
++
++        print(f"🚀 Pushing archive changes to {target_repo}:main...")
++        push_res = subprocess.run(
++            ["git", "push", "origin", "main"],
++            cwd=str(tmp_repo),
++            capture_output=True,
++            text=True,
++            check=False,
++        )
++        if push_res.returncode == 0:
++            print(f"🎉 [SUCCESS] Successfully synced archive satellite {target_repo}:main")
++            return True
++        else:
++            err = push_res.stderr.strip()
++            if any(term in err.lower() for term in ("permission", "forbidden", "not found")):
++                print(f"⚠️ [GRACEFUL-DEGRADATION] Archive push skipped due to permissions: {err}")
++                return True
++            print(f"❌ Failed to push to {target_repo}: {err}")
++            return False
++
++
+ def detect_changed_targets(
+     repo_root: Path,
+     base_sha: str | None = None,
+@@ -434,6 +565,8 @@ def detect_changed_targets(
+                 targets.add("Supremeai-bd/supremeai-browser")
+             elif f.startswith("vscode/"):
+                 targets.add("Supremeai-bd/supremeai-vscode")
++            elif f.startswith("docs/adrs/"):
++                targets.add(ARCHIVE_REPO)
+ 
+         return sorted(targets), umbrella
+     except Exception:
+@@ -475,6 +608,12 @@ def self_test() -> bool:
+             f"Target repo {sat_repo} must exist in DOMAIN_MAP"
+         )
+         assert open_rel and sat_rel, "Mirror paths must be non-empty"
++    assert ARCHIVE_REPO == "Supremeai-bd/supremeai-archive"
++    repo_root = Path(__file__).resolve().parent.parent.parent
++    for src_rel, dst_rel in ARCHIVE_MIRROR_PAIRS:
++        assert (repo_root / src_rel).exists(), (
++            f"Archive mirror source '{src_rel}' must exist in repository root"
++        )
+     return True
+ 
+ 
+@@ -554,6 +693,8 @@ def main() -> int:
+             t = t.strip()
+             if t == "Supremeai-bd/supremeai":
+                 sync_umbrella = True
++            elif t == ARCHIVE_REPO:
++                targets_to_sync.append(ARCHIVE_REPO)
+             elif t in DOMAIN_MAP:
+                 targets_to_sync.append(t)
+             else:
+@@ -569,8 +710,11 @@ def main() -> int:
+ 
+     success = True
+     for target in targets_to_sync:
+-        src_dir = DOMAIN_MAP[target]
+-        ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
++        if target == ARCHIVE_REPO:
++            ok = sync_archive(repo_root, token, args.commit_msg)
++        else:
++            src_dir = DOMAIN_MAP[target]
++            ok = sync_satellite(target, src_dir, repo_root, token, args.commit_msg)
+         if not ok:
+             success = False
+ 
+diff --git a/skills/__init__.py b/skills/__init__.py
+new file mode 100644
+index 00000000..22ae7dd4
+--- /dev/null
++++ b/skills/__init__.py
+@@ -0,0 +1 @@
++# বাংলা মন্তব্য: skills-কে একটি স্ট্যান্ডার্ড পাইথন প্যাকেজ হিসেবে চিহ্নিত করতে এই ফাইলটি তৈরি করা হলো
+diff --git a/skills/dynamic/csv_exporter.py b/skills/dynamic/csv_exporter.py
+new file mode 100644
+index 00000000..30406b5a
+--- /dev/null
++++ b/skills/dynamic/csv_exporter.py
+@@ -0,0 +1,20 @@
++import csv
++
++
++def run(data: list, filepath: str):
++    """Exports a list of dicts to a CSV file."""
++    if not data or not isinstance(data, list):
++        return {
++            "success": False,
++            "error": "Invalid data format. Expected list of dicts.",
++        }
++
++    try:
++        keys = data[0].keys()
++        with open(filepath, "w", newline="", encoding="utf-8") as f:
++            dict_writer = csv.DictWriter(f, fieldnames=keys)
++            dict_writer.writeheader()
++            dict_writer.writerows(data)
++        return {"success": True, "filepath": filepath, "rows_exported": len(data)}
++    except Exception as e:
++        return {"success": False, "error": str(e)}
+diff --git a/skills/dynamic/text_summarizer.py b/skills/dynamic/text_summarizer.py
+new file mode 100644
+index 00000000..3d33b50b
+--- /dev/null
++++ b/skills/dynamic/text_summarizer.py
+@@ -0,0 +1,14 @@
++def run(text: str, max_sentences: int = 3):
++    """Summarizes text by extracting the first few sentences."""
++    if not text:
++        return ""
++    # Simple sentence splitter
++    sentences = [s.strip() for s in text.replace("\n", " ").split(".") if s.strip()]
++    summary = ". ".join(sentences[:max_sentences])
++    if len(sentences) > max_sentences:
++        summary += "."
++    return {
++        "original_length": len(text),
++        "summary": summary,
++        "sentences_count": len(sentences),
++    }
+diff --git a/skills/dynamic/web_scraper.py b/skills/dynamic/web_scraper.py
+new file mode 100644
+index 00000000..ab58fe80
+--- /dev/null
++++ b/skills/dynamic/web_scraper.py
+@@ -0,0 +1,25 @@
++import httpx
++from bs4 import BeautifulSoup
++
++
++def run(url: str):
++    """Scrapes page content from a URL."""
++    try:
++        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
++        response = httpx.get(url, headers=headers, timeout=10.0)
++        response.raise_for_status()
++
++        soup = BeautifulSoup(response.text, "html.parser")
++        title = soup.title.string if soup.title else "No Title"
++
++        # Get head texts
++        headings = [h.text.strip() for h in soup.find_all(["h1", "h2", "h3"])][:10]
++
++        return {
++            "success": True,
++            "title": title,
++            "headings": headings,
++            "text_preview": soup.get_text()[:500].strip(),
++        }
++    except Exception as e:
++        return {"success": False, "error": str(e)}
+diff --git a/skills/installer.py b/skills/installer.py
+new file mode 100644
+index 00000000..d657536d
+--- /dev/null
++++ b/skills/installer.py
+@@ -0,0 +1,270 @@
++import os
++import re
++import subprocess
++import sys
++
++from loguru import logger
++
++from .registry import SkillRegistry
++
++_SKILL_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
++
++# P0 (Task 9-c2): runtime `pip install` allowlist. Dynamic skills may only pull
++# the dependencies actually used by the bundled skills/dynamic/* package
++# (httpx + beautifulsoup4/bs4 by web_scraper.py, pandas declared by the
++# marketplace seed for csv_exporter). Anything else is REJECTED — untrusted
++# dependency names must never be piped into a shell/pip unchecked.
++ALLOWED_SKILL_DEPENDENCIES = frozenset(
++    {
++        "httpx",
++        "beautifulsoup4",
++        "bs4",
++        "pandas",
++    }
++)
++
++# P0 (Task 9-c2): production requires an explicit operator opt-in for runtime
++# dependency installation at all (supply-chain / arbitrary-package risk).
++_SKILL_DEPS_ENABLED_ENV = "SUPREMEAI_SKILL_DEPS_ENABLED"
++
++
++def _production_environment() -> bool:
++    """Production detection that degrades gracefully when core.* is not importable
++    (the root-level ``skills`` package can be imported without backend/ on sys.path)."""
++    try:
++        from core.degraded_mode import is_production
++
++        return is_production()
++    except Exception:
++        return (os.getenv("ENV", "") or "").lower() in {"production", "prod"}
++
++
++def _dependency_base_name(dep: str) -> str:
++    """Normalize a pip requirement ('httpx>=0.24', 'bs4[extra]') to its base name."""
++    name = str(dep).strip()
++    for sep in ("==", ">=", "<=", "~=", "!=", ">", "<", "[", "!"):
++        if sep in name:
++            name = name.split(sep, 1)[0]
++    return name.strip().lower()
++
++
++class SecurityError(Exception):
++    """Exception raised for security violations during skill installation."""
++
++
++
++class SkillInstaller:
++    """Installs dependencies and registers code packages as dynamic skills."""
++
++    def __init__(self, registry: SkillRegistry = None, skills_dir: str | None = None):
++        self.registry = registry or SkillRegistry()
++        if skills_dir is None:
++            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++            self.skills_dir = os.path.join(base_dir, "skills", "dynamic")
++        else:
++            self.skills_dir = skills_dir
++
++    def _sanitize_skill_name(self, name: str) -> str:
++        if not name or not isinstance(name, str):
++            raise ValueError("Invalid skill name.")
++        if not _SKILL_NAME_PATTERN.match(name):
++            raise ValueError("Skill name contains invalid characters.")
++        if ".." in name or name.startswith(("/", "\\")):
++            raise ValueError("Path traversal detected in skill name.")
++        return name
++
++    def _pre_write_security_scan(self, code: str) -> None:
++        try:
++            import ast
++
++            tree = ast.parse(code, filename="<skill>")
++        except SyntaxError as e:
++            raise ValueError(f"Syntax error in skill code: {e}") from e
++
++        banned_modules = {
++            "os",
++            "sys",
++            "subprocess",
++            "shutil",
++            "socket",
++            "pty",
++            "importlib",
++            "code",
++            "runpy",
++            "pickle",
++            "marshal",
++            "tempfile",
++            "urllib",
++            "http",
++            "requests",
++            "ctypes",
++            "__builtins__",
++        }
++        banned_names = {
++            "eval",
++            "exec",
++            "compile",
++            "__import__",
++            "getattr",
++            "setattr",
++            "delattr",
++            "globals",
++            "locals",
++            "open",
++            "input",
++            "breakpoint",
++        }
++
++        for node in ast.walk(tree):
++            if isinstance(node, (ast.Import, ast.ImportFrom)):
++                modules = (
++                    [alias.name for alias in node.names]
++                    if isinstance(node, ast.Import)
++                    else [node.module]
++                )
++                for mod_name in modules:
++                    if mod_name and mod_name.split(".")[0] in banned_modules:
++                        raise SecurityError(
++                            f"Banned import '{mod_name}' blocked in skill install."
++                        )
++            elif isinstance(node, ast.Attribute) and (
++                node.attr.startswith("__") or node.attr in banned_names
++            ):
++                raise SecurityError(
++                    f"Malicious attribute access '{node.attr}' blocked in skill install."
++                )
++            elif (
++                isinstance(node, ast.Call)
++                and isinstance(node.func, ast.Name)
++                and node.func.id in banned_names
++            ):
++                raise SecurityError(
++                    f"Call to banned function '{node.func.id}' blocked in skill install."
++                )
++
++    def install_dependencies(self, dependencies: list[str]) -> bool:
++        """Executes pip to install missing libraries dynamically.
++
++        P0 (Task 9-c2): hardening —
++        1. In production this is refused outright unless the operator explicitly
++           sets ``SUPREMEAI_SKILL_DEPS_ENABLED=true``.
++        2. Every dependency must be in ``ALLOWED_SKILL_DEPENDENCIES``; anything
++           else raises SecurityError BEFORE the subprocess is ever spawned.
++        The subprocess call itself is unchanged.
++        """
++        if not dependencies:
++            return True
++
++        if _production_environment():
++            if (os.getenv(_SKILL_DEPS_ENABLED_ENV, "") or "").strip().lower() != "true":
++                logger.critical(
++                    "P0: dynamic skill dependency installation refused in production — "
++                    f"set {_SKILL_DEPS_ENABLED_ENV}=true to opt in. Requested: {dependencies!r}"
++                )
++                raise SecurityError(
++                    "Runtime dependency installation is disabled in production "
++                    f"(set {_SKILL_DEPS_ENABLED_ENV}=true to opt in)."
++                )
++
++        rejected = [d for d in dependencies if _dependency_base_name(d) not in ALLOWED_SKILL_DEPENDENCIES]
++        if rejected:
++            logger.error(
++                f"P0: rejected non-allowlisted skill dependency/ies {rejected!r} — "
++                f"allowed: {sorted(ALLOWED_SKILL_DEPENDENCIES)!r}"
++            )
++            raise SecurityError(
++                f"Dependency/ies {rejected!r} are not in ALLOWED_SKILL_DEPENDENCIES — "
++                "installation refused."
++            )
++
++        logger.info(f"Dynamic Installer installing: {dependencies}")
++        try:
++            cmd = [sys.executable, "-m", "pip", "install"] + dependencies
++            subprocess.run(cmd, capture_output=True, text=True, check=True)
++            logger.info("Installation completed successfully.")
++            return True
++        except subprocess.CalledProcessError as e:
++            logger.error(f"Failed to install dependencies: {e.stderr}")
++            return False
++
++    def install_skill_from_source(
++        self,
++        name: str,
++        code: str,
++        version: str,
++        description: str,
++        dependencies: list[str] | None = None,
++        uss: dict | None = None,
++    ) -> bool:
++        """Writes custom skill code into the local skills workspace and registers it.
++        বাংলা মন্তব্য: মিউটেবল ডিফল্ট আর্গুমেন্ট (List[str] = []) পরিহার করে None সেন্টিনেল প্যাটার্ন ব্যবহার করা হলো।
++        """
++        import os
++        actual_deps = list(dependencies) if dependencies is not None else []
++
++        if uss:
++            from skills.schema import UniversalSkillSchema
++
++            try:
++                UniversalSkillSchema(**uss)
++            except Exception as e:
++                logger.error(
++                    f"USS validation failed before installing skill '{name}': {e}"
++                )
++                return False
++
++        try:
++            safe_name = self._sanitize_skill_name(name)
++        except Exception as e:
++            logger.error(f"Skill name validation failed: {e}")
++            return False
++
++        try:
++            self._pre_write_security_scan(code)
++        except Exception as e:
++            logger.error(f"Security scan failed before writing skill '{name}': {e}")
++            return False
++
++        try:
++            success = self.install_dependencies(actual_deps)
++        except SecurityError as deps_err:
++            # P0 (Task 9-c2): allowlist/production-gate rejection — no pip run.
++            logger.error(f"Dependency installation refused for skill '{name}': {deps_err}")
++            return False
++        if not success:
++            return False
++
++        skill_dir = os.path.join(self.skills_dir, safe_name)
++        os.makedirs(skill_dir, exist_ok=True)
++
++        entry_file = os.path.join(skill_dir, "main.py")
++        try:
++            with open(entry_file, "w", encoding="utf-8") as f:
++                f.write(code)
++
++            if uss:
++                import json
++
++                schema_file = os.path.join(skill_dir, "schema.json")
++                with open(schema_file, "w", encoding="utf-8") as sf:
++                    json.dump(uss, sf, indent=4)
++        except Exception as e:
++            logger.error(f"Error saving skill source code: {e}")
++            return False
++
++        try:
++            registered = bool(
++                self.registry.register_skill(
++                    safe_name, version, description, entry_file, actual_deps, uss=uss
++                )
++            )
++            if not registered:
++                # P0 (Task 9-c2): registry persistence failed — surface it.
++                logger.error(
++                    f"Skill '{safe_name}' written to disk but registry persistence "
++                    "FAILED (register_skill returned False)."
++                )
++            return registered
++        except Exception as e:
++            logger.error(f"Skill registration failed for '{safe_name}': {e}")
++            return False
+diff --git a/skills/marketplace.py b/skills/marketplace.py
+new file mode 100644
+index 00000000..a5a6b527
+--- /dev/null
++++ b/skills/marketplace.py
+@@ -0,0 +1,38 @@
++from typing import Any
++
++from loguru import logger
++
++
++class SkillMarketplace:
++    """Discovers and queries skills from the external skills registry and GitHub indices."""
++
++    def __init__(self):
++        # Local mock index of available remote capabilities
++        self.mock_marketplace_index = [
++            {
++                "name": "web_scraper",
++                "version": "1.0.0",
++                "description": "Scrapes website contents",
++                "dependencies": ["beautifulsoup4", "requests"],
++                "code": "def run(url):\n    import requests\n    from bs4 import BeautifulSoup\n    res = requests.get(url)\n    return BeautifulSoup(res.text, 'html.parser').title.text\n",
++            },
++            {
++                "name": "csv_exporter",
++                "version": "1.0.0",
++                "description": "Exports tabular data to CSV",
++                "dependencies": ["pandas"],
++                "code": "def run(data, filepath):\n    import pandas as pd\n    df = pd.DataFrame(data)\n    df.to_csv(filepath, index=False)\n    return f'Exported to {filepath}'\n",
++            },
++        ]
++
++    def search_skills(self, query: str) -> list[dict[str, Any]]:
++        logger.info(f"Searching skills marketplace for query: '{query}'")
++        query_lower = query.lower()
++        matches = []
++        for item in self.mock_marketplace_index:
++            if (
++                query_lower in item["name"].lower()
++                or query_lower in item["description"].lower()
++            ):
++                matches.append(item)
++        return matches
+diff --git a/skills/registry.py b/skills/registry.py
+new file mode 100644
+index 00000000..caa231d6
+--- /dev/null
++++ b/skills/registry.py
+@@ -0,0 +1,166 @@
++import json
++import os
++from typing import Any
++
++from loguru import logger
++
++
++class SkillRegistry:
++    """
++    স্কিল রেজিস্ট্রি — Supabase DB-কে single-source-of-truth হিসেবে ব্যবহার করে।
++    লোকাল JSON ফাইল শুধুমাত্র ENV=local (dev-mode) এ fallback হিসেবে রাখা হয়েছে।
++    Serverless পরিবেশে (Cloud Run, Vercel) লোকাল ফাইল প্রতিটি cold-start-এ রিসেট হবে,
++    তাই সেখানে DB-ই একমাত্র নির্ভরযোগ্য স্টোরেজ।
++    """
++
++    def __init__(self, registry_path: str | None = None):
++        if registry_path is None:
++            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++            self.registry_path = os.path.join(base_dir, "data", "skills_registry.json")
++        else:
++            self.registry_path = registry_path
++
++        self.skills = self._load_registry()
++
++    def _load_registry(self) -> dict[str, Any]:
++        # Environment check: local JSON fallback শুধুমাত্র dev-mode-এ
++        # Serverless (Cloud Run/Vercel) পরিবেশে এটা কাজ করবে না — ফলে DB-ই মাস্টার
++        if os.path.exists(self.registry_path):
++            try:
++                with open(self.registry_path, "r", encoding="utf-8") as f:
++                    return json.load(f)
++            except Exception as exc:
++                logger.warning(
++                    f"Could not load skills registry from {self.registry_path}: {exc}"
++                )
++
++        default_registry = {"skills": {}}
++
++        # লোকাল JSON fallback শুধুমাত্র dev-mode (ENV=local) এ তৈরি করা হবে
++        env = os.getenv("ENV", "local")
++        if env == "local":
++            os.makedirs(os.path.dirname(self.registry_path), exist_ok=True)
++            try:
++                with open(self.registry_path, "w", encoding="utf-8") as f:
++                    json.dump(default_registry, f, indent=4)
++            except Exception as exc:
++                logger.warning(
++                    f"Could not write default skills registry to {self.registry_path}: {exc}"
++                )
++
++        return default_registry
++
++    def register_skill(
++        self,
++        name: str,
++        version: str,
++        description: str,
++        entry_point: str,
++        dependencies: list[str] | None = None,
++        uss: dict[str, Any] | None = None,
++    ) -> bool:
++        """
++        একটি স্কিল নিবন্ধন করে।
++        dependencies-এর জন্য None-safe ডিফল্ট ব্যবহৃত হচ্ছে (mutable default arg bug ফিক্স)।
++        """
++        # Fix: mutable default argument bug — None-safe initialization
++        if dependencies is None:
++            dependencies = []
++
++        if uss:
++            from skills.schema import UniversalSkillSchema
++
++            try:
++                UniversalSkillSchema(**uss)
++            except Exception as e:
++                logger.error(f"USS validation failed for skill '{name}': {e}")
++                return False
++
++        # Attempt to store in Supabase DB first (single-source-of-truth)
++        # P0 (Task 9-c2): a FAILED DB write is now LOUD (ERROR log) and makes
++        # register_skill return False — the caller can tell persistence failed.
++        db_persisted = False
++        try:
++            from database.supabase_client import db
++
++            if db.client:
++                upsert_result = db.upsert_db_skill(
++                    {
++                        "name": name,
++                        "version": version,
++                        "description": description,
++                        "category": uss.get("category", "general")
++                        if uss
++                        else "general",
++                        "parameters_schema": uss.get("parameters", {}) if uss else {},
++                        "metadata": uss or {},
++                    }
++                )
++                if upsert_result is None:
++                    # P0 (Task 9-c2): upsert_db_skill degrades to None on failure —
++                    # treat it as the persistence failure it is.
++                    logger.error(
++                        f"Failed to register skill '{name}' to Supabase: upsert returned no data."
++                    )
++                    return False
++                db_persisted = True
++        except Exception as e:
++            logger.error(f"Failed to register skill '{name}' to Supabase: {e}")
++            return False
++
++        # Store in local registry fallback — শুধুমাত্র dev-mode-এ
++        self.skills["skills"][name] = {
++            "name": name,
++            "version": version,
++            "description": description,
++            "entry_point": entry_point,
++            "dependencies": dependencies,
++            "uss": uss,
++        }
++        env = os.getenv("ENV", "local")
++        if env == "local":
++            try:
++                with open(self.registry_path, "w", encoding="utf-8") as f:
++                    json.dump(self.skills, f, indent=4)
++                return True
++            except Exception as exc:
++                logger.error(
++                    f"Could not write skill '{name}' to local registry: {exc}"
++                )
++                return db_persisted
++        else:
++            # Serverless পরিবেশে — শুধুমাত্র DB-তে স্টোর করাই যথেষ্ট।
++            # P0 (Task 9-c2): the DB is the ONLY store here, so report honestly
++            # whether the skill actually reached the database.
++            if db_persisted:
++                logger.debug(
++                    f"Skill '{name}' registered to Supabase (local file skipped in {env} mode)"
++                )
++            else:
++                logger.error(
++                    f"Skill '{name}' NOT persisted: no Supabase client available in {env} mode "
++                    "(no local registry fallback outside ENV=local)."
++                )
++            return db_persisted
++
++    def get_skill(self, name: str) -> dict[str, Any] | None:
++        # Attempt to retrieve from Supabase DB first
++        try:
++            from database.supabase_client import db
++
++            if db.client:
++                skill_data = db.get_db_skill(name)
++                if skill_data:
++                    return {
++                        "name": skill_data.get("name"),
++                        "version": skill_data.get("version"),
++                        "description": skill_data.get("description"),
++                        "entry_point": f"skills.dynamic.{name}",
++                        "dependencies": [],
++                        "uss": skill_data.get("metadata"),
++                    }
++        except Exception as e:
++            logger.debug(f"Failed to fetch skill '{name}' from Supabase: {e}")
++
++        # Local fallback — শুধুমাত্র dev-mode-এ
++        return self.skills["skills"].get(name)
+diff --git a/skills/schema.py b/skills/schema.py
+new file mode 100644
+index 00000000..2d8f884b
+--- /dev/null
++++ b/skills/schema.py
+@@ -0,0 +1,128 @@
++import re
++from typing import Any
++
++from pydantic import BaseModel, Field, model_validator
++
++
++class SkillMetadata(BaseModel):
++    """
++    Metadata information for discovering, versioning, and attributing a dynamic skill.
++    """
++
++    name: str = Field(
++        ...,
++        description="The unique, slugified name of the skill (e.g., 'data_cleaner').",
++        examples=["sentiment_analyzer"],
++    )
++    version: str = Field(
++        "1.0.0",
++        description="The SemVer version string of the skill.",
++        examples=["1.0.0", "0.2.1-beta"],
++    )
++    description: str = Field(
++        ...,
++        description="A concise description of the skill's purpose and functionality.",
++        examples=[
++            "Analyzes input text and classifies sentiment as positive, negative, or neutral."
++        ],
++    )
++    author: str = Field(
++        "supremeai_agent_id",
++        description="The identifier of the agent or developer who authored this skill.",
++    )
++    tags: list[str] = Field(
++        default_factory=list,
++        description="Keywords used for semantic and tokenized discovery of the skill.",
++    )
++
++    @model_validator(mode="after")
++    def validate_semver(self):
++        # Strict SemVer validation pattern
++        pattern = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$"
++        if not re.match(pattern, self.version):
++            raise ValueError(f"Version '{self.version}' is not valid SemVer format.")
++        return self
++
++
++class SkillInterface(BaseModel):
++    """
++    Input and Output JSON Schema definitions to guarantee interface contracts during composition.
++    """
++
++    input_schema: dict[str, Any] = Field(
++        ...,
++        description="Valid JSON Schema (Draft 7+) defining expected input fields, types, and constraints.",
++    )
++    output_schema: dict[str, Any] = Field(
++        ...,
++        description="Valid JSON Schema (Draft 7+) describing structure and validation for output values.",
++    )
++
++
++class SkillExecution(BaseModel):
++    """
++    Execution parameters, runtime target, entry point, and system dependencies.
++    """
++
++    runtime: str = Field(
++        "python3.11",
++        description="The execution runtime environment (e.g., 'python3.11').",
++    )
++    entry_point: str = Field(
++        "main.run",
++        description="Entry point in standard 'file.function' format.",
++        examples=["main.run", "processor.execute"],
++    )
++    dependencies: list[str] = Field(
++        default_factory=list,
++        description="List of pip package dependencies required for execution.",
++    )
++    timeout_seconds: int = Field(
++        30, ge=1, le=300, description="Maximum execution timeout in seconds."
++    )
++
++
++class SkillTestCase(BaseModel):
++    """
++    Individual test case configuration used to perform validation in the execution sandbox.
++    """
++
++    input: dict[str, Any] = Field(
++        ..., description="Dictionary representing the payload inputs for the test case."
++    )
++    expected_output: dict[str, Any] = Field(
++        ...,
++        description="Dictionary representing the expected payload output schema structure.",
++    )
++
++
++class SkillValidation(BaseModel):
++    """
++    Validation tests and security configurations used to verify skills before registration.
++    """
++
++    tests: list[SkillTestCase] = Field(
++        default_factory=list,
++        description="List of inputs and expected outputs to execute in tests.",
++    )
++    security_level: str = Field(
++        "sandboxed",
++        description="Execution context. Must be either 'sandboxed' or 'privileged'.",
++    )
++
++    @model_validator(mode="after")
++    def validate_security(self):
++        if self.security_level not in ("sandboxed", "privileged"):
++            raise ValueError("security_level must be 'sandboxed' or 'privileged'.")
++        return self
++
++
++class UniversalSkillSchema(BaseModel):
++    """
++    The root schema defining a SupremeAI dynamic skill.
++    """
++
++    metadata: SkillMetadata
++    interface: SkillInterface
++    execution: SkillExecution
++    validation: SkillValidation

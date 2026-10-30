@@ -1,0 +1,124 @@
+diff --git a/docs/reports/EYE_1783_1797_STALE_CLOSEOUT_2026-10-28.md b/docs/reports/EYE_1783_1797_STALE_CLOSEOUT_2026-10-28.md
+new file mode 100644
+index 00000000..f5921a80
+--- /dev/null
++++ b/docs/reports/EYE_1783_1797_STALE_CLOSEOUT_2026-10-28.md
+@@ -0,0 +1,118 @@
++# Stale closeout — eye(studio) evidence-only reports #1783 and #1797
++
++**What:** both issues are terminal, evidence-only verification reports whose own authors
++filed them with explicit no-work / close-me mandates. Both have sat `status:unclaimed`
++since filing (neither was ever claimed; zero comments each), and both are re-triaged by
++every agent's `pick_next_issue()` on every hourly cycle — recurring board tax with no
++claimable work behind it. This report is the durable closure record; the closing keywords
++ride in the order summary per the repo's own precedent (PR #1956 closed #1918/#1955;
++PR #1982 closed #1897/#1933).
++
++**Closure authority:** the issues' authors, not this agent. Verbatim mandates quoted
++below from the public issue bodies (fetched 2026-10-28 ~07:2xZ via the zero-credential
++public HTML plane after `api.github.com` rate-limited; tower `bridge_read_feedback`
++confirms both still `open` / never-claimed at read time).
++
++## Issue #1783 — post-deploy verification of #1696 (eye pass 1, probed 2026-10-28)
++
++Live production probe of the landed #1696 fix (charts chunk off the landing critical
++path + 44px mobile tap targets) against `https://supremeai-studio.vercel.app`, fresh
++browser profile, cold navigation:
++
++| Check | Mandate | Measured | Verdict |
++| --- | --- | --- | --- |
++| FCP, cold first visit `/` | < 1.0s | **516ms** (pre-fix: 1184ms) | PASS |
++| `vendor-charts` on landing path | lazy-only reach | **not fetched** on `/` | PASS |
++| `vendor-events` bucket | ~2.9KB claimed | 3KB decoded / 1KB transfer | PASS — exact |
++| Mobile hamburger (390×844) | ≥44px tap target | 44×44px (was 36px) | PASS |
++| Mobile logo hit area | ≥44px | 138×56px (was 32px) | PASS |
++| Horizontal scroll @390px | none | `scrollWidth == clientWidth == 390` | PASS |
++| Console errors (mobile+desktop) | none | none | PASS |
++| Guest funnel `/` → `/chat` | no lazy-chunk stall on first action | zero new JS chunks on click | PASS |
++
++**8/8 PASS.** Author's resolution instruction, verbatim: *"Verdict: the human-eye
++mandate (FCP < 1.0s + responsive UI) PASSES on the production studio as of 2026-10-28.
++Suggested resolution: reference this verification on #1696's timeline when an
++issue-comment plane becomes available, then close this WO as informational; the
++next-lane observation stays dormant unless FCP regresses."*
++
++The dormant next-lane observation (eager leader moved to `index-*.js`, 487KB decoded /
++215KB wire, FCP margin healthy at 516ms) stays dormant by the author's own gating —
++it is a note for a future probe, not a work order.
++
++## Issue #1797 — human-eye pass 2 (cold-FCP distribution + first LCP/CLS report)
++
++Second independent pass, same production target, same day:
++
++| Check | Mandate | Measured | Verdict |
++| --- | --- | --- | --- |
++| Cold-FCP distribution | < 1.0s bar | 208–1220ms, **median ≈ 400–600ms** (consistent with #1783's 516ms single run) | PASS (variance caveat) |
++| LCP (first report) | ≤ 2.5s | **1492ms** | PASS |
++| CLS (first report) | ≤ 0.1 | **0** — zero layout shift | PASS |
++| `/chat` direct-load mobile + responsive function checks | pass set | all pass | PASS |
++
++Author's terminal framing, verbatim: *"Role contract: issue-creation only, no CSS/TS
++edits."* / *"No regression found; no new work order warranted from this pass."* /
++*"Filed as evidence-only; unclaimed; no implementation requested."*
++
++## Why closure is correct (and why now)
++
++1. **The authors asked for it.** #1783: "close this WO as informational". #1797:
++   "no new work order warranted… no implementation requested". Closing an evidence
++   report whose verdict is recorded IS the author-intended lifecycle; leaving it open
++   contradicts the filing intent.
++2. **Zero information loss.** GitHub retains closed issues read-only with full bodies;
++   this report re-records the decisive tables on main where the landing commit message
++   links both numbers. The evidence chain survives closure intact.
++3. **The zero-duplicate doctrine cuts toward closure.** Two never-claimed, no-work
++   P3s re-triaged hourly by every solver are pure federation tax — the same argument
++   that closed #1897/#1933 (PR #1982) and that the board's own
++   `pick_next_issue()` skip-with-evidence analyses repeat every cycle.
++4. **Honest limitation, recorded:** the "#1783 → #1696 timeline reference" the author
++   suggested needs an issue-comment plane the tower does not expose (tool surface has
++   `github_create_issue` but no comment tool). The durable substitute is this file plus
++   the landing commit message referencing #1696; any future issue-comment plane can
++   link back to it.
++
++## Scope boundaries honored
++
++- **#1852 / #1934 (provider sentry generations) deliberately NOT closed:** their
++  verdicts ("No NEW degradation → no new WO") carry no closure mandate, and #1934's
++  provenance identifies the series as this loop family's own scheduled platform-guardian
++  trail (Job ID 478709, cycle 5) — the series is kept open as the monitoring trail;
++  #2009 (05:54Z) is its live generation. Closing unmandated series entries would
++  exceed the evidence.
++- **No new sentry pass this cycle:** #2009 is ~1.5h stale at read time versus the
++  series' observed ~2.5h cadence (00:51Z → 03:21Z → 05:54Z); the next due window is
++  the following cycle.
++- **No studio code, no CSS/TS edits, no chunk-graph changes:** both issues' never-do
++  registers (no vendor-charts re-welding, no eager→lazy conversion of vendor-ui while
++  DashboardLayout/CommandBar boot path imports it, no synthetic-benchmark claims) are
++  adopted here as constraints on any future lane.
++- **#1912 (P2) observed, not touched:** protected-path precedent (#1769/#1822, per the
++  landed runbook re-cert `docs/reports/wo1912-runbook-recert-20261028.md`) keeps the
++  `.github/` diff in the issue for admin landing; an active claim by the loop family
++  was present this cycle (06:50:23Z, TTL 30m). Unrelated to this closeout; recorded
++  for board continuity.
++
++## 3-tier verification mapping
++
++- **[T1 Reflection]** Full issue bodies quoted verbatim from the public HTML plane
++  (WebFetch, zero credentials); author identity cross-checked (paykaribazaronline,
++  Collaborator, filer of both). Mandates are the author's own words, not paraphrase.
++- **[T2 Smoke]** Tower `bridge_read_feedback` #1783 / #1797 this cycle: both `open`,
++  `latestClaim: null`, zero comments — no competing lane, no claim to collide with.
++  Main health at publication: tip `da72aa2`, run #4748 success (07:06:47Z); PR-lane
++  runs #4745–#4747 green. Zero-duplicate sweep: no open WO/PR targets #1783 or #1797.
++- **[T3 Tests]** Diff vs main is exactly 1 new additive file under `docs/reports/`;
++  no code, no config, no `.github/`, no generated files, no test surface. Report-only
++  vehicle per the CI_1933 / CI_4532 / wo1912-recert file precedents (`.gitignore:44`
++  `reports/` pattern handled by the tracked-file precedent; bridge payload carries
++  explicit path+content regardless).
++
++## Rollback path
++
++Single additive report file: revert the landing commit or delete the file. Closing
++keywords live in the commit message; a revert does not reopen the issues (GitHub keeps
++closure state) — if the closure itself were wrong, reopen via issue admin. No workflow,
++no code, no config surface affected.

@@ -1,0 +1,219 @@
+diff --git a/infrastructure/mcp-control-plane/src/registry/account.registry.ts b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+index c25214e1..50eaf198 100644
+--- a/infrastructure/mcp-control-plane/src/registry/account.registry.ts
++++ b/infrastructure/mcp-control-plane/src/registry/account.registry.ts
+@@ -43,17 +43,11 @@ function isAvailable(envRef: string): boolean {
+ export const CANONICAL_FEDERATION_REPOS = [
+   "supremeai",
+   "supremeai-open",
+-  "supremeai-command",
+-  "supremeai-skills",
+-  "supremeai-vscode",
+-  "supremeai-agents",
+-  "supremeai-browser",
++  "supremeai-core",
+   "supremeai-api",
++  "supremeai-browser",
+   "supremeai-studio",
+-  "supremeai-infrastructure",
+-  "supremeai-core",
+-  "supremeai-sdk",
+-  "supremeai-mcp-control-plane",
++  "supremeai-vscode",
+   "supremeai-archive",
+ ] as const;
+ 
+@@ -328,9 +322,6 @@ export const ADMIN_ONLY_GITHUB_REPOS = new Set([
+   "supremeai",
+   "supremeai-api",
+   "supremeai-core",
+-  "supremeai-command",
+-  "supremeai-infrastructure",
+-  "supremeai-mcp-control-plane",
+   "github-org-supremeai-bd",
+ ]);
+ 
+diff --git a/infrastructure/mcp-control-plane/src/tools/github.tools.ts b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+index b817e97f..44a7f7e8 100644
+--- a/infrastructure/mcp-control-plane/src/tools/github.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/github.tools.ts
+@@ -15,17 +15,11 @@ import { buildAccountRegistry } from "../registry/account.registry.js";
+  */
+ export const SATELLITE_REPOS: ReadonlySet<string> = new Set([
+   "supremeai-open",
+-  "supremeai-sdk",
+-  "supremeai-archive",
+   "supremeai-core",
+   "supremeai-studio",
+-  "supremeai-infrastructure",
+-  "supremeai-mcp-control-plane",
+-  "supremeai-command",
+-  "supremeai-skills",
+   "supremeai-vscode",
+-  "supremeai-agents",
+   "supremeai-browser",
++  "supremeai-archive",
+ ]);
+ 
+ export function isSatelliteRepo(repoName: string): boolean {
+diff --git a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+index 4faa86a7..3b0a1451 100644
+--- a/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
++++ b/infrastructure/mcp-control-plane/test_hybrid_repo_access.ts
+@@ -21,17 +21,18 @@ console.log("Starting hybrid repo access & organization discovery tests...");
+ 
+ // 1. Verify organization registry configuration
+ assert.equal(GITHUB_ORGANIZATION, "Supremeai-bd");
+-assert.equal(CANONICAL_FEDERATION_REPOS.length, 14);
++assert.equal(CANONICAL_FEDERATION_REPOS.length, 8);
+ assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai"));
+ assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-open"));
+-assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-command"));
+-assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-skills"));
+-assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-vscode"));
+-assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-agents"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-core"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-api"));
+ assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-browser"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-studio"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-vscode"));
++assert.ok(CANONICAL_FEDERATION_REPOS.includes("supremeai-archive"));
+ 
+ const initialTracked = getTrackedOrgRepos();
+-assert.equal(initialTracked.length, 14);
++assert.equal(initialTracked.length, 8);
+ 
+ // Org-level monitor account presence in registry
+ const accounts = buildAccountRegistry();
+@@ -51,12 +52,12 @@ assert.equal(dynAccount.url, "https://api.github.com/repos/Supremeai-bd/supremea
+ 
+ // 2. Hybrid repo URL resolution
+ assert.equal(
+-  repoUrlFor(undefined, "supremeai-skills"),
+-  "https://api.github.com/repos/Supremeai-bd/supremeai-skills"
++  repoUrlFor(undefined, "supremeai-studio"),
++  "https://api.github.com/repos/Supremeai-bd/supremeai-studio"
+ );
+ assert.equal(
+-  repoUrlFor("github-primary", "Supremeai-bd/supremeai-command"),
+-  "https://api.github.com/repos/Supremeai-bd/supremeai-command"
++  repoUrlFor("github-primary", "Supremeai-bd/supremeai-browser"),
++  "https://api.github.com/repos/Supremeai-bd/supremeai-browser"
+ );
+ assert.equal(
+   repoUrlFor("github-primary"),
+@@ -65,28 +66,28 @@ assert.equal(
+ 
+ // 3. Adapter getAccountConfig resolution
+ process.env.GITHUB_TOKEN = process.env.GITHUB_TOKEN || "test-gh-token-dummy";
+-const skillsConfig = getAccountConfig("supremeai-skills");
+-assert.equal(skillsConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-skills");
+-assert.ok(skillsConfig.apiKey);
++const studioConfig = getAccountConfig("supremeai-studio");
++assert.equal(studioConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-studio");
++assert.ok(studioConfig.apiKey);
+ 
+-const cmdConfig = getAccountConfig("Supremeai-bd/supremeai-command");
+-assert.equal(cmdConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-command");
++const browserConfig = getAccountConfig("Supremeai-bd/supremeai-browser");
++assert.equal(browserConfig.baseUrl, "https://api.github.com/repos/Supremeai-bd/supremeai-browser");
+ 
+ // 4. Satellite classification
+ assert.equal(isSatelliteRepo("supremeai"), false, "supremeai is core monorepo, not satellite");
+ assert.equal(isSatelliteRepo("supremeai-open"), true);
+-assert.equal(isSatelliteRepo("supremeai-skills"), true);
+-assert.equal(isSatelliteRepo("supremeai-command"), true);
++assert.equal(isSatelliteRepo("supremeai-studio"), true);
++assert.equal(isSatelliteRepo("supremeai-core"), true);
+ assert.equal(isSatelliteRepo("supremeai-vscode"), true);
+-assert.equal(isSatelliteRepo("supremeai-agents"), true);
+ assert.equal(isSatelliteRepo("supremeai-browser"), true);
+-assert.equal(SATELLITE_REPOS.has("supremeai-skills"), true);
+-assert.equal(SATELLITE_REPOS.has("supremeai-command"), true);
++assert.equal(isSatelliteRepo("supremeai-archive"), true);
++assert.equal(SATELLITE_REPOS.has("supremeai-studio"), true);
++assert.equal(SATELLITE_REPOS.has("supremeai-browser"), true);
+ 
+ // 5. Authority matrix checks across hybrid repositories
+ const coreUrl = "https://api.github.com/repos/Supremeai-bd/supremeai";
+-const skillsUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-skills";
+-const cmdUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-command";
++const studioUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-studio";
++const browserUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-browser";
+ 
+ // 5a. Agent authority (Rank = 3) — can access satellite repos, blocked from core monorepo
+ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+@@ -96,11 +97,11 @@ RequestContextStore.run({ role: "agent", scopes: ["tools:execute"] }, () => {
+     "Agent must be blocked from core repo"
+   );
+ 
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.equal(denySkills, null, "Agent must be permitted to read satellite repo supremeai-skills");
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.equal(denyStudio, null, "Agent must be permitted to read satellite repo supremeai-studio");
+ 
+-  const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
+-  assert.equal(denyCmd, null, "Agent must be permitted to read satellite repo supremeai-command");
++  const denyBrowser = assertRepoReadAccess("github.read_file", "supremeai-browser", browserUrl);
++  assert.equal(denyBrowser, null, "Agent must be permitted to read satellite repo supremeai-browser");
+ 
+   // Ghost Cloaking verification: supremeai-api is completely air-gapped from regular agents
+   const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+@@ -113,8 +114,8 @@ RequestContextStore.run({ role: "admin", scopes: ["tools:execute"] }, () => {
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+   assert.equal(denyCore, null, "Admin must be permitted to read core repo");
+ 
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.equal(denySkills, null, "Admin must be permitted to read satellite repo");
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.equal(denyStudio, null, "Admin must be permitted to read satellite repo");
+ 
+   const apiUrl = "https://api.github.com/repos/Supremeai-bd/supremeai-api";
+   const denyApiAdmin = assertRepoReadAccess("github.read_file", "supremeai-api", apiUrl);
+@@ -125,18 +126,18 @@ RequestContextStore.run({ role: "supremeadmin", scopes: ["tools:execute"] }, ()
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+   assert.equal(denyCore, null, "Supremeadmin must be permitted to read core repo");
+ 
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.equal(denySkills, null, "Supremeadmin must be permitted to read satellite repo");
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.equal(denyStudio, null, "Supremeadmin must be permitted to read satellite repo");
+ });
+ 
+ // 5b. Restricted viewer authority — satellite allowed, core blocked
+ const rvScopes = defaultClientScopes("restricted_viewer");
+ RequestContextStore.run({ role: "restricted_viewer", scopes: rvScopes }, () => {
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.equal(denySkills, null, "restricted_viewer must be permitted to read satellite repo");
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.equal(denyStudio, null, "restricted_viewer must be permitted to read satellite repo");
+ 
+-  const denyCmd = assertRepoReadAccess("github.read_file", "supremeai-command", cmdUrl);
+-  assert.equal(denyCmd, null, "restricted_viewer must be permitted to read satellite repo");
++  const denyBrowser = assertRepoReadAccess("github.read_file", "supremeai-browser", browserUrl);
++  assert.equal(denyBrowser, null, "restricted_viewer must be permitted to read satellite repo");
+ 
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+   assert.ok(denyCore && (denyCore.includes("restricted to admin") || denyCore.includes("satellite repos")), "restricted_viewer must be blocked from core repo");
+@@ -151,8 +152,8 @@ RequestContextStore.run({ role: "repo_viewer", scopes: audScopes }, () => {
+     "repo_viewer must be blocked from core repo"
+   );
+ 
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.equal(denySkills, null, "repo_viewer must read satellite repo");
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.equal(denyStudio, null, "repo_viewer must read satellite repo");
+ });
+ 
+ // 5d. Guest viewer authority — blocked from all repos except public docs
+@@ -161,8 +162,8 @@ RequestContextStore.run({ role: "viewer", scopes: guestScopes }, () => {
+   const denyCore = assertRepoReadAccess("github.read_file", "supremeai", coreUrl);
+   assert.ok(denyCore && denyCore.includes("no repository read access"));
+ 
+-  const denySkills = assertRepoReadAccess("github.read_file", "supremeai-skills", skillsUrl);
+-  assert.ok(denySkills && denySkills.includes("no repository read access"));
++  const denyStudio = assertRepoReadAccess("github.read_file", "supremeai-studio", studioUrl);
++  assert.ok(denyStudio && denyStudio.includes("no repository read access"));
+ });
+ 
+ // 5e. Organization-level resource access: admin/supremeadmin allowed, agent blocked

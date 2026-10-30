@@ -1,0 +1,64 @@
+diff --git a/browser/render.yaml b/browser/render.yaml
+index f657e3a2..430c8549 100644
+--- a/browser/render.yaml
++++ b/browser/render.yaml
+@@ -2,12 +2,12 @@ services:
+   - type: web
+     name: supremeai-browser
+     runtime: docker
+-    plan: starter
++    plan: free
+     dockerfilePath: ./Dockerfile
+     healthCheckPath: /health
+     envVars:
+       - key: GEMINI_PROFILE_DIR
+-        value: /data/profile
++        value: /tmp/profile
+       # R56 option A agent-slice (#2262): the ghost-tower vault regenerates its
+       # Fernet master key on every boot (VAULT_DIR ~/.supremeai_vault is
+       # ephemeral — outside the /data/profile disk), so anything encrypted
+@@ -20,7 +20,4 @@ services:
+       # then and makes the next key generation the last one. Unset = rollback.
+       - key: CREDENTIAL_MASTER_KEY
+         sync: false
+-    disk:
+-      name: browser-profile
+-      mountPath: /data/profile
+-      sizeGB: 1
++    
+\ No newline at end of file
+diff --git a/studio/src/components/auth/ServiceHealthBar.tsx b/studio/src/components/auth/ServiceHealthBar.tsx
+index 74e40e29..d1af4322 100644
+--- a/studio/src/components/auth/ServiceHealthBar.tsx
++++ b/studio/src/components/auth/ServiceHealthBar.tsx
+@@ -33,10 +33,14 @@ interface ServiceStatusProps {
+ }
+ 
+ const SERVICE_LABEL_MAP: Record<string, string> = {
++  api: 'API Gateway',
+   application: 'Backend Core',
+   database: 'Data Store (Postgres)',
+   redis: 'Cache Cluster (Redis)',
+-  scraper: 'Scraper Service',
++  scraper: 'Scraper Relay',
++  tower: 'MCP Control Tower',
++  primary: 'Primary Core Node',
++  worker: 'Worker Node',
+   ollama: 'Local Ollama Node',
+   memory: 'Compute Memory',
+   disk: 'Storage Node',
+diff --git a/studio/src/components/studio/SplitStudioView.tsx b/studio/src/components/studio/SplitStudioView.tsx
+index 2f279b5e..3d5d9854 100644
+--- a/studio/src/components/studio/SplitStudioView.tsx
++++ b/studio/src/components/studio/SplitStudioView.tsx
+@@ -109,7 +109,9 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
+   const recognitionRef = useRef<any>(null);
+ 
+   useEffect(() => {
+-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
++    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
++      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
++    }
+   }, [messages]);
+ 
+   // Handle template selection

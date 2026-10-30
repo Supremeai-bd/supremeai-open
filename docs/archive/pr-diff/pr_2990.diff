@@ -1,0 +1,32 @@
+diff --git a/docs/reports/SENTRY_2102_PROVIDER_REPROBE_DAY2_2026-10-30.md b/docs/reports/SENTRY_2102_PROVIDER_REPROBE_DAY2_2026-10-30.md
+new file mode 100644
+index 00000000..05957a66
+--- /dev/null
++++ b/docs/reports/SENTRY_2102_PROVIDER_REPROBE_DAY2_2026-10-30.md
+@@ -0,0 +1,26 @@
++# #2102 Sentry Series — Re-Probe Day +2 (2026-10-30T01:45Z)
++
++- **Refs:** #2102 (filing 10-28 10:39Z) · sibling #2058 (addendum PR #2984, shared sweep) · #1874 polarity
++- **Provenance:** zero-credential probes, browser UA, 20s timeout, 1 latency sample; evidence `sentry_probes_2058_c35.json` + `coreapi_currency_2102_c35.json`; filing rules (any HTTP = ALIVE; 401/403 = healthy; 404 = EXCLUDED). Claim `GRANT_TAKEOVER 01:55:10Z` (prior expired 2225m). Report-only; closure with admin.
++
++## 1. Delta — filing (10-28 10:39Z) vs day +2 (01:45Z + 01:55Z)
++
++| probe | filing | day +2 | verdict |
++|---|---|---|---|
++| 7/8 providers (gemini…bai) | ALIVE | same codes, 30–261ms | ALIVE — stable |
++| v0 | 404, EXCLUDED 6th | 404, 274–515ms | EXCLUDED — unchanged; key-holder GET required (#1852) |
++| core-api pub (`/health`, `HEAD /`) | **200 — "RESOLVED holds, 5th confirm"** | **404 ×6 @ 01:55Z** | **BROKEN at gateway — §2** |
++| origin `/health` | — | **200 `healthy` ×2** | service-level fine |
++| mcp-tower / studio / ddg / PyPI | success-class | 200/400-class | ALIVE |
++
++## 2. Row arc inversion: "5th confirm" chain broke at gateway
++
++Filing headline: core-api edge RESOLVED contract holding (5th confirm). Day +2: `supremeai-api.onrender.com/health` + `HEAD /` = **404**, persistent 01:45–01:55Z (×6/3 moments), while origin `supremeai-primary-node-5xso.onrender.com/health` = **200 healthy** every sample. Gateway/route-plane loss, invisible to the tower sweep (origin-URL-only). Remedy = gateway config/redeploy, admin-lane; full 16-endpoint table in sibling PR #2984. **Watch-item**: cross-pass persistence ⇒ ledger-worthy standalone.
++
++## 3. #1874 polarity + render-mcp
++
++`system_health` 01:45:53Z: `19 healthy · 2 degraded` — primary+worker `update_failed` (filing: re-flag persists; #2971 saw ≤8min self-clear; bounce confirmed by #2982 01:47:32Z). render-mcp, 3rd-pass-degraded at filing, **healthy** now. No new WO (#1692).
++
++## Limitations
++
++Single-sample latencies; 404 sampled 6×/~10min, not continuous; can't separate config loss vs rename vs DNS repoint.

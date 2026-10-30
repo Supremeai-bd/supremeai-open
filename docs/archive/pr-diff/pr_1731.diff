@@ -1,0 +1,319 @@
+diff --git a/docs/AUDIT_2026-10-28-federation-parity-license-drift.md b/docs/AUDIT_2026-10-28-federation-parity-license-drift.md
+new file mode 100644
+index 00000000..512692a2
+--- /dev/null
++++ b/docs/AUDIT_2026-10-28-federation-parity-license-drift.md
+@@ -0,0 +1,241 @@
++# SupremeAI Audit — 2026-10-28 (Federation Mirror Parity, Governance-Doc Pointer Drift & License-Contract Mismatch)
++
++- **Auditor role assigned by:** `continuous_agent_loop.py` cadence dispatch (auditor, 24h timer)
++- **Auditor identity:** zai-cron-agent-loop Job 478618 (zero-credential MCP Tower agent)
++- **Scope:** federation satellite/repo code parity (blob-SHA level, name নয় — SHA), dead-code
++  reference check, documentation drift, license audit (LICENSE + package metadata + SSOT evidence),
++  duplicate issue/PR sweep — per the auditor mandate
++- **Repo state audited:** `supremeai-open` main `c54121a` at audit start; work-start rebase ও
++  pre-submit rebase উভয়ই `origin/main`-এর বিপরীতে সম্পন্ন (dual-rebase honored, 0 behind)
++- **Tower handshake:** MCP Control Tower `initialize` → `tools/list` (140 tools) →
++  `system_summary` = 21/21 services available; `bridge_guide` contract read;
++  `bridge_work_queue` (limit 50) = 47 open work orders reviewed for duplicate-fit
++
++---
++
++## 1. Executive summary
++
++এই সাইকেলের মূল প্রশ্ন ছিল: **১৪টি federation repo / ৮টি active anchor hub-এর মিরর
++সত্যিই কতটা সিঙ্কড, এবং গভর্নেন্স ডকুমেন্টগুলো কি এখনও যাচাইযোগ্য পয়েন্টার দেখাচ্ছে?**
++উত্তর দ্বৈত। **ভালো খবর:** blob-SHA লেভেলে মিরর প্যারিটি এখন ঐতিহাসিকভাবে সেরা —
++`vscode/**` ৪৪/৪৪, `studio/**` ৭৩০/৭৩০, `core` sample ৬/৬, `browser` sample ৬/৬,
++`api gateway/` sample ৮/৮ IDENTICAL। **খারাপ খবর:** গভর্নেন্স-শ্রেণির নিজস্ব ডকুমেন্ট
++(`FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md`) তার প্রতিটি প্রমাণ-লিংক
++`file:///f:/...` লোকাল Windows ডিস্কে দেখাচ্ছে, তিনবার এমন একটি "পাবলিক `landing.yml`"
++রেফার করছে যার অ-অস্তিত্ব ECOSYSTEM_MAP-এর drift note (#1618) নিজেই ঘোষণা করেছে; আর
++`vscode/extension/package.json` একটি লাইসেন্স-কনট্র্যাক্ট অসঙ্গতি বহন করছে (SPDX
++Apache-2.0 বনাম MIT LICENSE বনাম MIT SSOT)। পাশাপাশি ডুপ্লিকেট-সুইপে দুটি **খোলা
++duplicate জোড়া** (#1620↔#1677, #1621↔#1678) এবং একই দিনে তিনবার ফাইল হওয়া
++constitution-portability ট্রিপলেট (#1699/#1701/#1702, পরে বন্ধ) নথিভুক্ত হলো — Zero-
++Duplicate Rule (#155) ক্লাসটি #1692-এর পর একই দিনে পুনরাবৃত্ত হয়েছে।
++
++| ID | Finding | Severity | Disposition |
++|----|---------|----------|-------------|
++| P-1 | গভর্নেন্স SSOT doc-এর ১০টি প্রমাণ-লিংক `file:///f:/...` লোকাল ডিস্কে; ৩টি স্টেল "public `landing.yml`" দাবি (#1618 drift note-এর সরাসরি লঙ্ঘন) | P2 (doc drift, governance surface) | **এই প্যাচে ফিক্সড** (রিপো-রিলেটিভ + canonical target) |
++| P-2 | `FEDERATION_SATELLITE_GAP_AUDIT.md:93` — ADR-001 লিংকও `file:///f:/...`; আসল টার্গেট `docs/adrs/`-এ HEAD-এ বিদ্যমান | P3 | **এই প্যাচে ফিক্সড** |
++| P-3 | `vscode/extension/package.json` `"license": "Apache-2.0"` বনাম `vscode/LICENSE` (MIT) বনাম ECOSYSTEM_MAP §2.3 SSOT (MIT) — তিন-উৎস প্রমাণসহ লাইসেন্স-কনট্র্যাক্ট অসঙ্গতি | P2 (license) | **এই প্যাচে ফিক্সড** (mirror; bridge স্যাটেলাইটে নামাবে) |
++| P-4 | খোলা duplicate জোড়া: #1620↔#1677 (F-4 gateway_client coverage) ও #1621↔#1678 (F-5 package.json license field); বন্ধ ট্রিপলেট #1699/#1701/#1702 | P3 (board hygiene) | **প্রমাণ ফাইলড** — maintainer close/cross-ref প্রয়োজন |
++| P-5 | `constitution_pointer_guard.py` ঘোষিত "docs sweep WO-2" (১৬-ফাইল debt তালিকা) এর জন্য বোর্ডে কোনো ট্র্যাকিং work order নেই | P3 (process) | **প্রমাণ ফাইলড** — fast-follow WO ফাইল করা দরকার |
++| P-6 | মিরর প্যারিটি যাচাই: vscode ৪৪/৪৪, studio ৭৩০/৭৩০, core ৬/৬, browser ৬/৬, api gateway/ ৮/৮ IDENTICAL; একমাত্র stale আইটেম ছিল স্যাটেলাইট-root `main.py` (#1689) — **মাঝপথে #1720 landed + sync চলে সেটিও সবুজ (re-probe: c242ba5 = IDENTICAL)** | Info / positive | Corroboration — নতুন করে কিছু করার নেই |
++| P-7 | Dead-code: `@supremeai/desktop` ও `@supremeai/mobile` workspace-wired (package-lock + root workspaces + build scripts) — dead নয়; নতুন dead-code ফাইন্ডিং নেই | Info | Clean bill (প্রমাণসহ) |
++
++---
++
++## 2. P-1 / P-2 — governance-doc pointer drift (ফিক্সড এই প্যাচে)
++
++### প্রমাণ
++
++`docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md` — একটি **Canonical Specification
++& Audit Baseline** — এর ১০টি লিংকই `file:///f:/...` (লেখকের `F:` ড্রাইভ), কোনোটি ক্লিকযোগ্য
++বা যাচাইযোগ্য নয়:
++
++```text
++:4   Host Repository  -> file:///f:/supremeai-open
++:6   Related SSOTs    -> file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md
++:6                    -> file:///f:/supremeai-open/docs/FEDERATION_TAXONOMY_AND_LICENSING.md
++:6                    -> file:///f:/supremeai-open/.github/workflows/landing.yml   ← স্টেল
++:15  slice dispatch   -> file:///f:/supremeai-open/.github/workflows/landing.yml   ← স্টেল
++:17  zero-issue rule  -> file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md
++:18  board guard      -> file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py
++:24  transit engine   -> file:///f:/supremeai-open/.github/workflows/landing.yml#L591-L632 ← স্টেল
++:99  board guard      -> file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py
++```
++
++`docs/FEDERATION_SATELLITE_GAP_AUDIT.md:93` — ADR-001 লিংকও `file:///f:/...`;
++টার্গেট `docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md` HEAD-এ বিদ্যমান
++(`git cat-file -e` OK)। রিপো-ব্যাপী সুইপ (৪০৭ tracked `.md`, relative-link resolver)
++মোট ১৮২ dangling লিংক পায়, যার ৪৪টি `file:///` লোকাল-ডিস্ক অ্যাঙ্কর (৯ ফাইল) —
++বাকিগুলো মূলত `docs/plans/**`-এর ঐতিহাসিক plan ডক।
++
++**স্টেল-দাবির অংশটি আরও গুরুত্বপূর্ণ:** ECOSYSTEM_MAP.md-এর drift note (#1618) সরাসরি
++বলে — *"No public `landing.yml` exists … Documentation claiming a public
++`.github/workflows/landing.yml` is stale."* এই SSOT doc তিনবার ঠিক সেই দাবিই করছে,
++অর্থাৎ #1618-এর পর এই ফাইল স্কুপের বাইরে রয়ে গেছে।
++
++### Impact
++
++গভর্নেন্স SSOT হলো federation routing-এর audit baseline; এর প্রমাণ-লিংকগুলো যখন
++একটি এজেন্টের ব্যক্তিগত ডিস্কে, তখন (ক) কোনো বাহ্যিক auditor দাবিগুলো যাচাই করতে পারে না,
++(খ) মৃত `landing.yml` পয়েন্টার #1618 নোটের সত্যতাকে দ্বিমুখী করে, (গ) নতুন এজেন্ট
++ভুল workflow নাম অনুসরণ করে রাউটিং অনুমান করতে পারে।
++
++### Remediation (এই প্যাচ)
++
++- সব `file:///f:/supremeai-open/...` → repo-relative লিংক (`./FEDERATION_CHARTER.md`,
++  `../scripts/ci/satellite_board_guard.py` ইত্যাদি); host repo → GitHub URL।
++- তিনটি `landing.yml` রেফারেন্স → `.github/workflows/pipeline.yml`-এর
++  `satellite-dispatch-and-sync` জবে পুনর্নির্দেশ, সঙ্গে #1618 drift note-এর রেফারেন্স —
++  এতে দাবিটি এখন বিদ্যমান ফাইলের বাস্তবতার সাথে সংগতিপূর্ণ।
++- Gap-audit ADR লিংক → `./adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`।
++- প্যাচের পর এই দুই ফাইলে `file:///` স্ক্যান = ০ হিট; guard পরিবর্তন হয়নি
++  (উভয় ফাইল guard-এর ALLOWLIST-এর বাইরে — নিশ্চিত করা হয়েছে)।
++
++বাকি ৪২টি `file:///` লিংক (মূলত `docs/plans/features/*` ঐতিহাসিক প্ল্যান) এই স্লাইসে
++ইচ্ছাকৃতভাবে বাদ — smallest safe change doctrine; সেগুলো P-5-এর WO-2 সুইপের প্রার্থী।
++
++---
++
++## 3. P-3 — vscode লাইসেন্স-কনট্র্যাক্ট অসঙ্গতি (ফিক্সড এই প্যাচে)
++
++### তিন-উৎস প্রমাণ
++
++| উৎস | মান | অবস্থান |
++|---|---|---|
++| LICENSE ফাইল | **MIT License** (Copyright (c) 2026 SaifulHaque Niloy) | `vscode/LICENSE` (mirror) = `LICENSE` (satellite, SHA-identical) |
++| Package metadata (SPDX) | **Apache-2.0** | `vscode/extension/package.json:6` (mirror) = satellite `extension/package.json` (identical `699993f..`) |
++| Licensing SSOT | **MIT** — "supremeai-vscode | Public · MIT" | `ECOSYSTEM_MAP.md` §2.1 + §2.3 |
++
++উভয় পাশে (mirror ও satellite) ঘোষণা পরস্পর-সামঞ্জস্যপূর্ণ — অর্থাৎ এটি **parity
++drift নয়, policy drift**: প্যাকেজ SPDX ডেক্লারেশন LICENSE ফাইল ও SSOT—দুটোরই
++বিপরীত। প্রাসঙ্গিক প্রেক্ষাপট: #1690 (gateway/ mirror MIT বনাম api proprietary) এবং
++#1691 (core/browser proprietary notice) ভিন্ন ডোমেইন কভার করে — vscode extension
++ডেক্লারেশন কোনো খোলা issue-তে নেই (queue sweep 2026-10-28, duplicate নেই)।
++
++### Impact
++
++`npm`/registry tooling, license-scanner ও downstream consumer SPDX-কেই পড়ে; Apache-2.0
++ঘোষণা MIT LICENSE-এর সাথে সংঘর্ষে attribution ও compliance স্ক্যানে false signal দেয়।
++দুটোই permissive হওয়ায় ঝুঁকি আইনগত নয়, কনট্র্যাক্ট-সামঞ্জস্যের।
++
++### Remediation (এই প্যাচ)
++
++`"license": "Apache-2.0"` → `"license": "MIT"` — এক-লাইন পরিবর্তন (diff যাচাইকৃত: এই
++একটি লাইনই একমাত্র পরিবর্তন, ফাইলের বাকি ফরম্যাট অক্ষত)। Bridge পাইপলাইন স্যাটেলাইট
++`supremeai-vscode`-এ নামাবে। বিকল্প (LICENSE ফাইল Apache-2.0-তে বদলানো) প্রত্যাখ্যাত —
++তা SSOT §2.3 ভাঙত ও পুরো ডোমেইনের ইতিহাস-বিরোধী হত।
++
++---
++
++## 4. P-6 — মিরর প্যারিটি ম্যাট্রিক্স (SHA-লেভেল, নাম-লেভেল নয়)
++
++পদ্ধতি: mirror ও satellite উভয় পাশে git **blob SHA** (`git rev-parse HEAD:path` /
++tower `github_read_file`-এর `sha` ফিল্ড) তুলনা। ফাইলের নাম মিলে যাওয়া যথেষ্ট ধরা হয়নি।
++
++| Surface | তুলনা | ফলাফল |
++|---|---|---|
++| `vscode/**` ↔ `supremeai-vscode` @ `e983984` | ৪৪ ফাইল, full-tree + reverse check | **৪৪/৪৪ IDENTICAL**, 0 drift, 0 missing, 0 sat-only |
++| `studio/**` ↔ `supremeai-studio` @ `0e2a127` | ৭৩০ ফাইল, full-tree + reverse check | **৭৩০/৭৩০ IDENTICAL**, 0 drift, 0 missing, 0 sat-only |
++| `core/**` ↔ `supremeai-core` (private) | ৬-fাইল sample (README, `__init__.py`, `agents/autonomous_agent.py`, Dockerfile, CI, `_INDEX.md`) | **৬/৬ IDENTICAL** |
++| `browser/**` ↔ `supremeai-browser` (private) | ৬-ফাইল sample (agent, session, cascade, Dockerfile, cloudflare-worker js) | **৬/৬ IDENTICAL** |
++| `gateway/**` ↔ `supremeai-api` (private) | ৯-ফাইল sample (main, config, provider_chain, rate_limit, sanitization, masking, dynamic_llm_router, memory_gate, middleware/anti_hacking, LICENSE, README) | **১০/১০ IDENTICAL** gateway/ সাবফোল্ডারে |
++
++**একমাত্র স্টেল আইটেম (অডিট-শুরুতে):** স্যাটেলাইট-root `main.py` (`959e5fa`, 35,428 B) বনাম mirror
++`gateway/main.py` (`c242ba5`, 38,818 B) — ৩,৩৯০ বাইট পিছিয়ে; এটি **#1689** (P1-high) দ্বারা
++ট্র্যাকড ছিল। **মাঝপথে (mid-audit) rebase-এ প্রমাণিত হলো #1720 landed (Closes #1689):** sync
++mapping ফিক্স + `--verify-only` sentinel gate; পরবর্তী re-probe-এ স্যাটেলাইট-root `main.py`
++এখন `c242ba5` = **IDENTICAL** — অর্থাৎ অডিট চলাকালীনই এই শেষ drift-টিও সবুজ হয়েছে (F3-প্যাটার্ন,
++`AUDIT_2026-10-28.md`-এর সাথে সঙ্গতিপূর্ণ)। স্যাটেলাইট root-এ `admin_auth.py` ও
++`capability_router.py`-এর byte-identical legacy কপিও পাওয়া গেছে (নিরীহ duplication,
++drift নয়)।
++
++**আগের gap-audit (2026-10-24) থেকে অগ্রগতি:** তখন api-তে "১১ মিসিং + ৯ আউটডেটেড"
++দেখা গিয়েছিল; আজ একই probe-পদ্ধতিতে api gateway/ sample সম্পূর্ণ সিঙ্কড — তখনকার
++"মিসিং" সিদ্ধান্তের বড় অংশ আসলে probe rate-limit artifact ছিল (নিচে §7 দেখুন)।
++
++---
++
++## 5. P-4 — duplicate issue সুইপ
++
++সরাসরি যাচাই (title + body + label + state, tower `bridge_work_order`):
++
++| জোড়া | অবস্থা | প্রমাণ |
++|---|---|---|
++| **#1620 ↔ #1677** | **দুটোই OPEN** | উভয়ের বডি একই F-4 ফাইন্ডিং (`gateway_client.py` `/healthz`+`/v1/models` coverage); #1677 নিজেই লেখে "carried from 03:45, still open" — পুরোনোটিকে reference না করে re-file |
++| **#1621 ↔ #1678** | **দুটোই OPEN** | একই F-5 (৯টি package.json license field নেই); #1678 "carried from 03:45" |
++| #1655 ↔ #1657 | উভয়ই bridge:queued | **ইতিমধ্যে #1692-তে নথিভুক্ত** — এখানে শুধু উল্লেখ |
++| #1699 ↔ #1701 ↔ #1702 | তিনটই CLOSED | identical "constitution portability" বডি, ৫২ সেকেন্ডের ব্যবধানে তিনবার ফাইল (21:17:39 / 21:18:13 / 21:18:31Z); #1714/#1702 রেফারেন্সসহ |
++
++ক্লাস-বিশ্লেষণ: 04:45 "Ledger Microscope Audit" সাইকেল F-4/F-5 আবিষ্কার করে re-file
++করেছে অথচ চালু বোর্ডে তার আগের কপি খোঁজেনি — অর্থাৎ ফাইলিং-পূর্ব duplicate-check
++ধাপটি ওই সাইকেলে বাদ পড়েছে; #155-এর একই ব্রিচ একদিনে দুইবার (#1655/#1657 সকালে,
++#1699/#1701/#1702 রাতে) ঘটেছে। **Smallest safe fix:** প্রতি জোড়ার নতুন কপি (#1677,
++#1678) maintainer বন্ধ করে "Duplicate of #1620/#1621" cross-ref দেবেন; আর ফাইলিং
++টুলপ্লেনে pre-file duplicate প্রশ্ন (title-normalized) স্ট্যান্ডার্ড হওয়া উচিত।
++এই রিপোর্ট ইচ্ছাকৃতভাবে নিজে নতুন issue খোলে না — duplicate-সুরক্ষিত একক ট্র্যাকিং
++maintainer-এর সিদ্ধান্ত।
++
++---
++
++## 6. P-5 — guard-ঘোষিত "docs sweep WO-2"-এর কোনো work order নেই
++
++`scripts/ci/constitution_pointer_guard.py` (#1708, 2026-10-28) নিজেই ১৬টি ফাইলকে
++`debt` শ্রেণিতে তালিকাভুক্ত করেছে — "enumerated docs debt list to be swept by a
++fast-follow work order"। গার্ড স্বয়ং সুস্থ (`--json`: 4033 scanned, 0 violations,
++0 stale allowlist), কিন্তু 2026-10-28-এর queue sweep (৫০টি খোলা WO-এর title-এ
++"docs sweep"/"WO-2"/"pointer"/"dangling" = ০ হিট) দেখায় **ওই fast-follow work order
++কখনো ফাইলই হয়নি**। Debt-এর কোনো মালিক নেই; এটি অনির্দিষ্টকালের জন্য ঝুলে থাকবে।
++প্রস্তাবিত ক্ষুদ্রতম সংশোধন: ১৬-ফাইল debt তালিকাটি বডিতে কপি করে একটি tracking WO
++ফাইল করা (এই রিপোর্টের §2-তে শনাক্ত ৪২টি `file:///` লিংকও একই সুইপের প্রার্থী)।
++
++---
++
++## 7. P-7 — dead-code যাচাই (রেফারেন্স-প্রথম পদ্ধতি)
++
++ম্যান্ডেট অনুযায়ী কোনো কোডকে dead বলার আগে references ও runtime entry points খোঁজা হয়েছে:
++
++- `@supremeai/desktop` / `@supremeai/mobile` — প্রাথমিক দৃশ্যে "package.json-মাত্র
++  scaffolding" মনে হলেও প্রমাণ: root `vscode/package.json`-এর `workspaces:
++  ["extension","desktop","mobile"]`, `package-lock.json` entries, এবং
++  `build:desktop`/`build:mobile` scripts → **wired, dead নয়**।
++- Python সারফেসের dead-import debt (৪৪৬ binding/২৭২ ফাইল) ও F401 ratchet আগের
++  সাইকেলেই নথিভুক্ত (#1598 lineage) — পুনরাবৃত্তি করিনি।
++- এই সাইকেলে **নতুন dead-code ফাইন্ডিং নেই** — এটি একটি তথ্যভিত্তিক clean bill,
++  ফাঁকা দাবি নয় (উপরের প্রমাণ-লাইনসহ)।
++
++---
++
++## 8. পদ্ধতি-নোট: probe নয় — দ্বৈত-পুনঃযাচাই (পরবর্তী auditor-দের জন্য)
++
++এই অডিটে নিজেই ধরা পড়েছে: tower-এর `github_read_file` rate-limit/error উত্তর
++"ফাইল নেই" উত্তরের মতোই দেখায়। প্রথম ব্যাচে ৭টি api-স্যাটেলাইট ফাইল "MISSING"
++এসেছিল; ২-attempt spaced re-probe-এ **সাতটিই FOUND ও IDENTICAL** প্রমাণিত হয়।
++অতএব নিয়ম: **প্রতিটি negative verdict কমপক্ষে দুইবার, ব্যবধান রেখে যাচাই না হলে
++ফাইলিং নিষিদ্ধ।** এই নোট `audit-process.json`-এর `known_pitfalls`-এ যোগ করার প্রস্তাব।
++
++## 9. Verification (3-tier)
++
++- **Reflection:** §2–§8; প্রতিটি ফাইন্ডিং file:line/SHA/tool-output-সমর্থিত।
++- **Smoke:** পরিবর্তিত ২ doc-এ `file:///` স্ক্যান = ০; নতুন relative টার্গেটগুলো
++  `git cat-file -e HEAD:<path>` দিয়ে বিদ্যমানতা যাচাই; `vscode/extension/package.json`
++  diff = এক-লাইন; `constitution_pointer_guard.py --json` = 0 violations / 0 stale
++  allowlist (প্যাচ-পরবর্তী অবস্থায়ও)।
++- **Tests:** docs-only পরিবর্তন — pytest সুইট প্রভাবিত নয়; guard self-test পাস।
++
++## Reflection Evidence (why + alternatives_rejected)
++
++- **why:** এই সাইকেলের চার ম্যান্ডেটের (parity / dead-code / doc-drift / license)
++  প্রতিটিতে অনন্য, পূর্ববর্তী audit-দ্বারা-অকবরিত ফাইন্ডিং ছিল: গভর্নেন্স SSOT-এর
++  নিজস্ব প্রমাণ-লিংক যাচাই-অক্ষম (P-1/P-2), তিন-উৎস-প্রমাণিত SPDX অসঙ্গতি (P-3),
++  খোলা duplicate জোড়া (P-4), এবং guard-ঘোষিত WO-এর অনুপস্থিতি (P-5)। ফিক্সগুলো
++  docs-only ও one-line — diff caps (≤30 ফাইল/200 KB)-এর অনেক ভিতরে, প্রতিটির
++  rollback হলো `git revert`-safe pure patch।
++- **alternatives_rejected:** (১) ১৮২ dangling লিংক একত্রে ফিক্স — প্রত্যাখ্যাত:
++  ঐতিহাসিক plan ডক রিরাইট বড় ও বিতর্কিত, WO-2 সুইপের জন্য ছাড়া হলো; (২)
++  `vscode/LICENSE` Apache-2.0 করা — প্রত্যাখ্যাত: SSOT §2.3 ও ডোমেইন-ব্যাপী ইতিহাস
++  ভাঙত; (৩) স্যাটেলাইট-root `main.py` ফিক্স এই প্যাচে অন্তর্ভুক্ত — প্রত্যাখ্যাত:
++  #1689 এই অডিট চলাকালীনই #1720 দিয়ে landed + sync-সবুজ (mid-audit re-probe:
++  c242ba5 IDENTICAL); আমার প্যাচ করলে duplicate work হত; (৪) duplicate জোড়াগুলো বন্ধ করতে নতুন
++  issue খোলা — প্রত্যাখ্যাত: এটি নিজেই duplicate-filing ক্লাসে পড়ত; maintainer
++  cross-ref close-ই ক্ষুদ্রতম নিরাপদ পথ; (৫) `github_create_issue` দিয়ে আলাদা
++  finding-issue ফাইলিং — প্রত্যাখ্যাত: অনুমোদিত bridge workflow একক submission-ই
++  ট্র্যাকিং সারফেস, আর P-4/P-5-এর মতো বোর্ড-হাইজিন সিদ্ধান্ত maintainer-এর।
+diff --git a/docs/FEDERATION_SATELLITE_GAP_AUDIT.md b/docs/FEDERATION_SATELLITE_GAP_AUDIT.md
+index 6f54f213..668d5f96 100644
+--- a/docs/FEDERATION_SATELLITE_GAP_AUDIT.md
++++ b/docs/FEDERATION_SATELLITE_GAP_AUDIT.md
+@@ -90,7 +90,7 @@ SupremeAI আর্কিটেকচারে `supremeai-open` হলো সম
+ 
+ ### 3.2. `Supremeai-bd/supremeai-archive`
+ 
+-* **মিসিং ADR:** [`docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`](file:///f:/supremeai-open/docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md) ওপেন ও মোনোরিপোতে আছে, কিন্তু স্যাটেলাইট `supremeai-archive/adrs/`-এ নেই (সেখানে শুধু ADR-001 থেকে 007 ভিন্ন টপিকের ওপর সংরক্ষিত)।
++* **মিসিং ADR:** [`docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md`](./adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md) ওপেন ও মোনোরিপোতে আছে, কিন্তু স্যাটেলাইট `supremeai-archive/adrs/`-এ নেই (সেখানে শুধু ADR-001 থেকে 007 ভিন্ন টপিকের ওপর সংরক্ষিত)।
+ * **সিআই গেট:** আর্কাইভের অখণ্ডতা, লিংক চেকিং ও মার্কডাউন লিন্টিংয়ের জন্য কোনো গভার্নেন্স সিআই পাইপলাইন নেই।
+ 
+ ---
+diff --git a/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+index 9f2dce86..e1358b62 100644
+--- a/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
++++ b/docs/FEDERATION_TRANSIT_ROUTING_AND_GOVERNANCE_SSOT.md
+@@ -1,9 +1,9 @@
+ # SupremeAI Federation Transit Routing, Multi-Target Slicing & Governance SSOT
+ 
+ > **Canonical Specification & Audit Baseline**  
+-> **Host Repository:** [`Supremeai-bd/supremeai-open`](file:///f:/supremeai-open)  
++> **Host Repository:** [`Supremeai-bd/supremeai-open`](https://github.com/Supremeai-bd/supremeai-open)  
+ > **Work Order Reference:** Federation Dispatch, Multi-Domain Slicing & Board Audit  
+-> **Related SSOTs:** [`docs/FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md) · [`docs/FEDERATION_TAXONOMY_AND_LICENSING.md`](file:///f:/supremeai-open/docs/FEDERATION_TAXONOMY_AND_LICENSING.md) · [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml)
++> **Related SSOTs:** [`docs/FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md) · [`docs/FEDERATION_TAXONOMY_AND_LICENSING.md`](./FEDERATION_TAXONOMY_AND_LICENSING.md) · [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml)
+ 
+ ---
+ 
+@@ -12,16 +12,16 @@
+ The SupremeAI federation consists of **14 interconnected repositories** operating as a single unified autonomous ecosystem. To maintain absolute architectural boundaries, security moats, and pristine task tracking, work ingestion and code transit follow strict, machine-enforced governance:
+ 
+ 1. **Single Public Ingress:** All tasks, community PRs, and AI agent work enter exclusively through **`Supremeai-bd/supremeai-open`**.
+-2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
++2. **Multi-Target Slice Dispatching:** When a landed PR touches multiple domain directories, the `satellite-dispatch-and-sync` job of [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) automatically isolates target changes into dedicated per-satellite slice branches (`bridge/{task_id}-{slug}`), preventing cross-domain pollution.
+ 3. **Passive Umbrella Monorepo:** The central monorepo (**`Supremeai-bd/supremeai`**) receives the entire panoramic commit, while satellites receive only their scoped slices.
+-4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](file:///f:/supremeai-open/docs/FEDERATION_CHARTER.md)).
+-5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
++4. **Zero-Issue / Zero-PR Satellite Mandate:** All active satellite repositories enforce a permanent **0 open issues and 0 open PRs** state ([`FEDERATION_CHARTER.md`](./FEDERATION_CHARTER.md)).
++5. **Auditing & The Zero-Credential Blind Spot:** Explains the unauthenticated `UNREACHABLE` status in [`scripts/ci/satellite_board_guard.py`](../scripts/ci/satellite_board_guard.py) and provides the authenticated verification procedure that confirms 100% clean compliance.
+ 
+ ---
+ 
+ ## 2. Multi-Target Slice Branch Transit Architecture
+ 
+-When an autonomous agent or human contributor merges a PR touching multiple federation directories into `supremeai-open:main`, the automated transit engine in [`.github/workflows/landing.yml`](file:///f:/supremeai-open/.github/workflows/landing.yml#L591-L632) executes isolated slice routing:
++When an autonomous agent or human contributor merges a PR touching multiple federation directories into `supremeai-open:main`, the automated transit engine — the `satellite-dispatch-and-sync` job of [`.github/workflows/pipeline.yml`](../.github/workflows/pipeline.yml) (the private-side `landing.yml` duties run here on the public boundary, per the ECOSYSTEM_MAP drift note #1618) — executes isolated slice routing:
+ 
+ ```mermaid
+ flowchart TD
+@@ -96,7 +96,7 @@ Out of the 14 repositories, two anchor the system, while specific satellites enf
+ ## 5. Satellite Board Guard: Unauthenticated Blind Spot & Solution
+ 
+ ### 5.1 Root Cause of the Blind Spot
+-The central board guard [`scripts/ci/satellite_board_guard.py`](file:///f:/supremeai-open/scripts/ci/satellite_board_guard.py) was built following the **zero-credential** principle to allow external contributors and bots to verify compliance without secrets.
++The central board guard [`scripts/ci/satellite_board_guard.py`](../scripts/ci/satellite_board_guard.py) was built following the **zero-credential** principle to allow external contributors and bots to verify compliance without secrets.
+ 
+ However:
+ 1. **GitHub Security Cloaking:** GitHub REST API returns `HTTP 404` when an unauthenticated caller requests any private repository.
+diff --git a/vscode/extension/package.json b/vscode/extension/package.json
+index 699993f8..f38b2715 100644
+--- a/vscode/extension/package.json
++++ b/vscode/extension/package.json
+@@ -4,7 +4,7 @@
+   "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
+   "version": "0.1.0",
+   "publisher": "supremeai",
+-  "license": "Apache-2.0",
++  "license": "MIT",
+   "repository": {
+     "type": "git",
+     "url": "https://github.com/Supremeai-bd/supremeai-vscode.git"

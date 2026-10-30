@@ -1,0 +1,150 @@
+diff --git a/docs/reports/LOOP_PICK_BAIT_BOARD_2026-10-29.md b/docs/reports/LOOP_PICK_BAIT_BOARD_2026-10-29.md
+new file mode 100644
+index 00000000..837cb676
+--- /dev/null
++++ b/docs/reports/LOOP_PICK_BAIT_BOARD_2026-10-29.md
+@@ -0,0 +1,144 @@
++# Loop Pick-Bait: Non-Actionable Report/Receipt Issues Dominate the Claimable Board; Top Pick's Remedy Lane Is Admin
++
++- **Date:** 2026-10-29 cycle (audit window 2026-10-28 21:30–21:55Z)
++- **Reporter:** zai-agent-job-477786 (Z.ai GLM, external bridge lane, public mirror)
++- **Task ID:** `bridge-20261029-loop-pick-bait-reports`
++- **Type:** Report-only finding — **no code change**; remediation is owner/admin-lane (labels + one SSOT decision)
++- **Severity:** P2 (dispatcher efficiency / anti-stampede hygiene; no runtime or CI impact)
++- **Method:** the **landed loop's own bytes** (`scripts/agents/continuous_agent_loop.py`, main
++  content-sha `13c6363`, 1136 lines) imported directly and its `pick_next_issue()` executed
++  against the live board fetched via `bridge_work_queue` in the same window. Board archived
++  agent-side (`board_0530.json`).
++
++---
++
++## 1. Finding
++
++On the live open board (20 items), the loop's claimable surface — per its own
++`EXCLUDED_LABELS` SSOT (12 labels) — is **6 items, and 5 of the 6 (83%) are
++report/receipt artifacts with no actionable task**. The loop's top pick right now is a
++P1 finding whose own companion issue declares its remedy lane admin-blocked. A runner
++dispatched with `--pick-next` deterministically burns a full cadence slot (claim →
++30-min lease → investigation → discover no agent-executable lane → release/requeue) on
++work no agent in this lane can complete.
++
++This is the third observed instance class of the same root pattern: **issues are filed
++without any label the queue's exclusion SSOT understands** (bridge filings get
++`bridge:queued` automatically, but manually-filed reports get nothing, and blocker
++information lives in prose instead of labels).
++
++## 2. Evidence
++
++Board snapshot (2026-10-28 ~21:5xZ), claimable set per landed loop logic:
++
++| # | Labels | Tier | Why it is bait |
++|---|---|---|---|
++| **#2265** | `status:unclaimed, audit:finding, P1-major` | P1 | landing_truth_probe blind-spot finding — but companion **#2281** (same audit lane) states the solver lane is blocked: "*credential* bridge protected pattern - admin/priv-repo lane required". Remedy = admin lane; `admin-only`/`blocked-by-upstream` (both in the SSOT) were simply never applied. |
++| #2268 | `status:unclaimed` | unlabeled | Receipt confirming tower fix for #2202 (`mergedAt` live) — a report, not a task. |
++| #2271 | — | unlabeled | Sentry pass 20:49Z — report artifact. |
++| #2274 | `platform-guardian, sentry` | unlabeled | Sentry pass 20:51Z — report artifact. |
++| #2275 | — | unlabeled | Scout R58 (FALSE_REJECTION cohort) — body says "No writes to production, no code edits. One new issue (this filing)." Report. |
++| #2281 | — | unlabeled | Blocker *notice* for #2276 (admin lane) — meta-issue, not a task. |
++
++Simulation output (landed bytes, empty lease store):
++
++```
++loop pick_next_issue() on live board -> #2265
++claimable: 6/20
++  #2265 tier=p1        labels=status:unclaimed,audit:finding,P1-major
++  #2268 tier=unlabeled labels=status:unclaimed
++  #2271 tier=unlabeled labels=-
++  #2274 tier=unlabeled labels=platform-guardian,sentry
++  #2275 tier=unlabeled labels=-
++  #2281 tier=unlabeled labels=-
++pipeline pre-check CLAIMABLE (6-label array): 19 items
++```
++
++Corroborating observations from the same window:
++
++1. **Mid-cycle flip:** #2265 showed `status:claimed` in a board fetch at ~21:33Z and
++   `status:unclaimed` at ~21:5xZ (two `bridge_work_queue` calls, minutes apart) — claim
++   churn that instantly promoted an admin-lane finding to the loop's top pick.
++2. **Counterfactual top pick:** had #2265 carried its lane-blocker as a label
++   (`admin-only` or `blocked-by-upstream` — both already in the SSOT), the loop's
++   (tier, number) sort would deterministically select **#2268 — the #2202 receipt** —
++   i.e., the next bait. The problem is structural, not one bad label.
++3. **Pipeline pre-check mismatch (known, guard-7):** the pre-check's 6-label CLAIMABLE
++   array finds 19/20 "has work" — it dispatches the loop 19 times out of 20 while the
++   loop's own SSOT finds 6, of which 1 is actionable only by admin. The dispatcher-side
++   waste multiplies the bait problem.
++4. Same class already consumed real picks earlier: #2201 and #2237 (sentry passes,
++   `status:unclaimed`) sat claimable for hours before closing; #2179 (sentry pass,
++   `repo:api` — a label the SSOT does not exclude) likewise.
++
++## 3. Impact
++
++- Every drained-state pick (no P0–P3 claimable) deterministically selects a
++  receipt/report: the loop's sort guarantees it (tier-4, lowest number). Each such pick
++  burns a runner cadence slot, a claim, a lease, and an investigation — the exact waste
++  the Anti-Stampede Invariant (AGENTS.md Rule 5) exists to prevent.
++- The single currently-actionable-looking claimable (#2265, P1) is admin-lane per its
++  own companion issue — so **100% of the loop's claimable surface this window was
++  non-actionable for the agent lane**.
++- The state is self-perpetuating: sentry/scout/receipt filings arrive every cycle
++  (≥4/day), none carry exclusion labels, so the bait pool only grows.
++
++## 4. Why no agent-side patch accompanies this report
++
++1. **Relabeling the 6 live issues** — impossible from this lane: the 151-tool face has
++   `github_create_issue` (create only); there is no label-write tool.
++2. **Extending `EXCLUDED_LABELS` unilaterally (e.g., adding `report:receipt`)** —
++   rejected: the exclusion SSOT's semantics (which labels exist, who stamps them) are an
++   owner decision; the change also requires the pipeline CLAIMABLE array (admin,
++   `.github/` bridge-protected — hard-reject precedent from the 01:30Z cycle) and guard
++   coverage. A partial patch would itself create SSOT drift — the class guards 7/8
++   police.
++3. **Title-shape heuristic in `pick_next_issue` (skip `guard(platform):`/`scout(`/`receipt`
++   prefixes)** — rejected: a second, brittle exclusion SSOT built on title matching;
++   false-positive risk on genuine work with similar titles; contradicts the SSOT-first
++   doctrine the landed parity guards enforce.
++4. **Filing as plain issue** — rejected: the established auditable pattern for
++   report-only findings is a single `docs/reports/` file via Bridge Work Order
++   (#2243/#2245/#2247/#2252 precedent).
++
++## 5. Remediation options (owner/admin)
++
++- **Option A (zero new labels, immediate):** apply existing SSOT labels to the live
++  bait — `admin-only` (or `blocked-by-upstream`) on #2265 (its lane is admin per
++  #2281); for report artifacts, either close them after archiving (receipts are already
++  in `docs/reports/` on main) or apply `state:seq-hold`… (semantically imperfect — see B).
++- **Option B (one-label convention, durable):** adopt a dedicated exclusion label
++  (e.g., `report:receipt`) for report/receipt/scout issues, stamped at filing time by
++  the filing agent (bridge WO bodies already carry it in prose — make it a label);
++  add it to the loop's `EXCLUDED_LABELS` (agent-editable), the pipeline CLAIMABLE array
++  (admin one-liner — simultaneously cures the standing guard-7 warn), and the contract
++  doc (SSOT pointer auto-syncs — no doc edit needed thanks to landed #2239 check 8).
++- **Either way:** make it intake etiquette — a finding whose remedy lane is admin
++  (per companion evidence) must carry `admin-only`/`blocked-by-upstream` at filing
++  time, not in prose.
++
++## 6. Provenance
++
++- Loop module imported from landed main bytes (content-sha `13c6363`); board archived
++  agent-side (`board_0530.json`); pick simulation script retained
++  (`sim_pick_next_0530.py`). Tool face 151 (unchanged). CI main green through run #5284
++  (head `fecc0c1`).
++- Checks: `bridge_work_queue` × 3 (incl. the #2265 flip pair), `bridge_work_order`
++  #2268/#2275 body reads, `github_list_prs` face test (now returns the public mirror's
++  PR space with `mergedAt` — #1304/#2202 fixes verified live, logged in worklog),
++  link-rot audit of README/AGENTS/CONTRIBUTING/AGENT_PORTAL_SPEC (30/30 internal links
++  resolve — negative result, no filing needed).
++- Rollback: single docs-only file — revert = delete this one file from main.
++
++## 7. বাংলা সারসংক্ষেপ (TL;DR)
++
++লুপের নিজের কোড (landed main bytes) দিয়ে আজকের লাইভ বোর্ডে `pick_next_issue()`
++চালিয়ে দেখালাম: দাবিযোগ্য ৬টি আইটেমের **৫টিই (৮৩%) রিপোর্ট/রিসিট — কোনো কাজই নেই**;
++আর শীর্ষ পিক #2265 (P1) এমন ফাইন্ডিং যার সমাধান-লেন নিজের সঙ্গী ইস্যু #2281
++অনুযায়ী অ্যাডমিন-নির্ভর। অর্থাৎ এজেন্ট-লেনের জন্য বোর্ডের দাবিযোগ্য পৃষ্ঠ **১০০%
++অন্যদিকে অকেজো**। কারণ: ম্যানুয়ালি ফাইল করা রিপোর্টে কোনো exclusion লেবেলই লাগে না,
++আর লেন-ব্লকার তথ্য থাকে লেখায়, লেবেলে নয়। ফলে প্রতি ফাঁকা সাইকেলে রানার একটা
++রিসিট দাবি করে লিজ-চক্র নষ্ট করে। মালিকের জন্য দুটি পথ: (A) বর্তমান ৬টি ইস্যুতে
++SSOT-লেবেল সাধারণ প্রয়োগ; (B) একটি `report:receipt` কনভেনশন — লুপ + pipeline +
++(SSOT-pointer ডক স্বয়ংক্রিয়ভাবেই সিঙ্ক)। এজেন্ট-পার্শ্বে লেবেল-লেখার টুল নেই বলে
++এটি রিপোর্ট-অনলি।

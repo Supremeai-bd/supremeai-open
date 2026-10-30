@@ -1,0 +1,185 @@
+diff --git a/core/feedback_loop.py b/core/feedback_loop.py
+index aaf7061a..fe61bc53 100644
+--- a/core/feedback_loop.py
++++ b/core/feedback_loop.py
+@@ -7,6 +7,8 @@
+ - `record_error_report()`: Records details about an error encountered within the system, including its message and context.
+ - `metrics()`: Returns the current aggregated performance metrics, such as counts of edits, accepts, rejects, and errors.
+ - `events()`: Returns a list of all recorded feedback events, with an option to filter by event type.
++- `record_correction()`: Records a user correction event with free-form detail text.
++- `record_issue_report()`: Records a user-filed issue report (title + detail), distinct from system error reports.
+ - `handle_feedback()`: A central dispatcher that processes incoming generic feedback payloads and routes them to the appropriate internal recording methods.
+ 
+ Dependencies:
+@@ -30,6 +32,8 @@ def __init__(self) -> None:
+             "accepts": 0,
+             "rejects": 0,
+             "errors_reported": 0,
++            "corrections": 0,
++            "issue_reports": 0,
+         }
+ 
+     def record_edit(self, file_path: str, diff_summary: str) -> dict[str, Any]:
+@@ -73,6 +77,33 @@ def record_error_report(self, error: Exception, context: dict[str, Any]) -> dict
+         logger.debug("Recorded error report: %s", error)
+         return event
+ 
++    def record_correction(self, detail: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
++        event = {
++            "type": "correction",
++            "detail": detail,
++            "context": context or {},
++            "timestamp": time.time(),
++        }
++        self._events.append(event)
++        self._metrics["corrections"] = self._metrics.get("corrections", 0) + 1
++        logger.debug("Recorded correction event")
++        return event
++
++    def record_issue_report(
++        self, title: str, detail: str = "", context: dict[str, Any] | None = None
++    ) -> dict[str, Any]:
++        event = {
++            "type": "issue_report",
++            "title": title,
++            "detail": detail,
++            "context": context or {},
++            "timestamp": time.time(),
++        }
++        self._events.append(event)
++        self._metrics["issue_reports"] = self._metrics.get("issue_reports", 0) + 1
++        logger.debug("Recorded issue report: %s", title)
++        return event
++
+     def metrics(self) -> dict[str, Any]:
+         return dict(self._metrics)
+ 
+@@ -107,6 +138,28 @@ def handle_feedback(self, payload: dict[str, Any]) -> dict[str, Any]:
+             context = payload.get("context") or payload
+             event = self.record_error_report(error=error, context=context)
+             return {"stored": True, "event": event}
++        # User-feedback taxonomy (#1363 contract item 1): the route's
++        # learning-store mapper already declares thumbs_up/thumbs_down/
++        # correction, but the loop rejected them at the door (400), so
++        # user ratings and reports never persisted. Thumbs map onto the
++        # existing accepts/rejects aggregation; the wire type is kept in
++        # context for downstream triage. Unknown types still fail closed.
++        if feedback_type in ("thumbs_up", "thumbs_down"):
++            context = dict(payload.get("context") or payload)
++            context.setdefault("wire_type", feedback_type)
++            event = self.record_suggestion_feedback(
++                accepted=feedback_type == "thumbs_up", context=context
++            )
++            return {"stored": True, "event": event}
++        if feedback_type == "correction":
++            detail = str(payload.get("detail") or payload.get("message") or "")
++            event = self.record_correction(detail=detail, context=payload)
++            return {"stored": True, "event": event}
++        if feedback_type == "issue_report":
++            title = str(payload.get("title") or payload.get("message") or "Issue report")
++            detail = str(payload.get("detail") or "")
++            event = self.record_issue_report(title=title, detail=detail, context=payload)
++            return {"stored": True, "event": event}
+         return {
+             "stored": False,
+             "reason": f"Unsupported feedback type: {feedback_type}",
+diff --git a/tests/test_feedback_loop_user_types.py b/tests/test_feedback_loop_user_types.py
+new file mode 100644
+index 00000000..a8fb5b3b
+--- /dev/null
++++ b/tests/test_feedback_loop_user_types.py
+@@ -0,0 +1,94 @@
++#!/usr/bin/env python3
++"""FeedbackLoop user-feedback taxonomy (#1363 contract item 1).
++
++The route's learning-store mapper already declares thumbs_up/thumbs_down/
++correction, but handle_feedback rejected them at the door (400), so user
++ratings and reports never persisted (the feedback_loop table holds only
++its seed row). These tests pin the widened dispatcher: the four user
++types store and aggregate, legacy types stay untouched, and unknown
++types still fail closed.
++"""
++from __future__ import annotations
++
++import unittest
++
++from core.feedback_loop import FeedbackLoop
++
++
++class TestUserFeedbackTypes(unittest.TestCase):
++    def test_thumbs_up_stores_and_aggregates_accepts(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "thumbs_up", "session_id": "s1"})
++        self.assertTrue(out["stored"])
++        self.assertEqual(out["event"]["type"], "suggestion_feedback")
++        self.assertEqual(out["event"]["context"].get("wire_type"), "thumbs_up")
++        self.assertEqual(loop.metrics()["accepts"], 1)
++
++    def test_thumbs_down_stores_and_aggregates_rejects(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "thumbs_down", "message": "wrong answer"})
++        self.assertTrue(out["stored"])
++        self.assertEqual(loop.metrics()["rejects"], 1)
++        self.assertEqual(out["event"]["context"].get("wire_type"), "thumbs_down")
++        # Thumbs are user ratings, not system errors: no error-report cascade.
++        self.assertEqual(loop.metrics()["errors_reported"], 0)
++
++    def test_correction_stores_with_dedicated_metric(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "correction", "detail": "use metric units"})
++        self.assertTrue(out["stored"])
++        self.assertEqual(out["event"]["type"], "correction")
++        self.assertEqual(out["event"]["detail"], "use metric units")
++        self.assertEqual(loop.metrics()["corrections"], 1)
++
++    def test_correction_falls_back_to_message_field(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "correction", "message": "fix the header"})
++        self.assertTrue(out["stored"])
++        self.assertEqual(out["event"]["detail"], "fix the header")
++
++    def test_issue_report_stores_with_dedicated_metric(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback(
++            {"type": "issue_report", "title": "login broken", "detail": "405 on passkey"}
++        )
++        self.assertTrue(out["stored"])
++        self.assertEqual(out["event"]["type"], "issue_report")
++        self.assertEqual(out["event"]["title"], "login broken")
++        self.assertEqual(loop.metrics()["issue_reports"], 1)
++
++    def test_issue_report_defaults_title(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "issue_report", "detail": "something odd"})
++        self.assertTrue(out["stored"])
++        self.assertEqual(out["event"]["title"], "Issue report")
++
++    def test_legacy_types_unchanged(self):
++        loop = FeedbackLoop()
++        self.assertTrue(
++            loop.handle_feedback({"type": "edit", "file": "a.py", "diff": "x"})["stored"]
++        )
++        self.assertTrue(
++            loop.handle_feedback({"type": "suggestion_feedback", "accepted": True})["stored"]
++        )
++        self.assertTrue(loop.handle_feedback({"type": "error", "message": "boom"})["stored"])
++        m = loop.metrics()
++        self.assertEqual((m["edits"], m["accepts"], m["errors_reported"]), (1, 1, 1))
++
++    def test_unknown_type_still_fails_closed(self):
++        loop = FeedbackLoop()
++        out = loop.handle_feedback({"type": "haiku"})
++        self.assertFalse(out["stored"])
++        self.assertIn("Unsupported", out["reason"])
++
++    def test_events_filter_by_new_types(self):
++        loop = FeedbackLoop()
++        loop.handle_feedback({"type": "correction", "detail": "d1"})
++        loop.handle_feedback({"type": "issue_report", "title": "t1"})
++        self.assertEqual(len(loop.events("correction")), 1)
++        self.assertEqual(len(loop.events("issue_report")), 1)
++        self.assertEqual(len(loop.events()), 2)
++
++
++if __name__ == "__main__":
++    unittest.main()

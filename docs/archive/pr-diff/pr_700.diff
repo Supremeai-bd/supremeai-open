@@ -1,0 +1,501 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index ce614deb..d5391e11 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -30,6 +30,14 @@
+ from pathlib import Path
+ from typing import Any
+ 
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from role_trigger_matrix import (  # S09 (#489): deterministic role trigger matrix
++    DECISION_DISPATCH,
++    DispatchSignal,
++    dispatch,
++    dispatch_from_labels,
++)
++
+ # Configure UTF-8 for cross-platform stability
+ if hasattr(sys.stdout, "reconfigure"):
+     try:
+@@ -168,6 +176,14 @@ def _offline_requested(flag: bool) -> bool:
+     "browser-qa": "End-to-end integration & UI flow specialist",
+     "planner": "Architecture, contracts, and ADR specification specialist",
+     "watcher": "Telemetry, heartbeat health, and ecosystem drift specialist",
++    # S09 (#489): Deterministic Role Trigger Matrix — contracts live in
++    # scripts/agents/role_trigger_matrix.py (single source of truth).
++    "task-auditor": "Pre-landing compliance, boundary & ledger auditor",
++    "ecosystem-scout": "Global tech radar & strategic critic (read-only)",
++    "federation-auditor": "11-satellite parity & drift auditor (read-only)",
++    "human-eye": "PR styling & aesthetic director (issue-only)",
++    "rules-breaker": "Red-team chaos engineer (tests/adversarial/ only)",
++    "platform-guardian": "External AI provider sentry & failover toggle",
+ }
+ 
+ 
+@@ -293,21 +309,19 @@ def build_task_contract(
+ 
+ 
+ def classify_task_role(title: str, labels: list[str], body: str) -> str:
+-    """Intelligently map issue context to one of the 7 specialist roles."""
+-    combined = f"{title} {' '.join(labels)} {body}".lower()
+-    if any(k in combined for k in ["sec", "security", "secret", "gitleaks", "credential", "vulnerability"]):
+-        return "security-breaker"
+-    if any(k in combined for k in ["ci", "workflow", "action", "pipeline", "matrix"]):
+-        return "ci-fixer"
+-    if any(k in combined for k in ["audit", "review", "parity", "drift", "readiness"]):
+-        return "auditor"
+-    if any(k in combined for k in ["plan", "adr", "architecture", "rfc", "contract"]):
+-        return "planner"
+-    if any(k in combined for k in ["browser", "e2e", "ui", "frontend", "playwright"]):
+-        return "browser-qa"
+-    if any(k in combined for k in ["telemetry", "heartbeat", "health", "watcher", "monitor"]):
+-        return "watcher"
+-    return "coder"
++    """DEPRECATED free-text matcher (#489) — deterministic label-plane dispatch.
++
++    Issue #489 deprecates keyword matching in titles/bodies. ``title`` and
++    ``body`` are retained for call-site compatibility but are NEVER
++    inspected: dispatch is an exact-match lookup on the structured label
++    plane via scripts/agents/role_trigger_matrix.py (fail-closed). The
++    legacy contract of falling through to "coder" is preserved for unrouted
++    signals so existing call sites and prompts keep working unchanged.
++    """
++    decision = dispatch_from_labels(frozenset(labels))
++    if decision.decision != DECISION_DISPATCH or decision.role_id is None:
++        return "coder"
++    return decision.role_id
+ 
+ 
+ def build_agent_prompt(task: dict[str, Any], role: str, contract: dict[str, Any]) -> str:
+@@ -1335,6 +1349,34 @@ def print_cron_entry(minutes: int) -> None:
+     print(f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1")
+ 
+ 
++def dispatch_idle_audit(schedule_minutes: int | None = None) -> int:
++    """Empty-board role dispatch (S09 #489 + owner policy: issue 0 → auditor).
++
++    In scheduled mode the tick itself IS the canonical schedule event
++    ``event:schedule.ecosystem_scan``; the S09 matrix routes it to the
++    ecosystem-scout (auditor family, read-only weapons). Manual one-shot
++    runs carry no schedule event, so the fail-closed matrix DENYs — no role
++    is ever invented for an unroutable signal.
++
++    Returns 0 when a role was dispatched (healthy idle tick), 1 otherwise.
++    """
++    if not schedule_minutes or schedule_minutes <= 0:
++        log("⚠️", "[Role Dispatch] Board empty — a manual run carries no schedule event; "
++                  "matrix DENY (fail-closed). Auditor dispatch fires on --schedule ticks.")
++        return 1
++    decision = dispatch(DispatchSignal(
++        event_type="event:schedule.ecosystem_scan",
++        payload={"schedule_kind": "cron", "schedule_expr": cron_expression(schedule_minutes)},
++    ))
++    if decision.decision == DECISION_DISPATCH and decision.role_id:
++        log("🌱", f"[Role Dispatch] Board empty → {decision.role_id} (auditor family) dispatched "
++                  f"via S09 matrix (event:schedule.ecosystem_scan, schedule={cron_expression(schedule_minutes)}). "
++                  f"Run the ecosystem escort: health sweep + board sweep + scout report.")
++        return 0
++    log("⚠️", f"[Role Dispatch] Board empty; matrix DENY ({decision.reason}) — fail-closed.")
++    return 1
++
++
+ def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[str] | None = None) -> tuple[int, str | None]:
+     """One scheduled dispatch — reuses upstream's own single-cycle paths."""
+     if args.verify_only:
+@@ -1344,8 +1386,12 @@ def _run_one_scheduled_tick(args: argparse.Namespace, exclude: set[str] | list[s
+     if args.pick_next:
+         issue_id = pick_next_issue(exclude=exclude)
+         if not issue_id:
+-            log("❌", "No eligible open issues found on board this tick!")
+-            return 1, None
++            log("⚠️", "No eligible open issues found on board this tick!")
++            # Owner policy + S09: an empty board on a scheduled tick is the
++            # canonical ecosystem_scan event → ecosystem-scout (auditor).
++            # A dispatched escort is a HEALTHY idle tick, not a failure.
++            rc = dispatch_idle_audit(args.schedule)
++            return (0 if rc == 0 else 1), None
+         log("🎯", f"Auto-selected highest priority Issue #{issue_id}")
+     rc = run_cycle(args, issue_id)
+     return rc, issue_id
+@@ -1563,7 +1609,8 @@ def main() -> int:
+     if args.pick_next:
+         issue_to_run = pick_next_issue()
+         if not issue_to_run:
+-            log("❌", "No eligible open issues found on board!")
++            log("⚠️", "No eligible open issues found on board!")
++            dispatch_idle_audit(getattr(args, "schedule", None))
+             return 1
+         log("🎯", f"Auto-selected highest priority Issue #{issue_to_run}")
+ 
+diff --git a/scripts/agents/self_healing_reporter.py b/scripts/agents/self_healing_reporter.py
+index 07af07ad..da0a8b4d 100644
+--- a/scripts/agents/self_healing_reporter.py
++++ b/scripts/agents/self_healing_reporter.py
+@@ -65,7 +65,10 @@ def priority_for_failure(blocked_merge: bool) -> str:
+ 
+ 
+ def healing_labels(repo: str, priority: str) -> list[str]:
+-    return ["bridge:queued", priority, f"repo:{repo}", "area:ci"]
++    # `status:runway` (S09 LABEL_PRIORITY[0]) makes the continuous loop's
++    # deterministic dispatch route every healing issue to the ci-fixer role;
++    # a healing issue IS a jammed merge-runway item by definition.
++    return ["bridge:queued", priority, "status:runway", f"repo:{repo}", "area:ci"]
+ 
+ 
+ def dedup_fingerprint(repo: str, pr_number: int) -> str:
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 958adb5a..7c351ba7 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -22,6 +22,7 @@
+ import sys
+ import urllib.request
+ import urllib.error
++from datetime import datetime, timedelta, timezone
+ from typing import Any, Dict, List, Optional, Tuple
+ 
+ if hasattr(sys.stdout, "reconfigure"):
+@@ -122,12 +123,50 @@ def build_issue_labels(repo: str) -> List[str]:
+     return [
+         "status:unclaimed",
+         "P0-critical",
++        # S09 (#489) label-bridge: `status:runway` is LABEL_PRIORITY[0] in
++        # scripts/agents/role_trigger_matrix.py, so the continuous loop's
++        # deterministic dispatch routes every mirrored CI failure to the
++        # ci-fixer role (the old `handoff:coder` label matched no trigger and
++        # silently fell through to the coder fallback).
++        "status:runway",
+         "handoff:coder",
+         "area:ci",
+         f"repo:{short_repo}",
+     ]
+ 
+ 
++def find_mirror_in_items(items: List[Dict[str, Any]], repo: str, run_id: int | str) -> Optional[int]:
++    """Pure scan: find the OPEN issue carrying this run's mirror marker.
++
++    The /issues list endpoint mixes pull requests into its items; PRs can
++    never carry a mirror marker, and with ~700 mixed items per week the old
++    fixed 50-item window missed older mirrors (duplicate issues every poll).
++    """
++    needle = f"{repo}/actions/runs/{run_id}"
++    for item in items or []:
++        if item.get("pull_request"):
++            continue  # PRs share the issue numbering plane; never a mirror
++        if needle in (item.get("body") or ""):
++            return int(item["number"])
++    return None
++
++
++def is_fresh_run(created_at: str, now_utc: datetime, max_age_hours: int) -> bool:
++    """Pure: True only if the failed run is younger than max_age_hours.
++
++    `--poll` used to mirror the 3 most recent failed runs regardless of age,
++    so a week-old dead run resurfaced as a fresh P0 issue on every tick.
++    Fail-closed: missing or malformed timestamps are never 'fresh'.
++    """
++    if not created_at or max_age_hours < 0:
++        return False
++    try:
++        ts = datetime.strptime(created_at.replace("Z", "+0000"), "%Y-%m-%dT%H:%M:%S%z")
++    except ValueError:
++        return False
++    return (now_utc - ts) <= timedelta(hours=max_age_hours)
++
++
+ def get_default_token() -> str:
+     for var in ("OPEN_SYNC_PAT", "GH_TOKEN", "GITHUB_TOKEN"):
+         val = os.environ.get(var)
+@@ -177,20 +216,25 @@ def gh_api(
+ 
+ 
+ def check_existing_mirror(repo: str, run_id: int | str, token: Optional[str] = None) -> Optional[int]:
+-    """Check if an open issue on supremeai-open already carries this mirror run marker."""
+-    marker = build_mirror_marker(repo, run_id)
+-    # Search open issues for the marker
+-    code, res = gh_api(
+-        f"repos/{OPEN_REPO}/issues?state=all&per_page=50",
+-        token=token,
+-    )
+-    if code != 200 or not isinstance(res, list):
+-        return None
+-
+-    for issue in res:
+-        body = issue.get("body") or ""
+-        if marker in body:
+-            return int(issue["number"])
++    """Check if an OPEN issue on supremeai-open already carries this run's marker.
++
++    Paginates up to 3 pages of 100 OPEN items (PRs excluded inside
++    find_mirror_in_items). A CLOSED mirror means the failure was fixed - a
++    re-listed failed run after that is a genuinely new event and SHOULD get
++    a new issue, so only the open plane participates in deduplication.
++    """
++    for page in (1, 2, 3):
++        code, res = gh_api(
++            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
++            token=token,
++        )
++        if code != 200 or not isinstance(res, list):
++            return None
++        found = find_mirror_in_items(res, repo, run_id)
++        if found is not None:
++            return found
++        if len(res) < 100:
++            break
+     return None
+ 
+ 
+@@ -231,15 +275,27 @@ def mirror_failure(
+         return False
+ 
+ 
+-def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int = 3) -> int:
+-    """Audit all 12 federation repositories for recent failed runs."""
++def poll_federation_failures(
++    token: Optional[str] = None,
++    limit_per_repo: int = 3,
++    max_age_hours: int = 24,
++) -> Tuple[int, int]:
++    """Audit all 12 federation repositories for RECENT failed runs.
++
++    Returns (mirrored_count, failed_mirror_count) so callers can exit
++    non-zero when mirroring itself fails (the old poll always returned 0,
++    hiding its own breakage from any scheduler).
++    """
+     mirrored_count = 0
++    failed_count = 0
++    now_utc = datetime.now(timezone.utc)
+     print(f"🔍 [watchdog] Auditing {len(FEDERATION_REPOS)} federation repositories for CI failures...")
+ 
+     for repo in FEDERATION_REPOS:
+         code, resp = gh_api(f"repos/{repo}/actions/runs?status=failure&per_page={limit_per_repo}", token=token)
+         if code != 200 or not isinstance(resp, dict):
+             print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
++            failed_count += 1
+             continue
+ 
+         runs = resp.get("workflow_runs", [])
+@@ -257,6 +313,10 @@ def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int =
+             if not run_id:
+                 continue
+ 
++            if not is_fresh_run(r.get("created_at", ""), now_utc, max_age_hours):
++                print(f"  [skip-stale] {repo} run {run_id}: older than {max_age_hours}h - not a current incident")
++                continue
++
+             success = mirror_failure(
+                 repo=repo,
+                 workflow_name=workflow_name,
+@@ -268,8 +328,10 @@ def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int =
+             )
+             if success:
+                 mirrored_count += 1
++            else:
++                failed_count += 1
+ 
+-    return mirrored_count
++    return mirrored_count, failed_count
+ 
+ 
+ def self_test() -> int:
+@@ -314,10 +376,27 @@ def self_test() -> int:
+     labels = build_issue_labels("Supremeai-bd/supremeai-command")
+     assert "status:unclaimed" in labels
+     assert "P0-critical" in labels
++    assert "status:runway" in labels  # S09 label-bridge -> ci-fixer dispatch
+     assert "area:ci" in labels
+     assert "repo:command" in labels
+ 
+-    print("✅ [self-test] All 4 contract assertions passed!")
++    # 5. Dedup scan: PRs are excluded, real mirror issues are found
++    fake_items = [
++        {"number": 700, "pull_request": {"url": "x"}, "body": f"<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} -->"},
++        {"number": 701, "body": f"prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/{123456} --> suffix"},
++        {"number": 702, "body": "no marker"},
++    ]
++    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 123456) == 701
++    assert find_mirror_in_items(fake_items, "Supremeai-bd/supremeai-command", 111111) is None
++
++    # 6. Recency gate: fresh/stale/malformed boundaries
++    now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
++    assert is_fresh_run("2026-10-18T11:00:00Z", now, 24) is True
++    assert is_fresh_run("2026-10-16T11:00:00Z", now, 24) is False
++    assert is_fresh_run("", now, 24) is False
++    assert is_fresh_run("not-a-date", now, 24) is False
++
++    print("✅ [self-test] All 6 contract assertion groups passed!")
+     return 0
+ 
+ 
+@@ -325,6 +404,7 @@ def main() -> int:
+     parser = argparse.ArgumentParser(description="Federation-wide CI Failure Watchdog")
+     parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
+     parser.add_argument("--poll", action="store_true", help="Poll all 12 federation repositories for recent failures")
++    parser.add_argument("--max-age-hours", type=int, default=24, help="Ignore failed runs older than this many hours (poll mode)")
+     parser.add_argument("--payload", type=str, help="JSON payload string or path to JSON file for event-driven mirror")
+     parser.add_argument("--repo", type=str, help="Repository name (e.g. Supremeai-bd/supremeai-command)")
+     parser.add_argument("--workflow", type=str, default="CI Workflow", help="Workflow name")
+@@ -373,8 +453,8 @@ def main() -> int:
+         return 0 if success else 1
+ 
+     if args.poll:
+-        poll_federation_failures(token=token)
+-        return 0
++        _mirrored, _failed = poll_federation_failures(token=token, max_age_hours=args.max_age_hours)
++        return 1 if _failed else 0
+ 
+     parser.print_help()
+     return 1
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+index 583454c0..39e4bef9 100644
+--- a/tests/test_federation_ci_watchdog.py
++++ b/tests/test_federation_ci_watchdog.py
+@@ -19,6 +19,8 @@
+     build_issue_labels,
+     build_issue_title,
+     build_mirror_marker,
++    find_mirror_in_items,
++    is_fresh_run,
+     repo_short_name,
+ )
+ 
+@@ -60,10 +62,42 @@ def test_issue_title_and_labels(self):
+         labels = build_issue_labels("Supremeai-bd/supremeai-studio")
+         self.assertIn("status:unclaimed", labels)
+         self.assertIn("P0-critical", labels)
++        # S09 label-bridge: status:runway is LABEL_PRIORITY[0] -> ci-fixer.
++        # Without it the mirrored issue matched no matrix trigger and the
++        # loop silently fell through to coder — ci-fixer could never fire.
++        self.assertIn("status:runway", labels)
+         self.assertIn("handoff:coder", labels)
+         self.assertIn("area:ci", labels)
+         self.assertIn("repo:studio", labels)
+ 
++    def test_find_mirror_in_items_excludes_prs_and_finds_real_mirror(self):
++        marker = build_mirror_marker("Supremeai-bd/supremeai-api", 999)
++        items = [
++            # A PR carrying the marker text in its body must be IGNORED —
++            # /issues mixes PRs into the list; mirrors live only on issues.
++            {"number": 900, "pull_request": {"url": "x"}, "body": f"noise {marker}"},
++            {"number": 901, "body": f"contract\n{marker}\nend"},
++            {"number": 902, "body": "no marker here"},
++            {"number": 903, "body": None},
++        ]
++        self.assertEqual(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 999), 901)
++        self.assertIsNone(find_mirror_in_items(items, "Supremeai-bd/supremeai-api", 404))
++        self.assertIsNone(find_mirror_in_items([], "Supremeai-bd/supremeai-api", 999))
++        self.assertIsNone(find_mirror_in_items(None, "Supremeai-bd/supremeai-api", 999))
++
++    def test_is_fresh_run_recency_gate(self):
++        from datetime import datetime, timezone
++        now = datetime(2026, 10, 18, 12, 0, 0, tzinfo=timezone.utc)
++        # Fresh: inside the 24h window.
++        self.assertTrue(is_fresh_run("2026-10-18T11:59:59Z", now, 24))
++        self.assertTrue(is_fresh_run("2026-10-17T12:00:00Z", now, 24))  # boundary
++        # Stale: week-old dead runs must not resurface as fresh P0 incidents.
++        self.assertFalse(is_fresh_run("2026-10-11T12:00:00Z", now, 24))
++        # Fail-closed: missing/malformed timestamps are never fresh.
++        self.assertFalse(is_fresh_run("", now, 24))
++        self.assertFalse(is_fresh_run("garbage", now, 24))
++        self.assertFalse(is_fresh_run("2026-10-18T11:00:00Z", now, -1))
++
+     def test_issue_body_contract(self):
+         body = build_issue_body(
+             repo="Supremeai-bd/supremeai-skills",
+diff --git a/tests/test_self_healing_reporter.py b/tests/test_self_healing_reporter.py
+index ba30f40b..d26b9adb 100644
+--- a/tests/test_self_healing_reporter.py
++++ b/tests/test_self_healing_reporter.py
+@@ -1,14 +1,17 @@
+ #!/usr/bin/env python3
+ """
+-tests/test_self_healing_reporter.py — WO #488 verification battery.
++tests/test_self_healing_reporter.py — WO #488 verification battery (S09-resynced).
+ 
+-Tier 1: the loop's classify_task_role maps CI-failure issues to ci-fixer
+-        with 100% determinism; priority ladder ranks healing issues above
+-        backlog features.
++Tier 1: the loop's classify_task_role routes CI-failure issues to ci-fixer
++        with 100% determinism — now via the S09 label plane (status:runway),
++        exactly the label the watchdog mirror and the healing reporter emit;
++        priority ladder ranks healing issues above backlog features.
+ Tier 2: healing payload generation conforms to the WO issue contract and
+         dedup fingerprints are deterministic and collision-free.
+-Tier 3: zero regression — the loop module still imports and classifies
+-        non-CI work exactly as before (coder default, planner/auditor maps).
++Tier 3: zero regression — the loop module still imports and dispatches
++        deterministically: unrouted keyword-only signals fall back to coder
++        (fail-closed), trigger labels route exactly, substring labels never
++        trigger.
+ 
+ Runner: plain stdlib unittest, no pytest dependency.
+   python3 tests/test_self_healing_reporter.py
+@@ -52,14 +55,17 @@ def _load_loop_module():
+ 
+ 
+ CI_FAILURE_FIXTURES = [
++    # Mirrored/healing CI-failure issues carry `status:runway` — the S09
++    # LABEL_PRIORITY[0] trigger that deterministically routes to ci-fixer
++    # (watchdog mirror + self-healing reporter both emit it now).
+     ("fix(Supremeai-bd/supremeai-open): [ci-failure] Heal PR #480 checks (Stale-Base Guard)",
+-     ["bridge:queued", "P0-critical", "repo:Supremeai-bd/supremeai-open", "area:ci"]),
++     ["bridge:queued", "P0-critical", "status:runway", "repo:Supremeai-bd/supremeai-open", "area:ci"]),
+     ("fix(Supremeai-bd/supremeai-infra): [ci-failure] Heal PR #12 checks (unit)",
+-     ["bridge:queued", "P1-high", "repo:Supremeai-bd/supremeai-infra", "area:ci"]),
++     ["bridge:queued", "P1-high", "status:runway", "repo:Supremeai-bd/supremeai-infra", "area:ci"]),
+     ("fix(repo): [ci-failure] Heal PR #7 checks (matrix, lint)",
+-     ["bridge:queued", "P0-critical", "repo:repo", "area:ci"]),
+-    ("ci pipeline red on main", ["area:ci"]),
+-    ("workflow action failure blocks merge", ["bug", "area:ci"]),
++     ["bridge:queued", "P0-critical", "status:runway", "repo:repo", "area:ci"]),
++    ("ci pipeline red on main", ["status:runway", "area:ci"]),
++    ("workflow action failure blocks merge", ["status:runway", "bug", "area:ci"]),
+ ]
+ 
+ 
+@@ -109,7 +115,7 @@ def test_payload_contains_branch_commit_log_and_labels(self):
+             "log_snippet": "error: Knowledge Sharing Guard: missing summary\n",
+         })
+         self.assertEqual(issue["labels"],
+-                         ["bridge:queued", "P1-high",
++                         ["bridge:queued", "P1-high", "status:runway",
+                           "repo:Supremeai-bd/supremeai-open", "area:ci"])
+         for needle in ("feat/dashboard-r2", "deadbee", "Knowledge Sharing Guard",
+                        "healing-fp:", "landing.yml auto-merges"):
+@@ -135,17 +141,32 @@ def test_classifier_compat_predicate(self):
+ 
+ 
+ class Tier3ZeroRegression(unittest.TestCase):
+-    def test_loop_module_healthy_and_defaults_intact(self):
++    def test_loop_module_healthy_and_dispatch_intact(self):
+         self.assertTrue(callable(LOOP.classify_task_role))
++        # Fail-closed fallback: keyword-only titles/labels can no longer
++        # invent a role (#489 deprecates keyword matching) — they route to
++        # the preserved coder default, deterministically.
+         self.assertEqual(LOOP.classify_task_role(
+             "feat: smart context selector", ["enhancement", "P1-high"], "body"),
+             "coder")
+         self.assertEqual(LOOP.classify_task_role(
+             "audit readiness report", ["documentation"], "parity drift"),
+-            "auditor")
++            "coder")
+         self.assertEqual(LOOP.classify_task_role(
+             "plan architecture rfc", ["documentation"], "adr contract"),
+-            "planner")
++            "coder")
++
++    def test_label_plane_routes_exactly_and_never_by_substring(self):
++        # Positive trigger-label routes (S09 LABEL_PRIORITY).
++        self.assertEqual(LOOP.classify_task_role("x", ["status:runway"], ""), "ci-fixer")
++        self.assertEqual(LOOP.classify_task_role("x", ["gate:pre-landing"], ""), "task-auditor")
++        self.assertEqual(LOOP.classify_task_role("x", ["status:claimed"], ""), "coder")
++        # Substring-immune: a label merely CONTAINING a trigger never fires.
++        self.assertEqual(LOOP.classify_task_role("x", ["xstatus:runwayx"], ""), "coder")
++        # Priority: runway outranks claimed when both are present.
++        self.assertEqual(
++            LOOP.classify_task_role("x", ["status:claimed", "status:runway"], ""),
++            "ci-fixer")
+ 
+     def test_reporter_module_import_is_pure(self):
+         self.assertTrue(hasattr(shr, "build_healing_issue"))

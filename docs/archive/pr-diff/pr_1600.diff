@@ -1,0 +1,412 @@
+diff --git a/scripts/agents/instruction_builder.py b/scripts/agents/instruction_builder.py
+index a5faa04a..301b6d06 100644
+--- a/scripts/agents/instruction_builder.py
++++ b/scripts/agents/instruction_builder.py
+@@ -1,36 +1,40 @@
+ #!/usr/bin/env python3
+-"""Instruction Builder — Step-intelligence.1 (#104, roadmap parent #113/#44).
++"""Instruction Builder — deterministic 5-section role instruction (issue #104).
+ 
+-৫-সেকশনের standard instruction contract (MODE/RULES/ACTIONS/FORBIDDEN/VALIDATION) —
+-`role_registry.get_role_contract()` + AGENT_RULES.md parsed policy থেকে deterministic
+-composition। LLM বাধ্যতামূলক নয় — শুধু pure function + template composition
+-(zero-cost doctrine অক্ষত)।
++মানসিক চুক্তি: MODE/RULES/ACTIONS/FORBIDDEN/VALIDATION — লিভিং SSOT
++`role_trigger_matrix.ROLE_CONTRACTS` থেকে deterministic composition। LLM বাধ্যতামূলক
++নয় — শুধু pure function + template composition (zero-cost doctrine অক্ষত)।
+ 
+-# বাংলা মন্তব্য (#104): সমস্যা ছিল — continuous_agent_loop.py-তে role-rules parsing
+-# ad-hocভাবে ছড়ানো (_parse_agent_rules_md, format_agent_rules_block, role_registry
+-# build_dynamic_prompt — প্রত্যেকটা আলাদা গঠন)। এই মডিউল একটাই standard আকৃতি দেয় —
+-# প্রতি run-এ একই contract একই গঠনে তৈরি হয় (deterministic)।
++# পুনর্নির্মাণ-নোট (2026-10-28, অডিট F7-r2 — Superior Replacement, Invariant 3):
++# মূল মডিউলটি #1526 loop rewrite-এ মুছে-ফেলা contract surface-এর ওপর দাঁড়িয়ে ছিল —
++# primary path `continuous_agent_loop._load_agent_rules` (যে প্রতীক কোনো revision-এই
++# ছিল না — F7) এবং fallback `role_registry.get_role_contract` (main-এ অস্তিত্বহীন)।
++# ফলে প্রতিটি কলে অনিবার্য ImportError — zero importer, zero test, dead-on-arrival
++# fossil। ডকুমেন্টেশনও মিথ্যা বলত (AGENT_RULES.md §3 RULES-এর উৎস — ফাইলটি নেই)।
++# এই সংস্করণ phantom প্রতীকের বদলে জীবন্ত SSOT-কে সরাসরি পড়ে — কোনো নতুন SSOT নয়
++# (P2/P3 সম্মত), শুধু read-only VIEW।
+ 
+ Read-only VIEW — নতুন SSOT নয় (P2/P3 সম্মান করে):
+-  MODE       → role_registry.AUTHORITY_TIERS (contract["authority"])
+-  RULES      → AGENT_RULES.md §3 parsed applicable bullets — লুপের প্রতিষ্ঠিত
+-               `_load_agent_rules` পুনর্ব্যবহার (AGENT_RULES §14: existing tooling
+-               first), fallback: contract["constraints"] লাইন-শ্রেণিবিভাগ
+-  ACTIONS    → credential_manager.TASK_SCOPED_ENV_KEYS + BOT_SLOT_CREDENTIALS scopes
+-               (contract["allowed_env_keys"] / contract["gh_scopes"])
+-  FORBIDDEN  → parsed prohibited bullets (একই উৎস)
+-  VALIDATION → role_registry.VERIFICATION_REQUIREMENTS + canonical 3 tiers
+-
+-সিকোয়েন্স নোট (#104 SEQUENCE NOTE): continuous_agent_loop.py-তে wiring seq:5 —
+-এই PR শুধু module + tests। তাই loop-import এখানে **lazy** (ফাংশন-বডির ভেতরে):
+-seq:5-এ যখন loop module-level-এ এই builder-কে import করবে তখন circular import
+-যেন না হয় — lazy import সেই চক্র সম্ভব করেই না।
++  MODE       → RoleContract.paradigm + role_id/name (ট্রিগার-ম্যাট্রিক্সের নিজ ক্ষেত্র)
++  RULES      → RoleContract.must_follow (canonical bullets — বাংলা-ইংরেজি জোড়া)
++  ACTIONS    → RoleContract.weapons (SSOT dispatch weapons — exact tool names)
++  FORBIDDEN  → RoleContract.must_not + RoleContract.forbidden_operations
++  VALIDATION → canonical 3-tier ladder (VERIFICATION_TIERS) + Verification Contract
++
++# সিকোয়েন্স-নোট: এই মডিউল loop-কে import করে না — circular import অসম্ভব নয়,
++# অপ্রয়োজনীয়। Canonical-merge নাম (যেমন cadence-এর 'auditor') এখানে সমাধান হয় না —
++# caller-কে ROLE_IDS-concrete role পাঠাতে হবে (fail-closed ValueError, নীরব অনুমান নয়)।
+ """
+ 
+ from __future__ import annotations
+ 
+ from typing import Any
+ 
++try:  # flat context (python scripts/agents/… চালানো হলে / tests-এর sys.path.insert)
++    from role_trigger_matrix import ROLE_CONTRACTS
++except ImportError:  # package context (scripts.agents.… হিসেবে import হলে)
++    from scripts.agents.role_trigger_matrix import ROLE_CONTRACTS
++
+ # canonical 3-tier verification ladder — issue #104 §৪-এর Verification Contract-এর
+ # সাথে সাংগত্যপূর্ণ জেনেরিক লেবেল (প্রতিটি tier-এর বিশদ রোল-ভেদে contract["verification"]-এ)
+ VALIDATION_TIERS: tuple[str, ...] = (
+@@ -39,99 +43,72 @@
+     "tier-3: pytest suite green",
+ )
+ 
+-# বাংলা মন্তব্য: লুপের _PROHIBITED_MARKERS-এর আয়না-কপি — শুধু fallback পথে ব্যবহৃত
+-# (loop-import ব্যর্থ হলে); প্রাইমারি পথে শ্রেণিবিভাগ লুপের নিজ ফাংশনেই হয়।
+-_FALLBACK_PROHIBITED_MARKERS = ("do not", "must not", "never", "নিষিদ্ধ")
+-
+ 
+-def _rules_from_contract_constraints(
+-    constraints: list[str],
+-) -> tuple[list[str], list[str]]:
+-    """Fallback: contract["constraints"] লাইন থেকে (applicable, prohibited) শ্রেণিবিভাগ।
++def load_role_rules(role: str) -> tuple[tuple[str, ...], tuple[str, ...], str]:
++    """জীবন্ত SSOT থেকে (applicable, prohibited, source) — fail-closed।
+ 
+-    # বাংলা মন্তব্য: লুপের sentence-split semantics-এর হালকা প্রতিলিপি — প্যারাগ্রাফ
+-    # লাইনকে বাক্যে ভেঙে নেতিবাচক-মার্কারযুক্ত বাক্য prohibited। এটি স্বতন্ত্র পার্সার
+-    # নয় — শুধু graceful degradation (loop import অনুপস্থিতি)।
+-    """
+-    import re
+-
+-    split_re = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"'`\u0980-\u09FF])")
+-    applicable: list[str] = []
+-    prohibited: list[str] = []
+-    for para in constraints or []:
+-        for sent in split_re.split(para):
+-            sent = sent.strip()
+-            if not sent:
+-                continue
+-            applicable.append(sent)
+-            low = sent.lower()
+-            if any(mk in low for mk in _FALLBACK_PROHIBITED_MARKERS):
+-                prohibited.append(sent)
+-    return applicable, prohibited
+-
+-
+-def _load_rules(role: str) -> tuple[list[str], list[str], str]:
+-    """রোল-নিয়ম লোড — প্রতিষ্ঠিত একক-উৎস পার্সার, lazy import-এ।
+-
+-    # বাংলা মন্তব্য: continuous_agent_loop._load_agent_rules = AGENT_RULES.md
+-    # (একক-উৎস) → rules.yml fallback চেইন — নিজে দ্বিতীয় পার্সার লেখা P2-লঙ্ঘন
+-    # হতো। Circular-import-এড়াতে import ফাংশন-বডির ভেতরে; ব্যর্থ হলে
+-    # role_registry-র constraints দিয়ে graceful fallback (U2: চুপচাপ শূন্য নয়,
+-    # উৎস-লেবেলসহ)।
++    # বাংলা মন্তব্য: ROLE_CONTRACTS-এ না থাকা role মানে নীরব-fallback নয়, ValueError —
++    # U2: চুপচাপ শূন্য নয়। ফেরত-লেবেলটি সত্যিকারের উৎস বহন করে (আর কাল্পনিক
++    # 'continuous_agent_loop._load_agent_rules' নয় — F7-এর শিক্ষা)।
+     """
+     try:
+-        from scripts.agents.continuous_agent_loop import _load_agent_rules
++        contract = ROLE_CONTRACTS[role]
++    except KeyError:
++        raise ValueError(
++            f"unknown dispatch role: {role!r}; known roles: {sorted(ROLE_CONTRACTS)}"
++        ) from None
++    applicable: tuple[str, ...] = tuple(contract.must_follow)
++    prohibited: tuple[str, ...] = tuple(contract.must_not) + tuple(
++        contract.forbidden_operations
++    )
++    return applicable, prohibited, "role_trigger_matrix.ROLE_CONTRACTS"
+ 
+-        applicable, prohibited = _load_agent_rules(role)
+-        if applicable or prohibited:
+-            return applicable, prohibited, "continuous_agent_loop._load_agent_rules"
+-    except Exception:  # noqa: BLE001 — graceful degradation, কখনো বিল্ডার ভাঙবে না
+-        pass
+-    from scripts.agents.role_registry import get_role_contract
+ 
+-    applicable, prohibited = _rules_from_contract_constraints(
+-        get_role_contract(role).get("constraints") or []
+-    )
+-    return applicable, prohibited, "role_registry.constraints-fallback"
++def _load_rules(role: str) -> tuple[tuple[str, ...], tuple[str, ...], str]:
++    """মূল call-shape-এর সামঞ্জস্য-এলিয়াস (issue #104 পৃষ্ঠ) — load_role_rules দেখুন।"""
++    return load_role_rules(role)
+ 
+ 
+ def build_instruction(
+     role: str,
+     *,
+-    rules: tuple[list[str], list[str]] | None = None,
+-    contract: dict[str, Any] | None = None,
++    rules: tuple[tuple[str, ...], tuple[str, ...]] | None = None,
++    contract: Any | None = None,
+ ) -> dict[str, Any]:
+     """৫-সেকশনের standard instruction block (dict) — pure function।
+ 
+     # বাংলা মন্তব্য: rules/contract inject করা যায় (testability — ফাইল-নিরপেক্ষ);
+-    # না দিলে সব SSOT থেকে লাইভ কম্পোজ। আউটপুট গঠন সর্বদা এক — এটাই #104-এর
+-    # "প্রতি run-এ একই contract একই গঠনে" চুক্তি।
++    # না দিলে সব লিভিং SSOT (ROLE_CONTRACTS) থেকে লাইভ কম্পোজ। আউটপুট গঠন সর্বদা
++    # এক — এটাই #104-এর "প্রতি run-এ একই contract একই গঠনে" চুক্তি।
+     """
+-    from scripts.agents.role_registry import get_role_contract
++    try:
++        c = contract if contract is not None else ROLE_CONTRACTS[role]
++    except KeyError:
++        raise ValueError(
++            f"unknown dispatch role: {role!r}; known roles: {sorted(ROLE_CONTRACTS)}"
++        ) from None
+ 
+-    c = contract if contract is not None else get_role_contract(role)
++    role_id = getattr(c, "role_id", role)
+ 
+     if rules is not None:
+-        applicable, prohibited = list(rules[0]), list(rules[1])
++        applicable, prohibited = tuple(rules[0]), tuple(rules[1])
+         rules_source = "injected"
+     else:
+-        applicable, prohibited, rules_source = _load_rules(c.get("role", role))
++        applicable, prohibited, rules_source = load_role_rules(role_id)
+ 
+     return {
+         "mode": {
+-            "role": c.get("role", role),
+-            "authority": c.get("authority", "governed_autonomous"),
++            "role": role_id,
++            "name": getattr(c, "name", role_id),
++            "paradigm": getattr(c, "paradigm", "unknown"),
+         },
+-        "rules": applicable,
++        "rules": list(applicable),
+         "actions": {
+-            "allowed_env_keys": list(c.get("allowed_env_keys") or []),
+-            "gh_scopes": list(c.get("gh_scopes") or []),
++            "weapons": sorted(getattr(c, "weapons", ()) or ()),
+         },
+-        "forbidden": prohibited,
++        "forbidden": list(prohibited),
+         "validation": {
+-            "requirement": c.get(
+-                "verification", "follow issue Verification Contract"
+-            ),
++            "requirement": "follow issue Verification Contract",
+             "tiers": list(VALIDATION_TIERS),
+         },
+         "source": {
+@@ -154,7 +131,11 @@ def render_instruction(block: dict[str, Any]) -> str:
+ 
+     lines = [
+         "=== SUPREMEAI INSTRUCTION ENVELOPE (deterministic, zero-cost) ===",
+-        f"MODE: role={mode.get('role', 'unknown')} | authority={mode.get('authority', 'unknown')}",
++        (
++            f"MODE: role={mode.get('role', 'unknown')}"
++            f" | paradigm={mode.get('paradigm', 'unknown')}"
++            f" | name={mode.get('name', 'unknown')}"
++        ),
+     ]
+ 
+     lines.append("RULES:")
+@@ -165,10 +146,10 @@ def render_instruction(block: dict[str, Any]) -> str:
+         lines.append("  - none declared")
+ 
+     lines.append("ACTIONS:")
+-    env_keys = actions.get("allowed_env_keys") or []
+-    scopes = actions.get("gh_scopes") or []
+-    lines.append(f"  - env_keys: {', '.join(env_keys) if env_keys else 'none'}")
+-    lines.append(f"  - gh_scopes: {', '.join(scopes) if scopes else 'none'}")
++    weapons = actions.get("weapons") or []
++    lines.append(
++        f"  - weapons: {', '.join(weapons) if weapons else 'none'}"
++    )
+ 
+     lines.append("FORBIDDEN:")
+     forbidden = block.get("forbidden") or []
+@@ -178,21 +159,20 @@ def render_instruction(block: dict[str, Any]) -> str:
+         lines.append("  - none declared")
+ 
+     lines.append("VALIDATION:")
+-    lines.append(f"  - requirement: {validation.get('requirement', 'follow issue Verification Contract')}")
++    lines.append(
++        f"  - requirement: {validation.get('requirement', 'follow issue Verification Contract')}"
++    )
+     for tier in validation.get("tiers") or VALIDATION_TIERS:
+         lines.append(f"  - {tier}")
+ 
+     source = block.get("source", {})
+-    lines.append(f"--- source: {source.get('rules_source', 'unknown')} | deterministic: {source.get('deterministic', True)}")
++    lines.append(
++        f"--- source: {source.get('rules_source', 'unknown')}"
++        f" | deterministic: {source.get('deterministic', True)}"
++    )
+     return "\n".join(lines)
+ 
+ 
+ def build_and_render(role: str) -> str:
+-    """সুবিধা-একক: লাইভ SSOT থেকে বিল্ড + রেন্ডার (loop seq:5 wiring-এর এন্ট্রিপয়েন্ট)।"""
++    """সুবিধা-একক: লিভিং SSOT থেকে বিল্ড + রেন্ডার।"""
+     return render_instruction(build_instruction(role))
+-
+-
+-if __name__ == "__main__":
+-    import sys
+-
+-    print(build_and_render(sys.argv[1] if len(sys.argv) > 1 else "coder"))
+diff --git a/scripts/ci/test_parity_baseline.json b/scripts/ci/test_parity_baseline.json
+index 6be6f889..ee559537 100644
+--- a/scripts/ci/test_parity_baseline.json
++++ b/scripts/ci/test_parity_baseline.json
+@@ -27,7 +27,6 @@
+     "scripts/agents/gh_label_ensure.py",
+     "scripts/agents/group_taxonomy.py",
+     "scripts/agents/heartbeat_ping.py",
+-    "scripts/agents/instruction_builder.py",
+     "scripts/agents/inventory_lint.py",
+     "scripts/agents/issue_fingerprint.py",
+     "scripts/agents/issue_revalidator.py",
+diff --git a/tests/test_instruction_builder.py b/tests/test_instruction_builder.py
+new file mode 100644
+index 00000000..571b66bf
+--- /dev/null
++++ b/tests/test_instruction_builder.py
+@@ -0,0 +1,131 @@
++#!/usr/bin/env python3
++"""Offline tests for the rebuilt instruction_builder (audit F7-r2 slice).
++
++The original module crashed with unconditional ImportError on every call
++(phantom symbols `continuous_agent_loop._load_agent_rules` and
++`role_registry.get_role_contract`) and had zero tests — this file locks the
++rebuilt living-SSOT contract: honest source label, deterministic envelope,
++fail-closed unknown-role handling, and no phantom-symbol regressions.
++"""
++
++from __future__ import annotations
++
++import sys
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import instruction_builder as ib
++
++
++class TestLoadRoleRules(unittest.TestCase):
++    def test_returns_real_ssot_source_label(self):
++        applicable, prohibited, source = ib.load_role_rules("coder")
++        self.assertEqual(source, "role_trigger_matrix.ROLE_CONTRACTS")
++        self.assertTrue(applicable, "must_follow bullets must surface as applicable")
++        self.assertTrue(prohibited, "must_not + forbidden_operations must surface")
++
++    def test_every_registered_role_loads(self):
++        for role_id in sorted(ib.ROLE_CONTRACTS):
++            applicable, prohibited, source = ib.load_role_rules(role_id)
++            self.assertTrue(len(applicable) >= 0 and source == "role_trigger_matrix.ROLE_CONTRACTS")
++
++    def test_unknown_role_fails_closed(self):
++        with self.assertRaises(ValueError):
++            ib.load_role_rules("no-such-role")
++
++    def test_merged_canonical_name_is_not_silently_resolved(self):
++        # cadence canonical name 'auditor' is NOT a ROLE_IDS-concrete contract;
++        # the module must fail closed instead of silently guessing a source.
++        with self.assertRaises(ValueError):
++            ib.load_role_rules("auditor")
++
++
++class TestBuildInstruction(unittest.TestCase):
++    def test_five_section_shape_deterministic(self):
++        block = ib.build_instruction("coder")
++        self.assertEqual(
++            sorted(block.keys()),
++            ["actions", "forbidden", "mode", "rules", "source", "validation"],
++        )
++        self.assertTrue(block["source"]["deterministic"])
++        self.assertFalse(block["source"]["llm_required"])
++        # determinism: two builds are byte-identical
++        self.assertEqual(ib.build_instruction("coder"), block)
++
++    def test_injected_rules_override(self):
++        block = ib.build_instruction(
++            "coder", rules=(("custom rule",), ("custom ban",))
++        )
++        self.assertEqual(block["rules"], ["custom rule"])
++        self.assertEqual(block["forbidden"], ["custom ban"])
++        self.assertEqual(block["source"]["rules_source"], "injected")
++
++    def test_validation_tiers_ladder(self):
++        block = ib.build_instruction("coder")
++        self.assertEqual(len(block["validation"]["tiers"]), 3)
++        self.assertEqual(tuple(block["validation"]["tiers"]), ib.VALIDATION_TIERS)
++
++    def test_weapons_surfaces_sorted(self):
++        block = ib.build_instruction("coder")
++        weapons = block["actions"]["weapons"]
++        self.assertEqual(weapons, sorted(weapons))
++        self.assertTrue(weapons, "coder carries SSOT dispatch weapons")
++
++
++class TestRenderInstruction(unittest.TestCase):
++    def test_envelope_sections_present(self):
++        text = ib.build_and_render("coder")
++        for section in ("MODE:", "RULES:", "ACTIONS:", "FORBIDDEN:", "VALIDATION:"):
++            self.assertIn(section, text)
++
++    def test_empty_sections_render_explicit_marker(self):
++        block = ib.build_instruction("coder", rules=((), ()))
++        text = ib.render_instruction(block)
++        self.assertIn("RULES:\n  - none declared", text)
++        self.assertIn("FORBIDDEN:\n  - none declared", text)
++
++
++class TestNoPhantomRegression(unittest.TestCase):
++    """AST-based guard: phantom symbols must never resurface as LIVE code.
++
++    Docstring/comment mentions of the dead names are allowed (history
++    documentation); Import/Name/Attribute usage is not — that is what made
++    the original module dead-on-arrival (audit F7-r2).
++    """
++
++    @staticmethod
++    def _live_code_facts(source: str) -> tuple[set, set]:
++        import ast
++
++        tree = ast.parse(source)
++        imported_modules: set[str] = set()
++        used_names: set[str] = set()
++        for node in ast.walk(tree):
++            if isinstance(node, ast.Import):
++                imported_modules.update(a.name for a in node.names)
++            elif isinstance(node, ast.ImportFrom):
++                imported_modules.add(node.module or "")
++                used_names.update(a.name for a in node.names)
++            elif isinstance(node, (ast.Name, ast.Attribute)):
++                used_names.add(getattr(node, "id", getattr(node, "attr", "")))
++        return imported_modules, used_names
++
++    def test_no_phantom_symbol_is_live_code(self):
++        source = Path(ib.__file__).read_text(encoding="utf-8")
++        imported, used = self._live_code_facts(source)
++        self.assertNotIn("_load_agent_rules", used)
++        self.assertNotIn("get_role_contract", used)
++
++    def test_no_loop_or_stale_registry_import_coupling(self):
++        source = Path(ib.__file__).read_text(encoding="utf-8")
++        imported, _ = self._live_code_facts(source)
++        for banned in ("continuous_agent_loop", "role_registry"):
++            hits = {m for m in imported if m and banned in m}
++            self.assertFalse(hits, f"stale import coupling resurfaced: {hits}")
++
++
++if __name__ == "__main__":
++    unittest.main()

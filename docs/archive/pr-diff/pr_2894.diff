@@ -1,0 +1,354 @@
+diff --git a/core/agents/base_pydantic_agent.py b/core/agents/base_pydantic_agent.py
+index abe48d4b..fcae5bd6 100644
+--- a/core/agents/base_pydantic_agent.py
++++ b/core/agents/base_pydantic_agent.py
+@@ -4,7 +4,7 @@
+ from pydantic_ai import Agent
+ 
+ from core.llm.llm_gateway import get_llm_gateway
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.mcp_client import MCPRegistryClient
+ 
+ 
+diff --git a/core/agents/code_vulnerability_scanner_agent.py b/core/agents/code_vulnerability_scanner_agent.py
+index 720fd47b..d43a8d84 100644
+--- a/core/agents/code_vulnerability_scanner_agent.py
++++ b/core/agents/code_vulnerability_scanner_agent.py
+@@ -23,7 +23,7 @@
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ VULNERABILITY_CACHE_TTL = 1800  # 30 minutes
+diff --git a/core/agents/data_trend_anomaly_agent.py b/core/agents/data_trend_anomaly_agent.py
+index f8388431..75a00873 100644
+--- a/core/agents/data_trend_anomaly_agent.py
++++ b/core/agents/data_trend_anomaly_agent.py
+@@ -33,7 +33,7 @@
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.tenant_db import TenantAwareFirestore
+ 
+ T = TypeVar("T", bound="DataTrendAnomalyAgent")
+diff --git a/core/agents/devops/llm_cost_optimizer.py b/core/agents/devops/llm_cost_optimizer.py
+index ca7ca6ec..06c83881 100644
+--- a/core/agents/devops/llm_cost_optimizer.py
++++ b/core/agents/devops/llm_cost_optimizer.py
+@@ -21,7 +21,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: উইন্ডোজ টার্মিনালে ইউনিকোড/ইমোজি আউটপুট সাপোর্ট করার জন্য এনকোডিং কনফিগার করা হলো।
+ if sys.platform == "win32":
+diff --git a/core/agents/devops/multicloud_quota_monitor.py b/core/agents/devops/multicloud_quota_monitor.py
+index 7b1d819e..3ba23816 100644
+--- a/core/agents/devops/multicloud_quota_monitor.py
++++ b/core/agents/devops/multicloud_quota_monitor.py
+@@ -24,7 +24,7 @@
+ 
+ import httpx as requests
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # বাংলা মন্তব্য: উইন্ডোজ টার্মিনালে ইউনিকোড/ইমোজি আউটপুট সাপোর্ট করার জন্য এনকোডিং কনফিগার করা হলো।
+ if sys.platform == "win32":
+diff --git a/core/agents/domain/bangla_nlp_agent.py b/core/agents/domain/bangla_nlp_agent.py
+index b8e60816..5c5f2f5f 100644
+--- a/core/agents/domain/bangla_nlp_agent.py
++++ b/core/agents/domain/bangla_nlp_agent.py
+@@ -15,7 +15,7 @@
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ BANGLA_CACHE_TTL = 3600
+ 
+diff --git a/core/agents/evolution_agents/multi_agent_collaboration_agent.py b/core/agents/evolution_agents/multi_agent_collaboration_agent.py
+index f68dc2b7..90b21013 100644
+--- a/core/agents/evolution_agents/multi_agent_collaboration_agent.py
++++ b/core/agents/evolution_agents/multi_agent_collaboration_agent.py
+@@ -17,7 +17,7 @@
+ from brain.model_router import ModelRouter
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ COLLAB_CACHE_TTL = 300
+ 
+diff --git a/core/agents/framework/agent_departments.py b/core/agents/framework/agent_departments.py
+index adf6964d..3f5f105c 100644
+--- a/core/agents/framework/agent_departments.py
++++ b/core/agents/framework/agent_departments.py
+@@ -1,7 +1,7 @@
+ from typing import Any
+ 
+ from brain.model_router import ModelRouter
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ ROLE_PROMPTS: dict[str, str] = {
+     "code-reviewer": (
+diff --git a/core/agents/framework/agent_registry.py b/core/agents/framework/agent_registry.py
+index 487e5c26..ac15ef70 100644
+--- a/core/agents/framework/agent_registry.py
++++ b/core/agents/framework/agent_registry.py
+@@ -14,7 +14,7 @@
+ 
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # Canonical Agent Registry
+ _AGENT_REGISTRY: dict[str, Any] = {}
+diff --git a/core/agents/framework/autonomous_task_orchestrator.py b/core/agents/framework/autonomous_task_orchestrator.py
+index f28a1521..3c8565d0 100644
+--- a/core/agents/framework/autonomous_task_orchestrator.py
++++ b/core/agents/framework/autonomous_task_orchestrator.py
+@@ -6,7 +6,7 @@
+ from brain.reasoning_orchestrator import ReasoningOrchestrator
+ from core.config import settings
+ from core.intent import IntentClassifier
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from tools.security_tools.vpn_switcher import VPNRotator
+ 
+ 
+diff --git a/core/agents/framework/crewai_agents.py b/core/agents/framework/crewai_agents.py
+index 71f3a8ac..c464e2a0 100644
+--- a/core/agents/framework/crewai_agents.py
++++ b/core/agents/framework/crewai_agents.py
+@@ -2,7 +2,7 @@
+ from typing import Optional
+ 
+ from brain.model_router import ModelRouter
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class CrewTask:
+diff --git a/core/agents/framework/task_runner_agent.py b/core/agents/framework/task_runner_agent.py
+index 68984c4c..92f0bbd7 100644
+--- a/core/agents/framework/task_runner_agent.py
++++ b/core/agents/framework/task_runner_agent.py
+@@ -6,7 +6,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.performance_enhancer import get_performance_optimizer
+ 
+ 
+diff --git a/core/agents/governance/bias_detection_agent.py b/core/agents/governance/bias_detection_agent.py
+index cbf59e22..20bfa6d9 100644
+--- a/core/agents/governance/bias_detection_agent.py
++++ b/core/agents/governance/bias_detection_agent.py
+@@ -12,7 +12,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config_cache import config_cache
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/agents/governance/explainability_agent.py b/core/agents/governance/explainability_agent.py
+index ae682941..61fb051f 100644
+--- a/core/agents/governance/explainability_agent.py
++++ b/core/agents/governance/explainability_agent.py
+@@ -11,7 +11,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config_cache import config_cache
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ @dataclass
+diff --git a/core/agents/governance/governance_agent.py b/core/agents/governance/governance_agent.py
+index 190befa5..a6e89a3f 100644
+--- a/core/agents/governance/governance_agent.py
++++ b/core/agents/governance/governance_agent.py
+@@ -13,7 +13,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.errors.error_bus import with_error_bus
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.background_tasks import track_task
+ 
+ 
+diff --git a/core/agents/headless_terminal_agent.py b/core/agents/headless_terminal_agent.py
+index e634bb68..3a4843d5 100644
+--- a/core/agents/headless_terminal_agent.py
++++ b/core/agents/headless_terminal_agent.py
+@@ -24,7 +24,7 @@
+ from core.cache import get_cache
+ from core.config_cache import config_cache
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # ── Constants ────────────────────────────────────────────────────────────────
+ COMMAND_TIMEOUT = 30  # seconds
+diff --git a/core/agents/ide/trio_adapters.py b/core/agents/ide/trio_adapters.py
+index 9011d953..660c0a0b 100644
+--- a/core/agents/ide/trio_adapters.py
++++ b/core/agents/ide/trio_adapters.py
+@@ -23,9 +23,9 @@
+ # loguru is optional — fall back to a lightweight stub so the adapters
+ # remain importable in bare / test environments (e.g. CI without backend deps).
+ try:
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ except ImportError:  # pragma: no cover
+-    from core.logging_config import logger
++    from core.monitoring.logging_config import logger
+ 
+     if not logger.handlers:
+         logger.addHandler(logging.NullHandler())
+diff --git a/core/agents/infrastructure/auto_scaling_agent.py b/core/agents/infrastructure/auto_scaling_agent.py
+index a36ec9a3..f9071bd3 100644
+--- a/core/agents/infrastructure/auto_scaling_agent.py
++++ b/core/agents/infrastructure/auto_scaling_agent.py
+@@ -14,7 +14,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.errors.error_bus import with_error_bus
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.background_tasks import track_task
+ from monitoring.metrics_collector import MetricsCollector
+ 
+diff --git a/core/agents/infrastructure/cost_optimization_agent.py b/core/agents/infrastructure/cost_optimization_agent.py
+index 2f48099b..4c76f763 100644
+--- a/core/agents/infrastructure/cost_optimization_agent.py
++++ b/core/agents/infrastructure/cost_optimization_agent.py
+@@ -11,7 +11,7 @@
+ 
+ from core.cache.redis_manager import redis_manager
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.background_tasks import track_task
+ from monitoring.metrics_collector import MetricsCollector
+ 
+diff --git a/core/agents/infrastructure/disaster_recovery_agent.py b/core/agents/infrastructure/disaster_recovery_agent.py
+index 2f27194c..39085fff 100644
+--- a/core/agents/infrastructure/disaster_recovery_agent.py
++++ b/core/agents/infrastructure/disaster_recovery_agent.py
+@@ -16,7 +16,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.config import settings
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.utils.background_tasks import track_task
+ 
+ 
+diff --git a/core/agents/infrastructure/performance_tuning_agent.py b/core/agents/infrastructure/performance_tuning_agent.py
+index b2b8e8c2..6aa048a2 100644
+--- a/core/agents/infrastructure/performance_tuning_agent.py
++++ b/core/agents/infrastructure/performance_tuning_agent.py
+@@ -15,7 +15,7 @@
+ from core.cache.redis_manager import redis_manager
+ from core.errors.error_bus import with_error_bus
+ from core.llm.token_deductor import TokenDeductor
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from monitoring.metrics_collector import MetricsCollector
+ 
+ 
+diff --git a/core/agents/internet_monitor_agent.py b/core/agents/internet_monitor_agent.py
+index e2f0a9c9..10ef2028 100644
+--- a/core/agents/internet_monitor_agent.py
++++ b/core/agents/internet_monitor_agent.py
+@@ -8,7 +8,7 @@
+ from datetime import datetime
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ # aiohttp প্যাকেজ উপলব্ধ না থাকলে সেফ ইমপোর্ট ফলব্যাক।
+ try:
+diff --git a/core/agents/legacy/system_health_agent.py b/core/agents/legacy/system_health_agent.py
+index e5871670..0601e371 100644
+--- a/core/agents/legacy/system_health_agent.py
++++ b/core/agents/legacy/system_health_agent.py
+@@ -8,7 +8,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     import psutil
+diff --git a/core/agents/live/benchmark_agent.py b/core/agents/live/benchmark_agent.py
+index db91660b..58d0ce72 100644
+--- a/core/agents/live/benchmark_agent.py
++++ b/core/agents/live/benchmark_agent.py
+@@ -1,7 +1,7 @@
+ import time
+ from typing import Any, ClassVar
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ try:
+     from brain.model_router import ModelRouter
+diff --git a/core/agents/live/browser_agent.py b/core/agents/live/browser_agent.py
+index 50540fec..f6505854 100644
+--- a/core/agents/live/browser_agent.py
++++ b/core/agents/live/browser_agent.py
+@@ -9,7 +9,7 @@
+ from pydantic import BaseModel
+ 
+ from core.human_behavior import HumanBehaviorSimulators
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.playwright_manager import get_global_browser
+ from core.security import is_safe_url
+ 
+diff --git a/core/agents/live/computer_agent.py b/core/agents/live/computer_agent.py
+index 7bc467c1..ca3d9dd8 100644
+--- a/core/agents/live/computer_agent.py
++++ b/core/agents/live/computer_agent.py
+@@ -3,7 +3,7 @@
+ import subprocess
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ComputerAgent:
+diff --git a/core/agents/live/vision_agent.py b/core/agents/live/vision_agent.py
+index 220d0f70..3dd00b06 100644
+--- a/core/agents/live/vision_agent.py
++++ b/core/agents/live/vision_agent.py
+@@ -4,7 +4,7 @@
+ from typing import Any
+ 
+ from core.errors.error_bus import with_error_bus
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from core.messaging.event_bus import ErrorContext
+ 
+ 

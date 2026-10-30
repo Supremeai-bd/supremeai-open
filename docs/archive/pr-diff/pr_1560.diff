@@ -1,0 +1,297 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index af50905e..a2837af8 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -27,11 +27,11 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
+     "task_id":   "task-63",
+     "issue":     "63",
+     "task_type": "IMPLEMENT",          // VALID_TASK_TYPES
+-    "group":     "core",              // VALID_GROUPS registry (§3) — fail-closed (exit 2)
++    "group":     "agent-orchestration",// VALID_GROUPS registry — fail-closed
+     "priority":  "P2",                 // P0..P3
+     "objective": "…",
+     "problem_statement": { "id", "title", "body", "labels", "state" },
+-    "role": "coder",                   // role surface: coder/ci-fixer/task-auditor specialists + ROLE_RULES scheduled roles
++    "role": "coder",                   // one of the 7 specialist roles
+     "role_policy": "contributor",
+     "role_description": "…",
+     "scope": {
+@@ -59,46 +59,31 @@ Now there is **one** canonical payload: `--task-envelope` → `task_envelope` JS
+ 
+ ## 3. Group taxonomy — `VALID_GROUPS` (fail-closed)
+ 
+-Agents **cannot** invent arbitrary group names. An unlisted group raises
+-`ValueError` inside `build_task_contract()`, and the `--group` CLI flag fails
+-closed with **exit 2** in `main()` (SPEC §3/§4b) — invalid work never reaches
+-private CI. This table mirrors the code's `VALID_GROUPS` frozenset byte-for-byte;
+-the code is the enforcement SSOT, so keep this table in sync when it changes.
++Agents **cannot** invent arbitrary group names. Any task contract with an
++unlisted group raises `ValueError` inside `build_task_contract()` **and**
++`resolve_group()` — invalid work never reaches private CI.
+ 
+ | Group | Domain |
+ |-------|--------|
+-| `core` | core federation business logic, state machines, models |
+-| `gateway` | API endpoints, routing, provider failover |
+-| `studio` | studio frontend pages, hooks, UI components |
+-| `vscode` | vscode extension satellite |
+-| `browser` | browser automation satellite |
+-| `docs` | documentation, workorders, guides |
+-| `infra` | deployment configs, CI actions, cloud runtime configurations |
+-| `marketplace` | mcp_plugins registry, BYO connect flow |
+-| `federation` | cross-repo/federation orchestration |
+-
+-**Resolution order (deterministic, `_detect_group()` + `main()`):**
++| `agent-orchestration` | continuous loop, agent dispatch, specialist roles, task envelopes, agent lifecycle |
++| `mcp-tower` | MCP Control Plane tools, health probes, bridge adapters, remote endpoints, server infra |
++| `core-engine` | core federation business logic, state machines, models |
++| `schemas-contracts` | OpenAPI schemas, contract definitions, protocol envelopes |
++| `infra-ops` | deployment configs, CI actions, cloud runtime configurations |
++
++**Resolution order (deterministic):**
+ 1. `--group <name>` CLI flag (must be in registry, else exit 2)
+-2. Issue label scan (first registry match in sorted label order; body is not scanned)
+-3. Default: `core` (`DEFAULT_GROUP`)
+-
+-> Taxonomy note: `.github/ISSUE_TEMPLATE/agent-task.yml`'s `sub_group` dropdown
+-> routes with a broader governance vocabulary (`agent-orchestration`,
+-> `mcp-tower`, `core-engine`, `security`, `ci`, `governance`, `frontend-ui`,
+-> `telemetry`) that predates the dispatch registry. Reconciling that dropdown
+-> with `VALID_GROUPS` is an admin taxonomy decision (`.github/` is a protected
+-> path); until then, only the registry above is accepted by `--group` and
+-> `build_task_contract()`.
+-
+-**Relationship to the constitution (Single Door SSOT):** the universal rules live
+-in `AGENTS.md` — the Single Door constitution since #1526 deleted
+-`AGENT_RULES.md` (older revisions of this section pointed at the deleted file,
+-which is the same dangling-SSOT defect class fixed for the freshness gate in
+-#1530). Constitutional sections define governance; the execution registry above
+-is the authoritative group surface for dispatch. Changing the registry is a code
+-change to `VALID_GROUPS` in `scripts/agents/continuous_agent_loop.py` first,
+-then ported to the private mirror via a bridge work order (§4b port rule).
++2. Issue body/label scan (first registry match, sorted order)
++3. Default: `agent-orchestration`
++
++`.github/ISSUE_TEMPLATE/agent-task.yml` carries a **dropdown aligned to this
++registry** — keep the two in sync when the taxonomy changes.
+ 
++**Relationship to `AGENT_RULES.md` (#90):** the canonical U1–U10 universal rules and
++P0–P7 engineering policies live in `AGENT_RULES.md` (§2 and §4 respectively); its §5 is
++*Machine Enforcement* (task-validation and board-SSOT guard commands) — it defines no
++group taxonomy. The execution registry below is the authoritative group surface for
++dispatch; no constitutional section substitutes for a registry group. Changing
+ ## 4. CLI surface after #63
+ 
+ | Command | Status | Behaviour |
+@@ -140,8 +125,7 @@ parity contract:
+    | `--task-envelope` | shared (canonical) | unified envelope JSON on stdout, banner → stderr |
+    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
+    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
+-   | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role |
+-   | `--auto-pr` | shared | accepted for pipeline parity (#89); the minimal loop opens no PR itself (honest stderr note) |
++   | `--issue` / `--pick-next` / `--loop` / `--loop-interval` / `--max-cycles` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` reruns the dispatch cycle in-process after every task (interval seconds, default 300, minimum 1; `--max-cycles` N caps it, 0 = unlimited) |
+    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+ 
+@@ -209,5 +193,5 @@ submit **without intermediate filesystem drafts**:
+ git grep -n "VALID_GROUPS" scripts/agents/continuous_agent_loop.py
+ python scripts/agents/continuous_agent_loop.py --verify-only
+ python scripts/agents/continuous_agent_loop.py --issue 63 --task-envelope
+-python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group agent-orchestration   # → exit 2 (fail-closed demo — this was this SPEC's own stale vocabulary before the registry sync)
++python scripts/agents/continuous_agent_loop.py --task-envelope --allow-adhoc --group not-a-group   # → exit 2 (fail-closed demo)
+ ```
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 9ae324db..10f8c0ca 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -9,6 +9,8 @@
+ 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
+ 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
+ 5. Problematic/stuck issues -> Agents autonomously decide and handle them.
++6. --loop: the wheel keeps turning in-process — after finishing one task the
++   dispatch cycle reruns (no sleep-until-cron; interval via --loop-interval).
+ """
+ from __future__ import annotations
+ import argparse, json, os, re, subprocess, sys, time
+@@ -692,53 +694,17 @@ def _binary_ok() -> bool:
+     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
+     return evidence
+ 
+-def main() -> int:
+-    parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
+-    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
+-    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
+-    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
+-    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
+-    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
+-    parser.add_argument("--loop", action="store_true", help="Run continuous loop")
+-    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
+-    # বাংলা: SPEC §4b-র shared dispatch flags — pipeline.yml-এর agent-loop জব
+-    # বাস্তবেই `--pick-next` (ও workflow_dispatch-এ `--auto-pr`) পাস করে, কিন্তু
+-    # আগের argparse-এ ফ্ল্যাগগুলোই ছিল না; parse_known_args() সেগুলো নীরবে গিলে
+-    # ফেলত — প্রোডাকশনের স্পষ্ট নির্দেশ অগণিত হয়ে যেত। এখন প্রতিটি শেয়ার্ড ফ্ল্যাগ
+-    # সংজ্ঞায়িত ও সম্মানিত (U2: silent-ignore নয়)।
+-    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
+-    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
+-    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
+-    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per invocation (minimal loop honors 1; >1 gets an honest stderr note)")
+-    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
+-    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
+-    args, _ = parser.parse_known_args()
+-
+-    # বাংলা: SPEC §3/§4 — --group ব্যর্থ-বদ্ধ (fail-closed): রেজিস্ট্রির বাইরের
+-    # group মানে exit 2, অবৈধ কাজ কখনো private CI-তে পৌঁছাবে না। আগে মানটি
+-    # গ্রহণ করেও কোথাও ব্যবহৃত হতই না — নীরব no-op ছিল।
+-    if args.group and args.group not in VALID_GROUPS:
+-        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
+-        return 2
+-
+-    if args.verify_only:
+-        # বাংলা: run_verify()-এর ফল আগে ফেলে দেওয়া হত — টিয়ার FAIL হলেও
+-        # exit 0 + মার্কার প্রিন্ট হত, অর্থাৎ যাচাই ছিল fail-open (U2 লঙ্ঘন;
+-        # আগের r3.1 ফিক্সের রিগ্রেশন)। SPEC §4b অনুযায়ী মার্কার লাইনটি
+-        # exit-code-independent — সেটি run_verify() নিজেই stdout-এর শেষ
+-        # লাইনে এমিট করে, তাই main()-এর ডুপ্লিকেট প্রিন্ট বাদ। এখন সৎ exit
+-        # কোড: যেকোনো টিয়ার ব্যর্থ হলে stderr-এ কারণসহ exit 1 (fail-closed)।
+-        evidence = run_verify()
+-        failed = [ev for ev in evidence if not ev.get("passed")]
+-        if failed:
+-            print(
+-                "verification FAILED: "
+-                + ", ".join(f"tier {ev['tier']} ({ev['name']})" for ev in failed),
+-                file=sys.stderr,
+-            )
+-            return 1
+-        return 0
++def run_dispatch_cycle(args: argparse.Namespace) -> int:
++    """One dispatch cycle: board query → solver/envelope dispatch or cadence role.
+ 
++    বাংলা: এই বডিটি আগে main()-এর ছিল — হুবহু তোলা, তাই একক সাইকেলের
++    stdout/stderr আগের মতোই (zero dispatch change, #1530 শৃঙ্খলা)। পার্থক্য
++    দুটি: (১) পুরানো নীরব --loop no-op নোট বাদ — অপারেটরের সরাসরি নির্দেশে
++    (2026-10-28) --loop এখন run_continuous_loop()-এ সত্যিই ঘোরায়: একটি কাজ
++    শেষ হলে প্রসেস ঘুমিয়ে যায় না, নির্দিষ্ট বিরতিতে সাইকেল নতুন করে চলে;
++    (২) --max-tasks নোট দুটি main()-এ উঠে গেছে — লুপে প্রতি সাইকেলে
++    পুনরাবৃত্ত নয়, একবারই সৎ ঘোষণা।
++    """
+     cmd = [
+         "gh", "issue", "list",
+         "--repo", UPSTREAM_REPO,
+@@ -841,18 +807,6 @@ def main() -> int:
+     print(COMMON_RULES)
+     print("=" * 52)
+ 
+-    if args.loop:
+-        # বাংলা: --loop flag টি SPEC §4b-র shared flag surface-এ আছে কিন্তু এই
+-        # minimal লুপে এটি in-process লুপ চালায় না — invocation প্রতি এক সাইকেল।
+-        # চাকাটি ঘোরায় বাইরের scheduler/workflow। আগে এটি নীরবে এক-cycle আচরণ
+-        # করত — U2 সৎতায় এখন stderr-এ সেটা স্পষ্ট বলে দেয় (stdout অপরিবর্তিত,
+-        # যাতে বিদ্যমান automation ভাঙে না)।
+-        print(
+-            "--loop: contract-parity flag — this minimal loop runs ONE dispatch "
+-            "cycle per invocation; the calling scheduler/workflow is the outer "
+-            "loop driver (SPEC §4b).",
+-            file=sys.stderr,
+-        )
+     if args.auto_pr:
+         # বাংলা: pipeline.yml workflow_dispatch --auto-pr পাঠায় (#89)। minimal
+         # লুপ নিজে PR খোলে না — সৎ stderr নোট, stdout অপরিবর্তিত।
+@@ -861,16 +815,6 @@ def main() -> int:
+             "auto_bridge_pr_opener.py owns PR opening in the workflow.",
+             file=sys.stderr,
+         )
+-    if args.max_tasks is not None and args.max_tasks <= 0:
+-        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
+-        return 0
+-    if args.max_tasks is not None and args.max_tasks > 1:
+-        print(
+-            "--max-tasks > 1: this minimal loop dispatches exactly ONE task per "
+-            "invocation (the scheduler is the outer loop); honoring 1.",
+-            file=sys.stderr,
+-        )
+-
+     if board_unavailable:
+         log("!", f"issue board unavailable ({board_error}) — skipping solver dispatch. Cadence roles still evaluated.")
+     else:
+@@ -928,5 +872,81 @@ def main() -> int:
+     print("ACTION: System is clean and up to date.")
+     return 0
+ 
++def run_continuous_loop(args: argparse.Namespace) -> int:
++    """বাংলা: --loop = চাকা ঘুমাবে না (অপারেটর নির্দেশ, 2026-10-28)।
++
++    আগে --loop ছিল নীরব no-op — এক সাইকেলেই প্রসেস exit করত, "বাইরের
++    scheduler-ই আসল লুপ" বলে। ফলে একটি কাজ শেষ করেই এজেন্ট ঘুমিয়ে
++    পড়ত। এখন: প্রতিটি সাইকেলে বোর্ড নতুন করে পড়ে — একটি কাজ শেষ হলে
++    --loop-interval সেকেন্ড পরে নতুন সাইকেল (ডিফল্ট ৩০০s, ন্যূনতম ১s —
++    busy-spin নিষেধ); বোর্ড খালি হলে cadence রোল স্বয়ংক্রিয় সক্রিয় (নিয়ম ৩),
++    তাই চাকা কখনো অলস থাকে না। --max-cycles N = N সাইকেল পরে সৎ বন্ধ
++    (CI/টেস্ট); Ctrl+C = পরিষ্কার বন্ধ (exit 0)।
++    """
++    interval = max(1, int(getattr(args, "loop_interval", 300) or 0))
++    max_cycles = max(0, int(getattr(args, "max_cycles", 0) or 0))
++    log("*", f"continuous loop engaged: dispatch cycle runs immediately, then reruns every {interval}s (max_cycles={'unlimited' if max_cycles == 0 else max_cycles}; Ctrl+C stops cleanly).")
++    cycles = 0
++    try:
++        while True:
++            cycles += 1
++            run_dispatch_cycle(args)
++            if max_cycles and cycles >= max_cycles:
++                log("*", f"continuous loop finished {cycles} cycle(s) (--max-cycles reached).")
++                return 0
++            time.sleep(interval)
++    except KeyboardInterrupt:
++        log("*", f"continuous loop stopped cleanly after {cycles} cycle(s) — restart anytime; the wheel never sleeps on its own.")
++        return 0
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
++    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
++    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
++    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
++    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
++    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
++    parser.add_argument("--loop", action="store_true", help="Run the dispatch cycle continuously in-process: after finishing one task the cycle reruns — no sleep-until-cron (interval --loop-interval, cap --max-cycles)")
++    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
++    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
++    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
++    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
++    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per dispatch cycle (minimal loop honors 1; >1 gets an honest stderr note)")
++    parser.add_argument("--loop-interval", dest="loop_interval", type=int, default=300, help="Seconds between --loop dispatch cycles (default 300, minimum 1)")
++    parser.add_argument("--max-cycles", dest="max_cycles", type=int, default=0, help="Stop --loop after N cycles (0 = unlimited; CI/test-friendly cap)")
++    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
++    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
++    args, _ = parser.parse_known_args()
++
++    if args.group and args.group not in VALID_GROUPS:
++        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
++        return 2
++
++    if args.verify_only:
++        evidence = run_verify()
++        failed = [ev for ev in evidence if not ev.get("passed")]
++        if failed:
++            print(
++                "verification FAILED: "
++                + ", ".join(f"tier {ev['tier']} ({ev['name']})" for ev in failed),
++                file=sys.stderr,
++            )
++            return 1
++        return 0
++
++    if args.max_tasks is not None and args.max_tasks <= 0:
++        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
++        return 0
++    if args.max_tasks is not None and args.max_tasks > 1:
++        print(
++            "--max-tasks > 1: this loop dispatches exactly ONE task per cycle "
++            "(--loop reruns the whole cycle); honoring 1.",
++            file=sys.stderr,
++        )
++
++    if args.loop:
++        return run_continuous_loop(args)
++    return run_dispatch_cycle(args)
++
+ if __name__ == "__main__":
+     sys.exit(main())

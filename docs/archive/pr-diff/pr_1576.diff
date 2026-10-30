@@ -1,0 +1,133 @@
+diff --git a/docs/AGENT_LOOP_SPEC.md b/docs/AGENT_LOOP_SPEC.md
+index debb2732..187c317c 100644
+--- a/docs/AGENT_LOOP_SPEC.md
++++ b/docs/AGENT_LOOP_SPEC.md
+@@ -137,7 +137,7 @@ parity contract:
+    | `--group <name>` | shared | group override, fail-closed against `VALID_GROUPS` |
+    | `--auto-pr` | shared | accepted for pipeline parity (#89); honest stderr note; the minimal loop opens no PR itself |
+    | `--verify-only` | shared | full verification tiers (count SSOT: §4) + parity marker line |
+-   | `--issue` / `--pick-next` / `--loop` / `--loop-interval` / `--max-cycles` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` reruns the dispatch cycle in-process after every task (interval seconds, default 300, minimum 1; `--max-cycles` N caps it, 0 = unlimited) |
++   | `--issue` / `--pick-next` / `--loop` / `--max-tasks` / `--role` / `--allow-adhoc` | shared | dispatch selection & role; `--loop` runs a single dispatch cycle per invocation (scheduler/orchestrator is the outer loop) |
+    | `--emit-prompt` / `--emit-contract` | shared, deprecated | shim → same envelope (removal gated on parity) |
+     | `--agent-name` / `--iterations` / `--model` / `--check-claimable` | private-mirror only | consumed by the private agent-loop workflow; public copy may reject or ignore them but the mirror MUST keep accepting them until that workflow migrates |
+ 
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 04e839e7..db593659 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -9,8 +9,7 @@
+ 3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
+ 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
+ 5. Problematic/stuck issues -> Agents autonomously decide and handle them.
+-6. --loop: the wheel keeps turning in-process — after finishing one task the
+-   dispatch cycle reruns (no sleep-until-cron; interval via --loop-interval).
++6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
+ """
+ from __future__ import annotations
+ import argparse, json, os, re, subprocess, sys, time
+@@ -703,13 +702,8 @@ def _binary_ok() -> bool:
+ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+     """One dispatch cycle: board query → solver/envelope dispatch or cadence role.
+ 
+-    বাংলা: এই বডিটি আগে main()-এর ছিল — হুবহু তোলা, তাই একক সাইকেলের
+-    stdout/stderr আগের মতোই (zero dispatch change, #1530 শৃঙ্খলা)। পার্থক্য
+-    দুটি: (১) পুরানো নীরব --loop no-op নোট বাদ — অপারেটরের সরাসরি নির্দেশে
+-    (2026-10-28) --loop এখন run_continuous_loop()-এ সত্যিই ঘোরায়: একটি কাজ
+-    শেষ হলে প্রসেস ঘুমিয়ে যায় না, নির্দিষ্ট বিরতিতে সাইকেল নতুন করে চলে;
+-    (২) --max-tasks নোট দুটি main()-এ উঠে গেছে — লুপে প্রতি সাইকেলে
+-    পুনরাবৃত্ত নয়, একবারই সৎ ঘোষণা।
++    বাংলা: একক সাইকেলের পরিষ্কার ডিসপ্যাচ এক্সিকিউশন। বাহ্যিক শিডিউলার বা রানার
++    দ্বারা সাইকেল পরিচালিত হয়।
+     """
+     cmd = [
+         "gh", "issue", "list",
+@@ -888,48 +882,6 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+     print("ACTION: System is clean and up to date.")
+     return 0
+ 
+-def run_continuous_loop(args: argparse.Namespace) -> int:
+-    """বাংলা: --loop = চাকা ঘুমাবে না (অপারেটর নির্দেশ, 2026-10-28)।
+-
+-    আগে --loop ছিল নীরব no-op — এক সাইকেলেই প্রসেস exit করত, "বাইরের
+-    scheduler-ই আসল লুপ" বলে। ফলে একটি কাজ শেষ করেই এজেন্ট ঘুমিয়ে
+-    পড়ত। এখন: প্রতিটি সাইকেলে বোর্ড নতুন করে পড়ে — একটি কাজ শেষ হলে
+-    --loop-interval সেকেন্ড পরে নতুন সাইকেল (ডিফল্ট ৩০০s, ন্যূনতম ১s —
+-    busy-spin নিষেধ); বোর্ড খালি হলে cadence রোল স্বয়ংক্রিয় সক্রিয় (নিয়ম ৩),
+-    তাই চাকা কখনো অলস থাকে না। --max-cycles N = N সাইকেল পরে সৎ বন্ধ
+-    (CI/টেস্ট); Ctrl+C = পরিষ্কার বন্ধ (exit 0)। একটি সাইকেলের অপ্রত্যাশিত
+-    ব্যর্থতা চাকা বন্ধ করে না — সৎ stderr লগের পর নির্দিষ্ট বিরতিতে পরের
+-    সাইকেল চলে (crash-resilient wheel)।
+-    """
+-    interval = max(1, int(getattr(args, "loop_interval", 300) or 0))
+-    max_cycles = max(0, int(getattr(args, "max_cycles", 0) or 0))
+-    log("*", f"continuous loop engaged: dispatch cycle runs immediately, then reruns every {interval}s (max_cycles={'unlimited' if max_cycles == 0 else max_cycles}; Ctrl+C stops cleanly).")
+-    cycles = 0
+-    failed_cycles = 0
+-    try:
+-        while True:
+-            cycles += 1
+-            try:
+-                run_dispatch_cycle(args)
+-            except Exception as exc:
+-                # বাংলা: একটি খারাপ সাইকেল পুরো চাকা মেরে দিতে পারে না —
+-                # অপারেটরের নির্দেশ (2026-10-28): চাকা কখনো অলস থাকবে না।
+-                # অপ্রত্যাশিত exception-এ সাইকেলটি সৎভাবে stderr-এ লগ হয় এবং
+-                # নির্দিষ্ট বিরতি পরে পরের সাইকেল চলে। এটি নীরব গিলে-ফেলা নয়
+-                # (U2): প্রতিটি ব্যর্থতা type+message সহ রিপোর্ট হয় এবং গণনা
+-                # ধরে রাখা হয়, শেষ বন্ধ-বার্তায় জানানো হয়। KeyboardInterrupt
+-                # Exception-এর বাইরে — সেটি ব্যবহারকারীর বন্ধ করার ইচ্ছা,
+-                # নিচের হ্যান্ডলারেই পরিষ্কারভাবে যায়।
+-                failed_cycles += 1
+-                log("!", f"dispatch cycle {cycles} crashed: {type(exc).__name__}: {exc} — wheel keeps turning; next cycle after {interval}s.")
+-            if max_cycles and cycles >= max_cycles:
+-                log("*", f"continuous loop finished {cycles} cycle(s) (--max-cycles reached; {failed_cycles} crashed).")
+-                return 0
+-            time.sleep(interval)
+-    except KeyboardInterrupt:
+-        log("*", f"continuous loop stopped cleanly after {cycles} cycle(s) ({failed_cycles} crashed) — restart anytime; the wheel never sleeps on its own.")
+-        return 0
+-
+ def main() -> int:
+     parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
+     parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
+@@ -937,14 +889,12 @@ def main() -> int:
+     parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
+     parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
+     parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
+-    parser.add_argument("--loop", action="store_true", help="Run the dispatch cycle continuously in-process: after finishing one task the cycle reruns — no sleep-until-cron (interval --loop-interval, cap --max-cycles)")
++    parser.add_argument("--loop", action="store_true", help="Shared flag (SPEC §4b): single dispatch cycle per invocation (scheduler is the outer loop)")
+     parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
+     parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
+     parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
+     parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
+     parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per dispatch cycle (minimal loop honors 1; >1 gets an honest stderr note)")
+-    parser.add_argument("--loop-interval", dest="loop_interval", type=int, default=300, help="Seconds between --loop dispatch cycles (default 300, minimum 1)")
+-    parser.add_argument("--max-cycles", dest="max_cycles", type=int, default=0, help="Stop --loop after N cycles (0 = unlimited; CI/test-friendly cap)")
+     parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
+     parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
+     args, _ = parser.parse_known_args()
+@@ -965,18 +915,21 @@ def main() -> int:
+             return 1
+         return 0
+ 
++    if args.loop:
++        # বাংলা: এই স্ক্রিপ্ট একটি পরিষ্কার একক-ডিসপ্যাচ সাইকেল চালায়। বাইরের শিডিউলার/রানারই
++        # পুনরাবৃত্তি নিয়ন্ত্রণ করে; ইন-প্রসেস অসীম লুপ প্রক্রিয়ার অপব্যবহার বন্ধ রাখা হয়েছে।
++        print("--loop: runs ONE dispatch cycle per invocation; the scheduler/orchestrator is the outer loop.", file=sys.stderr)
++
+     if args.max_tasks is not None and args.max_tasks <= 0:
+         print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
+         return 0
+     if args.max_tasks is not None and args.max_tasks > 1:
+         print(
+             "--max-tasks > 1: this loop dispatches exactly ONE task per cycle "
+-            "(--loop reruns the whole cycle); honoring 1.",
++            "(the scheduler/orchestrator is the outer loop); honoring 1.",
+             file=sys.stderr,
+         )
+ 
+-    if args.loop:
+-        return run_continuous_loop(args)
+     return run_dispatch_cycle(args)
+ 
+ if __name__ == "__main__":

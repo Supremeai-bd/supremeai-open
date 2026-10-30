@@ -1,0 +1,34 @@
+diff --git a/core/worker.py b/core/worker.py
+new file mode 100644
+index 00000000..2f3e2d9c
+--- /dev/null
++++ b/core/worker.py
+@@ -0,0 +1,12 @@
++"""Worker entrypoint shim for Render deploy compatibility.
++
++বাংলা: রেন্ডার ডিপ্লয়মেন্ট কম্প্যাটিবিলিটি শিম। রেন্ডার স্টার্ট কমান্ড
++`uvicorn worker:app --host 0.0.0.0 --port 8080` যাতে সরাসরি `core/worker_service.py`
++এর FastAPI `app` ইনস্ট্যান্স খুঁজে পায়।
++"""
++
++from __future__ import annotations
++
++from core.worker_service import app
++
++__all__ = ["app"]
+diff --git a/core/worker_service.py b/core/worker_service.py
+index 50d334e5..3db660b5 100644
+--- a/core/worker_service.py
++++ b/core/worker_service.py
+@@ -36,7 +36,10 @@
+ from sqlalchemy.exc import IntegrityError
+ 
+ from core.automation.models import ExecutionEnvelope
+-from database.session import get_db_session_context
++try:
++    from database.session import get_db_session_context
++except ImportError:
++    from core.database.session import get_db_session_context
+ 
+ SUPPORTED_CAPABILITIES = frozenset({"acknowledge", "scrape"})
+ MAX_METADATA_BYTES = 32_768

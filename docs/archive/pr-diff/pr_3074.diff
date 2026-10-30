@@ -1,0 +1,475 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 6e5f2ad9..d1bff8c0 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -189,6 +189,133 @@ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+ # None with an honest note instead (see pick_next_issue).
+ FEEDBACK_PREVERIFY_TOPN = 5
+ 
++# #3050: stale-incident demotion. A CI-failure incident row whose referenced run
++# is superseded by this many green main runs of the SAME workflow (with zero
++# newer red runs) is mechanically skipped by the picker — U3's manual
++# "verify on live main" duty becomes a pick-time filter. Live anatomy that
++# motivates the constant (a43 dossier #3048, item 18 cost model): the #3019
++# incident consumed 4 dispatches and a claim-release lap while every agent
++# re-derived the same staleness by hand; the treadmill kept re-serving the row
++# because the falsified premise lived above the pick line. Fail-open: any
++# probe failure (rate limit, timeout, parse, renamed workflow) serves the row
++# unchanged — the filter can only REMOVE a dispatch, never block one.
++STALE_INCIDENT_GREEN_RUNS = 5
++STALE_INCIDENT_PROBE_TIMEOUT_S = 10.0
++STALE_INCIDENT_RUNS_WINDOW = 60  # per_page for the runs fetch (newest-first)
++
++_INCIDENT_RUN_RE = re.compile(r"Run\s*#(\d+)", re.IGNORECASE)
++_INCIDENT_FAIL_MARKER = " failed on main"
++
++
++def _incident_stale_note(
++    item: dict[str, Any],
++    fetch_runs: Callable[[int], list[dict[str, Any]]] | None = None,
++    min_green: int | None = None,
++) -> str | None:
++    """#3050 — demotion note for a superseded CI-failure incident, else None.
++
++    Recognizes the mirror's incident-title shape
++    "...[<state>] <workflow> failed on main (Run #<id>)"; resolves the run's
++    workflow name and run_number via the runs surface, then checks whether
++    min_green (default STALE_INCIDENT_GREEN_RUNS) SUCCESS runs of the same
++    workflow on main exist strictly newer than it with zero newer FAILURES
++    (cancelled/timed-out runs are inconclusive and ignored — storm concurrency
++    pruning must not read as red). Returns None for anything unjudgeable
++    (non-incident titles, scrolled-off runs, renamed workflows, fetch errors):
++    fail-open by construction, the row is served exactly as before.
++    """
++    n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
++    title = str(item.get("title", ""))
++    if _INCIDENT_FAIL_MARKER not in title:
++        return None
++    run_match = _INCIDENT_RUN_RE.search(title)
++    if not run_match:
++        return None
++    try:
++        incident_run_id = int(run_match.group(1))
++    except ValueError:
++        return None
++    head = title.split(_INCIDENT_FAIL_MARKER)[0]
++    if "] " not in head:
++        return None
++    workflow = head.rsplit("] ", 1)[1].strip()
++    if not workflow:
++        return None
++
++    if fetch_runs is None:
++        def fetch_runs(per_page: int) -> list[dict[str, Any]]:
++            url = (
++                f"https://api.github.com/repos/{UPSTREAM_REPO}/actions/runs"
++                f"?branch=main&per_page={per_page}"
++            )
++            req = urllib.request.Request(
++                url,
++                headers={
++                    "Accept": "application/vnd.github+json",
++                    "User-Agent": "supremeai-agent-loop-stale-incident-probe",
++                },
++            )
++            with urllib.request.urlopen(req, timeout=STALE_INCIDENT_PROBE_TIMEOUT_S) as resp:
++                payload = json.loads(resp.read().decode("utf-8"))
++            return list(payload.get("workflow_runs") or [])
++
++    try:
++        runs = fetch_runs(STALE_INCIDENT_RUNS_WINDOW)
++    except Exception:  # noqa: BLE001 — fail-open: a dark runs surface serves the row
++        return None
++
++    incident = next(
++        (r for r in runs if r.get("id") == incident_run_id),
++        None,
++    )
++    if incident is None:
++        return None  # scrolled off the window — cannot judge, serve unchanged
++    incident_num = incident.get("run_number")
++    incident_name = str(incident.get("name") or "")
++    if not isinstance(incident_num, int):
++        return None
++
++    def _same_workflow(r: dict[str, Any]) -> bool:
++        name = str(r.get("name") or "")
++        return bool(name) and (name == workflow or name == incident_name or name in workflow or workflow in name or name in incident_name)
++
++    newer = [
++        r
++        for r in runs
++        if isinstance(r.get("run_number"), int)
++        and r["run_number"] > incident_num
++        and _same_workflow(r)
++    ]
++    concluded = [
++        r for r in newer if r.get("conclusion") in ("success", "failure")
++    ]
++    if not concluded:
++        return None
++    greens = sum(1 for r in concluded if r.get("conclusion") == "success")
++    has_red = any(r.get("conclusion") == "failure" for r in concluded)
++    newest_first = concluded[0].get("conclusion") == "success"
++    if greens >= n_green and not has_red and newest_first:
++        return (
++            f"incident-stale (U3 demotion, #3050): run #{incident_run_id} "
++            f"superseded by {greens} green main runs of '{workflow}' with zero "
++            "newer reds"
++        )
++    return None
++
++
++def _probe_incident_stale(item: dict[str, Any]) -> str | None:
++    """Live-plane wrapper handed to pick_next_issue as incident_probe.
++
++    Never raises (the pick path's never-raise contract); returns the demotion
++    note or None. Hermetic callers inject fetch_runs into _incident_stale_note
++    directly instead.
++    """
++    try:
++        return _incident_stale_note(item)
++    except Exception:  # noqa: BLE001
++        return None
++
++
+ def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> tuple[bool, str]:
+     """#2794 fix (1) — live-plane claim pre-verify for the dispatch pick.
+ 
+@@ -291,6 +418,7 @@ def pick_next_issue(
+     issues: list[dict[str, Any]] | None = None,
+     claim_probe: Callable[[int | str], tuple[bool, str]] | None = None,
+     log_fn: Callable[[str, str], None] | None = None,
++    incident_probe: Callable[[dict[str, Any]], str | None] | None = None,
+ ) -> str | None:
+     # বাংলা: log_fn=None → call-time-এ log-এ ফলব্যাক। ডিফল্ট-প্যারামিটারে সরাসরি log
+     # লিখলে def-time evaluation-এ NameError হত — log() এই ফাইলে pick_next_issue-
+@@ -391,6 +519,19 @@ def priority_key(item: dict[str, Any]) -> tuple[int, int]:
+         if active:
+             log_fn("!", f"pick pre-verify: #{num} skipped — {note}; advancing to next candidate (#2794 fix (1))")
+             continue
++        if incident_probe is not None:
++            # #3050 — stale-incident demotion: a superseded CI-failure incident
++            # is skipped IN THE SAME RUN (advance to the next candidate), the
++            # same skip-and-advance shape as the live-claim filter above.
++            # Fail-open: probe errors serve the row (never-raise contract).
++            try:
++                stale_note = incident_probe(item)
++            except Exception as exc:  # noqa: BLE001
++                stale_note = None
++                log_fn("!", f"pick pre-verify: #{num} incident probe raised {type(exc).__name__} — serving row unchanged")
++            if stale_note:
++                log_fn("!", f"pick pre-verify: #{num} skipped — {stale_note}; advancing to next candidate (#3050 U3 demotion)")
++                continue
+         if note and not note.startswith("no active claim"):
+             log_fn("!", f"pick pre-verify: #{num} {note} — proceeding on labels (live advisory to the agent stays in force)")
+         return num
+@@ -1149,7 +1290,7 @@ def build_task_envelope(
+             f"MANDATE: {role_description}",
+             "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
+             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
+-            "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
++            "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker also auto-demotes mechanically (#3050): an incident whose referenced run is superseded by >=5 green main runs of the same workflow (zero newer reds) is skipped at pick time — for explicit --issue N dispatches this manual check remains the backstop.",
+             # বাংলা: কিউ-স্তরের claim লেবেল tower-এর লাইভ claim-কে পিছিয়ে থাকে (live
+             # 2026-10-28: ৩ সারি >=১৯ মিনিট ধরে status:unclaimed দেখিয়েছে যদিও claim
+             # স্ট্যাম্প হয়ে গিয়েছিল — #2111, #2123, #2102; স্থায়ী প্রোব
+@@ -1553,7 +1694,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             # বাংলা: SPEC §4b stdout-purity — envelope-মোডে pick-প্রি-ভেরিফাই অ্যাডভাইজরি
+             # stderr-এ যায় (log_fn=_stderr_log), stdout শুধুই envelope JSON; ডিসপ্যাচ-পথে
+             # (নিচের সাইট) default log_fn=log অপরিবর্তিত — stdout-মার্কার গণনা অক্ষত।
+-            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log)
++            picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, log_fn=_stderr_log, incident_probe=_probe_incident_stale)
+             if picked:
+                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
+                 # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
+@@ -1646,7 +1787,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             # never raises/hangs (see _tower_queue_floor).
+             log("!", _tower_queue_floor())
+     else:
+-        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active)
++        picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale)
+         if picked:
+             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
+             # status:runway → ci-fixer, gate:pre-landing → task-auditor হলেও
+@@ -1673,7 +1814,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
+             print(action_instruction(picked))
+             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+-            print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
++            print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker auto-demotes superseded incidents at pick time (#3050); this manual check remains the backstop for explicit --issue N dispatches.")
+             # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
+             # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
+             # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে
+diff --git a/tests/test_stale_incident_demotion.py b/tests/test_stale_incident_demotion.py
+new file mode 100644
+index 00000000..6defa670
+--- /dev/null
++++ b/tests/test_stale_incident_demotion.py
+@@ -0,0 +1,267 @@
++#!/usr/bin/env python3
++"""Pin + behavior: #3050 — stale-incident demotion in the dispatch pick.
++
++Live anatomy that motivates the filter (a43 dossier #3048, item 18 cost
++model): the #3019 CI incident was triaged as TRANSIENT by peer PR #3023
++(merged 03:09:30Z, same-sha rerun green) yet kept dispatching as the top-P0
++row for hours — 4 dispatches and a claim-release lap were consumed by one
++falsified premise, every agent re-deriving the same U3 staleness by hand
++because the falsified premise lived above the pick line.
++
++Fix (the closure record #3051's side datum, implemented): pick_next_issue
++accepts an optional incident_probe; run_dispatch_cycle wires the live runs-
++surface probe. An incident whose referenced run is superseded by >=5 green
++main runs of the SAME workflow (zero newer reds; cancelled runs are
++inconclusive and ignored — storm concurrency pruning must not read as red)
++is skipped IN THE SAME RUN with an evidence note, advancing to the next
++candidate. Fail-open by construction: non-incident titles, scrolled-off
++runs, renamed workflows, rate limits and fetch errors all serve the row
++unchanged — the filter can only REMOVE a dispatch, never block one.
++
++Pins enforced here (zero gh/network dependency — fetchers are injected
++fakes):
++  1. Non-incident titles are never probed (None ⇒ served).
++  2. >=5 newer greens of the same workflow ⇒ demotion note.
++  3. Any newer red ⇒ serve (the incident may be live).
++  4. Newer greens with run_number BELOW the incident's ⇒ serve (not
++     supersession).
++  5. Fewer than N greens ⇒ serve.
++  6. Cancelled runs interleaved among newer greens ⇒ demotion stands.
++  7. Workflow-name mismatch only ⇒ serve (fail-open).
++  8. Incident run scrolled off the window ⇒ serve.
++  9. A raising fetcher ⇒ serve (never-raise).
++ 10. pick_next_issue integration: stale top row skipped, advances to the
++     next candidate; pure mode (incident_probe=None) serves the row with
++     zero probing — hermetic callers keep the pre-#3050 contract.
++ 11. AST pin: both dispatch surfaces wire incident_probe=_probe_incident_stale.
++
++Dual-mode: runs under both `python3 -m unittest` and `pytest`.
++"""
++
++from __future__ import annotations
++
++import ast
++import sys
++import unittest
++import unittest.mock
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
++
++import continuous_agent_loop as cal
++
++WORKFLOW = "CI — Open Unified Pipeline"
++
++
++def _incident(number: int, run_id: int = 40994815953) -> dict:
++    return {
++        "number": number,
++        "title": f"fix(ci): [open] {WORKFLOW} failed on main (Run #{run_id})",
++        "labels": [{"name": "P0-critical"}, {"name": "status:unclaimed"}],
++    }
++
++
++def _row(number: int, labels: list[str] | None = None) -> dict:
++    return {
++        "number": number,
++        "title": f"row {number}",
++        "labels": [{"name": name} for name in (labels or [])],
++    }
++
++
++def _run(run_id: int, run_number: int, conclusion: str, name: str = WORKFLOW):
++    return {
++        "id": run_id,
++        "run_number": run_number,
++        "conclusion": conclusion,
++        "status": "completed" if conclusion else "in_progress",
++        "name": name,
++        "head_branch": "main",
++    }
++
++
++def _green_fetcher(
++    incident_id: int,
++    incident_number: int,
++    greens: int,
++    name: str = WORKFLOW,
++    interleaved: list[dict] | None = None,
++):
++    """Newest-first runs list: incident + `greens` newer greens (+ extras)."""
++    runs: list[dict] = []
++    for i in range(greens):
++        runs.append(_run(900000 + i, incident_number + 10 - i, "success", name))
++    for extra in interleaved or []:
++        runs.append(extra)
++    runs.append(_run(incident_id, incident_number, "failure", name))
++    return runs
++
++
++class TestIncidentStaleNote(unittest.TestCase):
++    def test_non_incident_title_is_never_judged(self):
++        for title in (
++            "row 3001",
++            "fix(ci): something else entirely",
++            f"fix(ci): [open] {WORKFLOW} failed on main (no run id)",
++        ):
++            self.assertIsNone(
++                cal._incident_stale_note(
++                    {"number": 1, "title": title},
++                    fetch_runs=lambda p: (_ for _ in ()).throw(AssertionError("fetch called")),
++                ),
++                f"non-incident title must not be probed: {title}",
++            )
++
++    def test_superseded_incident_gets_demotion_note(self):
++        note = cal._incident_stale_note(
++            _incident(3019),
++            fetch_runs=lambda p: _green_fetcher(40994815953, 7183, greens=5),
++        )
++        self.assertIsNotNone(note)
++        self.assertIn("incident-stale", note)
++        self.assertIn("40994815953", note)
++        self.assertIn("#3050", note)
++
++    def test_newer_red_vetoes_demotion(self):
++        runs = _green_fetcher(40994815953, 7183, greens=5)
++        runs.insert(0, _run(910001, 7193, "failure"))  # newest concluded is red
++        self.assertIsNone(cal._incident_stale_note(_incident(3019), fetch_runs=lambda p: runs))
++
++    def test_older_greens_are_not_supersession(self):
++        # Greens exist but all carry run_number BELOW the incident's.
++        runs = [
++            _run(900000 + i, 7100 + i, "success") for i in range(5)
++        ]
++        runs.append(_run(40994815953, 7183, "failure"))
++        self.assertIsNone(cal._incident_stale_note(_incident(3019), fetch_runs=lambda p: runs))
++
++    def test_too_few_greens_serves(self):
++        self.assertIsNone(
++            cal._incident_stale_note(
++                _incident(3019),
++                fetch_runs=lambda p: _green_fetcher(40994815953, 7183, greens=4),
++            )
++        )
++
++    def test_cancelled_runs_do_not_read_as_red(self):
++        interleaved = [
++            _run(920001, 7190, "cancelled"),
++            _run(920002, 7189, None),
++        ]
++        note = cal._incident_stale_note(
++            _incident(3019),
++            fetch_runs=lambda p: _green_fetcher(
++                40994815953, 7183, greens=5, interleaved=interleaved
++            ),
++        )
++        self.assertIsNotNone(note)
++
++    def test_workflow_mismatch_fails_open(self):
++        # Greens carry a different workflow name than the incident run's own
++        # name (both resolved from the same surface): no same-workflow newer
++        # runs can be identified, so the note must fail open and serve.
++        runs = [
++            _run(900000 + i, 7193 - i, "success", "Other Workflow")
++            for i in range(5)
++        ]
++        runs.append(_run(40994815953, 7183, "failure", WORKFLOW))
++        self.assertIsNone(cal._incident_stale_note(_incident(3019), fetch_runs=lambda p: runs))
++
++    def test_scrolled_off_incident_fails_open(self):
++        runs = [_run(900000 + i, 7300 + i, "success") for i in range(5)]
++        self.assertIsNone(cal._incident_stale_note(_incident(3019), fetch_runs=lambda p: runs))
++
++    def test_raising_fetcher_fails_open(self):
++        def boom(per_page):
++            raise RuntimeError("rate limited")
++
++        self.assertIsNone(cal._incident_stale_note(_incident(3019), fetch_runs=boom))
++
++    def test_live_wrapper_never_raises(self):
++        with unittest.mock.patch.object(
++            cal,
++            "_incident_stale_note",
++            side_effect=RuntimeError("boom"),
++        ):
++            self.assertIsNone(cal._probe_incident_stale(_incident(3019)))
++
++
++class _LeaseIsolated(unittest.TestCase):
++    def setUp(self):
++        patcher = unittest.mock.patch.object(
++            cal, "load_issue_lease_store", lambda path=None: {}
++        )
++        patcher.start()
++        self.addCleanup(patcher.stop)
++
++
++class TestPickIntegration(_LeaseIsolated):
++    def test_stale_top_row_advances_to_next_candidate(self):
++        board = [_incident(3019), _row(3000)]
++        self.assertEqual(
++            cal.pick_next_issue(
++                issues=board,
++                claim_probe=lambda n: (False, "no active claim on the feedback plane"),
++                incident_probe=lambda item: (
++                    "incident-stale (U3 demotion, #3050)" if item.get("number") == 3019 else None
++                ),
++            ),
++            "3000",
++        )
++
++    def test_pure_mode_keeps_pre_3050_contract(self):
++        """incident_probe=None ⇒ the stale incident is served, zero probing."""
++        board = [_incident(3019), _row(3000)]
++        self.assertEqual(cal.pick_next_issue(issues=board), "3019")
++
++    def test_raising_incident_probe_serves_the_row(self):
++        board = [_incident(3019), _row(3000)]
++
++        def probe(item):
++            raise RuntimeError("boom")
++
++        self.assertEqual(
++            cal.pick_next_issue(
++                issues=board,
++                claim_probe=lambda n: (False, "no active claim on the feedback plane"),
++                incident_probe=probe,
++            ),
++            "3019",
++        )
++
++
++class TestDefaultProbeWiring(unittest.TestCase):
++    def test_loop_source_wires_incident_probe_at_both_dispatch_sites(self):
++        """AST pin (signature-robust, #2899-heal precedent): both
++        pick_next_issue call sites must carry
++        incident_probe=_probe_incident_stale, so the demotion cannot silently
++        regress to prose-only.
++        """
++        src = cal.__file__
++        self.assertTrue(src.endswith("continuous_agent_loop.py"))
++        loop_src = Path(src).read_text(encoding="utf-8")
++        tree = ast.parse(loop_src)
++        wired = 0
++        for node in ast.walk(tree):
++            if not isinstance(node, ast.Call):
++                continue
++            fname = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", None)
++            if fname != "pick_next_issue":
++                continue
++            for kw in node.keywords:
++                if (
++                    kw.arg == "incident_probe"
++                    and isinstance(kw.value, ast.Name)
++                    and kw.value.id == "_probe_incident_stale"
++                ):
++                    wired += 1
++        self.assertEqual(
++            wired,
++            2,
++            "both dispatch surfaces (envelope + dispatch print) must wire the incident probe",
++        )
++
++
++if __name__ == "__main__":
++    unittest.main()

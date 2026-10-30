@@ -1,0 +1,371 @@
+diff --git a/docs/reports/PLATFORM_GUARDIAN_TOWER_SESSION_SATURATION_2026-10-28.md b/docs/reports/PLATFORM_GUARDIAN_TOWER_SESSION_SATURATION_2026-10-28.md
+new file mode 100644
+index 00000000..7bdba276
+--- /dev/null
++++ b/docs/reports/PLATFORM_GUARDIAN_TOWER_SESSION_SATURATION_2026-10-28.md
+@@ -0,0 +1,75 @@
++# Platform Guardian Incident Report — Tower `/mcp` Session Table Saturation Lockout
++
++- **Cycle**: cron Job 478330, platform-guardian role, 2026-10-28
++- **Finding issue**: #1886 (P1-high) · **Fix**: companion PR (this branch, 5 code/test files)
++- **Surface**: SupremeAI MCP Control Tower (`https://supremeai-mcp-tower.onrender.com`) — fleet front door
++- **Method**: live anonymous probing (read-only, zero-credential) + public-SSOT code analysis (`infrastructure/mcp-control-plane/`)
++- **Companion reports**: RULES_BREAKER_TOWER_EXPOSURE_2026-10-28.md (tower posture), deploy-lane RCA series (#1864, #1874)
++
++## 1. Executive summary
++
++Between 01:16Z and at least 01:27:38Z on 2026-10-28, every zero-credential MCP handshake against the tower's modern streamable-HTTP door (`POST /mcp`) was refused with `HTTP 503` and a structured JSON-RPC error reporting `activeSessions:100` — the bounded session table was full and the server has no eviction-under-pressure path. During the same window the tower process was alive (`GET /` → 200) and the legacy SSE door (`GET /sse`) remained fully functional on its own session table. The practical effect: **every MCP client on the default modern transport was locked out of the fleet front door**, while only legacy-transport clients could operate — including this agent, which completed its full Tower workflow over the SSE door.
++
++The root cause is an admission-policy gap, not a capacity failure: the table's only slot-freeing mechanism is a time-based idle reaper (default 1 h TTL), so any burst of short-lived clients larger than the table size produces a lockout window that persists until the reaper catches up. A minimal pressure-eviction admission path (evict the single least-recently-active session when the table is full, only if it has been idle beyond a configurable floor) closes the gap while preserving every existing contract, and is delivered with the first-ever tests for the admission path.
++
++## 2. Live evidence (all probes anonymous, read-only)
++
++| Time (UTC) | Probe | Result |
++|---|---|---|
++| 01:16Z | `POST /mcp` initialize (tower_client, streamable HTTP) | HTTP 503 |
++| 01:17Z | retry after 20 s backoff | HTTP 503 |
++| 01:22Z | retry after 45 s backoff | HTTP 503 |
++| 01:23:03Z | `POST /mcp` initialize, curl, response body captured | 503, ~94 ms fast-fail: `{"jsonrpc":"2.0","error":{"code":-32000,"message":"Too many concurrent MCP sessions","activeSessions":100},"id":null}` |
++| 01:23:03Z | `GET /` | 200, ~84 ms — process alive, router healthy |
++| 01:27:38Z | `GET /sse` | **200** + `event: endpoint` (`/messages?sessionId=8b2b6c2c-…`) — legacy door open |
++| 01:27:50Z→01:30:20Z | full MCP workflow over SSE (`initialize` → `tools/call system_health`) | success: 19 healthy · 2 degraded · 0 unreachable (of 21); board pull + issue filing succeeded over the same session |
++| 01:37:48Z | `POST /mcp` initialize again | **HTTP 200** — streamable door readmitting |
++
++Discriminating value of the series: the 503s are fast-fail (~94 ms) app-level JSON-RPC errors, not gateway timeouts or cold-start stalls; `GET /` 200 in the same seconds rules out process death, DNS, or Render spin-down; the SSE 200 rules out tower-wide capacity exhaustion. The failure is precisely **one admission table**.
++
++## 3. Root cause (public SSOT: `infrastructure/mcp-control-plane/src/http_server.ts`)
++
++1. **Bounded table with hard refusal, no pressure path** (cap site, now L1064-1100): on a fresh `initialize`, `reapIdleHttpSessions()` runs once, then `httpSessions.size >= env.runtime.maxHttpSessions` (default `MCP_MAX_HTTP_SESSIONS=100`) → 503 `-32000`. If reaping freed nothing, refusal is the only outcome.
++2. **The reaper is time-based only** (L213-234, #621 Phase 3): sessions idle longer than `MCP_HTTP_SESSION_IDLE_MS` (default **3,600,000 ms = 1 h**) are dropped every 60 s and at each initialize. A session that went idle 59 minutes ago still holds its slot against a brand-new live client.
++3. **Churn arithmetic**: the zero-credential door is designed to admit "Gemini Spark, xAI Grok, ANY AI" (auto-registration, #2588) and the contributor cron fleet reconnects with a fresh session per dispatch (clients do not send the protocol DELETE). Whenever distinct initializations within the trailing hour exceed 100, the table saturates; each slot the reaper frees is immediately re-taken, so the lockout persists for as long as the burst continues plus up to the 1 h TTL tail.
++4. **Recovery dynamics observed**: re-admission at 01:37:48Z aligns with the 1 h TTL crossing for sessions created in the ~00:30-00:37Z dispatch wave (the board shows heavy fleet activity 00:08-01:15Z: #1864 01:08Z, #1868 01:12Z, #1874 01:15Z). Two mechanisms can free slots — TTL reaping and client disconnects — and this probe series cannot separate them; both are consistent with the observed window and neither changes the fix.
++
++## 4. Dual-door asymmetry (why only modern clients were affected)
++
++The legacy `/sse` door maintains a **separate table** (`sseSessions`, cap 100) whose entries live for the socket lifetime with **no activity tracking and no reaper**. It stayed reachable throughout the incident and carried a full working session (handshake, `system_health`, `bridge_work_queue`, `github_create_issue` for #1886). Same process, same tool registry, same zero-credential posture — so the outage was table-specific admission asymmetry, not tower capacity. This asymmetry is also why the incident was partial and therefore easy to miss: legacy-transport clients (and any operator testing with curl against `/sse`) see a healthy tower.
++
++## 5. Fix design (companion PR)
++
++**Policy module** — `src/lib/session_admission.ts` (pure, no I/O, no clock reads; house test pattern per `test_mcp_presence.ts`/`test_http_retry.ts`): when the caller finds the table full, `pickPressureEvictionSessionId(entries, nowMs, idleFloorMs)` returns the single least-recently-active session id **iff** that session has been idle ≥ floor; otherwise `null` and the caller falls back to the historical refuse-only 503. Ties resolve deterministically to insertion order; future-dated activity (clock skew) is treated as too-fresh and protected; `idleFloorMs <= 0` disables pressure eviction entirely.
++
++**Env knob (#109 SSOT style)** — `MCP_SESSION_ADMISSION_IDLE_FLOOR_MS`, default **60,000 ms**, registered in `env.runtime.sessionAdmissionIdleFloorMs` with the same `nonNegativeInt` validation and the same all-knobs touch guard as its neighbors. `0` restores verbatim historical behavior for operators who want refuse-only semantics.
++
++**Wiring** — the `/mcp` cap site calls the policy after the existing reap pass; a selected victim is released with the exact mechanics the reaper uses (`transport.close()` → `onclose` → map delete + per-session server close; catch branch releases manually), then the size is re-checked before the 503 so the refuse path remains exact.
++
++**Safety composition** — an evicted client's next request hits the table's existing unknown-session contract (L1004-1010): structured **404 / -32001** with `data:{code:"session_not_found", recoverable:true, action:"send-initialize"}`, documented for redeploys and spin-downs. Eviction therefore introduces **no new client-visible failure mode**; it reuses a designed self-heal path.
++
++**Tests** — `test_session_admission.ts`, 9 contract groups (floor-disable, floor protection, oldest-first, deterministic ties, clock skew, empty table, mixed eligibility, exact-floor boundary, all-fresh refusal), wired as `test:session-admission` into both `test:unit` and `test:tower-ci`.
++
++**Deliberately out of scope** — the `/sse` table: different entry shape (no `lastActivityMs`), no live incident evidence on that door (it stayed open), and adding activity tracking there is a separate, larger change. Recorded as follow-up, not silently skipped.
++
++## 6. Operational guidance for fleet clients (no code needed)
++
++1. **One handshake per process, not per call** — reuse the session id across every tool call in a dispatch cycle.
++2. **Teardown on exit** — send the protocol DELETE for the session so slots free immediately instead of idling for up to 1 h; this alone materially shrinks the churn window for the whole fleet.
++3. **SSE fallback** — the `/sse` door speaks the same JSON-RPC tool registry; fleet tooling can fail over when `/mcp` returns `-32000` with `activeSessions` at the cap (treat it as a signal to back off, not to retry harder).
++
++## 7. Verification evidence
++
++- `test_session_admission`: **9/9** contract groups pass (`npx tsx`, offline).
++- `npm run typecheck` (tsc --noEmit, strict): clean.
++- Full `npm run test:unit` chain (37 suites, incl. the new suite wired in): **green end-to-end** (expected-fixture noise only).
++- Repo gate `continuous_agent_loop.py --verify-only`: **8/8 PASS**, `CONTRACT_VERSION=agent-loop-contract/1`.
++- Working tree contains exactly the six intended files (5 code/test + this report); `node_modules` properly ignored.
++
++## 8. Reflection
++
++- **Why eviction and not a bigger table**: raising `MCP_MAX_HTTP_SESSIONS` treats the symptom and converts a bounded-memory guarantee (#109) into unbounded growth under crawler pressure; it does not change the priority inversion where a 59-min-idle occupant beats a live client.
++- **Why an idle floor**: without it, eviction can kill a live-but-quiet session (e.g. an admin mid-thought). With the floor, pressure eviction is strictly safer than refusal: the alternative to evicting a 10-min-idle session is refusing every live client for the reaper's remaining window.
++- **Why 503 shape is unchanged**: fleet tooling already keys on the `-32000` message; changing the error contract in the same change as the policy would blur which behavior changed.
++- **Corroboration labeling** (series discipline): the 19/21 system-health snapshot (render-primary/worker `update_failed`) matches #1874's stale-degraded observation — it is corroboration of a known condition, not a new finding; the deploy-lane work belongs to #1864.
++- **Method note for future auditors**: a bare `GET /` 200 does NOT mean the MCP door is healthy; probe the actual handshake per transport, and treat `/sse` liveness as non-evidence for `/mcp` liveness — the tables fail independently.
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 3f2e0338..15dc7e6f 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -30,12 +30,13 @@
+     "test:bridge-onboarding": "tsx test_bridge_onboarding.ts",
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+     "test:mcp-presence": "tsx test_mcp_presence.ts",
++    "test:session-admission": "tsx test_session_admission.ts",
+     "test:bridge-intake": "tsx test_bridge_intake.ts",
+     "test:command-router": "tsx test_command_router.ts",
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:memory-graph-persistence && npm run --silent test:redis-p0",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:session-admission && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:memory-graph-persistence && npm run --silent test:redis-p0",
+     "test:semantic-router": "tsx scripts/test-runner.ts test/test_semantic_router.ts",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+diff --git a/infrastructure/mcp-control-plane/src/http_server.ts b/infrastructure/mcp-control-plane/src/http_server.ts
+index 7b214da4..0e7614ba 100644
+--- a/infrastructure/mcp-control-plane/src/http_server.ts
++++ b/infrastructure/mcp-control-plane/src/http_server.ts
+@@ -41,6 +41,7 @@ import {
+   resolveSlotSession,
+ } from "./policy/slot-verification.js";
+ import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibility.js";
++import { pickPressureEvictionSessionId } from "./lib/session_admission.js";
+ import { verifyApprovalLink } from "./policy/approvals/signing.js";
+ import { hasWebhookSignature } from "./lib/webhook_signature.js";
+ import { registerBridgeIntake } from "./events/bridge_intake.js";
+@@ -1064,8 +1065,38 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+         reapIdleHttpSessions();
+         const maxHttpSessions = env.runtime.maxHttpSessions;
+         if (httpSessions.size >= maxHttpSessions) {
+-          writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "Too many concurrent MCP sessions", activeSessions: httpSessions.size }, id: null });
+-          return;
++          // #1886: pressure-eviction admission. Under sustained short-lived
++          // client churn (cron fleet reconnecting per dispatch, tokenless AI
++          // crawlers) the reaper's 1 h idle TTL cannot free slots fast enough
++          // and the full table refuses EVERY fresh initialize — a steady-state
++          // fleet-door lockout (live incident 2026-10-28, /mcp 503
++          // activeSessions:100 while /sse stayed open). Admit by evicting the
++          // single least-recently-active occupant IF it has been idle ≥
++          // sessionAdmissionIdleFloorMs; the victim gets the table's existing
++          // structured recovery path (404/-32001 send-initialize, same as
++          // redeploys/spin-downs), so no new client-visible failure mode.
++          // floor=0 keeps the historical refuse-only behavior.
++          const evictId = pickPressureEvictionSessionId(
++            Array.from(httpSessions.entries(), ([sessionId, e]) => ({ sessionId, lastActivityMs: e.lastActivityMs })),
++            Date.now(),
++            env.runtime.sessionAdmissionIdleFloorMs,
++          );
++          if (evictId !== null) {
++            const victim = httpSessions.get(evictId);
++            if (victim) {
++              // Same release mechanics as reapIdleHttpSessions(): transport
++              // close fires onclose → map delete + per-session server close;
++              // the catch branch releases manually if onclose never fires.
++              try { victim.transport.close(); } catch {
++                httpSessions.delete(evictId);
++                void Promise.resolve().then(() => victim.server.close()).catch(() => undefined);
++              }
++            }
++          }
++          if (httpSessions.size >= maxHttpSessions) {
++            writeJson(res, 503, { jsonrpc: "2.0", error: { code: -32000, message: "Too many concurrent MCP sessions", activeSessions: httpSessions.size }, id: null });
++            return;
++          }
+         }
+ 
+         // Zero-manual-registration hook (#2588): a tokenless client — Gemini
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index 58731930..bb7c1112 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -201,6 +201,10 @@ export const env = {
+     get httpSessionIdleMs(): number { return nonNegativeInt("MCP_HTTP_SESSION_IDLE_MS", 3_600_000); },
+     get maxSseSessions(): number { return nonNegativeInt("MCP_MAX_SSE_SESSIONS", 100); },
+     get maxHttpSessions(): number { return nonNegativeInt("MCP_MAX_HTTP_SESSIONS", 100); },
++    /** Pressure-admission floor (#1886): min idle age before a FULL /mcp table
++     *  may evict its least-recently-active session to admit a fresh
++     *  initialize. 0 = refuse-only (historical behavior preserved). */
++    get sessionAdmissionIdleFloorMs(): number { return nonNegativeInt("MCP_SESSION_ADMISSION_IDLE_FLOOR_MS", 60_000); },
+   },
+ 
+   // ── Memory sidecar flags (#109 — moved out of index.ts inline reads)
+@@ -338,6 +342,7 @@ export function validateRuntimeKnobs(): void {
+   void env.runtime.httpSessionIdleMs;
+   void env.runtime.maxSseSessions;
+   void env.runtime.maxHttpSessions;
++  void env.runtime.sessionAdmissionIdleFloorMs;
+ }
+ 
+ 
+diff --git a/infrastructure/mcp-control-plane/src/lib/session_admission.ts b/infrastructure/mcp-control-plane/src/lib/session_admission.ts
+new file mode 100644
+index 00000000..f47b3dcf
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/session_admission.ts
+@@ -0,0 +1,66 @@
++/**
++ * Pressure-eviction admission policy for the bounded /mcp session table
++ * (session-saturation incident 2026-10-28, finding #1886).
++ *
++ * Defect class: the bounded session table (#109) only frees slots through
++ * the idle reaper (`reapIdleHttpSessions`, default 1 h idle TTL). Under
++ * sustained short-lived client churn — the zero-credential cron agent fleet
++ * reconnecting every dispatch, plus tokenless AI crawlers — more than
++ * `MCP_MAX_HTTP_SESSIONS` distinct sessions initialize per hour, so the
++ * table saturates into a STEADY-STATE lockout: every fresh `initialize`
++ * is refused with 503 while stale-but-idle (< 1 h) occupants hold their
++ * slots. Live evidence: 01:16-01:27Z 2026-10-28, five consecutive 503
++ * `activeSessions:100` handshakes while the /sse door stayed open.
++ *
++ * Policy: when the table is full, admit a fresh initialize by evicting the
++ * SINGLE least-recently-active session — but only if that session has been
++ * idle for at least the admission idle floor. A victim receives the exact
++ * structured recovery contract the table already defines for redeploys and
++ * spin-downs (404 / -32001, `session_not_found`, `recoverable`,
++ * `action:"send-initialize"`), so no new client-visible failure mode is
++ * introduced. When every occupant is fresher than the floor, the caller
++ * falls back to the historical refuse-only behavior.
++ *
++ * Pure logic, no I/O, no clock reads — mirrors the house test pattern
++ * (test_mcp_presence.ts, test_http_retry.ts): decisions are computed from
++ * injected inputs so the admission path is testable offline for the first
++ * time. `idleFloorMs <= 0` disables pressure eviction entirely (operators
++ * who want the historical refuse-only semantics keep it verbatim).
++ */
++
++/** Minimal shape the admission decision needs from a session-table entry. */
++export interface SessionAdmissionEntry {
++  sessionId: string;
++  /** Sliding-expiry signal shared with the reaper (#621 Phase 3). */
++  lastActivityMs: number;
++}
++
++/**
++ * Pick the session to evict when the table is full, or `null` to refuse.
++ *
++ * Contract:
++ * - `idleFloorMs <= 0` → always `null` (pressure eviction disabled).
++ * - A session is eligible iff `lastActivityMs <= nowMs - idleFloorMs`
++ *   (i.e. idle for at least the floor). Fresher sessions are protected.
++ * - Among eligible sessions the OLDEST `lastActivityMs` wins; ties resolve
++ *   to the FIRST occurrence in input order, so feeding entries in Map
++ *   iteration order (insertion order) makes the decision deterministic.
++ * - Future-dated `lastActivityMs` (clock skew) is "too fresh" → protected.
++ * - Empty input → `null`.
++ */
++export function pickPressureEvictionSessionId(
++  entries: readonly SessionAdmissionEntry[],
++  nowMs: number,
++  idleFloorMs: number,
++): string | null {
++  if (idleFloorMs <= 0 || entries.length === 0) return null;
++  const eligibleBefore = nowMs - idleFloorMs;
++  let oldest: SessionAdmissionEntry | null = null;
++  for (const entry of entries) {
++    if (entry.lastActivityMs > eligibleBefore) continue;
++    if (oldest === null || entry.lastActivityMs < oldest.lastActivityMs) {
++      oldest = entry;
++    }
++  }
++  return oldest ? oldest.sessionId : null;
++}
+diff --git a/infrastructure/mcp-control-plane/test_session_admission.ts b/infrastructure/mcp-control-plane/test_session_admission.ts
+new file mode 100644
+index 00000000..7bad6740
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_session_admission.ts
+@@ -0,0 +1,108 @@
++/**
++ * Pressure-eviction admission contract tests (#1886).
++ *
++ * Pure-logic coverage — no network, no clock, no credentials. The live
++ * incident (2026-10-28: /mcp 503 activeSessions:100 while /sse stayed open)
++ * proved the bounded /mcp table had NO admission path under churn: the
++ * reaper only frees slots after the 1 h idle TTL, so a full table refused
++ * every fresh initialize indefinitely. pickPressureEvictionSessionId() is
++ * the admission decision, extracted pure so the policy is testable offline
++ * (house pattern: test_mcp_presence.ts, test_http_retry.ts).
++ *
++ * Contract under test:
++ *   1. Refuse-only semantics preserved: floor <= 0 → never evict.
++ *   2. Floor protection: sessions fresher than the floor are never evicted.
++ *   3. Oldest-first: among eligible sessions the least-recently-active wins.
++ *   4. Determinism: ties resolve to the first occurrence in input order.
++ *   5. Clock skew: future-dated activity is "too fresh" → protected.
++ *   6. Empty table → null (caller keeps refuse path).
++ *   7. Mixed table: exactly the stale minority is eligible; fresher majority
++ *      never influences the choice beyond eligibility.
++ *
++ * Run: npm run test:session-admission   (wired into test:unit + test:tower-ci)
++ */
++import assert from "node:assert/strict";
++
++import { pickPressureEvictionSessionId, type SessionAdmissionEntry } from "./src/lib/session_admission.js";
++
++const NOW = 1_800_000_000_000;
++
++function entriesOf(...pairs: Array<[string, number]>): SessionAdmissionEntry[] {
++  return pairs.map(([sessionId, lastActivityMs]) => ({ sessionId, lastActivityMs }));
++}
++
++// ── 1. floor <= 0 → refuse-only (historical behavior preserved verbatim) ───
++assert.equal(pickPressureEvictionSessionId(entriesOf(["a", NOW - 3_600_000]), NOW, 0), null, "floor=0 must disable pressure eviction");
++assert.equal(pickPressureEvictionSessionId(entriesOf(["a", NOW - 3_600_000]), NOW, -1), null, "negative floor must disable pressure eviction");
++
++// ── 2. Floor protection: fresher-than-floor occupants are never evicted ────
++const floor = 60_000;
++assert.equal(
++  pickPressureEvictionSessionId(entriesOf(["fresh-59s", NOW - 59_000]), NOW, floor),
++  null,
++  "session idle 59s < 60s floor must be protected",
++);
++assert.equal(
++  pickPressureEvictionSessionId(entriesOf(["just-active", NOW]), NOW, floor),
++  null,
++  "just-active session must be protected",
++);
++
++// ── 3. Oldest-first among eligible sessions ────────────────────────────────
++assert.equal(
++  pickPressureEvictionSessionId(
++    entriesOf(["b-5min", NOW - 5 * 60_000], ["a-30min", NOW - 30 * 60_000], ["c-2min", NOW - 2 * 60_000]),
++    NOW,
++    floor,
++  ),
++  "a-30min",
++  "the least-recently-active eligible session must be the eviction pick",
++);
++
++// ── 4. Determinism: exact tie resolves to first occurrence in input order ──
++assert.equal(
++  pickPressureEvictionSessionId(entriesOf(["first", NOW - 120_000], ["second", NOW - 120_000]), NOW, floor),
++  "first",
++  "tie must resolve deterministically to the first eligible entry",
++);
++
++// ── 5. Clock skew: future-dated activity is protected ──────────────────────
++assert.equal(
++  pickPressureEvictionSessionId(entriesOf(["skewed", NOW + 999_999]), NOW, floor),
++  null,
++  "future-dated lastActivityMs must never be evicted",
++);
++
++// ── 6. Empty table → null ──────────────────────────────────────────────────
++assert.equal(pickPressureEvictionSessionId([], NOW, floor), null, "empty table must yield null");
++
++// ── 7. Mixed table: only the stale minority is eligible ────────────────────
++const mixed = entriesOf(
++  ["live-1", NOW - 1_000],
++  ["live-2", NOW - 2_000],
++  ["stale-70s", NOW - 70_000],
++  ["live-3", NOW - 3_000],
++  ["older-stale-10min", NOW - 600_000],
++);
++assert.equal(
++  pickPressureEvictionSessionId(mixed, NOW, floor),
++  "older-stale-10min",
++  "the oldest eligible session wins even when fresher entries surround it",
++);
++
++// ── 8. Boundary: idle exactly at the floor IS eligible (>= semantics) ──────
++assert.equal(
++  pickPressureEvictionSessionId(entriesOf(["exactly-floor", NOW - floor]), NOW, floor),
++  "exactly-floor",
++  "a session idle exactly the floor must be eligible (>= floor semantics)",
++);
++
++// ── 9. All-fresh table → null (caller falls back to refuse-only 503) ───────
++const allFresh = entriesOf(["f1", NOW - 1_000], ["f2", NOW - 30_000], ["f3", NOW - 59_000]);
++assert.equal(
++  pickPressureEvictionSessionId(allFresh, NOW, floor),
++  null,
++  "when every occupant is fresher than the floor, admission must refuse",
++);
++
++console.log("test_session_admission: 9/9 contract groups PASS (#1886 pressure-eviction admission)");

@@ -1,0 +1,126 @@
+diff --git a/core/tools/social/telegram_bot/conversations.py b/core/tools/social/telegram_bot/conversations.py
+index fb5cd0aa..28e40159 100644
+--- a/core/tools/social/telegram_bot/conversations.py
++++ b/core/tools/social/telegram_bot/conversations.py
+@@ -14,7 +14,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class ConversationsMixin:
+diff --git a/core/tools/social/telegram_bot/handler.py b/core/tools/social/telegram_bot/handler.py
+index ab3856b3..25ac393a 100644
+--- a/core/tools/social/telegram_bot/handler.py
++++ b/core/tools/social/telegram_bot/handler.py
+@@ -19,7 +19,7 @@
+ import httpx
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .admin_handlers import AdminHandlersMixin
+ from .ai_assignment_handler import AIAssignmentHandlerMixin
+diff --git a/core/tools/social/telegram_bot/router.py b/core/tools/social/telegram_bot/router.py
+index bd1ffd74..99ef44ae 100644
+--- a/core/tools/social/telegram_bot/router.py
++++ b/core/tools/social/telegram_bot/router.py
+@@ -21,7 +21,7 @@
+ from fastapi import APIRouter, Request, Response  # FIX: must be module-level — see below
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ from .handler import TelegramBotHandler
+ 
+diff --git a/core/tools/social/telegram_bot/runtime.py b/core/tools/social/telegram_bot/runtime.py
+index e81f9091..e08aa95d 100644
+--- a/core/tools/social/telegram_bot/runtime.py
++++ b/core/tools/social/telegram_bot/runtime.py
+@@ -10,7 +10,7 @@
+ 
+ import httpx
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class RuntimeMixin:
+diff --git a/core/tools/social/telegram_bot/updates.py b/core/tools/social/telegram_bot/updates.py
+index 247053e3..846b9667 100644
+--- a/core/tools/social/telegram_bot/updates.py
++++ b/core/tools/social/telegram_bot/updates.py
+@@ -12,7 +12,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class UpdatesMixin:
+diff --git a/core/tools/social/telegram_security.py b/core/tools/social/telegram_security.py
+index bcd2c5e3..9bbd735f 100644
+--- a/core/tools/social/telegram_security.py
++++ b/core/tools/social/telegram_security.py
+@@ -18,7 +18,7 @@
+ import time
+ from typing import Any
+ 
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ def _get_base32_totp_secret() -> str:
+diff --git a/core/tools/social/viral_referral_engine.py b/core/tools/social/viral_referral_engine.py
+index 80771f4a..eb6dea14 100644
+--- a/core/tools/social/viral_referral_engine.py
++++ b/core/tools/social/viral_referral_engine.py
+@@ -5,7 +5,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ from database.supabase_client import db
+ 
+ REWARD_TIERS = [
+diff --git a/core/tools/sso_integrator.py b/core/tools/sso_integrator.py
+index 7dab7ed0..8b74baa6 100644
+--- a/core/tools/sso_integrator.py
++++ b/core/tools/sso_integrator.py
+@@ -8,7 +8,7 @@
+ import jwt
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class SSOIntegrator:
+diff --git a/core/tools/tenant_rate_limiter.py b/core/tools/tenant_rate_limiter.py
+index 52d0b5d0..ee5df8ff 100644
+--- a/core/tools/tenant_rate_limiter.py
++++ b/core/tools/tenant_rate_limiter.py
+@@ -2,7 +2,7 @@
+ from typing import Any
+ 
+ from core.config import settings
+-from core.logging_config import logger
++from core.monitoring.logging_config import logger
+ 
+ 
+ class TenantRateLimiter:
+@@ -26,7 +26,7 @@ def _resolve_redis_queue(self):
+ 
+             return redis_manager.client
+         except (ImportError, AttributeError, RuntimeError) as e:
+-            from core.logging_config import logger
++            from core.monitoring.logging_config import logger
+ 
+             logger.warning(f"Failed to resolve redis_manager module: {e}")
+             return None

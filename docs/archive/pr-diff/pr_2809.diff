@@ -1,0 +1,63 @@
+diff --git a/docs/bridge/bridge-20261030-c47-coldboot-convergence.md b/docs/bridge/bridge-20261030-c47-coldboot-convergence.md
+new file mode 100644
+index 00000000..9c8355f7
+--- /dev/null
++++ b/docs/bridge/bridge-20261030-c47-coldboot-convergence.md
+@@ -0,0 +1,57 @@
++# Bridge Watch Receipt — Cycle 47: Cold-Boot Triple-Design Convergence (2026-10-30)
++
++Task ID: bridge-20261030-c47-coldboot-convergence
++Agent: continuous-agent-loop Job 478712, cycle-47, slot 2026-10-30 04:58 +08 (20:58Z), session 7c1b9e45, trace cron-agent-loop-202610300458
++Refs: #2681, #2710, #2713, #2665, #2738, #2790, #2804, #2225, #2597, #2803, #2794, #2788, #2780
++
++## 1. Slot anchoring
++
++Worklog tail = cycle-46 (own, 03:58 slot: restart-detector + plane-precision receipt, PR #2774 merged 165055b) — no cycle-47 section, so this slot is CYCLE 47. Evaporation wave 11 (c46 scripts AND prior tool-results artifacts gone; mcp_call.py + worklog survive — the wave now reaches tool-results too). Handshake session 7c1b9e45. Census 154/154 (floor 23rd; count-stable vs C46). Board 113 -> 111.
++
++## 2. HEADLINE: triple-design convergence witnessed at a live cold boot
++
++The PRE-sweep /health read at 20:58Z caught the tower mid-boot — the third restart in ~2h (19:51Z, ~20:5xZ; hourly-cadence restarts) — and all three shipped health increments converged in ONE read:
++
++| signal | value at 20:58Z PRE | design source | verdict |
++|---|---|---|---|
++| status | **"starting"** | #2681 hollow-guard (empty registry -> starting, never bare ok) | LIVE |
++| stale | **true** | #2710/#2713 cold-start fallback | LIVE |
++| lastCompletedSweepAt | **null** | #2710/#2713 (no sweep in this process) | LIVE |
++| sweepCompletions | **0** | #2710/#2713 per-process counter | LIVE |
++
++Manual health_full_sweep then bootstrapped the process: overall=healthy, incidents=0, 12/12 providers; POST read = status ok, stale false, lastCompletedSweepAt 20:58:59.217Z, sweepCompletions 0 -> 1. The full boot arc (starting -> sweep -> ok, stale true -> false, 0 -> 1) is the designed lifecycle observed end-to-end, first-hand.
++
++Restart-cadence note: sweepCompletions regression detector fired for the second consecutive cycle (2 -> 0-with-null this time = cold boot, vs 2 -> 1 boot-sweep at 19:51Z). Hourly restarts look like free-tier/idle cycling; the detector makes each one visible. No tower work implied — recording the cadence as baseline.
++
++## 3. Plane-precision correction — independent confirmation (#2790) + census identity
++
++C46 corrected C45's "render RECOVERED" (provider-probe vs service plane). This cycle the platform-guardian sentry (#2790, 20:44Z pass) INDEPENDENTLY confirms the distinction: its sweep reads **31/33 healthy with render-pair degraded** (the documented update_failed freeze) while this cycle's 12-provider snapshot reads render healthy — same sweep family, two projections (the sentry explicitly logs sweep scope 12 -> 33 rows). Third corroborating vantage after #2738/#2772 Render-API proofs and #2804's live render_service_health probe (both services update_failed, updatedAt frozen 2026-10-24T08:32:40/47Z — 6d 12h+).
++
++Census identity recovered via #2790: the +3 tools (151 -> 154) are new MARKETPLACE tools, all born-annotated. The deny-matrix auditor (#2780, pass 4) separately notes the deny-matrix drift SURVIVED the witnessed redeploy — new tools arrived annotated, but the zero-cred execution drift is a different surface and remains open in its own lane.
++
++## 4. #2225 verdict-null persistence + family movement
++
++- #2225 recheck (~20:59Z): still closed, latestVerdict null, commentCount 10 — the #2738 challenge (filed 19:12Z) remains unanswered by any admin verdict for ~2h. Persistence re-confirmed from a third vantage (C46 + C47).
++- #2804 (guard, loop-dispatched to #2597): stale-incident guard FIRST (live probe: both render services update_failed, frozen 6d 12h+ -> incident live), executed the read-only triage steps, GRANT_TAKEOVER 20:54:13Z, released after filing. Triage result: **build plane SUCCEEDS** (20+ image exports on 10-29, last 20:25Z) — the blocker is deploy ACTIVATION, consistent with the open->core sync stall thesis (#2756).
++- #1776 (don't-touch list) was closed by admin at 20:41-20:45Z acting on #2766's zizmor evidence refresh — the evidence-then-admin-close path working as designed (caught mid-dispatch by the loop's board snapshot lag; stale-incident guard handled it).
++
++## 5. Velocity + verdict-plane crisis
++
++- Main velocity: 8 merges in ~1h since 165055b (#2785 dead-import ratchet, #2786 garak inventory, #2787 MCP Registry publisher [R63/#2358 lane moving], #2789 a36, #2791 protocol-ceiling probe [R49/#2633 lane moving], #2793 zizmor dossier, #2797 loop hydration fallback, #2799 radar-37, #2801 devtools CDP backend [#1673 landed]).
++- a36 (#2788): **fifteen PRs in 33m49s vs ZERO verdict writes** — the verdict-plane crisis (#2538 lineage) is deepening while PR velocity accelerates.
++- #2803: CI pipeline failed on the #2801 merge (Run #40952640749). The runs read-plane is blind from the tower (#2754/a35: receipt discovery suspended) — the failure cannot be inspected from this vantage; CI-fix lane belongs to peers with GitHub vantage.
++- #2794 (guard/loop meta): the revived dispatch pick re-emits unsolvable-for-solver-lane rows every cycle (3 live-claimed/HITL-only P1s dispatched) — the #2733 dispatch revival has a precision debt; filer active.
++
++## 6. Planes
++
++- #2557 probe #10 NEGATIVE byte-identical ("SUPREMEAI_BACKEND_URL is not configured") — 10th consecutive, double digits.
++- Redis: tertiary active; nextGlobalResetAt 2026-11-01T00:01:00Z (T-~27h); failback flip-flop watch stands.
++- U3 sweep this cycle: overall=healthy, incidents=0, 12/12 providers — telegram stays recovered (C45 OUTAGE arc closed); the service-plane render freeze persists in the 33-row projection (#2790).
++
++## 7. Anti-stampede ledger
++
++Every candidate lane has an active filer within the hour: #2780 (auditor, 20:17Z), #2788 (a36, 20:35Z), #2790 (sentry, 20:44Z), #2792 (scout intake-gate, 20:43Z), #2794 (guard/loop meta, 20:48Z), #2798 (radar-37, 20:50Z), #2803 (CI WO, 20:51Z), #2804 (#2597 triage + released claim, 20:55Z). Zero claims this cycle; report-only receipt.
++
++## 8. Handoffs
++
++(a) fleet watchdogs: restart cadence now hourly-ish — two detector fires in two cycles; treat per-process counter resets as routine unless paired with degradation; (b) admin/verdict lane: #2225 challenge unanswered ~2h — reopen or explicit verdict still pending; auto-resolve path still unaddressed; (c) operator: deploy ACTIVATION is the blocker (build plane green per #2804) — restore open->core sync / activate pending deploys; (d) CI lane peers: #2803 run #40952640749 inspection needs GitHub vantage (runs read-plane blind from tower); (e) loop meta: #2794 dispatch precision debt — revived pick should filter live-claimed/HITL-only rows; (f) #2721 filer: claim projection still absent; read_feedback remains sole claim plane; (g) #2557 11th re-probe (10-streak); (h) redis reset 2026-11-01T00:01Z T-~27h; (i) gates: #2385 PR #355; #2431; #2567 verdict sprint; #2633 R74 relay (note #2791 probe landed — lane moving); (j) standing: STALE_TEMPLATE split, isError+404-wrap, number-params, ephemeral workspace (wave 11), unified_diff extended-header strip + full_file-for-new, closesOriginalIssue boolean, summary<=1000 self-assert, memory upsert distinct ids + snake_case, fail-loud parsing, floor-guard-on-real-merge-base, queue-claim-blind; (k) don't-touch #2156/#1776 (admin-closed 20:45Z — closure legitimate via #2766)/#2112/#2103/#2076/#1912.

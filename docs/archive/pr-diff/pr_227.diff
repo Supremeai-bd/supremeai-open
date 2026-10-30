@@ -1,0 +1,137 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 9e423a99..43bcfae8 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -862,6 +862,92 @@ def step_8_return() -> None:
+     print("----------------------------------------------------------------------")
+ 
+ 
++# ============================================================================
++# Contributor additions: scheduled mode (AGENTS.md §0 — this extends the
++# EXISTING dispatcher in place; no new loop script is introduced). All lines
++# below are pure additions; upstream lines are left unmodified.
++# ============================================================================
++
++def _utc_now_stamp() -> str:
++    """UTC ISO-8601 timestamp for scheduler log lines."""
++    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
++
++
++def cron_expression(minutes: int) -> str:
++    """Best-effort translation of a start-to-start interval to crontab fields."""
++    if 0 < minutes < 60 and 60 % minutes == 0:
++        return f"*/{minutes} * * * *"
++    if minutes >= 60 and minutes % 60 == 0:
++        return f"0 */{minutes // 60} * * *"
++    return f"*/{minutes} * * * *"  # approximate in cron field semantics; --schedule itself anchors start-to-start
++
++
++def print_cron_entry(minutes: int) -> None:
++    """Print a ready-to-paste crontab entry for the requested cadence."""
++    print(f"# continuous_agent_loop.py --print-cron (generated {_utc_now_stamp()})")
++    print(f"# cadence: every {minutes} min — {cron_expression(minutes)}")
++    print(f"{cron_expression(minutes)} cd {REPO_ROOT} && python3 scripts/agents/continuous_agent_loop.py --schedule {minutes} >> .agent_loop_schedule.log 2>&1")
++
++
++def _run_one_scheduled_tick(args: argparse.Namespace) -> int:
++    """One scheduled dispatch — reuses upstream's own single-cycle paths."""
++    if args.verify_only:
++        passed, _ = step_6_verify()
++        return 0 if passed else 1
++    issue_id = args.issue
++    if args.pick_next:
++        issue_id = pick_next_issue()
++        if not issue_id:
++            log("❌", "No eligible open issues found on board this tick!")
++            return 1
++        log("🎯", f"Auto-selected highest priority Issue #{issue_id}")
++    return run_cycle(args, issue_id)
++
++
++def run_scheduled_cycles(args: argparse.Namespace) -> int:
++    """Cron-like scheduler anchored on cycle START (not cycle end).
++
++    Contract:
++      - cycle 1 starts immediately;
++      - cycle N starts exactly ``--schedule`` minutes after cycle N-1 STARTED
++        (the sleep is derived from a time.monotonic() anchor, so variable
++        cycle duration never accumulates end-to-start drift);
++      - if a cycle overruns the interval, the next tick runs immediately and
++        logs the catch-up loudly (silent drift is worse than a loud delay);
++      - a failed tick logs a warning and does NOT stop the clock — one failed
++        tick is not a stalled schedule;
++      - Ctrl-C stops the scheduler cleanly.
++    """
++    interval = args.schedule * 60
++    total = args.cycles
++    plan = "indefinitely (Ctrl-C to stop)" if total == 0 else f"{total} cycle(s)"
++    log("⏰", f"[Scheduled Mode] dispatch every {args.schedule} min, {plan}.")
++    failures = 0
++    cycle_no = 0
++    next_start = time.monotonic()
++    try:
++        while total == 0 or cycle_no < total:
++            if cycle_no > 0:
++                delay = next_start - time.monotonic()
++                if delay < 0:
++                    log("⚠️", f"[Scheduled Mode] overrun by {int(-delay)}s — running catch-up tick immediately (start-to-start anchor preserved).")
++                elif delay > 0:
++                    time.sleep(delay)
++            cycle_no += 1
++            next_start = time.monotonic() + interval
++            label = f"{cycle_no}/{total}" if total else str(cycle_no)
++            log("🚀", f"[Scheduled Mode] cycle {label} starting at {_utc_now_stamp()}.")
++            rc = _run_one_scheduled_tick(args)
++            if rc != 0:
++                failures += 1
++                log("⚠️", f"[Scheduled Mode] cycle {label} exited {rc} — one failed tick is not a stalled clock; schedule continues.")
++    except KeyboardInterrupt:
++        log("🛑", f"[Scheduled Mode] interrupted — clean stop after {cycle_no} cycle(s) ({failures} failed tick(s)).")
++        return 130
++    log("🏁", f"[Scheduled Mode] finished: {cycle_no} cycle(s), {failures} failed tick(s).")
++    return 0 if failures == 0 else 1
++
++
+ def run_cycle(args: argparse.Namespace, issue_id: str | None) -> int:
+     """Execute a single complete task dispatch cycle."""
+     task = step_1_understand(issue_id, allow_adhoc=args.allow_adhoc)
+@@ -939,6 +1025,13 @@ def main() -> int:
+                         help="Pathway 2: GitHub owner of your fork; step 7 pushes the branch "
+                              "there and opens the PR with head '<owner>:<branch>' "
+                              "(env fallback: SUPREMEAI_FORK_OWNER)")
++    # --- contributor additions: scheduled mode (cron-like start-to-start loop) ---
++    parser.add_argument("--schedule", type=int, nargs="?", const=30, default=None, metavar="MINUTES",
++                        help="Scheduled mode: dispatch every MINUTES minutes (default: 30). Anchored on cycle START like a true cron tick, so cycle duration never accumulates drift.")
++    parser.add_argument("--cycles", type=int, default=0,
++                        help="Stop after N scheduled cycles (default: 0 = run indefinitely; requires --schedule).")
++    parser.add_argument("--print-cron", action="store_true",
++                        help="Print the equivalent crontab entry for --schedule and exit (does not run the loop).")
+     args = parser.parse_args()
+ 
+     banner = (
+@@ -954,6 +1047,25 @@ def main() -> int:
+     else:
+         print(banner)
+ 
++    # --- contributor additions: scheduled-mode fail-fast guards + dispatch ---
++    # Unified guards apply to every consumer of --schedule (including
++    # --print-cron): zero/negative intervals and negative cycle counts are
++    # configuration errors, rejected before anything runs (fail-fast).
++    if args.schedule is not None and args.schedule <= 0:
++        log("❌", f"--schedule must be a positive number of minutes (got {args.schedule}).")
++        return 1
++    if args.cycles < 0:
++        log("❌", f"--cycles must be >= 0 (0 = run indefinitely; got {args.cycles}).")
++        return 1
++    if args.cycles > 0 and args.schedule is None:
++        log("❌", "--cycles requires --schedule (scheduled mode).")
++        return 1
++    if args.print_cron:
++        print_cron_entry(args.schedule if args.schedule is not None else 30)
++        return 0
++    if args.schedule is not None:
++        return run_scheduled_cycles(args)
++
+     if args.verify_only:
+         passed, _ = step_6_verify()
+         # #67 parity marker — final stdout line, byte-identical across the

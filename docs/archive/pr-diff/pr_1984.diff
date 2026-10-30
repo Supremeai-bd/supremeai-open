@@ -1,0 +1,603 @@
+diff --git a/core/api/routes/deep_research.py b/core/api/routes/deep_research.py
+index bfec6faf..a8a51a22 100644
+--- a/core/api/routes/deep_research.py
++++ b/core/api/routes/deep_research.py
+@@ -191,51 +191,50 @@ async def _llm_call(prompt: str, user_id: str, task_type: str = "deep_research")
+ 
+ 
+ async def _scout_search(query: str, tenant_id: str) -> list[dict[str, str]]:
+-    """Governed scout crawl search (MASTER_PLAN Phase 1: "Scout goes live").
+-
+-    বাংলা: আগে scout crawler ছিল API-র চোখে dead code — এখন deep research-এর
+-    web search প্রথমে টেন্যান্টের *সক্রিয়* CrawlPolicy মেনে governed crawl চালায়
+-    (robots.txt, rate pacing, SSRF gate, dedup, zero-token summary)। Policy না
+-    থাকলে বা crawl খালি হলে কলার browser fallback-এ ফিরে যায় (Graceful
+-    Degradation)। প্রতিটি crawl-এর ফলাফল durable history-তে রেকর্ড হয় —
+-    research উত্তর এখন governed সোর্স cite করে (B2 battlefield fuel)।
++    """Policy-gated scout search on the core.search SSOT (MASTER_PLAN Phase 1).
++
++    বাংলা: scout search-পথ এখন টেন্যান্টের *সক্রিয়* CrawlPolicy মেনে চলে —
++    policy না থাকলে কিছই হয় না (Policy Before Power)। Policy থাকলে search
++    SSOT (``core.search.web_search``: ddgs ক্লায়েন্ট + env-keyed provider
++    fallback) ফলাফল দেয়; ফাঁকা হলে কলার browser fallback-এ ফিরে যায়
++    (Graceful Degradation)।
++
++    Issue #1751: search-leg আর বট-হোস্টাইল DDG-HTML এন্ডপয়েন্ট হাতে-স্ক্র্যাপ করে
++    না (লাইভ প্রোব: HTTP 202 anti-bot interstitial — স্ক্র্যাপিং ভরসা ছিল ভাগ্যের
++    উপর, চুক্তির উপর নয়)। governed crawler থাকছে যেখানে সেটিই সঠিক হাতিয়ার —
++    *পেজ আনা*; search-ফলাফল আবিষ্কার SSOT দিয়েই হবে।
+     """
+     results: list[dict[str, str]] = []
+     try:
+-        from urllib.parse import quote_plus
+-
+-        from scout.crawler import CrawlerService
+-        from scout.models import CrawlRequest
+-        from scout.persistence import get_active_policy, record_crawl_response
++        from scout.persistence import get_active_policy
+ 
+         tenant_id = str(tenant_id).strip()
+         if not tenant_id:
+             return []
+         policy = await get_active_policy(tenant_id)
+         if policy is None:
+-            # বাংলা: Policy Before Power — সক্রিয় policy না থাকলে scout কিছুই crawl করে না।
++            # বাংলা: Policy Before Power — সক্রিয় policy না থাকলে scout কিছুই করে না।
+             return []
+ 
+-        service = CrawlerService(policy=policy)
+-        search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+-        resp = await service.execute_crawl(
+-            CrawlRequest(
+-                query_or_url=search_url,
+-                tenant_id=tenant_id,
+-                max_depth=1,
+-                max_results=min(policy.max_results, 8),
+-            )
+-        )
+-        await record_crawl_response(resp)
+-
+-        for page in resp.pages:
+-            if page.is_duplicate or not page.url:
++        # Issue #1751: search results come from the core.search SSOT (ddgs
++        # client + env-keyed provider fallback). web_search is sync and
++        # network-bound — run it off the event loop. The governed crawler
++        # remains the right tool for fetching pages, not for discovering
++        # search results (the raw DDG-HTML scrape served HTTP 202 anti-bot
++        # interstitials — zero parseable results in the wild).
++        from core.search import web_search
++
++        max_results = min(policy.max_results, 8)
++        raw = await asyncio.to_thread(web_search, query, max_results)
++        for r in raw:
++            url = r.get("href") or r.get("url") or ""
++            if not url:
+                 continue
+-            snippet = " ".join((page.content or "").split())[:280]
++            snippet = " ".join((r.get("body") or "").split())[:280]
+             results.append(
+                 {
+-                    "title": page.title or page.url,
+-                    "url": page.url,
++                    "title": r.get("title") or url,
++                    "url": url,
+                     "snippet": snippet,
+                     "source": "scout",
+                 }
+@@ -246,11 +245,11 @@ async def _scout_search(query: str, tenant_id: str) -> list[dict[str, str]]:
+ 
+ 
+ async def _web_search(query: str, user_id: str = "") -> list[dict[str, str]]:
+-    """Scout-first web search with browser-agent fallback.
++    """Policy-gated scout search with honest empty fallback.
+ 
+-    বাংলা: Phase 1 — governed scout crawl (tenant policy মেনে) প্রথম প্রচেষ্টা;
+-    সেটি ফাঁকা হলে পুরোনো autonomous-browser path (LLM-চালিত) fallback হিসেবে
+-    চলে। ফলাফল: [{title, url, snippet}]।
++    বাংলা: Phase 1 — CrawlPolicy-gated scout search (এখন core.search SSOT-এ,
++    issue #1751) প্রথম প্রচেষ্টা; সেটি ফাঁকা হলে সৎ zero-sources-ই ফলাফল।
++    ফলাফল: [{title, url, snippet}]।
+     """
+     results: list[dict[str, str]] = []
+     try:
+diff --git a/core/search.py b/core/search.py
+index c6c25805..30d38efe 100644
+--- a/core/search.py
++++ b/core/search.py
+@@ -1,13 +1,19 @@
+-"""Graceful DuckDuckGo (DDGS) web search — free, no API key required.
++"""Graceful web search SSOT — ddgs-first (free, no key) + env-keyed provider fallback.
+ 
+ বাংলা মন্তব্য: duckduckgo-search লাইব্রেরি (নতুন প্যাকেজ নাম `ddgs`, পুরনো `duckduckgo_search`)
+-ব্যবহার করে লাইভ ওয়েব সার্চ করে। প্যাকেজটি ইনস্টল না থাকলে ফাংশনগুলো খালি লিস্ট/None রিটার্ন
+-করে — কোনো ক্র্যাশ হয় না। প্যাকেজ ইনস্টল: `pip install duckduckgo-search` (বা `ddgs`)।
++ব্যবহার করে লাইভ ওয়েব সার্চ করে। প্যাকেজটি ইনস্টল না থাকলে ফাংশনগুলো খালি লিস্ট/None রিটার্ন
++করে — কোনো ক্র্যাশ হয় না। প্যাকেজ ইনস্টল: `pip install duckduckgo-search` (বা `ddgs`)।
++
++Issue #1751: এই মডিউলটি এখন repo-র একমাত্র search SSOT। এনভায়রনমেন্ট-কী থাকলে
++Brave/Tavily প্রোভাইডার আগে চলে (plain JSON, কোনো নতুন SDK নেই); key অনুপস্থিত বা
++প্রোভাইডার ব্যর্থ হলে fail-closed নীতিতে ddgs-only পথে ফিরে যাওয়া হয় (সৎ warning সহ)।
++key-বিহীন রান আজকের মতোই শূন্য-খরচ (DuckDuckGo, কোনো API key নেই)।
+ """
+ 
+ from __future__ import annotations
+ 
+ import importlib.util
++import os
+ from typing import Any
+ 
+ from core.logging_config import logger
+@@ -32,17 +38,100 @@ def _ddgs_client():
+     return None
+ 
+ 
+-def web_search(query: str, max_results: int = 5) -> list[dict[str, Any]]:
+-    """
+-    Free web search via DuckDuckGo. Returns list of
+-    ``{"title": str, "href": str, "body": str}``. Empty list if DDGS unavailable.
+-    """
++def _brave_web_search(query: str, max_results: int, key: str) -> list[dict[str, Any]]:
++    """Brave Search API via plain JSON (no SDK). Maps to the ddgs result contract."""
++    import httpx
++
++    with httpx.Client(timeout=10.0) as client:
++        resp = client.get(
++            "https://api.search.brave.com/res/v1/web/search",
++            params={"q": query, "count": max_results},
++            headers={"X-Subscription-Token": key, "Accept": "application/json"},
++        )
++        resp.raise_for_status()
++        data = resp.json()
++    web = data.get("web") if isinstance(data, dict) else None
++    items = (web or {}).get("results") if isinstance(web, dict) else None
++    return [
++        {
++            "title": str(item.get("title", "") or ""),
++            "href": str(item.get("url", "") or ""),
++            "body": str(item.get("description", "") or ""),
++        }
++        for item in (items or [])
++        if isinstance(item, dict)
++    ]
++
++
++def _tavily_web_search(query: str, max_results: int, key: str) -> list[dict[str, Any]]:
++    """Tavily Search API via plain JSON (no SDK). Maps to the ddgs result contract."""
++    import httpx
++
++    with httpx.Client(timeout=10.0) as client:
++        resp = client.post(
++            "https://api.tavily.com/search",
++            json={"query": query, "max_results": max_results},
++            headers={"Authorization": f"Bearer {key}"},
++        )
++        resp.raise_for_status()
++        data = resp.json()
++    items = data.get("results") if isinstance(data, dict) else None
++    return [
++        {
++            "title": str(item.get("title", "") or ""),
++            "href": str(item.get("url", "") or ""),
++            "body": str(item.get("content", "") or ""),
++        }
++        for item in (items or [])
++        if isinstance(item, dict)
++    ]
++
++
++# Issue #1751: keyed providers are tried in this order BEFORE ddgs; a provider
++# only participates when its env key is present (keys come from environment —
++# provider_registry doctrine). Absence/failure degrades fail-closed to ddgs.
++_KEYED_PROVIDERS: tuple[tuple[str, Any], ...] = (
++    ("SUPREME_SEARCH_BRAVE_KEY", _brave_web_search),
++    ("SUPREME_SEARCH_TAVILY_KEY", _tavily_web_search),
++)
++
++
++def _ddgs_search(query: str, max_results: int) -> list[dict[str, Any]]:
++    """ddgs-client search lane. Returns [] when the package is unavailable."""
+     client = _ddgs_client()
+     if client is None:
+         return []
+     try:
+-        results = client.text(query, max_results=max_results)
+-        return results or []
++        return client.text(query, max_results=max_results) or []
+     except Exception as exc:
+         logger.warning(f"[search] DDGS search failed: {exc}")
+         return []
++
++
++def web_search(query: str, max_results: int = 5) -> list[dict[str, Any]]:
++    """
++    Single search SSOT (issue #1751). Order:
++
++    1. env-keyed providers first (``SUPREME_SEARCH_BRAVE_KEY`` → Brave,
++       ``SUPREME_SEARCH_TAVILY_KEY`` → Tavily) — plain JSON via httpx,
++       results normalized to the ddgs contract ``{"title","href","body"}``;
++    2. on missing key / transport failure / empty result → next provider,
++       finally the free ddgs client (fail-closed, honest warn on failure).
++
++    Key-less runs keep the zero-cost behavior: ddgs only. Returns a list of
++    ``{"title": str, "href": str, "body": str}``; empty list if every lane
++    yields nothing.
++    """
++    for env_name, provider in _KEYED_PROVIDERS:
++        key = (os.environ.get(env_name) or "").strip()
++        if not key:
++            continue
++        try:
++            results = provider(query, max_results, key)
++        except Exception as exc:
++            logger.warning(f"[search] {env_name} provider failed, falling through: {exc}")
++            continue
++        if results:
++            return results
++        logger.warning(f"[search] {env_name} provider returned no results, falling through")
++    return _ddgs_search(query, max_results)
+diff --git a/core/tools/knowledge/local_search_rag.py b/core/tools/knowledge/local_search_rag.py
+index 0a8f50d9..4d8f8184 100644
+--- a/core/tools/knowledge/local_search_rag.py
++++ b/core/tools/knowledge/local_search_rag.py
+@@ -138,14 +138,9 @@ def _load_index(self) -> None:
+                     logger.warning(f"Exception suppressed: {e}")
+                 self._index = {}
+ 
+-    def build_search_url(self, query: str) -> str:
+-        from urllib.parse import quote_plus
+-
+-        return f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+-
+     def search(self, query: str) -> dict[str, Any]:
+         # বাংলা মন্তব্য: ফ্রি DuckDuckGo (DDGS) সার্চ — কোনো API key বা ব্রাউজার লাগে না।
+-        # প্যাকেজ না থাকলে পুরনো ব্রাউজার-স্ক্র্যাপিং ফলব্যাক ব্যবহার করে।
++        # core.search.web_search হলো repo-র একমাত্র search SSOT (issue #1751)।
+         try:
+             from core.search import web_search
+ 
+@@ -153,32 +148,29 @@ def search(self, query: str) -> dict[str, Any]:
+         except Exception as exc:
+             import loguru
+ 
+-            loguru.logger.warning(f"DDGS search failed, falling back to browser scrape: {exc}")
++            loguru.logger.warning(f"web_search SSOT failed for '{query[:60]}': {exc}")
+             raw = []
+ 
+-        if raw:
+-            results = [
+-                SearchResult(
+-                    title=r.get("title", ""),
+-                    url=r.get("href") or r.get("url") or "",
+-                    snippet=r.get("body", ""),
+-                    content="",
+-                )
+-                for r in raw
+-                if (r.get("href") or r.get("url"))
+-            ]
++        results = [
++            SearchResult(
++                title=r.get("title", ""),
++                url=r.get("href") or r.get("url") or "",
++                snippet=r.get("body", ""),
++                content="",
++            )
++            for r in raw
++            if (r.get("href") or r.get("url"))
++        ]
++        if not results:
++            # Issue #1751: the browser-scrape fallback against the bot-hostile
++            # DDG-HTML endpoint is removed (live probe: HTTP 202 anti-bot
++            # interstitial — scraping viability was luck, not a contract).
++            # Zero usable results is the honest outcome; the env-keyed
++            # Brave/Tavily lanes now live inside the SSOT itself.
+             return {
+-                "status": "ok",
+-                "query": query,
+-                "results": [r.to_dict() for r in results[: self.max_pages]],
++                "status": "error",
++                "error": "no search results: web_search SSOT yielded nothing",
+             }
+-
+-        # ফলব্যাক: ব্রাউজার দিয়ে DuckDuckGo HTML স্ক্র্যাপিং
+-        search_url = self.build_search_url(query)
+-        page_result = self.browser.fetch_page(search_url)
+-        if not page_result.get("success"):
+-            return {"status": "error", "error": page_result.get("error")}
+-        results = self._parse_results(page_result.get("content", ""))
+         return {
+             "status": "ok",
+             "query": query,
+@@ -325,21 +317,6 @@ async def astore_documents(self, query: str, docs: dict[str, list[str]]) -> None
+         """Async version of storing documents"""
+         self._store_search(query, docs)
+ 
+-    def _parse_results(self, page_text: str) -> list[SearchResult]:
+-        results: list[SearchResult] = []
+-        lines = [line.strip() for line in page_text.splitlines() if line.strip()]
+-        i = 0
+-        while i + 2 < len(lines) and len(results) < self.max_pages:
+-            title = lines[i]
+-            url = lines[i + 1]
+-            snippet = lines[i + 2]
+-            if (url.startswith("http://") or url.startswith("https://")) and " " not in url:
+-                results.append(SearchResult(title=title, url=url, snippet=snippet, content=""))
+-                i += 3
+-            else:
+-                i += 1
+-        return results
+-
+     def summarize(self, url: str, content: str) -> dict[str, Any]:
+         """Returns a summarized payload of the web page content."""
+         snippet = content[:200] if content else ""
+diff --git a/tests/test_search_ssot.py b/tests/test_search_ssot.py
+new file mode 100644
+index 00000000..cbebdff2
+--- /dev/null
++++ b/tests/test_search_ssot.py
+@@ -0,0 +1,266 @@
++"""Search SSOT consolidation tests (issue #1751).
++
++Three tiers, all offline (no network, stdlib + installed deps only):
++
++1. Behavioral — ``core.search.web_search`` provider selection, result-shape
++   mapping, and fail-closed degradation (fake httpx transport, monkeypatched
++   env/ddgs lane).
++2. Source-contract — the satellite mirror files (not importable in this repo:
++   ``scout/``, ``api/``, ``tools/`` namespaces live in the satellite repos)
++   are pinned by textual contract: the bot-hostile DDG-HTML scrape lane is
++   gone, the core.search SSOT import is present, the Policy gate survives.
++3. Acceptance regression — the issue's mechanical criterion:
++   ``rg "duckduckgo.com/html" gateway/ core/`` must stay at zero hits.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Any
++
++import pytest
++
++from core import search as search_mod
++from core.search import web_search
++
++REPO_ROOT = Path(__file__).resolve().parents[1]
++
++# ---------------------------------------------------------------- tier 1 fake
++
++
++class _FakeResponse:
++    def __init__(self, payload: dict[str, Any]):
++        self._payload = payload
++
++    def raise_for_status(self) -> None:
++        return None
++
++    def json(self) -> dict[str, Any]:
++        return self._payload
++
++
++class _FakeClient:
++    """Stands in for httpx.Client; records requests, serves queued payloads."""
++
++    calls: list[dict[str, Any]] = []
++    payloads: list[dict[str, Any]] = []
++    explode: bool = False
++
++    def __init__(self, *args: Any, **kwargs: Any) -> None:
++        pass
++
++    def __enter__(self) -> "_FakeClient":
++        return self
++
++    def __exit__(self, *exc: Any) -> None:
++        return None
++
++    def _record(self, method: str, url: Any, **kwargs: Any) -> _FakeResponse:
++        _FakeClient.calls.append(
++            {"method": method, "url": str(url), **{k: v for k, v in kwargs.items()}}
++        )
++        if _FakeClient.explode:
++            raise RuntimeError("transport down (simulated)")
++        return _FakeResponse(_FakeClient.payloads.pop(0) if _FakeClient.payloads else {})
++
++    def get(self, url: str, **kwargs: Any) -> _FakeResponse:
++        return self._record("GET", url, **kwargs)
++
++    def post(self, url: str, **kwargs: Any) -> _FakeResponse:
++        return self._record("POST", url, **kwargs)
++
++
++@pytest.fixture()
++def fake_http(monkeypatch: pytest.MonkeyPatch) -> type[_FakeClient]:
++    _FakeClient.calls = []
++    _FakeClient.payloads = []
++    _FakeClient.explode = False
++    monkeypatch.setattr("httpx.Client", _FakeClient)
++    return _FakeClient
++
++
++@pytest.fixture(autouse=True)
++def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
++    """No stray provider keys — tests opt in explicitly via setenv."""
++    for env_name, _provider in search_mod._KEYED_PROVIDERS:
++        monkeypatch.delenv(env_name, raising=False)
++
++
++@pytest.fixture()
++def ddgs_spy(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int]]:
++    seen: list[tuple[str, int]] = []
++
++    def _fake_ddgs(query: str, max_results: int) -> list[dict[str, Any]]:
++        seen.append((query, max_results))
++        return [{"title": "ddgs-hit", "href": "https://ddg.example/x", "body": "free lane"}]
++
++    monkeypatch.setattr(search_mod, "_ddgs_search", _fake_ddgs)
++    return seen
++
++
++# ------------------------------------------------------- tier 1: behavioral
++
++
++def test_no_keys_keeps_zero_cost_ddgs_lane(ddgs_spy: list) -> None:
++    """Key-less runs keep today's behavior: ddgs only, no provider traffic."""
++    out = web_search("hello", max_results=3)
++    assert _FakeClient.calls == []
++    assert ddgs_spy == [("hello", 3)]
++    assert out[0]["href"] == "https://ddg.example/x"
++
++
++def test_brave_key_goes_provider_first(fake_http: type, ddgs_spy: list) -> None:
++    """Keyed provider is tried BEFORE ddgs and its shape maps to the contract."""
++    _FakeClient.payloads = [
++        {
++            "web": {
++                "results": [
++                    {
++                        "title": "Brave Result",
++                        "url": "https://brave.example/r1",
++                        "description": "brave says hi",
++                    }
++                ]
++            }
++        }
++    ]
++    monkey_key = "test-brave-key"
++    search_mod.os.environ  # noqa: B018 - readability: module under test uses os.environ
++    import os
++
++    os.environ["SUPREME_SEARCH_BRAVE_KEY"] = monkey_key
++    try:
++        out = web_search("q", max_results=5)
++    finally:
++        os.environ.pop("SUPREME_SEARCH_BRAVE_KEY", None)
++
++    assert len(_FakeClient.calls) == 1
++    call = _FakeClient.calls[0]
++    assert call["method"] == "GET"
++    assert "api.search.brave.com" in call["url"]
++    assert call["headers"]["X-Subscription-Token"] == monkey_key
++    assert call["params"]["count"] == 5
++    assert out == [
++        {"title": "Brave Result", "href": "https://brave.example/r1", "body": "brave says hi"}
++    ]
++    assert ddgs_spy == []  # provider answered — ddgs lane untouched
++
++
++def test_tavily_key_uses_bearer_post(fake_http: type, ddgs_spy: list) -> None:
++    _FakeClient.payloads = [
++        {
++            "results": [
++                {"title": "Tavily Result", "url": "https://tav.example/r1", "content": "tavily"}
++            ]
++        }
++    ]
++    import os
++
++    os.environ["SUPREME_SEARCH_TAVILY_KEY"] = "test-tavily-key"
++    try:
++        out = web_search("q2", max_results=4)
++    finally:
++        os.environ.pop("SUPREME_SEARCH_TAVILY_KEY", None)
++
++    call = _FakeClient.calls[0]
++    assert call["method"] == "POST"
++    assert "api.tavily.com" in call["url"]
++    assert call["headers"]["Authorization"] == "Bearer test-tavily-key"
++    assert call["json"]["max_results"] == 4
++    assert out == [
++        {"title": "Tavily Result", "href": "https://tav.example/r1", "body": "tavily"}
++    ]
++    assert ddgs_spy == []
++
++
++def test_provider_transport_failure_falls_closed_to_ddgs(
++    fake_http: type, ddgs_spy: list
++) -> None:
++    """Fail-closed doctrine: provider failure degrades to ddgs, never raises."""
++    _FakeClient.explode = True
++    import os
++
++    os.environ["SUPREME_SEARCH_BRAVE_KEY"] = "k"
++    try:
++        out = web_search("q3", max_results=2)
++    finally:
++        os.environ.pop("SUPREME_SEARCH_BRAVE_KEY", None)
++
++    assert ddgs_spy == [("q3", 2)]
++    assert out[0]["title"] == "ddgs-hit"
++
++
++def test_provider_empty_result_falls_through_to_ddgs(
++    fake_http: type, ddgs_spy: list
++) -> None:
++    _FakeClient.payloads = [{"web": {"results": []}}]
++    import os
++
++    os.environ["SUPREME_SEARCH_BRAVE_KEY"] = "k"
++    try:
++        out = web_search("q4", max_results=2)
++    finally:
++        os.environ.pop("SUPREME_SEARCH_BRAVE_KEY", None)
++
++    assert ddgs_spy == [("q4", 2)]
++    assert out[0]["title"] == "ddgs-hit"
++
++
++def test_web_search_signature_is_stable() -> None:
++    """Callers across the repo rely on (query, max_results=5)."""
++    import inspect
++
++    sig = inspect.signature(web_search)
++    assert list(sig.parameters) == ["query", "max_results"]
++    assert sig.parameters["max_results"].default == 5
++
++
++# -------------------------------------------------- tier 2: source contracts
++
++
++def _read(rel: str) -> str:
++    return (REPO_ROOT / rel).read_text(encoding="utf-8")
++
++
++def test_scout_search_uses_ssot_and_keeps_policy_gate() -> None:
++    src = _read("core/api/routes/deep_research.py")
++    fn_start = src.index("async def _scout_search")
++    fn_end = src.index("async def _web_search")
++    body = src[fn_start:fn_end]
++    assert "from core.search import web_search" in body
++    assert "asyncio.to_thread" in body
++    assert "get_active_policy" in body  # Policy Before Power survives
++    assert '"source": "scout"' in body  # scout result shape preserved
++    # the crawler is no longer the search-result discovery mechanism
++    assert "CrawlerService" not in body
++    assert "record_crawl_response" not in body
++
++
++def test_gateway_mirror_still_reexports_core_module() -> None:
++    """Mirror-atomicity: gateway keeps re-exporting the single implementation."""
++    shim = _read("gateway/routes/deep_research.py")
++    assert "from core.api.routes.deep_research import" in shim
++
++
++def test_local_search_rag_scrape_fallback_removed() -> None:
++    src = _read("core/tools/knowledge/local_search_rag.py")
++    assert "from core.search import web_search" in src
++    assert "build_search_url" not in src
++    assert "_parse_results" not in src
++    assert "no search results" in src  # honest degradation path
++    # browser agent stays for fetching RESULT PAGES (a legitimate crawler job)
++    assert "self.browser.fetch_page(url)" in src
++
++
++# ------------------------------------------- tier 3: acceptance regression
++
++
++def test_no_bot_hostile_ddg_html_endpoint_left_in_open_surfaces() -> None:
++    """The issue's mechanical acceptance criterion, enforced going forward."""
++    offenders: list[str] = []
++    for top in ("gateway", "core"):
++        for path in (REPO_ROOT / top).rglob("*.py"):
++            if "duckduckgo.com/html" in path.read_text(encoding="utf-8", errors="replace"):
++                offenders.append(str(path.relative_to(REPO_ROOT)))
++    assert offenders == [], f"bot-hostile DDG-HTML scrape reappeared in: {offenders}"

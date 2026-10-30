@@ -1,0 +1,73 @@
+diff --git a/core/kaggle_orchestrator.py b/core/kaggle_orchestrator.py
+index 61f0a483..e2c3f40f 100644
+--- a/core/kaggle_orchestrator.py
++++ b/core/kaggle_orchestrator.py
+@@ -16,7 +16,7 @@
+ import os
+ import secrets
+ from dataclasses import dataclass, field
+-from datetime import datetime
++from datetime import datetime, timezone
+ from enum import Enum
+ from typing import Any
+ 
+@@ -24,7 +24,10 @@
+ import redis.asyncio as redis
+ 
+ from core.config import settings
+-from core.logging_config import logger
++# Canonical logging import (post-#2533 deprecation chain, P3 slice of #2564):
++# the core.logging_config shim warns on first attribute access; import the
++# target module directly instead of burning the fleet-wide single-shot warning.
++from core.monitoring.logging_config import logger
+ 
+ 
+ class KaggleTaskType(Enum):
+@@ -83,7 +86,10 @@ class KaggleJob:
+     priority: int = 5  # 1-10, 10 is highest
+     estimated_hours: float = 2.0
+     status: str = "queued"
+-    created_at: datetime = field(default_factory=datetime.utcnow)
++    # Shape-preserving naive-UTC (byte-identical to utcnow()) — deprecation-free (#2564 P2).
++    created_at: datetime = field(
++        default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
++    )
+     assigned_account: str | None = None
+     result: dict[str, Any] | None = None
+     error: str | None = None
+@@ -113,7 +119,7 @@ def callback(status, result=None, error=None):
+         "status": status,
+         "result": result or {},
+         "error": error,
+-        "completed_at": datetime.utcnow().isoformat(),
++        "completed_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
+         "kaggle_metadata": {"kernel_output": "/kaggle/working/output.json"},
+     }
+     data = json.dumps(payload).encode("utf-8")
+@@ -549,7 +555,7 @@ async def submit_job(
+         if not self.redis_client:
+             raise RuntimeError("Redis not configured for KaggleOrchestrator")
+ 
+-        job_id = f"job_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{hashlib.md5(json.dumps(payload).encode()).hexdigest()[:8]}"
++        job_id = f"job_{datetime.now(timezone.utc).replace(tzinfo=None).strftime('%Y%m%d_%H%M%S')}_{hashlib.md5(json.dumps(payload).encode()).hexdigest()[:8]}"
+ 
+         job = KaggleJob(
+             job_id=job_id,
+@@ -617,7 +623,7 @@ async def get_next_job(self) -> KaggleJob | None:
+             estimated_hours=float(job_data.get("estimated_hours", "2.0")),
+             status=job_data.get("status", "unknown"),
+             created_at=datetime.fromisoformat(
+-                job_data.get("created_at", datetime.utcnow().isoformat())
++                job_data.get("created_at", datetime.now(timezone.utc).replace(tzinfo=None).isoformat())
+             ),
+             retry_count=int(job_data.get("retry_count", "0")),
+         )
+@@ -689,7 +695,7 @@ async def dispatch_job_to_kaggle(self, job: KaggleJob, account: KaggleAccount) -
+ 
+                 account.status = KaggleAccountStatus.IN_USE
+                 account.current_task = job.job_id
+-                account.last_used = datetime.utcnow()
++                account.last_used = datetime.now(timezone.utc).replace(tzinfo=None)
+ 
+                 logger.info(f"🚀 Job {job.job_id} dispatched to Kaggle account {account.username}")
+                 return True

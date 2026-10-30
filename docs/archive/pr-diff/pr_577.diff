@@ -1,0 +1,162 @@
+diff --git a/docs/VOICE_SERVICE_ARCHITECTURE.md b/docs/VOICE_SERVICE_ARCHITECTURE.md
+new file mode 100644
+index 00000000..afb4de20
+--- /dev/null
++++ b/docs/VOICE_SERVICE_ARCHITECTURE.md
+@@ -0,0 +1,156 @@
++# VOICE SERVICE ARCHITECTURE — Zero-Compute High-Fidelity Bangla TTS (#540)
++
++> Satellite: `Supremeai-bd/supremeai-command` · Layer 2 (Tools / Workers /
++> Sidecars) · Priority P2 · Status: implemented, offline-verified (33 tests)
++> plus a live protocol probe (17,424-byte MP3, 25 streamed chunks).
++
++---
++
++## 1. Why zero-compute (philosophy compliance)
++
++Deploying local neural TTS engines (Coqui, XTTS, KittenTTS) costs 2–8 GB of
++RAM/VRAM plus gigabytes of model weights — a direct violation of the SupremeAI
++doctrine:
++
++- **"Simple + effective > clever + complex."**
++- **"Complexity must earn its existence."**
++- **"Incremental improvement > premature scale."**
++
++The voice service instead **leases** synthesis over the Microsoft Edge Neural
++TTS WebSocket protocol through the tiny `edge-tts` client: **0 MB of model
++weights, 0 GPU, 0 MB resident bloat**. The satellite's stdlib-only runtime
++core (boundary limit 5) is preserved: `edge_tts` is imported **lazily** and
++only when real synthesis is requested. Without it the service degrades
++**loudly** (`VoiceServiceUnavailable`) — the exact Redis/KillSwitch precedent
++(`KillSwitchUnavailable`) — never silently.
++
++## 2. Component map
++
++```
++src/services/voice_service.py   async adapter: validation → cache → leased stream → MP3 bytes
++src/utils/audio_cache.py        ephemeral SHA-256 cache (memory LRU or temp-file backend)
++src/telegram_bot.py             /voice command + /voiceon|/voiceoff toggle + sendVoice transport
++skills/voice/bangla_voice.yaml  skill package contract (speak_bangla)
++tests/test_voice_service.py     33 offline unit tests (fakes + injected clocks)
++```
++
++## 3. Voice catalog (Bangla-first)
++
++| Voice id | Gender | Dialect | Role |
++|---|---|---|---|
++| `bn-BD-PradeepNeural` | male | bn-BD | authoritative system broadcasts / status reports (default) |
++| `bn-BD-NabanitaNeural` | female | bn-BD | interactive conversational assistant |
++| `bn-IN-BashkarNeural` | male | bn-IN | alternate dialect fallback |
++| `bn-IN-TanishaaNeural` | female | bn-IN | alternate dialect fallback |
++
++Short aliases (`pradeep`, `nabanita`, `bashkar`, `tanishaa`, case-insensitive)
++resolve to canonical ids; anything else is rejected fail-closed
++(`VoiceRequestError`). Rate (`"+10%"`, `"-5%"`) and pitch (`"+5Hz"`,
++`"-10Hz"`) are regex-validated before touching the wire.
++
++## 4. Data flow
++
++```
++/voice <text>                /status (voice alerts enabled)
++     │                             │
++     ▼                             ▼
++CommandRouter ── synthesize_voice(text) ──► sync_voice_synthesizer
++     │                                        │ asyncio.run(...)
++     ▼                                        ▼
++VoiceOutcome ◄──────────────────────── VoiceService.synthesize(VoiceRequest)
++     │                                        │
++     │                              ① cache.get(sha256(text|voice|rate|pitch))
++     │                              ② miss → edge_tts.Communicate(...).stream()
++     │                              ③ chunks yielded AND buffered → cache.put
++     │                              ④ VoiceResult(audio, cached, chunk_count)
++     ▼                                        ▼
++BotReply(text, voice_audio=bytes) ──► StdlibTelegramTransport.send_voice()
++                                        (multipart sendVoice, stdlib only)
++```
++
++Key decisions:
++
++- **Streaming**: `VoiceService.stream()` yields MP3 chunks as they arrive;
++  chunks are simultaneously buffered so the cache is populated **without a
++  second network round-trip**.
++- **Cache key** = `SHA-256(text · voice · rate · pitch)` with a `\x1f` unit
++  separator between fields (no field-boundary bleed: `key("ab","c")` ≠
++  `key("a","bc")`). A hit is byte-equivalent to a fresh synthesis by
++  construction.
++- **Ephemeral by contract**: memory backend (LRU `max_entries`, TTL via
++  injectable clock) or temp-file backend (`tempfile.mkdtemp`, wiped on
++  `close()`). Nothing persists across reboots; the cache is never a source
++  of truth.
++- **Timeouts everywhere** (guard doctrine): `connect_timeout=10`,
++  `receive_timeout=30` into the protocol client **plus** a 60 s wall-clock
++  `asyncio.wait_for` guard around the whole synthesis.
++- **Text cap**: 4,000 chars — one Telegram voice note, not an audiobook.
++
++## 5. Telegram surface additions
++
++| Command | Behavior |
++|---|---|
++| `/voice <text>` | synthesize Bangla voice note (default Pradeep), upload via sendVoice; on failure replies `🔊 voice synthesis failed: <reason>` (loud, no crash) |
++| `/voiceon` | status summaries now carry a Bangla voice note |
++| `/voiceoff` | disable status voice notes |
++| `/status` (voice on) | text runway first, then `build_voice_status_summary()` → deterministic Bangla phrase → voice note; synthesis failure appends a warning line, text always flows |
++
++RBAC is inherited: `/voice` from a non-superadmin chat is denied before any
++synthesis callable is invoked (test-enforced).
++
++Deterministic summary phrase (cache-friendly — the exact phrase from the
++issue): `সিস্টেম সম্পূর্ণ স্বাভাবিক আছে। কন্ট্রোল টাওয়ার সংযুক্ত আছে।`
++
++## 6. Error taxonomy (loud, specific, never silent)
++
++| Class | Raised when | User-visible |
++|---|---|---|
++| `VoiceRequestError` | empty/oversized text, unknown voice, malformed rate/pitch | `invalid request: …` |
++| `VoiceServiceUnavailable` | optional `edge_tts` not installed | `service unavailable: … run: pip3 install edge-tts` |
++| `VoiceSynthesisError` | protocol failure, timeout, zero-byte output | `voice synthesis failed: …` |
++
++`sync_voice_synthesizer()` never raises — every failure becomes a
++`VoiceOutcome(error=…)` so the Telegram poll loop survives.
++
++## 7. Skill contract (skills/voice/bangla_voice.yaml)
++
++```yaml
++function: speak_bangla
++signature: speak_bangla(text: str, voice: str = "bn-BD-PradeepNeural") -> bytes
++```
++
++Implemented verbatim as `command/services/voice_service.py::speak_bangla`
++(async; returns MP3 bytes). Optional dependency declared `edge-tts`.
++
++## 8. Verification contract (3-tier)
++
++```bash
++# Tier 1 — reflection
++git grep -n "edge_tts\|bn-BD-PradeepNeural" src/
++# Tier 2 — boot smoke
++python3 -c "import edge_tts; print('Edge-TTS ready')"
++# Tier 3 — unit suite (contract minimum 8; suite ships 33)
++python3 -m pytest tests/test_voice_service.py -v
++```
++
++Evidence (local, pre-landing):
++
++- Tier 3: **33/33 passed** offline + **15/15 seed regression**
++  (`tests/test_command_foundation.py`) — backward compatibility intact.
++- Satellite-layout parity: the suite passes with `src.*` imports too
++  (dual-import shim, same convention as the seed test).
++- Live protocol probe: `bn-BD-PradeepNeural` × "সিস্টেম সম্পূর্ণ স্বাভাবিক
++  আছে" → 17,424-byte MP3 (valid frame-sync), 25 streamed chunks; second
++  call served from cache (`cached=True`); `bn-BD-NabanitaNeural` with
++  `rate="+10%", pitch="+5Hz"` → 18,432-byte MP3.
++
++## 9. Boundary-limit compliance
++
++| Limit | Compliance |
++|---|---|
++| 1. Secrets env-only | no tokens/keys anywhere; transport reads `CommandConfig` (redacted repr) |
++| 2. Explicit timeouts | every protocol/HTTP call carries one (§4) |
++| 3. UTF-8, LF | Bangla strings are UTF-8; repo LF endings |
++| 4. Fail-closed input | regex-validated params, unknown voices rejected, oversized text rejected |
++| 5. Stdlib-only core | `edge_tts` optional + lazy + loud degradation |
++| 6. Augment, never bypass | voice is a presentation layer; all authority remains the Superadmin + Tower |

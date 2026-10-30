@@ -1,0 +1,84 @@
+diff --git a/docs/bridge/bridge-20261027-fix-studio-admin-typecheck.md b/docs/bridge/bridge-20261027-fix-studio-admin-typecheck.md
+new file mode 100644
+index 00000000..19a89c0d
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-fix-studio-admin-typecheck.md
+@@ -0,0 +1,41 @@
++# 🌉 Bridge Work Order — [P0] Studio CI green: fix the two admin-gate typecheck errors breaking the Verify & Build lane
++
++Addresses the `handoff:coder` CI-failure orders on `Supremeai-bd/supremeai-studio` main
++(#1417 and the sibling orders for runs 40385534200 / 40382764270 / 40382763769 — one shared
++root cause). Failures started with the "Admin gate: server-verified code-only entry" commits
++(19:00Z) and every sync since: runs die in 22–57 s at the Typecheck step, so the deploy job is
++skipped and the Cloudflare Pages production build has been stale since 2026-10-26 ~19:00Z.
++
++## The two errors (exact, from the failing run page)
++1. `src/pages/admin/AdminShell.tsx(359,7): error TS17001: JSX elements cannot have multiple
++   attributes with the same name.` — the `<AdminConsole>` JSX lists the four login props
++   (`adminOtp`, `setAdminOtp`, `rememberBrowser`, `setRememberBrowser`) TWICE (first batch
++   right after `handleAdminLogin`, second batch after `setNewUserPerms`). The gate rework
++   pasted the login-prop group into the already-updated prop list.
++2. `src/components/admin/AdminConsole.tsx(59,…): Property 'handleAdminLogout' is missing in
++   type …` — the gate rework added a required `handleAdminLogout: () => void` to
++   `AuthenticatedViewProps` (used as `onLogout`, AdminAuthenticated.tsx line 44/82), but
++   `AdminConsoleProps` was not extended and AdminShell does not pass it, so the
++   `<AuthenticatedView {...props} />` spread fails the typecheck.
++
++## The fix (3 small edits, 2 files, public + satellite byte-identical bases)
++- **studio/src/pages/admin/AdminShell.tsx**: remove the duplicated 4-prop block (keep the
++  first occurrence); pass `handleAdminLogout={handleAdminLogout}` into `<AdminConsole>`
++  (the value is already in scope from `useAdminStore()`).
++- **studio/src/components/admin/AdminConsole.tsx**: add the required
++  `handleAdminLogout: () => void;` to `AdminConsoleProps` (comment documents why).
++- Logout keeps working end-to-end: AdminShell (store) → AdminConsole (props) →
++  AuthenticatedView (`onLogout`, DB-backed trusted-device revocation). Making the prop
++  optional was rejected — it would silently break the logout the gate just added.
++
++## Verification (real, local, reproducible)
++- tsc 5.9.3 parse-level check: BEFORE — original AdminShell.tsx reproduces
++  `error TS17001 … (359,7)` exactly as CI; AFTER — no TS17001 (grep clean on both files).
++- Diff bases re-fetched from the public tip at submission time; the public studio mirror and
++  the satellite files are byte-identical (SHA-verified for AdminShell.tsx).
++- Downstream steps (lint/vitest/build) untouched by these edits — no imports, exports,
++  runtime paths or CSS classes change; only a duplicated JSX attribute removal and one
++  required prop threaded through.
++
++## Labels
++`bridge:queued` `P0-critical` `area:ci` `repo:studio` `handoff:coder`
+diff --git a/studio/src/components/admin/AdminConsole.tsx b/studio/src/components/admin/AdminConsole.tsx
+index 002e3bdd..761d0ad5 100644
+--- a/studio/src/components/admin/AdminConsole.tsx
++++ b/studio/src/components/admin/AdminConsole.tsx
+@@ -10,6 +10,9 @@ interface AdminConsoleProps {
+   adminAuthenticated: boolean;
+   adminError: string;
+   handleAdminLogin: () => void;
++  // bridge-20261027-fix-studio-ci: AuthenticatedView requires this (logout with
++  // DB-backed trusted-device revocation) — AdminShell supplies it from useAdminStore.
++  handleAdminLogout: () => void;
+   adminOtp: string;
+   setAdminOtp: (val: string) => void;
+   rememberBrowser: boolean;
+diff --git a/studio/src/pages/admin/AdminShell.tsx b/studio/src/pages/admin/AdminShell.tsx
+index 12532b63..95b7bfab 100644
+--- a/studio/src/pages/admin/AdminShell.tsx
++++ b/studio/src/pages/admin/AdminShell.tsx
+@@ -323,6 +323,7 @@ export function AdminShell() {
+       adminAuthenticated={adminAuthenticated}
+       adminError={adminError}
+       handleAdminLogin={handleAdminLogin}
++      handleAdminLogout={handleAdminLogout}
+       adminOtp={adminOtp}
+       setAdminOtp={setAdminOtp}
+       rememberBrowser={rememberBrowser}
+@@ -356,10 +357,6 @@ export function AdminShell() {
+       setNewUserRole={setNewUserRole}
+       newUserPerms={newUserPerms}
+       setNewUserPerms={setNewUserPerms}
+-      adminOtp={adminOtp}
+-      setAdminOtp={setAdminOtp}
+-      rememberBrowser={rememberBrowser}
+-      setRememberBrowser={setRememberBrowser}
+       theme={consoleTheme}
+       toggleTheme={toggleTheme}
+     />

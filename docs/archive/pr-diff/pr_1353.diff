@@ -1,0 +1,241 @@
+diff --git a/studio/src/components/admin/AdminCommandCenter.tsx b/studio/src/components/admin/AdminCommandCenter.tsx
+index 09329437..e5ec6a58 100644
+--- a/studio/src/components/admin/AdminCommandCenter.tsx
++++ b/studio/src/components/admin/AdminCommandCenter.tsx
+@@ -39,7 +39,7 @@ export default function AdminCommandCenter({ healthMap = {}, setAdminSubTab, han
+   const cpu = metrics?.cpu_percent ?? metrics?.cpu_usage_percent;
+   const open = (tab: string) => setAdminSubTab?.(tab);
+ 
+-  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-7 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1500px] space-y-7"><header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-cyan-300"><Sparkles size={14} /> SupremeAI operations</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Command Center</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--sa-ink-muted)]">One calm surface for platform health, incidents, delivery, and the next safe operator action.</p></div><div className="flex flex-wrap items-center gap-3"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs font-medium text-emerald-300"><span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />Admin context protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"><GitMerge size={15} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Platform summary"><MetricCard label="Platform signal" value={metrics ? 'Live' : 'Pending'} detail={metrics ? 'Telemetry is reporting' : 'Waiting for telemetry'} icon={HeartPulse} tone={metrics ? 'emerald' : 'amber'} /><MetricCard label="p95 latency" value={latency != null ? `${latency} ms` : '—'} detail="From the current metrics snapshot" icon={Zap} tone="cyan" /><MetricCard label="Open incidents" value={activeIncidents.length} detail={activeIncidents.length ? 'Review required' : 'No high-severity findings'} icon={activeIncidents.length ? AlertTriangle : CheckCircle2} tone={activeIncidents.length ? 'rose' : 'emerald'} /><MetricCard label="Running deploys" value={runningDeployments.length} detail="CI/CD runs currently active" icon={GitMerge} tone="amber" /></section><section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]"><div className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="sa-eyebrow">Operational posture</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">What needs attention now?</h2></div><span className="text-xs text-[var(--sa-ink-muted)]">Auto-refreshed by platform hooks</span></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><PostureItem label="Services" value={serviceEntries.length ? `${healthyServices}/${serviceEntries.length} healthy` : 'No snapshot'} tone={serviceEntries.length && healthyServices === serviceEntries.length ? 'good' : 'neutral'} /><PostureItem label="Compute" value={cpu != null ? `${cpu}% CPU` : 'Awaiting data'} tone={cpu != null && cpu > 80 ? 'warn' : 'good'} /><PostureItem label="Traffic" value={rps != null ? `${rps} req/s` : 'Awaiting data'} tone="neutral" /></div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="sa-eyebrow">Service health</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">Federation status</h2></div><button type="button" onClick={() => open('service-explorer')} className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Open explorer <ArrowUpRight size={14} /></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{serviceEntries.length ? serviceEntries.map(([name, service]) => { const tone = statusTone(service.status); return <div key={name} className="rounded-xl border border-[var(--sa-border)] bg-black/10 p-4"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium capitalize text-[var(--sa-ink)]">{name.replace(/[-_]/g, ' ')}</span><span className={`inline-flex items-center gap-1.5 text-[11px] ${tone.text}`}><span className={`size-1.5 rounded-full ${tone.dot}`} />{tone.label}</span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: tone.label === 'Healthy' || tone.label === 'Operational' ? '100%' : tone.label === 'Degraded' ? '58%' : '24%' }} /></div><p className="mt-3 text-[11px] text-[var(--sa-ink-muted)]">{service.region || 'Region unavailable'}{service.latency != null ? ` · ${service.latency} latency` : ''}</p></div>; }) : <EmptyState icon={CircleDashed} title="No health snapshot yet" body="Open Service Explorer after the next health poll completes." />}</div></article></div><aside className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center gap-3"><div className="rounded-xl border border-indigo-400/20 bg-indigo-400/10 p-2 text-indigo-300"><LifeBuoy size={18} /></div><div><p className="sa-eyebrow">Operator shortcuts</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Move safely</h2></div></div><div className="mt-5 grid gap-2">{[['incidents', 'Review incidents', AlertTriangle], ['audit', 'Inspect audit trail', ShieldCheck], ['deployments', 'Review deployments', GitMerge], ['configuration', 'Open configuration', ServerCog], ['interactive-chat', 'Ask the admin copilot', Terminal]].map(([tab, label, Icon]) => <button key={tab as string} type="button" onClick={() => open(tab as string)} className="group flex items-center justify-between rounded-xl border border-[var(--sa-border)] bg-black/10 px-3 py-3 text-left text-sm text-[var(--sa-ink)] transition hover:border-cyan-400/30 hover:bg-cyan-400/5"><span className="flex items-center gap-3"><Icon size={16} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" />{label as string}</span><ArrowUpRight size={14} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" /></button>)}</div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="sa-eyebrow">Recent activity</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">What changed</h2></div><Activity size={18} className="text-cyan-300" /></div><div className="mt-5 space-y-3">{events?.length ? events.map((event, index) => <div key={`${event.timestamp}-${index}`} className="flex gap-3 border-b border-[var(--sa-border)] pb-3 last:border-0 last:pb-0"><div className="mt-1 size-2 shrink-0 rounded-full bg-cyan-300" /><div className="min-w-0"><p className="text-sm text-[var(--sa-ink)]">{event.message || event.source || 'Platform event'}</p><p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">{new Date(event.timestamp).toLocaleString()}</p></div></div>) : <EmptyState icon={Activity} title="No recent events" body="The activity stream is quiet." />}</div></article></aside></section>{activeIncidents.length > 0 && <section className="rounded-2xl border border-rose-400/25 bg-rose-400/5 p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-rose-300" size={18} /><div><h2 className="font-semibold text-rose-200">High-severity findings require review</h2><p className="mt-1 text-sm text-rose-100/70">The dashboard is showing the live threat feed. Use Incidents or Security for remediation; no destructive action is taken from this overview.</p><button type="button" onClick={() => open('incidents')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-300/20 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-400/10">Review now <ArrowUpRight size={14} /></button></div></div></section>}</div></div>;
++  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-7 sm:px-8 lg:px-10"><div className="mx-auto max-w-admin space-y-7"><header className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-cyan-300"><Sparkles size={14} /> SupremeAI operations</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Command Center</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--sa-ink-muted)]">One calm surface for platform health, incidents, delivery, and the next safe operator action.</p></div><div className="flex flex-wrap items-center gap-3"><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs font-medium text-emerald-300"><span className="size-2 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.8)]" />Admin context protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"><GitMerge size={15} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}<section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Platform summary"><MetricCard label="Platform signal" value={metrics ? 'Live' : 'Pending'} detail={metrics ? 'Telemetry is reporting' : 'Waiting for telemetry'} icon={HeartPulse} tone={metrics ? 'emerald' : 'amber'} /><MetricCard label="p95 latency" value={latency != null ? `${latency} ms` : '—'} detail="From the current metrics snapshot" icon={Zap} tone="cyan" /><MetricCard label="Open incidents" value={activeIncidents.length} detail={activeIncidents.length ? 'Review required' : 'No high-severity findings'} icon={activeIncidents.length ? AlertTriangle : CheckCircle2} tone={activeIncidents.length ? 'rose' : 'emerald'} /><MetricCard label="Running deploys" value={runningDeployments.length} detail="CI/CD runs currently active" icon={GitMerge} tone="amber" /></section><section className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]"><div className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="sa-eyebrow">Operational posture</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">What needs attention now?</h2></div><span className="text-xs text-[var(--sa-ink-muted)]">Auto-refreshed by platform hooks</span></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><PostureItem label="Services" value={serviceEntries.length ? `${healthyServices}/${serviceEntries.length} healthy` : 'No snapshot'} tone={serviceEntries.length && healthyServices === serviceEntries.length ? 'good' : 'neutral'} /><PostureItem label="Compute" value={cpu != null ? `${cpu}% CPU` : 'Awaiting data'} tone={cpu != null && cpu > 80 ? 'warn' : 'good'} /><PostureItem label="Traffic" value={rps != null ? `${rps} req/s` : 'Awaiting data'} tone="neutral" /></div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between gap-4"><div><p className="sa-eyebrow">Service health</p><h2 className="mt-2 text-lg font-semibold text-[var(--sa-ink)]">Federation status</h2></div><button type="button" onClick={() => open('service-explorer')} className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-300 hover:text-cyan-200">Open explorer <ArrowUpRight size={14} /></button></div><div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{serviceEntries.length ? serviceEntries.map(([name, service]) => { const tone = statusTone(service.status); return <div key={name} className="rounded-xl border border-[var(--sa-border)] bg-black/10 p-4"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium capitalize text-[var(--sa-ink)]">{name.replace(/[-_]/g, ' ')}</span><span className={`inline-flex items-center gap-1.5 text-[11px] ${tone.text}`}><span className={`size-1.5 rounded-full ${tone.dot}`} />{tone.label}</span></div><div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/5"><div className={`h-full rounded-full ${tone.bar}`} style={{ width: tone.label === 'Healthy' || tone.label === 'Operational' ? '100%' : tone.label === 'Degraded' ? '58%' : '24%' }} /></div><p className="mt-3 text-[11px] text-[var(--sa-ink-muted)]">{service.region || 'Region unavailable'}{service.latency != null ? ` · ${service.latency} latency` : ''}</p></div>; }) : <EmptyState icon={CircleDashed} title="No health snapshot yet" body="Open Service Explorer after the next health poll completes." />}</div></article></div><aside className="space-y-5"><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center gap-3"><div className="rounded-xl border border-indigo-400/20 bg-indigo-400/10 p-2 text-indigo-300"><LifeBuoy size={18} /></div><div><p className="sa-eyebrow">Operator shortcuts</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">Move safely</h2></div></div><div className="mt-5 grid gap-2">{[['incidents', 'Review incidents', AlertTriangle], ['audit', 'Inspect audit trail', ShieldCheck], ['deployments', 'Review deployments', GitMerge], ['configuration', 'Open configuration', ServerCog], ['interactive-chat', 'Ask the admin copilot', Terminal]].map(([tab, label, Icon]) => <button key={tab as string} type="button" onClick={() => open(tab as string)} className="group flex items-center justify-between rounded-xl border border-[var(--sa-border)] bg-black/10 px-3 py-3 text-left text-sm text-[var(--sa-ink)] transition hover:border-cyan-400/30 hover:bg-cyan-400/5"><span className="flex items-center gap-3"><Icon size={16} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" />{label as string}</span><ArrowUpRight size={14} className="text-[var(--sa-ink-muted)] group-hover:text-cyan-300" /></button>)}</div></article><article className="rounded-2xl border border-[var(--sa-border)] bg-[var(--sa-surface)] p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="sa-eyebrow">Recent activity</p><h2 className="mt-1 text-lg font-semibold text-[var(--sa-ink)]">What changed</h2></div><Activity size={18} className="text-cyan-300" /></div><div className="mt-5 space-y-3">{events?.length ? events.map((event, index) => <div key={`${event.timestamp}-${index}`} className="flex gap-3 border-b border-[var(--sa-border)] pb-3 last:border-0 last:pb-0"><div className="mt-1 size-2 shrink-0 rounded-full bg-cyan-300" /><div className="min-w-0"><p className="text-sm text-[var(--sa-ink)]">{event.message || event.source || 'Platform event'}</p><p className="mt-1 text-[11px] text-[var(--sa-ink-muted)]">{new Date(event.timestamp).toLocaleString()}</p></div></div>) : <EmptyState icon={Activity} title="No recent events" body="The activity stream is quiet." />}</div></article></aside></section>{activeIncidents.length > 0 && <section className="rounded-2xl border border-rose-400/25 bg-rose-400/5 p-5"><div className="flex items-start gap-3"><AlertTriangle className="mt-0.5 shrink-0 text-rose-300" size={18} /><div><h2 className="font-semibold text-rose-200">High-severity findings require review</h2><p className="mt-1 text-sm text-rose-100/70">The dashboard is showing the live threat feed. Use Incidents or Security for remediation; no destructive action is taken from this overview.</p><button type="button" onClick={() => open('incidents')} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-300/20 px-3 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-400/10">Review now <ArrowUpRight size={14} /></button></div></div></section>}</div></div>;
+ }
+ 
+ function PostureItem({ label, value, tone }: { label: string; value: string; tone: 'good' | 'warn' | 'neutral' }) {
+diff --git a/studio/src/components/admin/Dashboard.tsx b/studio/src/components/admin/Dashboard.tsx
+index 36e37d3c..419f3a79 100644
+--- a/studio/src/components/admin/Dashboard.tsx
++++ b/studio/src/components/admin/Dashboard.tsx
+@@ -16,7 +16,7 @@ export default function Dashboard() {
+ 
+   return (
+     <div className="flex-1 flex flex-col min-h-screen bg-surface-0 overflow-y-auto">
+-      <div className="p-8 max-w-7xl mx-auto w-full space-y-8">
++      <div className="p-8 max-w-dash mx-auto w-full space-y-8">
+         
+         {/* Header */}
+         <div className="flex flex-col gap-2">
+diff --git a/studio/src/components/admin/SupremeAdminControlPlane.tsx b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+index 2faf30de..f09bf64a 100644
+--- a/studio/src/components/admin/SupremeAdminControlPlane.tsx
++++ b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+@@ -130,7 +130,7 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+     speak('Action cancelled, Sir.');
+   };
+ 
+-  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-[1600px] space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-3 rounded-2xl border border-cyan-400/25 bg-black/40 px-3.5 py-2 backdrop-blur-md"><ArcReactorOrb state={orbState} size={56} onClick={toggleListening} /><div className="text-left"><div className="flex items-center gap-1.5 text-[10px] font-mono tracking-wider text-cyan-400 uppercase"><span className={`size-1.5 rounded-full ${orbState === 'alert' ? 'bg-red-400' : 'bg-cyan-400'} animate-ping`} />JARVIS {orbLabel(orbState)}</div><p className="text-[11px] text-[var(--sa-ink-muted)]">{isListening ? 'Listening to speech...' : isSpeaking ? 'Responding verbally...' : 'Voice cockpit ready'}</p><div className="mt-1 flex items-center gap-1.5"><button type="button" onClick={toggleListening} className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium transition ${isListening ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/20'}`} title="Toggle Speech Recognition">{isListening ? <Mic size={10} /> : <MicOff size={10} />}{isListening ? 'LIVE' : 'MIC'}</button><button type="button" onClick={toggleMute} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium bg-black/30 text-slate-400 border border-slate-700/50 hover:text-white" title={isMuted ? 'Unmute JARVIS Voice' : 'Mute JARVIS Voice'}>{isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}{isMuted ? 'MUTED' : 'VOICE'}</button></div></div></div><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
++  return <div className="min-h-full bg-[var(--sa-canvas)] px-5 py-6 sm:px-8 lg:px-10"><div className="mx-auto max-w-admin space-y-5"><header className="flex flex-col justify-between gap-4 rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_78%_0%,rgba(34,211,238,0.12),transparent_42%),var(--sa-surface)] p-5 sm:p-7 lg:flex-row lg:items-end"><div><div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300"><Sparkles size={14} /> Supreme system control plane</div><h1 className="text-3xl font-semibold tracking-tight text-[var(--sa-ink)] sm:text-4xl">Super Admin Dashboard</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--sa-ink-muted)]">Command the system, review requested work, approve or reject safely, and inspect the whole operational picture from one protected surface.</p></div><div className="flex flex-wrap items-center gap-3"><div className="flex items-center gap-3 rounded-2xl border border-cyan-400/25 bg-black/40 px-3.5 py-2 backdrop-blur-md"><ArcReactorOrb state={orbState} size={56} onClick={toggleListening} /><div className="text-left"><div className="flex items-center gap-1.5 text-[10px] font-mono tracking-wider text-cyan-400 uppercase"><span className={`size-1.5 rounded-full ${orbState === 'alert' ? 'bg-red-400' : 'bg-cyan-400'} animate-ping`} />JARVIS {orbLabel(orbState)}</div><p className="text-[11px] text-[var(--sa-ink-muted)]">{isListening ? 'Listening to speech...' : isSpeaking ? 'Responding verbally...' : 'Voice cockpit ready'}</p><div className="mt-1 flex items-center gap-1.5"><button type="button" onClick={toggleListening} className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium transition ${isListening ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse' : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/20'}`} title="Toggle Speech Recognition">{isListening ? <Mic size={10} /> : <MicOff size={10} />}{isListening ? 'LIVE' : 'MIC'}</button><button type="button" onClick={toggleMute} className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-mono font-medium bg-black/30 text-slate-400 border border-slate-700/50 hover:text-white" title={isMuted ? 'Unmute JARVIS Voice' : 'Mute JARVIS Voice'}>{isMuted ? <VolumeX size={10} /> : <Volume2 size={10} />}{isMuted ? 'MUTED' : 'VOICE'}</button></div></div></div><span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300"><LockKeyhole size={14} /> MFA protected</span>{handleTriggerDeploy && <button type="button" onClick={handleTriggerDeploy} className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/25 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-400/20"><GitMerge size={14} /> Deploy</button>}</div></header>{actionStatus && <div role="status" className="rounded-xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-xs text-cyan-200">{actionStatus}</div>}
+ 
+ <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Super admin live summary"><Summary icon={HeartPulse} label="Platform" value={metrics ? 'LIVE' : 'PENDING'} detail={metrics ? 'Telemetry connected' : 'Waiting for telemetry'} good={!!metrics} /><Summary icon={Activity} label="p95 latency" value={metrics?.latency_p95_ms != null ? `${metrics.latency_p95_ms} ms` : '—'} detail="Current metrics snapshot" /><Summary icon={AlertTriangle} label="Critical review" value={activeIncidents.length} detail={activeIncidents.length ? 'Action may be required' : 'No high-severity finding'} good={!activeIncidents.length} /><Summary icon={GitMerge} label="Deployments" value={runningDeployments.length} detail="Currently running" /></section>
+ 
+diff --git a/studio/src/components/dashboard/GuardrailsPage.tsx b/studio/src/components/dashboard/GuardrailsPage.tsx
+index 74f27b52..bc7cafa9 100644
+--- a/studio/src/components/dashboard/GuardrailsPage.tsx
++++ b/studio/src/components/dashboard/GuardrailsPage.tsx
+@@ -144,7 +144,7 @@ export function GuardrailsPage() {
+   );
+ 
+   return (
+-    <div className="max-w-5xl mx-auto px-6 py-8">
++    <div className="max-w-dash mx-auto px-6 py-8">
+       <div className="flex items-center gap-3 mb-6">
+         <Shield size={28} className="text-blue-500" />
+         <div>
+diff --git a/studio/src/pages/ActivityPage.tsx b/studio/src/pages/ActivityPage.tsx
+index 5d7de56b..c69b4891 100644
+--- a/studio/src/pages/ActivityPage.tsx
++++ b/studio/src/pages/ActivityPage.tsx
+@@ -83,7 +83,7 @@ export function ActivityPage() {
+ 
+   return (
+     <WorkspaceLayout>
+-      <div className="mx-auto w-full max-w-5xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
++      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
+           <div>
+             <p className="sa-eyebrow">Build / Activity</p>
+diff --git a/studio/src/pages/DevToolsPage.tsx b/studio/src/pages/DevToolsPage.tsx
+index b68a5cbf..ef8c4e54 100644
+--- a/studio/src/pages/DevToolsPage.tsx
++++ b/studio/src/pages/DevToolsPage.tsx
+@@ -227,7 +227,7 @@ export default function DevToolsPage() {
+   const [active, setActive] = useState<ToolId>('jsonforge');
+ 
+   return (
+-    <div className="mx-auto max-w-5xl px-4 py-10">
++    <div className="mx-auto max-w-dash px-4 py-10">
+       <header className="mb-8">
+         <h1 className="text-3xl font-semibold tracking-tight text-white">Free Developer Tools</h1>
+         <p className="mt-2 text-sm text-white/60">
+diff --git a/studio/src/pages/FilesPage.tsx b/studio/src/pages/FilesPage.tsx
+index 5ad39e0f..d19e9d34 100644
+--- a/studio/src/pages/FilesPage.tsx
++++ b/studio/src/pages/FilesPage.tsx
+@@ -78,7 +78,7 @@ export function FilesPage() {
+ 
+   return (
+     <WorkspaceLayout>
+-      <div className="mx-auto w-full max-w-7xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
++      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
+           <div>
+             <p className="sa-eyebrow">Build / Files</p>
+diff --git a/studio/src/pages/LandingPage.tsx b/studio/src/pages/LandingPage.tsx
+index 2e517c9f..ecbcc47f 100644
+--- a/studio/src/pages/LandingPage.tsx
++++ b/studio/src/pages/LandingPage.tsx
+@@ -139,7 +139,7 @@ export const LandingPage: React.FC = () => {
+         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(168,85,247,0.18)_0%,transparent_60%)] pointer-events-none" />
+         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_60%,rgba(16,185,129,0.12)_0%,transparent_50%)] pointer-events-none" />
+ 
+-        <div className="mx-auto max-w-5xl text-center relative z-10">
++        <div className="mx-auto max-w-dash text-center relative z-10">
+           <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1 text-xs font-mono text-emerald-300 mb-6 backdrop-blur-md">
+             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+             Cosmic Architecture 2.0 Live
+@@ -197,7 +197,7 @@ export const LandingPage: React.FC = () => {
+ 
+       {/* Feature Cards */}
+       <section id="features" className="border-t border-white/10 px-6 py-24 bg-slate-950/50">
+-        <div className="mx-auto max-w-6xl">
++        <div className="mx-auto max-w-dash">
+           <div className="text-center mb-16">
+             <h2 className="text-3xl font-bold text-white">Engineered for Sovereign Resilience</h2>
+             <p className="mt-3 text-slate-400">Three pillars of the federated architecture</p>
+diff --git a/studio/src/pages/MarketplacePage.tsx b/studio/src/pages/MarketplacePage.tsx
+index 70abf3bf..ced8e52a 100644
+--- a/studio/src/pages/MarketplacePage.tsx
++++ b/studio/src/pages/MarketplacePage.tsx
+@@ -115,7 +115,7 @@ export function MarketplacePage() {
+ 
+   return (
+     <WorkspaceLayout>
+-      <div className="mx-auto w-full max-w-7xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
++      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8">
+           <div>
+             <p className="sa-eyebrow">Extend / Marketplace</p>
+diff --git a/studio/src/pages/ProjectsPage.tsx b/studio/src/pages/ProjectsPage.tsx
+index 2c4d8c2f..34b0d3ca 100644
+--- a/studio/src/pages/ProjectsPage.tsx
++++ b/studio/src/pages/ProjectsPage.tsx
+@@ -107,7 +107,7 @@ export function ProjectsPage() {
+ 
+   return (
+     <WorkspaceLayout>
+-      <div className="mx-auto w-full max-w-7xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
++      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
+           <div>
+             <p className="sa-eyebrow">Build / Projects</p>
+diff --git a/studio/src/pages/PublicPages.tsx b/studio/src/pages/PublicPages.tsx
+index 66c72dd0..96a1f678 100644
+--- a/studio/src/pages/PublicPages.tsx
++++ b/studio/src/pages/PublicPages.tsx
+@@ -32,7 +32,7 @@ export function CapabilityStrip({ onProtected }: { onProtected: (feature: string
+   // Issue #1460: protected capability chips used to navigate straight to
+   // /login (or /register), destroying the guest's in-progress chat. They now
+   // raise an in-page auth prompt instead — no navigation, state intact.
+-  return <nav className="relative z-10 mx-auto flex w-full max-w-7xl gap-2 overflow-x-auto px-4 pt-16 sm:pt-20 sm:px-8" aria-label="SupremeAI capabilities">
++  return <nav className="relative z-10 mx-auto flex w-full max-w-dash gap-2 overflow-x-auto px-4 pt-16 sm:pt-20 sm:px-8" aria-label="SupremeAI capabilities">
+     <Link to="/chat" className="shrink-0 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-300">Chat</Link>
+     {capabilityItems.map(({ title, icon: Icon }) => <button key={title} type="button" onClick={() => onProtected(title)} className="flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.02] px-3 py-2 text-xs text-slate-500 transition hover:border-purple-500/40 hover:text-slate-200"><Icon size={13} aria-hidden="true" />{title}</button>)}
+   </nav>;
+@@ -60,12 +60,12 @@ import { UnifiedChatPanel } from '../components/chat/UnifiedChatPanel';
+ export function PublicHeader() {
+   const [menuOpen, setMenuOpen] = React.useState(false);
+   return <header className="absolute inset-x-0 top-0 z-20 border-b border-white/[0.06] px-4 py-4 sm:px-8 sm:py-5">
+-    <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
++    <div className="mx-auto flex max-w-dash items-center justify-between gap-4">
+       <Link to="/" aria-label="SupremeAI home" className="flex shrink-0 items-center gap-3 text-sm font-semibold tracking-[0.18em] text-slate-100"><span className="flex size-8 items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-400 via-indigo-500 to-purple-600 font-mono text-sm font-bold text-white shadow-lg shadow-purple-500/20">S</span><span className="hidden sm:inline">SUPREMEAI</span></Link>
+       <nav className="hidden items-center gap-4 md:flex lg:gap-6" aria-label="Public navigation">{publicLinks.map((link) => <Link key={link.to} to={link.to} className="text-sm text-slate-500 transition hover:text-slate-100">{link.label}</Link>)}</nav>
+       <div className="flex items-center gap-2 sm:gap-3"><span className="hidden items-center gap-2 text-xs text-slate-600 lg:flex"><span className="size-1.5 rounded-full bg-emerald-400" />Guest mode</span><Link to="/login" className="hidden text-sm text-slate-400 transition hover:text-slate-100 sm:block">Sign in</Link><Link to="/register" className="rounded-full bg-gradient-to-r from-emerald-500 to-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 transition hover:opacity-95">Get started</Link><button type="button" onClick={() => setMenuOpen((open) => !open)} className="rounded-lg p-2 text-slate-400 md:hidden" aria-label={menuOpen ? 'Close menu' : 'Open menu'} aria-expanded={menuOpen}>{menuOpen ? <X size={18} /> : <Menu size={18} />}</button></div>
+     </div>
+-    {menuOpen && <nav className="mx-auto mt-3 flex max-w-7xl flex-col gap-1 rounded-2xl border border-white/10 bg-slate-900/95 p-3 md:hidden" aria-label="Mobile navigation">{publicLinks.map((link) => <Link key={link.to} to={link.to} onClick={() => setMenuOpen(false)} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">{link.label}</Link>)}<Link to="/login" className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">Sign in</Link></nav>}
++    {menuOpen && <nav className="mx-auto mt-3 flex max-w-dash flex-col gap-1 rounded-2xl border border-white/10 bg-slate-900/95 p-3 md:hidden" aria-label="Mobile navigation">{publicLinks.map((link) => <Link key={link.to} to={link.to} onClick={() => setMenuOpen(false)} className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">{link.label}</Link>)}<Link to="/login" className="rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-white/5">Sign in</Link></nav>}
+   </header>;
+ }
+ 
+diff --git a/studio/src/pages/RunsPage.tsx b/studio/src/pages/RunsPage.tsx
+index 5cbe8bd0..dfc25392 100644
+--- a/studio/src/pages/RunsPage.tsx
++++ b/studio/src/pages/RunsPage.tsx
+@@ -115,7 +115,7 @@ export function RunsPage() {
+ 
+   return (
+     <WorkspaceLayout>
+-      <div className="mx-auto w-full max-w-5xl px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
++      <div className="mx-auto w-full max-w-dash px-5 py-8 text-[var(--sa-ink)] sm:px-8 lg:py-10">
+         <header className="flex flex-col gap-4 border-b border-[var(--sa-border)] pb-8 sm:flex-row sm:items-end sm:justify-between">
+           <div>
+             <p className="sa-eyebrow">Observe / Runs</p>
+diff --git a/studio/src/pages/user/CostDashboard.tsx b/studio/src/pages/user/CostDashboard.tsx
+index e74b80ed..13bc2d02 100644
+--- a/studio/src/pages/user/CostDashboard.tsx
++++ b/studio/src/pages/user/CostDashboard.tsx
+@@ -161,7 +161,7 @@ export const CostDashboard: React.FC = () => {
+   }
+ 
+   return (
+-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
++    <div className="p-6 space-y-6 max-w-dash mx-auto">
+       <div className="flex justify-between items-center">
+         <div>
+           <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+diff --git a/studio/src/pages/user/IntegrationsManager.tsx b/studio/src/pages/user/IntegrationsManager.tsx
+index 9d855aae..84c4cbf3 100644
+--- a/studio/src/pages/user/IntegrationsManager.tsx
++++ b/studio/src/pages/user/IntegrationsManager.tsx
+@@ -16,7 +16,7 @@ export const IntegrationsManager: React.FC = () => {
+ 
+   return (
+     <div className="w-full">
+-      <div className="flex border-b border-gray-200 mb-6 px-8 pt-8 max-w-7xl mx-auto">
++      <div className="flex border-b border-gray-200 mb-6 px-8 pt-8 max-w-dash mx-auto">
+         <button
+           className={`py-3 px-6 font-medium text-sm focus:outline-none ${activeTab === 'plugins' ? 'border-b-2 border-primary text-primary' : 'text-gray-500 hover:text-gray-700'}`}
+           onClick={() => setActiveTab('plugins')}
+@@ -44,7 +44,7 @@ export const IntegrationsManager: React.FC = () => {
+           <MCPConnector />
+         </div>
+       ) : (
+-        <div className="p-8 max-w-7xl mx-auto space-y-8">
++        <div className="p-8 max-w-dash mx-auto space-y-8">
+           <div>
+             <h1 className="text-3xl font-bold mb-2">🔗 System Integrations</h1>
+             <p className="text-[var(--supremeai-color-neutral-500)]">
+diff --git a/studio/src/pages/user/SystemHealthDashboard.tsx b/studio/src/pages/user/SystemHealthDashboard.tsx
+index 5d3d9eee..22c3f46a 100644
+--- a/studio/src/pages/user/SystemHealthDashboard.tsx
++++ b/studio/src/pages/user/SystemHealthDashboard.tsx
+@@ -33,7 +33,7 @@ export const SystemHealthDashboard: React.FC = () => {
+ 
+   return (
+     <div className="min-h-screen bg-slate-950 text-slate-300 p-8">
+-      <div className="max-w-7xl mx-auto space-y-8">
++      <div className="max-w-dash mx-auto space-y-8">
+ 
+         {/* Header Section */}
+         <div className="flex items-center gap-4 border-b border-slate-800 pb-6">
+diff --git a/studio/src/pages/user/plugins/PluginMarketplace.tsx b/studio/src/pages/user/plugins/PluginMarketplace.tsx
+index fb07ef51..a8ee7e3b 100644
+--- a/studio/src/pages/user/plugins/PluginMarketplace.tsx
++++ b/studio/src/pages/user/plugins/PluginMarketplace.tsx
+@@ -25,7 +25,7 @@ export const PluginMarketplace: React.FC = () => {
+     };
+ 
+     return (
+-        <div className="p-8 max-w-7xl mx-auto">
++        <div className="p-8 max-w-dash mx-auto">
+             <h1 className="text-3xl font-bold mb-8">Plugin Marketplace</h1>
+             
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,0 +1,63 @@
+diff --git a/docs/work-orders/bridge-20261022-frontend-cosmic-wo4.md b/docs/work-orders/bridge-20261022-frontend-cosmic-wo4.md
+new file mode 100644
+index 00000000..10798532
+--- /dev/null
++++ b/docs/work-orders/bridge-20261022-frontend-cosmic-wo4.md
+@@ -0,0 +1,57 @@
++# Bridge Work Order — bridge-20261022-frontend-cosmic-wo4
++## SupremeAI Studio Frontend "Cosmic" Modernization — Phase 4: Chat UX Modernization
++
++**Target subsystem:** supremeai-studio (frontend) — ChatInterface component + chat chrome
++**Author:** Vibe agent session (niloy joy)
++**Date:** 2026-10-22
++**Depends on:** bridge-20261022-frontend-cosmic-wo1 (tokens, #855); sibling: WO3 (#857), WO2 (#859)
++**Status:** Proposed work-order spec (apply-ready plan; implementation PRs follow)
++
++## Context
++
++ChatInterface is the product's core surface but is still styled with legacy slate/blue classes (known debt, documented in the design-token migration notes) and lacks the modern chat affordances shown in the owner-approved reference mockups: chat bubbles with distinct user/AI identity, online status, quick-action chips, typing/streaming indicators, and per-message actions. The backend already provides SSE streaming (`/api/chat/stream_chat`) and the versioned system personas; this work order is presentational only — it does NOT touch the frontend/backend route contract mismatch (`/api/v1/capabilities/execute`, `/api/v1/stream/chat`), which stays a separate tracked fix.
++
++## Scope of this work order
++
++1. **Token-driven bubble system:**
++   - `ChatBubble` presentational component: user messages with `--neon-purple` identity treatment, AI messages with glass surface tokens (`--surface-glass` from WO1); legacy slate/blue classes removed from new markup.
++   - Avatar/initial treatment + timestamp on hover (decluttered by default).
++2. **Streaming & typing affordances:**
++   - Typing-dots indicator while awaiting first SSE token; streaming caret (blinking block) at the tail of in-flight AI text; both `prefers-reduced-motion` safe.
++3. **Per-message actions:**
++   - Copy-to-clipboard (with copied-state feedback) and Regenerate (last AI message only; reuses existing send machinery — no new endpoints).
++4. **Quick-action chips (chat surface):**
++   - Same chip component as WO3 (shared, no duplication): 3 chips above the input — "Audit my project", "Design a landing page", "Explain this error" — each pre-filling the composer.
++5. **Composer upgrade:**
++   - Glass-surface input with focused glow (`--glow-accent`), paper-plane send button, auto-grow textarea (capped), Enter-to-send / Shift+Enter newline (existing behavior preserved).
++6. **Bangla ↔ English interface toggle:**
++   - UI-chrome-only language toggle (labels, placeholders, empty states) via the existing `BanglaHint` pattern's i18n direction — NOT model output language (that follows the user's own prompt). Persisted preference.
++7. **Honest status pill:**
++   - "Online / Connecting / Offline" pill driven by the existing `useStore` server-online + checking states (#972 honest CHECKING precedent).
++
++## Out of scope
++
++- Route contract alignment (separate issue, already tracked), backend chat pipeline, model fallback chain, message persistence schema, auth. No new npm dependencies.
++
++## Acceptance criteria
++
++- [ ] Zero raw slate/blue classes in new/modified chat markup (grep-verified).
++- [ ] All motion respects `prefers-reduced-motion`; toggle + chips keyboard-navigable.
++- [ ] Existing chat tests pass; new tests: bubble roles, copy button, typing indicator render, language toggle persistence.
++- [ ] `VITE_COSMIC_CHAT` flag (default true) toggles the new visual layer; old look recoverable.
++- [ ] No behavioral change to send/stream logic — presentation only (verified by unchanged network call assertions).
++
++## Reflection Evidence (why + alternatives_rejected)
++
++**Why:** Chat is the product's defining surface and the one place users spend all their time; it is also the last major legacy-styled area. Modernizing it after the token (WO1) and dashboard (WO3) phases means every primitive it needs already exists, making this a pure presentational diff with no architectural risk. The Bangla toggle is included because the primary user converses in Banglish — a differentiator no reference design offers.
++
++**Alternatives rejected:**
++- *Adopt a chat UI library (e.g. chatscope)* — rejected: new dependency, style fights with the token system, larger bundle on a cold-start-sensitive free tier.
++- *Fold in the route-contract fix* — rejected: mixing a behavioral fix (message-not-delivered bug) into a presentational diff doubles review risk; the contract fix stays separate per smallest-safe-change.
++- *Bangla toggle via full i18n framework* — rejected for this phase: chrome-only strings do not need a framework; a small typed dictionary keeps the diff small and reversible.
++- *Customizable model-output language setting* — rejected: output already follows the user's prompt language; a setting would suggest control we do not enforce.
++
++## Verification evidence
++
++- Doc-only work-order spec. Facts verified against live repo/knowledge on 2026-10-22: ChatInterface legacy styling debt, SSE endpoints (`/api/chat/stream_chat`), #972 honest-status precedent, `BanglaHint` component existence, route-contract mismatch documented as separate open item.
++- Reflection evidence included (mandatory fields: why, alternatives_rejected). Implementation PRs will attach vitest + typecheck output.

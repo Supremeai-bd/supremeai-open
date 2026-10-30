@@ -1,0 +1,88 @@
+diff --git a/docs/reports/BRIDGE_VERDICT_FALSE_REJECTIONS_2026-10-28.md b/docs/reports/BRIDGE_VERDICT_FALSE_REJECTIONS_2026-10-28.md
+new file mode 100644
+index 00000000..b7b20dc5
+--- /dev/null
++++ b/docs/reports/BRIDGE_VERDICT_FALSE_REJECTIONS_2026-10-28.md
+@@ -0,0 +1,82 @@
++# Bridge verdict backfill stamps false rejections on delivered work; the docs/reports tree exists only on the open mirror (report-only triage)
++
++- **Lane:** report-only `docs/reports` (#1963 / #1972 precedent). No code, no workflow edits, `.github/` untouched.
++- **Filed by:** zai-mcp-tower-agent (cron Job 477795, run 16, 2026-10-28 ~06:30Z)
++- **Refs:** BRIDGE_INTAKE_STALL_2026-10-28.md (prior phase, landed on open main), #1914, #1931, #1986, #1992, #1990 chain (adjacent, different surface), #1963
++- **Tooling:** every claim re-derivable from public state via `bridge.read_feedback` and file reads on both repos.
++
++## 0. Verdict
++
++Two things changed since the stall report (run 15) and both need admin attention:
++
++1. **The verdict backfill went live** (between roughly 05:45Z and 06:22Z — sampled items with `verdict: none` at 05:32Z carry verdicts at 06:25Z). But the evaluator stamps **`bridge:rejected` on work whose content is demonstrably delivered**, because it re-applies the patch branch after the landing pipeline has already merged and deleted it. One case (#1931) is verifiably false on both lanes at once: the file sits in the private monorepo with a blob identical to the open mirror, yet the verdict says the patch failed to apply there.
++2. **The entire `docs/reports/` tree exists only on the open mirror.** The private monorepo has 113 entries under `docs/` but no `docs/reports/` directory at all, while the open repo holds 19 report files from today alone — the whole day's institutional incident record (auto-lander race, eviction, duplicate-guard chain, closeouts, QA passes, registries). The private repo is otherwise fresh and tracking (`scripts/ops/_INDEX.md` blob is byte-identical across both repos), so this is a targeted divergence, not general staleness.
++
++## 1. Evidence
++
++**E1 — Verdicts now exist (backfill window identified).** At 05:32Z, `bridge.read_feedback` on #1931 returned `verdict: none`; at 06:25Z the same item carries a verdict and the label `bridge:rejected`. Same transition observed on #1914, #1986, #1992. The stall report's recipe R3 (backfill) was partially executed in the 05:45Z to 06:22Z window.
++
++**E2 — False rejection, strongest case: #1931.** Verdict reason, quoted: "patch failed to apply on Supremeai-bd/supremeai@main: run_all_guards.py:26". Delivery probe: `scripts/ci/js_dep_cve_guard.py` exists on BOTH repos with identical blob `97d66a974628` (26521 bytes each). The content the verdict claims failed to apply is already inside the target the verdict names. The reason text describes a late re-try against drifted context, not the delivery state.
++
++**E3 — False rejection by branch cleanup: #1992 and #1914.** #1992 verdict reason: "patch branch 'bridge/bridge-20261028-intake-verdict-stall-v2' not found on Supremeai-bd/supremeai-open". The report file it carries is on open main right now (blob `9c1c24e6b043`, 9382 bytes, verified by content read) — landed via its PR before the branch was cleaned up. #1914: same reason pattern ("patch branch ... not found"), content landed and verified live in runs 12 and 14. The evaluator conflates "branch deleted after successful merge" with "work rejected".
++
++**E4 — Verdict-vs-reality matrix.**
++
++| Item | Content on open main | Content in private monorepo | Verdict shown |
++|---|---|---|---|
++| #1931 CVE gate (code) | yes (`97d66a974628`) | **yes (same blob)** | bridge:rejected — false on both lanes |
++| #1914 parity closeout | yes (run-12/14 verified) | not probed (file name unlisted) | bridge:rejected — false for open lane |
++| #1992 stall report v2 | yes (`9c1c24e6b043`) | no (absent tree, see E5) | bridge:rejected — half-true, misleading |
++| #1986 stall report v1 | no (superseded by v2) | no | bridge:rejected — label accidentally right, reason still mechanical |
++
++**E5 — docs/reports parity: 19 vs 0.** Directory read of `docs/reports` on the open repo returns 19 files; the same read on the private monorepo returns Not Found. Control probes: `docs/` on private returns 113 entries (the tree exists), and `scripts/ops/_INDEX.md` blob `8f0eb71637a5` (61134 bytes) is identical on both repos (the tool reads private correctly; private tracks open for normal paths). The open-only 19, with sizes and blob prefixes (8 hex) exactly as returned by the directory listing (name, bytes, blob):
++
++| File | Bytes | Blob prefix (8 hex, as returned) |
++|---|---|---|
++| BRIDGE_INTAKE_STALL_2026-10-28.md | 9382 | 9c1c24e6 |
++| CI_1897_1933_STALE_CLOSEOUT_2026-10-28.md | 7637 | 3bb255f7 |
++| CI_1933_AUTOLANDING_MERGE_RACE_2026-10-28.md | 11841 | 9cf72bc0 |
++| CI_4532_LANDING_EVICTION_INDEX_DRIFT_2026-10-28.md | 14029 | b1f0b11a |
++| CI_4617_U4_DUPLICATE_GUARD_LANDING_DISCONNECT_2026-10-28.md | 19680 | 6c541d56 |
++| PLATFORM_GUARDIAN_TOWER_SESSION_SATURATION_2026-10-28.md | 10265 | 7bdba276 |
++| RULES_BREAKER_AUTH_HARDENING_2026-10-28.md | 10120 | a328b990 |
++| RULES_BREAKER_TOWER_EXPOSURE_2026-10-28.md | 8566 | 928db689 |
++| d4-fleet-contract-probe-20261028T0608Z.md | 4392 | 7bb03ca1 |
++| duplicates.json | 11747 | 59a7c30c |
++| human-eye-studio-qa-20261028.md | 15688 | 0a47267d |
++| human-eye-studio-qa-20261028-II.md | 7394 | e8df41cc |
++| human-eye-studio-qa-20261028-III.md | 13219 | 50b41960 |
++| import_analysis.json | 38342 | 3b14225d |
++| knowledge_cards_v2_lifecycle.json | 51319 | a717d3b3 |
++| pipeline_recipe_registry.json | 21158 | bc66bd66 |
++| platform-guardian-20261028-pages-drift.md | 6642 | d3a9cde7 |
++| tool_knowledge_registry.json | 32147 | a5965713 |
++| wo1912-runbook-recert-20261028.md | 3990 | 95faa940 |
++
++(The two fully-read files also carry 12-hex blobs from direct content reads: `9c1c24e6b043` for the stall report and `97d66a974628` for the CVE gate in the private target — both quoted in E2/E3.)
++
++**E6 — Timing coherence.** The three false-rejected items were all delivered through the PR auto-lander path (squash-merge deletes the source branch). The evaluator's "not found" reasons therefore post-date successful merges. The one item whose branch could still exist at evaluation time produced the different reason seen in E2 (apply failure), consistent with a post-hoc re-try model rather than a delivery check.
++
++## 2. Two failure classes
++
++- **Class A — verdict semantics.** The evaluator answers "can I still apply the patch branch?" when the question that matters is "is the delivered work present?". Any successfully merged WO will eventually wear a false `bridge:rejected` once its branch is cleaned up. #1931 proves even a delivery-successful item gets stamped rejected, because the re-try runs against drifted context (`run_all_guards.py:26`) instead of checking for the delivered blob.
++- **Class B — open-only report tree.** `docs/reports/` has never existed in the private monorepo (the directory is absent entirely, not merely stale). Either the bridge intentionally excludes it (then the verdicts should say so and the guide should document it), or delivery for this tree has silently never worked (then the repo's incident memory is single-copy on a public mirror that today's eviction already proved can be force-rolled back).
++
++## 3. Impact
++
++- Submitters who filed hours ago now read "rejected" for work that is live — the natural response is re-filing, which feeds straight into the duplicate-guard pressure documented by the #1990 chain. The verdict channel is generating the exact confusion the duplicate guard fights.
++- `bridge.read_feedback` was built (per #621) to end one-way feedback blindness; as of today it ends silence but introduces misdirection, which is worse for decision-making.
++- The day's incident record (19 artifacts) is single-copy on the resettable public mirror; the private monorepo — the landing target the bridge exists to feed — holds none of it.
++- Historical WOs #1914 and #1931 now carry both "content live" (verified across runs) and "bridge:rejected" (label) — the board contradicts itself.
++
++## 4. Admin recipes
++
++- **R1 — Verdict order of operations.** Before stamping any rejected: look up the submitted paths' blobs on open main (and private main for non-excluded paths). Branch missing + content present = APPLIED with location, not rejected. This one check clears the entire Class A.
++- **R2 — Decide and document the docs/reports policy.** If open-only by design: say so in the bridge guide and render verdicts for report WOs as OPEN_MIRRORED. If not by design: deliver from the open-main blob (no branch dependency) — this also removes the cleanup race for every path.
++- **R3 — Correct the live false labels:** #1931 (blob identical on both repos), #1914 (content verified live), #1992 (blob `9c1c24e6b043` on open main; private absence is a Class B fact, not a rejection of the work).
++- **R4 — Parity watchdog.** On every merge to open main, verify presence in private main for non-excluded paths; alert when divergence ages past a few minutes. Today it would have flagged a 19-file tree gap, not a subtle drift.
++- **R5 — Standing:** PR #1810 rescue, 6th notice (open since 23:31Z yesterday; recipe in CONTRIBUTING section 11). Workflow yml applications (run 7/9/10 + #1912) also still pending.
++
++## 5. Scope guard
++
++Report-only: one new file under `docs/reports/`. No code paths, no `.github/` paths, no other agent's branch or WO touched. The prior-phase stall report (v2, landed) is left unmodified — this document is the next phase of the same incident chain, cross-referenced both ways by name. All probes were read-only against both repos.

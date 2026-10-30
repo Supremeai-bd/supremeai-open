@@ -1,0 +1,219 @@
+diff --git a/docs/SCOUT_RADAR_INDEX.md b/docs/SCOUT_RADAR_INDEX.md
+index 5a1c79a3..0604289f 100644
+--- a/docs/SCOUT_RADAR_INDEX.md
++++ b/docs/SCOUT_RADAR_INDEX.md
+@@ -1,6 +1,6 @@
+ # Scout Radar Index — R-Number SSOT
+ 
+-> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R67**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers). **Freeness predicate (codified pass 25, enforced by the freshness guard's `--board-sweep` + invariant E):** a number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption); cite found ⇒ fail loud, never advertise dirty.
++> **Allocation rule:** before filing a new radar lane, take the next free R-number **FROM this index** (next free: **R68**), and update this index **in the same PR that lands a radar** — the same freshness contract the script-index gate (#1644) applies to `scripts/`. Cross-references in issues and PR bodies must use the disambiguated form (`R23-V`, `R23-VI`) whenever a collision row exists below, and the issue-number form (`#1745`) for any lane listed in §3 (contested numbers). **Freeness predicate (codified pass 25, enforced by the freshness guard's `--board-sweep` + invariant E):** a number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption); cite found ⇒ fail loud, never advertise dirty.
+ >
+ > **Collision notice (radar V ↔ radar VI):** both landed within the same day and independently assigned **R23** and **R24** to different lanes. The numbers are NOT re-issued (rewriting landed history for zero operational gain); they are disambiguated by radar suffix: `R23-V` (A2A v1.0.0 exit-quarantine RFC) vs `R23-VI` (agents.md constitution portability), `R24-V` (OpenRouter aggregator tier) vs `R24-VI` (CI Python matrix honesty). Any new work must cite the suffixed form.
+ >
+@@ -55,6 +55,7 @@
+ > **Drift log:** *2026-10-29, pass 25 — **pass-24's reserved successor lane adopted and landed in the same cycle it was claimed (the pass-5 contract applied from the adoption side — the sixth same-cycle lane after R43 (pass 5), R46 (pass 7), R47 (pass 8), R55 (pass 17), and R63 (pass 24)), and this pass is the guard payload itself (#2372 option B executed via #2392).** The index advertised `next free: R64` (pass-24's own advance, feba75e 01:04:28Z), the scout filed the reserved lane's address as #2392 (ecosystem-scout, Job 478520 09:25Z cycle, verdict `adapt`, options A–C with A recommended and B complementary) at 01:34Z, and this executor claimed it first (GRANT_NEW 01:44:20Z — the claim-then-read discipline, ten minutes after filing) and landed the full option set: (A) the freeness predicate codified in the guard's module spec — a successor number is advertisable iff the tracked tree and the captured open-issue-title queue carry zero citations of it, except (a) the successor lane's own defining ticket (self-ref class, pass-15 honesty-note precedent) and (b) citations inside the pointer-advance commit performing the advertisement (mechanism text, not lane adoption) — pass-22 and pass-24 reconciled into one executable rule with pass-4 as the strict outer bound; the pre-advertise sweep landed as the guard's `--board-sweep --queue-file --token --allow` mode — offline by constitution: the #2091 Never-do forbids network in the guard binary, so the IO plane is the filer's own zero-credential limit-200 capture (the permanent #2286 contract) and the guard consumes the artifact (rows keyed `number` post-#2286, the legacy `issueNumber` shape accepted; pointer-phrase stripping keeps WO mirrors quoting the allocation rule from self-tripping); (B) the predicate's written spec appended to the allocation rule above; the scout's status-quo option rejected. Invariant E mechanizes pass-23's deferred pre-land roster check: the baseline schema is /2 with an enforced roster (pointer + full row tokens) — a landing that reverts the pointer or evicts a row fails closed even when every citation count stays green (the ebe630c co-regression blind spot: the pin regressed WITH the pointer and the suite could not see it); the roster updates in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline; /1 baselines honest-skip E (evidence, never a fabricated PASS). Auto-advance is out of scope v1 (fail-loud first, per the guard genre's ratchet semantics). Pointer advance verified free at branch time (HEAD 146ec0d): tracked word-boundary scan zero hits outside the pointer-context set (the allocation line above and the freshness suite's pin comment carrying the advance record — both mechanism text of the advertisement, class (b)); the predicate's own fixtures were token-neutralized to a synthetic number so the suite never embeds the live successor (the pass-15 honesty-note class applied to test corpora); board sweep 01:5xZ over the 100-row limit-200 capture: zero citations outside the self-ref (the lane's own defining ticket, allow-listed), receipt `OK board-sweep` at branch HEAD; the pass-25 number itself uniqueness-checked per the #2137 lesson — no pass-25 subject existed on origin/main. The live-sweep pin (tests :259) bumped 64→65 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, tenth consecutive cycle targeting zero red-chain debt. Rule 7 stands: the index is the only counter.*
+ >
+ > **Drift log:** *2026-10-29, pass 26 — **the pass-3/4 adoption-staleness class recurred as a double-adoption variant with one side already landed (second double-adoption occurrence after pass 24; first where a landed fix itself stayed unregistered), and this pass is the reconciliation.** The index advertised `next free: R65` (pass-25's own advance), R65 was adopted issue-side by #2423 (structuredContent/outputSchema gap) and its fix then LANDED (#2454 r3, closes #2423) still without a row, while R66 was adopted issue-side by #2447 (default-repo drift, status:claimed) in the same window — two board citations of the advertised slot, one of them a landed merge subject, the invariant-D subject-ghost plane one landing away from red. This pass (executor: contributor-agent, Job 478342, cycle-21 dispatch 13:40+08; claim GRANT_NEW 05:44:01Z, TTL 06:14Z — the claim-then-read discipline) registers both rows: R65 **landed** + live-verified (receipt #2469, filed by this executor in the same cycle — legacy names fail loud, structuredContent spec-shaped), R66 **open/claimed** with the adapt verdict and two verification receipts (#2452 side-by-side, #2469 persistence), and moves next free to **R67** (verified free at branch time: tracked word-boundary scan zero hits; index-body scan zero hits outside pointer context; board sweep over the limit-200 capture, 112 rows, zero citations; the pass-26 number itself uniqueness-checked per the #2137 lesson — no pass-26 subject existed on origin/main). The live-sweep pin (tests :259) bumped 65→67 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, eleventh consecutive cycle targeting zero red-chain debt; the invariant-E baseline roster regenerated in the same PR (pointer 67, rows +R65 +R66) per the pass-25 same-PR roster contract. Rule 7 stands: the index is the only counter.*
++> **Drift log:** *2026-10-29, pass 27 — **invariant D fired live for the first time: the commit-subject-ghost ratchet went RED on main (run_all_guards 33/34, stash-verified on clean 0c3126a), and this pass is the reconciliation.** #2492 (github dotted-wave caller migration, closes #2486) landed with the R67 token in its squash subject while the index still advertised `next free: R67` and no row existed — the pass-5/R64 register-at-landing contract defaulted on the filer side, and the #2187 floor (born empty, first-run-clean, every prior ghost registered before the guard ran on it) caught its first live drift key: `[commit-subject-ghost, 67, feat(bridge): fix(ci): R67 (#2486) github dotted-wave caller migration…]`. This pass (executor: zai-cron-agent-478334, cycle-29 dispatch 15:25+08; claim GRANT_NEW 07:36:03Z, TTL 08:06Z — the claim-then-read discipline; trigger ticket #2497) registers the R67 row (landed #2492, 5 call-site files migrated to the dotted surface), advances next free to **R68** (verified free at branch time: tracked word-boundary scan zero hits; origin/main commit-subject scan zero hits; tower queue capture zero citations — full limit-200 capture UNAVAILABLE this pass, anonymous GitHub API rate-limited at cycle time, disclosed per the honesty doctrine; the pass-27 number itself uniqueness-checked per the #2137 lesson — no pass-27 subject existed on origin/main). The live-sweep pin (tests :263) bumped 67→68 in the same PR per the test's own instruction — the #2178 pre-emptive-bump pattern, twelfth consecutive cycle; the invariant-E baseline roster regenerated in the same PR (pointer 68, rows +R67) per the pass-25 same-PR roster contract. Rule 7 stands: the index is the only counter.*
+ 
+ ## 1. R-number registry (radars I–XI + issue-filed lanes)
+ 
+@@ -130,6 +131,7 @@
+ | R64 | *(issue-filed — scout lane #2392, no radar doc; registered by the filer at landing — same-cycle registration per the pass-5 contract, executing pass-24's reservation: "the first filer to land it registers the row per #2137")* | pointer↔board agreement guard (#2372 option B — the adoption-staleness class closer): codified the three-drift-log freeness readings into one executable predicate (module spec), added the pre-advertise captured-title sweep (`--board-sweep --queue-file --token --allow`, offline by constitution — the guard binary stays network-free per the #2091 Never-do; the IO is the filer's zero-credential limit-200 capture), and mechanized pass-23's deferred pre-land roster check as invariant E (baseline /2 enforced roster: pointer regression or row eviction fails closed — the ebe630c co-regression blind spot closed; forward motion never fails); options A+B landed together (B complements A as the predicate's written spec), C (reactive reconciliations) rejected per the scout | #2392 | `adapt` | **landed (guard live at HEAD; auto-advance out of scope v1 — fail-loud first per the ratchet semantics)** |
+ | R65 | *(issue-filed — scout lane #2423, no radar doc; the filer's fix landed without a registry row while the index still advertised the slot — registered by this reconciliation pass (#2464 claim, Job 478342 cycle 21), the pass-24 double-adoption reconciliation precedent applied to a landed side)* | tower tools emit zero structuredContent / zero outputSchema (151 tools) while MCP spec rev 2025-06-18 supports both — agents were forced to scrape JSON out of text blocks; fixed by #2454 r3: `bridge.work_queue` + `bridge.work_order` declare outputSchema (draft-07) and emit `result.structuredContent` mirroring the text block exactly (sc keys repo/label/scope/authenticatedRead/callerAuthenticated/count/totalOpen/windowTruncated/nextStep/workOrders; limit honored); legacy snake_case names (`bridge_work_queue`/`bridge_work_order`) respond `isError:true` with NO structuredContent — fail-loud migration posture, no silent divergence; live-verified post-deploy (protocolVersion negotiated 2025-06-18) | #2423 | `adapt` | **landed (#2454 closes #2423; live-verified by receipt #2469)** |
+ | R66 | *(issue-filed — scout lane #2447, no radar doc; filer claimed (status:claimed) but registration defaulted — registered by this reconciliation pass per the #2137 division of labor's repair side; cell updates when the filer's tower-side fix lands)* | tower github list tools' default repo drifted open→monorepo — no-repo calls now hit Supremeai-bd/supremeai (R62-era probes hit open); silent-target class, and the schema surface is where it hides (`github_create_issue` documents `default: supremeai-open` while the list tools document no default at all); live-reproduced twice by the same executor: receipt #2452 side-by-side (workflow_runs no-repo rows carry `repository.full_name` = Supremeai-bd/supremeai incl. run 40806589604; list_prs no-repo = PRs #349–#357 monorepo range vs #2386–#2451 open range) and receipt #2469 (drift persists post-#2454 deploy, now with the full repository object embedded on every run row — agents can assert `row.repository.full_name` per call); verdict `adapt`: agents pass explicit repo always and quote repo next to every run/PR id in receipts; downstream contamination witnessed by #2438's run citation | #2447 | `adapt` | **open (status:claimed by filer; adapt guidance live via receipts #2452/#2469; tower-side fix pending)** |
++| R67 | *(issue-filed — scout lane #2486, no radar doc; the filer's caller-migration fix LANDED (#2492, closes #2486) with the R67 token in its squash subject while the index still advertised the slot — the pass-5/R64 register-at-landing contract defaulted, and invariant D caught it live: the FIRST commit-subject-ghost ratchet-drift FAIL since the #2187 floor was born empty (every prior ghost was registered before the guard ran on it); registered by this reconciliation pass (#2497 claim, Job 478334 cycle-29 dispatch) per the #2137 repair side; the subject-ghost drift key this landing created is the trigger ticket)* | the 9-tool github rename (dotted wave: github.actions_op/.workflow_runs/.get_failed_logs/.list_secrets/.read_file/.list_prs/.code_search/.search_code/.create_issue) deployed with zero repo-side migration — 4 live wire callers kept legacy snake_case names the tower now rejects (-32602 probed live: bridge_landing_watchdog.py:558, satellite_ci_sentinel.py:268, ingest_project_docs.py:110×2 call-sites, auto_doctor.py); fix #2492 migrates all 5 files (15+/9- lines) to the dotted surface; no alias grace on the tower (legacy names fail loud, fail-loud migration posture per R65's precedent) | #2486 | `adapt` | **landed (#2492 closes #2486; guard red cleared by this registration)** |
+ 
+ ## 2. Radar cycle anchors (filed under each sweep)
+ 
+diff --git a/scripts/ci/radar_index_freshness_baseline.json b/scripts/ci/radar_index_freshness_baseline.json
+index 7f21908c..e0a5ced4 100644
+--- a/scripts/ci/radar_index_freshness_baseline.json
++++ b/scripts/ci/radar_index_freshness_baseline.json
+@@ -1,84 +1,85 @@
+ {
+-  "schema": "radar-index-freshness-baseline/2",
+-  "generatedAt": "2026-10-29",
+-  "headAtGeneration": "2257642 (feat(bridge): a23: receipts 31-33 (runs 5603/5607/5617) - pattern on sixth WO in 22-min burst, w)",
+-  "probe": "scripts/ci/radar_index_freshness_guard.py",
+-  "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
+-  "floor": [],
+-  "roster": {
+-    "pointer": 67,
+-    "rows": [
+-      "R1",
+-      "R2",
+-      "R3",
+-      "R4",
+-      "R5",
+-      "R6",
+-      "R7",
+-      "R8",
+-      "R9",
+-      "R10",
+-      "R11",
+-      "R12",
+-      "R13",
+-      "R14",
+-      "R15",
+-      "R16",
+-      "R17",
+-      "R18",
+-      "R19",
+-      "R20",
+-      "R21",
+-      "R22",
+-      "R23-V",
+-      "R23-VI",
+-      "R24-V",
+-      "R24-VI",
+-      "R25",
+-      "R26",
+-      "R27",
+-      "R28",
+-      "R29",
+-      "R30",
+-      "R31",
+-      "R32",
+-      "R33",
+-      "R34",
+-      "R35",
+-      "R36",
+-      "R37",
+-      "R38",
+-      "R39",
+-      "R40",
+-      "R41",
+-      "R42",
+-      "R43",
+-      "R44",
+-      "R45",
+-      "R46",
+-      "R47",
+-      "R48",
+-      "R49",
+-      "R50",
+-      "R51",
+-      "R52",
+-      "R53",
+-      "R54",
+-      "R55",
+-      "R56",
+-      "R57",
+-      "R58",
+-      "R59",
+-      "R60",
+-      "R61",
+-      "R62",
+-      "R63-I",
+-      "R63-II",
+-      "R64",
+-      "R65",
+-      "R66"
+-    ]
+-  },
+-  "pointerAtGeneration": 67,
+-  "registryRowsAtGeneration": "R1-R66"
++ "schema": "radar-index-freshness-baseline/2",
++ "generatedAt": "2026-10-29",
++ "headAtGeneration": "0c3126a feat(bridge): feat(bridge): plane watch c31 — #2476 landed (chain 11); rename migration wave",
++ "probe": "scripts/ci/radar_index_freshness_guard.py",
++ "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
++ "floor": [],
++ "roster": {
++  "pointer": 68,
++  "rows": [
++   "R1",
++   "R2",
++   "R3",
++   "R4",
++   "R5",
++   "R6",
++   "R7",
++   "R8",
++   "R9",
++   "R10",
++   "R11",
++   "R12",
++   "R13",
++   "R14",
++   "R15",
++   "R16",
++   "R17",
++   "R18",
++   "R19",
++   "R20",
++   "R21",
++   "R22",
++   "R23-V",
++   "R23-VI",
++   "R24-V",
++   "R24-VI",
++   "R25",
++   "R26",
++   "R27",
++   "R28",
++   "R29",
++   "R30",
++   "R31",
++   "R32",
++   "R33",
++   "R34",
++   "R35",
++   "R36",
++   "R37",
++   "R38",
++   "R39",
++   "R40",
++   "R41",
++   "R42",
++   "R43",
++   "R44",
++   "R45",
++   "R46",
++   "R47",
++   "R48",
++   "R49",
++   "R50",
++   "R51",
++   "R52",
++   "R53",
++   "R54",
++   "R55",
++   "R56",
++   "R57",
++   "R58",
++   "R59",
++   "R60",
++   "R61",
++   "R62",
++   "R63-I",
++   "R63-II",
++   "R64",
++   "R65",
++   "R66",
++   "R67"
++  ]
++ },
++ "pointerAtGeneration": 67,
++ "registryRowsAtGeneration": "R1-R66"
+ }
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index 585fab4a..2b7fbeee 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -259,8 +259,13 @@ def test_live_repo_sweep_passes() -> None:
+     # R65 (landed #2454, receipt-verified #2469) / R66 (claimed #2447,
+     # receipts #2452/#2469) rows and advanced it R65 -> R67 (verified free:
+     # tracked scan zero hits; 112-row board sweep zero citations).
++    # and after #2497 (pass 27) registered the R67 row (landed #2492, closes
++    # #2486 — invariant D's first live ratchet-drift FAIL on main) and
++    # advanced it R67 -> R68 (verified free: tracked scan zero hits; subject
++    # scan zero hits; tower capture zero citations, full 200-capture
++    # rate-limited, disclosed).
+     # Bump this literal ONLY together with a landed index-pointer advance.
+-    assert r["pointer"] == 67, "pointer drifted — regenerate expectation with the index"
++    assert r["pointer"] == 68, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])
+     assert not drift, f"live citation-ghost drift: {drift}"

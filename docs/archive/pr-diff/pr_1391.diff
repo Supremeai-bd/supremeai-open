@@ -1,0 +1,345 @@
+diff --git a/core/tools/gap_finder.py b/core/tools/gap_finder.py
+index db5ebadf..141b0543 100644
+--- a/core/tools/gap_finder.py
++++ b/core/tools/gap_finder.py
+@@ -1,10 +1,19 @@
+ #!/usr/bin/env python3
+ """
+ SupremeAI Universal Gap Finder wrapper script.
+-Delegates to the newly split `tools.gap_finder` package.
++Delegates to `core.tools.gap_finder.cli`.
+ """
+ 
+-from gap_finder.cli import main
++import os
++import sys
++
++# Ensure repository root is on sys.path
++_repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++if _repo_root not in sys.path:
++    sys.path.insert(0, _repo_root)
+ 
+ if __name__ == "__main__":
++    from core.tools.gap_finder.cli import main
+     main()
++
++
+diff --git a/core/tools/gap_finder/__init__.py b/core/tools/gap_finder/__init__.py
+new file mode 100644
+index 00000000..f5efa8df
+--- /dev/null
++++ b/core/tools/gap_finder/__init__.py
+@@ -0,0 +1,4 @@
++"""core.tools.gap_finder package."""
++from .cli import main
++
++__all__ = ["main"]
+diff --git a/studio/src/components/core/Sidebar.tsx b/studio/src/components/core/Sidebar.tsx
+index e69de29b..6dc9b74d 100644
+--- a/studio/src/components/core/Sidebar.tsx
++++ b/studio/src/components/core/Sidebar.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface SidebarProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const Sidebar: React.FC<SidebarProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`sidebar-stub ${className}`} data-testid="sidebar-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default Sidebar;
+diff --git a/studio/src/components/customer/CustomerSupportEditorStudio.tsx b/studio/src/components/customer/CustomerSupportEditorStudio.tsx
+index e69de29b..cbf0a5df 100644
+--- a/studio/src/components/customer/CustomerSupportEditorStudio.tsx
++++ b/studio/src/components/customer/CustomerSupportEditorStudio.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface CustomerSupportEditorStudioProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const CustomerSupportEditorStudio: React.FC<CustomerSupportEditorStudioProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`customersupporteditorstudio-stub ${className}`} data-testid="customersupporteditorstudio-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default CustomerSupportEditorStudio;
+diff --git a/studio/src/components/customer/HomeFeed.tsx b/studio/src/components/customer/HomeFeed.tsx
+index e69de29b..f3a4f868 100644
+--- a/studio/src/components/customer/HomeFeed.tsx
++++ b/studio/src/components/customer/HomeFeed.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface HomeFeedProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const HomeFeed: React.FC<HomeFeedProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`homefeed-stub ${className}`} data-testid="homefeed-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default HomeFeed;
+diff --git a/studio/src/components/dashboard/ActionDock.tsx b/studio/src/components/dashboard/ActionDock.tsx
+index e69de29b..3a4491e4 100644
+--- a/studio/src/components/dashboard/ActionDock.tsx
++++ b/studio/src/components/dashboard/ActionDock.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface ActionDockProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const ActionDock: React.FC<ActionDockProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`actiondock-stub ${className}`} data-testid="actiondock-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default ActionDock;
+diff --git a/studio/src/components/dashboard/DashboardLayout.tsx b/studio/src/components/dashboard/DashboardLayout.tsx
+index e69de29b..02bb12a7 100644
+--- a/studio/src/components/dashboard/DashboardLayout.tsx
++++ b/studio/src/components/dashboard/DashboardLayout.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface DashboardLayoutProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`dashboardlayout-stub ${className}`} data-testid="dashboardlayout-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default DashboardLayout;
+diff --git a/studio/src/components/dashboard/LiveSimulator.tsx b/studio/src/components/dashboard/LiveSimulator.tsx
+index e69de29b..804148ba 100644
+--- a/studio/src/components/dashboard/LiveSimulator.tsx
++++ b/studio/src/components/dashboard/LiveSimulator.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface LiveSimulatorProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const LiveSimulator: React.FC<LiveSimulatorProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`livesimulator-stub ${className}`} data-testid="livesimulator-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default LiveSimulator;
+diff --git a/studio/src/components/dashboard/LivingActionDock.tsx b/studio/src/components/dashboard/LivingActionDock.tsx
+index e69de29b..8639b1a9 100644
+--- a/studio/src/components/dashboard/LivingActionDock.tsx
++++ b/studio/src/components/dashboard/LivingActionDock.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface LivingActionDockProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const LivingActionDock: React.FC<LivingActionDockProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`livingactiondock-stub ${className}`} data-testid="livingactiondock-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default LivingActionDock;
+diff --git a/studio/src/components/dashboard/LivingDashboardShell.tsx b/studio/src/components/dashboard/LivingDashboardShell.tsx
+index e69de29b..878dc94d 100644
+--- a/studio/src/components/dashboard/LivingDashboardShell.tsx
++++ b/studio/src/components/dashboard/LivingDashboardShell.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface LivingDashboardShellProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const LivingDashboardShell: React.FC<LivingDashboardShellProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`livingdashboardshell-stub ${className}`} data-testid="livingdashboardshell-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default LivingDashboardShell;
+diff --git a/studio/src/components/dock/DynamicActionDock.tsx b/studio/src/components/dock/DynamicActionDock.tsx
+index e69de29b..cf9ac976 100644
+--- a/studio/src/components/dock/DynamicActionDock.tsx
++++ b/studio/src/components/dock/DynamicActionDock.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface DynamicActionDockProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const DynamicActionDock: React.FC<DynamicActionDockProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`dynamicactiondock-stub ${className}`} data-testid="dynamicactiondock-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default DynamicActionDock;
+diff --git a/studio/src/components/layout/MainLayout.tsx b/studio/src/components/layout/MainLayout.tsx
+index e69de29b..97c5895e 100644
+--- a/studio/src/components/layout/MainLayout.tsx
++++ b/studio/src/components/layout/MainLayout.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface MainLayoutProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const MainLayout: React.FC<MainLayoutProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`mainlayout-stub ${className}`} data-testid="mainlayout-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default MainLayout;
+diff --git a/studio/src/components/layout/NavRail.tsx b/studio/src/components/layout/NavRail.tsx
+index e69de29b..557c1fa9 100644
+--- a/studio/src/components/layout/NavRail.tsx
++++ b/studio/src/components/layout/NavRail.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface NavRailProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const NavRail: React.FC<NavRailProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`navrail-stub ${className}`} data-testid="navrail-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default NavRail;
+diff --git a/studio/src/components/layout/Shell.tsx b/studio/src/components/layout/Shell.tsx
+index e69de29b..26f3a991 100644
+--- a/studio/src/components/layout/Shell.tsx
++++ b/studio/src/components/layout/Shell.tsx
+@@ -0,0 +1,17 @@
++import React from 'react';
++
++export interface ShellProps {
++  children?: React.ReactNode;
++  className?: string;
++  [key: string]: any;
++}
++
++export const Shell: React.FC<ShellProps> = ({ children, className = '', ...props }) => {
++  return (
++    <div className={`shell-stub ${className}`} data-testid="shell-stub" {...props}>
++      {children}
++    </div>
++  );
++};
++
++export default Shell;
+diff --git a/studio/src/hooks/useDashboardActions.ts b/studio/src/hooks/useDashboardActions.ts
+index e69de29b..b759fc1f 100644
+--- a/studio/src/hooks/useDashboardActions.ts
++++ b/studio/src/hooks/useDashboardActions.ts
+@@ -0,0 +1,8 @@
++export function useDashboardActions() {
++  return {
++    dispatchAction: (action: string, payload?: any) => {},
++    actions: [] as string[],
++    loading: false,
++  };
++}
++export default useDashboardActions;
+diff --git a/studio/src/hooks/useDynamicDock.ts b/studio/src/hooks/useDynamicDock.ts
+index e69de29b..f97301c8 100644
+--- a/studio/src/hooks/useDynamicDock.ts
++++ b/studio/src/hooks/useDynamicDock.ts
+@@ -0,0 +1,9 @@
++export function useDynamicDock() {
++  return {
++    dockItems: [] as any[],
++    activeItem: null as any,
++    setActiveItem: (item: any) => {},
++    isOpen: true,
++  };
++}
++export default useDynamicDock;
+diff --git a/studio/src/store/useWorkspaceSettingsStore.ts b/studio/src/store/useWorkspaceSettingsStore.ts
+index e69de29b..6a231f31 100644
+--- a/studio/src/store/useWorkspaceSettingsStore.ts
++++ b/studio/src/store/useWorkspaceSettingsStore.ts
+@@ -0,0 +1,13 @@
++export interface WorkspaceSettings {
++  theme?: string;
++  autoSave?: boolean;
++  [key: string]: any;
++}
++
++export const useWorkspaceSettingsStore = () => {
++  return {
++    settings: { theme: 'dark', autoSave: true },
++    updateSettings: (newSettings: Partial<WorkspaceSettings>) => {},
++  };
++};
++export default useWorkspaceSettingsStore;

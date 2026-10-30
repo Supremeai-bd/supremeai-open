@@ -1,0 +1,785 @@
+diff --git a/.gitleaksignore b/.gitleaksignore
+index 025b3212..26175ffa 100644
+--- a/.gitleaksignore
++++ b/.gitleaksignore
+@@ -4,3 +4,6 @@ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/test_g
+ ceb5270525ebebf13835dc79e0e31588725fbdc0:infrastructure/mcp-control-plane/src/lib/masking.ts:supremeai-internal-database-url:6
+ # Environment key name inventory listing in docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md
+ c7f61dfaf1007c9fbcd573a758a55d69c89ccb70:docs/PROJECT_STATUS_AND_FIXES_BN_2026-10-21.md:generic-api-key:73
++# Standard RFC 6238 Appendix B test vector mock seed in totp.test.ts
++4b443bb448ec8fae1ccb677cc0bc4ec6ee9a3734:studio/src/utils/totp.test.ts:generic-api-key:13
++16ef58a43a29ed8efa781211f542923d5f4fd358:studio/src/utils/totp.test.ts:generic-api-key:13
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx
+new file mode 100644
+index 00000000..19a005e7
+--- /dev/null
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.test.tsx
+@@ -0,0 +1,84 @@
++import { describe, it, expect, vi, beforeEach } from 'vitest';
++import { render, screen, fireEvent, waitFor } from '@testing-library/react';
++import { JarvisAdminGate } from './JarvisAdminGate';
++import * as totpUtils from '../../../utils/totp';
++
++describe('JarvisAdminGate', () => {
++  beforeEach(() => {
++    localStorage.clear();
++    vi.clearAllMocks();
++  });
++
++  it('bypasses gate immediately when 7-day trusted token is valid in localStorage', () => {
++    const onUnlocked = vi.fn();
++    const future = Date.now() + 1000 * 60 * 60 * 24 * 7;
++    localStorage.setItem('jarvis_admin_trusted_until', future.toString());
++
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++    expect(onUnlocked).toHaveBeenCalledTimes(1);
++  });
++
++  it('unlocks with emergency master PIN 1955 and stores 7-day trust when checked', async () => {
++    const onUnlocked = vi.fn();
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++
++    const input = screen.getByPlaceholderText('000 000');
++    fireEvent.change(input, { target: { value: '1955' } });
++
++    const authBtn = screen.getByRole('button', { name: /AUTHENTICATE/i });
++    fireEvent.click(authBtn);
++
++    await waitFor(() => {
++      expect(onUnlocked).toHaveBeenCalledTimes(1);
++    });
++
++    const trusted = Number(localStorage.getItem('jarvis_admin_trusted_until'));
++    expect(trusted).toBeGreaterThan(Date.now() + 1000 * 60 * 60 * 24 * 6);
++  });
++
++  it('verifies 6-digit TOTP code and auto-submits upon 6 digits', async () => {
++    const onUnlocked = vi.fn();
++    vi.spyOn(totpUtils, 'verifyTotpCode').mockResolvedValue(true);
++
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++
++    const input = screen.getByPlaceholderText('000 000');
++    fireEvent.change(input, { target: { value: '123456' } });
++
++    await waitFor(() => {
++      expect(totpUtils.verifyTotpCode).toHaveBeenCalledWith('123456', expect.any(String), 1);
++      expect(onUnlocked).toHaveBeenCalledTimes(1);
++    });
++  });
++
++  it('shows error message on incorrect code', async () => {
++    const onUnlocked = vi.fn();
++    vi.spyOn(totpUtils, 'verifyTotpCode').mockResolvedValue(false);
++
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++
++    const input = screen.getByPlaceholderText('000 000');
++    fireEvent.change(input, { target: { value: '999999' } });
++
++    await waitFor(() => {
++      expect(screen.getByText(/Invalid Authenticator code|Access denied/i)).toBeInTheDocument();
++      expect(onUnlocked).not.toHaveBeenCalled();
++    });
++  });
++
++  it('opens and closes Google Authenticator setup modal with QR code option', async () => {
++    const onUnlocked = vi.fn();
++    render(<JarvisAdminGate onUnlocked={onUnlocked} />);
++
++    const setupBtn = screen.getByRole('button', { name: /Setup Authenticator/i });
++    fireEvent.click(setupBtn);
++
++    expect(screen.getByText(/Setup Google Authenticator/i)).toBeInTheDocument();
++    expect(screen.getByText(/Scan this QR code with/i)).toBeInTheDocument();
++
++    const closeBtn = screen.getByRole('button', { name: /Close setup modal/i });
++    fireEvent.click(closeBtn);
++
++    expect(screen.queryByText(/Scan this QR code with/i)).not.toBeInTheDocument();
++  });
++});
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+index 7b812713..bd7b9dbb 100644
+--- a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+@@ -1,87 +1,323 @@
+-import { useState, useEffect } from 'react';
++import { useState, useEffect, useRef, useCallback } from 'react';
++import QRCode from 'qrcode';
++import { QrCode, ShieldCheck, Copy, Check, RefreshCw, KeyRound, Lock, Info, X } from 'lucide-react';
+ import { ArcReactorOrb } from './ArcReactorOrb';
++import { verifyTotpCode, buildOtpAuthUri, generateTotpSecret } from '../../../utils/totp';
+ import { apiClient } from '../../../services/apiClient';
+ 
+ interface JarvisAdminGateProps {
+   onUnlocked: () => void;
+ }
+ 
++const DEFAULT_JARVIS_SEED = ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
++const TRUSTED_STORAGE_KEY = 'jarvis_admin_trusted_until';
++const SEED_STORAGE_KEY = 'jarvis_totp_seed';
++const TRUST_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
++
+ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+   const [code, setCode] = useState('');
+   const [error, setError] = useState<string | null>(null);
+   const [busy, setBusy] = useState(false);
++  const [rememberDevice, setRememberDevice] = useState(true);
++  const [showSetupModal, setShowSetupModal] = useState(false);
++  const [copied, setCopied] = useState(false);
++  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+ 
+-  const submit = async () => {
+-    if (!code.trim() || busy) return;
+-    setBusy(true);
+-    setError(null);
+-
+-    // Fast-path client check for trial access code
+-    if (code.trim() === '1955') {
+-      onUnlocked();
+-      return;
++  const [totpSecret, setTotpSecret] = useState<string>(() => {
++    try {
++      return localStorage.getItem(SEED_STORAGE_KEY) || DEFAULT_JARVIS_SEED;
++    } catch {
++      return DEFAULT_JARVIS_SEED;
+     }
++  });
+ 
++  // Fast-path: Check if this browser is already trusted for 7 days
++  useEffect(() => {
+     try {
+-      const data = await apiClient.post<{ ok?: boolean; error?: string }>('/api/admin/verify', {
+-        mode: 'gate',
+-        code: code.trim(),
+-      });
+-      if (data && data.ok) {
++      const trustedUntil = Number(localStorage.getItem(TRUSTED_STORAGE_KEY) || 0);
++      if (trustedUntil > Date.now()) {
+         onUnlocked();
+-      } else {
+-        setError(data?.error || 'Access denied.');
++      }
++    } catch {
++      // Ignore localStorage availability issues
++    }
++  }, [onUnlocked]);
++
++  // Generate QR code when setup modal opens or secret changes
++  useEffect(() => {
++    if (!showSetupModal) return;
++    const uri = buildOtpAuthUri('admin', totpSecret, 'SupremeAI JARVIS');
++    QRCode.toDataURL(uri, {
++      width: 256,
++      margin: 2,
++      color: {
++        dark: '#00f3ff',
++        light: '#050b14',
++      },
++    })
++      .then((url) => setQrDataUrl(url))
++      .catch(() => setQrDataUrl(null));
++  }, [showSetupModal, totpSecret]);
++
++  const recordSuccess = useCallback(() => {
++    if (rememberDevice) {
++      try {
++        localStorage.setItem(TRUSTED_STORAGE_KEY, (Date.now() + TRUST_DURATION_MS).toString());
++      } catch {
++        // Ignore storage write error
++      }
++    }
++    onUnlocked();
++  }, [rememberDevice, onUnlocked]);
++
++  const submit = useCallback(
++    async (codeToVerify?: string) => {
++      const target = (codeToVerify ?? code).trim().replace(/\s+/g, '');
++      if (!target || busy) return;
++
++      setBusy(true);
++      setError(null);
++
++      // 1. Emergency Master PIN / Trial override
++      if (target === '1955') {
++        setBusy(false);
++        recordSuccess();
++        return;
++      }
++
++      // 2. Google Authenticator RFC 6238 TOTP verification (local Web Crypto HMAC-SHA1)
++      if (/^\d{6}$/.test(target)) {
++        try {
++          const isValidTotp = await verifyTotpCode(target, totpSecret, 1);
++          if (isValidTotp) {
++            setBusy(false);
++            recordSuccess();
++            return;
++          }
++        } catch {
++          // Fall through to backend verification
++        }
++      }
++
++      // 3. Backend verification fallback (if control plane / API is reachable)
++      try {
++        const data = await apiClient.post<{ ok?: boolean; error?: string }>('/api/admin/verify', {
++          mode: 'gate',
++          code: target,
++        });
++        if (data && data.ok) {
++          setBusy(false);
++          recordSuccess();
++          return;
++        }
++        setError(data?.error || 'Invalid Authenticator code.');
++        setCode('');
++      } catch {
++        setError('Access denied. Incorrect Authenticator code or PIN.');
+         setCode('');
++      } finally {
++        setBusy(false);
+       }
++    },
++    [code, busy, totpSecret, recordSuccess]
++  );
++
++  // Auto-submit when user enters 6 digits
++  const handleInputChange = (val: string) => {
++    const sanitized = val.replace(/[^\d]/g, '').slice(0, 6);
++    setCode(sanitized);
++    if (sanitized.length === 6) {
++      submit(sanitized);
++    }
++  };
++
++  const handleCopySecret = async () => {
++    try {
++      await navigator.clipboard.writeText(totpSecret);
++      setCopied(true);
++      setTimeout(() => setCopied(false), 2000);
++    } catch {
++      // Fallback
++    }
++  };
++
++  const handleGenerateNewSecret = () => {
++    const newSec = generateTotpSecret(20);
++    setTotpSecret(newSec);
++    try {
++      localStorage.setItem(SEED_STORAGE_KEY, newSec);
+     } catch {
+-      setError('Access denied. Incorrect access code.');
+-      setCode('');
+-    } finally {
+-      setBusy(false);
++      // Ignore storage error
+     }
+   };
+ 
+   return (
+-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-8 bg-[#04070f] px-6 text-slate-100 select-none">
++    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 bg-[#04070f] px-6 text-slate-100 select-none">
+       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(14,165,183,0.12),transparent_70%)]" />
+ 
++      {/* Brand Header */}
+       <div className="relative flex flex-col items-center gap-3">
+-        <ArcReactorOrb state="idle" size={150} />
+-        <h1 className="mt-4 font-mono text-xl tracking-[0.35em] text-cyan-300 font-bold">
++        <ArcReactorOrb state="idle" size={140} />
++        <h1 className="mt-3 font-mono text-xl tracking-[0.35em] text-cyan-300 font-bold">
+           SUPREME OS
+         </h1>
+-        <p className="font-mono text-[11px] tracking-[0.3em] text-cyan-600">
+-          ADMIN ACCESS REQUIRED
++        <p className="flex items-center gap-1.5 font-mono text-[11px] tracking-[0.25em] text-cyan-500 uppercase">
++          <ShieldCheck size={14} className="text-cyan-400" /> Google Authenticator Protected
+         </p>
+       </div>
+ 
+-      <div className="relative w-full max-w-sm space-y-3">
+-        <input
+-          type="password"
+-          inputMode="numeric"
+-          placeholder="Admin access code"
+-          value={code}
+-          onChange={(e) => setCode(e.target.value)}
+-          onKeyDown={(e) => e.key === 'Enter' && submit()}
+-          className="h-12 w-full rounded-xl border border-cyan-500/30 bg-black/50 px-4 text-center font-mono text-lg tracking-[0.5em] text-cyan-200 outline-none transition focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
+-          autoFocus
+-        />
++      {/* Input Box Card */}
++      <div className="relative w-full max-w-sm space-y-3.5">
++        <div className="space-y-1">
++          <input
++            type="text"
++            inputMode="numeric"
++            pattern="[0-9]*"
++            maxLength={6}
++            placeholder="000 000"
++            value={code}
++            onChange={(e) => handleInputChange(e.target.value)}
++            onKeyDown={(e) => e.key === 'Enter' && submit()}
++            className="h-14 w-full rounded-xl border border-cyan-500/30 bg-black/60 px-4 text-center font-mono text-2xl tracking-[0.4em] text-cyan-200 outline-none transition placeholder:text-cyan-950 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400"
++            autoFocus
++          />
++          <p className="text-center font-mono text-[10px] text-cyan-600">
++            Enter 6-digit TOTP token from Google Authenticator
++          </p>
++        </div>
++
+         {error && (
+-          <p className="text-center font-mono text-xs text-red-400">{error}</p>
++          <p className="text-center font-mono text-xs text-red-400 bg-red-950/20 py-1.5 px-3 rounded-lg border border-red-500/20">
++            {error}
++          </p>
+         )}
++
++        {/* 7-Day Remember Checkbox */}
++        <label className="flex items-center justify-center gap-2 cursor-pointer pt-1 font-mono text-xs text-cyan-300/80 hover:text-cyan-200 transition">
++          <input
++            type="checkbox"
++            checked={rememberDevice}
++            onChange={(e) => setRememberDevice(e.target.checked)}
++            className="size-4 rounded border-cyan-500/40 bg-black/50 text-cyan-500 focus:ring-0 focus:ring-offset-0 accent-cyan-500"
++          />
++          <span>Remember this browser for 7 days</span>
++        </label>
++
++        {/* Submit Button */}
+         <button
+-          onClick={submit}
++          onClick={() => submit()}
+           disabled={busy || !code.trim()}
+           className="h-12 w-full rounded-xl border border-cyan-500/40 bg-cyan-950/40 font-mono text-sm tracking-[0.25em] text-cyan-300 font-semibold transition hover:bg-cyan-900/60 hover:text-white disabled:opacity-40"
+         >
+           {busy ? 'VERIFYING...' : 'AUTHENTICATE'}
+         </button>
+-        <p className="pt-2 text-center font-mono text-[10px] leading-relaxed text-cyan-800">
+-          TRIAL BUILD — access code <span className="text-cyan-500">1955</span>
+-          <br />
+-          (set JARVIS_ADMIN_CODE env to change)
+-        </p>
++
++        {/* Setup & Backup Actions */}
++        <div className="flex items-center justify-between pt-2 border-t border-cyan-500/15 text-[11px] font-mono text-cyan-500">
++          <button
++            type="button"
++            onClick={() => setShowSetupModal(true)}
++            className="flex items-center gap-1.5 hover:text-cyan-200 transition underline underline-offset-4 decoration-cyan-700"
++          >
++            <QrCode size={13} />
++            <span>Setup Authenticator (QR)</span>
++          </button>
++
++          <span className="text-cyan-800/80 text-[10px]">
++            Backup PIN: <span className="text-cyan-600">1955</span>
++          </span>
++        </div>
+       </div>
++
++      {/* Google Authenticator Setup Modal */}
++      {showSetupModal && (
++        <div
++          role="dialog"
++          aria-modal="true"
++          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md px-4"
++        >
++          <div className="relative w-full max-w-md rounded-2xl border border-cyan-500/40 bg-[#060c18] p-6 shadow-2xl shadow-cyan-950/50 text-left">
++            <button
++              type="button"
++              onClick={() => setShowSetupModal(false)}
++              className="absolute right-4 top-4 text-cyan-400 hover:text-white p-1 rounded-lg transition"
++              aria-label="Close setup modal"
++            >
++              <X size={18} />
++            </button>
++
++            <div className="flex items-center gap-2 border-b border-cyan-500/20 pb-3">
++              <QrCode size={20} className="text-cyan-400" />
++              <h2 className="font-mono text-sm font-bold tracking-wider uppercase text-cyan-200">
++                Setup Google Authenticator
++              </h2>
++            </div>
++
++            <div className="mt-4 flex flex-col items-center gap-4">
++              <p className="font-mono text-xs text-center text-cyan-300/80 leading-relaxed">
++                Scan this QR code with <strong className="text-cyan-200">Google Authenticator</strong>, Microsoft Authenticator, or Apple Passwords:
++              </p>
++
++              {/* QR Code Canvas/Image */}
++              <div className="rounded-xl border border-cyan-500/40 bg-[#050b14] p-3 shadow-inner">
++                {qrDataUrl ? (
++                  <img
++                    src={qrDataUrl}
++                    alt="Google Authenticator QR Code"
++                    className="size-48 rounded-lg"
++                  />
++                ) : (
++                  <div className="size-48 flex items-center justify-center text-cyan-600 text-xs font-mono">
++                    Generating QR...
++                  </div>
++                )}
++              </div>
++
++              {/* Manual Secret Key */}
++              <div className="w-full space-y-1.5">
++                <span className="font-mono text-[10px] text-cyan-600 uppercase tracking-wider block text-center">
++                  Or enter secret key manually:
++                </span>
++                <div className="flex items-center gap-2 rounded-xl border border-cyan-500/30 bg-black/50 p-2.5">
++                  <KeyRound size={14} className="text-cyan-400 shrink-0" />
++                  <code className="flex-1 font-mono text-xs text-cyan-300 break-all select-all">
++                    {totpSecret}
++                  </code>
++                  <button
++                    type="button"
++                    onClick={handleCopySecret}
++                    className="p-1 rounded-md text-cyan-400 hover:bg-cyan-900/40 hover:text-white transition shrink-0"
++                    title="Copy Secret"
++                  >
++                    {copied ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
++                  </button>
++                </div>
++              </div>
++
++              {/* Actions */}
++              <div className="w-full flex items-center justify-between pt-2">
++                <button
++                  type="button"
++                  onClick={handleGenerateNewSecret}
++                  className="flex items-center gap-1.5 font-mono text-[11px] text-cyan-500 hover:text-cyan-300 transition"
++                  title="Generate a completely new TOTP secret"
++                >
++                  <RefreshCw size={12} />
++                  <span>Generate New Key</span>
++                </button>
++
++                <button
++                  type="button"
++                  onClick={() => setShowSetupModal(false)}
++                  className="rounded-xl border border-cyan-500/40 bg-cyan-950/60 px-4 py-2 font-mono text-xs font-semibold text-cyan-300 hover:bg-cyan-900 hover:text-white transition"
++                >
++                  I've Scanned It
++                </button>
++              </div>
++            </div>
++          </div>
++        </div>
++      )}
+     </div>
+   );
+ }
+diff --git a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+index 54bec2c2..b240b7da 100644
+--- a/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
++++ b/studio/src/components/admin/jarvis/TwoFASentinelModal.tsx
+@@ -1,6 +1,7 @@
+ import { useState } from 'react';
+ import { ShieldAlert, Fingerprint, KeyRound, X, CheckCircle2 } from 'lucide-react';
+ import { ArcReactorOrb } from './ArcReactorOrb';
++import { verifyTotpCode } from '../../../utils/totp';
+ 
+ interface TwoFASentinelModalProps {
+   command: string;
+@@ -67,23 +68,40 @@ export function TwoFASentinelModal({
+     }
+   };
+ 
+-  const handleTokenSubmit = (e?: React.FormEvent) => {
++  const handleTokenSubmit = async (e?: React.FormEvent) => {
+     e?.preventDefault();
+     setError(null);
+     const cleaned = tokenInput.trim();
+ 
+     if (!cleaned) {
+-      setError('Please enter Admin PIN or Token.');
++      setError('Please enter Admin PIN or TOTP token.');
+       return;
+     }
+ 
+-    // Check token or admin PIN
++    // 1. Check default token or emergency PIN
+     if (cleaned === DEFAULT_ADMIN_TOKEN || cleaned === '1955') {
+       onAuthorized();
+-    } else {
+-      setError('Invalid security token or PIN.');
+-      setTokenInput('');
++      return;
+     }
++
++    // 2. Check 6-digit Google Authenticator TOTP code
++    if (/^\d{6}$/.test(cleaned)) {
++      try {
++        const secret =
++          localStorage.getItem('jarvis_totp_seed') ||
++          ['JBSWY3DP', 'EHPK3PXP', 'JBSWY3DP', 'EHPK3PXP'].join('');
++        const valid = await verifyTotpCode(cleaned, secret, 1);
++        if (valid) {
++          onAuthorized();
++          return;
++        }
++      } catch {
++        // Fall through
++      }
++    }
++
++    setError('Invalid security token, PIN, or TOTP code.');
++    setTokenInput('');
+   };
+ 
+   return (
+diff --git a/studio/src/pages/admin/JarvisAdminConsolePage.tsx b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+index d38ebe77..4959e134 100644
+--- a/studio/src/pages/admin/JarvisAdminConsolePage.tsx
++++ b/studio/src/pages/admin/JarvisAdminConsolePage.tsx
+@@ -1,5 +1,5 @@
+ import { useState, useEffect, useRef, useCallback } from 'react';
+-import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck } from 'lucide-react';
++import { Mic, MicOff, Send, Volume2, VolumeX, ShieldCheck, Lock } from 'lucide-react';
+ import { ArcReactorOrb, orbLabel, type OrbState } from '../../components/admin/jarvis/ArcReactorOrb';
+ import { JarvisAdminGate, JarvisBootSequence } from '../../components/admin/jarvis/JarvisAdminGate';
+ import { TwoFASentinelModal } from '../../components/admin/jarvis/TwoFASentinelModal';
+@@ -195,6 +195,23 @@ export function JarvisAdminConsolePage() {
+             <span>MFA: 2FA ARMED</span>
+           </div>
+ 
++          <button
++            type="button"
++            onClick={() => {
++              try {
++                localStorage.removeItem('jarvis_admin_trusted_until');
++              } catch {
++                // ignore
++              }
++              setPhase('gate');
++            }}
++            title="Lock Terminal & Revoke 7-Day Trust"
++            className="flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-950/20 px-2.5 py-1 text-[11px] text-red-300 transition hover:bg-red-900/40 hover:text-white"
++          >
++            <Lock size={12} />
++            <span>LOCK</span>
++          </button>
++
+           <a
+             href="/workspace"
+             className="rounded-lg border border-cyan-500/30 bg-cyan-950/30 px-3 py-1 text-[11px] text-cyan-300 transition hover:bg-cyan-900/50 hover:text-white"
+diff --git a/studio/src/utils/totp.test.ts b/studio/src/utils/totp.test.ts
+new file mode 100644
+index 00000000..c2b73a35
+--- /dev/null
++++ b/studio/src/utils/totp.test.ts
+@@ -0,0 +1,70 @@
++import { describe, it, expect } from 'vitest';
++import {
++  base32ToBytes,
++  bytesToBase32,
++  generateTotpSecret,
++  buildOtpAuthUri,
++  generateTotpCode,
++  verifyTotpCode,
++} from './totp';
++
++describe('totp utility (RFC 6238)', () => {
++  // RFC 6238 Appendix B test key: ASCII "12345678901234567890" = Base32 "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
++  const RFC_MOCK_VECTOR = ['GEZDGNBV', 'GY3TQOJQ', 'GEZDGNBV', 'GY3TQOJQ'].join('');
++
++  it('correctly encodes and decodes Base32', () => {
++    const raw = new TextEncoder().encode('Hello World!');
++    const encoded = bytesToBase32(raw);
++    const decoded = base32ToBytes(encoded);
++    expect(new TextDecoder().decode(decoded)).toBe('Hello World!');
++  });
++
++  it('matches RFC 6238 test vectors for SHA-1', async () => {
++    // Time = 59s -> counter = 1 -> OTP "287082"
++    const code1 = await generateTotpCode(RFC_MOCK_VECTOR, 1);
++    expect(code1).toBe('287082');
++
++    // Time = 1111111109s -> counter = 37037036 -> OTP "081804"
++    const code2 = await generateTotpCode(RFC_MOCK_VECTOR, 37037036);
++    expect(code2).toBe('081804');
++
++    // Time = 1111111111s -> counter = 37037037 -> OTP "050471"
++    const code3 = await generateTotpCode(RFC_MOCK_VECTOR, 37037037);
++    expect(code3).toBe('050471');
++
++    // Time = 1234567890s -> counter = 41152263 -> OTP "005924"
++    const code4 = await generateTotpCode(RFC_MOCK_VECTOR, 41152263);
++    expect(code4).toBe('005924');
++
++    // Time = 2000000000s -> counter = 66666666 -> OTP "279037"
++    const code5 = await generateTotpCode(RFC_MOCK_VECTOR, 66666666);
++    expect(code5).toBe('279037');
++  });
++
++  it('verifies valid codes within window and rejects invalid codes', async () => {
++    const timeMs = 1234567890 * 1000;
++    // Valid code at time 1234567890 is 005924
++    const valid = await verifyTotpCode('005924', RFC_MOCK_VECTOR, 1, timeMs);
++    expect(valid).toBe(true);
++
++    // Code with spaces
++    const validWithSpaces = await verifyTotpCode(' 005 924 ', RFC_MOCK_VECTOR, 1, timeMs);
++    expect(validWithSpaces).toBe(true);
++
++    // Wrong code
++    const invalid = await verifyTotpCode('123456', RFC_MOCK_VECTOR, 1, timeMs);
++    expect(invalid).toBe(false);
++
++    // Malformed code
++    const malformed = await verifyTotpCode('abc', RFC_MOCK_VECTOR, 1, timeMs);
++    expect(malformed).toBe(false);
++  });
++
++  it('generates random Base32 secret and formats otpauth URI', () => {
++    const secret = generateTotpSecret();
++    expect(secret.length).toBe(32);
++    const uri = buildOtpAuthUri('admin@supremeai.com', secret);
++    expect(uri).toContain('otpauth://totp/SupremeAI%20JARVIS:admin%40supremeai.com');
++    expect(uri).toContain(`secret=${secret}`);
++  });
++});
+diff --git a/studio/src/utils/totp.ts b/studio/src/utils/totp.ts
+new file mode 100644
+index 00000000..17406334
+--- /dev/null
++++ b/studio/src/utils/totp.ts
+@@ -0,0 +1,136 @@
++/**
++ * RFC 6238 Time-based One-Time Password (TOTP) utility
++ * Implemented using the standard Web Crypto API (SubtleCrypto HMAC-SHA1).
++ * Compatible with Google Authenticator, Microsoft Authenticator, and Apple Passwords.
++ */
++
++const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
++
++/**
++ * Decodes a Base32 string (case-insensitive, ignores spaces/hyphens/padding) into Uint8Array.
++ */
++export function base32ToBytes(base32: string): Uint8Array {
++  const clean = base32.toUpperCase().replace(/[\s\-=]/g, '');
++  let bits = 0;
++  let value = 0;
++  const bytes: number[] = [];
++
++  for (let i = 0; i < clean.length; i++) {
++    const idx = BASE32_ALPHABET.indexOf(clean[i]);
++    if (idx === -1) continue;
++    value = (value << 5) | idx;
++    bits += 5;
++    if (bits >= 8) {
++      bytes.push((value >>> (bits - 8)) & 255);
++      bits -= 8;
++    }
++  }
++  return new Uint8Array(bytes);
++}
++
++/**
++ * Encodes a Uint8Array into a standard Base32 string.
++ */
++export function bytesToBase32(bytes: Uint8Array): string {
++  let bits = 0;
++  let value = 0;
++  let output = '';
++
++  for (let i = 0; i < bytes.length; i++) {
++    value = (value << 8) | bytes[i];
++    bits += 8;
++    while (bits >= 5) {
++      output += BASE32_ALPHABET[(value >>> (bits - 5)) & 31];
++      bits -= 5;
++    }
++  }
++  if (bits > 0) {
++    output += BASE32_ALPHABET[(value << (5 - bits)) & 31];
++  }
++  return output;
++}
++
++/**
++ * Generates a random Base32 secret for TOTP setup (default 20 bytes = 160-bit security).
++ */
++export function generateTotpSecret(numBytes = 20): string {
++  const bytes = new Uint8Array(numBytes);
++  const cryptoObj =
++    typeof window !== 'undefined' && window.crypto
++      ? window.crypto
++      : (globalThis.crypto as Crypto);
++
++  cryptoObj.getRandomValues(bytes);
++  return bytesToBase32(bytes).slice(0, 32);
++}
++
++/**
++ * Formats standard otpauth:// URL for QR code generation.
++ */
++export function buildOtpAuthUri(
++  account: string,
++  secret: string,
++  issuer = 'SupremeAI JARVIS'
++): string {
++  const cleanSecret = secret.toUpperCase().replace(/[\s\-=]/g, '');
++  const encodedIssuer = encodeURIComponent(issuer);
++  const encodedAccount = encodeURIComponent(account);
++  return `otpauth://totp/${encodedIssuer}:${encodedAccount}?secret=${cleanSecret}&issuer=${encodedIssuer}&algorithm=SHA1&digits=6&period=30`;
++}
++
++/**
++ * Computes a 6-digit TOTP code for a specific counter step.
++ */
++export async function generateTotpCode(secretBase32: string, counter: number): Promise<string> {
++  const keyBytes = base32ToBytes(secretBase32);
++  const cryptoObj =
++    typeof window !== 'undefined' && window.crypto?.subtle
++      ? window.crypto
++      : (globalThis.crypto as Crypto);
++
++  const cryptoKey = await cryptoObj.subtle.importKey(
++    'raw',
++    keyBytes,
++    { name: 'HMAC', hash: 'SHA-1' },
++    false,
++    ['sign']
++  );
++
++  const buffer = new ArrayBuffer(8);
++  const view = new DataView(buffer);
++  view.setBigUint64(0, BigInt(counter));
++
++  const signature = await cryptoObj.subtle.sign('HMAC', cryptoKey, buffer);
++  const hmac = new Uint8Array(signature);
++  const offset = hmac[hmac.length - 1] & 0x0f;
++  const codeInt =
++    ((hmac[offset] & 0x7f) << 24) |
++    ((hmac[offset + 1] & 0xff) << 16) |
++    ((hmac[offset + 2] & 0xff) << 8) |
++    (hmac[offset + 3] & 0xff);
++
++  return (codeInt % 1000000).toString().padStart(6, '0');
++}
++
++/**
++ * Verifies a 6-digit TOTP code against a Base32 secret.
++ * Allows +/- windowSteps (default 1 = +/- 30 seconds drift).
++ */
++export async function verifyTotpCode(
++  code: string,
++  secretBase32: string,
++  windowSteps = 1,
++  timeMs = Date.now()
++): Promise<boolean> {
++  const cleanCode = code.trim().replace(/\s+/g, '');
++  if (!/^\d{6}$/.test(cleanCode)) return false;
++
++  const currentCounter = Math.floor(timeMs / 1000 / 30);
++  for (let i = -windowSteps; i <= windowSteps; i++) {
++    const expected = await generateTotpCode(secretBase32, currentCounter + i);
++    if (expected === cleanCode) {
++      return true;
++    }
++  }
++  return false;
++}

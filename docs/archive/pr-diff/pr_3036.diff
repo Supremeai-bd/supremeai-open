@@ -1,0 +1,439 @@
+diff --git a/gateway/model_churn_baseline.json b/gateway/model_churn_baseline.json
+new file mode 100644
+index 00000000..02b38247
+--- /dev/null
++++ b/gateway/model_churn_baseline.json
+@@ -0,0 +1,4 @@
++{
++  "schema": "model-churn-ledger/1",
++  "entries": {}
++}
+diff --git a/gateway/model_churn_gate.py b/gateway/model_churn_gate.py
+new file mode 100644
+index 00000000..4c3750d3
+--- /dev/null
++++ b/gateway/model_churn_gate.py
+@@ -0,0 +1,214 @@
++"""Token-churn regression gate for model bumps (radar P-03, issue #1662).
++
++Blocks a model bump when the committed evaluation artifact shows output-token
++cost growth >30% or diff churn >2x versus the baseline entry on the SAME
++golden task set, without a same-task quality comparison demonstrating
++non-regression (admin-ratified reopen of 2026-10-27: "block model changes
++that increase token cost by >30% or diff churn >2x without quality
++improvement").
++
++Design notes
++------------
++- Fail-closed everywhere: a missing baseline, a malformed ledger, a malformed
++  candidate artifact, a task-set mismatch, or a degenerate baseline metric all
++  BLOCK. The gate never invents numbers to allow a bump.
++- The gate consumes committed evaluation artifacts; it never runs models.
++  Producing the artifact for a candidate model is the bump author's job
++  (same-task, golden task set, recorded in the ledger schema below).
++- Stdlib only, deterministic, no network, no LLM inference.
++
++Ledger schema (``model_churn_baseline.json``)::
++
++    {
++      "schema": "model-churn-ledger/1",
++      "entries": {
++        "<model_id>": {
++          "output_tokens": <int, total output tokens across the task set>,
++          "diff_files_changed": <int, files touched by the model's diffs>,
++          "task_set_id": "<golden task set identifier>",
++          "quality_score": <float | null, same-task quality metric>,
++          "measured_at": "<ISO-8601 date the measurement was taken>"
++        }
++      }
++    }
++
++Candidate artifact schema (what a bump author must present)::
++
++    {
++      "model_id": "<candidate model id>",
++      "baseline_id": "<model id of the incumbent being replaced>",
++      "output_tokens": <int>,
++      "diff_files_changed": <int>,
++      "task_set_id": "<must equal the baseline entry's task_set_id>",
++      "quality_comparison": {"quality_score": <float>} | absent
++    }
++
++CLI (eval lane)::
++
++    python -m gateway.model_churn_gate --ledger gateway/model_churn_baseline.json \
++        --candidate candidate.json    # exit 0 = allow, 2 = block, 3 = config error
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import sys
++from dataclasses import dataclass, field
++from pathlib import Path
++
++LEDGER_SCHEMA = "model-churn-ledger/1"
++
++# Admin-ratified budgets (issue #1662, reopened 2026-10-27).
++OUTPUT_TOKEN_GROWTH_MAX = 0.30  # >30% output-token cost growth blocks
++DIFF_CHURN_RATIO_MAX = 2.0      # >2x diff churn blocks
++
++# Verdict kinds.
++ALLOW = "allow"
++BLOCK = "block"
++
++_REQUIRED_CANDIDATE_FIELDS = ("model_id", "baseline_id", "output_tokens", "diff_files_changed", "task_set_id")
++_REQUIRED_BASELINE_FIELDS = ("output_tokens", "diff_files_changed", "task_set_id")
++
++
++@dataclass
++class ChurnVerdict:
++    allowed: bool
++    kind: str  # ALLOW | BLOCK
++    model_id: str
++    baseline_id: str | None
++    reasons: list[str] = field(default_factory=list)
++    metrics: dict = field(default_factory=dict)
++
++
++def load_ledger(path: str | Path) -> dict:
++    """Load and shape-validate a churn ledger. Raises ValueError when malformed."""
++    with Path(path).open("r", encoding="utf-8") as f:
++        data = json.load(f)
++    if not isinstance(data, dict):
++        raise ValueError("ledger root must be an object")
++    if data.get("schema") != LEDGER_SCHEMA:
++        raise ValueError(f"unsupported ledger schema: {data.get('schema')!r}")
++    if not isinstance(data.get("entries"), dict):
++        raise ValueError("ledger 'entries' must be an object")
++    return data
++
++
++def _quality_case_holds(candidate: dict, baseline: dict) -> bool:
++    """A same-task quality comparison demonstrating non-regression."""
++    qc = candidate.get("quality_comparison")
++    if not isinstance(qc, dict):
++        return False
++    cand_q = qc.get("quality_score")
++    base_q = baseline.get("quality_score")
++    if not isinstance(cand_q, (int, float)) or not isinstance(base_q, (int, float)):
++        return False
++    return float(cand_q) >= float(base_q)
++
++
++def evaluate_bump(candidate: dict, ledger: dict) -> ChurnVerdict:
++    """Evaluate a candidate-model bump against the ledger. Fail-closed."""
++    model_id = candidate.get("model_id") if isinstance(candidate, dict) else None
++    baseline_id = candidate.get("baseline_id") if isinstance(candidate, dict) else None
++
++    def _block(kind_reason: str, detail: str) -> ChurnVerdict:
++        return ChurnVerdict(False, BLOCK, str(model_id), baseline_id, [f"{kind_reason}: {detail}"])
++
++    if not isinstance(candidate, dict):
++        return _block("malformed_candidate", "candidate artifact must be an object")
++    if not isinstance(ledger, dict) or not isinstance(ledger.get("entries"), dict):
++        return _block("malformed_ledger", "ledger must be an object with an 'entries' object")
++
++    missing = [k for k in _REQUIRED_CANDIDATE_FIELDS if candidate.get(k) is None]
++    if missing:
++        return _block("malformed_candidate", f"missing fields {missing}")
++
++    entries = ledger["entries"]
++    baseline = entries.get(candidate["baseline_id"])
++    if not isinstance(baseline, dict):
++        return _block("no_baseline", f"no ledger entry for baseline {candidate['baseline_id']!r}")
++    missing_base = [k for k in _REQUIRED_BASELINE_FIELDS if baseline.get(k) is None]
++    if missing_base:
++        return _block("malformed_baseline", f"baseline entry missing fields {missing_base}")
++
++    if candidate["task_set_id"] != baseline["task_set_id"]:
++        return _block(
++            "task_set_mismatch",
++            f"candidate {candidate['task_set_id']!r} vs baseline {baseline['task_set_id']!r}",
++        )
++
++    base_out = baseline["output_tokens"]
++    base_churn = baseline["diff_files_changed"]
++    if not isinstance(base_out, (int, float)) or base_out <= 0:
++        return _block("degenerate_baseline", "baseline output_tokens must be > 0")
++    if not isinstance(base_churn, (int, float)) or base_churn <= 0:
++        return _block("degenerate_baseline", "baseline diff_files_changed must be > 0")
++
++    cand_out = candidate["output_tokens"]
++    cand_churn = candidate["diff_files_changed"]
++    if not isinstance(cand_out, (int, float)) or cand_out < 0 or not isinstance(cand_churn, (int, float)) or cand_churn < 0:
++        return _block("malformed_candidate", "output_tokens/diff_files_changed must be non-negative numbers")
++
++    output_growth = (cand_out - base_out) / base_out
++    churn_ratio = cand_churn / base_churn
++    metrics = {
++        "output_growth": round(output_growth, 6),
++        "churn_ratio": round(churn_ratio, 6),
++        "output_growth_budget": OUTPUT_TOKEN_GROWTH_MAX,
++        "churn_ratio_budget": DIFF_CHURN_RATIO_MAX,
++    }
++
++    over_output = output_growth > OUTPUT_TOKEN_GROWTH_MAX
++    over_churn = churn_ratio > DIFF_CHURN_RATIO_MAX
++    if not (over_output or over_churn):
++        return ChurnVerdict(True, ALLOW, str(candidate["model_id"]), baseline_id, ["within budget"], metrics)
++
++    if _quality_case_holds(candidate, baseline):
++        return ChurnVerdict(
++            True, ALLOW, str(candidate["model_id"]), baseline_id,
++            ["over budget but same-task quality comparison shows non-regression"], metrics,
++        )
++
++    reasons = []
++    if over_output:
++        reasons.append(f"output-token growth {output_growth:.1%} exceeds budget {OUTPUT_TOKEN_GROWTH_MAX:.0%} without quality case")
++    if over_churn:
++        reasons.append(f"diff churn {churn_ratio:.2f}x exceeds budget {DIFF_CHURN_RATIO_MAX:.1f}x without quality case")
++    return ChurnVerdict(False, BLOCK, str(candidate["model_id"]), baseline_id, reasons, metrics)
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description="Token-churn regression gate for model bumps (#1662)")
++    parser.add_argument("--ledger", required=True, help="path to model_churn_baseline.json")
++    parser.add_argument("--candidate", required=True, help="path to candidate evaluation artifact JSON ('-' for stdin)")
++    args = parser.parse_args(argv)
++
++    try:
++        ledger = load_ledger(args.ledger)
++    except (OSError, ValueError) as exc:
++        print(f"BLOCK (config error): ledger unreadable/invalid: {exc}", file=sys.stderr)
++        return 3
++
++    try:
++        if args.candidate == "-":
++            candidate = json.load(sys.stdin)
++        else:
++            with open(args.candidate, "r", encoding="utf-8") as f:
++                candidate = json.load(f)
++    except (OSError, ValueError) as exc:
++        print(f"BLOCK (config error): candidate artifact unreadable/invalid: {exc}", file=sys.stderr)
++        return 3
++
++    verdict = evaluate_bump(candidate, ledger)
++    print(json.dumps({
++        "verdict": verdict.kind,
++        "model_id": verdict.model_id,
++        "baseline_id": verdict.baseline_id,
++        "reasons": verdict.reasons,
++        "metrics": verdict.metrics,
++    }, sort_keys=True))
++    return 0 if verdict.allowed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/test_model_churn_gate.py b/tests/test_model_churn_gate.py
+new file mode 100644
+index 00000000..d8479054
+--- /dev/null
++++ b/tests/test_model_churn_gate.py
+@@ -0,0 +1,203 @@
++"""tests/test_model_churn_gate.py — unit tests for the token-churn regression gate (#1662).
++
++The gate must fail closed: any missing baseline, malformed artifact, task-set
++mismatch, or degenerate baseline metric blocks the bump. Budget boundaries
++come from the admin-ratified reopen of #1662 (>30% output-token growth or >2x
++diff churn, without a same-task quality case).
++"""
++
++from __future__ import annotations
++
++import sys
++from pathlib import Path
++
++REPO_ROOT = Path(__file__).resolve().parent.parent
++sys.path.insert(0, str(REPO_ROOT))
++
++from gateway.model_churn_gate import (
++    ALLOW,
++    BLOCK,
++    LEDGER_SCHEMA,
++    evaluate_bump,
++    load_ledger,
++    main,
++)
++
++
++def _ledger(**baseline_overrides):
++    baseline = {
++        "output_tokens": 1000,
++        "diff_files_changed": 10,
++        "task_set_id": "golden-2026-10",
++        "quality_score": 0.80,
++        "measured_at": "2026-10-01",
++    }
++    baseline.update(baseline_overrides)
++    return {"schema": LEDGER_SCHEMA, "entries": {"incumbent-a": baseline}}
++
++
++def _candidate(**overrides):
++    cand = {
++        "model_id": "candidate-b",
++        "baseline_id": "incumbent-a",
++        "output_tokens": 1100,       # +10% growth
++        "diff_files_changed": 12,    # 1.2x churn
++        "task_set_id": "golden-2026-10",
++    }
++    cand.update(overrides)
++    return cand
++
++
++# ---------- budget math ----------
++
++def test_within_budget_allows():
++    v = evaluate_bump(_candidate(), _ledger())
++    assert v.allowed and v.kind == ALLOW
++
++
++def test_exactly_at_budget_allows():
++    # >30% blocks; exactly 30% does not. Same for exactly 2.0x churn.
++    v = evaluate_bump(_candidate(output_tokens=1300, diff_files_changed=20), _ledger())
++    assert v.allowed
++    assert v.metrics["output_growth"] == 0.3
++    assert v.metrics["churn_ratio"] == 2.0
++
++
++def test_output_growth_over_budget_blocks():
++    v = evaluate_bump(_candidate(output_tokens=1301), _ledger())
++    assert not v.allowed and v.kind == BLOCK
++    assert any("output-token growth" in r for r in v.reasons)
++
++
++def test_churn_over_budget_blocks():
++    v = evaluate_bump(_candidate(diff_files_changed=21), _ledger())
++    assert not v.allowed
++    assert any("diff churn" in r for r in v.reasons)
++
++
++def test_both_over_budget_blocks_with_both_reasons():
++    v = evaluate_bump(_candidate(output_tokens=2000, diff_files_changed=40), _ledger())
++    assert not v.allowed
++    assert len(v.reasons) == 2
++
++
++def test_output_decrease_and_churn_decrease_allow():
++    v = evaluate_bump(_candidate(output_tokens=500, diff_files_changed=5), _ledger())
++    assert v.allowed
++
++
++# ---------- quality escape hatch ----------
++
++def test_quality_case_allows_over_budget_bump():
++    v = evaluate_bump(
++        _candidate(output_tokens=2000, quality_comparison={"quality_score": 0.85}),
++        _ledger(),
++    )
++    assert v.allowed
++    assert any("quality" in r for r in v.reasons)
++
++
++def test_quality_regression_does_not_rescue_over_budget_bump():
++    v = evaluate_bump(
++        _candidate(output_tokens=2000, quality_comparison={"quality_score": 0.70}),
++        _ledger(),
++    )
++    assert not v.allowed
++
++
++def test_quality_case_without_baseline_quality_does_not_rescue():
++    # Baseline has no quality_score -> comparison cannot demonstrate non-regression.
++    v = evaluate_bump(
++        _candidate(output_tokens=2000, quality_comparison={"quality_score": 0.9}),
++        _ledger(quality_score=None),
++    )
++    assert not v.allowed
++
++
++# ---------- fail-closed paths ----------
++
++def test_no_baseline_blocks():
++    v = evaluate_bump(_candidate(baseline_id="unknown-model"), _ledger())
++    assert not v.allowed
++    assert v.reasons and "no_baseline" in v.reasons[0]
++
++
++def test_malformed_ledger_blocks():
++    v = evaluate_bump(_candidate(), {"schema": LEDGER_SCHEMA})  # entries missing
++    assert not v.allowed
++    assert "malformed_ledger" in v.reasons[0]
++
++
++def test_malformed_candidate_blocks():
++    v = evaluate_bump({"model_id": "candidate-b"}, _ledger())
++    assert not v.allowed
++    assert "malformed_candidate" in v.reasons[0]
++
++
++def test_task_set_mismatch_blocks():
++    v = evaluate_bump(_candidate(task_set_id="other-set"), _ledger())
++    assert not v.allowed
++    assert "task_set_mismatch" in v.reasons[0]
++
++
++def test_degenerate_baseline_blocks():
++    v = evaluate_bump(_candidate(), _ledger(output_tokens=0))
++    assert not v.allowed
++    assert "degenerate_baseline" in v.reasons[0]
++
++
++def test_non_dict_candidate_blocks():
++    v = evaluate_bump("not-a-dict", _ledger())  # type: ignore[arg-type]
++    assert not v.allowed
++
++
++# ---------- ledger loading ----------
++
++def test_load_ledger_round_trip(tmp_path):
++    import json
++    p = tmp_path / "ledger.json"
++    p.write_text(json.dumps(_ledger()), encoding="utf-8")
++    loaded = load_ledger(p)
++    assert loaded["schema"] == LEDGER_SCHEMA
++    assert "incumbent-a" in loaded["entries"]
++
++
++def test_load_ledger_rejects_bad_schema(tmp_path):
++    import json
++    import pytest
++    p = tmp_path / "ledger.json"
++    p.write_text(json.dumps({"schema": "nope/9", "entries": {}}), encoding="utf-8")
++    with pytest.raises(ValueError):
++        load_ledger(p)
++
++
++def test_committed_baseline_ledger_is_valid():
++    """A malformed committed ledger must born-red on main (suite-enforced)."""
++    ledger = load_ledger(REPO_ROOT / "gateway" / "model_churn_baseline.json")
++    assert isinstance(ledger["entries"], dict)
++
++
++# ---------- CLI ----------
++
++def _cli_args(tmp_path, ledger_doc, candidate_doc):
++    import json
++    lp = tmp_path / "l.json"
++    cp = tmp_path / "c.json"
++    lp.write_text(json.dumps(ledger_doc), encoding="utf-8")
++    cp.write_text(json.dumps(candidate_doc), encoding="utf-8")
++    return ["--ledger", str(lp), "--candidate", str(cp)]
++
++
++def test_cli_allow_exit_zero(tmp_path):
++    rc = main(_cli_args(tmp_path, _ledger(), _candidate()))
++    assert rc == 0
++
++
++def test_cli_block_exit_two(tmp_path):
++    rc = main(_cli_args(tmp_path, _ledger(), _candidate(output_tokens=2000)))
++    assert rc == 2
++
++
++def test_cli_config_error_exit_three(tmp_path):
++    rc = main(_cli_args(tmp_path, {"schema": "bogus"}, _candidate()))
++    assert rc == 3

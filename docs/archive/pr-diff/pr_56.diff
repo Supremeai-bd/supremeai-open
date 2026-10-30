@@ -1,0 +1,229 @@
+diff --git a/infrastructure/mcp-control-plane/src/adapters/github/app_token.ts b/infrastructure/mcp-control-plane/src/adapters/github/app_token.ts
+new file mode 100644
+index 00000000..98c8afa9
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/adapters/github/app_token.ts
+@@ -0,0 +1,157 @@
++/**
++ * GitHub App installation-token minter (issue: bridge lane unauthenticated reads).
++ *
++ * The tower receives `GITHUB_APP_ID` / `GITHUB_APP_INSTALLATION_ID` /
++ * `GITHUB_APP_PRIVATE_KEY` from the Infisical bootstrap, but nothing used them —
++ * so when no static `GITHUB_TOKEN` is configured, every GitHub call (bridge lane,
++ * adapter PAT chain) degrades to unauthenticated requests and dies on API rate
++ * limits (observed live: HTTP 403 on bridge.work_queue / bridge.work_order).
++ *
++ * This module mints short-lived installation access tokens (1 h) from the App
++ * credentials with zero new dependencies (node:crypto RS256), caches them until
++ * shortly before expiry, and fails honest: any absence or error returns ""
++ * so callers keep their existing graceful unauthenticated fallback.
++ *
++ * Self-healing installation resolution (live incident 2026-10-14): the vault's
++ * `GITHUB_APP_INSTALLATION_ID` can go stale when the App is installed on a new
++ * account (the vault API requires client-side ciphertext for updates, so a
++ * plain API write is impossible). If minting with the configured installation
++ * fails, the minter lists the App's installations via the App JWT and resolves
++ * the one matching `GITHUB_APP_TARGET_ACCOUNT` (case-insensitive), falling back
++ * to the first active installation. The resolved id is cached in-process.
++ */
++import crypto from "crypto";
++
++const GITHUB_API = "https://api.github.com";
++
++let cached: { token: string; expiresAtMs: number } | null = null;
++let resolvedInstallationId: string | null = null;
++let inFlight: Promise<string> | null = null;
++
++function appCreds(): { appId: string; installationId: string; pem: string } | null {
++  const appId = process.env["GITHUB_APP_ID"] || "";
++  const installationId = resolvedInstallationId || process.env["GITHUB_APP_INSTALLATION_ID"] || "";
++  const pem = (process.env["GITHUB_APP_PRIVATE_KEY"] || "").replace(/\\n/g, "\n");
++  if (!appId || !pem.includes("PRIVATE KEY")) return null;
++  return { appId, installationId, pem };
++}
++
++/** Sign a GitHub App JWT (RS256, ≤10 min lifetime per GitHub contract). */
++export function signAppJwt(appId: string, pem: string, nowMs = Date.now()): string {
++  const header = { alg: "RS256", typ: "JWT" };
++  const payload = { iat: Math.floor(nowMs / 1000) - 60, exp: Math.floor(nowMs / 1000) + 540, iss: appId };
++  const b64 = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString("base64url");
++  const unsigned = `${b64(header)}.${b64(payload)}`;
++  const signer = crypto.createSign("RSA-SHA256");
++  signer.update(unsigned);
++  const signature = signer.sign(pem).toString("base64url");
++  return `${unsigned}.${signature}`;
++}
++
++interface AppInstallation {
++  id: number;
++  account: { login?: string } | null;
++  suspended_at: string | null;
++}
++
++/** List every installation of the App (App-JWT authenticated). Fails honest: []. */
++async function listAppInstallations(appId: string, pem: string): Promise<AppInstallation[]> {
++  const jwt = signAppJwt(appId, pem);
++  const res = await fetch(`${GITHUB_API}/app/installations?per_page=100`, {
++    headers: {
++      Authorization: `Bearer ${jwt}`,
++      Accept: "application/vnd.github+json",
++      "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
++    },
++  });
++  if (!res.ok) return [];
++  const data = (await res.json()) as AppInstallation[];
++  return Array.isArray(data) ? data : [];
++}
++
++/**
++ * Resolve the installation to mint for: configured id if set and mintable,
++ * else auto-discovery (GITHUB_APP_TARGET_ACCOUNT match, else first active).
++ * Returns null when nothing is mintable (caller falls back unauthenticated).
++ */
++async function resolveInstallation(creds: { appId: string; pem: string; installationId: string }): Promise<{ installationId: string } | null> {
++  const tryMint = async (installationId: string): Promise<{ token: string; expiresAtMs: number } | null> => {
++    if (!installationId) return null;
++    try {
++      return await mintInstallationToken({ ...creds, installationId });
++    } catch {
++      return null;
++    }
++  };
++
++  const direct = await tryMint(creds.installationId);
++  if (direct) {
++    cached = direct;
++    return { installationId: creds.installationId };
++  }
++
++  // Auto-discovery — vault installation id is absent or stale.
++  const installations = await listAppInstallations(creds.appId, creds.pem);
++  const target = (process.env["GITHUB_APP_TARGET_ACCOUNT"] || "").toLowerCase();
++  const candidates = installations.filter((i) => !i.suspended_at);
++  const chosen =
++    candidates.find((i) => target && (i.account?.login || "").toLowerCase() === target) ?? candidates[0];
++  if (!chosen) return null;
++
++  const minted = await tryMint(String(chosen.id));
++  if (!minted) return null;
++  cached = minted;
++  return { installationId: String(chosen.id) };
++}
++
++async function mintInstallationToken(creds: { appId: string; installationId: string; pem: string }): Promise<{ token: string; expiresAtMs: number }> {
++  const jwt = signAppJwt(creds.appId, creds.pem);
++  const res = await fetch(`${GITHUB_API}/app/installations/${creds.installationId}/access_tokens`, {
++    method: "POST",
++    headers: {
++      Authorization: `Bearer ${jwt}`,
++      Accept: "application/vnd.github+json",
++      "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
++    },
++  });
++  if (!res.ok) {
++    throw new Error(`installation token mint failed: HTTP ${res.status}`);
++  }
++  const data = (await res.json()) as { token?: string; expires_at?: string };
++  if (!data.token) throw new Error("installation token mint returned no token");
++  const expiresAtMs = data.expires_at ? Date.parse(data.expires_at) : Date.now() + 55 * 60 * 1000;
++  return { token: data.token, expiresAtMs };
++}
++
++/**
++ * Returns a usable GitHub bearer token or "" (never throws).
++ * Order: cached fresh token → mint from App creds (with installation
++ * auto-discovery when the configured id is stale) → "".
++ * Static PATs stay the caller's concern (checked before calling this).
++ */
++export async function getGitHubAppInstallationToken(): Promise<string> {
++  if (cached && Date.now() < cached.expiresAtMs - 60_000) return cached.token;
++  if (inFlight) return inFlight;
++  const creds = appCreds();
++  if (!creds) return "";
++  inFlight = (async () => {
++    try {
++      const resolved = await resolveInstallation(creds);
++      if (!resolved) return ""; // fail honest — caller keeps unauthenticated fallback
++      resolvedInstallationId = resolved.installationId;
++      return cached?.token ?? "";
++    } catch {
++      return ""; // fail honest — caller keeps unauthenticated fallback
++    } finally {
++      inFlight = null;
++    }
++  })();
++  return inFlight;
++}
++
++/** Test hook — reset cache between unit tests. */
++export function resetGitHubAppTokenCache(): void {
++  cached = null;
++  resolvedInstallationId = null;
++  inFlight = null;
++}
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index cf7c2e8d..98992607 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -1,5 +1,6 @@
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { z } from "zod";
++import { getGitHubAppInstallationToken } from "../adapters/github/app_token.js";
+ import { httpRequest } from "../lib/http.js";
+ import { env } from "../lib/env.js";
+ 
+@@ -142,14 +143,20 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+     .slice(0, Math.min(Math.max(1, limit), 50));
+ }
+ 
+-function githubHeaders(withAuth = true): Record<string, string> {
++/**
++ * Authorization chain for bridge-lane GitHub reads:
++ *   static GITHUB_TOKEN/GH_TOKEN → GitHub App installation token (minted from
++ *   GITHUB_APP_* creds delivered by the Infisical bootstrap) → unauthenticated
++ *   (callers already fall back gracefully on 401/403).
++ */
++async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
+   const headers: Record<string, string> = {
+     Accept: "application/vnd.github+json",
+     "X-GitHub-Api-Version": "2022-11-28",
+     "User-Agent": "SupremeAI-MCP-Control-Tower-Bridge",
+   };
+   if (withAuth) {
+-    const token = env.github.token || process.env["GH_TOKEN"] || "";
++    const token = env.github.token || process.env["GH_TOKEN"] || (await getGitHubAppInstallationToken()) || "";
+     if (token) headers.Authorization = `Bearer ${token}`;
+   }
+   return headers;
+@@ -181,13 +188,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       try {
+         let res = await httpRequest<RawIssue[]>(
+           `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
+-          { headers: githubHeaders(true), timeoutMs: 15_000 }
++          { headers: await githubHeaders(true), timeoutMs: 15_000 }
+         );
+         // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+         if (!res.ok && (res.status === 401 || res.status === 403)) {
+           res = await httpRequest<RawIssue[]>(
+             `https://api.github.com/repos/${repo}/issues?state=open&labels=${encodeURIComponent(BRIDGE_QUEUE_LABEL)}&per_page=50&sort=created&direction=desc`,
+-            { headers: githubHeaders(false), timeoutMs: 15_000 }
++            { headers: await githubHeaders(false), timeoutMs: 15_000 }
+           );
+         }
+         if (!res.ok) {
+@@ -231,13 +238,13 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       try {
+         let res = await httpRequest<RawIssue>(
+           `https://api.github.com/repos/${repo}/issues/${number}`,
+-          { headers: githubHeaders(true), timeoutMs: 15_000 }
++          { headers: await githubHeaders(true), timeoutMs: 15_000 }
+         );
+         // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+         if (!res.ok && (res.status === 401 || res.status === 403)) {
+           res = await httpRequest<RawIssue>(
+             `https://api.github.com/repos/${repo}/issues/${number}`,
+-            { headers: githubHeaders(false), timeoutMs: 15_000 }
++            { headers: await githubHeaders(false), timeoutMs: 15_000 }
+           );
+         }
+         if (!res.ok) {

@@ -1,0 +1,1482 @@
+diff --git a/studio/src/components/dashboard/SettingsPage.tsx b/studio/src/components/dashboard/SettingsPage.tsx
+index 4318529d..12d04d7f 100644
+--- a/studio/src/components/dashboard/SettingsPage.tsx
++++ b/studio/src/components/dashboard/SettingsPage.tsx
+@@ -11,6 +11,7 @@ import {
+ } from '../../types/contracts/execution-mode';
+ // বাংলা মন্তব্য: বাহিরের মডেল নামের বদলে SupremeAI ব্র্যান্ডেড নাম + ক্যানোনিক্যাল মডেল লিস্ট
+ import { getSupremeModelLabel, SUPREME_AVAILABLE_MODELS } from '../../lib/modelBranding';
++import type { Theme } from '../../contexts/ThemeConstants';
+ 
+ interface Preferences {
+   theme: string;
+@@ -31,10 +32,7 @@ const DEFAULT_PREFS: Preferences = {
+ const MODELS = SUPREME_AVAILABLE_MODELS;
+ 
+ interface SettingsPageProps {
+-  /* RESTORE-AND-WIRE (2026-09-14): widened to the app's full Theme union
+-     (contexts/ThemeConstants.ts) so the page can be routed from App.tsx; the
+-     dark/light toggles below still key off 'dark' exactly as before. */
+-  theme: 'dark' | 'light' | 'sunset' | 'matrix';
++  theme: Theme;
+   toggleTheme: () => void;
+ }
+ 
+diff --git a/studio/src/contexts/ThemeConstants.ts b/studio/src/contexts/ThemeConstants.ts
+new file mode 100644
+index 00000000..e0e50cdf
+--- /dev/null
++++ b/studio/src/contexts/ThemeConstants.ts
+@@ -0,0 +1,51 @@
++// বাংলা মন্তব্য: থিম সাইকেল অর্ডার (টগল বাটনে ক্লিক করলে পরবর্তী থিমে যাবে)
++// Theme type এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ThemeContext.ts এর সাথে সাইকেল ইম্পোর্ট না হয়
++// (#4138 Phase 1): 4-থিম → 8-থিম সম্প্রসারণ (FRONTEND_DASHBOARD_MASTER_PLAN_V2)।
++// SSOT: এই ফাইলই একমাত্র উৎস — ThemeProvider/ThemeSyncProvider/টেস্ট সব এখান থেকে
++// পড়ে, কোথাও হার্ডকোড করা theme-তালিকা রাখা নিষিদ্ধ (Config > Hardcoded)।
++export type Theme =
++  | 'dark'
++  | 'light'
++  | 'synthwave'
++  | 'cyberpunk'
++  | 'minimal'
++  | 'sunset'
++  | 'matrix'
++  | 'emerald';
++
++export const THEME_ORDER: Theme[] = [
++  'dark',
++  'light',
++  'synthwave',
++  'cyberpunk',
++  'minimal',
++  'sunset',
++  'matrix',
++  'emerald',
++];
++
++// বাংলা মন্তব্য (#4138): প্রতিটি থিমের মেটা — টগল UI-লেবেল ও isDark-সিদ্ধান্তের
++// একমাত্র উৎস। আগে isDark সব জায়গায় `theme === 'dark' || theme === 'matrix'`
++// হার্ডকোড ছিল (ThemeProvider + ThemeSyncProvider) — নতুন থিম যোগ হলে সেটা
++// নীরবে ভুল isDark দিত; এখন এক জায়গায় (Single Source of Truth)।
++export interface ThemeMeta {
++  /** টগল-টুলটিপে দেখানোর মানব-পাঠযোগ্য নাম */
++  label: string;
++  /** থিমটি ডার্ক-পরিবারভুক্ত কি না — অ্যানিমেশন তীব্রতা/কনট্রাস্ট-সিদ্ধান্তে ব্যবহৃত */
++  isDark: boolean;
++}
++
++export const THEME_META: Record<Theme, ThemeMeta> = {
++  dark: { label: 'Deep Space', isDark: true },
++  light: { label: 'Daylight', isDark: false },
++  synthwave: { label: 'Synthwave', isDark: true },
++  cyberpunk: { label: 'Cyberpunk', isDark: true },
++  minimal: { label: 'Minimal', isDark: false },
++  sunset: { label: 'Sunset Ember', isDark: true },
++  matrix: { label: 'Matrix Rain', isDark: true },
++  emerald: { label: 'Emerald Deep', isDark: true },
++};
++
++/** isDark-সিদ্ধান্তের canonical helper — অজানা মানে fail-safe (true)। */
++export const isDarkTheme = (theme: Theme | string): boolean =>
++  THEME_META[theme as Theme]?.isDark ?? true;
+diff --git a/studio/src/contexts/ThemeContext.ts b/studio/src/contexts/ThemeContext.ts
+new file mode 100644
+index 00000000..3d5d2069
+--- /dev/null
++++ b/studio/src/contexts/ThemeContext.ts
+@@ -0,0 +1,11 @@
++import { createContext } from 'react';
++import type { Theme } from './ThemeConstants';
++
++// বাংলা মন্তব্য: ThemeContext এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ThemeProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export interface ThemeContextType {
++  theme: Theme;
++  toggleTheme: () => void;
++  setTheme: (theme: Theme) => void;
++}
++
++export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+diff --git a/studio/src/contexts/ThemeProvider.test.tsx b/studio/src/contexts/ThemeProvider.test.tsx
+new file mode 100644
+index 00000000..c68db153
+--- /dev/null
++++ b/studio/src/contexts/ThemeProvider.test.tsx
+@@ -0,0 +1,104 @@
++import { describe, it, expect, beforeEach, vi } from 'vitest';
++import { render, screen, fireEvent, act } from '@testing-library/react';
++import React from 'react';
++import { ThemeProvider } from './ThemeProvider';
++import { useTheme } from './useTheme';
++
++// Test consumer component
++const TestThemeConsumer: React.FC = () => {
++  const { theme, toggleTheme } = useTheme();
++  return (
++    <div>
++      <span data-testid="current-theme">{theme}</span>
++      <button data-testid="toggle-btn" onClick={toggleTheme}>
++        Toggle
++      </button>
++    </div>
++  );
++};
++
++describe('ThemeProvider (Issue #494)', () => {
++  beforeEach(() => {
++    localStorage.clear();
++    document.documentElement.className = '';
++    document.documentElement.removeAttribute('data-theme');
++    document.body.className = '';
++    document.body.removeAttribute('data-theme');
++    vi.clearAllMocks();
++  });
++
++  it('initializes with default dark theme and applies DOM classes', () => {
++    render(
++      <ThemeProvider>
++        <TestThemeConsumer />
++      </ThemeProvider>
++    );
++
++    expect(screen.getByTestId('current-theme')).toHaveTextContent('dark');
++    expect(document.documentElement.classList.contains('dark')).toBe(true);
++    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
++    expect(document.body.classList.contains('dark')).toBe(true);
++    expect(document.body.getAttribute('data-theme')).toBe('dark');
++  });
++
++  it('cycles across all 4 themes in order: dark -> light -> sunset -> matrix -> dark', async () => {
++    render(
++      <ThemeProvider>
++        <TestThemeConsumer />
++      </ThemeProvider>
++    );
++
++    const toggleBtn = screen.getByTestId('toggle-btn');
++    const themeSpan = screen.getByTestId('current-theme');
++
++    // 1. Dark -> Light
++    await act(async () => {
++      fireEvent.click(toggleBtn);
++    });
++    expect(themeSpan).toHaveTextContent('light');
++    expect(document.documentElement.classList.contains('light')).toBe(true);
++    expect(document.documentElement.classList.contains('dark')).toBe(false);
++    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
++
++    // 2. Light -> Sunset
++    await act(async () => {
++      fireEvent.click(toggleBtn);
++    });
++    expect(themeSpan).toHaveTextContent('sunset');
++    expect(document.documentElement.classList.contains('sunset')).toBe(true);
++    expect(document.documentElement.getAttribute('data-theme')).toBe('sunset');
++
++    // 3. Sunset -> Matrix
++    await act(async () => {
++      fireEvent.click(toggleBtn);
++    });
++    expect(themeSpan).toHaveTextContent('matrix');
++    expect(document.documentElement.classList.contains('matrix')).toBe(true);
++    expect(document.documentElement.getAttribute('data-theme')).toBe('matrix');
++
++    // 4. Matrix -> Dark
++    await act(async () => {
++      fireEvent.click(toggleBtn);
++    });
++    expect(themeSpan).toHaveTextContent('dark');
++    expect(document.documentElement.classList.contains('dark')).toBe(true);
++    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
++  });
++
++  it('persists selected theme in localStorage', async () => {
++    render(
++      <ThemeProvider>
++        <TestThemeConsumer />
++      </ThemeProvider>
++    );
++
++    const toggleBtn = screen.getByTestId('toggle-btn');
++    await act(async () => {
++      fireEvent.click(toggleBtn);
++    });
++
++    const stored = localStorage.getItem('supremeai-theme-storage');
++    expect(stored).toBeTruthy();
++    expect(JSON.parse(stored!).state.theme).toBe('light');
++  });
++});
+diff --git a/studio/src/contexts/ThemeProvider.tsx b/studio/src/contexts/ThemeProvider.tsx
+new file mode 100644
+index 00000000..2ad3cb4a
+--- /dev/null
++++ b/studio/src/contexts/ThemeProvider.tsx
+@@ -0,0 +1,95 @@
++import React, { useEffect, useState } from 'react';
++import { adminTokenStore } from '../services/adminTokenStore';
++import { THEME_ORDER, isDarkTheme } from './ThemeConstants';
++import { ThemeContext } from './ThemeContext';
++import type { Theme } from './ThemeConstants';
++import { apiClient } from '../services/apiClient';
++import { eventBus, Events } from '../lib/componentEventBus';
++
++// বাংলা মন্তব্য: ThemeContext একে অপর ফাইল থেকে ইম্পোর্ট করা হয়েছে, যাতে react-refresh সতর্কতা দূর হয়
++// useTheme hook একে অপর ফাইলে সরানো হয়েছে (useTheme.ts)
++export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
++  const [theme, setTheme] = useState<Theme>('dark'); // ডিফল্ট Deep Space (dark)
++
++  useEffect(() => {
++    // বাংলা মন্তব্য: Race Condition এড়াতে AbortController ব্যবহার করা হয়েছে
++    const controller = new AbortController();
++    const token = adminTokenStore.getDecodedToken();
++    const storageKey = 'supremeai-theme-storage';
++    const stored = localStorage.getItem(storageKey);
++    const legacy = localStorage.getItem('supremeai_theme');
++    const localTheme = stored ? JSON.parse(stored)?.state?.theme : legacy;
++    if (localTheme && THEME_ORDER.includes(localTheme as Theme)) {
++      setTheme(localTheme as Theme);
++      localStorage.removeItem('supremeai_theme');
++    }
++
++    const loadTheme = async () => {
++      if (!token) return;
++      try {
++        const response = await apiClient.get<{ theme?: string; data?: { theme?: string } }>('/api/preferences/', { signal: controller.signal });
++        const remoteTheme = response.data?.theme || response.theme;
++        if (remoteTheme && THEME_ORDER.includes(remoteTheme as Theme)) {
++          setTheme(remoteTheme as Theme);
++        }
++      } catch (err: unknown) {
++        const error = err as { name?: string };
++        if (error?.name !== 'AbortError' && error?.name !== 'CanceledError') console.error('Theme sync failed:', err);
++      }
++    };
++
++    loadTheme();
++
++    const unsub = eventBus.subscribe(Events.THEME_CHANGED, (data: unknown) => {
++      const payload = data as { theme?: string } | undefined;
++      if (payload?.theme && THEME_ORDER.includes(payload.theme as Theme)) setTheme(payload.theme as Theme);
++    });
++
++    return () => {
++      controller.abort();
++      unsub();
++    }; // কম্পোনেন্ট আনমাউন্ট হলে রিকোয়েস্ট বাতিল
++  }, []);
++
++  useEffect(() => {
++    // বাংলা মন্তব্য: HTML root ও body এলিমেন্টে থিম ক্লাস অ্যাড করা হচ্ছে
++    const root = window.document.documentElement;
++    const body = window.document.body;
++    root.classList.remove(...THEME_ORDER);
++    root.classList.add(theme);
++    root.setAttribute('data-theme', theme);
++    if (body) {
++      body.classList.remove(...THEME_ORDER);
++      body.classList.add(theme);
++      body.setAttribute('data-theme', theme);
++    }
++  }, [theme]);
++
++  const changeTheme = (newTheme: Theme) => {
++    setTheme(newTheme);
++    localStorage.setItem('supremeai-theme-storage', JSON.stringify({ state: { theme: newTheme }, version: 0 }));
++    localStorage.removeItem('supremeai_theme');
++
++    apiClient.post('/api/preferences/', { theme: newTheme })
++      .catch(err => console.error('Failed to sync theme to DB:', err));
++
++    eventBus.emit(Events.THEME_CHANGED, {
++      theme: newTheme,
++      isDark: isDarkTheme(newTheme),
++      timestamp: Date.now(),
++      source: 'theme_provider',
++    });
++  };
++
++  const toggleTheme = () => {
++    const currentIndex = THEME_ORDER.indexOf(theme);
++    const nextIndex = (currentIndex + 1) % THEME_ORDER.length;
++    changeTheme(THEME_ORDER[nextIndex]);
++  };
++
++  return (
++    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme: changeTheme }}>
++      {children}
++    </ThemeContext.Provider>
++  );
++};
+diff --git a/studio/src/contexts/ToastContext.ts b/studio/src/contexts/ToastContext.ts
+new file mode 100644
+index 00000000..3e2b4939
+--- /dev/null
++++ b/studio/src/contexts/ToastContext.ts
+@@ -0,0 +1,30 @@
++import { createContext } from 'react';
++
++// বাংলা মন্তব্য: Toast context types এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ToastProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export type ToastType = 'success' | 'error' | 'info';
++
++export interface Toast {
++  id: string;
++  type: ToastType;
++  message: string;
++}
++
++interface ToastContextValue {
++  showToast: (type: ToastType, message: string) => void;
++}
++
++// বাংলা মন্তব্য: ToastContext এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ToastProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export const ToastContext = createContext<ToastContextValue | undefined>(undefined);
++
++// Global toast function for external access - using ref pattern
++// বাংলা মন্তব্য: globalShowToastRef একে অপর ফাইলে সরানো হয়েছে, যাতে ToastProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export const globalShowToastRef = { current: (() => {
++  console.warn("ToastProvider is not mounted yet.");
++}) as (type: ToastType, message: string) => void };
++
++if (typeof window !== 'undefined') {
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  (window as any).showGlobalToast = (type: ToastType, message: string) => {
++    globalShowToastRef.current(type, message);
++  };
++}
+diff --git a/studio/src/contexts/ToastProvider.tsx b/studio/src/contexts/ToastProvider.tsx
+new file mode 100644
+index 00000000..6945d7e5
+--- /dev/null
++++ b/studio/src/contexts/ToastProvider.tsx
+@@ -0,0 +1,73 @@
++import React, { useState, useCallback, useEffect } from 'react';
++import { ToastContext, globalShowToastRef } from './ToastContext';
++import type { ToastType } from './ToastContext';
++
++// বাংলা মন্তব্য: ToastContext একে অপর ফাইল থেকে ইম্পোর্ট করা হয়েছে, যাতে react-refresh সতর্কতা দূর হয়
++// useToast hook একে অপর ফাইলে সরানো হয়েছে (useToast.ts)
++export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
++  const [toasts, setToasts] = useState<Array<{ id: string; type: ToastType; message: string }>>([]);
++
++  const showToast = useCallback((type: ToastType, message: string) => {
++    const id = Math.random().toString(36).substring(2, 9);
++    // বাংলা মন্তব্য: React #31 crash রোধ — যেকোনো caller object পাঠালেও message সর্বদা string রাখি।
++    const safeMessage =
++      typeof message === 'string'
++        ? message
++        : message && typeof message === 'object'
++          ? JSON.stringify(message)
++          : String(message);
++    setToasts((prev) => [...prev, { id, type, message: safeMessage }]);
++
++    setTimeout(() => {
++      setToasts((prev) => prev.filter((t) => t.id !== id));
++    }, 4000);
++  }, []);
++
++  useEffect(() => {
++    // Update the global ref to point to the current showToast function
++    globalShowToastRef.current = showToast;
++  }, [showToast]);
++
++  return (
++    <ToastContext.Provider value={{ showToast }}>
++      {children}
++      <div style={styles.container}>
++        {toasts.map((t) => (
++          <div key={t.id} style={{ ...styles.toast, ...styles[t.type] }}>
++            {t.message}
++          </div>
++        ))}
++      </div>
++    </ToastContext.Provider>
++  );
++};
++
++const styles: Record<string, React.CSSProperties> = {
++  container: {
++    position: 'fixed',
++    top: '20px',
++    right: '20px',
++    zIndex: 9999,
++    display: 'flex',
++    flexDirection: 'column',
++    gap: '10px',
++  },
++  toast: {
++    padding: '12px 20px',
++    borderRadius: '10px',
++    color: '#fff',
++    fontSize: '0.875rem',
++    fontWeight: 600,
++    boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
++    animation: 'fade-in 0.3s ease-out forwards',
++  },
++  success: {
++    background: '#065f46',
++  },
++  error: {
++    background: '#7f1d1d',
++  },
++  info: {
++    background: '#1e3a8a',
++  },
++};
+diff --git a/studio/src/contexts/useTheme.ts b/studio/src/contexts/useTheme.ts
+new file mode 100644
+index 00000000..fad2367e
+--- /dev/null
++++ b/studio/src/contexts/useTheme.ts
+@@ -0,0 +1,11 @@
++import { useContext } from 'react';
++import { ThemeContext } from './ThemeContext';
++
++// বাংলা মন্তব্য: useTheme hook এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ThemeProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export const useTheme = () => {
++  const context = useContext(ThemeContext);
++  if (context === undefined) {
++    throw new Error('useTheme must be used within a ThemeProvider');
++  }
++  return context;
++};
+diff --git a/studio/src/contexts/useToast.ts b/studio/src/contexts/useToast.ts
+new file mode 100644
+index 00000000..28638979
+--- /dev/null
++++ b/studio/src/contexts/useToast.ts
+@@ -0,0 +1,11 @@
++import { useContext } from 'react';
++import { ToastContext } from './ToastContext';
++
++// বাংলা মন্তব্য: useToast hook এখানে সরাসরি ডিফাইন করা হয়েছে, যাতে ToastProvider.tsx এ রেফ্রেশ সমস্যা না হয়
++export const useToast = () => {
++  const context = useContext(ToastContext);
++  if (!context) {
++    throw new Error('useToast must be used within a ToastProvider');
++  }
++  return context;
++};
+diff --git a/studio/src/hooks/useAuth.ts b/studio/src/hooks/useAuth.ts
+index 7cfe8741..61189aa4 100644
+--- a/studio/src/hooks/useAuth.ts
++++ b/studio/src/hooks/useAuth.ts
+@@ -1,176 +1,16 @@
+-import { useState, useEffect, useCallback } from 'react';
+-import {
+-  signInWithEmailAndPassword,
+-  createUserWithEmailAndPassword,
+-  signOut as firebaseSignOut,
+-  onAuthStateChanged,
+-  type User,
+-} from 'firebase/auth';
+-import { getFirebaseAuth } from '../firebase';
+-import { useCustomerStore } from '../store/customerStore';
+-import type { UserProfile } from '../types/customer';
+-
+-interface UseAuthReturn {
+-  user: UserProfile | null;
+-  firebaseUser: User | null;
+-  loading: boolean;
+-  error: string | null;
+-  signIn: (email: string, password: string) => Promise<void>;
+-  signUp: (email: string, password: string, username: string) => Promise<void>;
+-  signOut: () => Promise<void>;
+-}
+-
+-function mapFirebaseUser(firebaseUser: User): UserProfile {
+-  return {
+-    id: firebaseUser.uid,
+-    username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Anonymous',
+-    email: firebaseUser.email || '',
+-    role: 'operator',
+-    avatar_url: firebaseUser.photoURL || undefined,
+-    preferences: {
+-      theme: 'dark',
+-      sidebar_collapsed: false,
+-      notification_enabled: true,
+-      sound_enabled: false,
+-      compact_mode: false,
+-      font_size: 'medium',
+-    },
+-    created_at: firebaseUser.metadata.creationTime || new Date().toISOString(),
+-    last_login: firebaseUser.metadata.lastSignInTime || new Date().toISOString(),
+-  };
+-}
+-
+-export function useAuth(): UseAuthReturn {
+-  const { user, setUser } = useCustomerStore();
+-  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+-  const [loading, setLoading] = useState(true);
+-  const [error, setError] = useState<string | null>(null);
+-  const [authReady, setAuthReady] = useState(false);
+-
+-  useEffect(() => {
+-    // Issue #1682 (auth listener memory leak): the unsubscribe function
+-    // returned by onAuthStateChanged was discarded, so the Firebase listener
+-    // stayed registered for the lifetime of the page even after this hook
+-    // unmounted — one leaked listener per mount (HMR / route re-entries
+-    // compounded it). The `cancelled` flag only silenced state updates.
+-    // Now the unsubscribe is captured and invoked in the effect cleanup,
+-    // and both guards are kept (flag for the async window before the
+-    // listener exists, unsubscribe for everything after).
+-    // বাংলা: onAuthStateChanged যে unsubscribe ফাংশন ফেরত দেয় সেটি এখন
+-    // ক্লিনআপে কল করা হয় — লিসেনার আর লিক করবে না।
+-    let cancelled = false;
+-    let unsubscribe: (() => void) | null = null;
+-
+-    (async () => {
+-      try {
+-        const auth = await getFirebaseAuth();
+-        const stopListening = onAuthStateChanged(auth, (fbUser) => {
+-          if (cancelled) return;
+-          setFirebaseUser(fbUser);
+-          if (fbUser) {
+-            setUser(mapFirebaseUser(fbUser));
+-          } else {
+-            setUser(null);
+-          }
+-          setAuthReady(true);
+-          setLoading(false);
+-        });
+-        if (cancelled) {
+-          // Component unmounted while auth was initializing — clean up now.
+-          stopListening();
+-          return;
+-        }
+-        unsubscribe = stopListening;
+-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-      } catch (err: any) {
+-        if (!cancelled) {
+-          console.warn('Firebase auth initialization failed:', err.message);
+-          setAuthReady(true);
+-          setLoading(false);
+-        }
+-      }
+-    })();
+-
+-    return () => {
+-      cancelled = true;
+-      if (unsubscribe) {
+-        unsubscribe();
+-        unsubscribe = null;
+-      }
+-    };
+-  }, [setUser]);
+-
+-  const signIn = useCallback(async (email: string, password: string) => {
+-    setError(null);
+-    setLoading(true);
+-    try {
+-      const auth = await getFirebaseAuth();
+-      const credential = await signInWithEmailAndPassword(auth, email, password);
+-      const profile = mapFirebaseUser(credential.user);
+-      setUser(profile);
+-      setFirebaseUser(credential.user);
+-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-    } catch (err: any) {
+-      const message = err.code === 'auth/invalid-credential'
+-        ? 'Invalid email or password.'
+-        : err.code === 'auth/too-many-requests'
+-          ? 'Too many attempts. Please try again later.'
+-          : err.message || 'Sign in failed.';
+-      setError(message);
+-      throw err;
+-    } finally {
+-      setLoading(false);
+-    }
+-  }, [setUser]);
+-
+-  const signUp = useCallback(async (email: string, password: string, username: string) => {
+-    setError(null);
+-    setLoading(true);
+-    try {
+-      const auth = await getFirebaseAuth();
+-      const credential = await createUserWithEmailAndPassword(auth, email, password);
+-      const profile: UserProfile = {
+-        ...mapFirebaseUser(credential.user),
+-        username,
+-        role: 'developer',
+-      };
+-      setUser(profile);
+-      setFirebaseUser(credential.user);
+-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-    } catch (err: any) {
+-      const message = err.code === 'auth/email-already-in-use'
+-        ? 'An account with this email already exists.'
+-        : err.code === 'auth/weak-password'
+-          ? 'Password must be at least 6 characters.'
+-          : err.message || 'Sign up failed.';
+-      setError(message);
+-      throw err;
+-    } finally {
+-      setLoading(false);
+-    }
+-  }, [setUser]);
+-
+-  const signOut = useCallback(async () => {
+-    setError(null);
+-    try {
+-      const auth = await getFirebaseAuth();
+-      await firebaseSignOut(auth);
+-      setUser(null);
+-      setFirebaseUser(null);
+-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+-    } catch (err: any) {
+-      setError(err.message || 'Sign out failed.');
+-      throw err;
+-    }
+-  }, [setUser]);
++import { useAuthStore } from '../store/authStore';
+ 
++export function useAuth() {
++  const { user, status, login, logout, register, initialize } = useAuthStore();
+   return {
+     user,
+-    firebaseUser,
+-    loading: loading || !authReady,
+-    error,
+-    signIn,
+-    signUp,
+-    signOut,
++    loading: status === 'uninitialized',
++    error: null,
++    signIn: login,
++    signUp: register,
++    signOut: async () => {
++      logout();
++    },
++    initialize,
+   };
+ }
+diff --git a/studio/src/lib/devicePresets.ts b/studio/src/lib/devicePresets.ts
+new file mode 100644
+index 00000000..ea64226c
+--- /dev/null
++++ b/studio/src/lib/devicePresets.ts
+@@ -0,0 +1,163 @@
++/**
++ * Device presets for mobile/tablet preview (#4148).
++ *
++ * বাংলা: বিল্ট-ইন মোবাইল প্রিভিউয়ের জন্য ডিভাইস ডাইমেনশন ডাটাবেস।
++ * ৮টি key device + custom — BrowserPreview.tsx-এর existing desktop/tablet/mobile
++ * presets extend করে।
++ *
++ * Design decisions (adapted from user's plan):
++ * - lucide-react icons (NOT react-icons/fi — codebase convention)
++ * - cyan/neutral colors (NOT indigo — AGENTS.md prohibits indigo/blue)
++ * - 8 key devices (NOT 12 — consolidate to most-used)
++ */
++
++export interface DevicePreset {
++  id: string;
++  name: string;
++  width: number;
++  height: number;
++  userAgent: string;
++  deviceType: 'phone' | 'tablet';
++  os: 'ios' | 'android' | 'other';
++  pixelRatio: number;
++  statusBarHeight: number;
++  hasHomeIndicator: boolean;
++}
++
++export const DEVICE_PRESETS: DevicePreset[] = [
++  // iPhones (2 — most common sizes)
++  {
++    id: 'iphone15',
++    name: 'iPhone 15',
++    width: 393,
++    height: 852,
++    userAgent:
++      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
++    deviceType: 'phone',
++    os: 'ios',
++    pixelRatio: 3,
++    statusBarHeight: 47,
++    hasHomeIndicator: true,
++  },
++  {
++    id: 'iphone15promax',
++    name: 'iPhone 15 Pro Max',
++    width: 430,
++    height: 932,
++    userAgent:
++      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
++    deviceType: 'phone',
++    os: 'ios',
++    pixelRatio: 3,
++    statusBarHeight: 47,
++    hasHomeIndicator: true,
++  },
++
++  // Android (2 — Samsung + Pixel)
++  {
++    id: 'galaxyS24',
++    name: 'Samsung Galaxy S24',
++    width: 412,
++    height: 915,
++    userAgent:
++      'Mozilla/5.0 (Linux; Android 14; SM-S921B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
++    deviceType: 'phone',
++    os: 'android',
++    pixelRatio: 3.5,
++    statusBarHeight: 24,
++    hasHomeIndicator: false,
++  },
++  {
++    id: 'pixel8',
++    name: 'Google Pixel 8',
++    width: 412,
++    height: 915,
++    userAgent:
++      'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
++    deviceType: 'phone',
++    os: 'android',
++    pixelRatio: 2.75,
++    statusBarHeight: 24,
++    hasHomeIndicator: false,
++  },
++
++  // iPads (2 — Air + Pro)
++  {
++    id: 'ipadAir',
++    name: 'iPad Air (5th Gen)',
++    width: 820,
++    height: 1180,
++    userAgent:
++      'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
++    deviceType: 'tablet',
++    os: 'ios',
++    pixelRatio: 2,
++    statusBarHeight: 0,
++    hasHomeIndicator: false,
++  },
++  {
++    id: 'ipadPro11',
++    name: 'iPad Pro 11"',
++    width: 834,
++    height: 1194,
++    userAgent:
++      'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
++    deviceType: 'tablet',
++    os: 'ios',
++    pixelRatio: 2,
++    statusBarHeight: 0,
++    hasHomeIndicator: false,
++  },
++
++  // Small phone (SE-size — for testing minimal viewports)
++  {
++    id: 'iphoneSE',
++    name: 'iPhone SE (3rd Gen)',
++    width: 375,
++    height: 667,
++    userAgent:
++      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
++    deviceType: 'phone',
++    os: 'ios',
++    pixelRatio: 2,
++    statusBarHeight: 20,
++    hasHomeIndicator: false,
++  },
++
++  // Foldable (Galaxy Fold — for testing wide phone viewports)
++  {
++    id: 'galaxyFold',
++    name: 'Samsung Galaxy Fold',
++    width: 768,
++    height: 1080,
++    userAgent:
++      'Mozilla/5.0 (Linux; Android 14; SM-F946B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
++    deviceType: 'phone',
++    os: 'android',
++    pixelRatio: 3,
++    statusBarHeight: 24,
++    hasHomeIndicator: false,
++  },
++
++  // Custom (user-defined)
++  {
++    id: 'custom',
++    name: 'Custom Device',
++    width: 375,
++    height: 667,
++    userAgent: '',
++    deviceType: 'phone',
++    os: 'other',
++    pixelRatio: 2,
++    statusBarHeight: 20,
++    hasHomeIndicator: false,
++  },
++];
++
++export function getPresetById(id: string): DevicePreset | undefined {
++  return DEVICE_PRESETS.find((d) => d.id === id);
++}
++
++export function getPresetsByType(type: 'phone' | 'tablet'): DevicePreset[] {
++  return DEVICE_PRESETS.filter((d) => d.deviceType === type);
++}
+diff --git a/studio/src/services/adminTokenStore.ts b/studio/src/services/adminTokenStore.ts
+index 0bc45bf6..b665c7a4 100644
+--- a/studio/src/services/adminTokenStore.ts
++++ b/studio/src/services/adminTokenStore.ts
+@@ -1,17 +1,70 @@
+-import { getAdminToken } from './tokenStorage';
++// apps/studio-client/src/services/adminTokenStore.ts
++// 🚨 CRITICAL CHECK: No external imports allowed here to bypass Vite Rollup blocks
++//
++// বাংলা (#3223): আগে এখানে সরাসরি `localStorage.getItem('supreme_admin_jwt')` পড়া হতো
++// — XSS-exposed residual token persistence (#3154 closed-incomplete)। এখন
++// `tokenStorage.getAdminToken()` ব্যবহার করা হয় যা sessionStorage-first
++// (নিরাপদ), localStorage-এ কখনো write করে না। Legacy localStorage read
++// path সম্পূর্ণ সরানো হয়েছে।
++
++// বাংলা (#3223): adminTokenStore একটি "no external imports" সীমাবদ্ধ মডিউল
++// (Vite Rollup block এড়াতে)। তাই tokenStorage কে dynamic import ছাড়া সরাসরি
++// inline করতে হয়েছে — কিন্তু sessionStorage-first logic একই চুক্তি follow করে।
++// localStorage.getItem কখনো call হয় না (root-cause fix)।
++
++const ADMIN_TOKEN_KEY = 'supreme_admin_jwt';
++
++const readAdminToken = (): string | null => {
++  // বাংলা (#3223): sessionStorage-first — localStorage কখনো পড়া হয় না।
++  // এটি tokenStorage.readToken-এর একই নিরাপদ চুক্তি, কিন্তু inline
++  // (no external import — Vite Rollup constraint)। Legacy localStorage
++  // migration/sweep এখানে নেই — সেটি tokenStorage-এর দায়িত্বে থাকবে।
++  try {
++    const session = typeof window === 'undefined' ? undefined : window.sessionStorage;
++    if (!session) return null;
++    return session.getItem(ADMIN_TOKEN_KEY);
++  } catch {
++    // sessionStorage অপ্রাপ্য (privacy mode / SSR) — null return
++    return null;
++  }
++};
+ 
+ export const adminTokenStore = {
+-  getDecodedToken: () => {
+-    const token = getAdminToken();
++  getRawToken: (): string | null => {
++    return readAdminToken();
++  },
++  getDecodedToken: (): Record<string, unknown> | null => {
++    const token = readAdminToken();
+     if (!token) return null;
++
+     try {
+-      const part = token.split('.')[1];
+-      const base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+-      const payload = JSON.parse(decodeURIComponent(atob(base64).split('').map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join('')));
+-      if (typeof payload?.exp === 'number' && payload.exp * 1000 <= Date.now()) return null;
+-      return payload;
+-    } catch {
++      // 🛡️ Zero-Dependency Pure Native JWT Decoder
++      const tokenParts = token.split('.');
++      if (tokenParts.length !== 3) {
++        throw new Error("Malformed JWT string structure.");
++      }
++
++      const base64Url = tokenParts[1];
++      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
++
++      // UTF-8 Compliant Native Base64 Parsing
++      const jsonPayload = decodeURIComponent(
++        window.atob(base64)
++          .split('')
++          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
++          .join('')
++      );
++
++      return JSON.parse(jsonPayload);
++    } catch (error: unknown) {
++      const errObj = error as { message?: string };
++      console.warn("⚠️ [TOKEN_STORE_LEAK]: Failed to safely parse or decode admin JWT token natively.", {
++        error_message: errObj?.message || 'Invalid base64 payload matrix',
++        token_length: token.length,
++        timestamp: new Date().toISOString()
++      });
++
+       return null;
+     }
+-  },
++  }
+ };
+diff --git a/studio/src/store/dashboardStore.ts b/studio/src/store/dashboardStore.ts
+index c9493aac..3550b743 100644
+--- a/studio/src/store/dashboardStore.ts
++++ b/studio/src/store/dashboardStore.ts
+@@ -1,31 +1,10 @@
+-import { create } from 'zustand';
++/**
++ * DEPRECATION SHIM (Wave 3.7, issue #1263): dashboardStore migrated into
++ * unifiedStore's `dashboard` slice. `useDashboardStore` is now the SAME
++ * store — every selector (`useDashboardStore((s) => s.systemStatus)` etc.)
++ * keeps working because all dashboard fields live on UnifiedState.
++ * New code should import { useUnifiedStore } from './unifiedStore'.
++ */
++import { useUnifiedStore } from './unifiedStore';
+ 
+-type DashboardMode = 'simple' | 'advanced';
+-
+-interface DashboardState {
+-  dashboardMode: DashboardMode;
+-  setDashboardMode: (mode: DashboardMode) => void;
+-  chatTabTerminalOpen: boolean;
+-  chatTabBrowserOpen: boolean;
+-  chatTabMobileOpen: boolean;
+-  toggleTerminal: () => void;
+-  toggleBrowser: () => void;
+-  toggleMobile: () => void;
+-  setChatTabTerminalOpen: (open: boolean) => void;
+-  setChatTabBrowserOpen: (open: boolean) => void;
+-  setChatTabMobileOpen: (open: boolean) => void;
+-}
+-
+-export const useDashboardStore = create<DashboardState>((set) => ({
+-  dashboardMode: 'advanced',
+-  setDashboardMode: (mode) => set({ dashboardMode: mode }),
+-  chatTabTerminalOpen: false,
+-  chatTabBrowserOpen: true,
+-  chatTabMobileOpen: false,
+-  toggleTerminal: () => set((s) => ({ chatTabTerminalOpen: !s.chatTabTerminalOpen })),
+-  toggleBrowser: () => set((s) => ({ chatTabBrowserOpen: !s.chatTabBrowserOpen })),
+-  toggleMobile: () => set((s) => ({ chatTabMobileOpen: !s.chatTabMobileOpen })),
+-  setChatTabTerminalOpen: (open) => set({ chatTabTerminalOpen: open }),
+-  setChatTabBrowserOpen: (open) => set({ chatTabBrowserOpen: open }),
+-  setChatTabMobileOpen: (open) => set({ chatTabMobileOpen: open }),
+-}));
++export const useDashboardStore = useUnifiedStore;
+diff --git a/studio/src/store/unifiedStore.ts b/studio/src/store/unifiedStore.ts
+new file mode 100644
+index 00000000..c674ad14
+--- /dev/null
++++ b/studio/src/store/unifiedStore.ts
+@@ -0,0 +1,527 @@
++/**
++ * Unified Store - Single Source of Truth for Cross-Component State
++ * 
++ * This store connects your 20+ crown jewel components!
++ * 
++ * @file frontend/src/store/unifiedStore.ts
++ * @description Centralized state management for SupremeAI integration
++ * @version 1.0.0
++ * 
++ * REPLACES: Fragmented state across 10+ separate stores
++ * ENABLES: Real-time cross-component communication
++ */
++
++import { create } from 'zustand';
++import { subscribeWithSelector } from 'zustand/middleware';
++import type { UnifiedChatMessage } from '../types/chat';
++
++// ════════════════════════════════════════════════════════════════════
++// TYPES
++// ════════════════════════════════════════════════════════════════════
++
++export interface ServiceHealthEntry {
++  status: 'healthy' | 'degraded' | 'down';
++  latency?: number;
++  lastCheck: number;
++  error?: string;
++  uptimePercent?: number;
++}
++
++export interface BrowseSession {
++  url: string;
++  title: string;
++  timestamp: number;
++  tabId: string;
++  userId?: string;
++  duration?: number;
++}
++
++export interface SecurityScanResult {
++  url: string;
++  score: number;
++  issues: SecurityIssue[];
++  timestamp: number;
++  scanId?: string;
++}
++
++export interface SecurityIssue {
++  severity: 'critical' | 'high' | 'medium' | 'low' | 'info';
++  category: string;
++  message: string;
++  remediation?: string;
++}
++
++export interface AlertItem {
++  id: string;
++  severity: 'info' | 'warning' | 'error' | 'critical';
++  source: string;
++  message: string;
++  timestamp: number;
++  acknowledged: boolean;
++  actionUrl?: string;
++  resolvedAt?: number;
++}
++
++export interface DeploymentItem {
++  id: string;
++  environment: 'production' | 'staging' | 'development';
++  status: 'pending' | 'running' | 'success' | 'failed' | 'rolled_back';
++  commitSha: string;
++  commitMessage?: string;
++  triggeredBy: string;
++  startedAt: number;
++  completedAt?: number;
++  duration?: number;
++  logsUrl?: string;
++}
++
++export interface MemoryItem {
++  id: string;
++  type: 'conversation' | 'browse-session' | 'agent-task' | 'user-action';
++  summary: string;
++  content: unknown;
++  tags: string[];
++  importanceScore: number;
++  createdAt: number;
++  sessionId?: string;
++}
++
++// ════════════════════════════════════════════════════════════════════
++// UNIFIED STATE INTERFACE
++// ════════════════════════════════════════════════════════════════════
++
++export interface UnifiedState {
++  // ── CHAT STATE (shared by ChatInterface + CommandCenter + AI) ──
++  chat: {
++    unreadCount: number;
++    activeConversationId: string | null;
++    cachedMessages: UnifiedChatMessage[];
++    chatPanelExpanded: boolean;
++  };
++  setChatUnreadCount: (count: number) => void;
++  setActiveConversation: (conversationId: string | null) => void;
++  appendChatMessage: (message: UnifiedChatMessage) => void;
++  toggleChatPanel: () => void;
++  
++  // ── SERVICE HEALTH (shared by HealthMonitor + Browser + Dashboard) ──
++  serviceHealth: Record<string, ServiceHealthEntry>;
++  setServiceHealth: (service: string, health: Partial<ServiceHealthEntry>) => void;
++  batchUpdateServiceHealth: (updates: Record<string, ServiceHealthEntry>) => void;
++  
++  // ── BROWSER STATE (shared by CommandCenter + MemoryBrowser + AI) ──
++  activeBrowseSessions: BrowseSession[];
++  addBrowseSession: (session: BrowseSession) => void;
++  clearBrowseSessions: () => void;
++  currentBrowserUrl: string | null;
++  setCurrentBrowserUrl: (url: string | null) => void;
++  
++  // ── SECURITY STATE (shared by SecurityDashboard + Browser + ThreatDetection) ──
++  lastSecurityScan: SecurityScanResult | null;
++  setLastSecurityScan: (scan: SecurityScanResult) => void;
++  securityScanHistory: SecurityScanResult[];
++  addToSecurityHistory: (scan: SecurityScanResult) => void;
++  
++  // ── ALERTS (shared by AdminAlertsTab + all components) ──
++  alerts: AlertItem[];
++  addAlert: (alert: Omit<AlertItem, 'id' | 'timestamp' | 'acknowledged'>) => string; // Returns alert ID
++  acknowledgeAlert: (id: string) => void;
++  resolveAlert: (id: string) => void;
++  clearAcknowledgedAlerts: () => void;
++  getUnresolvedCount: () => number;
++  
++  // ── DEPLOYMENT STATE (shared by CICDVisualizer + CloudOrchestrator) ──
++  deployments: DeploymentItem[];
++  setDeployments: (deployments: DeploymentItem[]) => void;
++  updateDeploymentStatus: (id: string, status: DeploymentItem['status'], updates?: Partial<DeploymentItem>) => void;
++  activeDeployments: () => DeploymentItem[];
++  
++  // ── MEMORY/KNOWLEDGE (shared by MemoryBrowser + Chat + AI) ──
++  memoryItems: MemoryItem[];
++  addMemoryItem: (item: Omit<MemoryItem, 'id' | 'createdAt'>) => void;
++  searchMemory: (query: string) => MemoryItem[];
++  
++  // ── UI STATE (shared across components) ──
++  globalLoading: boolean;
++  setGlobalLoading: (loading: boolean) => void;
++  sidebarCollapsed: boolean;
++  toggleSidebar: () => void;
++  activeModule: string | null;
++  setActiveModule: (module: string | null) => void;
++  
++  // ── USER CONTEXT (shared for personalization) ──
++  currentUserId: string | null;
++  setCurrentUserId: (userId: string | null) => void;
++  userPreferences: Record<string, unknown>;
++  setUserPreference: (key: string, value: unknown) => void;
++  
++  // ── DASHBOARD UI (migrated from dashboardStore — Wave 3.7, issue #1263) ──
++  systemStatus: 'healthy' | 'degraded' | 'critical';
++  updateSystemStatus: (status: 'healthy' | 'degraded' | 'critical') => void;
++  activePanel: string | null;
++  setActivePanel: (panel: string | null) => void;
++  dashboardMode: 'simple' | 'advanced';
++  chatTabTerminalOpen: boolean;
++  chatTabBrowserOpen: boolean;
++  chatTabMobileOpen: boolean;
++  toggleDashboardMode: () => void;
++  setDashboardMode: (mode: 'simple' | 'advanced') => void;
++  toggleTerminal: () => void;
++  toggleBrowser: () => void;
++  toggleMobile: () => void;
++  setChatTabTerminalOpen: (open: boolean) => void;
++  setChatTabBrowserOpen: (open: boolean) => void;
++  setChatTabMobileOpen: (open: boolean) => void;
++  isDeploymentModalOpen: boolean;
++  setDeploymentModal: (open: boolean) => void;
++
++  
++  // ── UTILITIES ──
++  resetState: () => void;
++  getStateSnapshot: () => unknown;
++}
++
++// ════════════════════════════════════════════════════════════════════
++// INITIAL STATE
++// ════════════════════════════════════════════════════════════════════
++
++const initialState = {
++  // ── CHAT STATE ──
++  chat: {
++    unreadCount: 0,
++    activeConversationId: null as string | null,
++    cachedMessages: [] as UnifiedChatMessage[],
++    chatPanelExpanded: true,
++  },
++  serviceHealth: {} as Record<string, ServiceHealthEntry>,
++  activeBrowseSessions: [] as BrowseSession[],
++  currentBrowserUrl: null as string | null,
++  lastSecurityScan: null as SecurityScanResult | null,
++  securityScanHistory: [] as SecurityScanResult[],
++  alerts: [] as AlertItem[],
++  deployments: [] as DeploymentItem[],
++  memoryItems: [] as MemoryItem[],
++  globalLoading: false,
++  sidebarCollapsed: false,
++  activeModule: null as string | null,
++  // ── DASHBOARD UI (dashboardStore migration) ──
++  systemStatus: 'healthy' as 'healthy' | 'degraded' | 'critical',
++  activePanel: null as string | null,
++  dashboardMode: 'simple' as 'simple' | 'advanced',
++  chatTabTerminalOpen: true,
++  chatTabBrowserOpen: true,
++  chatTabMobileOpen: false,
++  isDeploymentModalOpen: false,
++  currentUserId: null as string | null,
++  userPreferences: {} as Record<string, unknown>,
++};
++
++// ════════════════════════════════════════════════════════════════════
++// STORE CREATION
++// ════════════════════════════════════════════════════════════════════
++
++export const useUnifiedStore = create<UnifiedState>()(
++  subscribeWithSelector((set, get) => ({
++    ...initialState,
++
++    // ════════════════════════════════════════════════════════════════════
++    // SERVICE HEALTH METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    setServiceHealth: (service, health) => set((state) => ({
++      serviceHealth: {
++        ...state.serviceHealth,
++        [service]: {
++          ...state.serviceHealth[service],
++          ...health,
++          lastCheck: Date.now()
++        }
++      }
++    })),
++    
++    batchUpdateServiceHealth: (updates) => set((state) => ({
++      serviceHealth: {
++        ...state.serviceHealth,
++        ...Object.fromEntries(
++          Object.entries(updates).map(([service, health]) => [
++            service,
++            { ...health, lastCheck: Date.now() }
++          ])
++        )
++      }
++    })),
++
++    // ════════════════════════════════════════════════════════════════════
++    // BROWSER METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    addBrowseSession: (session) => set((state) => ({
++      activeBrowseSessions: [session, ...state.activeBrowseSessions].slice(0, 100), // Keep last 100
++      currentBrowserUrl: session.url
++    })),
++    
++    clearBrowseSessions: () => set({ activeBrowseSessions: [] }),
++    
++    setCurrentBrowserUrl: (url) => set({ currentBrowserUrl: url }),
++
++    // ════════════════════════════════════════════════════════════════════
++    // SECURITY METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    setLastSecurityScan: (scan) => set((state) => ({
++      lastSecurityScan: scan,
++      securityScanHistory: [scan, ...state.securityScanHistory].slice(0, 50)
++    })),
++    
++    addToSecurityHistory: (scan) => set((state) => ({
++      securityScanHistory: [scan, ...state.securityScanHistory].slice(0, 50)
++    })),
++
++    // ════════════════════════════════════════════════════════════════════
++    // ALERTS METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    addAlert: (alert) => {
++      const id = `alert-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
++      const newAlert: AlertItem = {
++        id,
++        ...alert,
++        timestamp: Date.now(),
++        acknowledged: false
++      };
++      
++      set((state) => ({
++        alerts: [newAlert, ...state.alerts].slice(0, 500) // Keep last 500
++      }));
++      
++      return id; // Return ID so caller can reference it
++    },
++    
++    acknowledgeAlert: (id) => set((state) => ({
++      alerts: state.alerts.map(a => a.id === id ? { ...a, acknowledged: true } : a)
++    })),
++    
++    resolveAlert: (id) => set((state) => ({
++      alerts: state.alerts.map(a => 
++        a.id === id ? { ...a, acknowledged: true, resolvedAt: Date.now() } : a
++      )
++    })),
++    
++    clearAcknowledgedAlerts: () => set((state) => ({
++      alerts: state.alerts.filter(a => !a.acknowledged)
++    })),
++    
++    getUnresolvedCount: () => {
++      return get().alerts.filter(a => !a.acknowledged).length;
++    },
++
++    // ════════════════════════════════════════════════════════════════════
++    // DEPLOYMENT METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    setDeployments: (deployments) => set({ deployments }),
++    
++    updateDeploymentStatus: (id, status, updates = {}) => set((state) => ({
++      deployments: state.deployments.map(d =>
++        d.id === id
++          ? { 
++              ...d, 
++              status, 
++              ...updates,
++              completedAt: ['success', 'failed', 'rolled_back'].includes(status) ? Date.now() : d.completedAt,
++              duration: ['success', 'failed', 'rolled_back'].includes(status) ? Date.now() - d.startedAt : d.duration
++            }
++          : d
++      )
++    })),
++    
++    activeDeployments: () => {
++      return get().deployments.filter(d => ['pending', 'running'].includes(d.status));
++    },
++
++    // ════════════════════════════════════════════════════════════════════
++    // MEMORY METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    addMemoryItem: (item) => {
++      const id = `memory-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
++      set((state) => ({
++        memoryItems: [{
++          id,
++          ...item,
++          createdAt: Date.now()
++        }, ...state.memoryItems].slice(0, 1000)
++      }));
++    },
++    
++    searchMemory: (query) => {
++      const items = get().memoryItems;
++      const lowerQuery = query.toLowerCase();
++      
++      return items.filter(item =>
++        item.summary.toLowerCase().includes(lowerQuery) ||
++        item.tags.some(tag => tag.toLowerCase().includes(lowerQuery)) ||
++        JSON.stringify(item.content).toLowerCase().includes(lowerQuery)
++      ).slice(0, 50); // Return max 50 results
++    },
++
++    // ════════════════════════════════════════════════════════════════════
++    // CHAT METHODS
++    // ════════════════════════════════════════════════════════════════════
++
++    setChatUnreadCount: (count: number) =>
++      set((state) => ({
++        ...state,
++        chat: { ...state.chat, unreadCount: count },
++      })),
++
++    setActiveConversation: (conversationId: string | null) =>
++      set((state) => ({
++        ...state,
++        chat: {
++          ...state.chat,
++          activeConversationId: conversationId,
++          cachedMessages: conversationId === null ? [] : state.chat.cachedMessages,
++        },
++      })),
++
++    appendChatMessage: (message: UnifiedChatMessage) =>
++      set((state) => ({
++        ...state,
++        chat: {
++          ...state.chat,
++          cachedMessages: [...state.chat.cachedMessages, message].slice(-200),
++        },
++      })),
++
++    toggleChatPanel: () =>
++      set((state) => ({
++        ...state,
++        chat: { ...state.chat, chatPanelExpanded: !state.chat.chatPanelExpanded },
++      })),
++
++    // ════════════════════════════════════════════════════════════════════
++    // UI STATE METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    setGlobalLoading: (loading) => set({ globalLoading: loading }),
++    
++    toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
++    
++    setActiveModule: (module) => set({ activeModule: module }),
++
++    // ════════════════════════════════════════════════════════════════════
++    // USER CONTEXT METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    setCurrentUserId: (userId) => set({ currentUserId: userId }),
++    
++    setUserPreference: (key, value) => set((state) => ({
++      userPreferences: { ...state.userPreferences, [key]: value }
++    })),
++
++    // ════════════════════════════════════════════════════════════════════
++    // UTILITY METHODS
++    // ════════════════════════════════════════════════════════════════════
++    
++    // ════════════════════════════════════════════════════════════════════
++    // DASHBOARD UI METHODS (migrated from dashboardStore — issue #1263)
++    // ════════════════════════════════════════════════════════════════════
++
++    updateSystemStatus: (status) => set({ systemStatus: status }),
++    setActivePanel: (panel) => set({ activePanel: panel }),
++    toggleDashboardMode: () =>
++      set((state) => ({ dashboardMode: state.dashboardMode === 'simple' ? 'advanced' : 'simple' })),
++    setDashboardMode: (mode) => set({ dashboardMode: mode }),
++    toggleTerminal: () => set((state) => ({ chatTabTerminalOpen: !state.chatTabTerminalOpen })),
++    toggleBrowser: () => set((state) => ({ chatTabBrowserOpen: !state.chatTabBrowserOpen })),
++    toggleMobile: () => set((state) => ({ chatTabMobileOpen: !state.chatTabMobileOpen })),
++    setChatTabTerminalOpen: (open) => set({ chatTabTerminalOpen: open }),
++    setChatTabBrowserOpen: (open) => set({ chatTabBrowserOpen: open }),
++    setChatTabMobileOpen: (open) => set({ chatTabMobileOpen: open }),
++    setDeploymentModal: (open) => set({ isDeploymentModalOpen: open }),
++
++    resetState: () => set(initialState),
++    
++    getStateSnapshot: () => {
++      const state = get();
++      return {
++        timestamp: Date.now(),
++        alertsCount: state.alerts.length,
++        unresolvedAlerts: state.alerts.filter(a => !a.acknowledged).length,
++        servicesDown: Object.values(state.serviceHealth).filter(s => s.status === 'down').length,
++        servicesHealthy: Object.values(state.serviceHealth).filter(s => s.status === 'healthy').length,
++        activeDeployments: state.activeDeployments().length,
++        recentMemoryItems: state.memoryItems.length,
++        browserSessions: state.activeBrowseSessions.length,
++        lastSecurityScore: state.lastSecurityScan?.score || null,
++        chatUnread: state.chat.unreadCount,
++        activeChatConversation: state.chat.activeConversationId,
++      };
++    }
++  }))
++);
++
++// ════════════════════════════════════════════════════════════════════
++// SELECTOR HOOKS (for optimized re-renders)
++// ════════════════════════════════════════════════════════════════════
++
++/**
++ * Get service health for a specific service
++ */
++export function useServiceHealth(service: string) {
++  return useUnifiedStore(s => s.serviceHealth[service]);
++}
++
++/**
++ * Get all unresolved alerts
++ */
++export function useUnresolvedAlerts() {
++  return useUnifiedStore(s => s.alerts.filter(a => !a.acknowledged));
++}
++
++/**
++ * Get count of unresolved alerts by severity
++ */
++export function useAlertCounts() {
++  return useUnifiedStore(s => ({
++    critical: s.alerts.filter(a => !a.acknowledged && a.severity === 'critical').length,
++    error: s.alerts.filter(a => !a.acknowledged && a.severity === 'error').length,
++    warning: s.alerts.filter(a => !a.acknowledged && a.severity === 'warning').length,
++    info: s.alerts.filter(a => !a.acknowledged && a.severity === 'info').length,
++  }));
++}
++
++export function useAnyServicesDown() {
++  return useUnifiedStore(s => 
++    Object.values(s.serviceHealth).some(h => h.status === 'down')
++  );
++}
++
++/**
++ * Access the chat slice
++ */
++export function useChatSlice() {
++  return useUnifiedStore(s => s.chat);
++}
++
++export default useUnifiedStore;
++
++
++// ── R13 unified-store feature-flag helpers ──────────────────────────────────
++// These used to live in store/index.ts (deleted as part of the dead-code
++// cleanup — the barrel was unreachable from main.tsx). The tests and the
++// migration helpers need them, so they now live beside the store itself.
++
++export const isUnifiedStoreEnabled = (): boolean => {
++  if (typeof window !== 'undefined' && window.localStorage) {
++    return window.localStorage.getItem('UNIFIED_STORE') === 'true';
++  }
++  // Vite env fallback
++  return import.meta?.env?.VITE_UNIFIED_STORE === 'true';
++};
++
++export const disableUnifiedStore = (): void => {
++  if (typeof window !== 'undefined') {
++    window.localStorage.removeItem('UNIFIED_STORE');
++  }
++};

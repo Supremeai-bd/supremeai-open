@@ -1,0 +1,230 @@
+diff --git a/studio/eslint.config.js b/studio/eslint.config.js
+new file mode 100644
+index 00000000..b14c16ae
+--- /dev/null
++++ b/studio/eslint.config.js
+@@ -0,0 +1,97 @@
++// For more info, see https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
++let storybookConfig = [];
++try {
++  const storybookModule = await import("eslint-plugin-storybook");
++  const storybook = storybookModule.default || storybookModule;
++  if (storybook?.configs?.["flat/recommended"]) {
++    storybookConfig = [
++      storybook.configs["flat/recommended"],
++      {
++        files: ['**/*.stories.{ts,tsx}'],
++        rules: {
++          'storybook/no-renderer-packages': 'off',
++        },
++      },
++    ];
++  }
++} catch {
++  // storybook plugin optional when not installed in slice
++}
++
++import js from '@eslint/js'
++import globals from 'globals'
++import reactHooks from 'eslint-plugin-react-hooks'
++import reactRefresh from 'eslint-plugin-react-refresh'
++import tseslint from 'typescript-eslint'
++
++
++export default tseslint.config({ ignores: ['dist', 'dist-admin', 'dist-user', 'src/dataconnect-generated', 'coverage', 'node_modules'] }, {
++  extends: [
++    js.configs.recommended,
++    ...tseslint.configs.recommended,
++  ],
++  files: ['**/*.{ts,tsx}'],
++  languageOptions: {
++    ecmaVersion: 2020,
++    globals: globals.browser,
++  },
++  plugins: {
++    'react-hooks': reactHooks,
++    'react-refresh': reactRefresh,
++  },
++  rules: {
++    ...reactHooks.configs.recommended.rules,
++    'react-refresh/only-export-components': [
++      'warn',
++      { allowConstantExport: true, allowExportNames: ['useTheme', 'useToast', 'useI18n', 'useThemeSync', 'useSwarmStream', 'setSujonState', 'useSujonState', 'SUJON_STATE_EVENT', 'SujonState', 'Theme', 'THEME_ORDER', 'ToastType', 'Toast', 'globalShowToastRef', 'useSujonMetrics', 'SujonHealthIndicator', 'SujonDashboardGrid', 'useSwarmArchitect', 'useAuthStatus', 'useSystemHealth', 'workspaceFeatureRoutes', 'SwarmArchitect'] },
++    ],
++    '@typescript-eslint/no-explicit-any': 'warn',
++    '@typescript-eslint/no-unused-vars': ['warn', { 'argsIgnorePattern': '^_', 'varsIgnorePattern': '^_' }],
++    'react-hooks/set-state-in-effect': 'off',
++    'no-console': ['warn', { allow: ['warn', 'error', 'debug'] }],
++    // Issue #2522: bare fetch() regression guard — সব API কল apiClient দিয়ে যাবে
++    // (timeout, concurrency queue, auth header, cold-start retry, error mapping)।
++    // Justified raw users নিচের override block-এ allowlisted।
++    'no-restricted-syntax': ['warn', {
++      selector: "CallExpression[callee.name='fetch']",
++      message: "bare fetch() is forbidden (Issue #2522) — use apiClient from src/services/apiClient.ts (timeout/queue/auth/retry). For justified raw usage see the allowlist in eslint.config.js.",
++    }],
++  },
++}, {
++  // Issue #2522: justified bare-fetch allowlist — এই ফাইলগুলোতে raw fetch সচেতনভাবে রাখা হয়েছে:
++  //  - apiClient.ts: ক্লায়েন্ট নিজেই প্রিমিটিভ লেয়ার
++  //  - utils/api.ts: fetchWithRetry foundation (apiClient এই মডিউল import করে — circular এড়াতে)
++  //  - firebase.ts: Firebase Hosting-এর নিজস্ব init endpoint (backend API নয়)
++  //  - mcpViewer.ts: ইউজার-কনফিগার করা external MCP সার্ভার URL
++  //  - storageApi.ts: Cloudflare R2 pre-signed PUT (external storage, backend বাইপাস)
++  //  - GlobalErrorBoundary/RouteBoundary: keepalive unload-beacon (queue-তে গেলে unload-এ হারায়)
++  files: [
++    '**/services/apiClient.ts',
++    '**/utils/api.ts',
++    '**/services/TelemetryTracker.ts',
++    '**/services/CrossAiObserverService.ts',
++    '**/packages/shared-services/**',
++    '**/firebase.ts',
++    '**/services/mcpViewer.ts',
++    '**/services/storageApi.ts',
++    '**/components/GlobalErrorBoundary.tsx',
++    '**/router/RouteBoundary.tsx',
++    '**/main.tsx',
++  ],
++  rules: {
++    'no-restricted-syntax': 'off',
++  },
++}, {
++  // Test files: Allow any in tests (mocks, stubs, test fixtures)
++  files: ['**/*.{test,spec}.{ts,tsx}', '**/test/**/*.{ts,tsx}'],
++  rules: {
++    '@typescript-eslint/no-explicit-any': 'off',
++    'no-restricted-syntax': 'off',
++  },
++}, {
++  // Routes and config files export route objects, not React components
++  files: ['**/routes/**/*.{ts,tsx}', '**/routes.{ts,tsx}'],
++  rules: {
++    'react-refresh/only-export-components': 'off',
++  },
++}, ...storybookConfig);
+diff --git a/studio/src/components/admin/SupremeAdminControlPlane.tsx b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+index 259bd549..2faf30de 100644
+--- a/studio/src/components/admin/SupremeAdminControlPlane.tsx
++++ b/studio/src/components/admin/SupremeAdminControlPlane.tsx
+@@ -50,18 +50,21 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+     reason: string | null;
+   }>({ isOpen: false, command: '', reason: null });
+   const [graceUntil, setGraceUntil] = useState<number>(0);
++  const voiceControlsRef = useRef<{
++    speak: (text: string, onEnd?: () => void) => void;
++  } | null>(null);
+ 
+   const handleVoiceCommand = (spokenText: string) => {
+     setAdminInput?.(spokenText);
+     const reason = detectDestructiveReason(spokenText);
+     if (reason && Date.now() > graceUntil) {
+       setSentinelModal({ isOpen: true, command: spokenText, reason });
+-      speak('Authorization required for this command, Sir.');
++      voiceControlsRef.current?.speak('Authorization required for this command, Sir.');
+       return;
+     }
+     setTimeout(() => {
+       handleSendAdmin?.();
+-      speak(`Processing ${spokenText}, Sir.`);
++      voiceControlsRef.current?.speak(`Processing ${spokenText}, Sir.`);
+     }, 400);
+   };
+ 
+@@ -79,6 +82,10 @@ export default function SupremeAdminControlPlane({ healthMap = {}, adminMessages
+     toggleMute,
+   } = useAdminVoice(handleVoiceCommand);
+ 
++  useEffect(() => {
++    voiceControlsRef.current = { speak };
++  }, [speak]);
++
+   // Auto-greeting & oral briefing upon initial admin dashboard mount
+   const briefedRef = useRef(false);
+   useEffect(() => {
+diff --git a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+index 7061394f..7b812713 100644
+--- a/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
++++ b/studio/src/components/admin/jarvis/JarvisAdminGate.tsx
+@@ -1,5 +1,6 @@
+ import { useState, useEffect } from 'react';
+ import { ArcReactorOrb } from './ArcReactorOrb';
++import { apiClient } from '../../../services/apiClient';
+ 
+ interface JarvisAdminGateProps {
+   onUnlocked: () => void;
+@@ -22,16 +23,14 @@ export function JarvisAdminGate({ onUnlocked }: JarvisAdminGateProps) {
+     }
+ 
+     try {
+-      const res = await fetch('/api/admin/verify', {
+-        method: 'POST',
+-        headers: { 'Content-Type': 'application/json' },
+-        body: JSON.stringify({ mode: 'gate', code: code.trim() }),
++      const data = await apiClient.post<{ ok?: boolean; error?: string }>('/api/admin/verify', {
++        mode: 'gate',
++        code: code.trim(),
+       });
+-      const data = await res.json();
+-      if (res.ok && data.ok) {
++      if (data && data.ok) {
+         onUnlocked();
+       } else {
+-        setError(data.error || 'Access denied.');
++        setError(data?.error || 'Access denied.');
+         setCode('');
+       }
+     } catch {
+diff --git a/studio/src/components/admin/jarvis/useAdminVoice.ts b/studio/src/components/admin/jarvis/useAdminVoice.ts
+index f7cd313a..f9a8de1b 100644
+--- a/studio/src/components/admin/jarvis/useAdminVoice.ts
++++ b/studio/src/components/admin/jarvis/useAdminVoice.ts
+@@ -46,10 +46,14 @@ export function useAdminVoice(onFinalTranscript?: (text: string) => void) {
+ 
+   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+   const isMutedRef = useRef(isMuted);
+-  isMutedRef.current = isMuted;
++  useEffect(() => {
++    isMutedRef.current = isMuted;
++  }, [isMuted]);
+ 
+   const onFinalTranscriptRef = useRef(onFinalTranscript);
+-  onFinalTranscriptRef.current = onFinalTranscript;
++  useEffect(() => {
++    onFinalTranscriptRef.current = onFinalTranscript;
++  }, [onFinalTranscript]);
+ 
+   // Initialize Speech Recognition once on client
+   useEffect(() => {
+diff --git a/studio/src/components/visual/RealityDial.tsx b/studio/src/components/visual/RealityDial.tsx
+index 74d2a4f8..8dec5fa3 100644
+--- a/studio/src/components/visual/RealityDial.tsx
++++ b/studio/src/components/visual/RealityDial.tsx
+@@ -9,7 +9,7 @@
+  *   level: 1..4 | null   (null = unknown — renders muted, never fake-green)
+  */
+ 
+-import { useMemo } from 'react';
++import { useMemo, useState, useEffect } from 'react';
+ 
+ export interface RealityDialProps {
+   /** Current gateway reality-dial level, or null when unknown/unreachable. */
+@@ -37,11 +37,18 @@ export default function RealityDial({ level, updatedAt, compact = false }: Reali
+   const known = typeof level === 'number' && level >= 1 && level <= 4;
+   const active = useMemo(() => LEVELS.find((l) => l.n === level), [level]);
+ 
++  const [now, setNow] = useState(() => Date.now());
++  useEffect(() => {
++    setNow(Date.now());
++    const interval = setInterval(() => setNow(Date.now()), 1000);
++    return () => clearInterval(interval);
++  }, [updatedAt]);
++
+   const freshness = useMemo(() => {
+     if (!updatedAt) return null;
+-    const ageS = Math.max(0, Math.round((Date.now() - updatedAt) / 1000));
++    const ageS = Math.max(0, Math.round((now - updatedAt) / 1000));
+     return ageS < 5 ? 'live' : `${ageS}s ago`;
+-  }, [updatedAt]);
++  }, [updatedAt, now]);
+ 
+   return (
+     <section

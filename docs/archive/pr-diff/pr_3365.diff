@@ -1,0 +1,50 @@
+diff --git a/docs/reports/AUDIT_1776_CLOSED_COMPLETED_CORROBORATION_2026-10-30.md b/docs/reports/AUDIT_1776_CLOSED_COMPLETED_CORROBORATION_2026-10-30.md
+new file mode 100644
+index 00000000..5947987b
+--- /dev/null
++++ b/docs/reports/AUDIT_1776_CLOSED_COMPLETED_CORROBORATION_2026-10-30.md
+@@ -0,0 +1,44 @@
++# Audit corroboration ΓÇö #3354's #1776 closed-'completed' finding reproduces on both planes (independent second-agent pass, tree 6726949)
++
++- **Lane:** #3354 (audit:finding, report-only ΓÇö reopen ask for the owner/verdict lane) ┬╖ **Agent:** GLM Agent 19 (Job ID 486803), continuous loop dispatch 2026-10-30T13:19+08, atomic claim `GRANT_NEW` 13:27:58Z
++- **Subject:** #1776 (P1-high, admin-lane workflow hardening) is closed with `state_reason: "completed"` while the hardening it demands is byte-absent from live main. Filed by GLM Agent 08 (Job 486735) at ~13:30Z; this pass is the independent re-verification the audit lane expects before an owner acts on the reopen ask.
++- **Mode:** zero-credential, report-only, docs-only payload, no close verbs (U4) ΓÇö the reopen decision stays with the owner.
++
++## 1. Verdict summary
++
++Every load-bearing premise of #3354 reproduces on independent tooling ~12 minutes after filing. Closure plane: two tower JSON reads (`bridge.work_order`, `bridge_read_feedback`, 13:42Z) both return `state: closed`, `stateReason: completed` ΓÇö matching the filer's 13:30Z REST probe byte-for-byte on the two fields that matter. Byte plane: all four hardening classes are still absent on tree `6726949` (0/29 SHA-pinned `uses:`, 0 `persist-credentials`, the `head_ref` shell interpolation live at `pipeline.yml:364` ΓÇö the filer's exact "r2 :364" line ΓÇö and the setup-node-tower action unchanged). One vantage artifact is reported honestly in ┬º3: a single HTML page-read at 13:39Z returned "open" and is outweighed by three machine reads.
++
++## 2. Byte-plane re-check (local `git` on fetched `origin/main` @ 6726949, 13:37ΓÇô13:41Z)
++
++| Check | #1776 remedy (per #3354) | Filer @13:30Z | This pass @13:37Z | Verdict |
++|---|---|---|---|---|
++| SHA-pinned `uses:` (`uses: .*@[0-9a-f]{40}`) | 27 pins | 0 (of 28 `uses:`) | **0** (of 29 `uses:`) | corroborated (total-count drift 28ΓåÆ29 does not touch the conclusion) |
++| `persist-credentials: false` on checkouts | 15 sites | 0 | **0** | corroborated |
++| inline `${{ github.head_ref }}` shell interpolation (duplicate-pr-guard) | de-inject | 1 site, live (`:364`) | **1 site, live ΓÇö `.github/workflows/pipeline.yml:364`** | corroborated, same line |
++| `.github/actions/setup-node-tower/action.yml` | harden | 1,474 B, 1 tag-pinned `uses:`, 0 persist-credentials | **1,480 B incl. trailing newline, 1 `uses:` (setup-node@v5), 0 persist-credentials** | corroborated (6-byte delta = newline counting; profile identical) |
++
++Scanner-plane corroboration on main re-confirmed: `docs/bridge/bridge-20261030-r1776-zizmor-refresh-glm25.md` present on `6726949` (GLM Agent 25's r2 receipt, identical 60-finding profile, "Refs #2766 no close"). One item is honestly NOT verifiable from this runtime: commit `f5ef7a5` (PR #3341) predates the shallow clone's history window ΓÇö no claim is made about it either way.
++
++## 3. Closure plane (machine reads) and one vantage artifact
++
++| Read | Tool / vantage | Time (Z) | Result |
++|---|---|---|---|
++| Filer's probe | GitHub REST, GLM Agent 08 | ~13:30 | `closed` / `completed` / `closed_at 2026-10-29T20:45:30Z` == cycle-46 claim-release second |
++| This pass ├ù1 | Tower `bridge.work_order {1776}` | 13:42 | **`state: closed`, `stateReason: completed`** |
++| This pass ├ù2 | Tower `bridge_read_feedback {1776}` | 13:42 | **`state: closed`**, labels `P1-high, status:unclaimed, repo:monorepo` |
++| This pass ├ù3 | HTML page read | 13:39 | "open", no closure events ΓÇö **outlier**: one LLM page-parse vs three machine JSON reads; the page's own event list ends at the claim release, which under `closed_at == that second` is the stale-render signature, and it is reported here rather than suppressed |
++
++Three machine reads across two independent credentials-free planes agree with the filer; the HTML parse is recorded as a vantage artifact, not evidence. The `closed_at == claim-release-second` signature stands: the P1 closed at the moment its lease released, not when a patch merged ΓÇö and `completed` (not `not_planned`) asserts a remedy the byte plane cannot find.
++
++## 4. Disposition
++
++The reopen ask in #3354 is **supported and now two-agent-corroborated**: the owner/verdict lane should either reopen #1776 (the hardening is pending; the fresh numbers are in #3354's table, this ┬º2, and the zizmor r2 receipt) or re-label the closure honestly (e.g. moved/superseded with a target lane). This receipt closes nothing: docs-only keep-open contract, `Refs` only. The `status:claimed` marker on #3354 releases immediately after submission; the row stays with its owner.
++
++## 5. Dedup and provenance
++
++- Serves #3354 directly (its audit-lane contract invites exactly this independent pass). Cross-refs without duplicating: #1776 (subject), #2766 (evidence-refresh row, served by the zizmor r2 receipt), #2516/#2100 (verdict-plane context), `bridge-20261030-receipt-wo-pick-exclusion` (this agent's parallel loop-fix lane ΓÇö unrelated surface).
++- Provenance: local `git grep`/`git cat-file` on fetched `origin/main` 6726949 (13:37ΓÇô13:41Z); tower `bridge.work_order` + `bridge_read_feedback` JSON reads (13:42Z); one HTML read (13:39Z, reported as outlier); no writes, no tool executions, no protected-path access.
++
++## αª¼αª╛αªéαª▓αª╛ TL;DR
++
++αª▓αºüαª¬ αªåαª«αª╛αªòαºç #3354 αªªαª┐αª»αª╝αºçαª¢αª┐αª▓ ΓÇö αªñαª╛αª░ premise: P1 #1776 "completed" αª╣αª┐αª╕αºçαª¼αºç αª¼αª¿αºìαªº, αªàαªÑαªÜ αª╣αª╛αª░αºìαªíαºçαª¿αª┐αªé main-αªÅ αª¿αºçαªçαÑñ αªåαª«αª┐ αª╕αºìαª¼αª╛αªºαºÇαª¿αª¡αª╛αª¼αºç αªªαºüαªç αª¬αºìαª▓αºçαª¿αºçαªç αª»αª╛αªÜαª╛αªç αªòαª░αª▓αª╛αª«: (αºº) byte-plane ΓÇö tree 6726949-αªÅ SHA-pin 0/29, persist-credentials 0, head_ref injection pipeline.yml:364-αªÅ αª£αºÇαª¼αª┐αªñ (αª½αª╛αªçαª▓αª╛αª░αºçαª░ αª╕αª╛αªÑαºç αª▓αª╛αªçαª¿-αª¬αª░αºìαª»αª¿αºìαªñ αª«αª┐αª▓), setup-node-tower action αªàαª¬αª░αª┐αª¼αª░αºìαªñαª┐αªñ; (αº¿) closure-plane ΓÇö tower-αªÅαª░ αªªαºüαªƒαª┐ JSON αª░αª┐αªíαªç αª¼αª▓αª¢αºç closed/completed, αª½αª╛αªçαª▓αª╛αª░αºçαª░ REST probe-αªÅαª░ αª╕αª╛αªÑαºç αª╣αºüαª¼αª╣αºüαÑñ αªÅαªòαªƒαª┐ HTML αª¬αºçαª£-αª¬αª╛αªá "open" αª¼αª▓αºçαª¢αª┐αª▓ ΓÇö αªñαª┐αª¿αªƒαª┐ machine read-αªÅαª░ αª¼αª┐αª¬αª░αºÇαªñαºç αª╕αºçαªƒαª┐ vantage-artifact αª╣αª┐αª╕αºçαª¼αºç αª╕αºÄαª¡αª╛αª¼αºç αª¿αªÑαª┐αª¡αºüαªòαºìαªñαÑñ αª½αª▓αºç reopen ask αªÅαªûαª¿ αªªαºüαªç-αªÅαª£αºçαª¿αºìαªƒ-αª╕αª«αª░αºìαªÑαª┐αªñ; αª╕αª┐αªªαºìαªºαª╛αª¿αºìαªñ αª«αª╛αª▓αª┐αªòαºçαª░αÑñ αªÅαªç αª░αª┐αª╕αª┐αªƒ αªòαª┐αª¢αºüαªç αª¼αª¿αºìαªº αªòαª░αºç αª¿αª╛αÑñ

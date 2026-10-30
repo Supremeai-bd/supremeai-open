@@ -1,0 +1,59 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 754d46f7..939386e2 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -363,6 +363,40 @@ def run_cmd(
+             raise RuntimeError(err) from exc
+         return 1, "", err
+ 
++def hooks_path_advisory() -> str | None:
++    """R63/#2343 option B — start-of-run local-enforcement probe (agent-plane lane).
++
++    বাংলা: রিপো যে `.githooks/` স্যুট (Board-Freshness pre-push গেট, #4177) শিপ করে
++    সেটি git-এর ডিফল্টে কখনো সক্রিয় হয় না — সক্রিয় হতে প্রতি-ক্লোনে
++    `git config core.hooksPath .githooks` দরকার (git-এর নিজস্ব anti-malware
++    নীতি; Documentation/githooks.adoc), আর রিপোর কোনো পৃষ্ঠই সেই কনফিগ-লাইন
++    বুটস্ট্র্যাপ করে না (R63 স্ক্যান: hooksPath/githooks শূন্য হিট)। ফলে
++    Universal Invariant 1 (Dual-Rebase "0 behind pre-push")-এর স্থানীয়-স্তর
++    প্রয়োগ প্রতিটি স্ট্যান্ডার্ড ক্লোনে অন্ধকার — #2322-শ্রেণির stale-base
++    clobber ঠেকানোর প্রথম স্তরটাই ডিফল্টে বন্ধ। এই প্রোব সত্যিকারের worktree-তে
++    unset hooksPath দেখলে ঠিক এক লাইনের সত্য-সতর্কতা stderr-এ দেয় (লুপের বিদ্যমান
++    advisory-নোট শৈলী: --loop/--auto-pr নোটের মতোই; stdout-চুক্তি অস্পৃষ্ট —
++    envelope-মোডের SPEC §4b stdout-purity ও dispatch stdout মার্কার-গণনা দুটোই
++    অক্ষত)। git-কনফিগ মিউটেশন করে না (option D প্রত্যাখ্যাত — অপারেটর-সম্মতি);
++    worktree না হলে নীরব; নেটওয়ার্ক-মুক্ত তাই offline-এও সৎ।
++
++    Returns:
++        str | None: stderr-এ মুদ্রণযোগ্য এক-লাইন advisory, বা None (সক্রিয়/প্রযোজ্য নয়)।
++    """
++    rc, out, _ = run_cmd(["git", "config", "--get", "core.hooksPath"], timeout=10)
++    if rc == 0 and out.strip():
++        return None  # বাংলা: হুক-পাথ সক্রিয় — কিছু বলার নেই।
++    # বাংলা: git-রিপোজিটরি নয় এমন ডিরেক্টরিতে মিথ্যা সতর্কতা নয় — নীরব।
++    rc_repo, _, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"], timeout=10)
++    if rc_repo != 0:
++        return None
++    return (
++        "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
++        ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
++        "by git default ($GIT_DIR/hooks). One-line activation: "
++        "git config core.hooksPath .githooks"
++    )
++
+ def diff_rule_freshness(
+     local_shas: dict[str, str | None], remote_shas: dict[str, str | None]
+ ) -> list[str]:
+@@ -875,6 +909,13 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+     বাংলা: একক সাইকেলের পরিষ্কার ডিসপ্যাচ এক্সিকিউশন। বাহ্যিক শিডিউলার বা রানার
+     দ্বারা সাইকেল পরিচালিত হয়।
+     """
++    # বাংলা: R63/#2343 option B — start-of-run স্থানীয়-প্রয়োগ প্রোব। ডিসপ্যাচ-পথের
++    # একেবারে শুরুতে একবার; সতর্কতাটি সবসময় stderr-এ (envelope-মোডের stdout-purity
++    # ও dispatch stdout মার্কার-গণনা অস্পৃষ্ট)। --verify-only পথ এখানে পৌঁছায় না
++    # (main()-এ আগেই রিটার্ন করে) — তাই বুট-স্মোকের stderr-চুক্তিও বাইট-অপরিবর্তিত।
++    advisory = hooks_path_advisory()
++    if advisory:
++        print(advisory, file=sys.stderr)
+     cmd = [
+         "gh", "issue", "list",
+         "--repo", UPSTREAM_REPO,

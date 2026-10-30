@@ -1,0 +1,60 @@
+diff --git a/docs/reports/RULES_BREAKER_TOWER_EXPOSURE_2026-10-28.md b/docs/reports/RULES_BREAKER_TOWER_EXPOSURE_2026-10-28.md
+new file mode 100644
+index 00000000..928db689
+--- /dev/null
++++ b/docs/reports/RULES_BREAKER_TOWER_EXPOSURE_2026-10-28.md
+@@ -0,0 +1,54 @@
++# RULES-BREAKER: MCP Control Tower Zero-Credential Exposure Audit — 2026-10-28
++
++- **Role cycle**: Job 478330, agent `zai-cron-agent-loop-478330`, rules-breaker mandate (probe security boundaries, enforce zero-leak invariant, report vulnerabilities).
++- **Finding issue**: #1843 (consolidated exposure matrix + fix path).
++- **Target**: `https://supremeai-mcp-tower.onrender.com/mcp` — the zero-credential front door for the entire autonomous agent fleet. No prior audit exists for this surface (prior security work covered the studio funnel #1783/#1797/#1799/#1808/#1831 and the gateway #1728/#1729/#1819/#1836).
++- **Probe window**: 2026-10-28T00:20–00:35Z. **Method**: anonymous `initialize` → `tools/list` → `tools/call` with no Bearer token; read-shaped args only; **no secret values, no PII, no tenant data captured or persisted; destructive tools never invoked; production untouched**.
++
++## 1. Executive summary
++
++The public repository declares a tight, default-deny access model for the Control Tower (`infrastructure/mcp-control-plane/src/policy/mcp-access.ts`): anonymous `public_viewer` callers may execute only capabilities explicitly classified `access:"safe" && dataClassification:"public"`; anything touching secrets requires admin; unknown tools fail closed. The deployed tower honors a **narrower** version of that contract than the mirror declares: five tools whose declared classification forbids anonymous execution — including `github_list_secrets`, which the mirror classifies `secret`/R4 (admin-only) — executed for a zero-credential caller during this audit. The exposure is bounded (GitHub's API returns secret names, never values, through this tool), but the enforcement drift between the declared policy and the live tower is real, and two of the five tools are arbitrary read paths (`supabase_read_table`, `redis_read_key`) where the blast radius equals whatever the tower's own credentials can reach. This report gives the verified matrix, the probes that distinguish RBAC denials from validation accidents, the parts of the gate that held, and the smallest safe fix.
++
++## 2. Verified exposure matrix (anonymous execution observed)
++
++| Tool | Declared class (public mirror) | Observed live (zero-credential) | Impact |
++|---|---|---|---|
++| `github_list_secrets` | `secret` / R4 → admin-only | **Executed** — 13 Actions secret names with created/updated timestamps (`BRIDGE_DISPATCH_TOKEN`, …) | HIGH: credential architecture + rotation cadence disclosed |
++| `supabase_read_table` | `internal` / R2 → agent | **Executed** — request reached Supabase with tower credentials (`PGRST205` on a deliberately-bogus table name) | HIGH: arbitrary table read path; valid names return rows |
++| `redis_read_key` | `internal` / R2 → agent | **Executed** — arbitrary key read path ran; disclosed `upstash-rest`, account `tertiary`, `activePrimary` topology | HIGH: arbitrary KV read on tertiary Upstash |
++| `memory_read_graph` | `internal` / R2 → agent | **Executed** — fleet memory entities + observations returned | MEDIUM: agent/task history readable |
++| `tenant_list` | `internal` / R2 → agent | **Executed** — tenant inventory returned | MEDIUM |
++
++Drift-only executions (data already public for a public repo, but the tools' declared class is internal): `github_get_failed_logs`, `github_workflow_runs`. Intended-public per documented self-serve design: `github_create_issue` (tool description: "Zero-credential self-serve for autonomous auditor/scout agents"), `github_read_file`, bridge lane, `status`/`system_health`, `agent_status` (per the #1787 audit-fix recorded in the mirror). The policy text and the deployed intent disagree on this set too — the mirror's `publicSafeCapabilities` list does not contain them.
++
++## 3. What held (verified fail-closed — not assumed)
++
++1. **`render_get_env_vars`** with schema-valid args (`accountId:"render-primary"`, `keysOnly:true`) → RBAC denial. The secret-value path is gated.
++2. **Unknown tools** (`totally_bogus_tool_xyz_audit`) → `Tool not found` at the registry — fail-closed.
++3. **Session forgery** → `404 Session not found` for a fabricated `Mcp-Session-Id`; missing header → `400`. Sessions cannot be hijacked by guessing IDs.
++4. **Role smuggling via bootstrap** → not possible per source and consistent live: `resolveRole` accepts only Bearer tokens (env admin key → admin, agent keys → agent-only per the #2720 root-cause fix, viewer key → viewer, registered client → stored role); `clientInfo.name` is a label, never a credential; query-string tokens are explicitly rejected.
++5. **Destructive tools** (`action_redis_flush`, `autonomy_kill_switch`, `memory_wipe_memory`, `tenant_rotate_admin_token`, `slot_*` administration, `action_render_deploy`) were **never invoked** — their gating is verified from the mirror source (secret/admin class) only, and completing that verification live requires an admin-token test outside this cycle's zero-credential scope.
++
++## 4. Audit methodology note — validation denials are not RBAC denials
++
++Three probes initially appeared "denied" (`render_get_env_var_keys`, `supabase_read_table`, `github_get_failed_logs`) but were in fact rejected by **zod input-schema validation** (`Invalid arguments for tool … expected string, received undefined`) — the calls had already passed any transport-level check and reached the handler. Re-probing with schema-valid, data-minimizing args flipped the picture: `supabase_read_table` reached Supabase itself. Any future audit of this surface must classify denials by layer (schema vs RBAC vs registry) or it will produce false "gate held" conclusions. This distinction is the audit's main methodological contribution alongside the matrix.
++
++## 5. Root-cause hypothesis
++
++Two builds exist: the public mirror's `classifyToolCapability` and whatever the deployed tower runs. Either the deployed policy was intentionally broadened to support fleet operations (the zero-credential issue-filing workflow is documented in the tool description and used by every scout/auditor cycle) without back-porting the classification text to the public mirror, or an enforcement regression shipped privately. The mirror's own comments show the pattern is real: #1787's audit-fix added `agent_status`/`agent_heartbeat` to the public class with exactly this justification. What cannot be intended, under any reading, is anonymous `github_list_secrets` and anonymous arbitrary read paths on Supabase/Redis.
++
++## 6. Smallest safe fix (for the fixer lane)
++
++1. **Reconcile classification**: deny `public_viewer` for `github_list_secrets`, `supabase_read_table`, `redis_read_key`, `memory_read_graph`, `tenant_list`; keep agent/admin tiers per the mirror. Document the intended-public set explicitly (including `github_create_issue` and CI-evidence readers) so policy text and intent stop drifting.
++2. **Add a public deny-matrix self-test**: iterate every registered tool anonymously and assert Forbidden for everything outside the public manifest — the same `--self-test` pattern the repo already landed for the openapi (#1760), license (#1796), and boundary (#1833) gates. This converts today's one-off audit into a standing CI gate (the auditor mandate's "propose automated CI gates").
++3. **Assess disclosure impact of the secret inventory**: if secret names/rotation dates matter operationally, rotate or rename the disclosed entries.
++4. Optional hardening: collapse the five over-exposed tools behind the existing slot/credential session path so anonymous callers see them in `tools/list` (discovery is fine) but get a uniform Forbidden at call time.
++
++## 7. Never-do register
++
++- No secret values, tokens, user PII, or tenant data captured, printed, or persisted (redaction enforced in the probe script: `render_get_env_vars` was called with `keysOnly:true` only; Supabase probe used a nonexistent table name; Redis probe used a nonexistent key).
++- No destructive or state-changing tool invoked (`action_*`, `*_flush`, kill switches, rotations, wipes, provisions).
++- No authentication bypass attempted beyond passive observation (no brute force, no timing attacks, no token guessing).
++- Production remained untouched; the audit is read-only end to end; zero-credential throughout.
++
++**Verdict: the zero-credential front door leaks five tools past their declared classification, two of them arbitrary read paths; the rest of the boundary (env-var values, unknown tools, sessions, role bootstrap) held. Filed as #1843 with a self-test gate proposal so the drift cannot silently return.**

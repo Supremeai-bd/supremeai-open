@@ -1,0 +1,37 @@
+diff --git a/scripts/ci/radar_index_freshness_baseline.json b/scripts/ci/radar_index_freshness_baseline.json
+index 3e13c17a..0c19df0d 100644
+--- a/scripts/ci/radar_index_freshness_baseline.json
++++ b/scripts/ci/radar_index_freshness_baseline.json
+@@ -4,16 +4,7 @@
+   "headAtGeneration": "post-#2114 (aa9de7b)",
+   "probe": "scripts/ci/radar_index_freshness_guard.py",
+   "note": "shrink-only floor over the citation-ghost class only; key = [kind, file, base]. A/B invariant violations are NEVER floorable — they are structural and always fail.",
+-  "floor": [
+-    {
+-      "key": [
+-        "citation-ghost",
+-        "docs/SCOUT_RADAR_2026-10-28-XIV.md",
+-        51
+-      ],
+-      "allowed": 1
+-    }
+-  ],
+-  "pointerAtGeneration": 51,
++  "floor": [],
++  "pointerAtGeneration": 52,
+   "registryRowsAtGeneration": "R1-R50"
+ }
+diff --git a/tests/test_radar_index_freshness_guard.py b/tests/test_radar_index_freshness_guard.py
+index bcc9e4d7..25d5ec86 100644
+--- a/tests/test_radar_index_freshness_guard.py
++++ b/tests/test_radar_index_freshness_guard.py
+@@ -221,6 +221,9 @@ def test_self_test_passes() -> None:
+ def test_live_repo_sweep_passes() -> None:
+     r = guard.sweep(REPO_ROOT)
+     assert "fatal" not in r
++    # Pointer pin regenerated per the R48 gate's own instruction after #2145
++    # (R51 registration) legitimately advanced the index next-free R51 -> R52.
++    # Bump this literal ONLY together with a landed index-pointer advance.
+     assert r["pointer"] == 52, "pointer drifted — regenerate expectation with the index"
+     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
+     drift, _ = guard.compare(baseline, r["cits"])

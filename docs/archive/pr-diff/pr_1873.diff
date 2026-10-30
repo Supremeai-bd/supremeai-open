@@ -1,0 +1,59 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 01965bc6..d120d601 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -129,11 +129,24 @@ def label_names(item: dict[str, Any]) -> list[str]:
+     return [str(l.get("name", "")).lower() for l in labels if isinstance(l, dict)]
+ 
+ def has_open_p0_blocker(issues: list[dict[str, Any]]) -> bool:
+-    """Check if there is any open P0-critical architectural issue on the board."""
++    """Check if there is any open, actionable P0-critical architectural issue.
++
++    বাংলা: P0 Drainage Invariant (Rule 5) কেবল অ্যাকশনেবল P0-তে প্রযোজ্য।
++    blocked-by-upstream লেবেলযুক্ত P0 এই লেনের কেউই দাবি করতে পারে না
++    (pick_next_issue()-এর EXCLUDED_LABELS-এও আছে) — এমন চিরকাল-খোলা P0
++    has_open_p0_blocker()-ও ধরে রাখলে cadence রোল অনির্দিষ্টকালের জন্য
++    অবরুদ্ধ হয় (starvation): কেউ সমাধান করতে পারবে না, আবার অন্য সব রুটিন
++    কাজও বন্ধ থাকবে। তাই এই লেনে-অ্যাকশনেবল-নয় এমন P0 ব্লকার-গণনা থেকে বাদ;
++    status:claimed P0 আগের মতোই ব্লক করবে (অন্য রানার সক্রিয়ভাবে কাজ করছে —
++    নিয়ম ৫-এর উদ্দিষ্ট আচরণ)।
++    """
++    unactionable_in_lane = frozenset({"blocked-by-upstream"})
+     for item in issues:
+         if not isinstance(item, dict):
+             continue
+         names = label_names(item)
++        if unactionable_in_lane & set(names):
++            continue
+         if any(name == "p0" or name.startswith("p0-") or name.startswith("p0 ") for name in names):
+             return True
+     return False
+@@ -838,6 +851,28 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             picked = pick_next_issue(issues=raw)
+             if picked:
+                 target_issue = next((i for i in raw if str(i.get("number")) == picked), None)
++                # বাংলা: board query-র list payload-এ title থাকে না (gh issue list
++                # --json number,labels) — auto-pick পথে target_issue শুধু number+labels
++                # বহন করত, ফলে এমিটেড envelope-এ objective="" যেত এবং এজেন্ট
++                # envelope পেয়েও কাজটা কী তা বুঝতে পারত না (SPEC §2 objective ফাঁকা)।
++                # --issue পথের মতোই নির্বাচিত issue-র title/state hydrate করা হয়;
++                # hydrate ব্যর্থ হলে সৎ board_note — নীরব খালি objective নয়।
++                if target_issue is not None and target_issue.get("title") is None:
++                    h_cmd = [
++                        "gh", "issue", "view", str(picked),
++                        "--repo", UPSTREAM_REPO,
++                        "--json", "number,title,labels,state",
++                    ]
++                    try:
++                        hp = subprocess.run(h_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
++                        if hp.returncode == 0 and hp.stdout.strip():
++                            target_issue = json.loads(hp.stdout)
++                        else:
++                            note = f"gh issue view {picked} failed: {(hp.stderr or '').strip() or hp.returncode}; envelope emitted without title"
++                    except FileNotFoundError:
++                        note = "gh CLI not found on PATH; envelope emitted without title"
++                    except Exception as exc:
++                        note = f"gh issue view error: {exc}; envelope emitted without title"
+             elif not args.allow_adhoc:
+                 print(
+                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",

@@ -1,0 +1,109 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 93ce823b..08cc8730 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -532,6 +532,13 @@ def build_task_envelope(
+             "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
+             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
+             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.",
++            # বাংলা: কিউ-স্তরের claim লেবেল tower-এর লাইভ claim-কে পিছিয়ে থাকে (live
++            # 2026-10-28: ৩ সারি >=১৯ মিনিট ধরে status:unclaimed দেখিয়েছে যদিও claim
++            # স্ট্যাম্প হয়ে গিয়েছিল — #2111, #2123, #2102; স্থায়ী প্রোব
++            # scripts/queue_consistency_probe.py R2)। ভুল লেবেল-ডেটা লুপের কোডে ঠিক হয়
++            # না (b3dfbbe ব্রিজ-স্টেট বাদ দেয়, ভুল ডেটা নয়) — তাই সৎ প্রতিকার:
++            # এজেন্টকে claim-এর আগে feedback-plane যাচাইয়ের নির্দেশ।
++            "STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.",
+         ]
+     )
+ 
+@@ -985,6 +992,12 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+             print(f"ACTION: Highest-priority unclaimed issue = #{picked}. Solve root cause and submit PR with 'Closes #{picked}' in PR description to close it on merge.")
+             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
+             print("STALE-INCIDENT GUARD (U3 Live Validity): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved.")
++            # বাংলা: STALE-CLAIM GUARD — envelope-এর specialist_prompt-এর সাথে সমান্তরাল
++            # (U3-র দুই-স্তর প্যাটার্ন)। কিউ-লেবেল লাইভ claim-কে পিছিয়ে থাকায়
++            # status:unclaimed পরামর্শ মাত্র, সত্য নয়; work_claim-এর আগে
++            # bridge.read_feedback দিয়ে latestClaim যাচাই বাধ্যতামূলক, আর
++            # atomic-claim rejection হলে একই সারি রিট্রাই নয় — পরের প্রার্থী।
++            print("STALE-CLAIM GUARD: board claim labels can lag live tower claims (2026-10-28: 3 rows dispatched as unclaimed were claimed >=19min earlier; #2111, #2123, #2102). Label 'unclaimed' is advisory: re-verify claimability via the feedback plane (bridge.read_feedback latestClaim) immediately before work_claim; on atomic-claim rejection move to the next candidate - never retry the same row.")
+             return 0
+ 
+     cfg = load_cadence_config()
+diff --git a/tests/test_stale_claim_guard.py b/tests/test_stale_claim_guard.py
+new file mode 100644
+index 00000000..5cffc0fa
+--- /dev/null
++++ b/tests/test_stale_claim_guard.py
+@@ -0,0 +1,72 @@
++#!/usr/bin/env python3
++"""Pin: both dispatch surfaces carry the STALE-CLAIM advisory (#2100 arc).
++
++Live 2026-10-28: the tower's queue labels lagged live claims on three rows
++(#2111, #2123, #2102) - agents picking from the board saw `status:unclaimed`
++on rows claimed >=19 minutes earlier, then burned their cycle on atomic-claim
++rejection (work_claim GRANT_NEW fails on the second claimer). The loop cannot
++fix wrong label DATA (b3dfbbe already excludes bridge-plane states; this is a
++different failure: the label value itself is stale), so the loop's honest
++mitigation is the advisory carried to the agent at dispatch time, in the two
++places the U3 precedent already uses: the envelope's specialist_prompt and the
++dispatch print block.
++
++Comment-immune string-presence pin (wiring-pin precedent test_27 /
++test_pick_excludes_bridge_states.py AST pin family): reads the loop module's
++source and asserts the guard exists exactly twice with its operative tokens.
++Dual-mode: runs under both `python3 -m unittest` and `pytest`.
++"""
++
++from __future__ import annotations
++
++import ast
++import unittest
++from pathlib import Path
++
++_ROOT = Path(__file__).resolve().parent.parent
++LOOP_PATH = _ROOT / "scripts" / "agents" / "continuous_agent_loop.py"
++LOOP_SRC = LOOP_PATH.read_text(encoding="utf-8")
++
++GUARD_KEY = "STALE-CLAIM GUARD"
++REQUIRED_TOKENS = (
++    "bridge.read_feedback",
++    "latestClaim",
++    "work_claim",
++    "never retry the same row",
++)
++
++
++class TestStaleClaimGuardPin(unittest.TestCase):
++    def _string_literal_count(self) -> int:
++        """AST count of string CONSTANTS starting with the guard key -
++        comment-immune (Bangla contract comments may mention the guard by name)."""
++        tree = ast.parse(LOOP_SRC)
++        return sum(
++            1
++            for node in ast.walk(tree)
++            if isinstance(node, ast.Constant)
++            and isinstance(node.value, str)
++            and node.value.startswith(GUARD_KEY)
++        )
++
++    def test_guard_present_exactly_twice(self):
++        """Envelope specialist_prompt + dispatch print - the U3 two-surface pattern."""
++        count = self._string_literal_count()
++        self.assertEqual(
++            count,
++            2,
++            f"{GUARD_KEY} string literals must be exactly 2 (envelope + dispatch); found {count}",
++        )
++
++    def test_guard_carries_operative_tokens(self):
++        """The advisory must name the verify step and the rejection protocol."""
++        for token in REQUIRED_TOKENS:
++            self.assertIn(token, LOOP_SRC, f"guard token missing: {token}")
++
++    def test_u3_precedent_untouched(self):
++        """The new guard must not displace the existing U3 advisory."""
++        self.assertIn("STALE-INCIDENT GUARD", LOOP_SRC)
++
++
++if __name__ == "__main__":
++    unittest.main()

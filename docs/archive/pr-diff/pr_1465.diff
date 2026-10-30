@@ -1,0 +1,39 @@
+diff --git a/docs/bridge/bridge-20261027-audit-gap-multichat-compare.md b/docs/bridge/bridge-20261027-audit-gap-multichat-compare.md
+new file mode 100644
+index 00000000..9cb85a66
+--- /dev/null
++++ b/docs/bridge/bridge-20261027-audit-gap-multichat-compare.md
+@@ -0,0 +1,33 @@
++# 🌉 Bridge Work Order — [P2] AI Multi-Chat missing: no side-by-side model comparison view although the gateway already routes N models in parallel (Monica Gap 2/8) (bridge-20261027-audit-gap-multichat-compare)
++
++## Problem
++The Bangla feature audit (2026-10-27) mapped Monica's Multi-Chat (side-by-side model comparison) as Gap 2. SupremeAI has single-thread chat only.
++
++The gateway is built for exactly this shape of traffic: health-scored multi-account, multi-provider routing (51/51 keys healthy at last live check, `chat_ready: true`), and it can dispatch to N models in parallel. Nothing in Studio reuses that capability for comparison. A user who wants to know "which model answers my Bengali legal question better" must open two tabs, paste twice, and compare from memory. Monica presents the answer columns side by side with the same prompt on top.
++
++There is also a second-order loss: every comparison a user performs manually is an eval signal that evaporates. The knowledge-loop order (#1337/#1440) established that the feedback loop barely exists (1 seed row in `feedback_loop`). Comparison votes are the most natural way to start collecting labeled preference data.
++
++## Impact
++- Trust-building: side-by-side comparison is the fastest way for a new user to convince themselves the product is smart.
++- Eval flywheel: votes on comparisons are free, continuous, human preference labels — exactly what the missing eval set (AIQ-102) needs.
++- Latency honesty: simultaneous columns make speed differences visible, which sequential A/B testing hides.
++
++## Fix (smallest safe change)
++1. Compare view in Studio: one prompt input fans out to 2–3 user-selected models via the existing gateway parallel routing — no new backend fan-out service, the gateway already routes.
++2. Synchronized streaming columns (reuse the studio's existing secure SSE streaming pattern); per-column error state so one failing provider does not break the others.
++3. Per-column copy + vote buttons; a vote writes one `feedback_loop` row (model_a, model_b, winner, prompt hash, `adjusted: false`) — the same table the knowledge loop already reads.
++4. Route is lazy-loaded so the initial JS budget work (#1339) does not regress.
++
++## Acceptance Criteria
++- [ ] 2–3 model columns stream simultaneously for one prompt with independent error states
++- [ ] A column failing (timeout/provider error) shows an honest error card; remaining columns keep streaming
++- [ ] Vote persists a `feedback_loop` row and it is visible on the next knowledge-loop ingest pass
++- [ ] Compare route is lazy-loaded; initial route JS unaffected
++- [ ] Works with the model picker from gap-01 (columns pick from the same healthy-model list)
++
++## Reflection Evidence (why + alternatives_rejected)
++**Why:** comparison doubles as a human-eval harness; building it as a chat surface turns product marketing and model evaluation into the same activity.
++**Alternatives rejected:** (a) sequential A/B toggle — loses simultaneity, which is the entire point (latency and tone are only comparable side by side); (b) a new fan-out endpoint service — unnecessary, the gateway's parallel routing plus the studio's existing streaming pattern already covers the need.
++
++## Labels
++`bridge:queued` `P2-medium` `area:studio` `area:gateway` `gap:monica-02`

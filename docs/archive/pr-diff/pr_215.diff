@@ -1,0 +1,57 @@
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+index 433eb900..b768d590 100644
+--- a/scripts/agents/check_loop_contract_parity.py
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -13,6 +13,9 @@
+   3. SPEC §5 must name every guard job that ``pipeline.yml`` actually runs.
+   4. CONTRIBUTING.md must carry no flag-table copy (SSOT is SPEC §4).
+   5. The SSOT pointers must exist (SPEC §4b → §4; CONTRIBUTING → this guard).
++  6. Every ``.github/workflows/*.yml`` reference in the loop code or the SPEC
++     must resolve to an existing workflow file on disk (the deleted
++     ``open-guards.yml`` drift class — #214).
+ 
+ Exit codes: 0 = parity held · 1 = drift detected · 2 = guard environment error.
+ """
+@@ -104,6 +107,19 @@ def norm(name: str) -> str:
+     if "check_loop_contract_parity" not in contrib:
+         failures.append("CONTRIBUTING lost the parity-guard pointer")
+ 
++    # 6. Every .github/workflows/*.yml reference in the loop-contract surfaces
++    #    must resolve to an existing workflow file (#214: the envelope pointed
++    #    agents at open-guards.yml, deleted in the #155 workflow diet).
++    wf_ref_re = re.compile(r"\.github/workflows/([A-Za-z0-9_.-]+\.ya?ml)")
++    for surface in (LOOP, SPEC):
++        surface_text = surface.read_text(encoding="utf-8")
++        for wf_name in sorted(set(wf_ref_re.findall(surface_text))):
++            if not (ROOT / ".github" / "workflows" / wf_name).is_file():
++                failures.append(
++                    f"{surface.relative_to(ROOT)} references a deleted workflow: "
++                    f".github/workflows/{wf_name}"
++                )
++
+     if failures:
+         print("❌ Loop-contract parity FAILED:")
+         for failure in failures:
+@@ -114,7 +130,8 @@ def norm(name: str) -> str:
+         f"✅ Loop-contract parity OK: tiers 1..{max(emitted)} "
+         f"(code == SPEC §4 declared 1..{declared}), "
+         f"{len(job_names)} guards (workflow == SPEC §5), "
+-        "no flag-table copy, SSOT pointers present."
++        "no flag-table copy, SSOT pointers present, "
++        "all workflow references resolve."
+     )
+     return 0
+ 
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 17906fe1..44752d13 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -326,7 +326,7 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
+                 "issue_reference_required": True,
+                 "branch_convention": (
+                     "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|"
+-                    "hotfix|release|copilot|agent)/<slug> — enforced by .github/workflows/open-guards.yml"
++                    "hotfix|release|copilot|agent)/<slug> — enforced by pipeline.yml"
+                 ),
+                 "pr_body_template": pr_body_template,
+             },

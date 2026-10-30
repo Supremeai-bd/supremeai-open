@@ -1,0 +1,68 @@
+diff --git a/docs/reports/WORKQUEUE_HEAL_2026-10-30.md b/docs/reports/WORKQUEUE_HEAL_2026-10-30.md
+new file mode 100644
+index 00000000..20e371d3
+--- /dev/null
++++ b/docs/reports/WORKQUEUE_HEAL_2026-10-30.md
+@@ -0,0 +1,62 @@
++# Work Queue Heal Evidence — #2609 perPage param honored again after #2440 structuredContent landing
++
++**Class**: evidence receipt (report-only, keep-open — closure decision belongs to the verdict plane)
++**Date**: 2026-10-30 (UTC window 23:26–23:31Z)
++**Reporter**: zai-cron-agent-478334 (cycle 42 dispatch)
++**Refs**: #2609 (perPage param-drop series), #2691 (R76 ~4000ch truncation), #2423/#2440 (option A structuredContent emission, commit 27971a9), #2485 (keep-open contract)
++
++## What flipped
++
++`bridge.work_queue` now honors the caller-supplied `limit` argument exactly. Through the prior six
++measurements (spanning ≥9h, latest pair ~22:05Z, series recorded on the #2609 thread context) the
++parameter was silently dropped: `limit:2` and `limit:7` both returned the default 5 rows. As of this
++session the same calls return exactly the requested count.
++
++## Pass measurements (byte-exact, this session)
++
++| UTC time | call | requested | returned | raw len | complete parse |
++|---|---|---|---|---|---|
++| 23:26Z | work_queue | limit=2 | 2 | 1455 | yes |
++| 23:26Z | work_queue | limit=7 | 7 | 4204 | yes |
++| 23:26Z | work_queue | limit=200 | 108 (totalOpen=108) | 62937 | yes |
++| 23:30:38Z | work_queue | limit=2 | 2 | 1455 | yes |
++| 23:30:38Z | work_queue | limit=3 | 3 | 2030 | yes |
++| 23:30:38Z | work_queue | limit=7 | 7 | 4204 | yes |
++| 23:30:38Z | work_queue | limit=11 | 11 | 6467 | yes |
++
++6 consecutive passes across 4 distinct limit values (2/3/7/11), zero drops. Every response parsed to
++completion with all requested rows present.
++
++## R76 (~4000ch truncation) corroboration — non-reproducing
++
++Responses of 4204, 6467 and 62937 chars were parsed complete this session. The ~4000-char hard
++truncation that grounded the silent-empty defect class (#2691 R76) did not reproduce on the same
++tool, same transport (SSE), same probe script used when it was witnessed.
++
++## Causal candidate (correlational, not proven)
++
++- Commit `27971a9` (PR #2440; #2423 option A: `bridge_work_queue` + `bridge_work_order` declare
++  `outputSchema` and emit `structuredContent` per MCP spec rev 2025-06-18) landed on main at
++  **21:15:28Z** (commit date 2026-10-30 03:15:28 +0600).
++- Last fail measurement ~22:05Z; first pass 23:26Z. Flip window (22:05Z, 23:26Z] is consistent with
++  a tower redeploy of that commit (render deploys elsewhere are update_failed ~29h, but the MCP
++  tower service is a separate deploy plane).
++- Live confirmation: the raw work_queue response body now carries a `structuredContent` block with
++  `count` equal to the requested limit, `totalOpen:108`, and a `windowTruncated` flag — the exact
++  behavior #2440 specifies. `outputSchema` echo was not present in tool-list output at probe time.
++
++## Falsifiable predictions
++
++- **P1**: next independent probes get exactly-N rows for arbitrary N (e.g. 13, 50). Any future 5-row
++  return for limit≠5 reopens the defect as intermittent/reverted.
++- **P2**: `windowTruncated` is `true` iff returned count < totalOpen (metadata honesty check).
++- **P3**: `bridge.work_order` single-WO pulls show the same structuredContent dual-emission (same
++  PR #2440 touch-set).
++
++## Keep-open rationale
++
++The candidate remedy (#2440) was authored by another contributor and the tower activation was
++observed only indirectly (no deploy-log access from the zero-credential plane). The heal is
++single-session (≈5 minutes of passes). Per the #2485 contract this receipt adds **no Closes line**;
++#2609 and the R76 member of #2691 become closure candidates once any independent session confirms
++P1/P3. Docs-only: one file added, zero code touched.

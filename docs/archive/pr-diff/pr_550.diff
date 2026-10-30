@@ -1,0 +1,1291 @@
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index fac0dac5..7f6063d0 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -83,6 +83,7 @@
+     "gateway",  # Federation bridge surface for Supremeai-bd/supremeai-api (issue #469)
+     "command",  # Federation bridge surface for Supremeai-bd/supremeai-command (issue #505)
+     "browser",  # Federation bridge surface for Supremeai-bd/supremeai-browser (issue #502)
++    "sdk",  # Federation bridge surface for Supremeai-bd/supremeai-sdk (issue #510)
+ }
+ 
+ APPROVED_ROOT_FILES = {
+diff --git a/sdk/python/pyproject.toml b/sdk/python/pyproject.toml
+new file mode 100644
+index 00000000..3c47bfbe
+--- /dev/null
++++ b/sdk/python/pyproject.toml
+@@ -0,0 +1,30 @@
++[build-system]
++requires = ["setuptools>=68"]
++build-backend = "setuptools.build_meta"
++
++[project]
++name = "supremeai-sdk"
++version = "0.1.0"
++description = "Official Python client for the SupremeAI Unified Gateway: typed runs, SSE streaming, automatic failover retry."
++readme = "README.md"
++requires-python = ">=3.9"
++license = { text = "MIT" }
++dependencies = []
++keywords = ["supremeai", "gateway", "sse", "streaming", "client"]
++classifiers = [
++    "Development Status :: 4 - Beta",
++    "Intended Audience :: Developers",
++    "Programming Language :: Python :: 3",
++    "Programming Language :: Python :: 3.9",
++    "Programming Language :: Python :: 3.10",
++    "Programming Language :: Python :: 3.11",
++    "Programming Language :: Python :: 3.12",
++    "Topic :: Software Development :: Libraries :: Python Modules",
++]
++
++[project.optional-dependencies]
++httpx = ["httpx>=0.24"]
++dev = ["build>=1.0"]
++
++[tool.setuptools.packages.find]
++include = ["supremeai*"]
+diff --git a/sdk/python/supremeai/__init__.py b/sdk/python/supremeai/__init__.py
+new file mode 100644
+index 00000000..3766705c
+--- /dev/null
++++ b/sdk/python/supremeai/__init__.py
+@@ -0,0 +1,21 @@
++"""supremeai — official Python client for the SupremeAI Unified Gateway.
++
++Lightweight sync and async clients (stdlib only; httpx optional), with
++SSE streaming, bearer signing, and exponential-backoff retry on
++transient gateway failures.
++"""
++
++from .client import AsyncSupremeAIClient, SupremeAIClient
++from .errors import GatewayError
++from .sse_listener import SSEListener, StreamEvent
++
++__version__ = "0.1.0"
++
++__all__ = [
++    "AsyncSupremeAIClient",
++    "SupremeAIClient",
++    "GatewayError",
++    "SSEListener",
++    "StreamEvent",
++    "__version__",
++]
+diff --git a/sdk/python/supremeai/client.py b/sdk/python/supremeai/client.py
+new file mode 100644
+index 00000000..e7690e70
+--- /dev/null
++++ b/sdk/python/supremeai/client.py
+@@ -0,0 +1,195 @@
++"""SupremeAI Unified Gateway clients (sync + async, stdlib only).
++
++Both clients sign requests with a bearer key (argument or
++``SUPREMEAI_API_KEY``), target the gateway base URL (argument or
++``SUPREMEAI_GATEWAY_URL``), and retry transient 502/503/504 failures
++with exponential backoff and full jitter.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import os
++import random
++import time
++import urllib.error
++import urllib.request
++from typing import Any, AsyncIterator, Dict, Iterator, Optional
++
++from .errors import RETRYABLE_STATUSES, GatewayError
++from .sse_listener import SSEListener, StreamEvent
++
++USER_AGENT = "supremeai-sdk-python/0.1.0"
++
++
++def _backoff_delay(attempt: int, floor: float) -> float:
++    """Exponential backoff with full jitter."""
++    return floor + random.random() * floor * (2 ** attempt)
++
++
++class SupremeAIClient:
++    """Synchronous gateway client built on urllib."""
++
++    def __init__(
++        self,
++        base_url: Optional[str] = None,
++        api_key: Optional[str] = None,
++        max_retries: int = 3,
++        timeout: float = 30.0,
++        backoff_floor: float = 0.15,
++        default_headers: Optional[Dict[str, str]] = None,
++    ) -> None:
++        env = os.environ
++        self.base_url = (base_url or env.get("SUPREMEAI_GATEWAY_URL") or "").rstrip("/")
++        self.api_key = api_key or env.get("SUPREMEAI_API_KEY") or ""
++        self.max_retries = max(1, max_retries)
++        self.timeout = timeout
++        self.backoff_floor = backoff_floor
++        self.default_headers = dict(default_headers or {})
++
++    def _headers(self, extra: Optional[Dict[str, str]] = None) -> Dict[str, str]:
++        headers: Dict[str, str] = {
++            "Content-Type": "application/json",
++            "Accept": "application/json",
++            "User-Agent": USER_AGENT,
++        }
++        headers.update(self.default_headers)
++        if extra:
++            headers.update(extra)
++        if self.api_key:
++            headers["Authorization"] = "Bearer " + self.api_key
++        return headers
++
++    def request(
++        self,
++        method: str,
++        path: str,
++        payload: Any = None,
++        headers: Optional[Dict[str, str]] = None,
++    ) -> Any:
++        """Signed JSON request with retry on 502/503/504."""
++        url = self.base_url + path
++        body = None if payload is None else json.dumps(payload).encode("utf-8")
++        last_error: Optional[GatewayError] = None
++        for attempt in range(self.max_retries):
++            if attempt:
++                time.sleep(_backoff_delay(attempt - 1, self.backoff_floor))
++            request = urllib.request.Request(url, data=body, method=method)
++            for key, value in self._headers(headers).items():
++                request.add_header(key, value)
++            try:
++                with urllib.request.urlopen(request, timeout=self.timeout) as response:
++                    raw = response.read()
++                if not raw:
++                    return None
++                return json.loads(raw.decode("utf-8"))
++            except urllib.error.HTTPError as exc:
++                raw = exc.read() if hasattr(exc, "read") else b""
++                parsed: Any = None
++                if raw:
++                    try:
++                        parsed = json.loads(raw.decode("utf-8"))
++                    except ValueError:
++                        parsed = None
++                shape = parsed if isinstance(parsed, dict) else {}
++                error = GatewayError(
++                    status=exc.code,
++                    code=str(shape.get("code", "GATEWAY_ERROR")),
++                    message=str(shape.get("message", exc.reason)),
++                    provider=shape.get("provider"),
++                    retryable=shape.get("retryable"),
++                    body=parsed,
++                )
++                last_error = error
++                if exc.code in RETRYABLE_STATUSES and attempt < self.max_retries - 1:
++                    continue
++                raise error
++        raise last_error or GatewayError(0, code="UNREACHABLE", message="gateway unreachable")
++
++    def run_task(self, task: str, payload: Any = None, model: Optional[str] = None,
++                 idempotency_key: Optional[str] = None,
++                 metadata: Optional[Dict[str, str]] = None) -> Any:
++        """Submit a task run for gateway execution."""
++        body: Dict[str, Any] = {"task": task, "input": payload or {}}
++        if model:
++            body["model"] = model
++        if idempotency_key:
++            body["idempotencyKey"] = idempotency_key
++        if metadata:
++            body["metadata"] = metadata
++        return self.request("POST", "/v1/runs", body)
++
++    def get_run(self, run_id: str) -> Any:
++        """Fetch a run's state and execution trace."""
++        return self.request("GET", "/v1/runs/" + urllib.request.quote(run_id, safe=""))
++
++    def list_models(self) -> Any:
++        return self.request("GET", "/v1/models")
++
++    def health(self) -> Any:
++        return self.request("GET", "/v1/health")
++
++    def stream_run(self, run_id: str) -> Iterator[StreamEvent]:
++        """Yield parsed SSE events for a run until the [DONE] sentinel."""
++        url = self.base_url + "/v1/runs/" + urllib.request.quote(run_id, safe="") + "/stream"
++        request = urllib.request.Request(url, method="GET")
++        for key, value in self._headers({"Accept": "text/event-stream"}).items():
++            request.add_header(key, value)
++        listener = SSEListener()
++        with urllib.request.urlopen(request, timeout=self.timeout) as response:
++            for raw in response:
++                for event in listener.feed(raw.decode("utf-8", errors="replace")):
++                    if event.is_done:
++                        return
++                    yield event
++            for event in listener.finish():
++                if event.is_done:
++                    return
++                yield event
++
++
++class AsyncSupremeAIClient:
++    """Async facade over the sync client: executor-backed HTTP, queue-backed SSE."""
++
++    def __init__(self, **options: Any) -> None:
++        self._sync = SupremeAIClient(**options)
++
++    async def request(self, method: str, path: str, payload: Any = None,
++                      headers: Optional[Dict[str, str]] = None) -> Any:
++        loop = asyncio.get_running_loop()
++        return await loop.run_in_executor(
++            None, lambda: self._sync.request(method, path, payload, headers)
++        )
++
++    async def run_task(self, task: str, payload: Any = None, **kwargs: Any) -> Any:
++        loop = asyncio.get_running_loop()
++        return await loop.run_in_executor(
++            None, lambda: self._sync.run_task(task, payload, **kwargs)
++        )
++
++    async def get_run(self, run_id: str) -> Any:
++        loop = asyncio.get_running_loop()
++        return await loop.run_in_executor(None, lambda: self._sync.get_run(run_id))
++
++    async def stream_run(self, run_id: str) -> AsyncIterator[StreamEvent]:
++        """Async SSE iterator: a background thread pumps bytes into a queue."""
++        queue: "asyncio.Queue[Optional[StreamEvent]]" = asyncio.Queue()
++        loop = asyncio.get_running_loop()
++
++        def pump() -> None:
++            try:
++                for event in self._sync.stream_run(run_id):
++                    loop.call_soon_threadsafe(queue.put_nowait, event)
++            finally:
++                loop.call_soon_threadsafe(queue.put_nowait, None)
++
++        import threading
++
++        thread = threading.Thread(target=pump, daemon=True)
++        thread.start()
++        while True:
++            event = await queue.get()
++            if event is None:
++                break
++            yield event
+diff --git a/sdk/python/supremeai/errors.py b/sdk/python/supremeai/errors.py
+new file mode 100644
+index 00000000..86ad2825
+--- /dev/null
++++ b/sdk/python/supremeai/errors.py
+@@ -0,0 +1,38 @@
++"""Typed gateway errors for the SupremeAI Python SDK."""
++
++from __future__ import annotations
++
++from typing import Any, Optional
++
++RETRYABLE_STATUSES = frozenset({502, 503, 504})
++
++
++class GatewayError(RuntimeError):
++    """Raised when the gateway answers with a non-2xx response.
++
++    Attributes mirror the gateway error contract: ``status``, ``code``,
++    ``provider``, ``retryable`` and the decoded ``body`` when available.
++    """
++
++    def __init__(
++        self,
++        status: int,
++        code: str = "GATEWAY_ERROR",
++        message: str = "gateway request failed",
++        provider: Optional[str] = None,
++        retryable: Optional[bool] = None,
++        body: Any = None,
++    ) -> None:
++        super().__init__(message)
++        self.status = status
++        self.code = code
++        self.provider = provider
++        self.retryable = status in RETRYABLE_STATUSES if retryable is None else retryable
++        self.body = body
++
++    def __repr__(self) -> str:  # pragma: no cover - debug helper
++        return "GatewayError(status=%s, code=%s, retryable=%s)" % (
++            self.status,
++            self.code,
++            self.retryable,
++        )
+diff --git a/sdk/python/supremeai/sse_listener.py b/sdk/python/supremeai/sse_listener.py
+new file mode 100644
+index 00000000..7cef0774
+--- /dev/null
++++ b/sdk/python/supremeai/sse_listener.py
+@@ -0,0 +1,104 @@
++"""SSE parsing primitives shared by the sync and async SupremeAI clients.
++
++Implements the text/event-stream grammar: ``event``/``data``/``id``/
++``retry`` fields, multi-line ``data`` continuation, CRLF or LF endings,
++comment lines, and the ``[DONE]`` sentinel.
++"""
++
++from __future__ import annotations
++
++import json
++from dataclasses import dataclass
++from typing import Any, List, Optional
++
++
++@dataclass
++class StreamEvent:
++    """One completed server-sent event."""
++
++    event: str
++    data: str
++    id: Optional[str] = None
++    parsed: Any = None
++    is_done: bool = False
++
++
++class SSEListener:
++    """Incremental parser: feed raw chunks, receive completed events."""
++
++    def __init__(self) -> None:
++        self._buffer = ""
++        self._data_lines: List[str] = []
++        self._event_name = ""
++        self._event_id: Optional[str] = None
++
++    def feed(self, chunk: str) -> List[StreamEvent]:
++        """Consume raw text and return every event it completes."""
++        self._buffer += chunk
++        events: List[StreamEvent] = []
++        while True:
++            match_index = -1
++            separator_length = 0
++            for i in range(len(self._buffer)):
++                if self._buffer.startswith("\r\n", i):
++                    match_index, separator_length = i, 2
++                    break
++                if self._buffer[i] == "\n":
++                    match_index, separator_length = i, 1
++                    break
++                if self._buffer[i] == "\r":
++                    match_index, separator_length = i, 1
++                    break
++            if match_index == -1:
++                break
++            line = self._buffer[:match_index]
++            self._buffer = self._buffer[match_index + separator_length :]
++            event = self._consume_line(line)
++            if event is not None:
++                events.append(event)
++        return events
++
++    def finish(self) -> List[StreamEvent]:
++        """Flush trailing state at end-of-stream."""
++        event = self._flush_event()
++        self._buffer = ""
++        return [event] if event is not None else []
++
++    def _consume_line(self, line: str) -> Optional[StreamEvent]:
++        if line == "":
++            return self._flush_event()
++        if line.startswith(":"):
++            return None
++        if ":" in line:
++            field, _, value = line.partition(":")
++            if value.startswith(" "):
++                value = value[1:]
++        else:
++            field, value = line, ""
++        if field == "data":
++            self._data_lines.append(value)
++        elif field == "event":
++            self._event_name = value
++        elif field == "id":
++            self._event_id = value
++        return None
++
++    def _flush_event(self) -> Optional[StreamEvent]:
++        if not self._data_lines and not self._event_name:
++            return None
++        data = "\n".join(self._data_lines)
++        event = StreamEvent(
++            event=self._event_name or "message",
++            data=data,
++            id=self._event_id,
++            is_done=(data == "[DONE]"),
++        )
++        if data and not event.is_done:
++            try:
++                event.parsed = json.loads(data)
++            except ValueError:
++                event.parsed = None
++        self._data_lines = []
++        self._event_name = ""
++        self._event_id = None
++        return event
+diff --git a/sdk/tests/test_py_client.py b/sdk/tests/test_py_client.py
+new file mode 100644
+index 00000000..c9989ade
+--- /dev/null
++++ b/sdk/tests/test_py_client.py
+@@ -0,0 +1,203 @@
++"""Unit tests for the SupremeAI Python SDK against an in-process mock gateway.
++
++Stdlib only (unittest + http.server) per bridge test doctrine. Covers:
++header signing, run submission, 503 retry/backoff recovery, terminal
++GatewayError surfacing, SSE chunk re-assembly (sync), and the async
++streaming iterator.
++"""
++
++import asyncio
++import json
++import threading
++import unittest
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++
++import sys
++import os
++
++sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
++
++from supremeai import AsyncSupremeAIClient, GatewayError, SupremeAIClient  # noqa: E402
++from supremeai.sse_listener import SSEListener  # noqa: E402
++
++SSE_BODY = (
++    "event: token\n"
++    'data: {"type":"token","text":"He"}\n'
++    "\n"
++    "event: token\n"
++    'data: {"type":"token","text":"llo"}\n'
++    "\n"
++    "event: tool_call_delta\n"
++    'data: {"type":"tool_call_delta","delta":{"index":0,"id":"call_1","name":"get_weather"}}\n'
++    "\n"
++    "event: tool_call_delta\n"
++    'data: {"type":"tool_call_delta","delta":{"index":0,"argumentsFragment":"{\\"city\\":"}}\n'
++    "\n"
++    "event: tool_call_delta\n"
++    'data: {"type":"tool_call_delta","delta":{"index":0,"argumentsFragment":"\\"Dhaka\\"}"}}\n'
++    "\n"
++    "event: done\n"
++    'data: {"type":"done","finishReason":"stop"}\n'
++    "\n"
++    "data: [DONE]\n"
++    "\n"
++)
++
++
++class MockGateway(BaseHTTPRequestHandler):
++    """Deterministic mock of the Unified Gateway surface."""
++
++    server_version = "SupremeAIMock/1"
++
++    def log_message(self, *args):  # silence request logging
++        pass
++
++    def _send_json(self, status, payload):
++        body = json.dumps(payload).encode("utf-8")
++        self.send_response(status)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self.end_headers()
++        self.wfile.write(body)
++
++    def do_POST(self):
++        state = self.server.state  # type: ignore[attr-defined]
++        length = int(self.headers.get("Content-Length") or 0)
++        raw = self.rfile.read(length) if length else b"{}"
++        state["last_auth"] = self.headers.get("Authorization")
++        state["last_body"] = json.loads(raw.decode("utf-8") or "{}")
++        if self.path == "/v1/runs":
++            self._send_json(
++                201,
++                {"id": "run_123", "status": "queued", "task": state["last_body"].get("task", "")},
++            )
++        else:
++            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
++
++    def do_GET(self):
++        state = self.server.state  # type: ignore[attr-defined]
++        if self.path == "/v1/health":
++            self._send_json(200, {"ok": True})
++        elif self.path == "/v1/flaky":
++            with state["lock"]:
++                state["flaky_hits"] += 1
++                should_fail = state["flaky_hits"] <= 2
++            if should_fail:
++                self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "try again"})
++            else:
++                self._send_json(200, {"ok": True, "attempts": state["flaky_hits"]})
++        elif self.path == "/v1/always-503":
++            self._send_json(503, {"code": "UPSTREAM_BUSY", "message": "never recovers"})
++        elif self.path.endswith("/stream"):
++            body = SSE_BODY.encode("utf-8")
++            self.send_response(200)
++            self.send_header("Content-Type", "text/event-stream")
++            self.send_header("Content-Length", str(len(body)))
++            self.end_headers()
++            self.wfile.write(body)
++        else:
++            self._send_json(404, {"code": "NOT_FOUND", "message": "unknown path"})
++
++
++class MockGatewayServer(ThreadingHTTPServer):
++    daemon_threads = True
++
++    def __init__(self):
++        super().__init__(("127.0.0.1", 0), MockGateway)
++        self.state = {"lock": threading.Lock(), "flaky_hits": 0, "last_auth": None, "last_body": None}
++
++    @property
++    def base_url(self):
++        host, port = self.server_address[:2]
++        return "http://%s:%d" % (host, port)
++
++
++class TestSupremeAISDK(unittest.TestCase):
++    def setUp(self):
++        self.gateway = MockGatewayServer()
++        self.thread = threading.Thread(target=self.gateway.serve_forever, daemon=True)
++        self.thread.start()
++        self.client = SupremeAIClient(
++            base_url=self.gateway.base_url,
++            api_key="test-key-123",
++            max_retries=3,
++            backoff_floor=0.01,
++            timeout=5.0,
++        )
++
++    def tearDown(self):
++        self.gateway.shutdown()
++        self.gateway.server_close()
++
++    def test_header_signing_and_run_submission(self):
++        response = self.client.run_task("summarize", {"text": "hello"}, idempotency_key="abc")
++        self.assertEqual(response["id"], "run_123")
++        self.assertEqual(response["status"], "queued")
++        self.assertEqual(self.gateway.state["last_auth"], "Bearer test-key-123")
++        self.assertEqual(self.gateway.state["last_body"]["task"], "summarize")
++        self.assertEqual(self.gateway.state["last_body"]["idempotencyKey"], "abc")
++
++    def test_retry_backoff_succeeds_on_third_attempt(self):
++        response = self.client.request("GET", "/v1/flaky")
++        self.assertTrue(response["ok"])
++        self.assertEqual(response["attempts"], 3)
++        self.assertEqual(self.gateway.state["flaky_hits"], 3)
++
++    def test_gateway_error_after_max_retries(self):
++        with self.assertRaises(GatewayError) as ctx:
++            self.client.request("GET", "/v1/always-503")
++        error = ctx.exception
++        self.assertEqual(error.status, 503)
++        self.assertTrue(error.retryable)
++        self.assertEqual(error.code, "UPSTREAM_BUSY")
++
++    def test_sse_reassembly_sync(self):
++        tokens, done = [], None
++        tool = {"id": "", "name": "", "arguments": ""}
++        for event in self.client.stream_run("run_123"):
++            parsed = event.parsed or {}
++            if parsed.get("type") == "token":
++                tokens.append(parsed["text"])
++            elif parsed.get("type") == "tool_call_delta":
++                delta = parsed["delta"]
++                tool["id"] = delta.get("id") or tool["id"]
++                tool["name"] = delta.get("name") or tool["name"]
++                tool["arguments"] += delta.get("argumentsFragment", "")
++            elif parsed.get("type") == "done":
++                done = True
++                break
++        self.assertEqual("".join(tokens), "Hello")
++        self.assertEqual(tool["id"], "call_1")
++        self.assertEqual(tool["name"], "get_weather")
++        self.assertEqual(json.loads(tool["arguments"]), {"city": "Dhaka"})
++        self.assertTrue(done)
++
++    def test_sse_listener_multiline_and_finish(self):
++        listener = SSEListener()
++        events = listener.feed("event: message\nid: 42\ndata: line-one\n")
++        self.assertEqual(events, [])
++        events = listener.feed("data: line-two\n\n")
++        self.assertEqual(len(events), 1)
++        self.assertEqual(events[0].data, "line-one\nline-two")
++        self.assertEqual(events[0].id, "42")
++        self.assertEqual(listener.finish(), [])
++
++    def test_async_streaming_iterator(self):
++        async def collect():
++            async_client = AsyncSupremeAIClient(
++                base_url=self.gateway.base_url,
++                api_key="test-key-123",
++                timeout=5.0,
++            )
++            tokens = []
++            async for event in async_client.stream_run("run_123"):
++                parsed = event.parsed or {}
++                if parsed.get("type") == "token":
++                    tokens.append(parsed["text"])
++            return "".join(tokens)
++
++        self.assertEqual(asyncio.run(collect()), "Hello")
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)
+diff --git a/sdk/typescript/package.json b/sdk/typescript/package.json
+new file mode 100644
+index 00000000..6e8683d6
+--- /dev/null
++++ b/sdk/typescript/package.json
+@@ -0,0 +1,31 @@
++{
++  "name": "@supremeai/sdk",
++  "version": "0.1.0",
++  "description": "Official TypeScript client for the SupremeAI Unified Gateway: typed endpoints, SSE streaming, automatic failover retry.",
++  "license": "MIT",
++  "type": "module",
++  "main": "./src/client.ts",
++  "types": "./src/client.ts",
++  "exports": {
++    ".": "./src/client.ts",
++    "./streaming": "./src/streaming.ts",
++    "./types": "./src/types/generated.ts"
++  },
++  "engines": {
++    "node": ">=20"
++  },
++  "scripts": {
++    "typecheck": "tsc --noEmit",
++    "test": "node --test --experimental-strip-types test/test_ts_client.ts"
++  },
++  "keywords": [
++    "supremeai",
++    "gateway",
++    "sse",
++    "streaming",
++    "client"
++  ],
++  "files": [
++    "src"
++  ]
++}
+diff --git a/sdk/typescript/src/client.ts b/sdk/typescript/src/client.ts
+new file mode 100644
+index 00000000..41ed0132
+--- /dev/null
++++ b/sdk/typescript/src/client.ts
+@@ -0,0 +1,260 @@
++/**
++ * @supremeai/sdk — SupremeAI Unified Gateway client.
++ *
++ * Zero-dependency HTTP layer built on native fetch (Node 20+, Bun, Deno,
++ * Edge runtimes). Requests are signed with a bearer API key resolved from
++ * the caller-supplied option or the SUPREMEAI_API_KEY environment value.
++ * Transient gateway failures (502/503/504) are retried with exponential
++ * backoff and jitter before surfacing a GatewayError.
++ */
++
++import type {
++  GatewayErrorShape,
++  HealthResponse,
++  ModelInfo,
++  StreamEvent,
++  TaskRunRequest,
++  TaskRunResponse,
++} from './types/generated';
++import { SSEParser, streamRunEvents } from './streaming';
++
++export * from './types/generated';
++export { SSEParser, streamRunEvents } from './streaming';
++
++/** Status codes considered transient and safe to retry. */
++const RETRYABLE_STATUSES = new Set([502, 503, 504]);
++
++export class GatewayError extends Error {
++  readonly status: number;
++  readonly code: string;
++  readonly provider?: string;
++  readonly retryable: boolean;
++  readonly body?: unknown;
++
++  constructor(status: number, shape: Partial<GatewayErrorShape>, body?: unknown) {
++    super(shape.message || 'gateway request failed');
++    this.name = 'GatewayError';
++    this.status = status;
++    this.code = shape.code || 'GATEWAY_ERROR';
++    this.provider = shape.provider;
++    this.retryable = shape.retryable ?? RETRYABLE_STATUSES.has(status);
++    this.body = body;
++  }
++}
++
++export interface ClientOptions {
++  /** Gateway base, e.g. an env-driven value; falsy means same-origin paths. */
++  baseUrl?: string;
++  /** Bearer credential; falls back to the SUPREMEAI_API_KEY env value. */
++  apiKey?: string;
++  /** Max attempts per request (first call + retries). Default 3. */
++  maxRetries?: number;
++  /** Per-attempt fetch timeout in milliseconds. Default 30000. */
++  timeoutMs?: number;
++  /** Base backoff floor in milliseconds. Default 150. */
++  backoffMs?: number;
++  /** Extra headers merged into every request (after signing). */
++  defaultHeaders?: Record<string, string>;
++}
++
++export interface RequestOptions {
++  /** Abort signal propagated to the underlying fetch. */
++  signal?: AbortSignal;
++  headers?: Record<string, string>;
++}
++
++interface ResolvedConfig {
++  baseUrl: string;
++  apiKey: string;
++  maxRetries: number;
++  timeoutMs: number;
++  backoffMs: number;
++}
++
++function resolveConfig(options: ClientOptions = {}): ResolvedConfig {
++  const env =
++    typeof globalThis !== 'undefined'
++      ? (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
++      : undefined;
++  const baseUrl = (options.baseUrl ?? env?.SUPREMEAI_GATEWAY_URL ?? '').replace(/\/+$/, '');
++  const apiKey = options.apiKey ?? env?.SUPREMEAI_API_KEY ?? '';
++  return {
++    baseUrl,
++    apiKey,
++    maxRetries: options.maxRetries ?? 3,
++    timeoutMs: options.timeoutMs ?? 30000,
++    backoffMs: options.backoffMs ?? 150,
++  };
++}
++
++/** Exponential backoff with full jitter: floor + random(0 .. backoff * 2^attempt). */
++export function backoffDelay(attempt: number, backoffMs: number): number {
++  const ceiling = backoffMs * Math.pow(2, attempt);
++  return backoffMs + Math.floor(Math.random() * ceiling);
++}
++
++function sleep(ms: number, signal?: AbortSignal): Promise<void> {
++  return new Promise((resolve, reject) => {
++    if (signal?.aborted) {
++      reject(new Error('aborted'));
++      return;
++    }
++    const timer = setTimeout(resolve, ms);
++    signal?.addEventListener(
++      'abort',
++      () => {
++        clearTimeout(timer);
++        reject(new Error('aborted'));
++      },
++      { once: true },
++    );
++  });
++}
++
++/**
++ * Unified client for the SupremeAI gateway. One instance per process is
++ * sufficient; the class is stateless beyond configuration.
++ */
++export class SupremeAIClient {
++  private readonly config: ResolvedConfig;
++  private readonly defaultHeaders: Record<string, string>;
++
++  constructor(options: ClientOptions = {}) {
++    this.config = resolveConfig(options);
++    this.defaultHeaders = { ...(options.defaultHeaders ?? {}) };
++  }
++
++  /** Build signed headers; overrides win over defaults. */
++  private signedHeaders(extra?: Record<string, string>): Record<string, string> {
++    const headers: Record<string, string> = {
++      'content-type': 'application/json',
++      accept: 'application/json',
++      'x-client': 'supremeai-sdk-ts/0.1.0',
++      ...this.defaultHeaders,
++      ...(extra ?? {}),
++    };
++    if (this.config.apiKey) {
++      headers.authorization = 'Bearer ' + this.config.apiKey;
++    }
++    return headers;
++  }
++
++  private url(path: string): string {
++    return this.config.baseUrl + path;
++  }
++
++  /**
++   * Perform a signed JSON request with retry + exponential backoff on
++   * 502/503/504. Throws GatewayError for terminal failures.
++   */
++  async request<T>(
++    method: string,
++    path: string,
++    body?: unknown,
++    options: RequestOptions = {},
++  ): Promise<T> {
++    let lastError: GatewayError | undefined;
++    for (let attempt = 0; attempt < this.config.maxRetries; attempt++) {
++      if (attempt > 0) {
++        await sleep(backoffDelay(attempt - 1, this.config.backoffMs), options.signal);
++      }
++      const controller = new AbortController();
++      const timer = setTimeout(() => controller.abort(), this.config.timeoutMs);
++      const onOuterAbort = () => controller.abort();
++      options.signal?.addEventListener('abort', onOuterAbort, { once: true });
++      try {
++        const response = await fetch(this.url(path), {
++          method,
++          headers: this.signedHeaders(options.headers),
++          body: body === undefined ? undefined : JSON.stringify(body),
++          signal: controller.signal,
++        });
++        if (response.ok) {
++          if (response.status === 204) {
++            return undefined as T;
++          }
++          return (await response.json()) as T;
++        }
++        let shape: Partial<GatewayErrorShape> = {};
++        let raw: unknown;
++        try {
++          raw = await response.json();
++          if (raw && typeof raw === 'object') {
++            shape = raw as Partial<GatewayErrorShape>;
++          }
++        } catch {
++          raw = undefined;
++        }
++        const error = new GatewayError(response.status, shape, raw);
++        if (RETRYABLE_STATUSES.has(response.status) && attempt < this.config.maxRetries - 1) {
++          lastError = error;
++          continue;
++        }
++        throw error;
++      } catch (err) {
++        if (err instanceof GatewayError) {
++          if (attempt >= this.config.maxRetries - 1) throw err;
++          lastError = err;
++          continue;
++        }
++        throw err;
++      } finally {
++        clearTimeout(timer);
++        options.signal?.removeEventListener('abort', onOuterAbort);
++      }
++    }
++    throw lastError ?? new GatewayError(0, { code: 'UNREACHABLE', message: 'gateway unreachable' });
++  }
++
++  /** Submit a task run for execution. */
++  runTask(request: TaskRunRequest, options?: RequestOptions): Promise<TaskRunResponse> {
++    return this.request<TaskRunResponse>('POST', '/v1/runs', request, options);
++  }
++
++  /** Fetch a run's current state and trace. */
++  getRun(runId: string, options?: RequestOptions): Promise<TaskRunResponse> {
++    return this.request<TaskRunResponse>('GET', '/v1/runs/' + encodeURIComponent(runId), undefined, options);
++  }
++
++  /** List models available to the failover cascade. */
++  listModels(options?: RequestOptions): Promise<ModelInfo[]> {
++    return this.request<ModelInfo[]>('GET', '/v1/models', undefined, options);
++  }
++
++  /** Gateway health probe. */
++  health(options?: RequestOptions): Promise<HealthResponse> {
++    return this.request<HealthResponse>('GET', '/v1/health', undefined, options);
++  }
++
++  /**
++   * Open the SSE stream for a run and yield parsed events as an async
++   * iterable. The underlying fetch is not retried (streams are not
++   * idempotent); callers should resume via getRun on stream failure.
++   */
++  streamRun(runId: string, options?: RequestOptions): AsyncIterable<StreamEvent> {
++    const controller = new AbortController();
++    const onOuterAbort = () => controller.abort();
++    options?.signal?.addEventListener('abort', onOuterAbort, { once: true });
++    const start = async (): Promise<Response> => {
++      const response = await fetch(this.url('/v1/runs/' + encodeURIComponent(runId) + '/stream'), {
++        method: 'GET',
++        headers: this.signedHeaders({ accept: 'text/event-stream' }),
++        signal: controller.signal,
++      });
++      if (!response.ok || !response.body) {
++        let shape: Partial<GatewayErrorShape> = {};
++        try {
++          shape = (await response.json()) as Partial<GatewayErrorShape>;
++        } catch {
++          /* body not JSON — keep defaults */
++        }
++        throw new GatewayError(response.status, shape);
++      }
++      return response;
++    };
++    return streamRunEvents(() => start(), () => {
++      options?.signal?.removeEventListener('abort', onOuterAbort);
++      controller.abort();
++    });
++  }
++}
+diff --git a/sdk/typescript/src/streaming.ts b/sdk/typescript/src/streaming.ts
+new file mode 100644
+index 00000000..2dc60397
+--- /dev/null
++++ b/sdk/typescript/src/streaming.ts
+@@ -0,0 +1,178 @@
++/**
++ * @supremeai/sdk — SSE chunk parser and tool call re-assembly.
++ *
++ * Handles multi-line data fields, CRLF/LF line endings, interleaved
++ * id/event lines, and the [DONE] sentinel. Tool call deltas are stitched
++ * back into complete calls by index (id + name + concatenated argument
++ * fragments).
++ */
++
++import type { StreamEvent, ToolCallDelta } from './types/generated';
++
++export interface AssembledToolCall {
++  index: number;
++  id: string;
++  name: string;
++  arguments: string;
++}
++
++export class SSEParser {
++  private buffer = '';
++  private dataLines: string[] = [];
++  private eventName = '';
++  private eventId?: string;
++
++  /** Feed raw text; returns the events completed by this chunk. */
++  push(chunk: string): StreamEvent[] {
++    this.buffer += chunk;
++    const events: StreamEvent[] = [];
++    let newlineAt = this.buffer.search(/\r?\n/);
++    while (newlineAt !== -1) {
++      const line = this.buffer.slice(0, newlineAt);
++      this.buffer = this.buffer.slice(
++        newlineAt + (this.buffer[newlineAt] === '\r' && this.buffer[newlineAt + 1] === '\n' ? 2 : 1),
++      );
++      const emitted = this.consumeLine(line);
++      if (emitted) {
++        events.push(emitted);
++      }
++      newlineAt = this.buffer.search(/\r?\n/);
++    }
++    return events;
++  }
++
++  /** Flush any pending event at end-of-stream. */
++  finish(): StreamEvent[] {
++    const flushed = this.flushEvent();
++    this.buffer = '';
++    return flushed ? [flushed] : [];
++  }
++
++  private consumeLine(line: string): StreamEvent | undefined {
++    if (line === '') {
++      return this.flushEvent();
++    }
++    if (line.startsWith(':')) {
++      return undefined; // comment / keep-alive
++    }
++    const colon = line.indexOf(':');
++    const field = colon === -1 ? line : line.slice(0, colon);
++    let value = colon === -1 ? '' : line.slice(colon + 1);
++    if (value.startsWith(' ')) {
++      value = value.slice(1);
++    }
++    if (field === 'data') {
++      this.dataLines.push(value);
++    } else if (field === 'event') {
++      this.eventName = value;
++    } else if (field === 'id') {
++      this.eventId = value;
++    }
++    return undefined;
++  }
++
++  private flushEvent(): StreamEvent | undefined {
++    if (this.dataLines.length === 0 && this.eventName === '') {
++      return undefined;
++    }
++    const data = this.dataLines.join('\n');
++    const event: StreamEvent = {
++      event: this.eventName || 'message',
++      data,
++    };
++    if (this.eventId !== undefined) {
++      event.id = this.eventId;
++    }
++    if (data !== '[DONE]') {
++      try {
++        event.parsed = JSON.parse(data);
++      } catch {
++        /* non-JSON data — parsed stays undefined */
++      }
++    }
++    this.dataLines = [];
++    this.eventName = '';
++    this.eventId = undefined;
++    return event;
++  }
++}
++
++/** Accumulator stitching ToolCallDelta fragments into complete calls. */
++export class ToolCallAssembler {
++  private readonly partials = new Map<number, AssembledToolCall>();
++
++  add(delta: ToolCallDelta): AssembledToolCall | undefined {
++    const current =
++      this.partials.get(delta.index) ??
++      { index: delta.index, id: '', name: '', arguments: '' };
++    if (delta.id) {
++      current.id = delta.id;
++    }
++    if (delta.name) {
++      current.name = delta.name;
++    }
++    if (delta.argumentsFragment) {
++      current.arguments += delta.argumentsFragment;
++    }
++    this.partials.set(delta.index, current);
++    return current;
++  }
++
++  /** Snapshot of assembled calls; argument JSON validity is caller-checked. */
++  list(): AssembledToolCall[] {
++    return [...this.partials.values()].sort((a, b) => a.index - b.index);
++  }
++}
++
++type ResponseFactory = () => Promise<Response>;
++
++/**
++ * Bridge a fetch Response SSE body into an async iterable of parsed
++ * StreamEvents. disposer() is invoked when iteration ends or throws.
++ */
++export async function* streamRunEvents(
++  start: ResponseFactory,
++  disposer?: () => void,
++): AsyncIterable<StreamEvent> {
++  const response = await start();
++  if (!response.body) {
++    disposer?.();
++    return;
++  }
++  const parser = new SSEParser();
++  const reader = response.body.getReader();
++  const decoder = new TextDecoder();
++  try {
++    for (;;) {
++      const { done, value } = await reader.read();
++      if (done) {
++        break;
++      }
++      for (const event of parser.push(decoder.decode(value, { stream: true }))) {
++        if (event.data === '[DONE]') {
++          return;
++        }
++        yield event;
++      }
++    }
++    for (const event of parser.push(decoder.decode())) {
++      if (event.data === '[DONE]') {
++        return;
++      }
++      yield event;
++    }
++    for (const event of parser.finish()) {
++      if (event.data === '[DONE]') {
++        return;
++      }
++      yield event;
++    }
++  } finally {
++    try {
++      reader.releaseLock();
++    } catch {
++      /* reader already closed */
++    }
++    disposer?.();
++  }
++}
+diff --git a/sdk/typescript/src/types/generated.ts b/sdk/typescript/src/types/generated.ts
+new file mode 100644
+index 00000000..a71db2fb
+--- /dev/null
++++ b/sdk/typescript/src/types/generated.ts
+@@ -0,0 +1,104 @@
++/**
++ * @supremeai/sdk — OpenAPI 3.1 derived contract types.
++ *
++ * Source of truth: api-schemas/gateway.openapi.yaml (supremeai-open).
++ * Regenerate during releases via the OpenAPI sync workflow; do not edit
++ * by hand for breaking changes — propose schema PRs instead.
++ */
++
++/** Unified task submission accepted by the gateway run endpoint. */
++export interface TaskRunRequest {
++  /** Logical skill or pipeline identifier to execute. */
++  task: string;
++  /** Free-form payload consumed by the executing agent. */
++  input?: Record<string, unknown>;
++  /** Preferred model id; gateway may fail over per its cascade policy. */
++  model?: string;
++  /** Stable idempotency key for safe retries. */
++  idempotencyKey?: string;
++  /** Optional key/value metadata echoed back on the run. */
++  metadata?: Record<string, string>;
++}
++
++export type RunStatus =
++  | 'queued'
++  | 'planning'
++  | 'executing'
++  | 'streaming'
++  | 'succeeded'
++  | 'failed'
++  | 'cancelled';
++
++/** A single atomic step inside a run's execution trace. */
++export interface TraceStep {
++  index: number;
++  kind: 'plan' | 'tool_call' | 'observation' | 'token' | 'summary';
++  label?: string;
++  payload?: unknown;
++  startedAt?: string;
++  finishedAt?: string;
++}
++
++export interface TaskRunResponse {
++  id: string;
++  status: RunStatus;
++  task: string;
++  createdAt: string;
++  updatedAt: string;
++  steps?: TraceStep[];
++  result?: unknown;
++  error?: GatewayErrorShape;
++}
++
++export interface ModelInfo {
++  id: string;
++  provider: string;
++  contextWindow?: number;
++  /** Ordered preference for the failover cascade; lower wins. */
++  priority?: number;
++  healthy?: boolean;
++}
++
++export interface HealthResponse {
++  ok: boolean;
++  version?: string;
++  uptimeSeconds?: number;
++  satellites?: Record<string, { healthy: boolean; latencyMs?: number }>;
++}
++
++/** Normalized gateway error body. */
++export interface GatewayErrorShape {
++  code: string;
++  message: string;
++  /** Which upstream model/provider produced the failure, if any. */
++  provider?: string;
++  retryable?: boolean;
++  details?: unknown;
++}
++
++/** Streaming deltas for incremental tool call assembly. */
++export interface ToolCallDelta {
++  index: number;
++  id?: string;
++  name?: string;
++  /** Partial JSON text; concatenate across deltas then JSON.parse. */
++  argumentsFragment?: string;
++}
++
++/** Server-sent event payloads emitted on a run stream. */
++export type StreamEventData =
++  | { type: 'token'; text: string }
++  | { type: 'tool_call_delta'; delta: ToolCallDelta }
++  | { type: 'run_status'; status: RunStatus; runId?: string }
++  | { type: 'error'; error: GatewayErrorShape }
++  | { type: 'done'; finishReason?: string };
++
++/** Envelope produced by the SSE parser. */
++export interface StreamEvent {
++  event: string;
++  /** Raw data line payload (joined across continuation lines). */
++  data: string;
++  id?: string;
++  /** Parsed convenience view; undefined when data is not valid JSON. */
++  parsed?: StreamEventData;
++}
+diff --git a/tests/test_sdk_foundation.py b/tests/test_sdk_foundation.py
+new file mode 100644
+index 00000000..29805d97
+--- /dev/null
++++ b/tests/test_sdk_foundation.py
+@@ -0,0 +1,28 @@
++"""tests/test_sdk_foundation.py — 3-tier verification (tier 3, unit).
++
++Imports and executes the SupremeAI multi-language client SDK test battery
++at sdk/tests/test_py_client.py against an in-process threaded mock gateway.
++Covers: bearer signing, run submission, transient retry recovery (HTTP 503),
++terminal GatewayError surfacing, SSE chunk re-assembly, and async iterator.
++"""
++
++from __future__ import annotations
++
++import os
++import sys
++import unittest
++
++REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++sys.path.insert(0, REPO_ROOT)
++sys.path.insert(0, os.path.join(REPO_ROOT, "sdk", "python"))
++
++from sdk.tests.test_py_client import (  # noqa: E402
++    MockGateway,
++    MockGatewayServer,
++    TestSupremeAISDK,
++)
++
++__all__ = ["MockGateway", "MockGatewayServer", "TestSupremeAISDK"]
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_self_healing_reporter.py b/tests/test_self_healing_reporter.py
+index 00e77455..ba30f40b 100644
+--- a/tests/test_self_healing_reporter.py
++++ b/tests/test_self_healing_reporter.py
+@@ -28,7 +28,15 @@
+     if p not in sys.path:
+         sys.path.insert(0, p)
+ 
+-import self_healing_reporter as shr  # noqa: E402
++def _load_reporter_module():
++    spec = importlib.util.spec_from_file_location(
++        "agents_self_healing_reporter", AGENTS_DIR / "self_healing_reporter.py")
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++shr = _load_reporter_module()
+ 
+ 
+ def _load_loop_module():

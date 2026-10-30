@@ -1,0 +1,16 @@
+diff --git a/README.md b/README.md
+index 434fe985..550f2668 100644
+--- a/README.md
++++ b/README.md
+@@ -16,9 +16,9 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ >
+ > **MCP Tower call conventions (avoid argument/format errors):**
+ > - Tool names are **wave-split** (2026-10-29/30 rename waves, #2493): the core github + bridge queue/order tools are **dotted** (`github.read_file`, `github.list_prs`, `github.workflow_runs`, `bridge.work_queue`, `bridge.work_order`) — their old snake_case forms are dead (-32602). The external-repo explorer family (`github_repo_tree`, `github_search_repos`, ...) and the claim/feedback family (`work_claim`, `bridge_read_feedback`, `bridge_work_renew`, `bridge_work_release`) stay **snake_case**. Never guess: probe `tools/list` first.
+-> - Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference".
++> - Repo references must be **`owner/repo`** (e.g. `Supremeai-bd/supremeai-open`); a bare repo name returns "Invalid repo reference". On repo-resolving list tools pass `repo` explicitly — the omit-repo default resolves through the account registry and has silently drifted before (R66/#2447); every response echoes the resolved target as `targetRepo`/`targetUrl`, so verify it.
+ > - Use the correct tool name + `owner/repo` form or the call fails.
+-> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge.work_order`/`bridge_read_feedback` require `number` (issue number).
++> - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`); pass `originalIssueNumber` so the root issue auto-closes on merge, and `closesOriginalIssue: true` only when a docs-only payload **IS** the resolution of that issue (receipt-closure convention #2485, `contract.receiptClosureConvention` in `bridge_guide`; default keeps the WO open via `Refs #N`). `work_claim` requires `issueNumber` (integer). `bridge.work_order`/`bridge_read_feedback` require `number` (issue number).
+ 
+ ## 📐 Federation Architecture & Mathematical Repository Model
+ 

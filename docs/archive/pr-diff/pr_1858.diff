@@ -1,0 +1,63 @@
+diff --git a/vscode/desktop/tsconfig.json b/vscode/desktop/tsconfig.json
+index 17701b86..4eb37fee 100644
+--- a/vscode/desktop/tsconfig.json
++++ b/vscode/desktop/tsconfig.json
+@@ -1,15 +1,3 @@
+ {
+-  "compilerOptions": {
+-    "target": "ES2020",
+-    "module": "ESNext",
+-    "moduleResolution": "bundler",
+-    "strict": true,
+-    "esModuleInterop": true,
+-    "skipLibCheck": true,
+-    "jsx": "react-jsx",
+-    "rootDir": "src",
+-    "outDir": "dist",
+-    "noEmit": false
+-  },
+-  "include": ["src"]
++  "extends": "../tsconfig.base.json"
+ }
+diff --git a/vscode/mobile/tsconfig.json b/vscode/mobile/tsconfig.json
+index 17701b86..4eb37fee 100644
+--- a/vscode/mobile/tsconfig.json
++++ b/vscode/mobile/tsconfig.json
+@@ -1,15 +1,3 @@
+ {
+-  "compilerOptions": {
+-    "target": "ES2020",
+-    "module": "ESNext",
+-    "moduleResolution": "bundler",
+-    "strict": true,
+-    "esModuleInterop": true,
+-    "skipLibCheck": true,
+-    "jsx": "react-jsx",
+-    "rootDir": "src",
+-    "outDir": "dist",
+-    "noEmit": false
+-  },
+-  "include": ["src"]
++  "extends": "../tsconfig.base.json"
+ }
+diff --git a/vscode/tsconfig.base.json b/vscode/tsconfig.base.json
+new file mode 100644
+index 00000000..17701b86
+--- /dev/null
++++ b/vscode/tsconfig.base.json
+@@ -0,0 +1,15 @@
++{
++  "compilerOptions": {
++    "target": "ES2020",
++    "module": "ESNext",
++    "moduleResolution": "bundler",
++    "strict": true,
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "jsx": "react-jsx",
++    "rootDir": "src",
++    "outDir": "dist",
++    "noEmit": false
++  },
++  "include": ["src"]
++}

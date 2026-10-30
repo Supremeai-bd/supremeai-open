@@ -1,0 +1,593 @@
+diff --git a/gateway/service/app.py b/gateway/service/app.py
+index 969aea7f..baa689ee 100644
+--- a/gateway/service/app.py
++++ b/gateway/service/app.py
+@@ -14,7 +14,9 @@
+ 
+ import logging
+ import os
++import socket
+ import time
++import asyncio
+ from collections import deque
+ from datetime import datetime, timezone
+ from typing import Optional, Tuple
+@@ -33,6 +35,7 @@
+         PROVIDER_CONFIGS,
+         forward_chat_completion,
+         forward_stealth_webhook,
++        normalize_stealth_url,
+     )
+     from service.providers.web_session import web_bridge
+     from service.telegram_webhook import telegram_router
+@@ -51,6 +54,7 @@ def verify_key(key: str) -> dict | None:  # type: ignore[no-redef]
+             PROVIDER_CONFIGS,
+             forward_chat_completion,
+             forward_stealth_webhook,
++            normalize_stealth_url,
+         )
+     except ImportError:
+         try:
+@@ -58,6 +62,7 @@ def verify_key(key: str) -> dict | None:  # type: ignore[no-redef]
+                 PROVIDER_CONFIGS,
+                 forward_chat_completion,
+                 forward_stealth_webhook,
++                normalize_stealth_url,
+             )
+         except ImportError:
+             PROVIDER_CONFIGS = {}  # type: ignore[assignment]
+@@ -65,6 +70,8 @@ def forward_chat_completion(*a, **k):  # type: ignore[no-redef]
+                 return 503, {"error": "adapters unavailable"}
+             def forward_stealth_webhook(*a, **k):  # type: ignore[no-redef]
+                 return 503, {"error": "adapters unavailable"}
++            def normalize_stealth_url(url: str) -> str:  # type: ignore[no-redef]
++                return ""
+     try:
+         from gateway.service.providers.web_session import web_bridge
+     except ImportError:
+@@ -237,12 +244,74 @@ def _verify_client_auth(request: Request, x_supremeai_key: Optional[str] = None)
+ 
+ # ── Liveness & Readiness Probes ──────────────────────────────────────────────
+ 
++# Stealth relay DNS capability state (cached, TTL-refreshed). Oct-23 lesson:
++# chat_ready used to mean "the env var is non-empty", so the gateway reported
++# ready for DAYS while the configured hostname failed DNS ([Errno -2]) and every
++# chat reply died in 0.1s. /readyz now verifies the configured host actually
++# resolves before declaring capability; /health exposes the same state without
++# ever failing (liveness semantics unchanged).
++_STEALTH_DNS_TTL_SECONDS = float(os.getenv("STEALTH_DNS_CHECK_TTL", "60"))
++_stealth_dns_state: dict = {"ok": None, "checked_at": 0.0, "detail": "not checked yet"}
++
++
++def _stealth_target_host() -> str:
++    """Hostname of the normalized STEALTH_WEBHOOK_URL ('' when unconfigured)."""
++    if not STEALTH_WEBHOOK_URL:
++        return ""
++    try:
++        from urllib.parse import urlsplit
++        normalized = normalize_stealth_url(STEALTH_WEBHOOK_URL)
++        if not normalized:
++            return ""
++        host = urlsplit(normalized if "://" in normalized else "http://" + normalized).hostname or ""
++        return host
++    except Exception:  # noqa: BLE001 — probe must never crash the caller
++        return ""
++
++
++async def _stealth_dns_snapshot(force: bool = False) -> dict:
++    """TTL-cached DNS reachability verdict for the configured relay host.
++
++    getaddrinfo runs in the default executor (never blocks the loop) and is
++    bounded by wait_for so a broken resolver cannot stall /readyz.
++    """
++    host = _stealth_target_host()
++    now = time.time()
++    if not host:
++        return {"ok": None, "checked_at": 0.0, "detail": "STEALTH_WEBHOOK_URL not configured"}
++    if not force and _stealth_dns_state["checked_at"] and (now - _stealth_dns_state["checked_at"]) < _STEALTH_DNS_TTL_SECONDS:
++        return dict(_stealth_dns_state)
++    loop = asyncio.get_running_loop()
++
++    def _short(h: str) -> str:
++        parts = h.split(".")
++        return f"{h[:4]}…{'.'.join(parts[-2:])}" if "." in h else h
++
++    try:
++        infos = await asyncio.wait_for(
++            loop.run_in_executor(None, lambda: socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)),
++            timeout=4.0,
++        )
++        _stealth_dns_state.update(ok=True, checked_at=now, detail=f"resolved {len(infos)} addr(s) for {_short(host)}")
++    except asyncio.TimeoutError:
++        _stealth_dns_state.update(ok=False, checked_at=now, detail="DNS lookup timed out (possible resolver outage)")
++    except socket.gaierror as exc:
++        _stealth_dns_state.update(ok=False, checked_at=now, detail=f"host {_short(host)} does not resolve ({exc}) — fix Infisical STEALTH_WEBHOOK_URL")
++    except Exception as exc:  # noqa: BLE001
++        _stealth_dns_state.update(ok=False, checked_at=now, detail=f"DNS probe error: {exc}")
++    return dict(_stealth_dns_state)
++
++
+ @app.get("/")
+ @app.get("/health")
+ @app.get("/healthz")
+ async def health_check():
+     """Unauthenticated liveness probe. Always 200 OK when service is running."""
+     telemetry = squad.stats() if squad else {"total_keys": 0, "total_healthy_keys": 0, "providers": {}}
++    try:
++        stealth_dns = await _stealth_dns_snapshot()
++    except Exception:  # noqa: BLE001 — liveness must never fail because of a probe
++        stealth_dns = {"ok": None, "checked_at": 0.0, "detail": "probe error"}
+     return {
+         "status": "healthy",
+         "service_name": "supremeai-api",
+@@ -252,6 +321,7 @@ async def health_check():
+         "total_healthy_keys": telemetry["total_healthy_keys"],
+         "chat_ready": bool(STEALTH_WEBHOOK_URL),
+         "stealth_priority1_configured": bool(STEALTH_WEBHOOK_URL),
++        "stealth_dns": stealth_dns,
+         "web_sessions_active": bool(web_bridge and web_bridge.has_active_accounts),
+         "web_session_status": web_bridge.status() if web_bridge else {},
+         "telegram_webhook_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+@@ -264,14 +334,36 @@ async def health_check():
+ @app.get("/readyz")
+ async def readiness_check():
+     """Capability probe (distinct from liveness): 200 only when a chat reply path
+-    is configured. Monitors should target /readyz — /health alone cannot detect a
+-    relay outage because API fallback is disabled by mandate (single reply path)."""
++    is configured AND its host resolves. Monitors should target /readyz — /health
++    alone cannot detect a relay outage because API fallback is disabled by mandate
++    (single reply path). A configured-but-unresolvable host (the Oct-23 failure:
++    [Errno -2] on every chat call while /health reported healthy) now fails this
++    probe loudly with the masked host + fix hint instead of reporting ready."""
++    timestamp = datetime.now(timezone.utc).isoformat()
+     if STEALTH_WEBHOOK_URL:
++        stealth_dns = await _stealth_dns_snapshot()
++        if stealth_dns.get("ok") is False:
++            return JSONResponse(
++                status_code=503,
++                content={
++                    "status": "degraded",
++                    "chat_ready": False,
++                    "stealth_priority1_configured": True,
++                    "stealth_dns": stealth_dns,
++                    "reason": (
++                        f"STEALTH_WEBHOOK_URL host does not resolve ({stealth_dns.get('detail')}). "
++                        "Chat cannot reply (webhook-only mandate): fix the Infisical value to a live "
++                        "OpenAI-compatible /v1/chat/completions relay."
++                    ),
++                    "timestamp": timestamp,
++                },
++            )
+         return {
+             "status": "ready",
+             "chat_ready": True,
+             "stealth_priority1_configured": True,
+-            "timestamp": datetime.now(timezone.utc).isoformat(),
++            "stealth_dns": stealth_dns,
++            "timestamp": timestamp,
+         }
+     return JSONResponse(
+         status_code=503,
+@@ -279,7 +371,7 @@ async def readiness_check():
+             "status": "degraded",
+             "chat_ready": False,
+             "reason": "STEALTH_WEBHOOK_URL not configured — no chat reply path (API fallback disabled per mandate)",
+-            "timestamp": datetime.now(timezone.utc).isoformat(),
++            "timestamp": timestamp,
+         },
+     )
+ 
+diff --git a/gateway/service/providers/adapters.py b/gateway/service/providers/adapters.py
+index 6f1ae93c..6bf7fdf2 100644
+--- a/gateway/service/providers/adapters.py
++++ b/gateway/service/providers/adapters.py
+@@ -15,10 +15,36 @@
+ import os
+ import time
+ from typing import Any, Dict, Optional, Tuple
++from urllib.parse import urlsplit
+ import httpx
+ 
+ logger = logging.getLogger("supremeai.adapters")
+ 
++# One-shot config-defect warnings: keyed by defect signature so a hot request
++# path never spams the log, but every distinct misconfiguration surfaces loudly
++# exactly once per process (DNS ENOTFOUND storms are otherwise undiagnosable).
++_stealth_warned: set = set()
++
++
++def _mask_host(url: str) -> str:
++    """Host-only view of a webhook URL, safe for logs and API error bodies.
++
++    Strips scheme, userinfo, path and query (a relay URL may embed a token in
++    its path/query — never echo those back to anonymous callers). The hostname
++    itself is additionally truncated so even infra names stay partially masked:
++    supremeai-worker.paykaribazaronline.workers.dev -> supr….workers.dev
++    """
++    try:
++        host = urlsplit(url if "://" in url else "http://" + url).hostname or ""
++    except ValueError:
++        host = ""
++    if not host:
++        return "(unparseable-host)"
++    labels = host.split(".")
++    tail = ".".join(labels[-2:]) if len(labels) >= 2 else host
++    return f"{host[:4]}…{tail}" if len(host) > 12 else host
++
++
+ PROVIDER_CONFIGS: Dict[str, Dict[str, Any]] = {
+     "gemini": {
+         "base_url": os.getenv("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai"),
+@@ -106,14 +132,57 @@ def normalize_stealth_url(url: str) -> str:
+     """
+     Ensure the webhook URL targets the exact synchronous OpenAI-compatible endpoint
+     (/v1/chat/completions) instead of base domains, /mcp, or /dispatch.
++
++    Config-defect hardening (root cause of the Oct-23 "relay offline" outage:
++    STEALTH_WEBHOOK_URL held a value whose host failed DNS with [Errno -2]):
++    - strip env-quoting accidents (value wrapped in "..." or '...')
++    - collapse internal whitespace (never valid in a URL)
++    - repair doubled scheme (https://https://… -> host parsed as "https" -> ENOTFOUND)
++    - one-shot CRITICAL warnings for hosts that cannot possibly work:
++      underscore in host (getaddrinfo fails) and workers.dev APEX
++      (a worker URL is always <name>.<account-subdomain>.workers.dev — the apex
++      does not resolve; verified by DNS probe during the outage diagnosis).
+     """
+     raw = url.strip()
+     if not raw:
+         return ""
++    while len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("\"", "'"):
++        raw = raw[1:-1].strip()
++    if not raw:
++        return ""
++    if any(ch.isspace() for ch in raw):
++        raw = "".join(raw.split())
++    _low = raw.lower()
++    for _dbl in ("https://https://", "https://http://", "http://https://", "http://http://"):
++        if _low.startswith(_dbl):
++            raw = raw.split("://", 1)[1]
++            break
+     full = raw if "://" in raw else "http://" + raw
+     base = full.split("?", 1)[0].rstrip("/")
+     query = ("?" + full.split("?", 1)[1]) if "?" in full else ""
+ 
++    # One-shot diagnostics for values that will fail DNS regardless of network
++    try:
++        _host = urlsplit(base).hostname or ""
++    except ValueError:
++        _host = ""
++    if _host:
++        if "_" in _host and ("bad-host" + _host) not in _stealth_warned:
++            _stealth_warned.add("bad-host" + _host)
++            logger.critical(
++                "STEALTH_WEBHOOK_URL host '%s' contains '_' — getaddrinfo() will fail "
++                "with [Errno -2]. Fix the Infisical value (underscore hosts are not DNS-resolvable).",
++                _mask_host(base),
++            )
++        _labels = _host.split(".")
++        if _host.endswith(".workers.dev") and len(_labels) <= 3 and ("apex" + _host) not in _stealth_warned:
++            _stealth_warned.add("apex" + _host)
++            logger.critical(
++                "STEALTH_WEBHOOK_URL host '%s' is the workers.dev APEX (does not resolve). "
++                "A worker URL is always <worker-name>.<account-subdomain>.workers.dev.",
++                _mask_host(base),
++            )
++
+     # Strip incompatible non-chat suffixes
+     if base.endswith(("/api/chat", "/chat", "/dispatch", "/mcp", "/webhook/telegram")):
+         base = base.rsplit("/", 1)[0].rstrip("/")
+@@ -287,5 +356,18 @@ async def forward_stealth_webhook(
+             logger.warning(f"Stealth webhook timed out after {timeout}s")
+             return 504, {"error": "Stealth webhook timed out"}
+         except httpx.RequestError as exc:
+-            logger.warning(f"Stealth webhook connection error: {exc}")
+-            return 502, {"error": f"Stealth webhook connection error: {str(exc)}"}
++            # DNS/connect failures used to be indistinguishable from a dead
++            # upstream (the Oct-23 outage produced only "connection error" with
++            # zero host context, blocking diagnosis). Surface the masked host +
++            # failure class so ops can act from the log line or the 502 body alone.
++            _host = _mask_host(target_url)
++            _exc_text = str(exc)
++            _errno = "dns" if any(sig in _exc_text for sig in ("Name or service not known", "Temporary failure in name resolution", "No address associated", "nodename nor servname")) else ("refused" if "Connection refused" in _exc_text else "connect")
++            logger.warning(
++                "Stealth webhook connection error for host=%s class=%s: %s "
++                "(check Infisical STEALTH_WEBHOOK_URL value: quotes/typo/apex/dead hostname)",
++                _host,
++                _errno,
++                _exc_text,
++            )
++            return 502, {"error": f"Stealth webhook connection error for host {_host} ({_errno}): {_exc_text}", "host": _host, "reason": _errno}
+diff --git a/gateway/tests/test_stealth_dns_guards.py b/gateway/tests/test_stealth_dns_guards.py
+new file mode 100644
+index 00000000..82cffc37
+--- /dev/null
++++ b/gateway/tests/test_stealth_dns_guards.py
+@@ -0,0 +1,288 @@
++"""
++tests/test_stealth_dns_guards.py — guards for the Oct-23 stealth-relay outage class.
++
++Outage signature: STEALTH_WEBHOOK_URL held a value whose hostname failed DNS
++([Errno -2] Name or service not known) — every chat reply died in ~0.1s while
++/health + /readyz reported healthy/ready (they only checked env-var presence),
++and neither logs nor the 502 body identified the broken host. Guest chat fell
++back to the flat "Webhook relay is currently offline or unreachable." line with
++no diagnostic context.
++
++Guards (dual-mode: pytest OR plain `python3 test_stealth_dns_guards.py`):
++  G1  normalize_stealth_url strips env-quoting accidents (\"...\" / '...')
++  G2  normalize_stealth_url collapses internal whitespace
++  G3  normalize_stealth_url repairs doubled scheme (https://https:// -> ENOTFOUND host 'https')
++  G4  normalize_stealth_url legacy behaviors pinned (/mcp, /chat, /v1, query, schemeless)
++  G5  _mask_host strips userinfo/path/query and truncates the host
++  G6  forward_stealth_webhook on DNS ConnectError -> 502 with masked host + reason=dns
++  G7  forward_stealth_webhook refused connection -> reason=refused (class split)
++  G8  reply-wrapping path still works and emits exactly one \"id\" key (P3 pin)
++  G9  workers.dev APEX config raises a one-shot CRITICAL log
++  G10 /readyz -> 503 with fix hint when configured host does not resolve
++  G11 /readyz -> 200 ready when DNS ok; /readyz -> 503 when unconfigured
++  G12 /health stays 200 (liveness) and exposes stealth_dns block
++Run layouts: satellite (service.*) — mirrors gateway/service.* byte-for-byte.
++"""
++from __future__ import annotations
++
++import asyncio
++import logging
++import os
++import sys
++from typing import Any, Dict
++
++BASE = os.path.dirname(os.path.abspath(__file__))
++SAT = os.path.abspath(os.path.join(BASE, ".."))
++if SAT not in sys.path:
++    sys.path.insert(0, SAT)
++
++import httpx  # noqa: E402
++
++RESULTS: list = []
++
++
++def check(name: str, cond: bool, evidence: str = "") -> None:
++    RESULTS.append((name, bool(cond), evidence))
++    print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" — {evidence}" if evidence and not cond else ""))
++
++
++# ── Import target modules (satellite layout) ────────────────────────────────
++os.environ["STEALTH_WEBHOOK_URL"] = "https://dead-host.invalid/v1/chat/completions"
++from service.providers import adapters as ad  # noqa: E402
++import service.app as appmod  # noqa: E402
++
++
++# ── G1..G4 normalize_stealth_url ────────────────────────────────────────────
++def test_normalize() -> None:
++    print("G1..G4 normalize_stealth_url")
++    check("G1 double-quoted env value unquoted",
++          ad.normalize_stealth_url('"https://relay.example.com"') == "https://relay.example.com/v1/chat/completions")
++    check("G1b single-quoted env value unquoted",
++          ad.normalize_stealth_url("'https://relay.example.com'").startswith("https://relay.example.com/v1/chat/completions"))
++    check("G2 internal whitespace collapsed (ENOTFOUND 'relay example')",
++          ad.normalize_stealth_url("https://relay example.com") == "https://relayexample.com/v1/chat/completions")
++    check("G3 doubled scheme repaired (host would be 'https')",
++          ad.normalize_stealth_url("https://https://relay.example.com") == "https://relay.example.com/v1/chat/completions")
++    check("G4a /mcp suffix stripped",
++          ad.normalize_stealth_url("https://x.example.com/mcp") == "https://x.example.com/v1/chat/completions")
++    check("G4b /chat suffix stripped",
++          ad.normalize_stealth_url("https://x.example.com/chat").endswith("/v1/chat/completions"))
++    check("G4c /v1 extended not duplicated",
++          ad.normalize_stealth_url("https://x.example.com/v1") == "https://x.example.com/v1/chat/completions")
++    check("G4d query preserved",
++          ad.normalize_stealth_url("https://x.example.com?k=1") == "https://x.example.com/v1/chat/completions?k=1")
++    check("G4e schemeless host gets http:// + endpoint",
++          ad.normalize_stealth_url("x.example.com") == "http://x.example.com/v1/chat/completions")
++    check("G4f clean URL unchanged",
++          ad.normalize_stealth_url("https://x.example.com/v1/chat/completions") == "https://x.example.com/v1/chat/completions")
++    check("G4g empty -> empty",
++          ad.normalize_stealth_url("   ") == "")
++
++
++# ── G5 _mask_host ───────────────────────────────────────────────────────────
++def test_mask_host() -> None:
++    print("G5 _mask_host")
++    masked = ad._mask_host("https://user:tok@supremeai-worker.paykaribazaronline.workers.dev/v1/chat/completions?x=1")
++    check("G5a userinfo/path/query stripped, host truncated", masked == "supr…workers.dev" and "tok" not in masked and "chat" not in masked, f"got {masked!r}")
++    check("G5b short host kept readable", ad._mask_host("https://x.com/v1") == "x.com")
++    check("G5c unparseable safe fallback", ad._mask_host("http://") == "(unparseable-host)")
++
++
++# ── Fake transport for forwarder tests ──────────────────────────────────────
++class _FakeResponse:
++    def __init__(self, status_code: int, data: Any) -> None:
++        self.status_code = status_code
++        self._data = data
++
++    def json(self) -> Any:
++        return self._data
++
++    @property
++    def text(self) -> str:
++        return str(self._data)
++
++
++class _FakeClientFactory:
++    def __init__(self, behavior: str) -> None:
++        self._behavior = behavior
++        self.last_call: Dict[str, Any] = {}
++
++    def __call__(self, *a: Any, **k: Any) -> "_FakeClient":
++        return _FakeClient(self._behavior, self.last_call)
++
++
++class _FakeClient:
++    def __init__(self, behavior: str, last_call: Dict[str, Any]) -> None:
++        self._behavior = behavior
++        self._last_call = last_call
++
++    async def __aenter__(self) -> "_FakeClient":
++        return self
++
++    async def __aexit__(self, *a: Any) -> None:
++        return None
++
++    async def post(self, url: str, **k: Any) -> Any:
++        self._last_call["url"] = url
++        self._last_call.update(k)
++        if self._behavior == "dns":
++            raise httpx.ConnectError("[Errno -2] Name or service not known")
++        if self._behavior == "refused":
++            raise httpx.ConnectError("[Errno 111] Connection refused")
++        return _FakeResponse(200, {"reply": "hello from relay"})
++
++
++def test_forwarder() -> None:
++    print("G6..G8 forward_stealth_webhook")
++    real_client = httpx.AsyncClient
++    try:
++        factory = _FakeClientFactory("dns")
++        ad.httpx.AsyncClient = factory  # type: ignore[assignment]
++        status, body = asyncio.run(ad.forward_stealth_webhook("https://deadrelay.example.com", None, {"model": "m", "messages": []}))
++        check("G6a DNS failure -> 502", status == 502)
++        check("G6b error carries masked host", "dead…" in str(body.get("error", "")) or "deadr" in str(body.get("error", "")), str(body)[:120])
++        check("G6c structured host field", isinstance(body.get("host"), str) and "example.com" in body["host"], str(body.get("host")))
++        check("G6d classified as dns", body.get("reason") == "dns")
++        check("G6e target normalized to /v1/chat/completions", factory.last_call.get("url", "").endswith("/v1/chat/completions"), str(factory.last_call.get("url")))
++
++        factory2 = _FakeClientFactory("refused")
++        ad.httpx.AsyncClient = factory2  # type: ignore[assignment]
++        status2, body2 = asyncio.run(ad.forward_stealth_webhook("https://down.example.com", None, {"messages": []}))
++        check("G7 refused classified (not dns)", status2 == 502 and body2.get("reason") == "refused", str(body2))
++
++        factory3 = _FakeClientFactory("ok")
++        ad.httpx.AsyncClient = factory3  # type: ignore[assignment]
++        status3, body3 = asyncio.run(ad.forward_stealth_webhook("https://ok.example.com", "sekret", {"model": "m", "messages": []}))
++        check("G8a reply-wrapped OpenAI format", status3 == 200 and body3.get("choices", [{}])[0].get("message", {}).get("content") == "hello from relay")
++        check("G8b exactly one id key (P3 pin)", isinstance(body3, dict) and list(body3.keys()).count("id") == 1, str(list(body3.keys())))
++        check("G8c secret forwarded as Authorization", factory3.last_call.get("headers", {}).get("Authorization") == "Bearer sekret")
++    finally:
++        ad.httpx.AsyncClient = real_client  # type: ignore[assignment]
++
++
++# ── G9 apex config CRITICAL ─────────────────────────────────────────────────
++def test_apex_warning() -> None:
++    print("G9 workers.dev apex one-shot CRITICAL")
++    ad._stealth_warned.clear()
++    records: list = []
++
++    class _H(logging.Handler):
++        def emit(self, r: logging.LogRecord) -> None:
++            records.append(r)
++
++    h = _H()
++    ad.logger.addHandler(h)
++    try:
++        ad.normalize_stealth_url("https://paykaribazaronline.workers.dev")
++        ad.normalize_stealth_url("https://paykaribazaronline.workers.dev")  # second call: no repeat
++        crits = [r for r in records if r.levelno == logging.CRITICAL and "APEX" in r.getMessage()]
++        check("G9 apex raises CRITICAL exactly once", len(crits) == 1, f"got {len(crits)}")
++    finally:
++        ad.logger.removeHandler(h)
++        ad._stealth_warned.clear()
++
++
++# ── G10..G12 endpoint behavior (TestClient, snapshot monkeypatched) ─────────
++def test_endpoints() -> None:
++    print("G10..G12 /readyz + /health")
++    from fastapi.testclient import TestClient
++
++    client = TestClient(appmod.app)
++    real = appmod._stealth_dns_snapshot
++
++    async def _bad(force: bool = False) -> Dict[str, Any]:
++        return {"ok": False, "checked_at": 1.0, "detail": "host dead… invalid does not resolve ([Errno -2] Name or service not known) — fix Infisical STEALTH_WEBHOOK_URL"}
++
++    async def _good(force: bool = False) -> Dict[str, Any]:
++        return {"ok": True, "checked_at": 1.0, "detail": "resolved 2 addr(s)"}
++
++    appmod._stealth_dns_snapshot = _bad  # type: ignore[assignment]
++    try:
++        r = client.get("/readyz")
++        check("G10a readyz 503 on unresolvable host", r.status_code == 503, str(r.status_code))
++        j = r.json()
++        check("G10b reason names the env var + fix", "STEALTH_WEBHOOK_URL" in j.get("reason", "") and "Infisical" in j.get("reason", ""), j.get("reason", "")[:120])
++        check("G10c stealth_dns detail surfaced", j.get("stealth_dns", {}).get("ok") is False)
++        rh = client.get("/health")
++        check("G12a /health stays 200 (liveness)", rh.status_code == 200, str(rh.status_code))
++        check("G12b /health exposes stealth_dns block", rh.json().get("stealth_dns", {}).get("ok") is False)
++
++        appmod._stealth_dns_snapshot = _good  # type: ignore[assignment]
++        r2 = client.get("/readyz")
++        check("G11a readyz 200 ready when DNS ok", r2.status_code == 200 and r2.json().get("status") == "ready", str(r2.status_code))
++        check("G11b readyz carries stealth_dns ok", r2.json().get("stealth_dns", {}).get("ok") is True)
++    finally:
++        appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
++
++
++def test_unconfigured(monkeypatched: Dict[str, Any] = {}) -> None:
++    print("G11c unconfigured -> 503 (no env mutation: snapshot returns not-configured)")
++    from fastapi.testclient import TestClient
++
++    client = TestClient(appmod.app)
++    real_env = os.environ.get("STEALTH_WEBHOOK_URL")
++    os.environ["STEALTH_WEBHOOK_URL"] = ""
++    try:
++        # module captured STEALTH_WEBHOOK_URL at import; emulate unconfigured via empty snapshot
++        real = appmod._stealth_dns_snapshot
++
++        async def _unset(force: bool = False) -> Dict[str, Any]:
++            return {"ok": None, "checked_at": 0.0, "detail": "STEALTH_WEBHOOK_URL not configured"}
++
++        appmod._stealth_dns_snapshot = _unset  # type: ignore[assignment]
++        # force the endpoint down the unconfigured branch by monkeypatching the flag
++        real_url = appmod.STEALTH_WEBHOOK_URL
++        appmod.STEALTH_WEBHOOK_URL = ""
++        try:
++            r = client.get("/readyz")
++            check("G11c readyz 503 when unconfigured", r.status_code == 503 and "not configured" in r.json().get("reason", ""), str(r.status_code))
++        finally:
++            appmod.STEALTH_WEBHOOK_URL = real_url
++            appmod._stealth_dns_snapshot = real  # type: ignore[assignment]
++    finally:
++        if real_env is not None:
++            os.environ["STEALTH_WEBHOOK_URL"] = real_env
++
++
++# ── pytest wrappers ─────────────────────────────────────────────────────────
++def test_normalize_stealth_url() -> None:  # pragma: no cover
++    test_normalize()
++    _assert_all()
++
++
++def test_mask_host_fn() -> None:  # pragma: no cover
++    test_mask_host()
++    _assert_all()
++
++
++def test_forwarder_paths() -> None:  # pragma: no cover
++    test_forwarder()
++    _assert_all()
++
++
++def test_apex_critical() -> None:  # pragma: no cover
++    test_apex_warning()
++    _assert_all()
++
++
++def test_probe_endpoints() -> None:  # pragma: no cover
++    test_endpoints()
++    test_unconfigured()
++    _assert_all()
++
++
++def _assert_all() -> None:
++    failed = [r for r in RESULTS if not r[1]]
++    assert not failed, f"failed guards: {[f[0] for f in failed]}"
++
++
++if __name__ == "__main__":
++    test_normalize()
++    test_mask_host()
++    test_forwarder()
++    test_apex_warning()
++    test_endpoints()
++    test_unconfigured()
++    failed = [r for r in RESULTS if not r[1]]
++    print(f"\n==== {len(RESULTS) - len(failed)}/{len(RESULTS)} PASS ====")
++    sys.exit(1 if failed else 0)

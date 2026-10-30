@@ -1,0 +1,143 @@
+diff --git a/docs/runbooks/tenant_dogfood_runbook.md b/docs/runbooks/tenant_dogfood_runbook.md
+new file mode 100644
+index 00000000..1b79999d
+--- /dev/null
++++ b/docs/runbooks/tenant_dogfood_runbook.md
+@@ -0,0 +1,43 @@
++# Tenant Dogfood Runbook (#1343)
++
++**Goal:** convert tenant isolation from "designed but never exercised" into a
++tested invariant before the first real customer touches it.
++
++## Why
++`tenant_list` returns 0 tenants; every interactive client runs on
++`tenant_default`. AIQ-075 (P0) requires cross-tenant access + privilege
++escalation tests **before scale**. The first customer onboarding must not be
++the first-ever isolation test.
++
++## Week 0 — provision (operator, ~30 min)
++1. Create two internal tenants via the admin lane:
++   - `staging-admin` (admin/customer role pair kept internal)
++   - `staging-customer` (role: customer)
++   Tools: `tenant_create` (returns per-tenant admin token — store in Infisical, never in chat).
++2. Record both tenant IDs in this file's Evidence table.
++3. Rotate the customer admin token once via `tenant_rotate_admin_token` to prove rotation works.
++
++## Week 1 — dogfood
++1. Point one studio workspace profile at the **customer** tenant.
++2. Route **at least one full agent work-order lifecycle** through it
++   (claim → implement → submit → verdict) using only the customer tenant's
++   credentials.
++3. Each day: run the negative battery
++   (`SUPREMEAI_API_URL=... CUSTOMER_TOKEN=... python scripts/ci/tenant_negative_battery.py`)
++   and paste the JSON report into the Evidence table.
++
++## Evidence table
++
++| Date | Battery result | Work-order lifecycle step | Notes |
++|------|----------------|---------------------------|-------|
++| — | — | — | (fill during dogfood week) |
++
++## Exit criteria (all must hold)
++- [ ] `tenant_list` shows ≥1 active non-default tenant with its own rotated admin token
++- [ ] Negative battery: 0 cross-tenant successes across ≥5 runs on ≥3 days
++- [ ] One full work-order lifecycle completed inside the customer tenant
++- [ ] Any isolation hole → file a P0 follow-up work order referencing #1343
++
++## Rollback
++Tenants are soft-state: `tenant_suspend` + `tenant_activate` reverse any dogfood
++state; nothing here touches `tenant_default` clients.
+diff --git a/scripts/ci/tenant_negative_battery.py b/scripts/ci/tenant_negative_battery.py
+new file mode 100644
+index 00000000..a335e3bc
+--- /dev/null
++++ b/scripts/ci/tenant_negative_battery.py
+@@ -0,0 +1,88 @@
++#!/usr/bin/env python3
++"""Tenant isolation negative-test battery (#1343) — bridge-20261027-tenant-dogfood.
++
++Runs the AIQ-075 negative battery against a configured customer-tenant token:
++every call that should be forbidden must 403/empty. Results are JSON-serializable
++so CI can assert zero cross-tenant successes.
++
++Env:
++  SUPREMEAI_API_URL   e.g. https://supremeai-api.onrender.com
++  CUSTOMER_TOKEN      admin token of the dogfood CUSTOMER tenant
++  ADMIN_ENDPOINT_TOKEN  (optional) default-tenant token used only to verify it is NOT accepted cross-tenant
++
++Exit codes: 0 = zero violations, 1 = any cross-tenant success, 2 = misconfigured.
++"""
++from __future__ import annotations
++
++import json
++import os
++import sys
++import urllib.error
++import urllib.request
++
++BASE = os.environ.get("SUPREMEAI_API_URL", "").rstrip("/")
++CUSTOMER_TOKEN = os.environ.get("CUSTOMER_TOKEN", "")
++ADMIN_TOKEN = os.environ.get("ADMIN_ENDPOINT_TOKEN", "")
++
++# (method, path, expect) — expect: 403 | empty
++CASES = [
++    ("GET", "/api/admin/tenants", "403"),
++    ("GET", "/api/admin/clients", "403"),
++    ("GET", "/api/admin/policies", "403"),
++    ("GET", "/api/admin/agent/status", "403"),
++    ("GET", "/api/memory/graph", "empty"),          # cross-tenant memory read -> empty
++    ("GET", "/api/memory/search?query=primary", "empty"),
++    ("GET", "/api/knowledge/stats", "403"),
++    ("POST", "/api/admin/tenant/create", "403"),
++]
++
++
++def call(method: str, path: str, token: str, timeout: int = 30):
++    url = f"{BASE}{path}"
++    req = urllib.request.Request(url, method=method, headers={"Authorization": f"Bearer {token}"})
++    try:
++        with urllib.request.urlopen(req, timeout=timeout) as resp:
++            return resp.status, resp.read().decode("utf-8", errors="replace")
++    except urllib.error.HTTPError as err:
++        return err.code, err.read().decode("utf-8", errors="replace")
++    except Exception as err:  # noqa: BLE001
++        return 0, str(err)
++
++
++def main() -> int:
++    if not BASE or not CUSTOMER_TOKEN:
++        print("misconfigured: set SUPREMEAI_API_URL and CUSTOMER_TOKEN")
++        return 2
++
++    violations = []
++    report = []
++    for method, path, expect in CASES:
++        status, body = call(method, path, CUSTOMER_TOKEN)
++        if expect == "403":
++            ok = status in (401, 403)
++        else:  # empty
++            ok = status == 200 and body.strip() in ("", "[]", "{}")
++        verdict = "PASS" if ok else "VIOLATION"
++        report.append({"case": f"{method} {path}", "expect": expect, "status": status, "verdict": verdict})
++        if not ok:
++            violations.append(report[-1])
++        print(f"{verdict:9} {method:4} {path:42} -> {status}")
++
++    if ADMIN_TOKEN:
++        # The customer token must not equal/derive from the admin token path:
++        status, _ = call("GET", "/api/admin/tenants", ADMIN_TOKEN)
++        print(f"control   GET /api/admin/tenants with admin token -> {status} (expected 200)")
++        if status != 200:
++            print("::warning::admin control call failed — battery evidence may be unreliable")
++
++    print("\n=== TENANT NEGATIVE BATTERY ===")
++    print(json.dumps(report, indent=2))
++    if violations:
++        print(f"FAIL: {len(violations)} cross-tenant violation(s)")
++        return 1
++    print("PASS: zero cross-tenant successes")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())

@@ -1,0 +1,546 @@
+diff --git a/docs/S05_UNIFIED_QUEUE_SPEC.md b/docs/S05_UNIFIED_QUEUE_SPEC.md
+index c4f24e95..489c552d 100644
+--- a/docs/S05_UNIFIED_QUEUE_SPEC.md
++++ b/docs/S05_UNIFIED_QUEUE_SPEC.md
+@@ -1,11 +1,36 @@
+ # S05 — Unified Queue Listing Spec (bridge.work_queue, #474)
+ 
+-Status: r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
++Status: r2 · 2026-10-28 · Author: Z.ai Code (session web-b5fa5c9d, Job 478316)
++r1 · 2026-10-17 · Author: Z.ai Code (session web-26454b1b)
+ Scope: `infrastructure/mcp-control-plane/src/tools/bridge.tools.ts`
+-(+ `test_bridge_onboarding.ts`, `docs/TOOL-EXPOSURE.md` in the same
+-subsystem). Reference implementation + offline contract tests ship with
+-this spec (pure-new-file lane). The TS edit itself follows the exact
+-hunks in §4.
++(+ `test_bridge_onboarding.ts`, `test_queue_fidelity.ts`,
++`docs/TOOL-EXPOSURE.md` in the same subsystem). Reference implementation
+++ offline contract tests ship with this spec (pure-new-file lane). The
++TS edit itself follows the exact hunks in §4.
++
++## r2 addendum — completeness contract (#2115/#2123)
++
++r1 fixed label-blindness but kept a single-page fetch. Live evidence
++2026-10-28 (jobs 478316/478712): one page of the newest **creations**
++(issues and PRs share the feed) made the queue a creation-rank window —
++98 open issues read as 20–35 rows; rows vanished as they fell past the
++window (~2.5h during fleet storms, ~6.5h later the same day — an age
++cutoff was falsified; it is creation rank, not age) while
++`bridge.read_feedback` still resolved the dropped rows by number.
++Unclaimed P2s (#1912, #1769) were invisible to the whole fleet.
++
++Contract additions (both planes, TS + reference, now enforced):
++
++1. **Paginate until complete**: walk pages 1..`QUEUE_MAX_PAGES` (5) at
++   `per_page=QUEUE_PAGE_SIZE` (100); stop at the first short page.
++2. **Merge with dedupe** by issue number (first occurrence wins) before
++   normalization, so GitHub pagination races cannot double-count.
++3. **Ordering after merge**: number-descending sort stays post-merge —
++   ordering must never reintroduce truncation.
++4. **`limit` range**: 1..`QUEUE_LIMIT_MAX` (200), default 20 unchanged —
++   reconciliation consumers can request a full board; the default
++   surface stays small.
++5. 401/403 anonymous fallback applies per page.
+ 
+ ## 1. Problem
+ 
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 18f7c23f..41c65e9f 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:queue-fidelity && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:descriptor-pinning && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -60,7 +60,8 @@
+     "test:rate-limit-truncation": "tsx scripts/test-runner.ts test_rate_limit_truncation.ts",
+     "test:truncation-live-replay": "tsx scripts/test-runner.ts test_truncation_live_replay.ts",
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+-    "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts"
++    "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts",
++    "test:queue-fidelity": "tsx test_queue_fidelity.ts"
+   },
+   "keywords": ["mcp", "supremeai", "control-tower"],
+   "license": "MIT",
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index b14ef164..48bf87d5 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -668,6 +668,48 @@ function isOpenIssue(raw: RawIssue): boolean {
+   return typeof raw.state !== "string" || raw.state.toLowerCase() === "open";
+ }
+ 
++/**
++ * Queue fetch paging contract (#2115/#2123): the board must be enumerated
++ * completely, not sampled from one page. A single fetch of the newest
++ * creations (issues + PRs mixed) makes the queue a creation-rank window
++ * that silently drops open work as traffic flows (observed window shrank
++ * to ~2.5h during fleet storms and read 20–35 rows vs 98 open issues).
++ */
++export const QUEUE_PAGE_SIZE = 100;
++export const QUEUE_MAX_PAGES = 5;
++export const QUEUE_LIMIT_MAX = 200;
++
++/** Pure URL builder for one queue page (label optional, page is 1-based). */
++export function buildQueueQueryUrl(repo: string, label: string | null, page: number): string {
++  const params = new URLSearchParams({
++    state: "open",
++    per_page: String(QUEUE_PAGE_SIZE),
++    sort: "created",
++    direction: "desc",
++    page: String(Math.max(1, page)),
++  });
++  if (label) params.set("labels", label);
++  return `https://api.github.com/repos/${repo}/issues?${params.toString()}`;
++}
++
++/** Pure page merge: flatten + dedupe by issue number (first occurrence wins). */
++export function mergeIssuePages(pages: RawIssue[][]): RawIssue[] {
++  const seen = new Set<number>();
++  const out: RawIssue[] = [];
++  for (const page of Array.isArray(pages) ? pages : []) {
++    for (const item of Array.isArray(page) ? page : []) {
++      if (!item || typeof item !== "object") continue;
++      const num = (item as { number?: unknown }).number;
++      if (typeof num === "number" && Number.isFinite(num)) {
++        if (seen.has(num)) continue;
++        seen.add(num);
++      }
++      out.push(item as RawIssue);
++    }
++  }
++  return out;
++}
++
+ /** Pure queue builder: GitHub issues payload → sanitized work-order list. */
+ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+   const items = Array.isArray(rawIssues) ? rawIssues : [];
+@@ -679,7 +721,7 @@ export function queueFromIssues(rawIssues: unknown, limit = 20) {
+     .filter((item) => !isRejectedOrLanded(item))
+     .map(normalizeQueueItem)
+     .sort((a, b) => (b.number ?? 0) - (a.number ?? 0))
+-    .slice(0, Math.min(Math.max(1, limit), 50));
++    .slice(0, Math.min(Math.max(1, limit), QUEUE_LIMIT_MAX));
+ }
+ 
+ async function githubHeaders(withAuth = true): Promise<Record<string, string>> {
+@@ -714,36 +756,46 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     "bridge.work_queue",
+     "List OPEN work-order issues awaiting an agent in the public open-source repo (defaults to all open issues, or filter by optional label). Read-only, public data only.",
+     {
+-      limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return (default 20)"),
++      limit: z.number().int().min(1).max(QUEUE_LIMIT_MAX).optional().describe("Max work orders to return (default 20; up to 200 for full-board reconciliation)"),
+       label: z.string().optional().describe("Optional label filter; omit or empty = all open issues"),
+     },
+     async ({ limit, label }) => {
+       const repo = bridgeOpenRepo();
+       const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
+-      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
+-      if (appliedLabel) {
+-        queryParams.set("labels", appliedLabel);
+-      }
+       try {
+-        let res = await httpRequest<RawIssue[]>(
+-          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+-          { headers: await githubHeaders(true), timeoutMs: 15_000 }
+-        );
+-        // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
+-        if (!res.ok && (res.status === 401 || res.status === 403)) {
+-          res = await httpRequest<RawIssue[]>(
+-            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
+-            { headers: await githubHeaders(false), timeoutMs: 15_000 }
++        // Complete enumeration: walk pages until a short page (or cap).
++        // Fixes #2115/#2123 — a single per_page=50 fetch turned the queue
++        // into a creation-rank window that dropped open work (98 open
++        // issues read as 20–35 rows) while bridge_read_feedback still
++        // resolved the dropped rows.
++        const pages: RawIssue[][] = [];
++        let page = 1;
++        while (page <= QUEUE_MAX_PAGES) {
++          const url = buildQueueQueryUrl(repo, appliedLabel, page);
++          let res = await httpRequest<RawIssue[]>(
++            url,
++            { headers: await githubHeaders(true), timeoutMs: 15_000 }
+           );
++          // Fallback to unauthenticated public read if token is rejected (e.g. 401/403)
++          if (!res.ok && (res.status === 401 || res.status === 403)) {
++            res = await httpRequest<RawIssue[]>(
++              url,
++              { headers: await githubHeaders(false), timeoutMs: 15_000 }
++            );
++          }
++          if (!res.ok) {
++            const message = (res.data as { message?: unknown })?.message ?? res.status;
++            return {
++              isError: true,
++              content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
++            };
++          }
++          const rows = Array.isArray(res.data) ? res.data : [];
++          pages.push(rows);
++          if (rows.length < QUEUE_PAGE_SIZE) break;
++          page += 1;
+         }
+-        if (!res.ok) {
+-          const message = (res.data as { message?: unknown })?.message ?? res.status;
+-          return {
+-            isError: true,
+-            content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}: ${String(message)}). Retry shortly; the queue is public and needs no credentials.` }],
+-          };
+-        }
+-        const queued = queueFromIssues(res.data, limit ?? 20);
++        const queued = queueFromIssues(mergeIssuePages(pages), limit ?? 20);
+         // Expose all active open issues so agents discover claimable federation work
+         const anonymous = RequestContextStore.get()?.authenticated !== true;
+         const workOrders = queued;
+diff --git a/infrastructure/mcp-control-plane/test_queue_fidelity.ts b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+new file mode 100644
+index 00000000..dc1462d8
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_queue_fidelity.ts
+@@ -0,0 +1,115 @@
++import assert from "node:assert/strict";
++import {
++  QUEUE_LIMIT_MAX,
++  QUEUE_MAX_PAGES,
++  QUEUE_PAGE_SIZE,
++  buildQueueQueryUrl,
++  mergeIssuePages,
++  queueFromIssues,
++} from "./src/tools/bridge.tools.js";
++
++/**
++ * Queue-fidelity contract tests (#2115/#2123).
++ *
++ * The tower's bridge.work_queue must ENUMERATE the open board, not sample
++ * one page of the newest creations. Live evidence 2026-10-28: a single
++ * per_page=50 fetch returned 20-35 rows while 98 issues were open; rows
++ * vanished as they fell past the page window (~2.5h-6.5h "age cutoff")
++ * while bridge_read_feedback still resolved them by number.
++ *
++ * Regression scenarios encoded below:
++ *   R1: URL carries page + per_page=100 paging contract.
++ *   R2: page merge dedupes overlapping pages (GitHub pagination races).
++ *   R3: an old open issue survives pagination even when the newest page is
++ *       saturated with PRs (the exact #1912/#1769 drop).
++ *   R4: limit slice caps at QUEUE_LIMIT_MAX (200), not the old 50.
++ *   R5: short page terminates pagination (caller-side contract, mirrored
++ *       by the Python reference self-test).
++ */
++
++const REPO = "Supremeai-bd/supremeai-open";
++
++function issue(n: number, opts: { pr?: boolean; state?: string; labels?: unknown[] } = {}) {
++  const row: Record<string, unknown> = {
++    number: n,
++    title: `row-${n}`,
++    state: opts.state ?? "open",
++    labels: opts.labels ?? [],
++    html_url: `https://example.test/${n}`,
++    created_at: "2026-10-28T00:00:00Z",
++    updated_at: "2026-10-28T00:00:00Z",
++    comments: 0,
++  };
++  if (opts.pr) row["pull_request"] = { url: "https://example.test/pr" };
++  return row as never; // RawIssue shape
++}
++
++// ─── R1: paging URL contract ────────────────────────────────────────────────
++{
++  const u1 = buildQueueQueryUrl(REPO, null, 1);
++  assert.ok(u1.includes("state=open"), u1);
++  assert.ok(u1.includes(`per_page=${QUEUE_PAGE_SIZE}`), u1);
++  assert.ok(u1.includes("page=1"), u1);
++  assert.ok(!u1.includes("labels="), u1);
++  const u3 = buildQueueQueryUrl(REPO, "status:unclaimed", 3);
++  assert.ok(u3.includes("page=3"), u3);
++  assert.ok(u3.includes("labels=status%3Aunclaimed"), u3);
++  const u0 = buildQueueQueryUrl(REPO, null, 0); // clamp to 1
++  assert.ok(u0.includes("page=1"), u0);
++  console.log("  ✓ R1 buildQueueQueryUrl: page/per_page/label contract");
++}
++
++// ─── R2: merge dedupes overlapping pages ────────────────────────────────────
++{
++  const p1 = [issue(2126), issue(2125), issue(2124)];
++  const p2 = [issue(2124), issue(2123), issue(2122)]; // 2124 overlaps
++  const merged = mergeIssuePages([p1, p2]);
++  const nums = merged.map((r) => (r as { number: number }).number);
++  assert.deepEqual(nums.sort((a, b) => b - a), [2126, 2125, 2124, 2123, 2122]);
++  assert.equal(mergeIssuePages([]).length, 0);
++  assert.equal(mergeIssuePages([[] as never[]]).length, 0);
++  assert.equal(mergeIssuePages(undefined as never).length, 0);
++  console.log("  ✓ R2 mergeIssuePages: flatten + dedupe by number");
++}
++
++// ─── R3: the #1912 drop cannot recur ────────────────────────────────────────
++{
++  // One saturated page: 40 PRs + 10 newest issues (page-1 shape under the
++  // old per_page=50 single fetch). The old open issue #1912 lives on page 2.
++  const prs = Array.from({ length: 40 }, (_, i) => issue(3000 - i, { pr: true }));
++  const newest = Array.from({ length: 10 }, (_, i) => issue(2126 - i));
++  const old = issue(1912, { labels: [{ name: "status:unclaimed" }] });
++  const page1 = [...prs, ...newest];
++  const page2 = [old, issue(1911), issue(1910)];
++
++  const single = queueFromIssues(mergeIssuePages([page1]), 200);
++  assert.ok(!single.some((w) => w.number === 1912), "sanity: single page drops #1912");
++
++  const paged = queueFromIssues(mergeIssuePages([page1, page2]), 200);
++  assert.ok(paged.some((w) => w.number === 1912), "pagination must restore #1912");
++  assert.equal(paged.length, 13, "all open non-PR rows from both pages survive (10+3, PRs filtered)");
++  console.log("  ✓ R3 saturated page + PR pollution no longer drops open work");
++}
++
++// ─── R4: limit slice honors QUEUE_LIMIT_MAX ─────────────────────────────────
++{
++  const rows = Array.from({ length: 250 }, (_, i) => issue(2500 - i));
++  const q = queueFromIssues(mergeIssuePages([rows]), QUEUE_LIMIT_MAX);
++  assert.equal(q.length, QUEUE_LIMIT_MAX);
++  assert.equal(q[0].number, 2500);
++  const qTiny = queueFromIssues(mergeIssuePages([rows]), 3);
++  assert.equal(qTiny.length, 3);
++  const qDefault = queueFromIssues(mergeIssuePages([rows]));
++  assert.equal(qDefault.length, 20, "default limit stays 20");
++  console.log(`  ✓ R4 slice cap raised 50 -> ${QUEUE_LIMIT_MAX}, default still 20`);
++}
++
++// ─── R5: constants contract (mirrored by scripts/tower reference) ───────────
++{
++  assert.equal(QUEUE_PAGE_SIZE, 100);
++  assert.ok(QUEUE_MAX_PAGES >= 2, "cap must allow at least 2 pages");
++  assert.equal(QUEUE_LIMIT_MAX, 200);
++  console.log("  ✓ R5 paging constants pinned for parity with the reference");
++}
++
++console.log("Queue-fidelity contract tests passed (#2115/#2123)");
+diff --git a/scripts/tower/work_queue_query_reference.py b/scripts/tower/work_queue_query_reference.py
+index 13f2ebe2..23eb6181 100644
+--- a/scripts/tower/work_queue_query_reference.py
++++ b/scripts/tower/work_queue_query_reference.py
+@@ -1,15 +1,23 @@
+ #!/usr/bin/env python3
+ """S05 reference implementation: unified queue query construction (#474).
+ 
+-Executable spec for bridge.work_queue's GitHub query building and issue
+-normalization. The TS handler in bridge.tools.ts must behave identically;
+-tests/test_s05_unified_queue.py asserts the contract offline.
++r2 (#2115/#2123) adds the completeness contract: pagination + merge-dedupe.
++Executable spec for bridge.work_queue's GitHub query building, pagination,
++and issue normalization. The TS handler in bridge.tools.ts must behave
++identically; tests/test_s05_unified_queue.py asserts the contract offline,
++infrastructure/mcp-control-plane/test_queue_fidelity.ts mirrors it TS-side.
+ 
+-Contract (from docs/S05_UNIFIED_QUEUE_SPEC.md):
++Contract (from docs/S05_UNIFIED_QUEUE_SPEC.md r2):
+ - No label (or empty/whitespace) -> query ALL open issues, label=null.
+ - Explicit label -> labels=<urlencoded label>, label echoes the filter.
+ - PRs and closed issues are always excluded (normalization).
+-- Deterministic ordering: number descending.
++- COMPLETE ENUMERATION: pages are fetched until a short page (or
++  MAX_PAGES cap) and merged with number-dedupe — a single-page fetch
++  turns the queue into a creation-rank window that drops open work as
++  traffic flows (#2115: 98 open issues read as 20-35 rows; #2123: rows
++  vanished across a ~2.5-6.5h window) — forbidden since r2.
++- Deterministic ordering: number descending, applied AFTER the merge so
++  ordering can never reintroduce truncation.
+ 
+ Self-test: python3 work_queue_query_reference.py --self-test
+ """
+@@ -21,15 +29,24 @@
+ from urllib.parse import urlencode
+ 
+ REPO = "Supremeai-bd/supremeai-open"
++QUEUE_PAGE_SIZE = 100
++QUEUE_MAX_PAGES = 5
++QUEUE_LIMIT_MAX = 200
+ 
+ 
+-def build_queue_query(label: str | None = None) -> dict:
++def build_queue_query(label: str | None = None, page: int = 1) -> dict:
+     """Build the GitHub issues query exactly as the TS handler must.
+ 
+-    Returns {"url", "params", "applied_label"} — applied_label is the
+-    effective filter or None (all open issues).
++    Returns {"url", "params", "applied_label", "page"} — applied_label is
++    the effective filter or None (all open issues).
+     """
+-    params = {"state": "open", "per_page": "100"}
++    params = {
++        "state": "open",
++        "per_page": str(QUEUE_PAGE_SIZE),
++        "sort": "created",
++        "direction": "desc",
++        "page": str(max(1, page)),
++    }
+     applied = None
+     if label is not None and label.strip():
+         applied = label.strip()
+@@ -39,9 +56,43 @@ def build_queue_query(label: str | None = None) -> dict:
+         "url": f"https://api.github.com/repos/{REPO}/issues?{qs}",
+         "params": params,
+         "applied_label": applied,
++        "page": max(1, page),
+     }
+ 
+ 
++def fetch_all_pages(fetch_page, max_pages: int = QUEUE_MAX_PAGES) -> list:
++    """Page-termination contract: stop at the first short page or the cap.
++
++    fetch_page(page:int) -> list of raw issues (network injected by the
++    caller, so this stays pure-logic and offline-testable).
++    """
++    pages = []
++    for page in range(1, max(1, max_pages) + 1):
++        rows = fetch_page(page)
++        rows = rows if isinstance(rows, list) else []
++        pages.append(rows)
++        if len(rows) < QUEUE_PAGE_SIZE:
++            break
++    return pages
++
++
++def merge_pages(pages: list) -> list:
++    """Flatten pages with number-dedupe (first occurrence wins)."""
++    seen: set = set()
++    out: list = []
++    for page in pages or []:
++        for item in page if isinstance(page, list) else []:
++            if not isinstance(item, dict):
++                continue
++            num = item.get("number")
++            if isinstance(num, int):
++                if num in seen:
++                    continue
++                seen.add(num)
++            out.append(item)
++    return out
++
++
+ def is_queue_eligible(issue: dict) -> bool:
+     """Normalization filter: open issues only, never PRs."""
+     if issue.get("is_pull_request") or "pull_request" in issue:
+@@ -80,6 +131,7 @@ def normalize_queue(issues: list, applied_label: str | None = None) -> dict:
+ def _self_test() -> int:
+     q = build_queue_query()
+     assert q["applied_label"] is None and "labels=" not in q["url"], q
++    assert "page=1" in q["url"] and "per_page=100" in q["url"], q
+     q2 = build_queue_query("")
+     assert q2["applied_label"] is None, "empty label must mean all-open"
+     q3 = build_queue_query("   ")
+@@ -87,6 +139,10 @@ def _self_test() -> int:
+     q4 = build_queue_query("bridge:queued")
+     assert "labels=bridge%3Aqueued" in q4["url"], q4
+     assert q4["applied_label"] == "bridge:queued"
++    q5 = build_queue_query(None, page=3)
++    assert "page=3" in q5["url"] and q5["page"] == 3, q5
++    q0 = build_queue_query(None, page=0)
++    assert q0["page"] == 1, "page must clamp to 1"
+     rows = [
+         {"number": 3, "title": "c", "state": "open", "labels": []},
+         {"number": 1, "title": "a", "state": "open", "labels": []},
+@@ -106,7 +162,25 @@ def _self_test() -> int:
+     }
+     nd = normalize_queue([d])
+     assert nd["workOrders"][0]["labels"] == ["status:unclaimed"]
+-    print("self-test OK: work_queue_query_reference")
++
++    # Pagination contract (#2115/#2123)
++    full = [{"number": i} for i in range(200, 100, -1)]   # 100 rows -> full page
++    tail = [{"number": i} for i in range(100, 90, -1)]    # 10 rows -> short page
++    pages = fetch_all_pages(lambda p: full if p == 1 else (tail if p == 2 else []))
++    assert len(pages) == 2, f"must stop at first short page, got {len(pages)}"
++    over = fetch_all_pages(lambda p: full, max_pages=QUEUE_MAX_PAGES)
++    assert len(over) == QUEUE_MAX_PAGES, "cap must bound a saturated feed"
++    merged = merge_pages(pages)
++    assert len(merged) == 110, merged and len(merged)
++    dup = merge_pages([[{"number": 7}, {"number": 8}], [{"number": 8}, {"number": 9}]])
++    assert [r["number"] for r in dup] == [7, 8, 9], dup
++    old = {"number": 1912, "state": "open", "labels": [{"name": "status:unclaimed"}]}
++    single_page = normalize_queue(merge_pages([full[:90]]))
++    paged = normalize_queue(merge_pages([full[:90], [old]]))
++    assert not any(w["number"] == 1912 for w in single_page["workOrders"])
++    assert any(w["number"] == 1912 for w in paged["workOrders"]), \
++        "the #1912-class drop must be impossible under pagination"
++    print("self-test OK: work_queue_query_reference r2 (pagination-complete)")
+     return 0
+ 
+ 
+@@ -116,7 +190,7 @@ def _self_test() -> int:
+     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+         with open(sys.argv[1], encoding="utf-8") as fh:
+             payload = json.load(fh)
+-        print(json.dumps(build_queue_query(payload.get("label")), indent=2))
++        print(json.dumps(build_queue_query(payload.get("label"), payload.get("page", 1)), indent=2))
+         sys.exit(0)
+     print(__doc__)
+     sys.exit(2)
+diff --git a/tests/test_s05_unified_queue.py b/tests/test_s05_unified_queue.py
+index 734229c3..59c3afe1 100644
+--- a/tests/test_s05_unified_queue.py
++++ b/tests/test_s05_unified_queue.py
+@@ -94,5 +94,59 @@ def test_12_empty_queue_shape(self):
+         self.assertEqual(norm["workOrders"], [])
+ 
+ 
++class PaginationCompleteness(unittest.TestCase):
++    """r2 contract (#2115/#2123): the queue enumerates, it never samples."""
++
++    def test_13_query_carries_page_and_page_size(self):
++        q1 = qref.build_queue_query()
++        self.assertIn("page=1", q1["url"])
++        self.assertIn(f"per_page={qref.QUEUE_PAGE_SIZE}", q1["url"])
++        q3 = qref.build_queue_query("status:unclaimed", page=3)
++        self.assertIn("page=3", q3["url"])
++        self.assertEqual(q3["page"], 3)
++
++    def test_14_page_clamps_to_one(self):
++        self.assertEqual(qref.build_queue_query(page=0)["page"], 1)
++        self.assertEqual(qref.build_queue_query(page=-5)["page"], 1)
++
++    def test_15_fetch_stops_at_first_short_page(self):
++        full = [{"number": i} for i in range(200, 100, -1)]
++        short = [{"number": i} for i in range(100, 95, -1)]
++        pages = qref.fetch_all_pages(lambda p: full if p == 1 else short)
++        self.assertEqual(len(pages), 2)
++
++    def test_16_fetch_caps_saturated_feed(self):
++        full = [{"number": i} for i in range(1000, 0, -1)]
++        pages = qref.fetch_all_pages(lambda p: full, max_pages=qref.QUEUE_MAX_PAGES)
++        self.assertEqual(len(pages), qref.QUEUE_MAX_PAGES)
++
++    def test_17_merge_dedupes_by_number(self):
++        merged = qref.merge_pages(
++            [[{"number": 7}, {"number": 8}], [{"number": 8}, {"number": 9}]]
++        )
++        self.assertEqual([r["number"] for r in merged], [7, 8, 9])
++        self.assertEqual(qref.merge_pages([]), [])
++
++    def test_18_old_open_issue_survives_saturated_page(self):
++        # Regression for the live #1912-class drop: one saturated page of
++        # PRs + new issues must not evict an older open unclaimed issue.
++        prs = [{"number": 3000 - i, "title": f"pr{i}", "state": "open",
++                "pull_request": {"url": "x"}} for i in range(40)]
++        newest = [{"number": 2126 - i, "title": f"i{i}", "state": "open",
++                   "labels": []} for i in range(10)]
++        old = {"number": 1912, "title": "old", "state": "open",
++               "labels": [{"name": "status:unclaimed"}]}
++        single = qref.normalize_queue(qref.merge_pages([prs + newest]))
++        self.assertNotIn(1912, [w["number"] for w in single["workOrders"]])
++        paged = qref.normalize_queue(qref.merge_pages([prs + newest, [old]]))
++        self.assertIn(1912, [w["number"] for w in paged["workOrders"]])
++        self.assertEqual(paged["count"], 11)
++
++    def test_19_paging_constants_pinned(self):
++        self.assertEqual(qref.QUEUE_PAGE_SIZE, 100)
++        self.assertEqual(qref.QUEUE_MAX_PAGES, 5)
++        self.assertEqual(qref.QUEUE_LIMIT_MAX, 200)
++
++
+ if __name__ == "__main__":
+     unittest.main(verbosity=2)

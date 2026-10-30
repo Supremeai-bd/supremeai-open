@@ -1,0 +1,938 @@
+diff --git a/studio/src/components/mobile/apps/CalendarApp.tsx b/studio/src/components/mobile/apps/CalendarApp.tsx
+new file mode 100644
+index 00000000..6213163f
+--- /dev/null
++++ b/studio/src/components/mobile/apps/CalendarApp.tsx
+@@ -0,0 +1,98 @@
++/**
++ * CalendarApp — read-only sample month (iOS-home-template)।
++ * বাংলা: বাস্তব বর্তমান মাসের গ্রিড + নমুনা ইভেন্ট; সম্পাদনার সুবিধা নেই
++ * (চাহিদা অনুযায়ী read-only) — দিনে ট্যাপ করলে শুধু সেদিনের ইভেন্ট দেখায়।
++ */
++
++import { useState } from 'react';
++import { CalendarDays, MapPin } from 'lucide-react';
++
++interface SampleEvent {
++  day: number;
++  time: string;
++  title: string;
++  place: string;
++  tone: string;
++}
++
++const EVENTS: SampleEvent[] = [
++  { day: 3, time: '10:00', title: 'Sprint planning', place: 'War room', tone: 'bg-cyan-400' },
++  { day: 9, time: '13:30', title: 'Design review — Home launcher', place: 'Studio', tone: 'bg-violet-400' },
++  { day: 14, time: '09:00', title: 'Bridge intake sync', place: 'Online', tone: 'bg-emerald-400' },
++  { day: 18, time: '16:00', title: 'Mobile QA pass', place: 'Device lab', tone: 'bg-amber-400' },
++  { day: 23, time: '11:00', title: 'Release cut', place: 'Ops', tone: 'bg-rose-400' },
++];
++
++export function CalendarApp() {
++  const today = new Date();
++  const year = today.getFullYear();
++  const month = today.getMonth();
++  const daysInMonth = new Date(year, month + 1, 0).getDate();
++  const firstWeekday = new Date(year, month, 1).getDay(); // 0=Sun
++  const [selectedDay, setSelectedDay] = useState(today.getDate());
++
++  const cells: (number | null)[] = [
++    ...Array.from({ length: firstWeekday }, () => null),
++    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
++  ];
++  const dayEvents = EVENTS.filter((e) => e.day === selectedDay);
++
++  return (
++    <div className="flex h-full flex-col gap-3 overflow-y-auto px-5 pb-8 pt-14 text-white">
++      <header className="flex items-baseline justify-between">
++        <h1 className="text-2xl font-bold">
++          {today.toLocaleString('en-US', { month: 'long' })} <span className="text-white/50">{year}</span>
++        </h1>
++        <CalendarDays size={20} className="text-rose-300" />
++      </header>
++
++      <div className="grid grid-cols-7 gap-1 rounded-2xl bg-white/10 p-2.5 ring-1 ring-white/10">
++        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => (
++          <span key={`${d}-${i}`} className="pb-1 text-center text-[10px] font-semibold uppercase tracking-wider text-white/50">{d}</span>
++        ))}
++        {cells.map((d, i) => {
++          if (d === null) return <span key={`pad-${i}`} />;
++          const isToday = d === today.getDate();
++          const isSelected = d === selectedDay;
++          const hasEvent = EVENTS.some((e) => e.day === d);
++          return (
++            <button
++              key={d}
++              type="button"
++              onClick={() => setSelectedDay(d)}
++              className={`relative flex aspect-square items-center justify-center rounded-full text-xs transition ${
++                isSelected ? 'bg-rose-500 font-bold text-white' : isToday ? 'text-rose-300 font-semibold' : 'text-white/80 hover:bg-white/10'
++              }`}
++            >
++              {d}
++              {hasEvent && !isSelected && <span className="absolute bottom-0.5 size-1 rounded-full bg-cyan-300" />}
++            </button>
++          );
++        })}
++      </div>
++
++      <section className="rounded-2xl bg-white/10 p-3 ring-1 ring-white/10">
++        <p className="mb-2 text-[11px] uppercase tracking-wider text-white/60">
++          {today.toLocaleString('en-US', { month: 'short' })} {selectedDay} — sample events
++        </p>
++        {dayEvents.length === 0 ? (
++          <p className="py-3 text-center text-xs text-white/45">Nothing scheduled — read-only sample calendar.</p>
++        ) : (
++          <ul className="flex flex-col gap-2">
++            {dayEvents.map((e) => (
++              <li key={e.title} className="flex items-center gap-3 rounded-xl bg-white/[0.06] px-3 py-2">
++                <span className={`h-8 w-1 rounded-full ${e.tone}`} />
++                <div className="min-w-0">
++                  <p className="truncate text-sm font-medium">{e.title}</p>
++                  <p className="flex items-center gap-1 text-[11px] text-white/55"><MapPin size={10} /> {e.place}</p>
++                </div>
++                <span className="ml-auto text-xs font-semibold text-white/75">{e.time}</span>
++              </li>
++            ))}
++          </ul>
++        )}
++      </section>
++      <p className="mt-auto text-center text-[10px] text-white/35">Read-only demo — events are sample data.</p>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/apps/MusicApp.tsx b/studio/src/components/mobile/apps/MusicApp.tsx
+new file mode 100644
+index 00000000..fabff6e2
+--- /dev/null
++++ b/studio/src/components/mobile/apps/MusicApp.tsx
+@@ -0,0 +1,182 @@
++/**
++ * MusicApp — playable demo tracks (iOS-home-template)।
++ *
++ * বাংলা: বাইরের audio ফাইল/স্ট্রিম নেই ($0 নীতি + sandbox-এ CORS ঝামেলা নেই) —
++ * WebAudio API দিয়ে সিন্থেসাইজ করা ছোট chord-loop-ই "ডেমো ট্র্যাক"।
++ * Playback state launcherStore-এ শেয়ার্ড — widget ও Control Center-ও নিয়ন্ত্রণ করতে পারে।
++ * MusicEngine: HomeShell-এ সবসময় mounted থাকে, তাই home-এ ফিরে গেলেও গান বাজতে থাকে (iOS feel)।
++ */
++
++import { useEffect, useRef } from 'react';
++import { motion } from 'framer-motion';
++import { Music2, Pause, Play, SkipBack, SkipForward } from 'lucide-react';
++import { useLauncher, TRACK_LENGTH_SECONDS } from '../launcherStore';
++
++export interface DemoTrack {
++  name: string;
++  artist: string;
++  bpm: number;
++  /** হার্টজ — প্রতি বিটে পরপর বাজানো ৪টি নোট (chord tones)। */
++  notes: number[];
++  art: string;
++}
++
++export const TRACKS: DemoTrack[] = [
++  {
++    name: 'Aurora Drift',
++    artist: 'SupremeAI Synth',
++    bpm: 92,
++    notes: [220.0, 277.18, 329.63, 415.3],
++    art: 'from-cyan-400/80 via-teal-500/70 to-violet-600/80',
++  },
++  {
++    name: 'Neon Dhaka',
++    artist: 'SupremeAI Synth',
++    bpm: 124,
++    notes: [196.0, 246.94, 293.66, 392.0],
++    art: 'from-fuchsia-400/80 via-rose-500/70 to-amber-500/80',
++  },
++  {
++    name: 'Moonlit Terminal',
++    artist: 'SupremeAI Synth',
++    bpm: 72,
++    notes: [174.61, 220.0, 261.63, 349.23],
++    art: 'from-slate-300/70 via-cyan-300/60 to-emerald-500/70',
++  },
++];
++
++/**
++ * MusicEngine — store-এর musicPlaying/musicTrack/musicVolume অনুযায়ী WebAudio
++ * chord-loop বাজায়; প্রতি সেকেন্ডে musicTick() দিয়ে progress এগিয়ে দেয়।
++ */
++export function MusicEngine() {
++  const playing = useLauncher((s) => s.musicPlaying);
++  const trackIndex = useLauncher((s) => s.musicTrack);
++  const volume = useLauncher((s) => s.volume);
++  const tick = useLauncher((s) => s.musicTick);
++
++  useEffect(() => {
++    if (!playing) return;
++    const track = TRACKS[trackIndex % TRACKS.length];
++    type Ctor = typeof AudioContext;
++    const AC: Ctor | undefined =
++      typeof window !== 'undefined'
++        ? window.AudioContext ??
++          (window as unknown as { webkitAudioContext?: Ctor }).webkitAudioContext
++        : undefined;
++    if (!AC) return;
++    const ctx = new AC();
++    const master = ctx.createGain();
++    master.gain.value = (volume / 100) * 0.22;
++    master.connect(ctx.destination);
++
++    let step = 0;
++    const beatMs = 60000 / track.bpm;
++    const playNote = (freq: number, dur: number, gainScale: number) => {
++      const osc = ctx.createOscillator();
++      const gain = ctx.createGain();
++      osc.type = 'triangle';
++      osc.frequency.value = freq;
++      const t = ctx.currentTime;
++      gain.gain.setValueAtTime(0, t);
++      gain.gain.linearRampToValueAtTime(gainScale, t + 0.02);
++      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
++      osc.connect(gain).connect(master);
++      osc.start(t);
++      osc.stop(t + dur + 0.05);
++    };
++    const sequencer = window.setInterval(() => {
++      playNote(track.notes[step % track.notes.length], 0.34, 0.9);
++      if (step % 4 === 0) playNote(track.notes[0] / 2, 0.5, 0.7); // bass
++      if (step % 8 === 6) playNote(track.notes[3] * 2, 0.18, 0.35); // sparkle
++      step += 1;
++    }, beatMs);
++    const progress = window.setInterval(tick, 1000);
++    return () => {
++      window.clearInterval(sequencer);
++      window.clearInterval(progress);
++      void ctx.close();
++    };
++  }, [playing, trackIndex, volume, tick]);
++
++  return null;
++}
++
++export function MusicApp() {
++  const playing = useLauncher((s) => s.musicPlaying);
++  const toggleMusic = useLauncher((s) => s.toggleMusic);
++  const trackIndex = useLauncher((s) => s.musicTrack);
++  const setTrack = useLauncher((s) => s.setMusicTrack);
++  const elapsed = useLauncher((s) => s.musicElapsed);
++  const track = TRACKS[trackIndex % TRACKS.length];
++  const barRef = useRef<HTMLDivElement>(null);
++
++  const fmt = (sec: number) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
++  const progress = Math.min(100, (elapsed / TRACK_LENGTH_SECONDS) * 100);
++
++  return (
++    <div className="flex h-full flex-col items-center gap-5 px-6 pb-8 pt-16 text-white">
++      <p className="text-xs uppercase tracking-[0.2em] text-white/60">Now Playing</p>
++      <div
++        className={`relative flex aspect-square w-full max-w-[16rem] items-center justify-center rounded-3xl bg-gradient-to-br ${track.art} shadow-2xl shadow-black/50 ring-1 ring-white/20`}
++      >
++        <Music2 size={64} className="text-white/80" />
++        {/* বাংলা: বাজার অবস্থায় আলবার্ট আর্ট হালকা নিঃশ্বাসের মতো পালস করে (live feel)। */}
++        {playing && (
++          <motion.div
++            key={`pulse-${elapsed === 0 ? 'start' : 'run'}-${trackIndex}`}
++            className="absolute inset-0 rounded-3xl bg-white/10"
++            initial={{ opacity: 0.35, scale: 1 }}
++            animate={{ opacity: 0, scale: 1.04 }}
++            transition={{ repeat: Infinity, duration: 1.6, ease: 'easeOut' }}
++          />
++        )}
++      </div>
++      <div className="text-center">
++        <p className="text-lg font-semibold">{track.name}</p>
++        <p className="text-sm text-white/60">{track.artist} · {track.bpm} BPM · WebAudio synth</p>
++      </div>
++      <div className="w-full">
++        <div ref={barRef} className="h-1.5 w-full overflow-hidden rounded-full bg-white/15">
++          <div className="h-full rounded-full bg-white/80 transition-[width] duration-1000 ease-linear" style={{ width: `${progress}%` }} />
++        </div>
++        <div className="mt-1 flex justify-between text-[10px] text-white/50">
++          <span>{fmt(elapsed)}</span>
++          <span>{fmt(TRACK_LENGTH_SECONDS)}</span>
++        </div>
++      </div>
++      <div className="flex items-center gap-7">
++        <button type="button" aria-label="Previous track" onClick={() => setTrack((trackIndex + TRACKS.length - 1) % TRACKS.length)} className="text-white/80 transition hover:text-white active:scale-90">
++          <SkipBack size={30} />
++        </button>
++        <button
++          type="button"
++          aria-label={playing ? 'Pause' : 'Play'}
++          onClick={toggleMusic}
++          data-testid="music-play-toggle"
++          className="flex size-16 items-center justify-center rounded-full bg-white text-slate-900 shadow-lg transition active:scale-90"
++        >
++          {playing ? <Pause size={28} /> : <Play size={28} className="translate-x-0.5" />}
++        </button>
++        <button type="button" aria-label="Next track" onClick={() => setTrack((trackIndex + 1) % TRACKS.length)} className="text-white/80 transition hover:text-white active:scale-90">
++          <SkipForward size={30} />
++        </button>
++      </div>
++      <ul className="mt-auto w-full rounded-2xl bg-white/10 p-2 text-xs ring-1 ring-white/10">
++        {TRACKS.map((t, i) => (
++          <li key={t.name}>
++            <button
++              type="button"
++              onClick={() => setTrack(i)}
++              className={`flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left transition ${i === trackIndex % TRACKS.length ? 'bg-white/15 text-white' : 'text-white/60 hover:bg-white/5'}`}
++            >
++              <span className={`size-6 shrink-0 rounded-md bg-gradient-to-br ${t.art}`} />
++              <span className="truncate font-medium">{t.name}</span>
++              {i === trackIndex % TRACKS.length && <span className="ml-auto text-[10px] text-cyan-200">{playing ? '▶ Playing' : 'Selected'}</span>}
++            </button>
++          </li>
++        ))}
++      </ul>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/apps/NotesApp.tsx b/studio/src/components/mobile/apps/NotesApp.tsx
+new file mode 100644
+index 00000000..c23781a1
+--- /dev/null
++++ b/studio/src/components/mobile/apps/NotesApp.tsx
+@@ -0,0 +1,117 @@
++/**
++ * NotesApp — localStorage-synced notes (iOS-home-template)।
++ * বাংলা: launcherStore persist মিডলওয়্যারের মাধ্যমে সরাসরি localStorage-এ
++ * সেভ হয় (key: supremeai_home_launcher_v1) — এই অ্যাপের মূল চাহিদা এটাই।
++ */
++
++import { useState } from 'react';
++import { Check, Plus, Trash2 } from 'lucide-react';
++import { useLauncher } from '../launcherStore';
++
++export function NotesApp() {
++  const notes = useLauncher((s) => s.notes);
++  const addNote = useLauncher((s) => s.addNote);
++  const updateNote = useLauncher((s) => s.updateNote);
++  const deleteNote = useLauncher((s) => s.deleteNote);
++
++  const [editingId, setEditingId] = useState<string | null>(null);
++  const [draftTitle, setDraftTitle] = useState('');
++  const [draftBody, setDraftBody] = useState('');
++
++  const startNew = () => {
++    setEditingId('new');
++    setDraftTitle('');
++    setDraftBody('');
++  };
++  const startEdit = (id: string, title: string, body: string) => {
++    setEditingId(id);
++    setDraftTitle(title);
++    setDraftBody(body);
++  };
++  const save = () => {
++    if (editingId === 'new') addNote(draftTitle.trim() || 'Untitled note', draftBody);
++    else if (editingId) updateNote(editingId, draftTitle.trim() || 'Untitled note', draftBody);
++    setEditingId(null);
++  };
++
++  if (editingId) {
++    return (
++      <div className="flex h-full flex-col pt-14 text-white">
++        <div className="flex items-center justify-between px-5 pb-3">
++          <button type="button" onClick={() => setEditingId(null)} className="text-sm text-amber-300 transition active:scale-95">
++            ← Notes
++          </button>
++          <button
++            type="button"
++            onClick={save}
++            data-testid="notes-save"
++            className="flex items-center gap-1 rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white transition active:scale-95"
++          >
++            <Check size={13} /> Save
++          </button>
++        </div>
++        <div className="flex flex-1 flex-col gap-3 px-5 pb-8">
++          <input
++            value={draftTitle}
++            onChange={(e) => setDraftTitle(e.target.value)}
++            placeholder="Title"
++            data-testid="notes-title-input"
++            className="rounded-xl bg-white/10 px-3 py-2.5 text-base font-semibold text-white outline-none ring-1 ring-white/15 placeholder:text-white/40 focus:ring-cyan-300/50"
++          />
++          <textarea
++            value={draftBody}
++            onChange={(e) => setDraftBody(e.target.value)}
++            placeholder="Start writing… (auto-saved to this browser's localStorage on Save)"
++            data-testid="notes-body-input"
++            rows={12}
++            className="flex-1 resize-none rounded-xl bg-white/10 px-3 py-2.5 text-sm leading-6 text-white outline-none ring-1 ring-white/15 placeholder:text-white/40 focus:ring-cyan-300/50"
++          />
++          <p className="text-center text-[10px] text-white/40">Synced to localStorage on save — survives reload.</p>
++        </div>
++      </div>
++    );
++  }
++
++  return (
++    <div className="flex h-full flex-col pt-14 text-white">
++      <header className="flex items-center justify-between px-5 pb-3">
++        <h1 className="text-2xl font-bold">Notes</h1>
++        <button
++          type="button"
++          onClick={startNew}
++          aria-label="New note"
++          data-testid="notes-new"
++          className="flex size-9 items-center justify-center rounded-full bg-amber-400/90 text-slate-900 transition active:scale-90"
++        >
++          <Plus size={18} />
++        </button>
++      </header>
++      <ul className="flex flex-1 flex-col gap-2 overflow-y-auto px-4 pb-8">
++        {notes.length === 0 && (
++          <li className="mt-16 text-center text-sm text-white/50">
++            No notes yet — tap <span className="font-semibold text-amber-300">+</span> to write your first one.
++          </li>
++        )}
++        {notes.map((n) => (
++          <li key={n.id}>
++            <div className="group flex items-stretch overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/10 transition hover:bg-white/[0.14]">
++              <button type="button" onClick={() => startEdit(n.id, n.title, n.body)} className="min-w-0 flex-1 px-4 py-3 text-left">
++                <p className="truncate text-sm font-semibold">{n.title}</p>
++                <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-white/55">{n.body || 'No additional text'}</p>
++                <p className="mt-1 text-[10px] text-white/35">{new Date(n.updatedAt).toLocaleString()}</p>
++              </button>
++              <button
++                type="button"
++                onClick={() => deleteNote(n.id)}
++                aria-label={`Delete ${n.title}`}
++                className="flex w-11 items-center justify-center text-white/35 transition hover:bg-rose-500/20 hover:text-rose-300"
++              >
++                <Trash2 size={15} />
++              </button>
++            </div>
++          </li>
++        ))}
++      </ul>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/apps/PhotosApp.tsx b/studio/src/components/mobile/apps/PhotosApp.tsx
+new file mode 100644
+index 00000000..40c5d8bb
+--- /dev/null
++++ b/studio/src/components/mobile/apps/PhotosApp.tsx
+@@ -0,0 +1,79 @@
++/**
++ * PhotosApp — starter gallery (iOS-home-template)।
++ * বাংলা: কোনো বাইরের image ডাউনলোড নেই ($0 + offline-safe) — প্রতিটি "ছবি"
++ * একটি deterministic CSS gradient artwork; ট্যাপ করলে fullscreen viewer খোলে।
++ */
++
++import { useState } from 'react';
++import { motion } from 'framer-motion';
++import { X } from 'lucide-react';
++
++interface Artwork {
++  id: number;
++  title: string;
++  css: string;
++}
++
++const ARTWORKS: Artwork[] = [
++  { id: 1, title: 'Aurora Reef', css: 'linear-gradient(135deg, #22d3ee, #8b5cf6 60%, #101020)' },
++  { id: 2, title: 'Emerald Dawn', css: 'linear-gradient(160deg, #34d399, #0f766e 55%, #05201a)' },
++  { id: 3, title: 'Solar Drift', css: 'linear-gradient(140deg, #fbbf24, #f43f5e 60%, #1c0509)' },
++  { id: 4, title: 'Tidal Glass', css: 'linear-gradient(200deg, #67e8f9, #0369a1 55%, #06121f)' },
++  { id: 5, title: 'Violet Ember', css: 'linear-gradient(120deg, #c084fc, #7c3aed 55%, #150825)' },
++  { id: 6, title: 'Amber Field', css: 'linear-gradient(150deg, #fcd34d, #d97706 60%, #1d1204)' },
++  { id: 7, title: 'Neon Grid', css: 'linear-gradient(90deg, #2dd4bf, #6366f1 50%, #0b1026)' },
++  { id: 8, title: 'Rose Signal', css: 'linear-gradient(170deg, #fb7185, #be123c 55%, #20060d)' },
++  { id: 9, title: 'Deep Orbit', css: 'radial-gradient(120% 120% at 25% 20%, #38bdf8, #1e1b4b 60%, #050510)' },
++  { id: 10, title: 'Copper Dusk', css: 'linear-gradient(130deg, #f59e0b, #9a3412 60%, #170a04)' },
++  { id: 11, title: 'Mint Circuit', css: 'linear-gradient(180deg, #a7f3d0, #059669 55%, #03150e)' },
++  { id: 12, title: 'Slate Moon', css: 'linear-gradient(210deg, #e2e8f0, #475569 55%, #0a0d14)' },
++];
++
++export function PhotosApp() {
++  const [selected, setSelected] = useState<Artwork | null>(null);
++
++  return (
++    <div className="flex h-full flex-col pt-14 text-white">
++      <header className="flex items-baseline justify-between px-5 pb-3">
++        <h1 className="text-2xl font-bold">Gallery</h1>
++        <p className="text-xs text-white/60">{ARTWORKS.length} artworks · gradient starter set</p>
++      </header>
++      <div className="grid flex-1 grid-cols-3 content-start gap-1.5 overflow-y-auto px-3 pb-8">
++        {ARTWORKS.map((a) => (
++          <button
++            key={a.id}
++            type="button"
++            onClick={() => setSelected(a)}
++            className="aspect-square overflow-hidden rounded-lg ring-1 ring-white/10 transition active:scale-95"
++            aria-label={`Open ${a.title}`}
++          >
++            <span className="block size-full" style={{ background: a.css }} />
++          </button>
++        ))}
++      </div>
++
++      {selected && (
++        <motion.div
++          className="absolute inset-0 z-20 flex flex-col bg-black/90 backdrop-blur-md"
++          initial={{ opacity: 0, scale: 0.94 }}
++          animate={{ opacity: 1, scale: 1 }}
++          exit={{ opacity: 0 }}
++          transition={{ type: 'spring', stiffness: 320, damping: 30 }}
++        >
++          <div className="flex items-center justify-between px-5 pt-14 pb-3 text-white">
++            <div>
++              <p className="text-base font-semibold">{selected.title}</p>
++              <p className="text-[11px] text-white/50">SupremeAI starter gallery</p>
++            </div>
++            <button type="button" onClick={() => setSelected(null)} aria-label="Close viewer" className="rounded-full bg-white/10 p-2 transition active:scale-90">
++              <X size={18} />
++            </button>
++          </div>
++          <div className="flex flex-1 items-center justify-center p-5">
++            <div className="aspect-[3/4] w-full rounded-2xl shadow-2xl ring-1 ring-white/20" style={{ background: selected.css }} />
++          </div>
++        </motion.div>
++      )}
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/apps/SettingsApp.tsx b/studio/src/components/mobile/apps/SettingsApp.tsx
+new file mode 100644
+index 00000000..f9a8bf5a
+--- /dev/null
++++ b/studio/src/components/mobile/apps/SettingsApp.tsx
+@@ -0,0 +1,93 @@
++/**
++ * SettingsApp — theme switching + launcher settings (iOS-home-template)।
++ * বাংলা: ৪টি wallpaper theme (Aurora/Emerald/Sunset/Mono) — পছন্দ persist হয়;
++ * brightness slider Control Center-এর সাথে একই store state শেয়ার করে।
++ */
++
++import { Check, Moon, RotateCcw, Sun } from 'lucide-react';
++import { THEMES, useLauncher } from '../launcherStore';
++import type { ThemeId } from '../launcherStore';
++
++const THEME_ORDER: ThemeId[] = ['aurora', 'emerald', 'sunset', 'mono'];
++/** Settings-এর swatch-প্রিভিউ — পূর্ণ wallpaper স্ট্রিং ছোট কার্ডে দেখানোর জন্য। */
++const SWATCH: Record<ThemeId, string> = {
++  aurora: 'linear-gradient(135deg, #22d3ee, #8b5cf6 55%, #0a1020)',
++  emerald: 'linear-gradient(135deg, #34d399, #14b8a6 55%, #04120c)',
++  sunset: 'linear-gradient(135deg, #fb923c, #f43f5e 55%, #140709)',
++  mono: 'linear-gradient(135deg, #cbd5e1, #64748b 55%, #0a0c10)',
++};
++
++export function SettingsApp() {
++  const theme = useLauncher((s) => s.theme);
++  const setTheme = useLauncher((s) => s.setTheme);
++  const resetLayout = useLauncher((s) => s.resetLayout);
++  const brightness = useLauncher((s) => s.brightness);
++  const setBrightness = useLauncher((s) => s.setBrightness);
++
++  return (
++    <div className="flex h-full flex-col gap-4 overflow-y-auto px-5 pb-8 pt-14 text-white">
++      <h1 className="text-2xl font-bold">Settings</h1>
++
++      <section className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
++        <p className="mb-3 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/60">
++          <Sun size={12} /> Wallpaper theme
++        </p>
++        <div className="grid grid-cols-2 gap-2.5">
++          {THEME_ORDER.map((id) => (
++            <button
++              key={id}
++              type="button"
++              onClick={() => setTheme(id)}
++              aria-pressed={theme === id}
++              data-testid={`theme-${id}`}
++              className={`relative overflow-hidden rounded-xl p-2 text-left ring-1 transition active:scale-[0.97] ${
++                theme === id ? 'ring-2 ring-cyan-300' : 'ring-white/15 hover:ring-white/30'
++              }`}
++            >
++              <span className="block h-12 w-full rounded-lg" style={{ background: SWATCH[id] }} />
++              <span className="mt-1.5 flex items-center gap-1 text-xs font-medium">
++                {THEMES[id].label}
++                {theme === id && <Check size={12} className="text-cyan-300" />}
++              </span>
++            </button>
++          ))}
++        </div>
++      </section>
++
++      <section className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
++        <p className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/60">
++          <Moon size={12} /> Brightness
++        </p>
++        <input
++          type="range"
++          min={10}
++          max={100}
++          value={brightness}
++          onChange={(e) => setBrightness(Number(e.target.value))}
++          className="w-full accent-cyan-300"
++          aria-label="Screen brightness"
++        />
++        <p className="text-[10px] text-white/45">{brightness}% — synced with Control Center</p>
++      </section>
++
++      <section className="rounded-2xl bg-white/10 p-4 ring-1 ring-white/10">
++        <p className="text-[11px] uppercase tracking-wider text-white/60">Home screen</p>
++        <button
++          type="button"
++          onClick={resetLayout}
++          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-white/10 py-2 text-xs font-medium text-white/85 transition hover:bg-white/15 active:scale-[0.98]"
++        >
++          <RotateCcw size={13} /> Reset icon layout
++        </button>
++        <p className="mt-2 text-[10px] leading-4 text-white/45">
++          Long-press any icon for wiggle mode, then drag to rearrange. Layout is saved in this browser.
++        </p>
++      </section>
++
++      <footer className="mt-auto rounded-2xl bg-white/[0.06] p-4 text-center ring-1 ring-white/10">
++        <p className="text-sm font-semibold">SupremeAI Home</p>
++        <p className="text-[10px] text-white/45">Launcher v1 · demo apps run fully in-browser · $0 external cost</p>
++      </footer>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/apps/WeatherApp.tsx b/studio/src/components/mobile/apps/WeatherApp.tsx
+new file mode 100644
+index 00000000..6b04ed81
+--- /dev/null
++++ b/studio/src/components/mobile/apps/WeatherApp.tsx
+@@ -0,0 +1,89 @@
++/**
++ * WeatherApp — current + 7-day forecast (iOS-home-template)।
++ * বাংলা: বাইরের কোনো API/কি নেই ($0 নীতি) — deterministic ডেমো ডেটা দিয়েই
++ * পূর্ণ অভিজ্ঞতা; প্রতি ৪৫ সেকেন্ডে হালকা "refresh" ভ্যারিয়েশন widget-ও পালস করে।
++ */
++
++import { useEffect, useState } from 'react';
++import { CloudRain, CloudSun, Cloudy, Sun, Wind, Droplets } from 'lucide-react';
++
++interface Day {
++  label: string;
++  icon: typeof Sun;
++  lo: number;
++  hi: number;
++}
++
++const WEEK: Day[] = [
++  { label: 'Today', icon: CloudSun, lo: 22, hi: 31 },
++  { label: 'Tue', icon: Sun, lo: 23, hi: 33 },
++  { label: 'Wed', icon: CloudSun, lo: 23, hi: 32 },
++  { label: 'Thu', icon: Cloudy, lo: 22, hi: 30 },
++  { label: 'Fri', icon: CloudRain, lo: 21, hi: 28 },
++  { label: 'Sat', icon: CloudRain, lo: 21, hi: 27 },
++  { label: 'Sun', icon: CloudSun, lo: 22, hi: 30 },
++];
++
++const CONDITIONS = ['Mostly Clear', 'Sunny', 'Partly Cloudy', 'Overcast', 'Light Rain'];
++
++export function WeatherApp() {
++  const [tick, setTick] = useState(0);
++  useEffect(() => {
++    const t = window.setInterval(() => setTick((v) => v + 1), 45_000);
++    return () => window.clearInterval(t);
++  }, []);
++  const temp = 28 + (tick % 3);
++  const condition = CONDITIONS[tick % CONDITIONS.length];
++
++  return (
++    <div className="flex h-full flex-col gap-4 overflow-y-auto px-5 pb-6 pt-14 text-white">
++      <header className="text-center">
++        <p className="text-sm font-medium text-white/70">Dhaka</p>
++        <p className="text-[4.2rem] font-extralight leading-none tracking-tight">{temp}°</p>
++        <p className="text-sm text-white/80">{condition}</p>
++        <p className="text-xs text-white/60">H: {WEEK[0].hi}° · L: {WEEK[0].lo}°</p>
++      </header>
++
++      <div className="grid grid-cols-5 gap-2 rounded-2xl bg-white/10 p-3 ring-1 ring-white/10">
++        {[9, 12, 15, 18, 21].map((h, i) => (
++          <div key={h} className="flex flex-col items-center gap-1.5 text-[11px] text-white/80">
++            <span>{h}:00</span>
++            {i % 2 === 0 ? <Sun size={16} className="text-amber-300" /> : <CloudSun size={16} className="text-cyan-200" />}
++            <span className="font-semibold text-white">{temp + ((i * 7) % 3) - 1}°</span>
++          </div>
++        ))}
++      </div>
++
++      <section className="rounded-2xl bg-white/10 p-3 ring-1 ring-white/10">
++        <p className="mb-2 flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/60">
++          <Wind size={12} /> 7-day forecast
++        </p>
++        <ul className="flex flex-col divide-y divide-white/10">
++          {WEEK.map((d, i) => {
++            const lo = d.lo + (tick % 2);
++            const hi = d.hi + (tick % 2);
++            return (
++              <li key={d.label} className="flex items-center gap-3 py-2 text-sm">
++                <span className="w-12 text-white/80">{d.label}</span>
++                <d.icon size={18} className={d.icon === Sun ? 'text-amber-300' : 'text-cyan-200'} />
++                <span className="ml-auto w-8 text-right text-white/60">{lo}°</span>
++                <span className="h-1.5 w-20 overflow-hidden rounded-full bg-white/15">
++                  <span
++                    className="block h-full rounded-full bg-gradient-to-r from-cyan-300 to-amber-300"
++                    style={{ width: `${((hi - 18) / 17) * 100}%`, opacity: 1 - i * 0.08 }}
++                  />
++                </span>
++                <span className="w-8 text-right font-semibold">{hi}°</span>
++              </li>
++            );
++          })}
++        </ul>
++      </section>
++
++      <footer className="flex items-center justify-center gap-4 text-[11px] text-white/60">
++        <span className="flex items-center gap-1"><Droplets size={12} /> Humidity 68%</span>
++        <span className="flex items-center gap-1"><Wind size={12} /> 12 km/h</span>
++      </footer>
++    </div>
++  );
++}
+diff --git a/studio/src/components/mobile/launcherStore.ts b/studio/src/components/mobile/launcherStore.ts
+new file mode 100644
+index 00000000..587fd522
+--- /dev/null
++++ b/studio/src/components/mobile/launcherStore.ts
+@@ -0,0 +1,238 @@
++/**
++ * SupremeAI Home Launcher — state store (#iOS-home-template, owner request 2026-10-27).
++ *
++ * বাংলা: Mobile Simulator-এর ফোনে এখন একটি iOS-ঘরানার Home Launcher থাকবে —
++ * home screen, app icon, swipe page, widget, notification/control center।
++ * Store convention: Zustand (কোডবেসের সব store-এর মতোই)।
++ *
++ * Persist নীতি (useMobilePreview-এর মন্তব্যের সাথে সামঞ্জস্যপূর্ণ): "UI অবস্থা"
++ * (wiggle, কোন অ্যাপ খোলা, প্যানেল, music playback) persist নিষিদ্ধ; কিন্তু
++ * **সেটিংস ও ব্যবহারকারীর ডেটা** (theme, icon layout, Notes) persist করা যায় —
++ * Notes অ্যাপের মূল চাহিদাই ছিল localStorage sync।
++ */
++
++import { create } from 'zustand';
++import { persist, createJSONStorage } from 'zustand/middleware';
++
++export type ThemeId = 'aurora' | 'emerald' | 'sunset' | 'mono';
++
++export type AppId = 'weather' | 'music' | 'photos' | 'notes' | 'calendar' | 'settings';
++
++export interface Note {
++  id: string;
++  title: string;
++  body: string;
++  updatedAt: number;
++}
++
++/** ফোন-স্ক্রিনের ভেতরের স্থানাঙ্কে আইকনের rect — app-launch zoom অ্যানিমেশনের জন্য। */
++export interface Rect {
++  x: number;
++  y: number;
++  width: number;
++  height: number;
++}
++
++export type PanelId = 'none' | 'notifications' | 'control';
++
++export interface LauncherLayout {
++  dock: AppId[];
++  pages: AppId[][];
++}
++
++export const DEFAULT_LAYOUT: LauncherLayout = {
++  dock: ['photos', 'music', 'notes', 'settings'],
++  pages: [
++    ['weather', 'calendar'],
++    [],
++  ],
++};
++
++/** Theme-প্রতি wallpaper gradient + accent — Settings অ্যাপ থেকে বদলানো যায়। */
++export const THEMES: Record<ThemeId, { label: string; wallpaper: string; accent: string }> = {
++  aurora: {
++    label: 'Aurora',
++    wallpaper:
++      'radial-gradient(120% 90% at 18% 8%, rgba(34,211,238,0.34), transparent 55%),' +
++      'radial-gradient(100% 80% at 85% 18%, rgba(139,92,246,0.30), transparent 58%),' +
++      'radial-gradient(120% 100% at 50% 100%, rgba(16,185,129,0.22), transparent 60%),' +
++      'linear-gradient(180deg, #060913 0%, #0a1020 48%, #05070f 100%)',
++    accent: 'text-cyan-300',
++  },
++  emerald: {
++    label: 'Emerald',
++    wallpaper:
++      'radial-gradient(120% 90% at 20% 10%, rgba(16,185,129,0.36), transparent 55%),' +
++      'radial-gradient(100% 80% at 82% 20%, rgba(20,184,166,0.26), transparent 58%),' +
++      'radial-gradient(120% 100% at 50% 100%, rgba(34,211,238,0.18), transparent 60%),' +
++      'linear-gradient(180deg, #04120c 0%, #061a12 48%, #030a08 100%)',
++    accent: 'text-emerald-300',
++  },
++  sunset: {
++    label: 'Sunset',
++    wallpaper:
++      'radial-gradient(120% 90% at 18% 8%, rgba(251,146,60,0.32), transparent 55%),' +
++      'radial-gradient(100% 80% at 85% 18%, rgba(244,63,94,0.28), transparent 58%),' +
++      'radial-gradient(120% 100% at 50% 100%, rgba(168,85,247,0.20), transparent 60%),' +
++      'linear-gradient(180deg, #140709 0%, #1c0b10 48%, #0b0507 100%)',
++    accent: 'text-amber-300',
++  },
++  mono: {
++    label: 'Mono',
++    wallpaper:
++      'radial-gradient(120% 90% at 20% 8%, rgba(148,163,184,0.24), transparent 55%),' +
++      'radial-gradient(100% 80% at 82% 20%, rgba(100,116,139,0.20), transparent 58%),' +
++      'linear-gradient(180deg, #0a0c10 0%, #12151b 48%, #06070a 100%)',
++    accent: 'text-slate-200',
++  },
++};
++
++/**
++ * Pure helper — layout-এর যেকোনো দুটি slot (dock/page) swap করে।
++ * বাংলা: wiggle mode-এ দুই আইকনের জায়গা বদল — আলাদা pure ফাংশন রাখা হয়েছে
++ * যাতে ছোট vitest টেস্টে DOM ছাড়াই reorder-লজিক যাচাই করা যায়।
++ */
++export function swapInLayout(layout: LauncherLayout, a: AppId, b: AppId): LauncherLayout {
++  if (a === b) return layout;
++  const find = (id: AppId): { zone: 'dock' | 'page'; page: number; index: number } | null => {
++    const di = layout.dock.indexOf(id);
++    if (di >= 0) return { zone: 'dock', page: -1, index: di };
++    for (let p = 0; p < layout.pages.length; p++) {
++      const ii = layout.pages[p].indexOf(id);
++      if (ii >= 0) return { zone: 'page', page: p, index: ii };
++    }
++    return null;
++  };
++  const pa = find(a);
++  const pb = find(b);
++  if (!pa || !pb) return layout;
++  const next: LauncherLayout = {
++    dock: [...layout.dock],
++    pages: layout.pages.map((p) => [...p]),
++  };
++  const slotOf = (pos: { zone: 'dock' | 'page'; page: number; index: number }): AppId[] =>
++    pos.zone === 'dock' ? next.dock : next.pages[pos.page];
++  slotOf(pa)[pa.index] = b;
++  slotOf(pb)[pb.index] = a;
++  return next;
++}
++
++interface LauncherState {
++  // ---- persisted: settings + user data ----
++  theme: ThemeId;
++  layout: LauncherLayout;
++  notes: Note[];
++  setTheme: (t: ThemeId) => void;
++  cycleTheme: () => void;
++  swapApps: (a: AppId, b: AppId) => void;
++  resetLayout: () => void;
++  addNote: (title: string, body: string) => void;
++  updateNote: (id: string, title: string, body: string) => void;
++  deleteNote: (id: string) => void;
++
++  // ---- transient: UI state (persist নিষিদ্ধ) ----
++  wiggle: boolean;
++  setWiggle: (w: boolean) => void;
++  openApp: AppId | null;
++  launchRect: Rect | null;
++  openAppWith: (app: AppId, rect: Rect) => void;
++  closeApp: () => void;
++  panel: PanelId;
++  setPanel: (p: PanelId) => void;
++  page: number;
++  setPage: (p: number) => void;
++
++  // ---- transient: control center toggles ----
++  airplane: boolean;
++  wifi: boolean;
++  bluetooth: boolean;
++  flashlight: boolean;
++  brightness: number; // 0-100
++  volume: number; // 0-100
++  toggleControl: (key: 'airplane' | 'wifi' | 'bluetooth' | 'flashlight') => void;
++  setBrightness: (v: number) => void;
++  setVolume: (v: number) => void;
++
++  // ---- transient: shared music state (widget + control center + app) ----
++  musicPlaying: boolean;
++  musicTrack: number;
++  musicElapsed: number; // seconds within current track
++  toggleMusic: () => void;
++  setMusicTrack: (i: number) => void;
++  musicTick: () => void;
++}
++
++export const useLauncher = create<LauncherState>()(
++  persist(
++    (set) => ({
++      theme: 'aurora',
++      layout: DEFAULT_LAYOUT,
++      notes: [
++        {
++          id: 'note-welcome',
++          title: 'Welcome to SupremeAI',
++          body: 'এই Notes অ্যাপটি localStorage-এ sync হয় — লিখে রাখলে ফোন বন্ধ করলেও থাকবে।',
++          updatedAt: Date.parse('2026-10-27T09:00:00Z'),
++        },
++      ],
++      setTheme: (t) => set({ theme: t }),
++      cycleTheme: () =>
++        set((s) => {
++          const order: ThemeId[] = ['aurora', 'emerald', 'sunset', 'mono'];
++          return { theme: order[(order.indexOf(s.theme) + 1) % order.length] };
++        }),
++      swapApps: (a, b) => set((s) => ({ layout: swapInLayout(s.layout, a, b) })),
++      resetLayout: () => set({ layout: DEFAULT_LAYOUT }),
++      addNote: (title, body) =>
++        set((s) => ({
++          notes: [
++            { id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, title, body, updatedAt: Date.now() },
++            ...s.notes,
++          ],
++        })),
++      updateNote: (id, title, body) =>
++        set((s) => ({
++          notes: s.notes.map((n) => (n.id === id ? { ...n, title, body, updatedAt: Date.now() } : n)),
++        })),
++      deleteNote: (id) => set((s) => ({ notes: s.notes.filter((n) => n.id !== id) })),
++
++      wiggle: false,
++      setWiggle: (w) => set({ wiggle: w }),
++      openApp: null,
++      launchRect: null,
++      openAppWith: (app, rect) => set({ openApp: app, launchRect: rect, panel: 'none', wiggle: false }),
++      closeApp: () => set({ openApp: null, launchRect: null }),
++      panel: 'none',
++      setPanel: (p) => set({ panel: p }),
++      page: 0,
++      setPage: (p) => set({ page: p }),
++
++      airplane: false,
++      wifi: true,
++      bluetooth: false,
++      flashlight: false,
++      brightness: 85,
++      volume: 60,
++      toggleControl: (key) => set((s) => ({ [key]: !s[key] }) as Partial<LauncherState>),
++      setBrightness: (v) => set({ brightness: Math.max(0, Math.min(100, v)) }),
++      setVolume: (v) => set({ volume: Math.max(0, Math.min(100, v)) }),
++
++      musicPlaying: false,
++      musicTrack: 0,
++      musicElapsed: 0,
++      toggleMusic: () => set((s) => ({ musicPlaying: !s.musicPlaying })),
++      setMusicTrack: (i) => set({ musicTrack: i, musicElapsed: 0 }),
++      musicTick: () =>
++        set((s) => ({ musicElapsed: (s.musicElapsed + 1) % TRACK_LENGTH_SECONDS })),
++    }),
++    {
++      name: 'supremeai_home_launcher_v1',
++      storage: createJSONStorage(() => localStorage),
++      // বাংলা: শুধু settings + user data persist — UI/playback state নয়।
++      partialize: (s) => ({ theme: s.theme, layout: s.layout, notes: s.notes }),
++    },
++  ),
++);
++
++/** ডেমো ট্র্যাকের দৈর্ঘ্য (সেকেন্ড) — MusicEngine এই দৈর্ঘ্যে loop করে। */
++export const TRACK_LENGTH_SECONDS = 96;

@@ -1,0 +1,14 @@
+diff --git a/.gitleaksignore b/.gitleaksignore
+index e326abf9..6137246a 100644
+--- a/.gitleaksignore
++++ b/.gitleaksignore
+@@ -15,3 +15,9 @@ df32c1b027918e4cbe5deeb0d26e55daeff39b2f:studio/src/components/jarvis/avatarAsse
+ 4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:gcp-api-key:182
+ 4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:generic-api-key:183
+ 4e4011b40b6150417716d6ba0933c05d983b08b8:scripts/ci/master_secret_shield.py:generic-api-key:190
++# False-positive git commit SHAs in federation audit report (issue #1763)
++b886c118154ef4b80a2d6afc5b50fcba1061a59f:docs/reports/FEDERATION_AUDIT_2026-10-28.md:supremeai-cloudflare-global-key:6
++b886c118154ef4b80a2d6afc5b50fcba1061a59f:docs/reports/FEDERATION_AUDIT_2026-10-28.md:supremeai-cloudflare-api-token:5
++b886c118154ef4b80a2d6afc5b50fcba1061a59f:docs/reports/FEDERATION_AUDIT_2026-10-28.md:supremeai-cloudflare-api-token:6
++# False-positive filename in dependabot blocker dossier (issue #1771)
++da0c80769f9d2376485efe3cbbd755444e6c4424:docs/AUDIT_2026-10-28-dependabot-lane-blocker.md:supremeai-cloudflare-api-token:34

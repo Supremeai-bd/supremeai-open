@@ -1,0 +1,676 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 1b0c97f4..e79a926c 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -400,15 +400,18 @@ jobs:
+                 ;;
+               command/*|handlers/telegram*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-command")
++                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               skills/*|examples/langchain-*|examples/vercel-*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-skills")
++                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               vscode/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-vscode")
+                 ;;
+               agents/*|runner/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-agents")
++                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               browser/*|sandbox/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-browser")
+@@ -418,6 +421,7 @@ jobs:
+                 ;;
+               infrastructure/mcp-control-plane/*|api-schemas/heartbeat.*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-mcp-control-plane")
++                TARGET_REPOS+=("Supremeai-bd/supremeai-api")
+                 ;;
+               deployments/*|infra/*)
+                 TARGET_REPOS+=("Supremeai-bd/supremeai-infrastructure")
+@@ -576,18 +580,22 @@ jobs:
+                   out.add("Supremeai-bd/supremeai-core")
+               if f.startswith("command/") or f.startswith("handlers/telegram"):
+                   out.add("Supremeai-bd/supremeai-command")
++                  out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("skills/") or f.startswith("examples/langchain-") or f.startswith("examples/vercel-"):
+                   out.add("Supremeai-bd/supremeai-skills")
++                  out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("vscode/"):
+                   out.add("Supremeai-bd/supremeai-vscode")
+               if f.startswith("agents/") or f.startswith("runner/"):
+                   out.add("Supremeai-bd/supremeai-agents")
++                  out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("browser/") or f.startswith("sandbox/"):
+                   out.add("Supremeai-bd/supremeai-browser")
+               if f.startswith("sdk/") or f.startswith("examples/sdk-") or f.startswith("api-schemas/telemetry-log.") or f.startswith("api-schemas/websocket-events."):
+                   out.add("Supremeai-bd/supremeai-sdk")
+               if f.startswith("infrastructure/mcp-control-plane/") or f.startswith("api-schemas/heartbeat."):
+                   out.add("Supremeai-bd/supremeai-mcp-control-plane")
++                  out.add("Supremeai-bd/supremeai-api")
+               if f.startswith("deployments/") or f.startswith("infra/"):
+                   out.add("Supremeai-bd/supremeai-infrastructure")
+               # central monorepo receives everything (umbrella)
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 8ec3086e..761c5918 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -47,6 +47,9 @@
+     "test:github-adapter": "tsx scripts/test-runner.ts test_github.ts GITHUB_TOKEN",
+     "test:infisical": "tsx scripts/test-runner.ts test_infisical.ts",
+     "test:remediation": "tsx scripts/test-runner.ts test_remediation.ts",
++    "test:bridge-patch-modes": "tsx scripts/test-runner.ts test_bridge_patch_modes.ts",
++    "test:bridge-freshness": "tsx scripts/test-runner.ts test_bridge_freshness.ts",
++    "test:preemptive-rotation": "tsx test_redis_preemptive_rotation.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard"
+   },
+   "keywords": [
+@@ -59,7 +62,6 @@
+     "@modelcontextprotocol/sdk": "^1.30.0",
+     "@upstash/redis": "^1.38.3",
+     "dotenv": "^17.4.2",
+-    "firebase-admin": "^14.3.0",
+     "ioredis": "^6.0.0",
+     "zod": "^4.5.4"
+   },
+diff --git a/scripts/ci/boundary_sanitization_guard.py b/scripts/ci/boundary_sanitization_guard.py
+index 3fcb2726..1d61c862 100644
+--- a/scripts/ci/boundary_sanitization_guard.py
++++ b/scripts/ci/boundary_sanitization_guard.py
+@@ -104,6 +104,7 @@
+     "LICENSE",
+     "README.md",
+     "mcp.json",
++    "ruff.toml",
+ }
+ 
+ # depth-2 granularity for dirs that host executable/config material;
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index b5e9de8a..dece228c 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -158,6 +158,13 @@ def sync_satellite(
+                 if src_file.exists():
+                     dst_file.parent.mkdir(parents=True, exist_ok=True)
+                     shutil.copy2(src_file, dst_file)
++
++        # For consolidated unified API engine (supremeai-api per ARCHITECTURE_PLAN):
++        if target_repo == "Supremeai-bd/supremeai-api":
++            for sub in ("command", "skills", "agents", "gateway"):
++                sub_src = repo_root / sub
++                if sub_src.exists():
++                    copy_tree_contents(sub_src, tmp_repo / sub)
+                     print(
+                         f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}"
+                     )
+diff --git a/vscode/README.md b/vscode/README.md
+index e6a4b0a3..d4226cf5 100644
+--- a/vscode/README.md
++++ b/vscode/README.md
+@@ -1,47 +1,25 @@
+-# SupremeAI VS Code Extension
++# SupremeAI Unified Client Hub (`supremeai-vscode`)
+ 
+-Lightweight AI coding assistant + federation bridge for SupremeAI.
++Native client applications and developer workflows for SupremeAI.  
++Per [`ARCHITECTURE_PLAN.md`](https://github.com/Supremeai-bd/supremeai-open/blob/main/ARCHITECTURE_PLAN.md), this repository hosts all non-cloud client applications:
+ 
+-## Quick Start
++| Subdirectory | Target Platform | Release Channel |
++|---|---|---|
++| **[`/extension`](./extension)** | VS Code Extension (`.vsix`) | VS Code Marketplace / GitHub Releases |
++| **[`/desktop`](./desktop)** | Windows / macOS / Linux Desktop App | GitHub Releases (`.exe`, `.dmg`, `.AppImage`) |
++| **[`/mobile`](./mobile)** | Android & iOS Supervisor App | Google Play Store / Apple App Store |
+ 
+-1. Install dependencies: `npm install`
+-2. Compile: `npm run compile`
+-3. Run tests: `npm test`
+-4. Press F5 in VS Code to launch the Extension Development Host.
++---
+ 
+-## Configuration
++## 🛠️ Quick Start
+ 
+-Open Settings → SupremeAI:
++```bash
++# Install dependencies across all workspaces
++npm install
+ 
+-- `supremeai.gatewayUrl` — Gateway base URL (default `http://127.0.0.1:8080`)
+-- `supremeai.apiKey` — `X-SupremeAI-Key` (default test key)
+-- `supremeai.model` — default model (`auto`, `llama-3.1-8b-instant`, `gpt-4o-mini`, `claude-sonnet-4-5`)
+-- `supremeai.towerUrl` — MCP Control Tower URL
+-- `supremeai.autoRefreshSeconds` — status bar poll cadence
++# Compile the VS Code extension
++npm run build:extension
+ 
+-For a zero-cost local run, start the gateway in mock mode:
+-
+-```
+-SUPREMEAI_GATEWAY_MOCK_PROVIDER=1 python -m uvicorn gateway.serve:app --port 8080
+-```
+-
+-## Features
+-
+-- **Chat Sidebar** (activity bar → SupremeAI) with model selector.
+-- **Ask about Selection** (`Ctrl+Shift+I` / `Cmd+Shift+I`) — sends selection + question to the gateway; offers to apply a returned code block.
+-- **Code Actions** — "SupremeAI: Explain/Fix selection" on any selection.
+-- **Federation Bridge** — dispatch tasks, view PR runway, emergency kill-switch.
+-- **Status Bar** — live federation health & latency.
+-
+-## Run the gateway (real providers)
+-
+-Set `SUPREMEAI_PROVIDER_BASE_<PROVIDER>` and `SUPREMEAI_PROVIDER_KEY_<PROVIDER>` env vars (groq/openai/anthropic/gemini), then:
+-
+-```
+-python -m uvicorn gateway.serve:app --port 8080
+-```
+-
+-## License
+-
+-Proprietary — SupremeAI Federation.
+-EOF
+\ No newline at end of file
++# Run extension tests
++npm run test
++```
+\ No newline at end of file
+diff --git a/vscode/desktop/README.md b/vscode/desktop/README.md
+new file mode 100644
+index 00000000..feefdf30
+--- /dev/null
++++ b/vscode/desktop/README.md
+@@ -0,0 +1,9 @@
++# SupremeAI Desktop Application
++
++Native Windows, macOS, and Linux desktop workstation application for SupremeAI.
++
++## Architecture & Responsibilities
++- System tray status and instant global keyboard shortcuts (`Ctrl+Alt+S` / `Cmd+Alt+S`).
++- Local agent runtime management and IPC bridge.
++- Standalone multi-model workspace and autonomous workflow supervisor.
++- Released via GitHub Releases as native installer binaries (`.exe`, `.dmg`, `.AppImage`).
+diff --git a/vscode/desktop/package.json b/vscode/desktop/package.json
+new file mode 100644
+index 00000000..c2a321a4
+--- /dev/null
++++ b/vscode/desktop/package.json
+@@ -0,0 +1,17 @@
++{
++  "name": "@supremeai/desktop",
++  "version": "0.1.0",
++  "description": "SupremeAI Desktop Application — Native cross-platform desktop client (Tauri / Electron)",
++  "main": "dist/index.js",
++  "scripts": {
++    "dev": "tsx src/index.ts",
++    "build": "tsc -p tsconfig.json"
++  },
++  "dependencies": {
++    "@types/node": "^20.11.0"
++  },
++  "devDependencies": {
++    "tsx": "^4.23.15",
++    "typescript": "^5.3.3"
++  }
++}
+diff --git a/vscode/desktop/src/index.ts b/vscode/desktop/src/index.ts
+new file mode 100644
+index 00000000..5122daa5
+--- /dev/null
++++ b/vscode/desktop/src/index.ts
+@@ -0,0 +1,38 @@
++/**
++ * SupremeAI Desktop Application Bridge
++ * 
++ * Provides native OS system tray, keyboard global shortcuts,
++ * and direct IPC communication with local SupremeAI agent runners.
++ */
++
++export interface DesktopConfig {
++  gatewayUrl: string;
++  apiKey: string;
++  autoLaunch: boolean;
++  theme: "dark" | "light" | "system";
++}
++
++export const DEFAULT_DESKTOP_CONFIG: DesktopConfig = {
++  gatewayUrl: "http://127.0.0.1:8080",
++  apiKey: "",
++  autoLaunch: false,
++  theme: "dark",
++};
++
++export class SupremeAIDesktop {
++  private config: DesktopConfig;
++
++  constructor(config: Partial<DesktopConfig> = {}) {
++    this.config = { ...DEFAULT_DESKTOP_CONFIG, ...config };
++  }
++
++  public async start(): Promise<void> {
++    console.log("[SupremeAI Desktop] Initializing native runtime...");
++    console.log(`[SupremeAI Desktop] Connected gateway: ${this.config.gatewayUrl}`);
++  }
++}
++
++if (require.main === module) {
++  const app = new SupremeAIDesktop();
++  app.start().catch(console.error);
++}
+diff --git a/vscode/.vscodeignore b/vscode/extension/.vscodeignore
+similarity index 100%
+rename from vscode/.vscodeignore
+rename to vscode/extension/.vscodeignore
+diff --git a/vscode/media/chat.svg b/vscode/extension/media/chat.svg
+similarity index 100%
+rename from vscode/media/chat.svg
+rename to vscode/extension/media/chat.svg
+diff --git a/vscode/package-lock.json b/vscode/extension/package-lock.json
+similarity index 100%
+rename from vscode/package-lock.json
+rename to vscode/extension/package-lock.json
+diff --git a/vscode/extension/package.json b/vscode/extension/package.json
+new file mode 100644
+index 00000000..45d7cf2b
+--- /dev/null
++++ b/vscode/extension/package.json
+@@ -0,0 +1,135 @@
++{
++  "name": "supremeai-vscode",
++  "displayName": "SupremeAI Federation IDE Bridge",
++  "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
++  "version": "0.1.0",
++  "publisher": "supremeai",
++  "license": "Apache-2.0",
++  "repository": {
++    "type": "git",
++    "url": "https://github.com/Supremeai-bd/supremeai-vscode.git"
++  },
++  "engines": {
++    "vscode": "^1.80.0"
++  },
++  "categories": [
++    "AI",
++    "Programming Languages",
++    "Other"
++  ],
++  "keywords": [
++    "supremeai",
++    "mcp",
++    "agents",
++    "runway",
++    "telemetry"
++  ],
++  "activationEvents": [
++    "onStartupFinished"
++  ],
++  "main": "./out/extension.js",
++  "contributes": {
++    "commands": [
++      {
++        "command": "supremeai.dispatchTask",
++        "title": "Dispatch Task to Federation",
++        "category": "SupremeAI"
++      },
++      {
++        "command": "supremeai.viewRunway",
++        "title": "View Active PR Runway",
++        "category": "SupremeAI"
++      },
++      {
++        "command": "supremeai.emergencyStop",
++        "title": "Trigger Emergency Autonomy Kill-Switch",
++        "category": "SupremeAI"
++      },
++      {
++        "command": "supremeai.askSelection",
++        "title": "Ask SupremeAI about Selection",
++        "category": "SupremeAI"
++      },
++      {
++        "command": "supremeai.openChat",
++        "title": "Open SupremeAI Chat",
++        "category": "SupremeAI"
++      }
++    ],
++    "viewsContainers": {
++      "activitybar": [
++        {
++          "id": "supremeai",
++          "title": "SupremeAI",
++          "icon": "media/chat.svg"
++        }
++      ]
++    },
++    "keybindings": [
++      {
++        "command": "supremeai.askSelection",
++        "key": "ctrl+shift+i",
++        "mac": "cmd+shift+i",
++        "when": "editorHasSelection"
++      }
++    ],
++    "views": {
++      "supremeai": [
++        {
++          "id": "supremeai.chat",
++          "name": "Chat",
++          "type": "webview"
++        }
++      ]
++    },
++    "configuration": {
++      "type": "object",
++      "title": "SupremeAI Configuration",
++      "properties": {
++        "supremeai.towerUrl": {
++          "type": "string",
++          "default": "https://supremeai-mcp-tower.onrender.com/mcp",
++          "description": "MCP Control Tower URL for task dispatch and telemetry"
++        },
++        "supremeai.autoRefreshSeconds": {
++          "type": "number",
++          "default": 30,
++          "description": "Telemetry poll cadence in seconds"
++        },
++        "supremeai.enableNotifications": {
++          "type": "boolean",
++          "default": true,
++          "description": "Show notification when an agent completes a task or CI gate fails"
++        },
++        "supremeai.gatewayUrl": {
++          "type": "string",
++          "default": "http://127.0.0.1:8080",
++          "description": "SupremeAI Gateway base URL for chat completions"
++        },
++        "supremeai.apiKey": {
++          "type": "string",
++          "default": "supremeai-key-test-0000000001",
++          "description": "X-SupremeAI-Key for gateway authentication"
++        },
++        "supremeai.model": {
++          "type": "string",
++          "default": "auto",
++          "description": "Default model tier (auto, fast, balanced, pro)"
++        }
++      }
++    }
++  },
++  "scripts": {
++    "vscode:prepublish": "npm run compile",
++    "compile": "tsc -p ./",
++    "watch": "tsc -watch -p ./",
++    "test": "tsx src/test/extension.test.ts",
++    "package": "vsce package --no-git-tag-version"
++  },
++  "devDependencies": {
++    "@types/node": "^20.11.0",
++    "@types/vscode": "^1.80.0",
++    "tsx": "^4.23.15",
++    "typescript": "^5.3.3"
++  }
++}
+diff --git a/vscode/src/chat_view.ts b/vscode/extension/src/chat_view.ts
+similarity index 100%
+rename from vscode/src/chat_view.ts
+rename to vscode/extension/src/chat_view.ts
+diff --git a/vscode/src/code_actions.ts b/vscode/extension/src/code_actions.ts
+similarity index 100%
+rename from vscode/src/code_actions.ts
+rename to vscode/extension/src/code_actions.ts
+diff --git a/vscode/src/commands/inline_chat.ts b/vscode/extension/src/commands/inline_chat.ts
+similarity index 100%
+rename from vscode/src/commands/inline_chat.ts
+rename to vscode/extension/src/commands/inline_chat.ts
+diff --git a/vscode/src/commands/runway_status.ts b/vscode/extension/src/commands/runway_status.ts
+similarity index 100%
+rename from vscode/src/commands/runway_status.ts
+rename to vscode/extension/src/commands/runway_status.ts
+diff --git a/vscode/src/commands/submit_task.ts b/vscode/extension/src/commands/submit_task.ts
+similarity index 100%
+rename from vscode/src/commands/submit_task.ts
+rename to vscode/extension/src/commands/submit_task.ts
+diff --git a/vscode/src/context.ts b/vscode/extension/src/context.ts
+similarity index 100%
+rename from vscode/src/context.ts
+rename to vscode/extension/src/context.ts
+diff --git a/vscode/src/extension.ts b/vscode/extension/src/extension.ts
+similarity index 100%
+rename from vscode/src/extension.ts
+rename to vscode/extension/src/extension.ts
+diff --git a/vscode/src/mcp_bridge.ts b/vscode/extension/src/mcp_bridge.ts
+similarity index 100%
+rename from vscode/src/mcp_bridge.ts
+rename to vscode/extension/src/mcp_bridge.ts
+diff --git a/vscode/src/models.ts b/vscode/extension/src/models.ts
+similarity index 100%
+rename from vscode/src/models.ts
+rename to vscode/extension/src/models.ts
+diff --git a/vscode/src/status_bar.ts b/vscode/extension/src/status_bar.ts
+similarity index 100%
+rename from vscode/src/status_bar.ts
+rename to vscode/extension/src/status_bar.ts
+diff --git a/vscode/src/test/extension.test.ts b/vscode/extension/src/test/extension.test.ts
+similarity index 100%
+rename from vscode/src/test/extension.test.ts
+rename to vscode/extension/src/test/extension.test.ts
+diff --git a/vscode/tsconfig.json b/vscode/extension/tsconfig.json
+similarity index 100%
+rename from vscode/tsconfig.json
+rename to vscode/extension/tsconfig.json
+diff --git a/vscode/mobile/README.md b/vscode/mobile/README.md
+new file mode 100644
+index 00000000..ce8bee63
+--- /dev/null
++++ b/vscode/mobile/README.md
+@@ -0,0 +1,9 @@
++# SupremeAI Mobile Application
++
++iOS and Android client application for remote agent monitoring and emergency governance.
++
++## Key Features
++- Instant push notifications when PRs land or CI issues trigger.
++- Mobile emergency stop / autonomy kill switch.
++- Live chat and agent status inspection on the go.
++- Released via Apple App Store, Google Play Store, and APK downloads.
+diff --git a/vscode/mobile/package.json b/vscode/mobile/package.json
+new file mode 100644
+index 00000000..94e73f15
+--- /dev/null
++++ b/vscode/mobile/package.json
+@@ -0,0 +1,13 @@
++{
++  "name": "@supremeai/mobile",
++  "version": "0.1.0",
++  "description": "SupremeAI Mobile Application — Cross-platform iOS & Android Agent Supervisor",
++  "main": "src/App.tsx",
++  "scripts": {
++    "start": "echo 'Starting mobile dev server...'"
++  },
++  "dependencies": {},
++  "devDependencies": {
++    "typescript": "^5.3.3"
++  }
++}
+diff --git a/vscode/mobile/src/App.tsx b/vscode/mobile/src/App.tsx
+new file mode 100644
+index 00000000..b62ce337
+--- /dev/null
++++ b/vscode/mobile/src/App.tsx
+@@ -0,0 +1,22 @@
++/**
++ * SupremeAI Mobile Client Shell
++ *
++ * Provides remote supervisor UI, real-time push notifications,
++ * and emergency kill-switch controls from mobile devices (iOS / Android).
++ */
++
++export interface MobileAppState {
++  activeMissions: number;
++  towerHealth: "HEALTHY" | "DEGRADED" | "DOWN";
++  lastTelemetryTimestamp: number;
++}
++
++export const initialMobileState: MobileAppState = {
++  activeMissions: 0,
++  towerHealth: "HEALTHY",
++  lastTelemetryTimestamp: Date.now(),
++};
++
++export function renderMobileStatus(state: MobileAppState = initialMobileState): string {
++  return `SupremeAI Mobile Supervisor | Active Missions: ${state.activeMissions} | Health: ${state.towerHealth}`;
++}
+diff --git a/vscode/package.json b/vscode/package.json
+index 45d7cf2b..b73c69a6 100644
+--- a/vscode/package.json
++++ b/vscode/package.json
+@@ -1,135 +1,21 @@
+ {
+-  "name": "supremeai-vscode",
+-  "displayName": "SupremeAI Federation IDE Bridge",
+-  "description": "Developer workflow bridge and live federation runway telemetry for SupremeAI autonomous agents",
+-  "version": "0.1.0",
+-  "publisher": "supremeai",
+-  "license": "Apache-2.0",
+-  "repository": {
+-    "type": "git",
+-    "url": "https://github.com/Supremeai-bd/supremeai-vscode.git"
+-  },
+-  "engines": {
+-    "vscode": "^1.80.0"
+-  },
+-  "categories": [
+-    "AI",
+-    "Programming Languages",
+-    "Other"
+-  ],
+-  "keywords": [
+-    "supremeai",
+-    "mcp",
+-    "agents",
+-    "runway",
+-    "telemetry"
++  "name": "supremeai-client-hub",
++  "version": "1.0.0",
++  "private": true,
++  "description": "SupremeAI Unified Client Hub — VS Code Extension, Desktop (Tauri/Electron), and Mobile (React Native)",
++  "workspaces": [
++    "extension",
++    "desktop",
++    "mobile"
+   ],
+-  "activationEvents": [
+-    "onStartupFinished"
+-  ],
+-  "main": "./out/extension.js",
+-  "contributes": {
+-    "commands": [
+-      {
+-        "command": "supremeai.dispatchTask",
+-        "title": "Dispatch Task to Federation",
+-        "category": "SupremeAI"
+-      },
+-      {
+-        "command": "supremeai.viewRunway",
+-        "title": "View Active PR Runway",
+-        "category": "SupremeAI"
+-      },
+-      {
+-        "command": "supremeai.emergencyStop",
+-        "title": "Trigger Emergency Autonomy Kill-Switch",
+-        "category": "SupremeAI"
+-      },
+-      {
+-        "command": "supremeai.askSelection",
+-        "title": "Ask SupremeAI about Selection",
+-        "category": "SupremeAI"
+-      },
+-      {
+-        "command": "supremeai.openChat",
+-        "title": "Open SupremeAI Chat",
+-        "category": "SupremeAI"
+-      }
+-    ],
+-    "viewsContainers": {
+-      "activitybar": [
+-        {
+-          "id": "supremeai",
+-          "title": "SupremeAI",
+-          "icon": "media/chat.svg"
+-        }
+-      ]
+-    },
+-    "keybindings": [
+-      {
+-        "command": "supremeai.askSelection",
+-        "key": "ctrl+shift+i",
+-        "mac": "cmd+shift+i",
+-        "when": "editorHasSelection"
+-      }
+-    ],
+-    "views": {
+-      "supremeai": [
+-        {
+-          "id": "supremeai.chat",
+-          "name": "Chat",
+-          "type": "webview"
+-        }
+-      ]
+-    },
+-    "configuration": {
+-      "type": "object",
+-      "title": "SupremeAI Configuration",
+-      "properties": {
+-        "supremeai.towerUrl": {
+-          "type": "string",
+-          "default": "https://supremeai-mcp-tower.onrender.com/mcp",
+-          "description": "MCP Control Tower URL for task dispatch and telemetry"
+-        },
+-        "supremeai.autoRefreshSeconds": {
+-          "type": "number",
+-          "default": 30,
+-          "description": "Telemetry poll cadence in seconds"
+-        },
+-        "supremeai.enableNotifications": {
+-          "type": "boolean",
+-          "default": true,
+-          "description": "Show notification when an agent completes a task or CI gate fails"
+-        },
+-        "supremeai.gatewayUrl": {
+-          "type": "string",
+-          "default": "http://127.0.0.1:8080",
+-          "description": "SupremeAI Gateway base URL for chat completions"
+-        },
+-        "supremeai.apiKey": {
+-          "type": "string",
+-          "default": "supremeai-key-test-0000000001",
+-          "description": "X-SupremeAI-Key for gateway authentication"
+-        },
+-        "supremeai.model": {
+-          "type": "string",
+-          "default": "auto",
+-          "description": "Default model tier (auto, fast, balanced, pro)"
+-        }
+-      }
+-    }
+-  },
+   "scripts": {
+-    "vscode:prepublish": "npm run compile",
+-    "compile": "tsc -p ./",
+-    "watch": "tsc -watch -p ./",
+-    "test": "tsx src/test/extension.test.ts",
+-    "package": "vsce package --no-git-tag-version"
++    "build:extension": "npm run compile --workspace=extension",
++    "build:desktop": "npm run build --workspace=desktop",
++    "build:mobile": "npm run build --workspace=mobile",
++    "build:all": "npm run build:extension",
++    "test": "npm run test --workspace=extension"
+   },
+   "devDependencies": {
+-    "@types/node": "^20.11.0",
+-    "@types/vscode": "^1.80.0",
+-    "tsx": "^4.23.15",
+     "typescript": "^5.3.3"
+   }
+ }

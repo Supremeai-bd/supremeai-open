@@ -1,0 +1,546 @@
+diff --git a/core/api/routes/browser/_automation.py b/core/api/routes/browser/_automation.py
+index 8ced4384..e56525d2 100644
+--- a/core/api/routes/browser/_automation.py
++++ b/core/api/routes/browser/_automation.py
+@@ -32,7 +32,10 @@ class SavedSessionRequest(BaseModel):
+ 
+ class BrowserActionRequest(BaseModel):
+     session_id: str = Field(min_length=1, max_length=128)
+-    action: Literal["navigate", "click", "fill", "type", "screenshot", "content", "extract"]
++    action: Literal[
++        "navigate", "click", "fill", "type", "screenshot", "content", "extract",
++        "back", "forward", "reload",
++    ]
+     url: str | None = Field(default=None, max_length=2048)
+     selector: str | None = Field(default=None, min_length=1, max_length=512)
+     value: str | None = Field(default=None, max_length=20_000)
+@@ -145,6 +148,13 @@ async def _await_actionable(locator, action: str) -> None:
+         raise HTTPException(status_code=423, detail=str(exc)) from exc
+     page = session.page
+     action = req.action.lower()
++
++    async def _page_title() -> str:
++        """Best-effort page title for real-browser UI chrome (never fatal)."""
++        try:
++            return await page.title()
++        except Exception:  # noqa: BLE001 — title is metadata, never fail the action
++            return ""
+     if action not in session.allowed_actions:
+         raise HTTPException(status_code=403, detail="Action is not allowed for this session")
+     if action == "navigate":
+@@ -163,6 +173,14 @@ async def _await_actionable(locator, action: str) -> None:
+         locator = page.locator(req.selector)
+         await _await_actionable(locator, action)
+         await locator.fill(req.value, timeout=15_000)
++    elif action == "back":
++        if not await page.go_back(timeout=30_000):
++            raise HTTPException(status_code=409, detail="No previous page in this session's history")
++    elif action == "forward":
++        if not await page.go_forward(timeout=30_000):
++            raise HTTPException(status_code=409, detail="No next page in this session's history")
++    elif action == "reload":
++        await page.reload(wait_until="domcontentloaded", timeout=30_000)
+     elif action == "screenshot":
+         image = await page.screenshot(type="png", full_page=req.full_page)
+         import base64
+@@ -172,6 +190,7 @@ async def _await_actionable(locator, action: str) -> None:
+             "action": action,
+             "url": page.url,
+             "screenshot": base64.b64encode(image).decode("ascii"),
++            "title": await _page_title(),
+         }
+     elif action in {"content", "extract"}:
+         return {
+@@ -179,10 +198,16 @@ async def _await_actionable(locator, action: str) -> None:
+             "action": action,
+             "url": page.url,
+             "content": await page.locator("body").inner_text(timeout=15_000),
++            "title": await _page_title(),
+         }
+     else:
+         raise HTTPException(status_code=422, detail="Unsupported browser action")
+-    return {"success": True, "action": action, "url": page.url}
++    return {
++        "success": True,
++        "action": action,
++        "url": page.url,
++        "title": await _page_title(),
++    }
+ 
+ 
+ @router.post("/automation/pause")
+diff --git a/core/core/browser_session_manager.py b/core/core/browser_session_manager.py
+index 93402bf1..258cbf48 100644
+--- a/core/core/browser_session_manager.py
++++ b/core/core/browser_session_manager.py
+@@ -38,6 +38,12 @@ class BrowserSession:
+         "click",
+         "fill",
+         "type",
++        # 2026-10-25 (owner request, real-browser preview): history navigation
++        # and reload exposed end-to-end — frontend Browser Preview toolbar
++        # calls these through /automation/actions like any other action.
++        "back",
++        "forward",
++        "reload",
+     )
+ 
+ 
+diff --git a/studio/src/components/customer/BrowserPreview.tsx b/studio/src/components/customer/BrowserPreview.tsx
+index 2d1f04d2..087a7b76 100644
+--- a/studio/src/components/customer/BrowserPreview.tsx
++++ b/studio/src/components/customer/BrowserPreview.tsx
+@@ -9,10 +9,17 @@
+  * iframe remains only for same-origin generated content (the `html` prop)
+  * and as an explicit opt-in fallback, because the proxy path needs a
+  * reachable backend session.
++ *
++ * OWNER UPGRADE (2026-10-25, Banglish request): the auto browser now behaves
++ * like an actual browser plus extra perks — back/forward/reload session
++ * history (backend automation actions), live page title + URL chrome,
++ * full-page screenshot download, and one-click copy of extracted page text.
++ * The manual-work controls (agent pause toggle + "Manual control active"
++ * HITL banner) were REMOVED per the same owner decision.
+  */
+ 
+ import React, { useCallback, useEffect, useRef, useState } from 'react';
+-import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, Pause, Play, ImageOff } from 'lucide-react';
++import { Monitor, Tablet, Smartphone, RotateCcw, ExternalLink, RefreshCw, ArrowLeft, ArrowRight, Download, Copy, Check, ImageOff } from 'lucide-react';
+ import { browserService } from '../../services/browserService';
+ 
+ type DevicePreset = 'desktop' | 'tablet' | 'mobile';
+@@ -58,8 +65,6 @@ interface BrowserPreviewProps {
+   html?: string;
+   showDeviceToolbar?: boolean;
+   onUrlChange?: (url: string) => void;
+-  agentPaused?: boolean;
+-  onAgentPauseToggle?: () => void;
+ }
+ 
+ const isExternalHttpUrl = (value: string) => /^https?:\/\//i.test(value.trim());
+@@ -69,8 +74,6 @@ export function BrowserPreview({
+   html,
+   showDeviceToolbar = true,
+   onUrlChange,
+-  agentPaused = false,
+-  onAgentPauseToggle,
+ }: BrowserPreviewProps) {
+   const [currentUrl, setCurrentUrl] = useState(url);
+   const [reloadKey, setReloadKey] = useState(0);
+@@ -87,6 +90,12 @@ export function BrowserPreview({
+   const sessionRef = useRef<string | null>(null);
+   // dedupe guard for the auto-proxy effect below
+   const lastAutoNavRef = useRef<string | null>(null);
++  // OWNER UPGRADE (2026-10-25): real-browser chrome — live title + history
++  // depth tracking for honest back/forward enablement, download/copy perks.
++  const [pageTitle, setPageTitle] = useState<string | null>(null);
++  const [histDepth, setHistDepth] = useState(0);
++  const [backDepth, setBackDepth] = useState(0);
++  const [copied, setCopied] = useState(false);
+ 
+   // react-compiler lint: refs must not be written during render.
+   useEffect(() => {
+@@ -114,10 +123,12 @@ export function BrowserPreview({
+       });
+       if (action === 'content') {
+         setPageContent(result.content ?? 'No readable page content was returned.');
++        if (result.title) setPageTitle(result.title);
+       } else if (result.screenshot) {
+         // ERR-A03: the captured image is actually shown now (it used to be
+         // discarded with a success toast).
+         setLiveScreenshot(result.screenshot);
++        if (result.title) setPageTitle(result.title);
+         setAutomationStatus('Full-page screenshot captured and displayed.');
+       } else {
+         setAutomationError('The backend did not return a screenshot image.');
+@@ -129,6 +140,43 @@ export function BrowserPreview({
+     }
+   };
+ 
++  // OWNER UPGRADE (2026-10-25): real-browser history navigation + reload.
++  // The backend drives the live Playwright page (page.go_back/go_forward/
++  // reload), then we refresh the screenshot and chrome from its response.
++  const runNavAction = async (nav: 'back' | 'forward' | 'reload') => {
++    if (!sessionId || isLoading) return;
++    setIsLoading(true);
++    setAutomationError(null);
++    try {
++      const result = await browserService.execute(sessionId, { action: nav });
++      if (result.title) setPageTitle(result.title);
++      if (nav === 'back') setBackDepth(depth => depth + 1);
++      if (nav === 'forward') setBackDepth(depth => Math.max(0, depth - 1));
++      const shot = await captureLiveScreenshot(sessionId);
++      if (shot) {
++        setLiveScreenshot(shot);
++        setAutomationStatus(nav === 'reload' ? 'Page reloaded.' : nav === 'back' ? 'Went back.' : 'Went forward.');
++      } else {
++        setAutomationError(`Session ${nav} succeeded but returned no screenshot.`);
++      }
++    } catch (error) {
++      setAutomationError(error instanceof Error ? error.message : `Browser ${nav} failed`);
++    } finally {
++      setIsLoading(false);
++    }
++  };
++
++  const copyPageText = async () => {
++    if (!pageContent) return;
++    try {
++      await navigator.clipboard.writeText(pageContent);
++      setCopied(true);
++      window.setTimeout(() => setCopied(false), 2000);
++    } catch {
++      setAutomationError('Clipboard access was blocked by the browser.');
++    }
++  };
++
+   const closeBrowserSession = async () => {
+     if (!sessionId) return;
+     setIsLoading(true);
+@@ -137,6 +185,9 @@ export function BrowserPreview({
+       setSessionId(null);
+       setPageContent(null);
+       setLiveScreenshot(null);
++      setPageTitle(null);
++      setHistDepth(0);
++      setBackDepth(0);
+       setAutomationStatus('Browser session closed.');
+     } catch (error) {
+       setAutomationError(error instanceof Error ? error.message : 'Could not close browser session');
+@@ -173,7 +224,10 @@ export function BrowserPreview({
+       try {
+         const session = sessionId ? { session_id: sessionId } : await browserService.createSession();
+         setSessionId(session.session_id);
+-        await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
++        const navResult = await browserService.execute(session.session_id, { action: 'navigate', url: targetUrl });
++        setHistDepth(depth => depth + 1);
++        setBackDepth(0);
++        if (navResult.title) setPageTitle(navResult.title);
+         const shot = await captureLiveScreenshot(session.session_id);
+         if (shot) {
+           setLiveScreenshot(shot);
+@@ -339,7 +393,40 @@ export function BrowserPreview({
+             <RefreshCw size={12} />
+           </button>
+         </form>
++        {(pageTitle || liveScreenshot) && (
++          <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-500">
++            {pageTitle && <span className="max-w-[60%] truncate font-medium text-slate-300" title={pageTitle}>{pageTitle}</span>}
++            {pageTitle && currentUrl && <span className="truncate font-mono">{currentUrl}</span>}
++          </div>
++        )}
+         <div className="mt-2 flex flex-wrap items-center gap-2">
++          <button
++            type="button"
++            onClick={() => void runNavAction('back')}
++            disabled={!sessionId || isLoading || histDepth - backDepth <= 0}
++            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
++            title="Back"
++          >
++            <span className="inline-flex items-center gap-1"><ArrowLeft size={11} /> Back</span>
++          </button>
++          <button
++            type="button"
++            onClick={() => void runNavAction('forward')}
++            disabled={!sessionId || isLoading || backDepth <= 0}
++            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
++            title="Forward"
++          >
++            <span className="inline-flex items-center gap-1">Forward <ArrowRight size={11} /></span>
++          </button>
++          <button
++            type="button"
++            onClick={() => void runNavAction('reload')}
++            disabled={!sessionId || isLoading}
++            className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
++            title="Reload page"
++          >
++            Reload
++          </button>
+           <button
+             type="button"
+             onClick={() => void runBrowserAction('content')}
+@@ -364,8 +451,26 @@ export function BrowserPreview({
+           >
+             Close session
+           </button>
+-          {onAgentPauseToggle && <button type="button" onClick={onAgentPauseToggle} className="flex items-center gap-1 rounded border border-amber-500/40 px-2 py-1 text-[11px] text-amber-200 transition-colors hover:bg-amber-500/10" aria-pressed={agentPaused}>{agentPaused ? <Play size={11} /> : <Pause size={11} />} {agentPaused ? 'Resume automation' : 'Pause for manual input'}</button>}
+-          {agentPaused && <span role="status" className="text-[11px] text-amber-200">Manual control active. You can type secrets directly in the browser.</span>}
++          {liveScreenshot && (
++            <a
++              href={`data:image/png;base64,${liveScreenshot}`}
++              download={`supremeai-screenshot-${Date.now()}.png`}
++              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
++              title="Download the captured screenshot as a PNG file"
++            >
++              <span className="inline-flex items-center gap-1"><Download size={11} /> Download PNG</span>
++            </a>
++          )}
++          {pageContent && (
++            <button
++              type="button"
++              onClick={() => void copyPageText()}
++              className="rounded border border-slate-700 px-2 py-1 text-[11px] text-slate-300 transition-colors hover:border-cyan-500/60 hover:text-cyan-300"
++              title="Copy the extracted page text to the clipboard"
++            >
++              <span className="inline-flex items-center gap-1">{copied ? <Check size={11} /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy text'}</span>
++            </button>
++          )}
+           {automationStatus && <span role="status" className="text-[11px] text-emerald-300">{automationStatus}</span>}
+         </div>
+         {pageContent && (
+diff --git a/studio/src/pages/user/AIStudio.tsx b/studio/src/pages/user/AIStudio.tsx
+index 23285489..74ba7473 100644
+--- a/studio/src/pages/user/AIStudio.tsx
++++ b/studio/src/pages/user/AIStudio.tsx
+@@ -1,7 +1,7 @@
+ import React, { useEffect, useRef, useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { UnifiedChatPanel, listStoredConversations, type StoredConversationMeta } from '../../components/chat/UnifiedChatPanel';
+-import { Bot, Code, MessageSquarePlus, Pencil, Smartphone, Zap } from 'lucide-react';
++import { Bot, Code, MessageSquarePlus, Smartphone } from 'lucide-react';
+ import { MobilePreviewPanel } from '../../components/customer/MobilePreviewPanel';
+ import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/BrowserPreview';
+ 
+@@ -11,106 +11,13 @@ import { BrowserPreview as LiveBrowserPreview } from '../../components/customer/
+ // owner-reported white screens. hasPreview guards the iframe render.
+ const CODE_PLACEHOLDER = '<!-- Code generated by SupremeAI will appear here -->';
+ 
+-// OWNER DECISION (2026-10-24, Banglish request): Browser/Mobile preview আর
+-// conversation-এর ওপর "blocked" নয় — ইউজার নিজে Auto/Manual বেছে নিতে পারবে।
+-// Auto মোড = agent (SupremeAI) ইউজারের কাজ করে দেয় (generated HTML preview)।
+-// Manual মোড = ইউজার নিজে নিজের কাজ করে (built-in HTML editor + live preview,
+-// conversation ছাড়াও স্বাধীনভাবে কাজ করা যায়)। দুটো স্টেটই localStorage-এ টিকে থাকে।
+-const PREVIEW_MODE_STORE = 'supremeai_preview_mode_v1';
+-const MANUAL_CODE_STORE = 'supremeai_manual_preview_v1';
+-
+-const MANUAL_STARTER = `<!DOCTYPE html>
+-<html lang="en">
+-<head>
+-  <meta charset="UTF-8" />
+-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+-  <title>My page</title>
+-  <style>
+-    body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #ffffff; color: #0f172a; }
+-  </style>
+-</head>
+-<body>
+-  <h1>Hello from Manual mode ✍️</h1>
+-  <p>Edit this HTML — the preview updates live.</p>
+-</body>
+-</html>`;
+-
+-const PreviewModeToggle: React.FC<{ mode: 'auto' | 'manual'; onChange: (m: 'auto' | 'manual') => void }> = ({ mode, onChange }) => (
+-  <div className="flex w-fit shrink-0 items-center gap-1 rounded-full border border-[var(--sa-border)] bg-[var(--sa-surface)]/80 p-1" data-testid="preview-mode-toggle">
+-    <button
+-      type="button"
+-      onClick={() => onChange('auto')}
+-      aria-pressed={mode === 'auto'}
+-      title="Auto — the SupremeAI agent builds for you from the conversation"
+-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${mode === 'auto' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+-    >
+-      <Zap size={12} /> Auto — agent works
+-    </button>
+-    <button
+-      type="button"
+-      onClick={() => onChange('manual')}
+-      aria-pressed={mode === 'manual'}
+-      title="Manual — you write your own HTML and preview it live"
+-      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors ${mode === 'manual' ? 'bg-[var(--sa-primary)] text-white' : 'text-[var(--sa-ink-muted)] hover:bg-[var(--sa-surface-raised)] hover:text-[var(--sa-ink)]'}`}
+-    >
+-      <Pencil size={12} /> Manual — you work
+-    </button>
+-  </div>
+-);
+-
+-const ManualWorkbench: React.FC<{ device: 'browser' | 'mobile'; code: string; onChange: (v: string) => void }> = ({ device, code, onChange }) => (
+-  <div className="flex h-full min-h-0 w-full flex-col gap-3 lg:flex-row">
+-    <div className="flex min-h-[10rem] flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900">
+-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-white/10 px-4">
+-        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">Your HTML — Manual mode</span>
+-        <button
+-          type="button"
+-          onClick={() => onChange(MANUAL_STARTER)}
+-          className="rounded-md border border-white/10 bg-slate-900/80 px-2.5 py-1 text-[10px] font-medium text-slate-300 transition hover:border-purple-400/40 hover:text-white"
+-        >
+-          Load starter
+-        </button>
+-      </div>
+-      <textarea
+-        value={code}
+-        onChange={(e) => onChange(e.target.value)}
+-        spellCheck={false}
+-        data-testid="manual-html-editor"
+-        placeholder="Write your own HTML/CSS/JS here — the preview on the right updates live."
+-        className="min-h-0 flex-1 resize-none bg-transparent p-4 font-mono text-xs leading-5 text-slate-200 outline-none"
+-      />
+-    </div>
+-    <div className="min-h-0 flex-1">
+-      {device === 'browser'
+-        ? <BrowserPreview html={code.trim() ? code : MANUAL_STARTER} />
+-        : <MobilePreviewPanel html={code.trim() ? code : MANUAL_STARTER} title="SupremeAI manual preview" />}
+-    </div>
+-  </div>
+-);
+-
+-const BrowserPreview: React.FC<{ html: string }> = ({ html }) => (
+-  <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900 shadow-2xl">
+-    <div className="flex h-10 items-center justify-between border-b border-white/10 bg-slate-950/60 px-4">
+-      <div className="flex items-center gap-1.5">
+-        <span className="size-2.5 rounded-full bg-red-500/80" />
+-        <span className="size-2.5 rounded-full bg-yellow-500/80" />
+-        <span className="size-2.5 rounded-full bg-emerald-500/80" />
+-      </div>
+-      <div className="flex-1 max-w-sm mx-4">
+-        <div className="rounded-md border border-white/10 bg-slate-900/80 px-3 py-1 text-center font-mono text-[11px] text-slate-400">
+-          supremeai://preview/generated-html
+-        </div>
+-      </div>
+-      <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400">Generated preview</span>
+-    </div>
+-    <iframe
+-      title="SupremeAI Browser Preview"
+-      srcDoc={html}
+-      sandbox="allow-scripts allow-modals"
+-      className="h-full w-full flex-1 border-0 bg-white"
+-    />
+-  </div>
+-);
++// OWNER DECISION (2026-10-25, Banglish request): Manual work mode is REMOVED
++// from both preview tabs (Browser Preview + Mobile Simulator). Preview is now
++// AUTO-ONLY: the SupremeAI agent builds and drives everything — generated HTML
++// preview plus the upgraded server-side browser (real back/forward/reload,
++// page titles, full-page screenshots, text extraction). The removed manual
++// HTML-editor workbench and the agent pause toggle lived here and in
++// BrowserPreview; nothing imports them anymore.
+ 
+ const PreviewEmptyState: React.FC<{ device: 'browser' | 'mobile'; onBack: () => void }> = ({ device, onBack }) => (
+   <div className="flex h-full w-full items-center justify-center rounded-2xl border border-dashed border-white/10 bg-slate-900/40 p-6">
+@@ -153,19 +60,6 @@ export const AIStudio: React.FC = () => {
+   };
+   const [code, setCode] = useState(CODE_PLACEHOLDER);
+   const hasPreview = code.trim() !== '' && code !== CODE_PLACEHOLDER;
+-  // AUTO/MANUAL PREVIEW MODE (owner request 2026-10-24): mode + manual code দুটোই
+-  // localStorage-এ টিকে থাকে — রিফ্রেশে ইউজারের নিজের লেখা কাজ হারায় না।
+-  const [previewMode, setPreviewMode] = useState<'auto' | 'manual'>(() =>
+-    (localStorage.getItem(PREVIEW_MODE_STORE) === 'manual' ? 'manual' : 'auto'));
+-  const [manualCode, setManualCode] = useState<string>(() =>
+-    localStorage.getItem(MANUAL_CODE_STORE) ?? MANUAL_STARTER);
+-  useEffect(() => { localStorage.setItem(PREVIEW_MODE_STORE, previewMode); }, [previewMode]);
+-  useEffect(() => { localStorage.setItem(MANUAL_CODE_STORE, manualCode); }, [manualCode]);
+-  // PHASE A (owner plan: AI ওয়েব অপারেটর, 2026-10-24): Agent pause/resume —
+-  // ইউজার যেকোনো সময় agent-এর automated browsing pause করে নিজে হাতে
+-  // নিয়ে নিতে পারবে (HITL)। BrowserPreview কম্পোনেন্টের প্রপ-কন্ট্র্যাক্ট
+-  // (agentPaused / onAgentPauseToggle) রিইউজ করা হয়েছে — নতুন UI বানানো হয়নি।
+-  const [agentPaused, setAgentPaused] = useState(false);
+   const [searchParams, setSearchParams] = useSearchParams();
+   const intentConsumedRef = useRef(false);
+ 
+@@ -293,36 +187,23 @@ export const AIStudio: React.FC = () => {
+ 
+         {activeTab === 'preview' && (
+           <div className="absolute inset-0 flex flex-col gap-3 p-4">
+-            <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
+-            {previewMode === 'manual' ? (
+-              <ManualWorkbench device="browser" code={manualCode} onChange={setManualCode} />
+-            ) : (
+-              <div className="flex h-full min-h-0 w-full flex-col gap-2">
+-                {!hasPreview && (
+-                  <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
+-                    Nothing generated yet — ask the agent to build something, or type any
+-                    https:// URL below to browse it through the server-side browser.
+-                  </p>
+-                )}
+-                <div className="min-h-0 flex-1">
+-                  <LiveBrowserPreview
+-                    html={hasPreview ? code : undefined}
+-                    showDeviceToolbar
+-                    agentPaused={agentPaused}
+-                    onAgentPauseToggle={() => setAgentPaused((p) => !p)}
+-                  />
+-                </div>
++            <div className="flex h-full min-h-0 w-full flex-col gap-2">
++              {!hasPreview && (
++                <p className="shrink-0 rounded-lg border border-[var(--sa-border)] bg-[var(--sa-surface)]/60 px-3 py-2 text-[11px] leading-5 text-[var(--sa-ink-muted)]">
++                  Nothing generated yet — ask the agent to build something, or type any
++                  https:// URL below to browse it through the upgraded server-side browser.
++                </p>
++              )}
++              <div className="min-h-0 flex-1">
++                <LiveBrowserPreview html={hasPreview ? code : undefined} showDeviceToolbar />
+               </div>
+-            )}
++            </div>
+           </div>
+         )}
+ 
+         {activeTab === 'mobile' && (
+           <div className="absolute inset-0 flex flex-col gap-3 p-4">
+-            <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
+-            {previewMode === 'manual' ? (
+-              <ManualWorkbench device="mobile" code={manualCode} onChange={setManualCode} />
+-            ) : hasPreview ? (
++            {hasPreview ? (
+               <MobilePreviewPanel html={code} />
+             ) : (
+               <PreviewEmptyState device="mobile" onBack={() => setActiveTab('chat')} />
+diff --git a/studio/src/pages/user/AgentWorkspace.tsx b/studio/src/pages/user/AgentWorkspace.tsx
+index 238b72e8..84d2ea18 100644
+--- a/studio/src/pages/user/AgentWorkspace.tsx
++++ b/studio/src/pages/user/AgentWorkspace.tsx
+@@ -19,7 +19,6 @@ export const AgentWorkspace: React.FC = () => {
+   const [isHealing, setIsHealing] = useState(false);
+   const [historyOpen, setHistoryOpen] = useState(true);
+   const [panels, setPanels] = useState<Record<Panel, boolean>>({ chat: true, terminal: true, browser: true });
+-  const [agentPaused, setAgentPaused] = useState(false);
+   const terminalRef = useRef<HTMLDivElement>(null);
+   const xtermRef = useRef<Terminal | null>(null);
+   const webcontainerRef = useRef<WebContainer | null>(null);
+@@ -67,7 +66,7 @@ export const AgentWorkspace: React.FC = () => {
+   }, []);
+ 
+   const handleExecute = async () => {
+-    if (!prompt.trim() || isLoading || agentPaused) return;
++    if (!prompt.trim() || isLoading) return;
+     const trimmed = prompt.trim();
+     const next = [...messages, { role: 'user' as const, content: prompt }]; setMessages(next); setPrompt(''); setIsLoading(true);
+     // ফিক্স (ERR-A01 guard, defect register 2026-09-15): backend AgentTaskRequest enforces
+@@ -124,14 +123,14 @@ export const AgentWorkspace: React.FC = () => {
+       </aside>
+ 
+       <main className="flex min-w-0 flex-1 flex-col">
+-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.08] px-4"><div className="flex items-center gap-3"><div className="flex size-8 items-center justify-center rounded-lg bg-emerald-400/15 text-emerald-300"><Bot size={18} /></div><div><div className="text-sm font-semibold">SupremeAI Agent</div><div className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className={`size-1.5 rounded-full ${agentPaused ? 'bg-amber-400' : 'bg-emerald-400'}`} /> {agentPaused ? 'Paused · manual browser control enabled' : 'Ready'}</div></div></div><div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] p-1"><button onClick={() => setAgentPaused(value => !value)} className={`rounded-md px-2.5 py-1.5 text-[11px] font-medium transition ${agentPaused ? 'bg-amber-400/15 text-amber-200' : 'text-slate-400 hover:bg-white/[0.06] hover:text-white'}`} aria-pressed={agentPaused}>{agentPaused ? 'Resume agent' : 'Pause agent'}</button>{(['chat', 'terminal', 'browser'] as Panel[]).map(panel => <button key={panel} onClick={() => togglePanel(panel)} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] capitalize transition-all ${panels[panel] ? 'bg-emerald-400/15 text-emerald-200 shadow-[0_0_14px_rgba(52,211,153,0.18)]' : 'text-slate-500 hover:bg-cyan-400/10 hover:text-cyan-200 hover:shadow-[0_0_14px_rgba(34,211,238,0.16)]'}`} aria-label={`${panels[panel] ? 'Hide' : 'Show'} ${panel}`} title={`${panels[panel] ? 'Hide' : 'Show'} ${panel}`}><span>{panel === 'chat' ? <MessageSquare size={13} /> : panel === 'terminal' ? <TerminalSquare size={13} /> : <Eye size={13} />}</span>{panel}</button>)}</div></header>
++        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.08] px-4"><div className="flex items-center gap-3"><div className="flex size-8 items-center justify-center rounded-lg bg-emerald-400/15 text-emerald-300"><Bot size={18} /></div><div><div className="text-sm font-semibold">SupremeAI Agent</div><div className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className="size-1.5 rounded-full bg-emerald-400" /> Ready</div></div></div><div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-white/[0.03] p-1">{(['chat', 'terminal', 'browser'] as Panel[]).map(panel => <button key={panel} onClick={() => togglePanel(panel)} className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] capitalize transition-all ${panels[panel] ? 'bg-emerald-400/15 text-emerald-200 shadow-[0_0_14px_rgba(52,211,153,0.18)]' : 'text-slate-500 hover:bg-cyan-400/10 hover:text-cyan-200 hover:shadow-[0_0_14px_rgba(34,211,238,0.16)]'}`} aria-label={`${panels[panel] ? 'Hide' : 'Show'} ${panel}`} title={`${panels[panel] ? 'Hide' : 'Show'} ${panel}`}><span>{panel === 'chat' ? <MessageSquare size={13} /> : panel === 'terminal' ? <TerminalSquare size={13} /> : <Eye size={13} />}</span>{panel}</button>)}</div></header>
+ 
+         <div className={`grid min-h-0 flex-1 gap-3 overflow-auto p-3 max-lg:flex max-lg:flex-col max-lg:overflow-y-auto ${Object.values(panels).filter(Boolean).length === 1 ? 'grid-cols-1' : Object.values(panels).filter(Boolean).length === 2 ? 'grid-cols-2 max-xl:grid-cols-1' : 'grid-cols-[minmax(240px,1fr)_minmax(320px,1.35fr)_minmax(280px,1fr)] max-2xl:grid-cols-[minmax(220px,0.9fr)_minmax(300px,1.2fr)_minmax(260px,0.9fr)] max-xl:grid-cols-[minmax(280px,1fr)_minmax(320px,1.15fr)]'}`}>
+           {panels.chat && <section className="flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#111318]"><div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3"><div className="flex items-center gap-2 text-xs font-semibold"><MessageSquare size={15} className="text-emerald-300" /> Agent chat</div><button onClick={() => togglePanel('chat')} className="text-slate-500 hover:text-white" aria-label="Hide chat"><EyeOff size={14} /></button></div><div className="flex-1 overflow-y-auto p-4"><div className="mb-5 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.04] p-3 text-xs leading-relaxed text-slate-300"><span className="font-medium text-emerald-300">Agent plan</span><p className="mt-1">I’ll inspect the codebase, check for security issues, and report actionable findings.</p></div><div className="flex flex-col gap-3">{messages.map((msg, index) => <div key={index} className={`max-w-[92%] rounded-lg p-3 text-xs leading-relaxed ${msg.role === 'user' ? 'ml-auto bg-slate-700 text-white' : 'bg-white/[0.06] text-slate-300'}`}>{msg.content}</div>)}{isLoading && <div className="text-xs text-slate-500">Agent is thinking...</div>}<div ref={messagesEndRef} aria-hidden="true" /></div></div><div className="border-t border-white/[0.08] p-3"><textarea value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void handleExecute(); } }} placeholder="Ask the agent anything..." rows={3} className="w-full resize-none rounded-lg border border-white/[0.1] bg-[#0c0e11] p-3 text-xs text-white outline-none placeholder:text-slate-600 focus:border-emerald-400/50" /><div className="mt-2 flex items-center justify-between"><span className="text-[10px] text-slate-600">Enter to send · Shift+Enter for new line</span><button onClick={() => void handleExecute()} disabled={!prompt.trim() || isLoading} className="flex size-8 items-center justify-center rounded-lg bg-emerald-400 text-slate-950 transition hover:bg-emerald-300 disabled:opacity-40" aria-label="Send message"><Send size={14} /></button></div></div></section>}
+ 
+           <section className="flex min-h-[420px] min-w-0 flex-col gap-3 overflow-hidden"><div className="flex min-h-[260px] flex-1 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#111318]"><div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3"><div className="flex items-center gap-2 text-xs font-semibold"><FileCode2 size={15} className="text-sky-300" /> Generated workspace <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-slate-500">index.js</span></div><button onClick={() => void runCode()} disabled={isHealing} className="flex items-center gap-1.5 rounded-md bg-emerald-400/15 px-2.5 py-1.5 text-[11px] font-medium text-emerald-300 hover:bg-emerald-400/25 disabled:opacity-40"><Play size={12} /> {isHealing ? 'Running...' : 'Run & evaluate'}</button></div><div className="min-h-0 flex-1"><Editor height="100%" theme="vs-dark" defaultLanguage="javascript" value={generatedCode} onChange={value => setGeneratedCode(value || '')} options={{ minimap: { enabled: false }, fontSize: 12, padding: { top: 14 } }} /></div></div>{panels.terminal && <div className="flex h-44 shrink-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#111318]"><div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-2.5"><div className="flex items-center gap-2 text-xs font-semibold"><TerminalSquare size={14} className="text-amber-300" /> Terminal</div><button onClick={() => togglePanel('terminal')} className="text-slate-500 hover:text-white" aria-label="Hide terminal"><EyeOff size={14} /></button></div><div ref={terminalRef} className="min-h-0 flex-1 p-2" /></div>}</section>
+ 
+-          {panels.browser && <section className="flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#111318] xl:flex"><div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3"><div className="flex items-center gap-2 text-xs font-semibold"><Activity size={15} className="text-cyan-300" /> Live browser</div><div className="flex items-center gap-2"><button className="text-slate-500 hover:text-white" aria-label="Maximize browser"><Maximize2 size={14} /></button><button onClick={() => togglePanel('browser')} className="text-slate-500 hover:text-white" aria-label="Hide browser"><EyeOff size={14} /></button></div></div><div className="min-h-0 flex-1 p-2"><BrowserPreview showDeviceToolbar={false} agentPaused={agentPaused} onAgentPauseToggle={() => setAgentPaused(value => !value)} /></div></section>}
++          {panels.browser && <section className="flex min-h-[360px] min-w-0 flex-col overflow-hidden rounded-xl border border-white/[0.08] bg-[#111318] xl:flex"><div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3"><div className="flex items-center gap-2 text-xs font-semibold"><Activity size={15} className="text-cyan-300" /> Live browser</div><div className="flex items-center gap-2"><button className="text-slate-500 hover:text-white" aria-label="Maximize browser"><Maximize2 size={14} /></button><button onClick={() => togglePanel('browser')} className="text-slate-500 hover:text-white" aria-label="Hide browser"><EyeOff size={14} /></button></div></div><div className="min-h-0 flex-1 p-2"><BrowserPreview showDeviceToolbar={false} /></div></section>}
+         </div>
+       </main>
+     </div>
+diff --git a/studio/src/services/browserService.ts b/studio/src/services/browserService.ts
+index c7a457f7..bd7808cd 100644
+--- a/studio/src/services/browserService.ts
++++ b/studio/src/services/browserService.ts
+@@ -22,6 +22,7 @@ export interface BrowserActionResult {
+   url: string;
+   content?: string;
+   screenshot?: string;
++  title?: string;
+ }
+ 
+ export type BrowserAction =
+@@ -29,7 +30,8 @@ export type BrowserAction =
+   | { action: 'click'; selector: string }
+   | { action: 'fill' | 'type'; selector: string; value: string }
+   | { action: 'screenshot'; full_page?: boolean }
+-  | { action: 'content' | 'extract' };
++  | { action: 'content' | 'extract' }
++  | { action: 'back' | 'forward' | 'reload' };
+ 
+ export const browserService = {
+   createSession: (payload?: { label?: string; saved_url?: string }) => apiClient.post<BrowserSession>('/api/browser/automation/sessions', payload ?? {}),

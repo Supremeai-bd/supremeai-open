@@ -1,0 +1,24 @@
+diff --git a/tests/test_dead_import_drift.py b/tests/test_dead_import_drift.py
+index 97c1cb0d..0bf2456c 100644
+--- a/tests/test_dead_import_drift.py
++++ b/tests/test_dead_import_drift.py
+@@ -50,7 +50,18 @@
+ # Auditor baseline at patch time: 446 unused bindings across 272 live-path
+ # files (AST scan, scope below). Shrink-only: lower this number when a
+ # cleanup PR removes more; never raise it.
+-BASELINE_UNUSED_IMPORTS = 446
++#
++# Re-armed 2026-10-28 at 40ac0bf: re-measured with this file's own
++# _scan_live_scope (deterministic AST, same scope) -> 388 unused bindings
++# across 233 files. The 446 baseline had gone stale-high by 58 slots: debt
++# only ever leaves via cleanup (the ratchet forbids net growth, and the
++# suite was green at 446 both at patch time and now), so a stale-high
++# baseline could silently absorb up to 58 NEW dead imports before failing.
++# The ratchet now binds at the measured floor. Causality note: the drop is
++# consistent with the #1887-era −851-line prune wave plus the docs cuts
++# removing import-carrying files entirely; per-commit scan determinism is
++# what makes the number trustworthy, not the attribution.
++BASELINE_UNUSED_IMPORTS = 388
+ 
+ # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
+ # Each binding below was verified dead by AST Name-load analysis + word-boundary

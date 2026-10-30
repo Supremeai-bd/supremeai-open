@@ -1,0 +1,125 @@
+diff --git a/docs/reports/BRIDGE_GUIDE_ENTRYPOINT_404_2026-10-29.md b/docs/reports/BRIDGE_GUIDE_ENTRYPOINT_404_2026-10-29.md
+new file mode 100644
+index 00000000..9b07a7cc
+--- /dev/null
++++ b/docs/reports/BRIDGE_GUIDE_ENTRYPOINT_404_2026-10-29.md
+@@ -0,0 +1,119 @@
++# Bridge Guide Entrypoints 404 — architectureSpec Private-Only, operatorContract Lost Org-Wide
++
++- **Date:** 2026-10-29 (audit window 19:29–19:55Z)
++- **Reporter:** zai-agent-job-477786 (Z.ai GLM, external bridge lane, public mirror)
++- **Task ID:** `bridge-20261029-guide-entrypoint-404`
++- **Type:** Report-only finding — **no code change**; remediation is owner/admin-lane (tower config + private repo / federation mirror)
++- **Severity:** P2 (intake/first-contact breakage; no runtime or CI impact)
++- **Board prior-art check:** none — full open board (20 items) scanned at 19:35Z; zero issues mention guide entrypoints / AGENT_PORTAL 404
++
++---
++
++## 1. Finding
++
++`bridge_guide` — the zero-credential onboarding contract the MCP tower hands to every new
++external agent — advertises four entrypoints. Two of them are dead links for exactly the
++audience they are written for:
++
++1. `entrypoints.architectureSpec` → `docs/architecture/AGENT_PORTAL_AND_FEDERATION_BRIDGE.md`
++   **404 on the public mirror main.** The document exists only in the private monolith
++   (`Supremeai-bd/supremeai`, 21,008 B, blob `307572a475478aeaeb3ddf74a9009129ec60a859`,
++   front-matter `status: canonical_spec`). External agents cannot read private repos, so
++   the link is unreachable by construction.
++   Meanwhile the public mirror's own `README.md` (L145) points the "Agent Portal &
++   Federation Bridge architecture spec" at a **different live path**:
++   `docs/AGENT_PORTAL_SPEC.md` (200 OK, 7,857 B). Two competing spec pointers; the guide
++   picked the private-only one.
++2. `entrypoints.operatorContract` → `scripts/bridge/README.md`
++   **404 everywhere** — public mirror main, private monolith, and org-wide code search
++   (`path:scripts/bridge filename:README` → zero hits in all Supremeai-bd repos). The
++   directory itself survives on both mirrors (`scripts/bridge/bridge_intake.py`, 54,714 B
++   on public main), but the operator contract was lost — most plausibly in the
++   legacy-root archive migration (`Supremeai-bd/supremeai-archive` carries
++   `docs/legacy-root/MANIFEST.md`).
++
++The remaining two entrypoints are healthy: `openRepo` (`Supremeai-bd/supremeai-open`) and
++`guide` (`README.md`, 15,680 B).
++
++## 2. Evidence matrix
++
++| Path | Public main (raw fetch) | Private monolith | Notes |
++|---|---|---|---|
++| `docs/architecture/AGENT_PORTAL_AND_FEDERATION_BRIDGE.md` | **404** | **200** via tower `github_read_file` — 21,008 B, sha `307572a…` | content search `"Federation Bridge Specification" repo:supremeai-open` → `[]`; hits only in `supremeai` + `supremeai-archive` |
++| `scripts/bridge/README.md` | **404** | **404** (tower `github_read_file`) | org code search `path:scripts/bridge filename:README` → `[]` |
++| `scripts/bridge/bridge_intake.py` | **200**, 54,714 B | present (code search hit) | directory alive, contract file gone |
++| `docs/AGENT_PORTAL_SPEC.md` | **200**, 7,857 B | — | README L145 calls this the architecture spec |
++| `README.md` | **200**, 15,680 B | — | org refs clean: 0 × `paykaribazaronline/supremeai-open`, 2 × `Supremeai-bd/supremeai-open` |
++
++Tool face at audit time: 151 tools (`bridge_board_snapshot` still absent, unified
++`bridge_work` hub in place). CI on public main: run #5222 (head `4e3bd79`) success at
++19:29Z — evidence captured against this tip.
++
++Additional drift observed inside the private canonical spec (context for the owner, not
++part of the 404 finding): it names the public gateway `paykaribazaronline/supremeai-open`
++throughout — the org has since moved to `Supremeai-bd/supremeai-open` — so even the
++private-only copy is org-name-stale.
++
++## 3. Impact
++
++- A new agent's first-contact flow (`mission → entrypoints → implement → submit`) breaks
++  at step 2 for the architecture spec and the operator contract. The guide's own mission
++  premise — self-serve with "≤ 0.01% human intervention" — depends on those documents
++  being readable by agents that hold zero private credentials.
++- Practical blast radius is bounded (the guide body itself carries the diff caps, secret
++  families, protected paths, and lease contract inline), so agents can still operate —
++  but the deep-contract references silently 404, and agents that try to fetch them burn
++  cycles or (worse) conclude the docs were never written.
++- The competing spec pointers (README → `docs/AGENT_PORTAL_SPEC.md` vs guide →
++  `docs/architecture/AGENT_PORTAL_AND_FEDERATION_BRIDGE.md`) mean there is currently no
++  single agreed public architecture spec, which is the same hand-duplication drift class
++  that `check_loop_contract_parity.py` checks 3/7/8 police inside the repo.
++
++## 4. Why no agent-side patch accompanies this report
++
++1. **Hand-copying the private canonical spec into public `docs/architecture/`** — rejected:
++   creates an unmaintained duplicate of a `canonical_spec` document; byte-parity cannot be
++   hand-maintained across a private/public boundary, which is precisely the drift/waste
++   class the landed guards (parity checks 3/7/8, PR #2239) exist to prevent.
++2. **Fabricating a new `scripts/bridge/README.md` on the public mirror** — rejected: the
++   canonical content is gone org-wide; authoring a replacement operator contract is an
++   owner decision, not a drive-by docs patch.
++3. **Editing the tower's guide strings** — impossible from this lane: no tower-config
++   write tool exists in the 151-tool surface; guide content is tower-side state.
++4. **Plain issue without a report file** — rejected: the established auditable pattern for
++   report-only findings is a single `docs/reports/` file via Bridge Work Order
++   (#2243/#2245/#2247 precedent), which keeps the finding inside the loop's own queue.
++
++## 5. Remediation options (owner/admin)
++
++- **Option A (smallest):** repoint the tower guide strings —
++  `architectureSpec` → `docs/AGENT_PORTAL_SPEC.md` (public, live, README-sanctioned);
++  drop or repoint `operatorContract` (no operator contract exists anywhere today).
++- **Option B (fuller):** mirror the private canonical spec to public
++  `docs/architecture/` through the federation CI byte-parity mirror (not a hand copy) and
++  restore `scripts/bridge/README.md` from `supremeai-archive` (`docs/legacy-root/`) — then
++  reconcile the two competing spec documents into one SSOT with a pointer from the loser.
++- **Either way:** update the private canonical spec's stale
++  `paykaribazaronline/*` org references to `Supremeai-bd/*`.
++
++## 6. Provenance
++
++- Tower handshake 19:29Z: 151 tools; `bridge_guide` payload archived agent-side
++  (`guide_0330.json`); all raw fetches anonymous `raw.githubusercontent.com` (private-repo
++  raw 404s in the matrix are anonymous-raw behavior — the tower tool read confirmed the
++  private copies).
++- Checks executed: `github_code_search` × 4, `github_read_file` × 3 (2 private, 1 n/a),
++  raw fetch matrix × 9, `bridge_work_queue` (prior-art scan, 20 items), CI runs read.
++- Rollback: single docs-only file — revert = delete this one file from main; no code,
++  config, workflow, or platform state touched.
++
++## 7. বাংলা সারসংক্ষেপ (TL;DR)
++
++টাওয়ারের `bridge_guide` প্রতিটি নতুন এজেন্টকে যে ৪টি এন্ট্রিপয়েন্ট দেখায়, তার ২টি
++লিংকই মৃত: (১) আর্কিটেকচার স্পেক শুধু প্রাইভেট রিপোতে আছে — পাবলিক মিররে 404, অথচ
++পাবলিক README অন্য একটি জীবিত পথ (`docs/AGENT_PORTAL_SPEC.md`) দেখাচ্ছে; (২)
++অপারেটর কন্ট্রাক্ট (`scripts/bridge/README.md`) পুরো অর্গানাইজেশনেই আর নেই।
++শূন্য-ক্রেডেনশিয়াল এজেন্টরা প্রাইভেট রিপো পড়তে পারে না, তাই এই লিংকগুলো তাদের
++কাছে চিরকালই ভাঙা। এজেন্ট-পার্শ্ব প্যাচ নিরাপদ নয় (ক্যানোনিকাল স্পেকের নকল করা
++নিষিদ্ধ, README-টি কোথাও টিকে নেই) — সমাধান মালিক/অ্যাডমিন লেনে: গাইডের পথ
++বদলানো অথবা federation CI দিয়ে মিরর করা।

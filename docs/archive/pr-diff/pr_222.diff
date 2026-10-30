@@ -1,0 +1,170 @@
+diff --git a/.github/ISSUE_TEMPLATE/agent-task.yml b/.github/ISSUE_TEMPLATE/agent-task.yml
+index 178ed471..dd71d608 100644
+--- a/.github/ISSUE_TEMPLATE/agent-task.yml
++++ b/.github/ISSUE_TEMPLATE/agent-task.yml
+@@ -1,7 +1,7 @@
+ name: ⚡ Autonomous Agent Task (New Work Request)
+ description: Create a task for autonomous agents (local or virtual web bots) to claim and solve.
+ title: "type(scope): brief description — e.g. feat(backend): new router, fix(ci): pipeline repair"
+-labels: ["status:unclaimed", "P1-high", "handoff:coder"]
++labels: ["P1-high", "handoff:coder"]
+ body:
+   - type: markdown
+     attributes:
+diff --git a/scripts/agents/check_loop_contract_parity.py b/scripts/agents/check_loop_contract_parity.py
+index b768d590..a389a478 100644
+--- a/scripts/agents/check_loop_contract_parity.py
++++ b/scripts/agents/check_loop_contract_parity.py
+@@ -24,6 +24,13 @@
+ import sys
+ from pathlib import Path
+ 
++if hasattr(sys.stdout, "reconfigure"):
++    try:
++        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++    except Exception:
++        pass
++
+ try:
+     import yaml
+ except ImportError:  # pragma: no cover - PyYAML is the loop's only dependency
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index 44752d13..9e423a99 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -283,6 +283,7 @@ def build_task_envelope(task: dict[str, Any], role: str, contract: dict[str, Any
+ Autonomous contribution for issue #{issue_ref}: {task.get('title')}.
+ 
+ ## Linked Issue / Claim
++Closes #{issue_ref}
+ Refs #{issue_ref}
+ 
+ ## Type of Change
+@@ -386,10 +387,9 @@ def pick_next_issue() -> str | None:
+     """Fetch the highest priority claimable open issue from GitHub.
+ 
+     Selection policy (#88):
+-      - Claim-gated: only issues carrying ``status:unclaimed`` are eligible;
+-        claimed/in-progress, sequence-held, blocked and private-mirror
+-        boards are never
+-        (re)dispatched.
++      - Claim-gated: any open issue is claimable by default unless it carries
++        an active claim (status:claimed, status:in-progress), hold, blocked, or
++        private-mirror exclusion marker.
+       - Whole-board scope: pagination limit high enough that truncation cannot
+         starve old issues (verified: board regularly holds 35+ open issues).
+       - Explicit priority map on LABELS only (P0>P1>P2>P3>unlabeled) — prose in
+@@ -408,11 +408,15 @@ def pick_next_issue() -> str | None:
+     try:
+         issues = json.loads(out)
+ 
+-        CLAIMABLE_LABEL = "status:unclaimed"
+-        # mirror:private (#122) — issues mirrored from the private monorepo
+-        # declare a non-public target repository; no public lane can act on
+-        # private-only paths, so mirrors are born non-claimable.
+-        EXCLUDED_LABELS = {"status:in-progress", "state:seq-hold", "blocked-by-upstream", "mirror:private"}
++        # Claim-gated (#88): open issues are available unless claimed or held.
++        # Removing explicit status:unclaimed eliminates label desynchronization.
++        EXCLUDED_LABELS = {
++            "status:claimed",
++            "status:in-progress",
++            "state:seq-hold",
++            "blocked-by-upstream",
++            "mirror:private",
++        }
+ 
+         def label_names(item: dict[str, Any]) -> list[str]:
+             labels = item.get("labels")
+@@ -422,8 +426,6 @@ def label_names(item: dict[str, Any]) -> list[str]:
+ 
+         def is_claimable(item: dict[str, Any]) -> bool:
+             names = label_names(item)
+-            if CLAIMABLE_LABEL not in names:
+-                return False
+             return not (EXCLUDED_LABELS & set(names))
+ 
+         # Explicit priority map — LABELS ONLY (title prose must not influence).
+@@ -585,6 +587,9 @@ def step_4_branch(task: dict[str, Any]) -> str | None:
+         return None
+ 
+     log("✅", f"Active on verified branch '{target_branch}'")
++    # Mark issue as claimed on upstream board (honest degradation if guest/offline)
++    if issue_num != "adhoc":
++        run_cmd(["gh", "issue", "edit", str(issue_num), "--repo", UPSTREAM_REPO, "--add-label", "status:claimed"])
+     return target_branch
+ 
+ 
+@@ -794,6 +799,7 @@ def step_7_record(
+ Autonomous contribution for issue #{issue_num}: {task.get('title')}.
+ 
+ ## Linked Issue / Claim
++Closes #{issue_num}
+ Refs #{issue_num}
+ 
+ ## Type of Change
+diff --git a/scripts/ci/stale_claim_releaser.py b/scripts/ci/stale_claim_releaser.py
+index 8ffbae5a..177c07fc 100644
+--- a/scripts/ci/stale_claim_releaser.py
++++ b/scripts/ci/stale_claim_releaser.py
+@@ -9,13 +9,13 @@
+     When an issue is claimed by an agent, the work branch must be created/pushed
+     within 10 minutes. If no remote branch matching the issue appears in 10 minutes,
+     the claiming agent is considered disconnected/failed-to-start.
+-    -> The claim marker is released immediately back to `status:unclaimed`.
++    -> The claim marker is released immediately back to the pool.
+ 
+   Stage 2 (Branch -> Pull Request): 30 Minutes Max
+     Once a branch exists, the agent has 30 minutes to complete the 3-tier
+     verification and open an active Pull Request. If 30 minutes elapse with a branch
+     active but zero open PR submitted, the agent is considered stuck/abandoned.
+-    -> The claim marker is released back to `status:unclaimed`.
++    -> The claim marker is released back to the pool.
+ 
+ Principles:
+   - Stdlib-only: zero external dependencies, runs in public GitHub Actions and offline.
+@@ -43,7 +43,6 @@
+         pass
+ 
+ UPSTREAM_REPO = os.environ.get("GH_REPO", "Supremeai-bd/supremeai-open")
+-CLAIMABLE_LABEL = "status:unclaimed"
+ CLAIMED_LABELS = {"status:claimed", "status:in-progress"}
+ EXCLUDED_LABELS = {"state:seq-hold", "blocked-by-upstream", "mirror:private"}
+ 
+@@ -193,11 +192,10 @@ def evaluate_graduated_claims(
+         if title_lower.startswith("audit(") or "admin_decision" in title_lower or "bridge work order" in title_lower:
+             continue
+ 
+-        has_unclaimed = CLAIMABLE_LABEL in labels
+         has_claimed_label = any(cl in labels for cl in CLAIMED_LABELS)
+         claim_dt = extract_claim_timestamp(issue)
+ 
+-        is_claimed = has_claimed_label or (claim_dt is not None and not has_unclaimed)
++        is_claimed = has_claimed_label or (claim_dt is not None)
+         if not is_claimed:
+             continue
+ 
+@@ -240,19 +238,19 @@ def evaluate_graduated_claims(
+ 
+ 
+ def release_issue_claim(repo: str, issue_number: int, stage: int, reason: str, elapsed_min: float) -> bool:
+-    """Post release comment and restore status:unclaimed."""
++    """Post release comment and remove status:claimed."""
+     comment = (
+         f"⏰ **Graduated Lease Auto-Release (Stage {stage})**\n\n"
+         f"- **Trigger:** {reason} (elapsed: {elapsed_min}m)\n"
+         f"- **Heartbeat Policy:** Claim-to-branch TTL is 10 min; branch-to-PR TTL is 30 min.\n"
+-        f"- **Action:** Releasing claim marker back to the public pool with `{CLAIMABLE_LABEL}`.\n\n"
++        f"- **Action:** Releasing claim marker back to the public pool.\n\n"
+         f"Task is immediately available for `--pick-next` dispatch."
+     )
+     # Post audit comment
+     run_cmd(["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment])
+ 
+-    # Re-apply unclaimed label and remove in-progress markers
+-    cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo, "--add-label", CLAIMABLE_LABEL]
++    # Remove claimed / in-progress markers
++    cmd = ["gh", "issue", "edit", str(issue_number), "--repo", repo]
+     for cl in CLAIMED_LABELS:
+         cmd.extend(["--remove-label", cl])
+ 

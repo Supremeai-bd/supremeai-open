@@ -1,0 +1,18 @@
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 2b0d38a8..4ab8a79f 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -325,8 +325,11 @@ def poll_federation_failures(
+             token=token,
+         )
+         if code != 200 or not isinstance(resp, dict):
+-            print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
+-            failed_count += 1
++            if code in (403, 404):
++                print(f"  [skip-inaccessible] {repo}: could not fetch runs (HTTP {code})")
++            else:
++                print(f"  [skip-error] {repo}: could not fetch runs (HTTP {code})")
++                failed_count += 1
+             continue
+ 
+         runs = resp.get("workflow_runs", [])

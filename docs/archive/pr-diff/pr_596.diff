@@ -1,0 +1,671 @@
+diff --git a/.github/actions/report-ci-failure/action.yml b/.github/actions/report-ci-failure/action.yml
+new file mode 100644
+index 00000000..a56f79f6
+--- /dev/null
++++ b/.github/actions/report-ci-failure/action.yml
+@@ -0,0 +1,157 @@
++name: 'Report CI Failure to SupremeAI Open'
++description: 'Mirrors a failed CI workflow run to Supremeai-bd/supremeai-open task queue'
++author: 'SupremeAI Core Engineering'
++
++inputs:
++  target_open_token:
++    description: 'GitHub token with issues:write permission on Supremeai-bd/supremeai-open'
++    required: true
++  repo:
++    description: 'Repository where failure occurred'
++    required: false
++    default: ${{ github.repository }}
++  workflow:
++    description: 'Workflow name'
++    required: false
++    default: ${{ github.workflow }}
++  run_id:
++    description: 'Workflow run ID'
++    required: false
++    default: ${{ github.run_id }}
++  run_url:
++    description: 'HTML URL of the run'
++    required: false
++    default: 'https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}'
++  branch:
++    description: 'Branch name'
++    required: false
++    default: ${{ github.ref_name }}
++  commit:
++    description: 'Commit SHA'
++    required: false
++    default: ${{ github.sha }}
++  error_summary:
++    description: 'Optional error summary or failing test output'
++    required: false
++    default: ''
++
++runs:
++  using: 'composite'
++  steps:
++    - name: Mirror Failure via REST API
++      shell: bash
++      env:
++        OPEN_TOKEN: ${{ inputs.target_open_token }}
++        SRC_REPO: ${{ inputs.repo }}
++        WF_NAME: ${{ inputs.workflow }}
++        RUN_ID: ${{ inputs.run_id }}
++        RUN_URL: ${{ inputs.run_url }}
++        BRANCH: ${{ inputs.branch }}
++        COMMIT_SHA: ${{ inputs.commit }}
++        ERR_SUMMARY: ${{ inputs.error_summary }}
++      run: |
++        python3 - <<'PYEOF'
++        import json, os, urllib.request, urllib.error
++
++        open_repo = "Supremeai-bd/supremeai-open"
++        token = os.environ.get("OPEN_TOKEN", "").strip()
++        src_repo = os.environ.get("SRC_REPO", "").strip()
++        wf_name = os.environ.get("WF_NAME", "CI Workflow").strip()
++        run_id = os.environ.get("RUN_ID", "").strip()
++        run_url = os.environ.get("RUN_URL", "").strip()
++        branch = os.environ.get("BRANCH", "main").strip()
++        commit_sha = os.environ.get("COMMIT_SHA", "").strip()
++        err_summary = os.environ.get("ERR_SUMMARY", "").strip()
++
++        if not token:
++            print("::warning::No target_open_token provided — skipping CI failure mirroring.")
++            exit(0)
++
++        # Check existing mirror marker
++        marker = f"<!-- MIRROR_RUN: {src_repo}/actions/runs/{run_id} -->"
++        headers = {
++            "Accept": "application/vnd.github+json",
++            "Authorization": f"Bearer {token}",
++            "User-Agent": "SupremeAI-CI-Reporter/1.0",
++        }
++
++        search_url = f"https://api.github.com/repos/{open_repo}/issues?state=open&per_page=50"
++        try:
++            req = urllib.request.Request(search_url, headers=headers)
++            with urllib.request.urlopen(req, timeout=15) as resp:
++                issues = json.loads(resp.read().decode("utf-8"))
++                for iss in issues:
++                    if marker in (iss.get("body") or ""):
++                        print(f"✅ Mirror issue already exists: {open_repo}#{iss.get('number')}. Skipping duplicate.")
++                        exit(0)
++        except Exception as e:
++            print(f"[reporter] Note: marker search returned {e}; proceeding to create.")
++
++        # Short repo name
++        short_name = src_repo.split("/")[-1].lower()
++        if short_name.startswith("supremeai-"):
++            short_name = short_name[len("supremeai-"):]
++        elif short_name == "supremeai":
++            short_name = "monorepo"
++
++        title = f"fix(ci): [{short_name}] {wf_name} failed on {branch} (Run #{run_id})"
++        short_commit = commit_sha[:8] if commit_sha else "unknown"
++
++        err_block = f"\n- **Error Summary:**\n```\n{err_summary}\n```\n" if err_summary else ""
++
++        body = f"""### 🤖 SupremeAI Agent Task Contract
++This task is mirrored automatically from a federation CI workflow failure. Open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
++
++### Target Repository
++{src_repo}
++
++### Priority Tier
++P0-critical (Production CI failure / blocker)
++
++### Topological Layer
++Layer 2 (Tools / Workers / Sidecars)
++
++### Task Group (VALID_GROUPS registry)
++agent-orchestration
++
++### Summary / Problem Statement
++Workflow **{wf_name}** failed on repository `{src_repo}` (branch `{branch}`).
++- **Workflow Run:** [{run_id}]({run_url})
++- **Commit:** `{short_commit}`{err_block}
++- **Failure Logs / Check Details:** Inspect the check run logs in the linked run.
++
++### Acceptance Criteria
++1. Inspect the failing check logs in Run #{run_id}.
++2. Fix root cause in `{src_repo}`.
++3. Submit fix via zero-credential bridge (`bridge_submit_patch`) or fork PR.
++
++### 3-Tier Verification Contract
++1. Reflection: `git diff --stat` matches the fixed CI/code files.
++2. Smoke: CI checks compile and pass locally.
++3. Tests: relevant tests green.
++
++{marker}
++"""
++
++        payload = {
++            "title": title,
++            "body": body,
++            "labels": ["status:unclaimed", "P0-critical", "handoff:coder", "area:ci", f"repo:{short_name}"],
++        }
++
++        create_url = f"https://api.github.com/repos/{open_repo}/issues"
++        try:
++            req = urllib.request.Request(
++                create_url,
++                data=json.dumps(payload).encode("utf-8"),
++                headers=headers,
++                method="POST",
++            )
++            with urllib.request.urlopen(req, timeout=15) as resp:
++                res = json.loads(resp.read().decode("utf-8"))
++                print(f"✅ Mirrored failure to {open_repo}#{res.get('number')}: {res.get('html_url')}")
++        except urllib.error.HTTPError as e:
++            print(f"::warning::Failed to create mirror issue on {open_repo} (HTTP {e.code}): {e.read().decode('utf-8')}")
++        except Exception as e:
++            print(f"::warning::Failed to create mirror issue on {open_repo}: {e}")
++        PYEOF
+diff --git a/.github/workflows/pipeline.yml b/.github/workflows/pipeline.yml
+index c8cb5bad..ad7b1282 100644
+--- a/.github/workflows/pipeline.yml
++++ b/.github/workflows/pipeline.yml
+@@ -42,6 +42,8 @@ on:
+     types: [opened, edited, reopened, synchronize, ready_for_review]
+   # schedule:
+   #   - cron: "*/30 * * * *" # disabled per admin directive — Pipeline Cron does not run autonomous cycles unattended
++  repository_dispatch:
++    types: [federation_ci_failed]
+   workflow_dispatch:
+     inputs:
+       auto_pr:
+@@ -55,6 +57,32 @@ permissions:
+   contents: read
+ 
+ jobs:
++  # ---------------------------------------------------------------------------
++  # 📢 Federation CI Failure Ingress (event-driven from any of the 12 repos)
++  # ---------------------------------------------------------------------------
++  federation-ci-mirror:
++    name: "📢 Federation CI Failure Ingress"
++    if: github.event_name == 'repository_dispatch' && github.event.action == 'federation_ci_failed'
++    runs-on: ubuntu-latest
++    timeout-minutes: 5
++    permissions:
++      contents: read
++      issues: write
++    steps:
++      - name: Checkout repository
++        uses: actions/checkout@v4
++      - name: Setup Python
++        uses: actions/setup-python@v5
++        with:
++          python-version: "3.11"
++      - name: Mirror Failure to Open Queue
++        env:
++          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++          PAYLOAD: ${{ toJson(github.event.client_payload) }}
++        run: |
++          set -euo pipefail
++          python scripts/ci/federation_ci_watchdog.py --payload "$PAYLOAD"
++
+   # ---------------------------------------------------------------------------
+   # ⚡ Real-Time Bridge Intake & PR Opener (push to bridge/**)
+   # ---------------------------------------------------------------------------
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+new file mode 100644
+index 00000000..07731c5c
+--- /dev/null
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -0,0 +1,370 @@
++#!/usr/bin/env python3
++"""scripts/ci/federation_ci_watchdog.py — Federation-Wide CI Failure Watchdog & Open Queue Mirror.
++
++Automatically mirrors CI failures from all 12 SupremeAI federation repositories
++into the public task queue (`Supremeai-bd/supremeai-open`) as actionable agent
++task contract issues.
++
++Supports:
++  1. Direct event handling: receives `federation_ci_failed` payload and mirrors instantly.
++  2. Watchdog polling: audits all 12 federation repositories for recent failed runs.
++  3. Strict deduplication: idempotent via `<!-- MIRROR_RUN: {repo}/actions/runs/{run_id} -->`.
++  4. Offline self-test: `--self-test` verifies formatting, contract compliance, and dedup.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import subprocess
++import sys
++import urllib.request
++import urllib.error
++from typing import Any, Dict, List, Optional, Tuple
++
++if hasattr(sys.stdout, "reconfigure"):
++    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
++if hasattr(sys.stderr, "reconfigure"):
++    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
++
++OPEN_REPO = "Supremeai-bd/supremeai-open"
++
++FEDERATION_REPOS: Tuple[str, ...] = (
++    "Supremeai-bd/supremeai",
++    "Supremeai-bd/supremeai-command",
++    "Supremeai-bd/supremeai-skills",
++    "Supremeai-bd/supremeai-vscode",
++    "Supremeai-bd/supremeai-agents",
++    "Supremeai-bd/supremeai-browser",
++    "Supremeai-bd/supremeai-api",
++    "Supremeai-bd/supremeai-studio",
++    "Supremeai-bd/supremeai-infrastructure",
++    "Supremeai-bd/supremeai-core",
++    "Supremeai-bd/supremeai-sdk",
++    "Supremeai-bd/supremeai-mcp-control-plane",
++)
++
++
++def repo_short_name(repo: str) -> str:
++    """Extract short name from 'Supremeai-bd/supremeai-<name>' or 'Supremeai-bd/supremeai'."""
++    name = repo.split("/")[-1].lower()
++    if name.startswith("supremeai-"):
++        return name[len("supremeai-"):]
++    if name == "supremeai":
++        return "monorepo"
++    return name
++
++
++def build_mirror_marker(repo: str, run_id: int | str) -> str:
++    return f"<!-- MIRROR_RUN: {repo}/actions/runs/{run_id} -->"
++
++
++def build_issue_body(
++    repo: str,
++    workflow_name: str,
++    run_id: int | str,
++    html_url: str,
++    branch: str,
++    commit_sha: str,
++    error_summary: str = "",
++) -> str:
++    short_commit = str(commit_sha)[:8] if commit_sha else "unknown"
++    error_section = ""
++    if error_summary.strip():
++        error_section = f"\n- **Error Summary:**\n```\n{error_summary.strip()}\n```\n"
++
++    marker = build_mirror_marker(repo, run_id)
++
++    return f"""### 🤖 SupremeAI Agent Task Contract
++This task is mirrored automatically from a federation CI workflow failure. Open to **all autonomous agents** (Local Antigravity, Claude, ChatGPT, Mistral, external contributors).
++
++### Target Repository
++{repo}
++
++### Priority Tier
++P0-critical (Production CI failure / blocker)
++
++### Topological Layer
++Layer 2 (Tools / Workers / Sidecars)
++
++### Task Group (VALID_GROUPS registry)
++agent-orchestration
++
++### Summary / Problem Statement
++Workflow **{workflow_name}** failed on repository `{repo}` (branch `{branch}`).
++- **Workflow Run:** [{run_id}]({html_url})
++- **Commit:** `{short_commit}`{error_section}
++- **Failure Logs / Check Details:** Inspect the check run logs in the linked run.
++
++### Acceptance Criteria
++1. Inspect the failing check logs in Run #{run_id}.
++2. Fix root cause in `{repo}`.
++3. Submit fix via zero-credential bridge (`bridge_submit_patch`) or fork PR.
++
++### 3-Tier Verification Contract
++1. Reflection: `git diff --stat` matches the fixed CI/code files.
++2. Smoke: CI checks compile and pass locally.
++3. Tests: relevant tests green.
++
++{marker}
++"""
++
++
++def build_issue_title(workflow_name: str, repo: str, branch: str, run_id: int | str) -> str:
++    short_repo = repo_short_name(repo)
++    return f"fix(ci): [{short_repo}] {workflow_name} failed on {branch} (Run #{run_id})"
++
++
++def build_issue_labels(repo: str) -> List[str]:
++    short_repo = repo_short_name(repo)
++    return [
++        "status:unclaimed",
++        "P0-critical",
++        "handoff:coder",
++        "area:ci",
++        f"repo:{short_repo}",
++    ]
++
++
++def gh_api(
++    endpoint: str,
++    token: Optional[str] = None,
++    method: str = "GET",
++    data: Optional[Dict[str, Any]] = None,
++) -> Tuple[int, Any]:
++    """Execute authenticated GitHub REST API request."""
++    tok = token or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or os.environ.get("OPEN_SYNC_PAT")
++    url = endpoint if endpoint.startswith("http") else f"https://api.github.com/{endpoint.lstrip('/')}"
++    headers = {
++        "Accept": "application/vnd.github+json",
++        "User-Agent": "SupremeAI-Federation-Watchdog/1.0",
++    }
++    if tok:
++        headers["Authorization"] = f"Bearer {tok}"
++
++    body_bytes = json.dumps(data).encode("utf-8") if data is not None else None
++    req = urllib.request.Request(url, data=body_bytes, headers=headers, method=method)
++
++    try:
++        with urllib.request.urlopen(req, timeout=15) as resp:
++            content = resp.read().decode("utf-8", errors="replace")
++            return resp.status, json.loads(content) if content.strip() else {}
++    except urllib.error.HTTPError as e:
++        err_content = e.read().decode("utf-8", errors="replace")
++        try:
++            parsed = json.loads(err_content)
++        except Exception:
++            parsed = {"raw": err_content}
++        return e.code, parsed
++    except Exception as e:
++        return 0, {"error": str(e)}
++
++
++def check_existing_mirror(repo: str, run_id: int | str, token: Optional[str] = None) -> Optional[int]:
++    """Check if an open issue on supremeai-open already carries this mirror run marker."""
++    marker = build_mirror_marker(repo, run_id)
++    # Search open issues for the marker
++    code, res = gh_api(
++        f"repos/{OPEN_REPO}/issues?state=all&per_page=50",
++        token=token,
++    )
++    if code != 200 or not isinstance(res, list):
++        return None
++
++    for issue in res:
++        body = issue.get("body") or ""
++        if marker in body:
++            return int(issue["number"])
++    return None
++
++
++def mirror_failure(
++    repo: str,
++    workflow_name: str,
++    run_id: int | str,
++    html_url: str,
++    branch: str = "main",
++    commit_sha: str = "",
++    error_summary: str = "",
++    token: Optional[str] = None,
++) -> bool:
++    """Create a mirrored issue on supremeai-open if not already existing."""
++    existing = check_existing_mirror(repo, run_id, token=token)
++    if existing:
++        print(f"[watchdog] Mirror already exists on {OPEN_REPO}#{existing}. Skipping.")
++        return True
++
++    title = build_issue_title(workflow_name, repo, branch, run_id)
++    body = build_issue_body(repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary)
++    labels = build_issue_labels(repo)
++
++    data = {
++        "title": title,
++        "body": body,
++        "labels": labels,
++    }
++
++    code, resp = gh_api(f"repos/{OPEN_REPO}/issues", token=token, method="POST", data=data)
++    if code == 201:
++        issue_num = resp.get("number")
++        issue_url = resp.get("html_url")
++        print(f"✅ [watchdog] Mirrored CI failure from {repo} to {OPEN_REPO}#{issue_num}: {issue_url}")
++        return True
++    else:
++        print(f"❌ [watchdog] Failed to create mirror issue on {OPEN_REPO} (HTTP {code}): {resp}")
++        return False
++
++
++def poll_federation_failures(token: Optional[str] = None, limit_per_repo: int = 3) -> int:
++    """Audit all 12 federation repositories for recent failed runs."""
++    mirrored_count = 0
++    print(f"🔍 [watchdog] Auditing {len(FEDERATION_REPOS)} federation repositories for CI failures...")
++
++    for repo in FEDERATION_REPOS:
++        code, resp = gh_api(f"repos/{repo}/actions/runs?status=failure&per_page={limit_per_repo}", token=token)
++        if code != 200 or not isinstance(resp, dict):
++            print(f"  [skip] {repo}: could not fetch runs (HTTP {code})")
++            continue
++
++        runs = resp.get("workflow_runs", [])
++        if not runs:
++            continue
++
++        print(f"  [{repo}] Found {len(runs)} failed workflow runs.")
++        for r in runs:
++            run_id = r.get("id")
++            workflow_name = r.get("name", "CI Pipeline")
++            html_url = r.get("html_url", "")
++            branch = r.get("head_branch", "unknown")
++            commit_sha = r.get("head_sha", "")
++
++            if not run_id:
++                continue
++
++            success = mirror_failure(
++                repo=repo,
++                workflow_name=workflow_name,
++                run_id=run_id,
++                html_url=html_url,
++                branch=branch,
++                commit_sha=commit_sha,
++                token=token,
++            )
++            if success:
++                mirrored_count += 1
++
++    return mirrored_count
++
++
++def self_test() -> int:
++    """Hermetic self-test suite (zero network)."""
++    print("[self-test] Running Federation CI Watchdog offline contract test...")
++
++    # 1. Repos registry verification
++    assert len(FEDERATION_REPOS) == 12, f"Expected 12 federation repos, got {len(FEDERATION_REPOS)}"
++    assert "Supremeai-bd/supremeai" in FEDERATION_REPOS
++    assert "Supremeai-bd/supremeai-command" in FEDERATION_REPOS
++    assert "Supremeai-bd/supremeai-skills" in FEDERATION_REPOS
++    assert "Supremeai-bd/supremeai-studio" in FEDERATION_REPOS
++
++    # 2. Short name mapping
++    assert repo_short_name("Supremeai-bd/supremeai") == "monorepo"
++    assert repo_short_name("Supremeai-bd/supremeai-command") == "command"
++    assert repo_short_name("Supremeai-bd/supremeai-skills") == "skills"
++
++    # 3. Marker generation
++    marker = build_mirror_marker("Supremeai-bd/supremeai-command", 123456)
++    assert marker == "<!-- MIRROR_RUN: Supremeai-bd/supremeai-command/actions/runs/123456 -->"
++
++    # 4. Issue formatting
++    title = build_issue_title("CI Pipeline", "Supremeai-bd/supremeai-command", "main", 123456)
++    assert title == "fix(ci): [command] CI Pipeline failed on main (Run #123456)"
++
++    body = build_issue_body(
++        repo="Supremeai-bd/supremeai-command",
++        workflow_name="CI Pipeline",
++        run_id=123456,
++        html_url="https://github.com/Supremeai-bd/supremeai-command/actions/runs/123456",
++        branch="main",
++        commit_sha="abcdef123456",
++        error_summary="tests/test_command.py: FAILED",
++    )
++    assert "Supremeai-bd/supremeai-command" in body
++    assert "P0-critical" in body
++    assert "agent-orchestration" in body
++    assert marker in body
++    assert "tests/test_command.py: FAILED" in body
++
++    labels = build_issue_labels("Supremeai-bd/supremeai-command")
++    assert "status:unclaimed" in labels
++    assert "P0-critical" in labels
++    assert "area:ci" in labels
++    assert "repo:command" in labels
++
++    print("✅ [self-test] All 4 contract assertions passed!")
++    return 0
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Federation-wide CI Failure Watchdog")
++    parser.add_argument("--self-test", action="store_true", help="Run offline contract assertions")
++    parser.add_argument("--poll", action="store_true", help="Poll all 12 federation repositories for recent failures")
++    parser.add_argument("--payload", type=str, help="JSON payload string or path to JSON file for event-driven mirror")
++    parser.add_argument("--repo", type=str, help="Repository name (e.g. Supremeai-bd/supremeai-command)")
++    parser.add_argument("--workflow", type=str, default="CI Workflow", help="Workflow name")
++    parser.add_argument("--run-id", type=int, help="Workflow run ID")
++    parser.add_argument("--url", type=str, default="", help="Workflow run HTML URL")
++    parser.add_argument("--branch", type=str, default="main", help="Branch name")
++    parser.add_argument("--commit", type=str, default="", help="Commit SHA")
++    parser.add_argument("--error", type=str, default="", help="Error summary")
++
++    args = parser.parse_args()
++
++    if args.self_test:
++        return self_test()
++
++    token = os.environ.get("OPEN_SYNC_PAT") or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
++
++    if args.payload:
++        raw = args.payload
++        if os.path.exists(raw):
++            raw = open(raw, encoding="utf-8").read()
++        data = json.loads(raw)
++        client = data.get("client_payload") or data
++        success = mirror_failure(
++            repo=client.get("repo", client.get("repository", "")),
++            workflow_name=client.get("workflow", client.get("workflow_name", "CI Workflow")),
++            run_id=client.get("run_id", 0),
++            html_url=client.get("run_url", client.get("html_url", "")),
++            branch=client.get("branch", client.get("head_branch", "main")),
++            commit_sha=client.get("commit", client.get("head_sha", "")),
++            error_summary=client.get("error", client.get("error_summary", "")),
++            token=token,
++        )
++        return 0 if success else 1
++
++    if args.repo and args.run_id:
++        success = mirror_failure(
++            repo=args.repo,
++            workflow_name=args.workflow,
++            run_id=args.run_id,
++            html_url=args.url or f"https://github.com/{args.repo}/actions/runs/{args.run_id}",
++            branch=args.branch,
++            commit_sha=args.commit,
++            error_summary=args.error,
++            token=token,
++        )
++        return 0 if success else 1
++
++    if args.poll:
++        poll_federation_failures(token=token)
++        return 0
++
++    parser.print_help()
++    return 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/test_federation_ci_watchdog.py b/tests/test_federation_ci_watchdog.py
+new file mode 100644
+index 00000000..20aa4ab8
+--- /dev/null
++++ b/tests/test_federation_ci_watchdog.py
+@@ -0,0 +1,80 @@
++"""tests/test_federation_ci_watchdog.py — Offline test battery for Federation CI Watchdog.
++
++Hermetic tests for issue formatting, contract markers, short name mapping,
++deduplication logic, and payload handling without network calls.
++"""
++
++import json
++import unittest
++
++from scripts.ci.federation_ci_watchdog import (
++    FEDERATION_REPOS,
++    build_issue_body,
++    build_issue_labels,
++    build_issue_title,
++    build_mirror_marker,
++    repo_short_name,
++)
++
++
++class TestFederationCiWatchdog(unittest.TestCase):
++    def test_federation_repos_count_and_composition(self):
++        self.assertEqual(len(FEDERATION_REPOS), 12)
++        expected = [
++            "Supremeai-bd/supremeai",
++            "Supremeai-bd/supremeai-command",
++            "Supremeai-bd/supremeai-skills",
++            "Supremeai-bd/supremeai-vscode",
++            "Supremeai-bd/supremeai-agents",
++            "Supremeai-bd/supremeai-browser",
++            "Supremeai-bd/supremeai-api",
++            "Supremeai-bd/supremeai-studio",
++            "Supremeai-bd/supremeai-infrastructure",
++            "Supremeai-bd/supremeai-core",
++            "Supremeai-bd/supremeai-sdk",
++            "Supremeai-bd/supremeai-mcp-control-plane",
++        ]
++        for r in expected:
++            self.assertIn(r, FEDERATION_REPOS)
++
++    def test_repo_short_name(self):
++        self.assertEqual(repo_short_name("Supremeai-bd/supremeai"), "monorepo")
++        self.assertEqual(repo_short_name("Supremeai-bd/supremeai-command"), "command")
++        self.assertEqual(repo_short_name("Supremeai-bd/supremeai-studio"), "studio")
++        self.assertEqual(repo_short_name("Supremeai-bd/supremeai-mcp-control-plane"), "mcp-control-plane")
++
++    def test_mirror_marker_uniqueness(self):
++        m1 = build_mirror_marker("Supremeai-bd/supremeai-api", 999)
++        self.assertEqual(m1, "<!-- MIRROR_RUN: Supremeai-bd/supremeai-api/actions/runs/999 -->")
++
++    def test_issue_title_and_labels(self):
++        title = build_issue_title("Deploy Pipeline", "Supremeai-bd/supremeai-studio", "main", 555)
++        self.assertEqual(title, "fix(ci): [studio] Deploy Pipeline failed on main (Run #555)")
++
++        labels = build_issue_labels("Supremeai-bd/supremeai-studio")
++        self.assertIn("status:unclaimed", labels)
++        self.assertIn("P0-critical", labels)
++        self.assertIn("handoff:coder", labels)
++        self.assertIn("area:ci", labels)
++        self.assertIn("repo:studio", labels)
++
++    def test_issue_body_contract(self):
++        body = build_issue_body(
++            repo="Supremeai-bd/supremeai-skills",
++            workflow_name="Test Matrix",
++            run_id=888,
++            html_url="https://github.com/Supremeai-bd/supremeai-skills/actions/runs/888",
++            branch="staging",
++            commit_sha="1234567890abcdef",
++            error_summary="AssertionError: 5 != 6",
++        )
++        self.assertIn("### 🤖 SupremeAI Agent Task Contract", body)
++        self.assertIn("Supremeai-bd/supremeai-skills", body)
++        self.assertIn("P0-critical", body)
++        self.assertIn("agent-orchestration", body)
++        self.assertIn("<!-- MIRROR_RUN: Supremeai-bd/supremeai-skills/actions/runs/888 -->", body)
++        self.assertIn("AssertionError: 5 != 6", body)
++
++
++if __name__ == "__main__":
++    unittest.main()

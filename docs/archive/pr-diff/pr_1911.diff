@@ -1,0 +1,518 @@
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index 15dc7e6f..bacf6ef8 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
++    "test:unit": "npm run test:unified-diff-eof && npm run test:http-retry && npm run test:rate-limit-truncation && npm run test:truncation-live-replay && npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && npm run test:session-admission && npm run test:policy && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake && npm run test:command-router && npm run test:quota-routing && npm run test:task-engine && npm run test:federation && npm run test:memory-fallback && npm run test:memory-adapter && npm run test:actions && npm run test:infisical && npm run test:remediation && npm run test:github-adapter && npm run test:memory-sidecar && npm run test:memory-graph-persistence && npm run test:intelligence && npm run test:semantic-router && npm run test:wiring-guard && npm run test:federated-ci-watcher && npm run test:system-health-probe && npm run test:hybrid-repo-access && npm run test:redis-p0",
+     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:render-logs": "tsx test_render_logs.ts",
+@@ -36,7 +36,7 @@
+     "test:federated-ci-watcher": "tsx test_federated_ci_watcher.ts",
+     "test:system-health-probe": "tsx test_system_health_probe.ts",
+     "test:hybrid-repo-access": "tsx test_hybrid_repo_access.ts",
+-    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:session-admission && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:memory-graph-persistence && npm run --silent test:redis-p0",
++    "test:tower-ci": "tsx test_registry.ts && tsx test_summary.ts && npm run --silent test:health-history && npm run --silent test:heartbeat && npm run --silent test:mcp-presence && npm run --silent test:session-admission && npm run --silent test:client-registry && npm run --silent test:tool-visibility && npm run --silent test:timestamps && npm run --silent test:access && npm run --silent test:guardian && npm run --silent test:gemini-adapter && npm run --silent test:redis-rotation && npm run --silent test:bridge-onboarding && npm run --silent test:bridge-intake && npm run --silent test:command-router && npm run --silent test:smoke && npm run --silent test:policy && npm run --silent test:auto-register && npm run --silent test:slot-verification && npm run --silent test:integration && npm run --silent test:task-engine && npm run --silent test:federation && npm run --silent test:intelligence && npm run --silent test:semantic-router && npm run --silent test:wiring-guard && npm run --silent test:federated-ci-watcher && npm run --silent test:system-health-probe && npm run --silent test:hybrid-repo-access && tsx test_events.ts && npm run --silent test:quota-routing && npm run --silent test:memory-fallback && npm run --silent test:memory-adapter && npm run --silent test:actions && npm run --silent test:infisical && npm run --silent test:remediation && npm run --silent test:github-adapter && npm run --silent test:memory-sidecar && npm run --silent test:memory-graph-persistence && npm run --silent test:redis-p0 && npm run --silent test:rate-limit-truncation && npm run --silent test:truncation-live-replay",
+     "test:semantic-router": "tsx scripts/test-runner.ts test/test_semantic_router.ts",
+     "test:quota-routing": "tsx test_redis_quota_routing.ts",
+     "test:policy": "tsx scripts/test-runner.ts test_policy.ts MCP_ADMIN_KEY",
+@@ -56,6 +56,8 @@
+     "test:memory-graph-persistence": "tsx test_memory_graph_persistence.ts",
+     "test:wiring-guard": "tsx scripts/test-runner.ts --guard",
+     "test:unified-diff-eof": "tsx scripts/test-runner.ts test_unified_diff_eof.ts",
++    "test:rate-limit-truncation": "tsx scripts/test-runner.ts test_rate_limit_truncation.ts",
++    "test:truncation-live-replay": "tsx scripts/test-runner.ts test_truncation_live_replay.ts",
+     "test:intelligence": "tsx scripts/test-runner.ts test_intelligence_tools.ts",
+     "test:http-retry": "tsx scripts/test-runner.ts test_http_retry.ts"
+   },
+diff --git a/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts b/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
+index 85f7c801..4e52ca56 100644
+--- a/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
++++ b/infrastructure/mcp-control-plane/src/lib/mcp_rate_limit.ts
+@@ -81,6 +81,141 @@ export class ToolExecutionTimeoutError extends Error {
+   }
+ }
+ 
++/** Minimum surviving byte length for a pruned string leaf — below this we stop cutting. */
++const PRUNE_MIN_KEEP_BYTES = 256;
++/** Max nesting depth we recurse into string values that parse as JSON (tower github tools double-encode). */
++const PRUNE_MAX_NEST_DEPTH = 2;
++/** A string value must exceed this to be worth parsing as nested JSON. */
++const PRUNE_NESTED_THRESHOLD_BYTES = 4096;
++/** Hard pass cap for the prune loop; exhaustion falls back to the wholesale summary. */
++const PRUNE_MAX_PASSES = 200;
++
++/**
++ * Clip a string to at most maxBytes WITHOUT splitting a multi-byte UTF-8
++ * sequence (a raw Buffer.subarray cut emits U+FFFD mojibake for Bengali/CJK
++ * payloads, which dominate this federation).
++ */
++function utf8SafeClip(text: string, maxBytes: number): string {
++  if (maxBytes <= 0) return "";
++  const buf = Buffer.from(text, "utf8");
++  if (buf.length <= maxBytes) return text;
++  let cut = maxBytes;
++  // step back over UTF-8 continuation bytes (0b10xxxxxx) to keep the glyph whole
++  while (cut > 0 && (buf[cut] & 0xc0) === 0x80) cut--;
++  return buf.subarray(0, cut).toString("utf8");
++}
++
++function getChildValue(parent: unknown, key: string | number): unknown {
++  return Array.isArray(parent)
++    ? (parent as unknown[])[key as number]
++    : (parent as Record<string, unknown>)[key as string];
++}
++
++function setChildValue(parent: unknown, key: string | number, value: unknown): void {
++  if (Array.isArray(parent)) (parent as unknown[])[key as number] = value;
++  else (parent as Record<string, unknown>)[key as string] = value;
++}
++
++/** An editable string leaf, addressed through its parent so mutation stays in place. */
++interface EditableString {
++  parent: unknown;
++  key: string | number;
++  bytes: number; // current utf8 byte length; 0 = demoted from the prune set
++}
++
++/** A string value that parsed as nested JSON; re-serialized into its parent on every measurement. */
++interface NestedJsonRoot {
++  parent: unknown;
++  key: string | number;
++  parsed: unknown;
++}
++
++/**
++ * Collect editable string leaves of `node`. String values that themselves
++ * parse as a JSON object/array above the size threshold are recursed into so
++ * the prune operates at the innermost useful granularity (the tower's github
++ * tools double- and triple-encode payloads).
++ */
++function collectLeaves(node: unknown, depth: number, leaves: EditableString[], roots: NestedJsonRoot[]): void {
++  if (depth > PRUNE_MAX_NEST_DEPTH || node === null || typeof node !== "object") return;
++  const keys: (string | number)[] = Array.isArray(node)
++    ? (node as unknown[]).map((_, i) => i)
++    : Object.keys(node as Record<string, unknown>);
++  for (const key of keys) {
++    // never touch prototype-chain keys (JSON.parse can produce own "__proto__" props)
++    if (key === "__proto__" || key === "constructor" || key === "prototype") continue;
++    const value = getChildValue(node, key);
++    if (typeof value === "string") {
++      const bytes = Buffer.byteLength(value, "utf8");
++      if (bytes > PRUNE_NESTED_THRESHOLD_BYTES && depth < PRUNE_MAX_NEST_DEPTH) {
++        try {
++          const nested: unknown = JSON.parse(value);
++          if (nested !== null && typeof nested === "object") {
++            const before = leaves.length + roots.length;
++            collectLeaves(nested, depth + 1, leaves, roots);
++            if (leaves.length + roots.length > before) {
++              roots.push({ parent: node, key, parsed: nested });
++              continue; // inner granularity registered; outer string not editable directly
++            }
++          }
++        } catch {
++          /* not nested JSON — treat as an ordinary string leaf */
++        }
++      }
++      if (bytes > PRUNE_MIN_KEEP_BYTES) leaves.push({ parent: node, key, bytes });
++    } else if (value !== null && typeof value === "object") {
++      collectLeaves(value, depth, leaves, roots);
++    }
++  }
++}
++
++/**
++ * Iteratively halve the largest string leaf (UTF-8-safe) until the
++ * re-stringified document fits `budgetBytes`. Deterministic: largest-first,
++ * ties broken by discovery order. Returns total bytes removed, or null when
++ * the prune floor / pass cap is reached before fitting.
++ */
++function pruneToBudget(root: unknown, budgetBytes: number): number | null {
++  const leaves: EditableString[] = [];
++  const roots: NestedJsonRoot[] = [];
++  collectLeaves(root, 0, leaves, roots);
++  let removedTotal = 0;
++  for (let pass = 0; pass < PRUNE_MAX_PASSES; pass++) {
++    roots.forEach((r) => setChildValue(r.parent, r.key, JSON.stringify(r.parsed)));
++    const serialized = JSON.stringify(root);
++    if (Buffer.byteLength(serialized, "utf8") <= budgetBytes) return removedTotal;
++    let biggest: EditableString | null = null;
++    for (const leaf of leaves) {
++      if (leaf.bytes > PRUNE_MIN_KEEP_BYTES && (biggest === null || leaf.bytes > biggest.bytes)) {
++        biggest = leaf;
++      }
++    }
++    if (biggest === null) return null; // prune floor reached
++    const current = getChildValue(biggest.parent, biggest.key) as string;
++    const target = Math.max(PRUNE_MIN_KEEP_BYTES, Math.floor(biggest.bytes / 2));
++    const clipped = utf8SafeClip(current, target);
++    const removed = biggest.bytes - Buffer.byteLength(clipped, "utf8");
++    setChildValue(biggest.parent, biggest.key, clipped);
++    biggest.bytes = removed > 0 ? Buffer.byteLength(clipped, "utf8") : 0; // 0 = demoted
++    if (removed > 0) removedTotal += removed;
++  }
++  return null; // pass cap exhausted
++}
++
++/**
++ * Output-truncation gate (MCP_TOOL_RESULT_MAX_BYTES).
++ *
++ * Superior replacement of the former byte-clip: the old behavior cut the
++ * serialized JSON mid-structure and appended a prose marker, producing an
++ * UNPARSEABLE text payload (every JSON-parsing client failed on the largest,
++ * richest responses) and U+FFFD mojibake whenever the cut split a multi-byte
++ * UTF-8 sequence. The replacement prunes the largest string leaves
++ * (UTF-8-safe, nested-JSON-aware) so the emitted payload stays VALID JSON,
++ * embeds truncation facts under a reserved `_truncation` key, and preserves
++ * the original `metadata` contract. A wholesale-summary fallback covers the
++ * pathological case where the prune floor is reached before fitting.
++ * Signature and call sites unchanged.
++ */
+ export function truncateToolResult(toolName: string, result: unknown): unknown {
+   if (result === null || typeof result !== "object") return result;
+   let serialized: string | undefined;
+@@ -93,18 +228,72 @@ export function truncateToolResult(toolName: string, result: unknown): unknown {
+   const originalBytes = Buffer.byteLength(serialized, "utf8");
+   const maxBytes = env.runtime.toolResultMaxBytes;
+   if (originalBytes <= maxBytes) return result;
+-  const clipped = Buffer.from(serialized, "utf8").subarray(0, maxBytes).toString("utf8");
+-  const truncatedBytes = originalBytes - maxBytes;
+   const wasError = (result as { isError?: unknown }).isError === true;
++
++  // reserve room for the in-band `_truncation` note
++  const budget = Math.max(1024 + 256, maxBytes - 256);
++
++  let parsed: unknown = null;
++  try {
++    parsed = JSON.parse(serialized);
++  } catch {
++    parsed = null; // unreachable for stringify output; defensive
++  }
++
++  const removed = parsed !== null && typeof parsed === "object"
++    ? pruneToBudget(parsed, budget)
++    : null;
++
++  if (removed !== null) {
++    if (!Array.isArray(parsed)) {
++      const obj = parsed as Record<string, unknown>;
++      if (!("_truncation" in obj)) {
++        obj._truncation = {
++          truncated: true,
++          tool: toolName,
++          originalBytes,
++          maxBytes,
++          truncatedBytes: removed,
++        };
++      }
++    }
++    const prunedText = JSON.stringify(parsed);
++    if (Buffer.byteLength(prunedText, "utf8") <= maxBytes) {
++      return {
++        content: [{ type: "text", text: prunedText }],
++        isError: wasError,
++        metadata: {
++          truncated: true,
++          tool: toolName,
++          originalBytes,
++          maxBytes,
++          truncatedBytes: removed,
++          mode: "json-prune",
++        },
++      };
++    }
++  }
++
++  // wholesale fallback: prune floor / pass cap reached — emit a compact
++  // VALID-JSON summary instead of a corrupt half-document.
++  const summary = {
++    truncated: true,
++    tool: toolName,
++    originalBytes,
++    maxBytes,
++    note: "Result exceeded MCP_TOOL_RESULT_MAX_BYTES and could not be pruned under budget; re-query with narrower arguments (lower limit / tighter filters).",
++  };
+   return {
+-    content: [{ type: "text", text: `${clipped}\n...[truncated ${truncatedBytes} bytes]` }],
++    content: [{ type: "text", text: JSON.stringify(summary) }],
+     isError: wasError,
+     metadata: {
+       truncated: true,
+       tool: toolName,
+       originalBytes,
+       maxBytes,
+-      truncatedBytes,
++      truncatedBytes: originalBytes - Buffer.byteLength(JSON.stringify(summary), "utf8"),
++      mode: "wholesale",
+     },
+   };
+-}
+\ No newline at end of file
++}
++
+diff --git a/infrastructure/mcp-control-plane/test_rate_limit_truncation.ts b/infrastructure/mcp-control-plane/test_rate_limit_truncation.ts
+new file mode 100644
+index 00000000..3f51de05
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_rate_limit_truncation.ts
+@@ -0,0 +1,182 @@
++/**
++ * Hermetic contract tests for the output-truncation gate (truncateToolResult).
++ *
++ * Defect-class guard (#1882): the former byte-clip cut the serialized JSON
++ * mid-structure and appended a prose marker, so every JSON-parsing client
++ * failed on exactly the largest tool responses, and a cut landing inside a
++ * multi-byte UTF-8 sequence emitted U+FFFD mojibake. The replacement prunes
++ * the largest string leaves (UTF-8-safe, nested-JSON-aware) and emits VALID
++ * JSON with in-band `_truncation` facts; a wholesale summary covers the
++ * pathological floor case.
++ *
++ * House style: node:assert + plain script; no network, no credentials, no
++ * services. Run: tsx scripts/test-runner.ts test_rate_limit_truncation.ts
++ */
++
++import assert from "node:assert/strict";
++import { truncateToolResult } from "./src/lib/mcp_rate_limit.js";
++
++const CAP = 4096; // deterministic test budget (env getter re-reads per call)
++
++function withCap<T>(fn: () => T): T {
++  const prev = process.env.MCP_TOOL_RESULT_MAX_BYTES;
++  process.env.MCP_TOOL_RESULT_MAX_BYTES = String(CAP);
++  try {
++    return fn();
++  } finally {
++    if (prev === undefined) delete process.env.MCP_TOOL_RESULT_MAX_BYTES;
++    else process.env.MCP_TOOL_RESULT_MAX_BYTES = prev;
++  }
++}
++
++function bytesOf(s: string): number {
++  return Buffer.byteLength(s, "utf8");
++}
++
++let passed = 0;
++function ok(name: string, fn: () => void): void {
++  fn();
++  passed++;
++  console.log(`  ✓ ${name}`);
++}
++
++// ---------------------------------------------------------------------------
++console.log("=== test_rate_limit_truncation ===");
++
++ok("within-budget result passes through by identity", () => {
++  withCap(() => {
++    const result = { content: [{ type: "text", text: "tiny" }], isError: false };
++    assert.strictEqual(truncateToolResult("t", result), result);
++  });
++});
++
++ok("non-object results pass through unchanged", () => {
++  withCap(() => {
++    assert.strictEqual(truncateToolResult("t", null), null);
++    assert.strictEqual(truncateToolResult("t", "just a string"), "just a string");
++    assert.strictEqual(truncateToolResult("t", 42), 42);
++  });
++});
++
++ok("unserializable result (BigInt) passes through unchanged", () => {
++  withCap(() => {
++    const result = { content: [{ type: "text", text: "x" }], v: 1n };
++    assert.strictEqual(truncateToolResult("t", result), result);
++  });
++});
++
++ok("oversized JSON result: emitted text is VALID JSON, structure preserved", () => {
++  withCap(() => {
++    // mirrors the live repro: double-encoded envelope around a github runs payload.
++    // 6 runs: metadata floor (~0.8KB) stays under budget so the JSON-prune path
++    // converges before the prune floor (30 runs would exhaust it → wholesale).
++    const runs = Array.from({ length: 6 }, (_, i) => ({
++      id: 40600000000 + i,
++      name: "CI — Open Unified Pipeline",
++      head_branch: `bridge/bridge-20261028-pr-${i}`,
++      conclusion: i % 5 === 0 ? "failure" : "success",
++      logsSnippet: `2026-10-28T01:0${i}:00Z log line — ${"x".repeat(900)}`,
++    }));
++    const githubJson = JSON.stringify({ total_count: 7229, workflow_runs: runs });
++    const envelope = JSON.stringify({ content: [{ type: "text", text: githubJson }] });
++    const result = { content: [{ type: "text", text: envelope }], isError: false };
++    assert.ok(bytesOf(JSON.stringify(result)) > CAP, "fixture must exceed the cap");
++
++    const out = truncateToolResult("github_workflow_runs", result) as {
++      content: { type: string; text: string }[];
++      isError: boolean;
++      metadata: Record<string, unknown>;
++    };
++    const outer = JSON.parse(out.content[0].text); // must not throw — THE contract
++    assert.equal(out.isError, false);
++    assert.equal(out.metadata.truncated, true);
++    assert.equal(out.metadata.mode, "json-prune");
++    assert.ok(bytesOf(out.content[0].text) <= CAP, "emitted text honors the byte cap");
++
++    // nested layers preserved and parseable
++    const inner1 = JSON.parse(outer.content[0].text);
++    const github = JSON.parse(inner1.content[0].text);
++    assert.equal(github.total_count, 7229);
++    assert.equal(github.workflow_runs.length, 6, "run count preserved");
++    const snip = github.workflow_runs[0].logsSnippet as string;
++    assert.ok(snip.length < 900, "logsSnippet pruned");
++    assert.ok(!snip.includes("\uFFFD"), "no mojibake in pruned snippet");
++
++    // in-band facts
++    const t = outer._truncation as Record<string, unknown>;
++    assert.equal(t.truncated, true);
++    assert.equal(t.tool, "github_workflow_runs");
++    assert.ok((t.truncatedBytes as number) > 0);
++    assert.equal(out.metadata.truncatedBytes, t.truncatedBytes, "metadata/_truncation agree");
++  });
++});
++
++ok("UTF-8-safe cut: no U+FFFD when the clip straddles Bengali glyphs", () => {
++  withCap(() => {
++    // 3-byte glyphs; a naive subarray at the cap would split one mid-sequence
++    const bangla = "আমাদের কাস্টমার যেন সর্বোত্তম এক্সপেরিয়েন্স পায়। ".repeat(400);
++    const result = { content: [{ type: "text", text: bangla }], isError: false };
++    const out = truncateToolResult("bengali_tool", result) as {
++      content: { type: string; text: string }[];
++      metadata: Record<string, unknown>;
++    };
++    const text = out.content[0].text;
++    assert.ok(bytesOf(text) <= CAP);
++    JSON.parse(text); // valid JSON
++    assert.ok(!text.includes("\uFFFD"), "no replacement chars anywhere");
++  });
++});
++
++ok("prune floor reached (many tiny strings) → wholesale VALID-JSON summary", () => {
++  withCap(() => {
++    const tiny: Record<string, string> = {};
++    for (let i = 0; i < 20000; i++) tiny[`k${i}`] = "v" + "x".repeat(20); // ~27 B values, all < floor
++    const result = { content: [{ type: "text", text: "payload" }], data: tiny, isError: false };
++    assert.ok(bytesOf(JSON.stringify(result)) > CAP);
++    const out = truncateToolResult("tiny_tool", result) as {
++      content: { type: string; text: string }[];
++      metadata: Record<string, unknown>;
++    };
++    const parsed = JSON.parse(out.content[0].text); // valid JSON, not a corrupt half-doc
++    assert.equal(parsed.truncated, true);
++    assert.equal(parsed.tool, "tiny_tool");
++    assert.ok(typeof parsed.note === "string" && parsed.note.length > 0);
++    assert.equal(out.metadata.mode, "wholesale");
++  });
++});
++
++ok("isError flag preserved through truncation", () => {
++  withCap(() => {
++    const result = { content: [{ type: "text", text: "y".repeat(20000) }], isError: true };
++    const out = truncateToolResult("t", result) as { isError: boolean; metadata: Record<string, unknown> };
++    assert.equal(out.isError, true);
++    assert.equal(out.metadata.truncated, true);
++  });
++});
++
++ok("_truncation key collision: user field untouched", () => {
++  withCap(() => {
++    const result = {
++      content: [{ type: "text", text: "z".repeat(20000) }],
++      _truncation: { marker: "user" },
++      isError: false,
++    };
++    const out = truncateToolResult("t", result) as { content: { text: string }[] };
++    const parsed = JSON.parse(out.content[0].text);
++    assert.deepEqual(parsed._truncation, { marker: "user" }, "injection skipped on collision");
++  });
++});
++
++ok("array-root result truncates without _truncation injection", () => {
++  withCap(() => {
++    const result = [{ type: "text", text: "w".repeat(20000) }];
++    const out = truncateToolResult("t", result) as unknown as {
++      content: { text: string }[];
++      metadata: Record<string, unknown>;
++    };
++    JSON.parse(out.content[0].text); // valid JSON
++    assert.equal(out.metadata.mode, "json-prune");
++  });
++});
++
++console.log(`\nALL ${passed} CHECKS PASSED (rate-limit truncation contract)`);
+diff --git a/infrastructure/mcp-control-plane/test_truncation_live_replay.ts b/infrastructure/mcp-control-plane/test_truncation_live_replay.ts
+new file mode 100644
+index 00000000..3bdcc6d6
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_truncation_live_replay.ts
+@@ -0,0 +1,68 @@
++/**
++ * T2 smoke: replay the LIVE failure payload shape (triple-encoded, 524KB scale)
++ * through the new truncateToolResult and prove the original defect is gone:
++ * old code → invalid JSON (client parse failure); new code → valid JSON in/out.
++ * Run: npx tsx test_truncation_live_replay.ts   (offline, no services)
++ */
++import assert from "node:assert/strict";
++import { truncateToolResult } from "./src/lib/mcp_rate_limit.js";
++
++process.env.MCP_TOOL_RESULT_MAX_BYTES = String(524_288);
++
++// Build the exact live shape: MCP result → tower envelope (content[].text) → github API JSON (workflow_runs with embedded failed-job logs)
++const runs = Array.from({ length: 30 }, (_, i) => ({
++  id: 40600000000 + i,
++  name: "CI — Open Unified Pipeline",
++  node_id: "WFR_kwLOU_tPBM8AAAAJdMiU1Q",
++  head_branch: `bridge/bridge-20261028-lease-ssot-wiring-${i}`,
++  head_sha: "6d57b4b298fda1b0b2b7b6a6d562087a02a4a1b4",
++  event: "pull_request",
++  status: "completed",
++  conclusion: i % 3 === 0 ? "failure" : "success",
++  created_at: "2026-10-28T01:20:18Z",
++  logsSnippet: ("2026-10-28T01:0" + (i % 10) + ":45.5514260Z ##[endgroup] Post job cleanup. " +
++    "Adding repository directory to the temporary git global config as a safe directory. ").repeat(125),
++}));
++const githubJson = JSON.stringify({ total_count: 7229, workflow_runs: runs });
++const towerEnvelope = JSON.stringify({ content: [{ type: "text", text: githubJson }] });
++const mcpResult = { content: [{ type: "text", text: towerEnvelope }], isError: false };
++
++const serialized = JSON.stringify(mcpResult);
++const originalBytes = Buffer.byteLength(serialized, "utf8");
++console.log("fixture serialized bytes:", originalBytes, "(live failure was 523,977 + marker)");
++assert.ok(originalBytes > 524_288, "fixture must exceed the real 512KB cap");
++
++const out = truncateToolResult("github_workflow_runs", mcpResult) as {
++  content: { type: string; text: string }[];
++  isError: boolean;
++  metadata: Record<string, unknown>;
++};
++
++// OLD behavior equivalent (for the record): byte-clip would produce unparseable text:
++const oldStyle = Buffer.from(serialized, "utf8").subarray(0, 524_288).toString("utf8") + "\n...[truncated N bytes]";
++let oldParseOk = true;
++try { JSON.parse(oldStyle); } catch { oldParseOk = false; }
++console.log("old byte-clip parseable:", oldParseOk, "(expected false — the defect)");
++
++const text = out.content[0].text;
++const emitted = Buffer.byteLength(text, "utf8");
++console.log("new emitted bytes:", emitted, "| mode:", out.metadata.mode);
++assert.equal(oldParseOk, false, "old behavior must be the documented defect");
++assert.ok(emitted <= 524_288, "cap honored");
++
++const layer1 = JSON.parse(text); // MCP envelope — THE original failure point, now valid
++const l1 = layer1 as { _truncation?: Record<string, unknown>; content: { text: string }[] };
++assert.ok(l1._truncation, "in-band _truncation present");
++const layer2 = JSON.parse(l1.content[0].text);
++const l2 = layer2 as { content: { text: string }[] };
++const layer3 = JSON.parse(l2.content[0].text);
++const l3 = layer3 as { total_count: number; workflow_runs: { id: number; logsSnippet: string }[] };
++assert.equal(l3.total_count, 7229);
++assert.equal(l3.workflow_runs.length, 30, "all 30 runs preserved at triple-nest depth");
++assert.ok(
++  l3.workflow_runs[0].logsSnippet.length < runs[0].logsSnippet.length,
++  "logsSnippet pruned (largest-first minimal cutting, not uniform clipping)",
++);
++assert.ok(!text.includes("\uFFFD"), "no mojibake");
++
++console.log("\nLIVE-REPLAY SMOKE PASSED: triple-encoded 524KB payload → parseable at all 3 layers, cap honored, 0 mojibake");

@@ -1,0 +1,88 @@
+diff --git a/docs/reports/PLANE_WATCH_C31_2026-10-29.md b/docs/reports/PLANE_WATCH_C31_2026-10-29.md
+new file mode 100644
+index 00000000..dd18ffe8
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C31_2026-10-29.md
+@@ -0,0 +1,82 @@
++# Plane Watch — Cycle 31 (2026-10-29 UTC, Job 479095)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Session 1c9bcb82. Cycle-30
++watch PR #2476 verified LANDED (chain 11). **Rename migration wave 2:
++the github family is now dotted** (agent-session evidence). Queue
++probe patch holds for a 2nd cycle. Standing lane: 10th quiet cycle.
++
++## 1. Landings verified
++
++- #2476 ABSENT from open PRs -> merged; main blob
++  `docs/reports/PLANE_WATCH_C30_2026-10-29.md` sha 402e2f03, 3768 B.
++  Report chain (11 consecutive blob verifications): #2278 -> #2297 ->
++  #2320 -> #2357 -> #2382 -> #2403 -> #2422 -> #2435 -> #2456 ->
++  #2476.
++- Open set unchanged: #2440, #2420, #2404, #2386, #2367.
++
++## 2. Rename migration — wave 2 (github family)
++
++- `github_list_prs` returned MCP -32602 this cycle; **`github.list_prs`**
++  works. Blob verification ran through **`github.read_file`** (dotted)
++  successfully. The c30/c31 exposure receipts both list
++  `github.list_secrets` (dotted) in the secret-class candidates.
++- Family-by-family timeline: bridge.* dotted (observed c29) ->
++  github.* dotted (observed c31). Advertised count pinned at 151
++  throughout -> a namespace migration, one family at a time, not
++  add/remove. Underlined siblings (bridge_submit, bridge_read_feedback,
++  bridge_work) still respond.
++- Cross-family lesson holding: any client hardcoding exact tool names
++  will break once per family migration; role/alias-based discovery is
++  the only resilient pattern (queue probe patch proves it live).
++
++## 3. Standing probes (receipts 0653/0654Z)
++
++- Exposure: **violation — 151 advertised (12th identical count,
++  ~21h)**, 8 secret + 15 destructive candidates. #2076 policy still
++  not effective.
++- Queue probe: **violation — R3 #2400 5th consecutive fire**, dual-
++  plane confirmed again (agent session: verdict side unchanged,
++  intake-bot ERROR stamp 02:29:20Z; probe: independent detection).
++  R1=0, R2=0, 0 unresolved, 3 rotations. **Patched probe runs clean
++  for a 2nd consecutive cycle.**
++
++## 4. Monorepo mirror lane — zero movement continues
++
++- #349/#351/#353 (10-28 ~13:03-05Z, now ~17.8h) + #355/#357 (02:30/
++  31Z): all open, all updatedAt == createdAt, zero merges, zero
++  updates. R5/D1 probe script + queue-probe patch remain queued per
++  the c27 decision.
++
++## 5. #2225 — verdict pending day 3+ (approaching day 4)
++
++- bridge_read_feedback #2225: latestVerdict null, verdictHistory 0,
++  commentCount 7, labels unchanged. Work landed c33d6bd1.
++
++## 6. Stamping family — report-chain row-advance is systematically dead
++
++- **#2434 row-lag now cycle 3 — the second sample past the <=2-cycle
++  self-heal window** (#2421 was the first). #2421 is now at cycle 4;
++  #2455 at cycle 2; **#2475 fresh at cycle 1** (its PR #2476 landed
++  and blob-verified above).
++- All FOUR report-chain WOs (#2421/#2434/#2455/#2475) sit queued
++  while every one of their PRs landed. Row-advance for the report
++  chain is not lagging — it is absent.
++- R3 #2400 at 5 cycles (~11h since row creation 01:54Z): verdict
++  (ERROR stamp) present vs row `bridge:queued`.
++
++## 7. Queue state
++
++- bridge_work view=queue: **44 rows** (41 last cycle), zero claimable
++  p0/p1 (**10th quiet cycle**), zero claimed.
++- **Row-set mismatch 2nd observation**: bridge_work returns 44 rows,
++  probe's bridge.work_queue returns 50 — persistent across two
++  cycles with different totals on the bridge_work side (41 -> 44).
++  Upgraded from quirk to a tracked inconsistency; a dedicated rule
++  (R4-rowset-divergence candidate) if it persists a 3rd cycle.
++
++Routing: maintainer — mirror lane 5 PRs ~18h zero merges; #2225
++verdict day 4 edge; #2076 policy (151x12); github.* rename wave;
++#2400 error-stamp 5 cycles; report-chain row-advance absent (4
++landed PRs, 0 advanced rows); queue row-set divergence 44 vs 50.
++Agents — nothing claimable; use dotted github.* names; verify
++claimability via bridge_read_feedback before work_claim.

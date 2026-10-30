@@ -1,0 +1,26 @@
+diff --git a/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md b/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
+index 923e2c92..27cb7922 100644
+--- a/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
++++ b/docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md
+@@ -80,7 +80,7 @@ jobs:
+       - name: Probe live gateway (issue #453)
+         id: probe
+         env:
+-          GATEWAY_URL: ${{ vars.GATEWAY_URL || 'https://supremeai-api.onrender.com' }}
++          GATEWAY_URL: ${{ vars.GATEWAY_URL || 'https://supremeai-api-ulw0.onrender.com' }}
+           CORS_ORIGINS: ${{ vars.STUDIO_CORS_ORIGINS }}
+         run: |
+           set +e
+@@ -138,7 +138,11 @@ Usage:
+ python3 scripts/ci/probe_live_status_453.py --selftest
+ 
+ # live probe — telemetry, not a test: exit 1 while the gateway is down is CORRECT
+-GATEWAY_URL=https://supremeai-api.onrender.com \
++# NOTE (issue #2355): always probe the deployed SUFFIXED service URL
++# (supremeai-api-ulw0.onrender.com). Bare Render names are NOT service URLs:
++# they 404 at the router with x-render-routing: no-server (fast, 0.2s) —
++# check that header before declaring a gateway blackout.
++GATEWAY_URL=https://supremeai-api-ulw0.onrender.com \
+   python3 scripts/ci/probe_live_status_453.py --json-out probe-report.json
+ ```
+ 

@@ -1,0 +1,38 @@
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index daa190ce..fb20cbd1 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -1026,6 +1026,33 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+       };
+ 
+       try {
++        // Step 0: Ingress Idempotency Check (Zero-Duplicate Invariant, #155, #1692)
++        // If an open work order or branch already exists for this taskId, return idempotent success
++        // without generating duplicate issues or competing PRs across asynchronous agents.
++        const searchRes = await httpRequest<{ items?: Array<{ number: number; html_url: string; title: string }> }>(
++          `https://api.github.com/search/issues?q=repo:${repo}+is:issue+is:open+${encodeURIComponent(taskId)}+in:title`,
++          { headers, timeoutMs: 10_000 }
++        );
++        if (searchRes.ok && searchRes.data?.items && searchRes.data.items.length > 0) {
++          const existing = searchRes.data.items[0];
++          return {
++            content: [{
++              type: "text",
++              text: JSON.stringify({
++                ok: true,
++                taskId,
++                targetRepo: targetRepoResolution.repo,
++                targetAnchor: targetRepoResolution.anchor,
++                targetMode: targetRepoResolution.mode,
++                issueNumber: existing.number,
++                issueUrl: existing.html_url,
++                status: "bridge:idempotent-noop",
++                message: `Work order for task '${taskId}' is already active (#${existing.number}). Duplicate generation prevented.`,
++              }, null, 2),
++            }],
++          };
++        }
++
+         // Step A: Get main branch SHA
+         const mainRes = await httpRequest<{ object?: { sha?: string } }>(
+           `https://api.github.com/repos/${repo}/git/ref/heads/main`,

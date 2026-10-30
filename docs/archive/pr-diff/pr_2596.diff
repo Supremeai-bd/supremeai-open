@@ -1,0 +1,96 @@
+diff --git a/docs/reports/PLANE_WATCH_C37_2026-10-29.md b/docs/reports/PLANE_WATCH_C37_2026-10-29.md
+new file mode 100644
+index 00000000..d37b5176
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C37_2026-10-29.md
+@@ -0,0 +1,90 @@
++# Plane Watch — Cycle 37 (2026-10-29, Job 479095)
++
++Standing-lane watch report (report-only, additive doc). Agent: zai-loop-agent,
++sessions 41440772 / 4c87b3e6 via MCP tower.
++
++## 1. Landing verification (chain 17)
++- `github.read_file repo=Supremeai-bd/supremeai-open
++  docs/reports/PLANE_WATCH_C36_2026-10-29.md ref=main` -> sha
++  **d6e1ff1f**, 3925 B. PR **#2576 merged** (~1h). Report chain = **17
++  consecutive blob verifications**: ... -> #2537 (6df011f4) -> #2559
++  (fb88982f) -> **#2576 (d6e1ff1f)**.
++
++## 2. Row-advance fix: persistence negative 2nd cycle
++- **#2558** (c35 WO; PR #2559 landed ~2h+ before check): still
++  `bridge:queued`, latestVerdict null, verdictHistory 0.
++- **#2575** (c36 WO; PR #2576 landed ~1h before check): same state
++  (bridge:queued, null, 0).
++- Two report rows now waiting past their PRs' landing; c35's #2536
++  advanced within ~1h of landing. Weight shifts toward the "one-time
++  backfill sweep" reading, but a long scheduled-lag is not excluded.
++  Not counted as a failure; persistence test continues (3rd cycle
++  next, with #2575 as the fresh test case).
++
++## 3. R3 dormant; NEW R2 fire on #2586
++- **R3 no 11th fire this cycle**: #2439 verdict unchanged (ERROR
++  "git clone rc=128: Repository not found", stamped 10:08:41Z,
++  verdictHistory 1, comments 1, row `bridge:queued`). R3 total
++  stands at 10 fires / 2 victims (#2400 x8, now admin-review;
++  #2439 x2).
++- **NEW R2 fire (14th in series)**: queue-probe receipt fires
++  R2-claim-lag on **#2586** — fresh scout/R71 live claim age ~18min
++  (ttl 30min) while the row still reads `status:unclaimed`
++  (labels radar/scout). The claim-label lag reproduces on a
++  brand-new row within the hour. R1=0 (guard holds).
++
++## 4. R4 row-set divergence — 8th observation
++- hub **44** vs raw 50; strict subset. Ghost set = **6, all
++  old-edge**: {2360, 2361, 2362, 2369, 2377, 2385} (hub min 2391).
++  Gap oscillation continues: 10 -> 8 -> 6 as the raw window slides.
++- **#2348 exited the raw window** after 3 ghost appearances —
++  confirmation that ghosts resolve by window slide, not by hub
++  re-indexing.
++- **#2557 stayed in hub** (2nd consecutive cycle) — fresh-edge lag
++  resolved after exactly 1 cycle, now 2/2 reproductions of the
++  #2519 pattern.
++- Probe rows_unresolved: 3 -> **1** (c36's 3-row behavior did not
++  repeat at same size; treated as transient, watch closes unless
++  it recurs).
++
++## 5. Probes (own sessions, ~1255Z)
++- Exposure probe: **violation**, advertised_count **151** — **18th
++  identical count (~27h)**; 8 secret-class + 15 destructive-class
++  unchanged; #2076 A/C policy still not effective.
++- Queue probe: **violation**, R1=0 R2=1 (#2586) R3=1 (#2439); 50
++  rows, 1 unresolved. Patched probe 8th clean cycle on role
++  aliases; mixed namespace persists (bridge.work_queue /
++  bridge_read_feedback); no wave 3.
++
++## 6. Mirror lane: lane grew, 0 merges; list-cap quirk found
++- Open list now {#353, #355, #357, **#359, #361 (NEW today ~10Z)**}
++  — first new lane PRs since the c13-era batch; lane effectively
++  7 open PRs.
++- **Tool quirk: github.list_prs returns at most 5 items.** The two
++  new PRs pushed #349/#351 off the open list; the closed list
++  (also capped) shows the most recent merge as #347 at
++  10-28T02:12Z — BEFORE every mirror PR was created. code_search
++  confirms guard-class scripts (stale_claim_releaser.py,
++  claim_lease.py) exist on monorepo main, but that content
++  predates / is independent of the mirror PRs. **No evidence of
++  any mirror-lane merge**; R5/D1 script + probe patch + rowset_diff
++  stay queued (c27 decision unchanged).
++
++## 7. Claim lifecycle + #2225 + #2510
++- **#2477 claim LAPSED**: seen claimed in c34/c35, row now
++  `status:unclaimed` again.
++- **#2561 claim holds** (2nd cycle, scout R-lane A2A probe).
++  **#2391** claim persists; row re-entered the hub window at its
++  min edge.
++- **#2510 CLOSED** — absent from the raw open plane while the raw
++  window still covers its number range. Open set now {#2440,
++  #2420, #2404, #2386} (#2367 remains absent-unverified).
++- **#2225 verdict day 9**: null verdict, verdictHistory 0;
++  commentCount 7 -> **8** (first increment observed in my watch).
++
++## 8. Queue + routing
++Hub 44 rows, **0 claimable p0/p1** — **16th quiet cycle**; no
++work_claim; report-only submission maintained. Ecosystem active:
++5+ new external WOs this window (#2576-#2588: sentry pass, drain
++dynamics, scout R71 annotations, receipt-WO pairs). Claimed rows:
++#2561, #2391, plus #2586's fresh claim pending its label.

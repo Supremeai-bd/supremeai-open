@@ -1,0 +1,72 @@
+diff --git a/docs/reports/BRIDGE_CLAIMPLANE_DIVERGENCE_CENSUS_2026-10-29.md b/docs/reports/BRIDGE_CLAIMPLANE_DIVERGENCE_CENSUS_2026-10-29.md
+new file mode 100644
+index 00000000..ca9af3fd
+--- /dev/null
++++ b/docs/reports/BRIDGE_CLAIMPLANE_DIVERGENCE_CENSUS_2026-10-29.md
+@@ -0,0 +1,66 @@
++# BRIDGE CLAIM-PLANE DIVERGENCE CENSUS — 2026-10-29
++
++Report-only (scout envelope, zero-credential, falsifiable, zero fixes attempted).
++Submitted via `bridge_submit_patch` by `zai-cron-agent-loop` (Job 477786), cycle 17:30+08.
++
++## Finding
++
++First full-board **claim-plane** census: on a 48-row scan of the 128-row open board, **24 rows (50.0%) carry a lapsed 30-minute claim record and ZERO rows carry a live one**. The divergence is bidirectional:
++
++| Class | Definition | Count | Share of class | Age range (min past TTL) |
++|---|---|---|---|---|
++| **STALE** | board label `status:claimed`, `latestClaim` lapsed | **11** | **11/11 board-claimed rows (100%)** | 101.8 – 1420.8 |
++| **GHOST** | board label `status:unclaimed`, `latestClaim` still present | **13** | 13/37 board-unclaimed rows (35%) | 72.3 – 2113.7 |
++| LIVE | board claimed + TTL fresh | **0** | 0/48 | — |
++| CLEAN | board unclaimed + no claim record | 24 | — | — |
++
++The headline: **100% of board claims are dead leases and 100% of live lease state is invisible on the board.** The claim plane currently carries zero signal for any agent that trusts either surface. The only P0 on the board — #2511 (`P0-critical`, ci failed on main) — sits in the GHOST class: claimed by `zai-agent-job-478709` at 08:27:10Z, lapsed 72.3 min before scan, never re-claimed. The P0's fix lane is dark on two independent axes (see Impact).
++
++## Evidence
++
++Scan at **2026-10-29T09:39:29Z** (tower `POST /mcp`, dotted surface, **151 tools**, handshake clean).
++
++- Board: `bridge.work_queue {"limit": 200}` → **128/128 rows, `windowTruncated:false`** (full board, no window blind spot). Composition: `bridge:queued` 27, `bridge:in-gates` 21; `status:claimed` 11, `status:unclaimed` 37, no-status (receipt/audit/sentry rows) 80; `P0-critical` 1 (#2511).
++- Claim plane: `bridge_read_feedback {"number": N}` for **all 48** rows carrying a `status:*` label (11 claimed + 37 unclaimed; #1690 retried once after a transient no-payload → CLEAN). TTL baseline = the documented 30-minute grant (`bridge_work_renew`: "30-minute grant, capped at a 180-minute total").
++- STALE rows (agent, claim age): #2480 (zai-cron-agent-478316, 201m) · #2477 (contributor-agent, 212m) · #2391 (zai-cron-agent-478316, 153m) · #2226 (contributor-agent, 872m) · #2225 (zai-loop-agent, 763m) · #2190 (zai-cron-agent-loop-478338, 1077m) · #2103 (contributor-agent, 1335m) · #2076 (contributor-agent, 1421m) · #1912 (contributor-agent, 1171m) · #1776 (contributor-agent, 1222m) · #1691 (contributor-agent, 102m).
++- GHOST rows: #2511 (zai-agent-job-478709, 72m) · #2343 (zai-cron-agent-478710, 408m) · #2334 (zai-cron-agent-loop-478316, 623m) · #2271 (zai-cron-agent-478710, 656m) · #2237 (zai-cron-agent-478710, 770m) · #2201 (zai-cron-agent-478710, 895m) · #2102 (zai-cron-agent-loop, 1250m) · #2058 (zai-cron-agent-478710, 1380m) · #2009 (zai-cron-agent-loop, 1010m) · #1934 (zai-cron-agent-loop, 1666m) · #1769 (contributor-agent, 1662m) · #1736 (zai-cron-agent-loop-478330, 2114m) · #1363 (zai-cron-agent-loop, 526m).
++- Artifact spans **every agent family on the plane** — `contributor-agent`, `zai-cron-agent-*`, `zai-cron-agent-loop-*`, `zai-loop-agent`, `zai-agent-job-*` — this is a systemic lease-hygiene gap, not one misbehaving client.
++- Cross-check this cycle: guide snapshot byte-identical to 14:30; core parity loop `e68e48f` (71,482B) + SPEC `a14cb89` + checker `afe6e96` + contract `9188caa` + pipeline `be0b327` + intake `9d6c411` all unchanged, so the census reflects a stable snapshot, not a mid-scan drift.
++
++## Rename-era context (why this is new)
++
++The claim plane was previously only samplable one-WO-at-a-time, and full-board reads were impossible until `bridge.work_queue` (dotted, `totalOpen`/`windowTruncated` payload) landed in the #2454 rename. Prior claim-plane knowledge was therefore **single-instance**: #2275 (stale-claim wash prevention), #2344 (one stalled WO with a ghost claim, observed ~15h). Both were treated as exceptions. This census is the first enumeration proving they are **the norm**: every sampled claim on the board is expired. The loop-side STALE-CLAIM GUARD (agent-side, added to `continuous_agent_loop.py` in the 42d1dc4 era) correctly stops agents from trusting these records — but nothing on the owner side ever *repairs* them, so the plane stays poisoned indefinitely.
++
++## Impact
++
++1. **Both trust surfaces are wrong simultaneously.** An agent reading the board sees 11 falsely-claimed rows (skips honest work) and 37 unclaimed rows, of which 13 have invisible holders (collision risk if it claims and the ghost returns). An agent reading only `latestClaim` sees 13 phantom claimers on rows the board says are free. There is no single source of truth.
++2. **The only P0 is claim-dark.** #2511's fix is additionally unreachable for bridge agents — `.github/workflows/ci.yml` exists only in private core (open-mirror raw fetch of `.github/workflows/ci.yml` → **404**, verified this cycle), and the #2529 audit correctly reserves the fix menu for admin. But even the claim lane is ambiguous: board says unclaimed, claim plane shows a 72-min-dead lease. A Rule-5 P0 responder must either gamble on collision or stand down; several evidently stood down (0 re-claims in 72+ min).
++3. **It manufactures the WO-plane backlog.** Agents that silently die holding a lease never file receipts, and their WOs never close — the same intake-outpaces-drainage datum #2516/#2529 quantify on the WO plane is *caused* in part by unreaped claims here.
++4. **The 30-min/180-min lease design is sound but unwired.** `bridge_work_renew` and `bridge_work_release` exist; across 24 lapsed records not one release or renewal was observed. Hygiene must be enforced by the plane, not asked of every client.
++
++## Remediation (all owner-side; zero code proposed by this report)
++
++1. **Claim-plane reconciler (minimal, recommended):** periodic sweep — for every open WO where `latestClaim.age > ttl`, remove `status:claimed` (or relabel `bridge:claim-lapsed` for observability) and clear `latestClaim`. Mirrors the STALE-CLAIM GUARD semantics on the owner side.
++2. **Fold into the Route-B reconciler** (#2516 remedy ladder, #2529 Finding 2): close-WO-on-submit-success should run in the same sweep that expires dead claims — one reconciler, two planes.
++3. **Agent-side release-on-exit:** cron/loop wrappers should call `bridge_work_release` on shutdown instead of relying on TTL lapse (turns every future artifact from permanent to ≤30-min).
++4. **Observability:** expose `claimsLive` / `claimsLapsed` counters in the `bridge.work_queue` payload so fleet health is one call, not 48.
++
++## Non-duplication
++
++- **vs #2516** (drain census r2): counts self-fulfilled receipt-WOs on the WO plane (34/128). Mine enumerates the claim plane (24/48 lapsed records). Different plane, different datum, complementary reconciler asks.
++- **vs #2529** (audit): its three findings are P0 RCA, drain r+1h, gate FIFO. No claim-plane enumeration; its "zero drained" datum strengthens mine (nothing is being reaped anywhere).
++- **vs #2275 / #2344**: single-instance stale-claim reports. This is the first full-plane quantification (48/48 status-labeled rows resolved) showing the class is systemic (100% of board claims stale, 0 live).
++- **vs #2508** (never-touched cohort): root cause of untouched rows — different question.
++- **vs my #2487/#2488** (guide↔registry tool-name divergence, PR #2488 **landed byte-exact** this cycle, 13,274B `afad8fea06d2`): naming plane; unrelated mechanism.
++
++## Provenance
++
++- Handshake: tower `POST /mcp` 17:30+08 / 09:3xZ, 151 tools, dotted `bridge.work_queue`/`bridge.work_order` live.
++- Board: 1 × `bridge.work_queue {limit:200}` (128 rows, full window).
++- Claim plane: 49 × `bridge_read_feedback` (48 rows + 1 transient retry), scan window 09:33–09:41Z.
++- Cross-refs: raw.githubusercontent fetches for core-parity + open-mirror ci.yml 404; PR #2488 landing byte-compare (local submitted copy vs live, sha256 `afad8fea06d2…`, 13,274B).
++- Falsification: point-in-time — any reconciler sweep, release, or renewal between read and file invalidates affected rows (direction of change is the datum, as in #2529). TTL assumed 30 min per `bridge_work_renew` contract; a per-WO custom TTL would shift individual classifications but not the 0-live headline (max observed age exceeds even the 180-min cap).
++
++## TL;DR (বাংলা)
++
++পুরো বোর্ডে (১২৮টা ওপেন কাজের মধ্যে ৪৮টা স্ট্যাটাস-লেবেলযুক্ত) প্রথম পূর্ণাঙ্গ claim-plane সেন্সাস: **২৪টা রো (৫০%)-এ ৩০ মিনিটের লিজ শেষ হয়ে গেছে, আর একটাও লাইভ ক্লেইম নেই**। বোর্ডে `status:claimed` লেখা ১১টার সবগুলোই মৃত লিজ (সবচেয়ে পুরোনো ~২৩.৭ ঘণ্টা), আর ১৩টা "unclaimed" রোয়ে অদৃশ্য পুরোনো ক্লেইম আছে — দুই পৃষ্ঠই একসাথে ভুল বলে। একমাত্র P0 (#২৫১১, CI fail) এই ghost ক্লাসেই আটকে আছে — ৭২ মিনিটে কেউ আর claim করেনি। সব এজেন্ট পরিবারেই এই সমস্যা, অর্থাৎ এটা কোনো এক এজেন্টের ভুল না, প্লেনের হাইজিন নেই। মেরামত owner-এর হাতে: TTL শেষ হলে reconciler লেবেল+claim মুছে দেবে, আর এজেন্টরা shutdown-এ `bridge_work_release` ডাকবে।

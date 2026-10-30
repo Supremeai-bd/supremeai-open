@@ -1,0 +1,433 @@
+diff --git a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+index bf6bed6f..a4348962 100644
+--- a/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
++++ b/infrastructure/mcp-control-plane/src/policy/mcp-access.ts
+@@ -41,10 +41,10 @@ export const publicSafeCapabilities: readonly McpCapabilityMetadata[] = [
+   { name: "system.summary", kind: "tool", access: "safe", requiredScope: "system:read", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   // #123: Bridge onboarding surface — the zero-credential front door for
+   // external agents working from `Supremeai-bd/supremeai-open`.
+-  // bridge.guide is pure static contract data (zero network); the queue tools
+-  // only read PUBLIC repo content (issues) and never accept or return
+-  // credentials. Read-only + public ⇒ callable by every access mode.
+-  // (Wire/sanitized names — the same form classifyToolCapability uses.)
++  // #123 / S0.4: Bridge & Status onboarding surface — zero-credential front door
++  { name: "status", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
++  { name: "bridge_work", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
++  { name: "bridge_submit", kind: "tool", access: "safe", riskLevel: "R1", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_guide", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_queue", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+   { name: "bridge_work_order", kind: "tool", access: "safe", riskLevel: "R0", dataClassification: "public", approvalRequired: false },
+@@ -121,7 +121,7 @@ export function isPublicSafeResource(uri: string): boolean {
+  * দেখায়, agent_heartbeat শুধু slot validate করে ও Redis-এ heartbeat লেখে।
+  */
+ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+-  if (name === "system_summary" || name === "system_health") {
++  if (name === "system_summary" || name === "system_health" || name === "status") {
+     return {
+       name,
+       kind: "tool",
+@@ -146,11 +146,10 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+       approvalRequired: false,
+     };
+   }
+-  // #123: Bridge onboarding tools — zero-credential front door for external
+-  // agents. bridge.guide serves the static contract; the queue tools read ONLY
+-  // public repo issue content (never credentials, never private data) and
+-  // return sanitized fields. Read-only + public ⇒ safe for public_viewer.
++  // #123 / S0.4: Bridge onboarding & unified tools — zero-credential front door for external agents.
+   if (
++    name === "bridge_work" ||
++    name === "bridge_submit" ||
+     name === "bridge_guide" ||
+     name === "bridge_work_queue" ||
+     name === "bridge_work_order" ||
+@@ -166,6 +165,7 @@ export function classifyToolCapability(name: string): McpCapabilityMetadata {
+       access: "safe",
+       requiredScope: undefined,
+       riskLevel:
++        name === "bridge_submit" ||
+         name === "bridge_submit_patch" ||
+         name === "work_claim" ||
+         name === "bridge_work_renew" ||
+diff --git a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+index 033a5cd9..15ea0f58 100644
+--- a/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
++++ b/infrastructure/mcp-control-plane/src/policy/tool-visibility.ts
+@@ -69,6 +69,10 @@ export type ToolProfile = "chatgpt" | "readonly";
+  *    (and remain RBAC-gated on the call path).
+  */
+ const CHATGPT_CURATED_TOOLS: readonly string[] = [
++  // unified observability & work hub (S0.4)
++  "status",
++  "bridge_work",
++  "bridge_submit",
+   // system / observability
+   "system_summary",
+   "system_health",
+@@ -132,6 +136,7 @@ const CHATGPT_CURATED_TOOLS: readonly string[] = [
+ const MUTATING_TOOLS: readonly string[] = [
+   "notify_telegram",
+   "agent_review_workflow_execute",
++  "bridge_submit",
+   "bridge_submit_patch",
+   "work_claim",
+   // #621: renew posts markers, release flips labels — both are lane writes
+diff --git a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+index 36364a9b..fbdc68e4 100644
+--- a/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
++++ b/infrastructure/mcp-control-plane/src/tools/bridge.tools.ts
+@@ -809,30 +809,110 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+     }
+   );
+ 
++  // S0.4 Tool Consolidation: bridge.work (Unified work queue / order viewer)
+   server.tool(
+-    "bridge.submit_patch",
+-    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
++    "bridge.work",
++    "Unified Bridge work hub (S0.4). View available work orders (view='queue'), inspect a specific task (taskId=number), or read onboarding contracts (view='guide').",
+     {
+-      taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
+-      summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
+-      scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
+-      testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
+-      files: z.array(z.object({
+-        path: z.string().min(1),
+-        content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
+-        mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
+-        diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
+-      })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
+-      rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
+-      agentIdentity: z.string().optional().describe("Agent name / session attribution"),
+-      reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
+-      alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
++      view: z.enum(["queue", "order", "guide"]).default("queue").describe("Operation view: 'queue' to browse tasks, 'order' to view a specific task, 'guide' for contract."),
++      taskId: z.number().int().positive().optional().describe("Task issue number when viewing a specific order (view='order' or when taskId is supplied)."),
++      limit: z.number().int().min(1).max(50).optional().describe("Max work orders to return when viewing queue (default: 20)."),
++      label: z.string().optional().describe("Optional label filter for queue."),
+     },
+-    async ({ taskId, summary, scopePaths, testsEvidence, files, rollbackPath, agentIdentity, reflectionWhy, alternativesRejected }) => {
+-      // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
+-      const candidateBody = [
+-        REFLECTION_EVIDENCE_SECTION,
+-        `- **why:** ${reflectionWhy || ""}`,
++    async ({ view, taskId, limit, label }) => {
++      const repo = bridgeOpenRepo();
++      if (view === "guide") {
++        return { content: [{ type: "text", text: JSON.stringify(bridgeGuide(), null, 2) }] };
++      }
++      if (taskId !== undefined || view === "order") {
++        if (!taskId) {
++          return { isError: true, content: [{ type: "text", text: "taskId (issue number) is required when view='order'." }] };
++        }
++        try {
++          let res = await httpRequest<RawIssue>(
++            `https://api.github.com/repos/${repo}/issues/${taskId}`,
++            { headers: await githubHeaders(true), timeoutMs: 15_000 }
++          );
++          if (!res.ok && (res.status === 401 || res.status === 403)) {
++            res = await httpRequest<RawIssue>(
++              `https://api.github.com/repos/${repo}/issues/${taskId}`,
++              { headers: await githubHeaders(false), timeoutMs: 15_000 }
++            );
++          }
++          if (!res.ok) {
++            return { isError: true, content: [{ type: "text", text: `Work order #${taskId} unavailable from ${repo} (HTTP ${res.status}).` }] };
++          }
++          if (!isIssueNotPullRequest(res.data)) {
++            return { isError: true, content: [{ type: "text", text: `#${taskId} is a pull request, not a work order issue.` }] };
++          }
++          const item = normalizeQueueItem(res.data);
++          return {
++            content: [{
++              type: "text",
++              text: JSON.stringify({ ...item, body: clipBody(res.data.body), contract: bridgeGuide().contract }, null, 2),
++            }],
++          };
++        } catch (err) {
++          return { isError: true, content: [{ type: "text", text: `Work order #${taskId} fetch failed: ${(err as Error).message}` }] };
++        }
++      }
++
++      // Default: view='queue'
++      const appliedLabel = typeof label === "string" && label.trim().length > 0 ? label.trim() : null;
++      const queryParams = new URLSearchParams({ state: "open", per_page: "50", sort: "created", direction: "desc" });
++      if (appliedLabel) queryParams.set("labels", appliedLabel);
++      try {
++        let res = await httpRequest<RawIssue[]>(
++          `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
++          { headers: await githubHeaders(true), timeoutMs: 15_000 }
++        );
++        if (!res.ok && (res.status === 401 || res.status === 403)) {
++          res = await httpRequest<RawIssue[]>(
++            `https://api.github.com/repos/${repo}/issues?${queryParams.toString()}`,
++            { headers: await githubHeaders(false), timeoutMs: 15_000 }
++          );
++        }
++        if (!res.ok) {
++          return { isError: true, content: [{ type: "text", text: `Bridge work queue unavailable from ${repo} (HTTP ${res.status}).` }] };
++        }
++        const queued = queueFromIssues(res.data, limit ?? 20);
++        return {
++          content: [{
++            type: "text",
++            text: JSON.stringify({ repo, label: appliedLabel, count: queued.length, workOrders: queued }, null, 2),
++          }],
++        };
++      } catch (err) {
++        return { isError: true, content: [{ type: "text", text: `Bridge work queue fetch failed: ${(err as Error).message}` }] };
++      }
++    }
++  );
++
++  const submitPatchHandler = async ({
++    taskId,
++    summary,
++    scopePaths,
++    testsEvidence,
++    files,
++    rollbackPath,
++    agentIdentity,
++    reflectionWhy,
++    alternativesRejected,
++  }: {
++    taskId: string;
++    summary: string;
++    scopePaths: string[];
++    testsEvidence: string;
++    files: Array<{ path: string; content?: string; mode?: "full_file" | "unified_diff"; diff?: string }>;
++    rollbackPath?: string;
++    agentIdentity?: string;
++    reflectionWhy?: string;
++    alternativesRejected?: string;
++  }) => {
++    // 0. Pre-validate reflection evidence (#567) — fail-closed pre-push before any network or token.
++    const candidateBody = [
++      REFLECTION_EVIDENCE_SECTION,
++      `- **why:** ${reflectionWhy || ""}`,
+         `- **alternatives_rejected:** ${alternativesRejected || ""}`,
+       ].join("\n");
+       const missingReflection = validateReflectionEvidence(candidateBody);
+@@ -1128,7 +1208,38 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
+           content: [{ type: "text", text: `Bridge patch submission error: ${(err as Error).message}` }],
+         };
+       }
+-    }
++  };
++
++  const submitPatchSchema = {
++    taskId: z.string().regex(/^bridge-[0-9]{8}-[a-z0-9-]+$/).describe("Task ID format bridge-YYYYMMDD-<slug>"),
++    summary: z.string().min(5).max(1000).describe("Summary of what was changed and why"),
++    scopePaths: z.array(z.string()).min(1).max(30).describe("List of relative file paths modified"),
++    testsEvidence: z.string().min(10).max(4000).describe("3-tier test evidence: reflection, boot smoke, and tests"),
++    files: z.array(z.object({
++      path: z.string().min(1),
++      content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
++      mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
++      diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
++    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539)"),
++    rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
++    agentIdentity: z.string().optional().describe("Agent name / session attribution"),
++    reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
++    alternativesRejected: z.string().optional().describe("Alternatives considered and rejected with reasons"),
++  };
++
++  server.tool(
++    "bridge.submit_patch",
++    "Submit completed work to the public open repo as a Bridge Work Order branch and issue without needing personal GitHub credentials. Uses the Tower's server-side GitHub App to create the bridge branch, commit files, and file the work order.",
++    submitPatchSchema,
++    submitPatchHandler as any
++  );
++
++  // S0.4 Tool Consolidation: bridge.submit alias (canonical unified name)
++  server.tool(
++    "bridge.submit",
++    "Unified patch submission endpoint (S0.4 canonical alias of bridge.submit_patch). Submits work to the public repo atomically with automatic branch creation, commit, and PR generation.",
++    submitPatchSchema,
++    submitPatchHandler as any
+   );
+ 
+   const claimHandler = async ({
+diff --git a/infrastructure/mcp-control-plane/src/tools/index.ts b/infrastructure/mcp-control-plane/src/tools/index.ts
+index 04f1d7e6..745eae76 100644
+--- a/infrastructure/mcp-control-plane/src/tools/index.ts
++++ b/infrastructure/mcp-control-plane/src/tools/index.ts
+@@ -32,6 +32,8 @@ import { registerOrchestratorTools } from "./orchestrator.tools.js";
+ import { registerIntelligenceTools } from "./intelligence.tools.js";
+ import type { MemorySubAdapter } from "../adapters/memory/index.js";
+ 
++import { registerUnifiedStatusTool } from "./unified.status.tools.js";
++
+ /**
+  * Registers all MCP tools with the server.
+  * Tools are grouped by domain.
+@@ -40,6 +42,9 @@ export async function registerAllTools(
+   server: McpServer,
+   memoryAdapter?: MemorySubAdapter,
+ ): Promise<void> {
++  // ── Unified Observability Hub (S0.4 status tool)
++  await registerUnifiedStatusTool(server);
++
+   // ── System Tools
+   await registerSystemTools(server);
+   await registerSystemSummaryTools(server);
+diff --git a/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts b/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts
+new file mode 100644
+index 00000000..ce3ad4e7
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/tools/unified.status.tools.ts
+@@ -0,0 +1,107 @@
++import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
++import { z } from "zod";
++import { RequestContextStore } from "../policy/auth.context.js";
++import { getAccountsForRole, ProviderAccount } from "../registry/account.registry.js";
++import { globalHealthCache } from "../health/snapshot.js";
++import { globalHealthEngine } from "../health/engine.js";
++import { globalDependencyGraph } from "../health/dependency.js";
++import { listClients } from "../policy/client-registry.js";
++import { globalKillSwitch } from "../remediation/killswitch.js";
++
++/**
++ * S0.4 / Unified Observability Hub: `status(scope, targetId?)`
++ *
++ * Consolidates observation across:
++ *  - system / services
++ *  - health (live / cached)
++ *  - dependencies
++ *  - slots / agents
++ *  - autonomy / killswitch
++ *  - all (one-sweep composite snapshot)
++ *
++ * Fully backwards-compatible with existing legacy tools.
++ */
++export async function registerUnifiedStatusTool(server: McpServer): Promise<void> {
++  server.tool(
++    "status",
++    "Unified system observation tool. Inspects health, service availability, dependencies, agent slots, and runtime status in a single call.",
++    {
++      scope: z
++        .enum(["all", "system", "health", "health_live", "deps", "slots", "autonomy"])
++        .default("all")
++        .describe("The telemetry domain to observe. Default is 'all' (complete composite status)."),
++      targetId: z
++        .string()
++        .optional()
++        .describe("Optional target ID or agent slot to filter (e.g., 'agent-1', 'render-primary')."),
++    },
++    async ({ scope, targetId }) => {
++      const store = RequestContextStore.get();
++      const role = store?.role;
++
++      try {
++        const result: Record<string, unknown> = {
++          timestamp: new Date().toISOString(),
++          scope,
++        };
++
++        if (scope === "all" || scope === "system") {
++          const registry: ProviderAccount[] = getAccountsForRole(role);
++          const available = registry.filter((r: ProviderAccount) => r.available).length;
++          result.system = {
++            availableServices: `${available}/${registry.length}`,
++            services: registry.map((r: ProviderAccount) => ({
++              id: r.id,
++              provider: r.provider,
++              displayName: r.displayName,
++              available: r.available,
++            })),
++          };
++        }
++
++        if (scope === "all" || scope === "health") {
++          const cached = globalHealthCache.getAllSnapshots();
++          result.health = Object.keys(cached).length > 0 ? cached : "Health cache empty. Use scope 'health_live' for fresh sweep.";
++        } else if (scope === "health_live") {
++          result.health_live = await globalHealthEngine.runFullSweep();
++        }
++
++        if (scope === "all" || scope === "deps") {
++          result.dependencies = globalDependencyGraph.getRawMap();
++        }
++
++        if (scope === "all" || scope === "slots") {
++          const clients = listClients(store?.isGlobalAdmin ? "*" : (store?.tenantId ?? "tenant_default"));
++          const slots = clients.filter((c) => c.id.startsWith("slot_") || c.provider === "slot" || c.name.startsWith("agent-"));
++          result.slots = targetId ? slots.filter((s) => s.id === targetId || s.name === targetId) : slots;
++        }
++
++        if (scope === "all" || scope === "autonomy") {
++          result.autonomy = {
++            enabled: globalKillSwitch.isAutonomyEnabled(),
++            mode: globalKillSwitch.isAutonomyEnabled() ? "L2 (Autonomous)" : "L0 (Emergency Stop / Read-Only)",
++          };
++        }
++
++        return {
++          content: [
++            {
++              type: "text",
++              text: JSON.stringify(result, null, 2),
++            },
++          ],
++        };
++      } catch (err) {
++        return {
++          isError: true,
++          content: [
++            {
++              type: "text",
++              text: `Status query error: ${(err as Error).message}`,
++            },
++          ],
++        };
++      }
++    }
++  );
++}
+diff --git a/scripts/ops/advanced_analysis/db_model_drift_checker.py b/scripts/ops/advanced_analysis/db_model_drift_checker.py
+index d60ccd9b..69aedb13 100644
+--- a/scripts/ops/advanced_analysis/db_model_drift_checker.py
++++ b/scripts/ops/advanced_analysis/db_model_drift_checker.py
+@@ -31,11 +31,11 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-# রিপো রুট ডিরেক্টরি — স্ক্রিপ্ট অবস্থান থেকে দুই ধাপ উপরে
+-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+-MODELS_DIR = REPO_ROOT / "backend" / "models"
+-ALEMBIC_DIR = REPO_ROOT / "backend" / "alembic_migrations" / "versions"
+-SQL_MIGRATIONS_DIR = REPO_ROOT / "migrations"
++# রিপো রুট ডিরেক্টরি — scripts/ops/advanced_analysis থেকে ৩ ধাপ উপরে
++REPO_ROOT = Path(__file__).resolve().parents[3]
++MODELS_DIR = REPO_ROOT / "core" / "models"
++ALEMBIC_DIR = REPO_ROOT / "core" / "alembic_migrations" / "versions"
++SQL_MIGRATIONS_DIR = REPO_ROOT / "core" / "alembic_migrations" / "versions"
+ 
+ # সমালোচনামূলক টেবিল — এগুলোতে ড্রিফট HIGH রিস্ক
+ CRITICAL_TABLES = frozenset({"users", "user_wallets", "transaction_ledger", "api_keys", "payments", "subscriptions"})
+diff --git a/scripts/ops/operations/operational_truth_db.py b/scripts/ops/operations/operational_truth_db.py
+index 4b741d26..11574f34 100644
+--- a/scripts/ops/operations/operational_truth_db.py
++++ b/scripts/ops/operations/operational_truth_db.py
+@@ -27,7 +27,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-REPO_ROOT = Path(__file__).resolve().parents[2]
++REPO_ROOT = Path(__file__).resolve().parents[3]
+ 
+ # ── Table specs: (name, pk_cols, create-DDL) — op_truth_0001 Alembic-এর মিরর ──
+ # দুই flavor-ই CREATE TABLE IF NOT EXISTS সাপোর্ট করে। TIMESTAMPTZ → Postgres;
+diff --git a/scripts/ops/operations/sync_operational_truth.py b/scripts/ops/operations/sync_operational_truth.py
+index de1416c5..ab5a34f7 100644
+--- a/scripts/ops/operations/sync_operational_truth.py
++++ b/scripts/ops/operations/sync_operational_truth.py
+@@ -38,7 +38,7 @@
+ from pathlib import Path
+ from typing import Any
+ 
+-REPO_ROOT = Path(__file__).resolve().parents[2]
++REPO_ROOT = Path(__file__).resolve().parents[3]
+ sys.path.insert(0, str(Path(__file__).resolve().parent))
+ 
+ from operational_truth_db import (  # noqa: E402

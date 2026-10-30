@@ -1,0 +1,48 @@
+diff --git a/scripts/ci/federation_satellite_sync.py b/scripts/ci/federation_satellite_sync.py
+index dece228c..c01da1dd 100644
+--- a/scripts/ci/federation_satellite_sync.py
++++ b/scripts/ci/federation_satellite_sync.py
+@@ -147,8 +147,24 @@ def sync_satellite(
+             print(f"❌ Failed to clone {target_repo}: {r.stderr.strip()}")
+             return False
+ 
+-        # Copy domain files into the satellite root
+-        copy_tree_contents(src_path, tmp_repo)
++        # For consolidated unified API engine (supremeai-api per ARCHITECTURE_PLAN):
++        if target_repo == "Supremeai-bd/supremeai-api":
++            for sub_name, sub_source in [
++                ("gateway", "gateway"),
++                ("command", "command"),
++                ("agents", "agents"),
++                ("skills", "skills"),
++                ("mcp", "infrastructure/mcp-control-plane"),
++            ]:
++                sub_src = repo_root / sub_source
++                if sub_src.exists():
++                    copy_tree_contents(sub_src, tmp_repo / sub_name)
++                    print(
++                        f"📋 Synced submodule '{sub_source}' -> '{sub_name}' in {target_repo}"
++                    )
++        else:
++            # Copy domain files into the satellite root
++            copy_tree_contents(src_path, tmp_repo)
+ 
+         # Copy contract mirror pairs specific to this satellite
+         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
+@@ -159,16 +175,6 @@ def sync_satellite(
+                     dst_file.parent.mkdir(parents=True, exist_ok=True)
+                     shutil.copy2(src_file, dst_file)
+ 
+-        # For consolidated unified API engine (supremeai-api per ARCHITECTURE_PLAN):
+-        if target_repo == "Supremeai-bd/supremeai-api":
+-            for sub in ("command", "skills", "agents", "gateway"):
+-                sub_src = repo_root / sub
+-                if sub_src.exists():
+-                    copy_tree_contents(sub_src, tmp_repo / sub)
+-                    print(
+-                        f"📋 Mirrored contract file '{open_rel}' -> '{sat_rel}' in {target_repo}"
+-                    )
+-
+         # Check for diff
+         status = subprocess.check_output(
+             ["git", "status", "--porcelain"],

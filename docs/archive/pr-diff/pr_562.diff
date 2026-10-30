@@ -1,0 +1,929 @@
+diff --git a/skills/AGENTS.md b/skills/AGENTS.md
+new file mode 100644
+index 00000000..884162ae
+--- /dev/null
++++ b/skills/AGENTS.md
+@@ -0,0 +1,33 @@
++# AGENTS.md — supremeai-skills Governing Constitution
++
++## Scope
++
++This satellite is the SSOT for the SupremeAI Dynamic Capability Registry,
++Skill Marketplace, and Skill Execution Sandbox. It owns skill package
++layout, manifest specifications, progressive disclosure loading, the
++skills.sh-compatible CLI importer, and cursor/plugins manifest
++compatibility.
++
++## Governance
++
++1. The Superadmin directive chain is the only authority for spec changes
++   to SKILL.md frontmatter, plugin manifest mapping, or sandbox policy.
++2. External agents contribute exclusively through the bridge lane with
++   new-files-only payloads; existing files require an admin-lane order.
++3. Every skill ships `SKILL.md` (YAML frontmatter + markdown body),
++   optional `scripts/`, and optional `assets/`. Nothing else is indexed.
++4. Progressive disclosure is binding: boot-time discovery reads
++   frontmatter only; full instructions load when a task dispatches
++   against the skill. Never eager-load bodies into agent context.
++5. The execution sandbox is fail-closed: timeouts, sanitized
++   environment, ephemeral workspace. A script that outlives its budget
++   is terminated and reported, never retried silently.
++6. Zero hardcoded credentials. Registry sources resolve through
++   `registry/index.json`; secrets never enter manifests or code.
++
++## Conventions
++
++- Python code is stdlib-only, unittest-tested, colocated under `tests/`.
++- Manifest schema errors are data errors: report them, never guess.
++- Package manager verbs: `install`, `list`, `remove`, `pack`.
++- All module imports stay relative to the satellite root.
+diff --git a/skills/README.md b/skills/README.md
+new file mode 100644
+index 00000000..6270d871
+--- /dev/null
++++ b/skills/README.md
+@@ -0,0 +1,48 @@
++# supremeai-skills — Skill Spec & Marketplace Directory
++
++The Dynamic Capability Registry for the SupremeAI federation: modular
++skill packages with progressive disclosure, secure execution sandboxing,
++and universal index compatibility.
++
++## Skill package layout
++
++    <skill-name>/
++    ├── SKILL.md          # YAML frontmatter + markdown instructions (required)
++    ├── scripts/          # executable entry points (optional)
++    └── assets/           # static resources (optional)
++
++## SKILL.md frontmatter contract
++
++| field       | required | meaning                                   |
++|-------------|----------|--------------------------------------------|
++| name        | yes      | unique slug, lowercase with hyphens        |
++| version     | yes      | semantic version string                    |
++| description | yes      | one-line summary surfaced at discovery     |
++| triggers    | no       | task keywords that map dispatch to skill   |
++| entry       | no       | default script path inside scripts/        |
++
++The markdown body below the frontmatter is the full instruction set and
++is loaded only at dispatch time (progressive disclosure, stage 3).
++
++## cursor/plugins compatibility
++
++A `.cursor-plugin/plugin.json` manifest is normalized into the same
++capability descriptor: `name`, `description`, and its `commands` map
++become triggers so SupremeAI can run high-leverage workflows natively.
++
++## Marketplace directory
++
++| skill        | version | summary                                | source                 |
++|--------------|---------|----------------------------------------|------------------------|
++| echo-greeter | 0.1.0   | reference skill: greeting scripts demo | examples/echo-greeter  |
++
++External sources resolve through `registry/index.json`:
++
++    { "skills": { "<name>": { "git": "<clone-url>", "ref": "<optional>" } } }
++
++## CLI
++
++    supremeai-skill install <source>   # local path, git url, or index name
++    supremeai-skill list               # installed + indexed skills
++    supremeai-skill remove <name>      # uninstall from target root
++    supremeai-skill pack <dir>         # build distributable .skill archive
+diff --git a/skills/examples/echo-greeter/SKILL.md b/skills/examples/echo-greeter/SKILL.md
+new file mode 100644
+index 00000000..dbb38f4c
+--- /dev/null
++++ b/skills/examples/echo-greeter/SKILL.md
+@@ -0,0 +1,18 @@
++---
++name: echo-greeter
++version: 0.1.0
++description: Reference skill demonstrating the SKILL.md contract with a script entry point.
++triggers: [greet, hello, greeter]
++entry: scripts/greet.py
++---
++
++# Echo Greeter
++
++Prints a greeting, optionally personalized. Demonstrates the minimal
++skill package layout: this frontmatter plus `scripts/greet.py`.
++
++## Instructions
++
++1. Run the entry script with an optional `--name <who>` argument.
++2. Surface the script's stdout to the caller verbatim.
++3. On non-zero exit, report stderr without retrying.
+diff --git a/skills/examples/echo-greeter/scripts/greet.py b/skills/examples/echo-greeter/scripts/greet.py
+new file mode 100644
+index 00000000..336573c1
+--- /dev/null
++++ b/skills/examples/echo-greeter/scripts/greet.py
+@@ -0,0 +1,16 @@
++#!/usr/bin/env python3
++"""Reference entry script for the echo-greeter skill."""
++
++import argparse
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser(description="Print a greeting.")
++    parser.add_argument("--name", default="world")
++    args = parser.parse_args()
++    print(f"Hello, {args.name}! — from the echo-greeter skill.")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/skills/pyproject.toml b/skills/pyproject.toml
+new file mode 100644
+index 00000000..0f7339bf
+--- /dev/null
++++ b/skills/pyproject.toml
+@@ -0,0 +1,18 @@
++[build-system]
++requires = ["setuptools>=68"]
++build-backend = "setuptools.build_meta"
++
++[project]
++name = "supremeai-skills"
++version = "0.1.0"
++description = "Dynamic Capability Registry, skill packaging, and execution sandbox for the SupremeAI federation."
++requires-python = ">=3.9"
++license = { text = "MIT" }
++dependencies = []
++keywords = ["supremeai", "skills", "registry", "sandbox", "skills.sh"]
++
++[project.scripts]
++supremeai-skill = "registry.package_manager:main"
++
++[tool.setuptools]
++packages = ["registry", "sandbox"]
+diff --git a/skills/registry/__init__.py b/skills/registry/__init__.py
+new file mode 100644
+index 00000000..badabd35
+--- /dev/null
++++ b/skills/registry/__init__.py
+@@ -0,0 +1,17 @@
++"""supremeai-skills registry: manifest schemas and descriptors."""
++
++from .manifest_schema import (
++    CapabilityDescriptor,
++    ManifestError,
++    parse_cursor_plugin,
++    parse_skill_md,
++)
++from .progressive_loader import ProgressiveLoader
++
++__all__ = [
++    "CapabilityDescriptor",
++    "ManifestError",
++    "parse_cursor_plugin",
++    "parse_skill_md",
++    "ProgressiveLoader",
++]
+diff --git a/skills/registry/index.json b/skills/registry/index.json
+new file mode 100644
+index 00000000..09a3f22e
+--- /dev/null
++++ b/skills/registry/index.json
+@@ -0,0 +1,4 @@
++{
++  "_comment": "Registry index: maps skill names to git sources. Shape: {skills: {<name>: {git: <clone-url>, ref: <optional-branch-or-tag>}}}. Populated by the operator; the CLI resolves names through this file only — no hardcoded endpoints in code.",
++  "skills": {}
++}
+diff --git a/skills/registry/manifest_schema.py b/skills/registry/manifest_schema.py
+new file mode 100644
+index 00000000..1b0644c9
+--- /dev/null
++++ b/skills/registry/manifest_schema.py
+@@ -0,0 +1,131 @@
++"""Dual manifest schema: SKILL.md frontmatter + cursor plugin.json.
++
++Normalizes both ecosystem formats into one CapabilityDescriptor so the
++registry, loader, and CLI treat every capability identically.
++"""
++
++from __future__ import annotations
++
++import json
++import re
++from dataclasses import dataclass, field
++from typing import Any, Dict, List, Optional
++
++FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?", re.S)
++NAME_RE = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
++
++
++class ManifestError(ValueError):
++    """Raised when a manifest violates the schema contract."""
++
++
++@dataclass
++class CapabilityDescriptor:
++    """Normalized capability metadata (stage-1/2 payload: no body)."""
++
++    name: str
++    version: str
++    description: str
++    triggers: List[str] = field(default_factory=list)
++    entry: Optional[str] = None
++    source_format: str = "skill-md"  # or "cursor-plugin"
++    source_path: Optional[str] = None
++
++    def validate(self) -> None:
++        if not NAME_RE.match(self.name):
++            raise ManifestError(f"invalid skill name: {self.name!r}")
++        if not self.version:
++            raise ManifestError(f"skill {self.name}: missing version")
++        if not self.description:
++            raise ManifestError(f"skill {self.name}: missing description")
++
++    def summary(self) -> Dict[str, Any]:
++        """Lightweight boot-index payload (progressive disclosure, stage 1)."""
++        return {
++            "name": self.name,
++            "version": self.version,
++            "description": self.description,
++            "triggers": list(self.triggers),
++            "source_format": self.source_format,
++        }
++
++
++def _parse_scalar(value: str) -> Any:
++    value = value.strip()
++    if value.startswith("[") and value.endswith("]"):
++        inner = value[1:-1].strip()
++        if not inner:
++            return []
++        return [item.strip().strip("'\"") for item in inner.split(",")]
++    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
++        return value[1:-1]
++    return value
++
++
++def parse_frontmatter(text: str) -> Dict[str, Any]:
++    """Minimal YAML frontmatter reader: scalars, inline lists, comments."""
++    match = FRONTMATTER_RE.match(text)
++    if not match:
++        raise ManifestError("SKILL.md must open with a --- frontmatter block")
++    data: Dict[str, Any] = {}
++    for raw_line in match.group(1).splitlines():
++        line = raw_line.split("#", 1)[0].rstrip()
++        if not line.strip():
++            continue
++        if ":" not in line:
++            raise ManifestError(f"malformed frontmatter line: {raw_line!r}")
++        key, _, rest = line.partition(":")
++        data[key.strip()] = _parse_scalar(rest)
++    return data
++
++
++def parse_skill_md(text: str, source_path: Optional[str] = None) -> tuple:
++    """Return (descriptor, instructions_body) from SKILL.md content."""
++    data = parse_frontmatter(text)
++    match = FRONTMATTER_RE.match(text)
++    body = text[match.end():].strip()
++    for required in ("name", "version", "description"):
++        if required not in data:
++            raise ManifestError(f"SKILL.md frontmatter missing {required!r}")
++    descriptor = CapabilityDescriptor(
++        name=str(data["name"]),
++        version=str(data["version"]),
++        description=str(data["description"]),
++        triggers=[str(t) for t in data.get("triggers", [])] if isinstance(data.get("triggers"), list) else [],
++        entry=str(data["entry"]) if data.get("entry") else None,
++        source_format="skill-md",
++        source_path=source_path,
++    )
++    descriptor.validate()
++    return descriptor, body
++
++
++def parse_cursor_plugin(json_text: str, source_path: Optional[str] = None) -> tuple:
++    """Normalize a cursor/plugins plugin.json into (descriptor, notes)."""
++    try:
++        data = json.loads(json_text)
++    except json.JSONDecodeError as exc:
++        raise ManifestError(f"plugin.json is not valid JSON: {exc}") from exc
++    if not isinstance(data, dict):
++        raise ManifestError("plugin.json root must be an object")
++    for required in ("name", "description"):
++        if required not in data:
++            raise ManifestError(f"plugin.json missing {required!r}")
++    commands = data.get("commands")
++    triggers: List[str] = []
++    if isinstance(commands, dict):
++        triggers = [str(key) for key in commands]
++    elif isinstance(commands, list):
++        triggers = [str(item.get("name")) for item in commands if isinstance(item, dict) and item.get("name")]
++    descriptor = CapabilityDescriptor(
++        name=str(data["name"]).lower().replace("_", "-"),
++        version=str(data.get("version", "0.0.0")),
++        description=str(data["description"]),
++        triggers=triggers,
++        entry=str(data.get("entry")) if data.get("entry") else None,
++        source_format="cursor-plugin",
++        source_path=source_path,
++    )
++    descriptor.validate()
++    notes = str(data.get("instructions", "")).strip()
++    return descriptor, notes
+diff --git a/skills/registry/package_manager.py b/skills/registry/package_manager.py
+new file mode 100644
+index 00000000..fc81a05d
+--- /dev/null
++++ b/skills/registry/package_manager.py
+@@ -0,0 +1,148 @@
++"""skills.sh-compatible CLI and importer engine.
++
++Verbs: install (local dir, git url, or index name), list, remove, pack.
++Registry sources resolve exclusively through registry/index.json — no
++credentials, no hardcoded endpoints.
++"""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++import tarfile
++import tempfile
++from pathlib import Path
++from typing import List, Optional
++
++from .manifest_schema import ManifestError, parse_skill_md
++from .progressive_loader import ProgressiveLoader
++
++INDEX_FILENAME = "index.json"
++
++
++class PackageManagerError(RuntimeError):
++    """Raised when an install/remove/pack operation cannot proceed."""
++
++
++class PackageManager:
++    def __init__(self, target_root: Path, index_path: Optional[Path] = None) -> None:
++        self.target_root = Path(target_root)
++        self.index_path = Path(index_path) if index_path else self.target_root / INDEX_FILENAME
++
++    # ---- verbs -------------------------------------------------------
++    def install(self, source: str) -> Path:
++        """Install a skill from a local dir, a git url, or an index name."""
++        staged = self._stage_source(source)
++        try:
++            if not (staged / "SKILL.md").is_file():
++                raise PackageManagerError(f"not a skill directory (no SKILL.md): {source}")
++            descriptor, _ = parse_skill_md(
++                (staged / "SKILL.md").read_text(encoding="utf-8"),
++                source_path=str(staged / "SKILL.md"),
++            )
++            destination = self.target_root / descriptor.name
++            if destination.exists():
++                raise PackageManagerError(f"skill already installed: {descriptor.name}")
++            shutil.copytree(staged, destination)
++            return destination
++        finally:
++            shutil.rmtree(staged, ignore_errors=True)
++
++    def list_installed(self) -> List[str]:
++        if not self.target_root.is_dir():
++            return []
++        names = []
++        for skill_md in sorted(self.target_root.glob("*/SKILL.md")):
++            names.append(skill_md.parent.name)
++        return names
++
++    def remove(self, name: str) -> Path:
++        destination = self.target_root / name
++        if not destination.is_dir():
++            raise PackageManagerError(f"skill not installed: {name}")
++        shutil.rmtree(destination)
++        return destination
++
++    def pack(self, skill_dir: Path, output: Optional[Path] = None) -> Path:
++        """Build a distributable .skill tar.gz from a skill directory."""
++        skill_dir = Path(skill_dir)
++        skill_md = skill_dir / "SKILL.md"
++        if not skill_md.is_file():
++            raise PackageManagerError(f"not a skill directory (no SKILL.md): {skill_dir}")
++        name = skill_dir.name
++        output = output or (skill_dir.parent / f"{name}.skill")
++        with tarfile.open(output, "w:gz") as archive:
++            for member in sorted(skill_dir.rglob("*")):
++                archive.add(member, arcname=str(member.relative_to(skill_dir.parent)))
++        return output
++
++    # ---- staging -----------------------------------------------------
++    def _stage_source(self, source: str) -> Path:
++        staging = Path(tempfile.mkdtemp(prefix="skill-install-"))
++        candidate = Path(source)
++        if candidate.is_dir():
++            shutil.copytree(candidate, staging / "skill")
++            return staging / "skill"
++        git_source = self._resolve_index(source) or source
++        result = subprocess.run(
++            ["git", "clone", "--depth", "1", git_source, str(staging / "skill")],
++            capture_output=True,
++            text=True,
++            timeout=120,
++        )
++        if result.returncode != 0:
++            shutil.rmtree(staging, ignore_errors=True)
++            raise PackageManagerError(f"git clone failed for {source!r}: {result.stderr.strip()[:200]}")
++        return staging / "skill"
++
++    def _resolve_index(self, name: str) -> Optional[str]:
++        if not self.index_path.is_file():
++            return None
++        skills = ProgressiveLoader.read_index(self.index_path)
++        entry = skills.get(name)
++        if entry is None:
++            return None
++        if entry.get("ref"):
++            return f"{entry['git']}@{entry['ref']}"
++        return str(entry["git"])
++
++
++def build_cli() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(prog="supremeai-skill", description="SupremeAI skill package manager")
++    parser.add_argument("--root", default=".", help="skill installation root")
++    parser.add_argument("--index", default=None, help="path to registry index.json")
++    verbs = parser.add_subparsers(dest="verb", required=True)
++    install = verbs.add_parser("install")
++    install.add_argument("source")
++    verbs.add_parser("list")
++    remove = verbs.add_parser("remove")
++    remove.add_argument("name")
++    pack = verbs.add_parser("pack")
++    pack.add_argument("directory")
++    pack.add_argument("--out", default=None)
++    return parser
++
++
++def main(argv: Optional[List[str]] = None) -> int:
++    args = build_cli().parse_args(argv)
++    manager = PackageManager(Path(args.root), Path(args.index) if args.index else None)
++    try:
++        if args.verb == "install":
++            print(f"installed: {manager.install(args.source)}")
++        elif args.verb == "list":
++            for name in manager.list_installed():
++                print(name)
++        elif args.verb == "remove":
++            print(f"removed: {manager.remove(args.name)}")
++        elif args.verb == "pack":
++            print(f"packed: {manager.pack(Path(args.directory), Path(args.out) if args.out else None)}")
++    except (PackageManagerError, ManifestError) as exc:
++        print(f"error: {exc}", file=sys.stderr)
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/skills/registry/progressive_loader.py b/skills/registry/progressive_loader.py
+new file mode 100644
+index 00000000..ec76f714
+--- /dev/null
++++ b/skills/registry/progressive_loader.py
+@@ -0,0 +1,96 @@
++"""Three-stage progressive disclosure loader.
++
++Stage 1 (boot):  discover() — walk roots, read frontmatter/manifests only.
++Stage 2 (index): summaries() — cheap metadata payloads for agent context.
++Stage 3 (dispatch): load() — read full instructions for exactly one skill.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++from typing import Dict, List, Optional
++
++from .manifest_schema import (
++    CapabilityDescriptor,
++    ManifestError,
++    parse_cursor_plugin,
++    parse_skill_md,
++)
++
++SKILL_MD = "SKILL.md"
++CURSOR_MANIFEST = "plugin.json"
++
++
++class ProgressiveLoader:
++    """Filesystem-backed capability registry with context-diet semantics."""
++
++    def __init__(self, roots: List[Path]) -> None:
++        self.roots = [Path(root) for root in roots]
++        self._index: Dict[str, CapabilityDescriptor] = {}
++        self._bodies: Dict[str, str] = {}
++
++    def discover(self) -> Dict[str, CapabilityDescriptor]:
++        """Stage 1: index every skill under the roots (metadata only)."""
++        self._index = {}
++        self._bodies = {}
++        for root in self.roots:
++            if not root.is_dir():
++                continue
++            for skill_md in sorted(root.rglob(SKILL_MD)):
++                descriptor, body = parse_skill_md(
++                    skill_md.read_text(encoding="utf-8"), source_path=str(skill_md)
++                )
++                self._adopt(descriptor, body)
++            for plugin_json in sorted(root.rglob(CURSOR_MANIFEST)):
++                if plugin_json.parent.name != ".cursor-plugin":
++                    continue
++                descriptor, notes = parse_cursor_plugin(
++                    plugin_json.read_text(encoding="utf-8"), source_path=str(plugin_json)
++                )
++                self._adopt(descriptor, notes)
++        return dict(self._index)
++
++    def _adopt(self, descriptor: CapabilityDescriptor, body: str) -> None:
++        if descriptor.name in self._index:
++            raise ManifestError(f"duplicate capability name: {descriptor.name}")
++        self._index[descriptor.name] = descriptor
++        self._bodies[descriptor.name] = body
++
++    def summaries(self) -> List[Dict[str, object]]:
++        """Stage 2: lightweight summaries; safe for boot-time context."""
++        return [descriptor.summary() for descriptor in self._index.values()]
++
++    def load(self, name: str) -> Dict[str, object]:
++        """Stage 3: full instructions + entry for exactly one capability."""
++        if name not in self._index:
++            raise KeyError(f"capability not indexed: {name}")
++        descriptor = self._index[name]
++        return {
++            "descriptor": descriptor.summary(),
++            "entry": descriptor.entry,
++            "instructions": self._bodies[name],
++        }
++
++    def match(self, task_text: str) -> Optional[CapabilityDescriptor]:
++        """Resolve a dispatched task to a capability via trigger keywords."""
++        lowered = task_text.lower()
++        best: Optional[CapabilityDescriptor] = None
++        best_score = 0
++        for descriptor in self._index.values():
++            score = sum(1 for trigger in descriptor.triggers if trigger.lower() in lowered)
++            if score > best_score:
++                best, best_score = descriptor, score
++        return best
++
++    @staticmethod
++    def read_index(path: Path) -> Dict[str, Dict[str, str]]:
++        """Validate and return registry/index.json content (git sources)."""
++        raw = json.loads(Path(path).read_text(encoding="utf-8"))
++        skills = raw.get("skills", {})
++        if not isinstance(skills, dict):
++            raise ManifestError("index.json skills must be an object")
++        for name, spec in skills.items():
++            if not isinstance(spec, dict) or "git" not in spec:
++                raise ManifestError(f"index entry {name!r} missing git source")
++        return skills
+diff --git a/skills/sandbox/__init__.py b/skills/sandbox/__init__.py
+new file mode 100644
+index 00000000..b9ca30fd
+--- /dev/null
++++ b/skills/sandbox/__init__.py
+@@ -0,0 +1 @@
++"""Skill execution sandbox package."""
+diff --git a/skills/sandbox/executor.py b/skills/sandbox/executor.py
+new file mode 100644
+index 00000000..c09fb981
+--- /dev/null
++++ b/skills/sandbox/executor.py
+@@ -0,0 +1,98 @@
++"""Fail-closed skill script executor.
++
++Runs a skill script in an ephemeral workspace with a sanitized
++environment and a hard timeout. Network denial is a host-level control;
++the sandbox makes the contract explicit via the SKILL_SANDBOX flag and
++terminates anything that outlives its budget (never retries silently).
++"""
++
++from __future__ import annotations
++
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++from dataclasses import dataclass
++from pathlib import Path
++from typing import Dict, List, Optional, Sequence
++
++DEFAULT_TIMEOUT_S = 10.0
++
++
++@dataclass
++class SandboxResult:
++    script: str
++    returncode: int
++    stdout: str
++    stderr: str
++    timed_out: bool
++    workdir: str
++
++
++class SkillSandbox:
++    """Execute one skill script under resource guards."""
++
++    def __init__(self, skill_root: Path, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
++        self.skill_root = Path(skill_root)
++        self.timeout_s = timeout_s
++
++    def run(
++        self,
++        script: str,
++        args: Optional[Sequence[str]] = None,
++        timeout_s: Optional[float] = None,
++        extra_env: Optional[Dict[str, str]] = None,
++    ) -> SandboxResult:
++        script_path = (self.skill_root / script).resolve()
++        if self.skill_root.resolve() not in script_path.parents:
++            raise ValueError("script escapes the skill root")
++        if not script_path.is_file():
++            raise FileNotFoundError(f"script not found: {script}")
++        workdir = Path(tempfile.mkdtemp(prefix="skill-sandbox-"))
++        try:
++            shutil.copytree(self.skill_root, workdir / "skill", dirs_exist_ok=True)
++            staged_script = workdir / "skill" / script
++            env = {
++                "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
++                "HOME": str(workdir),
++                "PYTHONHASHSEED": "0",
++                "SKILL_SANDBOX": "1",
++                "LANG": "C.UTF-8",
++            }
++            if extra_env:
++                env.update(extra_env)
++            try:
++                completed = subprocess.run(
++                    [sys.executable, str(staged_script), *list(args or [])],
++                    capture_output=True,
++                    text=True,
++                    timeout=timeout_s or self.timeout_s,
++                    cwd=str(workdir),
++                    env=env,
++                )
++                return SandboxResult(
++                    script=script,
++                    returncode=completed.returncode,
++                    stdout=completed.stdout,
++                    stderr=completed.stderr,
++                    timed_out=False,
++                    workdir=str(workdir),
++                )
++            except subprocess.TimeoutExpired as exc:
++                return SandboxResult(
++                    script=script,
++                    returncode=-1,
++                    stdout=exc.stdout.decode("utf-8", errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
++                    stderr="sandbox timeout: script exceeded its budget and was terminated",
++                    timed_out=True,
++                    workdir=str(workdir),
++                )
++        finally:
++            shutil.rmtree(workdir, ignore_errors=True)
++
++    def run_entry(self, descriptor_entry: Optional[str], args: Optional[Sequence[str]] = None) -> SandboxResult:
++        """Execute a capability's declared entry point."""
++        if not descriptor_entry:
++            raise ValueError("capability declares no entry script")
++        return self.run(descriptor_entry, args=args)
+diff --git a/skills/tests/test_skills_foundation.py b/skills/tests/test_skills_foundation.py
+new file mode 100644
+index 00000000..bf3bfd44
+--- /dev/null
++++ b/skills/tests/test_skills_foundation.py
+@@ -0,0 +1,223 @@
++"""Unit tests for the supremeai-skills foundation seed.
++
++Stdlib-only unittest battery per bridge doctrine. Covers: SKILL.md
++frontmatter parsing, cursor/plugins manifest normalization, three-stage
++progressive disclosure, package manager install/list/remove/pack
++roundtrip, registry index validation, and sandbox execution with hard
++timeout enforcement.
++"""
++
++import json
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++sys.path.insert(0, str(ROOT))
++
++from registry.manifest_schema import (  # noqa: E402
++    CapabilityDescriptor,
++    ManifestError,
++    parse_cursor_plugin,
++    parse_skill_md,
++)
++from registry.package_manager import PackageManager, PackageManagerError  # noqa: E402
++from registry.progressive_loader import ProgressiveLoader  # noqa: E402
++from sandbox.executor import SkillSandbox  # noqa: E402
++
++EXAMPLES = ROOT / "examples"
++
++SKILL_MD_SAMPLE = """---
++name: sample-skill
++version: 1.2.3
++description: A sample capability for tests.
++triggers: [alpha, beta]
++entry: scripts/run.py
++---
++
++Full instructions live here and load only at dispatch.
++"""
++
++PLUGIN_JSON_SAMPLE = json.dumps({
++    "name": "Thermos_Review",
++    "version": "2.0.0",
++    "description": "Deep security review workflow.",
++    "commands": {
++        "security-review": {"description": "full review"},
++        "quick-scan": {"description": "fast pass"},
++    },
++})
++
++
++def make_skill(root: Path, name: str = "packme") -> Path:
++    skill_dir = root / name
++    (skill_dir / "scripts").mkdir(parents=True)
++    (skill_dir / "SKILL.md").write_text(
++        "---\nname: %s\nversion: 0.1.0\ndescription: pack test\nentry: scripts/go.py\n---\nbody\n" % name,
++        encoding="utf-8",
++    )
++    (skill_dir / "scripts" / "go.py").write_text("print('packed ok')\n", encoding="utf-8")
++    return skill_dir
++
++
++class TestManifestSchema(unittest.TestCase):
++    def test_skill_md_roundtrip(self):
++        descriptor, body = parse_skill_md(SKILL_MD_SAMPLE)
++        self.assertEqual(descriptor.name, "sample-skill")
++        self.assertEqual(descriptor.version, "1.2.3")
++        self.assertEqual(descriptor.triggers, ["alpha", "beta"])
++        self.assertEqual(descriptor.entry, "scripts/run.py")
++        self.assertEqual(descriptor.source_format, "skill-md")
++        self.assertIn("dispatch", body)
++
++    def test_skill_md_missing_required_field(self):
++        with self.assertRaises(ManifestError):
++            parse_skill_md("---\nname: only-name\n---\nbody")
++
++    def test_skill_md_invalid_name(self):
++        bad = "---\nname: Bad_Name!\nversion: 1\ndescription: x\n---\nbody"
++        with self.assertRaises(ManifestError):
++            parse_skill_md(bad)
++
++    def test_cursor_plugin_normalization(self):
++        descriptor, _ = parse_cursor_plugin(PLUGIN_JSON_SAMPLE)
++        self.assertEqual(descriptor.name, "thermos-review")
++        self.assertEqual(descriptor.source_format, "cursor-plugin")
++        self.assertEqual(descriptor.triggers, ["security-review", "quick-scan"])
++        descriptor.validate()
++
++    def test_cursor_plugin_invalid_json(self):
++        with self.assertRaises(ManifestError):
++            parse_cursor_plugin("{not json")
++
++
++class TestProgressiveLoader(unittest.TestCase):
++    def setUp(self):
++        self.loader = ProgressiveLoader([EXAMPLES])
++
++    def test_discover_indexes_reference_skill(self):
++        index = self.loader.discover()
++        self.assertIn("echo-greeter", index)
++        self.assertEqual(index["echo-greeter"].entry, "scripts/greet.py")
++
++    def test_summaries_are_lightweight(self):
++        self.loader.discover()
++        for summary in self.loader.summaries():
++            self.assertNotIn("instructions", summary)
++            self.assertIn("name", summary)
++
++    def test_load_returns_full_instructions(self):
++        self.loader.discover()
++        loaded = self.loader.load("echo-greeter")
++        self.assertIn("Instructions", loaded["instructions"])
++        self.assertEqual(loaded["entry"], "scripts/greet.py")
++
++    def test_load_unknown_raises(self):
++        self.loader.discover()
++        with self.assertRaises(KeyError):
++            self.loader.load("does-not-exist")
++
++    def test_trigger_matching(self):
++        self.loader.discover()
++        self.assertEqual(self.loader.match("please greet the operator").name, "echo-greeter")
++        self.assertIsNone(self.loader.match("unrelated task text"))
++
++    def test_read_index_validates(self):
++        with tempfile.TemporaryDirectory() as tmp:
++            index = Path(tmp) / "index.json"
++            index.write_text(json.dumps({"skills": {"x": {"git": "git@example:x.git"}}}), encoding="utf-8")
++            skills = ProgressiveLoader.read_index(index)
++            self.assertIn("x", skills)
++            bad = Path(tmp) / "bad.json"
++            bad.write_text(json.dumps({"skills": {"y": {"ref": "no-git"}}}), encoding="utf-8")
++            with self.assertRaises(ManifestError):
++                ProgressiveLoader.read_index(bad)
++
++
++class TestPackageManager(unittest.TestCase):
++    def setUp(self):
++        self.tmp = tempfile.TemporaryDirectory()
++        self.root = Path(self.tmp.name) / "installed"
++        self.root.mkdir()
++        self.manager = PackageManager(self.root, index_path=Path(self.tmp.name) / "absent.json")
++
++    def tearDown(self):
++        self.tmp.cleanup()
++
++    def test_install_list_remove_roundtrip(self):
++        source = make_skill(Path(self.tmp.name))
++        destination = self.manager.install(str(source))
++        self.assertTrue((destination / "SKILL.md").is_file())
++        self.assertIn("packme", self.manager.list_installed())
++        self.manager.remove("packme")
++        self.assertNotIn("packme", self.manager.list_installed())
++
++    def test_install_refuses_duplicates(self):
++        source = make_skill(Path(self.tmp.name))
++        self.manager.install(str(source))
++        with self.assertRaises(PackageManagerError):
++            self.manager.install(str(source))
++
++    def test_install_rejects_non_skill(self):
++        empty = Path(self.tmp.name) / "empty"
++        empty.mkdir()
++        with self.assertRaises(PackageManagerError):
++            self.manager.install(str(empty))
++
++    def test_pack_creates_archive(self):
++        skill_dir = make_skill(Path(self.tmp.name))
++        archive = self.manager.pack(skill_dir)
++        self.assertTrue(archive.is_file())
++        self.assertEqual(archive.suffixes[-1], ".skill")
++
++    def test_remove_unknown_fails(self):
++        with self.assertRaises(PackageManagerError):
++            self.manager.remove("ghost")
++
++
++class TestSandbox(unittest.TestCase):
++    def setUp(self):
++        self.tmp = tempfile.TemporaryDirectory()
++        self.skill = make_skill(Path(self.tmp.name), name="sandboxed")
++
++    def tearDown(self):
++        self.tmp.cleanup()
++
++    def test_runs_entry_script(self):
++        sandbox = SkillSandbox(self.skill)
++        result = sandbox.run("scripts/go.py")
++        self.assertEqual(result.returncode, 0)
++        self.assertIn("packed ok", result.stdout)
++        self.assertFalse(result.timed_out)
++
++    def test_timeout_enforced(self):
++        (self.skill / "scripts" / "slow.py").write_text("import time; time.sleep(30)\n", encoding="utf-8")
++        result = SkillSandbox(self.skill).run("scripts/slow.py", timeout_s=1.0)
++        self.assertTrue(result.timed_out)
++        self.assertIn("timeout", result.stderr)
++
++    def test_missing_script_and_escape(self):
++        sandbox = SkillSandbox(self.skill)
++        with self.assertRaises(FileNotFoundError):
++            sandbox.run("scripts/nope.py")
++        with self.assertRaises(ValueError):
++            sandbox.run("../outside.py")
++
++    def test_sandbox_flag_visible_to_script(self):
++        (self.skill / "scripts" / "env.py").write_text(
++            "import os; print(os.environ.get('SKILL_SANDBOX'))", encoding="utf-8"
++        )
++        result = SkillSandbox(self.skill).run("scripts/env.py")
++        self.assertEqual(result.stdout.strip(), "1")
++
++
++class TestDescriptorValidation(unittest.TestCase):
++    def test_validate_rejects_bad_name(self):
++        descriptor = CapabilityDescriptor(name="Space Name", version="1", description="d")
++        with self.assertRaises(ManifestError):
++            descriptor.validate()
++
++
++if __name__ == "__main__":
++    unittest.main(verbosity=2)

@@ -1,0 +1,228 @@
+diff --git a/scripts/ci/bridge_landing_watchdog.py b/scripts/ci/bridge_landing_watchdog.py
+index e0296bea..d73c1361 100644
+--- a/scripts/ci/bridge_landing_watchdog.py
++++ b/scripts/ci/bridge_landing_watchdog.py
+@@ -18,6 +18,16 @@
+   - history plane : landed commit subjects on origin/main (squash-merge
+                     convention embeds the same slug and the PR number).
+   - flight plane  : open PR titles (Tower github_list_prs) — same slug token.
++  - verdict plane : Tower bridge_read_feedback per WO number — the feedback-
++                    plane reader this file's own scope note called for. Used
++                    ONLY to enrich MERGED_ON_MAIN rows (tower_verdict /
++                    tower_unstamped): a history-proven landing whose Tower
++                    stamp is missing is bookkeeping blackout, visible here.
++                    Live 2026-10-28 condition that motivated it: 13/13 merged
++                    WOs carried latestVerdict=null while every slug was
++                    provably in main history. Best-effort, fail-open, never
++                    strict — a transient Tower condition must not red a gate
++                    (same doctrine as the report-only default).
+ 
+ Verdict per open bridge:queued WO (any-slug match wins):
+   MERGED_ON_MAIN   slug found in main history — WO should close; flagged as
+@@ -99,6 +109,10 @@
+ # Cap on per-WO body fetches during refinement (only at-risk candidates are
+ # fetched; the common board has zero, so the steady-state cost is nil).
+ MAX_SATELLITE_PROBES = 5
++# Cap on per-WO feedback fetches during verdict-plane enrichment (only
++# MERGED_ON_MAIN rows are probed — the rows Tower should have stamped; a
++# healthy board probes zero, the 2026-10-28 blackout board probed 13).
++MAX_FEEDBACK_PROBES = 24
+ 
+ _id = [100]
+ 
+@@ -319,6 +333,51 @@ def refine_satellites(verdicts: list[dict], fetch_body=_fetch_wo_body,
+     return out
+ 
+ 
++def _fetch_wo_feedback(number: int) -> dict | None:
++    """Fetch one WO's Tower verdict-plane record (read-only round-trip)."""
++    try:
++        return json.loads(_tower_text("bridge_read_feedback", {"number": number}))
++    except Exception:  # noqa: BLE001 - enrichment is best-effort, never fatal
++        return None
++
++
++def enrich_tower_verdicts(verdicts: list[dict], fetch_feedback=_fetch_wo_feedback,
++                          max_probes: int = MAX_FEEDBACK_PROBES) -> list[dict]:
++    """Cross-check MERGED_ON_MAIN rows against Tower's own verdict plane.
++
++    The history plane proves a landing; only Tower's verdict plane can say
++    whether the bookkeeping stamped it. Sets `tower_verdict` ('none' when
++    latestVerdict is null/absent, else its string value) and `tower_unstamped`
++    (True = history-proven landing with no Tower stamp; False = stamped;
++    None = unreadable, honest unknown) on each probed MERGED_ON_MAIN row.
++
++    Fail-open by contract: enrichment is best-effort and NEVER changes a
++    verdict class or the strict surface — a transient Tower condition must
++    not red a gate. Non-merged rows cost zero probes (healthy-board steady
++    state: zero round-trips, mirroring refine_satellites).
++    """
++    out = list(verdicts)
++    probed = 0
++    for i, v in enumerate(out):
++        if v["verdict"] != "MERGED_ON_MAIN" or probed >= max_probes:
++            continue
++        probed += 1
++        fb = None
++        try:
++            fb = fetch_feedback(v["number"])
++        except Exception:  # noqa: BLE001 - defense in depth vs raising injectables
++            fb = None
++        if not isinstance(fb, dict):
++            out[i] = {**v, "tower_verdict": "unreadable", "tower_unstamped": None}
++            continue
++        latest = fb.get("latestVerdict")
++        if latest:
++            out[i] = {**v, "tower_verdict": str(latest), "tower_unstamped": False}
++        else:
++            out[i] = {**v, "tower_verdict": "none", "tower_unstamped": True}
++    return out
++
++
+ def self_test() -> list[tuple[str, bool, str]]:
+     """Hermetic verdict-matrix proof: every class reachable, no false flags."""
+     cases: list[tuple[str, bool, str]] = []
+@@ -479,6 +538,47 @@ def _fetch_boom(number):
+     cases.append(("mixed queued/rejected board classifies exactly",
+                   by_num == {24: "MERGED_ON_MAIN", 25: "FALSE_REJECTION"}, json.dumps(by_num)[:200]))
+ 
++    # 18. feedback-plane enrichment (the guard's own documented future work;
++    # live 2026-10-28 blackout class): merged rows get tower_verdict /
++    # tower_unstamped; non-merged rows untouched and unprobed; fetch failure
++    # -> honest unknown (None), never False; a Tower stamp -> False.
++    merged_v = {"number": 26, "verdict": "MERGED_ON_MAIN", "slug": slug_a, "age_hours": 0.5}
++    risk_v = {"number": 27, "verdict": "LANDING_AT_RISK", "slug": slug_r2, "age_hours": 3.0}
++
++    def _fb_none(number):
++        return {"issueNumber": number, "state": "open", "labels": ["bridge:queued"],
++                "latestVerdict": None, "verdictHistory": [], "commentCount": 0}
++
++    def _fb_stamped(number):
++        return {"issueNumber": number, "state": "open", "labels": ["bridge:queued"],
++                "latestVerdict": "MERGED_ON_MAIN", "verdictHistory": ["MERGED_ON_MAIN"],
++                "commentCount": 1}
++
++    def _fb_boom(number):
++        raise RuntimeError("tower down")
++
++    vs = enrich_tower_verdicts([dict(merged_v), dict(risk_v)], fetch_feedback=_fb_none)
++    ok = (vs[0]["tower_unstamped"] is True and vs[0]["tower_verdict"] == "none"
++          and "tower_verdict" not in vs[1])
++    cases.append(("merged + null Tower verdict -> tower_unstamped (blackout visible)",
++                  ok, json.dumps(vs)[:220]))
++    vs = enrich_tower_verdicts([dict(merged_v)], fetch_feedback=_fb_stamped)
++    cases.append(("merged + Tower stamp -> tower_unstamped False",
++                  vs[0]["tower_unstamped"] is False and vs[0]["tower_verdict"] == "MERGED_ON_MAIN",
++                  json.dumps(vs[0])[:160]))
++    vs = enrich_tower_verdicts([dict(merged_v)], fetch_feedback=_fb_boom)
++    cases.append(("feedback fetch failure -> honest unknown (never False)",
++                  vs[0]["tower_unstamped"] is None and vs[0]["tower_verdict"] == "unreadable",
++                  json.dumps(vs[0])[:160]))
++    probed: list[int] = []
++
++    def _fb_spy(number):
++        probed.append(number)
++        return _fb_none(number)
++
++    enrich_tower_verdicts([dict(risk_v)], fetch_feedback=_fb_spy)
++    cases.append(("non-merged rows cost zero feedback probes", probed == [], str(probed)))
++
+     return cases
+ 
+ 
+@@ -512,6 +612,7 @@ def main(argv: list[str] | None = None) -> int:
+     now = time.mktime(time.gmtime())
+     verdicts = run_verdicts(wos, subjects, pr_titles, now, args.at_risk_hours)
+     verdicts = refine_satellites(verdicts)
++    verdicts = enrich_tower_verdicts(verdicts)
+     if not verdicts:
+         print("REPORT: no open bridge:queued WOs to reconcile (queue clean).")
+         return 0
+@@ -520,12 +621,20 @@ def main(argv: list[str] | None = None) -> int:
+     for v in sorted(verdicts, key=lambda v: (order.get(v["verdict"], 9), v["number"] or 0)):
+         flag = "!!" if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION") else "  "
+         age_s = "?" if v["age_hours"] is None else f"{v['age_hours']:.1f}h"
++        tv_s = f" tower_verdict={v['tower_verdict']}" if "tower_verdict" in v else ""
+         print(f"{flag} #{v['number']} [{v['verdict']}] age={age_s} "
+-              f"slug={v['slug']} — {v['evidence'][:100]}")
++              f"slug={v['slug']}{tv_s} — {v['evidence'][:100]}")
+     counts: dict[str, int] = {}
+     for v in verdicts:
+         counts[v["verdict"]] = counts.get(v["verdict"], 0) + 1
+     print("VERDICT: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
++    merged_total = sum(1 for v in verdicts if v["verdict"] == "MERGED_ON_MAIN")
++    unstamped = [v for v in verdicts if v.get("tower_unstamped") is True]
++    unreadable = sum(1 for v in verdicts if v.get("tower_unstamped") is None)
++    if unstamped:
++        print(f"TOWER VERDICT PLANE: {len(unstamped)}/{merged_total} merged WOs carry NO Tower "
++              f"verdict stamp" + (f" ({unreadable} unreadable)" if unreadable else "") +
++              " — bookkeeping blackout, report-only.")
+     risky = [v for v in verdicts
+              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
+              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]
+diff --git a/tests/test_bridge_landing_watchdog.py b/tests/test_bridge_landing_watchdog.py
+index c9a04859..970f824d 100644
+--- a/tests/test_bridge_landing_watchdog.py
++++ b/tests/test_bridge_landing_watchdog.py
+@@ -215,6 +215,61 @@ def test_self_test_hermetic():
+     assert "[FAIL]" not in r.stdout, r.stdout
+ 
+ 
++def test_enrich_tower_verdicts_injectable():
++    """Feedback-plane enrichment (the guard's own documented future work):
++    MERGED_ON_MAIN rows get tower_verdict/tower_unstamped; the live
++    2026-10-28 blackout (13/13 merged WOs with latestVerdict=null while every
++    slug was provably landed) is exactly the True case. Fail-open semantics:
++    an unreadable verdict plane is honest unknown (None), never False, and
++    never changes a verdict class or the strict surface."""
++    mod = _load_watchdog_module()
++    merged = {"number": 40, "verdict": "MERGED_ON_MAIN",
++              "slug": "(bridge-20261028-alpha-lane)", "age_hours": 0.5}
++    risk = {"number": 41, "verdict": "LANDING_AT_RISK",
++            "slug": "(bridge-20261028-alpha-lane-r2)", "age_hours": 3.0}
++
++    def fb_none(n):
++        return {"issueNumber": n, "state": "open", "labels": ["bridge:queued"],
++                "latestVerdict": None, "verdictHistory": [], "commentCount": 0}
++
++    def fb_stamped(n):
++        return {"issueNumber": n, "state": "open", "labels": ["bridge:queued"],
++                "latestVerdict": "MERGED_ON_MAIN", "verdictHistory": ["MERGED_ON_MAIN"],
++                "commentCount": 1}
++
++    def boom(n):
++        raise RuntimeError("tower down")
++
++    # History-proven landing + Tower null -> unstamped True (blackout visible).
++    vs = mod.enrich_tower_verdicts([dict(merged), dict(risk)], fetch_feedback=fb_none)
++    assert vs[0]["tower_unstamped"] is True and vs[0]["tower_verdict"] == "none", vs[0]
++    # Non-merged rows stay untouched (zero enrichment keys, zero probes).
++    assert "tower_verdict" not in vs[1] and "tower_unstamped" not in vs[1], vs[1]
++    # Tower stamp present -> unstamped False (bookkeeping healthy).
++    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=fb_stamped)
++    assert vs[0]["tower_unstamped"] is False and vs[0]["tower_verdict"] == "MERGED_ON_MAIN", vs[0]
++    # Raising fetcher -> honest unknown (None), never False, never a crash.
++    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=boom)
++    assert vs[0]["tower_unstamped"] is None and vs[0]["tower_verdict"] == "unreadable", vs[0]
++    # Non-dict payload (MCP error envelope) -> honest unknown too.
++    vs = mod.enrich_tower_verdicts([dict(merged)], fetch_feedback=lambda n: "MCP error -32602")
++    assert vs[0]["tower_unstamped"] is None, vs[0]
++    # Non-merged rows cost zero feedback probes (probe counter stays zero).
++    probed = []
++
++    def spy(n):
++        probed.append(n)
++        return fb_none(n)
++
++    mod.enrich_tower_verdicts([dict(risk)], fetch_feedback=spy)
++    assert probed == [], probed
++    # Probe cap is honored.
++    probed.clear()
++    many = [dict(merged, number=i) for i in range(30)]
++    mod.enrich_tower_verdicts(many, fetch_feedback=spy, max_probes=5)
++    assert len(probed) == 5, probed
++
++
+ def test_live_mode_honest_skip_on_unreachable():
+     # A watchdog that reports a verdict on unreachable planes would be a wolf
+     # itself — exit 2 (skip), never 0/1, when the board/history is unreachable.

@@ -1,0 +1,937 @@
+diff --git a/.github/workflows/continuous-agent-loop.yml b/.github/workflows/continuous-agent-loop.yml
+index 170cf5c6..e4d40f1f 100644
+--- a/.github/workflows/continuous-agent-loop.yml
++++ b/.github/workflows/continuous-agent-loop.yml
+@@ -9,6 +9,13 @@ name: Continuous Agent Loop Cron
+ # issue contract, so each tick runs ONE --pick-next dispatch cycle; the
+ # concurrency group serializes ticks and the next scheduled tick continues
+ # where this one stopped.
++#
++# EVENT-DRIVEN INTAKE (#69): the MCP Control Tower now dispatches this exact
++# workflow via workflow_dispatch the moment a relevant issue/PR/comment webhook
++# lands (see infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md). This
++# 30-minute cron REMAINS as the low-frequency reconciliation fallback until the
++# retirement criteria in BRIDGE_INTAKE.md are met (soak window + zero
++# dead-letters + dispatch-path scheduler defect resolved).
+ 
+ on:
+   schedule:
+diff --git a/infrastructure/mcp-control-plane/.gitignore b/infrastructure/mcp-control-plane/.gitignore
+new file mode 100644
+index 00000000..e4cfb21f
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/.gitignore
+@@ -0,0 +1,4 @@
++node_modules/
++
++#69: bridge intake durable outbox
++var/
+diff --git a/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md b/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
+new file mode 100644
+index 00000000..161b70a1
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/docs/BRIDGE_INTAKE.md
+@@ -0,0 +1,110 @@
++# Event-Driven Bridge Intake (#69)
++
++Webhook → workflow-dispatch wake-up path that replaces high-frequency **polling**
++latency with **event-driven** intake for the SupremeAI agent loop.
++
++- **Problem:** the agent loop only ran every 30 minutes (cron
++  `continuous-agent-loop.yml`), so a new Bridge Work Order / PR waited up to a
++  full interval before any agent picked it up. Scheduled runs also burned
++  Actions minutes on empty boards.
++- **Solution:** the already-deployed MCP Control Tower `/webhooks/github` route
++  (signature-verified, normalized, gateway-dispatched) now additionally arms a
++  **bridge intake listener** that dispatches the existing polling workflow via
++  the GitHub `workflow_dispatch` API the moment relevant work appears.
++- **No second event bus, no duplicate endpoint** — this extends
++  `src/events/normalizer.ts` + `src/events/gateway.ts` with one listener
++  (`src/events/bridge_intake.ts`).
++
++```
++GitHub webhook ──► /webhooks/github (HMAC sha256 over raw body, prod)
++                      │
++                      ▼
++              EventNormalizer ──► EventGateway ──► BridgeIntakeService
++                                                     │  decide (repo/action/bot filter)
++                                                     │  dedupe (X-GitHub-Delivery + event key, 30-min TTL)
++                                                     │  outbox append (durable JSONL, sync & O(1))
++                                                     ▼  async
++                                     POST /repos/{repo}/actions/workflows/{workflow}/dispatches
++                                                     │
++                                                     ▼
++                            continuous-agent-loop.yml runs immediately (--pick-next)
++```
++
++## Activation (owner-side, one time)
++
++1. **Repo webhook** on `Supremeai-bd/supremeai-open` →
++   URL `https://<tower-host>/webhooks/github`,
++   content type `application/json`,
++   secret = the value deployed as `GITHUB_WEBHOOK_SECRET`,
++   events: **Issues**, **Pull requests** (Issue comment optional).
++2. **Env on the Tower deployment:**
++
++   | Variable | Default | Meaning |
++   |---|---|---|
++   | `BRIDGE_INTAKE_ENABLED` | `false` | **fail-closed master switch** |
++   | `BRIDGE_INTAKE_REPO` | `Supremeai-bd/supremeai-open` | repo owning the workflow |
++   | `BRIDGE_INTAKE_WORKFLOW` | `continuous-agent-loop.yml` | dispatch target |
++   | `BRIDGE_INTAKE_REF` | `main` | dispatch ref |
++   | `BRIDGE_INTAKE_MIN_INTERVAL_MS` | `60000` | min spacing between dispatches |
++   | `BRIDGE_INTAKE_MAX_ATTEMPTS` | `5` | retry ceiling → dead-letter |
++   | `BRIDGE_INTAKE_OUTBOX_PATH` | `var/bridge-intake-outbox.jsonl` | durable outbox |
++   | `GITHUB_TOKEN` | — | server-side token **with `workflow` scope** on the target repo |
++
++3. **Boot check:** the Tower logs either
++   `[BRIDGE_INTAKE] armed → <repo>/<workflow>@<ref>` or
++   `[BRIDGE_INTAKE] disabled (set BRIDGE_INTAKE_ENABLED=true …)`.
++
++## Safety properties (each covered by `test_bridge_intake.ts`)
++
++- **Signature** — HMAC over the **raw request body**, constant-time compare,
++  fail-closed on missing secret/header (`src/lib/webhook_signature.ts`).
++- **Filtering** — only `issues` (`opened`/`reopened`/`labeled`),
++  `pull_request` (`opened`/`reopened`/`synchronize`),
++  `issue_comment` (`created`); wrong repo, bot senders, other actions and
++  non-GitHub sources are dropped with a reason. Events **cannot** bypass
++  claiming, scope gates, review or merge governance — they only start the
++  existing dispatcher, which enforces all of that.
++- **Idempotency** — duplicate deliveries collapse by delivery id *and* by
++  event key inside a 30-minute TTL window.
++- **Fast ack** — the HTTP 200 never waits on GitHub: accept + outbox append
++  are synchronous O(1); the API call is asynchronous.
++- **Durability** — every accepted event is persisted **before** dispatch;
++  pending entries are replayed on boot (`replayPending()`) and retried with
++  exponential backoff (5 s → 15 min cap) up to `maxAttempts`, then
++  dead-lettered **visibly** (log + outbox status).
++- **Rate limit** — dispatches spaced ≥ `BRIDGE_INTAKE_MIN_INTERVAL_MS`;
++  extras queue in the outbox instead of hammering the API.
++- **Least privilege** — only the server-side token is used; nothing from the
++  payload (and no secret) is ever logged or persisted.
++- **Reconciliation tick** — `service.tick()` drains whatever is due without a
++  new webhook (usable from an external cron/job).
++
++## Measured latency
++
++Every successful dispatch records `latencyMs` (enqueue → GitHub API 2xx) in the
++outbox entry and the `[BRIDGE_INTAKE] dispatched … (NNms)` log line. Test
++evidence: `npm run test:bridge-intake` → `ALL BRIDGE INTAKE TESTS PASSED (#69)`.
++Note the honest boundary: this measures **webhook-to-dispatch**. End-to-end
++**webhook-to-agent-start** additionally includes the runner start time and must
++be measured in deployment logs (`agent-loop` job start vs `[BRIDGE_INTAKE]`).
++
++## Rollout & cron retirement criteria
++
++The 30-minute cron in `continuous-agent-loop.yml` **stays** as the
++reconciliation fallback during rollout. Retire (or lower) it only after **all**
++of:
++
++1. ≥ 7 consecutive days with webhook-dispatched runs and no missed-issue
++   reconciliation (cron no-op evidence absent while issues existed);
++2. zero dead-lettered outbox entries over that window;
++3. the Support-ticketed `workflow_dispatch` scheduler defect (see
++   `docs/OPS_ACTIONS_QUOTA_RUNBOOK.md`) is confirmed resolved for this repo.
++
++## Recovery procedure
++
++1. Inspect the outbox: `cat var/bridge-intake-outbox.jsonl | jq -s 'group_by(.status)'`.
++2. Dead-lettered entries: fix the root cause (token scope, scheduler freeze),
++   then reset `"status": "pending"`, `"attempts": 0` and restart the Tower —
++   boot replay redelivers them. Re-dispatch is safe (workflow is idempotent:
++   one `--pick-next` cycle).
++3. Manual drain without restart: call `tick()` from an operator console.
+diff --git a/infrastructure/mcp-control-plane/package.json b/infrastructure/mcp-control-plane/package.json
+index b88bc2f7..c77f4686 100644
+--- a/infrastructure/mcp-control-plane/package.json
++++ b/infrastructure/mcp-control-plane/package.json
+@@ -9,7 +9,7 @@
+     "build": "tsc",
+     "start": "node dist/index.js",
+     "typecheck": "tsc --noEmit",
+-    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding",
++    "test:unit": "npm run test:health-history && npm run test:heartbeat && npm run test:redis-rotation && npm run test:mcp-presence && tsx test_policy.ts && tsx test_registry.ts && tsx test_events.ts && tsx test_summary.ts && npm run test:guardian && npm run test:client-registry && npm run test:auto-register && npm run test:gemini-adapter && npm run test:tool-visibility && npm run test:slot-verification && npm run test:bridge-onboarding && npm run test:bridge-intake",
+     "test:integration": "tsx test_resource_list.ts",
+     "test:smoke": "tsx test_adapters.ts",
+     "test:smoke:report": "tsx scripts/smoke-report.ts",
+@@ -28,7 +28,8 @@
+     "test:gemini-adapter": "tsx test_gemini_adapter.ts",
+     "test:bridge-onboarding": "tsx test_bridge_onboarding.ts",
+     "test:policy-parity": "tsx policy_parity_dump.ts > /dev/null && echo \"TS-side parity harness OK\"",
+-    "test:mcp-presence": "tsx test_mcp_presence.ts"
++    "test:mcp-presence": "tsx test_mcp_presence.ts",
++    "test:bridge-intake": "tsx test_bridge_intake.ts"
+   },
+   "keywords": [
+     "mcp",
+diff --git a/infrastructure/mcp-control-plane/src/events/bridge_intake.ts b/infrastructure/mcp-control-plane/src/events/bridge_intake.ts
+new file mode 100644
+index 00000000..ae2b986e
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/events/bridge_intake.ts
+@@ -0,0 +1,380 @@
++/**
++ * #69 — Event-driven bridge intake.
++ *
++ * Connects the already-deployed `/webhooks/github` route (validated, signed,
++ * normalized, dispatched through the existing EventGateway) to the active
++ * bridge-intake polling workflow, so new work wakes the agent loop in seconds
++ * instead of waiting for the next cron tick.
++ *
++ * Design constraints (issue #69):
++ *  - NO second event bus / NO duplicate webhook endpoint: this module is a
++ *    gateway listener on the existing normalizer→gateway pipeline.
++ *  - The webhook acknowledgement NEVER waits on downstream work: filtering +
++ *    dedupe + outbox append are synchronous and O(1); the GitHub
++ *    workflow-dispatch call runs asynchronously afterwards.
++ *  - Durability: a JSONL outbox persists every accepted event before it is
++ *    dispatched; pending entries are replayed on boot with bounded exponential
++ *    backoff and a dead-letter state after maxAttempts.
++ *  - Idempotency: redeliveries are collapsed by `X-GitHub-Delivery` id AND by
++ *    an event composite key (repo:type:number:action) within a TTL window.
++ *  - Least privilege: uses the server-side GITHUB_TOKEN only, never exposed
++ *    to webhook callers; nothing from the payload is logged (no secrets).
++ *  - Fail-closed: disabled by default (BRIDGE_INTAKE_ENABLED=true to arm),
++ *    unknown events/repos/actions are dropped with a reason, and the cron
++ *    polling workflow stays in place as the reconciliation fallback.
++ */
++
++import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
++import { dirname, resolve } from "node:path";
++import type { NormalizedEvent } from "./normalizer.js";
++import { globalEventGateway } from "./gateway.js";
++import { env } from "../lib/env.js";
++
++export interface BridgeIntakeConfig {
++  /** Master switch — fail-closed. Armed only via BRIDGE_INTAKE_ENABLED=true. */
++  enabled: boolean;
++  /** Repo owning the polling workflow (default: Supremeai-bd/supremeai-open). */
++  repo: string;
++  /** Workflow filename for the dispatch API (default: continuous-agent-loop.yml). */
++  workflow: string;
++  /** Git ref to dispatch against (default: main). */
++  ref: string;
++  /** Minimum interval between two actual dispatches (rate limit). */
++  minIntervalMs: number;
++  /** Outbox retry ceiling before dead-letter. */
++  maxAttempts: number;
++  /** Durable JSONL outbox path. */
++  outboxPath: string;
++  /** Server-side GitHub token (workflow scope). Never logged. */
++  token?: string;
++}
++
++export interface DispatchRequest {
++  repo: string;
++  workflow: string;
++  ref: string;
++  inputs: Record<string, unknown>;
++}
++
++export type DispatchFn = (req: DispatchRequest, token?: string) => Promise<{ ok: boolean; status: number }>;
++
++export interface OutboxEntry {
++  id: string;
++  eventKey: string;
++  deliveryId?: string;
++  createdAt: string;
++  status: "pending" | "done" | "dead";
++  attempts: number;
++  nextAttemptAt: string;
++  dispatch: DispatchRequest;
++  lastError?: string;
++  dispatchedAt?: string;
++  /** Measured webhook-to-dispatch latency (enqueue → 2xx from GitHub API). */
++  latencyMs?: number;
++}
++
++export interface IntakeDecision {
++  accept: boolean;
++  reason: string;
++  eventKey?: string;
++}
++
++/** Issue actions that represent new/re-queued work worth waking the loop for. */
++const WAKE_ISSUE_ACTIONS = new Set(["opened", "reopened", "labeled"]);
++const WAKE_PR_ACTIONS = new Set(["opened", "reopened", "synchronize"]);
++const WAKE_COMMENT_ACTIONS = new Set(["created"]);
++
++const DEDUPE_TTL_MS = 30 * 60 * 1000; // 30 min
++const DEDUPE_MAX = 1024;
++const DONE_KEEP = 100; // audit tail of completed entries kept in the outbox file
++const BACKOFF_BASE_MS = 5_000;
++const BACKOFF_CAP_MS = 15 * 60 * 1000;
++
++export interface BridgeIntakeDeps {
++  now?: () => number;
++  dispatch?: DispatchFn;
++  schedule?: (fn: () => void, ms: number) => unknown;
++  log?: (line: string) => void;
++}
++
++export class BridgeIntakeService {
++  private readonly config: BridgeIntakeConfig;
++  private readonly deps: Required<Pick<BridgeIntakeDeps, "now">> & BridgeIntakeDeps;
++  private readonly outbox: OutboxEntry[] = [];
++  private readonly seenDeliveries = new Map<string, number>();
++  private readonly seenEventKeys = new Map<string, number>();
++  private lastDispatchAt = 0;
++  private processing = false;
++  private replayed = false;
++
++  constructor(config: BridgeIntakeConfig, deps: BridgeIntakeDeps = {}) {
++    this.config = config;
++    this.deps = { now: deps.now ?? (() => Date.now()), dispatch: deps.dispatch, schedule: deps.schedule, log: deps.log };
++    this.loadOutbox();
++  }
++
++  // ── Event relevance policy ────────────────────────────────────────────────
++
++  /** Pure decision: is this normalized event worth a wake-up dispatch? */
++  public decide(event: NormalizedEvent): IntakeDecision {
++    if (event.source !== "github") return { accept: false, reason: `non-github source: ${event.source}` };
++    const payload: any = event.payload ?? {};
++    const repoFullName = String(payload?.repository?.full_name ?? "");
++    if (!repoFullName) return { accept: false, reason: "missing repository identity" };
++    if (this.config.repo && repoFullName.toLowerCase() !== this.config.repo.toLowerCase()) {
++      return { accept: false, reason: `repo mismatch: ${repoFullName}` };
++    }
++    const sender = String(payload?.sender?.login ?? "");
++    if (sender.endsWith("[bot]")) return { accept: false, reason: `bot sender: ${sender}` };
++
++    const type = event.type;
++    const action = String(payload?.action ?? "");
++    if (type === "issues" && WAKE_ISSUE_ACTIONS.has(action)) {
++      return { accept: true, reason: `issue.${action}`, eventKey: `issue:${repoFullName}:${payload?.issue?.number ?? "?"}:${action}` };
++    }
++    if (type === "pull_request" && WAKE_PR_ACTIONS.has(action)) {
++      return { accept: true, reason: `pr.${action}`, eventKey: `pr:${repoFullName}:${payload?.pull_request?.number ?? "?"}:${action}` };
++    }
++    if (type === "issue_comment" && WAKE_COMMENT_ACTIONS.has(action)) {
++      return { accept: true, reason: `comment.${action}`, eventKey: `comment:${repoFullName}:${payload?.issue?.number ?? "?"}:${action}` };
++    }
++    return { accept: false, reason: `unsupported event: ${type}.${action}` };
++  }
++
++  // ── Gateway listener ──────────────────────────────────────────────────────
++
++  /**
++   * Synchronous, fast listener body (gateway fire-and-forget). Acknowledgement
++   * latency is bounded by one outbox append — never by the GitHub API call.
++   */
++  public handle(event: NormalizedEvent): void {
++    if (!this.config.enabled) return; // fail-closed: silently inert unless armed
++    const decision = this.decide(event);
++    if (!decision.accept) {
++      this.log(`[BRIDGE_INTAKE] skip (${decision.reason})`);
++      return;
++    }
++    const deliveryId = event.deliveryId;
++    if (deliveryId && this.fresh(this.seenDeliveries, deliveryId)) {
++      this.log(`[BRIDGE_INTAKE] dedupe: delivery ${deliveryId} already processed`);
++      return;
++    }
++    const eventKey = decision.eventKey ?? "unknown";
++    if (this.fresh(this.seenEventKeys, eventKey)) {
++      this.log(`[BRIDGE_INTAKE] dedupe: event ${eventKey} already queued in TTL window`);
++      return;
++    }
++    const entry: OutboxEntry = {
++      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
++      eventKey,
++      deliveryId,
++      createdAt: new Date(this.deps.now!()).toISOString(),
++      status: "pending",
++      attempts: 0,
++      nextAttemptAt: new Date(this.deps.now!()).toISOString(),
++      dispatch: { repo: this.config.repo, workflow: this.config.workflow, ref: this.config.ref, inputs: { auto_pr: false } },
++    };
++    this.outbox.push(entry);
++    this.persist();
++    this.log(`[BRIDGE_INTAKE] accepted ${eventKey} (delivery=${deliveryId ?? "n/a"}) → outbox ${entry.id}`);
++    this.scheduleProcess();
++  }
++
++  // ── Dispatch pipeline ─────────────────────────────────────────────────────
++
++  private async processQueue(): Promise<void> {
++    if (this.processing) return;
++    this.processing = true;
++    try {
++      for (;;) {
++        const now = this.deps.now!();
++        const due = this.outbox.find(
++          (e) => e.status === "pending" && new Date(e.nextAttemptAt).getTime() <= now,
++        );
++        if (!due) break;
++
++        const sinceLast = now - this.lastDispatchAt;
++        if (this.lastDispatchAt > 0 && sinceLast < this.config.minIntervalMs) {
++          const waitMs = this.config.minIntervalMs - sinceLast;
++          due.nextAttemptAt = new Date(this.lastDispatchAt + this.config.minIntervalMs).toISOString();
++          this.log(`[BRIDGE_INTAKE] rate-limited ${due.eventKey} → queued until ${due.nextAttemptAt}`);
++          this.persist();
++          this.scheduleProcess(waitMs); // wake exactly when the interval elapses
++          break;
++        }
++
++        this.lastDispatchAt = now;
++        await this.attemptDispatch(due);
++      }
++    } finally {
++      this.processing = false;
++      // Anything scheduled while we ran (retries landing now) gets a next tick.
++      const stillDue = this.outbox.some(
++        (e) => e.status === "pending" && new Date(e.nextAttemptAt).getTime() <= this.deps.now!(),
++      );
++      if (stillDue) this.scheduleProcess();
++    }
++  }
++
++  /**
++   * Public reconciliation tick (#69): processes whatever is due right now.
++   * Lets an external cron/job drain the outbox without waiting for the next
++   * webhook, and gives the test suite deterministic clock control.
++   */
++  public async tick(): Promise<void> {
++    await this.processQueue();
++  }
++
++  private async attemptDispatch(entry: OutboxEntry): Promise<void> {
++    const started = this.deps.now!();
++    const fn = this.deps.dispatch ?? defaultDispatch;
++    try {
++      const res = await fn(entry.dispatch, this.config.token);
++      if (!res.ok) throw new Error(`GitHub dispatch API → HTTP ${res.status}`);
++      entry.status = "done";
++      entry.dispatchedAt = new Date(this.deps.now!()).toISOString();
++      entry.latencyMs = this.deps.now!() - started;
++      this.log(`[BRIDGE_INTAKE] dispatched ${entry.eventKey} → ${entry.dispatch.repo}/${entry.dispatch.workflow}@${entry.dispatch.ref} (${entry.latencyMs}ms)`);
++    } catch (err: any) {
++      entry.attempts += 1;
++      entry.lastError = String(err?.message ?? err);
++      if (entry.attempts >= this.config.maxAttempts) {
++        entry.status = "dead";
++        this.log(`[BRIDGE_INTAKE] DEAD-LETTER ${entry.eventKey} after ${entry.attempts} attempts: ${entry.lastError}`);
++      } else {
++        const backoff = Math.min(BACKOFF_BASE_MS * 2 ** (entry.attempts - 1), BACKOFF_CAP_MS);
++        entry.nextAttemptAt = new Date(this.deps.now!() + backoff).toISOString();
++        this.log(`[BRIDGE_INTAKE] dispatch failed for ${entry.eventKey} (attempt ${entry.attempts}/${this.config.maxAttempts}) → retry at ${entry.nextAttemptAt}: ${entry.lastError}`);
++        this.scheduleProcess(backoff); // self-wake: retries happen even with no new events
++      }
++    } finally {
++      this.persist();
++    }
++  }
++
++  private scheduleProcess(delayMs = 0): void {
++    const schedule = this.deps.schedule ?? ((fn, ms) => setTimeout(fn, ms));
++    const timer = schedule(() => { void this.processQueue(); }, delayMs);
++    if (timer && typeof (timer as any).unref === "function") (timer as any).unref();
++  }
++
++  // ── Durability (JSONL outbox) ─────────────────────────────────────────────
++
++  /** Boot-time replay: pending entries survive process restarts. */
++  public replayPending(): number {
++    if (this.replayed) return 0;
++    this.replayed = true;
++    const pending = this.outbox.filter((e) => e.status === "pending");
++    if (pending.length > 0) {
++      this.log(`[BRIDGE_INTAKE] replaying ${pending.length} pending outbox entr${pending.length === 1 ? "y" : "ies"} after restart`);
++      this.scheduleProcess();
++    }
++    return pending.length;
++  }
++
++  private loadOutbox(): void {
++    try {
++      const path = resolve(this.config.outboxPath);
++      if (!existsSync(path)) return;
++      const lines = readFileSync(path, "utf8").split("\n").filter((l) => l.trim().length > 0);
++      for (const line of lines) {
++        try { this.outbox.push(JSON.parse(line) as OutboxEntry); } catch { /* skip torn tail line */ }
++      }
++    } catch (err: any) {
++      this.log(`[BRIDGE_INTAKE] outbox load failed (starting clean): ${err?.message}`);
++    }
++  }
++
++  /** Atomic snapshot write: tmp file + rename (crash-safe, no torn snapshots). */
++  private persist(): void {
++    try {
++      const path = resolve(this.config.outboxPath);
++      mkdirSync(dirname(path), { recursive: true });
++      const done = this.outbox.filter((e) => e.status !== "pending").slice(-DONE_KEEP);
++      const pending = this.outbox.filter((e) => e.status === "pending");
++      const snapshot = [...pending, ...done].map((e) => JSON.stringify(e)).join("\n") + "\n";
++      const tmp = `${path}.tmp`;
++      writeFileSync(tmp, snapshot, "utf8");
++      renameSync(tmp, path);
++    } catch (err: any) {
++      this.log(`[BRIDGE_INTAKE] outbox persist failed: ${err?.message}`);
++    }
++  }
++
++  // ── Observability ─────────────────────────────────────────────────────────
++
++  public getStatus(): Record<string, unknown> {
++    return {
++      enabled: this.config.enabled,
++      repo: this.config.repo,
++      workflow: this.config.workflow,
++      ref: this.config.ref,
++      pending: this.outbox.filter((e) => e.status === "pending").length,
++      done: this.outbox.filter((e) => e.status === "done").length,
++      dead: this.outbox.filter((e) => e.status === "dead").length,
++      lastDispatchAt: this.lastDispatchAt > 0 ? new Date(this.lastDispatchAt).toISOString() : null,
++    };
++  }
++
++  private fresh(map: Map<string, number>, key: string): boolean {
++    const now = this.deps.now!();
++    for (const [k, ts] of map) if (now - ts > DEDUPE_TTL_MS) map.delete(k);
++    while (map.size >= DEDUPE_MAX) map.delete(map.keys().next().value as string);
++    if (map.has(key)) return true;
++    map.set(key, now);
++    return false;
++  }
++
++  private log(line: string): void {
++    const fn = this.deps.log ?? ((l: string) => console.error(l));
++    fn(line);
++  }
++}
++
++/** Default dispatch: GitHub workflow_dispatch API, server-side token only. */
++export const defaultDispatch: DispatchFn = async (req, token) => {
++  if (!token) return { ok: false, status: 0 }; // fail-closed: no creds → caller retries → dead-letters visibly
++  const res = await fetch(`https://api.github.com/repos/${req.repo}/actions/workflows/${req.workflow}/dispatches`, {
++    method: "POST",
++    headers: {
++      Authorization: `Bearer ${token}`,
++      Accept: "application/vnd.github+json",
++      "X-GitHub-Api-Version": "2022-11-28",
++      "User-Agent": "SupremeAI-MCP-Control-Tower",
++    },
++    body: JSON.stringify({ ref: req.ref, inputs: req.inputs }),
++  });
++  return { ok: res.status === 204, status: res.status };
++};
++
++// ── Boot wiring (idempotent) ────────────────────────────────────────────────
++
++let registered = false;
++
++/**
++ * Registers the intake service as an EventGateway listener (single call per
++ * process). Reads its configuration from env; logs one actionable line when
++ * disabled so operators can see why events are not waking the loop.
++ */
++export function registerBridgeIntake(): void {
++  if (registered) return;
++  registered = true;
++  const cfg = env.bridgeIntake;
++  const service = new BridgeIntakeService({
++    enabled: cfg.enabled,
++    repo: cfg.repo,
++    workflow: cfg.workflow,
++    ref: cfg.ref,
++    minIntervalMs: cfg.minIntervalMs,
++    maxAttempts: cfg.maxAttempts,
++    outboxPath: cfg.outboxPath,
++    token: cfg.token,
++  });
++  if (!cfg.enabled) {
++    console.error("[BRIDGE_INTAKE] disabled (set BRIDGE_INTAKE_ENABLED=true + configure the repo webhook to arm event-driven intake)");
++    return;
++  }
++  globalEventGateway.subscribe((event) => service.handle(event));
++  service.replayPending();
++  console.error(`[BRIDGE_INTAKE] armed → ${cfg.repo}/${cfg.workflow}@${cfg.ref} (min interval ${cfg.minIntervalMs}ms)`);
++}
+diff --git a/infrastructure/mcp-control-plane/src/events/normalizer.ts b/infrastructure/mcp-control-plane/src/events/normalizer.ts
+index cab6443e..57d35599 100644
+--- a/infrastructure/mcp-control-plane/src/events/normalizer.ts
++++ b/infrastructure/mcp-control-plane/src/events/normalizer.ts
+@@ -5,13 +5,16 @@ export interface NormalizedEvent {
+   message: string;
+   payload: any;
+   timestamp: string;
++  /** GitHub `X-GitHub-Delivery` id (#69) — used for webhook idempotency. */
++  deliveryId?: string;
+ }
+ 
+ export class EventNormalizer {
+   /**
+    * Normalizes a GitHub webhook payload.
++   * `deliveryId` is the `X-GitHub-Delivery` header value (#69 idempotency).
+    */
+-  public normalizeGitHubEvent(eventName: string, payload: any): NormalizedEvent {
++  public normalizeGitHubEvent(eventName: string, payload: any, deliveryId?: string): NormalizedEvent {
+     let severity: "INFO" | "WARNING" | "CRITICAL" = "INFO";
+     let message = `GitHub Event: ${eventName}`;
+ 
+@@ -30,7 +33,8 @@ export class EventNormalizer {
+       severity,
+       message,
+       payload,
+-      timestamp: new Date().toISOString()
++      timestamp: new Date().toISOString(),
++      deliveryId,
+     };
+   }
+ 
+diff --git a/infrastructure/mcp-control-plane/src/index.ts b/infrastructure/mcp-control-plane/src/index.ts
+index f8a08367..084363bd 100644
+--- a/infrastructure/mcp-control-plane/src/index.ts
++++ b/infrastructure/mcp-control-plane/src/index.ts
+@@ -14,7 +14,7 @@ const __currentDir = path.dirname(__currentFile);
+ dotenv.config({ path: path.resolve(__currentDir, "../../../.env") });
+ dotenv.config({ path: "F:/supremeai/.env" });
+ 
+-import { timingSafeEqual, createHmac, randomUUID } from "node:crypto";
++import { timingSafeEqual, randomUUID } from "node:crypto";
+ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+ import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+@@ -36,6 +36,8 @@ import {
+ } from "./policy/slot-verification.js";
+ import { attachDiscoveryFilter, isValidToolProfile } from "./policy/tool-visibility.js";
+ import { verifyApprovalLink } from "./policy/approvals/signing.js";
++import { hasWebhookSignature } from "./lib/webhook_signature.js";
++import { registerBridgeIntake } from "./events/bridge_intake.js";
+ import { pullSecretsIntoProcessEnv } from "./adapters/infisical/index.js";
+ import { MemorySubAdapter } from "./adapters/memory/index.js";
+ import {
+@@ -617,12 +619,8 @@ function resolveCaller(req: IncomingMessage): CallerContext {
+   return { role, client, tenantId, isGlobalAdmin };
+ }
+ 
+-function hasWebhookSignature(req: IncomingMessage, body: string, secret: string, header: string): boolean {
+-  const signature = req.headers[header]?.toString() ?? "";
+-  if (!secret || !signature.startsWith("sha256=")) return false;
+-  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+-  return safeEqual(signature, expected);
+-}
++// #69: signature verification extracted to src/lib/webhook_signature.ts for
++// unit testing — behavior unchanged (fail-closed, raw-body HMAC, constant-time).
+ 
+ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise<void> {
+   // Dynamically import transports
+@@ -1746,7 +1744,7 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+           const isGithub = url === "/webhooks/github";
+           const secret = isGithub ? env.githubWebhookSecret : env.cloudflareWebhookSecret;
+           const signatureHeader = isGithub ? "x-hub-signature-256" : "x-cloudflare-signature";
+-          if (env.nodeEnv === "production" && !hasWebhookSignature(req, body, secret, signatureHeader)) {
++          if (env.nodeEnv === "production" && !hasWebhookSignature(req.headers[signatureHeader]?.toString(), body, secret ?? "")) {
+             res.writeHead(401, { "Content-Type": "application/json" });
+             res.end(JSON.stringify({ error: "Invalid webhook signature" }));
+             return;
+@@ -1757,7 +1755,9 @@ async function startHttpServer(serverFactory: () => Promise<McpServer>): Promise
+ 
+           if (url === "/webhooks/github") {
+             const eventName = req.headers["x-github-event"] as string || "unknown";
+-            const normalized = globalEventNormalizer.normalizeGitHubEvent(eventName, payload);
++            // #69: delivery id rides the normalized event for idempotency.
++            const deliveryId = (req.headers["x-github-delivery"] as string) || undefined;
++            const normalized = globalEventNormalizer.normalizeGitHubEvent(eventName, payload, deliveryId);
+             await globalEventGateway.dispatch(normalized);
+           } else if (url === "/webhooks/cloudflare") {
+             const normalized = globalEventNormalizer.normalizeCloudflareEvent(payload);
+@@ -1892,6 +1892,12 @@ async function main(): Promise<void> {
+     console.error(`[MCP] GitHub adapter resolved repo → ${env.github.repo} (override via GITHUB_REPO)`);
+     void refreshFromGitHub();
+ 
++    // #69: event-driven bridge intake — webhook → workflow_dispatch wake-up.
++    // Idempotent, fail-closed (no-op unless BRIDGE_INTAKE_ENABLED=true) and
++    // replays the durable outbox on boot. Must be armed BEFORE the server
++    // accepts webhook traffic.
++    registerBridgeIntake();
++
+     const server = await createMcpServer(memoryAdapter);
+ 
+     if (mode === "stdio") {
+diff --git a/infrastructure/mcp-control-plane/src/lib/env.ts b/infrastructure/mcp-control-plane/src/lib/env.ts
+index 427fdad2..65d6ad0b 100644
+--- a/infrastructure/mcp-control-plane/src/lib/env.ts
++++ b/infrastructure/mcp-control-plane/src/lib/env.ts
+@@ -115,6 +115,20 @@ export const env = {
+     get repo(): string { return optional("GITHUB_REPO", "Supremeai-bd/supremeai"); },
+   },
+ 
++  // ── Event-driven bridge intake (#69)
++  // Arms the webhook → workflow-dispatch wake-up path. Fail-closed: disabled
++  // unless explicitly enabled. See docs/BRIDGE_INTAKE.md for activation steps.
++  bridgeIntake: {
++    get enabled(): boolean { return process.env.BRIDGE_INTAKE_ENABLED === "true"; },
++    get repo(): string { return optional("BRIDGE_INTAKE_REPO", "Supremeai-bd/supremeai-open"); },
++    get workflow(): string { return optional("BRIDGE_INTAKE_WORKFLOW", "continuous-agent-loop.yml"); },
++    get ref(): string { return optional("BRIDGE_INTAKE_REF", "main"); },
++    get minIntervalMs(): number { return parseInt(optional("BRIDGE_INTAKE_MIN_INTERVAL_MS", "60000"), 10) || 60000; },
++    get maxAttempts(): number { return parseInt(optional("BRIDGE_INTAKE_MAX_ATTEMPTS", "5"), 10) || 5; },
++    get outboxPath(): string { return optional("BRIDGE_INTAKE_OUTBOX_PATH", "var/bridge-intake-outbox.jsonl"); },
++    get token(): string { return optional("GITHUB_TOKEN", optional("GITHUB_API_TOKEN")); },
++  },
++
+   // ── Cloudflare (5-account federation pool)
+   cloudflare: {
+     get apiToken(): string | undefined { return process.env.CLOUDFLARE_API_TOKEN; },
+diff --git a/infrastructure/mcp-control-plane/src/lib/webhook_signature.ts b/infrastructure/mcp-control-plane/src/lib/webhook_signature.ts
+new file mode 100644
+index 00000000..b8c999c5
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/src/lib/webhook_signature.ts
+@@ -0,0 +1,29 @@
++import { createHmac, timingSafeEqual } from "node:crypto";
++
++/**
++ * Webhook signature verification (#69).
++ *
++ * Extracted from the /webhooks route handler in src/index.ts so the raw-body
++ * HMAC check is unit-testable. Behavior is identical to the original inline
++ * helper:
++ *   - missing secret          → fail-closed (false)
++ *   - missing/malformed header (must start with "sha256=") → false
++ *   - constant-time comparison of the hex sha256 HMAC over the RAW body
++ *     (the exact bytes received — never a re-serialized JSON copy)
++ */
++export function hasWebhookSignature(
++  headerValue: string | undefined,
++  body: string,
++  secret: string,
++): boolean {
++  const signature = headerValue ?? "";
++  if (!secret || !signature.startsWith("sha256=")) return false;
++  const expected = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
++  return timingSafeStringsEqual(signature, expected);
++}
++
++function timingSafeStringsEqual(left: string, right: string): boolean {
++  const a = Buffer.from(left);
++  const b = Buffer.from(right);
++  return a.length === b.length && timingSafeEqual(a, b);
++}
+diff --git a/infrastructure/mcp-control-plane/test_bridge_intake.ts b/infrastructure/mcp-control-plane/test_bridge_intake.ts
+new file mode 100644
+index 00000000..6210c348
+--- /dev/null
++++ b/infrastructure/mcp-control-plane/test_bridge_intake.ts
+@@ -0,0 +1,216 @@
++/**
++ * #69 — Bridge intake test suite (signature, filtering, idempotency,
++ * durable outbox, retry/backoff, rate limiting, replay, latency).
++ * House style: tsx script, hard asserts, exit code = verdict.
++ */
++import { mkdtempSync, readFileSync, existsSync } from "node:fs";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { createHmac } from "node:crypto";
++
++import { hasWebhookSignature } from "./src/lib/webhook_signature.js";
++import { BridgeIntakeService, type BridgeIntakeConfig, type DispatchFn, type OutboxEntry } from "./src/events/bridge_intake.js";
++import { globalEventNormalizer } from "./src/events/normalizer.js";
++
++let failures = 0;
++function check(name: string, cond: boolean, detail?: string): void {
++  if (cond) {
++    console.log(`  ✓ ${name}`);
++  } else {
++    failures += 1;
++    console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`);
++  }
++}
++function section(title: string): void {
++  console.log(`\n=== ${title} ===`);
++}
++
++function baseConfig(overrides: Partial<BridgeIntakeConfig> = {}): BridgeIntakeConfig {
++  return {
++    enabled: true,
++    repo: "Supremeai-bd/supremeai-open",
++    workflow: "continuous-agent-loop.yml",
++    ref: "main",
++    minIntervalMs: 0,
++    maxAttempts: 3,
++    outboxPath: join(mkdtempSync(join(tmpdir(), "intake-")), "outbox.jsonl"),
++    token: "test-token",
++    ...overrides,
++  };
++}
++
++function issueEvent(action: string, overrides: Record<string, any> = {}): any {
++  return {
++    source: "github",
++    type: "issues",
++    severity: "WARNING",
++    message: "test",
++    timestamp: new Date().toISOString(),
++    payload: {
++      action,
++      repository: { full_name: "Supremeai-bd/supremeai-open" },
++      sender: { login: "somehuman" },
++      issue: { number: 77, title: "bridge work order" },
++      ...overrides,
++    },
++  } as any;
++}
++
++async function drain(): Promise<void> {
++  await new Promise((r) => setTimeout(r, 20));
++}
++
++// ─── 1. Signature verification (lib) ─────────────────────────────────────────
++section("1. Webhook signature verification (fail-closed, raw-body HMAC)");
++const SECRET = "whsec_test_123";
++const RAW_BODY = JSON.stringify({ action: "opened", number: 1 });
++const VALID = `sha256=${createHmac("sha256", SECRET).update(RAW_BODY).digest("hex")}`;
++
++check("valid signature accepted", hasWebhookSignature(VALID, RAW_BODY, SECRET));
++check("tampered body rejected (raw-byte sensitivity)", !hasWebhookSignature(VALID, RAW_BODY + " ", SECRET));
++check("tampered signature rejected", !hasWebhookSignature(VALID.slice(0, -2) + "ff", RAW_BODY, SECRET));
++check("missing secret fail-closed", !hasWebhookSignature(VALID, RAW_BODY, ""));
++check("missing header fail-closed", !hasWebhookSignature(undefined, RAW_BODY, SECRET));
++check("malformed prefix rejected", !hasWebhookSignature(`md5=${VALID.slice(7)}`, RAW_BODY, SECRET));
++
++// ─── 2. Relevance policy ─────────────────────────────────────────────────────
++section("2. Event relevance policy (accept relevant, drop the rest)");
++const svc2 = new BridgeIntakeService(baseConfig());
++const d = (e: any) => svc2.decide(e);
++check("issues.opened accepted", d(issueEvent("opened")).accept);
++check("issues.labeled accepted", d(issueEvent("labeled")).accept);
++check("issues.closed dropped", !d(issueEvent("closed")).accept);
++check("pr.synchronize accepted", d({ ...issueEvent("opened"), type: "pull_request", payload: { action: "synchronize", repository: { full_name: "Supremeai-bd/supremeai-open" }, sender: { login: "dev" }, pull_request: { number: 9 } } }).accept);
++check("pr.closed dropped", !d({ ...issueEvent("opened"), type: "pull_request", payload: { action: "closed", repository: { full_name: "Supremeai-bd/supremeai-open" }, sender: { login: "dev" } } }).accept);
++check("comment.created accepted", d({ ...issueEvent("opened"), type: "issue_comment", payload: { action: "created", repository: { full_name: "Supremeai-bd/supremeai-open" }, sender: { login: "dev" }, issue: { number: 5 } } }).accept);
++check("push dropped", !d({ ...issueEvent("opened"), type: "push" }).accept);
++check("wrong repo dropped", !d(issueEvent("opened", { repository: { full_name: "evil/repo" } })).accept);
++check("missing repo dropped", !d(issueEvent("opened", { repository: undefined })).accept);
++check("bot sender dropped", !d(issueEvent("opened", { sender: { login: "dependabot[bot]" } })).accept);
++check("non-github source dropped", !d({ ...issueEvent("opened"), source: "cloudflare" }).accept);
++
++const disabledSvc = new BridgeIntakeService(baseConfig({ enabled: false }), { dispatch: async () => ({ ok: true, status: 204 }), log: () => {} });
++disabledSvc.handle(issueEvent("opened") as any);
++check("disabled service is inert (fail-closed)", disabledSvc.getStatus().pending === 0 && disabledSvc.getStatus().done === 0);
++
++// ─── 3. Idempotency ──────────────────────────────────────────────────────────
++section("3. Idempotency (delivery id + event key, TTL window)");
++let clock = 1_000_000;
++const dispatched3: any[] = [];
++const dispatchOk3: DispatchFn = async (req) => { dispatched3.push(req); return { ok: true, status: 204 }; };
++const svc3 = new BridgeIntakeService(baseConfig(), { now: () => clock, dispatch: dispatchOk3, log: () => {} });
++
++svc3.handle({ ...issueEvent("opened"), deliveryId: "delivery-A" } as any);
++svc3.handle({ ...issueEvent("opened"), deliveryId: "delivery-A" } as any); // same delivery redelivered
++await drain();
++check("same delivery id → exactly one dispatch", dispatched3.length === 1, `got ${dispatched3.length}`);
++
++clock += 5 * 60 * 1000; // still inside 30-min TTL
++svc3.handle({ ...issueEvent("opened"), deliveryId: "delivery-B" } as any); // different delivery, same event key
++await drain();
++check("same event key inside TTL → deduped", dispatched3.length === 1, `got ${dispatched3.length}`);
++
++clock += 31 * 60 * 1000; // TTL expired
++svc3.handle({ ...issueEvent("opened"), deliveryId: "delivery-C" } as any);
++await drain();
++check("same event key after TTL → processed again", dispatched3.length === 2, `got ${dispatched3.length}`);
++
++// ─── 4. Fast ack + async dispatch ────────────────────────────────────────────
++section("4. Acknowledgement never waits on dispatch (sync accept, async work)");
++let releaseDispatch: () => void = () => {};
++let slowDispatchCalls = 0;
++const slowDispatch: DispatchFn = async () => {
++  slowDispatchCalls += 1;
++  await new Promise<void>((r) => { releaseDispatch = r; });
++  return { ok: true, status: 204 };
++};
++const svc4 = new BridgeIntakeService(baseConfig(), { dispatch: slowDispatch, log: () => {} });
++svc4.handle(issueEvent("opened") as any);
++await drain();
++check("handle() returned before dispatch resolved (outbox has pending entry)", slowDispatchCalls === 1 && svc4.getStatus().pending === 1);
++releaseDispatch();
++await drain();
++check("dispatch completes after release", svc4.getStatus().done === 1);
++
++// ─── 5. Retry / backoff / dead-letter ────────────────────────────────────────
++section("5. Dispatch failure → bounded retry → dead-letter (observable)");
++const dispatchFail: DispatchFn = async () => ({ ok: false, status: 500 });
++clock = 5_000_000;
++const logLines: string[] = [];
++const svc5 = new BridgeIntakeService(baseConfig({ maxAttempts: 3 }), { now: () => clock, dispatch: dispatchFail, log: (l) => logLines.push(l) });
++svc5.handle(issueEvent("opened") as any);
++await drain();
++const s5 = svc5.getStatus();
++check("first failure → still pending (retry scheduled)", s5.pending === 1 && s5.dead === 0);
++clock += 20 * 60 * 1000; await svc5.tick(); // attempt 2
++clock += 20 * 60 * 1000; await svc5.tick(); // attempt 3 → ceiling
++check("dead-letter after maxAttempts", svc5.getStatus().dead === 1);
++check("dead-letter is logged (observable failure)", logLines.some((l) => l.includes("DEAD-LETTER")));
++
++// ─── 6. Rate limiting ────────────────────────────────────────────────────────
++section("6. Rate limit between dispatches (extras queued, not dropped)");
++clock = 9_000_000;
++const dispatched6: any[] = [];
++const dispatchOk6: DispatchFn = async (req) => { dispatched6.push(req); return { ok: true, status: 204 }; };
++const svc6 = new BridgeIntakeService(baseConfig({ minIntervalMs: 60_000 }), { now: () => clock, dispatch: dispatchOk6, log: () => {} });
++svc6.handle(issueEvent("opened", { issue: { number: 1 } }) as any);
++await drain();
++svc6.handle(issueEvent("opened", { issue: { number: 2 } }) as any);
++await drain();
++check("first event dispatched immediately", dispatched6.length === 1);
++check("second event rate-limited into pending queue", svc6.getStatus().pending === 1 && dispatched6.length === 1);
++clock += 61_000;
++await svc6.tick();
++check("queued event dispatched after interval elapses", dispatched6.length === 2, `got ${dispatched6.length}`);
++
++// ─── 7. Outbox durability + boot replay ─────────────────────────────────────
++section("7. Durable outbox survives restart (replay pending)");
++const outboxPath = join(mkdtempSync(join(tmpdir(), "intake-")), "outbox.jsonl");
++clock = 12_000_000;
++let failFirst = true;
++const dispatchFlaky: DispatchFn = async () => {
++  if (failFirst) { failFirst = false; throw new Error("transient network"); }
++  return { ok: true, status: 204 };
++};
++const svc7a = new BridgeIntakeService(baseConfig({ outboxPath }), { now: () => clock, dispatch: dispatchFlaky, log: () => {} });
++svc7a.handle(issueEvent("opened", { issue: { number: 42 } }) as any);
++await drain();
++check("transient failure → entry pending in outbox", svc7a.getStatus().pending === 1);
++check("outbox file exists on disk", existsSync(outboxPath));
++const rawDisk = readFileSync(outboxPath, "utf8");
++check("outbox file contains no secrets", !rawDisk.includes("test-token"));
++
++// New process, same outbox → replay delivers the pending entry (clock past backoff).
++const svc7b = new BridgeIntakeService(baseConfig({ outboxPath }), { now: () => clock + 10_000, dispatch: async () => ({ ok: true, status: 204 }), log: () => {} });
++const replayed = svc7b.replayPending();
++await drain();
++check("replayPending() picks up the persisted entry", replayed === 1);
++check("replayed entry reaches done", svc7b.getStatus().done === 1 && svc7b.getStatus().pending === 0);
++
++// ─── 8. Latency measurement ─────────────────────────────────────────────────
++section("8. Webhook-to-dispatch latency recorded");
++clock = 15_000_000;
++const svc8 = new BridgeIntakeService(baseConfig(), {
++  now: () => clock,
++  dispatch: async () => { clock += 120; return { ok: true, status: 204 }; },
++  log: () => {},
++});
++svc8.handle(issueEvent("opened") as any);
++await drain();
++const lastLine = readFileSync((svc8 as any).config.outboxPath, "utf8").trim().split("\n").pop()!;
++const doneEntry = JSON.parse(lastLine) as OutboxEntry;
++check("done entry records latencyMs", typeof doneEntry.latencyMs === "number" && doneEntry.latencyMs >= 0, `latencyMs=${doneEntry.latencyMs}`);
++
++// ─── 9. Normalizer delivery passthrough ──────────────────────────────────────
++section("9. Normalizer passes X-GitHub-Delivery through");
++const norm = globalEventNormalizer.normalizeGitHubEvent("issues", { action: "opened", repository: { full_name: "x/y" } }, "delivery-XYZ");
++check("deliveryId lands on normalized event", norm.deliveryId === "delivery-XYZ");
++
++// ─── Verdict ─────────────────────────────────────────────────────────────────
++console.log("\n=============================================");
++if (failures === 0) {
++  console.log("ALL BRIDGE INTAKE TESTS PASSED (#69)");
++} else {
++  console.error(`${failures} TEST(S) FAILED (#69)`);
++}
++process.exit(failures === 0 ? 0 : 1);

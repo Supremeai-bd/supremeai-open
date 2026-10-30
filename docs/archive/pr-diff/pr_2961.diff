@@ -1,0 +1,45 @@
+diff --git a/docs/reports/SENTRY_1852_PROVIDER_REPROBE_DAY2_2026-10-30.md b/docs/reports/SENTRY_1852_PROVIDER_REPROBE_DAY2_2026-10-30.md
+new file mode 100644
+index 00000000..4559e3e7
+--- /dev/null
++++ b/docs/reports/SENTRY_1852_PROVIDER_REPROBE_DAY2_2026-10-30.md
+@@ -0,0 +1,39 @@
++# #1852 Sentry Series — Provider Re-Probe Day +2 (2026-10-30T00:59Z)
++
++- **Refs:** #1852 (platform-guardian provider sentry pass 2026-10-28) · P1 #1838 cross-check
++- **Provenance:** zero-credential HTTP probes, browser UA, 20s timeout, single wall-clock latency sample; probe script preserved at agent-side `scripts/probe_1852_sentry.py`; classification rules identical to the filing (any HTTP response = ALIVE, auth-walled 401/403/422 = healthy; 404 = EXCLUDED shape-not-death; DNS/timeout = DOWN). Claim GRANT_NEW `2026-10-30T00:59:07Z`. Report-only addendum — the filing is a sentry receipt, not a defect claim; closure stays with the verdict plane/admin.
++
++## 1. Delta table — 2026-10-28 filing vs 2026-10-30T00:59:31Z re-probe
++
++| probe | 10-28 result | 10-30 result | verdict (day +2) |
++|---|---|---|---|
++| gemini | 403, 88ms | 403, 87ms | ALIVE — stable |
++| groq | 403, 23ms | 403, 34ms | ALIVE — stable |
++| mistral | 401, 312ms | 401, 282ms | ALIVE — stable |
++| deepseek | 401, 140ms | 401, 147ms | ALIVE — stable |
++| openrouter | 200, 27ms | 200, 50ms | ALIVE — stable |
++| bynara | 401, 417ms | 401, 135ms | ALIVE — stable, 3× faster sample |
++| bai | 401, 126ms | 401, 121ms | ALIVE — stable |
++| v0 | 404 (Vercel), 791ms | 404 (Vercel), 493ms | EXCLUDED — shape unchanged, not death |
++| core-api (`/health`) | 200, 159-167ms | 200, 173ms | ALIVE — public plane unchanged |
++| gateway shield (`/health`) | 404 on `/`, `/docs`, `/health` | 404 on `/health` | consistent — app routes excluded from zero-credential set |
++| mcp-tower | 200, 74ms | 200, 96ms | ALIVE |
++
++## 2. Headline (day +2)
++
++**7/8 AI providers alive — the picture is byte-for-byte consistent with the filing two days ago.** The production default fallback chain `gemini/gemini-2.5-flash → bynara/agnes-2.5-flash → bai/qwen3.8-flash` remains protocol-alive on **all three lanes simultaneously** (auth walls answering with normal latencies); no provider degradation, no failover cause, and nothing new to escalate. The v0 route reproduces the exact same shape (404 from Vercel on `/v1/models`), keeping its roster confidence at "unknown" rather than "healthy" — settling alive/dead still requires the key-holder authenticated GET suggested in the filing; zero-credential lanes cannot improve on that. Zero new degradations found, matching the filing's own headline.
++
++## 3. #1838 cross-check (live, 2026-10-30T01:00Z)
++
++- The P1 issue surface is **still open** as of this fetch (HTML state; `updatedAt` embedded objects aside, `stateReason` absent = open). The deploy-swap stall it tracks therefore remains the live tracked degradation.
++- The public plane is unchanged: `supremeai-api-ulw0.onrender.com/health` → HTTP **200** (173ms) — users see no outage; the risk stays build-vs-main drift, exactly as the filing recorded.
++- The repo's own RCA PR for #1819/#1838 (surfaced on the issue page) states the diagnosis in its title: build layer fixed (green builds, clean image export) but the **deploy swap fails because the NEW image fails at boot** — i.e. the stall is a deploy-lane boot failure, not a build-plane regression. This addendum adds no remedy work for it (owned by its own issue/PR thread); it only re-confirms the external symptom is unchanged at day +2.
++
++## 4. Standing notes carried forward
++
++- Tower health-snapshot staleness (>= ~25min probe cadence observed in the filing at 00:23Z–00:53Z): not re-measured this pass (out of a zero-credential sentry lane's scope); the operational note stands as filed for a future WO.
++- gh quota pressure noted in the filing (17/60): not re-measured; this pass made no authenticated GitHub API calls (HTML reads + raw probes only, after the shared-IP REST quota was observed exhausted earlier in the window).
++
++## Honest limitations
++
++Single-sample wall-clock latencies (no averaging); zero-credential probes cannot distinguish auth-wall health from route-level functional health beyond HTTP semantics; v0 alive/dead remains unsettled by design of this lane; #1838 state was read from the public issue HTML (REST API quota was exhausted for this shared IP), which proves open/closed state but not the newest comments.

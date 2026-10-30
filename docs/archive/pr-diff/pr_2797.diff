@@ -1,0 +1,161 @@
+diff --git a/scripts/agents/continuous_agent_loop.py b/scripts/agents/continuous_agent_loop.py
+index ad528a49..c73b097a 100644
+--- a/scripts/agents/continuous_agent_loop.py
++++ b/scripts/agents/continuous_agent_loop.py
+@@ -479,6 +479,118 @@ def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[
+         return [], str(outcome["error"])
+     return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
+ 
++def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
++    """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
++
++    বাংলা: R78 বোর্ড-fallback বোর্ড জীবিত রাখে (number/title/labels), কিন্তু
++    envelope-মোডের hydrate-পথ body-র জন্য কেবল gh issue view-এর উপর দাঁড়িয়ে ছিল।
++    gh-absent রানটাইমে ফল দুটো: auto-pick এনভেলপে problem_statement.body="" (এজেন্ট
++    acceptance-criteria ছাড়া অন্ধকারে কাজ করে — SPEC §2 body-গ্যারান্টি ভাঙে), আর
++    --issue N পথ সম্পূর্ণ ad-hoc এনভেলপে পতিত হয় (issue=null) — অথচ বোর্ড তখন
++    tower-fallback-এ জেগে থাকে (asymmetry: বোর্ড revive আছে, hydrate নেই)। এই
++    fallback একই lazy-sibling/never-raise প্যাটার্নে tower-এর live tool
++    bridge.work_order দিয়ে per-issue title/body/labels/state hydrate করে।
++    Transport: R78-এর urllib প্রোবই বাহক — live 2026-10-30 প্রমাণ: সিবলিং ক্লায়েন্টের
++    call_tool RESPONSE_WAIT=15s-এ bridge.work_order-এর tower-side GitHub-fetch
++    (>15s, Render cold tier) McpTowerTimeoutError দেয়, আর iter_lines বড়
++    single-line পেলোড chunk-boundary-তে ভাঙে; urllib raw-body data-line
++    এক্সট্র্যাকশন যেকোনো সাইজে/দেরিতে নিরাপদ (R78-এ ১৩৪KB-তে প্রমাণিত)। সততা:
++    sanitization tower-side (bridge.work_order-এর নিজস্ব চুক্তি) — এনভেলপে
++    বোর্ড-নোট সেটাই বলে।
++    ফেরত: gh-shaped dict (number/title/labels/state/body) বা None — কখনো raise নয়,
++    ব্যর্থতায় কলার-সাইটের আগের সৎ note অক্ষত থাকে।
++    """
++    outcome: dict[str, Any] = {}
++
++    def _probe() -> None:
++        try:
++            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
++            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
++
++            base = _mtc.MCP_SERVER_URL.rstrip("/")
++            headers = {
++                "Content-Type": "application/json",
++                "Accept": "application/json, text/event-stream",
++            }
++
++            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
++                hdrs = dict(headers)
++                if sid:
++                    hdrs["mcp-session-id"] = sid
++                req = urllib.request.Request(
++                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
++                )
++                with urllib.request.urlopen(req, timeout=timeout) as resp:
++                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
++
++            sid, _ = _post({
++                "jsonrpc": "2.0", "id": "cal-hydrate-1", "method": "initialize",
++                "params": {
++                    "protocolVersion": "2024-11-05", "capabilities": {},
++                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
++                },
++            }, None)
++            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
++            call_id = "cal-hydrate-2"
++            _, body = _post({
++                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
++                "params": {"name": "bridge.work_order", "arguments": {"number": int(number)}},
++            }, sid, timeout=60)
++
++            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
++            # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
++            envelopes: list[dict[str, Any]] = []
++            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
++                try:
++                    envelopes.append(json.loads(m.group(1)))
++                except json.JSONDecodeError:
++                    pass
++            if not envelopes:
++                try:
++                    envelopes.append(json.loads(body))
++                except json.JSONDecodeError:
++                    pass
++            result: Any = None
++            for env in envelopes:
++                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
++                    result = env.get("result")
++                    break
++            text = ""
++            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
++                first = result["content"][0]
++                if isinstance(first, dict):
++                    text = first.get("text") or ""
++            if not text:
++                outcome["error"] = "tower work-order payload carried no text"
++                return
++            wo = json.loads(text)
++            if not isinstance(wo, dict) or wo.get("number") is None:
++                outcome["error"] = "tower work-order payload carried no number"
++                return
++            raw_labels = wo.get("labels")
++            labels: list[Any] = []
++            if isinstance(raw_labels, list):
++                labels = [{"name": str(l)} for l in raw_labels]
++            outcome["issue"] = {
++                "number": wo.get("number"),
++                "title": wo.get("title"),
++                "state": wo.get("state") or "open",
++                "labels": labels,
++                "body": wo.get("body") or "",
++            }
++        except Exception as exc:  # noqa: BLE001 — hydration must never raise
++            outcome["error"] = f"tower issue hydration failed ({type(exc).__name__})"
++
++    try:
++        t = threading.Thread(target=_probe, daemon=True)
++        t.start()
++        t.join(timeout=timeout_s)
++    except Exception:  # noqa: BLE001 — hydration must never raise
++        return None
++    if t.is_alive():
++        return None
++    return outcome.get("issue")
++
+ def run_cmd(
+     cmd: list[str], cwd: Path | None = None, check: bool = False, timeout: int = 300
+ ) -> tuple[int, str, str]:
+@@ -1186,6 +1298,18 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                     note = "gh CLI not found on PATH"
+                 except Exception as exc:
+                     note = f"gh issue view error: {exc}"
++                if target_issue is None and note:
++                    # বাংলা: R78 board-fallback-এর আয়না — gh অনুপস্থিত/ব্যর্থ হলে
++                    # tower bridge.work_order দিয়ে per-issue hydrate। এর আগে --issue N
++                    # পথ gh-absent মেশিনে সম্পূর্ণ ad-hoc এনভেলপে পতিত হত (task-adhoc,
++                    # issue=null) — বোর্ড tower-fallback-এ জীবিত থাকলেও। hydrate সফল
++                    # হলে সত্যিকারের issue-বাউন্ড এনভেলপ যায় ও lease mark কাজ করে;
++                    # ব্যর্থ হলে আগের সৎ note অক্ষত থাকে (নীরব স্টাব নয়)।
++                    hydrated = _tower_issue_hydrate(args.issue)
++                    if hydrated is not None:
++                        target_issue = hydrated
++                        note = (f"gh issue view unavailable; hydrated via tower work-order "
++                                f"fallback (issue {args.issue})")
+         elif board_unavailable:
+             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
+         else:
+@@ -1226,6 +1350,18 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
+                         note = "gh CLI not found on PATH; envelope emitted without title/body"
+                     except Exception as exc:
+                         note = f"gh issue view error: {exc}; envelope emitted without title/body"
++                    # বাংলা: SPEC §2 body-গ্যারান্টি — auto-pick পথে hydrate-ট্রিগার
++                    # (title/body অনুপস্থিতি) gh ব্যর্থ হলে এতদিন শুধু খালি body-র
++                    # এনভেলপ রেখে দিত; tower work-order fallback সেটাই পূরণ করে
++                    # (একই চুক্তি: note সৎ, objective খালি নয়)।
++                    if target_issue is not None and (
++                        target_issue.get("title") is None or target_issue.get("body") is None
++                    ):
++                        hydrated = _tower_issue_hydrate(picked)
++                        if hydrated is not None:
++                            target_issue = hydrated
++                            note = (f"gh issue view unavailable; hydrated via tower "
++                                    f"work-order fallback (issue {picked})")
+             elif not args.allow_adhoc:
+                 print(
+                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",

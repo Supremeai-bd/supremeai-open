@@ -1,0 +1,148 @@
+diff --git a/docs/EVAL_2026-10-28-r39-typecheck-verdict.md b/docs/EVAL_2026-10-28-r39-typecheck-verdict.md
+new file mode 100644
+index 00000000..98137190
+--- /dev/null
++++ b/docs/EVAL_2026-10-28-r39-typecheck-verdict.md
+@@ -0,0 +1,63 @@
++# R39 Type-Check Plane — Evaluation Verdict (2026-10-28)
++
++Lane: **R39** (number from `docs/SCOUT_RADAR_INDEX.md` allocation rule, printed "next free: R39" after drift pass 3)
++Source: **#2029** (ecosystem-scout Job 478520; verdict requested: `evaluate`)
++Scope of this evaluation: adopt the scout's three adopt-grade annotation corrections, expand them by exact-class adjacency, and rule on the strict mypy gate proposal.
++
++## Verdict
++
++| Proposal element | Verdict | Basis |
++|---|---|---|
++| Annotation-correctness fixes (adopt-grade class) | **ADOPT — landed in this PR** | 6 sites across 4 files; each eliminated a live `mypy 2.4.0` error, zero new errors introduced (before/after receipts below) |
++| Strict mypy gate wired into CI now | **DEFER** | Sampled precision ~23% (3 real / 13 independent findings); 246-error mountain concentrated in documentable FP classes; wiring a gate at this precision would manufacture red CI without trust gains |
++| Future gate preconditions | **REGISTERED (this doc)** | Three hard preconditions listed below; gate re-proposal after they hold |
++
++## Adopted fixes (the annotation-lies class)
++
++Every site below was verified against actual usage before editing; the runtime contract was already the wider one — only the annotation lied.
++
++| File:line (HEAD `fc3c1a0`) | Was | Now | Evidence |
++|---|---|---|---|
++| `scripts/ci/vendored_tree_guard.py:131` | `by_top: Mapping[str, list[AddedFile]] = {}` | `dict[str, list[AddedFile]]` | `.setdefault()` mutates (line 132); `Mapping` is the read-only protocol; mypy `attr-defined` error confirmed at HEAD |
++| `scripts/ci/vendored_tree_guard.py:34` | `from collections.abc import Mapping, Sequence` | `from collections.abc import Sequence` | `Mapping` left unused after the fix above (rg: zero remaining references) |
++| `scripts/ci/staggered_rolling_train.py:197` | `commit_files: Mapping[str,] \| None` | `Mapping[str, tuple[str, ...]] \| None` | `Mapping[str,]` = 1 type arg (mypy `type-arg` at HEAD); values are path tuples at every call/definition site (`staggered_rolling_train.py:329`, `three_way_check` `.get(cur, ())`) |
++| `scripts/ci/hourly_satellite_batcher.py:261` | `commit_files: Mapping[str,]` | `Mapping[str, tuple[str, ...]]` | Same malformed syntax in the callee of the site above — exact-class adjacency, same value contract |
++| `scripts/ci/hourly_satellite_batcher.py:316` | `commit_files: Mapping[str,] \| None` | `Mapping[str, tuple[str, ...]] \| None` | Same class, `plan_batches` signature; repo-wide rg found exactly these 3 `Mapping[str,]` sites, all fixed |
++| `scripts/ci/bridge_opener_hardening_reference.py:43` | `wo_body: str` | `wo_body: str \| None` | In-file self-test line 187 asserts `extract_evidence_sections(None) == ""`; body guard `wo_body or ""` (line 52) already implemented the None-safe contract |
++| `scripts/ci/bridge_opener_hardening_reference.py:35` | `wo_body: str` | `wo_body: str \| None` | Docstring (line 38) already promises "empty/None body -> False (fail-closed, unchanged)"; annotation now matches the documented contract |
++
++Scope note: the scout's adopt-grade list named 3 files / 3 sites. This PR lands 6 sites in 4 files: the 3 additions are (a) the second `Mapping[str,]` site in `plan_batches` found by repo-wide rg of the identical syntax, (b) the callee `three_way_check` signature the caller feeds, (c) `has_reflection_evidence`, whose in-file docstring documents the None contract its annotation contradicted. No behavior changes anywhere — annotations and one import line only.
++
++## mypy 2.4.0 before/after (pinned, compiled wheel; profile `--explicit-package-bases --ignore-missing-imports`)
++
++Files under check: exactly the 4 touched files.
++
++- **Before (HEAD versions)**: 11 errors — includes the 5 target defects: `vendored_tree_guard.py:131 attr-defined` (Mapping.setdefault), `hourly_satellite_batcher.py:261 type-arg`, `hourly_satellite_batcher.py:316 type-arg`, `staggered_rolling_train.py:197 type-arg`, `bridge_opener_hardening_reference.py:187 arg-type` (None vs `str`).
++- **After (this PR)**: 6 errors — **all 5 target defects eliminated; 0 new errors**.
++- Remaining 6 are the scout's already-classified FP/pre-existing classes, out of adopt-grade scope by design:
++  - `staggered_rolling_train.py:291/293` — first-binding-wins rebinding FP (repro'd in scout's `audit/mypy_repro/`; runtime dispatches to the second def)
++  - `staggered_rolling_train.py:314` — intentional negative self-test (`active_slot("now")` inside expect-error block)
++  - `bridge_opener_hardening_reference.py:160/200`, `hourly_satellite_batcher.py:454` — pre-existing, unclaimed remainder (sampled-precision caveat unchanged)
++
++## Runtime verification receipts
++
++1. `py_compile` all 4 files — PASS (exit 0).
++2. In-file self-tests, all PASS after the fix:
++   - `bridge_opener_hardening_reference.py --self-test` → "self-test OK" (covers `extract_evidence_sections(None) == ""`)
++   - `hourly_satellite_batcher.py --self-test` → "self-test OK — hourly_satellite_batcher (issue #514 Tier 2 & Tier 3)"
++   - `staggered_rolling_train.py --self-test` → "self-test OK — staggered_rolling_train (issue #514 Tier 4)"
++   - `vendored_tree_guard.py --self-test` → "SELF-TEST OK: vendored_tree_guard"
++3. Residue scan: `rg 'Mapping\[str,\]'` over `scripts/ci/` → 0 hits; `rg Mapping` in `vendored_tree_guard.py` → 0 hits (import correct).
++4. Repo-wide syntax-class scan: `Mapping[str,]` count on main = 3 (this PR fixes all 3).
++
++## Gate preconditions (registered for the future gate re-proposal)
++
++1. **Pin the checker version** — gate must run a version-pinned mypy (today: 2.4.0) so error-code semantics are stable across the fleet's runners.
++2. **Regenerate `type: ignore` taxonomy under 2.x semantics** — the fleet's 171 `type: ignore` comments were written against 1.x codes; 2.x already drifts (`union-attr` not covered by `ignore[attr-defined]`). Until regenerated, a gate re-checks known sites.
++3. **Whitelist the designed negative self-tests** — at minimum `staggered_rolling_train.py:314`, `self_healing_reporter.py:196`, `bridge_opener_hardening_reference.py:187`; a gate that fails on fail-closed proofs is a false alarm machine.
++
++Re-proposal path: after preconditions 1–2 land, a shrink-only gate (per-file or per-class denylist that only shrinks) becomes evaluable; precision sampling should then be re-run on the regenerated-ignore state, not today's.
++
++## Benchmark honesty
++
++One dated mypy sweep (2.4.0, default semantics, 4-file scope) executed this cycle, before/after pairs archived in the PR evidence. No checker-vs-checker comparison, no runtime-behavior claims beyond the in-file self-tests. FP classifications beyond the 5 target defects are quoted from #2029's hand-verified taxonomy and were not independently re-derived here.
+diff --git a/scripts/ci/bridge_opener_hardening_reference.py b/scripts/ci/bridge_opener_hardening_reference.py
+index b39384b6..899be195 100644
+--- a/scripts/ci/bridge_opener_hardening_reference.py
++++ b/scripts/ci/bridge_opener_hardening_reference.py
+@@ -32,7 +32,7 @@
+ MAX_ACTIVE_CLAIMS = 1  # task #479 normative; detector cross-check
+ 
+ 
+-def has_reflection_evidence(wo_body: str) -> bool:
++def has_reflection_evidence(wo_body: str | None) -> bool:
+     """Robust typography parser (#485 fix 2): colon, em/en-dash, hyphen.
+ 
+     Case-insensitive; empty/None body -> False (fail-closed, unchanged).
+@@ -40,7 +40,7 @@ def has_reflection_evidence(wo_body: str) -> bool:
+     return bool(REFLECTION_RE.search(wo_body or ""))
+ 
+ 
+-def extract_evidence_sections(wo_body: str) -> str:
++def extract_evidence_sections(wo_body: str | None) -> str:
+     """Lossless evidence transfer (#485 fix 3).
+ 
+     Returns the verbatim "## Test Evidence" and "## Reflection Evidence"
+diff --git a/scripts/ci/hourly_satellite_batcher.py b/scripts/ci/hourly_satellite_batcher.py
+index 44a5eefd..28d27c16 100644
+--- a/scripts/ci/hourly_satellite_batcher.py
++++ b/scripts/ci/hourly_satellite_batcher.py
+@@ -258,7 +258,7 @@ def three_way_check(
+     base_sha: str,
+     target_head: str,
+     parents: Mapping[str, str],
+-    commit_files: Mapping[str,],
++    commit_files: Mapping[str, tuple[str, ...]],
+ ) -> tuple[str, ...]:
+     """Files touched by BOTH the batch and the target since `base_sha`.
+ 
+@@ -313,7 +313,7 @@ def plan_batches(
+     last_synced: Mapping[str, str] | None = None,
+     target_heads: Mapping[str, str] | None = None,
+     parents: Mapping[str, str] | None = None,
+-    commit_files: Mapping[str,] | None = None,
++    commit_files: Mapping[str, tuple[str, ...]] | None = None,
+ ) -> BatchPlan:
+     """Aggregate windowed + urgent commits into one batch per satellite.
+ 
+diff --git a/scripts/ci/staggered_rolling_train.py b/scripts/ci/staggered_rolling_train.py
+index ff244bce..a4848e1a 100644
+--- a/scripts/ci/staggered_rolling_train.py
++++ b/scripts/ci/staggered_rolling_train.py
+@@ -194,7 +194,7 @@ def plan_consolidation(
+     last_synced: str | None,
+     target_head: str | None,
+     parents: Mapping[str, str] | None = None,
+-    commit_files: Mapping[str,] | None = None,
++    commit_files: Mapping[str, tuple[str, ...]] | None = None,
+ ) -> ConsolidationPlan:
+     """Build the atomic consolidation plan for one satellite's slot.
+ 
+diff --git a/scripts/ci/vendored_tree_guard.py b/scripts/ci/vendored_tree_guard.py
+index 228c1425..833b1a4a 100644
+--- a/scripts/ci/vendored_tree_guard.py
++++ b/scripts/ci/vendored_tree_guard.py
+@@ -31,7 +31,7 @@
+ import argparse
+ import json
+ import sys
+-from collections.abc import Mapping, Sequence
++from collections.abc import Sequence
+ from dataclasses import dataclass
+ from typing import Final
+ 
+@@ -126,7 +126,7 @@ def guard_added_files(files: Sequence[AddedFile]) -> GuardVerdict:
+         )
+         offenders.update(f.path for f in oversize)
+ 
+-    by_top: Mapping[str, list[AddedFile]] = {}
++    by_top: dict[str, list[AddedFile]] = {}
+     for f in files:
+         by_top.setdefault(_top_dir(f.path), []).append(f)
+     for top, group in sorted(by_top.items()):

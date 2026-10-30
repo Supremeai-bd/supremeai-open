@@ -1,0 +1,43 @@
+diff --git a/infrastructure/mcp-control-plane/src/lib/http.ts b/infrastructure/mcp-control-plane/src/lib/http.ts
+index 0eb11338..349220e8 100644
+--- a/infrastructure/mcp-control-plane/src/lib/http.ts
++++ b/infrastructure/mcp-control-plane/src/lib/http.ts
+@@ -34,13 +34,20 @@ export async function httpRequest<T = unknown>(
+     retries = 2,
+   } = opts;
+ 
+-  const controller = new AbortController();
+-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+   const start = Date.now();
+ 
+   let lastError: Error | null = null;
+ 
+   for (let attempt = 0; attempt <= retries; attempt++) {
++    // Fresh AbortController PER ATTEMPT (defect-class fix): the previous
++    // implementation created ONE controller before the loop, so a timeout
++    // on attempt N left the shared signal permanently aborted — every
++    // later retry then failed instantly with AbortError, making retries
++    // dead code for the most common retry cause (timeout / cold-start
++    // spin-up of sleeping Render instances). Each attempt now owns its
++    // timeout and is aborted only by its own deadline.
++    const controller = new AbortController();
++    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+     try {
+       const requestBody =
+         body === undefined || body === null
+@@ -72,6 +79,7 @@ export async function httpRequest<T = unknown>(
+ 
+       return { ok: res.ok, status: res.status, data, latencyMs };
+     } catch (err) {
++      clearTimeout(timeout);
+       lastError = err as Error;
+       if (attempt < retries) {
+         await sleep(500 * Math.pow(2, attempt)); // 500ms, 1000ms...
+@@ -79,7 +87,6 @@ export async function httpRequest<T = unknown>(
+     }
+   }
+ 
+-  clearTimeout(timeout);
+   throw lastError ?? new Error(`HTTP request failed: ${url}`);
+ }
+ 

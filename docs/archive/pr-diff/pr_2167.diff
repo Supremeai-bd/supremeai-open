@@ -1,0 +1,89 @@
+diff --git a/docs/reports/PLANE_WATCH_C14_2026-10-28.md b/docs/reports/PLANE_WATCH_C14_2026-10-28.md
+new file mode 100644
+index 00000000..4c5cafc1
+--- /dev/null
++++ b/docs/reports/PLANE_WATCH_C14_2026-10-28.md
+@@ -0,0 +1,83 @@
++# Bridge Plane Watch — Cycle 14 (2026-10-28, 13:55Z receipts)
++
++Agent: zai-loop-agent (Z.ai, via MCP tower). Task ID: `bridge-20261028-plane-watch-c14`.
++Standing-record cycle: no legitimately claimable WO on the board; this report is the
++per-cycle landing for the standing defect lane (report-only, `docs/reports/` channel).
++
++## 1. Cycle-13 deliverable verified LANDED
++
++`PR #2151` (WO #2150, STALE-CLAIM GUARD) is no longer in the open-PR list and its
++payload is verifiable on `main` of `supremeai-open`:
++
++- `tests/test_stale_claim_guard.py` present (blob sha `5cffc0fa`, 2760 bytes) with the
++  exact AST string-literal pin (`GUARD_KEY == 2`, U3 precedent untouched check intact).
++- `scripts/agents/continuous_agent_loop.py` on main contains the `bridge.read_feedback`
++  advisory wiring (guard tokens present at both dispatch surfaces).
++- WO #2150 state flipped to `closed` with an in-repo verdict record (PR #349 at
++  13:03:51Z). The stale-claim response side is now shipped to every agent the loop
++  dispatches.
++
++## 2. Queue-plane probe — R2 claim-lag live-fire #4 + first recovery-time measurement
++
++Receipt: `queue_receipt_2026-10-28T1358Z.json` (13:55:07Z, 12/12 rows checked,
++0 unresolved, 0 session rotations).
++
++- **R2 fired on #2009**: live claim age=5 min (ttl 30) but the queue row still read
++  `status:unclaimed` (labels `p3-low, repo:api, status:unclaimed`).
++- **Recovery datapoint**: the board re-fetch seconds later in the same cycle showed
++  #2009 carrying `status:claimed`. Claim→label convergence for this instance is
++  therefore ~5–7 minutes, the first direct measurement of the lag window. Across the
++  four live-fires (#2111, #2123, #2102, #2009 — three different agents), lag ranged
++  from ≥19 min to ~5 min; it always resolves, never instantly. The STALE-CLAIM GUARD
++  advisory (landed this week) remains the correct response for as long as any window
++  exists.
++- R1 (mirror-stale) 0, R3 (verdict-lag) 0 on this snapshot.
++
++## 3. Verdict-plane blackout — new shape documented
++
++All three in-flight WOs owned by this agent (#2150 closed, #2132 open, #2082 open)
++carry a `latestVerdict` object whose `verdict` field is the **empty string** (records
++at 13:03:51Z, 13:04:20Z, 13:05:54Z; in-repo PR refs #349/#351/#353). The blackout is
++therefore not "no verdict rows" — it is *verdict rows whose stamping value is blank*,
++which previously showed as 23/23 merged WOs unstamped and now also covers in-gates
++WOs. Instrumentation (ee81b13) already captures this; the Tower-side stamping fix is
++still the owner lane (#2100 family).
++
++## 4. Exposure probe — persisting ~4 h post-filing
++
++Receipt: `probe_receipt_2026-10-28T1358Z.json` (13:55:06Z, status `violation`):
++142 tools advertised anonymously, 8 secret-class + 15 destructive-class candidates,
++0 executed (read-only observation). Unchanged since the #2082 filing (~10:00Z) — no
++redeploy observed. The in-gates PR #2083 documents the standing probe; the actual fix
++(activation of an exposure policy) remains the maintainer redeploy lane (#2076 A/C).
++
++## 5. Board state at 13:56Z
++
++Queue shrank 36 → 12 rows (fleet digestion is fast: #2143, #2149, #2155-class fixes
++landing within minutes of filing). 0×P0, 0×P1; the single P2 (#2076) and all four P3s
++are claimed. The unclaimed no-priority rows are all spoken for: #2159 is agent
++478330's U4 case-file receipt (PR #2160 already carries it), #2112 belongs to
++zai-glm-agent-c9 (patch already landed 4/4 files), #2156 is the admin-owned zizmor
++runbook (report-only), #2146 is the known report-only sentry pass, #2132/#2082 are
++this agent's own in-gates WOs. No false-claim noise was touched this cycle.
++
++Cross-reference: the 8th merge-despite-guard receipt (run 5014: Anti-Duplicate guard
++RED at 13:03:21Z, merge landed 66 s later as 967d081) is documented by its own lane
++(#2159); it reconfirms that guard verdicts are advisory to the lander, consistent
++with the verdict-plane finding above.
++
++## 6. CI on in-gates PRs
++
++`bridge/bridge-20261028-queue-plane-consistency-probe` (#2133): latest completed run
++**success** (id 40701068853), one newer run in progress at check time. #2083 branch
++remains in-gates after the 13:05:54Z label flip (~3 h open, now inside the normal
++gate lane at last).
++
++## Routing
++
++- Verdict stamping (empty-string verdicts): Tower-side owner lane, #2100 family.
++- Exposure policy activation: maintainer redeploy, #2076 A/C.
++- Claim-label lag: detection = standing queue probe (R2), response = landed
++  STALE-CLAIM GUARD; residual risk accepted until Tower stamps synchronously.
++- Intake residue cohort (#336/#339/#341/#343/#345): R5/R6 admin recipes still
++  pending, re-checked this cycle, unchanged.

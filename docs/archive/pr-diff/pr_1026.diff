@@ -1,0 +1,427 @@
+diff --git a/.github/workflows/landing.yml b/.github/workflows/landing.yml
+index 2927eb73..9ef9c4f4 100644
+--- a/.github/workflows/landing.yml
++++ b/.github/workflows/landing.yml
+@@ -79,6 +79,10 @@ permissions:
+   pull-requests: write
+   issues: write
+ 
++concurrency:
++  group: landing-${{ github.workflow }}-${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number || github.event.inputs.pr_number || github.ref }}
++  cancel-in-progress: false
++
+ jobs:
+   auto_merge:
+     name: "🛬 Autonomous Auto-Landing"
+diff --git a/README.md b/README.md
+index de9dd404..50696e75 100644
+--- a/README.md
++++ b/README.md
+@@ -19,34 +19,105 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
+ > - Use the correct tool name + `owner/repo` form or the call fails.
+ > - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`). `work_claim` requires `issueNumber` (integer). `bridge_work_order`/`bridge_read_feedback` require `number` (issue number).
+ 
+-## Federation at a glance
++## 📐 Federation Architecture & Mathematical Repository Model
+ 
+-```mermaid
+-flowchart LR
+-    AGENT["🤖 Autonomous agents<br/>(MCP bridge · fork+PR · JIT lease)"]
++> **Canonical Mathematical Blueprint:** [`docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md`](./docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md) · [`docs/FEDERATION_CHARTER.md`](./docs/FEDERATION_CHARTER.md)
+ 
+-    subgraph OPEN["supremeai-open · Public Window (this repo)"]
+-        direction TB
+-        TASKS["Task contracts (issues)"] --> GUARDS["7 PR guards<br/>+ CI Guardian"]
+-        GUARDS --> GATE["Merge Gate<br/>(squash authority)"]
+-    end
++### 1. Mathematical Universe & Repository Set Model
+ 
+-    subgraph PRIVATE["Private federation cores"]
++```mermaid
++flowchart TD
++    subgraph FEDERATION_UNIVERSE ["🌐 The Federation Universe (U)"]
+         direction TB
+-        TOWER["mcp-control-plane<br/>Control Tower · tool plane"]
+-        API["supremeai-api<br/>Gateway"]
+-        CORE["supremeai-core<br/>decision moat"]
+-        STUDIO["supremeai-studio<br/>Studio UI"]
++        OPEN["supremeai-open (Public Task Hub & Embassy)<br>Total = 635 Files<br>(261 U_open + 374 T_transit)"]
++        MONO["supremeai (Central Umbrella Monorepo)<br>Total = 2073 Files"]
++        
++        subgraph ACTIVE_SATS ["5 Active Product Satellites (Σ = 1384 Executable Files)"]
++            S_STUDIO["supremeai-studio<br>(643 files · Vercel Web UI)"]
++            S_API["supremeai-api<br>(490 files · Render Gateway & FastMCP)"]
++            S_CORE["supremeai-core<br>(146 files · DAG Decision Moat)"]
++            S_BROWSER["supremeai-browser<br>(60 files · Stealth Playwright)"]
++            S_VSCODE["supremeai-vscode<br>(45 files · Extension & Tauri Desktop)"]
++        end
++
++        ARCHIVE["supremeai-archive (Cold Storage)<br>Total = 57 Files (55 Unique Decommissioned Specs)"]
+     end
+ 
+-    AGENT --> TASKS
+-    AGENT <-.->|"MCP tools · zero credentials"| TOWER
+-    GATE ==>|"auto-bridge<br/>(webhook / direct dispatch)"| PRIVATE
++    OPEN ==>|"Transit Mirrors (374 files)<br>Step 1: Direct Dispatch"| ACTIVE_SATS
++    ACTIVE_SATS ==>|"Step 2: Monorepo Ingestion"| MONO
++    ARCHIVE -.->|"Retired Architectural Delta<br>(Permanently removed from active repos)"| MONO
++
++    classDef open fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
++    classDef sats fill:#059669,stroke:#fff,stroke-width:2px,color:#fff;
++    classDef mono fill:#7c3aed,stroke:#fff,stroke-width:2px,color:#fff;
++    classDef archive fill:#475569,stroke:#fff,stroke-width:1px,color:#fff;
++    class OPEN open;
++    class S_STUDIO,S_API,S_CORE,S_BROWSER,S_VSCODE sats;
++    class MONO mono;
++    class ARCHIVE archive;
++```
++
++#### Core Set Equations:
++- **Public Boundary Partition:** $\mathbf{Open} = T_{\text{transit}} \cup U_{\text{open}} \quad \text{where } T_{\text{transit}} \cap U_{\text{open}} = \emptyset$
++  - **$U_{\text{open}}$ (261 files):** Public front door, CI guards, 14 Anchor Hub configs, and constitution. **Never dispatched to satellites.**
++  - **$T_{\text{transit}}$ (374 files):** Scoped mirror surfaces (`studio/*`, `gateway/*`, `browser/*`, `vscode/*`, `core/*`).
++- **Active Federation Surface:** $\mathbf{S_{\text{active}}} = S_{\text{studio}} \cup S_{\text{api}} \cup S_{\text{vscode}} \cup S_{\text{browser}} \cup S_{\text{core}} = \mathbf{1384 \text{ executable files}}$
++- **The Blocked State Law:** Any file in `supremeai-open` not in $U_{\text{open}}$ represents an in-flight or blocked transit payload.
++
++---
+ 
+-    classDef boundary fill:none,stroke-width:2px;
+-    classDef core fill:none,stroke-dasharray:4 3;
+-    class OPEN boundary;
+-    class PRIVATE core;
++### 2. 2-Step Cascading Bridge & Zero-Residue Lifecycle (#416)
++
++```mermaid
++flowchart TD
++    PR["Autonomous PR / Patch Submission<br>(supremeai-open:main)"] --> GATES{"Constitutional Gates &<br>Verification Battery"}
++    
++    GATES -- "Pass" --> LAND["Autonomous Landing<br>(Squash Merge into main)"]
++    GATES -- "Fail" --> REJECT["Fail-Closed Block & Feedback<br>(CI Incident Logged)"]
++    
++    LAND --> STEP1["🌉 Bridge Step 1:<br>supremeai-open ➔ Active Target Satellite<br>(studio, api, browser, vscode, core)"]
++    
++    STEP1 --> VERIFY1{"Satellite Ingestion<br>Verified?"}
++    VERIFY1 -- "Yes" --> STEP2["🌉 Bridge Step 2:<br>Satellite ➔ Central Monorepo (supremeai)<br>(Full Product Parity Ingestion)"]
++    
++    STEP2 --> VERIFY2{"Monorepo Sync<br>Verified?"}
++    
++    VERIFY2 -- "Verified Completed" --> PRUNE["🧹 Zero-Residue Auto-Prune (#416):<br>1. Delete ephemeral transit patch files<br>2. Delete bridge/* transit sync branches"]
++    
++    PRUNE --> CLEAN["✨ Clean Steady State<br>Open repo preserved at exactly U_open (261 files)"]
++```
++
++---
++
++### 3. Federation CI Watchdog & 14 Anchor Hubs Architecture
++
++```mermaid
++flowchart TD
++    subgraph ALL_SATS ["🌐 7 Federation Pipelines (Studio, API, Browser, VSCode, Core, Monorepo, Open)"]
++        RUNS["GitHub Actions Workflow Runs"]
++    end
++
++    RUNS -->|"Failure Detected (Conclusion: failure)"| WATCHDOG["🔍 Federation CI Watchdog<br>(15-min cron & landing post-hook)"]
++    
++    WATCHDOG --> DEDUP{"Idempotent Marker Present?<br>(<!-- MIRROR_RUN: ... -->)"}
++    DEDUP -- "Already Open" --> NOOP["Clean Skip (Zero Spam)"]
++    DEDUP -- "New Incident" --> INGEST["Create P0 Incident Sub-Issue<br>(Database ID linking via REST API)"]
++    
++    INGEST --> HUB["🚨 [Federation Hub] #761<br>CI Failures & Incident Desk"]
++    
++    subgraph BOARD ["14 Persistent Anchor Hubs SSOT (gh issue list --search 'no:parent')"]
++        H761["#761 CI Incidents"]
++        H760["#760 Bridge Orders"]
++        H749["#749 Studio UI"]
++        H750["#750 API Gateway"]
++        H751["#751 Core Moat"]
++        H754["#754 VSCode Client"]
++        H756["#756 Browser Engine"]
++        H762["#762 Open Embassy"]
++        H_MORE["#752, #753, #755, #757, #758, #759"]
++    end
++    
++    HUB -.-> BOARD
+ ```
+ 
+ > Consuming the platform (not contributing)? Start at
+diff --git a/browser/.github/workflows/ci.yml b/browser/.github/workflows/ci.yml
+index 24385db4..b03472dd 100644
+--- a/browser/.github/workflows/ci.yml
++++ b/browser/.github/workflows/ci.yml
+@@ -8,6 +8,10 @@ on:
+ permissions:
+   contents: read
+ 
++concurrency:
++  group: ci-browser-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++
+ jobs:
+   test:
+     runs-on: ubuntu-latest
+diff --git a/core/.github/workflows/ci.yml b/core/.github/workflows/ci.yml
+index a75184a9..39c933bd 100644
+--- a/core/.github/workflows/ci.yml
++++ b/core/.github/workflows/ci.yml
+@@ -8,6 +8,10 @@ on:
+ permissions:
+   contents: read
+ 
++concurrency:
++  group: ci-core-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
++  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
++
+ jobs:
+   test:
+     runs-on: ubuntu-latest
+diff --git a/scripts/ci/federation_ci_watchdog.py b/scripts/ci/federation_ci_watchdog.py
+index 56c6b1ff..69ba9531 100644
+--- a/scripts/ci/federation_ci_watchdog.py
++++ b/scripts/ci/federation_ci_watchdog.py
+@@ -17,6 +17,7 @@
+ import argparse
+ import json
+ import os
++import re
+ import subprocess
+ import sys
+ import urllib.error
+@@ -436,6 +437,132 @@ def poll_federation_failures(
+     return mirrored_count, failed_count
+ 
+ 
++def parse_mirror_marker(body: str) -> tuple[str, int] | None:
++    """Pure: extract (repo, run_id) from an issue body containing MIRROR_RUN marker."""
++    match = re.search(
++        r"<!-- MIRROR_RUN:\s*([^/\s]+/[^/\s]+)/actions/runs/(\d+)\s*-->", body or ""
++    )
++    if match:
++        return match.group(1), int(match.group(2))
++    return None
++
++
++def is_run_resolved(
++    failed_run_id: int, runs: list[dict[str, Any]], branch: str = "main"
++) -> dict[str, Any] | None:
++    """Pure: True if any completed run on the specified branch succeeded after failed_run_id."""
++    for r in runs:
++        if r.get("head_branch") != branch:
++            continue
++        if r.get("status") == "completed" and r.get("conclusion") == "success":
++            run_id = r.get("id")
++            if isinstance(run_id, int) and run_id > failed_run_id:
++                return r
++    return None
++
++
++def auto_resolve_fixed_incidents(token: str | None = None) -> tuple[int, int]:
++    """Audit open mirrored CI failure issues and auto-close ones that succeeded on main.
++
++    Returns (resolved_count, error_count).
++    """
++    resolved_count = 0
++    error_count = 0
++    print("🔍 [watchdog] Checking open CI failure incidents for auto-resolution...")
++
++    # 1. Fetch all open issues in supremeai-open
++    page = 1
++    open_mirrors: list[dict[str, Any]] = []
++    while True:
++        code, items = gh_api(
++            f"repos/{OPEN_REPO}/issues?state=open&per_page=100&page={page}",
++            token=token,
++        )
++        if code != 200 or not isinstance(items, list) or not items:
++            break
++        for item in items:
++            if item.get("pull_request"):
++                continue
++            parsed = parse_mirror_marker(item.get("body") or "")
++            if parsed:
++                repo, failed_run_id = parsed
++                open_mirrors.append(
++                    {
++                        "issue_number": item["number"],
++                        "repo": repo,
++                        "failed_run_id": failed_run_id,
++                    }
++                )
++        if len(items) < 100:
++            break
++        page += 1
++
++    if not open_mirrors:
++        print("✅ [watchdog] No open CI failure incidents requiring resolution.")
++        return 0, 0
++
++    print(f"📋 [watchdog] Found {len(open_mirrors)} open CI incident(s) to verify.")
++
++    # Cache latest runs per repo to avoid redundant queries
++    repo_runs_cache: dict[str, list[dict[str, Any]]] = {}
++
++    for mirror in open_mirrors:
++        repo = mirror["repo"]
++        failed_run_id = mirror["failed_run_id"]
++        issue_number = mirror["issue_number"]
++
++        if repo not in repo_runs_cache:
++            code, resp = gh_api(
++                f"repos/{repo}/actions/runs?status=completed&per_page=10",
++                token=token,
++            )
++            if code == 200 and isinstance(resp, dict):
++                repo_runs_cache[repo] = resp.get("workflow_runs", [])
++            else:
++                repo_runs_cache[repo] = []
++
++        resolved_run = is_run_resolved(failed_run_id, repo_runs_cache[repo])
++        if resolved_run:
++            latest_run_id = resolved_run.get("id")
++            run_url = resolved_run.get("html_url", "")
++            print(
++                f"🎉 [watchdog] Incident #{issue_number} on {repo} resolved by run #{latest_run_id}!"
++            )
++
++            # Post resolution comment
++            comment_body = (
++                f"🎉 **Auto-Resolved:** The latest CI pipeline on `{repo}` is now passing on `main` "
++                f"in run [#{latest_run_id}]({run_url}).\n"
++                f"Auto-closing this incident issue as completed."
++            )
++            gh_api(
++                f"repos/{OPEN_REPO}/issues/{issue_number}/comments",
++                token=token,
++                method="POST",
++                data={"body": comment_body},
++            )
++
++            # Close issue as completed
++            code, _ = gh_api(
++                f"repos/{OPEN_REPO}/issues/{issue_number}",
++                token=token,
++                method="PATCH",
++                data={"state": "closed", "state_reason": "completed"},
++            )
++            if code == 200:
++                print(
++                    f"✅ [watchdog] Successfully auto-closed incident issue #{issue_number}."
++                )
++                resolved_count += 1
++            else:
++                print(
++                    f"❌ [watchdog] Failed to auto-close incident issue #{issue_number} (HTTP {code})."
++                )
++                error_count += 1
++
++    return resolved_count, error_count
++
++
+ def find_loose_mirrors(
+     items: list[dict[str, Any]] | None,
+     linked_ids: set[int] | None = None,
+@@ -661,7 +788,27 @@ def self_test() -> int:
+             f"sub-issue endpoint must be snake_case 'sub_issues', got {_ssp!r}"
+         )
+ 
+-    print("✅ [self-test] All 9 contract assertion groups passed!")
++    # 10. Auto-resolution contract
++    marker_text = "prefix <!-- MIRROR_RUN: Supremeai-bd/supremeai-api/actions/runs/555123 --> suffix"
++    parsed_info = parse_mirror_marker(marker_text)
++    assert parsed_info == ("Supremeai-bd/supremeai-api", 555123)
++    assert parse_mirror_marker("no marker present") is None
++
++    sample_runs = [
++        {"id": 555120, "head_branch": "main", "status": "completed", "conclusion": "success"},
++        {"id": 555124, "head_branch": "fix-branch", "status": "completed", "conclusion": "success"},
++        {"id": 555125, "head_branch": "main", "status": "completed", "conclusion": "failure"},
++        {"id": 555126, "head_branch": "main", "status": "completed", "conclusion": "success", "html_url": "https://github.com/runs/555126"},
++    ]
++    # Older run (555120 < 555123) doesn't resolve
++    # Other branch (fix-branch) doesn't resolve main
++    # Failing run doesn't resolve
++    # Newer green run on main (555126 > 555123) resolves!
++    resolved = is_run_resolved(555123, sample_runs, branch="main")
++    assert resolved is not None and resolved["id"] == 555126
++    assert is_run_resolved(999999, sample_runs, branch="main") is None
++
++    print("✅ [self-test] All 10 contract assertion groups passed!")
+     return 0
+ 
+ 
+@@ -687,6 +834,11 @@ def main() -> int:
+         help="Standalone backfill: scan open mirrored incidents and attach "
+         "every loose one as a sub-issue of the CI Failure Hub (idempotent)",
+     )
++    parser.add_argument(
++        "--auto-resolve",
++        action="store_true",
++        help="Audit open mirrored CI failure incidents and auto-close resolved ones",
++    )
+     parser.add_argument(
+         "--max-age-hours",
+         type=int,
+@@ -725,6 +877,16 @@ def main() -> int:
+         _relinked, _failed = relink_loose_mirrors(token=relink_token)
+         return 1 if _failed else 0
+ 
++    if args.auto_resolve:
++        resolve_token = (
++            os.environ.get("OPEN_SYNC_PAT")
++            or os.environ.get("GH_TOKEN")
++            or os.environ.get("GITHUB_TOKEN")
++            or get_default_token()
++        )
++        _resolved, _resolve_failed = auto_resolve_fixed_incidents(token=resolve_token)
++        return 1 if _resolve_failed else 0
++
+     token = (
+         os.environ.get("OPEN_SYNC_PAT")
+         or os.environ.get("GH_TOKEN")
+@@ -770,6 +932,8 @@ def main() -> int:
+         _mirrored, _failed = poll_federation_failures(
+             token=token, max_age_hours=args.max_age_hours
+         )
++        # Check and auto-resolve any incidents where subsequent runs are green
++        _resolved, _resolve_failed = auto_resolve_fixed_incidents(token=token)
+         # Self-healing board invariant: every poll tick ends with a relink
+         # pass so mirrored incidents can never drift loose on the root board
+         # again (the #910-#918 failure mode). Fail the tick if either half
+@@ -777,7 +941,7 @@ def main() -> int:
+         _relinked, _relink_failed = (0, 0)
+         if not args.no_relink:
+             _relinked, _relink_failed = relink_loose_mirrors(token=token)
+-        return 1 if (_failed or _relink_failed) else 0
++        return 1 if (_failed or _resolve_failed or _relink_failed) else 0
+ 
+     parser.print_help()
+     return 1
+diff --git a/vscode/.github/workflows/release-client-hub.yml b/vscode/.github/workflows/release-client-hub.yml
+index 4625f50d..c2eb65fe 100644
+--- a/vscode/.github/workflows/release-client-hub.yml
++++ b/vscode/.github/workflows/release-client-hub.yml
+@@ -5,6 +5,10 @@ on:
+     branches: [main]
+   workflow_dispatch:
+ 
++concurrency:
++  group: vscode-release-hub-${{ github.ref }}
++  cancel-in-progress: false
++
+ jobs:
+   build-extension:
+     runs-on: ubuntu-latest
+diff --git a/vscode/.github/workflows/release-extension.yml b/vscode/.github/workflows/release-extension.yml
+index 7e05ce69..29ade083 100644
+--- a/vscode/.github/workflows/release-extension.yml
++++ b/vscode/.github/workflows/release-extension.yml
+@@ -20,6 +20,10 @@ permissions:
+   contents: write
+   packages: write
+ 
++concurrency:
++  group: vscode-release-ext-${{ github.ref }}
++  cancel-in-progress: false
++
+ jobs:
+   package:
+     name: "Package & Publish VSIX"
