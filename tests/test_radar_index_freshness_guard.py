@@ -371,7 +371,13 @@ def test_live_repo_sweep_passes() -> None:
     # R85/R86 rows to the next fully-clean number (verified free by BOTH
     # passes: tree word-boundary scan zero; subject scan zero over 200; full
     # queue capture 68/68 windowTruncated:false zero).
-    assert r["pointer"] == 87, "pointer drifted — regenerate expectation with the index"
+    # R87→R89 regeneration (2026-10-31, GLM Agent 14 / Job 486785, standing-suite
+    # heal r2): the index legitimately advanced past the landed R88/R89 rows while
+    # this literal stayed at 87 — the exact #3624 pointer⇄pin co-obligation class
+    # (guard fired report-only, main CI runs no pytest). Regenerated WITH the index
+    # per the #3483 rule; scripts/ci/radar_pointer_pin_guard.py now mechanizes the
+    # co-obligation for future advances.
+    assert r["pointer"] == 89, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
