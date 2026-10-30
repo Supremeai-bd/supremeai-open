@@ -1,17 +1,20 @@
-"""Claim-lease SSOT pins (#57 wiring): one 30-minute lease, one 5-minute floor.
+"""Claim-lease SSOT pins (#57 wiring → #3573 regime).
 
-Locks the lease constants to scripts/agents/claim_thresholds.py so the
-release<->re-claim flip-flop-war fix (#57) stays wired:
-- continuous_agent_loop.py derives ISSUE_LEASE_SECONDS from the SSOT
-  (was hardcoded 1800.0 — dual-SSOT drift, the exact failure #57 documents);
+Locks the anti-stampede lease SSOT to scripts/agents/claim_thresholds.py so
+the release<->re-claim flip-flop-war fix (#57) stays wired:
 - stale_claim_releaser.py derives TTL_MINUTES_DEFAULT from the SSOT and
-  enforces the fresh-claim idempotency floor in release_plan().
+  enforces the fresh-claim idempotency floor in release_plan();
+- continuous_agent_loop.py carries NO dispatch time-gate since #3573 (the
+  live claim probe + the atomic work_claim decide claimability) — the SSOT
+  import there feeds only the machine-local dispatch JOURNAL retention
+  (hygiene-only prune, never a gate).
 
 Fully offline, stdlib-only, dual-mode (unittest + pytest).
 """
 
 from __future__ import annotations
 
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -47,15 +50,24 @@ def _snap(ts: str, ttl: str = "1m") -> dict:
 
 
 class ClaimLeaseSSOTPins(unittest.TestCase):
-    def test_01_loop_lease_derived_from_ssot(self):
-        self.assertEqual(cal.ISSUE_LEASE_SECONDS, ct.ORPHAN_RELEASE_MINUTES * 60.0)
-        # Rule 9 value must not silently change with this wiring:
-        self.assertEqual(cal.ISSUE_LEASE_SECONDS, 1800.0)
+    def test_01_loop_has_no_dispatch_time_gate(self):
+        # #3573: the loop's local 30-minute dispatch lease is REMOVED — no
+        # clock decides claimability; the live claim probe (#2794 fix (1)) and
+        # the atomic work_claim own that decision. The #57 SSOT import remains
+        # only for the dispatch JOURNAL retention (hygiene-only).
+        self.assertFalse(hasattr(cal, "ISSUE_LEASE_SECONDS"))
+        self.assertEqual(
+            cal.DISPATCH_JOURNAL_RETENTION_SECONDS,
+            ct.ORPHAN_RELEASE_MINUTES * 60.0,
+        )
 
-    def test_02_loop_source_has_no_hardcoded_lease(self):
+    def test_02_loop_source_has_no_time_gate_and_keeps_ssot_lineage(self):
         src = Path(cal.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("ISSUE_LEASE_SECONDS = 1800", src)
+        self.assertNotIn("ISSUE_LEASE_SECONDS", src)
         self.assertIn("claim_thresholds", src)
+        pick_src = inspect.getsource(cal.pick_next_issue)
+        self.assertNotIn("leased_at", pick_src)
+        self.assertNotIn("ISSUE_LEASE", pick_src)
 
     def test_03_releaser_ttl_derived_from_ssot(self):
         self.assertEqual(releaser.TTL_MINUTES_DEFAULT, ct.ORPHAN_RELEASE_MINUTES)
