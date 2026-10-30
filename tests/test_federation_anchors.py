@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """tests/test_federation_anchors.py — Unit tests for Federation Anchor Hubs SSOT Registry."""
 
+import json
 import unittest
+import unittest.mock
 
 from scripts.ci.federation_anchors import (
     ANCHOR_HUBS,
@@ -72,6 +74,108 @@ class TestFederationAnchors(unittest.TestCase):
     def test_self_test_passes(self):
         """Hermetic self_test function must return 0."""
         self.assertEqual(self_test(), 0)
+
+
+class TestVerifyLiveQuotaPreflight(unittest.TestCase):
+    """verify-live must fail fast on thin quota, degrade on probe failure, and
+    keep its fail-closed semantics — the #3851 false-green family, guarded."""
+
+    @staticmethod
+    def _fake_urlopen(responses):
+        """Build a urlopen mock consuming a scripted response list in order."""
+        calls = {"n": 0}
+
+        def _call(req, timeout=10):
+            item = responses[calls["n"]] if calls["n"] < len(responses) else responses[-1]
+            calls["n"] += 1
+            if isinstance(item, Exception):
+                raise item
+            resp = unittest.mock.MagicMock()
+            resp.__enter__.return_value.read.return_value = json.dumps(item).encode()
+            resp.__exit__.return_value = False
+            return resp
+
+        _call.calls = calls
+        return _call
+
+    ACTIVE_OK = {"state": "open", "title": "[Anchor Hub] ok"}
+    RETIRED_OK = {"state": "closed", "title": "[Anchor Hub] consolidated"}
+
+    def run_verify(self, responses):
+        import io
+        import unittest.mock
+        from contextlib import redirect_stdout
+
+        from scripts.ci.federation_anchors import verify_live
+
+        buf = io.StringIO()
+        with unittest.mock.patch(
+            "scripts.ci.federation_anchors.urllib.request.urlopen",
+            self._fake_urlopen(responses),
+        ):
+            with redirect_stdout(buf):
+                code = verify_live(token="test-token")
+        return code, buf.getvalue()
+
+    def test_preflight_blocks_when_quota_low(self):
+        """remaining=5 < 14 anchors: exit 1 and do NOT fire the 14 issue queries."""
+        rate_limit_body = {
+            "resources": {"core": {"limit": 60, "remaining": 5, "reset": 1790000000}}
+        }
+        code, out = self.run_verify([rate_limit_body])
+        self.assertEqual(code, 1)
+        self.assertIn("remaining=5", out)
+        self.assertIn("NOT a clean pass", out)
+
+    def test_preflight_degrades_gracefully(self):
+        """Probe failure (None,None) must NOT block a verification with budget."""
+        rate_limit_body = {
+            "resources": {"core": {"limit": 60, "remaining": 5000, "reset": 1790000000}}
+        }
+        # /rate_limit raises → degrade; then 8 active open + 6 retired closed.
+        code, out = self.run_verify(
+            [ConnectionError("probe down")]
+            + [self.ACTIVE_OK] * 8
+            + [self.RETIRED_OK] * 6
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("All Active Anchor Hubs are OPEN", out)
+
+    def test_403_diagnostic_includes_reset(self):
+        """A mid-verification 403 must carry remaining + reset + token advice."""
+        import email.message
+        import urllib.error
+
+        rate_limit_body = {
+            "resources": {"core": {"limit": 60, "remaining": 5000, "reset": 1790000000}}
+        }
+        hdrs = email.message.Message()
+        hdrs["X-RateLimit-Remaining"] = "0"
+        hdrs["X-RateLimit-Reset"] = "1790000000"
+        err403 = urllib.error.HTTPError(
+            "https://api.github.com/repos/x/issues/1", 403, "rate limit exceeded", hdrs, None
+        )
+        code, out = self.run_verify(
+            [rate_limit_body, err403]
+            + [self.ACTIVE_OK] * 7
+            + [self.RETIRED_OK] * 6
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("remaining=0", out)
+        self.assertIn("resets 2026-09-21T", out)
+        self.assertIn("GITHUB_TOKEN", out)
+
+    def test_fail_closed_semantics_preserved(self):
+        """A wrong anchor state must still exit 1 (pre-existing contract)."""
+        rate_limit_body = {
+            "resources": {"core": {"limit": 60, "remaining": 5000, "reset": 1790000000}}
+        }
+        closed_active = {"state": "closed", "title": "[Anchor Hub] wrongly closed"}
+        code, out = self.run_verify(
+            [rate_limit_body] + [closed_active] * 8 + [self.RETIRED_OK] * 6
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("Must be OPEN", out)
 
 
 if __name__ == "__main__":
