@@ -340,7 +340,16 @@ def test_live_repo_sweep_passes() -> None:
     # mechanism text inside pointer-phrase parentheticals, stripped by the
     # guard's own stripper; subject scan zero hits; FULL single-capture
     # queue 68,341ch 114/114 windowTruncated:false zero hits).
-    assert r["pointer"] == 79, "pointer drifted — regenerate expectation with the index"
+    # and after pass 39 (cycle-52, Job 478338) registered the R79 row
+    # (open/in-flight, peer scout arc — defining ticket #2925 "scout(R79):
+    # closure verdicts lack a live-state gate", filed 23:32:22Z by
+    # ecosystem-scout Job 478520 reading the #2225 second false closure;
+    # remedy work order bridge:queued at read time; pass-26 precedent seventh
+    # application, registered in-flight (not post-landing) reconciling the
+    # C50-witness docs' 5 citation-ghosts same-dispatch) and advanced it
+    # R79 -> R80 (verified free: tree word-boundary scan zero; subject scan
+    # zero over 200; full queue capture 119/119 windowTruncated:false zero).
+    assert r["pointer"] == 80, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
