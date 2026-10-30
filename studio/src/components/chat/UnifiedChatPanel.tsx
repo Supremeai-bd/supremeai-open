@@ -143,7 +143,14 @@ export async function callLiveAI(
         headers: {
           'Content-Type': 'application/json',
           ...(resolvedKey ? { 'X-SupremeAI-Key': resolvedKey } : {}),
-          ...(convId ? { 'X-Conversation-Id': convId } : {}),
+          // CORS allowlist contract (live-probed preflight on the gateway):
+          // Access-Control-Allow-Headers covers X-SupremeAI-Key but NOT
+          // X-Conversation-Id — a preflight carrying it 400s and the browser
+          // blocks EVERY guest turn with a bare "Failed to fetch", which the
+          // UI then misreports as a dead relay. conversation_id already
+          // travels in the request body below, so the header was redundant.
+          // Guard test: guestChatRelayHeaders.test.ts pins this header set
+          // to the live allowlist subset {content-type, x-supremeai-key}.
         },
         body,
         signal: controller.signal,
@@ -215,7 +222,7 @@ export async function callLiveAI(
       // Abort from the Stop button must not fall through to the next relay
       // target or the offline message — it is rethrown to the caller instead.
       if (external?.aborted) throw err;
-      relayDetail = 'network error (timeout, DNS or CORS)';
+      relayDetail = 'no response from relay (blocked, offline, or timed out)';
       console.warn('[GuestChat] target failed:', target, err);
     }
     return null;
@@ -244,7 +251,7 @@ export async function callLiveAI(
    */
 
   const offlineSuffix = relayDetail ? ` (${relayDetail.slice(0, 200)})` : '';
-  return { text: `Webhook relay is currently offline or unreachable.${offlineSuffix}`, via: 'webhook-offline' };
+  return { text: `The AI relay is not responding right now — please try again in a moment.${offlineSuffix}`, via: 'webhook-offline' };
 }
 
 // OWNER REQUEST (2026-10-24): the webhook-only relay takes a while to reply, so the
