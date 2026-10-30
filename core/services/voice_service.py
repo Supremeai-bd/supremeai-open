@@ -7,7 +7,7 @@ import os
 import time
 from typing import Any
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 # Issue #445 doctrine (real work or loud failure, never fabricated success):
 # the old implementation returned a FIXED Bengali transcript with confidence
