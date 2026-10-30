@@ -1,0 +1,4 @@
+{
+  "_comment": "Registry index: maps skill names to git sources. Shape: {skills: {<name>: {git: <clone-url>, ref: <optional-branch-or-tag>}}}. Populated by the operator; the CLI resolves names through this file only — no hardcoded endpoints in code.",
+  "skills": {}
+}
