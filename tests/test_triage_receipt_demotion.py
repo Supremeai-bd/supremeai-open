@@ -239,6 +239,7 @@ class TestShippedRegistrySanity(unittest.TestCase):
         demotion — pin the shipped file's shape (fail-closed sanity)."""
         idx = cal._load_triage_receipts(cal.TRIAGE_RECEIPTS_FILE)
         self.assertIn(3399, idx)
+        self.assertIn(3354, idx)
         for number, receipt in idx.items():
             self.assertTrue(receipt.get("class"), f"#{number} receipt missing class")
             self.assertTrue(receipt.get("censusRef"), f"#{number} receipt missing censusRef")
