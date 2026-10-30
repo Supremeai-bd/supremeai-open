@@ -44,6 +44,8 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ops/generate_script_index.py", "--check"],
     ["python", "scripts/ci/skill_conformance_guard.py", "--self-test"],
     ["python", "scripts/ci/skill_conformance_guard.py", "--check"],
+    ["python", "scripts/ci/ghost_host_guard.py", "--self-test"],
+    ["python", "scripts/ci/ghost_host_guard.py", "--check"],
 ]
 
 
