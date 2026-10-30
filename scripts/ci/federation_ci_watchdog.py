@@ -497,25 +497,25 @@ def mirror_failure(
         print(
             f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
         )
-        # Link as sub-issue under the CI Failure Hub (zero loose root issues).
+        # Link as sub-issue directly under the repository's Domain Anchor Hub (zero loose root issues).
+        target_anchor = get_anchor_issue_number(repo) if get_anchor_issue_number else CI_FAILURE_ANCHOR
         if issue_number and link_sub_issue is not None:
             try:
                 linked = link_sub_issue(
-                    parent_issue_number=CI_FAILURE_ANCHOR,
+                    parent_issue_number=target_anchor,
                     child_issue_number=int(issue_number),
                     repo=OPEN_REPO,
                     token=token,
                 )
                 if linked:
                     print(
-                        f"   ↳ linked as sub-issue under CI Hub #{CI_FAILURE_ANCHOR}."
+                        f"   ↳ linked as sub-issue directly under Domain Anchor #{target_anchor}."
                     )
                 else:
                     print(
                         f"   ↳ ❌ sub-issue link FAILED for #{issue_number} -> "
-                        f"#{CI_FAILURE_ANCHOR}; counting mirror as FAILED so the "
-                        f"scheduler surfaces it (a loose P0 on the root board "
-                        f"violates the 8-anchor SSOT invariant)."
+                        f"#{target_anchor}; counting mirror as FAILED so the "
+                        f"scheduler surfaces it."
                     )
                     return False
             except Exception as exc:
