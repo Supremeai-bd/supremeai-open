@@ -23,7 +23,11 @@ Contract pinned here (mirrors test_failed_pr_audit_honesty's philosophy):
    test_preflight_observability_audit's reporter-channel pin.
 
 All tests are offline: _tower_open_prs / list_failed_open_prs are stubbed at
-the module boundary — zero network, zero gh dependency.
+the module boundary — zero network, zero gh dependency. The 2026-10-31
+check-window enrichment layer (_tower_workflow_runs_probe) is stubbed dark in
+the shared capture helper so the revived-census pins below keep exercising
+exactly the pre-enrichment output contract; the enrichment contract itself is
+pinned in tests/test_failed_pr_check_enrichment.py.
 """
 
 from __future__ import annotations
@@ -47,8 +51,12 @@ def _capture_report(tower_stub: object, list_stub: object = None) -> tuple[list,
     buf = io.StringIO()
     with mock.patch.object(cal, "list_failed_open_prs", return_value=list_stub):
         with mock.patch.object(cal, "_tower_open_prs", return_value=tower_stub):
-            with redirect_stdout(buf):
-                failed = cal.report_failed_open_prs(repo="r/x", limit=30)
+            with mock.patch.object(
+                cal, "_tower_workflow_runs_probe",
+                return_value=(None, "runs probe dark (unit stub)"),
+            ):
+                with redirect_stdout(buf):
+                    failed = cal.report_failed_open_prs(repo="r/x", limit=30)
     return failed, buf.getvalue()
 
 
