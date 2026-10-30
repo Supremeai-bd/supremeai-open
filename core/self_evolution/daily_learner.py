@@ -23,7 +23,7 @@ from urllib.parse import quote_plus
 
 from brain.model_router import ModelRouter
 from core.cache import get_cache
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 from core.self_evolution.evolution_engine import EvolutionEngine
 from services.config_service import ConfigService
 

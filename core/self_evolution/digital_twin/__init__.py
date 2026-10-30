@@ -11,7 +11,7 @@ Bengali:
 """
 
 from core.contracts.security_policy import SEVERITY_LEVELS
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 from .remediation_engine import (
     RemediationAction,

@@ -6,7 +6,7 @@
 import shutil
 from pathlib import Path
 
-from core.logging_config import logger
+from core.monitoring.logging_config import logger
 
 _ALLOWED_BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
