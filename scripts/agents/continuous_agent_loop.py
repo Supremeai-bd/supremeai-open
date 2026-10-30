@@ -62,6 +62,17 @@ OFFLINE_ENV_VARS = (
 # pick_next_issue landed/in-flight কাজকে পুনঃদাবিযোগ্য ভাবত; live প্রমাণ 2026-10-28:
 # খোলা বোর্ডের ২৭টা non-excluded সারির ২০টাই bridge:queued মিরর (landed #2071/#2056
 # সহ), ফলে drained board-এ সত্যিকারের নতুন কাজের (#2103) আগে ভুলভাবে বেছে নেওয়া হত।
+# বাংলা: bridge:receipt = সাবমিশন পাইপলাইন নিজেই প্রতিটি receipt/report-only WO-তে
+# স্ট্যাম্প করে (mcp-control-plane bridge.tools.ts BRIDGE_RECEIPT_LABEL: taskId-তে
+# receipt|report-only হলে [bridge:receipt, report]) — এরা submission-এর intake
+# artifact, solver-টাস্ক নয়; তাদের কাজ নিজের PR-এই থাকে। সেটে না থাকায় picker
+# self-fulfilled receipt-WO নতুন টাস্ক হিসেবে পুনঃdispatch করত (#2516 drain census:
+# 34/128 self-fulfilled receipt-WO; লাইভ প্রমাণ 2026-10-30: #3345 dispatch হলো অথচ
+# তার কাজ ইতোমধ্যে #3346-এ landed)। #3315 coverage-probe এই শ্রেণি ধরতে পারে না —
+# সে উল্টো দিক দেখে (অন্য কোনো খোলা WO candidate-কে cite করছে কি না), অথচ receipt
+# নিজেকে cite করে না; label-exclusion এই শ্রেণির সঠিক ধরার জায়গা (#2100-র একই
+# মেকানিজম, একই SSOT)। সাধারণ report-only scout/ops রো বাদ যায় না — শুধু
+# পাইপলাইন-স্ট্যাম্প করা receipt শ্রেণি।
 EXCLUDED_LABELS = frozenset({
     "status:claimed",
     "status:in-progress",
@@ -75,6 +86,7 @@ EXCLUDED_LABELS = frozenset({
     "bridge:in-gates",
     "bridge:rejected",
     "bridge:idempotent-noop",
+    "bridge:receipt",
 })
 
 DEFAULT_GROUP = "core"
@@ -673,9 +685,11 @@ def _premise_delivered_note(
     """Item 15 — demotion note when a row's premise is already delivered, else None.
 
     বাংলা: দুই স্ক্যান, দুটোই সৎ-নোটবহন: (A) body-র প্রতিশ্রুত আর্টিফ্যাক্ট
-    বর্তমান গাছে আছে কি না; (B) মার্জড PR কি ডেলিভারি-ফর্মে রো-নম্বর উদ্ধৃত
-    করছে। যেকোনো প্রোব-ব্যর্থতা (rate limit, timeout, parse) রো অপরিবর্তিত
-    সার্ভ করে — ফিল্টার শুধু একটি dispatch সরাতে পারে, কখনো ব্লক করে না।
+    বর্তমান গাছে আছে কি না; (B) মার্জড PR কি ডেলিভারি-ফর্মে (closes/fixes/
+    resolves/for/receipt #N), কম্পাউন্ড রিসিট-হেডার ফর্মে (R<n>/#N, #<n>/#N)
+    বা বোর্ডের R-idiom bare ফর্মে (R<n>) রো-নম্বর উদ্ধৃত করছে। যেকোনো
+    প্রোব-ব্যর্থতা (rate limit, timeout, parse) রো অপরিবর্তিত সার্ভ করে —
+    ফিল্টার শুধু একটি dispatch সরাতে পারে, কখনো ব্লক করে না।
     হারমেটিক কলার tree_root/fetch_merged ইনজেক্ট করে (zero network)।
     """
     try:
@@ -696,12 +710,23 @@ def _premise_delivered_note(
     except Exception:  # noqa: BLE001 — fail-open: a dark plane serves the row
         return None
     cite = re.compile(rf"(?:closes|fixes|resolves|for|receipt)\s+#{num}\b", re.IGNORECASE)
+    # Compound receipt-header form (R1776/#2766, #1776/#2766): slash-adjacent
+    # row citation with NO whitespace, invisible to the keyword regex. Live
+    # miss (2026-10-30 12:52Z): merged #3338's subject "R1776/#2766 evidence
+    # refresh r2" sailed past the cross-scan and the loop re-dispatched #2766
+    # ~20 minutes later — the exact duplicate-minting invitation (U4).
+    compound = re.compile(rf"(?:\bR\d+|#\d+)/#{num}\b", re.IGNORECASE)
+    # Bare board R-idiom (R1776 = row #1776 in this board's own shorthand,
+    # cf. the R62 schema-note idiom): the same receipt names the PARENT row
+    # without a compound — the predicted next miss when the loop serves the
+    # parent while a fresh family receipt still rides the window.
+    rref = re.compile(rf"\bR{num}\b", re.IGNORECASE)
     try:
         for pr in rows:
             if not isinstance(pr, dict) or not pr.get("merged_at"):
                 continue
             hay = f"{pr.get('title') or ''}\n{pr.get('body') or ''}"
-            m = cite.search(hay)
+            m = cite.search(hay) or compound.search(hay) or rref.search(hay)
             if not m:
                 continue
             title = str(pr.get("title") or "").strip()[:80]
