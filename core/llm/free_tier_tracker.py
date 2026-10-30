@@ -450,7 +450,6 @@ def get_tracker(
     user_id: str = "default",
 ) -> FreeTierTracker:
     """Return the per-user FreeTierTracker."""
-    global _trackers
     if user_id not in _trackers:
         _trackers[user_id] = FreeTierTracker(custom_limits=custom_limits)
         logger.info(f"[FreeTier] FreeTierTracker initialized for user: {user_id}")

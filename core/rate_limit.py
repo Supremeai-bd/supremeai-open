@@ -158,7 +158,6 @@ class RateLimiter:
 
     def _fallback_is_allowed(self, key: str, limit: int, window: int) -> tuple[bool, dict]:
         now = time.time()
-        global fallback_cache
         try:
             timestamps = fallback_cache.get(key, [])
             timestamps = [t for t in timestamps if now - t < window]

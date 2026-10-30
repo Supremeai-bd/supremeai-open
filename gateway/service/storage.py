@@ -38,7 +38,6 @@ _USE_MEM_FALLBACK = False
 @contextmanager
 def get_db():
     """Provides a SQLite connection with WAL mode and row factory."""
-    global _USE_MEM_FALLBACK
     if _USE_MEM_FALLBACK:
         yield None
         return

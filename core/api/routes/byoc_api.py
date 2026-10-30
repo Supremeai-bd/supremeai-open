@@ -1,5 +1,6 @@
 # Secure Endpoints for Universal BYOC Management
 # বাংলা মন্তব্য: সিকিউর প্রক্সি, রোটেশন, ক্রেডেনশিয়াল ম্যানেজমেন্ট ও টেরাফর্ম রানার ট্রিগার এপিআই।
+import asyncio
 import json
 import os
 import uuid
@@ -85,9 +86,11 @@ async def deploy_container(
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config", "byoc_limits.json")
     try:
-        with open(config_path, encoding="utf-8") as f:
-            limits = json.load(f)["limits"]
-            user_limits = limits.get(user_tier, limits["free"])
+        def _read_byoc_limits():
+            with open(config_path, encoding="utf-8") as f:
+                return json.load(f)["limits"]
+        limits = await asyncio.to_thread(_read_byoc_limits)
+        user_limits = limits.get(user_tier, limits["free"])
     except Exception:
         logger.exception("Unhandled exception")
         user_limits = {"max_containers": 1, "max_memory": "256Mi", "max_cpu": "500m"}
