@@ -1152,6 +1152,63 @@ def _feedback_claim_active(issue_number: int | str, timeout_s: float = 6.0) -> t
         f"latestClaim by {agent} expired ({age_s / 60.0:.0f}m age > {ttl_raw:g}m ttl)"
     )
 
+
+def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]]:
+    """Read-only audit: scan open PRs and list ones with failing CI/guards.
+
+    Does NOT auto-create issues. Provides structured observability for failed PRs
+    so agents or operators can inspect unmerged failure bottlenecks cleanly.
+    """
+    code, out, _ = run_cmd([
+        "gh", "pr", "list",
+        "--repo", repo,
+        "--state", "open",
+        "--limit", str(limit),
+        "--json", "number,title,headRefName,statusCheckRollup,url",
+    ])
+    if code != 0 or not out.strip():
+        return []
+
+    try:
+        prs = json.loads(out)
+    except Exception:
+        return []
+
+    failed_prs: list[dict[str, Any]] = []
+    for pr in prs:
+        rollup = pr.get("statusCheckRollup") or []
+        failed_checks = [
+            c.get("name")
+            for c in rollup
+            if c.get("conclusion") in ("FAILURE", "TIMED_OUT", "CANCELLED")
+        ]
+        if failed_checks:
+            failed_prs.append({
+                "number": pr.get("number"),
+                "title": pr.get("title"),
+                "branch": pr.get("headRefName"),
+                "failed_checks": failed_checks,
+                "url": pr.get("url"),
+            })
+
+    return failed_prs
+
+
+def report_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dict[str, Any]]:
+    """Read-only audit step: emit a structured summary of currently failing open PRs."""
+    failed = list_failed_open_prs(repo=repo, limit=limit)
+    if failed:
+        log("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
+        for f in failed:
+            num = f.get("number")
+            branch = f.get("branch")
+            checks = ", ".join(f.get("failed_checks") or [])
+            log("  ↳", f"PR #{num} ({branch}): [{checks}]")
+    else:
+        log("✅", "Read-only failed PR audit: zero open PRs with failing checks.")
+    return failed
+
+
 def pick_next_issue(
     exclude: set[str] | list[str] | None = None,
     issues: list[dict[str, Any]] | None = None,
@@ -1483,7 +1540,9 @@ def log(icon: str, msg: str) -> None:
     try:
         print(f"{icon} {msg}")
     except UnicodeEncodeError:
-        print(f"[*] {msg}")
+        safe_icon = icon.encode("ascii", "replace").decode("ascii")
+        safe_msg = msg.encode("ascii", "replace").decode("ascii")
+        print(f"[{safe_icon}] {safe_msg}")
 
 def _stderr_log(icon: str, msg: str) -> None:
     """SPEC §4b stdout-purity logger for envelope-mode pick advisories.
@@ -2694,6 +2753,9 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             # never raises/hangs (see _tower_queue_floor).
             log("!", _tower_queue_floor())
     else:
+        # Read-only audit step: list open failed PRs without auto-creating issues
+        report_failed_open_prs(repo=UPSTREAM_REPO, limit=30)
+
         picked = pick_next_issue(issues=raw, claim_probe=_feedback_claim_active, incident_probe=_probe_incident_stale, premise_probe=_probe_premise_delivered, triage_probe=_probe_triage_receipt)
         if picked:
             # বাংলা: classify_task_role() এখন dispatch-এ তার সত্যিকারের কাজ পায় —
