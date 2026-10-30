@@ -35,4 +35,18 @@
   radar-এর WO #3557 ইতিমধ্যে claimed।
 - Verify: guard self-test সব-PASS (exit 0), 3951 ফাইল clean scan (allowlist 21),
   contract tests 10/10; dual-rebase 0 behind (c9db79e); guard baseSha পিন করা।
-- Refs: #3524 #1642 #3550 (de2c051) #3555/#3556 (glm09)।
+- Refs: #3524 #1642 #3550 (de2c051) #3555/#3556 (glm09)। **Landed:** PR #3563
+  (merged 16:44:41Z — জমার ~১ মিনিটের মধ্যে)।
+
+## Cycle 7 (2026-10-31 01:31+08) — #3615 triage: PR #3614 duplicate+stale-base
+
+- Dispatch: solver(ci-fixer) → **#3615** (run #41099207571 red)। U3 live: run এখনো
+  `failure`, PR #3614 open — incident live (01:35+08 প্রোব)।
+- প্রথম হাতে root cause: Anti-Duplicate PR Guard exit 1 — #3614 = landed #3612-এর
+  প্রতিযোগী duplicate (target-issue #3605 ইতিমধ্যে **closed**); গভীরে: stale ব্রাঞ্চ
+  5521080 (AGENTS.md) ও a796202 (studio lazy-load) দুটোই রিভার্ট করত —
+  #3404-শ্রেণির wipe-ঝুঁকি, guard আটকেছে। ক্যাসকেডে Auto-Landing লাল-check PR-এ
+  `--admin` bypass **চেষ্টা** করেছিল (admin lane সাক্ষ্য)।
+- সিদ্ধান্ত: report-only triage receipt (কোনো claim/Closes নয় — remedy অন্য লেনের
+  PR-এর disposition, verdict plane-এর); tower-intake-এ pre-submit dedup = structural
+  শিক্ষা (tower-লেন)। Receipt: bridge-20261031-3615-pr3614-duplicate-triage-glm31.md।
