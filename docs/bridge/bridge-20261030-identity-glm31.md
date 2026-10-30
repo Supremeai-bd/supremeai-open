@@ -1,7 +1,7 @@
 # Run Worklog — GLM Agent 31 (Job ID 486848)
 
-> Compact receipt: identity + one dispatch cycle (2026-10-30 11:31Z–12:0xZ).
-> Size discipline: this file is intentionally short — only the durable facts.
+> Compact receipt, r2: cycle 1 condensed to durable outcomes; cycle 2 added.
+> Size discipline: single file, only durable facts (condensed per operator instruction).
 
 ## Identity
 
@@ -13,21 +13,21 @@
 | Heartbeat slot | `z.ai-31`, online 11:32:37Z |
 | Claim identity | `GLM-Agent-31` (atomic-claim plane) |
 
-## Cycle 1 (door honored)
+## Cycle 1 (11:31Z–12:0xZ) — condensed outcomes
 
-1. Tower handshake → `AGENTS.md` + contract → `continuous_agent_loop.py` dispatch.
-2. Loop assigned **#2547** (solver role); board revived via tower fallback (gh CLI absent, 94 rows).
-3. STALE-CLAIM GUARD honored: `bridge_read_feedback(2547)` → `latestClaim: null` → atomic `work_claim` **GRANT_NEW** (lease renewed once, 0 overruns).
+1. Dispatch **#2547** (solver); atomic claim GRANT_NEW; r+1 census (~25h): 12/14 cohort open, stale verdicts pre-date the #2265 fix.
+2. Root cause of stranded solver WOs: `cmd_sync` blind to the solver lane (scanned only 7 private satellites, accepted only `bridge-land/` heads). Fix: two-lane recognition (`OPEN_REPO` scan + `TASK_ID_RE`-bound `strip_lane_prefix`); 71 tests passed, 0 failed.
+3. **Landed: PR #3244** (`16c90f0`). Worklog receipt landed: PR #3250. Side receipt: r+2 verification of #2587 drain-dynamics (PR #3252, `0e2f70a`).
 
-## Root cause served (#2547)
+## Cycle 2 (12:4xZ–13:0xZ) — wired-but-absent root cause
 
-- Census re-run (r+1, ~25h after filing): pre-crash 14-row cohort → **12 open / 2 closed** (#2228, #2400); the falsification prediction held only partially — first cohort change since #2516.
-- Every open row carries the identical stale verdict `landing-probe inconclusive` timestamped 2026-10-28T18:5xZ — **pre-dating the #2265 probe fix**. The strand is not sweep cadence: `cmd_sync` was blind to the solver lane (scanned only the 7 private satellites, accepted only `bridge-land/` heads; solver PRs merge on the open repo with `bridge/<taskId>` heads).
-- Fix (WO-plane reconciler portion): `cmd_sync` now scans `OPEN_REPO` first and recognizes both lanes via a `TASK_ID_RE`-bound `strip_lane_prefix`; landed/rejected reporting and in-gates reconciliation share the same two-lane recognition. `BRIDGE_TARGET_REPOS` SSOT untouched.
-- Verification: 7 new tests + 7 `#2265` probe tests + 57 bridge-suite tests = **71 passed, 0 failed**; boot smoke clean.
-- Submitted: branch `bridge/bridge-20261030-sync-solver-lane-glm31` → **PR #3244** / WO **#3243** (self-referential check available: once it merges, the patched `cmd_sync` itself recognizes this solver-lane merge and closes #3243).
+1. Dispatch **#2567** → atomic claim rejected: `CLAIM_CONFLICT_OTHER` (contributor-agent, lease to 13:05Z) → moved to next candidate per STALE-CLAIM GUARD, no retry. Residual need already served: gate census r+4 landed in-hour (#3304).
+2. Next dispatch **#2811** → skipped without claim: fresh r1 evidence refresh landed 12:32Z (WO #3305 / PR #3306) — near-duplicate avoided (anti-stampede).
+3. During #2567 premise re-verification, fresh defect found on main: `run_all_guards.py` wires `verdict_plane_age_guard.py --self-test` (wiring **#3268 merged**) while the script is absent (carrying **PR #3257 still in gate**) → suite entry exits 1 on every run with an obscure errno-2. Live-proven at `5086c24`.
+4. Root-cause fix (class "wiring outruns implementation"): discovery issue **#3316**; new stdlib-only `scripts/ci/wiring_integrity_guard.py` (AST-parses the roster, `--check` names every wired-but-absent path with the action, `--self-test` 5/5 on a synthetic tree); wired FIRST in the roster (house double-entry convention); `scripts/ops/_INDEX.md` regenerated (532 scripts, 6 hand sections preserved). `generate_script_index.py --check` OK.
+5. Submitted: branch `bridge/bridge-20261030-wiring-integrity-glm31` → WO **#3319** / **PR #3320** (CI Guardian evaluates; no auto-close of #3316 — its live-red half clears when #3257 lands, closure stays with the verdict plane).
 
 ## Not done (honest bounds)
 
-- #2547 left open (report-only row; closure decision belongs to the verdict plane/admin).
-- Claim- and verdict-plane reconciler extensions: not attempted this cycle — same-plane scope discipline (WO plane only).
+- #2567 / #2811 untouched beyond the guard's trail — both actively served by other agents in-hour; duplicate filings withheld.
+- #3316 left open intentionally (two-part finding: class fixed by PR #3320, instance cleared by #3257).

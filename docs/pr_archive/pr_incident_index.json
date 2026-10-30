@@ -1,0 +1,221 @@
+{
+  "version": 2,
+  "records": [
+    {
+      "pr_number": 3268,
+      "title": "feat(bridge): wiring supplement to bridge-20261030-verdict-age-gate (#2567, PR #3257), final reconciliation: run_all_guards.py sent as full_file equal to the branch tip's own content (live roster iâ€¦ (bridge-20261030-verdict-age-gate-wiring)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "GLM Agent 32 (Job 486850)",
+      "reflection_why": "why: the first submission of this taskId applied the roster line non-atomically (commit landed, overall response reported failure because the bundled _INDEX.md hunk was unappplicable on the landing plane), so no PR opened and re-applying the unified diff now fails on the changed context. Root-cause honest fix: send the byte-identical branch-tip content as full_file â€” a no-delta overwrite that cannot regress any live entry â€” purely to let the intake chain complete and open the supplement PR. Same taskId throughout: one branch, one task, zero duplicate work orders.",
+      "alternatives_rejected": "- alternatives_rejected: 1) A fresh taskId (new branch+PR) â€” rejected: duplicate-stampede class (AGENTS.md U5). 2) Re-sending the unified diff again â€” rejected: its old-side block no longer exists on the branch (line already applied); fail-closed apply will always reject it. 3) Leaving the chain dangling for a human â€” rejected: the missing roster line keeps PR #3257's own test red after landing; the reconciliation is mechanical.",
+      "touched_files": [
+        "scripts/ci/run_all_guards.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3268.diff",
+      "diff_size_bytes": 659,
+      "indexed_at": "2026-10-30T12:03:58.558863+00:00"
+    },
+    {
+      "pr_number": 3266,
+      "title": "feat(bridge): fix(loop): scan-B transport resilience â€” REST-dark tower fallback for the merged-landing cross-scan. Live anatomy (GLM Agent 22, Job 486813, 2026-10-30): same session, same boâ€¦ (bridge-20261030-landing-fetch-tower-fallback-r1)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "GLM Agent 22 (Job 486813)",
+      "reflection_why": "The premise-delivered demotion (#3194) is the repo's structural defense against duplicate-minting dispatches, but its only transport is an unauthenticated REST endpoint whose shared-IP budget makes it chronically dark on the documented external-agent runtime â€” so the defense silently evaporates exactly when agent concurrency (and rate pressure) is highest. I witnessed the flip live inside one session and burned a cycle on it. The board query already carries the repo-blessed cure (tower fallback); extending the same proven pattern to scan B closes the defect class at the root instead of asking every future agent to hand-re-verify premise-delivered rows.",
+      "alternatives_rejected": "- (1) In-gates WO title scan (my archived r1 design, docs/bridge/bridge-20261030-premise-delivered-residual-r1.md): withheld â€” it widens #3194's merged-only signal policy, a verdict-plane decision, not mine. (2) Authenticated REST via env token: external agents are zero-credential by constitution; no token exists on this surface. (3) Retry-with-backoff on REST: same 60 req/h IP budget â€” retries deepen the 403 storm and still leave the scan dark; a second transport is the only durable cure. (4) Demote-on-failure caching across pick runs: turns a transient dark plane into a sticky blind spot in the BLOCKING direction â€” violates the fail-open contract. (5) Move scan B wholly to the tower: drops body-citations the REST window carries; REST first + tower second preserves the stronger window when available.",
+      "touched_files": [
+        "scripts/agents/continuous_agent_loop.py",
+        "tests/test_landing_fetch_tower_fallback.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3266.diff",
+      "diff_size_bytes": 24243,
+      "indexed_at": "2026-10-30T12:04:01.655262+00:00"
+    },
+    {
+      "pr_number": 3262,
+      "title": "feat(bridge): docs(bridge): Identity registration + run worklog: GLM Agent 19 (Job 486803), zero-credential anonymous surface. One cycle 11:19Z-12:0xZ: door honored (MCP tower handshake -> AGENTS.md + bridgâ€¦ (bridge-20261030-identity-glm19)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "GLM Agent 19 (Job ID: 486803)",
+      "reflection_why": "Identity receipts are the accountability thread for the anonymous surface: the atomic-claim plane stores a sanitized agentId, so a durable in-repo receipt (the glm06/07/08/11/13/21/32 convention) is the only place the cycle's decisions (stale-claim moves, evidence, submission pointers) survive for the next agent.",
+      "alternatives_rejected": "- Appending to the PR #3259 body - mixes identity boilerplate into a code review surface; separate receipt keeps the diff reviewable. Skipping the receipt - loses the cross-cycle stale-claim/idempotency evidence trail. Consolidating old glm receipts - outside this cycle's scope and touches other agents' receipts.",
+      "touched_files": [
+        "docs/bridge/bridge-20261030-identity-glm19.md"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3262.diff",
+      "diff_size_bytes": 2882,
+      "indexed_at": "2026-10-30T12:04:04.417003+00:00"
+    },
+    {
+      "pr_number": 3259,
+      "title": "feat(bridge): fix(bridge): full-board drainage join in the landing watchdog (#2516 remedy item 2) - run_verdicts() silently dropped open rows outside the bridge:queued/rejected label pair, so seâ€¦ (bridge-20261030-watchdog-fullboard-join-r1)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "GLM Agent 19 (Job ID: 486803)",
+      "reflection_why": "#2516 proved the watchdog's git-join census was structurally blind outside the bridge:queued/rejected label pair: a landed row carrying any other label never surfaced, and the label-plane never-touched fingerprint (updatedAt==createdAt) under-counted the backlog for drainage planning (label-plane 14 vs authoritative git-join 34, material at 2.4x). Root cause: the label filter was allowed to shrink the REPORT surface, though the guard's own reconciliation model names the history plane as ground truth for a landing. The fix makes the join run against ALL open rows and lets the label shape only the message (label_plane tag), never visibility - so future stragglers surface within one cycle instead of accumulating between manual matrix-scoped sweeps.",
+      "alternatives_rejected": "- (1) Admin batch-close and route-B tower reconciler - #2516 remedy items 1/3 are admin/tower-owner lanes, unreachable from the zero-credential public-repo contract. (2) Flagging non-landed non-queued rows as LANDING_AT_RISK - rejected: they may be plain tracker issues; that adds a brand-new false-positive class on the strict surface (the rejected-plane doctrine exists for exactly this reason). (3) Repairing only the never-touched fingerprint (e.g. joining tower claim comments) - symptom patch: the label-plane count would still structurally drift from git-join. (4) A separate new census script - duplicates planes the guard already owns instead of repairing the one SSOT consumers already read.",
+      "touched_files": [
+        "scripts/ci/bridge_landing_watchdog.py",
+        "tests/test_bridge_landing_watchdog.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3259.diff",
+      "diff_size_bytes": 13506,
+      "indexed_at": "2026-10-30T12:04:08.350936+00:00"
+    },
+    {
+      "pr_number": 3255,
+      "title": "feat(bridge): feat(ci): closure-time live-state gate (#2925 Option A) â€” before any closing artifact for a platform-audit-labeled subject, mechanically evaluate its declared recovery criterion againâ€¦ (bridge-20261030-closure-live-state-gate)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "GLM Agent 28 (Job ID: 486832)",
+      "reflection_why": "The false-close family (#2225 second false-close 23:18:17Z; #2738, #2615, #2159/a8, #2470) is structural: proof plane (#2897) and witness plane (C49 #2916) record live-state violations in real time, but no mechanism consumes either plane at the closing act â€” the #2886 template fix binds dispatch picks and structurally cannot bind closing acts. Only a mechanical, fail-loud gate inside the closing path retires the class; the #2897 29th-proof sweep is the manually-executed prototype this submission mechanizes (#2925 Option A verdict: adapt). Scope note honored: platform-audit label scoping keeps normal fix-lane closures (which close on repo-verifiable landing evidence) outside the gate.",
+      "alternatives_rejected": "- Option C (auto-challenger with reopen authority): rejected by #2925 itself â€” a blind reopener feeds close/reopen oscillation (22:11 reopen vs 23:18 re-close is 67 minutes); churn, not integrity. Option D (a 30th #2225 proof addendum): the proof line is saturated; a 30th receipt changes no causal link. Option B (verdict-plane precondition on the tower controller): complementary and correct, but repo PRs cannot reach that surface â€” routed for the tower-owner, unchanged by this lane. Trusting resource_status alone: live-proven unsafe this cycle (it echoes status:healthy for bogus ids), hence the resource_list existence SSOT + echo-refusal design.",
+      "touched_files": [
+        "docs/bridge/bridge-20261030-identity-glm28.md",
+        "scripts/ci/closure_live_state_gate.py",
+        "scripts/ci/run_all_guards.py",
+        "scripts/ops/_INDEX.md",
+        "tests/test_closure_live_state_gate.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3255.diff",
+      "diff_size_bytes": 50412,
+      "indexed_at": "2026-10-30T12:04:11.733376+00:00"
+    },
+    {
+      "pr_number": 3210,
+      "title": "feat(hybrid-agent): implement dual-layer scoped github mcp and tower verification",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "zero-credential-hybrid-architect",
+      "reflection_why": "Establish a unified, safe Hybrid Architecture for external web agents (Devin, OpenHands, web runners) allowing fast read queries via scoped GitHub MCP while routing all write/patch executions strictly through SupremeAI Control Tower.",
+      "alternatives_rejected": "Pure Direct GitHub MCP (high blast radius, bypasses invariants), Pure MCP Tower (lacks broad read versatility for issues and discussions).",
+      "touched_files": [
+        ".github/workflows/pipeline.yml",
+        "AGENTS.md",
+        "core/mcp_allowlist.py",
+        "docs/AGENT_LOOP_SPEC.md",
+        "infrastructure/mcp-control-plane/mcp_config.remote.json",
+        "infrastructure/mcp-control-plane/src/tools/bridge.tools.ts",
+        "mcp.json",
+        "scripts/agents/pr_lifecycle_guard.py",
+        "scripts/ci/auto_bridge_pr_opener.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3210.diff",
+      "diff_size_bytes": 16150,
+      "indexed_at": "2026-10-30T11:45:28.393710+00:00"
+    },
+    {
+      "pr_number": 3175,
+      "title": "feat(bridge): ops(bridge) #2508 prescription A - submitter-side receipt-closure convention: bridge_guide now carries contract.receiptClosureConvention (docs-only keep-open default vs closeâ€¦ (bridge-20261030-glm23-receipt-closure-convention)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "#2490 shipped the closesOriginalIssue escape hatch but zero post-deploy adoption left the docs-only receipt cohort (#2470's never-touched rows) growing one row per docs-only landing - the flag exists yet submitters never encounter it. The guide is the SSOT surface every zero-credential submitter reads at onboarding and AGENT_LOOP_SPEC section 6 is the pathway doc loop-runner agents consume, so the convention note lands in exactly those two places plus a freshness test that fails if the guide ever drops it - making prescription A self-sustaining instead of tribal knowledge.",
+      "alternatives_rejected": "- B (tower-owner one-shot sweep with bridge:landed stamps): rejected - heals the existing 17 rows once but does not stop the next docs-only receipt from sticking, and it is owner-action outside contributor reach. C (default flip of the spec-only heuristic): rejected - silently closes genuine spec-only work orders that still owe code, the same reason #2490 rejected it. Docs-only convention file with no guide payload change: rejected - a report-only note no submitter sees at submission time repeats the zero-adoption failure mode.",
+      "touched_files": [
+        "docs/AGENT_LOOP_SPEC.md",
+        "infrastructure/mcp-control-plane/src/tools/bridge.tools.ts",
+        "infrastructure/mcp-control-plane/test_bridge_freshness.ts"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3175.diff",
+      "diff_size_bytes": 4589,
+      "indexed_at": "2026-10-30T11:58:30.495822+00:00"
+    },
+    {
+      "pr_number": 3172,
+      "title": "feat(bridge): fix(ci): ghost-host class closure (Closes #2377): #2365 retired 4 ghost instances but named the class without enforcing it â€” 2 executable + 4 doc surfaces survived. This lands the remaiâ€¦ (bridge-20261030-ghost-host-guard-2377)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "#2377's process lesson demands probe URLs pinned to the repo-SSOT host list; the ghost default in both curl-tests smoke scripts reproduces the exact false 'core-api DARK' outage #2348 filed and #2377 retracted. #2365 fixed 4 instances and named the class but landed no enforcement, so 2 executable + 4 doc surfaces survived. The root-cause form is a guard, not another instance fix: zero tolerance on executable/config surfaces, immutable evidence lanes, and a self-enforcing retirement banner for historical Markdown â€” making the class structurally un-reintroducible.",
+      "alternatives_rejected": "- (a) instance-fix only â€” rejected: #2365 did exactly that and 6 surfaces survived; the defect is the class, not the instance. (b) rewrite the ghost URLs inside historical SEQ/SENTRY receipts â€” rejected: rewriting measured-evidence falsifies the audit trail; banner + allowlist keeps history intact and read-safe. (c) per-file allowlist for the SEQ docs â€” rejected in favor of the banner-marker condition: a strip-the-banner-keep-the-string regression fails the guard, so the allowance is self-enforcing. (d) exclude the guard's own file from the scan â€” rejected: runtime string assembly keeps the contract total (self-scan stays inside the live sweep).",
+      "touched_files": [
+        "docs/SEQ04_CONSUMERS_QUICKSTART_HANDOFF.md",
+        "docs/SEQ453_LIVE_TELEMETRY_PROBE_HANDOFF.md",
+        "examples/curl-tests/run_e2e_smoke.ps1",
+        "examples/curl-tests/run_e2e_smoke.sh",
+        "scripts/ci/ghost_host_guard.py",
+        "scripts/ci/run_all_guards.py",
+        "scripts/ops/_INDEX.md",
+        "tests/test_ghost_host_guard.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3172.diff",
+      "diff_size_bytes": 26477,
+      "indexed_at": "2026-10-30T11:58:35.656375+00:00"
+    },
+    {
+      "pr_number": 3170,
+      "title": "feat(bridge): Recovery correction (report-only) for #2792: the private Bridge Intake gate is UP. Live 2026-10-30T10:2xZ, tower github.workflow_runs on Supremeai-bd/supremeai: after the 3 documentedâ€¦ (bridge-20261030-2792-intake-recovery-r1)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "#2792 (P1-major) presents a live outage that has actually been healed for ~36h; the loop's U3 STALE-INCIDENT GUARD requires the skip be recorded with evidence so future solvers stop chasing the dead incident, and the board's priority scans stop amplifying a false headline.",
+      "alternatives_rejected": "- (a) closing #2792 - closure authority is the filer/admin's (out-of-envelope remedy; guard suggestion still open value); (b) skipping silently - the guard mandates evidence-attached skip; (c) RCA on the failed runs - logs remain the filer's capture and the remedy lane is private-repo admin.",
+      "touched_files": [
+        "docs/bridge/bridge-20261030-2792-intake-recovery-r1.md"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3170.diff",
+      "diff_size_bytes": 3770,
+      "indexed_at": "2026-10-30T11:58:41.999953+00:00"
+    },
+    {
+      "pr_number": 3168,
+      "title": "feat(bridge): Report-only state-change receipt for #2470 (docs-only, zero code paths): first clean post-sweep run of the landed #2451 watchdog (self-test 54/54, HEAD d90cf0f) â€” cycle 59 (WO #3â€¦ (bridge-20261030-watchdog-postsweep-census-r1)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "#2470's observation protocol demands a report on state change from the landed watchdog. The state DID change: the 11-row never-touched cohort and the 47-row FALSE_REJECTION cohort vanished after the 08:44:58Z manual sweep that cycle 59 (WO #3128) confirmed â€” but cycle 59's own watchdog run was BLOCKED (streak 8), so the sweep had no machine-attested census from the row's designated instrument. This receipt is that missing verification leg: first clean post-sweep run (self-test 54/54 at d90cf0f), proving the old cohort is closed+stamped (spot-verified 414/421/465), the rejected plane rejoins cleanly (9/9), the unreadable-verdict backlog dropped 50->11, and the tip is still dark (2/2 newest unstamped) â€” which keeps #2470's continuing-half honestly open instead of declaring a false resolution.",
+      "alternatives_rejected": "- 1. Filing a fresh issue instead of a docs receipt â€” rejected: #2470 explicitly owns the observation protocol; a duplicate row violates the anti-stampede invariant. 2. Emitting Closes #2470 via closesOriginalIssue=true â€” rejected: the flap's continuing-half (verdict blackout at the tip, 2/2 newest unstamped) is unproven either way; #2405/#2368 precedent keeps spec-only receipts open. 3. Waiting for the next cycle's filer to report â€” rejected: the instrument evidence was already collected this cycle and the state change is material (47-row and 11-row cohorts resolved); the protocol says report now. 4. Editing the loop or tower code in the same WO â€” rejected: out of this row's report-only scope; kept the delivery single-purpose and revertible.",
+      "touched_files": [
+        "docs/reports/FLAP_WATCHDOG_POSTSWEEP_CENSUS_2026-10-30.md"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3168.diff",
+      "diff_size_bytes": 4701,
+      "indexed_at": "2026-10-30T11:58:53.864024+00:00"
+    },
+    {
+      "pr_number": 3166,
+      "title": "feat(bridge): fix(agents): root-cause fix - _cli_resolve parsed the --model flag but never forwarded it to resolve_agent_identity(), so EVERY CLI identity registration ran the model=None -â€¦ (bridge-20261030-agent-identity-cli-model-forward)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "why: The bug is a CLI-adapter-layer defect: the argparse surface advertises --model (help text even documents it) but _cli_resolve dropped it on the floor, so the advertised flag was a silent no-op and every CLI agent landed in the 'unknown-' model namespace. That namespace drives CAS branch claims (agent/{model}-{role}-N) and heartbeat observability, so a dropped flag is not cosmetic - it misnames agents permanently (persistent identity.json). Root-cause layer is the adapter: fix is forwarding the parsed value, plus tests that pin the adapter->implementation contract so the flag-drop class cannot silently recur (any future parser/impl drift breaks the suite).",
+      "alternatives_rejected": "- alternatives_rejected: (1) fix only via AGENT_MODEL env documentation - rejected: keeps the advertised CLI flag broken and pushes the trap onto every operator; (2) re-derive a new agent_name when persisted identity's model prefix mismatches the resolved model - rejected for this slice: renames break heartbeat/cooldown continuity and CAS branch mapping; recorded here as a known limitation, needs its own cohesive WO if owners want namespace migration; (3) patch all _cli_* helpers defensively - rejected: audited each; only _cli_resolve drops the flag (_cli_heartbeat forwards model=args.model correctly), speculative edits elsewhere violate smallest-safe-change (P7).",
+      "touched_files": [
+        "scripts/agents/agent_identity.py",
+        "tests/test_agent_identity_cli_model_forward.py"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3166.diff",
+      "diff_size_bytes": 8108,
+      "indexed_at": "2026-10-30T11:59:05.243580+00:00"
+    },
+    {
+      "pr_number": 3151,
+      "title": "feat(bridge): Identity registered: GLM fixer 02 (Job 479095). Chain 39 verified (#3135 9dc81744 4839B, ~1h). Stillness 9th hour (#2225 unchanged; gates zero merges ~8.2h). #2557 contradiction unremedied 3r… (bridge-20261030-plane-watch-c59)",
+      "state": "MERGED",
+      "author": "paykaribazaronline",
+      "agent_identity": "paykaribazaronline",
+      "reflection_why": "This cycle's datum is divergence: the board grows while the machinery does not move. totalOpen went 91 -> 97 in one hour (+6 open rows/hour) while hub width stays capped at 20 - the structural gap widens by arithmetic, not churn; discovery through the hub gets worse every hour the gates stay frozen. Second: the queue plane self-healed (22nd's R2 resolved within ttl) but the verdict plane did not - #2557's peer-proven premature closure is now three cycles old with zero remediation, and peer #3140 says the verdict plane is 'self-documented absent; family doubles'. Both lanes independently describe the same missing actor. Third: the peer lane's #3138 triage is a model of what the loop needs - failure caught, root-caused (merge-combination typecheck), handoff receipt filed - all on a CI lane, while the deploy lane cannot move a single byte (activation frozen 41h). The loop can diagnose everything except act on anything.",
+      "alternatives_rejected": "- (a) Claiming the CI merge-combination failure #3138 - rejected: the peer lane already triaged it and filed a handoff receipt (#3148); duplicate claims collide and the failure is on the open repo's PR lane, adjacent to my report-only watch surface. (b) Probing Telegram for recovery - rejected: no newer sentry row exists in the window; the unrecorded recovery IS the datum; guard lane owns the series. (c) Claiming #3011/#3012 again now that #2925-#2974 dropped out - rejected: they are dispatch-plane defects, unowned by design of the dispatch owner; a watch-lane PR into a 9-hour-stalled gate adds pile, not progress. (d) Reading totalOpen growth (+6/h) as healthy intake - rejected: intake without merge or deploy is conveyor growth; the width cap means the visible queue gets staler, not busier. (e) Keeping the long-form worklog - rejected: the operator asked for a small worklog; compress older cycles, keep only the defect ledger and threads.",
+      "touched_files": [
+        "docs/reports/PLANE_WATCH_C59_2026-10-30.md"
+      ],
+      "has_verification_signature": true,
+      "diff_path": "diffs/pr_3151.diff",
+      "diff_size_bytes": 5139,
+      "indexed_at": "2026-10-30T12:19:54.469055+00:00"
+    }
+  ]
+}

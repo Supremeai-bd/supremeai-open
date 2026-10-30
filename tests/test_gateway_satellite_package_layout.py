@@ -106,16 +106,54 @@ def test_app_namespace_imports_resolvable_under_package_layout() -> None:
         assert spec is not None, f"package module must be importable: {mod_name}"
 
 
+def test_sync_lands_proprietary_license_at_api_root() -> None:
+    """#1690 regression pin: the api satellite root must receive the SSOT
+    proprietary notice (gateway/LICENSE) on every sync — ECOSYSTEM_MAP §2.3
+    guarantees every private repo carries the standard notice, yet no pipeline
+    ever landed one (the api head had no LICENSE while the boundary mirror
+    shipped the notice)."""
+    text = _read(SYNC)
+    assert 'gw_license = repo_root / "gateway" / "LICENSE"' in text, (
+        "sync must source the api satellite LICENSE from the SSOT mirror notice"
+    )
+    assert 'shutil.copy2(gw_license, tmp_repo / "LICENSE")' in text, (
+        "sync must land gateway/LICENSE at the satellite root"
+    )
+
+
+def test_boundary_license_is_proprietary_not_root_mit() -> None:
+    """#1690 posture pin: gateway/LICENSE is the SSOT notice for the mirrored
+    proprietary domain — the boundary root MIT must never lead it."""
+    lic = _read(REPO_ROOT / "gateway" / "LICENSE")
+    assert lic.lstrip().lower().startswith("proprietary license"), (
+        "gateway/LICENSE must carry the SupremeAI proprietary notice"
+    )
+    head = lic.split("roprietary", 1)[0]  # tolerate case variants of the lead
+    assert "MIT License" not in head, "the root MIT grant must not lead the gateway license"
+
+
+def test_ecosystem_map_declares_nearest_license_rule() -> None:
+    """#1690 SSOT pin: §2.3 must carry the nearest-LICENSE precedence rule so a
+    mirror subtree's own LICENSE always overrides the boundary root MIT grant."""
+    text = _read(REPO_ROOT / "ECOSYSTEM_MAP.md")
+    assert "Mirror licensing precedence" in text, "§2.3 must declare mirror licensing precedence"
+    assert "nearest-`LICENSE`" in text or "nearest-LICENSE" in text, (
+        "§2.3 must state the nearest-LICENSE rule"
+    )
+
+
 if __name__ == "__main__":
     failures = 0
+    total = 0
     for name, fn in sorted(
         (k, v) for k, v in globals().items() if k.startswith("test_") and callable(v)
     ):
+        total += 1
         try:
             fn()
             print(f"PASS {name}")
         except AssertionError as exc:
             failures += 1
             print(f"FAIL {name}: {exc}")
-    print(f"{7 - failures}/7 checks passed" if failures else "all checks passed")
+    print(f"{total - failures}/{total} checks passed" if failures else "all checks passed")
     sys.exit(1 if failures else 0)

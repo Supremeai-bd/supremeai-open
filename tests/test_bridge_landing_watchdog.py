@@ -200,10 +200,45 @@ def test_run_verdicts_label_ssot():
          {"number": 12, "title": f"x {slug}", "createdAt": old, "labels": ["P2-medium"]},
          {"number": 13, "title": f"x {slug}", "createdAt": old, "labels": "bridge:queued"}],
         [], [], now)
-    # Only bridge:queued WOs classified (list OR string label form); the P2
-    # issue is not this guard's subject.
+    # Only bridge:queued WOs classified (list OR string label form); an
+    # UNLANDED P2 issue is not this guard's subject (non-landed non-queued
+    # rows stay silent — zero new false positives).
     assert sorted(v["number"] for v in vs) == [11, 13], vs
     assert all(v["verdict"] == "LANDING_AT_RISK" for v in vs), vs
+
+
+def test_run_verdicts_full_board_join_2516():
+    """#2516 remedy item 2 (full-board drainage join): an open row with a
+    non-bridge label whose deliverable IS on main reports as MERGED_ON_MAIN
+    tagged label_plane=outside-queued — previously it accumulated invisibly
+    between manual matrix-scoped sweeps (the 34-row #2516 cohort). A landed
+    row is a self-fulfilled WO regardless of label; a non-landed one stays
+    unreported."""
+    mod = _load_watchdog_module()
+    now = 1793160000.0
+    old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 4 * 3600))
+    slug = "(bridge-20261028-alpha-lane)"
+    hist = [f"feat: landed (bridge-20261028-alpha-lane) (#1905)"]
+    vs = mod.run_verdicts(
+        [{"number": 21, "title": f"landed {slug}", "createdAt": old,
+          "updatedAt": old, "labels": ["report-only", "ops"]},
+         {"number": 22, "title": f"landed {slug}", "createdAt": old,
+          "labels": ["bridge:queued"]},
+         {"number": 23, "title": f"stuck (bridge-20261028-beta-lane)", "createdAt": old,
+          "labels": ["status:claimed"]}],
+        hist, [], now)
+    by_num = {v["number"]: v["verdict"] for v in vs}
+    assert by_num == {21: "MERGED_ON_MAIN", 22: "MERGED_ON_MAIN"}, vs
+    row21 = next(v for v in vs if v["number"] == 21)
+    assert row21.get("label_plane") == "outside-queued", row21
+    assert row21.get("never_touched") is True, row21  # flap fingerprint works outside the queued plane too
+    assert "label_plane" not in next(v for v in vs if v["number"] == 22), "queued rows carry no plane tag"
+    # Non-landed non-queued rows stay silent (zero new false positives).
+    vs = mod.run_verdicts(
+        [{"number": 24, "title": f"stuck (bridge-20261028-beta-lane)", "createdAt": old,
+          "labels": ["status:claimed"]}],
+        hist, [], now)
+    assert vs == [], vs
 
 
 def test_self_test_hermetic():

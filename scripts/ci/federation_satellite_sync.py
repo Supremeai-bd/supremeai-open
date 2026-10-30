@@ -227,6 +227,47 @@ def sync_workflows(src_wf_dir: Path, target_wf_dir: Path) -> None:
                 print(f"⚠️ Could not delete stale workflow file {t_file.name}: {e}")
 
 
+def prune_domain_self_shadows(satellite_root: Path, domain_name: str, mirror_root: Path) -> list[str]:
+    """(#1676 root cause) Fail-closed guard against domain self-shadow duplicates.
+
+    A satellite that receives a domain mirror must never carry a top-level
+    directory named after the domain itself (e.g. supremeai-studio:/studio/):
+    the satellite root IS the domain, so a nested same-name directory can only
+    be a stale sync artifact, and tooling resolving the nested path reads
+    different content than the canonical root file (split-brain). The generic
+    sync uses prune=False for the domain root tree (satellites legitimately own
+    mirror-extraneous files such as Dockerfile/nginx.conf), so nothing else
+    ever removes these orphans once created — this guard closes that gap for
+    every satellite, permanently.
+
+    1. Start-gate (fail-closed): if the mirror in supremeai-open itself contains
+       a top-level `<domain_name>/` directory, raise — the contamination must be
+       fixed in the open mirror before any sync can proceed.
+    2. Satellite cleanup: remove `satellite_root/<domain_name>/` entirely and
+       return the removed paths, so every future sync run heals the satellite
+       instead of silently preserving stale duplicates.
+    """
+    removed: list[str] = []
+    mirror_shadow = mirror_root / domain_name
+    if mirror_shadow.is_dir():
+        raise RuntimeError(
+            f"#1676 self-shadow guard: mirror '{mirror_root.name}/{domain_name}/' contains "
+            f"a top-level copy of its own domain name — remove the nested directory from "
+            f"the supremeai-open mirror before syncing {domain_name}."
+        )
+    shadow_root = satellite_root / domain_name
+    if shadow_root.exists():
+        for path in sorted(shadow_root.rglob("*")):
+            if path.is_file():
+                removed.append(str(path.relative_to(satellite_root)))
+        shutil.rmtree(shadow_root, ignore_errors=True)
+        print(
+            f"🧹 [#1676] Removed stale self-shadow domain copy '{domain_name}/' from "
+            f"satellite ({len(removed)} files) — satellite root is the canonical surface."
+        )
+    return removed
+
+
 def sync_satellite(
     target_repo: str,
     source_dir: str,
@@ -323,6 +364,20 @@ def sync_satellite(
             if req_src.exists():
                 shutil.copy2(req_src, tmp_repo / "requirements.txt")
                 print(f"📋 Synced requirements.txt -> root in {target_repo}")
+            # Sync the proprietary license notice into the satellite root (#1690):
+            # ECOSYSTEM_MAP §2.3 guarantees "All private repositories carry the
+            # standard SupremeAI proprietary license notice", yet no pipeline ever
+            # landed one here — the api satellite head carries no LICENSE at all
+            # while the boundary mirror ships the SSOT notice at gateway/LICENSE
+            # (the root MIT of supremeai-open must never leak into this proprietary
+            # domain). gateway/LICENSE stays the single SSOT: mirror it
+            # byte-identically on every sync so the satellite IP posture can never
+            # drift from the boundary posture again (nearest-LICENSE rule,
+            # ECOSYSTEM_MAP §2.3).
+            gw_license = repo_root / "gateway" / "LICENSE"
+            if gw_license.exists():
+                shutil.copy2(gw_license, tmp_repo / "LICENSE")
+                print(f"📋 Synced license notice gateway/LICENSE -> LICENSE (root) in {target_repo}")
         elif target_repo == "Supremeai-bd/supremeai-studio":
             # Copy domain files into the satellite root (non-destructive)
             copy_tree_contents(src_path, tmp_repo, prune=False)
@@ -349,6 +404,15 @@ def sync_satellite(
             dom_wf_src = src_path / ".github" / "workflows"
             if dom_wf_src.exists():
                 sync_workflows(dom_wf_src, tmp_repo / ".github" / "workflows")
+
+        # (#1676 root cause) Domain self-shadow guard — fail-closed on mirror
+        # contamination, heal stale nested same-name copies on every satellite.
+        shadow_removed = prune_domain_self_shadows(tmp_repo, source_dir, src_path)
+        if shadow_removed:
+            print(
+                f"🧹 [#1676] Pruned self-shadow copies from {target_repo}: "
+                + ", ".join(shadow_removed)
+            )
 
         # Copy contract mirror pairs specific to this satellite
         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
