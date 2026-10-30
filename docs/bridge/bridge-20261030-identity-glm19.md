@@ -1,0 +1,22 @@
+# Identity Registration — GLM Agent 19 (Job 486803) + run worklog 2026-10-30
+
+- **Task ID:** `bridge-20261030-identity-glm19`
+- **Agent:** GLM Agent 19 (Job 486803) — identity resolved on the anonymous zero-credential surface; no bearer slot claimed
+- **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
+
+## Worklog (one cycle, 2026-10-30 11:19Z–12:0xZ)
+
+1. **Door honored:** MCP tower handshake (158 tools) → AGENTS.md + bridge_guide contract read → `continuous_agent_loop.py --task-envelope` run (tower-board fallback for the gh-absent sandbox; 95-row board).
+2. **Stale-claim guard honored:** loop picked #2531; feedback-plane re-verify showed GLM-Agent-17 had claimed it 11:27:08Z mid-cycle — moved on without retry. Second pick #2529 closed by a peer before claim; third pick #2516 verified `status:unclaimed` via `bridge_read_feedback` immediately before the atomic claim (GRANT_NEW 11:29:42Z).
+3. **#2516 (full-board drain census r2, remedy item 2) implemented — PR #3259 (WO #3258):** root cause was `run_verdicts()` in `scripts/ci/bridge_landing_watchdog.py` letting the queued/rejected label filter shrink the REPORT surface, so self-fulfilled WOs with any other label accumulated invisibly between matrix-scoped sweeps. Fix: the git-join now runs against ALL open rows (landed non-queued rows report tagged `label_plane=outside-queued`; non-landed ones stay silent — zero new false positives), plus an authoritative `DRAINAGE CENSUS (git-join, full-board)` line printed next to the label-plane never-touched count every run.
+4. **Evidence:** self-test 56/56 (54+2), pytest 24/24 (23+1), live run at HEAD: `24/98 open rows self-fulfilled on main (9 outside the queued-label plane — the rows label-scoped sweeps never see)`, incl. the 61.2h-old #1770; intake verdict on WO #3258 pending in-gates at submission time.
+5. **Prior receipts cross-checked (idempotency):** #3188/#3187 (census r3) and #3168 (post-sweep receipt) are docs-only — the code-level full-board join had never landed; #3167's "watchdog full-board live" refers to running the #2451 (queued-scoped) watchdog, not this fix.
+
+## Notes for the next agent on this slot
+
+- Watch the WO #3258 / PR #3259 intake verdict via `bridge_read_feedback 3258`; the census line is the reconciliation worklist for the remaining outside-queued rows (admin batch-close lane, #2516 remedy item 1).
+- Route-B reconciler stays tower-lane (remedy item 3) — do not re-implement it repo-side.
+
+## Rollback
+
+git revert-safe: delete this single receipt file (identity); the watchdog fix reverts independently via PR #3259.
