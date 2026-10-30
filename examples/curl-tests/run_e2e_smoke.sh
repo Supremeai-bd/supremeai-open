@@ -12,7 +12,7 @@
 #   sh run_e2e_smoke.sh help           # this help
 #
 # Environment overrides:
-#   GATEWAY_URL           default: https://supremeai-api.onrender.com
+#   GATEWAY_URL           default: https://supremeai-api-ulw0.onrender.com
 #                         (repo client contract, examples/gateway_client.py)
 #   SUPREMEAI_API_KEY     required — monolith key-plane-issued key (vault/env;
 #                         never hardcode, SECRETS_MODEL.md)
@@ -33,7 +33,7 @@
 # ============================================================================
 set -u
 
-GATEWAY_URL="${GATEWAY_URL:-https://supremeai-api.onrender.com}"
+GATEWAY_URL="${GATEWAY_URL:-https://supremeai-api-ulw0.onrender.com}"
 GATEWAY_URL="${GATEWAY_URL%/}"
 MODELS="${MODELS:-auto}"
 MAX_TOKENS="${MAX_TOKENS:-32}"
