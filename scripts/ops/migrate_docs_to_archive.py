@@ -83,7 +83,7 @@ def is_must_keep(rel_path: str) -> bool:
     if rel_path.lower() in {"readme.md", "agents.md", "license", "security.md"}:
         return True
         
-    if rel_path in {"docs/AGENT_OPERATING_SYSTEM.md", "docs/AGENT_LOOP_SPEC.md", "docs/ARCHITECTURE.md"}:
+    if rel_path in {"docs/AGENT_OPERATING_SYSTEM.md", "docs/AGENT_LOOP_SPEC.md", "docs/ARCHITECTURE.md", "docs/SCOUT_RADAR_INDEX.md"}:
         return True
 
     if rel_path.startswith("docs/specs/") or rel_path.startswith("docs/runbooks/"):
