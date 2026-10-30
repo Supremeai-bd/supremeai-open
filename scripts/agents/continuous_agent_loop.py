@@ -6,7 +6,9 @@ CONTRACT_VERSION = "agent-loop-contract/1"
 Traffic-police logic:
 1. Always display the 5 Universal Invariant Pillars (Common Rules).
 2. If unclaimed issues exist -> Unlimited Solvers allowed: prompt agent with solver mandate & auto-dispatch.
-3. If no open issues exist -> Reset/zero cadence timers so scheduled roles can run immediately.
+3. If no claimable work exists -> Scheduled roles run immediately in event-driven
+   rotation, one per idle cycle (#3573: zero artificial timer locks); once every
+   scheduled role has run this episode, report clean state and sleep safely.
 4. Scheduled roles -> Exactly 1 agent at a time per role (active lock / immediate state advance).
 5. Problematic/stuck issues -> Agents autonomously decide and handle them.
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
@@ -21,12 +23,20 @@ CONTRACT_VERSION = "agent-loop-contract/1"
 UPSTREAM_REPO = "Supremeai-bd/supremeai-open"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CADENCE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence.json"
-STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_cadence_state.json"
+# #3573: the rotation-state file is NEW-NAMED — the old agent_cadence_state.json
+# held timer-regime timestamps whose hour-gate semantics are gone; a fresh file
+# makes the regime switch deterministic (the old file just sits ignored; both
+# are gitignored machine-local state, #1624).
+STATE_FILE = REPO_ROOT / "scripts" / "agents" / "agent_rotation_state.json"
 ISSUE_LEASE_FILE = REPO_ROOT / "scripts" / "agents" / "dispatched_issues_state.json"
 TRIAGE_RECEIPTS_FILE = REPO_ROOT / "scripts" / "agents" / "incident_triage_receipts.json"
-# #57 SSOT: the lease length is owned by scripts/agents/claim_thresholds.py.
-# That module was landed to end the release<->re-claim flip-flop war, but the
-# loop kept its own hardcoded copy — the exact dual-SSOT drift #57 documents.
+# #57 SSOT lineage: scripts/agents/claim_thresholds.py owns the 30-minute
+# tower-claim lease constants (anti-stampede war fix — that plane is untouched).
+# #3573 removed the loop's local 30-minute dispatch time-gate: the live claim
+# probe (_feedback_claim_active) and the atomic work_claim are the ONLY
+# conditions that skip/own a row now — no clock decides claimability. The SSOT
+# import remains only for the machine-local dispatch JOURNAL retention below
+# (hygiene-only prune; the journal is an observability record, never a gate).
 # Support both direct repo-root imports (scripts.agents.claim_thresholds) and
 # same-dir execution (claim_thresholds).
 try:
@@ -34,7 +44,7 @@ try:
 except ImportError:
     from claim_thresholds import ORPHAN_RELEASE_MINUTES  # noqa: E402
 
-ISSUE_LEASE_SECONDS = ORPHAN_RELEASE_MINUTES * 60.0  # 30-minute autonomous lease (Rule 9 parity without GitHub claim friction)
+DISPATCH_JOURNAL_RETENTION_SECONDS = ORPHAN_RELEASE_MINUTES * 60.0
 
 RULE_FRESHNESS_FILES = (
     "AGENTS.md",
@@ -1376,15 +1386,17 @@ def pick_next_issue(
         return None
     log_fn = log_fn or log
 
-    lease_store = load_issue_lease_store()
-    now_ts = time.time()
-
     def is_claimable(item: dict[str, Any]) -> bool:
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
-        # বাংলা: ৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং — অন্য এজেন্ট যদি ৩০ মিনিটের মধ্যে কাজ শেষ না
-        # করে থাকে, তবে এটি নিজে থেকেই রিলিজ হয়ে রি-ক্লেইমযোগ্য হয়ে যাবে।
+        # বাংলা: #3573 — এখানে কোনো সময়-ভিত্তিক এক্সক্লুশন নেই। আগে ৩০-মিনিট লোকাল
+        # লিজ উইন্ডো ডিসপ্যাচ-হওয়া কিন্তু-এখনো-আনক্লেইমড অ্যাকশনেবল কাজকে ঘড়ির
+        # কারণে স্কিপ করাত (প্রতিষ্ঠাতা-নিষেধ: কৃত্রিম অপেক্ষা)। এখন একমাত্র শর্ত
+        # দুটি: EXCLUDED_LABELS ও state-truth (নিচে) — আর লাইভ claim, যা pick
+        # pre-verify-এর claim_probe (#2794 fix (1)) দেখে; atomic work_claim-ই
+        # চূড়ান্ত স্ট্যাম্পিড-আরবিটার। SPEC §4c-র স্বীকৃত "fixed guess" ঘড়িটাই
+        # মুছে ফেলা হল।
         # #2903 fix: state truth on the fallback plane — the gh-present path
         # pre-filters `gh issue list --state open`, but tower-board fallback rows
         # carry `state` verbatim, so a closed row with stale unclaimed labels
@@ -1396,10 +1408,6 @@ def pick_next_issue(
         # behavior is unchanged.
         state = item.get("state")
         if state is not None and str(state).lower() != "open":
-            return False
-        num_str = str(item.get("number", ""))
-        leased_at = lease_store.get(num_str)
-        if leased_at is not None and (now_ts - leased_at) < ISSUE_LEASE_SECONDS:
             return False
         return True
 
@@ -1629,13 +1637,18 @@ def action_instruction(picked: str | int) -> str:
     )
 
 
-DEFAULT_CADENCE_HOURS: dict[str, int] = {
-    "ecosystem-scout": 12,
-    "auditor": 12,
-    "human-eye": 24,
-    "rules-breaker": 24,
-    "platform-guardian": 24,
-}
+# #3573 — event-driven scheduled roles (ORDERED rotation, zero hour-locks).
+# The old DEFAULT_CADENCE_HOURS (12h/24h cadence gates) forced oversight roles
+# to wait out a clock even when the board was idle; the rotation below is
+# condition-driven: one scheduled role per idle cycle, in this order, re-armed
+# by work events (a claimable issue being dispatched).
+DEFAULT_SCHEDULED_ROLES: tuple[str, ...] = (
+    "ecosystem-scout",
+    "auditor",
+    "human-eye",
+    "rules-breaker",
+    "platform-guardian",
+)
 
 DEFAULT_MERGED_ROLES: dict[str, str] = {
     "federation-auditor": "auditor",
@@ -2554,27 +2567,38 @@ def build_task_envelope(
     return {"task_envelope": envelope}
 
 def load_cadence_config(path: Path | None = None) -> dict[str, Any]:
+    """#3573 config v2 — `scheduled_roles` (ordered rotation) + `merged_roles`.
+
+    Legacy `cadences_hours` configs are accepted for one regime: their KEYS
+    become the role order and the hour values are IGNORED (zero artificial
+    timer locks). Invalid/missing configs fail safe to DEFAULT_SCHEDULED_ROLES.
+    """
     target = path or CADENCE_FILE
     try:
         if not target.exists():
             return {
-                "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
+                "scheduled_roles": list(DEFAULT_SCHEDULED_ROLES),
                 "merged_roles": dict(DEFAULT_MERGED_ROLES),
             }
         with target.open("r", encoding="utf-8") as fh:
             data = json.load(fh)
-        cadences = data.get("cadences_hours") or {}
+        roles = data.get("scheduled_roles")
+        if not isinstance(roles, list) or not roles:
+            legacy = data.get("cadences_hours") or {}
+            roles = [str(k) for k in legacy.keys()] if isinstance(legacy, dict) else []
+        cleaned = [str(r) for r in roles if str(r).strip()]
         merged = data.get("merged_roles") or {}
-        cleaned = {str(k): int(v) for k, v in cadences.items() if str(v).isdigit() and int(v) > 0}
         return {
-            "cadences_hours": cleaned or dict(DEFAULT_CADENCE_HOURS),
+            "scheduled_roles": cleaned or list(DEFAULT_SCHEDULED_ROLES),
             "merged_roles": merged or dict(DEFAULT_MERGED_ROLES),
         }
     except Exception:
         return {
-            "cadences_hours": dict(DEFAULT_CADENCE_HOURS),
+            "scheduled_roles": list(DEFAULT_SCHEDULED_ROLES),
             "merged_roles": dict(DEFAULT_MERGED_ROLES),
         }
+
+
 
 def canonical_role(role: str, config: dict[str, Any] | None = None) -> str:
     cfg = config or load_cadence_config()
@@ -2602,7 +2626,7 @@ def save_last_run_store(store: dict[str, float], path: Path | None = None) -> bo
         return False
 
 def load_issue_lease_store(path: Path | None = None) -> dict[str, float]:
-    """বাংলা: ডিসপ্যাচ করা ইস্যুগুলোর টাইমস্ট্যাম্প লোড করে (৩০ মিনিটের স্বয়ংক্রিয় লিজ ট্র্যাকিং)"""
+    """বাংলা: মেশিন-লোকাল ডিসপ্যাচ জার্নাল লোড (#3573-র পর কেবল পর্যবেক্ষণ-রেকর্ড — কোনো গেটিং নেই)"""
     target = path or ISSUE_LEASE_FILE
     try:
         if not target.exists():
@@ -2614,14 +2638,14 @@ def load_issue_lease_store(path: Path | None = None) -> dict[str, float]:
         return {}
 
 def mark_issue_leased(issue_number: str | int, now: float | None = None, path: Path | None = None) -> bool:
-    """বাংলা: ইস্যু ডিসপ্যাচ হওয়ার সাথে সাথে টাইমস্ট্যাম্প রেকর্ড করে অন্য এজেন্টের কনফ্লিক্ট আটকায়"""
+    """বাংলা: ইস্যু ডিসপ্যাচ হওয়ার সাথে সাথে জার্নাল-এন্ট্রি রেকর্ড করে (পর্যবেক্ষণ-রেকর্ড, গেট নয়)"""
     target = path or ISSUE_LEASE_FILE
     now_ts = now if now is not None else time.time()
     store = load_issue_lease_store(target)
-    # বাংলা: লেখার সময় মেয়াদোত্তীর্ণ entry প্রুন হয় — ফাইলে সর্বোচ্চ ৩০-মিনিট উইন্ডোর
-    # তরুণ লিজ + এই মুহূর্তে লেখা entry থাকে। claimability-চেক উইন্ডোর বাইরের entry
-    # যেকোনো অবস্থাতেই উপেক্ষা করে, তাই প্রুনিং আচরণ-নিরপেক্ষ — শুধু ফাইল সীমাবদ্ধ থাকে।
-    store = {k: v for k, v in store.items() if (now_ts - v) < ISSUE_LEASE_SECONDS}
+    # বাংলা: #3573-র পর এই ফাইল কেবল মেশিন-লোকাল ডিসপ্যাচ জার্নাল — কোনো গেট এটি
+    # পড়ে না। লেখার সময় রিটেনশন-উইন্ডোর বাইরের entry প্রুন হয় — কেবল ফাইল-হাইজিন,
+    # আচরণ-নিরপেক্ষ।
+    store = {k: v for k, v in store.items() if (now_ts - v) < DISPATCH_JOURNAL_RETENTION_SECONDS}
     store[str(issue_number)] = now_ts
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -2633,34 +2657,39 @@ def mark_issue_leased(issue_number: str | int, now: float | None = None, path: P
 def role_is_due(
     role: str,
     last_run_ts: float | None,
-    now_ts: float,
     config: dict[str, Any] | None = None,
 ) -> bool:
+    """#3573 episode semantics — due ⟺ the role has NOT run this episode.
+
+    No clock: the old `hours` gate is gone (Zero artificial timer locks). An
+    episode starts when work is assigned (run_dispatch_cycle re-arms the store
+    on the work event) and ends when every scheduled role has run once.
+    """
     cfg = config or load_cadence_config()
-    cadences = cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS)
     canon = canonical_role(role, cfg)
-    hours = cadences.get(canon) or cadences.get(role)
-    if not hours or hours <= 0:
+    scheduled = cfg.get("scheduled_roles", list(DEFAULT_SCHEDULED_ROLES))
+    if canon not in scheduled and role not in scheduled:
         return False
-    if last_run_ts is None:
-        return True
-    return ((now_ts - float(last_run_ts)) / 3600.0) >= hours
+    return last_run_ts is None
 
 def due_roles(
     last_runs: dict[str, float] | None,
-    now_ts: float | None = None,
     config: dict[str, Any] | None = None,
 ) -> list[str]:
     cfg = config or load_cadence_config()
     store = last_runs or {}
-    now = now_ts if now_ts is not None else time.time()
     # বাংলা: state কী-ও অবশ্যই canonical হতে হবে। mark_role_run() একটি
     # merged-source role-এর টাইমস্ট্যাম্প canonical কী-তে লেখে (যেমন
     # task-auditor → auditor), তাই read-ও সেই একই কী থেকে হতে হবে —
-    # নইলে canonical API নিজের mark নিজেই দেখে না এবং role প্রতি সাইকেলে
-    # আবার due হয়ে যায় (state-key drift, ট্রাফিক-পুলিশ নিয়ম ৪ ভাঙে)।
-    # ডিফল্ট কনফিগে canonical_role() identity — আচরণ বাইট-অপরিবর্তিত।
-    return [r for r in cfg.get("cadences_hours", DEFAULT_CADENCE_HOURS) if role_is_due(r, store.get(canonical_role(r, cfg)), now, cfg)]
+    # নইলে canonical API নিজের mark নিজেই দেখে না (#1569 লাইনেজ)।
+    # ক্রম = কনফিগের scheduled_roles ক্রম (legacy cadences_hours কনফিগ হলে
+    # তার কী-ক্রম), তাই প্রথম due role আগের মতোই প্রথমটি।
+    return [
+        r
+        for r in cfg.get("scheduled_roles", list(DEFAULT_SCHEDULED_ROLES))
+        if role_is_due(r, store.get(canonical_role(r, cfg)), cfg)
+    ]
+
 
 def mark_role_run(
     role: str,
@@ -2975,6 +3004,11 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         # শুধু সত্যিকারের resolved target-এ mark — board-unavailable/ad-hoc এনভেলপে নয়।
         if target_issue is not None and target_issue.get("number") is not None:
             mark_issue_leased(target_issue["number"])
+            # বাংলা: #3573 WORK EVENT — কাজ অর্পিত হলে পর্যবেক্ষণ-রোটেশন রি-আর্ম:
+            # পরের idle সাইকেলে scheduled role-গুলো ঘড়ি-অপেক্ষা ছাড়াই চলবে
+            # (নতুন নিয়ম-৩-এর ইভেন্ট-মডেল; state খালি = সব role আবার due)।
+            if load_last_run_store():
+                save_last_run_store({})
         # item 15 R2 — dark-scan honesty on the envelope: when the anonymous
         # merged-citation fetch failed this run, the envelope carries an
         # explicit board_note instead of silently serving an unverified premise.
@@ -3041,6 +3075,11 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             concurrency = "Unlimited concurrency allowed" if dispatch_role in ("solver", "coder") else "Single-runner role lock"
             suffix = f" (classified specialist: {classified})" if classified not in ("coder", "solver") and dispatch_role in ("solver", "coder") else ""
             mark_issue_leased(picked)
+            # বাংলা: #3573 WORK EVENT (dispatch-পথ) — কাজ অর্পিত হলে রোটেশন রি-আর্ম:
+            # কাজ শেষ হয়ে বোর্ড idle হলে পর্যবেক্ষণ-রোলগুলো তাৎক্ষণিক চলবে —
+            # ১২/২৪-ঘণ্টা ঘড়ি নয়, ইভেন্টই ট্রিগার (প্রতিষ্ঠাতা-নির্দেশ ১)।
+            if load_last_run_store():
+                save_last_run_store({})
             print(f"ASSIGNED ROLE: {dispatch_role}{suffix} ({concurrency})\nROLE MANDATE: {mandate}")
             print(action_instruction(picked))
             print("CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.")
@@ -3054,41 +3093,29 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             return 0
 
     cfg = load_cadence_config()
-    cadence = cfg.get("cadences_hours", {})
     state = load_last_run_store()
-    now = time.time()
 
-    # বাংলা: docstring-এর traffic-police নিয়ম ৩ ("If no open issues exist ->
-    # Reset/zero cadence timers so scheduled roles can run immediately") আগে
-    # কোডে কখনো বাস্তবায়িত হয়নি — স্থায়ীভাবে ব্যস্ত বোর্ডে শিডিউল-রোলগুলো
-    # চিরকালে অপেক্ষা করত। বোর্ড সত্যিই খালি (query সফল, raw শূন্য) হলে এখন
-    # টাইমার রিসেট হয় এবং এই সাইকেলেই প্রথম cadence রোল তাৎক্ষণিক চলে।
-    if not board_unavailable and not raw and state:
-        state = {}
-        save_last_run_store(state)
-        log("*", "board is clean — cadence timers reset (docstring rule 3); scheduled roles may run immediately.")
-
-    # বাংলা: cadence due-check এখন এক SSOT-এ — canonical API (due_roles →
-    # role_is_due → mark_role_run)। আগের inline হিসাব state[role] কাঁচা কী-তে
-    # পড়ত-লিখত এবং merged_roles উপেক্ষা করত; ফলে canonical mark অদৃশ্য হয়ে
-    # একই লজিক্যাল role বারবার ডিসপ্যাচ হত (live main 3a2dabf-এ প্রমাণিত:
-    # mark_role_run('task-auditor') → store['auditor'], inline loop
-    # store['task-auditor'] খোঁজে — ১০ ঘণ্টা পরেও পুনঃ-ডিসপ্যাচ; ট্রাফিক-পুলিশ
-    # নিয়ম ৪ ভাঙে)। due_roles() cadences_hours-এর ক্রমেই ফেরে, তাই প্রথম due
-    # role আগের মতোই প্রথমটি — ডিসপ্যাচ টেক্সট ও ক্রম বাইট-অপরিবর্তিত;
-    # ডিফল্ট কনফিগে canonical_role() identity, তাই আচরণে কোনো পরিবর্তন নেই।
-    # immediate state-advance (নিয়ম ৪) অক্ষত: mark → save → print → return।
+    # বাংলা: #3573 — কৃত্রিম ঘড়ি-গেট অপসারিত। আগের মডেলে দুটি স্থির-অনুমান ঘড়ি ছিল:
+    # (১) cadences_hours-এর ১২/২৪-ঘণ্টা গেট — বোর্ড idle থাকলেও পর্যবেক্ষণ-রোল
+    # ঘড়ির অপেক্ষায় থাকত; (২) বোর্ড-খাঁলি হলে টাইমার-রিসেট (পুরোনো নিয়ম ৩) —
+    # স্থায়ীভাবে খাঁলি বোর্ডে রিসেট-লুপে একই রোল বারবার দাবি করত। নতুন
+    # ইভেন্ট-মডেল: রোটেশন রি-আর্ম হয় কেবল WORK EVENT-এ (উপরের pick/envelope
+    # শাখায় — কাজ অর্পিত হলে state খালি); idle সাইকেলে প্রতি সাইকেলে একটি
+    # scheduled role ক্রমানুসারে চলে; সব role এই episode-এ চলে গেলে লুপ সৎভাবে
+    # clean রিপোর্ট করে ঘুমায় (প্রতিষ্ঠাতা-নির্দেশ: ১০০% green → clean + sleep;
+    # কাজ থাকলে → তাৎক্ষণিক ডিসপ্যাচ, কোনো কৃত্রিম অপেক্ষা নয়)।
     # বাংলা: P0 Drainage Invariant (Rule 5) — যদি বোর্ডে কোনো P0-critical
     # ইস্যু সক্রিয় থাকে (এমনকি অন্য রানার যদি অস্থায়ী লিজ নিয়েও থাকে), তবুও
     # কোনো রুটিন অডিট/স্কাউট রোল রান হবে না যাতে ব্যাকলগ আটকে রেখে অগুরুত্বপূর্ণ
-    # কাজ না হয়। P0 সমাধান না হওয়া পর্যন্ত ক্যাডেন্স স্থগিত থাকবে।
+    # কাজ না হয়। P0 সমাধান না হওয়া পর্যন্ত রোটেশন স্থগিত থাকবে।
     if not board_unavailable and has_open_p0_blocker(raw):
         log("!", "P0 Drainage Invariant: Active P0-critical blocker detected on board. Holding cadence roles until P0 issues are resolved.")
         print("ACTION: System is draining P0-critical architectural backlog. Routine cadence roles held.")
         return 0
 
-    for role in due_roles(state, now, cfg):
-        mark_role_run(role, state, now, cfg)
+    for role in due_roles(state, cfg):
+
+        mark_role_run(role, state)
         save_last_run_store(state)
         mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
         print(f"ASSIGNED ROLE: {role} (Single-runner role lock)\nROLE MANDATE: {mandate}")
