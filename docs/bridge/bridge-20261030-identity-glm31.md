@@ -1,6 +1,6 @@
 # Run Worklog — GLM Agent 31 (Job ID 486848)
 
-> Compact receipt, r3: cycles 1-2 condensed to durable outcomes; cycle 3 added.
+> Compact receipt, r4: cycles 1-3 condensed to durable outcomes; cycle 4 added.
 > Size discipline: single file, only durable facts (operator instruction).
 
 ## Identity
@@ -12,19 +12,19 @@
 | MCP surface | zero-credential tower handshake (`supremeai-control-tower` v1.0.0) |
 | Claim identity | `GLM-Agent-31` (atomic-claim plane) |
 
-## Landed (cycles 1-2, condensed)
+## Landed (cycles 1-3, condensed)
 
-1. **#2547 solver-lane root cause** (`cmd_sync` blind to solver lane): PR #3244 landed (`16c90f0`); 71 tests passed. Receipts: #3250, #3252.
-2. **Wired-but-absent class prevention** (#3316; wiring #3268 merged while carrying PR #3257 waited in gate → suite exit 1): `scripts/ci/wiring_integrity_guard.py` (AST roster check, self-test 5/5) wired FIRST in the roster; **PR #3320 landed** (`7347ca5`). Worklog r2: PR #3324 landed (`58b05d9`).
+1. **#2547 solver-lane root cause** (`cmd_sync` blind to solver lane): PR #3244 landed (`16c90f0`). Receipts: #3250, #3252.
+2. **Wired-but-absent class prevention** (#3316): `scripts/ci/wiring_integrity_guard.py` wired FIRST in the roster; **PR #3320 landed** (`7347ca5`).
+3. **Ecosystem-scout cycle**: hooksPath idea already landed (R63-I/#2343) — withheld; scout(R81) finding **#3368** filed (`github.list_prs` no single-PR addressability/sort; verdict ADOPT_IMMEDIATELY).
 
-## Cycle 3 (13:3xZ–13:5xZ) — ecosystem-scout (single-runner lock)
+## Cycle 4 (22:3x+08) — dispatched #3440 (solver/ci-fixer); claim NOT taken
 
-1. Picker: top solver candidates live-claimed / premise-delivered (#2360→#3290, #2756→#3346 demotions) → scout role assigned.
-2. Anti-stampede catch: hooksPath bootstrap idea **already landed** as R63-I/#2343 (closes #2420) — withheld, zero duplicate filed.
-3. Finding filed from first-hand cycle-2 evidence: **scout(R81) #3368** — `github.list_prs` has no single-PR addressability (`pull_number`) and no `sort` param (5-property schema census verbatim); #2567-class 5-old-PR re-verification had zero tower path → 403-limited anon fallback. Gold Pearl: ~30-line adapter passthrough to REST `GET /pulls/{n}` + sort; verdict ADOPT_IMMEDIATELY, `replicate_pattern`, target `infrastructure/mcp-control-plane/`.
-4. R81 allocation per the rule: freshness guard `--check` exit 0 (A–E OK); board sweep R81 = 0; row registration defers to the lane's first radar-doc PR per #2137 (issue-side adoption; no code edits this cycle).
+1. Log probe (run 41072009314): PR #3439 landing fails on a **real merge conflict** (2 files) with dead `--auto` fallback (enablePullRequestAutoMerge=false) — a new sub-class beside the #3416 policy-block census; remedy = #3439 rebase (owner lane) → triage receipt filed, no Closes.
+2. Deeper live-red found + fixed: **#3404's wipe dropped GLM Agent 07's `_INCIDENT_TITLE_RE` recognition from the loop** (main's own `test_merge_ref_mirror_title_is_recognized` red). Byte-faithful restore from `43af028^` in this PR; `test_stale_incident_demotion.py` 16/16 green.
+3. Honest bounds: 20 pre-existing failures in the picker-coverage neighborhood reproduced on pristine main — different subsystem, left to its own lane.
 
 ## Not done (honest bounds)
 
-- No solver WO claimed this cycle (all top candidates live-claimed; scout mandate forbids code edits) — finding #3368 awaits its solver/adopter.
-- R81 registry row lands with the adopting PR, not this receipt.
+- #3440 itself stays open (remedy is #3439's rebase in the bridge rescue path, not agent-reachable).
+- Picker-coverage 20-failure cohort: unwitnessed by any receipt yet — next agent with that dispatch should start from `tests/test_pick_receipt_coverage.py` on pristine main.
