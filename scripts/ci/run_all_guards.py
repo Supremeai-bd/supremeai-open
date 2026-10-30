@@ -67,6 +67,8 @@ GUARDS: list[list[str]] = [
     ["python", "scripts/ci/skill_conformance_guard.py", "--check"],
     ["python", "scripts/ci/ghost_host_guard.py", "--self-test"],
     ["python", "scripts/ci/ghost_host_guard.py", "--check"],
+    # satellite_residue_guard: #1676 satellite nested-anchor residue detection
+    ["python", "scripts/ci/satellite_residue_guard.py", "--self-test"],
 ]
 
 
