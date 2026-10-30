@@ -103,10 +103,13 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
 ARCHIVE_MIRROR_PAIRS: list[tuple[str, str]] = [
-    (
-        "docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md",
-        "adrs/ADR-008-OPEN_FOUNDATION_BOUNDARY.md",
-    ),
+    # r1 heal (#3665): the sole pair mapped docs/adrs/ADR-001-OPEN_FOUNDATION_BOUNDARY.md,
+    # which #3524 (founder-mandated migration of 473 historical docs to
+    # Supremeai-bd/supremeai-archive, where it lives as adrs/ADR-008-...) deleted
+    # from this repo. A mirror pair whose source no longer exists in the open repo
+    # is dead config; the runtime loop skips absent sources, but self_test
+    # fail-closed on it and sat red. The ADR record is maintained in the archive
+    # repo directly — re-add a pair here only when a live open-repo source returns.
 ]
 
 # Post-sync sentinel verification (#1689): mirror<->satellite pairs that must stay
