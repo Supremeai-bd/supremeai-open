@@ -192,11 +192,25 @@ def check_identity_role(p: dict) -> tuple[str, str]:
     return Verdict.INDETERMINATE, f"no role/globalAdmin observables in summary ({blob[:120]!r})"
 
 
+DENY_MARKERS = ("forbidden", "default-deny", "requires agent role", "unauthorized",
+                "access denied", "requires authentication", "not authorized")
+
+
 def check_client_list(p: dict) -> tuple[str, str]:
-    """Criterion 2: client.list must be isError for an anonymous session."""
+    """Criterion 2: client.list must be isError for an anonymous session.
+
+    Deny responses arrive in three shapes — the JSON-RPC error plane, an
+    isError envelope, or plain prose inside the content envelope (observed
+    post-redeploy: "Forbidden: tool 'client_list' requires agent role or
+    higher (default-deny RBAC)"). All three are fail-closed evidence; only a
+    non-empty row set is exposure.
+    """
     if "error" in p:
         return Verdict.FAIL_CLOSED, f"JSON-RPC error plane: {p['error'].get('message', '')[:120]}"
     text = _result_text(p)
+    low = text.lower()
+    if any(m in low for m in DENY_MARKERS):
+        return Verdict.FAIL_CLOSED, f"deny prose (fail-closed RBAC): {text[:120]!r}"
     try:
         doc = json.loads(text)
         if isinstance(doc, dict) and doc.get("isError") is True:
@@ -243,6 +257,35 @@ def check_tools_list_payload(p: dict) -> tuple[str, str]:
     return Verdict.FAIL_CLOSED, f"{len(names)} tools listed, none matches {FORBIDDEN_TOOL_FRAGMENTS}"
 
 
+def aggregate(verdicts: list[str]) -> tuple[str, int]:
+    """Map 3 criterion verdicts to (banner, exit code).
+
+    Root-cause note (r2): the original else-branch fired on ANY non-uniform
+    verdict set, so a post-redeploy mixed state (FAIL-CLOSED + INDETERMINATE,
+    zero EXPOSED) was mislabeled "FAIL-OPEN STILL LIVE" — a false alarm that
+    would have kept the fleet believing the redeploy never happened. Exposure
+    is now the ONLY trigger for the fail-open verdict; absence of exposure is
+    reported for what it is.
+
+    Exit contract: 0 = 3/3 fail-closed (remediated) | 2 = any EXPOSED (fail
+    open) | 3 = no exposure observed but acceptance incomplete (mixed) |
+    1 = all INDETERMINATE (zero signal).
+    """
+    n_exposed = verdicts.count(Verdict.EXPOSED)
+    n_fc = verdicts.count(Verdict.FAIL_CLOSED)
+    n_ind = verdicts.count(Verdict.INDETERMINATE)
+    if n_exposed:
+        return (f"P0 #3663 FAIL-OPEN STILL LIVE ({n_exposed}/3 criteria exposed) — "
+                "pre-deploy expected state; owner redeploy pending", 2)
+    if n_fc == len(verdicts):
+        return ("P0 #3663 REMEDIATED on live tower — anonymous sessions fail closed (3/3)", 0)
+    if n_ind == len(verdicts):
+        return ("P0 #3663 INDETERMINATE — observables unavailable; manual review needed", 1)
+    return (f"P0 #3663 NO EXPOSURE OBSERVED — fail-closed signals {n_fc}/3, "
+            f"indeterminate {n_ind}/3 (positive redeploy evidence; full 3/3 "
+            "acceptance pending observability)", 3)
+
+
 def run_probe(base_url: str | None, timeout: int) -> dict:
     origin = (base_url or resolve_mcp_server_url()).rstrip("/")
     url = origin + MCP_STREAMABLE_PATH
@@ -268,17 +311,7 @@ def run_probe(base_url: str | None, timeout: int) -> dict:
     out["criteria"]["3_destructive_tools_hidden"] = {"verdict": v, "evidence": ev}
 
     verdicts = [c["verdict"] for c in out["criteria"].values()]
-    if all(v == Verdict.FAIL_CLOSED for v in verdicts):
-        out["banner"] = "P0 #3663 REMEDIATED on live tower — anonymous sessions fail closed (3/3)"
-        out["exit"] = 0
-    elif all(v == Verdict.INDETERMINATE for v in verdicts):
-        out["banner"] = "P0 #3663 INDETERMINATE — observables unavailable; manual review needed"
-        out["exit"] = 1
-    else:
-        n_open = sum(1 for v in verdicts if v == Verdict.EXPOSED)
-        out["banner"] = (f"P0 #3663 FAIL-OPEN STILL LIVE ({n_open}/3 criteria exposed) — "
-                         "pre-deploy expected state; owner redeploy pending")
-        out["exit"] = 2
+    out["banner"], out["exit"] = aggregate(verdicts)
     return out
 
 
@@ -308,6 +341,19 @@ def _self_test() -> int:
     expect(v == Verdict.FAIL_CLOSED, "client_list: isError fail-closed")
     v, _ = check_client_list({"error": {"message": "forbidden"}})
     expect(v == Verdict.FAIL_CLOSED, "client_list: JSON-RPC error plane fail-closed")
+    v, _ = check_client_list(mk("Forbidden: tool 'client_list' requires agent role or "
+                               "higher (default-deny RBAC). Present a valid MCP Bearer token."))
+    expect(v == Verdict.FAIL_CLOSED, "client_list: deny prose fail-closed (post-redeploy shape)")
+
+    expect(aggregate([Verdict.FAIL_CLOSED] * 3) == (
+        "P0 #3663 REMEDIATED on live tower — anonymous sessions fail closed (3/3)", 0),
+        "aggregate: 3x fail-closed -> remediated exit 0")
+    expect(aggregate([Verdict.FAIL_CLOSED, Verdict.FAIL_CLOSED, Verdict.INDETERMINATE])[1] == 3,
+        "aggregate: mixed no-exposure -> exit 3 (NOT fail-open)")
+    expect(aggregate([Verdict.INDETERMINATE] * 3)[1] == 1,
+        "aggregate: all indeterminate -> exit 1")
+    expect(aggregate([Verdict.EXPOSED, Verdict.FAIL_CLOSED, Verdict.INDETERMINATE])[1] == 2,
+        "aggregate: any exposed -> exit 2")
 
     v, _ = check_tools_list_payload({"result": {"tools": [{"name": "autonomy_kill_switch"},
                                                            {"name": "bridge_submit"}]}})
