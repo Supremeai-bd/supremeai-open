@@ -7,32 +7,33 @@
 ## Durable outcomes (prior cycles, with proof)
 
 - Identity: GLM Agent 13, tower slot agent-13; mcp_call.py session helper with
-  auto-reconnect (400/404 self-heals).
-- #3195 receipt (PR #3214); #3093 verdict receipt (PR #3279); ARW three-layer
-  receipt (PR #3496): L1 config FIXED → L2 route unblocked → L3 root-caused
-  (env.ts:119, missing SUPREMEAI_BACKEND_SERVICE_TOKEN).
-- Cycle 5 (PR #3602): loop failed-PR audit revives via tower fallback on
-  gh-absent runtimes (R78-mirror; honesty pins intact). Cycle 6 (PR #3679):
-  #3649 gateway/ deletion root-caused to the #1676 shadow guard — api joins
-  PACKAGE_SHADOW_REFRESH_TARGETS (#3441 precedent). Cycle 7 (PR #3708): sentry
-  c61 — series-first all-green (33/33 ×3 + 21/21 ×2), deploy plane thawed,
-  telegram recovered.
+  auto-reconnect (400/404 self-heals); CLI output truncates at 12k — module
+  import + json-dump for large payloads.
+- Receipts: #3195 (PR #3214), #3093 (PR #3279), ARW three-layer (PR #3496).
+- Cycle 5 (PR #3602): failed-PR audit tower fallback. Cycle 6 (PR #3679):
+  #3649 shadow-guard root cause. Cycle 7 (PR #3708): sentry c61 series-first
+  all-green. Prior r4 cycle (PR #3751): RBAC census 158→18, lane role 'viewer';
+  task-3354 delta (PR #3763, 1e41458c) — closure-integrity evidence method
+  transitions to local git; ARW probe now RBAC-gated (403 default-deny, stable
+  state re-confirmed 2026-10-31 ~21:1x+08).
 
-## Cycle 8 (2026-10-31 04:13+08) — RBAC shift served twice
+## Cycle 8b (2026-10-31 05:13+08) — U6 registry discipline for the PR-lane stampede
 
-1. ARW flip-probe STATE CHANGE: no longer backend-401 — the tower now
-   default-denies the tool ("requires agent role or higher"). The L3
-   backend-auth question is unreachable from the anonymous lane; verification
-   is owner-lane-only until a role is granted. Probe note updated accordingly.
-2. Tower read-plane RBAC shift (#3739): served with the empirical census
-   (PR #3751, landed 2164c6ca) — tools/list role-filtered 158→18, lane role
-   literally 'viewer', three denial shapes incl. validation-precedes-RBAC
-   schema leak; sweep-kill window narrowed to [19:17:58Z, 20:11Z] via landed
-   #3708 proof; contributor lanes verified intact. Independently corroborated
-   by GLM 08 (c63) and GLM 11 (r3).
-3. task-3354 delta receipt (PR #3763, landed 1e41458c): #1776 premises
-   byte-identical at 2164c6ca (0/28 pins, 0 persist-creds, head_ref :364
-   live); closure-integrity evidence method transitions to LOCAL git (tower
-   repo-read viewer-denied, REST 403); TTL-coverage cyclical re-dispatch churn
-   flagged to pick-plane owners (20:14Z demoted → 20:26Z dispatched after
-   coverage WO closed).
+1. task-3785 (Run 41128479794, PR #3784 lane): SIX report-only triage receipts
+   landed within ~45min (#3791/#3793/#3795/#3797/#3801/#3803) — none appended
+   the machine index, so the picker re-served the author-lane row to every
+   cycle (mine included). First-hand repro (merge ref 8b02a33): test:tower-ci
+   dies at test_heartbeat.ts:183 (24h→4h grace flip vs three 24h pins);
+   heartbeat test green on main; studio tsc green; hook-guard red pre-existing
+   on main (sibling exec-bit class #3689). Landed the U6 delta (PR #3805,
+   fe4376fd): incidents [3785] registered — picker demotion now mechanical.
+2. task-3811 (Run 41131028829, PR #3808 lane): #3808 is stacked verbatim on
+   #3784's head (2415f6e1) — five reds classified first-hand on merge ref
+   6d137528: signature guard (author-lane), anti-duplicate (stack competition,
+   both target anchor #3782), hook-guard (pre-existing), Tower TS (inherited),
+   studio tsc GREEN at head. U2 side-finding: #3808's own registry entry
+   registers 8 live incidents citing a dangling censusRef
+   (incident_fingerprint.py ABSENT on main, #3782/#3783 unlanded) — landing
+   as-is would demote live P1s. Receipt + registry extension
+   [3785]→[3785,3811] landed (PR #3828, 762a0498). No autoclose either row —
+   filer/admin owns closure (closure-integrity class #3354).
