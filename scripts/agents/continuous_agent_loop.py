@@ -1223,6 +1223,15 @@ def report_failed_open_prs(
     কলার-স্বাক্ষর অপরিবর্তিত: সবসময় তালিকা ফেরত (অন্ধকারে খালি তালিকা,
     তবে stdout-চুক্তি আলাদা — মিথ্যা-নিশ্চয়তা লাইন আর এমিট হয় না)।
 
+    R78-mirror PR-ফলব্যাক (2026-10-31): অন্ধকারে সরাসরি ⚠ ছাপার আগে
+    _tower_open_prs() প্রোব চলে — tower-এর github.list_prs gh-absent রানটাইমেও
+    PR-প্লেন দেখায় (live প্রমাণ: এক রানে লুপ "plane dark" ছাপাচ্ছিল, tower-এ ১০টি
+    open PR দৃশ্যমান ছিল)। ফলব্যাক সফল হলে 🔍 revived-লাইন + per-PR ক্যানসাস ছাপে,
+    তবে check status টাওয়ার-পেলোডে নেই বলে সেটা UNSEEN-ই থাকে — ফলে পুরনো
+    honesty-pin (কখনো "✅/zero" মিথ্যা-নিশ্চয়তা নয়) অক্ষত থাকে; ফলব্যাক-ব্যর্থতায়
+    আগের ⚠ লাইনই আসে (fallback-নোট সহ)। --offline পথ preflight-এ আগেই সৎ-skip
+    হয়, তাই নেটওয়ার্ক-বিহীন রানে এই প্রোব চলে না।
+
     #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
     বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
     অডিট envelope-মোডে _stderr_log পাঠায় — SPEC §4b stdout-purity (stdout
@@ -1232,7 +1241,22 @@ def report_failed_open_prs(
         log_fn = log
     failed = list_failed_open_prs(repo=repo, limit=limit)
     if failed is None:
-        log_fn("⚠", "Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent), not zero; treating this as clean would be false assurance (U2).")
+        # বাংলা: R78-অসমমিতির বাকি অর্ধেক — বোর্ড-পথে tower fallback ছিল, PR-পথে
+        # ছিল না; ফলে gh-absent প্রতিটি বুটে PR-প্লেন সম্পূর্ণ অদৃশ্য থাকত। এখন
+        # অন্ধকারে ফলব্যাক প্রোব চলে; সফল হলে প্লেন-ক্যানসাস দৃশ্যমান হয়, কিন্তু
+        # check-rollup টাওয়ার-পেলোডে নেই বলে "failing" শ্রেণিবিন্যাস কখনো মিথ্যা
+        # হয় না — সৎ UNSEEN-ই থাকে (U2)। ফলব্যাক কখনো raise/hang করে না —
+        # হেল্পারের অভ্যন্তরীণ never-raise-এর উপর defense-in-depth wrap।
+        try:
+            fb_rows, fb_note = _tower_open_prs(limit=limit)
+        except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
+            fb_rows, fb_note = None, f"tower PR probe raised ({type(exc).__name__})"
+        if fb_rows is not None:
+            log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
+            for p in fb_rows[:limit]:
+                log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+            return []
+        log_fn("⚠", f"Read-only failed PR audit: plane dark — open PRs UNSEEN (gh query failed/absent; {fb_note}), not zero; treating this as clean would be false assurance (U2).")
         return []
     if failed:
         log_fn("🔍", f"Read-only failed PR audit: found {len(failed)} open PR(s) with failing checks (report-only):")
@@ -1876,6 +1900,128 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
     if outcome.get("error"):
         return [], str(outcome["error"])
     return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
+
+def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict[str, Any]] | None, str]:
+    """R78-mirror — gh-absent tower PR-plane fallback (revives the failed-PR audit).
+
+    বাংলা: R78 বোর্ড-পথের অসমমিতি দূর করেছিল (board revive আছে), কিন্তু failed-PR
+    অডিট পথটা আজও gh-absent রানটাইমে প্রতিটি বুটে অন্ধকার — live প্রমাণ 2026-10-31
+    17:1xZ: লুপ "plane dark — open PRs UNSEEN" ছাপার ঠিক সেই রানে tower-এর
+    github.list_prs এক কলেই ১০টি open PR দেখাচ্ছিল (গুরুত্বপূর্ণ: তাদের মধ্যে ৮.৫
+    ঘণ্টা-পুরনো unmerged receipt-PR স্তূপও ছিল, অর্থাৎ অন্ধকারটা প্লেন-ব্লাইন্ডনেস
+    ছাড়াও ল্যান্ডিং-ট্রেন অবজারভেবিলিটি হারাচ্ছিল)। এই fallback R78-এর প্রমাণিত
+    lazy-sibling/urllib-raw-body/never-raise প্যাটার্নে tower-এর github.list_prs
+    দিয়ে PR-প্লেন জীবিত করে।
+
+    সততা চুক্তি (U2): tower payload-এ statusCheckRollup/headRefName **নেই** — তাই
+    ফেরত সারিগুলো failing-classified নয়, শুধু প্লেন-ক্যানসাস (number/title/url/
+    createdAt)। কলার (report_failed_open_prs) এই তথ্যকে "প্লেন জীবিত, per-PR check
+    status UNSEEN" হিসেবে ছাপে — কখনো মিথ্যা "zero failing" নয়। ফেরত: (rows|None,
+    note) — rows=None মানে fallback-ও ব্যর্থ (সৎ অন্ধকার), খালি তালিকা মানে tower
+    জীবিত কিন্তু 0টি open PR (তখনও check status UNSEEN)।
+
+    Transport: _tower_board_rows-এর নোট হুবহু প্রযোজ্য — requests-এর iter_lines
+    বড় single-line SSE পেলোড chunk-boundary-তে ভাঙে; urllib raw-body যেকোনো
+    সাইজে নিরাপদ। gh-present রানটাইমে (CI) এই ফাংশন ডাকা হয় না — অফলাইন পথও
+    preflight-এ আগেই সৎ-skip হয়, তাই নেটওয়ার্ক-বিহীন রানে কল ঘটে না।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req = urllib.request.Request(
+                    f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+            init_id = "cal-pr-fallback-1"
+            sid, _ = _post({
+                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }, None)
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-pr-fallback-2"
+            _, body = _post({
+                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                "params": {"name": "github.list_prs", "arguments": {
+                    "repo": UPSTREAM_REPO, "state": "open", "per_page": min(int(limit), 100),
+                }},
+            }, sid, timeout=45)
+
+            envelopes: list[dict[str, Any]] = []
+            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                try:
+                    envelopes.append(json.loads(m.group(1)))
+                except json.JSONDecodeError:
+                    pass
+            if not envelopes:
+                try:
+                    envelopes.append(json.loads(body))
+                except json.JSONDecodeError:
+                    pass
+            result: Any = None
+            for env in envelopes:
+                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                    result = env.get("result")
+                    break
+            text = ""
+            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                first = result["content"][0]
+                txt = first.get("text") if isinstance(first, dict) else None
+                if isinstance(txt, str):
+                    text = txt
+            prs: Any = None
+            if text:
+                try:
+                    prs = json.loads(text)
+                except json.JSONDecodeError:
+                    prs = None
+            if not isinstance(prs, list):
+                outcome["error"] = "tower PR payload carried no JSON list"
+                return
+            rows: list[dict[str, Any]] = []
+            for pr in prs:
+                if not isinstance(pr, dict) or pr.get("number") is None:
+                    continue
+                rows.append({
+                    "number": pr.get("number"),
+                    "title": str(pr.get("title") or "")[:120],
+                    "url": pr.get("htmlUrl") or pr.get("url") or "",
+                    "createdAt": pr.get("createdAt") or "",
+                })
+            outcome["rows"] = rows
+            outcome["note"] = f"tower PR fallback: {len(rows)} open PR(s) visible"
+        except Exception as exc:  # noqa: BLE001 — fallback must never raise
+            outcome["error"] = f"tower PR fallback failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — fallback must never raise
+        return None, f"tower PR fallback error ({type(exc).__name__})"
+    if t.is_alive():
+        return None, "tower PR fallback timed out"
+    if outcome.get("error"):
+        return None, str(outcome["error"])
+    return outcome.get("rows"), str(outcome.get("note", "tower PR fallback returned no rows"))
 
 def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
     """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
