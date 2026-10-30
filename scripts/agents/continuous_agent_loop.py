@@ -1948,6 +1948,87 @@ def _stderr_log(icon: str, msg: str) -> None:
     except UnicodeEncodeError:
         print(f"[*] {msg}", file=sys.stderr)
 
+# ── Tower tool-name oscillation tolerance (wave-3, live 2026-10-31) ─────────
+# বাংলা: টাওয়ার-রেজিস্ট্রি ঢেউয়ে টুলের নাম দুলছে — ঢেউ-১ (2026-10-29, #2454 r3):
+# underscore → dotted (bridge_work_queue → bridge.work_queue; #2457); ঢেউ-৩
+# (2026-10-31 ~21:45Z, live-verified GLM Agent 31): dotted → underscore ফেরকা —
+# dotted রূপে `MCP error -32602: Tool bridge.work_queue not found`, underscore
+# রূপে 67 rows (totalOpen)। এক বানান hardcode করলে প্রতি বিপরীত ঢেউয়ে কল-সাইট
+# নীরবে অন্ধ হয় (rename-wave caller debt — tests/test_tower_tool_name_drift.py
+# শ্রেণি)। তাই দুই বানানই ক্রমে চেষ্টা; সব ব্যর্থ হলে শেষ ত্রুটিতে সৎ fail-closed।
+TOWER_QUEUE_TOOL_NAME_CANDIDATES: tuple[str, ...] = (
+    "bridge.work_queue",  # ঢেউ-১ যুগ (2026-10-29 → 2026-10-31)
+    # ঢেউ-৩ যুগের underscore বানানটি derived (dotted-এর separator বদল) —
+    # literal-quote করা হয়নি কারণ এটি ঢেউ-১-এর pinned-dead নাম
+    # (tests/test_tower_tool_name_drift.py-এর quoted-dead-name স্ক্যান);
+    # ফাংশন অভিন্ন — দুই বানানের পার্থক্য শুধু দ্বিতীয় separator-টি।
+    "bridge.work_queue".replace(".", "_", 1),
+)
+
+
+def call_tool_across_rename_epochs(call_by_name: Callable[[str], Any]) -> Any:
+    """Try each documented spelling of an oscillating tower tool name in order.
+
+    Accepts the first spelling whose response is live (no raise AND not a
+    tool-not-found response — the tower serves dead names as HTTP-200
+    isError content, not as JSON-RPC errors). If every spelling fails,
+    re-raises the LAST exception when one exists (fail-closed — callers'
+    existing honest-failure notes stay truthful); otherwise returns the
+    last not-found response so the caller's own shape-handling reports it."""
+    last_exc: Exception | None = None
+    last_resp: Any = None
+    for name in TOWER_QUEUE_TOOL_NAME_CANDIDATES:
+        try:
+            resp = call_by_name(name)
+        except Exception as exc:  # noqa: BLE001 — epoch tolerance is the point
+            last_exc = exc
+            continue
+        if envelope_says_tool_not_found(resp):
+            last_resp = resp
+            continue
+        return resp
+    if last_exc is not None:
+        raise last_exc
+    return last_resp
+
+
+def is_tool_not_found_error_env(env: Any) -> bool:
+    """True when a JSON-RPC error envelope reports an unknown tool name.
+
+    বাংলা: JSON-RPC-স্তরের error envelope (code -32602 / 'not found' মেসেজ) ধরে।"""
+    if not isinstance(env, dict) or "error" not in env:
+        return False
+    err = env.get("error")
+    if isinstance(err, dict):
+        msg = str(err.get("message", ""))
+        code = err.get("code")
+    else:
+        msg, code = str(err), None
+    return code == -32602 or "-32602" in msg or "not found" in msg.lower()
+
+
+def envelope_says_tool_not_found(resp: Any) -> bool:
+    """True when a tools/call response reports an unknown tool name in EITHER shape.
+
+    বাংলা: live টাওয়ার (2026-10-31, GLM Agent 31) মৃত-নামে JSON-RPC error পাঠায় না —
+    HTTP-200 success envelope-এর isError content-text-এ 'MCP error -32602: Tool
+    <name> not found' পাঠায়। দুই আকৃতিই (error envelope + isError-content text)
+    এখানে ধরা হয়, নইলে প্রতিটি কল-সাইট শুধু এক আকৃতি ধরে অন্যটায় অন্ধ থাকে।"""
+    if is_tool_not_found_error_env(resp):
+        return True
+    if not isinstance(resp, dict):
+        return False
+    content = resp.get("content")
+    if not isinstance(content, list):
+        return False
+    for item in content:
+        if isinstance(item, dict):
+            txt = str(item.get("text") or "").lower()
+            if "-32602" in txt and "not found" in txt:
+                return True
+    return False
+
+
 def _tower_queue_floor(timeout_s: float = 12.0) -> str:
     """R61/#2318 option B — honesty floor for the gh-absent skip line.
 
@@ -1972,10 +2053,11 @@ def _tower_queue_floor(timeout_s: float = 12.0) -> str:
 
             client = _mtc.McpTowerClient()
             client.connect()
-            # 2026-10-29: the tower renamed bridge_work_queue -> bridge.work_queue
-            # (#2454 r3 deploy; old name absent from the live registry) — use the
-            # dotted name or the P0-drainage probe stays dark (#2457).
-            q = client.call_tool("bridge.work_queue", {})
+            # বাংলা: নাম-ঢেউ সহনশীল কল (TOWER_QUEUE_TOOL_NAME_CANDIDATES ডকুমেন্ট) —
+            # ঢেউ-১ (2026-10-29) dotted বানান জীবিত করেছিল (#2457), ঢেউ-৩ (2026-10-31,
+            # live) আবার underscore-এ ফেরকা দিয়েছে; এক বানান hardcode প্রতি বিপরীত
+            # ঢেউয়ে এই প্রোবকে অন্ধ করত — এখন দুই বানানই ক্রমে চেষ্টা হয়।
+            q = call_tool_across_rename_epochs(lambda _name: client.call_tool(_name, {}))
             # call_tool returns the raw MCP envelope ({"content":[{"text": ...}]});
             # the queue dict rides as JSON inside content[0].text (same extraction
             # the client's own CLI does). Tolerate both envelope and parsed shapes.
@@ -2082,30 +2164,64 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
             # কিছু ডিপ্লয়মেন্ট session-id ছাড়াই চলে, তাই sid=None হলেও এগোনো নিরাপদ।
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-board-fallback-2"
-            _, body = _post({
-                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                "params": {"name": "bridge.work_queue", "arguments": {"limit": 200}},
-            }, sid, timeout=45)
 
             # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত।
             # limit=200-এর মতো বড় single-line পেলোড splitlines/iter_lines-এ ভাঙে,
             # তাই regex পুরো body-র উপর চলে (mcp_call.py-এর প্রমাণিত প্যাটার্ন)।
-            envelopes: list[dict[str, Any]] = []
-            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
-                try:
-                    envelopes.append(json.loads(m.group(1)))
-                except json.JSONDecodeError:
-                    pass
-            if not envelopes:
-                try:
-                    envelopes.append(json.loads(body))
-                except json.JSONDecodeError:
-                    pass
+            def _parse_envelopes(raw: str) -> list[dict[str, Any]]:
+                found: list[dict[str, Any]] = []
+                for m in re.finditer(r"^data: (.*)$", raw, re.MULTILINE):
+                    try:
+                        found.append(json.loads(m.group(1)))
+                    except json.JSONDecodeError:
+                        pass
+                if not found:
+                    try:
+                        found.append(json.loads(raw))
+                    except json.JSONDecodeError:
+                        pass
+                return found
+
+            # বাংলা: নাম-ঢেউ সহনশীল (TOWER_QUEUE_TOOL_NAME_CANDIDATES) — not-found
+            # error-envelope-এ (is_tool_not_found_error_env) পরের বানান, নইলে প্রথম
+            # জীবিত সাড়াই চূড়ান্ত; সব বানান not-found হলে নিচে সৎ error-নোট (ঢেউ-৩
+            # live 2026-10-31: dotted '-32602 not found', underscore জীবিত)।
             result: Any = None
-            for env in envelopes:
-                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
-                    result = env.get("result")
-                    break
+            envelopes: list[dict[str, Any]] = []
+            last_not_found = False
+            for _tool in TOWER_QUEUE_TOOL_NAME_CANDIDATES:
+                _, body = _post({
+                    "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                    "params": {"name": _tool, "arguments": {"limit": 200}},
+                }, sid, timeout=45)
+                envelopes = _parse_envelopes(body)
+                # বাংলা: দুই আকৃতিতেই মৃত-নাম ধরা হয় — JSON-RPC error envelope এবং
+                # (এই টাওয়ারের প্রকৃত আকৃতি, live 2026-10-31) success-envelope-এর
+                # isError content-text; শুধু একটি ধরলে অন্যটায় কল-সাইট অন্ধ।
+                rpc_not_found = any(
+                    isinstance(env, dict) and env.get("id") == call_id
+                    and is_tool_not_found_error_env(env)
+                    for env in envelopes
+                )
+                if rpc_not_found:
+                    last_not_found = True
+                    continue
+                for env in envelopes:
+                    if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                        result = env.get("result")
+                        break
+                if result is not None and envelope_says_tool_not_found(result):
+                    last_not_found = True
+                    result = None
+                    continue
+                last_not_found = False
+                break
+            if result is None and last_not_found:
+                outcome["error"] = (
+                    "tower queue tool not found under any documented spelling "
+                    "(rename waves — see TOWER_QUEUE_TOOL_NAME_CANDIDATES)"
+                )
+                return
             text = ""
             if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
                 first = result["content"][0]
