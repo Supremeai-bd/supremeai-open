@@ -48,6 +48,65 @@ class TestFederationSatelliteSync(unittest.TestCase):
     def test_deploy_targets_omits_skip_ci(self):
         self.assertIn("Supremeai-bd/supremeai-studio", sync_mod.DEPLOY_TARGETS)
 
+    # --- (#1676 root cause) domain self-shadow guard -------------------
+
+    def test_self_shadow_cleanup_removes_nested_domain_copy(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            satellite = sync_mod.Path(tmp) / "sat"
+            mirror = sync_mod.Path(tmp) / "mirror"
+            (satellite / "studio" / "src" / "utils").mkdir(parents=True)
+            (satellite / "studio" / "package.json").write_text("{}")
+            (satellite / "studio" / "src" / "utils" / "api.ts").write_text("x")
+            (satellite / "src" / "utils").mkdir(parents=True)
+            (satellite / "src" / "utils" / "api.ts").write_text("root")
+            (satellite / "infrastructure" / "proxy").mkdir(parents=True)
+            (satellite / "infrastructure" / "proxy" / "wrangler.toml").write_text("k")
+            mirror.mkdir()
+            removed = sync_mod.prune_domain_self_shadows(satellite, "studio", mirror)
+            self.assertIn("studio/package.json", removed)
+            self.assertIn("studio/src/utils/api.ts", removed)
+            self.assertFalse((satellite / "studio").exists())
+            # canonical root files and legitimate satellite-only dirs survive
+            self.assertTrue((satellite / "src" / "utils" / "api.ts").exists())
+            self.assertTrue((satellite / "infrastructure" / "proxy" / "wrangler.toml").exists())
+
+    def test_self_shadow_noop_when_absent(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            satellite = sync_mod.Path(tmp) / "sat"
+            mirror = sync_mod.Path(tmp) / "mirror"
+            satellite.mkdir()
+            mirror.mkdir()
+            self.assertEqual(
+                sync_mod.prune_domain_self_shadows(satellite, "studio", mirror), []
+            )
+
+    def test_self_shadow_start_gate_fails_closed_on_mirror_contamination(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            satellite = sync_mod.Path(tmp) / "sat"
+            mirror = sync_mod.Path(tmp) / "mirror"
+            satellite.mkdir()
+            (mirror / "studio").mkdir(parents=True)
+            with self.assertRaises(RuntimeError):
+                sync_mod.prune_domain_self_shadows(satellite, "studio", mirror)
+
+    def test_self_shadow_guard_covers_all_domain_map_entries(self):
+        # The mirror itself never carries a same-name nested dir (verified
+        # live 2026-10-30: studio/core/gateway/browser/vscode all 0), so the
+        # fail-closed start-gate must be safe for every satellite.
+        for source_dir in sync_mod.DOMAIN_MAP.values():
+            self.assertEqual(
+                sync_mod.prune_domain_self_shadows(
+                    sync_mod.Path("/nonexistent-sat"), source_dir, sync_mod.Path("/nonexistent-mirror")
+                ),
+                [],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
