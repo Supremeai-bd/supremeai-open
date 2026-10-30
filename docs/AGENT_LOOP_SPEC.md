@@ -271,6 +271,17 @@ submit **without intermediate filesystem drafts**:
   Bridge Work Order issue → private gate battery lands the change
   (or `bridge_submit_patch` MCP tool per AGENTS.md §8).
 
+**Receipt-closure convention (#2508, prescription A).** Docs-only (spec-only)
+submissions emit `Refs #N` — the spec-first keep-open contract holds the work
+order open until code lands. When the docs-only patch IS the resolution of its
+target (closure receipts, verification receipts that resolve their finding),
+pass `closesOriginalIssue: true` in `bridge_submit_patch` so the landed PR
+emits `Closes #N` and the work order closes on merge. Watch/census receipts
+that do NOT resolve their subject keep the default — they are correctly open
+until their subject resolves. The same note ships in `bridge_guide`
+(`contract.receiptClosureConvention`), the onboarding surface every
+zero-credential submitter reads.
+
 ## 7. Verification quick-start
 
 ```bash

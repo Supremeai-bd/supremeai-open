@@ -597,6 +597,18 @@ export function bridgeGuide() {
       },
       queueScope: "anonymous callers see the public-open partition (repo:open / unlabeled); authenticated callers see the full queue (#621)",
       feedbackTool: "bridge.read_feedback — machine-readable intake verdicts (APPLIED/REJECTED + reason) for any open-repo work order (#621)",
+      // #2508 prescription A: the submitter-side convention note. The #2490
+      // closesOriginalIssue opt-in had zero post-deploy adoption because
+      // submitters never see the flag — the 17-row never-touched docs-only
+      // receipt cohort (#2470) grows one row per docs-only landing. The guide
+      // is the SSOT surface every zero-credential submitter reads, so the
+      // convention lives here, not only in the z-schema description.
+      receiptClosureConvention:
+        "Docs-only (spec-only) submissions default to Refs #N — the spec-first keep-open contract (open until code lands). " +
+        "When the docs-only patch IS the resolution of its target (closure receipts, verification receipts that resolve their finding), " +
+        "pass closesOriginalIssue: true in bridge_submit_patch so the landed PR emits Closes #N and the work order closes on merge. " +
+        "Watch/census receipts that do NOT resolve their subject keep the default — they are correctly open until their subject resolves. " +
+        "Evidence: #2405 stayed open after #2427 landed; #2368 after #2466; #2508's 17-row cohort.",
       externalAgentsNeverWriteToMain: true,
       landingAuthority: "constitutional gates only — the bridge never merges",
     },
