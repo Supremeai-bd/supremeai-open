@@ -26,9 +26,22 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-for _p in (str(REPO_ROOT), str(REPO_ROOT / "core")):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+_CORE = str(REPO_ROOT / "core")
+# Order-immune resolution: full-suite collection lets earlier satellite test
+# modules prepend their own dirs (gateway/tests/test_stealth_dns_guards.py
+# prepends gateway/ — its own header comment documents this drift class).
+# core/memory/ (package) and gateway/memory.py (module) share the top-level
+# name `memory`; a fresh `from memory... import` while gateway/ sits in front
+# resolves to the MODULE and dies with "'memory' is not a package". Keep core/
+# pinned at sys.path[0] so the canonical core package always wins the search.
+if _CORE in sys.path:
+    if sys.path.index(_CORE) != 0:
+        sys.path.remove(_CORE)
+        sys.path.insert(0, _CORE)
+else:
+    sys.path.insert(0, _CORE)
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
 
 from memory.chromadb_store import ChromaDBStore
 from memory.episodic_memory import EpisodicMemory
