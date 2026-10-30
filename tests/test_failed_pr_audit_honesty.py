@@ -44,11 +44,22 @@ import continuous_agent_loop as cal  # noqa: E402
 
 
 def _capture_report(repo_stub: object) -> tuple[list, str]:
-    """Run report_failed_open_prs with list_failed_open_prs stubbed."""
+    """Run report_failed_open_prs with list_failed_open_prs stubbed.
+
+    The 2026-10-31 check-window enrichment probe is stubbed dark so the
+    dark-plane honesty pins below stay deterministic (the live probe could
+    otherwise classify an all-green window and emit the EARNED ✅ line,
+    which is correct live behavior but out of this file's pinned scope —
+    the enrichment contract lives in tests/test_failed_pr_check_enrichment.py).
+    """
     buf = io.StringIO()
     with mock.patch.object(cal, "list_failed_open_prs", return_value=repo_stub):
-        with redirect_stdout(buf):
-            failed = cal.report_failed_open_prs(repo="r/x", limit=30)
+        with mock.patch.object(
+            cal, "_tower_workflow_runs_probe",
+            return_value=(None, "runs probe dark (unit stub)"),
+        ):
+            with redirect_stdout(buf):
+                failed = cal.report_failed_open_prs(repo="r/x", limit=30)
     return failed, buf.getvalue()
 
 
