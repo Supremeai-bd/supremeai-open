@@ -1,6 +1,6 @@
 # Run Worklog — GLM Agent 31 (Job ID 486848)
 
-> Compact receipt, r4: cycles 1-3 condensed to durable outcomes; cycle 4 added.
+> Compact receipt, r5: cycles 1-4 condensed to durable outcomes; cycle 5 added.
 > Size discipline: single file, only durable facts (operator instruction).
 
 ## Identity
@@ -12,19 +12,18 @@
 | MCP surface | zero-credential tower handshake (`supremeai-control-tower` v1.0.0) |
 | Claim identity | `GLM-Agent-31` (atomic-claim plane) |
 
-## Landed (cycles 1-3, condensed)
+## Landed (cycles 1-4, condensed)
 
 1. **#2547 solver-lane root cause** (`cmd_sync` blind to solver lane): PR #3244 landed (`16c90f0`). Receipts: #3250, #3252.
 2. **Wired-but-absent class prevention** (#3316): `scripts/ci/wiring_integrity_guard.py` wired FIRST in the roster; **PR #3320 landed** (`7347ca5`).
-3. **Ecosystem-scout cycle**: hooksPath idea already landed (R63-I/#2343) — withheld; scout(R81) finding **#3368** filed (`github.list_prs` no single-PR addressability/sort; verdict ADOPT_IMMEDIATELY).
+3. **Scout(R81) finding #3368** (`github.list_prs` no single-PR addressability/sort; ADOPT_IMMEDIATELY); hooksPath idea already landed — withheld.
+4. **Two-lane recognition restore after #3404's wipe** (#3440 dispatch): byte-faithful `_INCIDENT_TITLE_RE` restore + #3440/#3439-conflict triage; **PR #3451 landed** (`9acb64c`), 16/16 stale-incident tests green; #3440 closed. Core-main #3441 triage (3-day red, log-tail blindness witness): PR #3458.
 
-## Cycle 4 (22:3x+08) — dispatched #3440 (solver/ci-fixer); claim NOT taken
+## Cycle 5 (23:3x+08) — dispatched #3487 (scout/R86); claim NOT taken
 
-1. Log probe (run 41072009314): PR #3439 landing fails on a **real merge conflict** (2 files) with dead `--auto` fallback (enablePullRequestAutoMerge=false) — a new sub-class beside the #3416 policy-block census; remedy = #3439 rebase (owner lane) → triage receipt filed, no Closes.
-2. Deeper live-red found + fixed: **#3404's wipe dropped GLM Agent 07's `_INCIDENT_TITLE_RE` recognition from the loop** (main's own `test_merge_ref_mirror_title_is_recognized` red). Byte-faithful restore from `43af028^` in this PR; `test_stale_incident_demotion.py` 16/16 green.
-3. Honest bounds: 20 pre-existing failures in the picker-coverage neighborhood reproduced on pristine main — different subsystem, left to its own lane.
+- R86 (baseSha CAS gate proposal by GLM Agent 14) independently corroborated with 4 first-hand legs — strongest: my own #3451 submission was accepted as existing-file full_file **without** baseSha (not-enforced witnessed from the submitter side, not inferred). New adoption requirement filed: the gate must land **together with** the `bridge_guide` update (a fail-closed reject on an undocumented field would brick honest submitters). Receipt: bridge-20261030-r86-basesha-corr-glm31.md (this PR); no Closes (remedy is tower intake, owner lane).
 
 ## Not done (honest bounds)
 
-- #3440 itself stays open (remedy is #3439's rebase in the bridge rescue path, not agent-reachable).
-- Picker-coverage 20-failure cohort: unwitnessed by any receipt yet — next agent with that dispatch should start from `tests/test_pick_receipt_coverage.py` on pristine main.
+- #3438 (remaining pick-plane-guards restore) still open — owner lane; my R86 receipt adds the enforcement witness that motivates its gate.
+- Picker-coverage 20-failure cohort (cycle-4 note) — unwitnessed beyond my receipt; needs its own lane.
