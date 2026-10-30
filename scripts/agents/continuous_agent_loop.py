@@ -2132,6 +2132,42 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
         return [], str(outcome["error"])
     return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
 
+def _classify_tower_pr_failure(raw_error: str) -> str:
+    """Root-cause classifier for a failed tower github.list_prs tool-call.
+
+    বাংলা (GLM Agent 24, live প্রমাণ 2026-10-31T20:24Z): anonymous/viewer লেনের
+    tower সেশনে github.list_prs কল করলে JSON-RPC envelope নিজে OK থাকে কিন্তু
+    MCP result-এ isError=true + content[0].text =
+    "Forbidden: role 'viewer' has no repository read access for
+    'github.list_prs'." ফেরত আসে — পুরনো কোড isError দেখত না, ফলে এই স্থায়ী
+    access-control অবস্থাকে ভুলভাবে "tower PR payload carried no JSON list"
+    নোটে শ্রেণিবদ্ধ করত (মিথ্যা কারণ-নির্ণয়: payload ঠিকই এসেছিল, সেটা denial
+    টেক্সট)। ফলে প্রতি gh-absent রানে প্লেন-অন্ধকারের আসল কারণ গোপন থাকত এবং
+    পরবর্তী এজেন্টরা ট্রানজিয়েন্ট-আউটেজ ভেবে অপ্রয়োজনীয় রিট্রাই/গবেষণায় সময়
+    ফেলত (U6 zero-recurrence লঙ্ঘন-প্রবণ)। এই ক্লাসিফায়ার denial-শেপ চিনে সৎ,
+    স্থায়ী-অবস্থা সংকেত দেয় — নোট পড়লেই root cause বোঝা যায়, আর কখনো এই
+    শ্রেণির মিথ্যা কারণ-নির্ণয় হবে না। Shape-4 সেনসাস (#3759, Refs #3739)
+    tower-সাইড সুপারিশ নথিভুক্ত করেছে; এটা তার লুপ-সাইড প্রতিটা।
+
+    Returns:
+        str: সৎ failure-নোট (report_failed_open_prs-এর ডার্ক-লাইনে সরাসরি যায়)।
+    """
+    msg = (raw_error or "").strip()
+    lowered = msg.lower()
+    if (
+        "forbidden" in lowered
+        or "has no repository read access" in lowered
+        or "rbac" in lowered
+        or ("role '" in lowered and "access" in lowered)
+    ):
+        return (
+            "tower github.list_prs RBAC-forbidden for this lane's role "
+            f"({msg[:200]}) — permanent access-control state, not a transient "
+            "outage; PR-plane revival needs an elevated-role tower credential "
+            "(admin lane, Shape-4 census Refs #3739)"
+        )
+    return f"tower PR tool-call error: {msg[:200] or 'no error text returned'}"
+
 def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict[str, Any]] | None, str]:
     """R78-mirror — gh-absent tower PR-plane fallback (revives the failed-PR audit).
 
@@ -2208,16 +2244,34 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                 except json.JSONDecodeError:
                     pass
             result: Any = None
+            rpc_error_msg = ""
             for env in envelopes:
-                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
-                    result = env.get("result")
-                    break
+                if not isinstance(env, dict) or env.get("id") != call_id:
+                    continue
+                if "error" in env:
+                    # বাংলা: JSON-RPC-স্তরের error-envelope আগে নীরবে স্কিপ হত —
+                    # কোনো result-envelope না মেলালে নিচের মিথ্যা "no JSON list"
+                    # নোটে ঢাকা পড়ত। এখন সৎভাবে ধরা হয়।
+                    err = env.get("error")
+                    rpc_error_msg = (
+                        str(err.get("message")) if isinstance(err, dict) and err.get("message") else str(err)
+                    )
+                    continue
+                result = env.get("result")
+                break
             text = ""
+            mcp_is_error = isinstance(result, dict) and result.get("isError") is True
             if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
                 first = result["content"][0]
                 txt = first.get("text") if isinstance(first, dict) else None
                 if isinstance(txt, str):
                     text = txt
+            # বাংলা: MCP tool-error (isError=true) বা JSON-RPC error-envelope হলে
+            # টেক্সট/মেসেজটাই আসল error — সেটাকে JSON-list ভেবে পার্সের চেষ্টা
+            # করা মিথ্যা নোটের মূল উৎস ছিল; এখন ক্লাসিফায়ার দিয়ে সৎ নোট।
+            if mcp_is_error or (not result and rpc_error_msg):
+                outcome["error"] = _classify_tower_pr_failure(text or rpc_error_msg)
+                return
             prs: Any = None
             if text:
                 try:
@@ -2225,7 +2279,8 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                 except json.JSONDecodeError:
                     prs = None
             if not isinstance(prs, list):
-                outcome["error"] = "tower PR payload carried no JSON list"
+                outcome["error"] = _classify_tower_pr_failure(text or rpc_error_msg or "") \
+                    if (text or rpc_error_msg) else "tower PR payload carried no JSON list"
                 return
             rows: list[dict[str, Any]] = []
             for pr in prs:
