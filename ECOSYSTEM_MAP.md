@@ -123,7 +123,7 @@ flowchart TB
 
     subgraph TOWERBOX["mcp-control-plane · Control Tower"]
         direction TB
-        TOOLS["Tool plane: bridge_work_queue ·<br/>bridge_work_order · bridge_submit_patch ·<br/>system_summary · system_health"]
+        TOOLS["Tool plane: bridge.work_queue ·<br/>bridge.work_order · bridge_submit_patch ·<br/>system_summary · system_health"]
         WATCHER["Federated CI watcher<br/>(workflow_run failure → cross-repo issue)"]
         EVENTS["Event gateway · incident dispatch"]
     end
