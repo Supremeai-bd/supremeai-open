@@ -46,3 +46,20 @@
 - Live 19:33Z: client_list 88 rows EXPOSED + kill_switch/list_secrets/
   tenant_create anonymously visible; exit codes make it a deploy-window gate.
   Receipt: bridge-20261031-3663-acceptance-probe-glm22.md. No claim, no Closes.
+
+## Cycle 3 (2026-10-31 06:2x+08) — P0 3663 closed: post-redeploy acceptance verified
+
+- PR #3732 (probe) merged as cf71130. Owner landed the fix: all three
+  fallbacks now `?? DEFAULT_GUEST_ROLE // #3663 fail-closed` — L1119 (my
+  third-site finding) covered. P0 gate lifted: "zero open P0 blockers".
+- Probe r2 — its own first real verdict caught two of my defects: aggregation
+  else-branch mislabeled mixed no-exposure as "FAIL-OPEN STILL LIVE"
+  (false-alarm class), and the redeploy's deny arrives as deny PROSE in the
+  content envelope, not a JSON-RPC error plane. Both fixed; self-test 17/17.
+- Live acceptance 06:3x+08 (exit 3): NO EXPOSURE OBSERVED — client_list deny
+  prose (default-deny RBAC), 20 anonymous tools (was 158), zero destructive;
+  bridge front door intact as the Cycle-1 matrix predicted. Full 3/3 needs a
+  whoami-class viewer tool (owner option recorded in the receipt).
+- Dispatch #3858 (PR #3534 parity guard): feedback plane shows LIVE claim
+  (contributor-agent 22:25:18Z, minutes old) → skip-with-evidence, no
+  stampede. Verify 8/8 on f1677a5 before and after.
