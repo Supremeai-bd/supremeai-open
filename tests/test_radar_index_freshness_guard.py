@@ -358,10 +358,81 @@ def test_live_repo_sweep_passes() -> None:
     # guard was GREEN at 37d69c2, no ghosts/drift) and advanced it
     # R80 -> R81 (verified free: tree word-boundary scan zero; subject scan
     # zero over 200; queue capture 100/100 windowTruncated:false zero).
-    assert r["pointer"] == 81, "pointer drifted — regenerate expectation with the index"
+    # and after #3557's discovery (GLM Agent 18, Job 486801): the pointer
+    # advance R81 -> R84 in #3483 skipped this pin — RED on live main across
+    # three landings (CI runs no pytest; the pre-push trigger glob was stuck
+    # on the day-one SCOUT_RADAR_2026-10-28* names). The same landing adds
+    # guard invariant G (pin-truth): the pin-vs-pointer drift class now fails
+    # loud at guard time, so this literal can never silently rot again.
+    # and after the same-window peer pass 44 (GLM Agent 20, Job 486804 — the
+    # #3507/#3516 same-cycle race class witnessed live, reconciled by yield:
+    # first registration wins) registered the R84 row post-closure
+    # (corroboration record #3554) and advanced the pointer past the landed
+    # R85/R86 rows to the next fully-clean number (verified free by BOTH
+    # passes: tree word-boundary scan zero; subject scan zero over 200; full
+    # queue capture 68/68 windowTruncated:false zero).
+    # R87→R89 regeneration (2026-10-31, GLM Agent 14 / Job 486785, standing-suite
+    # heal r2): the index legitimately advanced past the landed R88/R89 rows while
+    # this literal stayed at 87 — the exact #3624 pointer⇄pin co-obligation class
+    # (guard fired report-only, main CI runs no pytest). Regenerated WITH the index
+    # per the #3483 rule; scripts/ci/radar_pointer_pin_guard.py now mechanizes the
+    # co-obligation for future advances.
+    # and after pass 46 (GLM Agent 18, Job 486801, cycle 05:18+08 2026-10-31): this pin co-advances
+    # 89 -> 90 in the SAME change that advances the index pointer 89 -> 90 (invariant P2 by
+    # construction). Same-window disclosure (the #3507/#3516 race class): this filer caught the
+    # pin 87 != pointer 89 drift live at 5e9c0d6 via `radar_pointer_pin_guard.py --check` and
+    # recorded it in the R89 report; GLM Agent 14's standing-suite heal r2 (#3821) landed the
+    # 87->89 regeneration first — first heal lands wins; this change therefore carries only its
+    # OWN co-advance, and Plan-5 (mechanical pre-push wiring of the co-obligation guard, still
+    # unwired on main) is recorded in docs/reports/SCOUT_R89_GATEWAY_PROMPT_CACHE_BLINDNESS_2026-10-31.md.
+    # and after pass 47 (GLM Agent 21, Job 486808, cycle 05:21+08 2026-10-31): this pin co-advances
+    # 90 -> 91 in the SAME change that advances the index pointer 90 -> 91. Same-window disclosure
+    # (pass-26 class, fifth recurrence): this filer drafted its lane as R89 with three-plane freeness
+    # verified, then caught the peer's issue-side R89 consumption (landing 0d32b24) on a fresh
+    # pre-submit queue capture, yielded R89 (first-registration-wins) and re-took the lane as R90 —
+    # see index drift log pass 47 + docs/reports/SCOUT_R90_GITHUB_AGENTIC_WORKFLOWS_2026-10-31.md.
+    assert r["pointer"] == 91, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
+
+
+def test_invariant_g_pin_truth_fires_on_drift() -> None:
+    """#3557: the pin literal must equal the advertised pointer (drift replays)."""
+    live_block = (
+        "def test_live_repo_sweep_passes() -> None:\n"
+        "    r = guard.sweep(REPO_ROOT)\n"
+        '    assert r["pointer"] == 84, "pointer drifted"\n'
+        "\n\n"
+    )
+    # Matching pin: ran, no findings.
+    root = make_tree({guard.INDEX_REL: index_doc(84, [1]),
+                      "tests/test_radar_index_freshness_guard.py": live_block})
+    r = guard.sweep(root)
+    assert r["g_ran"] and not r["g"]
+    # The #3483 replay: pointer advertised R84, pin left at 81 — must fire
+    # naming the exact was/now pair.
+    root = make_tree({guard.INDEX_REL: index_doc(84, [1]),
+                      "tests/test_radar_index_freshness_guard.py": live_block.replace("== 84", "== 81")})
+    r = guard.sweep(root)
+    assert any(f["kind"] == "pin-drifted" and f["was"] == 81 and f["now"] == 84 for f in r["g"])
+    # Live block missing: the pin contract changed shape — structural fail.
+    root = make_tree({guard.INDEX_REL: index_doc(84, [1]),
+                      "tests/test_radar_index_freshness_guard.py": "def unrelated_test() -> None:\n    pass\n"})
+    r = guard.sweep(root)
+    assert any(f["kind"] == "pin-block-missing" for f in r["g"])
+    # Pin file deleted while tests/ exists: structural fail (the carrier is gone).
+    root = make_tree({guard.INDEX_REL: index_doc(84, [1])})
+    (root / "tests").mkdir()
+    r = guard.sweep(root)
+    assert any(f["kind"] == "pin-file-missing" for f in r["g"])
+
+
+def test_invariant_g_fixture_tree_honest_skip() -> None:
+    """No tests/ directory (fixture tree) — G honest-skips, never fabricates."""
+    root = make_tree({guard.INDEX_REL: index_doc(4, [1])})
+    r = guard.sweep(root)
+    assert not r["g_ran"] and not r["g"]
 
 
 def test_invariant_e_roster_regressions_fail() -> None:

@@ -1,17 +1,24 @@
-"""Claim-lease SSOT pins (#57 wiring): one 30-minute lease, one 5-minute floor.
+"""Claim-lease SSOT pins (#57 wiring → #3573 regime).
 
-Locks the lease constants to scripts/agents/claim_thresholds.py so the
-release<->re-claim flip-flop-war fix (#57) stays wired:
-- continuous_agent_loop.py derives ISSUE_LEASE_SECONDS from the SSOT
-  (was hardcoded 1800.0 — dual-SSOT drift, the exact failure #57 documents);
+Locks the anti-stampede lease SSOT to scripts/agents/claim_thresholds.py so
+the release<->re-claim flip-flop-war fix (#57) stays wired:
 - stale_claim_releaser.py derives TTL_MINUTES_DEFAULT from the SSOT and
-  enforces the fresh-claim idempotency floor in release_plan().
+  enforces the fresh-claim idempotency floor in release_plan();
+- continuous_agent_loop.py carries NO dispatch time-gate on the claimability
+  path since #3573 (the live claim probe + the atomic work_claim decide
+  claimability) — the SSOT import there feeds the machine-local dispatch JOURNAL
+  retention (hygiene-only prune, never a gate) and, since the landed #3738
+  twin-guard contract, the SAME SSOT-derived value aliased as ISSUE_LEASE_SECONDS
+  for the born-duplicate demotion's in-flight input (demotion-only: it removes a
+  duplicate dispatch, it never gates or delays a candidate).
 
 Fully offline, stdlib-only, dual-mode (unittest + pytest).
 """
 
 from __future__ import annotations
 
+import ast
+import inspect
 import sys
 import unittest
 from pathlib import Path
@@ -47,15 +54,47 @@ def _snap(ts: str, ttl: str = "1m") -> dict:
 
 
 class ClaimLeaseSSOTPins(unittest.TestCase):
-    def test_01_loop_lease_derived_from_ssot(self):
-        self.assertEqual(cal.ISSUE_LEASE_SECONDS, ct.ORPHAN_RELEASE_MINUTES * 60.0)
-        # Rule 9 value must not silently change with this wiring:
-        self.assertEqual(cal.ISSUE_LEASE_SECONDS, 1800.0)
+    def test_01_loop_has_no_dispatch_time_gate(self):
+        # #3573: the loop's local 30-minute dispatch lease is REMOVED from the
+        # claimability path — no clock decides whether a candidate is dispatchable;
+        # the live claim probe (#2794 fix (1)) and the atomic work_claim own that
+        # decision. Since the landed #3738 twin-guard contract, ISSUE_LEASE_SECONDS
+        # survives ONLY as the born-duplicate demotion's in-flight input name,
+        # aliased to the SAME #57 SSOT-derived journal retention (one value, two
+        # contract names, zero independent magic numbers, zero artificial gates).
+        self.assertEqual(cal.ISSUE_LEASE_SECONDS, cal.DISPATCH_JOURNAL_RETENTION_SECONDS)
+        self.assertEqual(
+            cal.DISPATCH_JOURNAL_RETENTION_SECONDS,
+            ct.ORPHAN_RELEASE_MINUTES * 60.0,
+        )
 
-    def test_02_loop_source_has_no_hardcoded_lease(self):
+    def test_02_loop_source_has_no_time_gate_and_keeps_ssot_lineage(self):
         src = Path(cal.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("ISSUE_LEASE_SECONDS = 1800", src)
         self.assertIn("claim_thresholds", src)
+        # #3738 reconciliation: the twin-guard alias must be a verbatim alias of
+        # the SSOT-derived retention — never a second, independently-set number.
+        self.assertIn("ISSUE_LEASE_SECONDS = DISPATCH_JOURNAL_RETENTION_SECONDS", src)
+        pick_src = inspect.getsource(cal.pick_next_issue)
+        self.assertNotIn("leased_at", pick_src)
+        # The candidate gate itself (nested is_claimable) is clock-free: AST name
+        # scan, comment-immune — the lease/ISSUE_LEASE names may only live in the
+        # twin-demote input, never inside the claimability gate.
+        tree = ast.parse(pick_src)
+        gates = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "is_claimable"
+        ]
+        self.assertEqual(len(gates), 1)
+        gate_tokens = set()
+        for node in ast.walk(gates[0]):
+            if isinstance(node, ast.Name):
+                gate_tokens.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                gate_tokens.add(node.attr)
+        for tok in gate_tokens:
+            self.assertNotIn("LEASE", tok.upper())
 
     def test_03_releaser_ttl_derived_from_ssot(self):
         self.assertEqual(releaser.TTL_MINUTES_DEFAULT, ct.ORPHAN_RELEASE_MINUTES)

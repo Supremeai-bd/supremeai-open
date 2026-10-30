@@ -126,8 +126,10 @@ LICENSE_CANDIDATES = ("LICENSE", "LICENSE.md", "LICENSE.txt", "NOTICE", "NOTICE.
 # ---------------------------------------------------------------------------
 KNOWN_DRIFTS: frozenset[tuple[str, str]] = frozenset(
     {
-        # -- 1 model contradiction (the #1690 declared-vs-actual class)
-        ("MODEL_CONTRADICTION", "gateway/LICENSE"),
+        # r1 heal (#3665, shrink-only): the gateway/LICENSE model contradiction
+        # was fixed on main (gateway now ships no contradictory LICENSE text),
+        # so the dated baseline entry shrinks to zero. The ratchet only shrinks;
+        # new drift must be fixed, never baselined.
     }
 )
 

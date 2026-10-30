@@ -157,10 +157,12 @@ export const OperatorCockpit: React.FC = () => {
   );
 };
 
-const PublicPageShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+const PublicPageShell: React.FC<{ children: React.ReactNode; fullWidth?: boolean }> = ({ children, fullWidth = false }) => (
   <PublicLayout>
     <PublicHeader />
-    <div className="pt-16 sm:pt-20 px-4 pb-12 max-w-feed mx-auto">{children}</div>
+    <div className={`pt-16 sm:pt-20 px-3 sm:px-6 pb-12 mx-auto w-full transition-all duration-200 ${fullWidth ? 'max-w-7xl' : 'max-w-feed'}`}>
+      {children}
+    </div>
   </PublicLayout>
 );
 
@@ -214,7 +216,7 @@ export const App: React.FC = () => {
               <Route
                 path="/playground"
                 element={
-                  <PublicPageShell>
+                  <PublicPageShell fullWidth>
                     <GuestDashboard
                       language="bn"
                       onSwitchToUser={() => { window.location.href = '/register'; }}
