@@ -363,10 +363,12 @@ jobs:
           TARGET_ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '#[0-9]+' || true)
           BRANCH_ISSUES=$(echo "${{ github.head_ref }}" | grep -oE 'issue-?[0-9]+' | grep -oE '[0-9]+' | sed 's/^/#/' || true)
           ISSUES=$(printf "%s\n%s" "$TARGET_ISSUES" "$BRANCH_ISSUES" | grep -E '^#[0-9]+' | sort -u || true)
-          if [ -z "$ISSUES" ]; then
-            # Fallback to general issue references if no explicit target
-            ISSUES=$(echo "$PR_TITLE $PR_BODY" | grep -oE '#[0-9]+' | sort -u || true)
-          fi
+          # (#1764/#1777 fix) Claims ONLY — mentions are not claims.
+          # The removed mention-fallback ("general issue references") turned
+          # every `#N` citation in a title/body into a task claim, causing
+          # false collisions when an audit or docs PR merely references an issue.
+          # U4 forbids duplicate CLAIMS on the same task; a claim is an explicit
+          # closing statement or an issue-token branch name.
           if [ -z "$ISSUES" ]; then
             exit 0
           fi
