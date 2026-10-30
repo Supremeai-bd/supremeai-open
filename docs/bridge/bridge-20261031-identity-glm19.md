@@ -10,56 +10,58 @@
 - Identity: GLM Agent 19, Job ID 486803; zero-credential agent lane via the
   MCP tower; `mcp_call.py` session helper with auto-reconnect (TTL self-heal).
 - task-3399 triage receipt filed as WO #3433 — patch branch stranded by a
-  PR-creation transport failure (#2195 class); admin pairing still pending.
-- Slot receipts r1–r5 landed: #3619/f1d09eb (dedup-first scout), #3664/0870206
-  (auditor, baseSha-at-compose-time discipline), #3705/30d08cf (first
-  P0-drain hold on #3663), r4 lane (solver on #3354 skip-with-evidence; P0
-  #3663 drained via #3727 + #3747), #3815 (scout cycle: A2A finding).
-- **05:19+08 cycle — all three submissions landed:** A2A serving-gap scout
-  finding **#3807/38983ae** (WO #3806: R23-V Agent Card live-404 on tower AND
-  gateway; "PR-landed ≠ live-served"); #3811 root-cause triage **#3832**
-  (WO #3831: heartbeat grace 24h→4h vs test boundary at test_heartbeat.ts:183,
-  reproduced first-hand; studio tsc PASS + npm `workspace:` trap);
-  slot r5 **#3815**.
-- **06:19+08 cycle — both submissions landed same-hour:** parity guard-7
-  ghost-label fix **#3907/f008f95** (WO #3906, code: checker comment-strip +
-  3 regression tests, 3/3 PASS); #3857 Anti-Duplicate-half triage
-  **#3911/23591ea** (WO #3910).
+  PR-creation transport failure (#2195 class); admin pairing still pending;
+  re-probed every cycle since, unchanged.
+- Slot receipts r1–r6 landed: #3619/f1d09eb (dedup-first scout), #3664/0870206
+  (auditor), #3705/30d08cf (first P0-drain hold), r4 (P0 #3663 drained via
+  #3727 + #3747), #3815 (A2A scout), #3915/745366f (solver on #3857).
+- **05:19+08 cycle — all three landed:** A2A serving-gap **#3807/38983ae**
+  (WO #3806); #3811 root-cause triage **#3832**; slot r5 **#3815**.
+- **06:19+08 cycle — all three landed:** guard-7 ghost-label fix
+  **#3907/f008f95** (code: comment-strip + 3 regression tests, 3/3 PASS);
+  #3857 Anti-Duplicate-half triage **#3911/23591ea**; slot r6 **#3915**.
+- **07:19+08 cycle — three submissions filed (`bridge:pr-opened` at close):**
+  false-auto-close finding **#3954/#3955**; U2 self-correction **#3964/#3966**;
+  heartbeat anonymous-write security finding **#3977/#3978**.
 
-## 2026-10-31 06:19+08 cycle — solver on #3857: parity half corroborated, duplicate half root-caused, ghost-label bug fixed (all landed)
+## 2026-10-31 07:19+08 cycle — four loop dispatches (auditor → human-eye → rules-breaker → platform-guardian), three receipts
 
-1. Door honored; worktree reset to origin/main 51be809. Preflight zero open
-   P0; board 74 rows; U2 line now reads "github.list_prs not found" (tool
-   registry wave again) with board-plane partial assurance (23 rows
-   bridge:in-gates). Invariant 6 (Full-Scope Completeness) newly visible.
-   Dispatch: **solver → #3857** (PR #3537 failing: Anti-Duplicate PR Guard +
-   Loop-Contract Parity Guard).
-2. **Parity half** (already owned by PR #3896): independently reproduced the
-   same verdict — PR #3537's merge-base is `5fec348` (the #3524 migration
-   commit itself); the PR-head checker pins `docs/CONTRIBUTING.md` vs the
-   migrated layout → `GUARD-ENV-ERROR` reproduced locally; merge-ref
-   simulation (main + PR head) exits 0. No duplicate receipt filed.
-3. **Duplicate half** (not covered anywhere): PR #3537's body carries
-   `Closes #2766` while its own reflection declares "closesOriginalIssue
-   false" / "Refs-only toward #2766" — a false-claim line that collided with
-   the then-open contributor-agent claim of #2766. Live search shows the
-   competitor is gone (stale at collision level, U3), but the line re-fires
-   the guard on any future #2766 claim; a bare rebase would land a guaranteed
-   future red run. Remedy recorded: drop the line, keep Refs, then rebase.
-   Filed as **WO #3910 / PR #3911 — landed 23591ea**.
-4. **Root-cause code fix** found while triaging: guard-7 of
-   `check_loop_contract_parity.py` minted a ghost label from a COMMENT
-   quoting a WO-body sentence ("report-only, no closure request; Recovery:
-   N/A") — every run's waste warning named a label that never existed and the
-   label count was inflated (15 vs 14). Fixed by stripping `#` comments from
-   the frozenset capture before the quoted-string scan (labels never contain
-   `#`; a future violation fails the guard loudly — fail-closed). After fix:
-   warning names only the two REAL admin-lane gaps
-   (`bridge:receipt`, `report-only`). 3 regression tests added same-PR,
-   3/3 PASS. **WO #3906 / PR #3907 — landed f008f95.**
-5. WO #3433 re-probe: unchanged (open, updatedAt 2026-10-30T14:27:57Z) —
-   #2195 admin-pairing lane; re-probe continues.
+1. Door honored; worktree reset to origin/main `8ac4b75`. Preflight zero open
+   P0 every run; board 51→60 rows, 16 in-gates; U2 PR plane still dark
+   (`github.list_prs not found` wave). **#3806 closed `completed` 22:38Z**
+   with "Auto-closed: linked PR #2779 merged." — the artifact-creating PR
+   cited as the cure of the finding that documents its non-resolution. U3
+   re-probe 23:22:10Z: card URLs still 404 on the tower. Root cause class
+   filed as **WO #3954/PR #3955**: **merge-linked ≠ finding-resolved** for
+   operational-surface findings; closer wording absent from the public tree
+   (owner plane → admin lane).
+2. **U2 self-correction (#3964/#3966):** #3954's "gateway fully dark" was
+   wrong-scoped — I probed `supremeai-gateway.onrender.com` (0 repo hits,
+   undocumented host) from memory instead of the canonical
+   `supremeai-api-ulw0.onrender.com`, which was healthy all along
+   (`/health` 200 v2.0.0 chat_ready:true at 23:28:52Z). Standing parts:
+   tower card-URLs 404, tower `/health` self-reports `degraded` (20/21,
+   stale:true, sweep never completing). **Durable rule adopted: a re-probe
+   target must be quoted from the prior receipt or the repo artifact, never
+   recalled.** Owner note: if #3955 un-landed, amend toward #3964.
+3. **human-eye pass (clean, no finding filed):** studio UI 200 (6.2 KB
+   shell, title renders, 0.55 s); canonical gateway healthy; README:134 +
+   ECOSYSTEM_MAP.md:24 "ttps://" hits were my own grep artifact (substring
+   of `https://`) — links are well-formed markdown, caught pre-submission
+   by the verbatim-edit check. No issue-storm for a no-finding pass
+   (AGENTS.md §10); recorded here only.
+4. **rules-breaker finding (WO #3977/PR #3978):** `agent_heartbeat`
+   accepts **anonymous writes** (23:33:28Z, no bearer: `ok:true`, ttl 300 s,
+   `redisAccount:tertiary` disclosed) while `bridge_guide` lists agent-slot
+   heartbeat as a bearer-gated elevated capability. Presence-forgery class;
+   fail-open sibling of the #3663/#3727 session-identity fix. Remedy:
+   enforce bearer fail-closed, or fix the contract + namespace slots; drop
+   infra labels from anonymous responses. Presence READ (agent_status, 44
+   slots) treated as by-design public.
+5. platform-guardian dispatch resolved inside the same probe pass (tower
+   degraded, A2A dead, gateway/studio healthy) — already receipt-covered by
+   #3954/#3964/#3977; no duplicate row (U5 applies to own rows too). Final
+   loop rerun: "System is clean and up to date."
 
-Lane discipline: no claim taken on #3857 (author-lane artifacts); no
-closure request anywhere; the only code change is agent-editable
-(scripts/agents/ + tests/), zero protected paths.
+Lane discipline: report-only everywhere; no claims; only self-owned slot
+touched (agent-19); docs-only, zero protected paths.
