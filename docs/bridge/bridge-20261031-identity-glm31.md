@@ -1,44 +1,40 @@
 # GLM Agent 31 — Worklog (Job ID 486848)
 
-> #3524 founder-mandate archive-এর পরে রিস্টার্ট — পুরনো লেন-ইতিহাস supremeai-archive-এ;
-> এই ফাইল ছোট (durable facts only), প্রতি সাইকেলে in-place replace।
+> #3524 archive-এর পরে রিস্টার্ট — durable facts only, প্রতি সাইকেলে in-place replace।
 
 ## Durable outcomes (সংক্ষিপ্ত, প্রমাণসহ)
 
-- #2547 solver-lane root cause → PR #3244; wired-but-absent guard → PR #3320;
-  #3404 union-restore → PR #3451; #3441 triage → PR #3458; R86 baseSha → #3501।
-- Constitution-pointer guard-এর 23 ghost ALLOWLIST অপসারণ → PR #3563 (cf2fcd0;
-  failure-set-diff প্রমাণ); #3556 corroboration; #3615 triage (Anti-Duplicate
-  Guard first-hand সঠিকভাবে বাধা দিয়েছে)।
-- PR #3643-এর প্রথম live-data যাচাই → PR #3693 (WO #3692): 2 classified /
-  28 unseen / 0 failing; F2 শিক্ষা — naive updatedAt-guard passing-at-window-sha
-  মিথ্যা demote করত (epsilon দরকার)।
+- #2547 root cause → PR #3244; wired-but-absent guard (#3316) → PR #3320 (এখনো
+  live-মেইল ধরছে — verdict_plane_age_guard roster-এ আছে, ফাইল নেই); #3404
+  union-restore → PR #3451; #3441 triage → PR #3458; constitution 23-ghost →
+  PR #3563।
+- PR #3643 live-data যাচাই → PR #3693; exec-bit মোড-বহন tower-ingress-ব্লকড
+  প্রমাণসহ → PR #3731 (admin রেসিপি রিসিটে)।
+- Sentry c65 delta → PR #3776; RBAC লেন-ম্যাট্রিক্স: স্ট্যান্ডার্ড agent
+  transport-ও viewer — list_prs/workflow_runs Forbidden, health_full_sweep
+  সেন্সাস-বাইরে (#3772 residual: দুটি স্বাধীন সেশন, একই ফল)।
 
-## Cycle 9 (03:31+08) — exec-bit: প্রমাণিত, কিন্তু tower-ingress মোড বহন করতে পারে না
+## Cycle 11 (05:31+08) — tower টুল-নাম দোলন: loop caller-debt root fix
 
-- সংঘর্ষ-নির্ণয়: আমার গত-সাইকেলের pre-push self-test 9/9 ছিল **মিথ্যা-সবুজ** —
-  রানটাইম exec-bit noise (সব ফাইল 755) `test -x` নিঃশব্দে সত্য করে দিয়েছিল;
-  রিপো-মোড pre-commit/post-commit **100644** (আজও তাই), pre-push 100755 →
-  fresh clone-এ 2 sibling FAIL (glm20-এর #3689 সঠিক)। **clone সত্য, runtime মিথ্যা।**
-- মোড-সচেতন TDD: 644-এ 2 FAIL হুবহু পুনঃসৃজন → fresh clone-ও একই → mode-diff
-  apply → 9/9 PASS।
-- **remedy জমা ব্লকড (প্রথম-হাতে):** unified_diff পার্সার mode-line চেনে না
-  ("unrecognized diff line 2: old mode 100644"), full_file-এ মোড-সংকেত নেই →
-  শুধু docs landed: **PR #3731 (643e401)**; admin রেসিপি রিসিটে সংরক্ষিত:
-  `git update-index --chmod=+x .githooks/pre-commit .githooks/post-commit`।
-  গার্ড-শিক্ষা: self-test verdict `git ls-files -s` (রিপো-মোড) থেকে, runtime fs থেকে নয়।
-
-## Cycle 10 (04:31+08) — sentry c65 delta + RBAC লেন-ম্যাট্রিক্স
-
-- Loop dispatch task-3376; c64 মাত্র ~৪ মিনিট আগে ফাইল হয়েছে → U5-সচেতন
-  **delta পাস** (claim ছাড়া, পূর্ণ sweep পুনরাবৃত্তি নয়)। c64-এর watchpoint ফল:
-  render-primary update_failed **৪র্থ পাস** (ledger-escalation শর্ত পূরণ);
-  telegram ৯ম ডেটাম (unreachable ×2, flap পুনরাবৃত্ত নয়); well-known **১৮তম**
-  মাস্ক; work_queue 58; worker/scraper/mcp/api সব live।
-- **RBAC ৩য় পাস + লেন-আপগ্রেড (#3772-এর পূরক):** স্ট্যান্ডার্ড agent transport-ও
-  viewer — 18-টুল সেন্সাস; `github.list_prs` + `github.workflow_runs` Forbidden;
-  `memory_record_task` দুই-ধাপ denial ("requires agent role or higher");
-  **`health_full_sweep` সেন্সাস থেকেই বাদ** — সিরিজের মূল যন্ত্র agent lane থেকে
-  সরানো; work_queue-র `callerAuthenticated:true` বনাম viewer-role অসঙ্গতি।
-  দুটি স্বাধীন সেশন, একই ফল → অন্ধকার লেনব্যাপী।
-- রিসিট: docs/reports/SENTRY_C65_2026-10-31.md। Refs: #3376 #3772 #3751 #3765।
+- **ঢেউ-৩ (live ~21:30Z):** `bridge.work_queue` → `bridge_work_queue` ফেরকা
+  (c66/glm32-এর rename রিপোর্টের first-hand corroboration)। ব্যতিক্রমী আকৃতি:
+  মৃত-নাম JSON-RPC error নয় — **HTTP-200 isError content-text**-এ
+  `-32602 ... not found`।
+- **ফাংশনাল ভাঙন:** loop-এর board fallback + floor-probe dotted hardcode →
+  ঢেউ-৩-এ অন্ধ (fallback 0 rows; dispatch + P0-গেট অন্ধকার) — কোনো রো/claim
+  ছিল না।
+- **Root fix:** `TOWER_QUEUE_TOOL_NAME_CANDIDATES` (dotted literal + derived
+  underscore — drift-guard-এর quoted-dead স্ক্যান-সংঘর্ষহীন) +
+  `call_tool_across_rename_epochs()` (প্রথম-জীবিত-জয়ী; সব-মৃতে শেষ-exception
+  fail-closed) + দুই-আকৃতির not-found predicate। লাইভ পুনরুদ্ধার: fallback
+  **০ → ৬৩ rows**; preflight সবুজ। টেস্ট ৭/৭ (tests/
+  test_tower_queue_tool_name_epochs.py); drift-guard সবুজ (টেস্ট ফাইলের
+  ন্যায্য allowlist); roster 41/44 (নতুন red শূন্য)।
+- **দ্বিমুখী দোলন শিক্ষা:** ঢেউ একমুখী নয় (ওন্ডার→ডট→ওন্ডার); এক-বানান
+  hardcode প্রতি বিপরীত ঢেউয়ে অন্ধ করে — ঢেউ-১ নিজেই প্রমাণ (#2457)।
+- পার্শ্ব-finding: heal r2 (#3821) আমার ৬-red পৃষ্ঠের ৪টি শুকিয়েছে; বাকি ২
+  root-cause — wired-but-absent verdict_plane_age_guard (owner/author-লেন) +
+  radar_index_freshness (unowned)। ফলো-আপ লেজার রিসিটে (github.* কল-সাইট,
+  landing watchdog)।
+- রিসিট: docs/bridge/bridge-20261031-tower-name-oscillation-glm31.md।
+  Refs: #3834 #3819 #2457 #2493 #3376 (bare)।
