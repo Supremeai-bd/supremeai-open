@@ -7,7 +7,7 @@ import { httpRequest } from "../lib/http.js";
 import { env } from "../lib/env.js";
 import { applyUnifiedDiff, parseUnifiedDiff, resolveFileContent } from "../lib/unified_diff.js";
 import { isWorkOrderForTaskId, resolveIngressAction, taskIdSearchQuery } from "../lib/bridge_dedup.js";
-import { evaluateBaseStaleness, staleBaseErrorText, type MainBlobState } from "../lib/bridge_staleness.js";
+import { evaluateFullFileGate, type MainBlobState } from "../lib/bridge_staleness.js";
 import {
   isTestWired,
   payloadTestWiringGroups,
@@ -1382,40 +1382,39 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
             }
           } else {
             finalContent = file.content ?? "";
-            // #2333 staleness checkpoint (full_file only): when the filer
-            // declares the blob sha the file had on main at branch-cut time,
-            // re-read main now and fail closed on any drift — a stale
-            // full_file overwrite silently reverts main's increment (the R62
-            // eviction class: #2322's whole-file landing deleted #2314's
-            // landed registration). Opt-in per file, so legacy filers and
-            // brand-new files are untouched (no declared base -> no check,
-            // zero behavior change). API failure other than 404 fails open
-            // with a per-file disclosure (stalenessCheck) instead of blocking
-            // legitimate submissions on Tower-side API health.
-            let stalenessCheck: string | undefined;
-            if (file.baseSha) {
-              const mainBlobRes = await httpRequest<{ sha?: string; message?: string }>(
-                `https://api.github.com/repos/${repo}/contents/${file.path}?ref=main`,
-                { headers, timeoutMs: 15_000 }
-              );
-              // 200 -> compare against main's blob; 404 -> file absent on main
-              // (deleted since the cut); any other status -> Tower-side API
-              // health problem, fail open with a per-file disclosure.
-              const mainBlob: MainBlobState | undefined = mainBlobRes.ok
-                ? { exists: true, sha: mainBlobRes.data?.sha }
-                : mainBlobRes.status === 404
-                  ? { exists: false }
-                  : undefined;
-              if (mainBlob) {
-                const verdict = evaluateBaseStaleness(file.baseSha, mainBlob);
-                if (verdict.verdict === "stale") {
-                  return { isError: true, content: [{ type: "text", text: staleBaseErrorText(file.path, verdict) }] };
-                }
-                stalenessCheck = "checked-fresh";
-              } else {
-                stalenessCheck = "skipped-api-error";
-              }
+            // #3487 fail-closed CAS gate (upgrades #2333's opt-in checkpoint;
+            // RFC 9110 If-Match pattern): EVERY full_file landing re-reads
+            // main before applying. A stale base WITHOUT a declared baseSha
+            // used to sail through unchecked — #3404's landing silently wiped
+            // co-landed pick-plane guards and the same-day restoration trail
+            // (#3439/#3451, #3465, #3438, #3409) burned 4 PRs + 1 open WO in
+            // ~6 hours. Now: existing path + no baseSha -> STALE_BASE_MISSING;
+            // main blob unreadable (non-404) -> STALE_BASE_UNVERIFIED
+            // (fail-closed — the PUT below needs the same API, so a
+            // GET-fails/PUT-works partial failure is exactly the unguarded
+            // window; a retry is free, a silent clobber is not); declared
+            // base drifted -> STALE_BASE_ERROR (unchanged #2333 semantics).
+            // The brand-new-file lane stays open (baseSha omitted), and a
+            // declared baseSha on an absent path still rejects via the
+            // resurrection guard. unified_diff lane untouched (#539).
+            const mainBlobRes = await httpRequest<{ sha?: string; message?: string }>(
+              `https://api.github.com/repos/${repo}/contents/${file.path}?ref=main`,
+              { headers, timeoutMs: 15_000 }
+            );
+            // 200 -> compare against main's blob; 404 -> file absent on main
+            // (brand-new path or deleted since the cut); any other status ->
+            // fail closed with a re-readable error (#3487; was fail-open
+            // "skipped-api-error" disclosure before #3487).
+            const mainBlob: MainBlobState | undefined = mainBlobRes.ok
+              ? { exists: true, sha: mainBlobRes.data?.sha }
+              : mainBlobRes.status === 404
+                ? { exists: false }
+                : undefined;
+            const gate = evaluateFullFileGate(file.path, file.baseSha, mainBlob, mainBlobRes.status);
+            if (gate.verdict === "reject") {
+              return { isError: true, content: [{ type: "text", text: gate.error }] };
             }
+            const stalenessCheck: string = gate.disclosure;
             fileResults.push({ path: file.path, mode: ingressMode, stalenessCheck });
           }
 
@@ -1617,8 +1616,8 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
       content: z.string().optional().describe("Full file content (required for mode full_file, the default)"),
       mode: z.enum(["full_file", "unified_diff"]).optional().describe("Ingress mode; default full_file (#539 dual-mode)"),
       diff: z.string().optional().describe("Git unified diff against the branch-tip content (required for mode unified_diff)"),
-      baseSha: z.string().regex(/^[0-9a-f]{40}$/).optional().describe("#2333 staleness checkpoint: blob sha of this file as read from main at branch-cut time. Before landing, the Tower re-reads main and rejects with STALE_BASE_ERROR when the blob moved (main-advanced or file-deleted), preventing a stale full_file overwrite from silently reverting main. Omit for brand-new files (nothing to compare) or legacy unchecked submissions."),
-    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539; optional per-file baseSha staleness checkpoint per #2333)"),
+      baseSha: z.string().regex(/^[0-9a-f]{40}$/).optional().describe("#3487 fail-closed CAS gate (RFC 9110 If-Match): blob sha of this file as read from main at branch-cut time. REQUIRED for full_file on a path that exists on main — the Tower re-reads main before landing and rejects with STALE_BASE_MISSING (no baseSha declared), STALE_BASE_ERROR (blob moved or file deleted since the cut, #2333), or STALE_BASE_UNVERIFIED (main unreadable). Omit only for brand-new files (nothing to compare). Mechanically enforces Universal Invariant 1 (dual-rebase)."),
+    })).min(1).max(30).describe("Files to commit on the patch branch (dual-mode ingress per #539; fail-closed per-file baseSha CAS gate per #3487 — required for existing files, omit for brand-new files)"),
     rollbackPath: z.string().optional().describe("Rollback instructions (default: git revert-safe)"),
     agentIdentity: z.string().optional().describe("Agent name / session attribution"),
     reflectionWhy: z.string().optional().describe("Rationale explaining why this change was made (Reflection Evidence)"),
