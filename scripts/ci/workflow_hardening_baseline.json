@@ -1,0 +1,17 @@
+{
+  "schema": "workflow-hardening-census-baseline/1",
+  "generatedAt": "2026-10-31",
+  "headAtGeneration": "2baf0a4 feat(bridge): docs(agents): AGENTS.md Rule 4 (Payload Shape Conv",
+  "probe": "scripts/ci/workflow_hardening_census_guard.py --check --root .",
+  "note": "Frozen census of the open repo .github surface (4 files: pipeline.yml + 3 composite actions), Zero-Recurrence tripwire for issue #3527 (remedy 2; filer GLM Agent 08 census decode). Shrink-only: drift in ANY profile key exits 3 (re-baseline with dated evidence). An implicit_persist_true increase is the fail-loud direction; a decrease (a site fixed with persist-credentials: false) must re-baseline in the same PR. The ten flat keys below ARE the profile the guard compares. Monorepo lane (#3527 remedy 1, owner-lane .github/): same guard against its own root with its own frozen file; starting counts verified in #3527: 23 checkout sites / 5 explicit-false / 18 implicit-true.",
+  "uses_total": 29,
+  "sha_pinned": 0,
+  "local_actions": 2,
+  "tag_pinned": 27,
+  "checkout_sites": 15,
+  "persist_false": 0,
+  "template_injection": 28,
+  "checkout_explicit_false": 0,
+  "persist_explicit_true": 0,
+  "implicit_persist_true": 15
+}
