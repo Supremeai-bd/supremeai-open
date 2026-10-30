@@ -645,7 +645,12 @@ for line in $updates; do
         else
             radar_changed=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
         fi
-        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR_2026-10-28.*\.md$' || true)
+        # #3557: the day-one glob (SCOUT_RADAR_2026-10-28*) went dark once radar
+        # docs moved to dated names (SCOUT_RADAR_2026-10-30-XV.md) and the #3524
+        # founder migration retired loose radar files entirely — index-only pushes
+        # (the SSOT itself!) never engaged this gate. Trigger widened to the index
+        # plus any dated radar doc; the guard's invariant battery decides.
+        radar_surface=$(printf '%s\n' "$radar_changed" | grep -E '^docs/SCOUT_RADAR(_INDEX\.md|_[0-9]{4}-[0-9]{2}-[0-9]{2}.*\.md)$' || true)
         if [ -n "$radar_surface" ]; then
             hook_py=""
             if python3 -c "import sys" >/dev/null 2>&1; then
