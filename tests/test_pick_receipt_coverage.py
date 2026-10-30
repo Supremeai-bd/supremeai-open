@@ -33,6 +33,18 @@ Pins enforced here (zero gh/network dependency — in-memory boards):
   9. Malformed board rows fail open (never raise).
  10. A row never covers itself.
 
+TTL-expiry pins (saturation livelock root-cause, GLM Agent 18 Job 486801;
+evidence #3634 saturation #2 + #3600 strand census — in-flight receipts land
+in minutes (#3578: 44s, #3599: ~3min) while stranded coverers sit for hours
+(#2756 4th cycle, #3600 covered 54s after mint), so an open receipt used to
+demote its target FOREVER and the board entered a permanent NO-PICK state):
+ 11. A FRESH covering receipt (< claim_thresholds.RECEIPT_COVERAGE_TTL_MINUTES)
+     still demotes (anti-stampede U5 fully intact).
+ 12. A STALE covering receipt (>= TTL) no longer demotes (livelock broken).
+ 13. Mixed fresh+stale coverage still demotes, naming only the fresh receipt.
+ 14. Missing/unparseable createdAt is conservative (demotes — pre-fix contract).
+ 15. TTL is SSOT-imported from claim_thresholds (no dual-SSOT drift, #57 class).
+
 Dual-mode: runs under both `python3 -m unittest` and `pytest`.
 """
 
@@ -41,12 +53,19 @@ from __future__ import annotations
 import sys
 import unittest
 import unittest.mock
+from datetime import datetime, timezone
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
 
 import continuous_agent_loop as cal
+from claim_thresholds import RECEIPT_COVERAGE_TTL_MINUTES
+
+
+def _iso(epoch: float) -> str:
+    """epoch → tower-shaped ISO-8601 Z string (the exact board wire shape)."""
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _row(number: int, labels: list[str] | None = None, title: str | None = None,
@@ -61,9 +80,10 @@ def _row(number: int, labels: list[str] | None = None, title: str | None = None,
     return row
 
 
-def _wo(number: int, cites: int, state: str | None = "open") -> dict:
+def _wo(number: int, cites: int, state: str | None = "open",
+        created: str | None = None) -> dict:
     """A Bridge-WO-shaped row citing another issue number."""
-    return _row(
+    row = _row(
         number,
         labels=["bridge:queued"],
         title=(
@@ -72,6 +92,9 @@ def _wo(number: int, cites: int, state: str | None = "open") -> dict:
         ),
         state=state,
     )
+    if created is not None:
+        row["createdAt"] = created
+    return row
 
 
 _FREE = (False, "no active claim on the feedback plane")
@@ -242,6 +265,108 @@ class TestPickReceiptCoverageDemotion(_LeaseIsolated):
         self.assertEqual(picked, "2999")
         self.assertNotIn(2633, calls)
         self.assertIn(2999, calls)
+
+
+class TestReceiptCoverageTtlExpiry(unittest.TestCase):
+    """TTL-expiry pins 11–15: stale receipts stop demoting (livelock broken).
+
+    বাংলা: in-flight receipt মিনিটে land হয়, stranded ঘণ্টায় ঘণ্টা খোলা থাকে —
+    তাই বয়স TTL (claim_thresholds.RECEIPT_COVERAGE_TTL_MINUTES) পারহাওয়া
+    খোলা receipt আর anti-stampede coverage হিসেবে গণ্য হবে না। ঘড়ি ইনজেক্টেবল
+    (now_epoch) — হারমেটিক, রাত-পার হলেও টেস্ট ফ্ল্যাকি হবে না।
+    """
+
+    def test_fresh_receipt_still_demotes(self):
+        now = datetime.now(tz=timezone.utc).timestamp()
+        fresh = _iso(now - 5 * 60)  # 5 minutes old — well inside the TTL
+        note = cal._receipt_covered_note(_row(2633), [_wo(3281, 2633, created=fresh)], now_epoch=now)
+        self.assertIsNotNone(note)
+        self.assertIn("#3281", note)
+        self.assertIn("anti-stampede U5", note)
+
+    def test_stale_receipt_expiry_returns_none(self):
+        now = datetime.now(tz=timezone.utc).timestamp()
+        stale = _iso(now - 180 * 60)  # 3 hours old — well past the 120-min TTL
+        self.assertIsNone(
+            cal._receipt_covered_note(_row(2633), [_wo(3281, 2633, created=stale)], now_epoch=now)
+        )
+
+    def test_boundary_exact_ttl_expires(self):
+        now = datetime.now(tz=timezone.utc).timestamp()
+        exact = _iso(now - RECEIPT_COVERAGE_TTL_MINUTES * 60)  # age == TTL → expired
+        self.assertIsNone(
+            cal._receipt_covered_note(_row(2633), [_wo(3281, 2633, created=exact)], now_epoch=now)
+        )
+        just_under = _iso(now - (RECEIPT_COVERAGE_TTL_MINUTES * 60 - 1))  # 1s fresh
+        self.assertIsNotNone(
+            cal._receipt_covered_note(_row(2633), [_wo(3281, 2633, created=just_under)], now_epoch=now)
+        )
+
+    def test_mixed_fresh_and_stale_still_demotes_naming_fresh_only(self):
+        now = datetime.now(tz=timezone.utc).timestamp()
+        board = [
+            _wo(3001, 2633, created=_iso(now - 180 * 60)),  # stale — expired
+            _wo(3281, 2633, created=_iso(now - 5 * 60)),  # fresh — still covers
+        ]
+        note = cal._receipt_covered_note(_row(2633), board, now_epoch=now)
+        self.assertIsNotNone(note)
+        self.assertIn("#3281", note)
+        self.assertNotIn("#3001", note)
+
+    def test_missing_created_at_conservative_demote(self):
+        # Pre-fix contract: boards without createdAt behave byte-identically.
+        self.assertIsNotNone(cal._receipt_covered_note(_row(2633), [_wo(3281, 2633)]))
+
+    def test_unparseable_created_at_conservative_demote(self):
+        self.assertIsNotNone(
+            cal._receipt_covered_note(_row(2633), [_wo(3281, 2633, created="not-a-date")])
+        )
+
+    def test_numeric_epoch_created_at_supported(self):
+        now = datetime.now(tz=timezone.utc).timestamp()
+        fresh_num = _wo(3281, 2633)
+        fresh_num["createdAt"] = now - 5 * 60
+        self.assertIsNotNone(cal._receipt_covered_note(_row(2633), [fresh_num], now_epoch=now))
+        stale_num = _wo(3281, 2633)
+        stale_num["createdAt"] = now - 180 * 60
+        self.assertIsNone(cal._receipt_covered_note(_row(2633), [stale_num], now_epoch=now))
+
+    def test_pick_level_stale_coverage_serves_candidate(self):
+        # The livelock break, end-to-end: a board whose ONLY coverage of the
+        # candidate is a stale stranded receipt serves the candidate again.
+        now = datetime.now(tz=timezone.utc).timestamp()
+        board = [
+            _row(2633, labels=["P2-medium", "status:unclaimed"]),
+            _wo(3281, 2633, created=_iso(now - 180 * 60)),
+        ]
+        log = _CaptureLog()
+        picked = cal.pick_next_issue(
+            issues=board, claim_probe=lambda n: _FREE, log_fn=log,
+        )
+        self.assertEqual(picked, "2633")
+        self.assertNotIn("receipt-coverage demotion", log.joined())
+
+    def test_ttl_ssot_import_parity(self):
+        # Pin 15 — the loop imports the TTL from claim_thresholds (SSOT), never
+        # a private hardcoded copy (#57 dual-SSOT drift class).
+        self.assertEqual(cal.RECEIPT_COVERAGE_TTL_MINUTES, RECEIPT_COVERAGE_TTL_MINUTES)
+        self.assertEqual(RECEIPT_COVERAGE_TTL_MINUTES, 120)
+
+    def test_parse_epoch_shapes(self):
+        now = datetime.now(tz=timezone.utc)
+        self.assertAlmostEqual(
+            cal._parse_epoch("2026-10-30T18:21:13Z"),
+            datetime(2026, 10, 30, 18, 21, 13, tzinfo=timezone.utc).timestamp(),
+            places=3,
+        )
+        self.assertAlmostEqual(
+            cal._parse_epoch("2026-10-30T18:21:13+00:00"),
+            datetime(2026, 10, 30, 18, 21, 13, tzinfo=timezone.utc).timestamp(),
+            places=3,
+        )
+        self.assertEqual(cal._parse_epoch(now.timestamp()), now.timestamp())
+        for garbage in (None, "", "   ", "not-a-date", True, [], {}):
+            self.assertIsNone(cal._parse_epoch(garbage))
 
 
 if __name__ == "__main__":
