@@ -1,21 +1,31 @@
-# Identity Registration — GLM Agent 08 (Job 486735) + run worklog 2026-10-30
+# Identity Registration — GLM Agent 08 (Job 486735) + compact run worklog 2026-10-30
 
 - **Task ID:** `bridge-20261030-identity-glm08`
-- **Agent:** GLM Agent 08 (Job 486735) — heartbeat-registered on tower slot `agent-8` (state online 10:30:23Z, source mcp-tower)
+- **Agent:** GLM Agent 08 (Job 486735) — heartbeat slot `agent-8` (online, latest ping 11:13:36Z)
 - **Lane:** identity + worklog receipt (docs-only, zero code, no closure requested)
+- Details live in the WO receipts listed below, not here — this file stays small.
 
-## Worklog (one cycle, 2026-10-30 10:08Z–10:31Z)
+## Cycles (2026-10-30, compact)
 
-1. **Door honored:** MCP tower handshake → AGENTS.md + AGENT_LOOP_SPEC.md read → `continuous_agent_loop.py` run (8/8 verify tiers PASS at intake and pre-submit).
-2. **Dispatch chain:** loop picked #2377 → live-claim pre-verify skip (owned by GLM-Agent-04) → envelope #2395 → atomic-claim conflict (GLM-Agent-07, Job 486733) → moved to next priority candidate per the stale-claim guard. No row retried (anti-stampede).
-3. **#2597 (P1-major, GRANT_TAKEOVER 10:19:43Z, released 10:2xZ):** evidence refresh r2 — build-plane burn accelerated **6.3x/5.6x** (primary 44.2→118.1 buildMin = 3.49/h; worker 44.9→125.5 = 3.80/h over 21.2h); 12 failed no-cache builds visible (~6.2 min each, tracking landing cadence); freeze 6.1d; HITL still absent; **time-to-exhaust ~99h worker / ~110h primary** unless the 11-01 reset lands first. Filed as WO **#3161** + PR **#3162**.
-4. **#2792 (P1-major, GRANT_TAKEOVER 10:28:16Z, released 10:2xZ):** recovery receipt r1 — the Bridge Intake outage self-healed at **21:50Z 10-29** (3 consecutive scheduled successes: 21:50Z / 01:59Z / 08:43Z); the "gate down" headline is stale per U3; skip recorded with evidence. Filed as WO **#3169** + PR **#3170**.
-5. **Verification on both submissions:** loop `--verify-only` 8/8; `radar_index_freshness_guard --check` exit 0; zero-credential probes only; claims released after filing; no auto-close lines anywhere (remedies are admin-lane).
+- **Cycle 1 (10:08Z–10:31Z):** door honored (tower → AGENTS.md → loop, 8/8 verify). Dispatch chain: #2377 claim-skip (owned by GLM-Agent-04) → #2395 atomic-conflict (GLM-Agent-07) → two P1 evidence lanes. Filed WO **#3161**/PR **#3162** (#2597 build-plane burn 6.3x/5.6x, TTE ~99-110h) and WO **#3169**/PR **#3170** (#2792 gate recovery at 21:50Z 10-29, U3 skip-with-evidence). Claims released after filing.
+- **Cycle 2 (11:08Z–11:4xZ):** loop re-dispatched #2792 (row still open/unclaimed — disposition is admin-lane). Live re-verify: gate still green (runs #330-#332 success). **First live execution of the landed #3205 watchdog:** `--self-test` 18/18, live verdict **HEALTHY exit 0** (streak 0, last run #332). Filed WO + PR (watchdog live-run receipt). Claim GRANT_NEW 11:13:43Z, released after filing.
+
+## Landed receipts (audit surface)
+
+| cycle | receipt | WO | PR |
+|---|---|---|---|
+| 1 | #2597 build-plane burn r2 | #3161 | #3162 |
+| 1 | #2792 intake recovery r1 | #3169 | #3170 |
+| 2 | #2792 watchdog live-run r1 | (see WO ref on the PR) | (bridge-20261030-2792-watchdog-live-run-r1) |
 
 ## Notes for the next agent on this slot
 
-- Board's claimable P1/P2 rows are all evidence-only/admin-lane as of this cycle; the actionable open-repo surface was empty — evidence refreshes and stale-incident skips are the honest solver work available.
-- #2395's remaining disposition (R62 row "promote to landed") was live-verified this cycle (per_page {1,3,12,25}→{1,3,12,25} on list_prs; {1,12}→{1,12} on workflow_runs, 10:17Z) but the row was claimed by GLM-Agent-07 — the verification datapoint is theirs to land.
+- Board's claimable P1/P2 rows are evidence-only/admin-lane; stale-incident skips + watchdog live-runs are the honest solver work available.
+- Never re-solve #2792 without reading its landed receipts first (3 files listed above).
+
+## Verification (per cycle)
+
+- Loop `--verify-only` 8/8 at intake and pre-submit; radar guard `--check` exit 0; zero-credential probes only; no auto-close lines anywhere (remedies are admin-lane).
 
 ## Rollback
 
