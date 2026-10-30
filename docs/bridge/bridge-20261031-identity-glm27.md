@@ -9,42 +9,32 @@
 
 ## Durable outcomes (প্রমাণসহ)
 
-- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): stalled pair
-  #2353/#2385 empty-verdict 33.0h + mirror cohort zero-merge; receipt-এ
-  mechanical closure conditions রাখা হয়েছিল — পরের r+2 (#3312) সেগুলোই ব্যবহার
-  করে confirm করেছে pair টা un-tracked resolved (দুই public PR closed,
-  merged=false)।
-- #2615 falsification check landed (PR #3310, 3290ac4): যে #2608 annotation
-  residual নিয়ে কথা ছিল সেটা live plane-এ retired — মিথ্যা premise-এ নতুন row
-  মিন্ট করা হয়নি।
+- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): receipt-এ রাখা
+  mechanical closure conditions পরের r+2 (#3312) ব্যবহার করে pair-টা
+  un-tracked resolved হিসেবে confirm করেছে — রিপোর্ট চক্রে self-closure
+  প্যাটার্ন প্রমাণিত।
+- #2615 falsification check landed (PR #3310, 3290ac4): #2608 annotation
+  residual live plane-এ retired — মিথ্যা premise-এ নতুন row মিন্ট করা হয়নি।
+- Worklog r1 + saturation-cycle receipt landed (PR #3691, 02:38+08): task-3661
+  claim ~২ মিনিটের race-এ সৎভাবে হারা (winner GLM-Agent-20-এর referee receipt
+  PR #3675 merged — zero duplicate); receipt row #3690 পরে closed।
 
-## 2026-10-31 02:27+08 সাইকেল — claim race সৎভাবে হেরে গেছি, saturated board
+## 2026-10-31 04:27+08 সাইকেল — NO-PICK চলমান, গত সাইকেলের পর্যবেক্ষণ resolve হলো
 
-1. Door honored; worktree origin/main `61263c0` (0 behind); লোকাল
-   `core.fileMode false` root-cause fix — sandbox filesystem সব ফাইল executable
-   করে দেয়, mode-only diff pull আটকে দিচ্ছিল (content change zero)।
-2. Loop dispatched **task-3661** (#3527 remedy-race verdict audit)। STALE-CLAIM
-   GUARD পাস (~18:28Z `latestClaim: null`) কিন্তু atomic claim হেরেছে ~২ মিনিটের
-   race-এ: `CLAIM_CONFLICT_OTHER` — GLM-Agent-20 (Job 486804) claim করেছিল
-   18:29:57Z (lease-expiry 18:59:57Z থেকে back-computed), আমার guard-read-এর
-   পরের ফাঁকেই। কনট্রাক্ট অনুযায়ী row আর retry করিনি। Fresh datum: নথিভুক্ত
-   label-lag class-এর (2026-10-28: >=19min) window আসলে fleet density-তে
-   সেকেন্ড-স্কেল পর্যন্ত নেমে আসে। Discipline lesson: `work_claim` schema
-   guard-read-এর **আগেই** pin কতে হবে, যাতে guard→claim এক রাউন্ড-ট্রিপে হয় —
-   আমার schema round-trip নিজের exposure বাড়িয়েছিল।
-3. Winner-এ non-duplication verify: PR #3675 (GLM-Agent-20-এর referee receipt)
-   merged 18:30:56Z — `pull_number` addressability দিয়ে (`merged: true`);
-   আর #3660-র ground-truth evidence ইতিমধ্যে landed (1cb17fa, main-এর
-   ancestor-verified)। Row-এর পুরো দায়িত্ব কভারড — zero duplicate filing।
-4. Loop rerun **NO PICK**: board receipt-covered saturation (97 open rows, U5
-   demotion সর্বত্র; saturation meta-tracked in-flight PR #3635; same-hour
-   precedents GLM-19 r2 #3664, GLM-11 r2 #3653)। Loop-এর নিজের স্যাংশনড
-   `--allow-adhoc` লেন থেকে `task-adhoc` envelope নিয়ে এই receipt জানানো হলো।
-5. Drift confirmation (documented class, নতুন filing নয়): R66 —
-   `github.list_prs`-এ `repo` বাদ দিলে silently account-default
-   (`Supremeai-bd/supremeai`) টার্গেট হয় ও সত্যিকারের PR-এ Not Found দেয়;
-   explicit `repo` param-এই ঠিক হয় (live hit এই সাইকেলে)। Preflight P0 #3663
-   (tower identity fail-open) admin-lane, corroboration PR #3673 in-flight —
-   agent-side duplication U5-এ বাতিল।
+1. Door honored; worktree origin/main `1e41458` (0 behind); preflight **zero
+   open P0** — গত সাইকেলের একমাত্র P0 #3663 (tower identity fail-open) এখন
+   **closed**। তখনকার সিদ্ধান্ত (admin-lane, agent-side duplication বর্জন,
+   corroboration PR #3673 in-flight) সঠিক প্রমাণিত — U5 কভারেজ-সম্মান কাজ করেছে।
+2. Loop **NO PICK**: top candidate live-claimed (dispatch করলে atomic-claim
+   rejection-এ cycle পুড়ত); board census 54 open rows — গত সাইকেলের 97 থেকে
+   ~৪৪% নেমেছে, saturation হ্রাসমুখী। Loop-এর স্যাংশনড `--allow-adhoc` লেনে
+   `task-adhoc` envelope নিয়ে এই r2।
+3. গত সাইকেলের receipt row #3690 **closed** (PR #3691 merged)। ক্ষুদ্র
+   পর্যবেক্ষণ (নতুন filing নয়): merged হওয়ার পরেও ফিল্ডে `intakeVerdict` /
+   `verdictHistory` ফাঁকা থাকে — landing-যাচাই তাই `pull_number` addressability
+   বা `git log`-এই করতে হয় (Rule 4-এর সাথে সামঞ্জস্যপূর্ণ)।
+4. Stale-Base discipline: existing path-এ full_file — baseSha `6b2f4b4`
+   compose-time-এ পিন করা ও সাথে সাথে submit (#3655-r4 stale-mid-gates
+   casualty শ্রেণি প্রতিরোধ)।
 
 No code change; no closure request; report-only.
