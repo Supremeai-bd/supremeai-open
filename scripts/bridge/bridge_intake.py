@@ -242,6 +242,31 @@ def gh_first_page(path: str, token: str) -> tuple[list[dict], bool]:
         raise BridgeError(f"github GET {url} → HTTP {exc.code}: {exc.read().decode()[:200]}")
 
 
+# (#2547) Bridge PR-এর দুই লেন: v2 `bridge-land/<task_id>` (private স্যাটেলাইট),
+# solver `bridge/<task_id>` (সরাসরি OPEN_REPO)। ক্রম গুরুত্বপূর্ণ নয় —
+# "bridge-land/x" কখনো "bridge/" prefix-এ মেলে না ("bridge-" এর পরে "/" নেই)।
+LANE_PREFIXES = ("bridge-land/", "bridge/")
+
+
+def strip_lane_prefix(ref: str) -> str | None:
+    """Bridge PR head-ref → task_id — দুই লেনই চেনে (#2547 sync-plane অন্ধত্ব সংশোধন)।
+
+    বাংলা: সলভার লেন সরাসরি open repo-তে `bridge/<task_id>` head-এ PR খোলে, কিন্তু
+    cmd_sync আগে শুধু `bridge-land/` চিনত — ফলে solver-lane PR merge হয়েও public
+    work-order চিরকাল খোলা/stranded থাকত (লাইভ-প্রমাণিত: #2156 সহ ১২-row cohort,
+    #2516/#2547 census)। TASK_ID_RE শেকল প্রার্থীকে বাঁধে — নন-ব্রিজ ফিচার ব্রাঞ্চ
+    (যেমন `bridge/notes`) ভুল লেন-প্রার্থী হতে পারে না; আর task-id-আকারহীন ref
+    আগের মতোই find_issue-এ মিলবে না বলে আচরণ অপরিবর্তিত।
+    """
+    for prefix in LANE_PREFIXES:
+        if ref.startswith(prefix):
+            candidate = ref[len(prefix):]
+            if candidate and TASK_ID_RE.match(candidate):
+                return candidate
+            return None
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Work-order parsing + validators (pure — unit-tested)
 # ---------------------------------------------------------------------------
@@ -1076,7 +1101,14 @@ def cmd_sync(token: str) -> int:
     # per-repo fetch errors instead; remaining repos keep reporting; the run
     # still exits honestly non-zero AFTER processing everything (see below).
     sync_errors: list[str] = []
-    for repo in BRIDGE_TARGET_REPOS:
+    # (#2547) সলভার-লেন অন্ধত্ব শেষ: closed-PR স্ক্যানে OPEN_REPO প্রথমে — সলভার লেন
+    # সরাসরি open repo-তে `bridge/<task_id>` PR খোলে; পুরনো স্ক্যান শুধু private
+    # স্যাটেলাইটের `bridge-land/` চিনত, ফলে solver-lane PR merge হয়েও public WO
+    # চিরকাল stranded (লাইভ-প্রমাণিত ১২-row cohort, #2516/#2547 census)।
+    # BRIDGE_TARGET_REPOS অস্পৃষ্ট — sync/routing SSOT অক্ষত (#2265 probe-রীতির
+    # প্রতিফলন: OPEN_REPO first, একটি সস্তা কল প্রথমে)।
+    scan_repos: tuple[str, ...] = (OPEN_REPO,) + BRIDGE_TARGET_REPOS
+    for repo in scan_repos:
         # E5: ৪০-এর window বাদ, পুরো closed-PR ইতিহাস (Link rel=next) — নীরভ
         # cron-slot-এর পর পুরনো landed PR-ও report হতে হবে, নাহলে public issue
         # চিরকাল in-gates/queued-এ আটকে থাকে।
@@ -1086,9 +1118,11 @@ def cmd_sync(token: str) -> int:
             sync_errors.append(f"PR fetch failed: {str(exc)[:160]} ({repo})")
             continue
         for p in pulls:
-            if not (p.get("head") or {}).get("ref", "").startswith("bridge-land/"):
+            task_id = strip_lane_prefix((p.get("head") or {}).get("ref", ""))
+            if not task_id:
                 continue
             p["_repo"] = repo
+            p["_task_id"] = task_id
             (landed if p.get("merged_at") else rejected).append(p)
 
     try:
@@ -1111,7 +1145,7 @@ def cmd_sync(token: str) -> int:
 
     landed_ids: set[str] = set()
     for pr in landed:
-        task_id = pr["head"]["ref"].replace("bridge-land/", "", 1)
+        task_id = pr["_task_id"]
         landed_ids.add(task_id)
         issue = find_issue(task_id)
         if not issue:
@@ -1129,7 +1163,7 @@ def cmd_sync(token: str) -> int:
         results.append(f"{task_id} → landed (PR #{pr['number']})")
 
     for pr in rejected:
-        task_id = pr["head"]["ref"].replace("bridge-land/", "", 1)
+        task_id = pr["_task_id"]
         # E5: একই task-এর landed + rejected PR দুটোই থাকলে শেষ verdict জেতে —
         # নাহলে একই public issue-এ "LANDED" তারপর "REJECTED" কমেন্ট (বিরোধী
         # report); শেষ resubmit-এর PR-ই সম্ভাব্য rejected, তাই landed-কেই SSOT ধরি।
@@ -1151,17 +1185,16 @@ def cmd_sync(token: str) -> int:
 
     # Reconciliation: OPEN bridge PR → public issue অবশ্যই bridge:in-gates হবে
     # (stale লেবেল শুদ্ধ করে — E2E-তে প্রমাণিত কেস: ভুল rejected লেবেল আটকে ছিল)।
-    for repo in BRIDGE_TARGET_REPOS:
+    for repo in scan_repos:
         try:
             open_pulls = gh_paged(f"/repos/{repo}/pulls?state=open&per_page=100", token, max_pages=3)
         except BridgeError as exc:
             sync_errors.append(f"open PR fetch failed: {str(exc)[:160]} ({repo})")
             continue
         for pr in open_pulls:
-            ref = (pr.get("head") or {}).get("ref", "")
-            if not ref.startswith("bridge-land/"):
+            task_id = strip_lane_prefix((pr.get("head") or {}).get("ref", ""))
+            if not task_id:
                 continue
-            task_id = ref.replace("bridge-land/", "", 1)
             issue = find_issue(task_id)
             if issue and LABEL_INGATES not in issue_labels(issue):
                 set_labels(OPEN_REPO, token, issue["number"], [LABEL_INGATES])
