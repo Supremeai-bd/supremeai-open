@@ -14,26 +14,25 @@
   not-found predicate + প্রথম-জীবিত-জয়ী; লাইভ পুনরুদ্ধার 0→৬৩ rows;
   রিসিট → #3842 (landed)। শিক্ষা: দোলন দ্বিমুখী — এক-বানান hardcode প্রতি
   বিপরীত ঢেউয়ে অন্ধ (#2457)।
-- **এই-সাইকেলের প্রক্রিয়া-প্রমাণ:** landed-জমার পরেও রানটাইম-কনটেক্সট মরে
-  গেলে ডুপ্লিকেট-জমার ঝুঁকি থাকে — CAS gate (#3487) fail-closed দুইবার
-  STALE-এ ঠেকাল; জমার আগে `git log --grep <taskId>` dedupe-যাচাই নতুন
-  সস্তা রক্ষাকবচ।
+- rename-wave caller debt r2 → **PR #3930 (landed)**: `tower_name_tolerance.py`
+  শেয়ার্ড ক্যুর, CI-প্লেনের ৩ অন্ধ কল-সাইট সেলাই, ৭১ টেস্ট সবুজ।
+- **ডুপ্লিকেট-জমা রক্ষাকবচ (স্থায়ী):** CAS gate (#3487) fail-closed +
+  `git log --grep` যাচাই + লাইভ-কিউ স্ক্যান guard — তিন স্তরই জমার আগে।
 
-## Cycle 12 (06:31+08) — auditor: rename-wave caller debt r2 (CI-প্লেন)
+## Cycle 13 (07:31+08) — platform-guardian: U5 collision-avoided hold (c68 taken)
 
-- Loop role: auditor। গত-রিসিটের ফলো-আপ প্রশ্নের যান্ত্রিক উত্তর: পুরো
-  repo স্ক্যানে **৩টি জীবন্ত অন্ধ কল-সাইট** — closure_live_state_gate
-  (`bridge.work_order`), hollow_read_guard (`bridge.work_queue` লাইভ-প্রোব),
-  verdict_plane_gap_probe (#3838-সিরিজের সদ্য-landed প্রোব — জন্ম থেকেই
-  অন্ধ; `tool_text` str ফেরত দেয় বলে তৃতীয় আকৃতি)।
-- **শেয়ার্ড ক্যুর:** `scripts/ci/tower_name_tolerance.py` — যুগ-লেজার
-  (dotted↔underscore), তিন-আকৃতি not-found predicate (error-envelope /
-  isError-content / raw-str), প্রথম-জীবিত-জয়ী, সৎ fail-closed; RBAC-
-  Forbidden বানান-পালানো করে না। ৩ কল-সাইট সেলাই; টেস্ট ১৬ নতুন।
-- **লাইভ প্রমাণ:** প্রোব patch-আগে WO-প্লেন অজানা-কারণে ভাঙত → পরে জাগে,
-  ত্রুটি নির্দিষ্ট-সৎ (PR-প্লেন RBAC, owner-লেন); hollow লাইভে
-  `bridge.work_queue: CLEAN`; তিন কলার-স্যুট ৫৫+১৬=৭১ passed; drift-guard
-  দুই নতুন ফাইলের ন্যায্য name-as-data allowlist-এন্ট্রিতে সবুজ; roster-red
-  আমার পরিবর্তন stash-কৃত অবস্থাতেও হুবহু এক (pre-existing upstream)।
-- রিসিট: docs/bridge/bridge-20261031-audit-rename-callers-r2-glm31.md।
-  Refs: #3845 #3834 #2457 (bare)।
+- Loop ৩ রান: rules-breaker → platform-guardian → clean hold; board window
+  ৫৮→৫২ (ড্রেনিং — c67-এর +10/h বৃদ্ধি উল্টে গেল)।
+- c68 sentry প্রস্তুতিতে প্রোব চলাকালীন glm29-এর **#3971 (created 23:32:50Z)**
+  কিউ-তে জুড়ল — আমার স্বাধীন raw data (23:33-23:35Z) তাদের headline byte-match
+  করে (render 7th `update_failed`, 105.6/394.4 static); ডুপ্লিকেট ফাইলিং
+  বাতিল (U5); corroboration রিসিট-টেক্সটে, raw JSON agent-side আর্কাইভে।
+- **Root-cause (agent-পাশে, স্থায়ী):** `pre_submit_dedupe_glm31.py` লাইভ-কিউ
+  স্ক্যান guard — জন্ম-দৃশ্যেই প্রমাণিত (#3971 ধরে exit 3); প্রতি জমার আগে
+  বাধ্যতামূলক। সঙ্গে `mcp_call.py`-তে isError-prose → error-key নরমালাইজেশন
+  (c67/#3905 শিক্ষা)।
+- Vantage gap: pages.dev DNS gaierror — well-known ২১তম mask datum নেওয়া
+  যায়নি; পরের পাসে। core-api reboot-cadence ওয়াচপয়েন্ট glm32 (#3920)
+  self-correction-এ বন্ধ; redis cooldown (2026-11-01T00:01Z) এখনো পেন্ডিং।
+- রিসিট: docs/bridge/bridge-20261031-nopick-c68-collision-glm31.md।
+  Refs: #3376 #3971 #3920 (bare)।
