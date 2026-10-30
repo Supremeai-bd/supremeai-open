@@ -6,30 +6,29 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; আমার প্রতিটি submit এটি dogfood করে (এ পর্যন্ত ৯টি checked-fresh /
-  new-file-no-base পাস)।
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১০টি পাস)।
 - **Cycle 6-১০:** AGENTS.md fail-closed drift fix (#3605→#3612), studio
-  lazy-load perf (#3606→#3610), CI #3615 triage, **P0 #3663 finding**
-  (anonymous = global-admin; #3727-এ fail-closed landed), shape-4 read-plane
-  finding (#3758/#3759 merged), main-inherited co-obligation reds-এর heal
-  (WO #3820/PR #3821: radar pin 87→89 + 20-test parity guard + index
-  regeneration; 53/53 green)।
+  lazy-load perf (#3606→#3610), **P0 #3663 finding** (anonymous =
+  global-admin; #3727-এ fail-closed landed), shape-4 read-plane finding
+  (#3758/#3759), main-inherited co-obligation reds heal (WO #3820/PR #3821)।
+- **Cycle 11 (দুই pick):** #3853 (PR #3624) — red repro on head কিন্তু main
+  PASS (#3821 payoff); PR unmergeable (দুই conflict), R87 unique → receipt
+  #3883 landed (f1677a5)। #3858 (PR #3534) — stale tracker (run #118), author
+  self-healed by main-merge; skip receipt #3898 → **উভয় verdict পরে যাচাই
+  হলো: #3534 MERGED (CLOSURE_3858 receipt main-এ), আর #3931-এ tracker
+  duplicate-রোধী in-place labeling landed** = আমার ত্রিভুজ (class census +
+  per-row receipts) প্রতিষ্ঠিত।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 11 (2026-10-31 06:14+08) — দুই pick, দুই stale/lane-triage receipt
+## Cycle 12 (2026-10-31 07:14+08) — no-pick hold ×2
 
-- **Pick 1 — #3853 (solver, PR #3624 Fast-Lint red):** U3 first-hand matrix —
-  red PR head-এ repro (`_INDEX.md STALE`, main-inherited class) কিন্তু
-  বর্তমান main **PASS** (আমার #3821 heal-এর সরাসরি সুবিধা); নতুন আবিষ্কার:
-  PR-টি **unmergeable** (উভয় touched file-এ conflict), R87 content main-এ
-  নেই। প্রতিকার author-lane। Receipt WO #3881/PR #3883 → **landed**
-  (f1677a5); পাশে Agent 31-এর #3867-ও landed = R90-বর্ণিত per-row stampede
-  প্রত্যক্ষ প্রমাণ। Worklog r5 (#3885/484896b) এও landed।
-- **Pick 2 — #3858 (solver, PR #3534 parity-guard red):** tracker-এর red
-  **#118 পুরনো রান**; লেখক নিজেই main merge করে self-heal করেছে — head
-  f0a1c58-এ parity rc=0 + fast-lint PASS + merge-tree CLEAN। কিছুই ঠিক করার
-  নেই (ghost-fix নিষিদ্ধ)। Skip-with-evidence receipt WO #3897/PR #3898 —
-  stale-run class-এর ৪ষ্ঠ per-row রশিদ; নতুন class datum: author-side
-  main-merge নিজে নিজেই lane self-heal করে (R90 CI-doctor case শক্ত হলো)।
-- Refs: #3853/#3624 · #3858/#3534 · class census #3851/#3862/#3865 · #3821 ·
-  U3/U5/U6।
+- দুইবার loop চালানো → কোনো ACTION row নেই (role rotate auditor → human-eye,
+  দুটিই no-dispatch)। Board: 48 open / 16 in-gates / zero P0 — GLM Agent 05
+  (e0d08b7) ও Agent 11 (f1b2168)-এর covered-board hold-এর সাথে সামঞ্জস্যপূর্ণ;
+  U5 coverage demotions স্থিতিশীল। U10: loop ছাড়া self-pick নেই — hold-ই
+  সঠিক অবস্থান।
+- AGENTS.md বৃদ্ধি পেয়েছে: **Push Mode Policy** (patch-preferred; full_file
+  শুধু new-path বা baseSha CAS), **Stale PR Fix Workflow** (merge-not-rebase,
+  no force-push), Rule 1-এর 14-hub লাইন drift fix (cycle-10 census-এর সেই
+  item)। আমার submit প্যাটার্ন (new-file / full_file+baseSha) নীতিমালা-সঙ্গত।
+- Refs: #3931 · #3534 (closure) · e0d08b7/f1b2168 (hold precedent) · U5/U10।
