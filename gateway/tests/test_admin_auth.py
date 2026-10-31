@@ -11,9 +11,14 @@ Verifies:
 from __future__ import annotations
 
 import sys
+import asyncio
+import hashlib
+import hmac
+import json
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 # Add repo root and gateway dir to sys.path for portable discovery
@@ -365,3 +370,256 @@ def test_trusted_browser_revoke_via_raw_token_header(client):
 def test_trusted_browser_revoke_requires_token_or_bearer(client):
     res = client.delete("/api/admin/trusted-browsers")
     assert res.status_code == 401
+
+
+# Tenant administration is granted only from Supabase server-managed app_metadata.
+def _admin_auth_module():
+    from gateway.service import admin_auth
+
+    return admin_auth
+
+
+def test_tenant_jwt_carries_only_explicit_server_tenant_claim(monkeypatch):
+    monkeypatch.setenv("SUPREMEAI_JWT_SECRET", "test-jwt-secret-for-native-admin-tests")
+    tenant_token = issue_admin_jwt(
+        uid="tenant-user-1",
+        email="manager@example.com",
+        role="tenant_admin",
+        expiry_hours=1,
+        tenant_id="tenant-1",
+    )
+    tenant_claims = verify_admin_jwt(tenant_token)
+    assert tenant_claims["role"] == "tenant_admin"
+    assert tenant_claims["tenant_id"] == "tenant-1"
+
+    owner_token = issue_admin_jwt(uid="admin-root-001", email="admin@supremeai.com")
+    owner_claims = verify_admin_jwt(owner_token)
+    assert owner_claims["role"] == "admin"
+    assert "tenant_id" not in owner_claims
+
+
+def test_verify_admin_jwt_requires_expiration(monkeypatch):
+    auth = _admin_auth_module()
+    secret = "test-jwt-secret-for-native-admin-tests"
+    monkeypatch.setenv("SUPREMEAI_JWT_SECRET", secret)
+    header = auth._b64url_encode(b'{"alg":"HS256","typ":"JWT"}')
+    payload = auth._b64url_encode(json.dumps({"sub": "user-1", "role": "admin"}).encode())
+    signing_input = f"{header}.{payload}".encode("ascii")
+    signature = auth._b64url_encode(hmac.new(secret.encode(), signing_input, hashlib.sha256).digest())
+
+    with pytest.raises(HTTPException) as exc_info:
+        auth.verify_admin_jwt(f"{header}.{payload}.{signature}")
+    assert exc_info.value.status_code == 401
+
+
+def test_tenant_login_uses_app_metadata_and_ignores_user_metadata(client, monkeypatch):
+    auth = _admin_auth_module()
+
+    async def fake_login(email, password):
+        assert email == "manager@example.com"
+        assert password == "tenant-password"
+        return {
+            "id": "supabase-user-1",
+            "email": email,
+            "app_metadata": {"role": "tenant_admin", "tenant_id": "tenant-1"},
+            "user_metadata": {"role": "admin", "tenant_id": "tenant-other"},
+        }
+
+    async def fake_tenant(tenant_id):
+        assert tenant_id == "tenant-1"
+        return {"tenant_id": tenant_id, "org_name": "Tenant One"}
+
+    monkeypatch.setattr(auth, "_supabase_password_login", fake_login)
+    monkeypatch.setattr(auth, "_tenant_record", fake_tenant)
+    response = client.post(
+        "/api/admin/tenant-login",
+        json={"email": "manager@example.com", "password": "tenant-password"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    claims = verify_admin_jwt(result["token"])
+    assert result["role"] == "tenant_admin"
+    assert claims["sub"] == "supabase-user-1"
+    assert claims["tenant_id"] == "tenant-1"
+    assert claims["role"] == "tenant_admin"
+    assert "refresh_token" not in result
+
+
+def test_tenant_login_rejects_user_metadata_only_role_or_tenant(client, monkeypatch):
+    auth = _admin_auth_module()
+
+    async def fake_login(email, password):
+        return {
+            "id": "supabase-user-2",
+            "email": email,
+            "app_metadata": {},
+            "user_metadata": {"role": "tenant_admin", "tenant_id": "tenant-1"},
+        }
+
+    monkeypatch.setattr(auth, "_supabase_password_login", fake_login)
+    response = client.post(
+        "/api/admin/tenant-login",
+        json={"email": "user@example.com", "password": "password"},
+    )
+    assert response.status_code == 403
+    assert "token" not in response.json()
+
+
+def test_tenant_login_rejects_mismatched_tenant_row(client, monkeypatch):
+    auth = _admin_auth_module()
+
+    async def fake_login(email, password):
+        return {
+            "id": "supabase-user-3",
+            "email": email,
+            "app_metadata": {"role": "tenant_admin", "tenant_id": "tenant-3"},
+        }
+
+    async def mismatched_tenant(tenant_id):
+        return {"tenant_id": "tenant-other"}
+
+    monkeypatch.setattr(auth, "_supabase_password_login", fake_login)
+    monkeypatch.setattr(auth, "_tenant_record", mismatched_tenant)
+    response = client.post(
+        "/api/admin/tenant-login",
+        json={"email": "manager@example.com", "password": "password"},
+    )
+    assert response.status_code == 403
+    assert "token" not in response.json()
+
+
+def test_tenant_dashboard_scope_comes_from_token_not_query(client, monkeypatch):
+    auth = _admin_auth_module()
+    seen = []
+
+    async def fake_tenant(tenant_id):
+        seen.append(tenant_id)
+        return {"tenant_id": tenant_id, "org_name": "Tenant One"}
+
+    async def fake_usage(tenant_id):
+        assert tenant_id == "tenant-1"
+        return {"tenant_id": tenant_id, "requests_today": 4, "tokens_today": 80, "cost_today": 0.02}
+
+    monkeypatch.setattr(auth, "_tenant_record", fake_tenant)
+    monkeypatch.setattr(auth, "_tenant_usage", fake_usage)
+    token = issue_admin_jwt(
+        uid="tenant-user-1",
+        email="manager@example.com",
+        role="tenant_admin",
+        expiry_hours=1,
+        tenant_id="tenant-1",
+    )
+    response = client.get(
+        "/api/admin/tenant-dashboard?tenant_id=tenant-other",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["tenant"]["tenant_id"] == "tenant-1"
+    assert result["usage"]["tenant_id"] == "tenant-1"
+    assert seen == ["tenant-1"]
+
+
+def test_tenant_admin_cannot_read_platform_overview(client, monkeypatch):
+    auth = _admin_auth_module()
+    token = issue_admin_jwt(
+        uid="tenant-user-1",
+        email="manager@example.com",
+        role="tenant_admin",
+        expiry_hours=1,
+        tenant_id="tenant-1",
+    )
+
+    async def unexpected_query(*args, **kwargs):
+        raise AssertionError("unauthorized platform query must not run")
+
+    monkeypatch.setattr(auth, "_supabase_rows", unexpected_query)
+    response = client.get("/api/admin/tenant-overview", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 403
+
+
+def test_platform_tenant_overview_is_owner_only_and_sanitized(client, monkeypatch):
+    auth = _admin_auth_module()
+    queried = []
+
+    async def fake_rows(table, params):
+        queried.append(table)
+        if table == "tenant_limits":
+            return [{
+                "tenant_id": "tenant-1",
+                "org_name": "Tenant One",
+                "billing_tier": "pro",
+                "created_at": "2026-11-01T00:00:00Z",
+                "service_secret": "must-not-leak",
+            }]
+        return [{"tenant_id": "tenant-1", "requests_count": 7, "tokens_used": 120, "cost_incurred": 0.04}]
+
+    monkeypatch.setattr(auth, "_supabase_rows", fake_rows)
+    owner_token = issue_admin_jwt(uid="admin-root-001", email="admin@supremeai.com", role="admin")
+    response = client.get("/api/admin/tenant-overview", headers={"Authorization": f"Bearer {owner_token}"})
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["scope"] == "platform"
+    assert result["total"] == 1
+    assert result["tenants"][0]["org_name"] == "Tenant One"
+    assert "service_secret" not in result["tenants"][0]
+    assert result["usages"][0]["requests_today"] == 7
+    assert queried == ["tenant_limits", "tenant_usage"]
+
+    other_admin = issue_admin_jwt(uid="other", email="not-owner@example.com", role="admin")
+    denied = client.get("/api/admin/tenant-overview", headers={"Authorization": f"Bearer {other_admin}"})
+    assert denied.status_code == 403
+
+
+def test_tenant_admin_cannot_use_owner_totp_or_trusted_browser_routes(client, monkeypatch):
+    monkeypatch.setenv("ENV", "production")
+    token = issue_admin_jwt(
+        uid="tenant-user-1",
+        email="manager@example.com",
+        role="tenant_admin",
+        expiry_hours=1,
+        tenant_id="tenant-1",
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+
+    assert client.post("/api/admin/totp-setup", headers=headers).status_code == 403
+    assert client.get("/api/admin/trusted-browsers", headers=headers).status_code == 403
+    assert client.delete("/api/admin/trusted-browsers/browser-1", headers=headers).status_code == 403
+    assert client.delete("/api/admin/trusted-browsers", headers=headers).status_code == 403
+
+
+def test_supabase_mfa_challenge_is_not_bypassed(monkeypatch):
+    import httpx
+
+    auth = _admin_auth_module()
+    monkeypatch.setattr(auth, "_supabase_base_url", lambda: "https://project.supabase.co")
+    monkeypatch.setattr(auth, "get_vault_secret", lambda _name: "test-anon-key")
+
+    class FakeResponse:
+        status_code = 200
+        is_success = True
+
+        @staticmethod
+        def json():
+            return {
+                "user": {"id": "tenant-user", "app_metadata": {"role": "tenant_admin", "tenant_id": "tenant-1"}},
+                "mfa": {"type": "totp", "totp": {"challenge_id": "challenge-1"}},
+            }
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **_kwargs: FakeClient())
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(auth._supabase_password_login("manager@example.com", "password"))
+    assert exc_info.value.status_code == 403
