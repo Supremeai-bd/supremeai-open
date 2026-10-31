@@ -593,7 +593,7 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
 def _git_log_subjects(depth: int, git_bin: str) -> list[str]:
     out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
         [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if out.returncode != 0:
         raise RuntimeError(f"git log failed: {out.stderr.strip()[:120]}")
@@ -612,7 +612,7 @@ def _deepen_main(depth: int, git_bin: str) -> bool:
     try:
         out = subprocess.run(  # nosec B603 — list-argv, no shell, read-only fetch
             [git_bin, "-C", str(REPO_ROOT), "fetch", f"--deepen={depth}", "origin", "main"],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
         )
         return out.returncode == 0
     except Exception:  # noqa: BLE001 — offline/permission failures degrade, never crash
@@ -1421,7 +1421,7 @@ def main(argv: list[str] | None = None) -> int:
                 subprocess.run(
                     ["gh", "issue", "close", str(num), "--comment", comment],
                     capture_output=True,
-                    text=True,
+                    text=True, encoding="utf-8", errors="replace",
                     check=False,
                 )
                 print(f"  [OK] Auto-closed #{num}")
