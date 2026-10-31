@@ -3799,6 +3799,24 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                     f"! board query revived: {board_error}",
                     file=sys.stderr,
                 )
+            elif re.match(r"tower board fallback: \d+ rows", fb_note or ""):
+                # বাংলা: WO #4057 leg-1 — success-empty ও fallback-ব্যর্থতা আলাদা
+                # state: "tower board fallback: N rows" (colon-আকৃতি) মানে tower
+                # সাড়া দিয়েছে, কেবল ০ সারি দেখাচ্ছে। পুরোনো আচরণে এই শাখা চুপ
+                # থাকত, আর board_error-এ ভুল অ্যাট্রিবিউশন ("gh CLI not found")
+                # রয়ে যেত — অথচ শেষ কথা বলেছে gh নয়, tower। সৎ নোট সারফেস;
+                # আচরণে শূন্য পরিবর্তন (board_unavailable থাকে — ০-সারি উত্তর
+                # ingest-lag-এ false-empty প্রমাণিত (R94 E5 / R96), certified
+                # empty নয়)।
+                board_error = (
+                    f"gh board query failed ({board_error}); tower fallback "
+                    f"ANSWERED EMPTY: {fb_note} — empty answer UNVERIFIED "
+                    "(ingest lag), not certified clean (U2)"
+                )
+                print(
+                    f"! board fallback answered empty: {fb_note}",
+                    file=sys.stderr,
+                )
 
     envelope_mode = getattr(args, "task_envelope", False) or getattr(args, "emit_prompt", False) or getattr(args, "emit_contract", False)
 
@@ -4053,7 +4071,19 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
     force_flag = getattr(args, "force", False)
     if claimable_count < 5 and not force_flag:
-        print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
+        if board_unavailable:
+            # বাংলা: WO #4057 leg-2 (U2/U6) — preflight এই একই রানে "board plane
+            # dark — UNSEEN, not zero" ছাপায়, অথচ ACTION শর্তহীনভাবে "clean and
+            # healthy" দাবি করত — কোনো plane দ্বারা সমর্থিত নয় এমন clean claim
+            # (U2 false assurance; ঠিক যে স্ট্রিংটি PR #4091 আদালতে নিয়েছে)।
+            # dark হলে সৎ শব্দচয়ন: VISIBLE, certified নয়।
+            print(
+                "ACTION: No claimable work VISIBLE (claimable: 0/5 threshold) — "
+                "board plane dark, UNSEEN not zero; not certified clean (U2). "
+                "Observation roles idle."
+            )
+        else:
+            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
         return 0
 
     for role in due_roles(state, cfg):
