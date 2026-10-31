@@ -16,6 +16,9 @@ You do not need credentials or access to private repositories. You can inspect p
 
 ### 2.1 Active Monitored Federation Repositories (Live Probes & Targets)
 
+> **Topology SSOT Note:**  
+> SupremeAI-এর repository ও domain inventory পরিবর্তনশীল। সক্রিয়, একীভূত এবং ঐতিহাসিক repository-র বর্তমান তালিকা ও কাঠামোর জন্য ক্যানোনিক্যাল রেজিস্ট্রি [`scripts/ci/federation_anchors.py`](./scripts/ci/federation_anchors.py) দেখুন।
+
 These 8 repositories constitute the active monitored surfaces of the federation monitored by the MCP Control Tower:
 
 | Repository | Visibility & License | Scope & Responsibility | What Can Be Changed From Here |

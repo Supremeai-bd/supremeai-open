@@ -20,9 +20,11 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 > - Use the correct tool name + `owner/repo` form or the call fails.
 > - Bridge tools: `bridge_submit_patch` requires `taskId` (`bridge-YYYYMMDD-<slug>`), `summary`, `scopePaths` (1-30), `testsEvidence`, and `files` (each with `path`); pass `originalIssueNumber` so the root issue auto-closes on merge, and `closesOriginalIssue: true` only when a docs-only payload **IS** the resolution of that issue (receipt-closure convention #2485, `contract.receiptClosureConvention` in `bridge_guide`; default keeps the WO open via `Refs #N`). `work_claim` requires `issueNumber` (integer). `bridge.work_order`/`bridge_read_feedback` require `number` (issue number).
 
-## 📐 Federation Architecture & Mathematical Repository Model
+## 📐 Federation Architecture & Canonical Repository Inventory
 
-> **Canonical Mathematical Blueprint:** [`docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/FEDERATION_MATHEMATICAL_MODEL_AND_INVENTORY.md) · [`docs/FEDERATION_CHARTER.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/FEDERATION_CHARTER.md)
+> **ক্যানোনিক্যাল রেফারেন্স ও ডোমেইন ইনভেন্টরি:**  
+> SupremeAI-এর repository ও domain inventory পরিবর্তনশীল। সক্রিয়, একীভূত এবং ঐতিহাসিক repository-র বর্তমান তালিকা, সংজ্ঞা ও routing-এর জন্য [`scripts/ci/federation_anchors.py`](./scripts/ci/federation_anchors.py) এবং [`ECOSYSTEM_MAP.md`](./ECOSYSTEM_MAP.md)-এ দেখুন। এই নথির যে কোনো চিত্র বা ফাইল সংখ্যা মূলত কাঠামোগত স্থাপত্যের চিত্রণ।
+> **Reference SSOTs:** [`docs/FEDERATION_CHARTER.md`](https://github.com/Supremeai-bd/supremeai-archive/blob/main/docs/FEDERATION_CHARTER.md) · [`scripts/ci/federation_anchors.py`](./scripts/ci/federation_anchors.py)
 
 ### 1. Mathematical Universe & Repository Set Model
 
@@ -30,23 +32,23 @@ It contains only artifacts that are useful *outside* SupremeAI's private intelli
 flowchart TD
     subgraph FEDERATION_UNIVERSE ["🌐 The Federation Universe (U)"]
         direction TB
-        OPEN["supremeai-open (Public Task Hub & Embassy)<br>Total = 635 Files<br>(261 U_open + 374 T_transit)"]
-        MONO["supremeai (Central Umbrella Monorepo)<br>Total = 2073 Files"]
+        OPEN["supremeai-open (Public Task Hub & Embassy)<br>Task Board SSOT & Public Embassy"]
+        MONO["supremeai (Central Umbrella Monorepo)<br>Central Unified Platform"]
         
-        subgraph ACTIVE_SATS ["5 Active Product Satellites (Σ = 1384 Executable Files)"]
-            S_STUDIO["supremeai-studio<br>(643 files · Vercel Web UI)"]
-            S_API["supremeai-api<br>(490 files · Render Gateway & FastMCP)"]
-            S_CORE["supremeai-core<br>(146 files · DAG Decision Moat)"]
-            S_BROWSER["supremeai-browser<br>(60 files · Stealth Playwright)"]
-            S_VSCODE["supremeai-vscode<br>(45 files · Extension & Tauri Desktop)"]
+        subgraph ACTIVE_SATS ["Active Domain Satellites (Golden 6-Domain Architecture)"]
+            S_STUDIO["supremeai-studio<br>(Vercel Web UI)"]
+            S_API["supremeai-api<br>(Render Gateway & FastMCP)"]
+            S_CORE["supremeai-core<br>(DAG Decision Moat)"]
+            S_BROWSER["supremeai-browser<br>(Stealth Playwright Engine)"]
+            S_VSCODE["supremeai-vscode<br>(Extension & Desktop Client)"]
         end
 
-        ARCHIVE["supremeai-archive (Cold Storage)<br>Total = 57 Files (55 Unique Decommissioned Specs)"]
+        ARCHIVE["supremeai-archive (Cold Storage)<br>Historical Specs & Worklogs"]
     end
 
-    OPEN ==>|"Transit Mirrors (374 files)<br>Step 1: Direct Dispatch"| ACTIVE_SATS
+    OPEN ==>|"Transit Mirrors<br>Step 1: Direct Dispatch"| ACTIVE_SATS
     ACTIVE_SATS ==>|"Step 2: Monorepo Ingestion"| MONO
-    ARCHIVE -.->|"Retired Architectural Delta<br>(Permanently removed from active repos)"| MONO
+    ARCHIVE -.->|"Retired Architectural Delta<br>(Historical Reference)"| MONO
 
     classDef open fill:#1d76db,stroke:#fff,stroke-width:2px,color:#fff;
     classDef sats fill:#059669,stroke:#fff,stroke-width:2px,color:#fff;
