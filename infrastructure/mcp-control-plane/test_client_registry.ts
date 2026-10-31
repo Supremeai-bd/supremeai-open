@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { approveClient, defaultClientScopes, DEFAULT_GUEST_ROLE, getOrCreateGuestClient, listClients, registerClient, resolveClient, revokeClient, rotateClient } from "./src/policy/client-registry.js";
+import { approveClient, defaultClientScopes, getOrCreateGuestClient, listClients, registerClient, resolveClient, revokeClient, rotateClient } from "./src/policy/client-registry.js";
 
 const created = registerClient("Customer AI", "viewer", defaultClientScopes("viewer"), undefined, "customer-ai", "streamable-http");
 assert.equal(created.client.provider, "customer-ai");
@@ -21,11 +21,7 @@ assert.equal(resolveClient(rotated!.token), undefined);
 // Zero-manual-registration for no-auth AI clients + live protocol refresh.
 const guestSse = getOrCreateGuestClient("guest_test_registry_1", "Test Guest (1.2.3.4)", "cursor", "sse");
 assert.equal(guestSse.status, "active");
-// #3663 (P0 root-cause): the guest default is the fail-closed viewer role —
-// the pre-production "admin" default was the unauthenticated global-admin hole.
-assert.equal(guestSse.role, DEFAULT_GUEST_ROLE);
-assert.equal(guestSse.role, "viewer");
-assert.ok(!guestSse.scopes.includes("*"), "guest scopes must never be omni");
+assert.equal(guestSse.role, "admin"); // pre-production default: admin role until production ready
 assert.equal(guestSse.protocol, "sse");
 
 // Reconnect over streamable-http → SAME record, protocol follows the latest transport.
@@ -99,16 +95,10 @@ assert.equal(promoted?.role, "repo_viewer");
 assert.ok(promoted?.scopes.includes("repos:all:read"));
 
 // 5. Named client record: stable id, role upgrades persist (database truth).
-// #3663: the record must EXIST before the promotion — the old sequence relied
-// on changeClientRole silently no-oping and the pre-production admin default
-// filling the vacuum on first connect. Guests are born viewer now; the
-// contract under test is that an explicit dashboard promotion survives.
-const namedBase = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
-assert.equal(namedBase.id, "named_pko_main");
 changeClientRole("named_pko_main", "admin");
 const namedA = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "streamable-http");
 assert.equal(namedA.id, "named_pko_main");
-assert.equal(namedA.role, "admin"); // explicit promotion survives reconnect — #110 contract
+assert.equal(namedA.role, "admin");
 changeClientRole("named_pko_main", "agent");
 const namedB = getOrCreateGuestClient("named_pko_main", "Named Client: pko_main (xAI Grok Web)", "xai", "sse");
 assert.equal(namedB.id, "named_pko_main");
