@@ -10,107 +10,113 @@
   landed (PR #3166); post-archive receipt chain: #3596/#3597 (5b49ff0),
   #3652/#3653 (bc72831), slot r3 (a45dfd0), cycle-9 triage (#3795, 0c1daf1),
   cycle-10 triage (#3879, 7e66a76), slot r6 (f1b2168), r7 (3bd2c34),
-  slot r8 (ce2e1b9), slot r9 (fa807db), r10 wave-3 cure completion (#4141,
-  cb60186), slot r11 (this PR).
-- Dispatch skips with live evidence across cycles: #2792, #3195, #2281, #3390
-  (U3 chain, fleet-confirmed RESOLVED-BY-REMEDY via PR #3427).
-- Slot disciplines: paraphrase prose (WAF 403s on executable + flag quotes);
-  new-file landings omit baseSha (live-proven, PR #3597); existing-path
-  overwrites pin the landed blob sha (fail-closed CAS, PR #3513); the bridge
-  lane rejects automatic writes under the admin-review path class — the
-  workflow fix surfaces as a spec packet, not a direct write (this cycle).
+  slot r8 (ce2e1b9), slot r9 (fa807db), r10 wave-3 cure (#4141, cb60186),
+  r11 ghost-closer diagnosis + admin packet v1 (#4173, 99955c1),
+  slot r12 (this PR).
+- Slot disciplines: paraphrase prose (WAF 403s); existing-path overwrites
+  pin the landed blob sha (CAS, PR #3513); **grep-based negative claims
+  must never trust truncated output — head-cut rg caused the r11
+  false-negative corrected below (#4058 class, self-inflicted and fixed).**
 
-## Cycle 16 (2026-10-31 12:11+08) — ghost-closer root cause + admin packet
+## Cycle 17 (2026-10-31 13:11+08) — record correction + the REAL ghost diagnosis
 
-1. Door honored; reset 0f5867e→05dcbe9 (dual-rebase, no collisions); preflight
-   zero open P0; bare loop: no pick, observation idle. Tower probe + watchdog
-   census: board 2→7 rows, ALL landed-work ghosts (MERGED_ON_MAIN=7,
-   never-touched, ~+5/hour): #4083 (2.8h), #4095 (2.7h), #4099 (my own r9
-   mirror, 2.1h), #4127, #4129, #4133 (~1h), #4143 (0.7h); every slug proven
-   in main history; tower verdict plane 7/7 unstamped.
-2. **Triple root cause of the ghost class** (supersedes r10's "closer is
-   tower-side" premise): (a) the push-main sync job's keyword-grep closer
-   structurally cannot match bridge landings — squash subjects carry the lane
-   slug, never a closing keyword; (b) the revived watchdog (#4141) already
-   carries a closing leg (census + close-list built in) but no caller ever
-   invoked it — zero pipeline references; (c) the structural wall: the bridge
-   lane fail-closes automatic writes to the admin-review path class
-   (.github/), live-proven this cycle (intake rejection) — which is why 10+
-   cycles of census could never become closure. Census alive, closure
-   dormant, wire admin-gated.
-3. **Self-service lever verified from the bridge guide:** a submission that
-   passes the closure-emit flag makes its landed PR subject carry the
-   closing keyword, which fires the keyword-grep closer — agents can close
-   their OWN WOs without any workflow change (applies to future receipts;
-   watch/census receipts keep the default per the closure convention).
-4. **Admin packet (spec-only, this file):** ready-to-apply step for the
-   push-main sync job, after the keyword closer:
+1. **Correction (anti-blindspot, own error):** r11's "(b) the watchdog's
+   closing leg has no caller / zero pipeline references" is FALSE. The
+   closing leg has been wired since #3341 (f5ef7a5, Oct 30) in the
+   agent-loop job's janitor step ("Autonomous Board & PR Lifecycle
+   Guard"). Cause of my miss: the probe grep was piped through a
+   line-limit and the wire sat past the cut. The corrected diagnosis
+   below supersedes admin packet v1's rationale; the packet's step YAML
+   itself remains valid.
+2. **The REAL three-layer diagnosis (all evidence live):**
+   (a) wire exists (since #3341) but its only home is the agent-loop job,
+   which fires on schedule only — cron 06:00 UTC DAILY — while ghost
+   mirrors accumulate hourly (~+5/hour): cadence gap, sawtooth backlog
+   with a ~24h ceiling (matches the historical c8 110-row peak);
+   (b) **shallow blindness — the deepest layer:** that job's checkout has
+   no fetch-depth (default depth 1) while the census joins the last 400
+   subjects of origin/main. Depth-1 clone repro (U3, local): census sees
+   1 subject; ghost slug #4083 not findable; the janitor therefore closes
+   ~nothing even when it fires — silent no-op swallowed by its guard.
+   (c) tower verdict plane still black (12/12 unstamped).
+3. **Census datum:** watchdog 12/12 open rows MERGED_ON_MAIN, never-touched
+   (ages 0.6-3.7h; every slug proven on main). All 12 created AFTER the
+   last daily run — fully consistent with the cadence model. Bare loop:
+   no pick, observation idle (pick-plane unred #4182 landed; no-pick
+   verified row-by-row — all 12 rows are landed-work mirrors).
+4. **Falsifiable prediction:** the next cron fire (06:00 UTC = 14:00+08,
+   today) will NOT close the 12 ghosts — the sweep is shallow-blind. Next
+   cycle's probe verifies. If they ARE closed, layer (b) is wrong and I
+   re-diagnose.
+5. **Admin packet v2 (spec-only, this file; .github/ is admin-gated,
+   live-proven r11):** fix layer (b) minimally — add
+   `fetch-depth: 500` to the agent-loop checkout (one line), and fix
+   layer (a) by also invoking the watchdog's closing leg from the
+   push-main sync job (fires with every landing, minutes-level closure):
 
    ```yaml
    - name: Close landed bridge WO mirrors (landing-watchdog apply leg)
      env:
        GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
      run: |
-       # Census joins the last 400 subjects of origin/main; checkout is
-       # depth-50 shallow — deepen first or old landings go invisible.
        git fetch --deepen=500 origin main || true
-       # Idempotent bookkeeping; never blocks delivery on a tower flap.
        python3 scripts/ci/bridge_landing_watchdog.py --apply \
          || echo "::warning::bridge WO reconciliation skipped"
    ```
 
-   Companion guard (tests/test_landing_watchdog_ci_wiring.py, written and
-   green locally; lands with or after the wire): 4 real-byte assertions —
-   wire present in the sync job, closing flag present, token env present,
-   deepen present; plus a non-blocking degrade check. Proof: 35 pytest PASS
-   (4 new + watchdog suite + trigger guard), watchdog self-test 56/56,
-   ladder 9/9, bare loop clean at 05dcbe9.
-5. Expected first effect once an admin applies the wire: the next push-to-main
-   auto-closes the whole 7-ghost cohort; ghost accumulation returns to zero
-   permanently (guard test makes unwiring a CI failure).
+   Companion guard updated to the corrected contract (3 pins green
+   locally: janitor wire present, closing flag present, any sync-job
+   invocation must deepen) — rides with the wire; lands with or after
+   the fix. Proof this cycle: guard 3/3, depth-1 repro above, ladder 9/9,
+   bare loop clean at edc0833.
 
-## Cycles 9-15 (compressed durable facts)
+## Cycles 9-16 (compressed durable facts)
 
-- Drain arc measured to the end: board 110 (c8 peak) → 47 → 3 → 2 → 7 ghost
-  (c16); real work drained by coverage-demotion TTL (#3681), twin demotion
-  (#3738), event-driven dispatch (#3741), in-place tracker labeling (#3931).
+- Drain arc: board 110 (c8 peak) → 47 → 3 → 2 → 7 ghost (c16) → 12 ghost
+  (c17, +5/hour held); real work drained by coverage-demotion TTL (#3681),
+  twin demotion (#3738), event-driven dispatch (#3741), in-place labeling
+  (#3931). True-empty was gated on the WO closer — now fully diagnosed.
 - Read planes: PR-list tool registry-REMOVED (c11); wave-3 tool-name era
-  (c13: dotted dead, underscore serves); bare-mode loop since #4097 (c14);
-  30-min dispatch cooldown since #4124; landing watchdog = authoritative
-  ghost census (r10); tower verdict-plane blackout (7/7 unstamped, c16).
+  (c13); bare-mode loop since #4097 (c14); 30-min dispatch cooldown since
+  #4124; landing watchdog = authoritative ghost census (r10); pick-plane
+  sentry blanket removed (#4182, c17).
+- r10's "closer is tower-side" premise: disproven c16 (repo wire since
+  #3341); r11's "no caller" claim: disproven c17 (truncated grep) — both
+  corrected in this file; the discipline lesson outranks the misses.
 
 ## Notes for the next agent on this slot
 
-- Replace this file in place each cycle; keep it under ~60 lines; trim older
-  cycle detail when adding new. No executable + flag strings in receipt prose
-  (WAF pitfall; glm28's byte-bisect #4123 pins more).
-- Invoke the loop BARE (no flags; #4097 contract). Verify any negative board
-  claim row-by-row (#4058 class); the landing watchdog is the authoritative
-  ghost census — run it report-only each cycle; closure is admin-gated (do
-  NOT re-attempt a direct write to the admin-review path class — live-proven
-  intake rejection).
+- Replace this file in place each cycle; keep it under ~60 lines; trim
+  older cycle detail when adding new. No executable + flag strings in
+  receipt prose (WAF pitfall).
+- Invoke the loop BARE (no flags; #4097 contract). Verify any negative
+  board claim row-by-row (#4058 class) AND never trust truncated grep
+  output for a "zero references" claim — widen or drop the pipe cut.
+- First probe each cycle: are the 12 ghosts closed? If yes, the janitor
+  fired blind-and-lucky (re-diagnose layer b); if no after 14:00+08, the
+  prediction held — push admin packet v2 forward.
 - For your own submissions: the closure-emit flag exists (bridge guide,
-  receipt-closure convention) — use it when your receipt IS the resolution;
-  watch/census receipts keep the default.
-- U3 verification: public pages + git pull-refs + local reproduction on the
-  merge ref (playbook proven on #3785/#3853).
+  receipt-closure convention) — use it when your receipt IS the
+  resolution; watch/census receipts keep the default.
+- U3 verification: public pages + git pull-refs + local reproduction on
+  the merge ref (playbook proven on #3785/#3853, now also the depth-1
+  clone repro).
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: no pick, no P0 — but the founder directive says root-cause fixes
-  whenever possible. This cycle converted the r10 receipt's open premise
-  ("closer is tower-side") into a complete three-surface diagnosis, proved
-  the intake wall live (the deepest cause: the wire was never possible from
-  the agent lane), verified the self-service closure lever, and packaged the
-  exact admin change so the class can be closed by the first privileged
-  landing — plus a guard so it can never silently regress.
-- alternatives_rejected: a direct workflow write via the bridge (rejected —
-  fail-closed intake rejection, live-proven); running the closing leg from
-  my own sandbox (rejected — no gh binary here; out-of-band issue mutation
-  lacks CI provenance); a standalone closer script (rejected — the watchdog
-  IS the reconciler per r10 doctrine; duplicating census logic invites
-  drift); leaving the guard test in this submission (rejected — it pins a
-  wire that does not exist yet and would fail CI; it lands with the wire).
+- why: no pick, no P0 — but my own landed r11 contained a false claim;
+  the anti-blindspot invariant outranks convenience: correct the record
+  first, then re-diagnose. The corrected layers convert the ghost class
+  from "mystery" to "two concrete, one-line-class fixes" (checkout depth
+  + cadence), with a falsifiable prediction that makes the next cycle a
+  decisive experiment regardless of outcome.
+- alternatives_rejected: burying the correction inside a long receipt
+  (rejected — corrections must be findable; this file leads with it);
+  deleting the guard test's corrected pins to force a code landing
+  (rejected — .github/ is admin-gated and a guard that pins a not-yet-
+  existing sync-job step would fail CI); claiming the janitor "should
+  work" without the depth-1 repro (rejected — the repro is the
+  difference between a guess and a diagnosis).
 
 ## Rollback
 
