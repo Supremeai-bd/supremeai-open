@@ -76,10 +76,12 @@ class ClaimLeaseSSOTPins(unittest.TestCase):
         self.assertIn("ISSUE_LEASE_SECONDS = DISPATCH_JOURNAL_RETENTION_SECONDS", src)
         pick_src = inspect.getsource(cal.pick_next_issue)
         self.assertNotIn("leased_at", pick_src)
-        # The candidate gate itself (nested is_claimable) is clock-free: AST name
-        # scan, comment-immune — the lease/ISSUE_LEASE names may only live in the
-        # twin-demote input, never inside the claimability gate.
-        tree = ast.parse(pick_src)
+        # The candidate gate (top-level is_claimable in the minimal loop, per the
+        # #4136/#ff39ee6 merge) is clock-free: AST name scan, comment-immune —
+        # the lease/ISSUE_LEASE names may only live in the twin-demote input,
+        # never inside the claimability gate.
+        gate_src = inspect.getsource(cal.is_claimable)
+        tree = ast.parse(gate_src)
         gates = [
             n
             for n in ast.walk(tree)

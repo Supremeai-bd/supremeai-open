@@ -23,6 +23,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+try:
+    from scripts.agents import claim_thresholds as ct
+except ImportError:
+    try:
+        import claim_thresholds as ct
+    except ImportError:
+        class _FallbackCT:
+            ORPHAN_RELEASE_MINUTES = 30.0
+        ct = _FallbackCT()
+
 CADENCE_FILE = Path(__file__).resolve().parent / "agent_cadence.json"
 ROTATION_STORE = Path(".agent_cadence_last_run.json")
 ISSUE_LEASE_STORE = Path(".issue_lease_store.json")
@@ -32,30 +42,32 @@ EXCLUDED_LABELS = frozenset({
 })
 PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
+# SSOT lineage (#57 / #3573 regime): hygiene-only alias names, NO time gate.
+# These feed the born-duplicate demotion's in-flight input and the machine-local
+# dispatch journal retention. They NEVER decide claimability (SPEC §4c).
+DISPATCH_JOURNAL_RETENTION_SECONDS = ct.ORPHAN_RELEASE_MINUTES * 60.0
+ISSUE_LEASE_SECONDS = DISPATCH_JOURNAL_RETENTION_SECONDS
+
 # =============================================================================
 # 5 ROLES & THEIR MANDATES (SSOT)
 # =============================================================================
 ROLE_RULES: dict[str, str] = {
     "solver": (
-        "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, "
-        "write all required migrations/configs/tests end-to-end (no partial work), and submit PR."
+        "Unlimited concurrent solvers allowed. Objective: Solve root cause, verify boundary, "
+        "deliver complete migrations/configs/tests end-to-end, and submit PR."
     ),
     "ecosystem-scout": (
-        "à¦¸à¦¾à¦°à¦¾ à¦¬à¦¿à¦¶à§à¦¬à§‡à¦° à¦¯à§‡à¦•à§‹à¦¨à§‹ à¦œà¦¾à§Ÿà¦—à¦¾ à¦¥à§‡à¦•à§‡ SupremeAI-à¦à¦° à¦œà¦¨à§à¦¯ à¦¸à¦¬à¦šà§‡à§Ÿà§‡ à¦²à¦¾à¦­à¦œà¦¨à¦• à¦“ à¦‰à¦ªà¦•à¦¾à¦°à§€ "
-        "à¦¹à¦¬à§‡ à¦à¦®à¦¨ à¦œà¦¿à¦¨à¦¿à¦¸ à¦“ à¦‡à¦¨à§‹à¦­à§‡à¦¶à¦¨ à¦–à§à¦à¦œà§‡ à¦†à¦¨à¦¾à¥¤ à¦¶à§à¦§à§à¦®à¦¾à¦¤à§à¦° à¦²à¦¾à¦‡à¦­ à¦ªà§à¦°à¦®à¦¾à¦£à¦¸à¦¹ à¦•à¦‚à¦•à§à¦°à¦¿à¦Ÿ, "
-        "à¦¬à¦¾à¦¸à§à¦¤à¦¬à¦¾à¦¯à¦¼à¦¨à¦¯à§‹à¦—à§à¦¯ à¦«à¦¾à¦‡à¦¨à§à¦¡à¦¿à¦‚ à¦«à¦¾à¦‡à¦² à¦•à¦°à¦¾ à¦¯à¦¾à¦¬à§‡; à¦…à¦¨à§à¦®à¦¾à¦¨à¦¨à¦¿à¦°à§à¦­à¦°/à¦¹à¦¾à¦‡à¦ª à¦Ÿà¦¿à¦•à§‡à¦Ÿ à¦•à¦ à§‹à¦°à¦­à¦¾à¦¬à§‡ à¦¨à¦¿à¦·à¦¿à¦¦à§à¦§; à¦•à§‹à¦¡ à¦à¦¡à¦¿à¦Ÿ à¦¨à¦¯à¦¼à¥¤"
+        "Explore global innovations and high-impact capabilities for SupremeAI. "
+        "File actionable findings with live verifiable evidence; strictly no hype/speculation; no direct code edits."
     ),
     "human-eye": (
-        "à¦†à¦®à¦¾à¦¦à§‡à¦° à¦•à¦¾à¦¸à§à¦Ÿà¦®à¦¾à¦° à¦¯à§‡à¦¨ à¦¸à¦°à§à¦¬à§‹à¦¤à§à¦¤à¦® à¦“ à¦¶à§à¦°à§‡à¦·à§à¦  à¦à¦•à§à¦¸à¦ªà§‡à¦°à¦¿à§Ÿà§‡à¦¨à§à¦¸ à¦ªà¦¾à§Ÿ à¦¤à¦¾à¦° à¦œà¦¨à§à¦¯ "
-        "à¦ªà§à¦°à§Ÿà§‹à¦œà¦¨à§€à§Ÿ à¦¸à¦®à¦¸à§à¦¤ UI/UX à¦“ à¦ªà¦¾à¦°à¦«à¦°à¦®à§à¦¯à¦¾à¦¨à§à¦¸ à¦¨à¦¿à¦¶à§à¦šà¦¿à¦¤ à¦•à¦°à¦¾à¥¤"
+        "Audit UI/UX, frontend performance, responsiveness, and end-user customer experience across applications."
     ),
     "rules-breaker": (
-        "à¦†à¦®à¦¾à¦¦à§‡à¦° à¦¸à¦®à§à¦ªà§‚à¦°à§à¦£ à¦¸à¦¿à¦¸à§à¦Ÿà§‡à¦®à§‡à¦° à¦¸à¦¿à¦•à¦¿à¦‰à¦°à¦¿à¦Ÿà¦¿, à¦Ÿà§‡à¦•à¦¨à¦¿à¦•à§à¦¯à¦¾à¦² à¦¡à§‡à¦Ÿ à¦à¦¬à¦‚ à¦²à¦œà¦¿à¦•à§à¦¯à¦¾à¦² "
-        "à¦—à§à¦¯à¦¾à¦ªà§‡à¦° à¦¸à¦®à¦¸à§à¦¤ à¦¦à§à¦°à§à¦¬à¦²à¦¤à¦¾ à¦–à§à¦à¦œà§‡ à¦¬à§‡à¦° à¦•à¦°à§‡ à¦°à¦¿à¦ªà§‹à¦°à§à¦Ÿ à¦•à¦°à¦¾à¥¤"
+        "Adversarial audit: detect system security risks, technical debt, contract violations, and logic gaps."
     ),
     "platform-guardian": (
-        "à¦ªà§à¦°à¦œà§‡à¦•à§à¦Ÿà§‡à¦° à¦¸à¦¾à¦¥à§‡ à¦¯à§à¦•à§à¦¤ à¦…à¦¨à§à¦¯à¦¾à¦¨à§à¦¯ à¦¸à¦®à¦¸à§à¦¤ à¦¥à¦¾à¦°à§à¦¡-à¦ªà¦¾à¦°à§à¦Ÿà¦¿ à¦ªà§à¦²à§à¦¯à¦¾à¦Ÿà¦«à¦°à§à¦® à¦“ "
-        "à¦¸à¦¾à¦°à§à¦­à¦¿à¦¸à§‡à¦° à¦¸à¦¾à¦°à§à¦¬à¦•à§à¦·à¦£à¦¿à¦• à¦¤à¦¦à¦¾à¦°à¦•à¦¿, à¦…à¦¡à¦¿à¦Ÿ à¦“ à¦¨à¦œà¦°à¦¦à¦¾à¦°à¦¿ à¦¨à¦¿à¦¶à§à¦šà¦¿à¦¤ à¦•à¦°à¦¾ (absorbed auditor duties)à¥¤"
+        "Audit third-party integrations, satellite mirrors, platform health, database schema, and operational telemetry."
     ),
 }
 
@@ -201,24 +213,33 @@ def pick_next_scheduled_role(config: dict[str, Any]) -> str | None:
 def execute_role(role: str, issue: dict[str, Any] | None = None) -> int:
     concurrency = "Unlimited concurrent solvers allowed" if role == "solver" else "Single-runner role lock"
     mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
-    
+
     print("\n" + "=" * 70)
     print(COMMON_RULES.strip())
     print("=" * 70)
     print(f"ASSIGNED ROLE: {role} ({concurrency})")
     print(f"ROLE MANDATE: {mandate}")
-    
+
     if issue:
         num = issue.get("number")
         title = issue.get("title")
         print(f"TARGET TASK: #{num} - {title}")
-        print(f"ACTION INSTRUCTION: Work strictly inside satellite domain. Rebase origin/main, execute fix, verify 3-tier, submit via PR (Closes #{num}).")
+        print("CAPABILITIES & TOOLS (Suggested Info for Solver):")
+        print("  - Inspect: Read issue context, error logs, and related code files.")
+        print("  - Modify: edit_file / bridge_submit_patch / write_file (apply root fix + migrations + configs).")
+        print("  - Verify: python scripts/agents/continuous_agent_loop.py --verify-only, pytest, unit tests.")
+        print("  - PR: Create branch, commit changes, open PR referencing Closes #{num}.")
+        print("  - Guidelines: Complete freedom on HOW to solve; never bypass tests or deliver partial work.")
         record_issue_dispatch(num)
     else:
-        print("ACTION INSTRUCTION: Perform observation/audit scan per role mandate. File structured concrete findings with live evidence only.")
+        print("CAPABILITIES & TOOLS (Suggested Info for Auditor/Scout):")
+        print("  - Inspect: github-reader (get_issue, list_prs), web search, local file reading, health probes.")
+        print("  - Infrastructure: supabase_schema_inspect, render_service_health, devtools audit.")
+        print("  - Issue Creation: gh issue create / bridge_submit structured finding with live reproduction evidence.")
+        print("  - Guidelines: Check existing issues to avoid duplicates; observe and report; no code modifications.")
 
     print("=" * 70 + "\n")
-    
+
     last_runs = load_last_run_store()
     last_runs[role] = time.time()
     save_last_run_store(last_runs)
