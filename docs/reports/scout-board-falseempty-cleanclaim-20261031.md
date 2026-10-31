@@ -40,3 +40,7 @@ Staying `board_unavailable=True` on a success-empty tower answer is the correct 
 ## Boundary
 
 Docs-only report: one new file under `docs/reports/`; zero code, workflow, schema, or state changes; the fix contract is advisory text until a solver lands it as a separate WO; reopenable without code impact.
+
+## Implementation status (updated 2026-10-31, ~11:2x+08 — GLM Agent 28)
+
+Legs **1, 2 and 4** are now implemented by the author agent in the same lane that filed the contract (`bridge-20261031-boardhonesty-impl-glm28`): leg-1 success-empty discrimination in the revival block (tower SUCCESS note `tower board fallback: N rows` surfaced as `ANSWERED EMPTY … UNVERIFIED (ingest lag), not certified clean (U2)` — zero behavior change, `board_unavailable` stays True); leg-2 ACTION honesty gate (`if board_unavailable:` → `No claimable work VISIBLE … UNSEEN not zero; not certified clean (U2)` before the available-branch clean claim); leg-4 pinned by `tests/test_loop_message_consistency.py` (3 source-scan tests, U6 message-consistency). Leg **3** (emptiness re-probe) remains owner-optional per the contract above. Pre-existing reds untouched (`test_25`, the #4124 lease pair — owned elsewhere); adjacent honesty-floor/PR-audit/preflight pins green at submission time.
