@@ -336,6 +336,8 @@ class _GuardHarness:
             [_find_bash(), str(path)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=e,
             timeout=120,
             check=False,
