@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 use tauri::ipc::Channel;
+mod admin;
+use admin::{admin_dashboard, admin_login, admin_logout, admin_verify_totp, AdminSessionState};
 
 const DEFAULT_GATEWAY: &str = "https://supremeai-api-ulw0.onrender.com";
 const MAX_PROMPT_BYTES: usize = 80_000;
@@ -210,7 +212,14 @@ async fn send_chat(request: ChatRequest, on_chunk: Channel<String>) -> Result<Ch
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![send_chat])
+        .manage(AdminSessionState::default())
+        .invoke_handler(tauri::generate_handler![
+            send_chat,
+            admin_login,
+            admin_verify_totp,
+            admin_dashboard,
+            admin_logout
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the SupremeAI desktop application");
 }
