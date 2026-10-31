@@ -58,6 +58,7 @@ except Exception:
 # (e.g. Cloudflare Pages deploy in supremeai-studio)
 DEPLOY_TARGETS: set[str] = {
     "Supremeai-bd/supremeai-studio",
+    "Supremeai-bd/supremeai-vscode",
 }
 
 # (#3441 root cause) Satellites whose OWN CI surface imports the domain mirror
