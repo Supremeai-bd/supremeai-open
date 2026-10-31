@@ -5,34 +5,35 @@
   "identifier": "com.supremeai.desktop",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "SupremeAI Workstation",
-        "width": 1280,
-        "height": 800,
+        "width": 1340,
+        "height": 900,
+        "minWidth": 920,
+        "minHeight": 640,
         "resizable": true
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": []
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0NThCQjZERTVCMDRCM0EKUldRNlM3RGxiYnRZeEdwdHlBdFBWWGhhU0s4V212NkZDV2NrVjI4YVpNbG5PZW1IZzFMSEhrL28K",
-      "endpoints": [
-        "https://github.com/Supremeai-bd/supremeai-open/releases/latest/download/desktop-latest.json"
-      ]
-    }
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
   }
 }

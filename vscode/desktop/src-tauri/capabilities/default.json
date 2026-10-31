@@ -1,0 +1,6 @@
+{
+  "identifier": "default",
+  "description": "Minimal core IPC access for the SupremeAI desktop window.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

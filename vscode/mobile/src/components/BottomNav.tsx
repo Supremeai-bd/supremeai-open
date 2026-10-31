@@ -1,32 +1,56 @@
 import React from "react";
 
-export type MobileTab = "chat" | "runs" | "agents" | "inbox" | "more";
+export type NavTab = "chat" | "runs" | "agents" | "inbox" | "more";
 
-const TABS: { id: MobileTab; label: string }[] = [
-  { id: "chat", label: "Chat" },
-  { id: "runs", label: "Runs" },
-  { id: "agents", label: "Agents" },
-  { id: "inbox", label: "Inbox" },
-  { id: "more", label: "More" },
+const TABS: { id: NavTab; label: string; icon: string }[] = [
+  { id: "chat", label: "Chat", icon: "💬" },
+  { id: "runs", label: "Runs", icon: "⚡" },
+  { id: "agents", label: "Agents", icon: "🤖" },
+  { id: "inbox", label: "Inbox", icon: "📥" },
+  { id: "more", label: "More", icon: "⚙️" },
 ];
 
 export interface BottomNavProps {
-  active: MobileTab;
-  onChange: (tab: MobileTab) => void;
+  activeTab: NavTab;
+  onSelectTab: (tab: NavTab) => void;
 }
 
-export function BottomNav({ active, onChange }: BottomNavProps) {
+export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelectTab }) => {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 flex border-t border-slate-800 bg-slate-900">
-      {TABS.map((t) => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={`flex-1 py-2 text-xs ${active === t.id ? "text-sky-400" : "text-slate-400"}`}
-        >
-          {t.label}
-        </button>
-      ))}
+    <nav
+      style={{
+        display: "flex",
+        borderTop: "1px solid #1e293b",
+        backgroundColor: "#0f172a",
+        padding: "6px 0",
+      }}
+    >
+      {TABS.map((t) => {
+        const isActive = activeTab === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onSelectTab(t.id)}
+            style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "2px",
+              padding: "4px 0",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: isActive ? "#38bdf8" : "#94a3b8",
+              fontSize: "11px",
+              fontWeight: isActive ? 600 : 400,
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        );
+      })}
     </nav>
   );
-}
+};

@@ -1,97 +1,177 @@
-"""SupremeAI Standalone Scraper & Gemini Cookie Relay Entrypoint.
+"""SupremeAI Browser Service — Phase 11 (ROADMAP §33).
 
-Provides the FastAPI application entrypoint for Render (uvicorn main:app)
-and local deployments. Seamlessly integrates the lightweight Gemini Cookie
-Relay engine (server.py) with optional scraping routes.
+বাংলা: Browser/scraper আলাদা microservice. Playwright এখানে, Core API-তে নয়।
 """
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import logging
 import os
-import sys
+import socket
+from urllib.parse import urlparse
 
-logger = logging.getLogger("supremeai.scraper")
+from aiohttp import web
 
-# Ensure local directory is in path
-_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-if _CURRENT_DIR not in sys.path:
-    sys.path.insert(0, _CURRENT_DIR)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s | %(levelname)-7s | %(message)s",
+)
+logger = logging.getLogger("supremeai.browser")
+logger.info(f">>> booting browser service (env={os.getenv('ENV', 'production')})")
 
-# Import primary application from server.py (Cookie Relay Engine)
-try:
-    from server import app, relay_engine, duck_engine, ChatRequest
-except ImportError:
-    from browser.server import app, relay_engine, duck_engine, ChatRequest  # type: ignore
+_BROWSER_SERVICE_TOKEN = os.getenv("BROWSER_SERVICE_TOKEN", "").strip()
+_ALLOWED_HOSTS = {
+    host.strip().lower()
+    for host in os.getenv("BROWSER_ALLOWED_HOSTS", "").split(",")
+    if host.strip()
+}
+_MAX_RESPONSE_BYTES = int(os.getenv("BROWSER_MAX_RESPONSE_BYTES", "2000000"))
+_BROWSER_SEMAPHORE = asyncio.Semaphore(int(os.getenv("BROWSER_MAX_CONCURRENCY", "2")))
 
-# Register optional browser scraper routes if dependencies are available
-try:
+
+def _authorized(request: web.Request) -> bool:
+    """Fail closed in production; local development may explicitly opt out."""
+    if not _BROWSER_SERVICE_TOKEN:
+        return os.getenv("ENV", "production").lower() in {"development", "test"}
+    return request.headers.get("authorization", "") == f"Bearer {_BROWSER_SERVICE_TOKEN}"
+
+
+def _is_safe_public_ip(ip_str: str) -> bool:
     try:
-        from browser_agent import BrowserAgent, BrowseRequest
-        from security import is_safe_url
-        from web_scraper import WebScraper
-    except ImportError:
-        from services.scraper.browser_agent import BrowserAgent, BrowseRequest
-        from services.scraper.security import is_safe_url
-        from services.scraper.web_scraper import WebScraper
-
-    from fastapi import HTTPException
-    from pydantic import BaseModel
-
-    MAX_CONCURRENCY = int(os.getenv("SCRAPER_MAX_CONCURRENCY", "3"))
-    TIMEOUT_SECONDS = int(os.getenv("SCRAPER_TIMEOUT_SECONDS", "45"))
-
-    _scraper = WebScraper()
-    _agent = BrowserAgent(headless=True)
-
-    class ScrapeRequest(BaseModel):
-        url: str
-        extraction_prompt: str | None = None
-
-    class RecipeRequest(BaseModel):
-        steps: list = []
-        initial_url: str | None = None
-
-    @app.post("/scrape", tags=["scraper"])
-    async def scrape(request: ScrapeRequest):
-        if not request.url:
-            raise HTTPException(status_code=400, detail="URL is required")
-        if not is_safe_url(request.url):
-            raise HTTPException(
-                status_code=400, detail="SSRF check failed: Unauthorized internal access"
-            )
-        import asyncio
-        return await asyncio.to_thread(_scraper.fetch_page, request.url)
-
-    @app.post("/browse", tags=["scraper"])
-    async def browse(request: BrowseRequest):
-        if not request.url:
-            raise HTTPException(status_code=400, detail="URL is required")
-        if not is_safe_url(request.url):
-            raise HTTPException(
-                status_code=400, detail="SSRF check failed: Unauthorized internal access"
-            )
-        return await _agent.navigate_and_interact(
-            url=request.url,
-            action=request.action or "fetch",
-            selector=request.selector,
-            text=request.text,
-            wait_for=request.wait_for,
+        addr = ipaddress.ip_address(ip_str)
+        return (
+            addr.is_global
+            and not addr.is_multicast
+            and not addr.is_reserved
+            and not addr.is_loopback
+            and not addr.is_link_local
+            and not addr.is_unspecified
         )
+    except ValueError:
+        return False
 
-    @app.post("/recipe", tags=["scraper"])
-    async def recipe(request: RecipeRequest):
-        if request.initial_url and not is_safe_url(request.initial_url):
-            raise HTTPException(
-                status_code=400, detail="SSRF check failed: Unauthorized internal access"
-            )
-        return await _agent.execute_recipe(steps=request.steps, initial_url=request.initial_url)
 
-    logger.info("Scraper browser routes registered successfully")
+def _is_private_or_restricted_host(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return not _is_safe_public_ip(host)
+    except ValueError:
+        return False
 
-except Exception as _scraper_err:
-    logger.info(
-        f"Scraper engine dependencies unavailable ({_scraper_err}); "
-        "operating in lightweight Gemini Cookie Relay mode."
-    )
 
+async def _safe_url(raw_url: str) -> str:
+    parsed = urlparse(raw_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+        raise ValueError("only public http(s) URLs are allowed")
+    host = parsed.hostname.lower().rstrip(".")
+    if _ALLOWED_HOSTS and host not in _ALLOWED_HOSTS:
+        raise ValueError("destination host is not allowlisted")
+    if _is_private_or_restricted_host(host):
+        raise ValueError("private or restricted destination is not allowed")
+    try:
+        addresses = await asyncio.to_thread(socket.getaddrinfo, host, parsed.port or 443, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise ValueError("destination could not be resolved") from exc
+    for _, _, _, _, sockaddr in addresses:
+        if not _is_safe_public_ip(sockaddr[0]):
+            raise ValueError("destination resolves to a non-public or restricted address")
+    return parsed.geturl()
+
+
+async def scrape(request: web.Request) -> web.Response:
+    """Phase 11 — scrape a URL (ROADMAP §33)."""
+    if not _authorized(request):
+        return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+    data = await request.json()
+    url = data.get("url", "")
+    if not url:
+        return web.json_response({"ok": False, "error": "url required"}, status=400)
+    try:
+        url = await _safe_url(str(url))
+        async with _BROWSER_SEMAPHORE:
+            return await _scrape_url(url)
+    except ValueError as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=403)
+    except Exception:
+        logger.exception("browser scrape failed")
+        return web.json_response({"ok": False, "error": "browser operation failed"}, status=502)
+
+
+async def _scrape_url(url: str) -> web.Response:
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                title = await page.title()
+                content = (await page.content())[:_MAX_RESPONSE_BYTES]
+            finally:
+                await browser.close()
+        return web.json_response(
+            {"ok": True, "url": url, "title": title, "content_length": len(content)}
+        )
+    except ImportError:
+        return web.json_response({"ok": False, "error": "playwright not installed"}, status=500)
+    except Exception:
+        logger.exception("browser scrape execution failed")
+        return web.json_response({"ok": False, "error": "browser operation failed"}, status=502)
+
+
+async def screenshot(request: web.Request) -> web.Response:
+    """Take screenshot of a URL."""
+    if not _authorized(request):
+        return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+    data = await request.json()
+    url = data.get("url", "")
+    if not url:
+        return web.json_response({"ok": False, "error": "url required"}, status=400)
+    try:
+        url = await _safe_url(str(url))
+        async with _BROWSER_SEMAPHORE:
+            return await _screenshot_url(url)
+    except ValueError as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=403)
+    except Exception:
+        logger.exception("browser screenshot failed")
+        return web.json_response({"ok": False, "error": "browser operation failed"}, status=502)
+
+
+async def _screenshot_url(url: str) -> web.Response:
+    try:
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=30000)
+                screenshot_bytes = await page.screenshot()
+            finally:
+                await browser.close()
+        return web.Response(body=screenshot_bytes, content_type="image/png")
+    except ImportError:
+        return web.json_response({"ok": False, "error": "playwright not installed"}, status=500)
+    except Exception:
+        logger.exception("browser screenshot execution failed")
+        return web.json_response({"ok": False, "error": "browser operation failed"}, status=502)
+
+
+async def health(request: web.Request) -> web.Response:
+    return web.json_response({"status": "ok", "service": "supremeai-browser"})
+
+
+app = web.Application()
+app.router.add_get("/health", health)
+app.router.add_post("/scrape", scrape)
+app.router.add_post("/screenshot", screenshot)
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "8002"))
+    web.run_app(app, host="0.0.0.0", port=port)

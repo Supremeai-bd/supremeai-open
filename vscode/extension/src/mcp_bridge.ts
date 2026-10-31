@@ -54,10 +54,9 @@ export class McpBridge {
 
   public async fetchHealth(): Promise<FederationHealth> {
     const started = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
       // Lightweight health check against MCP endpoint or base /health
       const healthUrl = this.towerUrl.replace(/\/mcp\/?$/, "/health");
       const res = await fetch(healthUrl, {
@@ -65,7 +64,6 @@ export class McpBridge {
         headers: { "Accept": "application/json" },
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       const latencyMs = Date.now() - started;
       if (!res.ok) {
@@ -97,14 +95,15 @@ export class McpBridge {
         latencyMs: Date.now() - started,
         lastChecked: new Date().toISOString(),
       };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
   public async fetchRunway(): Promise<RunwayItem[]> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
       // Call MCP method work.runway or fallback endpoint
       const payload = {
         jsonrpc: "2.0",
@@ -122,7 +121,6 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
         return [];
@@ -136,6 +134,8 @@ export class McpBridge {
       return Array.isArray(parsed) ? parsed : [];
     } catch {
       return [];
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -144,10 +144,9 @@ export class McpBridge {
       return { success: false, error: "Task title and repository are required." };
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
       // 2026-10-30 rename-wave 2 fix (#2493): the pre-wave bridge_work_order
       // tool is DEAD on the tower (-32602 "Tool not found"), and the live
       // dotted bridge.work_order is a READ tool (requires `number`). The
@@ -181,7 +180,6 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
         return { success: false, error: `Tower responded with HTTP ${res.status}` };
@@ -241,6 +239,8 @@ export class McpBridge {
         success: false,
         error: err instanceof Error ? err.message : "Network error during dispatch",
       };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -249,10 +249,9 @@ export class McpBridge {
       return false;
     }
 
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
       const payload = {
         jsonrpc: "2.0",
         id: Date.now(),
@@ -269,7 +268,6 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
         return false;
@@ -289,6 +287,8 @@ export class McpBridge {
       return true;
     } catch {
       return false;
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

@@ -28,6 +28,7 @@ pr_body*.txt
 graphify-out/
 .cache/graphify*/
 audit-out/
+audit-results/
 audit.raw.json
 ci-reports/
 size_budget_report.json
@@ -57,3 +58,10 @@ core/.secrets/
 scripts/agents/agent_cadence_state.json
 scripts/agents/agent_rotation_state.json
 scripts/agents/dispatched_issues_state.json
+
+# Tauri target build directory
+vscode/desktop/src-tauri/target/
+
+# Desktop generated icons and tauri gen
+vscode/desktop/src-tauri/icons/
+vscode/desktop/src-tauri/gen/

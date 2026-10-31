@@ -1,23 +1,30 @@
 {
   "name": "@supremeai/desktop",
   "version": "0.1.0",
+  "private": true,
+  "type": "module",
   "license": "MIT",
-  "description": "SupremeAI Desktop Application — Native cross-platform desktop client (Tauri / Electron)",
-  "main": "dist/index.js",
+  "description": "SupremeAI Desktop Application — Tauri v2 workstation",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -p tsconfig.json",
-    "tauri": "tauri"
+    "dev": "vite --host 127.0.0.1 --strictPort",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "npm run typecheck && vite build",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
-    "@types/node": "^20.11.0",
-    "@types/react": "^19.3.0",
-    "react": "^19.3.1"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",
-    "tsx": "^4.23.15",
+    "@types/node": "^20.11.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^4.0.0",
     "typescript": "^5.3.3",
     "vite": "^5.0.0"
   }

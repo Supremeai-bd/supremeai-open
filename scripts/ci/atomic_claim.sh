@@ -30,6 +30,7 @@ set -euo pipefail
 # (#1838) flag parsing — backwards compatible with positional args.
 SKIP_ASSIGN=false
 FORCE=false
+CREATE_BRANCH=false
 STATUS_LABEL="status:in-progress"
 POSITIONAL=()
 while [ $# -gt 0 ]; do
@@ -40,6 +41,10 @@ while [ $# -gt 0 ]; do
       ;;
     --force)
       FORCE=true
+      shift
+      ;;
+    --create-branch|--create-branch=true)
+      CREATE_BRANCH=true
       shift
       ;;
     --status-label)
@@ -61,12 +66,14 @@ ISSUE_NUMBER="${POSITIONAL[0]:-}"
 AGENT_NAME="${POSITIONAL[1]:-}"
 
 if [ -z "$ISSUE_NUMBER" ] || [ -z "$AGENT_NAME" ]; then
-  echo "Usage: $0 <issue_number> <agent_name> [--status-label <label>] [--skip-assign]" >&2
+  echo "Usage: $0 <issue_number> <agent_name> [--status-label <label>] [--skip-assign] [--create-branch]" >&2
   echo "  --skip-assign      Skip assignee step (for GitHub App bots that get 403)" >&2
+  echo "  --create-branch    Automatically create and checkout dynamic work-order branch" >&2
   echo "  --status-label     Override the status label (default: status:in-progress)" >&2
   echo "Examples:" >&2
   echo "  $0 900 agent-1                          # Human operator claim" >&2
   echo "  $0 900 agent-3-coder-1 --skip-assign   # Bot claim (skips 403)" >&2
+  echo "  $0 900 agent-3-coder-1 --create-branch # Claim and checkout deterministic branch" >&2
   exit 2
 fi
 
@@ -326,6 +333,16 @@ fi
 # ─── STEP 4: Post claim timestamp comment (for audit trail) ────────────
 CLAIM_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
+# Auto-derive branch name if requested or not supplied
+if [ "$CREATE_BRANCH" = "true" ] && [ -z "${BRANCH_NAME:-}" ]; then
+  ISSUE_TITLE=$(echo "$FINAL_JSON" | python3 -c "import json, sys; print(json.load(sys.stdin).get('title', 'task'))" 2>/dev/null || echo "task")
+  SAFE_SLUG=$(echo "$ISSUE_TITLE" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g' | sed -E 's/^-+|-+$//g' | cut -c 1-35)
+  if [ -z "$SAFE_SLUG" ]; then
+    SAFE_SLUG="work-order"
+  fi
+  BRANCH_NAME="fix/${ISSUE_NUMBER}-${SAFE_SLUG}"
+fi
+
 # GAP-DUPLICATE-01: Enforce branch naming convention in the claim comment.
 # Branch MUST include the issue number: <lane>-<N>-<issue_number>-<slug>
 # Example: coder-1-2253-fix-session-takeover  (NOT just 'coder-1')
@@ -349,6 +366,16 @@ CLAIM_COMMENT="### 🔒 Atomic Claim Established (GAP-01)
 _Automated by atomic_claim.sh — Race-safe mutex establishment per ARCH-GAP-01_"
 
 gh issue comment "$ISSUE_NUMBER" --body "$CLAIM_COMMENT" 2>&1 | sed 's/^/  /' || true
+
+# If create-branch requested, checkout the deterministic branch
+if [ "$CREATE_BRANCH" = "true" ] && [ -n "${BRANCH_NAME:-}" ]; then
+  echo "🌿 Creating/checking out deterministic work-order branch: $BRANCH_NAME"
+  if git rev-parse --verify "$BRANCH_NAME" >/dev/null 2>&1; then
+    git checkout "$BRANCH_NAME"
+  else
+    git checkout -b "$BRANCH_NAME"
+  fi
+fi
 
 # GAP-DUPLICATE-01: The agent MUST add 'has-pr' label to the issue immediately
 # after gh pr create succeeds. This is NOT done here (we haven't created the PR yet),
