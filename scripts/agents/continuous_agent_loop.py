@@ -202,6 +202,23 @@ def pick_next_scheduled_role(config: dict[str, Any]) -> str | None:
     return roles[0] if roles else None
 
 
+def sanitize_branch_name(issue_num: int | str, title: str) -> str:
+    """Create deterministic and compliant branch name from issue number and title."""
+    # Prefix detection (fix, feat, chore, etc.)
+    prefix = "feat"
+    lower_title = title.lower()
+    for p in ("fix", "feat", "chore", "docs", "refactor", "test", "perf"):
+        if lower_title.startswith(f"{p}:") or lower_title.startswith(f"{p}("):
+            prefix = p
+            break
+
+    # Strip prefixes and non-alphanumeric characters
+    clean_title = re.sub(r'^(feat|fix|chore|docs|refactor|test|perf)(\([^)]+\))?:?\s*', '', title, flags=re.I)
+    slug = re.sub(r'[^a-z0-9]+', '-', clean_title.lower()).strip('-')[:35]
+    slug = slug.strip('-') or "task"
+    return f"{prefix}/{issue_num}-{slug}"
+
+
 def execute_role(role: str, issue: dict[str, Any] | None = None) -> int:
     concurrency = "Unlimited concurrent solvers allowed" if role == "solver" else "Single-runner role lock"
     mandate = ROLE_RULES.get(role, "Execute role objectives strictly.")
@@ -214,9 +231,24 @@ def execute_role(role: str, issue: dict[str, Any] | None = None) -> int:
     
     if issue:
         num = issue.get("number")
-        title = issue.get("title")
+        title = str(issue.get("title") or "")
+        branch_name = sanitize_branch_name(num, title)
         print(f"TARGET TASK: #{num} - {title}")
+        print(f"AUTOMATIC BRANCH: {branch_name}")
+        
+        # Automatic branch creation & checkout for the agent
+        try:
+            curr_branch = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+            if curr_branch != branch_name:
+                code = subprocess.run(["git", "checkout", "-b", branch_name], capture_output=True).returncode
+                if code != 0:
+                    subprocess.run(["git", "checkout", branch_name], capture_output=True)
+                log("INFO", f"Automatically switched to branch: {branch_name}")
+        except Exception as exc:
+            log("WARN", f"Could not auto-create branch: {exc}")
+
         print(f"ACTION INSTRUCTION: Work strictly inside satellite domain. Rebase origin/main, execute fix, verify 3-tier, submit via PR (Closes #{num}).")
+        print("CI CLOSURE POLICY: Issue closes automatically upon 100% green CI + auto-landing (never close manually).")
         record_issue_dispatch(num)
     else:
         print("ACTION INSTRUCTION: Perform observation/audit scan per role mandate. File structured concrete findings with live evidence only.")
