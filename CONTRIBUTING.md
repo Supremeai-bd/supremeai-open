@@ -32,8 +32,7 @@ infrastructure/mcp-control-plane/         # Source of the MCP Control Tower (Typ
 docs/                                     # Documentation (this file lives here)
 .github/ISSUE_TEMPLATE/                   # Task envelope + Bridge Work Order templates
 .github/actions/                          # Reusable composite actions (setup-node-tower, gitleaks-scan — #155)
-.github/workflows/pipeline.yml            # Unified validation: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + agent-loop cron
-.github/workflows/landing.yml             # Unified autonomous landing: auto-merge -> bridge dispatch in the same run
+.github/workflows/pipeline.yml            # Unified validation & landing: guards -> Python 3.10-3.13 matrix + Tower TS + secret scan + auto-landing & satellite dispatch
 AGENTS.md                                  # Governance contract — Single Door SSOT (see §1)
 README.md                                 # What this repo is and is not
 ```
@@ -167,7 +166,7 @@ The bridge intake is **fail-closed** — it rejects rather than sanitizes:
 
 This repository is the **public SSOT**; `Supremeai-bd/supremeai` is the private
 SSOT for everything that needs private context. Landed public work is
-**automatically bridged** into the private monorepo by `landing.yml` — you
+**automatically bridged** into the private monorepo by the unified `pipeline.yml` landing & dispatch jobs — you
 never move it by hand.
 
 **Never in this repo (private exclusives):** proprietary core/backend logic,
