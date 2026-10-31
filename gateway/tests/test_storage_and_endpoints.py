@@ -13,7 +13,7 @@ import os
 import sys
 import time
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 SAT = os.path.abspath(os.path.join(BASE, ".."))
@@ -162,7 +162,20 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertEqual(r_restore.status_code, 200)
         self.assertEqual(r_restore.json()["action"], "restored")
 
-    def test_07_health_aggregation(self):
+    @patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=MagicMock(status_code=200))
+    def test_07_health_aggregation(self, _mock_get):
+        # ROOT-CAUSE FIX (2026-10-31, GLM Agent 28, Job 486832): আগের সংস্করণ
+        # লাইভ Render fleet-কে সত্যিকার HTTP probe করত (api-ulw0/mcp-tower,
+        # timeout=4s)। Render free-tier cold-start/spin-down হলে probe 503 বা
+        # timeout → status "degraded" → টেস্ট লাল। অর্থাৎ red census নির্ভর করত
+        # বাইরের fleet-এর মুডের উপর — flaky red (এই চক্রে 3F/2407P সেনসাসে
+        # প্রমাণিত: একবার লাল, isolation-এ সবুজ)। এই টেস্টের দায়িত্ব fleet-এর
+        # স্বাস্থ্য নয়, ENDPOINT CONTRACT: probe 200 → "healthy"; probe ব্যর্থ →
+        # "degraded" (07b); configure না থাকলে "unknown" (2026-10-24 honesty
+        # fix)। তাই network deterministic mock — repo idiom:
+        # gateway/tests/test_model_cascades.py-এর class-level httpx patch।
+        # TestClient নিজে sync httpx.Client ব্যবহার করে, তাই AsyncClient.get
+        # patch শুধু অ্যাপের outbound probe-এ হিট করে — request path অক্ষত।
         r = self.client.get("/api/health-aggregation")
         self.assertEqual(r.status_code, 200)
         data = r.json()
@@ -173,6 +186,21 @@ class TestStorageAndEndpoints(unittest.TestCase):
         self.assertIn("tower", data["checks"])
         self.assertIn("primary", data["checks"])
         self.assertIn("worker", data["checks"])
+
+    @patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=ConnectionError("mock fleet down"))
+    def test_07b_health_aggregation_honest_degradation(self, _mock_get):
+        # Honest-degradation contract pin (07-এর মিরর): probe ব্যর্থ হলে
+        # "degraded" — কখনো ভুয়া সবুজ নয়; configure না-থাকা node সৎভাবে
+        # "unknown"। live network ছাড়াই 2026-10-24 honesty fix-এর চুক্তি
+        # এখন deterministicভাবে পিন করা।
+        r = self.client.get("/api/health-aggregation")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(data["checks"]["api"]["status"], "degraded")
+        self.assertEqual(data["checks"]["tower"]["status"], "degraded")
+        self.assertEqual(data["checks"]["scraper"]["status"], "unknown")
+        self.assertEqual(data["checks"]["primary"]["status"], "unknown")
+        self.assertEqual(data["checks"]["worker"]["status"], "unknown")
 
     @patch.dict(os.environ, {"SUPREMEAI_ADMIN_PASSWORD": "password123"})
     def test_08_auth_login_and_register(self):
