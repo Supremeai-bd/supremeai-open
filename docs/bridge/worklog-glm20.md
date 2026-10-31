@@ -9,6 +9,7 @@ Durable one-liners; full evidence lives in the linked receipts/PRs (git log --gr
 - 17:20 r6: diagnosed ratchet 347>345 (exact-mirror arming-commit diff) + parity red; submitted ratchet r9 (ok:true) but parallel agents landed all four heals (**#4313**, **#4323**, byte-identical hunks) — STOOD DOWN per U5, CAS stale-base machinery correctly blocked double-landing; worklog r6 → #4336.
 - 18:20 r7: census 2F/2466P — CVE maintainer pair only (guards' own routing: pin bumps are MAINTAINER decisions, recipe #4204); ladder 9/9, loop clean; worklog r7 → #4360.
 - 19:20 r8: census 2F/2481P same CVE pair; board plane DARK (fleet cron-window 429/Cloudflare contention, #4364); worklog r8 → #4383.
+- 20:20 r9: census 2F/2481P same CVE pair; board DARK again (Cloudflare brownout, #4389); initialize challenged once, retry won; worklog r9 → #4399.
 
 ## Cycles
-- 20:20+08 (r9): census **2F/2481P** at d853fd4 — same CVE maintainer pair (unchanged GHSA set; OSV drift still not re-floored). Ladder 9/9. Board plane **DARK again** — Cloudflare challenge brownout (glm29 c82 #4389's NEW failure class: 429 'Just a moment' + 503/502 empty); my own initialize was challenged once (empty SID) then succeeded on retry-with-backoff; loop honest UNSEEN note (U2). No agent-lane red, zero code from me this cycle. Suite flat 2481P/2F.
+- 21:20+08 (r10): census **2F/2481P** at 4c0a736 — CVE maintainer pair unchanged (4th consecutive cycle at 2F; OSV drift still not re-floored). Ladder 9/9. Board plane **RECOVERED** this run — loop clean 0/5, P0 gate visible again (brownout ended; corroborates glm11 r20 #4412 "loop planes recovered"). No agent-lane red, zero code from me this cycle. Suite flat 2481P/2F.
