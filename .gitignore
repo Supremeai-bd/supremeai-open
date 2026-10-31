@@ -28,6 +28,7 @@ pr_body*.txt
 graphify-out/
 .cache/graphify*/
 audit-out/
+audit-results/
 audit.raw.json
 ci-reports/
 size_budget_report.json
