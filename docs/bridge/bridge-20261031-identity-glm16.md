@@ -42,19 +42,24 @@
   blind-ladder class drained 12 -> 2 (#4209); remaining: ONLY the
   CVE-guard pair (follow-redirects@1.16.1, GHSA-mrwp-f3q8-3g9p) —
   maintainer-lane. r4–r7 landed (PRs #4116, #4128, #4160, #4184).
-- c22 (15:16): no dispatch (claimable 0/5; CLOSER REVIVED, board 19 -> 0:
-  ALL nineteen open receipt rows closed in one batch with label
-  bridge:landed — including #4083 at +288 min, this slot's own #4127
-  (~5 h) and fresh #4215 (~1 h); two direct fetches both read 0 rows).
-  The five-cycle "likely-never subset" reading is FALSIFIED: the correct
-  model is a BATCH-DELAYED closer — long silence, then the whole backlog
-  burns in one sweep; an open-count of 0 and of 19 are BOTH normal board
-  states, so per-row taskId verification remains the only work-truth
-  (R94 confirmed). Suite at tip 03bf12e: 2 failed, 2234 passed, 13
-  skipped — ONLY the CVE-guard pair remains (maintainer-lane;
-  follow-redirects@1.16.1); +4 green tests after GLM 28's hermetic fix
-  (#4232). verify-only 9/9. r8 landed (PR #4216, f29523b). r9 = this
-  patch.
+- c22 (15:16): no dispatch; CLOSER REVIVED — all 19 open rows closed in
+  one batch (bridge:landed), board 19 -> 0; batch-delayed closer model
+  confirmed (full detail in Notes). Suite 2F/2234P after GLM 28's
+  hermetic fix (#4232). r8 landed (PR #4216, f29523b).
+- c23 (16:16): no dispatch (claimable 0/5; board 3 rows, all other-agent
+  receipt-class; base e339dae, 0 behind). RBAC ERA ENDED: #4249 restored
+  the tower default role to admin — tools/list jumped ~20 -> ~158 tools
+  (policy/action/tenant/memory/github-ops classes), github_list_prs
+  RETURNED but in underscore form. NAMING-SKEW datum: the loop probes
+  the dot-form name github.list_prs and still reports the plane dark —
+  the PR-plane audit stays auto-skipped until the loop's lookup string
+  is updated (it degrades safely, no defect). Lane discipline unchanged:
+  admin visibility is NOT a lane expansion — bridge-read + submit only;
+  dangerous new tools (kill switch, db writes, deploys, token rotation)
+  stay off-limits. Suite at tip: 2F/2234P, only the CVE-guard pair
+  (maintainer-lane). verify-only 9/9. WO-mint flow is intermittent:
+  r8's submit minted WO #4215, r9's minted none. r9 landed (PR #4237,
+  fcc0c0e). r10 = this patch.
 
 ## Notes for the next agent on this slot
 
@@ -70,17 +75,22 @@
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
-- Receipt-WO closure model SOLVED (five-cycle measurement, c17–c22): the
-  closer is BATCH-DELAYED — it goes silent for hours, then closes the
-  whole backlog in one sweep with the bridge:landed label (c22: 19 rows,
-  oldest +288 min, one batch). Never file a defect report for a silent
-  closer, never treat open rows as work signals, and never read a 0-row
-  board as certified clean (ingest lag possible, U2) — per-row taskId
-  check via bridge_read_feedback is the only work-truth (R94).
-- Check the tool list at cycle start — tower tool names drift between
-  epochs; bridge_guide prose still shows old dot-form names.
-- RBAC-era discipline stands: PR-plane dark for anonymous lanes (#3959
-  option C until the owner moves); system_health 12/12.
+- Receipt-WO closure model SOLVED (c17–c22): the closer is BATCH-DELAYED
+  — hours of silence, then the whole backlog closes in one sweep with
+  bridge:landed (c22: 19 rows, oldest +288 min). Never file a defect
+  report for a silent closer; never treat open rows as work signals;
+  never read a 0-row board as certified clean (ingest lag, U2). Per-row
+  taskId check via bridge_read_feedback is the only work-truth (R94).
+- RBAC era ENDED (#4249, tower role -> admin): the roster now carries
+  ~158 tools including dangerous ones (autonomy kill switch, db writes,
+  deploys, tenant token rotation). Lane discipline is UNCHANGED: this
+  anonymous bridge lane uses bridge_* read tools and the submit-patch
+  path only — never touch admin/mutation tools. Roster names are now
+  UNDERSCORE-form (github_list_prs); the loop still probes dot-form, so
+  its PR-plane audit stays auto-skipped — expected behavior, not a
+  defect.
+- Check the tool list at cycle start — tower rosters and name forms
+  drift between epochs (dot-form -> underscore-form observed at c23).
 - Receipt prose must avoid executable strings and flag quotes (WAF 403s).
 - Loop observation roles are gated on a >=5 claimable threshold (#4007) —
   on a drained board expect hold cadence; scout lanes remain the
