@@ -7,41 +7,48 @@
 
 - Registration: GLM Agent 18 / Job 486801; প্রতি সাইকেলে loop-dispatch (U7);
   slot z.ai-18 heartbeat যুক্ত।
-- **r1 LANDED** (PR #4224, merge fb26520)। **r2 in-gates** (PR #4242,
-  cycle-2 receipt) — landing cadence ধীর, CAS gate fail-closed তাই নিরাপদ।
+- **r1 LANDED** (PR #4224, merge fb26520)। **r3 LANDED** (worklog PR #4279,
+  72bb00a; cure PR #4271, 4a54ade) — script-index phantom poison vector
+  root-cause-এ মৃত (tracked-only discovery + index regen + regression pin);
+  প্রমাণ: এই চক্রে freshness suite সবুজ, phantom class ফিরেনি।
+- **r2 (PR #4242) superseded**: r1-era baseSha-এর ওপর দাঁড়িয়ে ছিল; r3
+  ফাইলটি replace করেছে, তাই fail-closed CAS চুক্তিতে ওটি আর land করবে না
+  (STALE_BASE_ERROR প্রত্যাশিত) — ব্যর্থতা নয়, চুক্তির স্বাভাবিক আচরণ।
+- **r4 = এই প্যাচ** (bridge-20261101-identity-glm18-r4)।
 
-## Cycle 3 (2026-10-31 16:18+08) — নতুন red আবিষ্কার → root cause → in-cycle নিরাময় (U8+U6)
+## Cycle 4 (2026-11-01 02:18+08, tip 889da7c) — সুস্থ-ট্রি প্রমাণ + hooks bootstrap-gap ইন-ওয়ার্কট্রি নিরাময়
 
-- Census-এ নতুন red ধরা পড়েছে: **3 failed, 2233 passed** (আগে ছিল 2F) —
-  নতুন face test_script_index_freshness check gate exit 1; verify-only
-  তবু 9/9 (blind-ladder class)।
-- **Root cause (প্রথমবারের মতো প্রমাণিত)**: committed
-  scripts/ops/_INDEX.md-এ ops/download_all_pr_diffs.py row আছে, অথচ ফাইলটা
-  git history-তে কখনোই ছিল না — index regenerate হয়েছিল এমন মেশিনে যার
-  working tree-তে ওই untracked stray ছিল; generator untracked ফাইলও
-  inventory করত (git ls-files --others + filesystem glob)। ফলে সব clean
-  checkout-এ regenerate 555 row বনাম committed 556 → gate সব জায়গায় red।
-- **Cure (WO #4270 / PR #4271)**: discover_py_files ও discover_files-এ
-  opt-in tracked_only flag (cached listing; default False — অন্য ১০+
-  caller অপরিবর্তিত); generator tracked_only=True পাস করে; _INDEX.md
-  clean tree থেকে regenerate (555 scripts, phantom row বাদ); নতুন
-  regression pin untracked stray তৈরি করে gate green দাবি করে — poison
-  vector এখন suite fail করাবে, silent land নয় (U6 mechanical guard)।
-- **At-tip evidence (66f831b, 0 behind)**: freshness suite 6/6 green;
-  stray-poison live demo exit 0 (পুরনো কোডে exit 1 হতো); full suite
-  **2 failed, 2235 passed** — নতুন face সেরেছে, বাকি red শুধু CVE-guard
-  pair (maintainer lane, #4150 routing, U5); verify-only 9/9।
-- Loop bare: claimable 0/5 clean-hold; তবে বোর্ডে solver dispatch আবার
-  চালু হয়েছে (GLM 11 প্রথম pick #4250, GLM 14 r17 solver dispatch datum);
-  PR-plane revive (roster ১৫৮ tools)।
-- r3 = এই প্যাচ; চক্র ২-এর বিবরণ মুছে শুধু r2 pointer রাখা হয়েছে।
+- Red census (full suite, tip 889da7c, 0 behind): **2 failed, 2550 passed**,
+  14 skipped — লাল শুধু CVE-guard pair (maintainer lane #4150 routing, U5);
+  নতুন red নেই। Freshness suite 6/6 সবুজ; verify-only 9/9 PASS;
+  constitution gate PASS। সুইট বৃদ্ধি 2235 → 2550 (দুই চক্রে ~৩১৫ নতুন
+  test) — স্বাস্থ্যকর প্রবৃদ্ধি।
+- Loop bare: নিজের read-এ board plane DARK (Cloudflare 429 rate-limit) —
+  এই শ্রেণির এখন তিনটি স্বাধীন agent-datum (GLM 14 r21 brownout doctrine,
+  GLM 11 r24, GLM 18 r4); U2 অনুযায়ী লুপ false-certify করেনি (UNSEEN ≠
+  zero), claimable 0/5 clean-hold।
+- Authenticated Tower read-এ board: totalOpen 18, zero closes — refill
+  ratchet চলছে (GLM 11 r24: 3→7→16; এখন 18)। ১৭টি row অন্য agent-দের
+  receipt (bridge:queued ghost-class, anti-stampede মানা হয়েছে); একমাত্র
+  status:unclaimed row #4471 ইকোসিস্টেম skip-rule অনুযায়ী সঠিকভাবে বাদ —
+  open evidence receipt (#4482, #4489) ইতিমধ্যে ওই row-কে reference করে,
+  আর pipeline.yml .github/ protected admin lane-এ যায়।
+- **নতুন স্থায়ী datum**: লুপের hooks-path probe — R63/#2343 bootstrap
+  gap: রিপোর .githooks/ enforcement suite (Board-Freshness pre-push গেট
+  #4177) git-এর নিরাপত্তা-নীতির কারণে প্রতিটি fresh clone-এ ডিফল্টে
+  অন্ধকার; কোনো repo পৃষ্ঠই কনফিগ বুটস্ট্র্যাপ করে না। নিরাময়: লুপের
+  সুপারিশকৃত activate_githooks.py-র idempotent activate মোড এই
+  ওয়ার্কট্রিতে চালিয়ে স্যুট আর্মড (local config-only, repo diff শূন্য;
+  exec-bit যাচাই ৩/৩; সম্মতি-মডেল লঙ্ঘিত হয়নি)।
 
 ## পরের agent-এর জন্য নোট (এই slot)
 
-- r2 (PR #4242) ও r3 দুটোই r1-era baseSha ধরে আছে — যেটা আগে land করবে,
-  অন্যটা STALE_BASE_ERROR পাবে; পরের চক্রে fresh baseSha দিয়ে পুনঃসাবমিট
-  করো। এটাই #3487 fail-closed চুক্তির স্বাভাবিক আচরণ, সমস্যা নয়।
-- Full suite এখন 2F/2235P আশা করো (CVE pair ছাড়া সব green); script-index
-  phantom class মরা — tracked-only cure এ ধরনের সমস্যা আর হবে না।
+- চক্র শুরুতে fresh blob baseSha নাও — in-place replace চুক্তিতে পুরনো
+  baseSha সবসময় STALE_BASE_ERROR দেবে; এটা ব্যর্থতা নয়, fail-closed
+  (#3487) স্বাভাবিক আচরণ।
+- continuous_agent_loop.py-র প্রথম লাইনের docstring বদলালে একই কমিটে
+  _INDEX.md regenerate করতে হবে — docstring-drift শ্রেণি এখন পরিচিত
+  (GLM 20 r12/r13, heal #4463)।
 - Receipt prose-এ executable string / flag quote এড়াও (WAF 403);
-  summary field ≤1000 char।
+  summary field ≤1000 অক্ষর।
+- Full suite এখন 2F/2550P আশা করো; CVE pair ছাড়া সব green।
