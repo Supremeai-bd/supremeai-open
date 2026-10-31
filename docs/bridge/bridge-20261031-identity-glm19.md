@@ -9,53 +9,45 @@
 
 - Identity: GLM Agent 19, Job ID 486803; zero-credential lane via the MCP
   tower; `mcp_call.py` session helper (session TTL self-heal).
-- Slot receipts r1–r11 landed: #3619/f1d09eb, #3664/0870206, #3705/30d08cf,
+- Slot receipts r1–r12 landed: #3619/f1d09eb, #3664/0870206, #3705/30d08cf,
   r4 (P0 #3663 drained), #3815, #3915/745366f, #3982/27655af, #4021/236f45e,
-  #4081/a3f495e, #4107/cee129c, #4153/0f5867e. Earlier cycle receipts:
-  A2A serving-gap #3807/38983ae; false-auto-close #3955/f85031a
-  (merge-linked ≠ finding-resolved; standing U3 probe duty on #3806);
-  self-correction #3966/64f1d54 (re-probe targets quoted from artifacts,
-  never memory); heartbeat anon-write #3978/003f2ea; #4009 closed via
-  #4012/897f57a closesOriginalIssue; fix+triage census #4150 → landed
-  #4151/0d1d215 (12 reds invisible to the 9-tier ladder; triage table
-  docs/reports/TRIAGE_REDS_LADDER_BLINDSPOT_2026-10-31.md).
-- **12:19+08 cycle (r12) — no-pick clean-hold, 4 datums:**
-  1. Loop bare-mode clean (claimable 0/5, observation idle; board 7→8
-     rows, all fleet receipts, 0 in gates). WO #4108 no longer on board —
-     auto-sweep closure confirmed.
-  2. **U3 #3806 4th consecutive data point, 04:24Z** (probe URLs quoted
-     from landed artifacts per lane rule): tower card paths
-     /.well-known/agent-card.json, /a2a, /agent.json → 404 ×3; canonical
-     gateway supremeai-api-ulw0.onrender.com card paths → 404 ×3.
-     Controls green: tower /health 200 (degraded 20/21, stale:true);
-     gateway /health 200 healthy v2.0.0. False-resolve of #3806
-     persists; owner re-open decision still pending.
-  3. **U5 withdrawal + CAS-gate validation:** built and fully verified a
-     dead-import ratchet fix (8 verified-dead removals; ratchet 3 passed;
-     full suite 9F/2223P; ladder 9/9 exit 0) — submission hit
-     STALE_BASE_ERROR: GLM Agent 20 had landed heal r3 (#4172/104c4ed,
-     04:32Z) minutes earlier. **Withheld as duplicate, zero resubmit.**
-     The #2333 fail-closed baseSha gate mechanically blocked the
-     duplicate — landing-truth by CAS, working as designed.
-  4. **U2 self-correction:** my r11 triage red-#3 row misattributed the
-     5 core/api/routes bindings (UTC/Query/PolicyRule/DecisionResult/
-     AgentRegistry) as new offenders — #4172 root-caused the trap (the
-     ratchet assert's "New offenders" label is an alphabetical sample,
-     not a growth diff) and fixed it mechanically. Correction recorded;
-     both agent-lane reds of the census now dispositioned (#4172 + GLM 09
-     #4159/4e47990) — the table's remedy routing worked.
+  #4081/a3f495e, #4107/cee129c, #4153/0f5867e, #4176→PR#4177/148ab06.
+  Durable firsts this lane owns: A2A serving-gap #3807/38983ae; false-
+  auto-close #3955/f85031a (merge-linked ≠ finding-resolved; standing U3
+  duty on #3806); self-correction #3966/64f1d54 (probe targets quoted
+  from artifacts, never memory); heartbeat anon-write #3978/003f2ea;
+  receipt-closure loop #4012/897f57a; 12-red blind-ladder census #4150→
+  #4151/0d1d215 (triage table docs/reports/
+  TRIAGE_REDS_LADDER_BLINDSPOT_2026-10-31.md); U5 duplicate withdrawal +
+  U2 alphabetical-sample misattribution correction (r12, #4172 landed
+  the heal + the assert-message root fix).
+- **13:19+08 cycle (r13) — no-pick clean-hold, 2 datums:**
+  1. **U3 #3806 5th consecutive data point, 05:20Z** (URLs quoted from
+     landed artifacts): tower card paths /.well-known/agent-card.json,
+     /a2a, /agent.json → 404 ×3; canonical gateway
+     supremeai-api-ulw0.onrender.com card paths → 404 ×3. Controls
+     green: tower /health 200 (degraded 20/21, stale:true); gateway
+     /health 200 healthy v2.0.0. Five consecutive identical datums —
+     the serving gap is stable, not transient; false-resolve of #3806
+     persists, owner re-open decision still pending.
+  2. **Census drain check:** fleet landed 6e3b3a0 (unred six pick-plane
+     reds = triage rows #6–11). Full suite now **3F/2229P** — 11 of the
+     census's 12 reds dispositioned across four agents' hands (#1 this
+     lane, #3 GLM 20, #12 GLM 09, #6–11 fleet). Remaining 3 are exactly
+     the rows the landed table routed away from the agent lane: #2
+     argparser pin (governance — #4097 purge was deliberate), #4/#5 CVE
+     guards (maintainer — pin bump or admin re-floor). Zero unclaimed
+     agent-lane work; loop bare-mode clean (0/5, board 14 receipts).
 
 ## Lane-ecosystem notes (durable)
 
-- #4138: clock-free gate restored (Option A of the #4125 contract) + tier
-  9 inline constitution pins; SPEC §4 SSOT row 1–8 → 1–9. #4124 red pair
-  verified GREEN post-#4138 (96c1ca6, GLM 32 c74).
-- #4146: board-honesty legs 1+2+4. #4065/853be43: watchdog lands
-  in-place only. #4097: flag purge → bare-mode loop. #4106:
-  advisory-surface guard; githooks armed locally (Board-Freshness
-  pre-push gate live). #4067: strict preflight signatures. WO #3433
-  duty closed.
+- #4138 clock-free gate + tier 9 pins; #4124 pair GREEN (96c1ca6).
+- #4146 board-honesty; #4065/853be43 watchdog in-place-only; #4097
+  flag purge → bare-mode; #4106 advisory-surface guard; githooks armed
+  locally; #4067 strict preflight. #4172: ratchet heal + assert-message
+  root fix (alphabetical-sample trap). WO #3433 duty closed.
 
-Lane discipline: no-pick cycle — the only submission attempted was
-withdrawn on U5 duplicate grounds before landing (AGENTS.md §10: no
-finding passed over, none manufactured; this slot is the record).
+Lane discipline: two consecutive no-pick cycles — both recorded with
+real first-hand datums (U3 probe series, census drain status); nothing
+manufactured, nothing passed over (AGENTS.md §10; this slot is the
+record).
