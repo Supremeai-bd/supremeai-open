@@ -9,32 +9,32 @@
 
 - Identity: GLM Agent 19, Job ID 486803; zero-credential lane via the MCP
   tower; `mcp_call.py` session helper (session TTL self-heal).
-- Slot receipts r1–r13 landed (13/13 of this lane's cycles since restart):
-  #3619, #3664, #3705, r4 (P0 #3663 drained), #3815, #3915, #3982, #4021,
-  #4081, #4107/cee129c, #4153/0f5867e, #4176/148ab06, #4192/fc05585.
-  Durable firsts this lane owns: A2A serving-gap #3807/38983ae; false-
-  auto-close #3955/f85031a (merge-linked ≠ finding-resolved; standing U3
-  duty on #3806); self-correction #3966/64f1d54 (probe targets quoted
-  from artifacts, never memory); heartbeat anon-write #3978/003f2ea;
-  receipt-closure loop #4012/897f57a; 12-red blind-ladder census
-  #4151/0d1d215 (triage table docs/reports/
-  TRIAGE_REDS_LADDER_BLINDSPOT_2026-10-31.md); U5 duplicate withdrawal +
-  U2 alphabetical-sample correction (r12; #4172 landed the root fix).
-- **14:19+08 cycle (r14) — third consecutive no-pick clean-hold.**
-  1. **U3 #3806 6th consecutive data point, 06:19Z** (URLs quoted from
+- Slot receipts r1–r14 landed (14/14 cycles since restart, zero misses):
+  #3619, #3664, #3705, r4 (P0 #3663 drained), #3815, #3915, #3982,
+  #4021, #4081, #4107/cee129c, #4153/0f5867e, #4176/148ab06,
+  #4192/fc05585, #4218/466f401. Durable firsts this lane owns: A2A
+  serving-gap #3807/38983ae; false-auto-close #3955/f85031a (merge-
+  linked ≠ finding-resolved; standing U3 duty on #3806); self-
+  correction #3966/64f1d54 (probe targets quoted from artifacts, never
+  memory); heartbeat anon-write #3978/003f2ea; receipt-closure loop
+  #4012/897f57a; 12-red blind-ladder census #4151/0d1d215 (triage
+  table docs/reports/TRIAGE_REDS_LADDER_BLINDSPOT_2026-10-31.md;
+  end-state: 11/12 dispositioned, 3 parked in governance/maintainer
+  lanes); U5 duplicate withdrawal + U2 alphabetical-sample correction
+  (r12; #4172 landed the root fix).
+- **15:19+08 cycle (r15) — fourth consecutive no-pick clean-hold.**
+  1. **U3 #3806 7th consecutive data point, 07:19Z** (URLs quoted from
      landed artifacts): tower card paths /.well-known/agent-card.json,
      /a2a, /agent.json → 404 ×3; canonical gateway
      supremeai-api-ulw0.onrender.com card paths → 404 ×3. Controls
      green: tower /health 200 (degraded 20/21, stale:true); gateway
-     /health 200 healthy v2.0.0. **Six consecutive identical datums** —
-     a stable deployment gap, not a transient outage; false-resolve of
-     #3806 persists, owner re-open decision still pending.
-  2. **Census end-state:** suite 3F/2229P holds — the 3 remaining reds
-     are the rows my landed table routed away from the agent lane (#2
-     argparser pin governance; #4/#5 CVE guards maintainer-lane; CVE
-     mapping now also contracted fleet-side in #4203). Loop bare-mode
-     clean (0/5 claimable, observation idle; board 21 rows, all fleet
-     receipts, 0 in gates). Zero unclaimed agent-lane work.
+     /health 200 healthy v2.0.0. Seven identical datums — stable
+     deployment gap, not transient; false-resolve of #3806 persists,
+     owner re-open decision still pending.
+  2. **Board drain observed:** queue fell 21 → **1** in one hour
+     (fleet sweep closed receipt WOs; my slot WOs #4192/#4218 among
+     them). Sole survivor: #4234 (GLM 11's drain receipt). Loop
+     bare-mode clean (0/5 claimable, observation idle, 0 in gates).
 
 ## Lane-ecosystem notes (durable)
 
@@ -42,10 +42,9 @@
 - #4146 board-honesty; #4065/853be43 watchdog in-place-only; #4097
   flag purge → bare-mode; #4106 advisory-surface guard; githooks armed
   locally; #4067 strict preflight; #4172 ratchet heal + assert-message
-  root fix (alphabetical-sample trap); ratchet series at r8 (e2ef0fb)
-  still shrinking debt. WO #3433 duty closed.
+  root fix; ratchet series r8+ still shrinking debt. WO #3433 closed.
 
-Lane discipline: three consecutive no-pick cycles — each recorded with
-real first-hand datums (U3 series now 6 points, census drain verified
-end-to-end); nothing manufactured, nothing passed over (AGENTS.md §10;
-this slot is the record).
+Lane discipline: four consecutive no-pick cycles — each recorded with
+real first-hand datums (U3 series 7 points; board drain 21→1);
+nothing manufactured, nothing passed over (AGENTS.md §10; this slot
+is the record).
