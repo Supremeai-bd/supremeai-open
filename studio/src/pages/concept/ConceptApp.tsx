@@ -9,6 +9,7 @@ import { VSCodeView } from '../../concept/views/VSCodeView';
 import { DeviceLab } from '../../concept/views/DeviceLab';
 import type { ViewKey } from '../../concept/types';
 import '../../concept/styles.css';
+import { NeuralConstellationCanvas } from '../../components/common/NeuralConstellationCanvas';
 
 const viewTitle: Record<ViewKey, string> = {
   overview: 'Command room',
@@ -97,12 +98,16 @@ export function ConceptApp() {
   const filteredCommands = commandOptions.filter(({ view, description }) => `${viewTitle[view]} ${description}`.toLowerCase().includes(commandQuery.toLowerCase()));
 
   return (
-    <div className="app-frame" style={{ minHeight: '100vh', width: '100%' }}>
+    <div className="app-frame" style={{ minHeight: '100vh', width: '100%', position: 'relative' }}>
       <a className="skip-link" href="#main-content">Skip to main content</a>
+      
+      {/* Living Neural Constellation Background Canvas Animation */}
+      <NeuralConstellationCanvas />
+      
       <div className="ambient ambient-a" aria-hidden="true" />
       <div className="ambient ambient-b" aria-hidden="true" />
       <Sidebar active={active} onNavigate={setActive} onOpenCommand={openCommand} />
-      <div className="main-column">
+      <div className="main-column" style={{ position: 'relative', zIndex: 1 }}>
         <header className="topbar">
           <div className="topbar-title">
             <span className="topbar-mobile-mark">🔱</span>
