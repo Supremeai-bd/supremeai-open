@@ -143,6 +143,7 @@ class FederationSquad:
         "openrouter",
         "openai",
         "mistral",
+        "manus",
         "v0",
         "huggingface",
     ]
@@ -154,6 +155,7 @@ class FederationSquad:
         "openrouter": ["OPENROUTER_API_KEY"],
         "openai": ["OPENAI_API_KEY"],
         "mistral": ["MISTRAL_API_KEY"],
+        "manus": ["MANUS_API_KEY", "MANUS_API_KEYS"],
         "v0": ["V0_API_KEY"],
         "huggingface": ["HF_API_KEY", "HUGGINGFACE_API_KEY"],
     }

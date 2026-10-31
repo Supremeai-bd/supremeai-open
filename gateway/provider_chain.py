@@ -130,6 +130,7 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         "deepinfra": ("https://api.deepinfra.com/v1/openai", ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"]),
         "together": ("https://api.together.xyz/v1", ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"]),
         "xai": ("https://api.x.ai/v1", ["XAI_API_KEY", "XAI_API_KEYS"]),
+        "manus": ("https://api.manus.ai/v1", ["MANUS_API_KEY", "MANUS_API_KEYS"]),
     }
     if (not api_base or not api_key) and provider in _FALLBACKS:
         fb_base, fb_keys = _FALLBACKS[provider]
@@ -155,6 +156,7 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
         "deepinfra": ["DEEPINFRA_API_KEY", "DEEPINFRA_API_KEYS"],
         "together": ["TOGETHER_API_KEY", "TOGETHER_API_KEYS"],
         "xai": ["XAI_API_KEY", "XAI_API_KEYS"],
+        "manus": ["MANUS_API_KEY", "MANUS_API_KEYS"],
     }
     keys: list[str] = []
     if api_key:
@@ -189,11 +191,14 @@ async def _default_attempt(endpoint: Endpoint, payload: bytes) -> AttemptResult:
     last_result: AttemptResult | None = None
     for key in keys:
         started = time.monotonic()
+        req_headers = {"Authorization": f"Bearer {key}"}
+        if provider == "manus":
+            req_headers["API_KEY"] = key
         try:
             resp = await client.post(
                 url,
                 json=body,
-                headers={"Authorization": f"Bearer {key}"},
+                headers=req_headers,
                 timeout=30.0,
             )
         except (httpx.HTTPError, OSError, asyncio.TimeoutError):
