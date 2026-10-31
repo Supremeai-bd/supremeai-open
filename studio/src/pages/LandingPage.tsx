@@ -32,23 +32,16 @@ export const LandingHeader: React.FC = () => {
       </Link>
 
       <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
-        <Link to="/playground" className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors">
+        <Link to="/playground" className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors font-medium">
           <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
           <span>Guest Sandbox</span>
         </Link>
-        {onLanding ? (
-          <a href="#features" className="hover:text-emerald-400 transition-colors">Features</a>
-        ) : (
-          <Link to="/#features" className="hover:text-emerald-400 transition-colors">Features</Link>
-        )}
-        {onLanding ? (
-          <a href="#demo" className="hover:text-emerald-400 transition-colors">Live Demo</a>
-        ) : (
-          <Link to="/#demo" className="hover:text-emerald-400 transition-colors">Live Demo</Link>
-        )}
-        <button type="button" onClick={() => navigate('/about')} className="hover:text-emerald-400 transition-colors">
-          Our Story
-        </button>
+        <Link to="/chat" className="hover:text-cyan-300 transition-colors">
+          Live Assistant
+        </Link>
+        <Link to="/about" className="hover:text-cyan-300 transition-colors">
+          Our Vision
+        </Link>
       </nav>
 
       <div className="flex items-center gap-3">
@@ -88,20 +81,19 @@ export const LandingHeader: React.FC = () => {
       {/* Mobile dropdown menu */}
       {menuOpen && (
         <nav className="absolute top-16 left-0 right-0 z-modal flex flex-col gap-1 border-b border-white/10 bg-slate-950/95 px-4 py-4 backdrop-blur-xl md:hidden">
-          {onLanding ? (
-            <a href="#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</a>
-          ) : (
-            <Link to="/#features" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Features</Link>
-          )}
-          {onLanding ? (
-            <a href="#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</a>
-          ) : (
-            <Link to="/#demo" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Live Demo</Link>
-          )}
-          <button type="button" onClick={() => navTo('/about')} className="rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 hover:text-emerald-400 hover:bg-white/5 transition-colors">Our Story</button>
+          <Link to="/playground" onClick={closeMenu} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-cyan-300 hover:bg-white/5 transition-colors">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Guest Sandbox</span>
+          </Link>
+          <Link to="/chat" onClick={closeMenu} className="rounded-lg px-3 py-2.5 text-sm text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors">
+            Live Assistant
+          </Link>
+          <button type="button" onClick={() => navTo('/about')} className="rounded-lg px-3 py-2.5 text-left text-sm text-slate-300 hover:text-cyan-300 hover:bg-white/5 transition-colors">
+            Our Vision
+          </button>
           <div className="mt-2 flex flex-col gap-2 border-t border-white/10 pt-3">
             <button type="button" onClick={() => navTo('/login')} className="rounded-lg border border-white/10 px-3 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/5 transition-colors">Sign In</button>
-            <button type="button" onClick={() => navTo('/register')} className="rounded-lg bg-gradient-to-r from-emerald-500 to-purple-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-500/20 hover:opacity-95 transition-opacity">Get Started</button>
+            <button type="button" onClick={() => navTo('/register')} className="rounded-lg bg-gradient-to-r from-cyan-500 to-indigo-600 px-3 py-2.5 text-sm font-semibold text-white shadow-md shadow-cyan-500/20 hover:opacity-95 transition-opacity">Get Started</button>
           </div>
         </nav>
       )}
@@ -146,29 +138,10 @@ export const LandingPage: React.FC = () => {
       <div className="relative min-h-screen w-full bg-[#080b12] text-slate-100 overflow-x-hidden">
         <NeuralConstellationCanvas />
         <LandingHeader />
-        
-        {/* Living Dream Builder Interactive Hero */}
-        <div className="relative z-10">
-          <DreamBuilderHero />
-        </div>
 
-        {/* View mode switcher badge */}
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-slate-900/90 px-3.5 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur-md">
-          <Link
-            to="/playground"
-            className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors mr-2 border-r border-white/10 pr-3"
-          >
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Guest Dashboard</span>
-          </Link>
-          <span className="font-medium text-white">Vision Mode</span>
-          <button
-            type="button"
-            onClick={() => setViewMode('suite')}
-            className="ml-2 rounded-lg bg-cyan-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all"
-          >
-            Open Live Suite Cockpit &rarr;
-          </button>
+        {/* Living Dream Builder Interactive Hero */}
+        <div className="relative z-10 pb-16">
+          <DreamBuilderHero />
         </div>
       </div>
     );

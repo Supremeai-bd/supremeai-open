@@ -19,7 +19,7 @@ on:
         type: boolean
         default: false
       release_desktop:
-        description: 'Force release Desktop Client (.exe)'
+        description: 'Force release Desktop Client (.exe & NSIS setup)'
         required: false
         type: boolean
         default: false
@@ -115,11 +115,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-desktop:
-    name: "🖥️ Build & Release Desktop Client (Windows .exe)"
+    name: "🖥️ Build & Release Desktop Client (Windows Setup & Binary)"
     needs: detect-changes
     if: needs.detect-changes.outputs.desktop == 'true' || github.event.inputs.release_desktop == 'true'
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
 
@@ -138,9 +138,33 @@ jobs:
       - name: Build Desktop Web App
         run: npm run build --workspace=desktop
 
-      - name: Build Tauri Binary
-        run: npx tauri build --config src-tauri/tauri.conf.json --no-bundle
+      - name: Create Self-Signed Code Signing Certificate
+        shell: powershell
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=SupremeAI Technologies, O=SupremeAI, C=BD" -KeyUsage DigitalSignature -FriendlyName "SupremeAI Publisher" -CertStoreLocation "Cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(5)
+          $pwd = ConvertTo-SecureString -String "SupremeAI2026!" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath "$PWD\desktop\SupremeAI_Sign.pfx" -Password $pwd
+          Write-Host "Generated SupremeAI_Sign.pfx successfully."
+
+      - name: Build Tauri NSIS Installer & Binary
+        shell: cmd
         working-directory: desktop
+        run: npx tauri build --config src-tauri/tauri.conf.json
+
+      - name: Sign Binaries and Installer (Anti-SmartScreen)
+        shell: powershell
+        run: |
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1).FullName
+          if ($signtool) {
+            Write-Host "Found signtool: $signtool"
+            $pfx = "$PWD\desktop\SupremeAI_Sign.pfx"
+            Get-ChildItem -Path "desktop\src-tauri\target\release" -Include "*.exe","*.msi" -Recurse | ForEach-Object {
+              Write-Host "Signing: $($_.FullName)"
+              & $signtool sign /f $pfx /p "SupremeAI2026!" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
+            }
+          } else {
+            Write-Host "SignTool not found in runner image, skipping sign step."
+          }
 
       - name: Determine Desktop Version
         id: version
@@ -149,17 +173,23 @@ jobs:
           VER=$(node -p "require('./desktop/package.json').version")
           echo "version=desktop-v$VER" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Desktop Artifact
+      - name: Upload Desktop Artifacts
         uses: actions/upload-artifact@v6
         with:
           name: supremeai-desktop-windows-x64
-          path: desktop/src-tauri/target/release/*.exe
-          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/release/*.exe
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: warn
 
       - name: Publish Desktop GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: desktop/src-tauri/target/release/*.exe
+          files: |
+            desktop/src-tauri/target/release/*.exe
+            desktop/src-tauri/target/release/bundle/nsis/*.exe
+            desktop/src-tauri/target/release/bundle/msi/*.msi
           tag_name: ${{ steps.version.outputs.version }}
           name: "SupremeAI Desktop ${{ steps.version.outputs.version }}"
           draft: false

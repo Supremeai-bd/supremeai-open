@@ -176,16 +176,18 @@ pub async fn admin_login(
 #[tauri::command]
 pub async fn admin_verify_totp(
     otp: String,
+    remember_device: Option<bool>,
     state: State<'_, AdminSessionState>,
 ) -> Result<AdminLoginResult, String> {
     let otp = otp.trim();
     if otp.len() != 6 || !otp.chars().all(|character| character.is_ascii_digit()) {
         return Err("Enter the six-digit verification code.".to_string());
     }
+    let remember = remember_device.unwrap_or(true);
     let http = client()?;
     let response = http
         .post(format!("{GATEWAY_API}/api/admin/totp-verify"))
-        .json(&json!({ "otp": otp, "remember_browser": false }))
+        .json(&json!({ "otp": otp, "remember_browser": remember }))
         .send()
         .await
         .map_err(|_| "The SupremeAI authentication service could not be reached.".to_string())?;

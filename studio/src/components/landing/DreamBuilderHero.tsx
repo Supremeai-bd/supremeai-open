@@ -159,7 +159,7 @@ export const DreamBuilderHero: React.FC = () => {
           transition={{ duration: 0.6, delay: 0.2 }}
           className="mx-auto mt-5 max-w-2xl text-base text-slate-300 sm:text-lg sm:leading-relaxed"
         >
-          No complex jargon, no gatekeepers, and no limits on what you can build. 
+          No complex jargon, no gatekeepers, and no limits on what you can build.
           Step into a sovereign platform designed to turn your boldest ideas into living reality.
         </motion.p>
 
@@ -172,11 +172,10 @@ export const DreamBuilderHero: React.FC = () => {
                 key={pillar.id}
                 type="button"
                 onClick={() => setSelectedPillarId(pillar.id)}
-                className={`relative rounded-xl px-4 py-2 text-xs font-medium transition-all duration-300 sm:text-sm ${
-                  isSelected
+                className={`relative rounded-xl px-4 py-2 text-xs font-medium transition-all duration-300 sm:text-sm ${isSelected
                     ? 'border border-cyan-400/80 bg-cyan-500/15 text-white shadow-lg shadow-cyan-500/20 backdrop-blur-md'
                     : 'border border-white/10 bg-slate-900/60 text-slate-300 hover:border-white/25 hover:bg-slate-800/80'
-                }`}
+                  }`}
               >
                 <span>{pillar.badge}</span>
                 {isSelected && (
@@ -229,23 +228,22 @@ export const DreamBuilderHero: React.FC = () => {
                 <div className="min-h-[64px] font-mono text-sm sm:text-base text-slate-100 flex items-start">
                   <span>{typedPrompt}</span>
                   <span
-                    className={`ml-1 inline-block h-5 w-2 bg-cyan-400 ${
-                      isTyping ? 'animate-pulse' : 'opacity-70'
-                    }`}
+                    className={`ml-1 inline-block h-5 w-2 bg-cyan-400 ${isTyping ? 'animate-pulse' : 'opacity-70'
+                      }`}
                   />
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-3 text-xs">
                   <div className="flex items-center gap-2 text-slate-400">
                     <Rocket size={14} className="text-cyan-400" />
-                    <span>Click chips above to explore other dreams</span>
+                    <span>Select different pillars above to preview capabilities</span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate('/playground')}
                     className="flex items-center gap-1.5 rounded-lg bg-cyan-500/20 px-3 py-1 font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all"
                   >
-                    <span>Try with your own idea</span>
+                    <span>Launch in Sandbox</span>
                     <ArrowRight size={13} />
                   </button>
                 </div>
