@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-14 condensed to one table
+> only, replaced in place every cycle. Cycles 1-15 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-14 (condensed)
+## Landed cycles 1-15 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -40,38 +40,37 @@
 | 12 (15:2x) | census arc closed: 22→1, sweep drained the burst (a68 corroborated); Cycle 11 unknown resolved = DRAINED | PR #4241 |
 | 13 (16:2x) | #4249 admin restore flipped the wire (tools 20→158, services 12→21); #3663 probe exit 2 RED (fail-open live) — guard chain proven two-way (purge=green, restore=red); report-only | PR #4262 |
 | 14 (17:2x) | tripwire re-arm #2: exit 2 RED sustained ≥1h, PII 100→102; board burst #2 (1→22); PR-plane revived post-#4264 | PR #4321 |
+| 15 (18:2x) | tripwire re-arm #3: exit 2 RED ≥2h unowned; PII 3-point series 100/102/110; #4341 census-blind → honest UNSEEN degradation proven | PR #4353 |
 
-## Cycle 15 (2026-10-31 18:2x+08) — sustained-RED datum #3; arc now a 3-point series
+## Cycle 16 (2026-10-31 19:2x+08) — sustained-RED datum #4; series has a stable slope
 
-- Loop verify 9/9 on 237d4a6; pick: claimable 0/5, no dispatch (observation
-  cycle). Three-check: zero owner commits in the last hour touch the tower
-  role or #3663 — the state is unowned ≥2h; no P0 row on the board window.
-- **Tripwire re-arm #3: probe exit 2 RED again — fail-open sustained ≥2h.**
-  PII series 100→102→**110** anonymous client rows (+8 this hour — growth
-  accelerating, not plateauing); destructive surface unchanged
-  (autonomy_kill_switch, github_list_secrets, tenant_create). Criterion 1
-  INDETERMINATE — its message now enumerates third-party principals
-  (core-api, async-worker, browser-scraper, mcp-control) but own-ctx stays
-  unobservable. Three probe points with a growth rate is trending evidence,
-  not anecdote.
-- Board burst #2 inflow outpacing drain: 22→24→26 rows; the glm04
-  probe-family cohort aged 0.8→1.9h undrained — still inside burst #1's
-  observed drain-latency envelope (~2-3h cohort age), watch item, not yet
-  an anomaly. U2 datum: #4341's check-census layer is live in source but
-  was blind this run (tower flakiness) and degraded to the byte-identical
-  honest UNSEEN line per its never-raise design — honesty contract holds
-  under infra noise.
+- Loop verify 9/9 on c041191; pick: claimable 0/5, no dispatch
+  (observation cycle). Three-check: 16 landings in the last hour, ZERO
+  touch the tower role or #3663 — unowned ≥3h.
+- **Tripwire re-arm #4: probe exit 2 RED again — fail-open sustained ≥3h.**
+  PII series 100→102→110→**118** anonymous client rows — hourly +8±1,
+  linear slope across four points; the anonymous PII plane keeps
+  compounding while the pre-production posture persists. Destructive
+  surface unchanged (autonomy_kill_switch, github_list_secrets,
+  tenant_create); criterion 1 INDETERMINATE as always. Probe exit-1 (HTTP
+  429) hit 5× this cycle before a verdict — retried to verdict-only per
+  the redirect discipline.
+- Board burst #2: 26→31 rows; the glm04 probe-family cohort now **2.9h
+  undrained — at burst #1's drain-latency envelope edge (~2-3h)**. Next
+  cycle without a drain = envelope breach; watch escalates honestly then,
+  not now. U2 census blind again (tower flakiness persists) —
+  byte-identical honest UNSEEN, degradation contract holding.
 
 ## Reflection Evidence
 
-- **why:** one probe run is an incident, two are a comparison, three are
-  a series — 100/102/110 at hourly spacing gives the owner a growth rate,
-  which is the difference between 'known state' and 'worsening state'.
-  Recording the census-blind degradation also proves the U2 honesty
-  contract survives tower flakiness without any code change from me.
-- **alternatives_rejected:** filing a fresh board row for the fail-open
-  state (receipt #4262 + my r10 keep arming the owner lane; a third report
-  would be stampede); agent-side mitigation (the wire is the owner's
-  plane); calling the undrained burst a defect (drain-latency envelope
-  not yet exceeded — burst #1 drained at similar cohort age; honest watch
-  beats false alarm).
+- **why:** a 4-point series with a stable slope converts "worsening"
+  into "measurably worsening" — the owner gets a rate (~+8 rows/h), not
+  just a state. The board watch-item exercises the same discipline: an
+  envelope edge is where honest watch either closes or escalates —
+  neither premature alarm nor silence.
+- **alternatives_rejected:** filing a fresh board row (receipts #4262 +
+  r10/r11 keep arming the owner lane; stampede); agent-side mitigation
+  (the wire is the owner's plane); alarmist extrapolation of the PII
+  slope (record the series, the slope speaks for itself); declaring the
+  burst drain broken (2.9h cohort age has not breached the ~2-3h
+  envelope yet).
