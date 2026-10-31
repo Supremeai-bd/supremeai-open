@@ -2343,6 +2343,26 @@ def envelope_says_tool_not_found(resp: Any) -> bool:
     return False
 
 
+def _tower_rate_limited(exc: BaseException) -> bool:
+    """429-class (rate-limit) vs tower-down classifier — pure, transport-free.
+
+    বাংলা (GLM Agent 26, Job 486824, live প্রমাণ 2026-10-31T10:26Z): fleet-এর
+    hourly cron সবাই একই :26 উইন্ডোতে tower প্রোব করে — tower জীবিত অবস্থাতেই
+    429 দেয় (৩-উইন্ডো প্রোব: w1 bridge_work_queue OK rows=0, w2/w3 HTTP 429),
+    কিন্তু sibling-ক্লায়েন্ট ও urllib দুই পথেই এই স্থিতিকে সাধারণ
+    connection-failure হিসেবে তুলে ধরত — ফলে লুপ "plane dark" ছাপত এবং প্রতিটি
+    এজেন্ট মিথ্যা tower-down পাঠ পেত (r17 #4346 dark-cycle datum-এর আসল কারণ)।
+    এই শ্রেণিবিন্যাস নোট-স্তরকে সৎ কারণ দেয়: 429 মানে tower জীবিত, শুধু এই রান
+    অন্ধ — পরের সাইকেলই স্বাভাবিক রিট্রাই (hard-join বাজেটে in-run retry
+    ধরে নেওয়ার চেয়ে সৎ ও সরল)। String-শ্রেণি (ক্লাস-নাম + মেসেজ) বেছে নেওয়া
+    হয়েছে যাতে sibling import নিজেই ব্যর্থ হলেও শ্রেণিবিন্যাস কাজ করে।
+    """
+    if "RateLimited" in type(exc).__name__:
+        return True
+    msg = str(exc)
+    return "HTTP 429" in msg or "HTTP Error 429" in msg
+
+
 def _tower_queue_floor(timeout_s: float = 12.0) -> str:
     """R61/#2318 option B — honesty floor for the gh-absent skip line.
 
@@ -2395,10 +2415,19 @@ def _tower_queue_floor(timeout_s: float = 12.0) -> str:
                     "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
                 )
         except Exception as exc:  # noqa: BLE001 — floor must never raise
-            outcome["note"] = (
-                f"tower board probe failed ({type(exc).__name__}) — "
-                "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
-            )
+            if _tower_rate_limited(exc):
+                # বাংলা: 429-এ মিথ্যা "tower-down" নয় — সৎ শ্রেণি: tower জীবিত,
+                # fleet cron-window contention, এই রান অন্ধ (U2)।
+                outcome["note"] = (
+                    f"tower rate-limited ({type(exc).__name__}: {str(exc)[:120]}) — "
+                    "fleet cron-window contention, tower itself reachable (not tower-down); "
+                    "P0-drainage gate (Invariant 5) is still dark this run (U2)"
+                )
+            else:
+                outcome["note"] = (
+                    f"tower board probe failed ({type(exc).__name__}) — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
 
     try:
         t = threading.Thread(target=_probe, daemon=True)
@@ -2584,7 +2613,11 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
                 detail = " (window truncated)"
             outcome["note"] = f"tower board fallback: {len(board)} rows{detail}"
         except Exception as exc:  # noqa: BLE001 — fallback must never raise
-            outcome["error"] = f"tower board fallback failed ({type(exc).__name__})"
+            outcome["error"] = f"tower board fallback failed ({type(exc).__name__}: {str(exc)[:120]})"
+            if _tower_rate_limited(exc):
+                # বাংলা: 429-এ কারণ-স্তর সৎ রাখা — কনজ্যুমার লাইনে (PR-audit dark
+                # line, skip line) সরাসরি দেখা যায়: tower জীবিত, throttle খেটেছে।
+                outcome["error"] += " — rate-limited, not tower-down"
 
     try:
         t = threading.Thread(target=_probe, daemon=True)
