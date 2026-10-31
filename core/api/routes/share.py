@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
