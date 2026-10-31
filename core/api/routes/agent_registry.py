@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from api.dependencies import get_project_admin
-from core.agent_registry import AgentRecord, AgentRegistry, get_agent_registry
+from core.agent_registry import AgentRecord, get_agent_registry
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agent-registry"])
 
