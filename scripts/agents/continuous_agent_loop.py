@@ -3094,13 +3094,24 @@ def build_task_envelope(
     # আগের আচরণ (IMPLEMENT)।
     task_type = ROLE_TASK_TYPES.get(role, "IMPLEMENT")
 
+    # বাংলা: (#3933-শ্রেণির adhoc সততা, লাইভ-পর্যবেক্ষিত 2026-10-31 08:06+08 সাইকেল)
+    # adhoc এনভেলপে (issue: null) 'Closes #<issue_number>' নির্দেশটা অসম্ভব চুক্তি —
+    # এর পাশেই issue_reference_required:true; নির্দেশ অনুসরণকারী এজেন্ট বাধ্য হয়ে
+    # ইস্যু-রেফারেন্স বানায় (ঠিক সেই #1609 false-close verb-শ্রেণি যা ব্রিজ স্পষ্টভাবে
+    # আটকায়)। সৎ অনুসথিতি নীতি (SPEC §2) অনুযায়ী: issue থাকলেই close-ব্লুপ্রিন্ট,
+    # adhoc-এ adhoc-রেফারেন্স নির্দেশ — ইস্যু-রেফারেন্স ফেলসিফাই নিষিদ্ধ।
+    pr_blueprint_line = (
+        "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge."
+        if issue_number is not None
+        else "PR BLUEPRINT: ad-hoc envelope — no original issue to close. Reference the ad-hoc task id ('task-adhoc') in the PR description; do NOT fabricate an issue reference or a 'Closes #N' footer."
+    )
     specialist_prompt = "\n".join(
         [
             COMMON_RULES,
             "",
             f"ROLE: {role}",
             f"MANDATE: {role_description}",
-            "PR BLUEPRINT: PR must carry 'Closes #<issue_number>' in PR description to automatically close the resolved issue on merge.",
+            pr_blueprint_line,
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker also auto-demotes mechanically (#3050): an incident whose referenced run is superseded by >=5 green main runs of the same workflow (zero newer reds) is skipped at pick time — for explicit --issue N dispatches this manual check remains the backstop.",
             # বাংলা: কিউ-স্তরের claim লেবেল tower-এর লাইভ claim-কে পিছিয়ে থাকে (live
@@ -3151,7 +3162,9 @@ def build_task_envelope(
             "reference": "AGENTS.md §2.1 Pathway 1 + §8 (bridge_submit_patch)",
             "base_branch": "main",
             "pr_title_prefix": "fix(open):",
-            "issue_reference_required": True,
+            # বাংলা: adhoc (issue নেই) হলে issue-reference দাবি মিথ্যা চুক্তি —
+            # প্রকৃত issue-dispatch পথে True আগের মতোই।
+            "issue_reference_required": issue_number is not None,
             "branch_convention": "^(feat|fix|docs|chore|test|refactor|perf|bridge|group|contributor|hotfix|release|agent)/<slug>",
         },
     }

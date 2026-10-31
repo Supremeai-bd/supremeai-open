@@ -96,3 +96,24 @@ class TestHydrationRequestsBody(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+    def test_adhoc_envelope_issue_reference_not_required(self):
+        # (#3933-শ্রেণি adhoc সততা) issue: null এনভেলপে issue_reference_required:true
+        # একটা অসম্ভব চুক্তি — অনুসরণকারী এজেন্ট ইস্যু-রেফারেন্স ফেলসিফাই করতে বাধ্য হত।
+        env = cal.build_task_envelope(None)["task_envelope"]
+        self.assertIs(env["submission"]["issue_reference_required"], False)
+
+    def test_adhoc_envelope_blueprint_has_no_closes_demand(self):
+        env = cal.build_task_envelope(None)["task_envelope"]
+        prompt = env["specialist_prompt"]
+        self.assertNotIn("Closes #<issue_number>", prompt)
+        self.assertIn("task-adhoc", prompt)
+        self.assertIn("do NOT fabricate an issue reference", prompt)
+
+    def test_issue_envelope_keeps_closes_blueprint(self):
+        # প্রকৃত issue-dispatch পথের চুক্তি অপরিবর্তিত থাকতে হবে।
+        issue = {"number": 77, "title": "fix: real row", "state": "open", "body": "b"}
+        env = cal.build_task_envelope(issue)["task_envelope"]
+        self.assertIs(env["submission"]["issue_reference_required"], True)
+        self.assertIn("Closes #<issue_number>", env["specialist_prompt"])
