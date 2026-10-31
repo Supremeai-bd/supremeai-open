@@ -1456,11 +1456,19 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         // existing active WO (#2227): the zero-duplicate invariant guards WO
         // generation, so the paired PR closes/ref's the EXISTING work order
         // instead of spawning a duplicate issue for the same taskId.
+        const isReportOnlyReceipt =
+          /\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b/i.test(summary) ||
+          /\b(receipt|report-only)\b/i.test(taskId);
+
         let issueNumber: number | undefined;
         let issueUrl: string | undefined;
         if (pairedWorkOrder) {
           issueNumber = pairedWorkOrder.number;
           issueUrl = pairedWorkOrder.html_url;
+        } else if (isReportOnlyReceipt) {
+          // New plan: report-only receipts must not auto-create Bridge Work Order issues.
+          issueNumber = undefined;
+          issueUrl = undefined;
         } else {
         const issueBody = [
           "### Task ID",
@@ -1487,10 +1495,6 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
           "### Rollback Path",
           rollbackPath || "- [x] git revert-safe (pure code change; zero migration/config side effects)",
         ].join("\n");
-
-        const isReportOnlyReceipt =
-          /\b(report-only|docs-only|receipt|evidence\s+(addendum|refresh))\b/i.test(summary) ||
-          /\b(receipt|report-only)\b/i.test(taskId);
 
         const targetLabels = isReportOnlyReceipt
           ? [BRIDGE_RECEIPT_LABEL, "report"]
