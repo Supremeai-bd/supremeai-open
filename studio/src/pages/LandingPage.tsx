@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ConceptApp } from './concept/ConceptApp';
 
 // ROOT-CAUSE FIX (Refs #876 / bridge-20261023-frontend-router-restore):
 // CTAs previously targeted /signup (a route that does not exist) and
@@ -106,13 +107,9 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [typedText, setTypedText] = useState('');
-  // FRONTEND_SIMPLICITY rule 43 (jargon ban): user-facing demo copy must
-  // describe the user goal — "swarm" is on the banned list.
+  const [viewMode, setViewMode] = useState<'suite' | 'classic'>('suite');
   const fullText = 'What is the current health status of my AI assistants?';
 
-  // ROOT-CAUSE FIX (Our Story tab hash navigation): SPA pushState does not
-  // auto-scroll, so navigating to /#features or /#demo from another page
-  // needs an explicit scroll after the landing page mounts.
   useEffect(() => {
     if (!location.hash) return;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -125,7 +122,6 @@ export const LandingPage: React.FC = () => {
   }, [location.hash]);
 
   useEffect(() => {
-    // prefers-reduced-motion: skip the typing animation entirely
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (reduced) {
       setTypedText(fullText);
@@ -138,6 +134,26 @@ export const LandingPage: React.FC = () => {
     }, 75);
     return () => clearInterval(interval);
   }, []);
+
+  if (viewMode === 'suite') {
+    return (
+      <div className="relative min-h-screen w-full bg-[#080b12]">
+        {/* Quick view switch banner */}
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-slate-900/90 px-3 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur-md">
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span>SupremeAI Live Suite</span>
+          <button
+            type="button"
+            onClick={() => setViewMode('classic')}
+            className="ml-2 rounded px-2 py-0.5 text-[11px] font-semibold text-cyan-400 hover:bg-white/10"
+          >
+            Classic View
+          </button>
+        </div>
+        <ConceptApp />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-purple-500/30">
@@ -165,17 +181,17 @@ export const LandingPage: React.FC = () => {
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <button
               type="button"
-              onClick={() => navigate('/chat')}
+              onClick={() => setViewMode('suite')}
               className="w-full sm:w-auto rounded-xl bg-gradient-to-r from-emerald-500 to-purple-600 px-6 py-3 font-semibold text-white shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all"
             >
-              Try Live Guest Chat →
+              Open Live Suite →
             </button>
             <button
               type="button"
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/chat')}
               className="w-full sm:w-auto rounded-xl border border-white/10 bg-slate-900/80 px-6 py-3 font-semibold text-slate-200 hover:bg-slate-800 hover:text-white transition-all backdrop-blur-md"
             >
-              Create Free Account
+              Try Live Guest Chat
             </button>
           </div>
         </div>
