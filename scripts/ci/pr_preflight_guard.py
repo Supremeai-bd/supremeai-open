@@ -4,12 +4,21 @@ import argparse, re, subprocess, sys
 from pathlib import Path
 BRANCH_RE = re.compile(r"^(feat|fix|chore|docs|ci|test|refactor|perf|bridge|hotfix)/[a-z0-9][a-z0-9._/-]*$")
 ISSUE_RE = re.compile(r"(Closes|Fixes|Refs|Resolves)\s+#\d+", re.IGNORECASE)
+TOWER_SIG_RE = re.compile(r"##\s+Reflection Evidence", re.IGNORECASE)
+VERIFY_SIG_RE = re.compile(r"(3[- ]?Tier|Test Evidence)", re.IGNORECASE)
 def run(cmd): return subprocess.run(cmd, capture_output=True, text=True)
 def check_branch(branch):
     if branch in ("main","master"): return []
     return [] if BRANCH_RE.match(branch) else ["branch name %r invalid" % branch]
 def check_issue_ref(text):
-    return [] if ISSUE_RE.search(text) else ["missing issue reference (Closes/Fixes/Refs/Resolves #N)"]
+    errs = []
+    if not ISSUE_RE.search(text):
+        errs.append("missing issue reference (Closes/Fixes/Refs/Resolves #N)")
+    if not TOWER_SIG_RE.search(text):
+        errs.append("missing '## Reflection Evidence' header (Tower verification signature)")
+    if not VERIFY_SIG_RE.search(text):
+        errs.append("missing '3-Tier Verify' or 'Test Evidence' section (Tower verification signature)")
+    return errs
 def check_boundary(files):
     if not files: return []
     r = run([sys.executable, "scripts/ci/boundary_sanitization_guard.py", "--files", *files])
@@ -30,7 +39,8 @@ def self_test():
     else: print("PASS branch-ok")
     if not check_branch("badbranch"): fails+=1; print("FAIL branch-bad")
     else: print("PASS branch-bad")
-    if check_issue_ref("Closes #123"): fails+=1; print("FAIL issue-ok")
+    good_body = "Closes #123\n## Reflection Evidence\n3-Tier Verify passed"
+    if check_issue_ref(good_body): fails+=1; print("FAIL issue-ok")
     else: print("PASS issue-ok")
     if not check_issue_ref("no ref"): fails+=1; print("FAIL issue-missing")
     else: print("PASS issue-missing")
