@@ -61,6 +61,26 @@ import continuous_agent_loop as cal  # noqa: E402
 GATE_NOTE_FRAGMENT = "roster does not carry"
 
 
+def setUpModule() -> None:
+    """শেয়ার্ড init-once MCP session (18:04+08 root-fix) এই ফাইলে নিষ্ক্রিয় —
+    এই ফাইলের urlopen-মকগুলো ফিক্সড body-ক্রমে (প্রতি প্রোবের নিজস্ব
+    initialize→notifications→tools/call সহ) খাওয়ায়; helper ক্যাশ করলে
+    দ্বিতীয় প্রোবের init-কল বাদ গিয়ে ক্রম সরে যায়। fail-open "" ফেরত দিলে
+    প্রতিটি প্রোব পুরনো নিজস্ব-init পথেই চলে — ক্রম byte-অপরিবর্তিত।"""
+    _shared_session_patch = mock.patch.object(cal, "_tower_mcp_init_session", return_value="")
+    _shared_session_patch.start()
+    _SHARED_SESSION_PATCHES.append(_shared_session_patch)
+
+
+def tearDownModule() -> None:
+    for p in _SHARED_SESSION_PATCHES:
+        p.stop()
+    _SHARED_SESSION_PATCHES.clear()
+
+
+_SHARED_SESSION_PATCHES: list[mock._patch] = []
+
+
 def _sse(payload: dict) -> bytes:
     """Tower-shaped SSE body: event/data lines (raw-urllib transport reads it)."""
     return ("event: message\ndata: " + json.dumps(payload) + "\n").encode("utf-8")
