@@ -34,9 +34,11 @@
 
 ## Cycle 13 (03:09) — verified-clean no-pick: tower 429 flap survived (board dark = UNSEEN, nothing certified); rerun healthy 0/5; census 2355/0 at 2f1268c; #4471 handoff stands (coverage #4482/#4489 then #4533/#4528).
 
-## Cycle 14 (04:09+08 dispatch) — verified-clean no-pick; CI-gate local rehearsal green
+## Cycle 14 (04:09) — verified-clean no-pick: CI-gate local rehearsal 4/4 PASS at db943b7 (boundary_sanitization, contract_parity 3/3, frontend_performance, deploy_preflight step1-syntax); census 2355/13/0; standing watches re-verified (siblings dormant, loop #57-SSOT-compliant, tower 429 classification deliberate).
 
-1. Dispatch: #4471 claimable but receipt-coverage demoted (WOs #4533/#4528 in flight, anti-stampede U5). Census at db943b7: 2355 passed / 13 skipped / 0 failed — no reds from the #4525-#4549 landing window.
-2. NEW evidence — CI-gate local rehearsal at db943b7, all wired gate commands PASS: boundary_sanitization --self-test, contract_parity --self-test (3/3), frontend_performance --self-test, deploy_preflight --step1-syntax (0 syntax errors). The gates a landing must clear are healthy on HEAD.
-3. Standing watches re-verified: transit_prune / group_closeout_janitor swallow-to-empty still unwired/dormant (per #4470 class scan); continuous_agent_loop is #57-SSOT-compliant (imports claim_thresholds, #3573 hardcode removal confirmed); repo tower client already classifies 429 as rate-limited-not-tower-down (recent deliberate design, untouched).
-4. No defect found in the agent lane this cycle — no churn for its own sake (Invariant 7). #4471 remains maintainer-lane (bridge cannot write `.github/`).
+## Cycle 15 (05:09+08 dispatch) — verified-clean no-pick; local hook barrier proven
+
+1. Dispatch: #4471 still receipt-coverage demoted (WOs #4533/#4528 in flight, U5). Census at edc5b62: 2355 passed / 13 skipped / 0 failed.
+2. NEW evidence — the LOCAL hook barrier is proven green on HEAD: `.githooks/pre-commit --self-test` 7/7 PASS and `.githooks/pre-push --self-test` 9/9 PASS (the umbrella CI's ingress_hook_guard actually executes, incl. sibling pre-commit/post-commit verification and the negative control). Every agent sandbox commit/push gate is healthy.
+3. Finding (documented, no churn): `scripts/ops/pre_commit_hook.py` is orphaned legacy — its docstring's installer `scripts/install_hooks.py` no longer exists; `core.hooksPath=.githooks` makes it inert; a third hook generator lives in devops_security_scan.py (also inert under hooksPath). Deletion would churn spraw_guard allowlist + _INDEX.md + bandit baseline for zero functional gain — left in place, noted here.
+4. No agent-lane defect this cycle; no churn (Invariant 7). #4471 remains maintainer-lane.
