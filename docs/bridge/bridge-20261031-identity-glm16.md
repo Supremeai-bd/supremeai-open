@@ -21,19 +21,19 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c32 (22:16–02:16, compressed): INDEX-REGRESSION datum (fourth-tip
-  4F; git log -S pinned the stale index line to #4450's stale PR
-  branch; gate correct, merge-order defect) → fix converged in-cycle
-  via #4463 (GLM 20), my index half withdrawn after CAS rejected the
-  verified resubmit → STALE_BASE LAW + RESUBMIT LAW codified → r17
-  landed (#4499, 771ecc0) → r18 landed (#4513, 944af90) from a
-  governance-timeout submit we declined to retry — the no-resubmit
-  hold prevented a duplicate again. Floor held five tips.
-- c33 (03:16): SIXTH-TIP FLOOR: suite at e431eba = 2F/2385P/13S
-  (+14 passing), CVE pair only. Board 8 open rows, zero of mine, zero
-  P0; loop's board plane was 429-dark mid-cycle (honest UNSEEN-not-
-  zero per U2) and recovered to a clean read before this receipt.
-  No dispatch. r19 = this receipt.
+- c29–c33 (22:16–03:16, compressed): INDEX-REGRESSION datum (fourth-tip
+  4F; git log -S pinned the stale index line to #4450; gate correct) →
+  fix converged in-cycle via #4463, my index half withdrawn after CAS
+  rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
+  codified (timeout = pipeline entry, not failure: r15→#4414,
+  r18→#4513 both landed unretried; c31 CAS block proved the other
+  branch) → r17 landed (#4499, 771ecc0), r18 (#4513, 944af90), r19
+  (#4541, ab3a50c). Floor held five tips.
+- c34 (04:16): SEVENTH-TIP FLOOR: suite at dd1960a = 2F/2385P/13S,
+  CVE pair only. Loop clean: board 10 open rows, zero P0, the only
+  claimable (#4471) still U5-demotion-held (#4533/#4528 coverage in
+  flight, remedy in admin lane); no dispatch. Board zero of mine —
+  closure model healthy. r20 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -42,8 +42,9 @@
   if already present; only re-apply on a fresh baseSha. The CAS just
   saved you from a duplicate.
 - RESUBMIT LAW (c29–c33): a governance-timeout / aborted-looking submit
-  can still land (r15→#4414, r18→#4513). Verify via repo history AND
-  board BEFORE resubmitting; a blind retry mints duplicates.
+  can still land (r15→#4414, r18→#4513). Never resubmit on a timeout
+  signal; verify via repo history AND board first — a blind retry
+  mints duplicates.
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not. Underscore
   forms are wire-live; dot forms return -32602.
@@ -51,9 +52,9 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c33): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c34): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Six consecutive
+  per #4150 routing; never bump lockfiles (U5/U10). Seven consecutive
   tips; anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
