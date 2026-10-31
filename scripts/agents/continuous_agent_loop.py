@@ -3778,12 +3778,31 @@ def run_verify() -> list[dict[str, Any]]:
     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
     return evidence
 
+def is_autonomy_switch_disabled() -> bool:
+    """Check if autonomy kill-switch / pause flag is engaged (via file or environment).
+
+    Allows admin/dashboard to pause autonomous racing instantly.
+    """
+    if os.getenv("AUTONOMY_DISABLED", "").lower() in {"1", "true", "yes", "disabled", "l0"}:
+        return True
+    kill_file = Path(".autonomy_killswitch")
+    return kill_file.is_file()
+
 def run_dispatch_cycle(args: argparse.Namespace) -> int:
     """One dispatch cycle: board query → solver/envelope dispatch or cadence role.
 
     বাংলা: একক সাইকেলের পরিষ্কার ডিসপ্যাচ এক্সিকিউশন। বাহ্যিক শিডিউলার বা রানার
     দ্বারা সাইকেল পরিচালিত হয়।
     """
+    if is_autonomy_switch_disabled():
+        print(
+            "ACTION: Autonomy is PAUSED / KILLED (L0 Standby Switch engaged). "
+            "Autonomous loop dispatch is suspended without racing. "
+            "Remove .autonomy_killswitch or clear AUTONOMY_DISABLED to resume.",
+            file=sys.stderr,
+        )
+        print("ACTION: System is paused by Admin Kill-Switch (L0 Standby).")
+        return 0
     # বাংলা: R63/#2343 option B — start-of-run স্থানীয়-প্রয়োগ প্রোব। ডিসপ্যাচ-পথের
     # একেবারে শুরুতে একবার; সতর্কতাটি সবসময় stderr-এ (envelope-মোডের stdout-purity
     # ও dispatch stdout মার্কার-গণনা অস্পৃষ্ট)। --verify-only পথ এখানে পৌঁছায় না
@@ -4155,7 +4174,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 "Observation roles idle."
             )
         else:
-            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
+            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold).")
+            print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
         return 0
 
     for role in due_roles(state, cfg):
@@ -4168,6 +4188,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         return 0
 
     print("ACTION: System is clean and up to date.")
+    print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
     return 0
 
 def main() -> int:
