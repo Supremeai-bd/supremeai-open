@@ -908,23 +908,34 @@ def _tower_merged_landing_prs(
                 None,
             )
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
-            _, body = _post(
-                {
-                    "jsonrpc": "2.0",
-                    "id": call_id,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "github.list_prs",
-                        "arguments": {
-                            "repo": UPSTREAM_REPO,
-                            "state": "closed",
-                            "limit": min(int(per_page), 100),
+            # বাংলা (GLM Agent 04, Job 486718, U6): নাম-ঢেউ-সহনশীল কল — ঢেউ-৩
+            # (live 2026-10-31) dotted github.list_prs আবার মৃত (-32602); এক-বানান
+            # পিন scan-B পরিবহণকে অন্ধ করে রেখেছিল। যুগ-ক্রমে দুই বানান চেষ্টা;
+            # not-found স্বাক্ষরে পরের বানান, প্রথম জীবিত সাড়া জয়ী — hydrate
+            # idiom-এর সম-শ্রেণি; shared cure scripts/ci/tower_name_tolerance.py।
+            body = ""
+            for spelling in ("github.list_prs", "github.list_prs".replace(".", "_", 1)):
+                _, body = _post(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": call_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": spelling,
+                            "arguments": {
+                                "repo": UPSTREAM_REPO,
+                                "state": "closed",
+                                "limit": min(int(per_page), 100),
+                            },
                         },
                     },
-                },
-                sid,
-                timeout=45,
-            )
+                    sid,
+                    timeout=45,
+                )
+                _low = body.lower()
+                if "-32602" in _low and "not found" in _low:
+                    continue
+                break
             holder["body"] = body
         except Exception as exc:  # noqa: BLE001 — fallback must never raise out of the thread
             holder["error"] = f"tower landing fallback failed ({type(exc).__name__})"
@@ -2665,12 +2676,22 @@ def _tower_tool_roster_gate(tool_name: str, timeout_s: float = 20.0) -> str | No
             # বাংলা: রোস্টার-পেলোড পড়া যায়নি — অনুপস্থিতি প্রমাণিত নয়, fail-open।
             note = None
         else:
+            # বাংলা (GLM Agent 04, Job 486718, U6 Zero-Recurrence, live 2026-10-31):
+            # নাম-ঢেউ দ্বিমুখী — ঢেউ-২-তে ডট-ফর্ম লাইভ ছিল, ঢেউ-৩-তে আন্ডারস্কোর-ফর্ম
+            # ফিরেছে (tools/list 158 tools, underscore রূপ present)। এক-বানান মিল
+            # এক-বানান প্রোবের মৃত্যু-লাইনেই খোঁজে বসে ছিল — ফলে টুল রোস্টারে থাকতেও
+            # গেট ভুল "roster does not carry" নোট দিয়ে PR-plane মিথ্যা-অন্ধকার করছিল
+            # (লাইভ প্রমাণ: ডট রূপ → -32602, আন্ডারস্কোর রূপ → ডেটা; একই বুটে)।
+            # উভয়-বানান মিল hydrate/queue-candidates idiom-এর সম-শ্রেণি চুক্তি —
+            # shared cure scripts/ci/tower_name_tolerance.py। আন্ডারস্কোর বানানটি
+            # নিচের ক্যান্ডিডেট-সেটে derived (quoted-dead-name স্ক্যান চুক্তি অক্ষত)।
+            spellings = {tool_name, tool_name.replace(".", "_", 1)}
             note = (
                 f"tower tools/list roster does not carry '{tool_name}' "
                 f"(roster-purge state; {len(names)} tools visible) — probe skipped "
                 "with zero tool-call cycles; plane auto-revives if the tool "
                 "returns to the roster"
-            ) if tool_name not in names else None
+            ) if not (spellings & names) else None
     except Exception:  # noqa: BLE001 — যাচাই-ব্যর্থতা কখনো প্রোব আটকাবে না (fail-open)
         note = None
     if note is not None:
@@ -2742,12 +2763,24 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
             }, None)
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-pr-fallback-2"
-            _, body = _post({
-                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                "params": {"name": "github.list_prs", "arguments": {
-                    "repo": UPSTREAM_REPO, "state": "open", "per_page": min(int(limit), 100),
-                }},
-            }, sid, timeout=45)
+            # বাংলা (GLM Agent 04, Job 486718, U6): নাম-ঢেউ-সহনশীল কল — ঢেউ-৩
+            # (live 2026-10-31) dotted github.list_prs আবার মৃত (-32602); এক-বানান
+            # পিন open-PR ফলব্যাককে অন্ধ করে রেখেছিল (টুল রোস্টারে থাকতেও)।
+            # যুগ-ক্রমে দুই বানান চেষ্টা; not-found স্বাক্ষরে পরের বানান, প্রথম
+            # জীবিত সাড়া জয়ী — hydrate idiom-এর সম-শ্রেণি; shared cure
+            # scripts/ci/tower_name_tolerance.py।
+            body = ""
+            for spelling in ("github.list_prs", "github.list_prs".replace(".", "_", 1)):
+                _, body = _post({
+                    "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                    "params": {"name": spelling, "arguments": {
+                        "repo": UPSTREAM_REPO, "state": "open", "per_page": min(int(limit), 100),
+                    }},
+                }, sid, timeout=45)
+                _low = body.lower()
+                if "-32602" in _low and "not found" in _low:
+                    continue
+                break
 
             envelopes: list[dict[str, Any]] = []
             for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
