@@ -39,13 +39,25 @@ def _authorized(request: web.Request) -> bool:
     return request.headers.get("authorization", "") == f"Bearer {_BROWSER_SERVICE_TOKEN}"
 
 
-def _is_private_host(host: str) -> bool:
+def _is_safe_public_ip(ip_str: str) -> bool:
     try:
+        addr = ipaddress.ip_address(ip_str)
         return (
-            ipaddress.ip_address(host).is_private
-            or ipaddress.ip_address(host).is_loopback
-            or ipaddress.ip_address(host).is_link_local
+            addr.is_global
+            and not addr.is_multicast
+            and not addr.is_reserved
+            and not addr.is_loopback
+            and not addr.is_link_local
+            and not addr.is_unspecified
         )
+    except ValueError:
+        return False
+
+
+def _is_private_or_restricted_host(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return not _is_safe_public_ip(host)
     except ValueError:
         return False
 
@@ -57,15 +69,15 @@ async def _safe_url(raw_url: str) -> str:
     host = parsed.hostname.lower().rstrip(".")
     if _ALLOWED_HOSTS and host not in _ALLOWED_HOSTS:
         raise ValueError("destination host is not allowlisted")
-    if _is_private_host(host):
-        raise ValueError("private destination is not allowed")
+    if _is_private_or_restricted_host(host):
+        raise ValueError("private or restricted destination is not allowed")
     try:
         addresses = await asyncio.to_thread(socket.getaddrinfo, host, parsed.port or 443, type=socket.SOCK_STREAM)
     except OSError as exc:
         raise ValueError("destination could not be resolved") from exc
     for _, _, _, _, sockaddr in addresses:
-        if _is_private_host(sockaddr[0]):
-            raise ValueError("destination resolves to a private address")
+        if not _is_safe_public_ip(sockaddr[0]):
+            raise ValueError("destination resolves to a non-public or restricted address")
     return parsed.geturl()
 
 
@@ -94,11 +106,13 @@ async def _scrape_url(url: str) -> web.Response:
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            title = await page.title()
-            content = (await page.content())[:_MAX_RESPONSE_BYTES]
-            await browser.close()
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                title = await page.title()
+                content = (await page.content())[:_MAX_RESPONSE_BYTES]
+            finally:
+                await browser.close()
         return web.json_response(
             {"ok": True, "url": url, "title": title, "content_length": len(content)}
         )
@@ -134,10 +148,12 @@ async def _screenshot_url(url: str) -> web.Response:
 
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
-            page = await browser.new_page()
-            await page.goto(url, timeout=30000)
-            screenshot_bytes = await page.screenshot()
-            await browser.close()
+            try:
+                page = await browser.new_page()
+                await page.goto(url, timeout=30000)
+                screenshot_bytes = await page.screenshot()
+            finally:
+                await browser.close()
         return web.Response(body=screenshot_bytes, content_type="image/png")
     except ImportError:
         return web.json_response({"ok": False, "error": "playwright not installed"}, status=500)
