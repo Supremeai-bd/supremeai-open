@@ -31,10 +31,7 @@ GHOST_SENTENCE = "no closure request"
 
 
 def _run_checker() -> subprocess.CompletedProcess:
-    if shutil.which("python3"):
-        runner = "python3"
-    else:  # pragma: no cover - CI always has python3; keep pytest honest anyway
-        runner = sys.executable
+    runner = sys.executable
     return subprocess.run(
         [runner, str(CHECKER)],
         cwd=REPO_ROOT,
