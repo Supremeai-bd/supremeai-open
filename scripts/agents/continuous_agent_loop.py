@@ -4155,7 +4155,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 "Observation roles idle."
             )
         else:
-            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
+            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold).")
+            print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
         return 0
 
     for role in due_roles(state, cfg):
@@ -4168,6 +4169,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         return 0
 
     print("ACTION: System is clean and up to date.")
+    print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
     return 0
 
 def main() -> int:
