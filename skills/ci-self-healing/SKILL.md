@@ -1,6 +1,5 @@
 ---
 name: ci-self-healing
-version: 0.1.0
 description: Diagnose failing builds and tests, search prior incidents, propose or implement a safe fix, and rerun verification.
 triggers: [ci failure, build broken, test failing, self-healing, pipeline red]
 permission_level: write

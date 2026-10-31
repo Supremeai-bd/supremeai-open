@@ -37,7 +37,7 @@ All agents live, enter, and execute through exactly two unified pillars:
   6. **Zero-Recurrence Invariant (Anti-Regression & Continuous Learning):** Every identified mistake, defect, false closure, or contract violation MUST have an automated mechanical guard or test written against it. A mistake once discovered and remediated MUST NEVER recur. Machine enforcement supersedes human vigilance.
   7. **Loop-Driven Determinism:** Agents NEVER guess, speculate, or arbitrarily pick tasks. The continuous autonomous loop (`continuous_agent_loop.py`) is the sole SSOT for task assignment, dispatching, and role constraints. "The loop is the permission (U10)."
   8. **Universal Defect Ownership & Anti-Blindspot Invariant:** Whenever an agent discovers, uncovers, or observes ANY unhandled defect, pipeline failure (such as failed unmerged PRs or silent gate rejections), architectural blindspot, or unowned failure anywhere in the federation during execution, the agent MUST NEVER ignore, bypass, or silently discard it. The agent must record, claim, or surface an actionable structured work order with proper deduplication before considering its cycle complete. Avoidance of discovered defects is strictly prohibited.
-  9. **Full-Scope Completeness Invariant (End-to-End Implementation):** Agents (specifically `solver`, `coder`, `ci-fixer`) MUST NEVER deliver half-done or partial solutions. When a task requires database changes, schema migrations, environment configurations, security rules (RLS), or API wiring, the agent MUST write and submit the migration/config files as part of the exact same patch or PR. Leaving database schemas unmigrated, configs unmapped, or tests unwritten while marking a task "fixed" or "complete" is strictly prohibited.
+  9. **Full-Scope Completeness Invariant (End-to-End Implementation):** Agents (specifically `solver`) MUST NEVER deliver half-done or partial solutions. When a task requires database changes, schema migrations, environment configurations, security rules (RLS), or API wiring, the agent MUST write and submit the migration/config files as part of the exact same patch or PR. Leaving database schemas unmigrated, configs unmapped, or tests unwritten while marking a task "fixed" or "complete" is strictly prohibited.
 - **MUST AVOID:**
   - **NO Direct Push:** Never push directly to satellites or protected branches without PR gate.
   - **NO Root Shadowing:** Never put satellite code in repo root (`src/*`, `service/*`, `packages/*`).
@@ -136,5 +136,5 @@ Landing & Merge Policy (Zero Failed-Merge Invariant):
 When to use which:
 - New work: git checkout -b feat/<slug>, commit, push (pre-commit guards run)
 - Stale PR fix: merge + push --no-verify (above workflow)
-- Failed PR audit: loop reports failing PRs; ci-fixer marks existing issue as ci-failed
+- Failed PR audit: loop reports failing PRs; solver marks existing issue as ci-failed
 - Close PR: only if superseded or invalid branch name (document reason)

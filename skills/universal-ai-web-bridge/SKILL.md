@@ -1,6 +1,5 @@
 ---
 name: universal-ai-web-bridge
-version: 0.1.0
 description: Send prompts to an AI web interface through an authorized browser session and retrieve replies.
 triggers: [web bridge, browser automation, gemini web, chatgpt web]
 permission_level: read

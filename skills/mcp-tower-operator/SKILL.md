@@ -1,6 +1,5 @@
 ---
 name: mcp-tower-operator
-version: 0.1.0
 description: Discover and operate approved tools and services through capability contracts.
 triggers: [mcp tower, tool discovery, service health, provider status]
 permission_level: read
