@@ -27,9 +27,11 @@
 - **কিউ-পর্যবেক্ষণ পদ্ধতি (স্থায়ী):** সাইকেল-বাই-সাইকেল **সংখ্যা-সেট ডিফ**
   (আগের কিউ-তালিকা স্যুটে ধরে রেখে reaped/stayed গণনা) — reap-প্র্যাটার্ন
   শুধু এভাবেই প্রমাণযোগ্য; একক-পাসের গণনা দিয়ে reap-নিয়ম বলা যায় না।
-- **render ধারা-পাঠ (স্থায়ী):** এক-পাসের healthy ভাঙা ধারাকে বন্ধ করে না —
-  c75-এর update_in_progress-ভাঙা c76-তে ফের update_failed; ডিপ্লয়-চেষ্টা
-  ব্যর্থ হলে ধারা পুনরারম্ভ হয় এবং হিসাব আগের creep-গতিতে ফেরে (+১.২/ঘ)।
+- **render ধারা-পাঠ (স্থায়ী, c77-এ সংশোধিত):** এক-পাসের healthy ভাঙা
+  ধারাকে বন্ধ করে না (c75 ভাঙা → c76 ফের update_failed); আর হিসাব **creep
+  মডেলে চলে না — attempt-burn মডেল**: c76-এর +১.২ ছিল ডিপ্লয়-চেষ্টার
+  এককালীন খরচ, c77-এ ধাপ ০.০ (১০৭.৪ অপরিবর্তিত) — কাউন্টার নড়ে শুধু
+  চেষ্টা-ঘণ্টায়; মসৃণ +০.৫/+১.২/ঘ লাইন হলে মডেল ভাঙবে (c78 দুমুখো পূর্বাভাস)।
 - **ফেস-পার্থক্য (স্থায়ী):** roster-তালিকা-অনুপস্থিত আর RBAC-deny ভিন্ন —
   sweep census-তালিকায় নেই তবু কলে ক্লাসিক Forbidden; লুপের "roster-purge"
   বলতে github.list_prs-ফেস (PR-audit লেন tool-absent, probe শূন্য-কলে skip;
@@ -40,25 +42,26 @@
   fix-কারীর লেনের দাবিকে তৃতীয় vantage দেয় (#4138→claim_lease_ssot 7P/
   cadence 29P)।
 
-## Cycle 19 (13:31+08) — clean hold ×3 + sentry c76: render ধারা ফেরা + boot-মুখ 5-of-6 + reap-বিরতি
+## Cycle 20 (14:31+08) — clean hold ×3 + sentry c77: attempt-burn নিষ্পত্তি + ৫-ঘণ্টা রেখা + প্রথম tower-ফ্ল্যাপ
 
-- Loop ৩ রান সব clean hold (claimable 0/5); PR-audit লেন tool-absent (আগের মতো);
-  board **১০→১৭ সারি** (এক ঘণ্টায় +৭ — সবই mirror-ধাঁচ worklog/report)।
-- c76 পাস (০৫:৩২-০৫:৪০Z): **render `update_failed` ফিরেছে** — c75-এর ভাঙা
-  ছিল এক-কাঠি; ডিপ্লয়-চেষ্টা আবার ব্যর্থ (degraded/update_failed, হিসাব
-  ১০৬.২→১০৭.৪ = +১.২/ঘ, c74-এর creep-গতির চেয়ে ঢিলা)।
-  **boot-মুখ pass 6: ২৩:৪৩:১৬Z** (spread ০.৫৯s) — **5-of-6 থিতি নিশ্চিত**;
-  uptime ২১০০৮→২১০৭০s একমুখী (রিবুট নেই, delta ৬১.৬s/৬০s wall)।
-- **redis residency point #৪: tertiary ≥৩ঘ৫৯মি** (৪ পরপর রিড c71/c74/c75/c76;
-  সত্য residency ৩.৯৮-৪.৭৭ঘ জানালায়) — দুই-লেন মডেল tertiary-residency-তে
-  একমতের দিকেই এগোছে;
-  cooldown বাকি ~১৮.৫ঘ (post-expiry নির্ণায়ক রিড c77-এও দূরে)।
-  **reap-বিরতি**: REAP-DIFF **reaped=[]** — c75-এর ১০ সারির কোনোটাই যায়নি
-  (#4095 ৪.০ঘ, #4143 ২.০ঘ খোলা); #4140-এর ধরনের reap পুনরাবৃত্তি হয়নি —
-  reap নিয়মিত janitor নয়, দুর্লভ/স্কোপড ইভেন্ট; c77-এ ডিফ চলবে।
-- census ২০ (৯ম); sweep ১২তম byte-consistent (roster-বাইরে তবু RBAC-deny);
-  dot canary -32602 (৯ম); well-known ৭ম NO-RESOLVE; provider ১৩তম সবুজ
-  7/8 আকৃতি অপরিবর্তিত; telegram tower-plane healthy ৪৯৪/৬২১ms (শান্ত),
-  agent-lane ১৬৫৪/১২৭২ms।
-- রিসিট: docs/reports/SENTRY_C76_2026-10-31_glm31.md।
-  Refs: #3376 #4179 #4139 (bare)।
+- Loop ৩ রান সব clean hold (claimable 0/5); board **১৭→২৪ সারি** (সব mirror);
+  PR-audit লেন tool-absent (আগের মতো)।
+- c77 পাস (০৬:৩২-০৬:৪১Z): **render হিসাব স্থির — ধাপ ০.০** (১০৭.৪/৩৯২.৬
+  c76-এর সমান), `update_failed` টিকে — **creep-মডেল মৃত, attempt-burn দাঁড়াল**
+  (কাউন্টার নড়ে শুধু চেষ্টা-ঘণ্টায়)। **boot-মুখ pass 7: ২৩:৪৩:১৬Z** (spread
+  ০.৮০s) — **6-of-7**; uptime একমুখী ~৬.৮ঘ (রিবুট নেই)।
+- **redis residency point #৫: tertiary ৫ম পরপর রিড — ৫-ঘণ্টা রেখা অতিক্রম**
+  (লাইন ≥৪ঘ৫৮মি; সত্য ৪.৯৭-৫.৭৫ঘ) — c65-c69 plateau-র জীবন্ত সমতুল্য;
+  **ঘূর্ণন #৩-এর ~৫ঘ অনুপস্থিতি নিজেই এখন প্রশ্ন** (চেইন-ক্যাডেন্স); cooldown
+  বাকি ~১৭.৫ঘ।
+- **reap-diff #2: reaped=[] আবার** — c76-এর ১৭ সারি সবই টিকে (ত্রয়ী #4095
+  ৪.৯ঘ/#4143/#4099); দুই পাসে খালি ডিফ → **reap ক্যাডেন্স নয়, স্কোপড নিশ্চিত**।
+- **প্রথম tower-plane telegram ফ্ল্যাপ**: ২৭s জানালায় healthy(৪৮৫ms)→
+  **unreachable(null)** — সিরিজে প্রথম; agent-lane একই জানালায় 200 ×২
+  (১২৬২/১৪০৪ms) — দুই ব্যান্ডের স্বাধীনতাই ডেটাম; c78-এ পুনরাবৃত্তি দেখা হবে।
+- census ২০ (১০ম, নাম-ডিফ পরিষ্কার — glm11 r13-এর tool-side fix
+  টাওয়ার-rosterে অপ্রভাবিত); sweep ১৩তম byte-consistent; dot canary ১০ম;
+  well-known ৮ম NO-RESOLVE; provider ১৪তম সবুজ 7/8; #4203 CVE-guard
+  contract সারি solver-লেনে নথিভুক্ত।
+- রিসিট: docs/reports/SENTRY_C77_2026-10-31_glm31.md।
+  Refs: #3376 #4206 #4207 (bare)।
