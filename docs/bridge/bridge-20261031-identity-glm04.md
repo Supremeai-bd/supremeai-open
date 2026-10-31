@@ -14,9 +14,16 @@
    tower diff parser accepts **pure unified diffs only** (`diff --git`/`index`/mode/rename
    lines stripped; keep `---`/`+++`/`@@`); `full_file` only for brand-new paths,
    existing paths need `baseSha` CAS pin from `git rev-parse origin/main:<path>`.
-2. **Post-RBAC tower surface (live 2026-10-31):** 20 tools, zero `github.*` read family;
-   board/PR truth via tower planes + `git log origin/main` only; list rows camelCase,
-   merged-truth only via `pull_number` addressability (AGENTS.md Rule 4 — my remedy, #3526).
+2. **Tower surface epochs (live 2026-10-31, post-#4249 admin restore):** roster
+   now 158 tools and the `github_*` read family is BACK (underscore forms —
+   dotted `github.list_prs` is -32602 again; the wave is BIDIRECTIONAL, so
+   every caller must try both spellings — roster gates match both forms,
+   wire calls derive the second spelling via `"x.y".replace(".", "_", 1)`).
+   A single-spelling roster gate false-darks a live tool (my 16:04+08 find:
+   PR-plane stayed "dark" for hours while 10 open PRs were one call away);
+   fixed in the loop + pinned by tests. Board/PR truth also via
+   `git log origin/main`; list rows camelCase, merged-truth via
+   `pull_number` addressability (AGENTS.md Rule 4 — my remedy, #3526).
 3. **Liveness planes (R92 subject, still open):** `agent_heartbeat` (redis, 90 s online
    prose / 300 s TTL, rotating account primary→secondary→tertiary) is disjoint from the
    repo-side `agent_identity.py` JSON (600 s/1800 s) and from `slot_status` (registry
@@ -51,7 +58,17 @@
 - R92 Plan-1/2 — heartbeat payload self-describing + loop-side ping or lane-alive signal.
 - R96 Plan-1..4 — close-on-prune lifecycle + sweep net + label short-circuit + U6 pin.
 - R94 board ground-truth protocol paragraph (owner/docs lane).
-- PR-plane dark post-RBAC — glm22 receipt #3959, options A/B/C, owner decision pending.
+- PR-plane dark post-RBAC — ROOT-CAUSED & FIXED this cycle (16:04+08): the
+  #4249 restore revived the tool under its underscore name; the loop's
+  single-spelling roster gate + dotted wire call kept it fake-dark. Gate now
+  matches both spellings; both PR probes try in-order; 3 new U6 tests
+  (76 passed) + live proof: 10 open PRs visible first call. Revive is
+  loop-side, rides my next PR.
+- core nightly-RED (P0 #4250) — triaged report-only (7/7 failedJobs =
+  scheduled autofix; private-repo `upload-sarif` can never succeed;
+  one-line visibility-gate recipe) in
+  `docs/reports/TRIAGE_4250_CORE_PRIVATE_SARIF_NIGHTLY_RED_2026-10-31.md`;
+  admin lane; the mirror regenerates nightly until Option A lands.
 - render-primary `update_failed`: c75's one healthy pass RELAPSED — degraded/update_failed x2, pass 13 (sentry c76, #4206); #3699 boot classes remain owner-lane.
 - Blind-ladder class open past #4138's tier-9: 12 red faces invisible to the ladder while --verify-only prints 9/9 PASS (glm19 #4151).
 - CVE lanes: js/npm 2-red census re-proven live at 062f8efd (npm: follow-redirects@1.16.1 devtools-audit GHSA-mrwp-f3q8-3g9p; js: 6 pairs) — glm28 OSV-verified owner recipe #4204/#4203 receipt-covers it; pin bumps are maintainer decisions (both guards' own routing), NOT agent-lane work.
@@ -59,14 +76,15 @@
 
 ## বাংলা সারসংক্ষেপ
 
-স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, post-RBAC ২০-টুল পৃষ্ঠ, তিনটি
-disjoint liveness plane, আর radar-নম্বর hygiene — ভবিষ্যৎ চক্র আর নতুন করে শিখবে না।
-leasegate লেন পূর্ণ চক্রে বন্ধ: আমার triage (#4125) → glm12-র Option A (#4138) → লাল জুটি সবুজ।
-এই চক্রের নতুন আবিষ্কার: py-plane CVE-লেন পাইপ-অডিট-অনুপস্থিতিতে অন্ধ — এটা
-সক্রিয় করলেই ২টি লুকানো NEW-DRIFT জুটি (filelock, pillow; osv.dev-যাচাইকৃত) ধরা পড়ে,
-যা কোনো সেন্সাসেই আগে আসেনি। মালিক-রুটিং maintainer-এর; আমি baseline বা pin স্পর্শ করিনি।
-এই ফাইলই আমার একমাত্র worklog; পুরনো বিস্তারিত merged receipts-এ আছে, এখানে শুধু
-সারণি। প্রতিটি watch item owner-lane-এ receipt-covered — যতক্ষণ না সেটা বদলায়,
+স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, tower-সারফেস নাম-ঢেউয়ের
+দ্বিমুখী সত্য (উভয় বানান চেষ্টা বাধ্যতামূলক — এক-বানান গেট জীবিত টুলকেও
+মিথ্যা-অন্ধকার দেখায়), তিনটি disjoint liveness plane, আর radar-নম্বর hygiene।
+এই চক্রের মূল-কারণ নিরাময়: PR-plane মিথ্যা-অন্ধকার (টুল ফিরেছিল, গেট চিনতে
+পারেনি) — লুপ-নিরাময় + ৩টি U6-টেস্ট; এবং সেই উন্মোচনই রাতের-শিফট অন্ধ-লেন
+(P0 #4250) প্রকাশ করল: core-এর প্রতি-রাতের লাল = প্রাইভেট-রিপোতে অসম্ভব
+SARIF-আপলোড; admin-এক-লাইন-রেসিপিসহ report-only ট্রায়াজ জমা। এই ফাইলই আমার
+একমাত্র worklog; পুরনো বিস্তারিত merged receipts-এ আছে, এখানে শুধু সারণি।
+প্রতিটি watch item owner-lane-এ receipt-covered — যতক্ষণ না সেটা বদলায়,
 re-file করা duplicate হবে।
 
 ## Cycle log (append one line, prune on your own cycle per keep-it-small)
@@ -74,9 +92,14 @@ re-file করা duplicate হবে।
 - **2026-10-31 11:04→13:04+08 (condensed)** — leasegate arc end-to-end: #4124's
   time-gate regression caught → triage #4125 → glm12 Option A #4138 → pair re-proven
   GREEN (36 passed); worklog r2 landed (#4183).
-- **2026-10-31 14:04+08** — loop clean (claimable 0/5, P0 none). CVE census: js/npm
-  2-red re-proven live at 062f8efd, glm28 recipe receipt-covers, no dup. NEW DISCOVERY:
-  pip-audit-installed run exposes py-plane blind lane — filelock@3.32.7 (20 new ids)
-  + pillow@12.3.0 (17 new ids) NEW-DRIFT, osv.dev-verified, latent red
-  test_py_dep_cve_guard::test_live_check_passes_at_landing_head. Worklog r3 in-place
-  (this patch). No claim, no pin/baseline edits.
+- **2026-10-31 14:04+08 (condensed)** — py-plane pip-audit blind-lane discovery
+  (filelock/pillow NEW-DRIFT, osv-verified, latent red); worklog r3 landed (#4217).
+- **2026-10-31 16:04+08** — NEW root cause closed: PR-plane fake-dark — the
+  #4249 restore revived `github_list_prs` but the loop's single-spelling gate
+  + dotted call kept reporting "roster does not carry"; gate/probes now
+  wave-tolerant (76 tests green + live 10-PR proof). Same fix UNTOMBSTONED
+  the night-shift blind lane: P0 #4250 root-caused (core private-repo SARIF
+  nightly-red, 7/7 job-gated) — report-only triage with admin recipe
+  (protected path, U5 dedup vs glm10 #4251/glm09 #4252: they proved the
+  access wall, I read past it and named the defect). Loop fix + triage doc
+  + worklog r4 (this patch) = three separate PRs.
