@@ -4044,6 +4044,17 @@ def mark_issue_leased(issue_number: str | int, now: float | None = None, path: P
     except Exception:
         return False
 
+def get_skipped_roles(config: dict[str, Any] | None = None) -> set[str]:
+    """Return configured set of roles to skip from CADENCE_FILE or env var SUPREMEAI_SKIP_ROLES."""
+    raw_env = os.getenv("SUPREMEAI_SKIP_ROLES", "")
+    skipped = {r.strip() for r in raw_env.split(",") if r.strip()}
+    cfg = config or load_cadence_config()
+    for r in cfg.get("skip_roles", []):
+        if str(r).strip():
+            skipped.add(str(r).strip())
+    return skipped
+
+
 def role_is_due(
     role: str,
     last_run_ts: float | None,
@@ -4057,6 +4068,9 @@ def role_is_due(
     """
     cfg = config or load_cadence_config()
     canon = canonical_role(role, cfg)
+    skipped = get_skipped_roles(cfg)
+    if role in skipped or canon in skipped:
+        return False
     scheduled = cfg.get("scheduled_roles", list(DEFAULT_SCHEDULED_ROLES))
     if canon not in scheduled and role not in scheduled:
         return False

@@ -12,6 +12,7 @@ from __future__ import annotations
 import ast
 import inspect
 import json
+import os
 import sys
 import tempfile
 import time
@@ -126,6 +127,15 @@ class TestRoleEpisodeRotation(unittest.TestCase):
         store = {"auditor": now}
         cfg = {"scheduled_roles": ["task-auditor"], "merged_roles": {"task-auditor": "auditor"}}
         self.assertEqual(cal.due_roles(store, cfg), [])
+
+    def test_due_roles_respects_skip_roles(self):
+        # SUPREMEAI_SKIP_ROLES env var or skip_roles in config disables role
+        with unittest.mock.patch.dict(os.environ, {"SUPREMEAI_SKIP_ROLES": "ecosystem-scout"}):
+            self.assertEqual(cal.due_roles({}, self.CFG), ["auditor"])
+
+    def test_due_roles_respects_skip_roles_config(self):
+        cfg = {"scheduled_roles": ["ecosystem-scout", "auditor"], "skip_roles": ["auditor"]}
+        self.assertEqual(cal.due_roles({}, cfg), ["ecosystem-scout"])
 
     def test_mark_role_run(self):
         store = {}
