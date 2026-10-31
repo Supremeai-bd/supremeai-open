@@ -403,7 +403,12 @@ def test_live_repo_sweep_passes() -> None:
     # 93 -> 94 in the SAME change that advances the index pointer 93 -> 94 (R93 = #3993/#3994
     # anchor-routing result-None hole lane, offline URL-capture repro inside the defining report)
     # — see index drift log pass 50 + docs/reports/SCOUT_R93_ANCHOR_ROUTING_NONE_HOLE_2026-10-31.md.
-    assert r["pointer"] == 94, "pointer drifted — regenerate expectation with the index"
+    # and after pass 51 (GLM Agent 16, Job 486792, cycle 08:16+08 2026-10-31): this pin co-advances
+    # 94 -> 95 in the SAME change that advances the index pointer 94 -> 95 (R94 = credential-free
+    # board ground-truth freshness hierarchy lane, 61-open ghost-board vs tower single-fetch
+    # spot-check evidence inside the defining report) — see index drift log pass 51 +
+    # docs/reports/SCOUT_R94_GROUND_TRUTH_FRESHNESS_2026-10-31.md.
+    assert r["pointer"] == 95, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"

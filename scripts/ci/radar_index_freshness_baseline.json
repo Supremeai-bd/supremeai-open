@@ -1,12 +1,12 @@
 {
   "schema": "radar-index-freshness-baseline/2",
   "generatedAt": "2026-10-31",
-  "headAtGeneration": "3986703 (refactor(agents): consolidate auditor into Tower and unify coder/fixer into solver (#3995))",
+  "headAtGeneration": "4e553bd (feat(bridge): Scout R93 radar (docs-only, zero code edits by the filer; registry co-obligation files only): #3993/#3994 anchor-routing result-None hole. The direct-to-anchor ternary 'get_anch… (bridge-20261031-r93-anchor-none-hole-glm04-r1) (#4003))",
   "probe": "scripts/ci/radar_index_freshness_guard.py",
   "note": "shrink-only floor over the citation-ghost and commit-subject-ghost classes (#2187: D lands first-run-clean — its floor is born empty); key = [kind, file, base] / [kind, base, subject]. A/B invariant violations are NEVER floorable — they are structural and always fail. /2 adds the enforced roster (invariant E, #2392 component 1): a pointer regression or row eviction fails closed — update roster in the same PR that moves the registry, mirroring the pin-accompanies-pointer discipline.",
   "floor": [],
   "roster": {
-    "pointer": 94,
+    "pointer": 95,
     "rows": [
       "R1",
       "R2",
@@ -103,7 +103,8 @@
       "R90",
       "R91",
       "R92",
-      "R93"
+      "R93",
+      "R94"
     ]
   },
   "pointerAtGeneration": 94,
