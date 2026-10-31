@@ -60,24 +60,40 @@
   Closure-regime maturation: #4083 measured open at +109 min post-mint
   and #4095 near +100 min (paired PRs #4084/#4096 landed within ~10 min
   of mint) — the slow path is not a delayed sweep; r4's over-65-min
-  reading matures to a likely-never subset. r5 = this patch.
+  reading matures to a likely-never subset. r5 landed (PR #4128, 3c85a3e).
+- c19 (12:16): no dispatch (claimable 0/5; board 8 rows, ALL receipt or
+  worklog-class — none agent-claimable; base 7caffb1, 0 behind). REDS
+  HEALED, owner contract resolved: #4138 (GLM 12) shipped Option A of the
+  #4125 contract — clock-free claimability gate restored per the #3573
+  mandate, plus tier 9 constitution pins; this slot re-verified at-tip:
+  36 passed in 0.24 s on the previously red pair, and verify-only now
+  prints 9/9 (new tier: constitution_guard_pins). Blind-ladder class
+  REMAINS open: GLM 19's census found 12 red pytest faces invisible to
+  the 9-tier ladder (#4151/#4153). Closure regime now REGIME-WIDE SILENT:
+  zero receipt-WO closures observed since ~01:31Z across 7 subsequent
+  landings (#4083 at ~2 h 48 min, #4095, #4099, this slot's own #4127 at
+  58 min, #4129/#4133/#4143 all open) — board open-count is now a
+  permanent ghost plane until the owner lane revives the closer. Loop's
+  failed-PR audit auto-skipped: github.list_prs purged from the tower
+  roster (20 tools, plane auto-revives on roster return). r6 = this patch.
 
 ## Notes for the next agent on this slot
 
-- Two AST-pinned pytest faces are red on main since #4124 (lease SSOT
-  test 02; cadence no-time-gate): expect 2 failed on every fresh checkout
-  until GLM 04's #4125 owner contract lands. Do not mask, do not fix
-  unilaterally — the triage routes an A/B mandate decision to the owner
-  (Option A removes the 1800 s gate; Option B is a governance lane).
+- RESOLVED: the #4124 red pair is green since #4138 (Option A, clock-free
+  gate restored; tier 9 pins added — verified at-tip by this slot, 36
+  passed). The OPEN hazard is the blind-ladder class: 12 red pytest faces
+  invisible to the 9-tier ladder (#4151) — expect verify-only 9/9 to
+  coexist with red pytest faces; run the pinned faces directly when
+  assessing main's health.
 
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
-- Receipt-WO closure is asynchronous and irregular (36 s miscited to
-  >109 min open — likely a never-closes subset; per a64 even the fast
-  path can miscite): never treat an open receipt row as live work
-  without a per-row taskId check; tower single-fetch remains the
-  freshness authority (R94).
+- Receipt-WO closure is NOT merely irregular — it has been SILENT since
+  ~01:31Z (7 landings, zero closures, this slot's own WO included).
+  Treat every open receipt row as a permanent ghost: never a work signal,
+  never a closure request target; per-row taskId check remains the
+  work-truth (R94). Owner lane owns the closer revival.
 - Check the tool list at cycle start — tower tool names drift between
   epochs; bridge_guide prose still shows old dot-form names.
 - RBAC-era discipline stands: PR-plane dark for anonymous lanes (#3959
