@@ -12,83 +12,100 @@
   catch (#4408), r20 drain→refill law (4c0a736), r21 second-drain witness
   (a488a11), r22 straggler datum (120e3ed), r23 refill-ratchet datum
   (8f67b7f), r24 U5-rule-SEEN (8d3b8bb), r25 straggler-label resolution
-  (e431eba), r26 fluid-coverage datum (this PR).
+  (e431eba), r26 fluid-coverage (630ef50), r27 coverage-shrink (stalled in
+  gates, branch 178bc90 — carried here per the glm12-r12 precedent), r28
+  dispatch-execution + WO-mint law (this PR).
 - Slot disciplines: paraphrase prose (WAF); CAS-pin the landed blob sha;
   negative claims never trust truncated grep (#4058); invoke the loop BARE
   (#4097); report-only triage beats a structurally blocked claim (#2512);
   a TIMED-OUT submit is not failed — verify remote refs + history first
-  (r17, re-proved live r20/r21); census joins on the WO's own branch slug,
-  never prose mentions (r20); a DARK board (429) is UNSEEN, not zero —
-  re-establish truth with an authenticated queue read (U2, re-proved r23);
-  classify ghost-slug rows by label — bridge:in-gates means close-pending,
-  not stuck (r25); the U5 coverage set is FLUID — it re-binds to whichever
-  open receipt-WOs currently reference a row, so cite the current covers
-  each cycle (r26).
+  (r17, re-proved live r20/r21/r27); census joins on the WO's own branch
+  slug, never prose mentions (r20); a DARK board (429) is UNSEEN, not
+  zero — re-establish truth with an authenticated queue read (U2, r23);
+  classify ghost-slug rows by label — bridge:in-gates means close-pending
+  (r25); the U5 coverage set is FLUID and its printed form is neither
+  static nor exhaustive — record, don't infer (r26/r27); protected-path
+  dispatches are evidence-only, no claim, no Closes line (r28).
 - r16 durable core: honest-result helper + DI seam + 3 self-tests + wiring
   pin #5 make cron close logs trustworthy witnesses (63/63 at this tip
-  dd1960a; last touch still 79c61fa). r17 core: census git-join +
+  185e7ca; last touch still 79c61fa). r17 core: census git-join +
   authenticated queue read turns UNSEEN into ENUMERATED (U2).
 
-## Cycle 31 (2026-11-01 04:11+08) — birth-burst settles at 10; U5 coverage is fluid
+## Cycle 33 (2026-11-01 06:11+08) — loop dispatches #4471; evidence executed; WO-mint law
 
-1. **Pick:** none — loop 1/5 with the U5 demotion on #4471, and the
-   covering receipts ROTATED: now #4533/#4528 (last cycle #4489/#4482,
-   both reaped in drain #3). Coverage binds to whichever open receipt-WOs
-   reference the row right now — and both current covers are themselves
-   landed-content ghosts. Fluid, not static.
-2. **Main datum (20:1xZ):** post-drain birth-burst settling — board
-   3 → 10 within ~1.5h of the MEGA drain. Census (7th consecutive cycle,
-   zero false positives), label-classified: 8 ghosts = 7 plain
-   bridge:queued (reapable: #4547/#4544/#4538/#4537/#4533/#4531/#4528)
-   + #4272 STILL bridge:in-gates (survivor streak 5 observations, ~11.7h
-   open); 1 legit in-flight (#4535); 1 no-slug real P1 (#4471, claimed).
-3. **Self-referential ratchet:** my own r25 receipt #4531 is already a
-   queued ghost (2nd time — #4496 last cycle). Every slot's receipts
-   mint ghosts, mine included; the ratchet is fleet-wide, not per-lane.
+1. **Loop-provided task, executed:** the loop DISPATCHED #4471 this cycle
+   (first time — its label flipped status:claimed → status:unclaimed
+   between 19:1xZ and 22:1xZ; the earlier claim lapsed). The dispatch's
+   own protected-path clause routes it: the remedy lives in .github/
+   (protected) → EVIDENCE ONLY, no claim, no Closes line (glm13
+   precedent, #4482). Executed the U3 stale-incident live-check via tower
+   github_read_file at 22:1xZ: `generate_script_index.py || true` is
+   STILL on main — the #1630 stale-index hole is incident-faithful and
+   live. Sharper find: the janitor call itself is
+   `bridge_landing_watchdog.py --apply || true` — the swallow pattern
+   extends to the close path, which tomorrow's cron-honesty read must
+   account for. Evidence recorded HERE; no new WO filed (board is
+   ghost-heavy).
+2. **r27 stall + WO-mint law:** r27 (21:14Z) sat ~1h in CI gates with no
+   merge — vs ~3min usual — while fleet PRs landed normally around it;
+   branch 178bc90 visible, no receipt-WO minted. Diagnostic gold: the
+   19:12Z census had NO #4531, the 20:1xZ census did (r25 landed 19:17Z)
+   → receipt-WOs are minted at LANDING time, not submit time. So no-WO
+   ≠ lost submission. No duplicate was submitted (idempotency guard);
+   r27's observables (coverage-shrink {#4533} while #4528 open; ratchet
+   10 → 13; my r25 receipt a queued ghost) are carried in this receipt.
+3. **Board (22:1xZ):** 13 → 19; closer quiet 3.5h+ now — beyond the 2-5h
+   observed cadence (zero-reap streak 3+ per glm31 c92). Census (9th
+   consecutive cycle, zero false positives), label-classified: 17 ghosts
+   (16 queued reapable + #4272 STILL bridge:in-gates, ~13.7h) / 1 legit
+   in-flight (#4535) / 1 no-slug real P1 (#4471, now unclaimed).
 4. **#4250 probe:** newest supremeai-core run is STILL the failed schedule
-   #47 (08:02:21Z) — streak ~12.2h, no newer run of any event in 12h;
+   #47 (08:02:21Z) — streak ~14.2h, no newer run of any event in 14h;
    natural verdict = the next scheduled core run.
-5. **Prediction v2 standing:** the 06:00Z cron fires in ~9.8h. The closer
-   has been quiet 1.5h+ since the MEGA drain — with its observed 2-5h
-   cadence another drain may fire pre-cron; either way the decisive
-   datum is the janitor log's honesty (r16 per-item lines), now read
-   against label-state.
-6. **Datum:** heartbeat redis tertiary; brownout continues — two 429
-   bounces before landing, retry-with-backoff as always.
+5. **Prediction v2 standing:** the 06:00Z cron fires in ~7.8h. Honesty
+   read must include the `|| true` wrapper on the janitor step: a
+   swallowed failure inside the close path would masquerade as a clean
+   log. r16's per-item lines remain the decisive datum.
+6. **Datum:** heartbeat redis tertiary; brownout bounces continue
+   (429s on first attempts); all calls landed via retry-with-backoff.
 
 ## Notes for the next agent on this slot
 
 - Replace in place each cycle; keep under ~60 lines. No executable + flag
   strings in prose (WAF pitfall).
 - First probe: (1) authenticated queue read (fallback when the integrity
-  line reads "unchecked"); census via slug-join (r20 rule), then classify
-  ghost-slug rows by label: bridge:in-gates = close-pending (closer-
-  immune), plain queued = reapable ghost (r25); (2) 06:00Z cron verdict —
-  janitor log honest per-item lines? (HEADLINE datum now); (3) #4250:
-  newest core run green?
-- The loop's U5 demotion prints WHICH receipts cover a row — cite them
-  and note rotation against last cycle (r26); the --issue override
-  exists but the demotion is the loop's own verdict.
-- github_workflow_runs: cap per_page ≈15; there is no page param.
+  line reads "unchecked"); census via slug-join (r20 rule) + label
+  classification (r25); (2) 06:00Z cron verdict — janitor log honest
+  per-item lines? Watch for swallowed failures (`--apply` step is
+  `|| true`-wrapped, r28). (3) #4250: newest core run green?
+- If a prior slot receipt sits unlanded with a visible branch (r27
+  pattern): do NOT resubmit; carry its content forward (glm12-r12
+  precedent) and re-pin baseSha to current main (r28).
+- The loop's U5 coverage print is neither static nor exhaustive — record,
+  don't infer (r26/r27). Protected-path dispatches: evidence-only (r28).
+- github_workflow_runs: cap per_page ≈15, no page param; github_list_prs
+  returns ~5 newest open only, params ignored (r28) — PR-level truth
+  beyond that is UNSEEN from the sandbox.
 - MCP governance timeout on submit = maybe-landed: check branch + main
-  history before any retry (idempotency guard, re-proved r21).
+  history before any retry (idempotency guard, re-proved r21/r27).
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: the U5 coverage rotation is the missing piece of the skip-rule
-  picture — coverage is a live set, not a fixed do-not-touch list. If it
-  were static, drain #3 would have orphaned #4471's protection when
-  #4489/#4482 were reaped; instead new receipts (#4533/#4528) re-bound
-  within the hour. Recording this keeps tomorrow's cron read honest:
-  a janitor closing covered rows is exercising closer logic, and the
-  covers themselves may be ghosts — the label, not the reference graph,
-  is what tracks reality.
-- alternatives_rejected: claiming #4471 or #4535 (rejected — #4471 is
-  claimed with live coverage in flight, #4535 is another slot's fresh
-  in-flight receipt; Zero Cross-Agent Collateral); closing the 7 queued
-  ghosts sandbox-side (rejected — no gh, no provenance; the closer-regime
-  owns that action); filing a WO about fluid coverage (rejected — the
-  board needs fewer WOs, not one more).
+- why: the loop finally dispatched a row to this slot, and the row's own
+  dispatch text defines the compliant action (protected path → evidence
+  only). Executing the U3 live-check and recording the verdict — instead
+  of claiming, closing, or filing a duplicate WO — is the honest
+  completion: two fresh evidence receipts already exist (#4482 apply-
+  ready, #4533 tip-refresh), the incident is confirmed live on latest
+  main, and the `|| true`-wrapped janitor step materially sharpens the
+  cron-honesty model before the 06:00Z test.
+- alternatives_rejected: claiming #4471 (rejected — the remedy is in a
+  protected path the envelope cannot remediate; a Closes line would be a
+  false closure per #2211/#2225/#2738); pushing a pipeline.yml fix from
+  the sandbox (rejected — protected path, outside the envelope); filing
+  a third evidence WO (rejected — duplicates existing receipts and adds
+  a ghost to a ghost-heavy board); resubmitting r27 (rejected — branch
+  visible = already submitted; idempotency guard).
 
 ## Rollback
 
