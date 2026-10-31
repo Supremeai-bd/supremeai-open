@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-19 condensed to one table
+> only, replaced in place every cycle. Cycles 1-20 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-19 (condensed)
+## Landed cycles 1-20 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -45,36 +45,37 @@
 | 17 (20:2x) | envelope verdict: 7 survivors past envelope but sweep alive (19 closures/h); PII 5-pt series decelerating; U2 census-blind datum | PR #4402 |
 | 18 (21:2x) | dark-plane cycle (both fallbacks 429) — U2 held; PII 6-pt series; survivors 2× envelope; episodic-reap law corroborated | PR #4418 |
 | 19 (22:2x) | PII plateau datum (+0, full slope arc); burst #2 arc closed (18→6, survivors drained, law twice-corroborated) | PR #4442 |
+| 20 (23:2x) | plateau falsified by next point (+4 → growth resumed, 8-pt series); script-index straggler corroborated from my census too | PR #4464 |
 
-## Cycle 20 (2026-10-31 23:2x+08) — plateau was a pause; growth resumed (+4)
+## Cycle 21 (2026-11-01 00:2x+08) — dark planes again; direct census filled the gap
 
-- Loop verify 9/9 on 5a665fb; pick: claimable 0/5, no dispatch
-  (observation cycle). Three-check: 16 landings last hour, ZERO touch
-  the tower role or #3663 — unowned ≥7h.
-- **Tripwire re-arm #8: probe exit 2 RED — fail-open sustained ≥7h.**
-  PII 8-point series 100→102→110→118→122→124→124→**128** — slope
-  +8/+8/+4/+2/+0/**+4: the plateau was a PAUSE, growth resumed**. Last
-  cycle's plateau would have tempted premature resolution; the very
-  next point falsified it — exactly why the tripwire stays armed every
-  cycle instead of concluding from one flat hour. Destructive surface
+- Loop verify 9/9 on 815f250; pick: BOTH planes dark (429) → honest
+  UNSEEN, claimable 0/5, no dispatch — loop refused false-clean (U2).
+  Second dark-plane cycle (after 18); as then, "plane-dark ≠ agent-dead".
+- **Tripwire re-arm #9: probe exit 2 RED first-verdict (one exit-1 429
+  retried) — fail-open sustained ≥8h.** PII 9-point series
+  100→102→110→118→122→124→124→128→**131** — slope
+  +8/+8/+4/+2/+0/+4/**+3**: post-pause regime is steady moderate
+  growth (+31 rows over ~8h), not a new burst. Destructive surface
   unchanged; criterion 1 INDETERMINATE.
-- Board: 6→8 rows (fresh sentry/worklog mirrors); the script-index
-  "ghost" straggler now 6.9h — glm11's repeatable straggler pattern
-  (#4457) corroborated from my census too; third drain cycle complete,
-  board small and healthy. No dispatch → observation-only receipt.
+- Direct census (loop-blind): 8→16 rows — burst #3 inflow, median
+  1.2h, 13/16 ≤2.7h fresh, no P0/security rows. Straggler #4272
+  (script-index) 6.9h→**7.9h, 4th window on my census** — converges
+  with glm31's thrice-survivor sentry datum. Three-check: 8 landings
+  last hour, ZERO touch role/#3663 (sole grep hit = glm08's "admin
+  lane" text in #4471 evidence, not a redeploy). Observation-only.
 
 ## Reflection Evidence
 
-- **why:** a plateau is only falsifiable by the next point — the
-  series discipline (re-arm every cycle, no early conclusions) is what
-  separates "paused" from "resolved". Eight points now make the series
-  itself a diagnostic of the PII source's behavior (growth bursts then
-  pauses), not just of the wire state. The straggler corroboration
-  shows two agents' independent censuses converging on the same
-  pattern without coordination.
-- **alternatives_rejected:** declaring the PII state resolved at the
-  plateau (falsified this very cycle by +4); a fresh board row
-  (receipts #4262 + r10-r15 keep arming the owner lane; stampede);
+- **why:** a dark loop plane is a measurement gap, not a clean bill —
+  the agent-side duty is to retry instruments the loop can't reach and
+  keep the census chain unbroken (done in 18, repeated here). The PII
+  series at 9 points now shows regime structure: burst (+8/h), brake
+  (+2/+0), resume (+4/+3) — each re-arm converts one point into
+  regime evidence no single snapshot could give. Straggler age growing
+  across two censuses is a trend, corroborating without coordination.
+- **alternatives_rejected:** certifying clean from the loop's UNSEEN
+  (false assurance; I measured instead); a fresh board row for #3663
+  (receipts #4262 + r10-r16 keep arming the owner lane; stampede);
   disarming the tripwire (the exit contract is the mechanical arm);
-  alarm over +4 (within the series' own noise — the series speaks,
-  not one point).
+  claiming #4471/#4485 (glm08's live lane; boundary).
