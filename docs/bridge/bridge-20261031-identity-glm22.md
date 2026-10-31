@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-8 condensed to one table
+> only, replaced in place every cycle. Cycles 1-9 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-8 (condensed)
+## Landed cycles 1-9 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -34,32 +34,33 @@
 | 6 (09:2x) | githooks activation path exercised end-to-end, consent model (self-tests 9/9 + 7/7 first, then `--activate`, NOT-ACTIVE→OK) | PR #4084 / f5c19e2 |
 | 7 (10:2x) | clean-hold; hooks-path probe's first armed-silence observed (silent-when-armed contract source-verified) — Cycle 6 transition closed | PR #4110 |
 | 8 (11:2x) | glm09's roster gate (#4132) live-confirmed (zero-cycle skip + auto-revive note); #3959 probe-green guard's first real exercise vs the purge (exit 3, NO EXPOSURE) | PR #4135 |
+| 9 (12:2x) | verify suite 8→9 tiers datum (`constitution_guard_pins`, glm12 #4138) source-verified; roster-purge note stable 2nd cycle | PR #4162 |
 
-## Cycle 9 (2026-10-31 12:2x+08) — verify suite 8→9 tiers; roster-purge state stable
+## Cycle 10 (2026-10-31 13:2x+08) — clean-hold; mirror-burst census with ages
 
-- Loop verify **9/9** on 05dcbe9 — the suite grew its ninth tier,
-  `constitution_guard_pins` (source: loop tier table; re-pins the cadence-gate
-  contracts at every `--verify-only` so a blind-ladder landing can never
-  re-certify that gate dirty — glm12's #4138, Option A of the #4125 fix
-  contract). First cycle this slot has run the 9-tier suite; all green.
-- Pick: clean and healthy, claimable 0/5, observation idle. Board 7 rows, all
-  `bridge:queued` mirrors (my #4083 mirror still draining — known mirror-lag,
-  not stuck); zero P0. No dispatch. 三查: no row in my lane, no collision.
-- Datum: roster-purge dark note stable for the 2nd consecutive cycle, byte-
-  identical semantics (zero tool-call cycles; auto-revive untriggered —
-  `github.list_prs` still absent from the 20-tool roster). The #4132 gate is
-  consistent, not a one-run artifact. U2 owner decision (A/B/C) still pending.
-- No claim, no Closes — observation-only cycle; worklog r5 compaction
-  (Cycle 8 folded into the landed table) is the whole change.
+- Loop verify 9/9 on 6461f4c (tier 9 stable, 2nd run); pick: clean and
+  healthy, claimable 0/5, observation idle; zero P0. No dispatch.
+- Datum 1: roster-purge dark note stable for the 3rd consecutive cycle
+  (zero tool-call cycles; auto-revive untriggered) — the #4132 gate is now a
+  settled state, closing my #4135 single-run and #4162 two-run observation
+  arc at three runs.
+- Datum 2 — mirror-burst census with ages (authenticated board read): 7→14
+  rows, ALL 14 `bridge:queued` mirrors, 0 claimable, 0 in gates. Residency:
+  median 1.8h, oldest 3.9h (#4083, this slot's Cycle 6 mirror), newest 0.1h.
+  Drain is working but slow (burst inflow from the fleet's receipt cadence
+  outpaces the sweep); mirror closing is the verdict plane's lane — no agent
+  action, census only. Not stuck: ages are graded, newest mirrors already
+  draining.
+- No claim, no Closes — observation-only cycle; worklog r6 compaction
+  (Cycle 9 folded into the landed table) is the whole change.
 
 ## Reflection Evidence
 
-- **why:** the verify suite's tier count is a contract surface many receipts
-  quote ("8/8"); recording the 8→9 transition (and its source) prevents the
-  stale-count confusion class, and the second consecutive stable roster-purge
-  note upgrades Cycle 8's single-run observation into a consistency datum.
-- **alternatives_rejected:** treating the `gh CLI not found → tower fallback`
-  line as a defect (it is the designed fallback path, working as intended —
-  no churn); folding the tier-9 datum into a separate receipt doc (worklog
-  keeps the arc in one small file); claiming the tier (glm12's lane — I only
-  ran and verified the 9-tier suite green).
+- **why:** "board grew 7→14" without ages reads as alarm; with ages (median
+  1.8h, graded, zero claimable) it reads as a burst draining normally — the
+  census converts a scary-looking number into a verdict-plane heartbeat and
+  prevents a future agent from mis-reading it as a stuck-board P0.
+- **alternatives_rejected:** closing/merging mirrors myself (verdict-plane
+  authority, not mine); filing a defect for mirror residency (no defect —
+  sweep is slow under burst, designed behavior); a separate census doc
+  (keep-it-small contract — the table + one cycle entry carries it).
