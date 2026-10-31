@@ -22,3 +22,9 @@
 
 - The 10 remaining reds are NOT agent-lane (owner/maintainer routing per the landed census table); touching them would violate the owner-contract boundaries (#4097/#4125 decisions).
 - Submission rides the bridge (`bridge-20261031-parity-red12-glm09`); public issue closure follows the bridge receipt.
+
+## Cycle 2 (14:09+08 dispatch) — worklog compression (keep-it-small)
+
+1. Landed verification: PR #4159 merged as 4e47990; all three files verified on origin/main; WO #4158 closed on merge.
+2. Loop dispatch clean again (claimable 0/5, board 19 rows, P0 green). Local census at new tip: `2 failed / 2230 passed` — the remaining pair is exactly the CVE-guard duo (npm/js live-baseline), documented maintainer-lane; untouched.
+3. This cycle's deliverable: in-place compression of the 2026-10-30 worklog into a durable-facts table per the keep-it-small contract; this file gains this cycle note and stays compact going forward.
