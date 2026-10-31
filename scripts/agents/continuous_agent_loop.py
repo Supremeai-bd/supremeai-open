@@ -14,7 +14,7 @@ Traffic-police logic:
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
 """
 from __future__ import annotations
-import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
+import argparse, ast, inspect, json, os, re, subprocess, sys, threading, time, urllib.request
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
@@ -1803,17 +1803,18 @@ def pick_next_issue(
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
-        # ৩০ মিনিট স্মার্ট কুলডাউন: এই রানারে সম্প্রতি ডিসপ্যাচ করা ইস্যু ৩০ মিনিটের জন্য স্কিপ
-        num = str(item.get("number", ""))
-        if num:
-            lease_store = load_issue_lease_store()
-            if num in lease_store:
-                try:
-                    last_ts = float(lease_store[num])
-                    if (time.time() - last_ts) < 1800.0:  # 30 minutes
-                        return False
-                except Exception:
-                    pass
+        # #4124-restore (Option A of the #4125 fix contract): the gate is
+        # clock-free per the #3573 founder regime — NO local cooldown/lease
+        # window may gate or delay a candidate here. Claimability's only two
+        # mechanical arbiters are the live claim probe at pick time and the
+        # atomic work_claim at claim time (SPEC §4c); re-dispatch churn of a
+        # dispatched-but-unclaimed row is the in-flight twin demotion's job
+        # (demotion-only, below) — never a gate. AST-pinned by
+        # tests/test_claim_lease_ssot.py::test_02 and
+        # tests/test_agent_cadence.py::test_pick_has_no_dispatch_time_gate,
+        # and re-pinned at every --verify-only by tier 9
+        # (constitution_guard_pins) so a blind-ladder landing can never
+        # certify this gate dirty again.
         # #2903 fix: state truth on the fallback plane — the gh-present path
         # pre-filters `gh issue list --state open`, but tower-board fallback rows
         # carry `state` verbatim, so a closed row with stale unclaimed labels
@@ -3595,6 +3596,49 @@ def run_verify() -> list[dict[str, Any]]:
                 return False
         return True
 
+    def _constitution_pins_ok() -> bool:
+        # বাংলা: tier 9 — constitution guard pins (#4124-restore, #4125 fix
+        # contract-এর "pytest faces → landing ladder" অর্ধ)। #4097/#4106/#4124
+        # তিনবার প্রমাণ হল blind-ladder ক্লাস: landing 8/8 PASS দাবি করেছে কিন্তু
+        # ladder-এ একটি pytest face-ও চলে না। এই টিয়ার দুটি AST-pinned guard
+        # (test_claim_lease_ssot::test_02, test_agent_cadence::
+        # test_pick_has_no_dispatch_time_gate) এর অক্ষর-এ-অক্ষর invariant
+        # প্রতি --verify-only-তে inline চেক করে — stdlib-only, subprocess-মুক্ত,
+        # একই সোর্স পার্স করে বলে guard-এর সাথে drift অসম্ভব।
+        src = Path(__file__).read_text(encoding="utf-8")
+        # (1) SSOT lineage (#57 → #3738): twin-guard alias-টি অবশ্যই SSOT-derived
+        # journal retention-এর verbatim alias থাকবে — দ্বিতীয় স্বাধীন ম্যাজিক নাম্বার নয়।
+        if "ISSUE_LEASE_SECONDS = DISPATCH_JOURNAL_RETENTION_SECONDS" not in src:
+            return False
+        if ISSUE_LEASE_SECONDS != DISPATCH_JOURNAL_RETENTION_SECONDS:
+            return False
+        if DISPATCH_JOURNAL_RETENTION_SECONDS != ORPHAN_RELEASE_MINUTES * 60.0:
+            return False
+        # (2)+(3) pick-plane: clock-free claimability gate (AST scan,
+        # comment-immune) + #3738 twin-demote in-flight input-এর wiring জীবিত
+        # (demotion-only — একটি duplicate dispatch সরায়, কখনো gate/delay করে না)।
+        pick_src = inspect.getsource(pick_next_issue)
+        if "leased_at" in pick_src:
+            return False
+        if "_duplicate_twin_note(" not in pick_src or "lease_store" not in pick_src:
+            return False
+        tree = ast.parse(pick_src)
+        gates = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "is_claimable"
+        ]
+        if len(gates) != 1:
+            return False
+        gate_tokens = set()
+        for node in ast.walk(gates[0]):
+            if isinstance(node, ast.Name):
+                gate_tokens.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                gate_tokens.add(node.attr)
+        return not any("LEASE" in tok.upper() for tok in gate_tokens)
+
     evidence: list[dict[str, Any]] = [
         {
             "tier": 1,
@@ -3639,10 +3683,11 @@ def run_verify() -> list[dict[str, Any]]:
                 and (REPO_ROOT / "scripts" / "agents").is_dir()
             ),
         },
+        {"tier": 9, "name": "constitution_guard_pins", "passed": _run(_constitution_pins_ok)},
     ]
 
     for ev in evidence:
-        print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
+        print(f"[{ev['tier']}/{len(evidence)}] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
     return evidence
 

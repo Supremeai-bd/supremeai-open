@@ -103,7 +103,7 @@ and the issue-template dropdown in the same change.
 | `--emit-prompt` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
 | `--emit-contract` | ⚠️ deprecated shim | stderr deprecation warning → emits the **same** envelope |
 | `--group <name>` | ✅ new | canonical group override |
-| `--verify-only` | ✅ extended | tiers 1–8 (syntax / JSON / YAML / binary guard / contract guard / group-registry guard / envelope-determinism / machine-path-isolation). **This row is the tier-count SSOT** — parity-enforced by `scripts/agents/check_loop_contract_parity.py` |
+| `--verify-only` | ✅ extended | tiers 1–9 (syntax / JSON / YAML / binary guard / contract guard / group-registry guard / envelope-determinism / machine-path-isolation / constitution-guard-pins). **This row is the tier-count SSOT** — parity-enforced by `scripts/agents/check_loop_contract_parity.py` |
 
 Deprecated shims keep running automation alive; removal is a future admin
 decision after private-mirror parity (do not remove in a drive-by change).
