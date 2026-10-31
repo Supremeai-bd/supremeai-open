@@ -6,35 +6,38 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - Registration: GLM Agent 18 / Job 486801; প্রতি সাইকেলে loop-dispatch (U7)।
-- Slot z.ai-18 heartbeat রেজিস্ট্রে যুক্ত (06:21Z, dashboard-এ online)।
+- **r1 LANDED (PR #4224, merge fb26520; WO #4223 bridge:landed)** — প্রথম
+  landing; slot z.ai-18 heartbeat রেজিস্ট্রে যুক্ত।
 
-## Cycle 1 (2026-10-31 14:18+08) — no-pick clean-hold; পঞ্চম independent red-census নিশ্চিত; কোনো কোড এডিট নেই
+## Cycle 2 (2026-10-31 15:18+08) — no-pick clean-hold; board-drain regime নিশ্চিত; কোনো কোড এডিট নেই
 
-- Loop bare: tree 1 behind ছিল → loop শুরুতেই auto-rebase; pre-push
-  rebase → tip 466f401 (0 behind)। Board ২১ rows, claimable 0/5 →
-  observation idle; zero open P0 blocker; PR-plane dark (github.list_prs
-  tower roster-এ নেই, ২০ tools)।
-- **পঞ্চম independent red-census (full suite at 1861927): 2 failed,
-  2230 passed, 13 skipped, 21 subtests, 65.54s** — GLM 32-এর c76 ও
-  GLM 16-এর c21 গণনার সাথে হুবহু মিল। দুটি fail = শুধু CVE-guard pair
-  (test_npm_dep_cve_guard::test_live_baseline_check +
-  test_js_dep_cve_guard::test_live_check_passes_at_landing_head)
-  follow-redirects@1.16.1 (GHSA-mrwp-f3q8-3g9p, devtools-audit
-  package-lock) — maintainer-lane মালিকানাধীন (#4150 routing), agent
-  action নয় (U5)।
-- At-tip (466f401) re-verify: red pair 2 failed / 30 passed (7.19s);
-  verify-only 9/9 PASS।
-- Closure regime: ONE all-open plane — 06:23Z ফেচে ২২/২২ rows সব
-  bridge:queued, ০ কমেন্ট; পুরনো #4083 +295 min, নতুন row +2 min;
-  ~01:31Z থেকে closure নীরবতা ~৪ঘ ৫২মি — ghost-plane অবস্থা অটুট
-  (R94: per-row taskId-ই work-truth)।
-- r1 = এই প্যাচ (brand-new ফাইল, keep-it-small শুরু)।
+- Loop bare ×১ + rebase ladder: work-start rebase 10 behind সারিয়েছে;
+  চক্রের ভেতরে আরও ২ landing এসে loop-start auto-rebase আবার সারিয়েছে
+  → pre-push tip 556e3f5 (0 behind)। claimable 0/5 → observation idle;
+  zero open P0 blocker; PR-plane dark (github.list_prs roster-এ নেই)।
+- **Board-drain regime CORROBORATED (root-cause cure লাইভ)**: GLM 11
+  r14-এর integrity-certified খালি বোর্ড ধরে রাখা হয়েছে — 07:22Z ফেচে
+  totalOpen=1, একমাত্র row নিজেই GLM 11-এর r14 receipt (#4234, +5 min)।
+  আগের ২২-row ghost plane ~15:05+08-এ drain; ০ কমেন্ট সহ পুরনো rows
+  (#4083 +295 min পর্যন্ত) সব বন্ধ — ghost-closure অন্ধত্বের সমাধান
+  tool-side census ফিক্সে (GLM 11 r13)।
+- **Red-census at-tip (full suite): 2 failed, 2234 passed, 13 skipped,
+  21 subtests, 67.10s** — CVE-guard pair একমাত্র red (maintainer-lane,
+  #4150 routing, agent action নয় U5); passed 2230 → 2234 (নতুন hermetic
+  health test #4232 এসেছে, live Render probe সরানো হয়েছে — flake cure)।
+- verify-only 9/9 PASS (constitution freshness gate PASS)।
+- Sandbox নোট: এই মেশিনে exec-bit আলাদা হওয়ায় rebase-এর আগে
+  core.fileMode false না দিলে ৪২১৪-ফাইল phantom mode-diff rebase আটকায়
+  — machine-local কনফিগ, repo defect নয়।
+- r2 = এই প্যাচ (in-place replace; চক্র ১-এর বিবরণ মুছে ফেলা হয়েছে,
+  শুধু landing pointer রাখা হয়েছে)।
 
 ## পরের agent-এর জন্য নোট (এই slot)
 
-- ফাইলটি প্রতি সাইকেলে in-place replace করো; পুরনো সাইকেল-বিবরণ মুছে
-  durable facts রাখো — ফাইল ছোট থাকবে।
-- Full suite 2F/2230P আশা করো যতক্ষণ না maintainer CVE-guard lane
-  মীমাংসা করে; lockfile unilaterally bump নয় (U5/U10)।
+- ফাইলটি প্রতি সাইকেলে in-place replace + baseSha CAS pin করো (fail-closed
+  gate; পুরনো blob sha পুরোনো হলে STALE_BASE_ERROR)।
+- Full suite 2F/2234P আশা করো যতক্ষণ না maintainer CVE-guard lane মীমাংসা
+  করে; lockfile unilaterally bump নয় (U5/U10)।
+- Board এখন খালি-স্বাভাবিক (drain regime): নতুন row = নতুন agent-এর নিজের
+  receipt হলে সেটা ghost নয় — per-row taskId যাচাইই work-truth (R94)।
 - Receipt prose-এ executable string / flag quote এড়াও (WAF 403)।
-- Tower tool roster সাইকেলের শুরুতে যাচাই করো — নাম পরিবর্তিত হয়।
