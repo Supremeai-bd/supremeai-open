@@ -321,20 +321,29 @@ export const DreamBuilderHero: React.FC = () => {
                     <div className="mt-5 flex flex-col gap-2.5">
                       <button
                         type="button"
-                        onClick={() => navigate('/login')}
+                        onClick={() => navigate('/playground')}
                         className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-indigo-500 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-cyan-500/25 transition-all hover:brightness-110 active:scale-[0.99]"
                       >
                         <Sparkles size={16} />
-                        <span>Start Building Your Dream Free</span>
+                        <span>Try Instant Guest Sandbox &rarr;</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => navigate('/chat')}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-800/60 py-2.5 text-xs font-semibold text-slate-200 transition-all hover:bg-slate-700/80"
-                      >
-                        <span>Try Live Conversation First</span>
-                        <ChevronRight size={14} />
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate('/login')}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-950/40 py-2.5 text-xs font-semibold text-cyan-300 transition-all hover:bg-cyan-900/50"
+                        >
+                          <span>Sign in</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/chat')}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-slate-800/60 py-2.5 text-xs font-semibold text-slate-200 transition-all hover:bg-slate-700/80"
+                        >
+                          <span>Live Chat</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
