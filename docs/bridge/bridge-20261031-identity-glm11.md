@@ -7,76 +7,72 @@
 ## Durable outcomes (with proof)
 
 - Identity registered on tower slot agent-11; identity-CLI root-cause fix
-  landed (PR #3166); receipt chain WO #3154/#3229/#3424/#3470 landed as
-  bridge:receipt; post-archive receipts #3596/#3597 (5b49ff0), #3652/#3653
-  (bc72831), slot r3 (a45dfd0), cycle-9 triage (#3794/#3795, 0c1daf1),
-  cycle-10 triage (#3878/#3879, 7e66a76), slot r6 (f1b2168) landed.
+  landed (PR #3166); post-archive receipt chain: #3596/#3597 (5b49ff0),
+  #3652/#3653 (bc72831), slot r3 (a45dfd0), cycle-9 triage (#3795, 0c1daf1),
+  cycle-10 triage (#3879, 7e66a76), slot r6 (f1b2168), slot r7 (3bd2c34).
 - Dispatch skips with live evidence across cycles: #2792, #3195, #2281, #3390
   (U3 chain, fleet-confirmed RESOLVED-BY-REMEDY via PR #3427).
-- Slot disciplines: paraphrase receipt prose (bridge ingress 403s on
-  executable + flag quotes); new-file landings omit the baseSha key
-  (stalenessCheck new-file-no-base, live-proven on PR #3597); existing-path
-  overwrites pin the exact landed blob sha (fail-closed CAS, PR #3513).
+- Slot disciplines: paraphrase prose (WAF 403s on executable + flag quotes);
+  new-file landings omit baseSha (live-proven, PR #3597); existing-path
+  overwrites pin the landed blob sha (fail-closed CAS, PR #3513).
 
-## Cycle 12 (2026-10-31 08:11+08) — drain complete: 3 rows left
+## Cycle 13 (2026-10-31 09:11+08) — no-pick, verified row-by-row
 
-1. Door honored; reset to 3986703; preflight zero open P0. Loop emitted no
-   clean pick and — for the first time since cycle-8 — no U5 demotion
-   messages at all: the board is effectively EMPTY at 3 open rows (0 in
-   gates). No claim; worklog-only hold.
-2. **Milestone — the saturation arc this slot tracked is closed:** board
-   open rows 42→71→88→110 (cycles 6-8, peak) → 47 (cycle-11) → **3** now,
-   with roughly sixty PRs landed in the past hour alone. The root-cause
-   stack that drained it all landed while this slot watched: coverage
-   demotion TTL (#3681), born-duplicate twin demotion (#3738),
-   event-driven dispatch (#3741), in-place tracker labeling (#3931).
-3. **Tower tool registry is being pruned hard:** direct probes now fail
-   with tool-not-found for both the PR-list tool (cycle-11 finding) and
-   the board-queue tool the dispatch fallback documented yesterday — the
-   loop's own fallback still revives board data, so dispatch survives,
-   but external direct callers keep losing surface; the third-read-plane
-   (#3643) matters correspondingly more.
+1. Door honored; reset to d9f64c3; preflight zero open P0; loop emitted no
+   clean pick. Board totalOpen=2 (3→2), 0 in gates. Unlike the false-empty
+   darkness class (glm28, #4058), this negative claim was verified row-by-row
+   live against the queue itself: both rows are excluded-label mirrors —
+   #4072 (bridge:queued, the tower-minted report WO for the true-empty
+   milestone itself) and #4068 (bridge:receipt, glm07 r2 mirror). No claim;
+   worklog-only hold.
+2. **Wave-3 tool-name era live-proven (01:12Z):** the board-queue tool's
+   dotted name now answers not-found; the underscore variant serves the full
+   queue (totalOpen=2, first-hand). The loop's wave-tolerant name-candidate
+   list (drift-tested) already covers this, so dispatch survives — but
+   external direct callers pinned to the dotted name go dark silently; the
+   third-read-plane (#3643) keeps gaining weight.
+3. Saturation-arc epilogue: 110 (c8 peak) → 47 (c11) → 3 (c12) → 2 (c13,
+   both non-work). The one queued row was the tower's own report WO about
+   the drain — and glm05 picked and landed exactly it mid-cycle (#4073,
+   e8e5e00), live proof that event-driven dispatch (#3741) now drains the
+   queue in minutes. True-empty has effectively arrived.
 
-## Cycle 11 (compressed durable facts)
+## Cycles 9-12 (compressed durable facts)
 
-- No-pick hold; read-plane terminal state recorded (PR-list tool REMOVED,
-  not just forbidden); duplicate-tracker class root-cause fix confirmed
-  landed (#3931). Receipts #3934/#3935 landed (f1b2168).
-
-## Cycles 9-10 (compressed durable facts)
-
-- Two PR-lane CI triages with first-hand local reproduction on merge refs:
-  #3785 (heartbeat contract test breaks on the PR's 24h→4h grace change;
-  a same-cycle landed stale-skip was contradicted by live evidence) and
-  #3853 (stale committed script index from ephemeral self-healing; class
-  doctrine heal-then-verify recorded). Auto-trackers omit run ids — the
-  repro-on-merge-ref playbook is the U3 substitute. Receipts landed
-  0c1daf1 and 7e66a76.
+- PR-lane CI triages with local repro on merge refs: #3785 (contract test
+  vs grace change; a same-cycle stale-skip was contradicted by live
+  evidence) and #3853 (stale committed index from ephemeral self-healing;
+  doctrine heal-then-verify). Auto-trackers omit run ids —
+  repro-on-merge-ref is the U3 substitute. Receipts 0c1daf1, 7e66a76.
+- Drain milestone (c11→c12): board 47→3; root-cause stack: coverage-demotion
+  TTL (#3681), twin demotion (#3738), event-driven dispatch (#3741),
+  in-place tracker labeling (#3931). Receipts f1b2168, 3bd2c34.
+- Read-plane terminal state (c11): the PR-list tool was registry-REMOVED,
+  not just forbidden.
 
 ## Notes for the next agent on this slot
 
 - Replace this file in place each cycle; keep it under ~60 lines; trim
   older cycle detail when adding new. No executable + flag strings in
   receipt prose (WAF pitfall).
-- Board is near-empty: expect either a real dispatch or a fast hold each
-  cycle; the pick may now starve before the TTL matters.
+- Board is at true-empty's doorstep: expect a fast hold or a real dispatch;
+  verify any negative claim row-by-row before trusting it (#4058 class).
 - U3 verification: public pages + git pull-refs + local reproduction on
   the merge ref (playbook proven on #3785/#3853).
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: no pick, no P0, and a board so empty that the honest value is the
-  milestone measurement itself — the saturation arc this slot measured
-  from cycle-6 is now provably closed, with its full root-cause stack
-  named. Recording it costs one small in-place receipt and closes the
-  loop on the #3635 tracking effort.
-- alternatives_rejected: an ad-hoc envelope against a 3-row board
-  (rejected — nothing uncovered to work on; stampede logic inverted but
-  the queue is simply starved); a separate drain-complete report file
-  (rejected — the worklog is the slot's receipt surface and the founder
-  directive keeps it small); chasing the pruned board tool for direct
-  probing (rejected — the loop's fallback output is the citable truth;
-  the registry pruning is itself the recorded finding).
+- why: no pick, no P0; the honest value this cycle is verification quality —
+  the loop's no-pick on a 2-row board was checked row-by-row against the
+  queue itself, separating a verified-empty from the false-empty darkness
+  class (#4058), and the wave-3 tool-name era got its first timestamped
+  external-caller proof.
+- alternatives_rejected: an ad-hoc envelope against a 2-row all-mirror
+  board (rejected — both rows are excluded-label mirrors; nothing uncovered
+  exists); claiming the queued report WO #4072 outside the loop's dispatch
+  (rejected — its label is excluded by design and the loop is the claim
+  authority); a separate milestone report file (rejected — the worklog is
+  the slot's receipt surface and stays small).
 
 ## Rollback
 
