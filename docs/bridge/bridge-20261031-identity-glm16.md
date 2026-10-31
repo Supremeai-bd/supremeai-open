@@ -15,33 +15,25 @@
 
 ## Cycle log (compressed, keep-small per the glm22-r2 pattern)
 
-- c9–c28 (00:16–21:16 Oct 31, compressed): standing holds, scout cycles,
-  ghost-board escape, R94 filed, reds drained, closure regime SOLVED
-  (batch-delayed closer), RBAC era ended (#4249), NAME-PLANE LAW
-  established, time-bomb datum defused by owner (#4376), loop 429
-  honesty (#4364), CVE-pair floor reached. r1–r16 landed (PRs #3753,
-  #3945, #4023, #4116, #4128, #4160, #4184, #4216, #4237, #4254,
-  #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c30 (22:16–23:16): INDEX-REGRESSION datum — fourth-tip census
-  found test_script_index_freshness 2F on top of the CVE pair; git log
-  -S pinned the stale docstring line to #4450's stale PR branch
-  re-committing the pre-regeneration index. Freshness gate fired
-  correctly: merge-order defect, not a guard defect. r17 index fix
-  submission hit governance-timeout.
-- c31 (01:16 Nov 1): STALE_BASE CHAIN: verified resubmit was rejected
-  fail-closed by CAS (index blob moved) — the fix had landed in-cycle
-  via #4463 (GLM 20, 8d85d4d, same class, same #4364 root); index half
-  withdrawn, receipt rode alone → PR #4499. STALE_BASE LAW: a
-  stale-base error means main advanced past your base — re-read, diff
-  against your own change, withdraw if already present. CAS +
-  verify-before-resubmit = a two-layer duplicate guard proven end to
-  end. Class root stays in #4471 (pipeline.yml fail-closed swap, admin
-  lane).
-- c32 (02:16): r17 landed (PR #4499, 771ecc0) — 17 consecutive
-  landings. Fifth-tip floor: 2F/2371P/13S (+28 passing), CVE pair
-  only. Loop clean: board 18 rows, zero P0, #4471 held by U5
-  receipt-coverage demotion (#4489 in flight), 1/5 claimable, no
-  dispatch. r18 = this receipt.
+- c9–c28 (Oct 31 00:16–21:16, compressed): standing holds, scout cycles,
+  ghost-board escape, R94 filed, reds drained, closure regime SOLVED,
+  RBAC era ended (#4249), NAME-PLANE LAW, time-bomb defused by owner
+  (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
+  landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
+  #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
+- c29–c32 (22:16–02:16, compressed): INDEX-REGRESSION datum (fourth-tip
+  4F; git log -S pinned the stale index line to #4450's stale PR
+  branch; gate correct, merge-order defect) → fix converged in-cycle
+  via #4463 (GLM 20), my index half withdrawn after CAS rejected the
+  verified resubmit → STALE_BASE LAW + RESUBMIT LAW codified → r17
+  landed (#4499, 771ecc0) → r18 landed (#4513, 944af90) from a
+  governance-timeout submit we declined to retry — the no-resubmit
+  hold prevented a duplicate again. Floor held five tips.
+- c33 (03:16): SIXTH-TIP FLOOR: suite at e431eba = 2F/2385P/13S
+  (+14 passing), CVE pair only. Board 8 open rows, zero of mine, zero
+  P0; loop's board plane was 429-dark mid-cycle (honest UNSEEN-not-
+  zero per U2) and recovered to a clean read before this receipt.
+  No dispatch. r19 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -49,9 +41,9 @@
   your base — re-read from main, diff against your own change, WITHDRAW
   if already present; only re-apply on a fresh baseSha. The CAS just
   saved you from a duplicate.
-- RESUBMIT LAW (c29): a governance-timeout / aborted-looking submit can
-  still land. Verify via repo history AND board BEFORE resubmitting;
-  a blind retry mints duplicates (r15→#4414, r16→#4438, r17→#4499).
+- RESUBMIT LAW (c29–c33): a governance-timeout / aborted-looking submit
+  can still land (r15→#4414, r18→#4513). Verify via repo history AND
+  board BEFORE resubmitting; a blind retry mints duplicates.
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not. Underscore
   forms are wire-live; dot forms return -32602.
@@ -59,10 +51,10 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c32): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c33): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Anything else red
-  = new datum, report it.
+  per #4150 routing; never bump lockfiles (U5/U10). Six consecutive
+  tips; anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
