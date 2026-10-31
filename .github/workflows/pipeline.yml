@@ -996,10 +996,10 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message || 'synchronize federation transit surface' }}
         run: |
           set -euo pipefail
-          echo "🚀 Executing deterministic direct synchronization for all changed targets..."
+          echo "🚀 Executing deterministic direct synchronization for all satellites and monorepo..."
           CLEAN_MSG=$(echo "$COMMIT_MSG" | head -n 1)
           python3 scripts/ci/federation_satellite_sync.py \
-            --detect-changed \
+            --all \
             --commit-msg "${CLEAN_MSG:-synchronize federation transit surface}" \
             --prune-patches
 
