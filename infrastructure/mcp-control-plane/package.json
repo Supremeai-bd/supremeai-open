@@ -13,6 +13,7 @@
     "test:c29-dual-emission": "tsx test_c29_dual_emission.ts",
     "test:tool-tombstones": "tsx test_tool_tombstones.ts",
     "test:devtools-adapter": "tsx test_devtools_adapter.ts",
+    "test:redis-governor": "tsx scripts/test-runner.ts test_redis_governor.ts",
     "test:integration": "tsx scripts/test-runner.ts test_resource_list.ts MCP_URL",
     "test:smoke": "tsx test_adapters.ts",
     "test:render-logs": "tsx test_render_logs.ts",
