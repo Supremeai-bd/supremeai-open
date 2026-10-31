@@ -22,46 +22,52 @@
   #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216, #4237,
   #4254, #4316).
 - c25–c27 (18:16–20:16, compressed): no dispatches. NAME-PLANE LAW:
-  underscore wire-live, dot -32602; 429 name-blind (limiter precedes
-  routing); #4344's dot-form fixture heal is reality-wrong. Time-bomb
-  datum filed then defused by owner (#4376); floor reached; loop 429
-  messages honest (#4364). r12–r14 landed (PRs #4349, #4379, #4401).
+  underscore wire-live, dot -32602; 429 name-blind. Time-bomb datum
+  defused by owner (#4376); floor reached; loop 429 messages honest
+  (#4364). r12–r14 landed (PRs #4349, #4379, #4401).
 - c28–c29 (21:16–22:16): r15 landed (PR #4414, 5a29f1c) from the
-  aborted-looking governance-timeout attempt — blind resubmit declined
-  the night before would have minted a duplicate. r16 landed (PR #4438,
-  95b3ef3). FLOOR ON THREE TIPS: 2F/2338P/13S, CVE pair only. No
-  dispatches.
-- c30 (23:16): INDEX-REGRESSION datum + fix (this patch). Fourth-tip
-  census at 120e3ed found 4F: the CVE pair PLUS
-  test_script_index_freshness 2F — committed _INDEX.md carried the OLD
-  loop docstring ("Single Door SSOT") while the loop file's real
-  docstring is "Minimal Autonomous Agent Loop (Unified Rules &
-  Roles Dispatcher)". git log -S pins the regression to #4450 (ce512bc):
-  its stale PR branch re-committed the pre-regeneration index line, so
-  the stale state landed AT the very commit that touched the index.
-  Freshness gate fired correctly — guard worked, this is a merge-order
-  defect, not a guard defect. FIX: regenerate (one docstring line +
-  timestamp); freshness 6/6; full suite in the fix-state worktree =
-  2F/2343P/13S — back to the CVE-pair floor (+2 passing). Loop clean,
-  claimable 0/5; r17 = this patch.
+  aborted-looking governance-timeout attempt. r16 landed (PR #4438,
+  95b3ef3). Floor 2F/2338P/13S on three tips. No dispatches.
+- c30 (23:16): INDEX-REGRESSION datum: fourth-tip census at 120e3ed =
+  4F (CVE pair + test_script_index_freshness 2F) — committed _INDEX.md
+  carried the OLD loop docstring while the loop file's real docstring
+  is "Minimal Autonomous Agent Loop (Unified Rules & Roles
+  Dispatcher)". git log -S pins the stale line to #4450 (ce512bc): its
+  stale PR branch re-committed the pre-regeneration index. The
+  freshness gate fired correctly — a merge-order defect, not a guard
+  defect. Regenerated locally (freshness 6/6; suite 2F/2343P/13S);
+  submission hit governance-timeout; no board/git trace so resubmit was
+  held. INDEX FIX WITHDRAWN — landed in-cycle via #4463 (GLM 20,
+  8d85d4d, same class, same root). Floor restored on main.
+- c31 (01:16): STALE_BASE CHAIN taught the final lesson: resubmit after
+  board+git re-verification was rejected fail-closed by CAS
+  (index blob had moved) — reading that signal against the log showed
+  the fix already landed elsewhere, so the index half was withdrawn and
+  this receipt rides alone. CAS + verify-before-resubmit together form
+  a two-layer duplicate guard that WORKS end to end. #4471 (pipeline.yml
+  fail-closed --check swap) remains the class-root fix — admin-lane,
+  apply-ready per #4482. Loop clean, claimable 0/5; r17 = this receipt.
 
 ## Notes for the next agent on this slot
 
-- INDEX-REGRESSION CLASS (c30): a stale PR branch can re-commit an old
-  auto-generated index over a newer one and land it clean — line-level
-  merge cannot see semantic staleness. If _INDEX.md (or any generated
-  file) flips to an old timestamp/description, regenerate BEFORE
-  suspecting the guard; verify with git log -S on the stale string.
+- STALE_BASE LAW (c31): a STALE_BASE_ERROR is not a rejection to fight —
+  it is the signal that main advanced past your base. Re-read the file
+  from main and diff against your own change: if the change is already
+  there, WITHDRAW (the CAS just saved you from a duplicate); only then
+  re-apply on a fresh baseSha.
 - RESUBMIT LAW (c29): a governance-timeout / aborted-looking submit can
-  still land. Always verify via repo history or board BEFORE
-  resubmitting; a blind retry mints duplicates (r15→#4414, r16→#4438
-  both proved it).
+  still land. Verify via repo history AND board BEFORE resubmitting
+  (r15→#4414, r16→#4438 proved it); a blind retry mints duplicates.
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
-  never cite a 429 as proof a tool name exists or not; probe again in a
-  quota-free window. Underscore forms are wire-live; dot forms return
-  -32602. #4344's fixture heal points the WRONG way for reality.
-- RED FLOOR (c27–c30): CVE-pair floor held on three tips, broken by the
-  index regression at 120e3ed, restored by this patch. js studio
+  never cite a 429 as proof a tool name exists or not. Underscore forms
+  are wire-live; dot forms return -32602. #4344's fixture heal points
+  the WRONG way for reality.
+- INDEX-REGRESSION CLASS (c30): a stale PR branch can re-commit an old
+  auto-generated index over a newer one and land clean — line-level
+  merge cannot see semantic staleness. Diagnose with git log -S on the
+  stale string; class-root fix pending in #4471 (admin lane).
+- RED FLOOR (c27–c31): CVE-pair floor held three tips, broken by the
+  index regression at 120e3ed, restored on main via #4463. js studio
   lockfile (follow-redirects + glob/minimatch) and npm side remain
   maintainer-lane per #4150 routing; never bump lockfiles (U5/U10).
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
