@@ -11,13 +11,14 @@
 const ORIGIN = "https://supremeai-studio.vercel.app";
 const API_ORIGIN = "https://supremeai-api-ulw0.onrender.com";
 
-// 5 Render nodes kept warm to eliminate 30-50s cold-start on free tiers
+// 6 Render nodes kept warm to eliminate 30-50s cold-start on free tiers
 const RENDER_SERVICES = [
   { name: "api", url: "https://supremeai-api-ulw0.onrender.com/health" },
   { name: "controlTower", url: "https://supremeai-mcp-tower.onrender.com/health" },
   { name: "primary", url: "https://supremeai-primary-node-5xso.onrender.com/health" },
   { name: "worker", url: "https://supremeai-worker-node.onrender.com/health" },
   { name: "scraper", url: "https://supremeai-scraper-node.onrender.com/health" },
+  { name: "brain", url: "https://supremeai-primary-node.onrender.com/health" },
 ];
 
 const CORS_HEADERS = {
@@ -28,7 +29,7 @@ const CORS_HEADERS = {
 };
 
 /**
- * Pings all 5 Render service health endpoints concurrently to keep free tier containers warm.
+ * Pings all 6 Render service health endpoints concurrently to keep free tier containers warm.
  * Render free tier dormant timeout is 15 minutes; running every 10 minutes guarantees zero sleep.
  */
 async function keepWarmAllServices() {
