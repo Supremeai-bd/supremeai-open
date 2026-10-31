@@ -866,6 +866,13 @@ def _tower_merged_landing_prs(
 
     def _probe() -> None:
         try:
+            # বাংলা (GLM Agent 09, Job 486738, U6 রুট-কজ গেট): রোস্টারে টুল না
+            # থাকলে নিশ্চিত -32602-এর সাইকেল বৃথা — গেট-নোট থাকলে শূন্য নেটওয়ার্ক-
+            # কলে সৎ error; উপরের fail-open স্তর আগের মতোই অন্ধকার ক্যাশ করবে।
+            gate_note = _tower_tool_roster_gate("github.list_prs")
+            if gate_note:
+                holder["error"] = gate_note
+                return
             sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
             import mcp_tower_client as _mtc  # lazy sibling import (same-dir or repo-root both resolve)
 
@@ -1650,9 +1657,18 @@ def report_failed_open_prs(
                     for l in (r.get("labels") or [])
                 )
             )
+            # বাংলা (GLM Agent 09, Job 486738): প্লেন-অন্ধকারের কারণ-প্রিফিক্স এখন
+            # নোট-সত্যনিষ্ঠ — গেট-নোট রোস্টার-অনুপস্থিতি বললে মিথ্যা "viewer RBAC"
+            # আর ছাপাবে না (U6: মিথ্যা কারণ-নির্ণয় শ্রেণি বন্ধ); পুরনো RBAC-নোটে
+            # আগের প্রিফিক্সই থাকে (টেস্ট-পিন অক্ষত)।
+            plane_cause = (
+                "tool-absent (tower roster purge)"
+                if "roster" in (fb_note or "").lower()
+                else "viewer RBAC"
+            )
             log_fn(
                 "🔍",
-                f"Read-only failed PR audit: PR-plane dark (viewer RBAC; {fb_note}) — "
+                f"Read-only failed PR audit: PR-plane dark ({plane_cause}; {fb_note}) — "
                 f"board-plane partial assurance via {b_note}: {in_gates} row(s) in gates "
                 f"(bridge:in-gates) of {len(b_rows)}; landing cohort visible, per-PR check "
                 "status UNSEEN, not certified clean (U2).",
@@ -2518,6 +2534,22 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
     """
     msg = (raw_error or "").strip()
     lowered = msg.lower()
+    # বাংলা (GLM Agent 09, Job 486738, live প্রমাণ 2026-10-31T03:09Z): রোস্টার-পার্জ
+    # যুগে টাওয়ার টুলটাই সরিয়ে দেয় — JSON-RPC error-envelope
+    # "MCP error -32602: Tool github.list_prs not found"। এটা RBAC-ও নয়,
+    # তার চেয়েও মৌলিক স্থায়ী অবস্থা: টুলই রোস্টারে নেই, কোনো credential/role
+    # পরিবর্তন এটা ঠিক করবে না — টুলটা tools/list রোস্টারে ফিরলে প্লেন
+    # স্বয়ংক্রিয়ভাবে জীবিত হবে। আগে এই শেপ RBAC-শাখার জেনেরিক ফলব্যাকে পড়ে
+    # মিথ্যা "viewer RBAC" কারণ-নির্ণয় হত (U6) — তাই এই শেপ RBAC-চেকের আগেই
+    # শনাক্ত হয়।
+    if "-32602" in lowered or ("tool" in lowered and "not found" in lowered):
+        return (
+            "tower github.list_prs tool-absent from the live tools/list roster "
+            f"({msg[:200]}) — permanent tool-surface state, not RBAC and not a "
+            "transient outage; no credential or role change revives it. The "
+            "roster gate skips the call entirely (zero wasted tool-call cycle) "
+            "and the plane auto-revives the moment the tool returns to the roster"
+        )
     if (
         "forbidden" in lowered
         or "has no repository read access" in lowered
@@ -2531,6 +2563,109 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
             "(admin lane, Shape-4 census Refs #3739)"
         )
     return f"tower PR tool-call error: {msg[:200] or 'no error text returned'}"
+
+_TOWER_ROSTER_GATE_CACHE: dict[str, str] = {}
+
+def _tower_tool_roster_gate(tool_name: str, timeout_s: float = 20.0) -> str | None:
+    """Process-level tool-roster gate for tower github.* probes (U6 root fix).
+
+    বাংলা (GLM Agent 09, Job 486738, 2026-10-31): রোস্টার-পার্জের পর টুল টাওয়ারে
+    না থাকলে প্রতিটি প্রোব একটি পূর্ণ initialize→tools/call সাইকেল ব্যয় করে
+    নিশ্চিত -32602-এ মরত (live প্রমাণ: প্রতিটি zero-credential বুটে "tower PR
+    tool-call error: MCP error -32602: Tool github.list_prs not found")। রুট-কজ
+    ফিক্স: কলের আগে একবার tools/list রোস্টার পড়ে টুলের উপস্থিতি যাচাই।
+
+    ফেরত:
+      - None  → টুল রোস্টারে উপস্থিত, অথবা যাচাই অসম্ভব (fail-open — প্রোব আগের
+                মতোই চলবে; ট্রানজিয়েন্ট আউটেজ কখনো কাজ আটকাবে না)।
+      - str   → নিশ্চিত টুল-অনুপস্থিতির সৎ নোট (স্থায়ী অবস্থা — ক্যাশকৃত);
+                প্রোব শূন্য initialize/tools-call সাইকেলে এই নোট দিয়ে ফেরত দেয়।
+
+    ক্যাশ-চুক্তি: কেবল নিশ্চিত অনুপস্থিতি ক্যাশ হয় (স্থায়ী অবস্থা); যাচাই-পরিবহণ
+    ব্যর্থ বা অপার্স হলে ক্যাশ না করে None — পরের প্রোব আবার চেষ্টা করে। কখনো
+    raise করে না। রোস্টার সম্পূর্ণ পড়া না গেলে (খালি টুল-তালিকা) ভুল
+    "অনুপস্থিত" সিদ্ধান্ত এড়াতে সেটাও fail-open।
+    """
+    cached = _TOWER_ROSTER_GATE_CACHE.get(tool_name)
+    if cached is not None:
+        return cached
+    note: str | None
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+        import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+        base = _mtc.MCP_SERVER_URL.rstrip("/")
+
+        def _post(payload: dict[str, Any], sid: str | None = None, timeout: int = 15) -> tuple[str, str]:
+            hdrs = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+            if sid:
+                hdrs["mcp-session-id"] = sid
+            req = urllib.request.Request(
+                f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return (
+                    resp.headers.get("mcp-session-id") or sid or "",
+                    resp.read().decode("utf-8", errors="replace"),
+                )
+
+        sid, _ = _post(
+            {
+                "jsonrpc": "2.0",
+                "id": "cal-roster-gate-1",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }
+        )
+        _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=10)
+        _, body = _post(
+            {"jsonrpc": "2.0", "id": "cal-roster-gate-2", "method": "tools/list"},
+            sid,
+            timeout=max(10, int(timeout_s)),
+        )
+        envelopes: list[dict[str, Any]] = []
+        for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+            try:
+                envelopes.append(json.loads(m.group(1)))
+            except json.JSONDecodeError:
+                pass
+        if not envelopes:
+            try:
+                envelopes.append(json.loads(body))
+            except json.JSONDecodeError:
+                pass
+        names: set[str] = set()
+        for env in envelopes:
+            if not isinstance(env, dict) or env.get("id") != "cal-roster-gate-2":
+                continue
+            result = env.get("result")
+            if isinstance(result, dict) and isinstance(result.get("tools"), list):
+                for t in result["tools"]:
+                    if isinstance(t, dict) and isinstance(t.get("name"), str):
+                        names.add(t["name"])
+            break
+        if not names:
+            # বাংলা: রোস্টার-পেলোড পড়া যায়নি — অনুপস্থিতি প্রমাণিত নয়, fail-open।
+            note = None
+        else:
+            note = (
+                f"tower tools/list roster does not carry '{tool_name}' "
+                f"(roster-purge state; {len(names)} tools visible) — probe skipped "
+                "with zero tool-call cycles; plane auto-revives if the tool "
+                "returns to the roster"
+            ) if tool_name not in names else None
+    except Exception:  # noqa: BLE001 — যাচাই-ব্যর্থতা কখনো প্রোব আটকাবে না (fail-open)
+        note = None
+    if note is not None:
+        _TOWER_ROSTER_GATE_CACHE[tool_name] = note
+    return note
 
 def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict[str, Any]] | None, str]:
     """R78-mirror — gh-absent tower PR-plane fallback (revives the failed-PR audit).
@@ -2560,6 +2695,14 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
 
     def _probe() -> None:
         try:
+            # বাংলা (GLM Agent 09, Job 486738, U6 রুট-কজ গেট): রোস্টারে টুল না
+            # থাকলে নিশ্চিত -32602-এর initialize→tools/call সাইকেল ব্যয় বৃথা —
+            # গেট সৎ নোট দিলে শূন্য নেটওয়ার্ক-কলে ফেরত (রোস্টার ফিরলে স্বয়ংক্রিয়
+            # পুনরুজ্জীবন; যাচাই-অসম্ভব = None = আগের আচরণ অক্ষত)।
+            gate_note = _tower_tool_roster_gate("github.list_prs")
+            if gate_note:
+                outcome["error"] = gate_note
+                return
             sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
             import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
 
