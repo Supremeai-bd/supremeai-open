@@ -162,7 +162,7 @@ def self_test() -> int:
         failures.append("network error must map to INCONCLUSIVE")
 
     # 5. token material must never appear in verdict/detail output
-    secret = "ghp_SUPERSECRET1234567890"
+    secret = "ghp_SUPERSECRET1234567890"  # gitleaks:allow (fake fixture: asserts token never leaks to output)
     for fetcher in (
         lambda url, headers: (401, "nope"),
         lambda url, headers: (200, "nope"),

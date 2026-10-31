@@ -254,7 +254,55 @@ class TestShieldSharedContract(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             rc = shield.main(["--self-test"])
         self.assertEqual(rc, 0)
-        self.assertIn("ALL PASS (7/7", buf.getvalue())
+        self.assertIn("ALL PASS (13/13", buf.getvalue())
+
+    def test_shield_honors_gitleaks_allow_annotation(self):
+        flagged = "logger.info(f'Logged in with OTP: {current_otp}'"
+        self.assertTrue(self._shield_verdict(flagged))
+        self.assertFalse(
+            self._shield_verdict(flagged + "  // gitleaks:allow"),
+            "author-attested line annotation must be honored",
+        )
+
+    def test_shield_entropy_skips_namespace_and_template_values(self):
+        for line in (
+            "export const AUDIT_KEY = 'supremeai.store.migration.audit.v1';",
+            'local token="${UPSTASH_REDIS_REST_TOKEN:-}"',
+            'key = "simulator:profile:{user_id}"',
+            'declared = [ln.split("key:")[1].strip() for ln in rows]',
+        ):
+            self.assertFalse(self._shield_verdict(line), line)
+
+    def test_shield_entropy_still_catches_random_literal(self):
+        finding = shield.scan_line(
+            "secret = 'Kj9#mP$2vL@8qZ!5xY&1wR*4tN'", "f.py", 1)
+        self.assertIsNotNone(
+            finding, "precision escapes must not swallow random literals")
+        self.assertEqual(finding.rule, "HIGH_ENTROPY_CREDENTIAL")
+
+    def test_shield_honors_fixture_file_declaration(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            f = root / "tests" / "test_face.py"
+            f.parent.mkdir(parents=True)
+            f.write_text(
+                "# no-secret-logs: fixture-file\n"
+                "V = 'Kj9#mP$2vL@8qZ!5xY&1wR*4tN'\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(shield.scan_file(f, root), [])
+
+    def test_shield_pem_header_requires_body(self):
+        head = "-" * 5 + "BEGIN RSA " + "PRIVATE " + "KEY" + "-" * 5
+        body = "MII" + "AbCd" * 12
+        self.assertIsNone(
+            shield.scan_line(f"echo data {head}", "f.sh", 1),
+            "bare PEM header is a public template constant, not a leak",
+        )
+        finding = shield.scan_line(f"blob {head}{body}", "f.sh", 2)
+        self.assertIsNotNone(finding)
+        self.assertEqual(finding.rule, "PRIVATE_KEY")
 
     def test_shield_source_never_trips_scanner(self):
         """Drift guard: the shield's self-test vectors stay fixture-safe."""

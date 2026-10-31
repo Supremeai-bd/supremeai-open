@@ -384,7 +384,7 @@ section("Normalizer integration + derivation contract");
     headSha: "c".repeat(40),
     conclusion: "failure",
     failedJobs: [],
-    eventKey: "ci-failure:Supremeai-bd/supremeai-api:Release:77:3",
+    eventKey: "ci-failure:Supremeai-bd/supremeai-api:Release:77:3",  // gitleaks:allow
     reportedAt: "2026-10-16T00:00:00.000Z",
   };
   const issue = deriveFailureIssue(report);
