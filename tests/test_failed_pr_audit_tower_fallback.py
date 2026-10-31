@@ -149,9 +149,26 @@ class TestTowerPrFailureClassification(unittest.TestCase):
             self.assertIn("RBAC-forbidden", note, shape)
 
     def test_rpc_error_gets_tool_call_error_note(self) -> None:
-        note = cal._classify_tower_pr_failure("Tool github.list_prs not found")
+        # GLM Agent 09 (Job 486738, 2026-10-31) contract update: the "Tool ... not
+        # found" shape is now classified as PERMANENT tool-absence (roster-purge
+        # era, live-verified — a generic note baited pointless retries, U6).
+        # The generic note now pins on tool-name-less RPC text below.
+        note = cal._classify_tower_pr_failure("JSON-RPC transport malfunction -32000")
         self.assertIn("tower PR tool-call error:", note)
-        self.assertIn("Tool github.list_prs not found", note)
+        self.assertIn("JSON-RPC transport malfunction -32000", note)
+        self.assertNotIn("no JSON list", note)
+
+    def test_tool_not_found_shape_gets_truthful_tool_absent_note(self) -> None:
+        # GLM Agent 09 (Job 486738, 2026-10-31): the roster-purge -32602 shape is
+        # permanent tool-absence, NOT RBAC — the false "viewer RBAC" cause class
+        # must never ride this text again.
+        note = cal._classify_tower_pr_failure(
+            "MCP error -32602: Tool github.list_prs not found"
+        )
+        self.assertIn("tool-absent", note)
+        self.assertIn("permanent tool-surface state", note)
+        self.assertIn("MCP error -32602: Tool github.list_prs not found", note)
+        self.assertNotIn("RBAC-forbidden", note)
         self.assertNotIn("no JSON list", note)
 
     def test_empty_error_text_gets_generic_tool_call_note(self) -> None:
