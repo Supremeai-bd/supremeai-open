@@ -106,7 +106,10 @@ Modes:
 Exit codes: 0 = report OK, 1 = strict findings, 2 = board/history unreachable
             (honest skip — never reported as pass).
 
-Zero credentials, read-only (Tower queries + local git log). No mutation.
+Zero credentials for Tower/GitHub planes. The history plane reads local git
+log and, on a SHALLOW checkout (the agent-loop caller's depth-1 default,
+r13/cycle-18 Job 486770), performs ONE bounded `git fetch --deepen` that
+enriches only the local object store — no ref update, no Tower/repo write.
 """
 
 from __future__ import annotations
@@ -587,8 +590,7 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
 
 # ── IO wrappers (live mode) ──────────────────────────────────────────────────
 
-def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
-    git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
+def _git_log_subjects(depth: int, git_bin: str) -> list[str]:
     out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
         [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
         capture_output=True, text=True, timeout=60,
@@ -596,6 +598,65 @@ def _main_subjects(depth: int = LOG_DEPTH) -> list[str]:
     if out.returncode != 0:
         raise RuntimeError(f"git log failed: {out.stderr.strip()[:120]}")
     return [ln for ln in out.stdout.splitlines() if ln.strip()]
+
+
+def _clone_is_shallow() -> bool:
+    """actions/checkout's depth-1 default (fetch-depth unset) writes .git/shallow."""
+    return (REPO_ROOT / ".git" / "shallow").exists()
+
+
+def _deepen_main(depth: int, git_bin: str) -> bool:
+    """One bounded enrichment past the shallow boundary (local store only —
+    no ref update, no Tower/repo mutation; anonymous works on the public
+    origin, checkout-persisted credentials elsewhere)."""
+    try:
+        out = subprocess.run(  # nosec B603 — list-argv, no shell, read-only fetch
+            [git_bin, "-C", str(REPO_ROOT), "fetch", f"--deepen={depth}", "origin", "main"],
+            capture_output=True, text=True, timeout=180,
+        )
+        return out.returncode == 0
+    except Exception:  # noqa: BLE001 — offline/permission failures degrade, never crash
+        return False
+
+
+def _main_subjects(depth: int = LOG_DEPTH,
+                   log_reader=_git_log_subjects,
+                   shallow_probe=_clone_is_shallow,
+                   deepener=_deepen_main) -> list[str]:
+    """Landing subjects on origin/main, shallow-self-healing (r13/cycle-18).
+
+    Live-proof of the blindness this heals (cycle-18, Job 486770): the only
+    wired caller — the agent-loop janitor step, #3341 — checks out depth-1
+    while this census joins the last LOG_DEPTH subjects; the join saw ONE
+    subject, every landed slug was invisible, and the daily sweep closed
+    NOTHING even when it fired (board census 19/19 MERGED_ON_MAIN right
+    after the 06:00Z fire, all never-touched). The root fix lives in the
+    TOOL, not the caller, so every wired caller — daily janitor, future
+    sync-job step, local run — sees the full join window. Self-heal is one
+    bounded deepen; failure degrades LOUDLY (::warning:: GHA annotation,
+    check_commit_sizing.py idiom) — a truncated census is never silently
+    trusted again.
+    """
+    git_bin = shutil.which("git") or "git"  # B607: resolve to absolute path when available
+    subjects = log_reader(depth, git_bin)
+    if len(subjects) >= depth or not shallow_probe():
+        return subjects  # full window, or genuinely short history — nothing to heal
+    if deepener(depth, git_bin):
+        healed = log_reader(depth, git_bin)
+        if len(healed) > len(subjects):
+            print(f"::warning::landing-watchdog census self-healed a shallow "
+                  f"checkout: {len(subjects)} -> {len(healed)} of {depth} "
+                  f"subjects visible")
+            return healed
+        print(f"::warning::landing-watchdog census ran on a shallow checkout: "
+              f"{len(subjects)}/{depth} subjects visible and deepen fetched "
+              f"no new commits — MERGED_ON_MAIN detection may under-report")
+        return subjects
+    print(f"::warning::landing-watchdog census ran on a shallow checkout: "
+          f"{len(subjects)}/{depth} subjects visible and git fetch --deepen "
+          f"failed (offline/credentials) — MERGED_ON_MAIN detection may "
+          f"under-report")
+    return subjects
 
 
 def _open_pr_titles(fetch_text=_tower_text) -> list[str]:
@@ -1158,6 +1219,85 @@ def self_test() -> list[tuple[str, bool, str]]:
     qi, q_note = _load_queue_integrity({5}, fetch_rows=_q_down)
     cases.append(("integrity per-plane fail-open",
                   qi is None and "unreachable" in q_note, f"note={q_note}"))
+
+    # r13/cycle-18 (Job 486770): shallow-checkout census self-heal. The only
+    # wired caller checks out depth-1; the census must heal (one bounded
+    # deepen) or degrade loudly — never silently join a truncated window.
+    class _FakeShallowRepo:
+        def __init__(self, deepen_works, heals_wider):
+            self.calls: list[str] = []
+            self.deepen_works = deepen_works
+            self.heals_wider = heals_wider
+            self._deepened = False
+
+        def log(self, depth, git_bin):
+            self.calls.append(f"log:{depth}")
+            if self._deepened and self.heals_wider:
+                return [f"subj-{i}" for i in range(min(depth, 400))]
+            return ["subj-0"]
+
+        def probe(self):
+            self.calls.append("probe")
+            return True
+
+        def deepen(self, depth, git_bin):
+            self.calls.append(f"deepen:{depth}")
+            self._deepened = self.deepen_works
+            return self.deepen_works
+
+    repo = _FakeShallowRepo(deepen_works=True, heals_wider=True)
+    got = _main_subjects(400, log_reader=repo.log, shallow_probe=repo.probe,
+                         deepener=repo.deepen)
+    cases.append(("shallow census self-heals to the full join window",
+                  len(got) == 400 and any(c.startswith("deepen") for c in repo.calls),
+                  f"visible={len(got)} calls={repo.calls}"))
+
+    repo2 = _FakeShallowRepo(deepen_works=False, heals_wider=False)
+    got2 = _main_subjects(400, log_reader=repo2.log, shallow_probe=repo2.probe,
+                          deepener=repo2.deepen)
+    cases.append(("shallow census degrades to truncated view, never crashes",
+                  got2 == ["subj-0"] and repo2.calls == ["log:400", "probe", "deepen:400"],
+                  f"got={got2} calls={repo2.calls}"))
+
+    class _FakeDeepRepo:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def log(self, depth, git_bin):
+            self.calls.append(f"log:{depth}")
+            return [f"subj-{i}" for i in range(min(depth, 400))]
+
+        def probe(self):
+            self.calls.append("probe")
+            return True
+
+        def deepen(self, depth, git_bin):
+            self.calls.append("deepen:MUST-NOT-RUN")
+            return True
+
+    repo3 = _FakeDeepRepo()
+    got3 = _main_subjects(400, log_reader=repo3.log, shallow_probe=repo3.probe,
+                          deepener=repo3.deepen)
+    cases.append(("full window skips the heal path entirely",
+                  len(got3) == 400 and "deepen:MUST-NOT-RUN" not in repo3.calls,
+                  f"visible={len(got3)} calls={repo3.calls}"))
+
+    class _FakeShortRepo(_FakeDeepRepo):
+        def log(self, depth, git_bin):
+            self.calls.append(f"log:{depth}")
+            return ["only-commit"]
+
+        def probe(self):
+            self.calls.append("probe:False")
+            return False
+
+    repo4 = _FakeShortRepo()
+    got4 = _main_subjects(400, log_reader=repo4.log, shallow_probe=repo4.probe,
+                          deepener=repo4.deepen)
+    cases.append(("genuinely short history is not mistaken for truncation",
+                  got4 == ["only-commit"] and repo4.calls == ["log:400", "probe:False"]
+                  and "deepen:MUST-NOT-RUN" not in repo4.calls,
+                  f"got={got4} calls={repo4.calls}"))
     return cases
 
 
