@@ -6,110 +6,80 @@
 ## Durable outcomes (with proof)
 
 - Scout radar R94 filed (WO #4015, PR #4016): the credential-free board
-  ground-truth freshness hierarchy — a web-rendered GitHub view served a
-  61-open ghost board while tower single-fetches proved all four rows
-  closed 43–63 min BEFORE the view; anonymous REST 403-dark; tower
-  single-fetch is the only proven-fresh board authority. Registry
-  co-obligation done (index pass-51 + R94 row, pointer to R95).
+  ground-truth freshness hierarchy — tower single-fetch is the only proven
+  fresh board authority; web-rendered views serve ghosts; anonymous REST
+  403-dark. Registry co-obligation done (index pass-51 + R94 row).
 - CI-tracker triage r1 landed (PR #3877, WO #3876, merge 667b1bf): tracker
-  #3856 = #3524-collateral stale-run class (merge-ref guard exit 2, main
-  exit 0, true-rebase sim exit 0; remedy #3550 already on main; frozen red
-  clears on author rebase).
+  #3856 = #3524-collateral stale-run class; remedy #3550 already on main.
 - Scan-B board-plane third level with honest partial assurance (WO #3798,
   PR #3799, merge cbea0f5; 42/42 hermetic cases).
 - Standing successes (cycles 9–12, compressed): standing-suite heal r2
   (PR #3695, a5d1d10); #3467 read-classifier wiring (PR #3486, 89ca297);
-  jargon slice (PR #3599, b0e2ada); R66 slice live-proven (PR #3220);
-  landing-policy triage (PR #3406); OpenRouter free-tier scout (PR #3379);
-  sentry c61 all-green (PR #3716, f922303).
+  jargon slice (PR #3599, b0e2ada); R66 slice live-proven (PR #3220).
 
 ## Cycle log (compressed, keep-small per the glm22-r2 pattern)
 
-- c11–c16 (00:16–09:16, compressed): standing holds and scout cycles —
-  viewer-role denial corroborated (c11); #3527 resolved WITHOUT a claim,
-  census: pipeline.yml 22 jobs, 15 checkout sites (c14); board true-zero
-  proven by 4 single-fetch spot-checks after a stale web view nearly
-  minted a false finding; ecosystem-scout dispatched, R94 filed (c15);
-  receipt-orphan self-heal confirmed at +20 min, Target-Repo field proven
-  cosmetic on open AND closed WOs (c16). r1–r3 landed (PRs #3753, #3945,
-  #4023).
-- c17–c21 (10:16–14:16, compressed): bare-mode hold cycles (claimable 0/5
-  each; c18–c21 zero code edits). Closure-latency spectrum measured across
-  five cycles: 36 s fast path, ≤20 min self-heal, then REGIME-WIDE SILENCE
-  from ~01:31Z deepening to 4 h 45 min with 19/19 rows open — read at the
-  time as a likely-never subset. Reds: the #4124 pair healed by #4138
-  (Option A, verified at three independent tips, 36 passed each);
-  blind-ladder class drained 12 -> 2 (#4209); remaining: ONLY the
-  CVE-guard pair (follow-redirects@1.16.1, GHSA-mrwp-f3q8-3g9p) —
-  maintainer-lane. r4–r7 landed (PRs #4116, #4128, #4160, #4184).
-- c22 (15:16): no dispatch; CLOSER REVIVED — all 19 open rows closed in
-  one batch (bridge:landed), board 19 -> 0; batch-delayed closer model
-  confirmed (full detail in Notes). Suite 2F/2234P after GLM 28's
-  hermetic fix (#4232). r8 landed (PR #4216, f29523b).
-- c23 (16:16): no dispatch. RBAC ERA ENDED: #4249 restored the tower
-  default role to admin — tools/list jumped ~20 -> ~158 tools,
-  github_list_prs RETURNED in underscore form; NAMING-SKEW datum: the
-  loop still probes the dot-form name, PR-plane audit auto-skipped
-  (degrades safely). Lane discipline unchanged — admin visibility is NOT
-  a lane expansion. Suite 2F/2234P. r9 landed (PR #4237, fcc0c0e); r10
-  landed (PR #4254, 89c38d0).
-- c24 (17:16): no dispatch (claimable 0/5; board 22 rows — 13 of them are
-  probe WOs from an EXTERNAL binary-search campaign on the submit plane
-  ("isolate exact trigger" / "tiny full_file" classes), 9 receipt-class,
-  none this slot's; base 48ad193, 0 behind). NEW MAIN-RED CENSUS from the
-  #4310/#4311 landings, proven at-tip: (a) test_meta_cognitive_intent.py
-  ERRORS AT COLLECTION — its import chain (core.adaptive_engine ->
-  performance_enhancer -> brain.model_registry -> services.config_service)
-  needs sqlalchemy which is declared NOWHERE in requirements/pyproject —
-  the abort zeroes the WHOLE suite's visibility, a strictly worse class
-  than the old blind ladder; with --continue-on-collection-errors: 4
-  failed, 2238 passed, 13 skipped in 84 s. (b) NEW test_test_parity_guard
-  RED: the new scripts/ci/line_budget_guard.py and run_face_tests.py have
-  no parity tests (missing-tests assertion names both exactly). (c)
-  standing CVE-guard pair unchanged. ALL owner-lane items — no unilateral
-  dependency bump, core lazy-import, or parity authoring without a
-  dispatch (U10; dependency policy is maintainer-lane per the #4150
-  routing). Loop #4311-verified: UNIVERSALS 6 -> 8 (adds anti-bloat +
-  zero cross-agent collateral); the PR fallback now probes the underscore
-  name and its HTTPError was TOWER FLAKINESS, not a schema break — a
-  direct fetch 20 s later succeeded (22 rows). verify-only 9/9. r11 =
-  this patch.
+- c9–c16 (00:16–09:16, compressed): standing holds, scout cycles, viewer
+  denial corroboration, pipeline census (22 jobs, 15 checkout sites),
+  ghost-board escape (4 single-fetch spot-checks), R94 filed; r1–r3
+  landed (PRs #3753, #3945, #4023).
+- c17–c22 (10:16–15:16, compressed): bare-mode hold cycles; reds drained
+  — #4124 pair healed (#4138), blind ladder 12 -> 2 (#4209), closure
+  regime SOLVED (batch-delayed closer; c22: 19 rows closed in one sweep,
+  board 19 -> 0); suite 2F/2234P. r4–r8 landed (PRs #4116, #4128, #4160,
+  #4184, #4216).
+- c23 (16:16): RBAC ERA ENDED — #4249 default role -> admin, roster ~20
+  -> ~158 tools; lane discipline UNCHANGED (read + submit only). Suite
+  2F/2234P. r9 landed (PR #4237, fcc0c0e).
+- c24 (17:16): no dispatch (board 22 rows, external probe campaign).
+  New main-red census from #4310/#4311 landings: meta-cognitive test
+  aborted collection (sqlalchemy undeclared) + parity-guard wanted tests
+  for line_budget_guard.py/run_face_tests.py + CVE pair. Loop probes
+  underscore since #4311; UNIVERSALS 6 -> 8. r10 landed (PR #4254,
+  89c38d0); r11 landed (PR #4316, 8a786e3).
+- c25 (18:16): no dispatch (claimable 0/5; board 24 open — all other
+  agents' WOs). NAME TRUTH PROVEN BY WIRE: underscore form is LIVE,
+  dot form is DEAD — `github_workflow_runs` probe got HTTP 429 (tower
+  accepted the call; quota), `github.workflow_runs` probe got MCP
+  error -32602 "Tool not found". Consequences: (a) GLM 04's #4341
+  census-test uses the CORRECT underscore wire names; (b) the
+  test_tower_tool_name_drift.py DEAD_TOWER_TOOL_NAMES map is STALE —
+  it claims dot is live and flags the census-test's correct names,
+  which is the NEW third main-red. NOT fixed unilaterally: the
+  collision plane is GLM 04's active lane and the right fix (dynamic
+  roster check vs re-mapped pairs) is an owner design decision. Suite
+  at tip 2f5ad91: 3 failed / 2286 passed / 13 skipped — the c24
+  meta-cognitive collection-abort is HEALED (suite collects again) and
+  the parity-guard red is HEALED (#4333 face-runner manifest); js-CVE
+  drift GREW (glob@10.5.0/glob@13.0.6/minimatch x3 advisories joined
+  follow-redirects on the studio lockfile — still maintainer-lane).
+  TOWER 429 ROOT CAUSE: the loop's "flaky" HTTPError is rate limiting —
+  backoff + single retry recovers (proven twice this cycle).
+  verify-only 9/9. r12 = this patch.
 
 ## Notes for the next agent on this slot
 
-- NEW (c24): main's red census grew from the #4310/#4311 pair — the
-  meta-cognitive test ABORTS COLLECTION for the whole suite (sqlalchemy
-  undeclared; run pytest with --continue-on-collection-errors until an
-  owner fixes requirements or lazy-imports the chain) and the parity
-  guard wants tests for scripts/ci/line_budget_guard.py +
-  run_face_tests.py. Plus the standing CVE pair. Expect 3F+1E at tip.
-  Do NOT bump dependencies or author parity tests unilaterally (U10) —
-  both are owner-lane.
-- RESOLVED: the #4124 red pair is green since #4138; the wider
-  blind-ladder class drained 12 -> 2 by a67 (#4209). REMAINING
-  maintainer-lane hazard: the two CVE-guard faces on
-  follow-redirects@1.16.1 (GHSA-mrwp-f3q8-3g9p,
-  .agents/skills/devtools-audit/package-lock.json) — agents must NOT
-  bump the lockfile unilaterally (U5/U10).
-- The loop's CLI contract changed (#4097): invoke the loop BARE (no
-  arguments). The old pick and loop flags are purged; verify-only is the
-  only surviving mode.
-- Receipt-WO closure model SOLVED (c17–c22): the closer is BATCH-DELAYED
-  — hours of silence, then the whole backlog closes in one sweep with
-  bridge:landed (c22: 19 rows, oldest +288 min). Never file a defect
-  report for a silent closer; never treat open rows as work signals;
-  never read a 0-row board as certified clean (ingest lag, U2). Per-row
-  taskId check via bridge_read_feedback is the only work-truth (R94).
-- RBAC era ENDED (#4249, tower role -> admin): the roster now carries
-  ~158 tools including dangerous ones (autonomy kill switch, db writes,
-  deploys, tenant token rotation). Lane discipline is UNCHANGED: this
-  anonymous bridge lane uses bridge_* read tools and the submit-patch
-  path only — never touch admin/mutation tools. Roster names are
-  UNDERSCORE-form; the loop probes underscore now (#4311) but the tower
-  itself can flake (HTTPError) — retry once before concluding anything.
-- Check the tool list at cycle start — tower rosters and name forms
-  drift between epochs (dot-form -> underscore-form observed at c23).
-- Receipt prose must avoid executable strings and flag quotes (WAF 403s).
-- Loop observation roles are gated on a >=5 claimable threshold (#4007) —
-  on a drained board expect hold cadence; scout lanes remain the
-  productive path.
+- NEW (c25): main carries 3 reds at tip — (1) test_tower_tool_name_drift
+  flags #4341's census-test on STALE name-truth (underscore is
+  wire-LIVE per probe: dot form returns -32602 not-found, underscore
+  returns 429 quota); fixing it means touching GLM 04's lane — do NOT
+  edit either test without a dispatch; (2)+(3) the CVE-guard pair,
+  whose js side now ALSO flags glob/minimatch advisories on
+  .agents/skills/devtools-audit/package-lock.json. Never bump
+  lockfiles unilaterally (U5/U10; maintainer-lane per #4150 routing).
+- RESOLVED this window: meta-cognitive collection abort (healed —
+  suite collects at tip); parity-guard red (#4333); #4124 pair;
+  blind ladder.
+- The loop's CLI contract: invoke BARE (no arguments); verify-only is
+  the only surviving mode (#4097).
+- Receipt-WO closure is BATCH-DELAYED — silence is not a defect;
+  open rows are not work signals; a 0-row board is not certified
+  clean. Per-row taskId check via bridge_read_feedback is the only
+  work-truth (R94).
+- RBAC-era roster: ~158 tools incl. dangerous ones — this lane stays
+  read + submit-patch only, never admin/mutation tools.
+- Tower rate limiting is the real face behind "flaky" HTTPErrors:
+  back off ~20-25 s and retry once before concluding anything.
+- Check the tool list at cycle start — rosters drift between epochs.
+- Receipt prose must avoid executable strings and flag quotes
+  (WAF 403s). Claim-gate threshold is >=5 claimable (#4007).
