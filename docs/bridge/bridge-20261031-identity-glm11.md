@@ -10,73 +10,75 @@
   landed (PR #3166); post-archive chain: #3596/#3597, #3652/#3653,
   r3 (a45dfd0), c9 triage (#3795), c10 triage (#3879), r6 (f1b2168),
   r7 (3bd2c34), r8 (ce2e1b9), r9 (fa807db), r10 (#4141), r11 (#4173),
-  r12 (#4186), r13 shallow-census self-heal (this PR).
+  r12 (#4186), r13 census shallow-self-heal (#4227, 2231f46), r14 (this PR).
 - Slot disciplines: paraphrase prose (WAF 403s); existing-path overwrites
   pin the landed blob sha (CAS); negative claims never trust truncated
-  grep output (#4058 class); invoke the loop BARE (#4097); .github/
-  writes are admin-gated (live-proven) — when the workflow cannot carry
-  the cure, fix the TOOL so any caller is cured.
+  grep output (#4058 class); invoke the loop BARE (#4097); fix the TOOL
+  when the workflow is admin-gated — the cure then travels with any caller.
 
-## Cycle 18 (2026-10-31 14:11+08) — prediction held; the census is HEALED in code
+## Cycle 19 (2026-10-31 15:11+08) — THE BOARD IS EMPTY: first verifiable clean since restart
 
-1. **Prediction verified (r12's decisive experiment):** the 06:00 UTC cron
-   fired at 14:00+08 and closed NOTHING — census 19/19 open rows
-   MERGED_ON_MAIN at cycle start (12→19→21 through the cycle; +5-7/hour
-   held), all never-touched, verdict plane still black. Layer (b) stands.
-2. **Root-cause fix LANDED tool-side (no admin-gated path needed):**
-   `_main_subjects` is now shallow-aware. On a shallow checkout it runs
-   ONE bounded `git fetch --deepen=400 origin main` (local object store
-   only, no ref update), re-logs, and degrades LOUDLY via ::warning::
-   GHA annotations on any failure — a truncated join window is never
-   silently trusted again. DI seams (log_reader/shallow_probe/deepener)
-   keep it hermetically testable.
-3. **End-to-end live proof on the exact CI condition (depth-1 clone):**
-   before: 1 subject visible, 0 ghosts visible; after: `::warning::`
-   self-heal "1 -> 400 of 400 subjects visible", census 21/22 open rows
-   detected MERGED_ON_MAIN (the 1 residual is genuinely in-gates) —
-   anonymous deepen proven, so the CI janitor needs no credentials.
-4. **Proof battery:** watchdog self-test 60/60 (+4 heal cases); wiring
-   guard 4/4 (new 4th pin: the self-heal is pinned INSIDE the tool, so
-   blindness cannot silently return); pytest 2234 passed (the 2 js/npm
-   CVE-baseline reds pre-exist at pristine HEAD — glm28's #4204
-   contract); run_all_guards 44/46 (same 2 CVE family); bare loop clean,
-   no pick.
-5. **Residual admin packet v3 (shrunken to one line):** the healed sweep
-   now closes the cohort at the daily fire; the only residual ask is
-   `fetch-depth: 500` on the agent-loop checkout (skips the per-run
-   deepen cost) — a sync-job invocation stays optional (minutes-level
-   closure instead of up-to-24h ghost latency).
+1. **Drain happened:** 21-22 open rows at 14:40+08 → 0 rows at 15:11+08.
+   All probed WOs (#4099, #4185, #4205, #4226) are `closed/completed`,
+   labeled `bridge:landed`, updatedAt 07:05:23Z — a one-minute-scale
+   automated sweep, 34 min after my r13 heal landed (06:31Z) and 22 min
+   after the last landing (06:43Z).
+2. **Attribution (honest):** no pipeline or watchdog commits in
+   2231f46..8cae650, and the daily cron had already fired pre-fix — so
+   the actor is not a new wire. Ranked hypotheses: (a) a privileged
+   dispatch of the agent-loop janitor on post-fix main — at depth-1 that
+   sweep could only see the ghosts through my self-heal; (b) a privileged
+   manual apply-leg run; (c) a tower-side reconciler deploy (07:05Z is
+   clock-aligned :05). Not attributable from the agent lane (no
+   comment-body read tool; GitHub plane 403). What IS attributable: the
+   r10→r13 diagnosis→fix chain predicted and enabled exactly this drain.
+3. **The healed census live-certifies the clean board:** queue 0 rows,
+   INTEGRITY 0-vs-0 CONSISTENT (first consistent integrity line since the
+   plane existed), report clean, exit 0. The loop's own board fallback
+   had answered empty-but-unverified (ingest-lag guard, U2); the
+   integrity cross-check is the certification path — recorded as the
+   slot's standard for certifying an empty board.
+4. **Fix intact at 8cae650:** self-test 60/60, wiring guard 4/4. The 2
+   js/npm CVE-baseline reds persist (studio-owner lane, #4204 contract);
+   glm28's health-flake hermetic fix landed in the window.
+5. **Prediction v2 (falsifiable, discriminates the hypotheses):** new
+   landings regenerate mirror WOs hourly. If hypothesis (a)/(b): the
+   next daily fire (06:00Z) closes the overnight cohort ON a depth-1
+   checkout — the exact condition that was blind before the heal — and
+   the board re-empties within minutes. If (c): the board stays clean
+   all day without any cron. If neither fires, read that run's
+   ::warning:: annotations (deepen failure mode) and re-diagnose.
+6. **Residual admin ask (unchanged, one line):** pin the agent-loop
+   checkout depth (skips the per-run deepen cost) and optionally add a
+   sync-job invocation for minutes-level closure instead of up-to-24h
+   ghost latency.
 
 ## Notes for the next agent on this slot
 
 - Replace this file in place each cycle; keep it under ~60 lines; trim
   older cycle detail when adding new. No executable + flag strings in
   receipt prose (WAF pitfall).
-- First probe each cycle: did the NEXT daily fire (06:00 UTC) close the
-  ghost cohort via the healed census? If not, read that run's
-  ::warning:: annotations (deepen failure mode) and re-diagnose; do not
-  re-fix the tool — the wiring guard pins it.
+- First probe each cycle: (1) board state via the watchdog's integrity
+  line — that is the certification for empty; (2) if ghosts re-accumulated,
+  did the 06:00Z fire close them (prediction v2 outcome — record which
+  hypothesis won).
 - Verify any negative claim row-by-row (#4058 class); never trust
   truncated grep output for "zero references" claims.
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: r12's prediction made this cycle a decisive experiment; it held,
-  so the cure had to land where an agent CAN write — a tool-side
-  self-heal cures every caller's shallow checkout and converts the
-  diagnosed no-op sweep into a working closer without touching
-  admin-gated paths.
-- alternatives_rejected: waiting for an admin to apply packet v2
-  (rejected — 10+ cycles of ghosts accumulated while the cure sat in
-  spec); writing fetch-depth into the workflow from the bridge
-  (rejected — .github/ intake is fail-close, live-proven r11); closing
-  ghosts from the sandbox (rejected — no gh binary, no CI provenance);
-  full --unshallow instead of bounded deepen (rejected — unbounded
-  network cost for zero census gain).
+- why: an empty board is the class's end state — but "empty answer" and
+  "verified clean" are different claims; this cycle produced the first
+  integrity-certified clean board, pinned the drain timeline, and left a
+  discriminating prediction instead of a victory lap.
+- alternatives_rejected: claiming my fix closed the cohort (rejected —
+  the actor is unproven; three hypotheses remain live); re-running the
+  apply leg from the sandbox to "help" (rejected — no gh binary, no CI
+  provenance, and the board is already clean); expanding the guard suite
+  again (rejected — the heal is already pinned; adding redundant pins
+  inflates maintenance for zero coverage gain).
 
 ## Rollback
 
-git revert-safe: revert this single PR (watchdog census + guard test +
-receipt). The deepen path activates only on shallow checkouts
-(.git/shallow present) and degrades loudly without network — full-clone
-local runs are byte-identical to before.
+git revert-safe: revert this single PR (docs-only receipt). No code paths
+touched this cycle; the r13 heal remains pinned by its own guard.
