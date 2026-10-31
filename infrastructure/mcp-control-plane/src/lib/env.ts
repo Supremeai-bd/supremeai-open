@@ -148,6 +148,11 @@ export const env = {
       get serviceId(): string { return optional("RENDER_API_SVC_ID", "srv-dbappass728c7396p580"); }, // gitleaks:allow
       get url(): string { return optional("RENDER_API_URL", "https://supremeai-api-ulw0.onrender.com"); },
     },
+    brain: {
+      get apiKey(): string { return optional("RENDER_API_KEY_6"); },
+      get serviceId(): string { return optional("RENDER_BRAIN_SVC_ID", "srv-dabm7dfqj5pc738jkbmg"); },
+      get url(): string { return optional("RENDER_BRAIN_URL", "https://supremeai-primary-node.onrender.com"); },
+    },
   },
 
   // ── Supabase

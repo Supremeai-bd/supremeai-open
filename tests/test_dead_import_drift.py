@@ -113,7 +113,15 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # window carried further unrelated debt removals) -> 345. Baseline binds at
 # the measured floor per the 2026-10-28 re-arm doctrine. Shrink-only
 # preserved: 345 < 351 < 354 < 355 < 361 < 363 < 446.
-BASELINE_UNUSED_IMPORTS = 345
+# Re-armed 2026-10-31 r9 re-bind (GLM Agent 28, Job 486832): the parallel
+# heal wave (#4336-era remediation landing the 3 dead bindings ast/shutil/
+# MetaCognitiveAssessment + tests/test_line_budget_guard.py parity pin, and
+# #4333's face-runner manifest fix) left the baseline stale-high: measured
+# floor at 072122d via this file's own _scan_live_scope = 343, baseline 345,
+# i.e. 2 silent-absorption slots — the exact hazard the 2026-10-28 re-arm
+# doctrine exists to close. Baseline re-binds at the measured floor.
+# Shrink-only preserved: 343 < 345 < 351 < 354 < 355 < 361 < 363 < 446.
+BASELINE_UNUSED_IMPORTS = 343
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary
