@@ -6,27 +6,25 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১২টি পাস)।
-- **Cycle 6-১২:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১৪টি পাস)।
+- **Cycle 6-১৩:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
-  (#3883/#3898; #3534 MERGED, cure #3931), #3527 implicit-persist সেনসাস +
-  apply-ready প্যাচ (WO #3948/PR #3949, admin-lane)।
+  (#3883/#3898; #3534 MERGED, cure #3931), #3527 সেনসাস + apply-ready প্যাচ
+  (#3948/#3949, admin-lane), rules-breaker সুইপ: R93 লাইভ-ভেরিফাই + #3995/#3992
+  clean-cert (#4013/#4014 landed)।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 13 (2026-10-31 08:14+08) — rules-breaker sweep: R93 live-verify + fresh surfaces clean
+## Cycle 14 (2026-10-31 09:14+08) — R93 স্টেটাস-আপডেট (U8, no-dispatch সাইকেল)
 
-- Loop ×3 (human-eye → rules-breaker → platform-guardian; board 0 rows
-  সব run-এ, gh-less): কোনো solver dispatch নেই → fix নয়, সুইপ-রিপোর্ট।
-  মাঝ-সাইকেলে d4f4263 landed — observation roles এখন >=৫ claimable threshold-এ
-  gated; এই sweep প্রি-gate cadence-এ চলেছে।
-- **R93 লাইভ-পুনঃযাচাই (4e553bd+05a21ad):** unmapped repo → ternary `None`
-  (federation_ci_watchdog L355/L502), dedup URL `/issues/None/comments`,
-  mirror_failure issue-আগে-link-পরে এবং guard `target_anchor` চেক করে না —
-  স্বাধীন অফলাইন প্রমাণ; fix রেসিপি এখনো unpicked (board খালি; NO Speculative
-  Dispatch) → রিপোর্টই dispatch-সারফেস: WO #4013/PR #4014।
-- **#3995 audit CLEAN:** alias-map সম্পূর্ণ, envelope legacy নাম test-pinned,
-  canonical_role same-key, dispatch solver-first। **#3992 (৩৪ ফাইল) CLEAN:**
-  zero secret (শুধু নিজের detection regex), sandbox containment যাচাই।
-- Non-finding: queue state-lag সেকেন্ডে সেলফ-কারেক্ট, STALE-CLAIM GUARD ঢাকে।
-- Refs: #4002 #4003 #4000 #4001 #3995 #3992 R93/R88 (bare, report-only)।
+- Loop ×2: উভয়ই "clean and healthy (claimable 0/5), observation roles idle" —
+  d4f4263-এর নতুন gate সক্রিয়; কোনো dispatch নেই।
+- **R93 অর্ধেক-remedy প্রথম-হাতে নিশ্চিত:** #4065-এর refactor-এ
+  `active_anchor_for_repo()` (L463 fallback = CI_FAILURE_ANCHOR) এসেছে —
+  loose-issue অর্ধ বন্ধ; production dedup inline, None-মুক্ত; self-test 11/11।
+- **Residual (U8 সারফেস):** `check_existing_mirror` L358-এ এখনো import-guard
+  ternary (unmapped → None) — কিন্তু repo-ব্যাপী **zero caller**, orphaned
+  dead code = ভবিষ্যৎ rewiring-এর বুবি-ট্র্যাপ → solver-লেনে delete/rewire
+  করা উচিত। স্টেটাস-সংশোধন রশিদ: WO #4076/PR #4077 (R93 + RB13-এর "fix
+  unpicked" স্টেটাস সংশোধিত)।
+- Refs: #4065 R93 (#4002) #762 (bare, report-only)।
