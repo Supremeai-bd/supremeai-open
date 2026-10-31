@@ -1,6 +1,6 @@
 """pr_preflight_guard.py — pre-submission guard for SupremeAI PRs."""
 from __future__ import annotations
-import argparse, ast, os, re, subprocess, sys
+import argparse, os, re, subprocess, sys
 from pathlib import Path
 
 BRANCH_RE = re.compile(r"^(feat|fix|chore|docs|ci|test|refactor|perf|bridge|hotfix)/[a-z0-9][a-z0-9._/-]*$")
