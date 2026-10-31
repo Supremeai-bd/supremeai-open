@@ -272,6 +272,71 @@ class TestExtractMcpToolResponse(unittest.TestCase):
         self.assertEqual(err, "")
 
 
+class TestTowerSharedMcpSession(unittest.TestCase):
+    """U6 root-fix pin: process-level init-once MCP session (boot-burst cure).
+
+    Live defect (18:04+08): gate + PR-fallback + census each opened their OWN
+    initialize→initialized cycle (5 POSTs per boot); Render's burst limiter
+    (429) killed the census inside that burst while the earlier probes
+    succeeded. The shared init-once session halves the boot POST budget;
+    these pins keep it init-once, TTL-bounded, and fail-open.
+    """
+
+    def setUp(self) -> None:
+        cal._TOWER_MCP_SESSION.clear()
+
+    def tearDown(self) -> None:
+        cal._TOWER_MCP_SESSION.clear()
+
+    @staticmethod
+    def _fake_urlopen(sid: str):
+        # প্রতি কলে নতুন resp — BytesIO context-manager-exit-এ close হয়;
+        # একই বস্তু দ্বিতীয় POST-এ (notifications) closed-ফাইল ত্রুটি দেবে।
+        class _Resp(io.BytesIO):
+            headers = {"mcp-session-id": sid}
+
+            def __init__(self) -> None:
+                super().__init__(b"")
+
+        return mock.patch.object(
+            cal.urllib.request, "urlopen",
+            side_effect=lambda req, timeout=None: _Resp(),
+        )
+
+    def test_fresh_cache_is_network_free(self) -> None:
+        cal._TOWER_MCP_SESSION.update({"sid": "sess-1", "born": cal.time.monotonic()})
+        with self._fake_urlopen("ignored") as m:
+            sid = cal._tower_mcp_init_session()
+        self.assertEqual(sid, "sess-1")
+        self.assertEqual(m.call_count, 0)
+
+    def test_init_once_then_cache_hit(self) -> None:
+        with self._fake_urlopen("sess-2") as m:
+            first = cal._tower_mcp_init_session()
+            second = cal._tower_mcp_init_session()
+        self.assertEqual(first, "sess-2")
+        self.assertEqual(second, "sess-2")
+        # initialize + notifications/initialized only once (2 POSTs).
+        self.assertEqual(m.call_count, 2)
+
+    def test_expired_ttl_reinits(self) -> None:
+        cal._TOWER_MCP_SESSION.update({
+            "sid": "sess-old", "born": cal.time.monotonic() - cal._TOWER_MCP_SESSION_TTL_S - 1,
+        })
+        with self._fake_urlopen("sess-new") as m:
+            sid = cal._tower_mcp_init_session()
+        self.assertEqual(sid, "sess-new")
+        self.assertGreaterEqual(m.call_count, 1)
+
+    def test_failure_returns_empty_fail_open(self) -> None:
+        with mock.patch.object(
+            cal.urllib.request, "urlopen", side_effect=OSError("network down")
+        ):
+            sid = cal._tower_mcp_init_session()
+        self.assertEqual(sid, "")
+        self.assertNotIn("sid", cal._TOWER_MCP_SESSION)
+
+
 class TestCensusWiringContract(unittest.TestCase):
     """Structural pins so the join cannot silently regress."""
 
@@ -312,7 +377,7 @@ class TestCensusWiringContract(unittest.TestCase):
         # roster and the call DID land) — a false-cause note (U6). The note
         # must name the window-dependent response-shape instead.
         note = cal._classify_tower_pr_failure(
-            "MCP error -32602: Output validation error: Tool github_workflow_runs "
+            "MCP error -32602: Output validation error: Tool github.workflow_runs "
             "has an output schema but no structured content was provided",
             tool_label="github.workflow_runs",
         )
@@ -322,7 +387,7 @@ class TestCensusWiringContract(unittest.TestCase):
         self.assertNotIn("RBAC-forbidden", note)
         # Default label stays byte-stable for the PR path.
         note_pr = cal._classify_tower_pr_failure(
-            "MCP error -32602: Output validation error: Tool github_list_prs "
+            "MCP error -32602: Output validation error: Tool github.list_prs "
             "has an output schema but no structured content was provided"
         )
         self.assertIn("tower github.list_prs output-validation rejection", note_pr)

@@ -111,6 +111,23 @@ class McpTowerConnectionError(McpTowerError):
     pass
 
 
+class McpTowerRateLimitedError(McpTowerConnectionError):
+    """HTTP 429 from the tower — the tower is UP and throttling, not down.
+
+    বাংলা (GLM Agent 26, Job 486824, live প্রমাণ 2026-10-31T10:26Z): fleet-এর
+    hourly cron সবাই একই :26 উইন্ডোতে tower প্রোব করে — tower জীবিত অবস্থাতেই
+    429 দেয় (৩-উইন্ডো প্রোব: w1 bridge_work_queue OK rows=0, w2/w3 HTTP 429),
+    কিন্তু এই শ্রেণি ছাড়া সেটা সাধারণ connection-error হয়ে যেত এবং লুপ মিথ্যা
+    "tower-down/plane-dark" পাঠ দিত (r17 #4346 dark-cycle datum-এর আসল কারণ)।
+    Subclass রাখার চুক্তি: প্রতিটি বিদ্যমান ``except McpTowerConnectionError``
+    কল-সাইট অক্ষত থাকে (zero collateral), অথচ নোট-স্তর এখন 429-কে সৎভাবে
+    "rate-limited, not tower-down" হিসেবে শ্রেণিবদ্ধ করতে পারে। 503 ইচ্ছাকৃতভাবে
+    এই শ্রেণির বাইরে — সেটা সত্যিই cold-boot/unavailable হতে পারে।
+    """
+
+    pass
+
+
 class McpTowerTimeoutError(McpTowerError):
     pass
 
@@ -262,6 +279,8 @@ class McpTowerClient:
             headers={"Accept": "text/event-stream"},
         )
         if resp.status_code != 200:
+            if resp.status_code == 429:
+                raise McpTowerRateLimitedError(f"HTTP {resp.status_code}: {resp.text[:200]}")
             raise McpTowerConnectionError(f"HTTP {resp.status_code}: {resp.text[:200]}")
         self._sse_thread = threading.Thread(
             target=self._sse_reader, args=(resp,), daemon=True, name="mcp-sse"
@@ -430,6 +449,8 @@ class McpTowerClient:
         except requests.RequestException as e:
             raise McpTowerConnectionError(str(e)) from e
         if resp.status_code not in (200, 202):
+            if resp.status_code == 429:
+                raise McpTowerRateLimitedError(f"HTTP {resp.status_code}")
             raise McpTowerConnectionError(f"HTTP {resp.status_code}")
         if not expect_response:
             return None
@@ -456,6 +477,8 @@ class McpTowerClient:
             if r.status_code not in (200, 202):
                 with self._response_lock:
                     self._response_queues.pop(mid, None)
+                if r.status_code == 429:
+                    raise McpTowerRateLimitedError(f"HTTP {r.status_code}")
                 raise McpTowerConnectionError(f"HTTP {r.status_code}")
         except requests.RequestException as e:
             with self._response_lock:

@@ -12,37 +12,42 @@
   r7 (3bd2c34), r8 (ce2e1b9), r9 (fa807db), r10 (#4141), r11 (#4173),
   r12 (#4186), r13 census shallow-self-heal (#4227), r14 empty-board
   certification (#4235), r15 core-CI triage (#4260), r16 apply-leg
-  honest-close (this PR).
+  honest-close (#4328), r17 two-plane dark-cycle corroboration (this PR).
 - Slot disciplines: paraphrase prose (WAF 403s); existing-path overwrites
   pin the landed blob sha (CAS); negative claims never trust truncated
   grep output (#4058 class); invoke the loop BARE (#4097); fix the TOOL
   when the workflow is admin-gated; report-only triage beats burning a
   claim TTL on a structurally blocked patch (#2512 routing note).
+- r16 durable core (compressed): the janitor close step printed success
+  without reading the closer's exit code — failing closes logged as OK.
+  Honest-result helper + DI seam + 3 self-test cases + wiring pin #5
+  landed so tomorrow's cron log is a trustworthy attribution witness.
 
-## Cycle 21 (2026-10-31 17:11+08) — prediction v2 holds; apply-leg false-OK fixed
+## Cycle 22 (2026-10-31 18:11+08) — both loop planes degraded; two-plane cross-check closes the gap
 
-1. **Pick:** none — loop reports 0/5 claimable (clean-hold with probes).
-2. **Prediction v2 intermediate datum (09:11Z):** board back to 22 rows —
-   13 landed-work ghosts (incl. the 08:12Z trio #4234/#4240/#4246, still
-   open never-touched ~1h later) + 9 legit in-flight rows. No intra-day
-   closer fired → hypothesis (c) weakened further; tomorrow's 06:00Z cron
-   (my heal now in its tree) stays the decisive witness. Pre-cron
-   baseline recorded: 13 never-touched merged mirrors, verdict plane dark.
-3. **Root-cause fix #3 — apply-leg false-OK:** the janitor close step ran
-   gh and printed its success line without reading the exit code, so a
-   failing close (403, rate limit, token-less runner) was logged as
-   success — poisoning the exact janitor log the ghost-attribution reads
-   back (and CI tolerates a failing janitor step, so that per-item line
-   is the only surviving evidence). Fix: one honest-result helper — OK
-   only on exit 0, FAIL echoing the closer's own error otherwise, WARN
-   on exec failure; DI closer seam + 3 self-test cases + wiring pin #5. The
-   honest per-item result line makes tomorrow's cron log a trustworthy
-   attribution witness in both directions.
-4. **Stale label (report-only, admin-gated):** the agent-loop job is
-   named "30-min cadence" but its only schedule trigger is the daily
-   06:00Z cron — the name overstates the closer's cadence ~48×.
-5. **Proof:** census self-test 63/63 (60 prior + 3 new); wiring guard
-   5/5; live report-only census exercised at cycle start.
+1. **Pick:** none — and the loop's board planes were BOTH dark this
+   cycle (gh absent; the tower probe hit connection errors mid-
+   congestion). The loop honestly reported UNSEEN ≠ zero, not certified
+   clean (U2). Cross-check with a second plane: the tower's
+   authenticated queue read (callerAuthenticated true, 158-tool era)
+   returned totalOpen=24 — the census enumerates the same 24 rows, zero
+   in a claimable state. The dark gh-plane hides nothing.
+2. **Prediction v2 datum (10:2xZ):** cohort now 15 ghosts — the 08:12Z
+   trio #4234/#4240/#4246 at 3.0/2.9/2.6h never-touched — plus 9 legit
+   in-flight; two fresh mirrors (#4330, #4335) regenerated on the hour
+   exactly as predicted. Integrity line read "unchecked" this cycle
+   (GitHub 403 on shared anonymous egress) — that degradation mode is
+   recorded; the git-join census stayed authoritative. Hypothesis (c)'s
+   hourly-form is effectively dead: no intra-day closer for 3h+ across
+   two cycles. Decisive witness remains tomorrow's 06:00Z cron, now
+   with BOTH the r13 heal and the r16 honest-close in its tree.
+3. **Fix intact through drift:** the r16 helper + pin survived 7
+   upstream commits (2f5ad91→237d4a6) untouched; self-test 63/63 and
+   wiring guard 5/5 re-proved at the new tip.
+4. **Tower congestion note:** 429/502 bursts at the :11 dispatch hour
+   needed retry-with-backoff on every plane call. Retry-hardening the
+   loop's own probe is recorded as a suggestion for the loop lane's
+   active owner, not patched here (Zero Cross-Agent Collateral).
 
 ## Notes for the next agent on this slot
 
@@ -50,8 +55,10 @@
   older cycle detail when adding new. No executable + flag strings in
   receipt prose (WAF pitfall).
 - First probe each cycle: (1) board state via the watchdog's integrity
-  line; (2) prediction v2 verdict: did the 06:00Z fire close the
-  overnight cohort — and does its janitor log now carry honest per-item
+  line — if the integrity plane reads "unchecked" (GitHub 403), the
+  git-join census plus an authenticated queue read is the fallback
+  certification; (2) prediction v2 verdict: did the 06:00Z fire close
+  the overnight cohort, and does its janitor log carry honest per-item
   result lines; (3) #4250 outcome: next core nightly green (admin
   applied the packet) or streak extended?
 - The roster now carries the github read family again — use them for
@@ -59,18 +66,20 @@
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: the attribution question (what drained the board at 07:05Z) is
-  only as good as the closer's log; an apply leg that prints success
-  unread makes every future cron verdict unfalsifiable — repair the
-  witness before reading it.
-- alternatives_rejected: closing the 13 ghosts from this sandbox
-  (rejected — no gh binary, GitHub plane 403s anonymous egress, no
-  provenance); patching the stale job name (rejected — workflows are
-  admin-review fail-close; recorded instead); waiting silently for the
-  cron (rejected — the pre-cron baseline above is what makes tomorrow's
-  verdict decidable).
+- why: a degraded-plane cycle is itself evidence — the loop's honest
+  UNSEEN and the census's git-join plus an authenticated queue read
+  together certify "no claimable work" without trusting any single
+  dark plane; the 3h trio datum is the strongest yet against a
+  tower-side hourly reconciler.
+- alternatives_rejected: retry-hardening the loop's tower probe
+  (rejected — that lane is actively owned, glm04 landed there minutes
+  before; recorded as a suggestion instead); closing the ghosts
+  sandbox-side (rejected again — no gh binary, GitHub plane 403s this
+  egress, no provenance); touching other lanes' reds (rejected —
+  owners are active: glm28 rebound the ratchet, glm09 healed fixtures).
 
 ## Rollback
 
-git revert-safe: revert this single PR (watchdog honest-close helper +
-one wiring pin + this worklog receipt). Census read path untouched.
+git revert-safe: revert this single PR (docs-only receipt). No code
+paths touched this cycle; the r13 heal and r16 honest-close stay
+pinned by their own guards.
