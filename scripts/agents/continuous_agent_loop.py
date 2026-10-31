@@ -2025,28 +2025,29 @@ def action_instruction(picked: str | int) -> str:
 # to wait out a clock even when the board was idle; the rotation below is
 # condition-driven: one scheduled role per idle cycle, in this order, re-armed
 # by work events (a claimable issue being dispatched).
+# Auditor duties are absorbed by MCP Tower & platform-guardian; coder/fixer/solver unified.
 DEFAULT_SCHEDULED_ROLES: tuple[str, ...] = (
     "ecosystem-scout",
-    "auditor",
     "human-eye",
     "rules-breaker",
     "platform-guardian",
 )
 
 DEFAULT_MERGED_ROLES: dict[str, str] = {
-    "federation-auditor": "auditor",
-    "task-auditor": "auditor",
+    "auditor": "platform-guardian",
+    "federation-auditor": "platform-guardian",
+    "task-auditor": "platform-guardian",
     "ci-fixer": "solver",
+    "fixer": "solver",
     "coder": "solver",
 }
 
 ROLE_RULES: dict[str, str] = {
     "solver": "Unlimited concurrent solvers allowed. Solve root cause, verify boundary, write all required migrations/configs/tests end-to-end (no partial work), and submit PR.",
-    "auditor": "6 repo codebase-এ যা যা সমস্যা আছে তা পুঙ্খানুপুঙ্খ অডিট ও সমাধান বের করা।",
     "ecosystem-scout": "সারা বিশ্বের যেকোনো জায়গা থেকে SupremeAI-এর জন্য সবচেয়ে লাভজনক ও উপকারী হবে এমন জিনিস ও ইনোভেশন খুঁজে আনা। শুধুমাত্র লাইভ প্রমাণসহ কংক্রিট, বাস্তবায়নযোগ্য ফাইন্ডিং ফাইল করা যাবে; অনুমাননির্ভর/হাইপ টিকেট কঠোরভাবে নিষিদ্ধ; কোড এডিট নয়।",
     "human-eye": "আমাদের কাস্টমার যেন সর্বোত্তম ও শ্রেষ্ঠ এক্সপেরিয়েন্স পায় তার জন্য প্রয়োজনীয় সমস্ত UI/UX ও পারফরম্যান্স নিশ্চিত করা।",
     "rules-breaker": "আমাদের সম্পূর্ণ সিস্টেমের সিকিউরিটি, টেকনিক্যাল ডেট এবং লজিক্যাল গ্যাপের সমস্ত দুর্বলতা খুঁজে বের করে রিপোর্ট করা।",
-    "platform-guardian": "প্রজেক্টের সাথে যুক্ত অন্যান্য সমস্ত থার্ড-পার্টি প্ল্যাটফর্ম ও সার্ভিসের সার্বক্ষণিক তদারকি ও নজরদারি নিশ্চিত করা।",
+    "platform-guardian": "প্রজেক্টের সাথে যুক্ত অন্যান্য সমস্ত থার্ড-পার্টি প্ল্যাটফর্ম ও সার্ভিসের সার্বক্ষণিক তদারকি, অডিট ও নজরদারি নিশ্চিত করা (absorbed auditor duties)।",
 }
 
 COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===

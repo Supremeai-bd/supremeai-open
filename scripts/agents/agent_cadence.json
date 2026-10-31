@@ -2,14 +2,17 @@
   "version": 2,
   "scheduled_roles": [
     "ecosystem-scout",
-    "auditor",
     "human-eye",
     "rules-breaker",
     "platform-guardian"
   ],
   "merged_roles": {
-    "federation-auditor": "auditor",
-    "task-auditor": "auditor"
+    "auditor": "platform-guardian",
+    "federation-auditor": "platform-guardian",
+    "task-auditor": "platform-guardian",
+    "ci-fixer": "solver",
+    "fixer": "solver",
+    "coder": "solver"
   },
-  "notes": "Event-driven scheduled roles (#3573): zero artificial timer locks. Roles dispatch one per idle cycle in this order; the rotation re-arms on every work assignment (claimable issue dispatched). Legacy key 'cadences_hours' is still accepted (its keys become the role order; hour values are ignored)."
+  "notes": "Event-driven scheduled roles (#3573): zero artificial timer locks. Roles dispatch one per idle cycle in this order; the rotation re-arms on every work assignment (claimable issue dispatched). Auditor is consolidated into Tower/Platform Guardian; coder/fixer/ci-fixer are unified into solver."
 }
