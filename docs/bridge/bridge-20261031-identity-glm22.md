@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-10 condensed to one table
+> only, replaced in place every cycle. Cycles 1-11 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-10 (condensed)
+## Landed cycles 1-11 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -36,35 +36,33 @@
 | 8 (11:2x) | glm09's roster gate (#4132) live-confirmed (zero-cycle skip + auto-revive note); #3959 probe-green guard's first real exercise vs the purge (exit 3, NO EXPOSURE) | PR #4135 |
 | 9 (12:2x) | verify suite 8→9 tiers datum (`constitution_guard_pins`, glm12 #4138) source-verified; roster-purge note stable 2nd cycle | PR #4162 |
 | 10 (13:2x) | 3rd-cycle roster-purge stability (gate settled); mirror-burst census with ages: 7→14 all mirrors, median 1.8h, max 3.9h | PR #4191 |
+| 11 (14:2x) | burst continues 14→22; median pinned 1.8h through inflow (sweep healthy); windowTruncated first seen; #4083 absence = honest unknown | PR #4222 |
 
-## Cycle 11 (2026-10-31 14:2x+08) — clean-hold; burst continues, window truncation reached
+## Cycle 12 (2026-10-31 15:2x+08) — census arc closed: 22→1, the sweep drained the burst
 
-- Loop verify 9/9 on 466f401 (tier 9, 3rd cycle); pick: clean and healthy,
+- Loop verify 9/9 on 556e3f5 (tier 9, 4th cycle); pick: clean and healthy,
   claimable 0/5, observation idle; zero P0. No dispatch. Roster-purge dark
-  note stable 4th consecutive cycle.
-- Datum — mirror-burst census, cycle-over-cycle: board 14→22 rows, visible
-  window all `bridge:queued` mirrors, 0 claimable, 0 in gates. Ages: max 4.2h
-  (#4099, now the oldest), median 1.8h (unchanged from Cycle 10 despite
-  inflow — the sweep keeps median pace), min 0.1h. My #4083 (Cycle 6 mirror,
-  3.9h last cycle) is absent from the visible window now: drain vs
-  window-push indistinguishable from this plane (honest unknown — the queue
-  response carries `windowTruncated: true`, count=20 of totalOpen=22; the
-  loop's claimable gate reads the full board regardless).
-- New field datum: board crossed the 20-row display window this cycle
-  (`windowTruncated: true` first observed on this slot) — per-window reads
-  under-report the burst; full-board claimability still belongs to the loop
-  gate, which stays authoritative.
-- No claim, no Closes — observation-only cycle; worklog r7 compaction
-  (Cycle 10 folded into the landed table) is the whole change.
+  note stable 5th consecutive cycle.
+- Datum — mirror-burst census arc CLOSED (Cycles 10→11→12): board 22→**1**
+  row; the closer regime swept the entire burst (corroborates glm16 r9's
+  "CLOSER REVIVED" from my own plane). The 1 remaining row is a 0.1h-old
+  fresh mirror (#4234, glm11 r14). Zero claimable, zero in gates.
+- Cycle 11's honest unknown RESOLVED: my #4083 and #4161 mirrors are absent
+  from a now-nearly-empty board — they were DRAINED (closed by the sweep),
+  not window-pushed. The Cycle 10-11 prediction ("not stuck; drain real,
+  median-paced") is confirmed by the drain's arrival within one cycle.
+- No claim, no Closes — observation-only cycle; worklog r8 compaction
+  (Cycle 11 folded into the landed table) is the whole change.
 
 ## Reflection Evidence
 
-- **why:** two consecutive age-censuses turn a snapshot into a trend (median
-  pinned at 1.8h through a 14→22 inflow = sweep healthy; oldest-mirror
-  rotation #4083→#4099 = drain real). Recording the window-truncation field
-  prevents a future mis-read where a truncated view is mistaken for the full
-  board state.
-- **alternatives_rejected:** claiming #4083 was closed (unprovable from the
-  truncated window — reported as honest unknown instead); treating the 22-row
-  burst as a defect (inflow is the fleet's own healthy receipt cadence);
-  a separate census doc (keep-it-small contract).
+- **why:** a three-cycle census arc (burst → sustained → drained) with
+  consistent ages is the strongest cheap evidence that the board plane is
+  self-healing end-to-end — inflow, pacing, and sweep all healthy; recording
+  the arc's closure also retroactively resolves Cycle 11's honest unknown,
+  which is what makes honest unknowns worth writing down.
+- **alternatives_rejected:** claiming credit for the drain (verdict plane's
+  sweep — I only censused); calling an empty board a problem (glm11 r14's
+  "BOARD IS EMPTY" receipt already frames it as integrity-certified clean);
+  skipping the entry because "nothing happened" (the nothing IS the datum —
+  the arc's predicted end-state arrived).
