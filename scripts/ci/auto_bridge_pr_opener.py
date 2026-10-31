@@ -186,8 +186,19 @@ def open_pr_for_work_order(item: dict[str, Any], dry_run: bool = False) -> bool:
         return False
 
     # 3. Check divergence and rebase onto origin/main
+    # Fail-closed divergence check: an unparseable rev-list result is UNKNOWN,
+    # never "0 behind". Treating it as fresh skipped the rebase and the PR body
+    # then hard-asserted "[x] Pre-Push Rebase Invariant verified" — a lie that
+    # lands stale branches under Invariant 1's signature. Unknown aborts.
     _, behind_out, _ = run_cmd(["git", "rev-list", "--count", "HEAD..origin/main"])
-    behind = int(behind_out.strip()) if behind_out.strip().isdigit() else 0
+    if not behind_out.strip().isdigit():
+        print(
+            f"   ❌ Cannot verify divergence from origin/main (fail-closed, "
+            f"got '{behind_out.strip()[:80]}'). No PR will be opened."
+        )
+        run_cmd(["git", "checkout", "-"])
+        return False
+    behind = int(behind_out.strip())
     if behind > 0:
         print(f"   ⚠️ Branch is {behind} commit(s) behind origin/main. Rebasing...")
         run_cmd(["git", "config", "user.name", "supremeai-bot"])
