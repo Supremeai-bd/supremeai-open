@@ -962,21 +962,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Close linked issues on PR merge
+      - name: Note direct PR merge
         env:
-          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
           PR_NUM: ${{ github.event.pull_request.number }}
-          PR_BODY: ${{ github.event.pull_request.body }}
           MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
         run: |
-          echo "PR #${PR_NUM} was merged by ${MERGED_BY}."
-          # Find all issues cited with closes/fixes/resolves
-          CLOSED_ISSUES=$(echo "$PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+' | sort -u || true)
-          for iss in $CLOSED_ISSUES; do
-            echo "Auto-closing referenced issue #$iss..."
-            gh issue close "$iss" --repo "${{ github.repository }}" \
-              --comment "Closed automatically after PR #${PR_NUM} was merged by ${MERGED_BY}." || true
-          done
+          echo "PR #${PR_NUM} was merged by ${MERGED_BY}. Linked issues will finalize closure upon satellite and monorepo sync completion."
 
   # ---------------------------------------------------------------------------
   # 🚀 Transit Dispatch & Satellite Sync (Zero-Residue #416)
@@ -1031,6 +1022,19 @@ jobs:
             git push origin main || true
             echo "✅ Ephemeral transit patches successfully auto-pruned."
           fi
+
+      - name: Close Resolved Issues After Successful Satellite & Federation Sync
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          echo "Sync to satellites & monorepo passed. Checking commit message for resolvable issues..."
+          CLOSED_ISSUES=$(echo "$COMMIT_MSG" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+' | sort -u || true)
+          for iss in $CLOSED_ISSUES; do
+            echo "Closing issue #$iss after confirmed federation transit delivery (open -> satellite -> supremeai)..."
+            gh issue close "$iss" --repo "${{ github.repository }}" \
+              --comment "Closed automatically after delivery confirmed across open, satellite, and monorepo sync." || true
+          done
 
       - name: Ingest Knowledge to Supabase and Qdrant
         env:
