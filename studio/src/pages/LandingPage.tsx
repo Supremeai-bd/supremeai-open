@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ConceptApp } from './concept/ConceptApp';
+import { DreamBuilderHero } from '../components/landing/DreamBuilderHero';
+import { NeuralConstellationCanvas } from '../components/common/NeuralConstellationCanvas';
 
 // ROOT-CAUSE FIX (Refs #876 / bridge-20261023-frontend-router-restore):
 // CTAs previously targeted /signup (a route that does not exist) and
@@ -107,7 +109,7 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [typedText, setTypedText] = useState('');
-  const [viewMode, setViewMode] = useState<'suite' | 'classic'>('suite');
+  const [viewMode, setViewMode] = useState<'dream' | 'suite' | 'classic'>('dream');
   const fullText = 'What is the current health status of my AI assistants?';
 
   useEffect(() => {
@@ -135,6 +137,33 @@ export const LandingPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  if (viewMode === 'dream') {
+    return (
+      <div className="relative min-h-screen w-full bg-[#080b12] text-slate-100 overflow-x-hidden">
+        <NeuralConstellationCanvas />
+        <LandingHeader />
+        
+        {/* Living Dream Builder Interactive Hero */}
+        <div className="relative z-10">
+          <DreamBuilderHero />
+        </div>
+
+        {/* View mode switcher badge */}
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-slate-900/90 px-3.5 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur-md">
+          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="font-medium text-white">Public Vision Mode</span>
+          <button
+            type="button"
+            onClick={() => setViewMode('suite')}
+            className="ml-2 rounded-lg bg-cyan-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-cyan-300 hover:bg-cyan-500/30 transition-all"
+          >
+            Open Live Suite Cockpit &rarr;
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (viewMode === 'suite') {
     return (
       <div className="relative min-h-screen w-full bg-[#080b12]">
@@ -144,10 +173,10 @@ export const LandingPage: React.FC = () => {
           <span>SupremeAI Live Suite</span>
           <button
             type="button"
-            onClick={() => setViewMode('classic')}
+            onClick={() => setViewMode('dream')}
             className="ml-2 rounded px-2 py-0.5 text-[11px] font-semibold text-cyan-400 hover:bg-white/10"
           >
-            Classic View
+            Vision View
           </button>
         </div>
         <ConceptApp />
