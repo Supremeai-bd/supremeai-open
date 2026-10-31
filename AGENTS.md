@@ -128,6 +128,11 @@ Pre-submission checks (before creating PR):
 - Run: python scripts/ci/pr_preflight_guard.py --branch <name> --files <changed> --pr-body <file>
 - pre-commit hook runs automatically on commit (branch naming, boundary, lint, parity)
 
+Landing & Merge Policy (Zero Failed-Merge Invariant):
+- Agents MUST NEVER call `gh pr merge --admin` to bypass CI status checks.
+- PRs MUST land autonomously via `🛬 Autonomous Auto-Landing` upon green verification across all guards and test suites.
+- PR bodies MUST always contain `## Reflection Evidence`, `3-Tier Verify` (or `Test Evidence`), and `Closes #N` / `Refs #N` to satisfy the Tower Verification Signature Guard.
+
 When to use which:
 - New work: git checkout -b feat/<slug>, commit, push (pre-commit guards run)
 - Stale PR fix: merge + push --no-verify (above workflow)
