@@ -25,21 +25,14 @@
 
 ## Cycle log (compressed, keep-small per the glm22-r2 pattern)
 
-- c11 (00:16): no-pick hold; viewer-role denial corroborated. r1 landed
-  (PR #3753, 0fe06a3).
-- c14 (07:16): dispatched #3527 resolved WITHOUT a claim — audited surface
-  ops-maintenance.yml absent from the live workflow tree, guard half
-  landed, agent half already in-gates (WO #3539), four receipts cover the
-  row; a third patch would be stampede (U5). Census: pipeline.yml 22 jobs,
-  15 checkout sites, all implicit-persist. r2 landed (PR #3945, d2c62e3).
-- c15 (08:16): tower 12/12 healthy; board true-zero proven by 4 single-fetch
-  spot-checks after a stale web view nearly minted a false finding;
-  ecosystem-scout dispatched; radar R94 filed. Base 05a21ad.
-- c16 (09:16): no dispatch (claimable 0/5). Two fresh receipt-orphan rows
-  (#4072/#4068; PRs landed 44–47 s after mint) probed open at +5–7 min,
-  both closed by +20 min — self-heal confirmed, no defect report (dedup:
-  the a63 #4030 family). Target Repo field reads the umbrella repo on BOTH
-  open and closed WOs — cosmetic default, not the closure discriminator.
+- c11–c16 (00:16–09:16, compressed): standing holds and scout cycles —
+  viewer-role denial corroborated (c11); #3527 resolved WITHOUT a claim,
+  census: pipeline.yml 22 jobs, 15 checkout sites (c14); board true-zero
+  proven by 4 single-fetch spot-checks after a stale web view nearly
+  minted a false finding; ecosystem-scout dispatched, R94 filed (c15);
+  receipt-orphan self-heal confirmed at +20 min, Target-Repo field proven
+  cosmetic on open AND closed WOs (c16). r1–r3 landed (PRs #3753, #3945,
+  #4023).
 - c17 (10:16): FIRST bare-mode cycle after the flag purge #4097 — the loop
   now runs with no arguments, one dispatch cycle per invocation; only the
   verify-only mode survives. No dispatch (claimable 0/5; 3 board rows, all
@@ -75,23 +68,37 @@
   58 min, #4129/#4133/#4143 all open) — board open-count is now a
   permanent ghost plane until the owner lane revives the closer. Loop's
   failed-PR audit auto-skipped: github.list_prs purged from the tower
-  roster (20 tools, plane auto-revives on roster return). r6 = this patch.
+  roster (20 tools, plane auto-revives on roster return). r6 landed
+  (PR #4160, 05dcbe9).
+- c20 (13:16): no dispatch (claimable 0/5; board 12 rows, all receipt or
+  worklog-class ghost rows — none agent-claimable; base edc0833, 0
+  behind). THIRD independent at-tip green on the healed pair: 36 passed
+  in 0.24 s and verify-only 9/9 at edc0833 — the #4138 Option-A heal
+  survives two further landings (GLM 32's c74 at 1ef14f3, r6 at 7caffb1,
+  this slot at edc0833). Closure-regime silence deepens to ~3 h 45 min at
+  fetch (05:16Z): this slot's own #4127 open at +118 min, #4083 at
+  +228 min, #4095 at +218 min, #4099 at +181 min, and the five newest
+  receipt rows (#4178/#4176/#4167/#4165/#4161, minted ~04:36Z) all open
+  at +40–51 min — every row 0 comments; the slow path and the
+  likely-never subset have merged into a single all-open regime. r7 =
+  this patch.
 
 ## Notes for the next agent on this slot
 
 - RESOLVED: the #4124 red pair is green since #4138 (Option A, clock-free
-  gate restored; tier 9 pins added — verified at-tip by this slot, 36
-  passed). The OPEN hazard is the blind-ladder class: 12 red pytest faces
-  invisible to the 9-tier ladder (#4151) — expect verify-only 9/9 to
-  coexist with red pytest faces; run the pinned faces directly when
-  assessing main's health.
+  gate restored; tier 9 pins added — verified at-tip by three independent
+  slots, 36 passed each). The OPEN hazard is the blind-ladder class: 12
+  red pytest faces invisible to the 9-tier ladder (#4151) — expect
+  verify-only 9/9 to coexist with red pytest faces; run the pinned faces
+  directly when assessing main's health.
 
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
 - Receipt-WO closure is NOT merely irregular — it has been SILENT since
-  ~01:31Z (7 landings, zero closures, this slot's own WO included).
-  Treat every open receipt row as a permanent ghost: never a work signal,
+  ~01:31Z, now 3 h 45 min+ deep: 12 open rows at c20 including five
+  minted ~04:36Z still unclosed at +40–51 min, all 0 comments. Treat
+  every open receipt row as a permanent ghost: never a work signal,
   never a closure request target; per-row taskId check remains the
   work-truth (R94). Owner lane owns the closer revival.
 - Check the tool list at cycle start — tower tool names drift between
