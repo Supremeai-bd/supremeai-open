@@ -3750,6 +3750,26 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         print("ACTION: System is draining P0-critical architectural backlog. Routine cadence roles held.")
         return 0
 
+    # Founder directive: Scheduled rotation (ecosystem-scout, human-eye, rules-breaker, platform-guardian)
+    # runs only when the system has accumulated a baseline backlog of claimable issues (>= 5 claimable issues),
+    # ensuring observation/audit roles don't churn when the board is completely green/clean or sparse.
+    # When claimable count < 5, system reports clean and stays sleep/ready for work.
+    claimable_count = 0
+    if not board_unavailable and isinstance(raw, list):
+        claimable_count = sum(
+            1 for i in raw
+            if isinstance(i, dict)
+            and not (EXCLUDED_LABELS & set(label_names(i)))
+            and "anchor hub" not in str(i.get("title") or "").lower()
+            and "sentry" not in str(i.get("title") or "").lower()
+            and str(i.get("state", "open")).lower() == "open"
+        )
+
+    force_flag = getattr(args, "force", False)
+    if claimable_count < 5 and not force_flag:
+        print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
+        return 0
+
     for role in due_roles(state, cfg):
 
         mark_role_run(role, state)
