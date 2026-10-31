@@ -60,9 +60,9 @@ on:
         default: false
 
 # Anti-duplicate workflow invariant: cancel previous in-flight PR runs when a new
-# commit is pushed. Main branch pushes serialize without cancelling.
+# commit is pushed. Main branch pushes and repository dispatches serialize separately without cancelling each other.
 concurrency:
-  group: ci-open-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ci-open-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.client_payload.run_id || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
