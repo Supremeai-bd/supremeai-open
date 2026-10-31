@@ -591,68 +591,25 @@ def mirror_failure(
             break
         page += 1
 
-    title = build_issue_title(workflow_name, repo, branch, run_id)
-    body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
-        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
-    )
-    labels = build_issue_labels(repo, branch=branch)
-
-    code, resp = gh_api(
-        f"repos/{OPEN_REPO}/issues",
+    # New Zero-Issue Creation Policy: Never POST new issue under any condition.
+    # Strictly record the failure notice in-place on the repository Domain Anchor Hub.
+    target_anchor = active_anchor_for_repo(repo)
+    gh_api(
+        f"repos/{OPEN_REPO}/issues/{target_anchor}/comments",
         token=token,
         method="POST",
-        data={"title": title, "body": body, "labels": labels},
-    )
-    if code == 422:
-        core_labels = [l for l in labels if not l.startswith("repo:")]
-        code, resp = gh_api(
-            f"repos/{OPEN_REPO}/issues",
-            token=token,
-            method="POST",
-            data={"title": title, "body": body, "labels": core_labels},
-        )
-    if code == 201:
-        issue_number = resp.get("number")
-        issue_url = resp.get("html_url")
-        print(
-            f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
-        )
-        # Link as sub-issue directly under an ACTIVE Domain Anchor Hub (6-domain plan).
-        target_anchor = active_anchor_for_repo(repo)
-        if issue_number and link_sub_issue is not None:
-            try:
-                linked = link_sub_issue(
-                    parent_issue_number=target_anchor,
-                    child_issue_number=int(issue_number),
-                    repo=OPEN_REPO,
-                    token=token,
-                )
-                if linked:
-                    print(
-                        f"   ↳ linked as sub-issue directly under Domain Anchor #{target_anchor}."
-                    )
-                else:
-                    print(
-                        f"   ↳ ❌ sub-issue link FAILED for #{issue_number} -> "
-                        f"#{target_anchor}; counting mirror as FAILED so the "
-                        f"scheduler surfaces it."
-                    )
-                    return False
-            except Exception as exc:
-                print(f"   ↳ ❌ sub-issue link error: {exc}")
-                return False
-        elif issue_number and link_sub_issue is None:
-            print(
-                "   ↳ ❌ federation_anchors.link_sub_issue unavailable — cannot "
-                "guarantee zero loose incidents; counting mirror as FAILED."
+        data={
+            "body": (
+                f"🚨 **Production CI Failure** on `{repo}` (branch `{branch}`):\n"
+                f"- Workflow: `{workflow_name}`\n"
+                f"- Run: [{run_id}]({html_url})\n"
+                f"- Commit: `{commit_sha[:8] if commit_sha else 'n/a'}`\n"
+                f"Recorded in-place on Domain Anchor #{target_anchor}; zero new issues created."
             )
-            return False
-        return True
-    else:
-        print(
-            f"❌ [watchdog] Failed to mirror incident (HTTP {code}): {resp}"
-        )
-        return False
+        },
+    )
+    print(f"✅ [watchdog] Production failure notice recorded in-place on Domain Anchor #{target_anchor}. Zero new issues created.")
+    return True
 
 
 def poll_federation_failures(
