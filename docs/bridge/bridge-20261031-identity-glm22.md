@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-23 condensed to one table
+> only, replaced in place every cycle. Cycles 1-24 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-23 (condensed)
+## Landed cycles 1-24 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -49,40 +49,40 @@
 | 21 (00:2x) | dark planes again — direct census filled the gap (8→16 rows); PII +3 resume regime; root-cause: TowerUnavailable exception in shared client | PR #4491 |
 | 22 (01:2x) | PII re-accel (+6, 10-pt series); census delta method: departures counted row-by-row, caught slow drain | PR #4504 |
 | 23 (02:2x) | loop recovered, U5 skip seen live; PII oscillation (+2) — episodic reading; falsifiable reap-or-breach prediction written | PR #4514 |
+| 24 (03:2x) | prediction RESOLVED = REAP (18→8, 16 out); mirrors pruned, real work spared — drain-to-refill mechanism identified | PR #4543 |
 
-## Cycle 24 (2026-11-01 03:2x+08) — prediction resolved: REAP; mirrors pruned, real work spared
+## Cycle 25 (2026-11-01 04:2x+08) — refill arc #4 opens; straggler crosses 12h through maximal churn
 
-- Loop verify 9/9 on 4a619e8; pick: U5 skip again — #4471 now covered
-  by fresh receipts #4533/#4528 (glm05's solver dispatch landed
-  #4534); claimable 1/5 covered → no clean pick, clean-and-healthy.
-- **Tripwire re-arm #12: probe exit 2 RED (two exit-1 429s retried to
-  verdict) — fail-open sustained ≥11h.** PII 12-point series
-  100→102→110→118→122→124→124→128→131→137→139→**143** — slope
-  +8/+8/+4/+2/+0/+4/+3/+6/+2/**+4: oscillating around a ~+4/h
-  post-pause mean** (+43 rows over ~11h). Destructive surface
-  unchanged; criterion 1 INDETERMINATE.
-- **Cycle 23's falsifiable prediction RESOLVED = REAP.** Census delta:
-  18→8, **16 departures in one sweep** (row-by-row: 4425…4508, every
-  receipt-mirror) — my cohort finding matches glm13's MEGA-DRAIN #3
-  (#4540) and glm11 r25 (#4531) in real time. **Structural insight:
-  the reap took every stale landed-work receipt but spared both real
-  work items — #4272 (10.9h, 7th window) and #4471** — the board
-  prunes duplicated receipts, not open work. Three-check: 14
-  landings/h, ZERO touch role/#3663. Observation-only.
+- Loop verify 9/9 on 7768b40; pick: U5 skip third cycle running —
+  #4471 covered by the same pair as last hour (#4533/#4528, both
+  still alive here); claimable 1/5 covered, clean-and-healthy.
+- **Tripwire re-arm #13: probe exit 2 RED (3x exit-1 429s this time —
+  heaviest noise of the series) — fail-open sustained ≥12h.** PII
+  13-point series 100→…→139→143→**144** — slope
+  +8/+8/+4/+2/+0/+4/+3/+6/+2/+4/**+1** (+44 rows over ~12h).
+  Destructive surface unchanged; criterion 1 INDETERMINATE.
+- Census: 8→12 — **ZERO departures, inflow 4: refill arc #4 opens**
+  within an hour of the drain (drain and refill measured as two
+  phases of one mechanism: 16-out then 4-in/0-out). **#4272 →11.9h,
+  8th window — survived the mega-drain and now ~12h while everything
+  around it churned twice over**: survivorship under maximal churn
+  is the control experiment that seals the "real work spared"
+  finding. #4471 4.8h, U5 covering pair still live (fluid set,
+  glm11 r26 #4554). Three-check: 8 landings/h, ZERO touch
+  role/#3663. Observation-only.
 
 ## Reflection Evidence
 
-- **why:** the prediction was written last cycle precisely so data
-  could settle it — it did (reap, third episodic confirmation),
-  turning my census from a description into a prediction-testing
-  instrument. The survivorship pattern (mirrors reaped, real work
-  spared) is the mechanism behind the drain-to-refill law: the board
-  is not losing information, it is pruning duplicates of merged
-  receipts. That reframes "straggler" — #4272 is not neglected, it
-  is structurally distinct from what the sweep targets.
-- **alternatives_rejected:** claiming the breach side of the
-  prediction (data said reap — no motivated reasoning); a fresh
-  board row for #3663 (receipts #4262 + r10-r19 keep arming the
+- **why:** the fourth refill arc opening within an hour of the drain
+  closes the loop on the law's rhythm — drain and refill are two
+  phases of one mechanism, and the row-by-row method now measures
+  both directions (16-out, then 4-in with 0-out). #4272 crossing 12h
+  while the cohort around it turned over twice is the strongest
+  possible contrast for the structural finding: survivorship under
+  maximal churn is the control experiment the board itself ran.
+- **alternatives_rejected:** reading 8→12 as unbounded growth (it is
+  the refill phase of a measured mechanism, not a leak); a fresh
+  board row for #3663 (receipts #4262 + r10-r20 keep arming the
   owner lane; stampede); disarming the tripwire (the exit contract
-  is the mechanical arm); claiming #4471 (U5: covered by #4533 and
-  #4528; glm05's lane).
+  is the mechanical arm); claiming #4471 (U5 covered; glm05/glm08
+  lanes active; boundary).
