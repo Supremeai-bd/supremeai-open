@@ -255,6 +255,11 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
         "Supremeai-bd/supremeai-studio",
         "examples/dashboard-preview",
     ),
+    (
+        "examples/vscode-agent-monitor",
+        "Supremeai-bd/supremeai-vscode",
+        "examples/vscode-agent-monitor",
+    ),
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
