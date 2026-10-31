@@ -1,3 +1,5 @@
+import { speakText, generateLocalReply } from './companion/speechHelper';
+import HolographicHero from './companion/HolographicHero';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 // @ts-ignore
@@ -120,6 +122,8 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [commandOpen, setCommandOpen] = useState(false);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [hologramOpen, setHologramOpen] = useState(true);
+  const [hologramDocked, setHologramDocked] = useState(false);
   const [gatewayStatus, setGatewayStatus] = useState<GatewayStatus>('idle');
   const composer = useRef<HTMLTextAreaElement>(null);
   const endOfMessages = useRef<HTMLDivElement>(null);
@@ -373,6 +377,15 @@ export default function App() {
         </div>
       </main>
       {commandOpen && <div className="command-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCommandOpen(false); }}><section className="command-palette" role="dialog" aria-modal="true" aria-label="Command palette"><div className="command-heading"><span>COMMAND PALETTE</span><kbd>ESC</kbd></div><button onClick={startNewChat}><Icon name="plus" size={16} /><span><strong>New chat</strong><small>Start a fresh conversation</small></span><kbd>⌘ N</kbd></button><button onClick={() => { setCommandOpen(false); document.querySelector<HTMLInputElement>('#history-search')?.focus(); }}><Icon name="search" size={16} /><span><strong>Search chats</strong><small>Find by title or message content</small></span><kbd>⌘ K</kbd></button><button onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setCommandOpen(false); }}><Icon name="sun" size={16} /><span><strong>Switch theme</strong><small>Use the {theme === 'dark' ? 'light' : 'dark'} workspace theme</small></span></button><button onClick={() => { setSidebarOpen(!sidebarOpen); setCommandOpen(false); }}><Icon name="panel" size={16} /><span><strong>{sidebarOpen ? 'Collapse' : 'Open'} sidebar</strong><small>Change workspace navigation visibility</small></span></button></section></div>}
+      {hologramOpen && (
+        <HolographicHero
+          isDocked={hologramDocked}
+          onToggleDock={() => setHologramDocked(!hologramDocked)}
+          onClose={() => setHologramOpen(false)}
+          latestReply={messages.filter(m => m.role === 'assistant').slice(-1)[0]?.content}
+          onSendPrompt={(p) => void sendMessage(p)}
+        />
+      )}
       {adminOpen && <AdminDashboard onClose={() => setAdminOpen(false)} />}
     </div>
   );
