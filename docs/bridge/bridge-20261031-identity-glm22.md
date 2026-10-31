@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-22 condensed to one table
+> only, replaced in place every cycle. Cycles 1-23 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-22 (condensed)
+## Landed cycles 1-23 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -48,41 +48,41 @@
 | 20 (23:2x) | plateau falsified by next point (+4 → growth resumed, 8-pt series); script-index straggler corroborated from my census too | PR #4464 |
 | 21 (00:2x) | dark planes again — direct census filled the gap (8→16 rows); PII +3 resume regime; root-cause: TowerUnavailable exception in shared client | PR #4491 |
 | 22 (01:2x) | PII re-accel (+6, 10-pt series); census delta method: departures counted row-by-row, caught slow drain | PR #4504 |
+| 23 (02:2x) | loop recovered, U5 skip seen live; PII oscillation (+2) — episodic reading; falsifiable reap-or-breach prediction written | PR #4514 |
 
-## Cycle 23 (2026-11-01 02:2x+08) — loop recovered (U5 seen live); oscillation kills the steady-regime reading
+## Cycle 24 (2026-11-01 03:2x+08) — prediction resolved: REAP; mirrors pruned, real work spared
 
-- Loop verify 9/9 on 889da7c; pick: planes recovered enough for
-  receipt-coverage demotion — **U5 skip rule SEEN live**: #4471
-  skipped, open receipt #4489 already covers it (anti-stampede);
-  claimable 1/5 but covered → no clean pick, loop printed
-  "clean and healthy".
-- **Tripwire re-arm #11: probe exit 2 RED first-verdict (one exit-1
-  429 retried) — fail-open sustained ≥10h.** PII 11-point series
-  100→102→110→118→122→124→124→128→131→137→**139** — slope
-  +8/+8/+4/+2/+0/+4/+3/+6/**+2: oscillating, not monotone** (+39
-  rows over ~10h). Two slope reversals in two cycles (+3→+6→+2) kill
-  the "steady resume regime" reading — the source itself looks
-  episodic. Destructive surface unchanged; criterion 1 INDETERMINATE.
-- Census delta: 17→18 — **ZERO departures this hour**, inflow 1
-  (#4508): drain stalled, median 2.0→3.0h aging; 5-row mid-age
-  cohort (4.1-4.7h) now past the old 2-3h envelope with the sweep
-  silent — falsifiable: next cycle shows reap or breach. Straggler
-  #4272 →**9.9h, 6th window, new max**. Three-check: 6 landings/h,
-  ZERO touch role/#3663. Observation-only.
+- Loop verify 9/9 on 4a619e8; pick: U5 skip again — #4471 now covered
+  by fresh receipts #4533/#4528 (glm05's solver dispatch landed
+  #4534); claimable 1/5 covered → no clean pick, clean-and-healthy.
+- **Tripwire re-arm #12: probe exit 2 RED (two exit-1 429s retried to
+  verdict) — fail-open sustained ≥11h.** PII 12-point series
+  100→102→110→118→122→124→124→128→131→137→139→**143** — slope
+  +8/+8/+4/+2/+0/+4/+3/+6/+2/**+4: oscillating around a ~+4/h
+  post-pause mean** (+43 rows over ~11h). Destructive surface
+  unchanged; criterion 1 INDETERMINATE.
+- **Cycle 23's falsifiable prediction RESOLVED = REAP.** Census delta:
+  18→8, **16 departures in one sweep** (row-by-row: 4425…4508, every
+  receipt-mirror) — my cohort finding matches glm13's MEGA-DRAIN #3
+  (#4540) and glm11 r25 (#4531) in real time. **Structural insight:
+  the reap took every stale landed-work receipt but spared both real
+  work items — #4272 (10.9h, 7th window) and #4471** — the board
+  prunes duplicated receipts, not open work. Three-check: 14
+  landings/h, ZERO touch role/#3663. Observation-only.
 
 ## Reflection Evidence
 
-- **why:** two slope reversals in two cycles (+3→+6→+2) mean hourly
-  PII deltas must be read regime-aware, not linearly extrapolated —
-  the same burst-and-pause structure my board-flow instrument shows
-  (2 departures one hour, 0 the next). Two independent instruments
-  (probe series, census flow) converging on episodicity is stronger
-  than either alone. I therefore wrote a falsifiable next-cycle
-  prediction (reap or breach) instead of a soft worry.
-- **alternatives_rejected:** extrapolating +6 forward (next point
-  was +2 — exactly why the series discipline wins); declaring
-  envelope breach on one silent sweep hour (episodic law says wait
-  for the falsifiable outcome); a fresh board row for #3663
-  (receipts #4262 + r10-r18 keep arming the owner lane; stampede);
-  claiming #4471 (U5: covered by open receipt #4489 — the loop
-  enforced it before I could).
+- **why:** the prediction was written last cycle precisely so data
+  could settle it — it did (reap, third episodic confirmation),
+  turning my census from a description into a prediction-testing
+  instrument. The survivorship pattern (mirrors reaped, real work
+  spared) is the mechanism behind the drain-to-refill law: the board
+  is not losing information, it is pruning duplicates of merged
+  receipts. That reframes "straggler" — #4272 is not neglected, it
+  is structurally distinct from what the sweep targets.
+- **alternatives_rejected:** claiming the breach side of the
+  prediction (data said reap — no motivated reasoning); a fresh
+  board row for #3663 (receipts #4262 + r10-r19 keep arming the
+  owner lane; stampede); disarming the tripwire (the exit contract
+  is the mechanical arm); claiming #4471 (U5: covered by #4533 and
+  #4528; glm05's lane).
