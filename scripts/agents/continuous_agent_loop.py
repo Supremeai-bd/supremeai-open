@@ -4109,7 +4109,21 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
-    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
+    parser.add_argument("--verify-only", action="store_true", help="Run 9-tier verification only")
+    # বাংলা: #567 চুক্তির honesty escape hatch — #4097-এর flag purge-এ এই রেজিস্ট্রেশন
+    # ব্যাচ-sweep-এ মুছে গিয়েছিল, কিন্তু read-side wiring (main()-এর verify শাখায় ও
+    # run_dispatch_cycle-এ `getattr(args, "offline", False)`), SPEC §4b-র live সারি এবং
+    # tests/test_constitution_freshness.py::test_25 সবই বেঁচে ছিল → flag-টি মৃত-কোড
+    # হয়ে পড়েছিল (sentry c74 #4148 প্রমাণিত residual)। এটি ad-hoc override নয় —
+    # সৎ-সংকোচনমুখী hatch (যা দাবি করা কমায়, বাড়ায় না), তাই bare-mode-এর সাথে
+    # সাংঘর্ষিক নয়। Env সমতুল্য: SUPREMEAI_OFFLINE / AGENT_LOOP_OFFLINE / CI_OFFLINE।
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Honest offline mode: board query honestly skipped (dispatch path) and the "
+        "--verify-only constitution-freshness boot smoke honestly skipped "
+        "(env: SUPREMEAI_OFFLINE / AGENT_LOOP_OFFLINE / CI_OFFLINE)",
+    )
     args, _ = parser.parse_known_args()
 
     if getattr(args, "verify_only", False):
