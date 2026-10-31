@@ -419,7 +419,11 @@ def test_live_repo_sweep_passes() -> None:
     # orphaned-tracking-row lifecycle lane — cleanup_stale_branches × watchdog-mint × register
     # heal-close intersection, 10-row manual bulk-close wave + 5-skip pick-window burn live) —
     # see index drift log pass 53 + docs/reports/SCOUT_R96_BRANCH_DEATH_ROW_LIFECYCLE_2026-10-31.md.
-    assert r["pointer"] == 97, "pointer drifted — regenerate expectation with the index"
+    # pass 45 (GLM Agent 12, Job 486773): R100 row registered (tower github-plane
+    # removal + bridge.*→bridge_* name wave, live-probed); pointer advanced past the
+    # fixture-blocked R98/R99 to the next fully-clean number (verified free: tree
+    # word-boundary scan zero; subject scan zero over 400; queue capture zero).
+    assert r["pointer"] == 101, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
