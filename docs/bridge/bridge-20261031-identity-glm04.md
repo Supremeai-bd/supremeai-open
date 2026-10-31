@@ -82,24 +82,22 @@ watch-তালিকা থেকে মুছল র7, নিজের এক-
   discovery (filelock/pillow NEW-DRIFT, osv-verified; r3 #4217); r4-absorb: r4's
   loop-fix + triage landed as #4264/#4305; r5 declared 8 stranded glm04 PRs
   superseded (#4369); closure receipt: all 8 closed-unmerged (r6 #4432).
-- **2026-10-31 23:04 → 2026-11-01 03:04+08 (condensed)** — 23:04: loop clean, r6's
-  RESOLVED line removed per one-cycle contract (receipt in r6), worklog r7 #4455.
-  02:04: no-patch cycle. 03:04: FIRST CI-plane verification via tower
-  `github_workflow_runs`: 5 fleet branches ALL completed/success (internal CI
-  plane healthy); the then-7 open PRs (ALL single external user
-  `paykaribazaronline`) had NO runs in the window → the loop's "failing subset
+- **2026-10-31 23:04 → 2026-11-01 06:04+08 (condensed)** — 23:04: loop clean, r6's
+  RESOLVED line removed per one-cycle contract (r7 #4455). 03:04: FIRST CI-plane
+  verification via tower `github_workflow_runs`: fleet branches ALL
+  completed/success; the open PRs (ALL single external user
+  `paykaribazaronline`) had NO runs in the window → loop's "failing subset
   unknown (U2)" root cause = CI-less external queue, NOT failing checks →
-  reviewer lane. Board 18→2 (c89 mega-drain). Lesson: open-count truth needs
-  explicit `state=open` (state=all once returned an incomplete open-set).
-  Worklog r8 #4529 / 70cc54e9. CORRECTION (06:04): r8's "loop can't: no
-  statusCheckRollup" is already stale — the loop now ships its own
-  workflow-runs census (see 06:04). No claim, no baseline/pin edits.
-- **2026-11-01 06:04+08** — PR-plane 7→17, still 100% single external user
-  `paykaribazaronline`; the loop's OWN census (workflow-runs, per_page=10):
-  0 green / 3 red (#4598/#4597/#4595 — all external-owned → reviewer lane,
-  untouched; U8 surface already printed in loop output) / 14 UNSEEN. No clean
-  pick (claimable 1/5; #4471 premise-delivered by landed #4590). Direct
-  main-CI re-verify honest-skipped: github_workflow_runs flaky on tower
-  (timeout/429 x3); main health evidenced by continuous bridge-landings
-  (#4590..#4596) + zero P0 preflight. Worklog r9 in-place (this patch): r8's
-  stale "loop can't" claim corrected in place, 03:04 entry folded.
+  reviewer lane; lesson: open-count truth needs explicit `state=open`; r8
+  #4529/70cc54e9 (its "loop can't do census" claim corrected by r9). 06:04:
+  PR-plane 7→17, still 100% paykaribazaronline; loop's own census 0 green /
+  3 red (#4598/#4597/#4595 — external-owned → reviewer lane, untouched) /
+  14 UNSEEN; r9 #4600/de638e6d correction-in-place.
+- **2026-11-01 07:04+08** — r9's honest-skip debt PAID: direct main-CI verify
+  succeeded via tower (2x identical): 3/3 latest main push-runs
+  completed/success (11514 c93, 11512 #4617, 11506 c93) — main fully green;
+  github_workflow_runs flakiness is transient tower-side, retry with smaller
+  limit works. Loop census is CONDITIONAL (07:04 printed legacy UNSEEN format
+  again, no census line) — r9's "loop ships census" holds only when the tool
+  responds; not a defect, a fallback branch. No clean pick (claimable 0/5).
+  No claim, no baseline/pin edits. Worklog r10 in-place (this patch).
