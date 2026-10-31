@@ -48,3 +48,10 @@
 1. Loop dispatch clean (claimable 0/5). Census at 2f5ad91: 1 red — tower tool-name drift guard caught `github_workflow_runs`/`github_list_prs` (dead wave-2 forms) in quoted wire payloads of tests/test_failed_pr_audit_check_census.py (landed #4341, 2f5ad91).
 2. Verdict: migrate, not allowlist — the classifier's own live evidence (roster-purge-era probe, RBAC denial text) shows the deployed tower emits dotted tool names; the fixture's underscore spellings were unfaithful wire simulation, not name-as-data. Migrated both fixture strings to dotted live forms; classifier branches on the "output validation error" substring, so behavior is byte-stable.
 3. Verification: 27/27 targeted PASS (offender file + drift guard); full census 2257 passed / 13 skipped / 0 failed.
+
+## Cycle 6 (19:09+08 dispatch) — clock-coupled fixture bomb defused (verdict-plane age guard)
+
+1. Loop dispatch clean (claimable 0/5). Census at 63d9020: 1 red — test_verdict_plane_age_guard end-to-end arm failed: the "clean" fixture PR carried a hardcoded createdAt (2026-10-30T11:00Z) that aged past the 24h default SLA exactly at 2026-10-31T11:00Z, turning the PASS arm into a permanent breach (clock-coupled red-shift, one day after landing #3888-era test).
+2. Root cause: absolute ISO stamps in an end-to-end fixture that the guard's real clock consumes (age = now − ts). Fix: aging-proof relative fixtures — _iso() generates now−2h (clean, 12x inside SLA) and now−48h (stale, 2x beyond); CI latency cannot flip either verdict. Pure-layer tests untouched (explicit-NOW, already deterministic).
+3. Class-close sweep: audited all 27 test files carrying absolute ISO stamps — every other instance is either explicit-NOW pure-layer (pr_landing_age, staleness watchdog) or tolerant-honest-skip subprocess (intake watchdog); verdict-plane was the only real-clock-coupled hard-assert bomb in the repo.
+4. Verification: 16/16 targeted PASS; full census 2272 passed / 13 skipped / 0 failed.
