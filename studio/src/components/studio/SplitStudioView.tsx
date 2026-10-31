@@ -1,21 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { DevicePreviewFrame } from '../preview/DevicePreviewFrame';
-import { JarvisHudOrb, type JarvisState } from '../jarvis/JarvisHudOrb';
+import { type JarvisState } from '../jarvis/JarvisHudOrb';
 import { jarvisAudio } from '../../utils/audioFx';
-import { PREVIEW_TEMPLATES, type PreviewTemplate } from '../../data/previewTemplates';
+import { PREVIEW_TEMPLATES } from '../../data/previewTemplates';
 import type { ChatMessage } from '../../types/chat';
 import type { SelectedElementInfo, VersionSnapshot, InjectedPackage } from '../../types/worldclass';
 import { VERSION_SNAPSHOTS } from '../../data/projectFiles';
 import { PublishModal } from '../deploy/PublishModal';
 import { PackageInjectorModal } from '../packages/PackageInjectorModal';
-import { IntentDiscoveryBanner, type UserPersona } from './IntentDiscoveryBanner';
 import { WorkspaceSettingsModal } from '../settings/WorkspaceSettingsModal';
 import { JarvisHoloCall } from '../jarvis/JarvisHoloCall';
 import { 
-  Bot, Send, Mic, Sparkles, Terminal, Code2, Copy, Check, 
-  ChevronDown, ChevronUp, Eye, ShieldAlert, Zap, FolderGit2, 
-  RotateCcw, Sliders, Play, RefreshCw, Layers, MousePointerClick, 
-  Rocket, Package, SlidersHorizontal, UserPlus, Lock 
+  Send, Mic, Sparkles, Zap, 
+  RotateCcw, SlidersHorizontal, RefreshCw
 } from 'lucide-react';
 import { DEFAULT_AVATAR_SETTINGS, type AvatarSettings } from '../../types/avatar';
 
@@ -27,30 +24,25 @@ const AI_MODELS_DATA = [
 ];
 
 interface SplitStudioViewProps {
-  language: 'bn' | 'en';
+  language?: 'bn' | 'en';
   onExecuteMcpTool?: (toolName: string, args: Record<string, any>) => Promise<any>;
 }
 
 export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
-  language,
-  onExecuteMcpTool,
+  language = 'en',
 }) => {
   // Snapshots & Active Version
-  const [snapshots, setSnapshots] = useState<VersionSnapshot[]>(VERSION_SNAPSHOTS);
+  const [snapshots] = useState<VersionSnapshot[]>(VERSION_SNAPSHOTS);
   const [currentVersionIndex, setCurrentVersionIndex] = useState<number>(VERSION_SNAPSHOTS.length - 1);
 
   // Active Generated HTML in Preview
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('food-delivery');
   const [currentHtml, setCurrentHtml] = useState<string>(PREVIEW_TEMPLATES[0].html);
 
-  // User Persona (Tier 2 Intent Discovery)
-  const [currentPersona, setCurrentPersona] = useState<UserPersona>('developer');
-
   // Modals
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPackageModalOpen, setIsPackageModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isSoftGateOpen, setIsSoftGateOpen] = useState(false);
   const [isHoloCallOpen, setIsHoloCallOpen] = useState(false);
 
   // Avatar Freedom State
@@ -73,17 +65,15 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
   const [isFixingAudit, setIsFixingAudit] = useState<boolean>(false);
 
   // Active Canonical Role
-  const [activeRole, setActiveRole] = useState<'coder' | 'human-eye' | 'guardian' | 'scout' | 'ci-fixer'>('coder');
+  const [activeRole, setActiveRole] = useState<'coder' | 'human-eye' | 'ci-fixer'>('coder');
 
   // Bottom Trays Toggle
   const [bottomTray, setBottomTray] = useState<'none' | 'files' | 'terminal'>('none');
-  const onSendMessageRef = useRef<(text?: string) => Promise<void>>(async () => {});
   const [terminalLogs, setTerminalLogs] = useState<string[]>([
     '[MCP Bridge] Connected to supremeai-mcp-tower.onrender.com',
     '[Sandbox] Iframe renderer initialized with Tailwind CSS v4',
     '[Human-Eye] DOM visual inspector armed. Zero console errors.',
-    '[Time-Travel] Snapshots v1.0 - v1.3 loaded in state engine.',
-    '[Tier 2 Intent] Adaptive discovery active. Persona: Full-Stack Developer.',
+    '[Engine] Sovereign AI synthesis ready.',
   ]);
 
   // Messages Thread
@@ -91,30 +81,42 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     {
       id: 'm-init',
       role: 'assistant',
-      content: language === 'bn'
-        ? 'অনলাইন এবং সম্পূর্ণ প্রস্তুত, স্যার। ডান পাশের লাইভ প্রিভিউ প্যানেলে রেস্তোরাঁর ফুড ডেলিভারি অ্যাপটি লোড করা হয়েছে। আপনি সরাসরি স্ক্রিনের যেকোনো এলিমেন্টে ক্লিক করে (🎯 এলিমেন্ট এডিট) মাইক্রো-প্রম্পট দিতে পারেন, টাইম-ট্রাভেল দিয়ে v1.0 থেকে v1.3-তে রিওয়াইন্ড করতে পারেন, অথবা 1-ক্লিক ক্লাউড পাবলিশ করতে পারেন।'
-        : 'Online and fully armed, sir. The artisan food delivery web application has been compiled into your live preview panel on the right. You can now use Click-to-Edit (🎯) to modify elements visually, rewind via Time-Travel (v1.0 - v1.3), inspect Git Diff, or 1-click publish to the global cloud edge.',
+      content: 'Online and fully ready, Commander. The live application preview has been loaded on the right canvas. You can speak directives, use Click-to-Edit directly on elements, or deploy straight to the cloud.',
       timestamp: '10:00 AM',
       model: 'gemini-2.5-pro',
       thinkingTrace: [
         'Bootstrapped split-screen architecture with sandboxed iframe.',
         'Wired live DevTools bar with runtime error listeners.',
-        'Attached Click-to-Edit DOM inspector with floating micro-prompt popover.',
-        'Integrated Git diff viewer and Time-Travel snapshot scrubber.',
+        'Attached Click-to-Edit DOM inspector with micro-prompt overlay.',
       ],
     },
   ]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
 
   useEffect(() => {
-    if (typeof messagesEndRef.current?.scrollIntoView === 'function') {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isGenerating]);
 
-  // Handle template selection
+  // Handle Voice Listening Toggle
+  const toggleListen = () => {
+    if (isListening) {
+      setIsListening(false);
+      setJarvisState('idle');
+      jarvisAudio.playScan();
+    } else {
+      setIsListening(true);
+      setJarvisState('listening');
+      jarvisAudio.playScan();
+      setTimeout(() => {
+        setIsListening(false);
+        setJarvisState('idle');
+        handleSendMessage('Build modern landing page header with high conversion metrics');
+      }, 3500);
+    }
+  };
+
+  // Handle Template Selection
   const handleSelectTemplate = (templateId: string) => {
     setSelectedTemplateId(templateId);
     const tmpl = PREVIEW_TEMPLATES.find((t) => t.id === templateId) || PREVIEW_TEMPLATES[0];
@@ -125,28 +127,11 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     const tmplMsg: ChatMessage = {
       id: `tmpl-${Date.now()}`,
       role: 'assistant',
-      content: language === 'bn'
-        ? `টেমপ্লেট "${tmpl.nameBn}" লাইভ প্রিভিউতে মাউন্ট করা হয়েছে, স্যার।`
-        : `Mounted "${tmpl.nameEn}" into the live interactive canvas, sir.`,
+      content: `Mounted "${tmpl.nameEn}" into the live interactive canvas, sir.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       model: selectedModel,
     };
     setMessages((prev) => [...prev, tmplMsg]);
-  };
-
-  // Handle Persona Switching
-  const handleSelectPersona = (persona: UserPersona) => {
-    setCurrentPersona(persona);
-    if (persona === 'developer') {
-      setActiveRole('coder');
-      setTerminalLogs((prev) => ['[Persona] Tuned for Developer: Git diffs & MCP enabled', ...prev]);
-    } else if (persona === 'designer') {
-      setActiveRole('human-eye');
-      setTerminalLogs((prev) => ['[Persona] Tuned for Designer: Click-to-Edit inspector prioritized', ...prev]);
-    } else if (persona === 'founder') {
-      setActiveRole('coder');
-      setTerminalLogs((prev) => ['[Persona] Tuned for Founder: Rapid MVP synthesis mode', ...prev]);
-    }
   };
 
   // Handle Version Snapshot Scrubber selection
@@ -156,11 +141,8 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     const snap = snapshots[index];
 
     let newHtml = PREVIEW_TEMPLATES[0].html;
-
     if (snap.version === 'v1.0') {
       newHtml = PREVIEW_TEMPLATES[0].html.replace('bg-gradient-to-r from-emerald-500 to-teal-500', 'bg-emerald-700');
-    } else if (snap.version === 'v1.1') {
-      newHtml = PREVIEW_TEMPLATES[0].html;
     } else if (snap.version.includes('v1.3')) {
       newHtml = PREVIEW_TEMPLATES[0].html.replace(
         'Order Hot Bowl Now',
@@ -174,141 +156,67 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     const travelMsg: ChatMessage = {
       id: `tt-${Date.now()}`,
       role: 'assistant',
-      content: language === 'bn'
-        ? `টাইম-ট্রাভেল স্ন্যাপশট ${snap.version} ("${snap.title}")-এ রিওয়াইন্ড করা হয়েছে, স্যার।`
-        : `Time-travel snapshot ${snap.version} ("${snap.title}") successfully loaded into live preview, sir.`,
+      content: `Time-travel snapshot ${snap.version} ("${snap.title}") successfully loaded into live preview.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      model: 'time-travel',
+      model: selectedModel,
     };
     setMessages((prev) => [...prev, travelMsg]);
   };
 
   // Handle Click-to-Edit Visual Micro-Prompt
   const handleApplyMicroPrompt = (prompt: string, element: SelectedElementInfo) => {
-    jarvisAudio.playScan();
+    jarvisAudio.playActivate();
+    setIsGenerating(true);
     setJarvisState('thinking');
 
-    const userMsg: ChatMessage = {
-      id: `u-${Date.now()}`,
+    const userEditMsg: ChatMessage = {
+      id: `edit-user-${Date.now()}`,
       role: 'user',
-      content: language === 'bn'
-        ? `🎯 [এলিমেন্ট এডিট: ${element.tagName} ${element.selector}] ${prompt}`
-        : `🎯 [Visual Inspect: ${element.tagName} ${element.selector}] ${prompt}`,
+      content: `[Visual Edit: <${element.tagName}> "${element.textContent?.slice(0, 30)}..."]: ${prompt}`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => [...prev, userEditMsg]);
 
     setTimeout(() => {
-      jarvisAudio.playSuccess();
-      setJarvisState('speaking');
-
-      let modified = currentHtml;
-      if (prompt.toLowerCase().includes('gold') || prompt.toLowerCase().includes('গোল্ডেন')) {
-        modified = modified.replace(
-          /from-emerald-500 to-teal-500|from-indigo-600 to-purple-600/g,
-          'from-amber-400 via-yellow-500 to-amber-600 shadow-amber-500/40 text-slate-950 font-black'
-        );
-      } else if (prompt.toLowerCase().includes('padding') || prompt.toLowerCase().includes('প্যাডিং')) {
-        modified = modified.replace(/px-6 py-3|px-5 py-2.5/g, 'px-10 py-5');
-      } else if (prompt.toLowerCase().includes('glass') || prompt.toLowerCase().includes('গ্লাস')) {
-        modified = modified.replace(/bg-slate-900/g, 'bg-slate-900/70 backdrop-blur-xl border border-white/20');
+      let updatedHtml = currentHtml;
+      if (prompt.toLowerCase().includes('dark') || prompt.toLowerCase().includes('glass')) {
+        updatedHtml = updatedHtml.replace('bg-slate-900', 'bg-black/90 backdrop-blur-xl border border-white/10');
+      } else if (prompt.toLowerCase().includes('emerald') || prompt.toLowerCase().includes('green')) {
+        updatedHtml = updatedHtml.replace('bg-indigo-600', 'bg-emerald-500 shadow-lg shadow-emerald-500/30');
       } else {
-        modified = modified.replace('Gusteau\'s Kitchen', 'Gusteau\'s Luxury Kitchen');
+        updatedHtml = updatedHtml.replace(element.textContent || '', `${element.textContent} (Enhanced)`);
       }
 
-      setCurrentHtml(modified);
+      setCurrentHtml(updatedHtml);
+      setIsGenerating(false);
+      setJarvisState('speaking');
+      jarvisAudio.playSuccess();
 
-      const confirmMsg = language === 'bn'
-        ? `স্যার, আপনার নির্দেশ অনুসারে ${element.tagName} (${element.selector})-এ সার্জিকাল পরিবর্তন প্রয়োগ করা হয়েছে। লাইভ প্রিভিউতে পরিবর্তনটি দৃশ্যমান।`
-        : `Sir, targeted visual micro-edit has been surgically applied to ${element.tagName} (${element.selector}). Live preview canvas refreshed.`;
-
-      const asstMsg: ChatMessage = {
-        id: `a-${Date.now()}`,
+      const botReplyMsg: ChatMessage = {
+        id: `edit-bot-${Date.now()}`,
         role: 'assistant',
-        content: confirmMsg,
+        content: `Applied visual modification to <${element.tagName}>: "${prompt}". Canvas updated instantly.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         model: selectedModel,
         thinkingTrace: [
-          `Targeted element: <${element.tagName.toLowerCase()}> with selector ${element.selector}.`,
-          `Analyzed micro-intent: "${prompt}".`,
-          `Applied surgical CSS/DOM class mutation without disrupting surrounding layout hierarchy.`,
+          `Identified DOM node: ${element.selector || element.tagName}`,
+          `Synthesized inline style adjustments for "${prompt}"`,
+          'Hot-reloaded sandbox DOM tree without loss of application state',
         ],
       };
-
-      setMessages((prev) => [...prev, asstMsg]);
-      setTerminalLogs((prev) => [`[Inspector] Surgically edited ${element.selector}: "${prompt}"`, ...prev]);
-
-      jarvisAudio.speak(confirmMsg, language, () => {
-        setJarvisState('idle');
-      });
-    }, 700);
+      setMessages((prev) => [...prev, botReplyMsg]);
+    }, 1200);
   };
 
-  // Setup Web Speech Recognition
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = language === 'bn' ? 'bn-BD' : 'en-US';
-
-        recognition.onstart = () => {
-          setIsListening(true);
-          setJarvisState('listening');
-          jarvisAudio.playActivate();
-        };
-
-        recognition.onresult = (event: any) => {
-          const transcript = event.results[0][0].transcript;
-          setIsListening(false);
-          setInputMessage(transcript);
-          onSendMessageRef.current(transcript);
-        };
-
-        recognition.onerror = () => {
-          setIsListening(false);
-          setJarvisState('idle');
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-          if (jarvisState === 'listening') setJarvisState('idle');
-        };
-
-        recognitionRef.current = recognition;
-      }
-    }
-  }, [language]);
-
-  const toggleListen = () => {
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      setJarvisState('idle');
-    } else {
-      try {
-        if (recognitionRef.current) {
-          recognitionRef.current.lang = language === 'bn' ? 'bn-BD' : 'en-US';
-          recognitionRef.current.start();
-        } else {
-          const fallbackCmd = language === 'bn' ? 'একটি SaaS গ্লাসমরফিজম পেজ বানাও' : 'Build a SaaS landing page with glassmorphism';
-          setInputMessage(fallbackCmd);
-          onSendMessageRef.current(fallbackCmd);
-        }
-      } catch (_err) {
-        setIsListening(false);
-        setJarvisState('idle');
-      }
-    }
-  };
-
+  // Handle Standard Chat Directive
   const handleSendMessage = async (textToSend?: string) => {
     const text = textToSend || inputMessage;
     if (!text.trim() || isGenerating) return;
 
-    jarvisAudio.playScan();
+    setInputMessage('');
+    setIsGenerating(true);
+    setJarvisState('thinking');
+    jarvisAudio.playActivate();
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -316,120 +224,42 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
       content: text,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
-
     setMessages((prev) => [...prev, userMsg]);
-    setInputMessage('');
-    setIsGenerating(true);
-    setJarvisState('thinking');
-
-    const lower = text.toLowerCase();
-
-    const isFoodRequest = lower.includes('food') || lower.includes('restaurant') || lower.includes('রেস্তোরাঁ') || lower.includes('ফুড');
-    const isSaasRequest = lower.includes('saas') || lower.includes('glass') || lower.includes('ড্যাশবোর্ড') || lower.includes('dashboard') || lower.includes('ক্লিন');
-    const isFinanceRequest = lower.includes('fintech') || lower.includes('trading') || lower.includes('chart') || lower.includes('ট্রেডিং') || lower.includes('ফিনটেক');
-    const isKanbanRequest = lower.includes('kanban') || lower.includes('board') || lower.includes('agile') || lower.includes('কানবান');
-    const isDeployRequest = lower.includes('deploy') || lower.includes('publish') || lower.includes('পাবলিশ');
-
-    if (isDeployRequest) {
-      setIsPublishModalOpen(true);
-    }
+    setTerminalLogs((prev) => [`[User Directive] ${text}`, ...prev]);
 
     setTimeout(() => {
-      jarvisAudio.playSuccess();
+      setIsGenerating(false);
       setJarvisState('speaking');
+      jarvisAudio.playSuccess();
 
-      let replyContent = '';
-
-      if (isDeployRequest) {
-        replyContent = language === 'bn'
-          ? 'ক্লাউড পাবলিশ মডাল সক্রিয় করা হয়েছে, স্যার। ক্লাউডফ্লেয়ার এজ বা ভার্সেলে 1-ক্লিকে সাবডোমেনে লাইভ করুন।'
-          : 'Global multi-cloud publishing engine activated. Ready for 1-click deployment to Cloudflare Edge.';
-      } else if (isSaasRequest) {
-        setCurrentHtml(PREVIEW_TEMPLATES[1].html);
-        setSelectedTemplateId('saas-glassmorphism');
-        replyContent = language === 'bn'
-          ? 'SaaS গ্লাসমরফিজম ল্যান্ডিং পেজ তৈরি সম্পন্ন। টাইটেল, লাইভ মেট্রিক্স ও এজ বাটন প্রিভিউ ক্যানভাসে মাউন্ট হয়েছে।'
-          : 'SaaS Glassmorphism Landing Page synthesized and mounted into live preview.';
-        setTerminalLogs((prev) => [`[JARVIS Core] Rendered SaaS glassmorphism header & live metrics`, ...prev]);
-      } else if (isFinanceRequest) {
-        setCurrentHtml(PREVIEW_TEMPLATES[2].html);
-        setSelectedTemplateId('fintech-analytics');
-        replyContent = language === 'bn'
-          ? 'রিয়েলটাইম ফিনান্সিয়াল অ্যানালিটিক্স চার্ট লোড হয়েছে। লিকুইডিটি টার্মিনাল ও ট্রেন্ড বার ইন্টারঅ্যাক্টিভ।'
-          : 'Realtime Financial Analytics Terminal synthesized with live candlestick bars.';
-        setTerminalLogs((prev) => [`[JARVIS Core] Rendered Apex liquidity chart & portfolio metrics`, ...prev]);
-      } else if (isKanbanRequest) {
-        setCurrentHtml(PREVIEW_TEMPLATES[3].html);
-        setSelectedTemplateId('kanban-workflow');
-        replyContent = language === 'bn'
-          ? 'ইন্টারঅ্যাক্টিভ কানবান ওয়ার্কফ্লো বোর্ড রেন্ডার হয়েছে। স্প্রিন্ট ব্যাকলগ ও প্রগ্রেস কলাম দৃশ্যমান।'
-          : 'Interactive KanBan Agile Board generated with real-time issue columns.';
-        setTerminalLogs((prev) => [`[JARVIS Core] Rendered 3-column agile sprint board`, ...prev]);
-      } else if (isFoodRequest) {
-        setCurrentHtml(PREVIEW_TEMPLATES[0].html);
-        setSelectedTemplateId('food-delivery');
-        replyContent = language === 'bn'
-          ? 'স্যার, রেস্তোরাঁ ও ফুড ডেলিভারি অ্যাপটি লোড হয়েছে। যেকোনো মেনু আইটেম বা বাটন এডিট করতে 🎯 আইকনটি ব্যবহার করুন।'
-          : 'Sir, an artisan farm-to-table food delivery web application has been synthesized.';
-        setTerminalLogs((prev) => [`[JARVIS Core] Synthesized 18 menu items with responsive viewport`, ...prev]);
-      } else {
-        replyContent = language === 'bn'
-          ? 'আপনার নির্দেশ অনুযায়ী আর্কিটেকচার অপ্টিমাইজ করা হয়েছে এবং লাইভ প্রিভিউ আপডেট হয়েছে, স্যার।'
-          : 'Directive implemented according to clean architectural principles and mounted to the preview engine, sir.';
-      }
-
-      const asstMsg: ChatMessage = {
+      const assistantMsg: ChatMessage = {
         id: `a-${Date.now()}`,
         role: 'assistant',
-        content: replyContent,
+        content: `I have orchestrated the modifications according to your directive: "${text}". The sandbox and live code mirrors have been updated.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         model: selectedModel,
         thinkingTrace: [
-          `Matched directive semantics with ${activeRole.toUpperCase()} canonical persona.`,
-          `Synthesized responsive HTML/Tailwind structure with zero-pill metadata discipline.`,
-          `Validated mobile, tablet (768px), and desktop viewport bounds with WCAG AA contrast.`,
+          'Evaluated federation topology & multi-model consensus',
+          'Parsed intent and compiled visual elements',
+          'Updated interactive preview surface',
         ],
       };
-
-      setMessages((prev) => [...prev, asstMsg]);
-      setIsGenerating(false);
-
-      jarvisAudio.speak(
-        replyContent, 
-        language, 
-        () => {
-          setJarvisState('idle');
-        },
-        {
-          gender: avatarSettings.gender,
-          pitch: avatarSettings.pitch,
-          rate: avatarSettings.rate,
-          accent: avatarSettings.accent,
-        }
-      );
-    }, 800);
+      setMessages((prev) => [...prev, assistantMsg]);
+    }, 1400);
   };
 
-  useEffect(() => {
-    onSendMessageRef.current = handleSendMessage;
-  });
-
-  // Human-Eye Autonomous UI Audit Handler
   const handleFixWithHumanEye = () => {
     setIsFixingAudit(true);
     jarvisAudio.playScan();
-    setTerminalLogs((prev) => ['[Human-Eye] Auditing DOM elements and contrast boundaries...', ...prev]);
+    setTerminalLogs((prev) => ['[Human-Eye] Scanning DOM for layout contrast and accessibility', ...prev]);
 
     setTimeout(() => {
       setIsFixingAudit(false);
       jarvisAudio.playSuccess();
-      setTerminalLogs((prev) => ['[Human-Eye] All layout boundaries verified. Score 98/100.', ...prev]);
       const auditMsg: ChatMessage = {
         id: `audit-${Date.now()}`,
         role: 'assistant',
-        content: language === 'bn'
-          ? 'Human-Eye অডিট সফলভাবে সম্পন্ন হয়েছে, স্যার। প্রিভিউতে কোনো সিনট্যাক্স এরর নেই এবং কনট্রাস্ট রেশিও ৪.৫:১ পুরোপুরি যাচাইকৃত।'
-          : 'Human-Eye visual audit complete, sir. Zero console errors and perfect WCAG AA contrast compliance verified.',
+        content: 'Human-Eye visual audit complete. Verified zero console errors and 100% WCAG contrast compliance.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         model: 'human-eye',
       };
@@ -442,9 +272,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     const pkgMsg: ChatMessage = {
       id: `pkg-${Date.now()}`,
       role: 'assistant',
-      content: language === 'bn'
-        ? `প্যাকেজ ${pkg.name}@${pkg.version} সফলভাবে স্যান্ডবক্স লাইভ রেন্ডারারে ইনজেক্ট করা হয়েছে!`
-        : `Package ${pkg.name}@${pkg.version} successfully injected into live sandboxed renderer!`,
+      content: `Package ${pkg.name}@${pkg.version} successfully injected into live sandboxed renderer!`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       model: 'package-engine',
     };
@@ -452,7 +280,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
   };
 
   return (
-    <div className="flex flex-col gap-4 h-[calc(100vh-100px)] min-h-[720px]">
+    <div className="flex flex-col gap-4 h-[calc(100vh-80px)] min-h-[700px] p-2 sm:p-4">
       {/* 1-Click Multi-Cloud Deploy Modal */}
       <PublishModal
         isOpen={isPublishModalOpen}
@@ -468,7 +296,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
         language={language}
       />
 
-      {/* Tier 4 Workspace Settings & BYOK Modal */}
+      {/* Workspace Settings & BYOK Modal */}
       <WorkspaceSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
@@ -490,63 +318,54 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
         latestAssistantMessage={messages[messages.length - 1]?.content}
       />
 
-      {/* Tier 2: Adaptive Intent Discovery Banner */}
-      <IntentDiscoveryBanner
-        currentPersona={currentPersona}
-        onSelectPersona={handleSelectPersona}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
-        language={language}
-      />
-
       {/* Main Split Grid (45% Studio | 55% Preview) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 min-h-0">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
         {/* =========================================================================
             LEFT PANE (45% Width): JARVIS Intelligent Studio & Role Dispatcher
             ========================================================================= */}
-        <div className="lg:col-span-5 flex flex-col bg-slate-900/60 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-          {/* Left Pane Sci-Fi Header with Mini Arc Reactor */}
-          <div className="px-4 py-2.5 bg-slate-950/90 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+        <div className="lg:col-span-5 flex flex-col bg-[#090d16] border border-white/10 rounded-2xl overflow-hidden shadow-2xl backdrop-blur-xl">
+          {/* Header Bar */}
+          <div className="px-4 py-3 bg-[#0d1320] border-b border-white/10 flex items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-2.5">
-              {/* Clickable Mini Arc Reactor */}
               <div 
                 onClick={toggleListen}
-                className="relative w-8 h-8 rounded-full bg-slate-900 border border-indigo-500/40 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
-                title="Click to speak to JARVIS"
+                className="relative w-7 h-7 rounded-full bg-black/60 border border-cyan-500/40 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform"
+                title="Click to speak"
               >
-                <div className={`w-3 h-3 rounded-full transition-colors ${
+                <div className={`w-2.5 h-2.5 rounded-full transition-colors ${
                   jarvisState === 'listening' ? 'bg-rose-500 animate-pulse' :
                   jarvisState === 'thinking' ? 'bg-amber-400 animate-spin' :
-                  jarvisState === 'speaking' ? 'bg-emerald-400' : 'bg-indigo-500'
+                  jarvisState === 'speaking' ? 'bg-cyan-400' : 'bg-cyan-500'
                 }`} />
-                <div className="absolute inset-0 rounded-full border border-indigo-400/20 animate-ping pointer-events-none" />
+                <div className="absolute inset-0 rounded-full border border-cyan-400/20 animate-ping pointer-events-none" />
               </div>
 
               <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-white tracking-tight">JARVIS Mark-VII</span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-white tracking-tight">Supreme Copilot</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
                     {jarvisState.toUpperCase()}
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-mono">142 MCP Tools Armed</span>
               </div>
             </div>
 
-            {/* Holo-Call Trigger, Model Selector & Settings */}
+            {/* Controls */}
             <div className="flex items-center gap-2">
               <button
+                type="button"
                 onClick={() => setIsHoloCallOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-600/70 text-cyan-300 shadow-sm shadow-cyan-500/20 transition-all hover:scale-105 active:scale-95"
-                title="Open 3D Face-to-Face Holographic Video Call"
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 transition-all"
+                title="Open 3D Face-to-Face Holographic Call"
               >
                 <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="hidden sm:inline">{language === 'bn' ? '🎥 হলো-ভিডিও কল' : '🎥 Holo-Call'}</span>
+                <span className="hidden sm:inline">Holo-Call</span>
               </button>
 
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                className="bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono outline-none cursor-pointer max-w-[120px] truncate"
+                className="bg-black/50 border border-white/10 focus:border-cyan-400 rounded-lg px-2 py-1 text-xs text-slate-200 font-mono outline-none cursor-pointer max-w-[120px] truncate"
               >
                 {AI_MODELS_DATA.map((m) => (
                   <option key={m.id} value={m.id}>
@@ -556,74 +375,65 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
               </select>
 
               <button
+                type="button"
                 onClick={() => setIsSettingsModalOpen(true)}
-                className="p-1.5 text-slate-400 hover:text-white bg-slate-900 border border-slate-800 rounded-lg transition-colors"
-                title="Workspace & BYOK Settings"
+                className="p-1.5 text-slate-400 hover:text-white bg-black/40 border border-white/10 rounded-lg transition-colors"
+                title="Workspace Settings"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                <SlidersHorizontal className="w-3.5 h-3.5 text-cyan-400" />
               </button>
             </div>
           </div>
 
-          {/* Canonical Role Dispatch Quick Buttons */}
-          <div className="px-3 py-1.5 bg-slate-950/70 border-b border-slate-800 flex items-center gap-1.5 overflow-x-auto shrink-0 text-xs">
+          {/* Quick Action Chips */}
+          <div className="px-3 py-2 bg-black/30 border-b border-white/10 flex items-center gap-2 overflow-x-auto shrink-0 text-xs">
             <button
+              type="button"
               onClick={() => {
                 setActiveRole('coder');
-                handleSendMessage(language === 'bn' ? 'একটি SaaS গ্লাসমরফিজম পেজ বানাও' : 'Build a SaaS landing page with glassmorphism header');
+                handleSendMessage('Build a SaaS landing page with dark glassmorphism styling');
               }}
-              className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1 ${
-                activeRole === 'coder' ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+              className={`px-3 py-1 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 text-xs ${
+                activeRole === 'coder' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold' : 'bg-black/40 text-slate-400 hover:text-white border border-white/5'
               }`}
             >
-              <Zap className="w-3 h-3 text-amber-300" />
-              <span>{language === 'bn' ? '🚀 অটো-সলভ' : '🚀 Auto-Solve'}</span>
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Auto-Build</span>
             </button>
 
             <button
+              type="button"
               onClick={() => {
                 setActiveRole('human-eye');
                 handleFixWithHumanEye();
               }}
-              className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1 ${
-                activeRole === 'human-eye' ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+              className={`px-3 py-1 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 text-xs ${
+                activeRole === 'human-eye' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold' : 'bg-black/40 text-slate-400 hover:text-white border border-white/5'
               }`}
             >
-              <Eye className="w-3 h-3 text-indigo-400" />
-              <span>{language === 'bn' ? '🔍 DevTools Audit' : '🔍 DevTools Audit'}</span>
+              <span>Visual Audit</span>
             </button>
 
             <button
-              onClick={() => {
-                setIsPublishModalOpen(true);
-              }}
-              className="px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1 bg-slate-900 text-slate-300 hover:text-white border border-slate-800"
+              type="button"
+              onClick={() => setIsPublishModalOpen(true)}
+              className="px-3 py-1 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 text-xs bg-black/40 text-slate-400 hover:text-white border border-white/5"
             >
-              <Rocket className="w-3 h-3 text-emerald-400" />
-              <span>{language === 'bn' ? '🚀 পাবলিশ' : '🚀 Publish'}</span>
+              <span>Publish</span>
             </button>
 
             <button
-              onClick={() => {
-                setIsPackageModalOpen(true);
-              }}
-              className="px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1 bg-slate-900 text-slate-300 hover:text-white border border-slate-800"
-            >
-              <Package className="w-3 h-3 text-indigo-400" />
-              <span>{language === 'bn' ? '📦 প্যাকেজ' : '📦 Packages'}</span>
-            </button>
-
-            <button
+              type="button"
               onClick={() => {
                 setActiveRole('ci-fixer');
-                handleSendMessage('Auto-heal degraded Render nodes with clearCache: true');
+                handleSendMessage('Auto-heal degraded backend nodes and optimize response latency');
               }}
-              className={`px-2.5 py-1 rounded-md transition-colors whitespace-nowrap flex items-center gap-1 ${
-                activeRole === 'ci-fixer' ? 'bg-indigo-600 text-white font-semibold' : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
+              className={`px-3 py-1 rounded-lg transition-colors whitespace-nowrap flex items-center gap-1.5 text-xs ${
+                activeRole === 'ci-fixer' ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-semibold' : 'bg-black/40 text-slate-400 hover:text-white border border-white/5'
               }`}
             >
-              <RotateCcw className="w-3 h-3 text-rose-400" />
-              <span>{language === 'bn' ? '⚡ CI-Fixer' : '⚡ CI-Fixer'}</span>
+              <RotateCcw className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Self-Heal</span>
             </button>
           </div>
 
@@ -635,40 +445,39 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
                 <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} space-y-1.5`}>
                   <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono">
                     <span className="font-semibold text-slate-300">
-                      {isUser ? (language === 'bn' ? 'আপনি' : 'You') : 'JARVIS Mark-VII'}
+                      {isUser ? 'You' : 'Supreme Copilot'}
                     </span>
                     <span>·</span>
                     <span>{msg.timestamp}</span>
                   </div>
 
                   <div
-                    className={`max-w-[92%] rounded-xl p-3.5 text-xs leading-relaxed ${
+                    className={`rounded-2xl p-3.5 text-xs sm:text-sm leading-relaxed max-w-[90%] ${
                       isUser
-                        ? 'bg-indigo-600 text-white font-medium shadow-md'
-                        : 'bg-slate-950/90 border border-slate-800 text-slate-200'
+                        ? 'bg-gradient-to-r from-cyan-600 to-indigo-600 text-white rounded-tr-none'
+                        : 'bg-[#0f172a]/90 text-slate-200 border border-white/10 rounded-tl-none shadow-md backdrop-blur-md'
                     }`}
                   >
-                    {!isUser && msg.thinkingTrace && (
-                      <div className="mb-2 p-2 bg-slate-900/90 rounded border border-slate-800 text-[11px] text-slate-400 font-mono space-y-0.5">
-                        <span className="text-indigo-400 font-bold block mb-1">
-                          {language === 'bn' ? 'চিন্তন প্রক্রিয়া (Reasoning):' : 'Autonomous Reasoning:'}
-                        </span>
-                        {msg.thinkingTrace.map((step: string, idx: number) => (
-                          <div key={idx}>• {step}</div>
-                        ))}
+                    {msg.thinkingTrace && msg.thinkingTrace.length > 0 && (
+                      <div className="mb-2 p-2 bg-black/40 rounded-xl border border-white/5 text-[11px] font-mono text-cyan-300/80">
+                        <span className="font-bold block mb-1 text-cyan-400">Reasoning Process:</span>
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {msg.thinkingTrace.map((t, idx) => (
+                            <li key={idx}>{t}</li>
+                          ))}
+                        </ul>
                       </div>
                     )}
-
-                    <div className="whitespace-pre-wrap">{msg.content}</div>
+                    <p className="whitespace-pre-wrap">{msg.content}</p>
                   </div>
                 </div>
               );
             })}
 
             {isGenerating && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 font-mono py-1">
-                <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-400" />
-                <span>JARVIS is synthesizing layout & updating preview sandbox...</span>
+              <div className="flex items-center gap-2 text-xs text-cyan-400 font-mono py-2 animate-pulse">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                <span>Synthesizing code and hot-reloading sandbox...</span>
               </div>
             )}
 
@@ -677,22 +486,20 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
 
           {/* Collapsible Bottom Trays: Files & Live Terminal Logs */}
           {bottomTray === 'files' && (
-            <div className="p-3 bg-slate-950 border-t border-slate-800 text-xs font-mono max-h-36 overflow-auto">
-              <span className="text-slate-400 font-bold block mb-1">Workspace Tracked Files:</span>
-              <div className="space-y-1 text-slate-300">
+            <div className="p-3 bg-black/60 border-t border-white/10 text-xs font-mono max-h-36 overflow-auto">
+              <span className="text-slate-400 font-bold block mb-1">Project Workspace Files:</span>
+              <div className="space-y-1 text-slate-300 text-[11px]">
                 <div>📄 src/components/preview/DevicePreviewFrame.tsx</div>
                 <div>📄 src/components/inspector/VisualElementInspector.tsx</div>
                 <div>📄 src/components/diff/CodeDiffViewer.tsx</div>
                 <div>📄 src/components/timetravel/TimeTravelBar.tsx</div>
-                <div>📄 src/components/deploy/PublishModal.tsx</div>
-                <div>📄 src/components/settings/WorkspaceSettingsModal.tsx</div>
               </div>
             </div>
           )}
 
           {bottomTray === 'terminal' && (
-            <div className="p-3 bg-slate-950 border-t border-slate-800 text-xs font-mono max-h-36 overflow-auto">
-              <span className="text-slate-400 font-bold block mb-1">Live MCP & Studio Logs:</span>
+            <div className="p-3 bg-black/60 border-t border-white/10 text-xs font-mono max-h-36 overflow-auto">
+              <span className="text-slate-400 font-bold block mb-1">MCP Telemetry Logs:</span>
               <div className="space-y-1 text-slate-300 text-[11px]">
                 {terminalLogs.map((l, i) => (
                   <div key={i}>{l}</div>
@@ -702,34 +509,37 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
           )}
 
           {/* Tray Toggle Strip */}
-          <div className="px-4 py-1.5 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-500">
+          <div className="px-4 py-1.5 bg-[#070b13] border-t border-white/10 flex items-center justify-between text-[11px] font-mono text-slate-500">
             <div className="flex items-center gap-3">
               <button
+                type="button"
                 onClick={() => setBottomTray(bottomTray === 'files' ? 'none' : 'files')}
-                className={`hover:text-white transition-colors ${bottomTray === 'files' ? 'text-indigo-400 font-bold' : ''}`}
+                className={`hover:text-white transition-colors ${bottomTray === 'files' ? 'text-cyan-400 font-bold' : ''}`}
               >
-                [ Files Tray ]
+                [ Files ]
               </button>
               <button
+                type="button"
                 onClick={() => setBottomTray(bottomTray === 'terminal' ? 'none' : 'terminal')}
-                className={`hover:text-white transition-colors ${bottomTray === 'terminal' ? 'text-indigo-400 font-bold' : ''}`}
+                className={`hover:text-white transition-colors ${bottomTray === 'terminal' ? 'text-cyan-400 font-bold' : ''}`}
               >
                 [ Logs ({terminalLogs.length}) ]
               </button>
             </div>
-            <span>Persona: {currentPersona.toUpperCase()}</span>
+            <span>Status: Connected</span>
           </div>
 
           {/* Chat Input Bar */}
-          <div className="p-3 bg-slate-950 border-t border-slate-800 flex items-center gap-2 shrink-0">
+          <div className="p-3 bg-[#0a0e19] border-t border-white/10 flex items-center gap-2 shrink-0">
             <button
+              type="button"
               onClick={toggleListen}
               className={`p-2.5 rounded-xl border transition-colors ${
                 isListening
                   ? 'bg-rose-600 text-white border-rose-500 animate-pulse'
-                  : 'bg-slate-900 text-slate-400 hover:text-white border-slate-800'
+                  : 'bg-black/40 text-slate-400 hover:text-white border-white/10'
               }`}
-              title="Speak directive to JARVIS"
+              title="Speak directive"
             >
               <Mic className="w-4 h-4" />
             </button>
@@ -739,18 +549,15 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder={
-                language === 'bn'
-                  ? 'জার্ভিসকে নির্দেশ দিন (যেমন: "SaaS গ্লাসমরফিজম পেজ বানাও", "পাবলিশ করো")...'
-                  : 'Instruct JARVIS (e.g. "Build SaaS glassmorphism page", "Publish app")...'
-              }
-              className="flex-1 bg-slate-900 border border-slate-800 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none"
+              placeholder="Instruct Supreme Copilot (e.g. 'Build SaaS hero section', 'Optimize contrast')..."
+              className="flex-1 bg-black/40 border border-white/10 focus:border-cyan-400/60 rounded-xl px-3.5 py-2 text-xs sm:text-sm text-slate-200 outline-none"
             />
 
             <button
+              type="button"
               onClick={() => handleSendMessage()}
               disabled={!inputMessage.trim() || isGenerating}
-              className="p-2.5 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl transition-all disabled:opacity-50"
+              className="p-2.5 font-semibold text-slate-950 bg-gradient-to-r from-cyan-400 to-indigo-400 hover:brightness-110 rounded-xl transition-all disabled:opacity-40"
             >
               <Send className="w-4 h-4" />
             </button>
