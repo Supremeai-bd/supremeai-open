@@ -3582,7 +3582,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                     file=sys.stderr,
                 )
 
-    envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
+    envelope_mode = getattr(args, "task_envelope", False) or getattr(args, "emit_prompt", False) or getattr(args, "emit_contract", False)
 
     # #3574 Step-1 Preflight Observability Audit — শর্তহীন (Zero-Blindspot
     # Invariant): প্রতিটি বুট-পথ (envelope, dispatch, cadence, board-dark,
@@ -3601,7 +3601,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         # stdout শুধুই envelope JSON থাকে যাতে pipe/parse নিরাপদ থাকে।
         print(COMMON_RULES, file=sys.stderr)
         print("=" * 52, file=sys.stderr)
-        if args.emit_prompt or args.emit_contract:
+        if getattr(args, "emit_prompt", False) or getattr(args, "emit_contract", False):
             print(
                 "DEPRECATED: --emit-prompt/--emit-contract are shims for --task-envelope "
                 "(AGENT_LOOP_SPEC §4); removal is gated on private-mirror parity — do not remove in a drive-by change.",
@@ -3610,21 +3610,22 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
         target_issue: dict[str, Any] | None = None
         note = ""
-        if args.issue:
+        issue_val = getattr(args, "issue", "")
+        if issue_val:
             # বাংলা: --issue N → নির্দিষ্ট issue-র সৎ এনভেলপ; gh ব্যর্থ হলে
             # crash নয়, সৎ board_note সহ envelope (নীরব স্টাব নয়)।
             if board_unavailable:
                 note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
             else:
                 v_cmd = [
-                    "gh", "issue", "view", str(args.issue),
+                    "gh", "issue", "view", str(issue_val),
                     "--repo", UPSTREAM_REPO,
                     "--json", "number,title,labels,state,body",
                 ]
                 try:
                     vp = subprocess.run(v_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
                     if vp.returncode != 0:
-                        note = f"gh issue view {args.issue} failed: {(vp.stderr or '').strip() or vp.returncode}"
+                        note = f"gh issue view {issue_val} failed: {(vp.stderr or '').strip() or vp.returncode}"
                     else:
                         target_issue = json.loads(vp.stdout)
                 except FileNotFoundError:
@@ -3632,17 +3633,11 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 except Exception as exc:
                     note = f"gh issue view error: {exc}"
                 if target_issue is None and note:
-                    # বাংলা: R78 board-fallback-এর আয়না — gh অনুপস্থিত/ব্যর্থ হলে
-                    # tower bridge.work_order দিয়ে per-issue hydrate। এর আগে --issue N
-                    # পথ gh-absent মেশিনে সম্পূর্ণ ad-hoc এনভেলপে পতিত হত (task-adhoc,
-                    # issue=null) — বোর্ড tower-fallback-এ জীবিত থাকলেও। hydrate সফল
-                    # হলে সত্যিকারের issue-বাউন্ড এনভেলপ যায় ও lease mark কাজ করে;
-                    # ব্যর্থ হলে আগের সৎ note অক্ষত থাকে (নীরব স্টাব নয়)।
-                    hydrated = _tower_issue_hydrate(args.issue)
+                    hydrated = _tower_issue_hydrate(issue_val)
                     if hydrated is not None:
                         target_issue = hydrated
                         note = (f"gh issue view unavailable; hydrated via tower work-order "
-                                f"fallback (issue {args.issue})")
+                                f"fallback (issue {issue_val})")
         elif board_unavailable:
             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
         else:
@@ -3698,7 +3693,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                             target_issue = hydrated
                             note = (f"gh issue view unavailable; hydrated via tower "
                                     f"work-order fallback (issue {picked})")
-            elif not args.allow_adhoc:
+            elif not getattr(args, "allow_adhoc", False):
                 print(
                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
                     file=sys.stderr,
@@ -3727,8 +3722,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             _stderr_log("!", f"envelope premise advisory: {dark_note}")
         envelope = build_task_envelope(
             target_issue,
-            group=args.group,
-            role_override=args.role,
+            group=getattr(args, "group", ""),
+            role_override=getattr(args, "role", ""),
             board_note=note,
         )
         print(json.dumps(envelope, indent=2))
@@ -3737,7 +3732,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     print(COMMON_RULES)
     print("=" * 52)
 
-    if args.auto_pr:
+    if getattr(args, "auto_pr", False):
         # বাংলা: pipeline.yml workflow_dispatch --auto-pr পাঠায় (#89)। minimal
         # লুপ নিজে PR খোলে না — সৎ stderr নোট, stdout অপরিবর্তিত।
         print(
@@ -3773,9 +3768,10 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                         str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
                     ]
             classified = classify_task_role(title=picked_title, labels=picked_labels)
-            dispatch_role = args.role or "solver"
-            if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
-                log("!", f"unknown --role '{args.role}'; dispatching as solver")
+            role_arg = getattr(args, "role", "")
+            dispatch_role = role_arg or "solver"
+            if role_arg and role_arg not in SPECIALIST_ROLES and role_arg not in ROLE_RULES:
+                log("!", f"unknown --role '{role_arg}'; dispatching as solver")
                 dispatch_role = "solver"
             mandate = ROLE_RULES.get(
                 dispatch_role,
@@ -3857,25 +3853,9 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
     parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
-    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
-    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
-    parser.add_argument("--loop", action="store_true", help="Shared flag (SPEC §4b): single dispatch cycle per invocation (scheduler is the outer loop)")
-    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
-    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
-    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
-    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
-    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per dispatch cycle (minimal loop honors 1; >1 gets an honest stderr note)")
-    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
-    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
     args, _ = parser.parse_known_args()
 
-    if args.group and args.group not in VALID_GROUPS:
-        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
-        return 2
-
-    if args.verify_only:
+    if getattr(args, "verify_only", False):
         # বাংলা: #567-এর Tier-1 fresh-গেট step_2_rules() সম্পূর্ণ নির্মিত ও
         # ২৬-অফলাইন-টেস্টে যাচাইকৃত, অথচ #1551-এর dead-cluster removal-এর পর
         # একে কোনো কলার ডাকে না (git grep প্রমাণিত) — freshনেস যাচাই নীরবে শূন্য:
@@ -3923,21 +3903,6 @@ def main() -> int:
             )
             return 1
         return 0
-
-    if args.loop:
-        # বাংলা: এই স্ক্রিপ্ট একটি পরিষ্কার একক-ডিসপ্যাচ সাইকেল চালায়। বাইরের শিডিউলার/রানারই
-        # পুনরাবৃত্তি নিয়ন্ত্রণ করে; ইন-প্রসেস অসীম লুপ প্রক্রিয়ার অপব্যবহার বন্ধ রাখা হয়েছে।
-        print("--loop: runs ONE dispatch cycle per invocation; the scheduler/orchestrator is the outer loop.", file=sys.stderr)
-
-    if args.max_tasks is not None and args.max_tasks <= 0:
-        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
-        return 0
-    if args.max_tasks is not None and args.max_tasks > 1:
-        print(
-            "--max-tasks > 1: this loop dispatches exactly ONE task per cycle "
-            "(the scheduler/orchestrator is the outer loop); honoring 1.",
-            file=sys.stderr,
-        )
 
     return run_dispatch_cycle(args)
 
