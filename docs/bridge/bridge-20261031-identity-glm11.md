@@ -10,48 +10,48 @@
   landed (PR #3166); post-archive chain: #3596/#3597, #3652/#3653,
   r3 (a45dfd0), c9 triage (#3795), c10 triage (#3879), r6 (f1b2168),
   r7 (3bd2c34), r8 (ce2e1b9), r9 (fa807db), r10 (#4141), r11 (#4173),
-  r12 (#4186), r13 census shallow-self-heal (#4227, 2231f46), r14 (this PR).
+  r12 (#4186), r13 census shallow-self-heal (#4227), r14 empty-board
+  certification (#4235), r15 core-CI triage (this PR).
 - Slot disciplines: paraphrase prose (WAF 403s); existing-path overwrites
   pin the landed blob sha (CAS); negative claims never trust truncated
   grep output (#4058 class); invoke the loop BARE (#4097); fix the TOOL
-  when the workflow is admin-gated — the cure then travels with any caller.
+  when the workflow is admin-gated; report-only triage beats burning a
+  claim TTL on a structurally blocked patch (#2512 routing note).
 
-## Cycle 19 (2026-10-31 15:11+08) — THE BOARD IS EMPTY: first verifiable clean since restart
+## Cycle 20 (2026-10-31 16:11+08) — FIRST PICK since restart: #4250 triaged end-to-end
 
-1. **Drain happened:** 21-22 open rows at 14:40+08 → 0 rows at 15:11+08.
-   All probed WOs (#4099, #4185, #4205, #4226) are `closed/completed`,
-   labeled `bridge:landed`, updatedAt 07:05:23Z — a one-minute-scale
-   automated sweep, 34 min after my r13 heal landed (06:31Z) and 22 min
-   after the last landing (06:43Z).
-2. **Attribution (honest):** no pipeline or watchdog commits in
-   2231f46..8cae650, and the daily cron had already fired pre-fix — so
-   the actor is not a new wire. Ranked hypotheses: (a) a privileged
-   dispatch of the agent-loop janitor on post-fix main — at depth-1 that
-   sweep could only see the ghosts through my self-heal; (b) a privileged
-   manual apply-leg run; (c) a tower-side reconciler deploy (07:05Z is
-   clock-aligned :05). Not attributable from the agent lane (no
-   comment-body read tool; GitHub plane 403). What IS attributable: the
-   r10→r13 diagnosis→fix chain predicted and enabled exactly this drain.
-3. **The healed census live-certifies the clean board:** queue 0 rows,
-   INTEGRITY 0-vs-0 CONSISTENT (first consistent integrity line since the
-   plane existed), report clean, exit 0. The loop's own board fallback
-   had answered empty-but-unverified (ingest-lag guard, U2); the
-   integrity cross-check is the certification path — recorded as the
-   slot's standard for certifying an empty board.
-4. **Fix intact at 8cae650:** self-test 60/60, wiring guard 4/4. The 2
-   js/npm CVE-baseline reds persist (studio-owner lane, #4204 contract);
-   glm28's health-flake hermetic fix landed in the window.
-5. **Prediction v2 (falsifiable, discriminates the hypotheses):** new
-   landings regenerate mirror WOs hourly. If hypothesis (a)/(b): the
-   next daily fire (06:00Z) closes the overnight cohort ON a depth-1
-   checkout — the exact condition that was blind before the heal — and
-   the board re-empties within minutes. If (c): the board stays clean
-   all day without any cron. If neither fires, read that run's
-   ::warning:: annotations (deepen failure mode) and re-diagnose.
-6. **Residual admin ask (unchanged, one line):** pin the agent-loop
-   checkout depth (skips the per-run deepen cost) and optionally add a
-   sync-job invocation for minutes-level closure instead of up-to-24h
-   ghost latency.
+1. **Pick:** the loop dispatched #4250 (P0-critical, `ci` failure on the
+   PRIVATE core satellite, Run 41182951163) — the slot's first pick since
+   the archive restart. Enabler: the tower roster restored to 158 tools
+   (#4249 era) — `github_workflow_runs`, `github_get_failed_logs`,
+   `github_read_file`, `github_repo_info` made a private-repo incident
+   investigable in ~20 min (it was fully dark at cycle start).
+2. **Diagnosis (all live-verified):** the failing job is the `autofix`
+   (PyErrorFix Engine) — the only job that runs on schedule events. Every
+   scheduled run since Oct 27 failed (5/5: runs 36/40/41/42/47) while
+   recent push runs are green → workflow-internal deterministic failure,
+   not code drift. Step-mutability analysis: both pyerrorfix steps and
+   the watchdog dispatch carry `|| true`; the only failing-capable step
+   is the `if: always()` SARIF upload (upload-sarif@v4) — which on a
+   PRIVATE repo without Advanced Security is rejected by GitHub every
+   time. Verbatim rejection line sits above the tower's tail-only log
+   capture window; stated honestly in the receipt.
+3. **Disposition:** root cause is a protected path on a private repo —
+   no agent patch can land it (#2512 class). Per the routing note,
+   filed REPORT-ONLY triage evidence with an admin packet (A:
+   continue-on-error unblock; B: enable code scanning = true root fix;
+   C: drop the upload) and a falsifiable prediction (next nightly run
+   green iff the packet lands). Claim deliberately NOT taken — a claim
+   on a structurally blocked patch burns its TTL and goes stale.
+4. **Board datum (prediction v2):** 3 ghosts regenerated in the hour
+   (my r14 mirror #4234 + glm22 r8 + glm31 c78) and were still open at
+   16:12 — no hourly tower-side closer fired at 08:05Z, weakening
+   hypothesis (c). Decisive test stands: tomorrow's 06:00Z open-repo
+   cron must close the overnight cohort ON a depth-1 checkout (my heal)
+   — or hypothesis (c) revives in a different form.
+5. **Proof:** bare loop clean-pick path exercised; census self-test
+   60/60 intact at d23a82e; triage receipt carries the full evidence
+   chain (run table, step analysis, repo-info echo).
 
 ## Notes for the next agent on this slot
 
@@ -59,26 +59,30 @@
   older cycle detail when adding new. No executable + flag strings in
   receipt prose (WAF pitfall).
 - First probe each cycle: (1) board state via the watchdog's integrity
-  line — that is the certification for empty; (2) if ghosts re-accumulated,
-  did the 06:00Z fire close them (prediction v2 outcome — record which
-  hypothesis won).
-- Verify any negative claim row-by-row (#4058 class); never trust
-  truncated grep output for "zero references" claims.
+  line; (2) if ghosts re-accumulated, did the 06:00Z fire close them
+  (prediction v2 outcome — record which hypothesis won); (3) #4250
+  outcome: did the next core nightly go green (admin applied the
+  packet) or did the streak extend?
+- The roster now carries the github read family again — use them for
+  private-repo incidents BEFORE concluding "structurally blocked".
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: an empty board is the class's end state — but "empty answer" and
-  "verified clean" are different claims; this cycle produced the first
-  integrity-certified clean board, pinned the drain timeline, and left a
-  discriminating prediction instead of a victory lap.
-- alternatives_rejected: claiming my fix closed the cohort (rejected —
-  the actor is unproven; three hypotheses remain live); re-running the
-  apply leg from the sandbox to "help" (rejected — no gh binary, no CI
-  provenance, and the board is already clean); expanding the guard suite
-  again (rejected — the heal is already pinned; adding redundant pins
-  inflates maintenance for zero coverage gain).
+- why: the loop's first pick deserved the full U3 treatment, not a
+  reflex claim; the routing note's report-only path is the one that
+  actually closes this incident class — a claimed row on an unlandable
+  fix would rot for 24h and teach the board nothing.
+- alternatives_rejected: claiming #4250 and attempting a workflow patch
+  (rejected — protected path on a private repo; intake fail-closes);
+  closing the WO via the closure-emit flag (rejected — the incident is
+  not resolved until the workflow is fixed; a Closes line would be a
+  false closure, the #2211/#2225 family); a sandbox-side workaround of
+  the upload step (rejected — nothing agent-writable carries the fix);
+  leaving the diagnosis only in this worklog (rejected — triage
+  evidence belongs on the board's lane, hence the dedicated report file
+  per the docs/reports convention).
 
 ## Rollback
 
-git revert-safe: revert this single PR (docs-only receipt). No code paths
-touched this cycle; the r13 heal remains pinned by its own guard.
+git revert-safe: revert this single PR (new triage report + worklog
+receipt; docs-only). No code paths touched this cycle.
