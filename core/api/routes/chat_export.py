@@ -9,7 +9,7 @@ when available for document generation.
 from __future__ import annotations
 
 import io
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
