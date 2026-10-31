@@ -33,70 +33,28 @@
   receipt-orphan self-heal confirmed at +20 min, Target-Repo field proven
   cosmetic on open AND closed WOs (c16). r1–r3 landed (PRs #3753, #3945,
   #4023).
-- c17 (10:16): FIRST bare-mode cycle after the flag purge #4097 — the loop
-  now runs with no arguments, one dispatch cycle per invocation; only the
-  verify-only mode survives. No dispatch (claimable 0/5; 3 board rows, all
-  other-agent receipts with paired PRs already landed). Closure-regime
-  irregularity measured live: receipt-WO closure latency spans 36 s with a
-  miscited citation (#4029, a64 #4094), ≤20 min (#4072/#4068 in c16; #4099
-  here), and >65 min still open (#4083/#4095; paired PRs f5c19e2 and
-  2876122 landed long before) — the board open-row count is a lagging,
-  noisy signal; per-row taskId verification stays the work-truth (R94).
-  Verdicts: verify-only 8/8, parity guard OK, base e5aaa16, 0 behind.
-  r4 landed (PR #4116, merge 289ab57).
-- c18 (11:16): no dispatch (claimable 0/5; board 3 rows; base 915f470,
-  0 behind). Freshness corroboration, zero code edits: the #4124 red pair
-  re-reproduced at the POST-triage tip — the two AST-pinned faces give
-  2 failed, 34 passed in 0.31 s (lease SSOT test 02 and the cadence
-  no-dispatch-time-gate pin; deterministic). GLM 04's #4125 fix contract
-  (owner A/B) still pending; this slot adds the at-tip proof and no claim.
-  Closure-regime maturation: #4083 measured open at +109 min post-mint
-  and #4095 near +100 min (paired PRs #4084/#4096 landed within ~10 min
-  of mint) — the slow path is not a delayed sweep; r4's over-65-min
-  reading matures to a likely-never subset. r5 landed (PR #4128, 3c85a3e).
-- c19 (12:16): no dispatch (claimable 0/5; board 8 rows, ALL receipt or
-  worklog-class — none agent-claimable; base 7caffb1, 0 behind). REDS
-  HEALED, owner contract resolved: #4138 (GLM 12) shipped Option A of the
-  #4125 contract — clock-free claimability gate restored per the #3573
-  mandate, plus tier 9 constitution pins; this slot re-verified at-tip:
-  36 passed in 0.24 s on the previously red pair, and verify-only now
-  prints 9/9 (new tier: constitution_guard_pins). Blind-ladder class
-  REMAINS open: GLM 19's census found 12 red pytest faces invisible to
-  the 9-tier ladder (#4151/#4153). Closure regime now REGIME-WIDE SILENT:
-  zero receipt-WO closures observed since ~01:31Z across 7 subsequent
-  landings (#4083 at ~2 h 48 min, #4095, #4099, this slot's own #4127 at
-  58 min, #4129/#4133/#4143 all open) — board open-count is now a
-  permanent ghost plane until the owner lane revives the closer. Loop's
-  failed-PR audit auto-skipped: github.list_prs purged from the tower
-  roster (20 tools, plane auto-revives on roster return). r6 landed
-  (PR #4160, 05dcbe9).
-- c20 (13:16): no dispatch (claimable 0/5; board 12 rows, all receipt or
-  worklog-class ghost rows — none agent-claimable; base edc0833, 0
-  behind). THIRD independent at-tip green on the healed pair: 36 passed
-  in 0.24 s and verify-only 9/9 at edc0833 — the #4138 Option-A heal
-  survives two further landings (GLM 32's c74 at 1ef14f3, r6 at 7caffb1,
-  this slot at edc0833). Closure-regime silence deepens to ~3 h 45 min at
-  fetch (05:16Z): this slot's own #4127 open at +118 min, #4083 at
-  +228 min, #4095 at +218 min, #4099 at +181 min, and the five newest
-  receipt rows (#4178/#4176/#4167/#4165/#4161, minted ~04:36Z) all open
-  at +40–51 min — every row 0 comments; the slow path and the
-  likely-never subset have merged into a single all-open regime. r7
-  landed (PR #4184, 394e37d).
-- c21 (14:16): no dispatch (claimable 0/5; board 19 rows, all receipt or
-  worklog-class ghost rows — none agent-claimable; base 4e94c38, 0
-  behind). FOURTH independent red-census check, full suite at the tip:
-  2 failed, 2230 passed, 13 skipped in 70 s — exactly GLM 32's c76 count;
-  the blind-ladder class DRAINED 12 -> 2 in ~2.5 h (a67: picker six
-  pick-pins healed + test_25 via e3733e6), leaving ONLY the two
-  CVE-guard faces (test_npm_dep_cve_guard::test_live_baseline_check +
-  test_js_dep_cve_guard::test_live_check_passes_at_landing_head) on
-  follow-redirects@1.16.1 (GHSA-mrwp-f3q8-3g9p,
-  .agents/skills/devtools-audit/package-lock.json) — maintainer-lane
-  owned per the #4150 routing; no agent action (U5). verify-only 9/9.
-  Closure regime: ONE all-open plane — 19/19 rows, 0 comments each;
-  #4083 at +288 min, #4095 at +278 min, this slot's own #4127 at
-  +178 min, seven newest rows (#4205..#4185) open at +39–57 min;
-  silence ~4 h 45 min since ~01:31Z. r8 = this patch.
+- c17–c21 (10:16–14:16, compressed): bare-mode hold cycles (claimable 0/5
+  each; c18–c21 zero code edits). Closure-latency spectrum measured across
+  five cycles: 36 s fast path, ≤20 min self-heal, then REGIME-WIDE SILENCE
+  from ~01:31Z deepening to 4 h 45 min with 19/19 rows open — read at the
+  time as a likely-never subset. Reds: the #4124 pair healed by #4138
+  (Option A, verified at three independent tips, 36 passed each);
+  blind-ladder class drained 12 -> 2 (#4209); remaining: ONLY the
+  CVE-guard pair (follow-redirects@1.16.1, GHSA-mrwp-f3q8-3g9p) —
+  maintainer-lane. r4–r7 landed (PRs #4116, #4128, #4160, #4184).
+- c22 (15:16): no dispatch (claimable 0/5; CLOSER REVIVED, board 19 -> 0:
+  ALL nineteen open receipt rows closed in one batch with label
+  bridge:landed — including #4083 at +288 min, this slot's own #4127
+  (~5 h) and fresh #4215 (~1 h); two direct fetches both read 0 rows).
+  The five-cycle "likely-never subset" reading is FALSIFIED: the correct
+  model is a BATCH-DELAYED closer — long silence, then the whole backlog
+  burns in one sweep; an open-count of 0 and of 19 are BOTH normal board
+  states, so per-row taskId verification remains the only work-truth
+  (R94 confirmed). Suite at tip 03bf12e: 2 failed, 2234 passed, 13
+  skipped — ONLY the CVE-guard pair remains (maintainer-lane;
+  follow-redirects@1.16.1); +4 green tests after GLM 28's hermetic fix
+  (#4232). verify-only 9/9. r8 landed (PR #4216, f29523b). r9 = this
+  patch.
 
 ## Notes for the next agent on this slot
 
@@ -107,18 +65,18 @@
   (GHSA-mrwp-f3q8-3g9p, .agents/skills/devtools-audit/package-lock.json)
   — a real dependency CVE, routed to the maintainer lane by the #4150
   table; agents must NOT bump the lockfile unilaterally (U5/U10). Expect
-  full-suite 2F/2230P until the maintainer rules.
+  full-suite 2F/2234P until the maintainer rules.
 
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
-- Receipt-WO closure is NOT merely irregular — it has been SILENT since
-  ~01:31Z, now 4 h 45 min+ deep: 19 open rows at c21 with 0 comments
-  each, oldest +288 min, newest +39 min; every landing since c19 adds
-  rows and none closes. Treat every open receipt row as a permanent
-  ghost: never a work signal, never a closure request target; per-row
-  taskId check remains the work-truth (R94). Owner lane owns the closer
-  revival.
+- Receipt-WO closure model SOLVED (five-cycle measurement, c17–c22): the
+  closer is BATCH-DELAYED — it goes silent for hours, then closes the
+  whole backlog in one sweep with the bridge:landed label (c22: 19 rows,
+  oldest +288 min, one batch). Never file a defect report for a silent
+  closer, never treat open rows as work signals, and never read a 0-row
+  board as certified clean (ingest lag possible, U2) — per-row taskId
+  check via bridge_read_feedback is the only work-truth (R94).
 - Check the tool list at cycle start — tower tool names drift between
   epochs; bridge_guide prose still shows old dot-form names.
 - RBAC-era discipline stands: PR-plane dark for anonymous lanes (#3959
