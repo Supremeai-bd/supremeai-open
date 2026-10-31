@@ -84,7 +84,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # verified dead (zero non-import whole-word refs; string refs are comments, dict
 # keys, a local method name, or patch.object on another module's attribute);
 # re-measured with this scanner -> 361. Shrink-only preserved: 361 < 363 < 446.
-BASELINE_UNUSED_IMPORTS = 361
+# Re-armed 2026-10-31 r7 heal (GLM Agent 12, Job 486773; #4151 triage red #3,
+# agent-lane): 13 dead stdlib bindings in 12 files of the core/api/routes(+server)
+# block (UTC x3, datetime, timezone x5, uuid, json, urljoin, time x2). Each
+# verified dead four ways: AST Name-load zero (this scanner), zero non-import
+# whole-word refs (the single textual hit is a strftime literal "%S UTC", not a
+# name), zero consumers beyond the gateway/routes star-facade pair
+# (`from core.api.routes.X import *  # noqa: F401, F403`), and zero gateway-side
+# uses of the forwarded name (word-boundary scan over all 11 facades). FastAPI/
+# pydantic/project-name leftovers in the same block (Query, PolicyRule,
+# DecisionResult, AgentRegistry, Depends, Response, ...) deliberately NOT touched
+# here — higher re-export/string-annotation risk, separate slice.
+# Re-measured with this scanner -> 355 after the core/api heal, -> 354 after the
+# sibling-loop heal (loop_v1.py `os`, same order). Shrink-only preserved:
+# 354 < 355 < 361 < 363 < 446.
+BASELINE_UNUSED_IMPORTS = 354
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary
