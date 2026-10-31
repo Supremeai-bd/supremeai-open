@@ -250,6 +250,11 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
         "Supremeai-bd/supremeai-api",
         "tests/test_openapi_breaking_guard.py",
     ),
+    (
+        "examples/dashboard-preview",
+        "Supremeai-bd/supremeai-studio",
+        "examples/dashboard-preview",
+    ),
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
