@@ -1622,6 +1622,14 @@ def report_failed_open_prs(
     বোর্ড-প্লেনের (bridge.work_queue) in-gates গণনা — landing-cohort-এর সৎ partial
     assurance (কখনো ✅/zero নয়); বোর্ড-প্লেনও অন্ধ হলে তবেই আগের ⚠ লাইন।
 
+    check-census স্তর (GLM Agent 04, Job 486718, 17:04+08 চক্র): revived
+    branch-এর স্থায়ী "per-PR check status UNSEEN" ছিল join-অনুপস্থিতির সৎ
+    ঘোষণা — list_prs পেলোডে rollup নেই। নতুন স্তর: github.workflow_runs
+    (একই zero-credential tower) প্রতিটি pull_request রানের display_title +
+    conclusion দেয়; census জীবিত হলে per-PR green/red/UNSEEN শ্রেণি ছাপে
+    (report-only, কখনো ✅ নয়), census অন্ধ হলে পুরনো UNSEEN লাইন byte-অক্ষত।
+    census প্রোব never-raise — বিস্ফোরণ পুরনো সৎ-অজ্ঞতায় অবনমিত হয়।
+
     #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
     বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
     অডিট envelope-মোডে _stderr_log পাঠায় — SPEC §4b stdout-purity (stdout
@@ -1642,9 +1650,41 @@ def report_failed_open_prs(
         except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
             fb_rows, fb_note = None, f"tower PR probe raised ({type(exc).__name__})"
         if fb_rows is not None:
-            log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
+            # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U2-অন্ধত্ব নিরাময়):
+            # পুরনো চুক্তি ছিল — list_prs পেলোডে statusCheckRollup নেই বলে per-PR
+            # check status স্থায়ীভাবে UNSEEN। কিন্তু একই tower-এর
+            # github.workflow_runs প্রতিটি pull_request রানের display_title +
+            # conclusion দেয় (লাইভ-প্রমাণিত) — অর্থাৎ status অদৃশ্য ছিল না,
+            # join-ই ছিল না। census জীবিত হলে এখন green/red/UNSEEN শ্রেণি ছাপে;
+            # census অন্ধ হলে পুরনো UNSEEN লাইন byte-অপরিবর্তিত (সৎ অজ্ঞতা)।
+            # শ্রেণিবিন্যাস report-only — কখনো ✅/zero-assurance নয় (U2 পিন)।
+            try:
+                census, census_note = _tower_workflow_run_census(limit=limit)
+            except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
+                census, census_note = None, f"workflow-runs census raised ({type(exc).__name__})"
+            if census is None:
+                log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
+                for p in fb_rows[:limit]:
+                    log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+                return []
+            classified: list[tuple[dict[str, Any], str, dict[str, str] | None]] = []
             for p in fb_rows[:limit]:
-                log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+                run = _pr_check_classification(str(p.get("title") or ""), census)
+                if run is None:
+                    classified.append((p, "UNSEEN", None))
+                elif run.get("conclusion") == "success":
+                    classified.append((p, "green", run))
+                elif run.get("conclusion") in _PR_CHECK_RED_CONCLUSIONS:
+                    classified.append((p, "RED", run))
+                else:
+                    classified.append((p, "UNSEEN", None))
+            green_n = sum(1 for _p, marker, _r in classified if marker == "green")
+            red_n = sum(1 for _p, marker, _r in classified if marker == "RED")
+            unseen_n = len(classified) - green_n - red_n
+            log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check census via {census_note}: {green_n} green / {red_n} red / {unseen_n} UNSEEN (latest completed pull_request runs, title/head_branch join; UNSEEN = no matching run in window — unknown, not certified clean, U2).")
+            for p, marker, run in classified:
+                tag = f"[{marker}" + (f"/{run.get('conclusion')}" if run else "") + "]"
+                log_fn("  ↳", f"PR #{p.get('number')} {tag}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
             return []
         # বাংলা (#3772, viewer-যুগের স্থায়ী RBAC-অন্ধত্ব): PR-প্লেন (gh + tower
         # list_prs) দুই স্তরেই অন্ধ হলে আগের কোড সরাসরি ⚠ ছাপত — ফলে প্রতিটি
@@ -2558,7 +2598,7 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
         return [], str(outcome["error"])
     return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
 
-def _classify_tower_pr_failure(raw_error: str) -> str:
+def _classify_tower_pr_failure(raw_error: str, tool_label: str = "github.list_prs") -> str:
     """Root-cause classifier for a failed tower github.list_prs tool-call.
 
     বাংলা (GLM Agent 24, live প্রমাণ 2026-10-31T20:24Z): anonymous/viewer লেনের
@@ -2580,6 +2620,24 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
     """
     msg = (raw_error or "").strip()
     lowered = msg.lower()
+    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, লাইভ-প্রমাণ): tower-এর
+    # output-schema validation বড় window-এ structuredContent-হীন সাড়া দেয় —
+    # JSON-RPC কোড -32602-এ "Output validation error: Tool X has an output
+    # schema but no structured content was provided"। এটা tool-absence নয়
+    # (টুল রোস্টারে আছে, কল পৌঁছেছে), RBAC-ও নয় — payload-window নির্ভর
+    # tower-সাইড সাড়া-আকৃতি। আগের -32602-শাখা এটাকে মিথ্যা "tool-absent"
+    # নোটে ফেলত (U6 মিথ্যা-কারণ শ্রেণি), তাই এই শেপ আগেই শনাক্ত।
+    if "output validation error" in lowered or "no structured content" in lowered:
+        return (
+            f"tower {tool_label} output-validation rejection (tower response-shape: "
+            f"output schema present but no structured content; {msg[:200]}) — "
+            "payload-window dependent tower-side state, not tool-absence and "
+            "not RBAC; the census ladder retries with a smaller per_page window"
+        )
+    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র): tool_label প্যারামিটার —
+    # একই ক্লাসিফায়ার এখন workflow-runs census প্রোবও ব্যবহার করে; ডিফল্ট
+    # github.list_prs রাখা হয়েছে যাতে PR-পথের নোট-টেক্সট ও টেস্ট-পিন
+    # byte-অপরিবর্তিত থাকে। নোটে ভুল টুল-নাম থাকা মিথ্যা-কারণ শ্রেণি (U6)।
     # বাংলা (GLM Agent 09, Job 486738, live প্রমাণ 2026-10-31T03:09Z): রোস্টার-পার্জ
     # যুগে টাওয়ার টুলটাই সরিয়ে দেয় — JSON-RPC error-envelope
     # "MCP error -32602: Tool github.list_prs not found"। এটা RBAC-ও নয়,
@@ -2590,7 +2648,7 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
     # শনাক্ত হয়।
     if "-32602" in lowered or ("tool" in lowered and "not found" in lowered):
         return (
-            "tower github.list_prs tool-absent from the live tools/list roster "
+            f"tower {tool_label} tool-absent from the live tools/list roster "
             f"({msg[:200]}) — permanent tool-surface state, not RBAC and not a "
             "transient outage; no credential or role change revives it. The "
             "roster gate skips the call entirely (zero wasted tool-call cycle) "
@@ -2603,7 +2661,7 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
         or ("role '" in lowered and "access" in lowered)
     ):
         return (
-            "tower github.list_prs RBAC-forbidden for this lane's role "
+            f"tower {tool_label} RBAC-forbidden for this lane's role "
             f"({msg[:200]}) — permanent access-control state, not a transient "
             "outage; PR-plane revival needs an elevated-role tower credential "
             "(admin lane, Shape-4 census Refs #3739)"
@@ -2863,7 +2921,12 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                     continue
                 rows.append({
                     "number": pr.get("number"),
-                    "title": str(pr.get("title") or "")[:120],
+                    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র): টাইটেল-ট্রাংকেশন
+                    # [:120] সরানো হল — check-census টাইটেল-join হুবহু display_title-এর
+                    # সাথে মেলে; ট্রাংকেট করলে >120-বর্গ টাইটেলের PR ভুলভাবে UNSEEN
+                    # বাকেটে পড়ত (মিথ্যা অজ্ঞতা)। প্রিন্ট-সাইটগুলো নিজেই [:90]
+                    # ট্রাংকেট করে, তাই stdout-চুক্তি অপরিবর্তিত।
+                    "title": str(pr.get("title") or ""),
                     "url": pr.get("htmlUrl") or pr.get("url") or "",
                     "createdAt": pr.get("createdAt") or "",
                 })
@@ -2883,6 +2946,293 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
     if outcome.get("error"):
         return None, str(outcome["error"])
     return outcome.get("rows"), str(outcome.get("note", "tower PR fallback returned no rows"))
+
+
+# বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U2-সততা): gh-path-এর
+# statusCheckRollup-এ লাল মানে FAILURE / TIMED_OUT / CANCELLED — GitHub REST-এর
+# workflow-run conclusion-শব্দগুলো snake_case, আর startup_failure সেখানে আলাদা
+# শ্রেণি; দুই পথের শ্রেণিবিন্যাস অর্থগতভাবে এক রাখতে এই সেট-ই লাল।
+_PR_CHECK_RED_CONCLUSIONS = ("failure", "timed_out", "cancelled", "startup_failure")
+
+
+def _parse_workflow_run_census(payload: Any) -> dict[str, dict[str, dict[str, str]]]:
+    """Pure parser: GitHub-REST workflow-runs payload → per-PR title/branch মানচিত্র।
+
+    বাংলা (17:04+08 চক্র): tower-এর github.workflow_runs পেলোডে প্রতিটি
+    pull_request রানে display_title হুবহু PR-টাইটেল বহন করে (লাইভ-যাচাইকৃত
+    2026-10-31: run 41186411655) — তাই title-join করলেই gh ছাড়া রানটাইমেও
+    per-PR check status যান্ত্রিকভাবে পাওয়া যায়, নতুন credential ছাড়াই।
+
+    চুক্তি:
+      - কেবল event=="pull_request" ও status=="completed" রান গণ্য (in_progress
+        রান শ্রেণিবিন্যাসের উপাত্ত নয় — সৎ অজ্ঞতা বজায়)।
+      - একই টাইটেল/ব্রাঞ্চে একাধিক রান হলে updated_at-সর্বশেষটি জয়ী (rebase/
+        re-push-এর পরে পুরনো লাল রান মিথ্যা লাল রিপোর্ট করবে না)।
+      - দুটি কী-স্পেস: by_title (প্রাথমিক join) + by_branch (head_branch —
+        bridge PR-গুলোর টাইটেল-পরিশিষ্ট "(bridge-...)" ব্রাঞ্চ-নামই; টাইটেল
+        এডিট-পরবর্তী দ্বিতীয় সুযোগ)।
+      - কখনো raise করে না; বিকৃত payload → খালি মানচিত্র (সৎ শূন্য)।
+    """
+    out: dict[str, dict[str, dict[str, str]]] = {"by_title": {}, "by_branch": {}}
+    if not isinstance(payload, dict):
+        return out
+    runs = payload.get("workflow_runs")
+    if not isinstance(runs, list):
+        return out
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        if run.get("event") != "pull_request" or run.get("status") != "completed":
+            continue
+        title = str(run.get("display_title") or "").strip()
+        branch = str(run.get("head_branch") or "").strip()
+        if not title and not branch:
+            continue
+        entry = {
+            "conclusion": str(run.get("conclusion") or ""),
+            "updated_at": str(run.get("updated_at") or ""),
+            "url": str(run.get("html_url") or ""),
+            "head_sha": str(run.get("head_sha") or "")[:12],
+        }
+        for key, val in (("by_title", title), ("by_branch", branch)):
+            if not val:
+                continue
+            bucket = out[key]
+            prev = bucket.get(val)
+            if prev is None or entry["updated_at"] >= prev["updated_at"]:
+                bucket[val] = entry
+    return out
+
+
+def _pr_check_classification(
+    title: str, census: dict[str, dict[str, dict[str, str]]]
+) -> dict[str, str] | None:
+    """এক PR-টাইটেলকে census-মানচিত্রে মেলান; None মানে সৎ UNSEEN (কোনো রান নেই)।"""
+    if not isinstance(census, dict):
+        return None
+    by_title = census.get("by_title")
+    if isinstance(by_title, dict):
+        hit = by_title.get(title or "")
+        if isinstance(hit, dict):
+            return hit
+    by_branch = census.get("by_branch")
+    m = re.search(r"\(([^()]+)\)\s*$", title or "")
+    if isinstance(by_branch, dict) and m:
+        hit = by_branch.get(m.group(1).strip())
+        if isinstance(hit, dict):
+            return hit
+    return None
+
+
+def _extract_mcp_tool_response(
+    raw_body: str, call_id: str, tool_label: str
+) -> tuple[str, str]:
+    """MCP-SSE/raw body → (content-text, classified-error) — একটি অন্যটি খালি।
+
+    বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U6): SSE-ইভেন্ট-ব্লক
+    পার্সার — বড় পেলোড (per_page=30/100) একাধিক "data:" লাইনে ভাঙে (SSE
+    multi-line data; লাইভ-প্রমাণ 17:04+08: per_page=10 এক-ইভেন্টে সফল, 30/100
+    প্রতি-লাইন JSON পার্সে অপার্সেবল)। ইভেন্ট-ব্লক (শূন্য-লাইন বিভাজক) ধরে
+    data-লাইনগুলো জোড়া দিয়ে পার্স — compact-বিভাজনে "" জোড়া, pretty-বিভাজনে
+    "\n" জোড়া (দুই-জোড়া চেষ্টা — বিভাজন-বিন্দু আমাদের অজানা); ছোট ও বড় দুই
+    আকৃতিই নিরাপদ। error-envelope / isError-কনটেন্ট ক্লাসিফায়ারে যায় (সৎ
+    নোট); কখনো raise করে না।
+    """
+    envelopes: list[dict[str, Any]] = []
+    for block in re.split(r"\n\s*\n", raw_body):
+        data_lines = [
+            ln[5:].lstrip() for ln in block.splitlines() if ln.startswith("data:")
+        ]
+        if not data_lines:
+            continue
+        for joiner in ("", "\n"):
+            try:
+                env = json.loads(joiner.join(data_lines))
+                if isinstance(env, dict):
+                    envelopes.append(env)
+                    break
+            except json.JSONDecodeError:
+                continue
+    if not envelopes:
+        try:
+            env = json.loads(raw_body)
+            if isinstance(env, dict):
+                envelopes.append(env)
+        except json.JSONDecodeError:
+            pass
+    result: Any = None
+    rpc_error_msg = ""
+    for env in envelopes:
+        if not isinstance(env, dict) or env.get("id") != call_id:
+            continue
+        if "error" in env:
+            err = env.get("error")
+            rpc_error_msg = (
+                str(err.get("message")) if isinstance(err, dict) and err.get("message") else str(err)
+            )
+            continue
+        result = env.get("result")
+        break
+    mcp_is_error = isinstance(result, dict) and result.get("isError") is True
+    text = ""
+    if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+        first = result["content"][0]
+        txt = first.get("text") if isinstance(first, dict) else None
+        if isinstance(txt, str):
+            text = txt
+    if mcp_is_error or (not result and rpc_error_msg):
+        return "", _classify_tower_pr_failure(
+            text or rpc_error_msg, tool_label=tool_label
+        )
+    return text, ""
+
+
+def _tower_workflow_run_census(
+    limit: int = 30, timeout_s: float = 60.0
+) -> tuple[dict[str, dict[str, dict[str, str]]] | None, str]:
+    """gh-absent রানটাইমের per-PR check-census — tower github.workflow_runs প্রোব।
+
+    বাংলা (U2-অন্ধত্ব নিরাময়, 17:04+08 চক্র): revived PR-plane-এর স্থায়ী
+    "per-PR check status UNSEEN" ঘোষণার মূল কারণ ছিল — list_prs পেলোডে
+    statusCheckRollup নেই। কিন্তু একই zero-credential tower-এর
+    github.workflow_runs প্রতিটি pull_request রানের display_title + conclusion
+    দেয়; তাই check-status আসলে অদৃশ্য ছিল না — join-অনুপস্থিতি ছিল। এই প্রোব
+    সেই অন্ধত্ব বন্ধ করে; ফলব্যাক-কালচে ডাকা হয়, census অন্ধ হলে পুরনো UNSEEN
+    লাইন byte-অপরিবর্তিত থাকে (সৎ অজ্ঞতা অক্ষত)।
+
+    Transport: _tower_open_prs-এর প্রমাণিত idiom হুবহু — roster-gate (নাম-ঢেউ
+    দ্বিমুখী, shared cure tower_name_tolerance), lazy sibling client, raw-urllib
+    SSE-নিরাপদ পড়া, দ্বিবানান ক্রমে-চেষ্টা, never-raise, thread-guarded join।
+    ফেরত: (census|None, note) — census=None মানে সৎ অন্ধকার; মানচিত্র হলে
+    _parse_workflow_run_census-এর আকৃতি (by_title/by_branch)।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            gate_note = _tower_tool_roster_gate("github.workflow_runs")
+            if gate_note:
+                outcome["error"] = gate_note
+                return
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req_data = json.dumps(payload).encode()
+                last_429: Exception | None = None
+                # বাংলা (17:04+08 চক্র, লাইভ-প্রমাণ): Render tower বার্স্ট
+                # rate-limit (HTTP 429) করে — census-এর প্রথম লাইভ রানেই ২টি
+                # ধারাবাহিক 429 দেখা গেছে, ৩-য় চেষ্টা (৬ সেকেন্ড পরে) সফল।
+                # তাই ৪২৯-এ ২-স্তর ladder (২.৫ সে → ৫ সে); অন্য HTTPError
+                # সরাসরি উপরে (never-raise শেল সেটাই সৎ নোট দেয়)।
+                for attempt, backoff in enumerate((0.0, 2.5, 5.0)):
+                    if backoff:
+                        time.sleep(backoff)
+                    try:
+                        req = urllib.request.Request(
+                            f"{base}/mcp", data=req_data, headers=hdrs, method="POST"
+                        )
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+                    except urllib.error.HTTPError as exc:
+                        if exc.code == 429:
+                            last_429 = exc
+                            continue
+                        raise
+                if last_429 is not None:
+                    raise last_429
+                raise RuntimeError("unreachable: 429 retry ladder exhausted")
+
+            sid, _ = _post({
+                "jsonrpc": "2.0", "id": "cal-wf-census-0", "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05", "capabilities": {},
+                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                },
+            }, None)
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-wf-census-1"
+            used_window = 0
+
+            # বাংলা: window-ladder × নাম-ঢেউ — বড় window-এ tower-এর
+            # output-schema validation structuredContent ছাড়া সাড়া দেয়
+            # (লাইভ-প্রমাণ 17:04+08: per_page=100 → "Output validation error";
+            # per_page=5/10 → সফল)। validation-আকৃতি বা অপার্সেবল সাড়ায় ছোট
+            # window-এ পুনঃপ্রচেষ্টা; নাম-ঢেউ দ্বিবানান ক্রমে-চেষ্টা (৫৩৯-শ্রেণি;
+            # shared cure scripts/ci/tower_name_tolerance.py)। SSE multi-line
+            # পুনরুদ্ধার _extract_mcp_tool_response-এ (module-level, টেস্ট-পিন্ড)।
+            payload: Any = None
+            last_text = ""
+            for per_page in (100, 30, 10):
+                body = ""
+                for spelling in ("github.workflow_runs", "github.workflow_runs".replace(".", "_", 1)):
+                    _, body = _post({
+                        "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                        "params": {"name": spelling, "arguments": {
+                            "repo": UPSTREAM_REPO, "per_page": per_page,
+                        }},
+                    }, sid, timeout=45)
+                    _low = body.lower()
+                    if "-32602" in _low and "not found" in _low:
+                        continue
+                    break
+                used_window = per_page
+                if (
+                    "output validation error" in body.lower()
+                    or "no structured content" in body.lower()
+                ):
+                    continue
+                last_text, census_err = _extract_mcp_tool_response(
+                    body, call_id, tool_label="github.workflow_runs"
+                )
+                if census_err:
+                    outcome["error"] = census_err
+                    return
+                if last_text:
+                    try:
+                        cand = json.loads(last_text)
+                        if isinstance(cand, dict) and isinstance(cand.get("workflow_runs"), list):
+                            payload = cand
+                            break
+                    except json.JSONDecodeError:
+                        pass
+            if payload is None:
+                outcome["error"] = (
+                    _classify_tower_pr_failure(last_text, tool_label="github.workflow_runs")
+                    if last_text
+                    else "tower workflow-runs payload carried no workflow_runs list in any window (100/30/10)"
+                )
+                return
+            census = _parse_workflow_run_census(payload)
+            outcome["census"] = census
+            outcome["note"] = (
+                "tower workflow-runs census: "
+                f"{len(census['by_title'])} completed pull_request run-title(s) "
+                f"mapped (window per_page={used_window})"
+            )
+        except Exception as exc:  # noqa: BLE001 — census কখনো অডিট kill করবে না
+            outcome["error"] = f"tower workflow-runs census failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — census কখনো অডিট kill করবে না
+        return None, f"tower workflow-runs census error ({type(exc).__name__})"
+    if t.is_alive():
+        return None, "tower workflow-runs census timed out"
+    if outcome.get("error"):
+        return None, str(outcome["error"])
+    return outcome.get("census"), str(outcome.get("note", "tower workflow-runs census returned no map"))
 
 def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
     """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
