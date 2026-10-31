@@ -65,9 +65,17 @@ TOKEN_SIGNATURES: list[tuple[str, re.Pattern]] = [
 ]
 
 # Log Interpolation Leaks (e.g., logger.info(f"Key: {token}"))
+_SECRET_VAR = (
+    r"(?:current_otp|otp_code|totp_secret|totp_code|password|passwd|pwd"
+    r"|api_key|apikey|access_token|refresh_token|auth_token|secret|credential)"
+)
+# Identifier-suffix escape (shared root cause with scan_secret_logs.py):
+# `{secret_id}` / `{secret_name(s)}` interpolate the secret's lookup key,
+# never its value; value-bearing neighbors still match.
+_LOG_IDENT_BLOCK = r"(?!" + _SECRET_VAR + r"(?:_ids?|_names?)\b)"
 LOG_INTERPOLATION = re.compile(
     r"(?:logger|logging|console|print)\w*(?:\.\w+)*\s*\("
-    r"[^)]*\{\s*(?:current_otp|otp_code|totp_secret|totp_code|password|passwd|pwd|api_key|apikey|access_token|refresh_token|auth_token|secret|credential)\w*\s*\}",
+    r"[^)]*\{\s*" + _LOG_IDENT_BLOCK + _SECRET_VAR + r"\w*\s*\}",
     re.IGNORECASE,
 )
 
@@ -181,8 +189,12 @@ def self_test() -> int:
         "aiza": "".join(["AIzaSy", "BNm1234567890abcdefghijklmnopqrst"]),
         "gsk": "".join(["gsk_", "1234567890abcdefghijklmnopqrstuvwxyz", "1234567890abcdef"]),
     }
+    # OTP variable name also built at runtime (same technique as pats): the
+    # static spelling would trip the no-secret-logs pre-commit scanner
+    # (fixture-as-data false positive) and keep that gate red on its own tree.
+    otp_var = "".join(["current", "_otp"])
     cases = [
-        ("logger.info(f'Logged in with OTP: {current_otp}')", True, "LOG_SECRET_INTERPOLATION"),
+        (f"logger.info(f'Logged in with OTP: {{{otp_var}}}')" , True, "LOG_SECRET_INTERPOLATION"),
         (f"const token = '{pats['ghp']}';", True, "GITHUB_TOKEN"),
         (f"apiKey = '{pats['aiza']}';", True, "GOOGLE_API_KEY"),
         (f"groqKey = '{pats['gsk']}';", True, "GROQ_API_KEY"),
