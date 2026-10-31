@@ -97,7 +97,7 @@ async fn send_chat(request: ChatRequest, on_chunk: Channel<String>) -> Result<Ch
         "content": "You are SupremeAI. Be useful, clear, and honest about limitations. Do not claim to have used tools or verified current information unless you actually have."
     })];
     let history_start = request.history.len().saturating_sub(10);
-    let mut history_bytes = 0;
+    let mut history_bytes: usize = 0;
     for turn in request.history.iter().skip(history_start) {
         let turn_bytes = turn.content.len();
         if (turn.role == "user" || turn.role == "assistant")
