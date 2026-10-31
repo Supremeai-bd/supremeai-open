@@ -170,6 +170,115 @@ class TestIncidentStaleNote(unittest.TestCase):
             )
         )
 
+    # ── #4009 class: deleted-head-branch demotion (GLM Agent 22) ────────────
+
+    def _branch_incident(self, number: int, run_id: int = 41149642412) -> dict:
+        """Live #4009 title: a real branch-name ref (no numeric /merge shape)."""
+        return {
+            "number": number,
+            "title": (f"fix(ci): [open] {WORKFLOW} failed on "
+                      f"fix/pipeline-guard-watchdog-and-admin-merge (Run #{run_id})"),
+            "labels": [{"name": "P2-medium"}, {"name": "status:unclaimed"}],
+        }
+
+    def test_deleted_branch_gets_gone_note(self):
+        """The #4009 live witness: branch 404, zero PRs, run failed on the
+        deleted head — the row kept dispatching because a deleted run never
+        appears in the main-side supersession window. The existence probe
+        closes that gap; fetch_runs must NOT be reached (cheap git-first).
+        """
+        probes = []
+
+        def probe(ref: str) -> bool | None:
+            probes.append(ref)
+            return False
+
+        note = cal._incident_stale_note(
+            self._branch_incident(4009),
+            fetch_runs=lambda p: (_ for _ in ()).throw(AssertionError("fetch_runs reached")),
+            remote_probe=probe,
+        )
+        self.assertIsNotNone(note)
+        self.assertIn("incident-branch-gone", note)
+        self.assertIn("fix/pipeline-guard-watchdog-and-admin-merge", note)
+        self.assertIn("ROW-CLOSED-UNDER-US", note)
+        self.assertEqual(probes, ["fix/pipeline-guard-watchdog-and-admin-merge"])
+
+    def test_existing_branch_falls_through_to_runs_surface(self):
+        """A live branch must NOT be demoted by existence — the historical
+        main-scoped judgment runs (here: incident absent from the main
+        window ⇒ served unchanged, pre-#3050 behavior).
+        """
+        fetches = []
+
+        def fetch(p):
+            fetches.append(p)
+            return []
+
+        self.assertIsNone(
+            cal._incident_stale_note(
+                self._branch_incident(4009), fetch_runs=fetch, remote_probe=lambda r: True
+            )
+        )
+        self.assertEqual(len(fetches), 1, "existing branch must fall through to fetch_runs")
+
+    def test_indeterminate_probe_fails_open(self):
+        """Probe failure (transport/timeout/None) is indeterminate → the row
+        is served unchanged; the filter can only REMOVE a dispatch.
+        """
+        for broken in (lambda r: None, lambda r: (_ for _ in ()).throw(RuntimeError("net"))):
+            self.assertIsNone(
+                cal._incident_stale_note(
+                    self._branch_incident(4009),
+                    fetch_runs=lambda p: [],
+                    remote_probe=broken,
+                )
+            )
+
+    def test_main_and_merge_refs_never_existence_probed(self):
+        """'main' always exists; '<n>/merge' keeps the recorded main-scoped
+        decision (GLM Agent 07) — neither may hit the existence probe.
+        """
+        for row in (_incident(3019), _merge_ref_incident(3195)):
+            self.assertIsNone(
+                cal._incident_stale_note(
+                    row,
+                    fetch_runs=lambda p: [],
+                    remote_probe=lambda r: (_ for _ in ()).throw(
+                        AssertionError(f"probe must not run for ref: {r}")
+                    ),
+                )
+            )
+
+    def test_lsremote_rc_mapping_and_ref_guard(self):
+        """The default probe's contract: rc0=True, rc2=False (git's
+        --exit-code 'not found'), anything else None; hostile ref tokens are
+        refused without touching git.
+        """
+        calls = []
+
+        class P:
+            returncode = 1
+
+        def fake_run(argv, **kw):
+            calls.append(argv)
+            p = P()
+            p.returncode = {1: 0, 2: 2}.get(len(calls), 1)
+            return p
+
+        with unittest.mock.patch.object(cal.subprocess, "run", side_effect=fake_run):
+            self.assertIsNone(cal._lsremote_ref_exists("bad ref with spaces"))  # refused
+            self.assertTrue(cal._lsremote_ref_exists("feature/x"))  # rc 0
+            self.assertFalse(cal._lsremote_ref_exists("feature/y"))  # rc 2
+        self.assertTrue(all(a[0] == "git" and a[1] == "ls-remote" for a in calls))
+        # hostile option-shaped tokens are refused before subprocess
+        for hostile in ("-oProxyCommand=evil", "--upload-pack=x", "..%2f", "x.lock"):
+            self.assertIsNone(
+                cal._lsremote_ref_exists(hostile),
+                f"hostile ref must be refused: {hostile}",
+            )
+        self.assertEqual(len(calls), 2, "hostile refs must not spawn git")
+
     def test_newer_red_vetoes_demotion(self):
         runs = _green_fetcher(40994815953, 7183, greens=5)
         runs.insert(0, _run(910001, 7193, "failure"))  # newest concluded is red
