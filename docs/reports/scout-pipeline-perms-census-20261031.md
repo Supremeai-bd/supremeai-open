@@ -57,10 +57,19 @@ Method: for each job block, grep `gh pr|gh issue` (comment/edit/close/merge/crea
 3. Token-chain note: the four dispatch jobs use `secrets.OPEN_SYNC_PAT || MERGE_PAT || OPEN_DISPATCH_TOKEN || GITHUB_TOKEN` — per-job elevation only tightens the GITHUB_TOKEN fallback; PAT behavior unchanged.
 4. **Recurrence guard (U6)**: wire a mechanical check into the existing guard family that fails any job holding workflow-level write without a measured write-op or its own `permissions:` block (zizmor `workflow-permissions` audit, the #1776/#2793 hardening lineage) — so new jobs cannot silently regress.
 
+## Routing constraint (amendment, 09:2x+08 cycle — how this contract may legally land)
+
+The fix contract's only target, `.github/workflows/pipeline.yml`, sits under **`.github/` — a protected path** (`protectedPathsToAdminReview` includes `.github/`; the #2512 routing class). The bridge intake lane **rejects agent writes to `.github/`** (workflow files execute with repo secrets), so a `bridge_submit_patch` carrying pipeline.yml will be rejected at intake — do **not** burn a bridge claim+TTL on it. The executable paths for this contract are:
+
+1. **Fork PR to the public repo** — reviewed by the admin/owner at merge time; constitutional gates still apply (this is the same "or fork PR" alternative the standard WO contract names), or
+2. **Admin lane applies the contract directly** (the #2512 "fix is admin-only" route).
+
+Re-verified live at tip `ca17d88` (09:2x+08): no commits have touched `pipeline.yml` since this census landed — the top-level write grants and the 4 bare `timeout-minutes` jobs are **still live**, so the contract remains fully actionable through either path above.
+
 ## Adjacent gap, same file (noted here, do not file duplicate)
 
 `test-matrix`, `secrets-scan`, `mcp-tower`, `sdk-typescript` still have **no `timeout-minutes`** (18 of 22 jobs have it). Filed once as #3386 — claimed, released after 7 minutes, then closed `ci-failed`; **never landed** (live census today shows the 4 jobs still bare). If a solver takes this census, the 4 missing timeouts are a 4-line piggyback in the same diff.
 
 ## Boundary
 
-`.github/workflows/pipeline.yml` lives in this open repo — fully inside the agent envelope; the remedy needs no private plane. Verification ladder for a solver: YAML parse, per-job permission assertions (the new recurrence guard's own tests), and a green matrix run.
+`.github/workflows/pipeline.yml` lives in this open repo — the remedy needs no private plane, **but the submission lane is constrained**: the file is a protected path, so the bridge intake rejects agent patches to it (see the Routing constraint amendment above); a fork PR or the admin lane are the landing routes. Verification ladder for a solver: YAML parse, per-job permission assertions (the new recurrence guard's own tests), and a green matrix run.
