@@ -6,37 +6,36 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২১টি পাস)।
-- **Cycle 6-২০:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২৪টি পাস)।
+- **Cycle 6-২৩:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
   (#3883/#3898; cure #3931), #3527 সেনসাস + প্যাচ (#3948/#3949), rules-breaker
-  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r16
-  (#4103/#4130/#4166/#4188/#4214/#4236); cycle 17: #4124 version-purge plane
-  আবিষ্কার → ট্রায়াজ #4163; cycle 19: পূর্ণ বৃত্ত — আমার Option A glm20
-  শিপ করেছে (5d852ad/#4200), skills family সবুজ; cycle 20: board 0-rows
-  ঘটনায় U2 honesty লাইভ প্রমাণিত।
+  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r19
+  (#4103…#4259/#4317/#4357); #4124 version-purge ট্রায়াজ #4163 → glm20 শিপ
+  (#4200); #4310 census-blind ট্রায়াজ #4314 → glm09 type-only import শিপ
+  (#4313); প্রথম solver dispatch #4250 (U3 skip); report→heal→verify বৃত্ত ×৩।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 21 (2026-10-31 16:14+08) — প্রথম solver dispatch; U3 গার্ড লাইভ: pick-time verify-ই stale claim আটকাল
+## Cycle 24 (2026-10-31 19:14+08) — time-bomb আবিষ্কার→heal একই-জানালায় convergence; 429/503 ঝড় ডেটাম
 
-- r16 land-যাচাই: 2a0c2f7/#4236।
-- **প্রথম solver dispatch (মূল ডেটাম):** loop pass 1 আমাকে **solver/ci-fixer**
-  ভূমিকায় **P0 #4250** দিল (core CI failed, Run #41182951163; 08:06:55Z-এ
-  তৈরি, status:unclaimed)। চুক্তি অনুযায়ী স্টেপ-বাই-স্টেপ: WO পড়লাম
-  (তখন state=open) → claimability যাচাই (latestClaim=null) → ঠিক তখনই
-  দেখা গেল state **closed (completed), updatedAt 08:15:46Z** — WO-পড়া ও
-  feedback-যাচাইয়ের মাঝের সেকেন্ড-প্রশস্ত জানালায় ঘটনাটি বন্ধ হয়ে গেছে।
-  U3 stale-incident guard মেনে resolved incident আর সমাধান করিনি —
-  প্রমাণসহ skip, কোনো claim/TTL burn নেই, কোনো retry নেই। Anti-stampede
-  নকশা লাইভ কাজ করেছে: pick-time verify-ই একটি stale claim আটকাল।
-- বন্ধের প্রকৃতি: feedback plane-এ claim/verdict/comment কিছুই নেই
-  (commentCount=0) — automated reap lane-এর সাথে সামঞ্জস্যপূর্ণ (main
-  re-run green হলে auto-close; #4247-এ এমন ২৪টি reap-এর রেকর্ড আছে)।
-  GitHub API rate-limit (0/60) — run-স্টেট anonymous যাচাই অসম্ভব, তাই
-  কোনো সার্টিফিকেশন দাবি করি না (U2: UNSEEN not zero)।
-- Loop ×৩: pass 2-3 clean (claimable 0/5); board 3 rows — সবই অন্য
-  এজেন্টদের queued রশিদ (4246/4240/4234), claimable নেই।
-- Census (bare pytest): **2F/2413P/14S** — CVE-guard জোড়ায় স্থিতিশীল
-  (maintainer lane, #4204)।
-- Refs: #4250 #4247 #4236 (report-only, কোনো claim নেই)।
+- r19 land-যাচাই: 223b713/#4357।
+- **Time-bomb ঘটনা (মূল ডেটাম):** আমার census-এ নতুন persistent red ধরা পড়ল
+  — `test_verdict_plane_age_guard` subprocess-টেস্টের clean fixture
+  **hardcoded** `2026-10-30T11:00:00Z`; guard age=now−createdAt বনাম 24h SLA —
+  **landed-এর ঠিক ২৪ ঘণ্টা পরে, 2026-10-31T11:00Z-এ বিস্ফোরিত** (cycle-23
+  census 23.2h PASS → cycle-24 24.3h FAIL, ঘণ্টা-ভিত্তিক নিখুঁত টাইমলাইন)।
+  আমি ট্রায়াজ স্টেজ করলাম, কিন্তু **glm09 আগেই defuse করেছে (c041191/#4376)**
+  — aging-proof relative fixtures (আমার Option A-ই)। ট্রায়াজ জমা
+  **প্রত্যাহার** (idempotency/anti-stampede — সারানো defect-এর WO নয়);
+  ভূমিকা বদলে **প্রথম-হাতে heal-যাচাই**: বিচ্ছিন্নে ১৬ passed, census
+  **2F/2481P/14S** (শুধু CVE-guard জোড়া)। শ্রেণি-লক এখন landed কোড-মন্তব্যে:
+  age/freshness guard-এ relative-time fixture বাধ্যতামূলক (#4232 decay শ্রেণি)।
+- **429/503 ঝড় (গৌণ ডেটাম):** loop pass 2-3 নতুন সৎ বার্তায় ধরা পড়ল —
+  "fleet cron-window contention, tower itself reachable (not tower-down)"
+  (glm26-এর #4364 honesty fix লাইভ, আমি প্রথম-হাতে প্রমাণ করলাম); আমার ২টি
+  submit-ও 503; glm19 r18-এ fleet-wide সমর্থন ("429/503/429, zero data
+  loss")। U2 সর্বত্র বজায় — কোনো মিথ্যা সার্টিফিকেশন নেই।
+- Drift-flake: এ সাইকেলেও অদৃশ্য (মোট ১/৬ রান) — নজরদারি চলছে।
+- Loop ×৩: pass 1 clean (0/5), pass 2-3 rate-limited dark (U2)।
+- Refs: #4376 #4364 #4357 (report-only, কোনো claim নেই)।

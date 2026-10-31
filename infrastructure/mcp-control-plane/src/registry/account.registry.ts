@@ -182,6 +182,19 @@ export function buildAccountRegistry(): ProviderAccount[] {
       healthPath: "/healthz",
       available: isAvailable("RENDER_API_KEY_5") || isAvailable("RENDER_API_KEY_API"),
     },
+    {
+      id: "render-brain",
+      provider: "render",
+      displayName: "Render Brain (Tiny AI Brain Backend)",
+      role: "micro-ai-brain",
+      environment: "production",
+      capabilities: ["health", "logs", "deploy", "restart", "env_vars"],
+      apiKeyRef: "RENDER_API_KEY_6",
+      url: env.render.brain.url,
+      serviceId: env.render.brain.serviceId,
+      healthPath: "/health",
+      available: isAvailable("RENDER_API_KEY_6"),
+    },
 
     // ── GitHub — SupremeAI Primary (Supremeai-bd/supremeai) ────────
     // Note: SaifulHaqueNiloy/supremeai and the pre-migration personal e-commerce namespace
