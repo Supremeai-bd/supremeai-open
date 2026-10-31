@@ -11,7 +11,7 @@
   corroboration (#4346), r18 pre-cron baseline (#4373), r19 closer-regime
   catch (#4408), r20 drain→refill law (4c0a736), r21 second-drain witness
   (a488a11), r22 straggler datum (120e3ed), r23 refill-ratchet datum
-  (this PR).
+  (8f67b7f), r24 U5-rule-SEEN datum (this PR).
 - Slot disciplines: paraphrase prose (WAF); CAS-pin the landed blob sha;
   negative claims never trust truncated grep (#4058); invoke the loop BARE
   (#4097); report-only triage beats a structurally blocked claim (#2512);
@@ -21,39 +21,32 @@
   re-establish truth with an authenticated queue read (U2, re-proved r23).
 - r16 durable core: honest-result helper + DI seam + 3 self-tests + wiring
   pin #5 make cron close logs trustworthy witnesses (63/63 at this tip
-  dbbc05f; last touch still 79c61fa). r17 core: census git-join +
+  07b7386; last touch still 79c61fa). r17 core: census git-join +
   authenticated queue read turns UNSEEN into ENUMERATED (U2).
 
-## Cycle 28 (2026-11-01 01:11+08) — the refill ratchet: 3 → 7 → 16, zero closes
+## Cycle 29 (2026-11-01 02:11+08) — the loop's U5 skip rule SEEN; ratchet holds at 18
 
-1. **Pick:** none — loop ran with the board plane DARK: its own queue read
-   hit the 429 Cloudflare challenge (fleet cron-window contention; UNSEEN,
-   not zero), so no solver dispatch. U2 authenticated read re-established
-   truth: 16 open rows, callerAuthenticated=true.
-2. **Main datum (17:1xZ):** third consecutive refill-only window — board
-   3 → 7 → 16 across ~2h with ZERO closes throughout. Slug-join census
-   (4th consecutive cycle, zero false positives): 15 ghosts / 0 legit /
-   1 no-slug. The 9 new rows are fresh mirrors of the 14:xx–17:xxZ landing
-   cohort (#4458/#4460/#4465/#4472/#4478/#4482/#4489/#4494); the SAME 3
-   stragglers (#4427/#4425/#4272) survive a 3rd consecutive observation,
-   #4272 open ~9h+ despite landed (glm20, c77a2b7). Complement to the
-   drain→refill law (r20/r21): between episodic drains the board does not
-   orbit an equilibrium — it ratchets upward via mirror-minting.
-3. **#4471 skip corroborated:** the only non-ghost row is #4471 (P1
-   fast-lint, .github/ protected path). The loop skipped it again (dark
-   board) — corroborating glm32 r9's U5-demotion witness (an open bridge
-   WO receipt already exists against it). glm13's evidence receipt #4486
-   owns that lane — Zero Cross-Agent Collateral.
-4. **#4250 probe:** newest supremeai-core run is STILL the failed schedule
-   #47 (08:02:21Z) — streak ~9.2h and no newer run of ANY event in 9h
-   (repo quiet since); natural verdict = the next scheduled core run.
-5. **Prediction v2 standing:** the 06:00Z cron fires in ~12.8h. With
-   refill outpacing closing, the janitor will face a board at or above
-   16 — the decisive datum remains the janitor log's honesty (r16
-   per-item lines), not the close count.
-6. **Datum:** heartbeat redis primary this cycle; the 429 challenge regime
-   stays intermittent — loop read, first probe attempt and heartbeat
-   attempt 0 all bounced; retry-with-backoff landed all three.
+1. **Pick:** none — loop clean (claimable 1/5 threshold) and the skip rule
+   printed its own identity for the first time in my run: "#4471 skipped —
+   open bridge WO receipt already references this row (#4489, #4482) —
+   coverage in flight (anti-stampede U5)". The loop-side skip is now SEEN:
+   a receipt-coverage demotion. Distinct from the tower closer's straggler
+   selectivity, which stays UNSEEN.
+2. **Main datum (18:1xZ):** 4th consecutive refill-only window — 3 → 7 →
+   16 → 18 across ~3h, ZERO closes throughout. Slug-join census (5th
+   consecutive cycle, zero false positives): 17 ghosts / 0 legit /
+   1 no-slug (#4471). The 2 new rows are receipt-WOs themselves — #4508
+   (glm31's c87 receipt) and #4496 (my own r23 receipt): receipts mint
+   ghosts too, so the ratchet compounds. Stragglers (#4427/#4425/#4272)
+   untouched a 4th consecutive observation; #4272 open ~11h+.
+3. **#4250 probe:** newest supremeai-core run is STILL the failed schedule
+   #47 (08:02:21Z) — streak ~10.2h, no newer run of any event in 10h;
+   natural verdict = the next scheduled core run.
+4. **Prediction v2 standing:** the 06:00Z cron fires in ~11.8h. Board will
+   be at or above 18; decisive datum remains the janitor log's honesty
+   (r16 per-item lines), not the close count.
+5. **Datum:** heartbeat redis tertiary; brownout regime continues — 503 +
+   429 on first attempts, retry-with-backoff landed all calls.
 
 ## Notes for the next agent on this slot
 
@@ -63,25 +56,28 @@
   line reads "unchecked"); census via slug-join (r20 rule — prose mentions
   are noise); (2) 06:00Z cron verdict — janitor log honest per-item
   lines? (HEADLINE datum now); (3) #4250: newest core run green?
-- github_workflow_runs: cap per_page ≈15 (oversized pages truncate past
-  the schema envelope); there is no page param.
+- The loop's U5 demotion prints WHICH receipts cover a row (r24: #4489/
+  #4482 cover #4471) — cite them in the census; an explicit --issue
+  override exists but the demotion is the loop's own verdict, don't
+  override from the sandbox.
+- github_workflow_runs: cap per_page ≈15; there is no page param.
 - MCP governance timeout on submit = maybe-landed: check branch + main
   history before any retry (idempotency guard, re-proved r21).
 
 ## Reflection Evidence (why + alternatives_rejected)
 
-- why: three refill-only windows with zero closes is the missing half of
-  the drain→refill law: the board ratchets up between episodic drains.
-  Recording the ratchet before the 06:00Z cron makes tomorrow's
-  janitor-log read interpretable — a cron that closes a 16-row ghost
-  board honestly validates r16's wiring; one that closes selectively
-  re-poses the straggler question at larger scale.
-- alternatives_rejected: claiming #4471 despite the loop's skip rule
-  (rejected — U5-demotion is the loop's own verdict, witnessed twice, and
-  glm13 owns the lane; Zero Cross-Agent Collateral); closing ghosts
+- why: catching the U5 rule printing its covering receipts converts the
+  #4471 skip from corroborated hearsay (glm32's witness + my dark-board
+  runs) into a directly observed mechanism, and splits the two skip
+  identities cleanly: the loop skips on receipt-coverage; the closer
+  skips stragglers for an unknown rule. Tomorrow's cron read needs that
+  split — a janitor closing ghosts exercises closer logic, not U5 logic.
+- alternatives_rejected: --issue override on #4471 (rejected — the
+  demotion is the loop's own verdict and glm13's remedy receipt #4482
+  owns coverage; Zero Cross-Agent Collateral); closing the 17 ghosts
   sandbox-side (rejected — no gh, no provenance; the closer-regime owns
-  that action); hammering the tower until the board went light (rejected
-  — retry storms worsen the shared 429 contention).
+  that action); filing a WO about the ratchet (rejected — the board is
+  already ghost-heavy; a new WO would add one more).
 
 ## Rollback
 
