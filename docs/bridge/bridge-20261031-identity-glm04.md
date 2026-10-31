@@ -25,6 +25,10 @@
 4. **Radar hygiene:** take the next R-number from `docs/SCOUT_RADAR_INDEX.md` (the SSOT,
    freshness-guarded); re-verify freeness pre-submit (the pass-26 six-recurrence collision
    class is caught by the filer's own re-verification ladder, R95 preamble).
+5. **Bare-invocation loop contract (#4097 → #4175):** `continuous_agent_loop.py` takes NO
+   CLI flags (--task-envelope/--pick-next/role overrides purged); a cycle is a bare
+   `python3 scripts/agents/continuous_agent_loop.py` call. The offline escape hatch is
+   env-var-only (`SUPREMEAI_OFFLINE`); the `--offline` flag surface is gone (test_25 governs).
 
 ## Landed lanes (all merged on origin/main, first-registration-wins)
 
@@ -39,6 +43,8 @@
 | R92 radar | heartbeat liveness contract: 5 windows, 2 disjoint planes, zero mechanical consumers | #3961 / dbf5186a |
 | R93 radar | #3993/#3994 anchor-routing result-None hole | #4003 / 4e553bdd |
 | R96 radar | branch-death orphaned-tracking-row lifecycle (10/13 open rows) | #4088 / 0bd75aaf |
+| worklog mint | keep-it-small identity worklog (this file, r1) | #4101 / e5aaa160 |
+| triage P1 | #4124 re-introduced the #3573 time-gate: guard pair red, repro + owner contract | #4125 / 7d6ba3ad |
 
 ## Open watch items (owner lanes; no re-file while receipt-covered)
 
@@ -46,18 +52,23 @@
 - R96 Plan-1..4 — close-on-prune lifecycle + sweep net + label short-circuit + U6 pin.
 - R94 board ground-truth protocol paragraph (owner/docs lane).
 - PR-plane dark post-RBAC — glm22 receipt #3959, options A/B/C, owner decision pending.
-- render-primary `update_failed` + #3699 boot classes (boot-proven ×3, glm10) — admin/HITL.
+- render-primary `update_failed` streak BROKEN per sentry c75 (#4179, healthy/update_in_progress); #3699 boot classes remain owner-lane.
+- Blind-ladder class open past #4138's tier-9: 12 red faces invisible to the ladder while --verify-only prints 9/9 PASS (glm19 #4151).
 
 ## বাংলা সারসংক্ষেপ
 
 স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, post-RBAC ২০-টুল পৃষ্ঠ, তিনটি
 disjoint liveness plane, আর radar-নম্বর hygiene — ভবিষ্যৎ চক্র আর নতুন করে শিখবে না।
+leasegate লেন পূর্ণ চক্রে বন্ধ: আমার triage (#4125) → glm12-র Option A (#4138) → লাল জুটি সবুজ।
 এই ফাইলই আমার একমাত্র worklog; পুরনো বিস্তারিত merged receipts-এ আছে, এখানে শুধু
 সারণি। প্রতিটি watch item owner-lane-এ receipt-covered — যতক্ষণ না সেটা বদলায়,
 re-file করা duplicate হবে।
 
 ## Cycle log (append one line, prune on your own cycle per keep-it-small)
 
-- **2026-10-31 10:04+08** — fresh-sandbox re-clone at c8e8e2d7; loop clean (claimable
-  0/5, P0 gate green, board 2 fresh report rows); all five watch lanes verified
-  receipt-covered (no duplicate filed); this worklog minted. No claim, no code edits.
+- **2026-10-31 11:04+08** — fresh re-clone; loop clean; #4124's lease-gate regression
+  caught (2 AST-pinned guards red on main), triage #4125 filed with two-sided owner
+  contract (Option A / Option B + pytest-on-ladder remedy).
+- **2026-10-31 13:04+08** — Option A landed fleet-side: glm12 #4138 restored the
+  clock-free gate + tier-9 pins; red pair re-proven GREEN locally (36 passed);
+  worklog r2 in-place (this patch). No claim, no code edits.
