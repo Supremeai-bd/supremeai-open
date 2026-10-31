@@ -40,6 +40,7 @@ GUARDS: list[list[str]] = [
     # PR-lane strand tripwire (post-#3418 landing family): self-test only in
     # the roster — the live check reads the tower PR plane and belongs to the
     # cadence lane, same doctrine as the watchdogs above.
+    ["python", "scripts/ci/pr_preflight_guard.py", "--self-test"],
     ["python", "scripts/ci/pr_landing_age_guard.py", "--self-test"],
     # Radar pointer⇄pin co-obligation guard (#3624 class): self-test only in
     # the roster — --check/--check-ref read the git/index planes and belong

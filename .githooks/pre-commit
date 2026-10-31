@@ -233,5 +233,40 @@ if echo "$staged_files" | grep -q 'studio/package\.json'; then
             "Deliberate admin bypass: git commit --no-verify."
     fi
 fi
+# 9. Branch naming convention (prevents Branch Naming Guard CI failure)
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+if [ -n "$current_branch" ] && [ "$current_branch" != "main" ] && [ "$current_branch" != "master" ]; then
+    if ! echo "$current_branch" | grep -Eq '^(feat|fix|chore|docs|ci|test|refactor|perf|bridge|hotfix)/[a-z0-9][a-z0-9._/-]*$'; then
+        reject "Branch name does not follow convention: $current_branch" \
+            "Rename the branch to feat|fix|chore|docs|ci|test|refactor|perf|bridge|hotfix/<slug>." \
+            "Deliberate admin bypass: git commit --no-verify."
+    fi
+fi
+
+# 10. Boundary sanitization on staged files (prevents Boundary Sanitization Guard CI failure)
+if [ -f "scripts/ci/boundary_sanitization_guard.py" ]; then
+    if command -v python >/dev/null 2>&1; then
+        boundary_out=$(python scripts/ci/boundary_sanitization_guard.py --files $staged_files 2>&1)
+        boundary_rc=$?
+        if [ "$boundary_rc" -ne 0 ]; then
+            reject "Boundary sanitization check failed on staged files" \
+                "$boundary_out" \
+                "Move satellite code into its approved domain mirror." \
+                "Deliberate admin bypass: git commit --no-verify."
+        fi
+    fi
+fi
+
+# 11. Loop-contract parity when loop/spec touched
+if echo "$staged_files" | grep -Eq 'scripts/agents/continuous_agent_loop.py|docs/AGENT_LOOP_SPEC.md|docs/AUTONOMY_LOOP_CONTRACT.md'; then
+    if command -v python >/dev/null 2>&1; then
+        if ! python scripts/agents/check_loop_contract_parity.py >/dev/null 2>&1; then
+            reject "Loop-contract parity drift detected" \
+                "Run: python scripts/agents/check_loop_contract_parity.py" \
+                "Sync docs/spec with code before committing." \
+                "Deliberate admin bypass: git commit --no-verify."
+        fi
+    fi
+fi
 
 exit 0
