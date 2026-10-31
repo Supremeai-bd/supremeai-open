@@ -5,14 +5,25 @@
 
 ## Durable outcomes (with proof)
 
+- Scout radar R94 filed (WO #4015, PR #4016): the credential-free board
+  ground-truth freshness hierarchy — a web-rendered GitHub view served a
+  61-open ghost board (#3946/#3825/#3812/#3841 open) while tower
+  bridge_work_order fetches proved all four closed/completed 43–63 min
+  BEFORE the view; anonymous REST 403-dark (shared IP, #3967); tower
+  single-fetch is the only proven-fresh board authority; queue totalOpen=0
+  was true-empty (board drained ~110→0) but indistinguishable from
+  broken-queue-0 without spot-checks; the loop's board fallback prints
+  "0 open" with no dark/empty discriminator. Filer's own drafted
+  "false-empty board" finding died to spot-checks pre-submit (the harm
+  case). Fix routed owner-lane: one-paragraph protocol (bridge README/
+  AGENTS.md). Registry co-obligation done: index pass-51 + R94 row,
+  pointer → R95, baseline +R94, guard-test pin co-advanced.
 - Per-slot receipt r1 landed (this file, PR #3753, merge 0fe06a3): cycle-11
-  no-pick hold; the run-list viewer-role denial recorded as corroboration of
-  the landed RBAC census (GLM 13, PR #3751).
+  no-pick hold; viewer-role denial corroborating the RBAC census.
 - CI-tracker triage r1 landed (PR #3877, WO #3876, merge 667b1bf): tracker
-  #3856 (PR #3542 parity-guard red) pinned as the #3524-collateral stale-run
-  class — merge-ref guard exit 2 (env error), main exit 0, true-rebase
-  simulation exit 0; remedy already on main (#3550) seven minutes after the
-  PR head; frozen red clears on the author's rebase.
+  #3856 = #3524-collateral stale-run class (merge-ref guard exit 2, main
+  exit 0, true-rebase sim exit 0; remedy #3550 already on main; frozen red
+  clears on author rebase).
 - Standing successes (cycles 9–12, compressed): standing-suite heal r2
   (PR #3695, a5d1d10); #3467 read-classifier wiring (PR #3486, 89ca297);
   jargon slice (PR #3599, b0e2ada); R66 slice live-proven (PR #3220);
@@ -20,51 +31,35 @@
   sentry c61 all-green (PR #3716, f922303); scan-B board-plane third level
   with honest partial assurance (WO #3798, 42/42 hermetic cases).
 
-## Cycle 14 (2026-10-31 07:16+08) — covered-board hold; #3527 dispatch resolved by live coverage
+## Cycle 14 (07:16+08) — covered-board hold (compressed)
 
-1. Door honored; worktree fast-forwarded 41 commits to f1b2168; preflight
-   zero open P0; verify-only 8/8 PASS. Loop dispatched #3527 (audit:finding,
-   unclaimed). U3 fresh verification on live main resolved the lane without
-   a claim: the audited surface ops-maintenance.yml is ABSENT from the
-   workflow tree (sole workflow: pipeline.yml) — the restructuring is
-   already receipted (#3788, landed). The finding's guard half is landed
-   too: the hardening census guard already tracks unpersisted checkouts as
-   a fail-closed residual class (files=4, verdict RESIDUAL exit 2, live
-   counts unpersisted=15, tag-pinned=27, template-injection=28). The
-   workflow half (explicit persist-off at the bare sites) is the
-   agent-serviceable slice of WO #3539 — sitting in-gates since its
-   verdict-verified EXACT receipt; a third patch would be stampede (U5).
-   Four receipts already cover the row (#3529 value-gap, #3787 race hold,
-   #3788 live-delta, #3552 remedy-race). No claim, no Closes ask; the row
-   stays with the merge lane and the verdict plane.
-2. **Fresh live datum (tip f1b2168):** pipeline.yml census — 22 jobs,
-   3 write-permission jobs, 15 checkout sites, all 15 implicit-persist
-   (zero explicit persist-off lines). Recorded so the next reader gets the
-   current numbers without re-deriving them; the #3931 in-place labeling
-   change (landed this window) should stop this tracker family from
-   spawning duplicate rows.
-3. Candidate sweep (all skips evidence-backed, zero claims): board 49 rows
-   = 27 landed receipts (watch/closure planes), 16 in-gates (work done,
-   awaiting landing — incl. #3539 for #3527), 2 queued (other agents' WOs),
-   3 claimed (#3698 P1 scout, #3841, #2633). No claimable agent-lane work
-   remained after the #3527 resolution; bridge lanes fully functional
-   (tool-name epoch: the queue tool is now the underscore form; two new
-   submit/order tools appeared).
+Dispatched #3527 resolved without a claim: audited surface
+ops-maintenance.yml absent from the live workflow tree; guard half landed;
+agent-serviceable half already in-gates (WO #3539); four receipts cover the
+row — a third patch would be stampede (U5). Fresh-tip census recorded:
+pipeline.yml 22 jobs, 3 write-permission, 15 checkout sites, all
+implicit-persist. Worklog r2 landed (PR #3945, d2c62e3).
+
+## Cycle 15 (08:16+08) — ecosystem-scout; radar R94 filed
+
+Tower 12/12 healthy (render-primary recovered); tool epoch stable at 20
+(underscore bridge names; github_list_prs exists but Bearer-gated —
+anonymous blind probe → Forbidden). Board true-zero proven by 4 single-fetch
+spot-checks after a stale web view nearly minted a false finding. Loop
+dispatched ecosystem-scout; R94 radar filed (see durable outcomes).
+Verifications: guard --check exit 0, radar suite 30/30, verify-only 8/8,
+on base 05a21ad (rebase mid-cycle for #4004/#4006/#4007/#4010).
 
 ## Notes for the next agent on this slot
 
+- Tower single-fetch (bridge_work_order N) is the board freshness
+  authority; web-rendered views and anonymous REST are not (R94).
 - Check the tool list at cycle start — tower tool names drift between
-  epochs (dot-form to underscore-form this window); bridge_guide still
-  shows old names.
-- RBAC-era discipline stands: PR-plane dark (viewer role), board-plane
-  partial assurance only (never a green claim), public API rate-limited
-  best-effort; system_health still shows render-primary degraded
-  (update_failed) as of this cycle.
+  epochs; bridge_guide prose still shows old dot-form names.
+- RBAC-era discipline stands: PR-plane dark for anonymous lanes
+  (underscore variant is agent-role-gated, #3959 option C until owner
+  moves); system_health now 12/12 (update_failed cleared).
 - Receipt prose must avoid executable strings and flag quotes (WAF 403s).
-- Reflection: why = the dispatched row's agent-lane half was already
-  in-gates and its guard half landed, so the cycle's honest value is the
-  fresh-tip coverage proof (U8 hold with facts, not avoidance), not a
-  duplicate patch; alternatives_rejected = (1) a third #3527 patch —
-  duplicates WO #3539 in-gates (U5 stampede); (2) a fifth receipt file for
-  the row — four receipts already cover it; (3) claiming anyway to hold
-  the lane — the lane is held by the in-gates WO, a claim adds nothing.
+- Loop observation roles are now gated on a >=5 claimable-issue threshold
+  (#4007, landed mid-cycle 15) — on an empty board expect hold/skip
+  cadence, and scout lanes remain the productive path.
