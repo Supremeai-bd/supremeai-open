@@ -84,19 +84,16 @@ def pr_number_from_merge_ref(branch: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+# Strictly Active 7 Federation Repositories (Golden Topology):
+# 6 domain repos with live mirrors + 1 umbrella monorepo.
 FEDERATION_REPOS: tuple[str, ...] = (
     "Supremeai-bd/supremeai-open",
-    "Supremeai-bd/supremeai-command",
-    "Supremeai-bd/supremeai-skills",
-    "Supremeai-bd/supremeai-vscode",
-    "Supremeai-bd/supremeai-agents",
-    "Supremeai-bd/supremeai-browser",
-    "Supremeai-bd/supremeai-api",
+    "Supremeai-bd/supremeai",
     "Supremeai-bd/supremeai-studio",
-    "Supremeai-bd/supremeai-infrastructure",
+    "Supremeai-bd/supremeai-api",
     "Supremeai-bd/supremeai-core",
-    "Supremeai-bd/supremeai-sdk",
-    "Supremeai-bd/supremeai-mcp-control-plane",
+    "Supremeai-bd/supremeai-vscode",
+    "Supremeai-bd/supremeai-browser",
 )
 
 
@@ -916,20 +913,20 @@ def self_test() -> int:
     """Hermetic self-test suite (zero network)."""
     print("[self-test] Running Federation CI Watchdog offline contract test...")
 
-    # 1. Repos registry verification
-    assert len(FEDERATION_REPOS) == 12, (
-        f"Expected 12 federation repos (including open, excluding supremeai + archive), got {len(FEDERATION_REPOS)}"
+    # 1. Repos registry verification (Golden 7-Repo Topology)
+    assert len(FEDERATION_REPOS) == 7, (
+        f"Expected 7 active federation repos, got {len(FEDERATION_REPOS)}"
     )
     assert "Supremeai-bd/supremeai-open" in FEDERATION_REPOS
-    assert "Supremeai-bd/supremeai-command" in FEDERATION_REPOS
-    assert "Supremeai-bd/supremeai-skills" in FEDERATION_REPOS
     assert "Supremeai-bd/supremeai-studio" in FEDERATION_REPOS
-    assert "Supremeai-bd/supremeai" not in FEDERATION_REPOS
+    assert "Supremeai-bd/supremeai-api" in FEDERATION_REPOS
+    assert "Supremeai-bd/supremeai-core" in FEDERATION_REPOS
+    assert "Supremeai-bd/supremeai" in FEDERATION_REPOS
 
     # 2. Short name mapping
     assert repo_short_name("Supremeai-bd/supremeai") == "monorepo"
-    assert repo_short_name("Supremeai-bd/supremeai-command") == "command"
-    assert repo_short_name("Supremeai-bd/supremeai-skills") == "skills"
+    assert repo_short_name("Supremeai-bd/supremeai-studio") == "studio"
+    assert repo_short_name("Supremeai-bd/supremeai-api") == "api"
 
     # 3. Marker generation
     marker = build_mirror_marker("Supremeai-bd/supremeai-command", 123456)
