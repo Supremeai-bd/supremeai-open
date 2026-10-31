@@ -46,32 +46,51 @@
   one batch (bridge:landed), board 19 -> 0; batch-delayed closer model
   confirmed (full detail in Notes). Suite 2F/2234P after GLM 28's
   hermetic fix (#4232). r8 landed (PR #4216, f29523b).
-- c23 (16:16): no dispatch (claimable 0/5; board 3 rows, all other-agent
-  receipt-class; base e339dae, 0 behind). RBAC ERA ENDED: #4249 restored
-  the tower default role to admin — tools/list jumped ~20 -> ~158 tools
-  (policy/action/tenant/memory/github-ops classes), github_list_prs
-  RETURNED but in underscore form. NAMING-SKEW datum: the loop probes
-  the dot-form name github.list_prs and still reports the plane dark —
-  the PR-plane audit stays auto-skipped until the loop's lookup string
-  is updated (it degrades safely, no defect). Lane discipline unchanged:
-  admin visibility is NOT a lane expansion — bridge-read + submit only;
-  dangerous new tools (kill switch, db writes, deploys, token rotation)
-  stay off-limits. Suite at tip: 2F/2234P, only the CVE-guard pair
-  (maintainer-lane). verify-only 9/9. WO-mint flow is intermittent:
-  r8's submit minted WO #4215, r9's minted none. r9 landed (PR #4237,
-  fcc0c0e). r10 = this patch.
+- c23 (16:16): no dispatch. RBAC ERA ENDED: #4249 restored the tower
+  default role to admin — tools/list jumped ~20 -> ~158 tools,
+  github_list_prs RETURNED in underscore form; NAMING-SKEW datum: the
+  loop still probes the dot-form name, PR-plane audit auto-skipped
+  (degrades safely). Lane discipline unchanged — admin visibility is NOT
+  a lane expansion. Suite 2F/2234P. r9 landed (PR #4237, fcc0c0e); r10
+  landed (PR #4254, 89c38d0).
+- c24 (17:16): no dispatch (claimable 0/5; board 22 rows — 13 of them are
+  probe WOs from an EXTERNAL binary-search campaign on the submit plane
+  ("isolate exact trigger" / "tiny full_file" classes), 9 receipt-class,
+  none this slot's; base 48ad193, 0 behind). NEW MAIN-RED CENSUS from the
+  #4310/#4311 landings, proven at-tip: (a) test_meta_cognitive_intent.py
+  ERRORS AT COLLECTION — its import chain (core.adaptive_engine ->
+  performance_enhancer -> brain.model_registry -> services.config_service)
+  needs sqlalchemy which is declared NOWHERE in requirements/pyproject —
+  the abort zeroes the WHOLE suite's visibility, a strictly worse class
+  than the old blind ladder; with --continue-on-collection-errors: 4
+  failed, 2238 passed, 13 skipped in 84 s. (b) NEW test_test_parity_guard
+  RED: the new scripts/ci/line_budget_guard.py and run_face_tests.py have
+  no parity tests (missing-tests assertion names both exactly). (c)
+  standing CVE-guard pair unchanged. ALL owner-lane items — no unilateral
+  dependency bump, core lazy-import, or parity authoring without a
+  dispatch (U10; dependency policy is maintainer-lane per the #4150
+  routing). Loop #4311-verified: UNIVERSALS 6 -> 8 (adds anti-bloat +
+  zero cross-agent collateral); the PR fallback now probes the underscore
+  name and its HTTPError was TOWER FLAKINESS, not a schema break — a
+  direct fetch 20 s later succeeded (22 rows). verify-only 9/9. r11 =
+  this patch.
 
 ## Notes for the next agent on this slot
 
+- NEW (c24): main's red census grew from the #4310/#4311 pair — the
+  meta-cognitive test ABORTS COLLECTION for the whole suite (sqlalchemy
+  undeclared; run pytest with --continue-on-collection-errors until an
+  owner fixes requirements or lazy-imports the chain) and the parity
+  guard wants tests for scripts/ci/line_budget_guard.py +
+  run_face_tests.py. Plus the standing CVE pair. Expect 3F+1E at tip.
+  Do NOT bump dependencies or author parity tests unilaterally (U10) —
+  both are owner-lane.
 - RESOLVED: the #4124 red pair is green since #4138; the wider
-  blind-ladder class drained 12 -> 2 by a67 (#4209). REMAINING hazard:
-  ONLY the two CVE-guard faces (test_npm_dep_cve_guard +
-  test_js_dep_cve_guard) on follow-redirects@1.16.1
-  (GHSA-mrwp-f3q8-3g9p, .agents/skills/devtools-audit/package-lock.json)
-  — a real dependency CVE, routed to the maintainer lane by the #4150
-  table; agents must NOT bump the lockfile unilaterally (U5/U10). Expect
-  full-suite 2F/2234P until the maintainer rules.
-
+  blind-ladder class drained 12 -> 2 by a67 (#4209). REMAINING
+  maintainer-lane hazard: the two CVE-guard faces on
+  follow-redirects@1.16.1 (GHSA-mrwp-f3q8-3g9p,
+  .agents/skills/devtools-audit/package-lock.json) — agents must NOT
+  bump the lockfile unilaterally (U5/U10).
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
@@ -85,10 +104,9 @@
   ~158 tools including dangerous ones (autonomy kill switch, db writes,
   deploys, tenant token rotation). Lane discipline is UNCHANGED: this
   anonymous bridge lane uses bridge_* read tools and the submit-patch
-  path only — never touch admin/mutation tools. Roster names are now
-  UNDERSCORE-form (github_list_prs); the loop still probes dot-form, so
-  its PR-plane audit stays auto-skipped — expected behavior, not a
-  defect.
+  path only — never touch admin/mutation tools. Roster names are
+  UNDERSCORE-form; the loop probes underscore now (#4311) but the tower
+  itself can flake (HTTPError) — retry once before concluding anything.
 - Check the tool list at cycle start — tower rosters and name forms
   drift between epochs (dot-form -> underscore-form observed at c23).
 - Receipt prose must avoid executable strings and flag quotes (WAF 403s).
