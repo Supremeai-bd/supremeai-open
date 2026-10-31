@@ -1,6 +1,5 @@
 # Security Exceptions — Time-bound, Owner-based, Scoped bypasses
 # Per SG-14: No Permanent Bypass. Every exception MUST have expires_on + owner + scope.
-version: "1.0"
 
 # Empty initially — exceptions are added when needed, never permanent
 exceptions: []

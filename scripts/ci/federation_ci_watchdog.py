@@ -393,7 +393,9 @@ def label_pr_lane_failure(
         print(f"[watchdog] Could not fetch PR #{pr_num} on {repo} (HTTP {code}). Falling back.")
         return False
     
-    # Add ci-failed and status:unclaimed to the PR
+    # Add ci-failed and status:unclaimed to the PR, remove claimed labels
+    for claimed_lbl in ("status:claimed", "claimed"):
+        gh_api(f"repos/{repo}/issues/{pr_num}/labels/{claimed_lbl}", token=tok, method="DELETE")
     gh_api(
         f"repos/{repo}/issues/{pr_num}/labels",
         token=tok,
@@ -407,6 +409,8 @@ def label_pr_lane_failure(
     closes_match = re.search(r"(?:closes|fixes|resolves)\s+#(\d+)", pr_body, re.IGNORECASE)
     if closes_match:
         target_issue_num = int(closes_match.group(1))
+        for claimed_lbl in ("status:claimed", "claimed"):
+            gh_api(f"repos/{OPEN_REPO}/issues/{target_issue_num}/labels/{claimed_lbl}", token=tok, method="DELETE")
         gh_api(
             f"repos/{OPEN_REPO}/issues/{target_issue_num}/labels",
             token=tok,
@@ -414,7 +418,7 @@ def label_pr_lane_failure(
             data={"labels": ["ci-failed", "status:unclaimed"]},
         )
         print(
-            f"✅ [watchdog] Marked target issue #{target_issue_num} as 'ci-failed' and 'status:unclaimed' in-place."
+            f"✅ [watchdog] Marked target issue #{target_issue_num} as 'ci-failed' and 'status:unclaimed' in-place (stripped claimed labels)."
         )
     else:
         # If PR has no linked target issue via closes/fixes/resolves, create a tracking issue if needed
