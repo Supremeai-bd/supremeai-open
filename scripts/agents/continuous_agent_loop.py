@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-CADENCE_FILE = Path(__file__).resolve().parent / "agent_cadence.json"
 ROTATION_STORE = Path(".agent_cadence_last_run.json")
 ISSUE_LEASE_STORE = Path(".issue_lease_store.json")
 EXCLUDED_LABELS = frozenset({
@@ -99,12 +98,11 @@ def record_issue_dispatch(issue_number: int | str) -> None:
 
 
 def load_cadence_config() -> dict[str, Any]:
-    if not CADENCE_FILE.exists():
-        return {}
-    try:
-        return json.loads(CADENCE_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    return {
+        "scheduled_roles": [
+            "ecosystem-scout", "human-eye", "rules-breaker", "platform-guardian"
+        ]
+    }
 
 
 def load_last_run_store() -> dict[str, float]:
