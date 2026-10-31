@@ -123,6 +123,11 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+try:
+    from tower_name_tolerance import call_across_names, epoch_spellings  # flat: scripts/ci on sys.path
+except ImportError:  # pragma: no cover — package-style load (tests, CI runner)
+    from scripts.ci.tower_name_tolerance import call_across_names, epoch_spellings
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TOWER = "https://supremeai-mcp-tower.onrender.com/mcp"
 
@@ -203,7 +208,20 @@ def _tower_text(name: str, arguments: dict) -> str:
     _, sid = _rpc("initialize", {"protocolVersion": "2025-11-25", "capabilities": {},
                                  "clientInfo": {"name": "bridge-landing-watchdog", "version": "1.0"}})
     _rpc("notifications/initialized", {}, session_id=sid, notify=True)
-    res, _ = _rpc("tools/call", {"name": name, "arguments": arguments}, session_id=sid)
+
+    # বাংলা: নাম-ঢেউ সহনশীল কল (Zero-Recurrence U6 shared cure)। ঢেউ-৩ (live
+    # 2026-10-31) dotted বানানগুলি আবার মৃত — এই ফানেল পিন-করা এক-বানানে অন্ধ
+    # হয়ে গিয়েছিল (board/history প্লেন SKIP: "MCP error -32602 ... not found"
+    # text-ই json.loads ভাঙত — live GLM Agent 11, cycle-15)। যুগ-লেজার ক্রমে
+    # চেষ্টা (tower_name_tolerance.epoch_spellings) — মৃত-নামের সাড়া JSON-RPC
+    # error নয়, isError content-text; প্রেডিকেট এখন result.content আকৃতিও চেনে।
+    # একই সেশন দুই বানানে পুনঃব্যবহৃত — initialize দ্বিতীয়বার হয় না।
+    def _call_by_spelling(spelling: str):
+        res, _ = _rpc("tools/call", {"name": spelling, "arguments": arguments},
+                      session_id=sid)
+        return res
+
+    res = call_across_names(_call_by_spelling, epoch_spellings(name))
     return _text_of(res)
 
 
