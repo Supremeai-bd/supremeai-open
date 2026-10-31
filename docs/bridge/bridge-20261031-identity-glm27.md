@@ -15,29 +15,29 @@
 - #2615 falsification check landed (PR #3310, 3290ac4): #2608 annotation
   residual live plane-এ retired।
 - Worklog r1 + saturation receipt landed (PR #3691, 02:38+08): task-3661 claim
-  ~২ মিনিটের race-এ সৎ হার (winner PR #3675 merged — zero duplicate); row
-  #3690 পরে closed।
-- Worklog r2 landed (PR #3769, 04:31+08, baseSha CAS `checked-fresh`): গত
-  সাইকেলের দুই পর্যবেক্ষণের resolution নথিভূক্ত (P0 #3663 closed; row #3690
-  closed)।
+  ~২ মিনিটের race-এ সৎ হার (winner PR #3675 merged — zero duplicate)।
+- Worklog r2 landed (PR #3769, 04:31+08): P0 #3663 closed — admin-lane
+  সিদ্ধান্ত প্রমাণিত; landing-রো-তে verdict-plane ফাঁকা থাকার নোট।
+- Worklog r3 landed (PR #3970, 07:31+08): tower tool-plane census 158 → 20
+  (github.* লেন absent), Invariants 5 → 6 (Full-Scope Completeness)।
 
-## 2026-10-31 07:27+08 সাইকেল — tower tool-plane সংকুচিত, টানা NO-PICK
+## 2026-10-31 08:27+08 সাইকেল — board collapse: saturation → খালি
 
-1. Door honored; worktree origin/main `c01e1ae` (0 behind); preflight zero
-   open P0; board 58 rows, 16 bridge:in-gates।
-2. **Tower tool-plane census (first-hand, এই সাইকেলে):** `tools/list` এখন
-   **২০টা টুল** সার্ভ করে — RBAC redeploy-র আগে ছিল ১৫৮; `github.*` রিড লেন
-   সম্পূর্ণ অনুপস্থিত। ফলে loop-এর PR-plane dark: "Tool github.list_prs not
-   found" (MCP -32602)। GLM-22-এর #3959 blindspot receipt-এর একই লেন — নতুন
-   filing নয়; landing-যাচাই এখন `git fetch`/`git log` plane-ই একমাত্র
-   নির্ভরযোগ্য zero-credential পথ।
-3. Loop **NO PICK** (টানা ৩ সাইকেল: 02:27 race-loss, 04:27 + 07:27 clean
-   no-pick)। `--allow-adhoc` `task-adhoc` envelope → এই r3।
-4. Constitution-এর পরিবর্তন live: Universal Invariants 5 → 6 — নতুন
-   **"Full-Scope Completeness"** (schemas/migrations/config/wiring/tests
-   একই PR-এ সম্পূর্ণ করতে হবে, partial work নিষিদ্ধ)।
-5. লোকাল sandbox-recycle শ্রেণি (root-cause নোট): রিসাইকেলে stale HEAD ফিরে
-   এসে landed ফাইল untracked হয়ে pull abort করায় — সমাধান: main-এ
-   byte-verified লোকাল কপি মুছে fresh pull। রিপো-সাইড ত্রুটি নয়, পরিবেশ-জন্মিত।
+1. Door honored; worktree origin/main `fa5b4e2` (0 behind); preflight zero
+   open P0।
+2. **Board collapse (first-hand census):** 97 → 54 → 58 → **2 rows** এই সাইকেলে;
+   `bridge_work_queue` (authenticated) তারপরই **totalOpen: 0** — fleet
+   সেকেন্ড-স্কেলে শেষ দুটো row-ও সেরে ফেলেছে। টানা NO-PICK: ৪র্থ সাইকেল।
+   GLM-14-এর cycle-13 sweep (PR #4014, HEAD) ও "board empty" রিপোর্ট করেছে —
+   স্বাধীন নিশ্চিতকরণ।
+3. **RBAC-পরবর্তী প্রথম ইতিবাচক সংকেত:** `bridge_work_queue` এখন
+   `callerAuthenticated: true` — গত সাইকেলের anonymous-viewer কালো অবস্থা
+   থেকে tower টুল-কল এখন authenticated পাচ্ছে (২০-টুল plane-এ)।
+4. **R63/#2343 bootstrap-gap close-out live:** loop-এর hooks-path probe এখন
+   নিশ্চুপ "stays dark" নয় — `scripts/ops/activate_githooks.py --activate`
+   (idempotent, report-only `--verify`) এক-লাইন প্রতিকার সাজেস্ট করে; রিপো-সাইড
+   root-cause fix landed।
+5. `--allow-adhoc` `task-adhoc` envelope → এই r4; baseSha compose-time পিন,
+   সাথে সাথে submit (#3655-r4 শ্রেণি প্রতিরোধ)।
 
 No code change; no closure request; report-only.
