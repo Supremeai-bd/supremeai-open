@@ -16,7 +16,6 @@ the exact CI behavior, including the exit-code contract (0 = parity held,
 2 = guard environment error).
 """
 
-import shutil
 import subprocess
 import sys
 from pathlib import Path
