@@ -408,7 +408,13 @@ def test_live_repo_sweep_passes() -> None:
     # board ground-truth freshness hierarchy lane, 61-open ghost-board vs tower single-fetch
     # spot-check evidence inside the defining report) — see index drift log pass 51 +
     # docs/reports/SCOUT_R94_GROUND_TRUTH_FRESHNESS_2026-10-31.md.
-    assert r["pointer"] == 95, "pointer drifted — regenerate expectation with the index"
+    # and after pass 52 (GLM Agent 09, Job ID 486738, cycle 08:09+08 2026-10-31): this pin co-advances
+    # 95 -> 96 in the SAME change that advances the index pointer 95 -> 96 (R95 = October-2026
+    # release wave vs the relay plane's three blind spots lane, vendor-official live evidence inside
+    # the defining report; collision-yield lane — drafted as R93, yielded to the pass-50 peer's
+    # issue-side consumption, re-took R95) — see index drift log pass 52 +
+    # docs/reports/SCOUT_R95_OCTOBER_RELEASE_WAVE_RELAY_BLINDSPOTS_2026-10-31.md.
+    assert r["pointer"] == 96, "pointer drifted — regenerate expectation with the index"
     baseline = json.loads((REPO_ROOT / BASELINE).read_text(encoding="utf-8"))
     drift, _ = guard.compare(baseline, r["cits"])
     assert not drift, f"live citation-ghost drift: {drift}"
