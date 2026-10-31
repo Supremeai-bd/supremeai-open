@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-25 condensed to one table
+> only, replaced in place every cycle. Cycles 1-26 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-25 (condensed)
+## Landed cycles 1-26 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -51,41 +51,39 @@
 | 23 (02:2x) | loop recovered, U5 skip seen live; PII oscillation (+2) — episodic reading; falsifiable reap-or-breach prediction written | PR #4514 |
 | 24 (03:2x) | prediction RESOLVED = REAP (18→8, 16 out); mirrors pruned, real work spared — drain-to-refill mechanism identified | PR #4543 |
 | 25 (04:2x) | refill arc #4 (8→12, 0 out); #4272 12h through maximal churn; PII 13-pt (+1) | PR #4560 |
+| 26 (05:2x) | FIRST dispatch: #4471 solver turn — evidence-only (protected path); class DORMANT datum; proofs re-certified at 3rd tip; tripwire #14 clean first-attempt, PII →146 | PR #4581 |
 
-## Cycle 26 (2026-11-01 05:2x+08) — FIRST DISPATCH: #4471 solver turn (evidence-only, protected path)
+## Cycle 27 (2026-11-01 06:2x+08) — both open watches resolved by observation
 
-- Loop verify 9/9 on 97d813a; pick: **first dispatch of my session** —
-  #4471 highest-priority unclaimed (U5 demotion rotated away).
-- Solver turn per contract: remedy lives in `.github/workflows/` =
-  protected path → **evidence via bridge, no claim, no Closes**
-  (glm14 r28 #4576 precedent; glm05 #4534 holds the claim precedent).
-  Receipt:
-  `docs/reports/EVIDENCE_ISSUE-4471_TIP-RECERT_2026-11-01_glm22.md`.
-  New datum: **class DORMANT on main** — committed `_INDEX.md` fresh
-  at 97d813a (exit 0; glm20's #4463 heal holds through ~40 landings)
-  → urgency preventive, not incident. Both proofs re-certified at the
-  new tip: real #4450 blob (7c731bf) → gate exit 1; ordering defeat
-  (regen-first → false-positive PASS) — now proven at three tips.
-  Premise first-hand on origin/main: line 571 still `|| true`.
-- **Tripwire re-arm #14: probe exit 2 RED first-attempt (zero 429
-  noise — brownout easing) — fail-open sustained ≥13h.** PII 14-point
-  series …→143→144→**146** — slope +2 (+46 over ~13h). Three-check:
-  14 landings/h, ZERO touch role/#3663. Observation-only on board.
+- Loop verify 9/9 on f65b572 (auto-rebase, 2 behind at start); pick:
+  claimable 0/5 — and the U5 saga ends well: my census reads #4471
+  labels = `status:claimed` first-hand (glm11 #4603 dispatched;
+  glm17's churn receipt f65b572: "released after landing"). The row
+  watched for 3 cycles finally holds a solver — no stampede from me.
+- **Tripwire re-arm #15: exit 2 RED after 3× 429 noise — verdict only
+  on exit 2** (C26 was clean first-attempt; noise-rate oscillates,
+  discipline doesn't). PII 15-point …→146→**148** (+2); sub-mean
+  3rd point (+1,+2,+2) — plateau NOT declared (falsified once at
+  Cycle 20); fail-open ≥14h unowned, zero role/#3663 touches.
+- Census 12→19 (+7, inflow-dominated ~3.5/h); **#4272 = 13.9h —
+  past the 12h envelope, 9th window: long-haul survivor confirmed**.
+  Survivorship under maximal churn is a durable board property,
+  not a transient of one drain cycle.
 
 ## Reflection Evidence
 
-- **why:** a dispatch is a contract test as much as a work item — the
-  row's remedy is protected-path, so the honest solver turn is
-  evidence, not a forced PR; the fleet's freshest landed precedent
-  (glm14 r28) confirms the reading. My delta was chosen to not
-  re-state four prior receipts: none had reported the live staleness
-  state of main's own index — "dormant now, preventive urgency" is a
-  decision-relevant fact for the admin that no mechanism proof gives.
-  Re-certifying at the new tip keeps the chain fresh for the apply.
-- **alternatives_rejected:** a forced PR against `.github/`
-  (protected, hard-rejected lane); taking a claim (two precedents
-  exist; third adds nothing — U5); a Closes line (false closure,
-  #2211/#2225 family); re-running the 5-step sequence as "new"
-  (glm25 owns it — I only re-certified at the new tip and said so);
-  skipping the dispatch (loop picked it; the contract's evidence path
-  is the answer, not silence).
+- **why:** this cycle's decision-relevant delta is closure of two open
+  watches by pure observation: #4272 crossed the 12h envelope (the
+  survivorship question Cycle 25 posed is now answered — durable,
+  not transient) and #4471's 3-cycle churn resolved into a real
+  claim (verified first-hand via labels, not inferred from PR text).
+  Reporting the 3× 429 noise before the exit-2 verdict matters: it
+  proves the verdict discipline survived a noisy window right after
+  a clean one — the rule is exit-code-shaped, not luck-shaped.
+- **alternatives_rejected:** claiming or re-receipting #4471 (already
+  claimed — stampede; glm05's claim receipt + glm11's dispatch own
+  the lane); declaring PII plateau on three sub-mean points (the
+  Cycle 20 plateau call was falsified by the next point — regime-
+  aware patience is cheaper than a wrong regime label); forcing a
+  pick from the dark-plane run's silence (first run's 0/5 was the
+  honest datum, U2 — no invention of work).
