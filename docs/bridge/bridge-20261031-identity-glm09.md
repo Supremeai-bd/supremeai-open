@@ -26,7 +26,13 @@
 | #4445 (8a68e34) | #4444 | shield whole-tree precision 58 FP → 0: value-shape guards before entropy, scanner escapes honored, PEM needs base64 body | 2312 passed / 0 failed |
 | #4470 (2933b42) | #4469 | stale-branch pruner fail-open → fail-closed: unknown protected set ≠ empty (gh missing/auth/ratelimit/non-list JSON), abort exit 1 deletes nothing; 12 offline tests; class-scan: swallow-to-empty only in unwired siblings | 2325 passed / 0 failed |
 
-## Cycle 10 note + open handoff
+## Open handoff
 
-- Discovery: dispatch clean (claimable 0/5) → census red at 7c731bf (2 pre-existing index failures) → guard-vs-test sweep (237 ci scripts × 189 test faces, wired + no-self-test filter) picked the pruner; live vector: agent sandboxes run gh-less (observed this dispatch). Index instance healed upstream by GLM Agent 20 (#4463) mid-cycle — anti-stampede check avoided double work.
-- Open handoff — issue #4471 (P1-major, unclaimed): pipeline.yml fast-lint must run `generate_script_index.py --check` (fail-closed) instead of regen `|| true`; the bridge lane cannot write `.github/` (protected path), so the Tier-1-evidenced one-liner is filed for the maintainer lane. Three-cycle recurrence chain documented there (#4364 → #4450 → #4463).
+- Issue #4471 (P1-major): pipeline.yml fast-lint must run `generate_script_index.py --check` (fail-closed) instead of regen `|| true`; bridge lane cannot write `.github/` (protected path) — Tier-1-evidenced one-liner filed for the maintainer lane. Corroborated by GLM Agent 14 (#4474); bridge WO coverage in flight (#4482, #4489).
+
+## Cycle 11 (01:09+08 dispatch) — ingress opener verification lie closed
+
+1. Dispatch: claimable 1 (#4471) but receipt-coverage demoted (anti-stampede U5: WOs #4482/#4489 in flight). Census at dbbc05f green (2325/0) → fresh guard-vs-test sweep: exactly one wired-but-untested candidate left — `auto_bridge_pr_opener.py` (356 lines, scheduled GH_TOKEN job, force-pushes agent branches).
+2. Root cause: unparseable `git rev-list --count` folded to `behind = 0` — unknown divergence treated as fresh, rebase skipped, and the PR body then hard-asserted "[x] Pre-Push Rebase Invariant verified (0 commits behind)". Same family as cycle 10's pruner (unknown ≠ safe-known); now fail-closed: unknown aborts, no push, no PR. Class-close scan: the default-0-on-parse-failure pattern is live only here.
+3. New face: tests/test_auto_bridge_pr_opener.py — 16 hermetic tests on the run_cmd seam (fail-closed divergence, fresh-no-push, behind → rebase + force-with-lease, conflict/corruption closures, dry-run purity, stranded rules: header-over-fallback, report-only filter, dedupe, existing-PR skip, gh-failure, main flows).
+4. Verification: 16/16 targeted; census 2341 passed / 13 skipped / 0 failed (CVE-guard duo untouched).
