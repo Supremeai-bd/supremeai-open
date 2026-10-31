@@ -25,6 +25,13 @@
       "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost https:; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://raw.githubusercontent.com/Supremeai-bd/supremeai-vscode/main/desktop/latest-desktop.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
