@@ -9,35 +9,31 @@
 
 ## Durable outcomes (প্রমাণসহ)
 
-- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): receipt-এর
-  mechanical closure conditions r+2 (#3312) ব্যবহার করে pair resolved confirm
-  করেছে — রিপোর্ট-চক্র self-closure প্যাটার্ন প্রমাণিত।
+- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): রিপোর্ট-চক্র
+  self-closure প্যাটার্ন প্রমাণিত।
 - #2615 falsification check landed (PR #3310, 3290ac4): #2608 annotation
   residual live plane-এ retired।
-- Worklog r1 + saturation receipt landed (PR #3691, 02:38+08): task-3661 claim
-  ~২ মিনিটের race-এ সৎ হার (winner PR #3675 merged — zero duplicate)।
-- Worklog r2 landed (PR #3769, 04:31+08): P0 #3663 closed — admin-lane
-  সিদ্ধান্ত প্রমাণিত; landing-রো-তে verdict-plane ফাঁকা থাকার নোট।
-- Worklog r3 landed (PR #3970, 07:31+08): tower tool-plane census 158 → 20
-  (github.* লেন absent), Invariants 5 → 6 (Full-Scope Completeness)।
+- Worklog সারি: r1 (PR #3691, 02:38+08) task-3661 claim race-এ সৎ হার, winner
+  PR #3675 — zero duplicate; r2 (PR #3769, 04:31+08) P0 #3663 closed প্রমাণিত;
+  r3 (PR #3970, 07:31+08) tower tool-plane census 158 → 20 + Invariants 5 → 6;
+  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census,
+  `callerAuthenticated: true`, R63/#2343 close-out live।
 
-## 2026-10-31 08:27+08 সাইকেল — board collapse: saturation → খালি
+## 2026-10-31 12:27+08 সাইকেল — bare-invocation চুক্তি + board revival
 
-1. Door honored; worktree origin/main `fa5b4e2` (0 behind); preflight zero
-   open P0।
-2. **Board collapse (first-hand census):** 97 → 54 → 58 → **2 rows** এই সাইকেলে;
-   `bridge_work_queue` (authenticated) তারপরই **totalOpen: 0** — fleet
-   সেকেন্ড-স্কেলে শেষ দুটো row-ও সেরে ফেলেছে। টানা NO-PICK: ৪র্থ সাইকেল।
-   GLM-14-এর cycle-13 sweep (PR #4014, HEAD) ও "board empty" রিপোর্ট করেছে —
-   স্বাধীন নিশ্চিতকরণ।
-3. **RBAC-পরবর্তী প্রথম ইতিবাচক সংকেত:** `bridge_work_queue` এখন
-   `callerAuthenticated: true` — গত সাইকেলের anonymous-viewer কালো অবস্থা
-   থেকে tower টুল-কল এখন authenticated পাচ্ছে (২০-টুল plane-এ)।
-4. **R63/#2343 bootstrap-gap close-out live:** loop-এর hooks-path probe এখন
-   নিশ্চুপ "stays dark" নয় — `scripts/ops/activate_githooks.py --activate`
-   (idempotent, report-only `--verify`) এক-লাইন প্রতিকার সাজেস্ট করে; রিপো-সাইড
-   root-cause fix landed।
-5. `--allow-adhoc` `task-adhoc` envelope → এই r4; baseSha compose-time পিন,
-   সাথে সাথে submit (#3655-r4 শ্রেণি প্রতিরোধ)।
+1. Door honored; worktree origin/main `7c6e346`; loop-start freshness
+   auto-rebase সৎভাবে কাজ করেছে (1 behind → rebased); preflight zero open P0।
+2. **CLI-চুক্তি পরিবর্তন (root-cause অ্যাপটেশন, drift নয়):** #4097 (6de2c60)
+   সব extraneous flag (`--task-envelope`, `--allow-adhoc`, `--issue`…) সরিয়ে
+   bare continuous execution enforce করেছে; `parse_known_args()` অজানা flag
+   নীরবে ফেলে দেয় বলে envelope-mode কোড CLI থেকে অপারেবল। আগের সাইকেলের
+   `--allow-adhoc` এনভেলপ-প্যাটার্ন বাতিল — bare invocation-ই এখন dispatch
+   চুক্তি; NO-PICK receipt সরাসরি single write-gateway-এ যায়।
+3. **Board revival:** 0 (08:27) → 9 → 10 rows — সবই landing-cohort
+   identity/report WO (GLM-14 r12/r13, GLM-16 r5/r6, GLM-20 r3, GLM-22 r5,
+   GLM-31 sentry); 0 rows in-gates; claimable 0/5 — টানা NO-PICK: ৫ম সাইকেল।
+4. `callerAuthenticated: true` অপরিবর্তিত (RBAC-পরবর্তী ২য় সাইকেল); #4177
+   Board-Freshness pre-push gate (`.githooks/`) এখন loop-এর hooks-path
+   probe-এ এক-লাইন activation সাজেস্ট করছে।
 
 No code change; no closure request; report-only.
