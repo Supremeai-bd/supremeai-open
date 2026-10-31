@@ -62,30 +62,27 @@
 - Blind-ladder class open past #4138's tier-9: 12 red faces invisible to the ladder while --verify-only prints 9/9 PASS (glm19 #4151).
 - CVE lanes: js/npm 2-red census re-proven live at 062f8efd (npm: follow-redirects@1.16.1 devtools-audit GHSA-mrwp-f3q8-3g9p; js: 6 pairs) — glm28 OSV-verified owner recipe #4204/#4203 receipt-covers it; pin bumps are maintainer decisions (both guards' own routing), NOT agent-lane work.
 - py-plane pip-audit blind lane (my 14:04+08 census): #2114 has since FLOORED the poetry plane (filelock x6, pillow x78 now in baseline); my locally-audited NEW ids (filelock 20, pillow 17) stay baseline-excluded → owner lane unchanged (maintainer pin/range bump or admin re-floor); this cycle's re-verification honest-skipped (pip-audit absent in sandbox). Latent red `test_live_check_passes_at_landing_head` unchanged. Baseline may never grow; I touch nothing.
-- RESOLVED (22:04+08, was-STRANDED): all 8 superseded glm04 PRs (#4306 + probes #4277/#4283/#4289/#4291/#4297/#4299/#4304) are now closed-unmerged — r5's U5 declaration drove a clean maintainer/admin sweep (board 28→3 open, PR plane 25→2). Zero agent action needed; kept here one cycle as closure receipt.
+- STRANDED-lane CLOSED (receipt in r6 #4432 / cycle log): all 8 superseded glm04 PRs verified closed-unmerged 22:04+08; item removed from watch list per its own one-cycle contract.
 
 ## বাংলা সারসংক্ষেপ
 
 স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, tower-টুল-নাম-ঢেউয়ের দ্বিমুখী
 সত্য (dotted↔underscore — এক-বানান গেট জীবিত টুলকেও মিথ্যা-অন্ধকার দেখায়; নিরাময়
-#4264, টেস্ট-পিনড), তিনটি disjoint liveness plane, radar-নম্বর hygiene। এই চক্রের
-বিজয়: r5-এর U5-অবসমাপ্তি ঘোষণা তার সম্পূর্ণ ফল দিল — ৮/৮ ঝুলন্ত PR (worklog-r4
-#4306 + ৭টি probe) এখন সব closed-unmerged; মেইনটেইনার/অ্যাডমিনের পরিষ্কার-ঝাড়ুতে
-বোর্ড ২৮→৩, PR-plane ২৫→২। পরিচ্ছন্ন-যুগের শিক্ষা: সৎ অবসমাপ্তি-ঘোষণাই বর্জ্য-
-পরিষ্কারের যান্ত্রিক ট্রিগার — এজেন্টের PR-বন্ধ টুল না থাকলেও ঘোষণা যথেষ্ট।
-py-plane অন্ধ-লেন: মালিক-লেন অপরিবর্তিত, এই চক্রে pip-audit অনুপস্থিত, পুনঃপ্রমাণ
-honest-skip। এই ফাইলই আমার একমাত্র worklog; প্রতিটি watch item receipt-covered —
-re-file duplicate হবে।
+#4264, টেস্ট-পিনড), তিনটি disjoint liveness plane, radar-নম্বর hygiene, আর পরিচ্ছন্ন-
+যুগের শিক্ষা: সৎ অবসমাপ্তি-ঘোষণাই বর্জ্য-পরিষ্কারের যান্ত্রিক ট্রিগার — এজেন্টের
+PR-বন্ধ টুল না থাকলেও ঘোষণা যথেষ্ট (র5-ঘোষণা → ৮/৮ closed-unmerged, র6-রসিদ →
+watch-তালিকা থেকে মুছল র7, নিজের এক-চক্র-চুক্তি মেনে)। py-plane অন্ধ-লেন: মালিক-লেন
+অপরিবর্তিত, এই চক্রে pip-audit অনুপস্থিত, পুনঃপ্রমাণ honest-skip। এই ফাইলই আমার
+একমাত্র worklog; প্রতিটি watch item receipt-covered — re-file duplicate হবে।
 
 ## Cycle log (append one line, prune on your own cycle per keep-it-small)
 
-- **2026-10-31 11:04→19:04+08 (condensed)** — leasegate arc end-to-end (triage
+- **2026-10-31 11:04→22:04+08 (condensed)** — leasegate arc end-to-end (triage
   #4125 → glm12 #4138 → GREEN 36 passed; r2 #4183); py-plane pip-audit blind-lane
   discovery (filelock/pillow NEW-DRIFT, osv-verified; r3 #4217); r4-absorb: r4's
-  loop-fix + triage landed as #4264/#4305, r5 declared the 8 stranded glm04 PRs
-  superseded (#4369).
-- **2026-10-31 22:04+08** — loop clean (claimable 0/5, P0 none, board 3 rows).
-  CLOSURE RECEIPT: all 8 superseded glm04 PRs now closed-unmerged (2 at 20:04,
-  remaining 6 verified this cycle) — r5's declaration fully honored; watch item
-  → RESOLVED, removed next cycle. Fleet-wide sweep visible (open PRs 25→2).
-  Worklog r6 in-place (this patch). No claim, no baseline/pin edits.
+  loop-fix + triage landed as #4264/#4305; r5 declared 8 stranded glm04 PRs
+  superseded (#4369); closure receipt: all 8 closed-unmerged (r6 #4432).
+- **2026-10-31 23:04+08** — loop clean (claimable 0/5, P0 none, board 7 rows,
+  satellite-mirror wave #4451..#4453 landed). r6's RESOLVED line removed per its
+  one-cycle contract (receipt lives in r6/cycle log). Worklog r7 in-place (this
+  patch). No claim, no baseline/pin edits.
