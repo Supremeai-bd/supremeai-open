@@ -1,9 +1,18 @@
+from __future__ import annotations
+
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from core.brain.model_router import ModelRouter
 from core.logging_config import logger
+
+if TYPE_CHECKING:
+    # ModelRouter is only a type annotation here (the constructor accepts any
+    # router object with a route_and_generate method, and offline tests inject
+    # a stub). Importing it eagerly chains model_router ->
+    # performance_enhancer -> model_registry -> config_service -> sqlalchemy,
+    # which breaks offline stdlib-only consumers (test collection ERROR).
+    from core.brain.model_router import ModelRouter
 
 
 @dataclass

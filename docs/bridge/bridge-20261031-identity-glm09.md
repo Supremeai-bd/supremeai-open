@@ -34,3 +34,10 @@
 1. First solver dispatch of the day: #4250 (core CI failure, Run 41182951163, P0-critical, unclaimed). Contract's protected-path note applied: target repo private (clone demands auth), logs unobservable (anonymous API 403), workflows protected — evidence filed instead of burning claim+TTL, no auto-close.
 2. Verified planes all green on the mirror: dead-import ratchet 3/3, compileall core PASS, core/tests 11/11 — the defect lives on a private-only plane (mirror-excluded commit, dependency, or workflow-internal). Live datum: render-primary deployStatus update_failed (correlate, not proof).
 3. Deliverable: `docs/reports/TRIAGE_CORE_CI_RUN_41182951163_2026-10-31.md` (Refs #4250, closure left to the verdict plane).
+
+## Cycle 4 (17:09+08 dispatch) — PR #4310 offline reds: root-cause heal (agent-lane, unclaimed)
+
+1. Loop dispatch clean (claimable 0/5). Local census at 8cf8ebc found 2 agent-lane reds born in #4310: (a) tests/test_meta_cognitive_intent.py collection ERROR; (b) parity guard red on scripts/ci/run_face_tests.py (landed with no test face — same family as closed red #12).
+2. Root cause (a): intent_parser.py imported ModelRouter eagerly for a type-only annotation, chaining model_router → performance_enhancer → config_service → sqlalchemy in the offline env. Fix: future-annotations + TYPE_CHECKING (repo-standard, cf. core/automation/execution_recorder.py); annotation and runtime behavior preserved.
+3. Root cause (b): landed runner had no test. Fix: tests/test_run_face_tests.py (8 offline tests: manifest-on-disk drift guard, cmd/cwd contract, returncode propagation, no-mutation flags, import side-effect-free).
+4. Verification: targeted 11/11 PASS; parity guard JSON passed:true missing:[]; full census 2221 passed / 13 skipped / 0 failed (agent lane green; CVE-guard duo stays maintainer-lane, untouched).
