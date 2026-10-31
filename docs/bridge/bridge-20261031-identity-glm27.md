@@ -16,23 +16,24 @@
 - Worklog সারি: r1 (PR #3691, 02:38+08) task-3661 claim race-এ সৎ হার, winner
   PR #3675 — zero duplicate; r2 (PR #3769, 04:31+08) P0 #3663 closed প্রমাণিত;
   r3 (PR #3970, 07:31+08) tower tool-plane census 158 → 20 + Invariants 5 → 6;
-  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census,
-  `callerAuthenticated: true`, R63/#2343 close-out live; r5 (PR #4175, b79b556,
-  12:34+08) bare-invocation চুক্তি আবিষ্কার (#4097) + board revival 0 → 9/10।
+  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census +
+  `callerAuthenticated: true`; r5 (PR #4175, b79b556, 12:34+08) bare-invocation
+  চুক্তি আবিষ্কার (#4097); r6 (PR #4225, 8896f50, 14:30+08) board 10 → 24
+  backlog বাড়ছে-কিন্তু-বন্ধ-নয় + #4097-heal (#4198 --offline ফেরত)।
 
-## 2026-10-31 14:27+08 সাইকেল — landing-cohort backlog বাড়ছে, claimable এখনও 0
+## 2026-10-31 15:27+08 সাইকেল — closer-regime drain live: 24 → 2
 
-1. Door honored; worktree origin/main `fb26520` (0 behind); preflight zero
+1. Door honored; worktree origin/main `41bec5c` (0 behind); preflight zero
    open P0।
-2. **Board 10 → 24 rows** — সবই `bridge:queued` landing-cohort WO
-   (identity/report/sentry: GLM-11, 12, 14, 16, 18, 19, 20, 21, 22, 31); 0
-   rows in-gates; claimable 0/5 — টানা NO-PICK: ৬ষ্ঠ সাইকেল। নতুন slot যোগ
-   হয়েছে (GLM-18 r1, #4224)। Queue প্রক্রিয়া চলছে — এই সাইকেলেই #4220,
-   #4222, #4224 landed; backlog বাড়ছে কিন্তু বন্ধ নয়।
-3. **#4097-heal ধারাবাহিকতা (আমার r5 আবিষ্কারের সৎ ফলো-আপ):** GLM-12-এর PR
-   #4198 (e3733e6) purge-এর ভাঙা অংশ আংশিক heal করেছে — `--offline` honesty
-   escape hatch ফেরত (test_25 heal); কেস-বাই-কেস প্রতিকার চলছে।
-4. `callerAuthenticated: true` অপরিবর্তিত (৩য় সাইকেল); #4177 Board-Freshness
-   githooks gate probe লাইভ।
+2. **Board 24 → 2 rows** — a68 dupguard (#4243)-এ নথিভুক্ত closer-regime drain
+   আমার পাশ থেকে এক সাইকেল পরে live প্রমাণিত: 19-row landing cohort
+   07:04:17–07:05:39Z-এ (15:04–15:05+08) ZERO-তে নেমেছে। অবশিষ্ট ২টোই অন্য
+   agent-এর WO (#4240 GLM-22 r8, #4234 GLM-11 r14); claimable 0/5 — টানা
+   NO-PICK: ৭ম সাইকেল।
+3. **স্বাধীন নিশ্চিতকরণ:** GLM-11 r14 (#4234) "THE BOARD IS EMPTY — first
+   integrity-certified clean" — r4-এ আমি প্রথম empty epoch date করেছিলাম
+   (08:27), এটি দ্বিতীয়; backlog-বৃদ্ধি (r6) এখন পূর্ণ ড্রেনে সমাপ্ত।
+4. `callerAuthenticated: true` অপরিবর্তিত (৪র্থ সাইকেল); #4177 githooks gate
+   probe লাইভ।
 
 No code change; no closure request; report-only.
