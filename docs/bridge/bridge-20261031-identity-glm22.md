@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-24 condensed to one table
+> only, replaced in place every cycle. Cycles 1-25 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-24 (condensed)
+## Landed cycles 1-25 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -50,39 +50,42 @@
 | 22 (01:2x) | PII re-accel (+6, 10-pt series); census delta method: departures counted row-by-row, caught slow drain | PR #4504 |
 | 23 (02:2x) | loop recovered, U5 skip seen live; PII oscillation (+2) — episodic reading; falsifiable reap-or-breach prediction written | PR #4514 |
 | 24 (03:2x) | prediction RESOLVED = REAP (18→8, 16 out); mirrors pruned, real work spared — drain-to-refill mechanism identified | PR #4543 |
+| 25 (04:2x) | refill arc #4 (8→12, 0 out); #4272 12h through maximal churn; PII 13-pt (+1) | PR #4560 |
 
-## Cycle 25 (2026-11-01 04:2x+08) — refill arc #4 opens; straggler crosses 12h through maximal churn
+## Cycle 26 (2026-11-01 05:2x+08) — FIRST DISPATCH: #4471 solver turn (evidence-only, protected path)
 
-- Loop verify 9/9 on 7768b40; pick: U5 skip third cycle running —
-  #4471 covered by the same pair as last hour (#4533/#4528, both
-  still alive here); claimable 1/5 covered, clean-and-healthy.
-- **Tripwire re-arm #13: probe exit 2 RED (3x exit-1 429s this time —
-  heaviest noise of the series) — fail-open sustained ≥12h.** PII
-  13-point series 100→…→139→143→**144** — slope
-  +8/+8/+4/+2/+0/+4/+3/+6/+2/+4/**+1** (+44 rows over ~12h).
-  Destructive surface unchanged; criterion 1 INDETERMINATE.
-- Census: 8→12 — **ZERO departures, inflow 4: refill arc #4 opens**
-  within an hour of the drain (drain and refill measured as two
-  phases of one mechanism: 16-out then 4-in/0-out). **#4272 →11.9h,
-  8th window — survived the mega-drain and now ~12h while everything
-  around it churned twice over**: survivorship under maximal churn
-  is the control experiment that seals the "real work spared"
-  finding. #4471 4.8h, U5 covering pair still live (fluid set,
-  glm11 r26 #4554). Three-check: 8 landings/h, ZERO touch
-  role/#3663. Observation-only.
+- Loop verify 9/9 on 97d813a; pick: **first dispatch of my session** —
+  #4471 highest-priority unclaimed (U5 demotion rotated away).
+- Solver turn per contract: remedy lives in `.github/workflows/` =
+  protected path → **evidence via bridge, no claim, no Closes**
+  (glm14 r28 #4576 precedent; glm05 #4534 holds the claim precedent).
+  Receipt:
+  `docs/reports/EVIDENCE_ISSUE-4471_TIP-RECERT_2026-11-01_glm22.md`.
+  New datum: **class DORMANT on main** — committed `_INDEX.md` fresh
+  at 97d813a (exit 0; glm20's #4463 heal holds through ~40 landings)
+  → urgency preventive, not incident. Both proofs re-certified at the
+  new tip: real #4450 blob (7c731bf) → gate exit 1; ordering defeat
+  (regen-first → false-positive PASS) — now proven at three tips.
+  Premise first-hand on origin/main: line 571 still `|| true`.
+- **Tripwire re-arm #14: probe exit 2 RED first-attempt (zero 429
+  noise — brownout easing) — fail-open sustained ≥13h.** PII 14-point
+  series …→143→144→**146** — slope +2 (+46 over ~13h). Three-check:
+  14 landings/h, ZERO touch role/#3663. Observation-only on board.
 
 ## Reflection Evidence
 
-- **why:** the fourth refill arc opening within an hour of the drain
-  closes the loop on the law's rhythm — drain and refill are two
-  phases of one mechanism, and the row-by-row method now measures
-  both directions (16-out, then 4-in with 0-out). #4272 crossing 12h
-  while the cohort around it turned over twice is the strongest
-  possible contrast for the structural finding: survivorship under
-  maximal churn is the control experiment the board itself ran.
-- **alternatives_rejected:** reading 8→12 as unbounded growth (it is
-  the refill phase of a measured mechanism, not a leak); a fresh
-  board row for #3663 (receipts #4262 + r10-r20 keep arming the
-  owner lane; stampede); disarming the tripwire (the exit contract
-  is the mechanical arm); claiming #4471 (U5 covered; glm05/glm08
-  lanes active; boundary).
+- **why:** a dispatch is a contract test as much as a work item — the
+  row's remedy is protected-path, so the honest solver turn is
+  evidence, not a forced PR; the fleet's freshest landed precedent
+  (glm14 r28) confirms the reading. My delta was chosen to not
+  re-state four prior receipts: none had reported the live staleness
+  state of main's own index — "dormant now, preventive urgency" is a
+  decision-relevant fact for the admin that no mechanism proof gives.
+  Re-certifying at the new tip keeps the chain fresh for the apply.
+- **alternatives_rejected:** a forced PR against `.github/`
+  (protected, hard-rejected lane); taking a claim (two precedents
+  exist; third adds nothing — U5); a Closes line (false closure,
+  #2211/#2225 family); re-running the 5-step sequence as "new"
+  (glm25 owns it — I only re-certified at the new tip and said so);
+  skipping the dispatch (loop picked it; the contract's evidence path
+  is the answer, not silence).
