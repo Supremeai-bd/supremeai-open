@@ -1,6 +1,6 @@
-# GLM Agent 32 (Job 486850) — Slot Receipt r3
+# GLM Agent 32 (Job 486850) — Slot Receipt r4
 
-> In-place replace of r2 per the keep-it-small contract (earlier cycles'
+> In-place replace of r3 per the keep-it-small contract (earlier cycles'
 > detail lives in the landed PRs listed below). Identity: heartbeat slot
 > `agent-32` (TTL 300s, refreshed every cycle), hourly cron trace class
 > `...-cron-agent-loop-*`, zero-credential anonymous surface, door honored.
@@ -23,11 +23,13 @@
 | c76 | red-drain verified (12→2, root-fixes e3733e6+6e3b3a0); CVE flagged 1st | c59200c (#4208) |
 | c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | 78732bd (#4248, merged 07:47:14Z) |
 | c80 | tower restoration corroborated at 4 faces (census 158, sweep-allowed ends 15-pass deny, health 12→21, PR-plane back); 4-red census with scanner-diff attribution; render 6th charge + scraper first negative move; redis 3-face flux; CVE 3rd flag | 3898d2b (#4340) |
-| c81 | lane-clean chain verified (both PRs landed); test 4→2 heal validating the c80 attribution; CVE single-offender map — all 6 js pairs + npm pair from one commit 97ab568 (#3072); render 6-service census r1 frozen pair-read; telegram 3-face sub-2-min flapping class; redis joint soft-threshold cooldown 11-01T00:01Z | this filing |
+| c81 | lane-clean chain verified (both PRs landed); test 4→2 heal validating the c80 attribution; CVE single-offender map — all 6 js pairs + npm pair from one commit 97ab568 (#3072); render 6-service census r1 frozen pair-read; telegram 3-face sub-2-min flapping class; redis joint soft-threshold cooldown 11-01T00:01Z | 455f71e (#4366) |
+| c82 | redis face-split 2nd proof (hb wrote secondary while sweep lists it cooled-down) + first mixed residency; render latency storm (1-3 s lats) over a FROZEN billing pair-read; brain's first red (non-2xx x2); telegram 4th flap window (sweep healthy but 3886 ms); CVE pair 5th flag, offender map stable, no maintainer action; tower PR-list face unstable (different sets back-to-back, #4354-class mild); board 28→10 reap; suite 82.6→141.1 s | this filing |
 
 ## Standing residuals I track (report-only)
 
-- **CVE bump** — maintainer lane; recipe #4204; follow-redirects 4th-flagged (c76/c77/c80/c81); c81 adds the single-offender map: all 6 js pairs + npm pair from one commit 97ab568 (PR #3072 re-locked studio + added devtools-audit lock).
-- **Landing-gate lag** — clear on my lane this pass (both my PRs landed; zero stranded); fleet ghost-lag 1 visible instance (#4359 WO open, its PR #4360 landed).
+- **CVE bump** — maintainer lane; recipe #4204; c81 single-offender map (97ab568, PR #3072) stable and complete — pair 5th-flagged through c82, no new offenders, no maintainer action yet.
+- **Landing-gate lag** — clear on my lane (c81 landed in ~2 min); fleet ghost-lag reaped (board 28→10 WOs by c82).
 - **Option A config half** (agent_cadence.json under #4125) — owner decision pending.
+- **Tower face-trust rules (earned c81-c82)**: list-face cohort counts are unreliable in burst windows (verify per-PR); "cooldownUntil" is face-scoped, never global; tower hostname rotates in 216.24.57.x /24 (record the /24, not the v4).
 - Day-off-slip date convention (one sibling lane, last seen c80) — logged, non-adversarial.
