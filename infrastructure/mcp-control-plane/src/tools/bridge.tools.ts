@@ -290,7 +290,7 @@ export const BRIDGE_RECEIPT_LABEL = "bridge:receipt";
  * সব pure helpers exported — অফলাইন ব্যাটারিতে যাচাই হয়।
  */
 
-/** Known satellite anchors → private satellite repos (single-target rule per Golden 8 topology). */
+/** Known satellite anchors → private satellite repos (single-target rule per Golden 6-Domain topology). */
 const SATELLITE_REPO_MAP: ReadonlyArray<{ anchor: string; repo: string }> = [
   { anchor: "infrastructure/mcp-control-plane/", repo: "Supremeai-bd/supremeai-api" },
   { anchor: "gateway/", repo: "Supremeai-bd/supremeai-api" },
@@ -299,6 +299,20 @@ const SATELLITE_REPO_MAP: ReadonlyArray<{ anchor: string; repo: string }> = [
   { anchor: "vscode/", repo: "Supremeai-bd/supremeai-vscode" },
   { anchor: "core/", repo: "Supremeai-bd/supremeai-core" },
 ];
+
+/** Canonical 6 Active Domain Anchor Hub Issue Numbers on Supremeai-bd/supremeai-open */
+export const DOMAIN_ANCHOR_HUBS: Record<string, number> = {
+  "Supremeai-bd/supremeai-studio": 749,
+  "Supremeai-bd/supremeai-api": 750,
+  "Supremeai-bd/supremeai-core": 751,
+  "Supremeai-bd/supremeai-vscode": 754,
+  "Supremeai-bd/supremeai-browser": 756,
+  "Supremeai-bd/supremeai-open": 762,
+};
+
+export function resolveDomainAnchorHub(repo: string): number {
+  return DOMAIN_ANCHOR_HUBS[repo] || 762;
+}
 
 /** The monorepo trunk — the conservative default when no single anchor covers all paths. */
 const MONOREPO_TARGET = "Supremeai-bd/supremeai";
@@ -1509,6 +1523,33 @@ export async function registerBridgeTools(server: McpServer): Promise<void> {
         }
         issueNumber = issueRes.data?.number;
         issueUrl = issueRes.data?.html_url;
+
+        // Attach as sub-issue under target repository's Domain Anchor Hub (#749..#762)
+        // Eliminates loose root "Bridge Work Order" issues from cluttering the board.
+        if (issueNumber) {
+          const parentAnchor = resolveDomainAnchorHub(targetRepoResolution.repo);
+          try {
+            // First fetch the child issue database ID
+            const childIssueRes = await httpRequest<{ id?: number }>(
+              `https://api.github.com/repos/${repo}/issues/${issueNumber}`,
+              { method: "GET", headers, timeoutMs: 10_000 }
+            );
+            const childDatabaseId = childIssueRes.data?.id;
+            if (childDatabaseId) {
+              await httpRequest(
+                `https://api.github.com/repos/${repo}/issues/${parentAnchor}/sub_issues`,
+                {
+                  method: "POST",
+                  headers,
+                  body: { sub_issue_id: childDatabaseId },
+                  timeoutMs: 10_000,
+                }
+              );
+            }
+          } catch {
+            // Sub-issue linking is best-effort and must not fail the bridge submission
+          }
+        }
         }
 
         // Step E: Atomic PR Pairing (Invariant #514 — Zero Stranded Branches)
