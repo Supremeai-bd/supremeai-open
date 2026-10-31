@@ -28,9 +28,38 @@ export default function HolographicHero({
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
 
+  // Drag state for floating mode
+  const [position, setPosition] = useState({ x: 30, y: window.innerHeight - 480 });
+  const isDraggingRef = useRef(false);
+  const dragOffsetRef = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
     setInternalState(state);
   }, [state]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!isDocked) return;
+    isDraggingRef.current = true;
+    dragOffsetRef.current = {
+      x: e.clientX - position.x,
+      y: e.clientY - position.y,
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isDraggingRef.current) return;
+    const newX = Math.max(10, Math.min(window.innerWidth - 340, e.clientX - dragOffsetRef.current.x));
+    const newY = Math.max(10, Math.min(window.innerHeight - 460, e.clientY - dragOffsetRef.current.y));
+    setPosition({ x: newX, y: newY });
+  };
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false;
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+  };
 
   // Setup Web Speech recognition if supported in WebView
   useEffect(() => {
@@ -75,7 +104,6 @@ export default function HolographicHero({
 
   const handleMicToggle = () => {
     if (!recognitionRef.current) {
-      // Fallback demo simulation if browser mic permission or speech API isn't present
       if (!isListening) {
         setIsListening(true);
         setInternalState('listening');
@@ -105,10 +133,18 @@ export default function HolographicHero({
 
   const avatarSrc = activeModel === 'cortana' ? HOLO_AVATAR_CORTANA : HOLO_AVATAR_IRIDESCENT;
 
+  const floatingStyle: React.CSSProperties = isDocked
+    ? {
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+      }
+    : {};
+
   return (
     <div
+      style={floatingStyle}
       className={`holo-container ${
-        isDocked ? 'holo-container--docked' : 'holo-container--immersive'
+        isDocked ? 'holo-container--floating' : 'holo-container--immersive'
       }`}
     >
       {/* Background Cyber Floor Projector (visible in 90% full immersive view) */}
@@ -120,29 +156,40 @@ export default function HolographicHero({
         </>
       )}
 
-      {/* Floating Header Controls */}
-      <div className="holo-controls-bar">
+      {/* Floating Header / Drag Handle */}
+      <div
+        className={isDocked ? 'holo-drag-handle' : 'holo-controls-bar'}
+        onMouseDown={handleMouseDown}
+        title={isDocked ? 'Click & Drag to move hologram anywhere' : ''}
+      >
         <div className="holo-badge">
           <span className="holo-status-dot" />
-          <span>HOLO-AI // {internalState.toUpperCase()}</span>
+          <span>{isDocked ? '⠿ DRAG ME' : `HOLO-AI // ${internalState.toUpperCase()}`}</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '6px' }}>
           {/* Avatar Switcher */}
           <button
             className="holo-btn-action"
-            onClick={() =>
-              setActiveModel((m) => (m === 'cortana' ? 'iridescent' : 'cortana'))
-            }
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveModel((m) => (m === 'cortana' ? 'iridescent' : 'cortana'));
+            }}
             title="Switch Holographic Model"
           >
-            Model: {activeModel === 'cortana' ? '⚡ Cyber-Wireframe' : '✨ Iridescent'}
+            {activeModel === 'cortana' ? '⚡ Cyber' : '✨ Glow'}
           </button>
 
           {/* Dock / Expand Toggle */}
           {onToggleDock && (
-            <button className="holo-btn-action" onClick={onToggleDock}>
-              {isDocked ? '⤢ 90% Immersion' : '◨ Dock to Side'}
+            <button
+              className="holo-btn-action"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleDock();
+              }}
+            >
+              {isDocked ? '⤢ 90%' : '◨ Mini'}
             </button>
           )}
 
@@ -151,7 +198,10 @@ export default function HolographicHero({
             <button
               className="holo-btn-action"
               style={{ color: '#ff7b7b' }}
-              onClick={onClose}
+              onClick={(e) => {
+                e.stopPropagation();
+                onClose();
+              }}
             >
               ✕
             </button>
@@ -160,15 +210,8 @@ export default function HolographicHero({
       </div>
 
       {/* Main Holographic Avatar Stage */}
-      <div
-        className={`holo-avatar-wrapper holo-avatar-wrapper--${internalState}`}
-      >
-        <img
-          src={avatarSrc}
-          alt="Holographic AI Companion"
-          className="holo-avatar-img"
-        />
-        {/* Fine Scanlines Layer */}
+      <div className={`holo-avatar-wrapper holo-avatar-wrapper--${internalState}`}>
+        <img src={avatarSrc} alt="Holographic AI Companion" className="holo-avatar-img" />
         <div className="holo-scanlines" />
       </div>
 
@@ -183,7 +226,7 @@ export default function HolographicHero({
               ? 'Synthesizing neural telemetry...'
               : internalState === 'speaking'
               ? 'Broadcasting response across system channels.'
-              : 'SupremeAI Neural Hologram online. Tap the mic or start typing.')}
+              : 'SupremeAI Neural Hologram online. Tap the mic or type.')}
         </div>
 
         {/* Microphone Push-to-Talk */}
@@ -193,13 +236,12 @@ export default function HolographicHero({
           title="Push to Talk"
         >
           {isListening ? (
-            <span style={{ fontSize: '20px' }}>⏹</span>
+            <span style={{ fontSize: '18px' }}>⏹</span>
           ) : (
-            <span style={{ fontSize: '22px' }}>🎙️</span>
+            <span style={{ fontSize: '20px' }}>🎙️</span>
           )}
         </button>
       </div>
     </div>
   );
 }
-
