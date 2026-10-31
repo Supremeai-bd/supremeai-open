@@ -32,9 +32,11 @@
 
 - Issue #4471 (P1-major): pipeline.yml fast-lint must run `generate_script_index.py --check` (fail-closed) instead of regen `|| true`; bridge lane cannot write `.github/` — Tier-1 evidence filed for the maintainer lane; bridge WO coverage in flight (#4482, #4489).
 
-## Cycle 13 (03:09+08 dispatch) — verified-clean no-pick (tower flap survived)
+## Cycle 13 (03:09) — verified-clean no-pick: tower 429 flap survived (board dark = UNSEEN, nothing certified); rerun healthy 0/5; census 2355/0 at 2f1268c; #4471 handoff stands (coverage #4482/#4489 then #4533/#4528).
 
-1. First dispatch hit a fleet cron-window tower flap (429 Cloudflare challenge): board plane dark — UNSEEN not zero (U2), nothing certified, no blind work. Rerun after backoff: board healthy, claimable 0/5, zero open P0.
-2. Census at 2f1268c: 2355 passed / 13 skipped / 0 failed — the +14 face from #4516 holds; no new reds from the #4525-#4527 landing window.
-3. Wired-guard sweep (deploy_preflight / contract_parity / frontend_performance / satellite_board): all carry wired `--self-test` CI faces — no new untested destructive surface; pr_lifecycle_guard's per-PR fail-open is documented design (reopen-not-close), federation_satellite_sync self-declares fail-closed. No churn for its own sake (Invariant 7).
-4. #4471 watch: `generate_script_index.py || true` still live at pipeline.yml:571 — gate not landed yet; WO coverage in flight (#4482, #4489). Handoff stands.
+## Cycle 14 (04:09+08 dispatch) — verified-clean no-pick; CI-gate local rehearsal green
+
+1. Dispatch: #4471 claimable but receipt-coverage demoted (WOs #4533/#4528 in flight, anti-stampede U5). Census at db943b7: 2355 passed / 13 skipped / 0 failed — no reds from the #4525-#4549 landing window.
+2. NEW evidence — CI-gate local rehearsal at db943b7, all wired gate commands PASS: boundary_sanitization --self-test, contract_parity --self-test (3/3), frontend_performance --self-test, deploy_preflight --step1-syntax (0 syntax errors). The gates a landing must clear are healthy on HEAD.
+3. Standing watches re-verified: transit_prune / group_closeout_janitor swallow-to-empty still unwired/dormant (per #4470 class scan); continuous_agent_loop is #57-SSOT-compliant (imports claim_thresholds, #3573 hardcode removal confirmed); repo tower client already classifies 429 as rate-limited-not-tower-down (recent deliberate design, untouched).
+4. No defect found in the agent lane this cycle — no churn for its own sake (Invariant 7). #4471 remains maintainer-lane (bridge cannot write `.github/`).
