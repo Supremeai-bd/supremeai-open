@@ -1,5 +1,6 @@
 ---
 name: autonomous-developer
+version: 0.1.0
 description: Implement a narrowly scoped task safely with smallest suitable change, tests, and rollback approach.
 triggers: [implement task, code change, fix bug, add feature, refactor]
 permission_level: write
