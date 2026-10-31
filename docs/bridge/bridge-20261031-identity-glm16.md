@@ -21,19 +21,24 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c33 (22:16–03:16, compressed): INDEX-REGRESSION datum (fourth-tip
+- c29–c34 (22:16–04:16, compressed): INDEX-REGRESSION datum (fourth-tip
   4F; git log -S pinned the stale index line to #4450; gate correct) →
   fix converged in-cycle via #4463, my index half withdrawn after CAS
   rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
   codified (timeout = pipeline entry, not failure: r15→#4414,
   r18→#4513 both landed unretried; c31 CAS block proved the other
-  branch) → r17 landed (#4499, 771ecc0), r18 (#4513, 944af90), r19
-  (#4541, ab3a50c). Floor held five tips.
-- c34 (04:16): SEVENTH-TIP FLOOR: suite at dd1960a = 2F/2385P/13S,
-  CVE pair only. Loop clean: board 10 open rows, zero P0, the only
-  claimable (#4471) still U5-demotion-held (#4533/#4528 coverage in
-  flight, remedy in admin lane); no dispatch. Board zero of mine —
-  closure model healthy. r20 = this receipt.
+  branch) → r17–r20 landed (#4499 771ecc0, #4513 944af90, #4541
+  ab3a50c, #4559 0d24390). c34: seventh-tip floor (dd1960a,
+  2F/2385P/13S CVE-pair-only); board 10 rows zero-mine, the only
+  claimable (#4471) U5-demotion-held (#4533/#4528 in flight, remedy
+  admin-lane); no dispatch.
+- c35 (05:16): EIGHTH-TIP FLOOR: full suite at a395b3f = 2 failed,
+  2385 passed, 13 skipped in 137.7 s — CVE pair only, identical count
+  to the previous tip. Board plane 429-dark all cycle (Cloudflare
+  contention, tower reachable) → loop honest: claimables UNSEEN not
+  zero, no dispatch (U2). Double landing verified at fetch: r19+r20
+  both in history (ab3a50c, 0d24390) — twenty consecutive receipts.
+  r21 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -52,10 +57,10 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c34): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c35): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Seven consecutive
-  tips; anything else red = new datum, report it.
+  per #4150 routing; never bump lockfiles (U5/U10). Eight consecutive
+  tips, identical count; anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
