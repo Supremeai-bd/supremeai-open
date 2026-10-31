@@ -104,7 +104,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .session-badge--connected { color: #b9da7e; }
 .session-badge--offline { color: #e7a964; background: rgba(231,169,100,.08); border-color: rgba(231,169,100,.2); }
 .session-badge--offline i { background: #e7a964; box-shadow: 0 0 9px rgba(231,169,100,.45); }
-.conversation { position: relative; z-index: 1; display: flex; flex: 1; min-height: 0; flex-direction: column; overflow: auto; scrollbar-color: #3c4439 transparent; scrollbar-width: thin; }
+.conversation { position: relative; z-index: 1; display: flex; flex: 1; min-height: 0; flex-direction: column; justify-content: flex-end; overflow: auto; scrollbar-color: #3c4439 transparent; scrollbar-width: thin; }
 .welcome-wrap { display: flex; width: min(735px, calc(100% - 56px)); flex-direction: column; align-items: center; margin: auto; padding: 31px 0 26px; animation: reveal .55s cubic-bezier(.2,.75,.25,1) both; }
 .welcome-orbit { position: relative; display: grid; width: 101px; height: 101px; place-items: center; margin: 0 auto 24px; }
 .orbit-ring { position: absolute; border: 1px solid rgba(201,243,107,.12); border-radius: 50%; }
@@ -127,7 +127,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .prompt-card small { color: #778270; font-size: 9px; white-space: nowrap; }
 .prompt-card > svg { color: #65705e; }
 
-.message-list { display: flex; width: min(770px, calc(100% - 70px)); flex-direction: column; gap: 24px; margin: 0 auto; padding: 34px 0 26px; }
+.message-list { display: flex; width: min(770px, calc(100% - 70px)); flex-direction: column; justify-content: flex-end; min-height: 100%; gap: 24px; margin: 0 auto; padding: 34px 0 16px; }
 .message { display: flex; align-items: flex-start; gap: 12px; animation: message-in .25s ease both; }
 .message--user { justify-content: flex-end; }
 .assistant-mark { display: grid; flex: 0 0 29px; place-items: center; width: 29px; height: 29px; color: var(--acid); background: #20291b; border: 1px solid rgba(201,243,107,.18); border-radius: 9px; }
