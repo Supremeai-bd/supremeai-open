@@ -1,5 +1,4 @@
 from pathlib import Path
-import pytest
 from scripts.agents.incident_fingerprint import (
     compute_incident_fingerprint,
     extract_incident_fingerprint,

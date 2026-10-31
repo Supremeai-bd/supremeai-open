@@ -18,7 +18,6 @@ JSON-RPC error নয়, HTTP-200 success envelope-এর isError content-text
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 

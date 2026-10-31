@@ -197,7 +197,14 @@ def test_unused_import_ratchet_shrinks_only():
     total = sum(len(v) for v in scan.values())
     assert total <= BASELINE_UNUSED_IMPORTS, (
         f"unused-import debt grew: {total} > ratchet baseline {BASELINE_UNUSED_IMPORTS}. "
-        f"New offenders: {dict(list(scan.items())[:5])}. "
+        # Honesty note (post-#4153 lesson): the sample below is the
+        # alphabetically-first scan entries, NOT a growth diff — pre-existing
+        # baseline debt appears here too (a healer that trusts it will
+        # remediate the wrong files; the #4153-era triage misattributed new
+        # growth this exact way). Find the true growth by diffing this map
+        # against the scan at the commit that armed BASELINE_UNUSED_IMPORTS.
+        f"Offender sample (first {min(5, len(scan))} of {len(scan)} files; NOT a growth diff): "
+        f"{dict(list(scan.items())[:5])}. "
         "Remove the dead bindings (or mark deliberate re-exports with `# noqa: F401`), "
         "then lower the baseline — it is shrink-only."
     )
