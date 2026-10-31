@@ -55,6 +55,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [needsOtp, setNeedsOtp] = useState(false);
+  const [rememberDevice, setRememberDevice] = useState(true);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [role, setRole] = useState<AdminRole | null>(null);
   const [sessionEmail, setSessionEmail] = useState('');
@@ -112,7 +113,7 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setNotice('');
     try {
-      const result = await invoke<LoginResult>('admin_verify_totp', { otp });
+      const result = await invoke<LoginResult>('admin_verify_totp', { otp, rememberDevice });
       setOtp('');
       if (result.status !== 'authenticated' || result.role !== 'admin') {
         throw new Error('The verification service returned an invalid session.');
@@ -234,6 +235,10 @@ export default function AdminDashboard({ onClose }: { onClose: () => void }) {
                   <h2>Verify it’s you</h2>
                   <p className="admin-form-copy">Enter the six-digit code from your authenticator app.</p>
                   <label className="admin-field"><span>AUTHENTICATION CODE</span><input autoFocus inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="000000" /></label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', color: 'var(--muted)', cursor: 'pointer', margin: '4px 0 12px' }}>
+                    <input type="checkbox" checked={rememberDevice} onChange={(e) => setRememberDevice(e.target.checked)} style={{ accentColor: 'var(--acid)', width: '15px', height: '15px', cursor: 'pointer' }} />
+                    <span>Trust this desktop device (Save device — skip OTP for 30 days)</span>
+                  </label>
                   <button type="submit" className="admin-button admin-button--primary" disabled={busy || otp.length !== 6}>{busy ? 'Verifying…' : 'Verify and continue'}</button>
                   <button type="button" className="admin-text-button" onClick={() => { setNeedsOtp(false); setOtp(''); }}>Use a different sign-in</button>
                 </>
