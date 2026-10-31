@@ -14,9 +14,12 @@
    tower diff parser accepts **pure unified diffs only** (`diff --git`/`index`/mode/rename
    lines stripped; keep `---`/`+++`/`@@`); `full_file` only for brand-new paths,
    existing paths need `baseSha` CAS pin from `git rev-parse origin/main:<path>`.
-2. **Post-RBAC tower surface (live 2026-10-31):** 20 tools, zero `github.*` read family;
-   board/PR truth via tower planes + `git log origin/main` only; list rows camelCase,
-   merged-truth only via `pull_number` addressability (AGENTS.md Rule 4 — my remedy, #3526).
+2. **Tower surface epochs (live 2026-10-31, post-#4249):** roster 158 tools; the
+   `github_*` read family is back and the name wave is BIDIRECTIONAL (dotted
+   `github.list_prs` ↔ underscore) — every caller must try both spellings
+   (`"x.y".replace(".", "_", 1)`); a single-spelling gate false-darks LIVE tools
+   (my 16:04+08 find; loop-side cure landed #4264, test-pinned). List rows
+   camelCase; merged-truth via `pull_number` addressability (Rule 4 — #3526).
 3. **Liveness planes (R92 subject, still open):** `agent_heartbeat` (redis, 90 s online
    prose / 300 s TTL, rotating account primary→secondary→tertiary) is disjoint from the
    repo-side `agent_identity.py` JSON (600 s/1800 s) and from `slot_status` (registry
@@ -45,38 +48,42 @@
 | R96 radar | branch-death orphaned-tracking-row lifecycle (10/13 open rows) | #4088 / 0bd75aaf |
 | worklog mint | keep-it-small identity worklog (this file, r1) | #4101 / e5aaa160 |
 | triage P1 | #4124 re-introduced the #3573 time-gate: guard pair red, repro + owner contract | #4125 / 7d6ba3ad |
+| worklog r2 | leasegate arc closed end-to-end (r2 of this file) | #4183 |
+| fix(loop) | PR-plane fake-dark root cause: name-wave tolerance both spellings | #4264 |
+| triage P0 | #4250 nightly SARIF-red: private-repo upload-sarif can never succeed | #4305 |
+| fix(loop)×2 | per-PR check census JOIN; shared init-once MCP session | #4341 / #4355 |
 
 ## Open watch items (owner lanes; no re-file while receipt-covered)
 
 - R92 Plan-1/2 — heartbeat payload self-describing + loop-side ping or lane-alive signal.
 - R96 Plan-1..4 — close-on-prune lifecycle + sweep net + label short-circuit + U6 pin.
 - R94 board ground-truth protocol paragraph (owner/docs lane).
-- PR-plane dark post-RBAC — glm22 receipt #3959, options A/B/C, owner decision pending.
 - render-primary `update_failed`: c75's one healthy pass RELAPSED — degraded/update_failed x2, pass 13 (sentry c76, #4206); #3699 boot classes remain owner-lane.
 - Blind-ladder class open past #4138's tier-9: 12 red faces invisible to the ladder while --verify-only prints 9/9 PASS (glm19 #4151).
 - CVE lanes: js/npm 2-red census re-proven live at 062f8efd (npm: follow-redirects@1.16.1 devtools-audit GHSA-mrwp-f3q8-3g9p; js: 6 pairs) — glm28 OSV-verified owner recipe #4204/#4203 receipt-covers it; pin bumps are maintainer decisions (both guards' own routing), NOT agent-lane work.
-- NEW (my 14:04+08 census): py-plane is a pip-audit BLIND LANE — guard runs honest-degradation (#1760 pattern) and skips the audit when pip-audit is absent (CI has no pip-audit), so 2 latent NEW-DRIFT pairs went unseen: core/pyproject.toml:filelock@3.32.7 (20 new ids) + pillow@12.3.0 (17 new ids); osv.dev live-verified the new-id class (10 new GHSAs on filelock, none in baseline). Latent red: test_py_dep_cve_guard::test_live_check_passes_at_landing_head fails wherever pip-audit IS installed. Owner routing: maintainer pin/range bump or admin re-floor (glm28-recipe shape); baseline may never grow; I touched nothing.
+- py-plane pip-audit blind lane (my 14:04+08 census): #2114 has since FLOORED the poetry plane (filelock x6, pillow x78 now in baseline); my locally-audited NEW ids (filelock 20, pillow 17) stay baseline-excluded → owner lane unchanged (maintainer pin/range bump or admin re-floor); this cycle's re-verification honest-skipped (pip-audit absent in sandbox). Latent red `test_live_check_passes_at_landing_head` unchanged. Baseline may never grow; I touch nothing.
+- STRANDED (self-cleanup, my identity): 8 glm04 PRs superseded-dead — #4306 (worklog r4; its two siblings already landed as #4264/#4305) + content-filter probe series #4277/#4283/#4289/#4291/#4297/#4299/#4304 (binary-search mission done by #4264's landing). Zero unique content left; agent lane has no PR-close tool → maintainer/admin closure safe.
 
 ## বাংলা সারসংক্ষেপ
 
-স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, post-RBAC ২০-টুল পৃষ্ঠ, তিনটি
-disjoint liveness plane, আর radar-নম্বর hygiene — ভবিষ্যৎ চক্র আর নতুন করে শিখবে না।
-leasegate লেন পূর্ণ চক্রে বন্ধ: আমার triage (#4125) → glm12-র Option A (#4138) → লাল জুটি সবুজ।
-এই চক্রের নতুন আবিষ্কার: py-plane CVE-লেন পাইপ-অডিট-অনুপস্থিতিতে অন্ধ — এটা
-সক্রিয় করলেই ২টি লুকানো NEW-DRIFT জুটি (filelock, pillow; osv.dev-যাচাইকৃত) ধরা পড়ে,
-যা কোনো সেন্সাসেই আগে আসেনি। মালিক-রুটিং maintainer-এর; আমি baseline বা pin স্পর্শ করিনি।
-এই ফাইলই আমার একমাত্র worklog; পুরনো বিস্তারিত merged receipts-এ আছে, এখানে শুধু
-সারণি। প্রতিটি watch item owner-lane-এ receipt-covered — যতক্ষণ না সেটা বদলায়,
-re-file করা duplicate হবে।
+স্থায়ী শিক্ষা: bridge_submit-এর তিনটি যান্ত্রিক সীমা, tower-টুল-নাম-ঢেউয়ের দ্বিমুখী
+সত্য (dotted↔underscore — এক-বানান গেট জীবিত টুলকেও মিথ্যা-অন্ধকার দেখায়; নিরাময়
+#4264, টেস্ট-পিনড), তিনটি disjoint liveness plane, radar-নম্বর hygiene। এই চক্রের
+হিসাব: r4-চক্রের তিন PR-এর দুটি এমনিতেই landed (#4264 লুপ-নিরাময়, #4305 ট্রায়াজ);
+তাই r4-এর অবশিষ্ট তথ্য r5-এ absorb করে ৮টি ঝুলন্ত PR-এর অবসমাপ্তি ঘোষণা (worklog-r4
+#4306 + ৭টি content-filter probe — অনন্য-বিষয়বস্তু শূন্য, বন্ধযোগ্য)। py-plane
+অন্ধ-লেনে মালিক-অগ্রগতি: #2114 poetry-plane ফ্লোর করেছে; আমার লোকাল-নতুন id-গুলো
+তবু baseline-বহির্ভূত — মালিক-লেন অপরিবর্তিত; এই চক্রে pip-audit অনুপস্থিত, পুনঃপ্রমাণ
+honest-skip। এই ফাইলই আমার একমাত্র worklog; প্রতিটি watch item receipt-covered —
+re-file duplicate হবে।
 
 ## Cycle log (append one line, prune on your own cycle per keep-it-small)
 
-- **2026-10-31 11:04→13:04+08 (condensed)** — leasegate arc end-to-end: #4124's
-  time-gate regression caught → triage #4125 → glm12 Option A #4138 → pair re-proven
-  GREEN (36 passed); worklog r2 landed (#4183).
-- **2026-10-31 14:04+08** — loop clean (claimable 0/5, P0 none). CVE census: js/npm
-  2-red re-proven live at 062f8efd, glm28 recipe receipt-covers, no dup. NEW DISCOVERY:
-  pip-audit-installed run exposes py-plane blind lane — filelock@3.32.7 (20 new ids)
-  + pillow@12.3.0 (17 new ids) NEW-DRIFT, osv.dev-verified, latent red
-  test_py_dep_cve_guard::test_live_check_passes_at_landing_head. Worklog r3 in-place
-  (this patch). No claim, no pin/baseline edits.
+- **2026-10-31 11:04→14:04+08 (condensed)** — leasegate arc end-to-end (triage
+  #4125 → glm12 #4138 → GREEN 36 passed; worklog r2 #4183); py-plane pip-audit
+  blind-lane discovery (filelock/pillow NEW-DRIFT, osv-verified; worklog r3 #4217).
+- **2026-10-31 19:04+08** — loop clean (claimable 0/5, P0 none); PR-plane LIVE
+  (27 open PRs visible, per-PR census honest-UNSEEN). r4-absorb: r4's loop-fix and
+  triage doc had already landed as #4264/#4305, so r5 declares the 8 stranded
+  glm04 PRs superseded (#4306 + probes x7). py-plane owner-progress noted
+  (#2114 floor). Worklog r5 in-place (this patch). No claim, no baseline/pin edits.

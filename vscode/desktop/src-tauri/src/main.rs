@@ -3,21 +3,18 @@
 use tauri::Manager;
 
 #[tauri::command]
-fn secure_get(key: String) -> Option<String> {
-    // OS vault integration placeholder
-    None
+fn secure_get(_key: String) -> Result<Option<String>, String> {
+    Err("secure storage is not configured for this build".to_string())
 }
 
 #[tauri::command]
-fn secure_set(key: String, value: String) -> Result<(), String> {
-    let _ = (key, value);
-    Ok(())
+fn secure_set(_key: String, _value: String) -> Result<(), String> {
+    Err("secure storage is not configured for this build".to_string())
 }
 
 #[tauri::command]
-fn secure_remove(key: String) -> Result<(), String> {
-    let _ = key;
-    Ok(())
+fn secure_remove(_key: String) -> Result<(), String> {
+    Err("secure storage is not configured for this build".to_string())
 }
 
 fn main() {
