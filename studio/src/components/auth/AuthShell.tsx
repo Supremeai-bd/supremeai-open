@@ -3,15 +3,19 @@ import { Link } from 'react-router-dom';
 import { ServiceHealthBar } from './ServiceHealthBar';
 import { BrandMark } from '../../concept/components/BrandMark';
 import { ShieldCheck, Cpu, Terminal, ArrowUpRight } from 'lucide-react';
+import { NeuralConstellationCanvas } from '../common/NeuralConstellationCanvas';
 
 export const AuthShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#080b12] text-slate-100 selection:bg-cyan-500/30">
-      {/* Ambient background glows matching Concept Dashboard */}
+      {/* Living Neural Constellation Background Canvas Animation */}
+      <NeuralConstellationCanvas />
+
+      {/* Ambient background glows */}
       <div className="ambient ambient-a" aria-hidden="true" style={{ top: '0%', right: '10%' }} />
       <div className="ambient ambient-b" aria-hidden="true" style={{ bottom: '10%', left: '5%' }} />
 
-      <div className="relative mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-6 sm:px-6 lg:px-8">
         {/* Top Header */}
         <header className="flex items-center justify-between border-b border-white/10 pb-4">
           <Link to="/" className="flex items-center gap-3" aria-label="SupremeAI home">
