@@ -6,15 +6,16 @@ Responsibility:
 2. Smart triage:
    - If claimable issues <= 5: rotate scheduled observation roles (cadence-based).
    - If claimable issues > 5: dispatch highest priority issue to 'solver'.
-3. 30-minute cooldown: once an issue is dispatched, skip it for 30 minutes;
-   if still unresolved after 30 minutes, re-evaluate by priority.
+3. Dispatch journal: every issue assignment is recorded to the machine-local
+   journal (observability/hygiene only — #3573 regime: the journal NEVER gates
+   or delays a candidate; claimability's only arbiters are the live claim
+   probe and the atomic work_claim, SPEC §4c).
 4. Continuous loop execution without extraneous CLI flags.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -145,17 +146,16 @@ def is_claimable(item: dict[str, Any]) -> bool:
     if "anchor hub" in title.lower() or "sentry" in title.lower():
         return False
 
-    # 30-minute cooldown
-    num = str(item.get("number", ""))
-    if num:
-        lease_store = load_issue_lease_store()
-        if num in lease_store:
-            try:
-                last_ts = float(lease_store[num])
-                if (time.time() - last_ts) < 1800.0:
-                    return False
-            except Exception:
-                pass
+    # Clock-free claimability gate (#3573 founder regime, SPEC §4c — zero
+    # artificial timer locks): the dispatch journal below is written at
+    # assignment time but NEVER gates a candidate here; the live claim probe
+    # and the atomic work_claim own claimability. The 30-minute cooldown this
+    # file originally carried was the #4124 defect class (re-founding a
+    # mechanism the SPEC documents as removed — #4125 triage, restored
+    # clock-free in continuous_agent_loop.py by #4138); per Invariant 6 the
+    # class may not reincarnate in a sibling loop. AST-pinned by
+    # tests/test_loop_v1.py (same comment-immune pin style as
+    # test_claim_lease_ssot::test_02).
 
     state = item.get("state")
     if state is not None and str(state).lower() != "open":

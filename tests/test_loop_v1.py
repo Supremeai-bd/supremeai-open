@@ -5,6 +5,17 @@
 # না, ফলে test parity guard fail-closed লাল হচ্ছিল। এই ফাইল পিওর ফাংশনগুলো
 # (is_claimable, pick_next_issue, pick_next_scheduled_role, lease store)
 # অফলাইনে পিন করে। নেটওয়ার্ক-নির্ভর অংশ (fetch_open_issues) এখানে পড়ে না।
+
+Clock-free reconciliation (GLM Agent 12, Job 486773): #4159's first cut pinned
+loop_v1's 30-minute dispatch cooldown as contract (two cooldown-lock tests) —
+but that mechanism is the #4124 defect class: removed by the #3573 founder
+regime (SPEC §4c, "zero artificial timer locks"), triaged in #4125, and
+restored clock-free in continuous_agent_loop.py by #4138. Per Invariant 6 the
+class may not reincarnate in a sibling loop, so loop_v1's gate was restored
+clock-free in the same order and those two tests pin the CORRECT contract
+here: the dispatch journal is write-only (observability/hygiene) and NEVER
+decides claimability — same comment-immune AST pin style as
+test_claim_lease_ssot::test_02.
 """
 
 from __future__ import annotations
@@ -63,15 +74,35 @@ class TestIsClaimable(unittest.TestCase):
     def test_non_open_state_excluded(self):
         self.assertFalse(lv.is_claimable(_issue(5, "x", state="closed")))
 
-    def test_fresh_lease_within_cooldown_blocks_claim(self):
+    def test_dispatch_journal_never_blocks_claim(self):
+        # Clock-free contract (#3573 regime, SPEC §4c): a fresh dispatch-journal
+        # entry must NOT gate the candidate — the journal is write-only
+        # observability; claimability's arbiters are the live claim probe and
+        # the atomic work_claim. (#4159's first cut pinned the opposite
+        # behavior — the #4124 cooldown defect class — reconciled here.)
         lv.ISSUE_LEASE_STORE.write_text(
             json.dumps({"6": time.time()}), encoding="utf-8")
-        self.assertFalse(lv.is_claimable(_issue(6, "x")))
+        self.assertTrue(lv.is_claimable(_issue(6, "x")))
 
-    def test_lease_older_than_30_min_allows_claim(self):
-        lv.ISSUE_LEASE_STORE.write_text(
-            json.dumps({"7": time.time() - 1801.0}), encoding="utf-8")
-        self.assertTrue(lv.is_claimable(_issue(7, "x")))
+    def test_gate_is_clock_free_ast_pin(self):
+        # Comment-immune AST scan (same invariant as
+        # test_claim_lease_ssot::test_02): zero LEASE tokens and no cooldown
+        # magic number inside is_claimable — a clock may never decide
+        # claimability in ANY loop of this repo.
+        import ast as _ast
+        import inspect as _inspect
+
+        src = _inspect.getsource(lv.is_claimable)
+        tree = _ast.parse(src)
+        tokens = set()
+        for node in _ast.walk(tree):
+            if isinstance(node, _ast.Name):
+                tokens.add(node.id)
+            elif isinstance(node, _ast.Attribute):
+                tokens.add(node.attr)
+        for tok in tokens:
+            self.assertNotIn("LEASE", tok.upper())
+        self.assertNotIn("1800.0", src)
 
 
 class TestPickNextIssue(unittest.TestCase):

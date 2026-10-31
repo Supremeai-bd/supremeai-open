@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Offline tests for pr_preflight_guard (parity ratchet close-out).
+"""tests/test_pr_preflight_guard.py — contract tests for scripts/ci/pr_preflight_guard.py.
 
-# বাংলা: pr_preflight_guard.py প্রি-সাবমিশন গার্ড — এর জন্য কোনো ডেডিকেটেড
-# টেস্ট ছিল না, ফলে test parity guard লাল হয়ে ছিল (red #12, GLM Agent 19-এর
-# census)। এই ফাইল সেই ঋণ শোধ করে: প্রতিটি পিওর ফাংশন (check_branch,
-# check_issue_ref, check_lint) অফলাইনে পিন করা হলো।
-# Zero-Recurrence Invariant: guard নিজে এখন guard-এর আওতায়।
+The guard (branch-naming contract, PR-body verification signatures, python/json
+lint preflight) existed with NO test face — flagged by the test parity guard's
+fail-closed sweep and triaged as agent-lane work in
+docs/reports/TRIAGE_REDS_LADDER_BLINDSPOT_2026-10-31.md (red #12).
+
+Pins the pure contracts hermetically (no network, no repo mutations):
+  - check_branch: conventional branch regex, main/master exempt;
+  - check_issue_ref: the three PR-body signatures (issue ref, Tower
+    Reflection Evidence header, 3-Tier/Test Evidence section);
+  - check_lint: python and json syntax detection via tmp files;
+  - self_test(): the guard's built-in smoke exits 0.
+
+Fully offline, stdlib-only, dual mode (unittest + pytest).
 """
 
 from __future__ import annotations
@@ -15,78 +23,71 @@ import tempfile
 import unittest
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(_ROOT / "scripts" / "ci"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "ci"))
 
-import pr_preflight_guard as ppg
+import pr_preflight_guard as ppg  # noqa: E402
 
 
-class TestCheckBranch(unittest.TestCase):
-    def test_valid_branch_names_pass(self):
-        for branch in ("feat/foo-bar", "fix/auth-login", "bridge/task-1234",
-                       "ci/guards", "test/preflight", "chore/x_1",
-                       "hotfix/urgent-fix"):
-            self.assertEqual(ppg.check_branch(branch), [], branch)
+class BranchContract(unittest.TestCase):
+    def test_01_conventional_branches_pass(self):
+        for b in ("feat/foo-bar", "fix/loop-cadence", "bridge/bridge-20261031-x",
+                  "chore/ci.step", "test/a/b_c", "hotfix/urgent-1"):
+            self.assertEqual(ppg.check_branch(b), [], b)
 
-    def test_main_and_master_are_exempt(self):
+    def test_02_invalid_branches_rejected(self):
+        for b in ("badbranch", "Feat/x", "feat/", "feat/UPPER", "wip; rm -rf"):
+            self.assertTrue(ppg.check_branch(b), b)
+
+    def test_03_main_master_exempt(self):
         self.assertEqual(ppg.check_branch("main"), [])
         self.assertEqual(ppg.check_branch("master"), [])
 
-    def test_invalid_branch_names_fail(self):
-        for branch in ("badbranch", "feat/Upper-Case", "feat/",
-                       "feat/with space"):
-            self.assertTrue(ppg.check_branch(branch), branch)
+
+class IssueRefContract(unittest.TestCase):
+    GOOD = "Closes #123\n## Reflection Evidence\n3-Tier Verify passed"
+
+    def test_04_complete_body_passes(self):
+        self.assertEqual(ppg.check_issue_ref(self.GOOD), [])
+
+    def test_05_missing_issue_ref(self):
+        errs = ppg.check_issue_ref("## Reflection Evidence\nTest Evidence: ok")
+        self.assertTrue(any("issue reference" in e for e in errs))
+
+    def test_06_missing_reflection_signature(self):
+        errs = ppg.check_issue_ref("Closes #1\n3-Tier Verify passed")
+        self.assertTrue(any("Reflection Evidence" in e for e in errs))
+
+    def test_07_missing_verify_section(self):
+        errs = ppg.check_issue_ref("Closes #1\n## Reflection Evidence")
+        self.assertTrue(any("3-Tier" in e or "Test Evidence" in e for e in errs))
 
 
-class TestCheckIssueRef(unittest.TestCase):
-    def test_well_formed_body_passes(self):
-        body = "Closes #123\n## Reflection Evidence\n3-Tier Verify passed"
-        self.assertEqual(ppg.check_issue_ref(body), [])
+class LintPreflight(unittest.TestCase):
+    def test_08_python_syntax(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "bad.py"
+            bad.write_text("def broken(: pass\n", encoding="utf-8")
+            good = Path(d) / "good.py"
+            good.write_text("x = 1\n", encoding="utf-8")
+            self.assertTrue(ppg.check_lint([str(bad)]))
+            self.assertEqual(ppg.check_lint([str(good)]), [])
 
-    def test_all_error_kinds_reported(self):
-        errs = ppg.check_issue_ref("no marker here")
-        self.assertEqual(len(errs), 3)
+    def test_09_json_syntax(self):
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "bad.json"
+            bad.write_text("{not json", encoding="utf-8")
+            good = Path(d) / "good.json"
+            good.write_text('{"ok": true}\n', encoding="utf-8")
+            self.assertTrue(ppg.check_lint([str(bad)]))
+            self.assertEqual(ppg.check_lint([str(good)]), [])
 
-    def test_each_missing_signature_reported(self):
-        self.assertEqual(len(ppg.check_issue_ref("Fixes #9")), 2)
-        body = "Resolves #5\n## Reflection Evidence\n- why: x"
-        errs = ppg.check_issue_ref(body)
-        self.assertEqual(len(errs), 1)
-        self.assertIn("3-Tier", errs[0])
-
-
-class TestCheckLint(unittest.TestCase):
-    def test_good_python_passes(self):
-        with tempfile.TemporaryDirectory() as td:
-            p = Path(td) / "good.py"
-            p.write_text("x = 1\n", encoding="utf-8")
-            self.assertEqual(ppg.check_lint([str(p)]), [])
-
-    def test_broken_python_fails(self):
-        with tempfile.TemporaryDirectory() as td:
-            p = Path(td) / "bad.py"
-            p.write_text("def broken(: pass\n", encoding="utf-8")
-            errs = ppg.check_lint([str(p)])
-            self.assertEqual(len(errs), 1)
-            self.assertIn("syntax error", errs[0])
-
-    def test_broken_json_fails(self):
-        with tempfile.TemporaryDirectory() as td:
-            p = Path(td) / "bad.json"
-            p.write_text("{not json", encoding="utf-8")
-            errs = ppg.check_lint([str(p)])
-            self.assertEqual(len(errs), 1)
-            self.assertIn("json", errs[0])
-
-    def test_empty_file_list_passes(self):
-        self.assertEqual(ppg.check_lint([]), [])
+    def test_10_missing_file_ignored(self):
+        self.assertEqual(ppg.check_lint(["does/not/exist.py"]), [])
 
 
-class TestSelfTest(unittest.TestCase):
-    def test_builtin_self_test_zero_failures(self):
-        # pr_preflight_guard.self_test এর নিজস্ব অ্যাসারশন-চেইন; ০ = সব পাস
-        rc = ppg.self_test()
-        self.assertEqual(rc, 0)
+class SelfTestSmoke(unittest.TestCase):
+    def test_11_builtin_self_test_exits_zero(self):
+        self.assertEqual(ppg.self_test(), 0)
 
 
 if __name__ == "__main__":
