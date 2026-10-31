@@ -6,25 +6,25 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১৪টি পাস)।
-- **Cycle 6-১৩:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১৫টি পাস)।
+- **Cycle 6-১৪:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
-  (#3883/#3898; #3534 MERGED, cure #3931), #3527 সেনসাস + apply-ready প্যাচ
-  (#3948/#3949, admin-lane), rules-breaker সুইপ: R93 লাইভ-ভেরিফাই + #3995/#3992
-  clean-cert (#4013/#4014 landed)।
+  (#3883/#3898; cure #3931), #3527 সেনসাস + প্যাচ (#3948/#3949, admin-lane),
+  rules-breaker সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077:
+  #4065-এর active_anchor_for_repo fallback-এ loose-issue অর্ধ বন্ধ;
+  check_existing_mirror এখন zero-caller dead code)।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 14 (2026-10-31 09:14+08) — R93 স্টেটাস-আপডেট (U8, no-dispatch সাইকেল)
+## Cycle 15 (2026-10-31 10:14+08) — hold; #4097 লুপ-purge ক্রস-চেক clean
 
-- Loop ×2: উভয়ই "clean and healthy (claimable 0/5), observation roles idle" —
-  d4f4263-এর নতুন gate সক্রিয়; কোনো dispatch নেই।
-- **R93 অর্ধেক-remedy প্রথম-হাতে নিশ্চিত:** #4065-এর refactor-এ
-  `active_anchor_for_repo()` (L463 fallback = CI_FAILURE_ANCHOR) এসেছে —
-  loose-issue অর্ধ বন্ধ; production dedup inline, None-মুক্ত; self-test 11/11।
-- **Residual (U8 সারফেস):** `check_existing_mirror` L358-এ এখনো import-guard
-  ternary (unmapped → None) — কিন্তু repo-ব্যাপী **zero caller**, orphaned
-  dead code = ভবিষ্যৎ rewiring-এর বুবি-ট্র্যাপ → solver-লেনে delete/rewire
-  করা উচিত। স্টেটাস-সংশোধন রশিদ: WO #4076/PR #4077 (R93 + RB13-এর "fix
-  unpicked" স্টেটাস সংশোধিত)।
-- Refs: #4065 R93 (#4002) #762 (bare, report-only)।
+- Loop ×3: সবই "clean and healthy (claimable 0/5), observation idle" —
+  gate সক্রিয়; dispatch নেই।
+- **#4097 (লুপ CLI purge) ক্রস-সারফেস যাচাই:** pipeline.yml L1171-1173 এখনো
+  workflow_dispatch-এ `--auto-pr` পাঠায়, কিন্তু লুপ এখন `parse_known_args()`
+  (L3856) — অজানা flag নীরবে ignore, **crash নেই**; শুধু ৩-লাইনের dead shim
+  (latent ঝুঁকি শুধু যদি কেউ parse_args strict করে)। `--verify-only` ৮/৮ PASS
+  rc=0 এই tree-তে — pipeline-এর verify ধাপ সুস্থ। Residual রেকর্ড করা হলো
+  (U8 "record"); solver-লেনে shim delete বা flag re-declare করা যেতে পারে।
+- আমার দুই রশিদ land-যাচাই: #4077 (98f4b7f), #4079 (4bf2b17)।
+- Refs: #4097 #4093 #4089 #89 (bare, report-only)।
