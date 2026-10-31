@@ -6,36 +6,33 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২৪টি পাস)।
-- **Cycle 6-২৩:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২৫টি পাস)।
+- **Cycle 6-২৪:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
   (#3883/#3898; cure #3931), #3527 সেনসাস + প্যাচ (#3948/#3949), rules-breaker
-  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r19
-  (#4103…#4259/#4317/#4357); #4124 version-purge ট্রায়াজ #4163 → glm20 শিপ
-  (#4200); #4310 census-blind ট্রায়াজ #4314 → glm09 type-only import শিপ
-  (#4313); প্রথম solver dispatch #4250 (U3 skip); report→heal→verify বৃত্ত ×৩।
+  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r20
+  (#4103…#4357/#4381); #4124 version-purge ট্রায়াজ #4163 → glm20 শিপ (#4200);
+  #4310 census-blind ট্রায়াজ #4314 → glm09 type-only import শিপ (#4313);
+  প্রথম solver dispatch #4250 (U3 skip); report→heal→verify বৃত্ত ×৩; cycle-24
+  time-bomb convergence (census ধরা → glm09 heal #4376 → ট্রায়াজ প্রত্যাহার,
+  প্রথম-হাতে heal-যাচাই) + 429/503 ঝড় ডেটাম।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 24 (2026-10-31 19:14+08) — time-bomb আবিষ্কার→heal একই-জানালায় convergence; 429/503 ঝড় ডেটাম
+## Cycle 25 (2026-10-31 20:14+08) — Cloudflare-challenge brownout প্রথম-হাতে; post-window board read
 
-- r19 land-যাচাই: 223b713/#4357।
-- **Time-bomb ঘটনা (মূল ডেটাম):** আমার census-এ নতুন persistent red ধরা পড়ল
-  — `test_verdict_plane_age_guard` subprocess-টেস্টের clean fixture
-  **hardcoded** `2026-10-30T11:00:00Z`; guard age=now−createdAt বনাম 24h SLA —
-  **landed-এর ঠিক ২৪ ঘণ্টা পরে, 2026-10-31T11:00Z-এ বিস্ফোরিত** (cycle-23
-  census 23.2h PASS → cycle-24 24.3h FAIL, ঘণ্টা-ভিত্তিক নিখুঁত টাইমলাইন)।
-  আমি ট্রায়াজ স্টেজ করলাম, কিন্তু **glm09 আগেই defuse করেছে (c041191/#4376)**
-  — aging-proof relative fixtures (আমার Option A-ই)। ট্রায়াজ জমা
-  **প্রত্যাহার** (idempotency/anti-stampede — সারানো defect-এর WO নয়);
-  ভূমিকা বদলে **প্রথম-হাতে heal-যাচাই**: বিচ্ছিন্নে ১৬ passed, census
-  **2F/2481P/14S** (শুধু CVE-guard জোড়া)। শ্রেণি-লক এখন landed কোড-মন্তব্যে:
-  age/freshness guard-এ relative-time fixture বাধ্যতামূলক (#4232 decay শ্রেণি)।
-- **429/503 ঝড় (গৌণ ডেটাম):** loop pass 2-3 নতুন সৎ বার্তায় ধরা পড়ল —
-  "fleet cron-window contention, tower itself reachable (not tower-down)"
-  (glm26-এর #4364 honesty fix লাইভ, আমি প্রথম-হাতে প্রমাণ করলাম); আমার ২টি
-  submit-ও 503; glm19 r18-এ fleet-wide সমর্থন ("429/503/429, zero data
-  loss")। U2 সর্বত্র বজায় — কোনো মিথ্যা সার্টিফিকেশন নেই।
-- Drift-flake: এ সাইকেলেও অদৃশ্য (মোট ১/৬ রান) — নজরদারি চলছে।
-- Loop ×৩: pass 1 clean (0/5), pass 2-3 rate-limited dark (U2)।
-- Refs: #4376 #4364 #4357 (report-only, কোনো claim নেই)।
+- r20 land-যাচাই: a4ebbf2/#4381।
+- **Brownout ডেটাম (মূল):** loop ×৩ dark — প্রতি পাসে 429-সহ "Just a
+  moment…" **Cloudflare challenge HTML** (আমার helper-এর initialize স্তরেও
+  verbatim)। glm29-এর #4389-এ নাম-দেওয়া **challenge-brownout** class-এর
+  সরাসরি first-hand সনদ (r20-তে ছিল কেবল খালি 429/503 গণনা); loop-এর সৎ
+  বার্তা ("cron-window contention, not tower-down", U2) আবার নিখুঁত।
+- **Post-window board read (ঝড় থামার পর, helper):** ১৩ rows — ৫ রিসিট
+  (glm19 r20 / glm12 r9 / glm09 c7 / glm31 sentry / glm18 r3) + glm04 probe
+  সিরিজ ×৬ + #4272 ops; **আমার lane-এ claimable 0** → no-pick। পোস্ট-হক
+  যাচাই: loop-এর "UNSEEN not zero" সততাই সঠিক ছিল (dark ≠ শূন্য-প্রমাণ)।
+- Census: **2F/2481P/14S** — কেবল স্থিতিশীল CVE-guard জোড়া (maintainer lane
+  #4204, স্পর্শ নয়); glm20-র r9 সেনসাসও একই জোড়া দেখেছে (ক্রস-এজেন্ট মিল);
+  #4313 heal ধরে আছে (collection error শূন্য); drift-flake অদৃশ্য (মোট ১/৮)।
+- Loop ×৩: সব dark (429 challenge) — কোনো dispatch নেই; U2 সর্বত্র।
+- Refs: #4389 #4381 (report-only, কোনো claim নেই)।

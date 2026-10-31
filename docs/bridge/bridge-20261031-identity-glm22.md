@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-15 condensed to one table
+> only, replaced in place every cycle. Cycles 1-16 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-15 (condensed)
+## Landed cycles 1-16 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -41,36 +41,36 @@
 | 13 (16:2x) | #4249 admin restore flipped the wire (tools 20→158, services 12→21); #3663 probe exit 2 RED (fail-open live) — guard chain proven two-way (purge=green, restore=red); report-only | PR #4262 |
 | 14 (17:2x) | tripwire re-arm #2: exit 2 RED sustained ≥1h, PII 100→102; board burst #2 (1→22); PR-plane revived post-#4264 | PR #4321 |
 | 15 (18:2x) | tripwire re-arm #3: exit 2 RED ≥2h unowned; PII 3-point series 100/102/110; #4341 census-blind → honest UNSEEN degradation proven | PR #4353 |
+| 16 (19:2x) | tripwire re-arm #4: exit 2 RED ≥3h unowned; PII 4-point series 100/102/110/118, stable ~+8/h slope; board 26→31, cohort 2.9h at envelope edge | PR #4386 |
 
-## Cycle 16 (2026-10-31 19:2x+08) — sustained-RED datum #4; series has a stable slope
+## Cycle 17 (2026-10-31 20:2x+08) — envelope verdict: breached by survivors, sweep alive
 
-- Loop verify 9/9 on c041191; pick: claimable 0/5, no dispatch
-  (observation cycle). Three-check: 16 landings in the last hour, ZERO
-  touch the tower role or #3663 — unowned ≥3h.
-- **Tripwire re-arm #4: probe exit 2 RED again — fail-open sustained ≥3h.**
-  PII series 100→102→110→**118** anonymous client rows — hourly +8±1,
-  linear slope across four points; the anonymous PII plane keeps
-  compounding while the pre-production posture persists. Destructive
-  surface unchanged (autonomy_kill_switch, github_list_secrets,
-  tenant_create); criterion 1 INDETERMINATE as always. Probe exit-1 (HTTP
-  429) hit 5× this cycle before a verdict — retried to verdict-only per
-  the redirect discipline.
-- Board burst #2: 26→31 rows; the glm04 probe-family cohort now **2.9h
-  undrained — at burst #1's drain-latency envelope edge (~2-3h)**. Next
-  cycle without a drain = envelope breach; watch escalates honestly then,
-  not now. U2 census blind again (tower flakiness persists) —
-  byte-identical honest UNSEEN, degradation contract holding.
+- Loop verify 9/9 on 310e343, re-certified 6c188db post-auto-rebase; pick:
+  claimable 0/5, no dispatch. Three-check: 15 landings last hour, ZERO
+  touch the tower role or #3663 — unowned ≥4h.
+- **Tripwire re-arm #5: probe exit 2 RED — fail-open sustained ≥4h.** PII
+  series 100→102→110→118→**122** — slope decelerating (+8/+8/+4) but
+  still positive; a slowing leak is still a leak. Destructive surface
+  unchanged; criterion 1 INDETERMINATE.
+- **Board burst #2 verdict — the envelope question answered by data:**
+  31→12 rows, window untruncated (first since the burst began). The sweep
+  PARTIALLY drained the probe cohort (~19 rows closed in the hour,
+  including 6+ probe rows) yet **7 survivors now age 3.8-3.9h — past
+  burst #1's ~2-3h envelope**. Dual honest reading: drain latency has
+  stretched, consistent with #4389's newly named "Cloudflare challenge
+  brownout" choking every tower client (the sweep included), but the
+  sweep is demonstrably alive — brownout-degraded, not broken. U2 census
+  blind again (byte-identical honest UNSEEN).
 
 ## Reflection Evidence
 
-- **why:** a 4-point series with a stable slope converts "worsening"
-  into "measurably worsening" — the owner gets a rate (~+8 rows/h), not
-  just a state. The board watch-item exercises the same discipline: an
-  envelope edge is where honest watch either closes or escalates —
-  neither premature alarm nor silence.
-- **alternatives_rejected:** filing a fresh board row (receipts #4262 +
-  r10/r11 keep arming the owner lane; stampede); agent-side mitigation
-  (the wire is the owner's plane); alarmist extrapolation of the PII
-  slope (record the series, the slope speaks for itself); declaring the
-  burst drain broken (2.9h cohort age has not breached the ~2-3h
-  envelope yet).
+- **why:** last cycle set a falsifiable watch ("next cycle without drain
+  = breach"); this cycle the data split the difference — breach=yes for
+  the 7 survivors, aliveness=yes for the sweep — and recording BOTH
+  halves prevents the two symmetric errors: declaring the sweep dead,
+  or declaring everything healthy because totalOpen fell.
+- **alternatives_rejected:** declaring the sweep broken (19 closures in
+  the hour disprove it); declaring all-healthy (7 rows past envelope —
+  the stretch IS the datum); a fresh board row (receipts #4262 +
+  r10-r12 keep arming the owner lane; stampede); agent-side mitigation
+  (the wire is the owner's plane).
