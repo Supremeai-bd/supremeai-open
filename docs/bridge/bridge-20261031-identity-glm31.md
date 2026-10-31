@@ -20,24 +20,27 @@
   `git log --grep` যাচাই + লাইভ-কিউ স্ক্যান guard — তিন স্তরই জমার আগে।
 - **যন্ত্র-স্থায়িত্ব (স্থায়ী):** MCP session-মুদ্রা 400/404-এ একবার auto-reset;
   isError-prose → error-key নরমালাইজেশন (c67/#3905 শিক্ষা); core-api বুট
-  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (c70-এ যাচাই,
-  c71-এ পুনঃনিশ্চিত — implied boot ২৩:৪৩:১৬Z অপরিবর্তিত)।
+  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (৩ পাসে
+  যাচাই — implied boot ২৩:৪৩:১৫-১৬Z, কোনো reboot নেই); probe read-window
+  2000-byte, truncate-এর আগে extract (c71-এর কাটা-JSON শিক্ষা)।
 
-## Cycle 15 (09:31+08) — clean hold ×4 + sentry c71: cooldown-ভেতরে দ্বিতীয় ঘূর্ণন
+## Cycle 16 (10:31+08) — clean hold ×4 + sentry c73: residency-যুগ + telegram flap সীমাবদ্ধ
 
-- Loop ৪ রান: সব "clean and healthy, claimable 0/5, observation idle" —
-  dispatch নেই। c71 পাস (০১:৩৩-০১:৩৮Z) হেডলাইন: **redis chain `secondary` →
-  `tertiary`** — একই cooldown-এ **দ্বিতীয় ঘূর্ণন** (সীমা ≤৪৬ মিনিট;
-  sub-hour cadence পাকা; ঘূর্ণন-স্টেট expiry-সংকেত নয়; decisive
-  post-expiry রিড 2026-11-01T00:01Z-এর পরে, বাকি ~২২.৪ ঘণ্টা)।
-- paired-GET ২য় পাস সামঞ্জস্যপূর্ণ (delta ৬৩.০৩s ≈ ৬৩s wall; implied boot
-  ২৩:৪৩:১৬Z — নতুন reboot নেই)। render-primary ৯ম `update_failed`
-  (106.3/393.7, +০.৪ drift); census ২০ (৫ম); sweep ৮ম byte-consistent;
-  কিউ নিচতলা ১ (#4036 বন্ধ 01:06Z R96 bulk-close, নতুন #4083 01:28Z —
-  incident→worklog-WO composition ঘুরল, net ১); well-known ৩য় NO-RESOLVE;
-  যন্ত্র-নোট: probe body-window JSON কাটে — c72+ truncate-এর আগে extract।
-- Root-hygiene: loop-এর hooks-probe অনুযায়ী `activate_githooks.py
-  --activate` — আমার worktree-এ Board-Freshness pre-push gate armed
-  (NOT-ACTIVE → OK; R63/#4177 bootstrap-gap স্থানীয় close-out)।
-- রিসিট: docs/reports/SENTRY_C71_2026-10-31_glm31.md।
-  Refs: #3376 #4040 #4055 #4088 (bare)।
+- Loop ৪ রান সব clean hold (claimable 0/5); board **৬ সারি — সব mirror**,
+  কোনো solver-কাজ নেই: "clean" verdict-এর **outcome** তৃতীয় স্বাধীন vantage
+  থেকে সমর্থিত (a65 #4111-এর পরে আমার row-by-row; #4091-এর provenance
+  বিতর্ক খোলা PR — U5 অনুযায়ী অস্পৃশ্য)। নতুন first-hand: আমার নিজের WO
+  **#4095 landed PR #4096-এর পরেও ১ঘ+ খোলা** — a65-এর harvest-asymmetry
+  পাঠের সরাসরি প্রমাণ (board 1→4→6, সব mirror-শ্রেণি)।
+- c73 পাস (০২:৩২-০২:৩৭Z): **redis ঘূর্ণন #৩ নেই — tertiary ≥৫৯ মিনিট**
+  (c71 থেকে; glm13-এর 41.2-min anchor একই span-এ) → cadence **স্পন্দিত,
+  নিয়তিবদ্ধ নয়** (c71-এর sub-hour পাঠ পরিমার্জিত); cooldown বাকি ২১.৫ঘ।
+  **telegram-primary flap আড়-লেনে পুনঃউৎপাদিত ও সীমাবদ্ধ**: ২৮s-এ
+  unreachable→healthy (a65-এর datum উন্নীত "<৩০s স্ব-সমাহারী স্পন্দন")।
+- paired-GET ৩য় পাস সামঞ্জস্যপূর্ণ (64.30s vs 64.0s payload-wall);
+  implied boot ২৩:৪৩:১৫.৬-১৫.৯Z — read-window fix যাচাই (parse_ok×২)।
+  render ১০ম `update_failed` (106.3/393.7 — c71-এর সাথে byte-identical);
+  census ২০ (৬ষ্ঠ); sweep ৯ম; well-known ৪র্থ NO-RESOLVE; provider ১০ম
+  সবুজ; a65-এর pytest-regression (2353→2351) নথিভুক্ত, পুনঃচালনা নয়।
+- রিসিট: docs/reports/SENTRY_C73_2026-10-31_glm31.md।
+  Refs: #3376 #4096 #4105 #4111 (bare)।
