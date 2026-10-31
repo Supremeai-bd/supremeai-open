@@ -69,6 +69,16 @@ async def _safe_url(raw_url: str) -> str:
     return parsed.geturl()
 
 
+async def _guard_browser_route(route) -> None:
+    """Revalidate every browser request, including redirect destinations and subresources."""
+    try:
+        await _safe_url(route.request.url)
+    except ValueError:
+        await route.abort()
+    else:
+        await route.continue_()
+
+
 async def scrape(request: web.Request) -> web.Response:
     """Phase 11 — scrape a URL (ROADMAP §33)."""
     if not _authorized(request):
@@ -95,6 +105,7 @@ async def _scrape_url(url: str) -> web.Response:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
+            await page.route("**/*", _guard_browser_route)
             await page.goto(url, timeout=30000, wait_until="domcontentloaded")
             title = await page.title()
             content = (await page.content())[:_MAX_RESPONSE_BYTES]
@@ -135,6 +146,7 @@ async def _screenshot_url(url: str) -> web.Response:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page()
+            await page.route("**/*", _guard_browser_route)
             await page.goto(url, timeout=30000)
             screenshot_bytes = await page.screenshot()
             await browser.close()

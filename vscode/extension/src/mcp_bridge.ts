@@ -65,10 +65,10 @@ export class McpBridge {
         headers: { "Accept": "application/json" },
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       const latencyMs = Date.now() - started;
       if (!res.ok) {
+        clearTimeout(timer);
         return {
           status: "degraded",
           activeAgents: 0,
@@ -80,6 +80,7 @@ export class McpBridge {
       }
 
       const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      clearTimeout(timer);
       return {
         status: (data.status as FederationHealth["status"]) || "nominal",
         activeAgents: typeof data.activeAgents === "number" ? data.activeAgents : 0,
@@ -122,13 +123,14 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
+        clearTimeout(timer);
         return [];
       }
 
       const data = (await res.json().catch(() => ({}))) as { result?: { content?: Array<{ text?: string }> } };
+      clearTimeout(timer);
       const rawText = data?.result?.content?.[0]?.text;
       if (!rawText) return [];
 
@@ -181,9 +183,9 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
+        clearTimeout(timer);
         return { success: false, error: `Tower responded with HTTP ${res.status}` };
       }
 
@@ -191,6 +193,7 @@ export class McpBridge {
         result?: { content?: Array<{ text?: string }>; isError?: boolean };
         error?: { message?: string };
       };
+      clearTimeout(timer);
 
       if (data.error) {
         return { success: false, error: data.error.message || "MCP Dispatch Error" };
@@ -269,9 +272,9 @@ export class McpBridge {
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (!res.ok) {
+        clearTimeout(timer);
         return false;
       }
 
@@ -279,6 +282,7 @@ export class McpBridge {
         result?: { isError?: boolean; content?: Array<{ text?: string }> };
         error?: { message?: string };
       };
+      clearTimeout(timer);
 
       if (data.error) {
         return false;
