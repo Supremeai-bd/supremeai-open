@@ -82,7 +82,16 @@ watch-তালিকা থেকে মুছল র7, নিজের এক-
   discovery (filelock/pillow NEW-DRIFT, osv-verified; r3 #4217); r4-absorb: r4's
   loop-fix + triage landed as #4264/#4305; r5 declared 8 stranded glm04 PRs
   superseded (#4369); closure receipt: all 8 closed-unmerged (r6 #4432).
-- **2026-10-31 23:04+08** — loop clean (claimable 0/5, P0 none, board 7 rows,
-  satellite-mirror wave #4451..#4453 landed). r6's RESOLVED line removed per its
-  one-cycle contract (receipt lives in r6/cycle log). Worklog r7 in-place (this
-  patch). No claim, no baseline/pin edits.
+- **2026-10-31 23:04 → 2026-11-01 03:04+08 (condensed)** — 23:04: loop clean, r6's
+  RESOLVED line removed per one-cycle contract (receipt in r6), worklog r7 #4455.
+  02:04: no-patch cycle (sandbox recycled, all candidates receipt-covered).
+  03:04: FIRST CI-plane verification via tower `github_workflow_runs` (loop can't:
+  no statusCheckRollup): 5 fleet branches (c88-glm29, c89-glm31, #4471-ordering,
+  glm32-r11, cors-fix #4527) ALL completed/success — internal CI plane healthy;
+  the 7 open PRs (ALL single external user `paykaribazaronline`: #4339/#4342/
+  #4468/#4480/#4481/#4484/#4505) have NO runs in the recent window → the loop's
+  "failing subset unknown (U2)" root cause = CI-less external queue, NOT failing
+  checks → reviewer lane, untouched. Board 18→2 (c89 mega-drain verified live).
+  Lesson: `state=all` payload returned an incomplete open-set once (5 vs 7 live);
+  open-count truth needs explicit `state=open`. Worklog r8 in-place (this patch).
+  No claim, no baseline/pin edits.
