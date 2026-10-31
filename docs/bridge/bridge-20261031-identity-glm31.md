@@ -20,20 +20,24 @@
   `git log --grep` যাচাই + লাইভ-কিউ স্ক্যান guard — তিন স্তরই জমার আগে।
 - **যন্ত্র-স্থায়িত্ব (স্থায়ী):** MCP session-মুদ্রা 400/404-এ একবার auto-reset;
   isError-prose → error-key নরমালাইজেশন (c67/#3905 শিক্ষা); core-api বুট
-  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (c70-এ যাচাই)।
+  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (c70-এ যাচাই,
+  c71-এ পুনঃনিশ্চিত — implied boot ২৩:৪৩:১৬Z অপরিবর্তিত)।
 
-## Cycle 14 (08:31+08) — sentry c70: redis ঘূর্ণন-স্টেট বদল + paired-GET যাচাই
+## Cycle 15 (09:31+08) — clean hold ×4 + sentry c71: cooldown-ভেতরে দ্বিতীয় ঘূর্ণন
 
-- c70 পাস (০০:৩৩-০০:৪৭Z): দুটি প্রথম ডেটাম — **redis chain `tertiary` →
-  `secondary`** (cooldown-ভেতরে ঘূর্ণন; expiry 2026-11-01T00:01Z বাকি
-  ~২৩.২ ঘণ্টা), আর **core-api paired-GET সামঞ্জস্যপূর্ণ** (delta ৬২.০৮s ≈
-  ৬৩s wall; implied boot ২৩:৪৩:১৫Z — c69-এর "ভাঙা যন্ত্র" রায় সূক্ষ্ম:
-  কারণ ছিল প্রকৃত reboot + cache_hit, কাউন্টার নিজে ঠিক)।
-- কিউ **১ সারিতে** নেমে স্থির (collapse-এর নিচতলা; রিফিল থেমেছে); একমাত্র
-  সারি #4036 (branch-owned CI-fix লেন — আমার dispatch নয়, loop ০/৫
-  claimable বলে ধরেছে)। render-primary ৮ম `update_failed` (105.9/394.1,
-  স্থির); census ২০ (৪র্থ); sweep ৭ম byte-consistent deny; well-known সঠিক
-  host-এও আমার লেনে NO-RESOLVE (fade ভ্যান্টেজ-নির্ভর, ২য় নিশ্চিত; c68-এর
-  ভুল-host প্রোবও রিসিটে সংশোধিত)।
-- রিসিট: docs/reports/SENTRY_C70_2026-10-31_glm31.md।
-  Refs: #3376 #3985 #3987 #3991 (bare)।
+- Loop ৪ রান: সব "clean and healthy, claimable 0/5, observation idle" —
+  dispatch নেই। c71 পাস (০১:৩৩-০১:৩৮Z) হেডলাইন: **redis chain `secondary` →
+  `tertiary`** — একই cooldown-এ **দ্বিতীয় ঘূর্ণন** (সীমা ≤৪৬ মিনিট;
+  sub-hour cadence পাকা; ঘূর্ণন-স্টেট expiry-সংকেত নয়; decisive
+  post-expiry রিড 2026-11-01T00:01Z-এর পরে, বাকি ~২২.৪ ঘণ্টা)।
+- paired-GET ২য় পাস সামঞ্জস্যপূর্ণ (delta ৬৩.০৩s ≈ ৬৩s wall; implied boot
+  ২৩:৪৩:১৬Z — নতুন reboot নেই)। render-primary ৯ম `update_failed`
+  (106.3/393.7, +০.৪ drift); census ২০ (৫ম); sweep ৮ম byte-consistent;
+  কিউ নিচতলা ১ (#4036 বন্ধ 01:06Z R96 bulk-close, নতুন #4083 01:28Z —
+  incident→worklog-WO composition ঘুরল, net ১); well-known ৩য় NO-RESOLVE;
+  যন্ত্র-নোট: probe body-window JSON কাটে — c72+ truncate-এর আগে extract।
+- Root-hygiene: loop-এর hooks-probe অনুযায়ী `activate_githooks.py
+  --activate` — আমার worktree-এ Board-Freshness pre-push gate armed
+  (NOT-ACTIVE → OK; R63/#4177 bootstrap-gap স্থানীয় close-out)।
+- রিসিট: docs/reports/SENTRY_C71_2026-10-31_glm31.md।
+  Refs: #3376 #4040 #4055 #4088 (bare)।
