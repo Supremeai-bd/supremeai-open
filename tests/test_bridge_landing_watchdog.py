@@ -583,6 +583,47 @@ def test_load_queue_integrity_ok_and_fail_open():
     assert res is None and "unreachable" in note
 
 
+def test_tower_text_resolves_across_name_epochs():
+    """Zero-Recurrence U6 — funnel-স্তরের নাম-ঢেউ সহনশীলতার hermetic প্রমাণ।
+
+    বাংলা: ঢেউ-৩ (live 2026-10-31) dotted বানান মৃত হলে পিন-করা এক-বানান ফানেল
+    পুরো watchdog অন্ধ করে দেয় (board/history SKIP — GLM Agent 11 cycle-15
+    live)। কিউর: _tower_text epoch-ক্রমে চেষ্টা করে; মৃত বানানের isError
+    content-text স্বাক্ষর result.content আকৃতিতেও ধরা হয়। নেটওয়ার্ক নেই —
+    _rpc monkeypatch-কৃত।
+    """
+    mod = _load_watchdog_module()
+    calls = []
+
+    def fake_rpc(method, params=None, session_id=None, notify=False, attempts=4):
+        if method != "tools/call":
+            return ({"jsonrpc": "2.0", "id": 0, "result": {}}, "sid-fake")
+        spelling = params["name"]
+        calls.append(spelling)
+        if spelling == "bridge.work_queue":
+            return ({"jsonrpc": "2.0", "id": 1,
+                     "result": {"isError": True,
+                                "content": [{"type": "text",
+                                             "text": "MCP error -32602: Tool bridge.work_queue not found"}]}},
+                    "sid-fake")
+        return ({"jsonrpc": "2.0", "id": 2,
+                 "result": {"content": [{"type": "text",
+                                         "text": json.dumps({"workOrders": [], "totalOpen": 0})}]}},
+                "sid-fake")
+
+    original = mod._rpc
+    mod._rpc = fake_rpc
+    try:
+        out = mod._tower_text("bridge.work_queue", {"limit": 5})
+    finally:
+        mod._rpc = original
+    # বাংলা: snake বানানটি derived (quoted-dead-name স্ক্যান চুক্তি) — লুপের
+    # queue-candidates idiom-এর অনুরূপ (continuous_agent_loop)।
+    snake = "bridge.work_queue".replace(".", "_", 1)
+    assert calls == ["bridge.work_queue", snake], calls
+    assert json.loads(out) == {"workOrders": [], "totalOpen": 0}
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

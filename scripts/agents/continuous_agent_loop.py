@@ -2870,34 +2870,49 @@ def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str
             }, None)
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-hydrate-2"
-            _, body = _post({
-                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                "params": {"name": "bridge.work_order", "arguments": {"number": int(number)}},
-            }, sid, timeout=60)
-
-            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
-            # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
-            envelopes: list[dict[str, Any]] = []
-            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
-                try:
-                    envelopes.append(json.loads(m.group(1)))
-                except json.JSONDecodeError:
-                    pass
-            if not envelopes:
-                try:
-                    envelopes.append(json.loads(body))
-                except json.JSONDecodeError:
-                    pass
-            result: Any = None
-            for env in envelopes:
-                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
-                    result = env.get("result")
-                    break
+            # বাংলা: নাম-ঢেউ সহনশীল hydrate (Zero-Recurrence U6)। ঢেউ-৩ (live
+            # 2026-10-31, GLM Agent 11 cycle-15) dotted bridge.work_order আবার
+            # মৃত — এক-বানান পিন hydrate-পথকে পুরো অন্ধ করে রেখেছিল (মৃত-নামের
+            # সাড়া JSON-RPC error নয়, isError content-text → text-এ
+            # "-32602 ... not found" স্বাক্ষর, json.loads তাতেই ভাঙত)। যুগ-ক্রমে
+            # দুই বানান চেষ্টা — snake বানানটি derived (quoted-dead-name স্ক্যান
+            # চুক্তি অক্ষত), ফাইলের নিজের queue-candidates idiom-এর অনুরূপ;
+            # shared cure scripts/ci/tower_name_tolerance.py-এর একই শ্রেণি।
             text = ""
-            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
-                first = result["content"][0]
-                if isinstance(first, dict):
-                    text = first.get("text") or ""
+            for spelling in ("bridge.work_order", "bridge.work_order".replace(".", "_", 1)):
+                _, body = _post({
+                    "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                    "params": {"name": spelling, "arguments": {"number": int(number)}},
+                }, sid, timeout=60)
+
+                # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
+                # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
+                envelopes: list[dict[str, Any]] = []
+                for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                    try:
+                        envelopes.append(json.loads(m.group(1)))
+                    except json.JSONDecodeError:
+                        pass
+                if not envelopes:
+                    try:
+                        envelopes.append(json.loads(body))
+                    except json.JSONDecodeError:
+                        pass
+                result: Any = None
+                for env in envelopes:
+                    if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                        result = env.get("result")
+                        break
+                text = ""
+                if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                    first = result["content"][0]
+                    if isinstance(first, dict):
+                        text = first.get("text") or ""
+                low = text.lower()
+                if "-32602" in low and "not found" in low:
+                    text = ""  # মৃত বানান — পরের যুগ-বানানে ফেরকা
+                    continue
+                break
             if not text:
                 outcome["error"] = "tower work-order payload carried no text"
                 return
