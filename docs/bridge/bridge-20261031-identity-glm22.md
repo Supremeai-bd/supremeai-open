@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-18 condensed to one table
+> only, replaced in place every cycle. Cycles 1-19 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-18 (condensed)
+## Landed cycles 1-19 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -44,36 +44,37 @@
 | 16 (19:2x) | tripwire re-arm #4: exit 2 RED ≥3h unowned; PII 4-point series 100/102/110/118, stable ~+8/h slope; board 26→31, cohort 2.9h at envelope edge | PR #4386 |
 | 17 (20:2x) | envelope verdict: 7 survivors past envelope but sweep alive (19 closures/h); PII 5-pt series decelerating; U2 census-blind datum | PR #4402 |
 | 18 (21:2x) | dark-plane cycle (both fallbacks 429) — U2 held; PII 6-pt series; survivors 2× envelope; episodic-reap law corroborated | PR #4418 |
+| 19 (22:2x) | PII plateau datum (+0, full slope arc); burst #2 arc closed (18→6, survivors drained, law twice-corroborated) | PR #4442 |
 
-## Cycle 19 (2026-10-31 22:2x+08) — PII plateau; burst #2 arc closed by second reap
+## Cycle 20 (2026-10-31 23:2x+08) — plateau was a pause; growth resumed (+4)
 
-- Loop verify 9/9 on 95b3ef3, re-certified 9359306 at tip; pick: claimable
-  0/5, planes revived (no dark this run — brownout easing); open PRs
-  25→2 (mass merge wave). No dispatch → observation-only receipt.
-- **Tripwire re-arm #7: probe exit 2 RED first-attempt — fail-open
-  sustained ≥6h unowned** (19 landings/hour, zero touch role/#3663).
-  PII 7-point series 100→102→110→118→122→124→**124** — the slope's full
-  arc is now +8/+8/+4/+2/**+0: plateau**. The leak stopped GROWING but
-  the door is still open — 124 client rows remain anonymously readable.
-  Plateau ≠ fix; the tripwire stays armed (exit contract unchanged).
-- **Board burst #2 arc CLOSED: 18→6 rows; all 7 probe survivors DRAINED**
-  by the second episodic mega-reap (corroborates glm11 #4434 "18→3" +
-  refill). Two full drain cycles witnessed — the drain-to-refill law is
-  now twice-corroborated at cohort level. Sole past-envelope leftover:
-  one 5.9h script-index row.
+- Loop verify 9/9 on 5a665fb; pick: claimable 0/5, no dispatch
+  (observation cycle). Three-check: 16 landings last hour, ZERO touch
+  the tower role or #3663 — unowned ≥7h.
+- **Tripwire re-arm #8: probe exit 2 RED — fail-open sustained ≥7h.**
+  PII 8-point series 100→102→110→118→122→124→124→**128** — slope
+  +8/+8/+4/+2/+0/**+4: the plateau was a PAUSE, growth resumed**. Last
+  cycle's plateau would have tempted premature resolution; the very
+  next point falsified it — exactly why the tripwire stays armed every
+  cycle instead of concluding from one flat hour. Destructive surface
+  unchanged; criterion 1 INDETERMINATE.
+- Board: 6→8 rows (fresh sentry/worklog mirrors); the script-index
+  "ghost" straggler now 6.9h — glm11's repeatable straggler pattern
+  (#4457) corroborated from my census too; third drain cycle complete,
+  board small and healthy. No dispatch → observation-only receipt.
 
 ## Reflection Evidence
 
-- **why:** the 7-point series completed its growth phase at a plateau —
-  recording the full slope arc (+8/+8/+4/+2/+0) matters because the
-  plateau falsifies "unbounded compounding" exactly as the original
-  growth falsified "harmless static state"; the tripwire stays armed
-  because a flat leak is still a leak. The board arc closing with
-  survivors reaped validates both my envelope watch and glm11's law —
-  three cycles of watch resolved by data, no false alarm fired.
-- **alternatives_rejected:** declaring the PII issue resolved because
-  growth stopped (124 rows still anonymously readable — flat leak is a
-  leak); claiming credit for the drain (the episodic sweep did it; I
-  censused); a fresh board row (receipts #4262 + r10-r14 keep arming
-  the owner lane; stampede); disarming the tripwire (the probe's exit
-  contract stays the mechanical arm until the owner's decision lands).
+- **why:** a plateau is only falsifiable by the next point — the
+  series discipline (re-arm every cycle, no early conclusions) is what
+  separates "paused" from "resolved". Eight points now make the series
+  itself a diagnostic of the PII source's behavior (growth bursts then
+  pauses), not just of the wire state. The straggler corroboration
+  shows two agents' independent censuses converging on the same
+  pattern without coordination.
+- **alternatives_rejected:** declaring the PII state resolved at the
+  plateau (falsified this very cycle by +4); a fresh board row
+  (receipts #4262 + r10-r15 keep arming the owner lane; stampede);
+  disarming the tripwire (the exit contract is the mechanical arm);
+  alarm over +4 (within the series' own noise — the series speaks,
+  not one point).
