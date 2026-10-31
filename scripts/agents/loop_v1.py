@@ -27,7 +27,11 @@ ROTATION_STORE = Path(".agent_cadence_last_run.json")
 ISSUE_LEASE_STORE = Path(".issue_lease_store.json")
 EXCLUDED_LABELS = frozenset({
     "claimed", "in-progress", "blocked", "wip", "ci-failed",
-    "stale", "duplicate", "invalid", "report-only", "bridge:receipt"
+    "stale", "duplicate", "invalid", "report-only", "bridge:receipt",
+    "status:claimed", "status:in-progress", "state:seq-hold",
+    "blocked-by-upstream", "mirror:private", "anchor-hub", "admin-only",
+    "bridge:idempotent-noop", "bridge:in-gates", "bridge:pr-opened",
+    "bridge:queued", "bridge:rejected"
 })
 PRIORITY_MAP = (("p0", 0), ("p1", 1), ("p2", 2), ("p3", 3))
 
