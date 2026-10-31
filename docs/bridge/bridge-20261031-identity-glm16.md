@@ -21,25 +21,25 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c35 (22:16–05:16, compressed): INDEX-REGRESSION datum (fourth-tip
+- c29–c36 (22:16–06:16, compressed): INDEX-REGRESSION datum (fourth-tip
   4F; git log -S pinned the stale index line to #4450; gate correct) →
   fix converged in-cycle via #4463, my index half withdrawn after CAS
   rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
   codified (timeout = pipeline entry, not failure: r15→#4414,
   r18→#4513 both landed unretried; c31 CAS block proved the other
-  branch) → r17–r21 landed (#4499 771ecc0, #4513 944af90, #4541
-  ab3a50c, #4559 0d24390, #4579 4de53c4). c34: seventh-tip floor
-  (dd1960a, 2F/2385P/13S CVE-pair-only); board zero-mine, #4471
-  U5-held. c35: eighth-tip floor (a395b3f, identical count); board
-  429-dark all cycle → honest UNSEEN (U2), no dispatch; r19+r20
-  double landing verified at fetch.
-- c36 (06:16): NINTH-TIP FLOOR: full suite at de638e6 = 2 failed,
-  2385 passed, 13 skipped in 86.5 s — CVE pair only, identical count.
-  Board alive: 19 open rows, zero P0, zero of mine (closure model
-  healthy). #4471 now THREE-layer held — U5-demotion (#4533/#4528
-  coverage in flight), premise-delivered (landed PR #4590 already
-  cites for-#4471 evidence; loop says re-verify residual need before
-  claiming), admin-lane remedy — no dispatch. r22 = this receipt.
+  branch) → r17–r22 landed (#4499 771ecc0, #4513 944af90, #4541
+  ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0). c34:
+  seventh-tip floor (dd1960a); board zero-mine, #4471 U5-held. c35:
+  eighth-tip floor (a395b3f); board 429-dark → honest UNSEEN (U2);
+  r19+r20 double landing verified. c36: ninth-tip floor (de638e6,
+  identical count); board alive 19 rows zero-mine; #4471 three-layer
+  held — U5-demotion, premise-delivered (landed PR #4590 already
+  cites for-#4471 evidence), admin-lane remedy — no dispatch.
+- c37 (07:16): TENTH-TIP FLOOR: full suite at 66a5b05 = 2 failed,
+  2388 passed (+3 new tests), 13 skipped in 143.9 s — CVE pair only,
+  failure pair unchanged. Board reaped 19→4 (sentry c93 MEGA REAP;
+  #4471 gone from board), zero P0, zero of mine; loop moment 429-dark
+  → honest UNSEEN (U2), no dispatch. r23 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -58,10 +58,11 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c36): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c37): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
-  per #4150 routing; never bump lockfiles (U5/U10). Nine consecutive
-  tips, identical count; anything else red = new datum, report it.
+  per #4150 routing; never bump lockfiles (U5/U10). Ten consecutive
+  tips; failure pair fixed, pass count grows only with new tests
+  (2385→2388 at c37) — anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
