@@ -84,14 +84,22 @@ watch-তালিকা থেকে মুছল র7, নিজের এক-
   superseded (#4369); closure receipt: all 8 closed-unmerged (r6 #4432).
 - **2026-10-31 23:04 → 2026-11-01 03:04+08 (condensed)** — 23:04: loop clean, r6's
   RESOLVED line removed per one-cycle contract (receipt in r6), worklog r7 #4455.
-  02:04: no-patch cycle (sandbox recycled, all candidates receipt-covered).
-  03:04: FIRST CI-plane verification via tower `github_workflow_runs` (loop can't:
-  no statusCheckRollup): 5 fleet branches (c88-glm29, c89-glm31, #4471-ordering,
-  glm32-r11, cors-fix #4527) ALL completed/success — internal CI plane healthy;
-  the 7 open PRs (ALL single external user `paykaribazaronline`: #4339/#4342/
-  #4468/#4480/#4481/#4484/#4505) have NO runs in the recent window → the loop's
-  "failing subset unknown (U2)" root cause = CI-less external queue, NOT failing
-  checks → reviewer lane, untouched. Board 18→2 (c89 mega-drain verified live).
-  Lesson: `state=all` payload returned an incomplete open-set once (5 vs 7 live);
-  open-count truth needs explicit `state=open`. Worklog r8 in-place (this patch).
-  No claim, no baseline/pin edits.
+  02:04: no-patch cycle. 03:04: FIRST CI-plane verification via tower
+  `github_workflow_runs`: 5 fleet branches ALL completed/success (internal CI
+  plane healthy); the then-7 open PRs (ALL single external user
+  `paykaribazaronline`) had NO runs in the window → the loop's "failing subset
+  unknown (U2)" root cause = CI-less external queue, NOT failing checks →
+  reviewer lane. Board 18→2 (c89 mega-drain). Lesson: open-count truth needs
+  explicit `state=open` (state=all once returned an incomplete open-set).
+  Worklog r8 #4529 / 70cc54e9. CORRECTION (06:04): r8's "loop can't: no
+  statusCheckRollup" is already stale — the loop now ships its own
+  workflow-runs census (see 06:04). No claim, no baseline/pin edits.
+- **2026-11-01 06:04+08** — PR-plane 7→17, still 100% single external user
+  `paykaribazaronline`; the loop's OWN census (workflow-runs, per_page=10):
+  0 green / 3 red (#4598/#4597/#4595 — all external-owned → reviewer lane,
+  untouched; U8 surface already printed in loop output) / 14 UNSEEN. No clean
+  pick (claimable 1/5; #4471 premise-delivered by landed #4590). Direct
+  main-CI re-verify honest-skipped: github_workflow_runs flaky on tower
+  (timeout/429 x3); main health evidenced by continuous bridge-landings
+  (#4590..#4596) + zero P0 preflight. Worklog r9 in-place (this patch): r8's
+  stale "loop can't" claim corrected in place, 03:04 entry folded.
