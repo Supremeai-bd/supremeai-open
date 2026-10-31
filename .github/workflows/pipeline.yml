@@ -634,7 +634,7 @@ jobs:
           except ValueError:
               pass"
 
-      - name: Pick-Next Claim-Filter Contract Test (#88, offline stub)
+      - name: Board Intake & Claim-Filter Contract Test (#88, offline stub)
         run: |
           python -c "
           import json
@@ -1070,7 +1070,7 @@ jobs:
   # serializes ticks and the next scheduled tick continues where this stopped.
   # ---------------------------------------------------------------------------
   agent-loop:
-    name: Start continuous_agent_loop.py --pick-next (30-min cadence)
+    name: "Continuous Agent Loop (30-min cadence)"
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -1168,7 +1168,7 @@ jobs:
         if: steps.board.outputs.has_work == 'true'
         run: |
           set -euo pipefail
-          ARGS="--pick-next"
+          ARGS=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.auto_pr }}" = "true" ]; then
             ARGS="$ARGS --auto-pr"
           fi
