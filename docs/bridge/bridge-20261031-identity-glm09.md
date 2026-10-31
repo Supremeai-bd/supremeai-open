@@ -34,3 +34,24 @@
 1. First solver dispatch of the day: #4250 (core CI failure, Run 41182951163, P0-critical, unclaimed). Contract's protected-path note applied: target repo private (clone demands auth), logs unobservable (anonymous API 403), workflows protected — evidence filed instead of burning claim+TTL, no auto-close.
 2. Verified planes all green on the mirror: dead-import ratchet 3/3, compileall core PASS, core/tests 11/11 — the defect lives on a private-only plane (mirror-excluded commit, dependency, or workflow-internal). Live datum: render-primary deployStatus update_failed (correlate, not proof).
 3. Deliverable: `docs/reports/TRIAGE_CORE_CI_RUN_41182951163_2026-10-31.md` (Refs #4250, closure left to the verdict plane).
+
+## Cycle 4 (17:09+08 dispatch) — PR #4310 offline reds: root-cause heal (agent-lane, unclaimed)
+
+1. Loop dispatch clean (claimable 0/5). Local census at 8cf8ebc found 2 agent-lane reds born in #4310: (a) tests/test_meta_cognitive_intent.py collection ERROR; (b) parity guard red on scripts/ci/run_face_tests.py (landed with no test face — same family as closed red #12).
+2. Root cause (a): intent_parser.py imported ModelRouter eagerly for a type-only annotation, chaining model_router → performance_enhancer → config_service → sqlalchemy in the offline env. Fix: future-annotations + TYPE_CHECKING (repo-standard, cf. core/automation/execution_recorder.py); annotation and runtime behavior preserved.
+3. Root cause (b): landed runner had no test. Fix: tests/test_run_face_tests.py (8 offline tests: manifest-on-disk drift guard, cmd/cwd contract, returncode propagation, no-mutation flags, import side-effect-free).
+4. Verification: targeted 11/11 PASS; parity guard JSON passed:true missing:[]; full census 2221 passed / 13 skipped / 0 failed (agent lane green; CVE-guard duo stays maintainer-lane, untouched). PR 4313 landed as 9be78ba; WO 4312 auto-closed.
+5. Follow-up at tip a224dfa: PR 4311 (48ad193) landed 2 fresh agent-lane reds — dead imports `ast` (pr_preflight_guard.py) + `shutil` (test_loop_contract_parity.py) grew the shrink-only ratchet 345→347, and line_budget_guard.py arrived with no test face (third of its family). Healed: both imports verified dead by two-tip per-file diff + import-line-only textual check, then removed (ratchet back to 345, delta 0); tests/test_line_budget_guard.py added (12 offline tests: manifest drift guard, over/exact/missing/unreadable budget branches, self-test exit codes, argv routing). Census green again at the healed tip.
+
+## Cycle 5 (18:09+08 dispatch) — tower tool-name drift heal in fresh #4341 fixture
+
+1. Loop dispatch clean (claimable 0/5). Census at 2f5ad91: 1 red — tower tool-name drift guard caught `github_workflow_runs`/`github_list_prs` (dead wave-2 forms) in quoted wire payloads of tests/test_failed_pr_audit_check_census.py (landed #4341, 2f5ad91).
+2. Verdict: migrate, not allowlist — the classifier's own live evidence (roster-purge-era probe, RBAC denial text) shows the deployed tower emits dotted tool names; the fixture's underscore spellings were unfaithful wire simulation, not name-as-data. Migrated both fixture strings to dotted live forms; classifier branches on the "output validation error" substring, so behavior is byte-stable.
+3. Verification: 27/27 targeted PASS (offender file + drift guard); full census 2257 passed / 13 skipped / 0 failed.
+
+## Cycle 6 (19:09+08 dispatch) — clock-coupled fixture bomb defused (verdict-plane age guard)
+
+1. Loop dispatch clean (claimable 0/5). Census at 63d9020: 1 red — test_verdict_plane_age_guard end-to-end arm failed: the "clean" fixture PR carried a hardcoded createdAt (2026-10-30T11:00Z) that aged past the 24h default SLA exactly at 2026-10-31T11:00Z, turning the PASS arm into a permanent breach (clock-coupled red-shift, one day after landing #3888-era test).
+2. Root cause: absolute ISO stamps in an end-to-end fixture that the guard's real clock consumes (age = now − ts). Fix: aging-proof relative fixtures — _iso() generates now−2h (clean, 12x inside SLA) and now−48h (stale, 2x beyond); CI latency cannot flip either verdict. Pure-layer tests untouched (explicit-NOW, already deterministic).
+3. Class-close sweep: audited all 27 test files carrying absolute ISO stamps — every other instance is either explicit-NOW pure-layer (pr_landing_age, staleness watchdog) or tolerant-honest-skip subprocess (intake watchdog); verdict-plane was the only real-clock-coupled hard-assert bomb in the repo.
+4. Verification: 16/16 targeted PASS; full census 2272 passed / 13 skipped / 0 failed.
