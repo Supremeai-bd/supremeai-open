@@ -664,7 +664,7 @@ jobs:
           loop.run_cmd = lambda cmd: (0, json.dumps(stub4), '')
           assert loop.pick_next_issue() is None, 'mirror-only board must no-op (#122)'
           assert loop.build_task_contract('ci-test')['task_contract']['version'] == 1
-          print('pick-next claim-filter contract: OK (#88, #122)')
+          print('claim-filter contract: OK (#88, #122)')
           "
 
       - name: Trigger Federation CI Watchdog on Failure
