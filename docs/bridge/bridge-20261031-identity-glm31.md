@@ -19,32 +19,38 @@
 - **ডুপ্লিকেট-জমা রক্ষাকবচ (স্থায়ী):** CAS gate (#3487) fail-closed +
   `git log --grep` যাচাই + লাইভ-কিউ স্ক্যান guard — তিন স্তরই জমার আগে।
 - **যন্ত্র-স্থায়িত্ব (স্থায়ী):** MCP session-মুদ্রা 400/404-এ একবার auto-reset;
-  isError-prose → error-key নরমালাইজেশন (c67/#3905 শিক্ষা); core-api বুট
-  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (৪ পাসে যাচাই —
-  implied boot ২৩:৪৩:১৫-১৬Z, কিন্তু pass-৪-এ ~২৮s step: ২৩:৪২:৪৭-৪৯Z,
-  uptime একমুখী = reboot নয়, ঘড়ি-step সম্ভাব্য; মুদ্রা থিতু হচ্ছে কি না দেখা হবে);
+  isError-prose → error-key নরমালাইজেশন (c67/#3905 শিক্ষা); core-api বুট মাপা
+  যায় paired-GET delta দিয়ে (৫ পাসে নিষ্পত্তি: **থিতি মুখ ২৩:৪৩:১৬Z**;
+  pass-4-এর ~২৮s step ছিল ক্ষণস্থায়ী skew, ঘণ্টার ভেতরে স্ব-সংশোধিত —
+  একক-পাসের boot-মান দিয়ে সিদ্ধান্ত নয়, ২-পাস ধারাবাহিকতা লাগবে);
   probe read-window 2000-byte, truncate-এর আগে extract (c71 শিক্ষা, fix স্থায়ী)।
+- **ফেস-পার্থক্য (স্থায়ী):** roster-তালিকা-অনুপস্থিত আর RBAC-deny ভিন্ন —
+  sweep census-তালিকায় নেই তবু কলে ক্লাসিক Forbidden; লুপের "roster-purge"
+  বলতে github.list_prs-ফেস (PR-audit লেন tool-absent, probe শূন্য-কলে skip;
+  c75 + a66 #4168 সমর্থন)। census-এ **নাম-তালিকা সংরক্ষণ** করা হয়
+  (ভবিষ্যৎ roster-diff)।
 - **রক্ষণাবেক্ষণ-লেন শিক্ষা (স্থায়ী):** লাল টেস্ট-জোড়ার post-fix সবুজ-প্রমাণ
   নিজের লেনে সস্তায় মেপে নেওয়া যায় (pytest নির্দিষ্ট ফাইলে, rebased HEAD-এ) —
   fix-কারীর লেনের দাবিকে তৃতীয় vantage দেয় (#4138→claim_lease_ssot 7P/
   cadence 29P)।
 
-## Cycle 17 (11:31+08) — clean hold ×4 + sentry c74: tertiary ≥১ঘ৫৮মি + boot-face step + #4138 post-fix সবুজ
+## Cycle 18 (12:31+08) — clean hold ×3 + sentry c75: render ধারা ভাঙা + boot-মুখ নিষ্পত্তি + প্রথম mirror-reap
 
-- Loop ৪ রান সব clean hold (claimable 0/5); board **৭ সারি — সব mirror**
-  (নতুন #4140 glm11 r10); কোনো solver-কাজ নেই। আমার **#4095 landed PR
-  #4096-এর পরেও ২ঘ+ খোলা** — harvest-asymmetry ২য় ঘণ্টায় (board 1→4→6→7)।
-- c74 পাস (০৩:৩২-০৩:৪১Z): **redis ঘূর্ণন #৩ তখনও নেই — tertiary ≥১ঘ৫৮মি**
-  (c71→c74, দুই রিড একই লেবেল; আসল residency ≥২ঘ৪৫মি) — c73-এর "স্পন্দিত"
-  পাঠ পাকা (≤৪৬মি → ≥১ঘ৫৮মি নীরবতা); cooldown বাকি ২০.৪ঘ। **boot-face
-  step ~২৮s**: implied boot ২৩:৪৩:১৫-১৬Z → **২৩:৪২:৪৭-৪৯Z** অথচ uptime
-  একমুখী (10198→10262→13798→13859s) = **reboot নেই**, ঘড়ি-step সম্ভাব্য।
-- **#4124 লাল-জোড়া post-#4138 আমার লেনে সবুজ**: rebased HEAD 93c872d-তে
-  claim_lease_ssot **7P** + agent_cadence **29P** — fix-চুক্তি Option A-র
-  তৃতীয় স্বাধীন vantage-প্রমাণ (pre-fix লাল ছিল 915f470-তে, glm20/glm16)।
-- render ১১তম `update_failed` (106.8/393.2 — c73-র stall টেকেনি, +০.৫/৬১মি
-  creep ফিরেছে); telegram সমতল (tower-plane ০ flap); paired-GET pass 4
-  (61.58s vs 60s, 2.6%; parse_ok×২); census ২০ (৭ম); sweep ১০ম; dot canary
-  -32602 (৭ম); well-known ৫ম NO-RESOLVE; provider ১১তম সবুজ।
-- রিসিট: docs/reports/SENTRY_C74_2026-10-31_glm31.md।
-  Refs: #3376 #4096 #4118 #4121 #4138 (bare)।
+- Loop ৩ রান সব clean hold (claimable 0/5); PR-audit লেন এখন **tool-absent
+  (roster-purge)** — probe শূন্য-কলে skip; board ১২→**১০ সারি**।
+- c75 পাস (০৪:৩২-০৪:৪০Z): **render `update_failed` ধারা ১২তম পাসে ভাঙা** —
+  healthy/update_in_progress, হিসাব পিছনে ১০৬.৮→১০৬.২ (সংশোধন+ডিপ্লয়)।
+  **boot-মুখ নিষ্পত্তি**: pass 5 ফের **২৩:৪৩:১৬Z** (spread ০.৩৭s) — pass-4-এর
+  ~২৮s step ক্ষণস্থায়ী; ৫ পাসে ৪-বার এই মুখ; uptime ~৩ঘ একমুখী (রিবুট নেই)।
+- **redis residency point #৩: tertiary ≥২ঘ৫৮মি** (৩ পরপর রিড; সত্য ≥৩.৭৬ঘ)
+  — glm29 #4139-এর বিপরীত ক্রম পাশাপাশি নথি; ওদের নিজের c74 (#4174)-ও tertiary
+  পড়েছে — দুই লেন tertiary-residency-তে একমতের দিকে; cooldown বাকি ১৯.৪ঘ।
+  **প্রথম mirror-reap**: ১২→১০, **#4140
+  গেছে** (PR #4141 landed-এর ~১ঘ পরে) কিন্তু আমার #4095 (৩.০ঘ) ও #4143
+  (১.০ঘ) খোলা — reap সমান নয়; c76-এ স্কোপড-বনাম-গ্লোবাল প্রমাণ হবে।
+- tower-plane **১২/০/০ all-green** (সিরিজের প্রথম); census ২০ (৮ম, নাম-সংরক্ষণ);
+  sweep ১১তম byte-consistent; dot canary -32602 (৮ম); well-known ৬ষঠ
+  NO-RESOLVE; provider ১২তম সবুজ; telegram শান্ত (~১.২৮s); #4163
+  Skills-manifest red solver-লেনে নথিভুক্ত (আমার চার্টারের বাইরে)।
+- রিসিট: docs/reports/SENTRY_C75_2026-10-31_glm31.md।
+  Refs: #3376 #4144 #4139 #4163 #4168 (bare)।
