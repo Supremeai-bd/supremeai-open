@@ -312,7 +312,7 @@ class TestCensusWiringContract(unittest.TestCase):
         # roster and the call DID land) — a false-cause note (U6). The note
         # must name the window-dependent response-shape instead.
         note = cal._classify_tower_pr_failure(
-            "MCP error -32602: Output validation error: Tool github_workflow_runs "
+            "MCP error -32602: Output validation error: Tool github.workflow_runs "
             "has an output schema but no structured content was provided",
             tool_label="github.workflow_runs",
         )
@@ -322,7 +322,7 @@ class TestCensusWiringContract(unittest.TestCase):
         self.assertNotIn("RBAC-forbidden", note)
         # Default label stays byte-stable for the PR path.
         note_pr = cal._classify_tower_pr_failure(
-            "MCP error -32602: Output validation error: Tool github_list_prs "
+            "MCP error -32602: Output validation error: Tool github.list_prs "
             "has an output schema but no structured content was provided"
         )
         self.assertIn("tower github.list_prs output-validation rejection", note_pr)
