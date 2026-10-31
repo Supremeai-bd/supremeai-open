@@ -8,8 +8,12 @@ replaces hardcoding with DISCOVERY:
 
     - repo/backend/frontend roots are found by walking up from __file__
       (no "cd ../.." assumptions);
-    - python files come from `git ls-files` when available (respects
-      .gitignore) with a glob fallback for tarball/CI checkouts;
+    - python files come from `git ls-files --cached` when available (the
+      COMMITTED tree — untracked scratch files are invisible, so a dirty
+      worktree can never leak a phantom entry into a derived artifact;
+      repro: #4253 landed an _INDEX.md listing an untracked helper that
+      never landed, reddening the #1630 freshness gate on every clean
+      tree) with a glob fallback for tarball/CI checkouts;
     - FastAPI routes are extracted by AST parsing (no imports, no boot,
       safe against crash-on-import files);
     - service URLs are read from env (RENDER_*_URL / CORS_ORIGINS) with a
@@ -150,9 +154,14 @@ def get_layout(start_env: str = "SUPREMEAI_REPO_ROOT") -> RepoLayout:
 # --------------------------------------------------------------------------- #
 
 def _git_ls_files(root: Path) -> Optional[List[Path]]:
+    """Tracked files only (--cached). NO --others: discover_py_files' contract
+    says "all tracked python files" — including untracked scratch files here
+    let #4253's dirty worktree bake a phantom row into the landed _INDEX.md
+    (the #1630 gate then went red on every clean tree). Inventory consumers
+    audit the committed repo, not the agent's desk."""
     try:
         out = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            ["git", "ls-files", "--cached"],
             cwd=str(root), capture_output=True, text=True, timeout=30,
         )
         if out.returncode != 0:
