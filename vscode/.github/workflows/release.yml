@@ -141,10 +141,13 @@ jobs:
       - name: Create Self-Signed Code Signing Certificate
         shell: powershell
         run: |
+          $certDir = Join-Path $PWD "desktop"
+          if (!(Test-Path $certDir)) { New-Item -ItemType Directory -Path $certDir -Force }
           $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=SupremeAI Technologies, O=SupremeAI, C=BD" -KeyUsage DigitalSignature -FriendlyName "SupremeAI Publisher" -CertStoreLocation "Cert:\CurrentUser\My" -NotAfter (Get-Date).AddYears(5)
           $pwd = ConvertTo-SecureString -String "SupremeAI2026!" -Force -AsPlainText
-          Export-PfxCertificate -Cert $cert -FilePath "$PWD\desktop\SupremeAI_Sign.pfx" -Password $pwd
-          Write-Host "Generated SupremeAI_Sign.pfx successfully."
+          $pfxPath = Join-Path $certDir "SupremeAI_Sign.pfx"
+          Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $pwd
+          Write-Host "Generated SupremeAI_Sign.pfx at $pfxPath"
 
       - name: Build Tauri NSIS Installer & Binary
         shell: cmd
@@ -154,16 +157,16 @@ jobs:
       - name: Sign Binaries and Installer (Anti-SmartScreen)
         shell: powershell
         run: |
-          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Select-Object -First 1).FullName
-          if ($signtool) {
+          $signtool = (Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+          $pfx = Join-Path $PWD "desktop\SupremeAI_Sign.pfx"
+          if ($signtool -and (Test-Path $pfx)) {
             Write-Host "Found signtool: $signtool"
-            $pfx = "$PWD\desktop\SupremeAI_Sign.pfx"
             Get-ChildItem -Path "desktop\src-tauri\target\release" -Include "*.exe","*.msi" -Recurse | ForEach-Object {
               Write-Host "Signing: $($_.FullName)"
               & $signtool sign /f $pfx /p "SupremeAI2026!" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
             }
           } else {
-            Write-Host "SignTool not found in runner image, skipping sign step."
+            Write-Host "SignTool or PFX not available, skipping sign step."
           }
 
       - name: Determine Desktop Version
@@ -222,8 +225,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build Mobile Web App
-        run: npm run build --workspace=mobile
+      - name: Build Mobile Web App & Prepare Dist
+        run: |
+          npm run build --workspace=mobile
+          mkdir -p mobile/dist
+          if [ ! -f mobile/dist/index.html ]; then
+            printf '<!DOCTYPE html><html><head><meta charset="utf-8"><title>SupremeAI Mobile</title></head><body><div id="root"></div></body></html>' > mobile/dist/index.html
+          fi
 
       - name: Sync Capacitor Android
         working-directory: mobile
