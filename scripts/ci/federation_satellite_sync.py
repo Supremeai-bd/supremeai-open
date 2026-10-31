@@ -180,6 +180,31 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
         "Supremeai-bd/supremeai-core",
         "skills",
     ),
+    (
+        "evals",
+        "Supremeai-bd/supremeai-core",
+        "evals",
+    ),
+    (
+        "tests/test_tiny_brain_service.py",
+        "Supremeai-bd/supremeai-core",
+        "tests/test_tiny_brain_service.py",
+    ),
+    (
+        "tests/test_core_exports.py",
+        "Supremeai-bd/supremeai-core",
+        "tests/test_core_exports.py",
+    ),
+    (
+        "tests/test_brain_curriculum.py",
+        "Supremeai-bd/supremeai-core",
+        "tests/test_brain_curriculum.py",
+    ),
+    (
+        "tests/test_kaggle_orchestrator_dual_brain.py",
+        "Supremeai-bd/supremeai-core",
+        "tests/test_kaggle_orchestrator_dual_brain.py",
+    ),
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
