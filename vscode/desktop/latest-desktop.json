@@ -1,0 +1,11 @@
+{
+  "version": "0.1.0",
+  "notes": "Initial release of SupremeAI Desktop",
+  "pub_date": "2026-11-01T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "url": "https://github.com/Supremeai-bd/supremeai-vscode/releases/download/desktop-v0.1.0/supremeai-desktop-windows-x64.zip"
+    }
+  }
+}
+
