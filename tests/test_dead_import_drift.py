@@ -98,7 +98,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # Re-measured with this scanner -> 355 after the core/api heal, -> 354 after the
 # sibling-loop heal (loop_v1.py `os`, same order). Shrink-only preserved:
 # 354 < 355 < 361 < 363 < 446.
-BASELINE_UNUSED_IMPORTS = 354
+# Re-armed 2026-10-31 r8 heal (GLM Agent 23, Job 486814): the 3-binding slice
+# r7 deliberately deferred as "higher re-export/string-annotation risk" — now
+# verified dead at that deeper bar and removed: core/api/routes/
+# {admin_evaluation.py Query, admin_policies.py PolicyRule, agent_registry.py
+# AgentRegistry}. Each verified dead five ways: 0 AST Name-loads; 0
+# attribute-bases (module.attr form); the only whole-word textual ref is its
+# own import line (no string annotations, no comments); 0 consumer imports
+# (`from core.api.routes.X import <name>` repo-wide = 0); 0 star-facade
+# forwarding uses (word-boundary scan over all 201 gateway/routes/ files = 0
+# hits for all three names). admin_routing.py DecisionResult was already
+# removed by r7; no overlap with the r7 file set. Re-measured with this
+# scanner -> 351 on the r7 tip; re-measured at the submission tip (f7460154
+# window carried further unrelated debt removals) -> 345. Baseline binds at
+# the measured floor per the 2026-10-28 re-arm doctrine. Shrink-only
+# preserved: 345 < 351 < 354 < 355 < 361 < 363 < 446.
+BASELINE_UNUSED_IMPORTS = 345
 
 # Files remediated by the audit patch (docs/AUDIT_2026-10-28-dead-import-drift.md).
 # Each binding below was verified dead by AST Name-load analysis + word-boundary
