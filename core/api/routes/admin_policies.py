@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 from api.dependencies import get_current_admin
 from governance.policy_engine import enforce_policies, evaluate_policies
 from governance.policy_rules import DEFAULT_POLICY_RULES, get_active_rules
-from governance.policy_types import PolicyRule
 
 router = APIRouter(prefix="/admin-api/policies", tags=["policy-engine"])
 
