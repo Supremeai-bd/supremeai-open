@@ -7,7 +7,6 @@ list, create, update, delete, semantic search, sync, and stats.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException

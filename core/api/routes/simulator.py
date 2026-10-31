@@ -15,7 +15,6 @@ import json
 import os
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urljoin
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel

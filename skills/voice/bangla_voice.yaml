@@ -13,7 +13,6 @@ kind: Skill
 metadata:
   name: bangla-voice
   title: Bangla Voice (Zero-Compute Edge Neural TTS)
-  version: 1.0.0
   description: >-
     High-fidelity Bangla speech synthesis for the omnichannel admin control
     surface: audible runway status, critical alerts, and conversational voice

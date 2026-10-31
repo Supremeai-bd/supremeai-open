@@ -23,7 +23,6 @@
 #   - unknown_policy: অজানা পাথ = conservative core+worker (fail-open — স্টেল
 #     প্রোডের ঝুঁকি অপচয়ের চেয়ে বড়; #2901 মতবাদ অপরিবর্তিত)
 # ============================================================================
-version: 1
 unknown_policy: conservative-backend
 
 noise:

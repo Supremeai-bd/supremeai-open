@@ -11,10 +11,13 @@ reflected the next time the index is regenerated (and `--check` fails CI when
 somebody forgets).
 
 What it does
-    1. Discovers every script under scripts/ (SCAN_ROOT — the full tree, fixed
-       by #1812 which caught ops-only discovery) via the shared auto_discovery
-       lib: *.py through discover_py_files (git-aware, respects .gitignore),
-       plus *.sh / *.mjs / *.js / *.dart through discover_files.
+    1. Discovers every git-TRACKED script under scripts/ (SCAN_ROOT — the
+       full tree, fixed by #1812 which caught ops-only discovery; tracked-only
+       per the 2026-10-31 phantom-row cure) via the shared auto_discovery
+       lib: *.py through discover_py_files (git-aware), plus
+       *.sh / *.mjs / *.js / *.dart through discover_files. Untracked
+       working-tree strays are structurally excluded so an index regenerated
+       on one machine can never reference files absent from the repo.
     2. Extracts a one-line purpose per script WITHOUT importing anything:
        module docstring first line (AST) -> argparse description (AST) ->
        leading comment block (shell/js/dart).  Files with nothing get an
@@ -228,8 +231,14 @@ def purpose_for_comment_file(path: Path) -> Tuple[str, str]:
 def discover_scripts() -> Tuple[List[Tuple[Path, str]], int]:
     """[(absolute_path, scripts_relative_posix_path)], plus empty-file count."""
     # #1812: scan the WHOLE scripts/ tree (SCAN_ROOT), not just scripts/ops.
-    py_files = discover_py_files(base=SCAN_ROOT, env="")  # git-aware, untracked included
-    other_files = discover_files(SCAN_ROOT, NONPY_PATTERNS)
+    # Phantom-row cure (2026-10-31 live defect): discovery MUST be tracked-only.
+    # The old untracked-inclusive scan let a stray working-tree script on the
+    # regenerating machine (ops/download_all_pr_diffs.py — never in git
+    # history) enter the committed index, so every clean checkout read the
+    # index as stale and the #1630 gate went red on main. The index describes
+    # REPO content, never a machine's untracked strays.
+    py_files = discover_py_files(base=SCAN_ROOT, env="", tracked_only=True)
+    other_files = discover_files(SCAN_ROOT, NONPY_PATTERNS, tracked_only=True)
 
     entries: List[Tuple[Path, str]] = []
     skipped_empty = 0

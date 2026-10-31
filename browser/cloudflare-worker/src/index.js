@@ -37,12 +37,15 @@ export default {
     ) {
       return Response.json({ success: false, error: "target host not allowed" }, { status: 403 });
     }
+
+    // Never expose an unauthenticated browser proxy in production.
     const expectedToken = env.SUPREMEAI_WORKER_TOKEN;
-    if (expectedToken) {
-      const auth = request.headers.get("authorization") || "";
-      if (auth !== `Bearer ${expectedToken}`) {
-        return Response.json({ success: false, error: "unauthorized" }, { status: 401 });
-      }
+    if (!expectedToken) {
+      return Response.json({ success: false, error: "worker authentication is not configured" }, { status: 503 });
+    }
+    const auth = request.headers.get("authorization") || "";
+    if (auth !== `Bearer ${expectedToken}`) {
+      return Response.json({ success: false, error: "unauthorized" }, { status: 401 });
     }
 
     let browser;
@@ -78,7 +81,7 @@ export default {
       }
       return Response.json({
         success: false,
-        error: err.message,
+        error: "browser operation failed",
         url: targetUrl.href
       }, { status: 500 });
     }

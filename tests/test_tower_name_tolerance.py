@@ -57,6 +57,30 @@ class TestNotFoundPredicate(unittest.TestCase):
         self.assertFalse(is_tool_not_found_error_env(resp))
         self.assertTrue(envelope_says_tool_not_found(resp))
 
+    def test_jsonrpc_response_result_content_shape(self):
+        # বাংলা: চতুর্থ আকৃতি — JSON-RPC success envelope যার result.content-ই
+        # isError text বহন করে (MCP tools/call-এর স্ট্যান্ডার্ড শেপ; watchdog-এর
+        # _rpc funnel ঠিক এটাই দেখে — live dark ছিল, GLM Agent 11 cycle-15)।
+        resp = {"jsonrpc": "2.0", "id": 7, "result": _is_error_content(None)}
+        self.assertFalse(is_tool_not_found_error_env(resp))
+        self.assertTrue(envelope_says_tool_not_found(resp))
+
+    def test_result_content_shape_falls_through_to_next_spelling(self):
+        # বাংলা: funnel-আকৃতিতেও first-live-wins ক্রস করে মৃত বানান —
+        # watchdog-কিউর-এর hermetic প্রমাণ (নেটওয়ার্ক নেই)।
+        calls: list[str] = []
+
+        def call(n: str):
+            calls.append(n)
+            if n == "bridge.work_queue":
+                return {"jsonrpc": "2.0", "id": 1, "result": _is_error_content(None)}
+            return {"jsonrpc": "2.0", "id": 2,
+                    "result": {"content": [{"type": "text", "text": "{\"workOrders\": []}"}]}}
+
+        resp = call_across_names(call, epoch_spellings("bridge.work_queue"))
+        self.assertEqual(calls, ["bridge.work_queue", "bridge_work_queue"])
+        self.assertEqual(resp["result"]["content"][0]["text"], "{\"workOrders\": []}")
+
     def test_raw_text_shape_from_tool_text_style_callers(self):
         self.assertTrue(envelope_says_tool_not_found(DEAD_DOT_TEXT))
 

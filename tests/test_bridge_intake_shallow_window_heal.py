@@ -37,7 +37,6 @@ Dual-mode (pytest + stdlib runner), mirroring test_bridge_intake_gate_watchdog.p
 from __future__ import annotations
 
 import importlib.util
-import shutil
 import subprocess
 import sys
 import tempfile

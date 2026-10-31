@@ -14,7 +14,7 @@ Traffic-police logic:
 6. Single-dispatch clean execution: external runner/scheduler drives loop cadence.
 """
 from __future__ import annotations
-import argparse, json, os, re, subprocess, sys, threading, time, urllib.request
+import argparse, ast, inspect, json, os, re, subprocess, sys, threading, time, urllib.request
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from pathlib import Path
@@ -866,6 +866,13 @@ def _tower_merged_landing_prs(
 
     def _probe() -> None:
         try:
+            # বাংলা (GLM Agent 09, Job 486738, U6 রুট-কজ গেট): রোস্টারে টুল না
+            # থাকলে নিশ্চিত -32602-এর সাইকেল বৃথা — গেট-নোট থাকলে শূন্য নেটওয়ার্ক-
+            # কলে সৎ error; উপরের fail-open স্তর আগের মতোই অন্ধকার ক্যাশ করবে।
+            gate_note = _tower_tool_roster_gate("github.list_prs")
+            if gate_note:
+                holder["error"] = gate_note
+                return
             sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
             import mcp_tower_client as _mtc  # lazy sibling import (same-dir or repo-root both resolve)
 
@@ -901,23 +908,34 @@ def _tower_merged_landing_prs(
                 None,
             )
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
-            _, body = _post(
-                {
-                    "jsonrpc": "2.0",
-                    "id": call_id,
-                    "method": "tools/call",
-                    "params": {
-                        "name": "github.list_prs",
-                        "arguments": {
-                            "repo": UPSTREAM_REPO,
-                            "state": "closed",
-                            "limit": min(int(per_page), 100),
+            # বাংলা (GLM Agent 04, Job 486718, U6): নাম-ঢেউ-সহনশীল কল — ঢেউ-৩
+            # (live 2026-10-31) dotted github.list_prs আবার মৃত (-32602); এক-বানান
+            # পিন scan-B পরিবহণকে অন্ধ করে রেখেছিল। যুগ-ক্রমে দুই বানান চেষ্টা;
+            # not-found স্বাক্ষরে পরের বানান, প্রথম জীবিত সাড়া জয়ী — hydrate
+            # idiom-এর সম-শ্রেণি; shared cure scripts/ci/tower_name_tolerance.py।
+            body = ""
+            for spelling in ("github.list_prs", "github.list_prs".replace(".", "_", 1)):
+                _, body = _post(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": call_id,
+                        "method": "tools/call",
+                        "params": {
+                            "name": spelling,
+                            "arguments": {
+                                "repo": UPSTREAM_REPO,
+                                "state": "closed",
+                                "limit": min(int(per_page), 100),
+                            },
                         },
                     },
-                },
-                sid,
-                timeout=45,
-            )
+                    sid,
+                    timeout=45,
+                )
+                _low = body.lower()
+                if "-32602" in _low and "not found" in _low:
+                    continue
+                break
             holder["body"] = body
         except Exception as exc:  # noqa: BLE001 — fallback must never raise out of the thread
             holder["error"] = f"tower landing fallback failed ({type(exc).__name__})"
@@ -1604,6 +1622,14 @@ def report_failed_open_prs(
     বোর্ড-প্লেনের (bridge.work_queue) in-gates গণনা — landing-cohort-এর সৎ partial
     assurance (কখনো ✅/zero নয়); বোর্ড-প্লেনও অন্ধ হলে তবেই আগের ⚠ লাইন।
 
+    check-census স্তর (GLM Agent 04, Job 486718, 17:04+08 চক্র): revived
+    branch-এর স্থায়ী "per-PR check status UNSEEN" ছিল join-অনুপস্থিতির সৎ
+    ঘোষণা — list_prs পেলোডে rollup নেই। নতুন স্তর: github.workflow_runs
+    (একই zero-credential tower) প্রতিটি pull_request রানের display_title +
+    conclusion দেয়; census জীবিত হলে per-PR green/red/UNSEEN শ্রেণি ছাপে
+    (report-only, কখনো ✅ নয়), census অন্ধ হলে পুরনো UNSEEN লাইন byte-অক্ষত।
+    census প্রোব never-raise — বিস্ফোরণ পুরনো সৎ-অজ্ঞতায় অবনমিত হয়।
+
     #3574: log_fn ঐচ্ছিক প্যারামিটার (ডিফল্ট log — পুরনো dispatch-stdout চুক্তি
     বাইট-অপরিবর্তিত, test_failed_pr_audit_honesty পিন অক্ষত)। preflight
     অডিট envelope-মোডে _stderr_log পাঠায় — SPEC §4b stdout-purity (stdout
@@ -1624,9 +1650,41 @@ def report_failed_open_prs(
         except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
             fb_rows, fb_note = None, f"tower PR probe raised ({type(exc).__name__})"
         if fb_rows is not None:
-            log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
+            # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U2-অন্ধত্ব নিরাময়):
+            # পুরনো চুক্তি ছিল — list_prs পেলোডে statusCheckRollup নেই বলে per-PR
+            # check status স্থায়ীভাবে UNSEEN। কিন্তু একই tower-এর
+            # github.workflow_runs প্রতিটি pull_request রানের display_title +
+            # conclusion দেয় (লাইভ-প্রমাণিত) — অর্থাৎ status অদৃশ্য ছিল না,
+            # join-ই ছিল না। census জীবিত হলে এখন green/red/UNSEEN শ্রেণি ছাপে;
+            # census অন্ধ হলে পুরনো UNSEEN লাইন byte-অপরিবর্তিত (সৎ অজ্ঞতা)।
+            # শ্রেণিবিন্যাস report-only — কখনো ✅/zero-assurance নয় (U2 পিন)।
+            try:
+                census, census_note = _tower_workflow_run_census(limit=limit)
+            except Exception as exc:  # noqa: BLE001 — অডিট কখনো dispatch kill করবে না
+                census, census_note = None, f"workflow-runs census raised ({type(exc).__name__})"
+            if census is None:
+                log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check status UNSEEN (tower payload carries no statusCheckRollup; gh absent); failing subset unknown, not certified clean (U2).")
+                for p in fb_rows[:limit]:
+                    log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+                return []
+            classified: list[tuple[dict[str, Any], str, dict[str, str] | None]] = []
             for p in fb_rows[:limit]:
-                log_fn("  ↳", f"PR #{p.get('number')}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
+                run = _pr_check_classification(str(p.get("title") or ""), census)
+                if run is None:
+                    classified.append((p, "UNSEEN", None))
+                elif run.get("conclusion") == "success":
+                    classified.append((p, "green", run))
+                elif run.get("conclusion") in _PR_CHECK_RED_CONCLUSIONS:
+                    classified.append((p, "RED", run))
+                else:
+                    classified.append((p, "UNSEEN", None))
+            green_n = sum(1 for _p, marker, _r in classified if marker == "green")
+            red_n = sum(1 for _p, marker, _r in classified if marker == "RED")
+            unseen_n = len(classified) - green_n - red_n
+            log_fn("🔍", f"Read-only failed PR audit: plane revived via {fb_note} — per-PR check census via {census_note}: {green_n} green / {red_n} red / {unseen_n} UNSEEN (latest completed pull_request runs, title/head_branch join; UNSEEN = no matching run in window — unknown, not certified clean, U2).")
+            for p, marker, run in classified:
+                tag = f"[{marker}" + (f"/{run.get('conclusion')}" if run else "") + "]"
+                log_fn("  ↳", f"PR #{p.get('number')} {tag}: {str(p.get('title') or '')[:90]} ({p.get('url') or 'no-url'})")
             return []
         # বাংলা (#3772, viewer-যুগের স্থায়ী RBAC-অন্ধত্ব): PR-প্লেন (gh + tower
         # list_prs) দুই স্তরেই অন্ধ হলে আগের কোড সরাসরি ⚠ ছাপত — ফলে প্রতিটি
@@ -1650,9 +1708,18 @@ def report_failed_open_prs(
                     for l in (r.get("labels") or [])
                 )
             )
+            # বাংলা (GLM Agent 09, Job 486738): প্লেন-অন্ধকারের কারণ-প্রিফিক্স এখন
+            # নোট-সত্যনিষ্ঠ — গেট-নোট রোস্টার-অনুপস্থিতি বললে মিথ্যা "viewer RBAC"
+            # আর ছাপাবে না (U6: মিথ্যা কারণ-নির্ণয় শ্রেণি বন্ধ); পুরনো RBAC-নোটে
+            # আগের প্রিফিক্সই থাকে (টেস্ট-পিন অক্ষত)।
+            plane_cause = (
+                "tool-absent (tower roster purge)"
+                if "roster" in (fb_note or "").lower()
+                else "viewer RBAC"
+            )
             log_fn(
                 "🔍",
-                f"Read-only failed PR audit: PR-plane dark (viewer RBAC; {fb_note}) — "
+                f"Read-only failed PR audit: PR-plane dark ({plane_cause}; {fb_note}) — "
                 f"board-plane partial assurance via {b_note}: {in_gates} row(s) in gates "
                 f"(bridge:in-gates) of {len(b_rows)}; landing cohort visible, per-PR check "
                 "status UNSEEN, not certified clean (U2).",
@@ -1787,13 +1854,18 @@ def pick_next_issue(
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
-        # বাংলা: #3573 — এখানে কোনো সময়-ভিত্তিক এক্সক্লুশন নেই। আগে ৩০-মিনিট লোকাল
-        # লিজ উইন্ডো ডিসপ্যাচ-হওয়া কিন্তু-এখনো-আনক্লেইমড অ্যাকশনেবল কাজকে ঘড়ির
-        # কারণে স্কিপ করাত (প্রতিষ্ঠাতা-নিষেধ: কৃত্রিম অপেক্ষা)। এখন একমাত্র শর্ত
-        # দুটি: EXCLUDED_LABELS ও state-truth (নিচে) — আর লাইভ claim, যা pick
-        # pre-verify-এর claim_probe (#2794 fix (1)) দেখে; atomic work_claim-ই
-        # চূড়ান্ত স্ট্যাম্পিড-আরবিটার। SPEC §4c-র স্বীকৃত "fixed guess" ঘড়িটাই
-        # মুছে ফেলা হল।
+        # #4124-restore (Option A of the #4125 fix contract): the gate is
+        # clock-free per the #3573 founder regime — NO local cooldown/lease
+        # window may gate or delay a candidate here. Claimability's only two
+        # mechanical arbiters are the live claim probe at pick time and the
+        # atomic work_claim at claim time (SPEC §4c); re-dispatch churn of a
+        # dispatched-but-unclaimed row is the in-flight twin demotion's job
+        # (demotion-only, below) — never a gate. AST-pinned by
+        # tests/test_claim_lease_ssot.py::test_02 and
+        # tests/test_agent_cadence.py::test_pick_has_no_dispatch_time_gate,
+        # and re-pinned at every --verify-only by tier 9
+        # (constitution_guard_pins) so a blind-ladder landing can never
+        # certify this gate dirty again.
         # #2903 fix: state truth on the fallback plane — the gh-present path
         # pre-filters `gh issue list --state open`, but tower-board fallback rows
         # carry `state` verbatim, so a closed row with stale unclaimed labels
@@ -1806,8 +1878,17 @@ def pick_next_issue(
         title = str(item.get("title") or "")
         if "anchor hub" in title.lower():
             return False
-        if "sentry" in title.lower():
-            return False
+        # বাংলা (#4122-এর blind-ladder শ্রেণির জীবন্ত উদাহরণ): "sentry" টাইটেলের
+        # ব্ল্যাঙ্কেট-বাদ এখানে ইচ্ছাকৃতভাবে নেই — নিচের board-local demotion
+        # পরিবারই (stale-sentry #3050 → sentry-test-row U4 → twin U5 →
+        # receipt-coverage #3315) একমাত্র sentry arbiter। ব্ল্যাঙ্কেট-চেক পরিবারটিকে
+        # dead code বানিয়ে দেয়: stale fossil বাদ দেওয়ার আগেই প্রতিটি sentry রো
+        # সরে যায়, ফলে lone/newest sentinel serve চুক্তি (fail-open) আর
+        # demotion-লগ চুক্তি দুটোই ভাঙে — tests/test_stale_sentry_demotion.py ও
+        # tests/test_sentry_test_row_demotion.py এর ৫টি pinned টেস্ট (#3469/#3738)
+        # লাল হয়। যে অপচয় ব্ল্যাঙ্কেট-চেক আটকাতে চেয়েছিল (fossil/test-row
+        # dispatch) তা পরিবারটি লাইভ পথে ইতিমধ্যেই আটকায় — শুধুমাত্র sentinel
+        # duty-কে কাজ হিসেবে serve করে, যা pinned চুক্তি।
         state = item.get("state")
         if state is not None and str(state).lower() != "open":
             return False
@@ -2122,13 +2203,38 @@ ROLE_RULES: dict[str, str] = {
     "platform-guardian": "প্রজেক্টের সাথে যুক্ত অন্যান্য সমস্ত থার্ড-পার্টি প্ল্যাটফর্ম ও সার্ভিসের সার্বক্ষণিক তদারকি, অডিট ও নজরদারি নিশ্চিত করা (absorbed auditor duties)।",
 }
 
+def load_role_skill_instructions(role_name: str) -> str:
+    """Load deep instruction specification from .agents/skills/<role>/SKILL.md if available.
+
+    Falls back cleanly to ROLE_RULES or default string if skill file is absent.
+    """
+    try:
+        candidate_paths = [
+            Path(__file__).resolve().parent.parent.parent / ".agents" / "skills" / role_name / "SKILL.md",
+            Path(__file__).resolve().parent / "skills" / role_name / "SKILL.md",
+        ]
+        for p in candidate_paths:
+            if p.is_file():
+                content = p.read_text(encoding="utf-8")
+                # Strip YAML frontmatter if present
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        content = parts[2].strip()
+                return content
+    except Exception:
+        pass
+    return ""
+
 COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
 1. Dual-Rebase: Rebase origin/main at work-start AND pre-push (0 behind).
 2. Boundary: Zero satellite code in repo root (src/*, service/*, packages/*).
 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
 4. Verification: No direct push to protected branches; all PRs require local proof.
 5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory.
-6. Full-Scope Completeness: Solvers/coders must NEVER leave partial work. Database schemas, migrations, configuration, environment wiring, and tests must be completed in the exact same PR."""
+6. Full-Scope Completeness: Solvers/coders must NEVER leave partial work. Database schemas, migrations, configuration, environment wiring, and tests must be completed in the exact same PR.
+7. Simplest Solution & Anti-Bloat: Always adopt the simplest, most minimal, and most direct solution that solves root cause. Never bloat files or over-engineer.
+8. Zero Cross-Agent Collateral: Strictly stay within your task domain scope; never overwrite, erase, or weaken another agent's code or tests."""
 
 def log(icon: str, msg: str) -> None:
     try:
@@ -2237,6 +2343,26 @@ def envelope_says_tool_not_found(resp: Any) -> bool:
     return False
 
 
+def _tower_rate_limited(exc: BaseException) -> bool:
+    """429-class (rate-limit) vs tower-down classifier — pure, transport-free.
+
+    বাংলা (GLM Agent 26, Job 486824, live প্রমাণ 2026-10-31T10:26Z): fleet-এর
+    hourly cron সবাই একই :26 উইন্ডোতে tower প্রোব করে — tower জীবিত অবস্থাতেই
+    429 দেয় (৩-উইন্ডো প্রোব: w1 bridge_work_queue OK rows=0, w2/w3 HTTP 429),
+    কিন্তু sibling-ক্লায়েন্ট ও urllib দুই পথেই এই স্থিতিকে সাধারণ
+    connection-failure হিসেবে তুলে ধরত — ফলে লুপ "plane dark" ছাপত এবং প্রতিটি
+    এজেন্ট মিথ্যা tower-down পাঠ পেত (r17 #4346 dark-cycle datum-এর আসল কারণ)।
+    এই শ্রেণিবিন্যাস নোট-স্তরকে সৎ কারণ দেয়: 429 মানে tower জীবিত, শুধু এই রান
+    অন্ধ — পরের সাইকেলই স্বাভাবিক রিট্রাই (hard-join বাজেটে in-run retry
+    ধরে নেওয়ার চেয়ে সৎ ও সরল)। String-শ্রেণি (ক্লাস-নাম + মেসেজ) বেছে নেওয়া
+    হয়েছে যাতে sibling import নিজেই ব্যর্থ হলেও শ্রেণিবিন্যাস কাজ করে।
+    """
+    if "RateLimited" in type(exc).__name__:
+        return True
+    msg = str(exc)
+    return "HTTP 429" in msg or "HTTP Error 429" in msg
+
+
 def _tower_queue_floor(timeout_s: float = 12.0) -> str:
     """R61/#2318 option B — honesty floor for the gh-absent skip line.
 
@@ -2289,10 +2415,19 @@ def _tower_queue_floor(timeout_s: float = 12.0) -> str:
                     "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
                 )
         except Exception as exc:  # noqa: BLE001 — floor must never raise
-            outcome["note"] = (
-                f"tower board probe failed ({type(exc).__name__}) — "
-                "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
-            )
+            if _tower_rate_limited(exc):
+                # বাংলা: 429-এ মিথ্যা "tower-down" নয় — সৎ শ্রেণি: tower জীবিত,
+                # fleet cron-window contention, এই রান অন্ধ (U2)।
+                outcome["note"] = (
+                    f"tower rate-limited ({type(exc).__name__}: {str(exc)[:120]}) — "
+                    "fleet cron-window contention, tower itself reachable (not tower-down); "
+                    "P0-drainage gate (Invariant 5) is still dark this run (U2)"
+                )
+            else:
+                outcome["note"] = (
+                    f"tower board probe failed ({type(exc).__name__}) — "
+                    "P0-drainage gate (Invariant 5) is dark on this gh-less runtime"
+                )
 
     try:
         t = threading.Thread(target=_probe, daemon=True)
@@ -2478,7 +2613,11 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
                 detail = " (window truncated)"
             outcome["note"] = f"tower board fallback: {len(board)} rows{detail}"
         except Exception as exc:  # noqa: BLE001 — fallback must never raise
-            outcome["error"] = f"tower board fallback failed ({type(exc).__name__})"
+            outcome["error"] = f"tower board fallback failed ({type(exc).__name__}: {str(exc)[:120]})"
+            if _tower_rate_limited(exc):
+                # বাংলা: 429-এ কারণ-স্তর সৎ রাখা — কনজ্যুমার লাইনে (PR-audit dark
+                # line, skip line) সরাসরি দেখা যায়: tower জীবিত, throttle খেটেছে।
+                outcome["error"] += " — rate-limited, not tower-down"
 
     try:
         t = threading.Thread(target=_probe, daemon=True)
@@ -2492,7 +2631,7 @@ def _tower_board_rows(timeout_s: float = 20.0) -> tuple[list[dict[str, Any]], st
         return [], str(outcome["error"])
     return outcome.get("rows", []), str(outcome.get("note", "tower board fallback returned no rows"))
 
-def _classify_tower_pr_failure(raw_error: str) -> str:
+def _classify_tower_pr_failure(raw_error: str, tool_label: str = "github.list_prs") -> str:
     """Root-cause classifier for a failed tower github.list_prs tool-call.
 
     বাংলা (GLM Agent 24, live প্রমাণ 2026-10-31T20:24Z): anonymous/viewer লেনের
@@ -2514,6 +2653,40 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
     """
     msg = (raw_error or "").strip()
     lowered = msg.lower()
+    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, লাইভ-প্রমাণ): tower-এর
+    # output-schema validation বড় window-এ structuredContent-হীন সাড়া দেয় —
+    # JSON-RPC কোড -32602-এ "Output validation error: Tool X has an output
+    # schema but no structured content was provided"। এটা tool-absence নয়
+    # (টুল রোস্টারে আছে, কল পৌঁছেছে), RBAC-ও নয় — payload-window নির্ভর
+    # tower-সাইড সাড়া-আকৃতি। আগের -32602-শাখা এটাকে মিথ্যা "tool-absent"
+    # নোটে ফেলত (U6 মিথ্যা-কারণ শ্রেণি), তাই এই শেপ আগেই শনাক্ত।
+    if "output validation error" in lowered or "no structured content" in lowered:
+        return (
+            f"tower {tool_label} output-validation rejection (tower response-shape: "
+            f"output schema present but no structured content; {msg[:200]}) — "
+            "payload-window dependent tower-side state, not tool-absence and "
+            "not RBAC; the census ladder retries with a smaller per_page window"
+        )
+    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র): tool_label প্যারামিটার —
+    # একই ক্লাসিফায়ার এখন workflow-runs census প্রোবও ব্যবহার করে; ডিফল্ট
+    # github.list_prs রাখা হয়েছে যাতে PR-পথের নোট-টেক্সট ও টেস্ট-পিন
+    # byte-অপরিবর্তিত থাকে। নোটে ভুল টুল-নাম থাকা মিথ্যা-কারণ শ্রেণি (U6)।
+    # বাংলা (GLM Agent 09, Job 486738, live প্রমাণ 2026-10-31T03:09Z): রোস্টার-পার্জ
+    # যুগে টাওয়ার টুলটাই সরিয়ে দেয় — JSON-RPC error-envelope
+    # "MCP error -32602: Tool github.list_prs not found"। এটা RBAC-ও নয়,
+    # তার চেয়েও মৌলিক স্থায়ী অবস্থা: টুলই রোস্টারে নেই, কোনো credential/role
+    # পরিবর্তন এটা ঠিক করবে না — টুলটা tools/list রোস্টারে ফিরলে প্লেন
+    # স্বয়ংক্রিয়ভাবে জীবিত হবে। আগে এই শেপ RBAC-শাখার জেনেরিক ফলব্যাকে পড়ে
+    # মিথ্যা "viewer RBAC" কারণ-নির্ণয় হত (U6) — তাই এই শেপ RBAC-চেকের আগেই
+    # শনাক্ত হয়।
+    if "-32602" in lowered or ("tool" in lowered and "not found" in lowered):
+        return (
+            f"tower {tool_label} tool-absent from the live tools/list roster "
+            f"({msg[:200]}) — permanent tool-surface state, not RBAC and not a "
+            "transient outage; no credential or role change revives it. The "
+            "roster gate skips the call entirely (zero wasted tool-call cycle) "
+            "and the plane auto-revives the moment the tool returns to the roster"
+        )
     if (
         "forbidden" in lowered
         or "has no repository read access" in lowered
@@ -2521,12 +2694,187 @@ def _classify_tower_pr_failure(raw_error: str) -> str:
         or ("role '" in lowered and "access" in lowered)
     ):
         return (
-            "tower github.list_prs RBAC-forbidden for this lane's role "
+            f"tower {tool_label} RBAC-forbidden for this lane's role "
             f"({msg[:200]}) — permanent access-control state, not a transient "
             "outage; PR-plane revival needs an elevated-role tower credential "
             "(admin lane, Shape-4 census Refs #3739)"
         )
     return f"tower PR tool-call error: {msg[:200] or 'no error text returned'}"
+
+_TOWER_ROSTER_GATE_CACHE: dict[str, str] = {}
+
+# বাংলা (GLM Agent 04, Job 486718, 18:04+08 চক্র, U6 root-fix, লাইভ-প্রমাণ):
+# একই বুটে roster-gate / PR-fallback / workflow-runs census তিনটি প্রোব
+# আগে তিনটি আলাদা initialize→initialized সাইকেল খাটাত — প্রতি বুটে 5 POST;
+# Render-এর burst rate-limiter (HTTP 429, 17:04+08) সেই বার্স্টেই census-কে
+# সৎ-অন্ধ করে দিত (লাইভ: loop-এর board/PR fallback সফল, census পরপর
+# HTTPError — 18:04 চক্রে ২ বার পুনঃপ্রমাণিত)। root-cause: প্রতি-প্রোব init
+# বৃথা। নিরাময়: process-level init-once session (TTL 5 মিনিট — মৃত-session
+# দীর্ঘদিন ক্যাশে থেকে সব প্রোব অন্ধ হওয়া এড়াতে), threading.Lock-এ
+# race-নিরাপদ, ব্যর্থতায় "" (caller নিজের আগের init-পথে fail-open)।
+_TOWER_MCP_SESSION: dict[str, Any] = {}
+_TOWER_MCP_SESSION_TTL_S = 300.0
+_TOWER_MCP_SESSION_LOCK = threading.Lock()
+
+
+def _tower_mcp_init_session() -> str:
+    """Process-level init-once MCP session — ব্যর্থতায় "" (fail-open)।"""
+    now = time.monotonic()
+    with _TOWER_MCP_SESSION_LOCK:
+        cached_sid = _TOWER_MCP_SESSION.get("sid")
+        if cached_sid and (now - float(_TOWER_MCP_SESSION.get("born", 0.0))) < _TOWER_MCP_SESSION_TTL_S:
+            return str(cached_sid)
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+        import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+        base = _mtc.MCP_SERVER_URL.rstrip("/")
+        hdrs = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+
+        def _post(payload: dict[str, Any], sid: str | None = None, timeout: int = 15) -> tuple[str, str]:
+            h = dict(hdrs)
+            if sid:
+                h["mcp-session-id"] = sid
+            req = urllib.request.Request(
+                f"{base}/mcp", data=json.dumps(payload).encode(), headers=h, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+        new_sid, _ = _post({
+            "jsonrpc": "2.0", "id": "cal-shared-init-1", "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+            },
+        })
+        _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, new_sid, timeout=10)
+        if not new_sid:
+            return ""
+        with _TOWER_MCP_SESSION_LOCK:
+            _TOWER_MCP_SESSION["sid"] = new_sid
+            _TOWER_MCP_SESSION["born"] = time.monotonic()
+        return new_sid
+    except Exception:  # noqa: BLE001 — session-init ব্যর্থতা কোনো প্রোব আটকাবে না
+        return ""
+
+def _tower_tool_roster_gate(tool_name: str, timeout_s: float = 20.0) -> str | None:
+    """Process-level tool-roster gate for tower github.* probes (U6 root fix).
+
+    বাংলা (GLM Agent 09, Job 486738, 2026-10-31): রোস্টার-পার্জের পর টুল টাওয়ারে
+    না থাকলে প্রতিটি প্রোব একটি পূর্ণ initialize→tools/call সাইকেল ব্যয় করে
+    নিশ্চিত -32602-এ মরত (live প্রমাণ: প্রতিটি zero-credential বুটে "tower PR
+    tool-call error: MCP error -32602: Tool github.list_prs not found")। রুট-কজ
+    ফিক্স: কলের আগে একবার tools/list রোস্টার পড়ে টুলের উপস্থিতি যাচাই।
+
+    ফেরত:
+      - None  → টুল রোস্টারে উপস্থিত, অথবা যাচাই অসম্ভব (fail-open — প্রোব আগের
+                মতোই চলবে; ট্রানজিয়েন্ট আউটেজ কখনো কাজ আটকাবে না)।
+      - str   → নিশ্চিত টুল-অনুপস্থিতির সৎ নোট (স্থায়ী অবস্থা — ক্যাশকৃত);
+                প্রোব শূন্য initialize/tools-call সাইকেলে এই নোট দিয়ে ফেরত দেয়।
+
+    ক্যাশ-চুক্তি: কেবল নিশ্চিত অনুপস্থিতি ক্যাশ হয় (স্থায়ী অবস্থা); যাচাই-পরিবহণ
+    ব্যর্থ বা অপার্স হলে ক্যাশ না করে None — পরের প্রোব আবার চেষ্টা করে। কখনো
+    raise করে না। রোস্টার সম্পূর্ণ পড়া না গেলে (খালি টুল-তালিকা) ভুল
+    "অনুপস্থিত" সিদ্ধান্ত এড়াতে সেটাও fail-open।
+    """
+    cached = _TOWER_ROSTER_GATE_CACHE.get(tool_name)
+    if cached is not None:
+        return cached
+    note: str | None
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+        import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+        base = _mtc.MCP_SERVER_URL.rstrip("/")
+
+        def _post(payload: dict[str, Any], sid: str | None = None, timeout: int = 15) -> tuple[str, str]:
+            hdrs = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+            if sid:
+                hdrs["mcp-session-id"] = sid
+            req = urllib.request.Request(
+                f"{base}/mcp", data=json.dumps(payload).encode(), headers=hdrs, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return (
+                    resp.headers.get("mcp-session-id") or sid or "",
+                    resp.read().decode("utf-8", errors="replace"),
+                )
+
+        # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session আগে; খালি ফিরলে
+        # আগের নিজস্ব-init পথ অক্ষত fallback (fail-open, U2-নিরাপদ)।
+        sid = _tower_mcp_init_session()
+        if not sid:
+            sid, _ = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "cal-roster-gate-1",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }
+            )
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=10)
+        _, body = _post(
+            {"jsonrpc": "2.0", "id": "cal-roster-gate-2", "method": "tools/list"},
+            sid,
+            timeout=max(10, int(timeout_s)),
+        )
+        envelopes: list[dict[str, Any]] = []
+        for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+            try:
+                envelopes.append(json.loads(m.group(1)))
+            except json.JSONDecodeError:
+                pass
+        if not envelopes:
+            try:
+                envelopes.append(json.loads(body))
+            except json.JSONDecodeError:
+                pass
+        names: set[str] = set()
+        for env in envelopes:
+            if not isinstance(env, dict) or env.get("id") != "cal-roster-gate-2":
+                continue
+            result = env.get("result")
+            if isinstance(result, dict) and isinstance(result.get("tools"), list):
+                for t in result["tools"]:
+                    if isinstance(t, dict) and isinstance(t.get("name"), str):
+                        names.add(t["name"])
+            break
+        if not names:
+            # বাংলা: রোস্টার-পেলোড পড়া যায়নি — অনুপস্থিতি প্রমাণিত নয়, fail-open।
+            note = None
+        else:
+            # বাংলা (GLM Agent 04, Job 486718, U6 Zero-Recurrence, live 2026-10-31):
+            # নাম-ঢেউ দ্বিমুখী — ঢেউ-২-তে ডট-ফর্ম লাইভ ছিল, ঢেউ-৩-তে আন্ডারস্কোর-ফর্ম
+            # ফিরেছে (tools/list 158 tools, underscore রূপ present)। এক-বানান মিল
+            # এক-বানান প্রোবের মৃত্যু-লাইনেই খোঁজে বসে ছিল — ফলে টুল রোস্টারে থাকতেও
+            # গেট ভুল "roster does not carry" নোট দিয়ে PR-plane মিথ্যা-অন্ধকার করছিল
+            # (লাইভ প্রমাণ: ডট রূপ → -32602, আন্ডারস্কোর রূপ → ডেটা; একই বুটে)।
+            # উভয়-বানান মিল hydrate/queue-candidates idiom-এর সম-শ্রেণি চুক্তি —
+            # shared cure scripts/ci/tower_name_tolerance.py। আন্ডারস্কোর বানানটি
+            # নিচের ক্যান্ডিডেট-সেটে derived (quoted-dead-name স্ক্যান চুক্তি অক্ষত)।
+            spellings = {tool_name, tool_name.replace(".", "_", 1)}
+            note = (
+                f"tower tools/list roster does not carry '{tool_name}' "
+                f"(roster-purge state; {len(names)} tools visible) — probe skipped "
+                "with zero tool-call cycles; plane auto-revives if the tool "
+                "returns to the roster"
+            ) if not (spellings & names) else None
+    except Exception:  # noqa: BLE001 — যাচাই-ব্যর্থতা কখনো প্রোব আটকাবে না (fail-open)
+        note = None
+    if note is not None:
+        _TOWER_ROSTER_GATE_CACHE[tool_name] = note
+    return note
 
 def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict[str, Any]] | None, str]:
     """R78-mirror — gh-absent tower PR-plane fallback (revives the failed-PR audit).
@@ -2556,6 +2904,14 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
 
     def _probe() -> None:
         try:
+            # বাংলা (GLM Agent 09, Job 486738, U6 রুট-কজ গেট): রোস্টারে টুল না
+            # থাকলে নিশ্চিত -32602-এর initialize→tools/call সাইকেল ব্যয় বৃথা —
+            # গেট সৎ নোট দিলে শূন্য নেটওয়ার্ক-কলে ফেরত (রোস্টার ফিরলে স্বয়ংক্রিয়
+            # পুনরুজ্জীবন; যাচাই-অসম্ভব = None = আগের আচরণ অক্ষত)।
+            gate_note = _tower_tool_roster_gate("github.list_prs")
+            if gate_note:
+                outcome["error"] = gate_note
+                return
             sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
             import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
 
@@ -2576,21 +2932,36 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                     return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
 
             init_id = "cal-pr-fallback-1"
-            sid, _ = _post({
-                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05", "capabilities": {},
-                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
-                },
-            }, None)
-            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session; খালি হলে নিজস্ব init (fallback)।
+            sid = _tower_mcp_init_session()
+            if not sid:
+                sid, _ = _post({
+                    "jsonrpc": "2.0", "id": init_id, "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05", "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }, None)
+                _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-pr-fallback-2"
-            _, body = _post({
-                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                "params": {"name": "github.list_prs", "arguments": {
-                    "repo": UPSTREAM_REPO, "state": "open", "per_page": min(int(limit), 100),
-                }},
-            }, sid, timeout=45)
+            # বাংলা (GLM Agent 04, Job 486718, U6): নাম-ঢেউ-সহনশীল কল — ঢেউ-৩
+            # (live 2026-10-31) dotted github.list_prs আবার মৃত (-32602); এক-বানান
+            # পিন open-PR ফলব্যাককে অন্ধ করে রেখেছিল (টুল রোস্টারে থাকতেও)।
+            # যুগ-ক্রমে দুই বানান চেষ্টা; not-found স্বাক্ষরে পরের বানান, প্রথম
+            # জীবিত সাড়া জয়ী — hydrate idiom-এর সম-শ্রেণি; shared cure
+            # scripts/ci/tower_name_tolerance.py।
+            body = ""
+            for spelling in ("github.list_prs", "github.list_prs".replace(".", "_", 1)):
+                _, body = _post({
+                    "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                    "params": {"name": spelling, "arguments": {
+                        "repo": UPSTREAM_REPO, "state": "open", "per_page": min(int(limit), 100),
+                    }},
+                }, sid, timeout=45)
+                _low = body.lower()
+                if "-32602" in _low and "not found" in _low:
+                    continue
+                break
 
             envelopes: list[dict[str, Any]] = []
             for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
@@ -2648,7 +3019,12 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                     continue
                 rows.append({
                     "number": pr.get("number"),
-                    "title": str(pr.get("title") or "")[:120],
+                    # বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র): টাইটেল-ট্রাংকেশন
+                    # [:120] সরানো হল — check-census টাইটেল-join হুবহু display_title-এর
+                    # সাথে মেলে; ট্রাংকেট করলে >120-বর্গ টাইটেলের PR ভুলভাবে UNSEEN
+                    # বাকেটে পড়ত (মিথ্যা অজ্ঞতা)। প্রিন্ট-সাইটগুলো নিজেই [:90]
+                    # ট্রাংকেট করে, তাই stdout-চুক্তি অপরিবর্তিত।
+                    "title": str(pr.get("title") or ""),
                     "url": pr.get("htmlUrl") or pr.get("url") or "",
                     "createdAt": pr.get("createdAt") or "",
                 })
@@ -2668,6 +3044,297 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
     if outcome.get("error"):
         return None, str(outcome["error"])
     return outcome.get("rows"), str(outcome.get("note", "tower PR fallback returned no rows"))
+
+
+# বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U2-সততা): gh-path-এর
+# statusCheckRollup-এ লাল মানে FAILURE / TIMED_OUT / CANCELLED — GitHub REST-এর
+# workflow-run conclusion-শব্দগুলো snake_case, আর startup_failure সেখানে আলাদা
+# শ্রেণি; দুই পথের শ্রেণিবিন্যাস অর্থগতভাবে এক রাখতে এই সেট-ই লাল।
+_PR_CHECK_RED_CONCLUSIONS = ("failure", "timed_out", "cancelled", "startup_failure")
+
+
+def _parse_workflow_run_census(payload: Any) -> dict[str, dict[str, dict[str, str]]]:
+    """Pure parser: GitHub-REST workflow-runs payload → per-PR title/branch মানচিত্র।
+
+    বাংলা (17:04+08 চক্র): tower-এর github.workflow_runs পেলোডে প্রতিটি
+    pull_request রানে display_title হুবহু PR-টাইটেল বহন করে (লাইভ-যাচাইকৃত
+    2026-10-31: run 41186411655) — তাই title-join করলেই gh ছাড়া রানটাইমেও
+    per-PR check status যান্ত্রিকভাবে পাওয়া যায়, নতুন credential ছাড়াই।
+
+    চুক্তি:
+      - কেবল event=="pull_request" ও status=="completed" রান গণ্য (in_progress
+        রান শ্রেণিবিন্যাসের উপাত্ত নয় — সৎ অজ্ঞতা বজায়)।
+      - একই টাইটেল/ব্রাঞ্চে একাধিক রান হলে updated_at-সর্বশেষটি জয়ী (rebase/
+        re-push-এর পরে পুরনো লাল রান মিথ্যা লাল রিপোর্ট করবে না)।
+      - দুটি কী-স্পেস: by_title (প্রাথমিক join) + by_branch (head_branch —
+        bridge PR-গুলোর টাইটেল-পরিশিষ্ট "(bridge-...)" ব্রাঞ্চ-নামই; টাইটেল
+        এডিট-পরবর্তী দ্বিতীয় সুযোগ)।
+      - কখনো raise করে না; বিকৃত payload → খালি মানচিত্র (সৎ শূন্য)।
+    """
+    out: dict[str, dict[str, dict[str, str]]] = {"by_title": {}, "by_branch": {}}
+    if not isinstance(payload, dict):
+        return out
+    runs = payload.get("workflow_runs")
+    if not isinstance(runs, list):
+        return out
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        if run.get("event") != "pull_request" or run.get("status") != "completed":
+            continue
+        title = str(run.get("display_title") or "").strip()
+        branch = str(run.get("head_branch") or "").strip()
+        if not title and not branch:
+            continue
+        entry = {
+            "conclusion": str(run.get("conclusion") or ""),
+            "updated_at": str(run.get("updated_at") or ""),
+            "url": str(run.get("html_url") or ""),
+            "head_sha": str(run.get("head_sha") or "")[:12],
+        }
+        for key, val in (("by_title", title), ("by_branch", branch)):
+            if not val:
+                continue
+            bucket = out[key]
+            prev = bucket.get(val)
+            if prev is None or entry["updated_at"] >= prev["updated_at"]:
+                bucket[val] = entry
+    return out
+
+
+def _pr_check_classification(
+    title: str, census: dict[str, dict[str, dict[str, str]]]
+) -> dict[str, str] | None:
+    """এক PR-টাইটেলকে census-মানচিত্রে মেলান; None মানে সৎ UNSEEN (কোনো রান নেই)।"""
+    if not isinstance(census, dict):
+        return None
+    by_title = census.get("by_title")
+    if isinstance(by_title, dict):
+        hit = by_title.get(title or "")
+        if isinstance(hit, dict):
+            return hit
+    by_branch = census.get("by_branch")
+    m = re.search(r"\(([^()]+)\)\s*$", title or "")
+    if isinstance(by_branch, dict) and m:
+        hit = by_branch.get(m.group(1).strip())
+        if isinstance(hit, dict):
+            return hit
+    return None
+
+
+def _extract_mcp_tool_response(
+    raw_body: str, call_id: str, tool_label: str
+) -> tuple[str, str]:
+    """MCP-SSE/raw body → (content-text, classified-error) — একটি অন্যটি খালি।
+
+    বাংলা (GLM Agent 04, Job 486718, 17:04+08 চক্র, U6): SSE-ইভেন্ট-ব্লক
+    পার্সার — বড় পেলোড (per_page=30/100) একাধিক "data:" লাইনে ভাঙে (SSE
+    multi-line data; লাইভ-প্রমাণ 17:04+08: per_page=10 এক-ইভেন্টে সফল, 30/100
+    প্রতি-লাইন JSON পার্সে অপার্সেবল)। ইভেন্ট-ব্লক (শূন্য-লাইন বিভাজক) ধরে
+    data-লাইনগুলো জোড়া দিয়ে পার্স — compact-বিভাজনে "" জোড়া, pretty-বিভাজনে
+    "\n" জোড়া (দুই-জোড়া চেষ্টা — বিভাজন-বিন্দু আমাদের অজানা); ছোট ও বড় দুই
+    আকৃতিই নিরাপদ। error-envelope / isError-কনটেন্ট ক্লাসিফায়ারে যায় (সৎ
+    নোট); কখনো raise করে না।
+    """
+    envelopes: list[dict[str, Any]] = []
+    for block in re.split(r"\n\s*\n", raw_body):
+        data_lines = [
+            ln[5:].lstrip() for ln in block.splitlines() if ln.startswith("data:")
+        ]
+        if not data_lines:
+            continue
+        for joiner in ("", "\n"):
+            try:
+                env = json.loads(joiner.join(data_lines))
+                if isinstance(env, dict):
+                    envelopes.append(env)
+                    break
+            except json.JSONDecodeError:
+                continue
+    if not envelopes:
+        try:
+            env = json.loads(raw_body)
+            if isinstance(env, dict):
+                envelopes.append(env)
+        except json.JSONDecodeError:
+            pass
+    result: Any = None
+    rpc_error_msg = ""
+    for env in envelopes:
+        if not isinstance(env, dict) or env.get("id") != call_id:
+            continue
+        if "error" in env:
+            err = env.get("error")
+            rpc_error_msg = (
+                str(err.get("message")) if isinstance(err, dict) and err.get("message") else str(err)
+            )
+            continue
+        result = env.get("result")
+        break
+    mcp_is_error = isinstance(result, dict) and result.get("isError") is True
+    text = ""
+    if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+        first = result["content"][0]
+        txt = first.get("text") if isinstance(first, dict) else None
+        if isinstance(txt, str):
+            text = txt
+    if mcp_is_error or (not result and rpc_error_msg):
+        return "", _classify_tower_pr_failure(
+            text or rpc_error_msg, tool_label=tool_label
+        )
+    return text, ""
+
+
+def _tower_workflow_run_census(
+    limit: int = 30, timeout_s: float = 60.0
+) -> tuple[dict[str, dict[str, dict[str, str]]] | None, str]:
+    """gh-absent রানটাইমের per-PR check-census — tower github.workflow_runs প্রোব।
+
+    বাংলা (U2-অন্ধত্ব নিরাময়, 17:04+08 চক্র): revived PR-plane-এর স্থায়ী
+    "per-PR check status UNSEEN" ঘোষণার মূল কারণ ছিল — list_prs পেলোডে
+    statusCheckRollup নেই। কিন্তু একই zero-credential tower-এর
+    github.workflow_runs প্রতিটি pull_request রানের display_title + conclusion
+    দেয়; তাই check-status আসলে অদৃশ্য ছিল না — join-অনুপস্থিতি ছিল। এই প্রোব
+    সেই অন্ধত্ব বন্ধ করে; ফলব্যাক-কালচে ডাকা হয়, census অন্ধ হলে পুরনো UNSEEN
+    লাইন byte-অপরিবর্তিত থাকে (সৎ অজ্ঞতা অক্ষত)।
+
+    Transport: _tower_open_prs-এর প্রমাণিত idiom হুবহু — roster-gate (নাম-ঢেউ
+    দ্বিমুখী, shared cure tower_name_tolerance), lazy sibling client, raw-urllib
+    SSE-নিরাপদ পড়া, দ্বিবানান ক্রমে-চেষ্টা, never-raise, thread-guarded join।
+    ফেরত: (census|None, note) — census=None মানে সৎ অন্ধকার; মানচিত্র হলে
+    _parse_workflow_run_census-এর আকৃতি (by_title/by_branch)।
+    """
+    outcome: dict[str, Any] = {}
+
+    def _probe() -> None:
+        try:
+            gate_note = _tower_tool_roster_gate("github.workflow_runs")
+            if gate_note:
+                outcome["error"] = gate_note
+                return
+            sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+            import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+            base = _mtc.MCP_SERVER_URL.rstrip("/")
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            }
+
+            def _post(payload: dict[str, Any], sid: str | None, timeout: int = 30) -> tuple[str, str]:
+                hdrs = dict(headers)
+                if sid:
+                    hdrs["mcp-session-id"] = sid
+                req_data = json.dumps(payload).encode()
+                last_429: Exception | None = None
+                # বাংলা (17:04+08 চক্র, লাইভ-প্রমাণ): Render tower বার্স্ট
+                # rate-limit (HTTP 429) করে — census-এর প্রথম লাইভ রানেই ২টি
+                # ধারাবাহিক 429 দেখা গেছে, ৩-য় চেষ্টা (৬ সেকেন্ড পরে) সফল।
+                # তাই ৪২৯-এ ২-স্তর ladder (২.৫ সে → ৫ সে); অন্য HTTPError
+                # সরাসরি উপরে (never-raise শেল সেটাই সৎ নোট দেয়)।
+                for attempt, backoff in enumerate((0.0, 2.5, 5.0)):
+                    if backoff:
+                        time.sleep(backoff)
+                    try:
+                        req = urllib.request.Request(
+                            f"{base}/mcp", data=req_data, headers=hdrs, method="POST"
+                        )
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+                    except urllib.error.HTTPError as exc:
+                        if exc.code == 429:
+                            last_429 = exc
+                            continue
+                        raise
+                if last_429 is not None:
+                    raise last_429
+                raise RuntimeError("unreachable: 429 retry ladder exhausted")
+
+            # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session — census-এর
+            # নিজস্ব initialize-বার্স্ট বাদ; খালি হলে নিজস্ব init (fallback)।
+            sid = _tower_mcp_init_session()
+            if not sid:
+                sid, _ = _post({
+                    "jsonrpc": "2.0", "id": "cal-wf-census-0", "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05", "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }, None)
+                _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            call_id = "cal-wf-census-1"
+            used_window = 0
+
+            # বাংলা: window-ladder × নাম-ঢেউ — বড় window-এ tower-এর
+            # output-schema validation structuredContent ছাড়া সাড়া দেয়
+            # (লাইভ-প্রমাণ 17:04+08: per_page=100 → "Output validation error";
+            # per_page=5/10 → সফল)। validation-আকৃতি বা অপার্সেবল সাড়ায় ছোট
+            # window-এ পুনঃপ্রচেষ্টা; নাম-ঢেউ দ্বিবানান ক্রমে-চেষ্টা (৫৩৯-শ্রেণি;
+            # shared cure scripts/ci/tower_name_tolerance.py)। SSE multi-line
+            # পুনরুদ্ধার _extract_mcp_tool_response-এ (module-level, টেস্ট-পিন্ড)।
+            payload: Any = None
+            last_text = ""
+            for per_page in (100, 30, 10):
+                body = ""
+                for spelling in ("github.workflow_runs", "github.workflow_runs".replace(".", "_", 1)):
+                    _, body = _post({
+                        "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                        "params": {"name": spelling, "arguments": {
+                            "repo": UPSTREAM_REPO, "per_page": per_page,
+                        }},
+                    }, sid, timeout=45)
+                    _low = body.lower()
+                    if "-32602" in _low and "not found" in _low:
+                        continue
+                    break
+                used_window = per_page
+                if (
+                    "output validation error" in body.lower()
+                    or "no structured content" in body.lower()
+                ):
+                    continue
+                last_text, census_err = _extract_mcp_tool_response(
+                    body, call_id, tool_label="github.workflow_runs"
+                )
+                if census_err:
+                    outcome["error"] = census_err
+                    return
+                if last_text:
+                    try:
+                        cand = json.loads(last_text)
+                        if isinstance(cand, dict) and isinstance(cand.get("workflow_runs"), list):
+                            payload = cand
+                            break
+                    except json.JSONDecodeError:
+                        pass
+            if payload is None:
+                outcome["error"] = (
+                    _classify_tower_pr_failure(last_text, tool_label="github.workflow_runs")
+                    if last_text
+                    else "tower workflow-runs payload carried no workflow_runs list in any window (100/30/10)"
+                )
+                return
+            census = _parse_workflow_run_census(payload)
+            outcome["census"] = census
+            outcome["note"] = (
+                "tower workflow-runs census: "
+                f"{len(census['by_title'])} completed pull_request run-title(s) "
+                f"mapped (window per_page={used_window})"
+            )
+        except Exception as exc:  # noqa: BLE001 — census কখনো অডিট kill করবে না
+            outcome["error"] = f"tower workflow-runs census failed ({type(exc).__name__})"
+
+    try:
+        t = threading.Thread(target=_probe, daemon=True)
+        t.start()
+        t.join(timeout=timeout_s)
+    except Exception as exc:  # noqa: BLE001 — census কখনো অডিট kill করবে না
+        return None, f"tower workflow-runs census error ({type(exc).__name__})"
+    if t.is_alive():
+        return None, "tower workflow-runs census timed out"
+    if outcome.get("error"):
+        return None, str(outcome["error"])
+    return outcome.get("census"), str(outcome.get("note", "tower workflow-runs census returned no map"))
 
 def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str, Any] | None:
     """Per-issue tower hydration fallback — the mirror of _tower_board_rows (R78).
@@ -2722,34 +3389,49 @@ def _tower_issue_hydrate(number: int | str, timeout_s: float = 75.0) -> dict[str
             }, None)
             _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-hydrate-2"
-            _, body = _post({
-                "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
-                "params": {"name": "bridge.work_order", "arguments": {"number": int(number)}},
-            }, sid, timeout=60)
-
-            # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
-            # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
-            envelopes: list[dict[str, Any]] = []
-            for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
-                try:
-                    envelopes.append(json.loads(m.group(1)))
-                except json.JSONDecodeError:
-                    pass
-            if not envelopes:
-                try:
-                    envelopes.append(json.loads(body))
-                except json.JSONDecodeError:
-                    pass
-            result: Any = None
-            for env in envelopes:
-                if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
-                    result = env.get("result")
-                    break
+            # বাংলা: নাম-ঢেউ সহনশীল hydrate (Zero-Recurrence U6)। ঢেউ-৩ (live
+            # 2026-10-31, GLM Agent 11 cycle-15) dotted bridge.work_order আবার
+            # মৃত — এক-বানান পিন hydrate-পথকে পুরো অন্ধ করে রেখেছিল (মৃত-নামের
+            # সাড়া JSON-RPC error নয়, isError content-text → text-এ
+            # "-32602 ... not found" স্বাক্ষর, json.loads তাতেই ভাঙত)। যুগ-ক্রমে
+            # দুই বানান চেষ্টা — snake বানানটি derived (quoted-dead-name স্ক্যান
+            # চুক্তি অক্ষত), ফাইলের নিজের queue-candidates idiom-এর অনুরূপ;
+            # shared cure scripts/ci/tower_name_tolerance.py-এর একই শ্রেণি।
             text = ""
-            if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
-                first = result["content"][0]
-                if isinstance(first, dict):
-                    text = first.get("text") or ""
+            for spelling in ("bridge.work_order", "bridge.work_order".replace(".", "_", 1)):
+                _, body = _post({
+                    "jsonrpc": "2.0", "id": call_id, "method": "tools/call",
+                    "params": {"name": spelling, "arguments": {"number": int(number)}},
+                }, sid, timeout=60)
+
+                # বাংলা: body হয় SSE (data: লাইন) নয়তো সরাসরি JSON — দুই শেপই সমর্থিত;
+                # regex পুরো body-র উপর চলে (splitlines/iter_lines বড় single-line-এ ভাঙে)।
+                envelopes: list[dict[str, Any]] = []
+                for m in re.finditer(r"^data: (.*)$", body, re.MULTILINE):
+                    try:
+                        envelopes.append(json.loads(m.group(1)))
+                    except json.JSONDecodeError:
+                        pass
+                if not envelopes:
+                    try:
+                        envelopes.append(json.loads(body))
+                    except json.JSONDecodeError:
+                        pass
+                result: Any = None
+                for env in envelopes:
+                    if isinstance(env, dict) and env.get("id") == call_id and "error" not in env:
+                        result = env.get("result")
+                        break
+                text = ""
+                if isinstance(result, dict) and isinstance(result.get("content"), list) and result["content"]:
+                    first = result["content"][0]
+                    if isinstance(first, dict):
+                        text = first.get("text") or ""
+                low = text.lower()
+                if "-32602" in low and "not found" in low:
+                    text = ""  # মৃত বানান — পরের যুগ-বানানে ফেরকা
+                    continue
+                break
             if not text:
                 outcome["error"] = "tower work-order payload carried no text"
                 return
@@ -2841,6 +3523,17 @@ def hooks_path_advisory() -> str | None:
     rc_repo, _, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"], timeout=10)
     if rc_repo != 0:
         return None
+    # বাংলা: আত্মযাচাই (Invariant 6, #4070-শ্রেণি) — advisory যে স্ক্রিপ্ট-পাথ
+    # শেখায় সেটি এই ক্লোনে অস্তিত্বহীন হলে ভুল-আদেশ মুদ্রণ নিষিদ্ধ; একটি
+    # সৎ-পুরোনো-ক্লোন বার্তা দেয় (rebase করলেই activator আসবে)।
+    activator = "scripts/ops/activate_githooks.py"
+    if not os.path.isfile(activator):
+        return (
+            "hooks-path probe: core.hooksPath is unset and the advertised activator "
+            f"({activator}) is absent in this older clone — rebase origin/main to a "
+            "landing that carries scripts/ops/activate_githooks.py, then run "
+            "python3 scripts/ops/activate_githooks.py --activate"
+        )
     return (
         "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
         ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
@@ -3177,12 +3870,17 @@ def build_task_envelope(
         if issue_number is not None
         else "PR BLUEPRINT: ad-hoc envelope — no original issue to close. Reference the ad-hoc task id ('task-adhoc') in the PR description; do NOT fabricate an issue reference or a 'Closes #N' footer."
     )
+    skill_guide = load_role_skill_instructions(role)
+    mandate_section = f"MANDATE: {role_description}"
+    if skill_guide:
+        mandate_section = f"{mandate_section}\n\n=== ROLE SKILL SPECIFICATION ({role}) ===\n{skill_guide}"
+
     specialist_prompt = "\n".join(
         [
             COMMON_RULES,
             "",
             f"ROLE: {role}",
-            f"MANDATE: {role_description}",
+            mandate_section,
             pr_blueprint_line,
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker also auto-demotes mechanically (#3050): an incident whose referenced run is superseded by >=5 green main runs of the same workflow (zero newer reds) is skipped at pick time — for explicit --issue N dispatches this manual check remains the backstop.",
@@ -3437,6 +4135,49 @@ def run_verify() -> list[dict[str, Any]]:
                 return False
         return True
 
+    def _constitution_pins_ok() -> bool:
+        # বাংলা: tier 9 — constitution guard pins (#4124-restore, #4125 fix
+        # contract-এর "pytest faces → landing ladder" অর্ধ)। #4097/#4106/#4124
+        # তিনবার প্রমাণ হল blind-ladder ক্লাস: landing 8/8 PASS দাবি করেছে কিন্তু
+        # ladder-এ একটি pytest face-ও চলে না। এই টিয়ার দুটি AST-pinned guard
+        # (test_claim_lease_ssot::test_02, test_agent_cadence::
+        # test_pick_has_no_dispatch_time_gate) এর অক্ষর-এ-অক্ষর invariant
+        # প্রতি --verify-only-তে inline চেক করে — stdlib-only, subprocess-মুক্ত,
+        # একই সোর্স পার্স করে বলে guard-এর সাথে drift অসম্ভব।
+        src = Path(__file__).read_text(encoding="utf-8")
+        # (1) SSOT lineage (#57 → #3738): twin-guard alias-টি অবশ্যই SSOT-derived
+        # journal retention-এর verbatim alias থাকবে — দ্বিতীয় স্বাধীন ম্যাজিক নাম্বার নয়।
+        if "ISSUE_LEASE_SECONDS = DISPATCH_JOURNAL_RETENTION_SECONDS" not in src:
+            return False
+        if ISSUE_LEASE_SECONDS != DISPATCH_JOURNAL_RETENTION_SECONDS:
+            return False
+        if DISPATCH_JOURNAL_RETENTION_SECONDS != ORPHAN_RELEASE_MINUTES * 60.0:
+            return False
+        # (2)+(3) pick-plane: clock-free claimability gate (AST scan,
+        # comment-immune) + #3738 twin-demote in-flight input-এর wiring জীবিত
+        # (demotion-only — একটি duplicate dispatch সরায়, কখনো gate/delay করে না)।
+        pick_src = inspect.getsource(pick_next_issue)
+        if "leased_at" in pick_src:
+            return False
+        if "_duplicate_twin_note(" not in pick_src or "lease_store" not in pick_src:
+            return False
+        tree = ast.parse(pick_src)
+        gates = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name == "is_claimable"
+        ]
+        if len(gates) != 1:
+            return False
+        gate_tokens = set()
+        for node in ast.walk(gates[0]):
+            if isinstance(node, ast.Name):
+                gate_tokens.add(node.id)
+            elif isinstance(node, ast.Attribute):
+                gate_tokens.add(node.attr)
+        return not any("LEASE" in tok.upper() for tok in gate_tokens)
+
     evidence: list[dict[str, Any]] = [
         {
             "tier": 1,
@@ -3481,12 +4222,23 @@ def run_verify() -> list[dict[str, Any]]:
                 and (REPO_ROOT / "scripts" / "agents").is_dir()
             ),
         },
+        {"tier": 9, "name": "constitution_guard_pins", "passed": _run(_constitution_pins_ok)},
     ]
 
     for ev in evidence:
-        print(f"[{ev['tier']}/8] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
+        print(f"[{ev['tier']}/{len(evidence)}] {ev['name']}: {'PASS' if ev['passed'] else 'FAIL'}")
     print(f"CONTRACT_VERSION={CONTRACT_VERSION}")
     return evidence
+
+def is_autonomy_switch_disabled() -> bool:
+    """Check if autonomy kill-switch / pause flag is engaged (via file or environment).
+
+    Allows admin/dashboard to pause autonomous racing instantly.
+    """
+    if os.getenv("AUTONOMY_DISABLED", "").lower() in {"1", "true", "yes", "disabled", "l0"}:
+        return True
+    kill_file = Path(".autonomy_killswitch")
+    return kill_file.is_file()
 
 def run_dispatch_cycle(args: argparse.Namespace) -> int:
     """One dispatch cycle: board query → solver/envelope dispatch or cadence role.
@@ -3494,6 +4246,15 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     বাংলা: একক সাইকেলের পরিষ্কার ডিসপ্যাচ এক্সিকিউশন। বাহ্যিক শিডিউলার বা রানার
     দ্বারা সাইকেল পরিচালিত হয়।
     """
+    if is_autonomy_switch_disabled():
+        print(
+            "ACTION: Autonomy is PAUSED / KILLED (L0 Standby Switch engaged). "
+            "Autonomous loop dispatch is suspended without racing. "
+            "Remove .autonomy_killswitch or clear AUTONOMY_DISABLED to resume.",
+            file=sys.stderr,
+        )
+        print("ACTION: System is paused by Admin Kill-Switch (L0 Standby).")
+        return 0
     # বাংলা: R63/#2343 option B — start-of-run স্থানীয়-প্রয়োগ প্রোব। ডিসপ্যাচ-পথের
     # একেবারে শুরুতে একবার; সতর্কতাটি সবসময় stderr-এ (envelope-মোডের stdout-purity
     # ও dispatch stdout মার্কার-গণনা অস্পৃষ্ট)। --verify-only পথ এখানে পৌঁছায় না
@@ -3581,8 +4342,26 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                     f"! board query revived: {board_error}",
                     file=sys.stderr,
                 )
+            elif re.match(r"tower board fallback: \d+ rows", fb_note or ""):
+                # বাংলা: WO #4057 leg-1 — success-empty ও fallback-ব্যর্থতা আলাদা
+                # state: "tower board fallback: N rows" (colon-আকৃতি) মানে tower
+                # সাড়া দিয়েছে, কেবল ০ সারি দেখাচ্ছে। পুরোনো আচরণে এই শাখা চুপ
+                # থাকত, আর board_error-এ ভুল অ্যাট্রিবিউশন ("gh CLI not found")
+                # রয়ে যেত — অথচ শেষ কথা বলেছে gh নয়, tower। সৎ নোট সারফেস;
+                # আচরণে শূন্য পরিবর্তন (board_unavailable থাকে — ০-সারি উত্তর
+                # ingest-lag-এ false-empty প্রমাণিত (R94 E5 / R96), certified
+                # empty নয়)।
+                board_error = (
+                    f"gh board query failed ({board_error}); tower fallback "
+                    f"ANSWERED EMPTY: {fb_note} — empty answer UNVERIFIED "
+                    "(ingest lag), not certified clean (U2)"
+                )
+                print(
+                    f"! board fallback answered empty: {fb_note}",
+                    file=sys.stderr,
+                )
 
-    envelope_mode = args.task_envelope or args.emit_prompt or args.emit_contract
+    envelope_mode = getattr(args, "task_envelope", False) or getattr(args, "emit_prompt", False) or getattr(args, "emit_contract", False)
 
     # #3574 Step-1 Preflight Observability Audit — শর্তহীন (Zero-Blindspot
     # Invariant): প্রতিটি বুট-পথ (envelope, dispatch, cadence, board-dark,
@@ -3601,7 +4380,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         # stdout শুধুই envelope JSON থাকে যাতে pipe/parse নিরাপদ থাকে।
         print(COMMON_RULES, file=sys.stderr)
         print("=" * 52, file=sys.stderr)
-        if args.emit_prompt or args.emit_contract:
+        if getattr(args, "emit_prompt", False) or getattr(args, "emit_contract", False):
             print(
                 "DEPRECATED: --emit-prompt/--emit-contract are shims for --task-envelope "
                 "(AGENT_LOOP_SPEC §4); removal is gated on private-mirror parity — do not remove in a drive-by change.",
@@ -3610,21 +4389,22 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
         target_issue: dict[str, Any] | None = None
         note = ""
-        if args.issue:
+        issue_val = getattr(args, "issue", "")
+        if issue_val:
             # বাংলা: --issue N → নির্দিষ্ট issue-র সৎ এনভেলপ; gh ব্যর্থ হলে
             # crash নয়, সৎ board_note সহ envelope (নীরব স্টাব নয়)।
             if board_unavailable:
                 note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
             else:
                 v_cmd = [
-                    "gh", "issue", "view", str(args.issue),
+                    "gh", "issue", "view", str(issue_val),
                     "--repo", UPSTREAM_REPO,
                     "--json", "number,title,labels,state,body",
                 ]
                 try:
                     vp = subprocess.run(v_cmd, cwd=REPO_ROOT, capture_output=True, text=True, errors="replace")
                     if vp.returncode != 0:
-                        note = f"gh issue view {args.issue} failed: {(vp.stderr or '').strip() or vp.returncode}"
+                        note = f"gh issue view {issue_val} failed: {(vp.stderr or '').strip() or vp.returncode}"
                     else:
                         target_issue = json.loads(vp.stdout)
                 except FileNotFoundError:
@@ -3632,17 +4412,11 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                 except Exception as exc:
                     note = f"gh issue view error: {exc}"
                 if target_issue is None and note:
-                    # বাংলা: R78 board-fallback-এর আয়না — gh অনুপস্থিত/ব্যর্থ হলে
-                    # tower bridge.work_order দিয়ে per-issue hydrate। এর আগে --issue N
-                    # পথ gh-absent মেশিনে সম্পূর্ণ ad-hoc এনভেলপে পতিত হত (task-adhoc,
-                    # issue=null) — বোর্ড tower-fallback-এ জীবিত থাকলেও। hydrate সফল
-                    # হলে সত্যিকারের issue-বাউন্ড এনভেলপ যায় ও lease mark কাজ করে;
-                    # ব্যর্থ হলে আগের সৎ note অক্ষত থাকে (নীরব স্টাব নয়)।
-                    hydrated = _tower_issue_hydrate(args.issue)
+                    hydrated = _tower_issue_hydrate(issue_val)
                     if hydrated is not None:
                         target_issue = hydrated
                         note = (f"gh issue view unavailable; hydrated via tower work-order "
-                                f"fallback (issue {args.issue})")
+                                f"fallback (issue {issue_val})")
         elif board_unavailable:
             note = f"issue board unavailable ({board_error}); envelope emitted without problem_statement"
         else:
@@ -3698,7 +4472,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                             target_issue = hydrated
                             note = (f"gh issue view unavailable; hydrated via tower "
                                     f"work-order fallback (issue {picked})")
-            elif not args.allow_adhoc:
+            elif not getattr(args, "allow_adhoc", False):
                 print(
                     "No claimable issue on the board. Pass --allow-adhoc to emit an ad-hoc envelope.",
                     file=sys.stderr,
@@ -3727,8 +4501,8 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
             _stderr_log("!", f"envelope premise advisory: {dark_note}")
         envelope = build_task_envelope(
             target_issue,
-            group=args.group,
-            role_override=args.role,
+            group=getattr(args, "group", ""),
+            role_override=getattr(args, "role", ""),
             board_note=note,
         )
         print(json.dumps(envelope, indent=2))
@@ -3737,7 +4511,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
     print(COMMON_RULES)
     print("=" * 52)
 
-    if args.auto_pr:
+    if getattr(args, "auto_pr", False):
         # বাংলা: pipeline.yml workflow_dispatch --auto-pr পাঠায় (#89)। minimal
         # লুপ নিজে PR খোলে না — সৎ stderr নোট, stdout অপরিবর্তিত।
         print(
@@ -3773,9 +4547,10 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
                         str(l.get("name", "")).lower() for l in picked_issue["labels"] if isinstance(l, dict)
                     ]
             classified = classify_task_role(title=picked_title, labels=picked_labels)
-            dispatch_role = args.role or "solver"
-            if args.role and args.role not in SPECIALIST_ROLES and args.role not in ROLE_RULES:
-                log("!", f"unknown --role '{args.role}'; dispatching as solver")
+            role_arg = getattr(args, "role", "")
+            dispatch_role = role_arg or "solver"
+            if role_arg and role_arg not in SPECIALIST_ROLES and role_arg not in ROLE_RULES:
+                log("!", f"unknown --role '{role_arg}'; dispatching as solver")
                 dispatch_role = "solver"
             mandate = ROLE_RULES.get(
                 dispatch_role,
@@ -3839,7 +4614,20 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
 
     force_flag = getattr(args, "force", False)
     if claimable_count < 5 and not force_flag:
-        print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
+        if board_unavailable:
+            # বাংলা: WO #4057 leg-2 (U2/U6) — preflight এই একই রানে "board plane
+            # dark — UNSEEN, not zero" ছাপায়, অথচ ACTION শর্তহীনভাবে "clean and
+            # healthy" দাবি করত — কোনো plane দ্বারা সমর্থিত নয় এমন clean claim
+            # (U2 false assurance; ঠিক যে স্ট্রিংটি PR #4091 আদালতে নিয়েছে)।
+            # dark হলে সৎ শব্দচয়ন: VISIBLE, certified নয়।
+            print(
+                "ACTION: No claimable work VISIBLE (claimable: 0/5 threshold) — "
+                "board plane dark, UNSEEN not zero; not certified clean (U2). "
+                "Observation roles idle."
+            )
+        else:
+            print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold).")
+            print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
         return 0
 
     for role in due_roles(state, cfg):
@@ -3852,30 +4640,29 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         return 0
 
     print("ACTION: System is clean and up to date.")
+    print("STATUS: আপাতত সরাসরি কোনো কাজ নেই — কোনো রেসিং বা তাড়াহুড়ো নেই। পরে এসে আবার চেক করুন (Skip for now, come back later).")
     return 0
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="SupremeAI Minimal Continuous Loop")
-    parser.add_argument("--verify-only", action="store_true", help="Run 8-tier verification only")
-    parser.add_argument("--task-envelope", action="store_true", help="Emit the canonical task-envelope-v1 JSON (SPEC §2)")
-    parser.add_argument("--emit-prompt", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--emit-contract", action="store_true", help="Deprecated shim for --task-envelope")
-    parser.add_argument("--group", type=str, default="", help="Group override (fail-closed against VALID_GROUPS, exit 2)")
-    parser.add_argument("--loop", action="store_true", help="Shared flag (SPEC §4b): single dispatch cycle per invocation (scheduler is the outer loop)")
-    parser.add_argument("--offline", action="store_true", help="Run offline (board query honestly skipped)")
-    parser.add_argument("--pick-next", action="store_true", help="Shared flag (SPEC §4b): pick highest-priority claimable issue (default dispatch behavior)")
-    parser.add_argument("--issue", type=str, default="", help="Target a specific issue number for the task envelope")
-    parser.add_argument("--role", type=str, default="", help="Role override (validated against ROLE_RULES + specialist classes, honest fallback)")
-    parser.add_argument("--max-tasks", dest="max_tasks", type=int, default=1, help="Max tasks per dispatch cycle (minimal loop honors 1; >1 gets an honest stderr note)")
-    parser.add_argument("--allow-adhoc", dest="allow_adhoc", action="store_true", help="Emit an ad-hoc envelope when no claimable issue exists")
-    parser.add_argument("--auto-pr", action="store_true", help="Accepted for pipeline parity (#89); the minimal loop itself opens no PR")
+    parser.add_argument("--verify-only", action="store_true", help="Run 9-tier verification only")
+    # বাংলা: #567 চুক্তির honesty escape hatch — #4097-এর flag purge-এ এই রেজিস্ট্রেশন
+    # ব্যাচ-sweep-এ মুছে গিয়েছিল, কিন্তু read-side wiring (main()-এর verify শাখায় ও
+    # run_dispatch_cycle-এ `getattr(args, "offline", False)`), SPEC §4b-র live সারি এবং
+    # tests/test_constitution_freshness.py::test_25 সবই বেঁচে ছিল → flag-টি মৃত-কোড
+    # হয়ে পড়েছিল (sentry c74 #4148 প্রমাণিত residual)। এটি ad-hoc override নয় —
+    # সৎ-সংকোচনমুখী hatch (যা দাবি করা কমায়, বাড়ায় না), তাই bare-mode-এর সাথে
+    # সাংঘর্ষিক নয়। Env সমতুল্য: SUPREMEAI_OFFLINE / AGENT_LOOP_OFFLINE / CI_OFFLINE।
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Honest offline mode: board query honestly skipped (dispatch path) and the "
+        "--verify-only constitution-freshness boot smoke honestly skipped "
+        "(env: SUPREMEAI_OFFLINE / AGENT_LOOP_OFFLINE / CI_OFFLINE)",
+    )
     args, _ = parser.parse_known_args()
 
-    if args.group and args.group not in VALID_GROUPS:
-        log("❌", f"--group '{args.group}' is not in the VALID_GROUPS registry {sorted(VALID_GROUPS)} (SPEC §3 fail-closed)")
-        return 2
-
-    if args.verify_only:
+    if getattr(args, "verify_only", False):
         # বাংলা: #567-এর Tier-1 fresh-গেট step_2_rules() সম্পূর্ণ নির্মিত ও
         # ২৬-অফলাইন-টেস্টে যাচাইকৃত, অথচ #1551-এর dead-cluster removal-এর পর
         # একে কোনো কলার ডাকে না (git grep প্রমাণিত) — freshনেস যাচাই নীরবে শূন্য:
@@ -3923,21 +4710,6 @@ def main() -> int:
             )
             return 1
         return 0
-
-    if args.loop:
-        # বাংলা: এই স্ক্রিপ্ট একটি পরিষ্কার একক-ডিসপ্যাচ সাইকেল চালায়। বাইরের শিডিউলার/রানারই
-        # পুনরাবৃত্তি নিয়ন্ত্রণ করে; ইন-প্রসেস অসীম লুপ প্রক্রিয়ার অপব্যবহার বন্ধ রাখা হয়েছে।
-        print("--loop: runs ONE dispatch cycle per invocation; the scheduler/orchestrator is the outer loop.", file=sys.stderr)
-
-    if args.max_tasks is not None and args.max_tasks <= 0:
-        print("--max-tasks <= 0: dispatch suppressed by caller.", file=sys.stderr)
-        return 0
-    if args.max_tasks is not None and args.max_tasks > 1:
-        print(
-            "--max-tasks > 1: this loop dispatches exactly ONE task per cycle "
-            "(the scheduler/orchestrator is the outer loop); honoring 1.",
-            file=sys.stderr,
-        )
 
     return run_dispatch_cycle(args)
 

@@ -18,7 +18,6 @@ JSON-RPC error নয়, HTTP-200 success envelope-এর isError content-text
 """
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from typing import Any
 
@@ -67,7 +66,15 @@ def envelope_says_tool_not_found(resp: Any) -> bool:
         return "-32602" in low and "not found" in low
     if not isinstance(resp, dict):
         return False
+    # বাংলা: চতুর্থ আকৃতি (watchdog-funnel, live 2026-10-31 GLM Agent 11) —
+    # JSON-RPC success envelope যার result.content-ই isError text বহন করে
+    # ({"jsonrpc","id","result":{"content":[{"text":"MCP error -32602: ..."}]}})।
+    # এটাই MCP tools/call-এর স্ট্যান্ডার্ড রেসপন্স শেপ; top-level content-শাখা
+    # এই আকৃতিতে অন্ধ ছিল বলে funnel-কলার মৃত বানান চিনতে পারে নি।
     content = resp.get("content")
+    if not isinstance(content, list):
+        result = resp.get("result")
+        content = result.get("content") if isinstance(result, dict) else None
     if not isinstance(content, list):
         return False
     for item in content:

@@ -9,35 +9,37 @@
 
 ## Durable outcomes (প্রমাণসহ)
 
-- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): receipt-এর
-  mechanical closure conditions r+2 (#3312) ব্যবহার করে pair resolved confirm
-  করেছে — রিপোর্ট-চক্র self-closure প্যাটার্ন প্রমাণিত।
+- #2538 r+1 re-verification receipt landed (PR #3240, 48c126f): রিপোর্ট-চক্র
+  self-closure প্যাটার্ন প্রমাণিত।
 - #2615 falsification check landed (PR #3310, 3290ac4): #2608 annotation
   residual live plane-এ retired।
-- Worklog r1 + saturation receipt landed (PR #3691, 02:38+08): task-3661 claim
-  ~২ মিনিটের race-এ সৎ হার (winner PR #3675 merged — zero duplicate)।
-- Worklog r2 landed (PR #3769, 04:31+08): P0 #3663 closed — admin-lane
-  সিদ্ধান্ত প্রমাণিত; landing-রো-তে verdict-plane ফাঁকা থাকার নোট।
-- Worklog r3 landed (PR #3970, 07:31+08): tower tool-plane census 158 → 20
-  (github.* লেন absent), Invariants 5 → 6 (Full-Scope Completeness)।
+- Worklog সারি: r1 (PR #3691, 02:38+08) task-3661 claim race-এ সৎ হার, winner
+  PR #3675 — zero duplicate; r2 (PR #3769, 04:31+08) P0 #3663 closed প্রমাণিত;
+  r3 (PR #3970, 07:31+08) tower tool-plane census 158 → 20 + Invariants 5 → 6;
+  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census +
+  `callerAuthenticated: true`; r5 (PR #4175, b79b556, 12:34+08) bare-invocation
+  চুক্তি আবিষ্কার (#4097); r6 (PR #4225, 8896f50, 14:30+08) backlog 10 → 24 +
+  #4097-heal (#4198); r7 (PR #4244, 74c12db, 15:29+08) closer-regime drain
+  24 → 2 live প্রমাণ।
 
-## 2026-10-31 08:27+08 সাইকেল — board collapse: saturation → খালি
+## 2026-10-31 18:27+08 সাইকেল — tower 429 ঝড় + নিজের টুলে root-cause fix
 
-1. Door honored; worktree origin/main `fa5b4e2` (0 behind); preflight zero
-   open P0।
-2. **Board collapse (first-hand census):** 97 → 54 → 58 → **2 rows** এই সাইকেলে;
-   `bridge_work_queue` (authenticated) তারপরই **totalOpen: 0** — fleet
-   সেকেন্ড-স্কেলে শেষ দুটো row-ও সেরে ফেলেছে। টানা NO-PICK: ৪র্থ সাইকেল।
-   GLM-14-এর cycle-13 sweep (PR #4014, HEAD) ও "board empty" রিপোর্ট করেছে —
-   স্বাধীন নিশ্চিতকরণ।
-3. **RBAC-পরবর্তী প্রথম ইতিবাচক সংকেত:** `bridge_work_queue` এখন
-   `callerAuthenticated: true` — গত সাইকেলের anonymous-viewer কালো অবস্থা
-   থেকে tower টুল-কল এখন authenticated পাচ্ছে (২০-টুল plane-এ)।
-4. **R63/#2343 bootstrap-gap close-out live:** loop-এর hooks-path probe এখন
-   নিশ্চুপ "stays dark" নয় — `scripts/ops/activate_githooks.py --activate`
-   (idempotent, report-only `--verify`) এক-লাইন প্রতিকার সাজেস্ট করে; রিপো-সাইড
-   root-cause fix landed।
-5. `--allow-adhoc` `task-adhoc` envelope → এই r4; baseSha compose-time পিন,
-   সাথে সাথে submit (#3655-r4 শ্রেণি প্রতিরোধ)।
+1. Door honored; worktree origin/main `fdb3a3e` (loop auto-rebase, 4 behind →
+   current); preflight zero open P0।
+2. **Cron-gap সততা:** 16:27/17:27 সাইকেল fire করেনি (২ ঘণ্টার ফাঁক) — একই
+   উইন্ডোতে tower-ও অস্থির ছিল: আমার পাশে **HTTP 429 Too Many Requests**
+   (bounded retry-ও ৩×৩s পার হয়নি), GLM-11 r17 (#4347)-এর connection-error
+   dark-cycle datum ও a71 dupguard-এর (#4351) phantom-PR-table — তিনটি
+   স্বাধীন প্রমাণ, tower flakiness শ্রেণি নিশ্চিত (corroboration, duplicate নয়)।
+3. **mcp_client.py root-cause hardening (নিজের টুল, ৩ স্তর):** (a) bootstrap
+   initialize-এ bounded 3-attempt retry; (b) `_post`-এর ভিতরেই 429-নির্দিষ্ট
+   Retry-After-সচেতন bounded retry — init/list/call সব call-site একসাথে
+   কভার; (c) শেষ জাল: অবশিষ্ট HTTPError-এ raw traceback নয়, এক-লাইন সৎ
+   stderr + exit 3। Live যাচাই: ৪৫s পর 429 window পেরিয়ে heartbeat + queue
+   কল পরিষ্কার — এই শ্রেণি আর কোনো সাইকেল ক্র্যাশ করাবে না।
+4. **Board 2 → 27 rows** (ফাঁকের মধ্যে fleet-WO ঢেউ); কোনোটাই আমার নয়;
+   claimable 0/5 — টানা NO-PICK: ৮ম সাইকেল। `callerAuthenticated: true`
+   অপরিবর্তিত (৫ম সাইকেল)।
 
-No code change; no closure request; report-only.
+No code change in repo; no closure request; report-only (tool fix আমার নিজের
+sandbox-side সহায়ক, repo-র অংশ নয়)।

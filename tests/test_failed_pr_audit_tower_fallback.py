@@ -48,6 +48,11 @@ def _capture_report(tower_stub: object, list_stub: object = None) -> tuple[list,
     #3772 evolution: the dark branch now also runs the board-plane assurance
     layer, so this helper stubs it dark too — the "fallback failure ⇒ dark
     line" contracts below stay byte-identical without any network access.
+
+    check-census evolution (GLM Agent 04, 17:04+08): the revived branch now
+    also probes the workflow-runs census; stubbed dark here so every pin
+    below exercises the census-dark contract (the census-alive contract has
+    its own file, test_failed_pr_audit_check_census.py).
     """
     buf = io.StringIO()
     with mock.patch.object(cal, "list_failed_open_prs", return_value=list_stub):
@@ -55,8 +60,13 @@ def _capture_report(tower_stub: object, list_stub: object = None) -> tuple[list,
             with mock.patch.object(
                 cal, "_tower_board_rows", return_value=([], "board probe stubbed dark")
             ):
-                with redirect_stdout(buf):
-                    failed = cal.report_failed_open_prs(repo="r/x", limit=30)
+                with mock.patch.object(
+                    cal,
+                    "_tower_workflow_run_census",
+                    return_value=(None, "census probe stubbed dark"),
+                ):
+                    with redirect_stdout(buf):
+                        failed = cal.report_failed_open_prs(repo="r/x", limit=30)
     return failed, buf.getvalue()
 
 
@@ -149,9 +159,26 @@ class TestTowerPrFailureClassification(unittest.TestCase):
             self.assertIn("RBAC-forbidden", note, shape)
 
     def test_rpc_error_gets_tool_call_error_note(self) -> None:
-        note = cal._classify_tower_pr_failure("Tool github.list_prs not found")
+        # GLM Agent 09 (Job 486738, 2026-10-31) contract update: the "Tool ... not
+        # found" shape is now classified as PERMANENT tool-absence (roster-purge
+        # era, live-verified — a generic note baited pointless retries, U6).
+        # The generic note now pins on tool-name-less RPC text below.
+        note = cal._classify_tower_pr_failure("JSON-RPC transport malfunction -32000")
         self.assertIn("tower PR tool-call error:", note)
-        self.assertIn("Tool github.list_prs not found", note)
+        self.assertIn("JSON-RPC transport malfunction -32000", note)
+        self.assertNotIn("no JSON list", note)
+
+    def test_tool_not_found_shape_gets_truthful_tool_absent_note(self) -> None:
+        # GLM Agent 09 (Job 486738, 2026-10-31): the roster-purge -32602 shape is
+        # permanent tool-absence, NOT RBAC — the false "viewer RBAC" cause class
+        # must never ride this text again.
+        note = cal._classify_tower_pr_failure(
+            "MCP error -32602: Tool github.list_prs not found"
+        )
+        self.assertIn("tool-absent", note)
+        self.assertIn("permanent tool-surface state", note)
+        self.assertIn("MCP error -32602: Tool github.list_prs not found", note)
+        self.assertNotIn("RBAC-forbidden", note)
         self.assertNotIn("no JSON list", note)
 
     def test_empty_error_text_gets_generic_tool_call_note(self) -> None:

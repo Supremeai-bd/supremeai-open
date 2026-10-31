@@ -2,11 +2,12 @@
 
 Durable one-liners; full evidence lives in the linked receipts/PRs (git log --grep 486804). Replaced in place each cycle — this file stays small.
 
-## Cycles (2026-10-30 → 2026-10-31, +08)
-- #3615 stranded-duplicate triage (report-only): Run 41099207571 = U4 duplicate death (PR #3614 filed 25s after #3612 on the same issue), not a main defect → receipt `bridge-20261031-ci3615-triage-glm20.md` (#3633).
-- #3399 landing-race corroboration (report-only): second auto-landing policy-block (PR #3392, 13:40:37Z) 97s after instance 1 → #3411.
-- #3661 Ingress Hook Guard RED-ON-MAIN triage: .githooks self-test 2 sibling failures = #3689-class exec-bit mode-drift → receipt #3689 (class now cited by in-flight #3941 bootstrap fix).
-- scout R82: #3386 pipeline.yml runner-cost gap (4/22 jobs missing timeout-minutes, 360-min default; U6 guard proposal) → worklog #3392.
-- #3354 cyclical re-dispatch ROOT CAUSE: closure-integrity class registered in `scripts/agents/incident_triage_receipts.json` (+ test pin 3354) so the picker mechanically demotes covered rows → PR #3774 **merged** (aa5c2f4); probe: #3354 demoted, #9999 negative control served, 17/17 tests.
-- U3-family pick fix: referenced-PR-landed CI-row demotion (loop served #3858 minutes after PR #3534 landed) → PR #3913 **merged** (204d1c9).
-- 07:20+08 cycle — no clean pick (this file = worklog r1; future cycles replace in place): loop --task-envelope clean-pick verdict zero claimable; live tower census 52 open (0 unclaimed, 0 P0, 5 status:claimed, 16 bridge:in-gates, 32 report receipts); P1 #3698, ci-failed #3629, audit #3527, P2 #2633 all status:claimed; hooks-bootstrap gap covered in-flight #3941 (Agent 08, cites #3689); oldest-PR age guards already landed (verdict_plane_age_guard.py #3888, pr_landing_age_guard.py + tests); loop --verify-only 8/8 PASS; test_triage_receipt_demotion 17/17 PASS on fresh main.
+## Landed chain (2026-10-30 → 31, +08)
+- #3615 triage → #3633; #3399 landing-race corroboration → #3411; #3661 exec-bit mode-drift (cited by #3941); scout R82 → #3392; #3354 re-dispatch ROOT CAUSE + pin → #3774 merged (aa5c2f4); CI-row pick demotion → #3913 merged (204d1c9); worklog r1 → #3952/#3953.
+- 12:20 ratchet heal r3 → #4172 **merged** (104c4ed, 368→361 + 'NOT a growth diff' honesty relabel); 13:20 skills heal → #4200 **merged** (5d852ad, 14/14 verified at tip); worklog r4 → #4202, r5 → #4281.
+- 16:20 #1630 phantom root-cause (ls-files `--others` swept an untracked helper into #4253's dirty-worktree index regen) — my patch superseded by glm18's parallel fix **#4271** (opt-in `tracked_only` at generator + regression pin); mine withdrawn, class confirmed dead at tip.
+- 17:20 r6: diagnosed ratchet 347>345 (exact-mirror arming-commit diff) + parity red; submitted ratchet r9 (ok:true) but parallel agents landed all four heals (**#4313**, **#4323**, byte-identical hunks) — STOOD DOWN per U5, CAS stale-base machinery correctly blocked double-landing; worklog r6 → #4336.
+- 18:20 r7: census 2F/2466P — CVE maintainer pair only (guards' own routing: pin bumps are MAINTAINER decisions, recipe #4204); ladder 9/9, loop clean; worklog r7 → #4360.
+
+## Cycles
+- 19:20+08 (r8): census **2F/2481P** at 3aec9bc — same CVE maintainer pair (js+npm dep guards, unchanged GHSA set). Ladder 9/9; loop bare: board plane **DARK** this run — fleet cron-window contention 429/Cloudflare (#4364's diagnosis, tower itself reachable — my initialize + r7 submit both succeeded); direct bridge_work_queue probes also challenged ×2 with backoff; P0 gate **UNSEEN not zero** (U2 honest note, not certified clean). No agent-lane red, zero code from me this cycle. Suite 2466→2481 passing (test_tower_rate_limit_honesty.py et al landed), failures flat at 2 — third consecutive cycle of net health improvement.
