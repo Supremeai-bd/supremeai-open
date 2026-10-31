@@ -214,6 +214,7 @@ def build_issue_labels(repo: str, branch: str = PRODUCTION_BRANCH) -> list[str]:
         else "P2-medium"
     )
     return [
+        "ci-failed",
         "status:unclaimed",
         priority_label,
         # S09 (#489) label-bridge: `status:runway` is LABEL_PRIORITY[0] in
@@ -355,7 +356,7 @@ def check_existing_mirror(
     repo: str, run_id: int | str, token: str | None = None
 ) -> int | None:
     """Check if this run's marker already exists in target Domain Anchor comments."""
-    target_anchor = get_anchor_issue_number(repo) if get_anchor_issue_number else CI_FAILURE_ANCHOR
+    target_anchor = active_anchor_for_repo(repo)
     needle = f"{repo}/actions/runs/{run_id}"
     page = 1
     while True:
@@ -374,6 +375,68 @@ def check_existing_mirror(
     return None
 
 
+def linked_issue_numbers(pr_body: str) -> list[int]:
+    """Return issue references from bridge PR text in appearance order."""
+    return [
+        int(match.group(1))
+        for match in re.finditer(
+            r"\b(?:closes?|fix(?:es)?|resolves?|refs?)\s+#(\d+)\b",
+            pr_body or "",
+            re.IGNORECASE,
+        )
+    ]
+
+
+def is_active_anchor_child(issue_number: int, repo: str, token: str | None = None) -> bool:
+    """Fail closed unless issue_number is a direct child of this repo's active anchor.
+
+    GitHub's sub-issues endpoint returns database IDs, not issue numbers; fetch
+    the candidate first and compare its database ID with the anchor's children.
+    """
+    if list_sub_issue_ids is None:
+        print("[watchdog] Cannot verify anchor-child relationship; refusing label write.")
+        return False
+    anchor = active_anchor_for_repo(repo)
+    code, issue = gh_api(f"repos/{OPEN_REPO}/issues/{issue_number}", token=token)
+    if code != 200 or not isinstance(issue, dict) or not issue.get("id"):
+        return False
+    try:
+        child_ids = list_sub_issue_ids(anchor, repo=OPEN_REPO, token=token)
+        return int(issue["id"]) in {int(value) for value in child_ids}
+    except Exception as exc:
+        print(f"[watchdog] Could not verify child #{issue_number} under anchor #{anchor}: {exc}")
+        return False
+
+
+def mark_anchor_child_ci_failure(
+    issue_number: int, repo: str, token: str | None = None
+) -> bool:
+    """Add failure/unclaimed labels only to a verified direct anchor child."""
+    if not is_active_anchor_child(issue_number, repo, token=token):
+        print(
+            f"[watchdog] Refusing to mutate #{issue_number}: it is not verified as a direct child "
+            f"of repo {repo}'s active anchor."
+        )
+        return False
+    for claimed_label in ("status%3Aclaimed", "status%3Ain-progress", "claimed"):
+        gh_api(
+            f"repos/{OPEN_REPO}/issues/{issue_number}/labels/{claimed_label}",
+            token=token,
+            method="DELETE",
+        )
+    code, _ = gh_api(
+        f"repos/{OPEN_REPO}/issues/{issue_number}/labels",
+        token=token,
+        method="POST",
+        data={"labels": ["ci-failed", "status:unclaimed"]},
+    )
+    if code not in (200, 201):
+        print(f"[watchdog] Failed to label child issue #{issue_number} (HTTP {code}).")
+        return False
+    print(f"[watchdog] Labeled anchor child #{issue_number}: ci-failed + status:unclaimed.")
+    return True
+
+
 def label_pr_lane_failure(
     repo: str,
     pr_num: int,
@@ -381,78 +444,25 @@ def label_pr_lane_failure(
     html_url: str,
     token: str | None = None,
 ) -> bool:
-    """In-place update for PR-lane CI failures: label PR and target issue directly without creating a new issue.
-    
-    Zero-issue-duplication policy: adds 'ci-failed' and 'status:unclaimed' labels to the PR
-    and any target issue cited via 'Closes #N' in the PR body.
-    """
+    """Label only a PR-linked child under the repo's active anchor; never the PR/parent."""
     tok = token or get_default_token()
-    # 1. Label the PR itself
     code, pr_data = gh_api(f"repos/{repo}/pulls/{pr_num}", token=tok)
     if code != 200 or not isinstance(pr_data, dict):
-        print(f"[watchdog] Could not fetch PR #{pr_num} on {repo} (HTTP {code}). Falling back.")
+        print(f"[watchdog] Could not fetch PR #{pr_num} on {repo} (HTTP {code}).")
         return False
-    
-    # Add ci-failed and status:unclaimed to the PR, remove claimed labels
-    for claimed_lbl in ("status:claimed", "claimed"):
-        gh_api(f"repos/{repo}/issues/{pr_num}/labels/{claimed_lbl}", token=tok, method="DELETE")
-    gh_api(
-        f"repos/{repo}/issues/{pr_num}/labels",
-        token=tok,
-        method="POST",
-        data={"labels": ["ci-failed", "status:unclaimed"]},
-    )
-    print(f"✅ [watchdog] Marked PR #{pr_num} as 'ci-failed' and 'status:unclaimed' in-place.")
 
-    # 2. Check if the PR links to an issue via Closes/Fixes/Resolves #N or Refs #N
-    pr_body = pr_data.get("body") or ""
-    closes_match = re.search(r"(?:closes|fixes|resolves)\s+#(\d+)", pr_body, re.IGNORECASE)
-    if closes_match:
-        target_issue_num = int(closes_match.group(1))
-        for claimed_lbl in ("status:claimed", "claimed"):
-            gh_api(f"repos/{OPEN_REPO}/issues/{target_issue_num}/labels/{claimed_lbl}", token=tok, method="DELETE")
-        gh_api(
-            f"repos/{OPEN_REPO}/issues/{target_issue_num}/labels",
-            token=tok,
-            method="POST",
-            data={"labels": ["ci-failed", "status:unclaimed"]},
-        )
-        print(
-            f"✅ [watchdog] Marked target issue #{target_issue_num} as 'ci-failed' and 'status:unclaimed' in-place (stripped claimed labels)."
-        )
-    else:
-        # If PR has no linked target issue via closes/fixes/resolves, create a tracking issue if needed
-        refs_match = re.search(r"refs\s+#(\d+)", pr_body, re.IGNORECASE)
-        if refs_match:
-            ref_issue_num = int(refs_match.group(1))
-            # If referencing an anchor hub (#749..#762), add a tracking comment to the anchor hub
-            gh_api(
-                f"repos/{OPEN_REPO}/issues/{ref_issue_num}/comments",
-                token=tok,
-                method="POST",
-                data={"body": f"⚠️ **PR #{pr_num} CI Failed** in run [{run_id}]({html_url}). Marked in-place."},
-            )
-            print(f"✅ [watchdog] Posted CI failure notice to referenced issue #{ref_issue_num}.")
-        else:
-            # New plan: no auto-created CI issues. Record the failure notice on the
-            # active anchor hub instead of minting a new tracking issue.
-            anchor = active_anchor_for_repo(repo)
-            gh_api(
-                f"repos/{OPEN_REPO}/issues/{anchor}/comments",
-                token=tok,
-                method="POST",
-                data={
-                    "body": (
-                        f"⚠️ **PR #{pr_num} CI Failed** in run [{run_id}]({html_url}) "
-                        f"on `{repo}` (no linked issue). Recorded in-place; no new issue created."
-                    )
-                },
-            )
-            print(f"✅ [watchdog] Recorded CI failure notice on active anchor #{anchor} for unlinked PR #{pr_num}.")
+    candidates = linked_issue_numbers(pr_data.get("body") or "")
+    if not candidates:
+        print(f"[watchdog] PR #{pr_num} has no linked work-order issue; no issue created or mutated.")
+        return False
 
-    return True
-
-
+    changed = False
+    for issue_number in candidates:
+        if mark_anchor_child_ci_failure(issue_number, repo, token=tok):
+            changed = True
+    if not changed:
+        print(f"[watchdog] PR #{pr_num} references no verified direct child of the active anchor.")
+    return changed
 
 
 def active_anchor_for_repo(repo: str) -> int:
@@ -506,6 +516,19 @@ def find_pr_number_for_branch(repo: str, branch: str, token: str | None = None) 
                 return num
     return None
 
+def linked_prs_for_commit(repo: str, commit_sha: str, token: str | None = None) -> list[int]:
+    """Return PRs associated with a commit (e.g. a merge commit on main)."""
+    if not commit_sha:
+        return []
+    code, data = gh_api(
+        f"repos/{repo}/commits/{commit_sha}/pulls?per_page=10",
+        token=token,
+    )
+    if code != 200 or not isinstance(data, list):
+        return []
+    return [int(item["number"]) for item in data if isinstance(item, dict) and item.get("number")]
+
+
 def mirror_failure(
     repo: str,
     workflow_name: str,
@@ -523,6 +546,16 @@ def mirror_failure(
       - Production branch (main): mirrored as a tracked sub-issue directly under the affected repository's Domain Anchor Hub (#749..#762).
     """
     lane = classify_failure_lane(branch)
+    if lane == "production" and commit_sha:
+        # A push/workflow failure on main can be the merge commit of a bridge PR.
+        # Resolve the merged PR first so its linked work-order child gets the labels.
+        changed = False
+        for pr_num in linked_prs_for_commit(repo, commit_sha, token=token):
+            if label_pr_lane_failure(repo, pr_num, run_id, html_url, token=token):
+                changed = True
+        if changed:
+            return True
+
     if lane != "production":
         pr_num = find_pr_number_for_branch(repo, branch, token=token)
         if pr_num is not None:
@@ -530,16 +563,9 @@ def mirror_failure(
             if labeled:
                 print(f"[watchdog] PR-lane CI failure on PR #{pr_num} handled in-place (no duplicate issue created).")
                 return True
-        # No PR resolvable: record on active anchor, no new issue.
-        anchor = active_anchor_for_repo(repo)
-        gh_api(
-            f"repos/{OPEN_REPO}/issues/{anchor}/comments",
-            token=token,
-            method="POST",
-            data={"body": f"⚠️ **CI Failed** on `{repo}` branch `{branch}` run [{run_id}]({html_url}). Recorded in-place; no new issue created."},
-        )
-        print(f"[watchdog] PR-lane CI failure recorded on active anchor #{anchor} (no PR resolvable).")
-        return True
+        # No PR/work-order child can be resolved. Do not mutate the PR or parent anchor.
+        print(f"[watchdog] Unrouted PR-lane failure: {repo} {branch} run {run_id}; no issue created.")
+        return False
 
     # Dedup: scan open issues for this run's marker (paginated).
     all_items = []
@@ -554,105 +580,31 @@ def mirror_failure(
         all_items.extend(items)
         existing_num = find_mirror_in_items(items, repo, run_id)
         if existing_num is not None:
-            print(
-                f"[watchdog] Incident already mirrored as issue #{existing_num}. Skipping."
-            )
-            return True
+            return mark_anchor_child_ci_failure(existing_num, repo, token=token)
         # Enhanced dedup (#2705): same repo+branch+commit => same incident,
         # even if the run_id differs (re-runs / different workflow runs on
         # the same commit). Prevents duplicate P0/P2 WOs for one root cause.
         if commit_sha:
             dup_num = find_mirror_by_commit(items, repo, branch, commit_sha)
             if dup_num is not None:
-                print(
-                    f"[watchdog] Duplicate incident (same commit {commit_sha[:8]}) "
-                    f"already mirrored as issue #{dup_num}. Skipping."
-                )
-                return True
+                return mark_anchor_child_ci_failure(dup_num, repo, token=token)
         # New plan: same repo+branch => same incident; only change level in place.
         branch_num = find_mirror_by_repo_branch(items, repo, branch)
         if branch_num is not None:
-            labels = build_issue_labels(repo, branch=branch)
-            gh_api(
-                f"repos/{OPEN_REPO}/issues/{branch_num}/labels",
-                token=token,
-                method="PUT",
-                data={"labels": labels},
-            )
-            gh_api(
-                f"repos/{OPEN_REPO}/issues/{branch_num}/comments",
-                token=token,
-                method="POST",
-                data={"body": f"⚠️ **CI re-failed** on `{repo}` branch `{branch}` run [{run_id}]({html_url}). Level/labels updated in-place; no new issue created."},
-            )
-            print(f"[watchdog] Existing incident #{branch_num} updated in-place (level changed).")
-            return True
+            return mark_anchor_child_ci_failure(branch_num, repo, token=token)
         if len(items) < 100:
             break
         page += 1
 
-    title = build_issue_title(workflow_name, repo, branch, run_id)
-    body = f"## 🚨 CI Failure Incident: {title}\n\n" + build_issue_body(
-        repo, workflow_name, run_id, html_url, branch, commit_sha, error_summary
+    # No matching child issue: intentionally do not mint a new bridge/CI issue.
+    # Keep the failure visible in Actions and let the scheduler surface this
+    # as an unmapped failure for a human/agent to attach to the right work order.
+    _ = build_issue_labels(repo, branch=branch)
+    print(
+        f"[watchdog] Unrouted production failure: {repo} {branch} run {run_id}; "
+        "no verified anchor child matched, so no issue was created."
     )
-    labels = build_issue_labels(repo, branch=branch)
-
-    code, resp = gh_api(
-        f"repos/{OPEN_REPO}/issues",
-        token=token,
-        method="POST",
-        data={"title": title, "body": body, "labels": labels},
-    )
-    if code == 422:
-        core_labels = [l for l in labels if not l.startswith("repo:")]
-        code, resp = gh_api(
-            f"repos/{OPEN_REPO}/issues",
-            token=token,
-            method="POST",
-            data={"title": title, "body": body, "labels": core_labels},
-        )
-    if code == 201:
-        issue_number = resp.get("number")
-        issue_url = resp.get("html_url")
-        print(
-            f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
-        )
-        # Link as sub-issue directly under an ACTIVE Domain Anchor Hub (6-domain plan).
-        target_anchor = active_anchor_for_repo(repo)
-        if issue_number and link_sub_issue is not None:
-            try:
-                linked = link_sub_issue(
-                    parent_issue_number=target_anchor,
-                    child_issue_number=int(issue_number),
-                    repo=OPEN_REPO,
-                    token=token,
-                )
-                if linked:
-                    print(
-                        f"   ↳ linked as sub-issue directly under Domain Anchor #{target_anchor}."
-                    )
-                else:
-                    print(
-                        f"   ↳ ❌ sub-issue link FAILED for #{issue_number} -> "
-                        f"#{target_anchor}; counting mirror as FAILED so the "
-                        f"scheduler surfaces it."
-                    )
-                    return False
-            except Exception as exc:
-                print(f"   ↳ ❌ sub-issue link error: {exc}")
-                return False
-        elif issue_number and link_sub_issue is None:
-            print(
-                "   ↳ ❌ federation_anchors.link_sub_issue unavailable — cannot "
-                "guarantee zero loose incidents; counting mirror as FAILED."
-            )
-            return False
-        return True
-    else:
-        print(
-            f"❌ [watchdog] Failed to mirror incident (HTTP {code}): {resp}"
-        )
-        return False
+    return False
 
 
 def poll_federation_failures(
@@ -1008,11 +960,17 @@ def self_test() -> int:
     assert "admin-only" in body
 
     labels = build_issue_labels("Supremeai-bd/supremeai-command")
+    assert "ci-failed" in labels
     assert "status:unclaimed" in labels
     assert "P0-critical" in labels
     assert "status:runway" in labels  # S09 label-bridge -> ci-fixer dispatch
     assert "area:ci" in labels
     assert "repo:command" in labels
+
+    # PR references resolve work orders; a bare anchor reference is filtered later
+    # by the direct-child check before any write.
+    assert linked_issue_numbers("Closes #749\nRefs #1200") == [749, 1200]
+    assert linked_issue_numbers("No linked issue") == []
 
     # 5. Dedup scan: PRs are excluded, real mirror issues are found
     fake_items = [
