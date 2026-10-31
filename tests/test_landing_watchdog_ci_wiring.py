@@ -105,3 +105,27 @@ def test_census_shallow_self_heal_pinned_in_tool() -> None:
          "genuinely short history"),
     ):
         assert needle in src, f"{needle!r} missing from the watchdog: {why}"
+
+
+def test_apply_leg_reports_gh_failures_honestly() -> None:
+    """Fix-pin (r16/cycle-21, Job 486770): the apply leg must not fake success.
+
+    The pre-fix leg printed its success line without reading gh's exit
+    code, so a failing close (403, rate limit, token-less runner) was
+    logged as success — a false witness in the exact janitor log the
+    ghost-attribution reads back (the 06:00Z cron run is prediction v2's
+    decisive witness, and CI tolerates a failing janitor step, so the
+    per-item log line is the only evidence that survives).
+    """
+    src = WATCHDOG.read_text(encoding="utf-8")
+    for needle, why in (
+        ("def _close_result",
+         "apply leg lost the honest-result helper — unread exit codes again"),
+        ("[FAIL] #",
+         "apply leg lost the failure line — a failing gh would be logged "
+         "as success again (false-OK class)"),
+        ("gh exit",
+         "apply leg lost the exit-code echo that makes the janitor log a "
+         "trustworthy attribution witness"),
+    ):
+        assert needle in src, f"{needle!r} missing from the watchdog: {why}"
