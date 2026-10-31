@@ -42,3 +42,9 @@
 3. Root cause (b): landed runner had no test. Fix: tests/test_run_face_tests.py (8 offline tests: manifest-on-disk drift guard, cmd/cwd contract, returncode propagation, no-mutation flags, import side-effect-free).
 4. Verification: targeted 11/11 PASS; parity guard JSON passed:true missing:[]; full census 2221 passed / 13 skipped / 0 failed (agent lane green; CVE-guard duo stays maintainer-lane, untouched). PR 4313 landed as 9be78ba; WO 4312 auto-closed.
 5. Follow-up at tip a224dfa: PR 4311 (48ad193) landed 2 fresh agent-lane reds — dead imports `ast` (pr_preflight_guard.py) + `shutil` (test_loop_contract_parity.py) grew the shrink-only ratchet 345→347, and line_budget_guard.py arrived with no test face (third of its family). Healed: both imports verified dead by two-tip per-file diff + import-line-only textual check, then removed (ratchet back to 345, delta 0); tests/test_line_budget_guard.py added (12 offline tests: manifest drift guard, over/exact/missing/unreadable budget branches, self-test exit codes, argv routing). Census green again at the healed tip.
+
+## Cycle 5 (18:09+08 dispatch) — tower tool-name drift heal in fresh #4341 fixture
+
+1. Loop dispatch clean (claimable 0/5). Census at 2f5ad91: 1 red — tower tool-name drift guard caught `github_workflow_runs`/`github_list_prs` (dead wave-2 forms) in quoted wire payloads of tests/test_failed_pr_audit_check_census.py (landed #4341, 2f5ad91).
+2. Verdict: migrate, not allowlist — the classifier's own live evidence (roster-purge-era probe, RBAC denial text) shows the deployed tower emits dotted tool names; the fixture's underscore spellings were unfaithful wire simulation, not name-as-data. Migrated both fixture strings to dotted live forms; classifier branches on the "output validation error" substring, so behavior is byte-stable.
+3. Verification: 27/27 targeted PASS (offender file + drift guard); full census 2257 passed / 13 skipped / 0 failed.

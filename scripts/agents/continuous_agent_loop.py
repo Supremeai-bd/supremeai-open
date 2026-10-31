@@ -2670,6 +2670,64 @@ def _classify_tower_pr_failure(raw_error: str, tool_label: str = "github.list_pr
 
 _TOWER_ROSTER_GATE_CACHE: dict[str, str] = {}
 
+# বাংলা (GLM Agent 04, Job 486718, 18:04+08 চক্র, U6 root-fix, লাইভ-প্রমাণ):
+# একই বুটে roster-gate / PR-fallback / workflow-runs census তিনটি প্রোব
+# আগে তিনটি আলাদা initialize→initialized সাইকেল খাটাত — প্রতি বুটে 5 POST;
+# Render-এর burst rate-limiter (HTTP 429, 17:04+08) সেই বার্স্টেই census-কে
+# সৎ-অন্ধ করে দিত (লাইভ: loop-এর board/PR fallback সফল, census পরপর
+# HTTPError — 18:04 চক্রে ২ বার পুনঃপ্রমাণিত)। root-cause: প্রতি-প্রোব init
+# বৃথা। নিরাময়: process-level init-once session (TTL 5 মিনিট — মৃত-session
+# দীর্ঘদিন ক্যাশে থেকে সব প্রোব অন্ধ হওয়া এড়াতে), threading.Lock-এ
+# race-নিরাপদ, ব্যর্থতায় "" (caller নিজের আগের init-পথে fail-open)।
+_TOWER_MCP_SESSION: dict[str, Any] = {}
+_TOWER_MCP_SESSION_TTL_S = 300.0
+_TOWER_MCP_SESSION_LOCK = threading.Lock()
+
+
+def _tower_mcp_init_session() -> str:
+    """Process-level init-once MCP session — ব্যর্থতায় "" (fail-open)।"""
+    now = time.monotonic()
+    with _TOWER_MCP_SESSION_LOCK:
+        cached_sid = _TOWER_MCP_SESSION.get("sid")
+        if cached_sid and (now - float(_TOWER_MCP_SESSION.get("born", 0.0))) < _TOWER_MCP_SESSION_TTL_S:
+            return str(cached_sid)
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "scripts" / "agents"))
+        import mcp_tower_client as _mtc  # noqa: E402  (lazy sibling import)
+
+        base = _mtc.MCP_SERVER_URL.rstrip("/")
+        hdrs = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+
+        def _post(payload: dict[str, Any], sid: str | None = None, timeout: int = 15) -> tuple[str, str]:
+            h = dict(hdrs)
+            if sid:
+                h["mcp-session-id"] = sid
+            req = urllib.request.Request(
+                f"{base}/mcp", data=json.dumps(payload).encode(), headers=h, method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
+
+        new_sid, _ = _post({
+            "jsonrpc": "2.0", "id": "cal-shared-init-1", "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+            },
+        })
+        _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, new_sid, timeout=10)
+        if not new_sid:
+            return ""
+        with _TOWER_MCP_SESSION_LOCK:
+            _TOWER_MCP_SESSION["sid"] = new_sid
+            _TOWER_MCP_SESSION["born"] = time.monotonic()
+        return new_sid
+    except Exception:  # noqa: BLE001 — session-init ব্যর্থতা কোনো প্রোব আটকাবে না
+        return ""
+
 def _tower_tool_roster_gate(tool_name: str, timeout_s: float = 20.0) -> str | None:
     """Process-level tool-roster gate for tower github.* probes (U6 root fix).
 
@@ -2716,19 +2774,23 @@ def _tower_tool_roster_gate(tool_name: str, timeout_s: float = 20.0) -> str | No
                     resp.read().decode("utf-8", errors="replace"),
                 )
 
-        sid, _ = _post(
-            {
-                "jsonrpc": "2.0",
-                "id": "cal-roster-gate-1",
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
-                },
-            }
-        )
-        _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=10)
+        # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session আগে; খালি ফিরলে
+        # আগের নিজস্ব-init পথ অক্ষত fallback (fail-open, U2-নিরাপদ)।
+        sid = _tower_mcp_init_session()
+        if not sid:
+            sid, _ = _post(
+                {
+                    "jsonrpc": "2.0",
+                    "id": "cal-roster-gate-1",
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }
+            )
+            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=10)
         _, body = _post(
             {"jsonrpc": "2.0", "id": "cal-roster-gate-2", "method": "tools/list"},
             sid,
@@ -2837,14 +2899,17 @@ def _tower_open_prs(limit: int = 30, timeout_s: float = 25.0) -> tuple[list[dict
                     return resp.headers.get("mcp-session-id") or sid or "", resp.read().decode("utf-8", errors="replace")
 
             init_id = "cal-pr-fallback-1"
-            sid, _ = _post({
-                "jsonrpc": "2.0", "id": init_id, "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05", "capabilities": {},
-                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
-                },
-            }, None)
-            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session; খালি হলে নিজস্ব init (fallback)।
+            sid = _tower_mcp_init_session()
+            if not sid:
+                sid, _ = _post({
+                    "jsonrpc": "2.0", "id": init_id, "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05", "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }, None)
+                _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-pr-fallback-2"
             # বাংলা (GLM Agent 04, Job 486718, U6): নাম-ঢেউ-সহনশীল কল — ঢেউ-৩
             # (live 2026-10-31) dotted github.list_prs আবার মৃত (-32602); এক-বানান
@@ -3152,14 +3217,18 @@ def _tower_workflow_run_census(
                     raise last_429
                 raise RuntimeError("unreachable: 429 retry ladder exhausted")
 
-            sid, _ = _post({
-                "jsonrpc": "2.0", "id": "cal-wf-census-0", "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05", "capabilities": {},
-                    "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
-                },
-            }, None)
-            _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
+            # বাংলা (18:04+08 চক্র): শেয়ার্ড init-once session — census-এর
+            # নিজস্ব initialize-বার্স্ট বাদ; খালি হলে নিজস্ব init (fallback)।
+            sid = _tower_mcp_init_session()
+            if not sid:
+                sid, _ = _post({
+                    "jsonrpc": "2.0", "id": "cal-wf-census-0", "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05", "capabilities": {},
+                        "clientInfo": {"name": "supremeai-agent-loop", "version": "1.0"},
+                    },
+                }, None)
+                _post({"jsonrpc": "2.0", "method": "notifications/initialized"}, sid, timeout=15)
             call_id = "cal-wf-census-1"
             used_window = 0
 
