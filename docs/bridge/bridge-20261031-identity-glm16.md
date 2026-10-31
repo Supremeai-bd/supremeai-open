@@ -15,61 +15,54 @@
 
 ## Cycle log (compressed, keep-small per the glm22-r2 pattern)
 
-- c9–c22 (00:16–15:16, compressed): standing holds, scout cycles, ghost
-  board escape, R94 filed; reds drained; closure regime SOLVED
-  (batch-delayed closer); RBAC era ended c23 (#4249, roster ~158; admin
-  visibility NOT lane expansion); no dispatches. r1–r11 landed (PRs
-  #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216, #4237,
-  #4254, #4316).
-- c25–c27 (18:16–20:16, compressed): no dispatches. NAME-PLANE LAW:
-  underscore wire-live, dot -32602; 429 name-blind. Time-bomb datum
-  defused by owner (#4376); floor reached; loop 429 messages honest
-  (#4364). r12–r14 landed (PRs #4349, #4379, #4401).
-- c28–c29 (21:16–22:16): r15 landed (PR #4414, 5a29f1c) from the
-  aborted-looking governance-timeout attempt. r16 landed (PR #4438,
-  95b3ef3). Floor 2F/2338P/13S on three tips. No dispatches.
-- c30 (23:16): INDEX-REGRESSION datum: fourth-tip census at 120e3ed =
-  4F (CVE pair + test_script_index_freshness 2F) — committed _INDEX.md
-  carried the OLD loop docstring while the loop file's real docstring
-  is "Minimal Autonomous Agent Loop (Unified Rules & Roles
-  Dispatcher)". git log -S pins the stale line to #4450 (ce512bc): its
-  stale PR branch re-committed the pre-regeneration index. The
-  freshness gate fired correctly — a merge-order defect, not a guard
-  defect. Regenerated locally (freshness 6/6; suite 2F/2343P/13S);
-  submission hit governance-timeout; no board/git trace so resubmit was
-  held. INDEX FIX WITHDRAWN — landed in-cycle via #4463 (GLM 20,
-  8d85d4d, same class, same root). Floor restored on main.
-- c31 (01:16): STALE_BASE CHAIN taught the final lesson: resubmit after
-  board+git re-verification was rejected fail-closed by CAS
-  (index blob had moved) — reading that signal against the log showed
-  the fix already landed elsewhere, so the index half was withdrawn and
-  this receipt rides alone. CAS + verify-before-resubmit together form
-  a two-layer duplicate guard that WORKS end to end. #4471 (pipeline.yml
-  fail-closed --check swap) remains the class-root fix — admin-lane,
-  apply-ready per #4482. Loop clean, claimable 0/5; r17 = this receipt.
+- c9–c28 (00:16–21:16 Oct 31, compressed): standing holds, scout cycles,
+  ghost-board escape, R94 filed, reds drained, closure regime SOLVED
+  (batch-delayed closer), RBAC era ended (#4249), NAME-PLANE LAW
+  established, time-bomb datum defused by owner (#4376), loop 429
+  honesty (#4364), CVE-pair floor reached. r1–r16 landed (PRs #3753,
+  #3945, #4023, #4116, #4128, #4160, #4184, #4216, #4237, #4254,
+  #4316, #4349, #4379, #4401, #4414, #4438).
+- c29–c30 (22:16–23:16): INDEX-REGRESSION datum — fourth-tip census
+  found test_script_index_freshness 2F on top of the CVE pair; git log
+  -S pinned the stale docstring line to #4450's stale PR branch
+  re-committing the pre-regeneration index. Freshness gate fired
+  correctly: merge-order defect, not a guard defect. r17 index fix
+  submission hit governance-timeout.
+- c31 (01:16 Nov 1): STALE_BASE CHAIN: verified resubmit was rejected
+  fail-closed by CAS (index blob moved) — the fix had landed in-cycle
+  via #4463 (GLM 20, 8d85d4d, same class, same #4364 root); index half
+  withdrawn, receipt rode alone → PR #4499. STALE_BASE LAW: a
+  stale-base error means main advanced past your base — re-read, diff
+  against your own change, withdraw if already present. CAS +
+  verify-before-resubmit = a two-layer duplicate guard proven end to
+  end. Class root stays in #4471 (pipeline.yml fail-closed swap, admin
+  lane).
+- c32 (02:16): r17 landed (PR #4499, 771ecc0) — 17 consecutive
+  landings. Fifth-tip floor: 2F/2371P/13S (+28 passing), CVE pair
+  only. Loop clean: board 18 rows, zero P0, #4471 held by U5
+  receipt-coverage demotion (#4489 in flight), 1/5 claimable, no
+  dispatch. r18 = this receipt.
 
 ## Notes for the next agent on this slot
 
-- STALE_BASE LAW (c31): a STALE_BASE_ERROR is not a rejection to fight —
-  it is the signal that main advanced past your base. Re-read the file
-  from main and diff against your own change: if the change is already
-  there, WITHDRAW (the CAS just saved you from a duplicate); only then
-  re-apply on a fresh baseSha.
+- STALE_BASE LAW (c31): a STALE_BASE_ERROR means main advanced past
+  your base — re-read from main, diff against your own change, WITHDRAW
+  if already present; only re-apply on a fresh baseSha. The CAS just
+  saved you from a duplicate.
 - RESUBMIT LAW (c29): a governance-timeout / aborted-looking submit can
-  still land. Verify via repo history AND board BEFORE resubmitting
-  (r15→#4414, r16→#4438 proved it); a blind retry mints duplicates.
+  still land. Verify via repo history AND board BEFORE resubmitting;
+  a blind retry mints duplicates (r15→#4414, r16→#4438, r17→#4499).
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
-  never cite a 429 as proof a tool name exists or not. Underscore forms
-  are wire-live; dot forms return -32602. #4344's fixture heal points
-  the WRONG way for reality.
+  never cite a 429 as proof a tool name exists or not. Underscore
+  forms are wire-live; dot forms return -32602.
 - INDEX-REGRESSION CLASS (c30): a stale PR branch can re-commit an old
-  auto-generated index over a newer one and land clean — line-level
-  merge cannot see semantic staleness. Diagnose with git log -S on the
-  stale string; class-root fix pending in #4471 (admin lane).
-- RED FLOOR (c27–c31): CVE-pair floor held three tips, broken by the
-  index regression at 120e3ed, restored on main via #4463. js studio
-  lockfile (follow-redirects + glob/minimatch) and npm side remain
-  maintainer-lane per #4150 routing; never bump lockfiles (U5/U10).
+  auto-generated index over a newer one and land clean. Diagnose with
+  git log -S on the stale string. Class root: #4471 (admin lane,
+  pipeline.yml fail-closed --check swap).
+- RED FLOOR (c27–c32): CVE-pair floor — js studio lockfile
+  (follow-redirects + glob/minimatch) and npm side — maintainer-lane
+  per #4150 routing; never bump lockfiles (U5/U10). Anything else red
+  = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
