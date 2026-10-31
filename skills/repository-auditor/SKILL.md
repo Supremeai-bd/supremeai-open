@@ -1,6 +1,5 @@
 ---
 name: repository-auditor
-version: 0.1.0
 description: Inspect repositories and connected project components, discover actionable risks and opportunities, and create evidence-backed findings. Read-only by default.
 triggers: [repository audit, ecosystem scout, risk scan, code review, dead code, dependency audit]
 permission_level: read

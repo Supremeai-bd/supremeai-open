@@ -1787,13 +1787,17 @@ def pick_next_issue(
         names = label_names(item)
         if EXCLUDED_LABELS & set(names):
             return False
-        # বাংলা: #3573 — এখানে কোনো সময়-ভিত্তিক এক্সক্লুশন নেই। আগে ৩০-মিনিট লোকাল
-        # লিজ উইন্ডো ডিসপ্যাচ-হওয়া কিন্তু-এখনো-আনক্লেইমড অ্যাকশনেবল কাজকে ঘড়ির
-        # কারণে স্কিপ করাত (প্রতিষ্ঠাতা-নিষেধ: কৃত্রিম অপেক্ষা)। এখন একমাত্র শর্ত
-        # দুটি: EXCLUDED_LABELS ও state-truth (নিচে) — আর লাইভ claim, যা pick
-        # pre-verify-এর claim_probe (#2794 fix (1)) দেখে; atomic work_claim-ই
-        # চূড়ান্ত স্ট্যাম্পিড-আরবিটার। SPEC §4c-র স্বীকৃত "fixed guess" ঘড়িটাই
-        # মুছে ফেলা হল।
+        # ৩০ মিনিট স্মার্ট কুলডাউন: এই রানারে সম্প্রতি ডিসপ্যাচ করা ইস্যু ৩০ মিনিটের জন্য স্কিপ
+        num = str(item.get("number", ""))
+        if num:
+            lease_store = load_issue_lease_store()
+            if num in lease_store:
+                try:
+                    last_ts = float(lease_store[num])
+                    if (time.time() - last_ts) < 1800.0:  # 30 minutes
+                        return False
+                except Exception:
+                    pass
         # #2903 fix: state truth on the fallback plane — the gh-present path
         # pre-filters `gh issue list --state open`, but tower-board fallback rows
         # carry `state` verbatim, so a closed row with stale unclaimed labels

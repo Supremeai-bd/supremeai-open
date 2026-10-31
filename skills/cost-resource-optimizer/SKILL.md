@@ -1,6 +1,5 @@
 ---
 name: cost-resource-optimizer
-version: 0.1.0
 description: Measure resource consumption, latency, failures, and provider cost; recommend evidence-based simplification.
 triggers: [cost optimization, resource usage, latency, provider cost]
 permission_level: read

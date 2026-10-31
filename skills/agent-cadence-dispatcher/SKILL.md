@@ -1,6 +1,5 @@
 ---
 name: agent-cadence-dispatcher
-version: 0.1.0
 description: Role-based cadence dispatcher for the SupremeAI continuous agent loop. Determines which agent roles are due to run, creates scoped full-project audit issues when the board is empty, and records per-role last_run. Thin wrapper over scripts/agents/continuous_agent_loop.py.
 triggers: [cadence, agent dispatch, role schedule, empty board, audit issue]
 entry: scripts/dispatch.py

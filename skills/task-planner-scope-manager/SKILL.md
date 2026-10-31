@@ -1,6 +1,5 @@
 ---
 name: task-planner-scope-manager
-version: 0.1.0
 description: Break a task into small verifiable steps, select skills and tools, define acceptance criteria, and stop when scope is exceeded.
 triggers: [plan task, scope management, breakdown, acceptance criteria]
 permission_level: read

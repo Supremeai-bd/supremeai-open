@@ -1,18 +1,19 @@
 {
-  "version": 2,
   "scheduled_roles": [
     "ecosystem-scout",
     "human-eye",
     "rules-breaker",
     "platform-guardian"
   ],
+  "cadences_hours": {
+    "ecosystem-scout": 4,
+    "human-eye": 6,
+    "rules-breaker": 8,
+    "platform-guardian": 12
+  },
   "merged_roles": {
     "auditor": "platform-guardian",
-    "federation-auditor": "platform-guardian",
-    "task-auditor": "platform-guardian",
-    "ci-fixer": "solver",
-    "fixer": "solver",
     "coder": "solver"
   },
-  "notes": "Event-driven scheduled roles (#3573): zero artificial timer locks. Roles dispatch one per idle cycle in this order; the rotation re-arms on every work assignment (claimable issue dispatched). Auditor is consolidated into Tower/Platform Guardian; coder/fixer/ci-fixer are unified into solver."
+  "notes": "Consolidated Roles: auditor -> platform-guardian, coder -> solver. Scheduled roles rotate on cadence when claimable issues <= 5."
 }
