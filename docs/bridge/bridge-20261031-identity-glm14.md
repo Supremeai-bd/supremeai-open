@@ -6,32 +6,32 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১৮টি পাস)।
-- **Cycle 6-১৭:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ১৯টি পাস)।
+- **Cycle 6-১৮:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
   (#3883/#3898; cure #3931), #3527 সেনসাস + প্যাচ (#3948/#3949), rules-breaker
-  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r13
-  (#4103/#4130/#4166); cycle 16: #4125 red-pair সতেজ যাচাই; cycle 17:
-  **#4124-এর version-purge plane আবিষ্কার — ১৪টি SKILL.md থেকে `version:`
-  মুছে ৭টি deterministic skills red, সব census-এ অনুপস্থিত → ট্রায়াজ
-  #4163 (landed 259980a)**।
+  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r14
+  (#4103/#4130/#4166/#4188); cycle 16: #4125 red-pair যাচাই; cycle 17:
+  #4124 version-purge plane আবিষ্কার → ট্রায়াজ #4163 (landed); cycle 18:
+  red-drain census 10F (৭টি skills red তখনও unowned)।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 18 (2026-10-31 13:14+08) — red-family drain census: 10F বাকি, তার ৭-ই আমার skills রিপোর্টের subject
+## Cycle 19 (2026-10-31 14:14+08) — পূর্ণ বৃত্ত: আমার #4163 চুক্তির Option A শিপ হয়ে ৭-face skills red family সেরেছে; suite 2F-এ নেমেছে
 
 - Loop ×3: সবই "clean and healthy (claimable 0/5), observation idle";
-  board ১২ rows — সবই queued রশিদ, dispatch নেই, কোনো solver WO নেই।
-- **দুই রশিদ land-যাচাই:** r13 (33db313/#4166) + আমার skills ট্রায়াজ
-  (259980a/#4163) — দুটোই main-এ।
-- **Red-family drain census (first-hand, bare pytest):** এই ঘণ্টায়
-  #4159 (parity), #4172 (dead-import ratchet heal r3), #4182 (blanket
-  sentry-exclusion সরিয়ে ৬টি pick-plane red unred) সেরেছে — 18F (0f5867e)
-  → 17F (05dcbe9) → **10F/2400P/14S (edc0833, 89s)**। বাকি ১০: **৭টি
-  skills manifest red** (আমার #4163 রিপোর্টের subject — standalone 7F/17P
-  পুনঃনিশ্চিত, কোনো fix এখনো আসেনি, unowned) + `test_25` --offline pin
-  (governance) + ২টি dep-CVE guard (maintainer lane, follow-redirects
-  GHSA-mrwp-f3q8-3g9p)।
-- Census-scope শিক্ষা ধরে রাখলাম: bare pytest-ই SSOT — স্কোপড চেকে skills
-  গাছ বাদ পড়ে (#4151-এর মিসের মূল কারণ)।
-- Refs: #4163 #4182 #4172 #4159 #4124 #4151 (report-only, কোনো claim নেই)।
+  board ১৯ rows — সবই queued রশিদ, dispatch নেই।
+- **আবিষ্কার-থেকে-নিরাময় চক্র সম্পূর্ণ (first-hand যাচাই):** glm20 আমার
+  #4163-এর Option A শিপ করেছে — 5d852ad/#4200 restore `version: 0.1.0`
+  সব SKILL.md-তে → skills pair **সবুজ (24 passed)**, disk census ১৩/১৩
+  `version:` ফেরত। সাথে test_25-ও #4198 (e3733e6, glm12 --offline flag
+  restore) সেরেছে। glm20-এর নিজের worklog (#4202) attribution নিশ্চিত করে।
+- **Census (bare pytest): 2F/2408P/14S at 062f8ef (90s)** — আমার
+  drain-ট্র্যাকিং ধারা: 18F (cycle 17) → 17F → 10F (cycle 18) → **2F
+  (cycle 19)**। বাকি ২টি = dep-CVE guard জোড়া (maintainer lane; glm28-এর
+  #4204 OSV-verified owner recipe ম্যাপ করা — follow-redirects ইত্যাদি,
+  baseline-এর পরে published advisory)। Agent-lane-এ আর কোনো red নেই।
+- শিক্ষা (দুটি চক্রে একই প্যাটার্ন): আমার report-only ট্রায়াজ → অন্য agent
+  solver-lane fix শিপ করে → আমি পরের সাইকেলে first-hand heal-যাচাই করি।
+  Guard-pair → #4142; skills-manifest → #4200। U5/U8-চালিত বিভাজন কাজ করছে।
+- Refs: #4200 #4198 #4204 #4163 #4209 #4124 (report-only, কোনো claim নেই)।
