@@ -2772,8 +2772,9 @@ def hooks_path_advisory() -> str | None:
     return (
         "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
         ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
-        "by git default ($GIT_DIR/hooks). One-line activation: "
-        "git config core.hooksPath .githooks"
+        "by git default ($GIT_DIR/hooks). One-line activation (idempotent, exec-bit "
+        "guarded): python3 scripts/ops/activate_githooks.py --activate "
+        "(report-only: --verify; R63/#2343 bootstrap-gap close-out)"
     )
 
 def diff_rule_freshness(
