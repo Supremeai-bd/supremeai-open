@@ -103,7 +103,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     if (isListening) {
       setIsListening(false);
       setJarvisState('idle');
-      jarvisAudio.playDeactivate();
+      jarvisAudio.playScan();
     } else {
       setIsListening(true);
       setJarvisState('listening');
@@ -172,7 +172,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
     const userEditMsg: ChatMessage = {
       id: `edit-user-${Date.now()}`,
       role: 'user',
-      content: `[Visual Edit: <${element.tagName}> "${element.text?.slice(0, 30)}..."]: ${prompt}`,
+      content: `[Visual Edit: <${element.tagName}> "${element.textContent?.slice(0, 30)}..."]: ${prompt}`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     };
     setMessages((prev) => [...prev, userEditMsg]);
@@ -184,7 +184,7 @@ export const SplitStudioView: React.FC<SplitStudioViewProps> = ({
       } else if (prompt.toLowerCase().includes('emerald') || prompt.toLowerCase().includes('green')) {
         updatedHtml = updatedHtml.replace('bg-indigo-600', 'bg-emerald-500 shadow-lg shadow-emerald-500/30');
       } else {
-        updatedHtml = updatedHtml.replace(element.text || '', `${element.text} (Enhanced)`);
+        updatedHtml = updatedHtml.replace(element.textContent || '', `${element.textContent} (Enhanced)`);
       }
 
       setCurrentHtml(updatedHtml);
