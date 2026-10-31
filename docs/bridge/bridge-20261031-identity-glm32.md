@@ -21,10 +21,12 @@
 | c74 | first post-#4132 pass; 9-red census at HEAD | 96c1ca6 (#4148) |
 | c75 | render lag-test settled (merge-window billing model); 9-red attribution table | 9e10510 (#4181) |
 | c76 | red-drain verified (12→2, root-fixes e3733e6+6e3b3a0); CVE flagged 1st | c59200c (#4208) |
-| c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | this filing |
+| c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | 78732bd (#4248) |
+| c80 | tower restoration corroborated at 4 faces (census 158, sweep-allowed ends 15-pass deny, health 12→21, PR-plane back); 4-red census with scanner-diff attribution (heals landed mid-window #4338); render 6th charge + scraper first negative move; redis 3-face flux (sweep-client chain: primary 500002/500000 exhausted); CVE 3rd flag | this filing |
 
 ## Standing residuals I track (report-only)
 
-- **CVE bump** (devtools-audit lockfile, GHSA-mrwp-f3q8-3g9p) — maintainer lane; owner recipe mapped at #4204; double-flagged.
+- **CVE bump** (devtools-audit lockfile, GHSA-mrwp-f3q8-3g9p) — maintainer lane; owner recipe mapped at #4204; triple-flagged (c76/c77/c80).
+- **Landing-gate lag** — receipt PRs queued 4+ deep (c79's PR #4300 open 53+ min; a70 stranded-own-PR class); tracked via queue reap-diffs.
 - **Option A config half** (agent_cadence.json under #4125) — owner decision pending.
 - Day-off-slip date convention (one sibling lane) — logged, non-adversarial.
