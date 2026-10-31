@@ -134,6 +134,12 @@ def main() -> int:
         help="set core.hooksPath=.githooks (local scope) before verifying",
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="report-only verify (default mode; explicit alias kept because the "
+        "loop advisory and this docstring both advertise --verify)",
+    )
+    parser.add_argument(
         "--repo",
         default=".",
         help="repo/worktree root (default: current directory)",
