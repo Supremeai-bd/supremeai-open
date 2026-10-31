@@ -80,27 +80,45 @@
   +228 min, #4095 at +218 min, #4099 at +181 min, and the five newest
   receipt rows (#4178/#4176/#4167/#4165/#4161, minted ~04:36Z) all open
   at +40–51 min — every row 0 comments; the slow path and the
-  likely-never subset have merged into a single all-open regime. r7 =
-  this patch.
+  likely-never subset have merged into a single all-open regime. r7
+  landed (PR #4184, 394e37d).
+- c21 (14:16): no dispatch (claimable 0/5; board 19 rows, all receipt or
+  worklog-class ghost rows — none agent-claimable; base 4e94c38, 0
+  behind). FOURTH independent red-census check, full suite at the tip:
+  2 failed, 2230 passed, 13 skipped in 70 s — exactly GLM 32's c76 count;
+  the blind-ladder class DRAINED 12 -> 2 in ~2.5 h (a67: picker six
+  pick-pins healed + test_25 via e3733e6), leaving ONLY the two
+  CVE-guard faces (test_npm_dep_cve_guard::test_live_baseline_check +
+  test_js_dep_cve_guard::test_live_check_passes_at_landing_head) on
+  follow-redirects@1.16.1 (GHSA-mrwp-f3q8-3g9p,
+  .agents/skills/devtools-audit/package-lock.json) — maintainer-lane
+  owned per the #4150 routing; no agent action (U5). verify-only 9/9.
+  Closure regime: ONE all-open plane — 19/19 rows, 0 comments each;
+  #4083 at +288 min, #4095 at +278 min, this slot's own #4127 at
+  +178 min, seven newest rows (#4205..#4185) open at +39–57 min;
+  silence ~4 h 45 min since ~01:31Z. r8 = this patch.
 
 ## Notes for the next agent on this slot
 
-- RESOLVED: the #4124 red pair is green since #4138 (Option A, clock-free
-  gate restored; tier 9 pins added — verified at-tip by three independent
-  slots, 36 passed each). The OPEN hazard is the blind-ladder class: 12
-  red pytest faces invisible to the 9-tier ladder (#4151) — expect
-  verify-only 9/9 to coexist with red pytest faces; run the pinned faces
-  directly when assessing main's health.
+- RESOLVED: the #4124 red pair is green since #4138; the wider
+  blind-ladder class drained 12 -> 2 by a67 (#4209). REMAINING hazard:
+  ONLY the two CVE-guard faces (test_npm_dep_cve_guard +
+  test_js_dep_cve_guard) on follow-redirects@1.16.1
+  (GHSA-mrwp-f3q8-3g9p, .agents/skills/devtools-audit/package-lock.json)
+  — a real dependency CVE, routed to the maintainer lane by the #4150
+  table; agents must NOT bump the lockfile unilaterally (U5/U10). Expect
+  full-suite 2F/2230P until the maintainer rules.
 
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
 - Receipt-WO closure is NOT merely irregular — it has been SILENT since
-  ~01:31Z, now 3 h 45 min+ deep: 12 open rows at c20 including five
-  minted ~04:36Z still unclosed at +40–51 min, all 0 comments. Treat
-  every open receipt row as a permanent ghost: never a work signal,
-  never a closure request target; per-row taskId check remains the
-  work-truth (R94). Owner lane owns the closer revival.
+  ~01:31Z, now 4 h 45 min+ deep: 19 open rows at c21 with 0 comments
+  each, oldest +288 min, newest +39 min; every landing since c19 adds
+  rows and none closes. Treat every open receipt row as a permanent
+  ghost: never a work signal, never a closure request target; per-row
+  taskId check remains the work-truth (R94). Owner lane owns the closer
+  revival.
 - Check the tool list at cycle start — tower tool names drift between
   epochs; bridge_guide prose still shows old dot-form names.
 - RBAC-era discipline stands: PR-plane dark for anonymous lanes (#3959
