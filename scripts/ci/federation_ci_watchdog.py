@@ -42,6 +42,7 @@ try:
         get_anchor_issue_number,
         list_sub_issue_ids,
         link_sub_issue,
+        ACTIVE_ANCHOR_HUBS,
     )
 except ImportError:
     try:
@@ -49,11 +50,13 @@ except ImportError:
             get_anchor_issue_number,
             list_sub_issue_ids,
             link_sub_issue,
+            ACTIVE_ANCHOR_HUBS,
         )
     except ImportError:
         get_anchor_issue_number = None
         list_sub_issue_ids = None
         link_sub_issue = None
+        ACTIVE_ANCHOR_HUBS = {}
 
 OPEN_REPO = "Supremeai-bd/supremeai-open"
 
@@ -427,30 +430,77 @@ def label_pr_lane_failure(
             )
             print(f"✅ [watchdog] Posted CI failure notice to referenced issue #{ref_issue_num}.")
         else:
-            # Standalone PR with no issue reference: create an incident issue so failure is not lost
-            new_title = f"fix(ci): PR #{pr_num} failed CI ({repo})"
-            new_body = (
-                f"## 🚨 CI Failure on Standalone PR #{pr_num}\n\n"
-                f"- **Repository:** `{repo}`\n"
-                f"- **PR:** #{pr_num}\n"
-                f"- **Workflow Run:** [{run_id}]({html_url})\n\n"
-                f"PR has no linked issue (`Closes #N`). Tracking issue created to prevent silent defect loss."
-            )
-            c_code, created = gh_api(
-                f"repos/{OPEN_REPO}/issues",
+            # New plan: no auto-created CI issues. Record the failure notice on the
+            # active anchor hub instead of minting a new tracking issue.
+            anchor = active_anchor_for_repo(repo)
+            gh_api(
+                f"repos/{OPEN_REPO}/issues/{anchor}/comments",
                 token=tok,
                 method="POST",
                 data={
-                    "title": new_title,
-                    "body": new_body,
-                    "labels": ["ci-failed", "status:unclaimed", "area:ci"],
+                    "body": (
+                        f"⚠️ **PR #{pr_num} CI Failed** in run [{run_id}]({html_url}) "
+                        f"on `{repo}` (no linked issue). Recorded in-place; no new issue created."
+                    )
                 },
             )
-            if c_code in (200, 201) and isinstance(created, dict):
-                print(f"✅ [watchdog] Created tracking issue #{created.get('number')} for unlinked PR #{pr_num}.")
+            print(f"✅ [watchdog] Recorded CI failure notice on active anchor #{anchor} for unlinked PR #{pr_num}.")
 
     return True
 
+
+
+
+def active_anchor_for_repo(repo: str) -> int:
+    """Resolve an ACTIVE (6-domain) anchor hub for a repo, falling back to the
+    open-embassy / CI hub (#762) for retired or unknown repos. The new plan
+    attaches sub-issues only under the 6 active anchors -- never retired hubs."""
+    try:
+        if repo in (ACTIVE_ANCHOR_HUBS or {}):
+            return int(ACTIVE_ANCHOR_HUBS[repo])
+    except Exception:
+        pass
+    return CI_FAILURE_ANCHOR
+
+
+def find_mirror_by_repo_branch(items, repo: str, branch: str) -> int | None:
+    """Find an OPEN mirrored incident for the same repo+branch (any run)."""
+    if not repo or not branch:
+        return None
+    for item in items or []:
+        if item.get("pull_request"):
+            continue
+        body = item.get("body") or ""
+        if "MIRROR_RUN:" not in body or "/actions/runs/" not in body:
+            continue
+        if repo not in body:
+            continue
+        if branch not in body:
+            continue
+        number = item.get("number")
+        if isinstance(number, int):
+            return number
+    return None
+
+
+def find_pr_number_for_branch(repo: str, branch: str, token: str | None = None) -> int | None:
+    """Resolve an open (or recently closed) PR number for a non-merge-ref branch."""
+    if not repo or not branch or branch == "main":
+        return None
+    merge_pr = pr_number_from_merge_ref(branch)
+    if merge_pr is not None:
+        return merge_pr
+    owner = repo.split("/")[0]
+    for state in ("open", "all"):
+        code, data = gh_api(
+            f"repos/{repo}/pulls?head={owner}:{branch}&state={state}&per_page=5",
+            token=token,
+        )
+        if code == 200 and isinstance(data, list) and data:
+            num = data[0].get("number")
+            if isinstance(num, int):
+                return num
+    return None
 
 def mirror_failure(
     repo: str,
@@ -470,14 +520,25 @@ def mirror_failure(
     """
     lane = classify_failure_lane(branch)
     if lane != "production":
-        pr_num = pr_number_from_merge_ref(branch)
+        pr_num = find_pr_number_for_branch(repo, branch, token=token)
         if pr_num is not None:
             labeled = label_pr_lane_failure(repo, pr_num, run_id, html_url, token=token)
             if labeled:
                 print(f"[watchdog] PR-lane CI failure on PR #{pr_num} handled in-place (no duplicate issue created).")
                 return True
+        # No PR resolvable: record on active anchor, no new issue.
+        anchor = active_anchor_for_repo(repo)
+        gh_api(
+            f"repos/{OPEN_REPO}/issues/{anchor}/comments",
+            token=token,
+            method="POST",
+            data={"body": f"⚠️ **CI Failed** on `{repo}` branch `{branch}` run [{run_id}]({html_url}). Recorded in-place; no new issue created."},
+        )
+        print(f"[watchdog] PR-lane CI failure recorded on active anchor #{anchor} (no PR resolvable).")
+        return True
 
     # Dedup: scan open issues for this run's marker (paginated).
+    all_items = []
     page = 1
     while True:
         code, items = gh_api(
@@ -486,6 +547,7 @@ def mirror_failure(
         )
         if code != 200 or not isinstance(items, list) or not items:
             break
+        all_items.extend(items)
         existing_num = find_mirror_in_items(items, repo, run_id)
         if existing_num is not None:
             print(
@@ -503,6 +565,24 @@ def mirror_failure(
                     f"already mirrored as issue #{dup_num}. Skipping."
                 )
                 return True
+        # New plan: same repo+branch => same incident; only change level in place.
+        branch_num = find_mirror_by_repo_branch(items, repo, branch)
+        if branch_num is not None:
+            labels = build_issue_labels(repo, branch=branch)
+            gh_api(
+                f"repos/{OPEN_REPO}/issues/{branch_num}/labels",
+                token=token,
+                method="PUT",
+                data={"labels": labels},
+            )
+            gh_api(
+                f"repos/{OPEN_REPO}/issues/{branch_num}/comments",
+                token=token,
+                method="POST",
+                data={"body": f"⚠️ **CI re-failed** on `{repo}` branch `{branch}` run [{run_id}]({html_url}). Level/labels updated in-place; no new issue created."},
+            )
+            print(f"[watchdog] Existing incident #{branch_num} updated in-place (level changed).")
+            return True
         if len(items) < 100:
             break
         page += 1
@@ -533,8 +613,8 @@ def mirror_failure(
         print(
             f"✅ [watchdog] Mirrored CI failure from {repo} as issue #{issue_number}: {issue_url}"
         )
-        # Link as sub-issue directly under the repository's Domain Anchor Hub (zero loose root issues).
-        target_anchor = get_anchor_issue_number(repo) if get_anchor_issue_number else CI_FAILURE_ANCHOR
+        # Link as sub-issue directly under an ACTIVE Domain Anchor Hub (6-domain plan).
+        target_anchor = active_anchor_for_repo(repo)
         if issue_number and link_sub_issue is not None:
             try:
                 linked = link_sub_issue(
