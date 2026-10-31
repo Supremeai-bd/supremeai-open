@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-10 condensed to one table
+> only, replaced in place every cycle. Cycles 1-15 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-10 (condensed)
+## Landed cycles 1-15 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -36,35 +36,41 @@
 | 8 (11:2x) | glm09's roster gate (#4132) live-confirmed (zero-cycle skip + auto-revive note); #3959 probe-green guard's first real exercise vs the purge (exit 3, NO EXPOSURE) | PR #4135 |
 | 9 (12:2x) | verify suite 8→9 tiers datum (`constitution_guard_pins`, glm12 #4138) source-verified; roster-purge note stable 2nd cycle | PR #4162 |
 | 10 (13:2x) | 3rd-cycle roster-purge stability (gate settled); mirror-burst census with ages: 7→14 all mirrors, median 1.8h, max 3.9h | PR #4191 |
+| 11 (14:2x) | burst continues 14→22; median pinned 1.8h through inflow (sweep healthy); windowTruncated first seen; #4083 absence = honest unknown | PR #4222 |
+| 12 (15:2x) | census arc closed: 22→1, sweep drained the burst (a68 corroborated); Cycle 11 unknown resolved = DRAINED | PR #4241 |
+| 13 (16:2x) | #4249 admin restore flipped the wire (tools 20→158, services 12→21); #3663 probe exit 2 RED (fail-open live) — guard chain proven two-way (purge=green, restore=red); report-only | PR #4262 |
+| 14 (17:2x) | tripwire re-arm #2: exit 2 RED sustained ≥1h, PII 100→102; board burst #2 (1→22); PR-plane revived post-#4264 | PR #4321 |
+| 15 (18:2x) | tripwire re-arm #3: exit 2 RED ≥2h unowned; PII 3-point series 100/102/110; #4341 census-blind → honest UNSEEN degradation proven | PR #4353 |
 
-## Cycle 11 (2026-10-31 14:2x+08) — clean-hold; burst continues, window truncation reached
+## Cycle 16 (2026-10-31 19:2x+08) — sustained-RED datum #4; series has a stable slope
 
-- Loop verify 9/9 on 466f401 (tier 9, 3rd cycle); pick: clean and healthy,
-  claimable 0/5, observation idle; zero P0. No dispatch. Roster-purge dark
-  note stable 4th consecutive cycle.
-- Datum — mirror-burst census, cycle-over-cycle: board 14→22 rows, visible
-  window all `bridge:queued` mirrors, 0 claimable, 0 in gates. Ages: max 4.2h
-  (#4099, now the oldest), median 1.8h (unchanged from Cycle 10 despite
-  inflow — the sweep keeps median pace), min 0.1h. My #4083 (Cycle 6 mirror,
-  3.9h last cycle) is absent from the visible window now: drain vs
-  window-push indistinguishable from this plane (honest unknown — the queue
-  response carries `windowTruncated: true`, count=20 of totalOpen=22; the
-  loop's claimable gate reads the full board regardless).
-- New field datum: board crossed the 20-row display window this cycle
-  (`windowTruncated: true` first observed on this slot) — per-window reads
-  under-report the burst; full-board claimability still belongs to the loop
-  gate, which stays authoritative.
-- No claim, no Closes — observation-only cycle; worklog r7 compaction
-  (Cycle 10 folded into the landed table) is the whole change.
+- Loop verify 9/9 on c041191; pick: claimable 0/5, no dispatch
+  (observation cycle). Three-check: 16 landings in the last hour, ZERO
+  touch the tower role or #3663 — unowned ≥3h.
+- **Tripwire re-arm #4: probe exit 2 RED again — fail-open sustained ≥3h.**
+  PII series 100→102→110→**118** anonymous client rows — hourly +8±1,
+  linear slope across four points; the anonymous PII plane keeps
+  compounding while the pre-production posture persists. Destructive
+  surface unchanged (autonomy_kill_switch, github_list_secrets,
+  tenant_create); criterion 1 INDETERMINATE as always. Probe exit-1 (HTTP
+  429) hit 5× this cycle before a verdict — retried to verdict-only per
+  the redirect discipline.
+- Board burst #2: 26→31 rows; the glm04 probe-family cohort now **2.9h
+  undrained — at burst #1's drain-latency envelope edge (~2-3h)**. Next
+  cycle without a drain = envelope breach; watch escalates honestly then,
+  not now. U2 census blind again (tower flakiness persists) —
+  byte-identical honest UNSEEN, degradation contract holding.
 
 ## Reflection Evidence
 
-- **why:** two consecutive age-censuses turn a snapshot into a trend (median
-  pinned at 1.8h through a 14→22 inflow = sweep healthy; oldest-mirror
-  rotation #4083→#4099 = drain real). Recording the window-truncation field
-  prevents a future mis-read where a truncated view is mistaken for the full
-  board state.
-- **alternatives_rejected:** claiming #4083 was closed (unprovable from the
-  truncated window — reported as honest unknown instead); treating the 22-row
-  burst as a defect (inflow is the fleet's own healthy receipt cadence);
-  a separate census doc (keep-it-small contract).
+- **why:** a 4-point series with a stable slope converts "worsening"
+  into "measurably worsening" — the owner gets a rate (~+8 rows/h), not
+  just a state. The board watch-item exercises the same discipline: an
+  envelope edge is where honest watch either closes or escalates —
+  neither premature alarm nor silence.
+- **alternatives_rejected:** filing a fresh board row (receipts #4262 +
+  r10/r11 keep arming the owner lane; stampede); agent-side mitigation
+  (the wire is the owner's plane); alarmist extrapolation of the PII
+  slope (record the series, the slope speaks for itself); declaring the
+  burst drain broken (2.9h cohort age has not breached the ~2-3h
+  envelope yet).

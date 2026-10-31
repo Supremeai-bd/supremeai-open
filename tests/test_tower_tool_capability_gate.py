@@ -61,6 +61,26 @@ import continuous_agent_loop as cal  # noqa: E402
 GATE_NOTE_FRAGMENT = "roster does not carry"
 
 
+def setUpModule() -> None:
+    """শেয়ার্ড init-once MCP session (18:04+08 root-fix) এই ফাইলে নিষ্ক্রিয় —
+    এই ফাইলের urlopen-মকগুলো ফিক্সড body-ক্রমে (প্রতি প্রোবের নিজস্ব
+    initialize→notifications→tools/call সহ) খাওয়ায়; helper ক্যাশ করলে
+    দ্বিতীয় প্রোবের init-কল বাদ গিয়ে ক্রম সরে যায়। fail-open "" ফেরত দিলে
+    প্রতিটি প্রোব পুরনো নিজস্ব-init পথেই চলে — ক্রম byte-অপরিবর্তিত।"""
+    _shared_session_patch = mock.patch.object(cal, "_tower_mcp_init_session", return_value="")
+    _shared_session_patch.start()
+    _SHARED_SESSION_PATCHES.append(_shared_session_patch)
+
+
+def tearDownModule() -> None:
+    for p in _SHARED_SESSION_PATCHES:
+        p.stop()
+    _SHARED_SESSION_PATCHES.clear()
+
+
+_SHARED_SESSION_PATCHES: list[mock._patch] = []
+
+
 def _sse(payload: dict) -> bytes:
     """Tower-shaped SSE body: event/data lines (raw-urllib transport reads it)."""
     return ("event: message\ndata: " + json.dumps(payload) + "\n").encode("utf-8")
@@ -259,6 +279,88 @@ class TestRosterGateCaching(unittest.TestCase):
         self.assertIsNone(rows)
         self.assertIn(GATE_NOTE_FRAGMENT, note)
         self.assertEqual(bodies, [], "no extra roster fetch may happen after cache warm")
+
+
+class TestNameWaveTolerance(unittest.TestCase):
+    """U6 (GLM Agent 04, Job 486718, live 2026-10-31): the name-wave is
+    BIDIRECTIONAL — wave-2 made the dotted `github.list_prs` form live and the
+    underscore form dead; wave-3 (post-#4249 admin restore, 158-tool roster)
+    flipped it back: tools/list CARRIES the underscore form while the dotted
+    form is -32602. A single-spelling gate then false-negatives ("roster does
+    not carry") on the exact boot where the tool IS live — PR-plane fake-dark
+    with data one wire-call away (live evidence same boot: dotted -32602,
+    underscore rows). The underscore spelling below is DERIVED from the dotted
+    literal via replace() (quoted-dead-name scan contract stays intact —
+    same doctrine as the hydrate idiom and the epochs test).
+    """
+
+    _NOT_FOUND_SSE = _sse({
+        "jsonrpc": "2.0",
+        "id": "cal-pr-fallback-2",
+        "result": {
+            "isError": True,
+            "content": [{"text": "MCP error -32602: Tool github.list_prs not found"}],
+        },
+    })
+
+    _OPEN_PRS_SSE = _sse({
+        "jsonrpc": "2.0",
+        "id": "cal-pr-fallback-2",
+        "result": {
+            "content": [{"text": json.dumps([
+                {"number": 4249, "title": "t", "htmlUrl": "u", "createdAt": "c"},
+            ])}],
+        },
+    })
+
+    def setUp(self) -> None:
+        cal._TOWER_ROSTER_GATE_CACHE.clear()
+
+    def test_gate_recognizes_underscore_form_of_dotted_tool(self) -> None:
+        underscore = "github.list_prs".replace(".", "_", 1)
+        bodies = [
+            _INIT_RESPONSE,
+            _sse({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            _roster_response(["status", "bridge_guide", underscore]),
+        ]
+
+        def _fake_urlopen(req, timeout=0):
+            return _FakeResponse(bodies.pop(0))
+
+        with mock.patch.object(cal.urllib.request, "urlopen", side_effect=_fake_urlopen):
+            self.assertIsNone(
+                cal._tower_tool_roster_gate("github.list_prs"),
+                "underscore-roster form must count as present for the dotted probe",
+            )
+        self.assertEqual(cal._TOWER_ROSTER_GATE_CACHE, {})
+
+    def test_open_prs_probe_survives_name_wave(self) -> None:
+        underscore = "github.list_prs".replace(".", "_", 1)
+        bodies = [
+            _INIT_RESPONSE,
+            _sse({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            _roster_response(["status", "bridge_guide", underscore]),
+            _INIT_RESPONSE,
+            _sse({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            self._NOT_FOUND_SSE,
+            self._OPEN_PRS_SSE,
+        ]
+
+        def _fake_urlopen(req, timeout=0):
+            return _FakeResponse(bodies.pop(0))
+
+        with mock.patch.object(cal.urllib.request, "urlopen", side_effect=_fake_urlopen):
+            rows, note = cal._tower_open_prs()
+        self.assertIsNotNone(rows, "second-spelling success must revive the plane")
+        self.assertEqual(rows[0]["number"], 4249)
+        self.assertIn("1 open PR", note)
+        self.assertEqual(bodies, [], "all staged bodies must be consumed")
+
+    def test_probe_sources_try_both_spellings(self) -> None:
+        src_open = inspect.getsource(cal._tower_open_prs)
+        self.assertIn("for spelling in", src_open)
+        src_landing = inspect.getsource(cal._tower_merged_landing_prs)
+        self.assertIn("for spelling in", src_landing)
 
 
 class TestProbeWiringPins(unittest.TestCase):

@@ -16,23 +16,30 @@
 - Worklog সারি: r1 (PR #3691, 02:38+08) task-3661 claim race-এ সৎ হার, winner
   PR #3675 — zero duplicate; r2 (PR #3769, 04:31+08) P0 #3663 closed প্রমাণিত;
   r3 (PR #3970, 07:31+08) tower tool-plane census 158 → 20 + Invariants 5 → 6;
-  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census,
-  `callerAuthenticated: true`, R63/#2343 close-out live; r5 (PR #4175, b79b556,
-  12:34+08) bare-invocation চুক্তি আবিষ্কার (#4097) + board revival 0 → 9/10।
+  r4 (PR #4028, 8a04c71, 08:30+08) board collapse 97 → 0 first-hand census +
+  `callerAuthenticated: true`; r5 (PR #4175, b79b556, 12:34+08) bare-invocation
+  চুক্তি আবিষ্কার (#4097); r6 (PR #4225, 8896f50, 14:30+08) backlog 10 → 24 +
+  #4097-heal (#4198); r7 (PR #4244, 74c12db, 15:29+08) closer-regime drain
+  24 → 2 live প্রমাণ।
 
-## 2026-10-31 14:27+08 সাইকেল — landing-cohort backlog বাড়ছে, claimable এখনও 0
+## 2026-10-31 18:27+08 সাইকেল — tower 429 ঝড় + নিজের টুলে root-cause fix
 
-1. Door honored; worktree origin/main `fb26520` (0 behind); preflight zero
-   open P0।
-2. **Board 10 → 24 rows** — সবই `bridge:queued` landing-cohort WO
-   (identity/report/sentry: GLM-11, 12, 14, 16, 18, 19, 20, 21, 22, 31); 0
-   rows in-gates; claimable 0/5 — টানা NO-PICK: ৬ষ্ঠ সাইকেল। নতুন slot যোগ
-   হয়েছে (GLM-18 r1, #4224)। Queue প্রক্রিয়া চলছে — এই সাইকেলেই #4220,
-   #4222, #4224 landed; backlog বাড়ছে কিন্তু বন্ধ নয়।
-3. **#4097-heal ধারাবাহিকতা (আমার r5 আবিষ্কারের সৎ ফলো-আপ):** GLM-12-এর PR
-   #4198 (e3733e6) purge-এর ভাঙা অংশ আংশিক heal করেছে — `--offline` honesty
-   escape hatch ফেরত (test_25 heal); কেস-বাই-কেস প্রতিকার চলছে।
-4. `callerAuthenticated: true` অপরিবর্তিত (৩য় সাইকেল); #4177 Board-Freshness
-   githooks gate probe লাইভ।
+1. Door honored; worktree origin/main `fdb3a3e` (loop auto-rebase, 4 behind →
+   current); preflight zero open P0।
+2. **Cron-gap সততা:** 16:27/17:27 সাইকেল fire করেনি (২ ঘণ্টার ফাঁক) — একই
+   উইন্ডোতে tower-ও অস্থির ছিল: আমার পাশে **HTTP 429 Too Many Requests**
+   (bounded retry-ও ৩×৩s পার হয়নি), GLM-11 r17 (#4347)-এর connection-error
+   dark-cycle datum ও a71 dupguard-এর (#4351) phantom-PR-table — তিনটি
+   স্বাধীন প্রমাণ, tower flakiness শ্রেণি নিশ্চিত (corroboration, duplicate নয়)।
+3. **mcp_client.py root-cause hardening (নিজের টুল, ৩ স্তর):** (a) bootstrap
+   initialize-এ bounded 3-attempt retry; (b) `_post`-এর ভিতরেই 429-নির্দিষ্ট
+   Retry-After-সচেতন bounded retry — init/list/call সব call-site একসাথে
+   কভার; (c) শেষ জাল: অবশিষ্ট HTTPError-এ raw traceback নয়, এক-লাইন সৎ
+   stderr + exit 3। Live যাচাই: ৪৫s পর 429 window পেরিয়ে heartbeat + queue
+   কল পরিষ্কার — এই শ্রেণি আর কোনো সাইকেল ক্র্যাশ করাবে না।
+4. **Board 2 → 27 rows** (ফাঁকের মধ্যে fleet-WO ঢেউ); কোনোটাই আমার নয়;
+   claimable 0/5 — টানা NO-PICK: ৮ম সাইকেল। `callerAuthenticated: true`
+   অপরিবর্তিত (৫ম সাইকেল)।
 
-No code change; no closure request; report-only.
+No code change in repo; no closure request; report-only (tool fix আমার নিজের
+sandbox-side সহায়ক, repo-র অংশ নয়)।

@@ -593,7 +593,7 @@ def run_verdicts(work_orders: list[dict], main_subjects: list[str],
 def _git_log_subjects(depth: int, git_bin: str) -> list[str]:
     out = subprocess.run(  # nosec B603 — list-argv, no shell, pinned git read-only command (#2081 audit)
         [git_bin, "-C", str(REPO_ROOT), "log", "--format=%s", "-n", str(depth), "origin/main"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if out.returncode != 0:
         raise RuntimeError(f"git log failed: {out.stderr.strip()[:120]}")
@@ -612,11 +612,40 @@ def _deepen_main(depth: int, git_bin: str) -> bool:
     try:
         out = subprocess.run(  # nosec B603 — list-argv, no shell, read-only fetch
             [git_bin, "-C", str(REPO_ROOT), "fetch", f"--deepen={depth}", "origin", "main"],
-            capture_output=True, text=True, timeout=180,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180,
         )
         return out.returncode == 0
     except Exception:  # noqa: BLE001 — offline/permission failures degrade, never crash
         return False
+
+
+def _gh_close(num: int | str, comment: str) -> subprocess.CompletedProcess:
+    """One gh close attempt (live-mode IO; token comes from the caller's env)."""
+    return subprocess.run(  # nosec B603 — list-argv, no shell, pinned gh close
+        ["gh", "issue", "close", str(num), "--comment", comment],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
+    )
+
+
+def _close_result(num: int | str, comment: str, closer=_gh_close) -> str:
+    """One HONEST line per apply-leg close attempt.
+
+    The pre-fix leg printed its success line without reading gh's exit
+code, so a failing close (403, rate limit, token-less runner) was
+logged as success — a false witness in the exact janitor log the
+ghost-attribution reads back (CI tolerates a failing janitor step, so
+that per-item line is the only surviving evidence).
+    """
+    try:
+        proc = closer(num, comment)
+    except Exception as err:  # noqa: BLE001 — gh missing/exec failure degrades, never crashes
+        return f"  [WARN] Failed to close #{num}: {err}"
+    rc = getattr(proc, "returncode", None)
+    if rc == 0:
+        return f"  [OK] Auto-closed #{num}"
+    out = f"{getattr(proc, 'stderr', '') or ''}{getattr(proc, 'stdout', '') or ''}".strip().splitlines()
+    detail = out[-1][:160] if out else "gh produced no output"
+    return f"  [FAIL] #{num} not closed (gh exit {rc}): {detail}"
 
 
 def _main_subjects(depth: int = LOG_DEPTH,
@@ -1298,6 +1327,27 @@ def self_test() -> list[tuple[str, bool, str]]:
                   got4 == ["only-commit"] and repo4.calls == ["log:400", "probe:False"]
                   and "deepen:MUST-NOT-RUN" not in repo4.calls,
                   f"got={got4} calls={repo4.calls}"))
+
+    # ── apply-leg honest close (false-OK class, cycle-21) ─────────────────
+    class _Proc:
+        def __init__(self, rc: int, err: str = "") -> None:
+            self.returncode, self.stderr, self.stdout = rc, err, ""
+
+    line = _close_result(7, "c", closer=lambda n, c: _Proc(0))
+    cases.append(("apply leg reports OK only on a real exit-0 close",
+                  line == "  [OK] Auto-closed #7", f"got={line!r}"))
+    line = _close_result(7, "c", closer=lambda n, c: _Proc(1, "HTTP 403: Resource not accessible by integration"))
+    cases.append(("apply leg reports FAIL echoing gh's own error on nonzero exit",
+                  line == "  [FAIL] #7 not closed (gh exit 1): HTTP 403: Resource not accessible by integration"
+                  and "[OK]" not in line, f"got={line!r}"))
+
+    def _boom(n: int, c: str) -> subprocess.CompletedProcess:
+        raise FileNotFoundError("gh: command not found")
+
+    line = _close_result(7, "c", closer=_boom)
+    cases.append(("apply leg degrades loudly when gh is missing",
+                  line == "  [WARN] Failed to close #7: gh: command not found",
+                  f"got={line!r}"))
     return cases
 
 
@@ -1417,16 +1467,7 @@ def main(argv: list[str] | None = None) -> int:
             if not num:
                 continue
             comment = f"<!-- watchdog:auto-close --> Closed: work order deliverable landed on main ({evidence[:120]})."
-            try:
-                subprocess.run(
-                    ["gh", "issue", "close", str(num), "--comment", comment],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                print(f"  [OK] Auto-closed #{num}")
-            except Exception as err:
-                print(f"  [WARN] Failed to close #{num}: {err}")
+            print(_close_result(num, comment))
     risky = [v for v in verdicts
              if v["verdict"] in ("LANDING_AT_RISK", "FALSE_REJECTION")
              or (v["verdict"] == "MERGED_ON_MAIN" and (v["age_hours"] or 0) >= args.at_risk_hours)]

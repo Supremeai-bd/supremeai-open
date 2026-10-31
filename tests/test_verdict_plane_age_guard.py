@@ -39,6 +39,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +51,12 @@ sys.path.insert(0, str(REPO_ROOT / "scripts" / "ci"))
 import verdict_plane_age_guard as guard
 
 NOW = guard.parse_ts("2026-10-30T12:00:00Z")
+
+
+def _iso(hours_ago: float) -> str:
+    """ISO stamp N hours before the real clock (aging-proof fixtures)."""
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)) \
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def row(number: int, created: str, title: str = "t") -> dict:
@@ -227,16 +234,23 @@ def test_malformed_input_file_exits_2() -> None:
 
 
 def test_clean_input_exits_0_and_breach_exits_1() -> None:
+    # Aging-proof fixtures: timestamps are generated relative to the real
+    # clock, never hardcoded. The previous absolute stamps
+    # (2026-10-30T11:00Z clean / 2026-10-28T00:00Z stale) aged past the 24h
+    # default SLA and permanently breached the "clean" arm from
+    # 2026-10-31T11:00Z onward - a clock-coupled test that red-shifts with
+    # every passing day. Now: 2h-ago sits 12x inside the 24h SLA and 48h-ago
+    # sits 2x beyond it, so CI latency cannot flip either verdict.
     with tempfile.TemporaryDirectory() as tmp:
         clean = Path(tmp) / "clean.json"
         clean.write_text(json.dumps(
-            [row(40, "2026-10-30T11:00:00Z")]), encoding="utf-8")
+            [row(40, _iso(2.0))]), encoding="utf-8")
         res = _run_guard(["--input-file", str(clean)])
         assert res.returncode == 0 and "PASS" in res.stdout
 
         stale = Path(tmp) / "stale.json"
         stale.write_text(json.dumps(
-            [row(41, "2026-10-28T00:00:00Z")]), encoding="utf-8")
+            [row(41, _iso(48.0))]), encoding="utf-8")
         res = _run_guard(["--input-file", str(stale), "--format", "json"])
         assert res.returncode == 1
         payload = json.loads(res.stdout)

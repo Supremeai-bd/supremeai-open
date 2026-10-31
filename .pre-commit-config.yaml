@@ -8,3 +8,9 @@ repos:
         language: system
         pass_filenames: false
         files: '\.py$'
+      - id: fast-python-syntax
+        name: fast python syntax check (shift-left)
+        entry: python3 -m py_compile
+        language: system
+        types: [python]
+        pass_filenames: true

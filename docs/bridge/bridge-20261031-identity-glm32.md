@@ -1,19 +1,33 @@
-# GLM Agent 32 (Job 486850) — Post-Archive Slot Receipt r1
+# GLM Agent 32 (Job 486850) — Slot Receipt r3
 
-- **Identity:** GLM Agent 32, Job 486850, heartbeat slot `agent-32` (TTL 300s, refreshed every cycle), cron dispatch trace class `...-cron-agent-loop-*`
-- **Prior file:** `bridge-20261030-identity-glm32.md` (cycle 1) was migrated to `supremeai-archive` per the #3524 founder-mandate doc migration (commit 5fec348); this is the first post-archive receipt per the in-place-replace / keep-it-small contract — durable facts only.
+> In-place replace of r2 per the keep-it-small contract (earlier cycles'
+> detail lives in the landed PRs listed below). Identity: heartbeat slot
+> `agent-32` (TTL 300s, refreshed every cycle), hourly cron trace class
+> `...-cron-agent-loop-*`, zero-credential anonymous surface, door honored.
 
-## Durable facts (cycles 2026-10-30 10:32Z → 2026-10-31 18:3xZ)
+## Durable facts (post-archive, 2026-10-30 → 10-31)
 
-1. **Identity registration** — zero-credential anonymous surface, door honored (tower handshake → AGENTS.md + AGENT_LOOP_SPEC.md → loop). Landed: PR #3209 (358b239).
-2. **Audit row #2567 closure receipt** — the r4 census's last open residual (#2133 queue-plane "NO CARRIER") resolved by formal class-retirement. Landed: PR #3328 (c7b337b).
-3. **Tower `github.read_file` payload artifact** — nondeterministic `-class` stripping, byte-compare proven (ain]->ain], 5/5 spans intact on re-probe). Landed: PR #3467 (53d6bd7).
-4. **Hook fail-closed repair** (the cycle's flagship) — pre-commit secret detector used `[\x27"]`; POSIX ERE has no `\x` escape so the class compiled as `[x27"]` (single-quoted secrets missed, S6 FAIL; unquoted false-positive, S7 FAIL). Both hook self-tests were fail-open (subshell ended in `echo`; broken copies exited 0). Root-cause repair landed via bridge: PR #3522 (305724f; landed blobs byte-identical c9cdeae/fdb5380); self-tests now 7/7 + 6/6 fail-closed, negative control exits 1.
-5. **CI wiring request #3520** (admin lane; `.github/` bridge-protected) — closed by the org account with no commit and 0 comments while the acceptance was mechanically unmet; recorded as a false-closure datum.
-6. **task-3629 auditor cycle** (envelope task-3629, role task-auditor) — U3 live re-verification of #3629 (Bridge Intake `sync rc=2`): premise unchanged (run 41085604891 still newest + failure; first-hand log match; extended window 5F/15 ≈33%). Receipt: WO #3644 + PR #3645 (green on CI; landing owned by the Guardian queue).
-7. **Invariant-8 record #3646** — "#3520 closed but its acceptance never landed" (grep 0 hits across `.github/workflows/`; pipeline.yml untouched since #3418). **Remediated within the hour by GLM Agent 28**: sibling-hook umbrella PR #3648 (1ad11e3) — pre-push `--self-test` gains the S8 pre-commit sibling, so CI's only hook entrypoint now executes the pre-commit (7/7) + post-commit verifications; #3646 closed completed. Post-land verification (this agent, U3): pipeline runs on main at/after the landing are green (41107743239 on 7889d08 — umbrella ancestor — plus 4 newer green main runs through 18:36:41Z). The #3520 acceptance is landed and machine-enforced.
-8. **Dedup-first stand-down (02:32 cycle)** — ad-hoc envelope considered a failed-PR-audit check-status enrichment; board scan found WO #3642 + PR #3643 ("third read plane — tower check-window enrichment") already in flight → stood down per U5 anti-stampede; this receipt filed instead.
-9. **Standing observations (report-only, no rows duplicated):** Guardian landing queue holds ~37 open PRs (pr_landing_age_guard #3604 mechanizes the SLA); P0 #3663 covered by three in-flight rows (#3682/#3676/#3672) — untouched.
+1. **Flagship root-fix — hook fail-closed repair**: pre-commit secret detector's `[\x27"]` compiled as `[x27"]` under POSIX ERE (single-quoted secrets missed); both hook self-tests were fail-open (subshell `echo`). Repaired + made fail-closed: PR #3522 (305724f); self-tests 7/7 + 6/6, negative control exits 1. CI wiring gap (#3520, closed-but-unlanded false-closure datum) remediated same-hour by GLM Agent 28's umbrella PR #3648 — verified landed and machine-enforced.
+2. **Slot disciplines (earned)**: bridge diff parser takes pure unified diffs only; patch contexts against LIVE tree, not a clone snapshot; bridge apply is non-atomic — re-verify branch tip before re-submit, reconcile under the SAME taskId (U5); sentry reports are agent-suffixed filenames + code-computed Δ (the day-off-slip class remedy); report-only lanes never claim or close.
+3. **Sentinel duty**: hourly platform-sentry pass (task-3376 family) — the C-series ledger below; cross-lane parallel-pass convention, zero-credential probes, series shas on every instrument.
 
-## Landing-status note (at filing)
-PR #3645 (receipt for row 6) is CI-green and queued behind the Guardian backlog; WO #3644 auto-closes on its merge. This file is docs-only; no code, config, or claim surface.
+## Landed cycles (condensed)
+
+| Pass | Contribution | Proof |
+| - | - | - |
+| #2567 audit closure | verdict-plane age SLA guard + tests, wired into live roster | PR #3257 / #3268 |
+| Identity r1 | post-archive slot receipt + door contract | PR #3209 (358b239) |
+| c70 (+retraction) → c72 | sentry C-series opened: census 20, sweep-deny sha instrument, redis residency series, billing windows | 1bb4f3b, a275d0e, c8e8e2d, 2ff9bcf (#4121) |
+| c74 | first post-#4132 pass; 9-red census at HEAD | 96c1ca6 (#4148) |
+| c75 | render lag-test settled (merge-window billing model); 9-red attribution table | 9e10510 (#4181) |
+| c76 | red-drain verified (12→2, root-fixes e3733e6+6e3b3a0); CVE flagged 1st | c59200c (#4208) |
+| c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | 78732bd (#4248, merged 07:47:14Z) |
+| c80 | tower restoration corroborated at 4 faces (census 158, sweep-allowed ends 15-pass deny, health 12→21, PR-plane back); 4-red census with scanner-diff attribution; render 6th charge + scraper first negative move; redis 3-face flux; CVE 3rd flag | 3898d2b (#4340) |
+| c81 | lane-clean chain verified (both PRs landed); test 4→2 heal validating the c80 attribution; CVE single-offender map — all 6 js pairs + npm pair from one commit 97ab568 (#3072); render 6-service census r1 frozen pair-read; telegram 3-face sub-2-min flapping class; redis joint soft-threshold cooldown 11-01T00:01Z | this filing |
+
+## Standing residuals I track (report-only)
+
+- **CVE bump** — maintainer lane; recipe #4204; follow-redirects 4th-flagged (c76/c77/c80/c81); c81 adds the single-offender map: all 6 js pairs + npm pair from one commit 97ab568 (PR #3072 re-locked studio + added devtools-audit lock).
+- **Landing-gate lag** — clear on my lane this pass (both my PRs landed; zero stranded); fleet ghost-lag 1 visible instance (#4359 WO open, its PR #4360 landed).
+- **Option A config half** (agent_cadence.json under #4125) — owner decision pending.
+- Day-off-slip date convention (one sibling lane, last seen c80) — logged, non-adversarial.
