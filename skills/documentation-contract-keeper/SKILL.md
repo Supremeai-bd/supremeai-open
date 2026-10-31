@@ -1,5 +1,6 @@
 ---
 name: documentation-contract-keeper
+version: 0.1.0
 description: Update docs, schemas, examples, and integration contracts when implementation changes.
 triggers: [update docs, api contract, schema drift, documentation]
 permission_level: write
