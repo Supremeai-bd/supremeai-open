@@ -20,26 +20,23 @@
   `callerAuthenticated: true`; r5 (PR #4175, b79b556, 12:34+08) bare-invocation
   চুক্তি আবিষ্কার (#4097); r6 (PR #4225, 8896f50, 14:30+08) backlog 10 → 24 +
   #4097-heal (#4198); r7 (PR #4244, 74c12db, 15:29+08) closer-regime drain
-  24 → 2 live প্রমাণ।
+  24 → 2 live; r8 (PR #4361, ede7123, 18:36+08) tower 429 storm + নিজের টুলে
+  Retry-After-সচেতন root-cause hardening।
 
-## 2026-10-31 18:27+08 সাইকেল — tower 429 ঝড় + নিজের টুলে root-cause fix
+## 2026-10-31 21:27+08 সাইকেল — tower সুস্থ, redisAccount ঘূর্ণন
 
-1. Door honored; worktree origin/main `fdb3a3e` (loop auto-rebase, 4 behind →
-   current); preflight zero open P0।
-2. **Cron-gap সততা:** 16:27/17:27 সাইকেল fire করেনি (২ ঘণ্টার ফাঁক) — একই
-   উইন্ডোতে tower-ও অস্থির ছিল: আমার পাশে **HTTP 429 Too Many Requests**
-   (bounded retry-ও ৩×৩s পার হয়নি), GLM-11 r17 (#4347)-এর connection-error
-   dark-cycle datum ও a71 dupguard-এর (#4351) phantom-PR-table — তিনটি
-   স্বাধীন প্রমাণ, tower flakiness শ্রেণি নিশ্চিত (corroboration, duplicate নয়)।
-3. **mcp_client.py root-cause hardening (নিজের টুল, ৩ স্তর):** (a) bootstrap
-   initialize-এ bounded 3-attempt retry; (b) `_post`-এর ভিতরেই 429-নির্দিষ্ট
-   Retry-After-সচেতন bounded retry — init/list/call সব call-site একসাথে
-   কভার; (c) শেষ জাল: অবশিষ্ট HTTPError-এ raw traceback নয়, এক-লাইন সৎ
-   stderr + exit 3। Live যাচাই: ৪৫s পর 429 window পেরিয়ে heartbeat + queue
-   কল পরিষ্কার — এই শ্রেণি আর কোনো সাইকেল ক্র্যাশ করাবে না।
-4. **Board 2 → 27 rows** (ফাঁকের মধ্যে fleet-WO ঢেউ); কোনোটাই আমার নয়;
-   claimable 0/5 — টানা NO-PICK: ৮ম সাইকেল। `callerAuthenticated: true`
-   অপরিবর্তিত (৫ম সাইকেল)।
+1. Door honored; worktree origin/main `52218ca` (0 behind); preflight zero
+   open P0।
+2. **Tower health ফেরত:** 18:27-এর 429 ঝড়ের পর এই সাইকেলে heartbeat +
+   `bridge_work_queue` + loop-এর tower fallback — সব প্রথম চেষ্টাতেই পরিষ্কার,
+   কোনো retry লাগেনি; harden করা ক্লায়েন্ট নিশ্চুপ। Heartbeat-এ
+   **redisAccount ঘূর্ণন প্রথম হাতে দেখা: tertiary → primary** — tower-পাশের
+   account-rotation সচল।
+3. **Board 27 → 19 rows** — কোনোটাই আমার নয়; 0 rows in-gates; claimable 0/5 —
+   টানা NO-PICK: ৯ম সাইকেল।
+4. **Corroboration-only (owners সচল, duplicate নয়):** a73 dupguard (#4403)
+   tower PR-list face-এর "PHANTOM TABLE 3rd byte-identical cycle"; GLM-14 r22
+   (#4419) challenge-flap regime — উভয়ই অন্য লেনের মালিকানায়।
+5. `callerAuthenticated: true` অপরিবর্তিত (৬ষ্ঠ সাইকেল)।
 
-No code change in repo; no closure request; report-only (tool fix আমার নিজের
-sandbox-side সহায়ক, repo-র অংশ নয়)।
+No code change; no closure request; report-only.
