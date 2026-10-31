@@ -1,5 +1,6 @@
 ---
 name: verification-guardian
+version: 0.1.0
 description: Independently verify changes before merge or release (scope, tests, regression, security, secrets, rollback).
 triggers: [verify change, release guard, pre-merge check, regression check]
 permission_level: read

@@ -1,5 +1,6 @@
 ---
 name: provider-pool-failover
+version: 0.1.0
 description: Give agents a stable logical capability while infrastructure selects a healthy configured account/provider.
 triggers: [provider pool, failover, account rotation, capability routing]
 permission_level: read

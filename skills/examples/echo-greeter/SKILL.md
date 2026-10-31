@@ -1,5 +1,6 @@
 ---
 name: echo-greeter
+version: 0.1.0
 description: Reference skill demonstrating the SKILL.md contract with a script entry point.
 triggers: [greet, hello, greeter]
 entry: scripts/greet.py

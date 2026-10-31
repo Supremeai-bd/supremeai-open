@@ -1,5 +1,6 @@
 ---
 name: ai-knowledge-acquisition
+version: 0.1.0
 description: Collect, compare, verify and store knowledge from other AI models and agents (ChatGPT, Claude, Gemini, DeepSeek, Grok, SupremeAI agents) as structured, provenance-tracked records, then route them to long-term memory by risk. Use this skill whenever the user wants to ask several AIs the same question and compare answers, capture what another AI knows or recommends, judge whether an AI's claim is trustworthy, turn a lesson learned or a decision into a memory record, resolve conflicting AI opinions, or decide whether and where knowledge should be saved to SupremeAI memory, even if they never say "knowledge base" or "skill".
 triggers: [multi-agent debate, knowledge acquisition, compare ai answers, verify claim, memory record, resolve conflict, consensus]
 entry: scripts/validate_record.py
