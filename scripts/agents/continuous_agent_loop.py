@@ -289,11 +289,52 @@ _INCIDENT_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# #4009 class (GLM Agent 22, Job 486813, 2026-10-31): PR-lane merge-check refs
+# have GitHub's numeric shape "<n>/merge". They already carry a recorded
+# decision (GLM Agent 07: staleness stays main-scoped, never existence-probed)
+# — the numeric shape below must keep matching so those rows keep the old
+# behavior. A branch name like "fix/...-merge" has no numeric prefix and is
+# therefore existence-probed instead.
+_MERGE_REF_RE = re.compile(r"^\d+/merge$")
+
+# Conservative git-ref token guard for the existence probe: the token rides as
+# a git ARGUMENT (never a shell), but a hostile title could still smuggle a
+# leading-dash option or a malformed ref — anything outside this class is
+# indeterminate (fail-open), never probed.
+_SAFE_REF_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
+
+
+def _lsremote_ref_exists(ref: str) -> bool | None:
+    """Default existence probe: `git ls-remote --exit-code` against origin.
+
+    Zero credentials, zero API rate limit (plain git transport over the public
+    repo — the post-RBAC anonymous tower lost the github.* family, so the
+    guard's data source must not). rc 0 = ref present, rc 2 = --exit-code's
+    'not found', anything else (transport, timeout, hostile ref) is
+    indeterminate → None. Fail-open: None serves the row unchanged.
+    """
+    if not _SAFE_REF_TOKEN_RE.match(ref) or ".." in ref or ref.endswith(".lock"):
+        return None
+    url = f"https://github.com/{UPSTREAM_REPO}.git"
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--exit-code", url, f"refs/heads/{ref}"],
+            capture_output=True, text=True, timeout=STALE_INCIDENT_PROBE_TIMEOUT_S,
+        )
+    except Exception:  # noqa: BLE001 — probe failure must never raise through the pick
+        return None
+    if proc.returncode == 0:
+        return True
+    if proc.returncode == 2:
+        return False
+    return None
+
 
 def _incident_stale_note(
     item: dict[str, Any],
     fetch_runs: Callable[[int], list[dict[str, Any]]] | None = None,
     min_green: int | None = None,
+    remote_probe: Callable[[str], bool | None] | None = None,
 ) -> str | None:
     """#3050 — demotion note for a superseded CI-failure incident, else None.
 
@@ -308,6 +349,17 @@ def _incident_stale_note(
     pruning must not read as red). Returns None for anything unjudgeable
     (non-incident titles, scrolled-off runs, renamed workflows, fetch errors):
     fail-open by construction, the row is served exactly as before.
+
+    #4009 class demotion (GLM Agent 22): when the title's ref is a real
+    branch name (not main, not the numeric "<n>/merge" merge-check shape)
+    and that branch no longer exists on origin, the incident has NO
+    remediable surface — the failure lives only on a deleted head; the row
+    is served forever otherwise because the deleted run never appears in the
+    main-side supersession window (live witness: Run #41149642412 on
+    fix/pipeline-guard-watchdog-and-admin-merge, branch 404, zero PRs, row
+    still dispatching). Existence is probed via git ls-remote (credential-
+    and rate-limit-free); an indeterminate probe or an existing branch
+    falls through to the historical main-scoped judgment unchanged.
     """
     n_green = STALE_INCIDENT_GREEN_RUNS if min_green is None else min_green
     title = str(item.get("title", ""))
@@ -324,6 +376,26 @@ def _incident_stale_note(
     workflow = head.rsplit("] ", 1)[1].strip()
     if not workflow:
         return None
+
+    # #4009 class: a deleted head branch removes the incident's remediable
+    # surface entirely. Only real branch names are probed — "main" always
+    # exists, and the numeric "<n>/merge" merge-check refs keep their recorded
+    # main-scoped decision (GLM Agent 07) untouched.
+    ref_token = title_match.group("ref")
+    if ref_token != "main" and not _MERGE_REF_RE.match(ref_token):
+        probe = _lsremote_ref_exists if remote_probe is None else remote_probe
+        try:
+            exists = probe(ref_token)
+        except Exception:  # noqa: BLE001 — fail-open, identical to fetch_errors below
+            exists = None
+        if exists is False:
+            return (
+                f"incident-branch-gone (U3 demotion, #4009 class): head branch "
+                f"'{ref_token}' no longer exists on origin — the failure lived "
+                "only on a deleted head, no remediable surface "
+                "(ROW-CLOSED-UNDER-US); admin/verdict lane owns row closure"
+            )
+        # exists is True or indeterminate → historical main-scoped judgment
 
     if fetch_runs is None:
         def fetch_runs(per_page: int) -> list[dict[str, Any]]:
@@ -1507,71 +1579,6 @@ def list_failed_open_prs(repo: str = UPSTREAM_REPO, limit: int = 30) -> list[dic
     return failed_prs
 
 
-
-def mark_failed_prs_on_issues(failed, repo=UPSTREAM_REPO, log_fn=None):
-    if log_fn is None:
-        log_fn = log
-    if not failed:
-        return
-    run_cmd(["gh", "label", "create", "ci-failed", "--repo", repo, "--color", "d93f0b", "--description", "PR CI checks failing"])
-    marked = 0
-    for f in failed:
-        num = f.get("number")
-        title = str(f.get("title") or "")
-        import re as _re
-        m = _re.search(r"#(\d+)", title)
-        if not m:
-            continue
-        issue_no = m.group(1)
-        c, o, e = run_cmd(["gh", "issue", "edit", issue_no, "--repo", repo, "--add-label", "ci-failed"])
-        if c == 0:
-            marked += 1
-            log_fn("label", "marked issue #" + issue_no + " as ci-failed (PR #" + str(num) + ")")
-        else:
-            log_fn("warn", "could not label issue #" + issue_no + " (PR #" + str(num) + "): " + str(e)[:60])
-    if marked:
-        log_fn("label", "mark_failed_prs_on_issues: marked " + str(marked) + " issue(s)")
-
-
-
-def cleanup_merged_bridge_wos(repo=UPSTREAM_REPO, log_fn=None):
-    if log_fn is None:
-        log_fn = log
-    code, out, _ = run_cmd(["gh", "issue", "list", "--repo", repo, "--state", "open", "--limit", "50", "--json", "number,title,labels"])
-    if code != 0 or not out.strip():
-        return
-    try:
-        issues = json.loads(out)
-    except Exception:
-        return
-    closed = 0
-    for it in issues[:15]:
-        labels = [l.get("name","") for l in (it.get("labels") or [])]
-        if "bridge:receipt" not in labels:
-            continue
-        title = str(it.get("title") or "")
-        import re as _re
-        m = _re.search(r"PR\s*#(\d+)", title) or _re.search(r"#(\d+)", title)
-        if not m:
-            continue
-        pr_no = m.group(1)
-        c2, o2, _ = run_cmd(["gh", "pr", "view", pr_no, "--repo", repo, "--json", "state,mergedAt"])
-        if c2 != 0:
-            continue
-        try:
-            prinfo = json.loads(o2)
-        except Exception:
-            continue
-        if str(prinfo.get("state","")).upper() != "CLOSED" and not prinfo.get("mergedAt"):
-            continue
-        c3, _, e3 = run_cmd(["gh", "issue", "close", str(it.get("number")), "--repo", repo, "--comment", "Auto-closed: linked PR #" + pr_no + " merged."])
-        if c3 == 0:
-            closed += 1
-            log_fn("close", "closed bridge WO #" + str(it.get("number")) + " (PR #" + pr_no + " merged)")
-    if closed:
-        log_fn("close", "cleanup_merged_bridge_wos: closed " + str(closed) + " bridge WO(s)")
-
-
 def report_failed_open_prs(
     repo: str = UPSTREAM_REPO, limit: int = 30,
     log_fn: Callable[[str, str], None] | None = None,
@@ -1723,15 +1730,7 @@ def preflight_observability_audit(
         log_fn("⚠", "preflight failed-PR scan: honestly skipped (--offline) — plane UNSEEN, not zero (U2)")
         return
     try:
-        _failed = report_failed_open_prs(repo=UPSTREAM_REPO, limit=30, log_fn=log_fn)
-        try:
-            mark_failed_prs_on_issues(_failed or [], repo=UPSTREAM_REPO, log_fn=log_fn)
-        except Exception as exc2:
-            log_fn("warn", "mark_failed_prs_on_issues raised: " + type(exc2).__name__)
-        try:
-            cleanup_merged_bridge_wos(repo=UPSTREAM_REPO, log_fn=log_fn)
-        except Exception as exc3:
-            log_fn("warn", "cleanup_merged_bridge_wos raised: " + type(exc3).__name__)
+        report_failed_open_prs(repo=UPSTREAM_REPO, limit=30, log_fn=log_fn)
     except Exception as exc:  # বাংলা: অডিট কখনো dispatch kill করবে না — সৎ অন্ধকার
         log_fn("⚠", f"preflight failed-PR scan error (honest dark, dispatch continues): {exc}")
 
@@ -1809,19 +1808,8 @@ def pick_next_issue(
             return False
         if "sentry" in title.lower():
             return False
-        # 30-min cooldown gate
-        try:
-            _lease = load_issue_lease_store()
-            _ts = _lease.get(str(item.get("number")))
-            if _ts is not None and (time.time() - _ts) < ISSUE_LEASE_SECONDS:
-                return False
-        except Exception:
-            pass
         state = item.get("state")
         if state is not None and str(state).lower() != "open":
-            return False
-        title = str(item.get("title") or "")
-        if "anchor hub" in title.lower() or "sentry" in title.lower():
             return False
         return True
 
@@ -1829,8 +1817,6 @@ def pick_next_issue(
 
     def priority_key(item: dict[str, Any]) -> tuple[int, int]:
         names = label_names(item)
-        if "ci-failed" in names:
-            return (-1, int(item.get("number", 0)))
         tier = 4
         for marker, rank in PRIORITY_MAP:
             if any(name == marker or name.startswith(marker + "-") or name.startswith(marker + " ") for name in names):
@@ -1839,21 +1825,6 @@ def pick_next_issue(
         return (tier, int(item.get("number", 0)))
 
     candidates = [i for i in issues if isinstance(i, dict) and is_claimable(i)]
-    if not candidates:
-        def _base_claimable(i):
-            if not isinstance(i, dict):
-                return False
-            names = label_names(i)
-            if EXCLUDED_LABELS & set(names):
-                return False
-            state = i.get("state")
-            if state is not None and str(state).lower() != "open":
-                return False
-            title = str(i.get("title") or "")
-            if "anchor hub" in title.lower() or "sentry" in title.lower():
-                return False
-            return True
-        candidates = [i for i in issues if _base_claimable(i)]
     if exclude:
         excluded_set = {str(e) for e in exclude}
         candidates = [i for i in candidates if str(i.get("number")) not in excluded_set]
@@ -3078,7 +3049,7 @@ def classify_task_role(
     title: str = "", labels: Iterable[str] = (), body: str = ""
 ) -> str:
     present = frozenset(labels)
-    if "status:runway" in present or "ci-failed" in present:
+    if "status:runway" in present:
         return "ci-fixer"
     if "gate:pre-landing" in present:
         return "task-auditor"
@@ -3867,7 +3838,7 @@ def run_dispatch_cycle(args: argparse.Namespace) -> int:
         )
 
     force_flag = getattr(args, "force", False)
-    if claimable_count < 1 and not force_flag:
+    if claimable_count < 5 and not force_flag:
         print(f"ACTION: System is clean and healthy (claimable issues: {claimable_count}/5 threshold). Observation roles idle.")
         return 0
 
