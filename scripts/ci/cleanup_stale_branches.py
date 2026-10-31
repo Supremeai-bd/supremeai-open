@@ -4,6 +4,12 @@
 Branches created by agents, bridge runners, or completed PRs that have no open PRs
 are pruned from origin, ensuring that remote branch existence reflects ONLY active
 in-progress work and never clutters the remote repository.
+
+Fail-closed contract: this script deletes remote branches, so "protected set
+unknown" must never be conflated with "protected set empty". If the open-PR
+query or the remote enumeration cannot be verified (gh missing, auth expired,
+rate limited, malformed or non-list JSON, git failure), the run aborts with
+exit 1 and deletes nothing — never a destructive prune on unverified inputs.
 """
 
 from __future__ import annotations
@@ -42,7 +48,13 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("cleanup_stale_branches")
 
 
-def get_open_pr_head_branches() -> Set[str]:
+def get_open_pr_head_branches() -> Set[str] | None:
+    """Return head branches of open PRs, or None when they cannot be verified.
+
+    None (unknown) is distinct from an empty set (verified none). A gh failure
+    that yields valid non-list JSON (e.g. {"message": "Bad credentials"}) is
+    also "unknown", not "empty".
+    """
     try:
         res = subprocess.run(
             ["gh", "pr", "list", "--state", "open", "--limit", "300", "--json", "headRefName"],
@@ -52,21 +64,32 @@ def get_open_pr_head_branches() -> Set[str]:
             check=True,
         )
         data = json.loads(res.stdout)
-        return {pr["headRefName"] for pr in data if isinstance(pr, dict) and "headRefName" in pr}
     except Exception as e:
-        logger.error("Failed to fetch open PR heads: %s", e)
-        return set()
+        logger.error("Cannot verify open-PR protected set (fail-closed): %s", e)
+        return None
+    if not isinstance(data, list):
+        logger.error(
+            "Open-PR query returned unexpected non-list payload (fail-closed): %s",
+            str(data)[:120],
+        )
+        return None
+    return {pr["headRefName"] for pr in data if isinstance(pr, dict) and "headRefName" in pr}
 
 
-def get_remote_branches() -> Set[str]:
+def get_remote_branches() -> Set[str] | None:
+    """Return candidate remote branches, or None when enumeration fails."""
     subprocess.run(["git", "fetch", "origin", "--prune"], cwd=str(REPO_ROOT), check=False)
-    res = subprocess.run(
-        ["git", "branch", "-r"],
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    try:
+        res = subprocess.run(
+            ["git", "branch", "-r"],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except Exception as e:
+        logger.error("Cannot enumerate remote branches (fail-closed): %s", e)
+        return None
     branches = set()
     for line in res.stdout.splitlines():
         b = line.strip()
@@ -83,9 +106,21 @@ def main() -> int:
     args = parser.parse_args()
 
     open_heads = get_open_pr_head_branches()
+    if open_heads is None:
+        logger.error(
+            "Aborting stale-branch cleanup: open-PR protected set unverifiable. "
+            "No branches were deleted (fail-closed)."
+        )
+        return 1
     logger.info("Protected open PR branches (%d): %s", len(open_heads), open_heads)
 
     remote_branches = get_remote_branches()
+    if remote_branches is None:
+        logger.error(
+            "Aborting stale-branch cleanup: remote branch enumeration failed. "
+            "No branches were deleted (fail-closed)."
+        )
+        return 1
     to_delete = []
 
     for branch in sorted(remote_branches):
