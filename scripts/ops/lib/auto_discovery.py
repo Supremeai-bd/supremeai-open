@@ -149,10 +149,13 @@ def get_layout(start_env: str = "SUPREMEAI_REPO_ROOT") -> RepoLayout:
 # File discovery
 # --------------------------------------------------------------------------- #
 
-def _git_ls_files(root: Path) -> Optional[List[Path]]:
+def _git_ls_files(root: Path, cached_only: bool = False) -> Optional[List[Path]]:
     try:
+        cmd = ["git", "ls-files", "--cached"]
+        if not cached_only:
+            cmd += ["--others", "--exclude-standard"]
         out = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cmd,
             cwd=str(root), capture_output=True, text=True, timeout=30,
         )
         if out.returncode != 0:
@@ -169,18 +172,25 @@ def discover_py_files(
     env: str = "DISCOVER_PY_ROOT",
     root: Optional[Path] = None,  # legacy alias for base
     refresh: bool = False,
+    tracked_only: bool = False,
 ) -> List[Path]:
     """All tracked python files under *root* (default: repo root).
 
     Prefers `git ls-files`; falls back to rglob for plain directories.
     Env override: DISCOVER_PY_ROOT pins the scan root.
+    tracked_only: keep only git-tracked (cached) files, dropping untracked
+    working-tree strays — derived inventories (scripts/ops/_INDEX.md) MUST
+    use this so an index regenerated on a machine with stray untracked
+    scripts cannot reference files that never existed in git history
+    (phantom-row defect: committed index carried ops/download_all_pr_diffs.py
+    which no clean checkout has, turning --check red on every fresh tree).
     """
     layout = get_layout()
     base = (base or root or Path(os.getenv(env) or layout.root)).resolve()
     if not base.is_dir():
         raise DiscoveryError(f"discovery root {base} is not a directory")
 
-    files = _git_ls_files(base)
+    files = _git_ls_files(base, cached_only=tracked_only)
     if files is None:
         files = [p for p in base.rglob("*") if p.is_file()]
 
@@ -200,9 +210,20 @@ def discover_files(
     base: Path,
     patterns: Sequence[str],
     exclude: Sequence[str] = ("*/node_modules/*", "*/.git/*", "*/dist/*", "*/build/*"),
+    tracked_only: bool = False,
 ) -> List[Path]:
-    """Glob-based discovery for non-python assets (ts/tsx/yaml/json/...)."""
+    """Glob-based discovery for non-python assets (ts/tsx/yaml/json/...).
+
+    tracked_only: keep only git-tracked files (same rationale as
+    discover_py_files(tracked_only=True) — derived inventories must never
+    absorb a machine's untracked strays).
+    """
     base = base.resolve()
+    tracked: Optional[Set[Path]] = None
+    if tracked_only:
+        tracked_list = _git_ls_files(base, cached_only=True)
+        if tracked_list is not None:
+            tracked = set(tracked_list)
     found: Set[Path] = set()
     for pat in patterns:
         if pat.startswith("!"):
@@ -211,6 +232,8 @@ def discover_files(
             continue
         for p in base.glob(pat if "/" in pat else f"**/{pat}"):
             if p.is_file() and not any(fnmatch.fnmatch(str(p), ex) for ex in exclude):
+                if tracked is not None and p not in tracked:
+                    continue
                 found.add(p)
     return sorted(found)
 

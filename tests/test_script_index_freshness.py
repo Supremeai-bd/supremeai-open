@@ -59,6 +59,42 @@ class TestScriptIndexFreshness(unittest.TestCase):
             r.returncode, 0, f"index stale — regenerate it:\n{r.stdout}\n{r.stderr}"
         )
 
+    def test_check_gate_ignores_untracked_strays(self):
+        """A machine-local untracked stray must never poison the inventory.
+
+        Phantom-row defect (2026-10-31, live on main): the generator scanned
+        untracked working-tree files, so an index regenerated on a machine
+        holding a stray script (ops/download_all_pr_diffs.py — never in git
+        history) committed a row for a file no clean checkout has; every
+        fresh tree then read the committed index as stale and the #1630
+        gate went red (test_check_gate_passes_on_fresh_repo failure class).
+        Mechanical cure: discovery is tracked-only, so this pin creates an
+        untracked stray and demands --check stays green with it present.
+        """
+        stray = REPO_ROOT / "scripts" / "ops" / "_stray_poison_probe.py"
+        original = INDEX.read_text(encoding="utf-8")
+        try:
+            stray.write_text(
+                '"""stray poison probe — must stay untracked and unindexed."""\n',
+                encoding="utf-8",
+            )
+            r = subprocess.run(
+                [sys.executable, str(GENERATOR), "--check"],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(
+                r.returncode, 0,
+                "untracked stray poisoned the inventory — generator must be "
+                f"tracked-only:\n{r.stdout}\n{r.stderr}",
+            )
+        finally:
+            if stray.exists():
+                stray.unlink()
+            INDEX.write_text(original, encoding="utf-8")
+
     def test_generator_self_references_real_path(self):
         """The generator's own docs/header must point at its real location."""
         src = GENERATOR.read_text(encoding="utf-8")
