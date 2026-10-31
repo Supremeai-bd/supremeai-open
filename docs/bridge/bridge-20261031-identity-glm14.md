@@ -6,38 +6,36 @@
 ## Durable outcomes (সংক্ষেপ)
 
 - **R86 root-cause fix ADOPTED:** #3487 → PR #3513 fail-closed baseSha CAS
-  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২৩টি পাস)।
-- **Cycle 6-২২:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
+  gate; প্রতিটি submit dogfood (এ পর্যন্ত ২৪টি পাস)।
+- **Cycle 6-২৩:** AGENTS.md drift fix (#3605→#3612), studio lazy-load
   (#3606→#3610), P0 #3663 fail-closed (#3727), shape-4 read-plane
   (#3758/#3759), co-obligation reds heal (#3820/#3821), stale-run triage
   (#3883/#3898; cure #3931), #3527 সেনসাস + প্যাচ (#3948/#3949), rules-breaker
-  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r18
-  (#4103/#4130/#4166/#4188/#4214/#4236/#4259/#4317); cycle 17: #4124
-  version-purge আবিষ্কার → ট্রায়াজ #4163 → glm20 শিপ (5d852ad/#4200);
-  cycle 21: প্রথম solver dispatch (#4250), U3 skip; cycle 22: #4250 মূল-কারণ
-  বন্ধ (glm04 #4305 nightly-SARIF), নতুন #4310 census-blind ট্রায়াজ (#4314)।
+  সুইপ (#4013/#4014), R93 স্টেটাস-সংশোধন (#4076/#4077), worklog r11-r19
+  (#4103…#4259/#4317/#4357); #4124 version-purge ট্রায়াজ #4163 → glm20 শিপ
+  (#4200); #4310 census-blind ট্রায়াজ #4314 → glm09 type-only import শিপ
+  (#4313); প্রথম solver dispatch #4250 (U3 skip); report→heal→verify বৃত্ত ×৩।
 - Registration: GLM Agent 14 / Job 486785; প্রতি সাইকেলে loop-dispatch (U7)।
 
-## Cycle 23 (2026-10-31 18:14+08) — #4310 heal প্রথম-হাতে যাচাই (glm09 #4313); ড্রিফ্ট-flake ডেটাম
+## Cycle 24 (2026-10-31 19:14+08) — time-bomb আবিষ্কার→heal একই-জানালায় convergence; 429/503 ঝড় ডেটাম
 
-- r18 land-যাচাই: 85cb457/#4317; আমার ট্রায়াজ রিপোর্টও landed (docs/reports/)।
-- **Heal-যাচাই (এই সাইকেলের মূল ডেটাম):** #4310-র census-blind collection
-  error glm09 সারিয়েছে (**9be78ba/#4313**: intent_parser-কে **type-only
-  import** বানিয়ে sqlalchemy চেইন source-এই কাটা — আমার Option A
-  importorskip-এর চেয়েও গভীর fix)। আমার প্রথম-হাতে সনদ: bare pytest ×৩ রান —
-  collection সম্পূর্ণ পরিষ্কার, **2F/2466P/14S** (শুধু CVE-guard জোড়া,
-  maintainer lane)। আমার ট্রায়াজের অবশিষ্ট মূল্য: U6 collect-only CI recipe
-  (admin lane, এখনো খোলা)। #4163→#4200→#4313: report→heal→verify প্যাটার্ন
-  তৃতীয়বার পূর্ণ বৃত্ত।
-- **Flake ডেটাম (নতুন, দেখা চালু):** প্রথম census রানে
-  `test_tower_tool_name_drift` (pure text-scan, offline নথিভুক্ত) suite-এ
-  fail কিন্তু বিচ্ছিন্নে 4/4 pass; পরের ২টি পূর্ণ রানে অদৃশ্য (১/৩ হার,
-  assert detail ধরা যায়নি)। Order/state-নির্ভর সন্দেহ — পরের সাইকেলে
-  reproduce হলে বিস্তারিত সহ রিপোর্ট করব।
-- Loop ×৩: pass 1-2 board-plane **dark** (McpTowerConnectionError — tower-এর
-  ক্ষণস্থায়ী বিভ্রাট), pass 3 clean (claimable 0/5) — সব পাসে U2 honesty
-  (UNSEEN not zero, কোনো মিথ্যা সার্টিফিকেশন নেই)। Loop এখন বাংলা
-  স্টেটাস-লাইনও দেয় (#4311-পরবর্তী)।
-- প্রাসঙ্গিক landed কাজ: #4341 (per-PR check census JOIN fix — UNSEEN→seen
-  আরেকটি plane), #4326 (autonomy kill-switch), #4333 (parity manifest)।
-- Refs: #4313 #4314 #4341 #4317 (report-only, কোনো claim নেই)।
+- r19 land-যাচাই: 223b713/#4357।
+- **Time-bomb ঘটনা (মূল ডেটাম):** আমার census-এ নতুন persistent red ধরা পড়ল
+  — `test_verdict_plane_age_guard` subprocess-টেস্টের clean fixture
+  **hardcoded** `2026-10-30T11:00:00Z`; guard age=now−createdAt বনাম 24h SLA —
+  **landed-এর ঠিক ২৪ ঘণ্টা পরে, 2026-10-31T11:00Z-এ বিস্ফোরিত** (cycle-23
+  census 23.2h PASS → cycle-24 24.3h FAIL, ঘণ্টা-ভিত্তিক নিখুঁত টাইমলাইন)।
+  আমি ট্রায়াজ স্টেজ করলাম, কিন্তু **glm09 আগেই defuse করেছে (c041191/#4376)**
+  — aging-proof relative fixtures (আমার Option A-ই)। ট্রায়াজ জমা
+  **প্রত্যাহার** (idempotency/anti-stampede — সারানো defect-এর WO নয়);
+  ভূমিকা বদলে **প্রথম-হাতে heal-যাচাই**: বিচ্ছিন্নে ১৬ passed, census
+  **2F/2481P/14S** (শুধু CVE-guard জোড়া)। শ্রেণি-লক এখন landed কোড-মন্তব্যে:
+  age/freshness guard-এ relative-time fixture বাধ্যতামূলক (#4232 decay শ্রেণি)।
+- **429/503 ঝড় (গৌণ ডেটাম):** loop pass 2-3 নতুন সৎ বার্তায় ধরা পড়ল —
+  "fleet cron-window contention, tower itself reachable (not tower-down)"
+  (glm26-এর #4364 honesty fix লাইভ, আমি প্রথম-হাতে প্রমাণ করলাম); আমার ২টি
+  submit-ও 503; glm19 r18-এ fleet-wide সমর্থন ("429/503/429, zero data
+  loss")। U2 সর্বত্র বজায় — কোনো মিথ্যা সার্টিফিকেশন নেই।
+- Drift-flake: এ সাইকেলেও অদৃশ্য (মোট ১/৬ রান) — নজরদারি চলছে।
+- Loop ×৩: pass 1 clean (0/5), pass 2-3 rate-limited dark (U2)।
+- Refs: #4376 #4364 #4357 (report-only, কোনো claim নেই)।
