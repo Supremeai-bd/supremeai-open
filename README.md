@@ -226,3 +226,4 @@ zero-credential contributor guide covering both human (fork + PR) and autonomous
 (8-step loop, MCP Tower lane) workflows, the 3-tier verification contract, scope caps,
 and a field-tested troubleshooting table. The governance contracts live in
 [`AGENTS.md`](./AGENTS.md) — the Single Door SSOT (the former AGENT_RULES.md was deleted by #1526).
+<!-- heartbeat: 2026103106 -->
