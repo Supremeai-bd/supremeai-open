@@ -222,6 +222,18 @@ class TestTowerPayloadParsing(unittest.TestCase):
 
 
 class TestTowerProbeHardCap(unittest.TestCase):
+    def setUp(self):
+        # Test-isolation guard: _TOWER_ROSTER_GATE_CACHE is a PROCESS-level cache
+        # (#4132's U6 root fix — "permanent tool-absence" is cached for the whole
+        # boot). In one pytest session that boot spans every simulated tower in
+        # the suite, so a note primed by an earlier test (e.g. the -32602
+        # simulations in test_failed_pr_audit_honesty) makes the probe below
+        # early-return BEFORE any transport — no wedged urlopen, no TimeoutError,
+        # red that only reproduces in the full suite (order-dependent, observed
+        # 2026-10-31 at 35a72f6). This probe pins the TRANSPORT hard-join, so it
+        # must start with a cold gate: reset the cache, don't weaken the pin.
+        cal._TOWER_ROSTER_GATE_CACHE.clear()
+
     def test_stuck_transport_capped_by_hard_join(self):
         """A wedged tower probe must raise TimeoutError, never hang the pick path."""
         try:
