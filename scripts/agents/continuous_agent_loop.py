@@ -2163,13 +2163,38 @@ ROLE_RULES: dict[str, str] = {
     "platform-guardian": "প্রজেক্টের সাথে যুক্ত অন্যান্য সমস্ত থার্ড-পার্টি প্ল্যাটফর্ম ও সার্ভিসের সার্বক্ষণিক তদারকি, অডিট ও নজরদারি নিশ্চিত করা (absorbed auditor duties)।",
 }
 
+def load_role_skill_instructions(role_name: str) -> str:
+    """Load deep instruction specification from .agents/skills/<role>/SKILL.md if available.
+
+    Falls back cleanly to ROLE_RULES or default string if skill file is absent.
+    """
+    try:
+        candidate_paths = [
+            Path(__file__).resolve().parent.parent.parent / ".agents" / "skills" / role_name / "SKILL.md",
+            Path(__file__).resolve().parent / "skills" / role_name / "SKILL.md",
+        ]
+        for p in candidate_paths:
+            if p.is_file():
+                content = p.read_text(encoding="utf-8")
+                # Strip YAML frontmatter if present
+                if content.startswith("---"):
+                    parts = content.split("---", 2)
+                    if len(parts) >= 3:
+                        content = parts[2].strip()
+                return content
+    except Exception:
+        pass
+    return ""
+
 COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
 1. Dual-Rebase: Rebase origin/main at work-start AND pre-push (0 behind).
 2. Boundary: Zero satellite code in repo root (src/*, service/*, packages/*).
 3. Superior Replacement: Discard broken legacy code/tests; never hack new code to appease past errors.
 4. Verification: No direct push to protected branches; all PRs require local proof.
 5. P0 Drainage & Anti-Stampede: Architectural P0 blockers supersede all routine audits/scout tickets; idempotency check mandatory.
-6. Full-Scope Completeness: Solvers/coders must NEVER leave partial work. Database schemas, migrations, configuration, environment wiring, and tests must be completed in the exact same PR."""
+6. Full-Scope Completeness: Solvers/coders must NEVER leave partial work. Database schemas, migrations, configuration, environment wiring, and tests must be completed in the exact same PR.
+7. Simplest Solution & Anti-Bloat: Always adopt the simplest, most minimal, and most direct solution that solves root cause. Never bloat files or over-engineer.
+8. Zero Cross-Agent Collateral: Strictly stay within your task domain scope; never overwrite, erase, or weaken another agent's code or tests."""
 
 def log(icon: str, msg: str) -> None:
     try:
@@ -3393,12 +3418,17 @@ def build_task_envelope(
         if issue_number is not None
         else "PR BLUEPRINT: ad-hoc envelope — no original issue to close. Reference the ad-hoc task id ('task-adhoc') in the PR description; do NOT fabricate an issue reference or a 'Closes #N' footer."
     )
+    skill_guide = load_role_skill_instructions(role)
+    mandate_section = f"MANDATE: {role_description}"
+    if skill_guide:
+        mandate_section = f"{mandate_section}\n\n=== ROLE SKILL SPECIFICATION ({role}) ===\n{skill_guide}"
+
     specialist_prompt = "\n".join(
         [
             COMMON_RULES,
             "",
             f"ROLE: {role}",
-            f"MANDATE: {role_description}",
+            mandate_section,
             pr_blueprint_line,
             "CONTINUOUS DISPATCH: After completing this task, rerun continuous agent loop again.",
             "STALE-INCIDENT GUARD (U3): before claiming a CI-failure incident, verify on live main that the referenced run still fails; resolved incidents are skipped with evidence, never re-solved. The picker also auto-demotes mechanically (#3050): an incident whose referenced run is superseded by >=5 green main runs of the same workflow (zero newer reds) is skipped at pick time — for explicit --issue N dispatches this manual check remains the backstop.",
