@@ -10,15 +10,17 @@ const mockAuthState = {
   uninitialized: { status: 'uninitialized', initialize: vi.fn().mockResolvedValue(undefined) },
 };
 
+let currentAuthState = mockAuthState.loggedIn;
+
 vi.mock('../../store/authStore', () => {
   // identity.ts canAccessAdminContext() reads the store non-reactively via
   // useAuthStore.getState() — the mock must expose the same zustand surface.
   const useAuthStoreMock = (selector?: (state: typeof mockAuthState['loggedIn']) => unknown) => {
-    const state = mockAuthState['loggedIn'];
+    const state = currentAuthState;
     return selector ? selector(state) : state;
   };
   (useAuthStoreMock as unknown as { getState: () => typeof mockAuthState['loggedIn'] }).getState =
-    () => mockAuthState['loggedIn'];
+    () => currentAuthState;
   return {
     useAuthStore: useAuthStoreMock,
     AuthStatus: { UNINITIALIZED: 'uninitialized', LOGGED_OUT: 'loggedOut', LOGGED_IN: 'loggedIn' },
@@ -30,6 +32,7 @@ describe('AuthGuards', () => {
     Object.assign(mockAuthState['loggedIn'], { status: 'loggedIn', initialize: vi.fn().mockResolvedValue(undefined) });
     Object.assign(mockAuthState['loggedOut'], { status: 'loggedOut', initialize: vi.fn().mockResolvedValue(undefined) });
     Object.assign(mockAuthState['uninitialized'], { status: 'uninitialized', initialize: vi.fn().mockResolvedValue(undefined) });
+    currentAuthState = mockAuthState.loggedIn;
   });
 
   describe('AuthLoadingSpinner', () => {
@@ -52,7 +55,7 @@ describe('AuthGuards', () => {
     });
 
     it('renders the loading spinner when checking auth', () => {
-      Object.assign(mockAuthState['loggedIn'], { status: 'uninitialized', initialize: vi.fn().mockResolvedValue(undefined) });
+      currentAuthState = mockAuthState.uninitialized;
       render(
         <MemoryRouter initialEntries={['/']}>
           <Routes>
@@ -64,7 +67,7 @@ describe('AuthGuards', () => {
     });
 
     it('renders nothing when not authenticated', () => {
-      Object.assign(mockAuthState['loggedIn'], { status: 'loggedOut', initialize: vi.fn().mockResolvedValue(undefined) });
+      currentAuthState = mockAuthState.loggedOut;
       const { container } = render(
         <MemoryRouter initialEntries={['/']}>
           <Routes>
@@ -78,7 +81,7 @@ describe('AuthGuards', () => {
 
   describe('GuestRoute', () => {
     it('renders children when not authenticated', () => {
-      Object.assign(mockAuthState['loggedIn'], { status: 'loggedOut', initialize: vi.fn().mockResolvedValue(undefined) });
+      currentAuthState = mockAuthState.loggedOut;
       render(
         <MemoryRouter initialEntries={['/']}>
           <Routes>
@@ -90,6 +93,7 @@ describe('AuthGuards', () => {
     });
 
     it('renders nothing when authenticated', () => {
+      currentAuthState = mockAuthState.loggedIn;
       const { container } = render(
         <MemoryRouter initialEntries={['/']}>
           <Routes>
