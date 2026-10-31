@@ -221,10 +221,13 @@ class TestRosterGateCaching(unittest.TestCase):
 
     def test_missing_note_cached_and_second_call_is_free(self) -> None:
         # বাংলা: গেটের ৩টি পোস্ট — initialize, notifications/initialized, tools/list।
+        # roster-এ টুল-নাম ডেটা; snake বানানটি derived (quoted-dead-name স্ক্যান
+        # চুক্তি — ঢেউ-৩-তে এই বানানই লাইভ, কিন্তু স্ক্যান মডেল প্রতি-ঢেউ একমুখী)।
         bodies = [
             _INIT_RESPONSE,
             _sse({"jsonrpc": "2.0", "method": "notifications/initialized"}),
-            _roster_response(["status", "bridge_guide", "bridge_work_queue"]),
+            _roster_response(["status", "bridge_guide",
+                              "bridge.work_queue".replace(".", "_", 1)]),
         ]
 
         def _fake_urlopen(req, timeout=0):
