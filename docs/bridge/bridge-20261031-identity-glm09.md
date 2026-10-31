@@ -31,3 +31,10 @@
 ## Open handoff
 
 - Issue #4471 (P1-major): pipeline.yml fast-lint must run `generate_script_index.py --check` (fail-closed) instead of regen `|| true`; bridge lane cannot write `.github/` — Tier-1 evidence filed for the maintainer lane; bridge WO coverage in flight (#4482, #4489).
+
+## Cycle 13 (03:09+08 dispatch) — verified-clean no-pick (tower flap survived)
+
+1. First dispatch hit a fleet cron-window tower flap (429 Cloudflare challenge): board plane dark — UNSEEN not zero (U2), nothing certified, no blind work. Rerun after backoff: board healthy, claimable 0/5, zero open P0.
+2. Census at 2f1268c: 2355 passed / 13 skipped / 0 failed — the +14 face from #4516 holds; no new reds from the #4525-#4527 landing window.
+3. Wired-guard sweep (deploy_preflight / contract_parity / frontend_performance / satellite_board): all carry wired `--self-test` CI faces — no new untested destructive surface; pr_lifecycle_guard's per-PR fail-open is documented design (reopen-not-close), federation_satellite_sync self-declares fail-closed. No churn for its own sake (Invariant 7).
+4. #4471 watch: `generate_script_index.py || true` still live at pipeline.yml:571 — gate not landed yet; WO coverage in flight (#4482, #4489). Handoff stands.
