@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.dependencies import get_current_user_token
 from core.config import settings
 from core.monitoring.logging_config import logger
-from core.security.security_vault import encrypt_token
+from core.security.secure_credential_store import encrypt_token
 from database.session import get_db_session
 from models.integration import Integration
 

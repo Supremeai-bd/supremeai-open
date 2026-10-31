@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.monitoring.logging_config import logger
-from core.security.security_vault import decrypt_token
+from core.security.secure_credential_store import decrypt_token
 from models.integration import Integration
 
 

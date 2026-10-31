@@ -19,7 +19,7 @@ class HoneypotMiddleware:
         self.app = app
         # বাংলা মন্তব্য: RulesMutator ইনস্ট্যান্স একবার তৈরি করে রাখি (প্রতি রিকোয়েস্টে নতুন ইনস্ট্যান্স
         # বানানোর বদলে) — sync Redis কল rules_mutator-এর ৩-সেকেন্ড in-memory ক্যাশে দ্বারা আগে থেকেই সীমিত।
-        from core.rules_mutator import RulesMutator
+        from core.ip_blocklist_manager import RulesMutator
 
         self.rules_mutator = RulesMutator()
         # পরিচিত অ্যাটাক সিগনেচার

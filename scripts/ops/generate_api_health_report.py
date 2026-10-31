@@ -10,8 +10,10 @@ def generate_health_report():
     backend_path = Path(__file__).resolve().parent.parent / "backend"
     sys.path.insert(0, str(backend_path))
 
-    # Import the FastAPI app
-    from core.app import app
+    try:
+        from core.app import app  # noqa: F401
+    except Exception:
+        app = None
 
     report_path = backend_path / "pytest-report.json"
 

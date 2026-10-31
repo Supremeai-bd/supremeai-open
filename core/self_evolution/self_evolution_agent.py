@@ -34,7 +34,7 @@ try:
 except ImportError:
     FitnessEngine = None  # type: ignore[misc,assignment]
 
-from core.immune_system import ImmuneSystemScanner
+from core.ast_security_scanner import ImmuneSystemScanner
 from models.evolution import CodeProposal
 
 

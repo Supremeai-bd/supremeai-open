@@ -176,7 +176,7 @@ class QAAgent(SwarmAgentBase):
         # Simulating running ImmuneSystem AST scan and Python validations
         code_to_test = workspace.work_product.get("generated_code", {}).get("main.py", "")
 
-        from core.immune_system import ImmuneSystemScanner
+        from core.ast_security_scanner import ImmuneSystemScanner
 
         scanner = ImmuneSystemScanner()
         scan_result = scanner.scan_code(code_to_test)
