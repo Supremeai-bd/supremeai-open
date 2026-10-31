@@ -3,14 +3,14 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-7 condensed to one table
+> only, replaced in place every cycle. Cycles 1-8 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
 
 - Identity registered: GLM Agent 22, Job 486813, hourly cron cadence; door =
   self-healing MCP tower client (session auto-reinit) → AGENTS.md/bridge_guide
-  → verify-only 8/8 before every pick.
+  → verify-only full suite before every pick.
 - Slot disciplines (earned the hard way): quote guard output only inside its
   own next-free exclusion context (citation-ghost class); tower diff parser
   takes pure unified diffs only; before serving any row check open WOs AND
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-7 (condensed)
+## Landed cycles 1-8 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -33,35 +33,33 @@
 | 5 (08:2x) | #4009 class root-caused (deleted-head-branch demotion): `_lsremote_ref_exists` wired in loop; tests 21/21 | PR #4035 / 5f39495 |
 | 6 (09:2x) | githooks activation path exercised end-to-end, consent model (self-tests 9/9 + 7/7 first, then `--activate`, NOT-ACTIVE→OK) | PR #4084 / f5c19e2 |
 | 7 (10:2x) | clean-hold; hooks-path probe's first armed-silence observed (silent-when-armed contract source-verified) — Cycle 6 transition closed | PR #4110 |
+| 8 (11:2x) | glm09's roster gate (#4132) live-confirmed (zero-cycle skip + auto-revive note); #3959 probe-green guard's first real exercise vs the purge (exit 3, NO EXPOSURE) | PR #4135 |
 
-## Cycle 8 (2026-10-31 11:2x+08) — roster gate live; probe-green guard's first real exercise
+## Cycle 9 (2026-10-31 12:2x+08) — verify suite 8→9 tiers; roster-purge state stable
 
-- Loop verify 8/8 on 50f6633; pick: clean and healthy, claimable 0/5,
-  observation idle. Board 6 rows, all queued mirrors; zero P0. No dispatch.
-- Datum 1 — glm09's PR-plane roster gate (#4132) confirmed live: the U2 dark
-  note changed from "MCP error -32602 Tool not found" (a burned
-  initialize→tools/call cycle every boot) to "tool-absent (tower roster
-  purge) … probe skipped with zero tool-call cycles; plane auto-revives if
-  the tool returns to the roster" — the waste is gone and the darkness is
-  now a diagnosed, self-reviving state, not an error.
-- Datum 2 — my #3959 receipt's guard note ("any toolset change must keep the
-  #3663 probe green") exercised for the first time against a real post-receipt
-  toolset change: `p0_3663_acceptance_probe.py` live run after the roster
-  purge → exit 3, NO EXPOSURE OBSERVED (2/3 fail-closed: client_list deny
-  prose + 20 tools/zero destructive; 1/3 INDETERMINATE = the known whoami
-  gap, unchanged). The purge is RBAC-safe; owner A/B/C decision still pending.
-- No claim, no Closes — verification-only cycle; worklog r4 compaction
-  (Cycle 7 folded into the landed table) is the whole change.
+- Loop verify **9/9** on 05dcbe9 — the suite grew its ninth tier,
+  `constitution_guard_pins` (source: loop tier table; re-pins the cadence-gate
+  contracts at every `--verify-only` so a blind-ladder landing can never
+  re-certify that gate dirty — glm12's #4138, Option A of the #4125 fix
+  contract). First cycle this slot has run the 9-tier suite; all green.
+- Pick: clean and healthy, claimable 0/5, observation idle. Board 7 rows, all
+  `bridge:queued` mirrors (my #4083 mirror still draining — known mirror-lag,
+  not stuck); zero P0. No dispatch. 三查: no row in my lane, no collision.
+- Datum: roster-purge dark note stable for the 2nd consecutive cycle, byte-
+  identical semantics (zero tool-call cycles; auto-revive untriggered —
+  `github.list_prs` still absent from the 20-tool roster). The #4132 gate is
+  consistent, not a one-run artifact. U2 owner decision (A/B/C) still pending.
+- No claim, no Closes — observation-only cycle; worklog r5 compaction
+  (Cycle 8 folded into the landed table) is the whole change.
 
 ## Reflection Evidence
 
-- **why:** a guard is only proven once it survives its first real trigger;
-  the roster purge was the first toolset change since #3959, so running the
-  probe now (instead of waiting for a red) turns the guard note from prose
-  into a demonstrated invariant — and it documents that glm09's gate fixed
-  the waste-class symptom without touching the security posture.
-- **alternatives_rejected:** filing a new receipt doc for the datum (the
-  worklog keeps the arc in one small file — keep-it-small contract);
-  re-checking the owner A/B/C options (decision still pending, nothing new
-  to add); claiming credit for the roster gate (glm09's lane — I only
-  verified it live).
+- **why:** the verify suite's tier count is a contract surface many receipts
+  quote ("8/8"); recording the 8→9 transition (and its source) prevents the
+  stale-count confusion class, and the second consecutive stable roster-purge
+  note upgrades Cycle 8's single-run observation into a consistency datum.
+- **alternatives_rejected:** treating the `gh CLI not found → tower fallback`
+  line as a defect (it is the designed fallback path, working as intended —
+  no churn); folding the tier-9 datum into a separate receipt doc (worklog
+  keeps the arc in one small file); claiming the tier (glm12's lane — I only
+  ran and verified the 9-tier suite green).
