@@ -32,6 +32,10 @@ export const LandingHeader: React.FC = () => {
       </Link>
 
       <nav className="hidden md:flex items-center gap-6 text-sm text-slate-300">
+        <Link to="/playground" className="flex items-center gap-1.5 text-cyan-300 hover:text-cyan-200 transition-colors">
+          <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+          <span>Guest Sandbox</span>
+        </Link>
         {onLanding ? (
           <a href="#features" className="hover:text-emerald-400 transition-colors">Features</a>
         ) : (
@@ -150,8 +154,14 @@ export const LandingPage: React.FC = () => {
 
         {/* View mode switcher badge */}
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full border border-white/15 bg-slate-900/90 px-3.5 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur-md">
-          <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
-          <span className="font-medium text-white">Public Vision Mode</span>
+          <Link
+            to="/playground"
+            className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400 hover:text-emerald-300 transition-colors mr-2 border-r border-white/10 pr-3"
+          >
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>Guest Dashboard</span>
+          </Link>
+          <span className="font-medium text-white">Vision Mode</span>
           <button
             type="button"
             onClick={() => setViewMode('suite')}
