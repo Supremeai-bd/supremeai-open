@@ -3,7 +3,6 @@
 # (API POST /api/v1/agents দিয়েও হয় — রানটাইমে ফাইল আপডেট হয়)।
 # provider মুক্ত-ফর্ম: যে-কোনো ভেন্ডর (no vendor hardcoding)।
 # নিরাপত্তা: প্রতিটি agent নিজস্ব branch-এ কাজ করে, সরাসরি main-এ লেখা নিষিদ্ধ।
-version: '1'
 agents:
   - id: agent-1
     role: planner

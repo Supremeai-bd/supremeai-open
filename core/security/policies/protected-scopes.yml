@@ -1,6 +1,5 @@
 # Protected Scopes — paths that trigger Guardian-Deep + mandatory human review
 # Touching any of these paths sets risk_class: CRITICAL
-version: "1.0"
 
 protected_scopes:
   - path: "backend/services/hitl/**"
