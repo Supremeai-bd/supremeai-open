@@ -1,6 +1,6 @@
-# GLM Agent 32 (Job 486850) — Slot Receipt r2
+# GLM Agent 32 (Job 486850) — Slot Receipt r3
 
-> In-place replace of r1 per the keep-it-small contract (r1's cycle-by-cycle
+> In-place replace of r2 per the keep-it-small contract (earlier cycles'
 > detail lives in the landed PRs listed below). Identity: heartbeat slot
 > `agent-32` (TTL 300s, refreshed every cycle), hourly cron trace class
 > `...-cron-agent-loop-*`, zero-credential anonymous surface, door honored.
@@ -21,12 +21,13 @@
 | c74 | first post-#4132 pass; 9-red census at HEAD | 96c1ca6 (#4148) |
 | c75 | render lag-test settled (merge-window billing model); 9-red attribution table | 9e10510 (#4181) |
 | c76 | red-drain verified (12→2, root-fixes e3733e6+6e3b3a0); CVE flagged 1st | c59200c (#4208) |
-| c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | 78732bd (#4248) |
-| c80 | tower restoration corroborated at 4 faces (census 158, sweep-allowed ends 15-pass deny, health 12→21, PR-plane back); 4-red census with scanner-diff attribution (heals landed mid-window #4338); render 6th charge + scraper first negative move; redis 3-face flux (sweep-client chain: primary 500002/500000 exhausted); CVE 3rd flag | this filing |
+| c77 | DNS fade rotates (bai joins/bynara drops); 4th render freeze + first 5-service billing census; redis 6.08 h; CVE 2nd flag; refill latency 11.2 min | 78732bd (#4248, merged 07:47:14Z) |
+| c80 | tower restoration corroborated at 4 faces (census 158, sweep-allowed ends 15-pass deny, health 12→21, PR-plane back); 4-red census with scanner-diff attribution; render 6th charge + scraper first negative move; redis 3-face flux; CVE 3rd flag | 3898d2b (#4340) |
+| c81 | lane-clean chain verified (both PRs landed); test 4→2 heal validating the c80 attribution; CVE single-offender map — all 6 js pairs + npm pair from one commit 97ab568 (#3072); render 6-service census r1 frozen pair-read; telegram 3-face sub-2-min flapping class; redis joint soft-threshold cooldown 11-01T00:01Z | this filing |
 
 ## Standing residuals I track (report-only)
 
-- **CVE bump** (devtools-audit lockfile, GHSA-mrwp-f3q8-3g9p) — maintainer lane; owner recipe mapped at #4204; triple-flagged (c76/c77/c80).
-- **Landing-gate lag** — receipt PRs queued 4+ deep (c79's PR #4300 open 53+ min; a70 stranded-own-PR class); tracked via queue reap-diffs.
+- **CVE bump** — maintainer lane; recipe #4204; follow-redirects 4th-flagged (c76/c77/c80/c81); c81 adds the single-offender map: all 6 js pairs + npm pair from one commit 97ab568 (PR #3072 re-locked studio + added devtools-audit lock).
+- **Landing-gate lag** — clear on my lane this pass (both my PRs landed; zero stranded); fleet ghost-lag 1 visible instance (#4359 WO open, its PR #4360 landed).
 - **Option A config half** (agent_cadence.json under #4125) — owner decision pending.
-- Day-off-slip date convention (one sibling lane) — logged, non-adversarial.
+- Day-off-slip date convention (one sibling lane, last seen c80) — logged, non-adversarial.
