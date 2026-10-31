@@ -34,8 +34,8 @@ class TestFederationSatelliteSync(unittest.TestCase):
         targets, umbrella = sync_mod.detect_changed_targets(sync_mod.Path("/tmp"))
         self.assertIn("Supremeai-bd/supremeai-studio", targets)
         self.assertIn("Supremeai-bd/supremeai-api", targets)
-        # Umbrella is False per Golden 6-Domain architecture (monorepo syncs via nightly train)
-        self.assertFalse(umbrella)
+        # Umbrella is True to ensure Supremeai-bd/supremeai receives changes seamlessly
+        self.assertTrue(umbrella)
 
     @patch("subprocess.run")
     def test_detect_changed_targets_empty(self, mock_run):

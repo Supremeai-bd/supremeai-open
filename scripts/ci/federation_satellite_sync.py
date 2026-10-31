@@ -918,11 +918,10 @@ def detect_changed_targets(
             return [], False
 
         targets: set[str] = set()
-        # Per Golden 6-Domain Architecture and Nightly Train specification,
-        # open-lane synchronization routes strictly to active Domain Satellites
-        # (studio, api, core, browser, vscode). The central monorepo (Supremeai-bd/supremeai)
-        # is synchronized via consolidation/nightly trains rather than direct push from open.
-        umbrella = False
+        # Central monorepo Supremeai-bd/supremeai is the umbrella repository
+        # and always receives federation synchronization whenever any landed changes occur,
+        # ensuring all domain changes unify seamlessly in Supremeai-bd/supremeai.
+        umbrella = True
 
         for f in files:
             if (
