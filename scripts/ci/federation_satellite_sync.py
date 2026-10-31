@@ -1320,9 +1320,17 @@ def main() -> int:
             success = False
 
     if sync_umbrella:
-        ok = sync_monorepo(repo_root, token, safe_commit_msg)
-        if not ok:
-            success = False
+        # GATED SYNC (#SupremeAI lifecycle §4): Umbrella monorepo/archive sync MUST NOT proceed
+        # if any domain satellite sync failed. Downstream satellite green receipt is a strict prerequisite.
+        if not success:
+            print(
+                "🛑 [GATED-SYNC] Umbrella monorepo sync skipped: one or more satellite sync operations failed. "
+                "Downstream satellite delivery receipt is a prerequisite."
+            )
+        else:
+            ok = sync_monorepo(repo_root, token, safe_commit_msg)
+            if not ok:
+                success = False
 
     # Post-sync sentinel observation (#1689). CI should still run --verify-only as a
     # separate fail-closed gate step after a short propagation delay; this inline
