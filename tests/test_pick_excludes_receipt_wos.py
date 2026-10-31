@@ -166,8 +166,13 @@ class TestPickExcludesReceiptWOs(_LeaseIsolated):
 
     def test_no_over_exclusion_without_label(self):
         """A finding row carrying only `report` (no pipeline stamp) stays pickable."""
+        # 2026-10-31 (#3860-পরবর্তী reconciliation): fixture-এ আগে "report-only"
+        # label ছিল — কিন্তু #3860 "report-only"-কে EXCLUDED_LABELS-এ যুক্ত করেছে
+        # (SSOT), তাই ওই fixture নিজের docstring-ই ভাঙত ("carrying only `report`")।
+        # ওভার-এক্সক্লুশন গার্ডের উদ্দেশ্য অক্ষত রেখে plain "report" label-এ সরানো
+        # হল — pipeline-stamp ছাড়া সাধারণ finding রো এখনও pickable।
         board = [
-            _real_row(2538, labels=["status:unclaimed", "report-only", "ops"]),
+            _real_row(2538, labels=["status:unclaimed", "report", "ops"]),
         ]
         self.assertEqual(cal.pick_next_issue(issues=board), "2538")
 
