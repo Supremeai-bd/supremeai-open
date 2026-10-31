@@ -1,5 +1,6 @@
 ---
 name: security-secret-hygiene
+version: 0.1.0
 description: Detect exposed credentials, unsafe configuration, overbroad permissions, and risky changes.
 triggers: [secret scan, security audit, credential leak, permission review]
 permission_level: read
