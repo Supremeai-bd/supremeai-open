@@ -110,6 +110,76 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
         "Supremeai-bd/supremeai-api",
         "contracts/openapi.yaml",
     ),
+    (
+        "api-schemas/context-assembly.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/context-assembly.schema.json",
+    ),
+    (
+        "api-schemas/dashboard.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/dashboard.schema.json",
+    ),
+    (
+        "api-schemas/federated-ci-failure.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/federated-ci-failure.schema.json",
+    ),
+    (
+        "api-schemas/guardian-evaluation.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/guardian-evaluation.schema.json",
+    ),
+    (
+        "api-schemas/heartbeat.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/heartbeat.schema.json",
+    ),
+    (
+        "api-schemas/instruction-envelope.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/instruction-envelope.schema.json",
+    ),
+    (
+        "api-schemas/memory-search.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/memory-search.schema.json",
+    ),
+    (
+        "api-schemas/permissions.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/permissions.schema.json",
+    ),
+    (
+        "api-schemas/provider-registry.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/provider-registry.schema.json",
+    ),
+    (
+        "api-schemas/task-router.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/task-router.schema.json",
+    ),
+    (
+        "api-schemas/telemetry-log.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/telemetry-log.schema.json",
+    ),
+    (
+        "api-schemas/webhook-notification.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/webhook-notification.schema.json",
+    ),
+    (
+        "api-schemas/websocket-events.schema.json",
+        "Supremeai-bd/supremeai-api",
+        "contracts/schemas/websocket-events.schema.json",
+    ),
+    (
+        "skills",
+        "Supremeai-bd/supremeai-core",
+        "skills",
+    ),
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
@@ -561,11 +631,14 @@ def sync_satellite(
         # Copy contract mirror pairs specific to this satellite
         for open_rel, sat_repo, sat_rel in CONTRACT_MIRROR_PAIRS:
             if sat_repo == target_repo:
-                src_file = repo_root / open_rel
-                dst_file = tmp_repo / sat_rel
-                if src_file.exists():
-                    dst_file.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src_file, dst_file)
+                src_path = repo_root / open_rel
+                dst_path = tmp_repo / sat_rel
+                if src_path.is_dir():
+                    dst_path.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                elif src_path.exists():
+                    dst_path.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(src_path, dst_path)
 
         # Check for diff
         status = subprocess.check_output(
@@ -1277,7 +1350,7 @@ def main() -> int:
 
     if args.all:
         targets_to_sync = list(DOMAIN_MAP.keys())
-        sync_umbrella = False
+        sync_umbrella = True
     elif args.detect_changed:
         targets_to_sync, sync_umbrella = detect_changed_targets(
             repo_root, base_sha=args.base_sha
