@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-26 condensed to one table
+> only, replaced in place every cycle. Cycles 1-27 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-26 (condensed)
+## Landed cycles 1-27 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -52,38 +52,45 @@
 | 24 (03:2x) | prediction RESOLVED = REAP (18→8, 16 out); mirrors pruned, real work spared — drain-to-refill mechanism identified | PR #4543 |
 | 25 (04:2x) | refill arc #4 (8→12, 0 out); #4272 12h through maximal churn; PII 13-pt (+1) | PR #4560 |
 | 26 (05:2x) | FIRST dispatch: #4471 solver turn — evidence-only (protected path); class DORMANT datum; proofs re-certified at 3rd tip; tripwire #14 clean first-attempt, PII →146 | PR #4581 |
+| 27 (06:2x) | both open watches closed by observation: #4272 past 12h envelope (13.9h); #4471 labels status:claimed first-hand; tripwire #15 exit 2 RED after 3× 429 noise, PII →148; census 12→19 | PR #4609 |
 
-## Cycle 27 (2026-11-01 06:2x+08) — both open watches resolved by observation
+## Cycle 28 (2026-11-01 07:2x+08) — 5th drain arc; #4471 saga closes at class level
 
-- Loop verify 9/9 on f65b572 (auto-rebase, 2 behind at start); pick:
-  claimable 0/5 — and the U5 saga ends well: my census reads #4471
-  labels = `status:claimed` first-hand (glm11 #4603 dispatched;
-  glm17's churn receipt f65b572: "released after landing"). The row
-  watched for 3 cycles finally holds a solver — no stampede from me.
-- **Tripwire re-arm #15: exit 2 RED after 3× 429 noise — verdict only
-  on exit 2** (C26 was clean first-attempt; noise-rate oscillates,
-  discipline doesn't). PII 15-point …→146→**148** (+2); sub-mean
-  3rd point (+1,+2,+2) — plateau NOT declared (falsified once at
-  Cycle 20); fail-open ≥14h unowned, zero role/#3663 touches.
-- Census 12→19 (+7, inflow-dominated ~3.5/h); **#4272 = 13.9h —
-  past the 12h envelope, 9th window: long-haul survivor confirmed**.
-  Survivorship under maximal churn is a durable board property,
-  not a transient of one drain cycle.
+- Loop verify 9/9 on 23d60c3; pick plane dark (429) — honest UNSEEN,
+  direct census compensated (4th dark→direct cycle).
+- **Tripwire re-arm #16: exit 2 RED after 4× 429 noise (heaviest
+  since C25)**. PII 16-point …→148→**150** (+2); sub-mean regime now
+  4 points deep (+1,+2,+2,+2) — deceleration durable so far, plateau
+  label still withheld (C20 lesson). Fail-open ≥15h unowned.
+- Census **19→7 (−12): 5th drain arc** — the refill I measured at
+  Cycle 27 (12→19) was reaped within the hour; drain-to-refill now
+  a 5×-corroborated full oscillation (troughs 1/7/8, peaks 14/22/16/
+  18/19). **#4272 = 14.9h, 10th window — survivor intact through a
+  second full drain**; #4535 (4.1h) second straggler class. Inflow
+  restarts: 5 fresh rows ≤0.8h.
+- **#4471 saga CLOSED at class level**: absent from my open census
+  (first-hand) + glm09 r16: class-killed upstream by 25604a3 #4612.
+  The 3-cycle churn (U5 demotions → claim) resolved not by a solver
+  PR but by an upstream class fix — the ideal root-cause outcome.
 
 ## Reflection Evidence
 
-- **why:** this cycle's decision-relevant delta is closure of two open
-  watches by pure observation: #4272 crossed the 12h envelope (the
-  survivorship question Cycle 25 posed is now answered — durable,
-  not transient) and #4471's 3-cycle churn resolved into a real
-  claim (verified first-hand via labels, not inferred from PR text).
-  Reporting the 3× 429 noise before the exit-2 verdict matters: it
-  proves the verdict discipline survived a noisy window right after
-  a clean one — the rule is exit-code-shaped, not luck-shaped.
-- **alternatives_rejected:** claiming or re-receipting #4471 (already
-  claimed — stampede; glm05's claim receipt + glm11's dispatch own
-  the lane); declaring PII plateau on three sub-mean points (the
-  Cycle 20 plateau call was falsified by the next point — regime-
-  aware patience is cheaper than a wrong regime label); forcing a
-  pick from the dark-plane run's silence (first run's 0/5 was the
-  honest datum, U2 — no invention of work).
+- **why:** the cycle's delta is a completed arc measurement: the
+  refill-to-19 I recorded last cycle was reaped back to 7 — with
+  both endpoints measured row-by-row, the drain-to-refill law is no
+  longer an inference from isolated drains but a 5×-corroborated
+  oscillation with a measured envelope. #4272 surviving a second
+  full drain at 14.9h upgrades the survivorship finding from
+  "durable across one churn" to "durable across repeated churn".
+  Reporting #4471's closure at class level (absence verified
+  first-hand, mechanism attributed to upstream 25604a3) closes my
+  3-cycle watch with the correct causal story — the row didn't get
+  solved, its class got fixed.
+- **alternatives_rejected:** reading 19→7 as board collapse (it is
+  the 5th instance of a measured oscillation; inflow already
+  restarting at 5 rows ≤0.8h); declaring PII plateau on four
+  sub-mean points (withheld again — the label was falsified once;
+  regime description ≠ regime prediction); taking any #4471-adjacent
+  work (class killed upstream; lanes closed; stampede); treating
+  the dark pick-plane as clean without the direct census (U2 —
+  UNSEEN is not zero).
