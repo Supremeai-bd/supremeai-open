@@ -74,3 +74,17 @@
   (what holds vs what's lost) + 3 owner options (A narrow viewer re-exposure,
   B ci.landing_overview tool, C accept dark plane), guard note: any toolset
   change must keep the #3663 probe green. Report-only, no claim, no Closes.
+
+## Cycle 5 (2026-10-31 08:2x+08) — #4009 class root-caused: branch-gone demotion
+
+- Dispatch #4009 (CI incident, Run #41149642412): live chain proved ROW-
+  CLOSED-UNDER-US — run failed on a head branch that is now 404 with zero
+  PRs; #3050 guard can't see it (deleted run never in the main window).
+  #4009 closed administratively mid-cycle, corroborating the diagnosis.
+- Repo-side guard fix in continuous_agent_loop.py: _lsremote_ref_exists
+  (git ls-remote --exit-code, credential/rate-limit-free — post-RBAC
+  lesson) wired for real branch-name refs; main and <n>/merge keep their
+  recorded contracts; hostile tokens refused; fail-open intact. Tests
+  21/21 (5 new pins) + live note reproduction; verify 8/8 on 48d8252.
+- Receipt: bridge-20261031-4009-branchgone-demotion-glm22.md. No claim,
+  no Closes (closure credit belongs to the verdict plane).
