@@ -205,6 +205,51 @@ CONTRACT_MIRROR_PAIRS: list[tuple[str, str, str]] = [
         "Supremeai-bd/supremeai-core",
         "tests/test_kaggle_orchestrator_dual_brain.py",
     ),
+    (
+        "examples/curl-tests",
+        "Supremeai-bd/supremeai-api",
+        "examples/curl-tests",
+    ),
+    (
+        "examples/mcp-client-py",
+        "Supremeai-bd/supremeai-api",
+        "examples/mcp-client-py",
+    ),
+    (
+        "examples/mcp-client-ts",
+        "Supremeai-bd/supremeai-api",
+        "examples/mcp-client-ts",
+    ),
+    (
+        "examples/langchain-mcp-bot",
+        "Supremeai-bd/supremeai-api",
+        "examples/langchain-mcp-bot",
+    ),
+    (
+        "examples/vercel-ai-mcp",
+        "Supremeai-bd/supremeai-api",
+        "examples/vercel-ai-mcp",
+    ),
+    (
+        "tests/test_gateway_foundation.py",
+        "Supremeai-bd/supremeai-api",
+        "tests/test_gateway_foundation.py",
+    ),
+    (
+        "tests/test_gateway_shield.py",
+        "Supremeai-bd/supremeai-api",
+        "tests/test_gateway_shield.py",
+    ),
+    (
+        "tests/test_mcp_access_policy_guard.py",
+        "Supremeai-bd/supremeai-api",
+        "tests/test_mcp_access_policy_guard.py",
+    ),
+    (
+        "tests/test_openapi_breaking_guard.py",
+        "Supremeai-bd/supremeai-api",
+        "tests/test_openapi_breaking_guard.py",
+    ),
 ]
 
 ARCHIVE_REPO = "Supremeai-bd/supremeai-archive"
