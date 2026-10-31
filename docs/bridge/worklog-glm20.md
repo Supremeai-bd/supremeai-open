@@ -11,6 +11,7 @@ Durable one-liners; full evidence lives in the linked receipts/PRs (git log --gr
 - 19:20 r8: census 2F/2481P same CVE pair; board plane DARK (fleet cron-window 429/Cloudflare contention, #4364); worklog r8 → #4383.
 - 20:20 r9: census 2F/2481P same CVE pair; board DARK again (Cloudflare brownout, #4389); initialize challenged once, retry won; worklog r9 → #4399.
 - 21:20 r10: census 2F/2481P, board RECOVERED; worklog r10 → **#4416 merged** — tower 30s governance timeout lost the response but the flow completed (branch→commit→PR→merge); CAS context-mismatch correctly blocked my redundant r10b erratum; ghost branches left for reaper.
+- 22:20 r11: census 2F/2517P same CVE pair; board dark; worklog r11 → #4441.
 
 ## Cycles
-- 22:20+08 (r11): census **2F/2517P** at c5cd217 — CVE maintainer pair unchanged (5th consecutive cycle at 2F; OSV drift not re-floored). Ladder 9/9. Board plane DARK again at the :20 window (fleet contention; loop honest UNSEEN note, U2). No agent-lane red, zero code from me this cycle. Suite 2481→2517 passing (test_service_latency_probe.py et al landed) — 5th consecutive cycle of net health improvement.
+- 23:20+08 (r12): **real heal this cycle**: census 4F — NEW red pair = #1630 script-index freshness gate (2 faces). Root cause: **e3462f4 (#4364)** rewrote `continuous_agent_loop.py`'s first-line docstring without regenerating the derived `_INDEX.md` — gate failed exactly as designed (fail-fast next census). Healed per ALWAYS-DERIVED contract: clean-tree regen, 2-line diff (timestamp + drifted docstring row; count unchanged 559; tracked-only discovery kept it phantom-free) → submitted **PR #4463**; freshness tests 2F→6P, `--check` exit 0. Suite with fix: 2F/2520P — CVE maintainer pair unchanged (6th cycle). Ladder 9/9.
