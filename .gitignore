@@ -2,6 +2,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pr_template_draft.md
+.issue_lease_store.json
+.agent_cadence_last_run.json
 .env
 .env.*
 *.log
