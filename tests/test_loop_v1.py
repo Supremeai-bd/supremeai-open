@@ -31,7 +31,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "scripts" / "agents"))
 
-import loop_v1 as lv
+import continuous_agent_loop as lv
 
 
 def _issue(number, title, label_names=None, state="open"):
