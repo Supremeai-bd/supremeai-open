@@ -50,9 +50,11 @@ export class ScopeGuardService {
     return this.currentScope === PermissionScope.ADMIN;
   }
 
-  public async elevateScope(newScope: PermissionScope): Promise<boolean> {
-    // Future: verify JIT OTP before elevating scope
-    this.currentScope = newScope;
-    return true;
+  public async elevateScope(_newScope: PermissionScope): Promise<boolean> {
+    // Client-side state must never be able to grant write/admin authority.
+    // Until a backend-issued, short-lived capability is verified here, keep
+    // the process read-only and fail closed.
+    this.currentScope = PermissionScope.READ_ONLY;
+    return false;
   }
 }
