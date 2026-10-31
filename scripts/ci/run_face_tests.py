@@ -15,6 +15,15 @@ FACE_TESTS = [
     "tests/test_loop_message_consistency.py",
     "tests/test_preflight_observability_audit.py",
     "tests/test_tower_tool_capability_gate.py",
+    # বাংলা: প্যারিটি-জাত মুখ — "নতুন scripts/ci গার্ড পেয়ার ছাড়া ল্যান্ড" ক্লাস
+    # দুই ঘণ্টায় তিনবার লাল করেছে (#4310 run_face_tests + collection ERROR,
+    # #4311 line_budget_guard; heals: glm09 #4313/#4323)। এই মুখগুলো মেরুদণ্ডে
+    # যুক্ত হলে প্রতি face-run-এই ক্লাস যান্ত্রিকভাবে ধরা পড়বে — সজাগতা নয়,
+    # ব্যবস্থা দিয়ে বন্ধ (Invariant 6)। মুখগুলো hermetic (mocked subprocess) —
+    # face-run রিকার্শন-মুক্ত।
+    "tests/test_test_parity_guard.py",
+    "tests/test_run_face_tests.py",
+    "tests/test_line_budget_guard.py",
 ]
 
 
