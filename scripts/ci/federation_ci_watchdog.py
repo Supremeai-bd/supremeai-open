@@ -399,7 +399,7 @@ def label_pr_lane_failure(
     )
     print(f"✅ [watchdog] Marked PR #{pr_num} as 'ci-failed' and 'status:unclaimed' in-place.")
 
-    # 2. Check if the PR links to an issue via Closes/Fixes/Resolves #N
+    # 2. Check if the PR links to an issue via Closes/Fixes/Resolves #N or Refs #N
     pr_body = pr_data.get("body") or ""
     closes_match = re.search(r"(?:closes|fixes|resolves)\s+#(\d+)", pr_body, re.IGNORECASE)
     if closes_match:
@@ -413,6 +413,41 @@ def label_pr_lane_failure(
         print(
             f"✅ [watchdog] Marked target issue #{target_issue_num} as 'ci-failed' and 'status:unclaimed' in-place."
         )
+    else:
+        # If PR has no linked target issue via closes/fixes/resolves, create a tracking issue if needed
+        refs_match = re.search(r"refs\s+#(\d+)", pr_body, re.IGNORECASE)
+        if refs_match:
+            ref_issue_num = int(refs_match.group(1))
+            # If referencing an anchor hub (#749..#762), add a tracking comment to the anchor hub
+            gh_api(
+                f"repos/{OPEN_REPO}/issues/{ref_issue_num}/comments",
+                token=tok,
+                method="POST",
+                data={"body": f"⚠️ **PR #{pr_num} CI Failed** in run [{run_id}]({html_url}). Marked in-place."},
+            )
+            print(f"✅ [watchdog] Posted CI failure notice to referenced issue #{ref_issue_num}.")
+        else:
+            # Standalone PR with no issue reference: create an incident issue so failure is not lost
+            new_title = f"fix(ci): PR #{pr_num} failed CI ({repo})"
+            new_body = (
+                f"## 🚨 CI Failure on Standalone PR #{pr_num}\n\n"
+                f"- **Repository:** `{repo}`\n"
+                f"- **PR:** #{pr_num}\n"
+                f"- **Workflow Run:** [{run_id}]({html_url})\n\n"
+                f"PR has no linked issue (`Closes #N`). Tracking issue created to prevent silent defect loss."
+            )
+            c_code, created = gh_api(
+                f"repos/{OPEN_REPO}/issues",
+                token=tok,
+                method="POST",
+                data={
+                    "title": new_title,
+                    "body": new_body,
+                    "labels": ["ci-failed", "status:unclaimed", "area:ci"],
+                },
+            )
+            if c_code in (200, 201) and isinstance(created, dict):
+                print(f"✅ [watchdog] Created tracking issue #{created.get('number')} for unlinked PR #{pr_num}.")
 
     return True
 
