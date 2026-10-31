@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-12 condensed to one table
+> only, replaced in place every cycle. Cycles 1-13 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-12 (condensed)
+## Landed cycles 1-13 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -38,38 +38,36 @@
 | 10 (13:2x) | 3rd-cycle roster-purge stability (gate settled); mirror-burst census with ages: 7→14 all mirrors, median 1.8h, max 3.9h | PR #4191 |
 | 11 (14:2x) | burst continues 14→22; median pinned 1.8h through inflow (sweep healthy); windowTruncated first seen; #4083 absence = honest unknown | PR #4222 |
 | 12 (15:2x) | census arc closed: 22→1, sweep drained the burst (a68 corroborated); Cycle 11 unknown resolved = DRAINED | PR #4241 |
+| 13 (16:2x) | #4249 admin restore flipped the wire (tools 20→158, services 12→21); #3663 probe exit 2 RED (fail-open live) — guard chain proven two-way (purge=green, restore=red); report-only | PR #4262 |
 
-## Cycle 13 (2026-10-31 16:2x+08) — P0 #3663 class REVIVED by #4249 restore; probe exit 2
+## Cycle 14 (2026-10-31 17:2x+08) — sustained-RED datum #2; tripwire re-armed
 
-- Loop verify 9/9 on 2f339a8; pick: clean and healthy, claimable 0/5,
-  observation idle; zero P0 on the board (the regression is not yet a board
-  row). Roster-purge dark note now reads "158 tools visible" — the purge is
-  undone but `github.list_prs` is still absent, so the plane stays dark and
-  the #4132 auto-revive correctly has not fired.
-- **Owner landing `d23a82e` (#4249) deliberately restored the tower default
-  pre-production role to admin.** Wire state flipped: tools/list 20→**158**,
-  system_summary 12→**21 services**.
-- **Guard note's second real exercise — RED:** `p0_3663_acceptance_probe.py`
-  live → **exit 2, FAIL-OPEN STILL LIVE (2/3 EXPOSED)**: client_list 100
-  client rows anonymously (PII plane), destructive surface visible
-  (autonomy_kill_switch, github_list_secrets, tenant_create); criterion 1
-  INDETERMINATE as always (own-ctx unobservable). Guard chain now proven
-  two-way: purge=green, restore=red — a tripwire, not prose.
-- Receipt: bridge-20261031-3663-failopen-revival-glm22.md — machine verdict,
-  guard chain table, impact ledger (bridge front door still holding), owner
-  decision framing (#4249 is deliberate pre-production posture; accept or
-  re-fix before next production deploy = owner/HITL; probe arms it
-  mechanically: exit 0/3 safe, exit 2 = class live). Report-only, no claim,
-  no Closes; #3663 itself stays closed — this is a new post-fix state, not
-  the old issue.
+- Loop verify 9/9 on 8a786e3 (re-certified 85cb457 post-auto-rebase); pick:
+  claimable 0/5, clean and healthy. Three-check: no owner landing since
+  #4262 touches the tower role (only client-side #4264 name-wave
+  tolerance); no P0/fail-open row on the board window (20 rows scanned, 2
+  outside window); lane stays owner/HITL.
+- **Tripwire re-arm #2: probe exit 2 RED again — fail-open sustained ≥1h.**
+  Anonymous client_list now returns **102 client rows** (was 100 at 16:2x —
+  PII plane growing); destructive surface unchanged (autonomy_kill_switch,
+  github_list_secrets, tenant_create); criterion 1 INDETERMINATE as always.
+  One RED is an incident; consecutive REDs are an arc — sustained-RED plus
+  a growing row count is exactly the owner decision input, and it arrives
+  mechanically (exit 0/3 safe, exit 2 = class live), not as prose.
+- Board burst #2: 1→22 fresh WOs (median 0.9h, oldest 1.7h) — second
+  burst-drain arc opened; composition = glm04 content-filter probe family
+  + worklog/sentry mirrors, zero security rows. PR-plane revived post-#4264:
+  fallback lists 25 open PRs; per-PR check status still UNSEEN — U2 stands.
 
 ## Reflection Evidence
 
-- **why:** the guard note existed precisely for this moment; a toolset
-  change landed, the probe went red, and the durable response is a
-  machine-verifiable ledger row — not a chat note that evaporates.
-- **alternatives_rejected:** reopening #3663 (closed completed with an
-  owner-landed fix; the new state is a deliberate post-fix restore — a NEW
-  decision); agent-side mitigation (none exists client-side; the wire is
-  the owner's plane); staying silent because the restore was intentional
-  (intent does not make the wire safe — recording it does).
+- **why:** a tripwire that fires once is an incident report; one that
+  fires every cycle is an arc. Re-arming converts the 16:2x observation
+  into owner-grade evidence: sustained, and the PII row count (100→102)
+  makes the impact concrete instead of hypothetical.
+- **alternatives_rejected:** filing a fresh board row for the fail-open
+  state (merged receipt #4262 already arms the owner lane — a duplicate WO
+  is stampede); agent-side mitigation (the wire is the owner's plane);
+  treating probe exit 1 (HTTP 429) as a verdict (infra noise — retried
+  with redirect until a verdict-only exit; the pipe/redirect discipline
+  caught it: error exits must never be read as security verdicts).
