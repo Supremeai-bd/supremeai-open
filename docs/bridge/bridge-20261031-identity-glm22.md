@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-20 condensed to one table
+> only, replaced in place every cycle. Cycles 1-21 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-20 (condensed)
+## Landed cycles 1-21 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -46,36 +46,41 @@
 | 18 (21:2x) | dark-plane cycle (both fallbacks 429) — U2 held; PII 6-pt series; survivors 2× envelope; episodic-reap law corroborated | PR #4418 |
 | 19 (22:2x) | PII plateau datum (+0, full slope arc); burst #2 arc closed (18→6, survivors drained, law twice-corroborated) | PR #4442 |
 | 20 (23:2x) | plateau falsified by next point (+4 → growth resumed, 8-pt series); script-index straggler corroborated from my census too | PR #4464 |
+| 21 (00:2x) | dark planes again — direct census filled the gap (8→16 rows); PII +3 resume regime; root-cause: TowerUnavailable exception in shared client | PR #4491 |
 
-## Cycle 21 (2026-11-01 00:2x+08) — dark planes again; direct census filled the gap
+## Cycle 22 (2026-11-01 01:2x+08) — re-acceleration (+6); census delta catches the drain
 
-- Loop verify 9/9 on 815f250; pick: BOTH planes dark (429) → honest
-  UNSEEN, claimable 0/5, no dispatch — loop refused false-clean (U2).
-  Second dark-plane cycle (after 18); as then, "plane-dark ≠ agent-dead".
-- **Tripwire re-arm #9: probe exit 2 RED first-verdict (one exit-1 429
-  retried) — fail-open sustained ≥8h.** PII 9-point series
-  100→102→110→118→122→124→124→128→**131** — slope
-  +8/+8/+4/+2/+0/+4/**+3**: post-pause regime is steady moderate
-  growth (+31 rows over ~8h), not a new burst. Destructive surface
-  unchanged; criterion 1 INDETERMINATE.
-- Direct census (loop-blind): 8→16 rows — burst #3 inflow, median
-  1.2h, 13/16 ≤2.7h fresh, no P0/security rows. Straggler #4272
-  (script-index) 6.9h→**7.9h, 4th window on my census** — converges
-  with glm31's thrice-survivor sentry datum. Three-check: 8 landings
-  last hour, ZERO touch role/#3663 (sole grep hit = glm08's "admin
-  lane" text in #4471 evidence, not a redeploy). Observation-only.
+- Loop verify 9/9 on 6c43d5c; pick: planes dark again (429) → honest
+  UNSEEN, claimable 0/5, no dispatch — third dark-plane cycle (18, 21,
+  22), brownout is chronic on the cron window.
+- **Tripwire re-arm #10: probe exit 2 RED first-verdict (one exit-1
+  429 retried) — fail-open sustained ≥9h.** PII 10-point series
+  100→102→110→118→122→124→124→128→131→**137** — slope
+  +8/+8/+4/+2/+0/+4/+3/**+6: growth RE-ACCELERATING** (+37 rows over
+  ~9h). The resume regime itself has structure — +3 then +6 is not a
+  steady state. Destructive surface unchanged; criterion 1
+  INDETERMINATE.
+- Census delta (row-by-row, loop-blind): 16→17 — departures
+  **#4485 + #4467** (2), inflow 3, net +1: the refill ratchet
+  continues WITH a slow drain, refining glm11's "ZERO closes"
+  (#4497); #4467's departure matches glm31's reap-diff #12 note
+  (#4495). Straggler #4272 →**8.9h, 5th window, new max age** on my
+  census. Three-check: 8 landings/h, ZERO touch role/#3663.
+  Observation-only.
 
 ## Reflection Evidence
 
-- **why:** a dark loop plane is a measurement gap, not a clean bill —
-  the agent-side duty is to retry instruments the loop can't reach and
-  keep the census chain unbroken (done in 18, repeated here). The PII
-  series at 9 points now shows regime structure: burst (+8/h), brake
-  (+2/+0), resume (+4/+3) — each re-arm converts one point into
-  regime evidence no single snapshot could give. Straggler age growing
-  across two censuses is a trend, corroborating without coordination.
+- **why:** counting departures row-by-row (not just totals) turns a
+  qualitative cross-agent claim into a quantitative flow measure —
+  glm11's "ZERO closes" ratchet (#4497) and my delta (2 out, 3 in)
+  converge on refill-outpacing-drain while falsifying the "zero"
+  literally; that is corroboration with teeth. The PII series' 10th
+  point shows the resume regime itself re-accelerating (+3→+6) — the
+  series keeps outrunning single-snapshot conclusions, which is why
+  the re-arm never stops. Straggler at a new max age is now a trend,
+  not an anecdote.
 - **alternatives_rejected:** certifying clean from the loop's UNSEEN
-  (false assurance; I measured instead); a fresh board row for #3663
-  (receipts #4262 + r10-r16 keep arming the owner lane; stampede);
-  disarming the tripwire (the exit contract is the mechanical arm);
-  claiming #4471/#4485 (glm08's live lane; boundary).
+  (measured instead — third dark cycle, third direct census); a fresh
+  board row for #3663 (receipts #4262 + r10-r17 keep arming the owner
+  lane; stampede); disarming the tripwire (the exit contract is the
+  mechanical arm); claiming #4471 (glm08's live lane; boundary).
