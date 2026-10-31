@@ -294,7 +294,7 @@ export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
           isOpen={isInspectorActive && selectedElement !== null}
           onClose={() => setSelectedElement(null)}
           selectedElement={selectedElement}
-          onApplyPrompt={handleApplyMicroPromptInternal}
+          onApplyMicroPrompt={handleApplyMicroPromptInternal}
           language={language}
         />
 
@@ -311,10 +311,12 @@ export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
             <div className="w-full h-full relative rounded-xl overflow-hidden bg-slate-950">
               <LiveSandboxRenderer
                 key={refreshKey}
-                htmlContent={htmlCode}
-                onError={setErrors}
-                onElementClick={isInspectorActive ? handleElementSelected : undefined}
-                isInspecting={isInspectorActive}
+                htmlCode={htmlCode}
+                onErrorDetected={(err) => setErrors((prev) => [...prev, err])}
+                onClearErrors={() => setErrors([])}
+                isMobile={deviceMode === 'mobile'}
+                inspectorActive={isInspectorActive}
+                onElementSelected={handleElementSelected}
               />
             </div>
           </div>
@@ -323,9 +325,10 @@ export const DevicePreviewFrame: React.FC<DevicePreviewFrameProps> = ({
         {viewTab === 'diff' && (
           <div className="w-full h-full p-2 overflow-auto">
             <CodeDiffViewer
-              oldCode={snapshots[0]?.html || htmlCode}
-              newCode={htmlCode}
-              language="html"
+              fileName="src/App.tsx"
+              originalCode={snapshots[0]?.summary || htmlCode}
+              modifiedCode={htmlCode}
+              language={language}
             />
           </div>
         )}
