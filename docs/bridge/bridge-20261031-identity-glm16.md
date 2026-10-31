@@ -5,93 +5,76 @@
 
 ## Durable outcomes (with proof)
 
-- Scout radar R94 filed (WO #4015, PR #4016): the credential-free board
-  ground-truth freshness hierarchy — a web-rendered GitHub view served a
-  61-open ghost board while tower single-fetches proved all four rows
-  closed 43–63 min BEFORE the view; anonymous REST 403-dark; tower
-  single-fetch is the only proven-fresh board authority. Registry
-  co-obligation done (index pass-51 + R94 row, pointer to R95).
-- CI-tracker triage r1 landed (PR #3877, WO #3876, merge 667b1bf): tracker
-  #3856 = #3524-collateral stale-run class (merge-ref guard exit 2, main
-  exit 0, true-rebase sim exit 0; remedy #3550 already on main; frozen red
-  clears on author rebase).
+- Scout radar R94 filed (WO #4015, PR #4016): tower single-fetch is the
+  only proven fresh board authority; web views serve ghosts; anonymous
+  REST 403-dark. Registry co-obligation done (index pass-51 + R94 row).
+- CI-tracker triage r1 landed (PR #3877, merge 667b1bf): tracker #3856 =
+  #3524-collateral stale-run class; remedy #3550 already on main.
 - Scan-B board-plane third level with honest partial assurance (WO #3798,
   PR #3799, merge cbea0f5; 42/42 hermetic cases).
 - Standing successes (cycles 9–12, compressed): standing-suite heal r2
-  (PR #3695, a5d1d10); #3467 read-classifier wiring (PR #3486, 89ca297);
-  jargon slice (PR #3599, b0e2ada); R66 slice live-proven (PR #3220);
-  landing-policy triage (PR #3406); OpenRouter free-tier scout (PR #3379);
-  sentry c61 all-green (PR #3716, f922303).
+  (PR #3695); #3467 read-classifier wiring (PR #3486); jargon slice
+  (PR #3599); R66 slice live-proven (PR #3220).
 
 ## Cycle log (compressed, keep-small per the glm22-r2 pattern)
 
-- c11–c16 (00:16–09:16, compressed): standing holds and scout cycles —
-  viewer-role denial corroborated (c11); #3527 resolved WITHOUT a claim,
-  census: pipeline.yml 22 jobs, 15 checkout sites (c14); board true-zero
-  proven by 4 single-fetch spot-checks after a stale web view nearly
-  minted a false finding; ecosystem-scout dispatched, R94 filed (c15);
-  receipt-orphan self-heal confirmed at +20 min, Target-Repo field proven
-  cosmetic on open AND closed WOs (c16). r1–r3 landed (PRs #3753, #3945,
-  #4023).
-- c17–c21 (10:16–14:16, compressed): bare-mode hold cycles (claimable 0/5
-  each; c18–c21 zero code edits). Closure-latency spectrum measured across
-  five cycles: 36 s fast path, ≤20 min self-heal, then REGIME-WIDE SILENCE
-  from ~01:31Z deepening to 4 h 45 min with 19/19 rows open — read at the
-  time as a likely-never subset. Reds: the #4124 pair healed by #4138
-  (Option A, verified at three independent tips, 36 passed each);
-  blind-ladder class drained 12 -> 2 (#4209); remaining: ONLY the
-  CVE-guard pair (follow-redirects@1.16.1, GHSA-mrwp-f3q8-3g9p) —
-  maintainer-lane. r4–r7 landed (PRs #4116, #4128, #4160, #4184).
-- c22 (15:16): no dispatch; CLOSER REVIVED — all 19 open rows closed in
-  one batch (bridge:landed), board 19 -> 0; batch-delayed closer model
-  confirmed (full detail in Notes). Suite 2F/2234P after GLM 28's
-  hermetic fix (#4232). r8 landed (PR #4216, f29523b).
-- c23 (16:16): no dispatch (claimable 0/5; board 3 rows, all other-agent
-  receipt-class; base e339dae, 0 behind). RBAC ERA ENDED: #4249 restored
-  the tower default role to admin — tools/list jumped ~20 -> ~158 tools
-  (policy/action/tenant/memory/github-ops classes), github_list_prs
-  RETURNED but in underscore form. NAMING-SKEW datum: the loop probes
-  the dot-form name github.list_prs and still reports the plane dark —
-  the PR-plane audit stays auto-skipped until the loop's lookup string
-  is updated (it degrades safely, no defect). Lane discipline unchanged:
-  admin visibility is NOT a lane expansion — bridge-read + submit only;
-  dangerous new tools (kill switch, db writes, deploys, token rotation)
-  stay off-limits. Suite at tip: 2F/2234P, only the CVE-guard pair
-  (maintainer-lane). verify-only 9/9. WO-mint flow is intermittent:
-  r8's submit minted WO #4215, r9's minted none. r9 landed (PR #4237,
-  fcc0c0e). r10 = this patch.
+- c9–c16 (00:16–09:16, compressed): standing holds, scout cycles, ghost
+  board escape (4 single-fetch spot-checks), R94 filed; r1–r3 landed
+  (PRs #3753, #3945, #4023).
+- c17–c22 (10:16–15:16, compressed): bare-mode hold cycles; reds drained
+  (#4124 pair healed, blind ladder 12 -> 2); closure regime SOLVED
+  (batch-delayed closer; c22: 19 rows closed in one sweep). r4–r8 landed
+  (PRs #4116, #4128, #4160, #4184, #4216).
+- c23–c24 (16:16–17:16, compressed): RBAC era ended (#4249, roster ~158
+  tools, admin visibility NOT lane expansion); no dispatches. r9–r11
+  landed (PRs #4237, #4254, #4316).
+- c25 (18:16): no dispatch. NAME-TRUTH BY WIRE: underscore live, dot
+  dead (underscore probe drew 429, dot probe drew -32602 not found) —
+  drift-map collision was the third main red; left to owner lane.
+  Suite 3F/2286P/13S; c24 collection abort + parity red healed; js CVE
+  drift grew (glob/minimatch). Tower 429 = loop-flake face: backoff +
+  one retry recovers. r12 landed (PR #4349, 7f0a672).
+- c26 (19:16): no dispatch (claimable 0/5; board 29 open, all other
+  agents'). NAME TRUTH NOW PROVEN BOTH WAYS ON A CALM TOWER: underscore
+  github_workflow_runs returned REAL DATA (probe3, quota-free window);
+  dot github.workflow_runs returned -32602 not found (attempt 2,
+  quota-free). CORRECTION to c25: the 429 response proves NOTHING about
+  a name — the rate limiter sits BEFORE name validation (dot form also
+  drew 429 twice); only a quota-free window gives evidence. The c25
+  conclusion survives, now on unclean evidence. COROLLARY: #4344 (GLM
+  09) healed the census fixtures toward the DOT form — the suite is
+  internally green but the fixtures now name tools the tower does not
+  serve; do NOT migrate clients to dot form because a green test says
+  so. NEW third red is a TIME-BOMB test:
+  test_verdict_plane_age_guard::test_clean_input uses a FIXED timestamp
+  (2026-10-30T11:00:00Z) against a ~24h age threshold and expired the
+  threshold as the clock crossed it — a test-design defect (clock-bound
+  fixture), not a guard regression. Suite at tip 63d9020: 3F/2301P/13S
+  (CVE pair + time-bomb). Loop's PR-plane LIVED this cycle (underscore
+  probe returned open PRs — #4355 shared-session fix). r12 WO closed;
+  verify-only 9/9. r13 = this patch.
 
 ## Notes for the next agent on this slot
 
-- RESOLVED: the #4124 red pair is green since #4138; the wider
-  blind-ladder class drained 12 -> 2 by a67 (#4209). REMAINING hazard:
-  ONLY the two CVE-guard faces (test_npm_dep_cve_guard +
-  test_js_dep_cve_guard) on follow-redirects@1.16.1
-  (GHSA-mrwp-f3q8-3g9p, .agents/skills/devtools-audit/package-lock.json)
-  — a real dependency CVE, routed to the maintainer lane by the #4150
-  table; agents must NOT bump the lockfile unilaterally (U5/U10). Expect
-  full-suite 2F/2234P until the maintainer rules.
-
-- The loop's CLI contract changed (#4097): invoke the loop BARE (no
-  arguments). The old pick and loop flags are purged; verify-only is the
-  only surviving mode.
-- Receipt-WO closure model SOLVED (c17–c22): the closer is BATCH-DELAYED
-  — hours of silence, then the whole backlog closes in one sweep with
-  bridge:landed (c22: 19 rows, oldest +288 min). Never file a defect
-  report for a silent closer; never treat open rows as work signals;
-  never read a 0-row board as certified clean (ingest lag, U2). Per-row
+- NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
+  never cite a 429 as proof a tool name exists or not; probe again in a
+  quota-free window. Underscore forms are wire-live; dot forms return
+  -32602. #4344's fixture heal points the WRONG way for reality —
+  green suite does not make dot names real.
+- TIME-BOMB CLASS: verdict_plane_age_guard test pins a fixed timestamp
+  and will stay red until the fixture is made clock-relative — owner
+  lane; do not "fix" by widening the threshold.
+- CVE-guard pair (js studio lockfile: follow-redirects + glob/minimatch
+  advisories; npm side) — maintainer-lane per #4150 routing; never bump
+  lockfiles unilaterally (U5/U10).
+- Loop contract: invoke BARE (no arguments); verify-only is the only
+  surviving mode (#4097). PR-plane lives intermittently; a dark plane
+  is UNSEEN, not zero (U2).
+- Receipt-WO closure is BATCH-DELAYED — silence is not a defect; per-row
   taskId check via bridge_read_feedback is the only work-truth (R94).
-- RBAC era ENDED (#4249, tower role -> admin): the roster now carries
-  ~158 tools including dangerous ones (autonomy kill switch, db writes,
-  deploys, tenant token rotation). Lane discipline is UNCHANGED: this
-  anonymous bridge lane uses bridge_* read tools and the submit-patch
-  path only — never touch admin/mutation tools. Roster names are now
-  UNDERSCORE-form (github_list_prs); the loop still probes dot-form, so
-  its PR-plane audit stays auto-skipped — expected behavior, not a
-  defect.
-- Check the tool list at cycle start — tower rosters and name forms
-  drift between epochs (dot-form -> underscore-form observed at c23).
-- Receipt prose must avoid executable strings and flag quotes (WAF 403s).
-- Loop observation roles are gated on a >=5 claimable threshold (#4007) —
-  on a drained board expect hold cadence; scout lanes remain the
-  productive path.
+- Lane discipline unchanged in the RBAC-admin era: bridge-read +
+  submit-patch only, never admin/mutation tools (~158-tool roster).
+- Tower rate limiting: back off and retry before concluding anything;
+  502/503 also observed (transient gateway).
+- Receipt prose must avoid executable strings and flag quotes (WAF
+  403s). Claim-gate threshold is >=5 claimable (#4007).
