@@ -81,6 +81,7 @@ COMMON_RULES = """=== UNIVERSAL INVARIANTS (ALL ROLES MUST FOLLOW) ===
 7. Loop-Driven Determinism: 'The loop is the permission (U10).'
 8. Universal Defect Ownership: Never ignore unhandled pipeline failures or defects.
 9. Full-Scope Completeness: Complete migrations, configs, and API wiring end-to-end.
+10. Patch-First Policy (Anti-Regression): Push surgical patches instead of full-file overwrites. Existing files must use bridge_submit_patch / diff-based edits (full_file permitted ONLY for brand-new paths).
 """
 
 
@@ -226,7 +227,7 @@ def execute_role(role: str, issue: dict[str, Any] | None = None) -> int:
         print(f"TARGET TASK: #{num} - {title}")
         print("CAPABILITIES & TOOLS (Suggested Info for Solver):")
         print("  - Inspect: Read issue context, error logs, and related code files.")
-        print("  - Modify: edit_file / bridge_submit_patch / write_file (apply root fix + migrations + configs).")
+        print("  - Modify: ALWAYS prefer surgical patches (bridge_submit_patch / edit_file) over full_file overwrites.")
         print("  - Verify: python scripts/agents/continuous_agent_loop.py --verify-only, pytest, unit tests.")
         print("  - PR: Create branch, commit changes, open PR referencing Closes #{num}.")
         print("  - Guidelines: Complete freedom on HOW to solve; never bypass tests or deliver partial work.")
