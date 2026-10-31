@@ -21,46 +21,46 @@
   visibility NOT lane expansion); no dispatches. r1–r11 landed (PRs
   #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216, #4237,
   #4254, #4316).
-- c25–c26 (18:16–19:16, compressed): no dispatches. NAME-TRUTH LAW:
-  underscore wire-live, dot -32602; 429 is name-blind (limiter precedes
-  routing) — only quota-free windows prove names; #4344's fixture heal
-  toward dot is reality-wrong. Time-bomb datum filed
-  (verdict_plane_age_guard fixed timestamp). r12–r13 landed (PRs
-  #4349, #4379).
-- c27 (20:16): no dispatch. Time-bomb defused by owner (#4376 — c26
-  classification acted on verbatim); main-red reached the CVE-pair-only
-  floor (2F/2302P/13S at d853fd4). Loop's 429 messages now honest
-  (#4364 fix reached the loop; 429 body can be a Cloudflare challenge
-  page). Board sweep 29 -> 11. r14 landed (PR #4401, a429ebb).
-- c28 (21:16): no dispatch (claimable 0/5; loop reports clean+healthy).
-  CVE-PAIR FLOOR HOLDS ACROSS TWO TIPS: suite at 4a015b2 = 2F/2302P/13S,
-  same pair (js studio lockfile follow-redirects + glob/minimatch; npm
-  side). CLOSURE-MODEL RECONFIRMED: my r14 WO row is still open one
-  cycle AFTER its PR landed — batch-delayed closure spans landed rows
-  too; open-after-landed is normal, not a defect (consistent with R94:
-  per-row taskId truth over board state). Roster stable (158 tools,
-  underscore). verify-only 9/9. r15 = this patch.
+- c25–c27 (18:16–20:16, compressed): no dispatches. NAME-TRUTH LAW:
+  underscore wire-live, dot -32602; 429 name-blind (limiter precedes
+  routing); #4344's dot-form fixture heal is reality-wrong. Time-bomb
+  datum filed then defused by owner (#4376); floor reached; loop 429
+  messages honest (#4364). r12–r14 landed (PRs #4349, #4379, #4401).
+- c28 (21:16): no dispatch. CVE-pair floor held on two tips. CLOSURE
+  MODEL ADDENDUM: r14's WO row stayed open one cycle after landing —
+  batch-delayed closer spans landed rows. r15 submitted (attempt 1
+  HTTP 502, attempt 2 governance-timeout; board verification blocked
+  by tower turbulence, so NO blind resubmit).
+- c29 (22:16): no dispatch (claimable 0/5; loop clean+healthy).
+  GOVERNANCE-TIMEOUT SUBMISSIONS DO LAND: r15 landed (PR #4414,
+  5a29f1c) from the aborted-looking attempt — the blind resubmit we
+  declined would have minted a duplicate; verify-before-resubmit is
+  the proven rule. FLOOR ON THREE TIPS: suite at 6181024 = 2F/2338P/
+  13S, same CVE pair only (+36 new passing tests landed); the c84-era
+  6F jump healed via #4431 before my census. verify-only 9/9.
+  r16 = this patch.
 
 ## Notes for the next agent on this slot
 
+- RESUBMIT LAW (c29): a governance-timeout / aborted-looking submit can
+  still land. Always verify via repo history or board BEFORE
+  resubmitting; a blind retry mints duplicates.
 - NAME-PLANE LAW (c26): 429 is name-blind (limiter precedes routing) —
   never cite a 429 as proof a tool name exists or not; probe again in a
   quota-free window. Underscore forms are wire-live; dot forms return
-  -32602. #4344's fixture heal points the WRONG way for reality —
-  green suite does not make dot names real.
-- RED FLOOR (c27–c28): main sits at the CVE-pair-only floor on two
-  consecutive tips (2F/2302P/13S) — js studio lockfile (follow-
-  redirects + glob/minimatch) and npm side — maintainer-lane per #4150
-  routing; never bump lockfiles unilaterally (U5/U10). Anything else
-  red = new datum, report it.
-- CLOSURE MODEL (c28 addendum): a landed PR's WO row can stay open for
-  a cycle or more — batch-delayed closer covers landed rows too. Do not
-  read an open row of a landed slot as a stuck submission.
+  -32602. #4344's fixture heal points the WRONG way for reality.
+- RED FLOOR (c27–c29): main sits at the CVE-pair-only floor on THREE
+  consecutive tips — js studio lockfile (follow-redirects +
+  glob/minimatch) and npm side — maintainer-lane per #4150 routing;
+  never bump lockfiles unilaterally (U5/U10). Anything else red = new
+  datum, report it.
+- CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
+  row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
   surviving mode (#4097). A dark plane is UNSEEN, not zero (U2).
 - Lane discipline unchanged: bridge-read + submit-patch only, never
   admin/mutation tools (~158-tool roster, underscore names).
 - Tower rate limiting: back off and retry; 429 bodies may be Cloudflare
-  challenge pages; 502/503 transient.
+  challenge pages; 502/503 transient; submissions survive aborts.
 - Receipt prose must avoid executable strings and flag quotes (WAF
   403s). Claim-gate threshold is >=5 claimable (#4007).
