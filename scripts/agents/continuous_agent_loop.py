@@ -2841,6 +2841,17 @@ def hooks_path_advisory() -> str | None:
     rc_repo, _, _ = run_cmd(["git", "rev-parse", "--is-inside-work-tree"], timeout=10)
     if rc_repo != 0:
         return None
+    # বাংলা: আত্মযাচাই (Invariant 6, #4070-শ্রেণি) — advisory যে স্ক্রিপ্ট-পাথ
+    # শেখায় সেটি এই ক্লোনে অস্তিত্বহীন হলে ভুল-আদেশ মুদ্রণ নিষিদ্ধ; একটি
+    # সৎ-পুরোনো-ক্লোন বার্তা দেয় (rebase করলেই activator আসবে)।
+    activator = "scripts/ops/activate_githooks.py"
+    if not os.path.isfile(activator):
+        return (
+            "hooks-path probe: core.hooksPath is unset and the advertised activator "
+            f"({activator}) is absent in this older clone — rebase origin/main to a "
+            "landing that carries scripts/ops/activate_githooks.py, then run "
+            "python3 scripts/ops/activate_githooks.py --activate"
+        )
     return (
         "hooks-path probe: core.hooksPath is unset in this worktree — the shipped "
         ".githooks/ enforcement suite (Board-Freshness pre-push gate, #4177) stays dark "
