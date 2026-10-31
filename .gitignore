@@ -61,3 +61,7 @@ scripts/agents/dispatched_issues_state.json
 
 # Tauri target build directory
 vscode/desktop/src-tauri/target/
+
+# Desktop generated icons and tauri gen
+vscode/desktop/src-tauri/icons/
+vscode/desktop/src-tauri/gen/
