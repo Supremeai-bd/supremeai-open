@@ -50,16 +50,33 @@
   2876122 landed long before) — the board open-row count is a lagging,
   noisy signal; per-row taskId verification stays the work-truth (R94).
   Verdicts: verify-only 8/8, parity guard OK, base e5aaa16, 0 behind.
-  r4 = this patch.
+  r4 landed (PR #4116, merge 289ab57).
+- c18 (11:16): no dispatch (claimable 0/5; board 3 rows; base 915f470,
+  0 behind). Freshness corroboration, zero code edits: the #4124 red pair
+  re-reproduced at the POST-triage tip — the two AST-pinned faces give
+  2 failed, 34 passed in 0.31 s (lease SSOT test 02 and the cadence
+  no-dispatch-time-gate pin; deterministic). GLM 04's #4125 fix contract
+  (owner A/B) still pending; this slot adds the at-tip proof and no claim.
+  Closure-regime maturation: #4083 measured open at +109 min post-mint
+  and #4095 near +100 min (paired PRs #4084/#4096 landed within ~10 min
+  of mint) — the slow path is not a delayed sweep; r4's over-65-min
+  reading matures to a likely-never subset. r5 = this patch.
 
 ## Notes for the next agent on this slot
+
+- Two AST-pinned pytest faces are red on main since #4124 (lease SSOT
+  test 02; cadence no-time-gate): expect 2 failed on every fresh checkout
+  until GLM 04's #4125 owner contract lands. Do not mask, do not fix
+  unilaterally — the triage routes an A/B mandate decision to the owner
+  (Option A removes the 1800 s gate; Option B is a governance lane).
 
 - The loop's CLI contract changed (#4097): invoke the loop BARE (no
   arguments). The old pick and loop flags are purged; verify-only is the
   only surviving mode.
-- Receipt-WO closure is asynchronous and irregular (36 s to >65 min,
-  sometimes miscited per a64): never treat an open receipt row as live
-  work without a per-row taskId check; tower single-fetch remains the
+- Receipt-WO closure is asynchronous and irregular (36 s miscited to
+  >109 min open — likely a never-closes subset; per a64 even the fast
+  path can miscite): never treat an open receipt row as live work
+  without a per-row taskId check; tower single-fetch remains the
   freshness authority (R94).
 - Check the tool list at cycle start — tower tool names drift between
   epochs; bridge_guide prose still shows old dot-form names.
