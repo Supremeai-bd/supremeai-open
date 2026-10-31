@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-11 condensed to one table
+> only, replaced in place every cycle. Cycles 1-12 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-11 (condensed)
+## Landed cycles 1-12 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -37,32 +37,39 @@
 | 9 (12:2x) | verify suite 8→9 tiers datum (`constitution_guard_pins`, glm12 #4138) source-verified; roster-purge note stable 2nd cycle | PR #4162 |
 | 10 (13:2x) | 3rd-cycle roster-purge stability (gate settled); mirror-burst census with ages: 7→14 all mirrors, median 1.8h, max 3.9h | PR #4191 |
 | 11 (14:2x) | burst continues 14→22; median pinned 1.8h through inflow (sweep healthy); windowTruncated first seen; #4083 absence = honest unknown | PR #4222 |
+| 12 (15:2x) | census arc closed: 22→1, sweep drained the burst (a68 corroborated); Cycle 11 unknown resolved = DRAINED | PR #4241 |
 
-## Cycle 12 (2026-10-31 15:2x+08) — census arc closed: 22→1, the sweep drained the burst
+## Cycle 13 (2026-10-31 16:2x+08) — P0 #3663 class REVIVED by #4249 restore; probe exit 2
 
-- Loop verify 9/9 on 556e3f5 (tier 9, 4th cycle); pick: clean and healthy,
-  claimable 0/5, observation idle; zero P0. No dispatch. Roster-purge dark
-  note stable 5th consecutive cycle.
-- Datum — mirror-burst census arc CLOSED (Cycles 10→11→12): board 22→**1**
-  row; the closer regime swept the entire burst (corroborates glm16 r9's
-  "CLOSER REVIVED" from my own plane). The 1 remaining row is a 0.1h-old
-  fresh mirror (#4234, glm11 r14). Zero claimable, zero in gates.
-- Cycle 11's honest unknown RESOLVED: my #4083 and #4161 mirrors are absent
-  from a now-nearly-empty board — they were DRAINED (closed by the sweep),
-  not window-pushed. The Cycle 10-11 prediction ("not stuck; drain real,
-  median-paced") is confirmed by the drain's arrival within one cycle.
-- No claim, no Closes — observation-only cycle; worklog r8 compaction
-  (Cycle 11 folded into the landed table) is the whole change.
+- Loop verify 9/9 on 2f339a8; pick: clean and healthy, claimable 0/5,
+  observation idle; zero P0 on the board (the regression is not yet a board
+  row). Roster-purge dark note now reads "158 tools visible" — the purge is
+  undone but `github.list_prs` is still absent, so the plane stays dark and
+  the #4132 auto-revive correctly has not fired.
+- **Owner landing `d23a82e` (#4249) deliberately restored the tower default
+  pre-production role to admin.** Wire state flipped: tools/list 20→**158**,
+  system_summary 12→**21 services**.
+- **Guard note's second real exercise — RED:** `p0_3663_acceptance_probe.py`
+  live → **exit 2, FAIL-OPEN STILL LIVE (2/3 EXPOSED)**: client_list 100
+  client rows anonymously (PII plane), destructive surface visible
+  (autonomy_kill_switch, github_list_secrets, tenant_create); criterion 1
+  INDETERMINATE as always (own-ctx unobservable). Guard chain now proven
+  two-way: purge=green, restore=red — a tripwire, not prose.
+- Receipt: bridge-20261031-3663-failopen-revival-glm22.md — machine verdict,
+  guard chain table, impact ledger (bridge front door still holding), owner
+  decision framing (#4249 is deliberate pre-production posture; accept or
+  re-fix before next production deploy = owner/HITL; probe arms it
+  mechanically: exit 0/3 safe, exit 2 = class live). Report-only, no claim,
+  no Closes; #3663 itself stays closed — this is a new post-fix state, not
+  the old issue.
 
 ## Reflection Evidence
 
-- **why:** a three-cycle census arc (burst → sustained → drained) with
-  consistent ages is the strongest cheap evidence that the board plane is
-  self-healing end-to-end — inflow, pacing, and sweep all healthy; recording
-  the arc's closure also retroactively resolves Cycle 11's honest unknown,
-  which is what makes honest unknowns worth writing down.
-- **alternatives_rejected:** claiming credit for the drain (verdict plane's
-  sweep — I only censused); calling an empty board a problem (glm11 r14's
-  "BOARD IS EMPTY" receipt already frames it as integrity-certified clean);
-  skipping the entry because "nothing happened" (the nothing IS the datum —
-  the arc's predicted end-state arrived).
+- **why:** the guard note existed precisely for this moment; a toolset
+  change landed, the probe went red, and the durable response is a
+  machine-verifiable ledger row — not a chat note that evaporates.
+- **alternatives_rejected:** reopening #3663 (closed completed with an
+  owner-landed fix; the new state is a deliberate post-fix restore — a NEW
+  decision); agent-side mitigation (none exists client-side; the wire is
+  the owner's plane); staying silent because the restore was intentional
+  (intent does not make the wire safe — recording it does).
