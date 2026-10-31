@@ -39,7 +39,7 @@ on:
       - 'bridge/**'
   pull_request:
     branches: [ main ]
-    types: [opened, reopened, synchronize, ready_for_review]
+    types: [opened, reopened, synchronize, ready_for_review, closed]
   schedule:
     - cron: "0 6 * * *" # Daily satellite board audit (charter 0 Issues / 0 PRs)
   repository_dispatch:
@@ -340,6 +340,17 @@ jobs:
             exit 1
           fi
           echo "✅ Tower verification signature present."
+
+      - name: Trigger Federation CI Watchdog on Guard Failure
+        if: failure()
+        env:
+          DISPATCH_TOKEN: ${{ secrets.OPEN_SYNC_PAT || secrets.MERGE_PAT || secrets.OPEN_DISPATCH_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
+            -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.head_ref }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
 
   duplicate-pr-guard:
     name: "👥 Anti-Duplicate PR Guard"
@@ -941,6 +952,31 @@ jobs:
             -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
             https://api.github.com/repos/Supremeai-bd/supremeai-open/dispatches \
             -d "{\"event_type\": \"federation_ci_failed\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"workflow_name\": \"${{ github.workflow }}\", \"run_id\": \"${{ github.run_id }}\", \"html_url\": \"https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}\", \"branch\": \"${{ github.ref_name }}\", \"commit_sha\": \"${{ github.sha }}\"}}" || true
+
+  # ---------------------------------------------------------------------------
+  # 🚪 Admin / External PR Merge Cleanup (Closes linked issues if admin merged directly)
+  # ---------------------------------------------------------------------------
+  pr-merge-issue-close:
+    name: "🚪 Admin / PR Merge Issue Closer"
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Close linked issues on PR merge
+        env:
+          GH_TOKEN: ${{ secrets.MERGE_PAT || secrets.OPEN_SYNC_PAT || secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          MERGED_BY: ${{ github.event.pull_request.merged_by.login }}
+        run: |
+          echo "PR #${PR_NUM} was merged by ${MERGED_BY}."
+          # Find all issues cited with closes/fixes/resolves
+          CLOSED_ISSUES=$(echo "$PR_BODY" | grep -ioE '(closes|fixes|resolves) #[0-9]+' | grep -oE '[0-9]+' | sort -u || true)
+          for iss in $CLOSED_ISSUES; do
+            echo "Auto-closing referenced issue #$iss..."
+            gh issue close "$iss" --repo "${{ github.repository }}" \
+              --comment "Closed automatically after PR #${PR_NUM} was merged by ${MERGED_BY}." || true
+          done
 
   # ---------------------------------------------------------------------------
   # 🚀 Transit Dispatch & Satellite Sync (Zero-Residue #416)
