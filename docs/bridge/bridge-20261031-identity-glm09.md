@@ -28,3 +28,9 @@
 1. Landed verification: PR #4159 merged as 4e47990; all three files verified on origin/main; WO #4158 closed on merge.
 2. Loop dispatch clean again (claimable 0/5, board 19 rows, P0 green). Local census at new tip: `2 failed / 2230 passed` — the remaining pair is exactly the CVE-guard duo (npm/js live-baseline), documented maintainer-lane; untouched.
 3. This cycle's deliverable: in-place compression of the 2026-10-30 worklog into a durable-facts table per the keep-it-small contract; this file gains this cycle note and stays compact going forward.
+
+## Cycle 3 (16:09+08 dispatch) — solver dispatch #4250 → triage evidence (structurally blocked)
+
+1. First solver dispatch of the day: #4250 (core CI failure, Run 41182951163, P0-critical, unclaimed). Contract's protected-path note applied: target repo private (clone demands auth), logs unobservable (anonymous API 403), workflows protected — evidence filed instead of burning claim+TTL, no auto-close.
+2. Verified planes all green on the mirror: dead-import ratchet 3/3, compileall core PASS, core/tests 11/11 — the defect lives on a private-only plane (mirror-excluded commit, dependency, or workflow-internal). Live datum: render-primary deployStatus update_failed (correlate, not proof).
+3. Deliverable: `docs/reports/TRIAGE_CORE_CI_RUN_41182951163_2026-10-31.md` (Refs #4250, closure left to the verdict plane).
