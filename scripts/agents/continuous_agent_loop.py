@@ -1827,8 +1827,17 @@ def pick_next_issue(
         title = str(item.get("title") or "")
         if "anchor hub" in title.lower():
             return False
-        if "sentry" in title.lower():
-            return False
+        # বাংলা (#4122-এর blind-ladder শ্রেণির জীবন্ত উদাহরণ): "sentry" টাইটেলের
+        # ব্ল্যাঙ্কেট-বাদ এখানে ইচ্ছাকৃতভাবে নেই — নিচের board-local demotion
+        # পরিবারই (stale-sentry #3050 → sentry-test-row U4 → twin U5 →
+        # receipt-coverage #3315) একমাত্র sentry arbiter। ব্ল্যাঙ্কেট-চেক পরিবারটিকে
+        # dead code বানিয়ে দেয়: stale fossil বাদ দেওয়ার আগেই প্রতিটি sentry রো
+        # সরে যায়, ফলে lone/newest sentinel serve চুক্তি (fail-open) আর
+        # demotion-লগ চুক্তি দুটোই ভাঙে — tests/test_stale_sentry_demotion.py ও
+        # tests/test_sentry_test_row_demotion.py এর ৫টি pinned টেস্ট (#3469/#3738)
+        # লাল হয়। যে অপচয় ব্ল্যাঙ্কেট-চেক আটকাতে চেয়েছিল (fossil/test-row
+        # dispatch) তা পরিবারটি লাইভ পথে ইতিমধ্যেই আটকায় — শুধুমাত্র sentinel
+        # duty-কে কাজ হিসেবে serve করে, যা pinned চুক্তি।
         state = item.get("state")
         if state is not None and str(state).lower() != "open":
             return False
