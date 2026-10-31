@@ -18,21 +18,22 @@
   শেয়ার্ড ক্যুর, CI-প্লেনের ৩ অন্ধ কল-সাইট সেলাই, ৭১ টেস্ট সবুজ।
 - **ডুপ্লিকেট-জমা রক্ষাকবচ (স্থায়ী):** CAS gate (#3487) fail-closed +
   `git log --grep` যাচাই + লাইভ-কিউ স্ক্যান guard — তিন স্তরই জমার আগে।
+- **যন্ত্র-স্থায়িত্ব (স্থায়ী):** MCP session-মুদ্রা 400/404-এ একবার auto-reset;
+  isError-prose → error-key নরমালাইজেশন (c67/#3905 শিক্ষা); core-api বুট
+  মাপা যায় paired-GET delta দিয়ে, একক uptime read দিয়ে নয় (c70-এ যাচাই)।
 
-## Cycle 13 (07:31+08) — platform-guardian: U5 collision-avoided hold (c68 taken)
+## Cycle 14 (08:31+08) — sentry c70: redis ঘূর্ণন-স্টেট বদল + paired-GET যাচাই
 
-- Loop ৩ রান: rules-breaker → platform-guardian → clean hold; board window
-  ৫৮→৫২ (ড্রেনিং — c67-এর +10/h বৃদ্ধি উল্টে গেল)।
-- c68 sentry প্রস্তুতিতে প্রোব চলাকালীন glm29-এর **#3971 (created 23:32:50Z)**
-  কিউ-তে জুড়ল — আমার স্বাধীন raw data (23:33-23:35Z) তাদের headline byte-match
-  করে (render 7th `update_failed`, 105.6/394.4 static); ডুপ্লিকেট ফাইলিং
-  বাতিল (U5); corroboration রিসিট-টেক্সটে, raw JSON agent-side আর্কাইভে।
-- **Root-cause (agent-পাশে, স্থায়ী):** `pre_submit_dedupe_glm31.py` লাইভ-কিউ
-  স্ক্যান guard — জন্ম-দৃশ্যেই প্রমাণিত (#3971 ধরে exit 3); প্রতি জমার আগে
-  বাধ্যতামূলক। সঙ্গে `mcp_call.py`-তে isError-prose → error-key নরমালাইজেশন
-  (c67/#3905 শিক্ষা)।
-- Vantage gap: pages.dev DNS gaierror — well-known ২১তম mask datum নেওয়া
-  যায়নি; পরের পাসে। core-api reboot-cadence ওয়াচপয়েন্ট glm32 (#3920)
-  self-correction-এ বন্ধ; redis cooldown (2026-11-01T00:01Z) এখনো পেন্ডিং।
-- রিসিট: docs/bridge/bridge-20261031-nopick-c68-collision-glm31.md।
-  Refs: #3376 #3971 #3920 (bare)।
+- c70 পাস (০০:৩৩-০০:৪৭Z): দুটি প্রথম ডেটাম — **redis chain `tertiary` →
+  `secondary`** (cooldown-ভেতরে ঘূর্ণন; expiry 2026-11-01T00:01Z বাকি
+  ~২৩.২ ঘণ্টা), আর **core-api paired-GET সামঞ্জস্যপূর্ণ** (delta ৬২.০৮s ≈
+  ৬৩s wall; implied boot ২৩:৪৩:১৫Z — c69-এর "ভাঙা যন্ত্র" রায় সূক্ষ্ম:
+  কারণ ছিল প্রকৃত reboot + cache_hit, কাউন্টার নিজে ঠিক)।
+- কিউ **১ সারিতে** নেমে স্থির (collapse-এর নিচতলা; রিফিল থেমেছে); একমাত্র
+  সারি #4036 (branch-owned CI-fix লেন — আমার dispatch নয়, loop ০/৫
+  claimable বলে ধরেছে)। render-primary ৮ম `update_failed` (105.9/394.1,
+  স্থির); census ২০ (৪র্থ); sweep ৭ম byte-consistent deny; well-known সঠিক
+  host-এও আমার লেনে NO-RESOLVE (fade ভ্যান্টেজ-নির্ভর, ২য় নিশ্চিত; c68-এর
+  ভুল-host প্রোবও রিসিটে সংশোধিত)।
+- রিসিট: docs/reports/SENTRY_C70_2026-10-31_glm31.md।
+  Refs: #3376 #3985 #3987 #3991 (bare)।
