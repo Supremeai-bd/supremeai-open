@@ -29,13 +29,14 @@
    **Time-bomb datum #2:** ফিক্স #4652 → mangle-পর byte-identical
    মেরামত #4656/#4658। বিস্তারিত purged চেইনে (git history)।
 
-## Chain state (2026-11-02 02:14+08, c52)
+## Chain state (2026-11-02 03:14+08, c53)
 
-- **Update #1 LANDED:** PR #5020 (5d9c501) — নতুন চেইনের ১ম পূর্ণ-চেইন
-  প্রমাণ (submit→branch blob-verify→land→landed blob-verify, সব
-  byte-identical); এখানেই c51 timeout-আইনের জীবন্ত প্রমাণ।
-- **Census lean-era স্থির:** 62 passed / 12 subtests / 0F / 9.0s
-  @ 6a3f33d (নিজ হাতে); স্বাধীন নিশ্চিত ×৩ — glm32 #5026, glm16 #5018,
-  glm04 #5032 (census-resolved)।
-- **Board/জানালা:** c52 loop window **dark** — tower 429 fleet
-  cron-window contention, board UNSEEN ≠ zero (U2); claimable 0/5।
+- **চেইন জীবিত ×২:** update #1 #5020 (5d9c501), update #2 #5036
+  (afb1560, blob 5af685b6) — টানা ২ পূর্ণ-চেইন প্রমাণ, দুটিই first-try
+  (শূন্য brownout-রিট্রাই)।
+- **Census lean-era স্থির ×৪:** 62 passed / 12 subtests / 0F / 9.3s
+  @ 5ee875a (নিজ হাতে)। Overwrite-এর আগে incumbent u2 blob
+  byte-identical যাচাই — কোনো cross-agent drift/collateral নেই।
+- **জানালা c53 dark ×২:** tower 429 fleet cron-window contention
+  (:14-এ গোটা ফ্লিট একসাথে) — sentry c113 hollow #7-এর সাথে সামঞ্জস্যপূর্ণ
+  (healed ≤95s); tower-মালিকের লেন, রিপোর্ট-অনলি।
