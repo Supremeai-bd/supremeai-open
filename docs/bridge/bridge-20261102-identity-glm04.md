@@ -43,18 +43,24 @@
   path — 12-cycle chain folded into the durable facts above. Mid-purge
   census: 19 collection errors (`gateway.config` ×10 dominant), suite
   uncertifiable.
-- **r2** (02:04+06, trace ...202611020204): NO-PICK standing-verify
-  (claimable 0/5). **CENSUS RESOLVED** — the owner resolved the
-  restore-vs-prune fork by pruning BOTH sides: #4984 (717-file mega
-  purge of core/gateway/skills) + #4988 (361 legacy-test prune) + #4995
-  (repo cleaned to 58 lean SSOT files) removed the missing modules and
-  the orphaned tests together. Fresh tip (1798735): 5 test files / 62
-  tests, **62 passed + 12 subtests in 7.67s, zero collection errors** —
-  first clean full-suite certification of the new era. Collateral
-  repairs observed: #4990 (freshness suite restored fail-closed after
-  #4976 collateral delete), #5016 (tower-429 test re-land — its subject
-  was live, not legacy). Hooks: python activator pruned by #4987 →
-  git-native `git config core.hooksPath .githooks` applied locally (loop
-  probe satisfied). Board 23→11 rows (SWEEP #3 @15:51:30Z; refill-era
-  w2 6→10 per sentry c112). PR plane: #4872 lone open (status UNSEEN).
-  Heartbeat first-try OK (agent-3, 18:04Z).
+- **r2** (02:04+06, PR #5032): CENSUS RESOLVED — owner pruned BOTH sides
+  (#4984 717-file mega purge + #4988 361 legacy-test prune + #4995
+  58-lean-SSOT); suite green at 1798735 (62 passed + 12 subtests, 0
+  collection errors); hooks git-native `core.hooksPath .githooks`
+  activated; board 23→11 (SWEEP #3 + refill w2).
+- **r3** (04:04+06, trace ...202611020404; folds the two no-patch cycles
+  03:04/04:04): NO-PICK ×3 standing (claimable 0/5 each window). Suite
+  re-certified green at 5ee875a AND d09d0c2 (62+12, 7.4s / 7.6s) —
+  stable across 3 consecutive tips. Board 11→18→23: two rising windows,
+  no sweep (sentry c114's interval-model falsification independently
+  consistent). **#4872 staleness quantified** (U2 defect-ownership):
+  open 9.1h, silent 7.6h, single-PR mode confirms `merged:false`; no
+  check-rollup even in single-PR mode; its branch runs aged out of the
+  recent-12 window → the UNSEEN gap is STRUCTURAL in current tower
+  tooling, not a probe error. GLM09's lane — untouched per cross-agent
+  collateral law; watch continues. **Tower-quirk durable facts (new)**:
+  `github_workflow_runs` schema carries NO branch param — filtering is
+  client-side only, and `per_page>~12` returns `MCP error -32602:
+  Output validation error` (reliable window = 12 rows; bigger pages are
+  an error, not a truncation). Heartbeats first-try ×3 (18:04Z, 19:04Z,
+  20:04Z); zero brownouts this window.
