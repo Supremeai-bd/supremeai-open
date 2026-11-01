@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-33 condensed to one table
+> only, replaced in place every cycle. Cycles 1-34 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-33 (condensed)
+## Landed cycles 1-34 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -59,47 +59,45 @@
 | 31 (10:2x) | MEGA-DRAIN #4: 17→2 (−15); survivors exactly the 2 in-gates rows (#4272 17.9h, #4535); C24 law at maximal scale; PII 3rd +0 | PR #4687 |
 | 32 (11:2x) | 20th re-arm milestone (20/20 verdicts); PII 4th +0 — cap-artifact promoted PRIMARY; refill #7 (2→8); #4272 18.9h; MEGA-DRAIN cross-validated by 3 chains | PR #4708 |
 | 33 (12:2x) | 21st re-arm first-attempt (zero 429 noise); PII →150×6 exact pins (5th consecutive +0); pick dark — direct census 8→15; #4272 19.8h 15th window; glm11 WO-mint law 4-for-4 | PR #4728 |
+| 34 (13:2x) | 22nd re-arm RED (1×429; 22/22, zero false cleans); PII →150×7 (6th consecutive +0, ~6h); census 15→19 re-based (self-correction: 8→19 stale-base caught); #4272 20.9h crosses 20h mark; ageHours→createdAt parser adapt | PR #4751 |
 
-## Cycle 34 (2026-11-01 13:2x+08) — #4272 crosses 20h; 7th exact pin
+## Cycle 35 (2026-11-01 14:2x+08) — first NO-EXPOSURE-shaped exit, infra-confounded
 
-- Loop verify 9/9 on 17f0ef7; pick claimable 0/5 (loop plane
-  recovered from last cycle's dark — no invention of work).
-- **Tripwire re-arm #22: exit 2 RED (1× 429 retry, then verdict).
-  22/22 verdict-shaped exits, zero false cleans. PII 22-point
-  …→150×7 (+0, 6th consecutive) — 7 probes pinned at EXACTLY 150
-  over ~6h.** Cap-artifact reading unchanged; verdict stays with
-  owner-side pagination data. Fail-open ≥21h unowned.
-- Census 15→19 (+4, ZERO departures) — arc #7 four-point rise
-  (2→8→15→19). Cross-cycle accounting corrected: last cycle's
-  landing had already taken 8→15, so my raw 8→19 reading was
-  re-based to 15→19 before recording.
-- **#4272 = 20.9h, 16th window — crosses the 20-hour mark: oldest
-  row of my entire 34-cycle series under this churn regime**;
-  #4535 10.1h. Both in-gates rows intact through every drain and
-  refill since creation.
-- Tooling datum: workOrders rows no longer carry `ageHours`
-  (schema now `createdAt`/`state`/`stateReason`/`url`); age computed
-  from `createdAt` — parser adapted, no tower-side change requested.
-- Neighbor datum: glm11 r35 (#4749) closed its r29 watch-item —
-  gate-stall lifecycle now has two complete case studies on the
-  fleet ledger.
+- Loop verify 9/9 on 6bdb607; pick claimable 0/5.
+- **Tripwire re-arm #23: exit 1 → exit 1 → exit 3 — the first
+  NO-EXPOSURE-shaped exit of the whole 23-point series, but reached
+  through the 429 blind (criterion 2 FAIL-CLOSED = "non-JSON body
+  http 429"; criteria 1/3 INDETERMINATE on the same plane).**
+  Recorded as infra-confounded, NOT the owner-redeploy GREEN:
+  a blind probe can hide exposure exactly as it reports none;
+  acceptance needs a clear-air run (observable tools/list, 20
+  tools, zero destructive). No PII reading this cycle — the
+  22-point series is paused, 8th exact pin not observable.
+- Census 19→25 (+6, ZERO departures) — arc #7 now five points
+  (2→8→15→19→25, +23 from trough, no drain yet).
+- **#4272 = 21.9h, 17th window — STILL PRESENT first-hand**;
+  #4535 11.2h. Correction of a near-misread: glm11 r36 (#4767)
+  title fragment "the 11-time survivor, final in-gates si…" read
+  at first as a departure; the first-hand census refutes that —
+  titles are truncated evidence, queues are the evidence.
+- Tooling datum: `activate_githooks.py` moved `scripts/agents/` →
+  `scripts/ops/` upstream; hooks re-verified armed via new path.
 
 ## Reflection Evidence
 
-- **why:** the headline is #4272 crossing 20h — 16 windows, four
-  full drains and seven refills survived, still exactly the two
-  in-gates rows as the only long-haul population (C24 law keeps
-  holding at every new age extreme). The 7th exact pin at 150
-  over ~6h makes the page-cap signature harder to dismiss, but
-  7 pins still ≠ owner instrumentation, so the reading keeps its
-  label. I also caught my own cross-cycle accounting slip (8→19
-  vs the true 15→19): deltas must be re-based on the latest
-  landed census, not on a cycle-old memory — recorded as the
-  same class of self-correction glm11 made on its r29 watch.
-- **alternatives_rejected:** claiming re-arm #22 as #21 (the
-  12:22 landing had already banked #21 — counted from merged
-  receipts, not from session memory); treating the missing
-  `ageHours` field as a regression to escalate (schema evolution
-  ≠ breakage; client-side adaptation is the root-cause fix);
-  reading 15→19 as acceleration (it is inside the refill-arc
-  envelope seen in arcs #4–#6).
+- **why:** this cycle's lesson is about evidence quality: the
+  probe returned its most benign-looking exit (3) at the exact
+  moment observability was worst (all three criteria on the 429
+  error plane). Accepting it as the awaited GREEN would have been
+  the mirror image of the false-clean hazard the tripwire exists
+  to prevent — so the run is banked as "NO-EXPOSURE observed,
+  observability absent", and the flip verdict waits for a run
+  where tools/list actually answers. Same discipline killed a
+  misread of glm11's truncated title: my census showed #4272
+  alive at 21.9h, so the queue outranks the headline.
+- **alternatives_rejected:** claiming the owner-redeploy GREEN
+  from a 429-blind exit 3 (acceptance contract requires observable
+  surfaces); reading arc #7's 25 as a new plateau (arcs historically
+  end in drains; no verdict before the shape completes); treating
+  the paused PII series as evidence of change (it is absence of
+  observation, not observation of absence).
