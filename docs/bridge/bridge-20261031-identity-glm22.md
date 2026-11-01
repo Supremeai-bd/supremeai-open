@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-41 condensed to one table
+> only, replaced in place every cycle. Cycles 1-42 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-41 (condensed)
+## Landed cycles 1-42 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -67,52 +67,46 @@
 | 39 (18:2x) | 27th re-arm RED — PII pin broke: 150→151 (+1) re-opened cap-vs-organic, decision rule pre-registered (151-pins=cap, drift=organic); refill arc #8 opened 8→10 (law 6/6); #4535 15.1h steady | PR #4858 |
 | 40 (19:2x) | 28th re-arm RED first-attempt — PII 151→153 (+2), pre-registered vote: cap DEMOTED to rival, organic-regrowth LEADING (ten-pin = ~9h plateau inside organic regime); census 10→16; #4535 16.1h; glm11 r41 confirms regrow | PR #4875 |
 | 41 (20:2x) | 29th re-arm blind exit 3 (2×429 first) — C35 adjudication applied, infra-confounded, no GREEN claimed; exit-3-in-brownout rule twice-confirmed; census 16→23 arc #8 4th pt, zero departures; #4535 17.2h 5th solo window; glm13 c105 +7/h accumulation convergence | PR #4897 |
+| 42 (21:2x) | 30th re-arm RED observable (1×429) — PII 153→163 (+10, series-largest single climb, new high): pre-registered rule pays out, organic-regrowth CONFIRMED operative, cap stays demoted; climb ran through SWEEP #2 hour; census parse-artifact (RPC envelope) caught by double-read → 8 rows; SWEEP #2 (~12:31Z) reaped 23→~5, refill arc #9 opens 5→8 (law 7/7); #4535 18.2h survived SWEEP #2; schema: rows key on number not id — adapted | PR #4922 |
 
-## Cycle 42 (2026-11-01 21:2x+08) — PII +10 to 163; SWEEP #2 resets the arc
+## Cycle 43 (2026-11-01 22:2x+08) — PII pins at 163; arc #9 climbs to 12
 
-- Loop verify 9/9 on 11b9dbe; pick claimable 0/5 (board plane
-  429-dark for pick; direct census filled the gap, U2).
-- **Tripwire re-arm #30: 1×429 → RED observable (2/3 exposed).
-  PII 153→163 (+10) — largest single-cycle climb of the tracked
-  series and a new high (146→163). The pre-registered rule pays
-  out: a pinned cap cannot emit +10 — organic-regrowth is
-  confirmed as the operative regime, cap-artifact stays demoted
-  (not deleted, pending owner-side adjudication). The climb ran
-  straight through the SWEEP #2 hour: PII rows are not board
-  rows, fleet events did not touch that plane.** 30/30 verdicts,
-  zero false cleans.
-- Census: first parse returned an empty list (JSON-RPC envelope
-  artifact, not a real zero) — double-read + raw-shape dump
-  corrected it: **8 rows** = 7 fresh mints (0.0–0.9h, all
-  post-sweep) + #4535. SWEEP #2 (~12:31Z, fleet-documented by
-  glm11 r43 / glm13 c106) reaped 23→~5; refill arc #9 opens
-  ~5→8 — drain-to-refill now 7/7 including sweep-triggered
-  drains.
-- **#4535 = 18.2h (createdAt 2026-10-31T19:16:44Z) — sixth
-  solo-era window, roster=[4535] exact, SURVIVED SWEEP #2**
-  (reap-resistance streak: 2 MEGA-DRAINs + a fleet sweep).
-- Schema note: queue rows key on `number` (not `id`) — client
-  parse adapted with fallback; same class as the C34 ageHours
-  change: root-cause adaptation, not a regression.
+- Loop verify 9/9 on 4f08654; pick claimable 0/5 — board plane
+  READABLE this time (a clean 0/5, not dark).
+- **Tripwire re-arm #31: 1×429 → RED observable (2/3 exposed).
+  PII 163→163 (+0) — first pin at the new level. Interpretation
+  rule written BEFORE the next point: organic-regrowth stays
+  primary (the 150-pin's ~9h plateau sat inside the organic
+  regime, and a one-point +0 decides nothing — same standard
+  C29 was held to); 2–3 consecutive +0 readings open the
+  "163-plateau (organic-internal)" question as leading;
+  cap-artifact revival only if a long pin shows the structural
+  signature the 150-pin showed AND no climb follows. 163 is an
+  odd cap level with no page-multiple signature, so the prior
+  favors plateau.** 31/31 verdicts, zero false cleans.
+- Census 8→12 (truncated=None, full window): arc #9 now
+  5→8→(11, glm11's read)→12 — smooth refill, drain-to-refill
+  7/7 holds. My own #4921 (the r38 receipt WO) visible
+  in-window at 0.9h.
+- **#4535 = 19.1h — seventh solo-era window, roster=[4535]
+  exact**, SWEEP #2 survivor streak intact.
 
 ## Reflection Evidence
 
-- **why:** this cycle is the payoff of writing decision rules
-  before the data arrives: the cap hypothesis had one clean
-  falsification condition (a decisive climb) and the very next
-  observable point delivered +10 through a fleet sweep. Keeping
-  the cap as a demoted rival instead of deleting it made the
-  confirmation meaningful rather than vacuous. The census
-  parse-artifact was caught by the double-read discipline
-  before it could become a false "board is empty" datum — the
-  second parse-level trap of the series (C34 stale-base was
-  the first), both caught the same way: never trust a single
-  mechanical read.
-- **alternatives_rejected:** reading 163 as proof no cap ever
-  existed (a cap below 153 was already excluded by the pin
-  break; the rival stays demoted, not deleted); counting the
-  empty parse as a census datum (an artifact is not an
-  observation); promoting #4535's sweep survival into
-  immortality evidence (#4272's ending still governs); reading
-  arc #9's shape from two points (5→8 is a beginning, not a
-  law).
+- **why:** the cycle's discipline is restraint in both
+  directions: one +0 does not resurrect the cap, and one +10
+  did not delete it — the demoted-rival structure keeps every
+  reading informative without letting a single point flip the
+  verdict. Writing the 163-pin interpretation rule before the
+  next point arrives repeats the C39 pattern that worked:
+  rules first, data votes, owner decides. The census confirms
+  the fleet picture (arc #9 smooth, #4535 holding) with zero
+  interpretive strain.
+- **alternatives_rejected:** declaring a new cap at 163 from
+  one reading (a single +0 has carried no verdict since C29,
+  and 163 lacks any page-multiple signature); reading the pin
+  as organic-decisive too (there is no second +0 yet); folding
+  arc #9 into arc #8's story (different drain mechanism —
+  fleet sweep vs organic — earns its own arc number);
+  extrapolating #4535's permanence from a seventh window
+  (#4272's ending governs).
