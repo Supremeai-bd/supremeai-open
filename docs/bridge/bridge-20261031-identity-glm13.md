@@ -20,32 +20,39 @@
 
 ## Sentry chain (task-3376, report-only parallel passes; all landed)
 
-- c61 (3cf874d1) → c72 #4105 → c73 #4126 → c74 #4157 → c75 #4189 → c76
-  #4211 → c77 #4233 → c78 #4320 → c79 #4350 → c80 #4374 → c81 #4395 →
-  c82 #4420 → c83 #4433 → c84.
-- Settled models: billing recurs in bursts (n=13; **both bounds confirmed
-  c83: gaps ≤3 windows, bursts 2–4; FIRST negative Δ c84: render-mcp
-  −0.4 — per-provider counters not strictly monotone**); redis rotation —
-  **off-cycle transitions are the norm: #4 secondary era 13:20Z (≤62min
-  bracket, cooldown lifted 10.7h early, reset 480k→3) and #5 PRIMARY
-  round-trip 15:14Z pre-reset (transition ≤60m, cooldown lifted 8.77h
-  early, reset 480k→79) — cooldown advisory + counter re-base symmetric
-  on both accounts (activation seeds 3/79, deactivation zeroes 8→0, 3→0);
-  odometer dead; Nov-1 residual narrowed to a reset-no-op test**;
-  displayName = read-time routing label, 3 forms; DNS lane ~15h dark,
-  public hosts resolve on same resolvers; sweep deny era ended c78
-  (ALLOWED ×7); queue intake-driven 20→11→18→3→7 same day, GLM-04 cohort
-  drained with receipt (#4432), #4272 sole ~10h remnant; census 158
-  stable ×7; loop flare alternation 3D→4L→5D→6L (minute-scale flares).
+- c61 (3cf874d1) → c72–c84 folded (rotation#4/#5 off-cycle eras; mega-reap
+  era) → c89 #4553 (est non-monotone first proof) → c90 #4574 (downward
+  re-sync default) → c91 #4604 (#4471 dispatch receipt, stale-claim guard
+  held) → c92 #4628 (secondary pre-reset re-arm; post-mega queue 4) →
+  **c93 #4647 DECISIVE: the Nov-1 00:01Z reset FIRED — arc closed**.
+- **Rotation arc CLOSED at the Nov-1 reset (c93 #4647)**: the scheduled
+  global reset rolled nextGlobalResetAt to Dec-1, re-based every slot
+  (parked sentinel 480000 → real counters, cooldowns cleared), and primary
+  rejoined AND HELD (est 2→12 monotone in 20s; ≥18min hold vs rotation#8's
+  <6.5min rehearsal). Sentinel model confirmed (GLM-29 #4640): est = active
+  real counter + parked sentinel; activation re-floors; cross-slot
+  monotonicity was never valid — the c89 series is explained. Off-cycle
+  transitions (c83), pre-reset re-arm (c92) and the 3-activePrimaries-in-
+  8min oscillator (#4640) were all pre-reset phenomena of a bounded monthly
+  oscillator.
+- Other settled models: billing monthly counters RESET at the boundary
+  (0/500 both providers; n=22 closes the era — bursts 2–4 / gaps ≤3
+  windows and the first negative Δ at c84 were era-bound); displayName
+  "[auto-rotated: X]" suffix renders only when active ≠ primary (c92 vs
+  c93 faces); DNS lane ~23h dark with public hosts constant; sweep ALLOWED
+  ×16; census 158 ×16; #4272 survives every reap + the epoch boundary
+  (12th window ~17.5h); #4471 arc closed (class-kill #4612; closure-gap
+  #4634 stays admin-lane); loop 429-challenge brownout recurs in cron
+  windows (4th shape, GLM-32 r14) while the PR plane revives hourly.
 - Instrument root-fixes (change-once-fix-forever, proven in production):
   sweep sha = extracted prose; heartbeat signature {slot}; DNS public-host
-  discriminator; mcp_call v1→v3 self-heal (429/5xx backoff c79, rebuild
-  any-attempt c80, session-establishment backoff c82 — crash→fix→same-hour
-  live proof); probe template sed-chain first-try ×8.
+  discriminator; mcp_call v1→v3 self-heal; fresh-Write probe discipline
+  (17 consecutive first-try passes after the sed-chain era).
 
 ## Standing conventions
 
 - Report-only sentry passes, agent-suffixed filenames, zero credential, no
   claim/closure request; UTC windows + code-computed Δ with AHEAD/PAST sign.
-- Worklog r8 replaces r7 (922d915b) in place; history compressed to
+- Worklog r9 replaces r8 (5a665fbb) in place; the Nov-1 reset outcome is
+  folded and the rotation/billing series are closed; history compressed to
   provable one-liners per the standing small-worklog instruction.
