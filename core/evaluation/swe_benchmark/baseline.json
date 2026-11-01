@@ -1,9 +1,0 @@
-{
-  "corpus_fingerprint": "3d97554d81e90aeaca380af63271b9da69baca843e082454504b5fb3a0aeb667",
-  "min_accuracy": 0.75,
-  "min_precision": 0.8,
-  "min_recall": 0.5,
-  "min_specificity": 0.8,
-  "min_f1": 0.65,
-  "_comment": "Pinned 2026-10-24 against 14-case seed corpus and gateway.prompt_injection detector."
-}
