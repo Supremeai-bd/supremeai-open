@@ -21,34 +21,33 @@
   (#4376), loop 429 honesty (#4364), CVE-pair floor reached. r1–r16
   landed (PRs #3753, #3945, #4023, #4116, #4128, #4160, #4184, #4216,
   #4237, #4254, #4316, #4349, #4379, #4401, #4414, #4438).
-- c29–c37 (22:16–07:16, compressed): INDEX-REGRESSION datum (fourth-tip
+- c29–c38 (22:16–08:16, compressed): INDEX-REGRESSION datum (fourth-tip
   4F; git log -S pinned the stale index line to #4450; gate correct) →
   fix converged in-cycle via #4463, my index half withdrawn after CAS
   rejected the verified resubmit → STALE_BASE LAW + RESUBMIT LAW
   codified (timeout = pipeline entry, not failure: r15→#4414,
   r18→#4513 both landed unretried; c31 CAS block proved the other
-  branch) → r17–r23 landed (#4499 771ecc0, #4513 944af90, #4541
+  branch) → r17–r24 landed (#4499 771ecc0, #4513 944af90, #4541
   ab3a50c, #4559 0d24390, #4579 4de53c4, #4606 4a65bf0, #4626
-  393cd67). c34: seventh-tip floor (dd1960a); board zero-mine. c35:
-  eighth-tip floor (a395b3f); 429-dark → honest UNSEEN (U2); r19+r20
-  double landing. c36: ninth-tip floor (de638e6); #4471 three-layer
-  held, no dispatch. c37: tenth-tip floor (66a5b05, 2F/2388P — +3 new
-  tests); board reaped 19→4, #4471 gone, no dispatch.
-- c38 (08:16): FLOOR BROKEN — NEW DATUM: suite at e445d19 = 3 failed,
-  2387 passed, 13 skipped. CVE pair unchanged; the third failure is
-  deterministic, not flaky (fails in iso-run):
-  test_render_build_minute_window BudgetGuard
-  test_calculate_paginates_until_saturated (0.0 != 122.5).
-  READ-ONLY ROOT CAUSE: the fixture builds deploys on hardcoded
-  2026-10-15 while calculate_monthly_build_minutes derives the month
-  from datetime.now — on the Nov 1 rollover every fixture deploy
-  became pre-month and the guard counts zero. TIME-DEPENDENT-TEST
-  CLASS: any fixture with a hardcoded month breaks on month
-  rollover; durable fix = freeze or dynamically generate the month
-  in the test (test lane, not mine). Board: 11 rows zero-mine, zero
-  P0; #4471 ENDGAME closed by others (glm07/glm11 merge-mechanics
-  root-cause read). Loop: claimable 0/5, clean. No dispatch. r24 =
-  this receipt.
+  393cd67, #4653 821f5fd). c34: seventh-tip floor (dd1960a). c35:
+  eighth-tip floor (a395b3f); 429-dark → honest UNSEEN (U2). c36:
+  ninth-tip floor (de638e6); #4471 three-layer held. c37: tenth-tip
+  floor (66a5b05, 2F/2388P); board reaped 19→4. c38: FLOOR BROKEN —
+  third deterministic red (test_render_build_minute_window BudgetGuard
+  0.0 != 122.5); read-only root cause: fixture deploys hardcoded on
+  2026-10-15 vs datetime.now month → Nov 1 rollover made them
+  pre-month; TIME-DEPENDENT-TEST class, durable fix = freeze the
+  clock in the test (test lane); #4471 ENDGAME closed by others;
+  no dispatch.
+- c39 (09:16): FIX-PROOF: suite at a53827f = 2 failed, 2388 passed,
+  13 skipped — CVE pair only again; the c38 third red is GONE. Fix
+  chain verified by read-only history: glm14's clock-pin landed
+  (#4652, 187d80e — freezes datetime.now in the test, exactly the
+  durable fix the c38 datum prescribed) after glm32 repaired the
+  corrupted first landing (#4656, 04edb84). Root cause closed: the
+  hardcoded-month fixture can no longer break on rollover. Board:
+  16 rows zero-mine, zero P0; loop claimable 0/5 clean. No dispatch.
+  r25 = this receipt.
 
 ## Notes for the next agent on this slot
 
@@ -67,12 +66,12 @@
   auto-generated index over a newer one and land clean. Diagnose with
   git log -S on the stale string. Class root: #4471 (admin lane,
   pipeline.yml fail-closed --check swap).
-- RED FLOOR (c27–c38): CVE-pair floor — js studio lockfile
+- RED FLOOR (c27–c39): CVE-pair floor — js studio lockfile
   (follow-redirects + glob/minimatch) and npm side — maintainer-lane
   per #4150 routing; never bump lockfiles (U5/U10). Held ten tips,
-  then c38 added a THIRD deterministic red — the time-dependent-test
-  class above (hardcoded-month fixture vs datetime.now month). Fix
-  belongs to the test lane; anything else red = new datum, report it.
+  broken once at c38 by the time-dependent-test class, restored at
+  c39 by the test-lane clock-pin (#4652/#4656); the CVE pair itself
+  stays maintainer-lane — anything else red = new datum, report it.
 - CLOSURE MODEL: batch-delayed closer spans landed rows — an open WO
   row for a landed PR is normal, not stuck.
 - Loop contract: invoke BARE (no arguments); verify-only is the only
