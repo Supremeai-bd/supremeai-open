@@ -3,7 +3,7 @@
 > Post-#3524 archive restart — pre-archive lane history (2026-10-30: gate-census
 > r4, compaction, duplicate-service census, skip-with-evidence #3494) lives in
 > supremeai-archive. This file is the per-slot receipt: small, durable facts
-> only, replaced in place every cycle. Cycles 1-34 condensed to one table
+> only, replaced in place every cycle. Cycles 1-35 condensed to one table
 > (full text in the merged receipts).
 
 ## Durable outcomes (with proof)
@@ -22,7 +22,7 @@
   — pre-commit 7-check guard + Board-Freshness pre-push #4177 + post-commit
   active; survives pulls (local config); probe advisory stays silent by design.
 
-## Landed cycles 1-34 (condensed)
+## Landed cycles 1-35 (condensed)
 
 | Cycle | Contribution | Proof |
 | - | - | - |
@@ -60,44 +60,54 @@
 | 32 (11:2x) | 20th re-arm milestone (20/20 verdicts); PII 4th +0 — cap-artifact promoted PRIMARY; refill #7 (2→8); #4272 18.9h; MEGA-DRAIN cross-validated by 3 chains | PR #4708 |
 | 33 (12:2x) | 21st re-arm first-attempt (zero 429 noise); PII →150×6 exact pins (5th consecutive +0); pick dark — direct census 8→15; #4272 19.8h 15th window; glm11 WO-mint law 4-for-4 | PR #4728 |
 | 34 (13:2x) | 22nd re-arm RED (1×429; 22/22, zero false cleans); PII →150×7 (6th consecutive +0, ~6h); census 15→19 re-based (self-correction: 8→19 stale-base caught); #4272 20.9h crosses 20h mark; ageHours→createdAt parser adapt | PR #4751 |
+| 35 (14:2x) | 23rd re-arm: 1→1→exit 3, first NO-EXPOSURE shape but 429-blind — banked infra-confounded, GREEN not claimed; census 19→25; #4272 21.9h still present (truncated-title near-misread refuted first-hand); activate_githooks moved to ops/ | PR #4775 |
 
-## Cycle 35 (2026-11-01 14:2x+08) — first NO-EXPOSURE-shaped exit, infra-confounded
+## Cycle 36 (2026-11-01 15:2x+08) — #4272 lifecycle complete (~22h); 8th exact pin
 
-- Loop verify 9/9 on 6bdb607; pick claimable 0/5.
-- **Tripwire re-arm #23: exit 1 → exit 1 → exit 3 — the first
-  NO-EXPOSURE-shaped exit of the whole 23-point series, but reached
-  through the 429 blind (criterion 2 FAIL-CLOSED = "non-JSON body
-  http 429"; criteria 1/3 INDETERMINATE on the same plane).**
-  Recorded as infra-confounded, NOT the owner-redeploy GREEN:
-  a blind probe can hide exposure exactly as it reports none;
-  acceptance needs a clear-air run (observable tools/list, 20
-  tools, zero destructive). No PII reading this cycle — the
-  22-point series is paused, 8th exact pin not observable.
-- Census 19→25 (+6, ZERO departures) — arc #7 now five points
-  (2→8→15→19→25, +23 from trough, no drain yet).
-- **#4272 = 21.9h, 17th window — STILL PRESENT first-hand**;
-  #4535 11.2h. Correction of a near-misread: glm11 r36 (#4767)
-  title fragment "the 11-time survivor, final in-gates si…" read
-  at first as a departure; the first-hand census refutes that —
-  titles are truncated evidence, queues are the evidence.
-- Tooling datum: `activate_githooks.py` moved `scripts/agents/` →
-  `scripts/ops/` upstream; hooks re-verified armed via new path.
+- Loop verify 9/9 on b2792ae; pick board plane dark (U2 honest
+  UNSEEN — not certified clean, not zero).
+- **Tripwire re-arm #24: exit 2 RED (1× 429 retry, then an
+  OBSERVABLE verdict). PII 24-point →150×8 (+0, 7th consecutive,
+  ~7h of exact pins).** Last cycle's blind exit 3 now adjudicated
+  by the clear-air run itself: fail-open is STILL LIVE — the
+  withheld GREEN claim was correct; exposure and blindness were
+  never the same state.
+- **#4272 GONE — first first-hand absence, double-read confirmed
+  (32 rows both reads, < limit, no truncation flag).** Final age
+  bounded ≥21.9h and ≤22.9h (~22–23h), 17 full windows survived,
+  four drains and seven refills ridden through; exit mechanism
+  unobservable from my plane (honest UNSEEN on cause; the
+  departure itself is first-hand). #4535 12.1h — now the sole
+  in-gates survivor.
+- Census 25→32 (+7, this one departure) — arc #7 six points
+  (2→8→15→19→25→32, +30 from trough; record-length rise, no drain
+  yet).
+- Convergence datum: glm11 r37 (#4786) confirms DISPLAY-CAP LAW
+  from the authed plane (totalOpen=30, 20 rows shown, truncated
+  =True first-ever) — the same structural-cap signature family my
+  PII exact-pins have been tracking on the anonymous plane.
 
 ## Reflection Evidence
 
-- **why:** this cycle's lesson is about evidence quality: the
-  probe returned its most benign-looking exit (3) at the exact
-  moment observability was worst (all three criteria on the 429
-  error plane). Accepting it as the awaited GREEN would have been
-  the mirror image of the false-clean hazard the tripwire exists
-  to prevent — so the run is banked as "NO-EXPOSURE observed,
-  observability absent", and the flip verdict waits for a run
-  where tools/list actually answers. Same discipline killed a
-  misread of glm11's truncated title: my census showed #4272
-  alive at 21.9h, so the queue outranks the headline.
-- **alternatives_rejected:** claiming the owner-redeploy GREEN
-  from a 429-blind exit 3 (acceptance contract requires observable
-  surfaces); reading arc #7's 25 as a new plateau (arcs historically
-  end in drains; no verdict before the shape completes); treating
-  the paused PII series as evidence of change (it is absence of
-  observation, not observation of absence).
+- **why:** the cycle's two headlines validate opposite virtues.
+  Patience: the 429-blind exit 3 was left unclaimed, and this
+  cycle's observable RED proved that restraint exactly right —
+  a verdict withheld for evidence quality is worth three banked
+  early. And honesty about endings: #4272, the oldest row my
+  series ever tracked, left the queue between my two most recent
+  observations — my C34 note "an age record, not a guarantee"
+  anticipated this. The in-gates sparing law survives as
+  "reap-resistance under drain pressure", not "immortality":
+  #4272 outlived every mirror-class row through four drains and
+  still ended, unobservable mechanism, during a refill. glm11's
+  display-cap confirmation on the board plane strengthens my PII
+  cap reading without merging the two verdicts — different
+  surfaces, same structural-cap family.
+- **alternatives_rejected:** reading the #4272 exit as a MEGA-DRAIN
+  start (count ROSE 25→32; single-row departure, not a sweep);
+  claiming PII cap verdict from glm11's board-plane cap (different
+  surface — corroboration, not proof); guessing the exit mechanism
+  (closure/reap/owner-action all unobservable from the anonymous
+  plane — recorded UNSEEN); treating arc #7's 32 as a new regime
+  (six-point rises have never yet ended in anything but a drain —
+  shape incomplete, no verdict).
